@@ -306,6 +306,7 @@ import { installPermissionResponseHandler } from './webPermissionResponseHandler
 import { applyRendererBundleUpdate } from '../host/services/renderer/rendererBundleFetcher';
 import { getAppVersion, getBuildInfo } from '../host/platform';
 import { WEB_SERVER_DEFAULTS } from '../shared/constants/webServer';
+import { WEB_SERVER_SHUTDOWN_TIMEOUTS } from '../shared/constants/timeouts';
 import type { PendingLocalToolCall } from './routes/agent';
 import { getApplicationRunRegistry } from '../host/app/applicationRunRegistry';
 import { createApplicationAutoAgentRecoveryHost } from '../host/app/autoAgentRecoveryHost';
@@ -997,6 +998,20 @@ async function main(): Promise<void> {
     console.log();
   });
 
+  // 宽限期是有限的（Rust 侧 GRACEFUL_SHUTDOWN_TIMEOUT 到点就 SIGKILL），关库是这段
+  // 时间里唯一不能省的一步——前面两个清理任何一个卡住，都会把预算吃光，最后仍然被
+  // 硬杀，留下陈旧 -wal/-shm。所以给它们各自封顶，超时就跳过，绝不挡住关库。
+  const withCap = <T>(p: Promise<T>, label: string): Promise<T | void> =>
+    Promise.race([
+      p,
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          console.warn(`[shutdown] ${label} timed out, skipping`);
+          resolve();
+        }, WEB_SERVER_SHUTDOWN_TIMEOUTS.STEP_MS);
+      }),
+    ]);
+
   // 优雅退出
   const shutdown = async () => {
     console.log('\nShutting down...');
@@ -1004,19 +1019,28 @@ async function main(): Promise<void> {
     // 同一个 token，避免 Tauri WebView 里固化的旧 token 失效踩 "Invalid auth
     // token"。若要轮换 token，手动删 .dev-token 后重启 webServer。
     cleanupUploadDirs();
-    await durableRunRuntime?.shutdown().catch((error) => {
-      console.warn('[shutdown] durable recovery runtime failed:', error);
-    });
+    await withCap(
+      durableRunRuntime?.shutdown().catch((error) => {
+        console.warn('[shutdown] durable recovery runtime failed:', error);
+      }) ?? Promise.resolve(),
+      'durableRunRuntime.shutdown'
+    );
     // V2-A: 关掉所有用户起的 dev server，避免 Vite/CRA 子进程成孤儿
-    try {
-      const { getDevServerManager } = await import('../host/services/infra/devServerManager');
-      await getDevServerManager().disposeAll();
-    } catch (err) {
-      console.warn('[shutdown] devServerManager dispose failed:', err);
-    }
+    await withCap(
+      (async () => {
+        try {
+          const { getDevServerManager } = await import('../host/services/infra/devServerManager');
+          await getDevServerManager().disposeAll();
+        } catch (err) {
+          console.warn('[shutdown] devServerManager dispose failed:', err);
+        }
+      })(),
+      'devServerManager.disposeAll'
+    );
     // 干净关库：只有最后一个连接 sqlite3_close 后 SQLite 才会 checkpoint 并删掉
     // -wal/-shm；漏关任何一个，陈旧 -shm 会在下次启动被越界映射触发 SIGBUS。
     // 连接清单登记在 webShutdownDatabases.ts，新增主库连接必须同步登记。
+    // 不设超时封顶：这是唯一不能跳过的一步，必须等它做完。
     await (await import('./webShutdownDatabases')).closeAllDatabaseConnections();
     server.close();
     process.exit(0);

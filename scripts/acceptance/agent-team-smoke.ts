@@ -9,6 +9,7 @@ import os from 'os';
 import path from 'path';
 import { setTimeout as delay } from 'timers/promises';
 import { describeChildExit, isAbnormalExit, isChildGone } from './childProcessState';
+import { parseScopedSwarmAgentId } from '../../src/shared/contract/swarm';
 
 type ApiFailure = {
   error?: string | { message?: string };
@@ -210,8 +211,15 @@ async function requestJson<T>(
   return payload;
 }
 
+// 服务端下发的是 createScopedSwarmAgentId 编出来的作用域 id
+// （swarm-agent.v1.<sessionId>.<runId>.<treeId>.<localAgentId>，各段 base64url），
+// 本脚本按 dep-root / message-agent 这类本地 id 找任务。裸字符串相等在 Team 作用域化之后
+// 永远匹配不上，会以 "Missing task dep-root" 的形式报出来 —— 与真因无关。
+// 用共享契约里的解析器还原本地 id，别在这里手写一份 base64 拆解。
 function findTask(summary: SmokeScenarioSummary, taskId: string): SmokeTaskResult {
-  const task = summary.results.find((item) => item.taskId === taskId);
+  const task = summary.results.find((item) => (
+    item.taskId === taskId || parseScopedSwarmAgentId(item.taskId)?.localAgentId === taskId
+  ));
   if (!task) {
     throw new Error(`Missing task ${taskId}: ${JSON.stringify(summary)}`);
   }

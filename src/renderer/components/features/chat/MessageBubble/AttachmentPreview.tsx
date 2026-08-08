@@ -39,6 +39,7 @@ import {
   type SessionMediaAsset,
   type SessionMediaContext,
 } from '@shared/utils/sessionMediaAssets';
+import { getAttachmentId } from '@shared/utils/messageAttachments';
 import ipcService from '../../../../services/ipcService';
 import {
   invokeNativeCommandAction,
@@ -228,7 +229,7 @@ const AttachmentItem: React.FC<{
 
   // Appshot 会话回放：ledger 只存摘要（无 data/path），截图本体仍在 appshots 目录，
   // 按 requestId 派生路径惰性还原（无绝对路径入 ledger）。仅在 image 类且 src 为空时触发。
-  const isAppshotAttachment = Boolean(displayAttachment.appshot) || displayAttachment.id.startsWith('appshot-');
+  const isAppshotAttachment = Boolean(displayAttachment.appshot) || getAttachmentId(displayAttachment).startsWith('appshot-');
   const [lazyAppshotSrc, setLazyAppshotSrc] = useState('');
   const mediaAssetForCheck = buildAttachmentMediaAsset(displayAttachment, mediaContext);
   const rawImageSrc = mediaAssetForCheck
@@ -236,7 +237,7 @@ const AttachmentItem: React.FC<{
     : displayAttachment.thumbnail || displayAttachment.data || (displayAttachment.path ? resolveFileUrl(displayAttachment.path) : '');
   useEffect(() => {
     if (!isAppshotAttachment || rawImageSrc || lazyAppshotSrc || !isNativeCommandRuntimeAvailable()) return;
-    const requestId = displayAttachment.id.replace(/^appshot-/, '');
+    const requestId = getAttachmentId(displayAttachment).replace(/^appshot-/, '');
     if (!requestId) return;
     let cancelled = false;
     invokeNativeCommandAction('readAppshotImageDataUrlById', { requestId })
@@ -319,7 +320,8 @@ const AttachmentItem: React.FC<{
     // Appshot 窗口截图：气泡里用与 composer 完全一致的 AppshotChip（同款卡片、点击开同一预览 Modal）
     if (isAppshotAttachment) {
       const meta = displayAttachment.appshot;
-      const requestId = displayAttachment.id.replace(/^appshot-/, '') || displayAttachment.id;
+      const attachmentId = getAttachmentId(displayAttachment);
+      const requestId = attachmentId.replace(/^appshot-/, '') || attachmentId;
       const capture: AppshotCapture = {
         requestId,
         appName: meta?.appName?.trim()

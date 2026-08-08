@@ -82,7 +82,7 @@ Startup preflight is deliberately small. It checks only resources that determine
 | `web-server-script` | `dist/web/webServer.cjs` | Yes | Boot cannot spawn application server. |
 | `renderer-index` | `dist/renderer/index.html` | Yes | Builtin renderer fallback cannot load. |
 | `bundled-node` | `dist/bundled-node/bin/node`, `dist/bundled-node/node`, or platform equivalent | Yes | Boot cannot run the bundled webServer. |
-| `better-sqlite3-native` | `dist/native/better-sqlite3/build/Release/better_sqlite3.node` | Yes | Packaged persistence is likely broken. |
+| `better-sqlite3-native` | `dist/native/better-sqlite3/prebuilds/<platform>-<arch>.node` (Node-API prebuild, e.g. `darwin-arm64.node`) | Yes | Packaged persistence is likely broken. |
 | `control-plane-public-keys` | `dist/web/control-plane-public-keys.json` | No | Control-plane verification can warn, but shell startup continues. |
 
 Runtime assets are tracked separately through `RUNTIME_ASSET_DEFINITIONS`. Bundled assets include `sharp-image-runtime`, `system-audio-capture`, `vision-ocr`, `vision-tagger`, `computer-use-app`, `uv`, and `rtk`. Optional assets include `onnxruntime-vad` and `playwright-browser-runtime`.

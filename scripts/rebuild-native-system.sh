@@ -1,16 +1,16 @@
 #!/bin/bash
 # ============================================================================
-# rebuild-native-system.sh - 为系统 Node.js 重新编译原生模块
+# rebuild-native-system.sh - 为系统 Node.js 准备原生模块
 # ============================================================================
 # 使用方法: npm run rebuild-native:system
 #
 # 问题背景:
-# - Tauri app 通过系统 Node.js 运行 webServer.cjs
-# - postinstall 默认用 Electron ABI 编译 better-sqlite3
-# - 系统 Node.js 加载 Electron ABI 的 .node 文件会失败
+# - Tauri app 通过 bundled/system Node.js 运行 webServer.cjs
+# - better-sqlite3 v13 使用 Node-API，并随包提供跨 Node ABI 的平台预编译文件
+# - 打包态仍需要把当前平台文件复制到 dist/native/，供 nativeLoader 优先加载
 #
 # 解决方案:
-# - 为系统 Node 单独编译 better-sqlite3 到 dist/native/
+# - 把当前平台的 better-sqlite3 Node-API 预编译文件装配到 dist/native/
 # - webServer.cjs 运行时优先从 dist/native/ 加载
 # ============================================================================
 
@@ -34,11 +34,11 @@ process.stdout.write(entry.version);
 NODE
 )
 
-echo "Rebuilding better-sqlite3@$BETTER_SQLITE3_VERSION for system Node.js ($NODE_VERSION)..."
+echo "Preparing better-sqlite3@$BETTER_SQLITE3_VERSION for system Node.js ($NODE_VERSION)..."
 
-# 在临时目录编译，避免污染 node_modules（那里是 Electron 版本）
+# 在临时目录按 lockfile 版本取干净包，避免依赖工作区 node_modules 的残留产物。
 TEMP_DIR=$(mktemp -d)
-trap "rm -rf $TEMP_DIR" EXIT
+trap 'rm -rf "$TEMP_DIR"' EXIT
 NPM_CACHE_DIR="$TEMP_DIR/npm-cache"
 
 cd "$TEMP_DIR"
@@ -46,51 +46,51 @@ npm init -y --silent > /dev/null 2>&1
 NPM_INSTALL_LOG="$TEMP_DIR/npm-install.log"
 # 不加 --silent：npm 在 --silent 下会连 ECONNREFUSED 等失败信息一起吞掉（实测验证），
 # 靠这里的日志文件 + 分支输出来控制"成功时克制、失败时完整"，而不是靠 npm 自己的 loglevel。
-if ! npm install "better-sqlite3@$BETTER_SQLITE3_VERSION" --build-from-source --cache "$NPM_CACHE_DIR" > "$NPM_INSTALL_LOG" 2>&1; then
+if ! npm install "better-sqlite3@$BETTER_SQLITE3_VERSION" --ignore-scripts --cache "$NPM_CACHE_DIR" > "$NPM_INSTALL_LOG" 2>&1; then
   echo "npm install 失败，完整日志：" >&2
   cat "$NPM_INSTALL_LOG" >&2
   exit 1
 fi
 tail -1 "$NPM_INSTALL_LOG"
 
-# 复制编译产物到 dist/native/
-rm -rf "$NATIVE_DIR"
-mkdir -p "$NATIVE_DIR/build/Release"
-cp "$TEMP_DIR/node_modules/better-sqlite3/build/Release/better_sqlite3.node" \
-   "$NATIVE_DIR/build/Release/better_sqlite3.node"
-
-# 同步同一份系统 Node ABI 二进制到 node_modules/better-sqlite3：
-# 生产代码经 nativeLoader 优先加载 dist/native/，但测试(vitest)和 node 脚本直接
-# require('better-sqlite3') 命中的是 node_modules 那个二进制。机器上多版本 Node 共存时
-# (如 homebrew node@24 与 /usr/local node@22)，node_modules 二进制 ABI 与运行测试的 Node
-# 不一致会触发 NODE_MODULE_VERSION 报错，导致 sqlite 相关测试整片失败。这里复用上面的编译产物
-# 覆盖它，确保 install 后 node_modules 二进制始终与系统 Node 对齐（零额外编译开销）。
-NM_RELEASE="$PROJECT_ROOT/node_modules/better-sqlite3/build/Release"
-if [ -d "$NM_RELEASE" ]; then
-  cp "$TEMP_DIR/node_modules/better-sqlite3/build/Release/better_sqlite3.node" \
-     "$NM_RELEASE/better_sqlite3.node"
-  echo "Synced node_modules/better-sqlite3 to system Node ABI ($NODE_VERSION)"
+# v13 的预编译文件名直接编码平台和架构；Linux 还要区分 glibc / musl。
+PREBUILD_BASENAME=$(node - <<'NODE'
+const isMusl = process.platform === 'linux'
+  && !process.report.getReport().header.glibcVersionRuntime;
+const platform = isMusl ? 'linuxmusl' : process.platform;
+process.stdout.write(`${platform}-${process.arch}.node`);
+NODE
+)
+PREBUILD_SOURCE="$TEMP_DIR/node_modules/better-sqlite3/prebuilds/$PREBUILD_BASENAME"
+if [ ! -f "$PREBUILD_SOURCE" ]; then
+  echo "better-sqlite3 缺少当前平台预编译文件: $PREBUILD_SOURCE" >&2
+  exit 1
 fi
 
-# 复制 JS 入口文件（require 需要）
+# 复制当前平台运行时到 dist/native/。
+rm -rf "$NATIVE_DIR"
+mkdir -p "$NATIVE_DIR/prebuilds"
+cp "$PREBUILD_SOURCE" "$NATIVE_DIR/prebuilds/$PREBUILD_BASENAME"
 cp -r "$TEMP_DIR/node_modules/better-sqlite3/lib" "$NATIVE_DIR/lib"
 cp "$TEMP_DIR/node_modules/better-sqlite3/package.json" "$NATIVE_DIR/package.json"
 
-# 复制运行时依赖到 node_modules 布局，保证 Tauri resource_dir 里也能正常 require()
+# v12 的 bindings/file-uri-to-path 已不再是 v13 运行时依赖，清掉历史装配残留。
 rm -rf "$NATIVE_NODE_MODULES/bindings" \
        "$NATIVE_NODE_MODULES/file-uri-to-path" \
        "$PROJECT_ROOT/dist/native/bindings" \
        "$PROJECT_ROOT/dist/native/file-uri-to-path"
 mkdir -p "$NATIVE_NODE_MODULES"
-if [ -d "$TEMP_DIR/node_modules/bindings" ]; then
-  cp -r "$TEMP_DIR/node_modules/bindings" "$NATIVE_NODE_MODULES/bindings"
-fi
-if [ -d "$TEMP_DIR/node_modules/file-uri-to-path" ]; then
-  cp -r "$TEMP_DIR/node_modules/file-uri-to-path" "$NATIVE_NODE_MODULES/file-uri-to-path"
-fi
+
+node - "$NATIVE_DIR" <<'NODE'
+const Database = require(process.argv[2]);
+const db = new Database(':memory:');
+db.prepare('SELECT 1 AS ok').get();
+db.close();
+console.log(`[rebuild-native-system] better-sqlite3 Node-API smoke passed on ${process.version}`);
+NODE
 
 echo "Done! Native module at: dist/native/better-sqlite3/"
-echo "  .node file: $(file "$NATIVE_DIR/build/Release/better_sqlite3.node")"
+echo "  .node file: $(file "$NATIVE_DIR/prebuilds/$PREBUILD_BASENAME")"
 
 # ----------------------------------------------------------------------------
 # 恢复 node-pty prebuilt spawn-helper 的执行位

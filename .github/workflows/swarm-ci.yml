@@ -109,16 +109,12 @@ jobs:
           npm ci --ignore-scripts
           npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
 
-      - name: Install better-sqlite3 native binding
-        # --ignore-scripts 跳过了 better-sqlite3 的 install hook (prebuild-install)，
-        # CI 上 Database 初始化会因找不到 .node 文件 fallback 到 in-memory，
-        # 导致 swarm-trace / pending_approvals 持久化路径在 CI 测的不是真实路径。
-        # 用 prebuild-install 从 GitHub release 下当前 Node ABI（node24 = NODE_MODULE_VERSION 137）
-        # 的 linux x64 预编译 binary，跳过 node-gyp 编译链路。prebuild-install 按运行时 Node 自动
-        # 探测 ABI、不写死版本——若 better-sqlite3 该版本未提供 node24 预编译，此处会拉取失败（|| true
-        # 静默 fallback 到 in-memory），真实编译验证由下方 full job 的 --build-from-source 兜底。
-        working-directory: node_modules/better-sqlite3
-        run: ../.bin/prebuild-install || true
+      - name: Verify better-sqlite3 Node-API binding
+        # v13 随包携带 N-API 平台二进制；即使 npm ci --ignore-scripts，也必须真实加载，
+        # 防止持久化测试静默退回 in-memory。
+        run: |
+          test -f node_modules/better-sqlite3/prebuilds/linux-x64.node
+          node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('SELECT 1').get(); db.close()"
 
       - name: Typecheck (tsc — src/ only)
         # CI 此前**没有任何 tsc 门**：smoke/full 跑的 vitest 都是子集，类型错只要不落在子集
@@ -322,15 +318,11 @@ jobs:
           npm ci --ignore-scripts
           npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
 
-      - name: Install better-sqlite3 native binding
-        # npm ci --ignore-scripts 跳过了 postinstall(rebuild-native:system)，dist/native/ 不会生成，
-        # nativeLoader 最终 fallback 到 require('better-sqlite3') 命中 build/Release。原来的
-        # `prebuild-install || true` 一旦拉不到预编译就吞错，build/Release 为空 → e2e webServer 的
-        # DatabaseService 初始化失败（Could not locate the bindings file）→ 依赖持久化的 swarm-chain
-        # e2e 断言 element not found。改成：拉不到预编译就从源码编译，并断言产物存在（fail-loud）。
+      - name: Verify better-sqlite3 Node-API binding
+        # v13 的 linux-x64 N-API 二进制在 npm 包内；文件缺失或真实加载失败都直接终止。
         run: |
-          (cd node_modules/better-sqlite3 && ../.bin/prebuild-install) || npm rebuild better-sqlite3 --build-from-source
-          test -f node_modules/better-sqlite3/build/Release/better_sqlite3.node
+          test -f node_modules/better-sqlite3/prebuilds/linux-x64.node
+          node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('SELECT 1').get(); db.close()"
 
       - name: Build node-pty native binding
         # main 的 full job 一直缺这步：npm ci --ignore-scripts 跳过了 node-pty 的 install 脚本，

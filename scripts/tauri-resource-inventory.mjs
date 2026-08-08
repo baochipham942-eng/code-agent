@@ -20,9 +20,15 @@ const defaultRoot = path.join(
   '_up_',
 );
 
+const betterSqlite3Platform = process.platform === 'linux'
+  && !process.report.getReport().header.glibcVersionRuntime
+  ? 'linuxmusl'
+  : process.platform;
+const betterSqlite3Prebuild = `dist/native/better-sqlite3/prebuilds/${betterSqlite3Platform}-${process.arch}.node`;
+
 const REQUIRED_STARTUP_RESOURCES = [
   'dist/renderer/index.html',
-  'dist/native/better-sqlite3/build/Release/better_sqlite3.node',
+  betterSqlite3Prebuild,
 ];
 
 function readArg(name) {

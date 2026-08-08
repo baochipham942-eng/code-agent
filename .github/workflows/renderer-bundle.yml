@@ -6,7 +6,13 @@ name: Publish Renderer Bundle (hot update)
 # GitHub Actions 对 tag push 不评估 paths filter，所以正式 tag 一定会跑这条热更链。
 on:
   pull_request:
+    # package.json / package-lock.json 只进 PR 侧：热更链路挂过的那次根因是依赖
+    # （better-sqlite3 在 Node 24 上的原生断言崩了 webServer 子进程），而当时改依赖的
+    # PR 压根触发不到这条 workflow —— 缺陷只能等合进 main 再由 publish 那条腿吃到。
+    # push 侧不加：那条腿会真往 OSS 发包，不该被无关依赖变更带着发版。
     paths:
+      - 'package.json'
+      - 'package-lock.json'
       - 'src/renderer/**'
       - 'src/shared/**'
       - 'index.html'

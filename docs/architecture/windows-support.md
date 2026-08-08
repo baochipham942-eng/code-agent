@@ -101,7 +101,8 @@
 |------|---------------|---------|------|
 | bundled-node | nodejs.org 官方 `node-v24.x-win-x64.zip`（.zip 非 .tar.gz，产物是顶层 `node.exe` 无 bin/ 目录） | 官方长期供应 | 易 |
 | node-pty | `prebuilds/win32-x64/` **已在 node_modules**（conpty.node + winpty.dll 实 ls 确认） | ✅ 就绪，仅改 resource 路径 | 免 |
-| better-sqlite3 / keytar | prebuild-install 在 Windows runner `npm ci` 时自动拉 win32-x64 预编译（package-lock 已含依赖链） | 机制就绪，CI 实跑确认 | 易 |
+| better-sqlite3 | v13 起走 Node-API，`prebuilds/win32-x64.node` 随 npm 包下发，不再依赖 prebuild-install / MSVC 重编 | ✅ 包内就绪 | 免 |
+| keytar | prebuild-install 在 Windows runner `npm ci` 时自动拉 win32-x64 预编译（package-lock 已含依赖链） | 机制就绪，CI 实跑确认 | 易 |
 | sharp | `@img/sharp-win32-x64` **package-lock 已有条目（line 1750 实查）**；注意 Windows 版 libvips 静态打进 sharp 包，**无独立 libvips-win32 包**——tauri 资源只需打一条 | ✅ lock 就绪 | 易 |
 | uv | 上游 `uv-x86_64-pc-windows-msvc.zip`（0.11.16 release 实查，含官方 .sha256） | ✅ 上游就绪 | 易 |
 | rtk | 上游 `rtk-x86_64-pc-windows-msvc.zip`（v0.39.0 release 实查） | ✅ 上游就绪 | 易 |

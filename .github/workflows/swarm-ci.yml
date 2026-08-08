@@ -50,6 +50,7 @@ on:
       - 'scripts/design-system-zindex-allowlist.json'
       - 'scripts/check-token-integrity.mjs'
       - 'scripts/check-copy.mjs'
+      - 'scripts/host-chinese-error-ratchet.mjs'
       - 'tailwind.config.js'
       - 'scripts/knip-ratchet.mjs'
       - 'scripts/eslint-ratchet.mjs'
@@ -156,6 +157,11 @@ jobs:
           node scripts/check-design-system.mjs
           node scripts/check-token-integrity.mjs
           node scripts/check-copy.mjs
+
+      - name: Host Chinese error literal ratchet
+        # P2 工具错误文案分层保护门：只扫描 host/tools + host/memory 的 error 属性，
+        # 含中文字符串字面量的存量只降不升。脚本对 0 文件、0 目标和 TS 解析失败 fail loud。
+        run: node scripts/host-chinese-error-ratchet.mjs
 
       - name: Script gates (vitest tests/scripts)
         # tests/scripts 下的守门测试（designSystemGate / architectureDebtReport /

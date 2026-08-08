@@ -981,7 +981,10 @@ mod windows_process_reap_tests {
   TCP    0.0.0.0:81800          0.0.0.0:0              LISTENING       2
 ";
         assert!(parse_windows_netstat_port_holders(output, 8180, 999).is_empty());
- // 本地档，不是 CI 门（`.github/workflows/` 全仓 grep `cargo test` 零命中）。
+    }
+}
+
+// 本地档，不是 CI 门（`.github/workflows/` 全仓 grep `cargo test` 零命中）。
 // unix-only：起真子进程验编排，Windows 分支的 stdin-EOF 行为只有 static-contract 档证据。
 #[cfg(all(test, unix))]
 mod terminate_child_tests {
@@ -1029,7 +1032,7 @@ mod terminate_child_tests {
 
         assert_eq!(exit_reason, "forced-sigkill-timeout");
         assert!(wait_status.is_some());
-     }
+    }
 }
 
 fn unique_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {

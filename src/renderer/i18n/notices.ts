@@ -77,6 +77,13 @@ export const noticesZh = {
       visionUnavailableToast: '这张图片没能被识别：已配置的识图模型暂时都调不通，可能是网络或额度问题，稍后再试或去设置检查一下。',
       visionSetupAction: '去配置识图模型',
     },
+    agentNotice: {
+      heartbeatCheckFailed: 'Heartbeat「{name}」检查失败：{error}（连续 {count} 次）',
+      heartbeatStatusAlert: 'Heartbeat「{name}」状态：{status}',
+      autoAgentAwaitingApproval: '任务列表已生成，等待审批',
+      delegateModeActive: 'Delegate 模式：任务将委派给子 Agent 执行',
+      agentRouted: '使用 Agent：{agentName}',
+    },
   },
 };
 
@@ -147,6 +154,13 @@ export const noticesEn: typeof noticesZh = {
       visionNoKeyToast: "This image couldn't be read: no image-recognition model is set up yet. Add one in settings (the free Zhipu GLM-4.6V Flash works too).",
       visionUnavailableToast: "This image couldn't be read: the configured image-recognition models are all unreachable right now, likely a network or quota issue. Try again later or check settings.",
       visionSetupAction: 'Set up an image model',
+    },
+    agentNotice: {
+      heartbeatCheckFailed: 'Heartbeat "{name}" check failed: {error} ({count} in a row)',
+      heartbeatStatusAlert: 'Heartbeat "{name}" status: {status}',
+      autoAgentAwaitingApproval: 'Task list generated, awaiting approval',
+      delegateModeActive: 'Delegate mode: the task will be handed off to a sub-agent',
+      agentRouted: 'Using agent: {agentName}',
     },
   },
 };

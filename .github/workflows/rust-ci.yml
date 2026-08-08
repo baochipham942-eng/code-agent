@@ -1,0 +1,69 @@
+name: Rust CI (src-tauri)
+
+# 独立门：src-tauri/** 此前不在 swarm-ci.yml 的 paths 触发范围内，纯 Rust 改动的 PR
+# 走完是零 CI 检查（2026-08-08 补建）。这道门只跑 cargo test + cargo clippy，验证 Rust
+# 代码本身能编译/测试/过 lint——不打包、不签名、不公证，那部分仍由 release.yml 的
+# build-mac job 在打 tag 时验证（需要 Apple Developer ID 证书等发版 secrets，不适合每个
+# 改 src-tauri 的 PR 都跑一遍）。
+#
+# TAURI_CONFIG='{"bundle":{"resources":null}}'：tauri-build 的 build.rs 在
+# `cargo check`/`cargo test`/`cargo clippy` 阶段就会校验 tauri.conf.json 里
+# bundle.resources 列出的每一条路径存在——rtk/uv/poppler sidecar、4 个 Swift Mach-O
+# helper、重签名的 CUA app（需要 Apple 证书）、dist/web、dist/renderer 等，全是
+# gitignored 构建产物。实测（2026-08-08）：不给这个 env，一道门都跑不起来，会卡在
+# "resource path `../dist/web/control-plane-public-keys.json` doesn't exist"。
+# RFC 7396 JSON merge patch 用 null 显式删除 resources 键，绕开整条打包链路，只保留
+# Rust 编译器真正需要的那部分（依赖树 + cfg 门控的平台代码）。
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src-tauri/**'
+      - '.github/workflows/rust-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src-tauri/**'
+      - '.github/workflows/rust-ci.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: rust-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-lint:
+    name: cargo test + clippy (src-tauri)
+    # release.yml 的两个 Rust 构建 job（build-mac / build-windows）分别钉在 macos-15 /
+    # windows-latest；这里选 macos-15 而非更便宜的 ubuntu-latest，因为 tauri crate 的
+    # webview 后端在 Linux 上需要额外的 apt 系统库（webkit2gtk/gtk3 等）而本项目从未
+    # 验证过、也不发 Linux 版——用与真实目标平台一致的 macos-15，不引入一套没人验过的
+    # Linux 编译前置条件。
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      TAURI_CONFIG: '{"bundle":{"resources":null}}'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Ensure clippy component
+        run: rustup component add clippy
+
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test --locked
+
+      - name: cargo clippy
+        # 务实档位：不加 -D warnings。当前存量约 37 条 style/complexity 类告警
+        # （needless_borrow / collapsible_match / manual_is_multiple_of 等，
+        # 2026-08-08 实测），这道门只拦真正的编译错误 / clippy error 级 lint，
+        # 不为了让门变绿去动业务 Rust 代码清洗存量告警。
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --locked

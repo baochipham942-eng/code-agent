@@ -3,8 +3,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  checkWalShmConsistency,
   detectWalShmMismatch,
+  ensureWalShmConsistency,
   expectedShmBytes,
 } from '../../../src/host/services/core/database/walShmConsistency';
 
@@ -52,36 +52,75 @@ describe('detectWalShmMismatch', () => {
   });
 });
 
-describe('checkWalShmConsistency', () => {
+describe('ensureWalShmConsistency', () => {
+  /** 造一个「WAL 需要 3 个 region，shm 只有 1 个」的事故现场 */
+  function seedStaleShm(dir: string): string {
+    const dbPath = path.join(dir, 'code-agent.db');
+    const walHeader = Buffer.alloc(32);
+    walHeader.writeUInt32BE(0x377f0682, 0);
+    walHeader.writeUInt32BE(PAGE, 8);
+    fs.writeFileSync(`${dbPath}-wal`, Buffer.concat([walHeader, Buffer.alloc(9000 * FRAME)]));
+    fs.writeFileSync(`${dbPath}-shm`, Buffer.alloc(REGION));
+    return dbPath;
+  }
+
   it('没有 wal/shm 时静默通过', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-shm-'));
     const logger = fakeLogger();
     try {
-      expect(checkWalShmConsistency(path.join(dir, 'code-agent.db'), logger as never)).toBeNull();
+      expect(ensureWalShmConsistency(path.join(dir, 'code-agent.db'), logger as never)).toBeNull();
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.warn).not.toHaveBeenCalled();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // 丙案：补大到应有尺寸；文件必须还在（删除才是危险动作）
+  it('陈旧 shm 被补大到应有尺寸，且绝不删除文件', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-shm-'));
+    const logger = fakeLogger();
+    try {
+      const dbPath = seedStaleShm(dir);
+
+      const mismatch = ensureWalShmConsistency(dbPath, logger as never);
+
+      expect(mismatch?.expectedShmBytes).toBe(3 * REGION);
+      expect(fs.existsSync(`${dbPath}-shm`)).toBe(true);
+      expect(fs.statSync(`${dbPath}-shm`).size).toBe(3 * REGION);
+      expect(logger.warn).toHaveBeenCalledOnce();
       expect(logger.error).not.toHaveBeenCalled();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  // 验收 #7：人为造一个尺寸不匹配的 shm，必须看到 ERROR，且**不做任何修复**
-  it('陈旧 shm 报 ERROR 但绝不删除文件', () => {
+  it('补大后再跑一次不再判为 mismatch（幂等）', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-shm-'));
-    const dbPath = path.join(dir, 'code-agent.db');
     const logger = fakeLogger();
     try {
-      const walHeader = Buffer.alloc(32);
-      walHeader.writeUInt32BE(0x377f0682, 0);
-      walHeader.writeUInt32BE(PAGE, 8);
-      fs.writeFileSync(`${dbPath}-wal`, Buffer.concat([walHeader, Buffer.alloc(9000 * FRAME)]));
-      fs.writeFileSync(`${dbPath}-shm`, Buffer.alloc(REGION));
+      const dbPath = seedStaleShm(dir);
+      ensureWalShmConsistency(dbPath, logger as never);
 
-      const mismatch = checkWalShmConsistency(dbPath, logger as never);
-      expect(mismatch?.expectedShmBytes).toBe(3 * REGION);
+      expect(ensureWalShmConsistency(dbPath, logger as never)).toBeNull();
+      expect(logger.warn).toHaveBeenCalledOnce(); // 第二次不再补、不再喊
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('补不动（只读目录）时退回只报 ERROR，不抛', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-shm-'));
+    const logger = fakeLogger();
+    try {
+      const dbPath = seedStaleShm(dir);
+      fs.chmodSync(`${dbPath}-shm`, 0o444);
+
+      expect(() => ensureWalShmConsistency(dbPath, logger as never)).not.toThrow();
       expect(logger.error).toHaveBeenCalledOnce();
       expect(fs.existsSync(`${dbPath}-shm`)).toBe(true);
-      expect(fs.statSync(`${dbPath}-shm`).size).toBe(REGION);
     } finally {
+      try { fs.chmodSync(path.join(dir, 'code-agent.db-shm'), 0o644); } catch { /* ignore */ }
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });

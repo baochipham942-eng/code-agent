@@ -31,7 +31,11 @@ const limits = {
   // 16: main-full-gate.yml is the post-merge combo-break detector (full tsc + full
   // vitest on main push) — PR gates run shards, so cross-PR combination breakage
   // (4 incidents on 2026-07-17 alone) was previously invisible until the next PR.
-  workflows: 16,
+  // 17: rust-ci.yml — src-tauri/** was in no workflow's paths filter, so a pure Rust
+  // PR passed through with **zero** checks (found 2026-08-07 during the Windows hang
+  // battle). It cannot fold into swarm-ci.yml: paths filters are workflow-level, so
+  // reusing that file would run the whole TS suite for every Rust-only change.
+  workflows: 17,
 };
 
 const navigationFiles = [

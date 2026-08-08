@@ -128,6 +128,7 @@
     "check:hardcoded": "bash scripts/check-hardcoded-models.sh --all",
     "check:capability-evidence": "npx tsx scripts/check-capability-evidence.ts",
     "check:provider-runtime-release-evidence": "npx tsx scripts/check-provider-runtime-release-evidence.ts",
+    "check:release-evidence-registry": "npx tsx scripts/ci/check-release-evidence-registry.ts",
     "postinstall": "npm run rebuild-native:system",
     "eval": "npx tsx scripts/eval-ci.ts --split held-in",
     "trajectory:audit": "npx tsx scripts/export-agent-trajectories.ts",

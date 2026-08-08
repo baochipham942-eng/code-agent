@@ -1,0 +1,44 @@
+{
+  "name": "neo-landing-v2",
+  "mode": "incremental-mock-update",
+  "sourceMock": {
+    "html": "docs/acceptance/landing-page-v2/index.html",
+    "screenshot": "docs/acceptance/landing-page-v2/image-audit-v10/02-desktop-download-focused.jpg"
+  },
+  "implementation": {
+    "url": "file:///Users/linchen/Downloads/ai/code-agent/docs/acceptance/landing-page-v2/index.html",
+    "route": "/docs/acceptance/landing-page-v2/index.html",
+    "screenshot": "docs/acceptance/landing-page-v2/image-audit-v11/05-desktop-download-1265x712.jpg"
+  },
+  "viewports": [
+    { "name": "desktop", "width": 1440, "height": 900 },
+    { "name": "mobile", "width": 390, "height": 844 }
+  ],
+  "states": ["default", "mobile"],
+  "allowedSelectors": [
+    ".surface-band",
+    ".trust-band",
+    ".work-loop",
+    ".scenarios",
+    ".capability-band",
+    ".local-first",
+    ".download",
+    ".hero-actions"
+  ],
+  "protectedSelectors": [
+    ".site-header",
+    ".hero-copy",
+    ".hero-art-shell",
+    ".hero-proof",
+    ".signal-strip"
+  ],
+  "frozenFiles": [
+    "public/code-agent/index.html"
+  ],
+  "forbiddenCssTargets": [],
+  "thresholds": {
+    "fullPageMaxDiffRatio": 0.05,
+    "protectedRegionMaxDiffRatio": 0.003,
+    "pixelThreshold": 8
+  }
+}

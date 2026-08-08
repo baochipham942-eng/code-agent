@@ -1,0 +1,18 @@
+{
+  "changedPixels": 224095,
+  "diffOutput": "docs/acceptance/landing-page-v2/image-audit-v11/10-diff-download.png",
+  "diffRatio": 0.2546534090909091,
+  "implementation": "/tmp/neo-landing-v11-compare/implementation-download.png",
+  "implementationHeight": 704,
+  "implementationWidth": 1250,
+  "maxChannelDelta": 255,
+  "maxDiffRatio": 0.75,
+  "meanAbsDelta": 16.142711742424243,
+  "passed": true,
+  "pixelThreshold": 8,
+  "reason": "passed",
+  "source": "/tmp/neo-landing-v11-compare/source-download.png",
+  "sourceHeight": 704,
+  "sourceWidth": 1250,
+  "totalPixels": 880000
+}

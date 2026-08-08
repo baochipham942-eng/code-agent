@@ -1,0 +1,18 @@
+{
+  "changedPixels": 311798,
+  "diffOutput": "docs/acceptance/landing-page-v2/image-audit-v8/21-diff-loop.png",
+  "diffRatio": 0.5599820402298851,
+  "implementation": "docs/acceptance/landing-page-v2/image-audit-v8/06-after-loop.png",
+  "implementationHeight": 768,
+  "implementationWidth": 725,
+  "maxChannelDelta": 255,
+  "maxDiffRatio": 0.6,
+  "meanAbsDelta": 108.99523587164751,
+  "passed": true,
+  "pixelThreshold": 8,
+  "reason": "passed",
+  "source": "docs/acceptance/landing-page-v2/image-audit-v8/00-before-loop.png",
+  "sourceHeight": 768,
+  "sourceWidth": 725,
+  "totalPixels": 556800
+}

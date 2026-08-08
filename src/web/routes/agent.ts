@@ -26,6 +26,7 @@ import { buildGoalContract } from '../../host/agent/goalModeController';
 import { buildWorkbenchCapabilityContextLines } from '../../host/app/workbenchTurnContext';
 import { SESSION_COMMAND_CENTER_BRAIN_CONTEXT } from '../../host/app/sessionCommandCenterBrain';
 import {
+  isSessionCommandCenterTurn,
   SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
   SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES,
 } from '../../shared/constants/sessionCommandCenter';
@@ -773,7 +774,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         logger.info('[AgentRouter] Goal mode activated', { verify: body.goal.verify, review: body.goal.review, allowSwarm: body.goal.allowSwarm, sessionId });
       }
 
-      const commandCenterBrain = !body.goal && !prompt.trimStart().startsWith('/');
+      const commandCenterBrain = isSessionCommandCenterTurn({ prompt, hasGoal: Boolean(body.goal) });
       if (commandCenterBrain) {
         config.allowedToolNames = [...SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES];
         config.maxIterations = Math.min(

@@ -31,6 +31,7 @@ import {
   SYSTEM_CHROME_CDP_PROVIDER,
   type SystemChromeSession,
 } from './browser-computer-system-chrome.ts';
+import { describeChildExit, isChildGone } from './childProcessState.ts';
 import {
   CONVERSATION_EXECUTION_CANARY,
 } from './fixtures/surface-execution-conversation.ts';
@@ -271,10 +272,10 @@ function startAppHost(
 }
 
 async function stopProcess(child: ChildProcessByStdio<null, Readable, Readable>): Promise<void> {
-  if (child.killed || child.exitCode !== null) return;
+  if (child.killed || isChildGone(child)) return;
   await new Promise<void>((resolvePromise) => {
     const timer = setTimeout(() => {
-      if (child.exitCode === null) child.kill('SIGKILL');
+      if (!isChildGone(child)) child.kill('SIGKILL');
       resolvePromise();
     }, 2_000);
     child.once('close', () => {
@@ -294,8 +295,8 @@ async function waitForHealth(
   let lastStatus = 0;
   let lastBody = '';
   while (Date.now() - startedAt < 30_000) {
-    if (server.exitCode !== null) {
-      throw new Error(`app-host exited early with code ${server.exitCode}\n${sanitize(output())}`);
+    if (isChildGone(server)) {
+      throw new Error(`[surface-execution-conversation] app-host exited early (${describeChildExit(server)})\n${sanitize(output())}`);
     }
     try {
       const response = await fetch(`${baseUrl}/api/health`);

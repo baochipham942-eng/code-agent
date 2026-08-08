@@ -8,6 +8,7 @@ import {
   closeSystemChromeSession,
   launchSystemChromeSession,
 } from './browser-computer-system-chrome';
+import { describeChildExit, isChildGone } from './childProcessState';
 
 const port = Number(process.env.WEB_PORT || 8197);
 const baseUrl = `http://127.0.0.1:${port}`;
@@ -70,7 +71,9 @@ async function domain<T>(domainName: string, action: string, payload?: unknown):
 async function waitForServer(): Promise<void> {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (child?.exitCode !== null) throw new Error(`webServer exited early: ${child?.exitCode}`);
+    if (child && isChildGone(child)) {
+      throw new Error(`[grok-engine-live] webServer exited early (${describeChildExit(child)})`);
+    }
     token = startupToken() || '';
     if (token) {
       const response = await fetch(`${baseUrl}/api/health`).catch(() => null);
@@ -240,12 +243,13 @@ main()
     if (sessionId && token) {
       await domain('session', 'delete', { sessionId }).catch(() => undefined);
     }
-    if (child && child.exitCode === null) {
-      child.kill('SIGTERM');
+    const runningChild = child;
+    if (runningChild && !isChildGone(runningChild)) {
+      runningChild.kill('SIGTERM');
       await Promise.race([
-        new Promise<void>((resolve) => child?.once('close', () => resolve())),
+        new Promise<void>((resolve) => runningChild.once('close', () => resolve())),
         delay(3_000).then(() => {
-          if (child?.exitCode === null) child.kill('SIGKILL');
+          if (!isChildGone(runningChild)) runningChild.kill('SIGKILL');
         }),
       ]);
     }

@@ -12,6 +12,7 @@ import {
   printJson,
   printKeyValue,
 } from './_helpers.ts';
+import { isChildGone } from './childProcessState.ts';
 import { classifyAgentEngineFailure } from '../../src/host/services/agentEngine/agentEngineFailureDiagnostics';
 
 export interface ClaudeSubscriptionSmokeConfig {
@@ -537,7 +538,7 @@ function runProcess(args: {
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
       setTimeout(() => {
-        if (child.exitCode === null) child.kill('SIGKILL');
+        if (!isChildGone(child)) child.kill('SIGKILL');
       }, 2_000).unref?.();
     }, args.timeoutMs);
 

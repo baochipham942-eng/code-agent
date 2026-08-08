@@ -11,6 +11,7 @@ import {
   printJson,
   printKeyValue,
 } from './_helpers.ts';
+import { isChildGone } from './childProcessState.ts';
 import { computerUseTool } from '../../src/host/tools/vision/computerUse.ts';
 import type { ToolContext, ToolExecutionResult } from '../../src/host/tools/types.ts';
 import type { ComputerSurfaceSnapshot, WorkbenchActionTrace } from '../../src/shared/contract/desktop.ts';
@@ -260,7 +261,7 @@ async function activateFinder(): Promise<void> {
 }
 
 async function cleanupTarget(targetPath: string, child: ChildProcessByStdio<null, Readable, Readable> | null): Promise<void> {
-  if (child && child.exitCode === null && !child.killed) {
+  if (child && !isChildGone(child) && !child.killed) {
     child.kill('SIGTERM');
     await new Promise((resolve) => setTimeout(resolve, 300));
   }

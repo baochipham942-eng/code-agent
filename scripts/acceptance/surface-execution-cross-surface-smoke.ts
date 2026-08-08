@@ -80,6 +80,7 @@ import {
   surfaceAcceptanceCampaignProofFields,
   surfaceAcceptanceSourceFingerprint,
 } from './surface-execution-proof.ts';
+import { isChildGone } from './childProcessState.ts';
 
 const CONVERSATION_ID = 'surface-cross-acceptance';
 const RUN_ID = 'surface-cross-run';
@@ -493,13 +494,13 @@ async function startTargetFixture(tempRoot: string): Promise<TargetFixture> {
 }
 
 async function stopTargetFixture(fixture: TargetFixture | null): Promise<void> {
-  if (!fixture || fixture.process.exitCode !== null) return;
+  if (!fixture || isChildGone(fixture.process)) return;
   fixture.process.kill('SIGTERM');
   const exited = await Promise.race([
     new Promise<boolean>((resolveExit) => fixture.process.once('exit', () => resolveExit(true))),
     new Promise<boolean>((resolveTimeout) => setTimeout(() => resolveTimeout(false), 1_000)),
   ]);
-  if (!exited && fixture.process.exitCode === null) fixture.process.kill('SIGKILL');
+  if (!exited && !isChildGone(fixture.process)) fixture.process.kill('SIGKILL');
 }
 
 async function waitForComputerRoot(
@@ -1393,7 +1394,7 @@ async function main(): Promise<void> {
     try {
       await stopTargetFixture(computerFixture);
       assertions.computerFixtureTerminated = computerFixture
-        ? computerFixture.process.exitCode !== null || computerFixture.process.killed
+        ? isChildGone(computerFixture.process) || computerFixture.process.killed
         : true;
     } catch (fixtureError) {
       assertions.computerFixtureTerminated = false;

@@ -16,6 +16,7 @@ import {
   getFreePort,
   launchSystemChromeSession,
 } from './browser-computer-system-chrome.ts';
+import { describeChildExit, isChildGone } from './childProcessState.ts';
 
 type PanelCheck = {
   key: string;
@@ -215,11 +216,11 @@ function startAppHost(port: number): { child: ChildProcessByStdio<null, Readable
 }
 
 async function stopProcess(child: ChildProcessByStdio<null, Readable, Readable>): Promise<void> {
-  if (child.exitCode !== null) return;
+  if (isChildGone(child)) return;
 
   await new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
-      if (child.exitCode === null) {
+      if (!isChildGone(child)) {
         child.kill('SIGKILL');
       }
       resolve();
@@ -237,8 +238,8 @@ async function stopProcess(child: ChildProcessByStdio<null, Readable, Readable>)
 async function waitForHealth(baseUrl: string, server: ChildProcessByStdio<null, Readable, Readable>, output: () => string): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < 30_000) {
-    if (server.exitCode !== null) {
-      throw new Error(`app-host exited early with code ${server.exitCode}\n${output()}`);
+    if (isChildGone(server)) {
+      throw new Error(`[workbench-menu-panels] app-host exited early (${describeChildExit(server)})\n${output()}`);
     }
 
     try {
@@ -275,7 +276,7 @@ Body:
 ${bodyText.slice(0, 1_500)}
 
 Original error:
-${message}`);
+${message}`, { cause: error });
   }
 }
 
@@ -495,7 +496,7 @@ async function main(): Promise<void> {
       ok: failures.length === 0,
       appHost: {
         baseUrl,
-        serverRunning: appHost.child.exitCode === null,
+        serverRunning: !isChildGone(appHost.child),
       },
       chrome: chromeSession ? {
         provider: chromeSession.provider,

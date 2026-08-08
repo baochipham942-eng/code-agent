@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import { isChildGone } from './childProcessState';
 import { DURABLE_RUN_SCHEMA_VERSION } from '../../src/shared/contract/durableRun';
 import { DURABLE_RUN_KILL_RESTART_SCENARIOS } from '../../tests/fixtures/durableRunKillRestart';
 
@@ -43,7 +44,7 @@ interface ScenarioResult {
 const startedAt = Date.now();
 const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'code-agent-s9-'));
 const results: ScenarioResult[] = [];
-let finalExitCode = 1;
+let finalExitCode: number;
 try {
   for (const scenario of DURABLE_RUN_KILL_RESTART_SCENARIOS) {
     const scenarioDir = path.join(tempRoot, scenario.id);
@@ -154,7 +155,7 @@ async function forceKill(child: ChildProcessByStdio<null, Readable, Readable>): 
 }
 
 async function waitForExit(child: ChildProcessByStdio<null, Readable, Readable>): Promise<number | null> {
-  if (child.exitCode !== null || child.signalCode !== null) return child.exitCode;
+  if (isChildGone(child)) return child.exitCode;
   return new Promise((resolve) => child.once('exit', resolve));
 }
 

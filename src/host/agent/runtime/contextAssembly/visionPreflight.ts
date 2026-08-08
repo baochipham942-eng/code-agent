@@ -1,8 +1,15 @@
 import type { ToolDefinition } from '../../../../shared/contract';
+import type { AgentEvent } from '../../../../shared/contract';
 import type { ModelConfig } from '../../../../shared/contract/model';
 import type { MessageContent, ModelMessage } from '../../../agent/loopTypes';
 import type { InferenceOptions, ModelResponse as RouterModelResponse, StreamCallback } from '../../../model/types';
 import type { ContextAssemblyCtx } from './shared';
+import { logger } from './shared';
+import {
+  classifyAndLogVisionPreflightFailure,
+  logVisionPreflightExhausted,
+  type VisionPreflightAttempt,
+} from './inferenceProviderFallback';
 
 type RunEngineInference = (
   ctx: ContextAssemblyCtx,
@@ -122,4 +129,45 @@ export async function preflightImagesForMainModel(
   if (!summary) return null;
 
   return replaceImagesWithVisionSummary(modelMessages, summary, preflightConfig.model || 'vision-model');
+}
+
+export interface VisionPreflightRunResult {
+  modelMessages: ModelMessage[];
+  succeeded: boolean;
+  hadCandidates: boolean;
+  attempts: VisionPreflightAttempt[];
+}
+
+/**
+ * 依次尝试每个识图候选（同 provider 优先 → 其它已配 Key 的 provider），直到某个成功
+ * 读图；全部落空时（含"零候选"）落诊断日志。T7：从 inference.ts 抽出——候选循环 +
+ * 逐候选失败分类是"识图预处理"自己的关注点，不是主 loop 编排该内联的细节。
+ */
+export async function runVisionPreflightCandidates(
+  ctx: ContextAssemblyCtx,
+  modelMessages: ModelMessage[],
+  visionCandidates: ModelConfig[],
+  userRequestText: string,
+  runInference: RunEngineInference,
+): Promise<VisionPreflightRunResult> {
+  const hadCandidates = visionCandidates.length > 0;
+  const attempts: VisionPreflightAttempt[] = [];
+  for (const visionConfig of visionCandidates) {
+    try {
+      const preflightMessages = await preflightImagesForMainModel(
+        ctx, modelMessages, visionConfig, userRequestText, runInference,
+      );
+      if (!preflightMessages) continue;
+      logger.info(`[Fallback] 使用 ${visionConfig.provider}/${visionConfig.model} 预处理图片，继续使用主模型 ${ctx.runtime.modelConfig.model}`);
+      ctx.runtime.onEvent({
+        type: 'notification',
+        data: { message: `已用视觉模型 ${visionConfig.model} 读取图片，继续由 ${ctx.runtime.modelConfig.model} 回答。` },
+      } as AgentEvent);
+      return { modelMessages: preflightMessages, succeeded: true, hadCandidates, attempts };
+    } catch (error) {
+      attempts.push(classifyAndLogVisionPreflightFailure(visionConfig.provider, visionConfig.model, error));
+    }
+  }
+  logVisionPreflightExhausted(hadCandidates, attempts);
+  return { modelMessages, succeeded: false, hadCandidates, attempts };
 }

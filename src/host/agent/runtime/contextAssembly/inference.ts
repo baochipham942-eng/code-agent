@@ -48,14 +48,16 @@ import { applyEffortControls } from './effortControls';
 import { buildCompactArtifactRepairWriteRetryMessages } from './artifactRepairRetryMessages';
 import {
   contentHasImageParts,
-  preflightImagesForMainModel,
+  runVisionPreflightCandidates,
 } from './visionPreflight';
 import {
+  broadcastVisionPreflightUnavailable,
   buildAiSdkAdaptiveFallbackInfo,
   emitModelFallbackNoticeFromResponse,
   getErrorMessage,
   getModelFallbackFromError,
   runAiSdkInferenceWithProviderFallback,
+  type VisionPreflightAttempt,
 } from './inferenceProviderFallback';
 import {
   buildModelDecisionWithToolStrategy,
@@ -524,6 +526,9 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     const allowCapabilityFallback = ctx.runtime.modelConfig.adaptive === true;
     let needsVisionFallback = false;
     let visionFallbackSucceeded = false;
+    // T7：识图预处理逐候选失败明细，用于全失败时的用户 toast（日志已在 runVisionPreflightCandidates 内落）
+    let visionPreflightAttempts: VisionPreflightAttempt[] = [];
+    let visionPreflightHadCandidates = false;
 
     const userRequestText = extractUserRequestText(lastUserMessage);
     artifactRequest = needsArtifactTaskBrief(userRequestText);
@@ -561,37 +566,16 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           // mimo-v2.5-pro）完全看不到图（实证踩坑 2026-06-06）。
           if (capability === 'vision' && !needsToolForImage) {
             const visionCandidates = ctx.runtime.modelRouter.getVisionPreflightCandidates(ctx.runtime.modelConfig);
-            for (const visionConfig of visionCandidates) {
-              try {
-                const preflightMessages = await preflightImagesForMainModel(
-                  ctx,
-                  modelMessages,
-                  visionConfig,
-                  userRequestText,
-                  runEngineInference,
-                );
-                if (preflightMessages) {
-                  modelMessages = preflightMessages;
-                  visionFallbackSucceeded = true;
-                  logger.info(`[Fallback] 使用 ${visionConfig.provider}/${visionConfig.model} 预处理图片，继续使用主模型 ${ctx.runtime.modelConfig.model}`);
-                  ctx.runtime.onEvent({
-                    type: 'notification',
-                    data: {
-                      message: `已用视觉模型 ${visionConfig.model} 读取图片，继续由 ${ctx.runtime.modelConfig.model} 回答。`,
-                    },
-                  } as AgentEvent);
-                  break;
-                }
-              } catch (error) {
-                logger.warn(`[Fallback] 视觉预处理失败（${visionConfig.provider}/${visionConfig.model}），尝试下一个识图模型`, {
-                  error: error instanceof Error ? error.message : String(error),
-                });
-              }
-            }
-            if (visionFallbackSucceeded) {
+            const preflightResult = await runVisionPreflightCandidates(
+              ctx, modelMessages, visionCandidates, userRequestText, runEngineInference,
+            );
+            modelMessages = preflightResult.modelMessages;
+            visionPreflightHadCandidates = preflightResult.hadCandidates;
+            visionPreflightAttempts = preflightResult.attempts;
+            if (preflightResult.succeeded) {
+              visionFallbackSucceeded = true;
               continue;
             }
-            logger.warn('[Fallback] 所有已配置的识图模型预处理均失败或不可用');
           }
 
           // 整轮模型切换（用 fallback 模型替换用户选择的主模型）：仅在用户选"自动"
@@ -659,6 +643,12 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     if (needsVisionFallback && !visionFallbackSucceeded) {
       logger.warn('[AgentLoop] 无法使用视觉模型，将图片转换为文字描述');
       modelMessages = stripImagesFromMessages(modelMessages);
+      // T7：图片被静默转成文字描述用户完全无感——给一条可见 toast，
+      // 区分"零 key 新用户"（去设置配一个）和"配了但调用失败"（多半是网络/额度，稍后重试）。
+      void broadcastVisionPreflightUnavailable(ctx.runtime.modelConfig, {
+        category: visionPreflightHadCandidates ? 'vision_unavailable' : 'vision_no_key',
+        attempts: visionPreflightAttempts,
+      });
     }
 
     if (effectiveConfig === ctx.runtime.modelConfig) {

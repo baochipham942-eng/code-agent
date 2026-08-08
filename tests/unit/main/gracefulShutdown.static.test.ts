@@ -105,4 +105,42 @@ describe('T1 更新流程优雅停机', () => {
     expect(guardBlock, 'CODE_AGENT_TAURI_BOOT_TOKEN 守卫块锚点失效').not.toBeNull();
     expect(guardBlock![0]).toContain("process.stdin.on('end'");
   });
+
+  // ── C1 编译缓存预热的可达性（2026-08-08）─────────────────────────────
+  // 它此前挂在 install_update 命令里，而渲染器从 2026-06-06 起就改走插件命令、
+  // 不再 invoke install_update ⇒ 预热从落地那天起在**所有平台**都没跑过。
+  // 这一组门钉住「钩子挂在真正会被执行的那条路上」。
+  it('预热命令 warm_compile_cache_after_install 三处登记齐全', () => {
+    const main = readTauri('src/main.rs');
+
+    const fnBlock = /fn warm_compile_cache_after_install\(app: tauri::AppHandle\)\s*\{[\s\S]*?\n\}/.exec(
+      main
+    );
+    expect(fnBlock, 'warm_compile_cache_after_install 函数体锚点失效').not.toBeNull();
+    expect(fnBlock![0]).toContain('warm_compile_cache_before_restart(&app)');
+
+    // ① generate_handler 注册 ② ACL 白名单 ③ 渲染器能力登记表
+    // （T1 就是漏了第三处被 renderer-capability-scanner 照出来的）
+    const handlerBlock = /generate_handler!\[([\s\S]*?)\]/.exec(main);
+    expect(handlerBlock, 'generate_handler! 锚点失效').not.toBeNull();
+    expect(handlerBlock![1]).toMatch(/\bwarm_compile_cache_after_install\b/);
+    expect(readTauri('permissions/app-commands.toml')).toMatch(
+      /"warm_compile_cache_after_install"/
+    );
+    expect(readSrc('host/shellCapabilities.ts')).toMatch(
+      /'warm_compile_cache_after_install'/
+    );
+  });
+
+  it('预热必须排在 install 之后、relaunch 之前（install 之前磁盘上还是旧包）', () => {
+    const updater = readSrc('renderer/utils/tauriUpdater.ts');
+
+    const installIdx = updater.indexOf('await update.install()');
+    const warmIdx = updater.indexOf("invoke('warm_compile_cache_after_install')");
+    const relaunchIdx = updater.lastIndexOf('await relaunch()');
+
+    expect(warmIdx, "invoke('warm_compile_cache_after_install') 调用点缺失").toBeGreaterThan(-1);
+    expect(installIdx).toBeLessThan(warmIdx);
+    expect(warmIdx).toBeLessThan(relaunchIdx);
+  });
 });

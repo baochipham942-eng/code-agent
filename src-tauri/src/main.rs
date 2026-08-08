@@ -2250,6 +2250,26 @@ fn shutdown_web_server_for_update(app: tauri::AppHandle) {
     cleanup_server(&app);
 }
 
+/// C1 编译缓存预热的**可达入口**。
+///
+/// 为什么需要它：`warm_compile_cache_before_restart` 原本只挂在 `install_update` 命令里
+/// （#485，2026-07-18），而渲染器早在 2026-06-06（#3d845af74）就因为 Tauri ACL 拦截改走
+/// 插件命令 `plugin:updater|download / install`，**不再调 `install_update`**。也就是说这个
+/// 预热从落地那天起就挂在一条正常更新路径不经过的命令上，**在所有平台上一次都没跑过**——
+/// 不是「Windows 不可达」，是全平台死代码（2026-08-08 核实：`install_update` 在 src/ 下的
+/// 唯一引用是 shellCapabilities 的能力登记表，没有任何渲染侧调用点）。
+///
+/// 时机为什么必须是 install **之后**：`update.download()` 只把字节落到临时位置，磁盘上的
+/// app bundle 仍是旧的；那时预热等于预热旧代码。`update.install()` 返回后新包才就位，
+/// `resolve_server_script` 才指向新 bundle。
+///
+/// Windows 走不到这里：`install()` 内部 `std::process::exit(0)`，进程与新包首启之间没有
+/// 任何我们的代码窗口。那边更新后首启注定是冷的，属结构性限制，不再假装它被覆盖。
+#[tauri::command]
+fn warm_compile_cache_after_install(app: tauri::AppHandle) {
+    warm_compile_cache_before_restart(&app);
+}
+
 fn install_signal_handler(app: &tauri::AppHandle) {
     let handle = app.clone();
 
@@ -3877,6 +3897,7 @@ fn main() {
             install_update,
             open_update_url,
             shutdown_web_server_for_update,
+            warm_compile_cache_after_install,
             desktop_get_capabilities,
             desktop_get_permission_status,
             desktop_get_frontmost_context,

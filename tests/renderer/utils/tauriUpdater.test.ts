@@ -92,8 +92,14 @@ describe('tauriUpdater (plugin-based)', () => {
     expect(download).toHaveBeenCalledTimes(1);
     expect(install).toHaveBeenCalledTimes(1);
     expect(invokeMock).toHaveBeenCalledWith('shutdown_web_server_for_update');
-    // 跨端合同要求的顺序：先落盘字节，再优雅停 webServer，再 install（Windows 上此后不返回）
-    expect(callOrder).toEqual(['download', 'invoke:shutdown_web_server_for_update', 'install']);
+    // 跨端合同要求的顺序：先落盘字节，再优雅停 webServer，再 install（Windows 上此后不返回），
+    // 最后才预热 compile cache——install 之前磁盘上还是旧包，那时预热等于预热旧代码。
+    expect(callOrder).toEqual([
+      'download',
+      'invoke:shutdown_web_server_for_update',
+      'install',
+      'invoke:warm_compile_cache_after_install',
+    ]);
     expect(lastDownloaded).toBe(100);
     expect(phases).toContain('download');
     expect(phases).toContain('install');

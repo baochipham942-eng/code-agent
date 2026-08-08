@@ -41,6 +41,11 @@ import { describeChildExit, isAbnormalExit, isChildGone } from './childProcessSt
 // 配置
 // ----------------------------------------------------------------------------
 
+// provider 与 model 必须成对覆盖：只设其中一个，会把 A 家的模型名发到 B 家去，
+// 上游拒得莫名其妙（2026-08-08 在姊妹脚本 role-assets 上实测踩到）。宁可开跑前报错。
+if (Boolean(process.env.ROLE_E2E_PROVIDER) !== Boolean(process.env.ROLE_E2E_MODEL)) {
+  throw new Error('ROLE_E2E_PROVIDER 与 ROLE_E2E_MODEL 必须同时设置（只设一个会造成跨 provider 的模型名）');
+}
 const MAIN_PROVIDER = process.env.ROLE_E2E_PROVIDER || 'xiaomi';
 const MAIN_MODEL = process.env.ROLE_E2E_MODEL || 'mimo-v2.5-pro';
 /** 单次醒来上限（15 轮迭代的模型 run），triggerJob 是同步等待的 */
@@ -128,9 +133,13 @@ async function waitForServer(server: StartedServer, port: number): Promise<void>
       server.token = token;
       try {
         const response = await fetch(`${server.baseUrl}/api/health`);
-        const health = await response.json() as { status?: string };
-        if (response.ok && health.status === 'ok') return;
-        lastError = JSON.stringify(health);
+        const health = await response.json() as { status?: string; durableRunReady?: boolean };
+        // startup token + status:'ok' 只证明**进程起来了**。durable 就绪排在
+        // capabilityBootstrap 之后异步完成，这段窗口里 agent/run 一律 503。
+        // 判据必须锚服务能力（durableRunReady），不能锚进程存活。
+        if (response.ok && health.status === 'ok' && health.durableRunReady === true) return;
+        lastError = `health=${JSON.stringify(health)}（durableRunReady 必须为 true；`
+          + '若该字段缺失，说明 dist/web 是加这个字段之前的旧构建，先跑 npm run build:web）';
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
       }

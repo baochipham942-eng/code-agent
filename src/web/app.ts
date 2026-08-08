@@ -32,6 +32,7 @@ import {
 
 // Route modules
 import { createHealthRouter } from './routes/health';
+import { isDurableRunGateOpen } from './routes/agentDurableRouteLifecycle';
 import { createSettingsRouter } from './routes/settings';
 import { createExtractRouter } from './routes/extract';
 import { createDomainRouter } from './routes/domain';
@@ -140,6 +141,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     handlers,
     getBuildInfo,
     getPersistenceHealth,
+    getDurableRunReady: () => isDurableRunGateOpen(getDurableRunRollout()),
     getRendererServeDecision: () => resolveRendererServeDecision(
       resolveCodeAgentDataDir(),
       path.resolve(__dirname, '..', 'renderer'),

@@ -19,6 +19,7 @@ import {
   launchSystemChromeSession,
   type SystemChromeSession,
 } from './browser-computer-system-chrome.ts';
+import { describeChildExit, isChildGone } from './childProcessState.ts';
 
 interface SmokeResult {
   ok: boolean;
@@ -136,11 +137,11 @@ function startAppHost(port: number, dataDir: string): { child: ChildProcessByStd
 }
 
 async function stopProcess(child: ChildProcessByStdio<null, Readable, Readable>): Promise<void> {
-  if (child.killed || child.exitCode !== null) return;
+  if (child.killed || isChildGone(child)) return;
 
   await new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
-      if (child.exitCode === null) {
+      if (!isChildGone(child)) {
         child.kill('SIGKILL');
       }
       resolve();
@@ -164,8 +165,8 @@ async function waitForHealth(
   let last = '';
 
   while (Date.now() - start < 45_000) {
-    if (server.exitCode !== null) {
-      throw new Error(`app-host exited early with code ${server.exitCode}\n${output()}`);
+    if (isChildGone(server)) {
+      throw new Error(`[telemetry-feedback-cloud] app-host exited early (${describeChildExit(server)})\n${output()}`);
     }
 
     try {

@@ -7,6 +7,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { runArtifactPreviewHealth } from '../../src/host/agent/runtime/browser/artifactPreviewHealth';
 import { browserService } from '../../src/host/services/infra/browserService';
+import { describeChildExit, isChildGone } from './childProcessState';
 
 interface StartedWebServer {
   baseUrl: string;
@@ -68,8 +69,8 @@ async function startWebServer(dataDir: string): Promise<StartedWebServer> {
       token = match[1];
       break;
     }
-    if (child.exitCode !== null) {
-      throw new Error(`webServer exited early with ${child.exitCode}\n${output()}`);
+    if (isChildGone(child)) {
+      throw new Error(`[artifact-preview-health] webServer exited early (${describeChildExit(child)})\n${output()}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
@@ -81,7 +82,7 @@ async function startWebServer(dataDir: string): Promise<StartedWebServer> {
 
 async function stopWebServer(server: StartedWebServer | null): Promise<void> {
   if (!server) return;
-  if (server.child.exitCode !== null) return;
+  if (isChildGone(server.child)) return;
   await new Promise<void>((resolve) => {
     const timer = setTimeout(resolve, 2_000);
     server.child.once('exit', () => {

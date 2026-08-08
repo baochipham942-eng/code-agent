@@ -581,25 +581,27 @@ export function clearPersistedTasks(): void {
 // 注意：beforeExit 可能被多次调用，persistRunningTasks 是同步的所以安全
 process.on('beforeExit', persistRunningTasks);
 
-// SIGINT/SIGTERM 处理：Electron 主进程会通过 gracefulShutdown 统一处理
-// 这里只是备用，确保独立运行时也能正确保存状态
-// 注意：persistRunningTasks 是同步函数，可以直接调用
-process.on('SIGINT', () => {
+// 只登记「退出时保全状态」，**不夺取进程终止权**。
+//
+// 这里原本挂的是 SIGINT/SIGTERM 处理器，末尾 `process.exit(0)`。它是模块级代码，
+// 在 esbuild 单包里于 `main()` 之前就注册好，于是排在 webServer 自己那个
+// `process.on('SIGTERM', shutdown)` 前面——SIGTERM 一到，这里同步 exit(0)，
+// webServer 的 shutdown()（cleanupUploadDirs → durable/devServer 收尾 →
+// closeAllDatabaseConnections 做 WAL checkpoint）**一步都跑不到**。
+// 2026-08-08 mac Dev 槽真机坐实：正常退出 exitReason=graceful-sigterm、
+// waitStatus=exit status: 0（看起来完美），但 -wal 4.1MB / -shm 32KB 原样残留，
+// 且 shutdown 的第一行 console.log 从未打印。这正是 2026-07-31 SIGBUS 事故的
+// 陈旧 -shm 来源，也让 Rust 侧的 graceful 判定成了假绿。
+//
+// 改成 'exit' 钩子后：有 shutdown 属主的入口（webServer / cli serve）走完干净关库
+// 再 exit(0)，'exit' 触发本函数保全状态；没有属主的入口则由 SIGTERM 默认语义终止
+// （这是对的——没人负责收尾时就不该假装收了）。persistRunningTasks 是同步函数，
+// 'exit' 钩子里可以直接调。
+process.on('exit', () => {
   persistRunningTasks();
   // 清理所有运行中任务的定时器
   for (const task of backgroundTasks.values()) {
     if (task.timeout) clearTimeout(task.timeout);
     if (task.killTimeout) clearTimeout(task.killTimeout);
   }
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  persistRunningTasks();
-  // 清理所有运行中任务的定时器
-  for (const task of backgroundTasks.values()) {
-    if (task.timeout) clearTimeout(task.timeout);
-    if (task.killTimeout) clearTimeout(task.killTimeout);
-  }
-  process.exit(0);
 });

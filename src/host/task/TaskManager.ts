@@ -310,9 +310,20 @@ export class TaskManager extends EventEmitter {
     if (this.backgroundRuns.has(taskId)) throw new Error(`Background task ${taskId} is already running`);
 
     const orchestrator = this.createOrchestrator(sessionId, taskId);
-    if (workspaceScope) orchestrator.setWorkspaceScopeAuthority(workspaceScope);
     const { getBackgroundTaskSessionContext } = await import('./backgroundTaskSessionContext');
     const session = await getBackgroundTaskSessionContext(sessionId);
+
+    // ⚠️ 已知未修的洞（对抗审查确证，见 2026-08-08 交接单）：`workspaceScope` 是可选参数，
+    // 语音派活只传 6 个实参 ⇒ `if` 不成立 ⇒ 后台回落到 $HOME 合成 read_write scope，
+    // $HOME 内任意写又变回「项目目录内」被 W1 自动放行，delegate_task 的 WORKSPACE_REQUIRED
+    // 在语音链路上等于没有。
+    //
+    // 不在这里直接 throw：`startBackgroundTask` 是通用入口，无项目会话里的**只读**后台任务
+    // 也会被一并打死（实测打红 TaskManager.persistence 的权限路由用例）。安全要求是
+    // 「不给写边界」而不是「不许跑」，而给一个空 scope 会被 `workspace ?? workingDirectory`
+    // 这条兜底链重新回落——真正修它要动那条链本身，属独立一单。
+    if (workspaceScope) orchestrator.setWorkspaceScopeAuthority(workspaceScope);
+
     if (session?.messages.length) orchestrator.setMessages(session.messages);
     if (session?.workingDirectory) {
       orchestrator.setWorkingDirectory(session.workingDirectory, { syncWorkspaceServices: false });

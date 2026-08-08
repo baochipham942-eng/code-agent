@@ -325,6 +325,12 @@ export class SessionCommandCenter {
     task.updatedAt = Date.now();
     this.projectTask(task);
 
+    // 账本落终态必须**先于**下面那个 await：task.status 在上面已经同步变成 failed 且投影出去了，
+    // 而账本要等投影 Promise 落地才记终态。中间这段窗口里，前台从 task_status 已经看得到
+    // failed，立刻用同一 submissionKey 重试——账本里那个 slot 还是 running，admit() 返回
+    // reused，重试静默失效。正是这条改动要消灭的形态，只是窗口更窄。
+    const startable = this.ledger(task.sessionId).settle(task.id, status);
+
     try {
       await this.projectTerminalResult(task, status);
     } catch (error) {
@@ -334,7 +340,7 @@ export class SessionCommandCenter {
       });
     }
 
-    for (const slot of this.ledger(task.sessionId).settle(task.id, status)) {
+    for (const slot of startable) {
       const next = this.tasks(task.sessionId).get(slot.workItemId);
       if (next) this.launch(next);
     }

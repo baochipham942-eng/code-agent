@@ -102,6 +102,30 @@ describe('delegate_task workspace authority', () => {
     )).toBeUndefined();
   });
 
+  // 对抗审查实测出来的绕过：只查「root 在敏感目录里面」，不查「root 包含敏感目录」。
+  // $HOME 本身被挡住，但它的父目录和文件系统根都被 ACCEPTED——一旦成为 workspace，
+  // $HOME/.code-agent 又落回「项目目录内」，W1 照常自动放行，整条拒绝清单被祖先路径绕开。
+  it('does not accept an ancestor of the home or data directory as a workspace boundary', () => {
+    const home = '/tmp/test-home';
+    const dirs = { homeDirectories: [home], dataDirectory: `${home}/.code-agent` };
+
+    for (const ancestor of ['/tmp', '/']) {
+      expect(
+        resolveBackgroundWorkspaceAuthority(
+          { workspace: ancestor, workspaceScope: workspaceScope(ancestor) },
+          dirs,
+        ),
+        `${ancestor} 不该成为可写边界`,
+      ).toBeUndefined();
+    }
+
+    // 兄弟目录不含敏感目录，仍然应当放行——别把拒绝面扩大成「凡是短路径都拒」
+    expect(resolveBackgroundWorkspaceAuthority(
+      { workspace: '/tmp/some-project', workspaceScope: workspaceScope('/tmp/some-project') },
+      dirs,
+    )).toBeDefined();
+  });
+
   it('returns WORKSPACE_REQUIRED before SessionCommandCenter creates a task', async () => {
     const sessionId = 'workspace-required-session';
     const result = await executeDelegateTask(

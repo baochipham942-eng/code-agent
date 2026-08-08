@@ -35,6 +35,7 @@ describe('RunContext', () => {
     expect(Object.isFrozen(context)).toBe(true);
     expect(Reflect.set(context, 'cwd', '/tmp/other-workspace')).toBe(false);
     expect(context.cwd).toBe(resolveCanonicalRunPath('/tmp/native-run-workspace'));
+    expect(context.workspaceScope).toBeUndefined();
   });
 
   it('rejects an explicit runId that reuses the sessionId', () => {

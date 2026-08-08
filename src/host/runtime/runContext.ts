@@ -5,7 +5,6 @@ import type { MessageAttachment, MessageMetadata } from '../../shared/contract';
 import type { RunTraceContext } from '../telemetry/runTraceContext';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import {
-  createWorkspaceScope,
   isPathWithinRoot,
   resolveWorkspacePath,
 } from './workspaceScope';
@@ -13,10 +12,10 @@ import {
 export interface RunContext {
   readonly runId: string;
   readonly sessionId: string;
-  /** Authorization, persistence, and artifact boundary for this run. */
+  /** Runtime, persistence, and artifact root. Write authority comes only from workspaceScope. */
   readonly workspace: string;
-  /** Immutable Project Source snapshot. Legacy single-root runs receive a synthetic scope. */
-  readonly workspaceScope: WorkspaceScope;
+  /** Immutable authoritative Project Source snapshot. Absent means the run has no write boundary. */
+  readonly workspaceScope?: WorkspaceScope;
   /** Default process and relative-path directory for this run. */
   readonly cwd: string;
   readonly createdAt: number;
@@ -25,7 +24,7 @@ export interface RunContext {
 export interface CreateRunContextInput {
   runId?: string;
   sessionId: string;
-  workspace: string;
+  workspace?: string;
   workspaceScope?: WorkspaceScope;
   cwd?: string;
   createdAt?: number;
@@ -141,17 +140,18 @@ export function createRunContext(input: CreateRunContextInput): RunContext {
   // Freeze the resolved filesystem targets, not caller-provided symlink text.
   // Otherwise a workspace symlink could be retargeted while a run is active and
   // silently move every downstream policy/artifact/resolver boundary.
-  const requestedWorkspace = resolveCanonicalRunPath(requireIdentifier(input.workspace, 'workspace'));
-  const workspaceScope = input.workspaceScope ?? createWorkspaceScope('legacy', [{
-    sourceId: 'legacy-primary',
-    path: requestedWorkspace,
-    role: 'primary',
-    access: 'read_write',
-  }]);
-  const workspace = workspaceScope.primaryRoot;
+  const requestedWorkspace = resolveCanonicalRunPath(requireIdentifier(
+    input.workspace?.trim() || input.workspaceScope?.primaryRoot || input.cwd || '',
+    'workspace',
+  ));
+  const workspaceScope = input.workspaceScope;
+  const workspace = workspaceScope?.primaryRoot ?? requestedWorkspace;
   const cwd = resolveCanonicalRunPath(input.cwd?.trim() || workspace);
-  if (!resolveWorkspacePath(workspaceScope, cwd, 'read')) {
+  if (workspaceScope && !resolveWorkspacePath(workspaceScope, cwd, 'read')) {
     throw new Error(`Run cwd must stay inside workspace Project Sources: ${cwd}`);
+  }
+  if (!workspaceScope && input.workspace?.trim() && !isPathWithinRoot(cwd, workspace)) {
+    throw new Error(`Run cwd must stay inside workspace: ${cwd}`);
   }
 
   const context = {

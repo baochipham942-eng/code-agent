@@ -78,6 +78,28 @@ describe('PermissionClassifier', () => {
     expect(result.reason).toBe('写入临时目录');
   });
 
+  it('classifies every write as W3 when no authoritative workspace exists', async () => {
+    const workingDirectory = path.join(os.homedir(), 'unscoped-background-run');
+    const args = { file_path: 'voice-dispatch-probe.txt', content: 'probe' };
+    const result = await classifyPermission(
+      'Write',
+      args,
+      { workingDirectory, permissionLevel: 'write' },
+    );
+    const authoritativeResult = await classifyPermission(
+      'Write',
+      args,
+      { workingDirectory, workspaceRoot: workingDirectory, permissionLevel: 'write' },
+    );
+
+    expect(result).toMatchObject({
+      decision: 'ask',
+      reason: expect.stringContaining('写入项目目录外'),
+      traceStep: { rule: 'W3: outside_project', result: 'ask' },
+    });
+    expect(authoritativeResult).toMatchObject({ decision: 'approve', cached: false });
+  });
+
   it('asks before reading Claude global memory files', async () => {
     const result = await classifyPermission(
       'Read',

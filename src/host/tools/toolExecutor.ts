@@ -357,8 +357,13 @@ export class ToolExecutor {
 
     const executionToolName = toolDef.name;
     const policyToolName = normalizeToolName(executionToolName);
+    const writeWithoutWorkspaceAuthority = Boolean(
+      this.runContext
+      && !this.runContext.workspaceScope
+      && toolDef.permissionLevel === 'write',
+    );
 
-    if (this.runContext && toolDef.permissionLevel === 'write' && !isBashToolName(policyToolName)) {
+    if (this.runContext?.workspaceScope && toolDef.permissionLevel === 'write' && !isBashToolName(policyToolName)) {
       const rawTarget = [
         params.file_path,
         params.path,
@@ -517,7 +522,7 @@ export class ToolExecutor {
     const context: ToolContext & { sessionId?: string } = {
       runId: effectiveRunId, turnId: options.turnId,
       sessionId: effectiveSessionId,
-      workspace: this.workspaceRoot,
+      workspace: this.runtimeWorkspace,
       workspaceScope: this.runContext?.workspaceScope,
       workingDirectory: this.executionCwd,
       requestPermission: this.requestPermission,
@@ -629,7 +634,7 @@ export class ToolExecutor {
     // P0: Policy Enforcer — code-agent-policy.toml 硬规则（system/user/project 三层合并）。
     // deny 不可被任何后续层推翻（skill 预授权 / 安全命令白名单 / classifier / 用户审批）。
     // 无 policy 文件时 getPolicyEnforcer 返回 null，零开销。
-    const policyEnforcer = getPolicyEnforcer(resolveCanonicalRunPath(this.workspaceRoot));
+    const policyEnforcer = getPolicyEnforcer(resolveCanonicalRunPath(this.runtimeWorkspace));
     if (policyEnforcer?.isActive) {
       const policyCheck = this.checkAgainstPolicy(policyEnforcer, executionToolName, policyToolName, params, toolDef);
       if (!policyCheck.allowed) {
@@ -747,7 +752,7 @@ export class ToolExecutor {
       }
     }
 
-    if (toolDef.requiresPermission && (guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
+    if (toolDef.requiresPermission && (writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // B4：external 工具的授权 target 精确串（取不到=null，不具铸权资格）。一次算好，
@@ -775,7 +780,7 @@ export class ToolExecutor {
             policyForcesConfirmation,
             boundaryViolation,
             workingDirectory: resolveCanonicalRunPath(this.executionCwd),
-            workspaceRoot: resolveCanonicalRunPath(this.workspaceRoot),
+            workspaceRoot: this.writeWorkspaceRoot,
             permissionLevel: toolDef.permissionLevel,
             permStartTime,
             readOnlyForcesConfirmation,
@@ -1013,7 +1018,7 @@ export class ToolExecutor {
     const toolCache = getToolCache();
     const toolCacheScope = {
       sessionId: effectiveSessionId,
-      workingDirectory: this.workspaceRoot,
+      workingDirectory: this.runtimeWorkspace,
     };
     const canUseToolCache = toolCache.isCacheable(executionToolName);
 
@@ -1042,7 +1047,7 @@ export class ToolExecutor {
     const writeIsolationScope = getWriteIsolationScope(
       executionToolName,
       params,
-      this.workspaceRoot,
+      this.runtimeWorkspace,
       toolDef.permissionLevel,
       this.executionCwd,
     );
@@ -1110,7 +1115,7 @@ export class ToolExecutor {
           toolName: executionToolName,
           arguments: params,
           result: rawResult,
-          workingDirectory: this.workspaceRoot,
+          workingDirectory: this.runtimeWorkspace,
           conversationId: effectiveSessionId, runId: effectiveRunId, turnId: options.turnId, agentId: options.agentId,
           toolCallId: options.currentToolCallId || executionId, startedAt: startTime,
         }),
@@ -1215,21 +1220,22 @@ export class ToolExecutor {
     params: Record<string, unknown>
   ): PermissionRequestData {
     const sourceAttribution = (rawPath?: unknown): Record<string, unknown> => {
-      if (!this.runContext) return {};
+      const workspaceScope = this.runContext?.workspaceScope;
+      if (!workspaceScope) return {};
       const candidate = typeof rawPath === 'string' && rawPath.trim()
         ? (nodePath.isAbsolute(rawPath)
           ? nodePath.resolve(rawPath)
           : nodePath.resolve(this.executionCwd, rawPath))
         : this.executionCwd;
-      const match = resolveWorkspacePath(this.runContext.workspaceScope, candidate, 'read');
-      if (!match) return { workspaceScopeVersion: this.runContext.workspaceScope.version };
+      const match = resolveWorkspacePath(workspaceScope, candidate, 'read');
+      if (!match) return { workspaceScopeVersion: workspaceScope.version };
       return {
-        projectId: this.runContext.workspaceScope.projectId,
+        projectId: workspaceScope.projectId,
         sourceId: match.root.sourceId,
         sourceRole: match.root.role,
         sourceAccess: match.root.access,
         relativePathWithinSource: match.relativePath,
-        workspaceScopeVersion: this.runContext.workspaceScope.version,
+        workspaceScopeVersion: workspaceScope.version,
       };
     };
     switch (tool.name) {
@@ -1389,11 +1395,11 @@ export class ToolExecutor {
     const filePath = typeof rawPath === 'string' ? rawPath : '';
     if (!filePath) return isWrite ? 'file.project_write' : 'file.project_read';
 
-    const workspace = this.workspaceRoot;
+    const workspace = this.runtimeWorkspace;
     const resolvedPath = nodePath.isAbsolute(filePath)
       ? nodePath.resolve(filePath)
       : nodePath.resolve(this.executionCwd, filePath);
-    const match = this.runContext
+    const match = this.runContext?.workspaceScope
       ? resolveWorkspacePath(this.runContext.workspaceScope, resolvedPath, isWrite ? 'read_write' : 'read')
       : undefined;
     const inWorkspace = this.runContext
@@ -1408,8 +1414,14 @@ export class ToolExecutor {
     return this.runContext?.cwd ?? this.workingDirectory;
   }
 
-  private get workspaceRoot(): string {
+  private get runtimeWorkspace(): string {
     return this.runContext?.workspace ?? this.workingDirectory;
+  }
+
+  private get writeWorkspaceRoot(): string | undefined {
+    return this.runContext
+      ? this.runContext.workspaceScope?.primaryRoot
+      : this.workingDirectory;
   }
 
   private bindRunScopedParams(
@@ -1428,7 +1440,10 @@ export class ToolExecutor {
     const candidate = nodePath.isAbsolute(requestedDirectory)
       ? nodePath.resolve(requestedDirectory)
       : nodePath.resolve(this.executionCwd, requestedDirectory);
-    if (!resolveWorkspacePath(this.runContext.workspaceScope, candidate, 'read')) {
+    if (
+      this.runContext.workspaceScope
+      && !resolveWorkspacePath(this.runContext.workspaceScope, candidate, 'read')
+    ) {
       return {
         error: `Run ${this.runContext.runId} cannot execute outside workspace Project Sources: ${candidate}`,
       };

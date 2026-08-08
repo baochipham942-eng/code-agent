@@ -100,8 +100,8 @@ async function main(): Promise<void> {
       cwd: docs,
       createdAt: 2,
     });
-    check('运行中 Run 不因 Project 编辑动态扩权', oldRun.workspaceScope.roots.find((root) => root.sourceId === 'docs')?.access === 'read_only');
-    check('历史 Session 下一 Run 使用新 Source 快照', newRun.workspaceScope.roots.find((root) => root.sourceId === 'docs')?.access === 'read_write');
+    check('运行中 Run 不因 Project 编辑动态扩权', oldRun.workspaceScope?.roots.find((root) => root.sourceId === 'docs')?.access === 'read_only');
+    check('历史 Session 下一 Run 使用新 Source 快照', newRun.workspaceScope?.roots.find((root) => root.sourceId === 'docs')?.access === 'read_write');
 
     const gitStates = await getProjectSourceGitStates(initialScope);
     check('两个 Source Git 仓独立识别', gitStates.filter((state) => state.isRepository).length === 2);

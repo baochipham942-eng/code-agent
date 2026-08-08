@@ -1320,7 +1320,7 @@ export class AgentOrchestrator {
         ? createRunContext({
           runId: nativeRunId,
           sessionId,
-          workspace: workspaceScope?.primaryRoot ?? runWorkingDirectory,
+          workspace: workspaceScope?.primaryRoot,
           workspaceScope,
           cwd: runWorkingDirectory,
         })

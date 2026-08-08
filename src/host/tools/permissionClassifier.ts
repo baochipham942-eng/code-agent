@@ -56,7 +56,7 @@ export interface ClassifierConfig {
 interface ClassificationContext {
   /** Base directory for resolving relative tool paths. */
   workingDirectory: string;
-  /** Authorization boundary; defaults to workingDirectory for legacy callers. */
+  /** Authoritative write boundary. Absent means no write target is inside a workspace. */
   workspaceRoot?: string;
   permissionLevel?: string;
 }
@@ -557,8 +557,19 @@ export class PermissionClassifier {
     }
 
     const candidate = path.resolve(context.workingDirectory, filePath);
-    const workspaceBoundary = path.resolve(context.workspaceRoot ?? context.workingDirectory);
     const resolved = resolveCanonicalRunPath(candidate);
+    if (!context.workspaceRoot) {
+      const reason = `写入项目目录外: ${resolved}`;
+      return {
+        decision: 'ask',
+        reason,
+        confidence: 0.9,
+        cached: false,
+        traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
+      };
+    }
+
+    const workspaceBoundary = path.resolve(context.workspaceRoot);
     const workspace = resolveCanonicalRunPath(workspaceBoundary);
     const canonicalInsideWorkspace = isPathInside(resolved, workspace);
 
@@ -654,8 +665,11 @@ export class PermissionClassifier {
     args: Record<string, unknown>,
     context: ClassificationContext,
   ): string {
+    const workspaceNamespace = context.workspaceRoot
+      ? resolveCanonicalRunPath(path.resolve(context.workspaceRoot))
+      : '<no-authoritative-workspace>';
     const namespace = [
-      resolveCanonicalRunPath(path.resolve(context.workspaceRoot ?? context.workingDirectory)),
+      workspaceNamespace,
       resolveCanonicalRunPath(path.resolve(context.workingDirectory)),
     ].join('\u0000');
     if (isBashToolName(toolName)) {

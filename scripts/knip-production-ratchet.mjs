@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global console */
 // ============================================================================
 // knip-production-ratchet — 生产可达性棘轮门（knip 的第二 profile）
 // ============================================================================
@@ -9,20 +10,20 @@
 //   2026-07-25 的孤儿能力审计实测：三个已确认的孤儿（editMessage / BudgetSettings /
 //   designPreviewInject）喂给现行 knip 门，一个都没进网。
 //
-// 本门换一套 entry：只放真正的发行版入口（cli / webServer / mcp / renderer / bridge），
-// 报 knip 的 `files` 类问题 = "从生产入口出发完全走不到的文件"。
+// 本门保留历史 66 基线，同时用 strict profile 关掉 Knip 自动注入的测试/配置/plugin
+// 入口。普通 profile 锁存量；strict profile 只拦相对 main 新增且从发行版入口走不到的
+// 源码文件，不抬历史基线，也不维护逐文件豁免名单。
 //
 // 它防的是最贵的那种缺陷——"建好不接电"：代码写完、测试齐全、生产零消费者。
 // 已知受害史是现已删除的 src/host/index.ts Electron main 路径：
 // telemetry 上传器 / Agent Registry / LogBridge / dbRetention 先后在它上面搁浅。
 //
 // 口径与取舍：
-//   - **只做计数棘轮，不做 allowlist**。目的是"防新增"不是"逼人删"：存量 132 个里有一批
-//     是设计如此（被 scripts/ 消费的 eval harness、acceptance 工具等，审计报告附录 A 列了
-//     18 个，明确标注勿删）。给它们逐个维护豁免名单的成本远高于收益。
-//   - 新增生产不可达文件 → 计数上升 → 红。若确属"故意只给 scripts 用"，在下方基线注释里
-//     写明理由再调高（与本仓其他棘轮同一社会契约）。
-//   - 清理后手动调小，只降不升。
+//   - legacy profile 保留 66 的计数棘轮，继续锁住已经清下来的存量战果。
+//   - strict profile 不设第二个数字基线，也不做 allowlist；只把相对 main 新增的 src 文件
+//     与纯发行入口不可达集合取交集。既有 132 个历史债不会被本工单强行核销，新债会报红。
+//   - 故意只给 scripts/ 使用的实现应放在 scripts/ 或对应工具 workspace，不能靠抬生产基线放行。
+//   - legacy 清理后仍手动调小 BASELINE_MAX，只降不升。
 //
 // 基线沿革：2026-07-25 建门，实测 132；同日 #676 把 retention 接进 webServer 后降到 131；
 // 同日删 41 个死 barrel（孤儿审计 D4）后降到 90；2026-07-26 删除旧 Host
@@ -36,81 +37,199 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
-const BASELINE_MAX = 66;
-const KNIP_VERSION = '6.24.0';
-const CONFIG = 'knip.production.json';
+export const BASELINE_MAX = 66;
+export const KNIP_VERSION = '6.24.0';
+export const CONFIG = 'knip.production.json';
+export const STRICT_CONFIG = 'knip.production-strict.json';
 
 // 锚点：已知必然生产不可达的文件。它若从结果里消失而文件还在，说明本门的口径已经失效
 // （配置写错 / entry 被误改 / knip 报告格式变了），必须报红而不是"零命中=通过"地假绿。
-const ANCHOR = 'src/host/app/lifecycle.ts';
+export const ANCHOR = 'src/host/app/lifecycle.ts';
+// 第二锚点只有测试消费者，专门防 Vitest/Playwright 或未来插件把测试重新注入 strict 入口。
+export const TEST_ONLY_ANCHOR = 'src/host/app/desktopQueuedInputDrain.ts';
 
-// 自检 0：entry 必须都真实存在。
-// 少了一个生产入口，它下面整棵子树都会被算成"生产不可达"，门于是红在"你新增了 N 个死代码"
-// 上——归因指向改动者的 diff，而真因是配置陈旧（实测：把一个 entry 改成不存在的路径，
-// 计数从 132 涨到 136，报错却只字不提配置）。这类"红得指错人"和假绿一样坏。
-const entryPaths = JSON.parse(readFileSync(CONFIG, 'utf8')).entry ?? [];
-const missingEntries = entryPaths.filter((p) => !p.includes('*') && !existsSync(p));
-if (missingEntries.length > 0) {
-  console.error(`[knip-production-ratchet] ✗ 自检失败：${CONFIG} 里以下 entry 在磁盘上不存在——`);
-  for (const p of missingEntries) console.error(`    ${p}`);
-  console.error('  生产入口挪了位置就必须同步这里，否则整棵子树会被误判成生产不可达。');
-  process.exit(1);
+function fail(message) {
+  throw new Error(`[knip-production-ratchet] ✗ 自检失败：${message}`);
 }
 
-const result = spawnSync(
-  'npx',
-  ['--yes', `knip@${KNIP_VERSION}`, '--config', CONFIG, '--include', 'files', '--no-progress', '--reporter', 'json'],
-  { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 },
-);
+export function validateConfig(configPath) {
+  let config;
+  try {
+    config = JSON.parse(readFileSync(configPath, 'utf8'));
+  } catch (error) {
+    fail(`${configPath} 无法读取或不是合法 JSON：${error instanceof Error ? error.message : String(error)}`);
+  }
 
-// knip 有 issue 时 exit 1 属正常；以 JSON 可解析为准判断门本身是否健康（自检 fail loud）
-let report;
-try {
-  report = JSON.parse(result.stdout);
-} catch {
-  console.error('[knip-production-ratchet] ✗ 自检失败：knip 输出不可解析（工具未装好/配置损坏/被 kill）');
-  console.error(result.stderr?.slice(0, 2000) || '(无 stderr)');
-  process.exit(1);
-}
-if (!Array.isArray(report.issues)) {
-  console.error('[knip-production-ratchet] ✗ 自检失败：knip JSON 里没有 issues 数组，报告格式变了，请同步更新本脚本');
-  process.exit(1);
-}
+  if (!Array.isArray(config.entry) || config.entry.length === 0) {
+    fail(`${configPath} 没有非空 entry 数组，生产入口口径已失效。`);
+  }
+  if (!Array.isArray(config.project) || config.project.length === 0) {
+    fail(`${configPath} 没有非空 project 数组，扫描范围已失效。`);
+  }
 
-const files = report.issues.map((issue) => issue.file).filter(Boolean);
-const count = files.length;
-
-// 自检 1：一个都没扫出来 = 口径失效的典型症状（存量是三位数，不可能突然清零）
-if (count === 0) {
-  console.error('[knip-production-ratchet] ✗ 自检失败：生产不可达文件数为 0。');
-  console.error('  存量是三位数量级，归零几乎必然是 entry/project 配置失效或 knip 行为变更，');
-  console.error('  而不是真的清干净了。请先确认门本身，不要把这当作通过。');
-  process.exit(1);
+  const missingEntries = config.entry.filter((entryPath) => !entryPath.includes('*') && !existsSync(entryPath));
+  if (missingEntries.length > 0) {
+    fail(`${configPath} 里以下 entry 在磁盘上不存在：\n${missingEntries.map((entryPath) => `    ${entryPath}`).join('\n')}`);
+  }
+  return config;
 }
 
-// 自检 2：锚点还在磁盘上却不在结果里 → 口径失效
-if (existsSync(ANCHOR) && !files.includes(ANCHOR)) {
-  console.error(`[knip-production-ratchet] ✗ 自检失败：锚点 ${ANCHOR} 仍存在，却没被判为生产不可达。`);
-  console.error('  它是已确认未被任何生产入口引用的旧 Host lifecycle。锚点失效说明本门的可达性口径已经不可信。');
-  console.error('  若该文件真被接回发行版，请换一个仍然明确生产不可达的锚点。');
-  process.exit(1);
+export function parseKnipResult(result, configPath) {
+  if (result.error) {
+    fail(`${configPath} 的 Knip 进程无法启动：${result.error.message}`);
+  }
+  if (result.signal) {
+    fail(`${configPath} 的 Knip 进程被 ${result.signal} 终止。`);
+  }
+  if (result.status !== 0 && result.status !== 1) {
+    fail(`${configPath} 的 Knip 异常退出（status=${result.status ?? 'null'}）。`);
+  }
+  if (/^(?:ERROR:|npm error)/m.test(result.stderr ?? '')) {
+    fail(`${configPath} 的 Knip stderr 含工具/配置错误：\n${result.stderr.slice(0, 2000)}`);
+  }
+
+  let report;
+  try {
+    report = JSON.parse(result.stdout);
+  } catch {
+    fail(`${configPath} 的 Knip 输出不可解析（工具未装好、配置损坏或进程被 kill）：\n${result.stderr?.slice(0, 2000) || '(无 stderr)'}`);
+  }
+  if (!Array.isArray(report.issues)) {
+    fail(`${configPath} 的 Knip JSON 里没有 issues 数组，报告格式已变化。`);
+  }
+
+  const files = [...new Set(report.issues.map((issue) => issue.file).filter((file) => typeof file === 'string'))].sort();
+  if (files.length === 0) {
+    fail(`${configPath} 扫描出的生产不可达文件数为 0；entry/project、插件入口或 Knip 行为很可能已失效。`);
+  }
+  const requiredAnchors = configPath === STRICT_CONFIG ? [ANCHOR, TEST_ONLY_ANCHOR] : [ANCHOR];
+  for (const anchor of requiredAnchors) {
+    if (existsSync(anchor) && !files.includes(anchor)) {
+      fail(`${configPath} 的锚点 ${anchor} 仍存在，却没被判为生产不可达。`);
+    }
+  }
+  return files;
 }
 
-console.log(`[knip-production-ratchet] 生产不可达文件 ${count} 个（基线上限 ${BASELINE_MAX}）`);
-
-if (count > BASELINE_MAX) {
-  console.error(`[knip-production-ratchet] ✗ 超基线 ${count - BASELINE_MAX} 个 —— 有新代码从发行版入口完全走不到。`);
-  console.error('  这类缺陷不会被任何单测发现（测试引用得到 ≠ 生产引用得到），也不会崩，只是永远不执行。');
-  console.error('  处理方式二选一：把它接到真实消费路径上；或确属只给 scripts/ 用，则在脚本基线注释里写明理由再调高。');
-  console.error('  完整名单（前 30）：');
-  for (const file of files.slice(0, 30)) console.error(`    ${file}`);
-  if (files.length > 30) console.error(`    …… 其余 ${files.length - 30} 个`);
-  process.exit(1);
+export function runKnip(configPath) {
+  validateConfig(configPath);
+  const result = spawnSync(
+    'npx',
+    ['--yes', `knip@${KNIP_VERSION}`, '--config', configPath, '--include', 'files', '--no-progress', '--reporter', 'json'],
+    { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 },
+  );
+  return parseKnipResult(result, configPath);
 }
-if (count < BASELINE_MAX) {
-  console.log(`[knip-production-ratchet] ✓ 低于基线 ${BASELINE_MAX - count} 个 —— 可把 BASELINE_MAX 调小到 ${count} 收紧棘轮`);
-} else {
-  console.log('[knip-production-ratchet] ✓ 等于基线，通过（未新增）');
+
+function runGit(args, { allowFailure = false } = {}) {
+  const result = spawnSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (result.error) fail(`git ${args.join(' ')} 无法启动：${result.error.message}`);
+  if (!allowFailure && result.status !== 0) {
+    fail(`git ${args.join(' ')} 失败：${result.stderr?.trim() || `status=${result.status}`}`);
+  }
+  return result;
+}
+
+function resolveCommit(ref, { required = false } = {}) {
+  const result = runGit(['rev-parse', '--verify', `${ref}^{commit}`], { allowFailure: true });
+  if (result.status === 0) return result.stdout.trim();
+  if (required) fail(`无法解析比较基点 ${ref}；strict 新增文件检测不能在未知基点上假绿。`);
+  return null;
+}
+
+export function resolveComparisonBase(env = process.env) {
+  if (env.KNIP_PRODUCTION_BASE_REF) {
+    return resolveCommit(env.KNIP_PRODUCTION_BASE_REF, { required: true });
+  }
+  if (env.GITHUB_BASE_REF) {
+    return resolveCommit(`origin/${env.GITHUB_BASE_REF}`, { required: true });
+  }
+  if (env.GITHUB_EVENT_NAME === 'push') {
+    return resolveCommit('HEAD^', { required: true });
+  }
+
+  const head = resolveCommit('HEAD', { required: true });
+  const originMain = resolveCommit('origin/main');
+  if (!originMain || head === originMain) return null;
+
+  const mergeBase = runGit(['merge-base', head, originMain]);
+  const base = mergeBase.stdout.trim();
+  if (!base) fail('git merge-base HEAD origin/main 返回空 SHA。');
+  return base;
+}
+
+function splitNullDelimited(output) {
+  return output.split('\0').filter(Boolean);
+}
+
+export function collectAddedSourceFiles(env = process.env) {
+  const added = new Set();
+  const status = runGit(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', 'src']);
+  const records = splitNullDelimited(status.stdout);
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    const code = record.slice(0, 2);
+    const file = record.slice(3);
+    if (code === '??' || code.includes('A')) added.add(file);
+    if (code[0] === 'R' || code[0] === 'C') index += 1;
+  }
+
+  const base = resolveComparisonBase(env);
+  if (base) {
+    const diff = runGit(['diff', '--name-only', '--diff-filter=A', '-z', base, 'HEAD', '--', 'src']);
+    for (const file of splitNullDelimited(diff.stdout)) added.add(file);
+  }
+  return [...added].sort();
+}
+
+export function findNewStrictlyUnreachable(strictFiles, addedFiles) {
+  const added = new Set(addedFiles);
+  return strictFiles.filter((file) => added.has(file)).sort();
+}
+
+export function main() {
+  const files = runKnip(CONFIG);
+  const count = files.length;
+  console.log(`[knip-production-ratchet] 存量口径生产不可达文件 ${count} 个（基线上限 ${BASELINE_MAX}）`);
+
+  if (count > BASELINE_MAX) {
+    console.error(`[knip-production-ratchet] ✗ 超基线 ${count - BASELINE_MAX} 个。完整名单（前 30）：`);
+    for (const file of files.slice(0, 30)) console.error(`    ${file}`);
+    if (files.length > 30) console.error(`    …… 其余 ${files.length - 30} 个`);
+    process.exitCode = 1;
+    return;
+  }
+  if (count < BASELINE_MAX) {
+    console.log(`[knip-production-ratchet] ✓ 低于基线 ${BASELINE_MAX - count} 个，可把 BASELINE_MAX 调小到 ${count}`);
+  } else {
+    console.log('[knip-production-ratchet] ✓ 等于存量基线');
+  }
+
+  const strictFiles = runKnip(STRICT_CONFIG);
+  const addedFiles = collectAddedSourceFiles();
+  const newUnreachable = findNewStrictlyUnreachable(strictFiles, addedFiles);
+  console.log(`[knip-production-ratchet] strict 口径扫描 ${strictFiles.length} 个历史不可达文件；检查新增源码 ${addedFiles.length} 个`);
+
+  if (newUnreachable.length > 0) {
+    console.error('[knip-production-ratchet] ✗ 以下新增源码从发行版入口完全走不到：');
+    for (const file of newUnreachable) console.error(`    ${file}`);
+    console.error('  测试、脚本或配置能 import 到不等于生产可达；请接入真实发行入口或删除该文件。');
+    process.exitCode = 1;
+    return;
+  }
+  console.log('[knip-production-ratchet] ✓ 没有新增的严格生产不可达源码');
+}
+
+const isDirectRun = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isDirectRun) {
+  try {
+    main();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }

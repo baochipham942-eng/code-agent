@@ -1,0 +1,31 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/cli/index.ts",
+    "src/web/webServer.ts",
+    "src/host/mcp/mcp-server-entry.ts",
+    "src/renderer/index.tsx",
+    "packages/bridge/src/index.ts"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "!src/**/__tests__/**",
+    "!src/**/*.{test,spec}.{ts,tsx}"
+  ],
+  "eslint": false,
+  "github-actions": false,
+  "husky": false,
+  "lint-staged": false,
+  "node": false,
+  "playwright": false,
+  "postcss": false,
+  "sentry": false,
+  "tailwind": false,
+  "tsx": false,
+  "typedoc": false,
+  "typescript": false,
+  "vite": false,
+  "vitest": false,
+  "ignoreDependencies": [".*"],
+  "ignoreBinaries": [".*"]
+}

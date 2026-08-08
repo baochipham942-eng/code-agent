@@ -671,10 +671,8 @@ export function clearPersistedPtySessions(): void {
 }
 
 // Persist sessions on process exit
+// 与 backgroundTasks.ts 同理：模块级信号处理器会让「本进程有人管 SIGTERM」这件事
+// 提前成立，压掉默认终止语义，却又不做真正的收尾。状态保全走 'exit' 钩子即可
+// （persistRunningPtySessions 是同步函数），信号的终止权留给入口的 shutdown()。
 process.on('beforeExit', persistRunningPtySessions);
-process.on('SIGINT', () => {
-  persistRunningPtySessions();
-});
-process.on('SIGTERM', () => {
-  persistRunningPtySessions();
-});
+process.on('exit', persistRunningPtySessions);

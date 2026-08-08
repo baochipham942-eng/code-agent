@@ -24,7 +24,9 @@ const limits = {
   // package.json 的 tauri:gen-dev-slot-conf 稳定入口，被 tauri:package:dev 直接调用）。
   // 2026-08-06 +1: scripts/worktree-bootstrap.sh（新 worktree 构建输入引导：软链只读输入 +
   // 实体拷贝可写输入，CLAUDE.md「本地 dogfood 打包」小节指向的稳定手工入口）。
-  directScriptFiles: 146,
+  // 2026-08-08 +1: scripts/host-chinese-error-ratchet.mjs（P2 host 中文 error
+  // 字面量棘轮，package / gates:local / swarm-ci 共用的稳定入口）。
+  directScriptFiles: 147,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

@@ -121,7 +121,17 @@ export async function tauriInstallUpdate(
     return;
   }
 
-  // mac/Linux 才会走到这里；Windows 上进程已经在 install() 内部退出了。
+  // C1 编译缓存预热：新 bundle 此刻才真正落盘（install() 之前磁盘上还是旧包，那时预热
+  // 等于预热旧代码），所以钩子只能挂在 install 之后、relaunch 之前这一格。
+  // Windows 走不到这里——install() 内部 std::process::exit(0)，进程与新包首启之间
+  // 没有任何我们的代码窗口，那边更新后首启注定是冷的（结构性限制，非缺陷）。
+  // best-effort：Rust 侧自带 20s 超时兜底，这里再包一层 catch，绝不因为预热失败挡住重启。
+  try {
+    await invoke('warm_compile_cache_after_install');
+  } catch (warmError) {
+    console.warn('[updater] compile cache warmup skipped:', warmError);
+  }
+
   onProgress?.({ phase: 'relaunch', downloaded: total ?? downloaded, total });
   await relaunch();
 }

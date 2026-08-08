@@ -1,0 +1,18 @@
+{
+  "changedPixels": 273543,
+  "diffOutput": "docs/acceptance/landing-page-v2/image-audit-v11/11-diff-employees.png",
+  "diffRatio": 0.3108443181818182,
+  "implementation": "/tmp/neo-landing-v11-compare/implementation-roles.png",
+  "implementationHeight": 704,
+  "implementationWidth": 1250,
+  "maxChannelDelta": 254,
+  "maxDiffRatio": 0.75,
+  "meanAbsDelta": 20.023499242424244,
+  "passed": true,
+  "pixelThreshold": 8,
+  "reason": "passed",
+  "source": "/tmp/neo-landing-v11-compare/source-roles.png",
+  "sourceHeight": 704,
+  "sourceWidth": 1250,
+  "totalPixels": 880000
+}

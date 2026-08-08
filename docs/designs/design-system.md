@@ -128,11 +128,11 @@ Neo 的视觉身份是**深空新栖地**:界面是一艘飞船的舷窗,品牌�
 |------|--------------|------|
 | `styles/themes/dark.css` | `dark` | 默认主题,active |
 | `styles/themes/light.css` | `light` | active |
-| `styles/themes/high-contrast-dark.css` | `high-contrast-dark` | **文件存在但未激活**:`useTheme.ts` 只 resolve `light`/`dark`,UI 无入口 |
+| `styles/themes/high-contrast-dark.css` | `high-contrast-dark` | active(#918 接进设置页外观主题选择,`global.css` 已补 import) |
 | `styles/themes/high-contrast-light.css` | `high-contrast-light` | 同上 |
 
-注意:守卫脚本的对比度断言**覆盖全部四套主题**(见 §5),改任何一套的相关 token 都会过门,
-别以为 hc 未激活就能逃检。
+`useTheme.ts` 现已 resolve 全部四套主题。注意:守卫脚本的对比度断言**覆盖全部四套主题**
+(见 §5),改任何一套的相关 token 都会过门。
 
 **accent-accessible 拆分(2026-08-02 已落地)。** `--brand-primary` 恢复为**四主题恒等值
 `#0F766E`**,只承担品牌表达(logo、品牌装饰、深色底填充按钮等白字搭配场景),由守卫脚本的
@@ -143,6 +143,19 @@ Neo 的视觉身份是**深空新栖地**:界面是一艘飞船的舷窗,品牌�
 不许再靠改 brand 值解决。**
 
 - 出处: `src/renderer/styles/themes/`、`src/renderer/hooks/useTheme.ts`、`scripts/check-design-system.mjs`(`CONTRAST_SCENARIOS`)。
+
+### 语义徽标 / 状态点 token(2026-08-03 批)
+
+- `--badge-{info,success,warning,danger,accent}-{fg,bg,border}` 共 15 个语义徽标 token,
+  四主题各一套(#936)。浅色主题的彩色徽标对比度曾仅 1.0–1.7:1,修复时产品拍板把浅色
+  `--zinc-600` 从 161 调深到 113(与 `--zinc-500` 同值),徽标文字全部达标。深色主题的
+  badge 背景为 rgba 半透明合成背景。
+- `--mark-{info,success,warning,danger,accent,neutral}` 6 个实心状态点 token(#941):
+  mark 是"点本身的可见形状"(状态点、紧凑指示器),不是文字背后的浅色底,与 badge-*
+  严格分列,四主题由 `mark-contrast` 断言按真实用法核对(见 §5)。
+- Tailwind utility 同步登记:`text-badge-*` / `bg-badge-*` / `border-badge-*`、
+  `text-btn-*` / `bg-btn-*`、`bg-mark-*`,均在 `tailwind.config.js` 映射到上述 token,
+  新代码消费 utility,不要回到字面色。
 
 ### 尺寸 / 圆角 / 字号 / 时长缓动
 
@@ -275,7 +288,7 @@ React 侧**当前唯一真源是 NeoBrandMark 内联 SVG**,不接资产文件的
 ## §5 守卫机制(machine-checkable 的一半)
 
 `scripts/check-design-system.mjs` 是静态门,本文档是它注释里指的"契约"。
-**七条规则**(扫描 `src/renderer`,测试文件除外):
+**八条规则**(扫描 `src/renderer`,测试文件除外):
 
 1. `hardcoded-hex` — 禁硬编码 `#rrggbb`,走 token。
 2. `bare-button` — 禁裸 `<button>`,走 `primitives/` 的 Button/IconButton。
@@ -284,18 +297,27 @@ React 侧**当前唯一真源是 NeoBrandMark 内联 SVG**,不接资产文件的
 5. `bare-z-index` — 禁裸 z-index,走 `Z_LAYERS` + 双向 allowlist 核对(见 §3)。
 6. `important-unjustified` — 禁无登记的 `!important`。
 7. `local-display-primitive` — 禁在 `primitives/` 之外新增本地 EmptyState/Badge 定义。
+8. `theme-blind-bright-foreground` — 禁新增不带 `dark:` 主题分支的亮档彩色前景类
+   (`text-*-100..400`)。#931 建门(存量棘轮)、#941 翻转为默认拦下(354 处迁移归零);
+   zinc 色板是显式豁免(四主题都提供反转值,亮档前景随主题安全变化),
+   其余色板一律要 `dark:` 分支或 `ds-allow:color` 豁免。
 
-另有两条**硬断言**(非棘轮,任何回退直接红):
+另有若干**硬断言**(非棘轮,任何回退直接红):
 
 - `brand-contrast` — 四套主题按各自真实用法场景核对 WCAG ≥4.5:1:dark/light 的
   `--brand-primary` 对白色前景;hc 两套的 `--accent-accessible` 按用法核对
-  (hc-dark 前景压 `--bg-void`、hc-light 前景压白底)。
+  (hc-dark 前景压 `--bg-void`、hc-light 前景压白底)。注意 #941 后深色主题的 badge
+  背景是 rgba 半透明合成背景,核对一律按真实用法(合成后的实际前景/背景)进行,
+  不按 token 字面色。
 - `brand-identity` — 四套主题 `--brand-primary` 必须等于品牌恒等值 `#0F766E`;
   可读性需求走 `--accent-accessible`,不许再靠改 brand 值解决(见 §3)。
+- `mark-contrast` — 四套主题六个 `--mark-*` 实心状态点按真实用法核对对比度(#941 随门
+  新增);`secondary-button-contrast` / `secondary-button-hover-difference` 对
+  `--btn-secondary-*` 做同类核对(#937)。
 
 **豁免写法**(必须显式、必须带理由):
 
-- 行内: `// ds-allow:<kind> 理由`(kind = `viz`/`button`/`modal`/`radius`/`z`/`important`/`primitive`/`brand`);裸 `ds-allow` 放行任意规则,是给特殊场景留的口子,慎用。
+- 行内: `// ds-allow:<kind> 理由`(kind = `viz`/`button`/`modal`/`radius`/`z`/`important`/`primitive`/`brand`/`color`);裸 `ds-allow` 放行任意规则,是给特殊场景留的口子,慎用。
 - 区块: `// ds-allow:start 理由` … `// ds-allow:end` 之间整段跳过(品牌贴图调色板、品牌图标字面色用这个)。
 - 自动豁免: 数据可视化目录(脚本内 `VIZ_EXEMPT` 清单)与模板字符串内 hex(注入 iframe 的自包含 HTML,CSS 变量级联不进去)。
 

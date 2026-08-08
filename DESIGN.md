@@ -16,6 +16,28 @@ colors:
   warning: "#FBBF24"
   danger: "#F87171"
   info: "#60A5FA"
+  accent-accessible: "#0F766E"
+  badge-info-fg: "#7DD3FC"
+  badge-info-bg: "rgba(14, 165, 233, 0.15)"
+  badge-info-border: "rgba(14, 165, 233, 0.35)"
+  badge-success-fg: "#6EE7B7"
+  badge-success-bg: "rgba(16, 185, 129, 0.15)"
+  badge-success-border: "rgba(16, 185, 129, 0.35)"
+  badge-warning-fg: "#FCD34D"
+  badge-warning-bg: "rgba(245, 158, 11, 0.15)"
+  badge-warning-border: "rgba(245, 158, 11, 0.35)"
+  badge-danger-fg: "#FCA5A5"
+  badge-danger-bg: "rgba(239, 68, 68, 0.15)"
+  badge-danger-border: "rgba(239, 68, 68, 0.35)"
+  badge-accent-fg: "#5EEAD4"
+  badge-accent-bg: "rgba(20, 184, 166, 0.15)"
+  badge-accent-border: "rgba(20, 184, 166, 0.35)"
+  mark-info: "#7DD3FC"
+  mark-success: "#6EE7B7"
+  mark-warning: "#FCD34D"
+  mark-danger: "#FCA5A5"
+  mark-accent: "#5EEAD4"
+  mark-neutral: "#A1A1AA"
 typography:
   body:
     fontFamily: Inter, Source Han Sans, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif
@@ -145,7 +167,7 @@ The linked community `DESIGN.md` files are **unofficial analyses of public produ
 | Surface or contract | Status | Evidence and boundary |
 | --- | --- | --- |
 | Dark and light semantic themes | **Live** | `src/renderer/styles/themes/{dark,light}.css`, `src/renderer/hooks/useTheme.ts` |
-| High-contrast token files | **Planned / unresolved** | Token files and contrast checks exist, but `useTheme` exposes only dark, light, and system, and `global.css` imports only dark/light |
+| High-contrast dark and light themes | **Live** | All four themes resolve in `src/renderer/hooks/useTheme.ts`, are selectable in settings (`AppearanceSettings.tsx`), and are imported by `global.css` (#918); contrast assertions cover all four |
 | Shared spacing, radii, type, motion tokens | **Live** | `src/renderer/styles/global.css`, mapped by `tailwind.config.js` |
 | Primitive controls and display states | **Live with migration debt** | `src/renderer/components/primitives/`; the design-system ratchet still records legacy bare buttons and hand-built modals |
 | Tauri desktop shell + bundled web server | **Live** | `docs/architecture/desktop-shell.md`, `src-tauri/`, `src/web/webServer.ts` |
@@ -180,7 +202,7 @@ The linked community `DESIGN.md` files are **unofficial analyses of public produ
 
 - Agent Neo may retain local accents such as fuchsia for design mode, emerald for Neo identity/chosen output, and terminal-style `--cc-*` tokens. These accents do not enter shared foundations without cross-product validation.
 - Generated artifacts may use their own palette inside the iframe or node. Their palette must not leak into shell navigation, settings, or runtime status.
-- High-contrast files remain non-normative until users can select them and representative workbench, settings, and canvas screens are visually verified.
+- High-contrast dark and light themes are live and user-selectable in settings (#918). Readability-critical accents in those themes use `--accent-accessible`; `--brand-primary` stays the fixed brand identity value `#0F766E` across all four themes.
 
 ## Typography
 
@@ -317,6 +339,14 @@ The linked community `DESIGN.md` files are **unofficial analyses of public produ
 - Desktop-only settings such as update, screen memory, native desktop, and local integration disclose their platform requirement. Web mode must not silently save unsupported changes.
 - Diagnostics present stable stages, issue severity, last-known state, and low-risk repair actions without exposing secrets, raw tokens, cookies, or signing material.
 
+### Project-specific rule: brand layer
+
+- The normative brand contract lives in `docs/designs/design-system.md` (brand DNA, translation principles, asset usage, copy lexicon). This section records only what cross-cutting consumers must know.
+- `PlanetSphere` (`src/renderer/components/brand/PlanetSphere.tsx`) is the single source of expressive brand motion: 22px seven-state planet in the voice status bar, 42px slow-spinning earth on the welcome page, 34px optional `planet` in `EmptyState`. Do not hand-roll new planet/orb animations; extend the fx levels instead.
+- `NeoBrandMark` (N2 star-mark) is the React source of truth for the logo; the three finalized variants under `src/renderer/assets/brand/` are reserved assets that must stay in sync with the inline mark.
+- Brand expression concentrates in four showcases — welcome page, empty states, realtime voice, and the call summary card ("勘测报告 · 近地轨道"). Workbench surfaces stay neutral zinc.
+- Waiting copy uses the signal lexicon (回响/编队/巡航) from `src/renderer/i18n/chatTranscript.ts`; do not invent new waiting metaphors or add anxiety timers.
+
 ## Do's and Don'ts
 
 ### Do
@@ -340,7 +370,7 @@ The linked community `DESIGN.md` files are **unofficial analyses of public produ
 - Do not add raw hex values outside theme definitions, isolated visualizations/canvas rendering, or sandboxed artifact HTML with a documented exemption.
 - Do not add bare buttons, hand-built modal backdrops, arbitrary pixel radii, arbitrary z-index, or local `Badge`/`EmptyState` clones when a primitive applies.
 - Do not hide required permission, destructive scope, escalated failure, final outcome, or recovery action in hover-only or collapsed detail.
-- Do not claim high-contrast themes, full modal focus trapping, or mobile application support as live until the corresponding runtime wiring and representative visual/keyboard tests exist.
+- Do not claim full modal focus trapping or mobile application support as live until the corresponding runtime wiring and representative visual/keyboard tests exist.
 - Do not move Agent Neo routes, native calls, release state, design-run paths, or domain copy into `@linchen/ui-foundation` or `@linchen/agent-workbench`.
 
 ### Governance and verification

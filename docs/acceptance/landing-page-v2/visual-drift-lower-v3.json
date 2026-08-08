@@ -1,0 +1,18 @@
+{
+  "changedPixels": 1048210,
+  "diffOutput": "docs/acceptance/landing-page-v2/visual-drift-lower-v3.png",
+  "diffRatio": 0.8255734735266899,
+  "implementation": "docs/acceptance/landing-page-v2/audit-after-lower-v3-capabilities.png",
+  "implementationHeight": 891,
+  "implementationWidth": 1425,
+  "maxChannelDelta": 255,
+  "maxDiffRatio": 0.05,
+  "meanAbsDelta": 169.34963199243901,
+  "passed": false,
+  "pixelThreshold": 8,
+  "reason": "diff ratio exceeds threshold",
+  "source": "docs/acceptance/landing-page-v2/audit-before-lower-v3.png",
+  "sourceHeight": 891,
+  "sourceWidth": 1425,
+  "totalPixels": 1269675
+}

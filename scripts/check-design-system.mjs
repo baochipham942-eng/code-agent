@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// 设计系统静态门（W2）——契约见 docs/designs/design-system.md
+// 设计系统静态门（W2）——契约见 docs/designs/design-system.md §5（规则清单，改一边必须改另一边）
 //
-// 棘轮基线策略：现存违规（760 裸 button / 21 手搓 modal / 81 hex）不强制一次清零，
-// 而是记录到 design-system-baseline.json，门只拦"超出基线的新增"。W3 每收口一批就 --update 降基线。
+// 棘轮基线策略：现存违规（建门时 760 裸 button / 21 手搓 modal / 81 hex）不强制一次清零，
+// 而是记录到 design-system-baseline.json，门只拦"超出基线的新增"。每收口一批就 --update 降基线。
+// 现状（2026-08-03）：hex 已清零；手搓 modal 收至 11；裸 button 基线 702、实测 695；
+// theme-blind-bright-foreground 在 #941 翻转为默认拦下，354 处存量迁移归零。
 //
-// 规则（对应契约 §0 三条铁律 + 治理卫生批新增）：
+// 规则（对应 design-system.md §5 规则清单；旧契约 §0 版已归档，引用一律指 §5）：
 //   1. hardcoded-hex        : 禁硬编码 #rrggbb；viz 豁免目录 + 行内 `ds-allow:viz` / `ds-allow` 注释豁免
 //   2. bare-button          : 禁裸 <button>；primitives/ 目录 + 行内 `ds-allow:button` 豁免
 //   3. handrolled-modal     : 禁手搓 `fixed inset-0` 遮罩；primitives/Modal.tsx + 行内 `ds-allow` 豁免
@@ -39,7 +41,7 @@ const ROOT = join(__dirname, '..');
 const SCAN_ROOT = join(ROOT, 'src/renderer');
 const BASELINE_PATH = join(__dirname, 'design-system-baseline.json');
 
-// 契约 §3：数据可视化豁免目录（这些路径下的 hex 不计违规）
+// 契约 §5 自动豁免：数据可视化豁免目录（这些路径下的 hex 不计违规）
 const VIZ_EXEMPT = [
   'components/LivePreview/TweakPanel',
   'components/features/chat/MessageBubble/ChartBlock',
@@ -166,7 +168,7 @@ export function scan(scanRoot = SCAN_ROOT) {
     const isVizExempt = VIZ_EXEMPT.some((p) => rel.includes(p));
     const lines = readFileSync(file, 'utf8').split('\n');
     // 模板字符串（反引号）内的 hex = 注入 iframe/sandbox 的自包含 HTML/CSS，
-    // app 的 CSS 变量不级联进去，必须用字面色——契约 §3 自动豁免。
+    // app 的 CSS 变量不级联进去，必须用字面色——契约 §5 自动豁免。
     let inTemplate = false;
     // 区块豁免：`ds-allow:start <理由>` … `ds-allow:end` 之间整段跳过所有规则，
     // 用于 mermaid 主题、品牌图标等成块的合法字面色。

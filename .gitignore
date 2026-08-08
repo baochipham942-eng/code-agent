@@ -136,3 +136,6 @@ src-tauri/.dev-slot.json
 
 # 费曼审计产物（本地研究材料，不进公开仓库）
 .feynman/
+
+# better-harness 的运行产物（每次 neo-review 跑出来一批，非输入）
+better-harness-out/

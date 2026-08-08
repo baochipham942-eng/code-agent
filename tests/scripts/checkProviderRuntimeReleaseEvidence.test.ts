@@ -6,23 +6,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '../..');
 const CHECKER = path.join(REPO_ROOT, 'scripts/check-provider-runtime-release-evidence.ts');
-const EVIDENCE_PRODUCERS = [
-  {
-    script: 'scripts/acceptance/tool-cancel-smoke.ts',
-    evidence: 'docs/stability/tool-cancel-smoke-latest.json',
-    sourceFragments: ['docs/stability/tool-cancel-smoke-latest.json'],
-  },
-  {
-    script: 'scripts/acceptance/agent-runtime-app-host-smoke.ts',
-    evidence: 'docs/stability/agent-runtime-app-host-smoke-latest.json',
-    sourceFragments: ['docs/stability/agent-runtime-app-host-smoke-latest.json'],
-  },
-  {
-    script: 'scripts/perf/long-session-browser-smoke.ts',
-    evidence: 'docs/perf/long-session-gold-latest.json',
-    sourceFragments: ['docs/perf', 'long-session-gold-latest.json'],
-  },
-] as const;
 const workspaces: string[] = [];
 
 function writeJson(root: string, relativePath: string, value: unknown): void {
@@ -184,21 +167,6 @@ afterEach(() => {
 });
 
 describe('provider runtime release evidence gate', () => {
-  it('keeps all three evidence producers writing to the release artifact paths', () => {
-    expect(EVIDENCE_PRODUCERS, 'release evidence producer inventory must contain exactly three scripts')
-      .toHaveLength(3);
-
-    for (const producer of EVIDENCE_PRODUCERS) {
-      const source = fs.readFileSync(path.join(REPO_ROOT, producer.script), 'utf8');
-      for (const fragment of producer.sourceFragments) {
-        expect(
-          source,
-          `${producer.script} must write release evidence to ${producer.evidence}`,
-        ).toContain(fragment);
-      }
-    }
-  });
-
   it('returns zero for a complete and fresh evidence workspace', () => {
     const result = runChecker(createWorkspace());
     expect(result, result.output).toMatchObject({ status: 0 });

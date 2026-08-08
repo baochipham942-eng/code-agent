@@ -50,6 +50,7 @@ import {
   contentHasImageParts,
   runVisionPreflightCandidates,
 } from './visionPreflight';
+import { writeAgentRecoveryNotice } from './systemContextStack';
 import {
   broadcastVisionPreflightUnavailable,
   buildAiSdkAdaptiveFallbackInfo,
@@ -708,12 +709,11 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           logger.info(`[AgentLoop] 简化视觉模型 system prompt (${simplifiedPrompt.length} chars)`);
         }
 
-        ctx.runtime.onEvent({
-          type: 'notification',
-          data: {
-            message: `视觉模型 ${effectiveConfig.model} 不支持工具调用，本次请求将仅使用纯文本回复`,
-          },
-        });
+        await writeAgentRecoveryNotice(
+          ctx,
+          'vision_tool_unsupported',
+          `视觉模型 ${effectiveConfig.model} 不支持工具调用，本次请求将仅使用纯文本回复`,
+        );
       }
     }
     if (pendingCapabilityFallback) {
@@ -1016,12 +1016,11 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       ctx.inferenceRecovery._artifactNonStreamingRetried = true;
       logger.warn('[AgentLoop] Artifact tool stream ended incomplete; retrying once with non-streaming inference');
       logCollector.agent('WARN', 'Artifact tool stream incomplete; retrying non-streaming');
-      ctx.runtime.onEvent({
-        type: 'notification',
-        data: {
-          message: '生成文件时模型流中断，正在切换到更稳的非流式方式重试。',
-        },
-      } as AgentEvent);
+      await writeAgentRecoveryNotice(
+        ctx,
+        'artifact_stream_retry',
+        '生成文件时模型流中断，正在切换到更稳的非流式方式重试。',
+      );
       ctx.taskProgress.emitTaskProgress('generating', '模型流中断，正在用非流式方式重试 artifact 生成...');
       try {
         const retryResult = await runEngineInference(

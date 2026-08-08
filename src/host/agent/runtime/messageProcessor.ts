@@ -4,7 +4,6 @@
 // ============================================================================
 
 import type {
-  AgentEvent,
   Message,
   MessageAttachment,
   MessageMetadata,
@@ -68,17 +67,6 @@ import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
-function toAgentEventFromNudge(event: { type: string; data: unknown }): AgentEvent | null {
-  const data = event.data as { message?: unknown; parentToolUseId?: unknown } | null;
-  if (event.type !== 'notification' || typeof data?.message !== 'string') return null;
-  return {
-    type: 'notification',
-    data: {
-      message: data.message,
-      parentToolUseId: typeof data.parentToolUseId === 'string' ? data.parentToolUseId : undefined,
-    },
-  };
-}
 
 export class MessageProcessor {
   /** 2a: 防呆/重试计数自持状态（原 RuntimeContext 字段，ADR-038 批2a 下沉） */
@@ -260,10 +248,6 @@ export class MessageProcessor {
             limit: STOP_HOOK.USER_MAX_RETRIES,
           });
           logCollector.agent('WARN', `User stop hook max retries (${STOP_HOOK.USER_MAX_RETRIES}) reached, allowing stop`);
-          this.ctx.onEvent({
-            type: 'notification',
-            data: { message: 'Stop hook 持续拦截已达重试上限，本次按完成处理' },
-          });
         } else if (userStopResult.message) {
           this.contextAssembly.injectSystemMessage(`<stop-hook>\n${userStopResult.message}\n</stop-hook>`, 'stop-hook');
         }
@@ -326,10 +310,6 @@ export class MessageProcessor {
               ].join('\n'),
               'delivery-critic',
             );
-            this.ctx.onEvent({
-              type: 'notification',
-              data: { message: '交付前审查发现 Critical 问题，正在修复' },
-            });
             return 'continue';
           }
         } catch (error) {
@@ -359,28 +339,18 @@ export class MessageProcessor {
           if (this.guardState.stopHookRetryCount <= this.ctx.maxStopHookRetries) {
             this.contextAssembly.injectSystemMessage(stopResult.injectContext, 'planning-hook');
             if (stopResult.notification) {
-              this.ctx.onEvent({
-                type: 'notification',
-                data: { message: stopResult.notification },
-              });
+              logCollector.agent('INFO', 'Planning stop hook notification', { message: stopResult.notification });
             }
             logger.debug(` Stop hook retry ${this.guardState.stopHookRetryCount}/${this.ctx.maxStopHookRetries}`);
             return 'continue';
           } else {
             logger.debug('[AgentLoop] Stop hook max retries reached, allowing stop');
             logCollector.agent('WARN', `Stop hook max retries (${this.ctx.maxStopHookRetries}) reached`);
-            this.ctx.onEvent({
-              type: 'notification',
-              data: { message: 'Plan may be incomplete - max verification retries reached' },
-            });
           }
         }
 
         if (stopResult.notification && stopResult.shouldContinue) {
-          this.ctx.onEvent({
-            type: 'notification',
-            data: { message: stopResult.notification },
-          });
+          logCollector.agent('INFO', 'Planning stop hook notification', { message: stopResult.notification });
         }
       } catch (error) {
         logger.error('[AgentLoop] Planning stop hook error:', error);
@@ -453,12 +423,6 @@ export class MessageProcessor {
         workingDirectory: this.ctx.workingDirectory,
         mutationToolPrompt: artifactRepairPolicy?.mutationToolPromptZh,
         injectSystemMessage: (msg, source) => this.contextAssembly.injectSystemMessage(msg, source),
-        onEvent: (event: { type: string; data: unknown }) => {
-          const agentEvent = toAgentEventFromNudge(event);
-          if (agentEvent) {
-            this.ctx.onEvent(agentEvent);
-          }
-        },
         goalTracker: this.ctx.goalTracker,
       });
       if (nudgeTriggered) {

@@ -169,10 +169,7 @@ export class ToolExecutionEngine {
       }
 
       if (result.notification) {
-        this.ctx.onEvent({
-          type: 'notification',
-          data: { message: result.notification },
-        });
+        logCollector.agent('INFO', 'Session start hook notification', { message: result.notification });
       }
     } catch (error) {
       logger.error('Session start hook error:', error);

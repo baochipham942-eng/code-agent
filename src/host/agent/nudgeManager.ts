@@ -34,8 +34,6 @@ export interface NudgeCheckContext {
   taskIntent?: ReadOnlyTaskIntent;
   /** Inject a system message into the conversation */
   injectSystemMessage: (content: string, source: ContextInjectionSource) => void;
-  /** Emit an agent event (notification, etc.) */
-  onEvent: (event: { type: string; data: unknown }) => void;
   /** GoalTracker instance for F4 checks */
   goalTracker: GoalTracker;
 }
@@ -282,13 +280,6 @@ export class NudgeManager {
         logger.debug(`[NudgeManager] Read-only stop pattern detected, nudge ${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges}`);
         logCollector.agent('INFO', `Read-only stop pattern detected, nudge ${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges}`);
         ctx.injectSystemMessage(nudgeMessage, 'nudge');
-        const notificationMessage = (ctx.taskIntent || this._readOnlyTaskIntent) === 'analysis'
-          ? `检测到只读分析路径，提示收束证据 (${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges})...`
-          : `检测到只读模式，提示继续执行修改 (${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges})...`;
-        ctx.onEvent({
-          type: 'notification',
-          data: { message: notificationMessage },
-        });
         return true;
       }
     }
@@ -336,10 +327,6 @@ export class NudgeManager {
           `</task-completion-check>`,
           'nudge',
         );
-        ctx.onEvent({
-          type: 'notification',
-          data: { message: `检测到 ${totalIncomplete} 个未完成的任务，提示继续执行 (${this.todoNudgeCount}/${reentryCap})...` },
-        });
         return true;
       }
     }
@@ -377,10 +364,6 @@ export class NudgeManager {
           `</file-completion-check>`,
           'nudge',
         );
-        ctx.onEvent({
-          type: 'notification',
-          data: { message: `检测到 ${missingFiles.length} 个文件未修改，提示继续执行 (${this.fileNudgeCount}/${this.maxFileNudges})...` },
-        });
         return true;
       }
     }
@@ -399,6 +382,12 @@ export class NudgeManager {
       );
       if (!hasWriteAction && ctx.iterations > 1) {
         this.goalVerificationCount++;
+        logger.debug(`[NudgeManager] F4: Goal completion check triggered, nudge ${this.goalVerificationCount}/${this.maxGoalVerifications}`);
+        logCollector.agent('INFO', `F4 Nudge: Goal completion check triggered`, {
+          nudgeCount: this.goalVerificationCount,
+          goal: summary.goal,
+          completed: summary.completed,
+        });
         ctx.injectSystemMessage(
           `<goal-completion-check>\n` +
           `STOP! 任务尚未完成。\n` +
@@ -408,10 +397,6 @@ export class NudgeManager {
           `</goal-completion-check>`,
           'nudge',
         );
-        ctx.onEvent({
-          type: 'notification',
-          data: { message: `目标完成度检查：尚无写操作 (${this.goalVerificationCount}/${this.maxGoalVerifications})` },
-        });
         return true;
       }
     }
@@ -455,10 +440,6 @@ export class NudgeManager {
               `</subtask-completion-check>`,
               'nudge',
             );
-            ctx.onEvent({
-              type: 'notification',
-              data: { message: `检测到 ${incomplete.length}/${this._extractedSubtasks.length} 个子任务未完成，提示继续 (${this._subtaskNudgeCount}/${this.maxSubtaskNudges})` },
-            });
             return true;
           } else {
             logger.debug(`[NudgeManager] P4: SKIP (all ${this._extractedSubtasks.length} subtasks verified)`);
@@ -488,10 +469,6 @@ export class NudgeManager {
           `</output-file-check>`,
           'nudge',
         );
-        ctx.onEvent({
-          type: 'notification',
-          data: { message: `检测到 ${missingOutputFiles.length} 个输出文件缺失，提示继续 (${this.outputFileNudgeCount}/${this.maxOutputFileNudges})` },
-        });
         return true;
       } else {
         logger.debug(`[NudgeManager] P5-1: SKIP (explicit=${this.expectedOutputFiles.length}, allExist=true)`);

@@ -7,8 +7,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SubagentExecutionContext } from '../../../../src/host/agent/subagentExecutorTypes';
 import { WORKFLOW_ANTI_LOOP } from '../../../../src/shared/constants';
 
-const { executeSubagentMock } = vi.hoisted(() => ({
+const { executeSubagentMock, mockLogger } = vi.hoisted(() => ({
   executeSubagentMock: vi.fn(),
+  mockLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('../../../../src/host/agent/subagentExecutor', () => ({
@@ -16,6 +17,12 @@ vi.mock('../../../../src/host/agent/subagentExecutor', () => ({
     execute: (request: { prompt: string; config: unknown; context: unknown }) =>
       executeSubagentMock(request.prompt, request.config, request.context),
   }),
+}));
+
+// 丙类收口（2026-08-08 notification 零消费者工单）：notifyWorkflowUser 不再经
+// context.events.emit('notification', ...) 转发，只留 logger.warn——断言改落在这里。
+vi.mock('../../../../src/host/services/infra/logger', () => ({
+  createLogger: () => mockLogger,
 }));
 
 import { executeWorkflowOrchestrate } from '../../../../src/host/agent/multiagentTools/workflowOrchestrate';
@@ -158,8 +165,7 @@ describe('workflow anti-loop (GAP-004)', () => {
     expect(countStageCalls('Verify')).toBe(3);
   });
 
-  it('trips the circuit breaker when total fallbacks exceed the limit and notifies the user', async () => {
-    const emit = vi.fn();
+  it('trips the circuit breaker when total fallbacks exceed the limit and logs a warning', async () => {
     mockStageResults({
       Analyze: [{ success: true }, { success: true }, { success: true }],
       // 两个 verifier 都持续失败，各自触发回退 → 第二次回退超过 MAX_TOTAL_FALLBACKS=1 → 跳闸
@@ -194,7 +200,7 @@ describe('workflow anti-loop (GAP-004)', () => {
           { name: 'Final', role: 'coder', prompt: 'Finalize.', dependsOn: ['VerifyA', 'VerifyB'] },
         ],
       },
-      makeContext({ events: { emit } }),
+      makeContext(),
     );
 
     // workflow 整体失败且带 breaker 标记
@@ -204,11 +210,8 @@ describe('workflow anti-loop (GAP-004)', () => {
     // 剩余阶段（Final）未执行
     expect(countStageCalls('Final')).toBe(0);
     expect((result.metadata as { skippedStages: string[] }).skippedStages).toContain('Final');
-    // 用户收到通知
-    expect(emit).toHaveBeenCalledWith(
-      'notification',
-      expect.objectContaining({ message: expect.stringContaining('circuit breaker') }),
-    );
+    // 跳闸留诊断日志（不再弹零消费者的 notification 事件）
+    expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('circuit breaker'));
   });
 
   it('keeps legacy behavior (failure does not block later stages) when breaker is not tripped', async () => {

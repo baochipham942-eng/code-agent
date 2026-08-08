@@ -608,13 +608,13 @@ interface WorkflowAntiLoopState {
   breakerReason?: string;
 }
 
-/** 向用户发通知（cowork 产品的"人工介入"= 弹给用户）；emit 不可用时静默降级为日志 */
-function notifyWorkflowUser(context: SubagentExecutionContext, message: string): void {
-  try {
-    context.events.emit('notification', { message });
-  } catch {
-    /* emit 信道不可用时仅日志兜底 */
-  }
+/**
+ * 记录 workflow 级人工介入提示（丙类收口，2026-08-08 notification 事件零消费者工单）：
+ * 原先经 `context.events.emit('notification', ...)` 转发的 AgentEvent 在桌面 renderer
+ * 零消费者，只留诊断日志。circuit breaker 跳闸这类事件如果要真弹给用户看，应该走
+ * 甲类的 agent:notice 专属通道（结构化 payload + i18n），不是重新接回这条零消费者通路。
+ */
+function notifyWorkflowUser(message: string): void {
   logger.warn(`[Workflow] ${message}`);
 }
 
@@ -667,7 +667,6 @@ async function executeStageWithAntiLoop(
       `阶段 ${stage.name} 重试 ${maxRetries} 次后仍失败，且 workflow 总回退次数已超上限 ` +
       `(${WORKFLOW_ANTI_LOOP.MAX_TOTAL_FALLBACKS})，circuit breaker 跳闸`;
     notifyWorkflowUser(
-      context,
       `Workflow circuit breaker 跳闸：${antiLoop.breakerReason}。已暂停执行，请人工介入。`,
     );
     return {
@@ -682,7 +681,7 @@ async function executeStageWithAntiLoop(
     route: stage.onFailureRoute,
     totalFallbacks: antiLoop.totalFallbacks,
   });
-  notifyWorkflowUser(context, `阶段 ${stage.name} 多次失败，回退到上游阶段 ${stage.onFailureRoute} 重新执行`);
+  notifyWorkflowUser(`阶段 ${stage.name} 多次失败，回退到上游阶段 ${stage.onFailureRoute} 重新执行`);
 
   const routeResult = await executeStage(routeTarget, task, stageContexts, roles, context);
   if (routeResult.success && routeResult.context) {

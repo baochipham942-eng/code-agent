@@ -43,6 +43,9 @@ export const USER_VISIBLE_SYSTEM_EVENT_REGISTRY = {
   voiceCallFailure: { presentation: 'error', subtype: 'error', attach: 'current-turn' },
   voiceWorkFailure: { presentation: 'error', subtype: 'error', attach: 'matched-turn' },
   voiceWorkSettled: { presentation: 'settle', attach: 'matched-turn' },
+  // 无专属 subtype——落进 TraceNodeRenderer 的通用 system 节点渲染（纯文本、不打断），
+  // 与「弹 toast 打断」的 agent:notice 通道正交（ADR：2026-08-08 notification 零消费者工单乙类）。
+  agentRecoveryNotice: { presentation: 'info', attach: 'current-turn' },
 } as const satisfies Record<string, UserVisibleSystemEventSpec>;
 
 export type UserVisibleSystemEventKey = keyof typeof USER_VISIBLE_SYSTEM_EVENT_REGISTRY;

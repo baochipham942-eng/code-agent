@@ -46,6 +46,7 @@ import { getDatabase } from '../../services/core/databaseService';
 import type { RuntimeContext } from './runtimeContext';
 import type { LearningPipeline } from './learningPipeline';
 import type { MessageWriterPort } from './runtimePorts';
+import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import {
   getRunTerminalAgentEventType,
   getRunTerminalPostHogEvent,
@@ -430,11 +431,14 @@ export class RunFinalizer {
         incompleteTasks: incompleteFinalTasks.map(t => ({ id: t.id, subject: t.subject, status: t.status })),
       });
 
-      this.ctx.onEvent({
-        type: 'notification',
-        data: {
-          message: `⚠️ ${incompleteFinalTasks.length} 个显式任务未完成 (${allDetails})`,
-        },
+      await this.messageWriter.addAndPersistMessage({
+        id: this.messageWriter.generateId(),
+        role: 'system',
+        content: `⚠️ ${incompleteFinalTasks.length} 个显式任务未完成 (${allDetails})`,
+        timestamp: Date.now(),
+        metadata: {
+          agentRecoveryNotice: { kind: 'unresolved_tasks' },
+        } satisfies SystemEventMessageMetadata,
       });
     }
 

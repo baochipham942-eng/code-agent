@@ -1,5 +1,4 @@
 import type { ToolDefinition } from '../../../../shared/contract';
-import type { AgentEvent } from '../../../../shared/contract';
 import type { ModelConfig } from '../../../../shared/contract/model';
 import type { MessageContent, ModelMessage } from '../../../agent/loopTypes';
 import type { InferenceOptions, ModelResponse as RouterModelResponse, StreamCallback } from '../../../model/types';
@@ -10,6 +9,7 @@ import {
   logVisionPreflightExhausted,
   type VisionPreflightAttempt,
 } from './inferenceProviderFallback';
+import { writeAgentRecoveryNotice } from './systemContextStack';
 
 type RunEngineInference = (
   ctx: ContextAssemblyCtx,
@@ -159,10 +159,11 @@ export async function runVisionPreflightCandidates(
       );
       if (!preflightMessages) continue;
       logger.info(`[Fallback] 使用 ${visionConfig.provider}/${visionConfig.model} 预处理图片，继续使用主模型 ${ctx.runtime.modelConfig.model}`);
-      ctx.runtime.onEvent({
-        type: 'notification',
-        data: { message: `已用视觉模型 ${visionConfig.model} 读取图片，继续由 ${ctx.runtime.modelConfig.model} 回答。` },
-      } as AgentEvent);
+      await writeAgentRecoveryNotice(
+        ctx,
+        'vision_preflight_used',
+        `已用视觉模型 ${visionConfig.model} 读取图片，继续由 ${ctx.runtime.modelConfig.model} 回答。`,
+      );
       return { modelMessages: preflightMessages, succeeded: true, hadCandidates, attempts };
     } catch (error) {
       attempts.push(classifyAndLogVisionPreflightFailure(visionConfig.provider, visionConfig.model, error));

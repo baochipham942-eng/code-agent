@@ -638,10 +638,6 @@ export class ConversationRuntime {
           if (doomCheck.level === 'doom-loop-abort') {
             logger.warn('[DoomLoopGuard] Identical tool call repeated after warning; aborting run');
             logCollector.agent('WARN', 'Doom loop abort: identical tool call repeated after warning');
-            this.ctx.onEvent({
-              type: 'notification',
-              data: { message: 'Doom loop 防护：模型连续重复同一工具调用且警告无效，已中止本次执行' },
-            });
             terminal = { status: 'aborted' };
             break;
           }
@@ -1038,10 +1034,6 @@ export class ConversationRuntime {
       const promptResult = await this.ctx.hookManager.triggerUserPromptSubmit(userMessage, this.ctx.sessionId);
       if (!promptResult.shouldProceed) {
         logger.info('[AgentLoop] User prompt blocked by hook', { message: promptResult.message });
-        this.ctx.onEvent({
-          type: 'notification',
-          data: { message: promptResult.message || 'Prompt blocked by hook' },
-        });
         return null;
       }
       if (promptResult.message) {

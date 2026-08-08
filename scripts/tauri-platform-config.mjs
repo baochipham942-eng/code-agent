@@ -59,6 +59,7 @@ function shouldKeepResource(source) {
 
 function mapPath(entry) {
   return entry
+    .replaceAll('better-sqlite3/prebuilds/darwin-arm64.node', 'better-sqlite3/prebuilds/win32-x64.node')
     .replaceAll('node-pty/prebuilds/darwin-arm64', 'node-pty/prebuilds/win32-x64')
     .replaceAll('@img/sharp-darwin-arm64', '@img/sharp-win32-x64')
     // win32 sharp 包的 lib/ 同时含 .node 与 libvips DLL，必须整目录打包

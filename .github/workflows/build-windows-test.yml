@@ -47,9 +47,8 @@ jobs:
       - name: Use Git Bash as npm script shell
         run: npm config set script-shell "C:\\Program Files\\Git\\bin\\bash.exe"
 
-      # postinstall 跑 rebuild-native:system，在 Windows runner 上为系统 Node
-      # 重编 better-sqlite3（MSVC 工具链 runner 自带）；keytar/sharp/node-pty
-      # 走 prebuild-install / optionalDependencies 自动拉 win32-x64 预编译。
+      # postinstall 跑 rebuild-native:system，把 better-sqlite3 v13 随包提供的
+      # win32-x64 N-API 二进制装配到 dist/native；其他 native 依赖走各自安装链路。
       - name: Install dependencies
         run: npm ci
 

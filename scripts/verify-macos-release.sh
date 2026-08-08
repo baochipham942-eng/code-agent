@@ -154,14 +154,15 @@ fi
 echo "[verify-macos-release] bundled node: ${BUNDLED_NODE_PATH}"
 "${BUNDLED_NODE_PATH}" -p '"[verify-macos-release] bundled node runtime: " + process.version + " ABI " + process.versions.modules + " " + process.platform + "-" + process.arch'
 
-REQUIRED_BETTER_SQLITE3_NATIVE="${RESOURCES_ROOT}/dist/native/better-sqlite3/build/Release/better_sqlite3.node"
+BETTER_SQLITE3_PREBUILD_NAME="darwin-$("${BUNDLED_NODE_PATH}" -p 'process.arch').node"
+REQUIRED_BETTER_SQLITE3_NATIVE="${RESOURCES_ROOT}/dist/native/better-sqlite3/prebuilds/${BETTER_SQLITE3_PREBUILD_NAME}"
 if [[ ! -f "${REQUIRED_BETTER_SQLITE3_NATIVE}" ]]; then
   echo "[verify-macos-release] missing bundled better-sqlite3 native file: ${REQUIRED_BETTER_SQLITE3_NATIVE}" >&2
   exit 1
 fi
 
 better_sqlite3_native_paths=("${REQUIRED_BETTER_SQLITE3_NATIVE}")
-OPTIONAL_BETTER_SQLITE3_NATIVE="${RESOURCES_ROOT}/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+OPTIONAL_BETTER_SQLITE3_NATIVE="${RESOURCES_ROOT}/node_modules/better-sqlite3/prebuilds/${BETTER_SQLITE3_PREBUILD_NAME}"
 if [[ -f "${OPTIONAL_BETTER_SQLITE3_NATIVE}" ]]; then
   better_sqlite3_native_paths+=("${OPTIONAL_BETTER_SQLITE3_NATIVE}")
 fi

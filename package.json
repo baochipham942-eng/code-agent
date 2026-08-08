@@ -228,7 +228,7 @@
     "ai": "^6.0.191",
     "avr-vad": "^1.0.10",
     "axios": "^1.16.1",
-    "better-sqlite3": "^12.10.0",
+    "better-sqlite3": "^13.0.3",
     "chalk": "^5.6.2",
     "cheerio": "^1.2.0",
     "chokidar": "^5.0.0",

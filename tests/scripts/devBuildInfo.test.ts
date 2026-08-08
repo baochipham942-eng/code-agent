@@ -78,7 +78,10 @@ describe('dev build-info install gate', () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'agent-neo-dev-resources-'));
     tempDirs.push(tempDir);
     const renderer = join(tempDir, 'dist/renderer/index.html');
-    const native = join(tempDir, 'dist/native/better-sqlite3/build/Release/better_sqlite3.node');
+    const native = join(
+      tempDir,
+      `dist/native/better-sqlite3/prebuilds/${process.platform}-${process.arch}.node`,
+    );
     mkdirSync(resolve(renderer, '..'), { recursive: true });
     mkdirSync(resolve(native, '..'), { recursive: true });
     writeFileSync(renderer, '<!doctype html>');

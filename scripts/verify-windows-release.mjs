@@ -53,7 +53,8 @@ function verifyPre() {
     hasRequiredControlPlanePublicKeys('dist/web/control-plane-public-keys.json'),
   );
   check('dist/renderer/index.html', existsAt('dist/renderer/index.html'));
-  check('dist/native/better-sqlite3 (system-node ABI rebuild)', existsAt('dist/native/better-sqlite3'));
+  check('dist/native/better-sqlite3/prebuilds/win32-x64.node (Node-API runtime)',
+    existsAt('dist/native/better-sqlite3/prebuilds/win32-x64.node'));
   check('scripts/rtk.exe', existsAt('scripts/rtk.exe'));
   check('scripts/uv.exe', existsAt('scripts/uv.exe'));
   check('node_modules/node-pty/prebuilds/win32-x64/conpty.node',
@@ -67,8 +68,8 @@ function verifyPre() {
   check('@img/sharp-win32-x64/lib/*.dll (libvips 静态包)', sharpFiles.some((f) => f.endsWith('.dll')),
     'win32 sharp 包应内含 libvips DLL');
 
-  check('node_modules/better-sqlite3/build/Release/better_sqlite3.node',
-    existsAt('node_modules/better-sqlite3/build/Release/better_sqlite3.node'));
+  check('node_modules/better-sqlite3/prebuilds/win32-x64.node',
+    existsAt('node_modules/better-sqlite3/prebuilds/win32-x64.node'));
   check('node_modules/keytar build 产物', existsAt('node_modules/keytar/build/Release/keytar.node')
     || existsAt('node_modules/keytar/prebuilds'));
 }

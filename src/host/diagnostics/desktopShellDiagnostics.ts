@@ -33,6 +33,14 @@ const BOOT_DIAGNOSTICS_FILE = 'desktop-shell-boot-latest.json';
 const BOOT_DIAGNOSTICS_PATH_ENV = 'AGENT_NEO_TAURI_BOOT_DIAGNOSTICS_FILE';
 const DEFAULT_WEB_PORT = PROD_WEB_PORT;
 
+function betterSqlite3PrebuildName(): string {
+  const report = process.report.getReport() as { header?: { glibcVersionRuntime?: string } };
+  const isMusl = process.platform === 'linux'
+    && !report.header?.glibcVersionRuntime;
+  const platform = isMusl ? 'linuxmusl' : process.platform;
+  return `${platform}-${process.arch}.node`;
+}
+
 /** 与 src-tauri/src/main.rs 的 SHELL_EVENTS_FILE 常量同名，两者写同一个 `<app_data_dir>/logs` 目录。 */
 export const DESKTOP_SHELL_EVENTS_FILE = 'desktop-shell-events.ndjson';
 export const DESKTOP_SHELL_BOOT_DIAGNOSTICS_FILE = BOOT_DIAGNOSTICS_FILE;
@@ -91,7 +99,7 @@ const RESOURCE_DEFINITIONS: ResourceDefinition[] = [
     label: 'better-sqlite3 native module',
     kind: 'native-module',
     required: true,
-    relativePath: ['dist', 'native', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'],
+    relativePath: ['dist', 'native', 'better-sqlite3', 'prebuilds', betterSqlite3PrebuildName()],
   },
 ];
 

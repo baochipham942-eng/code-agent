@@ -177,7 +177,7 @@ describe('macOS release fail-closed gates', () => {
     expect(verifyScript).toContain('LEGACY_RESOURCES_ROOT="${APP_RESOURCES_DIR}/_up_"');
     expect(verifyScript).toContain('RESOURCES_ROOT="${APP_RESOURCES_DIR}"');
     expect(verifyScript).toContain('dist/bundled-node/bin/node');
-    expect(verifyScript).toContain('dist/native/better-sqlite3/build/Release/better_sqlite3.node');
+    expect(verifyScript).toContain('dist/native/better-sqlite3/prebuilds/${BETTER_SQLITE3_PREBUILD_NAME}');
     expect(verifyScript).toContain('better-sqlite3 native loads with bundled Node ABI');
     expect(verifyScript).toContain('codesign --verify --deep --strict');
     expect(verifyScript).toContain('Authority=Developer ID Application:');
@@ -1010,6 +1010,7 @@ describe('macOS release fail-closed gates', () => {
     expect(sources.some((resource) => resource.includes('sharp-libvips-darwin-arm64'))).toBe(false);
     expect(sources).toContain('../node_modules/@img/sharp-win32-x64/package.json');
     expect(sources).toContain('../node_modules/@img/sharp-win32-x64/lib');
+    expect(sources).toContain('../node_modules/better-sqlite3/prebuilds/win32-x64.node');
     expect(sources).toContain('../scripts/rtk.exe');
     expect(targets).toContain('scripts/rtk.exe');
   });
@@ -1087,6 +1088,7 @@ describe('macOS release fail-closed gates', () => {
     expect(sources.some((resource) => resource.includes('darwin-arm64'))).toBe(false);
     expect(targets.some((resource) => resource.includes('darwin-arm64'))).toBe(false);
     expect(sources).toContain('../node_modules/node-pty/prebuilds/darwin-x64');
+    expect(sources).toContain('../node_modules/better-sqlite3/prebuilds/darwin-x64.node');
     expect(sources).toContain('../node_modules/@img/sharp-darwin-x64/package.json');
     expect(sources).toContain('../node_modules/@img/sharp-libvips-darwin-x64/package.json');
     expect(merged['../.tauri-resources.noindex/scripts/Agent Neo Computer Use.app'])
@@ -1172,7 +1174,7 @@ describe('macOS release fail-closed gates', () => {
 
     expect(sources).toContain('../node_modules/better-sqlite3/package.json');
     expect(sources).toContain('../node_modules/better-sqlite3/lib');
-    expect(sources).toContain('../node_modules/better-sqlite3/build/Release/better_sqlite3.node');
+    expect(sources).toContain('../node_modules/better-sqlite3/prebuilds/darwin-arm64.node');
     expect(sources.some((resource) => resource.includes('node_modules/better-sqlite3/deps'))).toBe(false);
     expect(sources.some((resource) => resource.includes('node_modules/better-sqlite3/src'))).toBe(false);
     expect(sources.some((resource) => resource === '../node_modules/better-sqlite3')).toBe(false);

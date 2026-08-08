@@ -179,16 +179,29 @@ export function createAgentDurableRouteRunLifecycle(
   return new AgentDurableRouteRunLifecycle(deps);
 }
 
+/**
+ * agent/run 现在能不能接单——**唯一判据**。
+ *
+ * durable 就绪是 fire-and-forget 设在 capabilityBootstrap 之后的（webServer.ts），
+ * 而 startup token 早在那之前就打出来了。/api/health 的 `durableRunReady` 与这里
+ * 共用同一个谓词，别在两处各写一遍条件（写两遍必漂移）。
+ */
+export function isDurableRunGateOpen(
+  rollout: { policy: DurableRunRolloutPolicy; ready: boolean } | undefined,
+): boolean {
+  return !(rollout?.policy.durableActivation && !rollout.ready);
+}
+
 export function resolveAgentDurableActivation(
   deps: AgentDurableRouteDeps,
   res: Response,
 ): boolean | null {
   const rollout = deps.getDurableRunRollout?.();
-  if (rollout?.policy.durableActivation && !rollout.ready) {
+  if (!isDurableRunGateOpen(rollout)) {
     res.status(503).json({
       error: 'Durable Run persistence is unavailable',
       code: 'DURABLE_RUN_ROLLOUT_UNAVAILABLE',
-      rolloutMode: rollout.policy.mode,
+      rolloutMode: rollout?.policy.mode,
     });
     return null;
   }

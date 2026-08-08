@@ -41,7 +41,7 @@ import { describeChildExit, isAbnormalExit, isChildGone } from './childProcessSt
 // 配置
 // ----------------------------------------------------------------------------
 
-// 主模型默认跟随 app 当前配置的默认 provider（~/.code-agent/settings.json 的 models.defaultProvider），
+// 主模型默认跟随 app 当前配置的默认 provider（~/.code-agent/config.json 的 models.defaultProvider），
 // 不再写死——这样 E2E 始终用爸设置里的默认（现在是 xiaomi/mimo），切谁跟谁，不用每次手挑 key。
 // 仍可用 ROLE_E2E_PROVIDER / ROLE_E2E_MODEL / ROLE_E2E_API_KEY 显式覆盖。
 // 注意：Groq 免费档单请求 12k tokens 上限 < agent loop 单请求 ~20k tokens，不能当主模型，
@@ -50,33 +50,73 @@ import { describeChildExit, isAbnormalExit, isChildGone } from './childProcessSt
 const PROVIDER_DEFAULT_MODEL: Record<string, string> = {
   xiaomi: 'mimo-v2.5-pro',
   zhipu: 'glm-5',
-  deepseek: 'deepseek-chat',
+  // 与 config.json 的 deepseek 条目对齐（api.deepseek.com 现在只认 v4-pro / v4-flash，
+  // 老别名 deepseek-chat 虽仍被解析成 v4-flash，但按真实默认写才不会误导）
+  deepseek: 'deepseek-v4-flash',
   moonshot: 'kimi-k2.5',
   groq: 'llama-3.3-70b-versatile',
 };
 
-/** 读 app 配置的默认 provider/model（跟随 settings.json，读不到则回落 zhipu/glm-5）。 */
+/**
+ * 读 app 配置的默认 provider/model（读不到或不受支持则回落 zhipu/glm-5）。
+ *
+ * 配置权威是 `<数据目录>/config.json`（`configService.ts` 里 `configPath` 写死的那份），
+ * **不是 settings.json**——后者是另一套东西、早已 stale（2026-08-08 实测：settings.json
+ * 停在 custom-100xlabs，而 app 真在用的 config.json 是 custom-tokenrhythm）。
+ * 读错文件的后果不是报错而是**静默跟随一个没人用的 provider**。
+ *
+ * 本脚本的 key 只能从 `~/.code-agent/.env` 的 `<PROVIDER>_API_KEY` 取，所以只跟随
+ * 下面这张表里的内置 provider；app 默认是 `custom-*`（key 在 SecureStorage/config.json 里）
+ * 时跟不了，明确说一声再回落，别让 prepareEnvFile 到后面才抛一个看不懂的错。
+ */
 function readConfiguredDefault(): { provider: string; model: string } {
+  const FALLBACK = { provider: 'zhipu', model: 'glm-5' };
   try {
-    const settingsPath = path.join(os.homedir(), '.code-agent', 'settings.json');
-    const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
-    const provider: string | undefined = settings?.models?.defaultProvider;
-    if (provider) {
-      const model =
-        settings?.models?.providers?.[provider]?.model ||
-        PROVIDER_DEFAULT_MODEL[provider] ||
-        '';
-      if (model) return { provider, model };
+    const configPath = path.join(os.homedir(), '.code-agent', 'config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    const provider: string | undefined = config?.models?.defaultProvider;
+    if (!provider) return FALLBACK;
+    if (!(provider in PROVIDER_DEFAULT_MODEL)) {
+      // ROLE_E2E_PROVIDER 已经显式指定时这条回落根本不会被用到，别打出来误导
+      // （实测日志里先说「回落 zhipu/glm-5」下一行又说「主模型 deepseek」，读的人要愣一下）
+      if (process.env.ROLE_E2E_PROVIDER) return FALLBACK;
+      console.warn(
+        `[setup] app 默认 provider 是 ${provider}，本脚本只支持从 .env 取 key 的内置 provider`
+        + `（${Object.keys(PROVIDER_DEFAULT_MODEL).join(', ')}）⇒ 回落 ${FALLBACK.provider}/${FALLBACK.model}。`
+        + '要指定别的用 ROLE_E2E_PROVIDER / ROLE_E2E_MODEL / ROLE_E2E_API_KEY。',
+      );
+      return FALLBACK;
     }
+    const model = config?.models?.providers?.[provider]?.model || PROVIDER_DEFAULT_MODEL[provider];
+    if (model) return { provider, model };
   } catch {
-    // settings 读不到/解析失败 → 回落
+    // config.json 读不到/解析失败 → 回落
   }
-  return { provider: 'zhipu', model: 'glm-5' };
+  return FALLBACK;
 }
 
 const configuredDefault = readConfiguredDefault();
 const MAIN_PROVIDER = process.env.ROLE_E2E_PROVIDER || configuredDefault.provider;
-const MAIN_MODEL = process.env.ROLE_E2E_MODEL || configuredDefault.model;
+
+/**
+ * model 必须跟着 provider 走。
+ *
+ * 老写法是 `ROLE_E2E_MODEL || configuredDefault.model` —— 两个值各自独立解析，
+ * 于是**只覆盖 ROLE_E2E_PROVIDER 时会把另一个 provider 的模型名发出去**，
+ * 上游直接拒（2026-08-08 实测：provider=deepseek 配上回落来的 glm-5 →
+ * "The supported API model names are deepseek-v4-pro or deepseek-v4-flash,
+ * but you passed glm-5"，四个场景会一个不落地全 FAIL，而且报错长得不像配置问题）。
+ */
+function resolveMainModel(provider: string): string {
+  if (process.env.ROLE_E2E_MODEL) return process.env.ROLE_E2E_MODEL;
+  if (provider === configuredDefault.provider) return configuredDefault.model;
+  const derived = PROVIDER_DEFAULT_MODEL[provider];
+  if (derived) return derived;
+  throw new Error(
+    `ROLE_E2E_PROVIDER=${provider} 没有对应的默认模型，请同时设置 ROLE_E2E_MODEL`,
+  );
+}
+const MAIN_MODEL = resolveMainModel(MAIN_PROVIDER);
 const RUN_TIMEOUT_MS = 360_000; // 单次 agent run 上限（含 Groq 免费档限流重试的余量）
 const WRITE_BACK_POLL_MS = 120_000; // 写回是异步的，最多等这么久（含限流重试余量）
 /** 场景之间的间歇，给 Groq 免费档 TPM 限流留恢复窗口 */
@@ -155,9 +195,13 @@ async function waitForServer(server: StartedServer, port: number): Promise<void>
       server.token = token;
       try {
         const response = await fetch(`${server.baseUrl}/api/health`);
-        const health = await response.json() as { status?: string };
-        if (response.ok && health.status === 'ok') return;
-        lastError = JSON.stringify(health);
+        const health = await response.json() as { status?: string; durableRunReady?: boolean };
+        // startup token + status:'ok' 只证明**进程起来了**。durable 就绪排在
+        // capabilityBootstrap 之后异步完成，这段窗口里 agent/run 一律
+        // 503 DURABLE_RUN_ROLLOUT_UNAVAILABLE。判据必须锚服务能力。
+        if (response.ok && health.status === 'ok' && health.durableRunReady === true) return;
+        lastError = `health=${JSON.stringify(health)}（durableRunReady 必须为 true；`
+          + '若该字段缺失，说明 dist/web 是加这个字段之前的旧构建，先跑 npm run build:web）';
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
       }

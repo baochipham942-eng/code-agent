@@ -13,6 +13,7 @@ interface HealthDeps {
   handlers: Map<string, HandlerFn>;
   getBuildInfo: () => BuildInfo | null;
   getPersistenceHealth: () => PersistenceHealth;
+  getDurableRunReady: () => boolean;
   getRendererServeDecision?: () => RendererServeDecision | null;
 }
 
@@ -32,6 +33,7 @@ export function createHealthRouter(deps: HealthDeps): Router {
       tauriBootToken: process.env.CODE_AGENT_TAURI_BOOT_TOKEN || null,
       build: deps.getBuildInfo(),
       persistence: deps.getPersistenceHealth(),
+      durableRunReady: deps.getDurableRunReady(),
       rendererServe: deps.getRendererServeDecision?.() ?? null,
     };
     res.json(payload);

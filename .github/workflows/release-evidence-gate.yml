@@ -3,30 +3,28 @@ name: Release Evidence Producer Gate
 # 独立门：paths 是 workflow 级过滤条件。把这些发版证据脚本并进 swarm-ci.yml，
 # 会让一批纯脚本 PR 触发整套 Swarm CI；这里用窄 workflow 覆盖证据产出器、共享依赖和
 # 校验器，只验证类型与静态/单元合同。证据新鲜度属于 tag 发版闸，不适合 PR 常驻检查。
+#
+# paths 由 scripts/lib/releaseEvidenceRegistry.ts 派生，**不要手写**：
+#   npm run check:release-evidence-registry -- --write
+# 手写清单的失效方式是注定的——新增第四个证据门时漏掉一处。范围取整个 scripts/**
+# 而不是逐个列产出脚本，因为门要在「新增了还没登记的产出脚本」时就触发，
+# 枚举清单永远追不上一个还没被写出来的文件。
 
 on:
   pull_request:
     branches: [main]
     paths:
-      - 'scripts/perf/long-session-browser-smoke.ts'
-      - 'scripts/acceptance/tool-cancel-smoke.ts'
-      - 'scripts/acceptance/agent-runtime-app-host-smoke.ts'
-      - 'scripts/acceptance/childProcessState.ts'
-      - 'scripts/acceptance/_helpers.ts'
-      - 'scripts/acceptance/browser-computer-system-chrome.ts'
-      - 'scripts/check-provider-runtime-release-evidence.ts'
+      # BEGIN generated-paths (scripts/lib/releaseEvidenceRegistry.ts)
+      - 'scripts/**'
       - '.github/workflows/release-evidence-gate.yml'
+      # END generated-paths
   push:
     branches: [main]
     paths:
-      - 'scripts/perf/long-session-browser-smoke.ts'
-      - 'scripts/acceptance/tool-cancel-smoke.ts'
-      - 'scripts/acceptance/agent-runtime-app-host-smoke.ts'
-      - 'scripts/acceptance/childProcessState.ts'
-      - 'scripts/acceptance/_helpers.ts'
-      - 'scripts/acceptance/browser-computer-system-chrome.ts'
-      - 'scripts/check-provider-runtime-release-evidence.ts'
+      # BEGIN generated-paths (scripts/lib/releaseEvidenceRegistry.ts)
+      - 'scripts/**'
       - '.github/workflows/release-evidence-gate.yml'
+      # END generated-paths
   workflow_dispatch:
 
 concurrency:
@@ -54,8 +52,12 @@ jobs:
       - name: Typecheck ratchet (tests + scripts)
         run: node scripts/tsc-tests-ratchet.mjs
 
+      - name: Release evidence registry (fail-closed on unregistered producers)
+        run: npm run check:release-evidence-registry
+
       - name: Release evidence and child-process contracts
         run: >-
           npx vitest run
+          tests/scripts/releaseEvidenceRegistry.test.ts
           tests/scripts/checkProviderRuntimeReleaseEvidence.test.ts
           tests/scripts/childProcessState.test.ts

@@ -229,17 +229,6 @@ vi.mock('../../../src/host/agent/agentRequirementsAnalyzer', async (importOrigin
   };
 });
 
-vi.mock('../../../src/host/routing/intentClassifier', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../../src/host/routing/intentClassifier')>();
-  return {
-    ...original,
-    classifyIntent: vi.fn(async () => ({
-      intent: 'code',
-      references_past_context: false,
-    })),
-  };
-});
-
 import { AgentAppServiceImpl } from '../../../src/host/app/agentAppService';
 import { registerDesktopQueuedInputDrain } from '../../../src/host/app/desktopQueuedInputDrain';
 import type { ModelRouter } from '../../../src/host/model/modelRouter';

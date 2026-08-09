@@ -35,10 +35,8 @@ import { getSessionManager } from '../services';
 import type { PlanningService } from '../planning';
 import { DeepResearchMode, SemanticResearchOrchestrator } from '../research';
 import { analyzeTask } from './hybrid/taskRouter';
-import { classifyIntent, needsLlmIntentClassification } from '../routing/intentClassifier';
 import { getSessionStateManager } from '../session/sessionStateManager';
 import { getContextHealthService } from '../context/contextHealthService';
-import { ModelRouter } from '../model/modelRouter';
 import { generateMessageId, generatePermissionRequestId } from '../../shared/utils/id';
 import { buildGoalSeedTodos } from '../../shared/utils/goalTodos';
 import { createLogger } from '../services/infra/logger';
@@ -315,25 +313,6 @@ export class AgentOrchestrator {
       if (!options?.disableAutoAgent && analysis.taskType === 'research') {
         logger.info('Auto-detected research task (keyword match), routing to deep research pipeline');
         await this.runDeepResearchMode(content, options, sessionAwareOnEvent, modelConfig);
-      } else if (
-        !options?.disableAutoAgent
-        &&
-        !['code', 'data', 'ppt', 'image', 'video'].includes(analysis.taskType)
-        && needsLlmIntentClassification(content)
-      ) {
-        try {
-          const modelRouter = new ModelRouter();
-          const intent = await classifyIntent(content, modelRouter);
-          if (intent.intent === 'research') {
-            logger.info('Auto-detected research task (LLM classification), routing to deep research pipeline');
-            await this.runDeepResearchMode(content, options, sessionAwareOnEvent, modelConfig);
-          } else {
-            await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined, options);
-          }
-        } catch (error) {
-          logger.warn('LLM intent classification failed, falling back to normal mode', { error: String(error) });
-          await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined, options);
-        }
       } else {
         await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined, options);
       }

@@ -40,7 +40,7 @@ Goal 完成链路新增一层可核验合同：
 │  1. 创建 User Message { id, role: 'user', content, timestamp }              │
 │  2. 获取 ModelConfig (Provider + Model + API Key)                           │
 │  3. Combo Recording: 自动记录工具调用序列                                    │
-│  4. 路由决策: 意图分类 → 模型路由 → 创建 AgentLoop                          │
+│  4. 路由决策: 显式 ModeSwitch / 研究关键词 → 创建 DeepResearch 或 AgentLoop │
 │  5. steer() 支持: 实时重定向运行中的 Loop                                   │
 └────────┬────────────────────────────────────────────────────────────────────┘
          │
@@ -105,10 +105,8 @@ import type { IpcMain } from '../platform';
 - 处理代际切换
 - **Combo 录制**: 每次 `sendMessage` 自动录制工具调用序列
 - **实时转向**: `steer()` 支持运行中重定向
-- **路由决策**: 两层意图分类 → Deep Research / Semantic Research / Auto Agent / 普通 Loop
-  - **L1 正则快速路径**: taskRouter `analyzeTask()` 关键词匹配（深入研究/deep research/实现/重构等）
-  - **L2 LLM 分类 fallback**: taskType 为 `'unknown'`（未被正则捕获）时调用 `classifyIntent()` (GLM-4-Flash, 3s 超时)
-  - 正则确定性高但覆盖有限，LLM 分类处理模糊表达（"帮我看看这个行业"等）
+- **路由决策**: 用户显式选择 ModeSwitch 的「深度研究」，或 taskRouter `analyzeTask()` 命中研究关键词时进入 Deep Research；其他请求进入普通 Loop。
+  - 普通 Loop 中由模型按任务进展选择 `web_search` 的 `mode`（如 `research`）和搜索轮数。
 
 **关键方法**:
 ```typescript
@@ -116,7 +114,7 @@ sendMessage(content: string, attachments?, options?): Promise<void>
   ├─ 创建 user message（支持 MessageAttachment）
   ├─ Combo recording: startRecording + markTurn
   ├─ 获取 ModelConfig（含 session override）
-  ├─ 两层意图分类 → 路由决策（L1 正则 → L2 LLM fallback）
+  ├─ 显式 ModeSwitch / `analyzeTask()` 研究关键词 → Deep Research；其他进入 AgentLoop
   └─ 创建 AgentLoop → run()
 
 steer(newMessage: string, clientMessageId?, attachments?, metadata?): Promise<void>
@@ -738,7 +736,7 @@ GAP-009 的"落盘后截断"进一步升级为**可寻址归档 + 按需回水**
 |------|------|------|
 | `TelemetryCollector` | `telemetryCollector.ts` | 事件采集、缓冲、TelemetryAdapter 工厂 |
 | `TelemetryStorage` | `telemetryStorage.ts` | SQLite 持久化（CLI 模式下 DB 不可用时静默跳过） |
-| `intentClassifier` | `intentClassifier.ts` | 意图分类（3s 超时）+ 结果评估 |
+| `intentClassifier` | `intentClassifier.ts` | 规则意图打标 + 结果评估，写入 `telemetry_turns.intent_primary` |
 | `systemPromptCache` | `systemPromptCache.ts` | 系统提示缓存，避免重复构建 |
 
 ---

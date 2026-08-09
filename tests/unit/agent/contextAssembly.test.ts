@@ -40,17 +40,6 @@ const serviceMocks = vi.hoisted(() => ({
 const archiveHydrationMocks = vi.hoisted(() => ({
   readToolResultArchive: vi.fn(),
 }));
-const intentClassifierMocks = vi.hoisted(() => ({
-  classifyIntent: vi.fn().mockResolvedValue({
-    intent: 'general',
-    references_past_context: false,
-  }),
-}));
-
-vi.mock('../../../src/host/routing/intentClassifier', () => ({
-  classifyIntent: intentClassifierMocks.classifyIntent,
-}));
-
 // checkpointWriterService 的可注入 holder（audit C-H3 测试用）：默认透传真实单例，
 // 单个测试可临时替换实例，afterEach 清空
 const checkpointWriterHolder = vi.hoisted(() => ({ instance: undefined as unknown }));
@@ -510,11 +499,6 @@ beforeEach(() => {
   serviceMocks.sessionManager.addMessageToSession.mockClear();
   serviceMocks.sessionManager.replaceMessages.mockClear();
   archiveHydrationMocks.readToolResultArchive.mockReset();
-  intentClassifierMocks.classifyIntent.mockReset();
-  intentClassifierMocks.classifyIntent.mockResolvedValue({
-    intent: 'general',
-    references_past_context: false,
-  });
   vi.mocked(getPromptForTask).mockReset();
   vi.mocked(getPromptForTask).mockReturnValue('system prompt');
   vi.mocked(needsArtifactTaskBrief).mockReset();
@@ -748,7 +732,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(modelMessages[0].role).toBe('system');
     expect(systemPrompt.indexOf('<memory_index>')).toBeGreaterThanOrEqual(0);
     expect(modelMessages.slice(1).map((message) => String(message.content)).join('\n')).not.toContain('<memory_index>');
-    expect(intentClassifierMocks.classifyIntent).not.toHaveBeenCalled();
     expect(listMemoryInjectionTraces({ sessionId: 'session-memory-index' })).toContainEqual(
       expect.objectContaining({
         blockType: 'memory_index',
@@ -779,7 +762,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(allContent).not.toContain('<memory_hint>');
     expect(allContent).not.toContain('- must not inject');
     expect(buildRecentConversationsBlock).not.toHaveBeenCalled();
-    expect(intentClassifierMocks.classifyIntent).not.toHaveBeenCalled();
     expect(listMemoryInjectionTraces({ sessionId: 'session-memory-no-hint' })).not.toContainEqual(
       expect.objectContaining({ blockType: 'memory_hint' }),
     );
@@ -798,7 +780,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const modelMessages = await new ContextAssembly(ctx as never).buildModelMessages();
     const allContent = modelMessages.map((message) => String(message.content)).join('\n');
 
-    expect(intentClassifierMocks.classifyIntent).not.toHaveBeenCalled();
     expect(loadMemoryIndex).not.toHaveBeenCalled();
     expect(buildRecentConversationsBlock).not.toHaveBeenCalled();
     expect(allContent).not.toContain('<memory_index>');

@@ -84,7 +84,7 @@ let narrations: VoiceWorkNarration[];
 
 function spawn(index: number, laneKey = `lane-${index}`, submissionKey = `turn-${index}`) {
   return dispatchVoiceIntent({
-    kind: 'spawn_task',
+    kind: 'delegate_task',
     title: `任务${index}`,
     shortName: `短名${index}`,
     laneKey,
@@ -150,6 +150,21 @@ describe('voice multi-slot coordinator', () => {
 
     expect(runtime.startBackgroundTask).toHaveBeenCalledTimes(1);
     expect(reply).toContain('reused');
+  });
+
+  // 账本用终态决定同一 submissionKey 还能不能重试，而这里是语音侧唯一的 settle 调用点：
+  // 它曾经不传终态、吃 settle 的 'completed' 默认值，于是**失败的语音任务被记成成功**，
+  // 从此不可重试。参数已改必填 + 四态映射三态，这条钉住行为侧。
+  it('a failed voice task stays retryable under the same submission key', async () => {
+    await spawn(1, 'report', 'same-turn');
+    expect(runtime.startBackgroundTask).toHaveBeenCalledTimes(1);
+    const firstId = runtime.startBackgroundTask.mock.calls[0][0] as string;
+
+    runtime.emit('task_error', firstId, { error: '上游超时' });
+    await vi.waitFor(() => expect(latest(firstId)).toMatchObject({ status: 'failed' }));
+
+    await spawn(2, 'report', 'same-turn');
+    expect(runtime.startBackgroundTask).toHaveBeenCalledTimes(2);
   });
 
   it('cancels one task by short name without touching its sibling', async () => {

@@ -67,7 +67,7 @@ describe('backgroundTaskSessionContext', () => {
           role: 'assistant',
           content: '交给后台',
           timestamp: 4,
-          toolCalls: [{ id: 'spawn-call', name: 'spawn_task', arguments: { prompt: '调研 Vue' } }],
+          toolCalls: [{ id: 'spawn-call', name: 'delegate_task', arguments: { prompt: '调研 Vue' } }],
         },
         {
           id: 'dispatch-result',

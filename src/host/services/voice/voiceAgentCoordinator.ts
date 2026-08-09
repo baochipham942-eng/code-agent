@@ -5,7 +5,7 @@
 // 派活/改方向/叫停、work item 生命周期回流全部收在这一个文件里。
 //
 // 为什么派活要走 TaskManager.startTask 而不是 orchestrator.sendMessage（批 H 的根因修）：
-//   批 A 的 spawn_task 直接 getOrCreateCurrentOrchestrator().sendMessage()，**绕开了
+//   批 A 的 delegate_task 直接 getOrCreateCurrentOrchestrator().sendMessage()，**绕开了
 //   TaskManager 的状态机**——sessionStates 里这条会话始终是 idle。后果是
 //   TaskManager.cancelTask() 看到 idle 直接 warn 后返回（叫停无效），
 //   interruptAndContinue() 看到非 running 会 fallthrough 成 startTask（「改方向」变成
@@ -84,7 +84,7 @@ export type VoiceIntent = { origin?: VoiceToolCallOrigin } & (
    * 与 steer_task（改方向、不弃活）是两件事，路由判别写在 voiceRouting 的 prompt 里。
    */
   | {
-      kind: 'spawn_task';
+      kind: 'delegate_task';
       title: string;
       prompt: string;
       shortName?: string;
@@ -297,7 +297,7 @@ export function setVoiceDispatchFocus(focus: VoiceFocusContext | null): void {
 /**
  * 一条 final 字幕进近窗（P0-2，2026-07-28）。
  *
- * 为什么执行侧要拿原文而不是只拿 brain 改写的 prompt：`spawn_task(prompt)` 是通话 brain
+ * 为什么执行侧要拿原文而不是只拿 brain 改写的 prompt：`delegate_task(prompt)` 是通话 brain
  * **改写**出来的，改写会丢信息，而且「改写正确」是这条链上唯一的一条路——它一失手，
  * 用户说的话就再也到不了执行侧。Codex Desktop 的做法是 handoff 载荷同时带
  * `<input>`（意图）和 `<transcript_delta>`（近窗带噪原文），把意图重建的责任从断句层
@@ -427,7 +427,12 @@ function settle(
     state.runConclusions.get(id),
   );
   getPermissionModeManager().clearLiveVoiceSession(state.neoSessionId, runHoldId(id));
-  const startable = state.slots.settle(id);
+  // 语音的终态四档要映射到账本的三档：只有真正做完（done/unverified）才算 completed，
+  // 否则 failed/cancelled 必须如实落账——账本据此决定同 submissionKey 能不能重试。
+  const startable = state.slots.settle(
+    id,
+    status === 'failed' ? 'failed' : status === 'cancelled' ? 'cancelled' : 'completed',
+  );
   state.pendingStartedAtById.delete(id);
   state.runRequests.delete(id);
   state.runConclusions.delete(id);
@@ -791,8 +796,8 @@ export async function dispatchVoiceIntent(intent: VoiceIntent): Promise<string> 
       return describeFocusedFiles(state);
     case 'capture_screen':
       return captureScreenContext(state);
-    case 'spawn_task':
-      return spawnTask(
+    case 'delegate_task':
+      return delegateTask(
         state,
         intent.title,
         intent.prompt,
@@ -991,7 +996,7 @@ async function startRun(
 // （那条链还会把一段内部指令 prompt 显示给用户看）。
 // 保留的是「已派出任务的挂断后通知」与近窗字幕注入普通派活——它们与本条无关。
 
-async function spawnTask(
+async function delegateTask(
   state: LedgerState,
   title: string,
   prompt: string,
@@ -1137,8 +1142,8 @@ function screenCapturedSpeech(capture: AppshotCapture): string {
   return [
     `已经拍下用户此刻的屏幕${frontmost}。`,
     '**这张图不会给你看**：你不知道画面里有什么，不要描述它，也不要说「我看到…」。',
-    '它会自动跟着你下一次 spawn_task / steer_task 交给执行侧，由执行侧去看图。',
-    '所以：用户要你就这张图做点什么，直接调 spawn_task 把事情派出去（图会自己带上，不用你转述画面）；',
+    '它会自动跟着你下一次 delegate_task / steer_task 交给执行侧，由执行侧去看图。',
+    '所以：用户要你就这张图做点什么，直接调 delegate_task 把事情派出去（图会自己带上，不用你转述画面）；',
     '他只是先让你知道他在看什么，就说「我拍下来了，你要我做什么？」。',
   ].join('\n');
 }

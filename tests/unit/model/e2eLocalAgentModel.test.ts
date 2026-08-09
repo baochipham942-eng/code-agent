@@ -43,8 +43,8 @@ const taskManagerTool: ToolDefinition = {
   permissionLevel: 'write',
 };
 
-const spawnTaskTool: ToolDefinition = {
-  name: 'spawn_task',
+const delegateTaskTool: ToolDefinition = {
+  name: 'delegate_task',
   description: 'Spawn a background task',
   inputSchema: { type: 'object', properties: {} },
   requiresPermission: false,
@@ -95,13 +95,13 @@ describe('e2eLocalAgentModel', () => {
   it('drives foreground command-center dispatch and live status through real tools', () => {
     const first = buildE2ELocalAgentModelResponse(
       [{ role: 'user', content: 'E2E_SESSION_COMMAND_CENTER SPAWN' }],
-      [spawnTaskTool, taskStatusTool, steerTaskTool],
+      [delegateTaskTool, taskStatusTool, steerTaskTool],
       config,
     );
     expect(first.type).toBe('tool_use');
     expect(first.toolCalls?.[0]).toMatchObject({
       id: 'e2e-command-center-spawn',
-      name: 'spawn_task',
+      name: 'delegate_task',
       arguments: {
         short_name: '项目身份',
         lane_key: 'acceptance-read',
@@ -113,7 +113,7 @@ describe('e2eLocalAgentModel', () => {
         { role: 'user', content: 'E2E_SESSION_COMMAND_CENTER SPAWN' },
         { role: 'tool', toolCallId: 'e2e-command-center-spawn', content: 'accepted：后台任务已开始。' },
       ],
-      [spawnTaskTool, taskStatusTool, steerTaskTool],
+      [delegateTaskTool, taskStatusTool, steerTaskTool],
       config,
     );
     expect(accepted.type).toBe('text');
@@ -121,7 +121,7 @@ describe('e2eLocalAgentModel', () => {
 
     const status = buildE2ELocalAgentModelResponse(
       [{ role: 'user', content: 'E2E_SESSION_COMMAND_CENTER STATUS' }],
-      [spawnTaskTool, taskStatusTool, steerTaskTool],
+      [delegateTaskTool, taskStatusTool, steerTaskTool],
       config,
     );
     expect(status.toolCalls?.[0]).toMatchObject({
@@ -132,18 +132,18 @@ describe('e2eLocalAgentModel', () => {
 
     const second = buildE2ELocalAgentModelResponse(
       [{ role: 'user', content: 'E2E_SESSION_COMMAND_CENTER SECOND' }],
-      [spawnTaskTool, taskStatusTool, steerTaskTool],
+      [delegateTaskTool, taskStatusTool, steerTaskTool],
       config,
     );
     expect(second.toolCalls?.[0]).toMatchObject({
       id: 'e2e-command-center-second',
-      name: 'spawn_task',
+      name: 'delegate_task',
       arguments: { short_name: '审批任务', prompt: 'E2E_BACKGROUND_APPROVAL' },
     });
 
     const steer = buildE2ELocalAgentModelResponse(
       [{ role: 'user', content: 'E2E_SESSION_COMMAND_CENTER STEER' }],
-      [spawnTaskTool, taskStatusTool, steerTaskTool],
+      [delegateTaskTool, taskStatusTool, steerTaskTool],
       config,
     );
     expect(steer.toolCalls?.[0]).toMatchObject({
@@ -180,7 +180,7 @@ describe('e2eLocalAgentModel', () => {
         { role: 'user', content: 'E2E_BACKGROUND_APPROVAL' },
         { role: 'user', content: 'E2E_SESSION_COMMAND_CENTER STATUS' },
       ],
-      [askUserQuestionTool, spawnTaskTool, taskStatusTool],
+      [askUserQuestionTool, delegateTaskTool, taskStatusTool],
       config,
     );
     expect(foregroundStatus.toolCalls?.[0]).toMatchObject({

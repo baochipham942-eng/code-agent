@@ -35,6 +35,10 @@ describe('RunContext', () => {
     expect(Object.isFrozen(context)).toBe(true);
     expect(Reflect.set(context, 'cwd', '/tmp/other-workspace')).toBe(false);
     expect(context.cwd).toBe(resolveCanonicalRunPath('/tmp/native-run-workspace'));
+    // 丙案：没有显式 Project Source 时，**校验通过的** workspace 仍然成为写边界
+    // （/tmp/native-run-workspace 是具体目录，不是 $HOME / 数据目录 / 敏感目录的祖先）。
+    // 「太宽就没有写边界」那三类各有专门用例，见 commandCenterWorkspaceAuthority.test.ts。
+    expect(context.workspaceScope?.primaryRoot).toBe(context.workspace);
   });
 
   it('rejects an explicit runId that reuses the sessionId', () => {

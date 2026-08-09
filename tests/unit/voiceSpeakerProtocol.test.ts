@@ -133,7 +133,7 @@ function bind(activeAgentId?: string): void {
 
 async function spawn(title = '建个文件'): Promise<void> {
   runtime.status = 'idle';
-  await dispatchVoiceIntent({ kind: 'spawn_task', title, prompt: '建一个 a.txt' });
+  await dispatchVoiceIntent({ kind: 'delegate_task', title, prompt: '建一个 a.txt' });
 }
 
 /**
@@ -385,19 +385,19 @@ describe('④ prompt 不许把分层暴露给用户', () => {
   });
 
   it('多任务只能在每次工具成功后承诺已派发', () => {
-    expect(instructions).toContain('本轮第一个输出必须是 spawn_task function call');
-    expect(instructions).toContain('每件事分别调用一次 spawn_task');
+    expect(instructions).toContain('本轮第一个输出必须是 delegate_task function call');
+    expect(instructions).toContain('每件事分别调用一次 delegate_task');
     expect(instructions).toContain('工具没返回成功就必须如实说没有派出');
   });
 
   it('派发与已派任务的控制指令升级为 required，否定和讨论保持 auto', () => {
     expect(requiresVoiceActionTool('请立即调用英文名 spawn task 的派发任务工具')).toBe(true);
-    expect(requiresVoiceActionTool('请再使用 spawn_task 派一件活')).toBe(true);
+    expect(requiresVoiceActionTool('请再使用 delegate_task 派一件活')).toBe(true);
     expect(requiresVoiceActionTool('查询那件继续改成跳过等待')).toBe(true);
     expect(requiresVoiceActionTool('报告那件现在怎么样了')).toBe(true);
     expect(requiresVoiceActionTool('停掉一个任务')).toBe(true);
     expect(requiresVoiceActionTool('不要调用 spawn task')).toBe(false);
-    expect(requiresVoiceActionTool('spawn_task 是什么')).toBe(false);
+    expect(requiresVoiceActionTool('delegate_task 是什么')).toBe(false);
   });
 
   it('明确的语音控制语句由 Host 确定性路由，并保留短名目标', () => {

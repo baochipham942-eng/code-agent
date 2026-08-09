@@ -54,13 +54,13 @@ function seedFailedToolCall(): void {
       now,
       JSON.stringify([{
         id: `${SESSION_ID}-tc`,
-        name: 'spawn_task',
+        name: 'delegate_task',
         arguments: { title: '组头对齐验收', short_name: '验收' },
       }]),
       JSON.stringify([{
         toolCallId: `${SESSION_ID}-tc`,
         success: false,
-        error: '工具 "spawn_task" 参数校验失败（1 处问题）',
+        error: '工具 "delegate_task" 参数校验失败（1 处问题）',
         duration: 1200,
       }]),
     );

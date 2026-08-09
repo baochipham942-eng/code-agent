@@ -61,7 +61,7 @@ describe('getDeferredToolsSummary MCP name index (GAP-008)', () => {
   // 模型物理上加载不了任何延迟工具——继续宣传"用 ToolSearch 加载 X"只会诱导模型
   // 反复尝试一条走不通的路（2026-08-07 排查报告 §2/§7.4-1）。
   it('suppresses the entire summary when an allowlist is active without ToolSearch', () => {
-    const summary = getDeferredToolsSummary([], ['spawn_task', 'steer_task', 'cancel_task', 'task_status', 'AskUserQuestion']);
+    const summary = getDeferredToolsSummary([], ['delegate_task', 'steer_task', 'cancel_task', 'task_status', 'AskUserQuestion']);
 
     expect(summary).toBe('');
   });

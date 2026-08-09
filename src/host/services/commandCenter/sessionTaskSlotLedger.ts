@@ -4,6 +4,7 @@ import {
 } from '../../../shared/constants/voice';
 
 type SessionTaskSlotStatus = 'queued' | 'running' | 'settled';
+type SessionTaskTerminalStatus = 'completed' | 'failed' | 'cancelled';
 
 export interface SessionTaskSlotInput {
   workItemId: string;
@@ -14,6 +15,8 @@ export interface SessionTaskSlotInput {
 
 export interface SessionTaskSlot extends SessionTaskSlotInput {
   status: SessionTaskSlotStatus;
+  attempt: number;
+  terminalStatus?: SessionTaskTerminalStatus;
 }
 
 export type SessionTaskAdmission =
@@ -51,6 +54,7 @@ export class SessionTaskConcurrencyPool {
 export class SessionTaskSlotLedger {
   private readonly slots = new Map<string, SessionTaskSlot>();
   private readonly workItemIdBySubmissionKey = new Map<string, string>();
+  private readonly attemptsBySubmissionKey = new Map<string, number>();
   private readonly queue: string[] = [];
 
   constructor(
@@ -63,24 +67,26 @@ export class SessionTaskSlotLedger {
   admit(input: SessionTaskSlotInput, options: { queueWhenFull?: boolean } = {}): SessionTaskAdmission {
     const reusedId = this.workItemIdBySubmissionKey.get(input.submissionKey);
     const reused = reusedId ? this.slots.get(reusedId) : undefined;
-    if (reused) return { outcome: 'reused', slot: { ...reused } };
+    if (reused && !this.canRetry(reused)) return { outcome: 'reused', slot: { ...reused } };
 
-    const slot: SessionTaskSlot = { ...input, status: 'queued' };
-    this.slots.set(slot.workItemId, slot);
-    this.workItemIdBySubmissionKey.set(slot.submissionKey, slot.workItemId);
+    const slot: SessionTaskSlot = {
+      ...input,
+      status: 'queued',
+      attempt: (this.attemptsBySubmissionKey.get(input.submissionKey) ?? 0) + 1,
+    };
 
     if (this.runningInLane(slot.laneKey) >= this.laneLimit) {
+      this.track(slot);
       this.queue.push(slot.workItemId);
       return { outcome: 'queued', slot: { ...slot }, reason: 'lane_busy' };
     }
 
     if (!this.hasSessionCapacity() || !this.pool.hasCapacity()) {
       if (options.queueWhenFull) {
+        this.track(slot);
         this.queue.push(slot.workItemId);
         return { outcome: 'queued', slot: { ...slot }, reason: 'capacity' };
       }
-      this.slots.delete(slot.workItemId);
-      this.workItemIdBySubmissionKey.delete(slot.submissionKey);
       return {
         outcome: 'requires_choice',
         reason: 'capacity',
@@ -88,15 +94,20 @@ export class SessionTaskSlotLedger {
       };
     }
 
+    this.track(slot);
     this.start(slot);
     return { outcome: 'started', slot: { ...slot } };
   }
 
-  settle(workItemId: string): SessionTaskSlot[] {
+  // terminalStatus 刻意**没有默认值**：这个账本用终态决定同一 submissionKey 还能不能重试，
+  // 默认成 'completed' 就等于「没传参数就当成功」——失败会被记成成功、且从此不可重试，
+  // 正是这条改动要消灭的那种谎。设成必填让 tsc 逼每个调用点表态。
+  settle(workItemId: string, terminalStatus: SessionTaskTerminalStatus): SessionTaskSlot[] {
     const slot = this.slots.get(workItemId);
     if (!slot || slot.status === 'settled') return [];
     if (slot.status === 'running') this.pool.release(workItemId);
     slot.status = 'settled';
+    slot.terminalStatus = terminalStatus;
     const queuedIndex = this.queue.indexOf(workItemId);
     if (queuedIndex >= 0) this.queue.splice(queuedIndex, 1);
     return this.drainStartable();
@@ -145,13 +156,24 @@ export class SessionTaskSlotLedger {
     slot.status = 'running';
   }
 
+  private track(slot: SessionTaskSlot): void {
+    this.slots.set(slot.workItemId, slot);
+    this.workItemIdBySubmissionKey.set(slot.submissionKey, slot.workItemId);
+    this.attemptsBySubmissionKey.set(slot.submissionKey, slot.attempt);
+  }
+
+  private canRetry(slot: SessionTaskSlot): boolean {
+    return slot.status === 'settled'
+      && (slot.terminalStatus === 'failed' || slot.terminalStatus === 'cancelled');
+  }
+
   private drainStartable(): SessionTaskSlot[] {
     const started: SessionTaskSlot[] = [];
     for (let index = 0; index < this.queue.length;) {
       if (!this.hasSessionCapacity() || !this.pool.hasCapacity()) break;
       const workItemId = this.queue[index];
       const slot = this.slots.get(workItemId);
-      if (!slot || slot.status !== 'queued') {
+      if (slot?.status !== 'queued') {
         this.queue.splice(index, 1);
         continue;
       }

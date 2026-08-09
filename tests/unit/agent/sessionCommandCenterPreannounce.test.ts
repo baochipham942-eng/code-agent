@@ -3,10 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { emitCommandCenterToolStart } from '../../../src/host/agent/runtime/contextAssembly/sessionCommandCenterPreannounce';
 
 describe('session command center renderer-visible preannounce', () => {
-  it('emits non-empty task-bound assistant text before the spawn_task row', () => {
+  it('emits non-empty task-bound assistant text before the delegate_task row', () => {
     const events: Array<{ type: string; text?: string }> = [];
     const preview = emitCommandCenterToolStart({
-      toolName: 'spawn_task',
+      toolName: 'delegate_task',
       commandCenterEnabled: true,
       streamedContent: '',
       existingPreannounce: '',
@@ -27,7 +27,7 @@ describe('session command center renderer-visible preannounce', () => {
     const emitPreview = vi.fn();
     const emitToolStart = vi.fn();
     const preview = emitCommandCenterToolStart({
-      toolName: 'spawn_task',
+      toolName: 'delegate_task',
       commandCenterEnabled: true,
       streamedContent: '我先去研究。',
       existingPreannounce: '',

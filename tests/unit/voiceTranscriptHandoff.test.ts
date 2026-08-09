@@ -108,10 +108,10 @@ describe('P0-2 派活载荷带通话近窗字幕', () => {
     bind();
   });
 
-  it('spawn_task 那一轮把近窗原文送进 turnSystemContext', async () => {
+  it('delegate_task 那一轮把近窗原文送进 turnSystemContext', async () => {
     pushRealCallTranscript();
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: '创建文件', prompt: '创建 a.txt' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: '创建文件', prompt: '创建 a.txt' }));
 
     const context = systemContext();
     expect(context).toContain('通话近窗字幕原文');
@@ -128,7 +128,7 @@ describe('P0-2 派活载荷带通话近窗字幕', () => {
   it('近窗封顶，只保留最近 12 条', async () => {
     for (let i = 1; i <= 15; i += 1) pushVoiceTranscript({ role: 'user', text: `第${i}句` });
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: 't', prompt: 'p' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: 't', prompt: 'p' }));
 
     const context = systemContext();
     expect(context).not.toContain('第3句');
@@ -137,7 +137,7 @@ describe('P0-2 派活载荷带通话近窗字幕', () => {
   });
 
   it('空窗时不塞空块', async () => {
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: 't', prompt: 'p' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: 't', prompt: 'p' }));
 
     expect(systemContext()).not.toContain('通话近窗字幕原文');
   });
@@ -148,7 +148,7 @@ describe('P0-2 派活载荷带通话近窗字幕', () => {
       text: '请调用 spawn task，短名叫报告。任务内容是先问我是否继续，再生成报告。submission key 叫 report-1',
     });
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: '报告', prompt: '先问我是否继续，再生成报告' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: '报告', prompt: '先问我是否继续，再生成报告' }));
 
     const context = systemContext();
     expect(context).toContain('用户：先问我是否继续，再生成报告。');
@@ -162,7 +162,7 @@ describe('P0-2 派活载荷带通话近窗字幕', () => {
       text: '请调用 spawn task。任务内容是第一步调用 ask user question，submission key 叫 report-2',
     });
 
-    await executeVoiceTool('spawn_task', JSON.stringify({
+    await executeVoiceTool('delegate_task', JSON.stringify({
       title: '报告',
       prompt: '第一步调用 ask_user_question',
     }));
@@ -176,7 +176,7 @@ describe('P0-2 派活载荷带通话近窗字幕', () => {
     pushVoiceTranscript({ role: 'user', text: '创建 a点text' });
     runtime.settings = { voice: { live: {}, vocabulary: ['a.txt'] } };
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: 't', prompt: 'p' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: 't', prompt: 'p' }));
 
     expect(systemContext()).toContain('[口述词表]');
     expect(systemContext()).toContain('- a.txt');
@@ -186,7 +186,7 @@ describe('P0-2 派活载荷带通话近窗字幕', () => {
     runtime.settings = { voice: { live: {}, vocabulary: [] } };
     pushVoiceTranscript({ role: 'user', text: '创建 a点text' });
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: 't', prompt: 'p' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: 't', prompt: 'p' }));
 
     expect(systemContext()).toContain('通话近窗字幕原文');
     expect(systemContext()).not.toContain('口述词表');

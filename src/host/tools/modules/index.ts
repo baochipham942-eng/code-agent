@@ -175,7 +175,7 @@ import { spaceQuerySchema } from './planning/spaceQuery.schema';
 import { spaceCreateSchema } from './planning/spaceCreate.schema';
 import {
   cancelTaskSchema,
-  spawnTaskSchema,
+  delegateTaskSchema,
   steerTaskSchema,
   taskStatusSchema,
 } from './commandCenter/sessionCommandCenter.schema';
@@ -185,8 +185,8 @@ export function registerMigratedTools(
   platform: NodeJS.Platform = process.platform,
 ): void {
   registry.register(
-    spawnTaskSchema,
-    async () => (await import('./commandCenter/sessionCommandCenter')).spawnTaskModule,
+    delegateTaskSchema,
+    async () => (await import('./commandCenter/sessionCommandCenter')).delegateTaskModule,
   );
   registry.register(
     steerTaskSchema,

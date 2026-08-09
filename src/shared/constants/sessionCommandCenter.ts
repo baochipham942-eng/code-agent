@@ -1,6 +1,6 @@
 /** Tools exposed to the foreground text brain. Background task runs deny them. */
 export const SESSION_COMMAND_CENTER_TOOL_NAMES = [
-  'spawn_task',
+  'delegate_task',
   'steer_task',
   'cancel_task',
   'task_status',
@@ -18,7 +18,7 @@ export const SESSION_COMMAND_CENTER_TOOL_NAMES = [
  * 这四个工具毫秒级、零写入，本来就该在里面；5 元组比它所实现的 ADR 更窄。
  *
  * 边界画在**副作用**上，不画在「回答 vs 派活」上：写入、跑命令、联网、要审批的工作
- * 照旧只能 spawn_task。权限不打折——Read/Grep 仍然过 folder-trust 与权限档，这里放开的
+ * 照旧只能 delegate_task。权限不打折——Read/Grep 仍然过 folder-trust 与权限档，这里放开的
  * 是「模型能不能发起」，不是「能不能绕过审批」。
  */
 export const SESSION_COMMAND_CENTER_READ_TOOL_NAMES = [

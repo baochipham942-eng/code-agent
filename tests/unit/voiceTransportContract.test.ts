@@ -586,7 +586,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
         neoSessionId: 's1',
         tools: [{
           type: 'function',
-          name: 'spawn_task',
+          name: 'delegate_task',
           description: '派发任务',
           parameters: { type: 'object', properties: {}, required: [] },
         }],
@@ -610,7 +610,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     upstream.emit('message', JSON.stringify({
       type: 'response.function_call_arguments.done',
       call_id: 'call-1',
-      name: 'spawn_task',
+      name: 'delegate_task',
       arguments: '{}',
     }));
     await vi.waitFor(() => expect(onToolCall).toHaveBeenCalledTimes(1));
@@ -640,7 +640,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     const onToolCall = vi.fn(async () => '已派发');
     const spawnTool = {
       type: 'function' as const,
-      name: 'spawn_task',
+      name: 'delegate_task',
       description: '派发任务',
       parameters: {
         type: 'object' as const,
@@ -664,7 +664,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     });
     if (handle.kind !== 'relay') throw new Error('unreachable');
     const upstream = upstreams[upstreams.length - 1];
-    const transcript = '<invoke name="spawn_task">'
+    const transcript = '<invoke name="delegate_task">'
       + '<parameter name="title">生成周报</parameter>'
       + '<parameter name="short_name">周报</parameter>'
       + '<parameter name="lane_key">weekly</parameter>'
@@ -695,7 +695,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     upstream.emit('message', JSON.stringify({ type: 'response.done', response: { id: 'resp-xml' } }));
     await vi.waitFor(() => expect(onToolCall).toHaveBeenCalledWith({
       callId: 'xml-fallback-resp-xml-1',
-      name: 'spawn_task',
+      name: 'delegate_task',
       arguments: JSON.stringify({
         title: '生成周报',
         short_name: '周报',

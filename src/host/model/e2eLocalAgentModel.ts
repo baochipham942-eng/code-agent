@@ -110,7 +110,7 @@ function buildBackgroundApprovalE2EResponse(
   onStream?: StreamCallback,
 ): ModelResponse | null {
   if (!messages.some((message) => getMessageText(message).includes(E2E_BACKGROUND_APPROVAL_MARKER))) return null;
-  if (hasTool(tools, 'spawn_task')) return null;
+  if (hasTool(tools, 'delegate_task')) return null;
   const actualProvider = 'acceptance';
   const actualModel = 'e2e-local-agent-model';
   const result = findToolResultContent(messages, E2E_BACKGROUND_APPROVAL_CALL_ID);
@@ -181,7 +181,7 @@ function buildCommandCenterE2EResponse(
       : secondRequested
         ? E2E_COMMAND_CENTER_SECOND_CALL_ID
         : E2E_COMMAND_CENTER_SPAWN_CALL_ID;
-  const toolName = statusRequested ? 'task_status' : steerRequested ? 'steer_task' : 'spawn_task';
+  const toolName = statusRequested ? 'task_status' : steerRequested ? 'steer_task' : 'delegate_task';
   const result = findToolResultContent(messages, callId);
   if (result) {
     const content = statusRequested

@@ -8,12 +8,16 @@ import type {
 } from '../../../protocol/tools';
 import type { MessageAttachment } from '../../../../shared/contract';
 import { getSessionCommandCenter, type SessionTaskReferenceResult } from '../../../services/commandCenter/sessionCommandCenter';
+import type { SpawnSessionTaskResult } from '../../../services/commandCenter/sessionCommandCenter';
+import { resolveBackgroundWorkspaceAuthority } from '../../../runtime/workspaceAuthority';
 import {
   cancelTaskSchema,
-  spawnTaskSchema,
+  delegateTaskSchema,
   steerTaskSchema,
   taskStatusSchema,
 } from './sessionCommandCenter.schema';
+
+const WORKSPACE_REQUIRED_MESSAGE = '没有可写的项目根，请先选择项目或添加目录。';
 
 function stringArg(args: Record<string, unknown>, key: string): string {
   return typeof args[key] === 'string' ? args[key].trim() : '';
@@ -63,13 +67,27 @@ async function permit(
     : { ok: false, error: `permission denied: ${decision.reason}`, code: 'PERMISSION_DENIED' };
 }
 
-export async function executeSpawnTask(
+export function describeDelegateTaskResult(result: Exclude<SpawnSessionTaskResult, { outcome: 'requires_choice' }>): string {
+  const { task } = result;
+  const retryContext = task.retryOf
+    ? `这是第 ${task.attempt} 次尝试；上一次 [${task.retryOf.status}]${task.retryOf.detail ? `：${task.retryOf.detail}` : '。'}`
+    : '';
+  if (result.outcome === 'reused') {
+    return `reused：复用「${task.shortName}」(${task.id})，当前状态 [${task.status}]${task.detail ? `：${task.detail}` : '。'}${task.attempt > 1 ? `这是第 ${task.attempt} 次尝试。` : ''}`;
+  }
+  if (result.outcome === 'queued') {
+    return `queued：已把「${task.shortName}」(${task.id}) 放进同一任务线，前序任务结束后自动开始。${retryContext}`;
+  }
+  return `accepted：后台任务「${task.shortName}」(${task.id}) 已开始。accepted 不等于完成；结果只以后续任务终态回流为准。${retryContext}`;
+}
+
+export async function executeDelegateTask(
   args: Record<string, unknown>,
   ctx: ToolContext,
   canUseTool: CanUseToolFn,
   onProgress?: ToolProgressFn,
 ): Promise<ToolResult<string>> {
-  const denied = await permit(spawnTaskSchema.name, args, canUseTool);
+  const denied = await permit(delegateTaskSchema.name, args, canUseTool);
   if (denied) return denied;
   const session = requireSession(ctx);
   if (typeof session !== 'string') return session;
@@ -83,6 +101,17 @@ export async function executeSpawnTask(
   }
   const shortName = normalizeSessionTaskShortName(rawShortName, title);
   if (ctx.abortSignal.aborted) return { ok: false, error: 'aborted', code: 'ABORTED' };
+  const workspaceScope = resolveBackgroundWorkspaceAuthority({
+    workspace: ctx.workspace,
+    workspaceScope: ctx.workspaceScope,
+  });
+  if (!workspaceScope) {
+    return {
+      ok: false,
+      error: WORKSPACE_REQUIRED_MESSAGE,
+      code: 'WORKSPACE_REQUIRED',
+    };
+  }
 
   onProgress?.({ stage: 'starting', detail: shortName });
   const result = await getSessionCommandCenter().spawn({
@@ -92,6 +121,7 @@ export async function executeSpawnTask(
     laneKey,
     submissionKey,
     prompt,
+    workspaceScope,
     queueWhenFull: args.queue_when_full === true,
     attachments: ctx.subagent?.attachments as MessageAttachment[] | undefined,
     options: {
@@ -112,15 +142,12 @@ export async function executeSpawnTask(
     };
   }
   if (result.outcome === 'reused') {
-    return { ok: true, output: `reused：复用「${result.task.shortName}」(${result.task.id})，没有重复派发。` };
+    return { ok: true, output: describeDelegateTaskResult(result) };
   }
   if (result.outcome === 'queued') {
-    return { ok: true, output: `queued：已把「${result.task.shortName}」(${result.task.id}) 放进同一任务线，前序任务结束后自动开始。` };
+    return { ok: true, output: describeDelegateTaskResult(result) };
   }
-  return {
-    ok: true,
-    output: `accepted：后台任务「${result.task.shortName}」(${result.task.id}) 已开始。accepted 不等于完成；结果只以后续任务终态回流为准。`,
-  };
+  return { ok: true, output: describeDelegateTaskResult(result) };
 }
 
 export async function executeSteerTask(
@@ -182,7 +209,7 @@ type CommandToolExecutor = (
 
 class Handler implements ToolHandler<Record<string, unknown>, string> {
   constructor(
-    readonly schema: typeof spawnTaskSchema,
+    readonly schema: typeof delegateTaskSchema,
     private readonly executeFn: CommandToolExecutor,
   ) {}
 
@@ -197,13 +224,13 @@ class Handler implements ToolHandler<Record<string, unknown>, string> {
 }
 
 function moduleFor(
-  schema: typeof spawnTaskSchema,
+  schema: typeof delegateTaskSchema,
   executeFn: CommandToolExecutor,
 ): ToolModule<Record<string, unknown>, string> {
   return { schema, createHandler: () => new Handler(schema, executeFn) };
 }
 
-export const spawnTaskModule = moduleFor(spawnTaskSchema, executeSpawnTask);
+export const delegateTaskModule = moduleFor(delegateTaskSchema, executeDelegateTask);
 export const steerTaskModule = moduleFor(steerTaskSchema, executeSteerTask);
 export const cancelTaskModule = moduleFor(cancelTaskSchema, executeCancelTask);
 export const taskStatusModule = moduleFor(taskStatusSchema, executeTaskStatus);

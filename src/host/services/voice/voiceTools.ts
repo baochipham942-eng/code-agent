@@ -54,12 +54,12 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
       + '**只在用户明确指屏时调**（「你看下我屏幕上这个」「我屏幕上这个」「看看我现在开着的这个」）；'
       + '他没提屏幕就不要拍，更不要为了「看看情况」反复拍——那是在偷看。'
       + '**拍到的画面不会给你**：你看不见里面有什么，不要描述它，也不要说「我看到…」。'
-      + '它会自动跟着你下一次 spawn_task / steer_task 交给执行侧，由执行侧去看。',
+      + '它会自动跟着你下一次 delegate_task / steer_task 交给执行侧，由执行侧去看。',
     parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
   },
   {
     type: 'function',
-    name: 'spawn_task',
+    name: 'delegate_task',
     description:
       '把一件需要真干活的事派给执行侧（读写文件、跑命令、多步任务都走这里）。'
       + '返回值会告诉你接下来该对用户说什么，照它说；这件事的结果只以之后收到的消息为准。',
@@ -171,7 +171,7 @@ function toIntent(name: string, rawArguments: string, origin: VoiceToolCallOrigi
       return { kind: 'end_call' };
     case 'get_current_time':
       return { kind: 'current_time' };
-    case 'spawn_task': {
+    case 'delegate_task': {
       const args = parseArgs(rawArguments);
       if (!args) return '任务参数解析失败，请重说一遍要做什么。';
       const prompt = str(args.prompt);
@@ -186,7 +186,7 @@ function toIntent(name: string, rawArguments: string, origin: VoiceToolCallOrigi
       // 而 `!!'false'` 是 true——那会让「派一件新活」变成「顶掉正在跑的活」。
       const replaceCurrent = args.replace_current === true;
       return {
-        kind: 'spawn_task',
+        kind: 'delegate_task',
         origin,
         title: str(args.title) || prompt.slice(0, 30),
         ...(shortName ? { shortName } : {}),

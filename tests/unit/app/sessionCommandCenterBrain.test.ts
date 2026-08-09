@@ -26,8 +26,20 @@ describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
   it('tells the model the tool narrowing is by design, not an environment fault', () => {
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('流程设计');
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('不是权限问题或环境故障');
-    // 反面案例是模型说"环境禁用了/环境受限"（排查报告 §2）——声明必须正面堵住这句话
-    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('不要向用户说');
+  });
+
+  // ADR-056 首轮真机 FAIL 的机制：原文点名「Bash/Write/Edit/WebSearch/ToolSearch 一概没有」，
+  // 并在同一句写「不要向用户说"环境禁用了"」。模型的拒绝原话把三个工具名和「禁用」一起还了
+  // 回来（session_1786186241326_0bce358d：「Write、Edit、Bash 工具均被禁用」）。
+  // 「不要说 X」和 X 写在同一句是经典失效形态——这道门钉住「只讲能做什么」，
+  // 防止有人再把负向枚举加回来。
+  it('does not hand the model the refusal vocabulary it echoed back', () => {
+    for (const name of ['Bash', 'Write', 'Edit', 'WebSearch', 'ToolSearch']) {
+      expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).not.toContain(name);
+    }
+    for (const word of ['禁用', '受限', '不能动']) {
+      expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).not.toContain(word);
+    }
   });
 
   it('names every tool it actually has, so the model knows the boundary up front', () => {
@@ -48,10 +60,17 @@ describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
     expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).not.toContain('只看得到这 5 个工具');
   });
 
-  it('still routes side-effecting work to spawn_task', () => {
-    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('spawn_task');
-    // 写/跑命令/联网这三类必须仍被点名为「不在这里」
-    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toMatch(/写文件[、，].*跑命令|Bash\/Write\/Edit/);
+  it('still routes side-effecting work to delegate_task', () => {
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('delegate_task');
+    // 写/跑命令/联网这三类必须仍被点名为「派活」——正向说法，不点名缺哪个工具
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toMatch(/写文件[、，].*跑命令[、，].*delegate_task/);
+  });
+
+  // B 组（先读一轮再写）的 FAIL 与 A 组（新会话直接写）的 PASS 差了两个变量：读过 + 指代。
+  // 提示词按「与读没读过无关」的形式写死这两条，修法就不依赖对照结论。
+  it('covers the two variables that separated the FAIL run from the PASS run', () => {
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('已经读过内容再收到写请求');
+    expect(SESSION_COMMAND_CENTER_BRAIN_CONTEXT).toContain('解析成绝对路径');
   });
 });
 

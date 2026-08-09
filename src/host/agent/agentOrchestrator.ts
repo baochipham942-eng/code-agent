@@ -78,6 +78,7 @@ import { runAutoAgentMode } from './orchestrator/autoAgentRunner';
 import { setSessionTodos, syncTodosToSessionTasks } from './todoParser';
 import { resolveNeoTagModelIntent } from '../services/project/neoTagModelIntentResolver';
 import { createRunContext, type RunHandle } from '../runtime/runContext';
+import { selectBackgroundWorkspaceScope } from '../runtime/workspaceAuthority';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectService } from '../services/project/projectService';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
@@ -87,6 +88,7 @@ import { getDatabase } from '../services/core/databaseService';
 import { wrapWithTurnSystemContext } from './turnScaffold';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type { AgentNoticeEvent } from '../../shared/ipc/handlers';
+import type { WorkspaceScope } from '../../shared/contract/project';
 
 export type { AgentOrchestratorConfig } from './orchestrator/types';
 
@@ -159,6 +161,7 @@ export class AgentOrchestrator {
   // TaskList: 可视化任务管理
   private taskListManager: TaskListManager;
   private sessionId: string | null = null;
+  private workspaceScopeAuthority?: WorkspaceScope;
   private lastSerializedCompressionState: string | null = null;
   private activeRunPromise: Promise<void> | null = null;
   private readonly runRegistry?: RunRegistry;
@@ -634,6 +637,11 @@ export class AgentOrchestrator {
       this.initializeLSP(path);
       this.updateSkillWatcher(path);
     }
+  }
+
+  /** Set once on a newly-created background orchestrator from the foreground host run. */
+  setWorkspaceScopeAuthority(workspaceScope: WorkspaceScope): void {
+    this.workspaceScopeAuthority = workspaceScope;
   }
 
   getWorkingDirectory(): string {
@@ -1281,7 +1289,7 @@ export class AgentOrchestrator {
         rolePresetSessionId = sessionId;
       }
       const runSession = sessionId ? await getSessionManager().getSession(sessionId) : undefined;
-      const workspaceScope = runSession
+      const sessionWorkspaceScope = runSession
         ? resolveSessionWorkspaceScope(
             runSession,
             getAuthService().getCurrentUser()?.id ?? null,
@@ -1289,6 +1297,10 @@ export class AgentOrchestrator {
             getProjectService(),
           )
         : undefined;
+      const workspaceScope = selectBackgroundWorkspaceScope(
+        this.workspaceScopeAuthority,
+        sessionWorkspaceScope,
+      );
       const runWorkingDirectory = workspaceScope
         ? (resolveWorkspacePath(workspaceScope, this.workingDirectory, 'read')
           ? this.workingDirectory
@@ -1308,7 +1320,7 @@ export class AgentOrchestrator {
         ? createRunContext({
           runId: nativeRunId,
           sessionId,
-          workspace: workspaceScope?.primaryRoot ?? runWorkingDirectory,
+          workspace: workspaceScope?.primaryRoot,
           workspaceScope,
           cwd: runWorkingDirectory,
         })

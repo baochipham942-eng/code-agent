@@ -76,7 +76,7 @@ export async function resolveToolPermissionClassification(input: {
   policyForcesConfirmation: boolean;
   boundaryViolation: { skillName: string; allowedTools: readonly string[] } | undefined;
   workingDirectory: string;
-  workspaceRoot: string;
+  workspaceRoot?: string;
   permissionLevel: ToolPermissionLevel;
   permStartTime: number;
   readOnlyForcesConfirmation: boolean;

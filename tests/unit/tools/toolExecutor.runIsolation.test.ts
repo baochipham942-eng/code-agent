@@ -12,6 +12,7 @@ vi.mock('../../../src/host/tools/shell/dynamicDescription', () => ({
 import {
   createRunContext,
   resolveCanonicalRunPath,
+  type CreateRunContextInput,
   type RunContext,
 } from '../../../src/host/runtime/runContext';
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
@@ -25,6 +26,20 @@ import type { SwarmRunScope } from '../../../src/shared/contract/swarm';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 
 const preApprovedRunTools = new Set(['Bash', 'Write']);
+
+function createAuthoritativeRunContext(
+  input: CreateRunContextInput & { workspace: string },
+): RunContext {
+  return createRunContext({
+    ...input,
+    workspaceScope: input.workspaceScope ?? createWorkspaceScope(`project-${input.runId}`, [{
+      sourceId: `primary-${input.runId}`,
+      path: input.workspace,
+      role: 'primary',
+      access: 'read_write',
+    }]),
+  });
+}
 
 function executionOptions(context: RunContext): ExecuteOptions {
   return {
@@ -72,6 +87,66 @@ describe('ToolExecutor per-run workspace isolation', () => {
     await fs.rm(tempRoot, { recursive: true, force: true });
   });
 
+  it('keeps unscoped background reads running while routing writes to approval', async () => {
+    const workingDirectory = path.join(tempRoot, 'voice-unscoped');
+    const sourcePath = path.join(workingDirectory, 'source.txt');
+    await fs.mkdir(workingDirectory, { recursive: true });
+    await fs.writeFile(sourcePath, 'readable\n');
+    const run = createRunContext({
+      runId: 'run-voice-unscoped',
+      sessionId: 'session-voice-unscoped',
+      workspace: workingDirectory,
+    });
+    const executor = baseExecutor.forRun(run);
+
+    const read = await executor.execute(
+      'Read',
+      { file_path: sourcePath },
+      executionOptions(run),
+    );
+    expect(read).toMatchObject({ success: true });
+    expect(resultText(read)).toContain('readable');
+
+    const write = await executor.execute(
+      'Write',
+      { file_path: path.join(workingDirectory, 'voice-write.txt'), content: 'approved by user\n' },
+      executionOptions(run),
+    );
+    expect(write).toMatchObject({ success: true });
+    // 丙案（产品负责人 2026-08-08 拍板）：没有显式 Project Source 时，**校验通过的 cwd
+    // 仍然是合法写边界**——竞品一致如此，且真库里无 project_id 的会话有 1914 个 cwd 是
+    // 具体项目目录，判「无边界」会把它们全部误伤。这里的 workspace 是 tempRoot 下的具体
+    // 目录，校验能过，所以项目内写走 W1 自动放行，不该产生审批请求。
+    //
+    // 「cwd 太宽就没有写边界」那条的覆盖在两处：
+    // - 判据层 tests/unit/tools/modules/commandCenterWorkspaceAuthority.test.ts
+    //   （$HOME / 数据目录 / 祖先路径三类各一条）
+    // - 分类器层 tests/unit/tools/permissionClassifier.test.ts
+    //   「classifies every write as W3 when no authoritative workspace exists」
+    expect(permissionRequests).toEqual([]);
+  });
+
+  it('keeps authoritative project writes on the W1 auto-approval path', async () => {
+    const workspace = path.join(tempRoot, 'authoritative-project');
+    await fs.mkdir(workspace, { recursive: true });
+    const run = createAuthoritativeRunContext({
+      runId: 'run-authoritative-write',
+      sessionId: 'session-authoritative-write',
+      workspace,
+    });
+    const executor = baseExecutor.forRun(run);
+
+    const write = await executor.execute(
+      'Write',
+      { file_path: 'inside.txt', content: 'inside\n' },
+      { runId: run.runId, sessionId: run.sessionId },
+    );
+
+    expect(write).toMatchObject({ success: true });
+    expect(permissionRequests).toHaveLength(0);
+    await expect(fs.readFile(path.join(workspace, 'inside.txt'), 'utf8')).resolves.toBe('inside\n');
+  });
+
   it('keeps identical relative Read, Bash, and Write calls isolated across concurrent runs', async () => {
     const repoA = path.join(tempRoot, 'repo-a');
     const repoB = path.join(tempRoot, 'repo-b');
@@ -84,12 +159,12 @@ describe('ToolExecutor per-run workspace isolation', () => {
       fs.writeFile(path.join(repoB, 'marker.txt'), 'marker-from-b\n'),
     ]);
 
-    const runA = createRunContext({
+    const runA = createAuthoritativeRunContext({
       runId: 'run-workspace-a',
       sessionId: 'session-workspace-a',
       workspace: repoA,
     });
-    const runB = createRunContext({
+    const runB = createAuthoritativeRunContext({
       runId: 'run-workspace-b',
       sessionId: 'session-workspace-b',
       workspace: repoB,
@@ -173,7 +248,7 @@ describe('ToolExecutor per-run workspace isolation', () => {
       { sourceId: 'primary', path: primary, role: 'primary', access: 'read_write' },
       { sourceId: 'docs', path: docs, role: 'additional', access: 'read_only' },
     ]);
-    const run = createRunContext({
+    const run = createAuthoritativeRunContext({
       runId: 'run-multi',
       sessionId: 'session-multi',
       workspace: primary,
@@ -213,7 +288,7 @@ describe('ToolExecutor per-run workspace isolation', () => {
     await fs.mkdir(cwd, { recursive: true });
     await fs.writeFile(sharedPath, 'shared-before\n');
 
-    const run = createRunContext({
+    const run = createAuthoritativeRunContext({
       runId: 'run-nested-cwd',
       sessionId: 'session-nested-cwd',
       workspace,
@@ -297,7 +372,7 @@ describe('ToolExecutor per-run workspace isolation', () => {
     ]);
     await fs.symlink(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
 
-    const run = createRunContext({
+    const run = createAuthoritativeRunContext({
       runId: 'run-symlink-boundary',
       sessionId: 'session-symlink-boundary',
       workspace,
@@ -366,7 +441,7 @@ describe('ToolExecutor per-run workspace isolation', () => {
       const workspace = path.join(tempRoot, 'artifact-repo');
       const cwd = path.join(workspace, 'pkg');
       await fs.mkdir(cwd, { recursive: true });
-      const run = createRunContext({
+      const run = createAuthoritativeRunContext({
         runId: 'run-artifact-context',
         sessionId: 'session-artifact-context',
         workspace,
@@ -424,7 +499,7 @@ describe('ToolExecutor per-run workspace isolation', () => {
     try {
       const workspace = path.join(tempRoot, 'identity-repo');
       await fs.mkdir(workspace, { recursive: true });
-      const nativeRun = createRunContext({
+      const nativeRun = createAuthoritativeRunContext({
         runId: 'native-run-identity',
         sessionId: 'session-identity',
         workspace,

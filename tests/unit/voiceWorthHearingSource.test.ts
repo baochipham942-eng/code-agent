@@ -115,7 +115,7 @@ function begin(): void {
 /** 派一件活并让它跑起来（worth-hearing 只在有活在跑时才产）。 */
 async function spawnRunning(title: string): Promise<void> {
   runtime.status = 'idle';
-  await dispatchVoiceIntent({ kind: 'spawn_task', title, prompt: `做${title}` });
+  await dispatchVoiceIntent({ kind: 'delegate_task', title, prompt: `做${title}` });
   runtime.emit('task_started');
   runtime.status = 'running';
 }

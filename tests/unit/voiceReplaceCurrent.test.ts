@@ -105,7 +105,7 @@ function begin(): void {
 /** 先派一件活并让它跑起来，作为「手上那件」。 */
 async function spawnRunning(): Promise<void> {
   runtime.status = 'idle';
-  await dispatchVoiceIntent({ kind: 'spawn_task', title: '写周报', prompt: '写一份周报' });
+  await dispatchVoiceIntent({ kind: 'delegate_task', title: '写周报', prompt: '写一份周报' });
   runtime.emit('task_started');
   runtime.status = 'running';
   runtime.startTask.mockClear();
@@ -140,7 +140,7 @@ describe('replace_current — 确认终态前绝不 startRun', () => {
     await spawnRunning();
 
     const reply = await dispatchVoiceIntent({
-      kind: 'spawn_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
+      kind: 'delegate_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
     });
 
     // 硬门：终态还没到，startTask 必须一次都没调。
@@ -154,7 +154,7 @@ describe('replace_current — 确认终态前绝不 startRun', () => {
   it('旧的落终态后才派新活，并注入「旧的收尾了、新的开始了」', async () => {
     await spawnRunning();
     await dispatchVoiceIntent({
-      kind: 'spawn_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
+      kind: 'delegate_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
     });
     expect(runtime.startTask).not.toHaveBeenCalled();
 
@@ -172,7 +172,7 @@ describe('replace_current — 确认终态前绝不 startRun', () => {
   it('超时（含重发 cancel）仍等不到终态 → 不派新活 + 说清两件事都没成', async () => {
     await spawnRunning();
     await dispatchVoiceIntent({
-      kind: 'spawn_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
+      kind: 'delegate_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
     });
 
     await exhaustConfirmWindow();
@@ -188,7 +188,7 @@ describe('replace_current — 确认终态前绝不 startRun', () => {
   it('第一次超时会重发 cancel，而不是直接放弃', async () => {
     await spawnRunning();
     await dispatchVoiceIntent({
-      kind: 'spawn_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
+      kind: 'delegate_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
     });
     expect(runtime.cancelTask).toHaveBeenCalledTimes(1);
 
@@ -202,7 +202,7 @@ describe('replace_current — 确认终态前绝不 startRun', () => {
   it('超时之后旧活自己跑完了，它的结局照样念（抑制已解除）', async () => {
     await spawnRunning();
     await dispatchVoiceIntent({
-      kind: 'spawn_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
+      kind: 'delegate_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
     });
     await exhaustConfirmWindow();
     narrations.length = 0;
@@ -220,7 +220,7 @@ describe('replace_current — 正对照与边界', () => {
     runtime.status = 'idle';
 
     const reply = await dispatchVoiceIntent({
-      kind: 'spawn_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
+      kind: 'delegate_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
     });
 
     expect(runtime.startTask).toHaveBeenCalledTimes(1);
@@ -232,7 +232,7 @@ describe('replace_current — 正对照与边界', () => {
     await spawnRunning();
 
     const reply = await dispatchVoiceIntent({
-      kind: 'spawn_task', title: '建个文件', prompt: '建 a.txt',
+      kind: 'delegate_task', title: '建个文件', prompt: '建 a.txt',
     });
 
     expect(runtime.startTask).toHaveBeenCalledTimes(1);
@@ -243,12 +243,12 @@ describe('replace_current — 正对照与边界', () => {
   it('停旧的在途时再来一次 replace → 不覆盖、不排队，如实说', async () => {
     await spawnRunning();
     await dispatchVoiceIntent({
-      kind: 'spawn_task', title: '第一件', prompt: 'A', replaceCurrent: true,
+      kind: 'delegate_task', title: '第一件', prompt: 'A', replaceCurrent: true,
     });
     runtime.cancelTask.mockClear();
 
     const reply = await dispatchVoiceIntent({
-      kind: 'spawn_task', title: '第二件', prompt: 'B', replaceCurrent: true,
+      kind: 'delegate_task', title: '第二件', prompt: 'B', replaceCurrent: true,
     });
 
     expect(reply).toContain('还没停稳');
@@ -259,7 +259,7 @@ describe('replace_current — 正对照与边界', () => {
   it('挂断作废在途的替换：终态再到也不派新活', async () => {
     await spawnRunning();
     await dispatchVoiceIntent({
-      kind: 'spawn_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
+      kind: 'delegate_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
     });
 
     endVoiceDispatch();
@@ -273,7 +273,7 @@ describe('replace_current — 正对照与边界', () => {
   it('被顶掉的活不回头念它的结局', async () => {
     await spawnRunning();
     await dispatchVoiceIntent({
-      kind: 'spawn_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
+      kind: 'delegate_task', title: '建个文件', prompt: '建 a.txt', replaceCurrent: true,
     });
 
     runtime.status = 'idle';
@@ -295,7 +295,7 @@ describe('进度旁路接不上时，派活必须照常', () => {
     });
     try {
       runtime.status = 'idle';
-      const reply = await dispatchVoiceIntent({ kind: 'spawn_task', title: '建个文件', prompt: '建 a.txt' });
+      const reply = await dispatchVoiceIntent({ kind: 'delegate_task', title: '建个文件', prompt: '建 a.txt' });
       expect(runtime.startTask).toHaveBeenCalledTimes(1);
       expect(reply).toContain('我已经开始做');
     } finally {

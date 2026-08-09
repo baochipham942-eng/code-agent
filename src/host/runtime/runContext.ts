@@ -4,8 +4,8 @@ import { lstatSync, readlinkSync, realpathSync } from 'node:fs';
 import type { MessageAttachment, MessageMetadata } from '../../shared/contract';
 import type { RunTraceContext } from '../telemetry/runTraceContext';
 import type { WorkspaceScope } from '../../shared/contract/project';
+import { resolveBackgroundWorkspaceAuthority } from './workspaceAuthority';
 import {
-  createWorkspaceScope,
   isPathWithinRoot,
   resolveWorkspacePath,
 } from './workspaceScope';
@@ -13,10 +13,10 @@ import {
 export interface RunContext {
   readonly runId: string;
   readonly sessionId: string;
-  /** Authorization, persistence, and artifact boundary for this run. */
+  /** Runtime, persistence, and artifact root. Write authority comes only from workspaceScope. */
   readonly workspace: string;
-  /** Immutable Project Source snapshot. Legacy single-root runs receive a synthetic scope. */
-  readonly workspaceScope: WorkspaceScope;
+  /** Immutable authoritative Project Source snapshot. Absent means the run has no write boundary. */
+  readonly workspaceScope?: WorkspaceScope;
   /** Default process and relative-path directory for this run. */
   readonly cwd: string;
   readonly createdAt: number;
@@ -25,7 +25,7 @@ export interface RunContext {
 export interface CreateRunContextInput {
   runId?: string;
   sessionId: string;
-  workspace: string;
+  workspace?: string;
   workspaceScope?: WorkspaceScope;
   cwd?: string;
   createdAt?: number;
@@ -141,17 +141,27 @@ export function createRunContext(input: CreateRunContextInput): RunContext {
   // Freeze the resolved filesystem targets, not caller-provided symlink text.
   // Otherwise a workspace symlink could be retargeted while a run is active and
   // silently move every downstream policy/artifact/resolver boundary.
-  const requestedWorkspace = resolveCanonicalRunPath(requireIdentifier(input.workspace, 'workspace'));
-  const workspaceScope = input.workspaceScope ?? createWorkspaceScope('legacy', [{
-    sourceId: 'legacy-primary',
-    path: requestedWorkspace,
-    role: 'primary',
-    access: 'read_write',
-  }]);
-  const workspace = workspaceScope.primaryRoot;
+  const requestedWorkspace = resolveCanonicalRunPath(requireIdentifier(
+    input.workspace?.trim() || input.workspaceScope?.primaryRoot || input.cwd || '',
+    'workspace',
+  ));
+  // 没有显式 Project Source 时，cwd 仍然可以当写边界——竞品一致如此（Claude Code 继承父会话
+  // cwd、Codex CLI 用启动 cwd + writable_roots、Aider 用 cwd 所在 git 仓根、Cline/Zed 用打开的
+  // 文件夹），**没有一家要求先注册「项目」才给写权限**。真库切窗也印证：无 project_id 的 1933
+  // 个会话里 1914 个 working_directory 是具体项目目录，直接判「无写边界」会误伤这 1914 个。
+  //
+  // 原来的问题从来不是「cwd 不该当边界」，而是**兜底时没有任何宽度校验**，以致 $HOME、
+  // /Users、<dataDir> 也能当边界。所以这里不是删掉兜底，而是让它先过校验（判据与
+  // delegate_task 前置预检同一份，见 workspaceAuthority.ts，不许另造第二份）。
+  const workspaceScope = input.workspaceScope
+    ?? resolveBackgroundWorkspaceAuthority({ workspace: requestedWorkspace });
+  const workspace = workspaceScope?.primaryRoot ?? requestedWorkspace;
   const cwd = resolveCanonicalRunPath(input.cwd?.trim() || workspace);
-  if (!resolveWorkspacePath(workspaceScope, cwd, 'read')) {
+  if (workspaceScope && !resolveWorkspacePath(workspaceScope, cwd, 'read')) {
     throw new Error(`Run cwd must stay inside workspace Project Sources: ${cwd}`);
+  }
+  if (!workspaceScope && input.workspace?.trim() && !isPathWithinRoot(cwd, workspace)) {
+    throw new Error(`Run cwd must stay inside workspace: ${cwd}`);
   }
 
   const context = {

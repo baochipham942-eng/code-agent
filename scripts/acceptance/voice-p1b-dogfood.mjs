@@ -211,7 +211,7 @@ async function main() {
     await browser.close();
   }
 
-  // ── 会话 B：派活 → working 态（best-effort，依赖模型真调 spawn_task）──
+  // ── 会话 B：派活 → working 态（best-effort，依赖模型真调 delegate_task）──
   {
     const { browser, context } = await launchBrowser(taskWav);
     const page = await context.newPage();

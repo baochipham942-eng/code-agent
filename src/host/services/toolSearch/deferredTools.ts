@@ -27,7 +27,7 @@ export const CORE_TOOLS: string[] = [
   'TaskManager',
   // 'TodoWrite', // 已移除
   'AskUserQuestion',
-  'spawn_task',
+  'delegate_task',
   'steer_task',
   'cancel_task',
   'task_status',
@@ -881,6 +881,9 @@ export const TOOL_ALIASES: Record<string, string> = {
   write: 'Write',
   append: 'Append',
   edit: 'Edit',
+  // 会话指挥台前台派活工具 2026-08-08 改名（spawn_task → delegate_task）：语义从「开工单」
+  // 改成「把写入委派出去」。历史会话的 tool_calls 里存的是旧名，模型也可能沿用旧名，两者都要能解析。
+  spawn_task: 'delegate_task',
   // Multi-agent aliases
   agent_spawn: 'AgentSpawn',
   AgentMessage: 'agent_message',

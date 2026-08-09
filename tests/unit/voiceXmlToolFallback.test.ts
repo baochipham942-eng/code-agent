@@ -9,7 +9,7 @@ import {
 const tools: VoiceToolDefinition[] = [
   {
     type: 'function',
-    name: 'spawn_task',
+    name: 'delegate_task',
     description: '派活',
     parameters: {
       type: 'object',
@@ -36,7 +36,7 @@ const tools: VoiceToolDefinition[] = [
 describe('voice XML tool fallback', () => {
   it('只接受顶层完整块，解码实体并按注册 schema 还原类型', () => {
     const result = parseVoiceXmlToolFallback(`
-      <invoke name="spawn_task">
+      <invoke name="delegate_task">
         <parameter name="title">周报</parameter>
         <parameter name="short_name">周报</parameter>
         <parameter name="lane_key">report&amp;weekly</parameter>
@@ -48,7 +48,7 @@ describe('voice XML tool fallback', () => {
 
     expect(result).toEqual({
       kind: 'accepted',
-      name: 'spawn_task',
+      name: 'delegate_task',
       arguments: JSON.stringify({
         title: '周报',
         short_name: '周报',
@@ -63,9 +63,9 @@ describe('voice XML tool fallback', () => {
   it.each([
     ['混入正文', '我来处理 <invoke name="task_status"></invoke>', 'not_candidate'],
     ['未知工具', '<invoke name="read_file"></invoke>', 'rejected'],
-    ['缺必填字段', '<invoke name="spawn_task"><parameter name="title">周报</parameter></invoke>', 'rejected'],
+    ['缺必填字段', '<invoke name="delegate_task"><parameter name="title">周报</parameter></invoke>', 'rejected'],
     ['重复字段', '<invoke name="task_status"><parameter name="x">1</parameter><parameter name="x">2</parameter></invoke>', 'rejected'],
-    ['未转义实体', '<invoke name="spawn_task"><parameter name="prompt">A&B</parameter></invoke>', 'rejected'],
+    ['未转义实体', '<invoke name="delegate_task"><parameter name="prompt">A&B</parameter></invoke>', 'rejected'],
     ['尾部注入', '<invoke name="task_status"></invoke><invoke name="task_status"></invoke>', 'rejected'],
   ])('%s 不执行', (_label, text, kind) => {
     expect(parseVoiceXmlToolFallback(text, tools).kind).toBe(kind);
@@ -77,7 +77,7 @@ describe('voice XML tool fallback', () => {
       ok: false,
       reason: 'schema_mismatch',
     });
-    expect(validateVoiceToolArguments('spawn_task', '{', tools)).toEqual({
+    expect(validateVoiceToolArguments('delegate_task', '{', tools)).toEqual({
       ok: false,
       reason: 'malformed_json',
     });

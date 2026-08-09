@@ -360,7 +360,7 @@ export function buildMultimodalContent(
     } catch (error) {
       // fail-loud，不留裸 TypeError：单个附件的字段缺陷（如历史脏数据缺 id）不该
       // 拖垮整条后台任务/主对话轮次。记录到具体哪个附件、什么类别，再退化成一条
-      // 文本占位，让轮次能继续跑完（2026-08-07 spawn_task TypeError 真机实录）。
+      // 文本占位，让轮次能继续跑完（2026-08-07 delegate_task TypeError 真机实录）。
       logger.error('[MessageConverter] Failed to process attachment, skipping with fallback text', {
         attachmentId: getAttachmentId(attachment) || '(missing id)',
         attachmentName: attachment?.name,

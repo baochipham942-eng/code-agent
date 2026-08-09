@@ -28,6 +28,7 @@ import { MessageDeltaAccumulator } from '../protocol/messageDeltaAccumulator';
 import type { SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
 import type { SessionStatus as PersistedSessionStatus } from '../../shared/contract/session';
+import type { WorkspaceScope } from '../../shared/contract/project';
 import { getModelSessionState } from '../session/modelSessionState';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
@@ -39,7 +40,7 @@ const logger = createLogger('TaskManager');
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
 const AUXILIARY_RUN_SYSTEM_CONTEXT = [
   '你已经在一个独立后台任务槽里，必须亲自执行这件任务。',
-  '禁止调用、搜索或建议 Task、TaskManager、spawn_agent、AgentSpawn、spawn_task、steer_task、cancel_task、task_status 等任务拆分或指挥台工具；上层已经完成任务拆分。',
+  '禁止调用、搜索或建议 Task、TaskManager、spawn_agent、AgentSpawn、delegate_task、steer_task、cancel_task、task_status 等任务拆分或指挥台工具；上层已经完成任务拆分。',
   'AskUserQuestion 是已经加载的核心工具。用户要求它时，第一步直接调用；不得先用 ToolSearch 查它或任何任务拆分工具，也不要把工具名或 JSON 当文字输出。',
 ].join('\n');
 
@@ -301,6 +302,7 @@ export class TaskManager extends EventEmitter {
     attachments?: unknown[],
     options?: AgentRunOptions,
     messageMetadata?: MessageMetadata,
+    workspaceScope?: WorkspaceScope,
   ): Promise<void> {
     if (!this.configService || !this.onAgentEvent) {
       throw new Error('TaskManager not initialized. Call initialize() first.');
@@ -310,6 +312,10 @@ export class TaskManager extends EventEmitter {
     const orchestrator = this.createOrchestrator(sessionId, taskId);
     const { getBackgroundTaskSessionContext } = await import('./backgroundTaskSessionContext');
     const session = await getBackgroundTaskSessionContext(sessionId);
+
+    // workspaceScope 仍可缺省：无项目后台 run 可以继续执行读任务，但不会获得写边界。
+    if (workspaceScope) orchestrator.setWorkspaceScopeAuthority(workspaceScope);
+
     if (session?.messages.length) orchestrator.setMessages(session.messages);
     if (session?.workingDirectory) {
       orchestrator.setWorkingDirectory(session.workingDirectory, { syncWorkspaceServices: false });
@@ -658,7 +664,7 @@ export class TaskManager extends EventEmitter {
     // auxiliary run 的中间消息与工具结果会以 isMeta=true 回写到同一会话，供审计和
     // 任务状态投影使用，但不能重新灌进前台 orchestrator 的模型历史。否则用户在后台
     // 任务运行期间重新打开会话后，序列会变成：
-    // assistant(spawn_task) -> meta user(child prompt) -> tool(spawn accepted)，
+    // assistant(delegate_task) -> meta user(child prompt) -> tool(spawn accepted)，
     // AI SDK 会把本来存在的 tool result 判成缺失，后续正常聊天直接失败。
     const inferenceMessages = messages.filter(isInferenceHistoryMessage);
     const wrapper = this.activeOrchestrators.get(sessionId);

@@ -1,4 +1,5 @@
 import type { MessageAttachment } from '../../../shared/contract';
+import type { WorkspaceScope } from '../../../shared/contract/project';
 import type { AgentRunOptions } from '../../research/types';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
@@ -21,7 +22,14 @@ export interface SessionCommandTask {
   laneKey: string;
   submissionKey: string;
   prompt: string;
+  workspaceScope: WorkspaceScope;
   status: SessionCommandTaskStatus;
+  attempt: number;
+  retryOf?: {
+    taskId: string;
+    status: Extract<SessionCommandTaskStatus, 'failed' | 'cancelled'>;
+    detail?: string;
+  };
   createdAt: number;
   updatedAt: number;
   detail?: string;
@@ -40,6 +48,7 @@ export interface SpawnSessionTaskInput {
   laneKey: string;
   submissionKey: string;
   prompt: string;
+  workspaceScope: WorkspaceScope;
   queueWhenFull?: boolean;
   attachments?: MessageAttachment[];
   options?: AgentRunOptions;
@@ -115,6 +124,10 @@ export class SessionCommandCenter {
       return { outcome: 'reused', task: { ...reused } };
     }
 
+    const retryOfId = admission.slot.attempt > 1
+      ? this.previousTaskId(input.sessionId, input.submissionKey, admission.slot.workItemId)
+      : undefined;
+    const retryOf = retryOfId ? this.tasks(input.sessionId).get(retryOfId) : undefined;
     const now = Date.now();
     const task: SessionCommandTask = {
       id,
@@ -124,7 +137,18 @@ export class SessionCommandCenter {
       laneKey: input.laneKey,
       submissionKey: input.submissionKey,
       prompt: input.prompt,
+      workspaceScope: input.workspaceScope,
       status: admission.outcome === 'started' ? 'running' : 'queued',
+      attempt: admission.slot.attempt,
+      ...(retryOf && (retryOf.status === 'failed' || retryOf.status === 'cancelled')
+        ? {
+          retryOf: {
+            taskId: retryOf.id,
+            status: retryOf.status,
+            ...(retryOf.detail ? { detail: retryOf.detail } : {}),
+          },
+        }
+        : {}),
       createdAt: now,
       updatedAt: now,
       attachments: input.attachments,
@@ -254,6 +278,7 @@ export class SessionCommandCenter {
         parentRunId: task.parentRunId,
       },
       undefined,
+      task.workspaceScope,
     ).catch((error) => {
       void this.settle(task, 'failed', error instanceof Error ? error.message : String(error));
     });
@@ -300,6 +325,12 @@ export class SessionCommandCenter {
     task.updatedAt = Date.now();
     this.projectTask(task);
 
+    // 账本落终态必须**先于**下面那个 await：task.status 在上面已经同步变成 failed 且投影出去了，
+    // 而账本要等投影 Promise 落地才记终态。中间这段窗口里，前台从 task_status 已经看得到
+    // failed，立刻用同一 submissionKey 重试——账本里那个 slot 还是 running，admit() 返回
+    // reused，重试静默失效。正是这条改动要消灭的形态，只是窗口更窄。
+    const startable = this.ledger(task.sessionId).settle(task.id, status);
+
     try {
       await this.projectTerminalResult(task, status);
     } catch (error) {
@@ -309,7 +340,7 @@ export class SessionCommandCenter {
       });
     }
 
-    for (const slot of this.ledger(task.sessionId).settle(task.id)) {
+    for (const slot of startable) {
       const next = this.tasks(task.sessionId).get(slot.workItemId);
       if (next) this.launch(next);
     }
@@ -339,6 +370,8 @@ export class SessionCommandCenter {
           shortName: task.shortName,
           laneKey: task.laneKey,
           submissionKey: task.submissionKey,
+          attempt: task.attempt,
+          retryOf: task.retryOf,
           parentRunId: task.parentRunId,
           childRunId: task.id,
         },
@@ -349,6 +382,13 @@ export class SessionCommandCenter {
         message: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private previousTaskId(sessionId: string, submissionKey: string, currentTaskId: string): string | undefined {
+    const previous = this.list(sessionId)
+      .filter((task) => task.submissionKey === submissionKey && task.id !== currentTaskId)
+      .at(-1);
+    return previous?.id;
   }
 }
 

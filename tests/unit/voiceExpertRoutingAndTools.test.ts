@@ -1,7 +1,7 @@
 // A3 专家继承 + A4 窄工具 + H1/H2 指挥台（Intent → Coordinator）的接线门。
 //
 // 钉的是「消费者真的读到了」，不是「函数返回了对的字符串」：
-//   · spawn_task 派出去的那一轮，agentOverrideId 必须是通话身份；
+//   · delegate_task 派出去的那一轮，agentOverrideId 必须是通话身份；
 //   · 那一轮必须过 withWorkbenchTurnSystemContext（连接器收窄的唯一发生地——
 //     host 直调 orchestrator.sendMessage 一律绕开它，这是 #637 同款形状），
 //     所以断言专家声明的 connectors 真的进了 toolScope.allowedConnectorIds；
@@ -139,7 +139,7 @@ describe('A3 通话身份解析', () => {
   it('没选专家时不编人设，只给通话基线', () => {
     const routing = resolveVoiceRouting(undefined);
     expect(routing.activeAgentId).toBeUndefined();
-    expect(routing.personaInstructions).toContain('spawn_task');
+    expect(routing.personaInstructions).toContain('delegate_task');
     expect(routing.personaInstructions).not.toContain('身份是');
   });
 
@@ -268,7 +268,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
       'task_status',
       'get_current_file_summary',
       'capture_screen_context',
-      'spawn_task',
+      'delegate_task',
       'steer_task',
       'cancel_task',
       'get_current_time',
@@ -295,12 +295,12 @@ describe('A4 窄工具 / H1 指挥台', () => {
     expect(result).toContain('/repo/src/b.ts');
   });
 
-  it('spawn_task 派出的一轮带通话身份，并注入全量角色资料', async () => {
+  it('delegate_task 派出的一轮带通话身份，并注入全量角色资料', async () => {
     resolvedAgent.value = { id: 'muzhi', name: '牧之' };
     bind('muzhi');
 
     const result = await executeVoiceTool(
-      'spawn_task',
+      'delegate_task',
       JSON.stringify({ title: '改大纲', prompt: '把大纲改成三段' }),
       'xml_fallback',
     );
@@ -327,12 +327,12 @@ describe('A4 窄工具 / H1 指挥台', () => {
     expect(buildRoleContextBlock).toHaveBeenCalledWith('muzhi');
   });
 
-  it('spawn_task 那一轮真过了连接器收窄（专家声明的 connectors 进 toolScope）', async () => {
+  it('delegate_task 那一轮真过了连接器收窄（专家声明的 connectors 进 toolScope）', async () => {
     // core 档的声明才参与收窄（optional 不自动进 scope）
     resolvedAgent.value = { id: 'muzhi', name: '牧之', connectors: [{ id: 'crm', level: 'core' }] };
     bind('muzhi');
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: 'a', prompt: '去 crm 查一下' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: 'a', prompt: '去 crm 查一下' }));
 
     await vi.waitFor(() => expect(runtime.startTask).toHaveBeenCalled());
     expect(lastRunOptions().toolScope?.allowedConnectorIds).toContain('crm');
@@ -344,7 +344,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
     voiceSettings.value = { executionModel: { provider: 'deepseek', model: 'deepseek-chat' } };
     bind();
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: 'a', prompt: '干活' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: 'a', prompt: '干活' }));
 
     await vi.waitFor(() => expect(runtime.startTask).toHaveBeenCalled());
     expect(lastRunOptions().modelSpec).toEqual({ provider: 'deepseek', model: 'deepseek-chat' });
@@ -353,7 +353,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
   it('没配就不传 modelSpec（跟随会话默认引擎，行为与批 H 之前一致）', async () => {
     bind();
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: 'a', prompt: '干活' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: 'a', prompt: '干活' }));
 
     await vi.waitFor(() => expect(runtime.startTask).toHaveBeenCalled());
     expect(lastRunOptions().modelSpec).toBeUndefined();
@@ -363,7 +363,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
   it('work item 走完 queued → running → done（run 干完了得有人说一声）', async () => {
     bind();
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: '跑测试', prompt: '跑一下测试' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: '跑测试', prompt: '跑一下测试' }));
     expect(workItems.value.at(-2)).toMatchObject({ status: 'queued' });
     expect(workItems.value.at(-1)).toMatchObject({ status: 'running' });
 
@@ -377,7 +377,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
 
   it('steer_task 在有活跑时打断续跑，不再派一件新的', async () => {
     bind();
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: '改大纲', prompt: '改成三段' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: '改大纲', prompt: '改成三段' }));
     runtime.startTask.mockClear();
     runtime.status = 'running';
 
@@ -398,7 +398,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
   it('派活台词是用户向第一人称，照念也通顺', async () => {
     bind();
 
-    const result = await executeVoiceTool('spawn_task', JSON.stringify({ title: '创建a.txt文件', prompt: '建个文件' }));
+    const result = await executeVoiceTool('delegate_task', JSON.stringify({ title: '创建a.txt文件', prompt: '建个文件' }));
 
     expect(result).toContain('我已经开始做');
     expect(result).toContain('做完马上告诉你');
@@ -422,7 +422,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
 
   it('cancel_task 真调到 TaskManager，并把条目落成 cancelled', async () => {
     bind();
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: '删文件', prompt: '删掉临时文件' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: '删文件', prompt: '删掉临时文件' }));
     runtime.status = 'running';
 
     const result = await executeVoiceTool('cancel_task', '{}');
@@ -437,7 +437,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
     bind();
     runtime.status = 'running';
 
-    const result = await executeVoiceTool('spawn_task', JSON.stringify({ title: 'b', prompt: '再干一件' }));
+    const result = await executeVoiceTool('delegate_task', JSON.stringify({ title: 'b', prompt: '再干一件' }));
 
     expect(runtime.startTask).toHaveBeenCalledTimes(1);
     expect(result).toContain('我已经开始做');
@@ -454,14 +454,14 @@ describe('A4 窄工具 / H1 指挥台', () => {
   // D4 的另一半：管理器支持 run 级持票没用，得派活时真的去取那张票。
   // 2026-07-26 真机的洞就在这——挂断即解除，语音派的 run 后半程直接按会话档落盘。
   // 判据是「run 在飞时抬严标记为真、落地后为假」，不是「有没有调某个函数」。
-  it('spawn_task 为这一轮单独持票，run 落地才还（抬严罩住整个 run）', async () => {
+  it('delegate_task 为这一轮单独持票，run 落地才还（抬严罩住整个 run）', async () => {
     const { getPermissionModeManager } = await import('../../src/host/permissions/modes');
     const permissions = getPermissionModeManager();
     bind();
 
     expect(permissions.isLiveVoiceSession('session-1')).toBe(false);
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: 'a', prompt: '干活' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: 'a', prompt: '干活' }));
 
     // 注意这里没有任何「通话票」——只有 run 票。挂断早于 run 结束时就是这个状态。
     expect(permissions.isLiveVoiceSession('session-1')).toBe(true);
@@ -478,7 +478,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
     const permissions = getPermissionModeManager();
     bind();
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: 'a', prompt: '干活' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: 'a', prompt: '干活' }));
     endVoiceDispatch(); // 用户说完就挂——这是常态
 
     expect(permissions.isLiveVoiceSession('session-1')).toBe(true);
@@ -494,7 +494,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
     runtime.startTask.mockImplementationOnce(async () => { throw new Error('boom'); });
     bind();
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: 'a', prompt: '干活' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: 'a', prompt: '干活' }));
 
     await vi.waitFor(() => expect(permissions.isLiveVoiceSession('session-1')).toBe(false));
     expect(workItems.value.at(-1)).toEqual(expect.objectContaining({ status: 'failed' }));
@@ -502,7 +502,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
 
   it('缺少任务内容时不派活（口误不该变成一次真跑）', async () => {
     bind();
-    const result = await executeVoiceTool('spawn_task', JSON.stringify({ title: '空的' }));
+    const result = await executeVoiceTool('delegate_task', JSON.stringify({ title: '空的' }));
     expect(result).toContain('没有派发');
     expect(runtime.startTask).not.toHaveBeenCalled();
   });
@@ -512,7 +512,7 @@ describe('A4 窄工具 / H1 指挥台', () => {
     runtime.startTask.mockImplementationOnce(async () => { throw new Error('trust identity changed'); });
     bind('muzhi');
 
-    await executeVoiceTool('spawn_task', JSON.stringify({ title: '写文件', prompt: '建个文件' }));
+    await executeVoiceTool('delegate_task', JSON.stringify({ title: '写文件', prompt: '建个文件' }));
 
     await vi.waitFor(() => expect(workItems.value.some((item) => item.status === 'failed')).toBe(true));
     expect(workItems.value.at(-1)).toMatchObject({ title: '写文件', status: 'failed', detail: 'trust identity changed' });

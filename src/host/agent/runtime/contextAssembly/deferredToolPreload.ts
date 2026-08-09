@@ -7,7 +7,8 @@ const logger = createLogger('ContextAssembly');
 
 type RuntimeForDeferredToolPreload = Pick<
   RuntimeContext,
-  'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode' | 'turn' | 'deniedToolNames'
+  'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode' | 'turn'
+  | 'deniedToolNames' | 'allowedToolNames'
 >;
 
 // 意图正则守则（issue #322）：\b 对 . / - 等非单词字符也成立，"notes.md" 能穿过
@@ -94,6 +95,20 @@ export function getDeferredToolsToPreloadForTurn(
 
   if (SPAWN_AGENT_INTENT_RE.test(userText)) {
     tools.add('spawn_agent');
+  }
+
+  // 显式 allowlist 一律预加载。理由：allowedToolNames 给出时，filterToolsByRunPolicy 会把
+  // 不在表里的工具全部剔掉——**这一轮的工具面已经由它定死**，比任何意图正则都强的信号。
+  // 而此前它完全不参与预加载，于是「被允许」和「进得来」是两件事：deferred 工具即使在
+  // allowlist 里，也只能靠某条正则碰巧命中才进得来。`spawn_agent` 的触发条件恰好是
+  // `/\bspawn_agent\b/i`——**用户得逐字打出工具名**。真实用户说「让溯真去调研 X」永远不命中，
+  // 于是前台角色委派入口在 99.1% 的轮次里不可达（ADR-056 回归，真库 10 份
+  // tool_schema_snapshot 里 spawn_agent 一次没出现过）；而 role e2e 的提示词逐字写了
+  // "spawn_agent"，正好把这道门盖住了，排查时只看得见 allowlist 那一层。
+  // 按名字枚举触发词是漏洞制造机；allowlist 是现成的、且永远同步的真源。
+  for (const allowed of runtime.allowedToolNames ?? []) {
+    const canonical = resolveToolAlias(allowed);
+    if (!isCoreToolName(canonical)) tools.add(canonical);
   }
 
   // Active skill invocation：把本轮命中的 skill 的 allowedTools 里的非 core 工具预加载，

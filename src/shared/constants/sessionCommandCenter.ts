@@ -1,6 +1,16 @@
-/** Tools exposed to the foreground text brain. Background task runs deny them. */
+/**
+ * Tools exposed to the foreground text brain. Background task runs deny them.
+ *
+ * `spawn_agent`（角色委派）是 2026-08-09 补登记的：ADR-056 把边界画在**副作用**上并明确
+ * 允许前台「发起委派」，但四元组只登记了「通用后台任务」这一种委派入口，漏了角色委派。
+ * 后果不是测试挂而已——真实用户在普通会话里说「让溯真去调研 X」（覆盖 99.1% 的轮次），
+ * 模型手上唯一的委派工具是 delegate_task，于是它把角色名写进 prompt 让通用任务扮演，
+ * 那个角色从未被真正调起，RoleWriteBack 一行日志都没有，角色记忆/履历/跨会话延续整条塌掉。
+ * 后台侧无需担心递归：spawn_agent 早已在 MULTIAGENT_TOOL_NAMES 的拒绝清单里。
+ */
 export const SESSION_COMMAND_CENTER_TOOL_NAMES = [
   'delegate_task',
+  'spawn_agent',
   'steer_task',
   'cancel_task',
   'task_status',

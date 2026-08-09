@@ -68,5 +68,7 @@ export function recordMessageProcessorModelCallTelemetry(
     traceSpanId: ctx.stats.lastModelTraceSpanId,
     prompt: promptSummary.substring(0, maxPromptLength),
     completion: completionText.substring(0, maxCompletionLength),
+    cacheReadTokens: response.usage?.cacheReadTokens,
+    cacheCreationTokens: response.usage?.cacheCreationTokens,
   });
 }

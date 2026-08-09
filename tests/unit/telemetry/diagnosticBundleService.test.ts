@@ -180,7 +180,8 @@ describe('buildDiagnosticBundle', () => {
         provider TEXT NOT NULL, model TEXT NOT NULL, temperature REAL, max_tokens INTEGER,
         input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0, latency_ms INTEGER DEFAULT 0,
         response_type TEXT, tool_call_count INTEGER DEFAULT 0, truncated INTEGER DEFAULT 0, error TEXT,
-        fallback_info TEXT, prompt TEXT, completion TEXT
+        fallback_info TEXT, prompt TEXT, completion TEXT,
+        cache_read_tokens INTEGER DEFAULT 0, cache_creation_tokens INTEGER DEFAULT 0
       );
       CREATE TABLE telemetry_tool_calls (
         id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, session_id TEXT NOT NULL, tool_call_id TEXT NOT NULL,

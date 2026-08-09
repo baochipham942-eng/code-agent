@@ -43,7 +43,8 @@ describe('TelemetryStorage raw payloads', () => {
         temperature REAL, max_tokens INTEGER, input_tokens INTEGER DEFAULT 0,
         output_tokens INTEGER DEFAULT 0, latency_ms INTEGER DEFAULT 0, response_type TEXT,
         tool_call_count INTEGER DEFAULT 0, truncated INTEGER DEFAULT 0, error TEXT,
-        fallback_info TEXT, prompt TEXT, completion TEXT
+        fallback_info TEXT, prompt TEXT, completion TEXT,
+        cache_read_tokens INTEGER DEFAULT 0, cache_creation_tokens INTEGER DEFAULT 0
       );
       CREATE TABLE telemetry_tool_calls (
         id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, session_id TEXT NOT NULL,
@@ -94,6 +95,23 @@ describe('TelemetryStorage raw payloads', () => {
     expect(byField.prompt.content).not.toContain('sk-abcd1234efgh');
     expect(byField.prompt.content).toContain('REDACTED');
     expect(byField.completion.content).toBe('done');
+  });
+
+  it('persists non-zero provider prompt-cache usage', () => {
+    const storage = new TelemetryStorage();
+    const call = modelCall('m-cache', 'turn-cache', 'sess-1', 100, 'prompt', 'completion');
+    call.cacheReadTokens = 4096;
+    call.cacheCreationTokens = 512;
+
+    storage.batchInsert({ modelCalls: [call] });
+
+    expect(dbState.sqlite!.prepare(`
+      SELECT cache_read_tokens, cache_creation_tokens
+      FROM telemetry_model_calls WHERE id = ?
+    `).get('m-cache')).toEqual({
+      cache_read_tokens: 4096,
+      cache_creation_tokens: 512,
+    });
   });
 
   // 直接测 prepareRawPayload:绕开聚合表的 guardTelemetryText(对超大输入极慢,属既有问题)

@@ -37,4 +37,19 @@ describe('database migrations', () => {
     );
     db.close();
   });
+
+  it('adds prompt-cache usage columns to telemetry model calls', () => {
+    const db = new Database(':memory:');
+    const logger = createLogger();
+    db.exec('CREATE TABLE telemetry_model_calls (id TEXT PRIMARY KEY)');
+
+    applyTelemetryTurnsMigrations(db, logger);
+
+    const columns = db.prepare('PRAGMA table_info(telemetry_model_calls)').all() as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining([
+      'cache_read_tokens',
+      'cache_creation_tokens',
+    ]));
+    db.close();
+  });
 });

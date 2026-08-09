@@ -922,6 +922,10 @@ export class TelemetryStorage {
               error, fallback_info, prompt, completion, cache_read_tokens, cache_creation_tokens
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
+          // ⚠️ cache_read_tokens / cache_creation_tokens 这两列的 `?? 0` 有二义性：
+          // 库里的 0 既可能是「provider 报了 0 = 真没命中」，也可能是「provider 根本没报这个字段」。
+          // 读这两列做缓存健康度判断时，0 不等于"缓存失效"，要结合 provider 是否支持一起看。
+          // （CLI 侧的 --metrics 出口没有这个问题：那边 undefined 直接不写键，见 metricsCollector.ts）
           for (const mc of data.modelCalls) {
             stmt.run(mc.id, mc.turnId, mc.sessionId, mc.timestamp, mc.provider, mc.model, mc.temperature ?? null, mc.maxTokens ?? null, mc.inputTokens, mc.outputTokens, mc.latencyMs, mc.responseType, mc.toolCallCount, mc.truncated ? 1 : 0, guardTelemetryText(mc.error, TELEMETRY_TRUNCATION.EVENT_SUMMARY), mc.fallbackUsed ? stringifyGuardedTelemetry(mc.fallbackUsed) : null, guardTelemetryText(mc.prompt, TELEMETRY_TRUNCATION.USER_PROMPT), guardTelemetryText(mc.completion, TELEMETRY_TRUNCATION.ASSISTANT_RESPONSE), mc.cacheReadTokens ?? 0, mc.cacheCreationTokens ?? 0);
           }

@@ -40,10 +40,3 @@ export {
   type TaskAnalysis,
   analyzeTask,
 } from './taskRouter';
-
-// Intent Classifier (hybrid fast/slow path for research detection)
-export {
-  type TaskIntent,
-  type TaskIntentClassification,
-  classifyIntent,
-} from '../../routing/intentClassifier';

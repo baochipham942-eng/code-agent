@@ -3,8 +3,8 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { classifyIntent, clearIntentClassificationCache, IntentClassifier } from '../../../src/host/routing/intentClassifier';
-import { quickTask } from '../../../src/host/model/quickModel';
+import { IntentClassifier } from '../../../src/host/routing/intentClassifier';
+import { analyzeTask } from '../../../src/host/agent/hybrid/taskRouter';
 import type { ModelRouter } from '../../../src/host/model/modelRouter';
 
 // Mock logger to suppress console output during tests
@@ -15,10 +15,6 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
     error: vi.fn(),
     debug: vi.fn(),
   }),
-}));
-
-vi.mock('../../../src/host/model/quickModel', () => ({
-  quickTask: vi.fn(),
 }));
 
 /**
@@ -37,160 +33,9 @@ function createMockModelRouter(chatResponse?: { content: string | null }): Model
   } as unknown as ModelRouter;
 }
 
-// ============================================================================
-// Part 1: classifyIntent (lightweight agent-routing function)
-// ============================================================================
-
-describe('classifyIntent — Lightweight Agent Routing', () => {
-  let mockRouter: ModelRouter;
-  const quickTaskMock = vi.mocked(quickTask);
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    clearIntentClassificationCache();
-    mockRouter = createMockModelRouter();
-    quickTaskMock.mockResolvedValue({ success: true, content: 'general' });
-  });
-
-  // --------------------------------------------------------------------------
-  // Keyword quick path
-  // --------------------------------------------------------------------------
-  describe('keyword quick path', () => {
-    it('should classify 深入调研 as research via keywords (no LLM call)', async () => {
-      const result = await classifyIntent('请帮我深入调研一下市场情况', mockRouter);
-      expect(result).toEqual({ intent: 'research', references_past_context: false });
-      expect(mockRouter.chat).not.toHaveBeenCalled();
-    });
-
-    it('should classify 深度搜索 as research via keywords', async () => {
-      const result = await classifyIntent('深度搜索 AI Agent 框架', mockRouter);
-      expect(result.intent).toBe('research');
-      expect(mockRouter.chat).not.toHaveBeenCalled();
-    });
-
-    it('should classify comprehensive research as research via keywords', async () => {
-      const result = await classifyIntent('Please do comprehensive research on LLM pricing', mockRouter);
-      expect(result.intent).toBe('research');
-      expect(mockRouter.chat).not.toHaveBeenCalled();
-    });
-
-    it('should classify deep research as research via keywords', async () => {
-      const result = await classifyIntent('I need a deep research on transformer architectures', mockRouter);
-      expect(result.intent).toBe('research');
-      expect(mockRouter.chat).not.toHaveBeenCalled();
-    });
-
-    it('should classify 全面分析 as research via keywords', async () => {
-      const result = await classifyIntent('全面分析竞品', mockRouter);
-      expect(result.intent).toBe('research');
-      expect(mockRouter.chat).not.toHaveBeenCalled();
-    });
-  });
-
-  // --------------------------------------------------------------------------
-  // LLM classification path
-  // --------------------------------------------------------------------------
-  describe('LLM classification path', () => {
-    it('should use LLM when keywords do not match', async () => {
-      quickTaskMock.mockResolvedValueOnce({ success: true, content: 'code' });
-      const result = await classifyIntent('请帮我写一个排序算法并说明复杂度', mockRouter);
-      expect(result.intent).toBe('code');
-      expect(quickTaskMock).toHaveBeenCalledTimes(1);
-      expect(mockRouter.chat).not.toHaveBeenCalled();
-    });
-
-    it('memoizes LLM result so routing and memory gate share one quickModel call per message', async () => {
-      quickTaskMock.mockResolvedValueOnce({
-        success: true,
-        content: '{"intent":"code","references_past_context":true}',
-      });
-      const first = await classifyIntent('把那个方案往下做', mockRouter);
-      const second = await classifyIntent('把那个方案往下做', mockRouter);
-      expect(first).toEqual({ intent: 'code', references_past_context: true });
-      expect(second).toEqual(first);
-      expect(quickTaskMock).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not memoize failure fallbacks so the next call can retry', async () => {
-      quickTaskMock.mockResolvedValueOnce({ success: false, content: undefined, error: 'boom' });
-      quickTaskMock.mockResolvedValueOnce({
-        success: true,
-        content: '{"intent":"code","references_past_context":true}',
-      });
-      const first = await classifyIntent('把那个方案往下做', mockRouter);
-      const second = await classifyIntent('把那个方案往下做', mockRouter);
-      expect(first).toEqual({ intent: 'general', references_past_context: false });
-      expect(second).toEqual({ intent: 'code', references_past_context: true });
-      expect(quickTaskMock).toHaveBeenCalledTimes(2);
-    });
-
-    it('classifies empty input as general without an LLM call', async () => {
-      const result = await classifyIntent('   ', mockRouter);
-      expect(result).toEqual({ intent: 'general', references_past_context: false });
-      expect(quickTaskMock).not.toHaveBeenCalled();
-    });
-
-    it('should return valid intent from LLM response', async () => {
-      quickTaskMock.mockResolvedValueOnce({ success: true, content: 'search' });
-      const result = await classifyIntent('请查一下 React 19 的新特性和发布信息', mockRouter);
-      expect(result.intent).toBe('search');
-    });
-
-    it('should handle LLM returning data intent', async () => {
-      quickTaskMock.mockResolvedValueOnce({ success: true, content: 'data' });
-      const result = await classifyIntent('请分析一下这个 CSV 文件里的销售趋势', mockRouter);
-      expect(result.intent).toBe('data');
-    });
-
-    it('should trim and lowercase LLM response', async () => {
-      quickTaskMock.mockResolvedValueOnce({ success: true, content: '  Code  \n' });
-      const result = await classifyIntent('please fix the bug in this function', mockRouter);
-      expect(result.intent).toBe('code');
-    });
-
-    it('should identify a semantic reference to past context without legacy regex keywords', async () => {
-      quickTaskMock.mockResolvedValueOnce({
-        success: true,
-        content: '{"intent":"general","references_past_context":true}',
-      });
-
-      const result = await classifyIntent('把那个方案往下做', mockRouter);
-
-      expect(result).toEqual({ intent: 'general', references_past_context: true });
-      expect(quickTaskMock).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  // --------------------------------------------------------------------------
-  // Fallback to general
-  // --------------------------------------------------------------------------
-  describe('fallback behavior', () => {
-    it('should default to general when LLM returns invalid label', async () => {
-      quickTaskMock.mockResolvedValueOnce({ success: true, content: 'unknown_intent' });
-      const result = await classifyIntent('something ambiguous', mockRouter);
-      expect(result).toEqual({ intent: 'general', references_past_context: false });
-    });
-
-    it('should default to general when LLM returns empty content', async () => {
-      quickTaskMock.mockResolvedValueOnce({ success: true, content: undefined });
-      const result = await classifyIntent('please classify this ambiguous input', mockRouter);
-      expect(result).toEqual({ intent: 'general', references_past_context: false });
-    });
-
-    it('should default to general when LLM call fails', async () => {
-      quickTaskMock.mockRejectedValueOnce(new Error('API error'));
-      const result = await classifyIntent('please classify this ambiguous input', mockRouter);
-      expect(result).toEqual({ intent: 'general', references_past_context: false });
-    });
-
-    it('should default to general when LLM call times out', async () => {
-      quickTaskMock.mockImplementationOnce(
-        () => new Promise((resolve) => setTimeout(() => resolve({ success: true, content: 'code' }), 5000))
-      );
-      const result = await classifyIntent('fix the function', mockRouter);
-      // Should timeout at 3s and fall back to general
-      expect(result).toEqual({ intent: 'general', references_past_context: false });
-    }, 10000);
+describe('analyzeTask research keyword gate', () => {
+  it('routes 「深入调研 X」 to the deep-research path without a model classification', () => {
+    expect(analyzeTask('深入调研 AI Agent 市场').taskType).toBe('research');
   });
 });
 

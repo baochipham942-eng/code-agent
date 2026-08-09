@@ -19,11 +19,8 @@ export type {
   AgentRoutingEvent,
 } from '../../shared/contract/agentRouting';
 
-// Intent Classifier (unified — research + hybrid agent routing)
+// Intent Classifier (research orchestration)
 export {
   IntentClassifier,
   type IntentClassifierConfig,
-  type TaskIntent,
-  type TaskIntentClassification,
-  classifyIntent,
 } from './intentClassifier';

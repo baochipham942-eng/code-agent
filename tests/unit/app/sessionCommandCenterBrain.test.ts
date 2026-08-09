@@ -98,6 +98,13 @@ describe('前台 allowlist 的副作用边界', () => {
     }
   });
 
+  // ADR-056 回归（2026-08-09）：ADR 明确允许前台**发起委派**，四元组却只登记了通用后台任务
+  // 这一种入口，漏了角色委派 ⇒ 用户说「让溯真去调研 X」时模型手上只有 delegate_task，
+  // 只能把角色名写进 prompt 让通用任务扮演，那个角色从未被真正调起（RoleWriteBack 零日志）。
+  it('带上角色委派入口（否则前台永远调不起持久化角色）', () => {
+    expect(SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES).toContain('spawn_agent');
+  });
+
   it('绝不带上有副作用的工具', () => {
     for (const name of ['Bash', 'Write', 'Edit', 'Append', 'WebSearch', 'ToolSearch']) {
       expect(SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES).not.toContain(name);

@@ -25,6 +25,7 @@ import {
 import { getToolSearchService, resetToolSearchService } from '../../../src/host/services/toolSearch';
 import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
+import { SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES } from '../../../src/shared/constants/sessionCommandCenter';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -42,8 +43,8 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 function runtime(
-  overrides: Partial<Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn' | 'deniedToolNames'>>,
-): Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn' | 'deniedToolNames'> {
+  overrides: Partial<Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn' | 'deniedToolNames' | 'allowedToolNames'>>,
+): Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn' | 'deniedToolNames' | 'allowedToolNames'> {
   return {
     enableToolDeferredLoading: true,
     executionIntent: undefined,
@@ -339,6 +340,56 @@ describe('deferred tool preload', () => {
       expect(getDeferredToolsToPreloadForTurn(runtime({
         messages: [{ id: 'm1', role: 'user', content: 'capture the current meeting notes for me', timestamp: 1 }],
       }))).toEqual(['Computer']);
+    });
+  });
+
+  // ADR-056 回归（2026-08-09 定因）：spawn_agent 的预加载触发条件是 /\bspawn_agent\b/i，
+  // 即**用户得逐字打出工具名**。真实用户说「让溯真去调研 X」不命中 ⇒ 它进不了本轮工具表 ⇒
+  // 前台角色委派入口不可达（真库 10 份 tool_schema_snapshot 里 spawn_agent 一次没出现过）。
+  // 光把它加进 allowlist 救不了：allowlist 只做减法，它从来不参与预加载。
+  describe('显式 allowlist 参与预加载', () => {
+    const NATURAL = '让溯真去调研一下竞品的定价';
+
+    it('自然语句 + 指挥台 allowlist ⇒ spawn_agent 进得来', () => {
+      expect(getDeferredToolsToPreloadForTurn(runtime({
+        messages: [{ id: 'm1', role: 'user', content: NATURAL, timestamp: 1 }],
+        allowedToolNames: [...SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES],
+      }))).toContain('spawn_agent');
+    });
+
+    it('同一句话没有 allowlist 时进不来——钉住这条门真正承重的是 allowlist 而不是句子本身', () => {
+      expect(getDeferredToolsToPreloadForTurn(runtime({
+        messages: [{ id: 'm1', role: 'user', content: NATURAL, timestamp: 1 }],
+      }))).not.toContain('spawn_agent');
+    });
+
+    it('常驻 core 工具不塞进预加载清单（与 skill boundary 那条对称）', () => {
+      const preloaded = getDeferredToolsToPreloadForTurn(runtime({
+        messages: [{ id: 'm1', role: 'user', content: NATURAL, timestamp: 1 }],
+        allowedToolNames: [...SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES],
+      }));
+      for (const core of ['Read', 'Grep', 'Glob', 'ListDirectory']) {
+        expect(preloaded).not.toContain(core);
+      }
+    });
+
+    // 契约是「任何显式 allowlist」，不是给指挥台开的特例——RuntimeContext.allowedToolNames
+    // 的消费方还有 CLI（cli/bootstrap.ts:536）。用一个与指挥台无关的工具钉住通用性。
+    // 注意影响面只到这里：subagentExecutor.ts:353 那个 allowedToolNames 喂的是
+    // createSubagentToolRuntime → ToolExecutor，不是 RuntimeContext，子代理不走本路径。
+    it('任何显式 allowlist 都算数，不只是指挥台那一份', () => {
+      expect(getDeferredToolsToPreloadForTurn(runtime({
+        messages: [{ id: 'm1', role: 'user', content: '随便聊两句', timestamp: 1 }],
+        allowedToolNames: ['workflow_orchestrate'],
+      }))).toContain('workflow_orchestrate');
+    });
+
+    it('denylist 仍然压过 allowlist（后台槽的防递归不能被这条绕开）', () => {
+      expect(getDeferredToolsToPreloadForTurn(runtime({
+        messages: [{ id: 'm1', role: 'user', content: NATURAL, timestamp: 1 }],
+        allowedToolNames: [...SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES],
+        deniedToolNames: ['spawn_agent'],
+      }))).not.toContain('spawn_agent');
     });
   });
 

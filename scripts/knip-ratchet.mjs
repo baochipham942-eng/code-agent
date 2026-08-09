@@ -1,37 +1,74 @@
 #!/usr/bin/env node
 // ============================================================================
-// knip-ratchet — dead-export 棘轮门（与 console-scan 同构）
+// knip-ratchet — dead-export 棘轮门（集合基线）
 // ============================================================================
 //
-// 跑 knip（入口/范围见 knip.json）统计 unused exports + types，超基线即红。
-// 存量 2026-07-02 实测 2785（exports 1502 + types 1283），大头是 barrel index.ts
-// 的转口出口（消费方直接 import 源模块，转口本身无人走）——抽查 5 例 0 误报，
-// 全部是"该出口确实没有任何 import 路径"的真阳性，故不设 allowlist 起步；
-// 确属误报时用 knip.json 的 ignore 机制核销并在此注明。
+// 跑 knip（入口/范围见 knip.json）收集 unused exports + types。基线记录每个
+// 文件、符号名和类别；当前结果中不在基线的符号即阻塞。这样同一批清理存量
+// 死导出时，不能再用净计数下降掩盖新造的死导出。
 //
-// 棘轮：命中数 <= BASELINE_MAX 通过；清理后手动调小（只降不升）。
-// 清理记录：2026-07-13 从 2881 清到 2748；2026-07-15 状态化 CUA 收口到 2747；
-// 2026-07-21 Surface Execution V1 新增 57 处死出口清零（去 export/删声明），收到 2708。
-// 2026-07-21 资料库 Batch 2：libraryClient 按需裁剪后收到 2707。
-// 2026-07-25 删 BudgetSettings 孤儿页（产品拍板不让用户设预算）后收到 2695。
-// 2026-07-26 UI 债收尾删掉单工具耗时后，formatDuration 那两层转出口没人要了，收到 2694。
-// 2026-07-27 批 G 清掉新组件的无人 default 转出口 + 未用类型出口，收到 2692。
-// 2026-07-27 Fork/Rewind 清掉 78 处新增死出口（含 23 处 repository barrel 转口），收到 2690。
-// 2026-07-31 X6 realtime provider 通用化移除 2 个旧死出口，收到 2687。
-// 2026-08-07 诊断包导出：appDiagnosticsBundleBuilder.ts 三个只在本文件内用的
-// interface（AppDiagnosticsFileEntry/RendererCacheManifestEntry/AppDiagnosticsManifest）
-// 去掉多余 export，本地收到 2686；但 CI 环境恒比本地多解析出 1 处（2687），
-// 基线以 CI 口径为准取 2687——收基线前必须用 CI 实跑数校对，别用本地数。
-// knip 版本锁 6.24.0（未入 devDependencies，避免 lockfile/共享 node_modules 变更；
-// CI 与本地统一走 npx knip@6.24.0，升版本须同步重测基线）。
+// 2026-08-07 本地与 CI 的总数曾相差一处。集合基线必须以 CI 首次点名的额外
+// 符号补齐，不能用“允许 N 个未知新增”的宽容度掩盖环境差异。
+// knip 版本锁 6.24.0；升版本须先重测并有意更新基线。
 //
-// 用法：node scripts/knip-ratchet.mjs
+// 用法：
+//   node scripts/knip-ratchet.mjs
+//   node scripts/knip-ratchet.mjs --update-baseline
 
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
-const BASELINE_MAX = 2686;
 const KNIP_VERSION = '6.24.0';
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const baselinePath = path.join(scriptDir, 'knip-ratchet-baseline.json');
+const updateBaseline = process.argv.slice(2).includes('--update-baseline');
+const unknownArguments = process.argv.slice(2).filter((argument) => argument !== '--update-baseline');
+
+if (unknownArguments.length > 0) {
+  console.error(`[knip-ratchet] ✗ 不支持的参数：${unknownArguments.join(', ')}；仅支持 --update-baseline`);
+  process.exit(1);
+}
+
+function compareSymbols(a, b) {
+  return a.file.localeCompare(b.file) || a.name.localeCompare(b.name) || a.kind.localeCompare(b.kind);
+}
+
+function symbolKey(symbol) {
+  return `${symbol.file}\u0000${symbol.kind}\u0000${symbol.name}`;
+}
+
+function formatSymbol(symbol) {
+  return `${symbol.file}: ${symbol.name} (${symbol.kind})`;
+}
+
+function collectSymbols(report) {
+  const symbols = [];
+  for (const issue of report.issues) {
+    for (const entry of issue.exports ?? []) symbols.push({ file: issue.file, name: entry.name, kind: 'export' });
+    for (const entry of issue.types ?? []) symbols.push({ file: issue.file, name: entry.name, kind: 'type' });
+  }
+  return symbols.sort(compareSymbols);
+}
+
+function readBaseline() {
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+  } catch (error) {
+    console.error(`[knip-ratchet] ✗ 自检失败：无法读取基线 ${path.relative(process.cwd(), baselinePath)}：${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+  if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.symbols)
+    || parsed.symbols.some((symbol) => !symbol || typeof symbol.file !== 'string' || typeof symbol.name !== 'string'
+      || !['export', 'type'].includes(symbol.kind))) {
+    console.error('[knip-ratchet] ✗ 自检失败：基线格式无效，预期 schemaVersion=1 和有序 symbols[]');
+    process.exit(1);
+  }
+  return parsed.symbols.sort(compareSymbols);
+}
 
 const result = spawnSync(
   'npx',
@@ -39,7 +76,7 @@ const result = spawnSync(
   { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 },
 );
 
-// knip 有 issue 时 exit 1 属正常；以 JSON 可解析为准判断门本身是否健康（自检 fail loud）
+// knip 有 issue 时 exit 1 属正常；以 JSON 可解析为准判断门本身是否健康（自检 fail loud）。
 let report;
 try {
   report = JSON.parse(result.stdout);
@@ -53,25 +90,31 @@ if (!Array.isArray(report.issues)) {
   process.exit(1);
 }
 
-let count = 0;
-const perFile = [];
-for (const issue of report.issues) {
-  const n = (issue.exports?.length ?? 0) + (issue.types?.length ?? 0);
-  if (n > 0) {
-    count += n;
-    perFile.push({ file: issue.file, n });
-  }
+const currentSymbols = collectSymbols(report);
+if (updateBaseline) {
+  fs.writeFileSync(baselinePath, `${JSON.stringify({ schemaVersion: 1, symbols: currentSymbols }, null, 2)}\n`);
+  console.log(`[knip-ratchet] 扫描完成：${report.issues.length} 个命中文件，${currentSymbols.length} 个 dead export/type 符号`);
+  console.log(`[knip-ratchet] ✓ 已更新 ${path.relative(process.cwd(), baselinePath)}；CI 首跑若点名环境额外符号，核实后将其补入此集合`);
+  process.exit(0);
 }
 
-console.log(`[knip-ratchet] dead exports+types 命中 ${count} 处（基线上限 ${BASELINE_MAX}）`);
+const baselineSymbols = readBaseline();
+const baselineKeys = new Set(baselineSymbols.map(symbolKey));
+const currentKeys = new Set(currentSymbols.map(symbolKey));
+const added = currentSymbols.filter((symbol) => !baselineKeys.has(symbolKey(symbol)));
+const removed = baselineSymbols.filter((symbol) => !currentKeys.has(symbolKey(symbol)));
 
-if (count > BASELINE_MAX) {
-  console.error(`[knip-ratchet] ✗ 超基线 ${count - BASELINE_MAX} 处，请移除新增的无人引用出口（或确属误报时在 knip.json 里核销）`);
-  for (const { file, n } of perFile.sort((a, b) => b.n - a.n).slice(0, 20)) console.error(`  ${n}\t${file}`);
+console.log(`[knip-ratchet] 扫描完成：${report.issues.length} 个命中文件；当前 ${currentSymbols.length} 个符号，基线 ${baselineSymbols.length} 个符号`);
+
+if (added.length > 0) {
+  console.error(`[knip-ratchet] ✗ 发现 ${added.length} 个新增 dead export/type，不能由存量清理抵消：`);
+  for (const symbol of added) console.error(`  ${formatSymbol(symbol)}`);
   process.exit(1);
 }
-if (count < BASELINE_MAX) {
-  console.log(`[knip-ratchet] ✓ 低于基线 ${BASELINE_MAX - count} 处 —— 可把 BASELINE_MAX 调小到 ${count} 收紧棘轮`);
+
+if (removed.length > 0) {
+  console.log(`[knip-ratchet] ✓ 未新增；有 ${removed.length} 个存量符号已清理，可运行 --update-baseline 从基线移除：`);
+  for (const symbol of removed) console.log(`  ${formatSymbol(symbol)}`);
 } else {
-  console.log('[knip-ratchet] ✓ 等于基线，通过（未新增）');
+  console.log('[knip-ratchet] ✓ 未新增；当前符号集合与基线一致');
 }

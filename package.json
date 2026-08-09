@@ -198,7 +198,7 @@
     "@ai-sdk/deepseek": "^2.0.35",
     "@ai-sdk/google": "^3.0.79",
     "@ai-sdk/openai-compatible": "^2.0.48",
-    "@anthropic-ai/sdk": "^0.97.1",
+    "@anthropic-ai/sdk": "^0.116.0",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.2",
     "@codemirror/lang-markdown": "^6.5.0",

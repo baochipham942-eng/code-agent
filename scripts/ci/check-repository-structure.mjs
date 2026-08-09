@@ -26,10 +26,12 @@ const limits = {
   // 实体拷贝可写输入，CLAUDE.md「本地 dogfood 打包」小节指向的稳定手工入口）。
   // 2026-08-08 +1: scripts/host-chinese-error-ratchet.mjs（P2 host 中文 error
   // 字面量棘轮，package / gates:local / swarm-ci 共用的稳定入口）。
+  // 2026-08-09 +1: scripts/knip-ratchet-baseline.json（dead export/type 集合基线，
+  // 由 scripts/knip-ratchet.mjs 的 --update-baseline 稳定生成）。
   // 2026-08-08 +1: scripts/neo-collect-diagnostics.bat（Windows 测试用户一键收诊断的
   // 单文件 polyglot：bat 头自读文件、从 #PSBEGIN 起交给 PowerShell 执行，双击即跑。
   // 它是直接交到用户手上的入口，不能藏进子目录，所以占一个直属名额）。
-  directScriptFiles: 148,
+  directScriptFiles: 149,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

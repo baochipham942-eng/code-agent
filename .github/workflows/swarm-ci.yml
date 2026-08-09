@@ -53,6 +53,8 @@ on:
       - 'scripts/host-chinese-error-ratchet.mjs'
       - 'tailwind.config.js'
       - 'scripts/knip-ratchet.mjs'
+      # 基线本身也要触发这道门：否则「只改基线」的 PR（等于手工放宽棘轮）不会被任何门看到
+      - 'scripts/knip-ratchet-baseline.json'
       - 'scripts/knip-production-ratchet.mjs'
       - 'scripts/eslint-ratchet.mjs'
       - 'knip.json'
@@ -259,7 +261,7 @@ jobs:
         run: npx vitest run tests/unit/mcp tests/integration/mcp --retry=1
 
       - name: Knip dead-export ratchet
-        # dead exports+types 棘轮（基线 2785，见 scripts/knip-ratchet.mjs 头注）。
+        # dead exports+types 集合棘轮（基线见 scripts/knip-ratchet-baseline.json）。
         # knip 版本锁在脚本内（npx knip@<pin>），未入 devDependencies；本地实测 ~12s，
         # CI 走 setup-node 的 npm 缓存。独立 step 便于失败归因。
         run: node scripts/knip-ratchet.mjs

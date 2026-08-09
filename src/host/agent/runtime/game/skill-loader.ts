@@ -10,7 +10,7 @@
 
 import { promises as fsp } from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 
 import { SKILL_LOADER_DEFAULTS } from '@shared/constants';
 

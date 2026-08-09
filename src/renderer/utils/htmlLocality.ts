@@ -17,8 +17,9 @@ export interface HtmlLocalitySelectionController {
 }
 
 function escapeCssIdentifier(value: string): string {
-  const cssEscape = globalThis.CSS?.escape;
-  if (cssEscape) return cssEscape(value);
+  // 必须挂在 CSS 上调用：CSS.escape 是 WebIDL 静态方法，摘下来单独调会丢 this，
+  // 真浏览器抛 Illegal invocation、jsdom 30+ 抛 "not a valid instance of CSS"。
+  if (typeof globalThis.CSS?.escape === 'function') return globalThis.CSS.escape(value);
 
   return Array.from(value)
     .map((char, index) => {

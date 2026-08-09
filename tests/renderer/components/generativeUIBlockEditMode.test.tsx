@@ -171,19 +171,21 @@ describe('属性面板改文字 / 字号 / 颜色', () => {
     render(<GenerativeUIBlock code={CODE} />);
     const { element } = enterEditAndSelect('h1');
 
+    // 30 而不是 28：沙箱 body 是 14px，h1 默认 2em ⇒ 面板初值就是 28，
+    // 填 28 等于没改，受控 input 不会触发 onChange，onApply 一次都不会调。
     fireEvent.change(screen.getByTestId('generative-ui-font-size-input'), {
-      target: { value: '28' },
+      target: { value: '30' },
     });
     fireEvent.change(screen.getByTestId('generative-ui-color-input'), {
       target: { value: '#2563eb' },
     });
 
-    expect(element.style.fontSize).toBe('28px');
+    expect(element.style.fontSize).toBe('30px');
     expect(element.style.color).toBe('rgb(37, 99, 235)');
 
     fireEvent.click(editToggle());
     const srcdoc = previewSrcdoc();
-    expect(srcdoc).toContain('font-size: 28px');
+    expect(srcdoc).toContain('font-size: 30px');
     expect(srcdoc).toContain('color: rgb(37, 99, 235)');
   });
 

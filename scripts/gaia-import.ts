@@ -25,7 +25,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 import { buildGaiaSuite, type GaiaRow } from '../src/host/testing/gaiaImporter';
 
 const HELP = `gaia-import — GAIA metadata.jsonl → TestRunner YAML case

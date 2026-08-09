@@ -203,8 +203,13 @@ describe('属性面板读当前值', () => {
   });
 
   it('颜色读不出来时退到沙箱正文色，不是黑色', () => {
-    document.body.innerHTML = '<p style="color: somethingweird">x</p>';
-    expect(readElementStyle(document.querySelector('p')!).color).toBe(SANDBOX_TEXT_COLOR);
+    // 用无 defaultView 的游离文档触发「读不出来」：非法内联色本身不够——浏览器和
+    // jsdom 30+ 的 getComputedStyle 一定会给出已解析的颜色（继承来的初始值 rgb(0,0,0)），
+    // 兜底根本轮不到。jsdom 26 那时返回 "canvastext" 才让这条断言看着成立。
+    const detached = document.implementation.createHTMLDocument('');
+    detached.body.innerHTML = '<p style="color: somethingweird">x</p>';
+    expect(detached.defaultView).toBeNull();
+    expect(readElementStyle(detached.querySelector('p')!).color).toBe(SANDBOX_TEXT_COLOR);
   });
 
   it('字号带小数时取整，读不到时给可用的默认值而不是 0', () => {

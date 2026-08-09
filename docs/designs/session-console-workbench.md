@@ -25,7 +25,8 @@
 ### 已实现
 
 - **前台持续可输入**：任务运行中用户可继续发消息、steer 或 stop。renderer 不再有"下一轮排队中"的第二套状态文案——新输入直接进入当前会话控制链，UI 只投影 `sessionTaskSlots` 与真实运行状态。（SPEC §2.1、workbench §3.0）
-- **派活动词的用户侧表达是自然语言**：spawn / steer / cancel / status 不做成 slash 命令或固定按钮组，而是前台窄工具（`spawn_task / steer_task / cancel_task / task_status`）由对话触发。文字与实时语音共享同一合同。（SPEC §1、§2.1）
+- **派活动词的用户侧表达是自然语言**：派活 / 追加 / 取消 / 查进度不做成 slash 命令或固定按钮组，而是前台窄工具（`delegate_task / spawn_agent / steer_task / cancel_task / task_status`）由对话触发。文字与实时语音共享同一合同。（SPEC §1、§2.1）
+  - 两个委派入口按**产出什么**分工：一般的活走 `delegate_task`；用户点名某个角色（"让溯真去调研 X"）走 `spawn_agent`，这样角色的记忆与履历才真正累积，而不是让通用任务扮演一个角色。
 - **幂等**：重复派活由 `submissionKey` 收敛到既有任务，用户不会因为连点/复述而开出两件一样的活。（SPEC §2.1）
 - **并发上限的用户投影**：全局最多 4 件、单会话最多 2 件、同一 lane 同时 1 件。活跃时 `ChatView` 顶部出现 Run Status Rail（`TaskStatusBar`），聚合 running/queued、活跃 session 与进度；无后台、无队列、无团队时不出现。点击跳转到对应 session 或打开 TaskPanel / Agent Team。（SPEC §2.1、§3；workbench §4.0.1）
 - **容量满 = 用户选择，不是系统独断**：容量已满且调用方未明确允许排队时返回 `requires_choice`，由前台把选择摆给用户（排队还是顶替/取消别的），不静默扩容、不静默拒绝。（SPEC §2.1、workbench §3.0.1）

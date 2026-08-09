@@ -1,6 +1,6 @@
 # Agent Neo / Code Agent - 架构设计文档
 
-> 版本: 9.31 (9.30 + 2026-08-04~07 post-v0.30 as-built：会话指挥台任务槽位、单 spawn 后台可见、composer 上下文分槽、Browser 用户接管/账号态、session spine/CLI/FTS/分页、指令记忆 path authority)
+> 版本: 9.31 (9.30 + 2026-08-04~09 post-v0.30 as-built：会话指挥台任务槽位、单 spawn 后台可见、composer 上下文分槽、Browser 用户接管/账号态、session spine/CLI/FTS/分页、指令记忆 path authority；含 ADR-056 指挥台写入路由收口——`spawn_task`→`delegate_task` 路由契约进工具 description、`spawn_agent` 补登记为前台角色委派入口、cwd 作写边界须过宽度校验)
 > 版本: 9.30 (9.29 + 2026-08-05 ADR-054 会话指挥台四批落地：文字/语音统一任务槽位、前台窄工具与持续输入、User Directives/User Memory 权限分块、随时开口快捷键引导、实时语音成本与单通上限)
 > 版本: 9.29 (9.28 + 2026-07-12~18 Durable Run 生产切换、Web/External 终态单一事实源、renderer 权限与工具事件投影、Skill IPC 类型合同、事件假 seam 清理、桌面启动分段与更新后 compile-cache 预热；详见 runtime safety as-built spec 与 ADR-037)
 > 版本: 9.28 (9.27 + 2026-06-26 Neo Tools evidence/control 收口：统一 EvidenceRef、goal verification card、Browser/Computer durable proof、Agent Pointer 可见化、background/subagent recovery plan、agent tree/worktree read-only review；当前合同已折入本文对应能力域与 ADR-029)

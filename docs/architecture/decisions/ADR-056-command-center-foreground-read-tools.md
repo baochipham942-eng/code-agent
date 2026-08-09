@@ -4,6 +4,11 @@
 - 日期：2026-08-08
 - 关联：[ADR-054 会话=指挥台](./ADR-054-session-as-command-center.md)（本 ADR 不推翻它，是按它自己写的原则收窄实现的过宽处）
 - 排查依据：`code-agent-private-archive/docs/plans/2026-08-07-T3-工具坍缩排查报告.md`
+- **后续（2026-08-09，本 ADR 决策不变，工具面有两处变更）**：① `spawn_task` 已改名
+  **`delegate_task`**（#1055，路由契约从系统提示词搬进工具 description）；② 前台元组补登记
+  **`spawn_agent`** 作为角色委派入口（#1056，此前用户点名角色时模型只能让通用任务扮演）。
+  **正文以下保留决策当时的原文与命名，不作回溯改写**；当前形态以
+  `docs/plans/2026-08-07-neo-post-v0.30-as-built-spec.md` §2.1 为准。
 
 ## 背景：一个判据，两次真机体验伤害
 

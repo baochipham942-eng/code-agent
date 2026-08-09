@@ -94,6 +94,8 @@ export function applyTelemetryTurnsMigrations(db: BetterSqlite3.Database, logger
   const modelCallMigrations = [
     'ALTER TABLE telemetry_model_calls ADD COLUMN prompt TEXT',
     'ALTER TABLE telemetry_model_calls ADD COLUMN completion TEXT',
+    'ALTER TABLE telemetry_model_calls ADD COLUMN cache_read_tokens INTEGER DEFAULT 0',
+    'ALTER TABLE telemetry_model_calls ADD COLUMN cache_creation_tokens INTEGER DEFAULT 0',
   ];
   for (const sql of modelCallMigrations) {
     safeExec(db, sql, logger);

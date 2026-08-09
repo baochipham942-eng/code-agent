@@ -234,7 +234,9 @@ export function rowToModelCall(row: Record<string, unknown>): TelemetryModelCall
     error: row.error as string | undefined,
     fallbackUsed: parseFallbackInfoJson(row.fallback_info),
     prompt: row.prompt as string | undefined,
-    completion: row.completion as string | undefined
+    completion: row.completion as string | undefined,
+    cacheReadTokens: row.cache_read_tokens as number | undefined,
+    cacheCreationTokens: row.cache_creation_tokens as number | undefined,
   };
 }
 

@@ -919,11 +919,11 @@ export class TelemetryStorage {
               id, turn_id, session_id, timestamp, provider, model,
               temperature, max_tokens, input_tokens, output_tokens,
               latency_ms, response_type, tool_call_count, truncated,
-              error, fallback_info, prompt, completion
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              error, fallback_info, prompt, completion, cache_read_tokens, cache_creation_tokens
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
           for (const mc of data.modelCalls) {
-            stmt.run(mc.id, mc.turnId, mc.sessionId, mc.timestamp, mc.provider, mc.model, mc.temperature ?? null, mc.maxTokens ?? null, mc.inputTokens, mc.outputTokens, mc.latencyMs, mc.responseType, mc.toolCallCount, mc.truncated ? 1 : 0, guardTelemetryText(mc.error, TELEMETRY_TRUNCATION.EVENT_SUMMARY), mc.fallbackUsed ? stringifyGuardedTelemetry(mc.fallbackUsed) : null, guardTelemetryText(mc.prompt, TELEMETRY_TRUNCATION.USER_PROMPT), guardTelemetryText(mc.completion, TELEMETRY_TRUNCATION.ASSISTANT_RESPONSE));
+            stmt.run(mc.id, mc.turnId, mc.sessionId, mc.timestamp, mc.provider, mc.model, mc.temperature ?? null, mc.maxTokens ?? null, mc.inputTokens, mc.outputTokens, mc.latencyMs, mc.responseType, mc.toolCallCount, mc.truncated ? 1 : 0, guardTelemetryText(mc.error, TELEMETRY_TRUNCATION.EVENT_SUMMARY), mc.fallbackUsed ? stringifyGuardedTelemetry(mc.fallbackUsed) : null, guardTelemetryText(mc.prompt, TELEMETRY_TRUNCATION.USER_PROMPT), guardTelemetryText(mc.completion, TELEMETRY_TRUNCATION.ASSISTANT_RESPONSE), mc.cacheReadTokens ?? 0, mc.cacheCreationTokens ?? 0);
           }
         }
 

@@ -360,10 +360,6 @@ vi.mock('../../../src/host/agent/runtime/contextAssembly/modeInjection', () => (
 }));
 
 import { ContextAssembly, MAX_SYSTEM_PROMPT_TOKENS } from '../../../src/host/agent/runtime/contextAssembly';
-import {
-  MEMORY_INTENT_PATTERN,
-  RECENT_CONVERSATIONS_INTENT_PATTERN,
-} from '../../../src/host/agent/runtime/contextAssembly/messageBuild';
 import { estimateTokens } from '../../../src/host/context/tokenOptimizer';
 import { buildEnhancedSystemPrompt, injectWorkingDirectoryContext } from '../../../src/host/agent/messageHandling/contextBuilder';
 import { getPromptForTask } from '../../../src/host/prompts/builder';
@@ -736,137 +732,61 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(visibleContents).not.toContain('excluded content');
   });
 
-  it('records memory_index injection trace when memory intent matches', async () => {
+  it('keeps memory_index in the stable system prefix for a query without memory keywords', async () => {
     vi.mocked(loadMemoryIndex).mockResolvedValueOnce('- [Project]: Keep memory audit visible');
     const ctx = buildRuntimeContext({
       sessionId: 'session-memory-index',
       messages: [
-        buildMessage('user-memory-index', 'user', '记得之前的 memory 规则吗'),
+        buildMessage('user-memory-index', 'user', 'fix repo code bug'),
       ],
     });
 
     const assembly = new ContextAssembly(ctx as never);
     const modelMessages = await assembly.buildModelMessages();
 
-    // 前缀稳定改造：advisory 块从 system 消息挪到历史末尾的 transient 动态尾巴
-    const memoryIndexTail = modelMessages[modelMessages.length - 1];
-    expect(memoryIndexTail.transient).toBe(true);
-    expect(memoryIndexTail.content).toContain('<memory_index>');
-    expect(modelMessages[0].content).not.toContain('<memory_index>');
+    const systemPrompt = modelMessages[0].content as string;
+    expect(modelMessages[0].role).toBe('system');
+    expect(systemPrompt.indexOf('<memory_index>')).toBeGreaterThanOrEqual(0);
+    expect(modelMessages.slice(1).map((message) => String(message.content)).join('\n')).not.toContain('<memory_index>');
+    expect(intentClassifierMocks.classifyIntent).not.toHaveBeenCalled();
     expect(listMemoryInjectionTraces({ sessionId: 'session-memory-index' })).toContainEqual(
       expect.objectContaining({
         blockType: 'memory_index',
-        trigger: 'memory_intent',
+        trigger: 'memory_index_available',
         chars: '- [Project]: Keep memory audit visible'.length,
         injected: true,
         source: 'light-memory-index',
-        decisionSource: 'regex-fast-path',
         count: 1,
         sessionId: 'session-memory-index',
       }),
     );
   });
 
-  it('records memory_hint injection trace when memory intent does not match', async () => {
+  it('does not emit memory_hint or recent conversations for a normal turn', async () => {
+    vi.mocked(loadMemoryIndex).mockResolvedValueOnce('- [Project]: Always available');
+    vi.mocked(buildRecentConversationsBlock).mockResolvedValueOnce('- must not inject');
     const ctx = buildRuntimeContext({
-      sessionId: 'session-memory-hint',
+      sessionId: 'session-memory-no-hint',
       messages: [
-        buildMessage('user-memory-hint', 'user', 'fix repo code bug'),
+        buildMessage('user-memory-no-hint', 'user', 'fix repo code bug'),
       ],
-    });
-
-    const assembly = new ContextAssembly(ctx as never);
-    const modelMessages = await assembly.buildModelMessages();
-
-    const memoryHintTail = modelMessages[modelMessages.length - 1];
-    expect(memoryHintTail.transient).toBe(true);
-    expect(memoryHintTail.content).toContain('<memory_hint>');
-    expect(modelMessages[0].content).not.toContain('<memory_hint>');
-    expect(listMemoryInjectionTraces({ sessionId: 'session-memory-hint' })).toEqual([
-      expect.objectContaining({
-        blockType: 'memory_hint',
-        trigger: 'default_memory_hint',
-        injected: true,
-        source: 'light-memory-tool-hint',
-        count: 1,
-        sessionId: 'session-memory-hint',
-      }),
-    ]);
-  });
-
-  it('records recent_conversations injection trace when recent intent matches', async () => {
-    vi.mocked(buildRecentConversationsBlock).mockResolvedValueOnce('- Previous task: memory audit');
-    const ctx = buildRuntimeContext({
-      sessionId: 'session-recent-conversations',
-      messages: [
-        buildMessage('user-recent-conversations', 'user', 'continue recent context'),
-      ],
-    });
-
-    const assembly = new ContextAssembly(ctx as never);
-    const modelMessages = await assembly.buildModelMessages();
-
-    const recentTail = modelMessages[modelMessages.length - 1];
-    expect(recentTail.transient).toBe(true);
-    expect(recentTail.content).toContain('- Previous task: memory audit');
-    expect(listMemoryInjectionTraces({ sessionId: 'session-recent-conversations' })).toContainEqual(
-      expect.objectContaining({
-        blockType: 'recent_conversations',
-        trigger: 'recent_conversations_intent',
-        chars: '- Previous task: memory audit'.length,
-        injected: true,
-        source: 'recent-conversations',
-        decisionSource: 'regex-fast-path',
-        count: 1,
-        sessionId: 'session-recent-conversations',
-      }),
-    );
-  });
-
-  it('injects past-session context through the classifier when both legacy regexes miss', async () => {
-    const query = '把那个方案往下做';
-    expect(MEMORY_INTENT_PATTERN.test(query)).toBe(false);
-    expect(RECENT_CONVERSATIONS_INTENT_PATTERN.test(query)).toBe(false);
-    intentClassifierMocks.classifyIntent.mockResolvedValueOnce({
-      intent: 'general',
-      references_past_context: true,
-    });
-    vi.mocked(loadMemoryIndex).mockResolvedValueOnce('- [Project]: Semantic recall');
-    vi.mocked(buildRecentConversationsBlock).mockResolvedValueOnce('- Related session: proposal');
-    const ctx = buildRuntimeContext({
-      sessionId: 'session-semantic-past-context',
-      messages: [buildMessage('user-semantic-past-context', 'user', query)],
     });
 
     const modelMessages = await new ContextAssembly(ctx as never).buildModelMessages();
-    const dynamicTail = modelMessages[modelMessages.length - 1];
-    const traces = listMemoryInjectionTraces({ sessionId: 'session-semantic-past-context' });
+    const allContent = modelMessages.map((message) => String(message.content)).join('\n');
 
-    expect(intentClassifierMocks.classifyIntent).toHaveBeenCalledTimes(1);
-    expect(dynamicTail.content).toContain('<memory_index>');
-    expect(dynamicTail.content).toContain('- Related session: proposal');
-    expect(traces).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        blockType: 'memory_index',
-        injected: true,
-        decisionSource: 'intent-classifier',
-      }),
-      expect.objectContaining({
-        blockType: 'recent_conversations',
-        injected: true,
-        decisionSource: 'intent-classifier',
-      }),
-    ]));
+    expect(allContent).toContain('<memory_index>');
+    expect(allContent).not.toContain('<memory_hint>');
+    expect(allContent).not.toContain('- must not inject');
+    expect(buildRecentConversationsBlock).not.toHaveBeenCalled();
+    expect(intentClassifierMocks.classifyIntent).not.toHaveBeenCalled();
+    expect(listMemoryInjectionTraces({ sessionId: 'session-memory-no-hint' })).not.toContainEqual(
+      expect.objectContaining({ blockType: 'memory_hint' }),
+    );
   });
 
-  it('keeps memoryMode off from invoking the classifier or injecting memory blocks', async () => {
+  it('keeps memoryMode off from loading the memory index', async () => {
     const query = '那个东西咱们再推进一版';
-    expect(MEMORY_INTENT_PATTERN.test(query)).toBe(false);
-    expect(RECENT_CONVERSATIONS_INTENT_PATTERN.test(query)).toBe(false);
-    intentClassifierMocks.classifyIntent.mockResolvedValueOnce({
-      intent: 'general',
-      references_past_context: true,
-    });
     vi.mocked(loadMemoryIndex).mockResolvedValueOnce('- should stay hidden');
     vi.mocked(buildRecentConversationsBlock).mockResolvedValueOnce('- should stay hidden');
     const ctx = buildRuntimeContext({
@@ -885,35 +805,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(allContent).not.toContain('<memory_hint>');
     expect(allContent).not.toContain('- should stay hidden');
     expect(listMemoryInjectionTraces({ sessionId: 'session-memory-off-semantic-reference' })).toEqual([]);
-  });
-
-  it('falls back to the legacy regex behavior when past-context classification fails', async () => {
-    const query = '把那个方案往下做';
-    expect(MEMORY_INTENT_PATTERN.test(query)).toBe(false);
-    expect(RECENT_CONVERSATIONS_INTENT_PATTERN.test(query)).toBe(false);
-    intentClassifierMocks.classifyIntent.mockRejectedValueOnce(new Error('quick model unavailable'));
-    vi.mocked(loadMemoryIndex).mockResolvedValueOnce('- must not inject');
-    vi.mocked(buildRecentConversationsBlock).mockResolvedValueOnce('- must not inject');
-    const ctx = buildRuntimeContext({
-      sessionId: 'session-classifier-fail-closed',
-      messages: [buildMessage('user-classifier-fail-closed', 'user', query)],
-    });
-
-    const modelMessages = await new ContextAssembly(ctx as never).buildModelMessages();
-    const dynamicTail = modelMessages[modelMessages.length - 1];
-
-    expect(intentClassifierMocks.classifyIntent).toHaveBeenCalledTimes(1);
-    expect(loadMemoryIndex).not.toHaveBeenCalled();
-    expect(buildRecentConversationsBlock).not.toHaveBeenCalled();
-    expect(dynamicTail.content).toContain('<memory_hint>');
-    expect(dynamicTail.content).not.toContain('<memory_index>');
-    expect(dynamicTail.content).not.toContain('- must not inject');
-    expect(listMemoryInjectionTraces({ sessionId: 'session-classifier-fail-closed' })).toEqual([
-      expect.objectContaining({
-        blockType: 'memory_hint',
-        trigger: 'default_memory_hint',
-      }),
-    ]);
   });
 
   it('does not append runtime-only prompt blocks past the system prompt budget', async () => {
@@ -1000,15 +891,12 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const assembly = new ContextAssembly(ctx as never);
     const modelMessages = await assembly.buildModelMessages();
 
-    // 前缀稳定改造后 GAP-023 的排序保证变成结构性的：能力发现块（deferred tools）
-    // 留在 system 稳定前缀，锦上添花块（session metadata / memory hint）在历史末尾
-    // 的 transient 尾巴里——前者必然先于后者被模型看到。
+    // 能力发现块与常驻记忆索引都在稳定前缀；会话 metadata 仍在 transient 尾巴。
     const systemPrompt = modelMessages[0].content as string;
     const orderTail = modelMessages[modelMessages.length - 1];
     expect(systemPrompt.indexOf('<deferred-tools>')).toBeGreaterThan(-1);
     expect(orderTail.transient).toBe(true);
     expect(orderTail.content).toContain('<session_metadata>');
-    expect(orderTail.content).toContain('<memory_hint>');
     expect(systemPrompt).not.toContain('<session_metadata>');
     expect(systemPrompt).not.toContain('<memory_hint>');
   });
@@ -1661,7 +1549,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
       symbolCount: 1,
       estimatedTokens: 20,
     });
-    vi.mocked(buildRecentConversationsBlock).mockResolvedValueOnce('<recent_conversations>normal</recent_conversations>');
     vi.mocked(getDeferredToolsSummary).mockReturnValueOnce('browser: deferred');
 
     const ctx = buildRuntimeContext({
@@ -1678,18 +1565,18 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const modelMessages = await assembly.buildModelMessages();
     const systemPrompt = modelMessages[0].content;
 
-    // 稳定前缀：能力发现块留在 system；advisory 块进 transient 尾巴，注入条件不变
+    // 稳定前缀：能力发现块和记忆索引留在 system；advisory 块进 transient 尾巴。
     expect(systemPrompt).toContain('<deferred-tools>');
     expect(systemPrompt).toContain('browser: deferred');
+    expect(systemPrompt).toContain('<memory_index>normal memory</memory_index>');
     const normalTail = modelMessages[modelMessages.length - 1];
     expect(normalTail.transient).toBe(true);
     const normalTailContent = normalTail.content as string;
     expect(normalTailContent).toContain('<session_metadata>normal</session_metadata>');
-    expect(normalTailContent).toContain('<memory_index>normal memory</memory_index>');
     expect(normalTailContent).toContain('<relevant_skills>perf</relevant_skills>');
     expect(normalTailContent).toContain('<repo_map>');
     expect(normalTailContent).toContain('repo map normal');
-    expect(normalTailContent).toContain('<recent_conversations>normal</recent_conversations>');
+    expect(normalTailContent).not.toContain('<recent_conversations>');
   });
 
   it('reuses heavy prompt blocks within a user turn and invalidates compression on transcript change', async () => {
@@ -1735,7 +1622,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
       symbolCount: 1,
       estimatedTokens: 20,
     });
-    vi.mocked(buildRecentConversationsBlock).mockResolvedValue('<recent_conversations>recent</recent_conversations>');
     vi.mocked(needsArtifactTaskBrief).mockReturnValue(false);
 
     const ctx = {
@@ -1842,7 +1728,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(loadMemoryIndex).toHaveBeenCalledTimes(1);
     expect(loadRelevantSkills).toHaveBeenCalledTimes(1);
     expect(getRepoMap).toHaveBeenCalledTimes(1);
-    expect(buildRecentConversationsBlock).toHaveBeenCalledTimes(1);
     expect(evaluate).toHaveBeenCalledTimes(1);
 
     messages.push(buildMessage('tool-1', 'tool', 'tool result changed transcript'));
@@ -1852,7 +1737,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(loadMemoryIndex).toHaveBeenCalledTimes(1);
     expect(loadRelevantSkills).toHaveBeenCalledTimes(1);
     expect(getRepoMap).toHaveBeenCalledTimes(1);
-    expect(buildRecentConversationsBlock).toHaveBeenCalledTimes(1);
     expect(evaluate).toHaveBeenCalledTimes(2);
   });
 });
@@ -2656,34 +2540,35 @@ describe('ContextAssembly 前缀稳定（request shape）', () => {
     expect(secondAll.slice(0, firstPrefix.length)).toEqual(firstPrefix);
   });
 
-  it('跨轮意图块变化（repo map/memory intent 进出）不改 system，只改尾巴', async () => {
+  it('跨轮 repo map 变化不改含常驻 memory_index 的 system，只改尾巴', async () => {
     const ctx = buildRuntimeContext({
       sessionId: 'session-prefix-cross-turn',
       isSimpleTaskMode: false,
       messages: [buildMessage('user-prefix-t1', 'user', 'hello there')],
     });
+    vi.mocked(loadMemoryIndex).mockResolvedValue('memory index stable');
     const assembly = new ContextAssembly(ctx as never);
     const turn1 = await assembly.buildModelMessages();
 
-    // 第二轮：query 命中 repo map + memory intent，advisory 块进场
+    // 第二轮：query 命中 repo map，advisory 块进场；memory_index 始终在稳定前缀。
     vi.mocked(getRepoMap).mockResolvedValueOnce({
       text: 'repo map cross-turn',
       fileCount: 2,
       symbolCount: 2,
       estimatedTokens: 30,
     });
-    vi.mocked(loadMemoryIndex).mockResolvedValueOnce('memory cross-turn entry');
     (ctx as { messages: Message[] }).messages.push(
       buildMessage('assistant-prefix-t1', 'assistant', 'hi, how can I help?'),
-      buildMessage('user-prefix-t2', 'user', '记得之前的 repo code file 结构吗'),
+      buildMessage('user-prefix-t2', 'user', 'repo code file 结构吗'),
     );
     const turn2 = await assembly.buildModelMessages();
 
-    // system 字节级一致——意图块进出不再打掉 system+全史前缀
+    // system 字节级一致；常驻索引与未变化的历史都能复用前缀缓存。
     expect(turn2[0].content).toBe(turn1[0].content);
+    expect(turn2[0].content).toContain('memory index stable');
     const turn2Tail = turn2[turn2.length - 1];
     expect(turn2Tail.transient).toBe(true);
     expect(turn2Tail.content).toContain('repo map cross-turn');
-    expect(turn2Tail.content).toContain('memory cross-turn entry');
+    expect(turn2Tail.content).not.toContain('memory index stable');
   });
 });

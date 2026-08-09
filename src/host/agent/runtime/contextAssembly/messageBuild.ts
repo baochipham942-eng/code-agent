@@ -18,7 +18,6 @@ import { buildSessionMetadataBlock } from '../../../lightMemory/sessionMetadata'
 import { appendPinnedLibraryPromptBlock, getSessionPinFingerprint } from './libraryPins';
 import { injectRuntimeModelIdentity } from './runtimeModelIdentity';
 import { buildCompressionCacheKey, cloneCompressionState, cloneTranscriptEntries } from './compressionStateUtils';
-import { buildRecentConversationsBlock } from '../../../lightMemory/recentConversations';
 import {
   getPromptForTask,
   needsGenerativeUI,
@@ -59,7 +58,6 @@ import { applyProviderVariant } from '../../../prompts/providerVariants';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { countTraceEntries, recordMemoryInjectionTrace } from '../../../memory/memoryInjectionTrace';
 import { recordTurnMemoryBlock } from '../turnQuality';
-import { classifyIntent } from '../../../routing/intentClassifier';
 import { createHash } from 'crypto';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from './shared';
 import { logger } from './shared';
@@ -96,16 +94,14 @@ export {
 const DYNAMIC_PROMPT_CACHE_TTL_MS = 2 * 60 * 1000;
 const COMPRESSION_CACHE_TTL_MS = 30 * 1000;
 
-export const MEMORY_INTENT_PATTERN = /记忆|记得|回忆|之前|上次|上一次|历史|先前|previous|remember|recall|memory|before|earlier/i;
-export const RECENT_CONVERSATIONS_INTENT_PATTERN = /继续|接着|上次|上一轮|之前|历史|recent|previous|continue|resume|earlier/i;
 const REPO_MAP_INTENT_PATTERN = /代码|仓库|文件|实现|测试|修复|报错|构建|重构|性能|源码|模块|函数|类|bug|repo|code|file|test|fix|implement|refactor|build|performance|source|module/i;
-const REQUIRED_GAME_PROMPT_TRIM_CANDIDATES = ['repo map', 'skills', 'recent conversations', 'deferred tools'];
+const REQUIRED_GAME_PROMPT_TRIM_CANDIDATES = ['repo map', 'skills', 'deferred tools'];
 /**
  * 前缀稳定（P1 request shape）拆分产物：
  * - systemPrompt：会话内字节稳定的可缓存前缀（identity/工具描述/契约类块/env/runtime
  *   mode/plugins/deferred tools/APPEND_SYSTEM）。
  * - turnContext：按当前轮 userQuery 计算的 advisory 块（skills/session metadata/
- *   failure journal/memory/repo map/recent conversations/generative UI/question form）。
+ *   failure journal/repo map/generative UI/question form）。
  *   不进 system 消息，由 buildModelMessages 放进历史之后的 transient 动态尾巴，
  *   避免每轮意图块进出把整个历史的 provider prompt cache 打掉。
  */
@@ -436,9 +432,67 @@ ${deferredToolsSummary}
   }
 
   // ── 稳定前缀边界 ─────────────────────────────────────────────────────────
-  // 到此为止的内容 = system 消息（会话内字节稳定）。以下 advisory 块按当前轮
+  // 到此为止的内容 = system 消息（会话内字节稳定）。memory_index 与索引文件同步，
+  // 但在文件未变化时可被 provider 前缀缓存；以下 advisory 块按当前轮
   // userQuery 计算，随轮进出——继续在同一 working string 上追加以保留原有的
   // 预算/丢弃/trace 语义，最后 slice 出 turnContext 放进动态尾巴。
+  const memoryContextEnabled =
+    !artifactRepairMode
+    && !shouldInjectArtifactBrief
+    && ctx.runtime.memoryMode !== 'off';
+
+  // 注入轻量记忆索引（File-as-Memory）。索引是 MemoryRead 的常驻目录，放进
+  // 稳定前缀以复用 provider prompt cache，不再按单轮查询猜测是否需要。
+  if (memoryContextEnabled) {
+    const memoryIndex = await loadMemoryIndex();
+    if (memoryIndex) {
+      const memoryIndexBlock = `<memory_index>\n${memoryIndex}\n</memory_index>`;
+      const beforeMemoryIndex = systemPrompt;
+      systemPrompt = appendPromptBlockWithinBudget(
+        systemPrompt,
+        memoryIndexBlock,
+        'memory index',
+        ctx,
+      );
+      recordMemoryInjectionTrace({
+        blockType: 'memory_index',
+        trigger: 'memory_index_available',
+        chars: memoryIndex.length,
+        injected: systemPrompt !== beforeMemoryIndex,
+        source: 'light-memory-index',
+        count: countTraceEntries(memoryIndex),
+        sessionId: ctx.runtime.sessionId,
+      });
+      recordTurnMemoryBlock(ctx.runtime, {
+        blockType: 'memory_index',
+        trigger: 'memory_index_available',
+        chars: memoryIndex.length,
+        injected: systemPrompt !== beforeMemoryIndex,
+        source: 'light-memory-index',
+        count: countTraceEntries(memoryIndex),
+      });
+      logger.debug('[ContextAssembly] memory_index injected into stable prefix');
+    } else {
+      recordMemoryInjectionTrace({
+        blockType: 'memory_index',
+        trigger: 'memory_index_empty',
+        chars: 0,
+        injected: false,
+        source: 'light-memory-index',
+        count: 0,
+        sessionId: ctx.runtime.sessionId,
+      });
+      recordTurnMemoryBlock(ctx.runtime, {
+        blockType: 'memory_index',
+        trigger: 'memory_index_empty',
+        chars: 0,
+        injected: false,
+        source: 'light-memory-index',
+        count: 0,
+      });
+    }
+  }
+
   const stableSystemPrompt = systemPrompt;
 
   // 注入相关 Skill（Hermes Procedural layer）— 按用户查询关键词匹配。
@@ -497,39 +551,6 @@ ${deferredToolsSummary}
     systemPrompt = appendPinnedLibraryPromptBlock(systemPrompt, ctx, appendedBlocks);
   }
 
-  const memoryContextEnabled =
-    !artifactRepairMode
-    && !shouldInjectArtifactBrief
-    && ctx.runtime.memoryMode !== 'off';
-  const memoryRegexMatched = memoryContextEnabled && MEMORY_INTENT_PATTERN.test(userQuery);
-  const recentConversationsRegexMatched =
-    memoryContextEnabled && RECENT_CONVERSATIONS_INTENT_PATTERN.test(userQuery);
-  let referencesPastContext = false;
-
-  // 两个旧正则仍是零成本快路径；任一门未命中时只调用一次分类器，共享语义判定。
-  if (memoryContextEnabled && (!memoryRegexMatched || !recentConversationsRegexMatched)) {
-    try {
-      const classification = await classifyIntent(userQuery, ctx.runtime.modelRouter);
-      referencesPastContext = classification.references_past_context;
-    } catch (error) {
-      // 分类器异常时严格退回旧正则语义，避免失败导致意外记忆注入。
-      logger.warn('[ContextAssembly] past-context intent classification failed closed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  const memoryIntentDecisionSource = memoryRegexMatched
-    ? 'regex-fast-path'
-    : referencesPastContext
-      ? 'intent-classifier'
-      : null;
-  const recentConversationsDecisionSource = recentConversationsRegexMatched
-    ? 'regex-fast-path'
-    : referencesPastContext
-      ? 'intent-classifier'
-      : null;
-
   // GAP-005: 注入 failure journal（跨会话失败模式，避免重复踩坑）。
   // journal 由 learningPipeline 在 session 结束时自动沉淀；为空时不注入。
   if (!artifactRepairMode && !shouldInjectArtifactBrief && ctx.runtime.memoryMode !== 'off') {
@@ -562,87 +583,6 @@ ${deferredToolsSummary}
     }
   }
 
-  // 注入轻量记忆索引（File-as-Memory）
-  // 先做意图判断，避免每轮无条件读 INDEX.md。
-  if (memoryContextEnabled && memoryIntentDecisionSource) {
-    const memoryIndex = await loadMemoryIndex();
-    if (memoryIndex) {
-      const memoryIndexBlock = `<memory_index>\n${memoryIndex}\n</memory_index>`;
-      const beforeMemoryIndex = systemPrompt;
-      systemPrompt = appendPromptBlockWithinBudget(
-        systemPrompt,
-        memoryIndexBlock,
-        'memory index',
-        ctx,
-      );
-      recordMemoryInjectionTrace({
-        blockType: 'memory_index',
-        trigger: 'memory_intent',
-        chars: memoryIndex.length,
-        injected: systemPrompt !== beforeMemoryIndex,
-        source: 'light-memory-index',
-        decisionSource: memoryIntentDecisionSource,
-        count: countTraceEntries(memoryIndex),
-        sessionId: ctx.runtime.sessionId,
-      });
-      recordTurnMemoryBlock(ctx.runtime, {
-        blockType: 'memory_index',
-        trigger: 'memory_intent',
-        chars: memoryIndex.length,
-        injected: systemPrompt !== beforeMemoryIndex,
-        source: 'light-memory-index',
-        count: countTraceEntries(memoryIndex),
-      });
-      logger.debug('[ContextAssembly] memory_index injected (intent matched)');
-    } else {
-      recordMemoryInjectionTrace({
-        blockType: 'memory_index',
-        trigger: 'memory_intent_empty',
-        chars: 0,
-        injected: false,
-        source: 'light-memory-index',
-        decisionSource: memoryIntentDecisionSource,
-        count: 0,
-        sessionId: ctx.runtime.sessionId,
-      });
-      recordTurnMemoryBlock(ctx.runtime, {
-        blockType: 'memory_index',
-        trigger: 'memory_intent_empty',
-        chars: 0,
-        injected: false,
-        source: 'light-memory-index',
-        count: 0,
-      });
-    }
-  } else if (memoryContextEnabled) {
-    // 日常对话：只放短提示，让模型知道可以用 MemoryRead 工具按需查，不读取索引文件。
-    const memoryHintBlock = '<memory_hint>Memory files available via MemoryRead tool (see ~/.code-agent/memory/).</memory_hint>';
-    const beforeMemoryHint = systemPrompt;
-    systemPrompt = appendPromptBlockWithinBudget(
-      systemPrompt,
-      memoryHintBlock,
-      'memory hint',
-      ctx,
-    );
-    recordMemoryInjectionTrace({
-      blockType: 'memory_hint',
-      trigger: 'default_memory_hint',
-      chars: memoryHintBlock.length,
-      injected: systemPrompt !== beforeMemoryHint,
-      source: 'light-memory-tool-hint',
-      count: 1,
-      sessionId: ctx.runtime.sessionId,
-    });
-    recordTurnMemoryBlock(ctx.runtime, {
-      blockType: 'memory_hint',
-      trigger: 'default_memory_hint',
-      chars: memoryHintBlock.length,
-      injected: systemPrompt !== beforeMemoryHint,
-      source: 'light-memory-tool-hint',
-      count: 1,
-    });
-  }
-
   // 注入 Repo Map（代码结构索引，借鉴 Aider）
   if (
     ctx.runtime.workingDirectory &&
@@ -671,39 +611,6 @@ ${deferredToolsSummary}
       }
     } catch (err) {
       logger.debug(`[ContextAssembly] RepoMap skipped: ${err instanceof Error ? err.message : 'unknown'}`);
-    }
-  }
-
-  // 注入近期对话摘要（跨会话连续性，借鉴 ChatGPT Layer 4）
-  if (memoryContextEnabled && recentConversationsDecisionSource) {
-    const recentConversationsBlock = await buildRecentConversationsBlock();
-    const beforeRecentConversations = systemPrompt;
-    systemPrompt = appendPromptBlockWithinBudget(
-      systemPrompt,
-      recentConversationsBlock,
-      'recent conversations',
-      ctx,
-    );
-    recordMemoryInjectionTrace({
-      blockType: 'recent_conversations',
-      trigger: 'recent_conversations_intent',
-      chars: recentConversationsBlock?.length ?? 0,
-      injected: Boolean(recentConversationsBlock) && systemPrompt !== beforeRecentConversations,
-      source: 'recent-conversations',
-      decisionSource: recentConversationsDecisionSource,
-      count: countTraceEntries(recentConversationsBlock),
-      sessionId: ctx.runtime.sessionId,
-    });
-    recordTurnMemoryBlock(ctx.runtime, {
-      blockType: 'recent_conversations',
-      trigger: 'recent_conversations_intent',
-      chars: recentConversationsBlock?.length ?? 0,
-      injected: Boolean(recentConversationsBlock) && systemPrompt !== beforeRecentConversations,
-      source: 'recent-conversations',
-      count: countTraceEntries(recentConversationsBlock),
-    });
-    if (recentConversationsBlock && systemPrompt.includes(recentConversationsBlock)) {
-      appendedBlocks.set('recent conversations', recentConversationsBlock);
     }
   }
 

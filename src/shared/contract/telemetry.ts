@@ -71,6 +71,10 @@ export interface TelemetryModelCall {
   prompt?: string;
   /** 截断后的模型输出（用于评测重放，最大 4000 字符） */
   completion?: string;
+  /** Provider reported prompt-cache tokens read for this model call. */
+  cacheReadTokens?: number;
+  /** Provider reported prompt-cache tokens created for this model call. */
+  cacheCreationTokens?: number;
 }
 
 // ----------------------------------------------------------------------------

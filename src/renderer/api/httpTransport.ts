@@ -310,6 +310,15 @@ function parseHttpErrorMessage(errorBody: string): string {
   return errorBody;
 }
 
+function parseHttpErrorCode(errorBody: string): string | undefined {
+  const parsed = parseJsonValue(errorBody);
+  if (!isRecord(parsed)) return undefined;
+  if (typeof parsed.code === 'string') return parsed.code;
+  return isRecord(parsed.error) && typeof parsed.error.code === 'string'
+    ? parsed.error.code
+    : undefined;
+}
+
 function getRecoverableAuthTokenError(status: number, errorMessage: string): AuthTokenRecovery | null {
   if (status !== 401 && status !== 403) return null;
   const normalized = errorMessage.toLowerCase();
@@ -563,6 +572,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         if (!response.ok) {
           const errorBody = await response.text();
           const errorMessage = parseHttpErrorMessage(errorBody);
+          const errorCode = parseHttpErrorCode(errorBody);
           const authError = getRecoverableAuthTokenError(response.status, errorMessage);
           if (authError) {
             console.warn('[HttpTransport] local auth token expired:', authError.message);
@@ -572,7 +582,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           // 和真正的失败。只留一句人话字符串的话，上层只能去正则匹配错误文案。
           throw Object.assign(
             new Error(`云端代理请求失败 (${response.status}): ${errorMessage}`),
-            { status: response.status },
+            { status: response.status, ...(errorCode ? { code: errorCode } : {}) },
           );
         }
         clearAuthTokenReloadAttempt();

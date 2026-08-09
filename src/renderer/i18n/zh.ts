@@ -70,6 +70,7 @@ export const zh = {
     active: '当前',
     coming: '即将推出',
     sessionExpiredReconnect: '登录已过期，请重新登录以恢复云端同步',
+    durableRunStartupTimeout: '服务还在启动，消息暂时没有发出。请稍后重试。',
   },
 
   deliverable: {

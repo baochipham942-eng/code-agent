@@ -3,7 +3,7 @@
 // 从 src-tauri/tauri.conf.json 派生指定架构的 bundle.resources 覆盖配置。
 // ============================================================================
 // 背景：tauri.conf.json 的 bundle.resources 写死了 arm64 的 native 路径
-//   （node-pty/prebuilds/darwin-arm64、@img/sharp-darwin-arm64、sharp-libvips-darwin-arm64）。
+//   （better-sqlite3 / node-pty prebuild、@img/sharp-darwin-arm64、sharp-libvips-darwin-arm64）。
 //   Tauri 没有 arch 模板，x64 构建需要把这些路径换成 darwin-x64。
 //
 // 用法：
@@ -16,8 +16,7 @@
 //   - Tauri --config 走 JSON merge patch；bundle.resources 是 object 时会深合并，
 //     所以 x64 source 改名必须为 arm64 旧 key 写 null deletion marker。
 //     覆盖仍从 base 派生（而非另存一份 x64 配置）避免两边漂移。
-//   - 只改 arch 相关路径；rtk/uv/swift/better-sqlite3/keytar 等路径与架构无关
-//     （文件内容由各自 x64 构建步骤产出，路径不变）。
+//   - 只改 arch 相关路径；rtk/uv/swift/keytar 等路径与架构无关。
 //   - rtk 在 x64 照常打包（已决策带上 x64），路径不变，无需特殊处理。
 // ============================================================================
 

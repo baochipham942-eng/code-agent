@@ -54,6 +54,7 @@ import {
   prepareExternalEngineAcceptanceEnvironment,
   runExternalEngineProcessAcceptance,
 } from './session-fork-external-engine-smoke';
+import { describeChildExit, isChildGone } from './childProcessState';
 
 type SQLiteRow = Record<string, unknown>;
 
@@ -322,7 +323,7 @@ async function readBuildFingerprint(
   const originMain = gitOutput(['rev-parse', 'origin/main']);
   const worktreeStatus = gitOutput(['status', '--porcelain=v1', '--untracked-files=all']);
   const worktreeClean = worktreeStatus.length === 0;
-  let originMainAncestor = false;
+  let originMainAncestor: boolean;
   try {
     execFileSync('git', ['merge-base', '--is-ancestor', originMain, gitHead], {
       cwd: repoRoot,
@@ -410,8 +411,8 @@ async function waitForServer(server: StartedServer, port: number): Promise<void>
   const deadline = Date.now() + 90_000;
   let lastError = '';
   while (Date.now() < deadline) {
-    if (server.child.exitCode !== null) {
-      throw new Error(`webServer exited early with ${server.child.exitCode}\n${server.output()}`);
+    if (isChildGone(server.child)) {
+      throw new Error(`[session-fork] webServer exited early (${describeChildExit(server.child)})\n${server.output()}`);
     }
     const token = extractStartupToken(server.output(), port);
     if (token) {
@@ -515,11 +516,11 @@ async function startServer(
 }
 
 async function stopServer(server: StartedServer): Promise<void> {
-  if (server.child.exitCode !== null) return;
+  if (isChildGone(server.child)) return;
   server.child.kill('SIGTERM');
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
-    if (server.child.exitCode !== null) return;
+    if (isChildGone(server.child)) return;
     await delay(100);
   }
   server.child.kill('SIGKILL');

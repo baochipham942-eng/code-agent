@@ -19,6 +19,7 @@ import {
   launchSystemChromeSession,
   SYSTEM_CHROME_CDP_PROVIDER,
 } from './browser-computer-system-chrome.ts';
+import { describeChildExit, isChildGone } from './childProcessState.ts';
 
 function usage(): void {
   console.log(`Browser / Computer app-host smoke
@@ -91,8 +92,8 @@ async function ensureBuild(skipBuild: boolean): Promise<void> {
 async function waitForHealth(baseUrl: string, server: ChildProcessByStdio<null, Readable, Readable>, output: () => string): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < 30_000) {
-    if (server.exitCode !== null) {
-      throw new Error(`app-host exited early with code ${server.exitCode}\n${output()}`);
+    if (isChildGone(server)) {
+      throw new Error(`[browser-computer-app-host] app-host exited early (${describeChildExit(server)})\n${output()}`);
     }
 
     try {
@@ -395,11 +396,11 @@ async function activateRepairAction(page: Page, selector: string, label: string)
 }
 
 async function stopProcess(child: ChildProcessByStdio<null, Readable, Readable>): Promise<void> {
-  if (child.killed || child.exitCode !== null) return;
+  if (child.killed || isChildGone(child)) return;
 
   await new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
-      if (child.exitCode === null) {
+      if (!isChildGone(child)) {
         child.kill('SIGKILL');
       }
       resolve();
@@ -1185,7 +1186,7 @@ async function main(): Promise<void> {
       ok: failures.length === 0,
       appHost: {
         baseUrl,
-        serverRunning: appHost.child.exitCode === null,
+        serverRunning: !isChildGone(appHost.child),
       },
       chrome: {
         provider: chromeSession.provider,

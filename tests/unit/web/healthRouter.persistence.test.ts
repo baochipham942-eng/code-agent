@@ -16,12 +16,14 @@ async function startHealthApi(
   persistence: PersistenceHealth,
   rendererServe?: RendererServeDecision,
   build: BuildInfo | null = null,
+  durableRunReady = true,
 ) {
   const app = express();
   app.use('/api', createHealthRouter({
     handlers: new Map(),
     getBuildInfo: () => build,
     getPersistenceHealth: () => persistence,
+    getDurableRunReady: () => durableRunReady,
     getRendererServeDecision: rendererServe ? () => rendererServe : undefined,
   }));
 
@@ -120,5 +122,24 @@ describe('createHealthRouter persistence health', () => {
     const body = await response.json() as WebHealthResponse;
 
     expect(body.build).toEqual(build);
+  });
+
+  // durable 就绪排在 capabilityBootstrap 之后异步完成，这段窗口里 agent/run 一律 503。
+  // `status: 'ok'` 判的是进程活着，判「服务能不能接单」必须看 durableRunReady。
+  it('reports durableRunReady independently of status: ok', async () => {
+    const persistence = {
+      status: 'available',
+      mode: 'database',
+      durable: true,
+      message: 'ok',
+      checkedAt: 123,
+    } satisfies PersistenceHealth;
+
+    await startHealthApi(persistence, undefined, null, false);
+
+    const body = await (await fetch(`${baseUrl}/api/health`)).json() as WebHealthResponse;
+
+    expect(body.status).toBe('ok');
+    expect(body.durableRunReady).toBe(false);
   });
 });

@@ -278,7 +278,8 @@ if [[ "$(uname -s)" == "Darwin" && -n "${SIGNING_IDENTITY}" ]]; then
     node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${resource_scan_root}"
 
     # Pass 0: 剥掉编译中间产物。node-gyp 从源码编译原生模块时会留下 obj.target/*.o，
-    # 它们是 Mach-O 但**不是运行时产物**（运行时只 require build/Release/*.node），
+    # 它们是 Mach-O 但**不是运行时产物**（运行时 require 的是 build/Release/ 或
+    # prebuilds/ 下的 .node——better-sqlite3 v13 起走后者），
     # 既进不了下面两趟签名的白名单，又会被 verify-bundle-signatures 判红。
     #
     # 为什么是删不是签：签一个中间产物只是让门闭嘴，而它本来就不该进 bundle。

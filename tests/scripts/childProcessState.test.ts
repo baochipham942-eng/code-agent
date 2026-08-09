@@ -10,6 +10,9 @@
 import { describe, it, expect } from 'vitest';
 import { spawn } from 'child_process';
 import { once } from 'events';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   isChildGone,
   describeChildExit,
@@ -76,5 +79,70 @@ describe('childProcessState', () => {
     expect(child.signalCode).toBe('SIGABRT');
     expect(isChildGone(child)).toBe(true);
     expect(isAbnormalExit(child)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 静态契约：全仓不准再出现裸判活谓词。
+//
+// 上面那组断言只钉住 helper 自己的行为，钉不住「有人在新脚本里又写一遍
+// child.exitCode !== null」——这条病在本仓被复制粘贴过 24 处（#1019 修 1 个、
+// #1042 修 3 个、#1045 修 2 个、本批修 21 个），每一处都是独立写出来的。
+// 没有这道门，第 25 处只是时间问题。
+//
+// 零豁免机制：唯一的排除是 helper 定义文件自身。不设行内标记、不设文件名
+// 白名单——按名字枚举的清单是漏洞制造机，新文件会默认漏过去。
+// 真有必须裸写的场合，就把那处也收进 childProcessState.ts。
+// ---------------------------------------------------------------------------
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const SCAN_DIRS = ['scripts/acceptance', 'scripts/perf'];
+const SCAN_EXTENSIONS = new Set(['.ts', '.tsx', '.mjs', '.cjs']);
+/** helper 的定义处必然含这个模式，是唯一排除项。 */
+const DEFINITION_FILE = 'scripts/acceptance/childProcessState.ts';
+const BARE_PREDICATE = /exitCode\s*[!=]==?\s*null/;
+
+function collectScannedFiles(): string[] {
+  const found: string[] = [];
+  for (const dir of SCAN_DIRS) {
+    const absDir = path.join(REPO_ROOT, dir);
+    if (!fs.existsSync(absDir)) continue;
+    for (const entry of fs.readdirSync(absDir, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      if (!SCAN_EXTENSIONS.has(path.extname(entry.name))) continue;
+      const rel = path
+        .relative(REPO_ROOT, path.join(entry.parentPath ?? absDir, entry.name))
+        .split(path.sep)
+        .join('/');
+      if (rel === DEFINITION_FILE) continue;
+      found.push(rel);
+    }
+  }
+  return found.sort();
+}
+
+describe('判活谓词静态契约', () => {
+  const scanned = collectScannedFiles();
+
+  // fail-loud：glob 写错扫到 0 个文件时，下面那条断言会「全绿」但什么都没验。
+  // 这条让扫描范围本身也是被断言的对象。
+  it('扫描范围非空（否则下面那条零违规是假绿）', () => {
+    expect(scanned.length, `扫描 ${SCAN_DIRS.join(' / ')} 只找到 ${scanned.length} 个文件`)
+      .toBeGreaterThan(30);
+  });
+
+  it('没有任何脚本裸用 exitCode 判活（应改 import isChildGone）', () => {
+    const violations: string[] = [];
+    for (const rel of scanned) {
+      const lines = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8').split('\n');
+      lines.forEach((line, index) => {
+        if (BARE_PREDICATE.test(line)) violations.push(`${rel}:${index + 1}: ${line.trim()}`);
+      });
+    }
+
+    expect(
+      violations,
+      `裸判活谓词会把「被信号打死」误判成「还在跑」。改用 ${DEFINITION_FILE} 的 isChildGone：\n${violations.join('\n')}`,
+    ).toEqual([]);
   });
 });

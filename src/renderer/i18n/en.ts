@@ -69,6 +69,7 @@ export const en: Translations = {
     active: 'Active',
     coming: 'Coming',
     sessionExpiredReconnect: 'Your session has expired. Please sign in again to resume cloud sync.',
+    durableRunStartupTimeout: 'The service is still starting, so your message was not sent. Please try again shortly.',
   },
 
   deliverable: {

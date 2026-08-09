@@ -39,6 +39,8 @@ import { useVoiceCallStore } from '../../stores/voiceCallStore';
 import { useTurnExecutionStore } from '../../stores/turnExecutionStore';
 import ipcService from '../../services/ipcService';
 import { typedInvokeDomain } from '../../services/typedInvoke';
+import { getApiBaseUrl } from '../../api/transport';
+import { useI18n } from '../useI18n';
 
 const logger = createLogger('useAgent');
 
@@ -375,6 +377,56 @@ export function isSessionBusyRunConflict(error: unknown): boolean {
   return message.includes('already has active run');
 }
 
+const DURABLE_RUN_ROLLOUT_UNAVAILABLE = 'DURABLE_RUN_ROLLOUT_UNAVAILABLE';
+const DURABLE_RUN_READY_TIMEOUT_MS = 90_000;
+const DURABLE_RUN_READY_POLL_INTERVAL_MS = 1_000;
+
+type DurableRunHealth = { durableRunReady?: unknown };
+
+function isDurableRunHealth(value: unknown): value is DurableRunHealth {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function waitFor(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function isDurableRunRolloutUnavailable(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const httpError = error as { status?: unknown; code?: unknown };
+  return httpError.status === 503 && httpError.code === DURABLE_RUN_ROLLOUT_UNAVAILABLE;
+}
+
+async function waitForDurableRunReady(): Promise<boolean> {
+  const deadline = Date.now() + DURABLE_RUN_READY_TIMEOUT_MS;
+  const healthUrl = `${getApiBaseUrl().replace(/\/+$/, '')}/api/health`;
+
+  while (true) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) return false;
+
+    const controller = new AbortController();
+    const abortTimer = setTimeout(() => controller.abort(), remainingMs);
+    try {
+      const response = await fetch(healthUrl, { cache: 'no-store', signal: controller.signal });
+      if (response.ok) {
+        const health = await response.json() as unknown;
+        if (isDurableRunHealth(health) && health.durableRunReady === true) {
+          return true;
+        }
+      }
+    } catch {
+      // The run endpoint just reported its cold-start gate. Keep polling until the bounded deadline.
+    } finally {
+      clearTimeout(abortTimer);
+    }
+
+    const nextWaitMs = Math.min(DURABLE_RUN_READY_POLL_INTERVAL_MS, deadline - Date.now());
+    if (nextWaitMs <= 0) return false;
+    await waitFor(nextWaitMs);
+  }
+}
+
 export function getRuntimeInputSuccessMessage(mode: RuntimeInputMode): string {
   return mode === 'redirect' ? '已改道处理' : '已加入当前任务';
 }
@@ -613,6 +665,7 @@ export function useAgentIPC({
   setIsProcessing,
   setSessionProcessing,
 }: UseAgentIPCArgs) {
+  const { t } = useI18n();
   // Send a message to the agent
   // Turn-based model: 不再预创建 placeholder，等待后端 turn_start 事件
   // 运行中继续发送时，直接交给前台 brain；短暂拒收由 host 输入投递层缓冲重投。
@@ -964,21 +1017,21 @@ export function useAgentIPC({
         startTime: Date.now(),
       });
       currentTurnMessageIdRef.current = null; // 重置 turn tracking
+      const messagePayload: ConversationEnvelope = {
+        ...envelope,
+        // 设计画布冷启动引导已改为服务端按轮注入 systemPrompt/turnSystemContext
+        // （context.executionIntent.designCanvasActive，见 canvasSessionReminder.ts），
+        // 不再 prepend 进 content——content 会被原样持久化+渲染为用户气泡，此前的
+        // renderer 侧 prepend 会把 <system-reminder> 全文泄漏进用户可见消息。
+        clientMessageId: userMessage.id,
+        context: contextWithDesignContext,
+        sessionId: effectiveSessionId,
+      };
 
       try {
         // Send to main process
         // Note: Don't set isProcessing to false here, it will be set by agent_complete event
         logger.debug('Calling invoke agent:send-message');
-        const messagePayload: ConversationEnvelope = {
-          ...envelope,
-          // 设计画布冷启动引导已改为服务端按轮注入 systemPrompt/turnSystemContext
-          // （context.executionIntent.designCanvasActive，见 canvasSessionReminder.ts），
-          // 不再 prepend 进 content——content 会被原样持久化+渲染为用户气泡，此前的
-          // renderer 侧 prepend 会把 <system-reminder> 全文泄漏进用户可见消息。
-          clientMessageId: userMessage.id,
-          context: contextWithDesignContext,
-          sessionId: effectiveSessionId,
-        };
         logger.debug('messagePayload', { type: typeof messagePayload, isObject: typeof messagePayload === 'object' });
         if (typeof messagePayload === 'object') {
           logger.debug('Attachments being sent', { attachments: attachments?.map(a => ({ name: a.name, category: a.category, hasData: !!a.data, dataLen: a.data?.length, path: a.path, hasPath: !!a.path })) });
@@ -1001,6 +1054,19 @@ export function useAgentIPC({
           await deliverToForegroundBrain(userMessage.id);
           return;
         }
+        // 冷启动窗口：durable 就绪前 host 一律回 503，等就绪后原样重发一次。
+        // 重发失败要按「重发的那个错」收口，所以另起一个变量——不能改写 catch 参数
+        // （no-ex-assign：被改写的 error 会让后面每一处引用都要回头确认它现在指谁）。
+        let sendFailure: unknown = error;
+        if (isDurableRunRolloutUnavailable(sendFailure) && await waitForDurableRunReady()) {
+          try {
+            await ipcService.invoke('agent:send-message', messagePayload);
+            return;
+          } catch (retryError) {
+            logger.error('Agent retry after durable run rollout completed failed', retryError);
+            sendFailure = retryError;
+          }
+        }
         if (options?.silentFailure === true) {
           if (effectiveSessionId) {
             setSessionProcessing(effectiveSessionId, false);
@@ -1010,13 +1076,15 @@ export function useAgentIPC({
               previousTaskState ?? { status: 'idle' },
             );
           }
-          throw error;
+          throw sendFailure;
         }
         // 错误时创建一条错误消息
         const errorMessage: Message = {
           id: generateMessageId(),
           role: 'assistant',
-          content: getAgentSendFailureMessage(error),
+          content: isDurableRunRolloutUnavailable(sendFailure)
+            ? t.common.durableRunStartupTimeout
+            : getAgentSendFailureMessage(sendFailure),
           timestamp: Date.now(),
         };
         addMessage(errorMessage);
@@ -1026,11 +1094,11 @@ export function useAgentIPC({
         // 后续消息全部进入"运行中排队"分支但没有 run 去消费，表现为永远不回复
         useTaskStore.getState().updateSessionState(effectiveSessionId!, {
           status: 'error',
-          error: String(error),
+          error: String(sendFailure),
         });
       }
     },
-    [addMessage, setSessionProcessing, isProcessing, currentSessionId]
+    [addMessage, setSessionProcessing, isProcessing, currentSessionId, t]
   );
 
   // Cancel the current operation

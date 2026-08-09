@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import net from 'net';
 import { chromium, type Browser } from 'playwright';
+import { describeChildExit, isChildGone } from './childProcessState';
 
 export const SYSTEM_CHROME_CDP_PROVIDER = 'system-chrome-cdp';
 
@@ -129,9 +130,9 @@ export async function connectToSystemChrome(
   let lastError: unknown;
 
   while (Date.now() - start < timeoutMs) {
-    if (chrome.exitCode !== null) {
+    if (isChildGone(chrome)) {
       throw new SystemChromeUnavailableError(
-        `System Chrome exited before CDP became available. exitCode=${chrome.exitCode}\n${output()}`,
+        `System Chrome exited before CDP became available (${describeChildExit(chrome)}).\n${output()}`,
       );
     }
 
@@ -207,10 +208,10 @@ export async function launchSystemChromeSession(options: {
 export async function closeSystemChromeSession(
   session: Pick<SystemChromeSession, 'chrome' | 'profileDir'>,
 ): Promise<void> {
-  if (!session.chrome.killed && session.chrome.exitCode === null) {
+  if (!session.chrome.killed && !isChildGone(session.chrome)) {
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
-        if (session.chrome.exitCode === null) {
+        if (!isChildGone(session.chrome)) {
           session.chrome.kill('SIGKILL');
         }
         resolve();

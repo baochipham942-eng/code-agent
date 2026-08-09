@@ -27,7 +27,7 @@
 | 4 | rtk sidecar | fetch 脚本硬拒非 arm64；上游**有** x64 包（之前误判为无） | `scripts/fetch-rtk.sh:30,45`；`tauri.conf.json:86` | 易 |
 | 5 | bundled-node | 已支持 `BUNDLED_NODE_ARCH=x64` 自动下官方 node | `prepare-bundled-node.mjs:25` | ✅ 就绪 |
 | 6 | node-pty | 已同时有 darwin-arm64 + darwin-x64 prebuild | `node_modules/node-pty/prebuilds/` | ✅ 仅改 resource 路径 |
-| 7 | better-sqlite3 | 只 rebuild 了 arm64 `.node` | `dist/native/better-sqlite3/build/Release/` | 中 |
+| 7 | better-sqlite3 | v13 起走 Node-API，npm 包内自带 darwin-arm64 + darwin-x64 预编译 | `node_modules/better-sqlite3/prebuilds/` | ✅ 仅改 resource 路径 |
 | 8 | keytar | 只 rebuild 了 arm64 `.node` | `node_modules/keytar/build/Release/` | 中 |
 | 9 | sharp + libvips | 只装/打了 arm64；**package-lock 已含 x64 条目** | `tauri.conf.json:76-80`、`build-runtime-assets.mjs:50,57` | 中 |
 | 10a | PII 脱敏（gliner） | 走 Python 子进程（uv+venv），**不依赖 node onnxruntime** | `piiEntityDetector.ts`、`scripts/pii/gliner_onnx_runner.py` | ✅ 随 uv x64 即可 |

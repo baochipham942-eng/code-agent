@@ -49,11 +49,10 @@ jobs:
         # macOS runner 无需 linux binary 补装。
         run: npm ci --ignore-scripts
 
-      - name: Install better-sqlite3 native binding
-        # --ignore-scripts 跳过了 prebuild-install hook；失败静默 fallback
-        # in-memory（本门目标是组合断裂检测，不是 sqlite 真路径验证）。
-        working-directory: node_modules/better-sqlite3
-        run: ../.bin/prebuild-install || true
+      - name: Verify better-sqlite3 Node-API binding
+        run: |
+          test -f "node_modules/better-sqlite3/prebuilds/darwin-$(node -p 'process.arch').node"
+          node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('SELECT 1').get(); db.close()"
 
       - name: Install Playwright Chromium
         # browser 族测试(mediaAssetLightbox/artifactPreviewHealth/designPreviewRepair/

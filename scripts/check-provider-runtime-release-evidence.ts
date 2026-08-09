@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { RELEASE_EVIDENCE_PRODUCERS } from './lib/releaseEvidenceRegistry.ts';
+
 type GateMode = 'static' | 'full';
 
 interface GateOptions {
@@ -325,8 +327,7 @@ async function validateMatrix(options: GateOptions, ledger: Map<string, LedgerRe
   return entries;
 }
 
-function validateLongSession(options: GateOptions, errors: string[]): void {
-  const relativePath = 'docs/perf/long-session-gold-latest.json';
+function validateLongSession(options: GateOptions, relativePath: string, errors: string[]): void {
   const report = readJson(options.root, relativePath, errors);
   if (!isObject(report)) return;
   ownKeys(report, ['schemaVersion', 'generatedAt', 'environment', 'thresholds', 'stopEvidence', 'scenarios', 'mainThread', 'memory', 'gates', 'passed'], relativePath, errors);
@@ -382,9 +383,11 @@ export async function checkProviderRuntimeReleaseEvidence(options: GateOptions):
   const matrix = await validateMatrix(options, ledger, errors);
   validateReleaseMaterials(options, matrix, errors);
   if (options.mode === 'full') {
-    validateLongSession(options, errors);
-    validateStopReport(options, 'docs/stability/tool-cancel-smoke-latest.json', 'tool-cancel', ['Bash', 'http_request'], errors);
-    validateStopReport(options, 'docs/stability/agent-runtime-app-host-smoke-latest.json', 'agent-runtime-app-host', ['RunRegistry', 'rendererStop'], errors);
+    // 校验目标从登记表派生：新增证据门只改 scripts/lib/releaseEvidenceRegistry.ts 一处
+    for (const entry of RELEASE_EVIDENCE_PRODUCERS) {
+      if (entry.shape === 'long-session') validateLongSession(options, entry.evidence, errors);
+      else validateStopReport(options, entry.evidence, entry.smoke, [...entry.scenarios], errors);
+    }
   }
   return errors;
 }

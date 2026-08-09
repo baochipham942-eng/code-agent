@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import path from 'path';
 import { promises as fsp } from 'fs';
 import os from 'os';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 
 import {
   extractSection,
@@ -77,18 +77,17 @@ describe('loadSkill', () => {
 
   it('preserves the YAML parser error as the cause', async () => {
     const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'skill-loader-'));
-    const originalError = new Error('yaml parser failed');
-    vi.spyOn(yaml, 'load').mockImplementationOnce(() => {
-      throw originalError;
-    });
     try {
+      // 直接写坏 YAML 拿真解析错误，不再 vi.spyOn(yaml, 'load')：js-yaml 5 只有具名
+      // 导出，ESM 命名空间对象不可配置，spyOn 会报 Cannot redefine property。
+      // 制造非法：tab 缩进，YAML 规范禁止用它做缩进。
       await fsp.writeFile(
         path.join(tmp, 'SKILL.md'),
-        '---\nname: bad\ndescription: bad\nartifact_kind: game\n---\n',
+        '---\nname: bad\nnested:\n\tdescription: bad\n---\n',
       );
       const error = await captureError(loadSkill(tmp));
       expect(error.message).toContain('Invalid YAML frontmatter');
-      expect(error.cause).toBe(originalError);
+      expect(error.cause).toBeInstanceOf(yaml.YAMLException);
     } finally {
       await fsp.rm(tmp, { recursive: true, force: true });
     }

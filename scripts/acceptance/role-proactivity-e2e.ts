@@ -41,6 +41,11 @@ import { describeChildExit, isAbnormalExit, isChildGone } from './childProcessSt
 // 配置
 // ----------------------------------------------------------------------------
 
+// provider 与 model 必须成对覆盖：只设其中一个，会把 A 家的模型名发到 B 家去，
+// 上游拒得莫名其妙（2026-08-08 在姊妹脚本 role-assets 上实测踩到）。宁可开跑前报错。
+if (Boolean(process.env.ROLE_E2E_PROVIDER) !== Boolean(process.env.ROLE_E2E_MODEL)) {
+  throw new Error('ROLE_E2E_PROVIDER 与 ROLE_E2E_MODEL 必须同时设置（只设一个会造成跨 provider 的模型名）');
+}
 const MAIN_PROVIDER = process.env.ROLE_E2E_PROVIDER || 'xiaomi';
 const MAIN_MODEL = process.env.ROLE_E2E_MODEL || 'mimo-v2.5-pro';
 /** 单次醒来上限（15 轮迭代的模型 run），triggerJob 是同步等待的 */
@@ -50,7 +55,13 @@ const RUN_TIMEOUT_MS = 480_000;
 /** event 触发是 fire-and-forget，run 结束后轮询履历的窗口 */
 const EVENT_WAKE_POLL_MS = 600_000;
 
-const RESEARCHER = '研究员';
+// 调研定位的内置角色。原为「研究员」，但它在 Batch 3 收敛里已**退役停止分发**
+// （见 builtinRoles.ts 的 RETIRED_BUILTIN_ROLE_VISUALS：调研定位已被「溯真」覆盖且更全），
+// installBuiltinRoles 不再写 agents/研究员.md ⇒ 脚本 fake HOME 下必然拿不到它，
+// 而报错文案却说「installBuiltinRoles 接线有问题」——接线是好的，是断言判错了对象。
+// 本脚本只把它当「一个已注册的自定义角色 id」用（验 cadence / 履历写回 / 子代理委派），
+// 不依赖具体人设，所以换成现役的接替者即可。
+const RESEARCHER = '溯真';
 const ANALYST = '数据分析师';
 /** 与 ROLE_PROACTIVITY 常量保持一致（E2E 是黑盒，断言用字面值核对行为） */
 const WAKE_TITLE_PREFIX = '主动巡检';
@@ -122,9 +133,13 @@ async function waitForServer(server: StartedServer, port: number): Promise<void>
       server.token = token;
       try {
         const response = await fetch(`${server.baseUrl}/api/health`);
-        const health = await response.json() as { status?: string };
-        if (response.ok && health.status === 'ok') return;
-        lastError = JSON.stringify(health);
+        const health = await response.json() as { status?: string; durableRunReady?: boolean };
+        // startup token + status:'ok' 只证明**进程起来了**。durable 就绪排在
+        // capabilityBootstrap 之后异步完成，这段窗口里 agent/run 一律 503。
+        // 判据必须锚服务能力（durableRunReady），不能锚进程存活。
+        if (response.ok && health.status === 'ok' && health.durableRunReady === true) return;
+        lastError = `health=${JSON.stringify(health)}（durableRunReady 必须为 true；`
+          + '若该字段缺失，说明 dist/web 是加这个字段之前的旧构建，先跑 npm run build:web）';
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
       }
@@ -331,8 +346,17 @@ async function runAgent(server: StartedServer, options: { prompt: string; projec
 // 文件系统 helpers
 // ----------------------------------------------------------------------------
 
+/**
+ * 本次运行的数据目录 —— 必须与传给 webServer 的 `CODE_AGENT_DATA_DIR` 一致。
+ *
+ * 原实现返回 `<fakeHome>/.code-agent`（即「HOME 下的默认数据目录」），但 startServer
+ * 传的是 `CODE_AGENT_DATA_DIR = env.dataDir = <fakeHome>/data`，而 `getUserConfigDir()`
+ * 里 `CODE_AGENT_DATA_DIR` **优先于** `<home>/.code-agent`。于是 app 把角色写进
+ * `<fakeHome>/data/agents/`，脚本却去 `<fakeHome>/.code-agent/agents/` 找 —— 永远找不到，
+ * 报错还说「installBuiltinRoles 接线有问题」。接线是好的，是这个 helper 指错了地方。
+ */
 function configDir(env: E2EEnv): string {
-  return path.join(env.fakeHome, '.code-agent');
+  return env.dataDir;
 }
 
 function roleHistoryPath(env: E2EEnv, roleId: string): string {

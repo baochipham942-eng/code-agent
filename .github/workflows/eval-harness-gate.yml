@@ -64,11 +64,11 @@ jobs:
           npm ci --ignore-scripts
           npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
 
-      - name: Install better-sqlite3 native binding
-        # evaluation 单测（telemetryQueryService 等）走真实 DB，需预编译 binding，
-        # 否则 fallback in-memory 测的不是真实路径
-        working-directory: node_modules/better-sqlite3
-        run: ../.bin/prebuild-install || true
+      - name: Verify better-sqlite3 Node-API binding
+        # evaluation 单测（telemetryQueryService 等）走真实 DB；文件缺失或加载失败必须直接红。
+        run: |
+          test -f node_modules/better-sqlite3/prebuilds/linux-x64.node
+          node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('SELECT 1').get(); db.close()"
 
       - name: Typecheck
         run: npm run typecheck

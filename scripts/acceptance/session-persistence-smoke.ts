@@ -8,6 +8,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import { setTimeout as delay } from 'timers/promises';
+import { describeChildExit, isChildGone } from './childProcessState';
 
 type ApiResult<T> = {
   success: boolean;
@@ -131,8 +132,8 @@ async function waitForServer(server: StartedServer, port: number): Promise<void>
   let lastError = '';
 
   while (Date.now() < deadline) {
-    if (server.child.exitCode !== null) {
-      throw new Error(`webServer exited early with ${server.child.exitCode}\n${server.output()}`);
+    if (isChildGone(server.child)) {
+      throw new Error(`[session-persistence] webServer exited early (${describeChildExit(server.child)})\n${server.output()}`);
     }
 
     const token = extractStartupToken(server.output(), port);
@@ -201,12 +202,12 @@ async function startServer(dataDir: string): Promise<StartedServer> {
 }
 
 async function stopServer(server: StartedServer): Promise<void> {
-  if (server.child.exitCode !== null) return;
+  if (isChildGone(server.child)) return;
 
   server.child.kill('SIGTERM');
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
-    if (server.child.exitCode !== null) return;
+    if (isChildGone(server.child)) return;
     await delay(100);
   }
   server.child.kill('SIGKILL');

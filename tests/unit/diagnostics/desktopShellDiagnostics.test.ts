@@ -80,9 +80,8 @@ describe('desktop shell diagnostics aggregator', () => {
       'dist',
       'native',
       'better-sqlite3',
-      'build',
-      'Release',
-      'better_sqlite3.node',
+      'prebuilds',
+      `${process.platform}-${process.arch}.node`,
     ));
 
     const checks = getDesktopShellResourceChecks({ resourceRoot });

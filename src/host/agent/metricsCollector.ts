@@ -22,6 +22,14 @@ export interface SessionMetrics {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  /**
+   * Provider 报告的 prompt-cache 命中 token 累计。
+   * **缺席（undefined）= provider 一次都没报过这个字段**，与"报了 0"（真没命中）是两回事——
+   * 别在没有字段时填 0，那会让"观测没接通"和"缓存没命中"长得一模一样。
+   */
+  cacheReadTokens?: number;
+  /** 同上：provider 报告的 prompt-cache 写入 token 累计。 */
+  cacheCreationTokens?: number;
   // Tool calls
   toolCallCount: number;
   toolCallsByName: Record<string, number>;
@@ -85,6 +93,13 @@ export class MetricsCollector implements TelemetryAdapter {
     this.metrics.outputTokens += call.outputTokens;
     this.metrics.totalTokens += call.inputTokens + call.outputTokens;
     this.metrics.totalModelLatencyMs += call.latencyMs;
+    // 只在 provider 真报了字段时才建立计数器，保住"没报"与"报了 0"的区分（见 SessionMetrics 注释）
+    if (call.cacheReadTokens !== undefined) {
+      this.metrics.cacheReadTokens = (this.metrics.cacheReadTokens ?? 0) + call.cacheReadTokens;
+    }
+    if (call.cacheCreationTokens !== undefined) {
+      this.metrics.cacheCreationTokens = (this.metrics.cacheCreationTokens ?? 0) + call.cacheCreationTokens;
+    }
     if (call.truncated) {
       this.metrics.truncationCount++;
     }

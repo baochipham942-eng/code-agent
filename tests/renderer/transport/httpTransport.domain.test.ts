@@ -196,6 +196,25 @@ describe('httpTransport domain API', () => {
     });
   });
 
+  it('preserves the durable-run rollout code on a rejected chat send', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      text: async () => JSON.stringify({
+        error: {
+          code: 'DURABLE_RUN_ROLLOUT_UNAVAILABLE',
+          message: 'Durable Run persistence is unavailable',
+        },
+      }),
+    });
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    await expect(api.invoke('agent:send-message', { content: 'hello' })).rejects.toMatchObject({
+      status: 503,
+      code: 'DURABLE_RUN_ROLLOUT_UNAVAILABLE',
+    });
+  });
+
   it('preserves non-A1 sheet rangeStart across the web HTTP extraction path', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ok: true,

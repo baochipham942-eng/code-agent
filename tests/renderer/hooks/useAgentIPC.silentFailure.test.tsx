@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationEnvelope } from '../../../src/shared/contract/conversationEnvelope';
 
 const invokeMock = vi.hoisted(() => vi.fn());
 const invokeDomainMock = vi.hoisted(() => vi.fn());
+const originalFetch = globalThis.fetch;
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
@@ -54,6 +55,11 @@ describe('useAgentIPC sendMessage silentFailure', () => {
         'session-queued': { status: 'idle' },
       },
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    globalThis.fetch = originalFetch;
   });
 
   it('rejects without adding an assistant error or leaving the session busy', async () => {
@@ -136,6 +142,60 @@ describe('useAgentIPC sendMessage silentFailure', () => {
         clientMessageId: 'queued-message-id',
       }),
     );
+  });
+
+  it('waits for durable-run readiness then resends the same visible user message', async () => {
+    vi.useFakeTimers();
+    invokeMock
+      .mockRejectedValueOnce(Object.assign(
+        new Error('cloud proxy request failed (503): durable run is starting'),
+        { status: 503, code: 'DURABLE_RUN_ROLLOUT_UNAVAILABLE' },
+      ))
+      .mockResolvedValueOnce(undefined);
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ durableRunReady: false }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ durableRunReady: true }) });
+    const hook = renderSendHook();
+
+    let send: Promise<void> | undefined;
+    await act(async () => {
+      send = hook.result.current.sendMessage(envelope);
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1_000);
+      await send;
+    });
+
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+    expect(invokeMock.mock.calls[1]).toEqual([
+      'agent:send-message',
+      expect.objectContaining({ clientMessageId: useSessionStore.getState().messages[0]?.id }),
+    ]);
+    expect(useSessionStore.getState().messages.filter((message) => message.role === 'user')).toHaveLength(1);
+    expect(useSessionStore.getState().messages.filter((message) => message.role === 'assistant')).toEqual([]);
+  });
+
+  it('shows the localized failure only after durable-run readiness times out', async () => {
+    vi.useFakeTimers();
+    invokeMock.mockRejectedValueOnce(Object.assign(
+      new Error('cloud proxy request failed (503): durable run is starting'),
+      { status: 503, code: 'DURABLE_RUN_ROLLOUT_UNAVAILABLE' },
+    ));
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ durableRunReady: false }) });
+    const hook = renderSendHook();
+
+    let send: Promise<void> | undefined;
+    await act(async () => {
+      send = hook.result.current.sendMessage(envelope);
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(90_000);
+      await send;
+    });
+
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(useSessionStore.getState().messages.filter((message) => message.role === 'assistant')).toEqual([
+      expect.objectContaining({ content: '服务还在启动，消息暂时没有发出。请稍后重试。' }),
+    ]);
+    expect(useTaskStore.getState().sessionStates['session-queued']).toMatchObject({ status: 'error' });
   });
 
   it('projects accepted foreground input without exposing a queue marker', async () => {

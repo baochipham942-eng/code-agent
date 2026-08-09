@@ -1,5 +1,6 @@
 # Agent Neo / Code Agent - 架构设计文档
 
+> 版本: 9.31 (9.30 + 2026-08-04~07 post-v0.30 as-built：会话指挥台任务槽位、单 spawn 后台可见、composer 上下文分槽、Browser 用户接管/账号态、session spine/CLI/FTS/分页、指令记忆 path authority)
 > 版本: 9.30 (9.29 + 2026-08-05 ADR-054 会话指挥台四批落地：文字/语音统一任务槽位、前台窄工具与持续输入、User Directives/User Memory 权限分块、随时开口快捷键引导、实时语音成本与单通上限)
 > 版本: 9.29 (9.28 + 2026-07-12~18 Durable Run 生产切换、Web/External 终态单一事实源、renderer 权限与工具事件投影、Skill IPC 类型合同、事件假 seam 清理、桌面启动分段与更新后 compile-cache 预热；详见 runtime safety as-built spec 与 ADR-037)
 > 版本: 9.28 (9.27 + 2026-06-26 Neo Tools evidence/control 收口：统一 EvidenceRef、goal verification card、Browser/Computer durable proof、Agent Pointer 可见化、background/subagent recovery plan、agent tree/worktree read-only review；当前合同已折入本文对应能力域与 ADR-029)
@@ -11,7 +12,7 @@
 > 版本: 9.22 (9.21 + 2026-06-10~11 Windows (win32-x64) 移植与发版链折入：P0 安全/路径地基（权限路径旁路修复 + commandSafety 平台规则包）+ NSIS unsigned 打包链 + 天翼云真机打通（5 个实现期 bug）+ release.yml 独立 build-windows job（三平台 latest.json，windows 失败降级 mac-only，预发布 tag 空跑全绿）+ 全入口设备感知下载/更新（修资产选择两处真 bug）+ ConnectorRegistry 平台过滤 + PII 安装链 Node 化)
 > 版本: 9.21 (9.20 + 2026-06-09 Computer Use 底座迁移 argus → trycua/cua-driver（ADR-021：stdio MCP 接入 + 桌面走 cua/浏览器走 Playwright 分流 + 重签名内嵌 Agent Neo Computer Use.app + cua 工具人话文案/真实 app 图标差异化渲染 + Accessibility 必需/录屏可选）)
 > 版本: 9.20 (9.19 + 2026-06-08 经验沉淀重做（ADR-020：废弃 telemetry n-gram，统一 LLM 反思路 + 命名禁用清单）、Telemetry 可诊断性 P1+P2+P3（版本指纹 + 本地全量诊断旁表/诊断包/脱敏/失败 session 上报 + Langfuse 默认开 opt-out）、卸载/权限三层修复（safety 措辞 + rm 分级松绑 + 挂起权限死锁）、06-07 下午 provider/session/vision 稳定性收尾)
-> 日期: 2026-07-18
+> 日期: 2026-08-07
 > 作者: Lin Chen
 
 本文档是 Agent Neo（代码仓库仍名为 Code Agent）的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -42,7 +43,7 @@
 | [Dynamic Workflow](./architecture/dynamic-workflow.md) | 命令式脚本编排运行时：模型写 JS 脚本 → worker 沙箱后台执行、5 原语、forced 结构化、provider-aware 并发闸、token budget、跑前审批、resumable |
 | [Runtime Consolidation Snapshot](./architecture/runtime-consolidation-2026-05-31.md) | 2026-05-29~06-01 运行时收口 as-built：workflow、provider 控制、app-host 验收、observability、dead path 归属、product closure |
 | [Agent Architecture Debt Iteration](./architecture/agent-architecture-debt-iteration-plan-2026-05-31.md) | runtime ports、model/app-host 拆分、prompt/session/eval gates 的分阶段闭环 |
-| [Chat-Native Workbench](./architecture/workbench.md) | 聊天主链路能力工作台（ConversationEnvelope + InlineWorkbenchBar + Turn Timeline + Prompt Rewind），与 TaskPanel(sidecar) 分工 |
+| [Chat-Native Workbench](./architecture/workbench.md) | 聊天主链路能力工作台（ConversationEnvelope + 会话指挥台 + scoped composer + Turn Timeline + Prompt Rewind），与 TaskPanel(sidecar) 分工 |
 | [Live Voice](./architecture/live-voice.md) | 会话内实时语音、随时开口全局快捷键、上游 token 用量、共享价表与单通成本上限 |
 | [Artifact Verification](./architecture/artifact-verification.md) | Game/Deck/Dashboard verifier、repair guard、ArtifactIssue、EvalReplayQualityReport、Admin Review Queue；旧 AcceptanceRunner / Delivery Review / Preview Feedback 已下线 |
 | [Activity Providers](./architecture/activity-providers.md) | OpenChronicle / Tauri Native Desktop / audio / screenshot-analysis 统一上下文 provider 边界 |
@@ -57,6 +58,7 @@
 
 | Spec | 覆盖 |
 |------|------|
+| [Neo post-v0.30 as-built](./plans/2026-08-07-neo-post-v0.30-as-built-spec.md) | `v0.30.0^{}` 后的会话指挥台、单 spawn 后台投影、composer 上下文分槽、Browser 用户接管/账号态、session spine/CLI、FTS/分页与 directive path authority |
 | [Neo Runtime Safety as-built](./plans/2026-07-11-neo-runtime-safety-as-built-spec.md) | 7 月 4~18 日 as-built：Durable Run 终态事实源、Agent Team/External 恢复、权限队列、renderer 工具卡身份、Skill IPC 类型合同与桌面启动就绪边界 |
 | Neo Tools Evidence Control and Agent Pointer | 6 月 26 日 as-built：统一 `EvidenceRef`、goal verification card、CI log ingest、Browser/Computer durable proof timeline、Neo virtual pointer、session evidence control summary、background/subagent recovery plan、Browser launch helper split |
 | Iteration Governance / Ledger / Budget / Design System | 6 月 16~17 日 as-built：权限决策和工具执行 append-only ledger、Swarm ledger 真理源、reconcile scan 和 opt-in backfill、console/a11y/stale-dist 静态门、设计系统契约与 ratchet gate、预算告警、失败工具 action、Bash 输出头尾预览和 auto-compaction 卡死护栏 |

@@ -35,6 +35,7 @@ import {
 } from './toolPermissionClassification';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
+import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
 import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
@@ -1419,9 +1420,13 @@ export class ToolExecutor {
   }
 
   private get writeWorkspaceRoot(): string | undefined {
-    return this.runContext
-      ? this.runContext.workspaceScope?.primaryRoot
-      : this.workingDirectory;
+    if (this.runContext) return this.runContext.workspaceScope?.primaryRoot;
+    // 无 runContext 的基座 executor：workingDirectory 仍可当写边界（前台 IPC run
+    // 继承会话项目目录，竞品一致），但必须过与 delegate_task 前置预检 / createRunContext
+    // 同一份宽度校验——否则 $HOME / 数据目录 / 祖先路径（/Users、/）也会被当项目边界
+    // 无审批自动放行（安全单 2026-08-09：语音后台 run 把 $HOME 写入判 W1）。判据只此一份，
+    // 不在消费端另造（workspaceAuthority.ts 的注释即禁第二份）。
+    return resolveBackgroundWorkspaceAuthority({ workspace: this.workingDirectory })?.primaryRoot;
   }
 
   private bindRunScopedParams(

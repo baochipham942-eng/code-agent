@@ -221,6 +221,10 @@ import type { AgentEvent, Message, MessageAttachment } from '../../src/shared/co
 import type { AgentRunOptions } from '../../src/host/research/types';
 import { getAllToolDefinitions } from '../../src/host/tools/dispatch/toolDefinitions';
 import { createWorkspaceScope } from '../../src/host/runtime/workspaceScope';
+import { resolveToolPermissionClassification } from '../../src/host/tools/toolPermissionClassification';
+import * as nodeFs from 'node:fs/promises';
+import * as nodeOs from 'node:os';
+import * as nodePath from 'node:path';
 
 // 部分目标是 private 方法 / 内部状态，特征测试经类型逃逸访问（测试专用）
 interface OrchestratorInternals {
@@ -366,6 +370,74 @@ describe('AgentOrchestrator', () => {
       expect(lastAgentLoopConfig()?.workspaceScope).toBe(foregroundScope);
       expect(lastAgentLoopConfig()?.toolExecutor?.runContext?.workspace)
         .toBe(foregroundScope.primaryRoot);
+    });
+
+    it('语音形状的后台 run：workingDirectory=home、无 authority 时，写 home 文件不得判 approve（安全单 2026-08-09）', async () => {
+      // 复刻 TaskManager.startBackgroundTask 对 orchestrator 做的三件事：
+      // setSessionId + setWorkingDirectory(会话 cwd=$HOME) + 不设 workspaceScopeAuthority（语音链路不传）。
+      // 假 home 用 CODE_AGENT_HOME 注入，workspaceAuthority 的 canonicalHomes 会把它当 home 拒掉。
+      const fakeHome = await nodeFs.mkdtemp(nodePath.join(nodeOs.tmpdir(), 'voice-scope-home-'));
+      const prevHome = process.env.CODE_AGENT_HOME;
+      process.env.CODE_AGENT_HOME = fakeHome;
+      try {
+        orchestrator.setSessionId('voice-bg-session');
+        orchestrator.setWorkingDirectory(fakeHome, { syncWorkspaceServices: false });
+        await (orchestrator as unknown as {
+          runStandardAgentLoop(
+            content: string,
+            onEvent: (event: AgentEvent) => void,
+            modelConfig: unknown,
+            sessionId: string,
+            executionContent: string | undefined,
+            toolScope: unknown,
+            executionIntent: unknown,
+            options: AgentRunOptions,
+          ): Promise<void>;
+        }).runStandardAgentLoop(
+          '创建边界探针文件',
+          mockOnEvent,
+          { provider: 'deepseek', model: 'deepseek-chat' },
+          'voice-bg-session',
+          undefined,
+          undefined,
+          undefined,
+          {
+            mode: 'normal',
+            runRegistration: 'auxiliary',
+            runId: 'voice-bg-run',
+            historyVisibility: 'meta',
+            disableAutoAgent: true,
+          },
+        );
+        const executor = lastAgentLoopConfig()?.toolExecutor as unknown as {
+          runContext?: { workspace?: string; workspaceScope?: unknown };
+          writeWorkspaceRoot?: string;
+        } | undefined;
+        expect(executor).toBeDefined();
+        // 钉死安全单 §3 的 (a)/(b)：(a)=executor 无 runContext（回落 workingDirectory 当写边界）
+        expect(executor?.runContext).toBeDefined();
+        // 写边界判据（与 toolExecutor.execute 同一入口同一参数形状）：
+        // 后台 run 写 home 下文件的分类结果不得是 approve
+        const probe = nodePath.join(fakeHome, 'probe.txt');
+        const classification = await resolveToolPermissionClassification({
+          executionToolName: 'Write',
+          policyToolName: 'Write',
+          params: { file_path: probe, content: 'x' },
+          policyForcesConfirmation: false,
+          boundaryViolation: undefined,
+          workingDirectory: fakeHome,
+          workspaceRoot: executor?.writeWorkspaceRoot,
+          permissionLevel: 'write',
+          permStartTime: Date.now(),
+          readOnlyForcesConfirmation: false,
+          sessionPermissionMode: 'default',
+        });
+        expect(classification.decision).not.toBe('approve');
+      } finally {
+        if (prevHome === undefined) delete process.env.CODE_AGENT_HOME;
+        else process.env.CODE_AGENT_HOME = prevHome;
+        await nodeFs.rm(fakeHome, { recursive: true, force: true });
+      }
     });
   });
 

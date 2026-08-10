@@ -120,4 +120,18 @@ describe('TelemetryStorage.pruneAgedTelemetry', () => {
     expect(() => new TelemetryStorage().pruneAgedTelemetry(NOW)).not.toThrow();
     expect(count('telemetry_events')).toBe(2); // 未动
   });
+
+  it('中央 schema 冷启动即可跑 retention（issue #1072：system_prompt_cache 曾惰性建表拖死整个事务）', async () => {
+    const { applyTelemetrySchema } = await import('../../../src/host/services/core/database/schemaTelemetry');
+    const fresh = new Database(':memory:');
+    const noop = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
+    applyTelemetrySchema(fresh, noop as never);
+    fresh.prepare('INSERT INTO telemetry_events (id, turn_id, session_id, timestamp, event_type) VALUES (?, ?, ?, ?, ?)')
+      .run('aged', 't1', 's1', OLD, 'tool_call');
+    const { deleteAgedTelemetryRows } = await import('../../../src/host/telemetry/telemetryRetentionSql');
+    // 直接调底层（不经 pruneAgedTelemetry 的吞错 catch）：任何表缺失都会在这里炸红
+    expect(() => deleteAgedTelemetryRows(fresh, NOW)).not.toThrow();
+    expect((fresh.prepare('SELECT COUNT(*) AS n FROM telemetry_events').get() as { n: number }).n).toBe(0);
+    fresh.close();
+  });
 });

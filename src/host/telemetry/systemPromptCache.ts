@@ -28,7 +28,8 @@ export class SystemPromptCache {
   }
 
   /**
-   * 确保表存在
+   * 确保表存在。DDL 已收进中央 schema（schemaTelemetry.ts，启动期 retention 依赖），
+   * 此处保留作 dbOverride/测试兜底；改列必须两处同步。
    */
   ensureTable(): void {
     try {

@@ -7,7 +7,13 @@
 // File operations are tested in E2E tests.
 // ============================================================================
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+const loggerSpies = vi.hoisted(() => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }));
+vi.mock('../../../src/host/services/infra/logger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/services/infra/logger')>();
+  return { ...actual, createLogger: () => loggerSpies };
+});
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -198,6 +204,18 @@ describe('AuditLogger', () => {
 
     it('should have cleanup method', () => {
       expect(typeof logger.cleanup).toBe('function');
+    });
+
+    it('cleanup 对未创建的审计目录返回 0 且不落 ERROR 日志（issue #1072：ensureAuditDir 异步 fire-and-forget，启动期清理可先跑）', async () => {
+      const ghostDir = path.join(tempDir, 'never-created-dir');
+      const ghost = new AuditLogger(ghostDir);
+      // 构造器的 ensureAuditDir 是异步 fire-and-forget，先让它落定再删目录，
+      // 否则本测试在跟它赛跑（目录被建出来 → readdir 不会 ENOENT → 假绿）
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      fs.rmSync(ghostDir, { recursive: true, force: true });
+      loggerSpies.error.mockClear();
+      await expect(ghost.cleanup()).resolves.toBe(0);
+      expect(loggerSpies.error).not.toHaveBeenCalled();
     });
 
     it('should return empty results for empty log', async () => {

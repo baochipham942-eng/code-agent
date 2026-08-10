@@ -60,6 +60,11 @@ on:
       - 'scripts/knip-production-ratchet.mjs'
       - 'scripts/eslint-ratchet.mjs'
       - 'knip.json'
+      # 依赖维度零容忍门的输入（配置 / 门脚本 / knip 版本单一真源）。
+      # package.json 已在上面的清单里——依赖增删本来就该触发这道门。
+      - 'knip.dependencies.json'
+      - 'scripts/knip-dependency-gate.mjs'
+      - 'scripts/lib/knipVersion.mjs'
       - 'knip.production.json'
       - 'knip.production-strict.json'
       - 'scripts/architecture-debt-report.mjs'
@@ -277,6 +282,13 @@ jobs:
         # legacy profile 锁存量文件集合；strict profile 关闭自动测试/plugin 入口，只拦相对 main
         # 新增且从发行版入口完全走不到的源码。完整历史用于解析真实 merge-base。
         run: node scripts/knip-production-ratchet.mjs
+
+      - name: Knip dependency dimension gate
+        # 依赖维度**零容忍**（不是棘轮）：unlisted / unused / unresolved 必须为 0。
+        # knip.json 的 `ignoreDependencies: [".*"]` 把依赖维度整个关掉了，这道门补上。
+        # 未声明依赖靠 transitive hoisting 活着，上游一变就是运行时 MODULE_NOT_FOUND，
+        # 且只在打包后的 app 里炸——开发树永远有它，本地跑不出来。
+        run: node scripts/knip-dependency-gate.mjs
 
       - name: ESLint error/warning ratchet
         # errors / warnings 双独立基线棘轮；任一超基线即阻塞，清理后只能下调。

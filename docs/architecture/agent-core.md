@@ -2,6 +2,14 @@
 
 > 本文档详细描述 Agent 的核心组件：AgentOrchestrator、AgentLoop、运行时模块、平台抽象层、记忆系统、上下文压缩等
 
+## 2026-08-04~07 会话指挥台与写入权威门
+
+会话前台现在承担短响应、派活、转向、取消和查状态；耗时执行进入 `SessionCommandCenter → TaskManager → BackgroundTaskLedger`。文字与实时语音共用全局 4、单会话 2、同 lane 1 的并发合同，`submissionKey` 保证重复派活复用已有任务。任务终态既投影进后台账本，也写回会话消息，供后续指代和诊断。
+
+单个 `spawn_agent` 超过前台预算后保留原 SpawnGuard/agentId 执行身份，只通过 `singleSpawnVisibilityRegistry` 建立短生命周期 UI scope；成员条、概览和停止入口复用 swarm 投影，终态删除映射。synthetic scope 不参与并发配额、恢复或执行身份判断。
+
+指令记忆的保护从 `MemoryWrite` 单工具提升到 `ToolExecutor` 的路径权威门。`directiveMemoryPathAuthority` 会检查声明式路径、Write、Bash 重定向和 global-memory 目标；写入记忆目录必须携带与本次 tool+params+targets 匹配的确认 fingerprint。`User Memory` 仍只是可错的上下文，不提供指令或授权。完整合同见 [post-v0.30 as-built spec](../plans/2026-08-07-neo-post-v0.30-as-built-spec.md)。
+
 ## 2026-07-11 Native Run 与 Goal 完成合同
 
 Native Agent run 现在由独立 `runId` 拥有执行生命周期，`sessionId` 只承担会话与持久化身份。`RunContext` 冻结 workspace/cwd，`RunRegistry` 提供 session 唯一占用和 stale-owner-safe cleanup；控制、断线、本地工具与 Bridge 都绑定精确 RunHandle。完整链路见 [native-run-context.md](./native-run-context.md)。

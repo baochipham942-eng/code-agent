@@ -135,6 +135,8 @@ The public marketing surface and `admin-console/` are outside this contract. Gen
 
 The source of truth is, in order: executable renderer and theme code at the pinned commit; stable architecture documents; repeated component behavior and tests; then screenshots. Existing screenshots are historical evidence and lose when they conflict with current executable code.
 
+Post-v0.30 session interaction contracts (command console, backgrounded spawns, composer context slots, browser trust and takeover, history/export, and user directives vs memory) are specified in [docs/designs/session-console-workbench.md](docs/designs/session-console-workbench.md). That document owns user-visible interaction and state expression; this file continues to own the cross-surface visual and component contract.
+
 ### Classification and reuse boundary
 
 | Classification | Owns | Must not own |
@@ -179,6 +181,7 @@ The linked community `DESIGN.md` files are **unofficial analyses of public produ
 | Touch/mobile application layout | **Unresolved** | A 768px CSS token collapse exists, but no complete mobile navigation, settings, canvas, or touch contract is implemented |
 | Focus management and keyboard accessibility | **Partial / unresolved** | Global focus styles, ARIA labels, Escape handling, and canvas shortcuts exist; several controls suppress outlines and the base modal focuses its container without a complete focus loop |
 | `@linchen/ui-foundation` and `@linchen/agent-workbench` | **Planned** | No package or import exists at the pinned baseline |
+| Post-v0.30 session interaction contracts | **Live (automated gates); fresh-build release acceptance pending** | `docs/designs/session-console-workbench.md`; automated anchors per `docs/plans/2026-08-07-neo-post-v0.30-as-built-spec.md` §5; real text/voice console sessions and real-UI cancel remain manual smoke items |
 
 ## Colors
 

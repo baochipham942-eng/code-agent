@@ -212,6 +212,18 @@ Renderer 不再维护旧的“下一轮排队”状态。新输入直接进入�
 
 两块分别写入 `memoryInjectionTrace`。规则文件使用同目录临时文件、fsync、校验后 rename；坏的临时文件隔离为 `.corrupt-*`，不会进入活动记忆集合。规则可在记忆管理中删除，frontmatter 保留确认请求 ID 和时间。
 
+#### 3.0.1 后台任务槽位与单 spawn 投影
+
+`SessionCommandCenter` 用 `SessionTaskSlotLedger` 管理文字/语音共用的任务槽位：全局 4、单会话 2、同 lane 1；`submissionKey` 去重，容量不足时返回 `requires_choice` 或在调用方明确允许时排队。执行委托给 `TaskManager`，状态统一投影到 `BackgroundTaskLedger`，终态再写回 session transcript。
+
+普通单 `spawn_agent` 转后台不创建新的执行身份。`singleSpawnVisibilityRegistry` 只把 synthetic run scope 映射回 legacy agentId，让 SessionMemberBar、Task Workspace Overview 和 run-level stop 复用现有 swarm UI；完成/失败/取消后立即清理映射。
+
+#### 3.0.2 Composer 上下文分槽与移交
+
+`composerScopeModel.ts` 将输入上下文拆成 `draft`、`space:<projectId>`、`session:<sessionId>` 三类槽。每槽独立保存 working directory、routing、browser mode、skills/connectors/MCP、团队配方、pin 与专家意图；切换会话或空间只切 active scope，不复制上一槽状态。
+
+从草稿/空间发起新会话时，`planScopeHandoffToSession()` 负责一次性移交：turn 选择进入新 session 槽，pin 和专家意图分别物化到 host session 真源，源槽清空。Library 的“带进新会话”也走该移交路径，不再先创建空会话再等待异步补 pin。
+
 ### 3.1 发送链（普通 Auto / Parallel）
 
 ```
@@ -518,6 +530,9 @@ prompt builder 要求 _meta
 - `src/renderer/components/features/chat/TraceNodeRenderer.tsx` — 新增 `turn_timeline` 节点渲染
 - `src/renderer/components/features/chat/ChatInput/InputAddMenu.tsx` — ChatInput B+ 低频动作入口
 - `src/renderer/components/features/chat/ChatInput/index.tsx` — `setDraft()` 供 prompt rewind 回填输入框
+- `src/renderer/stores/composerScopeModel.ts` — draft / space / session 上下文分槽与新会话移交纯合同
+- `src/host/services/commandCenter/` — 会话任务槽位、幂等派发、steer/cancel 与终态回流
+- `src/host/agent/singleSpawnVisibilityRegistry.ts` — 单 spawn 后台任务的 UI scope 到 legacy agentId 映射
 - `src/renderer/components/features/chat/TurnCard.tsx` — Hook Activity banner
 - `src/renderer/components/ChatView.tsx` — prompt rewind 确认、IPC 调用与 active messages 回写
 - `src/renderer/components/features/settings/tabs/ConversationSettings.tsx` — Routing / Browser 默认偏好

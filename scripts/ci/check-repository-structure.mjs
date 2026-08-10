@@ -35,7 +35,10 @@ const limits = {
   // 2026-08-08 +1: scripts/neo-collect-diagnostics.bat（Windows 测试用户一键收诊断的
   // 单文件 polyglot：bat 头自读文件、从 #PSBEGIN 起交给 PowerShell 执行，双击即跑。
   // 它是直接交到用户手上的入口，不能藏进子目录，所以占一个直属名额）。
-  directScriptFiles: 151,
+  // 2026-08-10 +1: scripts/knip-dependency-gate.mjs（依赖维度零容忍门，package /
+  // swarm-ci 共用的稳定入口，与 eslint/knip/tsc-tests 各棘轮同族。它的 knip 版本常量
+  // 已抽到 scripts/lib/knipVersion.mjs，不占直属名额）。
+  directScriptFiles: 152,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

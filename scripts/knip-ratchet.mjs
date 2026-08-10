@@ -24,7 +24,8 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
-const KNIP_VERSION = '6.24.0';
+export { KNIP_VERSION } from './lib/knipVersion.mjs';
+import { KNIP_VERSION } from './lib/knipVersion.mjs';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const profiles = {
   default: {

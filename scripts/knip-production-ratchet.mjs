@@ -10,7 +10,7 @@
 //   2026-07-25 的孤儿能力审计实测：三个已确认的孤儿（editMessage / BudgetSettings /
 //   designPreviewInject）喂给现行 knip 门，一个都没进网。
 //
-// 本门保留历史 66 基线，同时用 strict profile 关掉 Knip 自动注入的测试/配置/plugin
+// legacy profile 用文件路径集合锁住历史不可达文件，同时用 strict profile 关掉 Knip 自动注入的测试/配置/plugin
 // 入口。普通 profile 锁存量；strict profile 只拦相对 main 新增且从发行版入口走不到的
 // 源码文件，不抬历史基线，也不维护逐文件豁免名单。
 //
@@ -19,11 +19,11 @@
 // telemetry 上传器 / Agent Registry / LogBridge / dbRetention 先后在它上面搁浅。
 //
 // 口径与取舍：
-//   - legacy profile 保留 66 的计数棘轮，继续锁住已经清下来的存量战果。
+//   - legacy profile 锁定历史不可达文件集合；同批清理存量文件不能抵消新增的断电文件。
 //   - strict profile 不设第二个数字基线，也不做 allowlist；只把相对 main 新增的 src 文件
 //     与纯发行入口不可达集合取交集。既有 132 个历史债不会被本工单强行核销，新债会报红。
 //   - 故意只给 scripts/ 使用的实现应放在 scripts/ 或对应工具 workspace，不能靠抬生产基线放行。
-//   - legacy 清理后仍手动调小 BASELINE_MAX，只降不升。
+//   - legacy 清理后用 --update-baseline 从集合移除已清理文件；基线只能由有意操作收紧。
 //
 // 基线沿革：2026-07-25 建门，实测 132；同日 #676 把 retention 接进 webServer 后降到 131；
 // 同日删 41 个死 barrel（孤儿审计 D4）后降到 90；2026-07-26 删除旧 Host
@@ -33,18 +33,22 @@
 // 唯一剩余消费方 Progress.tsx 以及两者共用的 taskPanelUtils.ts / useToolProgress.ts
 // 一并清空（三者互为彼此的唯一消费者，`rtk proxy grep` 核实全仓零其他引用）后降到 66，收紧锁住战果。
 //
-// 用法：node scripts/knip-production-ratchet.mjs
+// 用法：
+//   node scripts/knip-production-ratchet.mjs
+//   node scripts/knip-production-ratchet.mjs --update-baseline
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-export const BASELINE_MAX = 66;
 export const KNIP_VERSION = '6.24.0';
 export const CONFIG = 'knip.production.json';
 export const STRICT_CONFIG = 'knip.production-strict.json';
+export const BASELINE_FILE = 'knip-production-ratchet-baseline.json';
+const scriptDir = resolve(fileURLToPath(import.meta.url), '..');
+export const BASELINE_PATH = resolve(scriptDir, BASELINE_FILE);
 
 // 锚点：已知必然生产不可达的文件。它若从结果里消失而文件还在，说明本门的口径已经失效
 // （配置写错 / entry 被误改 / knip 报告格式变了），必须报红而不是"零命中=通过"地假绿。
@@ -54,6 +58,51 @@ export const TEST_ONLY_ANCHOR = 'src/host/app/desktopQueuedInputDrain.ts';
 
 function fail(message) {
   throw new Error(`[knip-production-ratchet] ✗ 自检失败：${message}`);
+}
+
+function compareFiles(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export function readBaseline(baselinePath = BASELINE_PATH) {
+  let baseline;
+  try {
+    baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
+  } catch (error) {
+    fail(`无法读取基线 ${baselinePath}：${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  if (baseline.schemaVersion !== 1 || !Array.isArray(baseline.files)
+    || baseline.files.some((file) => typeof file !== 'string')) {
+    fail(`${baselinePath} 基线格式无效，预期 schemaVersion=1 和有序 files[]。`);
+  }
+  const sorted = [...baseline.files].sort(compareFiles);
+  if (baseline.files.some((file, index) => file !== sorted[index])
+    || new Set(baseline.files).size !== baseline.files.length) {
+    fail(`${baselinePath} 的 files[] 必须稳定排序且不含重复路径。`);
+  }
+  return baseline.files;
+}
+
+export function findBaselineDelta(files, baselineFiles) {
+  const current = new Set(files);
+  const baseline = new Set(baselineFiles);
+  return {
+    added: files.filter((file) => !baseline.has(file)).sort(compareFiles),
+    removed: baselineFiles.filter((file) => !current.has(file)).sort(compareFiles),
+  };
+}
+
+export function writeBaseline(files, baselinePath = BASELINE_PATH) {
+  const sortedFiles = [...new Set(files)].sort(compareFiles);
+  writeFileSync(baselinePath, `${JSON.stringify({ schemaVersion: 1, files: sortedFiles }, null, 2)}\n`);
+  return sortedFiles;
+}
+
+export function parseArgs(args) {
+  if (args.length === 0) return { updateBaseline: false };
+  if (args.length === 1 && args[0] === '--update-baseline') return { updateBaseline: true };
+  fail(`不支持的参数：${args.join(' ')}；仅支持 --update-baseline。`);
 }
 
 export function validateConfig(configPath) {
@@ -191,22 +240,31 @@ export function findNewStrictlyUnreachable(strictFiles, addedFiles) {
   return strictFiles.filter((file) => added.has(file)).sort();
 }
 
-export function main() {
+export function main(args = process.argv.slice(2)) {
+  const { updateBaseline } = parseArgs(args);
   const files = runKnip(CONFIG);
-  const count = files.length;
-  console.log(`[knip-production-ratchet] 存量口径生产不可达文件 ${count} 个（基线上限 ${BASELINE_MAX}）`);
+  if (updateBaseline) {
+    const updated = writeBaseline(files);
+    console.log(`[knip-production-ratchet] 存量口径扫描完成：${updated.length} 个生产不可达文件`);
+    console.log(`[knip-production-ratchet] ✓ 已更新 ${BASELINE_FILE}；仅在有意确认存量清理后提交此基线。`);
+    return;
+  }
 
-  if (count > BASELINE_MAX) {
-    console.error(`[knip-production-ratchet] ✗ 超基线 ${count - BASELINE_MAX} 个。完整名单（前 30）：`);
-    for (const file of files.slice(0, 30)) console.error(`    ${file}`);
-    if (files.length > 30) console.error(`    …… 其余 ${files.length - 30} 个`);
+  const baselineFiles = readBaseline();
+  const { added, removed } = findBaselineDelta(files, baselineFiles);
+  console.log(`[knip-production-ratchet] 存量口径生产不可达文件：当前 ${files.length} 个，基线 ${baselineFiles.length} 个`);
+
+  if (added.length > 0) {
+    console.error(`[knip-production-ratchet] ✗ 发现 ${added.length} 个新增生产不可达文件，不能由存量清理抵消：`);
+    for (const file of added) console.error(`    ${file}`);
     process.exitCode = 1;
     return;
   }
-  if (count < BASELINE_MAX) {
-    console.log(`[knip-production-ratchet] ✓ 低于基线 ${BASELINE_MAX - count} 个，可把 BASELINE_MAX 调小到 ${count}`);
+  if (removed.length > 0) {
+    console.log(`[knip-production-ratchet] ✓ 未新增；有 ${removed.length} 个存量不可达文件已清理，可运行 --update-baseline 从基线移除：`);
+    for (const file of removed) console.log(`    ${file}`);
   } else {
-    console.log('[knip-production-ratchet] ✓ 等于存量基线');
+    console.log('[knip-production-ratchet] ✓ 未新增；当前文件集合与基线一致');
   }
 
   const strictFiles = runKnip(STRICT_CONFIG);

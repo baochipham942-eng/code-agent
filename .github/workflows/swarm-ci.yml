@@ -56,6 +56,7 @@ on:
       # 基线本身也要触发这道门：否则「只改基线」的 PR（等于手工放宽棘轮）不会被任何门看到
       - 'scripts/knip-ratchet-baseline.json'
       - 'scripts/knip-production-export-ratchet-baseline.json'
+      - 'scripts/knip-production-ratchet-baseline.json'
       - 'scripts/knip-production-ratchet.mjs'
       - 'scripts/eslint-ratchet.mjs'
       - 'knip.json'
@@ -273,7 +274,7 @@ jobs:
         run: node scripts/knip-ratchet.mjs --profile production
 
       - name: Knip production-reachability ratchet
-        # legacy profile 锁 66 存量；strict profile 关闭自动测试/plugin 入口，只拦相对 main
+        # legacy profile 锁存量文件集合；strict profile 关闭自动测试/plugin 入口，只拦相对 main
         # 新增且从发行版入口完全走不到的源码。完整历史用于解析真实 merge-base。
         run: node scripts/knip-production-ratchet.mjs
 

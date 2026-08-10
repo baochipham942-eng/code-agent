@@ -51,7 +51,11 @@ const limits = {
   // reusing that file would run the whole TS suite for every Rust-only change.
   // 18: release-evidence-gate.yml — the three release evidence producers and their
   // validator now have a narrow type + contract gate without widening swarm-ci.yml.
-  workflows: 18,
+  // 19: desktop-lifecycle.yml — nightly 双平台（windows-latest + macos-15）生命周期
+  // 验收：kill-restart/pause-resume/renderer-hot-update。此前 Windows 只在手动构建与
+  // 发版 tag 被碰到，孤儿进程/-shm 残留类回归的发现窗口 = 到下次发版；nightly 压到 24h。
+  // 不能折进 swarm-ci.yml：触发方式（cron）与 runner 矩阵（含 windows）都不同。
+  workflows: 19,
 };
 
 const navigationFiles = [

@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -93,15 +93,31 @@ function isWithinRepo(candidatePath: string): boolean {
   }
 }
 
+// require.resolve 走 exports 表，而收紧了 exports 的包（sharp 0.35 起、@img/* 全族）
+// 不再对外暴露 ./package.json —— 只靠它找包根，这些包会整包变成门的盲区。
+// 包根位置本身与 exports 无关，按 node_modules 逐级上溯直接找即可。
+function findManifestByWalk(packageName: string, anchorDir: string): string | null {
+  let dir = anchorDir;
+  for (;;) {
+    const candidate = join(dir, 'node_modules', packageName, 'package.json');
+    if (existsSync(candidate)) return realpathSync(candidate);
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
 function resolveInstalledPackage(packageName: string, anchorDir: string): string | null {
+  let manifestPath: string | null;
   try {
-    const manifestPath = requireFromTest.resolve(`${packageName}/package.json`, {
+    manifestPath = requireFromTest.resolve(`${packageName}/package.json`, {
       paths: [anchorDir],
     });
-    return isWithinRepo(manifestPath) ? dirname(manifestPath) : null;
   } catch {
-    return null;
+    manifestPath = findManifestByWalk(packageName, anchorDir);
   }
+  if (!manifestPath) return null;
+  return isWithinRepo(manifestPath) ? dirname(manifestPath) : null;
 }
 
 const defaultEnvironment: DependencyClosureEnvironment = {

@@ -52,6 +52,9 @@ function buildAssetGroups(arch) {
         `node_modules/@img/sharp-darwin-${arch}`,
         `node_modules/@img/sharp-libvips-darwin-${arch}`,
         'node_modules/detect-libc',
+        // sharp 0.35 起 semver 不再嵌在 sharp/node_modules 下（被提升到顶层），
+        // dist/*.cjs 运行时 require('semver')，漏了它打包后加载即炸。
+        'node_modules/semver',
       ],
       nodeModules: [
         'sharp',
@@ -59,6 +62,7 @@ function buildAssetGroups(arch) {
         `@img/sharp-darwin-${arch}`,
         `@img/sharp-libvips-darwin-${arch}`,
         'detect-libc',
+        'semver',
       ],
     },
   };

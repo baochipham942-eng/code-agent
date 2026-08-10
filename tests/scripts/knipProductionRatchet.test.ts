@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 // @ts-expect-error —— 纯 JS 静态门脚本，无类型声明
-import { ANCHOR, TEST_ONLY_ANCHOR, findNewStrictlyUnreachable, parseKnipResult, validateConfig } from '../../scripts/knip-production-ratchet.mjs';
+import { ANCHOR, TEST_ONLY_ANCHOR, findBaselineDelta, findNewStrictlyUnreachable, parseArgs, parseKnipResult, readBaseline, validateConfig } from '../../scripts/knip-production-ratchet.mjs';
 
 const tempRoots: string[] = [];
 
@@ -81,5 +81,35 @@ describe('strict incremental reachability', () => {
       [ANCHOR, 'src/example/new-dead.ts', 'src/example/old-dead.ts'],
       ['src/example/live.ts', 'src/example/new-dead.ts'],
     )).toEqual(['src/example/new-dead.ts']);
+  });
+});
+
+describe('legacy set reachability', () => {
+  it('blocks a newly unreachable file even when a stored file is cleaned in the same change', () => {
+    expect(findBaselineDelta(
+      ['src/example/newly-unreachable.ts', 'src/example/unchanged.ts'],
+      ['src/example/cleaned.ts', 'src/example/unchanged.ts'],
+    )).toEqual({
+      added: ['src/example/newly-unreachable.ts'],
+      removed: ['src/example/cleaned.ts'],
+    });
+  });
+
+  it('rejects malformed, duplicate, or unordered baselines before accepting a green result', () => {
+    const root = mkdtempSync(join(tmpdir(), 'knip-production-baseline-'));
+    tempRoots.push(root);
+    const baselinePath = join(root, 'baseline.json');
+
+    writeFileSync(baselinePath, JSON.stringify({ schemaVersion: 1, files: ['src/z.ts', 'src/a.ts'] }), 'utf8');
+    expect(() => readBaseline(baselinePath)).toThrow(/稳定排序/);
+
+    writeFileSync(baselinePath, JSON.stringify({ schemaVersion: 1, files: ['src/a.ts', 'src/a.ts'] }), 'utf8');
+    expect(() => readBaseline(baselinePath)).toThrow(/不含重复路径/);
+  });
+
+  it('accepts only the explicit baseline update command', () => {
+    expect(parseArgs([])).toEqual({ updateBaseline: false });
+    expect(parseArgs(['--update-baseline'])).toEqual({ updateBaseline: true });
+    expect(() => parseArgs(['--unknown'])).toThrow(/不支持的参数/);
   });
 });

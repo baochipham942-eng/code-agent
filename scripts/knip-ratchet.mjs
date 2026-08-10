@@ -22,6 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const KNIP_VERSION = '6.24.0';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -35,6 +36,7 @@ const profiles = {
     baselineFile: 'knip-production-export-ratchet-baseline.json',
     configFile: 'knip.production-strict.json',
     label: 'production dead-export',
+    tracksUnreachableFiles: true,
   },
 };
 
@@ -75,6 +77,17 @@ function collectSymbols(report) {
   return symbols.sort(compareSymbols);
 }
 
+function collectUnreachableFiles(report) {
+  const files = new Set();
+  for (const issue of report.issues) {
+    if (typeof issue.file === 'string') files.add(issue.file);
+    for (const entry of issue.files ?? []) {
+      if (typeof entry.name === 'string') files.add(entry.name);
+    }
+  }
+  return [...files].sort((a, b) => a.localeCompare(b));
+}
+
 function readBaseline() {
   let parsed;
   try {
@@ -83,55 +96,153 @@ function readBaseline() {
     console.error(`[knip-ratchet] ✗ 自检失败：无法读取基线 ${path.relative(process.cwd(), baselinePath)}：${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
-  if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.symbols)
-    || parsed.symbols.some((symbol) => !symbol || typeof symbol.file !== 'string' || typeof symbol.name !== 'string'
-      || !['export', 'type'].includes(symbol.kind))) {
-    console.error('[knip-ratchet] ✗ 自检失败：基线格式无效，预期 schemaVersion=1 和有序 symbols[]');
+  const validSymbols = Array.isArray(parsed.symbols)
+    && !parsed.symbols.some((symbol) => !symbol || typeof symbol.file !== 'string' || typeof symbol.name !== 'string'
+      || !['export', 'type'].includes(symbol.kind));
+  const validUnreachableFiles = !profile.tracksUnreachableFiles
+    || (Array.isArray(parsed.unreachableFiles) && parsed.unreachableFiles.every((file) => typeof file === 'string'));
+  const expectedSchemaVersion = profile.tracksUnreachableFiles ? 2 : 1;
+  if (parsed.schemaVersion !== expectedSchemaVersion || !validSymbols || !validUnreachableFiles) {
+    const expected = profile.tracksUnreachableFiles
+      ? 'schemaVersion=2、有序 symbols[] 和有序 unreachableFiles[]'
+      : 'schemaVersion=1 和有序 symbols[]';
+    console.error(`[knip-ratchet] ✗ 自检失败：基线格式无效，预期 ${expected}`);
     process.exit(1);
   }
-  return parsed.symbols.sort(compareSymbols);
+  return {
+    symbols: parsed.symbols.sort(compareSymbols),
+    unreachableFiles: profile.tracksUnreachableFiles ? [...parsed.unreachableFiles].sort((a, b) => a.localeCompare(b)) : [],
+  };
 }
 
-const result = spawnSync(
+function runKnip(include) {
+  const result = spawnSync(
   'npx',
-  ['--yes', `knip@${KNIP_VERSION}`, ...(profile.configFile ? ['--config', profile.configFile] : []), '--include', 'exports,types', '--no-progress', '--reporter', 'json'],
+  ['--yes', `knip@${KNIP_VERSION}`, ...(profile.configFile ? ['--config', profile.configFile] : []), '--include', include, '--no-progress', '--reporter', 'json'],
   { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 },
-);
+  );
 
-// knip 有 issue 时 exit 1 属正常；以 JSON 可解析为准判断门本身是否健康（自检 fail loud）。
-let report;
-try {
-  report = JSON.parse(result.stdout);
-} catch {
-  console.error('[knip-ratchet] ✗ 自检失败：knip 输出不可解析（工具未装好/配置损坏/被 kill）');
-  console.error(result.stderr?.slice(0, 2000) || '(无 stderr)');
+  // knip 有 issue 时 exit 1 属正常；以 JSON 可解析为准判断门本身是否健康（自检 fail loud）。
+  let report;
+  try {
+    report = JSON.parse(result.stdout);
+  } catch {
+    console.error(`[knip-ratchet] ✗ 自检失败：knip ${include} 输出不可解析（工具未装好/配置损坏/被 kill）`);
+    console.error(result.stderr?.slice(0, 2000) || '(无 stderr)');
+    process.exit(1);
+  }
+  if (!Array.isArray(report.issues)) {
+    console.error(`[knip-ratchet] ✗ 自检失败：knip ${include} JSON 里没有 issues 数组，报告格式变了，请同步更新本脚本`);
+    process.exit(1);
+  }
+  return report;
+}
+
+function exportedNames(sourceText, fileName) {
+  const source = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, false);
+  const names = new Set();
+  const addBindingNames = (name) => {
+    if (ts.isIdentifier(name)) names.add(name.text);
+    else if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
+      for (const element of name.elements) {
+        if (ts.isBindingElement(element)) addBindingNames(element.name);
+      }
+    }
+  };
+  for (const statement of source.statements) {
+    const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
+    if (!modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) continue;
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) addBindingNames(declaration.name);
+    } else if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)
+      || ts.isInterfaceDeclaration(statement) || ts.isEnumDeclaration(statement)
+      || ts.isTypeAliasDeclaration(statement) || ts.isModuleDeclaration(statement)) && statement.name) {
+      names.add(statement.name.text);
+    } else if (ts.isExportDeclaration(statement) && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+      for (const element of statement.exportClause.elements) names.add(element.name.text);
+    }
+  }
+  return names;
+}
+
+function baselineRevision() {
+  const configured = process.env.KNIP_RATCHET_BASE_REF;
+  const candidates = configured ? [configured] : ['origin/main', 'main'];
+  for (const candidate of candidates) {
+    const result = spawnSync('git', ['merge-base', 'HEAD', candidate], { encoding: 'utf8' });
+    if (result.status === 0 && result.stdout.trim()) return result.stdout.trim();
+  }
+  console.error('[knip-ratchet] ✗ 自检失败：无法解析比较基点；设置 KNIP_RATCHET_BASE_REF 或确保 origin/main/main 可用');
   process.exit(1);
 }
-if (!Array.isArray(report.issues)) {
-  console.error('[knip-ratchet] ✗ 自检失败：knip JSON 里没有 issues 数组，报告格式变了，请同步更新本脚本');
-  process.exit(1);
+
+function historicalExportNames(file, revision) {
+  const result = spawnSync('git', ['show', `${revision}:${file}`], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+  if (result.status !== 0) return new Set();
+  return exportedNames(result.stdout, file);
 }
 
+const report = runKnip('exports,types');
 const currentSymbols = collectSymbols(report);
+const fileReport = profile.tracksUnreachableFiles ? runKnip('files') : null;
+const currentUnreachableFiles = fileReport ? collectUnreachableFiles(fileReport) : [];
 if (updateBaseline) {
-  fs.writeFileSync(baselinePath, `${JSON.stringify({ schemaVersion: 1, symbols: currentSymbols }, null, 2)}\n`);
+  const baseline = profile.tracksUnreachableFiles
+    ? { schemaVersion: 2, symbols: currentSymbols, unreachableFiles: currentUnreachableFiles }
+    : { schemaVersion: 1, symbols: currentSymbols };
+  fs.writeFileSync(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`);
   console.log(`[knip-ratchet] ${profile.label} 扫描完成：${report.issues.length} 个命中文件，${currentSymbols.length} 个 dead export/type 符号`);
+  if (profile.tracksUnreachableFiles) {
+    console.log(`[knip-ratchet] 生产不可达文件：${currentUnreachableFiles.length} 个，已写入第二维基线`);
+  }
   console.log(`[knip-ratchet] ✓ 已更新 ${path.relative(process.cwd(), baselinePath)}；CI 首跑若点名环境额外符号，核实后将其补入此集合`);
   process.exit(0);
 }
 
-const baselineSymbols = readBaseline();
+const baseline = readBaseline();
+const baselineSymbols = baseline.symbols;
 const baselineKeys = new Set(baselineSymbols.map(symbolKey));
 const currentKeys = new Set(currentSymbols.map(symbolKey));
 const added = currentSymbols.filter((symbol) => !baselineKeys.has(symbolKey(symbol)));
 const removed = baselineSymbols.filter((symbol) => !currentKeys.has(symbolKey(symbol)));
+const baselineUnreachableFiles = new Set(baseline.unreachableFiles);
+const currentUnreachableFileSet = new Set(currentUnreachableFiles);
+const revivedFiles = new Set(baseline.unreachableFiles.filter((file) => !currentUnreachableFileSet.has(file)));
+const disconnectedFiles = currentUnreachableFiles.filter((file) => !baselineUnreachableFiles.has(file));
+const historicalNamesByRevivedFile = new Map();
+if (revivedFiles.size > 0) {
+  const revision = baselineRevision();
+  for (const file of revivedFiles) historicalNamesByRevivedFile.set(file, historicalExportNames(file, revision));
+}
+const newlyIntroduced = added.filter((symbol) => {
+  if (!revivedFiles.has(symbol.file)) return true;
+  return !historicalNamesByRevivedFile.get(symbol.file)?.has(symbol.name);
+});
+const newlyIntroducedKeys = new Set(newlyIntroduced.map(symbolKey));
+const surfacedStoredSymbols = added.filter((symbol) => !newlyIntroducedKeys.has(symbolKey(symbol)));
 
 console.log(`[knip-ratchet] ${profile.label} 扫描完成：${report.issues.length} 个命中文件；当前 ${currentSymbols.length} 个符号，基线 ${baselineSymbols.length} 个符号`);
+if (profile.tracksUnreachableFiles) {
+  console.log(`[knip-ratchet] 生产不可达文件：当前 ${currentUnreachableFiles.length} 个，基线 ${baseline.unreachableFiles.length} 个`);
+}
 
-if (added.length > 0) {
-  console.error(`[knip-ratchet] ✗ 发现 ${added.length} 个新增 dead export/type，不能由存量清理抵消：`);
-  for (const symbol of added) console.error(`  ${formatSymbol(symbol)}`);
+if (disconnectedFiles.length > 0) {
+  console.error(`[knip-ratchet] ✗ 发现 ${disconnectedFiles.length} 个生产文件从可达变为不可达，不能把断电当作存量清理：`);
+  for (const file of disconnectedFiles) console.error(`  ${file}`);
+}
+
+if (newlyIntroduced.length > 0) {
+  console.error(`[knip-ratchet] ✗ 发现 ${newlyIntroduced.length} 个新增 dead export/type，不能由存量清理抵消：`);
+  for (const symbol of newlyIntroduced) console.error(`  ${formatSymbol(symbol)}`);
+}
+
+if (disconnectedFiles.length > 0 || newlyIntroduced.length > 0) {
   process.exit(1);
+}
+
+if (surfacedStoredSymbols.length > 0) {
+  console.log(`[knip-ratchet] ✓ ${surfacedStoredSymbols.length} 个符号随不可达文件复活而现形，均已存在于比较基点，未计为新增：`);
+  for (const symbol of surfacedStoredSymbols) console.log(`  ${formatSymbol(symbol)}`);
 }
 
 if (removed.length > 0) {

@@ -17,6 +17,13 @@ import { describe, expect, it } from 'vitest';
 //
 // 这道门把「路径还在不在」提前到本地与 PR CI。
 //
+// 平台专属 optional 包（`@img/sharp-darwin-arm64` 等）在别的平台上根本不会安装，
+// 而 Swarm CI 跑 Linux —— 这类按「整个包根都不在」跳过，名单从 sharp 自己的
+// optionalDependencies 推导，不硬编码（与 resourcesDependencyClosure 同一套判法）。
+// 🔴 划清界限：**只有包根整个不在才算平台没装**；包根在、子路径没了就是真断裂，
+// 照红不误——sharp 0.35 的 lib/*.js 与 node_modules/semver 正是后者。这条有专门
+// 的用例钉着，别为了让 CI 变绿把它放宽成「包名匹配就跳过」。
+//
 // 🔴 已知盲区（写在这里，不要以为它覆盖了）：
 //   - 只检查 base conf（macOS/arm64 形态）。win32-x64 与 darwin-x64 的派生配置
 //     指向本机没装的包（@img/sharp-win32-x64 等），存在性无从检查；那两条的
@@ -70,7 +77,22 @@ function toRepoRelative(source: string): string {
   return source.startsWith('../') ? source.slice(3) : join('src-tauri', source);
 }
 
+/** `node_modules/@img/sharp-darwin-arm64/lib` → `@img/sharp-darwin-arm64`；非 node_modules 路径返回 null。 */
+export function packageNameOf(repoRelativePath: string): string | null {
+  const marker = 'node_modules/';
+  const at = repoRelativePath.lastIndexOf(marker);
+  if (at < 0) return null;
+  const segments = repoRelativePath.slice(at + marker.length).split('/');
+  if (segments.length === 0 || segments[0] === '') return null;
+  return segments[0].startsWith('@') && segments.length > 1
+    ? `${segments[0]}/${segments[1]}`
+    : segments[0];
+}
+
 type PathProbe = (repoRelativePath: string) => boolean;
+
+/** 读一个已安装包的 optionalDependencies；读不到返回空表。 */
+type OptionalDepsReader = (packageName: string) => string[];
 
 const realProbe: PathProbe = (repoRelativePath) => {
   const absolute = join(repoRoot, repoRelativePath);
@@ -80,22 +102,56 @@ const realProbe: PathProbe = (repoRelativePath) => {
   return globSync(absolute).length > 0;
 };
 
+const realOptionalDepsReader: OptionalDepsReader = (packageName) => {
+  const manifest = join(repoRoot, 'node_modules', packageName, 'package.json');
+  if (!existsSync(manifest)) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(manifest, 'utf8')) as {
+      optionalDependencies?: Record<string, string>;
+    };
+    return Object.keys(parsed.optionalDependencies ?? {});
+  } catch {
+    return [];
+  }
+};
+
 export function assertResourcePathsExist(
   resources: TauriResources,
   registry: ReadonlyMap<string, string>,
   probe: PathProbe,
-): { exempted: string[] } {
+  readOptionalDeps: OptionalDepsReader,
+): { exempted: string[]; skippedForPlatform: string[] } {
   const sources = resourceSources(resources);
   if (sources.length === 0) {
     throw new Error('bundle.resources 解析出 0 条；conf 结构或解析器已失效，不能静默通过。');
   }
 
+  // base conf 是 macOS/arm64 形态，`@img/sharp-darwin-arm64` 这类平台专属包在别的
+  // 平台上（Swarm CI 跑 Linux）根本不会安装。判据不硬编码平台名单：从 conf 引用到的、
+  // **本机装得上的**包各自的 optionalDependencies 里推导出「哪些是平台可选的」。
+  const platformOptional = new Set<string>();
+  for (const source of sources) {
+    const name = packageNameOf(toRepoRelative(source));
+    if (name) for (const dep of readOptionalDeps(name)) platformOptional.add(dep);
+  }
+
   const missing: string[] = [];
   const exempted: string[] = [];
+  const skippedForPlatform: string[] = [];
   const nodeModulesExemptions: string[] = [];
 
   for (const source of sources) {
-    if (probe(toRepoRelative(source))) continue;
+    const repoRelative = toRepoRelative(source);
+    if (probe(repoRelative)) continue;
+
+    // 🔴 只有「整个包根都不在」才算平台没装。包根在、子路径没了 = 真断裂（sharp 0.35
+    // 的 lib/*.js 与 node_modules/semver 正是这个形状），绝不能被平台豁免吃掉。
+    const name = packageNameOf(repoRelative);
+    if (name && platformOptional.has(name) && !probe(`node_modules/${name}`)) {
+      skippedForPlatform.push(source);
+      continue;
+    }
+
     const producer = registry.get(source);
     if (producer) {
       exempted.push(source);
@@ -124,17 +180,23 @@ export function assertResourcePathsExist(
   }
   if (failures.length > 0) throw new Error(failures.join('\n\n'));
 
-  return { exempted };
+  return { exempted, skippedForPlatform };
 }
+
+const noOptionalDeps: OptionalDepsReader = () => [];
 
 describe('Tauri bundle.resources 路径存在性', () => {
   it('每一条 resources 都能命中文件，构建产物只走显式豁免', () => {
-    expect(() => assertResourcePathsExist(readTauriResources(), BUILD_ARTIFACT_SOURCES, realProbe))
-      .not.toThrow();
+    expect(() => assertResourcePathsExist(
+      readTauriResources(),
+      BUILD_ARTIFACT_SOURCES,
+      realProbe,
+      realOptionalDepsReader,
+    )).not.toThrow();
   });
 
   it('解析出 0 条时报红，而不是静默通过', () => {
-    expect(() => assertResourcePathsExist({}, BUILD_ARTIFACT_SOURCES, () => true))
+    expect(() => assertResourcePathsExist({}, BUILD_ARTIFACT_SOURCES, () => true, noOptionalDeps))
       .toThrowError(/解析出 0 条/);
   });
 
@@ -143,6 +205,7 @@ describe('Tauri bundle.resources 路径存在性', () => {
       { '../node_modules/sharp/lib/*.js': 'node_modules/sharp/lib' },
       new Map(),
       () => false,
+      noOptionalDeps,
     )).toThrowError(/指向不存在的路径/);
   });
 
@@ -151,7 +214,32 @@ describe('Tauri bundle.resources 路径存在性', () => {
       { '../node_modules/sharp/lib/*.js': 'node_modules/sharp/lib' },
       new Map([['../node_modules/sharp/lib/*.js', '假装它是构建产物']]),
       () => false,
+      noOptionalDeps,
     )).toThrowError(/不得进构建产物豁免表/);
+  });
+
+  it('平台专属的 optional 包整包没装时跳过，不报红', () => {
+    const result = assertResourcePathsExist(
+      {
+        '../node_modules/sharp/package.json': 'node_modules/sharp/package.json',
+        '../node_modules/@img/sharp-darwin-arm64/lib': 'node_modules/@img/sharp-darwin-arm64/lib',
+      },
+      new Map(),
+      // sharp 装上了，平台包整个不在（Linux runner 的真实形状）
+      (p) => p.startsWith('node_modules/sharp/'),
+      (name) => (name === 'sharp' ? ['@img/sharp-darwin-arm64'] : []),
+    );
+    expect(result.skippedForPlatform).toEqual(['../node_modules/@img/sharp-darwin-arm64/lib']);
+  });
+
+  it('🔴 包根在、子路径没了仍然报红——平台豁免不许吃掉真断裂', () => {
+    expect(() => assertResourcePathsExist(
+      { '../node_modules/@img/sharp-darwin-arm64/index.cjs': 'node_modules/@img/sharp-darwin-arm64/index.cjs' },
+      new Map(),
+      // 包根在（平台对得上），只有子路径不在 —— 这正是 sharp 0.35 那两条的形状
+      (p) => p === 'node_modules/@img/sharp-darwin-arm64',
+      () => ['@img/sharp-darwin-arm64'],
+    )).toThrowError(/指向不存在的路径/);
   });
 
   it('豁免表里留下 conf 已不引用的条目时报红', () => {
@@ -159,6 +247,7 @@ describe('Tauri bundle.resources 路径存在性', () => {
       { '../package.json': 'package.json' },
       new Map([['../scripts/已删掉的东西', 'some-script.sh']]),
       () => true,
+      noOptionalDeps,
     )).toThrowError(/已不再引用/);
   });
 });

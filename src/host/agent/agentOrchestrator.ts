@@ -51,21 +51,23 @@ import { TaskDAG } from '../scheduler/TaskDAG';
 import { sendDAGInitEvent } from '../scheduler/dagEventBridge';
 import { getEventBus } from '../services/eventing';
 import { getComboRecorder } from '../services/skills/comboRecorder';
-import { getPredefinedAgent } from './agentDefinition';
 import { resolveAgent as registryResolveAgent } from './agentRegistry';
 import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { buildLiveVoiceToolDenylist, buildRoutingToolDenylist } from './routingToolPolicy';
 import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import { startRunPreferringDurable } from './orchestrator/durableRunStart';
 import { getUserPresenceToolNames } from '../tools/dispatch/toolDefinitions';
+import { OrchestratorRunSettings } from './orchestratorRunSettings';
+import { OrchestratorMessageHistory } from './orchestratorMessageHistory';
+import { applyTurnSystemContext, buildLiveVoicePermissionNotice } from './orchestratorTurnContext';
+import {
+  resolveExplicitAgentRouting,
+  syncAutoAgentDAGStatus,
+  syncDAGStatus,
+} from './orchestratorDagSync';
 
 // Sub-modules
-import { type AgentOrchestratorConfig, MAX_MESSAGES_IN_MEMORY } from './orchestrator/types';
-import {
-  mapAgentEventToDAGStatus,
-  mapAutoAgentStatusToDAGStatus,
-  buildDAGStatusEvent,
-} from './orchestrator/dagManager';
+import { type AgentOrchestratorConfig } from './orchestrator/types';
 import {
   resolveModelConfig,
   resolveRunModelConfig,
@@ -83,7 +85,6 @@ import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { resolveSessionWorkspaceScope } from '../services/sessionFork/workspace';
 import { getAuthService } from '../services/auth/authService';
 import { getDatabase } from '../services/core/databaseService';
-import { wrapWithTurnSystemContext } from './turnScaffold';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type { AgentNoticeEvent } from '../../shared/ipc/handlers';
 import type { WorkspaceScope } from '../../shared/contract/project';
@@ -133,7 +134,8 @@ export class AgentOrchestrator {
   private onEvent: (event: AgentEvent) => void;
   private workingDirectory: string;
   private isDefaultWorkingDirectory: boolean = true;
-  private messages: Message[] = [];
+  private readonly runSettings: OrchestratorRunSettings;
+  private readonly messageHistory: OrchestratorMessageHistory;
   private pendingPermissions: Map<string, {
     resolve: (response: PermissionResponse) => void;
     request: PermissionRequest;
@@ -143,15 +145,6 @@ export class AgentOrchestrator {
   private readonly injectedPendingApprovalRepo?: PendingApprovalRepository;
   private cachedPendingApprovalRepo: PendingApprovalRepository | null = null;
   private planningService?: PlanningService;
-  private researchUserSettings: Partial<ResearchUserSettings> = {
-    autoDetect: true,
-    confirmBeforeStart: false,
-  };
-
-  // Agent Teams: Delegate 模式和 Plan 审批
-  private delegateMode: boolean = false;
-  private requirePlanApproval: boolean = false;
-
   // Real-time steering: 中断排队
   private isInterrupting: boolean = false;
   private pendingSteerMessages: PendingSteerMessage[] = [];
@@ -160,7 +153,6 @@ export class AgentOrchestrator {
   private taskListManager: TaskListManager;
   private sessionId: string | null = null;
   private workspaceScopeAuthority?: WorkspaceScope;
-  private lastSerializedCompressionState: string | null = null;
   private activeRunPromise: Promise<void> | null = null;
   private readonly runRegistry?: RunRegistry;
 
@@ -175,6 +167,8 @@ export class AgentOrchestrator {
     this.broadcastDAGEvent = config.broadcastDAGEvent;
     this.runRegistry = config.runRegistry;
     this.injectedPendingApprovalRepo = config.pendingApprovalRepo;
+    this.runSettings = new OrchestratorRunSettings(() => this.agentLoop);
+    this.messageHistory = new OrchestratorMessageHistory(() => this.agentLoop);
 
     this.workingDirectory = this.initializeWorkDirectory();
     this.isDefaultWorkingDirectory = true;
@@ -461,12 +455,11 @@ export class AgentOrchestrator {
   }
 
   setResearchUserSettings(settings: Partial<ResearchUserSettings>): void {
-    this.researchUserSettings = { ...this.researchUserSettings, ...settings };
-    logger.debug('Research user settings updated:', this.researchUserSettings);
+    this.runSettings.setResearchUserSettings(settings);
   }
 
   getResearchUserSettings(): Partial<ResearchUserSettings> {
-    return { ...this.researchUserSettings };
+    return this.runSettings.getResearchUserSettings();
   }
 
   handlePermissionResponse(requestId: string, response: PermissionResponse): PermissionDeliveryOutcome {
@@ -636,27 +629,23 @@ export class AgentOrchestrator {
   // ========================================================================
 
   setDelegateMode(enabled: boolean): void {
-    this.delegateMode = enabled;
-    logger.info(`[AgentOrchestrator] Delegate mode ${enabled ? 'enabled' : 'disabled'}`);
+    this.runSettings.setDelegateMode(enabled);
   }
 
   isDelegateMode(): boolean {
-    return this.delegateMode;
+    return this.runSettings.isDelegateMode();
   }
 
   setEffortLevel(level: import('../../shared/contract/agent').EffortLevel): void {
-    this.agentLoop?.setEffortLevel(level);
-    logger.info(`[AgentOrchestrator] Effort level set to ${level}`);
+    this.runSettings.setEffortLevel(level);
   }
 
   setThinkingEnabled(enabled: boolean): void {
-    this.agentLoop?.setThinkingEnabled(enabled);
-    logger.info(`[AgentOrchestrator] Thinking ${enabled ? 'enabled' : 'disabled'}`);
+    this.runSettings.setThinkingEnabled(enabled);
   }
 
   setInteractionMode(mode: import('../../shared/contract/agent').InteractionMode): void {
-    this.agentLoop?.setInteractionMode(mode);
-    logger.info(`[AgentOrchestrator] Interaction mode set to ${mode}`);
+    this.runSettings.setInteractionMode(mode);
   }
 
   pause(): void {
@@ -678,12 +667,11 @@ export class AgentOrchestrator {
   }
 
   setRequirePlanApproval(enabled: boolean): void {
-    this.requirePlanApproval = enabled;
-    logger.info(`[AgentOrchestrator] Plan approval ${enabled ? 'required' : 'not required'}`);
+    this.runSettings.setRequirePlanApproval(enabled);
   }
 
   isRequirePlanApproval(): boolean {
-    return this.requirePlanApproval;
+    return this.runSettings.isRequirePlanApproval();
   }
 
   setPlanningService(service: PlanningService): void {
@@ -695,20 +683,15 @@ export class AgentOrchestrator {
   }
 
   setMessages(messages: Message[]): void {
-    this.messages = [...messages];
-    logger.debug(`Messages set, count: ${this.messages.length}`);
+    this.messageHistory.setMessages(messages);
   }
 
   getMessages(): Message[] {
-    return [...this.messages];
+    return this.messageHistory.getMessages();
   }
 
   getSerializedCompressionState(): string | null {
-    const liveState = this.agentLoop?.getSerializedCompressionState() ?? null;
-    if (liveState) {
-      this.lastSerializedCompressionState = liveState;
-    }
-    return liveState ?? this.lastSerializedCompressionState;
+    return this.messageHistory.getSerializedCompressionState();
   }
 
   getHookManager() {
@@ -716,8 +699,7 @@ export class AgentOrchestrator {
   }
 
   clearMessages(): void {
-    this.messages = [];
-    logger.debug('Messages cleared');
+    this.messageHistory.clearMessages();
   }
 
   // --------------------------------------------------------------------------
@@ -725,27 +707,18 @@ export class AgentOrchestrator {
   // --------------------------------------------------------------------------
 
   private addMessage(message: Message): void {
-    this.messages.push(message);
-    if (this.messages.length > MAX_MESSAGES_IN_MEMORY) {
-      const trimCount = this.messages.length - MAX_MESSAGES_IN_MEMORY;
-      this.messages = this.messages.slice(trimCount);
-      logger.debug(`Trimmed ${trimCount} old messages, keeping ${this.messages.length}`);
-    }
+    this.messageHistory.addMessage(message);
   }
 
   private applyHistoryVisibility(message: Message, options?: AgentRunOptions): Message {
-    if (options?.historyVisibility === 'meta') {
-      message.isMeta = true;
-      message.source = message.source ?? 'system';
-    }
-    return message;
+    return this.messageHistory.applyHistoryVisibility(message, options);
   }
 
   private updateContextHealthSnapshot(sessionId: string, model: string): void {
     try {
       getContextHealthService().update(
         sessionId,
-        this.messages.map((message) => ({
+        this.messageHistory.getMessagesForRun().map((message) => ({
           role: message.role,
           content: message.content || '',
           toolResults: message.toolResults?.map((result) => ({
@@ -997,7 +970,7 @@ export class AgentOrchestrator {
         requirements.executionStrategy = 'sequential';
       }
 
-      if (this.delegateMode && !requirements.needsAutoAgent) {
+      if (this.runSettings.isDelegateMode() && !requirements.needsAutoAgent) {
         logger.info('[DelegateMode] Forcing auto agent mode — orchestrator will not execute tools directly');
         requirements.needsAutoAgent = true;
         requirements.executionStrategy = requirements.executionStrategy || 'parallel';
@@ -1017,7 +990,7 @@ export class AgentOrchestrator {
             this.runStandardAgentLoop(c, e, m, s, executionPrompt, toolScope, executionIntent, options),
           toolScope: options?.toolScope,
           executionIntent: options?.executionIntent,
-          sourceMessageId: this.messages.filter((message) => message.role === 'user').at(-1)?.id,
+          sourceMessageId: this.messageHistory.getMessagesForRun().filter((message) => message.role === 'user').at(-1)?.id,
         }, sessionId);
       } else {
         await this.runStandardAgentLoop(
@@ -1310,7 +1283,7 @@ export class AgentOrchestrator {
       systemPrompt,
       modelConfig: effectiveModelConfig,
       toolExecutor: runContext ? this.toolExecutor.forRun(runContext) : this.toolExecutor,
-      messages: this.messages,
+      messages: this.messageHistory.getMessagesForRun(),
       onEvent: dagAwareOnEvent,
       planningService: this.planningService,
       runId: nativeRunId,
@@ -1415,8 +1388,7 @@ export class AgentOrchestrator {
         });
       }
       if (registeredRun) this.runRegistry?.unregister(nativeRunId, registeredRun);
-      this.lastSerializedCompressionState = this.agentLoop?.getSerializedCompressionState()
-        ?? this.lastSerializedCompressionState;
+      this.messageHistory.captureCompressionState();
       logger.info('========== Finally block, agentLoop = null ==========');
       this.agentLoop = null;
       this.activeRunPromise = null;
@@ -1428,39 +1400,16 @@ export class AgentOrchestrator {
     options?: AgentRunOptions,
     sessionId?: string | null,
   ): string {
-    const turnSystemContext = options?.turnSystemContext?.filter((item) => item.trim().length > 0) || [];
-    const liveVoiceNotice = this.buildLiveVoicePermissionNotice(sessionId ?? this.sessionId ?? undefined);
-    if (liveVoiceNotice) {
-      turnSystemContext.push(liveVoiceNotice);
-    }
-    // 标签字面量收在 turnScaffold 里：轮首的分类器要按同一份定义把用户原话拆回来
-    // （见该文件顶注的 skill 别名劫持实录）。
-    return wrapWithTurnSystemContext(turnSystemContext, content);
+    return applyTurnSystemContext(
+      content,
+      options,
+      sessionId ?? this.sessionId ?? undefined,
+      (resolvedSessionId) => this.buildLiveVoicePermissionNotice(resolvedSessionId),
+    );
   }
 
-  /**
-   * D4 通话态钳档告知模型（2026-07-26 真机实录）：live-voice 会话把权限档钳严到
-   * readOnly 时，模型此前完全不知道自己被拦了什么——Write 被拒后接连换 Write→Write→
-   * Bash 三种写法白试，因为它只看到通用拒绝错误，猜不到根因是「通话中」。
-   * 这里把钳档事实和「等审批卡、别换写法重试」的行为指引直接注入这一轮的 system context，
-   * 与 buildWorkbenchTurnSystemContext 那批 workbench 偏好走同一个 turnSystemContext 数组、
-   * 同一套渲染方式，不另起机制。判据同源于 requestPermission 的停车分支（D4 单一真源）。
-   */
   private buildLiveVoicePermissionNotice(sessionId?: string | null): string | null {
-    if (!sessionId) return null;
-    const manager = getPermissionModeManager();
-    if (!manager.isLiveVoiceSession(sessionId)) return null;
-    const mode = manager.getModeForSession(sessionId);
-    // ADR-053 之后通话不再抬严（唯一钳制是 bypassPermissions→acceptEdits），
-    // 旧文案「已临时抬严到 X」变成了假话，会误导执行模型以为有额外限制。
-    // 现在只陈述事实：档位是多少、需要确认的操作会等审批卡、用户在通话中可能不马上点。
-    return [
-      '<live_voice_permission_notice>',
-      `当前处于实时语音通话中，本轮权限档为 ${mode}（通话跟随会话自己的权限设置，不额外收紧）。`,
-      '需要用户确认的操作会挂起等待审批卡；用户正在通话、不在键盘前，可能不会立刻确认。',
-      '不要因为一次尝试没有立即成功就反复更换写法重试，等待审批结果即可。',
-      '</live_voice_permission_notice>',
-    ].join('\n');
+    return buildLiveVoicePermissionNotice(sessionId);
   }
 
   private async resolveAgentRouting(
@@ -1520,29 +1469,7 @@ export class AgentOrchestrator {
   }
 
   private resolveExplicitAgentRouting(agentId: string): RoutingResolution | null {
-    try {
-      const agent = getPredefinedAgent(agentId);
-      return {
-        agent: {
-          id: agent.id,
-          name: agent.name,
-          description: agent.description,
-          systemPrompt: agent.prompt,
-          tools: agent.tools,
-          readonly: agent.coordination?.readonly === true,
-          enabled: true,
-          tags: agent.tags,
-        },
-        score: 1000,
-        reason: `Explicit agent selected: ${agent.id}`,
-      };
-    } catch (error) {
-      logger.warn('Explicit agent selection failed, falling back to auto routing', {
-        agentId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    }
+    return resolveExplicitAgentRouting(agentId);
   }
 
   // --------------------------------------------------------------------------
@@ -1550,17 +1477,11 @@ export class AgentOrchestrator {
   // --------------------------------------------------------------------------
 
   private syncDAGStatus(dagId: string, event: AgentEvent): void {
-    const statusUpdate = mapAgentEventToDAGStatus(event);
-    if (statusUpdate) {
-      const vizEvent = buildDAGStatusEvent(dagId, statusUpdate);
-      this.broadcastDAGEvent?.(vizEvent);
-    }
+    syncDAGStatus(dagId, event, this.broadcastDAGEvent);
   }
 
   private syncAutoAgentDAGStatus(dagId: string, agentId: string, status: string): void {
-    const statusUpdate = mapAutoAgentStatusToDAGStatus(agentId, status);
-    const vizEvent = buildDAGStatusEvent(dagId, statusUpdate);
-    this.broadcastDAGEvent?.(vizEvent);
+    syncAutoAgentDAGStatus(dagId, agentId, status, this.broadcastDAGEvent);
   }
 
   // --------------------------------------------------------------------------

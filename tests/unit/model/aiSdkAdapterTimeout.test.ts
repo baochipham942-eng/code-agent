@@ -38,11 +38,11 @@ function hangUntilAbort(signal: AbortSignal | undefined): Promise<never> {
 }
 
 function streamOf(parts: unknown[]) {
-  return { fullStream: (async function* () { for (const p of parts) yield p; })() } as unknown as ReturnType<typeof streamText>;
+  return { stream: (async function* () { for (const p of parts) yield p; })() } as unknown as ReturnType<typeof streamText>;
 }
 function hangingStream(signal: AbortSignal | undefined, leadingParts: unknown[] = []) {
   return {
-    fullStream: (async function* () {
+    stream: (async function* () {
       for (const p of leadingParts) yield p;
       await hangUntilAbort(signal);
     })(),

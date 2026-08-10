@@ -865,7 +865,7 @@ Neo 作为 MCP server 对外暴露能力时，**控屏/写入类能力永不通�
 
 | 模块 | 位置 | 描述 |
 |------|------|------|
-| **AiSdkModelAdapter** | `src/host/model/adapters/aiSdkAdapter.ts` | 实现现有 `ModelRouter.inference` 契约。`generateText`（非流式，服务子代理 + artifact 重试）+ `streamText`（流式，主 loop，`fullStream` 映射成项目 StreamChunk 契约）；`tool()` 只取 schema，执行仍走 Neo 自己的 toolExecutor + 权限/审计/hook |
+| **AiSdkModelAdapter** | `src/host/model/adapters/aiSdkAdapter.ts` | 实现现有 `ModelRouter.inference` 契约。`generateText`（非流式，服务子代理 + artifact 重试）+ `streamText`（流式，主 loop，`stream` 映射成项目 StreamChunk 契约）；`tool()` 只取 schema，执行仍走 Neo 自己的 toolExecutor + 权限/审计/hook |
 | **引擎开关** | `CODE_AGENT_MODEL_ENGINE` flag | 子代理 + 主 loop 默认 aisdk（`!== 'legacy'`），`=legacy` 一键全回退旧 modelRouter；`AISDK_UNSUPPORTED_PROVIDERS` 已清空（2026-05-27 收口），**所有 provider 都走 AI SDK，不再有自动降级**，该集合留待 P3 净删旧路径时一并删除 |
 | **provider 路由** | `aiSdkAdapter.resolveModel()` + `providerResolution.ts` | 按 provider 选包：deepseek→`@ai-sdk/deepseek`、anthropic→`@ai-sdk/anthropic`、gemini→`@ai-sdk/google`、openrouter→`@openrouter/ai-sdk-provider`、其余（zhipu/moonshot/xiaomi/longcat/qwen/…）→`@ai-sdk/openai-compatible` + `buildVendorCompatSettings()`（thinking 字段/采样参数）。baseURL/apiKey 仍由 `providerResolution.ts` 收口（zhipu 三态 / moonshot 专端点 / `resolveProviderApiKey(trustConfigKey)` 区分主 loop vs 子代理）；zhipu 免费档并发 limiter 套在 `inferenceViaAiSdk()` 外层 |
 | **消息归一** | `aiSdkAdapter.toAiMessages` + `reorderToolResultsAfterAssistant` | Neo ModelMessage ↔ AI SDK ModelMessage；镜像旧路径 `sanitizeToolCallOrder` 把夹在 assistant tool-call 与 tool-result 之间的 system 消息后移（否则 AI SDK 校验抛 `MissingToolResultsError`） |

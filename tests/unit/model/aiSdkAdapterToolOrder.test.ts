@@ -47,7 +47,7 @@ const TASK_TOOL: ToolDefinition = {
 // 流只发一个 finish，让 streamViaAiSdk 直接收尾返回（本测试只关心传入的 messages）。
 function finishOnlyStream() {
   return {
-    fullStream: (async function* () {
+    stream: (async function* () {
       yield { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } };
     })(),
   } as unknown as ReturnType<typeof streamText>;

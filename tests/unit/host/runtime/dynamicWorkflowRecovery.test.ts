@@ -160,6 +160,14 @@ describe('Dynamic Workflow startup recovery', () => {
     expect(runScriptInSandbox).not.toHaveBeenCalled();
   });
 
+  it('fails closed when the durable envelope names a different Graph', async () => {
+    const mismatchedPlan = plan(state());
+    mismatchedPlan.envelope.engine = { kind: 'dynamic_workflow', workflowId: 'other-graph' };
+    const result = await createDynamicWorkflowGraphRecoveryHandler({ registry: registry().value, host: host() }).recover(mismatchedPlan, 10);
+    expect(result).toMatchObject({ status: 'requires_review', reason: 'dynamic workflow engine cursor identity mismatch' });
+    expect(runScriptInSandbox).not.toHaveBeenCalled();
+  });
+
   it('fences checkpoint writes after the recovered owner attempt becomes stale', async () => {
     const currentRegistry = registry();
     (currentRegistry.value.getTraceContext as ReturnType<typeof vi.fn>)

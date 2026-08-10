@@ -1,0 +1,101 @@
+name: Desktop Lifecycle Acceptance (nightly)
+
+# 桌面生命周期验收 nightly：Windows + macOS 双平台跑「启动 → 接单 → 强杀 → 重启 → 断言副作用」
+# 一类的验收脚本。动机：孤儿进程 / 陈旧 -shm / SIGTERM 抢占 / 热更新缓存这类 bug 只在
+# 真实 OS 生命周期下现形，vitest 照不到；此前 Windows 只在手动构建（build-windows-test.yml）
+# 和发版 tag（release.yml）才被碰到，回归发现窗口 = 到下次发版。本闸把窗口压到 24h。
+#
+# 为什么是 nightly 不是 per-PR：三个验收要 build:web + 多轮真进程 spawn/kill，per-PR 成本
+# 不划算；nightly 足够。为什么直接 npx tsx 不走 npm run 包装：package.json 里
+# acceptance:pause-resume / renderer-hot-update 带内联 POSIX env 赋值
+# （npm_config_cache=/tmp/...），Windows 上 npm 经 cmd.exe 跑 script 会直接炸；
+# CI 环境不需要那个本地缓存重定向，绕开包装即绕开问题（排查报告：2026-08-10 Kimi
+# acceptance Windows 兼容性排查，结论：五脚本零重写、小改可上）。
+#
+# 已知语义退化（Windows，接受并记录）：child.kill('SIGTERM') 在 Windows 映射为
+# TerminateProcess，webServer 的优雅 shutdown 路径在 Windows leg 测不到（pause-resume /
+# renderer-hot-update 的「5s 内优雅退出」断言退化为强杀语义）。kill-restart 的核心语义
+# （模拟崩溃 → WAL 恢复）在两平台完整保留（脚本内自带 taskkill /T /F 分支）。
+
+on:
+  schedule:
+    - cron: '0 19 * * *' # 北京时间 03:00
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: desktop-lifecycle
+  cancel-in-progress: false
+
+jobs:
+  lifecycle:
+    name: 生命周期验收（${{ matrix.os }}）
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash # Windows 上统一 Git Bash，与 build-windows-test.yml 同约定
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      # 不加 --ignore-scripts：better-sqlite3 等原生模块需要 install 脚本拉 prebuilt
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build webServer bundle
+        run: npx tsx esbuild.config.ts web
+
+      - name: Build renderer
+        run: npm run build:renderer
+
+      # S9 kill-restart：强杀 → WAL 恢复 → 副作用断言（无重复副作用/陈旧 owner 被 fence/
+      # terminal 唯一），判据全在脚本内锚副作用，不锚退出方式
+      - name: Durable run kill-restart acceptance
+        run: npx tsx scripts/acceptance/durable-run-kill-restart.ts --out test-results/durable-run-s9-acceptance.json
+
+      - name: Pause/resume lifecycle smoke
+        run: npx tsx scripts/acceptance/pause-resume-smoke.ts
+
+      - name: Renderer hot-update lifecycle smoke
+        run: npx tsx scripts/acceptance/renderer-hot-update-smoke.ts
+
+      - name: Upload acceptance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifecycle-reports-${{ matrix.os }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # 红了开 issue（按标签去重：已有 open issue 则追加评论，不刷屏）
+      - name: Open issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create desktop-lifecycle --description "desktop-lifecycle nightly 失败跟踪" --force || true
+          existing=$(gh issue list --label desktop-lifecycle --state open --json number --jq '.[0].number // empty')
+          if [ -z "$existing" ]; then
+            gh issue create \
+              --title "desktop-lifecycle nightly 红（首发平台：${{ matrix.os }}）" \
+              --label desktop-lifecycle \
+              --body "nightly 生命周期验收失败。运行：$RUN_URL —— 同因连红 2 天转人工排查。"
+          else
+            gh issue comment "$existing" --body "再次失败（${{ matrix.os }}）：$RUN_URL"
+          fi

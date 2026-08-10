@@ -12,7 +12,9 @@ const BASELINE_SHA = '2548c7b1cc457485c06303cd6a6e7ba4a7092b8c';
 const root = path.resolve(import.meta.dirname, '../..');
 const childEntry = path.join(root, 'tests/e2e/fixtures/durableRunProcessHost.ts');
 const rolloutEntry = path.join(root, 'tests/e2e/fixtures/durableRunRolloutProcess.ts');
-const tsx = path.join(root, 'node_modules/.bin/tsx');
+// 不走 node_modules/.bin/tsx：Windows 上无扩展名的 .bin shim 是 POSIX 脚本，
+// CreateProcess 直接 ENOENT；改用 process.execPath + tsx 真实入口，两平台同一条路。
+const tsxCli = path.join(root, 'node_modules/tsx/dist/cli.mjs');
 const outputArg = process.argv.indexOf('--out');
 const outputPath = path.resolve(root, outputArg >= 0 && process.argv[outputArg + 1]
   ? process.argv[outputArg + 1]!
@@ -100,18 +102,27 @@ try {
   process.stdout.write(`${JSON.stringify({ pass, report: outputPath, testedSha, scenarios: results.length, gates: report.gates })}\n`);
   finalExitCode = pass ? 0 : 1;
 } finally {
-  await rm(tempRoot, { recursive: true, force: true });
+  // Windows 上 Defender/索引器短暂持锁会让 rm 偶发 EPERM/EBUSY，带重试兜掉这类 CI flake
+  await rm(tempRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
 }
 process.exit(finalExitCode);
 
+// POSIX 侧保持最小白名单隔离；Windows 子进程缺 SystemRoot/ComSpec/PATHEXT 会随机炸
+// （DNS 解析、二级 spawn），win32 下以完整 env 打底再覆盖隔离键。HOME 只对 POSIX 生效，
+// Windows 的 os.homedir() 读 USERPROFILE，两个都设才真隔离。
+function childEnv(isolatedDataDir: string): NodeJS.ProcessEnv {
+  return {
+    ...(process.platform === 'win32' ? process.env : {}),
+    PATH: process.env.PATH ?? '', HOME: isolatedDataDir, USERPROFILE: isolatedDataDir,
+    NODE_ENV: 'test', CODE_AGENT_DATA_DIR: isolatedDataDir, CODE_AGENT_CLI_MODE: 'true',
+  };
+}
+
 function startChild(args: string[]): ChildProcessByStdio<null, Readable, Readable> {
   const isolatedDataDir = args.at(-1)!;
-  return spawn(tsx, [childEntry, ...args], {
+  return spawn(process.execPath, [tsxCli, childEntry, ...args], {
     cwd: root,
-    env: {
-      PATH: process.env.PATH ?? '', HOME: isolatedDataDir, NODE_ENV: 'test',
-      CODE_AGENT_DATA_DIR: isolatedDataDir, CODE_AGENT_CLI_MODE: 'true',
-    },
+    env: childEnv(isolatedDataDir),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
@@ -147,11 +158,16 @@ async function waitForMarker(child: ChildProcessByStdio<null, Readable, Readable
 
 async function forceKill(child: ChildProcessByStdio<null, Readable, Readable>): Promise<void> {
   if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F']);
+    const killed = spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F']);
+    // taskkill 偶发失败（返回码非 0）时补一刀，否则下面的 waitForExit 会永久挂
+    if (killed.status !== 0 && !isChildGone(child)) child.kill('SIGKILL');
   } else {
     child.kill('SIGKILL');
   }
-  await waitForExit(child);
+  await Promise.race([
+    waitForExit(child),
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`forceKill: pid ${child.pid} 在 15s 内未退出`)), 15_000)),
+  ]);
 }
 
 async function waitForExit(child: ChildProcessByStdio<null, Readable, Readable>): Promise<number | null> {
@@ -163,12 +179,9 @@ async function runRollbackRoundTrip(dataDir: string): Promise<Record<string, unk
   await mkdir(dataDir, { recursive: true });
   const phases = ['durable_preferred:create', 'legacy:verify', 'durable_preferred:restore'];
   const outputs = phases.map((phase) => {
-    const result = spawnSync(tsx, [rolloutEntry, phase, dataDir], {
+    const result = spawnSync(process.execPath, [tsxCli, rolloutEntry, phase, dataDir], {
       cwd: root,
-      env: {
-        PATH: process.env.PATH ?? '', HOME: dataDir, NODE_ENV: 'test',
-        CODE_AGENT_DATA_DIR: dataDir, CODE_AGENT_CLI_MODE: 'true',
-      },
+      env: childEnv(dataDir),
       encoding: 'utf8',
     });
     if (result.status !== 0) throw new Error(`rollback ${phase} failed: ${result.stderr}`);
@@ -182,6 +195,7 @@ async function runRollbackRoundTrip(dataDir: string): Promise<Record<string, unk
 async function runReadPreferenceRoundTrip(dataDir: string): Promise<Record<string, unknown> & { pass: boolean }> {
   await mkdir(dataDir, { recursive: true });
   process.env.HOME = dataDir;
+  process.env.USERPROFILE = dataDir; // Windows 的 os.homedir() 读这个，不读 HOME
   process.env.CODE_AGENT_DATA_DIR = dataDir;
   process.env.CODE_AGENT_CLI_MODE = 'true';
   const [{ default: Database }, { applyDurableRunMigrationDraft }, { DurableRunRepository },

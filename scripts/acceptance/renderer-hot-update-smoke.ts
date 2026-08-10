@@ -232,7 +232,7 @@ async function main(): Promise<void> {
       results.push('✅ 场景1 active 健康 → serve 云端版 + token 注入');
     } finally {
       await stopServer(server);
-      await rm(dataDir, { recursive: true, force: true });
+      await rm(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
     }
   }
 
@@ -257,7 +257,7 @@ async function main(): Promise<void> {
       results.push('✅ 场景2 无 active → 回包内基线 + token 注入 + beta source 状态');
     } finally {
       await stopServer(server);
-      await rm(dataDir, { recursive: true, force: true });
+      await rm(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
     }
   }
 
@@ -273,7 +273,7 @@ async function main(): Promise<void> {
       results.push('✅ 场景3 active 不健康 → 兜底回包内基线');
     } finally {
       await stopServer(server);
-      await rm(dataDir, { recursive: true, force: true });
+      await rm(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
     }
   }
 
@@ -292,7 +292,7 @@ async function main(): Promise<void> {
       results.push('✅ 场景4 kill switch → 强制回包内基线');
     } finally {
       await stopServer(server);
-      await rm(dataDir, { recursive: true, force: true });
+      await rm(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
     }
   }
 
@@ -316,7 +316,7 @@ async function main(): Promise<void> {
       results.push('✅ 场景5 rendererBundleStatus → 非法 channel fail closed 可诊断');
     } finally {
       await stopServer(server);
-      await rm(dataDir, { recursive: true, force: true });
+      await rm(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
     }
   }
 

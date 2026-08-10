@@ -446,7 +446,7 @@ async function main(): Promise<void> {
       await deleteStub(server, sessionId).catch(() => undefined);
     }
     if (server) await stopServer(server);
-    await rm(dataDir, { recursive: true, force: true });
+    await rm(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
   }
 }
 

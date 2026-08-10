@@ -130,6 +130,11 @@ const gates = [
     args: ['scripts/knip-ratchet.mjs'],
   },
   {
+    ci: 'swarm-ci / smoke / Knip production dead-export ratchet',
+    command: 'node',
+    args: ['scripts/knip-ratchet.mjs', '--profile', 'production'],
+  },
+  {
     ci: 'swarm-ci / smoke / Knip production-reachability ratchet',
     command: 'node',
     args: ['scripts/knip-production-ratchet.mjs'],

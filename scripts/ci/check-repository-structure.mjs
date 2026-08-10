@@ -28,10 +28,12 @@ const limits = {
   // 字面量棘轮，package / gates:local / swarm-ci 共用的稳定入口）。
   // 2026-08-09 +1: scripts/knip-ratchet-baseline.json（dead export/type 集合基线，
   // 由 scripts/knip-ratchet.mjs 的 --update-baseline 稳定生成）。
+  // 2026-08-10 +1: scripts/knip-production-export-ratchet-baseline.json（strict 发行版
+  // 入口下的 dead export/type 集合基线，由同一脚本的 --profile production 生成）。
   // 2026-08-08 +1: scripts/neo-collect-diagnostics.bat（Windows 测试用户一键收诊断的
   // 单文件 polyglot：bat 头自读文件、从 #PSBEGIN 起交给 PowerShell 执行，双击即跑。
   // 它是直接交到用户手上的入口，不能藏进子目录，所以占一个直属名额）。
-  directScriptFiles: 149,
+  directScriptFiles: 150,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

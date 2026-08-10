@@ -6,6 +6,7 @@
 // 由 webEnvInit 在所有其他 import 之前应用到 process.env。
 // ============================================================================
 
+import * as fs from 'fs';
 import * as path from 'path';
 import { CONFIG_DIR_DEV } from '../host/config/configPaths';
 
@@ -31,4 +32,23 @@ export function resolveChannelDataDir(
   if (!isDevChannel) return undefined;
 
   return path.join(homedir, CONFIG_DIR_DEV);
+}
+
+/**
+ * 把数据目录展开为真实长路径。Windows 8.3 短名（RUNNER~1、长用户名机器的
+ * TEMP/AppData）会让 webServer 内 fs.watch 的 libuv 断言直接 abort 进程
+ * （src/win/fs-event.c:72，0xC0000409，issue #1072）；Rust 侧 compile-cache
+ * warmup 更是把 env::temp_dir() 原样注入 CODE_AGENT_DATA_DIR。目录可能尚不
+ * 存在（首启），先建再解析；解析失败返回原值——宁可维持旧行为也不能把数据
+ * 目录改坏。macOS 上仅解析 /var→/private/var 一类 symlink，前后一致使用无
+ * 行为差异（同 scripts/acceptance/_helpers.ts 的 mkdtempLongPath）。
+ */
+export function expandDataDirLongPath(dir: string): string {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    return fs.realpathSync.native(dir);
+  } catch (error) {
+    console.warn(`[channelDataDir] data dir realpath normalization failed, keeping as-is: ${dir}`, error);
+    return dir;
+  }
 }

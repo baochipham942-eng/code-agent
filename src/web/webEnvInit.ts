@@ -8,7 +8,7 @@
 
 // channelDataDir 只依赖 configPaths（无 keytar 等 native 副作用），安全前置。
 import * as os from 'os';
-import { resolveChannelDataDir } from './channelDataDir';
+import { resolveChannelDataDir, expandDataDirLongPath } from './channelDataDir';
 
 process.env.CODE_AGENT_CLI_MODE = 'true';
 process.env.CODE_AGENT_WEB_MODE = 'true';
@@ -19,4 +19,13 @@ process.env.CODE_AGENT_WEB_MODE = 'true';
 const channelDataDir = resolveChannelDataDir(process.env, os.homedir());
 if (channelDataDir) {
   process.env.CODE_AGENT_DATA_DIR = channelDataDir;
+}
+
+// 数据目录展开为真实长路径（Windows 8.3 短名会让 fs.watch 的 libuv 断言 abort，
+// issue #1072）。必须在任何消费方（configPaths.getUserConfigDir / appPaths.getUserDataPath
+// 及其派生的 skillWatcher/soulLoader 等 fs.watch）读到之前做，一处归一化全链路生效。
+// 未设置时沿用 <home>/.code-agent 惰性默认，不在此显式落 env（保持 CODE_AGENT_HOME 语义）。
+const explicitDataDir = process.env.CODE_AGENT_DATA_DIR?.trim();
+if (explicitDataDir) {
+  process.env.CODE_AGENT_DATA_DIR = expandDataDirLongPath(explicitDataDir);
 }

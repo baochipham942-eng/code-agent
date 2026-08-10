@@ -520,7 +520,15 @@ export class AuditLogger {
     let deletedCount = 0;
 
     try {
-      const files = await fs.promises.readdir(this.auditDir);
+      let files: string[];
+      try {
+        files = await fs.promises.readdir(this.auditDir);
+      } catch (error) {
+        // 目录未建（ensureAuditDir 是异步 fire-and-forget，启动期 cleanup 可能先跑）
+        // = 无可清理，不是错误；其他失败照常走外层 error 日志。
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+        throw error;
+      }
 
       // 并行删除过期文件
       const deletePromises = files

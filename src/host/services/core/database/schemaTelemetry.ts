@@ -231,4 +231,16 @@ export function applyTelemetrySchema(db: BetterSqlite3.Database, logger: Logger)
     )
   `);
 
+  // System Prompt Cache - 系统提示词去重缓存。DDL 与 systemPromptCache.ts 的
+  // ensureTable 保持一致（改列必须两处同步）。收进中央 schema 是因为启动期
+  // retention（telemetryRetentionSql.ts）会删这张表：惰性建表时序上晚于 retention，
+  // 干净数据目录冷启动时 "no such table" 会把整个清理事务拖死（issue #1072 噪音①）。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS system_prompt_cache (
+      hash TEXT PRIMARY KEY,
+      content TEXT NOT NULL,
+      tokens INTEGER,
+      created_at INTEGER NOT NULL
+    )
+  `);
 }

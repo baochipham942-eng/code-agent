@@ -45,6 +45,20 @@ CREATE TABLE messages (
 
 上面的 SQL 是最小会话模型。2026-04-27 之后，真实本地库已经把 agent runtime 的恢复面也纳入 SQLite，不再只持久化 sessions/messages。
 
+### 2026-08-05~07 Session spine、搜索与分页
+
+SQLite 继续承担会话事实源；post-v0.30 新增的是统一 projection 和完整发现路径，没有另造第二份会话数据库。
+
+| 能力 | 当前合同 | 主要路径 |
+|---|---|---|
+| Correlation | `messages.metadata.correlation` 关联 session/run/turn/tool call；logger、audit、MCP、sandbox、browser 与 telemetry 复用该上下文 | `src/host/telemetry/runTraceContext.ts`、`src/host/services/infra/logger.ts` |
+| Session package v2 | 从 SQLite transcript + 五泳道 ledger 投影，并拼接日志时间窗、audit、环境指纹和 manifest；`shareable` 默认脱敏 | `src/host/session/spine/packageBuilder.ts` |
+| Read-only CLI | `neo session list/timeline/export/digest` 以 readonly handle 读取同一 DB 和 package builder，不触发 runtime 写入 | `src/cli/sessionDiagnostics/` |
+| 会话搜索 | UI 走 `session_messages_fts`；短于 trigram 下限的中文 2 字查询显式回落 LIKE；默认过滤 rewound/meta/loop 噪音 | `sessionRepositoryFtsSearch.ts`、`src/host/session/search.ts` |
+| 侧栏分页 | active/archived/all 过滤下沉 SQL，使用 `limit/offset`；静默刷新保持已加载窗口，追加页按 id 去重 | `SessionManager.listSessions()`、`sessionListPagination.ts` |
+
+导出包和 CLI 是只读视图，不是新的事实源。诊断包可以缺少 telemetry（用户关闭或旧会话未采集），此时 transcript/ledger 仍应可导出；`full-local` 可能包含 prompt、命令、路径和敏感内容，只允许本机排障。
+
 ### 2026-04-27 runtime durable state
 
 | 表 / 字段 | 用途 | 主要写入路径 |

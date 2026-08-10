@@ -86,6 +86,14 @@ wire 目录：`resources/browser-relay-extension/protocol-v2.js`（`protocolVers
 
 组件在 `src/renderer/components/features/surfaceExecution/`：ConversationPanel / ChatPanel / ExecutionCard / SessionHeader / SemanticTimeline / EvidenceCard+List / PermissionCard / InterventionCards（Takeover+Recovery）/ Controls / RunStatus / OutputEntry / ResourceSections。Sidebar、会话、composer、PiP 消费同一投影，折叠 turn 保留关键证据与产出（配合 ADR-043 三态折叠）。PiP 由 `useSurfaceExecutionPip` + `public/pip.html` 承载，控制事件走白名单校验；`useComputerUsePip` 仅为兼容转发。文案经 `src/renderer/i18n/surfaceExecution.ts` 的 `getSurfaceExecutionTranslations` 提供中英双语。
 
+### Browser 工作台 Phase 2/3（2026-08-04~06）
+
+`BrowserAgentWindow` 已从只读留影面扩为用户可操作的 browser rail：地址栏回车导航、后退/前进/刷新、URL/标题/favicon 回写、加载中和失败状态都读 managed browser session state。Agent 正在操作时，用户导航或点击先经过 `browserStageInteractionGate`，不静默抢写页面。
+
+live frame 上的 click/type/key/scroll 由 `useBrowserStageUserInput` 归一化，经 shared coordinate/viewport contract 进入 `UserBrowserLinkService`，再作为 owner-aware operation 交给 managed provider；renderer 不直接向 CDP 注入输入。用户接管后仍沿用 Surface Session/Grant/Observation 与 stop fence，迟到帧不能覆盖新状态。
+
+账号态以 Neo 管理的 personal persistent profile 为默认。Cookie/profile 导入必须由用户从 overflow menu 明确发起并经过 host approval；导入过程使用临时副本读取浏览器 cookie DB，UI/日志只返回数量和截断后的域名摘要，不暴露 cookie value。它不等于直接复用用户当前 Chrome 进程；Relay 路线仍要求扩展配对和 tab lease。
+
 ## 安全与脱敏
 
 - `src/shared/utils/surfaceExecutionRedaction.ts`：敏感键位（authorization/token/cookie/clipboard/password/…）、内联凭证、canary 标记、绝对路径全链脱敏；console/network 默认只留脱敏 metadata。
@@ -105,3 +113,4 @@ wire 目录：`resources/browser-relay-extension/protocol-v2.js`（`protocolVers
 - Computer 的 background AX / CGEvent 仅对显式 target app/window 与受控 smoke 成立，foreground fallback 仍需人工确认。
 - Agent Pointer 是 app 内可视化，不声明系统鼠标所有权。
 - Relay 依赖用户侧扩展安装与配对；签名分发/升级兼容的运行时证明仍在补强。
+- Managed Browser 的 Cookie 导入只覆盖显式选择的 Chromium profile/domain；MFA、CAPTCHA、支付和账号安全操作仍强制人工接管。

@@ -2,7 +2,8 @@
 
 import { spawn, type ChildProcessByStdio } from 'child_process';
 import type { Readable } from 'node:stream';
-import { access, mkdtemp, rm } from 'fs/promises';
+import { access, rm } from 'fs/promises';
+import { mkdtempLongPath } from './_helpers';
 import { constants } from 'fs';
 import http from 'http';
 import os from 'os';
@@ -401,7 +402,7 @@ async function runBackgroundNotificationSmoke(
 async function main(): Promise<void> {
   await ensureBuiltWebServer();
 
-  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'code-agent-pause-resume-'));
+  const dataDir = await mkdtempLongPath(path.join(os.tmpdir(), 'code-agent-pause-resume-'));
   let server: StartedServer | null = null;
   let sessionId: string | null = null;
   let cleanupStub = false;

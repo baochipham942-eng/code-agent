@@ -13,7 +13,8 @@
 
 import { spawn, type ChildProcessByStdio } from 'child_process';
 import type { Readable } from 'node:stream';
-import { access, mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
+import { access, mkdir, rm, writeFile } from 'fs/promises';
+import { mkdtempLongPath } from './_helpers';
 import { constants } from 'fs';
 import http from 'http';
 import os from 'os';
@@ -222,7 +223,7 @@ async function main(): Promise<void> {
 
   // ── 场景1：active 健康 → serve 云端版 + token ───────────────────
   {
-    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'rb-e2e-active-'));
+    const dataDir = await mkdtempLongPath(path.join(os.tmpdir(), 'rb-e2e-active-'));
     await writeActive(dataDir, true);
     const server = await startServer('场景1', dataDir);
     try {
@@ -238,7 +239,7 @@ async function main(): Promise<void> {
 
   // ── 场景2：无 active → 回包内基线（builtin，无 CLOUD marker）───────
   {
-    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'rb-e2e-builtin-'));
+    const dataDir = await mkdtempLongPath(path.join(os.tmpdir(), 'rb-e2e-builtin-'));
     const server = await startServer('场景2', dataDir, {
       CODE_AGENT_RENDERER_BUNDLE_CHANNEL: 'beta',
     });
@@ -263,7 +264,7 @@ async function main(): Promise<void> {
 
   // ── 场景3：active 不健康（缺 index.html）→ 兜底回包内基线 ──────────
   {
-    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'rb-e2e-unhealthy-'));
+    const dataDir = await mkdtempLongPath(path.join(os.tmpdir(), 'rb-e2e-unhealthy-'));
     await writeActive(dataDir, false);
     const server = await startServer('场景3', dataDir);
     try {
@@ -279,7 +280,7 @@ async function main(): Promise<void> {
 
   // ── 场景4：生产 kill switch → 即使 active 健康也回包内基线 ──────────
   {
-    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'rb-e2e-disabled-'));
+    const dataDir = await mkdtempLongPath(path.join(os.tmpdir(), 'rb-e2e-disabled-'));
     await writeActive(dataDir, true);
     const server = await startServer('场景4', dataDir, {
       CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
@@ -298,7 +299,7 @@ async function main(): Promise<void> {
 
   // ── 场景5：非法 channel → status fail closed 暴露配置错误 ──────────
   {
-    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'rb-e2e-invalid-channel-'));
+    const dataDir = await mkdtempLongPath(path.join(os.tmpdir(), 'rb-e2e-invalid-channel-'));
     const server = await startServer('场景5', dataDir, {
       CODE_AGENT_RENDERER_BUNDLE_CHANNEL: '../beta',
     });

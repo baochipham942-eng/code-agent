@@ -1,5 +1,19 @@
 #!/usr/bin/env npx tsx
 
+import { realpathSync } from 'fs';
+import { mkdtemp } from 'fs/promises';
+
+/**
+ * mkdtemp + 展开为真实长路径。Windows runner/长用户名机器的 TEMP 常是 8.3 短名
+ * （如 RUNNER~1），webServer 里 fs.watch 的 libuv 断言（src/win/fs-event.c:72）
+ * 在事件路径与被 watch 目录长短名不一致时会直接 abort 进程（0xC0000409，
+ * desktop-lifecycle 首跑实录 2026-08-10，issue #1072）。macOS 上仅解析
+ * /var→/private/var 一类 symlink，前后一致使用无行为差异。
+ */
+export async function mkdtempLongPath(prefix: string): Promise<string> {
+  return realpathSync.native(await mkdtemp(prefix));
+}
+
 export interface ParsedArgs {
   positionals: string[];
   options: Record<string, string | string[] | boolean>;

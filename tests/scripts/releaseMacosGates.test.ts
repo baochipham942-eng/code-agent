@@ -878,11 +878,14 @@ describe('macOS release fail-closed gates', () => {
     expect(sources.some((resource) => resource.includes('node_modules/playwright-core'))).toBe(false);
 
     expect(sources).toContain('../node_modules/sharp/package.json');
-    expect(sources).toContain('../node_modules/sharp/lib/*.js');
-    expect(sources).toContain('../node_modules/sharp/node_modules/semver');
+    // sharp 0.35 起 JS 在 dist/（lib/ 只剩 index.d.ts），semver 也不再嵌在 sharp/node_modules 下。
+    expect(sources).toContain('../node_modules/sharp/dist/*.cjs');
+    expect(sources).toContain('../node_modules/semver');
     expect(sources).toContain('../node_modules/@img/colour/package.json');
     expect(sources).toContain('../node_modules/@img/colour/*.cjs');
     expect(sources).toContain('../node_modules/@img/sharp-darwin-arm64/package.json');
+    // require('@img/sharp-darwin-arm64/sharp.node') 经 exports 落到包根的 index.cjs。
+    expect(sources).toContain('../node_modules/@img/sharp-darwin-arm64/index.cjs');
     expect(sources).toContain('../node_modules/@img/sharp-darwin-arm64/lib');
     expect(sources).toContain('../node_modules/@img/sharp-libvips-darwin-arm64/package.json');
     expect(sources).toContain('../node_modules/@img/sharp-libvips-darwin-arm64/versions.json');

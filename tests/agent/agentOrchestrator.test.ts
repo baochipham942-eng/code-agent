@@ -247,6 +247,15 @@ interface OrchestratorInternals {
 function internals(o: AgentOrchestrator): OrchestratorInternals {
   return o as unknown as OrchestratorInternals;
 }
+// Batch F-3：权限/审批实现搬到 OrchestratorPermissionIsland（orchestrator.permissions）。
+// 摸这些私有成员的测试改走岛；公开委托 handlePermissionResponse/resolveParkedApproval 仍在 orchestrator 上。
+type PermissionInternals = Pick<
+  OrchestratorInternals,
+  'pendingPermissions' | 'requestPermission' | 'getPendingApprovalRepo' | 'drainPendingPermissions'
+>;
+function perm(o: AgentOrchestrator): PermissionInternals {
+  return (o as unknown as { permissions: PermissionInternals }).permissions;
+}
 function lastAgentLoopConfig(): typeof agentLoopProbe.lastConfig {
   return agentLoopProbe.lastConfig;
 }
@@ -749,10 +758,10 @@ describe('AgentOrchestrator', () => {
   describe('权限响应解除挂起', () => {
     it('handlePermissionResponse 对已登记的挂起项 resolve 并从队列移除', () => {
       const resolve = vi.fn();
-      internals(orchestrator).pendingPermissions.set('req-1', { resolve });
+      perm(orchestrator).pendingPermissions.set('req-1', { resolve });
       orchestrator.handlePermissionResponse('req-1', 'allow');
       expect(resolve).toHaveBeenCalledWith('allow');
-      expect(internals(orchestrator).pendingPermissions.has('req-1')).toBe(false);
+      expect(perm(orchestrator).pendingPermissions.has('req-1')).toBe(false);
     });
   });
 
@@ -873,7 +882,7 @@ describe('AgentOrchestrator', () => {
     });
 
     const parkRequest = (sessionId: string) =>
-      internals(parkedOrch).requestPermission({
+      perm(parkedOrch).requestPermission({
         type: 'command',
         tool: 'bash',
         sessionId,
@@ -893,7 +902,7 @@ describe('AgentOrchestrator', () => {
       expect(fake.insert).toHaveBeenCalledTimes(1);
       expect(fake.insert.mock.calls[0][0]).toMatchObject({ kind: 'tool_approval' });
       const requestId = fake.insert.mock.calls[0][0].id as string;
-      const entry = internals(parkedOrch).pendingPermissions.get(requestId);
+      const entry = perm(parkedOrch).pendingPermissions.get(requestId);
       expect(entry?.parked).toBe(true);
       // 收尾避免悬挂 promise
       internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
@@ -913,7 +922,7 @@ describe('AgentOrchestrator', () => {
       expect(await isStillPending(promise)).toBe(true);
       expect(fake.insert).toHaveBeenCalledTimes(1);
       const requestId = fake.insert.mock.calls[0][0].id as string;
-      expect(internals(parkedOrch).pendingPermissions.get(requestId)?.parked).toBe(true);
+      expect(perm(parkedOrch).pendingPermissions.get(requestId)?.parked).toBe(true);
 
       internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
       expect(await promise).toBe(false);
@@ -925,7 +934,7 @@ describe('AgentOrchestrator', () => {
       getPermissionModeManager().markLiveVoiceSession(voiceSid, 'run:voice-work-1');
       getPermissionModeManager().clearLiveVoiceSession(voiceSid, 'run:voice-work-1');
 
-      const promise = internals(parkedOrch).requestPermission({
+      const promise = perm(parkedOrch).requestPermission({
         type: 'command',
         tool: 'bash',
         sessionId: voiceSid,
@@ -933,13 +942,13 @@ describe('AgentOrchestrator', () => {
       });
 
       expect(fake.insert).not.toHaveBeenCalled();
-      internals(parkedOrch).pendingPermissions.get([...internals(parkedOrch).pendingPermissions.keys()][0])?.resolve('deny');
+      perm(parkedOrch).pendingPermissions.get([...perm(parkedOrch).pendingPermissions.keys()][0])?.resolve('deny');
       expect(await promise).toBe(false);
     });
 
     it('有人值守：60s 交互路径不变，不写 pending_approvals', async () => {
       const attendedSid = `attended-${Math.random().toString(36).slice(2)}`;
-      const promise = internals(parkedOrch).requestPermission({
+      const promise = perm(parkedOrch).requestPermission({
         type: 'command',
         tool: 'bash',
         sessionId: attendedSid,
@@ -947,8 +956,8 @@ describe('AgentOrchestrator', () => {
       });
       expect(await isStillPending(promise)).toBe(true);
       expect(fake.insert).not.toHaveBeenCalled();
-      const requestId = [...internals(parkedOrch).pendingPermissions.keys()][0];
-      const entry = internals(parkedOrch).pendingPermissions.get(requestId);
+      const requestId = [...perm(parkedOrch).pendingPermissions.keys()][0];
+      const entry = perm(parkedOrch).pendingPermissions.get(requestId);
       expect(entry?.parked).toBeFalsy();
       parkedOrch.handlePermissionResponse(requestId, 'allow');
       expect(await promise).toBe(true);
@@ -966,7 +975,7 @@ describe('AgentOrchestrator', () => {
 
       // 第二口（抢答后到达）：即便手动残留一个内存项，repo changes=0 也不得二次 resolve
       const secondResolve = vi.fn();
-      internals(parkedOrch).pendingPermissions.set(requestId, {
+      perm(parkedOrch).pendingPermissions.set(requestId, {
         resolve: secondResolve,
         parked: true,
         request: { sessionId: unattendedSid },
@@ -982,12 +991,12 @@ describe('AgentOrchestrator', () => {
       const requestId = fake.insert.mock.calls[0][0].id as string;
       expect(fake.rows.get(requestId)?.status).toBe('pending');
 
-      internals(parkedOrch).drainPendingPermissions('deny');
+      perm(parkedOrch).drainPendingPermissions('deny');
       expect(await promise).toBe(false);
       const row = fake.rows.get(requestId);
       expect(row?.status).toBe('rejected'); // 不再是 pending 孤儿
       expect(row?.feedback).toBe('run cancelled');
-      expect(internals(parkedOrch).pendingPermissions.has(requestId)).toBe(false);
+      expect(perm(parkedOrch).pendingPermissions.has(requestId)).toBe(false);
     });
 
     it('24h 兜底：无人应答超时 deny + repo rejected', async () => {
@@ -1008,14 +1017,14 @@ describe('AgentOrchestrator', () => {
       await isStillPending(promiseA);
 
       const attendedSid = `attended-${Math.random().toString(36).slice(2)}`;
-      const promiseB = internals(parkedOrch).requestPermission({
+      const promiseB = perm(parkedOrch).requestPermission({
         type: 'command',
         tool: 'bash',
         sessionId: attendedSid,
         details: { command: 'echo B' },
       });
-      const bId = [...internals(parkedOrch).pendingPermissions.keys()].find(
-        (k) => !internals(parkedOrch).pendingPermissions.get(k)?.parked,
+      const bId = [...perm(parkedOrch).pendingPermissions.keys()].find(
+        (k) => !perm(parkedOrch).pendingPermissions.get(k)?.parked,
       )!;
       parkedOrch.handlePermissionResponse(bId, 'allow');
       expect(await promiseB).toBe(true);           // B 全程正常
@@ -1048,7 +1057,7 @@ describe('AgentOrchestrator', () => {
     // 短窗口路径，也不该被写权限的 auto-approve 顺带放行。
     it('directory_access：有人值守也走停车挂起（不落 60s 交互路径）', async () => {
       const attendedSid = `attended-${Math.random().toString(36).slice(2)}`;
-      const promise = internals(parkedOrch).requestPermission({
+      const promise = perm(parkedOrch).requestPermission({
         type: 'directory_access',
         tool: 'request_directory',
         sessionId: attendedSid,
@@ -1058,7 +1067,7 @@ describe('AgentOrchestrator', () => {
       expect(fake.insert).toHaveBeenCalledTimes(1);
       expect(fake.insert.mock.calls[0][0]).toMatchObject({ kind: 'directory_access' });
       const requestId = fake.insert.mock.calls[0][0].id as string;
-      const entry = internals(parkedOrch).pendingPermissions.get(requestId);
+      const entry = perm(parkedOrch).pendingPermissions.get(requestId);
       expect(entry?.parked).toBe(true);
       internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
       expect(await promise).toBe(false);
@@ -1072,7 +1081,7 @@ describe('AgentOrchestrator', () => {
         },
       });
       const attendedSid = `attended-devmode-${Math.random().toString(36).slice(2)}`;
-      const promise = internals(parkedOrch).requestPermission({
+      const promise = perm(parkedOrch).requestPermission({
         type: 'directory_access',
         tool: 'request_directory',
         sessionId: attendedSid,
@@ -1101,9 +1110,9 @@ describe('AgentOrchestrator', () => {
         onEvent: mockOnEvent,
       });
       // 台账不可用（DB 未就绪）：getPendingApprovalRepo 返回 null 的那条路径
-      internals(noRepoOrch).getPendingApprovalRepo = () => null;
+      perm(noRepoOrch).getPendingApprovalRepo = () => null;
 
-      const granted = await internals(noRepoOrch).requestPermission({
+      const granted = await perm(noRepoOrch).requestPermission({
         type: 'directory_access',
         tool: 'request_directory',
         sessionId: `no-repo-${Math.random().toString(36).slice(2)}`,

@@ -54,7 +54,7 @@ Agent Neo 目前**自己拥有整个 provider 矩阵**：`ModelRouter` + `provid
 └─────────────────────────────────────────────┘
 ```
 
-**关键招**：新增一个 `AiSdkModelAdapter`，**实现现有 `ModelRouter.inference(messages, tools, modelConfig, onEvent, signal)` 签名**，内部用 `streamText` 把 AI SDK 的 `fullStream` 映射成 Neo 的 `AgentEvent`，返回现有 `ModelResponse` 形状。**agent loop 一行不用改**，只是把 provider 的脏活换掉。
+**关键招**：新增一个 `AiSdkModelAdapter`，**实现现有 `ModelRouter.inference(messages, tools, modelConfig, onEvent, signal)` 签名**，内部用 `streamText` 把 AI SDK 的 `stream` 映射成 Neo 的 `AgentEvent`，返回现有 `ModelResponse` 形状。**agent loop 一行不用改**，只是把 provider 的脏活换掉。
 
 ### 适配器接缝（草图）
 
@@ -70,9 +70,11 @@ export async function inferenceViaAiSdk(
   const tools = Object.fromEntries(toolDefs.map(d => [d.name, aiTool({
     description: d.description, inputSchema: d.inputSchema,     // 工具名单一来源
   })])); // execute 留空：Neo 自己的 toolExecutor 执行，这里只要 schema
-  const res = streamText({ model, messages, tools, abortSignal: signal });
+  // v7：system 走顶层 instructions，messages 里不留 system role
+  //（留了要显式开 allowSystemInMessages，默认会被拒）
+  const res = streamText({ model, instructions, messages, tools, abortSignal: signal });
   let content = '', toolCalls = [];
-  for await (const part of res.fullStream) {
+  for await (const part of res.stream) {
     switch (part.type) {
       case 'text-delta':   content += part.text; onEvent({ type: 'message_delta', data: { text: part.text, path: 'content' } }); break;
       case 'reasoning-delta': onEvent({ type: 'stream_reasoning', data: { content: part.text } }); break;
@@ -103,7 +105,7 @@ export async function inferenceViaAiSdk(
 ## 5. 风险 / 非目标
 
 - **不在分发前做**。下周分发用已修好的版本（Bug A/C 已修，Bug B 是 DeepSeek 特定、默认 mimo 路径已能跑）。本迁移是分发后的结构性还债。
-- **流式事件映射**要逐一核对：Neo 的 `AgentEvent`（message_delta/tool_call_start/turn_end/usage…）和 AI SDK `fullStream` part 的字段一一对齐，尤其 reasoning/thinking、truncation、token usage。
+- **流式事件映射**要逐一核对：Neo 的 `AgentEvent`（message_delta/tool_call_start/turn_end/usage…）和 AI SDK `stream` part 的字段一一对齐，尤其 reasoning/thinking、truncation、token usage。
 - **保留项**：Codex CLI / Claude Code 外部引擎（已走 adapter）、MCP 工具（AI SDK 也支持，但 Neo 现有 MCP client 可继续用）、权限门 / worktree / 多 agent 编排 / 评测中心 —— 全在 agent loop 层，不动。
 - **无原生 function calling 的模型**：用 `@ai-sdk-tool/parser`（alma 同款）做 prompt-based tool 解析兜底，替代 Neo 手写的 `Calling foo()` 正则。
 - **成本/遥测**：token usage 来源从自算改为 AI SDK 的 `usage`，需校准遥测链路（架构记忆里的 SSE token 追踪链要对齐）。

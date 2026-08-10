@@ -229,7 +229,7 @@ describe('inferenceViaAiSdk provider options', () => {
     vi.mocked(streamText).mockImplementation((options) => {
       const model = options.model as unknown as { options: { fetch: typeof globalThis.fetch } };
       return {
-        fullStream: (async function* () {
+        stream: (async function* () {
           const response = await model.options.fetch('https://relay.example/v1/chat/completions', {
             signal: options.abortSignal,
           });

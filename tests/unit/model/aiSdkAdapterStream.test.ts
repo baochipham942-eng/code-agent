@@ -1,4 +1,4 @@
-// AI SDK 适配器流式路径 —— 锁住 streamText fullStream 事件 → StreamChunk（项目契约）
+// AI SDK 适配器流式路径 —— 锁住 streamText stream 事件 → StreamChunk（项目契约）
 // → ModelResponse 的映射，以及 emittedOutput 闸门重试（首字节前才重试、绝不 mid-stream 重试）。
 // 主 loop 是 HOT 路径 + 用户可见聊天，这套映射的语义漂移最危险，故用受控事件流单测覆盖。
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -39,10 +39,10 @@ const READ_TOOL: ToolDefinition = {
   permissionLevel: 'read',
 };
 
-/** 用一组受控事件构造 streamText 返回值（只实现被消费的 fullStream）。 */
+/** 用一组受控事件构造 streamText 返回值（只实现被消费的 stream）。 */
 function fakeStream(parts: unknown[]) {
   return {
-    fullStream: (async function* () {
+    stream: (async function* () {
       for (const p of parts) yield p;
     })(),
   } as unknown as ReturnType<typeof streamText>;

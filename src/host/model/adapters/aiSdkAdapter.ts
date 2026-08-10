@@ -9,7 +9,7 @@
 // 两条路径：
 //   - 非流式（onStream 缺省 或 options.forceNonStreaming）：用 generateText。
 //     服务子代理（onStream no-op）和主 loop 的 artifact 非流式重试。
-//   - 流式（onStream 存在）：用 streamText 消费 fullStream，把事件映射成项目的
+//   - 流式（onStream 存在）：用 streamText 消费 stream，把事件映射成项目的
 //     StreamCallback 契约（StreamChunk，见 model/types.ts）后实时回调，最终从流里
 //     累积出与非流式同形状的 ModelResponse。服务主 agent loop 的逐字输出。
 //     映射目标对齐旧 SSE 路径 providers/sseStream.ts（openAISSEStream），不自创语义。
@@ -533,7 +533,7 @@ function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
   const out: AiModelMessage[] = [];
   for (const m of ordered) {
     if (m.role === 'system' && m.transient) {
-      // 动态尾巴（transient）：不能进 system 参数——buildAiSdkPrompt 会把全部 system
+      // 动态尾巴（transient）：不能进 instructions 参数——buildAiSdkPrompt 会把全部 system
       // 消息提升到最前，尾巴每请求变化会把整个历史的 prompt cache 前缀打掉。
       // 转成位于原位（历史末尾）的 user 消息 + <system-reminder> 包裹（Claude Code 模式）。
       out.push({ role: 'user', content: wrapTransientSystemReminder(textOf(m.content)) });
@@ -572,7 +572,11 @@ function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
 }
 
 interface AiSdkPromptShape {
-  system?: AiSystemModelMessage[];
+  // v7 把顶层 `system` 改名为 `instructions`（`system` 仍在但已 deprecated）。
+  // `Instructions = string | SystemModelMessage | Array<SystemModelMessage>`，
+  // 数组形态受支持 ⇒ 挂在 system 消息上的 providerOptions.anthropic.cacheControl
+  // （GAP-003 的缓存断点 1）原样保留，不需要退化成拼接字符串。
+  instructions?: AiSystemModelMessage[];
   messages: AiModelMessage[];
 }
 
@@ -590,7 +594,7 @@ function buildAiSdkPrompt(messages: ModelMessage[], provider: string): AiSdkProm
   }
 
   return {
-    ...(system.length > 0 ? { system } : {}),
+    ...(system.length > 0 ? { instructions: system } : {}),
     messages: nonSystem,
   };
 }
@@ -893,7 +897,7 @@ async function generateViaAiSdk(params: {
     toolCallCount: toolCalls.length,
     streaming: false,
     // GAP-003: 缓存命中验证（Anthropic caching 生效时 > 0）
-    cachedInputTokens: result.usage?.cachedInputTokens ?? 0,
+    cachedInputTokens: result.usage?.inputTokenDetails?.cacheReadTokens ?? 0,
   });
 
   // contentParts：text 与 tool_call 的交错顺序。老路径(openaiWrapper)对 tool_use 会带它，
@@ -997,7 +1001,7 @@ function buildStreamResponse(acc: StreamAccumulator, config: ModelConfig): Model
   };
 }
 
-// ── 流式：streamText 消费 fullStream，事件→StreamChunk（对齐 sseStream openAISSEStream），
+// ── 流式：streamText 消费 stream，事件→StreamChunk（对齐 sseStream openAISSEStream），
 //    最终累积出与非流式同形状的 ModelResponse。服务主 agent loop 的逐字输出 ──
 async function streamViaAiSdk(params: {
   model: LanguageModel;
@@ -1074,7 +1078,7 @@ async function streamViaAiSdk(params: {
         maxRetries: 0,
       });
 
-      for await (const part of result.fullStream as AsyncIterable<TextStreamPart<ToolSet>>) {
+      for await (const part of result.stream as AsyncIterable<TextStreamPart<ToolSet>>) {
         // 收到任意事件即重置为 inactivity 窗口（首个事件顺带解除 first-byte 窗口）。
         armWatchdog(inactivityMs, 'stream inactivity');
         switch (part.type) {

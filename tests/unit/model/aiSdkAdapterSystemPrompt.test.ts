@@ -39,21 +39,21 @@ const TASK_TOOL: ToolDefinition = {
 };
 
 type CapturedAiSdkCall = {
-  system?: Array<{ role: 'system'; content: string }>;
+  instructions?: Array<{ role: 'system'; content: string }>;
   messages: Array<{ role: string; content: unknown }>;
   allowSystemInMessages?: boolean;
 };
 
 function finishOnlyStream() {
   return {
-    fullStream: (async function* () {
+    stream: (async function* () {
       yield { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } };
     })(),
   } as unknown as ReturnType<typeof streamText>;
 }
 
 function expectNoSystemMessages(call: CapturedAiSdkCall): void {
-  expect(call.system?.map((m) => m.role)).toEqual(call.system?.map(() => 'system'));
+  expect(call.instructions?.map((m) => m.role)).toEqual(call.instructions?.map(() => 'system'));
   expect(call.messages.some((m) => m.role === 'system')).toBe(false);
   expect(call.allowSystemInMessages).toBeUndefined();
 }
@@ -79,7 +79,7 @@ describe('inferenceViaAiSdk system prompt wiring', () => {
     ], [], CONFIG);
 
     const call = vi.mocked(generateText).mock.calls[0][0] as CapturedAiSdkCall;
-    expect(call.system).toEqual([{ role: 'system', content: 'root system prompt' }]);
+    expect(call.instructions).toEqual([{ role: 'system', content: 'root system prompt' }]);
     expect(call.messages.map((m) => m.role)).toEqual(['user']);
     expectNoSystemMessages(call);
   });
@@ -102,7 +102,7 @@ describe('inferenceViaAiSdk system prompt wiring', () => {
     await inferenceViaAiSdk(messages, [TASK_TOOL], CONFIG, noopStream);
 
     const call = vi.mocked(streamText).mock.calls[0][0] as CapturedAiSdkCall;
-    expect(call.system?.map((m) => m.content)).toEqual([
+    expect(call.instructions?.map((m) => m.content)).toEqual([
       'root system prompt',
       '<post-tool-hook>note</post-tool-hook>',
       '<auto-continuation>continue</auto-continuation>',
@@ -123,7 +123,7 @@ describe('inferenceViaAiSdk system prompt wiring', () => {
 
     const call = vi.mocked(generateText).mock.calls[0][0] as CapturedAiSdkCall;
     // system 参数只有稳定前缀——尾巴若被提升进 system，每请求变化会打掉整个历史的 prompt cache
-    expect(call.system).toEqual([{ role: 'system', content: 'root system prompt' }]);
+    expect(call.instructions).toEqual([{ role: 'system', content: 'root system prompt' }]);
     const last = call.messages[call.messages.length - 1];
     expect(last.role).toBe('user');
     expect(String(last.content)).toContain('<system-reminder>');

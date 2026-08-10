@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-07-11",
+  "updatedAt": "2026-08-10",
   "policy": {
     "verificationStatus": ["verified", "unverified", "failed"],
     "supportedRequiresVerifiedRecord": true,
@@ -165,7 +165,7 @@
     },
     {
       "id": "p0-local-stop-verified",
-      "date": "2026-07-11",
+      "date": "2026-08-10",
       "runtime": "native",
       "protocolFamily": "local-control-plane",
       "provider": "none",

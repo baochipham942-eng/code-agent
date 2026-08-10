@@ -75,13 +75,13 @@ export const DURABLE_RUN_KILL_RESTART_SCENARIOS: readonly DurableRunKillRestartS
   },
   {
     id: 'dynamic-workflow', coreId: 'dynamic-workflow', killPoint: 'nested node checkpoint committed',
-    engine: { kind: 'dynamic_workflow', workflowId: 'workflow-stable' }, operationKind: 'child_run',
+    engine: { kind: 'dynamic_workflow', workflowId: 'graph-dynamic-workflow' }, operationKind: 'child_run',
     operationStatus: 'prepared', sideEffect: false, expectedOutcome: 'completed',
     expectedRecoveryAction: 'resume_incomplete_nested_node',
   },
   {
     id: 'dynamic-workflow-drift', coreId: 'dynamic-workflow', killPoint: 'nested checkpoint with workspace drift',
-    engine: { kind: 'dynamic_workflow', workflowId: 'workflow-drift' }, operationKind: 'child_run',
+    engine: { kind: 'dynamic_workflow', workflowId: 'graph-dynamic-workflow' }, operationKind: 'child_run',
     operationStatus: 'prepared', sideEffect: false, expectedOutcome: 'waiting_review',
     expectedRecoveryAction: 'reject_drifted_workflow', requiresReviewReason: 'workspace_model_tool_drift',
   },

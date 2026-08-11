@@ -1,8 +1,10 @@
 // 临时配置：用系统 Chrome 跑 e2e（chromium 二进制下载不可用时的替代路径）。
-// 与 playwright.e2e.config.ts 唯一区别：channel: 'chrome' + 不自起 webServer（要求 8180 已有服务）。
+// 与 playwright.e2e.config.ts 唯一区别：channel: 'chrome' + 不自起 webServer（要求 E2E_WEB_PORT 对应服务已启动）。
 import { defineConfig } from '@playwright/test';
+import { resolveE2eWebPort } from './e2eWebPort';
 
-const webPort = Number(process.env.E2E_WEB_PORT || 8180);
+const webPort = resolveE2eWebPort({ explicitPort: process.env.E2E_WEB_PORT });
+console.log(`  E2E web port: ${webPort}${process.env.E2E_WEB_PORT ? ' (explicit)' : ' (derived from PID)'}`);
 
 export default defineConfig({
   testDir: '.',

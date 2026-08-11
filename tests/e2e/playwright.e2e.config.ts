@@ -1,12 +1,14 @@
 import { defineConfig } from '@playwright/test';
 import os from 'node:os';
 import path from 'node:path';
+import { resolveE2eWebPort } from './e2eWebPort';
 
 delete process.env.FORCE_COLOR;
 delete process.env.NO_COLOR;
 
 const useLocalAgentModel = process.env.CODE_AGENT_E2E_LOCAL_AGENT_MODEL === '1';
-const webPort = Number(process.env.E2E_WEB_PORT || (useLocalAgentModel ? 8181 : 8180));
+const webPort = resolveE2eWebPort({ explicitPort: process.env.E2E_WEB_PORT });
+console.log(`  E2E web port: ${webPort}${process.env.E2E_WEB_PORT ? ' (explicit)' : ' (derived from PID)'}`);
 const browserChannel = process.env.E2E_BROWSER_CHANNEL || undefined;
 const recordVideo = process.env.E2E_DISABLE_VIDEO === '1' ? 'off' : 'retain-on-failure';
 const reuseExistingServer = !process.env.CI && !process.env.E2E_WEB_PORT && !useLocalAgentModel;

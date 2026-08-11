@@ -774,6 +774,7 @@ export class ToolExecutor {
       if (!guardFabricForcesApproval) {
         try {
           // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
+          const workspaceRoot = this.writeWorkspaceRoot;
           const classification: ClassificationResult = await resolveToolPermissionClassification({
             executionToolName,
             policyToolName,
@@ -781,7 +782,7 @@ export class ToolExecutor {
             policyForcesConfirmation,
             boundaryViolation,
             workingDirectory: resolveCanonicalRunPath(this.executionCwd),
-            workspaceRoot: this.writeWorkspaceRoot,
+            workspaceRoot,
             permissionLevel: toolDef.permissionLevel,
             permStartTime,
             readOnlyForcesConfirmation,
@@ -1420,7 +1421,9 @@ export class ToolExecutor {
   }
 
   private get writeWorkspaceRoot(): string | undefined {
-    if (this.runContext) return this.runContext.workspaceScope?.primaryRoot;
+    if (this.runContext) {
+      return this.runContext.workspaceScope?.primaryRoot;
+    }
     // 无 runContext 的基座 executor：workingDirectory 仍可当写边界（前台 IPC run
     // 继承会话项目目录，竞品一致），但必须过与 delegate_task 前置预检 / createRunContext
     // 同一份宽度校验——否则 $HOME / 数据目录 / 祖先路径（/Users、/）也会被当项目边界

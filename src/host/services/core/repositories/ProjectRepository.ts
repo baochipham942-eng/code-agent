@@ -28,6 +28,7 @@ import {
   canonicalizeWorkspacePath,
   workspacePathIdentity,
 } from '../../../runtime/workspaceScope';
+import { resolveBackgroundWorkspaceAuthority } from '../../../runtime/workspaceAuthority';
 
 type SQLiteRow = Record<string, unknown>;
 
@@ -251,7 +252,11 @@ export class ProjectRepository {
     const run = this.db.transaction(() => {
       for (const row of rows) {
         const originalPath = String(row.workspace_path);
-        const canonicalPath = canonicalizeWorkspacePath(originalPath);
+        // 旧 project 行也不能在启动回填时把 $HOME / 数据目录 / 祖先路径重新铸为
+        // trusted Primary Source。这里直接复用后台写边界的唯一宽度判据。
+        const authority = resolveBackgroundWorkspaceAuthority({ workspace: originalPath });
+        if (!authority) continue;
+        const canonicalPath = authority.primaryRoot;
         const identity = workspacePathIdentity(canonicalPath);
         this.upsertSource({
           id: `psrc_${String(row.id).replace(/^proj_/, '').slice(0, 12)}_primary`,

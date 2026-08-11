@@ -51,6 +51,7 @@ import {
   workspacePathIdentity,
   resolveWorkspacePath,
 } from '../../runtime/workspaceScope';
+import { resolveBackgroundWorkspaceAuthority } from '../../runtime/workspaceAuthority';
 import { ProjectSourceTrustError } from './projectSourceTrustError';
 import { evaluateFolderTrust, setFolderTrust } from '../../security/folderTrustService';
 import { getProjectSourceGitStates } from '../git/gitStatusService';
@@ -92,6 +93,13 @@ const READ_ONLY_ARTIFACT_TOOL_NAMES = new Set([
   'episodicrecall',
   'episodic_recall',
 ]);
+
+function requireProjectWorkspaceAuthority(workspacePath: string, operation: string): void {
+  const authority = resolveBackgroundWorkspaceAuthority({ workspace: workspacePath });
+  if (!authority) {
+    throw new Error(`Unsafe workspace path cannot be used to ${operation}: ${workspacePath}`);
+  }
+}
 
 type ProjectArtifactMessage = {
   id?: string;
@@ -404,6 +412,10 @@ export class ProjectService {
     const dir = (workspacePath || '').trim();
     if (!dir) return this.ensureUnsorted(now);
 
+    // Session 创建会调用这里隐式铸造 Project。只有同一份后台写边界判据认可的具体项目目录
+    // 才能被静默登记为 trusted read_write Primary；$HOME、数据目录及其祖先一律落未分类。
+    const authority = resolveBackgroundWorkspaceAuthority({ workspace: dir });
+    if (!authority) return this.ensureUnsorted(now);
     const key = getProjectKey(dir);
     const repo = this.repo();
     const existing = repo.getProjectByWorkspaceKey(key);
@@ -435,6 +447,7 @@ export class ProjectService {
     const repo = this.repo();
 
     if (requestedWorkspacePath) {
+      requireProjectWorkspaceAuthority(requestedWorkspacePath, 'create a Project Space');
       const workspacePath = canonicalizeWorkspacePath(requestedWorkspacePath);
       // 创建即信任：信任门先行，撞已有项目的早退分支同样先过门再升级
       await this.ensureFolderTrustForSpaceCreation(workspacePath, 'create-space', input.trustAcknowledged);
@@ -493,6 +506,7 @@ export class ProjectService {
     // 升级即信任：项目带工作目录时先过同一道信任门（无目录空间无授权面，直接升级）
     const workspacePath = this.repo().getProject(projectId)?.workspacePath?.trim();
     if (workspacePath) {
+      requireProjectWorkspaceAuthority(workspacePath, 'promote a Project Space');
       await this.ensureFolderTrustForSpaceCreation(workspacePath, 'promote-to-space', opts?.trustAcknowledged);
     }
     return this.repo().promoteToSpace(projectId, now);
@@ -557,6 +571,7 @@ export class ProjectService {
       return project;
     }
 
+    requireProjectWorkspaceAuthority(dir, 'create a Project');
     let project = await this.ensureProjectForWorkspace(dir, now);
     if (project.name !== name) {
       project = this.renameProject(project.id, name, now) ?? project;
@@ -591,7 +606,12 @@ export class ProjectService {
     const repo = this.repo();
     const count = repo.backfillSessions(
       now,
-      (workspacePath, key) => buildProjectRow(workspacePath, key, now),
+      (workspacePath, key) => {
+        const authority = resolveBackgroundWorkspaceAuthority({ workspace: workspacePath });
+        return authority
+          ? buildProjectRow(workspacePath, key, now)
+          : this.ensureUnsorted(now);
+      },
       ({ sessionId, reason }) => {
         logger.warn('[ProjectService] 跳过不可变边界冲突的存量会话归桶', { sessionId, reason });
       },
@@ -641,7 +661,7 @@ export class ProjectService {
       const failureKind = sourceTrustFailureKind(source, identity);
       if (failureKind) throw new ProjectSourceTrustError(failureKind, source.path);
     }
-    return createWorkspaceScope(projectId, sources.map((source) => ({
+    const scope = createWorkspaceScope(projectId, sources.map((source) => ({
       sourceId: source.id,
       path: source.canonicalPath,
       role: source.role,
@@ -649,6 +669,16 @@ export class ProjectService {
       identityDev: source.identityDev,
       identityIno: source.identityIno,
     })));
+    // 存量数据库可能已含 #1075 前静默铸造的 $HOME 项目。派生 scope 时重新走同一份
+    // 宽度校验，保证这些行即便还在库中也绝不会成为 run 的写边界。
+    if (scope.roots.some((root) => !resolveBackgroundWorkspaceAuthority({ workspace: root.path }))) {
+      logger.warn('[ProjectService] rejected unsafe Project Source while deriving workspace scope', {
+        projectId,
+        primaryRoot: scope.primaryRoot,
+      });
+      return undefined;
+    }
+    return resolveBackgroundWorkspaceAuthority({ workspaceScope: scope });
   }
 
   async updateProject(input: UpdateProjectInput, now: number): Promise<ProjectDetail | undefined> {
@@ -684,6 +714,9 @@ export class ProjectService {
       throw new Error('Duplicate Project Source path.');
     }
     assertNonOverlappingRoots(sources.map((source) => ({ sourceId: source.id, path: source.canonicalPath })));
+    if (sources.some((source) => !resolveBackgroundWorkspaceAuthority({ workspace: source.canonicalPath }))) {
+      throw new Error('Unsafe Project Source path cannot be trusted for a Project.');
+    }
     const retainedIds = new Set(sources.map((source) => source.id));
     const removed = Array.from(existingById.values()).filter((source) => !retainedIds.has(source.id));
     if (removed.length > 0) {

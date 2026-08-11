@@ -775,14 +775,6 @@ export class ToolExecutor {
         try {
           // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
           const workspaceRoot = this.writeWorkspaceRoot;
-          if (executionToolName === 'Write') {
-            logger.info('Voice home boundary diagnostic: Write classifier workspace root', {
-              runContextExists: Boolean(this.runContext),
-              workspaceScope: this.runContext?.workspaceScope,
-              workspaceRoot,
-              branch: this.runContext ? 'run-context-workspace-scope' : 'base-executor-working-directory',
-            });
-          }
           const classification: ClassificationResult = await resolveToolPermissionClassification({
             executionToolName,
             policyToolName,
@@ -1430,28 +1422,14 @@ export class ToolExecutor {
 
   private get writeWorkspaceRoot(): string | undefined {
     if (this.runContext) {
-      const workspaceRoot = this.runContext.workspaceScope?.primaryRoot;
-      logger.info('Voice home boundary diagnostic: writeWorkspaceRoot getter', {
-        runContextExists: true,
-        workspaceScope: this.runContext.workspaceScope,
-        workspaceRoot,
-        branch: 'run-context-workspace-scope',
-      });
-      return workspaceRoot;
+      return this.runContext.workspaceScope?.primaryRoot;
     }
     // 无 runContext 的基座 executor：workingDirectory 仍可当写边界（前台 IPC run
     // 继承会话项目目录，竞品一致），但必须过与 delegate_task 前置预检 / createRunContext
     // 同一份宽度校验——否则 $HOME / 数据目录 / 祖先路径（/Users、/）也会被当项目边界
     // 无审批自动放行（安全单 2026-08-09：语音后台 run 把 $HOME 写入判 W1）。判据只此一份，
     // 不在消费端另造（workspaceAuthority.ts 的注释即禁第二份）。
-    const workspaceRoot = resolveBackgroundWorkspaceAuthority({ workspace: this.workingDirectory })?.primaryRoot;
-    logger.info('Voice home boundary diagnostic: writeWorkspaceRoot getter', {
-      runContextExists: false,
-      workspaceScope: undefined,
-      workspaceRoot,
-      branch: 'base-executor-working-directory',
-    });
-    return workspaceRoot;
+    return resolveBackgroundWorkspaceAuthority({ workspace: this.workingDirectory })?.primaryRoot;
   }
 
   private bindRunScopedParams(

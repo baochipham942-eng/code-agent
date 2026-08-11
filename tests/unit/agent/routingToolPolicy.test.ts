@@ -6,25 +6,35 @@ import { describe, expect, it } from 'vitest';
 import {
   BUILTIN_TOOL_READONLY_ROLES,
   READONLY_TOOL_DENYLIST,
-  buildLiveVoiceToolDenylist,
+  assembleTurnDenylist,
   buildRoutingToolDenylist,
   isToolWriteReadonlyRole,
 } from '../../../src/host/agent/routingToolPolicy';
 
-describe('buildLiveVoiceToolDenylist', () => {
+// live-voice 收窄逻辑经 assembleTurnDenylist 覆盖（buildLiveVoiceToolDenylist 已内联，
+// 其它三源置空时结果纯由 live-voice 决定）。
+describe('assembleTurnDenylist · live-voice 分支', () => {
   const presenceTools = ['AskUserQuestion', 'ask_user_question', 'ConfirmGenerationCost'];
+  const voiceOnly = (isLiveVoiceSession: boolean, runRegistration: 'primary' | 'auxiliary') =>
+    assembleTurnDenylist({
+      agent: null,
+      optionDenied: undefined,
+      sessionMemoryMode: 'auto' as const,
+      isLiveVoiceSession,
+      runRegistration,
+      userPresenceToolNames: presenceTools,
+    });
 
   it('auxiliary voice run 只放行已有语音桥的选择题工具', () => {
-    expect(buildLiveVoiceToolDenylist(true, 'auxiliary', presenceTools))
-      .toEqual(['ConfirmGenerationCost']);
+    expect(voiceOnly(true, 'auxiliary')).toEqual(['ConfirmGenerationCost']);
   });
 
   it('primary voice run 继续禁用全部在场工具', () => {
-    expect(buildLiveVoiceToolDenylist(true, 'primary', presenceTools)).toEqual(presenceTools);
+    expect(voiceOnly(true, 'primary')).toEqual(presenceTools);
   });
 
-  it('非通话 run 不施加通话 denylist', () => {
-    expect(buildLiveVoiceToolDenylist(false, 'auxiliary', presenceTools)).toEqual([]);
+  it('非通话 run 不施加通话 denylist（三源全空 → undefined）', () => {
+    expect(voiceOnly(false, 'auxiliary')).toBeUndefined();
   });
 });
 
@@ -86,5 +96,55 @@ describe('isToolWriteReadonlyRole — 工具写只读判定（单一真源，spa
     expect(BUILTIN_TOOL_READONLY_ROLES).toContain('reviewer');
     expect(BUILTIN_TOOL_READONLY_ROLES).toContain('explore');
     expect(BUILTIN_TOOL_READONLY_ROLES).not.toContain('plan');
+  });
+});
+
+describe('assembleTurnDenylist（三源去重组装）', () => {
+  const base = {
+    agent: null,
+    optionDenied: undefined,
+    sessionMemoryMode: 'auto' as const,
+    isLiveVoiceSession: false,
+    runRegistration: undefined,
+    userPresenceToolNames: ['AskUser', 'ShowPanel'],
+  };
+
+  it('全空 → undefined（AgentLoop 只在非空时收 deniedToolNames）', () => {
+    expect(assembleTurnDenylist(base)).toBeUndefined();
+  });
+
+  it('memoryMode=off → 并入 4 个记忆/历史工具', () => {
+    const result = assembleTurnDenylist({ ...base, sessionMemoryMode: 'off' });
+    expect(result).toEqual(expect.arrayContaining(['MemoryRead', 'MemoryWrite', 'History', 'EpisodicRecall']));
+  });
+
+  it('memoryMode=auto 不加记忆类；option 显式拒绝原样保留', () => {
+    const result = assembleTurnDenylist({ ...base, optionDenied: ['Foo'] });
+    expect(result).toEqual(['Foo']);
+  });
+
+  it('只读路由 agent → 并入 READONLY_TOOL_DENYLIST', () => {
+    const result = assembleTurnDenylist({ ...base, agent: { readonly: true } });
+    expect(result).toEqual(expect.arrayContaining([...READONLY_TOOL_DENYLIST]));
+  });
+
+  it('实时通话 primary run → 收窄在场工具', () => {
+    const result = assembleTurnDenylist({ ...base, isLiveVoiceSession: true, runRegistration: 'primary' });
+    expect(result).toEqual(expect.arrayContaining(['AskUser', 'ShowPanel']));
+  });
+
+  it('三源同时命中且去重：option 与 readonly 重叠的 Write 只出现一次', () => {
+    const result = assembleTurnDenylist({
+      ...base,
+      optionDenied: ['Write', 'Foo'],
+      agent: { readonly: true },
+      sessionMemoryMode: 'off',
+      isLiveVoiceSession: true,
+      runRegistration: 'primary',
+    });
+    expect(result).toBeDefined();
+    expect(result!.filter((n) => n === 'Write')).toHaveLength(1);
+    // 三源都在
+    expect(result).toEqual(expect.arrayContaining(['Foo', 'MemoryRead', 'Write', 'AskUser']));
   });
 });

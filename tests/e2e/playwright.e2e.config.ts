@@ -8,6 +8,9 @@ delete process.env.NO_COLOR;
 
 const useLocalAgentModel = process.env.CODE_AGENT_E2E_LOCAL_AGENT_MODEL === '1';
 const webPort = resolveE2eWebPort({ explicitPort: process.env.E2E_WEB_PORT });
+// sticky：Playwright 每个 worker 进程会重新评估本 config，写回 env 让 worker 走显式分支，
+// 否则各 worker 按自己的 PID 再派生一次端口，与 webServer 实际监听口错开（CI 实翻过车）。
+process.env.E2E_WEB_PORT = String(webPort);
 // 走 stderr：config 会被 knip 等工具加载，stdout 打印会污染它们的 JSON 输出（CI 实翻过车）
 console.error(`  E2E web port: ${webPort}${process.env.E2E_WEB_PORT ? ' (explicit)' : ' (derived from PID)'}`);
 const browserChannel = process.env.E2E_BROWSER_CHANNEL || undefined;

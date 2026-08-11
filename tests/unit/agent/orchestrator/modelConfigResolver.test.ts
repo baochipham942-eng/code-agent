@@ -2,9 +2,12 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   resolveModelConfig,
   resolveRunModelConfig,
+  resolveTurnModelConfig,
   getDefaultModelByProvider,
   getPermissionLevel,
 } from '../../../../src/host/agent/orchestrator/modelConfigResolver';
+import type { ModelConfig } from '../../../../src/shared/contract';
+import type { RoutingResolution } from '../../../../src/shared/contract/agentRouting';
 import type { ConfigService } from '../../../../src/host/services/core/configService';
 import type { PermissionRequest } from '../../../../src/shared/contract';
 import { getModelSessionState, resetModelSessionState } from '../../../../src/host/session/modelSessionState';
@@ -153,6 +156,37 @@ describe('modelConfigResolver', () => {
       expect(config.baseUrl).toBeUndefined();
       expect(config.apiKey).not.toBe('sk-zhipu');
       expect(config.apiKey).toBeUndefined();
+    });
+  });
+
+  describe('resolveTurnModelConfig', () => {
+    const base: ModelConfig = { provider: 'deepseek', model: 'deepseek-chat', temperature: 0.5 };
+    const withOverride = (override: Record<string, unknown> | undefined): RoutingResolution => ({
+      agent: { id: 'a', name: 'A', enabled: true, ...(override ? { modelOverride: override } : {}) },
+      score: 1,
+      reason: 'test',
+    } as unknown as RoutingResolution);
+
+    it('无 routingResolution → 原样返回', () => {
+      expect(resolveTurnModelConfig(base, null, false)).toBe(base);
+    });
+
+    it('有 override 且非 fixed_model → 覆盖 provider/model/temperature', () => {
+      const r = resolveTurnModelConfig(base, withOverride({ provider: 'zhipu', model: 'glm-4', temperature: 0.9 }), false);
+      expect(r).toMatchObject({ provider: 'zhipu', model: 'glm-4', temperature: 0.9 });
+    });
+
+    it('override 缺字段 → 回落 base 对应字段', () => {
+      const r = resolveTurnModelConfig(base, withOverride({ model: 'glm-4' }), false);
+      expect(r).toMatchObject({ provider: 'deepseek', model: 'glm-4', temperature: 0.5 });
+    });
+
+    it('fixed_model 钉死 → 即使有 override 也原样返回 base', () => {
+      expect(resolveTurnModelConfig(base, withOverride({ provider: 'zhipu', model: 'glm-4' }), true)).toBe(base);
+    });
+
+    it('agent 无 modelOverride → 原样返回', () => {
+      expect(resolveTurnModelConfig(base, withOverride(undefined), false)).toBe(base);
     });
   });
 });

@@ -4,6 +4,7 @@
 
 import type { ModelConfig, ModelProvider, PermissionRequest } from '../../../shared/contract';
 import type { ConversationModelSpec } from '../../../shared/contract/conversationEnvelope';
+import type { RoutingResolution } from '../../../shared/contract/agentRouting';
 import type { ConfigService } from '../../services/core/configService';
 import { getModelSessionState } from '../../session/modelSessionState';
 import {
@@ -142,4 +143,24 @@ export function getPermissionLevel(type: PermissionRequest['type']): 'read' | 'w
     default:
       return 'read';
   }
+}
+
+/**
+ * 本轮有效模型配置：显式 /agent 路由带 modelOverride 且未被 Neo Tag fixed_model 钉死时，
+ * 用 override 覆盖 provider/model/temperature；否则原样返回 modelConfig。纯计算，
+ * 路由日志与 routing_resolved 事件仍由调用点发（副作用不进此函数）。
+ */
+export function resolveTurnModelConfig(
+  modelConfig: ModelConfig,
+  routingResolution: RoutingResolution | null,
+  neoTagFixedModel: boolean,
+): ModelConfig {
+  const override = routingResolution?.agent.modelOverride;
+  if (!override || neoTagFixedModel) return modelConfig;
+  return {
+    ...modelConfig,
+    provider: (override.provider as ModelProvider) || modelConfig.provider,
+    model: override.model || modelConfig.model,
+    temperature: override.temperature ?? modelConfig.temperature,
+  };
 }

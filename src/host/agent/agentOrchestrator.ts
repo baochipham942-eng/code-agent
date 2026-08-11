@@ -9,7 +9,6 @@ import type {
   MessageMetadata,
   PermissionResponse,
   ModelConfig,
-  ModelProvider,
 } from '../../shared/contract';
 import type { AgentRunOptions, ResearchUserSettings } from '../research/types';
 import { AgentLoop } from './agentLoop';
@@ -43,7 +42,7 @@ import { getEventBus } from '../services/eventing';
 import { getComboRecorder } from '../services/skills/comboRecorder';
 import { resolveAgent as registryResolveAgent } from './agentRegistry';
 import { buildRoutingResolvedEventData } from './routingResolvedEvent';
-import { buildLiveVoiceToolDenylist, buildRoutingToolDenylist } from './routingToolPolicy';
+import { assembleTurnDenylist } from './routingToolPolicy';
 import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import { startRunPreferringDurable } from './orchestrator/durableRunStart';
 import { getUserPresenceToolNames } from '../tools/dispatch/toolDefinitions';
@@ -62,6 +61,7 @@ import { type AgentOrchestratorConfig } from './orchestrator/types';
 import {
   resolveModelConfig,
   resolveRunModelConfig,
+  resolveTurnModelConfig,
 } from './orchestrator/modelConfigResolver';
 import { runDeepResearch } from './orchestrator/researchRunner';
 import { runAutoAgentMode } from './orchestrator/autoAgentRunner';
@@ -773,8 +773,8 @@ export class AgentOrchestrator {
       sessionId,
       options?.agentOverrideId ?? undefined,
     );
-    let effectiveModelConfig = modelConfig;
     const neoTagFixedModel = options?.neoTag?.modelIntent.mode === 'fixed_model';
+    const effectiveModelConfig = resolveTurnModelConfig(modelConfig, routingResolution, neoTagFixedModel);
 
     if (routingResolution) {
       logger.info('Agent routing resolved', {
@@ -785,13 +785,6 @@ export class AgentOrchestrator {
       });
 
       if (routingResolution.agent.modelOverride && !neoTagFixedModel) {
-        const override = routingResolution.agent.modelOverride;
-        effectiveModelConfig = {
-          ...modelConfig,
-          provider: (override.provider as ModelProvider) || modelConfig.provider,
-          model: override.model || modelConfig.model,
-          temperature: override.temperature ?? modelConfig.temperature,
-        };
         logger.debug('Model config overridden by agent', {
           provider: effectiveModelConfig.provider,
           model: effectiveModelConfig.model,
@@ -880,27 +873,14 @@ export class AgentOrchestrator {
     }
 
     // 显式路由到 readonly agent（explore/plan）时收窄文件写入工具（Explorer 真只读）
-    const routingDeniedToolNames = buildRoutingToolDenylist(routingResolution?.agent);
-    const baseDeniedToolNames = sessionMemoryMode === 'off'
-      ? [
-          ...(options?.deniedToolNames || []),
-          'MemoryRead',
-          'MemoryWrite',
-          'History',
-          'EpisodicRecall',
-        ]
-      : (options?.deniedToolNames || []);
-    const liveVoiceDeniedToolNames = buildLiveVoiceToolDenylist(
-      getPermissionModeManager().isLiveVoiceSession(sessionId),
-      options?.runRegistration,
-      getUserPresenceToolNames(),
-    );
-    const mergedDeniedToolNames = Array.from(new Set([
-      ...baseDeniedToolNames,
-      ...routingDeniedToolNames,
-      ...liveVoiceDeniedToolNames,
-    ]));
-    const deniedToolNames = mergedDeniedToolNames.length > 0 ? mergedDeniedToolNames : undefined;
+    const deniedToolNames = assembleTurnDenylist({
+      agent: routingResolution?.agent,
+      optionDenied: options?.deniedToolNames,
+      sessionMemoryMode,
+      isLiveVoiceSession: getPermissionModeManager().isLiveVoiceSession(sessionId),
+      runRegistration: options?.runRegistration,
+      userPresenceToolNames: getUserPresenceToolNames(),
+    });
 
     const baseSystemPrompt = routingResolution?.agent?.systemPrompt
       || applyProviderVariant(SYSTEM_PROMPT, effectiveModelConfig.provider, effectiveModelConfig.model);

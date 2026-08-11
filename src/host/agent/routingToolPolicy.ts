@@ -11,6 +11,34 @@
 
 import { isCoreAgent } from './hybrid/coreAgents';
 import { ASK_USER_QUESTION_TOOL_NAMES } from '../../shared/constants/tools';
+import type { SessionMemoryMode } from '../../shared/contract/session';
+
+/** 记忆关闭档额外拒绝的记忆/历史类工具（memoryMode='off'）。 */
+const MEMORY_OFF_DENYLIST: readonly string[] = ['MemoryRead', 'MemoryWrite', 'History', 'EpisodicRecall'];
+
+/**
+ * 组装一轮 run 的工具 denylist（三源去重）：option 显式拒绝（memoryMode=off 时并入记忆类）
+ * + 显式路由只读收窄 + 实时通话在场工具收窄。空则返回 undefined（与旧行为一致：
+ * AgentLoop 只在非空时收到 deniedToolNames）。纯函数——live-voice 两个输入由调用点求值传入。
+ */
+export function assembleTurnDenylist(input: {
+  agent: { readonly?: boolean } | null | undefined;
+  optionDenied: string[] | undefined;
+  sessionMemoryMode: SessionMemoryMode;
+  isLiveVoiceSession: boolean;
+  runRegistration: 'primary' | 'auxiliary' | undefined;
+  userPresenceToolNames: string[];
+}): string[] | undefined {
+  const base = input.sessionMemoryMode === 'off'
+    ? [...(input.optionDenied || []), ...MEMORY_OFF_DENYLIST]
+    : (input.optionDenied || []);
+  const merged = Array.from(new Set([
+    ...base,
+    ...buildRoutingToolDenylist(input.agent),
+    ...buildLiveVoiceToolDenylist(input.isLiveVoiceSession, input.runRegistration, input.userPresenceToolNames),
+  ]));
+  return merged.length > 0 ? merged : undefined;
+}
 
 /** 只读 agent 在主对话链路里被拒的文件写入工具（两种命名变体都收） */
 export const READONLY_TOOL_DENYLIST: readonly string[] = [
@@ -34,7 +62,8 @@ export function buildRoutingToolDenylist(
  * 实时通话的主 run 依旧隐藏需要 UI 在场的工具。语音派出的 auxiliary run 是例外：
  * AskUserQuestion 已有语音念题和答案回传桥，必须放行它的两个别名，其他在场工具仍拒绝。
  */
-export function buildLiveVoiceToolDenylist(
+// 仅本文件内 assembleTurnDenylist 消费（orchestrator 抽走 F-4a 后不再跨文件 import）。
+function buildLiveVoiceToolDenylist(
   isLiveVoiceSession: boolean,
   runRegistration: 'primary' | 'auxiliary' | undefined,
   userPresenceToolNames: string[],

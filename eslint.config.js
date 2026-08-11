@@ -234,7 +234,6 @@ export default tseslint.config(
     // bundled 双路径）；helper 已拆到 browser/*，本文件仍是会话真源与 IPC 入口。
     files: [
       'src/host/services/skills/builtinSkillsData.ts',
-      'src/host/agent/agentOrchestrator.ts',
       'src/host/services/core/database/schema.ts',
       'src/host/services/core/databaseService.ts',
       'src/host/tools/toolExecutor.ts',

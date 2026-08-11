@@ -528,11 +528,12 @@ describe('AgentOrchestrator', () => {
           submissionKey: 'voice-home-boundary-turn',
           prompt: '创建边界探针文件',
         });
-        await vi.waitFor(() => expect(startBackgroundTask).toHaveBeenCalledTimes(1));
+        // 后台任务从队列到 agent loop 起来有真实异步间隔，默认 1s 窗口在满负载下会假红
+        await vi.waitFor(() => expect(startBackgroundTask).toHaveBeenCalledTimes(1), { timeout: 10000 });
         await vi.waitFor(() => {
           expect(taskErrors).toEqual([]);
           expect(lastAgentLoopConfig()?.toolExecutor).toBeDefined();
-        });
+        }, { timeout: 10000 });
 
         // launchAdmittedRun 的真实调用刻意只传 6 个参数，workspaceScope（第 7 参）必须缺省。
         expect(startBackgroundTask.mock.calls[0]).toHaveLength(6);

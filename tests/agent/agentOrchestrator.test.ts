@@ -129,6 +129,11 @@ const queuedInputMocks = vi.hoisted(() => ({
   getDb: vi.fn(),
 }));
 
+const voiceBackgroundChain = vi.hoisted(() => ({
+  manager: undefined as undefined | import('../../src/host/task/TaskManager').TaskManager,
+  session: undefined as undefined | { id: string; messages: Message[]; workingDirectory?: string },
+}));
+
 // Mock electron app before importing AgentOrchestrator
 vi.mock('electron', () => ({
   app: {
@@ -142,9 +147,42 @@ vi.mock('../../src/host/services', () => ({
   getSessionManager: vi.fn(() => ({
     addMessage: vi.fn().mockResolvedValue(undefined),
     addMessageToSession: vi.fn().mockResolvedValue(undefined),
-    getSession: vi.fn().mockResolvedValue({ id: 'test-session-id', messages: [] }),
+    getSession: vi.fn(async (sessionId: string) => voiceBackgroundChain.session
+      ?? { id: sessionId, messages: [] }),
     getCurrentSessionId: vi.fn().mockReturnValue('test-session-id'),
   })),
+}));
+
+vi.mock('../../src/host/services/infra/sessionManager', () => ({
+  getSessionManager: vi.fn(() => ({
+    getSession: vi.fn(async (sessionId: string) => voiceBackgroundChain.session
+      ?? { id: sessionId, messages: [] }),
+  })),
+}));
+
+// voiceAgentCoordinator 通过这层动态取得 TaskManager；测试注入真实 TaskManager，
+// 不让语音入口退化成「手工调用 orchestrator」。
+vi.mock('../../src/host/task', () => ({
+  getTaskManager: () => {
+    if (!voiceBackgroundChain.manager) throw new Error('voice TaskManager is not configured');
+    return voiceBackgroundChain.manager;
+  },
+}));
+
+vi.mock('../../src/host/services/voice/voiceWorkEvidence', () => ({
+  resolveVoiceWorkOutcome: vi.fn(async () => 'done'),
+}));
+vi.mock('../../src/host/services/voice/voiceTaskResultProjector', () => ({
+  projectVoiceTaskTerminalResult: vi.fn(async () => undefined),
+}));
+vi.mock('../../src/host/services/roleAssets/roleAssetService', () => ({
+  buildRoleContextBlock: vi.fn(async () => null),
+}));
+vi.mock('../../src/host/services/planning/taskStore', () => ({
+  getIncompleteTasks: () => [],
+}));
+vi.mock('../../src/host/services/voice/voiceTelemetry', () => ({
+  recordVoiceWorkEvent: vi.fn(),
 }));
 
 // 专家审批档的门要看「AgentLoop 真跑那一刻的有效档位」，所以 loop 本身换成探针。
@@ -222,6 +260,12 @@ import type { AgentRunOptions } from '../../src/host/research/types';
 import { getAllToolDefinitions } from '../../src/host/tools/dispatch/toolDefinitions';
 import { createWorkspaceScope } from '../../src/host/runtime/workspaceScope';
 import { resolveToolPermissionClassification } from '../../src/host/tools/toolPermissionClassification';
+import { TaskManager } from '../../src/host/task/TaskManager';
+import {
+  beginVoiceDispatch,
+  dispatchVoiceIntent,
+  endVoiceDispatch,
+} from '../../src/host/services/voice/voiceAgentCoordinator';
 import * as nodeFs from 'node:fs/promises';
 import * as nodeOs from 'node:os';
 import * as nodePath from 'node:path';
@@ -443,6 +487,82 @@ describe('AgentOrchestrator', () => {
         });
         expect(classification.decision).not.toBe('approve');
       } finally {
+        if (prevHome === undefined) delete process.env.CODE_AGENT_HOME;
+        else process.env.CODE_AGENT_HOME = prevHome;
+        await nodeFs.rm(fakeHome, { recursive: true, force: true });
+      }
+    });
+
+    it('真实语音入口链：voice → TaskManager（第 7 参缺省）→ createRunContext → ToolExecutor 时，home 写入不得判 approve', async () => {
+      const fakeHome = await nodeFs.mkdtemp(nodePath.join(nodeOs.tmpdir(), 'voice-real-chain-home-'));
+      const prevHome = process.env.CODE_AGENT_HOME;
+      process.env.CODE_AGENT_HOME = fakeHome;
+      const manager = new TaskManager({ maxConcurrentTasks: 1 });
+      manager.initialize({ configService: mockConfigService, onAgentEvent: vi.fn() });
+      voiceBackgroundChain.manager = manager;
+      voiceBackgroundChain.session = {
+        id: 'voice-real-chain-session',
+        messages: [],
+        workingDirectory: fakeHome,
+      };
+      const startBackgroundTask = vi.spyOn(manager, 'startBackgroundTask');
+      const taskErrors: unknown[] = [];
+      manager.on('event', (event) => {
+        if (event.type === 'task_error') taskErrors.push(event.data);
+      });
+      agentLoopProbe.lastConfig = undefined;
+      try {
+        beginVoiceDispatch({
+          neoSessionId: 'voice-real-chain-session',
+          voiceSessionId: 'voice-real-chain-call',
+          onWorkItem: vi.fn(),
+          onWorkFailed: vi.fn(),
+          onEndCall: vi.fn(),
+        });
+        await dispatchVoiceIntent({
+          kind: 'delegate_task',
+          title: '创建边界探针文件',
+          shortName: '边界探针',
+          laneKey: 'voice-home-boundary',
+          submissionKey: 'voice-home-boundary-turn',
+          prompt: '创建边界探针文件',
+        });
+        await vi.waitFor(() => expect(startBackgroundTask).toHaveBeenCalledTimes(1));
+        await vi.waitFor(() => {
+          expect(taskErrors).toEqual([]);
+          expect(lastAgentLoopConfig()?.toolExecutor).toBeDefined();
+        });
+
+        // launchAdmittedRun 的真实调用刻意只传 6 个参数，workspaceScope（第 7 参）必须缺省。
+        expect(startBackgroundTask.mock.calls[0]).toHaveLength(6);
+        const executor = lastAgentLoopConfig()?.toolExecutor as unknown as {
+          runContext?: { workspace?: string; workspaceScope?: unknown };
+          writeWorkspaceRoot?: string;
+        } | undefined;
+        const probe = nodePath.join(fakeHome, 'boundary-probe.txt');
+        const workspaceRoot = executor?.writeWorkspaceRoot;
+        const classification = await resolveToolPermissionClassification({
+          executionToolName: 'Write',
+          policyToolName: 'Write',
+          params: { file_path: probe, content: 'x' },
+          policyForcesConfirmation: false,
+          boundaryViolation: undefined,
+          workingDirectory: fakeHome,
+          workspaceRoot,
+          permissionLevel: 'write',
+          permStartTime: Date.now(),
+          readOnlyForcesConfirmation: false,
+          sessionPermissionMode: 'default',
+        });
+
+        // 主判据只锚真实执行入口喂给分类器的 workspaceRoot / decision，不能因其它异常而红。
+        expect(executor?.runContext?.workspace).toBe(await nodeFs.realpath(fakeHome));
+        expect(workspaceRoot).toBeUndefined();
+        expect(classification.decision).toBe('ask');
+      } finally {
+        endVoiceDispatch();
+        voiceBackgroundChain.manager = undefined;
+        voiceBackgroundChain.session = undefined;
         if (prevHome === undefined) delete process.env.CODE_AGENT_HOME;
         else process.env.CODE_AGENT_HOME = prevHome;
         await nodeFs.rm(fakeHome, { recursive: true, force: true });

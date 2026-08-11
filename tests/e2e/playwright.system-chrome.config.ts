@@ -4,7 +4,8 @@ import { defineConfig } from '@playwright/test';
 import { resolveE2eWebPort } from './e2eWebPort';
 
 const webPort = resolveE2eWebPort({ explicitPort: process.env.E2E_WEB_PORT });
-console.log(`  E2E web port: ${webPort}${process.env.E2E_WEB_PORT ? ' (explicit)' : ' (derived from PID)'}`);
+// 走 stderr：config 会被 knip 等工具加载，stdout 打印会污染它们的 JSON 输出（CI 实翻过车）
+console.error(`  E2E web port: ${webPort}${process.env.E2E_WEB_PORT ? ' (explicit)' : ' (derived from PID)'}`);
 
 export default defineConfig({
   testDir: '.',

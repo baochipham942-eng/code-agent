@@ -8,7 +8,8 @@ delete process.env.NO_COLOR;
 
 const useLocalAgentModel = process.env.CODE_AGENT_E2E_LOCAL_AGENT_MODEL === '1';
 const webPort = resolveE2eWebPort({ explicitPort: process.env.E2E_WEB_PORT });
-console.log(`  E2E web port: ${webPort}${process.env.E2E_WEB_PORT ? ' (explicit)' : ' (derived from PID)'}`);
+// 走 stderr：config 会被 knip 等工具加载，stdout 打印会污染它们的 JSON 输出（CI 实翻过车）
+console.error(`  E2E web port: ${webPort}${process.env.E2E_WEB_PORT ? ' (explicit)' : ' (derived from PID)'}`);
 const browserChannel = process.env.E2E_BROWSER_CHANNEL || undefined;
 const recordVideo = process.env.E2E_DISABLE_VIDEO === '1' ? 'off' : 'retain-on-failure';
 const reuseExistingServer = !process.env.CI && !process.env.E2E_WEB_PORT && !useLocalAgentModel;

@@ -27,7 +27,6 @@ import { analyzeTask } from './hybrid/taskRouter';
 import { getSessionStateManager } from '../session/sessionStateManager';
 import { getContextHealthService } from '../context/contextHealthService';
 import { generateMessageId } from '../../shared/utils/id';
-import { buildGoalSeedTodos } from '../../shared/utils/goalTodos';
 import { createLogger } from '../services/infra/logger';
 import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
 import { getRoutingService } from '../routing';
@@ -36,8 +35,6 @@ import { getTelemetryCollector } from '../telemetry';
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
 import type { EffortLevel } from '../../shared/contract/agent';
 import { getTaskListManager, type TaskListManager } from './taskList';
-import { TaskDAG } from '../scheduler/TaskDAG';
-import { sendDAGInitEvent } from '../scheduler/dagEventBridge';
 import { getEventBus } from '../services/eventing';
 import { getComboRecorder } from '../services/skills/comboRecorder';
 import { resolveAgent as registryResolveAgent } from './agentRegistry';
@@ -53,8 +50,9 @@ import { applyTurnSystemContext, buildLiveVoicePermissionNotice } from './orches
 import {
   resolveExplicitAgentRouting,
   syncAutoAgentDAGStatus,
-  syncDAGStatus,
+  initRunDag,
 } from './orchestratorDagSync';
+import { seedGoalContractForRun } from './orchestratorGoalSeed';
 
 // Sub-modules
 import { type AgentOrchestratorConfig } from './orchestrator/types';
@@ -65,7 +63,6 @@ import {
 } from './orchestrator/modelConfigResolver';
 import { runDeepResearch } from './orchestrator/researchRunner';
 import { runAutoAgentMode } from './orchestrator/autoAgentRunner';
-import { setSessionTodos, syncTodosToSessionTasks } from './todoParser';
 import { resolveNeoTagModelIntent } from '../services/project/neoTagModelIntentResolver';
 import { createRunContext, type RunHandle } from '../runtime/runContext';
 import { selectBackgroundWorkspaceScope } from '../runtime/workspaceAuthority';
@@ -751,22 +748,12 @@ export class AgentOrchestrator {
     options?: AgentRunOptions,
   ): Promise<void> {
     const effectiveContent = executionContent ?? content;
-    const dagId = `conv-${sessionId || Date.now()}`;
-    const dag = new TaskDAG(dagId, content.substring(0, 50) + (content.length > 50 ? '...' : ''));
-    dag.addAgentTask('main', {
-      role: 'general-purpose',
-      prompt: content,
-    }, {
-      name: '对话处理',
-      description: content.substring(0, 100),
+    const { dagAwareOnEvent } = initRunDag({
+      sessionId,
+      content,
+      onEvent,
+      broadcastDAGEvent: this.broadcastDAGEvent,
     });
-
-    sendDAGInitEvent(dag);
-
-    const dagAwareOnEvent = (event: AgentEvent) => {
-      onEvent(event);
-      this.syncDAGStatus(dagId, event);
-    };
 
     const { resolution: routingResolution, requestedAgentId } = await this.resolveTurnRouting(
       content,
@@ -854,22 +841,7 @@ export class AgentOrchestrator {
       : undefined;
 
     if (goalContract && sessionId) {
-      const goalSeedTodos = buildGoalSeedTodos(goalContract.goal);
-      setSessionTodos(sessionId, goalSeedTodos);
-      const taskSync = syncTodosToSessionTasks(sessionId, goalSeedTodos);
-      dagAwareOnEvent({ type: 'todo_update', data: goalSeedTodos });
-      dagAwareOnEvent({
-        type: 'task_update',
-        data: {
-          tasks: taskSync.tasks,
-          action: 'sync',
-          taskIds: [
-            ...taskSync.created.map((task) => task.id),
-            ...taskSync.updated.map((task) => task.id),
-          ],
-          source: 'goal_mode',
-        },
-      });
+      seedGoalContractForRun({ goalContract, sessionId, emitEvent: dagAwareOnEvent });
     }
 
     // 显式路由到 readonly agent（explore/plan）时收窄文件写入工具（Explorer 真只读）
@@ -1142,10 +1114,6 @@ export class AgentOrchestrator {
   // --------------------------------------------------------------------------
   // DAG Status Sync (delegates to dagManager helpers)
   // --------------------------------------------------------------------------
-
-  private syncDAGStatus(dagId: string, event: AgentEvent): void {
-    syncDAGStatus(dagId, event, this.broadcastDAGEvent);
-  }
 
   private syncAutoAgentDAGStatus(dagId: string, agentId: string, status: string): void {
     syncAutoAgentDAGStatus(dagId, agentId, status, this.broadcastDAGEvent);

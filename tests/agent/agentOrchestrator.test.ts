@@ -518,6 +518,7 @@ describe('AgentOrchestrator', () => {
           onWorkItem: vi.fn(),
           onWorkFailed: vi.fn(),
           onEndCall: vi.fn(),
+          onWorkNarration: vi.fn(),
         });
         await dispatchVoiceIntent({
           kind: 'delegate_task',

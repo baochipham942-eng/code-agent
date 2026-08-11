@@ -32,6 +32,7 @@ const cfg = (provider: string, model: string, extra: Partial<ModelConfig> = {}):
 const ENV_KEYS = [
   'ZHIPU_OFFICIAL_API_KEY', 'KIMI_K25_API_KEY', 'KIMI_K25_API_URL',
   'XIAOMI_API_KEY', 'LONGCAT_API_KEY', 'DEEPSEEK_API_KEY', 'ANTHROPIC_BASE_URL',
+  'OPENAI_BASE_URL',
 ];
 let envSnapshot: Record<string, string | undefined>;
 beforeEach(() => {
@@ -69,6 +70,14 @@ describe('resolveProviderBaseUrl', () => {
   it('config.baseUrl 覆盖默认端点（简单 provider）', () => {
     expect(resolveProviderBaseUrl(cfg('deepseek', 'deepseek-chat', { baseUrl: 'https://relay.test/v1' })))
       .toBe('https://relay.test/v1');
+  });
+
+  it('openai：OPENAI_BASE_URL 在未显式配置端点时兜底，且不影响默认端点', () => {
+    expect(resolveProviderBaseUrl(cfg('openai', 'gpt-4o'))).toBe(MODEL_API_ENDPOINTS.openai);
+    process.env.OPENAI_BASE_URL = 'http://inspect.test/v1';
+    expect(resolveProviderBaseUrl(cfg('openai', 'gpt-4o'))).toBe('http://inspect.test/v1');
+    expect(resolveProviderBaseUrl(cfg('openai', 'gpt-4o', { baseUrl: 'https://explicit.test/v1' })))
+      .toBe('https://explicit.test/v1');
   });
 
   it('动态 custom provider：config.baseUrl 缺失时从 settings.models.providers[id].baseUrl 兜底', () => {

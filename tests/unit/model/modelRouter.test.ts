@@ -126,13 +126,13 @@ describe('ModelRouter', () => {
     router = new ModelRouter();
   });
 
-  it('routes an explicit Responses override to the Responses provider while DeepSeek defaults stay on chat-completions', async () => {
+  it('routes the Responses matrix default to the Responses provider while an explicit override remains supported', async () => {
     const dynamicProvider = (router as any).getDynamicCustomProvider({
       provider: 'deepseek', model: 'deepseek-v4-flash', protocol: 'responses',
     });
     expect(dynamicProvider).toBeInstanceOf(ResponsesProvider);
     expect((router as any).providers.get('deepseek')).toBeInstanceOf(DeepSeekProvider);
-    expect((router as any).getDynamicCustomProvider({ provider: 'deepseek', model: 'deepseek-v4-flash' })).toBeUndefined();
+    expect((router as any).getDynamicCustomProvider({ provider: 'deepseek', model: 'deepseek-v4-flash' })).toBeInstanceOf(ResponsesProvider);
 
     const deepseek = (router as any).providers.get('deepseek');
     const responses = (router as any).providers.get('responses');
@@ -141,11 +141,11 @@ describe('ModelRouter', () => {
     const request = [{ role: 'user', content: 'hello' }];
 
     await (router as any)._callProvider(request, [], { provider: 'deepseek', model: 'deepseek-v4-flash' });
-    expect(deepseekInference).toHaveBeenCalledOnce();
-    expect(responsesInference).not.toHaveBeenCalled();
+    expect(deepseekInference).not.toHaveBeenCalled();
+    expect(responsesInference).toHaveBeenCalledOnce();
 
     await (router as any)._callProvider(request, [], { provider: 'deepseek', model: 'deepseek-v4-flash', protocol: 'responses' });
-    expect(responsesInference).toHaveBeenCalledOnce();
+    expect(responsesInference).toHaveBeenCalledTimes(2);
   });
 
   it('keeps built-in providers on their native implementation when protocol is openai/claude', () => {
@@ -158,6 +158,17 @@ describe('ModelRouter', () => {
     expect((router as any).getDynamicCustomProvider({
       provider: 'claude', model: 'claude-sonnet-4-6', protocol: 'claude',
     })).toBeUndefined();
+  });
+
+  it('routes DeepSeek fallback targets through the matrix protocol without a user override', () => {
+    const fallback = PROVIDER_FALLBACK_CHAIN.longcat.find(
+      (candidate) => candidate.provider === 'deepseek' && candidate.model === 'deepseek-v4-flash',
+    );
+    expect(fallback).toBeDefined();
+    expect((router as any).getDynamicCustomProvider({
+      provider: fallback!.provider,
+      model: fallback!.model,
+    })).toBeInstanceOf(ResponsesProvider);
   });
 
   // --------------------------------------------------------------------------
@@ -1965,8 +1976,14 @@ describe('ModelRouter', () => {
       const zhipuProvider = {
         inference: vi.fn().mockRejectedValue(new Error('zhipu temporary failure')),
       } as any;
-      const deepseekProvider = {
+      // 降级链上的 deepseek 条目是 deepseek-v4-flash，能力矩阵已把它切到 Responses 协议，
+      // 所以这一跳由 ResponsesProvider 承接，原生 DeepSeekProvider 不再被调用。
+      // 链的顺序语义（deepseek 排在 moonshot 前）不变，变的只是谁来执行这一跳。
+      const responsesProvider = {
         inference: vi.fn().mockResolvedValue({ type: 'text', content: 'deepseek artifact fallback', finishReason: 'stop' }),
+      } as any;
+      const deepseekProvider = {
+        inference: vi.fn().mockResolvedValue({ type: 'text', content: 'native deepseek should not run', finishReason: 'stop' }),
       } as any;
       const moonshotProvider = {
         inference: vi.fn().mockResolvedValue({ type: 'text', content: 'moonshot should not run', finishReason: 'stop' }),
@@ -1974,6 +1991,7 @@ describe('ModelRouter', () => {
 
       (router as any).providers.set('xiaomi', primaryProvider);
       (router as any).providers.set('zhipu', zhipuProvider);
+      (router as any).providers.set('responses', responsesProvider);
       (router as any).providers.set('deepseek', deepseekProvider);
       (router as any).providers.set('moonshot', moonshotProvider);
 
@@ -1994,7 +2012,8 @@ describe('ModelRouter', () => {
 
       expect(result).toMatchObject({ type: 'text', content: 'deepseek artifact fallback' });
       expect(zhipuProvider.inference).toHaveBeenCalledTimes(1);
-      expect(deepseekProvider.inference).toHaveBeenCalledTimes(1);
+      expect(responsesProvider.inference).toHaveBeenCalledTimes(1);
+      expect(deepseekProvider.inference).not.toHaveBeenCalled();
       expect(moonshotProvider.inference).not.toHaveBeenCalled();
     });
 

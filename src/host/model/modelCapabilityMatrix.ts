@@ -19,8 +19,7 @@ const MATRIX: ModelCapabilityMatrix = {
   },
   deepseek: {
     models: {
-      // 不声明 protocol：默认/fallback 仍走 chat-completions，只有用户显式 protocol override 才进 Responses。
-      'deepseek-v4-flash': { search: { mode: 'deepseek-responses' } },
+      'deepseek-v4-flash': { protocol: 'responses', search: { mode: 'deepseek-responses' } },
     },
   },
 };

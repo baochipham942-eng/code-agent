@@ -56,6 +56,8 @@ export interface ElectronFetchOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
   provider?: string;
+  /** 保留响应体供协议专用 SSE parser 消费；普通请求仍按 JSON 缓冲。 */
+  stream?: boolean;
 }
 
 export interface ElectronFetchResponse<T = unknown> {
@@ -81,6 +83,7 @@ export async function electronFetch<T = unknown>(
       validateStatus: () => true,
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
+      ...(options.stream ? { responseType: 'stream' as const } : {}),
       signal: options.signal,
     });
 
@@ -89,6 +92,9 @@ export async function electronFetch<T = unknown>(
       status: response.status,
       text: async () => typeof response.data === 'string' ? response.data : JSON.stringify(response.data),
       json: async (): Promise<T> => response.data,
+      // Axios 在 Node/Electron stream adapter 下返回 NodeJS.ReadableStream；保留 fetch
+      // 兼容的 public contract，协议侧再按运行时形态读取。
+      ...(options.stream ? { body: response.data as unknown as ReadableStream<Uint8Array> } : {}),
     };
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);

@@ -6,8 +6,10 @@
 // ============================================================================
 import { z } from 'zod';
 
+import type { ToolCall, ToolDefinition } from '../../../../shared/contract';
 import type { ModelResponse } from '../../types';
-import { logger } from '../providerRuntime';
+import { logger, safeJsonParse } from '../providerRuntime';
+import { extractToolCallMeta } from '../toolCallMeta';
 import { normalizeResponsesUsage } from './usageNormalization';
 
 const OutputItemSchema = z.object({ type: z.string().optional() }).passthrough();
@@ -21,6 +23,39 @@ const ResponsesSchema = z.object({
 }).passthrough();
 
 type SearchTrace = NonNullable<ModelResponse['searchTrace']>[number];
+
+/** Responses 的 function 定义是扁平 wire format，不能复用 chat-completions converter。 */
+export function convertToolsToResponses(tools: ToolDefinition[]): Array<{
+  type: 'function'; name: string; description: string; parameters: ToolDefinition['inputSchema'];
+}> {
+  return tools.map((tool) => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.inputSchema }));
+}
+
+// 与 OpenAI wrapper 对齐：代理偶尔给工具名包 functions_ 前缀及数字后缀。
+function normalizeToolName(name: string): string {
+  const withoutPrefix = name.startsWith('functions_') ? name.slice('functions_'.length) : name;
+  return withoutPrefix.replace(/_\d+$/, '') || name;
+}
+
+function functionCallsOf(output: unknown[]): ToolCall[] {
+  const calls: ToolCall[] = [];
+  for (const item of output) {
+    const record = item as Record<string, unknown>;
+    if (record.type !== 'function_call' || typeof record.name !== 'string') continue;
+    const rawArguments = typeof record.arguments === 'string' ? record.arguments : '{}';
+    const argumentsObject = safeJsonParse(rawArguments);
+    if (argumentsObject.__parseError) {
+      logger.warn('[Responses] ignoring function call with invalid JSON arguments', { name: record.name });
+      continue;
+    }
+    calls.push({
+      id: typeof record.call_id === 'string' ? record.call_id : typeof record.id === 'string' ? record.id : `call_${calls.length}`,
+      name: normalizeToolName(record.name),
+      ...extractToolCallMeta(argumentsObject),
+    });
+  }
+  return calls;
+}
 
 function textOf(value: unknown): string {
   if (typeof value === 'string') return value;
@@ -61,6 +96,7 @@ export function parseResponsesResponse(raw: unknown): ModelResponse {
   const text: string[] = [];
   const thinking: string[] = [];
   const searchTrace: SearchTrace[] = [];
+  const toolCalls = functionCallsOf(output);
 
   // 服务端 agent 循环会在每次工具调用前后各插一条 message，中间那些是过程旁白
   // （真机实测一次问答产生 7 条 message，前 6 条都是「让我打开官方文档核实…」这类交代下一步，
@@ -87,11 +123,12 @@ export function parseResponsesResponse(raw: unknown): ModelResponse {
   });
 
   return {
-    type: 'text',
+    type: toolCalls.length ? 'tool_use' : 'text',
     content: text.join(''),
     ...(thinking.length ? { thinking: thinking.join('\n') } : {}),
     ...(parsed.data.usage ? { usage: normalizeResponsesUsage(parsed.data.usage) } : {}),
     responsesOutput: output,
+    ...(toolCalls.length ? { toolCalls } : {}),
     ...(searchTrace.length ? { searchTrace } : {}),
   };
 }

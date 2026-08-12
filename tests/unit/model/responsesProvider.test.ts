@@ -3,7 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const electronFetch = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/host/model/providers/providerHttp', () => ({ electronFetch }));
 
-import { ResponsesProvider, resolveResponsesEndpoint } from '../../../src/host/model/providers/responsesProvider';
+import { ResponsesProvider } from '../../../src/host/model/providers/responsesProvider';
+
+/** 走真实调用路径断言最终请求 URL——端点拼接是内部实现，不为测试单独导出。 */
+async function requestUrlFor(baseUrl: string): Promise<string> {
+  electronFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) });
+  await new ResponsesProvider().inference([{ role: 'user', content: 'ping' }], [], {
+    provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'test-key', protocol: 'responses', baseUrl,
+  } as any);
+  return electronFetch.mock.calls.at(-1)![0] as string;
+}
 
 describe('ResponsesProvider', () => {
   beforeEach(() => electronFetch.mockReset());
@@ -20,8 +29,11 @@ describe('ResponsesProvider', () => {
       model: 'deepseek-v4-flash', input: [{ role: 'user', content: '查今天新闻' }], store: false,
       tools: [{ type: 'web_search' }],
     });
-    expect(resolveResponsesEndpoint('https://relay.test/v1/')).toBe('https://relay.test/responses');
-    expect(resolveResponsesEndpoint('https://relay.test/api')).toBe('https://relay.test/api/responses');
+  });
+
+  it('strips a trailing /v1 but leaves other base paths intact', async () => {
+    expect(await requestUrlFor('https://relay.test/v1/')).toBe('https://relay.test/responses');
+    expect(await requestUrlFor('https://relay.test/api')).toBe('https://relay.test/api/responses');
   });
 
   it('does not mount web_search when the matrix says none', async () => {

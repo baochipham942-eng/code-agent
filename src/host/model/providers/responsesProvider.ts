@@ -10,7 +10,7 @@ import { resolveProviderApiKey, resolveProviderBaseUrl } from './providerResolut
 import { parseResponsesResponse } from './wrappers/responsesWrapper';
 
 /** /v1 是 chat-completions API version；Responses 位于 API 根的 /responses。 */
-export function resolveResponsesEndpoint(baseUrl: string): string {
+function resolveResponsesEndpoint(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, '').replace(/\/v\d+$/, '')}/responses`;
 }
 

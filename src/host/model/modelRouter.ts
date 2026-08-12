@@ -23,6 +23,7 @@ import { getAdaptiveRouter } from './adaptiveRouter';
 import { buildModelProviderIdentity, resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from './modelDecision';
 import { getConfigService } from '../services/core/configService';
 import { getProviderHealthMonitor } from './providerHealthMonitor';
+import { resolveModelCapabilities } from './modelCapabilityMatrix';
 import { combineAbortSignals, createTimedAbortController } from '../agent/shutdownProtocol';
 import {
   ARTIFACT_UNUSABLE_RESPONSE_PATTERN,
@@ -924,7 +925,9 @@ export class ModelRouter {
     // 让存量配置改判：云端托管 provider 会被 configService 写死 protocol:'openai'，一旦其 id
     // 撞上内置 provider，就会从原生实现掉进通用 custom（DeepSeek 会因此丢掉 thinking-mode 的
     // reasoning_content 处理，多轮直接 400）。
-    if (config.protocol === 'responses') return this.providers.get('responses');
+    // 用户显式写的 protocol 优先于矩阵声明；矩阵只在用户没写时驱动分派（否则用户改不回去）。
+    const effectiveProtocol = config.protocol ?? resolveModelCapabilities(config.provider, config.model).protocol;
+    if (effectiveProtocol === 'responses') return this.providers.get('responses');
     if (this.providers.has(config.provider)) return undefined;
     if (config.protocol === 'claude') return this.providers.get('claude');
     if (config.protocol === 'openai') return this.providers.get('custom');

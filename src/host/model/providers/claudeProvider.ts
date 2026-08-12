@@ -22,6 +22,7 @@ import {
 import { parseClaudeSSEEvent } from './wrappers/anthropicWrapper';
 import { extractToolCallMeta } from './toolCallMeta';
 import { normalizeClaudeUsage } from './wrappers/usageNormalization';
+import { resolveModelCapabilities } from '../modelCapabilityMatrix';
 import { MODEL_API_ENDPOINTS, API_VERSIONS, getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
 
 /**
@@ -487,6 +488,10 @@ export class ClaudeProvider implements Provider {
     }
     if (effectiveConfig.promptCaching?.enabled) {
       betaFeatures.push('prompt-caching-2024-07-31');
+    }
+    // 哪些模型支持 interleaved 由能力矩阵声明，厂商放开新模型 = 改表一行，不碰这里。
+    if (thinkingBudget && resolveModelCapabilities(config.provider, config.model).thinking?.interleaved) {
+      betaFeatures.push('interleaved-thinking-2025-05-14');
     }
 
     const headers: Record<string, string> = {

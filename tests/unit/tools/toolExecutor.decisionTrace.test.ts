@@ -28,6 +28,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 import { resetDecisionHistory, getDecisionHistory } from '../../../src/host/security/decisionHistory';
+import { createCLIPermissionHandler } from '../../../src/cli/permissionPolicy';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 
 describe('ToolExecutor decision trace history', () => {
@@ -97,5 +98,30 @@ describe('ToolExecutor decision trace history', () => {
     });
     expect(entry.decisionTrace?.finalOutcome).toBe('deny');
     expect(entry.decisionTrace?.steps[0]?.layer).toBe('guard_fabric');
+  });
+
+  it('denies an external Write ask in the headless handler without executing it', async () => {
+    resolverState.getDefinition.mockReturnValue({
+      name: 'Write',
+      description: 'write test tool',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      requiresPermission: true,
+      permissionLevel: 'write',
+    });
+    const executor = new ToolExecutor({
+      requestPermission: createCLIPermissionHandler({ warn: vi.fn() }),
+      workingDirectory: '/tmp/workbench',
+    });
+
+    const result = await executor.execute('Write', {
+      file_path: '/Users/linchen/boundary_probe.txt',
+      content: 'probe',
+    }, { sessionId: 's1' });
+
+    expect(result.success).toBe(false);
+    expect(resolverState.execute).not.toHaveBeenCalled();
+    const [entry] = getDecisionHistory().getRecent(1);
+    expect(entry).toMatchObject({ toolName: 'Write', outcome: 'ask-denied' });
+    expect(entry.decisionTrace?.finalOutcome).toBe('deny');
   });
 });

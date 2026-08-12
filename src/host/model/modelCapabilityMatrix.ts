@@ -6,7 +6,7 @@ export interface ModelCapabilityMatrixEntry {
   thinking?: { interleaved: boolean };
 }
 
-export type ModelCapabilityMatrix = Partial<Record<
+type ModelCapabilityMatrix = Partial<Record<
   ModelProvider,
   { default?: Partial<ModelCapabilityMatrixEntry>; models?: Record<string, Partial<ModelCapabilityMatrixEntry>> }
 >>;

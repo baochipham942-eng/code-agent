@@ -97,6 +97,7 @@ import { mcpUnifiedSchema } from './mcp/mcpUnified.schema';
 import { webFetchSchema } from './network/webFetch.schema';
 import { webFetchUnifiedSchema } from './network/webFetchUnified.schema';
 import { webSearchSchema } from './network/webSearch.schema';
+import { externalSearchSchema } from './network/externalSearch.schema';
 import { httpRequestSchema } from './network/httpRequest.schema';
 import { readDocumentSchema } from './network/readDocument.schema';
 import { readDocxSchema } from './network/readDocx.schema';
@@ -547,6 +548,10 @@ export function registerMigratedTools(
   registry.register(
     webSearchSchema,
     async () => (await import('./network/webSearch')).webSearchModule,
+  );
+  registry.register(
+    externalSearchSchema,
+    async () => (await import('./network/externalSearch')).externalSearchModule,
   );
   registry.register(
     httpRequestSchema,

@@ -957,6 +957,9 @@ export class ConfigService implements IReadConfigService {
       firecrawl: 'FIRECRAWL_API_KEY',
       perplexity: 'PERPLEXITY_API_KEY',
       tavily: 'TAVILY_API_KEY',
+      // 外部搜索源的独立搜索凭据（与 zhipu/minimax 模型 key 是两把，故意不复用）。
+      'zhipu-search': 'ZHIPU_OFFICIAL_API_KEY',
+      'minimax-search': 'MINIMAX_SEARCH_API_KEY',
       skillsmp: 'SKILLSMP_API_KEY',
     };
 

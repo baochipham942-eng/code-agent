@@ -8,11 +8,33 @@ const isPermission = (event) => event?.type === 'permission_request';
 async function dispatch(ctx, workdir, filePath) {
   const sessionId = await ctx.createSession(workdir);
   const events = ctx.openEvents();
-  const response = await ctx.api.post('/api/domain/agent/send', {
-    sessionId,
-    content: `创建文件 ${filePath}，内容精确为 scenario-command-center，不带换行，创建完成即结束。`,
+  // web 模式的真实产品入口是 POST /api/run（响应体 = 跟随整个 run 的 SSE 流）。
+  // /api/domain/agent/send 是桌面 IPC 通道，web-standalone 下 getAppService 恒为 null，
+  // 永远报 Agent not initialized——2026-08-11 真机实测，别改回去。
+  const response = await fetch(`${ctx.env.baseUrl}/api/run`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${ctx.env.token || ''}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId,
+      prompt: `创建文件 ${filePath}，内容精确为 scenario-command-center，不带换行，创建完成即结束。`,
+    }),
   });
-  ctx.expect('文字派活入口接受请求', response.status >= 200 && response.status < 300 && response.body?.success !== false, response);
+  const contentType = String(response.headers.get('content-type') || '');
+  ctx.expect('文字派活入口接受请求（/api/run 流已开启）', response.ok && contentType.includes('text/event-stream'), {
+    status: response.status,
+    contentType,
+  });
+  // 后台排空响应流防背压；判据一律走 /api/events 采集与真实副作用，不依赖这条流的内容
+  if (response.body) {
+    (async () => {
+      const reader = response.body.getReader();
+      for (;;) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    })().catch(() => {});
+  }
+  ctx.cleanup(() => ctx.api.post('/api/cancel', { sessionId }).catch(() => {}), `cancel run ${sessionId}`);
   return { sessionId, events, filePath };
 }
 

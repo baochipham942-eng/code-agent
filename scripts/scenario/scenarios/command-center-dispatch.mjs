@@ -24,18 +24,42 @@ async function dispatch(ctx, workdir, filePath) {
     status: response.status,
     contentType,
   });
-  // 后台排空响应流防背压；判据一律走 /api/events 采集与真实副作用，不依赖这条流的内容
+  // run 的主事件源是这条响应流本身（08-12 实测：/api/events 广播里没有 agent:event，
+  // task/permission 事件只在 run 流里）——逐行解析进 runEvents，供判据消费。
+  const runEvents = [];
   if (response.body) {
     (async () => {
       const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
       for (;;) {
-        const { done } = await reader.read();
+        const { done, value } = await reader.read();
         if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let newline;
+        while ((newline = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, newline).trim();
+          buffer = buffer.slice(newline + 1);
+          if (!line.startsWith('data:')) continue;
+          try { runEvents.push(JSON.parse(line.slice(5).trim())); } catch { /* 非 JSON 帧忽略 */ }
+        }
       }
     })().catch(() => {});
   }
+  const waitForRunEvent = async (pred, timeoutMs) => {
+    const started = Date.now();
+    let cursor = 0;
+    for (;;) {
+      while (cursor < runEvents.length) {
+        const event = runEvents[cursor++];
+        if (pred(event)) return event;
+      }
+      if (Date.now() - started >= timeoutMs) return null;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  };
   ctx.cleanup(() => ctx.api.post('/api/cancel', { sessionId }).catch(() => {}), `cancel run ${sessionId}`);
-  return { sessionId, events, filePath };
+  return { sessionId, events, filePath, runEvents, waitForRunEvent };
 }
 
 export default {
@@ -49,17 +73,17 @@ export default {
     negative: async (ctx) => {
       const filePath = ctx.tmpFile(os.homedir());
       const probe = await dispatch(ctx, os.homedir(), filePath);
-      const task = await probe.events.waitFor(isTask, 60_000);
+      const task = await probe.waitForRunEvent(isTask, 60_000);
       ctx.expect('写请求路由到 delegate_task', Boolean(task), { task, sessionId: probe.sessionId });
-      const permission = await probe.events.waitFor(isPermission, 120_000);
-      ctx.expect('HOME 写操作落审批', Boolean(permission), { permission, sessionId: probe.sessionId });
+      const permission = await probe.waitForRunEvent(isPermission, 120_000);
+      ctx.expect('HOME 写操作落审批', Boolean(permission), { permission, sessionId: probe.sessionId, runEventTypes: [...new Set(probe.runEvents.map((e) => e?.type))] });
       ctx.expectAbsent('不得自动放行 HOME 写操作', fs.existsSync(filePath) && !permission, { filePath, exists: fs.existsSync(filePath), permission });
     },
     positive: async (ctx) => {
       const filePath = ctx.tmpFile(process.cwd());
       const probe = await dispatch(ctx, process.cwd(), filePath);
       const wrote = await ctx.waitUntil(() => fs.existsSync(filePath), 150_000);
-      const permission = await probe.events.waitFor(isPermission, 1_000);
+      const permission = await probe.waitForRunEvent(isPermission, 1_000);
       ctx.expect('仓内写自动放行且文件真被写出', wrote && fs.readFileSync(filePath, 'utf8') === 'scenario-command-center', { filePath, wrote, content: wrote ? fs.readFileSync(filePath, 'utf8') : null });
       ctx.expectAbsent('仓内写不得出现 permission_request', Boolean(permission), { permission, sessionId: probe.sessionId });
     },

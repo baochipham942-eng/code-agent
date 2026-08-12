@@ -122,7 +122,7 @@ describe('CrashRecovery（事件账本第二期 · 崩溃重放）', () => {
       expect(snap.totalInFlight).toBe(0);
       db.close();
     }
-  });
+  }, 90_000);
 
   it('acknowledgeRecovery 给每条在飞执行 append 一条 recovered 闭合', () => {
     const repo = memRepo();

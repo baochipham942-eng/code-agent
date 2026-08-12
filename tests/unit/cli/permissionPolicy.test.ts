@@ -12,11 +12,11 @@ function makeRequest(overrides: Partial<PermissionRequestData> = {}): Permission
 }
 
 describe('createCLIPermissionHandler', () => {
-  it('approves normal tool permissions by default', async () => {
+  it('denies every ask by default because CLI mode has no approval surface', async () => {
     const handler = createCLIPermissionHandler();
-    await expect(handler(makeRequest({ type: 'file_write' }))).resolves.toBe(true);
-    await expect(handler(makeRequest({ type: 'command' }))).resolves.toBe(true);
-    await expect(handler(makeRequest({ type: 'network' }))).resolves.toBe(true);
+    await expect(handler(makeRequest({ type: 'file_write' }))).resolves.toBe(false);
+    await expect(handler(makeRequest({ type: 'command' }))).resolves.toBe(false);
+    await expect(handler(makeRequest({ type: 'network' }))).resolves.toBe(false);
   });
 
   it('denies dangerous_command type in non-interactive mode', async () => {
@@ -36,6 +36,20 @@ describe('createCLIPermissionHandler', () => {
     await expect(handler(makeRequest({ dangerLevel: 'danger' }))).resolves.toBe(false);
   });
 
+  it('denies an external file write when no person can answer the ask', async () => {
+    const handler = createCLIPermissionHandler();
+
+    await expect(handler(makeRequest({
+      type: 'file_write',
+      tool: 'Write',
+      details: { path: '/Users/linchen/boundary_probe.txt' },
+      boundary: {
+        id: 'file.external_write',
+        reason: '写入文件内容会修改工作区外的目标路径。',
+      },
+    }))).resolves.toBe(false);
+  });
+
   it('approves everything when dangerouslySkipPermissions is set', async () => {
     const handler = createCLIPermissionHandler({ dangerouslySkipPermissions: true });
     await expect(handler(makeRequest({ type: 'dangerous_command' }))).resolves.toBe(true);
@@ -53,7 +67,7 @@ describe('createCLIPermissionHandler', () => {
 
   it('does not warn on approvals', async () => {
     const warn = vi.fn();
-    const handler = createCLIPermissionHandler({ warn });
+    const handler = createCLIPermissionHandler({ warn, dangerouslySkipPermissions: true });
     await handler(makeRequest());
     expect(warn).not.toHaveBeenCalled();
   });

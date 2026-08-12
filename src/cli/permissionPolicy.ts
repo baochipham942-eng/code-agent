@@ -2,9 +2,8 @@
 // CLI Permission Policy — 非交互模式的安全默认（借鉴 MiMoCode run 命令设计）
 // ============================================================================
 //
-// CLI run/batch 没有审批 UI，无法人工确认。安全默认：需要人工确认的权限
-// （dangerous_command / forceConfirm / dangerLevel=danger）自动拒绝并告知模型，
-// 其余照常放行，防止 CI 挂起或危险操作被静默批准。
+// CLI run/batch 没有审批 UI，无法人工确认。凡是已经进入 requestPermission 的操作
+// 都在等人批准；没有真实批准动作时必须拒绝，不能以布尔 true 冒充用户响应。
 // `--dangerously-skip-permissions` 是显式逃生门，恢复全自动批准。
 
 import type { PermissionRequestData } from '../host/tools/types';
@@ -16,13 +15,9 @@ export interface CLIPermissionPolicyOptions {
   warn?: (message: string) => void;
 }
 
-/** 判定该权限请求是否需要人工确认（非交互模式下无法满足 → 拒绝） */
-export function requiresHumanConfirmation(request: PermissionRequestData): boolean {
-  return (
-    request.type === 'dangerous_command'
-    || request.forceConfirm === true
-    || request.dangerLevel === 'danger'
-  );
+/** requestPermission 代表一个等待人工回答的 ask；CLI/web headless 无法回答。 */
+export function requiresHumanConfirmation(_request: PermissionRequestData): boolean {
+  return true;
 }
 
 export function createCLIPermissionHandler(

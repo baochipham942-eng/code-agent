@@ -24,7 +24,6 @@ import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'node:crypto';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
-import { execFileSync } from 'child_process';
 import { setupAllIpcHandlers, type IpcDependencies } from '../host/ipc';
 import { createLogger } from '../host/services/infra/logger';
 import { loadShellEnvironment } from '../host/services/infra/shellEnvironment';
@@ -47,6 +46,7 @@ import { kickoffCloudPrompts } from './webStartupCloudPrompts';
 import { registerMemoryConsolidationJob } from './webStartupMemoryJobs';
 import { setupWebLogBridge } from './webLogBridgeSetup';
 import { kickoffWebStartupServices } from './webStartupServices';
+import { killPortHolder } from './portCleanup';
 
 const logger = createLogger('WebServer');
 
@@ -858,27 +858,6 @@ function registerHandlers(): void {
 // ============================================================================
 // Port cleanup
 // ============================================================================
-
-/** Kill any process holding the target port (zombie node processes from previous runs) */
-async function killPortHolder(port: number): Promise<void> {
-  try {
-    const pids = execFileSync('lsof', ['-ti', `:${port}`], { encoding: 'utf-8' }).trim();
-    if (!pids) return;
-
-    // Don't kill ourselves
-    const myPid = process.pid.toString();
-    const targetPids = pids.split('\n').filter((p) => p !== myPid && /^\d+$/.test(p));
-    if (targetPids.length === 0) return;
-
-    console.log(`  Killing zombie process(es) on port ${port}: PID ${targetPids.join(', ')}`);
-    execFileSync('kill', ['-9', ...targetPids], { encoding: 'utf-8' });
-
-    // Brief wait for OS to release the port
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  } catch {
-    // lsof returns exit code 1 when no match — port is free
-  }
-}
 
 // ============================================================================
 // Main

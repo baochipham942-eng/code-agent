@@ -34,6 +34,7 @@ export const CORE_TOOLS: string[] = [
 
   // Gen 4: 网络搜索
   'WebSearch',
+  'ExternalSearch',
 
   // Light Memory (File-as-Memory)
   'MemoryWrite',

@@ -36,6 +36,7 @@ export function SearchSettings() {
   const searchText = t.settings.search;
   const [orderedIds, setOrderedIds] = useState<string[]>(() => orderCatalog().map((s) => s.id));
   const [disabled, setDisabled] = useState<Set<string>>(new Set());
+  const [externalSource, setExternalSource] = useState<'auto' | 'zhipu' | 'minimax'>('auto');
   const [serviceKeys, setServiceKeys] = useState<ServiceKeyMap>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -57,6 +58,7 @@ export function SearchSettings() {
         const prefs = settings?.search;
         setOrderedIds(orderCatalog(prefs?.sourceOrder).map((s) => s.id));
         setDisabled(new Set(prefs?.disabledSources ?? []));
+        setExternalSource(prefs?.externalSource ?? 'auto');
         setServiceKeys(keys ?? {});
       })
       .catch(() => {
@@ -101,6 +103,7 @@ export function SearchSettings() {
       const search: NonNullable<AppSettings['search']> = {
         disabledSources: Array.from(disabled),
         sourceOrder: orderedIds,
+        externalSource,
       };
       await invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { settings: { search } });
       toast.success(searchText.saveSuccess);
@@ -186,6 +189,18 @@ export function SearchSettings() {
         title={searchText.sourcesSectionTitle}
         description={searchText.sourcesSectionDescription}
       >
+        <label className="mb-3 flex items-center gap-3 text-sm text-zinc-200">
+          <span className="shrink-0">外部搜索源</span>
+          <select
+            value={externalSource}
+            onChange={(event) => setExternalSource(event.target.value as 'auto' | 'zhipu' | 'minimax')}
+            className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm"
+          >
+            <option value="auto">自动（优先智谱）</option>
+            <option value="zhipu">智谱</option>
+            <option value="minimax">MiniMax</option>
+          </select>
+        </label>
         <div className="flex flex-col gap-2">
           {orderedIds.map((id, index) => {
             const entry = catalogById.get(id);

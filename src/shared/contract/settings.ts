@@ -224,6 +224,8 @@ export interface AppSettings {
     disabledSources?: string[];
     /** 源优先级覆盖（id 顺序，越靠前越优先；未列出的按内置 priority 排在后） */
     sourceOrder?: string[];
+    /** 外部结构化搜索服务：自动按就绪优先级，或固定到一家。 */
+    externalSource?: 'auto' | 'zhipu' | 'minimax';
   };
   // 生成模型默认值（ADR-027）。全部可选，未配置 = 设计画布仍用 registry 首项。
   // 模型 id 须为 visualModels.ts 的 IMAGE_MODELS / VIDEO_MODELS 中的 id。

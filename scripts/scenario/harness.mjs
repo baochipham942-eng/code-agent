@@ -80,15 +80,6 @@ function git(args) {
   return execFileSync('git', args, { cwd: process.cwd(), encoding: 'utf8' }).trim();
 }
 
-function persistencePath(health) {
-  const persistence = health?.persistence;
-  if (!persistence || typeof persistence !== 'object') return null;
-  for (const key of ['path', 'dataDir', 'dbPath', 'databasePath']) {
-    if (typeof persistence[key] === 'string') return persistence[key];
-  }
-  return null;
-}
-
 export async function assertEnv(env, { requireCommit } = {}) {
   const api = createApi(env);
   let probe;
@@ -109,21 +100,30 @@ export async function assertEnv(env, { requireCommit } = {}) {
   const localHead = git(['rev-parse', '--short', 'HEAD']);
   const dirty = git(['status', '--porcelain']);
   const actualCommit = health?.build?.commitShort;
-  const actualPersistencePath = persistencePath(health);
   const baseEvidence = {
     health,
     localHead,
     dirty,
     expectedDataDir: env.dataDir,
-    persistencePath: actualPersistencePath,
+    rendererServeSource: health?.rendererServe?.source ?? null,
     rebuildHint: 'Build with npm run tauri:build:dev, then start the Dev app from a terminal with nohup so it inherits DASHSCOPE_API_KEY and related environment variables.',
   };
-  if (health?.rendererServe?.source !== 'builtin') {
-    throw new NotRun('stale_build', { ...baseEvidence, mismatch: 'renderer_not_builtin' });
-  }
-  if (!actualPersistencePath || !path.resolve(actualPersistencePath).startsWith(`${path.resolve(env.dataDir)}${path.sep}`)
-    && path.resolve(actualPersistencePath || '') !== path.resolve(env.dataDir)) {
-    throw new NotRun('stale_build', { ...baseEvidence, mismatch: 'persistence_path' });
+  // renderer 来源只记证据不判死：app 启动会从云端拉热更新，source 永远回到 'active'，
+  // 而现有剧本全是 API 驱动的 host 侧行为，renderer 新鲜度不影响被测行为。
+  // 未来出现 renderer 向剧本时，再加 per-scenario 的 requireBuiltinRenderer 开关。
+  // 端口↔数据目录绑定改用 dev token 证明：token 是逐槽随机值（存于 <dataDir>/.dev-token），
+  // 带 token 打一个受保护端点通过，即证明该端口的 server 读的是预期数据目录
+  //（/api/health 不鉴权，health 里也没有持久化路径字段——2026-08-11 nightly 实测）。
+  const bindingProbe = await api.get('/api/voice/status').catch((error) => ({
+    status: 0,
+    body: { message: error instanceof Error ? error.message : String(error) },
+  }));
+  if (bindingProbe.status < 200 || bindingProbe.status >= 300) {
+    throw new NotRun('stale_build', {
+      ...baseEvidence,
+      mismatch: 'token_binding_probe_failed',
+      bindingProbe: { status: bindingProbe.status, body: bindingProbe.body },
+    });
   }
   if (dirty) {
     throw new NotRun('stale_build', { ...baseEvidence, mismatch: 'local_worktree_dirty' });
@@ -171,11 +171,11 @@ export function openEvents(env, logPath) {
           const raw = JSON.parse(line.slice(5).trim());
           rawEvents.push(raw);
           fs.appendFileSync(logPath, `${JSON.stringify(raw)}\n`);
+          // receivedCount 判的是"SSE 通道活着吗"，任何合法帧都算；
+          // 具体判据事件另有来源（agent:event 解包或 /api/run 响应流）
+          state.receivedCount += 1;
           const event = raw?.channel === 'agent:event' ? raw.args : null;
-          if (event && typeof event === 'object') {
-            events.push(event);
-            state.receivedCount += 1;
-          }
+          if (event && typeof event === 'object') events.push(event);
         } catch {
           // Malformed SSE frames are preserved only when valid JSON; they cannot prove a product verdict.
         }

@@ -48,6 +48,10 @@ export const SKILL_REVIEW = {
   MAX_DESCRIPTION_CHARS: 200,
   /** 触发复盘的最少用户轮数（太短的会话没有可沉淀的"类"） */
   MIN_USER_TURNS: 2,
+  /** 同类信号跨多少个不同会话出现后，才允许调用 LLM 复盘 */
+  MIN_DISTINCT_SIGNAL_SESSIONS: 2,
+  /** 用户拒绝同类建议后的复议冷却期 */
+  REJECTION_COOLDOWN_MS: 30 * 24 * 60 * 60 * 1000,
   /** 自沉淀来源标记（写入草稿 meta.origin / SKILL.md frontmatter，可在设置页筛人建 vs 自沉淀） */
   ORIGIN: 'llm-review',
   /**

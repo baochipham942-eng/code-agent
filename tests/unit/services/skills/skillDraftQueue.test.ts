@@ -39,7 +39,7 @@ import {
   getSkillDraftsDir,
   generateDraftSkillMd,
 } from '../../../../src/host/services/skills/skillDraftQueue';
-import { LEARNING_PIPELINE } from '../../../../src/shared/constants';
+import { LEARNING_PIPELINE, SKILL_REVIEW } from '../../../../src/shared/constants';
 
 function makeDraftInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -176,7 +176,42 @@ describe('skillDraftQueue', () => {
   // --------------------------------------------------------------------------
 
   describe('rejectSkillDraft', () => {
-    it('should delete draft and never re-enqueue the same patternKey', async () => {
+    it('在冷却期内阻止、到期后允许，并兼容旧字符串拒绝账本', async () => {
+      const now = 1_800_000_000_000;
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+      const ledgerPath = path.join(getSkillDraftsDir(), 'rejected.json');
+
+      try {
+        await fs.mkdir(getSkillDraftsDir(), { recursive: true });
+        await fs.writeFile(ledgerPath, JSON.stringify([{
+          patternKey: 'within-cooldown',
+          rejectedAt: now - SKILL_REVIEW.REJECTION_COOLDOWN_MS + 1,
+        }]), 'utf-8');
+        expect(await enqueueSkillDraft(makeDraftInput({
+          patternKey: 'within-cooldown',
+          timestamp: now,
+        }))).toBeNull();
+
+        await fs.writeFile(ledgerPath, JSON.stringify([{
+          patternKey: 'expired-cooldown',
+          rejectedAt: now - SKILL_REVIEW.REJECTION_COOLDOWN_MS - 1,
+        }]), 'utf-8');
+        expect(await enqueueSkillDraft(makeDraftInput({
+          patternKey: 'expired-cooldown',
+          timestamp: now + 1,
+        }))).not.toBeNull();
+
+        await fs.writeFile(ledgerPath, JSON.stringify(['legacy-rejection']), 'utf-8');
+        expect(await enqueueSkillDraft(makeDraftInput({
+          patternKey: 'legacy-rejection',
+          timestamp: now + 2,
+        }))).toBeNull();
+      } finally {
+        clock.mockRestore();
+      }
+    });
+
+    it('should delete draft and block the same patternKey during cooldown', async () => {
       const meta = await enqueueSkillDraft(makeDraftInput());
       const result = await rejectSkillDraft(meta!.id);
       expect(result.success).toBe(true);

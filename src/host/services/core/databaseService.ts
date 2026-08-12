@@ -15,6 +15,7 @@ import { applySessionForkPortabilitySchema } from './database/schemaSessionForkP
 import { applyIndexes } from './database/indexes';
 import { ensureWalShmConsistency } from './database/walShmConsistency';
 import { applySessionsMigrations, applyTelemetryTurnsMigrations, applyEvaluationCleanupMigration } from './database/migrations';
+import { applyDistillSignalsMigration } from './database/migrations/distillSignals';
 import { DurableRunDatabaseSupport } from './database/durableRunDatabaseSupport';
 
 const logger = createLogger('DatabaseService');
@@ -347,6 +348,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       applySessionsMigrations(this.db, logger);
       applyTelemetryTurnsMigrations(this.db, logger);
       applyEvaluationCleanupMigration(this.db, logger);
+      applyDistillSignalsMigration(this.db, logger);
       this.applyDurableRunMigration(this.db);
       // Create immutable ledger tables before repositories are constructed,
       // but defer legacy rows until project ownership has been backfilled.

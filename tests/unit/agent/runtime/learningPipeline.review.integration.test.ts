@@ -49,6 +49,13 @@ const quickMocks = vi.hoisted(() => ({
   })),
 }));
 vi.mock('../../../../src/host/model/quickModel', () => ({ quickTask: quickMocks.quickTask }));
+// 止血层信号闸走 SQLite（hermetic 环境无 DB）：mock 成"跨会话复现已达标"，
+// 让本测试继续专注验证 LLM 复盘→enqueue→confirm 整条链的穿透；闸本身的行为有专门单测。
+vi.mock('../../../../src/host/services/skills/distillSignalStore', () => ({
+  hasDistillSuggestionForSession: () => false,
+  recordDistillSignal: () => ({ distinctSessionCount: 2, inserted: true }),
+  recordDistillSuggestion: vi.fn(),
+}));
 vi.mock('../../../../src/host/services/infra/timeoutController', () => ({
   withTimeout: <T>(p: Promise<T>) => p,
 }));
@@ -89,7 +96,8 @@ describe('LLM 复盘链真穿透', () => {
     const drafts = await listSkillDrafts();
     expect(drafts).toHaveLength(1);
     expect(drafts[0].origin).toBe('llm-review');
-    expect(drafts[0].patternKey).toBe('llm-review:deploy-tauri-macos');
+    // 止血层后 patternKey=内容签名（防换名绕过），不再是 skill 名
+    expect(drafts[0].patternKey).toMatch(/^llm-review:/);
 
     // 3) 真发了 skill_draft_pending 事件，带 origin
     const evt = events.find((e) => e.type === 'skill_draft_pending');

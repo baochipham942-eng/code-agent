@@ -8,7 +8,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getUserConfigDir, getSkillsDir } from '../../config/configPaths';
-import { LEARNING_PIPELINE } from '../../../shared/constants';
+import { LEARNING_PIPELINE, SKILL_REVIEW } from '../../../shared/constants';
 import type { SkillDraftOrigin } from '../../../shared/contract/agent';
 import { scanSkillContent } from '../../security/skillContentGuard';
 import { isLowValueSkillName } from '../../lightMemory/conversationReview';
@@ -21,6 +21,11 @@ const logger = createLogger('SkillDraftQueue');
 const DRAFT_META_FILENAME = 'draft.json';
 const REJECTED_LEDGER_FILENAME = 'rejected.json';
 const ACCEPTED_LEDGER_FILENAME = 'accepted.json';
+
+interface RejectedLedgerEntry {
+  patternKey: string;
+  rejectedAt: number;
+}
 
 export interface SkillDraftMeta {
   /** 草稿目录名（队列内唯一） */
@@ -159,19 +164,45 @@ export function generateDraftSkillMd(input: {
 // 队列操作
 // ----------------------------------------------------------------------------
 
-async function loadRejectedKeys(): Promise<Set<string>> {
+async function loadRejectedEntries(now = Date.now()): Promise<RejectedLedgerEntry[]> {
   try {
     const raw = await fs.readFile(getRejectedLedgerPath(), 'utf-8');
-    const parsed = JSON.parse(raw) as string[];
-    return new Set(Array.isArray(parsed) ? parsed : []);
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    const entries = new Map<string, RejectedLedgerEntry>();
+    for (const entry of parsed) {
+      // v1 ledger stored bare pattern keys. Keep them safely in cooldown from
+      // the first read rather than corrupting or permanently blocking them.
+      if (typeof entry === 'string' && entry.trim()) {
+        entries.set(entry, { patternKey: entry, rejectedAt: now });
+        continue;
+      }
+      if (
+        typeof entry === 'object'
+        && entry !== null
+        && typeof (entry as { patternKey?: unknown }).patternKey === 'string'
+        && typeof (entry as { rejectedAt?: unknown }).rejectedAt === 'number'
+      ) {
+        const value = entry as RejectedLedgerEntry;
+        if (value.patternKey.trim() && Number.isFinite(value.rejectedAt)) {
+          entries.set(value.patternKey, value);
+        }
+      }
+    }
+    return Array.from(entries.values());
   } catch {
-    return new Set();
+    return [];
   }
 }
 
-async function saveRejectedKeys(keys: Set<string>): Promise<void> {
+function isRejectionCoolingDown(entry: RejectedLedgerEntry, now: number): boolean {
+  return now < entry.rejectedAt + SKILL_REVIEW.REJECTION_COOLDOWN_MS;
+}
+
+async function saveRejectedEntries(entries: RejectedLedgerEntry[]): Promise<void> {
   await fs.mkdir(getSkillDraftsDir(), { recursive: true });
-  await fs.writeFile(getRejectedLedgerPath(), JSON.stringify(Array.from(keys), null, 2), 'utf-8');
+  await fs.writeFile(getRejectedLedgerPath(), JSON.stringify(entries, null, 2), 'utf-8');
 }
 
 // accepted ledger：草稿确认入库后记账，避免同一 pattern 跨会话反复蒸馏打扰用户。
@@ -229,7 +260,7 @@ export async function listSkillDrafts(): Promise<SkillDraftMeta[]> {
 }
 
 /**
- * 把成功模式入队为草稿。同一 patternKey 已在队列中或已被拒绝过则跳过（返回 null）。
+ * 把成功模式入队为草稿。同一 patternKey 已在队列中、已被接受，或仍在拒绝冷却期则跳过。
  */
 export async function enqueueSkillDraft(input: {
   name: string;
@@ -264,11 +295,11 @@ export async function enqueueSkillDraft(input: {
 
   const [existing, rejected, accepted] = await Promise.all([
     listSkillDrafts(),
-    loadRejectedKeys(),
+    loadRejectedEntries(),
     loadAcceptedKeys(),
   ]);
-  if (rejected.has(input.patternKey)) {
-    logger.debug('Skill draft skipped (previously rejected)', { patternKey: input.patternKey });
+  if (rejected.some((entry) => entry.patternKey === input.patternKey && isRejectionCoolingDown(entry, Date.now()))) {
+    logger.debug('Skill draft skipped (rejection cooldown active)', { patternKey: input.patternKey });
     return null;
   }
   if (accepted.has(input.patternKey)) {
@@ -375,7 +406,7 @@ export async function confirmSkillDraft(
 }
 
 /**
- * 用户拒绝草稿：删除草稿并记入 rejected ledger（同一模式不再重复打扰）。
+ * 用户拒绝草稿：删除草稿并记入 rejected ledger，30 天内不重复打扰。
  */
 export async function rejectSkillDraft(id: string): Promise<{ success: boolean; error?: string }> {
   const draftDir = path.join(getSkillDraftsDir(), path.basename(id));
@@ -392,9 +423,11 @@ export async function rejectSkillDraft(id: string): Promise<{ success: boolean; 
   try {
     await fs.rm(draftDir, { recursive: true, force: true });
     if (patternKey) {
-      const rejected = await loadRejectedKeys();
-      rejected.add(patternKey);
-      await saveRejectedKeys(rejected);
+      const rejectedAt = Date.now();
+      const rejected = await loadRejectedEntries(rejectedAt);
+      const entries = rejected.filter((entry) => entry.patternKey !== patternKey);
+      entries.push({ patternKey, rejectedAt });
+      await saveRejectedEntries(entries);
     }
     logger.info('Skill draft rejected', { id, patternKey });
     return { success: true };

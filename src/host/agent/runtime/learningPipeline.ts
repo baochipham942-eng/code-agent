@@ -23,11 +23,25 @@ import {
   type SkillDraftMeta,
 } from '../../services/skills/skillDraftQueue';
 import { reviewConversationForSkill } from '../../lightMemory/conversationReview';
+import {
+  hasDistillSuggestionForSession,
+  recordDistillSignal,
+  recordDistillSuggestion,
+} from '../../services/skills/distillSignalStore';
 import { broadcastToRenderer } from '../../platform/windowBridge';
 import { LEARNING_PIPELINE, SKILL_REVIEW } from '../../../shared/constants';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('LearningPipeline');
+
+function buildDistillPatternKey(userMessages: string[]): string {
+  const normalized = userMessages
+    .slice(-SKILL_REVIEW.RECENT_USER_TURNS)
+    .map((message) => message.trim().toLowerCase().replace(/\d+/g, '#').replace(/\s+/g, ' '))
+    .join(' | ')
+    .slice(0, 500);
+  return `${SKILL_REVIEW.ORIGIN}:${normalized}`;
+}
 
 // ----------------------------------------------------------------------------
 // 纯函数：模式提取（可单测）
@@ -137,6 +151,20 @@ export class LearningPipeline {
       .filter((m) => m.role === 'user' && typeof m.content === 'string' && m.content.trim().length > 0)
       .map((m) => m.content as string);
     if (userMessages.length < SKILL_REVIEW.MIN_USER_TURNS) return;
+    if (hasDistillSuggestionForSession(this.ctx.sessionId)) return;
+
+    // Layer 1 starts with a deterministic, zero-LLM signal. The frequency gate
+    // is introduced separately below so this path stays silent on every turn.
+    const patternKey = buildDistillPatternKey(userMessages);
+    const signal = recordDistillSignal({
+      patternKey,
+      sessionId: this.ctx.sessionId,
+    });
+    if (
+      signal === null
+      || !signal.inserted
+      || signal.distinctSessionCount < SKILL_REVIEW.MIN_DISTINCT_SIGNAL_SESSIONS
+    ) return;
 
     const lastAssistant = [...messages]
       .reverse()
@@ -149,13 +177,18 @@ export class LearningPipeline {
     const draft = await enqueueSkillDraft({
       name: reviewed.name,
       description: reviewed.description,
-      // 以 skill 名做去重 key：同一类技能不重复打扰，被拒绝过的不再入队
-      patternKey: `${SKILL_REVIEW.ORIGIN}:${reviewed.name}`,
+      patternKey,
       origin: SKILL_REVIEW.ORIGIN,
       body: reviewed.body,
       sessionId: this.ctx.sessionId,
     });
     if (!draft) return;
+
+    recordDistillSuggestion({
+      id: draft.id,
+      patternKey,
+      sessionId: this.ctx.sessionId,
+    });
 
     logger.info('Conversation-review skill draft enqueued, awaiting user confirmation', {
       sessionId: this.ctx.sessionId,

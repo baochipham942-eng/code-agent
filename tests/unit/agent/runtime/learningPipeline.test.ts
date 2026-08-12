@@ -80,6 +80,18 @@ vi.mock('../../../../src/host/lightMemory/conversationReview', () => ({
   reviewConversationForSkill: reviewMocks.reviewConversationForSkill,
 }));
 
+const distillSignalMocks = vi.hoisted(() => ({
+  recordDistillSignal: vi.fn(() => ({ distinctSessionCount: 1, inserted: true })),
+  hasDistillSuggestionForSession: vi.fn(() => false),
+  recordDistillSuggestion: vi.fn(),
+}));
+
+vi.mock('../../../../src/host/services/skills/distillSignalStore', () => ({
+  recordDistillSignal: distillSignalMocks.recordDistillSignal,
+  hasDistillSuggestionForSession: distillSignalMocks.hasDistillSuggestionForSession,
+  recordDistillSuggestion: distillSignalMocks.recordDistillSuggestion,
+}));
+
 import {
   LearningPipeline,
   extractFailurePatterns,
@@ -271,6 +283,77 @@ describe('runConversationReviewDistillation', () => {
     reviewMocks.reviewConversationForSkill.mockReset();
     reviewMocks.reviewConversationForSkill.mockResolvedValue(null);
     draftMocks.enqueueSkillDraft.mockClear();
+    distillSignalMocks.recordDistillSignal.mockReset();
+    distillSignalMocks.recordDistillSignal.mockReturnValue({ distinctSessionCount: 2, inserted: true });
+    distillSignalMocks.hasDistillSuggestionForSession.mockReset();
+    distillSignalMocks.hasDistillSuggestionForSession.mockReturnValue(false);
+    distillSignalMocks.recordDistillSuggestion.mockClear();
+  });
+
+  it('首个会话只记录蒸馏信号，不调用 LLM 复盘器', async () => {
+    distillSignalMocks.recordDistillSignal
+      .mockReturnValueOnce({ distinctSessionCount: 1, inserted: true })
+      .mockReturnValueOnce({ distinctSessionCount: 1, inserted: false });
+    reviewMocks.reviewConversationForSkill.mockResolvedValue({
+      shouldCreate: true,
+      signal: 'remember_request',
+      name: 'deploy-tauri-macos',
+      description: '部署 Tauri 桌面应用的标准流程',
+      body: '## 要点\n用 scripts/tauri-install.sh，手动 cp 会残留旧文件',
+    });
+
+    const pipeline = new LearningPipeline(makeCtx('session-first-signal', convo));
+    await pipeline.runConversationReviewDistillation();
+    await pipeline.runConversationReviewDistillation();
+
+    expect(distillSignalMocks.recordDistillSignal).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-first-signal',
+    }));
+    expect(reviewMocks.reviewConversationForSkill).not.toHaveBeenCalled();
+    expect(draftMocks.enqueueSkillDraft).not.toHaveBeenCalled();
+  });
+
+  it('同一模式不足两个会话不建议，第二个不同会话才调用 LLM', async () => {
+    distillSignalMocks.recordDistillSignal
+      .mockReturnValueOnce({ distinctSessionCount: 1, inserted: true })
+      .mockReturnValueOnce({ distinctSessionCount: 2, inserted: true });
+    reviewMocks.reviewConversationForSkill.mockResolvedValue({
+      shouldCreate: true,
+      signal: 'remember_request',
+      name: 'deploy-tauri-macos',
+      description: '部署 Tauri 桌面应用的标准流程',
+      body: '## 要点\n用 scripts/tauri-install.sh，手动 cp 会残留旧文件',
+    });
+
+    await new LearningPipeline(makeCtx('session-pattern-one', convo)).runConversationReviewDistillation();
+    expect(reviewMocks.reviewConversationForSkill).not.toHaveBeenCalled();
+
+    await new LearningPipeline(makeCtx('session-pattern-two', convo)).runConversationReviewDistillation();
+    expect(reviewMocks.reviewConversationForSkill).toHaveBeenCalledTimes(1);
+    expect(draftMocks.enqueueSkillDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it('同一会话已经产出建议后，第二次收尾不再调用 LLM', async () => {
+    distillSignalMocks.hasDistillSuggestionForSession
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    reviewMocks.reviewConversationForSkill.mockResolvedValue({
+      shouldCreate: true,
+      signal: 'remember_request',
+      name: 'deploy-tauri-macos',
+      description: '部署 Tauri 桌面应用的标准流程',
+      body: '## 要点\n用 scripts/tauri-install.sh，手动 cp 会残留旧文件',
+    });
+
+    const pipeline = new LearningPipeline(makeCtx('session-single-suggestion', convo));
+    await pipeline.runConversationReviewDistillation();
+    await pipeline.runConversationReviewDistillation();
+
+    expect(reviewMocks.reviewConversationForSkill).toHaveBeenCalledTimes(1);
+    expect(draftMocks.enqueueSkillDraft).toHaveBeenCalledTimes(1);
+    expect(distillSignalMocks.recordDistillSuggestion).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-single-suggestion',
+    }));
   });
 
   it('复盘命中 → 以 origin=llm-review 入队 + 发 skill_draft_pending 事件', async () => {
@@ -293,7 +376,7 @@ describe('runConversationReviewDistillation', () => {
     expect(draftMocks.enqueueSkillDraft).toHaveBeenCalledTimes(1);
     const arg = draftMocks.enqueueSkillDraft.mock.calls[0][0] as Record<string, unknown>;
     expect(arg.origin).toBe('llm-review');
-    expect(arg.patternKey).toBe('llm-review:deploy-tauri-macos');
+    expect(arg.patternKey).toContain('llm-review:帮我部署 tauri 应用');
     expect(arg.body).toContain('tauri-install.sh');
     expect(arg.name).toBe('deploy-tauri-macos');
 

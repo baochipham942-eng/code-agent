@@ -121,6 +121,14 @@ describe('ResponsesProvider', () => {
     expect(JSON.parse(electronFetch.mock.calls[0][1].body)).toMatchObject({ stream: true });
     expect(onStream).toHaveBeenCalledWith({ type: 'text', content: '最终答案' });
     expect(onStream).not.toHaveBeenCalledWith({ type: 'text', content: '先查资料。' });
+    // 真机 2026-08-12 抓到的漏子：旁白只在最终 content 里被剔除，却照样沿 text 轨推给了用户
+    // （流式 2459 字 vs 最终 2062 字）。判据必须是「推出去的正文」与「最终 content」逐字一致，
+    // 光断言某句话没出现挡不住这个。
+    const streamedText = onStream.mock.calls
+      .map(([event]: [any]) => (event.type === 'text' ? String(event.content ?? '') : ''))
+      .join('');
+    expect(streamedText).toBe(result.content);
+    expect(streamedText).not.toContain('先查资料。');
     expect(onStream).toHaveBeenCalledWith(expect.objectContaining({ type: 'reasoning', content: expect.stringContaining('Neo') }));
     expect(onStream).toHaveBeenCalledWith({ type: 'tool_call_delta', toolCall: { index: 1, argumentsDelta: '{"path":"a' } });
     expect(onStream).toHaveBeenCalledWith({ type: 'usage', inputTokens: 12, outputTokens: 5, cacheReadTokens: 8 });

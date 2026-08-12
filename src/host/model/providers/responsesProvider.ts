@@ -58,17 +58,27 @@ async function parseResponsesStream(
   onStream: StreamCallback,
 ): Promise<ModelResponse> {
   let buffer = '';
-  let lastCallIndex = -1;
-  let emittedText = false;
   const functionCalls = new Map<number, { id?: string; name?: string; arguments: string }>();
   let completed: unknown | undefined;
+
+  // 流式下无法在 message 开始时就知道它是不是最后一条（后面还会不会再来 call）。
+  // 所以把当前 message 的正文攒起来：一旦下一个 output item 开始，就说明刚才那条是过程旁白
+  // ⇒ 改道进度轨；攒到 response.completed 还没被顶掉的那条，才是答案。
+  // 真机实测（2026-08-12）：不这么做，「搜索到了一些信息，让我打开官方页面确认…」会被当正文
+  // 推给用户，随后又被最终 content 换掉（流式 2459 字 vs 最终 2062 字）。
+  let pendingText = '';
+  const demotedPendingToProgress = () => {
+    if (!pendingText) return;
+    onStream({ type: 'reasoning', content: pendingText });
+    pendingText = '';
+  };
 
   const handle = (event: Record<string, unknown>) => {
     const type = String(event.type ?? '');
     const index = typeof event.output_index === 'number' ? event.output_index : 0;
     const item = event.item && typeof event.item === 'object' ? event.item as Record<string, unknown> : undefined;
     if (type === 'response.output_item.added' && item) {
-      if (String(item.type).endsWith('_call')) lastCallIndex = Math.max(lastCallIndex, index);
+      demotedPendingToProgress();
       if (item.type === 'function_call') {
         const call = { id: typeof item.call_id === 'string' ? item.call_id : typeof item.id === 'string' ? item.id : undefined, name: typeof item.name === 'string' ? item.name : undefined, arguments: '' };
         functionCalls.set(index, call);
@@ -78,16 +88,12 @@ async function parseResponsesStream(
     }
     if (type.startsWith('response.web_search_call')) {
       const trace = item ?? event;
-      lastCallIndex = Math.max(lastCallIndex, index);
+      demotedPendingToProgress();
       onStream({ type: 'reasoning', content: searchProgress(trace) });
       return;
     }
     if (type === 'response.output_text.delta' && typeof event.delta === 'string') {
-      // 在最后一个 *_call 前出现的 message 是 agent 过程旁白，不进入正文轨。
-      if (lastCallIndex >= 0 && index > lastCallIndex) {
-        emittedText = true;
-        onStream({ type: 'text', content: event.delta });
-      }
+      pendingText += event.delta;
       return;
     }
     if (type === 'response.reasoning_summary_text.delta' && typeof event.delta === 'string') {
@@ -122,8 +128,14 @@ async function parseResponsesStream(
   }
   if (!completed || typeof completed !== 'object') throw new Error('Responses stream completed without response payload');
   const result = parseResponsesResponse(completed);
-  // call 可能晚于过程 message 才到 SSE；在确认本轮无 call 前先缓冲正文，避免把旁白吐给用户。
-  if (!emittedText && result.content) onStream({ type: 'text', content: result.content });
+  // 收尾以 result.content 为准（它按完整 output 算最后一个 *_call 的边界，是唯一权威口径），
+  // 保证「推给用户的正文」与「最终 content」逐字一致。pendingText 只用来判断答案是否已攒到。
+  // ponytail: 答案在 completed 时整段落地，不逐字流——协议在 message 结束前无法判定它是不是
+  // 最后一条，要逐字流就得让流协议支持撤回临时正文。搜索/思考进度全程是实时的。
+  pendingText = '';
+  if (result.content) {
+    onStream({ type: 'text', content: result.content });
+  }
   if (result.usage) onStream({ type: 'usage', ...result.usage });
   return result;
 }

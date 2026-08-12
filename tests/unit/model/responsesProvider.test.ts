@@ -125,7 +125,7 @@ describe('ResponsesProvider', () => {
     // （流式 2459 字 vs 最终 2062 字）。判据必须是「推出去的正文」与「最终 content」逐字一致，
     // 光断言某句话没出现挡不住这个。
     const streamedText = onStream.mock.calls
-      .map(([event]: [any]) => (event.type === 'text' ? String(event.content ?? '') : ''))
+      .map((call) => (call[0]?.type === 'text' ? String(call[0].content ?? '') : ''))
       .join('');
     expect(streamedText).toBe(result.content);
     expect(streamedText).not.toContain('先查资料。');

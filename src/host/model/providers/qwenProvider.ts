@@ -7,6 +7,7 @@ import type { ModelMessage } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
 import { getModelMaxOutputTokens } from '../../../shared/constants';
+import { resolveModelCapabilities } from '../modelCapabilityMatrix';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from './providerResolution';
 
 export class QwenProvider extends BaseOpenAIProvider {
@@ -43,6 +44,10 @@ export class QwenProvider extends BaseOpenAIProvider {
     if (useToolCalling && qwenTools.length > 0) {
       body.tools = qwenTools;
       body.tool_choice = 'auto';
+    }
+
+    if (resolveModelCapabilities('qwen', config.model).search?.mode === 'bailian-enable-search') {
+      body.enable_search = true;
     }
 
     return body;

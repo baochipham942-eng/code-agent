@@ -190,15 +190,15 @@ export function SearchSettings() {
         description={searchText.sourcesSectionDescription}
       >
         <label className="mb-3 flex items-center gap-3 text-sm text-zinc-200">
-          <span className="shrink-0">外部搜索源</span>
+          <span className="shrink-0">{searchText.externalSourceLabel}</span>
           <select
             value={externalSource}
             onChange={(event) => setExternalSource(event.target.value as 'auto' | 'zhipu' | 'minimax')}
             className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm"
           >
-            <option value="auto">自动（优先智谱）</option>
-            <option value="zhipu">智谱</option>
-            <option value="minimax">MiniMax</option>
+            <option value="auto">{searchText.externalSourceAuto}</option>
+            <option value="zhipu">{searchText.externalSourceZhipu}</option>
+            <option value="minimax">{searchText.externalSourceMiniMax}</option>
           </select>
         </label>
         <div className="flex flex-col gap-2">

@@ -69,6 +69,7 @@ export const TOOL_CONSENT_MAP: Readonly<Record<string, { group: ToolConsentGroup
   task_status: { group: 'memoryTask', effect: 'task' },
 
   WebSearch: { group: 'network', effect: 'webSearch' },
+  ExternalSearch: { group: 'network', effect: 'webSearch' },
   WebFetch: { group: 'network', effect: 'webFetch' },
 
   AskUserQuestion: { group: 'assist', effect: 'askUser' },

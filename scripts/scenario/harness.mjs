@@ -171,11 +171,11 @@ export function openEvents(env, logPath) {
           const raw = JSON.parse(line.slice(5).trim());
           rawEvents.push(raw);
           fs.appendFileSync(logPath, `${JSON.stringify(raw)}\n`);
+          // receivedCount 判的是"SSE 通道活着吗"，任何合法帧都算；
+          // 具体判据事件另有来源（agent:event 解包或 /api/run 响应流）
+          state.receivedCount += 1;
           const event = raw?.channel === 'agent:event' ? raw.args : null;
-          if (event && typeof event === 'object') {
-            events.push(event);
-            state.receivedCount += 1;
-          }
+          if (event && typeof event === 'object') events.push(event);
         } catch {
           // Malformed SSE frames are preserved only when valid JSON; they cannot prove a product verdict.
         }

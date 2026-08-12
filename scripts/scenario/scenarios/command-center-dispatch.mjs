@@ -3,7 +3,7 @@ import os from 'node:os';
 
 const eventText = (event) => JSON.stringify(event?.data || event || {});
 const isTask = (event) => event?.type === 'task_started' || event?.type === 'task_created' || eventText(event).includes('delegate_task');
-const isPermission = (event) => event?.type === 'permission_request';
+const isPermission = (event) => event?.type === 'permission_request' || String(event?.type || '').startsWith('permission');
 
 async function dispatch(ctx, workdir, filePath) {
   const sessionId = await ctx.createSession(workdir);
@@ -27,6 +27,7 @@ async function dispatch(ctx, workdir, filePath) {
   // run 的主事件源是这条响应流本身（08-12 实测：/api/events 广播里没有 agent:event，
   // task/permission 事件只在 run 流里）——逐行解析进 runEvents，供判据消费。
   const runEvents = [];
+  let lastEventName = null;
   if (response.body) {
     (async () => {
       const reader = response.body.getReader();
@@ -40,8 +41,14 @@ async function dispatch(ctx, workdir, filePath) {
         while ((newline = buffer.indexOf('\n')) >= 0) {
           const line = buffer.slice(0, newline).trim();
           buffer = buffer.slice(newline + 1);
+          // SSE 事件类型在 `event:` 行、载荷在紧随的 `data:` 行（08-12 实测），拼回一个对象
+          if (line.startsWith('event:')) { lastEventName = line.slice(6).trim(); continue; }
           if (!line.startsWith('data:')) continue;
-          try { runEvents.push(JSON.parse(line.slice(5).trim())); } catch { /* 非 JSON 帧忽略 */ }
+          try {
+            const data = JSON.parse(line.slice(5).trim());
+            runEvents.push({ type: lastEventName || data?.type || null, data });
+            lastEventName = null;
+          } catch { /* 非 JSON 帧忽略 */ }
         }
       }
     })().catch(() => {});

@@ -144,7 +144,8 @@ async function runScenario({ scenario, scenarioPath, options }) {
       leg.teardown = finish;
       report.teardownClean &&= finish.teardownClean;
       report.invalid.push(...validateLeg({ legName, assertions: ctx.assertions, openedEvents: finish.streams.length }));
-      if (finish.streams.some((stream) => stream.receivedCount === 0)) {
+      // FAIL 优先于 NOT_RUN：已拿到坏行为证据时，取证通道不全不能洗白结论（设计 §2.8）
+      if (leg.verdict !== 'FAIL' && finish.streams.some((stream) => stream.receivedCount === 0)) {
         leg.verdict = 'NOT_RUN'; leg.reason = 'sse_no_events'; leg.evidence = { streams: finish.streams };
       }
     }

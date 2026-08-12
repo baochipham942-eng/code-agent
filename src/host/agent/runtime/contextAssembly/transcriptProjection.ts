@@ -82,6 +82,7 @@ export function buildContextTranscriptEntries(ctx: ContextAssemblyCtx, messages:
       ...(message.attachments?.length ? { attachments: message.attachments } : {}),
       ...(message.toolCalls?.length ? { toolCalls: message.toolCalls } : {}),
       ...(message.thinking ? { thinking: message.thinking } : {}),
+      ...(message.responsesOutput ? { responsesOutput: message.responsesOutput } : {}),
     });
   }
 

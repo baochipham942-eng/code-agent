@@ -17,6 +17,12 @@ const MATRIX: ModelCapabilityMatrix = {
       search: { mode: 'bailian-enable-search' },
     },
   },
+  deepseek: {
+    models: {
+      // 不声明 protocol：默认/fallback 仍走 chat-completions，只有用户显式 protocol override 才进 Responses。
+      'deepseek-v4-flash': { search: { mode: 'deepseek-responses' } },
+    },
+  },
 };
 
 export function resolveModelCapabilities(provider: ModelProvider, modelId: string): ModelCapabilityMatrixEntry {

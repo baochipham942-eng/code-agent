@@ -88,6 +88,7 @@ export interface ContextTranscriptEntry extends ProjectableMessage {
   attachments?: Message['attachments'];
   toolCalls?: Message['toolCalls'];
   thinking?: string;
+  responsesOutput?: unknown[];
   preserveObservation?: boolean;
   evidenceKind?: string;
   filePath?: string;

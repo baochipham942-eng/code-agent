@@ -105,6 +105,7 @@ import { PerplexityProvider } from './providers/perplexityProvider';
 import { LocalProvider } from './providers/localProvider';
 import { OpenAIProvider } from './providers/openaiProvider';
 import { DeepSeekProvider } from './providers/deepseekProvider';
+import { ResponsesProvider } from './providers/responsesProvider';
 import { OpenRouterProvider } from './providers/openrouterProvider';
 import { ZhipuProvider } from './providers/zhipuProvider';
 import { ClaudeProvider } from './providers/claudeProvider';
@@ -143,6 +144,7 @@ export class ModelRouter {
     ['local', new LocalProvider()],
     ['openai', new OpenAIProvider()],
     ['deepseek', new DeepSeekProvider()],
+    ['responses', new ResponsesProvider()],
     ['openrouter', new OpenRouterProvider()],
     ['zhipu', new ZhipuProvider()],
     ['claude', new ClaudeProvider()],
@@ -870,8 +872,9 @@ export class ModelRouter {
     signal?: AbortSignal,
     options?: InferenceOptions,
   ): Promise<ModelResponse> {
-    const provider = this.providers.get(config.provider)
-      ?? this.getDynamicCustomProvider(config);
+    // 显式 protocol override 优先于 provider 的默认实现；未设置时才保持既有链路。
+    const provider = this.getDynamicCustomProvider(config)
+      ?? this.providers.get(config.provider);
     if (!provider) {
       throw new Error(`Unsupported provider: ${config.provider}`);
     }
@@ -916,12 +919,19 @@ export class ModelRouter {
   }
 
   private getDynamicCustomProvider(config: ModelConfig): Provider | undefined {
+    // responses 是协议级 override：内置 provider（如 deepseek）也要能切到 Responses 适配器。
+    // claude / openai 两条保持原语义——只对未注册的 provider 生效。把它们也提到 has() 之前会
+    // 让存量配置改判：云端托管 provider 会被 configService 写死 protocol:'openai'，一旦其 id
+    // 撞上内置 provider，就会从原生实现掉进通用 custom（DeepSeek 会因此丢掉 thinking-mode 的
+    // reasoning_content 处理，多轮直接 400）。
+    if (config.protocol === 'responses') return this.providers.get('responses');
     if (this.providers.has(config.provider)) return undefined;
     if (config.protocol === 'claude') return this.providers.get('claude');
     if (config.protocol === 'openai') return this.providers.get('custom');
     try {
       const providerConfig = getConfigService().getSettings().models?.providers?.[config.provider];
       if (providerConfig?.protocol === 'claude') return this.providers.get('claude');
+      if (providerConfig?.protocol === 'responses') return this.providers.get('responses');
       // baseUrl 判定与 aiSdk providerResolution 共用同一读取来源（P2-3 对齐点抽共享，勿再 inline 查）
       if (config.baseUrl || getSettingsProviderBaseUrl(config.provider)) return this.providers.get('custom');
       return undefined;

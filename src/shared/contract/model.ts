@@ -23,7 +23,7 @@ export type BuiltInModelProvider =
 
 export type ModelProvider = BuiltInModelProvider | (string & {});
 
-export type ModelProviderProtocol = 'openai' | 'claude';
+export type ModelProviderProtocol = 'openai' | 'claude' | 'responses';
 
 /**
  * 模型鉴权失败的结构化标记（缺 API Key / key 被拒）。

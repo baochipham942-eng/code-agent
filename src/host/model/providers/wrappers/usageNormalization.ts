@@ -70,6 +70,24 @@ export function normalizeOpenAIUsage(usage: OpenAIUsageShape): NormalizedTokenUs
   return normalized;
 }
 
+/**
+ * Responses usage 用 input_tokens/output_tokens；归一化后仍沿用预算层的统一口径。
+ * input_tokens 含缓存命中（真机实测一次带搜索的问答 input_tokens=87479，其中
+ * input_tokens_details.cached_tokens=64256），必须按 cached 拆出来，否则缓存读会被
+ * 按整价记进 inputTokens，成本口径虚高数倍。
+ */
+export function normalizeResponsesUsage(usage: {
+  input_tokens?: number;
+  output_tokens?: number;
+  input_tokens_details?: { cached_tokens?: number } | null;
+}): NormalizedTokenUsage {
+  return normalizeOpenAIUsage({
+    prompt_tokens: usage.input_tokens,
+    completion_tokens: usage.output_tokens,
+    prompt_tokens_details: usage.input_tokens_details ?? null,
+  });
+}
+
 interface AiSdkUsageShape {
   /** AI SDK v6：总输入（含缓存读/写） */
   inputTokens?: number;

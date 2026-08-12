@@ -13,4 +13,11 @@ describe('model capability matrix', () => {
   it('declares Bailian enable_search for Qwen models', () => {
     expect(resolveModelCapabilities('qwen', 'qwen-flash').search?.mode).toBe('bailian-enable-search');
   });
+
+  it('declares DeepSeek Responses web search without changing its default protocol', () => {
+    expect(resolveModelCapabilities('deepseek', 'deepseek-v4-flash')).toMatchObject({
+      protocol: 'chat-completions',
+      search: { mode: 'deepseek-responses' },
+    });
+  });
 });

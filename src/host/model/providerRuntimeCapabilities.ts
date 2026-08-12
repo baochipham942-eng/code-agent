@@ -175,10 +175,10 @@ export const PROVIDER_RUNTIME_CAPABILITY_MATRIX: readonly ProviderRuntimeCapabil
     runtime: 'native',
     protocolFamily: 'openai_responses',
     providerScope: [],
-    adapterBoundary: 'no production adapter',
+    adapterBoundary: 'Responses adapter is DeepSeek-only, opt-in via config.protocol, v1 non-streaming',
     capabilities: Object.fromEntries(PROVIDER_RUNTIME_CAPABILITIES.map((capability) => [
       capability,
-      cell('unsupported', 'Neo has no production OpenAI Responses adapter.'),
+      cell('unsupported', 'Responses adapter is opt-in and DeepSeek-only; not a production default path yet.'),
     ])) as Record<ProviderRuntimeCapability, ProviderRuntimeCapabilityCell>,
   },
   {

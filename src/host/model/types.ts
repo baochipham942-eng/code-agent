@@ -46,6 +46,8 @@ export interface ModelMessage {
   toolCallText?: string;
   /** 推理/思考内容（Kimi reasoning / DeepSeek reasoning_content） */
   thinking?: string;
+  /** 上一轮原生 Responses output，供 /responses 无状态续聊原样回填。 */
+  responsesOutput?: unknown[];
   /**
    * 每请求重建的动态尾巴消息（位于全部历史之后，内容随请求变化）。
    * provider 侧统一转成末尾 user + <system-reminder>，不参与可缓存前缀，
@@ -74,6 +76,10 @@ export interface ModelResponse {
   fallback?: ModelFallbackInfo;
   // Adaptive Thinking: 思考过程
   thinking?: string;
+  /** 保留服务端返回的 output，持久化后作为下一轮 /responses input 的一部分。 */
+  responsesOutput?: unknown[];
+  /** DeepSeek 内置搜索的可观测轨迹。 */
+  searchTrace?: Array<{ id?: string; action?: string; query?: string; url?: string }>;
   // Token usage from API response（inputTokens = 非缓存输入，见 wrappers/usageNormalization.ts）
   usage?: {
     inputTokens: number;

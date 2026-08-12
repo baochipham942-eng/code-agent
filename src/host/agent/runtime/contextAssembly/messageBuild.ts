@@ -1005,6 +1005,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
           toolCallText: tcs.map(tc => formatToolCallForHistory(tc)).join('\n'),
         }),
         thinking: entry.thinking,
+        ...(entry.responsesOutput ? { responsesOutput: entry.responsesOutput } : {}),
       });
       modelMessageSourceIds.push(entry.originMessageId);
     } else if (entry.role === 'user' && entry.attachments?.length) {
@@ -1018,6 +1019,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
       modelMessages.push({
         role: entry.role,
         content: entry.content,
+        ...(entry.responsesOutput ? { responsesOutput: entry.responsesOutput } : {}),
       });
       modelMessageSourceIds.push(entry.originMessageId);
     }

@@ -144,6 +144,8 @@ export interface ModelResponse {
   fallback?: ModelFallbackInfo;
   // Adaptive Thinking: 思考过程
   thinking?: string;
+  responsesOutput?: unknown[];
+  searchTrace?: Array<{ id?: string; action?: string; query?: string; url?: string }>;
   // Token usage from API response
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number; providerReportedSavedTokens?: number };
   // 内容块顺序（text 和 tool_call 的交错顺序）
@@ -214,6 +216,8 @@ export interface ModelMessage {
   toolCallText?: string;
   /** 推理/思考内容（Kimi reasoning / DeepSeek reasoning_content） */
   thinking?: string;
+  /** 上一轮原生 Responses output，供 /responses 无状态续聊原样回填。 */
+  responsesOutput?: unknown[];
   /**
    * 每请求重建的动态尾巴消息（git 状态 / 通知 / persistent context 等）。
    * 位于全部历史之后，内容随请求变化，不属于可缓存前缀；Anthropic 路径

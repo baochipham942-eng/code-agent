@@ -307,7 +307,7 @@ export function getProviderEndpoint(provider: string | null | undefined): string
 
 export function getProviderEndpointForProtocol(
   provider: string | null | undefined,
-  protocol?: 'openai' | 'claude',
+  protocol?: 'openai' | 'claude' | 'responses',
 ): string | undefined {
   const normalizedProvider = normalizeProviderId(provider);
   if (normalizedProvider === 'longcat' && protocol === 'claude') {

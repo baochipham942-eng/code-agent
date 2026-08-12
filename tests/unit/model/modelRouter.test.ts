@@ -11,6 +11,8 @@ import {
   PROVIDER_FALLBACK_CHAIN,
 } from '../../../src/shared/constants';
 import type { ModelConfig, ModelProvider } from '../../../src/shared/contract';
+import { ResponsesProvider } from '../../../src/host/model/providers/responsesProvider';
+import { DeepSeekProvider } from '../../../src/host/model/providers/deepseekProvider';
 
 const healthMonitorMock = {
   getHealth: vi.fn().mockReturnValue(null),
@@ -122,6 +124,40 @@ describe('ModelRouter', () => {
     healthMonitorMock.getHealth.mockReturnValue(null);
     broadcastToRendererMock.mockReset();
     router = new ModelRouter();
+  });
+
+  it('routes an explicit Responses override to the Responses provider while DeepSeek defaults stay on chat-completions', async () => {
+    const dynamicProvider = (router as any).getDynamicCustomProvider({
+      provider: 'deepseek', model: 'deepseek-v4-flash', protocol: 'responses',
+    });
+    expect(dynamicProvider).toBeInstanceOf(ResponsesProvider);
+    expect((router as any).providers.get('deepseek')).toBeInstanceOf(DeepSeekProvider);
+    expect((router as any).getDynamicCustomProvider({ provider: 'deepseek', model: 'deepseek-v4-flash' })).toBeUndefined();
+
+    const deepseek = (router as any).providers.get('deepseek');
+    const responses = (router as any).providers.get('responses');
+    const deepseekInference = vi.spyOn(deepseek, 'inference').mockResolvedValue({ type: 'text', content: 'chat' });
+    const responsesInference = vi.spyOn(responses, 'inference').mockResolvedValue({ type: 'text', content: 'responses' });
+    const request = [{ role: 'user', content: 'hello' }];
+
+    await (router as any)._callProvider(request, [], { provider: 'deepseek', model: 'deepseek-v4-flash' });
+    expect(deepseekInference).toHaveBeenCalledOnce();
+    expect(responsesInference).not.toHaveBeenCalled();
+
+    await (router as any)._callProvider(request, [], { provider: 'deepseek', model: 'deepseek-v4-flash', protocol: 'responses' });
+    expect(responsesInference).toHaveBeenCalledOnce();
+  });
+
+  it('keeps built-in providers on their native implementation when protocol is openai/claude', () => {
+    // 云端托管 provider 会被 configService 写死 protocol:'openai'。若 openai/claude 的 override
+    // 也越过 providers.has() 这道门，内置 provider 会从原生实现掉进通用 custom——DeepSeek 会因此
+    // 丢掉 thinking-mode 的 reasoning_content 处理。只有 responses 允许越过。
+    expect((router as any).getDynamicCustomProvider({
+      provider: 'deepseek', model: 'deepseek-v4-flash', protocol: 'openai',
+    })).toBeUndefined();
+    expect((router as any).getDynamicCustomProvider({
+      provider: 'claude', model: 'claude-sonnet-4-6', protocol: 'claude',
+    })).toBeUndefined();
   });
 
   // --------------------------------------------------------------------------

@@ -11,6 +11,7 @@ export { PerplexityProvider } from './perplexityProvider';
 export { LocalProvider } from './localProvider';
 export { OpenAIProvider } from './openaiProvider';
 export { DeepSeekProvider } from './deepseekProvider';
+export { ResponsesProvider } from './responsesProvider';
 export { OpenRouterProvider } from './openrouterProvider';
 export { ZhipuProvider } from './zhipuProvider';
 export { ClaudeProvider } from './claudeProvider';

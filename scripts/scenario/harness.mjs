@@ -80,6 +80,15 @@ function git(args) {
   return execFileSync('git', args, { cwd: process.cwd(), encoding: 'utf8' }).trim();
 }
 
+export function isSameGitCommit(left, right) {
+  if (typeof left !== 'string' || typeof right !== 'string') return false;
+  const normalizedLeft = left.trim().toLowerCase();
+  const normalizedRight = right.trim().toLowerCase();
+  const isCommitId = (value) => /^[0-9a-f]{7,64}$/.test(value);
+  if (!isCommitId(normalizedLeft) || !isCommitId(normalizedRight)) return false;
+  return normalizedLeft.startsWith(normalizedRight) || normalizedRight.startsWith(normalizedLeft);
+}
+
 export async function assertEnv(env, { requireCommit } = {}) {
   const api = createApi(env);
   let probe;
@@ -97,9 +106,9 @@ export async function assertEnv(env, { requireCommit } = {}) {
     throw new NotRun('cannot_connect', { probe, baseUrl: env.baseUrl });
   }
 
-  const localHead = git(['rev-parse', '--short', 'HEAD']);
+  const localHead = git(['rev-parse', 'HEAD']);
   const dirty = git(['status', '--porcelain']);
-  const actualCommit = health?.build?.commitShort;
+  const actualCommit = health?.build?.commit || health?.build?.commitShort;
   const baseEvidence = {
     health,
     localHead,
@@ -137,7 +146,7 @@ export async function assertEnv(env, { requireCommit } = {}) {
     } catch {
       throw new NotRun('stale_build', { ...baseEvidence, requireCommit, mismatch: 'required_commit_not_ancestor' });
     }
-  } else if (actualCommit !== localHead) {
+  } else if (!isSameGitCommit(actualCommit, localHead)) {
     throw new NotRun('stale_build', { ...baseEvidence, mismatch: 'build_commit_not_local_head' });
   }
   return { api, health, localHead, dirty };

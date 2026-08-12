@@ -364,6 +364,18 @@ export const enSettingsModels = {
           description: 'Real-time news and social coverage; broad index with free-tier limits',
         },
       },
+      externalKeysSectionTitle: 'External search credentials',
+      externalKeysSectionDescription: 'Dedicated search credentials for the ExternalSearch tool — not the same as your model keys. Save an empty field to clear; environment variables are used as fallback.',
+      externalSources: {
+        'zhipu-search': {
+          label: 'Zhipu Search',
+          placeholder: 'Zhipu open platform official key (not your model key)…',
+        },
+        'minimax-search': {
+          label: 'MiniMax Search',
+          placeholder: 'MiniMax Token Plan key (not your model key)…',
+        },
+      },
     },
     soul: {
       loading: 'Loading persona settings…',

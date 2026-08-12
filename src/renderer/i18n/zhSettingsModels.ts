@@ -365,6 +365,18 @@ export const zhSettingsModels = {
           description: '实时新闻 / 社交，覆盖广（免费档限流）',
         },
       },
+      externalKeysSectionTitle: '外部搜索源凭据',
+      externalKeysSectionDescription: 'ExternalSearch 工具使用的独立搜索凭据，与模型 key 不是同一把。留空保存可清除；未配置时回落到环境变量。',
+      externalSources: {
+        'zhipu-search': {
+          label: '智谱搜索',
+          placeholder: '智谱开放平台官方 key（与模型 key 不同）…',
+        },
+        'minimax-search': {
+          label: 'MiniMax 搜索',
+          placeholder: 'MiniMax Token Plan key（与模型 key 不同）…',
+        },
+      },
     },
     soul: {
       loading: '加载人格设置…',

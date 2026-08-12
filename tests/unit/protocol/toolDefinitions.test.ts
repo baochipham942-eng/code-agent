@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   getCoreToolDefinitions,
   getLoadedDeferredToolDefinitions,
@@ -41,6 +41,14 @@ vi.mock('../../../src/host/mcp', () => ({
   }),
 }));
 
+const getServiceApiKey = vi.hoisted(() => vi.fn().mockReturnValue(undefined));
+
+// 工具表初筛要读设置里的搜索 key；默认 mock 成「什么都没配」，单测不碰真实 SecureStorage。
+vi.mock('../../../src/host/services/core/configService', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getConfigService: () => ({ getServiceApiKey }),
+}));
+
 vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
     debug: vi.fn(),
@@ -60,6 +68,11 @@ describe('toolDefinitions deferred loading', () => {
   beforeEach(() => {
     resetProtocolRegistry();
     resetToolSearchService();
+    getServiceApiKey.mockReset().mockReturnValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('includes loaded protocol tools and loaded MCP dynamic definitions', () => {
@@ -87,6 +100,21 @@ describe('toolDefinitions deferred loading', () => {
     const names = getCoreToolDefinitions().map((definition) => definition.name);
     expect(names).toContain('Write');
     expect(names).toContain('Append');
+  });
+
+  it('keeps ExternalSearch out of the tool table when no search credential is configured anywhere', () => {
+    // 设置里没配（getServiceApiKey 全 undefined）且 env 无搜索变量 → 工具不进表。
+    // 只配模型 key 不算数：mock 一个只认模型 provider 的 getter 也救不回来。
+    vi.stubEnv('ZHIPU_OFFICIAL_API_KEY', '');
+    vi.stubEnv('MINIMAX_SEARCH_API_KEY', '');
+    getServiceApiKey.mockImplementation((service: string) => (service === 'zhipu' || service === 'minimax' ? 'model-key' : undefined));
+    expect(getCoreToolDefinitions().map((definition) => definition.name)).not.toContain('ExternalSearch');
+  });
+
+  it('includes ExternalSearch once a dedicated search key is configured in settings', () => {
+    // 用户在设置页配了 zhipu-search 的 key（env 为空）→ 工具必须出现在工具表。
+    getServiceApiKey.mockImplementation((service: string) => (service === 'zhipu-search' ? 'settings-zhipu-key' : undefined));
+    expect(getCoreToolDefinitions().map((definition) => definition.name)).toContain('ExternalSearch');
   });
 
   it('does not put a permission prompt in front of AskUserQuestion itself', () => {

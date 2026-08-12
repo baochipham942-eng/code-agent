@@ -7,6 +7,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronUp, ChevronDown, KeyRound, Search } from 'lucide-react';
 import type { AppSettings } from '@shared/contract';
+import type { ServiceApiKey } from '@shared/contract/configService';
 import { SEARCH_SOURCE_CATALOG, type SearchSourceCatalogEntry } from '@shared/constants';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
@@ -17,6 +18,19 @@ import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
 
 type ServiceKeyMap = Partial<Record<string, string>>;
+
+/** key 编辑器只依赖 id + serviceKey，catalog 条目与外部搜索源条目都满足这个形状。 */
+type KeyEditableEntry = { id: string; serviceKey: ServiceApiKey | null };
+
+/**
+ * 外部搜索源（ExternalSearch 工具）的独立搜索凭据条目。
+ * 故意不进 SEARCH_SOURCE_CATALOG —— 那张表与 WebSearch 策略路由共用 id，
+ * 而智谱/MiniMax 搜索走独立的 ExternalSearchService，不参与 WebSearch 排序/启停。
+ */
+const EXTERNAL_SEARCH_KEY_ENTRIES: readonly KeyEditableEntry[] = [
+  { id: 'zhipu-search', serviceKey: 'zhipu-search' },
+  { id: 'minimax-search', serviceKey: 'minimax-search' },
+];
 
 /** 按 sourceOrder（若有）排序 catalog，未列出的随后按 defaultPriority。 */
 function orderCatalog(order?: string[]): SearchSourceCatalogEntry[] {
@@ -45,7 +59,7 @@ export function SearchSettings() {
   const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
   const [editorOpen, setEditorOpen] = useState<Set<string>>(new Set());
   const [keySavingId, setKeySavingId] = useState<string | null>(null);
-  const [pendingClear, setPendingClear] = useState<SearchSourceCatalogEntry | null>(null);
+  const [pendingClear, setPendingClear] = useState<KeyEditableEntry | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,7 +136,7 @@ export function SearchSettings() {
    * （那个只管启停与排序），成功后就地翻转 key 状态，不整页 reload。
    * 空串 = 清除，需先过 ConfirmDialog。
    */
-  const handleSaveKey = async (entry: SearchSourceCatalogEntry) => {
+  const handleSaveKey = async (entry: KeyEditableEntry) => {
     if (!entry.serviceKey) return;
     const service = entry.serviceKey;
     const draft = (keyDrafts[entry.id] ?? '').trim();
@@ -179,6 +193,7 @@ export function SearchSettings() {
       : { label: searchText.keyStatus.required, tone: 'text-badge-warning' };
   };
   const sourceTexts = searchText.sources as Record<string, { label: string; description: string } | undefined>;
+  const externalSourceTexts = searchText.externalSources as Record<string, { label: string; placeholder: string } | undefined>;
 
   return (
     <SettingsPage
@@ -301,6 +316,74 @@ export function SearchSettings() {
                   <input type="checkbox" checked={isEnabled} onChange={() => toggle(id)} />
                   {searchText.enabledLabel}
                 </label>
+              </div>
+            );
+          })}
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title={searchText.externalKeysSectionTitle}
+        description={searchText.externalKeysSectionDescription}
+      >
+        <div className="flex flex-col gap-2">
+          {EXTERNAL_SEARCH_KEY_ENTRIES.map((entry) => {
+            const service = entry.serviceKey as ServiceApiKey;
+            const sourceText = externalSourceTexts[entry.id];
+            const maskedKey = serviceKeys[service];
+            const hasKey = Boolean(maskedKey);
+            // 展开规则与上方搜索源一致：未配 Key 恒展开；已配 Key 收起成打码值，点「更换」才展开。
+            const showEditor = !maskedKey || editorOpen.has(entry.id);
+            const draft = keyDrafts[entry.id] ?? '';
+            const isSavingKey = keySavingId === entry.id;
+            return (
+              <div
+                key={entry.id}
+                className="flex items-center gap-3 rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 py-2.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-zinc-100">{sourceText?.label ?? entry.id}</span>
+                    <span className={`text-[11px] ${hasKey ? 'text-badge-success' : 'text-badge-warning'}`}>
+                      {hasKey ? searchText.keyStatus.configured : searchText.keyStatus.required}
+                    </span>
+                  </div>
+                  {!showEditor && (
+                    <div className="mt-1.5 flex items-center gap-2 text-xs text-zinc-400">
+                      <KeyRound className="h-3.5 w-3.5 text-zinc-500" />
+                      <span className="font-mono" data-testid={`external-search-key-masked-${entry.id}`}>{maskedKey}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        data-testid={`external-search-key-change-${entry.id}`}
+                        onClick={() => setEditorOpen((prev) => new Set(prev).add(entry.id))}
+                      >
+                        {searchText.changeKey}
+                      </Button>
+                    </div>
+                  )}
+                  {showEditor && (
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <input
+                        type="password"
+                        data-testid={`external-search-key-input-${entry.id}`}
+                        value={draft}
+                        onChange={(event) => setKeyDrafts((prev) => ({ ...prev, [entry.id]: event.target.value }))}
+                        placeholder={sourceText?.placeholder ?? searchText.keyPlaceholder}
+                        className="h-7 w-56 rounded border border-zinc-700 bg-zinc-950 px-2 text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-badge-info/60"
+                      />
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        data-testid={`external-search-key-save-${entry.id}`}
+                        onClick={() => handleSaveKey(entry)}
+                        disabled={isSavingKey || (!draft.trim() && !maskedKey)}
+                      >
+                        {isSavingKey ? searchText.saving : searchText.saveKey}
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}

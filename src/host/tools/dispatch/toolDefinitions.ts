@@ -25,6 +25,7 @@ import { getMCPClient } from '../../mcp';
 import { CORE_TOOLS, DEFERRED_TOOLS_META } from '../../services/toolSearch/deferredTools';
 import { getToolSearchService } from '../../services/toolSearch/toolSearchService';
 import { isBashToolName } from '../toolNames';
+import { getConfigService } from '../../services/core/configService';
 import { hasConfiguredExternalSearchCredential } from '../../services/search/searchSourceRegistry';
 
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
@@ -87,10 +88,12 @@ export function getCoreToolDefinitions(): ToolDefinition[] {
 
   return getProtocolToolSchemas()
     .filter((schema) => core.has(schema.name))
-    // ExternalSearch is absent until a dedicated search credential exists. A
+    // ExternalSearch is absent until a dedicated search credential exists — either
+    // configured in Settings (SecureStorage, preferred) or via env fallback. A
     // failed readiness probe subsequently makes its handler fail loud instead
     // of silently borrowing a model/provider credential.
-    .filter((schema) => schema.name !== 'ExternalSearch' || hasConfiguredExternalSearchCredential())
+    .filter((schema) => schema.name !== 'ExternalSearch'
+      || hasConfiguredExternalSearchCredential(process.env, (service) => getConfigService().getServiceApiKey(service)))
     .map((schema) => schemaToDefinition(schema, cloudToolMeta));
 }
 

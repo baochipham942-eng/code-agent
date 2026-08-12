@@ -10,8 +10,14 @@ class ExternalSearchHandler implements ToolHandler<Record<string, unknown>, stri
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
     try {
-      const preference = getConfigService().getSettings().search?.externalSource ?? 'auto';
-      const result = await getExternalSearchService().search(preference, args.query as string);
+      const configService = getConfigService();
+      const preference = configService.getSettings().search?.externalSource ?? 'auto';
+      // 把设置页配的搜索 key 注入共享服务实例（deps 仅首次创建时生效）；
+      // 闭包每次现取 configService，key 变更即时生效。
+      const service = getExternalSearchService({
+        getServiceApiKey: (serviceId) => configService.getServiceApiKey(serviceId),
+      });
+      const result = await service.search(preference, args.query as string);
       return {
         ok: true,
         output: result.results.map((item, index) => `### ${index + 1}. ${item.title}\n${item.snippet ?? ''}\n${item.url}${item.date ? `\n${item.date}` : ''}`).join('\n\n'),

@@ -39,6 +39,8 @@ export type ServiceApiKey =
   | 'firecrawl'
   | 'perplexity'
   | 'tavily'
+  | 'zhipu-search'
+  | 'minimax-search'
   | 'skillsmp';
 
 /**
@@ -60,6 +62,8 @@ export const MASKED_SERVICE_KEY_LIST = [
   'exa',
   'perplexity',
   'tavily',
+  'zhipu-search',
+  'minimax-search',
 ] as const satisfies readonly ServiceApiKey[];
 
 /** getAllServiceKeys 的返回形状：打码后的 key（前 8 位 + `...`），未配置的服务不出现。 */

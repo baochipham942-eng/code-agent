@@ -1,6 +1,8 @@
 // External search is deliberately independent from modelCapabilityMatrix: these
 // APIs return structured results and use credentials unrelated to model keys.
 
+import type { ServiceApiKey } from '../../../shared/contract/configService';
+
 export type ExternalSearchSourceId = 'zhipu' | 'minimax';
 export type SearchSourcePreference = 'auto' | ExternalSearchSourceId;
 export type SearchSourceFailureReason = 'no_credential' | 'invalid_credential' | 'insufficient_balance' | 'rate_limited' | 'network_error';
@@ -17,6 +19,11 @@ export interface SearchSource {
   id: ExternalSearchSourceId;
   label: string;
   credentialEnv: 'ZHIPU_OFFICIAL_API_KEY' | 'MINIMAX_SEARCH_API_KEY';
+  /**
+   * 设置页（SecureStorage）里的独立搜索凭据 id。
+   * 故意不复用 'zhipu'/'minimax' —— 那是模型 provider 的 key，与搜索凭据是两把。
+   */
+  serviceKeyId: 'zhipu-search' | 'minimax-search';
   priority: number;
 }
 
@@ -35,14 +42,22 @@ export class ExternalSearchError extends Error {
 }
 
 const SEARCH_SOURCES: readonly SearchSource[] = [
-  { id: 'zhipu', label: '智谱', credentialEnv: 'ZHIPU_OFFICIAL_API_KEY', priority: 1 },
+  { id: 'zhipu', label: '智谱', credentialEnv: 'ZHIPU_OFFICIAL_API_KEY', serviceKeyId: 'zhipu-search', priority: 1 },
   // Token Plan quota is shared with the Lobster daily pipeline; keep it second.
-  { id: 'minimax', label: 'MiniMax', credentialEnv: 'MINIMAX_SEARCH_API_KEY', priority: 2 },
+  { id: 'minimax', label: 'MiniMax', credentialEnv: 'MINIMAX_SEARCH_API_KEY', serviceKeyId: 'minimax-search', priority: 2 },
 ];
 
-/** 同步工具表只能据此做初筛；真正可用性仍由 30 分钟探活缓存裁决。 */
-export function hasConfiguredExternalSearchCredential(env: NodeJS.ProcessEnv = process.env): boolean {
-  return SEARCH_SOURCES.some((source) => Boolean(env[source.credentialEnv]?.trim()));
+/**
+ * 同步工具表只能据此做初筛；真正可用性仍由 30 分钟探活缓存裁决。
+ * 凭据两处都算数：设置页配的 key（getServiceApiKey 注入，优先）+ 环境变量兜底。
+ */
+export function hasConfiguredExternalSearchCredential(
+  env: NodeJS.ProcessEnv = process.env,
+  getServiceApiKey?: (service: ServiceApiKey) => string | undefined,
+): boolean {
+  return SEARCH_SOURCES.some((source) => Boolean(
+    getServiceApiKey?.(source.serviceKeyId)?.trim() || env[source.credentialEnv]?.trim(),
+  ));
 }
 
 const TTL_MS = 30 * 60 * 1000;
@@ -57,15 +72,27 @@ function failureReason(status: number | undefined, body: string): SearchSourceFa
 
 /** 失败缓存挂在实例上，必须复用同一个实例，否则 TTL 形同虚设。 */
 let shared: ExternalSearchService | undefined;
-export function getExternalSearchService(): ExternalSearchService {
-  shared ??= new ExternalSearchService();
+/**
+ * deps 只在首次创建时生效（单例语义）。生产注入点见 externalSearch.ts ——
+ * 它把 configService.getServiceApiKey 绑进来，让「设置页配的 key」对共享实例生效。
+ */
+export function getExternalSearchService(deps?: ExternalSearchServiceDeps): ExternalSearchService {
+  shared ??= new ExternalSearchService(deps);
   return shared;
+}
+
+export interface ExternalSearchServiceDeps {
+  env?: NodeJS.ProcessEnv;
+  fetch?: typeof fetch;
+  now?: () => number;
+  /** 设置页（SecureStorage）读服务 key 的注入点；缺省时只走 env。 */
+  getServiceApiKey?: (service: ServiceApiKey) => string | undefined;
 }
 
 export class ExternalSearchService {
   private readonly readiness = new Map<ExternalSearchSourceId, SearchSourceReadiness>();
 
-  constructor(private readonly deps: { env?: NodeJS.ProcessEnv; fetch?: typeof fetch; now?: () => number } = {}) {}
+  constructor(private readonly deps: ExternalSearchServiceDeps = {}) {}
 
   private get env(): NodeJS.ProcessEnv { return this.deps.env ?? process.env; }
   private get fetch(): typeof fetch { return this.deps.fetch ?? globalThis.fetch; }
@@ -76,7 +103,11 @@ export class ExternalSearchService {
     if (!found) throw new Error(`未注册的搜索源：${id}`);
     return found;
   }
-  private key(id: ExternalSearchSourceId): string | undefined { return this.env[this.source(id).credentialEnv]?.trim() || undefined; }
+  /** 凭据：设置页配的 key 优先，环境变量兜底（与 brave/firecrawl 同形态）。 */
+  private key(id: ExternalSearchSourceId): string | undefined {
+    const source = this.source(id);
+    return this.deps.getServiceApiKey?.(source.serviceKeyId)?.trim() || this.env[source.credentialEnv]?.trim() || undefined;
+  }
 
   /**
    * 就绪状态**不主动探活**：探活等于一次真实付费检索（智谱 0.05 元/次），拿一个无意义的

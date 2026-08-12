@@ -143,9 +143,10 @@ export function getModelScaffoldTier(modelId: string): ScaffoldTier {
 /**
  * 已验证工具调用（agentic）的模型集合 —— 刻意保持小。
  *
- * 只认两种证据，别加第三种来源：
+ * 只认三种可追溯证据，别随意加第四种来源：
  *   ① 出厂默认模型（DEFAULT_MODELS 里跑主链路那几档 + AGENT_DEFAULT_MODEL）——产品自己天天在跑；
  *   ② catalog 标注 `scaffoldTier: 'strong'` 的旗舰档。
+ *   ③ 带日期的真机工具调用验证清单；它只影响 UI 徽章，绝不借 scaffoldTier 改 agent 行为。
  *
  * 不在集合里 **不等于不能用**：只是「我们没验过，出问题自担风险」。UI 据此把未验证的
  * 折进「高级」并给风险提示，而不是禁用——非程序员配了不支持工具调用的模型时，
@@ -165,6 +166,9 @@ export const VERIFIED_AGENTIC_MODELS: ReadonlySet<string> = new Set<string>([
   ...Object.entries(MODEL_SCAFFOLD_TIERS)
     .filter(([, tier]) => tier === 'strong')
     .map(([modelId]) => modelId),
+  // 2026-08-13 真机实测：官方 api.deepseek.com 3/3、基元 tokenrhythm 2/3 返回
+  // get_weather({"city":"上海"}) 工具调用且 finish_reason=tool_calls；另 1 次 503 为中转可用性问题。
+  'deepseek-v4-flash',
 ]);
 
 /** 该模型是否已验证工具调用。openrouter 那种带前缀的 id 走 normalizeModelId 再查一次。 */

@@ -277,7 +277,7 @@ export async function runAiSdkInferenceWithProviderFallback(
       }
 
       const fallbackProvider = fallback.provider as ModelProvider;
-      if (!aiSdkSupportsProvider(fallback.provider)) {
+      if (!aiSdkSupportsProvider(fallback.provider, fallback.model)) {
         fallbackSkipped.push(fallbackTraceStep(
           fallback.provider,
           fallback.model,

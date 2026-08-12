@@ -61,6 +61,7 @@ import { getProviderLimiter } from '../concurrencyLimiter';
 import { convertToolsToOpenAI, getHttpsAgent, wrapTransientSystemReminder } from '../providers/shared';
 import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
 import { summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
+import { resolveModelCapabilities } from '../modelCapabilityMatrix';
 import {
   assertNativeRequestCapabilities,
   collectNativeRequestCapabilities,
@@ -79,9 +80,12 @@ const logger = createLogger('AiSdkAdapter');
 // WS1 Phase 3 删双路时连同闸门一并移除。
 const AISDK_UNSUPPORTED_PROVIDERS = new Set<string>([]);
 
-/** 适配器是否能跑该 provider（false → 调用方应走旧 modelRouter 路径）。 */
-export function aiSdkSupportsProvider(provider: string): boolean {
-  return !AISDK_UNSUPPORTED_PROVIDERS.has(provider);
+/** 适配器是否能跑该 provider/model（false → 调用方应走旧 modelRouter 路径）。 */
+export function aiSdkSupportsProvider(provider: string, model?: string): boolean {
+  if (AISDK_UNSUPPORTED_PROVIDERS.has(provider)) return false;
+  // 非 chat-completions 协议 AI SDK 接不了（@ai-sdk/deepseek 无 responses 形态），
+  // 回落 legacy 的 protocol 分派。
+  return !model || resolveModelCapabilities(provider, model).protocol === 'chat-completions';
 }
 
 interface ProviderRequest {
@@ -275,6 +279,13 @@ export function buildVendorCompatSettings(config: ModelConfig): OpenAICompatVend
           top_p: b.top_p ?? 0.95,
         }),
       };
+    case 'qwen':
+      // 百炼搜索的开关归能力矩阵所有；未声明的模型不可被默认开启。
+      return resolveModelCapabilities(config.provider, config.model).search?.mode === 'bailian-enable-search'
+        ? {
+          transformRequestBody: (b) => ({ ...b, enable_search: true }),
+        }
+        : {};
     case 'xiaomi': {
       // MiMo：thinking 字段（enabled/disabled 由 reasoningEffort/thinkingBudget 决定）+ 官方采样
       // temp=1.0/top_p=0.95 + 用 max_completion_tokens 而非 max_tokens（沿用 legacy XiaomiProvider）。
@@ -299,6 +310,24 @@ export function buildVendorCompatSettings(config: ModelConfig): OpenAICompatVend
     default:
       return {};
   }
+}
+
+// 返回类型交给推断：唯一的备选标注 SharedV4ProviderOptions 只存在于传递依赖
+// @ai-sdk/provider 里，为一个类型标注去 package.json 直接依赖上游内部包不划算
+// （knip-dependency-gate 也会红）。
+function resolveAiSdkProviderOptions(config: ModelConfig) {
+  // 交给 @ai-sdk/anthropic 合并 beta header，避免手写 header 覆盖 SDK 的内置 beta。
+  if (
+    config.thinkingBudget
+    && resolveModelCapabilities(config.provider, config.model).thinking?.interleaved
+  ) {
+    return {
+      anthropic: {
+        anthropicBeta: ['interleaved-thinking-2025-05-14'],
+      },
+    };
+  }
+  return undefined;
 }
 
 // ── provider 解析：优先专用包（专用包能处理 thinking 回传等坑，通用 openai-compatible 不行）──
@@ -817,6 +846,7 @@ async function generateViaAiSdk(params: {
   const { model, aiPrompt, aiTools, config, signal, options, messages } = params;
   const requestTimeoutMs = options?.requestTimeoutMs ?? PROVIDER_TIMEOUT;
   const requestTemperature = resolveModelRequestTemperature(config.model, config.temperature);
+  const providerOptions = resolveAiSdkProviderOptions(config);
   let result;
   try {
     // maxRetries:0 关掉 SDK 自带重试，统一走项目的 withTransientRetry——后者除 HTTP 瞬态
@@ -834,6 +864,7 @@ async function generateViaAiSdk(params: {
             tools: aiTools,
             abortSignal: guard.signal,
             temperature: requestTemperature,
+            ...(providerOptions ? { providerOptions } : {}),
             ...(options?.toolChoice ? { toolChoice: options.toolChoice as ToolChoice<ToolSet> } : {}),
             ...(typeof config.maxTokens === 'number' && Number.isFinite(config.maxTokens)
               ? { maxOutputTokens: config.maxTokens } : {}),
@@ -1050,6 +1081,7 @@ async function streamViaAiSdk(params: {
     const firstByteMs = options?.firstByteTimeoutMs ?? SSE_FIRST_BYTE_TIMEOUT;
     const inactivityMs = options?.inactivityTimeoutMs ?? SSE_INACTIVITY_TIMEOUT;
     const requestTemperature = resolveModelRequestTemperature(config.model, config.temperature);
+    const providerOptions = resolveAiSdkProviderOptions(config);
     const watchdog = new AbortController();
     let timedOutKind: 'first-byte' | 'stream inactivity' | null = null;
     let activityTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1070,6 +1102,7 @@ async function streamViaAiSdk(params: {
         tools: aiTools,
         abortSignal: streamSignal,
         temperature: requestTemperature,
+        ...(providerOptions ? { providerOptions } : {}),
         ...(options?.toolChoice ? { toolChoice: options.toolChoice as ToolChoice<ToolSet> } : {}),
         // 主 loop 的 artifact 生成/修复按阶段 cap maxTokens，必须透传给 SDK 保住上限；
         // 未设时交给 provider 默认（与旧 SSE 路径 buildRequestBody 的 max_tokens 行为对齐）。

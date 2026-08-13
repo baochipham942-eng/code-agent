@@ -66,27 +66,17 @@ function parseDashscopeUsage(raw: unknown): VoiceTokenUsage | undefined {
   const totalTokens = tokenCount(raw, 'total_tokens');
   const inputTokens = tokenCount(raw, 'input_tokens');
   const outputTokens = tokenCount(raw, 'output_tokens');
-  const inputAudioTokens = tokenCount(raw.input_tokens_details, 'audio_tokens');
-  const inputTextTokens = tokenCount(raw.input_tokens_details, 'text_tokens');
-  const outputAudioTokens = tokenCount(raw.output_tokens_details, 'audio_tokens');
-  const outputTextTokens = tokenCount(raw.output_tokens_details, 'text_tokens');
-  if (
-    totalTokens === undefined
-    || inputTokens === undefined
-    || outputTokens === undefined
-    || inputAudioTokens === undefined
-    || inputTextTokens === undefined
-    || outputAudioTokens === undefined
-    || outputTextTokens === undefined
-  ) return undefined;
+  if (totalTokens === undefined || inputTokens === undefined || outputTokens === undefined) return undefined;
+  // DashScope 的 details 是稀疏的：没消耗的形态不发字段（纯文本输入没有 audio_tokens）。
+  // 缺席 = 0；顶层三个总量字段仍必需，防止把完全不认识的形状静默算成 0。
   return {
     totalTokens,
     inputTokens,
     outputTokens,
-    inputAudioTokens,
-    inputTextTokens,
-    outputAudioTokens,
-    outputTextTokens,
+    inputAudioTokens: tokenCount(raw.input_tokens_details, 'audio_tokens') ?? 0,
+    inputTextTokens: tokenCount(raw.input_tokens_details, 'text_tokens') ?? 0,
+    outputAudioTokens: tokenCount(raw.output_tokens_details, 'audio_tokens') ?? 0,
+    outputTextTokens: tokenCount(raw.output_tokens_details, 'text_tokens') ?? 0,
   };
 }
 
@@ -911,6 +901,8 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
               provider: profile.id,
               sessionShape: profile.sessionShape,
               hasUsage: event.response?.usage !== undefined,
+              // usage 只是计数字段，不含用户内容；不打原始形状这条 warn 无法定位（08-06 C3 拖了一周的教训）
+              rawUsage: event.response?.usage,
             });
           }
           if (responseId === activeResponseId) activeResponseId = '';

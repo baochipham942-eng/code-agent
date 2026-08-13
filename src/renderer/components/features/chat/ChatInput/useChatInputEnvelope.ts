@@ -12,6 +12,7 @@ import type { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchB
 import { parseLeadingAgentMentions } from './agentMentionRouting';
 import { buildBrowserSessionIntentSnapshot } from '../../../../utils/browserExecutionIntent';
 import { useComposerStore } from '../../../../stores/composerStore';
+import { useModeStore } from '../../../../stores/modeStore';
 
 /** ChatInput 中 agent chip / 注册表条目的统一形态（id + name）。 */
 interface BuildEnvelopeAgentEntry {
@@ -143,6 +144,10 @@ export function useChatInputEnvelope(params: UseChatInputEnvelopeParams): BuildE
     return {
       content,
       attachments: nextAttachments && nextAttachments.length > 0 ? nextAttachments : undefined,
+      // 提交时取现值而非订阅快照：composer 常驻，订阅值会被 useCallback 依赖数组冻住。
+      // 这是用户真实提交路径的逐轮联网开关（#1102 只接了 ChatView.buildEnvelope 的
+      // 编辑/重发旁路，真机复验抓出主路径漏接）。
+      searchEnabled: useModeStore.getState().searchEnabled,
       context: runtimeScopedContext,
     };
   }, [

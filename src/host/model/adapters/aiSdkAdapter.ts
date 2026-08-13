@@ -34,8 +34,6 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-import axios, { type AxiosResponse } from 'axios';
-import { Readable, Transform } from 'node:stream';
 import type {
   ModelMessage,
   MessageContent,
@@ -47,7 +45,6 @@ import type { StreamSnapshot } from '../providers/sseStream';
 import type { ModelResponse } from '../../agent/loopTypes';
 import type { ToolCall, ToolDefinition, ModelConfig } from '../../../shared/contract';
 import { MODEL_API_ENDPOINTS, PROVIDER_TIMEOUT, SSE_FIRST_BYTE_TIMEOUT, SSE_INACTIVITY_TIMEOUT } from '../../../shared/constants';
-import { createLogger } from '../../services/infra/logger';
 import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
 import {
@@ -58,18 +55,19 @@ import {
 } from '../providers/retryStrategy';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
 import { getProviderLimiter } from '../concurrencyLimiter';
-import { convertToolsToOpenAI, getHttpsAgent, wrapTransientSystemReminder } from '../providers/shared';
+import { convertToolsToOpenAI, wrapTransientSystemReminder } from '../providers/shared';
 import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
 import { summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
 import { resolveModelCapabilities } from '../modelCapabilityMatrix';
+import { logger, makeAiSdkFetch } from './aiSdkFetch';
+import { buildVendorCompatSettings, resolveAiSdkProviderOptions } from './aiSdkVendorCompat';
+export { buildVendorCompatSettings } from './aiSdkVendorCompat';
 import {
   assertNativeRequestCapabilities,
   collectNativeRequestCapabilities,
   ProviderRuntimeCapabilityError,
   resolveNativeProtocolFamily,
 } from '../providerRuntimeCapabilities';
-
-const logger = createLogger('AiSdkAdapter');
 
 // resolveModel 现覆盖全部 provider：deepseek/claude·anthropic（专用包）/ gemini（@ai-sdk/google）/
 // openrouter（@openrouter/ai-sdk-provider）/ 其余走 openai-compatible。zhipu/moonshot/xiaomi 的 vendor
@@ -95,147 +93,6 @@ interface ProviderRequest {
   supportsVision: boolean;
 }
 
-function headersToRecord(headers: HeadersInit | undefined): Record<string, string> | undefined {
-  if (!headers) return undefined;
-  const out: Record<string, string> = {};
-  if (headers instanceof Headers) {
-    headers.forEach((value, key) => { out[key] = value; });
-  } else if (Array.isArray(headers)) {
-    for (const [key, value] of headers) out[key] = value;
-  } else {
-    for (const [key, value] of Object.entries(headers)) {
-      if (value !== undefined) out[key] = String(value);
-    }
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
-}
-
-function responseHeaders(headers: AxiosResponse['headers']): Headers {
-  const out = new Headers();
-  for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
-    if (Array.isArray(value)) {
-      for (const item of value) out.append(key, String(item));
-    } else if (value !== undefined && value !== null) {
-      out.set(key, String(value));
-    }
-  }
-  return out;
-}
-
-function isNodeReadable(value: unknown): value is Readable {
-  return value instanceof Readable
-    || (typeof value === 'object'
-      && value !== null
-      && typeof (value as { pipe?: unknown }).pipe === 'function'
-      && typeof (value as { on?: unknown }).on === 'function');
-}
-
-function requestBodyForAxios(body: BodyInit | null | undefined): unknown {
-  if (body instanceof ReadableStream) {
-    return Readable.fromWeb(body as Parameters<typeof Readable.fromWeb>[0]);
-  }
-  return body ?? undefined;
-}
-
-function toUint8Readable(readable: Readable): Readable {
-  const transform = new Transform({
-    transform(chunk: unknown, _encoding, callback) {
-      if (typeof chunk === 'string') {
-        callback(null, Buffer.from(chunk));
-      } else if (chunk instanceof Uint8Array) {
-        callback(null, chunk);
-      } else if (chunk instanceof ArrayBuffer) {
-        callback(null, Buffer.from(chunk));
-      } else {
-        callback(null, Buffer.from(String(chunk)));
-      }
-    },
-  });
-  readable.once('error', (err: Error) => transform.destroy(err));
-  readable.once('close', () => {
-    if (!readable.readableEnded) {
-      transform.destroy(new Error('AI SDK response stream closed prematurely'));
-    }
-  });
-  return readable.pipe(transform);
-}
-
-function responseBodyForFetch(data: unknown, status: number): BodyInit | null {
-  if (status === 204 || status === 304 || data == null) return null;
-  if (isNodeReadable(data)) {
-    return Readable.toWeb(toUint8Readable(data)) as BodyInit;
-  }
-  if (
-    typeof data === 'string'
-    || data instanceof Blob
-    || data instanceof ArrayBuffer
-    || ArrayBuffer.isView(data)
-    || data instanceof FormData
-    || data instanceof URLSearchParams
-    || data instanceof ReadableStream
-  ) {
-    return data as BodyInit;
-  }
-  return JSON.stringify(data);
-}
-
-// 按 provider 生成 fetch：闭包绑定 provider，使 getHttpsAgent 能按 provider 身份决定走代理/直连
-// （而非只看 url host）。修复 mimo 等「国内厂商海外节点」被全局代理打偏的问题。
-function makeAiSdkFetch(
-  provider?: string,
-  transformRequestBody?: (body: Record<string, unknown>) => Record<string, unknown>,
-): typeof globalThis.fetch {
-  return async (input, init) => {
-  const request = input instanceof Request ? input : undefined;
-  const url = input instanceof URL ? input.toString() : request?.url ?? String(input);
-  const method = init?.method ?? request?.method ?? 'GET';
-  const headers = headersToRecord(init?.headers ?? request?.headers);
-  let body = requestBodyForAxios(init?.body ?? request?.body);
-  // Vendor body quirks (e.g. mimo thinking:{type:'disabled'}, moonshot sampling)
-  // are NOT a standard createOpenAICompatible option, so they must be applied to
-  // the serialized JSON body here. Without this, transformRequestBody is dead
-  // code and mimo defaults to thinking-ON → runaway reasoning (verified 2026-06-11:
-  // full-content generation never starts, 65K reasoning tokens, finish=length).
-  if (transformRequestBody && typeof body === 'string') {
-    try {
-      const parsed = JSON.parse(body) as Record<string, unknown>;
-      body = JSON.stringify(transformRequestBody(parsed));
-    } catch {
-      // Non-JSON or unparsable body: leave untouched.
-    }
-  }
-  const signal = init?.signal ?? request?.signal;
-  const agent = getHttpsAgent(url, provider);
-
-  const response = await axios({
-    url,
-    method,
-    headers,
-    data: body,
-    signal,
-    responseType: 'stream',
-    timeout: 0,
-    validateStatus: () => true,
-    maxContentLength: Infinity,
-    maxBodyLength: Infinity,
-    httpAgent: agent,
-    httpsAgent: agent,
-    proxy: false,
-  });
-
-  // HTTP 层错误在此落日志（带 URL）：AI SDK 上抛的 APICallError 往往只剩 statusText（如 "Not Found"），
-  // 没有这条日志就无法定位 Base URL 配错（缺 /v1、末尾多斜杠等）
-  if (response.status >= 400) {
-    logger.warn(`[AiSdkAdapter] HTTP ${response.status} ${method} ${url}`);
-  }
-  return new Response(responseBodyForFetch(response.data, response.status), {
-    status: response.status,
-    statusText: response.statusText,
-    headers: responseHeaders(response.headers),
-  });
-  };
-}
-
 // baseURL / apiKey 走与 provider 类同一份解析（providerResolution）——不再在适配器里复制
 // zhipu 三态等逻辑（消除「每加一个 provider 就要在 adapter 再打一次补丁」）。
 // trustConfigKey:false：子代理 modelConfig 的 apiKey 是从父代理继承来的，provider 可能已被
@@ -250,88 +107,6 @@ function resolveProviderRequest(config: ModelConfig): ProviderRequest {
     supportsTool: modelEntry?.supportsTool ?? true,
     supportsVision: modelEntry?.supportsVision ?? false,
   };
-}
-
-// ── 国内 thinking 模型（zhipu/moonshot/xiaomi）的 openai-compatible vendor quirks，迁自各 legacy
-//    provider class 的 buildRequestBody。全部走 openai-compatible 官方支持的 settings：
-//    includeUsage（stream_options.include_usage）/ headers / transformRequestBody（注入 vendor body 字段）。
-//    reasoning_content 由 openai-compatible 原生映射成 reasoning-delta；zhipu 三态端点已由
-//    resolveProviderBaseUrl 处理、并发 limiter 在 inferenceViaAiSdk 层套，故此处不重复。──
-interface OpenAICompatVendorSettings {
-  includeUsage?: boolean;
-  headers?: Record<string, string>;
-  transformRequestBody?: (body: Record<string, unknown>) => Record<string, unknown>;
-}
-
-export function buildVendorCompatSettings(config: ModelConfig, options?: { searchEnabled?: boolean }): OpenAICompatVendorSettings {
-  switch (config.provider) {
-    case 'zhipu':
-      // GLM：仅 stream_options include_usage（并发 limiter 在 inferenceViaAiSdk 层，不在 body）。
-      return { includeUsage: true };
-    case 'moonshot':
-      // Kimi K2.5 thinking-mode 官方采样 temp=1.0/top_p=0.95 + 自报 UA（沿用 legacy MoonshotProvider）。
-      return {
-        includeUsage: true,
-        headers: { 'User-Agent': 'claude-code/1.0' },
-        transformRequestBody: (b) => ({
-          ...b,
-          temperature: b.temperature ?? 1.0,
-          top_p: b.top_p ?? 0.95,
-        }),
-      };
-    case 'qwen':
-      // 百炼搜索的开关归能力矩阵所有；未声明的模型不可被默认开启。
-      // 逐轮「联网搜索」开关是第二道闸：用户这一轮关了联网，矩阵裁决让位（默认 undefined = 开）。
-      // 🔴 这里是 qwen 在【默认引擎】上的唯一注入点——legacy 的 qwenProvider.buildRequestBody
-      // 只在 CODE_AGENT_MODEL_ENGINE=legacy 时才跑到，两处都要挂闸才算真接线。
-      return options?.searchEnabled !== false
-        && resolveModelCapabilities(config.provider, config.model).search?.mode === 'bailian-enable-search'
-        ? {
-          transformRequestBody: (b) => ({ ...b, enable_search: true }),
-        }
-        : {};
-    case 'xiaomi': {
-      // MiMo：thinking 字段（enabled/disabled 由 reasoningEffort/thinkingBudget 决定）+ 官方采样
-      // temp=1.0/top_p=0.95 + 用 max_completion_tokens 而非 max_tokens（沿用 legacy XiaomiProvider）。
-      const thinkingEnabled = config.reasoningEffort === 'high' || (config.thinkingBudget ?? 0) > 0;
-      return {
-        includeUsage: true,
-        transformRequestBody: (b) => {
-          const out: Record<string, unknown> = {
-            ...b,
-            temperature: b.temperature ?? 1.0,
-            top_p: b.top_p ?? 0.95,
-            thinking: { type: thinkingEnabled ? 'enabled' : 'disabled' },
-          };
-          if (out.max_tokens != null && out.max_completion_tokens == null) {
-            out.max_completion_tokens = out.max_tokens;
-            delete out.max_tokens;
-          }
-          return out;
-        },
-      };
-    }
-    default:
-      return {};
-  }
-}
-
-// 返回类型交给推断：唯一的备选标注 SharedV4ProviderOptions 只存在于传递依赖
-// @ai-sdk/provider 里，为一个类型标注去 package.json 直接依赖上游内部包不划算
-// （knip-dependency-gate 也会红）。
-function resolveAiSdkProviderOptions(config: ModelConfig) {
-  // 交给 @ai-sdk/anthropic 合并 beta header，避免手写 header 覆盖 SDK 的内置 beta。
-  if (
-    config.thinkingBudget
-    && resolveModelCapabilities(config.provider, config.model).thinking?.interleaved
-  ) {
-    return {
-      anthropic: {
-        anthropicBeta: ['interleaved-thinking-2025-05-14'],
-      },
-    };
-  }
-  return undefined;
 }
 
 // ── provider 解析：优先专用包（专用包能处理 thinking 回传等坑，通用 openai-compatible 不行）──

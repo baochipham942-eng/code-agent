@@ -1299,8 +1299,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
             {/* 累计费用：底栏不再常驻，收进 ContextUsagePill hover 面板（2026-07-26 底栏收敛） */}
 
-            {/* B+ 移除: InteractionModeIndicator — 已收进 InputAddMenu 二级菜单 */}
-
             {/* 上下文使用 pill — 模型选择器左边，Codex 风格 */}
             <ContextUsagePill />
 

@@ -14,9 +14,6 @@ import type { SurfaceExecutionEventV1 } from './surfaceExecution';
 // Adaptive Thinking: 思考深度级别
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra_code';
 
-// Interaction Mode: Code / Plan / Ask
-export type InteractionMode = 'code' | 'plan' | 'ask';
-
 export interface AgentConfig {
   model: ModelConfig;
   workingDirectory: string;

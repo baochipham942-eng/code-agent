@@ -19728,7 +19728,6 @@
     "src/renderer/components/features/chat/ChatInput/EffortSelector.tsx",
     "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
     "src/renderer/components/features/chat/ChatInput/ModelStrategyRecommendationStrip.tsx",
-    "src/renderer/components/features/chat/ChatInput/ModeSelector.tsx",
     "src/renderer/components/features/chat/ChatInput/ModeSwitch.tsx",
     "src/renderer/components/features/chat/ChatInput/neoMentionRouting.ts",
     "src/renderer/components/features/chat/ChatInput/ReportStyleSelector.tsx",

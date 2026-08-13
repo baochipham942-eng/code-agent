@@ -36,7 +36,6 @@ const composerState = vi.hoisted(() => ({
   selectedConnectorIds: [],
 }));
 const modeState = vi.hoisted(() => ({
-  setInteractionMode: vi.fn(),
   setEffortLevel: vi.fn(),
 }));
 

@@ -22,9 +22,6 @@ vi.mock('../../../src/renderer/stores/agentRegistryStore', () => ({
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: () => null,
 }));
-vi.mock('../../../src/renderer/stores/modeStore', () => ({
-  useModeStore: () => 'ask',
-}));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
   return { useI18n: () => ({ t: zh }) };

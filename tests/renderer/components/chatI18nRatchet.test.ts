@@ -47,7 +47,6 @@ const MIGRATED: string[] = [
   'features/chat/ChatInput/inputAddSubmenuPrefs.ts',
   'features/chat/ChatInput/LoopStatusBar.tsx',
   'features/chat/ChatInput/ModelStrategyRecommendationStrip.tsx',
-  'features/chat/ChatInput/ModeSelector.tsx',
   'features/chat/ChatInput/ModeSwitch.tsx',
   'features/chat/ChatInput/neoMentionRouting.ts',
   'features/chat/ChatInput/parseGoalCommand.ts',

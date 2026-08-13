@@ -45,7 +45,6 @@ const registryDefs = vi.hoisted(() => ({
   }>,
 }));
 const modeState = vi.hoisted(() => ({
-  setInteractionMode: vi.fn(),
   setEffortLevel: vi.fn(),
 }));
 

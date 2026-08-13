@@ -40,18 +40,14 @@ function parsePythonResult(raw: string): PythonResult | null {
 }
 
 /**
- * 解析 Python 脚本路径（3 级降级）
+ * 解析 Python 脚本路径（2 级降级）
  */
 export function resolveScriptPath(scriptName: string): string {
-  // 1. 开发环境
-  const devPath = path.join(__dirname, '../../../../scripts/', scriptName);
-  if (fs.existsSync(devPath)) return devPath;
+  // 1. 开发/打包环境同基准：app.getAppPath()（原 __dirname 写法在 ESM 执行态会炸）
+  const appPath = path.join(app.getAppPath(), 'scripts', scriptName);
+  if (fs.existsSync(appPath)) return appPath;
 
-  // 2. 打包环境
-  const prodPath = path.join(app.getAppPath(), 'scripts/', scriptName);
-  if (fs.existsSync(prodPath)) return prodPath;
-
-  // 3. 资源目录
+  // 2. 资源目录
   const resourcePath = path.join((process as ProcessWithResourcesPath).resourcesPath || '', 'scripts/', scriptName);
   if (fs.existsSync(resourcePath)) return resourcePath;
 

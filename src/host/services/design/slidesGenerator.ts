@@ -9,7 +9,7 @@
 // modelCallback/artifact/权限耦合。引擎纯核函数直接 import 复用，零拷贝。
 // ============================================================================
 
-import type PptxGenJS from 'pptxgenjs';
+import PptxGenJS from 'pptxgenjs';
 import type { ChartMode, SlideData, SlideImage, ThemeConfig } from '../../tools/media/ppt/types';
 import { getThemeConfig } from '../../tools/media/ppt/themes';
 import { outlineToSlideData, parseContentToSlides } from '../../tools/media/ppt/parser';
@@ -18,12 +18,9 @@ import { themeConfigFromBrand } from './brandTheme';
 import { registerSlideMasters } from '../../tools/media/ppt/slideMasters';
 import { selectMasterAndLayout, fillSlide, resetLayoutRotation } from '../../tools/media/ppt/layouts';
 
-// pptxgenjs 是 CJS——走 require 取构造器（与 pptGenerate / pptxExport 同款）。
 type PptxGenJSConstructor = new () => PptxGenJS;
 function getPptxGenJS(): PptxGenJSConstructor {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const moduleValue: unknown = require('pptxgenjs');
-  return moduleValue as PptxGenJSConstructor;
+  return PptxGenJS as PptxGenJSConstructor;
 }
 
 const DEFAULT_SLIDES_COUNT = 10;

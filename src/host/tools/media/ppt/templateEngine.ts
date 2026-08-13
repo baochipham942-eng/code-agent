@@ -11,7 +11,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type JSZip from 'jszip';
+import JSZip from 'jszip';
 import { createLogger } from '../../../services/infra/logger';
 import { DEFAULT_FALLBACK_COLORS, DEFAULT_FALLBACK_FONTS, EMU_PER_INCH } from './constants';
 import type { TemplateProfile, MergedTemplateProfile, TemplateMetadata } from './types';
@@ -36,11 +36,7 @@ export interface TemplateResult {
 // ============================================================================
 
 function getJSZip(): JSZip {
-  try {
-    return require('jszip') as JSZip;
-  } catch {
-    throw new Error('jszip is not installed. Run: npm install jszip');
-  }
+  return JSZip;
 }
 
 // ============================================================================

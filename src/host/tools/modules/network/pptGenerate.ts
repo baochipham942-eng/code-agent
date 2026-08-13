@@ -11,6 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
+import { createRequire } from 'node:module';
 import type {
   ToolHandler,
   ToolModule,
@@ -19,7 +20,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import type PptxGenJS from 'pptxgenjs';
+import PptxGenJS from 'pptxgenjs';
 import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS, MODEL_MAX_TOKENS } from '../../../../shared/constants';
 import type { PPTGenerateParams, SlideImage, ChartMode, ResearchContext, VlmCallback, SlideData } from '../../media/ppt/types';
 import { getThemeConfig } from '../../media/ppt/themes';
@@ -134,11 +135,11 @@ async function writeDesignPptArtifact(input: {
 
 type PptxGenJSConstructor = new () => PptxGenJS;
 
-// pptxgenjs is CJS — load via require to keep Electron compatibility
+// CJS bundle 有宿主 require，ESM bundle 走 createRequire；仅用于 design mode 的包根定位。
+const moduleResolver = typeof require === 'function' ? require : createRequire(import.meta.url);
+
 function getPptxGenJS(): PptxGenJSConstructor {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const moduleValue: unknown = require('pptxgenjs');
-  return moduleValue as PptxGenJSConstructor;
+  return PptxGenJS as PptxGenJSConstructor;
 }
 
 export async function executePptGenerate(
@@ -376,7 +377,7 @@ export async function executePptGenerate(
       const { executeDesignMode } = await import('../../media/ppt/designMode');
 
       // pptxgenjs v4 的 exports 不再暴露 ./package.json 子路径，从主入口反推包根目录
-      const pptxgenRoot = path.dirname(path.dirname(require.resolve('pptxgenjs')));
+      const pptxgenRoot = path.dirname(path.dirname(moduleResolver.resolve('pptxgenjs')));
       const designResult = await executeDesignMode({
         topic,
         slideCount: slides_count as number,

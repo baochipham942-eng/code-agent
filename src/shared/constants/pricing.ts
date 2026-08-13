@@ -1,3 +1,5 @@
+import { normalizeProviderId } from './providers';
+
 /** 模型定价条目（每 1M tokens，美元）。cacheRead/cacheWrite 缺省时按比例回退（见下方 ratio 常量）。 */
 export interface ModelPricingEntry {
   input: number;
@@ -77,6 +79,32 @@ export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
   // Fallback
   'default': { input: 1, output: 3 },
 };
+
+/**
+ * 从官方策展价表取得模型单价。
+ *
+ * 策展表只证明内置 provider 的官方刊例，custom/unknown 等渠道不能借用同名模型价。
+ * 日期版本号允许继承基础模型价，例如 gpt-4o-2024-08-06 → gpt-4o。
+ */
+export function getCuratedModelPricing(provider: string, model: string): ModelPricingEntry | undefined {
+  if (!normalizeProviderId(provider) || model === 'default') {
+    return undefined;
+  }
+
+  const exact = MODEL_PRICING_PER_1M[model];
+  if (exact) {
+    return exact;
+  }
+
+  for (const [key, pricing] of Object.entries(MODEL_PRICING_PER_1M)) {
+    const suffix = model.slice(key.length);
+    if (model.startsWith(key) && /^-\d{4}(-\d{2}){0,2}$/.test(suffix)) {
+      return pricing;
+    }
+  }
+
+  return undefined;
+}
 
 /** 设计模式 flux 路由所用模型 id（schnell 档，成本低；供 generateImage 的 fluxModel 入参 + 价表查表）。 */
 export const DESIGN_FLUX_MODEL = 'black-forest-labs/flux.2-klein-4b';

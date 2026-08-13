@@ -119,6 +119,20 @@ function parseResponseUsage(profile: RealtimeVoiceProviderProfile, raw: unknown)
     : parseOpenAIUsage(raw);
 }
 
+/**
+ * 真机故障注入接缝（L7 看门狗 P3 / L10 剧本库哑火场景共用）：把 realtime 上游经本地
+ * 拦截代理转发。双门控——只在 dev API 开启时认 override，生产/普通用户永远走真实上游；
+ * 原 URL 的 query（model 等）由代理侧合并，这里只换 origin+path。
+ */
+function resolveUpstreamUrlOverride(realUrl: string): string {
+  if (process.env.CODE_AGENT_ENABLE_DEV_API !== 'true') return realUrl;
+  const override = process.env.CODE_AGENT_VOICE_UPSTREAM_URL_OVERRIDE;
+  if (!override) return realUrl;
+  const query = realUrl.includes('?') ? realUrl.slice(realUrl.indexOf('?')) : '';
+  logger.warn('voice upstream URL override active (dev only)', { override });
+  return `${override}${query}`;
+}
+
 function responseIdOf(event: UpstreamEvent, fallback = ''): string {
   if (typeof event.response_id === 'string' && event.response_id) return event.response_id;
   if (typeof event.response?.id === 'string' && event.response.id) return event.response.id;
@@ -312,7 +326,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
       ? turnDetectionConfig.silenceDurationMs
       : undefined;
     const registeredTools = onToolCall ? config.tools ?? [] : [];
-    const url = profile.wsUrl(model);
+    const url = resolveUpstreamUrlOverride(profile.wsUrl(model));
     logger.info('connecting upstream', {
       provider: profile.id,
       model,

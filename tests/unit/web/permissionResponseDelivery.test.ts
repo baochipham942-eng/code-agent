@@ -32,9 +32,21 @@ const configServiceStub = {
   getServiceApiKey: () => '',
 };
 
-/** 拿到 orchestrator 内部的真实挂起表（登记走的是生产路径 requestPermission）。 */
+/**
+ * 从 ToolExecutor 取构造时注入的生产登记入口；它实际绑定到
+ * OrchestratorPermissionIsland.requestPermission，而非已经搬走的 orchestrator 方法。
+ */
+function requestPermission(orchestrator: AgentOrchestrator): (request: Record<string, unknown>) => Promise<boolean> {
+  return (orchestrator as unknown as {
+    toolExecutor: { requestPermission: (request: Record<string, unknown>) => Promise<boolean> };
+  }).toolExecutor.requestPermission;
+}
+
+/** 拿到权限岛内部的真实挂起表；登记仍必须经 ToolExecutor 注入的生产入口。 */
 function pendingIds(orchestrator: AgentOrchestrator): string[] {
-  return [...(orchestrator as unknown as { pendingPermissions: Map<string, unknown> }).pendingPermissions.keys()];
+  return [...(orchestrator as unknown as {
+    permissions: { pendingPermissions: Map<string, unknown> };
+  }).permissions.pendingPermissions.keys()];
 }
 
 describe('审批响应投递链路（web 路径）', () => {
@@ -77,10 +89,8 @@ describe('审批响应投递链路（web 路径）', () => {
     const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId)!;
     install();
 
-    // 走生产登记路径：requestPermission 自己往 pendingPermissions 里塞条目并返回等待中的 Promise
-    const approval = (orchestrator as unknown as {
-      requestPermission: (r: Record<string, unknown>) => Promise<boolean>;
-    }).requestPermission({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate' });
+    // 走 ToolExecutor 实际持有的生产登记入口：它自己登记并返回等待中的 Promise
+    const approval = requestPermission(orchestrator)({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate' });
     await Promise.resolve();
 
     const [requestId] = pendingIds(orchestrator);
@@ -97,9 +107,7 @@ describe('审批响应投递链路（web 路径）', () => {
     const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId)!;
     install();
 
-    const approval = (orchestrator as unknown as {
-      requestPermission: (r: Record<string, unknown>) => Promise<boolean>;
-    }).requestPermission({ type: 'command', tool: 'Bash', sessionId, reason: 'gate' });
+    const approval = requestPermission(orchestrator)({ type: 'command', tool: 'Bash', sessionId, reason: 'gate' });
     await Promise.resolve();
 
     const [requestId] = pendingIds(orchestrator);
@@ -147,9 +155,7 @@ describe('审批响应投递链路（web 路径）', () => {
     });
     install();
 
-    const approval = (orchestrator as unknown as {
-      requestPermission: (r: Record<string, unknown>) => Promise<boolean>;
-    }).requestPermission({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate' });
+    const approval = requestPermission(orchestrator)({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate' });
     await Promise.resolve();
 
     const [requestId] = pendingIds(orchestrator);

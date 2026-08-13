@@ -23,12 +23,12 @@ export function applyTurnSystemContext(
 }
 
 /**
- * D4 通话态钳档告知模型（2026-07-26 真机实录）：live-voice 会话把权限档钳严到
- * readOnly 时，模型此前完全不知道自己被拦了什么——Write 被拒后接连换 Write→Write→
- * Bash 三种写法白试，因为它只看到通用拒绝错误，猜不到根因是「通话中」。
- * 这里把钳档事实和「等审批卡、别换写法重试」的行为指引直接注入这一轮的 system context，
- * 与 buildWorkbenchTurnSystemContext 那批 workbench 偏好走同一个 turnSystemContext 数组、
- * 同一套渲染方式，不另起机制。判据同源于 requestPermission 的停车分支（D4 单一真源）。
+ * D4 通话态权限告知模型。2026-07-26 的事故中，live-voice 会话曾把权限档钳严到
+ * readOnly，模型不知道 Write 为何被拒，便依次改用 Write→Write→Bash 白试。
+ * ADR-053 已取消这层额外收紧；现在注入会话实际权限档，以及“需要确认时等待审批卡、
+ * 不要换写法重试”的行为指引；它与 buildWorkbenchTurnSystemContext 那批 workbench 偏好
+ * 共用 turnSystemContext 数组和渲染方式；权限档判据仍同源于 requestPermission 的停车分支。
+ * 当前语义不再把实时通话描述为额外的权限收紧。
  */
 export function buildLiveVoicePermissionNotice(sessionId?: string | null): string | null {
   if (!sessionId) return null;

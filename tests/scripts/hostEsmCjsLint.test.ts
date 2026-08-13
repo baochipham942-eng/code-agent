@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 // @ts-expect-error -- 纯 JS 静态门脚本，无类型声明
-import { assertNoHostEsmCjsPrimitives, scanHostEsmCjsPrimitives } from '../../scripts/host-esm-cjs-lint.mjs';
+import { assertNoHostEsmCjsPrimitives, scanHostEsmCjsPrimitives } from '../../scripts/ci/host-esm-cjs-lint.mjs';
 
 describe('host ESM/CJS 静态门', () => {
   let repoRoot: string;

@@ -51,7 +51,7 @@ on:
       - 'scripts/check-token-integrity.mjs'
       - 'scripts/check-copy.mjs'
       - 'scripts/host-chinese-error-ratchet.mjs'
-      - 'scripts/host-esm-cjs-lint.mjs'
+      - 'scripts/ci/host-esm-cjs-lint.mjs'
       - 'tailwind.config.js'
       - 'scripts/knip-ratchet.mjs'
       # 基线本身也要触发这道门：否则「只改基线」的 PR（等于手工放宽棘轮）不会被任何门看到
@@ -178,7 +178,7 @@ jobs:
       - name: Host ESM/CJS static gate
         # 只扫 host 工具和插件的发行源码；根路径/解析/0 文件都会失败，防止 ESM 构建中
         # 残留裸 require、__dirname 或 module.exports，在惰性工具路径上延迟爆炸。
-        run: node scripts/host-esm-cjs-lint.mjs
+        run: node scripts/ci/host-esm-cjs-lint.mjs
 
       - name: Script gates (vitest tests/scripts)
         # tests/scripts 下的守门测试（designSystemGate / architectureDebtReport /

@@ -117,7 +117,7 @@ const gates = [
   {
     ci: 'swarm-ci / smoke / Host ESM/CJS static gate',
     command: 'node',
-    args: ['scripts/host-esm-cjs-lint.mjs'],
+    args: ['scripts/ci/host-esm-cjs-lint.mjs'],
   },
   {
     ci: '本工单新增，local-only（未接入 CI workflow，见 2026-08-01 脚本报错路径先失明 REPORT 遗留项）',

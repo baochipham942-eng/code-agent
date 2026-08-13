@@ -15,7 +15,7 @@ import ts from 'typescript';
 import { fileURLToPath } from 'node:url';
 
 const scriptPath = fileURLToPath(import.meta.url);
-const repoRoot = path.resolve(path.dirname(scriptPath), '..');
+const repoRoot = path.resolve(path.dirname(scriptPath), '../..');
 
 export const SCAN_ROOTS = ['src/host/tools', 'src/host/plugins', 'src/host/services/design'];
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);

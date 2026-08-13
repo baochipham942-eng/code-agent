@@ -42,6 +42,13 @@ export interface ClassificationResult {
    * 供 B2 无人值守停车 / B4 target 授权与审计消费。判据见 tools/externalSideEffect.ts。
    */
   external?: boolean;
+  /**
+   * 信任边界 ask（W3 写边界）：终审层的便利放行（devModeAutoApprove / autoApprove[level] /
+   * renderer 权限记忆）必须让路，由 toolExecutor 映射为 forceConfirm。与 directory_access
+   * 同性质——边界决策不该被为日常操作设的开关顺带批掉（真机事故 2026-08-13：W3 ask 被
+   * devModeAutoApprove 自动放行，文件真写进 $HOME）。
+   */
+  trustBoundary?: boolean;
 }
 
 export interface ClassifierConfig {
@@ -566,6 +573,7 @@ export class PermissionClassifier {
         confidence: 0.9,
         cached: false,
         traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
+        trustBoundary: true,
       };
     }
 
@@ -595,6 +603,7 @@ export class PermissionClassifier {
         confidence: 0.9,
         cached: false,
         traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
+        trustBoundary: true,
       };
     }
 
@@ -620,6 +629,7 @@ export class PermissionClassifier {
       confidence: 0.9,
       cached: false,
       traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
+      trustBoundary: true,
     };
   }
 

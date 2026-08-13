@@ -27,7 +27,7 @@ const ROOT = path.resolve(__dirname, '../../..');
 // --------------------------------------------------------------------------
 
 const { mockAiSdkSupportsProvider, mockGetApiKey, mockGetProviderHealth, mockGetSettings, mockInferenceViaAiSdk } = vi.hoisted(() => ({
-  mockAiSdkSupportsProvider: vi.fn((_provider: string) => true),
+  mockAiSdkSupportsProvider: vi.fn((_provider: string, _model?: string) => true),
   mockGetApiKey: vi.fn<(provider: string) => string | null>(() => 'mock-key'),
   mockGetProviderHealth: vi.fn((_provider: string) => null),
   mockGetSettings: vi.fn(() => ({} as Record<string, unknown>)),

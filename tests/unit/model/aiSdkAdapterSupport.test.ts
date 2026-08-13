@@ -1,5 +1,5 @@
-// aiSdkSupportsProvider —— 锁住「适配器支持哪些 provider」。
-// 当前 AI SDK 路径已覆盖所有内置 provider；legacy 回退由 CODE_AGENT_MODEL_ENGINE 控制。
+// aiSdkSupportsProvider —— 锁住「适配器支持哪些 provider/model」。
+// 非 chat-completions 协议必须回落 legacy，由它按协议分派。
 import { describe, expect, it, vi } from 'vitest';
 import { aiSdkSupportsProvider } from '../../../src/host/model/adapters/aiSdkAdapter';
 
@@ -29,5 +29,14 @@ describe('aiSdkSupportsProvider', () => {
     ]) {
       expect(aiSdkSupportsProvider(p)).toBe(true);
     }
+  });
+
+  it('让 DeepSeek Responses 模型回落 legacy，但不连累 chat-completions 模型', () => {
+    expect(aiSdkSupportsProvider('deepseek', 'deepseek-v4-flash')).toBe(false);
+    expect(aiSdkSupportsProvider('deepseek', 'deepseek-chat')).toBe(true);
+  });
+
+  it('未传 model 时保持 provider 级调用的向后兼容', () => {
+    expect(aiSdkSupportsProvider('deepseek')).toBe(true);
   });
 });

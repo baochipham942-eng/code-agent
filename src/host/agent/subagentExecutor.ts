@@ -639,7 +639,7 @@ export class SubagentExecutor {
         // 配对），不能用 buildInferenceMessages 压平后的 providerMessages（它把 tool 结果变成
         // user 消息，导致 AI SDK 报 "Tool result is missing"）。
         const useAiSdk = process.env.CODE_AGENT_MODEL_ENGINE !== 'legacy'
-          && aiSdkSupportsProvider(context.modelConfig.provider);
+          && aiSdkSupportsProvider(context.modelConfig.provider, context.modelConfig.model);
         // per-request 超时取执行预算的一半：单次 provider 卡住（接受连接但响应不返回）时在 ~budget/2 早退 +
         // withTransientRetry 重试（重发常能过），而非把整个子代理预算耗在一次挂死上——旧 AI SDK 路径无
         // per-request 超时，一次 stall = 整个子代理跑满 90s 硬超时报废（实测 zhipu glm-4-flash 偶发）。

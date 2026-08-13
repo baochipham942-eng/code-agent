@@ -61,4 +61,15 @@ describe('buildVendorCompatSettings — xiaomi/mimo thinking control', () => {
     expect(buildVendorCompatSettings({ provider: 'moonshot', model: 'kimi-k2.5' } as ModelConfig).transformRequestBody).toBeTypeOf('function');
     expect(buildVendorCompatSettings({ provider: 'longcat', model: 'x' } as ModelConfig).transformRequestBody).toBeUndefined();
   });
+
+  it('注入 enable_search 的开关来自能力矩阵，不是 provider 名硬编码', () => {
+    // 矩阵把百炼搜索声明在 qwen 的 default 档（不分模型），所以任意 qwen 模型都注入。
+    for (const model of ['qwen-flash', 'qwen3-coder-plus']) {
+      const settings = buildVendorCompatSettings({ provider: 'qwen', model } as ModelConfig);
+      expect(settings.transformRequestBody?.({ messages: [] })).toMatchObject({ enable_search: true });
+    }
+    // 负例：矩阵未声明 search 的 openai-compatible provider 不能被顺带打开。
+    expect(buildVendorCompatSettings({ provider: 'longcat', model: 'LongCat-2.0' } as ModelConfig).transformRequestBody)
+      .toBeUndefined();
+  });
 });

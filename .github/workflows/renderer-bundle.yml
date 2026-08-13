@@ -167,7 +167,11 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        # --ignore-scripts：与 renderer-bundle-dry-run 同因（见下方注释）——本 job 是
+        # build:web/build:renderer + 起 dist/web/webServer.cjs 冒烟，2026-08-13 干净装置
+        # （fresh npm ci --ignore-scripts）真跑全程通过，原生模块非必需；带脚本安装只是
+        # 把成败绑在二进制 CDN 的网络运气上。
+        run: npm ci --ignore-scripts
 
       - name: Smoke renderer hot-update serving
         run: npm run acceptance:renderer-hot-update
@@ -250,7 +254,11 @@ jobs:
 
       - name: Install dependencies
         if: ${{ (env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '') || env.RENDERER_BUNDLE_DRY_RUN == 'true' }}
-        run: npm ci
+        # --ignore-scripts：本 job 全部命令面已在干净装置逐一探明（2026-08-13）——
+        # release:renderer-bundle 构建（同 dry-run job，长期绿）、hot-update 冒烟（真跑过）、
+        # manifest-diff / release-record / verify-production 三个 tsx 脚本（零原生依赖，
+        # 模块加载探针通过）；OSS 上传走下方单独安装的 ossutil 外部二进制，与 npm scripts 无关。
+        run: npm ci --ignore-scripts
 
       - name: Build + sign renderer bundle
         if: ${{ (env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '') || env.RENDERER_BUNDLE_DRY_RUN == 'true' }}

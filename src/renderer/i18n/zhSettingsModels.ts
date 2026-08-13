@@ -154,6 +154,11 @@ export const zhSettingsModels = {
         thinkingOptionLow: '低',
         thinkingOptionMedium: '中',
         thinkingOptionHigh: '高',
+        // 逐轮联网搜索开关：模型自带搜索或已配外部搜索源时才可用
+        searchSectionLabel: '联网搜索',
+        searchOptionOn: '开',
+        searchOptionOff: '关',
+        searchUnavailableHint: '当前模型不支持联网搜索，且未配置外部搜索源凭据',
         setDefault: '设为默认',
         setDefaultSaving: '保存中…',
         selectableLabel: '进选择页',

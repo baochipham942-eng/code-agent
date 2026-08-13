@@ -504,6 +504,10 @@ export class AgentOrchestrator {
     this.runSettings.setThinkingEnabled(enabled);
   }
 
+  setSearchEnabled(enabled: boolean): void {
+    this.runSettings.setSearchEnabled(enabled);
+  }
+
   setInteractionMode(mode: import('../../shared/contract/agent').InteractionMode): void {
     this.runSettings.setInteractionMode(mode);
   }

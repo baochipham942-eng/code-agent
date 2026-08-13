@@ -153,6 +153,11 @@ export const enSettingsModels = {
         thinkingOptionLow: 'Low',
         thinkingOptionMedium: 'Med',
         thinkingOptionHigh: 'High',
+        // Per-turn web search toggle: enabled when the model searches natively or an external source is configured
+        searchSectionLabel: 'Web search',
+        searchOptionOn: 'On',
+        searchOptionOff: 'Off',
+        searchUnavailableHint: 'This model has no web search and no external search credential is configured',
         setDefault: 'Set default',
         setDefaultSaving: 'Saving...',
         selectableLabel: 'In picker',

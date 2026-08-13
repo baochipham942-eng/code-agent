@@ -1254,6 +1254,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     orchestrator.setThinkingEnabled(enabled);
   }
 
+  setSearchEnabled(enabled: boolean): void {
+    const orchestrator = this.getOrchestratorOrThrow();
+    orchestrator.setSearchEnabled(enabled);
+  }
+
   // === Interaction Mode ===
 
   setInteractionMode(mode: import('../../shared/contract/agent').InteractionMode): void {

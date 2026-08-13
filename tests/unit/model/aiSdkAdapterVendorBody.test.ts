@@ -72,4 +72,22 @@ describe('buildVendorCompatSettings — xiaomi/mimo thinking control', () => {
     expect(buildVendorCompatSettings({ provider: 'longcat', model: 'LongCat-2.0' } as ModelConfig).transformRequestBody)
       .toBeUndefined();
   });
+
+  // 🔴 这条必须打【AI SDK 这条路】：qwen 是 chat-completions，默认引擎下走的是
+  // buildVendorCompatSettings，不是 legacy 的 qwenProvider.buildRequestBody。
+  // 只在 provider 类上验开关 = 验了一条用户走不到的路（本仓 08-13 连栽两次的形态）。
+  it('逐轮联网搜索开关在 AI SDK 路径上真的关得掉 qwen 的 enable_search', () => {
+    const cfg = { provider: 'qwen', model: 'qwen-flash' } as ModelConfig;
+    const body = { messages: [] };
+
+    // 正：显式开、以及缺省（undefined = 默认开）都要挂上
+    expect(buildVendorCompatSettings(cfg, { searchEnabled: true }).transformRequestBody?.(body))
+      .toMatchObject({ enable_search: true });
+    expect(buildVendorCompatSettings(cfg, {}).transformRequestBody?.(body))
+      .toMatchObject({ enable_search: true });
+
+    // 负：这一轮关了联网，矩阵声明让位——连 transform 都不该存在
+    expect(buildVendorCompatSettings(cfg, { searchEnabled: false }).transformRequestBody)
+      .toBeUndefined();
+  });
 });

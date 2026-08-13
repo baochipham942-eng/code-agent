@@ -67,6 +67,16 @@ export interface ModelThinkingCapabilityCatalog {
   models: Record<string, ModelThinkingCapability>;
 }
 
+/**
+ * 联网搜索可用性总览（模型选择弹窗「联网搜索」开关的可用判据）：
+ * - modelsByProvider：注册表 capabilities 含 'search' 的模型（能力矩阵注册期单源回填）
+ * - externalSearchReady：是否有已配凭据的外部搜索源（设置页 key 或 env 兜底）
+ */
+export interface ModelSearchCapabilityOverview {
+  modelsByProvider: Partial<Record<ModelProvider, string[]>>;
+  externalSearchReady: boolean;
+}
+
 /** 用户对单个模型保存的 thinking 偏好；具体可用字段由 ModelThinkingCapability.kind 决定。 */
 export interface ModelThinkingPreference {
   enabled?: boolean;

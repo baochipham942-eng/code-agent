@@ -27,6 +27,9 @@ interface ModeState {
   // Provider thinking switch; effort controls intensity when this is on.
   thinkingEnabled: boolean;
 
+  // Per-turn web search switch (model popup); off = this turn never goes online.
+  searchEnabled: boolean;
+
   // Interaction mode (Code / Plan / Ask)
   interactionMode: import('../../shared/contract/agent').InteractionMode;
 
@@ -38,6 +41,7 @@ interface ModeState {
   toggleMode: () => void;
   setEffortLevel: (level: import('../../shared/contract/agent').EffortLevel) => void;
   setThinkingEnabled: (enabled: boolean) => void;
+  setSearchEnabled: (enabled: boolean) => void;
   setInteractionMode: (mode: import('../../shared/contract/agent').InteractionMode) => void;
   setIsPaused: (paused: boolean) => void;
 
@@ -59,6 +63,9 @@ export const useModeStore = create<ModeState>()(
 
       // Default provider thinking on for workflow/cowork tasks.
       thinkingEnabled: true,
+
+      // 产品负责人 2026-08-12 拍板：逐轮联网搜索默认开启。
+      searchEnabled: true,
 
       // Default interaction mode
       interactionMode: 'code' as import('../../shared/contract/agent').InteractionMode,
@@ -88,6 +95,13 @@ export const useModeStore = create<ModeState>()(
         });
       },
 
+      setSearchEnabled: (enabled) => {
+        set({ searchEnabled: enabled });
+        invokeDomain('domain:agent', 'setSearchEnabled', { enabled }).catch(() => {
+          // Silently ignore if agent not initialized yet — will apply on next message
+        });
+      },
+
       // Set interaction mode and sync to backend via IPC
       setInteractionMode: (mode) => {
         set({ interactionMode: mode });
@@ -110,7 +124,7 @@ export const useModeStore = create<ModeState>()(
     }),
     {
       name: 'code-agent-mode',
-      version: 5, // Bump: add independent provider thinking switch.
+      version: 6, // Bump: add per-turn web search switch (default on).
       migrate: (persistedState) => {
         if (!persistedState || typeof persistedState !== 'object') {
           return persistedState;
@@ -121,6 +135,9 @@ export const useModeStore = create<ModeState>()(
           effortLevel: normalizeAgentEffortLevel(state.effortLevel),
           thinkingEnabled: typeof state.thinkingEnabled === 'boolean'
             ? state.thinkingEnabled
+            : true,
+          searchEnabled: typeof state.searchEnabled === 'boolean'
+            ? state.searchEnabled
             : true,
         };
       },

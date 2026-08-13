@@ -90,6 +90,7 @@ function makeAppService(
     exportSessionDiagnostics: async () => { throw new Error('not implemented'); },
     setEffortLevel: () => {},
     setThinkingEnabled: () => {},
+    setSearchEnabled: () => {},
     setInteractionMode: () => {},
     pause: () => {},
     resume: () => {},

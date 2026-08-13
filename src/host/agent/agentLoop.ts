@@ -282,6 +282,10 @@ export class AgentLoop {
     this.conversationRuntime.setThinkingEnabled(enabled);
   }
 
+  setSearchEnabled(enabled: boolean): void {
+    this.conversationRuntime.setSearchEnabled(enabled);
+  }
+
   getEffortLevel(): import('../../shared/contract/agent').EffortLevel {
     return this.conversationRuntime.getEffortLevel();
   }

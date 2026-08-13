@@ -198,6 +198,7 @@ function makeAppService(sessionId: string, messages: Message[], modelOverride?: 
     isDelegateMode: () => false,
     setEffortLevel: () => {},
     setThinkingEnabled: () => {},
+    setSearchEnabled: () => {},
     setInteractionMode: () => {},
     pause: () => {},
     resume: () => {},

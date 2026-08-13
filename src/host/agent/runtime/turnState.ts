@@ -35,6 +35,9 @@ export class TurnState {
   private _thinkingEnabled = true;
   private _thinkingStepCount = 0;
 
+  // --- 逐轮联网搜索开关（模型选择弹窗，默认开） ---
+  private _searchEnabled = true;
+
   // --- research mode ---
   private _researchModeActive = false;
   private _researchIterationCount = 0;
@@ -54,6 +57,7 @@ export class TurnState {
   get isSimpleTaskMode(): boolean { return this._isSimpleTaskMode; }
   get effortLevel(): EffortLevel { return this._effortLevel; }
   get thinkingEnabled(): boolean { return this._thinkingEnabled; }
+  get searchEnabled(): boolean { return this._searchEnabled; }
   get thinkingStepCount(): number { return this._thinkingStepCount; }
   get researchModeActive(): boolean { return this._researchModeActive; }
   get researchIterationCount(): number { return this._researchIterationCount; }
@@ -116,6 +120,10 @@ export class TurnState {
     this._thinkingEnabled = enabled;
   }
 
+  setSearchEnabled(enabled: boolean): void {
+    this._searchEnabled = enabled;
+  }
+
   resetThinkingSteps(): void {
     this._thinkingStepCount = 0;
   }
@@ -160,6 +168,7 @@ export class TurnState {
     isSimpleTaskMode?: boolean;
     effortLevel?: EffortLevel;
     thinkingEnabled?: boolean;
+    searchEnabled?: boolean;
     thinkingStepCount?: number;
     researchModeActive?: boolean;
     researchIterationCount?: number;
@@ -179,6 +188,7 @@ export class TurnState {
     if (seed.isSimpleTaskMode !== undefined) state._isSimpleTaskMode = seed.isSimpleTaskMode;
     if (seed.effortLevel !== undefined) state._effortLevel = seed.effortLevel;
     if (seed.thinkingEnabled !== undefined) state._thinkingEnabled = seed.thinkingEnabled;
+    if (seed.searchEnabled !== undefined) state._searchEnabled = seed.searchEnabled;
     if (seed.thinkingStepCount !== undefined) state._thinkingStepCount = seed.thinkingStepCount;
     if (seed.researchModeActive !== undefined) state._researchModeActive = seed.researchModeActive;
     if (seed.researchIterationCount !== undefined) state._researchIterationCount = seed.researchIterationCount;

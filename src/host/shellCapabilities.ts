@@ -80,6 +80,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'setEffortLevel',
     'setInteractionMode',
     'setPermissionMode',
+    'setSearchEnabled',
     'setSessionPermissionMode',
     'setThinkingEnabled',
   ],
@@ -299,6 +300,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.PROVIDER]: [
     'discover_models',
     'getHealthStatus',
+    'get_search_capabilities',
     'get_thinking_capabilities',
     'list_realtime_voice_providers',
     'run_diagnostics',

@@ -413,6 +413,9 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     const responseItemIds = new Map<string, string>();
     const cancellingResponseIds = new Set<string>();
     const watchdogCancelledResponseIds = new Set<string>();
+    // 每发一次看门狗 cancel，允许吞一次上游的「none active response」良性回声；
+    // 与上面集合分开——那个还要给 stale done 隔离用，不能被吞错消费掉。
+    let watchdogCancelBenignErrorBudget = 0;
     const cancellingResponseItemIds = new Map<string, string>();
     let responseCreateQueued = false;
     let responseCreateInFlight = false;
@@ -560,6 +563,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             notifyServiceUnstable({ ...detail, takeoverCount: responseWatchdogTakeoverCount });
           }
           if (responseProgressResponseId) watchdogCancelledResponseIds.add(responseProgressResponseId);
+          watchdogCancelBenignErrorBudget += 1;
           ws.send(JSON.stringify({ type: 'response.cancel' }));
           ws.send(JSON.stringify({
             type: 'response.create',
@@ -1158,6 +1162,20 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
               message: event.error.message,
             });
             onEvent({ type: 'session.ended', reason: 'idle-timeout' });
+            break;
+          }
+          // 看门狗接管在飞时，cancel 一个上游已完结的 response 会得到「none active response」
+          // 族回执（P3 真机 2026-08-13：DashScope 回 COMMON_ERROR/Conversation has none active
+          // response，被当致命错误整通挂断）。这是我方 cancel 的良性回声，吞掉继续等重建。
+          if (
+            watchdogCancelBenignErrorBudget > 0
+            && /no(?:ne)?\s+active\s+response/i.test(event.error?.message ?? '')
+          ) {
+            watchdogCancelBenignErrorBudget -= 1;
+            logger.info('watchdog cancel acked by benign upstream error', {
+              code: event.error?.code,
+              message: event.error?.message,
+            });
             break;
           }
           // message 必须一起记：上游的 code 常常是 COMMON_ERROR 这种无信息量的占位，

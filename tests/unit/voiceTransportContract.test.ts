@@ -983,6 +983,60 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     await handle.close();
   });
 
+  it('P1b: 接管期上游对 cancel 回「none active response」按良性回声吞掉，不挂断通话', async () => {
+    // 真机 P3（2026-08-13 槽 2）：吞流只吞下行，DashScope 服务端早已跑完该 response，
+    // 收到我方 cancel 回 COMMON_ERROR/"Conversation has none active response"——
+    // 修复前它走通用错误路径发 UPSTREAM_ERROR ⇒ voiceSessionService 整通挂断，
+    // 重建恢复被 40ms 前的挂断作废（mock 上游不回这个错，单测全绿真机 FAIL）。
+    vi.useFakeTimers();
+    const events: VoiceEvent[] = [];
+    const connecting = qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const handle = await connecting;
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+
+    handle.respond('原始轮次指令');
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-original' } }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.delta',
+      response_id: 'resp-original',
+      delta: '正在',
+    }));
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_SILENCE_MIN_TIMEOUT_MS);
+
+    // 上游对看门狗的 cancel 回良性错误（真机原样载荷）
+    upstream.emit('message', JSON.stringify({
+      type: 'error',
+      error: { code: 'COMMON_ERROR', message: 'Conversation has none active response' },
+    }));
+    // 随后重建照常恢复
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-rebuilt' } }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio.delta',
+      response_id: 'resp-rebuilt',
+      delta: Buffer.from([1, 2]).toString('base64'),
+    }));
+    upstream.emit('message', JSON.stringify({ type: 'response.done', response: { id: 'resp-rebuilt' } }));
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS * 3);
+
+    // 判据：良性回声不外发错误（挂断由 UPSTREAM_ERROR 触发），重建 done 正常送达
+    expect(events.filter((event) => event.type === 'error')).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'response.done' && event.responseId === 'resp-rebuilt')).toHaveLength(1);
+    // 接管窗口外的错误照旧致命（守卫不能变成全局吞错）
+    upstream.emit('message', JSON.stringify({
+      type: 'error',
+      error: { code: 'COMMON_ERROR', message: 'Conversation has none active response' },
+    }));
+    expect(events.filter((event) => event.type === 'error' && event.code === 'UPSTREAM_ERROR')).toHaveLength(1);
+    await handle.close();
+  });
+
   it('P2: 重建仍哑会记健康减分并且用户 notice 只发一次', async () => {
     vi.useFakeTimers();
     const events: VoiceEvent[] = [];

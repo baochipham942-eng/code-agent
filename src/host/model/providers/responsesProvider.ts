@@ -77,17 +77,30 @@ async function parseResponsesStream(
     onStream({ type: 'reasoning', content: pendingText });
     pendingText = '';
   };
+  // function_call 是同一模型轮从「交代接下来要做什么」切到工具参数流的边界。
+  // 在这里把已产出的正文先交给下游：否则它会一直留在 pendingText，直到工具轮结束，
+  // 消费这条正文流的界面会出现一段无反馈的死气。web_search 的过程旁白仍走 reasoning，不混淆。
+  // flushedText 记录已下发的正文总和，收尾只补差量，保证「推给用户的正文===最终 content」不双发。
+  let flushedText = '';
+  const flushPendingToText = () => {
+    if (!pendingText) return;
+    flushedText += pendingText;
+    onStream({ type: 'text', content: pendingText });
+    pendingText = '';
+  };
 
   const handle = (event: Record<string, unknown>) => {
     const type = String(event.type ?? '');
     const index = typeof event.output_index === 'number' ? event.output_index : 0;
     const item = event.item && typeof event.item === 'object' ? event.item as Record<string, unknown> : undefined;
     if (type === 'response.output_item.added' && item) {
-      demotedPendingToProgress();
       if (item.type === 'function_call') {
+        flushPendingToText();
         const call = { id: typeof item.call_id === 'string' ? item.call_id : typeof item.id === 'string' ? item.id : undefined, name: typeof item.name === 'string' ? item.name : undefined, arguments: '' };
         functionCalls.set(index, call);
         onStream({ type: 'tool_call_start', toolCall: { index, id: call.id, name: call.name } });
+      } else {
+        demotedPendingToProgress();
       }
       return;
     }
@@ -106,6 +119,9 @@ async function parseResponsesStream(
       return;
     }
     if (type === 'response.function_call_arguments.delta' && typeof event.delta === 'string') {
+      // 某些兼容端只给 arguments.delta、不先给 output_item.added；同样不能让 preamble
+      // 被工具参数缓冲跨过。重复调用是安全的，因为第一次已清空 pendingText。
+      flushPendingToText();
       const call = functionCalls.get(index) ?? { arguments: '' };
       call.arguments += event.delta;
       functionCalls.set(index, call);
@@ -139,7 +155,18 @@ async function parseResponsesStream(
   // 最后一条，要逐字流就得让流协议支持撤回临时正文。搜索/思考进度全程是实时的。
   pendingText = '';
   if (result.content) {
-    onStream({ type: 'text', content: result.content });
+    if (!flushedText) {
+      onStream({ type: 'text', content: result.content });
+    } else if (result.content.startsWith(flushedText)) {
+      const remainder = result.content.slice(flushedText.length);
+      if (remainder) onStream({ type: 'text', content: remainder });
+    } else {
+      // 已下发正文与最终 content 不一致（不应发生）：宁可少发也不双发/闪变，留日志追查。
+      logger.warn('[Responses] 流式已下发正文与最终 content 不一致，跳过收尾补发', {
+        flushedLength: flushedText.length,
+        contentLength: result.content.length,
+      });
+    }
   }
   if (result.usage) onStream({ type: 'usage', ...result.usage });
   return result;

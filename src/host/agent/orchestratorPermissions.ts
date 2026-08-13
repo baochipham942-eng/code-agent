@@ -226,17 +226,8 @@ export class OrchestratorPermissionIsland {
     const permissionLevel = getPermissionLevel(request.type);
     const forceConfirm = request.forceConfirm === true;
 
-    if (!forceConfirm && settings.permissions.devModeAutoApprove) {
-      logger.info(`[DevMode] Auto-approving permission: ${request.type} for ${request.tool}`);
-      return true;
-    }
-
-    if (!forceConfirm && settings.permissions.autoApprove[permissionLevel]) {
-      return true;
-    }
-
     // 无人值守（async_agent）会话：连接器显式声明为只读的 MCP 工具免交互审批直接放行。
-    // 否则读飞书日历/表格会撞下面的 60s 交互门、无人应答被 deny，无人值守 cron 永远跑不完
+    // 这条既有豁免须在停车前生效；否则读飞书日历/表格会被停车等人，无人值守 cron 永远跑不完
     // （真机 dogfood 2026-07-24 实证）。判据是我方 catalog 声明，不信第三方 server 自报。
     if (
       !forceConfirm
@@ -247,9 +238,10 @@ export class OrchestratorPermissionIsland {
       return true;
     }
 
-    // 无人值守会话（cron/heartbeat/channel）：审批不再走 60s deny，改为「停车挂起」，
+    // 无人值守会话（cron/heartbeat/channel）与语音派：审批先于任何自动批准判定，改为「停车挂起」，
     // 写 pending_approvals 等收件箱/会话卡任一入口应答（B2）。判据与权限档钳制同源
-    // （markUnattendedSession）。repo 不可用时（DB 未就绪/测试）回退老 60s 路径。
+    // （markUnattendedSession）。repo 不可用时（DB 未就绪/测试）也只能回退 60s 交互路径，
+    // 超时 deny，绝不能继续触发 devMode/autoApprove 自动放行。
     //
     // 语音派的 run 走同一条路（2026-07-26 真机）：D4 抬严的立论就是「用户在通话里
     // 手不在键盘上、眼睛不在 diff 上，这姿态等于无人值守」——既然这么判定，审批就不能
@@ -258,9 +250,20 @@ export class OrchestratorPermissionIsland {
     // 判据与抬严同源（isLiveVoiceSession = 通话中 或 语音派的 run 还在飞）。
     const needsParking = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId)
       || getPermissionModeManager().isLiveVoiceSession(fullRequest.sessionId);
-    const parkRepo = needsParking ? this.getPendingApprovalRepo() : null;
-    if (parkRepo) {
-      return this.parkApproval(fullRequest, permissionLevel, parkRepo);
+    if (needsParking) {
+      const parkRepo = this.getPendingApprovalRepo();
+      if (parkRepo) {
+        return this.parkApproval(fullRequest, permissionLevel, parkRepo);
+      }
+    } else {
+      if (!forceConfirm && settings.permissions.devModeAutoApprove) {
+        logger.info(`[DevMode] Auto-approving permission: ${request.type} for ${request.tool}`);
+        return true;
+      }
+
+      if (!forceConfirm && settings.permissions.autoApprove[permissionLevel]) {
+        return true;
+      }
     }
 
     const PERMISSION_TIMEOUT = 60000;

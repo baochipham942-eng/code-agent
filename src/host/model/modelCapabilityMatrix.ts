@@ -4,6 +4,8 @@ export interface ModelCapabilityMatrixEntry {
   protocol: 'chat-completions' | 'responses' | 'anthropic-messages';
   search?: { mode: 'none' | 'deepseek-responses' | 'bailian-enable-search' };
   thinking?: { interleaved: boolean };
+  /** chat-completions 请求体的历史消息兼容字段；仅在明确声明的 (provider, model) 上发送。 */
+  requestCompat?: { deepseekReasoningContent: boolean };
   /** Responses 端点是否在 API 根（true 时剥掉 baseUrl 末尾的 /vN）；默认 false = 端点在 baseUrl 之下的 /responses。 */
   responsesAtApiRoot?: boolean;
 }
@@ -23,6 +25,9 @@ const MATRIX: ModelCapabilityMatrix = {
     default: {
       // 官方 DeepSeek 的 Responses 在 API 根（api.deepseek.com/responses），不在 /v1 下。
       responsesAtApiRoot: true,
+      // DeepSeek 要求历史中每条 assistant 消息都回传 reasoning_content（可以为空）。
+      requestCompat: { deepseekReasoningContent: true },
+      // DeepSeek 要求历史中每条 assistant 消息都回传 reasoning_content（可以为空）。
     },
     models: {
       'deepseek-v4-flash': { protocol: 'responses', search: { mode: 'deepseek-responses' } },

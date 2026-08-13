@@ -9,6 +9,7 @@ import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessage
 import { DEFAULT_MODELS, getModelMaxOutputTokens } from '../../../shared/constants';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from './providerResolution';
 import { createLogger } from '../../services/infra/logger';
+import { resolveModelCapabilities } from '../modelCapabilityMatrix';
 
 const logger = createLogger('DeepSeekProvider');
 
@@ -23,10 +24,10 @@ export class DeepSeekProvider extends BaseOpenAIProvider {
     return resolveProviderApiKey(config);
   }
 
-  protected isThinkingMode(_config: ModelConfig): boolean {
-    // DeepSeek 全系列（v4-flash / v4 / r1 / reasoner）走 thinking-mode 协议，
-    // 历史 assistant 消息缺 reasoning_content 字段会被服务端 400 拒绝。
-    return true;
+  protected isThinkingMode(config: ModelConfig): boolean {
+    // 历史 assistant 消息缺 reasoning_content 字段会被服务端 400 拒绝；判据必须是
+    // (provider, model) 矩阵，不能靠 Provider 类把同名中转模型也误判成官方 DeepSeek。
+    return resolveModelCapabilities(config.provider, config.model).requestCompat?.deepseekReasoningContent === true;
   }
 
   protected buildRequestBody(

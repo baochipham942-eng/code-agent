@@ -190,7 +190,15 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        # --ignore-scripts：本 job 只做 vite build（renderer 侧纯 JS/TS），不加载任何原生模块，
+        # 而带脚本的 npm ci 会去下载 7 个包的预编译二进制（better-sqlite3 / esbuild / keytar /
+        # node-pty / onnxruntime-node / core-js / protobufjs），把这道门的成败绑在 runner 到
+        # 二进制 CDN 的网络运气上。2026-08-13 连挂两次即此因：先是 onnxruntime-node 下载
+        # ETIMEDOUT，重跑后换成 keytar 的 prebuild-install 失败 → 回落 node-gyp 源码编译 →
+        # runner 无 libsecret-1 → 挂；同一份代码 18 分钟前同一个 job 是 pass 的。
+        # 同仓先例：webserver-boot.yml 也是 --ignore-scripts 后直接 build，长期稳定；
+        # esbuild 的 postinstall 在 @esbuild/<platform> 已由 lockfile 装上时只做本地链接、不联网。
+        run: npm ci --ignore-scripts
 
       - name: Build renderer bundle (dry-run capability gate)
         run: |

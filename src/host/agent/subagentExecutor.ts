@@ -393,6 +393,7 @@ export class SubagentExecutor {
     let latestContextSnapshot = buildContextSnapshot(
       messages,
       context.modelConfig.model,
+      context.modelConfig.provider,
       toolsUsed,
       context.attachments,
     );
@@ -401,6 +402,7 @@ export class SubagentExecutor {
       latestContextSnapshot = buildContextSnapshot(
         effectiveMessages,
         context.modelConfig.model,
+        context.modelConfig.provider,
         toolsUsed,
         context.attachments,
       );
@@ -602,7 +604,7 @@ export class SubagentExecutor {
 
         // Auto-compaction: truncate old messages if approaching context limit
         if (iterations > SUBAGENT_COMPACTION.SKIP_FIRST_ITERATIONS) {
-          if (compactSubagentMessages(messages, context.modelConfig.model)) {
+          if (compactSubagentMessages(messages, context.modelConfig.model, context.modelConfig.provider)) {
             for (const message of messages) {
               if (typeof message.content === 'string' && message.content.includes('[truncated]')) {
                 message.observation = buildObservation('compression_survivor', 'subagent_compaction', {

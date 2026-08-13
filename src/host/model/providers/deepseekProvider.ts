@@ -6,7 +6,8 @@ import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
-import { DEFAULT_MODELS, getModelMaxOutputTokens } from '../../../shared/constants';
+import { DEFAULT_MODELS } from '../../../shared/constants';
+import { resolveModelMaxOutputTokens } from '../modelLimits';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from './providerResolution';
 import { createLogger } from '../../services/infra/logger';
 import { resolveModelCapabilities } from '../modelCapabilityMatrix';
@@ -38,7 +39,7 @@ export class DeepSeekProvider extends BaseOpenAIProvider {
     const modelInfo = this.getModelInfo(config);
     const useToolCalling = modelInfo?.supportsTool !== false;
     const openaiTools = convertToolsToOpenAI(tools, true);
-    const recommendedMaxTokens = modelInfo?.maxTokens || getModelMaxOutputTokens(config.model || DEFAULT_MODELS.chat);
+    const recommendedMaxTokens = modelInfo?.maxTokens || resolveModelMaxOutputTokens(config.model || DEFAULT_MODELS.chat, config.provider);
 
     const body: Record<string, unknown> = {
       model: config.model || DEFAULT_MODELS.chat,

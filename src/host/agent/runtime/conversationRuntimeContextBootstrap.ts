@@ -28,7 +28,7 @@ import { formatActivityPromptContext } from '../../services/activity/activityPro
 import { getSessionManager } from '../../services';
 import { generateMessageId } from '../../../shared/utils/id';
 import { getSessionTodos, setSessionTodos } from '../../agent/todoParser';
-import { getContextWindow } from '../../../shared/constants';
+import { resolveContextWindow } from '../../model/modelLimits';
 import { estimateTokens } from '../../context/tokenOptimizer';
 import { createLogger } from '../../services/infra/logger';
 
@@ -48,7 +48,7 @@ export async function bootstrapDesktopDerivedContext(
     + ctx.messages
       .filter((message) => message.role === 'system')
       .reduce((sum, message) => sum + estimateTokens(message.content || ''), 0);
-  const contextWindowSize = getContextWindow(ctx.modelConfig.model);
+  const contextWindowSize = resolveContextWindow(ctx.modelConfig.model, ctx.modelConfig.provider);
   const contextPressure = existingSystemContextTokens / contextWindowSize;
   const workspaceContextMaxTokens =
     contextPressure >= 0.12 ? 120

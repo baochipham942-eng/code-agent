@@ -4,7 +4,7 @@
 
 import type { Message, MessageAttachment, ToolCall } from '../../shared/contract';
 import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
-import { getContextWindow } from '../../shared/constants';
+import { resolveContextWindow } from '../model/modelLimits';
 import { getWarningLevel } from '../../shared/contract/contextHealth';
 import { generateMessageId } from '../../shared/utils/id';
 import type {
@@ -115,10 +115,11 @@ export function buildMessageAttachments(
 export function buildContextSnapshot(
   messages: RuntimeMessage[],
   model: string,
+  provider: string | undefined,
   toolsUsed: string[],
   attachments?: Array<{ name?: string }>,
 ): SwarmAgentContextSnapshot {
-  const maxTokens = getContextWindow(model);
+  const maxTokens = resolveContextWindow(model, provider);
   const normalizedMessages = messages.map((message) => ({
     role: message.role,
     content: flattenMessageContent(message.content),

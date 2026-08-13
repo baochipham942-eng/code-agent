@@ -33,7 +33,9 @@ export function resolveModelConfig(
     settings.models?.providers?.[normalizedProvider]
     ?? settings.models?.providers?.[userProviderStr];
   const userModel = providerConfig?.model || getDefaultModelByProvider(normalizedProvider);
-  const maxTokens = providerConfig?.maxTokens ?? getModelMaxOutputTokens(userModel);
+  const maxTokens = providerConfig?.models?.[userModel]?.maxTokens
+    ?? providerConfig?.maxTokens
+    ?? getModelMaxOutputTokens(userModel, normalizedProvider);
 
   // 获取对应的 API Key
   const selectedApiKey = configService.getApiKey(normalizedProvider);

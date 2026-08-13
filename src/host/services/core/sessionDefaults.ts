@@ -37,7 +37,7 @@ export function resolveSessionDefaultModelConfig(args: SessionDefaultArgs = {}):
     models?: {
       default?: string;
       defaultProvider?: string;
-      providers?: Record<string, { model?: string; temperature?: number; maxTokens?: number; baseUrl?: string }>;
+      providers?: Record<string, { model?: string; temperature?: number; maxTokens?: number; baseUrl?: string; models?: Record<string, { maxTokens?: number }> }>;
     };
   };
 
@@ -51,6 +51,6 @@ export function resolveSessionDefaultModelConfig(args: SessionDefaultArgs = {}):
     apiKey: config?.getApiKey?.(provider) ?? '',
     baseUrl: providerCfg?.baseUrl,
     temperature: args.temperature ?? providerCfg?.temperature ?? 0.7,
-    maxTokens: args.maxTokens ?? providerCfg?.maxTokens ?? getModelMaxOutputTokens(model),
+    maxTokens: args.maxTokens ?? providerCfg?.models?.[model]?.maxTokens ?? providerCfg?.maxTokens ?? getModelMaxOutputTokens(model, provider),
   };
 }

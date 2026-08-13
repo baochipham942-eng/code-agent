@@ -158,8 +158,18 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'LongCat-2.0-Preview': 32_768,
 };
 
-/** 根据模型名查找推荐的 maxOutputTokens（先做规范化） */
-export function getModelMaxOutputTokens(model: string): number {
+/**
+ * 根据模型名查找推荐的 maxOutputTokens（先做规范化）。
+ *
+ * `provider` 让调用方能把同名 model 的来源带进来；共享层不读取 settings，
+ * host 层将该 provider/model 对应的已发现上限作为 `configuredMaxTokens` 注入。
+ */
+export function getModelMaxOutputTokens(
+  model: string,
+  _provider?: string,
+  configuredMaxTokens?: number,
+): number {
+  if (configuredMaxTokens != null) return configuredMaxTokens;
   const id = normalizeModelId(model);
   return MODEL_MAX_OUTPUT_TOKENS[id] || MODEL_MAX_TOKENS.DEFAULT;
 }
@@ -246,7 +256,12 @@ export const DEFAULT_CONTEXT_WINDOW = 128_000;
  * 查模型的上下文窗口（先规范化，再查表，查不到回落到 DEFAULT_CONTEXT_WINDOW）。
  * 所有需要根据 model ID 取 context size 的地方都应通过本函数，不要直接读 CONTEXT_WINDOWS。
  */
-export function getContextWindow(model: string): number {
+export function getContextWindow(
+  model: string,
+  _provider?: string,
+  configuredContextWindow?: number,
+): number {
+  if (configuredContextWindow != null) return configuredContextWindow;
   const id = normalizeModelId(model);
   return CONTEXT_WINDOWS[id] ?? DEFAULT_CONTEXT_WINDOW;
 }

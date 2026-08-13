@@ -125,7 +125,7 @@ export function flushPromptLayerRecords(
  * GAP-023: 按当前模型解析 system prompt 预算（动态化）；无 ctx 时退回静态默认值。
  */
 export function promptBudget(ctx?: ContextAssemblyCtx): number {
-  return getSystemPromptBudget(ctx?.runtime.modelConfig?.model);
+  return getSystemPromptBudget(ctx?.runtime.modelConfig?.model, ctx?.runtime.modelConfig?.provider);
 }
 
 /**

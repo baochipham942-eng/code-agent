@@ -293,6 +293,30 @@ describe('ModelRouter', () => {
     });
   });
 
+  describe('provider-scoped max_tokens（真实主路 seam：resolveSessionDefaultModelConfig）', () => {
+    // 主路 config.maxTokens 在 sessionDefaults 求值后随 config 进 aiSdk/legacy 请求体——
+    // 断言这个真实 seam，而不是 new Provider 直调 buildRequestBody 自证（QF-02 收活重写）。
+    it('中转 (provider, model) 配置的 maxTokens 优先，未配回落官方同名表', async () => {
+      const { resolveSessionDefaultModelConfig } = await import('../../../src/host/services/core/sessionDefaults');
+      mockGetSettings.mockReturnValue({
+        models: {
+          providers: {
+            'custom-relay': {
+              enabled: true,
+              models: { 'deepseek-v4-flash': { maxTokens: 2048 } },
+            },
+          },
+        },
+      });
+      const configured = resolveSessionDefaultModelConfig({ provider: 'custom-relay', model: 'deepseek-v4-flash' });
+      expect(configured.maxTokens).toBe(2048);
+
+      mockGetSettings.mockReturnValue({});
+      const fallback = resolveSessionDefaultModelConfig({ provider: 'custom-relay', model: 'deepseek-v4-flash' });
+      expect(fallback.maxTokens).toBe(64_000);
+    });
+  });
+
   // --------------------------------------------------------------------------
   // detectRequiredCapabilities
   // --------------------------------------------------------------------------

@@ -6,7 +6,7 @@ import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
 import { convertToolsToOpenAI, convertToOpenAIMessages } from './shared';
-import { getModelMaxOutputTokens } from '../../../shared/constants';
+import { resolveModelMaxOutputTokens } from '../modelLimits';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from './providerResolution';
 import { createLogger } from '../../services/infra/logger';
 import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
@@ -40,7 +40,7 @@ export class OpenAIProvider extends BaseOpenAIProvider {
         thinkingMode: resolveModelCapabilities(config.provider, config.model).requestCompat?.deepseekReasoningContent === true,
       }),
       temperature: resolveModelRequestTemperature(config.model, config.temperature ?? 0.7),
-      max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'gpt-4o'),
+      max_tokens: config.maxTokens ?? resolveModelMaxOutputTokens(config.model || 'gpt-4o', config.provider),
       stream: true,
       stream_options: { include_usage: true },
     };

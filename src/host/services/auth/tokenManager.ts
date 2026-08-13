@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Message } from '../../../shared/contract';
-import { getContextWindow } from '../../../shared/constants';
+import { resolveContextWindow } from '../../model/modelLimits';
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 import { estimateTokens as estimateTextTokens } from '../../context/tokenEstimator';
 
@@ -88,9 +88,9 @@ export class TokenManager implements Disposable {
   private reservedOutputTokens: number;
   private usageHistory: TokenCount[] = [];
 
-  constructor(model: string = 'default', reservedOutputTokens: number = 4096) {
+  constructor(model: string = 'default', reservedOutputTokens: number = 4096, provider?: string) {
     this.model = model;
-    this.maxContextTokens = getContextWindow(model);
+    this.maxContextTokens = resolveContextWindow(model, provider);
     this.reservedOutputTokens = reservedOutputTokens;
   }
 
@@ -98,9 +98,9 @@ export class TokenManager implements Disposable {
   // Configuration
   // --------------------------------------------------------------------------
 
-  setModel(model: string): void {
+  setModel(model: string, provider?: string): void {
     this.model = model;
-    this.maxContextTokens = getContextWindow(model);
+    this.maxContextTokens = resolveContextWindow(model, provider);
   }
 
   setReservedOutputTokens(tokens: number): void {
@@ -388,11 +388,12 @@ export class TokenManager implements Disposable {
 
 const tokenManagers: Map<string, TokenManager> = new Map();
 
-export function getTokenManager(model: string = 'default'): TokenManager {
-  let manager = tokenManagers.get(model);
+export function getTokenManager(model: string = 'default', provider?: string): TokenManager {
+  const cacheKey = `${provider ?? ''}:${model}`;
+  let manager = tokenManagers.get(cacheKey);
   if (!manager) {
-    manager = new TokenManager(model);
-    tokenManagers.set(model, manager);
+    manager = new TokenManager(model, 4096, provider);
+    tokenManagers.set(cacheKey, manager);
   }
   return manager;
 }

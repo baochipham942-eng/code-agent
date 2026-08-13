@@ -3,6 +3,12 @@
 // ============================================================================
 
 import { describe, it, expect, vi } from 'vitest';
+
+const mockGetSettings = vi.hoisted(() => vi.fn(() => ({})));
+
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: mockGetSettings }),
+}));
 import {
   compactSubagentMessages,
   type SubagentMessage,
@@ -51,6 +57,26 @@ function buildConversation(rounds: number, resultSize = 2000): SubagentMessage[]
 }
 
 describe('compactSubagentMessages', () => {
+  it('uses the configured provider/model context window before the official same-id fallback', () => {
+    const configuredMessages = buildConversation(30, 8000);
+    mockGetSettings.mockReturnValue({
+      models: {
+        providers: {
+          'custom-relay': {
+            models: { 'deepseek-v4-flash': { contextWindow: 10_000 } },
+          },
+        },
+      },
+    });
+
+    expect(compactSubagentMessages(configuredMessages, 'deepseek-v4-flash', 'custom-relay')).toBe(true);
+
+    mockGetSettings.mockReturnValue({});
+    const fallbackMessages = buildConversation(30, 8000);
+    // No configured truth: deepseek-v4-flash returns to its official 1M window.
+    expect(compactSubagentMessages(fallbackMessages, 'deepseek-v4-flash', 'custom-relay')).toBe(false);
+  });
+
   it('should NOT compact when token count is below threshold', () => {
     // Small conversation: 3 rounds with small results
     const messages = buildConversation(3, 100);

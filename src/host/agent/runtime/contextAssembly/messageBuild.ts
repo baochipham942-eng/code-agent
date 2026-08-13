@@ -1,6 +1,7 @@
 // ContextAssembly - Model message construction and transcript projection.
 import type { Message } from '../../../../shared/contract';
-import { getContextWindow, ACTIVE_TOOL_RESULT_PRUNE, CONTEXT_LEDGER } from '../../../../shared/constants';
+import { ACTIVE_TOOL_RESULT_PRUNE, CONTEXT_LEDGER } from '../../../../shared/constants';
+import { resolveContextWindow } from '../../../model/modelLimits';
 import type { ModelMessage } from '../../../agent/loopTypes';
 import { formatToolCallForHistory, buildMultimodalContent } from '../../../agent/messageHandling/converter';
 import {
@@ -813,7 +814,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   );
 
   let contextApiView = interventionAdjustedEntries;
-  const contextWindowSize = getContextWindow(ctx.runtime.modelConfig.model);
+  const contextWindowSize = resolveContextWindow(ctx.runtime.modelConfig.model, ctx.runtime.modelConfig.provider);
   try {
     const cache = getRuntimeAssemblyCache(ctx);
     const compressionCacheKey = buildCompressionCacheKey(

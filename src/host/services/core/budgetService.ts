@@ -6,6 +6,7 @@
 import { createLogger } from '../infra/logger';
 import {
   MODEL_PRICING_PER_1M,
+  getCuratedModelPricing,
   DEFAULT_CACHE_READ_PRICE_RATIO,
   DEFAULT_CACHE_WRITE_PRICE_RATIO,
   type ModelPricingEntry,
@@ -261,7 +262,7 @@ export class BudgetService {
    * Calculate cost for a single usage record（cache-aware：缓存读/写按各自价档归一化计费）
    */
   private calculateCost(usage: TokenUsage): number {
-    const pricing = this.getModelPricing(usage.model);
+    const pricing = this.getModelPricing(usage.model, usage.provider);
     const cacheReadPrice = pricing.cacheRead ?? pricing.input * DEFAULT_CACHE_READ_PRICE_RATIO;
     const cacheWritePrice = pricing.cacheWrite ?? pricing.input * DEFAULT_CACHE_WRITE_PRICE_RATIO;
     const inputCost = (usage.inputTokens / 1_000_000) * pricing.input;
@@ -274,21 +275,8 @@ export class BudgetService {
   /**
    * Get pricing for a model
    */
-  private getModelPricing(model: string): ModelPricingEntry {
-    // Try exact match
-    if (MODEL_PRICING_PER_1M[model]) {
-      return MODEL_PRICING_PER_1M[model];
-    }
-
-    // Try prefix match (e.g., 'gpt-4o-2024-08-06' -> 'gpt-4o')
-    for (const key of Object.keys(MODEL_PRICING_PER_1M)) {
-      if (model.startsWith(key)) {
-        return MODEL_PRICING_PER_1M[key];
-      }
-    }
-
-    // Fallback to default
-    return MODEL_PRICING_PER_1M['default'];
+  private getModelPricing(model: string, provider: string): ModelPricingEntry {
+    return getCuratedModelPricing(provider, model) ?? MODEL_PRICING_PER_1M['default'];
   }
 
   /**
@@ -321,7 +309,7 @@ export class BudgetService {
       const read = usage.cacheReadTokens ?? 0;
       const write = usage.cacheCreationTokens ?? 0;
       if (read === 0 && write === 0) continue;
-      const pricing = this.getModelPricing(usage.model);
+      const pricing = this.getModelPricing(usage.model, usage.provider);
       const cacheReadPrice = pricing.cacheRead ?? pricing.input * DEFAULT_CACHE_READ_PRICE_RATIO;
       const cacheWritePrice = pricing.cacheWrite ?? pricing.input * DEFAULT_CACHE_WRITE_PRICE_RATIO;
       cacheReadTokens += read;
@@ -510,8 +498,8 @@ export class BudgetService {
   /**
    * Estimate cost for a planned operation
    */
-  estimateCost(inputTokens: number, outputTokens: number, model: string): number {
-    const pricing = this.getModelPricing(model);
+  estimateCost(inputTokens: number, outputTokens: number, model: string, provider: string): number {
+    const pricing = this.getModelPricing(model, provider);
     const inputCost = (inputTokens / 1_000_000) * pricing.input;
     const outputCost = (outputTokens / 1_000_000) * pricing.output;
     return inputCost + outputCost;

@@ -13,7 +13,7 @@
 // 快照刷新：scripts/generate-litellm-snapshot.mjs。
 // ============================================================================
 
-import { MODEL_PRICING_PER_1M } from '../constants/pricing';
+import { getCuratedModelPricing } from '../constants/pricing';
 import litellmSnapshot from './litellmSnapshot.json';
 
 export type PriceSource = 'litellm' | 'openrouter' | 'catalog' | 'user' | 'unknown';
@@ -57,8 +57,7 @@ export function resolveModelPrice(
   }
 
   // catalog 纠错表：策展价（含免费档 0 与 Token Plan 包月 0——是「已知为 0」，不是未知）。
-  // 'default' 是历史兜底键，不是价格证据，跳过。
-  const curated = modelId !== 'default' ? MODEL_PRICING_PER_1M[modelId] : undefined;
+  const curated = getCuratedModelPricing(provider, modelId);
   if (curated) {
     return { modelId, source: 'catalog', inputPerMTok: curated.input, outputPerMTok: curated.output };
   }

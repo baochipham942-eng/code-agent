@@ -17,6 +17,12 @@ export function buildVendorCompatSettings(config: ModelConfig, options?: { searc
     case 'zhipu':
       // GLM：仅 stream_options include_usage（并发 limiter 在 inferenceViaAiSdk 层，不在 body）。
       return { includeUsage: true };
+    case 'deepseek':
+      // DeepSeek thinking-mode：reasoning_effort 随 config 走（legacy DeepSeekProvider 有此映射，
+      // 默认引擎此前没有——thinking/effort 逐轮设置在默认引擎上从未到过请求体，QE-01 真机抓获）。
+      return config.reasoningEffort
+        ? { transformRequestBody: (b) => ({ ...b, reasoning_effort: config.reasoningEffort }) }
+        : {};
     case 'moonshot':
       // Kimi K2.5 thinking-mode 官方采样 temp=1.0/top_p=0.95 + 自报 UA（沿用 legacy MoonshotProvider）。
       return {

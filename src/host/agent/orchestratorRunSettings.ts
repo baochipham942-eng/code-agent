@@ -2,9 +2,7 @@
 // Orchestrator Run Settings - Runtime configuration state and loop forwarding
 // ============================================================================
 
-import type { EffortLevel, InteractionMode } from '../../shared/contract/agent';
 import type { ResearchUserSettings } from '../research/types';
-import type { AgentLoop } from './agentLoop';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('AgentOrchestrator');
@@ -18,7 +16,7 @@ export class OrchestratorRunSettings {
   private delegateMode = false;
   private requirePlanApproval = false;
 
-  constructor(private readonly getAgentLoop: () => AgentLoop | null) {}
+  constructor() {}
 
   setResearchUserSettings(settings: Partial<ResearchUserSettings>): void {
     this.researchUserSettings = { ...this.researchUserSettings, ...settings };
@@ -36,21 +34,6 @@ export class OrchestratorRunSettings {
 
   isDelegateMode(): boolean {
     return this.delegateMode;
-  }
-
-  setEffortLevel(level: EffortLevel): void {
-    this.getAgentLoop()?.setEffortLevel(level);
-    logger.info(`[AgentOrchestrator] Effort level set to ${level}`);
-  }
-
-  setThinkingEnabled(enabled: boolean): void {
-    this.getAgentLoop()?.setThinkingEnabled(enabled);
-    logger.info(`[AgentOrchestrator] Thinking ${enabled ? 'enabled' : 'disabled'}`);
-  }
-
-  setInteractionMode(mode: InteractionMode): void {
-    this.getAgentLoop()?.setInteractionMode(mode);
-    logger.info(`[AgentOrchestrator] Interaction mode set to ${mode}`);
   }
 
   setRequirePlanApproval(enabled: boolean): void {

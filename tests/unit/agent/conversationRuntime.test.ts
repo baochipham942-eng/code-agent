@@ -855,24 +855,6 @@ describe('ConversationRuntime', () => {
   });
 
   // ==========================================================================
-  // Effort Level
-  // ==========================================================================
-
-  describe('effort level', () => {
-    it('should set and get effort level', () => {
-      runtime.setEffortLevel('high' as any);
-      expect(runtime.getEffortLevel()).toBe('high');
-      expect(ctx.turn.thinkingStepCount).toBe(0);
-    });
-
-    it('should reset thinking step count when changing effort level', () => {
-      for (let i = 0; i < 5; i++) ctx.turn.incrementThinkingStep();
-      runtime.setEffortLevel('low' as any);
-      expect(ctx.turn.thinkingStepCount).toBe(0);
-    });
-  });
-
-  // ==========================================================================
   // Step-by-step mode
   // ==========================================================================
 

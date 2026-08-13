@@ -160,7 +160,11 @@ export class AgentLoop {
         : createTelemetryAdapter(),
 
       // Turn 级状态切片（ADR-038 批3a）
-      turn: new TurnState({ searchEnabled: config.searchEnabled ?? true }),
+      turn: new TurnState({
+        searchEnabled: config.searchEnabled ?? true,
+        thinkingEnabled: config.thinkingEnabled ?? true,
+        effortLevel: config.effortLevel,
+      }),
       // 控制流状态切片（ADR-038 批3b）
       control: new ControlState(),
       // RunStats+Tracing 切片（ADR-038 批3d）
@@ -272,22 +276,6 @@ export class AgentLoop {
 
   getStructuredOutput(): StructuredOutputConfig | undefined {
     return this.conversationRuntime.getStructuredOutput();
-  }
-
-  setEffortLevel(level: import('../../shared/contract/agent').EffortLevel): void {
-    this.conversationRuntime.setEffortLevel(level);
-  }
-
-  setThinkingEnabled(enabled: boolean): void {
-    this.conversationRuntime.setThinkingEnabled(enabled);
-  }
-
-  getEffortLevel(): import('../../shared/contract/agent').EffortLevel {
-    return this.conversationRuntime.getEffortLevel();
-  }
-
-  setInteractionMode(mode: import('../../shared/contract/agent').InteractionMode): void {
-    this.conversationRuntime.setInteractionMode(mode);
   }
 
   async cancel(reason?: 'user' | 'session-switch'): Promise<void> {

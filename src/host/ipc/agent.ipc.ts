@@ -42,6 +42,8 @@ interface SendMessagePayload {
   sessionId?: string;
   attachments?: unknown[];
   searchEnabled?: boolean;
+  thinkingEnabled?: boolean;
+  effortLevel?: import('../../shared/contract/agent').EffortLevel;
   options?: AppServiceRunOptions;
   context?: ConversationEnvelope['context'];
 }
@@ -59,6 +61,8 @@ function normalizeEnvelope(
     ...(payload.sessionId ? { sessionId: payload.sessionId } : {}),
     ...(payload.attachments ? { attachments: payload.attachments as ConversationEnvelope['attachments'] } : {}),
     ...(typeof payload.searchEnabled === 'boolean' ? { searchEnabled: payload.searchEnabled } : {}),
+    ...(typeof payload.thinkingEnabled === 'boolean' ? { thinkingEnabled: payload.thinkingEnabled } : {}),
+    ...(typeof payload.effortLevel === 'string' ? { effortLevel: payload.effortLevel } : {}),
     ...(payload.options ? { options: payload.options } : {}),
     ...(payload.context ? { context: payload.context } : {}),
   };
@@ -146,24 +150,6 @@ export function registerAgentHandlers(
         case 'interrupt': {
           const outcome = await handleInterrupt(getAppService, payload as string | InterruptPayload | ConversationEnvelope);
           return { success: true, data: outcome };
-        }
-        case 'setEffortLevel': {
-          const appService = getAppService();
-          if (!appService) throw new Error('Agent not initialized');
-          appService.setEffortLevel((payload as { level: import('../../shared/contract/agent').EffortLevel }).level);
-          return { success: true, data: null };
-        }
-        case 'setThinkingEnabled': {
-          const appService = getAppService();
-          if (!appService) throw new Error('Agent not initialized');
-          appService.setThinkingEnabled(Boolean((payload as { enabled?: boolean }).enabled));
-          return { success: true, data: null };
-        }
-        case 'setInteractionMode': {
-          const appService = getAppService();
-          if (!appService) throw new Error('Agent not initialized');
-          appService.setInteractionMode((payload as { mode: import('../../shared/contract/agent').InteractionMode }).mode);
-          return { success: true, data: null };
         }
         case 'setPermissionMode': {
           const mode = normalizePermissionMode((payload as { mode?: unknown } | undefined)?.mode);

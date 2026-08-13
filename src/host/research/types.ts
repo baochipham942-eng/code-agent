@@ -180,6 +180,10 @@ export interface AgentRunOptions {
   runtimeInput?: import('../../shared/contract/conversationEnvelope').RuntimeInputIntent;
   /** Per-turn web search switch. Omitted by legacy callers means enabled. */
   searchEnabled?: boolean;
+  /** Per-turn provider thinking switch. Omitted by legacy callers means enabled. */
+  thinkingEnabled?: boolean;
+  /** Explicit user effort choice only; omission keeps complexity-based automatic effort. */
+  effortLevel?: import('../../shared/contract/agent').EffortLevel;
   /** 排队输入恢复时使用的原 run 显式模型。 */
   modelSpec?: import('../../shared/contract/conversationEnvelope').ConversationModelSpec;
   /** /goal 自治模式：存在则本轮激活 goal 模式（normal mode 下生效） */

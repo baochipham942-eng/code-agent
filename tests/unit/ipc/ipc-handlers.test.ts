@@ -245,6 +245,8 @@ describe('IPC Handlers', () => {
           sessionId: 'session-1',
           attachments: [{ id: 'att-1', type: 'file', category: 'text', name: 'a.txt', size: 1, mimeType: 'text/plain' }],
           searchEnabled: false,
+          thinkingEnabled: false,
+          effortLevel: 'low',
           options: { researchMode: true },
           context: {
             workingDirectory: '/tmp/work',
@@ -264,6 +266,8 @@ describe('IPC Handlers', () => {
         sessionId: 'session-1',
         attachments: [{ id: 'att-1', type: 'file', category: 'text', name: 'a.txt', size: 1, mimeType: 'text/plain' }],
         searchEnabled: false,
+        thinkingEnabled: false,
+        effortLevel: 'low',
         options: { researchMode: true },
         context: {
           workingDirectory: '/tmp/work',

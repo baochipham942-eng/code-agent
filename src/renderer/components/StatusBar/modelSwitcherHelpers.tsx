@@ -965,3 +965,74 @@ export function getSelectedEffortOption(
     ?? options[options.length - 1]
     ?? EFFORT_OPTION_CONFIG.high;
 }
+
+export interface ThinkingSegmentOption {
+  value: 'auto' | 'off' | EffortLevel;
+  label: string;
+  selected: boolean;
+  color: string;
+  tint: string;
+  onSelect: () => void;
+}
+
+/** 思考段选项：自动=保留复杂度分析；关/低/中/高=用户显式的逐轮选择（QE-01）。 */
+export function buildThinkingSegmentOptions(params: {
+  labels: {
+    thinkingOptionAuto: string;
+    thinkingOptionOff: string;
+    thinkingOptionLow: string;
+    thinkingOptionMedium: string;
+    thinkingOptionHigh: string;
+  };
+  effortOptions: EffortOption[];
+  thinkingEnabled: boolean;
+  effortLevelExplicit: boolean;
+  effortLevel: EffortLevel;
+  setThinkingEnabled: (enabled: boolean) => void;
+  setEffortLevel: (level: EffortLevel) => void;
+  setAutomaticEffortLevel: () => void;
+}): ThinkingSegmentOption[] {
+  const {
+    labels, effortOptions, thinkingEnabled, effortLevelExplicit, effortLevel,
+    setThinkingEnabled, setEffortLevel, setAutomaticEffortLevel,
+  } = params;
+  return [
+    {
+      value: 'auto',
+      label: labels.thinkingOptionAuto,
+      selected: thinkingEnabled && !effortLevelExplicit,
+      color: 'text-zinc-300',
+      tint: 'bg-zinc-700',
+      onSelect: () => {
+        setThinkingEnabled(true);
+        setAutomaticEffortLevel();
+      },
+    },
+    {
+      value: 'off',
+      label: labels.thinkingOptionOff,
+      selected: !thinkingEnabled,
+      color: 'text-zinc-300',
+      tint: 'bg-zinc-700',
+      onSelect: () => setThinkingEnabled(false),
+    },
+    ...(['low', 'medium', 'high'] as const).map((level) => {
+      const effortOption = effortOptions.find((option) => option.value === level);
+      return {
+        value: level as EffortLevel,
+        label: level === 'low'
+          ? labels.thinkingOptionLow
+          : level === 'medium'
+            ? labels.thinkingOptionMedium
+            : labels.thinkingOptionHigh,
+        selected: thinkingEnabled && effortLevelExplicit && effortLevel === level,
+        color: effortOption?.color ?? 'text-zinc-300',
+        tint: effortOption?.tint ?? 'bg-zinc-700',
+        onSelect: () => {
+          setThinkingEnabled(true);
+          setEffortLevel(level);
+        },
+      };
+    }),
+  ];
+}

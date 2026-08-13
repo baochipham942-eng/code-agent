@@ -88,9 +88,6 @@ function makeAppService(
     rewindToPrompt: async () => { throw new Error('not implemented'); },
     exportSessionMarkdown: async () => { throw new Error('not implemented'); },
     exportSessionDiagnostics: async () => { throw new Error('not implemented'); },
-    setEffortLevel: () => {},
-    setThinkingEnabled: () => {},
-    setInteractionMode: () => {},
     pause: () => {},
     resume: () => {},
   };

@@ -15,7 +15,6 @@ import type {
   AgentEngineSourceDescriptor,
   ExternalAgentEngineKind,
 } from '@shared/contract/agentEngine';
-import type { EffortLevel } from '@shared/contract/agent';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { getProviderDisplayName, isAgenticVerifiedModel } from '@shared/constants';
 import {
@@ -52,6 +51,7 @@ import {
   formatExternalModelSwitcherTooltip,
   formatNativeModelSwitcherTooltip,
   getEngineEffortOptions,
+  buildThinkingSegmentOptions,
   getProviderEffortOptions,
   getSelectedEffortOption,
   type ProviderHealthSnapshot,
@@ -209,7 +209,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const defaultProvider = useAppStore((s) => s.modelConfig.provider);
   // effort 切换内嵌到模型菜单顶部，对照 Codex 的"模型 + Intelligence"两层选择
   const effortLevel = useModeStore((s) => s.effortLevel);
+  const effortLevelExplicit = useModeStore((s) => s.effortLevelExplicit);
   const setEffortLevel = useModeStore((s) => s.setEffortLevel);
+  const setAutomaticEffortLevel = useModeStore((s) => s.setAutomaticEffortLevel);
   const thinkingEnabled = useModeStore((s) => s.thinkingEnabled);
   const setThinkingEnabled = useModeStore((s) => s.setThinkingEnabled);
   // 状态栏仍展示当前执行引擎；弹窗本身只负责 Neo provider 模型，不再承载外部引擎模型配置。
@@ -638,37 +640,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     [displayModel, displayProvider, engine.kind, selectedNativeOption?.features],
   );
   const selectedEffort = getSelectedEffortOption(effortLevel, effortOptions);
-  // 思考段（2026-07-29 合并改版）：原 Thinking On/Off 与 Effort 两段行高不齐、
-  // 选项数不一（2 vs 3），合并为一行 4 等分 segmented：关 = thinking off；
-  // 低/中/高 = thinking on + effort low/med/high。setters 不变，只是 UI 合段。
-  const thinkingSegmentOptions = useMemo(() => ([
-    {
-      value: 'off' as const,
-      label: modelText.thinkingOptionOff,
-      selected: !thinkingEnabled,
-      color: 'text-zinc-300',
-      tint: 'bg-zinc-700',
-      onSelect: () => setThinkingEnabled(false),
-    },
-    ...(['low', 'medium', 'high'] as const).map((level) => {
-      const effortOption = effortOptions.find((option) => option.value === level);
-      return {
-        value: level as EffortLevel,
-        label: level === 'low'
-          ? modelText.thinkingOptionLow
-          : level === 'medium'
-            ? modelText.thinkingOptionMedium
-            : modelText.thinkingOptionHigh,
-        selected: thinkingEnabled && effortLevel === level,
-        color: effortOption?.color ?? 'text-zinc-300',
-        tint: effortOption?.tint ?? 'bg-zinc-700',
-        onSelect: () => {
-          setThinkingEnabled(true);
-          setEffortLevel(level);
-        },
-      };
-    }),
-  ]), [effortLevel, effortOptions, modelText, setEffortLevel, setThinkingEnabled, thinkingEnabled]);
+  const thinkingSegmentOptions = useMemo(() => buildThinkingSegmentOptions({
+    labels: modelText, effortOptions, thinkingEnabled, effortLevelExplicit, effortLevel,
+    setThinkingEnabled, setEffortLevel, setAutomaticEffortLevel,
+  }), [effortLevel, effortLevelExplicit, effortOptions, modelText, setAutomaticEffortLevel, setEffortLevel, setThinkingEnabled, thinkingEnabled]);
   const supportsThinkingControls = !showModelSettingsPrompt && engine.kind === 'native'
     ? displayProvider === 'xiaomi'
       || Boolean(selectedNativeOption?.features.includes('reasoning'))
@@ -783,9 +758,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   }, [appWorkingDirectory, session?.workingDirectory, sessionId, updateSessionEngine]);
 
   useEffect(() => {
+    if (!effortLevelExplicit) return;
     if (effortOptions.some((option) => option.value === effortLevel)) return;
     setEffortLevel(selectedEffort.value);
-  }, [effortLevel, effortOptions, selectedEffort.value, setEffortLevel]);
+  }, [effortLevel, effortLevelExplicit, effortOptions, selectedEffort.value, setEffortLevel]);
 
   const menu = open && menuPos && (
     <div
@@ -1015,7 +991,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                 <Brain className="w-3 h-3" />
                 <span>{modelText.thinkingSectionLabel}</span>
               </div>
-              <div className="grid grid-cols-4 gap-1" data-native-reasoning-segment>
+              <div className="grid grid-cols-5 gap-1" data-native-reasoning-segment>
                 {thinkingSegmentOptions.map((option) => (
                   <button
                     key={option.value}

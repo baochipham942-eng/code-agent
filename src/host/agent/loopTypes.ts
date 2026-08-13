@@ -88,6 +88,10 @@ export interface AgentLoopConfig {
   executionIntent?: ConversationExecutionIntent;
   /** Per-turn web search switch. Omitted by legacy callers means enabled. */
   searchEnabled?: boolean;
+  /** Per-turn provider thinking switch. Omitted by legacy callers means enabled. */
+  thinkingEnabled?: boolean;
+  /** Explicit user effort choice only; omission keeps complexity-based automatic effort. */
+  effortLevel?: import('../../shared/contract/agent').EffortLevel;
   /** /goal 自治模式契约；存在则激活 goal 模式（设 ctx.goalMode + maxIterations=maxTurns） */
   goalContract?: GoalContract;
   /** Approved Neo Tag work card context for this run. */

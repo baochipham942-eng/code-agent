@@ -7,6 +7,7 @@ import type { DesignBrief } from './designBrief';
 import type { DesignAcceptanceContract } from './designAcceptanceContract';
 import type { DesignCodeHandoffContext } from './designHandoff';
 import type { CanvasSnapshot } from './canvasProposal';
+import type { EffortLevel } from './agent';
 
 export type ConversationRoutingMode = 'auto' | 'direct' | 'parallel';
 export type BrowserSessionMode = 'none' | 'managed' | 'desktop';
@@ -149,6 +150,10 @@ export interface ConversationEnvelope {
   attachments?: MessageAttachment[];
   /** Per-turn web search switch. Omitted by legacy clients means enabled. */
   searchEnabled?: boolean;
+  /** Per-turn provider thinking switch. Omitted by legacy clients means enabled. */
+  thinkingEnabled?: boolean;
+  /** Explicit user effort choice only; omission keeps complexity-based automatic effort. */
+  effortLevel?: EffortLevel;
   options?: AppServiceRunOptions;
   context?: ConversationEnvelopeContext;
 }

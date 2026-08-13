@@ -36,7 +36,6 @@ import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
 import { getAuthService } from '../services/auth/authService';
 import { applyPromptCommandExpansion } from '../services/commands/promptCommandService';
-import { normalizeAgentEffortLevel } from '../../shared/effortLevels';
 import type { AgentRunOptions } from '../research/types';
 import type { SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import type {
@@ -705,16 +704,18 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
     );
-    const optionsWithSearchEnabled: AppServiceRunOptions = {
+    const optionsWithTurnSettings: AppServiceRunOptions = {
       ...(workbenchOptions ?? {}),
       searchEnabled: envelope.searchEnabled ?? true,
+      thinkingEnabled: envelope.thinkingEnabled ?? true,
+      ...(envelope.effortLevel !== undefined ? { effortLevel: envelope.effortLevel } : {}),
     };
     const options = isSessionCommandCenterTurn({
       prompt: envelope.content,
-      hasGoal: Boolean(optionsWithSearchEnabled.goal),
+      hasGoal: Boolean(optionsWithTurnSettings.goal),
     })
-      ? withSessionCommandCenterBrain(optionsWithSearchEnabled)
-      : optionsWithSearchEnabled;
+      ? withSessionCommandCenterBrain(optionsWithTurnSettings)
+      : optionsWithTurnSettings;
 
     // 云货架专家首跑：本轮档位钳到最严，让用户看见它每一步要干什么。
     // 必须挂在**主 agent 轮起点**——用户在输入框选中专家后说话，专家就是主 agent
@@ -1244,25 +1245,6 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const tm = this.getTaskManager();
     const orchestrator = tm.getOrCreateCurrentOrchestrator();
     return orchestrator?.isDelegateMode() ?? false;
-  }
-
-  // === Effort Level ===
-
-  setEffortLevel(level: import('../../shared/contract/agent').EffortLevel): void {
-    const orchestrator = this.getOrchestratorOrThrow();
-    orchestrator.setEffortLevel(normalizeAgentEffortLevel(level));
-  }
-
-  setThinkingEnabled(enabled: boolean): void {
-    const orchestrator = this.getOrchestratorOrThrow();
-    orchestrator.setThinkingEnabled(enabled);
-  }
-
-  // === Interaction Mode ===
-
-  setInteractionMode(mode: import('../../shared/contract/agent').InteractionMode): void {
-    const orchestrator = this.getOrchestratorOrThrow();
-    orchestrator.setInteractionMode(mode);
   }
 
   // === Pause / Resume ===

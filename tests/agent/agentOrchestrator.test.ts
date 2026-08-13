@@ -192,6 +192,8 @@ const agentLoopProbe = vi.hoisted(() => ({
   lastConfig: undefined as undefined | {
     deniedToolNames?: string[];
     searchEnabled?: boolean;
+    thinkingEnabled?: boolean;
+    effortLevel?: import('../../src/shared/contract/agent').EffortLevel;
     toolExecutor?: { runContext?: { workspace?: string } };
     workspaceScope?: { primaryRoot: string };
   },
@@ -202,7 +204,6 @@ vi.mock('../../src/host/agent/agentLoop', () => ({
       agentLoopProbe.lastConfig = config;
     }
     async run(): Promise<void> { agentLoopProbe.onRun?.(); }
-    setEffortLevel(): void { /* noop */ }
     getSerializedCompressionState(): undefined { return undefined; }
   },
 }));
@@ -409,6 +410,35 @@ describe('AgentOrchestrator', () => {
       );
 
       expect(lastAgentLoopConfig()?.searchEnabled).toBe(false);
+    });
+
+    it('显式 effort 与 thinking 随本轮 config 进入 AgentLoop，且不被复杂度自动档覆盖', async () => {
+      await (orchestrator as unknown as {
+        runStandardAgentLoop(
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: unknown,
+          sessionId: string,
+          executionContent: string | undefined,
+          toolScope: unknown,
+          executionIntent: unknown,
+          options: AgentRunOptions,
+        ): Promise<void>;
+      }).runStandardAgentLoop(
+        '设计完整架构、逐项实现并验证所有边界条件',
+        mockOnEvent,
+        { provider: 'deepseek', model: 'deepseek-chat' },
+        'explicit-effort-session',
+        undefined,
+        undefined,
+        undefined,
+        { mode: 'normal', effortLevel: 'low', thinkingEnabled: false, disableAutoAgent: true },
+      );
+
+      expect(lastAgentLoopConfig()).toEqual(expect.objectContaining({
+        effortLevel: 'low',
+        thinkingEnabled: false,
+      }));
     });
 
     it('后台 runContext workspace 等于前台当轮固化的项目根', async () => {

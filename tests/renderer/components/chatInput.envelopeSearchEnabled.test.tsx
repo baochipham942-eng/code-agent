@@ -23,8 +23,8 @@ function buildParams() {
   };
 }
 
-describe('useChatInputEnvelope · 逐轮联网开关随载荷', () => {
-  it('envelope 携带 modeStore 提交时刻的 searchEnabled（OFF/ON 成对）', () => {
+describe('useChatInputEnvelope · 同族逐轮设置随载荷', () => {
+  it('envelope 携带 modeStore 提交时刻的 searchEnabled / thinkingEnabled（正负成对）', () => {
     const { result } = renderHook(() => useChatInputEnvelope(buildParams() as never));
 
     act(() => { useModeStore.getState().setWebSearchEnabled(false); });
@@ -33,5 +33,21 @@ describe('useChatInputEnvelope · 逐轮联网开关随载荷', () => {
     // 同一个 builder 实例（依赖数组没变）也必须读到新值——防 useCallback 冻结快照回潮
     act(() => { useModeStore.getState().setWebSearchEnabled(true); });
     expect(result.current('ON 消息').searchEnabled).toBe(true);
+
+    act(() => { useModeStore.getState().setThinkingEnabled(false); });
+    expect(result.current('不思考消息').thinkingEnabled).toBe(false);
+
+    act(() => { useModeStore.getState().setThinkingEnabled(true); });
+    expect(result.current('思考消息').thinkingEnabled).toBe(true);
+  });
+
+  it('只在用户显式选择 effort 后携带 effortLevel，自动档留给 host analyzer', () => {
+    const { result } = renderHook(() => useChatInputEnvelope(buildParams() as never));
+
+    act(() => { useModeStore.getState().setAutomaticEffortLevel(); });
+    expect(result.current('自动档消息').effortLevel).toBeUndefined();
+
+    act(() => { useModeStore.getState().setEffortLevel('low'); });
+    expect(result.current('显式低档消息').effortLevel).toBe('low');
   });
 });

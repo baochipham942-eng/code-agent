@@ -167,11 +167,17 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        # --ignore-scripts：与 renderer-bundle-dry-run 同因（见下方注释）——本 job 是
-        # build:web/build:renderer + 起 dist/web/webServer.cjs 冒烟，2026-08-13 干净装置
-        # （fresh npm ci --ignore-scripts）真跑全程通过，原生模块非必需；带脚本安装只是
-        # 把成败绑在二进制 CDN 的网络运气上。
-        run: npm ci --ignore-scripts
+        # --ignore-scripts 消灭 7 个包的二进制 CDN 抽奖（onnxruntime ETIMEDOUT / keytar
+        # 回落 node-gyp 缺 libsecret 那类，2026-08-13 连挂两次的根因），再单独源码补编译
+        # webServer 启动真正需要的两个原生模块：node-pty 在 linux 是 webServer bundle 顶层
+        # require、缺了直接 crash（npm 包只带 darwin 预编译，2026-08-13 本 PR 首版 CI 实证；
+        # swarm-ci full job 补编译 node-pty 同因）；better-sqlite3 同为运行时需要。
+        # --build-from-source 跳过 prebuild-install 的下载路径，本地编译是确定性动作。
+        # ⚠️ webserver-boot.yml 的绿不构成「无原生可启动」先例——它的验证脚本把原生缺失
+        # 归为环境问题 warn+pass，只守打包完整性。
+        run: |
+          npm ci --ignore-scripts
+          npm rebuild node-pty better-sqlite3 --build-from-source
 
       - name: Smoke renderer hot-update serving
         run: npm run acceptance:renderer-hot-update
@@ -254,11 +260,14 @@ jobs:
 
       - name: Install dependencies
         if: ${{ (env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '') || env.RENDERER_BUNDLE_DRY_RUN == 'true' }}
-        # --ignore-scripts：本 job 全部命令面已在干净装置逐一探明（2026-08-13）——
-        # release:renderer-bundle 构建（同 dry-run job，长期绿）、hot-update 冒烟（真跑过）、
-        # manifest-diff / release-record / verify-production 三个 tsx 脚本（零原生依赖，
-        # 模块加载探针通过）；OSS 上传走下方单独安装的 ossutil 外部二进制，与 npm scripts 无关。
-        run: npm ci --ignore-scripts
+        # 与 renderer-hot-update-smoke 同方案（见上方注释）：--ignore-scripts 消灭 CDN 抽奖，
+        # 源码补编译 node-pty/better-sqlite3——本 job 也跑 hot-update 冒烟（真起 webServer，
+        # linux 上 node-pty 是硬需求）。其余命令面（renderer-bundle 构建、manifest-diff /
+        # release-record / verify-production）均零原生依赖；OSS 上传走下方单独安装的
+        # ossutil 外部二进制，与 npm scripts 无关。
+        run: |
+          npm ci --ignore-scripts
+          npm rebuild node-pty better-sqlite3 --build-from-source
 
       - name: Build + sign renderer bundle
         if: ${{ (env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '') || env.RENDERER_BUNDLE_DRY_RUN == 'true' }}

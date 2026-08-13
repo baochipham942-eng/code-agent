@@ -12,7 +12,6 @@
 
 import React, { useCallback, useLayoutEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useModeStore } from '../../../../stores/modeStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { InlineComposerChip, type InlineChipView } from './InlineComposerChip';
 import {
@@ -420,19 +419,11 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       'application/vnd.rar',
     ].join(',');
 
-    const interactionMode = useModeStore((s) => s.interactionMode);
     const { t } = useI18n();
 
-    // 根据交互模式决定 placeholder 文案和颜色；续轮统一精炼
-    const placeholderConfig = {
-      code: { text: t.chatInput.placeholderCode, colorClass: 'placeholder-zinc-500', textClass: 'text-zinc-500' },
-      plan: { text: t.chatInput.placeholderPlan, colorClass: 'placeholder-amber-500/50', textClass: 'text-badge-warning/50' },
-      ask: { text: t.chatInput.placeholderAsk, colorClass: 'placeholder-emerald-500/50', textClass: 'text-badge-success/50' },
-    };
-    const baseConfig = placeholderConfig[interactionMode] ?? placeholderConfig.code;
     // 续轮用中性 placeholder：之前的 "@ 标记 agent" 提示在普通对话里造成困惑
     // （产品负责人反馈："出现 @agent 的提示不合适"），只有 swarm session 才适合提示
-    const placeholderText = hasMessages ? t.chatInput.placeholderContinue : baseConfig.text;
+    const placeholderText = hasMessages ? t.chatInput.placeholderContinue : t.chatInput.placeholderCode;
     const resolvedPlaceholder = placeholder ?? (hasAttachments ? t.chatInput.placeholderWithAttachments : placeholderText);
 
     return (
@@ -459,7 +450,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           {isEmpty && (
             <span
               aria-hidden
-              className={`pointer-events-none absolute left-4 top-4 select-none text-sm ${baseConfig.textClass}`}
+              className="pointer-events-none absolute left-4 top-4 select-none text-sm text-zinc-500"
             >
               {resolvedPlaceholder}
             </span>

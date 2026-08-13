@@ -1,17 +1,15 @@
 // Codex 风格 "+" 二级菜单：收纳 ChatInput 工具栏低频入口。
-// B+ 设计：上传 / 能力（专家/团队/技能/连接器）/ 交互模式 都进这里，
+// B+ 设计：上传 / 能力（专家/团队/技能/连接器）都进这里，
 // ChatInput 工具栏只露真正高频的（权限模式 / 上下文 / 模型 / 语音 / 发送）。
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Image as ImageIcon, Bot, ChevronRight, Plug, SlidersHorizontal, Sparkles, UsersRound } from 'lucide-react';
-import { useModeStore } from '../../../../stores/modeStore';
+import { Plus, Image as ImageIcon, Bot, ChevronRight, Plug, Sparkles, UsersRound } from 'lucide-react';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { isPanelVisibleAgent } from '../../../../../shared/contract/agentRegistry';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useTeamRecipeStore } from '../../../../stores/teamRecipeStore';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
-import type { InteractionMode } from '../../../../../shared/contract/agent';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { useI18n } from '../../../../hooks/useI18n';
 import { InputAddSubmenu, type InputAddSubmenuItem } from './InputAddSubmenu';
@@ -22,18 +20,10 @@ interface Props {
   onSelectCapability: (capability: WorkbenchCapabilityRegistryItem) => void;
 }
 
-type SubmenuKind = 'experts' | 'teams' | 'skills' | 'connectors' | 'mode';
+type SubmenuKind = 'experts' | 'teams' | 'skills' | 'connectors';
 
 /** hover 离开能力行到进入 flyout 之间有个间隙，留一点宽限避免 flyout 被误关 */
 const SUBMENU_CLOSE_GRACE_MS = 150;
-
-function buildModeOptions(hints: { code: string; plan: string; ask: string }): Array<{ value: InteractionMode; label: string; hint: string }> {
-  return [
-    { value: 'code', label: 'Code', hint: hints.code },
-    { value: 'plan', label: 'Plan', hint: hints.plan },
-    { value: 'ask', label: 'Ask', hint: hints.ask },
-  ];
-}
 
 export const InputAddMenu: React.FC<Props> = ({
   onFileSelect,
@@ -49,8 +39,6 @@ export const InputAddMenu: React.FC<Props> = ({
   // 五个能力行的 DOM 引用：flyout 错位修复靠指针坐标对行 rect 做几何判定（见 handleMenuMouseMove）
   const submenuRowRefs = useRef<Partial<Record<SubmenuKind, HTMLDivElement | null>>>({});
 
-  const interactionMode = useModeStore((s) => s.interactionMode);
-  const setInteractionMode = useModeStore((s) => s.setInteractionMode);
   // 连接器 flyout 合并 MCP servers（用户真实已连接/已添加的，如飞书）与 host 原生
   // 连接器（Mail/Calendar 等，桌面端才有）：两者共用同一条 selectedXxxIds 挂载链路。
   const { skills, connectors, mcpServers } = useWorkbenchCapabilityRegistry();
@@ -65,7 +53,6 @@ export const InputAddMenu: React.FC<Props> = ({
   const refreshRecipes = useTeamRecipeStore((s) => s.refresh);
   const selectedTeamRecipeId = useComposerStore((s) => s.selectedTeamRecipeId);
   const setSelectedTeamRecipeId = useComposerStore((s) => s.setSelectedTeamRecipeId);
-  const modeOptions = buildModeOptions(t.inputAddMenu.modeHints);
 
   const clearSubmenuCloseTimer = () => {
     if (submenuCloseTimerRef.current !== null) {
@@ -148,13 +135,6 @@ export const InputAddMenu: React.FC<Props> = ({
     description: entry.description,
     selected: entry.id === activeAgentId,
   }));
-  const modeItems: InputAddSubmenuItem[] = modeOptions.map((opt) => ({
-    id: opt.value,
-    label: opt.label,
-    description: opt.hint,
-    selected: interactionMode === opt.value,
-  }));
-
   useEffect(() => {
     if (open && !recipesLoaded) void refreshRecipes();
   }, [open, recipesLoaded, refreshRecipes]);
@@ -224,7 +204,6 @@ export const InputAddMenu: React.FC<Props> = ({
               ['teams', UsersRound, t.inputAddMenu.teamsLabel],
               ['skills', Sparkles, t.inputAddMenu.skillsLabel],
               ['connectors', Plug, t.inputAddMenu.connectorsLabel],
-              ['mode', SlidersHorizontal, t.inputAddMenu.modeLabel],
             ] as const).map(([kind, Icon, label]) => (
               <div
                 key={kind}
@@ -250,10 +229,8 @@ export const InputAddMenu: React.FC<Props> = ({
                       scope={kind}
                       items={kind === 'experts'
                         ? expertItems
-                        : kind === 'teams'
-                          ? teamItems
-                          : kind === 'mode'
-                            ? modeItems
+                          : kind === 'teams'
+                            ? teamItems
                             : capabilityItems(kind === 'skills' ? skills : connectorEntries)}
                       onSelect={(item) => {
                         if (kind === 'experts') {
@@ -263,16 +240,13 @@ export const InputAddMenu: React.FC<Props> = ({
                           // 选中只是预选：成员条先把名单铺出来，真启动等发第一句话
                           setSelectedTeamRecipeId(item.id === selectedTeamRecipeId ? null : item.id);
                           focusComposer();
-                        } else if (kind === 'mode') {
-                          setInteractionMode(item.id as InteractionMode);
-                          focusComposer();
                         } else {
                           const capability = (kind === 'skills' ? skills : connectorEntries).find((entry) => entry.id === item.id);
                           if (capability) onSelectCapability(capability);
                         }
                         closeMenu();
                       }}
-                      footerActions={kind === 'mode' ? [] : [{
+                      footerActions={[{
                         label: kind === 'experts' ? t.inputAddMenu.manageExperts : kind === 'teams' ? t.inputAddMenu.manageTeams : kind === 'skills' ? t.inputAddMenu.manageSkills : t.inputAddMenu.manageConnectors,
                         onClick: () => {
                           // 团队和专家同属能力中心的「专家」tab

@@ -7,8 +7,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Plus, Trash2, Archive, FileText, FolderOpen,
   BarChart2, Settings, Keyboard, HelpCircle,
-  Terminal, Cpu, Plug, Zap, ClipboardList,
-  MessageCircleQuestion, ZapOff, Flame,
+  Terminal, Cpu, Plug, Zap, ZapOff, Flame,
   Lock, LockOpen, Bot, Sparkles, Server, Target, GitBranch, UserPlus, Clock3, Repeat,
 } from 'lucide-react';
 import { buildCostText, buildStatusText, fmtTokens } from './chatDiagnostics';
@@ -186,7 +185,6 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     currentSessionId,
   } = useSessionStore();
 
-  const setInteractionMode = useModeStore((s) => s.setInteractionMode);
   const setEffortLevel = useModeStore((s) => s.setEffortLevel);
   // 会话权限档：真源在 host PermissionModeManager，通过 domain:agent 读写（无本地档位 state）
   const setSessionPermissionTier = (mode: 'default' | 'bypassPermissions') => {
@@ -419,27 +417,6 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       action: () => {},
     },
     {
-      id: 'code',
-      label: sc.code.label,
-      description: sc.code.description,
-      icon: <Terminal className="w-4 h-4" />,
-      action: () => setInteractionMode('code'),
-    },
-    {
-      id: 'plan',
-      label: sc.plan.label,
-      description: sc.plan.description,
-      icon: <ClipboardList className="w-4 h-4" />,
-      action: () => setInteractionMode('plan'),
-    },
-    {
-      id: 'ask',
-      label: sc.ask.label,
-      description: sc.ask.description,
-      icon: <MessageCircleQuestion className="w-4 h-4" />,
-      action: () => setInteractionMode('ask'),
-    },
-    {
       id: 'low',
       label: sc.low.label,
       description: sc.low.description,
@@ -669,7 +646,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     getShortcutLabel, sc,
     setShowSettings, openSettingsTab, setShowDAGPanel, showDAGPanel,
     setShowWorkspace, showWorkspace, setSidebarCollapsed, sidebarCollapsed,
-    setInteractionMode, setEffortLevel,
+    setEffortLevel,
   ]);
 
   // Merge registry commands (gui surface) with GUI-only commands

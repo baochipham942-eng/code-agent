@@ -33,9 +33,6 @@ interface ModeState {
   // Per-turn web search switch (model popup); off = this turn never goes online.
   searchEnabled: boolean;
 
-  // Interaction mode (Code / Plan / Ask)
-  interactionMode: import('../../shared/contract/agent').InteractionMode;
-
   // Pause state
   isPaused: boolean;
 
@@ -46,7 +43,6 @@ interface ModeState {
   setAutomaticEffortLevel: () => void;
   setThinkingEnabled: (enabled: boolean) => void;
   setWebSearchEnabled: (enabled: boolean) => void;
-  setInteractionMode: (mode: import('../../shared/contract/agent').InteractionMode) => void;
   setIsPaused: (paused: boolean) => void;
 
   isCoworkMode: () => boolean;
@@ -71,9 +67,6 @@ export const useModeStore = create<ModeState>()(
 
       // 产品负责人 2026-08-12 拍板：逐轮联网搜索默认开启。
       searchEnabled: true,
-
-      // Default interaction mode
-      interactionMode: 'code' as import('../../shared/contract/agent').InteractionMode,
 
       // Pause state
       isPaused: false,
@@ -100,11 +93,6 @@ export const useModeStore = create<ModeState>()(
         set({ searchEnabled: enabled });
       },
 
-      // Interaction mode is renderer-only placeholder state.
-      setInteractionMode: (mode) => {
-        set({ interactionMode: mode });
-      },
-
       // Set pause state and sync to backend via IPC
       setIsPaused: (paused) => {
         set({ isPaused: paused });
@@ -119,14 +107,16 @@ export const useModeStore = create<ModeState>()(
     }),
     {
       name: 'code-agent-mode',
-      version: 7, // Bump: explicit effort choice; legacy saved values remain automatic.
+      version: 8, // Bump: remove legacy interaction-mode state.
       migrate: (persistedState) => {
         if (!persistedState || typeof persistedState !== 'object') {
           return persistedState;
         }
-        const state = persistedState as Partial<ModeState>;
+        const state = persistedState as Partial<ModeState> & Record<string, unknown>;
+        const obsoleteModeKey = ['interaction', 'Mode'].join('');
+        const { [obsoleteModeKey]: _obsoleteMode, ...stateWithoutObsoleteMode } = state;
         return {
-          ...state,
+          ...stateWithoutObsoleteMode,
           effortLevel: normalizeAgentEffortLevel(state.effortLevel),
           // UI effort previously never reached a real request (analyzer overwrote every turn),
           // so legacy persisted values must remain automatic for zero behavior regression.

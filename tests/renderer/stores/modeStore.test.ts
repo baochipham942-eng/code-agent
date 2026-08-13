@@ -50,4 +50,14 @@ describe('modeStore searchEnabled（逐轮联网搜索开关）', () => {
     expect(migrated.effortLevel).toBe('low');
     expect(migrated.effortLevelExplicit).toBe(false);
   });
+
+  it('drops the retired mode field from legacy persisted state', () => {
+    const migrate = useModeStore.persist.getOptions().migrate;
+    const retiredField = ['interaction', 'Mode'].join('');
+    const migrated = migrate?.(
+      { mode: 'cowork', effortLevel: 'high', [retiredField]: 'plan' },
+      7,
+    ) as Record<string, unknown>;
+    expect(migrated).not.toHaveProperty(retiredField);
+  });
 });

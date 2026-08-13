@@ -23,9 +23,6 @@ vi.mock('../../../src/renderer/stores/agentRegistryStore', () => ({
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: () => null,
 }));
-vi.mock('../../../src/renderer/stores/modeStore', () => ({
-  useModeStore: () => 'ask',
-}));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
   return { useI18n: () => ({ t: zh }) };
@@ -55,12 +52,12 @@ function setup() {
     return el;
   };
   // 菜单 rect：行宽 200，各行纵向 40px 排列；flyout 物理上盖在右侧
-  const kinds = ['experts', 'teams', 'skills', 'connectors', 'mode'];
+  const kinds = ['experts', 'teams', 'skills', 'connectors'];
   kinds.forEach((kind, index) => {
     mockRect(row(kind), { left: 0, right: 200, top: 40 + index * 40, bottom: 80 + index * 40 });
   });
-  const menuEl = row('mode').parentElement!.parentElement!;
-  mockRect(menuEl, { left: 0, right: 220, top: 0, bottom: 280 });
+  const menuEl = row('connectors').parentElement!.parentElement!;
+  mockRect(menuEl, { left: 0, right: 220, top: 0, bottom: 240 });
   return { ...rendered, row, menuEl };
 }
 
@@ -71,17 +68,17 @@ afterEach(() => {
 });
 
 describe('InputAddMenu flyout 几何切换（20a）', () => {
-  it('指针物理上在 flyout 上、几何落在「模式」行 → 立即切到模式 flyout', () => {
+  it('指针物理上在 flyout 上、几何落在「连接器」行 → 立即切到连接器 flyout', () => {
     const { row, menuEl } = setup();
 
     fireEvent.mouseEnter(row('skills'));
     expect(screen.getByText('Alpha skill')).toBeTruthy();
 
     // 指针移到 x=250（已超出菜单列宽，物理上在 skills flyout 上），
-    // 但 y 落在「模式」行（top 200~240）——应切换到模式 flyout。
-    fireEvent.mouseMove(menuEl, { clientX: 250, clientY: 220 });
+    // 但 y 落在「连接器」行（top 160~200）——应切换到连接器 flyout。
+    fireEvent.mouseMove(menuEl, { clientX: 250, clientY: 180 });
     expect(screen.queryByText('Alpha skill')).toBeNull();
-    expect(screen.getByText('Plan')).toBeTruthy();
+    expect(row('connectors').querySelector('.absolute.bottom-0')).toBeTruthy();
   });
 
   it('指针落在菜单内非行区域（上传按钮/边缘）→ 150ms grace 后关闭 flyout', () => {
@@ -105,7 +102,7 @@ describe('InputAddMenu flyout 几何切换（20a）', () => {
     fireEvent.mouseMove(menuEl, { clientX: 100, clientY: 10 });
     act(() => { vi.advanceTimersByTime(100); });
     // 150ms 未到就移到 connectors 行（几何判定），flyout 不关、直接切换
-    fireEvent.mouseMove(menuEl, { clientX: 100, clientY: 190 });
+    fireEvent.mouseMove(menuEl, { clientX: 100, clientY: 180 });
     act(() => { vi.advanceTimersByTime(200); });
     // skills flyout 已关；connectors flyout 开着（行内 flyout 容器存在）
     expect(screen.queryByText('Alpha skill')).toBeNull();

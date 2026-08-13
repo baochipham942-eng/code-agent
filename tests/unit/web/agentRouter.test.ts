@@ -927,6 +927,64 @@ describe('createAgentRouter', () => {
     }));
   });
 
+  describe('/api/run 逐轮设置接线（QE-01：桌面主链走本路由，不经 appService envelope 分支）', () => {
+    it('body 带 thinkingEnabled=false + effortLevel=low → 原样落进 agent config', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'hi',
+          sessionId: 'session-turn-settings-on',
+          thinkingEnabled: false,
+          effortLevel: 'low',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as {
+        thinkingEnabled?: boolean;
+        effortLevel?: string;
+      };
+      expect(config.thinkingEnabled).toBe(false);
+      expect(config.effortLevel).toBe('low');
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
+    it('body 不带 → thinkingEnabled 缺省 true、effortLevel 不设（复杂度自动档）', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'hi',
+          sessionId: 'session-turn-settings-default',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as {
+        thinkingEnabled?: boolean;
+        effortLevel?: string;
+      };
+      expect(config.thinkingEnabled).toBe(true);
+      expect(config.effortLevel).toBeUndefined();
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+  });
+
   describe('S2 Native Run lifecycle isolation', () => {
     function createPendingLoop() {
       let release: (() => void) | undefined;

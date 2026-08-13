@@ -112,6 +112,8 @@ export function buildQueuedAgentRunBody(envelope: ConversationEnvelope): AgentRu
     clientMessageId: envelope.clientMessageId,
     attachments: envelope.attachments,
     searchEnabled: envelope.searchEnabled,
+    thinkingEnabled: envelope.thinkingEnabled,
+    effortLevel: envelope.effortLevel,
     context: envelope.context,
     goal: envelope.options?.goal,
     model: envelope.options?.modelSpec?.model,
@@ -776,6 +778,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
 
       config.searchEnabled = body.searchEnabled ?? true;
+      // 桌面主链走本路由而非 appService.sendMessage 的 envelope 分支——
+      // 逐轮设置必须在这里落进 options，否则 renderer 带了也会被丢（QE-01 真机抓获）。
+      config.thinkingEnabled = body.thinkingEnabled ?? true;
+      if (body.effortLevel !== undefined) config.effortLevel = body.effortLevel;
 
       const commandCenterBrain = isSessionCommandCenterTurn({ prompt, hasGoal: Boolean(body.goal) });
       if (commandCenterBrain) {

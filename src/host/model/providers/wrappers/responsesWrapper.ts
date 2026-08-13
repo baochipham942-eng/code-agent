@@ -101,9 +101,14 @@ export function parseResponsesResponse(raw: unknown): ModelResponse {
   // 服务端 agent 循环会在每次工具调用前后各插一条 message，中间那些是过程旁白
   // （真机实测一次问答产生 7 条 message，前 6 条都是「让我打开官方文档核实…」这类交代下一步，
   // 只有最后一次工具调用之后的那条才是答案）。全部 join 起来会把旁白当正文喂给用户，
-  // 所以以「最后一个 *_call 项」为界：界前的 message 进思考轨，界后的才是正文。
+  // 所以以「最后一个服务端 *_call 项」为界：界前的 message 进思考轨，界后的才是正文。
+  // function_call 不算界：它是客户端工具调用、本轮到此收尾，界前文本是 preamble 正文
+  // （与 Claude/aiSdk 分支同语义），进思考轨会让流式已下发的正文和最终 content 对不上。
   const lastCallIndex = output.reduce(
-    (last, item, index) => (String((item as Record<string, unknown>).type ?? '').endsWith('_call') ? index : last),
+    (last, item, index) => {
+      const itemType = String((item as Record<string, unknown>).type ?? '');
+      return itemType.endsWith('_call') && itemType !== 'function_call' ? index : last;
+    },
     -1,
   );
 

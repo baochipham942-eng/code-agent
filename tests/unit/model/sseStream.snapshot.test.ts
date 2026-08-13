@@ -21,6 +21,27 @@ describe('openAISSEStream snapshot and incomplete tool calls', () => {
     return `http://127.0.0.1:${address.port}`;
   }
 
+  it('在 tool_call delta 前下发已生成的 preamble 文本', async () => {
+    const baseUrl = await startServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', Connection: 'close' });
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: '我先读取文件。' } }] })}\n\n`);
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', function: { name: 'read_file', arguments: '{"path":"a.txt"}' } }] }, finish_reason: 'tool_calls' }] })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+    });
+    const events: Array<{ type?: string; content?: string }> = [];
+
+    await openAISSEStream({
+      providerName: 'TestProvider', baseUrl, apiKey: 'test-key', requestBody: { model: 'test', messages: [], stream: true },
+      onStream: (event) => { if (typeof event !== 'string') events.push(event); },
+    });
+
+    const preambleAt = events.findIndex((event) => event.type === 'text' && event.content === '我先读取文件。');
+    const toolDeltaAt = events.findIndex((event) => event.type === 'tool_call_delta');
+    expect(preambleAt).toBeGreaterThanOrEqual(0);
+    expect(toolDeltaAt).toBeGreaterThan(preambleAt);
+  });
+
   it('rejects a stream that ends mid tool-call arguments before DONE', async () => {
     const baseUrl = await startServer((_req, res) => {
       res.writeHead(200, {

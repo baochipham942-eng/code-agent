@@ -1,14 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 
-const eventText = (event) => JSON.stringify(event?.args || event?.data || event || {});
-// SSE 帧是 {channel, args} 包裹层（08-13 真机实测）：任务启动的真实词汇是
-// dag:event 的 task:status / agent:event 的 task_progress，不存在 task_started/task_created。
-const isTask = (event) => {
-  const type = event?.args?.type;
-  return (event?.channel === 'dag:event' && type === 'task:status')
-    || (event?.channel === 'agent:event' && type === 'task_progress');
-};
+// harness 的 events[] 只收解包后的 agent:event args（裸 {type,...}，没有 channel 字段；
+// dag:event 帧不进 events[]，见 harness openEvents）。08-13 两轮真机实测：任务启动在
+// 该形状下的词汇是 task_progress/task_stats，不存在 task_started/task_created。
+const isTask = (event) => event?.type === 'task_progress' || event?.type === 'task_stats';
 
 async function voiceDispatch(ctx, workdir, filePath) {
   const sessionId = await ctx.createSession(workdir);
@@ -20,6 +16,9 @@ async function voiceDispatch(ctx, workdir, filePath) {
   return { sessionId, events, filePath, startedAt: Date.now() };
 }
 
+// ⚠️ 正例腿前提：runner 必须在授权工作区（主仓 /Users/linchen/Downloads/ai/code-agent）cwd 下跑。
+// workspaceAuthority 不认临时 worktree（08-13 真机实测：worktree 内写会被 W3 ask+停车，
+// project_sources 的 trust_state 不被写授权链消费）——nightly 从主仓跑天然满足。
 export default {
   id: 'voice-write-boundary',
   module: 'L7-voice',

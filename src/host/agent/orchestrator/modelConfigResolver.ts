@@ -79,6 +79,9 @@ export function resolveRunModelConfig(
       model: explicitModelSpec.model,
       apiKey: configService.getApiKey(provider),
       baseUrl: providerSettings?.baseUrl,
+      // protocol 与 apiKey/baseUrl 同理：必须跟着目标 provider 换，沿用上一家的会把
+      // 协议家族也串染过去（如把 OpenAI 家族的 'openai' 带进 claude 家族的 provider）。
+      protocol: providerSettings?.protocol,
       adaptive: false,
     };
   }
@@ -96,6 +99,7 @@ export function resolveRunModelConfig(
       model: override.model,
       apiKey: configService.getApiKey(override.provider),
       baseUrl: providerSettings?.baseUrl,
+      protocol: providerSettings?.protocol,
       temperature: override.temperature ?? modelConfig.temperature,
       maxTokens: override.maxTokens ?? modelConfig.maxTokens,
       adaptive: false,

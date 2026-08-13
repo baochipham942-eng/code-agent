@@ -8,6 +8,7 @@ describe('model capability matrix', () => {
       protocol: 'chat-completions',
       search: { mode: 'none' },
       thinking: { interleaved: false },
+      responsesAtApiRoot: false,
     });
   });
 
@@ -25,5 +26,26 @@ describe('model capability matrix', () => {
   it('marks deepseek-v4-flash as explicitly tool-call verified without changing its scaffold tier', () => {
     expect(isAgenticVerifiedModel('deepseek-v4-flash')).toBe(true);
     expect(getModelScaffoldTier('deepseek-v4-flash')).toBe('standard');
+  });
+
+  it('resolves relay deepseek-v4-flash-0731 to Responses protocol with web search', () => {
+    expect(resolveModelCapabilities('custom-tokenrhythm', 'deepseek-v4-flash-0731')).toMatchObject({
+      protocol: 'responses',
+      search: { mode: 'deepseek-responses' },
+    });
+  });
+
+  it('does not let the relay inherit official DeepSeek capabilities for same-name models', () => {
+    // 验收判据：2026-08-13 实测同名 deepseek-v4-flash 被中转上游 400 拒绝，必须降级。
+    expect(resolveModelCapabilities('custom-tokenrhythm', 'deepseek-v4-flash')).toMatchObject({
+      protocol: 'chat-completions',
+      search: { mode: 'none' },
+    });
+  });
+
+  it('marks official DeepSeek Responses at the API root and relay models under /v1', () => {
+    expect(resolveModelCapabilities('deepseek', 'deepseek-v4-flash').responsesAtApiRoot).toBe(true);
+    expect(resolveModelCapabilities('custom-tokenrhythm', 'deepseek-v4-flash-0731').responsesAtApiRoot).toBe(false);
+    expect(resolveModelCapabilities('custom-tokenrhythm', 'deepseek-v4-flash').responsesAtApiRoot).toBe(false);
   });
 });

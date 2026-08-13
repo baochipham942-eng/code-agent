@@ -13,6 +13,7 @@ import {
 import type { ModelConfig, ModelProvider } from '../../../src/shared/contract';
 import { ResponsesProvider } from '../../../src/host/model/providers/responsesProvider';
 import { DeepSeekProvider } from '../../../src/host/model/providers/deepseekProvider';
+import { OpenAIProvider } from '../../../src/host/model/providers/openaiProvider';
 
 const healthMonitorMock = {
   getHealth: vi.fn().mockReturnValue(null),
@@ -153,11 +154,27 @@ describe('ModelRouter', () => {
     // 也越过 providers.has() 这道门，内置 provider 会从原生实现掉进通用 custom——DeepSeek 会因此
     // 丢掉 thinking-mode 的 reasoning_content 处理。只有 responses 允许越过。
     expect((router as any).getDynamicCustomProvider({
-      provider: 'deepseek', model: 'deepseek-v4-flash', protocol: 'openai',
+      provider: 'deepseek', model: 'deepseek-chat', protocol: 'openai',
     })).toBeUndefined();
     expect((router as any).getDynamicCustomProvider({
       provider: 'claude', model: 'claude-sonnet-4-6', protocol: 'claude',
     })).toBeUndefined();
+  });
+
+  it('lets matrix responses rows fire through the openai family default, built-in and relay alike', () => {
+    // protocol:'openai' 是 provider 注册/云托管写死的家族缺省，不是用户对具体模型的显式改道
+    // （2026-08-13 真机 config 核实：存量配置的 deepseek 与全部 custom-* 都带着它）。
+    // 矩阵按模型声明的 responses 行必须在 'openai' 下继续生效，否则矩阵对存量配置全是死代码。
+    expect((router as any).getDynamicCustomProvider({
+      provider: 'deepseek', model: 'deepseek-v4-flash', protocol: 'openai',
+    })).toBeInstanceOf(ResponsesProvider);
+    expect((router as any).getDynamicCustomProvider({
+      provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash-0731', protocol: 'openai',
+    })).toBeInstanceOf(ResponsesProvider);
+    // 负例（验收判据）：中转站同名 flash 没有矩阵行，仍走 OpenAI 兼容通用实现（chat-completions）。
+    expect((router as any).getDynamicCustomProvider({
+      provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash', protocol: 'openai',
+    })).toBeInstanceOf(OpenAIProvider);
   });
 
   it('routes DeepSeek fallback targets through the matrix protocol without a user override', () => {

@@ -9,9 +9,14 @@ import { electronFetch, logger } from './shared';
 import { resolveProviderApiKey, resolveProviderBaseUrl } from './providerResolution';
 import { convertToolsToResponses, parseResponsesResponse } from './wrappers/responsesWrapper';
 
-/** /v1 是 chat-completions API version；Responses 位于 API 根的 /responses。 */
-function resolveResponsesEndpoint(baseUrl: string): string {
-  return `${baseUrl.replace(/\/+$/, '').replace(/\/v\d+$/, '')}/responses`;
+/**
+ * 末尾斜杠照剥；/v\d+ 只在 atApiRoot 为 true 时剥。
+ * 官方 DeepSeek 的 Responses 在 API 根（api.deepseek.com/responses，而 baseUrl 常量是 .../v1）；
+ * 中转站的 Responses 就在 baseUrl 之下的 /responses（如 /v1/responses），剥掉 /v1 会打到根路径 405。
+ */
+function resolveResponsesEndpoint(baseUrl: string, atApiRoot: boolean): string {
+  const trimmed = baseUrl.replace(/\/+$/, '');
+  return `${atApiRoot ? trimmed.replace(/\/v\d+$/, '') : trimmed}/responses`;
 }
 
 function buildResponsesInput(messages: ModelMessage[]): unknown[] {
@@ -152,7 +157,8 @@ export class ResponsesProvider implements Provider {
     options?: InferenceOptions,
   ): Promise<ModelResponse> {
     const baseUrl = resolveProviderBaseUrl(config);
-    const endpoint = resolveResponsesEndpoint(baseUrl);
+    const caps = resolveModelCapabilities(config.provider, config.model);
+    const endpoint = resolveResponsesEndpoint(baseUrl, caps.responsesAtApiRoot === true);
     const body: Record<string, unknown> = {
       model: config.model,
       input: buildResponsesInput(messages),
@@ -160,7 +166,7 @@ export class ResponsesProvider implements Provider {
     };
     const responseTools: unknown[] = [];
     // 逐轮「联网搜索」开关（默认开）：关掉时这一轮不挂 web_search，矩阵裁决让位。
-    if (options?.searchEnabled !== false && resolveModelCapabilities(config.provider, config.model).search?.mode === 'deepseek-responses') responseTools.push({ type: 'web_search' });
+    if (options?.searchEnabled !== false && caps.search?.mode === 'deepseek-responses') responseTools.push({ type: 'web_search' });
     responseTools.push(...convertToolsToResponses(tools));
     if (responseTools.length) body.tools = responseTools;
     if (onStream) body.stream = true;

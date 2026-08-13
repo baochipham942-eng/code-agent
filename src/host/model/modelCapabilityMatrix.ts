@@ -4,6 +4,8 @@ export interface ModelCapabilityMatrixEntry {
   protocol: 'chat-completions' | 'responses' | 'anthropic-messages';
   search?: { mode: 'none' | 'deepseek-responses' | 'bailian-enable-search' };
   thinking?: { interleaved: boolean };
+  /** Responses 端点是否在 API 根（true 时剥掉 baseUrl 末尾的 /vN）；默认 false = 端点在 baseUrl 之下的 /responses。 */
+  responsesAtApiRoot?: boolean;
 }
 
 type ModelCapabilityMatrix = Partial<Record<
@@ -18,8 +20,19 @@ const MATRIX: ModelCapabilityMatrix = {
     },
   },
   deepseek: {
+    default: {
+      // 官方 DeepSeek 的 Responses 在 API 根（api.deepseek.com/responses），不在 /v1 下。
+      responsesAtApiRoot: true,
+    },
     models: {
       'deepseek-v4-flash': { protocol: 'responses', search: { mode: 'deepseek-responses' } },
+    },
+  },
+  'custom-tokenrhythm': {
+    models: {
+      // 2026-08-13 实测：仅 0731 支持 Responses + web_search；
+      // 同名的 deepseek-v4-flash / -pro 均被上游拒绝，不可想当然继承官方。
+      'deepseek-v4-flash-0731': { protocol: 'responses', search: { mode: 'deepseek-responses' } },
     },
   },
   claude: {
@@ -42,6 +55,7 @@ export function resolveModelCapabilities(provider: ModelProvider, modelId: strin
     protocol: 'chat-completions',
     search: { mode: 'none' },
     thinking: { interleaved: false },
+    responsesAtApiRoot: false,
     ...entry?.default,
     ...entry?.models?.[modelId],
   };

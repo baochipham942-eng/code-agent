@@ -141,6 +141,25 @@ describe('sessionMetadata', () => {
       expect(stats.modelUsage['deepseek-chat']).toBe(1);
     });
 
+    it('should track provider-qualified model usage when provider is supplied', async () => {
+      await recordSessionEnd(10, 'deepseek-v4-flash', 'session-1', 'deepseek');
+      await recordSessionEnd(15, 'deepseek-v4-flash', 'session-2', 'custom-tokenrhythm');
+
+      const stats = await readStats();
+      expect(stats.modelUsage).toEqual({
+        'deepseek/deepseek-v4-flash': 1,
+        'custom-tokenrhythm/deepseek-v4-flash': 1,
+      });
+    });
+
+    it('should keep the plain model key when provider is omitted', async () => {
+      await recordSessionEnd(10, 'deepseek-v4-flash', 'session-1');
+
+      const stats = await readStats();
+      expect(stats.modelUsage).toEqual({ 'deepseek-v4-flash': 1 });
+      expect(stats.lastEndedModel).toBe('deepseek-v4-flash');
+    });
+
     it('should keep only last 15 session depths', async () => {
       for (let i = 0; i < 20; i++) {
         await recordSessionEnd(i + 1);
@@ -176,6 +195,16 @@ describe('sessionMetadata', () => {
       expect(stats.modelUsage['model-b']).toBe(1);
       expect(stats.lastEndedSessionId).toBe('session-1');
       expect(stats.lastEndedModel).toBe('model-b');
+    });
+
+    it('should replace the composite usage key when a repeated session changes provider', async () => {
+      await recordSessionEnd(10, 'deepseek-v4-flash', 'session-1', 'deepseek');
+      await recordSessionEnd(25, 'deepseek-v4-flash', 'session-1', 'custom-tokenrhythm');
+
+      const stats = await readStats();
+      expect(stats.recentSessionDepths).toEqual([25]);
+      expect(stats.modelUsage).toEqual({ 'custom-tokenrhythm/deepseek-v4-flash': 1 });
+      expect(stats.lastEndedModel).toBe('custom-tokenrhythm/deepseek-v4-flash');
     });
   });
 

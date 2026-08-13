@@ -26,6 +26,20 @@ describe('resolveModelPrice 五档证据等级', () => {
     expect(mimo.inputPerMTok).toBe(0); // Token Plan 包月，已知为 0
   });
 
+  it('custom provider 不把同名模型误认成官方策展价', () => {
+    expect(resolveModelPrice('custom-tokenrhythm', 'deepseek-v4-flash').source).toBe('unknown');
+  });
+
+  it('内置 provider 仍使用同名模型的官方策展价', () => {
+    const price = resolveModelPrice('deepseek', 'deepseek-v4-flash');
+    expect(price).toMatchObject({ source: 'catalog', inputPerMTok: 0.14, outputPerMTok: 0.28 });
+  });
+
+  it('内置 provider 的别名仍被识别为官方策展价', () => {
+    const price = resolveModelPrice('anthropic', 'claude-sonnet-4-20250514');
+    expect(price).toMatchObject({ source: 'catalog', inputPerMTok: 3, outputPerMTok: 15 });
+  });
+
   it('local provider 一律已知为 0（本地推理无 API 账单）', () => {
     const price = resolveModelPrice('local', 'qwen3.5:9b');
     expect(price.source).toBe('catalog');
@@ -37,6 +51,11 @@ describe('resolveModelPrice 五档证据等级', () => {
     expect(price.source).toBe('litellm');
     expect(price.inputPerMTok).toBeGreaterThan(0);
     expect(price.updatedAt).toBeTruthy();
+  });
+
+  it('litellm 快照的真实 fullId 条目保持 litellm 来源', () => {
+    const price = resolveModelPrice('openai', 'gpt-5.5');
+    expect(price.source).toBe('litellm');
   });
 
   it('无权威价 → unknown，绝不落兜底价（治「default $1/$3 装精确」的病）', () => {

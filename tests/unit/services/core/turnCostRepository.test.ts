@@ -99,7 +99,7 @@ describe('TurnCostRepository', () => {
     expect(repo.getTodayCost(today)).toEqual({ usd: 0.25, unknownTurns: 1 });
   });
 
-  it('aggregates the last N local calendar days by model_id', () => {
+  it('aggregates the last N local calendar days by provider and model_id', () => {
     const now = localTime(2026, 7, 27);
     const insert = (
       modelId: string,
@@ -123,8 +123,42 @@ describe('TurnCostRepository', () => {
     insert('outside-window', 8, localTime(2026, 7, 24));
 
     expect(repo.getCostStats(3, now)).toEqual([
-      { modelId: 'model-a', turns: 3, usd: 0.30000000000000004, unknownTurns: 1 },
-      { modelId: 'model-b', turns: 1, usd: 0, unknownTurns: 1 },
+      { provider: 'test-provider', modelId: 'model-a', turns: 3, usd: 0.30000000000000004, unknownTurns: 1 },
+      { provider: 'test-provider', modelId: 'model-b', turns: 1, usd: 0, unknownTurns: 1 },
+    ]);
+  });
+
+  it('keeps same-named models from different providers separate, including unknown turns', () => {
+    const now = localTime(2026, 7, 27);
+    const insert = (provider: string, usd: number | null) => repo.insert({
+      sessionId: `session-${provider}`,
+      provider,
+      modelId: 'deepseek-v4-flash',
+      inputTokens: 10,
+      outputTokens: 5,
+      usd,
+      source: usd == null ? 'unknown' : 'catalog',
+      createdAt: now,
+    });
+
+    insert('custom-tokenrhythm', 0.03);
+    insert('deepseek', null);
+
+    expect(repo.getCostStats(1, now)).toEqual([
+      {
+        provider: 'custom-tokenrhythm',
+        modelId: 'deepseek-v4-flash',
+        turns: 1,
+        usd: 0.03,
+        unknownTurns: 0,
+      },
+      {
+        provider: 'deepseek',
+        modelId: 'deepseek-v4-flash',
+        turns: 1,
+        usd: 0,
+        unknownTurns: 1,
+      },
     ]);
   });
 

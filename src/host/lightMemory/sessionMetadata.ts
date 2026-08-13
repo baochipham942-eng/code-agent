@@ -105,10 +105,12 @@ export async function recordSessionEnd(
   messageCount: number,
   model?: string,
   sessionId?: string,
+  provider?: string,
 ): Promise<void> {
   try {
     const stats = await loadStats();
     const updatingSameSession = Boolean(sessionId && stats.lastEndedSessionId === sessionId);
+    const usageKey = model ? (provider ? `${provider}/${model}` : model) : undefined;
 
     // Track conversation depth
     if (updatingSameSession && stats.recentSessionDepths.length > 0) {
@@ -121,20 +123,20 @@ export async function recordSessionEnd(
     }
 
     // Track model usage
-    if (model) {
-      if (updatingSameSession && stats.lastEndedModel && stats.lastEndedModel !== model) {
+    if (usageKey) {
+      if (updatingSameSession && stats.lastEndedModel && stats.lastEndedModel !== usageKey) {
         const previous = stats.modelUsage[stats.lastEndedModel] ?? 0;
         if (previous <= 1) {
           delete stats.modelUsage[stats.lastEndedModel];
         } else {
           stats.modelUsage[stats.lastEndedModel] = previous - 1;
         }
-        stats.modelUsage[model] = (stats.modelUsage[model] || 0) + 1;
+        stats.modelUsage[usageKey] = (stats.modelUsage[usageKey] || 0) + 1;
       } else if (!updatingSameSession) {
-        stats.modelUsage[model] = (stats.modelUsage[model] || 0) + 1;
+        stats.modelUsage[usageKey] = (stats.modelUsage[usageKey] || 0) + 1;
       }
       if (sessionId) {
-        stats.lastEndedModel = model;
+        stats.lastEndedModel = usageKey;
       }
     } else if (sessionId && !updatingSameSession) {
       stats.lastEndedModel = undefined;

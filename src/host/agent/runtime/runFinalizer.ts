@@ -399,7 +399,12 @@ export class RunFinalizer {
 
     // Light Memory: Record session stats + conversation summary
     const messageCount = this.ctx.messages.length;
-    recordSessionEnd(messageCount, this.ctx.modelConfig.model, this.ctx.sessionId)
+    recordSessionEnd(
+      messageCount,
+      this.ctx.modelConfig.model,
+      this.ctx.sessionId,
+      this.ctx.modelConfig.provider,
+    )
       .catch(() => { /* non-critical */ });
 
     // Extract conversation summary from user messages

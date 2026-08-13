@@ -540,7 +540,7 @@ export class SubagentPipeline {
   private calculateTotalCost(usages: TokenUsage[]): number {
     const budgetService = getBudgetService();
     return usages.reduce((sum, usage) => {
-      return sum + budgetService.estimateCost(usage.inputTokens, usage.outputTokens, usage.model);
+      return sum + budgetService.estimateCost(usage.inputTokens, usage.outputTokens, usage.model, usage.provider);
     }, 0);
   }
 

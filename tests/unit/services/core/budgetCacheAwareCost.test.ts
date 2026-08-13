@@ -105,7 +105,7 @@ describe('BudgetService cache-aware cost accounting (WP2-1)', () => {
 
   it('estimateCost stays cache-unaware (planning path unchanged)', () => {
     const svc = makeService();
-    const cost = svc.estimateCost(1_000_000, 1_000_000, 'claude-sonnet-4-20250514');
+    const cost = svc.estimateCost(1_000_000, 1_000_000, 'claude-sonnet-4-20250514', 'claude');
     expect(cost).toBeCloseTo(18, 6);
   });
 });

@@ -95,17 +95,19 @@ export class TurnCostRepository {
 
     const rows = this.db.prepare(`
       SELECT
+        provider,
         model_id,
         COUNT(*) AS turns,
         COALESCE(SUM(usd), 0) AS usd,
         COALESCE(SUM(CASE WHEN usd IS NULL THEN 1 ELSE 0 END), 0) AS unknown_turns
       FROM turn_cost_estimates
       WHERE created_at >= ? AND created_at < ?
-      GROUP BY model_id
-      ORDER BY model_id ASC
+      GROUP BY provider, model_id
+      ORDER BY provider ASC, model_id ASC
     `).all(startDate.getTime(), end) as SQLiteRow[];
 
     return rows.map((row) => ({
+      provider: String(row.provider),
       modelId: String(row.model_id),
       turns: Number(row.turns),
       usd: Number(row.usd),

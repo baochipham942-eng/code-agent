@@ -764,6 +764,8 @@ export class ToolExecutor {
     if (toolDef.requiresPermission && (writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
+      // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
+      let boundaryAskForcesConfirmation = false;
       // B4：external 工具的授权 target 精确串（取不到=null，不具铸权资格）。一次算好，
       // 供下面的长期授权消费判定，以及需人工审批时透传给停车审批卡（铸权入口）。
       const standingGrantTarget = isExternalSideEffectTool(executionToolName)
@@ -853,6 +855,7 @@ export class ToolExecutor {
             };
           } else {
             // 'ask' — collect trace step for permission request
+            if (classification.trustBoundary) boundaryAskForcesConfirmation = true;
             if (classification.traceStep) {
               traceBuilder.addStep(
                 classification.traceStep.layer,
@@ -899,7 +902,9 @@ export class ToolExecutor {
       // devModeAutoApprove / autoApprove[level]、renderer PermissionCard 的
       // always/session 权限记忆）全部对 forceConfirm 让路——只读探索档下
       // 写入/执行必须逐次真人确认，且不写入/不消费权限记忆。
-      if (readOnlyForcesConfirmation || guardFabricForcesApproval) {
+      // 信任边界 ask（W3 写边界）同样让路：2026-08-13 真机事故里 devModeAutoApprove
+      // 把 $HOME 写边界 ask 自动批掉、文件真落盘。
+      if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation) {
         permissionRequest.forceConfirm = true;
       }
 

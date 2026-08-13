@@ -209,6 +209,18 @@ export const VOICE_UPSTREAM_SILENCE_TIMEOUT_MS = VOICE_UPSTREAM_HEARTBEAT_INTERV
 /** 已提交用户轮次等待模型创建响应的窗口（ms）；首轮超时后 nudge，再超时提示用户。 */
 export const VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000;
 
+/** response.created 后等待首增量或下一增量的绝对下限（ms）。 */
+export const VOICE_UPSTREAM_RESPONSE_SILENCE_MIN_TIMEOUT_MS = 12_000;
+
+/** 响应增量间隔的通话内滚动样本数；只留近期节奏，避免早期慢轮永久放宽看门狗。 */
+export const VOICE_UPSTREAM_RESPONSE_SILENCE_SAMPLE_WINDOW = 12;
+
+/** 滚动最大间隔的容忍倍数；真实节奏慢于绝对下限时自动放宽。 */
+export const VOICE_UPSTREAM_RESPONSE_SILENCE_MULTIPLIER = 4;
+
+/** 同一通话发生两次接管后，后续轮次的阈值收紧系数（仍不低于绝对下限）。 */
+export const VOICE_UPSTREAM_RESPONSE_SILENCE_DEGRADED_FACTOR = 0.75;
+
 /** 通话最长时长（ms），到点强制挂断，兜住忘记挂断导致的持续计费。 */
 export const VOICE_SESSION_MAX_DURATION_MS = 10 * 60 * 1000;
 

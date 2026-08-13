@@ -71,6 +71,33 @@ type VoiceWorkEvent =
 
 export type VoiceToolCallOutcome = 'accepted' | 'rejected' | 'duplicate';
 
+/** 记一次 response.created 后的轮次悬空接管；字段全是受控标识或数值，不含对话内容。 */
+export function recordVoiceWatchdogTakeover(input: {
+  provider: VoiceProviderId;
+  turn: number;
+  responseId: string;
+  silenceMs: number;
+  thresholdMs: number;
+  thresholdSource: 'absolute_floor' | 'rolling_estimate';
+  takeoverCount: number;
+}): void {
+  try {
+    const telemetry = getTelemetryService();
+    const span = telemetry.startSpan('watchdog_takeover', 'internal', {
+      'voice_watchdog.provider': input.provider,
+      'voice_watchdog.turn': input.turn,
+      'voice_watchdog.response_id': input.responseId,
+      'voice_watchdog.silence_ms': input.silenceMs,
+      'voice_watchdog.threshold_ms': input.thresholdMs,
+      'voice_watchdog.threshold_source': input.thresholdSource,
+      'voice_watchdog.takeover_count': input.takeoverCount,
+    });
+    telemetry.endSpan(span.spanId, 'error');
+  } catch (err) {
+    logger.warn('voice watchdog telemetry unavailable', { message: err instanceof Error ? err.message : 'unknown' });
+  }
+}
+
 /**
  * 记录 Realtime 工具通道命中。provider + origin 可直接聚合 fallback 率；
  * toolName 只允许注册工具名，调用方不得传参数或用户文本。

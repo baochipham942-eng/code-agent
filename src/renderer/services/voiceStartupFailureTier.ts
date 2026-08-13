@@ -27,6 +27,7 @@ export const VOICE_STARTUP_FAILURE_TIER: Record<VoiceMessageCode, VoiceStartupFa
   // 以下三条只在通话中产生（提示/派活失败），不会落到启动失败出口；归 actionable 保持既有呈现。
   VOICE_TOOLS_DROPPED: 'actionable',
   VOICE_MODEL_UNRESPONSIVE: 'actionable',
+  VOICE_SERVICE_UNSTABLE: 'actionable',
   VOICE_WORK_FAILED: 'actionable',
   // 用户修不了的上游/网络失败：收回 chrome + toast。
   VOICE_UPSTREAM_UNAVAILABLE: 'silent',

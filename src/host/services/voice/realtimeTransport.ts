@@ -8,9 +8,6 @@
 import WebSocket from 'ws';
 import {
   VOICE_INJECTION_ACK_WINDOW_MS,
-  VOICE_STALE_PREFIX_DEFAULTS_MS,
-  VOICE_STALE_SILENCE_DEFAULTS_MS,
-  VOICE_TURN_DETECTION_DEFAULT,
   VOICE_UPSTREAM_CONNECT_TIMEOUT_MS,
   VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS,
   VOICE_UPSTREAM_RESPONSE_SILENCE_DEGRADED_FACTOR,
@@ -28,7 +25,19 @@ import type {
   VoiceTransportHandle,
   VoiceTurnDetectionConfig,
 } from '../../../shared/contract/voice';
-import { getConfigService } from '../core/configService';
+import { parseResponseUsage } from './realtimeUsage';
+import {
+  parseEvent,
+  resolveUpstreamUrlOverride,
+  responseIdOf,
+  upstreamAcceptedTools,
+  type UpstreamEvent,
+} from './realtimeUpstream';
+import {
+  buildSessionUpdate,
+  resolveTurnDetectionConfig,
+  toUpstreamTurnDetection,
+} from './realtimeSessionConfig';
 import { createLogger } from '../infra/logger';
 import { getHttpsAgent } from '../../model/providers/providerHttp';
 import { recordVoiceToolCall, recordVoiceWatchdogTakeover } from './voiceTelemetry';
@@ -43,248 +52,7 @@ const RESPONSE_IDLE_TIMEOUT_CODE = 'response_idle_timeout';
 // Realtime 协议族的 provider 不保证必发 session.updated；超时降级是预期路径，不是建连失败。
 const INITIAL_SESSION_HANDSHAKE_TIMEOUT_MS = 8_000;
 
-interface UpstreamEvent {
-  type: string;
-  response_id?: string;
-  item_id?: string;
-  response?: { id?: string; usage?: unknown };
-  item?: { id?: string };
-  delta?: string;
-  transcript?: string;
-  audio?: string;
-  error?: { code?: string; message?: string };
-  [key: string]: unknown;
-}
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function tokenCount(record: Record<string, unknown>, key: string): number | undefined {
-  const value = record[key];
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-function parseDashscopeUsage(raw: unknown): VoiceTokenUsage | undefined {
-  if (!isRecord(raw) || !isRecord(raw.input_tokens_details) || !isRecord(raw.output_tokens_details)) return undefined;
-  const totalTokens = tokenCount(raw, 'total_tokens');
-  const inputTokens = tokenCount(raw, 'input_tokens');
-  const outputTokens = tokenCount(raw, 'output_tokens');
-  if (totalTokens === undefined || inputTokens === undefined || outputTokens === undefined) return undefined;
-  // DashScope 的 details 是稀疏的：没消耗的形态不发字段（纯文本输入没有 audio_tokens）。
-  // 缺席 = 0；顶层三个总量字段仍必需，防止把完全不认识的形状静默算成 0。
-  return {
-    totalTokens,
-    inputTokens,
-    outputTokens,
-    inputAudioTokens: tokenCount(raw.input_tokens_details, 'audio_tokens') ?? 0,
-    inputTextTokens: tokenCount(raw.input_tokens_details, 'text_tokens') ?? 0,
-    outputAudioTokens: tokenCount(raw.output_tokens_details, 'audio_tokens') ?? 0,
-    outputTextTokens: tokenCount(raw.output_tokens_details, 'text_tokens') ?? 0,
-  };
-}
-
-function parseOpenAIUsage(raw: unknown): VoiceTokenUsage | undefined {
-  if (!isRecord(raw) || !isRecord(raw.input_token_details) || !isRecord(raw.output_token_details)) return undefined;
-  const totalTokens = tokenCount(raw, 'total_tokens');
-  const inputTokens = tokenCount(raw, 'input_tokens');
-  const outputTokens = tokenCount(raw, 'output_tokens');
-  const inputAudioTokens = tokenCount(raw.input_token_details, 'audio_tokens');
-  const inputTextTokens = tokenCount(raw.input_token_details, 'text_tokens');
-  const outputAudioTokens = tokenCount(raw.output_token_details, 'audio_tokens');
-  const outputTextTokens = tokenCount(raw.output_token_details, 'text_tokens');
-  if (
-    totalTokens === undefined
-    || inputTokens === undefined
-    || outputTokens === undefined
-    || inputAudioTokens === undefined
-    || inputTextTokens === undefined
-    || outputAudioTokens === undefined
-    || outputTextTokens === undefined
-  ) return undefined;
-  return {
-    totalTokens,
-    inputTokens,
-    outputTokens,
-    inputAudioTokens,
-    inputTextTokens,
-    outputAudioTokens,
-    outputTextTokens,
-  };
-}
-
-function parseResponseUsage(profile: RealtimeVoiceProviderProfile, raw: unknown): VoiceTokenUsage | undefined {
-  return profile.sessionShape === 'dashscope-compatible'
-    ? parseDashscopeUsage(raw)
-    : parseOpenAIUsage(raw);
-}
-
-/**
- * 真机故障注入接缝（L7 看门狗 P3 / L10 剧本库哑火场景共用）：把 realtime 上游经本地
- * 拦截代理转发。双门控——只在 dev API 开启时认 override，生产/普通用户永远走真实上游；
- * 原 URL 的 query（model 等）由代理侧合并，这里只换 origin+path。
- */
-function resolveUpstreamUrlOverride(realUrl: string): string {
-  if (process.env.CODE_AGENT_ENABLE_DEV_API !== 'true') return realUrl;
-  const override = process.env.CODE_AGENT_VOICE_UPSTREAM_URL_OVERRIDE;
-  if (!override) return realUrl;
-  const query = realUrl.includes('?') ? realUrl.slice(realUrl.indexOf('?')) : '';
-  logger.warn('voice upstream URL override active (dev only)', { override });
-  return `${override}${query}`;
-}
-
-function responseIdOf(event: UpstreamEvent, fallback = ''): string {
-  if (typeof event.response_id === 'string' && event.response_id) return event.response_id;
-  if (typeof event.response?.id === 'string' && event.response.id) return event.response.id;
-  return fallback;
-}
-
-function parseEvent(raw: unknown): UpstreamEvent | null {
-  try {
-    const parsed: unknown = JSON.parse(String(raw));
-    if (parsed && typeof parsed === 'object' && typeof (parsed as UpstreamEvent).type === 'string') {
-      return parsed as UpstreamEvent;
-    }
-  } catch {
-    // 上游偶发非 JSON 帧，忽略即可；不要打印内容（可能含音频 base64）。
-  }
-  return null;
-}
-
-type UpstreamTurnDetection =
-  | {
-      type: 'server_vad';
-      threshold?: number;
-      prefix_padding_ms?: number;
-      silence_duration_ms?: number;
-      create_response: false;
-      interrupt_response: false;
-    }
-  | {
-      type: 'semantic_vad';
-      eagerness?: 'low' | 'medium' | 'high' | 'auto';
-      create_response: false;
-      interrupt_response: false;
-    }
-  | null;
-
-function resolveTurnDetectionConfig(): VoiceTurnDetectionConfig {
-  try {
-    const voice = getConfigService().getSettings().voice;
-    const configured = voice?.turnDetection;
-    // `turnDetection: null` = 手动 commit 档。但删掉「按住说话」之后，老配置里会出现
-    // `turnDetection: null` + `live.interrupt: 'push_to_talk'` 的组合——UI 侧把它归一到
-    // 全双工了，运行时若还按 null 走，就是「UI 说全双工、上游永远等不到 commit」的
-    // 分叉：用户说了没反应，连补救的点按按钮都不显示（2026-07-27 真机差点踩到）。
-    // 只有**显式**留在点按档时才认这个 null。
-    if (configured === null && voice?.live?.interrupt !== 'manual') return VOICE_TURN_DETECTION_DEFAULT;
-    if (configured === undefined) return VOICE_TURN_DETECTION_DEFAULT;
-    return upgradeStaleVadDefaults(configured);
-  } catch {
-    return VOICE_TURN_DETECTION_DEFAULT;
-  }
-}
-
-/**
- * 存量配置里的旧默认值升级（批 X2，批 X5 补上 800）。prefix/silence 从来不是 UI 可设项
- * ——落盘里等于历代默认值之一，就只可能是「当年默认值随保存写死的拷贝」，不是用户选择。
- * 改默认值对存量零生效是踩过的坑（echoCancellation 先例），所以在读取口把旧默认识别为
- * 过期：逐字段命中历代默认表 → 升到新默认；手改过的其他值（含 threshold）原样保留。
- *
- * 历代默认表放常量文件而不是写在这里：改默认值的人改的是那个文件，旧值必须在他眼前。
- */
-function upgradeStaleVadDefaults(configured: VoiceTurnDetectionConfig): VoiceTurnDetectionConfig {
-  if (configured?.type !== 'server_vad') return configured;
-  const defaults = VOICE_TURN_DETECTION_DEFAULT;
-  if (defaults?.type !== 'server_vad') return configured;
-  const isStale = (value: number | undefined, stale: readonly number[]): boolean =>
-    value !== undefined && stale.includes(value);
-  return {
-    ...configured,
-    ...(isStale(configured.prefixPaddingMs, VOICE_STALE_PREFIX_DEFAULTS_MS)
-      ? { prefixPaddingMs: defaults.prefixPaddingMs }
-      : {}),
-    ...(isStale(configured.silenceDurationMs, VOICE_STALE_SILENCE_DEFAULTS_MS)
-      ? { silenceDurationMs: defaults.silenceDurationMs }
-      : {}),
-  };
-}
-
-/** session.updated 回显里是否真收下了工具。回显不带 tools 字段一律按「没收下」算。 */
-function upstreamAcceptedTools(event: UpstreamEvent): boolean {
-  const session = event.session as { tools?: unknown } | undefined;
-  return Array.isArray(session?.tools) && session.tools.length > 0;
-}
-
-function toUpstreamTurnDetection(config: VoiceTurnDetectionConfig): UpstreamTurnDetection {
-  if (config === null) return null;
-  if (config.type === 'semantic_vad') {
-    return {
-      type: 'semantic_vad',
-      create_response: false,
-      interrupt_response: false,
-      ...(config.eagerness ? { eagerness: config.eagerness } : {}),
-    };
-  }
-  return {
-    type: 'server_vad',
-    create_response: false,
-    interrupt_response: false,
-    ...(config.threshold !== undefined ? { threshold: config.threshold } : {}),
-    ...(config.prefixPaddingMs !== undefined ? { prefix_padding_ms: config.prefixPaddingMs } : {}),
-    ...(config.silenceDurationMs !== undefined ? { silence_duration_ms: config.silenceDurationMs } : {}),
-  };
-}
-
-function buildSessionUpdate(
-  profile: RealtimeVoiceProviderProfile,
-  input: {
-    model: string;
-    voice: string;
-    instructions?: string;
-    tools: readonly unknown[];
-    turnDetection: UpstreamTurnDetection;
-  },
-): Record<string, unknown> {
-  if (profile.sessionShape === 'openai-realtime') {
-    return {
-      type: 'session.update',
-      session: {
-        type: 'realtime',
-        model: input.model,
-        output_modalities: ['audio'],
-        audio: {
-          input: {
-            format: { type: 'audio/pcm', rate: profile.inputSampleRate },
-            transcription: profile.transcriptionModel ? { model: profile.transcriptionModel } : undefined,
-            turn_detection: input.turnDetection,
-          },
-          output: {
-            format: { type: 'audio/pcm' },
-            voice: input.voice,
-          },
-        },
-        ...(input.instructions ? { instructions: input.instructions } : {}),
-        ...(input.tools.length ? { tools: input.tools, tool_choice: 'auto' } : {}),
-      },
-    };
-  }
-  return {
-    type: 'session.update',
-    session: {
-      modalities: ['text', 'audio'],
-      voice: input.voice,
-      input_audio_format: 'pcm16',
-      output_audio_format: 'pcm16',
-      ...(profile.transcriptionModel
-        ? { input_audio_transcription: { model: profile.transcriptionModel } }
-        : {}),
-      turn_detection: input.turnDetection,
-      ...(input.instructions ? { instructions: input.instructions } : {}),
-      ...(input.tools.length ? { tools: input.tools, tool_choice: 'auto' } : {}),
-    },
-  };
-}
 
 function resolveProxyAgent(profile: RealtimeVoiceProviderProfile, url: string) {
   if (!profile.needsProxy) return undefined;

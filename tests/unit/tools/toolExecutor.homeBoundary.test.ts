@@ -80,6 +80,23 @@ describe('基座 ToolExecutor 写边界宽度校验（无 runContext 回落）',
     expect(existsSync(probe)).toBe(false);
   });
 
+  it('负向：home 写边界 ask 必须带 forceConfirm——便利放行层不得吃掉信任边界审批', async () => {
+    // 真机事故 2026-08-13：scenario-voice-write-boundary-negative 剧本里，W3 ask 被
+    // orchestratorPermissions 的 devModeAutoApprove 自动批掉，文件真写进 $HOME。
+    // devModeAutoApprove / autoApprove[level] / renderer 权限记忆全部以 !forceConfirm
+    // 为让路前提（同 readOnlyMode.test.ts 的锚点）；写边界是信任边界决策，
+    // 与 directory_access 同性质，必须穿透所有便利开关。
+    const executor = buildExecutor(fakeHome, false);
+    const probe = path.join(fakeHome, 'boundary-probe-force.txt');
+    await executor.execute(
+      'Write',
+      { file_path: probe, content: 'neo-boundary-force-confirm' },
+      { sessionId: 'home-boundary-session' },
+    );
+    expect(permissionRequests.length).toBeGreaterThan(0);
+    expect(permissionRequests[0].forceConfirm).toBe(true);
+  });
+
   it('正向：workingDirectory=具体项目目录时，写边界保持该目录（1914 个存量会话不误伤）', async () => {
     const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'legit-project-'));
     try {

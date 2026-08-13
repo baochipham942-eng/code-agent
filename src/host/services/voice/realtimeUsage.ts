@@ -6,7 +6,7 @@
 import type { RealtimeVoiceProviderProfile } from '../../../shared/constants/realtimeVoiceProviders';
 import type { VoiceTokenUsage } from '../../../shared/contract/voice';
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 

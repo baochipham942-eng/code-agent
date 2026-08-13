@@ -338,6 +338,43 @@ export function createCliTables(db: CliDb): void {
   `);
 
   db.exec(`CREATE INDEX IF NOT EXISTS idx_mtpe_master_task ON master_task_plan_events(master_task_id, created_at)`);
+
+  // 工具/权限账本与桌面共用同一数据库文件；CLI 先启动时也必须能独立建出完整结构。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS permission_decisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT,
+      tool_name TEXT NOT NULL,
+      summary TEXT,
+      final_outcome TEXT NOT NULL,
+      history_outcome TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      duration_ms INTEGER NOT NULL,
+      wait_ms INTEGER,
+      origin TEXT,
+      recorded_at INTEGER NOT NULL,
+      trace_json TEXT
+    )
+  `);
+  addColumnIfMissing(db, `ALTER TABLE permission_decisions ADD COLUMN wait_ms INTEGER`);
+  addColumnIfMissing(db, `ALTER TABLE permission_decisions ADD COLUMN origin TEXT`);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tool_execution_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      execution_id TEXT NOT NULL,
+      session_id TEXT,
+      tool_name TEXT NOT NULL,
+      summary TEXT,
+      params_json TEXT,
+      phase TEXT NOT NULL,
+      status TEXT,
+      error TEXT,
+      origin TEXT,
+      recorded_at INTEGER NOT NULL
+    )
+  `);
+  addColumnIfMissing(db, `ALTER TABLE tool_execution_events ADD COLUMN origin TEXT`);
 }
 
 export function createCliIndexes(db: CliDb): void {
@@ -357,5 +394,13 @@ export function createCliIndexes(db: CliDb): void {
     CREATE INDEX IF NOT EXISTS idx_compaction_snapshots_session ON compaction_snapshots(session_id);
     CREATE INDEX IF NOT EXISTS idx_compaction_snapshots_created ON compaction_snapshots(created_at);
     CREATE INDEX IF NOT EXISTS idx_sessions_master_task ON sessions(master_task_id);
+    CREATE INDEX IF NOT EXISTS idx_permission_decisions_recorded ON permission_decisions(recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_permission_decisions_session ON permission_decisions(session_id, recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_permission_decisions_tool ON permission_decisions(tool_name, recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_permission_decisions_origin ON permission_decisions(origin, recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_tool_execution_events_exec_phase ON tool_execution_events(execution_id, phase);
+    CREATE INDEX IF NOT EXISTS idx_tool_execution_events_session ON tool_execution_events(session_id, recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_tool_execution_events_phase ON tool_execution_events(phase, recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_tool_execution_events_origin ON tool_execution_events(origin, recorded_at);
   `);
 }

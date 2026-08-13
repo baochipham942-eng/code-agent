@@ -8,6 +8,7 @@
 
 import type BetterSqlite3 from 'better-sqlite3';
 import type { DecisionTrace } from '../../../../shared/contract/decisionTrace';
+import type { ToolLedgerOrigin } from '../../../../shared/constants/toolLedger';
 
 type SQLiteRow = Record<string, unknown>;
 
@@ -22,6 +23,9 @@ export interface PermissionDecisionInput {
   historyOutcome: string;
   reason: string;
   durationMs: number;
+  /** 真实等待人工审批的墙钟时长；自动/策略路径保持空。 */
+  waitMs?: number;
+  origin?: ToolLedgerOrigin;
   /** 决策发生时间戳（毫秒），由调用方传入 */
   recordedAt: number;
   /** 多层决策 trace（可选） */
@@ -38,6 +42,8 @@ export interface PermissionDecisionRecord {
   historyOutcome: string;
   reason: string;
   durationMs: number;
+  waitMs: number | null;
+  origin: ToolLedgerOrigin | null;
   recordedAt: number;
   trace: DecisionTrace | null;
 }
@@ -61,6 +67,8 @@ function rowToRecord(row: SQLiteRow): PermissionDecisionRecord {
     historyOutcome: String(row.history_outcome),
     reason: String(row.reason),
     durationMs: Number(row.duration_ms),
+    waitMs: row.wait_ms == null ? null : Number(row.wait_ms),
+    origin: (row.origin as ToolLedgerOrigin | null) ?? null,
     recordedAt: Number(row.recorded_at),
     trace,
   };
@@ -73,8 +81,8 @@ export class PermissionDecisionRepository {
   append(input: PermissionDecisionInput): void {
     this.db.prepare(`
       INSERT INTO permission_decisions
-        (session_id, tool_name, summary, final_outcome, history_outcome, reason, duration_ms, recorded_at, trace_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (session_id, tool_name, summary, final_outcome, history_outcome, reason, duration_ms, wait_ms, origin, recorded_at, trace_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.sessionId ?? null,
       input.toolName,
@@ -83,6 +91,8 @@ export class PermissionDecisionRepository {
       input.historyOutcome,
       input.reason,
       input.durationMs,
+      input.waitMs ?? null,
+      input.origin ?? null,
       input.recordedAt,
       input.trace ? JSON.stringify(input.trace) : null,
     );
@@ -111,6 +121,12 @@ export class PermissionDecisionRepository {
   /** 账本总条数 */
   count(): number {
     const row = this.db.prepare(`SELECT COUNT(*) AS c FROM permission_decisions`).get() as { c?: number };
+    return Number(row?.c ?? 0);
+  }
+
+  countByOriginSince(origin: ToolLedgerOrigin, since: number): number {
+    const row = this.db.prepare(`SELECT COUNT(*) AS c FROM permission_decisions WHERE origin = ? AND recorded_at >= ?`)
+      .get(origin, since) as { c?: number };
     return Number(row?.c ?? 0);
   }
 }

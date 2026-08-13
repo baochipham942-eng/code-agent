@@ -356,10 +356,14 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       history_outcome TEXT NOT NULL,
       reason TEXT NOT NULL,
       duration_ms INTEGER NOT NULL,
+      wait_ms INTEGER,
+      origin TEXT,
       recorded_at INTEGER NOT NULL,
       trace_json TEXT
     )
   `);
+  safeAlter(db, `ALTER TABLE permission_decisions ADD COLUMN wait_ms INTEGER`, logger);
+  safeAlter(db, `ALTER TABLE permission_decisions ADD COLUMN origin TEXT`, logger);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_permission_decisions_recorded ON permission_decisions (recorded_at)`);
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_permission_decisions_session ON permission_decisions (session_id, recorded_at)`,
@@ -381,9 +385,11 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       phase TEXT NOT NULL,
       status TEXT,
       error TEXT,
+      origin TEXT,
       recorded_at INTEGER NOT NULL
     )
   `);
+  safeAlter(db, `ALTER TABLE tool_execution_events ADD COLUMN origin TEXT`, logger);
   // (execution_id, phase) 复合索引前缀覆盖旧的单列 execution_id 索引，并让启动时
   // getOpenExecutions 的 NOT EXISTS 反连接走 execution_id 探测——缺它时 planner 选
   // phase 索引，begin×complete 全交叉，大账本上实测 1.8s（启动关键路径）。

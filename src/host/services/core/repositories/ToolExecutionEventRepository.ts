@@ -10,6 +10,7 @@
 // 时间戳：recordedAt 由调用方传入（仓储层禁止裸 Date.now()）。
 
 import type BetterSqlite3 from 'better-sqlite3';
+import type { ToolLedgerOrigin } from '../../../../shared/constants/toolLedger';
 
 type SQLiteRow = Record<string, unknown>;
 
@@ -24,6 +25,7 @@ export interface ToolExecutionBeginInput {
   params: Record<string, unknown>;
   /** begin 时间戳（毫秒），由调用方传入 */
   recordedAt: number;
+  origin?: ToolLedgerOrigin;
 }
 
 /** 一个工具执行结束（成功 / 出错 / 被恢复确认）所需的输入 */
@@ -38,6 +40,7 @@ export interface ToolExecutionCompleteInput {
   summary?: string;
   sessionId?: string;
   recordedAt: number;
+  origin?: ToolLedgerOrigin;
 }
 
 /** 从库里读回的一条生命周期事件 */
@@ -52,6 +55,7 @@ export interface ToolExecutionEventRecord {
   status: string | null;
   error: string | null;
   recordedAt: number;
+  origin: ToolLedgerOrigin | null;
 }
 
 /** 一条"在飞执行"（崩溃现场的一个工序）：有 begin 无 complete */
@@ -85,6 +89,7 @@ function rowToRecord(row: SQLiteRow): ToolExecutionEventRecord {
     status: (row.status as string | null) ?? null,
     error: (row.error as string | null) ?? null,
     recordedAt: Number(row.recorded_at),
+    origin: (row.origin as ToolLedgerOrigin | null) ?? null,
   };
 }
 
@@ -95,14 +100,15 @@ export class ToolExecutionEventRepository {
   appendBegin(input: ToolExecutionBeginInput): void {
     this.db.prepare(`
       INSERT INTO tool_execution_events
-        (execution_id, session_id, tool_name, summary, params_json, phase, status, error, recorded_at)
-      VALUES (?, ?, ?, ?, ?, 'begin', NULL, NULL, ?)
+        (execution_id, session_id, tool_name, summary, params_json, phase, status, error, origin, recorded_at)
+      VALUES (?, ?, ?, ?, ?, 'begin', NULL, NULL, ?, ?)
     `).run(
       input.executionId,
       input.sessionId ?? null,
       input.toolName,
       input.summary ?? null,
       JSON.stringify(input.params ?? {}),
+      input.origin ?? null,
       input.recordedAt,
     );
   }
@@ -111,8 +117,8 @@ export class ToolExecutionEventRepository {
   appendComplete(input: ToolExecutionCompleteInput): void {
     this.db.prepare(`
       INSERT INTO tool_execution_events
-        (execution_id, session_id, tool_name, summary, params_json, phase, status, error, recorded_at)
-      VALUES (?, ?, ?, ?, NULL, 'complete', ?, ?, ?)
+        (execution_id, session_id, tool_name, summary, params_json, phase, status, error, origin, recorded_at)
+      VALUES (?, ?, ?, ?, NULL, 'complete', ?, ?, ?, ?)
     `).run(
       input.executionId,
       input.sessionId ?? null,
@@ -120,6 +126,7 @@ export class ToolExecutionEventRepository {
       input.summary ?? null,
       input.status,
       input.error ?? null,
+      input.origin ?? null,
       input.recordedAt,
     );
   }
@@ -171,6 +178,12 @@ export class ToolExecutionEventRepository {
 
   count(): number {
     const row = this.db.prepare(`SELECT COUNT(*) AS c FROM tool_execution_events`).get() as { c?: number };
+    return Number(row?.c ?? 0);
+  }
+
+  countByOriginSince(origin: ToolLedgerOrigin, since: number): number {
+    const row = this.db.prepare(`SELECT COUNT(*) AS c FROM tool_execution_events WHERE origin = ? AND recorded_at >= ?`)
+      .get(origin, since) as { c?: number };
     return Number(row?.c ?? 0);
   }
 }

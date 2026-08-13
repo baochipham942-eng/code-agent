@@ -126,6 +126,14 @@ describe('inferenceViaAiSdk —— 流式映射', () => {
       { type: 'tool_call_start', toolCall: { index: 0, id: 'call_1', name: 'Read' } },
     ]);
     expect(col.byType('tool_call_delta').map((c) => c.toolCall?.argumentsDelta).join('')).toBe('{"path":"a.ts"}');
+    const preambleAt = col.chunks.findIndex((chunk) => chunk.type === 'text' && chunk.content === 'Hello ');
+    const toolDeltaAt = col.chunks.findIndex((chunk) => chunk.type === 'tool_call_delta');
+    expect(preambleAt).toBeGreaterThanOrEqual(0);
+    expect(toolDeltaAt).toBeGreaterThan(preambleAt);
+    expect(col.chunks.slice(0, toolDeltaAt)
+      .filter((chunk) => chunk.type === 'text')
+      .map((chunk) => chunk.content)
+      .join('')).toBe('Hello world');
     expect(col.byType('usage')[0]).toMatchObject({ type: 'usage', inputTokens: 10, outputTokens: 5 });
     expect(col.byType('complete')[0]).toMatchObject({ type: 'complete', finishReason: 'tool-calls' });
 

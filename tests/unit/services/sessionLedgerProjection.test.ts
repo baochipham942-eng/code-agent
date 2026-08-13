@@ -26,14 +26,14 @@ function swarmRun(over: Partial<SwarmRunListItem>): SwarmRunListItem {
 function decision(over: Partial<PermissionDecisionRecord>): PermissionDecisionRecord {
   return {
     id: 1, sessionId: SID, toolName: 'Bash', summary: null, finalOutcome: 'allow',
-    historyOutcome: 'auto-approve', reason: 'policy', durationMs: 5, recordedAt: 0, trace: null,
+    historyOutcome: 'auto-approve', reason: 'policy', durationMs: 5, waitMs: null, origin: null, recordedAt: 0, trace: null,
     ...over,
   };
 }
 function execution(over: Partial<ToolExecutionEventRecord>): ToolExecutionEventRecord {
   return {
     id: 1, executionId: 'exec-1', sessionId: SID, toolName: 'Bash', summary: null,
-    params: null, phase: 'begin', status: null, error: null, recordedAt: 0,
+    params: null, phase: 'begin', status: null, error: null, origin: null, recordedAt: 0,
     ...over,
   };
 }

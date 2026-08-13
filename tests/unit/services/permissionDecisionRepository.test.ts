@@ -32,7 +32,7 @@ describe('PermissionDecisionRepository（事件账本第一期）', () => {
     try {
       const cols = db.prepare('PRAGMA table_info(permission_decisions)').all().map((r) => (r as { name: string }).name);
       expect(cols).toEqual(expect.arrayContaining([
-        'id', 'session_id', 'tool_name', 'summary', 'final_outcome', 'history_outcome', 'reason', 'duration_ms', 'recorded_at', 'trace_json',
+        'id', 'session_id', 'tool_name', 'summary', 'final_outcome', 'history_outcome', 'reason', 'duration_ms', 'wait_ms', 'origin', 'recorded_at', 'trace_json',
       ]));
       const idx = db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='permission_decisions'").all().map((r) => (r as { name: string }).name);
       expect(idx).toEqual(expect.arrayContaining([
@@ -52,14 +52,14 @@ describe('PermissionDecisionRepository（事件账本第一期）', () => {
       repo.append({
         sessionId: 's1', toolName: 'Bash', summary: 'rm -rf /',
         finalOutcome: 'deny', historyOutcome: 'classifier-deny', reason: '危险命令',
-        durationMs: 3, recordedAt: 1234, trace: sampleTrace,
+        durationMs: 3, waitMs: 456, origin: 'desktop', recordedAt: 1234, trace: sampleTrace,
       });
       const recent = repo.getRecent();
       expect(recent).toHaveLength(1);
       expect(recent[0]).toMatchObject({
         sessionId: 's1', toolName: 'Bash', summary: 'rm -rf /',
         finalOutcome: 'deny', historyOutcome: 'classifier-deny', reason: '危险命令',
-        durationMs: 3, recordedAt: 1234,
+        durationMs: 3, waitMs: 456, origin: 'desktop', recordedAt: 1234,
       });
       // trace JSON 往返还原
       expect(recent[0].trace).toEqual(sampleTrace);
@@ -114,7 +114,7 @@ describe('PermissionDecisionRepository（事件账本第一期）', () => {
       const mutating = methods.filter((m) => /update|delete|remove|clear|set|drop/i.test(m));
       expect(mutating).toEqual([]);
       // 公开方法只应是 append + 查询
-      expect(methods.sort()).toEqual(['append', 'count', 'getBySession', 'getRecent']);
+      expect(methods.sort()).toEqual(['append', 'count', 'countByOriginSince', 'getBySession', 'getRecent']);
     } finally {
       db.close();
     }

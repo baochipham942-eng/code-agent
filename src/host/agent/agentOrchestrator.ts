@@ -158,6 +158,7 @@ export class AgentOrchestrator {
     this.toolExecutor = new ToolExecutor({
       requestPermission: this.permissions.requestPermission.bind(this.permissions),
       workingDirectory: this.workingDirectory,
+      ledgerOrigin: 'desktop',
     });
 
     this.taskListManager = getTaskListManager();

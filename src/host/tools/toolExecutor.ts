@@ -39,7 +39,8 @@ import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthori
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
 import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
-import { annotateToolExecution, reportUndeclaredToolParams, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
+import { annotateToolExecution, getApprovalWaitMs, reportUndeclaredToolParams, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
+import type { ToolLedgerOrigin } from '../../shared/constants/toolLedger';
 import { recordCachedToolReplay } from './cachedToolReplay';
 import { createToolExecutionLedger } from './toolExecutionLedger';
 import { type ExecutionTopology } from '../permissions';
@@ -85,6 +86,8 @@ export interface ToolExecutorConfig {
   runContext?: RunContext;
   /** Optional final dispatch hop. Returning null falls back to the protocol resolver. */
   dispatchTool?: ToolExecutionDelegate;
+  /** 账本来源由所有构造入口显式声明。 */
+  ledgerOrigin?: ToolLedgerOrigin;
 }
 
 export type ToolExecutionDelegate = (toolName: string, params: Record<string, unknown>, context: ToolContext, options: ExecuteOptions) => Promise<ToolExecutionResult | null>;
@@ -199,6 +202,7 @@ export class ToolExecutor {
   private executionTopology: ExecutionTopology;
   private auditEnabled = true;
   private permissionModeOverride?: PermissionMode;
+  private readonly ledgerOrigin: ToolLedgerOrigin;
 
   constructor(config: ToolExecutorConfig) {
     this.requestPermission = config.requestPermission;
@@ -207,6 +211,7 @@ export class ToolExecutor {
     this.runContext = config.runContext;
     this.dispatchTool = config.dispatchTool;
     this.executionTopology = config.executionTopology ?? 'main';
+    this.ledgerOrigin = config.ledgerOrigin ?? 'desktop';
     if (this.runContext && this.workingDirectory !== this.runContext.cwd) {
       throw new Error(
         `Run-scoped ToolExecutor cwd mismatch for ${this.runContext.runId}: ${this.workingDirectory}`,
@@ -234,6 +239,7 @@ export class ToolExecutor {
       executionTopology: this.executionTopology,
       runContext,
       dispatchTool: dispatchTool ?? this.dispatchTool,
+      ledgerOrigin: this.ledgerOrigin,
     });
     executor.setAuditEnabled(this.auditEnabled);
     return executor;
@@ -419,7 +425,7 @@ export class ToolExecutor {
       }
       if (options.subagentPolicy.check(executionToolName, params) === 'deny') {
         logger.warn('Denied by subagent permission policy', { toolName: executionToolName });
-        recordDecision(executionToolName, params, 'policy-deny', 'subagent policy', Date.now());
+        recordDecision(executionToolName, params, 'policy-deny', 'subagent policy', Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
         return {
           success: false,
           error: `Denied by subagent permission policy: ${executionToolName}`,
@@ -508,6 +514,8 @@ export class ToolExecutor {
         guardFabricGate.deny.reason,
         permStartTime,
         guardFabricGate.deny.trace,
+        effectiveSessionId,
+        this.ledgerOrigin,
       );
       return {
         success: false,
@@ -574,7 +582,7 @@ export class ToolExecutor {
           workCardId: options.neoTag.workCardId,
           runId: options.neoTag.runId,
         });
-        recordDecision(executionToolName, params, 'policy-deny', neoTagGuard.reason, permStartTime);
+        recordDecision(executionToolName, params, 'policy-deny', neoTagGuard.reason, permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
         return {
           success: false,
           error: neoTagGuard.reason,
@@ -615,7 +623,7 @@ export class ToolExecutor {
           executionToolName, commandValidation.reason || 'security policy', 'policy',
           effectiveSessionId || 'unknown',
         ).catch(() => {});
-        recordDecision(executionToolName, params, 'monitor-blocked', commandValidation.reason || 'security', permStartTime);
+        recordDecision(executionToolName, params, 'monitor-blocked', commandValidation.reason || 'security', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
 
         return {
           success: false,
@@ -672,7 +680,7 @@ export class ToolExecutor {
             )
             .build('deny')
           : undefined;
-        recordDecision(executionToolName, params, 'policy-deny', policyCheck.reason || 'policy', permStartTime, trace);
+        recordDecision(executionToolName, params, 'policy-deny', policyCheck.reason || 'policy', permStartTime, trace, effectiveSessionId, this.ledgerOrigin);
 
         return {
           success: false,
@@ -707,7 +715,7 @@ export class ToolExecutor {
       && toolMatchesPatternSet(executionToolName, params, options.preApprovedTools);
     if (isPreApproved) {
       logger.debug('Tool pre-approved by Skill system, skipping permission check', { toolName: executionToolName });
-      recordDecision(executionToolName, params, 'auto-approve', 'pre-approved', permStartTime);
+      recordDecision(executionToolName, params, 'auto-approve', 'pre-approved', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
     }
 
     // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批
@@ -721,9 +729,9 @@ export class ToolExecutor {
         if (policyDecision === 'allow') {
           isSafeCommand = true;
           logger.debug('Command allowed by exec policy', { command: cmd.substring(0, 80) });
-          recordDecision(executionToolName, params, 'policy-allow', 'exec-policy', permStartTime);
+          recordDecision(executionToolName, params, 'policy-allow', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
         } else if (policyDecision === 'forbidden') {
-          recordDecision(executionToolName, params, 'policy-deny', 'exec-policy', permStartTime);
+          recordDecision(executionToolName, params, 'policy-deny', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
           return {
             success: false,
             error: `Blocked by exec policy: ${cmd.substring(0, 80)}`,
@@ -737,7 +745,7 @@ export class ToolExecutor {
       if (!isSafeCommand && isKnownSafeCommand(cmd)) {
         isSafeCommand = true;
         logger.debug('Command is known safe, skipping approval', { command: cmd.substring(0, 80) });
-        recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime);
+        recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
       }
 
       // 3. lenient 模式（已决策 2026-06-10，朋友测试包默认）：硬毙清单照拦
@@ -748,7 +756,7 @@ export class ToolExecutor {
         if (lenientCheck.allowed) {
           isSafeCommand = true;
           logger.debug('Command auto-approved by lenient safety mode', { command: cmd.substring(0, 80) });
-          recordDecision(executionToolName, params, 'auto-approve', 'lenient-mode', permStartTime);
+          recordDecision(executionToolName, params, 'auto-approve', 'lenient-mode', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
         }
       }
     }
@@ -820,7 +828,7 @@ export class ToolExecutor {
               }
               trace = approveTrace.build('allow');
             }
-            recordDecision(executionToolName, params, 'auto-approve', classification.reason || 'classifier', permStartTime, trace);
+            recordDecision(executionToolName, params, 'auto-approve', classification.reason || 'classifier', permStartTime, trace, effectiveSessionId, this.ledgerOrigin);
           } else if (classification.decision === 'deny') {
             // Collect trace step from classifier
             if (classification.traceStep) {
@@ -840,7 +848,7 @@ export class ToolExecutor {
               executionToolName, classification.reason || 'classifier deny', 'classifier',
               effectiveSessionId || 'unknown',
             ).catch(() => {});
-            recordDecision(executionToolName, params, 'classifier-deny', classification.reason || 'classifier', permStartTime, traceBuilder.build('deny'));
+            recordDecision(executionToolName, params, 'classifier-deny', classification.reason || 'classifier', permStartTime, traceBuilder.build('deny'), effectiveSessionId, this.ledgerOrigin);
             return {
               success: false,
               error: `Denied: ${classification.reason}`,
@@ -879,7 +887,7 @@ export class ToolExecutor {
         needsUserApproval = false;
         const grantTrace = createTraceBuilder(executionToolName);
         grantTrace.addStep('permission_classifier', 'standing_grant', 'allow', `长期授权命中：${executionToolName} → ${standingGrantTarget}`);
-        recordDecision(executionToolName, params, 'auto-approve', `standing_grant:${standingGrantTarget}`, permStartTime, grantTrace.build('allow'));
+        recordDecision(executionToolName, params, 'auto-approve', `standing_grant:${standingGrantTarget}`, permStartTime, grantTrace.build('allow'), effectiveSessionId, this.ledgerOrigin);
       }
 
       if (needsUserApproval) {
@@ -959,7 +967,7 @@ export class ToolExecutor {
               executionToolName, hookResult.message || 'blocked', 'hook',
               effectiveSessionId || 'unknown',
             ).catch(() => {});
-            recordDecision(executionToolName, params, 'hook-blocked', hookResult.message || 'hook', permStartTime);
+            recordDecision(executionToolName, params, 'hook-blocked', hookResult.message || 'hook', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
             return {
               success: false,
               error: `Permission denied by hook: ${hookResult.message || 'blocked'}`,
@@ -977,7 +985,7 @@ export class ToolExecutor {
       });
 
       if (approved) {
-        recordDecision(executionToolName, params, 'ask-approved', 'user', permStartTime);
+        recordDecision(executionToolName, params, 'ask-approved', 'user', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
       }
 
       // P0: prefix_rule 学习 — 用户批准后生成持久化规则
@@ -1008,7 +1016,7 @@ export class ToolExecutor {
           executionToolName, 'Permission denied by user', 'user',
           effectiveSessionId || 'unknown',
         ).catch(() => {});
-        recordDecision(executionToolName, params, 'ask-denied', 'user', permStartTime);
+        recordDecision(executionToolName, params, 'ask-denied', 'user', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
 
         // 只读探索档（审出 MED）：无审批 UI 的运行环境（CLI run/batch 非交互模式）对
         // forceConfirm 请求自动拒绝（fail-closed）。泛用的 "Permission denied by user"
@@ -1069,6 +1077,7 @@ export class ToolExecutor {
       sessionId: effectiveSessionId,
       params,
       startedAt: startTime,
+      origin: this.ledgerOrigin,
     });
     const { executionId } = executionLedger;
     try {

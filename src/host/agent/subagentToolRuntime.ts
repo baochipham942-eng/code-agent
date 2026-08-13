@@ -29,6 +29,7 @@ export function createSubagentToolRuntime(input: {
     // 拓扑由构造点显式标注（SubagentExecutionContext.executionTopology），缺省 main：
     // 未标注的子 agent 路径不受 TOPOLOGY_RULES 约束（Option A 保守默认）。
     executionTopology: context.executionTopology ?? 'main',
+    ledgerOrigin: 'subagent',
     requestPermission: async (request) => {
       const forceConfirm = request.forceConfirm === true;
       if (

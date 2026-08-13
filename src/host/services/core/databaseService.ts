@@ -412,9 +412,11 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       step('repos');
 
       this.lastRecoverySnapshot = runStartupMaintenance({
+        db: this.db,
         sessionRepo: this.sessionRepo,
         memoryRepo: this.memoryRepo,
         toolExecutionEventRepo: this.toolExecutionEventRepo,
+        permissionDecisionRepo: this.permissionDecisionRepo,
         logger,
         step,
       });

@@ -339,8 +339,8 @@ describe('inferenceViaAiSdk provider options', () => {
       method: 'POST', body: JSON.stringify(requestBody),
     });
 
-    const officialBody = JSON.parse((vi.mocked(axios).mock.calls[0][0] as { data: string }).data);
-    const relayBody = JSON.parse((vi.mocked(axios).mock.calls[1][0] as { data: string }).data);
+    const officialBody = JSON.parse((vi.mocked(axios).mock.calls[0][0] as unknown as { data: string }).data);
+    const relayBody = JSON.parse((vi.mocked(axios).mock.calls[1][0] as unknown as { data: string }).data);
     const officialAssistants = officialBody.messages.filter((message: { role: string }) => message.role === 'assistant');
     const relayAssistants = relayBody.messages.filter((message: { role: string }) => message.role === 'assistant');
 

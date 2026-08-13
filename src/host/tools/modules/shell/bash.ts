@@ -321,7 +321,6 @@ function runForegroundCommand(options: {
     let timedOut = false;
     let maxBufferExceeded = false;
     let aborted = false;
-    let exited = false;
     let exitCode: number | null = null;
     let exitSignal: NodeJS.Signals | null = null;
     let postExitTimer: NodeJS.Timeout | undefined;
@@ -332,25 +331,29 @@ function runForegroundCommand(options: {
       abortSignal.removeEventListener('abort', abortHandler);
     };
 
-    // 整组发信号：POSIX detached 下 child.pid 即组长，-pid 命中组内全部(含被后台化的
-    // 孙进程)，组不存在(进程已退)时回退到直接子进程；win32 走 taskkill /T 收树。
-    const killGroup = (signal: NodeJS.Signals) => {
-      killProcessTree(child, signal, { posixGroupKill: true });
-    };
+    // 整组收树并等到整树确认退出：POSIX detached 下 child.pid 即组长，-pid 命中组内
+    // 全部(含被后台化的孙进程)，组不存在(进程已退)时回退到直接子进程；win32 走
+    // taskkill /T。SIGTERM → 宽限 → SIGKILL → 探活确认全在 killProcessTree 内部。
+    //
+    // 只对 child 的进程组发信号，宿主自己不在这个组里（宿主是 spawn 的父进程，
+    // detached 让 child 另开了一组）——对照 claude-code #45717：Bash 工具超时的
+    // SIGTERM 传播把宿主进程自己杀了。
+    let treeExit: Promise<void> | undefined;
 
     const killChild = () => {
-      killGroup('SIGTERM');
-      // 宽限后整组仍存活则升级 SIGKILL，确保挂死命令及其后台子进程被回收。
-      const escalation = setTimeout(() => {
-        if (!exited) killGroup('SIGKILL');
-      }, BASH.KILL_GRACE_MS);
-      escalation.unref();
+      treeExit = killProcessTree(child, {
+        posixGroupKill: true,
+        graceMs: BASH.KILL_GRACE_MS,
+      });
     };
 
     // 'close'(管道 EOF) 与 exit 后兜底共用的收尾逻辑（顺序：abort > timeout > maxBuffer > 非零退出 > 成功）。
-    const finalize = (code: number | null, signal: NodeJS.Signals | null) => {
+    const finalize = async (code: number | null, signal: NodeJS.Signals | null) => {
       if (settled) return;
       settled = true;
+      // 主动杀过（abort / 超时 / 输出溢出）就等整树确认退出再交还结果——直接子进程
+      // 退出不代表树死了，提前 reject 会让调用方以为清理完成而被后台孙进程反咬。
+      if (treeExit) await treeExit;
       const durationMs = Date.now() - startedAt;
       cleanup();
       // 释放对子进程 stdio 管道的持有，避免被后台化、存活更久的孙进程拖住事件循环。
@@ -462,17 +465,16 @@ function runForegroundCommand(options: {
 
     // 正常命令：stdio 管道 EOF → 'close' 先触发，捕获全部输出后 settle（行为不变）。
     child.on('close', (code, signal) => {
-      finalize(code, signal);
+      void finalize(code, signal);
     });
 
     // shell 已退出但 'close' 可能因被 `&` 后台化的子进程持有 stdout 管道而永不触发。
     // 给极短窗口让正常 'close' 优先；超时则用 exit 结果兜底 settle，避免工具无限挂起。
     child.on('exit', (code, signal) => {
       if (settled) return;
-      exited = true;
       exitCode = code;
       exitSignal = signal;
-      postExitTimer = setTimeout(() => finalize(exitCode, exitSignal), BASH.POST_EXIT_DRAIN_MS);
+      postExitTimer = setTimeout(() => void finalize(exitCode, exitSignal), BASH.POST_EXIT_DRAIN_MS);
       postExitTimer.unref();
     });
   });

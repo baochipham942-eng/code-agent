@@ -196,6 +196,24 @@ export class RunFinalizer {
     this.ctx.onEvent(event);
   }
 
+  /**
+   * 终局记录（熔断提示 / 兜底文案 / 未完成任务提醒）落库：吞掉持久化失败。
+   *
+   * addAndPersistMessage 的 fail-closed 是为了挡住工具 dispatch；这里 run 已经终局、
+   * 后面不会再有工具跑，让它抛只会盖掉真正的 runError（finalizeRun 在 conversationRuntime
+   * 的 finally 里），还会跳过 finally 中剩下的收尾。
+   */
+  private async persistTerminalMessage(message: Message): Promise<void> {
+    try {
+      await this.messageWriter.addAndPersistMessage(message);
+    } catch (error) {
+      logger.warn('[RunFinalizer] terminal message not persisted', {
+        messageId: message.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   async finalizeRun(
     iterations: number,
     userMessage: string,
@@ -306,7 +324,7 @@ export class RunFinalizer {
         content: '⚠️ **工具调用异常**\n\n连续多次工具调用失败，已自动停止执行。这可能是由于：\n- 文件路径不存在\n- 网络连接问题\n- 工具参数错误\n\n请检查上面的错误信息，然后告诉我如何继续。',
         timestamp: Date.now(),
       };
-      await this.messageWriter.addAndPersistMessage(errorMessage);
+      await this.persistTerminalMessage(errorMessage);
       this.ctx.onEvent({ type: 'message', data: errorMessage });
 
       // Fire-and-forget: emit StopFailure hook
@@ -342,7 +360,7 @@ export class RunFinalizer {
           content: '任务已结束，执行记录和产物已保留。这一轮没有生成最终说明，请直接查看上面的工具结果。',
           timestamp: Date.now(),
         };
-        await this.messageWriter.addAndPersistMessage(fallbackMessage);
+        await this.persistTerminalMessage(fallbackMessage);
         this.ctx.onEvent({ type: 'message', data: fallbackMessage });
       }
       langfuse.endTrace(this.ctx.stats.traceId, `Completed in ${iterations} iterations`);
@@ -436,7 +454,7 @@ export class RunFinalizer {
         incompleteTasks: incompleteFinalTasks.map(t => ({ id: t.id, subject: t.subject, status: t.status })),
       });
 
-      await this.messageWriter.addAndPersistMessage({
+      await this.persistTerminalMessage({
         id: this.messageWriter.generateId(),
         role: 'system',
         content: `⚠️ ${incompleteFinalTasks.length} 个显式任务未完成 (${allDetails})`,

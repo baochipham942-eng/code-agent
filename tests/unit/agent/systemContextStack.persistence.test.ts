@@ -136,4 +136,57 @@ describe('systemContextStack.addAndPersistMessage', () => {
       expect.objectContaining({ metadata: message.metadata }),
     );
   });
+
+  // T-016 fail-closed：磁盘满 / DB 锁竞争时不能带着「记录里不存在的消息」继续跑，
+  // 否则紧接着 dispatch 的那批工具会留下无从追溯的副作用。
+  describe('落库失败时 fail-closed', () => {
+    const message = (): Message => ({
+      id: 'message-1',
+      role: 'assistant',
+      content: 'about to call tools',
+      timestamp: 123,
+    });
+
+    it('两条写入路径都失败时抛，且给的是人话不是堆栈', async () => {
+      const ctx = makeCtx('runtime-session-1');
+      ctx.runtime.persistMessage = vi.fn().mockRejectedValue(new Error('SQLITE_BUSY'));
+      sessionManagerState.addMessageToSession.mockRejectedValue(new Error('ENOSPC: no space left on device'));
+
+      const error = await addAndPersistMessage(ctx, message()).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).name).toBe('MessagePersistenceError');
+      expect((error as Error).message).toContain('对话记录写入失败');
+      expect((error as Error).message).not.toContain('SQLITE_BUSY');
+      expect((error as Error).message).not.toContain('ENOSPC');
+      // 两条路径都真的试过了才算「都失败」
+      expect(ctx.runtime.persistMessage).toHaveBeenCalledTimes(1);
+      expect(sessionManagerState.addMessageToSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('只有 callback 失败、降级路径成功时照常返回（现有降级行为不变）', async () => {
+      const ctx = makeCtx('runtime-session-1');
+      ctx.runtime.persistMessage = vi.fn().mockRejectedValue(new Error('callback down'));
+      sessionManagerState.addMessageToSession.mockResolvedValue(undefined);
+
+      await expect(addAndPersistMessage(ctx, message())).resolves.toBeUndefined();
+      expect(sessionManagerState.addMessageToSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('正常落库时不抛（正例）', async () => {
+      const ctx = makeCtx('runtime-session-1');
+      ctx.runtime.persistMessage = vi.fn().mockResolvedValue(undefined);
+
+      await expect(addAndPersistMessage(ctx, message())).resolves.toBeUndefined();
+      // callback 成功就不该再走降级
+      expect(sessionManagerState.addMessageToSession).not.toHaveBeenCalled();
+    });
+
+    it('无 callback 且无 sessionId 的运行时不抛——它压根没打算写库，不是故障', async () => {
+      const ctx = makeCtx('');
+
+      await expect(addAndPersistMessage(ctx, message())).resolves.toBeUndefined();
+      expect(sessionManagerState.addMessageToSession).not.toHaveBeenCalled();
+    });
+  });
 });

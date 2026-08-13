@@ -73,7 +73,7 @@ class KillShellHandler implements ToolHandler<Record<string, unknown>, string> {
       };
     }
 
-    const result = killBackgroundTask(taskId);
+    const result = await killBackgroundTask(taskId);
 
     onProgress?.({ stage: 'completing', percent: 100 });
 

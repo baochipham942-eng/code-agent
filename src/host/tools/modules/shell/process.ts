@@ -405,7 +405,7 @@ function handleSubmit(args: Record<string, unknown>, ctx: ToolContext): ToolResu
   };
 }
 
-function handleKill(args: Record<string, unknown>, ctx: ToolContext): ToolResult<string> {
+async function handleKill(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult<string>> {
   // 兼容 session_id 和 task_id 两个参数名
   const id = (args.session_id as string | undefined) ?? (args.task_id as string | undefined);
   if (!id) {
@@ -434,7 +434,7 @@ function handleKill(args: Record<string, unknown>, ctx: ToolContext): ToolResult
   }
 
   if (isTaskId(id)) {
-    const result = killBackgroundTask(id);
+    const result = await killBackgroundTask(id);
     if (!result.success) {
       return { ok: false, error: result.error ?? 'kill task failed', code: 'KILL_FAILED' };
     }
@@ -611,7 +611,7 @@ class ProcessHandler implements ToolHandler<Record<string, unknown>, string> {
           result = handleSubmit(args, ctx);
           break;
         case 'kill':
-          result = handleKill(args, ctx);
+          result = await handleKill(args, ctx);
           break;
         case 'output':
           result = await handleOutput(args, ctx);

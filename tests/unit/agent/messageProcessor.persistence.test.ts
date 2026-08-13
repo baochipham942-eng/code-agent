@@ -1664,4 +1664,68 @@ describe('MessageProcessor persistence', () => {
     );
     expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
   });
+  // T-016：落库失败必须挡住工具 dispatch。messageProcessor 先 await
+  // addAndPersistMessage(assistantMessage)，再 executeToolsWithHooks(toolCalls)——
+  // 前者抛，后者就永远到不了；否则磁盘满时会执行一批记录里根本不存在的副作用。
+  it('blocks tool dispatch when the assistant message cannot be persisted', async () => {
+    const ctx = {
+      artifact: ArtifactState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
+      turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn().mockReturnValue('assistant-message-1'),
+      // 真实实现在两条写入路径都失败时就是这样抛（见 systemContextStack.persistence.test.ts）
+      addAndPersistMessage: vi.fn(async () => {
+        throw Object.assign(
+          new Error('对话记录写入失败，已停止本轮工具执行，避免产生记录里查不到的改动。请检查磁盘空间和数据库状态后重试。'),
+          { name: 'MessagePersistenceError' },
+        );
+      }),
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [
+        { toolCallId: 'tool-1', success: true, output: 'deleted' },
+      ]),
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer, toolEngine);
+
+    await expect(processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '',
+        toolCalls: [{ id: 'tool-1', name: 'bash', arguments: { command: 'rm -rf build' } }],
+      } as ModelResponse,
+      false,
+      1,
+      { endSpan: vi.fn() },
+    )).rejects.toThrow('对话记录写入失败');
+
+    // 承重断言：工具一次都没跑
+    expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
+  });
 });

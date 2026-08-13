@@ -29,6 +29,19 @@ export const BASH = {
   RTK_REWRITE_TIMEOUT: 500,
 } as const;
 
+/** 进程树终止：信号升级与整树退出确认（killProcessTree） */
+export const SHELL_KILL = {
+  /** SIGTERM 后宽限此时长，整树仍未退出则升级 SIGKILL */
+  GRACE_MS: 2000,
+  /** 整树存活探测间隔 */
+  POLL_INTERVAL_MS: 50,
+  /**
+   * SIGKILL 之后仍探到存活的最长等待。真正杀不掉的进程（不可中断睡眠）不该
+   * 无限期挂住停机，超过此时长记 warn 后返回——放弃是显式的，不是静默的。
+   */
+  CONFIRM_TIMEOUT_MS: 10000,
+} as const;
+
 /** Grep 工具配置 */
 export const GREP = {
   /** 默认超时 (30 秒) */

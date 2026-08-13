@@ -39,6 +39,10 @@ vi.mock('../../../src/host/services', () => ({
     startGenerationInSpan: vi.fn(),
     endGeneration: vi.fn(),
   }),
+  // fixture 声明了 sessionId（= 打算落库），就必须给出能落库的 sessionManager。
+  // 缺它时 addAndPersistMessage 的降级路径会抛，而它现在是 fail-closed 的（T-016）——
+  // 补救说明写不进记录，这一轮就该中断，不该继续跑。
+  getSessionManager: () => ({ addMessageToSession: vi.fn().mockResolvedValue(undefined) }),
 }));
 
 vi.mock('../../../src/host/mcp/logCollector.js', () => ({

@@ -43,6 +43,11 @@ export interface TelemetryToolRow {
   timestamp: number;
 }
 
+export interface LedgerHealthSnapshot {
+  lastWrittenAt: number | null;
+  originCounts: Array<{ origin: string; count: number }>;
+}
+
 function parseJson<T>(value: unknown, fallback: T): T {
   if (typeof value !== 'string' || value.length === 0) return fallback;
   try {
@@ -92,6 +97,19 @@ export class ReadOnlySessionDatabase {
 
   getNativeDatabase(): Database.Database {
     return this.db;
+  }
+
+  getLedgerHealth(table: 'permission_decisions' | 'tool_execution_events', since: number): LedgerHealthSnapshot {
+    if (!this.hasTable(table)) return { lastWrittenAt: null, originCounts: [] };
+    const last = this.safeGet(`SELECT MAX(recorded_at) AS recorded_at FROM ${table}`);
+    const rows = this.safeAll(`
+      SELECT COALESCE(origin, 'unknown') AS origin, COUNT(*) AS count
+      FROM ${table} WHERE recorded_at >= ? GROUP BY COALESCE(origin, 'unknown') ORDER BY count DESC, origin ASC
+    `, since);
+    return {
+      lastWrittenAt: last?.recorded_at == null ? null : Number(last.recorded_at),
+      originCounts: rows.map((row) => ({ origin: String(row.origin), count: Number(row.count) })),
+    };
   }
 
   hasTable(table: string): boolean {
@@ -182,6 +200,8 @@ export class ReadOnlySessionDatabase {
       toolName: String(row.tool_name), summary: optionalString(row.summary) ?? null,
       finalOutcome: String(row.final_outcome), historyOutcome: String(row.history_outcome),
       reason: String(row.reason ?? ''), durationMs: Number(row.duration_ms ?? 0),
+      waitMs: row.wait_ms == null ? null : Number(row.wait_ms),
+      origin: optionalString(row.origin) as PermissionDecisionRecord['origin'],
       recordedAt: Number(row.recorded_at), trace: parseJson(row.trace_json, null),
     }));
   }
@@ -195,6 +215,7 @@ export class ReadOnlySessionDatabase {
       sessionId: optionalString(row.session_id) ?? null, toolName: String(row.tool_name),
       summary: optionalString(row.summary) ?? null, params: parseJson(row.params_json, null),
       phase: String(row.phase), status: optionalString(row.status) ?? null,
+      origin: optionalString(row.origin) as ToolExecutionEventRecord['origin'],
       error: optionalString(row.error) ?? null, recordedAt: Number(row.recorded_at),
     }));
   }

@@ -10,6 +10,7 @@
 import fs from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
+import { app } from '../../../platform';
 import type {
   ToolHandler,
   ToolModule,
@@ -55,14 +56,16 @@ let cachedBinaryPath: string | null = null;
 function findVisionOcrBinary(): string | null {
   if (cachedBinaryPath && fs.existsSync(cachedBinaryPath)) return cachedBinaryPath;
 
-  const candidates: string[] = [];
-  // 1. dev：scripts/ 目录
-  candidates.push(path.join(__dirname, '..', '..', '..', '..', '..', 'scripts', BINARY_NAME));
-  candidates.push(path.join(__dirname, '..', '..', '..', '..', 'scripts', BINARY_NAME));
-  candidates.push(path.join(__dirname, '..', '..', '..', 'scripts', BINARY_NAME));
-  // 2. Tauri 打包：Resources/_up_/scripts/ 或 Resources/scripts/
-  candidates.push(path.join(__dirname, '..', '..', 'scripts', BINARY_NAME));
-  candidates.push(path.join(__dirname, '..', 'scripts', BINARY_NAME));
+  const appPath = app.getAppPath();
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+  const roots = [
+    process.cwd(),
+    appPath,
+    ...(resourcesPath ? [path.join(resourcesPath, '_up_'), resourcesPath] : []),
+  ];
+  const candidates = roots.map((root) => (
+    path.join(root, 'scripts', BINARY_NAME)
+  ));
   for (const candidate of candidates) {
     try {
       if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {

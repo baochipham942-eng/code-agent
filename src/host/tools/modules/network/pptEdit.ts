@@ -9,6 +9,7 @@
 // ============================================================================
 
 import * as fs from 'fs';
+import JSZip from 'jszip';
 import type {
   ToolHandler,
   ToolModule,
@@ -132,10 +133,6 @@ export async function executePptEdit(
   }
 
   try {
-    // jszip 是 CJS，运行时构造；类型 unknown 以避免拉 .d.ts
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const JSZip = require('jszip') as { loadAsync(data: Buffer): Promise<JsZipInstance> };
-
     const snapshot = createSnapshot(file_path, `ppt-edit: ${action}`);
     const data = fs.readFileSync(file_path);
     const zip = await JSZip.loadAsync(data);

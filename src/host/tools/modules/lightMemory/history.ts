@@ -54,12 +54,11 @@ interface TranscriptDatabase {
   ): { sessionId: string; messages: Array<{ message: Message; matched: boolean }> } | null;
 }
 
-function getTranscriptDatabase(): TranscriptDatabase | null {
+async function getTranscriptDatabase(): Promise<TranscriptDatabase | null> {
   if (process.env.CODE_AGENT_CLI_MODE === 'true') {
     try {
-      // 动态 require 避免 main → cli 的反向静态依赖
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const cliDbMod = require('../../../../cli/database') as {
+      // 保持 CLI 数据库惰性加载，避免 main → cli 的启动期反向依赖。
+      const cliDbMod = await import('../../../../cli/database') as {
         getCLIDatabase?: () => ({ isInitialized: boolean } & Partial<TranscriptDatabase>) | undefined;
       };
       const cliDb = cliDbMod.getCLIDatabase?.();
@@ -208,7 +207,7 @@ class HistoryHandler implements ToolHandler<Record<string, unknown>, HistoryOutp
       return { ok: false, error: 'aborted', code: 'ABORTED' };
     }
 
-    const db = getTranscriptDatabase();
+    const db = await getTranscriptDatabase();
     if (!db) {
       return { ok: false, error: 'database not ready', code: 'DB_NOT_READY' };
     }

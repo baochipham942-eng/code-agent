@@ -284,6 +284,7 @@ async function getRealApprovalDevToolExecutor(
     devRealApprovalToolExecutor = new ToolExecutor({
       requestPermission: (req) => requestDevToolPermission(pendingDevPermissions, req),
       workingDirectory: process.cwd(),
+      ledgerOrigin: 'dev-route',
     });
   }
 

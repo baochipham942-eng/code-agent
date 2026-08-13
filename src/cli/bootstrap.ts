@@ -25,6 +25,8 @@ import './config'; // 副作用：加载 .env（保持原有行为）
 import type { CLIConfigService } from './config';
 import { initConfigService as initMainConfigService } from '../host/services/core/configService';
 import { initCLIDatabase, type CLIDatabaseService } from './database';
+import { setToolLedgerSink } from '../host/tools/toolLedgerSink';
+import { createCliLedgerSink } from './cliLedgerSink';
 import { createCLIPermissionHandler } from './permissionPolicy';
 import { getCLISessionManager, type CLISessionManager } from './session';
 import type { CLIConfig, CLIEventHandler } from './types';
@@ -165,6 +167,7 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
   // 初始化数据库
   try {
     databaseService = await initCLIDatabase();
+    setToolLedgerSink(createCliLedgerSink(databaseService));
     cliLog('Database initialized');
   } catch (error) {
     // 数据库失败不阻止 CLI 运行，只是缓存和会话持久化不可用
@@ -219,6 +222,7 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
       dangerouslySkipPermissions: options.dangerouslySkipPermissions,
     }),
     workingDirectory: process.cwd(),
+    ledgerOrigin: 'cli',
   });
   cliLog('ToolExecutor initialized');
 

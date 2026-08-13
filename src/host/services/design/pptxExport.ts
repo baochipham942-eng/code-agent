@@ -4,8 +4,8 @@
 // imagesToPptx —— N 张图 → 1 份 PPTX，每张 = 1 张全幅 slide（x:0,y:0,w:100%,h:100%）。
 //   抽自 frontend-slides skill 的 merge-to-pptx-hybrid.mjs「图→全幅 slide」核心
 //   （pptxgenjs 是生产依赖；主进程不 spawn 技能层 .mjs，尊重工程层/技能层分层）。
-//   pptxgenjs 是 CJS——走 require 取构造器（与 pptGenerate getPptxGenJS 同款），
-//   ESM 默认 import 在 Electron/esbuild 运行时会得到非构造器（dogfood 实锤 not a constructor）。
+//   pptxgenjs 是 CJS；经静态 default import 交给 esbuild 做互操作封装，避免 ESM 产物在
+//   运行时再依赖全局 require。
 //   薄版：只铺全幅图，不做文字层智能叠加、不做半透明遮罩、不做自动布局。
 //
 // 版面/缩放决策：
@@ -16,15 +16,13 @@
 //     打包给干系人审阅，「完整可见」比「铺满无边」更重要，故选 contain。
 // ============================================================================
 
+import PptxGenJS from 'pptxgenjs';
 import type PptxGenJSType from 'pptxgenjs';
 
 type PptxGenJSConstructor = new () => PptxGenJSType;
 
-// pptxgenjs 是 CJS，走 require 取构造器以保 Electron/esbuild 运行时兼容（与 pptGenerate 同款）。
 function getPptxGenJS(): PptxGenJSConstructor {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const moduleValue: unknown = require('pptxgenjs');
-  return moduleValue as PptxGenJSConstructor;
+  return PptxGenJS as PptxGenJSConstructor;
 }
 
 // 图字节 → data URI 的 MIME 嗅探（与 merge-to-pptx-hybrid 同款 magic-byte 检测，

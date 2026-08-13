@@ -4,10 +4,13 @@
 // 顺序执行：崩溃会话标记 → 崩溃现场重建（ADR-022 第二期）→ 三个 FTS backfill。
 // 都在启动关键路径上，耗时由调用方的 step 计时器记录。
 
+import type { Database } from 'better-sqlite3';
 import { buildRecoverySnapshot, acknowledgeRecovery, type RecoverySnapshot } from '../crashRecovery';
+import { checkLedgerHealth } from './ledgerHealthCheck';
 import type { SessionRepository } from '../repositories/SessionRepository';
 import type { MemoryRepository } from '../repositories/MemoryRepository';
 import type { ToolExecutionEventRepository } from '../repositories/ToolExecutionEventRepository';
+import type { PermissionDecisionRepository } from '../repositories/PermissionDecisionRepository';
 import type { createLogger } from '../../infra/logger';
 
 type Logger = ReturnType<typeof createLogger>;
@@ -30,9 +33,11 @@ export function createInitStepTimer(): { step: (name: string) => void; summary: 
 }
 
 export interface StartupMaintenanceDeps {
+  db: Database;
   sessionRepo: SessionRepository;
   memoryRepo: MemoryRepository;
   toolExecutionEventRepo: ToolExecutionEventRepository;
+  permissionDecisionRepo: PermissionDecisionRepository;
   logger: Logger;
   /** 分步计时回调（databaseService 的 init timings 日志） */
   step: (name: string) => void;
@@ -40,7 +45,7 @@ export interface StartupMaintenanceDeps {
 
 /** 返回崩溃恢复快照（fail-safe：扫描失败返回 null，不阻塞启动） */
 export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySnapshot | null {
-  const { sessionRepo, memoryRepo, toolExecutionEventRepo, logger, step } = deps;
+  const { db, sessionRepo, memoryRepo, toolExecutionEventRepo, permissionDecisionRepo, logger, step } = deps;
 
   const crashedSessions = sessionRepo.markCrashedActiveSessions(Date.now());
   if (crashedSessions.interrupted > 0 || crashedSessions.orphaned > 0) {
@@ -64,6 +69,12 @@ export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySna
     logger.warn('[DatabaseService] Crash recovery scan failed (ignored):', err);
   }
   step('crash-recovery');
+
+  checkLedgerHealth(
+    { db, toolExecutionEventRepo, permissionDecisionRepo, warn: (msg, data) => logger.warn(msg, data) },
+    Date.now(),
+  );
+  step('ledger-health');
 
   // 首次升级后：从已有 messages 表 backfill episodic FTS 索引（幂等）
   sessionRepo.backfillSessionMessagesFts();

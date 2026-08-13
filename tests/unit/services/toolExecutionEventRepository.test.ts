@@ -22,7 +22,7 @@ describe('ToolExecutionEventRepository（事件账本第二期 · 执行生命�
     try {
       const cols = db.prepare('PRAGMA table_info(tool_execution_events)').all().map((r) => (r as { name: string }).name);
       expect(cols).toEqual(expect.arrayContaining([
-        'id', 'execution_id', 'session_id', 'tool_name', 'summary', 'params_json', 'phase', 'status', 'error', 'recorded_at',
+        'id', 'execution_id', 'session_id', 'tool_name', 'summary', 'params_json', 'phase', 'status', 'error', 'origin', 'recorded_at',
       ]));
       const idx = db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='tool_execution_events'").all().map((r) => (r as { name: string }).name);
       expect(idx).toEqual(expect.arrayContaining([
@@ -43,7 +43,7 @@ describe('ToolExecutionEventRepository（事件账本第二期 · 执行生命�
       const repo = new ToolExecutionEventRepository(db);
       repo.appendBegin({
         executionId: 'exec-1', sessionId: 's1', toolName: 'Bash',
-        summary: 'npm run build', params: { command: 'npm run build', cwd: '/tmp' }, recordedAt: 1000,
+        summary: 'npm run build', params: { command: 'npm run build', cwd: '/tmp' }, origin: 'desktop', recordedAt: 1000,
       });
       const open = repo.getOpenExecutions();
       expect(open).toHaveLength(1);

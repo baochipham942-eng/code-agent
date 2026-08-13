@@ -67,7 +67,7 @@ describe('ToolExecutor → 执行生命周期事件账本 接入（第二期）'
     expect(ledgerState.appendToolExecutionComplete).toHaveBeenCalledTimes(1);
     const begin = ledgerState.appendToolExecutionBegin.mock.calls[0][0];
     const complete = ledgerState.appendToolExecutionComplete.mock.calls[0][0];
-    expect(begin).toMatchObject({ toolName: 'Read', sessionId: 's1' });
+    expect(begin).toMatchObject({ toolName: 'Read', sessionId: 's1', origin: 'desktop' });
     expect(typeof begin.executionId).toBe('string');
     expect(begin.executionId.length).toBeGreaterThan(0);
     expect(begin.params).toEqual({ file_path: 'README.md' });
@@ -75,6 +75,7 @@ describe('ToolExecutor → 执行生命周期事件账本 接入（第二期）'
     // begin 与 complete 共享同一 executionId（关联键）
     expect(complete.executionId).toBe(begin.executionId);
     expect(complete.status).toBe('success');
+    expect(complete.origin).toBe('desktop');
   });
 
   it('begin 先于 complete 触发（崩溃发生在执行中途才能留下未闭合 begin）', async () => {

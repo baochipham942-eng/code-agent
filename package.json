@@ -23,6 +23,7 @@
     "lint:knip-dependency-gate": "node scripts/knip-dependency-gate.mjs",
     "lint:eslint-ratchet": "node scripts/eslint-ratchet.mjs",
     "lint:host-chinese-error-ratchet": "node scripts/host-chinese-error-ratchet.mjs",
+    "lint:host-esm-cjs": "node scripts/ci/host-esm-cjs-lint.mjs",
     "lint:shell-fail-loud": "node scripts/shell-fail-loud-lint.mjs",
     "debt:report": "node scripts/architecture-debt-report.mjs",
     "gates:local": "node scripts/gates-local.mjs",

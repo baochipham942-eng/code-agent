@@ -13,6 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { BASH } from '../../../../shared/constants';
+import { app } from '../../../platform';
 
 const BINARY_NAME = 'rtk';
 
@@ -25,14 +26,16 @@ let cachedBinaryPath: string | null = null;
 function findRtkBinary(): string | null {
   if (cachedBinaryPath && fs.existsSync(cachedBinaryPath)) return cachedBinaryPath;
 
-  const candidates: string[] = [];
-  // dev: scripts/ 目录
-  candidates.push(path.join(__dirname, '..', '..', '..', '..', '..', 'scripts', BINARY_NAME));
-  candidates.push(path.join(__dirname, '..', '..', '..', '..', 'scripts', BINARY_NAME));
-  candidates.push(path.join(__dirname, '..', '..', '..', 'scripts', BINARY_NAME));
-  // Tauri 打包: Resources/_up_/scripts/ 或 Resources/scripts/
-  candidates.push(path.join(__dirname, '..', '..', 'scripts', BINARY_NAME));
-  candidates.push(path.join(__dirname, '..', 'scripts', BINARY_NAME));
+  const appPath = app.getAppPath();
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+  const roots = [
+    process.cwd(),
+    appPath,
+    ...(resourcesPath ? [path.join(resourcesPath, '_up_'), resourcesPath] : []),
+  ];
+  const candidates = roots.map((root) => (
+    path.join(root, 'scripts', BINARY_NAME)
+  ));
 
   for (const candidate of candidates) {
     try {

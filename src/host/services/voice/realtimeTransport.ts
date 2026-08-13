@@ -20,10 +20,8 @@ import {
 import type { RealtimeVoiceProviderProfile } from '../../../shared/constants/realtimeVoiceProviders';
 import type {
   VoiceToolCallOrigin,
-  VoiceTokenUsage,
   VoiceTransport,
   VoiceTransportHandle,
-  VoiceTurnDetectionConfig,
 } from '../../../shared/contract/voice';
 import { parseResponseUsage } from './realtimeUsage';
 import {
@@ -31,7 +29,6 @@ import {
   resolveUpstreamUrlOverride,
   responseIdOf,
   upstreamAcceptedTools,
-  type UpstreamEvent,
 } from './realtimeUpstream';
 import {
   buildSessionUpdate,

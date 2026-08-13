@@ -46,8 +46,10 @@ export function resolveConnectionTestModel(
   protocol?: ModelProviderProtocol,
   model?: string,
 ): string {
+  // 用户填了 model 就测用户填的那个：MODEL_MIGRATIONS 是内置默认值的保鲜手段，
+  // 对用户显式输入套用会让测试打到别的型号（撞名审计 M-4）
   const trimmed = model?.trim();
-  if (trimmed) return normalizeModelId(trimmed);
+  if (trimmed) return trimmed;
 
   const normalizedProvider = normalizeProviderId(provider) ?? provider;
   const providerForDefault = protocol === 'claude' ? 'claude' : normalizedProvider;

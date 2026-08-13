@@ -14,11 +14,11 @@ const READ_TOOL = {
   }, requiresPermission: false, permissionLevel: 'read',
 } as any;
 
-/** 走真实调用路径断言最终请求 URL——端点拼接是内部实现，不为测试单独导出。 */
-async function requestUrlFor(baseUrl: string): Promise<string> {
+/** 走真实调用路径断言最终请求 URL——端点拼接是内部实现，不为测试单独导出（knip production 门会判 dead export）。 */
+async function requestUrlFor(baseUrl: string, provider = 'deepseek', model = 'deepseek-v4-flash'): Promise<string> {
   electronFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) });
   await new ResponsesProvider().inference([{ role: 'user', content: 'ping' }], [], {
-    provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'test-key', protocol: 'responses', baseUrl,
+    provider, model, apiKey: 'test-key', protocol: 'responses', baseUrl,
   } as any);
   return electronFetch.mock.calls.at(-1)![0] as string;
 }
@@ -36,6 +36,16 @@ function sseResponse(events: unknown[]) {
     }),
   };
 }
+
+describe('responses endpoint per provider', () => {
+  it('strips /vN only when the Responses API lives at the API root', async () => {
+    // 官方 DeepSeek：Responses 在 api.deepseek.com 根路径，剥掉 /v1。
+    expect(await requestUrlFor('https://api.deepseek.com/v1')).toBe('https://api.deepseek.com/responses');
+    // 中转站：Responses 在 /v1/responses，/v1 必须保留（剥掉实测 405+HTML）。
+    expect(await requestUrlFor('https://tokenrhythm.studio/v1', 'custom-tokenrhythm', 'deepseek-v4-flash-0731'))
+      .toBe('https://tokenrhythm.studio/v1/responses');
+  });
+});
 
 describe('ResponsesProvider', () => {
   beforeEach(() => electronFetch.mockReset());

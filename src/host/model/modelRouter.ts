@@ -925,8 +925,16 @@ export class ModelRouter {
     // 让存量配置改判：云端托管 provider 会被 configService 写死 protocol:'openai'，一旦其 id
     // 撞上内置 provider，就会从原生实现掉进通用 custom（DeepSeek 会因此丢掉 thinking-mode 的
     // reasoning_content 处理，多轮直接 400）。
-    // 用户显式写的 protocol 优先于矩阵声明；矩阵只在用户没写时驱动分派（否则用户改不回去）。
-    const effectiveProtocol = config.protocol ?? resolveModelCapabilities(config.provider, config.model).protocol;
+    // protocol:'openai' 描述的是「OpenAI 兼容家族」——provider 注册 UI 与云托管都会默认写死它，
+    // 存量配置普遍带着（2026-08-13 真机 config 核实：默认 provider 与全部 custom-* 均为 'openai'），
+    // 它不是用户对具体模型的显式改道。Responses 本就是 OpenAI 家族的线格式，所以矩阵按模型声明的
+    // responses 行在 'openai' 下必须继续生效——否则矩阵行对一切带存量 protocol 的配置都是死代码，
+    // #1095 的 Responses+搜索在这类配置上一次都没走到过。'claude' 是另一协议家族，维持一票否决；
+    // 显式 protocol:'responses' 强制走 Responses 的语义不变。
+    const matrixProtocol = resolveModelCapabilities(config.provider, config.model).protocol;
+    const effectiveProtocol = matrixProtocol === 'responses' && config.protocol !== 'claude'
+      ? 'responses'
+      : config.protocol ?? matrixProtocol;
     if (effectiveProtocol === 'responses') return this.providers.get('responses');
     if (this.providers.has(config.provider)) return undefined;
     if (config.protocol === 'claude') return this.providers.get('claude');

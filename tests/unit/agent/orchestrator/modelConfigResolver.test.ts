@@ -143,6 +143,8 @@ describe('modelConfigResolver', () => {
       expect(config.baseUrl).toBeUndefined();
       expect(config.apiKey).not.toBe('sk-zhipu');
       expect(config.apiKey).toBeUndefined();
+      // protocol 同族：沿用上一家的会把协议家族串染过去（矩阵 responses 行会被压死）
+      expect(config.protocol).toBeUndefined();
     });
 
     it('explicit modelSpec 换 provider 后，同样不继承上一个 provider 的 baseUrl/apiKey', () => {
@@ -156,6 +158,7 @@ describe('modelConfigResolver', () => {
       expect(config.baseUrl).toBeUndefined();
       expect(config.apiKey).not.toBe('sk-zhipu');
       expect(config.apiKey).toBeUndefined();
+      expect(config.protocol).toBeUndefined();
     });
   });
 

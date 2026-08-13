@@ -37,6 +37,22 @@ describe('ToolExecutionEventRepository（事件账本第二期 · 执行生命�
     }
   });
 
+  it('countSince 把 origin 为 NULL 的存量行也算作活性证据（升级窗口不误报断流）', () => {
+    const db = freshDb();
+    try {
+      const repo = new ToolExecutionEventRepository(db);
+      // 模拟升级前旧版本写入：无 origin
+      repo.appendBegin({
+        executionId: 'legacy-1', sessionId: 's1', toolName: 'Bash',
+        summary: 'ls', params: {}, recordedAt: 1000,
+      });
+      expect(repo.countByOriginSince('desktop', 0)).toBe(0);
+      expect(repo.countSince(0)).toBe(1);
+    } finally {
+      db.close();
+    }
+  });
+
   it('appendBegin → getOpenExecutions 取回，params round-trip 还原', () => {
     const db = freshDb();
     try {

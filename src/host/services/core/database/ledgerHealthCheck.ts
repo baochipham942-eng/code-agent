@@ -33,10 +33,12 @@ export function checkLedgerHealth(deps: LedgerHealthDeps, now: number): void {
     const since = now - HEALTH_WINDOW_MS;
     const activeDesktopSessions = countDesktopToolActiveSessionsSince(deps.db, since);
     if (activeDesktopSessions === 0) return;
-    const executionRows = deps.toolExecutionEventRepo.countByOriginSince('desktop', since);
-    const decisionRows = deps.permissionDecisionRepo.countByOriginSince('desktop', since);
+    // 活性判据用窗口内总行数：升级前的存量行 origin 为 NULL，但它们同样证明写入链活着；
+    // 只看 desktop-origin 会在升级后的 7 天窗口里对每次启动误报断流。
+    const executionRows = deps.toolExecutionEventRepo.countSince(since);
+    const decisionRows = deps.permissionDecisionRepo.countSince(since);
     if (executionRows === 0 || decisionRows === 0) {
-      deps.warn('[DatabaseService] 账本疑似断流：近 7 天有桌面工具会话，但 desktop-origin 账本写入为零', {
+      deps.warn('[DatabaseService] 账本疑似断流：近 7 天有桌面工具会话，但账本零写入', {
         activeDesktopSessions, executionRows, decisionRows,
       });
     }

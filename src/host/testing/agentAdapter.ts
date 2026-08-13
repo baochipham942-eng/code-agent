@@ -410,6 +410,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
           ? async (request) => permissionDecider({ ...request, toolName: request.tool })
           : async () => true,
         workingDirectory: this.workingDirectory,
+        ledgerOrigin: 'eval',
       });
 
       // 3. Shared messages array — persisted on the adapter instance so follow-up

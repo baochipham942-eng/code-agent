@@ -11,7 +11,8 @@ import type { ContextEventRecord } from '../../../context/contextEventLedger';
 import type { ContextInjectionSource } from '../../../context/contextEventLedger';
 import type { ProjectableMessage } from '../../../context/projectionEngine';
 import { createLogger } from '../../../services/infra/logger';
-import { SYSTEM_PROMPT_BUDGET, getContextWindow } from '../../../../shared/constants';
+import { SYSTEM_PROMPT_BUDGET } from '../../../../shared/constants';
+import { resolveContextWindow } from '../../../model/modelLimits';
 import type { RuntimeContext } from '../runtimeContext';
 import type { TaskProgressPort } from '../runtimePorts';
 
@@ -63,14 +64,14 @@ export const MAX_SYSTEM_PROMPT_TOKENS = parseInt(process.env.CODE_AGENT_MAX_SYST
  * - 否则按模型上下文窗口的 WINDOW_RATIO 计算，下限 MIN_TOKENS（小窗口模型不低于历史默认值）
  * 修复重记忆环境下 base prompt 吃满固定 6000 后能力发现块全被静默丢弃的问题。
  */
-export function getSystemPromptBudget(model?: string): number {
+export function getSystemPromptBudget(model?: string, provider?: string): number {
   if (process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS) {
     return MAX_SYSTEM_PROMPT_TOKENS;
   }
   if (model) {
     return Math.max(
       SYSTEM_PROMPT_BUDGET.MIN_TOKENS,
-      Math.floor(getContextWindow(model) * SYSTEM_PROMPT_BUDGET.WINDOW_RATIO),
+      Math.floor(resolveContextWindow(model, provider) * SYSTEM_PROMPT_BUDGET.WINDOW_RATIO),
     );
   }
   return MAX_SYSTEM_PROMPT_TOKENS;

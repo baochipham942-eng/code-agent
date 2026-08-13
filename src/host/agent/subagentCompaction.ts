@@ -8,10 +8,8 @@
 
 import { createLogger } from '../services/infra/logger';
 import { estimateTokens } from '../context/tokenEstimator';
-import {
-  getContextWindow,
-  SUBAGENT_COMPACTION,
-} from '../../shared/constants';
+import { SUBAGENT_COMPACTION } from '../../shared/constants';
+import { resolveContextWindow } from '../model/modelLimits';
 
 const logger = createLogger('SubagentCompaction');
 
@@ -83,7 +81,8 @@ function estimateTotalTokens(messages: SubagentMessage[]): number {
  */
 export function compactSubagentMessages(
   messages: SubagentMessage[],
-  model: string
+  model: string,
+  provider?: string,
 ): boolean {
   // Head: system (0) + initial user (1)
   const headCount = 2;
@@ -95,7 +94,7 @@ export function compactSubagentMessages(
     return false;
   }
 
-  const contextWindow = getContextWindow(model);
+  const contextWindow = resolveContextWindow(model, provider);
   const threshold = contextWindow * SUBAGENT_COMPACTION.THRESHOLD;
   const currentTokens = estimateTotalTokens(messages);
 

@@ -24,7 +24,7 @@ import { trackNode } from '../../observability/posthogNode';
 import { silence } from '../../utils/errorHandling';
 import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
-import { getContextWindow } from '../../../shared/constants';
+import { resolveContextWindow } from '../../model/modelLimits';
 
 // Import refactored modules
 import type {
@@ -619,7 +619,7 @@ export class RunFinalizer {
     try {
       const healthService = getContextHealthService();
       const health = healthService.get(this.ctx.sessionId);
-      const contextWindow = getContextWindow(this.ctx.modelConfig.model);
+      const contextWindow = resolveContextWindow(this.ctx.modelConfig.model, this.ctx.modelConfig.provider);
       this.ctx.onEvent({
         type: 'task_stats',
         data: {

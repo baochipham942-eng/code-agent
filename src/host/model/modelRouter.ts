@@ -17,6 +17,7 @@ import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../sha
 import { isFallbackEligible, abortableSleep, isCancellationError } from './providers/retryStrategy';
 import { getSettingsProviderBaseUrl } from './providers/providerResolution';
 import { getModelMaxOutputTokens } from '../../shared/constants';
+import { resolveModelMaxOutputTokens } from './modelLimits';
 import { createLogger } from '../services/infra/logger';
 import { getInferenceCache } from './inferenceCache';
 import { getAdaptiveRouter } from './adaptiveRouter';
@@ -206,7 +207,7 @@ export class ModelRouter {
       id: modelId,
       name: settingsModel.label ?? modelId,
       capabilities: settingsModel.capabilities ?? [],
-      maxTokens: settingsModel.maxTokens ?? getModelMaxOutputTokens(modelId),
+      maxTokens: getModelMaxOutputTokens(modelId, provider, settingsModel.maxTokens),
       supportsTool: settingsModel.supportsTool !== false,
       supportsVision: settingsModel.supportsVision === true,
       supportsStreaming: settingsModel.supportsStreaming !== false,
@@ -385,7 +386,7 @@ export class ModelRouter {
         provider: fallbackProvider,
         model: fallback.model,
         apiKey,
-        maxTokens: getModelMaxOutputTokens(fallback.model),
+        maxTokens: resolveModelMaxOutputTokens(fallback.model, fallbackProvider),
       };
     }
 
@@ -757,7 +758,7 @@ export class ModelRouter {
           provider: fallback.provider as ModelProvider,
           model: fallback.model,
           apiKey: fallbackApiKey,
-          maxTokens: getModelMaxOutputTokens(fallback.model),
+          maxTokens: resolveModelMaxOutputTokens(fallback.model, fallback.provider),
         };
 
         try {

@@ -80,7 +80,6 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'setEffortLevel',
     'setInteractionMode',
     'setPermissionMode',
-    'setSearchEnabled',
     'setSessionPermissionMode',
     'setThinkingEnabled',
   ],

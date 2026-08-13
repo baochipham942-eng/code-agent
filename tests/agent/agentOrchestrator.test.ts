@@ -191,6 +191,7 @@ const agentLoopProbe = vi.hoisted(() => ({
   onRun: undefined as undefined | (() => void),
   lastConfig: undefined as undefined | {
     deniedToolNames?: string[];
+    searchEnabled?: boolean;
     toolExecutor?: { runContext?: { workspace?: string } };
     workspaceScope?: { primaryRoot: string };
   },
@@ -382,6 +383,32 @@ describe('AgentOrchestrator', () => {
     it('getWorkingDirectory 应该返回当前目录', () => {
       const dir = orchestrator.getWorkingDirectory();
       expect(dir).toBeTruthy();
+    });
+
+    it('将本轮 searchEnabled 传给新建的 AgentLoop', async () => {
+      await (orchestrator as unknown as {
+        runStandardAgentLoop(
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: unknown,
+          sessionId: string,
+          executionContent: string | undefined,
+          toolScope: unknown,
+          executionIntent: unknown,
+          options: AgentRunOptions,
+        ): Promise<void>;
+      }).runStandardAgentLoop(
+        '不联网的本轮',
+        mockOnEvent,
+        { provider: 'deepseek', model: 'deepseek-chat' },
+        'search-disabled-session',
+        undefined,
+        undefined,
+        undefined,
+        { mode: 'normal', searchEnabled: false, disableAutoAgent: true },
+      );
+
+      expect(lastAgentLoopConfig()?.searchEnabled).toBe(false);
     });
 
     it('后台 runContext workspace 等于前台当轮固化的项目根', async () => {

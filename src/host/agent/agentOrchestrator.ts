@@ -504,10 +504,6 @@ export class AgentOrchestrator {
     this.runSettings.setThinkingEnabled(enabled);
   }
 
-  setSearchEnabled(enabled: boolean): void {
-    this.runSettings.setSearchEnabled(enabled);
-  }
-
   setInteractionMode(mode: import('../../shared/contract/agent').InteractionMode): void {
     this.runSettings.setInteractionMode(mode);
   }
@@ -942,6 +938,7 @@ export class AgentOrchestrator {
       isDefaultWorkingDirectory: this.isDefaultWorkingDirectory,
       toolScope,
       executionIntent,
+      searchEnabled: options?.searchEnabled,
       neoTag: options?.neoTag,
       goalContract,
       // 迭代数硬上限（角色主动性醒来等预算受限场景，内部文档 §6）

@@ -160,7 +160,7 @@ export class AgentLoop {
         : createTelemetryAdapter(),
 
       // Turn 级状态切片（ADR-038 批3a）
-      turn: new TurnState(),
+      turn: new TurnState({ searchEnabled: config.searchEnabled ?? true }),
       // 控制流状态切片（ADR-038 批3b）
       control: new ControlState(),
       // RunStats+Tracing 切片（ADR-038 批3d）
@@ -280,10 +280,6 @@ export class AgentLoop {
 
   setThinkingEnabled(enabled: boolean): void {
     this.conversationRuntime.setThinkingEnabled(enabled);
-  }
-
-  setSearchEnabled(enabled: boolean): void {
-    this.conversationRuntime.setSearchEnabled(enabled);
   }
 
   getEffortLevel(): import('../../shared/contract/agent').EffortLevel {

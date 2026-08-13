@@ -23,6 +23,7 @@ export interface AgentMessageRequest {
   content: string;
   sessionId?: string;
   attachments?: MessageAttachment[];
+  searchEnabled?: boolean;
   options?: AppServiceRunOptions;
   context?: ConversationEnvelopeContext;
 }

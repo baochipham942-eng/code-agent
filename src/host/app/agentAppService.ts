@@ -705,12 +705,16 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
     );
+    const optionsWithSearchEnabled: AppServiceRunOptions = {
+      ...(workbenchOptions ?? {}),
+      searchEnabled: envelope.searchEnabled ?? true,
+    };
     const options = isSessionCommandCenterTurn({
       prompt: envelope.content,
-      hasGoal: Boolean(workbenchOptions?.goal),
+      hasGoal: Boolean(optionsWithSearchEnabled.goal),
     })
-      ? withSessionCommandCenterBrain(workbenchOptions)
-      : workbenchOptions;
+      ? withSessionCommandCenterBrain(optionsWithSearchEnabled)
+      : optionsWithSearchEnabled;
 
     // 云货架专家首跑：本轮档位钳到最严，让用户看见它每一步要干什么。
     // 必须挂在**主 agent 轮起点**——用户在输入框选中专家后说话，专家就是主 agent
@@ -1252,11 +1256,6 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   setThinkingEnabled(enabled: boolean): void {
     const orchestrator = this.getOrchestratorOrThrow();
     orchestrator.setThinkingEnabled(enabled);
-  }
-
-  setSearchEnabled(enabled: boolean): void {
-    const orchestrator = this.getOrchestratorOrThrow();
-    orchestrator.setSearchEnabled(enabled);
   }
 
   // === Interaction Mode ===

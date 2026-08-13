@@ -178,6 +178,8 @@ export interface AgentRunOptions {
   toolScope?: import('../../shared/contract/conversationEnvelope').WorkbenchToolScope;
   executionIntent?: import('../../shared/contract/conversationEnvelope').ConversationExecutionIntent;
   runtimeInput?: import('../../shared/contract/conversationEnvelope').RuntimeInputIntent;
+  /** Per-turn web search switch. Omitted by legacy callers means enabled. */
+  searchEnabled?: boolean;
   /** 排队输入恢复时使用的原 run 显式模型。 */
   modelSpec?: import('../../shared/contract/conversationEnvelope').ConversationModelSpec;
   /** /goal 自治模式：存在则本轮激活 goal 模式（normal mode 下生效） */

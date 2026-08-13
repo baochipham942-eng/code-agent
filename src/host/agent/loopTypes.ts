@@ -86,6 +86,8 @@ export interface AgentLoopConfig {
   toolScope?: WorkbenchToolScope;
   /** 当前 turn 的结构化执行意图 */
   executionIntent?: ConversationExecutionIntent;
+  /** Per-turn web search switch. Omitted by legacy callers means enabled. */
+  searchEnabled?: boolean;
   /** /goal 自治模式契约；存在则激活 goal 模式（设 ctx.goalMode + maxIterations=maxTurns） */
   goalContract?: GoalContract;
   /** Approved Neo Tag work card context for this run. */

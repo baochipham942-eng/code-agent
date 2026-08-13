@@ -53,6 +53,8 @@ export interface CLIConfig {
   allowedToolNames?: string[];
   /** 每轮执行意图（含 designCanvasActive 等）；web HTTP 路径据此透传到 RuntimeContext。 */
   executionIntent?: ConversationExecutionIntent;
+  /** Per-turn web search switch. Omitted by legacy callers means enabled. */
+  searchEnabled?: boolean;
   /** /agent 显式选择（preferredAgentId）；web/CLI 独立 run 路径据此换 prompt + 收窄工具。 */
   agentOverride?: ExplicitAgentOverride;
   /** 用户显式请求的 agent id（含解析失败场景）；进 AgentLoop ctx 供 turnQuality 徽标降级判定。 */

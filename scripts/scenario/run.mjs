@@ -143,7 +143,12 @@ async function runScenario({ scenario, scenarioPath, options }) {
       leg.finishedAt = new Date().toISOString();
       leg.teardown = finish;
       report.teardownClean &&= finish.teardownClean;
-      report.invalid.push(...validateLeg({ legName, assertions: ctx.assertions, openedEvents: finish.streams.length }));
+      // 崩掉/没跑到的腿不做契约校验：它的断言根本没机会走完，按契约无效收整体
+      // SCENARIO_INVALID 会把另一条腿拿到的真 FAIL 洗掉（08-13 真机实测：negative
+      // 抓到坏行为，positive 因环境被踩 fetch failed，整体却报 exit 3）。
+      if (leg.verdict !== 'NOT_RUN' && leg.reason !== 'leg_exception') {
+        report.invalid.push(...validateLeg({ legName, assertions: ctx.assertions, openedEvents: finish.streams.length }));
+      }
       // FAIL 优先于 NOT_RUN：已拿到坏行为证据时，取证通道不全不能洗白结论（设计 §2.8）
       if (leg.verdict !== 'FAIL' && finish.streams.some((stream) => stream.receivedCount === 0)) {
         leg.verdict = 'NOT_RUN'; leg.reason = 'sse_no_events'; leg.evidence = { streams: finish.streams };

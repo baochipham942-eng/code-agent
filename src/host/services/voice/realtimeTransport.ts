@@ -8,26 +8,36 @@
 import WebSocket from 'ws';
 import {
   VOICE_INJECTION_ACK_WINDOW_MS,
-  VOICE_STALE_PREFIX_DEFAULTS_MS,
-  VOICE_STALE_SILENCE_DEFAULTS_MS,
-  VOICE_TURN_DETECTION_DEFAULT,
   VOICE_UPSTREAM_CONNECT_TIMEOUT_MS,
   VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS,
+  VOICE_UPSTREAM_RESPONSE_SILENCE_DEGRADED_FACTOR,
+  VOICE_UPSTREAM_RESPONSE_SILENCE_MIN_TIMEOUT_MS,
+  VOICE_UPSTREAM_RESPONSE_SILENCE_MULTIPLIER,
+  VOICE_UPSTREAM_RESPONSE_SILENCE_SAMPLE_WINDOW,
   VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
   VOICE_UPSTREAM_SILENCE_TIMEOUT_MS,
 } from '../../../shared/constants/voice';
 import type { RealtimeVoiceProviderProfile } from '../../../shared/constants/realtimeVoiceProviders';
 import type {
   VoiceToolCallOrigin,
-  VoiceTokenUsage,
   VoiceTransport,
   VoiceTransportHandle,
-  VoiceTurnDetectionConfig,
 } from '../../../shared/contract/voice';
-import { getConfigService } from '../core/configService';
+import { parseResponseUsage } from './realtimeUsage';
+import {
+  parseEvent,
+  resolveUpstreamUrlOverride,
+  responseIdOf,
+  upstreamAcceptedTools,
+} from './realtimeUpstream';
+import {
+  buildSessionUpdate,
+  resolveTurnDetectionConfig,
+  toUpstreamTurnDetection,
+} from './realtimeSessionConfig';
 import { createLogger } from '../infra/logger';
 import { getHttpsAgent } from '../../model/providers/providerHttp';
-import { recordVoiceToolCall } from './voiceTelemetry';
+import { recordVoiceToolCall, recordVoiceWatchdogTakeover } from './voiceTelemetry';
 import {
   mayBeVoiceXmlFallback,
   parseVoiceXmlToolFallback,
@@ -39,234 +49,7 @@ const RESPONSE_IDLE_TIMEOUT_CODE = 'response_idle_timeout';
 // Realtime 协议族的 provider 不保证必发 session.updated；超时降级是预期路径，不是建连失败。
 const INITIAL_SESSION_HANDSHAKE_TIMEOUT_MS = 8_000;
 
-interface UpstreamEvent {
-  type: string;
-  response_id?: string;
-  item_id?: string;
-  response?: { id?: string; usage?: unknown };
-  item?: { id?: string };
-  delta?: string;
-  transcript?: string;
-  audio?: string;
-  error?: { code?: string; message?: string };
-  [key: string]: unknown;
-}
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function tokenCount(record: Record<string, unknown>, key: string): number | undefined {
-  const value = record[key];
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-function parseDashscopeUsage(raw: unknown): VoiceTokenUsage | undefined {
-  if (!isRecord(raw) || !isRecord(raw.input_tokens_details) || !isRecord(raw.output_tokens_details)) return undefined;
-  const totalTokens = tokenCount(raw, 'total_tokens');
-  const inputTokens = tokenCount(raw, 'input_tokens');
-  const outputTokens = tokenCount(raw, 'output_tokens');
-  if (totalTokens === undefined || inputTokens === undefined || outputTokens === undefined) return undefined;
-  // DashScope 的 details 是稀疏的：没消耗的形态不发字段（纯文本输入没有 audio_tokens）。
-  // 缺席 = 0；顶层三个总量字段仍必需，防止把完全不认识的形状静默算成 0。
-  return {
-    totalTokens,
-    inputTokens,
-    outputTokens,
-    inputAudioTokens: tokenCount(raw.input_tokens_details, 'audio_tokens') ?? 0,
-    inputTextTokens: tokenCount(raw.input_tokens_details, 'text_tokens') ?? 0,
-    outputAudioTokens: tokenCount(raw.output_tokens_details, 'audio_tokens') ?? 0,
-    outputTextTokens: tokenCount(raw.output_tokens_details, 'text_tokens') ?? 0,
-  };
-}
-
-function parseOpenAIUsage(raw: unknown): VoiceTokenUsage | undefined {
-  if (!isRecord(raw) || !isRecord(raw.input_token_details) || !isRecord(raw.output_token_details)) return undefined;
-  const totalTokens = tokenCount(raw, 'total_tokens');
-  const inputTokens = tokenCount(raw, 'input_tokens');
-  const outputTokens = tokenCount(raw, 'output_tokens');
-  const inputAudioTokens = tokenCount(raw.input_token_details, 'audio_tokens');
-  const inputTextTokens = tokenCount(raw.input_token_details, 'text_tokens');
-  const outputAudioTokens = tokenCount(raw.output_token_details, 'audio_tokens');
-  const outputTextTokens = tokenCount(raw.output_token_details, 'text_tokens');
-  if (
-    totalTokens === undefined
-    || inputTokens === undefined
-    || outputTokens === undefined
-    || inputAudioTokens === undefined
-    || inputTextTokens === undefined
-    || outputAudioTokens === undefined
-    || outputTextTokens === undefined
-  ) return undefined;
-  return {
-    totalTokens,
-    inputTokens,
-    outputTokens,
-    inputAudioTokens,
-    inputTextTokens,
-    outputAudioTokens,
-    outputTextTokens,
-  };
-}
-
-function parseResponseUsage(profile: RealtimeVoiceProviderProfile, raw: unknown): VoiceTokenUsage | undefined {
-  return profile.sessionShape === 'dashscope-compatible'
-    ? parseDashscopeUsage(raw)
-    : parseOpenAIUsage(raw);
-}
-
-function responseIdOf(event: UpstreamEvent, fallback = ''): string {
-  if (typeof event.response_id === 'string' && event.response_id) return event.response_id;
-  if (typeof event.response?.id === 'string' && event.response.id) return event.response.id;
-  return fallback;
-}
-
-function parseEvent(raw: unknown): UpstreamEvent | null {
-  try {
-    const parsed: unknown = JSON.parse(String(raw));
-    if (parsed && typeof parsed === 'object' && typeof (parsed as UpstreamEvent).type === 'string') {
-      return parsed as UpstreamEvent;
-    }
-  } catch {
-    // 上游偶发非 JSON 帧，忽略即可；不要打印内容（可能含音频 base64）。
-  }
-  return null;
-}
-
-type UpstreamTurnDetection =
-  | {
-      type: 'server_vad';
-      threshold?: number;
-      prefix_padding_ms?: number;
-      silence_duration_ms?: number;
-      create_response: false;
-      interrupt_response: false;
-    }
-  | {
-      type: 'semantic_vad';
-      eagerness?: 'low' | 'medium' | 'high' | 'auto';
-      create_response: false;
-      interrupt_response: false;
-    }
-  | null;
-
-function resolveTurnDetectionConfig(): VoiceTurnDetectionConfig {
-  try {
-    const voice = getConfigService().getSettings().voice;
-    const configured = voice?.turnDetection;
-    // `turnDetection: null` = 手动 commit 档。但删掉「按住说话」之后，老配置里会出现
-    // `turnDetection: null` + `live.interrupt: 'push_to_talk'` 的组合——UI 侧把它归一到
-    // 全双工了，运行时若还按 null 走，就是「UI 说全双工、上游永远等不到 commit」的
-    // 分叉：用户说了没反应，连补救的点按按钮都不显示（2026-07-27 真机差点踩到）。
-    // 只有**显式**留在点按档时才认这个 null。
-    if (configured === null && voice?.live?.interrupt !== 'manual') return VOICE_TURN_DETECTION_DEFAULT;
-    if (configured === undefined) return VOICE_TURN_DETECTION_DEFAULT;
-    return upgradeStaleVadDefaults(configured);
-  } catch {
-    return VOICE_TURN_DETECTION_DEFAULT;
-  }
-}
-
-/**
- * 存量配置里的旧默认值升级（批 X2，批 X5 补上 800）。prefix/silence 从来不是 UI 可设项
- * ——落盘里等于历代默认值之一，就只可能是「当年默认值随保存写死的拷贝」，不是用户选择。
- * 改默认值对存量零生效是踩过的坑（echoCancellation 先例），所以在读取口把旧默认识别为
- * 过期：逐字段命中历代默认表 → 升到新默认；手改过的其他值（含 threshold）原样保留。
- *
- * 历代默认表放常量文件而不是写在这里：改默认值的人改的是那个文件，旧值必须在他眼前。
- */
-function upgradeStaleVadDefaults(configured: VoiceTurnDetectionConfig): VoiceTurnDetectionConfig {
-  if (configured?.type !== 'server_vad') return configured;
-  const defaults = VOICE_TURN_DETECTION_DEFAULT;
-  if (defaults?.type !== 'server_vad') return configured;
-  const isStale = (value: number | undefined, stale: readonly number[]): boolean =>
-    value !== undefined && stale.includes(value);
-  return {
-    ...configured,
-    ...(isStale(configured.prefixPaddingMs, VOICE_STALE_PREFIX_DEFAULTS_MS)
-      ? { prefixPaddingMs: defaults.prefixPaddingMs }
-      : {}),
-    ...(isStale(configured.silenceDurationMs, VOICE_STALE_SILENCE_DEFAULTS_MS)
-      ? { silenceDurationMs: defaults.silenceDurationMs }
-      : {}),
-  };
-}
-
-/** session.updated 回显里是否真收下了工具。回显不带 tools 字段一律按「没收下」算。 */
-function upstreamAcceptedTools(event: UpstreamEvent): boolean {
-  const session = event.session as { tools?: unknown } | undefined;
-  return Array.isArray(session?.tools) && session.tools.length > 0;
-}
-
-function toUpstreamTurnDetection(config: VoiceTurnDetectionConfig): UpstreamTurnDetection {
-  if (config === null) return null;
-  if (config.type === 'semantic_vad') {
-    return {
-      type: 'semantic_vad',
-      create_response: false,
-      interrupt_response: false,
-      ...(config.eagerness ? { eagerness: config.eagerness } : {}),
-    };
-  }
-  return {
-    type: 'server_vad',
-    create_response: false,
-    interrupt_response: false,
-    ...(config.threshold !== undefined ? { threshold: config.threshold } : {}),
-    ...(config.prefixPaddingMs !== undefined ? { prefix_padding_ms: config.prefixPaddingMs } : {}),
-    ...(config.silenceDurationMs !== undefined ? { silence_duration_ms: config.silenceDurationMs } : {}),
-  };
-}
-
-function buildSessionUpdate(
-  profile: RealtimeVoiceProviderProfile,
-  input: {
-    model: string;
-    voice: string;
-    instructions?: string;
-    tools: readonly unknown[];
-    turnDetection: UpstreamTurnDetection;
-  },
-): Record<string, unknown> {
-  if (profile.sessionShape === 'openai-realtime') {
-    return {
-      type: 'session.update',
-      session: {
-        type: 'realtime',
-        model: input.model,
-        output_modalities: ['audio'],
-        audio: {
-          input: {
-            format: { type: 'audio/pcm', rate: profile.inputSampleRate },
-            transcription: profile.transcriptionModel ? { model: profile.transcriptionModel } : undefined,
-            turn_detection: input.turnDetection,
-          },
-          output: {
-            format: { type: 'audio/pcm' },
-            voice: input.voice,
-          },
-        },
-        ...(input.instructions ? { instructions: input.instructions } : {}),
-        ...(input.tools.length ? { tools: input.tools, tool_choice: 'auto' } : {}),
-      },
-    };
-  }
-  return {
-    type: 'session.update',
-    session: {
-      modalities: ['text', 'audio'],
-      voice: input.voice,
-      input_audio_format: 'pcm16',
-      output_audio_format: 'pcm16',
-      ...(profile.transcriptionModel
-        ? { input_audio_transcription: { model: profile.transcriptionModel } }
-        : {}),
-      turn_detection: input.turnDetection,
-      ...(input.instructions ? { instructions: input.instructions } : {}),
-      ...(input.tools.length ? { tools: input.tools, tool_choice: 'auto' } : {}),
-    },
-  };
-}
 
 function resolveProxyAgent(profile: RealtimeVoiceProviderProfile, url: string) {
   if (!profile.needsProxy) return undefined;
@@ -308,7 +91,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
       ? turnDetectionConfig.silenceDurationMs
       : undefined;
     const registeredTools = onToolCall ? config.tools ?? [] : [];
-    const url = profile.wsUrl(model);
+    const url = resolveUpstreamUrlOverride(profile.wsUrl(model));
     logger.info('connecting upstream', {
       provider: profile.id,
       model,
@@ -394,6 +177,10 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     let activeResponseId = '';
     const responseItemIds = new Map<string, string>();
     const cancellingResponseIds = new Set<string>();
+    const watchdogCancelledResponseIds = new Set<string>();
+    // 每发一次看门狗 cancel，允许吞一次上游的「none active response」良性回声；
+    // 与上面集合分开——那个还要给 stale done 隔离用，不能被吞错消费掉。
+    let watchdogCancelBenignErrorBudget = 0;
     const cancellingResponseItemIds = new Map<string, string>();
     let responseCreateQueued = false;
     let responseCreateInFlight = false;
@@ -413,6 +200,16 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     } | null = null;
     let responseWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
     let responseWatchdogNudged = false;
+    let responseProgressWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+    let responseProgressResponseId = '';
+    let responseProgressCreatedAt = 0;
+    let responseProgressLastSignalAt = 0;
+    let responseTakeoverUsed = false;
+    let responseTakeoverPending = false;
+    let responseWatchdogTakeoverCount = 0;
+    let responseWatchdogHealthScore = 0;
+    let serviceUnstableNotified = false;
+    const responseProgressSamplesMs: number[] = [];
     let modelUnresponsiveNotified = false;
     let speechStartedAt = 0;
     let currentCandidateId = '';
@@ -435,6 +232,162 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
       if (responseWatchdogTimer) clearTimeout(responseWatchdogTimer);
       responseWatchdogTimer = null;
       responseWatchdogNudged = false;
+    };
+    const clearResponseProgressWatchdog = (resetTakeover = true) => {
+      if (responseProgressWatchdogTimer) clearTimeout(responseProgressWatchdogTimer);
+      responseProgressWatchdogTimer = null;
+      responseProgressResponseId = '';
+      responseProgressCreatedAt = 0;
+      responseProgressLastSignalAt = 0;
+      if (resetTakeover) {
+        responseTakeoverUsed = false;
+        responseTakeoverPending = false;
+      }
+    };
+    const clearAllResponseWatchdogs = () => {
+      clearResponseWatchdog();
+      clearResponseProgressWatchdog();
+    };
+    const responseSilenceThreshold = (): {
+      timeoutMs: number;
+      source: 'absolute_floor' | 'rolling_estimate';
+      degraded: boolean;
+    } => {
+      const rollingTimeoutMs = responseProgressSamplesMs.length
+        ? Math.max(...responseProgressSamplesMs) * VOICE_UPSTREAM_RESPONSE_SILENCE_MULTIPLIER
+        : 0;
+      const source = rollingTimeoutMs > VOICE_UPSTREAM_RESPONSE_SILENCE_MIN_TIMEOUT_MS
+        ? 'rolling_estimate' as const
+        : 'absolute_floor' as const;
+      const baselineMs = Math.max(VOICE_UPSTREAM_RESPONSE_SILENCE_MIN_TIMEOUT_MS, rollingTimeoutMs);
+      const degraded = responseWatchdogTakeoverCount >= 2;
+      return {
+        timeoutMs: degraded
+          ? Math.max(
+              VOICE_UPSTREAM_RESPONSE_SILENCE_MIN_TIMEOUT_MS,
+              Math.round(baselineMs * VOICE_UPSTREAM_RESPONSE_SILENCE_DEGRADED_FACTOR),
+            )
+          : baselineMs,
+        source,
+        degraded,
+      };
+    };
+    const notifyModelUnresponsive = (detail: Record<string, unknown>) => {
+      if (modelUnresponsiveNotified) return;
+      modelUnresponsiveNotified = true;
+      onEvent({
+        type: 'notice',
+        code: 'VOICE_MODEL_UNRESPONSIVE',
+        message: '模型没有回应，可以再说一遍，或挂断重拨',
+        detail: JSON.stringify(detail),
+      });
+    };
+    const notifyServiceUnstable = (detail: Record<string, unknown>) => {
+      if (serviceUnstableNotified) return;
+      serviceUnstableNotified = true;
+      onEvent({
+        type: 'notice',
+        code: 'VOICE_SERVICE_UNSTABLE',
+        message: '当前语音服务不稳定，我会继续尝试恢复',
+        detail: JSON.stringify(detail),
+      });
+    };
+    const scheduleResponseProgressWatchdog = () => {
+      if (responseProgressWatchdogTimer) clearTimeout(responseProgressWatchdogTimer);
+      const threshold = responseSilenceThreshold();
+      responseProgressWatchdogTimer = setTimeout(() => {
+        responseProgressWatchdogTimer = null;
+        if (ws.readyState !== WebSocket.OPEN || !responseProgressLastSignalAt) return;
+        const silenceMs = Date.now() - responseProgressLastSignalAt;
+        const detail = {
+          turn,
+          responseId: responseProgressResponseId || 'pending-rebuild',
+          silenceMs,
+          thresholdMs: threshold.timeoutMs,
+          thresholdSource: threshold.source,
+          degraded: threshold.degraded,
+        };
+        if (!responseTakeoverUsed) {
+          responseTakeoverUsed = true;
+          responseTakeoverPending = true;
+          responseWatchdogTakeoverCount += 1;
+          logger.warn('upstream response watchdog taking over stalled turn', {
+            ...detail,
+            takeoverCount: responseWatchdogTakeoverCount,
+          });
+          recordVoiceWatchdogTakeover({
+            provider: profile.id,
+            turn,
+            responseId: detail.responseId,
+            silenceMs,
+            thresholdMs: threshold.timeoutMs,
+            thresholdSource: threshold.source,
+            takeoverCount: responseWatchdogTakeoverCount,
+          });
+          if (responseWatchdogTakeoverCount >= 2) {
+            notifyServiceUnstable({ ...detail, takeoverCount: responseWatchdogTakeoverCount });
+          }
+          if (responseProgressResponseId) watchdogCancelledResponseIds.add(responseProgressResponseId);
+          watchdogCancelBenignErrorBudget += 1;
+          ws.send(JSON.stringify({ type: 'response.cancel' }));
+          ws.send(JSON.stringify({
+            type: 'response.create',
+            ...(sentResponseInstructions
+              ? { response: { instructions: sentResponseInstructions } }
+              : {}),
+          }));
+          activeResponseId = '';
+          responseCreateInFlight = true;
+          responseProgressLastSignalAt = Date.now();
+          scheduleResponseProgressWatchdog();
+          return;
+        }
+        responseWatchdogHealthScore -= 1;
+        responseCreateInFlight = false;
+        activeResponseId = '';
+        responseTakeoverPending = false;
+        logger.warn('upstream response watchdog rebuild still silent', {
+          ...detail,
+          healthScore: responseWatchdogHealthScore,
+          takeoverCount: responseWatchdogTakeoverCount,
+        });
+        notifyModelUnresponsive({
+          ...detail,
+          healthScore: responseWatchdogHealthScore,
+          takeoverCount: responseWatchdogTakeoverCount,
+        });
+      }, threshold.timeoutMs);
+    };
+    const armResponseProgressWatchdog = (responseId: string) => {
+      responseProgressResponseId = responseId;
+      responseProgressCreatedAt = Date.now();
+      responseProgressLastSignalAt = responseProgressCreatedAt;
+      scheduleResponseProgressWatchdog();
+    };
+    const feedResponseProgressWatchdog = (responseId: string) => {
+      if (!responseProgressWatchdogTimer || !responseId || responseId !== responseProgressResponseId) return;
+      const now = Date.now();
+      const previousAt = responseProgressLastSignalAt || responseProgressCreatedAt;
+      const intervalMs = previousAt ? now - previousAt : 0;
+      if (intervalMs > 0) {
+        responseProgressSamplesMs.push(intervalMs);
+        if (responseProgressSamplesMs.length > VOICE_UPSTREAM_RESPONSE_SILENCE_SAMPLE_WINDOW) {
+          responseProgressSamplesMs.shift();
+        }
+      }
+      responseProgressLastSignalAt = now;
+      if (responseTakeoverPending) {
+        responseTakeoverPending = false;
+        const threshold = responseSilenceThreshold();
+        logger.info('upstream response watchdog rebuild recovered', {
+          turn,
+          responseId,
+          silenceMs: intervalMs,
+          thresholdMs: threshold.timeoutMs,
+          thresholdSource: threshold.source,
+        });
+      }
+      scheduleResponseProgressWatchdog();
     };
     const scheduleResponseWatchdog = () => {
       if (responseWatchdogTimer) clearTimeout(responseWatchdogTimer);
@@ -466,18 +419,17 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           turn,
           timeoutMs: VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
         });
-        if (!modelUnresponsiveNotified) {
-          modelUnresponsiveNotified = true;
-          onEvent({
-            type: 'notice',
-            code: 'VOICE_MODEL_UNRESPONSIVE',
-            message: '模型没有回应，可以再说一遍，或挂断重拨',
-          });
-        }
+        notifyModelUnresponsive({
+          turn,
+          responseId: 'pending-create',
+          silenceMs: VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS * 2,
+          thresholdMs: VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
+          thresholdSource: 'await_created',
+        });
       }, VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS);
     };
     const armResponseWatchdog = () => {
-      clearResponseWatchdog();
+      clearAllResponseWatchdogs();
       scheduleResponseWatchdog();
     };
     const settlePendingInjection = (error?: Error): void => {
@@ -541,6 +493,8 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           type: 'conversation.item.create',
           item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
         }));
+        sentResponseInstructions = '';
+        armResponseWatchdog();
         ws.send(JSON.stringify({ type: 'response.create' }));
         responseCreateInFlight = true;
       } catch (error) {
@@ -627,6 +581,8 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         type: 'conversation.item.create',
         item: { type: 'function_call_output', call_id: callId, output },
       }));
+      sentResponseInstructions = '';
+      armResponseWatchdog();
       ws.send(JSON.stringify({ type: 'response.create' }));
       responseCreateInFlight = true;
     }
@@ -673,6 +629,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           const responseId = responseIdOf(event, 'legacy-response');
           const narrationId = pendingInjectionNarrationId;
           activeResponseId = responseId;
+          armResponseProgressWatchdog(responseId);
           if (responseId) unclassifiedAudioByResponse.set(responseId, []);
           responseCreateQueued = false;
           settlePendingInjection();
@@ -699,6 +656,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             }
             const audio = Buffer.from(event.delta, 'base64');
             const responseId = responseIdOf(event, activeResponseId);
+            feedResponseProgressWatchdog(responseId);
             const held = heldXmlResponses.get(responseId);
             if (held) held.audio.push(audio);
             else if (unclassifiedAudioByResponse.has(responseId)) {
@@ -711,6 +669,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         case 'response.output_audio_transcript.delta': {
           if (typeof event.delta === 'string') {
             const responseId = responseIdOf(event, activeResponseId);
+            feedResponseProgressWatchdog(responseId);
             if (responseId) {
               const itemId = responseItemIds.get(responseId) ?? event.item_id;
               if (itemId && !responseItemIds.has(responseId)) responseItemIds.set(responseId, itemId);
@@ -736,6 +695,14 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
                 });
               }
             }
+          }
+          break;
+        }
+        case 'response.text.delta':
+        case 'response.output_text.delta': {
+          if (typeof event.delta === 'string') {
+            const responseId = responseIdOf(event, activeResponseId);
+            feedResponseProgressWatchdog(responseId);
           }
           break;
         }
@@ -835,7 +802,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           break;
         }
         case 'input_audio_buffer.speech_started':
-          clearResponseWatchdog();
+          clearAllResponseWatchdogs();
           speechStoppedAt = 0;
           ttfaModelMs = undefined;
           ttfaPerceivedMs = undefined;
@@ -895,6 +862,9 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
           break;
         case 'response.done': {
           const responseId = responseIdOf(event, activeResponseId || 'legacy-response');
+          const staleWatchdogCancellation = watchdogCancelledResponseIds.delete(responseId)
+            && responseId !== activeResponseId;
+          if (!staleWatchdogCancellation) clearAllResponseWatchdogs();
           const usage = parseResponseUsage(profile, event.response?.usage);
           if (!usage) {
             logger.warn('response.done usage missing or unrecognized', {
@@ -938,9 +908,10 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         }
         case 'error':
           if (event.error?.code === RESPONSE_IDLE_TIMEOUT_CODE) {
-            clearResponseWatchdog();
+            clearAllResponseWatchdogs();
             activeResponseId = '';
             cancellingResponseIds.clear();
+            watchdogCancelledResponseIds.clear();
             cancellingResponseItemIds.clear();
             responseItemIds.clear();
             responseCreateQueued = false;
@@ -956,6 +927,20 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
               message: event.error.message,
             });
             onEvent({ type: 'session.ended', reason: 'idle-timeout' });
+            break;
+          }
+          // 看门狗接管在飞时，cancel 一个上游已完结的 response 会得到「none active response」
+          // 族回执（P3 真机 2026-08-13：DashScope 回 COMMON_ERROR/Conversation has none active
+          // response，被当致命错误整通挂断）。这是我方 cancel 的良性回声，吞掉继续等重建。
+          if (
+            watchdogCancelBenignErrorBudget > 0
+            && /no(?:ne)?\s+active\s+response/i.test(event.error?.message ?? '')
+          ) {
+            watchdogCancelBenignErrorBudget -= 1;
+            logger.info('watchdog cancel acked by benign upstream error', {
+              code: event.error?.code,
+              message: event.error?.message,
+            });
             break;
           }
           // message 必须一起记：上游的 code 常常是 COMMON_ERROR 这种无信息量的占位，
@@ -985,7 +970,8 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
 
     ws.on('close', () => {
       clearHeartbeat();
-      clearResponseWatchdog();
+      clearAllResponseWatchdogs();
+      watchdogCancelledResponseIds.clear();
       rejectPendingInjection('voice upstream closed during injection');
       onEvent({ type: 'state', state: 'closed' });
     });
@@ -1094,7 +1080,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
       },
       async close() {
         clearHeartbeat();
-        clearResponseWatchdog();
+        clearAllResponseWatchdogs();
         if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
       },
     };

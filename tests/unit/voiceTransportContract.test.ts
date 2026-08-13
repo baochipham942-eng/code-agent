@@ -9,6 +9,7 @@ import type { VoiceEvent, VoiceTransport, VoiceTransportHandle, VoiceTurnDetecti
 import {
   QWEN_OMNI_REALTIME_MODEL,
   VOICE_INJECTION_ACK_WINDOW_MS,
+  VOICE_UPSTREAM_RESPONSE_SILENCE_MIN_TIMEOUT_MS,
   VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
 } from '../../src/shared/constants/voice';
 import { REALTIME_VOICE_PROVIDER_PROFILES } from '../../src/shared/constants/realtimeVoiceProviders';
@@ -50,6 +51,10 @@ const logger = vi.hoisted(() => ({
   error: vi.fn(),
   debug: vi.fn(),
 }));
+const telemetry = vi.hoisted(() => ({
+  startSpan: vi.fn(() => ({ spanId: 'voice-watchdog-span' })),
+  endSpan: vi.fn(),
+}));
 const mockConfig = vi.hoisted(() => ({
   settings: {} as { voice?: { turnDetection?: VoiceTurnDetectionConfig; live?: { interrupt?: 'server_vad' | 'manual' } } },
 }));
@@ -71,6 +76,9 @@ vi.mock('../../src/host/services/infra/logger', () => ({
 }));
 vi.mock('../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => mockConfig.settings }),
+}));
+vi.mock('../../src/host/telemetry/telemetryService', () => ({
+  getTelemetryService: () => telemetry,
 }));
 
 const { qwenOmniTransport } = await import('../../src/host/services/voice/qwenOmniTransport');
@@ -893,7 +901,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     await handle.close();
   });
 
-  it('已提交轮次很快收到 response.created 时看门狗零动作', async () => {
+  it('已提交轮次很快收到 created + delta + done 时看门狗零动作', async () => {
     vi.useFakeTimers();
     const events: VoiceEvent[] = [];
     const connecting = qwenOmniTransport.connect({
@@ -909,7 +917,13 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
 
     upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.committed' }));
     await vi.advanceTimersByTimeAsync(1_000);
-    upstream.emit('message', JSON.stringify({ type: 'response.created' }));
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-fast' } }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.delta',
+      response_id: 'resp-fast',
+      delta: '正常回复',
+    }));
+    upstream.emit('message', JSON.stringify({ type: 'response.done', response: { id: 'resp-fast' } }));
     await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS * 2);
 
     const frames = upstream.sent.slice(sentBeforeCommit).map((raw) => JSON.parse(raw) as { type: string });
@@ -917,6 +931,268 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_MODEL_UNRESPONSIVE')).toHaveLength(0);
 
     await handle.close();
+  });
+
+  it('P1: created 后增量停滞会 cancel + 重建，重建恢复后无用户打扰', async () => {
+    vi.useFakeTimers();
+    const events: VoiceEvent[] = [];
+    const connecting = qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const handle = await connecting;
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+
+    handle.respond('原始轮次指令');
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-original' } }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.delta',
+      response_id: 'resp-original',
+      delta: '正在',
+    }));
+    await vi.advanceTimersByTimeAsync(100);
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.delta',
+      response_id: 'resp-original',
+      delta: '回复',
+    }));
+
+    const beforeSilence = upstream.sent.length;
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_SILENCE_MIN_TIMEOUT_MS);
+    expect(upstream.sent.slice(beforeSilence).map((raw) => JSON.parse(raw))).toEqual([
+      { type: 'response.cancel' },
+      { type: 'response.create', response: { instructions: '原始轮次指令' } },
+    ]);
+
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-rebuilt' } }));
+    upstream.emit('message', JSON.stringify({ type: 'response.done', response: { id: 'resp-original' } }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio.delta',
+      response_id: 'resp-rebuilt',
+      delta: Buffer.from([1, 2]).toString('base64'),
+    }));
+    upstream.emit('message', JSON.stringify({ type: 'response.done', response: { id: 'resp-rebuilt' } }));
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS * 3);
+
+    expect(upstream.sent.filter((raw) => (JSON.parse(raw) as { type?: string }).type === 'response.cancel')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_MODEL_UNRESPONSIVE')).toHaveLength(0);
+    await handle.close();
+  });
+
+  it('P1b: 接管期上游对 cancel 回「none active response」按良性回声吞掉，不挂断通话', async () => {
+    // 真机 P3（2026-08-13 槽 2）：吞流只吞下行，DashScope 服务端早已跑完该 response，
+    // 收到我方 cancel 回 COMMON_ERROR/"Conversation has none active response"——
+    // 修复前它走通用错误路径发 UPSTREAM_ERROR ⇒ voiceSessionService 整通挂断，
+    // 重建恢复被 40ms 前的挂断作废（mock 上游不回这个错，单测全绿真机 FAIL）。
+    vi.useFakeTimers();
+    const events: VoiceEvent[] = [];
+    const connecting = qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const handle = await connecting;
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+
+    handle.respond('原始轮次指令');
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-original' } }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.delta',
+      response_id: 'resp-original',
+      delta: '正在',
+    }));
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_SILENCE_MIN_TIMEOUT_MS);
+
+    // 上游对看门狗的 cancel 回良性错误（真机原样载荷）
+    upstream.emit('message', JSON.stringify({
+      type: 'error',
+      error: { code: 'COMMON_ERROR', message: 'Conversation has none active response' },
+    }));
+    // 随后重建照常恢复
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-rebuilt' } }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio.delta',
+      response_id: 'resp-rebuilt',
+      delta: Buffer.from([1, 2]).toString('base64'),
+    }));
+    upstream.emit('message', JSON.stringify({ type: 'response.done', response: { id: 'resp-rebuilt' } }));
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS * 3);
+
+    // 判据：良性回声不外发错误（挂断由 UPSTREAM_ERROR 触发），重建 done 正常送达
+    expect(events.filter((event) => event.type === 'error')).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'response.done' && event.responseId === 'resp-rebuilt')).toHaveLength(1);
+    // 接管窗口外的错误照旧致命（守卫不能变成全局吞错）
+    upstream.emit('message', JSON.stringify({
+      type: 'error',
+      error: { code: 'COMMON_ERROR', message: 'Conversation has none active response' },
+    }));
+    expect(events.filter((event) => event.type === 'error' && event.code === 'UPSTREAM_ERROR')).toHaveLength(1);
+    await handle.close();
+  });
+
+  it('P2: 重建仍哑会记健康减分并且用户 notice 只发一次', async () => {
+    vi.useFakeTimers();
+    const events: VoiceEvent[] = [];
+    const connecting = qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const handle = await connecting;
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+
+    handle.respond('需要恢复的轮次');
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-original' } }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.delta',
+      response_id: 'resp-original',
+      delta: '开始',
+    }));
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_SILENCE_MIN_TIMEOUT_MS);
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-rebuilt' } }));
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_SILENCE_MIN_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS * 6);
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'upstream response watchdog rebuild still silent',
+      expect.objectContaining({ responseId: 'resp-rebuilt', healthScore: -1 }),
+    );
+    expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_MODEL_UNRESPONSIVE')).toHaveLength(1);
+
+    handle.respond('第二个需要恢复的轮次');
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-second-original' } }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.delta',
+      response_id: 'resp-second-original',
+      delta: '第一帧',
+    }));
+    await vi.advanceTimersByTimeAsync(4_000);
+    upstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.delta',
+      response_id: 'resp-second-original',
+      delta: '第二帧',
+    }));
+    await vi.advanceTimersByTimeAsync(16_000);
+
+    expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_SERVICE_UNSTABLE')).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(VOICE_UPSTREAM_RESPONSE_SILENCE_MIN_TIMEOUT_MS);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'upstream response watchdog rebuild still silent',
+      expect.objectContaining({
+        responseId: 'resp-second-original',
+        healthScore: -2,
+        thresholdMs: VOICE_UPSTREAM_RESPONSE_SILENCE_MIN_TIMEOUT_MS,
+        degraded: true,
+      }),
+    );
+    expect(telemetry.startSpan).toHaveBeenCalledTimes(2);
+    expect(telemetry.startSpan).toHaveBeenLastCalledWith(
+      'watchdog_takeover',
+      'internal',
+      expect.objectContaining({
+        'voice_watchdog.response_id': 'resp-second-original',
+        'voice_watchdog.takeover_count': 2,
+      }),
+    );
+    expect(events.filter((event) => event.type === 'notice' && event.code === 'VOICE_MODEL_UNRESPONSIVE')).toHaveLength(1);
+    await handle.close();
+  });
+
+  it('N1: tool_call response.done 后工具等待 120s 看门狗零动作', async () => {
+    vi.useFakeTimers();
+    const tool = { type: 'function' as const, name: 'long_task', description: 'd', parameters: { type: 'object' as const, properties: {}, required: [] as string[] } };
+    const connecting = qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1', tools: [tool] },
+      onEvent: vi.fn(),
+      onAudio: vi.fn(),
+      onToolCall: vi.fn(() => new Promise<string>(() => undefined)),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const handle = await connecting;
+    const upstream = upstreams[upstreams.length - 1];
+
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-tool' } }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.function_call_arguments.done',
+      response_id: 'resp-tool',
+      call_id: 'call-tool',
+      name: 'long_task',
+      arguments: '{}',
+    }));
+    upstream.emit('message', JSON.stringify({ type: 'response.done', response: { id: 'resp-tool' } }));
+    const beforeWait = upstream.sent.length;
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(upstream.sent.slice(beforeWait).filter((raw) => {
+      const type = (JSON.parse(raw) as { type?: string }).type;
+      return type === 'response.cancel' || type === 'response.create';
+    })).toHaveLength(0);
+    await handle.close();
+  });
+
+  it('N2: 用户说话期和 ending 工具收尾期各静默 120s 都零动作', async () => {
+    vi.useFakeTimers();
+    const connecting = qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: vi.fn(),
+      onAudio: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const speakingHandle = await connecting;
+    const speakingUpstream = upstreams[upstreams.length - 1];
+    speakingUpstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-speaking' } }));
+    speakingUpstream.emit('message', JSON.stringify({
+      type: 'response.audio_transcript.delta',
+      response_id: 'resp-speaking',
+      delta: '未说完',
+    }));
+    speakingUpstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.speech_started' }));
+    const beforeSpeakingWait = speakingUpstream.sent.length;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(speakingUpstream.sent.slice(beforeSpeakingWait).filter((raw) =>
+      (JSON.parse(raw) as { type?: string }).type === 'response.cancel',
+    )).toHaveLength(0);
+    await speakingHandle.close();
+
+    const endCallTool = { type: 'function' as const, name: 'end_call', description: 'd', parameters: { type: 'object' as const, properties: {}, required: [] as string[] } };
+    const endingConnecting = qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1', tools: [endCallTool] },
+      onEvent: vi.fn(),
+      onAudio: vi.fn(),
+      onToolCall: vi.fn(() => new Promise<string>(() => undefined)),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const endingHandle = await endingConnecting;
+    const endingUpstream = upstreams[upstreams.length - 1];
+    endingUpstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-ending' } }));
+    endingUpstream.emit('message', JSON.stringify({
+      type: 'response.function_call_arguments.done',
+      response_id: 'resp-ending',
+      call_id: 'call-ending',
+      name: 'end_call',
+      arguments: '{}',
+    }));
+    endingUpstream.emit('message', JSON.stringify({ type: 'response.done', response: { id: 'resp-ending' } }));
+    const beforeEndingWait = endingUpstream.sent.length;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(endingUpstream.sent.slice(beforeEndingWait).filter((raw) => {
+      const type = (JSON.parse(raw) as { type?: string }).type;
+      return type === 'response.cancel' || type === 'response.create';
+    })).toHaveLength(0);
+    await endingHandle.close();
   });
 
   it('committed 后用户再次开口会解除已作废轮次的看门狗', async () => {
@@ -1173,7 +1449,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
 
     const handle = await qwenOmniTransport.connect({
       apiKey: 'test-key',
-      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object', properties: {}, required: [] } }] },
+      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object' as const, properties: {}, required: [] as string[] } }] },
       onEvent: vi.fn(),
       onAudio: vi.fn(),
       onToolCall: async () => 'ok',
@@ -1189,7 +1465,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     const onToolCall = vi.fn(async () => '当前没有进行中的任务。');
     const handle = await qwenOmniTransport.connect({
       apiKey: 'test-key',
-      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object', properties: {}, required: [] } }] },
+      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object' as const, properties: {}, required: [] as string[] } }] },
       onEvent: vi.fn(),
       onAudio: vi.fn(),
       onToolCall,
@@ -1296,7 +1572,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     const events: VoiceEvent[] = [];
     const handle = await qwenOmniTransport.connect({
       apiKey: 'test-key',
-      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object', properties: {}, required: [] } }] },
+      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object' as const, properties: {}, required: [] as string[] } }] },
       onEvent: (event) => events.push(event),
       onAudio: vi.fn(),
       onToolCall: async () => 'ok',
@@ -1391,7 +1667,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     const events: VoiceEvent[] = [];
     const handle = await qwenOmniTransport.connect({
       apiKey: 'test-key',
-      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object', properties: {}, required: [] } }] },
+      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object' as const, properties: {}, required: [] as string[] } }] },
       onEvent: (event) => events.push(event),
       onAudio: vi.fn(),
       onToolCall: async () => 'ok',

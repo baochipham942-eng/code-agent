@@ -17,6 +17,7 @@ import { getPermissionModeManager, resetPermissionModeManager } from '../../../s
 const settings = (overrides: Partial<AppSettings['permissions']> = {}): AppSettings => ({
   permissions: {
     autoApprove: { read: false, write: false, execute: false, network: false },
+    blockedCommands: [],
     devModeAutoApprove: false,
     ...overrides,
   },
@@ -45,7 +46,7 @@ describe('停车判定先于自动批准', () => {
   });
 
   function makeIsland(
-    permissionSettings: AppSettings['permissions'],
+    permissionSettings: Partial<AppSettings['permissions']>,
     repo: PendingApprovalRepository | undefined,
     topology: 'main' | 'async_agent' = 'main',
   ) {
@@ -63,7 +64,7 @@ describe('停车判定先于自动批准', () => {
     getPermissionModeManager().markLiveVoiceSession(sessionId, 'run:voice');
     const island = makeIsland({ devModeAutoApprove: true }, repo);
 
-    const result = island.requestPermission({ type: 'file_write', tool: 'write_file', sessionId });
+    const result = island.requestPermission({ type: 'file_write', tool: 'write_file', details: { path: '/Users/linchen/probe.txt' }, sessionId });
 
     expect(await isStillPending(result)).toBe(true);
     expect(repo.insert).toHaveBeenCalledOnce();
@@ -75,7 +76,7 @@ describe('停车判定先于自动批准', () => {
     getPermissionModeManager().markUnattendedSession(sessionId);
     const island = makeIsland({ autoApprove: { read: false, write: true, execute: false, network: false } }, repo);
 
-    const result = island.requestPermission({ type: 'file_write', tool: 'write_file', sessionId });
+    const result = island.requestPermission({ type: 'file_write', tool: 'write_file', details: { path: '/Users/linchen/probe.txt' }, sessionId });
 
     expect(await isStillPending(result)).toBe(true);
     expect(repo.insert).toHaveBeenCalledOnce();
@@ -84,7 +85,7 @@ describe('停车判定先于自动批准', () => {
   it('普通有人值守 + devModeAutoApprove 仍直接放行', async () => {
     const island = makeIsland({ devModeAutoApprove: true }, makeRepo());
 
-    await expect(island.requestPermission({ type: 'file_write', tool: 'write_file', sessionId: 'attended' })).resolves.toBe(true);
+    await expect(island.requestPermission({ type: 'file_write', tool: 'write_file', details: { path: '/tmp/x' }, sessionId: 'attended' })).resolves.toBe(true);
   });
 
   it('async_agent 的 catalog 只读 MCP 工具仍免审放行，不停车', async () => {
@@ -94,8 +95,9 @@ describe('停车判定先于自动批准', () => {
     const island = makeIsland({}, repo, 'async_agent');
 
     await expect(island.requestPermission({
-      type: 'read',
+      type: 'file_read',
       tool: 'mcp__lark__calendar_v4_calendarEvent_list',
+      details: {},
       sessionId,
     })).resolves.toBe(true);
     expect(repo.insert).not.toHaveBeenCalled();
@@ -107,7 +109,7 @@ describe('停车判定先于自动批准', () => {
     getPermissionModeManager().markLiveVoiceSession(sessionId, 'run:voice');
     const island = makeIsland({ devModeAutoApprove: true }, undefined);
 
-    const result = island.requestPermission({ type: 'file_write', tool: 'write_file', sessionId });
+    const result = island.requestPermission({ type: 'file_write', tool: 'write_file', details: { path: '/Users/linchen/probe.txt' }, sessionId });
 
     expect(await isStillPending(result)).toBe(true);
     await vi.advanceTimersByTimeAsync(60_000);

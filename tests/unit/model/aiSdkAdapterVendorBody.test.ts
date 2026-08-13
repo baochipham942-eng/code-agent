@@ -27,9 +27,14 @@ describe('buildVendorCompatSettings — deepseek reasoning_effort（QE-01：默�
     expect(body.reasoning_effort).toBe('low');
   });
 
-  it('无 reasoningEffort（thinking 关被 applyEffortControls 剥掉后）→ 不注入任何字段', () => {
+  it('无 reasoningEffort 时不注入 reasoning_effort，但仍按矩阵补历史 reasoning_content', () => {
     const settings = buildVendorCompatSettings(deepseek());
-    expect(settings.transformRequestBody).toBeUndefined();
+    const body = settings.transformRequestBody!({
+      model: 'deepseek-reasoner',
+      messages: [{ role: 'assistant', content: 'history' }],
+    });
+    expect(body).not.toHaveProperty('reasoning_effort');
+    expect(body.messages).toEqual([{ role: 'assistant', content: 'history', reasoning_content: '' }]);
   });
 });
 

@@ -10,6 +10,7 @@ import { getModelMaxOutputTokens } from '../../../shared/constants';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from './providerResolution';
 import { createLogger } from '../../services/infra/logger';
 import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
+import { resolveModelCapabilities } from '../modelCapabilityMatrix';
 
 const logger = createLogger('OpenAIProvider');
 
@@ -33,7 +34,11 @@ export class OpenAIProvider extends BaseOpenAIProvider {
 
     const body: Record<string, unknown> = {
       model: config.model || 'gpt-4o',
-      messages: convertToOpenAIMessages(messages),
+      // custom-* 在 legacy 回退路径也必须按 (provider, model) 矩阵判定，不能因同名
+      // DeepSeek 模型被 OpenAIProvider 类吞掉而漏 reasoning_content 兼容字段。
+      messages: convertToOpenAIMessages(messages, {
+        thinkingMode: resolveModelCapabilities(config.provider, config.model).requestCompat?.deepseekReasoningContent === true,
+      }),
       temperature: resolveModelRequestTemperature(config.model, config.temperature ?? 0.7),
       max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'gpt-4o'),
       stream: true,

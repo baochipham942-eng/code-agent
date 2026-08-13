@@ -41,6 +41,10 @@ describe('model capability matrix', () => {
       protocol: 'chat-completions',
       search: { mode: 'none' },
     });
+    expect(resolveModelCapabilities('custom-tokenrhythm', 'deepseek-v4-flash').requestCompat)
+      .toBeUndefined();
+    expect(resolveModelCapabilities('deepseek', 'deepseek-v4-flash').requestCompat)
+      .toEqual({ deepseekReasoningContent: true });
   });
 
   it('marks official DeepSeek Responses at the API root and relay models under /v1', () => {

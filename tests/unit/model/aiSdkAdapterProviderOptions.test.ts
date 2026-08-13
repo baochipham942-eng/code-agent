@@ -312,6 +312,48 @@ describe('inferenceViaAiSdk provider options', () => {
     });
   });
 
+  it('同名模型按 (provider, model) 矩阵分开补 DeepSeek reasoning_content', async () => {
+    const history = [
+      { role: 'assistant', content: 'plain historical answer' },
+      {
+        role: 'assistant', content: null,
+        tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read_file', arguments: '{}' } }],
+      },
+      { role: 'tool', tool_call_id: 'call_1', content: 'result' },
+      { role: 'user', content: 'continue' },
+    ];
+    const requestBody = { model: 'deepseek-v4-flash', messages: history };
+    vi.mocked(axios).mockResolvedValue({
+      status: 200, statusText: 'OK', headers: { 'content-type': 'application/json' }, data: Readable.from(['{}']),
+    });
+
+    await runNonStreaming({ provider: 'deepseek', model: 'deepseek-v4-flash' } as ModelConfig);
+    const officialFetch = providerMocks.createDeepSeek.mock.calls[0][0].fetch as typeof globalThis.fetch;
+    await officialFetch('https://relay.example/v1/chat/completions', {
+      method: 'POST', body: JSON.stringify(requestBody),
+    });
+
+    await runNonStreaming({ provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' } as ModelConfig);
+    const relayFetch = providerMocks.createOpenAICompatible.mock.calls[0][0].fetch as typeof globalThis.fetch;
+    await relayFetch('https://relay.example/v1/chat/completions', {
+      method: 'POST', body: JSON.stringify(requestBody),
+    });
+
+    const officialBody = JSON.parse((vi.mocked(axios).mock.calls[0][0] as { data: string }).data);
+    const relayBody = JSON.parse((vi.mocked(axios).mock.calls[1][0] as { data: string }).data);
+    const officialAssistants = officialBody.messages.filter((message: { role: string }) => message.role === 'assistant');
+    const relayAssistants = relayBody.messages.filter((message: { role: string }) => message.role === 'assistant');
+
+    expect(officialAssistants).toEqual(expect.arrayContaining([
+      expect.objectContaining({ content: 'plain historical answer', reasoning_content: '' }),
+      expect.objectContaining({ tool_calls: expect.any(Array), reasoning_content: '' }),
+    ]));
+    expect(relayAssistants).toEqual(expect.arrayContaining([
+      expect.not.objectContaining({ reasoning_content: expect.anything() }),
+    ]));
+    expect(relayAssistants).toEqual(history.filter((message) => message.role === 'assistant'));
+  });
+
   it('非流式 generateText 透传 config.maxTokens 为 maxOutputTokens', async () => {
     await runNonStreaming({
       provider: 'qwen',

@@ -155,6 +155,30 @@ describe('inferenceViaAiSdk provider options', () => {
     }));
   });
 
+  it('Claude 仅在开启 thinking 且矩阵声明支持时传公开 anthropicBeta option', async () => {
+    await runNonStreaming({
+      provider: 'claude',
+      model: 'claude-sonnet-4-6',
+      thinkingBudget: 1024,
+    } as ModelConfig);
+
+    expect(vi.mocked(generateText)).toHaveBeenCalledWith(expect.objectContaining({
+      providerOptions: {
+        anthropic: { anthropicBeta: ['interleaved-thinking-2025-05-14'] },
+      },
+    }));
+
+    await runNonStreaming({
+      provider: 'claude',
+      model: 'claude-3-5-sonnet-20241022',
+      thinkingBudget: 1024,
+    } as ModelConfig);
+
+    expect(vi.mocked(generateText)).toHaveBeenLastCalledWith(expect.not.objectContaining({
+      providerOptions: expect.anything(),
+    }));
+  });
+
   it('custom fetch 通过 getHttpsAgent/axios 保留 method、headers、body 和 AbortSignal，并返回可读 Response body', async () => {
     const proxyAgent = { tag: 'proxy-agent' };
     networkMocks.getHttpsAgent.mockReturnValue(proxyAgent);
@@ -165,9 +189,12 @@ describe('inferenceViaAiSdk provider options', () => {
       data: Readable.from(['{"ok":', 'true}']),
     });
 
+    // 本例验的是 fetch 管道「原样透传 method/headers/body」，所以必须挑一个矩阵没声明
+    // vendor 改写的 provider。用 qwen 会被 transformRequestBody 注入 enable_search，
+    // 等于自己拆掉自己的判据。
     await runNonStreaming({
-      provider: 'qwen',
-      model: 'qwen3-coder-plus',
+      provider: 'longcat',
+      model: 'LongCat-2.0',
       temperature: 0.4,
     } as ModelConfig);
 
@@ -180,7 +207,7 @@ describe('inferenceViaAiSdk provider options', () => {
       signal: abort.signal,
     });
 
-    expect(networkMocks.getHttpsAgent).toHaveBeenCalledWith('https://relay.example/v1/chat/completions', 'qwen');
+    expect(networkMocks.getHttpsAgent).toHaveBeenCalledWith('https://relay.example/v1/chat/completions', 'longcat');
     expect(vi.mocked(axios)).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://relay.example/v1/chat/completions',
       method: 'POST',

@@ -116,7 +116,7 @@ function runEngineInference(
   }
 
   const useAiSdk = process.env.CODE_AGENT_MODEL_ENGINE !== 'legacy'
-    && aiSdkSupportsProvider(effectiveConfig.provider);
+    && aiSdkSupportsProvider(effectiveConfig.provider, effectiveConfig.model);
   if (useAiSdk) {
     if (adaptedConfig) {
       logger.info(`[AgentLoop] inference engine = aisdk (adaptive: ${config.provider}/${config.model} → ${adaptedConfig.provider}/${adaptedConfig.model})`);

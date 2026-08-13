@@ -369,6 +369,45 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     await handle.close();
   });
 
+  it('DashScope 稀疏 details（缺席字段按 0）也要解析成功——真机纯文本输入的实际形状', async () => {
+    // fixture 来自 2026-08-13 直连 DashScope 真机探针抓到的 response.done.usage 原始载荷：
+    // 纯文本输入时 input_tokens_details 只有 text_tokens、没有 audio_tokens 字段。
+    // 全字段严格校验把它整体拒收，正是 08-06 C3「成本到限提醒 FAIL」的根因。
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    upstreams.at(-1)?.emit('message', JSON.stringify({
+      type: 'response.done',
+      response: {
+        id: 'dash-sparse-usage',
+        usage: {
+          total_tokens: 484,
+          input_tokens: 475,
+          output_tokens: 9,
+          input_tokens_details: { text_tokens: 475 },
+          output_tokens_details: { text_tokens: 2, audio_tokens: 7 },
+        },
+      },
+    }));
+
+    expect(events.find((event) => event.type === 'response.done')).toMatchObject({
+      usage: {
+        totalTokens: 484,
+        inputTokens: 475,
+        outputTokens: 9,
+        inputAudioTokens: 0,
+        inputTextTokens: 475,
+        outputAudioTokens: 7,
+        outputTextTokens: 2,
+      },
+    });
+    await handle.close();
+  });
+
   it('OpenAI response.done 只按单数 input_token_details/output_token_details 解析 usage', async () => {
     const events: VoiceEvent[] = [];
     const handle = await openaiRealtimeTransport.connect({

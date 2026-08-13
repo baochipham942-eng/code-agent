@@ -145,6 +145,35 @@ describe('ResponsesProvider', () => {
     expect(result).toMatchObject({ type: 'tool_use', content: '最终答案', toolCalls: [{ id: 'call_1', name: 'read_file', arguments: { path: 'a.txt' } }] });
   });
 
+  it('在 function_call 参数流开始前下发同轮 preamble 正文', async () => {
+    electronFetch.mockResolvedValue(sseResponse([
+      { type: 'response.output_item.added', output_index: 0, item: { type: 'message', content: [] } },
+      { type: 'response.output_text.delta', output_index: 0, delta: '我先读取这个文件。' },
+      { type: 'response.output_item.added', output_index: 1, item: { type: 'function_call', call_id: 'call_1', name: 'read_file' } },
+      { type: 'response.function_call_arguments.delta', output_index: 1, delta: '{"path":"a.txt"}' },
+      { type: 'response.completed', response: { output: [
+        { type: 'message', content: [{ type: 'output_text', text: '我先读取这个文件。' }] },
+        { type: 'function_call', call_id: 'call_1', name: 'read_file', arguments: '{"path":"a.txt"}' },
+      ] } },
+    ]));
+    const events: Array<{ type?: string; content?: string }> = [];
+
+    const result = await new ResponsesProvider().inference([{ role: 'user', content: '读取文件' }], [READ_TOOL], {
+      provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'test-key', protocol: 'responses',
+    } as any, (event) => {
+      if (typeof event !== 'string') events.push(event);
+    });
+
+    const preambleAt = events.findIndex((event) => event.type === 'text' && event.content === '我先读取这个文件。');
+    const toolDeltaAt = events.findIndex((event) => event.type === 'tool_call_delta');
+    expect(preambleAt).toBeGreaterThanOrEqual(0);
+    expect(toolDeltaAt).toBeGreaterThan(preambleAt);
+    // 铁律：推给用户的流式正文之和 === 最终 content，逐字一致、不双发
+    const streamedText = events.filter((event) => event.type === 'text').map((event) => event.content).join('');
+    expect(result.content).toBe('我先读取这个文件。');
+    expect(streamedText).toBe(result.content);
+  });
+
   it('does not mount web_search when the matrix says none', async () => {
     electronFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) });
     await new ResponsesProvider().inference([{ role: 'user', content: 'hello' }], [], {

@@ -322,27 +322,37 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
     let requestedOutcome: WorkerOutcome | undefined;
     let stderr = '';
     let stdoutBuffer = '';
-    let killTimer: NodeJS.Timeout | undefined;
+    /** 主动终止时的整树退出承诺；未主动终止（脚本自己跑完）时为 undefined。 */
+    let treeExit: Promise<void> | undefined;
 
     const cleanup = (): void => {
       clearTimeout(timeoutTimer);
-      if (killTimer) clearTimeout(killTimer);
       opts.signal.removeEventListener('abort', onAbort);
       rmSync(cwd, { recursive: true, force: true });
     };
     const finalize = (outcome: WorkerOutcome): void => {
       if (settled) return;
       settled = true;
+      // 主动终止的路径：等整树确认退出再清工作目录、再交还结果。发完信号就返回的话，
+      // 脚本 spawn 出来的子孙会活过这次调用，而工作目录已经被 rmSync 抽走。
+      if (treeExit) {
+        void treeExit.then(() => {
+          cleanup();
+          resolve(outcome);
+        });
+        return;
+      }
       cleanup();
       resolve(outcome);
     };
     const stopTree = (outcome: WorkerOutcome): void => {
       if (requestedOutcome) return;
       requestedOutcome = outcome;
-      killProcessTree(child, 'SIGTERM', { posixGroupKill: process.platform !== 'win32' });
-      killTimer = setTimeout(() => {
-        killProcessTree(child, 'SIGKILL', { posixGroupKill: process.platform !== 'win32' });
-      }, KILL_GRACE_MS);
+      // SIGTERM → 宽限 → SIGKILL → 探到整组消失，全在 killProcessTree 内部。
+      treeExit = killProcessTree(child, {
+        posixGroupKill: process.platform !== 'win32',
+        graceMs: KILL_GRACE_MS,
+      });
     };
     const onStdinError = (error: Error): void => {
       if (settled || requestedOutcome) return;

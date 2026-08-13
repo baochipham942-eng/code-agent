@@ -564,6 +564,14 @@ export async function cleanup(): Promise<void> {
   const isDebugCleanup = process.env.DEBUG === 'true' || process.argv.includes('--debug');
   if (isDebugCleanup) console.error('Cleaning up CLI services...');
 
+  // 收尸：取消在跑 agent + 确认后台任务进程树死干净（与 webServer 停机属主同一步）
+  try {
+    const { reapChildProcesses } = await import('../host/app/shutdownReaper');
+    await reapChildProcesses('cli_shutdown');
+  } catch (error) {
+    console.warn('[CLI] reapChildProcesses failed:', (error as Error).message);
+  }
+
   // MCP：断开外部 server 子进程（cua-driver 等），避免 CLI 退出后残留孤儿进程
   if (cliShouldInitMcp()) {
     try {

@@ -39,8 +39,6 @@ export interface TaskState {
   lastReadPosition: number;
   /** 主超时定时器 */
   timeout?: NodeJS.Timeout;
-  /** 内部 SIGKILL 定时器 */
-  killTimeout?: NodeJS.Timeout;
   cwd: string;
   sessionId?: string;
   toolCallId?: string;
@@ -208,7 +206,11 @@ export function startBackgroundTask(
         cwd,
         env: { ...process.env },
         stdio: ['ignore', 'pipe', 'pipe'],
-        detached: false,
+        // detached: 让 bash 自成进程组，终止时才能整组收树。detached:false 时
+        // killProcessTree 只能杀掉 bash 本身——后台任务里跑 e2e 脚本 spawn 出的
+        // Playwright worker / Chrome 会全部活下来，这正是 2026-07-30 孤儿 Chrome
+        // 事故（90 秒连崩 25 次）的成因。停机属主会显式收树，不靠进程组连坐。
+        detached: true,
       });
 
   // Create output file stream
@@ -235,17 +237,9 @@ export function startBackgroundTask(
   const timeout = setTimeout(() => {
     if (taskState.status === 'running') {
       console.warn(`[BackgroundTasks] Task ${taskId} exceeded max runtime, terminating...`);
-      try {
-        killProcessTree(proc, 'SIGTERM');
-        // 追踪内部 SIGKILL 定时器
-        taskState.killTimeout = setTimeout(() => {
-          if (taskState.status === 'running') {
-            killProcessTree(proc, 'SIGKILL');
-          }
-        }, 1000);
-      } catch (err) {
-        console.error(`[BackgroundTasks] Failed to kill task ${taskId}:`, err);
-      }
+      // 升级与整树退出确认都在 killProcessTree 内部；这里是定时器回调，没有 await
+      // 的位置，交给它自己跑完（内部已吞掉所有信号异常，不会 reject）。
+      void killProcessTree(proc, { posixGroupKill: true });
     }
   }, taskState.maxRuntime);
 
@@ -292,9 +286,6 @@ export function startBackgroundTask(
     if (taskState.timeout) {
       clearTimeout(taskState.timeout);
     }
-    if (taskState.killTimeout) {
-      clearTimeout(taskState.killTimeout);
-    }
 
     // Close output stream（幂等：error 与 close 可能先后触发，避免重复 end 抛 ERR_STREAM_WRITE_AFTER_END）
     if (taskState.outputStream && !taskState.outputStream.writableEnded) {
@@ -319,9 +310,6 @@ export function startBackgroundTask(
     if (taskState.timeout) {
       clearTimeout(taskState.timeout);
     }
-    if (taskState.killTimeout) {
-      clearTimeout(taskState.killTimeout);
-    }
     emitTaskLifecycleEvent('failed', taskState);
   });
 
@@ -336,9 +324,14 @@ export function startBackgroundTask(
 }
 
 /**
- * Kill a background task
+ * Kill a background task.
+ *
+ * 等到整棵进程树确认退出才返回——「已终止」是对调用方（模型 / 停机属主）的承诺，
+ * 发完信号就返回等于撒谎：后台任务里 spawn 出来的子孙进程还活着。
  */
-export function killBackgroundTask(taskId: string): { success: boolean; error?: string; message?: string } {
+export async function killBackgroundTask(
+  taskId: string,
+): Promise<{ success: boolean; error?: string; message?: string }> {
   const task = backgroundTasks.get(taskId);
   if (!task) {
     return { success: false, error: `No task found with ID: ${taskId}` };
@@ -349,21 +342,10 @@ export function killBackgroundTask(taskId: string): { success: boolean; error?: 
     if (task.timeout) {
       clearTimeout(task.timeout);
     }
-    if (task.killTimeout) {
-      clearTimeout(task.killTimeout);
-    }
 
-    // Send SIGTERM first
-    killProcessTree(task.process, 'SIGTERM');
     task.outputStream?.end();
-
-    // Wait 1 second, then force kill if still running
-    // 追踪这个内部定时器
-    task.killTimeout = setTimeout(() => {
-      if (task.status === 'running') {
-        killProcessTree(task.process, 'SIGKILL');
-      }
-    }, 1000);
+    // SIGTERM → 宽限 → SIGKILL → 探到整组消失，全在 killProcessTree 内部。
+    await killProcessTree(task.process, { posixGroupKill: true });
 
     // Update status
     task.status = 'failed';
@@ -461,9 +443,6 @@ export function cleanupCompletedTasks(): number {
       if (task.timeout) {
         clearTimeout(task.timeout);
       }
-      if (task.killTimeout) {
-        clearTimeout(task.killTimeout);
-      }
       task.outputStream?.end();
       backgroundTasks.delete(taskId);
     }
@@ -481,7 +460,8 @@ export function cleanupTimedOutTasks(): void {
   for (const [taskId, task] of backgroundTasks) {
     if (task.status === 'running' && now - task.startTime > task.maxRuntime) {
       console.warn(`[BackgroundTasks] Task ${taskId} timed out, killing...`);
-      killBackgroundTask(taskId);
+      // 周期清理定时器回调，没有 await 的位置；killBackgroundTask 内部不 reject。
+      void killBackgroundTask(taskId);
     }
   }
 }
@@ -602,6 +582,5 @@ process.on('exit', () => {
   // 清理所有运行中任务的定时器
   for (const task of backgroundTasks.values()) {
     if (task.timeout) clearTimeout(task.timeout);
-    if (task.killTimeout) clearTimeout(task.killTimeout);
   }
 });

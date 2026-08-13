@@ -209,6 +209,17 @@ export function inferBufferedSystemMessageCategory(ctx: ContextAssemblyCtx, cont
   return undefined;
 }
 
+/**
+ * 对话记录落库失败。message 直接进 `{type:'error'}` 事件给用户看（runFinalizer 的
+ * formatTerminalError 只取 message，不带堆栈），所以写成人话而不是技术描述。
+ */
+export class MessagePersistenceError extends Error {
+  constructor() {
+    super('对话记录写入失败，已停止本轮工具执行，避免产生记录里查不到的改动。请检查磁盘空间和数据库状态后重试。');
+    this.name = 'MessagePersistenceError';
+  }
+}
+
 export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Message): Promise<void> {
   message.metadata = attachMessageCorrelation(ctx.runtime, message.metadata);
   if (ctx.runtime.historyVisibility === 'meta') {
@@ -221,9 +232,15 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
   // 单一统一路径：优先用 runtime.persistMessage callback（CLI/webServer/desktop 都注入了），
   // callback 缺失或失败时降级到 sessionManager.addMessageToSession（idempotent，重复写会自动 update）。
   // 任何写入失败用 logger.warn 输出，确保被默认日志级别捕获。
+  // 两条路径**都**失败时抛（fail-closed）——调用方 messageProcessor 紧接着就 dispatch
+  // 工具，落库不成还往下走等于执行一批记录里根本不存在的副作用，重启后无从追溯。
   let persisted = false;
+  // 只有「真尝试写过且全失败」才算失败。没有 callback 也没有 sessionId 的运行时
+  // （一次性/无持久化场景）本就不写库，那不是故障，不能拿它挡住工具。
+  let attempted = false;
 
   if (ctx.runtime.persistMessage) {
+    attempted = true;
     try {
       await ctx.runtime.persistMessage(message);
       persisted = true;
@@ -238,6 +255,7 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
   }
 
   if (!persisted && ctx.runtime.sessionId) {
+    attempted = true;
     try {
       const sessionManager = getSessionManager();
       await sessionManager.addMessageToSession(ctx.runtime.sessionId, message);
@@ -277,14 +295,17 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
       role: message.role,
       hasCallback: !!ctx.runtime.persistMessage,
     });
+    if (attempted) throw new MessagePersistenceError();
   }
 }
 
 /**
  * 乙类落点（2026-08-08 notification 事件零消费者工单）：模型这次做了什么补救动作的过程
  * 说明，写成落库的 `role:'system'` 消息，登记进 USER_VISIBLE_SYSTEM_EVENT_REGISTRY 的
- * agentRecoveryNotice 项，回看对话时可见、不弹窗打断。addAndPersistMessage 内部已吞掉
- * 持久化失败（只 warn），这里不用再包 try/catch。
+ * agentRecoveryNotice 项，回看对话时可见、不弹窗打断。
+ *
+ * 落库失败会向上抛（addAndPersistMessage 已改为 fail-closed）：补救说明写不进记录时，
+ * 这一轮继续往下跑只会攒出一份查不到的历史，让它中断是对的。
  */
 export async function writeAgentRecoveryNotice(
   ctx: ContextAssemblyCtx,

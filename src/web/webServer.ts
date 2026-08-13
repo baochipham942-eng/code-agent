@@ -1037,6 +1037,22 @@ async function main(): Promise<void> {
     // 同一个 token，避免 Tauri WebView 里固化的旧 token 失效踩 "Invalid auth
     // token"。若要轮换 token，手动删 .dev-token 后重启 webServer。
     cleanupUploadDirs();
+    // 收尸：取消在跑 agent + 确认后台任务进程树死干净。排在关库之前——关库不设
+    // 超时上限，排它后面的步骤真机上可能永远轮不到。
+    await withCap(
+      (async () => {
+        try {
+          const { reapChildProcesses } = await import('../host/app/shutdownReaper');
+          const { cancelledAgents, killedTasks } = await reapChildProcesses('app_shutdown');
+          // 无条件打印：收尸步骤不留痕就没法在事后判断它到底跑没跑过（本仓吃过
+          // 「exitReason 看着完美、shutdown 第一行日志从没打印」的亏）。
+          console.log(`[shutdown] reaped ${cancelledAgents} agent(s), ${killedTasks} background task(s)`);
+        } catch (err) {
+          console.warn('[shutdown] reapChildProcesses failed:', err);
+        }
+      })(),
+      'reapChildProcesses'
+    );
     await withCap(
       durableRunRuntime?.shutdown().catch((error) => {
         console.warn('[shutdown] durable recovery runtime failed:', error);

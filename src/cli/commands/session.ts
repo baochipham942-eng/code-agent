@@ -122,6 +122,32 @@ const digestCommand = new Command('digest')
     }
   });
 
+const ledgerHealthCommand = new Command('ledger-health')
+  .description('查看工具/权限账本最近写入与近 7 天来源分布（只读）')
+  .option('--json', '输出纯 JSON')
+  .action(async (options: { json?: boolean }, command: Command) => {
+    try {
+      const health = await withReadonlyDb((db) => {
+        const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        return {
+          generatedAt: Date.now(),
+          since,
+          permissionDecisions: db.getLedgerHealth('permission_decisions', since),
+          toolExecutionEvents: db.getLedgerHealth('tool_execution_events', since),
+        };
+      });
+      if (wantsJson(options, command)) return writeJson(health);
+      for (const [name, value] of Object.entries(health)) {
+        if (name === 'generatedAt' || name === 'since') continue;
+        const ledger = value as { lastWrittenAt: number | null; originCounts: Array<{ origin: string; count: number }> };
+        process.stdout.write(`${name}: last=${ledger.lastWrittenAt ? formatDate(ledger.lastWrittenAt) : '-'}\n`);
+        for (const row of ledger.originCounts) process.stdout.write(`  ${row.origin}: ${row.count}\n`);
+      }
+    } catch (error) {
+      fail(error);
+    }
+  });
+
 const exportCommand = new Command('export')
   .description('按需导出会话包或 transcript.jsonl（复用 spine packageBuilder）')
   .argument('<id>', '会话 ID')
@@ -175,4 +201,5 @@ export const sessionCommand = new Command('session')
   .addCommand(listCommand)
   .addCommand(timelineCommand)
   .addCommand(exportCommand)
-  .addCommand(digestCommand);
+  .addCommand(digestCommand)
+  .addCommand(ledgerHealthCommand);

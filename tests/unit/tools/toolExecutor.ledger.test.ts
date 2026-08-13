@@ -55,6 +55,8 @@ describe('ToolExecutor → 权限决策事件账本 接入', () => {
     expect(ledgerState.appendPermissionDecision).toHaveBeenCalled();
     const arg = ledgerState.appendPermissionDecision.mock.calls.at(-1)?.[0];
     expect(arg).toMatchObject({
+      sessionId: 's1',
+      origin: 'desktop',
       toolName: 'Read',
       finalOutcome: 'allow',
       historyOutcome: 'auto-approve',

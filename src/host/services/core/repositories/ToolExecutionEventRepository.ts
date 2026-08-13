@@ -186,4 +186,10 @@ export class ToolExecutionEventRepository {
       .get(origin, since) as { c?: number };
     return Number(row?.c ?? 0);
   }
+
+  countSince(since: number): number {
+    const row = this.db.prepare(`SELECT COUNT(*) AS c FROM tool_execution_events WHERE recorded_at >= ?`)
+      .get(since) as { c?: number };
+    return Number(row?.c ?? 0);
+  }
 }

@@ -114,7 +114,7 @@ describe('PermissionDecisionRepository（事件账本第一期）', () => {
       const mutating = methods.filter((m) => /update|delete|remove|clear|set|drop/i.test(m));
       expect(mutating).toEqual([]);
       // 公开方法只应是 append + 查询
-      expect(methods.sort()).toEqual(['append', 'count', 'countByOriginSince', 'getBySession', 'getRecent']);
+      expect(methods.sort()).toEqual(['append', 'count', 'countByOriginSince', 'countSince', 'getBySession', 'getRecent']);
     } finally {
       db.close();
     }

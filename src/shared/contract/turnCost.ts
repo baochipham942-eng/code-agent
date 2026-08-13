@@ -24,6 +24,7 @@ export interface TodayCost {
 }
 
 export interface ModelCostStats {
+  provider: string;
   modelId: string;
   turns: number;
   usd: number;

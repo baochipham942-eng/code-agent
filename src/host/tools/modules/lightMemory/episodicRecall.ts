@@ -41,12 +41,11 @@ interface SearchableDatabase {
 /**
  * 运行时选 DB 源：CLI 模式走 CLIDatabaseService，主进程走 Electron DatabaseService
  */
-function getSearchableDatabase(): SearchableDatabase | null {
+async function getSearchableDatabase(): Promise<SearchableDatabase | null> {
   if (process.env.CODE_AGENT_CLI_MODE === 'true') {
     try {
-      // 动态 require 避免 main → cli 的反向静态依赖
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const cliDbMod = require('../../../../cli/database') as {
+      // 保持 CLI 数据库惰性加载，避免 main → cli 的启动期反向依赖。
+      const cliDbMod = await import('../../../../cli/database') as {
         getCLIDatabase?: () => {
           isInitialized: boolean;
           searchSessionMessagesFts: SearchableDatabase['searchSessionMessagesFts'];
@@ -145,7 +144,7 @@ class EpisodicRecallHandler
     onProgress?.({ stage: 'starting', detail: `recall ${query.slice(0, 40)}` });
 
     // ---- Query -----------------------------------------------------------
-    const db = getSearchableDatabase();
+    const db = await getSearchableDatabase();
     if (!db) {
       return {
         ok: false,

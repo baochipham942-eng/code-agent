@@ -9,6 +9,7 @@
 // ============================================================================
 
 import * as fs from 'fs';
+import JSZip from 'jszip';
 import { createSnapshot, restoreLatest } from '../../document/snapshotManager';
 import {
   enableTrackChanges,
@@ -313,8 +314,6 @@ export async function executeDocxEdit(
   const snapshot = createSnapshot(file_path, `docx-edit: ${operations.length} ops`);
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- jszip lacks proper ESM types in this project; require() preserved from legacy implementation
-    const JSZip = require('jszip') as { loadAsync: (data: Buffer) => Promise<JSZipLike & { generateAsync: (opts: { type: 'nodebuffer' }) => Promise<Buffer> }> };
     const data = fs.readFileSync(file_path);
     const zip = await JSZip.loadAsync(data);
 

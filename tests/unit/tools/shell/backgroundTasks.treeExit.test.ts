@@ -72,7 +72,7 @@ posixOnly('后台任务停机收尸', () => {
       (t) => t.taskId === started.taskId && t.status === 'running',
     ));
 
-    const { reapChildProcesses } = await import('../../../../src/host/app/shutdownReaper');
+    const { reapChildProcesses } = await import('../../../../src/host/tools/shell/shutdownReaper');
     const { killedTasks } = await reapChildProcesses('test_shutdown');
 
     expect(killedTasks).toBeGreaterThanOrEqual(1);

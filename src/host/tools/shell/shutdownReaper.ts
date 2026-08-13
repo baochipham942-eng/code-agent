@@ -5,12 +5,12 @@
 // 本模块只提供它们共用的那一步：取消在跑的 agent + 确认后台任务的进程树死干净。
 //
 // **不在这里注册任何 SIGTERM/SIGINT 处理器**：本进程的终止权已经有主，
-// 抢注册会让干净关库一步都跑不到（backgroundTasks.ts 末尾那段注释记的就是这个
+// 抢注册会让干净关库一步都跑不到（同目录 backgroundTasks.ts 末尾那段注释记的就是这个
 // 2026-08-08 真机事故）。属主自己在合适的位置调 reapChildProcesses()。
 // ============================================================================
 
-import { getSpawnGuard } from '../agent/spawnGuard';
-import { getAllBackgroundTasks, killBackgroundTask } from '../tools/shell/backgroundTasks';
+import { getSpawnGuard } from '../../agent/spawnGuard';
+import { getAllBackgroundTasks, killBackgroundTask } from './backgroundTasks';
 
 /**
  * 取消全部在跑 agent，并等待全部后台任务的进程树确认退出。

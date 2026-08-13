@@ -14,11 +14,22 @@ import { killProcessTree } from '../../../../src/host/tools/shell/platformShell'
  * 见 killProcessTree.realProcess.test.ts。
  */
 function makeExitedChild(pid: number | undefined) {
-  return { pid, kill: vi.fn(), exitCode: null, signalCode: 'SIGTERM' as NodeJS.Signals };
+  return {
+    pid,
+    kill: vi.fn(),
+    exitCode: null as number | null,
+    signalCode: 'SIGTERM' as NodeJS.Signals | null,
+  };
 }
 
+/** signalCode 初值是 null，但用例会在轮询途中把它改成信号名——类型必须写成联合而非 null 字面量。 */
 function makeLiveChild(pid: number | undefined) {
-  return { pid, kill: vi.fn(), exitCode: null, signalCode: null };
+  return {
+    pid,
+    kill: vi.fn(),
+    exitCode: null as number | null,
+    signalCode: null as NodeJS.Signals | null,
+  };
 }
 
 function makeKillerProc() {
@@ -51,7 +62,7 @@ describe('killProcessTree', () => {
       spawnMock.mockReturnValue(makeKillerProc());
       const child = makeLiveChild(1234);
       const pending = killProcessTree(child, { platform: 'win32', pollIntervalMs: 1, graceMs: 5000 });
-      child.signalCode = 'SIGTERM' as NodeJS.Signals;
+      child.signalCode = 'SIGTERM';
       await pending;
 
       expect(spawnMock).toHaveBeenCalledWith(
@@ -66,7 +77,7 @@ describe('killProcessTree', () => {
       spawnMock.mockReturnValue(makeKillerProc());
       const child = makeLiveChild(1234);
       const pending = killProcessTree(child, { platform: 'win32', pollIntervalMs: 1, graceMs: 20 });
-      setTimeout(() => { child.signalCode = 'SIGKILL' as NodeJS.Signals; }, 60);
+      setTimeout(() => { child.signalCode = 'SIGKILL'; }, 60);
       await pending;
 
       expect(spawnMock).toHaveBeenCalledWith('taskkill', ['/pid', '1234', '/T'], expect.anything());
@@ -79,7 +90,7 @@ describe('killProcessTree', () => {
       });
       const child = makeLiveChild(1234);
       const pending = killProcessTree(child, { platform: 'win32', pollIntervalMs: 1, graceMs: 5000 });
-      child.signalCode = 'SIGTERM' as NodeJS.Signals;
+      child.signalCode = 'SIGTERM';
       await pending;
 
       expect(child.kill).toHaveBeenCalledWith('SIGTERM');
@@ -95,7 +106,7 @@ describe('killProcessTree', () => {
         | undefined;
       expect(errorHandler).toBeDefined();
       errorHandler?.(new Error('spawn taskkill ENOENT'));
-      child.signalCode = 'SIGTERM' as NodeJS.Signals;
+      child.signalCode = 'SIGTERM';
       await pending;
 
       expect(child.kill).toHaveBeenCalledWith('SIGTERM');
@@ -107,7 +118,7 @@ describe('killProcessTree', () => {
       const processKill = vi.spyOn(process, 'kill').mockImplementation(() => true);
       const child = makeLiveChild(4321);
       const pending = killProcessTree(child, { posixGroupKill: true, platform: 'darwin', pollIntervalMs: 1, graceMs: 5000 });
-      child.signalCode = 'SIGTERM' as NodeJS.Signals;
+      child.signalCode = 'SIGTERM';
       // 组探活（kill(-pid, 0)）此时返回成功 = 组还在，所以改成抛 ESRCH 表示组没了
       processKill.mockImplementation(() => {
         const err = new Error('ESRCH') as NodeJS.ErrnoException;
@@ -129,7 +140,7 @@ describe('killProcessTree', () => {
       });
       const child = makeLiveChild(4321);
       const pending = killProcessTree(child, { posixGroupKill: true, platform: 'darwin', pollIntervalMs: 1, graceMs: 5000 });
-      child.signalCode = 'SIGTERM' as NodeJS.Signals;
+      child.signalCode = 'SIGTERM';
       await pending;
 
       expect(child.kill).toHaveBeenCalledWith('SIGTERM');
@@ -140,7 +151,7 @@ describe('killProcessTree', () => {
       const processKill = vi.spyOn(process, 'kill').mockImplementation(() => true);
       const child = makeLiveChild(4321);
       const pending = killProcessTree(child, { platform: 'linux', pollIntervalMs: 1, graceMs: 5000 });
-      child.signalCode = 'SIGTERM' as NodeJS.Signals;
+      child.signalCode = 'SIGTERM';
       await pending;
 
       expect(processKill).not.toHaveBeenCalled();

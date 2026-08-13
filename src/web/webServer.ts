@@ -1042,7 +1042,7 @@ async function main(): Promise<void> {
     await withCap(
       (async () => {
         try {
-          const { reapChildProcesses } = await import('../host/app/shutdownReaper');
+          const { reapChildProcesses } = await import('../host/tools/shell/shutdownReaper');
           const { cancelledAgents, killedTasks } = await reapChildProcesses('app_shutdown');
           // 无条件打印：收尸步骤不留痕就没法在事后判断它到底跑没跑过（本仓吃过
           // 「exitReason 看着完美、shutdown 第一行日志从没打印」的亏）。

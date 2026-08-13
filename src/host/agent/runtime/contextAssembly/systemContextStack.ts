@@ -213,7 +213,7 @@ export function inferBufferedSystemMessageCategory(ctx: ContextAssemblyCtx, cont
  * 对话记录落库失败。message 直接进 `{type:'error'}` 事件给用户看（runFinalizer 的
  * formatTerminalError 只取 message，不带堆栈），所以写成人话而不是技术描述。
  */
-export class MessagePersistenceError extends Error {
+class MessagePersistenceError extends Error {
   constructor() {
     super('对话记录写入失败，已停止本轮工具执行，避免产生记录里查不到的改动。请检查磁盘空间和数据库状态后重试。');
     this.name = 'MessagePersistenceError';

@@ -566,7 +566,7 @@ export async function cleanup(): Promise<void> {
 
   // 收尸：取消在跑 agent + 确认后台任务进程树死干净（与 webServer 停机属主同一步）
   try {
-    const { reapChildProcesses } = await import('../host/app/shutdownReaper');
+    const { reapChildProcesses } = await import('../host/tools/shell/shutdownReaper');
     await reapChildProcesses('cli_shutdown');
   } catch (error) {
     console.warn('[CLI] reapChildProcesses failed:', (error as Error).message);

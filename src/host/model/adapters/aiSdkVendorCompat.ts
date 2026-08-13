@@ -24,7 +24,8 @@ function withDeepSeekReasoningContentCompat(
     if (!Array.isArray(transformed.messages)) return transformed;
     return {
       ...transformed,
-      messages: transformed.messages.map((message) => {
+      // Array.isArray 把 unknown 窄化成 any[]，逐元素按 unknown 处理避开 unsafe-return
+      messages: (transformed.messages as unknown[]).map((message) => {
         if (
           !message
           || typeof message !== 'object'

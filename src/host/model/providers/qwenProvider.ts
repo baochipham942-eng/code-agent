@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
-import type { ModelMessage } from '../types';
+import type { InferenceOptions, ModelMessage } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
 import { getModelMaxOutputTokens } from '../../../shared/constants';
@@ -24,7 +24,8 @@ export class QwenProvider extends BaseOpenAIProvider {
   protected buildRequestBody(
     messages: ModelMessage[],
     tools: ToolDefinition[],
-    config: ModelConfig
+    config: ModelConfig,
+    options?: InferenceOptions
   ): Record<string, unknown> {
     const modelInfo = this.getModelInfo(config);
     const useToolCalling = modelInfo?.supportsTool !== false;
@@ -46,7 +47,11 @@ export class QwenProvider extends BaseOpenAIProvider {
       body.tool_choice = 'auto';
     }
 
-    if (resolveModelCapabilities('qwen', config.model).search?.mode === 'bailian-enable-search') {
+    // 逐轮「联网搜索」开关（默认开）：用户关掉时这一轮不挂百炼搜索，矩阵裁决让位。
+    if (
+      options?.searchEnabled !== false
+      && resolveModelCapabilities('qwen', config.model).search?.mode === 'bailian-enable-search'
+    ) {
       body.enable_search = true;
     }
 

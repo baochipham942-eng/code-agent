@@ -82,7 +82,7 @@ function schemaToDefinition(
  * 核心工具是最常用的基础工具，始终包含在模型请求中。
  * 其他工具需要通过 tool_search 发现和加载。
  */
-export function getCoreToolDefinitions(): ToolDefinition[] {
+export function getCoreToolDefinitions(options?: { searchEnabled?: boolean }): ToolDefinition[] {
   const cloudToolMeta = getCloudConfigService().getAllToolMeta();
   const core = new Set(CORE_TOOLS);
 
@@ -92,8 +92,11 @@ export function getCoreToolDefinitions(): ToolDefinition[] {
     // configured in Settings (SecureStorage, preferred) or via env fallback. A
     // failed readiness probe subsequently makes its handler fail loud instead
     // of silently borrowing a model/provider credential.
+    // 逐轮「联网搜索」开关（默认开）是第二道初筛：这一轮用户关了联网，
+    // 凭据再齐全 ExternalSearch 也不进工具表。
     .filter((schema) => schema.name !== 'ExternalSearch'
-      || hasConfiguredExternalSearchCredential(process.env, (service) => getConfigService().getServiceApiKey(service)))
+      || (options?.searchEnabled !== false
+        && hasConfiguredExternalSearchCredential(process.env, (service) => getConfigService().getServiceApiKey(service))))
     .map((schema) => schemaToDefinition(schema, cloudToolMeta));
 }
 

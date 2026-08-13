@@ -64,6 +64,7 @@ import {
   EngineScopedModelPanel,
   type EngineMenuView,
 } from './EngineScopedModelPanel';
+import { SearchToggleSection } from './SearchToggleSection';
 
 export { buildModelSwitcherEngineSelection } from './modelSwitcherHelpers';
 
@@ -1034,6 +1035,13 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               </div>
             </div>
           )}
+
+          <SearchToggleSection
+            visible={engine.kind === 'native' && !showModelSettingsPrompt}
+            open={open}
+            provider={displayProvider}
+            model={displayModel}
+          />
       {engine.kind === 'native' && isOverridden && !showModelSettingsPrompt && (
         <>
           <div className="border-t border-zinc-700 my-1" />

@@ -149,7 +149,7 @@ export class ResponsesProvider implements Provider {
     config: ModelConfig,
     onStream?: StreamCallback,
     signal?: AbortSignal,
-    _options?: InferenceOptions,
+    options?: InferenceOptions,
   ): Promise<ModelResponse> {
     const baseUrl = resolveProviderBaseUrl(config);
     const endpoint = resolveResponsesEndpoint(baseUrl);
@@ -159,7 +159,8 @@ export class ResponsesProvider implements Provider {
       store: false,
     };
     const responseTools: unknown[] = [];
-    if (resolveModelCapabilities(config.provider, config.model).search?.mode === 'deepseek-responses') responseTools.push({ type: 'web_search' });
+    // 逐轮「联网搜索」开关（默认开）：关掉时这一轮不挂 web_search，矩阵裁决让位。
+    if (options?.searchEnabled !== false && resolveModelCapabilities(config.provider, config.model).search?.mode === 'deepseek-responses') responseTools.push({ type: 'web_search' });
     responseTools.push(...convertToolsToResponses(tools));
     if (responseTools.length) body.tools = responseTools;
     if (onStream) body.stream = true;

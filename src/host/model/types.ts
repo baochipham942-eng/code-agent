@@ -169,6 +169,12 @@ export interface InferenceOptions {
    */
   reasoningEffort?: 'low' | 'medium' | 'high';
   /**
+   * 逐轮联网搜索开关（模型选择弹窗「联网搜索」，默认开）。
+   * false 时这一轮：Responses 不挂 web_search、百炼不挂 enable_search；
+   * 缺省/undefined 维持矩阵裁决的旧行为。
+   */
+  searchEnabled?: boolean;
+  /**
    * 强制工具选择（dynamic-workflow forced structured output 用）。仅 AI SDK 路径生效，
    * legacy provider 路径忽略。'required'=必须调某工具；{type:'tool',toolName}=必须调指定工具。
    * 形状对齐 AI SDK 的 ToolChoice，透传时直接映射。

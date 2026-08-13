@@ -157,6 +157,12 @@ export function registerAgentHandlers(
           appService.setThinkingEnabled(Boolean((payload as { enabled?: boolean }).enabled));
           return { success: true, data: null };
         }
+        case 'setSearchEnabled': {
+          const appService = getAppService();
+          if (!appService) throw new Error('Agent not initialized');
+          appService.setSearchEnabled(Boolean((payload as { enabled?: boolean }).enabled));
+          return { success: true, data: null };
+        }
         case 'setInteractionMode': {
           const appService = getAppService();
           if (!appService) throw new Error('Agent not initialized');

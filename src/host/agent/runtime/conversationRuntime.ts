@@ -1196,6 +1196,11 @@ export class ConversationRuntime {
     logger.debug(`[AgentLoop] Thinking ${enabled ? 'enabled' : 'disabled'}`);
   }
 
+  setSearchEnabled(enabled: boolean): void {
+    this.ctx.turn.setSearchEnabled(enabled);
+    logger.debug(`[AgentLoop] Web search ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
   getEffortLevel(): import('../../../shared/contract/agent').EffortLevel {
     return this.ctx.turn.effortLevel;
   }

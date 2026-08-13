@@ -117,6 +117,20 @@ describe('toolDefinitions deferred loading', () => {
     expect(getCoreToolDefinitions().map((definition) => definition.name)).toContain('ExternalSearch');
   });
 
+  it('drops ExternalSearch when the per-turn search toggle is off, even with a configured credential', () => {
+    // 逐轮开关（模型选择弹窗「联网搜索」）关掉时，ExternalSearch 不进工具表——
+    // 哪怕凭据齐全。语义：这一轮不允许联网。
+    getServiceApiKey.mockImplementation((service: string) => (service === 'zhipu-search' ? 'settings-zhipu-key' : undefined));
+    expect(getCoreToolDefinitions({ searchEnabled: false }).map((definition) => definition.name))
+      .not.toContain('ExternalSearch');
+  });
+
+  it('keeps ExternalSearch when the per-turn search toggle is explicitly on', () => {
+    getServiceApiKey.mockImplementation((service: string) => (service === 'zhipu-search' ? 'settings-zhipu-key' : undefined));
+    expect(getCoreToolDefinitions({ searchEnabled: true }).map((definition) => definition.name))
+      .toContain('ExternalSearch');
+  });
+
   it('does not put a permission prompt in front of AskUserQuestion itself', () => {
     const definition = getCoreToolDefinitions()
       .find((candidate) => candidate.name === 'AskUserQuestion');

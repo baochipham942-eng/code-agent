@@ -143,6 +143,22 @@ describe('ResponsesProvider', () => {
     expect(JSON.parse(electronFetch.mock.calls[0][1].body).tools).toBeUndefined();
   });
 
+  it('omits web_search when the per-turn search toggle is off, even when the matrix allows it', async () => {
+    electronFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) });
+    await new ResponsesProvider().inference([{ role: 'user', content: '查今天新闻' }], [], {
+      provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'test-key', protocol: 'responses',
+    } as any, undefined, undefined, { searchEnabled: false });
+    expect(JSON.parse(electronFetch.mock.calls[0][1].body).tools).toBeUndefined();
+  });
+
+  it('mounts web_search when the per-turn search toggle is explicitly on', async () => {
+    electronFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) });
+    await new ResponsesProvider().inference([{ role: 'user', content: '查今天新闻' }], [], {
+      provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'test-key', protocol: 'responses',
+    } as any, undefined, undefined, { searchEnabled: true });
+    expect(JSON.parse(electronFetch.mock.calls[0][1].body).tools).toEqual([{ type: 'web_search' }]);
+  });
+
   it('feeds the previous Responses output back into the next input unchanged', async () => {
     electronFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) });
     const priorOutput = [{ type: 'web_search_call', id: 'ws_1', action: { type: 'search', query: 'q' } }, { type: 'message', content: [{ type: 'output_text', text: 'a' }] }];

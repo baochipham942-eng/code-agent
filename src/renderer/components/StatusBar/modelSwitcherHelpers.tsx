@@ -1,6 +1,6 @@
 import React from 'react';
 import { Eye, Wrench, Brain, Cpu, Terminal, Code2, Gauge } from 'lucide-react';
-import type { BillingMode, ModelProvider, ModelProviderProtocol } from '@shared/contract';
+import type { BillingMode, ModelProvider, ModelProviderProtocol, ModelSearchCapabilityOverview } from '@shared/contract';
 import type {
   AgentEngineModelCatalogModel,
   AgentEngineDescriptor,
@@ -41,6 +41,21 @@ export const QUICK_SWITCH_PROVIDERS = [
   'local',
   'custom',
 ] as const satisfies readonly ModelProvider[];
+
+/**
+ * 逐轮「联网搜索」开关可用判据（L0 2026-08-12 裁决）：
+ * 当前模型注册表 capabilities 含 'search'（能力矩阵注册期单源回填）
+ * 或有已就绪的外部搜索源（ExternalSearch 任何模型都能调，只要配了凭据）。
+ * 两者都没有才置灰。overview 为 null（IPC 未返回/失败）时按不可用处理，不误报可用。
+ */
+export function resolveSearchToggleAvailability(
+  overview: ModelSearchCapabilityOverview | null,
+  provider: ModelProvider,
+  model: string,
+): boolean {
+  if (!overview) return false;
+  return Boolean(overview.modelsByProvider[provider]?.includes(model)) || overview.externalSearchReady;
+}
 
 export const ENGINE_SHORT_LABEL: Record<AgentEngineKind, string> = {
   native: 'Neo',

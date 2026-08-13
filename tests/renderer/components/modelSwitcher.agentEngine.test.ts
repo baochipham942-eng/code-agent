@@ -29,7 +29,9 @@ import {
   resolveEngineModelCompatReason,
   EngineBillingBadge,
   isExternalEngineKind,
+  resolveSearchToggleAvailability,
 } from '../../../src/renderer/components/StatusBar/modelSwitcherHelpers';
+import type { ModelSearchCapabilityOverview } from '../../../src/shared/contract';
 import { zh, en } from '../../../src/renderer/i18n';
 
 function descriptor(overrides: Partial<AgentEngineDescriptor>): AgentEngineDescriptor {
@@ -612,5 +614,51 @@ describe('ModelSwitcher engine billingMode + 兼容原因（i18n）', () => {
     expect(isExternalEngineKind('claude_code')).toBe(true);
     expect(isExternalEngineKind('mimo_code')).toBe(true);
     expect(isExternalEngineKind('kimi_code')).toBe(true);
+  });
+});
+
+describe('ModelSwitcher 联网搜索逐轮开关可用性', () => {
+  const overview = (
+    modelsByProvider: Partial<Record<string, string[]>>,
+    externalSearchReady: boolean,
+  ): ModelSearchCapabilityOverview => ({ modelsByProvider, externalSearchReady });
+
+  it('当前模型自带搜索能力（注册表含 search 标签）→ 开关可用', () => {
+    expect(resolveSearchToggleAvailability(
+      overview({ qwen: ['qwen3-max'] }, false), 'qwen', 'qwen3-max',
+    )).toBe(true);
+    expect(resolveSearchToggleAvailability(
+      overview({ deepseek: ['deepseek-v4-flash'] }, false), 'deepseek', 'deepseek-v4-flash',
+    )).toBe(true);
+  });
+
+  it('模型不支持但有已就绪的外部搜索源 → 开关仍可用', () => {
+    expect(resolveSearchToggleAvailability(
+      overview({}, true), 'openai', 'gpt-4o',
+    )).toBe(true);
+  });
+
+  it('模型不支持且外部搜索源未就绪 → 置灰', () => {
+    expect(resolveSearchToggleAvailability(
+      overview({}, false), 'openai', 'gpt-4o',
+    )).toBe(false);
+    expect(resolveSearchToggleAvailability(
+      overview({ qwen: ['qwen3-max'] }, false), 'openai', 'gpt-4o',
+    )).toBe(false);
+  });
+
+  it('能力总览还没拉到（null）→ 置灰，不误报可用', () => {
+    expect(resolveSearchToggleAvailability(null, 'qwen', 'qwen3-max')).toBe(false);
+  });
+
+  it('联网搜索开关文案 zh/en 两份齐全', () => {
+    expect(zh.settings.model.models.searchSectionLabel).toBeTruthy();
+    expect(en.settings.model.models.searchSectionLabel).toBeTruthy();
+    expect(zh.settings.model.models.searchOptionOn).toBeTruthy();
+    expect(en.settings.model.models.searchOptionOn).toBeTruthy();
+    expect(zh.settings.model.models.searchOptionOff).toBeTruthy();
+    expect(en.settings.model.models.searchOptionOff).toBeTruthy();
+    expect(zh.settings.model.models.searchUnavailableHint).toBeTruthy();
+    expect(en.settings.model.models.searchUnavailableHint).toBeTruthy();
   });
 });

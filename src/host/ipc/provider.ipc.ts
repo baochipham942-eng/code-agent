@@ -16,6 +16,7 @@ import type {
   ModelCapability,
   ModelProvider,
   ModelProviderProtocol,
+  ModelSearchCapabilityOverview,
   ModelThinkingCapabilityCatalog,
 } from '../../shared/contract';
 import { inferModelCapabilities, inferSupportsTool } from '../../shared/modelRuntime';
@@ -29,6 +30,8 @@ import {
 import { getProviderHealthMonitor } from '../model/providerHealthMonitor';
 import { PROVIDER_REGISTRY } from '../model/providerRegistry';
 import { resolveModelThinkingCapability } from '../model/providerRuntimeCapabilities';
+import { getConfigService } from '../services/core/configService';
+import { hasConfiguredExternalSearchCredential } from '../services/search/searchSourceRegistry';
 import {
   handleTestConnection,
   mapProviderHttpError as mapHttpError,
@@ -91,6 +94,29 @@ export function getModelThinkingCapabilityCatalog(providerId: string): ModelThin
         model.id,
         resolveModelThinkingCapability(provider, model.thinking),
       ]),
+    ),
+  };
+}
+
+/**
+ * 联网搜索可用性总览：模型侧单源取注册期回填的 'search' 能力标签；
+ * 外部搜索源就绪走与工具表初筛同一个判据（设置页 key 优先、env 兜底）。
+ */
+function getModelSearchCapabilityOverview(): ModelSearchCapabilityOverview {
+  const modelsByProvider: Partial<Record<ModelProvider, string[]>> = {};
+  for (const [providerId, providerConfig] of Object.entries(PROVIDER_REGISTRY)) {
+    const searchModels = providerConfig.models
+      .filter((model) => model.capabilities.includes('search'))
+      .map((model) => model.id);
+    if (searchModels.length > 0) {
+      modelsByProvider[providerId as ModelProvider] = searchModels;
+    }
+  }
+  return {
+    modelsByProvider,
+    externalSearchReady: hasConfiguredExternalSearchCredential(
+      process.env,
+      (service) => getConfigService().getServiceApiKey(service),
     ),
   };
 }
@@ -557,6 +583,9 @@ export function registerProviderHandlers(ipcMain: IpcMain): void {
             };
           }
           return { success: true, data: getModelThinkingCapabilityCatalog(provider) };
+        }
+        case 'get_search_capabilities': {
+          return { success: true, data: getModelSearchCapabilityOverview() };
         }
         case 'run_diagnostics': {
           const data = await runDiagnostics();

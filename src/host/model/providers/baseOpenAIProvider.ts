@@ -90,7 +90,8 @@ export abstract class BaseOpenAIProvider implements Provider {
   protected buildRequestBody(
     messages: ModelMessage[],
     tools: ToolDefinition[],
-    config: ModelConfig
+    config: ModelConfig,
+    _options?: InferenceOptions
   ): Record<string, unknown> {
     const openAITools = convertToolsToOpenAI(tools);
 
@@ -135,7 +136,7 @@ export abstract class BaseOpenAIProvider implements Provider {
       });
     }
 
-    const requestBody = this.buildRequestBody(messages, tools, config);
+    const requestBody = this.buildRequestBody(messages, tools, config, options);
     // Cross-provider reasoning_effort plug: read either from caller-supplied
     // options (the modelRouter artifact-path default of 'low') or from
     // config.reasoningEffort, and surface it as the OpenAI-compatible

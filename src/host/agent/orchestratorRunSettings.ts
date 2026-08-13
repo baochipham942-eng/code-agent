@@ -48,6 +48,11 @@ export class OrchestratorRunSettings {
     logger.info(`[AgentOrchestrator] Thinking ${enabled ? 'enabled' : 'disabled'}`);
   }
 
+  setSearchEnabled(enabled: boolean): void {
+    this.getAgentLoop()?.setSearchEnabled(enabled);
+    logger.info(`[AgentOrchestrator] Web search ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
   setInteractionMode(mode: InteractionMode): void {
     this.getAgentLoop()?.setInteractionMode(mode);
     logger.info(`[AgentOrchestrator] Interaction mode set to ${mode}`);

@@ -121,6 +121,35 @@ describe('ProviderRegistry', () => {
   });
 
   // --------------------------------------------------------------------------
+  // Search capability backfill (能力矩阵 search.mode → 注册表 'search' 标签)
+  // --------------------------------------------------------------------------
+  describe('search capability backfill', () => {
+    it('backfills search for models whose matrix search mode is not none', () => {
+      const flash = PROVIDER_REGISTRY.deepseek.models.find((m) => m.id === 'deepseek-v4-flash');
+      expect(flash?.capabilities).toContain('search');
+    });
+
+    it('does not mark models whose matrix search mode is none', () => {
+      const chat = PROVIDER_REGISTRY.deepseek.models.find((m) => m.id === 'deepseek-chat');
+      expect(chat).toBeDefined();
+      expect(chat?.capabilities).not.toContain('search');
+    });
+
+    it('backfills qwen models from the provider-level bailian default', () => {
+      const qwenModels = PROVIDER_REGISTRY.qwen.models;
+      expect(qwenModels.length).toBeGreaterThan(0);
+      for (const model of qwenModels) {
+        expect(model.capabilities).toContain('search');
+      }
+    });
+
+    it('keeps perplexity manual search labels intact', () => {
+      const sonar = PROVIDER_REGISTRY.perplexity.models.find((m) => m.id === 'sonar-pro');
+      expect(sonar?.capabilities).toContain('search');
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Token window constraints
   // --------------------------------------------------------------------------
   describe('token window constraints', () => {

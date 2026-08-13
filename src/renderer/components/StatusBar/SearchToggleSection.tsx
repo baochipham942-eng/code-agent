@@ -28,7 +28,7 @@ export function SearchToggleSection({
   const { t } = useI18n();
   const text = t.settings.model.models;
   const searchEnabled = useModeStore((s) => s.searchEnabled);
-  const setSearchEnabled = useModeStore((s) => s.setSearchEnabled);
+  const setWebSearchEnabled = useModeStore((s) => s.setWebSearchEnabled);
   // 联网搜索可用性总览（注册表 search 标签 + 外部搜索源凭据），打开面板时从 host 拉
   const [overview, setOverview] = useState<ModelSearchCapabilityOverview | null>(null);
 
@@ -65,7 +65,7 @@ export function SearchToggleSection({
             key={option.value}
             type="button"
             disabled={!available}
-            onClick={() => setSearchEnabled(option.value === 'on')}
+            onClick={() => setWebSearchEnabled(option.value === 'on')}
             className={`
               inline-flex h-7 items-center justify-center rounded px-2 text-[10px] transition-colors
               ${!available

@@ -147,6 +147,8 @@ export interface ConversationEnvelope {
   clientMessageId?: string;
   sessionId?: string;
   attachments?: MessageAttachment[];
+  /** Per-turn web search switch. Omitted by legacy clients means enabled. */
+  searchEnabled?: boolean;
   options?: AppServiceRunOptions;
   context?: ConversationEnvelopeContext;
 }

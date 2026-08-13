@@ -5,11 +5,7 @@
 // @vitest-environment jsdom
 // jsdom 提供 localStorage，zustand persist 才会挂 .persist API（node 环境下没有）。
 
-import { describe, it, expect, vi } from 'vitest';
-
-vi.mock('../../../src/renderer/services/ipcService', () => ({
-  invokeDomain: vi.fn().mockResolvedValue(undefined),
-}));
+import { describe, it, expect } from 'vitest';
 
 import { useModeStore } from '../../../src/renderer/stores/modeStore';
 
@@ -18,12 +14,10 @@ describe('modeStore searchEnabled（逐轮联网搜索开关）', () => {
     expect(useModeStore.getState().searchEnabled).toBe(true);
   });
 
-  it('setSearchEnabled updates the store and syncs to the agent domain', async () => {
-    const { invokeDomain } = await import('../../../src/renderer/services/ipcService');
-    useModeStore.getState().setSearchEnabled(false);
+  it('setWebSearchEnabled only updates the persisted local state', () => {
+    useModeStore.getState().setWebSearchEnabled(false);
     expect(useModeStore.getState().searchEnabled).toBe(false);
-    expect(invokeDomain).toHaveBeenCalledWith('domain:agent', 'setSearchEnabled', { enabled: false });
-    useModeStore.getState().setSearchEnabled(true);
+    useModeStore.getState().setWebSearchEnabled(true);
     expect(useModeStore.getState().searchEnabled).toBe(true);
   });
 

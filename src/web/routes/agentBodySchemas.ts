@@ -37,6 +37,7 @@ export const AgentRunBodySchema = z.object({
   sessionId: z.string().optional(),
   clientMessageId: z.string().optional(),
   attachments: z.array(MessageAttachmentBodySchema).optional(),
+  searchEnabled: z.boolean().optional(),
   context: ConversationEnvelopeContextBodySchema.optional(),
   goal: GoalBodySchema.optional(),
 }).passthrough();

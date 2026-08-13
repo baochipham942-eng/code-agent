@@ -111,6 +111,7 @@ export function buildQueuedAgentRunBody(envelope: ConversationEnvelope): AgentRu
     sessionId: envelope.sessionId,
     clientMessageId: envelope.clientMessageId,
     attachments: envelope.attachments,
+    searchEnabled: envelope.searchEnabled,
     context: envelope.context,
     goal: envelope.options?.goal,
     model: envelope.options?.modelSpec?.model,
@@ -773,6 +774,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         });
         logger.info('[AgentRouter] Goal mode activated', { verify: body.goal.verify, review: body.goal.review, allowSwarm: body.goal.allowSwarm, sessionId });
       }
+
+      config.searchEnabled = body.searchEnabled ?? true;
 
       const commandCenterBrain = isSessionCommandCenterTurn({ prompt, hasGoal: Boolean(body.goal) });
       if (commandCenterBrain) {

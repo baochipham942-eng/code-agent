@@ -41,7 +41,7 @@ interface ModeState {
   toggleMode: () => void;
   setEffortLevel: (level: import('../../shared/contract/agent').EffortLevel) => void;
   setThinkingEnabled: (enabled: boolean) => void;
-  setSearchEnabled: (enabled: boolean) => void;
+  setWebSearchEnabled: (enabled: boolean) => void;
   setInteractionMode: (mode: import('../../shared/contract/agent').InteractionMode) => void;
   setIsPaused: (paused: boolean) => void;
 
@@ -95,11 +95,8 @@ export const useModeStore = create<ModeState>()(
         });
       },
 
-      setSearchEnabled: (enabled) => {
+      setWebSearchEnabled: (enabled) => {
         set({ searchEnabled: enabled });
-        invokeDomain('domain:agent', 'setSearchEnabled', { enabled }).catch(() => {
-          // Silently ignore if agent not initialized yet — will apply on next message
-        });
       },
 
       // Set interaction mode and sync to backend via IPC

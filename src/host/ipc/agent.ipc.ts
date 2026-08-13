@@ -41,6 +41,7 @@ interface SendMessagePayload {
   clientMessageId?: string;
   sessionId?: string;
   attachments?: unknown[];
+  searchEnabled?: boolean;
   options?: AppServiceRunOptions;
   context?: ConversationEnvelope['context'];
 }
@@ -57,6 +58,7 @@ function normalizeEnvelope(
     ...('clientMessageId' in payload && payload.clientMessageId ? { clientMessageId: payload.clientMessageId } : {}),
     ...(payload.sessionId ? { sessionId: payload.sessionId } : {}),
     ...(payload.attachments ? { attachments: payload.attachments as ConversationEnvelope['attachments'] } : {}),
+    ...(typeof payload.searchEnabled === 'boolean' ? { searchEnabled: payload.searchEnabled } : {}),
     ...(payload.options ? { options: payload.options } : {}),
     ...(payload.context ? { context: payload.context } : {}),
   };
@@ -155,12 +157,6 @@ export function registerAgentHandlers(
           const appService = getAppService();
           if (!appService) throw new Error('Agent not initialized');
           appService.setThinkingEnabled(Boolean((payload as { enabled?: boolean }).enabled));
-          return { success: true, data: null };
-        }
-        case 'setSearchEnabled': {
-          const appService = getAppService();
-          if (!appService) throw new Error('Agent not initialized');
-          appService.setSearchEnabled(Boolean((payload as { enabled?: boolean }).enabled));
           return { success: true, data: null };
         }
         case 'setInteractionMode': {

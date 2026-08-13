@@ -113,6 +113,8 @@ export interface AppServiceRunOptions {
   allowedToolNames?: string[];
   /** /goal 自治模式：存在则本轮激活 goal 模式 */
   goal?: GoalRunInput;
+  /** Per-turn web search switch. Omitted by legacy clients means enabled. */
+  searchEnabled?: boolean;
   [key: string]: unknown;
 }
 
@@ -330,7 +332,6 @@ export interface AgentApplicationService {
   // === Effort Level ===
   setEffortLevel(level: import('./agent').EffortLevel): void;
   setThinkingEnabled(enabled: boolean): void;
-  setSearchEnabled(enabled: boolean): void;
 
   // === Interaction Mode ===
   setInteractionMode(mode: import('./agent').InteractionMode): void;

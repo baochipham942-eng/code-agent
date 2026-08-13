@@ -57,6 +57,7 @@ import { InlineStrip } from './features/chat/InlineStrip';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { useMessageActionStore } from '../stores/messageActionStore';
+import { useModeStore } from '../stores/modeStore';
 import { isWebMode } from '../utils/platform';
 import { toast } from '../hooks/useToast';
 import { hasConfiguredDefaultRuntimeModel, hasConfiguredRuntimeModels } from '@shared/modelRuntime';
@@ -86,6 +87,7 @@ import { Image, AlertTriangle, MessageSquare, X } from 'lucide-react';
 
 export const ChatView: React.FC = () => {
   const { t } = useI18n();
+  const searchEnabled = useModeStore((state) => state.searchEnabled);
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
   const setAppWorkingDirectory = useAppStore((state) => state.setWorkingDirectory);
   const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
@@ -166,8 +168,9 @@ export const ChatView: React.FC = () => {
   const buildEnvelope = useCallback((content: string, attachments?: MessageAttachment[]): ConversationEnvelope => ({
     content,
     ...(attachments?.length ? { attachments } : {}),
+    searchEnabled,
     context: buildComposerContext(),
-  }), [buildComposerContext]);
+  }), [buildComposerContext, searchEnabled]);
 
   // Register message action store (edit / regenerate)
   const messageActionRegister = useMessageActionStore((s) => s.register);

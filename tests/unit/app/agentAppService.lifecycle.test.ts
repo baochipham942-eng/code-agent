@@ -416,6 +416,7 @@ describe('AgentAppService lifecycle routing', () => {
       content: 'hello',
       clientMessageId: 'client-msg-send-1',
       attachments: [{ name: 'a.txt' }],
+      searchEnabled: false,
       context: {
         workingDirectory: '/tmp/project',
         preferredAgentId: 'reviewer',
@@ -528,6 +529,9 @@ describe('AgentAppService lifecycle routing', () => {
     expect(sessionManager.updateSession).toHaveBeenCalledWith(
       'session-1',
       expect.objectContaining({ workingDirectory: '/current/project' }),
+    );
+    expect(taskManager.startTask.mock.calls.at(-1)?.[3]).toEqual(
+      expect.objectContaining({ searchEnabled: true }),
     );
   });
 

@@ -47,6 +47,10 @@ export class TurnState {
   private _activeSkillContextBlock?: string;
   private _skillToolBoundary?: SkillToolBoundary;
 
+  constructor(seed?: { searchEnabled?: boolean }) {
+    if (seed?.searchEnabled !== undefined) this._searchEnabled = seed.searchEnabled;
+  }
+
   get currentTurnId(): string { return this._currentTurnId; }
   get messageDeltaSeq(): number { return this._messageDeltaSeq; }
   get currentIterationSpanId(): string { return this._currentIterationSpanId; }
@@ -120,10 +124,6 @@ export class TurnState {
     this._thinkingEnabled = enabled;
   }
 
-  setSearchEnabled(enabled: boolean): void {
-    this._searchEnabled = enabled;
-  }
-
   resetThinkingSteps(): void {
     this._thinkingStepCount = 0;
   }
@@ -176,7 +176,7 @@ export class TurnState {
     activeSkillContextBlock?: string;
     skillToolBoundary?: SkillToolBoundary;
   }): TurnState {
-    const state = new TurnState();
+    const state = new TurnState(seed);
     if (!seed) return state;
     if (seed.currentTurnId !== undefined) state._currentTurnId = seed.currentTurnId;
     if (seed.messageDeltaSeq !== undefined) state._messageDeltaSeq = seed.messageDeltaSeq;
@@ -188,7 +188,6 @@ export class TurnState {
     if (seed.isSimpleTaskMode !== undefined) state._isSimpleTaskMode = seed.isSimpleTaskMode;
     if (seed.effortLevel !== undefined) state._effortLevel = seed.effortLevel;
     if (seed.thinkingEnabled !== undefined) state._thinkingEnabled = seed.thinkingEnabled;
-    if (seed.searchEnabled !== undefined) state._searchEnabled = seed.searchEnabled;
     if (seed.thinkingStepCount !== undefined) state._thinkingStepCount = seed.thinkingStepCount;
     if (seed.researchModeActive !== undefined) state._researchModeActive = seed.researchModeActive;
     if (seed.researchIterationCount !== undefined) state._researchIterationCount = seed.researchIterationCount;

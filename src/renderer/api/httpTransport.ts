@@ -550,6 +550,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         const prompt = typeof arg === 'string' ? arg : (arg as { content: string }).content;
         const sessionId = typeof arg === 'object' && arg !== null ? (arg as { sessionId?: string }).sessionId : undefined;
         const attachments = typeof arg === 'object' && arg !== null ? (arg as { attachments?: unknown[] }).attachments : undefined;
+        const searchEnabled = typeof arg === 'object' && arg !== null ? (arg as { searchEnabled?: unknown }).searchEnabled : undefined;
         const options = typeof arg === 'object' && arg !== null ? (arg as { options?: unknown }).options : undefined;
         const goal = isRecord(options) && isRecord(options.goal) ? options.goal : undefined;
         const context = typeof arg === 'object' && arg !== null ? (arg as { context?: unknown }).context : undefined;
@@ -562,6 +563,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             ...(clientMessageId ? { clientMessageId } : {}),
             ...(sessionId ? { sessionId } : {}),
             ...(attachments?.length ? { attachments } : {}),
+            ...(typeof searchEnabled === 'boolean' ? { searchEnabled } : {}),
             ...(options ? { options } : {}),
             ...(goal ? { goal } : {}),
             ...(context ? { context } : {}),

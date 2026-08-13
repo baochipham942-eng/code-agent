@@ -263,7 +263,7 @@ interface OpenAICompatVendorSettings {
   transformRequestBody?: (body: Record<string, unknown>) => Record<string, unknown>;
 }
 
-export function buildVendorCompatSettings(config: ModelConfig): OpenAICompatVendorSettings {
+export function buildVendorCompatSettings(config: ModelConfig, options?: { searchEnabled?: boolean }): OpenAICompatVendorSettings {
   switch (config.provider) {
     case 'zhipu':
       // GLM：仅 stream_options include_usage（并发 limiter 在 inferenceViaAiSdk 层，不在 body）。
@@ -281,7 +281,11 @@ export function buildVendorCompatSettings(config: ModelConfig): OpenAICompatVend
       };
     case 'qwen':
       // 百炼搜索的开关归能力矩阵所有；未声明的模型不可被默认开启。
-      return resolveModelCapabilities(config.provider, config.model).search?.mode === 'bailian-enable-search'
+      // 逐轮「联网搜索」开关是第二道闸：用户这一轮关了联网，矩阵裁决让位（默认 undefined = 开）。
+      // 🔴 这里是 qwen 在【默认引擎】上的唯一注入点——legacy 的 qwenProvider.buildRequestBody
+      // 只在 CODE_AGENT_MODEL_ENGINE=legacy 时才跑到，两处都要挂闸才算真接线。
+      return options?.searchEnabled !== false
+        && resolveModelCapabilities(config.provider, config.model).search?.mode === 'bailian-enable-search'
         ? {
           transformRequestBody: (b) => ({ ...b, enable_search: true }),
         }
@@ -331,7 +335,7 @@ function resolveAiSdkProviderOptions(config: ModelConfig) {
 }
 
 // ── provider 解析：优先专用包（专用包能处理 thinking 回传等坑，通用 openai-compatible 不行）──
-function resolveModel(config: ModelConfig, req: ProviderRequest): LanguageModel {
+function resolveModel(config: ModelConfig, req: ProviderRequest, options?: { searchEnabled?: boolean }): LanguageModel {
   switch (config.provider) {
     case 'deepseek':
       return createDeepSeek({ apiKey: req.apiKey, baseURL: req.baseURL, fetch: makeAiSdkFetch(config.provider) })(config.model);
@@ -358,7 +362,7 @@ function resolveModel(config: ModelConfig, req: ProviderRequest): LanguageModel 
       }
       // zhipu/moonshot/xiaomi 在此叠加 vendor quirks；其余 openai-compatible provider
       // （longcat/qwen/minimax/custom 等）buildVendorCompatSettings 返回 {} 不受影响。
-      const vendor = buildVendorCompatSettings(config);
+      const vendor = buildVendorCompatSettings(config, options);
       return createOpenAICompatible({
         name: config.provider,
         baseURL: req.baseURL,
@@ -795,7 +799,7 @@ async function runInferenceViaAiSdk(
       'unsupported',
     );
   }
-  const model = resolveModel(requestConfig, req);
+  const model = resolveModel(requestConfig, req, options);
   let aiTools: ToolSet | undefined;
   let aiPrompt: AiSdkPromptShape;
   try {

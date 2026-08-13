@@ -266,6 +266,7 @@ export type VoiceMessageCode =
   | 'VOICE_PROVIDER_UNCONFIGURED'
   | 'VOICE_TOOLS_DROPPED'
   | 'VOICE_MODEL_UNRESPONSIVE'
+  | 'VOICE_SERVICE_UNSTABLE'
   /** 语音派出去的活死了。G1（2026-07-28 真机）：失败此前只进日志，通话里的人毫无察觉。 */
   | 'VOICE_WORK_FAILED'
   | 'VOICE_UPSTREAM_UNAVAILABLE'

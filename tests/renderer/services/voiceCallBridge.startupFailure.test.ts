@@ -118,6 +118,7 @@ describe('voiceStartupFailureTier 分档表', () => {
       // 通话中才产生，落不到启动失败出口；归 actionable = 保持既有呈现不变
       VOICE_TOOLS_DROPPED: 'actionable',
       VOICE_MODEL_UNRESPONSIVE: 'actionable',
+      VOICE_SERVICE_UNSTABLE: 'actionable',
       VOICE_WORK_FAILED: 'actionable',
       // 用户什么都做不了：上游 5xx / 429 / 连不上 / 退避耗尽
       VOICE_UPSTREAM_UNAVAILABLE: 'silent',

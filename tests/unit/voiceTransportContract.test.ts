@@ -1110,7 +1110,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
 
   it('N1: tool_call response.done 后工具等待 120s 看门狗零动作', async () => {
     vi.useFakeTimers();
-    const tool = { type: 'function' as const, name: 'long_task', description: 'd', parameters: { type: 'object', properties: {}, required: [] } };
+    const tool = { type: 'function' as const, name: 'long_task', description: 'd', parameters: { type: 'object' as const, properties: {}, required: [] as string[] } };
     const connecting = qwenOmniTransport.connect({
       apiKey: 'test-key',
       config: { neoSessionId: 's1', tools: [tool] },
@@ -1166,7 +1166,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     )).toHaveLength(0);
     await speakingHandle.close();
 
-    const endCallTool = { type: 'function' as const, name: 'end_call', description: 'd', parameters: { type: 'object', properties: {}, required: [] } };
+    const endCallTool = { type: 'function' as const, name: 'end_call', description: 'd', parameters: { type: 'object' as const, properties: {}, required: [] as string[] } };
     const endingConnecting = qwenOmniTransport.connect({
       apiKey: 'test-key',
       config: { neoSessionId: 's1', tools: [endCallTool] },
@@ -1449,7 +1449,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
 
     const handle = await qwenOmniTransport.connect({
       apiKey: 'test-key',
-      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object', properties: {}, required: [] } }] },
+      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object' as const, properties: {}, required: [] as string[] } }] },
       onEvent: vi.fn(),
       onAudio: vi.fn(),
       onToolCall: async () => 'ok',
@@ -1465,7 +1465,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     const onToolCall = vi.fn(async () => '当前没有进行中的任务。');
     const handle = await qwenOmniTransport.connect({
       apiKey: 'test-key',
-      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object', properties: {}, required: [] } }] },
+      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object' as const, properties: {}, required: [] as string[] } }] },
       onEvent: vi.fn(),
       onAudio: vi.fn(),
       onToolCall,
@@ -1572,7 +1572,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     const events: VoiceEvent[] = [];
     const handle = await qwenOmniTransport.connect({
       apiKey: 'test-key',
-      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object', properties: {}, required: [] } }] },
+      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object' as const, properties: {}, required: [] as string[] } }] },
       onEvent: (event) => events.push(event),
       onAudio: vi.fn(),
       onToolCall: async () => 'ok',
@@ -1667,7 +1667,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     const events: VoiceEvent[] = [];
     const handle = await qwenOmniTransport.connect({
       apiKey: 'test-key',
-      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object', properties: {}, required: [] } }] },
+      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object' as const, properties: {}, required: [] as string[] } }] },
       onEvent: (event) => events.push(event),
       onAudio: vi.fn(),
       onToolCall: async () => 'ok',

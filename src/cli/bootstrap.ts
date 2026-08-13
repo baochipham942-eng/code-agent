@@ -524,6 +524,9 @@ export function createAgentLoop(
     isDefaultWorkingDirectory: false,
     autoApprovePlan: config.autoApprovePlan, // CLI 模式自动批准 plan mode
     searchEnabled: config.searchEnabled ?? true,
+    // 逐轮设置随载荷走（QE-01）：此路径无复杂度 analyzer，effortLevel 缺省=TurnState 默认 high
+    thinkingEnabled: config.thinkingEnabled ?? true,
+    effortLevel: config.effortLevel,
     enableToolDeferredLoading: true, // 延迟加载非核心工具，减少 tool overhead
     goalContract: config.goalContract, // /goal 自治模式契约（透传给 ctx.goalMode）
     maxIterations: config.maxIterations, // 迭代数硬上限（角色主动性醒来等预算受限场景）

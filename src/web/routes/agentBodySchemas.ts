@@ -38,6 +38,8 @@ export const AgentRunBodySchema = z.object({
   clientMessageId: z.string().optional(),
   attachments: z.array(MessageAttachmentBodySchema).optional(),
   searchEnabled: z.boolean().optional(),
+  thinkingEnabled: z.boolean().optional(),
+  effortLevel: z.enum(['low', 'medium', 'high', 'xhigh', 'max', 'ultra_code']).optional(),
   context: ConversationEnvelopeContextBodySchema.optional(),
   goal: GoalBodySchema.optional(),
 }).passthrough();

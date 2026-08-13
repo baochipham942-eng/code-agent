@@ -115,6 +115,10 @@ export interface AppServiceRunOptions {
   goal?: GoalRunInput;
   /** Per-turn web search switch. Omitted by legacy clients means enabled. */
   searchEnabled?: boolean;
+  /** Per-turn provider thinking switch. Omitted by legacy clients means enabled. */
+  thinkingEnabled?: boolean;
+  /** Explicit user effort choice only; omission keeps complexity-based automatic effort. */
+  effortLevel?: import('./agent').EffortLevel;
   [key: string]: unknown;
 }
 
@@ -328,13 +332,6 @@ export interface AgentApplicationService {
   // === Delegate Mode ===
   setDelegateMode(enabled: boolean): void;
   isDelegateMode(): boolean;
-
-  // === Effort Level ===
-  setEffortLevel(level: import('./agent').EffortLevel): void;
-  setThinkingEnabled(enabled: boolean): void;
-
-  // === Interaction Mode ===
-  setInteractionMode(mode: import('./agent').InteractionMode): void;
 
   // === Pause / Resume ===
   pause(sessionId?: string): void;

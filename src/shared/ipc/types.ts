@@ -11,6 +11,7 @@ import type {
   TodoItem,
 } from '../contract';
 import type { ConversationEnvelopeContext } from '../contract/conversationEnvelope';
+import type { EffortLevel } from '../contract/agent';
 import type { AgentTrajectoryCollectionMetadataPatch } from '../contract/agentTrajectory';
 
 import type {
@@ -24,6 +25,8 @@ export interface AgentMessageRequest {
   sessionId?: string;
   attachments?: MessageAttachment[];
   searchEnabled?: boolean;
+  thinkingEnabled?: boolean;
+  effortLevel?: EffortLevel;
   options?: AppServiceRunOptions;
   context?: ConversationEnvelopeContext;
 }

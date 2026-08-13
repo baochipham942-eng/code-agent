@@ -113,7 +113,13 @@ function resolveProviderRequest(config: ModelConfig): ProviderRequest {
 function resolveModel(config: ModelConfig, req: ProviderRequest, options?: { searchEnabled?: boolean }): LanguageModel {
   switch (config.provider) {
     case 'deepseek':
-      return createDeepSeek({ apiKey: req.apiKey, baseURL: req.baseURL, fetch: makeAiSdkFetch(config.provider) })(config.model);
+      // deepseek 不走 default case 的 createOpenAICompatible，vendorCompat 的
+      // reasoning_effort 注入必须在这里挂进 fetch（QE-01 真机探针抓获的死代码分叉）。
+      return createDeepSeek({
+        apiKey: req.apiKey,
+        baseURL: req.baseURL,
+        fetch: makeAiSdkFetch(config.provider, buildVendorCompatSettings(config, options).transformRequestBody),
+      })(config.model);
     case 'anthropic':
     case 'claude':
       return createAnthropic({ apiKey: req.apiKey, baseURL: req.baseURL ?? MODEL_API_ENDPOINTS.claude, fetch: makeAiSdkFetch(config.provider) })(config.model);

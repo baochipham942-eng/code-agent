@@ -140,14 +140,14 @@
         },
         {
           "id": "deepseek-chat",
-          "label": "DeepSeek Chat (legacy)",
+          "label": "DeepSeek Chat（旧版）",
           "desc": "128K · 2026-07-24 退役，已 route 到 V4 Flash",
           "evalEligible": false,
           "scaffoldTier": "lite"
         },
         {
           "id": "deepseek-reasoner",
-          "label": "DeepSeek Reasoner (legacy)",
+          "label": "DeepSeek Reasoner（旧版）",
           "desc": "128K · 2026-07-24 退役，已 route 到 V4 Pro",
           "evalEligible": false,
           "scaffoldTier": "strong"

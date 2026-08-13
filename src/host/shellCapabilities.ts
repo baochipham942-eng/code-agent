@@ -77,11 +77,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'permissionResponse',
     'resume',
     'send',
-    'setEffortLevel',
-    'setInteractionMode',
     'setPermissionMode',
     'setSessionPermissionMode',
-    'setThinkingEnabled',
   ],
   [IPC_DOMAINS.AGENT_ENGINE]: [
     'detect',

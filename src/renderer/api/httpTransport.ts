@@ -551,6 +551,8 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         const sessionId = typeof arg === 'object' && arg !== null ? (arg as { sessionId?: string }).sessionId : undefined;
         const attachments = typeof arg === 'object' && arg !== null ? (arg as { attachments?: unknown[] }).attachments : undefined;
         const searchEnabled = typeof arg === 'object' && arg !== null ? (arg as { searchEnabled?: unknown }).searchEnabled : undefined;
+        const thinkingEnabled = typeof arg === 'object' && arg !== null ? (arg as { thinkingEnabled?: unknown }).thinkingEnabled : undefined;
+        const effortLevel = typeof arg === 'object' && arg !== null ? (arg as { effortLevel?: unknown }).effortLevel : undefined;
         const options = typeof arg === 'object' && arg !== null ? (arg as { options?: unknown }).options : undefined;
         const goal = isRecord(options) && isRecord(options.goal) ? options.goal : undefined;
         const context = typeof arg === 'object' && arg !== null ? (arg as { context?: unknown }).context : undefined;
@@ -564,6 +566,8 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             ...(sessionId ? { sessionId } : {}),
             ...(attachments?.length ? { attachments } : {}),
             ...(typeof searchEnabled === 'boolean' ? { searchEnabled } : {}),
+            ...(typeof thinkingEnabled === 'boolean' ? { thinkingEnabled } : {}),
+            ...(typeof effortLevel === 'string' ? { effortLevel } : {}),
             ...(options ? { options } : {}),
             ...(goal ? { goal } : {}),
             ...(context ? { context } : {}),

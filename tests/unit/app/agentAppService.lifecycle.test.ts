@@ -417,6 +417,8 @@ describe('AgentAppService lifecycle routing', () => {
       clientMessageId: 'client-msg-send-1',
       attachments: [{ name: 'a.txt' }],
       searchEnabled: false,
+      thinkingEnabled: false,
+      effortLevel: 'low',
       context: {
         workingDirectory: '/tmp/project',
         preferredAgentId: 'reviewer',
@@ -453,6 +455,9 @@ describe('AgentAppService lifecycle routing', () => {
       [{ name: 'a.txt' }],
       expect.objectContaining({
         researchMode: false,
+        searchEnabled: false,
+        thinkingEnabled: false,
+        effortLevel: 'low',
         modelSpec: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
         toolScope: expect.objectContaining({ allowedSkillIds: ['docx'] }),
       }),
@@ -531,7 +536,7 @@ describe('AgentAppService lifecycle routing', () => {
       expect.objectContaining({ workingDirectory: '/current/project' }),
     );
     expect(taskManager.startTask.mock.calls.at(-1)?.[3]).toEqual(
-      expect.objectContaining({ searchEnabled: true }),
+      expect.objectContaining({ searchEnabled: true, thinkingEnabled: true }),
     );
   });
 

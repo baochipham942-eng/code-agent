@@ -1184,26 +1184,6 @@ export class ConversationRuntime {
     return this.ctx.planningService;
   }
 
-  setEffortLevel(level: import('../../../shared/contract/agent').EffortLevel): void {
-    this.ctx.turn.setEffortLevel(level);
-    this.ctx.turn.resetThinkingSteps();
-    logger.debug(`[AgentLoop] Effort level set to: ${level}`);
-  }
-
-  setThinkingEnabled(enabled: boolean): void {
-    this.ctx.turn.setThinkingEnabled(enabled);
-    this.ctx.turn.resetThinkingSteps();
-    logger.debug(`[AgentLoop] Thinking ${enabled ? 'enabled' : 'disabled'}`);
-  }
-
-  getEffortLevel(): import('../../../shared/contract/agent').EffortLevel {
-    return this.ctx.turn.effortLevel;
-  }
-
-  setInteractionMode(mode: import('../../../shared/contract/agent').InteractionMode): void {
-    logger.debug(`[AgentLoop] Interaction mode set to: ${mode}`);
-  }
-
   generateAutoContinuationPrompt(): string {
     return buildAutoContinuationPrompt();
   }

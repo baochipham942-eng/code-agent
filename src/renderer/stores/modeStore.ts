@@ -24,6 +24,9 @@ interface ModeState {
   // Effort level (Adaptive Thinking)
   effortLevel: import('../../shared/contract/agent').EffortLevel;
 
+  // Only an explicit user selection overrides per-message complexity analysis.
+  effortLevelExplicit: boolean;
+
   // Provider thinking switch; effort controls intensity when this is on.
   thinkingEnabled: boolean;
 
@@ -40,6 +43,7 @@ interface ModeState {
   setMode: (mode: AppMode) => void;
   toggleMode: () => void;
   setEffortLevel: (level: import('../../shared/contract/agent').EffortLevel) => void;
+  setAutomaticEffortLevel: () => void;
   setThinkingEnabled: (enabled: boolean) => void;
   setWebSearchEnabled: (enabled: boolean) => void;
   setInteractionMode: (mode: import('../../shared/contract/agent').InteractionMode) => void;
@@ -60,6 +64,7 @@ export const useModeStore = create<ModeState>()(
 
       // Default effort level
       effortLevel: 'high' as import('../../shared/contract/agent').EffortLevel,
+      effortLevelExplicit: false,
 
       // Default provider thinking on for workflow/cowork tasks.
       thinkingEnabled: true,
@@ -79,32 +84,25 @@ export const useModeStore = create<ModeState>()(
       // Toggle (no-op, only cowork mode now)
       toggleMode: () => {},
 
-      // Set effort level and sync to backend via IPC
+      // An explicit choice travels with the next conversation envelope.
       setEffortLevel: (level) => {
         const normalizedLevel = normalizeAgentEffortLevel(level);
-        set({ effortLevel: normalizedLevel });
-        invokeDomain('domain:agent', 'setEffortLevel', { level: normalizedLevel }).catch(() => {
-          // Silently ignore if agent not initialized yet — will apply on next message
-        });
+        set({ effortLevel: normalizedLevel, effortLevelExplicit: true });
       },
+
+      setAutomaticEffortLevel: () => set({ effortLevel: 'high', effortLevelExplicit: false }),
 
       setThinkingEnabled: (enabled) => {
         set({ thinkingEnabled: enabled });
-        invokeDomain('domain:agent', 'setThinkingEnabled', { enabled }).catch(() => {
-          // Silently ignore if agent not initialized yet — will apply on next message
-        });
       },
 
       setWebSearchEnabled: (enabled) => {
         set({ searchEnabled: enabled });
       },
 
-      // Set interaction mode and sync to backend via IPC
+      // Interaction mode is renderer-only placeholder state.
       setInteractionMode: (mode) => {
         set({ interactionMode: mode });
-        invokeDomain('domain:agent', 'setInteractionMode', { mode }).catch(() => {
-          // Silently ignore if agent not initialized yet — will apply on next message
-        });
       },
 
       // Set pause state and sync to backend via IPC
@@ -121,7 +119,7 @@ export const useModeStore = create<ModeState>()(
     }),
     {
       name: 'code-agent-mode',
-      version: 6, // Bump: add per-turn web search switch (default on).
+      version: 7, // Bump: explicit effort choice; legacy saved values remain automatic.
       migrate: (persistedState) => {
         if (!persistedState || typeof persistedState !== 'object') {
           return persistedState;
@@ -130,6 +128,11 @@ export const useModeStore = create<ModeState>()(
         return {
           ...state,
           effortLevel: normalizeAgentEffortLevel(state.effortLevel),
+          // UI effort previously never reached a real request (analyzer overwrote every turn),
+          // so legacy persisted values must remain automatic for zero behavior regression.
+          effortLevelExplicit: typeof state.effortLevelExplicit === 'boolean'
+            ? state.effortLevelExplicit
+            : false,
           thinkingEnabled: typeof state.thinkingEnabled === 'boolean'
             ? state.thinkingEnabled
             : true,

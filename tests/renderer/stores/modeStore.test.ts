@@ -40,4 +40,14 @@ describe('modeStore searchEnabled（逐轮联网搜索开关）', () => {
     ) as { searchEnabled?: boolean };
     expect(migrated.searchEnabled).toBe(false);
   });
+
+  it('migrates legacy effort selections to automatic because they never affected a request', () => {
+    const migrate = useModeStore.persist.getOptions().migrate;
+    const migrated = migrate?.(
+      { mode: 'cowork', effortLevel: 'low', thinkingEnabled: true },
+      6,
+    ) as { effortLevel?: string; effortLevelExplicit?: boolean };
+    expect(migrated.effortLevel).toBe('low');
+    expect(migrated.effortLevelExplicit).toBe(false);
+  });
 });

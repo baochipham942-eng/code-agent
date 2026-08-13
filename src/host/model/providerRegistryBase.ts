@@ -34,7 +34,7 @@ export const BASE_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
       },
       {
         id: 'deepseek-chat',
-        name: 'DeepSeek Chat (legacy)',
+        name: 'DeepSeek Chat（旧版）',
         capabilities: ['general', 'code'],
         maxTokens: 16384,
         supportsTool: true,
@@ -44,7 +44,7 @@ export const BASE_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
       },
       {
         id: 'deepseek-coder',
-        name: 'DeepSeek Coder (legacy)',
+        name: 'DeepSeek Coder（旧版）',
         capabilities: ['code'],
         maxTokens: 32768,
         supportsTool: true,
@@ -54,7 +54,7 @@ export const BASE_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
       },
       {
         id: 'deepseek-reasoner',
-        name: 'DeepSeek R1 (legacy)',
+        name: 'DeepSeek R1（旧版）',
         capabilities: ['reasoning', 'code'],
         maxTokens: 65536,
         supportsTool: false,

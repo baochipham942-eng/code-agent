@@ -88,6 +88,9 @@ import { Image, AlertTriangle, MessageSquare, X } from 'lucide-react';
 export const ChatView: React.FC = () => {
   const { t } = useI18n();
   const searchEnabled = useModeStore((state) => state.searchEnabled);
+  const thinkingEnabled = useModeStore((state) => state.thinkingEnabled);
+  const effortLevel = useModeStore((state) => state.effortLevel);
+  const effortLevelExplicit = useModeStore((state) => state.effortLevelExplicit);
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
   const setAppWorkingDirectory = useAppStore((state) => state.setWorkingDirectory);
   const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
@@ -169,8 +172,10 @@ export const ChatView: React.FC = () => {
     content,
     ...(attachments?.length ? { attachments } : {}),
     searchEnabled,
+    thinkingEnabled,
+    ...(effortLevelExplicit ? { effortLevel } : {}),
     context: buildComposerContext(),
-  }), [buildComposerContext, searchEnabled]);
+  }), [buildComposerContext, effortLevel, effortLevelExplicit, searchEnabled, thinkingEnabled]);
 
   // Register message action store (edit / regenerate)
   const messageActionRegister = useMessageActionStore((s) => s.register);

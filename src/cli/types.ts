@@ -55,6 +55,10 @@ export interface CLIConfig {
   executionIntent?: ConversationExecutionIntent;
   /** Per-turn web search switch. Omitted by legacy callers means enabled. */
   searchEnabled?: boolean;
+  /** Per-turn provider thinking switch. Omitted by legacy callers means enabled. */
+  thinkingEnabled?: boolean;
+  /** Explicit user effort choice; omission keeps complexity-based automatic effort. */
+  effortLevel?: import('../shared/contract/agent').EffortLevel;
   /** /agent 显式选择（preferredAgentId）；web/CLI 独立 run 路径据此换 prompt + 收窄工具。 */
   agentOverride?: ExplicitAgentOverride;
   /** 用户显式请求的 agent id（含解析失败场景）；进 AgentLoop ctx 供 turnQuality 徽标降级判定。 */

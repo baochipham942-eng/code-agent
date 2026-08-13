@@ -141,7 +141,7 @@ export class AgentOrchestrator {
     this.getHomeDir = config.getHomeDir ?? (() => process.cwd());
     this.broadcastDAGEvent = config.broadcastDAGEvent;
     this.runRegistry = config.runRegistry;
-    this.runSettings = new OrchestratorRunSettings(() => this.agentLoop);
+    this.runSettings = new OrchestratorRunSettings();
     this.messageHistory = new OrchestratorMessageHistory(() => this.agentLoop);
     this.permissions = new OrchestratorPermissionIsland({
       getSettings: () => this.configService.getSettings(),
@@ -496,18 +496,6 @@ export class AgentOrchestrator {
     return this.runSettings.isDelegateMode();
   }
 
-  setEffortLevel(level: import('../../shared/contract/agent').EffortLevel): void {
-    this.runSettings.setEffortLevel(level);
-  }
-
-  setThinkingEnabled(enabled: boolean): void {
-    this.runSettings.setThinkingEnabled(enabled);
-  }
-
-  setInteractionMode(mode: import('../../shared/contract/agent').InteractionMode): void {
-    this.runSettings.setInteractionMode(mode);
-  }
-
   pause(): void {
     this.agentLoop?.pause();
     const sessionId = this.sessionId ?? getSessionManager().getCurrentSessionId();
@@ -762,6 +750,22 @@ export class AgentOrchestrator {
     );
     const neoTagFixedModel = options?.neoTag?.modelIntent.mode === 'fixed_model';
     const effectiveModelConfig = resolveTurnModelConfig(modelConfig, routingResolution, neoTagFixedModel);
+    // UI effort previously never reached a real request because this analyzer overwrote every
+    // newly-created loop. Legacy users therefore remain automatic; an explicit envelope value
+    // is the user's per-turn decision and takes priority over automatic complexity selection.
+    const automaticEffort = options?.effortLevel === undefined
+      ? (() => {
+        const complexityAnalysis = taskComplexityAnalyzer.analyze(content);
+        const effortMap: Record<string, EffortLevel> = {
+          simple: 'low',
+          moderate: 'medium',
+          complex: 'high',
+        };
+        const effort = effortMap[complexityAnalysis.complexity] || 'high';
+        logger.info(`[EffortLevel] complexity=${complexityAnalysis.complexity} → effort=${effort}`);
+        return effort;
+      })()
+      : undefined;
 
     if (routingResolution) {
       logger.info('Agent routing resolved', {
@@ -939,6 +943,8 @@ export class AgentOrchestrator {
       toolScope,
       executionIntent,
       searchEnabled: options?.searchEnabled,
+      thinkingEnabled: options?.thinkingEnabled,
+      effortLevel: options?.effortLevel ?? automaticEffort,
       neoTag: options?.neoTag,
       goalContract,
       // 迭代数硬上限（角色主动性醒来等预算受限场景，内部文档 §6）
@@ -972,16 +978,6 @@ export class AgentOrchestrator {
           }, options?.runRegistration, options?.parentRunId)
         : undefined;
       await registeredRun?.attach(this.agentLoop);
-
-    const complexityAnalysis = taskComplexityAnalyzer.analyze(content);
-    const effortMap: Record<string, EffortLevel> = {
-      simple: 'low',
-      moderate: 'medium',
-      complex: 'high',
-    };
-    const effort = effortMap[complexityAnalysis.complexity] || 'high';
-    this.agentLoop.setEffortLevel(effort);
-    logger.info(`[EffortLevel] complexity=${complexityAnalysis.complexity} → effort=${effort}`);
 
       logger.info('========== Starting agent loop ==========');
       // 第二个参数是用户原话：telemetry 的 user_prompt 只能存它，别存拼了

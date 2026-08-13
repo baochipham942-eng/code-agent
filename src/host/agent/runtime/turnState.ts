@@ -47,8 +47,10 @@ export class TurnState {
   private _activeSkillContextBlock?: string;
   private _skillToolBoundary?: SkillToolBoundary;
 
-  constructor(seed?: { searchEnabled?: boolean }) {
+  constructor(seed?: { searchEnabled?: boolean; thinkingEnabled?: boolean; effortLevel?: EffortLevel }) {
     if (seed?.searchEnabled !== undefined) this._searchEnabled = seed.searchEnabled;
+    if (seed?.thinkingEnabled !== undefined) this._thinkingEnabled = seed.thinkingEnabled;
+    if (seed?.effortLevel !== undefined) this._effortLevel = seed.effortLevel;
   }
 
   get currentTurnId(): string { return this._currentTurnId; }
@@ -114,14 +116,6 @@ export class TurnState {
 
   setSimpleTaskMode(value: boolean): void {
     this._isSimpleTaskMode = value;
-  }
-
-  setEffortLevel(level: EffortLevel): void {
-    this._effortLevel = level;
-  }
-
-  setThinkingEnabled(enabled: boolean): void {
-    this._thinkingEnabled = enabled;
   }
 
   resetThinkingSteps(): void {

@@ -16,6 +16,23 @@ import type { ModelConfig } from '../../../src/shared/contract/model';
 const xiaomi = (over: Partial<ModelConfig> = {}): ModelConfig =>
   ({ provider: 'xiaomi', model: 'mimo-v2.5-pro', apiKey: 'k', ...over }) as ModelConfig;
 
+describe('buildVendorCompatSettings — deepseek reasoning_effort（QE-01：默认引擎此前无此映射）', () => {
+  const deepseek = (over: Partial<ModelConfig> = {}): ModelConfig =>
+    ({ provider: 'deepseek', model: 'deepseek-reasoner', apiKey: 'k', ...over }) as ModelConfig;
+
+  it('config.reasoningEffort 存在 → 注入 body.reasoning_effort', () => {
+    const settings = buildVendorCompatSettings(deepseek({ reasoningEffort: 'low' } as Partial<ModelConfig>));
+    expect(settings.transformRequestBody).toBeTypeOf('function');
+    const body = settings.transformRequestBody!({ model: 'deepseek-reasoner', messages: [] });
+    expect(body.reasoning_effort).toBe('low');
+  });
+
+  it('无 reasoningEffort（thinking 关被 applyEffortControls 剥掉后）→ 不注入任何字段', () => {
+    const settings = buildVendorCompatSettings(deepseek());
+    expect(settings.transformRequestBody).toBeUndefined();
+  });
+});
+
 describe('buildVendorCompatSettings — xiaomi/mimo thinking control', () => {
   it('disables thinking by default (no reasoningEffort / no thinkingBudget)', () => {
     const settings = buildVendorCompatSettings(xiaomi());

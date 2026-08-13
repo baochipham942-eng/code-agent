@@ -141,13 +141,16 @@ export function useChatInputEnvelope(params: UseChatInputEnvelopeParams): BuildE
         }
       : context;
 
+    const modeState = useModeStore.getState();
     return {
       content,
       attachments: nextAttachments && nextAttachments.length > 0 ? nextAttachments : undefined,
       // 提交时取现值而非订阅快照：composer 常驻，订阅值会被 useCallback 依赖数组冻住。
       // 这是用户真实提交路径的逐轮联网开关（#1102 只接了 ChatView.buildEnvelope 的
       // 编辑/重发旁路，真机复验抓出主路径漏接）。
-      searchEnabled: useModeStore.getState().searchEnabled,
+      searchEnabled: modeState.searchEnabled,
+      thinkingEnabled: modeState.thinkingEnabled,
+      ...(modeState.effortLevelExplicit ? { effortLevel: modeState.effortLevel } : {}),
       context: runtimeScopedContext,
     };
   }, [

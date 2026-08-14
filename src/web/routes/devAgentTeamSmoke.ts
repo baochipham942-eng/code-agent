@@ -67,6 +67,7 @@ function makeToolResolver(): ToolResolver {
         name,
         description: `E2E dev smoke tool definition for ${name}`,
         inputSchema: { type: 'object', properties: {} },
+        outputSchema: { type: 'string' },
         permissionLevel: 'read',
         requiresPermission: false,
       };

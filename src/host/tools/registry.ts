@@ -28,9 +28,10 @@ export class ToolRegistry implements IToolRegistry {
   private readonly inflight = new Map<string, Promise<ToolHandler>>();
 
   register(schema: ToolSchema, loader: ToolLoader): void {
-    if (schema.outputSchema) {
-      assertSupportedJsonSchema(schema.outputSchema, `${schema.name}.outputSchema`);
+    if (!schema.outputSchema) {
+      throw new Error(`${schema.name}.outputSchema is required`);
     }
+    assertSupportedJsonSchema(schema.outputSchema, `${schema.name}.outputSchema`);
     if (this.schemas.has(schema.name)) {
       // 幂等：同名重复注册覆盖（热重载/测试）
       this.schemas.set(schema.name, schema);

@@ -413,6 +413,7 @@ describe('ToolExecutor per-run workspace isolation', () => {
     const schema: ToolSchema = {
       name: toolName,
       description: 'Emit a small base64 image for run context verification',
+      outputSchema: { type: 'string' },
       inputSchema: { type: 'object', properties: {} },
       category: 'vision',
       permissionLevel: 'read',
@@ -479,6 +480,7 @@ describe('ToolExecutor per-run workspace isolation', () => {
     const schema: ToolSchema = {
       name: toolName,
       description: 'Observe Native Run and Agent Team identities',
+      outputSchema: { type: 'string' },
       inputSchema: { type: 'object', properties: {} },
       category: 'fs',
       permissionLevel: 'read',

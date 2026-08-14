@@ -21,6 +21,7 @@ const {
 const tool = (name: string): ToolDefinition => ({
   name,
   description: name,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {},

@@ -59,6 +59,7 @@ function setMockTool(overrides: Partial<ToolDefinition> = {}): ToolDefinition {
   const def: ToolDefinition = {
     name: 'test_tool',
     description: 'A test tool',
+    outputSchema: { type: 'string' },
     inputSchema: { type: 'object', properties: {} },
     requiresPermission: false,
     permissionLevel: 'read',

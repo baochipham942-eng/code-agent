@@ -370,6 +370,7 @@ Parameters:
 - path (required): Directory path to index
 - pattern (optional): Glob pattern for files (default: **/*.{ts,tsx,js,jsx,py,go,rs})
 - maxFiles (optional): Maximum files to index (default: 500)`,
+        outputSchema: { type: 'string' },
         inputSchema: {
           type: 'object',
           properties: {
@@ -465,6 +466,7 @@ Parameters:
 Parameters:
 - query (required): Search query
 - limit (optional): Maximum results (default: 5)`,
+        outputSchema: { type: 'string' },
         inputSchema: {
           type: 'object',
           properties: {
@@ -516,6 +518,7 @@ Parameters:
 Parameters:
 - name (required): Symbol name to find
 - kind (optional): Filter by symbol kind (function, class, interface, type)`,
+        outputSchema: { type: 'string' },
         inputSchema: {
           type: 'object',
           properties: {
@@ -568,6 +571,7 @@ Parameters:
 Parameters:
 - name (required): Symbol name to find references for
 - limit (optional): Maximum files to search (default: 50)`,
+        outputSchema: { type: 'string' },
         inputSchema: {
           type: 'object',
           properties: {
@@ -624,6 +628,7 @@ Parameters:
       definition: {
         name: 'index_status',
         description: 'Get the current status of the code index.',
+        outputSchema: { type: 'string' },
         inputSchema: { type: 'object', properties: {} },
         requiresPermission: false,
         permissionLevel: 'read',

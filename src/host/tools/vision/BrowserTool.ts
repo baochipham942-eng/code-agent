@@ -121,6 +121,7 @@ Routing contract:
 - prompt: Custom prompt for AI analysis (Playwright)`,
   requiresPermission: true,
   permissionLevel: 'execute', // highest among sub-tools: execute > write
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

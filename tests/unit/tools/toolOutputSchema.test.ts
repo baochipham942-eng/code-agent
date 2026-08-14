@@ -7,7 +7,7 @@ const loader = (async () => {
   throw new Error('loader should remain lazy');
 }) as ToolLoader;
 
-function schema(outputSchema?: ToolSchema['outputSchema']): ToolSchema {
+function schema(outputSchema: ToolSchema['outputSchema']): ToolSchema {
   return {
     name: 'test_tool',
     description: 'test',
@@ -46,8 +46,11 @@ describe('tool output schema registration', () => {
     expect(registry.has('test_tool')).toBe(false);
   });
 
-  it('temporarily accepts a missing schema while coverage is being filled', () => {
+  it('fails loud when an untyped runtime caller omits outputSchema', () => {
     const registry = new ToolRegistry();
-    expect(() => registry.register(schema(), loader)).not.toThrow();
+    const missing = schema({ type: 'string' }) as unknown as Record<string, unknown>;
+    delete missing.outputSchema;
+    expect(() => registry.register(missing as unknown as ToolSchema, loader))
+      .toThrow('test_tool.outputSchema is required');
   });
 });

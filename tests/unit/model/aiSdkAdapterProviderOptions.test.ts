@@ -388,6 +388,7 @@ describe('inferenceViaAiSdk provider options', () => {
         properties: { path: { type: 'string' } },
         required: ['path'],
       },
+      outputSchema: { type: 'string' },
       requiresPermission: false,
       permissionLevel: 'read',
     };

@@ -11,6 +11,7 @@ function makeTool(name: string): ToolDefinition {
   return {
     name,
     description: `${name} description`,
+    outputSchema: { type: 'string' },
     inputSchema: { type: 'object', properties: {} },
     requiresPermission: false,
     permissionLevel: 'read',

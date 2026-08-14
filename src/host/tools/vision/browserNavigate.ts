@@ -67,6 +67,7 @@ Parameters:
 - browser: Specific browser to use (optional, default: system default)`,
   requiresPermission: true,
   permissionLevel: 'write',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

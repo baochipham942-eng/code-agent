@@ -97,6 +97,7 @@ If a tool result includes metadata.foregroundFallbackWarning, your last keystrok
 IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launched browser. locate_role with targetApp is the only smart action that works on desktop apps (returns axPath via macOS Accessibility — feed it back to click/type with the same targetApp).`,
   requiresPermission: true,
   permissionLevel: 'execute', // highest among sub-tools: execute > write
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

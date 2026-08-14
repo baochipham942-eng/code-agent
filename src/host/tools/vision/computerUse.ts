@@ -214,6 +214,7 @@ If a tool result includes metadata.foregroundFallbackWarning, it means your last
 IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launched browser via browser_action. locate_role with targetApp is the only smart action that works on desktop apps (returns axPath via macOS Accessibility).`,
   requiresPermission: true,
   permissionLevel: 'execute',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

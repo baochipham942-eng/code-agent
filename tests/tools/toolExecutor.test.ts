@@ -70,6 +70,7 @@ function setMockTool(overrides: Partial<ToolDefinition> = {}): ToolDefinition {
     name: 'test_tool',
     description: 'A test tool',
     inputSchema: { type: 'object', properties: {} },
+    outputSchema: { type: 'string' },
     requiresPermission: false,
     permissionLevel: 'read',
     ...overrides,

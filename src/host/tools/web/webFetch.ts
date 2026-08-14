@@ -130,6 +130,7 @@ Notes:
 - This tool is read-only and does not modify any files.`,
   requiresPermission: true,
   permissionLevel: 'network',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

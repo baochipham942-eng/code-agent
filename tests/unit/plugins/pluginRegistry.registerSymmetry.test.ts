@@ -40,6 +40,7 @@ function makeTool(name: string): Tool {
   return {
     name,
     description: 'test tool',
+    outputSchema: { type: 'string' as const },
     inputSchema: { type: 'object', properties: {} },
     requiresPermission: false,
     permissionLevel: 'read',
@@ -51,6 +52,7 @@ function makeToolModule(name: string): ToolModule {
   const schema = {
     name,
     description: 'test module',
+    outputSchema: { type: 'string' as const },
     inputSchema: { type: 'object' as const, properties: {} },
     category: 'fs' as const,
     permissionLevel: 'read' as const,

@@ -57,6 +57,7 @@ export async function main() {
     {
       name: 'get_weather',
       description: 'Get current weather for a city',
+      outputSchema: { type: 'string' },
       inputSchema: {
         type: 'object',
         properties: { city: { type: 'string' } },

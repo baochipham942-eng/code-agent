@@ -21,6 +21,3 @@ The tool schemas available in the current turn are the authoritative capability 
 - For 2+ files or 3+ steps, list a numbered plan in your response — system auto-tracks it
 `,
 );
-
-// Orchestrator Mode prompt (for swarm scenarios)
-export { getOrchestratorPrompt, getOrchestratorPromptCompact } from './orchestrator';

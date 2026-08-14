@@ -71,7 +71,11 @@ describe('常驻层体量', () => {
   it('每轮必带，不许无节制膨胀', () => {
     // 改前实测 2690（identity 2241 + tools 449）。泛化必然带来一点净增，
     // 但这是每轮都付的钱（有前缀缓存兜底），给一个会响的上限而不是随它涨。
+    // 3000 → 3100（2026-08-14，L8 N-L8-GHOSTRULES，实测 3060）：constitution/ 六块
+    // 从来没下发过，删除时把其中两条真缺的搬进常驻层——硬拒清单（武器/CSAM/欺诈/冒充）
+    // 与「确认由权限层负责，别用文字空等代替工具调用」。净增 ~120，换的是安全红线
+    // 和一类真实存在的「光说不做」行为缺陷，不接受再用它顶别的膨胀。
     const total = estimateTokens(IDENTITY_PROMPT) + estimateTokens(TOOLS_PROMPT);
-    expect(total).toBeLessThanOrEqual(3000);
+    expect(total).toBeLessThanOrEqual(3100);
   });
 });

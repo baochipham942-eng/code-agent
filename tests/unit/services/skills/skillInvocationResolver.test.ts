@@ -268,6 +268,45 @@ describe('skillInvocationResolver', () => {
     );
   });
 
+  // N-L8-ATT10 回归护栏：真机语音派活说「读取…」时命中了用户级 skill lark-markdown，
+  // 整份 SKILL.md（1226 token）以 <required-skill-invocation match="alias"> 进系统提示，
+  // 每轮都付且正文要求改用 lark-cli（指令跑偏）。根因是「当用户需要 X」这种场景描述句式
+  // 被当成触发词表解析，X 是日常动作动词而不是用户会打出来的名字。
+  it('场景描述句式（当用户需要…）里的日常动词不再当触发别名', () => {
+    const larkMarkdown = skill({
+      name: 'lark-markdown',
+      description:
+        '飞书 Markdown：查看、创建、上传、编辑和比较 Markdown 文件。当用户需要创建或编辑 Markdown 文件、'
+        + '读取、修改、局部 patch 或比较差异时使用。不负责将 Markdown 导入为飞书在线文档。',
+    });
+
+    const aliases = getSkillInvocationAliases(larkMarkdown).map((alias) => alias.value);
+    expect(aliases).not.toContain('读取');
+    expect(aliases).not.toContain('修改');
+
+    expect(resolveSkillInvocationFromSkills('读取一下这份会议纪要，帮我总结要点', [larkMarkdown])).toBeNull();
+    expect(resolveSkillInvocationFromSkills('读取', [larkMarkdown])).toBeNull();
+
+    // 显式调用不受影响
+    expect(resolveSkillInvocationFromSkills('/lark-markdown 上传这份文件', [larkMarkdown])?.skill.name)
+      .toBe('lark-markdown');
+  });
+
+  // 同上一条的正例：「当用户提到 X」声明的是用户会原话说出来的名字，必须继续命中。
+  it('原话句式（当用户提到/说…）里的名字仍然是触发别名', () => {
+    const lobster = skill({
+      name: 'lobster',
+      description: '龙虾(OpenClaw VPS)：当用户提到龙虾、lobster、VPS、OpenClaw 时使用。',
+    });
+    const shipSkill = skill({
+      name: 'ship',
+      description: '任务收口一条龙。当用户说"收口"、"合并上线"、"落地这批改动"时触发。',
+    });
+
+    expect(resolveSkillInvocationFromSkills('将我的龙虾升级到最新版本', [lobster])?.skill.name).toBe('lobster');
+    expect(resolveSkillInvocationFromSkills('这批改动收口一下', [shipSkill])?.skill.name).toBe('ship');
+  });
+
   it('does not bind ambiguous aliases to an arbitrary skill', () => {
     const first = skill({ name: 'first-tool', description: '用于共享入口。', aliases: ['共享'] });
     const second = skill({ name: 'second-tool', description: '用于共享入口。', aliases: ['共享'] });

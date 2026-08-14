@@ -3812,56 +3812,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "getOrchestratorPrompt",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "getOrchestratorPromptCompact",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "ORCHESTRATOR_AGENT_DISPATCH",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "ORCHESTRATOR_COMMUNICATION",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "ORCHESTRATOR_IDENTITY",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "ORCHESTRATOR_TEAMMATE_USAGE",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "ORCHESTRATOR_TOOL_OWNERSHIP",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "ORCHESTRATOR_WORKFLOW",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/tools.ts",
-      "name": "getOrchestratorPrompt",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/tools.ts",
-      "name": "getOrchestratorPromptCompact",
-      "kind": "export"
-    },
-    {
       "file": "src/host/prompts/builder.ts",
       "name": "AgentMode",
       "kind": "type"
@@ -3959,36 +3909,6 @@
     {
       "file": "src/host/prompts/builder.ts",
       "name": "WEB_SOURCE_OUTPUT_RULE",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/constitution/ethics.ts",
-      "name": "ETHICS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/constitution/hardConstraints.ts",
-      "name": "HARD_CONSTRAINTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/constitution/judgment.ts",
-      "name": "JUDGMENT",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/constitution/safety.ts",
-      "name": "SAFETY",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/constitution/soul.ts",
-      "name": "SOUL",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/constitution/values.ts",
-      "name": "VALUES",
       "kind": "export"
     },
     {
@@ -4139,16 +4059,6 @@
     {
       "file": "src/host/prompts/remoteFragments.ts",
       "name": "TRUSTED_REMOTE_PROMPT_FRAGMENT_IDS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/htmlGeneration.ts",
-      "name": "HTML_GENERATION_RULES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/outputFormat.ts",
-      "name": "OUTPUT_FORMAT_RULES",
       "kind": "export"
     },
     {

@@ -16,12 +16,13 @@ const noticedSessions = new Set<string>();
 export function buildCapabilityCandidateNotice(sessionId?: string | null): string | null {
   if (!sessionId || noticedSessions.has(sessionId)) return null;
 
-  let top: ReturnType<typeof listCandidates> = [];
+  let top: ReturnType<typeof listCandidates>;
   try {
     top = listCandidates(Date.now())
       .filter((candidate) => candidate.aboveFold)
       .slice(0, CAPABILITY_CANDIDATES.AGENT_NOTICE_MAX_ENTRIES);
   } catch {
+    // 账本读不出来就当没有——注入是锦上添花，绝不能拖垮一轮对话
     return null;
   }
   // 没有够格的候选就一个字都不注入——空标签也是要付 token 的

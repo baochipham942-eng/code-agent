@@ -15,11 +15,9 @@
 import { CAPABILITY_CANDIDATES } from '../../../shared/constants';
 import type {
   CapabilityCandidateRecord,
-  CapabilityCandidateTier,
-  CapabilityCandidateTierTests,
   CapabilityCandidateView,
 } from '../../../shared/contract/capabilityCandidate';
-import type { ComboStep, ComboTurn } from './comboRecorder';
+import type { ComboStep } from './comboRecorder';
 import { getCapabilityCandidateStore } from './capabilityCandidateStore';
 import {
   clusterKeyOf,
@@ -33,7 +31,6 @@ import {
   sequenceShapeOf,
   tierOf,
 } from './capabilityGapScoring';
-
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('CapabilityGapDetector');

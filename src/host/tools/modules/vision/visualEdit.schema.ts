@@ -13,6 +13,32 @@ export const visualEditSchema: ToolSchema = {
     '- LLM returns strict JSON {old_text, new_text, summary} describing minimal replacement\n' +
     '- Validates old_text uniquely matches file content, then atomic writes the change\n\n' +
     'Permission: write. User sees intent + file + diff preview before applying.',
+  outputSchema: {
+    type: 'object',
+    properties: {
+      absolutePath: { type: 'string' },
+      line: { type: 'number' },
+      column: { type: 'number' },
+      applied: { type: 'boolean' },
+      summary: { type: 'string' },
+      oldText: { type: 'string' },
+      newText: { type: 'string' },
+      bytesDelta: { type: 'number' },
+      visionModel: { type: 'string' },
+    },
+    required: [
+      'absolutePath',
+      'line',
+      'column',
+      'applied',
+      'summary',
+      'oldText',
+      'newText',
+      'bytesDelta',
+      'visionModel',
+    ],
+    additionalProperties: false,
+  },
   inputSchema: {
     type: 'object',
     properties: {

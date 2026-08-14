@@ -52,7 +52,10 @@ export const BASELINE_PATH = resolve(scriptDir, BASELINE_FILE);
 
 // 锚点：已知必然生产不可达的文件。它若从结果里消失而文件还在，说明本门的口径已经失效
 // （配置写错 / entry 被误改 / knip 报告格式变了），必须报红而不是"零命中=通过"地假绿。
-export const ANCHOR = 'src/host/app/lifecycle.ts';
+// 🔴 删除锚点文件时**必须同时改这一行**：下面的检查带 existsSync 守卫，锚点文件一旦不在，
+// 检查会被整条跳过，本门就静默失去了自证能力（2026-08-14 N-DSH-STOP2 删 app/lifecycle.ts
+// 时亲历：ratchet 照样打 ✓，只有 knipProductionRatchet 单测把它抓了出来）。
+export const ANCHOR = 'src/host/errors/recoveryEngine.ts';
 // 第二锚点只有测试消费者，专门防 Vitest/Playwright 或未来插件把测试重新注入 strict 入口。
 export const TEST_ONLY_ANCHOR = 'src/host/app/desktopQueuedInputDrain.ts';
 

@@ -36,6 +36,8 @@ export const voiceZh: VoiceTranslations = {
       estimatedCost: '预估 {cost}',
       costUnavailable: '预估 —',
       costLimitReached: '本次通话预估成本已到上限（{cost}）',
+      /** 通话录音进行中的持续可见指示（N-L7-REC）。 */
+      recordCallsIndicator: '录音中',
     },
     status: {
       connecting: '正在接通…',
@@ -273,6 +275,20 @@ export const voiceZh: VoiceTranslations = {
       voiceprintCleared: '已清除。所有声纹数据已从本机删除。',
       // 四要点缺一不可：①隔离存储 ②如实承认准确率上限（行业惯例文案）③删除时限给具体数字 ④非生物识别替代路径
       voiceprintPrivacyBody: '声纹只以数学特征向量的形式保存在这台设备上，与你的账号身份信息隔离存储；不上传云端、不进入问题诊断包。我们无法完全保证声纹识别的准确性，因此它只用于个性化与区分说话人，绝不用于解锁、授权等任何身份验证。连续 90 天未匹配的声纹会自动删除，你也可以随时在这里清除。未注册或清除后，全部核心功能不受影响，只是失去跨通话的个性化上下文。',
+      // ── 通话录音（N-L7-REC）。知情文案要把「录什么/存哪/留多久/怎么删」四件事说全，
+      //    不能只写一句「开启录音诊断」（工单 §4）。 ──
+      recordCallsTitle: '通话录音（诊断用）',
+      recordCallsDescription: '语音出问题时（听不见我、乱打断、没声音），录一通给工程侧，比描述症状有用得多。默认关闭。',
+      recordCallsToggleLabel: '启用通话录音',
+      recordCallsInformedBody: '开启后，从下一通电话开始，你的麦克风音频和助手的播报音频会各存一个文件到本机数据目录的录音文件夹里，不会自动上传到任何地方。录音保留 7 天、总量最多 500MB、最多留 10 通，任一超限就自动清掉最旧的那通，每次清理都记在下面。只有你在导出诊断包时显式勾选，录音才会随包出去；你也可以随时打开文件夹自己删。',
+      recordCallsStatus: '本机已有 {count} 段录音，共 {size}。',
+      recordCallsEmpty: '本机还没有录音。',
+      recordCallsOpenFolder: '打开录音文件夹',
+      recordCallsLastCleanup: '最近清理：{time} 删除 {count} 段，释放 {size}（触发：{rule}）。',
+      recordCallsNeverCleaned: '还没有发生过自动清理。',
+      recordCallsRuleAge: '保留期上限',
+      recordCallsRuleCount: '条数上限',
+      recordCallsRuleBytes: '体积上限',
     },
     expert: {
       with_name: '与 {name} 通话',
@@ -332,6 +348,7 @@ export const voiceEn = {
       estimatedCost: 'Est. {cost}',
       costUnavailable: 'Est. —',
       costLimitReached: 'This call reached its estimated cost limit ({cost})',
+      recordCallsIndicator: 'Recording',
     },
     status: {
       connecting: 'Connecting…',
@@ -567,6 +584,18 @@ export const voiceEn = {
       voiceprintClearConfirm: 'Clearing permanently deletes the voiceprint data on this device and cannot be undone. Neo will no longer recognize you across calls. Continue?',
       voiceprintCleared: 'Cleared. All voiceprint data has been deleted from this device.',
       voiceprintPrivacyBody: 'Your voiceprint is stored on this device only, as a mathematical feature vector, isolated from your account identity. It is never uploaded and never included in diagnostic bundles. We cannot fully guarantee recognition accuracy, so it is used only for personalization and speaker disambiguation — never for unlocking or authorization. Voiceprints unmatched for 90 consecutive days are deleted automatically, and you can clear them here at any time. Without enrollment, all core features work normally; you only lose cross-call personalization.',
+      recordCallsTitle: 'Call recording (for diagnostics)',
+      recordCallsDescription: 'When voice misbehaves (it cannot hear you, it interrupts, there is no sound), one recording tells engineering far more than a description. Off by default.',
+      recordCallsToggleLabel: 'Enable call recording',
+      recordCallsInformedBody: 'Once enabled, starting with your next call, your microphone audio and the assistant playback audio are each written to a file in the recordings folder inside this app\'s local data directory. Nothing is uploaded anywhere automatically. Recordings are kept for 7 days, up to 500MB total and at most 10 calls; whenever a limit is exceeded the oldest call is removed and every cleanup is logged below. Recordings leave your machine only if you explicitly tick them when exporting a diagnostics bundle — and you can always open the folder and delete them yourself.',
+      recordCallsStatus: '{count} recordings on this machine, {size} total.',
+      recordCallsEmpty: 'No recordings on this machine yet.',
+      recordCallsOpenFolder: 'Open recordings folder',
+      recordCallsLastCleanup: 'Last cleanup: {time} removed {count} recordings, freed {size} (triggered by: {rule}).',
+      recordCallsNeverCleaned: 'No automatic cleanup has happened yet.',
+      recordCallsRuleAge: 'retention limit',
+      recordCallsRuleCount: 'call count limit',
+      recordCallsRuleBytes: 'size limit',
     },
     expert: {
       with_name: 'On a call with {name}',

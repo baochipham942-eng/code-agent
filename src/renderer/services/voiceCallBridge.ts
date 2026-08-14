@@ -889,6 +889,10 @@ class VoiceCallBridge {
 
   private handleEvent(event: VoiceEvent, sessionId: string): void {
     switch (event.type) {
+      // 录音指示（N-L7-REC）：host 说了算——开关开着但录音目录没建起来时不能亮。
+      case 'recording':
+        this.store().recordingChanged(event.active);
+        break;
       case 'state':
         if (event.state === 'live') {
           this.hasGoneLive = true;

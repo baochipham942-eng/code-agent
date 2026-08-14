@@ -481,3 +481,30 @@ export const VOICE_STREAM_WS_PATH = '/api/voice/stream';
 
 /** Renderer→Host Dictation 流式识别 WS 路径。 */
 export const DICTATION_STREAM_WS_PATH = '/api/voice/dictation';
+
+// ── 通话录音诊断能力（N-L7-REC）。默认关；开启后上行/下行两路 PCM 落盘为 WAV。 ──
+
+/** 录音根目录（数据目录下）。一通电话一个子目录，便于按「条」整体计数与删除。 */
+export const VOICE_RECORDING_DIR_NAME = 'voice-recordings';
+
+/** 一通电话目录里的两路文件名与元信息文件名。 */
+export const VOICE_RECORDING_UPSTREAM_FILE = 'upstream.wav';
+export const VOICE_RECORDING_DOWNSTREAM_FILE = 'downstream.wav';
+export const VOICE_RECORDING_META_FILE = 'meta.json';
+
+/** 清理台账文件名（录音根目录下）。清理不静默：删了什么、为什么删，这里能查到。 */
+export const VOICE_RECORDING_CLEANUP_LEDGER_FILE = 'cleanup-ledger.json';
+
+/** 台账保留的清理批次条数。 */
+export const VOICE_RECORDING_CLEANUP_LEDGER_LIMIT = 20;
+
+/**
+ * 三重上限，三条互相独立、各自单独能触发清理。
+ *
+ * 数值按音频体积重定，**不照抄** transcript 的 14 天 / 500MB / 100 条——
+ * 上行 16k×2B = 32KB/s、下行 24k×2B = 48KB/s，合计 80KB/s；
+ * VOICE_SESSION_MAX_DURATION_MS 硬顶 10 分钟 ⇒ 单通最坏 ≈ 48MB。
+ */
+export const VOICE_RECORDING_RETENTION_DAYS = 7;
+export const VOICE_RECORDING_MAX_BYTES = 500 * 1024 * 1024;
+export const VOICE_RECORDING_MAX_CALLS = 10;

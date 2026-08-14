@@ -20,6 +20,7 @@ import os from 'os';
 import path from 'path';
 import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
+import { VOICE_RECORDING_DIR_NAME } from '../../shared/constants/voice';
 import { getAppVersion, getLogsPath, getUserDataPath } from '../platform/appPaths';
 import { gatherEnvFingerprint } from '../telemetry/diagnosticBundleService';
 import {
@@ -62,6 +63,8 @@ interface AppDiagnosticsManifest {
     environment: boolean;
     rendererCacheManifest: boolean;
     doctorReport: boolean;
+    /** 通话录音（N-L7-REC）：只有导出时显式勾选才为 true，绝不因「录了」就默认进包。 */
+    voiceRecordings: boolean;
   };
   files: AppDiagnosticsFileEntry[];
 }
@@ -84,6 +87,13 @@ export interface BuildAppDiagnosticsBundleOptions {
   workingDirectory?: string;
   /** renderer 侧已有的 Doctor 报告（避免再跑一次体检），原样脱敏后随包带上。 */
   doctorReport?: unknown;
+  /**
+   * 通话录音是否随包导出（N-L7-REC）。**默认 false**：录音是敏感度最高的一档数据，
+   * 必须是导出时的显式勾选，不能因为「录了」就默认进包（工单 §4）。
+   */
+  includeVoiceRecordings?: boolean;
+  /** 录音根目录，默认 <userData>/voice-recordings。 */
+  voiceRecordingDir?: string;
 }
 
 export interface AppDiagnosticsBundleResult {
@@ -145,6 +155,17 @@ function walkDirManifest(dir: string, base: string = dir): RendererCacheManifest
     }
   }
   return output;
+}
+
+/** 目录下的一级子目录名；目录不存在时静默返回空。 */
+function listSubdirectories(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
 }
 
 function readTextFile(filePath: string): string | null {
@@ -232,7 +253,24 @@ export async function buildAppDiagnosticsBundle(
   const rendererCacheManifest = walkDirManifest(rendererCacheDir);
   addText('renderer-cache-manifest.json', json(rendererCacheManifest));
 
-  // 7. 可选：renderer 侧已有的 Doctor 报告
+  // 7. 可选：通话录音（默认不进包，只有显式勾选才拷；音频是二进制，不走文本脱敏）
+  let voiceRecordingFiles = 0;
+  if (options.includeVoiceRecordings === true) {
+    const recordingRoot = options.voiceRecordingDir
+      ?? path.join(getUserDataPath(), VOICE_RECORDING_DIR_NAME);
+    for (const entry of listSubdirectories(recordingRoot)) {
+      for (const file of listRecentFiles(path.join(recordingRoot, entry), 0)) {
+        try {
+          files.set(`voice-recordings/${entry}/${path.basename(file)}`, fs.readFileSync(file));
+          voiceRecordingFiles += 1;
+        } catch {
+          // 单个录音读不出不阻塞整包导出
+        }
+      }
+    }
+  }
+
+  // 8. 可选：renderer 侧已有的 Doctor 报告
   const hasDoctorReport = options.doctorReport !== undefined && options.doctorReport !== null;
   if (hasDoctorReport) {
     addText('doctor-report.json', json(sanitizePackageValue(options.doctorReport, 'shareable', homeDir)));
@@ -250,9 +288,15 @@ export async function buildAppDiagnosticsBundle(
     'environment.json        操作系统/Node/应用版本/git 状态指纹',
     'renderer-cache-manifest.json  renderer 热更新缓存目录清单（仅元数据，不含内容）',
     hasDoctorReport ? 'doctor-report.json      导出时的体检报告' : null,
+    voiceRecordingFiles > 0
+      ? 'voice-recordings/       通话录音（你在导出时显式勾选的；含麦克风与助手播报原始音频）'
+      : null,
     '',
     '本包内容已脱敏（home 目录替换为 ~，密钥形态字符串与敏感字段值已抹除），仍可能包含',
     '项目路径、命令历史等信息，请仅发送给可信的开发/支持人员。',
+    voiceRecordingFiles > 0
+      ? '⚠️ 本包含通话录音原始音频，无法脱敏。发送前请确认接收方可信。'
+      : null,
   ].filter((line): line is string => line !== null).join('\n'));
 
   const manifest: AppDiagnosticsManifest = {
@@ -269,6 +313,7 @@ export async function buildAppDiagnosticsBundle(
       environment: true,
       rendererCacheManifest: true,
       doctorReport: hasDoctorReport,
+      voiceRecordings: voiceRecordingFiles > 0,
     },
     files: [...files.entries()].map(([name, content]) => ({
       path: name,

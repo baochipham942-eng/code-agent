@@ -3,6 +3,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc
 import type { RendererVoiceFailureReport, VoiceUserTextInjectionResult } from '../../shared/contract/voice';
 import { persistVoiceCallFailure } from '../services/voice/voiceFailurePersistence';
 import { injectVoiceUserText } from '../services/voice/voiceSessionService';
+import { getVoiceRecordingOverview } from '../services/voice/voiceRecordingRetention';
 import {
   clearVoiceprintData,
   getVoiceprintOverview,
@@ -45,6 +46,10 @@ export function registerVoiceHandlers(ipcMain: IpcMain): void {
     }
     if (request.action === 'voiceprintClear') {
       return { success: true, data: clearVoiceprintData() };
+    }
+    // 通话录音（N-L7-REC）：只回计数/路径/上次清理，绝不在响应里携带任何音频。
+    if (request.action === 'recordingOverview') {
+      return { success: true, data: await getVoiceRecordingOverview() };
     }
     if (request.action === 'voiceprintPrepareModel') {
       try {

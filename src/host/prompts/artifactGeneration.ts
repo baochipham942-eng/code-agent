@@ -50,6 +50,7 @@ Writing rules:
 - If the target path is explicit, write that file in the first tool-writing turn. File tools create parent directories.
 - Do not spend a separate shell/tool turn on mkdir for the target directory; Write/Append create parent directories.
 - A complete medium single-file artifact may use one Write call.
+- HTML deliverables — pages, dashboards, games, web apps — ship as ONE self-contained file: styles in a \`<style>\` tag, script in a \`<script>\` tag, no separate .css/.js/package.json and no build step. It must run by opening the file in a browser. Style it deliberately with modern responsive CSS; browser defaults are not a design.
 - Use chunked assembly: Write the initial skeleton or first chunk, then Append ordered chunks, and set \`final: true\` only on the last Append.
 - If an Append closes or completes the deliverable, that same call is final.
 - Keep chunks coherent: metadata/bootstrap, markup, styles, data, logic, validation helpers, closing tags.

@@ -21,6 +21,7 @@ const AGENT_ENGINE_LABELS: Record<ExternalAgentEngineKind, string> = {
   kimi_code: 'Kimi',
   codebuddy_code: 'WorkBuddy',
   grok_cli: 'Grok',
+  dsh_cli: 'dsh',
 };
 
 function formatCatalogDate(value?: string, locale: string = localeForLanguage('zh')): string {

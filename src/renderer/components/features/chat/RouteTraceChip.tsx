@@ -109,6 +109,7 @@ const ENGINE_KIND_LABELS: Record<ModelExternalEngineSnapshot['kind'], string> = 
   kimi_code: 'Kimi Code',
   codebuddy_code: 'WorkBuddy',
   grok_cli: 'Grok Build',
+  dsh_cli: 'DeepSeek Harness',
 };
 
 const ENGINE_INSTALL_LABELS: Record<ModelExternalEngineSnapshot['installState'], string> = {
@@ -166,6 +167,7 @@ const ENGINE_TOOL_LABELS: Record<NonNullable<ModelExternalEngineSnapshot['reliab
 const ENGINE_TRANSCRIPT_LABELS: Record<NonNullable<ModelExternalEngineSnapshot['reliability']>['transcriptMode'], string> = {
   clean_stream_json: '干净 stream-json transcript',
   raw_terminal: '原始终端 transcript',
+  final_text: '仅最终回答 transcript',
   session_import: '历史导入 transcript',
   unknown: 'transcript 未知',
 };

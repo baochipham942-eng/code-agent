@@ -1,6 +1,6 @@
 # 系统提示注入全景表
 
-更新：2026-08-14。盘点范围是 `src/host` 中实际把内容送入模型上下文的运行时注入：`injectSystemMessage(...)` 的直接调用，以及虽不经过该函数、但会在轮首拼入模型消息的 `live_voice_permission_notice`。`rg -l 'injectSystemMessage|system_reminder' src/host` 当前命中 20 个文件；其中 `contextAssembly.ts` 是门面定义，5 处是回调转发（nudge/artifact 系 4 处的实际内容已按被调方列行；swarm 引导转发的内容独有，单列一行），故表中是 **98 个实际注入点**（96 个 direct call + 1 个轮首拼接 + 1 个经转发的 swarm 引导）。
+更新：2026-08-14。盘点范围是 `src/host` 中实际把内容送入模型上下文的运行时注入：`injectSystemMessage(...)` 的直接调用，以及虽不经过该函数、但会在轮首拼入模型消息的 `live_voice_permission_notice`。`rg -l 'injectSystemMessage|system_reminder' src/host` 当前命中 20 个文件；其中 `contextAssembly.ts` 是门面定义，5 处是回调转发（nudge/artifact 系 4 处的实际内容已按被调方列行；swarm 引导转发的内容独有，单列一行），故表中是 **99 个实际注入点**（97 个 direct call + 1 个轮首拼接 + 1 个经转发的 swarm 引导）。
 
 口径：token 取静态文案字符数 ÷ 3 并四舍五入；标签和固定标点计入，文件名、错误文本、schema、hook 返回、模型回复、用户内容等动态载荷不计入，标为“+动态”。“全模型”表示本仓没有 provider/model 分支；仍受对应功能、模式、Hook 或工具事件开关约束。`injectSystemMessage` 追加的是运行时 system message，Provider 会在适配边界转成 transient `<system-reminder>`；它不是静态系统提示的重复定义。
 
@@ -48,6 +48,7 @@
 | 注入点（文件:行号 + tag）                                                                                      | 内容摘要                                | 触发条件                                 | 频次     |              token 估算 | 三问判断                                                                           |
 | -------------------------------------------------------------------------------------------------------------- | --------------------------------------- | ---------------------------------------- | -------- | ----------------------: | ---------------------------------------------------------------------------------- |
 | `src/host/agent/nudgeManager.ts:282 （nudge payload）`                                                         | 只读停滞后的下一步提醒                  | 检出 read-only stop pattern 且未超上限   | 条件触发 |                    动态 | 前提：检测器返回 nudge 才进入；降频：有最大次数；模型：全模型。                    |
+| `src/host/agent/nudgeManager.ts:319 <task-tracking-hint>`                                                      | 长活一个任务都没建时提醒建任务          | 七闸全中：非简单模式 + 本 run 未用过 TaskManager + 未进强制完成 + iterations≥6 + todos 空 + 未完成任务空 + 本 run 未提醒过 | 条件触发·**整个 run 至多 1 次** | ~167（静态文案） | 前提：P2 收口检查的反向半边（P2 要求已建过任务）；降频：`maxTaskStartNudges=1` + `TASK_START_NUDGE_MIN_ITERATIONS=6`；模型：全模型。**一次性注入，不进每轮固定开销**。 |
 | `src/host/agent/nudgeManager.ts:320 <task-completion-check>`                                                   | 未完成 Todo/Task 时禁止收尾             | 非简单任务、任务管理显式使用且有未完成项 | 条件触发 |         ~180 + 动态列表 | 前提：已防 stale planning item 劫持；降频：有 reentry cap；模型：全模型。          |
 | `src/host/agent/nudgeManager.ts:359 <file-completion-check>`                                                   | 已点名文件未改时要求补改                | 任务目标文件缺少修改                     | 条件触发 |         ~125 + 动态文件 | 前提：以 modifiedFiles/targetFiles 对照；降频：有 maxFileNudges；模型：全模型。    |
 | `src/host/agent/nudgeManager.ts:391 <goal-completion-check>`                                                   | 目标未完成且未写入时阻止提前结束        | GoalTracker 未完成、无写动作、迭代大于 1 | 条件触发 |          ~70 + 动态目标 | 前提：对有写入预期的 goal 成立；降频：有 maxGoalVerifications；模型：全模型。      |

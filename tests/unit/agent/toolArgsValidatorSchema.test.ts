@@ -66,6 +66,13 @@ describe('validateToolArgs — schema section unchanged (regression)', () => {
 // 这两个 describe 用**真实生产 schema**（不是合成 schema）钉住修复覆盖到两个不同工具，
 // 证明改的是 validateToolArgs 里那一条共用谓词，不是 Write 的个案 patch。
 describe('validateToolArgs — empty string is a valid required value, not "missing" (regression for the 2026-07-26 Write bug)', () => {
+  it('Bash description 是可选的用户视角叙事参数', () => {
+    const description = bashSchema.inputSchema.properties?.description as { description?: string };
+    expect(bashSchema.inputSchema.required).not.toContain('description');
+    expect(description.description).toContain('user-facing verb phrase');
+    expect(description.description).toContain('same language as the conversation');
+  });
+
   it('Write: content: "" passes validation (真实生产 schema)', () => {
     const result = validateToolArgs('Write', writeSchema.inputSchema, {
       file_path: '/tmp/x.txt',

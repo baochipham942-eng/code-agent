@@ -95,6 +95,7 @@ type ToolCategory =
   | 'read' | 'write' | 'edit' | 'bash' | 'search' | 'listDir'
   | 'webSearch' | 'webFetch' | 'mcpChannel' | 'mcp'
   | 'subagentSpawn' | 'subagentMessage' | 'todo' | 'planUpdate' | 'planRead'
+  | 'delegateTask' | 'taskStatus' | 'steerTask' | 'cancelTask'
   | 'taskManager' | 'skill' | 'screenshot' | 'computerUse' | 'browserAction'
   | 'askUser' | 'memoryStore' | 'memorySearch' | 'toolSearch' | 'unknown';
 
@@ -111,6 +112,10 @@ const WEBSEARCH_TOOLS = new Set(['WebSearch']);
 const WEBFETCH_TOOLS = new Set(['WebFetch', 'web_fetch', 'http_request', 'screenshot_page', 'twitter_fetch', 'youtube_transcript']);
 const SUBAGENT_SPAWN_TOOLS = new Set(['spawn_agent', 'AgentSpawn', 'Task', 'Explore']);
 const SUBAGENT_MESSAGE_TOOLS = new Set(['agent_message', 'send_input', 'wait_agent', 'close_agent']);
+const DELEGATE_TASK_TOOLS = new Set(['delegate_task']);
+const TASK_STATUS_TOOLS = new Set(['task_status']);
+const STEER_TASK_TOOLS = new Set(['steer_task']);
+const CANCEL_TASK_TOOLS = new Set(['cancel_task']);
 const TODO_TOOLS = new Set(['todo_write']);
 const PLAN_UPDATE_TOOLS = new Set(['plan_update', 'Plan', 'PlanMode']);
 const PLAN_READ_TOOLS = new Set(['plan_read']);
@@ -138,6 +143,10 @@ function classifyToolName(name: string): ToolCategory {
   if (WEBFETCH_TOOLS.has(name)) return 'webFetch';
   if (SUBAGENT_SPAWN_TOOLS.has(name)) return 'subagentSpawn';
   if (SUBAGENT_MESSAGE_TOOLS.has(name)) return 'subagentMessage';
+  if (DELEGATE_TASK_TOOLS.has(name)) return 'delegateTask';
+  if (TASK_STATUS_TOOLS.has(name)) return 'taskStatus';
+  if (STEER_TASK_TOOLS.has(name)) return 'steerTask';
+  if (CANCEL_TASK_TOOLS.has(name)) return 'cancelTask';
   if (TODO_TOOLS.has(name)) return 'todo';
   if (PLAN_UPDATE_TOOLS.has(name)) return 'planUpdate';
   if (PLAN_READ_TOOLS.has(name)) return 'planRead';
@@ -222,13 +231,18 @@ export function humanizeToolStep(
   shortDescription?: string,
   failed?: boolean,
 ): string {
+  const schemaDescription = BASH_TOOLS.has(name)
+    ? firstString(args ?? {}, ['description'])
+    : '';
+  const preferredDescription = typeof shortDescription === 'string' && shortDescription.trim()
+    ? shortDescription.trim()
+    : schemaDescription;
   if (
     isSemanticToolUIEnabled()
-    && typeof shortDescription === 'string'
-    && shortDescription.trim().length > 0
-    && matchesUiScript(shortDescription.trim(), t)
+    && preferredDescription
+    && matchesUiScript(preferredDescription, t)
   ) {
-    return shortDescription.trim();
+    return preferredDescription;
   }
 
   const a = args || {};
@@ -289,6 +303,18 @@ export function humanizeToolStep(
     }
     case 'subagentMessage':
       return h.subagentMessage;
+    case 'delegateTask': {
+      const description = firstString(a, ['description', 'title']);
+      return description
+        ? h.delegateTask.replace('{description}', description)
+        : h.delegateTaskFallback;
+    }
+    case 'taskStatus':
+      return h.taskStatus;
+    case 'steerTask':
+      return h.steerTask;
+    case 'cancelTask':
+      return h.cancelTask;
     case 'todo':
       return h.todo;
     case 'planUpdate':
@@ -357,6 +383,10 @@ function groupBucketFor(category: ToolCategory): GroupBucket | null {
       return 'mcp';
     case 'subagentSpawn':
     case 'subagentMessage':
+    case 'delegateTask':
+    case 'taskStatus':
+    case 'steerTask':
+    case 'cancelTask':
       return 'subagent';
     case 'todo':
     case 'planUpdate':

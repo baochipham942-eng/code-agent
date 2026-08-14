@@ -43,6 +43,7 @@ import {
 import type { AgentInterface } from '../src/host/testing/testRunner';
 import type { CompareConfiguration, TestRunSummary, TrendDataPoint } from '../src/host/testing/types';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
+import { isDynamicCustomProviderId } from '../src/shared/modelRuntime';
 import { isProviderVariantDisabled } from '../src/host/prompts/providerVariants';
 import { isRedlineCase } from '../src/host/testing/testCaseClassification';
 import { getTestDirs } from '../src/host/config/configPaths';
@@ -453,10 +454,21 @@ function createAgent(opts: {
     throw new Error(`No API key found for ${resolvedProvider}. Set AUTO_TEST_API_KEY or ${candidates.join(' / ')}.`);
   }
 
-  // 动态 custom provider（custom-xxx）的端点唯一来源是用户设置，而 getSettings()
-  // 对 models.providers 做白名单过滤，headless 进程里查不到 → providerResolution 抛
-  // 「无法解析 baseURL」。补齐 AUTO_TEST_* 家族缺的这一项，让 eval 能跑中继/自建端点。
+  // eval 刻意不初始化 ConfigService（见 prepareRealEvalRuntime 的说明），所以动态 custom
+  // provider（custom-xxx）的端点拿不到——它唯一来源是用户 config.json。这里显式给入口。
   const baseUrl = process.env.AUTO_TEST_BASE_URL;
+
+  // fail-loud：不显式给端点就往下走，会在真正发请求时才抛「无法解析 provider 的 baseURL」，
+  // 那句话看不出是「eval 故意不读你的配置」，只会让人以为 provider 配错了（本仓踩过）。
+  if (!baseUrl && isDynamicCustomProviderId(resolvedProvider)) {
+    throw new Error(
+      `[eval-config-isolation] provider "${resolvedProvider}" 是你在 app 里自建的动态 provider，` +
+      '而 eval 刻意不读用户 config.json（保证评测可复现、CI 上也没有那份配置），' +
+      '所以拿不到它的端点。\n' +
+      `请显式指定：AUTO_TEST_BASE_URL=<endpoint> AUTO_TEST_API_KEY=<key> ... --provider ${resolvedProvider}\n` +
+      '（端点与 key 可在 app 的设置里查到；这是 eval 的既定隔离策略，不是配置错误。）',
+    );
+  }
 
   return new StandaloneAgentAdapter({
     workingDirectory: opts.workingDir,
@@ -469,6 +481,22 @@ function createAgent(opts: {
   });
 }
 
+/**
+ * 评测运行时 = 与用户本机状态隔离的确定性环境。
+ *
+ * 下面三行是显式隔离：不吃用户级 skill、不吃最近会话、钉死系统提示预算。
+ * 还有**一条隐式隔离**，2026-08-14 (N-PROV1) 明确为既定策略并记在这里，免得再有人当 bug 修：
+ *
+ *   **eval 不调用 `configService.initialize()`**，所以 `getSettings()` 返回的是编译进代码的
+ *   `DEFAULT_SETTINGS`（内置 provider 清单），而不是用户的 `~/.code-agent/config.json`。
+ *
+ * 为什么保持这样：① CI 机器上根本没有那份配置，读它会让本地/CI 行为分叉；② 评测该显式声明
+ * 自己用什么模型和端点，而不是隐式继承跑测的人的本机设置——否则同一批 case 换台机器就换了结论。
+ * 产品侧不受影响：`webServer.ts` 与 `cli/bootstrap.ts` 都各自初始化过。
+ *
+ * 代价是自建的动态 custom provider 在这里不可见，须经 `AUTO_TEST_BASE_URL` / `AUTO_TEST_API_KEY`
+ * 显式注入（createAgent 里有 fail-loud 守着，不会让人对着「无法解析 baseURL」猜半天）。
+ */
 async function prepareRealEvalRuntime(): Promise<void> {
   process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS ||= '12000';
   process.env.CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS ||= 'false';

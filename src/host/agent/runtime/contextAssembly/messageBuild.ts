@@ -357,7 +357,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   }
 
   systemPrompt = injectWorkingDirectoryContext(systemPrompt, ctx.runtime.workingDirectory, ctx.runtime.isDefaultWorkingDirectory);
-  systemPrompt += buildRuntimeModeBlock();
+  systemPrompt += buildRuntimeModeBlock(ctx.runtime.workingDirectory);
   recordBasePromptLayer(ctx, systemPrompt, projectSystemPrompt.custom === null ? CONTEXT_LEDGER.BASE_SOURCE.TASK : CONTEXT_LEDGER.BASE_SOURCE.PROJECT, appendedBlocks.values());
 
   // GAP-023: 注入块优先级排序 —— 能力发现类块（plugins / skills / deferred-tools）

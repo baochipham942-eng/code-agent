@@ -1080,7 +1080,7 @@ export class MessageProcessor {
     const artifactRepairPolicy = getArtifactRepairToolPolicy(this.ctx.artifact.repairGuard);
     this.ctx.nudgeManager.checkProgressState(
       this.ctx.turn.toolsUsedInTurn,
-      (msg, source) => this.contextAssembly.injectSystemMessage(msg, source),
+      (msg, source) => this.contextAssembly.injectSystemMessage(msg, source, 'checkpoint-nudge'),
       { mutationToolPrompt: artifactRepairPolicy?.mutationToolPromptZh },
     );
 

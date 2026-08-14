@@ -14,18 +14,11 @@ Actions:
 - replace: Replace the whole session task plan with tasks[]; exactly one open task is normalized to in_progress.
 - patch: Batch update/create session tasks with tasks[]; exactly one open task is normalized to in_progress.
 
-Evidence gate (applies to update, replace and patch alike):
-- status="completed" requires completionEvidence — what you actually verified. A subagent reporting success is not evidence; verify it yourself, then write the evidence.
-- status="blocked" requires blockedReason in plain language, not a raw error dump.
-- Task status is advisory. It records what the agent claims; it never overrides real filesystem/git/test results.
-
 Examples:
 - Create: { "action": "create", "subject": "Implement login", "description": "Add OAuth login flow" }
 - Get: { "action": "get", "taskId": "1" }
 - List: { "action": "list" }
 - Update status: { "action": "update", "taskId": "1", "status": "in_progress" }
-- Complete with evidence: { "action": "update", "taskId": "1", "status": "completed", "completionEvidence": "Ran npm test — 214 passed, 0 failed" }
-- Block: { "action": "update", "taskId": "1", "status": "blocked", "blockedReason": "The report page needs a company login we do not have" }
 - Replace plan: { "action": "replace", "tasks": [{ "subject": "Read code", "status": "in_progress" }, { "subject": "Patch code" }] }
 - Patch plan: { "action": "patch", "tasks": [{ "taskId": "1", "status": "completed" }, { "taskId": "2", "status": "in_progress" }] }
 - Cancel: { "action": "update", "taskId": "1", "status": "cancelled" }

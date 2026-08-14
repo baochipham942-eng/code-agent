@@ -757,20 +757,16 @@ export class NudgeManager {
   ): string {
     if (taskIntent === 'analysis') {
       return (
-        `<checkpoint-nudge priority="medium">\n` +
         `已连续 ${this.maxConsecutiveExploring} 轮只读取未修改。\n` +
-        `当前任务看起来是分析/诊断，请收束证据并输出分析；如果还缺关键事实，只读一次最关键范围。\n` +
-        `</checkpoint-nudge>`
+        `当前任务看起来是分析/诊断，请收束证据并输出分析；如果还缺关键事实，只读一次最关键范围。`
       );
     }
 
     const mutationTools = mutationToolPrompt || 'Edit 或 Write';
     return (
-      `<checkpoint-nudge priority="medium">\n` +
       `已连续 ${this.maxConsecutiveExploring} 轮只读取未修改。\n` +
       `如果已充分了解问题，请开始用 ${mutationTools} 实施修改。\n` +
-      `如果仍需调查，请用一句可见说明交代还缺什么证据，然后有针对性地读取。\n` +
-      `</checkpoint-nudge>`
+      `如果仍需调查，请用一句可见说明交代还缺什么证据，然后有针对性地读取。`
     );
   }
 

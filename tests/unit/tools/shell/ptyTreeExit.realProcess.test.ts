@@ -48,6 +48,12 @@ const realPtyAvailable = await probeRealPty();
 // doUnmock 不被 hoist，只对之后的动态 import 生效——正好用来按能力分流
 vi.doUnmock('node-pty');
 
+// ⚠️ 已知副作用（实测，别照着 knip 的建议改基线）：这个 conditional dynamic import 会让
+// knip 把 ptyExecutor 的**每一个**导出都算作「已使用」——`knip-ratchet` 因此多报 9 个
+// 「存量符号已清理」，其中包括 resizePtySession / loadPersistedPtySessions 这类**零 importer**
+// 的真死导出。改成命名解构**没用**（knip 分析的是 `import()` 表达式本身，不是解构模式）。
+// 所以：**别对这 9 个跑 `--update-baseline`**，那会把一条假的「已使用」钉进共享棘轮。
+// 正确的收口是把那批零 importer 的导出删掉（见工单 N-DSH-STOP6）。
 type PtyExecutor = typeof import('../../../../src/host/tools/shell/ptyExecutor');
 const ptyExecutor: PtyExecutor | null = realPtyAvailable
   ? await import('../../../../src/host/tools/shell/ptyExecutor')

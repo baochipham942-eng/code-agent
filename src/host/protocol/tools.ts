@@ -53,6 +53,8 @@ export interface ToolSchema {
   /** 动态描述，运行时计算（例如注入当前日期）。有则优先于 description */
   readonly dynamicDescription?: () => string;
   readonly inputSchema: JSONSchema;
+  /** 工具成功产出的 JSON Schema；覆盖完成前保持可选，最终收紧为必填。 */
+  readonly outputSchema?: JSONSchema;
   readonly category: ToolCategory;
   readonly permissionLevel: PermissionLevel;
   /** 文件写目标的声明式来源；不按工具名枚举权限。 */

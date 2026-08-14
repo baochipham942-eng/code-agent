@@ -18,6 +18,7 @@ import type {
   ToolLoader,
   ToolFilterOptions,
 } from '../protocol/tools';
+import { assertSupportedJsonSchema } from './outputSchema';
 
 export class ToolRegistry implements IToolRegistry {
   private readonly schemas = new Map<string, ToolSchema>();
@@ -27,6 +28,9 @@ export class ToolRegistry implements IToolRegistry {
   private readonly inflight = new Map<string, Promise<ToolHandler>>();
 
   register(schema: ToolSchema, loader: ToolLoader): void {
+    if (schema.outputSchema) {
+      assertSupportedJsonSchema(schema.outputSchema, `${schema.name}.outputSchema`);
+    }
     if (this.schemas.has(schema.name)) {
       // 幂等：同名重复注册覆盖（热重载/测试）
       this.schemas.set(schema.name, schema);

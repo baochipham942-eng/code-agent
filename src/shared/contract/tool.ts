@@ -49,6 +49,8 @@ export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: JSONSchema;
+  /** 工具成功产出的 JSON Schema；覆盖完成前保持可选，最终收紧为必填。 */
+  outputSchema?: JSONSchema;
   requiresPermission: boolean;
   permissionLevel: PermissionLevel;
 

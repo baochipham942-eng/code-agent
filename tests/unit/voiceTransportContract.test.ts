@@ -681,6 +681,79 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     await handle.close();
   });
 
+  // 终结型工具（ignore_turn）的承重契约。正负成对：同一条链路上，普通工具照常续答，
+  // 终结型工具必须静默收场——否则「模型判定这轮不该开口」会被我们自己的续答推翻。
+  const IGNORE_TURN_TOOL = {
+    type: 'function' as const,
+    name: 'ignore_turn',
+    description: '不是对你说的时候调用',
+    parameters: {
+      type: 'object' as const,
+      properties: { reason: { type: 'string' } },
+      required: ['reason'],
+    },
+    endsTurnSilently: true,
+  };
+  const DELEGATE_TOOL = {
+    type: 'function' as const,
+    name: 'delegate_task',
+    description: '派发任务',
+    parameters: { type: 'object' as const, properties: {}, required: [] },
+  };
+
+  async function runToolCall(toolName: string) {
+    const onToolCall = vi.fn(async () => '已处理');
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1', tools: [DELEGATE_TOOL, IGNORE_TURN_TOOL] },
+      onEvent: vi.fn(),
+      onAudio: vi.fn(),
+      onToolCall,
+    });
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+    const upstream = upstreams[upstreams.length - 1];
+
+    handle.respond('', 'auto');
+    upstream.emit('message', JSON.stringify({ type: 'response.created', response: { id: 'resp-1' } }));
+    const mark = upstream.sent.length;
+
+    upstream.emit('message', JSON.stringify({
+      type: 'response.function_call_arguments.done',
+      call_id: 'call-1',
+      name: toolName,
+      arguments: '{"reason":"这是天气预报"}',
+    }));
+    await vi.waitFor(() => expect(onToolCall).toHaveBeenCalledTimes(1));
+
+    const after = () => upstream.sent.slice(mark).map((raw) => JSON.parse(raw) as { type?: string; item?: { type?: string } });
+    return { handle, upstream, after };
+  }
+
+  it('ignore_turn：回灌 function_call_output 但**不再发 response.create**（模型说不开口就不开口）', async () => {
+    const { handle, after } = await runToolCall('ignore_turn');
+
+    await vi.waitFor(() => {
+      expect(after().some((f) => f.item?.type === 'function_call_output')).toBe(true);
+    });
+    // 给续答留出时间窗后再断言「始终没发」——不然可能只是还没发到
+    await new Promise((r) => setTimeout(r, 50));
+    expect(after().filter((f) => f.type === 'response.create')).toHaveLength(0);
+    expect(handle.isResponding()).toBe(false);
+
+    await handle.close();
+  });
+
+  it('对照腿：普通工具在同一条链路上照常续答（证明上面那条不是链路本身坏了）', async () => {
+    const { handle, after } = await runToolCall('delegate_task');
+
+    await vi.waitFor(() => {
+      expect(after().filter((f) => f.type === 'response.create')).toHaveLength(1);
+    });
+    expect(after().some((f) => f.item?.type === 'function_call_output')).toBe(true);
+
+    await handle.close();
+  });
+
   it('XML fallback：纯 invoke 从字幕和音频剥除，response.done 后走同一工具出口', async () => {
     const events: VoiceEvent[] = [];
     const onAudio = vi.fn();

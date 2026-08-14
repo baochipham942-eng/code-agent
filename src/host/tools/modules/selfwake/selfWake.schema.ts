@@ -15,6 +15,7 @@ export const sleepUntilSchema: ToolSchema = {
     + 'Use when the next useful step simply cannot happen yet (a deadline, a scheduled export, "check back in 2 hours"). '
     + 'This ends the current turn — you are not blocking or polling, and nothing runs while you wait. '
     + 'You will be woken with your own reason text. For work that should repeat on a schedule, create an automation instead.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {
@@ -38,6 +39,7 @@ export const wakeOnSchema: ToolSchema = {
     'Park the current task until a specific automation (cron job) finishes, then continue automatically. '
     + 'Use when your next step needs the output of a scheduled task that is already set up. '
     + 'This ends the current turn; nothing runs while you wait.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {
@@ -64,6 +66,7 @@ export const wakeOnEventSchema: ToolSchema = {
     + 'For a business-event watcher (e.g. a calendar-conflict or table-change monitor), the event fires only '
     + 'when the watcher actually finds something new — a quiet scheduled check with nothing to report does not fire it. '
     + 'This ends the current turn; nothing runs while you wait.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

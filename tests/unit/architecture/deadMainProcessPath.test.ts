@@ -65,7 +65,9 @@ const HOST_APP_DIR = 'src/host/app';
 const MIGRATED_REGISTRATIONS: Array<[string, RegExp]> = [
   ['预算 hydrate + alert', /budget:\s*\(\)\s*=>\s*\{\s*wireBudgetService\s*\(/],
   ['EventBus → SSE bridge', /\binitWebEventBridge\s*\(/],
-  ['ComboRecorder', /\bgetComboRecorder\s*\(\s*\)\.init\s*\(/],
+  // ComboRecorder 那行已随 N-CAP1（#1140）删除：它的 init() 订阅的 EventBus 事件主链路根本
+  // 不发，是死代码；真正的记账接线在 AgentLoop（所有入口的唯一汇聚点），由下面单独一条钉住。
+  ['候选能力账本预热', /\bgetCapabilityCandidateStore\s*\(\s*\)\.load\s*\(/],
   ['DAG event bridge', /\binitDAGEventBridge\s*\(/],
   ['DAG resolver', /\.setAgentResolver\s*\(/],
   ['/dream executor', /\bregisterDreamSkillExecutor\s*\(/],
@@ -111,6 +113,17 @@ describe('死主进程路径（src/host/index.ts）', () => {
 
   it.each(MIGRATED_REGISTRATIONS)('%s 的注册落在 src/web 启动文件（第二跳）', (_capability, callPattern) => {
     expect(readCode(STARTUP_SERVICES)).toMatch(callPattern);
+  });
+
+  // ComboRecorder 不在启动文件里注册：桌面真机入口 /api/run 走 cli/bootstrap.createAgentLoop，
+  // 不经 AgentOrchestrator（2026-08-14 N-CAP1 真机实测），所以记账只能接在 AgentLoop 这个
+  // 所有入口的汇聚点上。原先钉 src/web 的 init() 锚点已随 #1140 删掉那段死代码而失效。
+  it('ComboRecorder 的每轮记账接在 AgentLoop 上', () => {
+    const agentLoop = readCode('src/host/agent/agentLoop.ts');
+    expect(agentLoop, 'AgentLoop 未按工具执行日志记账：候选能力探测会拿不到任何一步')
+      .toMatch(/\bgetComboRecorder\s*\(\s*\)\.recordStep\s*\(/);
+    expect(agentLoop, 'AgentLoop 未标记轮次：记账缺少轮边界，组合签名会跨轮串味')
+      .toMatch(/\bmarkTurn\s*\(/);
   });
 
   it('同批后台 registrar 不得残留或重新挂进 src/host/app', () => {

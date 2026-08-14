@@ -19680,7 +19680,6 @@
     "src/host/agent/verificationCi.ts",
     "src/host/app/desktopQueuedInputDrain.ts",
     "src/host/app/dynamicWorkflowRecoveryHost.ts",
-    "src/host/app/lifecycle.ts",
     "src/host/context/compactionSnapshotWriter.ts",
     "src/host/cowork/coworkContract.ts",
     "src/host/cron/index.ts",

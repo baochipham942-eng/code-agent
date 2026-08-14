@@ -10,7 +10,6 @@
     "src/host/agent/teammate/teamPersistence.ts",
     "src/host/agent/toolExecution/dagScheduler.ts",
     "src/host/agent/types/builtinAgents.ts",
-    "src/host/app/lifecycle.ts",
     "src/host/cowork/coworkContract.ts",
     "src/host/cron/index.ts",
     "src/host/errors/errorClassifier.ts",

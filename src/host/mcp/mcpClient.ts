@@ -648,6 +648,19 @@ export class MCPClient extends EventEmitter {
   }
 
   /**
+   * 停机收尾用：拿到当前 stdio 传输层的子进程 pid。
+   *
+   * 断连超时后属主要对幸存者补刀（见 webShutdownFinalizers），而 pid 必须在断连**之前**
+   * 取——断连成功的 server 自己就退了，事后再问 transport 已经拿不到。
+   * SSE / in-process server 没有子进程，自然不在结果里。
+   */
+  getStdioChildPids(): number[] {
+    return [...this.transports.values()]
+      .map((transport) => (transport as { pid?: number | null }).pid)
+      .filter((pid): pid is number => typeof pid === 'number');
+  }
+
+  /**
    * 断开所有连接
    */
   async disconnectAll(): Promise<void> {

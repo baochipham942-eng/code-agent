@@ -89,9 +89,9 @@ const CITATION_CONVENTIONS = `## 引用约定
 // Web Source Output Rule —— 与 UI 的「Sources」面板去重
 // ----------------------------------------------------------------------------
 // 背景：使用联网工具后，被引用的网页来源会由 UI 自动以可点击的「Sources」面板渲染在
-// 回答下方。若模型再在正文末尾罗列同样的 URL，就会与面板重复。注：原 outputFormat
-// 静态规则（rules/outputFormat.ts、cloud BUILTIN_RULES）均未接入运行时 prompt，故此处
-// 直接在 live 组装段注入这条约定。
+// 回答下方。若模型再在正文末尾罗列同样的 URL，就会与面板重复。注：原 outputFormat 静态
+// 规则从不接入运行时 prompt（2026-08-14 L8 N-L8-HTMLSKILL 已连同其余 rules/ 一并删除），
+// 所以这条约定直接写在 live 组装段，别再往 rules/ 里放。
 export const WEB_SOURCE_OUTPUT_RULE = `## Web 来源展示约定
 
 使用联网工具（web 搜索 / 抓取）后，被引用的网页来源会由 UI **自动**以可点击的

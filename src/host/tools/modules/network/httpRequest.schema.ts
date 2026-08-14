@@ -24,6 +24,7 @@ Examples:
 - GET: { "url": "https://api.example.com/data" }
 - POST with JSON: { "url": "https://api.example.com/create", "method": "POST", "body": "{\\"name\\": \\"test\\"}", "headers": { "Content-Type": "application/json" } }
 - With auth: { "url": "https://api.example.com/protected", "headers": { "Authorization": "Bearer token" } }`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

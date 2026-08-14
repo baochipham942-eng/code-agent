@@ -16,6 +16,7 @@ Best for:
 - Reading text-based PDFs (technical docs, code, reports)
 - Processing scanned documents and images
 - Analyzing PDF forms, diagrams and charts`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

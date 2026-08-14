@@ -45,6 +45,7 @@ github_pr { "action": "review", "pr": 42, "event": "approve", "body": "Looks goo
 \`\`\`
 github_pr { "action": "merge", "pr": 42, "method": "squash", "delete_branch": true }
 \`\`\``,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

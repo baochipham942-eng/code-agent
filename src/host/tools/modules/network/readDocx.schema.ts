@@ -15,6 +15,7 @@ export const readDocxSchema: ToolSchema = {
 read_docx { "file_path": "report.docx" }
 read_docx { "file_path": "report.docx", "format": "markdown" }
 \`\`\``,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

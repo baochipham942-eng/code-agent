@@ -34,6 +34,7 @@ WiFi 连接二维码：
 \`\`\`
 qrcode_generate { "content": "WIFI:T:WPA;S:MyNetwork;P:MyPassword;;" }
 \`\`\``,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

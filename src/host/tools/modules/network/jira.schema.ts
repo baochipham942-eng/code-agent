@@ -34,6 +34,7 @@ jira {
   "priority": "High"
 }
 \`\`\``,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

@@ -36,6 +36,7 @@ mermaid_export {
   "theme": "dark"
 }
 \`\`\``,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

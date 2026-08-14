@@ -15,7 +15,7 @@ vi.mock('../../src/host/services/infra/logger', () => ({
 // 运行时装载：默认造成「缺失」，个别用例再改成可用
 const loadOrt = vi.hoisted(() => vi.fn<() => unknown>(() => null));
 vi.mock('../../src/host/services/desktop/audioVadRuntime', () => ({
-  loadOrtRuntimeForModule: () => loadOrt(),
+  loadOrtRuntimeForModule: () => ({ ort: loadOrt(), attempts: [{ path: '/fake', error: 'not found' }] }),
 }));
 vi.mock('../../src/host/runtime/runtimeAssetResolver', () => ({
   resolveExistingResource: () => null,

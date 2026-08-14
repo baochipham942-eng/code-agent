@@ -55,7 +55,7 @@ export interface VoiceprintRuntimeStatus {
 export function getVoiceprintRuntimeStatus(): VoiceprintRuntimeStatus {
   return {
     modelReady: resolveVoiceprintModelPath() !== null,
-    runtimeReady: loadOrtRuntimeForModule(__dirname) !== null,
+    runtimeReady: loadOrtRuntimeForModule(__dirname).ort !== null,
   };
 }
 
@@ -76,7 +76,8 @@ export interface SpeakerEmbedder {
  */
 export async function createSpeakerEmbedder(): Promise<SpeakerEmbedder | null> {
   const modelPath = resolveVoiceprintModelPath();
-  const ort = modelPath ? loadOrtRuntimeForModule(__dirname) : null;
+  const runtime = modelPath ? loadOrtRuntimeForModule(__dirname) : { ort: null, attempts: [] };
+  const ort = runtime.ort;
   if (!modelPath || !ort) {
     logger.warn('voiceprint disabled: prerequisite missing', {
       modelReady: modelPath !== null,
@@ -84,6 +85,8 @@ export async function createSpeakerEmbedder(): Promise<SpeakerEmbedder | null> {
       hint: modelPath === null
         ? '声纹模型未下载：设置 → 语音 → 声纹身份 → 下载声纹组件'
         : '本地推理运行时缺失（onnxruntime 按需资产未安装）',
+      // 装了却加载不了时，光说「缺失」没法判因——把每条候选路径的真实错误带出来
+      ...(runtime.attempts.length ? { attempts: runtime.attempts } : {}),
     });
     return null;
   }
@@ -130,7 +133,7 @@ export async function createSpeakerEmbedder(): Promise<SpeakerEmbedder | null> {
  * 模型走固定 URL + SHA256（等模型产物进 OSS manifest 后合并成一次调用）。
  */
 export async function prepareVoiceprintPrerequisites(): Promise<VoiceprintRuntimeStatus> {
-  if (!loadOrtRuntimeForModule(__dirname)) {
+  if (!loadOrtRuntimeForModule(__dirname).ort) {
     // 与 desktop.ipc 的 startAudioCapture 同款：只在 arm64 mac 上有产物，其余平台
     // 拿不到就维持缺失态（设置页据此显示「本机暂不可用」，不是假装能下）。
     try {

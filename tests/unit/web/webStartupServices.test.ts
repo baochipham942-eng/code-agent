@@ -24,7 +24,7 @@ import {
 const TASK_NAMES: WebStartupTaskName[] = [
   'budget',
   'eventBridge',
-  'comboRecorder',
+  'capabilityCandidates',
   'dagEventBridge',
   'dagResolver',
   'dreamExecutor',

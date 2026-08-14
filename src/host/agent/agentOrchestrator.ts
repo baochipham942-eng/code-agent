@@ -215,16 +215,8 @@ export class AgentOrchestrator {
     this.addMessage(userMessage);
     logger.debug('User message added, hasAttachments:', !!userMessage.attachments?.length, 'count:', userMessage.attachments?.length || 0);
 
-    // Combo recording: start recording + mark this turn
-    try {
-      const recorder = getComboRecorder();
-      if (sessionId) {
-        recorder.startRecording(sessionId);
-        recorder.markTurn(sessionId, content);
-      }
-    } catch {
-      // Non-blocking
-    }
+    // 录制开轮已下沉到 AgentLoop.run —— 那才是所有入口（桌面 /api/run、CLI、
+    // 通道）的唯一汇聚点；这里再调一次会给同一轮多插一条空 turn。
 
     try {
       if (sessionId) {
@@ -959,14 +951,6 @@ export class AgentOrchestrator {
             await getSessionManager().addMessageToSession(sessionId, message);
           }
         : undefined,
-      onToolExecutionLog: (log) => {
-        try {
-          const recorder = getComboRecorder();
-          recorder.enrichLastStep(log.sessionId, log.toolCallId, log.toolName, log.args);
-        } catch {
-          // Non-blocking
-        }
-      },
       });
 
       registeredRun = this.runRegistry && sessionId

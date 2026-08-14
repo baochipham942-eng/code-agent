@@ -7,8 +7,6 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { getEventBus } from '../eventing';
-import type { BusEvent } from '../../protocol/events';
 import type { ToolResult } from '@shared/contract';
 import { getSkillsDir } from '../../config/configPaths';
 import { createLogger } from '../infra/logger';
@@ -59,28 +57,6 @@ const MIN_STEPS_FOR_SUGGESTION = 3;
 
 class ComboRecorderService {
   private recordings = new Map<string, ComboRecording>();
-  private unsubscribe: (() => void) | null = null;
-
-  /**
-   * Start listening to tool execution events via EventBus
-   */
-  init(): void {
-    if (this.unsubscribe) return;
-
-    const bus = getEventBus();
-
-    this.unsubscribe = bus.subscribe('agent:tool_call_end', (event: BusEvent) => {
-      const sessionId = event.sessionId;
-      if (!sessionId) return;
-
-      const toolResult = event.data as ToolResult;
-      if (!toolResult?.toolCallId) return;
-
-      this.recordStep(sessionId, toolResult);
-    });
-
-    logger.info('ComboRecorder initialized');
-  }
 
   /**
    * Start or resume recording for a session
@@ -111,9 +87,22 @@ class ComboRecorderService {
   }
 
   /**
-   * Record a tool execution step
+   * 记录一次工具执行（唯一步骤入口，来自 onToolExecutionLog）。
+   *
+   * 2026-08-14（N-CAP1）修正：原本步骤靠订阅 EventBus 的 `agent:tool_call_end` 采集，
+   * 但主链路的 AgentEvent 走 TaskManager.onAgentEvent → EventBatcher → webContents.send，
+   * 根本不过 EventBus（全仓 publish('agent', …) 只有 4 处，无一发 tool_call_end），
+   * 于是 steps 恒空、checkSuggestion 因 totalSteps<3 恒返回 null——录制器在主链路上
+   * 从未真正记过一步。改为直接吃 runtimeContext 的 onToolExecutionLog：
+   * 那是四个工具执行出口的唯一汇聚点，且带完整 ToolResult（success/duration/输出）。
    */
-  private recordStep(sessionId: string, toolResult: ToolResult): void {
+  recordStep(
+    sessionId: string,
+    toolCallId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+    result: ToolResult,
+  ): void {
     const recording = this.recordings.get(sessionId);
     if (!recording) return;
 
@@ -127,33 +116,27 @@ class ComboRecorderService {
     }
 
     const currentTurn = recording.turns[recording.turns.length - 1];
-    const step: ComboStep = {
-      toolCallId: toolResult.toolCallId,
-      toolName: (toolResult as unknown as { toolName?: string }).toolName ?? 'unknown',
-      args: {},
-      success: toolResult.success,
-      outputPreview: (toolResult.output ?? toolResult.error ?? '').substring(0, OUTPUT_PREVIEW_LENGTH),
-      duration: toolResult.duration ?? 0,
-      timestamp: Date.now(),
-    };
-
-    currentTurn.steps.push(step);
-    recording.toolNames.add(step.toolName);
-  }
-
-  /**
-   * Enrich the last recorded step with tool call args (called from onToolExecutionLog)
-   */
-  enrichLastStep(sessionId: string, toolCallId: string, toolName: string, args: Record<string, unknown>): void {
-    const recording = this.recordings.get(sessionId);
-    if (!recording || recording.turns.length === 0) return;
-
-    const currentTurn = recording.turns[recording.turns.length - 1];
-    const step = currentTurn.steps.find(s => s.toolCallId === toolCallId);
-    if (step) {
-      step.toolName = toolName;
-      step.args = sanitizeArgs(args);
+    const existing = currentTurn.steps.find(s => s.toolCallId === toolCallId);
+    if (existing) {
+      // 同一 toolCallId 重复上报（恢复确认等）：就地覆盖，不重复计步。
+      existing.toolName = toolName;
+      existing.args = sanitizeArgs(args);
+      existing.success = result.success;
+      existing.duration = result.duration ?? existing.duration;
+      recording.toolNames.add(toolName);
+      return;
     }
+
+    currentTurn.steps.push({
+      toolCallId,
+      toolName,
+      args: sanitizeArgs(args),
+      success: result.success,
+      outputPreview: (result.output ?? result.error ?? '').substring(0, OUTPUT_PREVIEW_LENGTH),
+      duration: result.duration ?? 0,
+      timestamp: Date.now(),
+    });
+    recording.toolNames.add(toolName);
   }
 
   /**
@@ -229,8 +212,6 @@ class ComboRecorderService {
    * Cleanup
    */
   shutdown(): void {
-    this.unsubscribe?.();
-    this.unsubscribe = null;
     this.recordings.clear();
   }
 }

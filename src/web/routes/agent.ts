@@ -31,6 +31,7 @@ import {
   SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES,
 } from '../../shared/constants/sessionCommandCenter';
 import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
+import { buildCapabilityCandidateNotice } from '../../host/agent/capabilityCandidateNotice';
 import { getLibraryService } from '../../host/services/library/libraryService';
 import {
   ClaudeCodeAdapter,
@@ -900,6 +901,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // turnSystemContext 脚手架；持久化与展示仍用 visiblePrompt（extractUserRequest
       // 负责还原，agentLoop.run 第二参 displayPrompt 即桌面双轨语义的对应物）。
       const capabilityContextLines = buildWorkbenchCapabilityContextLines(body.context);
+      // 候选能力（N-CAP1 / F12「人与 agent 共用同一张表」）：每会话首轮注入一次。
+      // 必须在这里补一遍——桌面 renderer 走的就是本路由，
+      // agentOrchestrator 的 applyTurnSystemContext 在真机上根本不执行。
+      const candidateNotice = buildCapabilityCandidateNotice(sessionId);
+      if (candidateNotice) capabilityContextLines.push(candidateNotice);
       const modelFacePrompt = capabilityContextLines.length > 0
         ? wrapWithTurnSystemContext(capabilityContextLines, visiblePrompt)
         : visiblePrompt;

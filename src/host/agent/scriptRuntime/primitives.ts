@@ -59,7 +59,7 @@ function findNonJsonValue(value: unknown, seen: WeakSet<object>, path: string): 
     }
     return null;
   }
-  const proto = Object.getPrototypeOf(obj);
+  const proto: unknown = Object.getPrototypeOf(obj);
   if (proto !== Object.prototype && proto !== null) {
     return `${path} 是 ${obj.constructor?.name ?? '非普通'} 对象`;
   }

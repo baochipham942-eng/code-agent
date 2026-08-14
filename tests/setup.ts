@@ -61,7 +61,17 @@ vi.mock('electron', () => ({
 }));
 
 
-// node-pty: PTY 原生模块，在 vitest fork worker 中可能干扰进程信号处理
+// node-pty: PTY 原生模块，在 vitest fork worker 中可能干扰进程信号处理。
+//
+// 🔴 更硬的理由（2026-08-14 实测，两轮 CI 红换来的）：**CI 上根本起不来真 PTY，且两个
+// runner 各坏各的**——linux-x64 没有原生产物（`Cannot find module
+// './prebuilds/linux-x64//pty.node'`），**模块加载阶段**就炸；macOS 加载得了，但
+// `pty.spawn` 运行时抛 `posix_spawnp failed.`。所以这个 mock 不是可选的洁癖。
+//
+// 要验**真** PTY 行为（「进程组死没死」这种 mock 句柄回答不了的判据）的写法见
+// `tests/unit/tools/shell/ptyTreeExit.realProcess.test.ts`：能力探测**必须真 spawn 一次**
+// （只做 `vi.importActual` 是代理信号，挡不住 macOS 那支），可用才 `vi.doUnmock` +
+// 动态 import，不可用整组 `describe.skipIf`，并另留一组永不跳过的接线守护防假绿。
 vi.mock('node-pty', () => ({
   spawn: () => ({
     onData: () => {},

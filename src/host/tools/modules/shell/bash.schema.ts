@@ -54,7 +54,7 @@ Git: NEVER \`--force\` push or \`--no-verify\` unless explicitly requested.`,
       },
       description: {
         type: 'string',
-        description: 'Short description of what this command does (for logging)',
+        description: 'One user-facing verb phrase explaining what this command does, in the same language as the conversation.',
       },
     },
     required: ['command'],

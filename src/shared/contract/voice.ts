@@ -157,6 +157,17 @@ export interface VoiceToolDefinition {
     required: string[];
     additionalProperties?: boolean;
   };
+  /**
+   * 执行后**本轮不再有语音回复**，调用即终结这一轮。
+   *
+   * 普通工具的语义是「拿结果回来接着说」，所以回灌 output 之后必须再发一次
+   * response.create。带这个标志的工具语义相反——模型调它就是在表达「这轮我不该开口」，
+   * 再发 response.create 等于强迫它开口，把工具的意思彻底反过来。
+   *
+   * 不按工具名硬编码而是走能力位：transport 只认这个标志，不认名字，
+   * 将来再有同类工具（例如「这轮交给别人处理」）直接标注即可。
+   */
+  endsTurnSilently?: boolean;
 }
 
 export interface VoiceSessionConfig {

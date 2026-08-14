@@ -264,6 +264,8 @@ describe('A4 窄工具 / H1 指挥台', () => {
     // 2026-07-28 真机加了两只：`get_current_time`（此前它只会说「我看不到时间」）、
     // `end_call`（此前它说「已挂断」但通话还开着，是第二例「说了没做」）。
     // Phase 3 加了 `capture_screen_context`：它采屏但不落用户文件，零写权限的底线没破。
+    // 2026-08-14 加了 `ignore_turn`：模型判「这段不是对我说的」时调它静默收场。
+    // 它同样零写权限——不改任何东西，只是让这一轮不出声（见下方 endsTurnSilently 断言）。
     expect(VOICE_TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual([
       'task_status',
       'get_current_file_summary',
@@ -273,11 +275,16 @@ describe('A4 窄工具 / H1 指挥台', () => {
       'cancel_task',
       'get_current_time',
       'end_call',
+      'ignore_turn',
     ]);
     // D5：通话 brain 全程零写权限——注册面里不许出现能直接落盘/跑命令的参数。
     const params = JSON.stringify(VOICE_TOOL_DEFINITIONS.map((tool) => tool.parameters));
     expect(params).not.toContain('file_path');
     expect(params).not.toContain('command');
+    // 终结型工具只该有 ignore_turn 这一只：它靠 endsTurnSilently 让 transport 跳过续答，
+    // 误标在别的工具上会让那只工具执行完就把整轮吞掉（模型拿到结果再也不开口）。
+    expect(VOICE_TOOL_DEFINITIONS.filter((tool) => tool.endsTurnSilently).map((tool) => tool.name))
+      .toEqual(['ignore_turn']);
   });
 
   it('task_status 报真实任务，空的时候明说没有', async () => {

@@ -75,65 +75,14 @@ function getRulesForPrompt(): string[] {
 }
 
 // ----------------------------------------------------------------------------
-// Tool Call Envelope Conventions (产品视角语义元数据)
+// Citation Conventions
 // ----------------------------------------------------------------------------
-// 2026-08-07：targetContext 从这份约定里拿掉了（schema 侧同步移除）。它的可见产出
-// 只是一个由 kind 决定的 12px 图标，宿主能从工具名推出来（deriveToolTargetContext），
-// 让模型填反而 7/18 个工具填得自相矛盾。这里和 shared.ts 的 META_PROPERTY_SCHEMA
-// 必须同增同减——prompt 教一个 schema 里没有的字段，OpenAI strict 模式会直接报错。
-//
-// 让模型在每次 tool_call 的 arguments 中嵌入 _meta envelope，frontend parser
-// 会自动剥离 _meta 并写入 ToolCall 顶层（不会进入工具真实执行参数），UI 用它
-// 把"在干什么 + 在操作什么"展示给用户，像看一段安静的工作录像。
-//
-// 设计文档：~/.claude/plans/dreamy-sniffing-lagoon.md
-// ----------------------------------------------------------------------------
-
-export const TOOL_ENVELOPE_CONVENTIONS = `## Tool Call Envelope（强制语义元数据）
-
-**每一次** 调用任何工具，你 **必须** 在 arguments 顶层加入 \`_meta\` 对象。
-前端会自动剥离 \`_meta\` 后再执行工具，所以不会污染真实参数；但 UI 用它向用户展示
-"你现在在干什么"。**没有 _meta 就等于没说话**——用户看不见你的意图。
-
-### 完整示例 1：Bash
-
-\`\`\`json
-{
-  "command": "echo hello world",
-  "_meta": {
-    "shortDescription": "Print hello world to verify shell setup",
-    "expectedOutcome": "stdout 输出 hello world"
-  }
-}
-\`\`\`
-
-### 完整示例 2：MCP 工具
-
-\`\`\`json
-{
-  "query": "claude code agent loop",
-  "_meta": {
-    "shortDescription": "Search Exa for Claude Code agent loop docs",
-    "expectedOutcome": "返回 5-10 个相关搜索结果"
-  }
-}
-\`\`\`
-
-### 字段约定
-
-- **shortDescription** —— 一句话动词短语，**用户视角的产品语义**，**必须用与用户对话相同的语言**
-  （它会直接显示在界面上给用户看，中文对话里出现英文短语等于没翻译）：
-  - ✅ "打开百度搜索 Claude" / "读取 MEMORY.md 里的 Clash Verge 配置"
-  - ❌ "browser_click" / "Reading file"（不要用工具内部命名，不要用与对话不同的语言）
-- **expectedOutcome** —— 一句话描述成功后大概看到什么（可选但推荐）
-
-### 引用约定
+// 引用字段属于结构化来源展示，与已退役的全局工具语义信封无关，继续独立注入。
+const CITATION_CONVENTIONS = `## 引用约定
 
 输出 citation 引用 memory 等结构化源时，每条 citation 同步带：
 - \`rationale\` — 一句话"为什么用这段"
 - \`lineRange\` — \`[startLine, endLine]\` 结构化行号
-
-**这条规则没有例外。**调用工具前没想清楚 shortDescription，就停下来想清楚再调。
 `;
 
 // ----------------------------------------------------------------------------
@@ -163,12 +112,10 @@ export function buildPrompt(): string {
   }
 
   // Stable prefix (cacheable across turns)
-  // envelope 约定放在 tool descriptions 之前：让模型在了解每个工具签名前就吃下
-  // _meta 强制约定，避免它把工具描述读完后才被提醒还要补元数据。
   const stablePrefix = [
     getSoul(),
     basePrompt,
-    TOOL_ENVELOPE_CONVENTIONS,
+    CITATION_CONVENTIONS,
     ...getToolDescriptions(),
   ].join('\n\n');
   // Dynamic section (rules 等；GENERATIVE_UI_PROMPT 改为按意图注入)
@@ -429,11 +376,11 @@ export function buildProfilePrompt(profile: PromptProfile, context: PromptContex
 
   const activeOverlays = getProfileOverlays(profile);
 
-  // L1: Base Substrate — identity + envelope conventions + tools
+  // L1: Base Substrate — identity + citation conventions + tools
   const substrate = [
     getSoul(),
     TOOLS_PROMPT,
-    TOOL_ENVELOPE_CONVENTIONS,
+    CITATION_CONVENTIONS,
     ...getToolDescriptions(),
   ].join('\n\n');
 

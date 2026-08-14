@@ -34,6 +34,11 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     expect(humanizeToolStep('Bash', { command: 'ls src/' }, zh, '列出源码目录')).toBe('列出源码目录');
   });
 
+  it('bash: schema description becomes the user-facing narration', () => {
+    expect(humanizeToolStep('Bash', { command: 'ls src/', description: '列出源码目录' }, zh))
+      .toBe('列出源码目录');
+  });
+
   // 「注入对用户可见」红线在会话侧的一半：Neo 往用户终端敲了什么，聊天里要读得出来，
   // 不能只显示一句「使用了 terminal_write」。
   it('terminal_write: shows what was typed into the user terminal', () => {
@@ -93,6 +98,24 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
 
   it('subagent message', () => {
     expect(humanizeToolStep('agent_message', {}, zh)).toBe('给子任务发了条消息');
+  });
+
+  it('delegate_task: uses args.description when present', () => {
+    expect(humanizeToolStep('delegate_task', { description: '统计三个配置文件行数' }, zh))
+      .toBe('派出后台任务：统计三个配置文件行数');
+  });
+
+  it('delegate_task: falls back without args.description', () => {
+    expect(humanizeToolStep('delegate_task', {}, zh)).toBe('派出后台任务');
+  });
+
+  it('delegate_task: uses the current schema title when description is absent', () => {
+    expect(humanizeToolStep('delegate_task', { title: '统计配置文件' }, zh))
+      .toBe('派出后台任务：统计配置文件');
+  });
+
+  it('task_status: has a stable progress template', () => {
+    expect(humanizeToolStep('task_status', {}, zh)).toBe('查看后台任务进度');
   });
 
   it('todo', () => {

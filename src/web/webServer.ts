@@ -345,7 +345,7 @@ import { installPermissionResponseHandler } from './webPermissionResponseHandler
 import { applyRendererBundleUpdate } from '../host/services/renderer/rendererBundleFetcher';
 import { getAppVersion, getBuildInfo } from '../host/platform';
 import { WEB_SERVER_DEFAULTS } from '../shared/constants/webServer';
-import { WEB_SERVER_SHUTDOWN_TIMEOUTS } from '../shared/constants/timeouts';
+import { createShutdownStepCap, runShutdownFinalizers } from './webShutdownFinalizers';
 import type { PendingLocalToolCall } from './routes/agent';
 import { getApplicationRunRegistry } from '../host/app/applicationRunRegistry';
 import { createApplicationAutoAgentRecoveryHost } from '../host/app/autoAgentRecoveryHost';
@@ -1016,23 +1016,14 @@ async function main(): Promise<void> {
     console.log();
   });
 
-  // 宽限期是有限的（Rust 侧 GRACEFUL_SHUTDOWN_TIMEOUT 到点就 SIGKILL），关库是这段
-  // 时间里唯一不能省的一步——前面两个清理任何一个卡住，都会把预算吃光，最后仍然被
-  // 硬杀，留下陈旧 -wal/-shm。所以给它们各自封顶，超时就跳过，绝不挡住关库。
-  const withCap = <T>(p: Promise<T>, label: string): Promise<T | void> =>
-    Promise.race([
-      p,
-      new Promise<void>((resolve) => {
-        setTimeout(() => {
-          console.warn(`[shutdown] ${label} timed out, skipping`);
-          resolve();
-        }, WEB_SERVER_SHUTDOWN_TIMEOUTS.STEP_MS);
-      }),
-    ]);
-
   // 优雅退出
   const shutdown = async () => {
     console.log('\nShutting down...');
+    // 宽限期是有限的（Rust 侧 GRACEFUL_SHUTDOWN_TIMEOUT 到点就 SIGKILL），关库是这段
+    // 时间里唯一不能省的一步——前面的清理任何一个卡住，都会把预算吃光，最后仍然被
+    // 硬杀，留下陈旧 -wal/-shm。所以关库之前的步骤共用一个总预算、每步再各自封顶，
+    // 超时就跳过，绝不挡住关库。预算从这一刻起算。
+    const { withCap, stepMs } = createShutdownStepCap();
     // .dev-token 保留不删 — dev 下 kill/restart webServer 时 auth.ts 会复用
     // 同一个 token，避免 Tauri WebView 里固化的旧 token 失效踩 "Invalid auth
     // token"。若要轮换 token，手动删 .dev-token 后重启 webServer。
@@ -1071,6 +1062,10 @@ async function main(): Promise<void> {
       })(),
       'devServerManager.disposeAll'
     );
+    // 停机收尾：MCP 外部 server 断连（不断就留下孤儿 stdio 子进程）+ 遥测冲刷 +
+    // 定时器/watcher 释放。这份清单以前只活在死文件 src/host/app/lifecycle.ts 里，
+    // 从没被执行过。五步互不依赖 ⇒ 并行，同样排在关库之前。
+    await runShutdownFinalizers(stepMs());
     // 干净关库：只有最后一个连接 sqlite3_close 后 SQLite 才会 checkpoint 并删掉
     // -wal/-shm；漏关任何一个，陈旧 -shm 会在下次启动被越界映射触发 SIGBUS。
     // 连接清单登记在 webShutdownDatabases.ts，新增主库连接必须同步登记。

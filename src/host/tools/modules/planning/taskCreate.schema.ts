@@ -8,6 +8,7 @@ export const taskCreateSchema: ToolSchema = {
     'Use this for multi-step tasks that need progress tracking. ' +
     'Do not create tasks for low-level tool operations such as reading files, writing files, or running tests. ' +
     'Tasks are session-scoped and support dependencies via task_update.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

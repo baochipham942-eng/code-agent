@@ -38,6 +38,7 @@ export const taskUpdateSchema: ToolSchema = {
     'Update a semantic work-unit task\'s status, details, or dependencies. ' +
     'Keep task titles user-visible and outcome-oriented; do not rename tasks to raw tool operations. ' +
     'Use addBlockedBy/addBlocks to establish task dependencies.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

@@ -11,6 +11,7 @@ known, use direct read/search/edit tools instead.
 
 The explorer can perform multiple searches and file reads, then return a short
 summary with relevant paths and line references.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

@@ -55,6 +55,7 @@ export const taskManagerSchema: ToolSchema = {
 - 完成（必须带证据）: { "action": "update", "taskId": "1", "status": "completed", "completionEvidence": "跑了 npm test，42 passed；页面能正常跳转回首页" }
 - 卡住: { "action": "update", "taskId": "2", "status": "blocked", "blockedReason": "这个报表页要公司账号登录，我们拿不到" }
 - 批量推进: { "action": "patch", "tasks": [{ "taskId": "1", "status": "completed", "completionEvidence": "…" }, { "taskId": "2", "status": "in_progress" }] }`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

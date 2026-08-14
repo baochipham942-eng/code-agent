@@ -24,6 +24,7 @@ When to skip:
 - Single-line or small fixes (typos, simple bugs)
 - Clear-cut single-function additions
 - User gave detailed specific instructions`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

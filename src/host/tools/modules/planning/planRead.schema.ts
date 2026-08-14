@@ -7,6 +7,7 @@ export const planReadSchema: ToolSchema = {
     'Read the current task plan from task_plan.md. ' +
     'Use this to review your progress, objectives, and remaining tasks. ' +
     'Essential for staying on track during complex multi-step tasks.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

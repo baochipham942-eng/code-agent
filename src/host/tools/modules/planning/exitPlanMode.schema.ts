@@ -20,6 +20,7 @@ export const exitPlanModeSchema: ToolSchema = {
 - 每个文件的修改内容概述
 - 实现步骤（按顺序）
 - 潜在风险或注意事项`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

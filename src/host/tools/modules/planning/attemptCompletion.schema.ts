@@ -16,6 +16,7 @@ export const ATTEMPT_COMPLETION_DESCRIPTION = `在 /goal 自治模式下，当�
 export const attemptCompletionSchema: ToolSchema = {
   name: 'attempt_completion',
   description: ATTEMPT_COMPLETION_DESCRIPTION,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

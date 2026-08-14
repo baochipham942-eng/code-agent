@@ -5,6 +5,7 @@ export const spaceListSchema: ToolSchema = {
   description:
     'List the user-created collaboration spaces available in Neo, including recent activity. ' +
     'Use this when the user asks what collaboration spaces exist or when you need a projectId before space_query.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {},

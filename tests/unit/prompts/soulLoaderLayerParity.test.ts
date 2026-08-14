@@ -47,6 +47,22 @@ describe('loadSoul 组合路径不丢工程层段落', () => {
     expect(engineeringLayerBlocks().length).toBeGreaterThanOrEqual(5);
   });
 
+  it('门自己的盲区要报出来：IDENTITY_PROMPT 里不许有推导不到的私有段落', () => {
+    // 本门只看得见 identity 的**导出面**。OBJECTIVITY_RULES 当初正是 `const` 而非
+    // `export const`（#1150 加的），soulLoader 想拼也 import 不到 —— 只要还有这种私有块，
+    // 它从任何组合路径掉队本门都抓不到。所以先证明「导出面能拼回整块 IDENTITY_PROMPT」。
+    let remainder = String(identity.IDENTITY_PROMPT);
+    for (const block of [String(identity.IDENTITY), ...engineeringLayerBlocks()]) {
+      remainder = remainder.replace(block, '');
+    }
+    expect(
+      remainder.trim(),
+      'IDENTITY_PROMPT 里有一段不在 identity 的导出面上 —— 本门推导不到它，' +
+        '它从 soulLoader 之类的组合路径掉队时不会报红。把它改成 export const。\n' +
+        `剩余片段：${remainder.trim().slice(0, 200)}`,
+    ).toBe('');
+  });
+
   it('用户写了 SOUL.md 之后，IDENTITY_PROMPT 里的每个工程层段落仍然下发', async () => {
     const { loadSoul } = await import('../../../src/host/prompts/soulLoader');
     const composed = loadSoul();

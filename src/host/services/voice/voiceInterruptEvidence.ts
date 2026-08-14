@@ -15,8 +15,13 @@ import {
   VOICE_INTERRUPT_EARLY_OVERLAP_MS,
   VOICE_INTERRUPT_SUBSTANTIVE_SPEECH_MS,
 } from '../../../shared/constants/voice';
+import type { VoiceProviderId } from '../../../shared/contract/voice';
+import { createLogger } from '../infra/logger';
+import { recordVoiceInterruptEvidence } from './voiceTelemetry';
 
-export interface VoiceInterruptEvidenceInput {
+const logger = createLogger('VoiceInterruptEvidence');
+
+interface VoiceInterruptEvidenceInput {
   /** 本次候选的 speech_started 时刻 */
   startedAt: number;
   /** 本次语音时长（上游 speech_stopped 带回）；缺席 = 上游没给 */
@@ -31,7 +36,7 @@ export interface VoiceInterruptEvidenceInput {
   text: string;
 }
 
-export interface VoiceInterruptEvidence {
+interface VoiceInterruptEvidence {
   /** 短窗内触发次数（含本次） */
   burstCount: number;
   /** 距上一次触发的间隔；本通话首次 = undefined */
@@ -74,7 +79,7 @@ function isAddressed(text: string): boolean {
  * 纯函数，无副作用、不读配置——这样 shadow mode 的采样和将来的真判定吃的是同一段逻辑，
  * 不会出现「量的是一套、判的是另一套」。
  */
-export function collectVoiceInterruptEvidence(
+function collectVoiceInterruptEvidence(
   input: VoiceInterruptEvidenceInput,
 ): VoiceInterruptEvidence {
   const windowStart = input.startedAt - VOICE_INTERRUPT_BURST_WINDOW_MS;
@@ -121,4 +126,47 @@ export function collectVoiceInterruptEvidence(
     tier,
     score,
   };
+}
+
+/**
+ * shadow mode 的采样出口：组装输入 → 打分 → 落遥测与日志。**不返回判决**。
+ *
+ * 放在证据层自己的文件里而不是散在会话服务里：采样口径和打分口径必须同源，
+ * 分在两处迟早长成「量的是一套、判的是另一套」。
+ *
+ * 只该在**终判那一刻**调一次——partial 阶段的 pending 不是结论，采了会把分布灌满噪声。
+ */
+export function sampleVoiceInterruptEvidence(input: {
+  provider: VoiceProviderId;
+  voiceSessionId: string;
+  candidateId: string;
+  startedAt: number;
+  durationMs?: number;
+  playedMs?: number;
+  assistantPlaying: boolean;
+  priorStartedAt: readonly number[];
+  text: string;
+  decidedClassification: string;
+  decidedCancel: boolean;
+}): void {
+  const evidence = collectVoiceInterruptEvidence({
+    startedAt: input.startedAt,
+    ...(input.durationMs === undefined ? {} : { durationMs: input.durationMs }),
+    assistantPlaying: input.assistantPlaying,
+    ...(input.playedMs === undefined ? {} : { playedMs: input.playedMs }),
+    priorStartedAt: input.priorStartedAt,
+    text: input.text,
+  });
+  const tail = {
+    ...evidence,
+    assistantPlaying: input.assistantPlaying,
+    decidedClassification: input.decidedClassification,
+    decidedCancel: input.decidedCancel,
+  };
+  recordVoiceInterruptEvidence({ provider: input.provider, ...tail });
+  logger.info('voice interrupt evidence (shadow)', {
+    voiceSessionId: input.voiceSessionId,
+    candidateId: input.candidateId,
+    ...tail,
+  });
 }

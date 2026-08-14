@@ -36,8 +36,12 @@ import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import { reportVoiceWorkFailure } from './voiceWorkFailureReporter';
 import { detectHangupIntent } from './hangupIntent';
-import { collectVoiceInterruptEvidence } from './voiceInterruptEvidence';
-import { recordVoiceInterruptEvidence } from './voiceTelemetry';
+import {
+  findVoiceInterruptCandidateByItemId,
+  resolveInterruptCandidate,
+  type VoiceInterruptCandidate,
+} from './voiceInterruptCandidates';
+import { sampleVoiceInterruptEvidence } from './voiceInterruptEvidence';
 import { decideVoiceInterrupt, shouldDisarmHangup } from './voiceTurnTaking';
 import {
   createNarrationState,
@@ -106,21 +110,6 @@ function withLanguageDirective(instructions: string, language: VoiceLiveSettings
   return instructions;
 }
 
-interface VoiceInterruptCandidate {
-  itemId?: string;
-  startedAt: number;
-  durationMs?: number;
-  assistantPlaying?: boolean;
-  /** 打断发生时助手已播了多久（renderer 上报）。证据层的「早重叠」维吃它。 */
-  playedMs?: number;
-  classification?: VoiceInterruptClassification;
-  classificationSource?: 'empty-text-fallback' | 'transcript';
-  emptyTextFallbackObserved?: boolean;
-  decided: boolean;
-  cancelledResponseId?: string;
-  responseRequested: boolean;
-  finalGraceTimer?: NodeJS.Timeout;
-}
 
 interface ActiveSession {
   id: string;
@@ -276,36 +265,13 @@ async function requestResponse(session: ActiveSession, userFinal: string): Promi
   const prompt = latest ? `只回应并严格执行用户最新一句话，不要继续被取消回复的目标或内容。\n用户最新一句话：${latest}` : undefined; session.upstream.respond(prompt, requiresVoiceActionTool(latest) ? 'required' : 'auto');
 }
 
-function findInterruptCandidateByItemId(
-  session: ActiveSession,
-  itemId?: string,
-): { candidateId: string; candidate: VoiceInterruptCandidate } | undefined {
-  if (!itemId) return undefined;
-  for (const [candidateId, candidate] of session.interruption.candidates) {
-    if (candidate.itemId === itemId) return { candidateId, candidate };
-  }
-  return undefined;
-}
-
-function resolveInterruptCandidate(
-  session: ActiveSession,
-  identity: { candidateId?: string; itemId?: string } = {},
-): { candidateId: string; candidate: VoiceInterruptCandidate } | undefined {
-  const byItemId = findInterruptCandidateByItemId(session, identity.itemId);
-  if (byItemId) return byItemId;
-  const candidateId = identity.candidateId ?? session.interruption.currentCandidateId;
-  if (!candidateId) return undefined;
-  const candidate = session.interruption.candidates.get(candidateId);
-  return candidate ? { candidateId, candidate } : undefined;
-}
-
 function evaluateInterrupt(
   session: ActiveSession,
   text: string,
   stage: 'partial' | 'final',
   identity: { candidateId?: string; itemId?: string; classificationSource?: 'empty-text-fallback' | 'transcript' } = {},
 ): void {
-  const resolved = resolveInterruptCandidate(session, identity);
+  const resolved = resolveInterruptCandidate(session.interruption, identity);
   const candidateId = resolved?.candidateId;
   if (!candidateId) {
     if (stage === 'final' && text.trim()) void requestResponse(session, text);
@@ -324,33 +290,21 @@ function evaluateInterrupt(
     stage,
   });
 
-  // ── 证据层 shadow mode ──────────────────────────────────────────────
-  // 只在终判那一刻采样一次（partial 阶段的 pending 不是结论，采了会把分布灌满噪声）。
-  // 输出**不参与**上面的 decision，只落遥测——先量两组真实分布，阈值从数据里读出来再接线。
+  // 证据层 shadow mode：只在终判那一刻采一次，输出不参与上面的 decision。
   if (decision.terminal && !candidate.decided) {
-    const assistantPlaying = candidate.assistantPlaying
-      ?? (session.upstream.kind === 'relay' && session.upstream.isResponding());
-    const evidence = collectVoiceInterruptEvidence({
+    sampleVoiceInterruptEvidence({
+      provider: session.upstream.provider,
+      voiceSessionId: session.id,
+      candidateId,
       startedAt: candidate.startedAt,
-      ...(candidate.durationMs === undefined ? {} : { durationMs: candidate.durationMs }),
-      assistantPlaying,
-      ...(candidate.playedMs === undefined ? {} : { playedMs: candidate.playedMs }),
+      durationMs: candidate.durationMs,
+      playedMs: candidate.playedMs,
+      assistantPlaying: candidate.assistantPlaying
+        ?? (session.upstream.kind === 'relay' && session.upstream.isResponding()),
       priorStartedAt: [...session.interruption.candidates.values()]
         .filter((other) => other !== candidate)
         .map((other) => other.startedAt),
       text,
-    });
-    recordVoiceInterruptEvidence({
-      provider: session.upstream.provider,
-      ...evidence,
-      assistantPlaying,
-      decidedClassification: decision.classification,
-      decidedCancel: decision.cancel,
-    });
-    logger.info('voice interrupt evidence (shadow)', {
-      voiceSessionId: session.id,
-      candidateId,
-      ...evidence,
       decidedClassification: decision.classification,
       decidedCancel: decision.cancel,
     });
@@ -926,7 +880,7 @@ async function connectAndBind(
           if (active?.id === id) {
             voiceQuestionConsumed = event.done
               && handleVoiceQuestionTranscript(neoSessionId, event.text);
-            const transcriptCandidate = resolveInterruptCandidate(active, {
+            const transcriptCandidate = resolveInterruptCandidate(active.interruption, {
               candidateId: event.candidateId,
               itemId: event.itemId,
             });
@@ -938,7 +892,7 @@ async function connectAndBind(
               });
             }
             if (event.done && event.itemId) {
-              const candidate = findInterruptCandidateByItemId(active, event.itemId)?.candidate;
+              const candidate = findVoiceInterruptCandidateByItemId(active.interruption, event.itemId)?.candidate;
               const classification = candidate?.classification;
               suppressUserFragment = !candidate?.emptyTextFallbackObserved
                 && candidate?.classificationSource !== 'empty-text-fallback'

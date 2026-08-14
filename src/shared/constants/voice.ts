@@ -439,6 +439,12 @@ export const VOICEPRINT_EMBEDDING_DIM = 192;
 export const VOICEPRINT_DIR = 'voiceprint';
 export const VOICEPRINT_PROFILE_FILE = 'owner-profile.json';
 
+/**
+ * 声纹推理复用桌面 VAD 那份 ONNX 运行时按需资产（同一个 onnxruntime-node）。
+ * 只在 darwin-arm64 有产物，其余平台拿不到就维持缺失态。
+ */
+export const VOICEPRINT_ONNX_ASSET_ID = 'onnxruntime-vad';
+
 /** 模型缓存目录（按需下载落这里；与声纹数据目录分开——模型是组件，不是身份数据）。 */
 export const VOICEPRINT_MODEL_DIR = 'voiceprint-model';
 export const VOICEPRINT_MODEL_FILE = 'campplus-zh-cn-16k-common.onnx';

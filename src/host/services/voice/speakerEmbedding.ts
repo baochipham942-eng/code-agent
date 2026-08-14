@@ -21,6 +21,7 @@ import type { InferenceSession } from 'onnxruntime-node';
 import {
   VOICEPRINT_EMBEDDING_DIM,
   VOICEPRINT_MODEL_DIR,
+  VOICEPRINT_ONNX_ASSET_ID,
   VOICEPRINT_MODEL_FILE,
   VOICEPRINT_MODEL_SHA256,
   VOICEPRINT_MODEL_URL,
@@ -67,12 +68,25 @@ export interface SpeakerEmbedder {
 /**
  * 每通电话建一个 embedder（session 创建实测 186ms，摊在拨号期）。
  * 模型/运行时缺失时返回 null——调用方据此完全跳过声纹链路。
+ *
+ * 🔴 缺失必须出声（2026-08-14 真机腿的教训）：首轮真机跑完，声纹链路**一条日志都没有**——
+ * 打包态没有 onnxruntime-node（它是 delivery:'optional' 的按需下载资产，全新数据目录从没下过），
+ * 于是这里静默返回 null，通话照常跑，用户以为声纹在工作，日志里查不到任何痕迹。
+ * fail-open 说的是**行为**不改变，不是**失败不留痕**。
  */
 export async function createSpeakerEmbedder(): Promise<SpeakerEmbedder | null> {
   const modelPath = resolveVoiceprintModelPath();
-  if (!modelPath) return null;
-  const ort = loadOrtRuntimeForModule(__dirname);
-  if (!ort) return null;
+  const ort = modelPath ? loadOrtRuntimeForModule(__dirname) : null;
+  if (!modelPath || !ort) {
+    logger.warn('voiceprint disabled: prerequisite missing', {
+      modelReady: modelPath !== null,
+      runtimeReady: ort !== null,
+      hint: modelPath === null
+        ? '声纹模型未下载：设置 → 语音 → 声纹身份 → 下载声纹组件'
+        : '本地推理运行时缺失（onnxruntime 按需资产未安装）',
+    });
+    return null;
+  }
   let session: InferenceSession;
   try {
     session = await ort.InferenceSession.create(modelPath);
@@ -108,12 +122,39 @@ export async function createSpeakerEmbedder(): Promise<SpeakerEmbedder | null> {
 }
 
 /**
- * 按需下载模型（设置页触发）。固定 URL + 固定 SHA256，校验不过即删——
+ * 「下载声纹组件」要备齐**两样**：ONNX 运行时（按需资产，与桌面 VAD 共用同一份）
+ * 与声纹模型文件。首轮真机腿只备了后者，结果打包态里根本没有 onnxruntime-node，
+ * 声纹链路整条静默失效——所以运行时这一步不能省。
+ *
+ * 运行时走仓内既有机制（`prepareRuntimeAssetOnDemand`，同 playwright/desktop VAD 先例），
+ * 模型走固定 URL + SHA256（等模型产物进 OSS manifest 后合并成一次调用）。
+ */
+export async function prepareVoiceprintPrerequisites(): Promise<VoiceprintRuntimeStatus> {
+  if (!loadOrtRuntimeForModule(__dirname)) {
+    // 与 desktop.ipc 的 startAudioCapture 同款：只在 arm64 mac 上有产物，其余平台
+    // 拿不到就维持缺失态（设置页据此显示「本机暂不可用」，不是假装能下）。
+    try {
+      const { isUpdateServiceInitialized, prepareRuntimeAssetOnDemand } = await import('../cloud/updateService');
+      if (isUpdateServiceInitialized()) {
+        await prepareRuntimeAssetOnDemand(VOICEPRINT_ONNX_ASSET_ID);
+        logger.info('voiceprint onnx runtime prepared');
+      }
+    } catch (error) {
+      logger.warn('voiceprint onnx runtime prepare failed', {
+        message: error instanceof Error ? error.message : 'unknown',
+      });
+    }
+  }
+  if (!resolveVoiceprintModelPath()) await downloadVoiceprintModel();
+  return getVoiceprintRuntimeStatus();
+}
+
+/**
+ * 按需下载模型文件。固定 URL + 固定 SHA256，校验不过即删——
  * 与 updateService.downloadVerifiedFile 同形（那是私有方法，这里体量不值得开洞）。
- * 等模型产物进 OSS runtime-assets manifest 后，这段换成 prepareRuntimeAssetOnDemand。
  * 代理跟 gitDownloader 同款（GitHub 直连在国内不可达）。
  */
-export async function downloadVoiceprintModel(): Promise<VoiceprintRuntimeStatus> {
+async function downloadVoiceprintModel(): Promise<VoiceprintRuntimeStatus> {
   const proxyUrl = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
   const httpsAgent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
   const response = await axios.get<ArrayBuffer>(VOICEPRINT_MODEL_URL, {

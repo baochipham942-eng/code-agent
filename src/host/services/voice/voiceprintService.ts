@@ -10,7 +10,7 @@
 import { createLogger } from '../infra/logger';
 import {
   createSpeakerEmbedder,
-  downloadVoiceprintModel,
+  prepareVoiceprintPrerequisites,
   getVoiceprintRuntimeStatus,
   type SpeakerEmbedder,
   type VoiceprintRuntimeStatus,
@@ -147,8 +147,8 @@ export function clearVoiceprintData(): VoiceprintOverview {
   return getVoiceprintOverview();
 }
 
-/** 设置页「下载声纹组件」。 */
+/** 设置页「下载声纹组件」：ONNX 运行时 + 模型文件两样都备齐。 */
 export async function prepareVoiceprintModel(): Promise<VoiceprintOverview> {
-  await downloadVoiceprintModel();
+  await prepareVoiceprintPrerequisites();
   return getVoiceprintOverview();
 }

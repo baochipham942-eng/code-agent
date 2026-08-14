@@ -37,7 +37,6 @@ import type { EffortLevel } from '../../shared/contract/agent';
 import { getTaskListManager, type TaskListManager } from './taskList';
 import { getEventBus } from '../services/eventing';
 import { getComboRecorder } from '../services/skills/comboRecorder';
-import { recordCapabilityGapTurn } from './capabilityGapTurnRecorder';
 import { resolveAgent as registryResolveAgent } from './agentRegistry';
 import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { assembleTurnDenylist } from './routingToolPolicy';
@@ -216,16 +215,8 @@ export class AgentOrchestrator {
     this.addMessage(userMessage);
     logger.debug('User message added, hasAttachments:', !!userMessage.attachments?.length, 'count:', userMessage.attachments?.length || 0);
 
-    // Combo recording: start recording + mark this turn
-    try {
-      const recorder = getComboRecorder();
-      if (sessionId) {
-        recorder.startRecording(sessionId);
-        recorder.markTurn(sessionId, content);
-      }
-    } catch {
-      // Non-blocking
-    }
+    // 录制开轮已下沉到 AgentLoop.run —— 那才是所有入口（桌面 /api/run、CLI、
+    // 通道）的唯一汇聚点；这里再调一次会给同一轮多插一条空 turn。
 
     try {
       if (sessionId) {
@@ -960,17 +951,6 @@ export class AgentOrchestrator {
             await getSessionManager().addMessageToSession(sessionId, message);
           }
         : undefined,
-      onToolExecutionLog: (log) => {
-        try {
-          // 这里是四个工具执行出口的唯一汇聚点，也是录制器**唯一**的步骤来源
-          // （N-CAP1：原先靠 EventBus 的 agent:tool_call_end，而主链路根本不过 EventBus，
-          //  步骤一条都没记进去过）。
-          const recorder = getComboRecorder();
-          recorder.recordStep(log.sessionId, log.toolCallId, log.toolName, log.args, log.result);
-        } catch {
-          // Non-blocking
-        }
-      },
       });
 
       registeredRun = this.runRegistry && sessionId
@@ -1003,9 +983,6 @@ export class AgentOrchestrator {
         } catch {
           // Non-blocking
         }
-        // 缺口探测器（N-CAP1 / F1）：把这一轮的拼凑增量记进候选能力账本。
-        // 纯记账——不发事件、不弹卡、不通知；人要看得自己去能力中心翻。
-        void recordCapabilityGapTurn(sessionId);
       }
     } finally {
       // 只钳这一轮：下一轮换成别的专家（或回到主会话）时回到会话自己的档。

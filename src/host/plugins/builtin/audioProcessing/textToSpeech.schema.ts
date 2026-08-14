@@ -46,6 +46,7 @@ text_to_speech { "text": "快速播报", "speed": 1.5, "voice": "小陈" }
 \`\`\`
 
 注意：需要配置智谱 API Key`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

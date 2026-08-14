@@ -44,3 +44,54 @@ describe('voice turn-taking semantic gate', () => {
     expect(shouldDisarmHangup('不要挂断')).toBe(true);
   });
 });
+
+describe('声纹门（N-L7-SPK 判据3 协议级正负成对）', () => {
+  it('负例：陌生声纹说正常人话（电视台词形态）→ 不取消播报，speakerGated 记账', () => {
+    expect(decideVoiceInterrupt({
+      assistantPlaying: true,
+      durationMs: 2_400,
+      text: '明天上海的天气还是不错的',
+      stage: 'final',
+      speakerMismatch: true,
+    })).toMatchObject({ classification: 'background', cancel: false, shouldRespond: false, speakerGated: true });
+  });
+
+  it('正例：同一句话来自匹配的说话人 → 兜底照旧取消（行为与今天完全一致）', () => {
+    expect(decideVoiceInterrupt({
+      assistantPlaying: true,
+      durationMs: 2_400,
+      text: '明天上海的天气还是不错的',
+      stage: 'final',
+      speakerMismatch: false,
+    })).toMatchObject({ classification: 'true_interrupt', cancel: true });
+  });
+
+  it('救援词永远有效：哪怕声纹 mismatch，显式打断词照样取消（判错后果只能是体验差一点）', () => {
+    expect(decideVoiceInterrupt({
+      assistantPlaying: true,
+      durationMs: 400,
+      text: '停一下',
+      stage: 'final',
+      speakerMismatch: true,
+    })).toMatchObject({ classification: 'true_interrupt', cancel: true });
+  });
+
+  it('未提供声纹证据（unknown/未启用）→ 与现状完全一致（fail-open）', () => {
+    expect(decideVoiceInterrupt({
+      assistantPlaying: true,
+      durationMs: 2_400,
+      text: '明天上海的天气还是不错的',
+      stage: 'final',
+    })).toMatchObject({ classification: 'true_interrupt', cancel: true });
+  });
+
+  it('声纹 mismatch 不影响豁免枚举（附和仍是附和，不会被误标 gated）', () => {
+    expect(decideVoiceInterrupt({
+      assistantPlaying: true,
+      durationMs: 420,
+      text: '好的',
+      stage: 'final',
+      speakerMismatch: true,
+    })).toMatchObject({ classification: 'acknowledgement', cancel: false });
+  });
+});

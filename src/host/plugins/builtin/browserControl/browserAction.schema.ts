@@ -10,6 +10,7 @@ Routing: prefer web_fetch/search for plain reads; use browser_action for login/s
 engine (ADR-041): optional auto|managed|relay (default auto). Explicit managed/relay never silent-switches. managed=Neo isolated browser; relay=user-attached Chrome tab.
 Profile login reuse: list_profiles; import_profile_cookies recognizes the legacy userConfirmed signal but also requires a one-time Host approval bound to profile/domain scope; clear_cookies clears managed profile cookies. Never log cookie values.
 storageState file path: export_storage_state / import_storage_state for CI/scripts.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

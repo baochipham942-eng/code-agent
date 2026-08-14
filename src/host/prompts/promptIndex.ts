@@ -30,18 +30,11 @@ import './questionForm';
 
 // Rules
 import './rules/attachmentHandling';
-import './rules/codeReference';
 import './rules/codeSnippet';
 import './rules/errorHandling';
-import './rules/githubRouting';
 import './rules/gitSafety';
 import './rules/htmlGeneration';
 import './rules/outputFormat';
-import './rules/parallelTools';
-import './rules/planMode';
-import './rules/professionalObjectivity';
-import './rules/taskClassification';
-import './rules/taskManagement';
 import './rules/toolDecisionTree';
 import './rules/toolUsagePolicy';
 

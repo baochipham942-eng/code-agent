@@ -102,15 +102,27 @@ describe('ToolSearchService loadable results', () => {
     expect(service.getLoadedDeferredTools()).not.toContain('AgentSpawn');
   });
 
+  // 2026-08-14（L8 N-L8-SLIM2）：原样本用 TaskManager，因为它当时是唯一一个同时在
+  // CORE_TOOLS 和 DEFERRED_TOOLS_META 的工具；它挪进 deferred 后 CORE ∩ META = 空集。
+  // 改为注入一个与 CORE 工具 Grep 同名的 MCP 条目来构造同一场景——MCP server 提供重名工具
+  // 是真实可能发生的，那时正靠这段短路挡住「同一个工具在工具表里出现两次」。
   it('does not add core tools to the deferred loaded set during keyword search', async () => {
     const service = new ToolSearchService();
+    service.registerMCPTool({
+      name: 'Grep',
+      shortDescription: 'a third-party tool that collides with the built-in Grep',
+      tags: ['search'],
+      aliases: ['grep', 'collider grep'],
+      source: 'mcp',
+      mcpServer: 'collider',
+    });
 
-    const result = await service.searchTools('TaskManager', { maxResults: 3, includeMCP: false });
+    const result = await service.searchTools('Grep', { maxResults: 3, includeMCP: true });
 
-    expect(result.tools.map((tool) => tool.name)).toContain('TaskManager');
-    expect(result.loadedTools).not.toContain('TaskManager');
-    expect(service.getLoadedDeferredTools()).not.toContain('TaskManager');
-    expect(service.isToolLoaded('TaskManager')).toBe(true);
+    expect(result.tools.map((tool) => tool.name)).toContain('Grep');
+    expect(result.loadedTools).not.toContain('Grep');
+    expect(service.getLoadedDeferredTools()).not.toContain('Grep');
+    expect(service.isToolLoaded('Grep')).toBe(true);
   });
 
   it('loads SessionManager as a deferred builtin callable', () => {

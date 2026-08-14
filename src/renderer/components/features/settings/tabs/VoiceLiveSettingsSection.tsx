@@ -23,6 +23,8 @@ import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Toggle } from '../../../primitives/Toggle';
+import { Button } from '../../../primitives/Button';
+import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { useVoiceLiveAvailability } from '../../voice/useVoiceLiveAvailability';
 import { deriveInterruptMode, deriveTurnDetection, deriveVadSensitivity } from '../../voice/voiceSettingsDerivation';
 import { resolveVoiceInputDevice } from '../../../../services/voiceAudioPipeline';
@@ -89,6 +91,21 @@ export const VoiceLiveSettingsSection: React.FC = () => {
   const [voiceprint, setVoiceprint] = useState<VoiceprintOverviewView | null>(null);
   const [voiceprintBusy, setVoiceprintBusy] = useState<'download' | 'register' | 'clear' | null>(null);
   const [voiceprintMessage, setVoiceprintMessage] = useState('');
+  // 清除声纹不可逆（删的是生物识别数据），照仓内破坏性动作惯例走二次确认。
+  const [pendingVoiceprintClear, setPendingVoiceprintClear] = useState(false);
+
+  const confirmVoiceprintClear = () => {
+    setPendingVoiceprintClear(false);
+    setVoiceprintBusy('clear');
+    setVoiceprintMessage('');
+    void ipcService.invokeDomain<VoiceprintOverviewView>(IPC_DOMAINS.VOICE, 'voiceprintClear')
+      .then((overview) => {
+        setVoiceprint(overview);
+        setVoiceprintMessage(text.voiceprintCleared);
+      })
+      .catch((error) => logger.error('voiceprint clear failed', error))
+      .finally(() => setVoiceprintBusy(null));
+  };
 
   const refreshVoiceprint = async () => {
     try {
@@ -660,25 +677,15 @@ export const VoiceLiveSettingsSection: React.FC = () => {
                     {text.voiceprintRegister}
                   </button>
                   {voiceprint.status.registered && (
-                    <button
-                      type="button"
+                    <Button
+                      variant="danger"
+                      size="sm"
                       data-testid="voiceprint-clear"
                       disabled={voiceprintBusy !== null}
-                      onClick={() => {
-                        setVoiceprintBusy('clear');
-                        setVoiceprintMessage('');
-                        void ipcService.invokeDomain<VoiceprintOverviewView>(IPC_DOMAINS.VOICE, 'voiceprintClear')
-                          .then((overview) => {
-                            setVoiceprint(overview);
-                            setVoiceprintMessage(text.voiceprintCleared);
-                          })
-                          .catch((error) => logger.error('voiceprint clear failed', error))
-                          .finally(() => setVoiceprintBusy(null));
-                      }}
-                      className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-red-300 hover:border-red-700"
+                      onClick={() => setPendingVoiceprintClear(true)}
                     >
                       {text.voiceprintClear}
-                    </button>
+                    </Button>
                   )}
                 </div>
                 {!voiceprint.callActive && (
@@ -701,6 +708,17 @@ export const VoiceLiveSettingsSection: React.FC = () => {
           <p className="mt-1 text-xs leading-5 text-zinc-500">{text.privacyBody}</p>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={pendingVoiceprintClear}
+        title={text.voiceprintClear}
+        message={text.voiceprintClearConfirm}
+        variant="danger"
+        confirmText={text.voiceprintClear}
+        cancelText={t.common.cancel}
+        onConfirm={confirmVoiceprintClear}
+        onCancel={() => setPendingVoiceprintClear(false)}
+      />
     </div>
   );
 };

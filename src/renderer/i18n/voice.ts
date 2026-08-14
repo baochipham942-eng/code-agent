@@ -269,6 +269,7 @@ export const voiceZh: VoiceTranslations = {
       voiceprintRegisterNoSamples: '这通电话里还没听到足够的声音，多说几句后再试。',
       voiceprintRegisterDone: '已注册。下一通电话开始生效。',
       voiceprintClear: '清除声纹',
+      voiceprintClearConfirm: '清除后本机的声纹数据会被彻底删除且无法恢复，Neo 将不再能跨通话认出你。要继续吗？',
       voiceprintCleared: '已清除。所有声纹数据已从本机删除。',
       // 四要点缺一不可：①隔离存储 ②如实承认准确率上限（行业惯例文案）③删除时限给具体数字 ④非生物识别替代路径
       voiceprintPrivacyBody: '声纹只以数学特征向量的形式保存在这台设备上，与你的账号身份信息隔离存储；不上传云端、不进入问题诊断包。我们无法完全保证声纹识别的准确性，因此它只用于个性化与区分说话人，绝不用于解锁、授权等任何身份验证。连续 90 天未匹配的声纹会自动删除，你也可以随时在这里一键清除。未注册或清除后，全部核心功能不受影响，只是失去跨通话的个性化上下文。',
@@ -563,6 +564,7 @@ export const voiceEn = {
       voiceprintRegisterNoSamples: 'Not enough of your voice heard in this call yet. Say a bit more and retry.',
       voiceprintRegisterDone: 'Enrolled. Takes effect from your next call.',
       voiceprintClear: 'Clear voiceprint',
+      voiceprintClearConfirm: 'Clearing permanently deletes the voiceprint data on this device and cannot be undone. Neo will no longer recognize you across calls. Continue?',
       voiceprintCleared: 'Cleared. All voiceprint data has been deleted from this device.',
       voiceprintPrivacyBody: 'Your voiceprint is stored on this device only, as a mathematical feature vector, isolated from your account identity. It is never uploaded and never included in diagnostic bundles. We cannot fully guarantee recognition accuracy, so it is used only for personalization and speaker disambiguation — never for unlocking or authorization. Voiceprints unmatched for 90 consecutive days are deleted automatically, and you can clear them here at any time. Without enrollment, all core features work normally; you only lose cross-call personalization.',
     },

@@ -21,6 +21,7 @@ import { buildClaudeCodeArgs } from '../../../src/host/services/agentEngine/clau
 import { buildMimoArgs } from '../../../src/host/services/agentEngine/mimoCliAdapter';
 import { buildKimiArgs } from '../../../src/host/services/agentEngine/kimiCliAdapter';
 import { buildGrokArgs } from '../../../src/host/services/agentEngine/grokCliAdapter';
+import { buildDshArgs } from '../../../src/host/services/agentEngine/dshCliAdapter';
 import type { InferenceOptions, ModelMessage } from '../../../src/host/model/types';
 import type { ModelConfig } from '../../../src/shared/contract/model';
 import { PROVIDER_REGISTRY } from '../../../src/host/model/providerRegistry';
@@ -66,7 +67,7 @@ function buildFixtureMessages(labels: string[]): ModelMessage[] {
 
 describe('Provider × Runtime capability matrix', () => {
   it('covers every declared capability with an allowed four-state value', () => {
-    expect(PROVIDER_RUNTIME_CAPABILITY_MATRIX).toHaveLength(12);
+    expect(PROVIDER_RUNTIME_CAPABILITY_MATRIX).toHaveLength(13);
     for (const entry of PROVIDER_RUNTIME_CAPABILITY_MATRIX) {
       expect(Object.keys(entry.capabilities).sort()).toEqual([...PROVIDER_RUNTIME_CAPABILITIES].sort());
       for (const capability of PROVIDER_RUNTIME_CAPABILITIES) {
@@ -188,6 +189,7 @@ describe('Provider × Runtime capability matrix', () => {
       { runtime: 'mimo_code', fixture: 'runtime-mimo-code.json', args: buildMimoArgs('<redacted-user-content>', 'fixture-model') },
       { runtime: 'kimi_code', fixture: 'runtime-kimi-code.json', args: buildKimiArgs('<redacted-user-content>', 'fixture-model') },
       { runtime: 'grok_cli', fixture: 'runtime-grok-cli.json', args: buildGrokArgs('read_only', 'fixture-model', '<redacted-user-content>') },
+      { runtime: 'dsh_cli', fixture: 'runtime-dsh-cli.json', args: buildDshArgs('read_only', undefined, '<redacted-user-content>') },
     ];
 
     for (const item of cases) {

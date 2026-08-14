@@ -20,6 +20,7 @@ const EXTERNAL_ENGINE_LABELS: Record<ExternalAgentEngineKind, string> = {
   kimi_code: 'Kimi Code',
   codebuddy_code: 'WorkBuddy',
   grok_cli: 'Grok Build',
+  dsh_cli: 'DeepSeek Harness',
 };
 
 function getExternalEngineLabel(kind: ExternalAgentEngineKind): string {

@@ -65,6 +65,7 @@ export const ENGINE_SHORT_LABEL: Record<AgentEngineKind, string> = {
   kimi_code: 'Kimi',
   codebuddy_code: 'WorkBuddy',
   grok_cli: 'Grok',
+  dsh_cli: 'dsh',
 };
 
 export const ENGINE_ICON: Record<AgentEngineKind, React.ReactNode> = {
@@ -75,6 +76,7 @@ export const ENGINE_ICON: Record<AgentEngineKind, React.ReactNode> = {
   kimi_code: <Terminal className="w-3 h-3" />,
   codebuddy_code: <Terminal className="w-3 h-3" />,
   grok_cli: <Terminal className="w-3 h-3" />,
+  dsh_cli: <Terminal className="w-3 h-3" />,
 };
 
 export const ENGINE_INSTALL_LABEL: Record<AgentEngineDescriptor['installState'], string> = {
@@ -136,6 +138,7 @@ const ENGINE_STREAMING_MODE_LABEL: Record<NonNullable<AgentEngineDescriptor['rel
 const ENGINE_TRANSCRIPT_MODE_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['transcriptMode'], string> = {
   clean_stream_json: '干净 transcript',
   raw_terminal: '原始终端 transcript',
+  final_text: '仅最终回答 transcript',
   session_import: '历史导入 transcript',
   unknown: 'transcript 未知',
 };

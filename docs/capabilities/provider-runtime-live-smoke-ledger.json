@@ -2,7 +2,11 @@
   "schemaVersion": 1,
   "updatedAt": "2026-08-10",
   "policy": {
-    "verificationStatus": ["verified", "unverified", "failed"],
+    "verificationStatus": [
+      "verified",
+      "unverified",
+      "failed"
+    ],
     "supportedRequiresVerifiedRecord": true,
     "paidOrSubscriptionSmokeRequiresExplicitAuthorization": true,
     "secretsAndUserContent": "must-not-be-recorded"
@@ -178,6 +182,22 @@
         "scripts/acceptance/agent-runtime-app-host-smoke.ts"
       ],
       "reason": "Non-provider stop evidence only; it does not promote any provider stop_abort cell to supported."
+    },
+    {
+      "id": "dsh-cli-local-spike",
+      "date": "2026-08-14",
+      "runtime": "dsh_cli",
+      "protocolFamily": "opaque_cli",
+      "provider": "cli-owned",
+      "model": "deepseek-v4-pro",
+      "verificationStatus": "cli-verified",
+      "result": "passed",
+      "scope": "CLI-level spike only: stdout shape, provider/model translation through --patch, and read-only sandbox enforcement",
+      "evidence": [
+        "src/host/services/agentEngine/dshCliAdapter.ts",
+        "tests/unit/agentEngine/dshCliAdapter.test.ts"
+      ],
+      "reason": "dsh 0.1.0-rc.6 headless prints only the final assistant text (no event stream); a --patch overlay on agent-default-model produced a request header with provider deepseek-official and model deepseek-v4-pro; with DSH_PERMISSION_MODE=read-only a real file-write attempt was refused, escalation failed closed with no approval channel, and no file was created. Neo-side real-runtime verification is tracked separately."
     }
   ]
 }

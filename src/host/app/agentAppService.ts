@@ -86,6 +86,7 @@ import {
   ClaudeCodeAdapter,
   CodeBuddyCliAdapter,
   CodexCliAdapter,
+  DshCliAdapter,
   GrokCliAdapter,
   KimiCliAdapter,
   MimoCliAdapter,
@@ -673,6 +674,36 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         cwd: launch.cwd,
       });
       await this.executeExternalRun(durableLifecycle, () => new GrokCliAdapter().run({
+        sessionId: resolvedSessionId,
+        prompt: envelope.content,
+        cwd: launch.cwd,
+        workspaceRoot: launch.workspaceRoot,
+        model: resolvedModel,
+        permissionProfile: launch.permissionProfile,
+        clientMessageId: envelope.clientMessageId,
+        attachmentsCount: envelope.attachments?.length ?? 0,
+        messageMetadata: this.getMessageMetadata(envelope),
+        durableLifecycle,
+      }));
+      return;
+    }
+    if (engine.kind === 'dsh_cli') {
+      const launch = resolveExternalEngineLaunch(
+        session,
+        engine,
+        externalRequestedCwd,
+        sessionWorkspaceScope,
+      );
+      orchestrator?.setWorkingDirectory(launch.cwd);
+      const resolvedModel = await getRemoteAgentEngineModelCatalogService()
+        .resolveModelId('dsh_cli', launch.model, { strict: true });
+      const durableLifecycle = await this.startExternalLifecycle({
+        engine: engine.kind,
+        sessionId: resolvedSessionId,
+        workspace: launch.workspaceRoot,
+        cwd: launch.cwd,
+      });
+      await this.executeExternalRun(durableLifecycle, () => new DshCliAdapter().run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,

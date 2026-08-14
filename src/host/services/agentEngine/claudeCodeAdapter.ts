@@ -39,7 +39,7 @@ import {
 } from '../sessionFork/context';
 
 export interface ClaudeProtocolCliConfig {
-  kind: Extract<ExternalAgentEngineKind, 'claude_code' | 'codebuddy_code' | 'grok_cli'>;
+  kind: Extract<ExternalAgentEngineKind, 'claude_code' | 'codebuddy_code' | 'grok_cli' | 'dsh_cli'>;
   label: string;
   runPrefix: string;
   logSlug: string;

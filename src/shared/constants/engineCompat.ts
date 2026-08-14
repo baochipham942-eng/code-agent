@@ -40,6 +40,8 @@ export const ENGINE_BILLING_MODES: readonly EngineBillingMode[] = [
  *   - codex/claude/
  *     mimo/kimi      → subscription：外部 CLI 经各自 login 吃订阅/账号额度，
  *                     适配器从不注入 API key（见各 adapter auditNotes）。
+ *   - dsh_cli       → api_key_payg：DeepSeek Harness 用它自己 credentials 里的
+ *                     DeepSeek API key 按量计费，同样不由 Neo 注入。
  */
 export const ENGINE_BILLING_MODE: Record<AgentEngineKind, EngineBillingMode> = {
   native: 'api_key_payg',
@@ -49,6 +51,7 @@ export const ENGINE_BILLING_MODE: Record<AgentEngineKind, EngineBillingMode> = {
   kimi_code: 'subscription',
   codebuddy_code: 'subscription',
   grok_cli: 'subscription',
+  dsh_cli: 'api_key_payg',
 };
 
 export function getEngineBillingMode(kind: AgentEngineKind): EngineBillingMode {
@@ -161,6 +164,7 @@ export function getEngineModelCompat(
     case 'mimo_code':
     case 'kimi_code':
     case 'codebuddy_code':
+    case 'dsh_cli':
       return { supported: true, reasonCode: 'resolved_by_cli' };
     default:
       return { supported: true };

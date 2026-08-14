@@ -42,6 +42,7 @@ const EXTERNAL_AGENT_ENGINE_KINDS = new Set<ExternalAgentEngineKind>([
   'kimi_code',
   'codebuddy_code',
   'grok_cli',
+  'dsh_cli',
 ]);
 const MODEL_CAPABILITIES = new Set<ModelCapability>([
   'code',
@@ -689,7 +690,7 @@ function parseEngine(
   if (!kind || !EXTERNAL_AGENT_ENGINE_KINDS.has(kind as ExternalAgentEngineKind)) {
     diagnostics.push(diagnostic(
       'invalid_engine_kind',
-      'Agent Engine catalog engine kind must be codex_cli, claude_code, mimo_code, kimi_code, codebuddy_code, or grok_cli.',
+      'Agent Engine catalog engine kind must be codex_cli, claude_code, mimo_code, kimi_code, codebuddy_code, grok_cli, or dsh_cli.',
       { path: `${path}.kind` },
     ));
     return { diagnostics };

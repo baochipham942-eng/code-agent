@@ -360,6 +360,8 @@ describe('skillInvocationResolver', () => {
     }, '/tmp/work');
     expect(context.contextModifier.toolBoundary?.strict).toBe(true);
     expect(context.contextModifier.toolBoundary?.allowedTools).toEqual(['propose_role', 'read_file']);
+    expect(context.block.match(/User arguments: 研究员/g)).toHaveLength(1);
+    expect(context.block).not.toContain('User provided arguments: 研究员');
   });
 
   it('未设 strictToolset 的 skill → toolBoundary.strict 为 false（软边界不变）', async () => {

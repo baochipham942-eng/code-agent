@@ -16,19 +16,7 @@ Run shell commands (git, npm, build, test, local CLIs, environment probes). Time
 ### Rules
 - Quote paths with spaces: \`cd "/path/with spaces"\`
 - Verify parent dir before creating files
-- Use Bash for tests, builds, git, package managers, installed CLIs, and diagnostics
-- Prefer Read / Glob / Grep / Edit / Write for ordinary file operations
-- Use Bash as an escape hatch when dedicated tools are insufficient for repo-wide search, data wrangling, niche formats, or local CLI workflows
 - Keep independent read-only commands parallel when the runtime supports parallel tool calls
-
-### Prefer Dedicated Tools
-| Task | Prefer |
-|------|--------|
-| read one file | Read |
-| find files | Glob |
-| search content | Grep |
-| edit files | Edit |
-| create/overwrite files | Write |
 
 ## Git Commit
 

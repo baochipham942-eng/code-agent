@@ -33,4 +33,15 @@ describe('buildRuntimeModeBlock', () => {
     expect(block).toContain('CLI mode');
     expect(block).toContain('GUI features (screenshot, browser_action) are unavailable');
   });
+
+  it('omits the source path only when it equals the working directory', () => {
+    delete process.env.CODE_AGENT_CLI_MODE;
+    delete process.env.CODE_AGENT_WEB_MODE;
+
+    const samePathBlock = buildRuntimeModeBlock(process.cwd());
+    const differentPathBlock = buildRuntimeModeBlock('/tmp/another-worktree');
+
+    expect(samePathBlock).not.toContain('Your own source code is at:');
+    expect(differentPathBlock).toContain(`Your own source code is at: ${process.cwd()}`);
+  });
 });

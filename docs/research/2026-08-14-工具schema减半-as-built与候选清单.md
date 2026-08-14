@@ -16,6 +16,8 @@
 1. **绝对值偏高**。工具 schema 几乎全英文，所以整桶被高估约三成。真 tokenizer 口径下：CORE 23 个 = **7877 token**（不是 10371）。
 2. **桶间比例失真**，这条更要紧。ATT1 报「工具 schema 占每轮 45~51%」——那一桶全英文被高估，而静态系统提示里大量中文规则被低估，**真实占比应低于报告值**。ATT1 五桶分解需要按真 tokenizer 重算，另起一单。
 
+   ✅ **已办（2026-08-14 N-L8-RECALC）**：ATT1 五桶分解已就地换真 tokenizer 口径重算完毕，本节的推测被实测证实——工具 schema 首轮真实占比 **38.2%**（÷3 记 45.3%），而静态系统提示 **49.1%**（÷3 记 44.8%），**首轮第一大桶由「工具 schema」翻转为「静态系统提示」**。详见 `2026-08-14-注意力预算-真实下发五桶分解.md` §重算对照。
+
 下文凡标注「÷3」的是初稿口径（保留以便对账），标注「真」的是 tokenizer 实测值。**结论性判断以真值为准**；好在两个口径下"脂肪在参数里"「TaskManager 是最大单点」这两条判断都不变。
 
 ## 结论
@@ -293,7 +295,7 @@ Claude Code 的二进制里，`TodoWrite` 是 `isEnabled(){return !B1() && !Fde(
 
 ## 证据与口径
 
-- token 口径与 ATT1 一致：`{name, description, parameters}` 的 JSON 序列化字符数 ÷ 3，四舍五入。量尺脚本直接 import 全部 120 个 `*.schema.ts`（0 个解析失败，得到 130 个 schema 对象），不启动 registry。
+- token 口径：`{name, description, parameters}` 的 JSON 序列化字符数 ÷ 3，四舍五入——这是**初稿口径**，标「真」的数字为 tokenizer 实测。⚠️ 「与 ATT1 一致」这句话已不再成立：ATT1 报告于 2026-08-14 由 N-L8-RECALC 就地换成了真 tokenizer 口径，那边的表已全部是真值。量尺脚本直接 import 全部 120 个 `*.schema.ts`（0 个解析失败，得到 130 个 schema 对象），不启动 registry。
 - 与 ATT1 真实下发的对账：10 个 Top 工具里 7 个完全一致（Grep 855 / MemoryWrite 745 / Write 567 / Edit 519 / Glob 451 / AskUserQuestion 377 / Read 376）。三个有差：`TaskManager` 2249 vs 2502、`WebSearch` 855 vs 1233 是 `dynamicDescription()` 运行时拼接；`Bash` 730 vs 715 涨了 15，正是 #1131 给 Bash 补的可选 `description` 参数。**差异全部可解释，口径可信。**
 - 使用频率：`tool_execution_events` 按 `execution_id` 去重（该表每次执行落 begin + complete 两行，直接 `count(*)` 会翻倍）。生产库 + dev 槽合并。
 - 证据档位：schema token 与工具注册状况为 A（源码实算 + 与真实请求体对账）；使用频率为 A（生产真库多信源交叉：工具账本 + `session_tasks` 表）；ToolSearch 召回质量为 B（69 次真实调用的行为学证据，非受控实验）；"引导断了"为 B（静态可达性分析，未做运行时变异验证）。

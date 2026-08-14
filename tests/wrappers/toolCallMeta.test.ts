@@ -118,3 +118,24 @@ describe.each(metaShapes)('tool-call _meta chokepoint / $name', ({ value, semant
     expectStripped(result.toolCalls![0], semantic);
   });
 });
+
+describe('schema-level narration routing', () => {
+  it('routes Bash args.description into the existing shortDescription UI channel', () => {
+    const result = buildToolCallFromAccumulator({
+      id: 'bash-1',
+      name: 'Bash',
+      arguments: JSON.stringify({ command: 'ls', description: '列出当前目录' }),
+    });
+    expect(result.arguments).toEqual({ command: 'ls', description: '列出当前目录' });
+    expect(result.shortDescription).toBe('列出当前目录');
+  });
+
+  it('leaves delegate_task narration to the localized renderer template', () => {
+    const result = buildToolCallFromAccumulator({
+      id: 'delegate-1',
+      name: 'delegate_task',
+      arguments: JSON.stringify({ description: '统计三个配置文件行数' }),
+    });
+    expect(result.shortDescription).toBeUndefined();
+  });
+});

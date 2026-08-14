@@ -5653,11 +5653,6 @@
     },
     {
       "file": "src/host/prompts/builder.ts",
-      "name": "TOOL_ENVELOPE_CONVENTIONS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/builder.ts",
       "name": "WEB_SOURCE_OUTPUT_RULE",
       "kind": "export"
     },

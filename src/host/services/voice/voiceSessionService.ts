@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
+import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
 import {
   REALTIME_VOICE_PROVIDER_PROFILES,
   resolveRealtimeVoiceSelection,
@@ -26,7 +26,7 @@ import {
   resolveConfiguredRealtimeVoiceProfile,
 } from './customRealtimeVoiceProviders';
 import { requiresVoiceActionTool, resolveVoiceActionRoute, resolveVoiceRouting } from './voiceRouting';
-import { beginVoiceDispatch, endVoiceDispatch, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
+import { beginVoiceDispatch, endVoiceDispatch, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import { composeVoiceInstructions, focusChanged, type VoiceContinuityContext } from './voiceContextAssembler';
 import { isVoiceScreenContextSupported } from './voiceScreenContext';
 import { addTokenUsage, recordVoiceCall } from './voiceUsageLedger';

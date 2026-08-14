@@ -82,7 +82,8 @@ export function registerSessionHandlers(
           });
           await requireAppService().deleteSession(deletedSessionId);
           // 会话没了，它那个长生命周期 PTY 不能继续挂着（没有超时会自己收它）。
-          disposeTerminalSession(deletedSessionId);
+          // await：dispose 现在等整树确认退出才返回，不 await 就退回「发完信号就走」。
+          await disposeTerminalSession(deletedSessionId);
           data = null;
           break;
         }

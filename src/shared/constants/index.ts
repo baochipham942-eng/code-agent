@@ -42,3 +42,4 @@ export * from './sessionSearch';
 export * from './voice';
 export * from './doctor';
 export * from './toolLedger';
+export * from './capabilityCandidates';

@@ -11,18 +11,19 @@
 
 import { getSpawnGuard } from '../../agent/spawnGuard';
 import { getAllBackgroundTasks, killBackgroundTask } from './backgroundTasks';
+import { reapPtySessions } from './ptyExecutor';
 
 /**
- * 取消全部在跑 agent，并等待全部后台任务的进程树确认退出。
+ * 取消全部在跑 agent，并等待后台任务与 PTY 会话的进程树确认退出。
  *
  * 必须排在关库之前调用：关库是不设超时上限的最后一步，排在它后面的步骤在真机上
  * 可能永远轮不到。本函数自己的等待上限由 killProcessTree 的 confirmTimeoutMs 兜住。
  *
- * @returns 取消的 agent 数与收掉的后台任务数（供属主打日志）
+ * @returns 取消的 agent 数、收掉的后台任务数与 PTY 会话数（供属主打日志）
  */
 export async function reapChildProcesses(
   reason: string = 'app_shutdown',
-): Promise<{ cancelledAgents: number; killedTasks: number }> {
+): Promise<{ cancelledAgents: number; killedTasks: number; killedPtySessions: number }> {
   let cancelledAgents = 0;
   try {
     cancelledAgents = getSpawnGuard().cancelAll(reason);
@@ -43,5 +44,14 @@ export async function reapChildProcesses(
     }),
   );
 
-  return { cancelledAgents, killedTasks: results.filter(Boolean).length };
+  // PTY 会话是第三个会 spawn 进程的子系统（node-pty 走的不是 child_process，
+  // 但 POSIX 上它天生自成进程组，收树反而比后台任务更直接）。
+  let killedPtySessions = 0;
+  try {
+    killedPtySessions = await reapPtySessions();
+  } catch (error) {
+    console.warn('[shutdown] reapPtySessions failed:', error);
+  }
+
+  return { cancelledAgents, killedTasks: results.filter(Boolean).length, killedPtySessions };
 }

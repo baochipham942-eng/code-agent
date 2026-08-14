@@ -568,7 +568,7 @@ export async function cleanup(): Promise<void> {
   const isDebugCleanup = process.env.DEBUG === 'true' || process.argv.includes('--debug');
   if (isDebugCleanup) console.error('Cleaning up CLI services...');
 
-  // 收尸：取消在跑 agent + 确认后台任务进程树死干净（与 webServer 停机属主同一步）
+  // 收尸：取消在跑 agent + 确认后台任务与 PTY 会话进程树死干净（与 webServer 停机属主同一步）
   try {
     const { reapChildProcesses } = await import('../host/tools/shell/shutdownReaper');
     await reapChildProcesses('cli_shutdown');

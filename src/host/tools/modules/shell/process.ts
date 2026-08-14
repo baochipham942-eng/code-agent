@@ -414,7 +414,7 @@ async function handleKill(args: Record<string, unknown>, ctx: ToolContext): Prom
 
   // Try PTY session first
   if (isPtySessionId(id)) {
-    const result = killPtySession(id);
+    const result = await killPtySession(id);
     if (!result.success) {
       return { ok: false, error: result.error ?? 'kill pty failed', code: 'KILL_FAILED' };
     }

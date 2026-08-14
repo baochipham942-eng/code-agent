@@ -49,6 +49,12 @@ const INTERRUPT_OPTIONS: InterruptMode[] = ['server_vad', 'manual'];
 const SENSITIVITY_OPTIONS: VadSensitivity[] = ['low', 'medium', 'high'];
 const SPEECH_RATE_OPTIONS: SpeechRate[] = ['slow', 'normal', 'fast'];
 
+interface VoiceprintOverviewView {
+  status: { registered: boolean; createdAt?: number; lastMatchedAt?: number; sampleCount?: number };
+  runtime: { modelReady: boolean; runtimeReady: boolean };
+  callActive: boolean;
+}
+
 export const VoiceLiveSettingsSection: React.FC = () => {
   const { t } = useI18n();
   const text = t.voice.settings;
@@ -78,6 +84,20 @@ export const VoiceLiveSettingsSection: React.FC = () => {
   const [inputDeviceRecovered, setInputDeviceRecovered] = useState(false);
   const [inputDeviceEnumFailed, setInputDeviceEnumFailed] = useState(false);
   const prevInputDeviceAvailableRef = useRef<boolean | null>(null);
+  // 声纹（N-L7-SPK）：undefined = 契约默认开
+  const [voiceprintEnabled, setVoiceprintEnabled] = useState(true);
+  const [voiceprint, setVoiceprint] = useState<VoiceprintOverviewView | null>(null);
+  const [voiceprintBusy, setVoiceprintBusy] = useState<'download' | 'register' | 'clear' | null>(null);
+  const [voiceprintMessage, setVoiceprintMessage] = useState('');
+
+  const refreshVoiceprint = async () => {
+    try {
+      setVoiceprint(await ipcService.invokeDomain<VoiceprintOverviewView>(IPC_DOMAINS.VOICE, 'voiceprintOverview'));
+    } catch (error) {
+      logger.error('load voiceprint overview failed', error);
+    }
+  };
+  useEffect(() => { void refreshVoiceprint(); }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,6 +113,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
         setExecutionModel(voice?.live?.executionModel);
         setEchoCancellation(voice?.live?.echoCancellation ?? 'auto');
         setSpeechRate(voice?.live?.speechRate ?? 'normal');
+        setVoiceprintEnabled(voice?.live?.voiceprint !== false);
         setCostLimitInput(voice?.live?.callCostLimit ? String(voice.live.callCostLimit) : '');
         setCostLimitAction(voice?.live?.callCostLimitAction ?? 'warn');
         setKeybindings(mergeKeybindingsWithDefaults(
@@ -171,6 +192,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
     if (patch.vadSensitivity !== undefined) setSensitivity(patch.vadSensitivity);
     if (patch.echoCancellation !== undefined) setEchoCancellation(patch.echoCancellation);
     if (patch.speechRate !== undefined) setSpeechRate(patch.speechRate);
+    if (patch.voiceprint !== undefined) setVoiceprintEnabled(patch.voiceprint);
     if ('callCostLimit' in patch) {
       setCostLimitInput(patch.callCostLimit ? String(patch.callCostLimit) : '');
     }
@@ -558,6 +580,117 @@ export const VoiceLiveSettingsSection: React.FC = () => {
               ))}
             </select>
           </label>
+        )}
+      </div>
+
+      {/* 声纹身份（N-L7-SPK）。「认出你」的能力表述与隐私说明同框出现，不许拆开——
+          调研结论：孤立出现的能力宣传会变成呈堂证供（Fireflies 诉状先例）。 */}
+      <div className="border-t border-zinc-700 pt-4" data-testid="voiceprint-section">
+        <div className="flex items-center justify-between">
+          <div className="pr-4">
+            <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.voiceprintTitle}</h3>
+            <p className="text-xs leading-5 text-zinc-500">{text.voiceprintDescription}</p>
+          </div>
+          <Toggle
+            size="md"
+            checked={voiceprintEnabled}
+            onChange={(next) => void persist({ voiceprint: next })}
+            aria-label={text.voiceprintToggleLabel}
+          />
+        </div>
+        <p className="mt-2 text-xs leading-5 text-zinc-500">{text.voiceprintToggleDesc}</p>
+
+        {voiceprintEnabled && voiceprint && (
+          <div className="mt-3 space-y-3" data-testid="voiceprint-manage">
+            {!voiceprint.runtime.runtimeReady ? (
+              <p className="text-xs text-zinc-500" data-testid="voiceprint-runtime-missing">{text.voiceprintRuntimeMissing}</p>
+            ) : !voiceprint.runtime.modelReady ? (
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  data-testid="voiceprint-download"
+                  disabled={voiceprintBusy !== null}
+                  onClick={() => {
+                    setVoiceprintBusy('download');
+                    setVoiceprintMessage('');
+                    void ipcService.invokeDomain<VoiceprintOverviewView>(IPC_DOMAINS.VOICE, 'voiceprintPrepareModel')
+                      .then((overview) => setVoiceprint(overview))
+                      .catch((error: unknown) => setVoiceprintMessage(
+                        text.voiceprintDownloadFailed.replace('{message}', error instanceof Error ? error.message : 'unknown'),
+                      ))
+                      .finally(() => setVoiceprintBusy(null));
+                  }}
+                  className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
+                >
+                  {voiceprintBusy === 'download' ? text.voiceprintDownloading : text.voiceprintDownload}
+                </button>
+                <span className="text-xs text-zinc-500">{text.voiceprintModelMissing}</span>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-zinc-400" data-testid="voiceprint-status">
+                  {voiceprint.status.registered
+                    ? text.voiceprintStatusRegistered.replace('{count}', String(voiceprint.status.sampleCount ?? 0))
+                    : text.voiceprintStatusUnregistered}
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    data-testid="voiceprint-register"
+                    disabled={voiceprintBusy !== null || !voiceprint.callActive}
+                    onClick={() => {
+                      setVoiceprintBusy('register');
+                      setVoiceprintMessage('');
+                      void ipcService.invokeDomain<{ ok: true; overview: VoiceprintOverviewView } | { ok: false; reason: 'no_active_call' | 'no_samples' }>(IPC_DOMAINS.VOICE, 'voiceprintRegister')
+                        .then((result) => {
+                          if (result.ok) {
+                            setVoiceprint(result.overview);
+                            setVoiceprintMessage(text.voiceprintRegisterDone);
+                          } else {
+                            setVoiceprintMessage(result.reason === 'no_active_call'
+                              ? text.voiceprintRegisterNoCall
+                              : text.voiceprintRegisterNoSamples);
+                          }
+                        })
+                        .catch((error) => logger.error('voiceprint register failed', error))
+                        .finally(() => setVoiceprintBusy(null));
+                    }}
+                    className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 hover:border-zinc-600 disabled:opacity-40"
+                  >
+                    {text.voiceprintRegister}
+                  </button>
+                  {voiceprint.status.registered && (
+                    <button
+                      type="button"
+                      data-testid="voiceprint-clear"
+                      disabled={voiceprintBusy !== null}
+                      onClick={() => {
+                        setVoiceprintBusy('clear');
+                        setVoiceprintMessage('');
+                        void ipcService.invokeDomain<VoiceprintOverviewView>(IPC_DOMAINS.VOICE, 'voiceprintClear')
+                          .then((overview) => {
+                            setVoiceprint(overview);
+                            setVoiceprintMessage(text.voiceprintCleared);
+                          })
+                          .catch((error) => logger.error('voiceprint clear failed', error))
+                          .finally(() => setVoiceprintBusy(null));
+                      }}
+                      className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-red-300 hover:border-red-700"
+                    >
+                      {text.voiceprintClear}
+                    </button>
+                  )}
+                </div>
+                {!voiceprint.callActive && (
+                  <p className="text-xs text-zinc-500">{text.voiceprintRegisterHint}</p>
+                )}
+              </>
+            )}
+            {voiceprintMessage && (
+              <p role="status" className="text-xs text-zinc-400" data-testid="voiceprint-message">{voiceprintMessage}</p>
+            )}
+            <p className="text-xs leading-5 text-zinc-500" data-testid="voiceprint-privacy">{text.voiceprintPrivacyBody}</p>
+          </div>
         )}
       </div>
 

@@ -79,6 +79,13 @@ function resolveVadModelPath(tauriNodeModules: string, cwdNodeModules: string): 
   return '';
 }
 
+/** 只要 ONNX 运行时不要 VAD 模型（声纹 embedding 走这里，同一份 runtime asset）。 */
+export function loadOrtRuntimeForModule(moduleDir: string, cwd = process.cwd()): OrtRuntimeModule | null {
+  const tauriNodeModules = path.join(moduleDir, '..', '..', 'node_modules');
+  const cwdNodeModules = path.join(cwd, 'node_modules');
+  return loadOrtRuntime(tauriNodeModules, cwdNodeModules);
+}
+
 export function loadVadRuntime(moduleDir: string, cwd = process.cwd()): VadRuntimeLoadResult {
   const tauriNodeModules = path.join(moduleDir, '..', '..', 'node_modules');
   const cwdNodeModules = path.join(cwd, 'node_modules');

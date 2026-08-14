@@ -5,6 +5,11 @@ export interface VoiceInterruptEvidence {
   durationMs?: number;
   text: string;
   stage: 'partial' | 'final';
+  /**
+   * 声纹判定（N-L7-SPK）：true = 这段人声与本通话活跃说话人集（含已注册本人）都不匹配。
+   * 只在明确 mismatch 时为 true；unknown/match/未启用一律 false（fail-open）。
+   */
+  speakerMismatch?: boolean;
 }
 
 export interface VoiceInterruptDecision {
@@ -12,6 +17,8 @@ export interface VoiceInterruptDecision {
   terminal: boolean;
   cancel: boolean;
   shouldRespond: boolean;
+  /** 本会落兜底 cancel、被声纹门拦下：只记账用，行为等同 background。 */
+  speakerGated?: boolean;
 }
 
 const ACKNOWLEDGEMENT = /^(?:嗯+|唔+|啊+|哦+|对(?:的)?|是(?:的)?|好(?:的)?|行(?:的)?|可以|没错|知道了|好(?:的)?知道了|明白了|收到(?:了)?|ok|okay|yes)(?:啊|呀|呢)?$/i;
@@ -58,6 +65,12 @@ export function decideVoiceInterrupt(evidence: VoiceInterruptEvidence): VoiceInt
   }
   if ((evidence.durationMs ?? 0) < 300 && text.length <= 2) {
     return { classification: 'short_fragment', terminal: true, cancel: false, shouldRespond: false };
+  }
+  // 声纹门（N-L7-SPK）：不是本通话在对话的任何人 → 不许走兜底 cancel（治电视误触发）。
+  // 刻意排在显式打断词**之后**：声纹判错时，用户的救援词（停/等等）必须永远有效——
+  // 判错的后果只能是「体验差一点」，不能把打断做聋（工单 §5 边界的行为面）。
+  if (evidence.speakerMismatch) {
+    return { classification: 'background', terminal: true, cancel: false, shouldRespond: false, speakerGated: true };
   }
   return { classification: 'true_interrupt', terminal: true, cancel: true, shouldRespond: true };
 }

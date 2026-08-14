@@ -9,6 +9,7 @@ import type { VoiceTranscriptionPathId } from './voiceTranscription';
 export type PrivacyBoundaryIndexId =
   | 'desktop'
   | 'voice'
+  | 'voiceprint'
   | 'channel'
   | 'mcp_plugin'
   | 'model_provider'
@@ -57,6 +58,20 @@ export const PRIVACY_BOUNDARY_INDEX: Record<PrivacyBoundaryIndexId, PrivacyBound
     actionTarget: { tab: 'privacy', label: '查看语音转写边界' },
     permissionBoundaryIds: ['desktop.audio.microphone', 'desktop.audio.system', 'channel.connector'],
     voicePathIds: ['chat_voice', 'voice_paste', 'desktop_audio', 'channel_audio'],
+  },
+  // 声纹是生物识别数据，比录音更敏感（录音是「你说过的话」，声纹是「你是谁」），
+  // 单列一条不并进 voice。文案四要点（隔离存储/准确率如实/删除时限具体数字/替代路径）
+  // 是 N-L7-SPK 工单 §5 的硬要求，改动前先读那份工单。
+  voiceprint: {
+    id: 'voiceprint',
+    title: '声纹身份',
+    summary: '通话内临时说话人区分与跨通话认出本人是两件事：前者不落盘不建档，后者需要你显式注册。',
+    data: ['声纹特征向量（192 维数学向量，非音频）', '注册与最近匹配时间戳'],
+    storage: '只保存在本机声纹目录，与账号身份信息隔离；不存任何原始音频。通话内临时比对只在内存进行，通话结束即丢弃。连续 90 天未匹配自动删除。',
+    cloud: '永不上传：声纹向量不出本机、不进诊断包。识别准确性无法完全保证，因此声纹只用于个性化与说话人区分，绝不用于解锁或授权。',
+    revoke: '在语音设置里关闭声纹识别或一键清除声纹；未注册/清除后核心功能不受影响，只失去跨通话个性化。',
+    actionTarget: { tab: 'voiceLive', label: '打开实时语音设置' },
+    permissionBoundaryIds: ['desktop.audio.microphone'],
   },
   channel: {
     id: 'channel',

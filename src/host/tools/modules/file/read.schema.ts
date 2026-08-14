@@ -13,24 +13,15 @@ export const readSchema: ToolSchema = {
       file_path: {
         type: 'string',
         description:
-          'Absolute path to the file. MUST be a string, not an object. ' +
-          'Examples: "/Users/name/project/src/index.ts", "/home/user/config.json". ' +
-          'Supports ~ for home directory: "~/Documents/file.txt". ' +
-          'Do NOT include parameters like offset or limit in this string.',
+          'Absolute path to the file; ~ is expanded. Put only the path here — offset/limit are separate parameters.',
       },
       offset: {
         type: 'number',
-        description:
-          'Line number to start reading from. Integer, 1-indexed (first line is 1, not 0). ' +
-          'Default: 1. Example: offset=100 starts reading from line 100. ' +
-          'If offset exceeds total lines, returns empty content.',
+        description: 'First line to read, 1-indexed. Default 1. Past the end of the file returns empty content.',
       },
       limit: {
         type: 'number',
-        description:
-          'Maximum number of lines to read. Integer, must be positive. ' +
-          'Default: 2000. Example: limit=50 reads up to 50 lines. ' +
-          'Combined with offset: offset=100, limit=50 reads lines 100-149.',
+        description: 'How many lines to read. Default 2000.',
       },
     },
     required: ['file_path'],

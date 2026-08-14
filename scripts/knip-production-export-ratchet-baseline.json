@@ -4492,11 +4492,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/observability/posthogNode.ts",
-      "name": "shutdownPostHog",
-      "kind": "export"
-    },
-    {
       "file": "src/host/observability/sentryNode.ts",
       "name": "captureException",
       "kind": "export"
@@ -9773,11 +9768,6 @@
     },
     {
       "file": "src/host/session/sessionStateManager.ts",
-      "name": "cleanupSessionStateManager",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/session/sessionStateManager.ts",
       "name": "SessionStatusUpdateEvent",
       "kind": "type"
     },
@@ -11028,47 +11018,7 @@
     },
     {
       "file": "src/host/tools/shell/ptyExecutor.ts",
-      "name": "cleanupCompletedPtySessions",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/shell/ptyExecutor.ts",
-      "name": "cleanupTimedOutPtySessions",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/shell/ptyExecutor.ts",
-      "name": "clearPersistedPtySessions",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/shell/ptyExecutor.ts",
       "name": "getPtySession",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/shell/ptyExecutor.ts",
-      "name": "loadPersistedPtySessions",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/shell/ptyExecutor.ts",
-      "name": "persistRunningPtySessions",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/shell/ptyExecutor.ts",
-      "name": "PtySessionLifecycleEventType",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/tools/shell/ptyExecutor.ts",
-      "name": "PtySessionState",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/tools/shell/ptyExecutor.ts",
-      "name": "resizePtySession",
       "kind": "export"
     },
     {

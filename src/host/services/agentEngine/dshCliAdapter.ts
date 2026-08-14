@@ -25,7 +25,7 @@ const DSH_READ_ONLY_MODE = 'read-only';
 /** provider/model 只允许这个字符集，既是 dsh 的实际 id 形态，也挡住 YAML 注入。 */
 const DSH_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
 
-export interface DshModelSelection {
+interface DshModelSelection {
   provider: string;
   model: string;
 }
@@ -66,7 +66,7 @@ export class DshCliAdapter extends ClaudeCodeAdapter {
  * 只给 `model` 会把 `provider: deepseek-official` 一起抹掉），所以两者必须成对下发，
  * 只给模型名无法安全翻译。
  */
-export function parseDshModelSelection(model?: string | null): DshModelSelection | null {
+function parseDshModelSelection(model?: string | null): DshModelSelection | null {
   const trimmed = model?.trim();
   if (!trimmed || trimmed === CLIENT_DEFAULT_MODEL) return null;
   const separator = trimmed.indexOf('/');
@@ -89,7 +89,7 @@ export function parseDshModelSelection(model?: string | null): DshModelSelection
  * 文件名由 provider/model 决定，因此同一组合复用同一份、可重复写入，不需要按 run 清理；
  * 内容是两个受限字符集的 id，既非机密也完全由所选模型决定，所以落临时目录即可，不引 YAML 库。
  */
-export function writeDshModelPatch(selection: DshModelSelection): string {
+function writeDshModelPatch(selection: DshModelSelection): string {
   const patchDir = path.join(tmpdir(), 'agent-neo-dsh-model-patches');
   mkdirSync(patchDir, { recursive: true });
   const patchPath = path.join(patchDir, `${selection.provider}__${selection.model}.yml`);

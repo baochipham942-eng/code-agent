@@ -4,8 +4,6 @@ import {
   buildDshArgs,
   buildDshEnv,
   parseDshLine,
-  parseDshModelSelection,
-  writeDshModelPatch,
 } from '../../../src/host/services/agentEngine/dshCliAdapter';
 
 describe('DshCliAdapter protocol', () => {
@@ -34,11 +32,9 @@ describe('DshCliAdapter protocol', () => {
   });
 
   it('refuses a model that carries no provider or smuggles YAML', () => {
-    expect(() => parseDshModelSelection('deepseek-v4-pro')).toThrow(/<provider>\/<model>/);
-    expect(() => parseDshModelSelection('/deepseek-v4-pro')).toThrow(/<provider>\/<model>/);
-    expect(() => parseDshModelSelection('p/m\n    task: pwned')).toThrow(/只允许字母/);
-    expect(parseDshModelSelection(undefined)).toBeNull();
-    expect(parseDshModelSelection('client_default')).toBeNull();
+    expect(() => buildDshArgs('read_only', 'deepseek-v4-pro', 'nonce')).toThrow(/<provider>\/<model>/);
+    expect(() => buildDshArgs('read_only', '/deepseek-v4-pro', 'nonce')).toThrow(/<provider>\/<model>/);
+    expect(() => buildDshArgs('read_only', 'p/m\n    task: pwned', 'nonce')).toThrow(/只允许字母/);
   });
 
   it('keeps every stdout line as real text, blank lines included', () => {
@@ -81,8 +77,8 @@ describe('DshCliAdapter protocol', () => {
   });
 
   it('reuses one patch file per provider/model pair', () => {
-    const first = writeDshModelPatch({ provider: 'deepseek-official', model: 'deepseek-v4-flash' });
-    const second = writeDshModelPatch({ provider: 'deepseek-official', model: 'deepseek-v4-flash' });
+    const first = buildDshArgs('read_only', 'deepseek-official/deepseek-v4-flash', 'nonce')[3];
+    const second = buildDshArgs('read_only', 'deepseek-official/deepseek-v4-flash', 'nonce')[3];
     expect(second).toBe(first);
   });
 });

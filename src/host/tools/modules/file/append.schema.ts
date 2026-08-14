@@ -7,6 +7,7 @@ export const appendSchema: ToolSchema = {
     'for one Write call: Write the initial file or first chunk, then Append ordered chunks. ' +
     'Parent directories are created automatically. Set final=true only on the last chunk so ' +
     'the runtime can run post-write validation.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

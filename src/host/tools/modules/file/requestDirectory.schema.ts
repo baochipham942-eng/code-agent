@@ -10,6 +10,7 @@ Use this when a task needs to read or write a folder you don't currently have ac
 If approved, the directory is added as an additional Project Source starting with the NEXT message in this conversation (not the current tool call) — after approval, tell the user you now have access and ask them to continue, or state clearly that you'll pick the task back up next turn.
 
 Only request 'read_write' when the task actually needs to write into that directory; default to 'read_only'.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

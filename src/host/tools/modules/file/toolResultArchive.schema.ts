@@ -6,6 +6,7 @@ export const toolResultArchiveSchema: ToolSchema = {
   description:
     'Reads a previously archived large tool result by artifact_id. Use this when a tool result notice includes archive=... ' +
     'and you need the original output instead of the truncated context copy. Supports offset and limit for line pagination.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

@@ -10,6 +10,9 @@ import { runScriptInSandbox } from '../../../../src/host/agent/scriptRuntime/san
 import type { ScriptRunContext } from '../../../../src/host/agent/scriptRuntime/agentBridge';
 import type { RpcRequest } from '../../../../src/host/agent/scriptRuntime/types';
 
+/** 给 vi.fn 用的显式签名——无类型参数时它推断成空元组，mock.calls[0][0] 取不到。 */
+type ExecuteTool = NonNullable<ScriptRunContext['executeTool']>;
+
 function toolRequest(name: string, args: unknown): RpcRequest {
   return { id: 1, kind: 'tool', payload: { name, args } as never };
 }
@@ -57,7 +60,7 @@ describe('PTC 工具通道 · Host 侧把关', () => {
   });
 
   it('名单内 + 合法入参 → 送进注入的工具管线，产出原样回传', async () => {
-    const executeTool = vi.fn(async () => ({ ok: true as const, value: { lines: 3 } }));
+    const executeTool = vi.fn<ExecuteTool>(async () => ({ ok: true as const, value: { lines: 3 } }));
     const res = await handleRpc(
       toolRequest('Read', { path: '/tmp/x', limit: 3 }),
       makeCtx({ executeTool, visibleToolNames: ['Read'] }),
@@ -139,7 +142,7 @@ describe('PTC 工具通道 · Host 侧把关', () => {
   });
 
   it('缺省入参当空对象处理，不误伤无参工具', async () => {
-    const executeTool = vi.fn(async () => ({ ok: true as const, value: 'ok' }));
+    const executeTool = vi.fn<ExecuteTool>(async () => ({ ok: true as const, value: 'ok' }));
     const res = await handleRpc(
       toolRequest('ListTasks', undefined),
       makeCtx({ executeTool, visibleToolNames: ['ListTasks'] }),
@@ -258,6 +261,21 @@ describe('PTC 工具通道 · child 侧命名空间（真进程）', () => {
       frozen: true,
       keys: ['Read'],
     });
+  });
+
+  it('legacy worker 路径开着 PTC 时 fail-loud，不静默把 tools 变成 undefined', async () => {
+    const outcome = await runScriptInSandbox({
+      script: 'return 1;',
+      signal: new AbortController().signal,
+      timeoutMs: 5_000,
+      useOsSandbox: false,
+      legacyWorkerFallback: true,
+      toolNames: ['Read'],
+      onRpc: async (req) => ({ id: req.id, ok: true, result: null }),
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error).toContain('legacy worker 路径不支持 PTC 工具通道');
   });
 
   it('工具 stub 不可被脚本改写或删除', async () => {

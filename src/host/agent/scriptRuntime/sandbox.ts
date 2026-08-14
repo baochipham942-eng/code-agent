@@ -342,6 +342,15 @@ function spawnSandboxProcess(cwd: string, useOsSandbox: boolean): ChildProcessWi
 /** 独立进程执行；默认不自动降级。 */
 export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutcome> {
   if (opts.legacyWorkerFallback) {
+    // legacy worker 有自己的一份形参表（agent/parallel/.../budget + require/process/globalThis），
+    // 不提供 tools。开着 PTC 走到这条路上，脚本里的 tools 会是 undefined——
+    // 那是「功能静默失效且现场零线索」，本仓错题本点名的形态。宁可报错也不静默降级。
+    if (opts.toolNames?.length) {
+      return Promise.resolve({
+        ok: false,
+        error: 'legacy worker 路径不支持 PTC 工具通道：要么关掉 legacyWorkerFallback，要么不要传 toolNames',
+      });
+    }
     return runScriptInLegacyWorker(opts);
   }
   const timeoutMs = opts.timeoutMs ?? SCRIPT_RUNTIME.WORKER_TIMEOUT_MS;

@@ -12,6 +12,7 @@ Parameters:
 - plan_id: The ID of the plan to review (from the plan submission notification)
 - action: "approve" or "reject"
 - feedback: Optional feedback message (required when rejecting)`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

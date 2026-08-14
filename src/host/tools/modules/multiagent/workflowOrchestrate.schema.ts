@@ -25,6 +25,7 @@ export const workflowOrchestrateSchema: ToolSchema = {
   name: 'workflow_orchestrate',
   description: buildDescription(),
   dynamicDescription: buildDescription,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

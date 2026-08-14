@@ -4,6 +4,7 @@ import type { ToolSchema } from '../../../protocol/tools';
 export const closeAgentSchema: ToolSchema = {
   name: 'close_agent',
   description: `Close a running sub-agent. Sends an abort signal so the agent stops at the next safe point. Don't keep agents open too long if they are not needed anymore.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

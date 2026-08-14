@@ -6,6 +6,7 @@ export const waitAgentSchema: ToolSchema = {
   description: `Wait for one or more sub-agents to reach a final status. Only use when truly blocked on the result — prefer doing non-overlapping work while agents run.
 
 Returns each agent's final status and result summary.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

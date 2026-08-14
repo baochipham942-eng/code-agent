@@ -163,6 +163,7 @@ export const spawnAgentSchema: ToolSchema = {
   name: 'spawn_agent',
   description: baseDescription,
   dynamicDescription: buildSpawnAgentDescription,
+  outputSchema: { type: 'string' },
   inputSchema: spawnInputSchema,
   category: 'multiagent',
   permissionLevel: 'execute',
@@ -192,6 +193,7 @@ Use this tool when you need:
 For simple synchronous task delegation, use Task instead.
 
 ${buildSpawnAgentDescription()}`,
+  outputSchema: { type: 'string' },
   inputSchema: spawnInputSchema,
   category: 'multiagent',
   permissionLevel: 'execute',

@@ -29,6 +29,7 @@ Parameters:
 - message: Message content (required for send/coordinate/handoff/query/respond/broadcast)
 - responseTo: Original message ID (required for respond action)
 - taskId: Related task ID (optional)`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

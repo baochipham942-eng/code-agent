@@ -6,6 +6,7 @@ export const sendInputSchema: ToolSchema = {
   description: `Send a message to a running sub-agent. The message is queued and delivered at the start of the agent's next iteration.
 
 Reuse running agents via send_input when follow-up tasks depend on their prior context, instead of spawning a new agent.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

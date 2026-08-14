@@ -39,6 +39,7 @@ export const taskSchema: ToolSchema = {
   name: 'Task',
   description: staticDescription,
   dynamicDescription: buildTaskDescription,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

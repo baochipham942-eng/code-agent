@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { getUserConfigDir } from '../../config/configPaths';
-import { resolveWindowsShell, WINDOWS_SHELL_ENCODING_PRELUDE } from './platformShell';
+import { killProcessTree, resolveWindowsShell, WINDOWS_SHELL_ENCODING_PRELUDE, type KillableChild } from './platformShell';
 
 // ============================================================================
 // Constants
@@ -45,6 +45,11 @@ export interface PtySessionState {
   cols: number;
   rows: number;
   inputBuffer: string[];
+  /**
+   * 供 killProcessTree 使用的句柄视图（懒建、随会话长存）。
+   * **不能每次现造**：整树退出边界记在 WeakSet 里、按对象身份认，现造的话防 pid 复用就失效。
+   */
+  killable?: KillableChild;
 }
 
 export interface PtySessionInfo {
@@ -276,11 +281,9 @@ export function createPtySession(options: {
     const timeout = setTimeout(() => {
       if (sessionState.status === 'running') {
         console.warn(`[PTY] Session ${sessionId} exceeded max runtime, terminating...`);
-        try {
-          ptyProcess.kill();
-        } catch (err) {
+        void terminatePtyProcess(sessionState).catch((err: unknown) => {
           console.error(`[PTY] Failed to kill session ${sessionId}:`, err);
-        }
+        });
       }
     }, sessionState.maxRuntime);
 
@@ -385,16 +388,59 @@ export function resizePtySession(sessionId: string, cols: number, rows: number):
 }
 
 /**
- * Kill a PTY session
+ * 把 `IPty` 适配成 killProcessTree 要的最小子进程视图。
+ *
+ * node-pty 只给 `pid` 和 `kill(signal?)`，没有 `exitCode`/`signalCode`——退出信息走 `onExit`
+ * 回填到会话状态，这里用 getter 暴露成实时值。视图缓存在会话上，因为整树退出边界是按
+ * 对象身份记的（WeakSet），每次现造等于没有边界。
  */
-export function killPtySession(sessionId: string): { success: boolean; error?: string; message?: string } {
+function killableView(session: PtySessionState): KillableChild {
+  if (!session.killable) {
+    session.killable = {
+      pid: session.pty.pid,
+      kill: (signal?: NodeJS.Signals | number): boolean => {
+        // node-pty 的 kill 内部就吞异常，返回值不代表信号送达——判死一律看探活。
+        try { session.pty.kill(typeof signal === 'string' ? signal : undefined); } catch { /* 已退出 */ }
+        return true;
+      },
+      get exitCode(): number | null { return session.exitCode ?? null; },
+      get signalCode(): NodeJS.Signals | null { return null; },
+    };
+  }
+  return session.killable;
+}
+
+/**
+ * 终止 PTY 会话进程，**并等到整组确认退出**。
+ *
+ * 两步走：
+ * 1. `pty.kill()` —— node-pty 自身的拆台（POSIX 发 SIGHUP；win32 拆 ConPTY 并杀控制台进程列表）。
+ *    win32 上只有这一步能释放 agent 句柄，taskkill 替代不了。
+ * 2. `killProcessTree` —— SIGTERM → 宽限 → SIGKILL → 轮询探活到确认退出（与后台任务同一份状态机）。
+ *
+ * POSIX 上 PTY 进程**天生是进程组长**（node-pty 用 `POSIX_SPAWN_SETSID`/`forkpty` 建会话，
+ * 实测 `pid == pgid`），所以组模式无条件成立，不用像普通子进程那样要求 `detached: true`。
+ * `pid > 0` 是闸门：`UnixTerminal` 在 `pty.open()` 路径下把 `_pid` 置 -1，
+ * 那样 `process.kill(-pid)` 会打到 init 头上。
+ *
+ * 已知降级：win32 没有进程组语义，「确认退出」只能确认到 shell 自身。
+ */
+async function terminatePtyProcess(session: PtySessionState): Promise<void> {
+  try { session.pty.kill(); } catch { /* node-pty 内部已吞，这里兜底 */ }
+  await killProcessTree(killableView(session), { posixGroupKill: session.pty.pid > 0 });
+}
+
+/**
+ * Kill a PTY session（等到整组确认退出才返回——「已终止」是对调用方的承诺）
+ */
+export async function killPtySession(sessionId: string): Promise<{ success: boolean; error?: string; message?: string }> {
   const session = ptySessions.get(sessionId);
   if (!session) {
     return { success: false, error: `No PTY session found with ID: ${sessionId}` };
   }
 
   try {
-    session.pty.kill();
+    await terminatePtyProcess(session);
     session.outputStream?.end();
 
     // Update status
@@ -566,20 +612,40 @@ export function cleanupCompletedPtySessions(): number {
 /**
  * Cleanup timed out PTY sessions
  */
-export function cleanupTimedOutPtySessions(): void {
+export async function cleanupTimedOutPtySessions(): Promise<void> {
   const now = Date.now();
 
   for (const [sessionId, session] of ptySessions) {
     if (session.status === 'running' && now - session.startTime > session.maxRuntime) {
       console.warn(`[PTY] Session ${sessionId} timed out, killing...`);
-      killPtySession(sessionId);
+      await killPtySession(sessionId);
     }
   }
 }
 
+/**
+ * 收掉全部在跑的 PTY 会话，逐个等确认退出。停机收尸（reapChildProcesses）用。
+ *
+ * @returns 确认收掉的会话数
+ */
+export async function reapPtySessions(): Promise<number> {
+  const running = [...ptySessions.keys()].filter((id) => ptySessions.get(id)?.status === 'running');
+  const results = await Promise.all(
+    running.map(async (sessionId) => {
+      try {
+        return (await killPtySession(sessionId)).success;
+      } catch (error) {
+        console.warn(`[shutdown] failed to kill PTY session ${sessionId}:`, error);
+        return false;
+      }
+    }),
+  );
+  return results.filter(Boolean).length;
+}
+
 // Start periodic cleanup（捕获 handle + onShutdown 注册 + .unref() 三重保护）
 const ptyCleanupTimer = setInterval(() => {
-  cleanupTimedOutPtySessions();
+  void cleanupTimedOutPtySessions();
 }, PTY_CLEANUP_INTERVAL);
 ptyCleanupTimer.unref();
 

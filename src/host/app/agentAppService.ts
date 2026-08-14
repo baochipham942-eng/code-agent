@@ -695,8 +695,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         sessionWorkspaceScope,
       );
       orchestrator?.setWorkingDirectory(launch.cwd);
-      const resolvedModel = await getRemoteAgentEngineModelCatalogService()
-        .resolveModelId('dsh_cli', launch.model, { strict: true });
+      // dsh 没有签名 catalog：resolveModelId 在 strict 下会直接抛，非 strict 下返回
+      // undefined，两种都会让用户选的 provider/model 到不了 dsh。和 mimo/kimi 一样直传。
+      const resolvedModel = launch.model;
       const durableLifecycle = await this.startExternalLifecycle({
         engine: engine.kind,
         sessionId: resolvedSessionId,

@@ -634,8 +634,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             .resolveModelId('grok_cli', launch.model, { strict: true });
         } else if (selectedEngine.kind === 'dsh_cli') {
           adapter = new DshCliAdapter();
-          resolvedEngineModel = await getRemoteAgentEngineModelCatalogService()
-            .resolveModelId('dsh_cli', launch.model, { strict: true });
+          // 同 mimo/kimi：无签名 catalog，直传才不会把用户选的 provider/model 丢掉。
+          resolvedEngineModel = launch.model;
         } else {
           // 兜底 else 曾经等于「跑 Grok」：新引擎忘了接线会被静默当成 Grok 跑掉，
           // 两边都不报错。改成显式报错，让漏接线在第一次真跑时就现形。

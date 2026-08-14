@@ -190,9 +190,9 @@
       "protocolFamily": "opaque_cli",
       "provider": "cli-owned",
       "model": "deepseek-v4-pro",
-      "verificationStatus": "cli-verified",
+      "verificationStatus": "unverified",
       "result": "passed",
-      "scope": "CLI-level spike only: stdout shape, provider/model translation through --patch, and read-only sandbox enforcement",
+      "scope": "CLI-level spike only: stdout shape, provider/model translation through --patch, and read-only sandbox enforcement. Neo-side real-runtime smoke still pending.",
       "evidence": [
         "src/host/services/agentEngine/dshCliAdapter.ts",
         "tests/unit/agentEngine/dshCliAdapter.test.ts"

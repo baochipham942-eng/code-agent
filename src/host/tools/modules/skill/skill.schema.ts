@@ -27,6 +27,7 @@ export const SKILL_INPUT_SCHEMA = {
 export const skillSchema: ToolSchema = {
   name: 'Skill',
   description: SKILL_DESCRIPTION,
+  outputSchema: { type: 'string' },
   inputSchema: SKILL_INPUT_SCHEMA,
   category: 'skill',
   permissionLevel: 'read',

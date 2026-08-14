@@ -36,6 +36,7 @@ export const SKILL_CREATE_INPUT_SCHEMA = {
 export const skillCreateSchema: ToolSchema = {
   name: 'SkillCreate',
   description: SKILL_CREATE_DESCRIPTION,
+  outputSchema: { type: 'string' },
   inputSchema: SKILL_CREATE_INPUT_SCHEMA,
   category: 'skill',
   permissionLevel: 'write',

@@ -117,6 +117,16 @@ export function makeAiSdkFetch(
   const signal = init?.signal ?? request?.signal;
   const agent = getHttpsAgent(url, provider);
 
+  if (process.env.CODE_AGENT_DUMP_MODEL_PAYLOAD) {
+    const { dumpModelPayload } = await import('../modelPayloadDump');
+    await dumpModelPayload({
+      body,
+      provider,
+      protocol: 'chat-completions',
+      url,
+    });
+  }
+
   const response = await axios({
     url,
     method,

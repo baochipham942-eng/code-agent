@@ -33,7 +33,7 @@ import { computeFbank, FBANK_MEL_BINS } from './speakerFbank';
 
 const logger = createLogger('SpeakerEmbedding');
 
-export function getVoiceprintModelDir(): string {
+function getVoiceprintModelDir(): string {
   return path.join(getUserConfigDir(), VOICEPRINT_MODEL_DIR);
 }
 

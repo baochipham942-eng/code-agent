@@ -34,7 +34,7 @@ const ACTIVE_SET_CAP = 8;
 /** 低于该 RMS 的片段当静音处理（切窗对错了/纯底噪），不做判定。 */
 const MIN_SEGMENT_RMS = 0.004;
 
-export type SpeakerVerdict = 'match' | 'mismatch' | 'unknown';
+type SpeakerVerdict = 'match' | 'mismatch' | 'unknown';
 
 export interface SpeakerIdentityTracker {
   /** 上行 16k PCM16 mono 帧进环形缓冲。 */

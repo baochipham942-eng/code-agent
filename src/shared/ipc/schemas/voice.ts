@@ -84,4 +84,3 @@ export const VoiceSchemas = {
 } as const;
 
 export type VoiceUserTextInjectionRequest = z.infer<typeof InjectUserTextRequestSchema>;
-export type VoiceprintOverviewIpc = z.infer<typeof VoiceprintOverviewSchema>;

@@ -6,7 +6,7 @@
 // 纯函数、零依赖、只吃内存里的 PCM——音频不落盘是 L7 语音线硬纪律。
 // ============================================================================
 
-export const FBANK_SAMPLE_RATE = 16_000;
+const FBANK_SAMPLE_RATE = 16_000;
 export const FBANK_MEL_BINS = 80;
 
 const FRAME_LEN = 400; // 25ms @16k

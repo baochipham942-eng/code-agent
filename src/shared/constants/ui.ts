@@ -64,6 +64,9 @@ export const TELEMETRY_TRUNCATION = {
   ASSISTANT_RESPONSE: 50000,
   THINKING_CONTENT: 20000,
   TOOL_ARGUMENTS: 10000,
+  // 2026-08-14 实测 23 个核心工具的完整快照为 23,715 字符 / 24,401 bytes。
+  // 65,536 字符留出约 2.7 倍增长空间；超过时写入层会显式 warn，避免静默损坏。
+  TOOL_SCHEMA_SNAPSHOT: 64 * 1024,
   TOOL_RESULT_SUMMARY: 2000,
   EVENT_SUMMARY: 500,
 } as const;

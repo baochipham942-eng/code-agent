@@ -15,6 +15,7 @@ import {
   guardTelemetryText,
   prepareRawPayload,
   guardTelemetryJsonText,
+  guardTelemetryEventData,
   stringifyGuardedTelemetry,
   rowToSession,
   rowToTurn,
@@ -955,7 +956,7 @@ export class TelemetryStorage {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           `);
           for (const ev of data.events) {
-            stmt.run(ev.id, ev.turnId, ev.sessionId, ev.timestamp, ev.eventType, guardTelemetryText(ev.summary, TELEMETRY_TRUNCATION.EVENT_SUMMARY), guardTelemetryJsonText(ev.data, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS), ev.durationMs ?? null);
+            stmt.run(ev.id, ev.turnId, ev.sessionId, ev.timestamp, ev.eventType, guardTelemetryText(ev.summary, TELEMETRY_TRUNCATION.EVENT_SUMMARY), guardTelemetryEventData(ev.eventType, ev.data, (details) => logger.warn('Telemetry event data truncated', details)), ev.durationMs ?? null);
           }
         }
 

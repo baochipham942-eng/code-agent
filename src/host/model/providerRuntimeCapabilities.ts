@@ -22,6 +22,7 @@ export const PROVIDER_RUNTIME_IDS = [
   'kimi_code',
   'codebuddy_code',
   'grok_cli',
+  'dsh_cli',
 ] as const;
 
 export type ProviderRuntimeId = typeof PROVIDER_RUNTIME_IDS[number];
@@ -264,6 +265,16 @@ export const PROVIDER_RUNTIME_CAPABILITY_MATRIX: readonly ProviderRuntimeCapabil
     capabilities: opaqueCliCapabilities(
       'runtime-grok-cli.json',
       'grok-cli-local-spike',
+    ),
+  },
+  {
+    runtime: 'dsh_cli',
+    protocolFamily: 'opaque_cli',
+    providerScope: ['cli-owned'],
+    adapterBoundary: 'dsh --profile headless',
+    capabilities: opaqueCliCapabilities(
+      'runtime-dsh-cli.json',
+      'dsh-cli-local-spike',
     ),
   },
 ] as const;

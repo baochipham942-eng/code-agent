@@ -203,6 +203,7 @@ const AGENT_ENGINE_TOOL_SUPPORT = new Set<AgentEngineReliability['toolSupport']>
 const AGENT_ENGINE_TRANSCRIPT_MODES = new Set<AgentEngineReliability['transcriptMode']>([
   'clean_stream_json',
   'raw_terminal',
+  'final_text',
   'session_import',
   'unknown',
 ]);

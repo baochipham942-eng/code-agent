@@ -11,7 +11,8 @@ function isExternalEngineKind(kind: string): kind is ExternalAgentEngineKind {
     || kind === 'mimo_code'
     || kind === 'kimi_code'
     || kind === 'codebuddy_code'
-    || kind === 'grok_cli';
+    || kind === 'grok_cli'
+    || kind === 'dsh_cli';
 }
 
 function resolveToolPolicy(descriptor: AgentEngineDescriptor): ModelToolPolicy {

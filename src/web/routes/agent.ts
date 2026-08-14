@@ -37,6 +37,7 @@ import {
   ClaudeCodeAdapter,
   CodeBuddyCliAdapter,
   CodexCliAdapter,
+  DshCliAdapter,
   GrokCliAdapter,
   KimiCliAdapter,
   MimoCliAdapter,
@@ -608,7 +609,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           | MimoCliAdapter
           | KimiCliAdapter
           | CodeBuddyCliAdapter
-          | GrokCliAdapter;
+          | GrokCliAdapter
+          | DshCliAdapter;
         let resolvedEngineModel: string | undefined;
         if (selectedEngine.kind === 'codex_cli') {
           adapter = new CodexCliAdapter();
@@ -626,10 +628,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           adapter = new CodeBuddyCliAdapter();
           resolvedEngineModel = await getRemoteAgentEngineModelCatalogService()
             .resolveModelId('codebuddy_code', launch.model);
-        } else {
+        } else if (selectedEngine.kind === 'grok_cli') {
           adapter = new GrokCliAdapter();
           resolvedEngineModel = await getRemoteAgentEngineModelCatalogService()
             .resolveModelId('grok_cli', launch.model, { strict: true });
+        } else if (selectedEngine.kind === 'dsh_cli') {
+          adapter = new DshCliAdapter();
+          // 同 mimo/kimi：无签名 catalog，直传才不会把用户选的 provider/model 丢掉。
+          resolvedEngineModel = launch.model;
+        } else {
+          // 兜底 else 曾经等于「跑 Grok」：新引擎忘了接线会被静默当成 Grok 跑掉，
+          // 两边都不报错。改成显式报错，让漏接线在第一次真跑时就现形。
+          throw new Error(`external engine ${selectedEngine.kind} has no adapter wired in the web route`);
         }
         const persistedExternalSessionId = persistedForkExternalSessionId;
         const forkContext = !persistedExternalSessionId

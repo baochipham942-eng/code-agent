@@ -86,6 +86,7 @@ import {
   ClaudeCodeAdapter,
   CodeBuddyCliAdapter,
   CodexCliAdapter,
+  DshCliAdapter,
   GrokCliAdapter,
   KimiCliAdapter,
   MimoCliAdapter,
@@ -673,6 +674,37 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         cwd: launch.cwd,
       });
       await this.executeExternalRun(durableLifecycle, () => new GrokCliAdapter().run({
+        sessionId: resolvedSessionId,
+        prompt: envelope.content,
+        cwd: launch.cwd,
+        workspaceRoot: launch.workspaceRoot,
+        model: resolvedModel,
+        permissionProfile: launch.permissionProfile,
+        clientMessageId: envelope.clientMessageId,
+        attachmentsCount: envelope.attachments?.length ?? 0,
+        messageMetadata: this.getMessageMetadata(envelope),
+        durableLifecycle,
+      }));
+      return;
+    }
+    if (engine.kind === 'dsh_cli') {
+      const launch = resolveExternalEngineLaunch(
+        session,
+        engine,
+        externalRequestedCwd,
+        sessionWorkspaceScope,
+      );
+      orchestrator?.setWorkingDirectory(launch.cwd);
+      // dsh 没有签名 catalog：resolveModelId 在 strict 下会直接抛，非 strict 下返回
+      // undefined，两种都会让用户选的 provider/model 到不了 dsh。和 mimo/kimi 一样直传。
+      const resolvedModel = launch.model;
+      const durableLifecycle = await this.startExternalLifecycle({
+        engine: engine.kind,
+        sessionId: resolvedSessionId,
+        workspace: launch.workspaceRoot,
+        cwd: launch.cwd,
+      });
+      await this.executeExternalRun(durableLifecycle, () => new DshCliAdapter().run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,

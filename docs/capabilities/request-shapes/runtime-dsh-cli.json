@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "runtime": "dsh_cli",
+  "protocolFamily": "opaque_cli",
+  "adapterBoundary": "dsh --profile headless",
+  "syntheticRequest": {
+    "args": [
+      "--profile",
+      "headless",
+      "<redacted-user-content>"
+    ],
+    "credentials": "dsh-owned DeepSeek credentials under ~/.dsh; values-not-read-or-recorded",
+    "environment": "DSH_PERMISSION_MODE=read-only; proxy variables withheld"
+  }
+}

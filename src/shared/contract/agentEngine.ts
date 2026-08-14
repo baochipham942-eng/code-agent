@@ -13,7 +13,8 @@ export type AgentEngineKind =
   | 'mimo_code'
   | 'kimi_code'
   | 'codebuddy_code'
-  | 'grok_cli';
+  | 'grok_cli'
+  | 'dsh_cli';
 
 export type ExternalAgentEngineKind = Exclude<AgentEngineKind, 'native'>;
 
@@ -49,7 +50,7 @@ export type AgentEngineAuthState = 'not_checked' | 'authenticated' | 'needs_logi
 export type AgentEngineQuotaState = 'not_checked' | 'available' | 'limited' | 'exhausted' | 'unknown';
 export type AgentEngineStreamingMode = 'stream_json' | 'json' | 'text' | 'none' | 'unknown';
 export type AgentEngineToolSupport = 'none' | 'read_only_cli_tools' | 'workspace_tools' | 'mcp_bridge' | 'unknown';
-export type AgentEngineTranscriptMode = 'clean_stream_json' | 'raw_terminal' | 'session_import' | 'unknown';
+export type AgentEngineTranscriptMode = 'clean_stream_json' | 'raw_terminal' | 'final_text' | 'session_import' | 'unknown';
 
 export type AgentEngineFailureCategory =
   | 'auth'
@@ -245,6 +246,7 @@ export const AGENT_ENGINE_KINDS: AgentEngineKind[] = [
   'kimi_code',
   'codebuddy_code',
   'grok_cli',
+  'dsh_cli',
 ];
 
 /** 引擎展示名单一真源（registry descriptor 与 UI 文案共用，别把 kind 裸串透给用户） */
@@ -256,6 +258,7 @@ export const AGENT_ENGINE_LABELS: Record<AgentEngineKind, string> = {
   kimi_code: 'Kimi Code',
   codebuddy_code: 'WorkBuddy',
   grok_cli: 'Grok Build',
+  dsh_cli: 'DeepSeek Harness',
 };
 
 export const DEFAULT_AGENT_ENGINE_SESSION: AgentEngineSessionMetadata = {

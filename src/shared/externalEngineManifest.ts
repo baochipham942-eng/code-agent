@@ -20,7 +20,8 @@ interface ExternalEngineAdapterContract {
   adapterId?: string;
   transport: ExternalEngineTransport;
   promptTransport: 'internal' | 'stdin' | 'argv' | 'http_body';
-  eventFormat: 'internal' | 'stream_json' | 'jsonl' | 'sse' | 'unknown';
+  /** `text` = CLI 只在 stdout 打印最终回答，没有可解析的事件流。 */
+  eventFormat: 'internal' | 'stream_json' | 'jsonl' | 'sse' | 'text' | 'unknown';
   credentialOwner: 'neo' | 'official_client';
   evidence: 'production' | 'local_spike' | 'official_docs' | 'none';
 }
@@ -360,6 +361,46 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
       'The official Grok Build CLI owns OAuth credentials; Neo never reads or persists them.',
       'The local spike proved official-account login, model discovery, streaming-json text events, and terminal session identity.',
       'Neo disables built-in tools, subagents, memory, and web search for the initial read-only integration.',
+    ],
+  },
+  {
+    id: 'dsh_cli',
+    kind: 'dsh_cli',
+    label: 'DeepSeek Harness',
+    summary: '把一条任务交给本机 DeepSeek Harness 的一次性 headless 会话执行，回答由 dsh 自己的凭据与模型产生。',
+    commandSummary: 'DSH_PERMISSION_MODE=read-only dsh --profile headless',
+    probe: {
+      commands: ['dsh'],
+      binaryPaths: ['~/.npm-global/bin/dsh'],
+      versionArgs: ['--version'],
+      timeoutMs: 12_000,
+      authStateMarker: '~/.dsh/.credentials.yaml',
+    },
+    adapter: {
+      adapterId: 'dsh_cli',
+      transport: 'cli',
+      promptTransport: 'argv',
+      eventFormat: 'text',
+      credentialOwner: 'official_client',
+      evidence: 'production',
+    },
+    modelSelection: 'client_default',
+    capabilities: ['execute'],
+    defaultPermissionProfile: 'read_only',
+    riskTier: 'medium',
+    reliability: {
+      streamingMode: 'text',
+      toolSupport: 'read_only_cli_tools',
+      transcriptMode: 'final_text',
+      partialMessages: false,
+      mcpBridge: false,
+    },
+    auditNotes: [
+      'The headless profile prints only the final assistant text; Neo renders that text and claims no event stream.',
+      'dsh owns its DeepSeek credentials under ~/.dsh; Neo never reads, copies, or injects them.',
+      'Neo pins DSH_PERMISSION_MODE=read-only, the knob the shipped headless profile already reads; a real write attempt was refused and escalation failed closed with no approval channel.',
+      'Proxy variables are withheld from the child environment because dsh talks to api.deepseek.com directly.',
+      'Each headless run creates a fresh dsh session and prints no session id, so resume stays unavailable until N-DSH1b.',
     ],
   },
   {

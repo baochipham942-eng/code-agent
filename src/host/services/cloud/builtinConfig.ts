@@ -326,6 +326,18 @@ const BUILTIN_SKILLS: SkillDefinition[] = [
 // Tool Metadata
 // ----------------------------------------------------------------------------
 
+// ⚠️ 这里的键**绝不能与任何工具 schema 名大小写完全一致**。
+// `schemaToDefinition`（tools/dispatch/toolDefinitions.ts:63）的合并顺序是
+// `cloud?.description || schema.dynamicDescription?.() || schema.description`——cloud 最优先，
+// 所以一条命中的一句话兜底描述会把那个工具**整份 description 顶掉且不报错**，
+// 模型从此看不到它真正的使用规则。门在 tests/unit/tools/builtinToolMetaOverride.test.ts。
+//
+// 2026-08-14（L8 N-L8-RULES-SINK）按这条判据删掉 4 条已经命中的：
+//   Task（顶掉整段委派路由规则 + renderAgentCatalogSection 动态渲染的子代理目录）
+//   web_fetch（顶掉「认证/私有 URL 必失败」这条 IMPORTANT 警告）
+//   read_pdf / mcp（各自顶掉完整参数与用法说明）
+// 剩下的 bash / read_file / glob / … 是历史小写名，与现在的 Bash / Read / Glob 大小写不符，
+// 查不中所以无害；留着是给远端下发同名 override 时兜底。
 const BUILTIN_TOOL_META: Record<string, ToolMetadata> = {
   bash: { name: 'bash', description: '执行 shell 命令', version: '1.0.0' },
   read_file: { name: 'read_file', description: '读取文件内容', version: '1.0.0' },
@@ -334,13 +346,9 @@ const BUILTIN_TOOL_META: Record<string, ToolMetadata> = {
   glob: { name: 'glob', description: '按模式搜索文件', version: '1.0.0' },
   grep: { name: 'grep', description: '在文件中搜索内容', version: '1.0.0' },
   list_directory: { name: 'list_directory', description: '列出目录内容', version: '1.0.0' },
-  Task: { name: 'Task', description: '创建子任务', version: '1.0.0' },
   // todo_write: { name: 'todo_write', description: '管理任务列表', version: '1.0.0' }, // 已移除
   ask_user_question: { name: 'ask_user_question', description: '向用户提问', version: '1.0.0' },
   skill: { name: 'skill', description: '调用预定义技能', version: '1.0.0' },
-  web_fetch: { name: 'web_fetch', description: '获取网页内容', version: '1.0.0' },
-  read_pdf: { name: 'read_pdf', description: '读取 PDF 文件', version: '1.0.0' },
-  mcp: { name: 'mcp', description: '调用 MCP 服务器工具', version: '1.0.0' },
 };
 
 // ----------------------------------------------------------------------------

@@ -5897,36 +5897,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/prompts/rules/attachmentHandling.ts",
-      "name": "ATTACHMENT_HANDLING_RULES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/codeReference.ts",
-      "name": "CODE_REFERENCE_RULES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/codeSnippet.ts",
-      "name": "CODE_SNIPPET_RULES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/errorHandling.ts",
-      "name": "ERROR_HANDLING_RULES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/githubRouting.ts",
-      "name": "GITHUB_ROUTING_RULES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/gitSafety.ts",
-      "name": "GIT_SAFETY_RULES",
-      "kind": "export"
-    },
-    {
       "file": "src/host/prompts/rules/htmlGeneration.ts",
       "name": "HTML_GENERATION_RULES",
       "kind": "export"
@@ -5934,41 +5904,6 @@
     {
       "file": "src/host/prompts/rules/outputFormat.ts",
       "name": "OUTPUT_FORMAT_RULES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/parallelTools.ts",
-      "name": "PARALLEL_TOOLS_RULES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/planMode.ts",
-      "name": "PLAN_MODE_RULES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/professionalObjectivity.ts",
-      "name": "PROFESSIONAL_OBJECTIVITY_RULES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/taskClassification.ts",
-      "name": "TASK_CLASSIFICATION_RULES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/taskManagement.ts",
-      "name": "TASK_MANAGEMENT_RULES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/toolDecisionTree.ts",
-      "name": "TOOL_DECISION_TREE",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/toolUsagePolicy.ts",
-      "name": "TOOL_USAGE_POLICY",
       "kind": "export"
     },
     {
@@ -9099,11 +9034,6 @@
     {
       "file": "src/host/services/skills/comboRecorder.ts",
       "name": "ComboRecording",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/services/skills/comboRecorder.ts",
-      "name": "ComboStep",
       "kind": "type"
     },
     {

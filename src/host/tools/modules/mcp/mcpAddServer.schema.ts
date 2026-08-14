@@ -28,6 +28,7 @@ Examples:
 - SSE server: { "name": "my-server", "type": "sse", "serverUrl": "https://mcp.example.com/sse" }
 - Stdio server: { "name": "fs-server", "type": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"] }
 - Without auto-connect: { "name": "test", "type": "http-streamable", "serverUrl": "https://...", "auto_connect": false }`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

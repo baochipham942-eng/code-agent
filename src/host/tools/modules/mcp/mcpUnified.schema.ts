@@ -22,6 +22,7 @@ Examples:
 - Add HTTP Streamable server: { "action": "add_server", "name": "jira", "type": "http-streamable", "serverUrl": "https://mcp.example.com/mcp" }
 - Add SSE server: { "action": "add_server", "name": "my-server", "type": "sse", "serverUrl": "https://mcp.example.com/sse" }
 - Add stdio server: { "action": "add_server", "name": "fs", "type": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"] }`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

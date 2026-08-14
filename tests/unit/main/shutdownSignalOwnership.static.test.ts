@@ -26,6 +26,19 @@ const TOOL_LAYER_FILES = [
   'src/host/tools/shell/ptyExecutor.ts',
 ];
 
+/**
+ * 上面那些模块里**确实有状态要保全**的那一部分：它们必须挂 'exit'，不许改挂信号。
+ *
+ * 这是子集而不是等同于 `TOOL_LAYER_FILES`，因为「不许挂信号」是不变量，
+ * 「必须挂 exit」只是它的替代手段——一个**没有状态要保全**的模块两条都不该被要求。
+ * `ptyExecutor.ts` 2026-08-14（N-DSH-STOP6）删掉了那套**有写方无读方**的会话持久化
+ * （`loadPersistedPtySessions` 全仓零调用方，写出去的 JSON 从来没人读），
+ * 于是它不再有 exit 钩子，也不该再被这条正向锚要求。
+ */
+const STATE_PRESERVING_FILES = [
+  'src/host/tools/shell/backgroundTasks.ts',
+];
+
 /** 允许拥有终止权的入口（正向锚，防止 shutdown 属主被误删） */
 const SHUTDOWN_OWNERS = [
   'src/web/webServer.ts',
@@ -48,9 +61,15 @@ describe('shutdown signal ownership', () => {
     expect(code).not.toMatch(/process\.on\(\s*['"]SIGINT['"]/);
   });
 
-  it.each(TOOL_LAYER_FILES)('%s 仍用 exit 钩子保全状态', (rel) => {
+  it.each(STATE_PRESERVING_FILES)('%s 仍用 exit 钩子保全状态', (rel) => {
     const code = stripComments(read(rel));
     expect(code).toMatch(/process\.on\(\s*['"]exit['"]/);
+  });
+
+  // 缩小上面那张表之后，别让它悄悄缩到空——扫 0 个目标还报通过就是假绿。
+  it('状态保全清单非空，且是工具层清单的子集', () => {
+    expect(STATE_PRESERVING_FILES.length).toBeGreaterThan(0);
+    for (const rel of STATE_PRESERVING_FILES) expect(TOOL_LAYER_FILES).toContain(rel);
   });
 
   it.each(SHUTDOWN_OWNERS)('%s 仍是 SIGTERM 的属主并走 shutdown', (rel) => {

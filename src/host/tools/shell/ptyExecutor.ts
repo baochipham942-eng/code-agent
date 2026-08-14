@@ -23,7 +23,7 @@ const PTY_CLEANUP_INTERVAL = 60 * 1000; // 1 minute
 // Types
 // ============================================================================
 
-export interface PtySessionState {
+interface PtySessionState {
   sessionId: string;
   pty: pty.IPty;
   output: string[];
@@ -77,7 +77,7 @@ export interface PtySessionOutput {
   duration: number;
 }
 
-export type PtySessionLifecycleEventType = 'started' | 'completed' | 'failed';
+type PtySessionLifecycleEventType = 'started' | 'completed' | 'failed';
 
 export interface PtySessionLifecycleEvent {
   type: PtySessionLifecycleEventType;
@@ -91,52 +91,6 @@ export interface PtySessionLifecycleEvent {
 const ptySessions: Map<string, PtySessionState> = new Map();
 const ptySessionEvents = new EventEmitter();
 ptySessionEvents.setMaxListeners(50);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function readString(record: Record<string, unknown>, key: string): string | null {
-  const value = record[key];
-  return typeof value === 'string' ? value : null;
-}
-
-function readNumber(record: Record<string, unknown>, key: string): number | null {
-  const value = record[key];
-  return typeof value === 'number' ? value : null;
-}
-
-function readStringArray(record: Record<string, unknown>, key: string): string[] | null {
-  const value = record[key];
-  return Array.isArray(value) && value.every((entry) => typeof entry === 'string') ? value : null;
-}
-
-function isPtyStatus(value: unknown): value is PtySessionState['status'] {
-  return value === 'running' || value === 'completed' || value === 'failed';
-}
-
-function parsePersistedPtySession(value: unknown): PersistedPtySession | null {
-  if (!isRecord(value)) return null;
-  const sessionId = readString(value, 'sessionId');
-  const command = readString(value, 'command');
-  const args = readStringArray(value, 'args');
-  const cwd = readString(value, 'cwd');
-  const startTime = readNumber(value, 'startTime');
-  const outputFile = readString(value, 'outputFile');
-  const status = value.status;
-  if (!sessionId || !command || !args || !cwd || startTime === null || !outputFile || !isPtyStatus(status)) {
-    return null;
-  }
-  return { sessionId, command, args, cwd, startTime, outputFile, status };
-}
-
-function parsePersistedPtySessions(value: unknown): PersistedPtySession[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
-    const session = parsePersistedPtySession(entry);
-    return session ? [session] : [];
-  });
-}
 
 // ============================================================================
 // Directory Management
@@ -364,28 +318,9 @@ export function submitToPtySession(sessionId: string, input: string): { success:
   return writeToPtySession(sessionId, input + '\n');
 }
 
-/**
- * Resize a PTY session
- */
-export function resizePtySession(sessionId: string, cols: number, rows: number): { success: boolean; error?: string } {
-  const session = ptySessions.get(sessionId);
-  if (!session) {
-    return { success: false, error: `No PTY session found with ID: ${sessionId}` };
-  }
-
-  if (session.status !== 'running') {
-    return { success: false, error: `PTY session ${sessionId} is not running` };
-  }
-
-  try {
-    session.pty.resize(cols, rows);
-    session.cols = cols;
-    session.rows = rows;
-    return { success: true };
-  } catch (error: unknown) {
-    return { success: false, error: `Failed to resize PTY: ${error instanceof Error ? error.message : String(error)}` };
-  }
-}
+// resize 能力住在有视口的那个子系统（terminalSessionManager.resizeTerminalSession ←
+// TerminalPanel ← IPC 'terminal/resize'）。ptyExecutor 的会话是无视口的后台 shell，
+// 建会话时定一次 cols/rows 就够，故此处不留 resize 导出。
 
 /**
  * 把 `IPty` 适配成 killProcessTree 要的最小子进程视图。
@@ -592,7 +527,7 @@ export function isPtySessionId(sessionId: string): boolean {
 /**
  * Cleanup completed PTY sessions (remove from memory, keep files)
  */
-export function cleanupCompletedPtySessions(): number {
+function cleanupCompletedPtySessions(): number {
   let cleaned = 0;
 
   for (const [sessionId, session] of ptySessions) {
@@ -612,7 +547,7 @@ export function cleanupCompletedPtySessions(): number {
 /**
  * Cleanup timed out PTY sessions
  */
-export async function cleanupTimedOutPtySessions(): Promise<void> {
+async function cleanupTimedOutPtySessions(): Promise<void> {
   const now = Date.now();
 
   for (const [sessionId, session] of ptySessions) {
@@ -658,87 +593,17 @@ import('../../services/infra/gracefulShutdown')
   .catch(() => { /* shutdown infra 不可用就靠 .unref() */ });
 
 // ============================================================================
-// Persistence
+// Persistence —— 已删除（2026-08-14，N-DSH-STOP6）
 // ============================================================================
-
-interface PersistedPtySession {
-  sessionId: string;
-  command: string;
-  args: string[];
-  cwd: string;
-  startTime: number;
-  outputFile: string;
-  status: 'running' | 'completed' | 'failed';
-}
-
-const PTY_PERSISTENCE_FILE = path.join(getUserConfigDir(), 'pty-sessions.json');
-
-/**
- * Save running PTY sessions for recovery
- */
-export function persistRunningPtySessions(): void {
-  const sessions: PersistedPtySession[] = [];
-
-  for (const [, session] of ptySessions) {
-    if (session.status === 'running') {
-      sessions.push({
-        sessionId: session.sessionId,
-        command: session.command,
-        args: session.args,
-        cwd: session.cwd,
-        startTime: session.startTime,
-        outputFile: session.outputFile,
-        status: session.status,
-      });
-    }
-  }
-
-  try {
-    const dir = path.dirname(PTY_PERSISTENCE_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(PTY_PERSISTENCE_FILE, JSON.stringify(sessions, null, 2));
-  } catch (err) {
-    console.error('[PTY] Failed to persist sessions:', err);
-  }
-}
-
-/**
- * Load persisted PTY sessions (called on startup)
- * Note: These sessions are marked as 'failed' since the original process is gone
- */
-export function loadPersistedPtySessions(): PersistedPtySession[] {
-  try {
-    if (fs.existsSync(PTY_PERSISTENCE_FILE)) {
-      const data = fs.readFileSync(PTY_PERSISTENCE_FILE, 'utf-8');
-      const sessions = parsePersistedPtySessions(JSON.parse(data) as unknown);
-
-      // Mark all as failed since the process is gone
-      return sessions.map((s) => ({ ...s, status: 'failed' as const }));
-    }
-  } catch (err) {
-    console.error('[PTY] Failed to load persisted sessions:', err);
-  }
-  return [];
-}
-
-/**
- * Clear persistence file
- */
-export function clearPersistedPtySessions(): void {
-  try {
-    if (fs.existsSync(PTY_PERSISTENCE_FILE)) {
-      fs.unlinkSync(PTY_PERSISTENCE_FILE);
-    }
-  } catch (err) {
-    console.error('[PTY] Failed to clear persisted sessions:', err);
-  }
-}
-
-// Persist sessions on process exit
-// 与 backgroundTasks.ts 同理：模块级信号处理器会让「本进程有人管 SIGTERM」这件事
-// 提前成立，压掉默认终止语义，却又不做真正的收尾。状态保全走 'exit' 钩子即可
-// （persistRunningPtySessions 是同步函数），信号的终止权留给入口的 shutdown()。
-process.on('beforeExit', persistRunningPtySessions);
-process.on('exit', persistRunningPtySessions);
+//
+// 这里原本有一套「退出时把在跑的会话写进 ~/.code-agent/pty-sessions.json，
+// 启动时读回来」的持久化。删掉的理由：**它自诞生（a3a7cce47）起就只有写方、没有读方**，
+// `loadPersistedPtySessions` / `clearPersistedPtySessions` 全仓零调用方（含 src-tauri Rust 侧），
+// 而且即便接上也恢复不了任何东西——读回来的每一条都被强制改成 status:'failed'（PTY 句柄
+// 不可能跨进程复活），能提供的只有一句「上次退出时有 N 个会话没了」；STOP1/STOP3 之后停机
+// 路径会主动 reapPtySessions() 收干净，连这句都恒为空。
+//
+// 真正需要跨重启收尾的是 terminalSessionManager：它落盘的是 **pid**，启动时
+// reapOrphanTerminals() 带两道核对去收割孤儿——那是有读方、有用途的持久化，别跟这个混淆。
+//
+// 依赖图与逐符号判据见 docs/design/2026-08-14-pty-executor-dead-export-map.md。

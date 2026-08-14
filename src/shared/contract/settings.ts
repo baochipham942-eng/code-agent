@@ -93,6 +93,12 @@ export interface VoiceLiveSettings {
   echoCancellation?: 'auto' | 'off';
   /** 通话语速。纯 instructions 指令，遵从度按 Provider 不保证。未配置 = normal。 */
   speechRate?: 'slow' | 'normal' | 'fast';
+  /**
+   * 声纹身份（N-L7-SPK）：undefined = 默认开启。开 = 通话内临时说话人锚定
+   * （不落盘不建档，通话结束即丢）+ 已注册时跨会话认本人。关 = 完全不做声纹运算。
+   * 注册与否是另一件事（显式动作，见 voiceprintStore）；此开关只控运算是否发生。
+   */
+  voiceprint?: boolean;
 }
 
 /**

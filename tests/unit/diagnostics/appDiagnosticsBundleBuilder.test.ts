@@ -190,4 +190,40 @@ describe('buildAppDiagnosticsBundle', () => {
     expect(logText).toContain('~');
     expect(auditText).toContain('~');
   });
+
+  // N-L7-SPK 判据 6：导出诊断包 → 包内无任何声纹向量（「不离机」的负例）。
+  // 数据目录按真实布局搭：logs/audit/config.json/voiceprint 同根，声纹已注册后打包，
+  // 逐个 zip 条目扫哨兵值——白名单式收集将来若被改成整目录扫描，这条会当场红。
+  // （灵敏度已变异验证过：把 configPath 指向 owner-profile.json 时本测试红。）
+  it('已注册声纹后导出诊断包：包内无 voiceprint 路径、无向量哨兵值（判据6）', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'app-diag-'));
+    const dirs = makeDirs(root);
+    const now = Date.now();
+    writeFileWithMtime(path.join(dirs.logDir, 'code-agent-today.log'), 'voiceprint verdict logged', new Date(now));
+    fs.writeFileSync(dirs.configPath, JSON.stringify({ voice: { live: { voiceprint: true } } }), 'utf8');
+
+    const prevDataDir = process.env.CODE_AGENT_DATA_DIR;
+    process.env.CODE_AGENT_DATA_DIR = root;
+    try {
+      const { registerOwnerEmbedding } = await import('../../../src/host/services/voice/voiceprintStore');
+      const { VOICEPRINT_EMBEDDING_DIM } = await import('../../../src/shared/constants/voice');
+      const sentinel = 0.987654321;
+      registerOwnerEmbedding(new Float32Array(VOICEPRINT_EMBEDDING_DIM).fill(sentinel), now);
+      expect(fs.existsSync(path.join(root, 'voiceprint', 'owner-profile.json'))).toBe(true);
+
+      const result = await buildAppDiagnosticsBundle({ ...dirs, now, homeDir: root, workingDirectory: root });
+      const zip = await JSZip.loadAsync(result.buffer);
+      const names = Object.keys(zip.files);
+      expect(names.some((name) => name.toLowerCase().includes('voiceprint'))).toBe(false);
+      for (const name of names) {
+        const entry = zip.file(name);
+        if (!entry) continue;
+        const content = await entry.async('string');
+        expect(content, `bundle entry ${name} 泄漏了声纹向量`).not.toContain('0.98765');
+      }
+    } finally {
+      if (prevDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+      else process.env.CODE_AGENT_DATA_DIR = prevDataDir;
+    }
+  });
 });

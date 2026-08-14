@@ -4,6 +4,7 @@ export const listExpertsSchema: ToolSchema = {
   name: 'list_experts',
   description:
     'List the authoritative local expert roster that can be used to form a team. Call this before drafting a team; do not use Bash or Glob to inspect the filesystem and guess roles.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {},

@@ -9,7 +9,7 @@ Usage:
 - Takes a task_id parameter identifying the shell to kill
 - Returns success or failure status
 
-To find available task IDs: check the task_id returned when starting a background command, or list running tasks via task_output.`,
+To find available task IDs: check the task_id returned when starting a background command, or list running tasks via the Process tool with action="list".`,
   inputSchema: {
     type: 'object',
     properties: {

@@ -57,6 +57,11 @@ const REACHABLE_VIA_FACADE: Record<string, string> = {
   xlwings_execute: 'ExcelAutomate',
   pdf_compress: 'PdfAutomate',
   web_fetch: 'WebFetch',
+  // Process 门面（process.ts 的 output/kill action 是这两个的严格超集：同样吃 task_id、
+  // 同样的 block/timeout 语义，并额外覆盖 PTY session）。2026-08-14 N-L8-UNREACH19
+  // 同批把 Bash 后台结果里指向 task_output/kill_shell 的话术改成了 Process。
+  task_output: 'Process',
+  kill_shell: 'Process',
 };
 
 /**
@@ -66,35 +71,15 @@ const REACHABLE_VIA_FACADE: Record<string, string> = {
 const STRICT_SKILL_INJECTED = new Set<string>(['exit_role_flow']);
 
 /**
- * 存量真·不可达名单（**只许变短**）。2026-08-14 建门时钉住 19 条。
+ * 存量真·不可达名单（**只许变短**）。2026-08-14 建门时钉住 19 条，同日
+ * N-L8-UNREACH19 逐条处置后**清零**：17 个补进 DEFERRED_TOOLS_META，
+ * task_output / kill_shell 归到 Process 门面（见 REACHABLE_VIA_FACADE）。
  *
- * 这些工具注册了、能执行，但模型既看不见（不在 CORE）也搜不到（不在 DEFERRED_TOOLS_META），
- * 也没有门面代理——等于能力不存在。逐条要么补进发现索引、要么补门面、要么删掉。
- *
- * 再加名字进来之前先想清楚：是「该藏起来」还是「忘了登记」。前者补进 REACHABLE_VIA_FACADE
- * 并写明门面，后者补索引。往这个名单里加，等于承认又漏了一个。
+ * 清零后本名单是个空棘轮：新注册的工具只要够不着就直接把上面那条主断言打红。
+ * 别再往里加名字——是「该藏起来」就补 REACHABLE_VIA_FACADE 并写明门面，
+ * 是「忘了登记」就补索引。往这里加等于承认又漏了一个。
  */
-const UNREACHABLE_BASELINE = new Set<string>([
-  'collect_agent',
-  'declare_deliverables',
-  'diagnostics',
-  'git_commit',
-  'git_diff',
-  'git_worktree',
-  'kill_shell',
-  'local_speech_to_text',
-  'plan_review',
-  'ppt_edit',
-  'read_tool_result_archive',
-  'request_directory',
-  'SkillCreate',
-  'space_create',
-  'space_list',
-  'space_query',
-  'task_output',
-  'teammate',
-  'visual_edit',
-]);
+const UNREACHABLE_BASELINE = new Set<string>([]);
 
 function collectRegisteredSchemas(): ToolSchema[] {
   const schemas: ToolSchema[] = [];

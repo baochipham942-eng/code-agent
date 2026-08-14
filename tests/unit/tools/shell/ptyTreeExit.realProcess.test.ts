@@ -2,23 +2,39 @@
 // node-pty 不是 child_process，它的终止语义（setsid 自成组、kill() 默认 SIGHUP 且吞异常）
 // mock 造不出来——「组死没死」只有真进程能回答。
 // 证据档位：real-runtime / fault-injection。
+//
+// 🔴 两道运行前提，缺一这些用例就跑不了真 PTY：
+//   1. tests/setup.ts 把 node-pty 全局 mock 成 `{ pid: 0, kill(){} }`——那个假句柄回答不了
+//      「组死没死」。这里用 vi.doUnmock + 动态 import 拿真模块。
+//   2. **CI（linux-x64）根本没有 node-pty 的原生产物**（实测报
+//      `Cannot find module './prebuilds/linux-x64//pty.node'`）。所以真 PTY 用例只能在
+//      本机跑，CI 上整组 skip——skip 不是假绿：下面「接线守护」那条**不跳过**，
+//      CI 照样守着收尸接线，本机再补真进程证明。
 import { execFileSync } from 'child_process';
-import { mkdtempSync } from 'fs';
+import { mkdtempSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
+import { join } from 'path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-// tests/setup.ts 把 node-pty 全局 mock 成 `{ pid: 0, kill(){} }`——那个假句柄回答不了
-// 「组死没死」这个本单唯一重要的问题。这里显式撤销，用真 node-pty 跑真 PTY。
-vi.unmock('node-pty');
-
-import {
-  createPtySession,
-  getPtySession,
-  killPtySession,
-} from '../../../../src/host/tools/shell/ptyExecutor';
 import { SHELL_KILL } from '../../../../src/shared/constants/tools';
 
-const posixOnly = process.platform === 'win32' ? describe.skip : describe;
+// 真 node-pty 能不能加载（原生模块，CI 上没有）
+let realPtyAvailable = true;
+try {
+  await vi.importActual('node-pty');
+} catch {
+  realPtyAvailable = false;
+}
+
+// doUnmock 不被 hoist，只对之后的动态 import 生效——正好用来按能力分流
+vi.doUnmock('node-pty');
+
+type PtyExecutor = typeof import('../../../../src/host/tools/shell/ptyExecutor');
+const ptyExecutor: PtyExecutor | null = realPtyAvailable
+  ? await import('../../../../src/host/tools/shell/ptyExecutor')
+  : null;
+
+const canRunRealPty = realPtyAvailable && process.platform !== 'win32';
 
 function pidAlive(pid: number): boolean {
   try {
@@ -47,18 +63,22 @@ async function startSession(command: string): Promise<{
   pid: number;
   read: () => string;
 }> {
+  const mod = ptyExecutor!;
   const cwd = mkdtempSync(`${tmpdir()}/neo-pty-`);
-  const created = await createPtySession({ command, args: [], cwd });
+  const created = mod.createPtySession({ command, args: [], cwd });
   expect(created.success, created.error).toBe(true);
-  const session = getPtySession(created.sessionId!);
+  const session = mod.getPtySession(created.sessionId!);
   expect(session).toBeDefined();
+  // fail-loud：mock 句柄的 pid 恒为 0。真 pid 才有「组」可言，
+  // 万一 mock 漏回来，这里立刻报红，而不是在假句柄上跑出一片假绿。
+  expect(session!.pty.pid, 'node-pty 是 mock 句柄（pid=0），这组用例失去意义').toBeGreaterThan(0);
   let buffered = '';
   session!.pty.onData((chunk) => { buffered += chunk; });
   await waitFor(() => buffered.includes('READY'));
   return { sessionId: created.sessionId!, pid: session!.pty.pid, read: () => buffered };
 }
 
-posixOnly('PTY 会话整树退出证明', () => {
+describe.skipIf(!canRunRealPty)('PTY 会话整树退出证明（真 node-pty）', () => {
   const openedPids: number[] = [];
   const previousDataDir = process.env.CODE_AGENT_DATA_DIR;
 
@@ -84,7 +104,7 @@ posixOnly('PTY 会话整树退出证明', () => {
     expect(groupAlive(pid)).toBe(true);
 
     const startedAt = Date.now();
-    const result = await killPtySession(sessionId);
+    const result = await ptyExecutor!.killPtySession(sessionId);
     const elapsed = Date.now() - startedAt;
 
     expect(result.success).toBe(true);
@@ -111,7 +131,7 @@ posixOnly('PTY 会话整树退出证明', () => {
     }) as typeof process.kill);
 
     const startedAt = Date.now();
-    const result = await killPtySession(sessionId);
+    const result = await ptyExecutor!.killPtySession(sessionId);
     const elapsed = Date.now() - startedAt;
     killSpy.mockRestore();
 
@@ -134,7 +154,7 @@ posixOnly('PTY 会话整树退出证明', () => {
     const pgid = (target: number) => execFileSync('ps', ['-o', 'pgid=', '-p', String(target)]).toString().trim();
     expect(pgid(grandchildPid)).toBe(String(pid));
 
-    await killPtySession(sessionId);
+    await ptyExecutor!.killPtySession(sessionId);
 
     expect(pidAlive(grandchildPid)).toBe(false);
     expect(groupAlive(pid)).toBe(false);
@@ -148,7 +168,7 @@ posixOnly('PTY 会话整树退出证明', () => {
     const pgid = (target: number) => execFileSync('ps', ['-o', 'pgid=', '-p', String(target)]).toString().trim();
     expect(pgid(pid)).not.toBe(pgid(process.pid));
 
-    await killPtySession(sessionId);
+    await ptyExecutor!.killPtySession(sessionId);
 
     expect(pidAlive(process.pid)).toBe(true);
     expect(groupAlive(pid)).toBe(false);
@@ -168,11 +188,36 @@ posixOnly('PTY 会话整树退出证明', () => {
   it('永久退出边界：已确认退出的会话再收一次立刻返回，不对复用的 pid 发信号', async () => {
     const { sessionId, pid } = await startSession('echo READY; exec sleep 300');
     openedPids.push(pid);
-    await killPtySession(sessionId);
+    await ptyExecutor!.killPtySession(sessionId);
 
     const startedAt = Date.now();
-    await killPtySession(sessionId);
+    await ptyExecutor!.killPtySession(sessionId);
 
     expect(Date.now() - startedAt).toBeLessThan(SHELL_KILL.POLL_INTERVAL_MS);
   }, 30000);
+});
+
+// **这一组永不跳过**：上面的真进程用例在 CI（无 node-pty 原生产物）上整组 skip，
+// 收尸接线不能因此失守。守的是「PTY 真的在收尸清单里」——产品代码里零调用方的
+// 收尸函数 = 白写（STOP1 的 cancelAll 就是前车之鉴）。
+describe('PTY 收尸接线守护（不依赖原生模块）', () => {
+  it('reapChildProcesses 收 PTY 会话，且停机属主把 pty 计数打进日志', () => {
+    const root = join(__dirname, '../../../../src');
+    const reaper = readFileSync(join(root, 'host/tools/shell/shutdownReaper.ts'), 'utf-8');
+    expect(reaper, '收尸入口没收 PTY').toContain('reapPtySessions');
+    expect(reaper, '收尸返回值没带 pty 计数').toContain('killedPtySessions');
+
+    // 不留痕的步骤事后无法判断跑没跑过（本仓吃过 exitReason 看着完美、日志一行没打的亏）
+    const webServer = readFileSync(join(root, 'web/webServer.ts'), 'utf-8');
+    expect(webServer, '停机日志没带 pty 计数').toContain('pty session(s)');
+  });
+
+  it('killPtySession 返回 Promise（「已终止」要等确认退出，不能发完信号就返回）', () => {
+    const source = readFileSync(
+      join(__dirname, '../../../../src/host/tools/shell/ptyExecutor.ts'),
+      'utf-8',
+    );
+    expect(source).toMatch(/export async function killPtySession/);
+    expect(source, 'PTY 终止没走整树退出证明').toContain('killProcessTree');
+  });
 });

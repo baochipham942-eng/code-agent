@@ -116,6 +116,22 @@ export const SKILL_CHANNELS = {
 export type SkillChannel = (typeof SKILL_CHANNELS)[keyof typeof SKILL_CHANNELS];
 
 // ============================================================================
+// 候选能力（N-CAP1 / F12）—— 能力中心「候选能力」这一区
+// ============================================================================
+// 通道前缀刻意不叫 `capability:`：那个名字已经被 IPC_DOMAINS.CAPABILITY 这个
+// domain handler 占了（且非 list 动作要管理员），web 桥的 /domain/:domain/:action
+// 会先命中它。
+
+export const CAPABILITY_CANDIDATE_CHANNELS = {
+  /** 拉取候选能力列表（机械分降序；调用方主动拉，host 不推） */
+  LIST: 'capabilityCandidate:list',
+  /** 忽略：下沉冷却，冷却到期且再次发生会回到列表 */
+  IGNORE: 'capabilityCandidate:ignore',
+  /** 不再提示：终态，永久隐藏 */
+  DISMISS: 'capabilityCandidate:dismiss',
+} as const;
+
+// ============================================================================
 // Prompt Command（/命令协议层，roadmap 2.2）IPC 通道
 // ============================================================================
 

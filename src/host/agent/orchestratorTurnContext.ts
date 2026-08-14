@@ -5,6 +5,7 @@
 import type { AgentRunOptions } from '../research/types';
 import { getPermissionModeManager } from '../permissions/modes';
 import { wrapWithTurnSystemContext } from './turnScaffold';
+import { buildCapabilityCandidateNotice } from './capabilityCandidateNotice';
 
 export function applyTurnSystemContext(
   content: string,
@@ -16,6 +17,11 @@ export function applyTurnSystemContext(
   const liveVoiceNotice = getLiveVoicePermissionNotice(sessionId);
   if (liveVoiceNotice) {
     turnSystemContext.push(liveVoiceNotice);
+  }
+  // 候选能力（N-CAP1）：每会话首轮注入一次，之后靠历史带着走。
+  const capabilityNotice = buildCapabilityCandidateNotice(sessionId);
+  if (capabilityNotice) {
+    turnSystemContext.push(capabilityNotice);
   }
   // 标签字面量收在 turnScaffold 里：轮首的分类器要按同一份定义把用户原话拆回来
   // （见该文件顶注的 skill 别名劫持实录）。

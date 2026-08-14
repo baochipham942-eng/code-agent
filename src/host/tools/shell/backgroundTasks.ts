@@ -191,7 +191,7 @@ export function startBackgroundTask(
     if (cleaned === 0 && backgroundTasks.size >= MAX_BACKGROUND_TASKS) {
       return {
         success: false,
-        error: `Maximum number of background tasks (${MAX_BACKGROUND_TASKS}) reached. Use kill_shell to terminate some tasks.`,
+        error: `Maximum number of background tasks (${MAX_BACKGROUND_TASKS}) reached. Use the Process tool with action="kill" to terminate some tasks.`,
       };
     }
   }

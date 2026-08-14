@@ -17,8 +17,10 @@
 //
 // ## 调基线的正当理由
 //   - **降**：瘦身完了把基线跟着降下来，锁住成果。
-//   - **涨**：只有「新工具进 CORE」这一种。那本身是个需要显式决策的动作
+//   - **涨**：两种。①「新工具进 CORE」；②规则分流——把一条**本来就该发给模型、但发错了
+//     地方**的规则搬进 description（见下方基线变更记录）。两者都是需要显式决策的动作
 //     （判据见 CORE_TOOLS 的注释块），顺手改个数字比悄悄多花每轮 token 好得多。
+//     ⚠️ 「顺手补一句更清楚的说明」不在此列——那是措辞，走压缩不走抬基线。
 //   - 把工具挪出 CORE 会让总量下降，此时**必须**同步下调基线，否则门就松了。
 // ============================================================================
 
@@ -36,8 +38,18 @@ import { CORE_TOOLS } from '../../../src/host/services/toolSearch/deferredTools'
  *
  * ⚠️ 别用「字符数 ÷ 3」那套估算——实测它按语言系统性偏斜（纯中文真 token 是它的 2.16 倍、
  * 纯英文是 0.44 倍），工具 schema 几乎全英文会被高估约一倍，桶间比例直接失真。
+ *
+ * ## 基线变更记录
+ * - 4155 → 4349（2026-08-14，L8 N-L8-RULES-SINK，+194）：规则分流。`prompts/rules/` 下的
+ *   gitSafety / errorHandling / codeSnippet 三块**从来没进过运行时提示词**（RULE_TIERS 全空，
+ *   builder.ts 不消费），用户在设置页改了也零效果。按四个成熟产品的一手对标结论——系统提示只
+ *   讲跨工具元策略，单个工具「怎么用、什么时候别用」下沉到工具 description（Windsurf 的工具
+ *   schema 32.8KB > 它系统提示本体 11.7KB；Amp 的 git 流程整段在 Bash 的 description 里）——
+ *   压缩后搬进 Bash(+141) / Write(+33) / Read(+20)。
+ *   这 194 不是措辞膨胀，是**从「一分钱不花但也一点用没有」换成「花 194 但真的送到」**；
+ *   同批 toolUsagePolicy 的委派判据搬进了 Task（非 CORE，按需下发，不计本门）。
  */
-const CORE_SCHEMA_TOKEN_BASELINE = 4155;
+const CORE_SCHEMA_TOKEN_BASELINE = 4349;
 
 const MODULES_DIR = join(__dirname, '../../../src/host/tools/modules');
 

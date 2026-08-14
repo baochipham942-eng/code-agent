@@ -298,3 +298,84 @@ Claude Code 的二进制里，`TodoWrite` 是 `isEnabled(){return !B1() && !Fde(
 - 使用频率：`tool_execution_events` 按 `execution_id` 去重（该表每次执行落 begin + complete 两行，直接 `count(*)` 会翻倍）。生产库 + dev 槽合并。
 - 证据档位：schema token 与工具注册状况为 A（源码实算 + 与真实请求体对账）；使用频率为 A（生产真库多信源交叉：工具账本 + `session_tasks` 表）；ToolSearch 召回质量为 B（69 次真实调用的行为学证据，非受控实验）；"引导断了"为 B（静态可达性分析，未做运行时变异验证）。
 - 本单只列不改，未动任何源码。
+
+---
+
+## 规则分流落地结果（2026-08-14，N-L8-RULES-KEEP + N-L8-RULES-SINK）
+
+上面「顺带查出」第 1 条（`prompts/rules/` 全部不进运行时提示词）已开成两张单做完。这里记结果和过程里被实测推翻的几处判断。
+
+### 先纠一个口径：本报告的 ÷3 估算把这批规则的体量低估了 2.3 倍
+
+本报告 token 口径是「JSON 字符数 ÷ 3」。规则块正文**几乎全是中文**，而 ÷3 对中文系统性低估 2.16 倍。用真 tokenizer（`tokenEstimator.estimateTokens`）重算这 6 块：
+
+| 规则块 | ÷3 估算 | 真 tokenizer | 倍数 |
+| --- | ---: | ---: | ---: |
+| gitSafety | 168 | 387 | 2.30 |
+| errorHandling | 149 | 335 | 2.25 |
+| toolUsagePolicy | 392 | 1089 | 2.78 |
+| toolDecisionTree | 133 | 449 | 3.38 |
+| attachmentHandling | 161 | 284 | 1.76 |
+| codeSnippet | 118 | 525 | 4.45 |
+| **合计** | **1121** | **3069** | **2.74** |
+
+**工单按 1121 派的活，真实体量是 3069。**（本报告其他章节的 token 数针对的是全英文的工具 schema，÷3 在那边是高估约一倍，方向相反；两处不能混用。）
+
+### as-built 复核推翻了一半的「该下沉」判断
+
+工单列的 6 块要求逐块下沉。逐条核到底之后，**只有 4 块有东西可搬，2 块是纯冗余直接删**：
+
+- **`attachmentHandling`（284）→ 删，不搬。** 它讲的「文件夹附件只给目录树 / 大文件只给前 30 行 / 必须再 Read 一次」这套话，`messageHandling/converter.ts` 已经**贴着被截断的内容原地发出来了**，而且带真实数字：`generateFilePreview()` 输出「预览（前 N 行 / 共 M 行，X KB）」+「还有 K 行未显示…必须用 Read 读取：`<路径>`」，`processFolderAttachment()` 输出「以上只是文件列表，不包含文件内容」。**这是比工具 description 更好的位置**——只在真有附件时出现，带具体行数，不占常驻。规则里那份是它的劣化副本。
+- **`toolDecisionTree`（449）→ 删，不搬。** 三棵 ASCII 决策树 + 一张示例表，内容分别已在 `Task` 的 schema description（"Do not delegate a single fact lookup… use local read/search/edit tools directly"）和 `identity.toolDiscipline` 的 `<use_parallel_tool_calls>` 里。
+- **`toolUsagePolicy`（1089）→ 只搬 65 token。** 里面的子代理角色表被 `renderAgentCatalogSection()` 的动态目录覆盖（真实注册表渲染，比手写表更准）；并行派发段被 AgentSpawn 自己的 description 覆盖；负向判据（单点修改别委派）Task 已有。**真缺的只有正向判据**——"什么时候该委派"，Task 只写了什么时候不该。Handoff 文档模板（约 200 token）直接删：没有任何证据表明它被用过，属于工单没要求、也没人用的东西。
+- **`errorHandling`（335）→ 只搬 ~70 token，且它给的答案已经过时。** 它的主体是「权限错误 → 告诉用户切工作目录 / 用 work/」，而当前产品的正确动作是调 `request_directory`（它自己的 description 已经写了「instead of failing the operation and giving up」）。它举的错误文案 `"Cannot write files outside the working directory"` **在现在的代码里 grep 不到**——规则连例子都是过期的。搬进 Bash 的是没过时的那部分：权限类失败重试不会变绿、超时要拆活、非零退出码不许报成功。
+
+顺带修了一处：converter.ts 那两条附件提示写的是 `read_file`。它是 `toolExecutor.ts` 里还活着的历史别名（不是坏引用），但模型看到的工具表里叫 `Read`，让它多推一步没必要——改成 `Read`。
+
+### 落地形状
+
+| 规则块 | 去处 | 常驻成本 |
+| --- | --- | ---: |
+| gitSafety | Bash description（config / no-verify / amend / commit 信息 / PR 前读全部 commit） | +141 |
+| errorHandling | Bash description（失败后该干什么） | 同上合计 |
+| codeSnippet | Write description（用户贴代码不要问路径，从内容取名） | +33 |
+| errorHandling 残条 | Read description（文件不存在就报告，别为了让读成功而创建） | +20 |
+| toolUsagePolicy | **Task** description（正向委派判据） | 0（Task 非 CORE，按需下发）※ |
+| toolDecisionTree | 删 | 0 |
+| attachmentHandling | 删（converter.ts 的原地提示已覆盖且更好） | 0 |
+
+※ 搬进 Task 之后核下发路径，撞出一个真 bug：Task 的 description 被内置 toolMeta 顶掉了，搬进去也到不了模型。详见下一节，已修 + 已立门。
+
+CORE schema 预算棘轮 4155 → **4349（+194）**，已在 `coreToolSchemaBudget.test.ts` 顶部立「基线变更记录」写明理由：这 194 换的是**从「一分钱不花但一点用没有」变成「花 194 但真的送到模型面前」**，不是措辞膨胀。同时把该门注释里「调基线的正当理由」从一种扩到两种，并加了一条防滥用的反面判据（「顺手补一句更清楚的说明」不算，走压缩）。
+
+净效果：源码删掉 6 个规则文件共 3069 token 的死文本，运行时每轮 +194 token 换 4 条真规则真下发，1 条委派规则按需下发。
+
+### 🔴 下沉过程中撞出的真 bug：内置 toolMeta 在静默顶掉工具 description
+
+搬 `toolUsagePolicy` 到 Task 之后按「变异必须真的落地」核了一遍下发路径，发现搬进去的东西**根本到不了模型**。
+
+`schemaToDefinition`（`tools/dispatch/toolDefinitions.ts:63`）的合并顺序是：
+
+```
+cloud?.description || schema.dynamicDescription?.() || schema.description
+```
+
+cloud meta 优先级最高。而 `builtinConfig.BUILTIN_TOOL_META` 里有一条 `Task: { description: '创建子任务' }`，**键与 Task 的 schema 名大小写完全一致**——于是 Task 那一整段委派路由规则、`renderAgentCatalogSection()` 按真实注册表动态渲染的子代理目录，全部被替换成那五个字。没有任何报错。模型一直只看到「创建子任务」。
+
+写了一道门（`tests/unit/tools/builtinToolMetaOverride.test.ts`：内置 toolMeta 的键与任何工具 schema 名取交集必须为空）之后，**第一次跑就又抓出三个**，都是当前活着的工具名：
+
+| 键 | 被顶掉的真实 description |
+| --- | --- |
+| `Task` | 委派路由规则 + 动态子代理目录 |
+| `web_fetch` | 含「认证 / 私有 URL（Google Docs、Confluence、Jira）必然失败」这条 IMPORTANT 警告 |
+| `read_pdf` | 完整参数说明（视觉模型读 PDF） |
+| `mcp` | 「先调 mcp_list_tools 查可用工具」等完整用法 |
+
+四条已全部删除。剩下的 `bash` / `read_file` / `glob` / … 是历史小写名，与现在的 `Bash` / `Read` / `Glob` 大小写不符，查不中所以无害——**但这个「无害」是我先下的结论，门跑完才发现有三条不属于这一类**。判据交给门，不交给眼睛。
+
+这条和本单是同一个病：**规则写了，但发不到模型面前，而且现场没有任何信号**。区别只在一个是 `RULE_TIERS` 空数组吃掉的，一个是一句话占位符顶掉的。
+
+### 本次查出、仍未处理的两件
+
+1. **`src/host/services/cloud/builtinConfig.ts` 的 `BUILTIN_RULES` 是这批规则的第二份死副本**：12 条规则正文（含本单删掉的 gitSafety / errorHandling / codeSnippet / attachmentHandling，和 HTMLSKILL 那单的 htmlGeneration）在这里各存一份，唯一读者 `cloudConfigService.getRule()` **全仓零调用**。没在本单删是因为 `rules` 是 `CloudConfig` 的必填字段（控制面下发的线上契约），摘字段要跨端确认，超出本单范围。
+2. **schema 预算门看的是静态 `description`，模型收到的是 `dynamicDescription`**：`WebSearch` 静态 77 token、动态拼出来约 330，门只数前者。本单改的四个工具都没有 `dynamicDescription`，所以这次的数字是准的，但这道门对「把话写进 dynamicDescription」是全盲的——绕过成本为零。值得单开一张补上。

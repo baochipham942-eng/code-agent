@@ -379,7 +379,7 @@ describe('inferenceViaAiSdk provider options', () => {
     }));
   });
 
-  it('AI SDK 工具 schema 复用旧 OpenAI 路径的 _meta 注入', async () => {
+  it('AI SDK 工具 schema 不再注入 _meta（全局语义信封已退役，#1131）', async () => {
     const readTool: ToolDefinition = {
       name: 'Read',
       description: 'read a file',
@@ -399,7 +399,10 @@ describe('inferenceViaAiSdk provider options', () => {
     } as ModelConfig);
 
     const call = vi.mocked(generateText).mock.calls.at(-1)?.[0] as { tools?: Record<string, unknown> };
-    expect(JSON.stringify(call.tools?.Read)).toContain('"_meta"');
+    const serialized = JSON.stringify(call.tools?.Read);
+    // 退役后 schema 只剩工具自己声明的参数：既不能带 _meta，也不能把原参数弄丢。
+    expect(serialized).not.toContain('"_meta"');
+    expect(serialized).toContain('"path"');
   });
 
   it('rejects image input before provider construction when the selected model declares no vision support', async () => {

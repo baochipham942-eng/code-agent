@@ -404,4 +404,10 @@ export const TELEMETRY_UPLOAD_RESILIENCE = {
 export const WEB_SERVER_SHUTDOWN_TIMEOUTS = {
   /** 单个关库前清理步骤的超时上限 (ms) */
   STEP_MS: 1_000,
+  /**
+   * 关库前**所有**步骤的总预算 (ms)。Rust 侧宽限期是 3s，逐步各封顶 1s 的写法
+   * 在步骤数超过 3 个之后最坏情况必然吃穿宽限期——每步的实际上限因此收成
+   * `min(STEP_MS, 总预算剩余)`，给关库留下至少 1s（N-DSH-STOP2，2026-08-14）。
+   */
+  PRE_DB_BUDGET_MS: 2_000,
 } as const;

@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "globalFixedTokens": 110,
-  "liveVoiceFixedTokens": 55,
+  "globalFixedTokens": 86,
+  "liveVoiceFixedTokens": 93,
   "liveVoiceToleranceRatio": 0.1,
   "panoramaMatchedFiles": 20,
   "astCallCount": 102,
   "panoramaPointCount": 100,
-  "reason": "#1114 全景表交接基线 + L8 计数棘轮口径；N-L8-ATT2 删除七条同轮重复，但没有增删 injectSystemMessage 调用或全景点位，故 AST、panorama、globalFixedTokens 当时均不变。2026-08-14 N-L8-SLIM2（#1143）新增 P2b「你该建任务了」nudge（nudgeManager.ts:319 <task-tracking-hint>），AST 101→102、panorama 99→100、matchedFiles 仍 20（该文件本就含 nudge 注入）。该点位**不进每轮固定开销**：七条闸全中才发（非简单模式 + 本 run 未用过 TaskManager + 未进强制完成 + iterations≥6 + todos 与未完成任务双空 + 本 run 未提醒过），且 maxTaskStartNudges=1 限定整个 run 至多一次，静态文案约 167 token；同批 SLIM2 净省 4000 token/轮，账面压倒性为正。它治的是真库实证的死功能：session_tasks 41 个会话 79 行任务，创建时间全部停在 2026-06-11，任务面板已空两个多月。globalFixedTokens 保持 110 不变可佐证其条件性（无守卫静态注入总量未变）。102 个调用含 4 个转发/门面，实参为变量不产生静态开销；本地无守卫静态注入为 conversationRuntime:92/goalCompletionGate:2/toolArtifactValidationLifecycle:16，只许降不许涨。实时语音条件路径约 55 token/轮独立对账。行号漂移不动计数，增删注入点必须同步全景表与本基线。"
+  "reason": "2026-08-14 N-L8-RECALC 换 token 口径：脚本从「字符数 ÷ 3」改为仓里真 tokenizer（gpt-tokenizer cl100k_base BPE，与 coreToolSchemaBudget 门同源）。÷3 按语言系统性偏斜——纯中文真 token 约是它的 2.16 倍、纯英文约 0.44 倍，而这两个基线量的都是中文注入文案。重钉后：globalFixedTokens 110→86（真值更低，门更严，不是放松）；liveVoiceFixedTokens 55→93（真值更高，÷3 把它低估了 41%，此前门的允许区间 49.5–60.5 与真实成本毫无关系）。两个数都钉在换口径当下的实测真值上，未加余量；语音仍保留 ±10% 容差供措辞微调。 —— 以下为换口径前的历史理由，行号与计数部分继续有效 —— #1114 全景表交接基线 + L8 计数棘轮口径；N-L8-ATT2 删除七条同轮重复，但没有增删 injectSystemMessage 调用或全景点位，故 AST、panorama、globalFixedTokens 当时均不变。2026-08-14 N-L8-SLIM2（#1143）新增 P2b「你该建任务了」nudge（nudgeManager.ts:319 <task-tracking-hint>），AST 101→102、panorama 99→100、matchedFiles 仍 20（该文件本就含 nudge 注入）。该点位**不进每轮固定开销**：七条闸全中才发（非简单模式 + 本 run 未用过 TaskManager + 未进强制完成 + iterations≥6 + todos 与未完成任务双空 + 本 run 未提醒过），且 maxTaskStartNudges=1 限定整个 run 至多一次，静态文案约 167 token；同批 SLIM2 净省 4000 token/轮，账面压倒性为正。它治的是真库实证的死功能：session_tasks 41 个会话 79 行任务，创建时间全部停在 2026-06-11，任务面板已空两个多月。globalFixedTokens 保持 110 不变可佐证其条件性（无守卫静态注入总量未变）。102 个调用含 4 个转发/门面，实参为变量不产生静态开销；本地无守卫静态注入为 conversationRuntime:92/goalCompletionGate:2/toolArtifactValidationLifecycle:16，只许降不许涨。实时语音条件路径约 55 token/轮独立对账。行号漂移不动计数，增删注入点必须同步全景表与本基线。"
 }

@@ -11,6 +11,7 @@ export const exitRoleFlowSchema: ToolSchema = {
     'after it succeeds the full toolset is restored in this same turn, so you can continue with the user request immediately. ' +
     'Any pending draft stays on its confirmation card — the user can still confirm it later. ' +
     'Do NOT call this while the user is still iterating on the role definition.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

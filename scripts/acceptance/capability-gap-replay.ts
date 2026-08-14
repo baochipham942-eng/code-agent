@@ -10,7 +10,7 @@
 // 账本也不落用户目录：全程用临时 HOME，跑完即弃。
 //
 // 用法：
-//   npx tsx scripts/capability-gap-replay.ts [--db <path>] [--top 15] [--min-steps 2]
+//   npx tsx scripts/acceptance/capability-gap-replay.ts [--db <path>] [--top 15] [--min-steps 2]
 
 import Database from 'better-sqlite3';
 import * as os from 'os';
@@ -48,8 +48,8 @@ interface UserMessageRow {
 }
 
 async function main(): Promise<void> {
-  const { observeTurn, listCandidates } = await import('../src/host/services/skills/capabilityGapDetector');
-  const { getCapabilityCandidateStore } = await import('../src/host/services/skills/capabilityCandidateStore');
+  const { observeTurn, listCandidates } = await import('../../src/host/services/skills/capabilityGapDetector');
+  const { getCapabilityCandidateStore } = await import('../../src/host/services/skills/capabilityCandidateStore');
   const store = getCapabilityCandidateStore();
   await store.load();
 

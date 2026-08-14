@@ -198,6 +198,16 @@ export class ResponsesProvider implements Provider {
     if (responseTools.length) body.tools = responseTools;
     if (onStream) body.stream = true;
 
+    if (process.env.CODE_AGENT_DUMP_MODEL_PAYLOAD) {
+      const { dumpModelPayload } = await import('../modelPayloadDump');
+      await dumpModelPayload({
+        body,
+        provider: config.provider,
+        protocol: 'responses',
+        url: endpoint,
+      });
+    }
+
     const response = await electronFetch(endpoint, {
       method: 'POST',
       headers: { Authorization: `Bearer ${resolveProviderApiKey(config)}`, 'Content-Type': 'application/json' },

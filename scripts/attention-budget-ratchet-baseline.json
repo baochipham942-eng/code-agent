@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "globalFixedTokens": 110,
+  "liveVoiceFixedTokens": 55,
+  "liveVoiceToleranceRatio": 0.1,
+  "panoramaMatchedFiles": 20,
+  "astCallCount": 101,
+  "panoramaPointCount": 99,
+  "reason": "#1114 全景表交接基线 + L8 计数棘轮口径：AST 101 个 injectSystemMessage 调用（含 4 个转发/门面，实参为变量不产生静态开销）；全景表 99 个 file:line 点位引用；本地无守卫静态注入总量 110 token（conversationRuntime:92/goalCompletionGate:2/toolArtifactValidationLifecycle:16——局部无 if 守卫但可能在调用图上条件触发，只许降不许涨）。实时语音条件路径约 55 token/轮独立对账。行号漂移不动计数，增删注入点必须同步全景表与本基线。"
+}

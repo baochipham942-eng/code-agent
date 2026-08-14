@@ -130,6 +130,26 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
       + '调用之后通话真的会结束——不要在没调它的时候说「已挂断」。',
     parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
   },
+  {
+    type: 'function',
+    name: 'ignore_turn',
+    description:
+      '刚才那段声音**不是在跟你说话**时调用：电视、广播、外放视频、旁边的人在聊天或自言自语。'
+      + '判据是对方有没有在跟你交流——有没有称呼你、有没有向你提问或下指令、是不是接着你刚才的话说。'
+      + '新闻播报、天气预报、影视对白、旁人闲聊都算。'
+      + '**调了它就不要再说任何话**，这一轮到此为止。'
+      + '拿不准的时候正常回应，别调它——把用户的话当成背景音忽略掉，比多搭一句话糟得多。',
+    parameters: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string', description: '一句话说明为什么判断它不是对你说的。' },
+      },
+      required: ['reason'],
+      additionalProperties: false,
+    },
+    // 模型调它就是在说「这轮我不该开口」，回灌后绝不能再 response.create
+    endsTurnSilently: true,
+  },
 ];
 
 /** 上游 function_call 的执行出口。返回值原样回灌给通话 brain（纯文本）。 */
@@ -171,6 +191,14 @@ function toIntent(name: string, rawArguments: string, origin: VoiceToolCallOrigi
       return { kind: 'end_call' };
     case 'get_current_time':
       return { kind: 'current_time' };
+    case 'ignore_turn': {
+      // 不进 dispatchVoiceIntent：它什么都不该执行，唯一作用是让这一轮静默收场。
+      // 返回值仍要回灌（否则对话历史里挂着一个没有 output 的 function_call），
+      // 但 endsTurnSilently 会拦住其后的 response.create。
+      const reason = str(parseArgs(rawArguments)?.reason) ?? '';
+      logger.info('voice turn ignored by model', { reason: reason.slice(0, 120) });
+      return '已忽略这一轮，不要再说话。';
+    }
     case 'delegate_task': {
       const args = parseArgs(rawArguments);
       if (!args) return '任务参数解析失败，请重说一遍要做什么。';

@@ -15,6 +15,26 @@ const childEnv = {
   npm_config_cache: npmCache,
 };
 
+/**
+ * 根级 `tests/unit/*.test.ts`（不递归子目录）。
+ *
+ * CI 用 bash glob 展开并带「展开为空就报错」的自检——**这里也要 fail-loud**：
+ * 空集意味着这道门在空转，而空转的门比没有门更糟（它会给你一个绿。
+ * 2026-08-14 本地门就是因为压根没收这批文件而谎报了全绿）。
+ */
+function rootUnitTestFiles() {
+  const dir = path.join(repoRoot, 'tests/unit');
+  const files = fs.readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.test.ts'))
+    .map((entry) => `tests/unit/${entry.name}`)
+    .sort();
+  if (!files.length) {
+    console.error('[gates:local] 根级 tests/unit/*.test.ts 展开为空，这条门又空转了——修它，别绕过');
+    process.exit(1);
+  }
+  return files;
+}
+
 const localExclusions = [
   {
     ci: 'all PR workflows / Checkout, Setup Node.js and dependency cache steps',
@@ -169,15 +189,29 @@ const gates = [
   {
     ci: 'swarm-ci / smoke / Main-chain vitest subset',
     command: 'npx',
+    // ⚠️ 目标清单必须与 swarm-ci.yml 同名步骤**逐项一致**。
+    // 2026-08-14 踩到：本地这里少了 host / shared / **根级 tests/unit/*.test.ts** /
+    // web/agentRunControllerBroadcast 四项，于是本地 gates:local 报 31/31 全绿、
+    // PR 上同一道门却红——改动新增的测试全在根级，本地一个都没跑到。
+    // 「本地门绿」当时被我当成了「CI 会绿」的判据，这正是门谎报覆盖面的形态。
+    // CI 那边对根级用了 glob 展开并带空展开自检；本地交给 vitest 自己按目录收敛，
+    // 但**目录清单不能少**。改这里必须同步改 swarm-ci.yml，反之亦然。
+    // 对齐后本地收 1609 个 test file，CI 是 1610——**还差 1 个未对上**，如实记在这里，
+    // 别当成已经完全等价；下次谁撞到 PR 红而本地绿，先从这 1 个的差集查起。
     args: [
       'vitest',
       'run',
       'tests/unit/agent',
+      'tests/unit/host',
       'tests/unit/design',
       'tests/unit/ipc',
       'tests/unit/tools',
       'tests/unit/services',
+      'tests/unit/shared',
       'tests/renderer',
+      'tests/unit/web/agentRunControllerBroadcast.test.ts',
+      // 根级 tests/unit/*.test.ts：vitest 的目录参数不递归收根级散文件，必须显式给。
+      ...rootUnitTestFiles(),
       '--retry=1',
       '--exclude',
       'tests/unit/tools/modules/network/webSearch.test.ts',

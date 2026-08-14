@@ -99,6 +99,51 @@ export function recordVoiceWatchdogTakeover(input: {
 }
 
 /**
+ * 记一次打断证据层的采样（shadow mode）。
+ *
+ * **字段全是布尔与数值，不含任何字幕文本**——证据层虽然读了字幕来判「是不是冲着助手说的」，
+ * 但只把那个布尔结论带出来，原文不出这个模块。
+ *
+ * `decidedClassification` 是同一次判定里 L3 真正给出的结论，落在一起才能事后回答
+ * 「证据说弱、L3 却判了真打断」这类分歧有多少——**这正是接线前要量的那个数**。
+ */
+export function recordVoiceInterruptEvidence(input: {
+  provider: VoiceProviderId;
+  tier: 'weak' | 'medium' | 'strong';
+  score: number;
+  burstCount: number;
+  burstLike: boolean;
+  sinceLastMs?: number;
+  earlyOverlap?: boolean;
+  substantive?: boolean;
+  addressed: boolean;
+  assistantPlaying: boolean;
+  decidedClassification: string;
+  decidedCancel: boolean;
+}): void {
+  try {
+    const telemetry = getTelemetryService();
+    const span = telemetry.startSpan('voice_interrupt_evidence', 'internal', {
+      'voice_interrupt.provider': input.provider,
+      'voice_interrupt.tier': input.tier,
+      'voice_interrupt.score': input.score,
+      'voice_interrupt.burst_count': input.burstCount,
+      'voice_interrupt.burst_like': input.burstLike,
+      ...(input.sinceLastMs === undefined ? {} : { 'voice_interrupt.since_last_ms': input.sinceLastMs }),
+      ...(input.earlyOverlap === undefined ? {} : { 'voice_interrupt.early_overlap': input.earlyOverlap }),
+      ...(input.substantive === undefined ? {} : { 'voice_interrupt.substantive': input.substantive }),
+      'voice_interrupt.addressed': input.addressed,
+      'voice_interrupt.assistant_playing': input.assistantPlaying,
+      'voice_interrupt.decided_classification': input.decidedClassification,
+      'voice_interrupt.decided_cancel': input.decidedCancel,
+    });
+    telemetry.endSpan(span.spanId, 'ok');
+  } catch (err) {
+    logger.warn('voice interrupt evidence telemetry unavailable', { message: err instanceof Error ? err.message : 'unknown' });
+  }
+}
+
+/**
  * 记录 Realtime 工具通道命中。provider + origin 可直接聚合 fallback 率；
  * toolName 只允许注册工具名，调用方不得传参数或用户文本。
  */

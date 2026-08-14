@@ -582,6 +582,20 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         item: { type: 'function_call_output', call_id: callId, output },
       }));
       sentResponseInstructions = '';
+
+      // 终结型工具（ignore_turn 等）：模型调它就是在说「这轮我不该开口」。
+      // 这里必须两件事都做——不发 response.create，且**清掉看门狗**。
+      // 少清看门狗的后果是反的：这一轮预期本来就没有回复，看门狗会把它当上游哑火，
+      // 接管后替模型补一次 response.create，等于强迫它开口，把工具的意思整个翻过来。
+      if (registeredTools.some((tool) => tool.name === name && tool.endsTurnSilently)) {
+        clearAllResponseWatchdogs();
+        responseCreateInFlight = false;
+        responseCreateQueued = false;
+        activeResponseId = '';
+        logger.info('voice turn ended silently by tool', { provider: profile.id, toolName: name, responseId });
+        return;
+      }
+
       armResponseWatchdog();
       ws.send(JSON.stringify({ type: 'response.create' }));
       responseCreateInFlight = true;

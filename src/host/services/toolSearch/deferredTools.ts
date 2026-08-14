@@ -917,6 +917,146 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   // ============================================================================
   // 进程管理工具（PTY）
   // ============================================================================
+
+  // ============================================================================
+  // 2026-08-14 补登记（L8 N-L8-UNREACH19）—— 此前「注册了但模型够不着」的 17 个
+  // ----------------------------------------------------------------------------
+  // 它们注册在 registry 里、handler 能执行，但既不在 CORE_TOOLS（看不见）也不在本表
+  // （搜不到），也没有门面代理——能力等于不存在，真库 0 次调用即为佐证。
+  //
+  // 其中五个是**明确的断链**：系统自己在提示词或工具结果里点名让模型调它们，而模型
+  // 根本拿不到——
+  //   collect_agent            ← spawnAgent 后台结果 `Use collect_agent("...")`
+  //   read_tool_result_archive ← 大结果归档通知 `recover=read_tool_result_archive ...`
+  //   declare_deliverables     ← artifactGeneration 提示词「开工第一步调用」
+  //   teammate                 ← orchestrator 提示词整节讲它的 action 用法
+  //   visual_edit              ← workbenchTurnContext「用 visual_edit 工具做定向修改」
+  //
+  // 另两个（task_output / kill_shell）走门面：Process 的 output/kill action 是它们的
+  // 严格超集（同样吃 task_id / block / timeout），见 toolRegistrationDiscoverability
+  // 门里的 REACHABLE_VIA_FACADE。
+  //
+  // aliases 中英都给，理由同本表顶部：召回是纯词法匹配，中文提问命不中英文描述。
+  // ============================================================================
+  {
+    name: 'collect_agent',
+    shortDescription: '取回 spawn_agent 起的后台子代理结果（默认阻塞等它跑完）',
+    tags: ['multiagent'],
+    aliases: ['collect_agent', 'collect agent', 'fetch agent result', '取回子代理结果', '收子代理', '后台代理结果'],
+    source: 'builtin',
+  },
+  {
+    name: 'plan_review',
+    shortDescription: '审批子代理提交的计划（approve / reject + 反馈）',
+    tags: ['multiagent', 'planning'],
+    aliases: ['plan_review', 'approve plan', 'reject plan', '审批计划', '批计划', '子代理计划'],
+    source: 'builtin',
+  },
+  {
+    name: 'teammate',
+    shortDescription: 'Agent 间通信（发消息/协调/交接/问答/广播/收件箱/名册/历史）',
+    tags: ['multiagent'],
+    aliases: ['teammate', 'agent message', 'handoff', 'broadcast', 'inbox', '给其他agent发消息', 'agent间通信', '交接任务'],
+    source: 'builtin',
+  },
+  {
+    name: 'declare_deliverables',
+    shortDescription: '产物任务开工第一步：声明最终交付文件路径（后续校验/锚定的依据）',
+    tags: ['planning', 'file'],
+    aliases: ['declare_deliverables', 'final artifacts', 'deliverables', '声明产物', '交付路径', '最终文件'],
+    source: 'builtin',
+  },
+  {
+    name: 'space_list',
+    shortDescription: '列出用户建的 Neo 协作空间（拿 projectId 用）',
+    tags: ['planning'],
+    aliases: ['space_list', 'list spaces', 'collaboration space', '协作空间', '空间列表', '有哪些空间'],
+    source: 'builtin',
+  },
+  {
+    name: 'space_query',
+    shortDescription: '读一个 Neo 协作空间的全貌（成员/专家/技能/连接器/自动化/活动/产物）',
+    tags: ['planning'],
+    aliases: ['space_query', 'space detail', 'collaboration space', '协作空间详情', '空间成员', '空间产物'],
+    source: 'builtin',
+  },
+  {
+    name: 'space_create',
+    shortDescription: '新建 Neo 协作空间（写操作，仅在用户明确要求时用）',
+    tags: ['planning'],
+    aliases: ['space_create', 'create space', 'new collaboration space', '新建协作空间', '创建空间'],
+    source: 'builtin',
+  },
+  {
+    name: 'visual_edit',
+    shortDescription: '按 Live Preview 点中的文件+行，用视觉模型把用户诉求改成最小 diff',
+    tags: ['vision', 'file'],
+    aliases: ['visual_edit', 'click to edit', 'live preview edit', '可视化修改', '点哪改哪', '预览里改'],
+    source: 'builtin',
+  },
+  {
+    name: 'read_tool_result_archive',
+    shortDescription: '按 artifact_id 读被归档的大工具结果原文（结果里出现 archive=/recover= 时用）',
+    tags: ['file'],
+    aliases: ['read_tool_result_archive', 'archive', 'recover output', '读归档', '完整输出', '被截断的结果'],
+    source: 'builtin',
+  },
+  {
+    name: 'request_directory',
+    shortDescription: '向用户申请访问工作区之外的目录（走审批箱，别直接失败放弃）',
+    tags: ['file'],
+    aliases: ['request_directory', 'request folder access', 'permission', '申请目录', '要权限', '访问其他文件夹'],
+    source: 'builtin',
+  },
+  {
+    name: 'diagnostics',
+    shortDescription: '查 LSP 诊断（编译错误/警告），可单文件也可全项目',
+    tags: ['search', 'file'],
+    aliases: ['diagnostics', 'errors', 'warnings', 'compile errors', '编译错误', '报错', '看诊断'],
+    source: 'builtin',
+  },
+  {
+    name: 'git_commit',
+    shortDescription: 'Git 提交管理（status / add / commit / push / log）',
+    tags: ['shell'],
+    aliases: ['git_commit', 'git status', 'git push', 'git log', '提交代码', '推代码', '看提交历史'],
+    source: 'builtin',
+  },
+  {
+    name: 'git_diff',
+    shortDescription: 'Git 差异（未暂存 / 已暂存 / 跨分支 / 某次提交）',
+    tags: ['shell'],
+    aliases: ['git_diff', 'git show', 'diff', '看改动', '差异', '改了什么'],
+    source: 'builtin',
+  },
+  {
+    name: 'git_worktree',
+    shortDescription: 'Git 工作树管理（list / add / remove / prune）',
+    tags: ['shell'],
+    aliases: ['git_worktree', 'worktree', '工作树', '开分支目录'],
+    source: 'builtin',
+  },
+  {
+    name: 'ppt_edit',
+    shortDescription: '编辑已有 PPTX（改标题/正文/整页、增删页、调序、备注、取样式、结构分析）',
+    tags: ['document'],
+    aliases: ['ppt_edit', 'pptx', 'slides edit', 'powerpoint', '改ppt', '编辑幻灯片', '演示稿'],
+    source: 'builtin',
+  },
+  {
+    name: 'local_speech_to_text',
+    shortDescription: '本地离线语音转文字（whisper-cpp，需本机已装）',
+    tags: ['media'],
+    aliases: ['local_speech_to_text', 'whisper', 'transcribe', 'asr', '语音转文字', '音频转录', '听写'],
+    source: 'builtin',
+  },
+  {
+    name: 'SkillCreate',
+    shortDescription: '把可复用的工作流固化成 skill（写 SKILL.md，创建前用户确认）',
+    tags: ['evolution'],
+    aliases: ['skill_create', 'create skill', 'new skill', '建skill', '沉淀技能', '把流程存下来'],
+    source: 'builtin',
+  },
 ];
 
 // ============================================================================

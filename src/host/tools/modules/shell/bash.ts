@@ -743,8 +743,8 @@ Use process_kill to terminate the session.`;
 <status>running</status>
 <summary>Command "${normalizedCommand.substring(0, 50)}${normalizedCommand.length > 50 ? '...' : ''}" started in background.</summary>
 
-Use task_output tool with task_id="${result.taskId}" to check status and retrieve output.
-Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
+Use Process tool with action="output", task_id="${result.taskId}" to check status and retrieve output.
+Use Process tool with action="kill", task_id="${result.taskId}" to terminate if needed.`;
 
       onProgress?.({ stage: 'completing', percent: 100 });
       return {

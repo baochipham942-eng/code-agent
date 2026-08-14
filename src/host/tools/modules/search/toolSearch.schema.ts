@@ -25,6 +25,7 @@ export const TOOL_SEARCH_INPUT_SCHEMA = {
 export const toolSearchSchema: ToolSchema = {
   name: 'ToolSearch',
   description: TOOL_SEARCH_DESCRIPTION,
+  outputSchema: { type: 'string' },
   inputSchema: TOOL_SEARCH_INPUT_SCHEMA,
   category: 'fs',
   permissionLevel: 'read',

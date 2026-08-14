@@ -36,6 +36,8 @@ import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import { reportVoiceWorkFailure } from './voiceWorkFailureReporter';
 import { detectHangupIntent } from './hangupIntent';
+import { collectVoiceInterruptEvidence } from './voiceInterruptEvidence';
+import { recordVoiceInterruptEvidence } from './voiceTelemetry';
 import { decideVoiceInterrupt, shouldDisarmHangup } from './voiceTurnTaking';
 import {
   createNarrationState,
@@ -109,6 +111,8 @@ interface VoiceInterruptCandidate {
   startedAt: number;
   durationMs?: number;
   assistantPlaying?: boolean;
+  /** 打断发生时助手已播了多久（renderer 上报）。证据层的「早重叠」维吃它。 */
+  playedMs?: number;
   classification?: VoiceInterruptClassification;
   classificationSource?: 'empty-text-fallback' | 'transcript';
   emptyTextFallbackObserved?: boolean;
@@ -319,6 +323,38 @@ function evaluateInterrupt(
     text,
     stage,
   });
+
+  // ── 证据层 shadow mode ──────────────────────────────────────────────
+  // 只在终判那一刻采样一次（partial 阶段的 pending 不是结论，采了会把分布灌满噪声）。
+  // 输出**不参与**上面的 decision，只落遥测——先量两组真实分布，阈值从数据里读出来再接线。
+  if (decision.terminal && !candidate.decided) {
+    const assistantPlaying = candidate.assistantPlaying
+      ?? (session.upstream.kind === 'relay' && session.upstream.isResponding());
+    const evidence = collectVoiceInterruptEvidence({
+      startedAt: candidate.startedAt,
+      ...(candidate.durationMs === undefined ? {} : { durationMs: candidate.durationMs }),
+      assistantPlaying,
+      ...(candidate.playedMs === undefined ? {} : { playedMs: candidate.playedMs }),
+      priorStartedAt: [...session.interruption.candidates.values()]
+        .filter((other) => other !== candidate)
+        .map((other) => other.startedAt),
+      text,
+    });
+    recordVoiceInterruptEvidence({
+      provider: session.upstream.provider,
+      ...evidence,
+      assistantPlaying,
+      decidedClassification: decision.classification,
+      decidedCancel: decision.cancel,
+    });
+    logger.info('voice interrupt evidence (shadow)', {
+      voiceSessionId: session.id,
+      candidateId,
+      ...evidence,
+      decidedClassification: decision.classification,
+      decidedCancel: decision.cancel,
+    });
+  }
 
   if (decision.terminal && !candidate.decided) {
     candidate.decided = true;
@@ -1216,7 +1252,10 @@ function bindClientHandlers(session: ActiveSession, client: WsSocket): void {
     }
     else if (command.type === 'interrupt.playback') {
       const candidate = session.interruption.candidates.get(command.candidateId);
-      if (candidate) candidate.assistantPlaying = command.playing;
+      if (candidate) {
+        candidate.assistantPlaying = command.playing;
+        candidate.playedMs = command.playedMs;
+      }
       if (command.playing) handleNarrationPlaybackInterrupted(session);
       logger.info('voice interrupt playback observed', {
         voiceSessionId: id,

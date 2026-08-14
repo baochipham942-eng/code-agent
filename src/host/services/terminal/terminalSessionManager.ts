@@ -17,7 +17,8 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { getUserConfigDir } from '../../config/configPaths';
 // eslint-disable-next-line no-restricted-imports -- platform shell resolution, not a legacy tool impl（同 agent/scriptRuntime/sandbox.ts 先例）
-import { resolveWindowsShell } from '../../tools/shell/platformShell';
+import { killProcessTree, resolveWindowsShell, type KillableChild } from '../../tools/shell/platformShell';
+import { SHELL_KILL } from '../../../shared/constants/tools';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('TerminalSession');
@@ -52,6 +53,13 @@ interface TerminalSession {
   startedAt: number;
   /** 程序是否切到了备用屏（全屏 TUI）。见 updateAlternateScreen。 */
   altScreen: boolean;
+  /**
+   * 供 killProcessTree 使用的句柄视图（懒建、随会话长存）。
+   * **不能每次现造**：整树退出边界记在 WeakSet 里、按对象身份认，现造的话防 pid 复用就失效。
+   */
+  killable?: KillableChild;
+  /** onExit 回填的退出码，给上面那个视图当实时值读。 */
+  exitCode?: number;
 }
 
 const sessions = new Map<string, TerminalSession>();
@@ -305,6 +313,7 @@ export function openTerminalSession(options: OpenTerminalOptions): TerminalSnaps
 
   ptyProcess.onExit(({ exitCode }) => {
     session.alive = false;
+    session.exitCode = exitCode;
     const notice = `\r\n\x1b[2m[terminal exited with code ${exitCode}]\x1b[0m\r\n`;
     appendToBuffer(session, notice);
     emitOutput(session.sessionId, notice);
@@ -364,34 +373,145 @@ export function resizeTerminalSession(sessionId: string, cols: number, rows: num
   }
 }
 
-export function disposeTerminalSession(sessionId: string): boolean {
-  const session = sessions.get(sessionId);
-  if (!session) return false;
-  if (session.alive) {
-    try {
-      session.pty.kill();
-    } catch (err) {
-      logger.warn('terminal kill failed', { sessionId, err });
+/**
+ * 把 `IPty` 适配成 killProcessTree 要的最小子进程视图（形态同 ptyExecutor.killableView）。
+ *
+ * node-pty 只给 `pid` 和 `kill(signal?)`，没有 `exitCode`/`signalCode`——退出信息走 `onExit`
+ * 回填到会话状态，这里用 getter 暴露成实时值。视图缓存在会话上，因为整树退出边界是按
+ * 对象身份记的（WeakSet），每次现造等于没有边界。
+ */
+function killableView(session: TerminalSession): KillableChild {
+  if (!session.killable) {
+    session.killable = {
+      pid: session.pty.pid,
+      kill: (signal?: NodeJS.Signals | number): boolean => {
+        // node-pty 的 kill 内部就吞异常，返回值不代表信号送达——判死一律看探活。
+        try { session.pty.kill(typeof signal === 'string' ? signal : undefined); } catch { /* 已退出 */ }
+        return true;
+      },
+      get exitCode(): number | null { return session.exitCode ?? null; },
+      get signalCode(): NodeJS.Signals | null { return null; },
+    };
+  }
+  return session.killable;
+}
+
+/**
+ * 这个终端里起出来的、当前还活着的全部子孙进程（不含 shell 自己）。
+ *
+ * 🔴 为什么按 ppid 现场走树，而不是像 ptyExecutor 那样只按进程组收：
+ * 这个子系统起的是**交互 shell**，job control 是开着的，用户敲 `npm run dev &`
+ * 会被放进**独立进程组**（实测：孙进程 pgid 41329 ≠ shell pgid 41287），
+ * `kill(-shellPid)` 一个都收不到，它们会一直活到用户重启机器。
+ * 而 macOS 的 `ps -o sess=` 恒为 0（拿不到 session id），所以只能走 ppid 关系。
+ *
+ * ponytail: 快照式，只认调用这一刻的树。此后新 fork 出来的孙进程收不到——
+ * 但那一刻 shell 已经在被杀了，窗口是毫秒级。真出问题再上 kqueue/PROC_EVENTS。
+ */
+function descendantPids(rootPid: number): number[] {
+  if (process.platform === 'win32' || rootPid <= 0) return [];
+  let childrenOf: Map<number, number[]>;
+  try {
+    childrenOf = new Map();
+    const listing = execFileSync('ps', ['-ax', '-o', 'pid=,ppid='], { encoding: 'utf-8' });
+    for (const line of listing.split('\n')) {
+      const [pid, ppid] = line.trim().split(/\s+/).map(Number);
+      if (!Number.isInteger(pid) || !Number.isInteger(ppid)) continue;
+      childrenOf.set(ppid, [...(childrenOf.get(ppid) ?? []), pid]);
+    }
+  } catch (err) {
+    logger.warn('failed to list processes for terminal teardown', { rootPid, err });
+    return [];
+  }
+
+  const found: number[] = [];
+  const queue = [rootPid];
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    for (const child of childrenOf.get(queue[cursor]) ?? []) {
+      if (child === rootPid || found.includes(child)) continue;
+      found.push(child);
+      queue.push(child);
     }
   }
+  return found;
+}
+
+function trySignal(pid: number, signal: NodeJS.Signals): void {
+  try { process.kill(pid, signal); } catch { /* 已退出 / 无权限 */ }
+}
+
+/**
+ * 等这批子孙进程确认退出：宽限期内还活着就升级 SIGKILL，到上限记 warn 后放弃（不无限挂住停机）。
+ * 时间从 `startedAt` 起算——它与 leader 的宽限期是同一个窗口，不叠加。
+ */
+async function confirmDescendantsGone(pids: number[], startedAt: number, sessionId: string): Promise<void> {
+  if (pids.length === 0) return;
+  let escalated = false;
+  for (;;) {
+    const alive = pids.filter(isProcessAlive);
+    if (alive.length === 0) return;
+    const elapsed = Date.now() - startedAt;
+    if (!escalated && elapsed >= SHELL_KILL.GRACE_MS) {
+      escalated = true;
+      for (const pid of alive) trySignal(pid, 'SIGKILL');
+    } else if (elapsed >= SHELL_KILL.CONFIRM_TIMEOUT_MS) {
+      logger.warn('terminal descendants did not exit in time', { sessionId, alive });
+      return;
+    }
+    await new Promise((resolve) => { setTimeout(resolve, SHELL_KILL.POLL_INTERVAL_MS); });
+  }
+}
+
+/**
+ * 终止终端会话的 PTY，**并等到整棵树确认退出**（leader 的终止内核与 ptyExecutor 完全同一套）。
+ *
+ * POSIX 上 node-pty 天生 setsid 自成进程组（实测 `pid == pgid`），组模式无条件成立；
+ * `pid > 0` 是闸门——`UnixTerminal` 在 `pty.open()` 路径下把 `_pid` 置 -1，
+ * 那样 `process.kill(-pid)` 会打到 init 头上。
+ * 比 ptyExecutor 多一步子孙扫尾，理由见 `descendantPids`。
+ * 已知降级：win32 没有进程组语义也走不了 ppid 扫尾，「确认退出」只能确认到 shell 自身。
+ */
+async function terminateTerminalPty(session: TerminalSession): Promise<void> {
+  const startedAt = Date.now();
+  // 必须在 leader 死之前快照：它一死，子孙就被 reparent 到 launchd/init，ppid 关系断了。
+  const descendants = descendantPids(session.pty.pid);
+  for (const pid of descendants) trySignal(pid, 'SIGTERM');
+
+  try { session.pty.kill(); } catch (err) { logger.warn('terminal kill failed', { sessionId: session.sessionId, err }); }
+  await killProcessTree(killableView(session), { posixGroupKill: session.pty.pid > 0 });
+  await confirmDescendantsGone(descendants, startedAt, session.sessionId);
+}
+
+/** 关掉一个终端会话。**返回时整组已确认退出**（win32 降级到 shell 自身）。 */
+export async function disposeTerminalSession(sessionId: string): Promise<boolean> {
+  const session = sessions.get(sessionId);
+  if (!session) return false;
+  if (session.alive) await terminateTerminalPty(session);
   session.alive = false;
   sessions.delete(sessionId);
   persistLivePids();
   return true;
 }
 
-function disposeAllTerminalSessions(): void {
-  for (const sessionId of [...sessions.keys()]) disposeTerminalSession(sessionId);
+/**
+ * 停机收尸用：收掉全部终端会话，逐个等确认退出。返回收掉的会话数。
+ *
+ * 挂的是 `reapChildProcesses()`（webServer / CLI 停机属主真正会调的那条路），
+ * **不是** `gracefulShutdown` 的 `onShutdown` 注册表——那张表的
+ * `setupDefaultSignalHandlers()` 产品代码零调用方，挂进去等于没挂（STOP1 已坐实）。
+ */
+export async function reapTerminalSessions(): Promise<number> {
+  const ids = [...sessions.keys()];
+  const results = await Promise.all(ids.map(async (sessionId) => {
+    try {
+      return await disposeTerminalSession(sessionId);
+    } catch (err) {
+      logger.warn('failed to reap terminal session', { sessionId, err });
+      return false;
+    }
+  }));
+  return results.filter(Boolean).length;
 }
-
-// app 退出时收干净——本模块没有周期性超时清理，这里是唯一的兜底出口。
-import('../infra/gracefulShutdown')
-  .then(({ onShutdown }) => {
-    onShutdown('terminal/sessionManager.dispose', async () => {
-      disposeAllTerminalSessions();
-    });
-  })
-  .catch(() => { /* shutdown infra 不可用：pid 文件仍在，下次启动靠孤儿收割兜底 */ });
 
 // ----------------------------------------------------------------------------
 // 读取

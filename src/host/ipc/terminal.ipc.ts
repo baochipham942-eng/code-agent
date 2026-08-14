@@ -83,7 +83,7 @@ export function registerTerminalHandlers(ipcMain: IpcMain): void {
         }
         case 'close': {
           if (!sessionId) return { success: false, error: { code: 'INVALID_ARGS', message: '缺少 sessionId' } };
-          return { success: true, data: { closed: disposeTerminalSession(sessionId) } };
+          return { success: true, data: { closed: await disposeTerminalSession(sessionId) } };
         }
         case 'snapshot': {
           if (!sessionId) return { success: false, error: { code: 'INVALID_ARGS', message: '缺少 sessionId' } };

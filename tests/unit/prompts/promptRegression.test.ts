@@ -10,6 +10,7 @@
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { describe, expect, it } from 'vitest';
 import { buildPrompt, buildDynamicPromptV2 } from '../../../src/host/prompts/builder';
+import { TOOLS_PROMPT } from '../../../src/host/prompts/base';
 import { injectWorkingDirectoryContext } from '../../../src/host/agent/messageHandling/contextBuilder';
 import { CORE_AGENTS } from '../../../src/host/agent/hybrid/coreAgents';
 
@@ -70,8 +71,9 @@ describe('prompt regressions', () => {
 
     expect(withWorkingDirectory).toContain('AskUserQuestion');
     expect(withWorkingDirectory).toContain('"questions"');
-    expect(withWorkingDirectory).toContain('TaskManager');
-    expect(withWorkingDirectory).toContain('ToolSearch');
+    // ATT2：核心工具能力由本轮真实 schema 说明，常驻 Tools prompt 不再枚举。
+    expect(String(TOOLS_PROMPT)).not.toContain('TaskManager');
+    expect(String(TOOLS_PROMPT)).not.toContain('ToolSearch');
     expect(withWorkingDirectory).not.toContain('ask_user_question');
     expect(withWorkingDirectory).not.toContain('task_create');
     expect(withWorkingDirectory).not.toContain('task_update');

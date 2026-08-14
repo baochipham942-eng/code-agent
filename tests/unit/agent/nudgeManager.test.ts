@@ -207,6 +207,7 @@ describe('NudgeManager', () => {
       const injectedMessage = injectSystemMessage.mock.calls[0][0] as string;
       expect(injectedMessage).toContain('Edit 或 Append');
       expect(injectedMessage).not.toContain('write_file');
+      expect(injectedMessage).not.toContain('<checkpoint-nudge');
     });
 
     it('uses analysis checkpoint wording for diagnosis prompts', () => {
@@ -223,6 +224,7 @@ describe('NudgeManager', () => {
       expect(injectedMessage).not.toContain('实施修改');
       expect(injectedMessage).not.toContain('edit_file');
       expect(injectedMessage).not.toContain('write_file');
+      expect(injectedMessage).not.toContain('<checkpoint-nudge');
     });
   });
 

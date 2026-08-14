@@ -346,10 +346,6 @@ export async function buildSkillInvocationContext(
     workingDirectory,
   });
 
-  if (invocation.args) {
-    promptContent += `\n\n---\nUser provided arguments: ${invocation.args}`;
-  }
-
   if (skill.source === 'user' || skill.source === 'project') {
     promptContent += `\n\n---\n**自修补**: 如果发现本 skill 的指令过时或有错误（工具名变化、路径错误、逻辑缺陷），直接用 Edit 修改 \`${skill.basePath}/SKILL.md\` 的相应部分。修改后系统自动重载。`;
   }

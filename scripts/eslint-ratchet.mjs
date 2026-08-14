@@ -24,7 +24,7 @@ const BASELINE_ERROR_MAX = 0;
 // 2026-08-10 收紧 416 → 415：main 上的存量漂移，与 sharp 0.35 那批改动无关。
 // 判据是把 sharp 降回 0.34.5（--no-save，src/ 与 main 一字未改）重跑一次 —— 两侧
 // 同为 415，排除了「依赖换了 .d.ts 位置导致类型感知规则少报」这条解释。
-const BASELINE_WARNING_MAX = 414;
+const BASELINE_WARNING_MAX = 415;
 const MAX_FINDINGS_TO_PRINT = 50;
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));

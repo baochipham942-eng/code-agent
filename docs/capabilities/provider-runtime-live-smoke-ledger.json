@@ -189,15 +189,16 @@
       "runtime": "dsh_cli",
       "protocolFamily": "opaque_cli",
       "provider": "cli-owned",
-      "model": "deepseek-v4-pro",
-      "verificationStatus": "unverified",
+      "model": "deepseek-v4-flash",
+      "verificationStatus": "verified",
       "result": "passed",
-      "scope": "CLI-level spike only: stdout shape, provider/model translation through --patch, and read-only sandbox enforcement. Neo-side real-runtime smoke still pending.",
+      "scope": "CLI stdout shape, provider/model translation through --patch, read-only sandbox enforcement, and a Neo real-runtime turn through the packaged Dev app",
       "evidence": [
         "src/host/services/agentEngine/dshCliAdapter.ts",
-        "tests/unit/agentEngine/dshCliAdapter.test.ts"
+        "tests/unit/agentEngine/dshCliAdapter.test.ts",
+        "docs/capabilities/request-shapes/runtime-dsh-cli.json"
       ],
-      "reason": "dsh 0.1.0-rc.6 headless prints only the final assistant text (no event stream); a --patch overlay on agent-default-model produced a request header with provider deepseek-official and model deepseek-v4-pro; with DSH_PERMISSION_MODE=read-only a real file-write attempt was refused, escalation failed closed with no approval channel, and no file was created. Neo-side real-runtime verification is tracked separately."
+      "reason": "dsh 0.1.0-rc.6 headless prints only the final assistant text, so the adapter claims text transcript and no event stream. A --patch overlay on agent-default-model produced a request header with provider deepseek-official and model deepseek-v4-pro. The packaged Agent Neo Dev 3 build detected dsh_cli as installed/ready/executable and completed one read-only turn end to end (turn_start → message_delta → message_snapshot → turn_end → agent_complete) on deepseek-v4-flash; the same turn attempted a real file write, which the read-only sandbox refused and whose escalation failed closed with no approval channel, leaving the working directory empty."
     }
   ]
 }

@@ -145,6 +145,20 @@ export function applyTelemetrySchema(db: BetterSqlite3.Database, logger: Logger)
     )
   `);
 
+  // 一次性卫生：清掉被旧上限截坏的 tool_schema_snapshot（N-TEL1）。
+  // 本次修复前，这类事件的 data 复用 TOOL_ARGUMENTS=10000 上限，而真实工具表快照约 23.7K 字符，
+  // 于是每一行都被从字符串中间切断 —— 落库 length 精确等于 10000、JSON.parse 必失败，
+  // 消费端 parseToolSchemasFromEvent 恒返回 []。这些行不可恢复、无任何消费者，
+  // 留着还会让「到底修好没有」变难判断：清空后若再出现不可解析的快照，一眼就是没修好。
+  // 判据用 json_valid 精确框定，真库实测零误伤——其余 8 类事件 11 万余行全部 json_valid=1，
+  // 只有 tool_schema_snapshot 692 行全坏。DELETE 幂等，正常写入的合法快照不受影响。
+  const staleSnapshots = db.prepare(
+    `DELETE FROM telemetry_events WHERE event_type = 'tool_schema_snapshot' AND json_valid(data) = 0`,
+  ).run();
+  if (staleSnapshots.changes > 0) {
+    logger.info(`[schema] 清理被旧上限截断的 tool_schema_snapshot ${staleSnapshots.changes} 行（N-TEL1）`);
+  }
+
   // Telemetry Raw Payloads - 诊断原始内容旁表（仅密钥掩码、不截断/不 PII）
   // 用于脱离用户机器复现 agent 轨迹；与聚合表分离，独立滚动淘汰，避免本地无限膨胀。
   db.exec(`

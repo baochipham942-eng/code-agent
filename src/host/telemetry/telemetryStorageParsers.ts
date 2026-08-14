@@ -6,7 +6,7 @@
 import { randomUUID } from 'crypto';
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, ComputerSurfaceReliabilitySummary, QualitySignals, TelemetryFeedback, TelemetryRendererBundleAttempt } from '../../shared/contract/telemetry';
 import type { RendererBundleStatus } from '../../shared/contract/update';
-import { TELEMETRY_RAW } from '../../shared/constants';
+import { TELEMETRY_RAW, TELEMETRY_TRUNCATION } from '../../shared/constants';
 import { guardSensitiveJsonText, guardSensitiveText, guardSensitiveValue } from '../security/sensitiveDataGuard';
 import { redactSecrets } from '../security/secretRedaction';
 
@@ -110,14 +110,39 @@ export const prepareRawPayload = (
   return { content, byteLen: fullBytes, truncated: true };
 };
 
-export const guardTelemetryJsonText = (value: string | undefined | null, limit: number): string | null => {
-  if (typeof value !== 'string') return null;
+const guardTelemetryJsonTextWithMetadata = (
+  value: string | undefined | null,
+  limit: number,
+): { text: string | null; truncated: boolean; originalLength: number } => {
+  if (typeof value !== 'string') {
+    return { text: null, truncated: false, originalLength: 0 };
+  }
   const guarded = guardSensitiveJsonText(value, {
     surface: 'telemetry',
     mode: 'diagnostic',
     maxLength: limit * 2
   });
-  return truncate(guarded, limit);
+  return {
+    text: truncate(guarded, limit),
+    truncated: typeof guarded === 'string' && guarded.length > limit,
+    originalLength: value.length,
+  };
+};
+
+export const guardTelemetryJsonText = (value: string | undefined | null, limit: number): string | null =>
+  guardTelemetryJsonTextWithMetadata(value, limit).text;
+
+export const guardTelemetryEventData = (
+  eventType: string,
+  value: string | undefined | null,
+  onTruncated: (details: { eventType: string; originalLength: number; limit: number }) => void,
+): string | null => {
+  const limit = eventType === 'tool_schema_snapshot'
+    ? TELEMETRY_TRUNCATION.TOOL_SCHEMA_SNAPSHOT
+    : TELEMETRY_TRUNCATION.TOOL_ARGUMENTS;
+  const guarded = guardTelemetryJsonTextWithMetadata(value, limit);
+  if (guarded.truncated) onTruncated({ eventType, originalLength: guarded.originalLength, limit });
+  return guarded.text;
 };
 
 export const stringifyGuardedTelemetry = (value: unknown): string =>

@@ -28,7 +28,7 @@ const topN = Number(option('--top', '15'));
 
 // 账本重定向到临时目录：回放绝不能污染真实的候选账本
 const scratchHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-replay-'));
-process.env.CODE_AGENT_CONFIG_DIR = scratchHome;
+process.env.CODE_AGENT_DATA_DIR = scratchHome; // getUserConfigDir() 认的是这个名字，别写成 CONFIG_DIR
 
 interface BeginRow {
   session_id: string | null;

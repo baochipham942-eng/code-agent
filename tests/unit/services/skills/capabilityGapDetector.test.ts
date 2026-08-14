@@ -11,22 +11,26 @@ vi.mock('../../../../src/host/config/configPaths', () => ({
 import { CAPABILITY_CANDIDATES } from '../../../../src/shared/constants';
 import type { ComboStep } from '../../../../src/host/services/skills/comboRecorder';
 import {
+  listCandidates,
+  observeTurn,
+  setCandidateState,
+} from '../../../../src/host/services/skills/capabilityGapDetector';
+import {
   clusterKeyOf,
-  commandHead,
-  findClusterFor,
-  hasWorkaroundSignature,
-  toolSetOverlap,
   decayCount,
   detectDegraded,
   detectMissingHint,
-  listCandidates,
+  findClusterFor,
+  hasWorkaroundSignature,
   mechanicalScoreOf,
-  observeTurn,
   sequenceShapeOf,
-  setCandidateState,
-  shapeOfStep,
   tierOf,
-} from '../../../../src/host/services/skills/capabilityGapDetector';
+} from '../../../../src/host/services/skills/capabilityGapScoring';
+
+/** commandHead / shapeOfStep 是内部实现，从公开的 sequenceShapeOf 走 */
+const shapeOf = (command: string): string => sequenceShapeOf([
+  { toolName: 'bash', args: { command } },
+])[0];
 import { getCapabilityCandidateStore } from '../../../../src/host/services/skills/capabilityCandidateStore';
 
 const T0 = 1_770_000_000_000;
@@ -51,14 +55,13 @@ beforeEach(() => {
 
 describe('去参数化', () => {
   it('bash 细分到可执行名，丢掉路径/参数/env 前缀', () => {
-    expect(commandHead('HTTPS_PROXY=x /usr/bin/ffmpeg -i a.mp4 out.mp4')).toBe('ffmpeg');
-    expect(commandHead('sudo screencapture -x /tmp/a.png')).toBe('screencapture');
-    expect(commandHead('tesseract a.png out | grep x')).toBe('tesseract');
+    expect(shapeOf('HTTPS_PROXY=x /usr/bin/ffmpeg -i a.mp4 out.mp4')).toBe('bash:ffmpeg');
+    expect(shapeOf('sudo screencapture -x /tmp/a.png')).toBe('bash:screencapture');
+    expect(shapeOf('tesseract a.png out | grep x')).toBe('bash:tesseract');
     // 真库回放实测踩到的两个：选项被当成可执行名 / 探针动词盖住宾语
-    expect(commandHead('command -v ffmpeg')).toBe('ffmpeg');
-    expect(commandHead('which python3 && python3 --version')).toBe('python3');
-    expect(shapeOfStep({ toolName: 'bash', args: { command: 'screencapture -x a.png' } })).toBe('bash:screencapture');
-    expect(shapeOfStep({ toolName: 'write_file', args: { path: 'a.xlsx' } })).toBe('write_file');
+    expect(shapeOf('command -v ffmpeg')).toBe('bash:ffmpeg');
+    expect(shapeOf('which python3 && python3 --version')).toBe('bash:python3');
+    expect(sequenceShapeOf([{ toolName: 'write_file', args: { path: 'a.xlsx' } }])).toEqual(['write_file']);
   });
 
   it('连续同形步骤压成一个，参数不同不影响形状', () => {
@@ -85,7 +88,8 @@ describe('归并与首屏签名（真库回放逼出来的两条）', () => {
     expect(findClusterFor(['bash:cd', 'bash:ls', 'bash:mkdir', 'bash:node', 'Read', 'Write'], existing)).toBe('A');
     // 换掉一半：2/8 = 0.25 → 不归并
     expect(findClusterFor(['bash:cd', 'bash:python3', 'bash:pip', 'Glob'], existing)).toBeNull();
-    expect(toolSetOverlap(['a', 'b'], ['a', 'b'])).toBe(1);
+    // 完全相同的集合必然命中自己
+    expect(findClusterFor(['bash:cd', 'bash:ls', 'bash:mkdir', 'bash:node', 'Read'], existing)).toBe('A');
   });
 
   it('归并不吸收新工具：簇的代表集合保持首次那份，防止一路漂移', () => {

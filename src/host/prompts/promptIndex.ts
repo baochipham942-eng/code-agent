@@ -29,14 +29,8 @@ import './generativeUI';
 import './questionForm';
 
 // Rules
-import './rules/attachmentHandling';
-import './rules/codeSnippet';
-import './rules/errorHandling';
-import './rules/gitSafety';
 import './rules/htmlGeneration';
 import './rules/outputFormat';
-import './rules/toolDecisionTree';
-import './rules/toolUsagePolicy';
 
 // Tools
 import './tools/bash';

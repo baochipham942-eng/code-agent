@@ -238,7 +238,7 @@ function generateFilePreview(content: string, filePath: string, lang: string): s
 \`\`\`${lang}
 ${previewLines}
 \`\`\`
-${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_LINES} 行未显示。这只是预览，要分析完整代码必须用 \`read_file\` 读取: \`${filePath}\`` : ''}`;
+${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_LINES} 行未显示。这只是预览，要分析完整代码必须用 \`Read\` 读取: \`${filePath}\`` : ''}`;
 }
 
 /**
@@ -663,7 +663,7 @@ function processFolderAttachment(attachment: MessageAttachment): string {
       const fullPath = attachment.path ? `${attachment.path}/${file.path}` : file.path;
       fileList += `- ${file.path} (${sizeKB} KB) → \`${fullPath}\`\n`;
     }
-    fileList += '\n⚠️ **注意**: 以上只是文件列表，不包含文件内容。要分析代码，必须先用 `read_file` 工具读取文件。';
+    fileList += '\n⚠️ **注意**: 以上只是文件列表，不包含文件内容。要分析代码，必须先用 `Read` 工具读取文件。';
   }
 
   return `📁 **文件夹: ${attachment.name}**${pathInfo}${statsInfo}\n\n${attachment.data || ''}${fileList}`;

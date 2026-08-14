@@ -13,6 +13,7 @@ Use this tool when you need a single agent to complete a task synchronously.
 Available agent types: coder, reviewer, explore, plan, awaiter
 
 Routing rules:
+- Delegate when the work is broad or open-ended: you do not know where the relevant code lives, the change spans several modules, or the task needs a specialist pass (security audit, performance analysis, architecture plan). Delegating beats searching yourself when the search space is wide; when it is not, it only costs a round trip.
 - Use nested spawn for tree-shaped work: investigation → implementation → review, staged refactors, recursive research, and parent-level synthesis. Nested spawn is for context offload, not parallel speedup; prefer 2-3 layers.
 - Use parallel multi-agent mode through AgentSpawn when branches are independent and can run at the same time.
 - Do not delegate a single fact lookup, known file location, direct symbol search, or a small known edit. Use local read/search/edit tools directly.

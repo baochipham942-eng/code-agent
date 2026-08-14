@@ -16,7 +16,9 @@ For common file/search operations, dedicated tools are faster and more reliable:
 
 For everything else — running scripts, git, build/install, invoking any CLI on PATH (jq, ffmpeg, opencli, jina, mineru, pdftotext ...), or probing the environment with \`which\` / \`<cli> --help\` to learn what tools are available — Bash is your tool. When the built-in tools fall short (anti-scraping responses, niche formats, structured data wrangling), fall back to Bash and explore. The <env-capabilities> block in your context lists CLIs already detected locally; if a needed one is missing, \`command -v X\` confirms availability before use.
 
-Git: NEVER \`--force\` push or \`--no-verify\` unless explicitly requested.`,
+Git: never \`--force\` push, \`--no-verify\`, \`--no-gpg-sign\`, or change git config unless explicitly requested. Avoid \`commit --amend\` — only when the user asks for it or a pre-commit hook rewrote files, and never on a commit already pushed. Commit messages say why, not what. Before drafting a PR, read every commit on the branch, not just the last one.
+
+A failed command tells you what to do next. A permission or workspace-scope denial will not pass on a retry — use request_directory or tell the user what access you need. A timeout means split the work or raise \`timeout\`. Never rerun an unchanged command hoping for a different result, and never report success on a non-zero exit.`,
   inputSchema: {
     type: 'object',
     properties: {

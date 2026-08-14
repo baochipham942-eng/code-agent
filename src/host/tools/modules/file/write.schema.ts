@@ -9,7 +9,9 @@ export const writeSchema: ToolSchema = {
     'instead, which only sends the diff. Use Write for new files or complete rewrites. ' +
     'For large generated artifacts such as full HTML/CSS/JS apps, games, documents, or data files, ' +
     'prefer Append chunks when the content is very large. Complete medium-sized artifacts are accepted ' +
-    'in one Write call when the whole content is already available.',
+    'in one Write call when the whole content is already available. ' +
+    'When the user pastes code instead of naming a file, do not ask for a path — derive a name from ' +
+    'the content and write it under the working directory.',
   inputSchema: {
     type: 'object',
     properties: {

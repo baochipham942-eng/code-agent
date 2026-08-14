@@ -25,6 +25,7 @@ Parameters:
 - prompt (optional): Custom analysis prompt (default: describe content)
 
 Returns the path to the saved screenshot file, plus AI analysis if analyze=true.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

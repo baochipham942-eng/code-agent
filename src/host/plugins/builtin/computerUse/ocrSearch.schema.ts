@@ -34,6 +34,47 @@ export const ocrSearchSchema: ToolSchema = {
 - regions: 文本块数组，每个含 text/confidence/boundingBox(x/y/width/height 像素坐标)
 - imageSize: { width, height }
 - memoryId: 若 persist=true，返回入库的 memory id`,
+  outputSchema: {
+    type: 'object',
+    properties: {
+      fullText: { type: 'string' },
+      regions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            text: { type: 'string' },
+            confidence: { type: 'number' },
+            boundingBox: {
+              type: 'object',
+              properties: {
+                x: { type: 'number' },
+                y: { type: 'number' },
+                width: { type: 'number' },
+                height: { type: 'number' },
+              },
+              required: ['x', 'y', 'width', 'height'],
+              additionalProperties: false,
+            },
+          },
+          required: ['text', 'confidence', 'boundingBox'],
+          additionalProperties: false,
+        },
+      },
+      imageSize: {
+        type: 'object',
+        properties: {
+          width: { type: 'number' },
+          height: { type: 'number' },
+        },
+        required: ['width', 'height'],
+        additionalProperties: false,
+      },
+      memoryId: { type: 'string' },
+    },
+    required: ['fullText', 'regions', 'imageSize'],
+    additionalProperties: false,
+  },
   inputSchema: {
     type: 'object',
     properties: {

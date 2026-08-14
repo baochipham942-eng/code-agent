@@ -97,6 +97,7 @@ Desktop routing contract:
 If a tool result includes metadata.foregroundFallbackWarning, it means your last keyboard action ran as a global keystroke. Re-run the recipe above with targetApp+axPath before continuing — subsequent app switches will misroute further input.
 
 IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launched browser via browser_action. locate_role with targetApp is the only smart action that works on desktop apps (returns axPath via macOS Accessibility).`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

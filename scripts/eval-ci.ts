@@ -453,12 +453,18 @@ function createAgent(opts: {
     throw new Error(`No API key found for ${resolvedProvider}. Set AUTO_TEST_API_KEY or ${candidates.join(' / ')}.`);
   }
 
+  // 动态 custom provider（custom-xxx）的端点唯一来源是用户设置，而 getSettings()
+  // 对 models.providers 做白名单过滤，headless 进程里查不到 → providerResolution 抛
+  // 「无法解析 baseURL」。补齐 AUTO_TEST_* 家族缺的这一项，让 eval 能跑中继/自建端点。
+  const baseUrl = process.env.AUTO_TEST_BASE_URL;
+
   return new StandaloneAgentAdapter({
     workingDirectory: opts.workingDir,
     modelConfig: {
       provider: resolvedProvider,
       model: resolvedModel,
       apiKey,
+      ...(baseUrl ? { baseUrl } : {}),
     },
   });
 }

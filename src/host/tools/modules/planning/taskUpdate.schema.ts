@@ -37,10 +37,6 @@ export const taskUpdateSchema: ToolSchema = {
   description:
     'Update a semantic work-unit task\'s status, details, or dependencies. ' +
     'Keep task titles user-visible and outcome-oriented; do not rename tasks to raw tool operations. ' +
-    'Set status="blocked" (with blockedReason) when something external stops the work; ' +
-    'set status="cancelled" to abandon a task while keeping it visible; ' +
-    'set status="deleted" to permanently remove a task. ' +
-    'Completing a task requires completionEvidence. ' +
     'Use addBlockedBy/addBlocks to establish task dependencies.',
   inputSchema: {
     type: 'object',

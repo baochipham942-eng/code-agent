@@ -274,8 +274,10 @@ export class HookMessageBuffer {
     // Merge all entries
     const merged = entries
       .map((entry) => {
-        const header =
-          entry.count > 1 ? `<${entry.category} count="${entry.count}">` : `<${entry.category}>`;
+        // checkpoint producer 只交裸正文；优先级由唯一的 buffer 外层标签承载。
+        const priority = entry.category === 'checkpoint-nudge' ? ' priority="medium"' : '';
+        const count = entry.count > 1 ? ` count="${entry.count}"` : '';
+        const header = `<${entry.category}${priority}${count}>`;
         const footer = `</${entry.category}>`;
         return `${header}\n${entry.content}\n${footer}`;
       })

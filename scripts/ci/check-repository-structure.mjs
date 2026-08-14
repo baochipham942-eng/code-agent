@@ -38,7 +38,9 @@ const limits = {
   // 2026-08-10 +1: scripts/knip-dependency-gate.mjs（依赖维度零容忍门，package /
   // swarm-ci 共用的稳定入口，与 eslint/knip/tsc-tests 各棘轮同族。它的 knip 版本常量
   // 已抽到 scripts/lib/knipVersion.mjs，不占直属名额）。
-  directScriptFiles: 152,
+  // 2026-08-14 +2: scripts/attention-budget-ratchet.mjs 及其显式基线文件（模型每轮
+  // 固定注入开销棘轮，gates:local 稳定入口；基线提额必须连同理由接受评审）。
+  directScriptFiles: 154,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

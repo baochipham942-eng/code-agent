@@ -135,6 +135,19 @@ describe('context injection provenance', () => {
     expect(hookMessageBuffer.add).toHaveBeenCalledTimes(1);
   });
 
+  it('wraps a bare checkpoint nudge once and preserves its priority', () => {
+    const { ctx } = makeHarness();
+
+    injectSystemMessage(ctx, '继续实施修改。', 'nudge', 'checkpoint-nudge');
+    flushHookMessageBuffer(ctx);
+
+    expect(ctx.runtime.messages).toHaveLength(1);
+    expect(ctx.runtime.messages[0].content).toBe(
+      '<checkpoint-nudge priority="medium">\n继续实施修改。\n</checkpoint-nudge>',
+    );
+    expect(ctx.runtime.messages[0].content.match(/<checkpoint-nudge/g)).toHaveLength(1);
+  });
+
   it('marks source-less system messages as unattributed instead of hiding the gap', () => {
     const { ctx } = makeHarness();
     const events = buildContextEventsForMessage(ctx, {

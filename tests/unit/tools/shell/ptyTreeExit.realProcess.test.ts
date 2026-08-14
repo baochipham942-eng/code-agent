@@ -6,9 +6,13 @@
 // 🔴 两道运行前提，缺一这些用例就跑不了真 PTY：
 //   1. tests/setup.ts 把 node-pty 全局 mock 成 `{ pid: 0, kill(){} }`——那个假句柄回答不了
 //      「组死没死」。这里用 vi.doUnmock + 动态 import 拿真模块。
-//   2. **CI（linux-x64）根本没有 node-pty 的原生产物**（实测报
-//      `Cannot find module './prebuilds/linux-x64//pty.node'`）。所以真 PTY 用例只能在
-//      本机跑，CI 上整组 skip——skip 不是假绿：下面「接线守护」那条**不跳过**，
+//   2. **CI 上起不来真 PTY，而且两个 runner 各坏各的**：
+//      - linux-x64：原生产物压根不存在（`Cannot find module './prebuilds/linux-x64//pty.node'`），
+//        **模块加载阶段**就炸；
+//      - macOS（Main Full Gate 那台）：模块加载得了，但 `pty.spawn` 运行时抛
+//        `posix_spawnp failed.`（起不了 node-pty 的 spawn-helper）。
+//      所以能力探测**必须真 spawn 一次**——「模块 import 得了」是代理信号，不是能力本身。
+//      真 PTY 用例只能在本机跑，CI 上整组 skip——skip 不是假绿：下面「接线守护」那组**不跳过**，
 //      CI 照样守着收尸接线，本机再补真进程证明。
 import { execFileSync } from 'child_process';
 import { mkdtempSync, readFileSync } from 'fs';
@@ -18,13 +22,28 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 import { SHELL_KILL } from '../../../../src/shared/constants/tools';
 
-// 真 node-pty 能不能加载（原生模块，CI 上没有）
-let realPtyAvailable = true;
-try {
-  await vi.importActual('node-pty');
-} catch {
-  realPtyAvailable = false;
+// 这台机器**真的能起 PTY 吗**：判据锚能力本身（真 spawn 一次 + pid > 0），
+// 不锚「模块 import 得了」这种代理信号——macOS CI 上正是 import 得了但 spawn 失败。
+async function probeRealPty(): Promise<boolean> {
+  try {
+    const realPty = await vi.importActual<typeof import('node-pty')>('node-pty');
+    const probe = realPty.spawn('/bin/sh', ['-c', 'exit 0'], {
+      name: 'xterm-256color',
+      cols: 80,
+      rows: 24,
+      cwd: tmpdir(),
+      env: process.env as Record<string, string>,
+    });
+    const spawned = probe.pid > 0;
+    try { probe.kill(); } catch { /* 已退出 */ }
+    return spawned;
+  } catch {
+    // linux CI：原生产物不存在，import 就炸；macOS CI：import 得了但 spawn 抛 posix_spawnp failed
+    return false;
+  }
 }
+
+const realPtyAvailable = await probeRealPty();
 
 // doUnmock 不被 hoist，只对之后的动态 import 生效——正好用来按能力分流
 vi.doUnmock('node-pty');

@@ -37,6 +37,16 @@ const CHANNELS = 1;
 const RIFF_SIZE_OFFSET = 4;
 const DATA_SIZE_OFFSET = 40;
 
+/**
+ * 录音开关判据。**默认关**：只认字面 `true`，undefined / 缺配置 / 任何其他值都是关。
+ *
+ * 单列成一个谓词是为了把这条钉住：紧邻的声纹开关用的是 `voiceprint !== false`
+ * （默认开），两者形状相反，照着旁边那行抄一次就会变成「默认给所有人录音」。
+ */
+export function isVoiceCallRecordingEnabled(live: { recordCalls?: boolean } | undefined): boolean {
+  return live?.recordCalls === true;
+}
+
 /** 录音根目录。测试可传 root 覆盖，生产读数据目录。 */
 export function getVoiceRecordingRoot(root?: string): string {
   return root ?? path.join(getUserDataPath(), VOICE_RECORDING_DIR_NAME);

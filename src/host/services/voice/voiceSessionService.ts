@@ -21,7 +21,7 @@ import { getSessionManager } from '../infra/sessionManager';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
 import { createRealtimeTransport } from './realtimeTransport';
-import { createVoiceCallRecorder, type VoiceCallRecorder } from './voiceCallRecorder';
+import { createVoiceCallRecorder, isVoiceCallRecordingEnabled, type VoiceCallRecorder } from './voiceCallRecorder';
 import { runVoiceRecordingRetention } from './voiceRecordingRetention';
 import {
   getRealtimeVoiceProviderApiKey,
@@ -635,7 +635,7 @@ async function connectAndBind(
 
   // 通话录音（N-L7-REC）：闸在拨号这一刻判一次，判完整通不变——每帧读配置是白烧 CPU，
   // 且中途改开关会产出半截文件。默认关 ⇒ recorder 恒为 null，两处 feed 都是空调用。
-  const recorder = liveSettings?.recordCalls === true ? createVoiceCallRecorder(id) : null;
+  const recorder = isVoiceCallRecordingEnabled(liveSettings) ? createVoiceCallRecorder(id) : null;
 
   const transcriptBuf = { assistantByResponse: new Map<string, string>() };
   const transcriptMerge: TranscriptMergeState = { messageId: null, text: '', at: 0 };

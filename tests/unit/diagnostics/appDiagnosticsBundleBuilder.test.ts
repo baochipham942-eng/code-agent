@@ -226,4 +226,29 @@ describe('buildAppDiagnosticsBundle', () => {
       else process.env.CODE_AGENT_DATA_DIR = prevDataDir;
     }
   });
+  // 通话录音（N-L7-REC）判据 4：不勾选 → 包内无音频；勾选 → 有。正负成对。
+  it('通话录音默认不进包，只有显式勾选才拷进去', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'app-diag-rec-'));
+    const dirs = makeDirs(root);
+    const now = Date.parse('2026-08-14T12:00:00.000Z');
+    const recordingDir = path.join(root, 'voice-recordings', '20260814-120000-voice-1');
+    fs.mkdirSync(recordingDir, { recursive: true });
+    fs.writeFileSync(path.join(recordingDir, 'upstream.wav'), Buffer.from('RIFF____WAVEfake-audio'));
+
+    const optOut = await buildAppDiagnosticsBundle({
+      ...dirs, now, homeDir: root, workingDirectory: root, voiceRecordingDir: path.join(root, 'voice-recordings'),
+    });
+    const optOutNames = Object.keys((await JSZip.loadAsync(optOut.buffer)).files);
+    expect(optOutNames.some((name) => name.startsWith('voice-recordings/'))).toBe(false);
+    expect(optOut.manifest.includes.voiceRecordings).toBe(false);
+
+    const optIn = await buildAppDiagnosticsBundle({
+      ...dirs, now, homeDir: root, workingDirectory: root,
+      voiceRecordingDir: path.join(root, 'voice-recordings'),
+      includeVoiceRecordings: true,
+    });
+    const optInNames = Object.keys((await JSZip.loadAsync(optIn.buffer)).files);
+    expect(optInNames).toContain('voice-recordings/20260814-120000-voice-1/upstream.wav');
+    expect(optIn.manifest.includes.voiceRecordings).toBe(true);
+  });
 });

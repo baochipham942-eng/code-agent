@@ -9,6 +9,7 @@ Usage:
 - Provide task_id to get output from a specific task
 - Use block=true (default) to wait for completion, block=false for non-blocking check
 - Without task_id, lists all background tasks and their status`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

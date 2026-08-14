@@ -6,6 +6,7 @@ export const gitDiffSchema: ToolSchema = {
   description: `Git 差异分析工具。查看未暂存/已暂存/跨分支差异和特定提交内容。
 
 操作类型: diff (未暂存) | diff_staged (已暂存) | diff_branch (跨分支) | show (特定提交)`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

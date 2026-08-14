@@ -8,6 +8,28 @@ import type { ToolTag } from '../../../shared/contract/tool';
 /**
  * 核心工具列表
  * 这些工具始终发送给模型，无需通过 tool_search 发现
+ *
+ * ## 入选判据（2026-08-14 L8 N-L8-SLIM2 补写，此前无成文依据）
+ *
+ * 常驻一个工具 = 每轮全额付它的 schema（95~2249 token）；挪进 deferred = 每轮只付
+ * 名字索引一行（~13 token），模型要用时 `select:` 拉全量，代价是一个额外往返。
+ * 所以判据是**「这一轮多半用得上」**，不是「这个能力重要」：
+ *
+ * - ✅ 进 CORE：高频（真库使用频次在前列）、或首轮就需要（模型没它无法起步，如 ToolSearch）、
+ *   或延迟一个往返会直接伤交互（AskUserQuestion 是唯一的问人通道）。
+ * - ❌ 不进 CORE：低频 + 高 schema 成本。能力不会丢——名字仍在每轮下发的 deferred 索引里，
+ *   `select:<name>` 稳定命中；子 agent / skill 的显式 allowlist 还会自动预载
+ *   （见 contextAssembly/deferredToolPreload.ts）。
+ *
+ * 改这张表前先跑一遍真实使用频次：
+ *   sqlite3 ~/.code-agent/code-agent.db \
+ *     "SELECT tool_name, count(DISTINCT execution_id) FROM tool_execution_events GROUP BY 1 ORDER BY 2 DESC"
+ * 注意该表每次执行落 begin+complete 两行，直接 count(*) 会翻倍；且用户 08-04 起主要驾
+ * Dev 槽，必须把 ~/.code-agent-dev/code-agent.db 一起合并看，只看生产库会漏掉近期用量。
+ *
+ * ⚠️ 往 deferred 挪之前必须先确认它在 DEFERRED_TOOLS_META 里有条目——`selectTool()` 对
+ * CORE 工具有短路（直接合成"核心工具"结果返回，根本不查索引），所以拿它探测「挪出去还
+ * 找不找得到」会 100% 假绿。判据取 buildDeferredToolIndex()，或直接看下面那张表。
  */
 export const CORE_TOOLS: string[] = [
   // Gen 1: 基础文件操作
@@ -15,7 +37,6 @@ export const CORE_TOOLS: string[] = [
   'Read',
   'Blob',
   'Write',
-  'Append',
   'Edit',
 
   // Gen 2: 代码搜索
@@ -24,22 +45,14 @@ export const CORE_TOOLS: string[] = [
   'ListDirectory',
 
   // Gen 3: 规划和任务
-  'TaskManager',
   // 'TodoWrite', // 已移除
   'AskUserQuestion',
   'delegate_task',
-  'steer_task',
-  'cancel_task',
   'task_status',
 
   // Gen 4: 网络搜索
   'WebSearch',
   'ExternalSearch',
-
-  // Light Memory (File-as-Memory)
-  'MemoryWrite',
-  'MemoryRead',
-  'EpisodicRecall',
 
   // 工具发现
   'ToolSearch',
@@ -49,6 +62,12 @@ export const CORE_TOOLS: string[] = [
 
   // Capability discovery 元工具（Step 7 PR 2，让模型自主诊断能力缺口）
   'recommend_capability',
+
+  // ── 2026-08-14 挪出（L8 N-L8-SLIM2，合计省 3805 token/轮 = 工具 schema 桶的 36.7%）──
+  // TaskManager(2249) / MemoryWrite(745) / EpisodicRecall(363) / Append(306) /
+  // MemoryRead(222) / steer_task(113) / cancel_task(94)
+  // 真库 4748 次工具调用里这七个合计只被用到 5 次（MemoryRead 4 / Append 1，其余 0）。
+  // 全部已在 DEFERRED_TOOLS_META 登记，见该常量顶部的挪出段。
 ];
 
 /**
@@ -56,6 +75,59 @@ export const CORE_TOOLS: string[] = [
  * 用于搜索匹配，不包含完整的工具定义
  */
 export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
+  // ============================================================================
+  // 2026-08-14 从 CORE_TOOLS 挪出（L8 注意力预算 N-L8-SLIM2）
+  // ----------------------------------------------------------------------------
+  // 这六个此前每轮全额下发 schema，而真库 4748 次工具调用里合计只被用到 5 次
+  // （MemoryRead 4 / Append 1，其余四个 0）。挪进按需加载后每轮只占名字索引一行
+  // （~13 token），模型要用时 `select:<name>` 拉全量。
+  //
+  // aliases 中英都给：ToolSearch 的关键词召回是纯词法匹配，没有语义理解——中文提问
+  // 命不中英文 shortDescription，实测有会话为找一个工具换六种说法搜了 8 次。
+  // ============================================================================
+  {
+    name: 'MemoryWrite',
+    shortDescription: '写入/更新/删除长期记忆文件（markdown + frontmatter）',
+    tags: ['memory', 'file'],
+    aliases: ['memory_write', 'save memory', 'remember this', '记住', '写入记忆', '存记忆'],
+    source: 'builtin',
+  },
+  {
+    name: 'MemoryRead',
+    shortDescription: '按名读取一条长期记忆的正文（先看系统提示里的 INDEX.md 再取）',
+    tags: ['memory', 'search'],
+    aliases: ['memory_read', 'load memory', '读取记忆', '查记忆'],
+    source: 'builtin',
+  },
+  {
+    name: 'EpisodicRecall',
+    shortDescription: '全文检索历史会话消息（FTS5），找"以前是不是干过类似的事"',
+    tags: ['memory', 'search'],
+    aliases: ['episodic_recall', 'recall', 'past sessions', '历史会话', '之前聊过', '以前做过'],
+    source: 'builtin',
+  },
+  {
+    name: 'Append',
+    shortDescription: '往文件尾部追加内容，用于一次 Write 装不下的大产物分块续写',
+    tags: ['file'],
+    aliases: ['append', 'append_file', '追加', '续写', '分块写'],
+    source: 'builtin',
+  },
+  {
+    name: 'steer_task',
+    shortDescription: '给正在跑或排队的后台任务补要求、改方向，不新开任务',
+    tags: ['planning', 'multiagent'],
+    aliases: ['steer', 'redirect task', '调整任务', '改方向', '追加要求'],
+    source: 'builtin',
+  },
+  {
+    name: 'cancel_task',
+    shortDescription: '取消一件后台任务（目标不唯一时先让用户选）',
+    tags: ['planning', 'multiagent'],
+    aliases: ['cancel', 'abort task', '取消任务', '停掉任务'],
+    source: 'builtin',
+  },
+
   // ============================================================================
   // Gen 1: 扩展 Shell 工具
   // ============================================================================

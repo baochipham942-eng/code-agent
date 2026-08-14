@@ -48,7 +48,7 @@ type BudgetWiringDependencies = {
 export type WebStartupTaskName =
   | 'budget'
   | 'eventBridge'
-  | 'comboRecorder'
+  | 'capabilityCandidates'
   | 'dagEventBridge'
   | 'dagResolver'
   | 'dreamExecutor'
@@ -173,9 +173,11 @@ function createDefaultTasks(
       initWebEventBridge(options.broadcastSSE).start();
     },
 
-    comboRecorder: async () => {
-      const { getComboRecorder } = await import('../host/services/skills/comboRecorder');
-      getComboRecorder().init();
+    // 候选能力账本预热（N-CAP1）：会话首轮要同步读得到它（agent 注入路径是同步的）。
+    // 原先这里是 comboRecorder.init()，它订阅的 EventBus 事件主链路根本不发，是死代码。
+    capabilityCandidates: async () => {
+      const { getCapabilityCandidateStore } = await import('../host/services/skills/capabilityCandidateStore');
+      await getCapabilityCandidateStore().load();
     },
 
     dagEventBridge: async () => {

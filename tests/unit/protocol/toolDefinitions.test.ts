@@ -96,10 +96,13 @@ describe('toolDefinitions deferred loading', () => {
     expect(definitions.find((definition) => definition.name === 'mcp__github__search_code')).toEqual(mcpToolDefinition);
   });
 
-  it('exposes Append as a core file tool', () => {
+  // 2026-08-14（L8 N-L8-SLIM2）：Append 每轮占 306 token，真库 4748 次调用里只被用到 1 次，
+  // 已挪进 deferred。同 EpisodicRecall——断言不删，升级到「能力不许丢」这一层。
+  it('keeps Write core and Append reachable after Append moved out of the core table', () => {
     const names = getCoreToolDefinitions().map((definition) => definition.name);
     expect(names).toContain('Write');
-    expect(names).toContain('Append');
+    expect(names).not.toContain('Append');
+    expect(getToolSearchService().selectTool('Append').tools[0]?.name).toBe('Append');
   });
 
   it('keeps ExternalSearch out of the tool table when no search credential is configured anywhere', () => {
@@ -142,13 +145,30 @@ describe('toolDefinitions deferred loading', () => {
     });
   });
 
-  it('keeps core tools out of loaded deferred definitions after ToolSearch hits', async () => {
+  // 本条守的不变量：关键词搜索命中一个**与 CORE 工具同名**的可搜索条目时，它不能被算进
+  // 「已加载的 deferred 工具」——否则同一个工具会在工具表里出现两次。
+  //
+  // 2026-08-14（L8 N-L8-SLIM2）：原样本用的是 TaskManager，因为它当时是唯一一个同时登记在
+  // CORE_TOOLS 和 DEFERRED_TOOLS_META 的工具。它挪进 deferred 后 CORE ∩ META = 空集，
+  // 这个场景没有任何真实数据能构造了。改为注入一个与 CORE 工具 Grep 同名的 MCP 条目——
+  // 这不是为了凑测试：MCP server 完全可能提供一个跟内置工具重名的工具，那时正是这段
+  // isCoreToolName 短路在挡重复进表。
+  it('keeps core tools out of loaded deferred definitions when a same-named entry is searchable', async () => {
     const service = getToolSearchService();
-    await service.searchTools('TaskManager', { maxResults: 3, includeMCP: false });
+    service.registerMCPTool({
+      name: 'Grep',
+      shortDescription: 'a third-party tool that collides with the built-in Grep',
+      tags: ['search'],
+      aliases: ['grep', 'collider grep'],
+      source: 'mcp',
+      mcpServer: 'collider',
+    });
+
+    await service.searchTools('Grep', { maxResults: 3, includeMCP: true });
 
     const definitions = getLoadedDeferredToolDefinitions();
 
-    expect(definitions.map((definition) => definition.name)).not.toContain('TaskManager');
+    expect(definitions.map((definition) => definition.name)).not.toContain('Grep');
   });
 
   it('includes canonical multiagent tools loaded through aliases without mixing workflow generations', () => {
@@ -237,9 +257,17 @@ describe('toolDefinitions deferred loading', () => {
     }
   });
 
-  it('keeps EpisodicRecall in the always-visible core tool table', () => {
-    expect(CORE_TOOLS).toContain('EpisodicRecall');
-    expect(getCoreToolDefinitions().map((definition) => definition.name)).toContain('EpisodicRecall');
+  // 2026-08-14（L8 N-L8-SLIM2）：本断言原文是「EpisodicRecall 必须在 CORE_TOOLS 里」，
+  // 来自 #349 把它加进 CORE 时钉的回归钉。真库 4748 次工具调用里它一次没被用到，而 schema
+  // 每轮占 363 token，已随该批挪进 deferred。
+  //
+  // 断言没有删——删掉等于放任这个能力悄悄失联。它被升级到了正确的层面：#349 真正要守的是
+  // 「这个能力不许丢」，而不是「它必须常驻」。挪进 deferred 后守的就是「模型仍找得回它」。
+  it('keeps EpisodicRecall reachable after it moved out of the core table', () => {
+    expect(CORE_TOOLS).not.toContain('EpisodicRecall');
+    // 名字仍随每轮 deferred 索引下发，且 select: 稳定命中它自己（不是被 alias 串到别的工具）
+    expect(DEFERRED_TOOLS_META.map((meta) => meta.name)).toContain('EpisodicRecall');
+    expect(getToolSearchService().selectTool('EpisodicRecall').tools[0]?.name).toBe('EpisodicRecall');
   });
 
   it('keeps design canvas tools out of the normal-session base table (zero pollution invariant)', () => {

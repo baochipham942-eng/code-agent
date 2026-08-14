@@ -13,75 +13,47 @@ export const grepSchema: ToolSchema = {
     properties: {
       pattern: {
         type: 'string',
-        description:
-          'Regex pattern to search for. MUST be a string. ' +
-          'Examples: "function\\\\s+handleClick" (function definitions), ' +
-          '"import.*from" (import statements), "TODO|FIXME" (comments). ' +
-          'Escape special regex chars: . * + ? [ ] ( ) { } | \\\\ ^ $',
+        description: 'Regex pattern. Escape . * + ? [ ] ( ) { } | \\\\ ^ $ when matching them literally.',
       },
       path: {
         type: 'string',
-        description:
-          'File or directory to search in. MUST be a string. ' +
-          'Default: current working directory. ' +
-          'Examples: "/Users/name/project/src", "./src/components". ' +
-          'Can be a specific file: "/path/to/file.ts".',
+        description: 'File or directory to search in. Default: current working directory.',
       },
       include: {
         type: 'string',
-        description:
-          'Glob pattern to filter which files to search. MUST be a string. ' +
-          'Examples: "*.ts" (TypeScript only), "*.{js,jsx}" (JS and JSX), ' +
-          '"*.test.ts" (test files only). Without this, searches all text files.',
+        description: 'Glob filter for which files to search, e.g. "*.{js,jsx}". Default: all text files.',
       },
       case_insensitive: {
         type: 'boolean',
-        description:
-          'If true, performs case-insensitive matching. Default: false. ' +
-          'Example: with case_insensitive=true, "error" matches "Error", "ERROR".',
+        description: 'Case-insensitive matching. Default: false.',
       },
       type: {
         type: 'string',
         description:
-          'Filter by file type. More efficient than include glob. ' +
-          'Supported types: js, ts, jsx, tsx, py, rust, go, java, c, cpp, css, html, ' +
-          'json, yaml, md, xml, sql, sh, ruby, php, swift, kotlin. ' +
-          'Example: type="ts" searches only TypeScript files.',
+          'Filter by file type — cheaper than an include glob. One of: js, ts, jsx, tsx, py, rust, go, '
+          + 'java, c, cpp, css, html, json, yaml, md, xml, sql, sh, ruby, php, swift, kotlin.',
       },
       before_context: {
         type: 'number',
-        description:
-          'Number of lines to show BEFORE each match (like grep -B). ' +
-          'Useful for seeing context leading up to a match.',
+        description: 'Lines to show before each match (grep -B).',
       },
       after_context: {
         type: 'number',
-        description:
-          'Number of lines to show AFTER each match (like grep -A). ' +
-          'Useful for seeing what follows a match.',
+        description: 'Lines to show after each match (grep -A).',
       },
       context: {
         type: 'number',
-        description:
-          'Number of lines to show BEFORE and AFTER each match (like grep -C). ' +
-          'Shorthand for setting both before_context and after_context.',
+        description: 'Lines to show on both sides (grep -C); sets before_context and after_context together.',
       },
       head_limit: {
         type: 'number',
         description:
-          'Limit output to first N match groups (default: 0 = unlimited). ' +
-          'A match group is a single match or a match with its context lines.',
-      },
-      limit: {
-        type: 'number',
-        description:
-          'Alias for head_limit. Use with offset for pagination by match group.',
+          'Cap the number of match groups returned (default 0 = unlimited). A match group is one match '
+          + 'plus its context lines. Pair with offset to page through results.',
       },
       offset: {
         type: 'number',
-        description:
-          'Skip first N match groups before applying head_limit/limit (default: 0). ' +
-          'Use the returned nextOffset to fetch the next page.',
+        description: 'Skip this many match groups first (default 0). Use the returned nextOffset for the next page.',
       },
     },
     required: ['pattern'],

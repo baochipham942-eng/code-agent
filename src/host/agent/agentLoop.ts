@@ -72,6 +72,8 @@ import { composeTelemetryAdapters } from './metricsCollector';
 import { withRunTraceContext } from '../telemetry/runTraceContext';
 import { resolvePersistentRoleId } from './persistentRoleResolution';
 import { createTurnCostEventHandler } from './runtime/turnCostPersistence';
+import { getComboRecorder } from '../services/skills/comboRecorder';
+import { recordCapabilityGapTurn } from './capabilityGapTurnRecorder';
 
 export class AgentLoop {
   private ctx: RuntimeContext;
@@ -129,7 +131,16 @@ export class AgentLoop {
       memoryMode: config.memoryMode ?? 'auto',
       suppressedMemoryEntryIds: config.suppressedMemoryEntryIds,
       persistMessage: config.persistMessage,
-      onToolExecutionLog: config.onToolExecutionLog,
+      // 工具步骤录制接在这里，而不是接在 AgentOrchestrator 上：真机 renderer 的
+      // 每一次发送都走 webServer 的 /api/run → cli/bootstrap.createAgentLoop →
+      // agentLoop.run，**根本不经过 AgentOrchestrator**（2026-08-14 N-CAP1 真机实测）。
+      // AgentLoop 才是所有入口（桌面 / CLI / 通道）的唯一汇聚点。
+      onToolExecutionLog: (log) => {
+        try {
+          getComboRecorder().recordStep(log.sessionId, log.toolCallId, log.toolName, log.args, log.result);
+        } catch { /* 旁路记账，绝不影响工具执行 */ }
+        config.onToolExecutionLog?.(log);
+      },
       toolScope: config.toolScope,
       executionIntent: config.executionIntent,
       neoTag: config.neoTag,
@@ -253,13 +264,29 @@ export class AgentLoop {
     this.ctx.persistentRoleId = await resolvePersistentRoleId(this.ctx.agentId);
     // 每条 user 消息开新的工具 repair 失败统计窗口（Kimi 借鉴 #1）
     this.toolEngine.resetRepairGate();
-    if (this.ctx.runTraceContext) {
-      return withRunTraceContext(
-        this.ctx.runTraceContext,
-        () => this.conversationRuntime.run(userMessage, displayPrompt),
-      );
+    // 一轮的边界在这里，所以录制器的开轮也在这里（displayPrompt 才是用户原话，
+    // userMessage 可能已被拼上 turnSystemContext 脚手架）。
+    this.beginComboTurn(displayPrompt ?? userMessage);
+    try {
+      if (this.ctx.runTraceContext) {
+        return await withRunTraceContext(
+          this.ctx.runTraceContext,
+          () => this.conversationRuntime.run(userMessage, displayPrompt),
+        );
+      }
+      return await this.conversationRuntime.run(userMessage, displayPrompt);
+    } finally {
+      // 缺口探测器（N-CAP1 / F1）：纯记账，不发事件、不弹卡、不通知。
+      void recordCapabilityGapTurn(this.ctx.sessionId);
     }
-    return this.conversationRuntime.run(userMessage, displayPrompt);
+  }
+
+  private beginComboTurn(userMessage: string): void {
+    try {
+      const recorder = getComboRecorder();
+      recorder.startRecording(this.ctx.sessionId);
+      recorder.markTurn(this.ctx.sessionId, userMessage);
+    } catch { /* 旁路记账，绝不影响这一轮 */ }
   }
 
   setPlanMode(active: boolean): void {

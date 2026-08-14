@@ -70,6 +70,11 @@ const gates = [
     args: ['scripts/tsc-tests-ratchet.mjs'],
   },
   {
+    ci: 'swarm-ci / smoke / Attention budget ratchet',
+    command: 'node',
+    args: ['scripts/attention-budget-ratchet.mjs'],
+  },
+  {
     ci: 'swarm-ci / smoke / Install Vercel control-plane dependencies',
     command: 'npm',
     args: ['ci', '--prefix', 'vercel-api', '--ignore-scripts'],

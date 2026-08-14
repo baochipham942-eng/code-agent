@@ -6,6 +6,7 @@ export const memoryReadSchema: ToolSchema = {
   description:
     'Read a memory detail file from the persistent file-based memory system. ' +
     'Use after checking INDEX.md (injected in system prompt) to load specific memories relevant to the current task.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

@@ -33,8 +33,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { computeFbank, cosineSimilarity, FBANK_MEL_BINS } from '../../src/host/services/voice/speakerFbank';
-import { resolveVoiceprintModelPath } from '../../src/host/services/voice/speakerEmbedding';
-import { VOICEPRINT_EMBEDDING_DIM, VOICEPRINT_MATCH_THRESHOLD } from '../../src/shared/constants/voice';
+import {
+  VOICEPRINT_EMBEDDING_DIM,
+  VOICEPRINT_MATCH_THRESHOLD,
+  VOICEPRINT_MODEL_DIR,
+  VOICEPRINT_MODEL_FILE,
+} from '../../src/shared/constants/voice';
 
 /** 分离度极差容差：任一组分离度低于「各组中位数 − 该值」即判偏差。 */
 const SEPARATION_TOLERANCE = 0.15;
@@ -113,8 +117,11 @@ function mean(values: number[]): number {
 }
 
 async function main(): Promise<void> {
+  // 缺省按契约常量拼按需下载路径（不为脚本给产品内部 helper 开 export）
   const modelArg = process.argv.indexOf('--model');
-  const modelPath = modelArg >= 0 ? process.argv[modelArg + 1] : resolveVoiceprintModelPath();
+  const modelPath = modelArg >= 0
+    ? process.argv[modelArg + 1]
+    : path.join(process.env.CODE_AGENT_DATA_DIR || path.join(os.homedir(), '.code-agent'), VOICEPRINT_MODEL_DIR, VOICEPRINT_MODEL_FILE);
   if (!modelPath || !fs.existsSync(modelPath)) {
     throw new Error(`声纹模型不可用：${modelPath ?? '(未下载)'}。传 --model <path> 或先在设置页下载组件。`);
   }

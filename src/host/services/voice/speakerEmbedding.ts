@@ -38,7 +38,7 @@ function getVoiceprintModelDir(): string {
 }
 
 /** 模型文件按序找：按需下载目录 → runtime asset 资源路径。找不到 = 能力不可用。 */
-export function resolveVoiceprintModelPath(): string | null {
+function resolveVoiceprintModelPath(): string | null {
   const downloaded = path.join(getVoiceprintModelDir(), VOICEPRINT_MODEL_FILE);
   if (fs.existsSync(downloaded)) return downloaded;
   return resolveExistingResource(path.join('voiceprint', VOICEPRINT_MODEL_FILE));

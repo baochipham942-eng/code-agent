@@ -47,7 +47,7 @@ export interface VoiceprintStatus {
   sampleCount?: number;
 }
 
-export function getVoiceprintDir(): string {
+function getVoiceprintDir(): string {
   return path.join(getUserConfigDir(), VOICEPRINT_DIR);
 }
 

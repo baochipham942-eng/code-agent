@@ -3,13 +3,14 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  VOICEPRINT_DIR,
   VOICEPRINT_EMBEDDING_DIM,
   VOICEPRINT_MAX_OWNER_EMBEDDINGS,
+  VOICEPRINT_PROFILE_FILE,
   VOICEPRINT_RETENTION_DAYS,
 } from '../../src/shared/constants/voice';
 import {
   clearVoiceprint,
-  getVoiceprintDir,
   getVoiceprintStatus,
   loadOwnerEmbeddings,
   registerOwnerEmbedding,
@@ -17,6 +18,12 @@ import {
 } from '../../src/host/services/voice/voiceprintStore';
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
+
+/** 按契约常量自己拼路径：不为了测试给内部 helper 开 export（knip 生产门会红）。 */
+let dataDir = '';
+function voiceprintDir(): string {
+  return path.join(dataDir, VOICEPRINT_DIR);
+}
 
 function vec(fill: number): Float32Array {
   return new Float32Array(VOICEPRINT_EMBEDDING_DIM).fill(fill);
@@ -28,6 +35,7 @@ describe('voiceprintStore', () => {
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'voiceprint-store-'));
+    dataDir = dir;
     prevDataDir = process.env.CODE_AGENT_DATA_DIR;
     process.env.CODE_AGENT_DATA_DIR = dir;
   });
@@ -41,7 +49,7 @@ describe('voiceprintStore', () => {
   it('默认态：未注册 = 空比对集 + registered:false + 不落任何文件（判据1）', () => {
     expect(loadOwnerEmbeddings()).toEqual([]);
     expect(getVoiceprintStatus()).toEqual({ registered: false });
-    expect(fs.existsSync(getVoiceprintDir())).toBe(false);
+    expect(fs.existsSync(voiceprintDir())).toBe(false);
   });
 
   it('注册后可读回，且落盘内容只有向量与时间戳（判据7：grep 不到音频）', () => {
@@ -51,7 +59,7 @@ describe('voiceprintStore', () => {
     const loaded = loadOwnerEmbeddings(now);
     expect(loaded).toHaveLength(1);
     expect(loaded[0][0]).toBeCloseTo(0.5, 5);
-    const raw = fs.readFileSync(path.join(getVoiceprintDir(), 'owner-profile.json'), 'utf-8');
+    const raw = fs.readFileSync(path.join(voiceprintDir(), VOICEPRINT_PROFILE_FILE), 'utf-8');
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     expect(Object.keys(parsed).sort()).toEqual(['createdAt', 'embeddings', 'lastMatchedAt', 'version']);
     // 不存在任何音频形态的字段/编码（wav/pcm/base64 音频块）
@@ -76,7 +84,7 @@ describe('voiceprintStore', () => {
     registerOwnerEmbedding(vec(0.1));
     clearVoiceprint();
     expect(getVoiceprintStatus()).toEqual({ registered: false });
-    expect(fs.existsSync(getVoiceprintDir())).toBe(false);
+    expect(fs.existsSync(voiceprintDir())).toBe(false);
   });
 
   it('保留期到且长期未命中 → 自动删除（工单 §4.2）', () => {
@@ -86,7 +94,7 @@ describe('voiceprintStore', () => {
     expect(loadOwnerEmbeddings(beforeExpiry)).toHaveLength(1);
     const afterExpiry = t0 + (VOICEPRINT_RETENTION_DAYS + 1) * DAY_MS;
     expect(loadOwnerEmbeddings(afterExpiry)).toEqual([]);
-    expect(fs.existsSync(getVoiceprintDir())).toBe(false);
+    expect(fs.existsSync(voiceprintDir())).toBe(false);
   });
 
   it('touchOwnerMatched 顺延保留期', () => {
@@ -99,8 +107,8 @@ describe('voiceprintStore', () => {
   });
 
   it('损坏的档案文件按未注册处理（fail-open 不炸通话）', () => {
-    fs.mkdirSync(getVoiceprintDir(), { recursive: true });
-    fs.writeFileSync(path.join(getVoiceprintDir(), 'owner-profile.json'), 'not json');
+    fs.mkdirSync(voiceprintDir(), { recursive: true });
+    fs.writeFileSync(path.join(voiceprintDir(), VOICEPRINT_PROFILE_FILE), 'not json');
     expect(loadOwnerEmbeddings()).toEqual([]);
     expect(getVoiceprintStatus()).toEqual({ registered: false });
   });

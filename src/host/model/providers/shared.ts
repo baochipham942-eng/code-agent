@@ -197,61 +197,6 @@ export function normalizeJsonSchema(schema: JsonSchemaNode | undefined | null): 
 // Tool Conversion
 // ----------------------------------------------------------------------------
 
-// ----------------------------------------------------------------------------
-// Tool Call Envelope Meta — Schema-level Enforcement
-// ----------------------------------------------------------------------------
-// envelope-only prompt 约定对 OpenAI tool calling 协议下的模型（GLM/Kimi 等）
-// 几乎无效——模型按 tool inputSchema 严格生成 arguments，不会主动加 schema
-// 之外的字段。把 _meta 注入每个 tool 的 inputSchema.properties，让它成为工具
-// argument 的一等公民，模型才会真的填。前端 parser（buildToolCallFromAccumulator）
-// 拿到后抽出 _meta 写到 ToolCall envelope 顶层，并从 arguments 删除避免污染
-// 工具执行参数。
-// ----------------------------------------------------------------------------
-
-// 这段描述是**每个工具**都复制一份的常驻开销：22 个核心工具的定义本体合计
-// 7473 token，注入的 _meta 曾占整包 44.9%（2026-08-07 gpt-tokenizer 实测）。
-// 这里的措辞按 token 算钱，写够意思即可，别写作文。
-//
-// 为什么 targetContext 不在这里了（2026-08-07 拿掉）：它渲染出来是
-// TargetContextIcon 里**由 kind 唯一决定的一个 12px 图标**，`label` 只进
-// aria-label、从不作为可见文字出现。也就是说 file/browser/mcp_server/memory
-// 四种 kind 的全部可见产出 = 一个字形，而字形是工具名的函数——宿主自己就能推
-// （见 renderer/utils/humanizeToolStep.ts 的 deriveToolTargetContext）。
-// 让模型填它的代价是每工具 74 token，收益是它把 7/18 个工具的 kind 填得自相
-// 矛盾（Bash→file/app、WebSearch→browser/mcp_server）。
-// 唯一带真信息的是 app kind（NSWorkspace 真 app logo，靠 bundleId），那条由
-// cuaNarration 在宿主侧推导，不依赖模型。
-// expectedOutcome 留着：真库填充率 39.5%，且是自由文本，推导不出来。
-const META_PROPERTY_SCHEMA = {
-  type: 'object',
-  description: '【必填】给用户看的语义元数据，会被剥离，不进入工具执行参数。',
-  properties: {
-    shortDescription: {
-      type: 'string',
-      description:
-        '一句话动词短语，说明这次调用在做什么，用与用户对话相同的语言。例："打开百度搜索 Claude"。别用工具内部命名。',
-    },
-    expectedOutcome: {
-      type: 'string',
-      description: '可选：成功后会看到什么',
-    },
-  },
-  required: ['shortDescription'],
-} as const;
-
-/**
- * 把 _meta 注入到 inputSchema.properties，让模型按 tool argument 一等公民方式 emit。
- * 不修改原 schema（深拷贝），避免 ToolDefinition 状态污染。
- */
-function injectMetaIntoInputSchema(rawSchema: unknown): Record<string, unknown> {
-  const cloned = JSON.parse(JSON.stringify(rawSchema || {})) as Record<string, unknown>;
-  if (!cloned.properties || typeof cloned.properties !== 'object') {
-    cloned.properties = {};
-  }
-  (cloned.properties as Record<string, unknown>)._meta = META_PROPERTY_SCHEMA;
-  return cloned;
-}
-
 /**
  * Convert tools to OpenAI format
  */
@@ -261,9 +206,7 @@ export function convertToolsToOpenAI(tools: ToolDefinition[], strict = false): O
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: normalizeJsonSchema(
-        injectMetaIntoInputSchema(tool.inputSchema) as unknown as JsonSchemaNode,
-      ) as Record<string, unknown>,
+      parameters: normalizeJsonSchema(tool.inputSchema as unknown as JsonSchemaNode) as Record<string, unknown>,
       ...(strict && { strict: true }),
     },
   }));
@@ -276,7 +219,7 @@ export function convertToolsToClaude(tools: ToolDefinition[]): ClaudeToolDefinit
   return tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
-    input_schema: injectMetaIntoInputSchema(tool.inputSchema),
+    input_schema: tool.inputSchema as unknown as Record<string, unknown>,
   }));
 }
 
@@ -861,11 +804,22 @@ export function buildToolCallFromAccumulator(tc: {
     if (!targetContext && cua.targetContext) targetContext = cua.targetContext;
   }
 
-  // Fallback：如果模型没 emit shortDescription（GLM/Kimi 实测覆盖率低），
-  // 用机械规则生成一个保底版（比工具内部命名好看，比"操作完成"有信息），
-  // 让 UI 100% 覆盖到产品视角语义。targetContext / expectedOutcome 不强制
-  // fallback（缺它们 UI 渲染降级但不致崩）。
-  if (!shortDescription) {
+  // Bash 是当前唯一在自身 schema 声明用户视角 description 的工具，把它接到既有
+  // shortDescription UI 通道；执行器只读取 command 等执行参数，不消费 description。
+  if (
+    !shortDescription
+    && (tc.name === 'Bash' || tc.name === 'bash')
+    && typeof args.description === 'string'
+    && args.description.trim()
+  ) {
+    shortDescription = args.description.trim();
+  }
+
+  // Fallback：模型没给可见描述时用机械规则合成保底版。后台任务控制工具已有渲染层
+  // 本地化模板，留空让模板读取 description/title，避免英文机械文案盖住中英文模板。
+  const usesLocalizedTaskTemplate = ['delegate_task', 'task_status', 'steer_task', 'cancel_task']
+    .includes(tc.name);
+  if (!shortDescription && !usesLocalizedTaskTemplate) {
     shortDescription = generateFallbackShortDescription(tc.name, args);
   }
 

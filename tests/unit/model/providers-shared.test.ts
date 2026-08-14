@@ -510,14 +510,11 @@ describe('convertToolsToClaude', () => {
         type: 'object',
         properties: {
           query: { type: 'string' },
-          _meta: expect.objectContaining({
-            type: 'object',
-            required: ['shortDescription'],
-          }),
         },
         required: ['query'],
       },
     });
+    expect(result[0].input_schema).toBe(inputSchema);
     expect(inputSchema.properties).not.toHaveProperty('_meta');
   });
 });

@@ -41,9 +41,6 @@ export interface ToolCallPayload {
   args: Record<string, unknown>;
 }
 
-/** 工具调用的产出值——工具返回什么就是什么（无损 JSON），不做二次包装。 */
-export type ToolCallResult = unknown;
-
 export interface AgentWorkspaceLease {
   cwd: string;
   workspace: string;
@@ -139,7 +136,12 @@ export interface RpcRequest {
 export interface RpcResponse {
   id: number;
   ok: boolean;
-  result?: PrimitiveResult | ToolCallResult | null;
+  /**
+   * agent/phase/log 路径回 `PrimitiveResult | null`；tool 路径回工具的产出值本身
+   * （任意无损 JSON，不做二次包装）。故这里是 unknown——别为「工具产出」另起一个
+   * 类型别名，`X | unknown` 会被折叠成 unknown，名字不带来任何约束只带来一个死导出。
+   */
+  result?: unknown;
   error?: string;
   /** agent 调用后回传的累计已花 outputTokens，child 侧 budget.spent() 镜像据此更新。 */
   spent?: number;

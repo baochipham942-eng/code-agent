@@ -15,7 +15,7 @@ import { SCRIPT_RUNTIME } from '../../../shared/constants';
 import { redactSecrets } from '../../security/secretRedaction';
 // eslint-disable-next-line no-restricted-imports -- process sandbox requires OS process-tree cleanup
 import { killProcessTree } from '../../tools/shell/platformShell';
-import type { RpcRequest, RpcResponse } from './types';
+import { RPC_KINDS, type RpcRequest, type RpcResponse } from './types';
 import { runScriptInLegacyWorker } from './legacyWorkerSandbox';
 import { ORCHESTRATION_CAPABILITIES } from './capabilityManifest';
 import {
@@ -31,6 +31,9 @@ const KILL_GRACE_MS = 500;
 
 export const WORKER_SCRIPT_PARAMS = [
   'agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'budget',
+  // PTC 通道：tools 是按 init.toolNames 现造的命名空间（未开放时是空对象，调什么都 UNKNOWN_TOOL）；
+  // ToolCallError 走形参而非全局，因为 hideAmbientAuthority() 之后脚本拿不到自定义全局。
+  'tools', 'ToolCallError',
 ];
 
 const PROCESS_SOURCE = String.raw`
@@ -111,7 +114,9 @@ function metadataFor(kind, payload, traceContext) {
     nodeId,
     dependencyNodeIds: Object.freeze([...(scope.dependencyNodeIds || [])]),
     callIndex,
-    sideEffect: kind === 'agent' ? sideEffectFor(payload && payload.options) : 'none',
+    sideEffect: kind === 'agent'
+      ? sideEffectFor(payload && payload.options)
+      : (kind === 'tool' ? 'unknown' : 'none'),
     ...(traceContext ? { traceContext } : {}),
   });
 }
@@ -135,6 +140,32 @@ function rpc(kind, payload) {
     pending.set(id, { resolve, reject, scope: nestedContext.getStore(), metadata });
     send({ type: 'rpc', request: { id, kind, payload, traceContext, metadata } });
   });
+}
+
+class ToolCallError extends Error {
+  constructor(toolName, message) {
+    super(message);
+    this.name = 'ToolCallError';
+    this.toolName = toolName;
+  }
+}
+
+// PTC 工具命名空间。Object.create(null) 起手 + 逐个 defineProperty + freeze：
+// 脚本是半信任的敌对方，用 __proto__ / constructor 这类名字不能绕原型链摸到宿主对象。
+// 名单由 Host 在 init 帧给定；未开放（空名单）时这里是个空对象，调任何工具都在 Host 侧
+// 判成 UNKNOWN_TOOL——fail-closed，不靠 child 自觉。
+function buildToolsNamespace(names) {
+  const ns = Object.create(null);
+  for (const name of Array.isArray(names) ? names : []) {
+    if (typeof name !== 'string' || name.length === 0) continue;
+    Object.defineProperty(ns, name, {
+      value: (args) => rpc('tool', { name, args: args === undefined ? {} : args }),
+      enumerable: true,
+      writable: false,
+      configurable: false,
+    });
+  }
+  return Object.freeze(ns);
 }
 
 async function execute(init) {
@@ -177,10 +208,11 @@ async function execute(init) {
   };
   const phase = (title) => rpc('phase', { title: String(title) });
   const log = (message) => rpc('log', { message: String(message) });
+  const tools = buildToolsNamespace(init.toolNames);
   hideAmbientAuthority();
   const fn = new AsyncFunctionCtor(${WORKER_SCRIPT_PARAMS.map((p) => JSON.stringify(p)).join(', ')}, '"use strict";\n' + init.script);
   return fn(
-    agent, parallel, pipeline, phase, log, init.goal, budget
+    agent, parallel, pipeline, phase, log, init.goal, budget, tools, ToolCallError
   );
 }
 
@@ -209,6 +241,7 @@ rl.on('line', async (line) => {
     if (typeof response.spent === 'number') spent = response.spent;
     if (response.ok && waiter.scope && waiter.metadata) waiter.scope.dependencyNodeIds = [waiter.metadata.nodeId];
     if (response.ok) waiter.resolve(response.result);
+    else if (response.toolName) waiter.reject(new ToolCallError(response.toolName, response.error || 'tool call failed'));
     else waiter.reject(new Error(response.error || 'rpc failed'));
   }
 });
@@ -231,6 +264,12 @@ export interface RunSandboxOptions {
   /** Allowlisted run trace metadata propagated in the init frame. */
   traceContext?: SerializedRunTraceContext;
   nestedGraph?: import('./types').NestedWorkflowIdentity;
+  /**
+   * PTC 通道对本次 run 开放的工具名单。缺省/空 = 不开放，child 侧 `tools` 是空对象。
+   * 名单只决定 child 侧造出哪些 stub；**是否真的放行由 Host 侧 handleRpc 再判一次**
+   * （child 是敌对方，它发什么名字都不算数）。
+   */
+  toolNames?: string[];
 }
 
 export interface WorkerOutcome {
@@ -397,7 +436,7 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
           const message = decodeMessage(line);
           if (message.type === 'rpc' && message.request) {
             const req = message.request;
-            if (!['agent', 'phase', 'log'].includes(req.kind)) {
+            if (!(RPC_KINDS as readonly string[]).includes(req.kind)) {
               writeToChild({ type: 'rpc-response', response: { id: req.id, ok: false, error: 'unsupported primitive' } });
             } else {
               const invokeRpc = () => opts.onRpc(req);
@@ -480,6 +519,7 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
       capabilities: ORCHESTRATION_CAPABILITIES,
       traceContext: opts.traceContext,
       nestedGraph: opts.nestedGraph,
+      toolNames: opts.toolNames ?? [],
     });
   });
 }

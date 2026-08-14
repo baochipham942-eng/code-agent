@@ -55,7 +55,29 @@ function voiceprintAction<A extends string>(action: A) {
   return z.object({ action: z.literal(action), requestId: z.string().optional() });
 }
 
+// ── 通话录音（N-L7-REC）。只有计数/路径/上次清理，音频本身绝不过 IPC。 ──
+
+const VoiceRecordingCleanupEntrySchema = z.object({
+  at: z.number(),
+  deleted: z.number(),
+  freedBytes: z.number(),
+  byRule: z.object({ age: z.number(), count: z.number(), bytes: z.number() }),
+});
+
+const VoiceRecordingOverviewSchema = z.object({
+  dir: z.string(),
+  count: z.number(),
+  totalBytes: z.number(),
+  lastCleanup: VoiceRecordingCleanupEntrySchema.nullable(),
+  limits: z.object({ retentionDays: z.number(), maxBytes: z.number(), maxCalls: z.number() }),
+});
+
 export const VoiceSchemas = {
+  RECORDING_OVERVIEW: channelSchema({
+    channel: IPC_DOMAINS.VOICE,
+    payload: z.object({ action: z.literal('recordingOverview'), requestId: z.string().optional() }),
+    response: IPCResponseSchema(VoiceRecordingOverviewSchema),
+  }),
   INJECT_USER_TEXT: channelSchema({
     channel: IPC_DOMAINS.VOICE,
     payload: InjectUserTextRequestSchema,

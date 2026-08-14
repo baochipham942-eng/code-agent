@@ -42,6 +42,8 @@ interface VoiceCallStoreState {
   activeAgentId?: string;
   startedAt: number | null;
   muted: boolean;
+  /** 本通电话是否正在录音（N-L7-REC）。由 host 的 recording 事件写入，不是 renderer 读设置。 */
+  recording: boolean;
   /** 用户正在说（speech.started 之后、该轮 final 之前） */
   userSpeaking: boolean;
   /** 助手正在说（收到助手音频/字幕增量之后、response.done 之前） */
@@ -88,6 +90,7 @@ interface VoiceCallStoreState {
   }) => void;
   levelsChanged: (mic: number, playback: number) => void;
   muteChanged: (muted: boolean) => void;
+  recordingChanged: (recording: boolean) => void;
   pttCaptureChanged: (on: boolean) => void;
   reconnectingChanged: (
     reconnecting: boolean,
@@ -104,6 +107,7 @@ const INITIAL = {
   activeAgentId: undefined,
   startedAt: null,
   muted: false,
+  recording: false,
   userSpeaking: false,
   assistantSpeaking: false,
   pttCaptureOn: false,
@@ -165,6 +169,7 @@ export const useVoiceCallStore = create<VoiceCallStoreState>((set) => ({
 
   levelsChanged: (mic, playback) => set({ micLevel: mic, playbackLevel: playback }),
   muteChanged: (muted) => set({ muted }),
+  recordingChanged: (recording) => set({ recording }),
   pttCaptureChanged: (on) => set({ pttCaptureOn: on }),
   // 重连开始必须带进度（attempt 从 1 起）；结束/归零时不带，进度清零。
   reconnectingChanged: (reconnecting, progress) =>

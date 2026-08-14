@@ -266,6 +266,9 @@ export const zhSettingsModels = {
       pageDescription: '检查运行环境、网络、配置、数据库等 9 类系统状态；失败项可直接跳转修复。',
       exportLogs: '导出日志',
       exportBundle: '导出诊断包',
+      // 录音进包必须是导出时的显式勾选，默认不勾（N-L7-REC 工单 §4）。
+      includeRecordings: '包含通话录音（{count} 段，{size}）',
+      includeRecordingsHint: '录音是原始音频，无法脱敏。不勾选则诊断包里没有音频。',
       rerun: '重新诊断',
       start: '开始诊断',
       empty: '点击下方按钮开始系统诊断',

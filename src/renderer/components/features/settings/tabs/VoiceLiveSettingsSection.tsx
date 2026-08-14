@@ -57,6 +57,23 @@ interface VoiceprintOverviewView {
   callActive: boolean;
 }
 
+/** 通话录音（N-L7-REC）概览。只有计数/路径/上次清理，不含任何音频。 */
+interface VoiceRecordingOverviewView {
+  dir: string;
+  count: number;
+  totalBytes: number;
+  lastCleanup: {
+    at: number;
+    deleted: number;
+    freedBytes: number;
+    byRule: { age: number; count: number; bytes: number };
+  } | null;
+  limits: { retentionDays: number; maxBytes: number; maxCalls: number };
+}
+
+// ponytail: 一行够用，不为它建个 util 模块。
+const formatMb = (bytes: number): string => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
 export const VoiceLiveSettingsSection: React.FC = () => {
   const { t } = useI18n();
   const text = t.voice.settings;
@@ -107,6 +124,22 @@ export const VoiceLiveSettingsSection: React.FC = () => {
       .finally(() => setVoiceprintBusy(null));
   };
 
+  // 通话录音（N-L7-REC）：默认关 ⇒ 初值 false，别用 `!== false` 那套默认开的写法。
+  const [recordCalls, setRecordCalls] = useState(false);
+  const [recording, setRecording] = useState<VoiceRecordingOverviewView | null>(null);
+
+  const refreshRecording = async () => {
+    try {
+      setRecording(await ipcService.invokeDomain<VoiceRecordingOverviewView>(IPC_DOMAINS.VOICE, 'recordingOverview'));
+    } catch (error) {
+      // 旧壳没有这个 action：录音区降级为只有开关，不报错打断整页。
+      logger.warn('load recording overview failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+  useEffect(() => { void refreshRecording(); }, []);
+
   const refreshVoiceprint = async () => {
     try {
       setVoiceprint(await ipcService.invokeDomain<VoiceprintOverviewView>(IPC_DOMAINS.VOICE, 'voiceprintOverview'));
@@ -131,6 +164,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
         setEchoCancellation(voice?.live?.echoCancellation ?? 'auto');
         setSpeechRate(voice?.live?.speechRate ?? 'normal');
         setVoiceprintEnabled(voice?.live?.voiceprint !== false);
+        setRecordCalls(voice?.live?.recordCalls === true);
         setCostLimitInput(voice?.live?.callCostLimit ? String(voice.live.callCostLimit) : '');
         setCostLimitAction(voice?.live?.callCostLimitAction ?? 'warn');
         setKeybindings(mergeKeybindingsWithDefaults(
@@ -210,6 +244,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
     if (patch.echoCancellation !== undefined) setEchoCancellation(patch.echoCancellation);
     if (patch.speechRate !== undefined) setSpeechRate(patch.speechRate);
     if (patch.voiceprint !== undefined) setVoiceprintEnabled(patch.voiceprint);
+    if (patch.recordCalls !== undefined) setRecordCalls(patch.recordCalls);
     if ('callCostLimit' in patch) {
       setCostLimitInput(patch.callCostLimit ? String(patch.callCostLimit) : '');
     }
@@ -697,6 +732,63 @@ export const VoiceLiveSettingsSection: React.FC = () => {
               <p role="status" className="text-xs text-zinc-400" data-testid="voiceprint-message">{voiceprintMessage}</p>
             )}
             <p className="text-xs leading-5 text-zinc-500" data-testid="voiceprint-privacy">{text.voiceprintPrivacyBody}</p>
+          </div>
+        )}
+      </div>
+
+      {/* 通话录音（N-L7-REC）。开关默认关；知情文案与开关同框，「录什么/存哪/留多久/
+          怎么删」四件事一次说全——只写一句「开启录音诊断」不算知情（工单 §4）。 */}
+      <div className="border-t border-zinc-700 pt-4" data-testid="call-recording-section">
+        <div className="flex items-center justify-between">
+          <div className="pr-4">
+            <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.recordCallsTitle}</h3>
+            <p className="text-xs leading-5 text-zinc-500">{text.recordCallsDescription}</p>
+          </div>
+          <Toggle
+            size="md"
+            checked={recordCalls}
+            onChange={(next) => void persist({ recordCalls: next })}
+            aria-label={text.recordCallsToggleLabel}
+          />
+        </div>
+        <p className="mt-2 text-xs leading-5 text-zinc-500" data-testid="call-recording-informed">
+          {text.recordCallsInformedBody}
+        </p>
+
+        {recording && (
+          <div className="mt-3 space-y-2">
+            <p className="text-xs text-zinc-400" data-testid="call-recording-status">
+              {recording.count === 0
+                ? text.recordCallsEmpty
+                : text.recordCallsStatus
+                  .replace('{count}', String(recording.count))
+                  .replace('{size}', formatMb(recording.totalBytes))}
+            </p>
+            {/* 判据 5：清理必须对用户可见。台账在这里显示，不是静默删除。 */}
+            <p className="text-xs text-zinc-500" data-testid="call-recording-cleanup">
+              {recording.lastCleanup === null
+                ? text.recordCallsNeverCleaned
+                : text.recordCallsLastCleanup
+                  .replace('{time}', new Date(recording.lastCleanup.at).toLocaleString())
+                  .replace('{count}', String(recording.lastCleanup.deleted))
+                  .replace('{size}', formatMb(recording.lastCleanup.freedBytes))
+                  .replace('{rule}', [
+                    recording.lastCleanup.byRule.age > 0 ? text.recordCallsRuleAge : null,
+                    recording.lastCleanup.byRule.count > 0 ? text.recordCallsRuleCount : null,
+                    recording.lastCleanup.byRule.bytes > 0 ? text.recordCallsRuleBytes : null,
+                  ].filter((rule): rule is string => rule !== null).join('、'))}
+            </p>
+            <button
+              type="button"
+              data-testid="call-recording-open-folder"
+              onClick={() => {
+                void ipcService.invokeDomain(IPC_DOMAINS.WORKSPACE, 'openPath', { filePath: recording.dir })
+                  .catch((error) => logger.error('open recordings folder failed', error));
+              }}
+              className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 hover:border-zinc-600"
+            >
+              {text.recordCallsOpenFolder}
+            </button>
           </div>
         )}
       </div>

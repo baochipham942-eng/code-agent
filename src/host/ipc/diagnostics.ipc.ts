@@ -260,9 +260,13 @@ export function registerDiagnosticsHandlers(ipcMain: IpcMain): void {
         // audit + 脱敏 config + 环境指纹 + renderer-cache 清单 + 可选 Doctor 报告，打成 zip。
         // renderer 侧已有报告时随 payload 带上，避免再跑一次全量体检。
         case 'exportAppBundle': {
-          const payload = (request.payload ?? {}) as { doctorReport?: unknown };
+          const payload = (request.payload ?? {}) as { doctorReport?: unknown; includeVoiceRecordings?: unknown };
           const { buildAppDiagnosticsBundle } = await import('../diagnostics/appDiagnosticsBundleBuilder');
-          const result = await buildAppDiagnosticsBundle({ doctorReport: payload.doctorReport });
+          const result = await buildAppDiagnosticsBundle({
+            doctorReport: payload.doctorReport,
+            // 录音进包必须是导出时的显式勾选：只认字面 true，缺省/任何其他值都是不进包。
+            includeVoiceRecordings: payload.includeVoiceRecordings === true,
+          });
           return {
             success: true,
             data: {

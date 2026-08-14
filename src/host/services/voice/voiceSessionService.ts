@@ -21,6 +21,8 @@ import { getSessionManager } from '../infra/sessionManager';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
 import { createRealtimeTransport } from './realtimeTransport';
+import { createVoiceCallRecorder, type VoiceCallRecorder } from './voiceCallRecorder';
+import { runVoiceRecordingRetention } from './voiceRecordingRetention';
 import {
   getRealtimeVoiceProviderApiKey,
   resolveConfiguredRealtimeVoiceProfile,
@@ -165,6 +167,8 @@ interface ActiveSession {
   narration: NarrationState;
   /** 声纹身份（N-L7-SPK）：全内存，teardown 即丢。生命周期与判定语义见 voiceprintService。 */
   speaker: VoiceprintCallState;
+  /** 通话录音（N-L7-REC）：开关关（默认）时为 null；teardown 时收尾并跑一次三重上限。 */
+  recorder: VoiceCallRecorder | null;
 }
 
 // ponytail: 单进程内一个模块级变量就是「全局单路」的全部实现（方案 §2.6）。
@@ -475,6 +479,14 @@ async function teardown(reason: string): Promise<void> {
   }
   // 声纹临时态（环形缓冲/活跃集/逐候选 verdict）随通话一起丢（§4.3 不建档）。
   releaseVoiceprintForCall(session.speaker);
+  // 录音收尾 + 就地跑一次三重上限（N-L7-REC）。不 await：排水窗与挂断摘要不该等磁盘。
+  if (session.recorder) {
+    void session.recorder.close()
+      .then(() => runVoiceRecordingRetention())
+      .catch((error) => logger.warn('call recording finalize failed', {
+        voiceSessionId: session.id, error: error instanceof Error ? error.message : String(error),
+      }));
+  }
   logger.info('session ended', { voiceSessionId: session.id, reason });
   // D4：通话态标记必须先于任何后续动作解除，别让抬严挂在会话上不下来。
   // 只还「通话」这一张票。语音派出去、还在飞的 run 各自持票，抬严对它们继续有效——
@@ -620,6 +632,10 @@ async function connectAndBind(
       requested: liveSettings.voiceId,
     });
   }
+
+  // 通话录音（N-L7-REC）：闸在拨号这一刻判一次，判完整通不变——每帧读配置是白烧 CPU，
+  // 且中途改开关会产出半截文件。默认关 ⇒ recorder 恒为 null，两处 feed 都是空调用。
+  const recorder = liveSettings?.recordCalls === true ? createVoiceCallRecorder(id) : null;
 
   const transcriptBuf = { assistantByResponse: new Map<string, string>() };
   const transcriptMerge: TranscriptMergeState = { messageId: null, text: '', at: 0 };
@@ -961,6 +977,7 @@ async function connectAndBind(
         }
         const socket = clientRef.current;
         if (socket.readyState === socket.OPEN) socket.send(frame, { binary: true });
+        recorder?.feedDownstream(frame);
       },
       onToolCall: (call) => executeVoiceTool(call.name, call.arguments, call.origin),
     });
@@ -976,6 +993,8 @@ async function connectAndBind(
     });
     void persistVoiceCallFailure({ neoSessionId, voiceSessionId: id, code: 'VOICE_UPSTREAM_UNAVAILABLE', phase: 'handshake' });
     closeClientTerminal(client);
+    // 电话没打成也要收尾录音目录，否则每次握手失败留一个空录音（会顶掉条数上限）。
+    void recorder?.close();
     return;
   }
 
@@ -983,7 +1002,16 @@ async function connectAndBind(
   if (client.readyState !== client.OPEN) {
     endVoiceDispatch();
     await upstream.close().catch(() => undefined);
+    void recorder?.close();
     return;
+  }
+
+  // 媒体面不经 host 的形态（契约里有 direct，当前代码只构造 relay）录不到任何东西。
+  // 真出现时必须留痕：让用户以为在录、结果目录是空的，是最难判因的一种失败。
+  if (recorder && upstream.kind !== 'relay') {
+    logger.warn('call recording enabled but media plane bypasses host; recording will be empty', {
+      voiceSessionId: id, transportKind: upstream.kind,
+    });
   }
 
   const session: ActiveSession = {
@@ -1007,6 +1035,7 @@ async function connectAndBind(
     continuity: voiceprint.withholdContinuity ? null : continuity,
     focus: null,
     speaker: voiceprint.initialState(continuity),
+    recorder,
     interruption: {
       currentCandidateId: null,
       candidates: new Map(),
@@ -1021,6 +1050,8 @@ async function connectAndBind(
     }, VOICE_SESSION_MAX_DURATION_MS),
   };
   active = session;
+  // 录音指示以「recorder 真的建起来了」为准，不是「开关开着」。
+  if (recorder) send(client, { type: 'recording', active: true });
   voiceprint.activate({
     state: session.speaker,
     isCurrent: () => active?.id === id,
@@ -1115,6 +1146,8 @@ function bindClientHandlers(session: ActiveSession, client: WsSocket): void {
       if (upstream.kind === 'relay') upstream.sendAudio(data);
       // 声纹环形缓冲（仅内存，≈30s，通话结束即丢）。tracker 为 null 时零开销。
       session.speaker.tracker?.feed(data);
+      // 通话录音上行路（N-L7-REC）。开关关时 recorder 为 null，同样零开销。
+      session.recorder?.feedUpstream(data);
       // 采集链探针：首帧 + 每 200 帧记一次，带幅值峰值——没有这行，原生采集
       // 静音/断流与「模型不响应」在日志里不可区分（AEC 判因第三例的教训）。
       session.inboundAudioFrames += 1;
@@ -1198,6 +1231,8 @@ function reattachVoiceClient(session: ActiveSession, client: WsSocket): void {
   logger.info('client reattached', { voiceSessionId: session.id });
   // 让 Renderer 知道自己接回的是同一通电话（它据此保留 work items / 通话计时）。
   send(client, { type: 'state', state: 'live' });
+  // 重连换的是 socket 不是通话：录音还在继续，指示要跟着接回来。
+  if (session.recorder) send(client, { type: 'recording', active: true });
 }
 
 /** 测试用：强制释放当前通话。 */

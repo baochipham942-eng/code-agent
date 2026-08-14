@@ -123,7 +123,10 @@ describe('PTC 工具通道 · Host 侧把关', () => {
   });
 
   it('拒绝稀疏数组的洞（JSON 往返会变成 null）', async () => {
-    const sparse = [1, , 3] as unknown[];
+    // 显式造洞而不写 [1, , 3] 字面量——后者触发 no-sparse-arrays，语义一样
+    const sparse: unknown[] = [];
+    sparse[0] = 1;
+    sparse[2] = 3;
     const res = await handleRpc(
       toolRequest('Read', { items: sparse }),
       makeCtx({ executeTool: vi.fn(), visibleToolNames: ['Read'] }),

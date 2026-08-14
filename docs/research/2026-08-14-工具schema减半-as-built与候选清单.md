@@ -416,17 +416,14 @@ REQUIRED_GAME_PROMPT_TRIM_CANDIDATES = ['repo map', 'skills', 'deferred tools']
 
 `ARTIFACT_TASK_BRIEF_PROMPT` 没有这两个问题：它由 `needsArtifactTaskBrief()` 按**意图**正则注入（create/generate/build/做个/写一个…），不靠名字；且是 `required` 档，不在被裁名单里。产品负责人拍板的原始意图是「按需到达而不是常驻」，这个落点满足得更彻底，还不违反「一个能力只有一个家」。
 
-**⚠️ 但这个落点自己有洞，如实标注**：`needsArtifactTaskBrief` 的中文半边也在按词枚举（收了 `做个/做一个/写一个/生成/创建/制作`，没收 `写个/弄个/来个/搞个/画成`）。拿 10 条口语说法实测：
+**⚠️ 这个落点的召回率已用真库量过（见文末「遗留项调研」一节），结论修正如下。**
 
-```
-✓ 做个贪吃蛇游戏      ✗ 帮我写个 HTML 页面
-✓ 生成一个数据看板    ✗ 弄个网页给我看看
-✓ 做一个落地页        ✗ 来个 dashboard
-✓ build me a landing  ✗ 搞个 HTML 小工具
-✓ 写一个井字棋        ✗ 这个数据画成网页
-```
+本节初稿写的是「拿 10 条口语说法实测 5/10 miss，天花板 ~50%」。**那 10 条是我自己编的，结论是错的。**改用真库行为真值重测（判据=这一轮到底有没有真的写出 artifact 文件，不用另一个正则做判据）：
 
-**5/10 miss。**天花板是 ~50%，不是 100%——但现状是 0%（规则从不下发），所以仍是严格改进。没在本单顺手放宽正则：它是 `required` 档，误触发会把 repo map / skills / deferred tools 挤掉，放宽边界必须先拿**真库里的真实说法**跑命中率，不能靠编的 10 条样本。已列为下方待办。
+- 产物型交付 106 轮，命中 91 → **召回 85.8%**
+- 其中 **HTML 类 76 轮，命中 76 → 召回 100.0%**（正是本节这条规则的受众）
+
+漏掉的 15 条全是 `.md` 报告/文档类（「撰写一份报告」「深入调研」「扫一下 shared/ 写进 INDEX」），**没有一条是 HTML**。所以对本节的搬运而言这个落点是满分，真正的缺口在文档型产物。详见文末。
 
 ### `outputFormat`：只删死文件，不加新规则
 
@@ -452,3 +449,90 @@ Markdown 结构那半边（headers / lists / tables / code blocks）没有接回
 ### 本单新增待办
 
 - **放宽 `needsArtifactTaskBrief` 的意图识别**：现测 5/10 miss，中文口语动词枚举不全。放宽前先从真库抽用户真实的产物类请求跑命中率与误触发率（它是 `required` 档，误触发会挤掉能力发现块）。
+
+---
+
+## 遗留项调研（2026-08-14，规则分流三单收尾后补）
+
+三单收尾时挂了三条「查出但没处理」。开单前先把它们量到能写验收判据的程度。
+
+### 遗留一：schema 预算门看不见 `dynamicDescription`——今天已经少算 258 token
+
+`coreToolSchemaBudget.test.ts` 数的是 `schema.description`，而模型收到的是
+`toolDefinitions.ts:63` 算出来的 `cloud?.description || schema.dynamicDescription?.() || schema.description`。
+把全部 130 个 schema 的两种取值都算一遍：
+
+| | |
+| --- | ---: |
+| 带 `dynamicDescription` 的 schema | **5 个** |
+| 其中在 CORE 里的 | **1 个（`WebSearch`）** |
+| `WebSearch` static / dynamic | 77 / **335**（delta **+258**） |
+| CORE description 合计：门看到的 | 1504 |
+| CORE description 合计：模型收到的 | **1762** |
+
+**门报 4349，模型实收 4607，低估 5.9%。** 另外 4 个（`Task` / `spawn_agent` / `AgentSpawn` / `workflow_orchestrate`）都不在 CORE，本门不管——但注意本次测得的它们 dynamic≈static 是因为测试环境里 agent 注册表没加载走了 fallback 分支，真实运行时 `Task` 会把子代理目录渲染进去，只会更大。
+
+**为什么当初写成静态**：`WebSearch` 的 `dynamicDescription()` 里嵌了当天日期，直接量会让门每天变。**这不构成不量的理由**——注入一个固定日期再量即可。
+
+**绕过成本为零**：现在把话写进 `dynamicDescription` 完全不计入预算。这是「门必须能报告自己的盲区」的反面教材。
+
+**建议验收判据**：门改量 `dynamicDescription?.() ?? description`（日期类动态段用固定时钟），基线一次性对齐到真实值；并加一条断言——CORE 里任何带 `dynamicDescription` 的 schema，其动态值必须被计入。
+
+### 遗留二：`needsArtifactTaskBrief` 召回率——我原来那个数是错的
+
+**方法**：不用另一个正则当判据（那是循环论证），改用**行为真值**——一条用户消息之后的那一轮，助手到底有没有真的写出 artifact 文件（扫 `messages.tool_calls` 里 `Write`/`Append`/`Edit` 系列的 `file_path`）。语料是两个真库（生产 `~/.code-agent/code-agent.db` 1064MB + Dev 槽 53MB）。
+
+**先切噪音**：原始 3238 个用户轮，按正文去重后只剩 **1296**——**1942 轮是 eval 夹具的重复 prompt**（同一条 `重构 src/api/middleware/auth.ts` 出现几十次）。不去重的话六成样本是噪音。
+
+| 分桶（去重后 1296 轮） | 数量 |
+| --- | ---: |
+| 产物型交付（html/md/xlsx/pptx/docx/csv/图） | 106 |
+| 仅普通代码文件（ts/js/css/py…） | 83 |
+| 写了文件但扩展名未分类（.yml/.prisma/.nvmrc…） | 19 |
+| 没写任何文件 | 1088 |
+
+**召回（可信）**：
+
+| | 轮数 | 命中 | 召回 |
+| --- | ---: | ---: | ---: |
+| 产物型交付 | 106 | 91 | **85.8%** |
+| 其中 HTML 类 | 76 | 76 | **100.0%** |
+| 对照：`needsGenerativeUI` 在同一集 | 106 | 4 | **3.8%** |
+
+**这推翻了本报告初稿的「5/10 miss、天花板 ~50%」**——那 10 条是我自己编的说法。真实召回是 85.8%，HTML 类满分。
+
+顺带一条：HTMLSKILL 工单原本让我「触发条件参考现成的 `needsGenerativeUI`」。**它在产物型交付集上召回只有 3.8%**，用它当触发器等于不触发。没照做是对的。
+
+**漏掉的 15 条全是 `.md` 文档/报告类**，一条 HTML 都没有：
+
+```
+撰写一份关于 AI Agent 在企业中应用的报告，输出到 …/ai_report.md
+帮我深入调研一下 2026 年上海 AI 产品经理市场的薪资水平和技能要求
+扫一下 shared/ 写进 INDEX
+把我的龙虾升级
+设计一组虚构卡券系统的 REST API …
+```
+
+缺的中文动词是 **撰写 / 调研 / 设计（一组）/ 扫 / 提炼 / 升级**，以及 `输出到 <路径>` 这种「动词在别处、路径在句尾」的形态。**所以真正的缺口是文档型产物，不是 HTML。**
+
+**误触发率：这个数我量不出来，不要引用任何数字。** 初测得到 23.7%，但逐条看负例后发现负例集是脏的——「没写文件」不等于「不是产物请求」：
+
+- 有 19 轮写了文件只是扩展名没分类（已修正分桶）
+- 剩下的大量负例长这样：`任务未完成。以下文件需要创建但尚未创建：src/api/controllers/users.controller.ts。请立即创建这些文件。` ——**这些是 eval 夹具在专门探测「模型不服从」**，用户确实要求建文件，模型没建。把它们算成误触发是错的。
+
+要量误触发必须换判据（人工标注一批，或者只在有机对话会话上量，把 eval 会话整个排除），不是加样本。
+
+**⚠️ 语料本身的天花板**：这两个库九成是 eval 夹具与自测，不是有机的用户对话。上面的召回数**只对「这个语料像什么样的请求」成立**，外推到真实用户要打折。
+
+**建议验收判据**：① 目标是文档型产物的召回，不是 HTML（HTML 已 100%）；② 放宽后必须在**同一份行为真值集**上回归，HTML 召回不许掉；③ 误触发要先有干净的负例集才谈——它是 `required` 档注入块（真 token **886**），误触发会挤掉 repo map / skills / deferred tools，代价是实的。
+
+### 遗留三：`BUILTIN_RULES` 是这批规则的第二份死副本，客户端侧删除是安全的
+
+`src/host/services/cloud/builtinConfig.ts` 的 `BUILTIN_RULES` 存着 12 条规则正文（含三单删掉的 gitSafety / errorHandling / codeSnippet / attachmentHandling / htmlGeneration / outputFormat），唯一读者是 `cloudConfigService.getRule()`，而 **`getRule()` 全仓零调用**。
+
+当初没删是担心 `rules` 是 `CloudConfig` 的必填字段、属于控制面下发的线上契约。查完可以放心：
+
+- 远端配置走 `acceptFetchedConfig` → 验签封套 → 直接当 `CloudConfig` 用，**没有任何按字段的严格 schema 校验**（`src/shared/contract/` 下没有对应的 zod/schema 定义）
+- 因此控制面继续下发 `rules` 字段也只是被忽略，**客户端删字段不会让线上下发失败**
+
+**建议验收判据**：删 `BUILTIN_RULES` + 12 条常量 + `getRule()` + `CloudConfig.rules` 字段；`gates:local` 全绿；knip 两道棘轮基线同步下调（这次会掉十几个死导出）。控制面侧是否停发另说，不阻塞客户端。

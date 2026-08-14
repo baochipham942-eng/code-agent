@@ -8,10 +8,10 @@
 export type CapabilityCandidateTier = 'skill' | 'workflow' | 'plugin';
 
 /** 条目状态：拉式列表的三态 + 折叠位 */
-export type CapabilityCandidateState = 'active' | 'ignored' | 'dismissed';
+type CapabilityCandidateState = 'active' | 'ignored' | 'dismissed';
 
 /** 采集到的信号种类（S1~S3） */
-export interface CapabilityCandidateSignals {
+interface CapabilityCandidateSignals {
   /** S1：同一组工具被反复拼凑（默认信号，任何重复都算） */
   repeated: boolean;
   /** S2：中途有步骤失败，随后换别的工具达成（降级完成） */

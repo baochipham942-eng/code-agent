@@ -131,9 +131,6 @@ export const CAPABILITY_CANDIDATE_CHANNELS = {
   DISMISS: 'capabilityCandidate:dismiss',
 } as const;
 
-export type CapabilityCandidateChannel =
-  (typeof CAPABILITY_CANDIDATE_CHANNELS)[keyof typeof CAPABILITY_CANDIDATE_CHANNELS];
-
 // ============================================================================
 // Prompt Command（/命令协议层，roadmap 2.2）IPC 通道
 // ============================================================================

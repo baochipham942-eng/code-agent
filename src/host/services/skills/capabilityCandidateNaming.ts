@@ -55,7 +55,7 @@ interface NamingReply {
   summary?: string;
 }
 
-export function parseNamingReply(content: string): NamingReply[] {
+function parseNamingReply(content: string): NamingReply[] {
   const start = content.indexOf('[');
   const end = content.lastIndexOf(']');
   if (start < 0 || end <= start) return [];

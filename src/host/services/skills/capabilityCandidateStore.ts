@@ -22,7 +22,7 @@ interface LedgerFile {
   candidates: CapabilityCandidateRecord[];
 }
 
-export function getCandidateLedgerPath(): string {
+function getCandidateLedgerPath(): string {
   return path.join(getUserConfigDir(), CAPABILITY_CANDIDATES.LEDGER_FILENAME);
 }
 

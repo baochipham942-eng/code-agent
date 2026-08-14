@@ -198,13 +198,13 @@ export function decayCount(count: number, elapsedMs: number): number {
 }
 
 /** 单次成本：步数 × token（拿不到用量时退化为纯步数，不假装有数据） */
-export function unitCostOf(avgSteps: number, avgTokens: number): number {
+function unitCostOf(avgSteps: number, avgTokens: number): number {
   const tokenFactor = avgTokens > 0 ? avgTokens / 1000 : 1;
   return Math.max(avgSteps, 1) * Math.max(tokenFactor, 1);
 }
 
 /** 可参数化度 = 变异度倒数：只有一种步骤顺序 ⇒ 1（最可参数化） */
-export function parameterizabilityOf(variantCount: number): number {
+function parameterizabilityOf(variantCount: number): number {
   return 1 / Math.max(variantCount, 1);
 }
 
@@ -223,7 +223,7 @@ export function mechanicalScoreOf(record: CapabilityCandidateRecord, now: number
 // 沉淀层级路由 · 三测试
 // ---------------------------------------------------------------------------
 
-export function runTierTests(record: Omit<CapabilityCandidateRecord, 'tests' | 'tier'>): CapabilityCandidateTierTests {
+function runTierTests(record: Omit<CapabilityCandidateRecord, 'tests' | 'tier'>): CapabilityCandidateTierTests {
   const variance = record.variants.length / Math.max(record.occurrences, 1);
   return {
     deterministic: variance <= CAPABILITY_CANDIDATES.DETERMINISTIC_VARIANCE_MAX,
@@ -350,7 +350,7 @@ function resolveState(
 // 读取面（人与 agent 共用同一张表）
 // ---------------------------------------------------------------------------
 
-export function toView(record: CapabilityCandidateRecord, now: number): CapabilityCandidateView {
+function toView(record: CapabilityCandidateRecord, now: number): CapabilityCandidateView {
   const mechanicalScore = mechanicalScoreOf(record, now);
   const cooledDown = record.state === 'ignored'
     && (!record.ignoredUntil || now >= record.ignoredUntil);

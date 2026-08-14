@@ -13,10 +13,6 @@ import { fallbackName } from '../services/skills/capabilityCandidateNaming';
 
 const noticedSessions = new Set<string>();
 
-export function resetCapabilityCandidateNoticeForTests(): void {
-  noticedSessions.clear();
-}
-
 export function buildCapabilityCandidateNotice(sessionId?: string | null): string | null {
   if (!sessionId || noticedSessions.has(sessionId)) return null;
 

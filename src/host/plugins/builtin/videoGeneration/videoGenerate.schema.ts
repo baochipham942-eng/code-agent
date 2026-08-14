@@ -7,6 +7,7 @@ export const videoGenerateSchema: ToolSchema = {
   description: `生成 AI 视频，可以根据文字描述或图片生成短视频。
 
 支持横屏、竖屏、方形三种比例，时长 5 秒或 10 秒。生成需要 30-180 秒。`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

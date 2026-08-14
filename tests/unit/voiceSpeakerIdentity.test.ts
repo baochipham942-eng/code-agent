@@ -25,7 +25,7 @@ interface Turn {
 /** 喂一轮语音：先进帧再报 speech_stopped。embed mock 按「该轮属于谁」返回指纹。 */
 function makeHarness(opts: { owner?: Float32Array[]; onOwnerRecognized?: () => void } = {}) {
   const plan = new Map<string, Float32Array>();
-  const embed = vi.fn(async () => fp(0));
+  const embed = vi.fn<(pcm: Float32Array) => Promise<Float32Array | null>>(async () => fp(0));
   const tracker = createSpeakerIdentityTracker({
     ownerEmbeddings: opts.owner ?? [],
     embed,

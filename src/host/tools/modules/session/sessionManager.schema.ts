@@ -18,6 +18,7 @@ Safety:
 - archive refuses the current session.
 - archive refuses running, queued, paused, or cancelling sessions.
 - delete is intentionally not supported.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

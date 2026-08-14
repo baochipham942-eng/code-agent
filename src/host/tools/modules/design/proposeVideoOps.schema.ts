@@ -14,6 +14,7 @@ Modes:
 - i2v (image-to-video): animate an existing image node — set mode="i2v" and "baseNodeId" to that node's id (from the injected canvas snapshot). A "prompt" can refine the motion.
 
 Use this only in the design workspace. Do not specify coordinates — the canvas auto-places the result.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

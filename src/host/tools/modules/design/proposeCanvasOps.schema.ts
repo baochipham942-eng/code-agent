@@ -23,6 +23,7 @@ Every op must include:
 - source: one of user_request | design_acceptance_contract | canvas_snapshot | qa_finding | agent_inferred.
 - affectedNodes: existing canvas node ids affected by this op. Use [] for addShape/generateImage when no existing node is affected.
 Only image generation is supported here (no video / no editing of existing images yet). For non-generate ops, only target nodes that exist in the current canvas snapshot.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

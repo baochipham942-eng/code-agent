@@ -16,6 +16,7 @@ How it works once granted:
 - Destructive ops (discard/delete) and video are NEVER autonomous — they still need step-by-step approval.
 
 This is a PRE-AUTHORIZATION of spend, not free money: the user sees and approves the budget cap, and you can never exceed it.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

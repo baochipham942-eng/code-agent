@@ -19,6 +19,7 @@ Call this first whenever the user asks you to do something in the terminal ("ope
 Opening a terminal needs no approval — it is an empty shell until something is typed into it. Everything you subsequently send with terminal_write still goes through the normal command-safety and approval flow.
 
 ${ROUTING}`,
+  outputSchema: { type: 'string' },
   inputSchema: { type: 'object', properties: {} },
   category: 'shell',
   // 开一个空 shell 本身无副作用可言，产品拍板不进审批（permissionLevel 'read' ⇒
@@ -34,6 +35,7 @@ export const terminalListSchema: ToolSchema = {
   description: `Lists the interactive terminal sessions the user has open, with their shell, working directory and whether they are still alive.
 
 ${ROUTING}`,
+  outputSchema: { type: 'string' },
   inputSchema: { type: 'object', properties: {} },
   category: 'shell',
   permissionLevel: 'read',
@@ -46,6 +48,7 @@ export const terminalReadSchema: ToolSchema = {
   description: `Reads recent output from the user's interactive terminal. Output is stripped of terminal control codes and truncated to the most recent lines.
 
 ${ROUTING}`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {
@@ -76,6 +79,7 @@ If the terminal is sitting on a password, passphrase, PIN or verification-code p
 A successful result means the keystrokes were delivered — NOT that the program accepted, understood or finished them. Always call terminal_read (or terminal_wait) afterwards and look at the screen before you tell the user anything about what happened. Never report "it received the input" or "it is processing" from the write result alone.
 
 ${ROUTING}`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {
@@ -113,6 +117,7 @@ export const terminalWaitSchema: ToolSchema = {
   description: `Waits for the user's interactive terminal to settle or to print something matching a pattern, then returns the recent output. Use after terminal_write instead of guessing how long a command takes.
 
 ${ROUTING}`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

@@ -5,6 +5,12 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+// 口径：走仓里真 tokenizer（cl100k_base BPE），不用「字符数 ÷ 3」——后者按语言系统性偏斜
+// （纯中文真 token 约是它的 2.16 倍），而这里量的注入文案几乎全是中文，÷3 会把它们低估约两成。
+// 2026-08-14 N-L8-RECALC 换口径，基线同步重钉在真值上（见 baseline 的 reason）。
+import { encode } from 'gpt-tokenizer';
+
+const countTokens = (text) => encode(text).length;
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -151,7 +157,7 @@ if (panoramaPoints !== baseline.panoramaPointCount) {
 // 转发/门面调用的实参是变量，staticText 为空，自然不计入，无需行号豁免清单。
 const unguardedStatic = calls.filter((call) => !call.guarded && call.staticText);
 let globalTokens = 0;
-for (const call of unguardedStatic) globalTokens += Math.round(call.staticText.length / 3);
+for (const call of unguardedStatic) globalTokens += countTokens(call.staticText);
 
 function voiceStaticText() {
   const file = path.join(hostRoot, 'agent/orchestratorTurnContext.ts');
@@ -172,7 +178,7 @@ function voiceStaticText() {
 
 const voiceText = voiceStaticText();
 if (!voiceText) failSelfCheck('未找到 live_voice_permission_notice 固定文案，语音预算已失去测量能力');
-const voiceTokens = Math.round(voiceText.length / 3);
+const voiceTokens = countTokens(voiceText);
 const voiceMin = baseline.liveVoiceFixedTokens * (1 - baseline.liveVoiceToleranceRatio);
 const voiceMax = baseline.liveVoiceFixedTokens * (1 + baseline.liveVoiceToleranceRatio);
 
@@ -188,7 +194,7 @@ if (calls.length !== baseline.astCallCount) {
 if (unguardedStatic.length > 0 && globalTokens > baseline.globalFixedTokens) {
   console.error(`[attention-budget-ratchet] ✗ 发现 ${unguardedStatic.length} 个无条件静态注入调用点：`);
   for (const call of unguardedStatic) {
-    console.error(`  ${call.point} static=${Math.round(call.staticText.length / 3)} token`);
+    console.error(`  ${call.point} static=${countTokens(call.staticText)} token`);
   }
 }
 if (globalTokens > baseline.globalFixedTokens) {

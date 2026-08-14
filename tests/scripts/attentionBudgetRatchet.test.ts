@@ -17,7 +17,9 @@ function makeFixture(): string {
   writeFileSync(join(root, 'scripts/attention-budget-ratchet-baseline.json'), JSON.stringify({
     schemaVersion: 1,
     globalFixedTokens: 0,
-    liveVoiceFixedTokens: 55,
+    // 真 tokenizer（cl100k_base BPE）下这段夹具文案的实测值；同一段文本按「字符数 ÷ 3」
+    // 只有 60——两个数字差 55%，所以下面第一条用例顺带把口径钉死：口径退回 ÷3 就报红。
+    liveVoiceFixedTokens: 93,
     liveVoiceToleranceRatio: 0.1,
     panoramaMatchedFiles: 1,
     astCallCount: 1,
@@ -62,6 +64,8 @@ describe('attention-budget-ratchet', () => {
     const result = run(makeFixture());
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('本地无守卫静态注入总量 current=0 baseline=0');
+    // 口径锚：93 是真 tokenizer 值，÷3 口径会打印 60。这条断言让「悄悄改回字符估算」直接红。
+    expect(result.stdout).toContain('实时语音条件路径 current=93 baseline=93');
     expect(result.stdout).toContain('✓ 注入点计数、无守卫静态总量与语音固定开销均未超基线');
   });
 

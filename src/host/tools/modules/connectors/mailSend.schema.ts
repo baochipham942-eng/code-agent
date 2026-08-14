@@ -16,6 +16,7 @@ Optional parameters:
 - attachments
 
 Use this only when the user explicitly wants to send an email now.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

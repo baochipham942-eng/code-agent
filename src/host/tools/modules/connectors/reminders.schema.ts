@@ -11,6 +11,7 @@ Supported actions:
 - list_reminders
 
 Use this for local reminders inspection in office workflows.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

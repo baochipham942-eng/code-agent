@@ -16,6 +16,7 @@ Optional parameters:
 - attachments
 
 Use this when the user wants a real email draft prepared locally, but not sent yet.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

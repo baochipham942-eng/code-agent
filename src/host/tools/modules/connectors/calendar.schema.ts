@@ -11,6 +11,7 @@ Supported actions:
 - list_events
 
 Use this for local calendar inspection in office workflows.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

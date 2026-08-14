@@ -14,6 +14,7 @@ Optional parameters:
 - remind_at_ms
 
 Use this only when the user wants to create a real local reminder.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

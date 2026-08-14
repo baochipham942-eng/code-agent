@@ -55,6 +55,17 @@ vi.mock('child_process', async (importOriginal) => {
   return { ...actual, default: actual, execFileSync: (...args: unknown[]) => execFileSyncMock(...args) };
 });
 
+// 🔴 killProcessTree 必须在这一层挡掉：上面那个 fake pty 的 pid 是**编出来的**（1001…），
+// 真让它跑组模式就会对本机一个真实存在的进程组发 SIGTERM/SIGKILL。
+// 而且 mock 句柄本来就回答不了「树死没死」——那件事由
+// tests/unit/services/terminalTreeExit.realProcess.test.ts 用真 PTY 证明。
+// 这里只验调用契约：dispose 确实走了整树退出证明、且按组收。
+const killProcessTreeMock = vi.fn(async (..._args: unknown[]) => {});
+vi.mock('../../../src/host/tools/shell/platformShell', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/tools/shell/platformShell')>();
+  return { ...actual, killProcessTree: (...args: unknown[]) => killProcessTreeMock(...args) };
+});
+
 const tmpConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'term-p0-'));
 vi.mock('../../../src/host/config/configPaths', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../src/host/config/configPaths')>();
@@ -71,12 +82,14 @@ const {
   onTerminalOutput,
   openTerminalSession,
   reapOrphanTerminals,
+  reapTerminalSessions,
   resizeTerminalSession,
   writeToTerminalSession,
 } = await import('../../../src/host/services/terminal/terminalSessionManager');
 
 beforeEach(() => {
   spawned.length = 0;
+  killProcessTreeMock.mockClear();
   __resetTerminalSessionsForTest();
 });
 
@@ -129,12 +142,43 @@ describe('terminal session lifecycle', () => {
     expect(getTerminalSnapshot('s1')?.alive).toBe(true);
   });
 
-  it('kills the pty and drops the session on dispose', () => {
+  it('kills the pty and drops the session on dispose', async () => {
     openTerminalSession({ sessionId: 's1', cwd: '/tmp' });
-    expect(disposeTerminalSession('s1')).toBe(true);
+    await expect(disposeTerminalSession('s1')).resolves.toBe(true);
 
     expect(spawned[0].killed).toBe(true);
     expect(getTerminalSnapshot('s1')).toBeNull();
+  });
+
+  it('dispose 等整树确认退出才返回（而不是发完信号就走）', async () => {
+    openTerminalSession({ sessionId: 's1', cwd: '/tmp' });
+    await disposeTerminalSession('s1');
+
+    // node-pty 在 POSIX 上天生 setsid 自成进程组，所以组模式无条件成立（pid > 0 是闸门）
+    expect(killProcessTreeMock).toHaveBeenCalledWith(
+      expect.objectContaining({ pid: spawned[0].pid }),
+      { posixGroupKill: true },
+    );
+  });
+
+  it('已经退出的会话 dispose 时不再发信号', async () => {
+    openTerminalSession({ sessionId: 's1', cwd: '/tmp' });
+    spawned[0].emitExit(0);
+
+    await expect(disposeTerminalSession('s1')).resolves.toBe(true);
+
+    expect(spawned[0].killed).toBe(false);
+    expect(killProcessTreeMock).not.toHaveBeenCalled();
+  });
+
+  it('reapTerminalSessions 收掉全部会话并返回计数（停机收尸调的就是它）', async () => {
+    openTerminalSession({ sessionId: 's1', cwd: '/tmp' });
+    openTerminalSession({ sessionId: 's2', cwd: '/tmp' });
+
+    await expect(reapTerminalSessions()).resolves.toBe(2);
+
+    expect(listTerminalSessions()).toEqual([]);
+    expect(killProcessTreeMock).toHaveBeenCalledTimes(2);
   });
 
   it('marks the session dead when the shell exits', () => {

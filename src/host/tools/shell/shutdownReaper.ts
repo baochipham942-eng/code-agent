@@ -10,20 +10,21 @@
 // ============================================================================
 
 import { getSpawnGuard } from '../../agent/spawnGuard';
+import { reapTerminalSessions } from '../../services/terminal/terminalSessionManager';
 import { getAllBackgroundTasks, killBackgroundTask } from './backgroundTasks';
 import { reapPtySessions } from './ptyExecutor';
 
 /**
- * 取消全部在跑 agent，并等待后台任务与 PTY 会话的进程树确认退出。
+ * 取消全部在跑 agent，并等待后台任务、PTY 会话与终端会话的进程树确认退出。
  *
  * 必须排在关库之前调用：关库是不设超时上限的最后一步，排在它后面的步骤在真机上
  * 可能永远轮不到。本函数自己的等待上限由 killProcessTree 的 confirmTimeoutMs 兜住。
  *
- * @returns 取消的 agent 数、收掉的后台任务数与 PTY 会话数（供属主打日志）
+ * @returns 取消的 agent 数、收掉的后台任务数、PTY 会话数与终端会话数（供属主打日志）
  */
 export async function reapChildProcesses(
   reason: string = 'app_shutdown',
-): Promise<{ cancelledAgents: number; killedTasks: number; killedPtySessions: number }> {
+): Promise<{ cancelledAgents: number; killedTasks: number; killedPtySessions: number; killedTerminalSessions: number }> {
   let cancelledAgents = 0;
   try {
     cancelledAgents = getSpawnGuard().cancelAll(reason);
@@ -53,5 +54,19 @@ export async function reapChildProcesses(
     console.warn('[shutdown] reapPtySessions failed:', error);
   }
 
-  return { cancelledAgents, killedTasks: results.filter(Boolean).length, killedPtySessions };
+  // 第四个会 spawn 进程的子系统：会话级交互终端。它自带「下次启动收孤儿」的兜底
+  // （reapOrphanTerminals），但那要等到下次启动——用户不重启就一直挂着，所以停机时也收一次。
+  let killedTerminalSessions = 0;
+  try {
+    killedTerminalSessions = await reapTerminalSessions();
+  } catch (error) {
+    console.warn('[shutdown] reapTerminalSessions failed:', error);
+  }
+
+  return {
+    cancelledAgents,
+    killedTasks: results.filter(Boolean).length,
+    killedPtySessions,
+    killedTerminalSessions,
+  };
 }

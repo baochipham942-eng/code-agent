@@ -28,9 +28,12 @@ import './artifactGeneration';
 import './generativeUI';
 import './questionForm';
 
-// Rules
-import './rules/htmlGeneration';
-import './rules/outputFormat';
+// Rules —— 空了。原 rules/ 下 16 个规则块全部处理完毕（2026-08-14 L8 规则分流三单）：
+// 已覆盖的删、真缺的接回 identity、讲某个工具怎么用的下沉到那个工具的 description、
+// 讲产物怎么写的并进 artifactGeneration 的按需注入块。剩下的 rules/injectionDefense.ts
+// 不走这里（它由 inputSanitizer 直接消费，是活的）。
+// 往这里加新 import 前先想清楚：builder.ts 的 RULE_TIERS 是空数组，登记进来只让规则
+// 出现在设置页，不会发给模型——这正是这三单要清理的病。
 
 // Tools
 import './tools/bash';

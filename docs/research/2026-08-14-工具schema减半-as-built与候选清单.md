@@ -379,3 +379,76 @@ cloud meta 优先级最高。而 `builtinConfig.BUILTIN_TOOL_META` 里有一条 
 
 1. **`src/host/services/cloud/builtinConfig.ts` 的 `BUILTIN_RULES` 是这批规则的第二份死副本**：12 条规则正文（含本单删掉的 gitSafety / errorHandling / codeSnippet / attachmentHandling，和 HTMLSKILL 那单的 htmlGeneration）在这里各存一份，唯一读者 `cloudConfigService.getRule()` **全仓零调用**。没在本单删是因为 `rules` 是 `CloudConfig` 的必填字段（控制面下发的线上契约），摘字段要跨端确认，超出本单范围。
 2. **schema 预算门看的是静态 `description`，模型收到的是 `dynamicDescription`**：`WebSearch` 静态 77 token、动态拼出来约 330，门只数前者。本单改的四个工具都没有 `dynamicDescription`，所以这次的数字是准的，但这道门对「把话写进 dynamicDescription」是全盲的——绕过成本为零。值得单开一张补上。
+
+---
+
+## 规则分流第三刀落地结果（2026-08-14，N-L8-HTMLSKILL）
+
+`prompts/rules/` 最后两块。两块的工单方向复核后都做了调整，产品负责人 2026-08-14 已重新拍板。
+
+### `htmlGeneration`（393 → 真 tokenizer 未单独重算，量级同上批）：不做成 skill，并进现役产物简报
+
+工单原方向是「转成内置 skill 按需到达」。逐段核完改成**并进 `ARTIFACT_TASK_BRIEF_PROMPT`**，两条依据：
+
+**一、这块内容大半已被现役机制覆盖，且有一段是过时且冲突的。**
+
+| htmlGeneration 段 | 核完结论 |
+| --- | --- |
+| 自包含单文件 / 内联 CSS+JS / 不要 build tools | **真空缺**，全仓 live 提示词 grep 不到 → 搬 |
+| 现代 CSS / 视觉好看 / 响应式 | `GAME_ARTIFACT_CONTRACT` 有，但只覆盖游戏 → 合进上面那条 |
+| 大文件分步生成：**写骨架后用 Edit 增量加内容** | 🔴 **过时且与现役契约冲突**——`ARTIFACT_TASK_BRIEF` 的写法是 `Write` 骨架 → `Append` 有序分块 → 最后一块 `final: true`。留着会教模型走已经不用的路 → 删 |
+| 截断检测 | 同上，已被 Append 机制取代 → 删 |
+| HTML 样板结构示例 | 纯样板 → 删 |
+
+净搬运量 3 行，加在 `ARTIFACT_TASK_BRIEF_PROMPT` 的 Writing rules 段里。
+
+**二、内置 skill 的到达路径在「生成 HTML」这个场景恰好是最弱的一条。**
+
+`skillInvocationResolver.ts` 的匹配只有四条路：用户打 `/名字`、消息含 `/名字`、消息**字面**含名字或别名、以及 ToolSearch 关键词召回（名字进常发索引，可 `select:` 拉全量）。前三条都是「要用户逐字打出名字」——正是本仓 ADR-056 里 `spawn_agent` 99.1% 轮次不可达的同一个形态；第四条召回率实测 58%。
+
+更要命的是 `messageBuild.ts:99`：
+
+```
+REQUIRED_GAME_PROMPT_TRIM_CANDIDATES = ['repo map', 'skills', 'deferred tools']
+```
+
+游戏 / 产物提示词块要腾地方时，**装着 skill 名字的索引块是第一批被裁掉的**——而那正是用户在生成 HTML 游戏的那一轮。skill 会在最该到场的时候最先消失。
+
+`ARTIFACT_TASK_BRIEF_PROMPT` 没有这两个问题：它由 `needsArtifactTaskBrief()` 按**意图**正则注入（create/generate/build/做个/写一个…），不靠名字；且是 `required` 档，不在被裁名单里。产品负责人拍板的原始意图是「按需到达而不是常驻」，这个落点满足得更彻底，还不违反「一个能力只有一个家」。
+
+**⚠️ 但这个落点自己有洞，如实标注**：`needsArtifactTaskBrief` 的中文半边也在按词枚举（收了 `做个/做一个/写一个/生成/创建/制作`，没收 `写个/弄个/来个/搞个/画成`）。拿 10 条口语说法实测：
+
+```
+✓ 做个贪吃蛇游戏      ✗ 帮我写个 HTML 页面
+✓ 生成一个数据看板    ✗ 弄个网页给我看看
+✓ 做一个落地页        ✗ 来个 dashboard
+✓ build me a landing  ✗ 搞个 HTML 小工具
+✓ 写一个井字棋        ✗ 这个数据画成网页
+```
+
+**5/10 miss。**天花板是 ~50%，不是 100%——但现状是 0%（规则从不下发），所以仍是严格改进。没在本单顺手放宽正则：它是 `required` 档，误触发会把 repo map / skills / deferred tools 挤掉，放宽边界必须先拿**真库里的真实说法**跑命中率，不能靠编的 10 条样本。已列为下方待办。
+
+### `outputFormat`：只删死文件，不加新规则
+
+工单方向是「去掉鼓励 emoji 那段，按 Amp 的 `responses never contain emojis` 来」。复核发现**这在运行时是零效果**：
+
+```
+rules/outputFormat.ts   从不下发（RULE_TIERS 空数组）
+cloud BUILTIN_RULES     getRule() 全仓零调用
+identity.* 六段          grep emoji → 0 命中
+其余 live 提示词          grep emoji → 0 命中
+```
+
+全仓没有任何一条活着的 emoji 规则。删掉这个文件不会让模型少用一个 emoji，因为它从来没被鼓励过。
+
+要真的改变输出调性，得往**常驻层加**一条禁令（`identity.conciseness` 的 `<output_style>`，约 15 token/轮）——那是「加规则」不是「删规则」，与工单字面相反，且该不该加取决于真机输出里 emoji 到底多不多，没量过就是在猜。产品负责人拍板：**本单只删死文件，如实记录这是清理死代码而非调性改动**；要不要真的禁 emoji 另开一单，先量再定。
+
+Markdown 结构那半边（headers / lists / tables / code blocks）没有接回：`identity.conciseness` 已覆盖输出风格的主干，且现代模型默认就输出 Markdown，符合 RULES-KEEP 立的「先核已有再接回」判据。
+
+### `prompts/rules/` 清理完毕
+
+三单合计：16 个规则块全部处理完。`promptIndex.ts` 的 `// Rules` 段现在是空的，留了注释说明为什么不要再往这里加。剩下的 `rules/injectionDefense.ts` 不走 promptIndex——它由 `inputSanitizer` 直接消费，是活的。
+
+### 本单新增待办
+
+- **放宽 `needsArtifactTaskBrief` 的意图识别**：现测 5/10 miss，中文口语动词枚举不全。放宽前先从真库抽用户真实的产物类请求跑命中率与误触发率（它是 `required` 档，误触发会挤掉能力发现块）。

@@ -12,20 +12,11 @@ export const globSchema: ToolSchema = {
     properties: {
       pattern: {
         type: 'string',
-        description:
-          'Glob pattern to match files. MUST be a string. ' +
-          'Common patterns: "**/*.ts" (all .ts files recursively), ' +
-          '"src/**/*.tsx" (TSX files in src), "*.json" (JSON in current dir), ' +
-          '"**/*test*.ts" (all test files). ' +
-          'Use ** for recursive matching, * for single-level wildcard.',
+        description: 'Glob pattern, e.g. "src/**/*.tsx". ** matches recursively, * matches one level.',
       },
       path: {
         type: 'string',
-        description:
-          'Directory to search in. MUST be a string. ' +
-          'Default: current working directory. ' +
-          'Examples: "/Users/name/project", "~/Documents", "./src". ' +
-          'Supports absolute paths, ~ for home, and relative paths.',
+        description: 'Directory to search in — absolute, relative, or ~. Default: current working directory.',
       },
       offset: {
         type: 'number',

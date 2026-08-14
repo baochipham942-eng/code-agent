@@ -19,6 +19,12 @@ import type { ContextInjectionSource } from '../context/contextEventLedger';
 const logger = createLogger('NudgeManager');
 
 /**
+ * P2b「你该建任务了」的最小轮次门槛（L8 N-L8-SLIM2）。
+ * 取 6 与 Cline 的 remindClineInterval 对齐——短活提醒纯属打扰，够长的活才值得记账。
+ */
+const TASK_START_NUDGE_MIN_ITERATIONS = 6;
+
+/**
  * Context passed to NudgeManager methods from AgentLoop.
  * Avoids holding a reference to the loop itself.
  */
@@ -68,6 +74,10 @@ export class NudgeManager {
   // ── P2 Nudge: Todo completion / taskGate ──
   private todoNudgeCount: number = 0;
   private maxTodoNudges: number = 2;
+
+  // ── P2b Nudge: 长活一个任务都没建时提醒一次（L8 N-L8-SLIM2）──
+  private taskStartNudgeCount: number = 0;
+  private maxTaskStartNudges: number = 1;
   /** taskGate（roadmap 1.3，借鉴 MiMoCode task/gate.ts）：存在未收口 task 时的重入上限（main） */
   private maxTaskGateReentries: number = 3;
   /** 本 run 内模型是否主动用过 task 写工具（task_create/task_update）→ 触发 taskGate */
@@ -144,6 +154,7 @@ export class NudgeManager {
 
     this.readOnlyNudgeCount = 0;
     this.todoNudgeCount = 0;
+    this.taskStartNudgeCount = 0;
     this.goalVerificationCount = 0;
     this._subtaskNudgeCount = 0;
     this._extractedSubtasks = this._extractSubtasksFromPrompt(userMessage);
@@ -282,6 +293,39 @@ export class NudgeManager {
         ctx.injectSystemMessage(nudgeMessage, 'nudge');
         return true;
       }
+    }
+
+    // P2b Nudge（2026-08-14 L8 N-L8-SLIM2）：「你该建任务了」——现有 P2 的反向那一半。
+    //
+    // P2 是**收口检查**（"你有 N 项没做完，别急着总结"），前提是模型已经建过任务。缺的是
+    // 反向：长活跑了十几轮一个任务都没建，右侧面板从头空到尾。真库实证——session_tasks
+    // 41 个会话 79 行任务，创建时间全部停在 2026-06-11，面板已空了两个多月。
+    //
+    // 对标形态：Goose 每轮把 TODO 状态注进上下文（清单为空时也注，等于把"没在用"变成显式
+    // 信号）；Cline 用 remindClineInterval:6 计数器。这里取两者的保守交集：够长的活才提醒，
+    // 且整个 run 只提醒一次——Kimi 的 TodoList 专门写了「Avoid churn」段防模型反复空转，
+    // Manus 更是因为清单维护吃掉约三分之一动作预算而重构掉了这套机制。宁可提醒不足。
+    if (
+      !ctx.isSimpleTaskMode
+      && !this._taskManagerUsedInRun
+      && !this._enforceTaskCompletion
+      && this.taskStartNudgeCount < this.maxTaskStartNudges
+      && ctx.iterations >= TASK_START_NUDGE_MIN_ITERATIONS
+      && getCurrentTodos(ctx.sessionId).length === 0
+      && getIncompleteTasks(ctx.sessionId).length === 0
+    ) {
+      this.taskStartNudgeCount++;
+      logger.debug(`[NudgeManager] P2b: long run without any task, nudging once (iteration ${ctx.iterations})`);
+      ctx.injectSystemMessage(
+        `<task-tracking-hint>\n`
+        + `这轮活已经跑了 ${ctx.iterations} 步，但任务清单还是空的——用户右侧面板看不到任何进度。\n`
+        + `如果这确实是个多步骤任务，现在把它拆成任务：先 ToolSearch {"query":"select:TaskManager"} 加载工具，`
+        + `再 TaskManager({action:"create", ...})，开工的那条标 in_progress。\n`
+        + `如果只是一两步就能收尾的小事，忽略这条，别为了记账而记账。\n`
+        + `</task-tracking-hint>`,
+        'nudge',
+      );
+      return true;
     }
 
     // P2 Nudge: Check for incomplete todos AND tasks in complex tasks.

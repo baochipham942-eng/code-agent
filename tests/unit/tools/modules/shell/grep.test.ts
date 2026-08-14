@@ -107,8 +107,31 @@ describe('grepModule (native)', () => {
       expect(props.after_context).toBeDefined();
       expect(props.context).toBeDefined();
       expect(props.head_limit).toBeDefined();
-      expect(props.limit).toBeDefined();
       expect(props.offset).toBeDefined();
+      // 2026-08-14（L8 N-L8-SLIM3）：`limit` 是 head_limit 的别名，已从 schema 移除——
+      // 每轮把同一个参数宣传两遍是纯 token 浪费。handler 仍接受它（向后兼容，见下条断言），
+      // 所以这里断言的是"不再对模型宣传"，而不是"这个能力没了"。
+      expect(props.limit).toBeUndefined();
+    });
+
+    it('仍接受 limit 作为 head_limit 的向后兼容别名（schema 不再宣传它）', async () => {
+      await fs.writeFile(
+        path.join(tempDir, 'alias.txt'),
+        Array.from({ length: 5 }, (_, i) => `needle ${i}`).join('\n'),
+      );
+
+      const withAlias = await run({ pattern: 'needle', path: tempDir, limit: 2 });
+      const withCanonical = await run({ pattern: 'needle', path: tempDir, head_limit: 2 });
+
+      expect(withAlias.ok).toBe(true);
+      expect(withCanonical.ok).toBe(true);
+      if (withAlias.ok && withCanonical.ok) {
+        // 大结果会被归档，归档行里带毫秒时间戳，两次调用必然不同——比对时剥掉它，
+        // 只比匹配主体（归档行里的 sha256 本身也证明内容一致）。
+        const body = (output: string): string => output.split('[Full output saved to:')[0];
+        expect(body(withAlias.output)).toEqual(body(withCanonical.output));
+        expect(body(withAlias.output)).toContain('showing 1-2 of 5 matches');
+      }
     });
   });
 

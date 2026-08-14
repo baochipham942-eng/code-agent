@@ -69,7 +69,7 @@ export const PRIVACY_BOUNDARY_INDEX: Record<PrivacyBoundaryIndexId, PrivacyBound
     data: ['声纹特征向量（192 维数学向量，非音频）', '注册与最近匹配时间戳'],
     storage: '只保存在本机声纹目录，与账号身份信息隔离；不存任何原始音频。通话内临时比对只在内存进行，通话结束即丢弃。连续 90 天未匹配自动删除。',
     cloud: '永不上传：声纹向量不出本机、不进诊断包。识别准确性无法完全保证，因此声纹只用于个性化与说话人区分，绝不用于解锁或授权。',
-    revoke: '在语音设置里关闭声纹识别或一键清除声纹；未注册/清除后核心功能不受影响，只失去跨通话个性化。',
+    revoke: '在语音设置里关闭声纹识别，或清除已注册的声纹；未注册/清除后核心功能不受影响，只失去跨通话个性化。',
     actionTarget: { tab: 'voiceLive', label: '打开实时语音设置' },
     permissionBoundaryIds: ['desktop.audio.microphone'],
   },

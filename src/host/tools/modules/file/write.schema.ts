@@ -16,20 +16,14 @@ export const writeSchema: ToolSchema = {
       file_path: {
         type: 'string',
         description:
-          'Absolute path where the file will be created or overwritten. MUST be a string. ' +
-          'Examples: "/Users/name/project/src/new-file.ts", "/home/user/config.json". ' +
-          'Supports ~ for home directory: "~/Documents/file.txt". ' +
-          'Parent directories will be created automatically if they do not exist.',
+          'Absolute path to create or overwrite; ~ is expanded. Parent directories are created automatically.',
       },
       content: {
         type: 'string',
-          description:
-            'The complete file content to write. MUST be a string (not an object or array). ' +
-            'This will REPLACE the entire file content, not append. ' +
-            'For very large generated artifacts, use Append for subsequent chunks. ' +
-            'For a medium-sized single-file app/game, a complete one-shot Write is acceptable. ' +
-            'For JSON files, use JSON.stringify() format. ' +
-            'For code files, include proper indentation and newlines.',
+        description:
+          'Complete file content — this REPLACES the whole file, it does not append. '
+          + 'A medium-sized single-file app in one Write is fine; for artifacts too large for one call, '
+          + 'Write the first chunk then Append the rest.',
       },
       force: {
         type: 'boolean',

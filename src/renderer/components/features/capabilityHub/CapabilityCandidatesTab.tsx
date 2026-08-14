@@ -47,10 +47,11 @@ function tierHint(tier: CapabilityCandidateTier, text: CandidateText): string {
   return text.tierSkillHint;
 }
 
-function tierTone(tier: CapabilityCandidateTier): string {
-  if (tier === 'plugin') return 'border-amber-500/40 bg-amber-500/10 text-amber-300';
-  if (tier === 'workflow') return 'border-sky-500/40 bg-sky-500/10 text-sky-300';
-  return 'border-zinc-600/60 bg-zinc-700/30 text-zinc-300';
+/** 徽章只用主题感知的 mark-* token 点色；文字一律中性，避免亮档瞎色 */
+function tierDot(tier: CapabilityCandidateTier): string {
+  if (tier === 'plugin') return 'bg-mark-warning';
+  if (tier === 'workflow') return 'bg-mark-info';
+  return 'bg-mark-neutral';
 }
 
 function evidenceLine(candidate: CapabilityCandidateView, text: CandidateText): string {
@@ -83,7 +84,11 @@ const CandidateRow: React.FC<CandidateRowProps> = ({ candidate, text, busy, onIg
           <span className="truncate text-sm font-medium text-zinc-100">
             {candidate.displayName || candidate.shapeTokens.join(' + ')}
           </span>
-          <Badge className={`shrink-0 text-[10px] font-medium ${tierTone(candidate.tier)}`} title={tierHint(candidate.tier, text)}>
+          <Badge
+            className="shrink-0 border-zinc-700 bg-zinc-800/60 text-[10px] font-medium text-zinc-300"
+            dot={tierDot(candidate.tier)}
+            title={tierHint(candidate.tier, text)}
+          >
             {tierLabel(candidate.tier, text)}
           </Badge>
         </div>

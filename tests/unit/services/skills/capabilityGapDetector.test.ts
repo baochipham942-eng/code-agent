@@ -13,6 +13,9 @@ import type { ComboStep } from '../../../../src/host/services/skills/comboRecord
 import {
   clusterKeyOf,
   commandHead,
+  findClusterFor,
+  hasWorkaroundSignature,
+  toolSetOverlap,
   decayCount,
   detectDegraded,
   detectMissingHint,
@@ -51,6 +54,9 @@ describe('去参数化', () => {
     expect(commandHead('HTTPS_PROXY=x /usr/bin/ffmpeg -i a.mp4 out.mp4')).toBe('ffmpeg');
     expect(commandHead('sudo screencapture -x /tmp/a.png')).toBe('screencapture');
     expect(commandHead('tesseract a.png out | grep x')).toBe('tesseract');
+    // 真库回放实测踩到的两个：选项被当成可执行名 / 探针动词盖住宾语
+    expect(commandHead('command -v ffmpeg')).toBe('ffmpeg');
+    expect(commandHead('which python3 && python3 --version')).toBe('python3');
     expect(shapeOfStep({ toolName: 'bash', args: { command: 'screencapture -x a.png' } })).toBe('bash:screencapture');
     expect(shapeOfStep({ toolName: 'write_file', args: { path: 'a.xlsx' } })).toBe('write_file');
   });
@@ -69,6 +75,48 @@ describe('去参数化', () => {
     const c = clusterKeyOf(['bash:ffmpeg', 'write_file']);
     expect(a).toBe(b);
     expect(a).not.toBe(c);
+  });
+});
+
+describe('归并与首屏签名（真库回放逼出来的两条）', () => {
+  it('工具集合重合度达阈值就归并，差太远不归并', () => {
+    const existing = [{ clusterKey: 'A', shapeTokens: ['bash:cd', 'bash:ls', 'bash:mkdir', 'bash:node', 'Read'] }];
+    // 多一个工具：5/6 = 0.83 ≥ 0.7 → 归并
+    expect(findClusterFor(['bash:cd', 'bash:ls', 'bash:mkdir', 'bash:node', 'Read', 'Write'], existing)).toBe('A');
+    // 换掉一半：2/8 = 0.25 → 不归并
+    expect(findClusterFor(['bash:cd', 'bash:python3', 'bash:pip', 'Glob'], existing)).toBeNull();
+    expect(toolSetOverlap(['a', 'b'], ['a', 'b'])).toBe(1);
+  });
+
+  it('归并不吸收新工具：簇的代表集合保持首次那份，防止一路漂移', () => {
+    const base = [step('bash', 'mkdir -p out'), step('bash', 'node build.js'), step('read_file')];
+    const first = observeTurn({ userMessage: 'a', steps: base, tokens: 0 }, T0)!;
+    const second = observeTurn(
+      { userMessage: 'b', steps: [...base, step('write_file')], tokens: 0 },
+      T0 + 1000,
+    )!;
+    expect(second.clusterKey).toBe(first.clusterKey);
+    expect(second.shapeTokens).toEqual(first.shapeTokens);
+    expect(second.occurrences).toBe(2);
+  });
+
+  it('单工具不算拼凑，不进账本', () => {
+    expect(observeTurn({
+      userMessage: 'x',
+      steps: [step('web_search'), step('web_search')],
+      tokens: 0,
+    }, T0)).toBeNull();
+  });
+
+  it('纯内置工具组合记账但不进首屏；含 shell 的才是拼凑签名', () => {
+    expect(hasWorkaroundSignature(['WebFetch', 'WebSearch'])).toBe(false);
+    expect(hasWorkaroundSignature(['Bash:find', 'Glob'])).toBe(true);
+    const pure = [step('web_search'), step('web_fetch')];
+    for (let i = 0; i < 6; i += 1) observeTurn({ userMessage: 'q', steps: pure, tokens: 90_000 }, T0 + i * 1000);
+    const view = listCandidates(T0 + 10_000)[0];
+    // 分数够高也不进首屏——它不是缺口，是它有这个工具而且很常用
+    expect(view.mechanicalScore).toBeGreaterThan(CAPABILITY_CANDIDATES.ABOVE_FOLD_MIN_SCORE);
+    expect(view.aboveFold).toBe(false);
   });
 });
 

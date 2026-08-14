@@ -69,12 +69,19 @@ export function commandHead(command: string): string {
     if (!token) continue;
     // `KEY=value` 形式的环境变量前缀不是可执行名
     if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) continue;
-    if (token === 'sudo' || token === 'env' || token === 'command') continue;
+    // 选项（-v / --version）永远不是可执行名。真库回放里 `command -v foo`
+    // 曾被解析成 `-v`，说明这一条不是理论问题。
+    if (token.startsWith('-')) continue;
+    // shell 语法词与「这东西存在吗」的探针动词：真正要记的是它们的宾语。
+    // 这不是「哪些命令算外部」的名字清单，是 shell 语法处理。
+    if (SHELL_WRAPPER_WORDS.has(token)) continue;
     const base = token.split('/').pop() ?? token;
     if (base) return base.toLowerCase();
   }
   return '';
 }
+
+const SHELL_WRAPPER_WORDS = new Set(['sudo', 'env', 'command', 'which', 'type', 'exec', 'nohup', 'time']);
 
 /** 一轮的步骤顺序（去参数化 + 去掉连续重复），用于算变异度 */
 export function sequenceShapeOf(steps: Array<Pick<ComboStep, 'toolName' | 'args'>>): string[] {
@@ -95,6 +102,55 @@ export function sequenceShapeOf(steps: Array<Pick<ComboStep, 'toolName' | 'args'
  */
 export function clusterKeyOf(shapeSequence: string[]): string {
   return [...new Set(shapeSequence)].sort().join(' + ');
+}
+
+/** 两个工具集合的重合度（Jaccard）：列表里「凭什么归成一条」的第二种答案 */
+export function toolSetOverlap(a: string[], b: string[]): number {
+  const left = new Set(a);
+  const right = new Set(b);
+  if (left.size === 0 || right.size === 0) return 0;
+  let shared = 0;
+  for (const token of left) if (right.has(token)) shared += 1;
+  return shared / (left.size + right.size - shared);
+}
+
+/**
+ * 找这一轮该归到哪个已有候选。
+ *
+ * 为什么不能只用精确的集合键：真库回放实测，同一件事（建目录→装依赖→跑脚本）
+ * 每次多一两个工具就变成一个新键，200 条候选里绝大多数 occurrences=1，
+ * 真正反复在做的事反而永远攒不出分数。所以精确键不中就退一步按重合度归并。
+ * 归并**不吸收**新工具（簇的代表集合保持首次那份），否则簇会一路漂移成大杂烩。
+ */
+export function findClusterFor(
+  shapeTokens: string[],
+  existing: Array<{ clusterKey: string; shapeTokens: string[] }>,
+): string | null {
+  const exactKey = shapeTokens.slice().sort().join(' + ');
+  if (existing.some((entry) => entry.clusterKey === exactKey)) return exactKey;
+
+  let best: { key: string; overlap: number } | null = null;
+  for (const entry of existing) {
+    const overlap = toolSetOverlap(shapeTokens, entry.shapeTokens);
+    if (overlap >= CAPABILITY_CANDIDATES.CLUSTER_MERGE_OVERLAP && (!best || overlap > best.overlap)) {
+      best = { key: entry.clusterKey, overlap };
+    }
+  }
+  return best?.key ?? null;
+}
+
+/**
+ * 这一簇是不是「拼凑」——首屏的必要条件。
+ *
+ * 判据：簇里得有 shell 步骤。Bash 是工具表里**没有对应工具时的唯一出口**，
+ * 所以「反复走 Bash 出口」正是缺口的可观测签名；而纯内置工具的组合
+ * （Read/Write/Edit/WebSearch…）是 agent 干活的正常方式，不是缺口。
+ * 真库回放实测：不加这一条，首屏第一名是「WebSearch ×114」——
+ * 那不是它缺什么，那是它有这个工具而且很常用。
+ * 纯工具编排仍然记账、仍可展开看，只是不占首屏。
+ */
+export function hasWorkaroundSignature(shapeTokens: string[]): boolean {
+  return shapeTokens.some((token) => token.includes(':'));
 }
 
 // ---------------------------------------------------------------------------
@@ -208,10 +264,12 @@ export function observeTurn(turn: ObservedTurn, now: number): CapabilityCandidat
   if (steps.length < CAPABILITY_CANDIDATES.MIN_STEPS_PER_TURN) return null;
 
   const shapeSequence = sequenceShapeOf(steps);
-  const clusterKey = clusterKeyOf(shapeSequence);
-  if (!clusterKey) return null;
+  const shapeTokens = [...new Set(shapeSequence)].sort();
+  // 单工具不是拼凑，是在用工具——不进账本
+  if (shapeTokens.length < CAPABILITY_CANDIDATES.MIN_DISTINCT_TOOLS) return null;
 
   const store = getCapabilityCandidateStore();
+  const clusterKey = findClusterFor(shapeTokens, store.list()) ?? clusterKeyOf(shapeSequence);
   const previous = store.get(clusterKey);
 
   const missingHint = steps.map(detectMissingHint).find((hint): hint is string => Boolean(hint));
@@ -243,7 +301,8 @@ export function observeTurn(turn: ObservedTurn, now: number): CapabilityCandidat
 
   const base: Omit<CapabilityCandidateRecord, 'tests' | 'tier'> = {
     clusterKey,
-    shapeTokens: [...new Set(shapeSequence)].sort(),
+    // 归并进已有簇时保持代表集合不变，防止簇一路漂移成大杂烩
+    shapeTokens: previous?.shapeTokens ?? shapeTokens,
     variants,
     occurrences: previousCount + 1,
     // 增量：把旧值按上次出现到现在的间隔衰减，再 +1。不回放历史。
@@ -300,6 +359,7 @@ export function toView(record: CapabilityCandidateRecord, now: number): Capabili
     mechanicalScore,
     aboveFold: record.state !== 'dismissed'
       && (record.state !== 'ignored' || cooledDown)
+      && hasWorkaroundSignature(record.shapeTokens)
       && record.occurrences >= CAPABILITY_CANDIDATES.ABOVE_FOLD_MIN_OCCURRENCES
       && mechanicalScore >= CAPABILITY_CANDIDATES.ABOVE_FOLD_MIN_SCORE,
   };

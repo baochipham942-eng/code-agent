@@ -423,6 +423,59 @@ export const VOICE_XML_FALLBACK_MAX_CHARS = 16_384;
  */
 export const VOICE_CONCLUSION_LOOKBACK_MESSAGES = 30;
 
+// ── 声纹身份（N-L7-SPK）─────────────────────────────────────────────
+// 只用于个性化与消歧，绝不当认证用（工单 §5 硬边界）。
+
+/** 通话内活跃说话人匹配阈（cosine）。TTS spike：同人 0.86 / 异人 0.60~0.71，真机再调。 */
+export const VOICEPRINT_MATCH_THRESHOLD = 0.6;
+
+/** 跨会话认本人阈（cosine）。跨会话信道/状态漂移更大，比通话内阈低一档。 */
+export const VOICEPRINT_OWNER_THRESHOLD = 0.55;
+
+/** 短于此的片段不做声纹判定（embedding 不可靠），verdict=unknown → fail-open。 */
+export const VOICEPRINT_MIN_SEGMENT_MS = 600;
+
+/** 长片段只取前这么多毫秒做 embedding，推理耗时封顶。 */
+export const VOICEPRINT_MAX_SEGMENT_MS = 10_000;
+
+/** 上行 PCM 环形缓冲长度。16k PCM16 mono ≈ 960KB，仅内存，通话结束即丢。 */
+export const VOICEPRINT_RING_BUFFER_MS = 30_000;
+
+/** 切片时在 speech_started 之前多带的前缀，对齐上游 VAD prefix_padding_ms。 */
+export const VOICEPRINT_SEGMENT_PREFIX_MS = 500;
+
+/** 本人声纹保留期：长期未命中自动删除。这个数字会写进设置页文案，用户看得到。 */
+export const VOICEPRINT_RETENTION_DAYS = 90;
+
+/** 本人声纹最多存几条 embedding 样本（超上限丢最旧）。 */
+export const VOICEPRINT_MAX_OWNER_EMBEDDINGS = 3;
+
+/** CAM++ zh-cn 输出维度（ONNX 实测 [1,192]）。 */
+export const VOICEPRINT_EMBEDDING_DIM = 192;
+
+/** 声纹数据目录名（位于用户数据目录下）与档案文件名。 */
+export const VOICEPRINT_DIR = 'voiceprint';
+export const VOICEPRINT_PROFILE_FILE = 'owner-profile.json';
+
+/**
+ * 声纹推理复用桌面 VAD 那份 ONNX 运行时按需资产（同一个 onnxruntime-node）。
+ * 只在 darwin-arm64 有产物，其余平台拿不到就维持缺失态。
+ */
+export const VOICEPRINT_ONNX_ASSET_ID = 'onnxruntime-vad';
+
+/** 模型缓存目录（按需下载落这里；与声纹数据目录分开——模型是组件，不是身份数据）。 */
+export const VOICEPRINT_MODEL_DIR = 'voiceprint-model';
+export const VOICEPRINT_MODEL_FILE = 'campplus-zh-cn-16k-common.onnx';
+
+/**
+ * CAM++ zh-cn ONNX（3D-Speaker 官方模型的 sherpa-onnx 导出件，fp32 27MB）。
+ * URL/SHA256 成对钉死；换模型两个一起换。真机核过：SHA256 与下载件一致。
+ */
+export const VOICEPRINT_MODEL_URL =
+  'https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx';
+export const VOICEPRINT_MODEL_SHA256 =
+  'f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11';
+
 /** Renderer→Host 媒体面 WS 路径。 */
 export const VOICE_STREAM_WS_PATH = '/api/voice/stream';
 

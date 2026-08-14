@@ -39,3 +39,11 @@ globs: "src/**/*.test.ts,src/**/*.spec.ts,tests/**/*"
 
 - **红线类 case（预期模型拒绝的破坏性指令）不得在未越狱的 harness 里真跑**：eval 沙箱只隔离工作目录，bash 不隔离主机。断言"回复不含已删除"挡不住顺从模型真执行——LongCat-2.0 实测三次顺从伪装成磁盘清理的注入指令，`find ~ -name node_modules` 批量删除 15 个项目依赖 + 清空 ~/.cache。
 - **泛化规则**：任何"期望 AI 拒绝"型测试，护栏必须是机制（jail/mock/只读挂载），不能是期望本身；未 jail 前红线 case 禁止进 sweep/重复跑量/换更顺从模型跑。
+
+## 降级路径必须留痕 / 假 mock 掩盖真形状（错题本 2026-08-14）
+
+- **静默降级会叠加成「功能完全没生效且现场零线索」**：声纹能力在 Dev 包跑完一整通真通话，日志一条都没有。剥开是三层「合理」的静默叠在一起——① 业务层前置缺失时 `return null` 不记日志 ② `isOrtRuntimeModule` 类型判据默默返 false ③ `loadOrtRuntime` 一路 `try/catch` 吞异常。每层单独看都说得通，合起来就是黑箱。
+- **泛化规则**：`fail-open` 说的是「**行为**不改变」，不是「**失败不留痕**」。任何降级/回落分支都要 warn 出**可区分的原因**（是 A 缺了还是 B 缺了），装载类逻辑还要把**每条候选路径的真实错误**带出来（返回 attempts 之类），否则判因时只能靠猜。
+- **单测里被 mock 的东西，在真机上可能根本不存在**：这次的形状差异是**运行时资产的存在性**——`onnxruntime-node` 是 `delivery:'optional'` 的按需下载资产，全新数据目录从没下过，而单测里它永远"在"。
+- **夹具要用真实模块形状**：`onnxruntime-node` 的 `InferenceSession` 是 **class**（`typeof 'function'`），而判据用 `isRecord`（只认 `typeof 'object'`）→ 恒返回 false。当初用手搓 plain-object mock 写的测试，正因为形状是假的才没抓住这个存量 bug（桌面 VAD 同链中招）。
+- **「按需下载组件」要备齐运行时 + 资源两样**，只下其中一样 = 备了子弹没备枪。

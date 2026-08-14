@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
+import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
 import {
   REALTIME_VOICE_PROVIDER_PROFILES,
   resolveRealtimeVoiceSelection,
@@ -26,7 +26,7 @@ import {
   resolveConfiguredRealtimeVoiceProfile,
 } from './customRealtimeVoiceProviders';
 import { requiresVoiceActionTool, resolveVoiceActionRoute, resolveVoiceRouting } from './voiceRouting';
-import { beginVoiceDispatch, endVoiceDispatch, pushVoiceTranscript, setVoiceDispatchFocus } from './voiceAgentCoordinator';
+import { beginVoiceDispatch, endVoiceDispatch, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import { composeVoiceInstructions, focusChanged, type VoiceContinuityContext } from './voiceContextAssembler';
 import { isVoiceScreenContextSupported } from './voiceScreenContext';
 import { addTokenUsage, recordVoiceCall } from './voiceUsageLedger';
@@ -61,6 +61,8 @@ import {
   endVoiceQuestionSession,
   handleVoiceQuestionTranscript,
 } from './voiceQuestionBridge';
+import { isPureToolTagText, persistTranscript, type TranscriptMergeState } from './voiceTranscriptPersistence';
+import { prepareVoiceprintForCall, releaseVoiceprintForCall, type VoiceprintCallState } from './voiceprintService';
 
 const logger = createLogger('VoiceSession');
 
@@ -161,6 +163,8 @@ interface ActiveSession {
   tokenUsage: { value?: VoiceTokenUsage; accepting: boolean };
   /** 终态播报只属于这通电话：压住、去重与已播记录都随 active 一起销毁。 */
   narration: NarrationState;
+  /** 声纹身份（N-L7-SPK）：全内存，teardown 即丢。生命周期与判定语义见 voiceprintService。 */
+  speaker: VoiceprintCallState;
 }
 
 // ponytail: 单进程内一个模块级变量就是「全局单路」的全部实现（方案 §2.6）。
@@ -288,9 +292,12 @@ function evaluateInterrupt(
     durationMs: candidate.durationMs,
     text,
     stage,
+    // 声纹门（N-L7-SPK）：只有明确 mismatch 才收紧（拦兜底 cancel）；
+    // unknown（推理没完/模型缺失/片段过短）一律 fail-open 回现状。
+    speakerMismatch: session.speaker.tracker?.verdictFor(candidateId) === 'mismatch',
   });
 
-  // 证据层 shadow mode：只在终判那一刻采一次，输出不参与上面的 decision。
+  // 证据层 shadow mode（#1128）：只在终判那一刻采一次，输出不参与上面的 decision。
   if (decision.terminal && !candidate.decided) {
     sampleVoiceInterruptEvidence({
       provider: session.upstream.provider,
@@ -308,6 +315,12 @@ function evaluateInterrupt(
       decidedClassification: decision.classification,
       decidedCancel: decision.cancel,
     });
+  }
+
+  // 用途一读图重点：在 no_playback 轮真的开口对话的人，当场纳入活跃集，不设观察期
+  // ——中途换人第一句就被接纳（判据 4），电视永远不参与对话轮所以进不来。
+  if (decision.classification === 'no_playback' && stage === 'final' && text.trim()) {
+    session.speaker.tracker?.admitCandidate(candidateId);
   }
 
   if (decision.terminal && !candidate.decided) {
@@ -341,6 +354,8 @@ function evaluateInterrupt(
       classification: decision.classification,
       action: decision.cancel ? 'cancel_discard' : 'resume',
       responseId: cancelledResponseId ?? undefined,
+      // 声纹拦下的兜底打断单独可查（判据 3 的真机证据就看这个字段）
+      ...(decision.speakerGated ? { speakerGated: true } : {}),
     });
   }
 
@@ -361,93 +376,6 @@ function evaluateInterrupt(
  */
 function closeClientTerminal(client: WsSocket): void {
   if (client.readyState === client.OPEN) client.close(VOICE_WS_CLOSE_TERMINAL);
-}
-
-/**
- * 整条字幕只有工具标签（R6，2026-07-30 真机：模型把 `<end_call>` 当话「说」了出来）。
- *
- * 标签是模型和我们之间的暗号，不是说给用户听的话——不该上屏，也不该落进消息流。
- * 流式 delta 会给到半截标签（`<`、`<end_c`），所以闭合的 `>` 是可选的。
- * **标签混在正文里的不管**：那时正文才是这句话的内容，删标签等于改用户看到的话。
- */
-const PURE_TOOL_TAG_TEXT = /^\s*(<[a-z0-9_]*>?\s*)+$/i;
-
-function isPureToolTagText(text: string): boolean {
-  return PURE_TOOL_TAG_TEXT.test(text);
-}
-
-/**
- * 上一条落库的用户字幕（R5 合并用）。VAD 会把一句话切成几轮，消息流里就成了几条碎片。
- *
- * 合并是**落库后回头并入**，不是攒着晚点写：近窗（派活时执行侧重建意图的原文）、
- * 挂断闸、字幕 UI 全都吃这条 final 的到达时刻，晚 2 秒等于让紧跟的 delegate_task
- * 看不到用户最后那句话。所以照常立即写，下一条来得够快就把上一条改掉。
- */
-interface TranscriptMergeState {
-  messageId: string | null;
-  text: string;
-  at: number;
-}
-
-async function persistTranscript(
-  neoSessionId: string,
-  role: 'user' | 'assistant',
-  text: string,
-  counter?: { count: number },
-  merge?: TranscriptMergeState,
-  identity?: { responseId?: string; itemId?: string },
-): Promise<void> {
-  const trimmed = text.trim();
-  // 落库的唯一入口 = 过滤的唯一落点：done 那条、排水窗冲刷那条走的都是这里。
-  // 丢弃必须出声（E1 硬要求）：静默丢弃就是「用户说了话、系统什么都没留下、日志一个字都没有」，
-  // 本仓已为此付过一次数据丢失。只记 role 和原因，不记内容。
-  if (!trimmed || isPureToolTagText(trimmed)) {
-    logger.warn('transcript dropped before persist', {
-      role,
-      reason: trimmed ? 'pure-tool-tag' : 'empty-text',
-    });
-    return;
-  }
-  // 落库的同时进近窗（P0-2）：派活时执行侧要拿原文自己重建意图，
-  // 别只给它通话 brain 改写过的那一句。落库失败不影响近窗，反之亦然。
-  // ponytail: 合并只改消息流不回收近窗——近窗是喂模型的，碎一点无害（产品拍板）。
-  pushVoiceTranscript({ role, text: trimmed });
-  const now = Date.now();
-  // ponytail: 上一条还在写库时（messageId 尚未回填）就直接不合并，各落各的——
-  // 真机上两条 final 至少隔一个 VAD 静音窗，插入早完成了；退化路径也只是多一条消息。
-  const mergeable = role === 'user'
-    && merge?.messageId
-    && now - merge.at < VOICE_TRANSCRIPT_MERGE_WINDOW_MS;
-  try {
-    if (mergeable && merge?.messageId) {
-      const merged = `${merge.text} ${trimmed}`;
-      await getSessionManager().updateMessage(merge.messageId, { content: merged });
-      merge.text = merged;
-      merge.at = now;
-      // 合并进上一条 = 消息没多一条，transcriptCount 也不该多一个。
-      return;
-    }
-    const id = `voice-${role}-${now}-${Math.random().toString(36).slice(2, 8)}`;
-    await getSessionManager().addMessageToSession(neoSessionId, {
-      id,
-      role,
-      content: trimmed,
-      timestamp: now,
-      metadata: {
-        source: 'voice',
-        ...(identity && (identity.responseId || identity.itemId) ? { voiceTranscript: identity } : {}),
-      },
-    });
-    if (counter) counter.count += 1;
-    // 助手说过话之后用户再开口，那是新的一轮，不能再往上一条里并。
-    if (merge) {
-      merge.messageId = role === 'user' ? id : null;
-      merge.text = trimmed;
-      merge.at = now;
-    }
-  } catch (err) {
-    logger.warn('failed to persist transcript', { role, message: err instanceof Error ? err.message : 'unknown' });
-  }
 }
 
 /**
@@ -545,6 +473,8 @@ async function teardown(reason: string): Promise<void> {
   for (const candidate of session.interruption.candidates.values()) {
     if (candidate.finalGraceTimer) clearTimeout(candidate.finalGraceTimer);
   }
+  // 声纹临时态（环形缓冲/活跃集/逐候选 verdict）随通话一起丢（§4.3 不建档）。
+  releaseVoiceprintForCall(session.speaker);
   logger.info('session ended', { voiceSessionId: session.id, reason });
   // D4：通话态标记必须先于任何后续动作解除，别让抬严挂在会话上不下来。
   // 只还「通话」这一张票。语音派出去、还在飞的 run 各自持票，抬严对它们继续有效——
@@ -731,10 +661,12 @@ async function connectAndBind(
   };
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
   const continuity = await loadVoiceContinuity(neoSessionId);
+  // 声纹（N-L7-SPK）：embedder 加载与上游建连并行；已注册本人时 continuity 扣住等认人。
+  const voiceprint = prepareVoiceprintForCall(liveSettings?.voiceprint !== false);
   const initialInstructions = composeVoiceInstructions(baseInstructions, null, {
     // Phase 3：跟着这台机器真有没有这个能力走。能力与文案同一个判据，不虚构截屏能力。
     screenContextEnabled: isVoiceScreenContextSupported(),
-    continuity,
+    continuity: voiceprint.withholdContinuity ? null : continuity,
     speechRate: liveSettings?.speechRate,
   });
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
@@ -845,6 +777,8 @@ async function connectAndBind(
         } else if (active?.id === id && event.type === 'speech.stopped') {
           const candidateId = event.candidateId ?? active.interruption.currentCandidateId;
           const candidate = candidateId ? active.interruption.candidates.get(candidateId) : undefined;
+          // 声纹：按 speech_stopped 时刻从环形缓冲切这一段去算 embedding（异步，判定不等它）。
+          if (candidateId) void active.speaker.tracker?.onSpeechStopped(candidateId, event.durationMs);
           if (candidate) {
             candidate.durationMs = event.durationMs;
             if (candidate.finalGraceTimer) clearTimeout(candidate.finalGraceTimer);
@@ -1070,8 +1004,9 @@ async function connectAndBind(
     personaInstructions: baseInstructions,
     instructions: initialInstructions,
     conversationModel: selection.model.id,
-    continuity,
+    continuity: voiceprint.withholdContinuity ? null : continuity,
     focus: null,
+    speaker: voiceprint.initialState(continuity),
     interruption: {
       currentCandidateId: null,
       candidates: new Map(),
@@ -1086,6 +1021,14 @@ async function connectAndBind(
     }, VOICE_SESSION_MAX_DURATION_MS),
   };
   active = session;
+  voiceprint.activate({
+    state: session.speaker,
+    isCurrent: () => active?.id === id,
+    attachContinuity: (held) => {
+      session.continuity = held;
+      updateSessionInstructions(session);
+    },
+  });
   beginVoiceQuestionSession({
     neoSessionId,
     dismiss: (narrationPrefix) => {
@@ -1170,6 +1113,8 @@ function bindClientHandlers(session: ActiveSession, client: WsSocket): void {
       // direct 形态的媒体面不经 Host（Renderer 直连上游），这里收到二进制帧只能是
       // 客户端接错了传输形态——丢弃比静默 no-op 转发更接近真相。
       if (upstream.kind === 'relay') upstream.sendAudio(data);
+      // 声纹环形缓冲（仅内存，≈30s，通话结束即丢）。tracker 为 null 时零开销。
+      session.speaker.tracker?.feed(data);
       // 采集链探针：首帧 + 每 200 帧记一次，带幅值峰值——没有这行，原生采集
       // 静音/断流与「模型不响应」在日志里不可区分（AEC 判因第三例的教训）。
       session.inboundAudioFrames += 1;

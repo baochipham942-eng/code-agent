@@ -362,4 +362,112 @@ describe('VoiceLiveSettingsSection', () => {
     expect(screen.getByText(zh.voice.settings.speechRateHelper)).toBeTruthy();
     expect(en.voice.settings.speechRateHelper).toBeTruthy();
   });
+
+  // ── 声纹身份（N-L7-SPK）──────────────────────────────────────────────
+  //
+  // 判据 1 的 UI 面：默认态展示「未注册」；判据 5 的入口面：清除走二次确认。
+  // 「能力表述与隐私说明同框」是调研结论（孤立的能力宣传会变成呈堂证供），
+  // 所以隐私正文与四要点在这里当结构断言钉住，不只是文案存在性。
+  function voiceprintOverview(over: {
+    registered?: boolean; sampleCount?: number; modelReady?: boolean; runtimeReady?: boolean; callActive?: boolean;
+  } = {}) {
+    return {
+      status: { registered: over.registered ?? false, ...(over.sampleCount ? { sampleCount: over.sampleCount } : {}) },
+      runtime: { modelReady: over.modelReady ?? true, runtimeReady: over.runtimeReady ?? true },
+      callActive: over.callActive ?? false,
+    };
+  }
+
+  function settingsGetWithVoiceprint(
+    voice: AppSettings['voice'],
+    overview: ReturnType<typeof voiceprintOverview>,
+    extra?: (action: string) => unknown,
+  ) {
+    invokeDomainMock.mockImplementation((_domain: string, action: string) => {
+      if (action === 'get') return Promise.resolve({ voice } as AppSettings);
+      if (action === 'voiceprintOverview') return Promise.resolve(overview);
+      const handled = extra?.(action);
+      if (handled !== undefined) return Promise.resolve(handled);
+      return Promise.resolve(undefined);
+    });
+  }
+
+  it('默认态：声纹开关开着，状态显示未注册，且隐私说明与能力表述同框（判据1 UI 面）', async () => {
+    settingsGetWithVoiceprint({ live: { enabled: true } }, voiceprintOverview());
+    render(<VoiceLiveSettingsSection />);
+
+    await screen.findByTestId('voiceprint-manage');
+    expect(screen.getByRole('switch', { name: zh.voice.settings.voiceprintToggleLabel }).getAttribute('aria-checked'))
+      .toBe('true');
+    expect(screen.getByTestId('voiceprint-status').textContent).toBe(zh.voice.settings.voiceprintStatusUnregistered);
+    // 四要点：隔离存储 / 准确率如实 / 删除时限具体数字 / 非生物识别替代路径
+    const privacy = screen.getByTestId('voiceprint-privacy').textContent ?? '';
+    expect(privacy).toContain('隔离存储');
+    expect(privacy).toContain('无法完全保证');
+    expect(privacy).toMatch(/90\s*天/);
+    expect(privacy).toContain('核心功能不受影响');
+    expect(en.voice.settings.voiceprintPrivacyBody).toBeTruthy();
+  });
+
+  it('关掉声纹开关：持久化 voiceprint=false，且管理区整体消失（不做任何声纹运算）', async () => {
+    settingsGetWithVoiceprint({ live: { enabled: true } }, voiceprintOverview());
+    render(<VoiceLiveSettingsSection />);
+    await screen.findByTestId('voiceprint-manage');
+
+    fireEvent.click(screen.getByRole('switch', { name: zh.voice.settings.voiceprintToggleLabel }));
+    await waitFor(() => {
+      const setCall = invokeDomainMock.mock.calls.find(([, action]) => action === 'set');
+      expect(setCall).toBeTruthy();
+      expect((setCall![2] as { voice: { live: { voiceprint?: boolean } } }).voice.live.voiceprint).toBe(false);
+    });
+    expect(screen.queryByTestId('voiceprint-manage')).toBeNull();
+  });
+
+  it('模型未下载：只出下载入口，不出注册/清除（能力没就绪就别给按钮）', async () => {
+    settingsGetWithVoiceprint({ live: { enabled: true } }, voiceprintOverview({ modelReady: false }));
+    render(<VoiceLiveSettingsSection />);
+
+    await screen.findByTestId('voiceprint-download');
+    expect(screen.queryByTestId('voiceprint-register')).toBeNull();
+    expect(screen.queryByTestId('voiceprint-clear')).toBeNull();
+  });
+
+  it('无进行中通话时注册按钮禁用（注册必须发生在真通话里）', async () => {
+    settingsGetWithVoiceprint({ live: { enabled: true } }, voiceprintOverview({ callActive: false }));
+    render(<VoiceLiveSettingsSection />);
+
+    const register = await screen.findByTestId('voiceprint-register') as HTMLButtonElement;
+    expect(register.disabled).toBe(true);
+    expect(screen.getByText(zh.voice.settings.voiceprintRegisterHint)).toBeTruthy();
+  });
+
+  it('清除声纹必须过二次确认；确认后才发 voiceprintClear（判据5 入口面）', async () => {
+    let cleared = false;
+    settingsGetWithVoiceprint(
+      { live: { enabled: true } },
+      voiceprintOverview({ registered: true, sampleCount: 2 }),
+      (action) => {
+        if (action !== 'voiceprintClear') return undefined;
+        cleared = true;
+        return voiceprintOverview();
+      },
+    );
+    render(<VoiceLiveSettingsSection />);
+
+    fireEvent.click(await screen.findByTestId('voiceprint-clear'));
+    // 点了按钮但没确认 → 一个清除请求都不许发出去
+    expect(cleared).toBe(false);
+    expect(invokeDomainMock.mock.calls.some(([, action]) => action === 'voiceprintClear')).toBe(false);
+    // 确认框真的开了：不可逆动作的后果文案必须在场
+    expect(screen.getByText(zh.voice.settings.voiceprintClearConfirm)).toBeTruthy();
+
+    // 触发按钮与确认按钮同名，确认按钮是后出现的那个（对话框在 DOM 尾部）
+    const clearButtons = screen.getAllByRole('button', { name: zh.voice.settings.voiceprintClear });
+    expect(clearButtons.length).toBe(2);
+    fireEvent.click(clearButtons[clearButtons.length - 1]);
+    await waitFor(() => expect(cleared).toBe(true));
+    await waitFor(() => {
+      expect(screen.getByTestId('voiceprint-status').textContent).toBe(zh.voice.settings.voiceprintStatusUnregistered);
+    });
+  });
 });

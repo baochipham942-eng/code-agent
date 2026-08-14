@@ -118,7 +118,7 @@ class WavTrack {
   }
 }
 
-export interface VoiceCallRecordingMeta {
+interface VoiceCallRecordingMeta {
   voiceSessionId: string;
   startedAt: number;
   endedAt: number;

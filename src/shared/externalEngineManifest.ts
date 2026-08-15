@@ -135,7 +135,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
       evidence: 'production',
     },
     modelSelection: 'runtime_catalog',
-    capabilities: ['execute', 'stream_events', 'review'],
+    capabilities: ['execute', 'stream_events', 'resume'],
     defaultPermissionProfile: 'read_only',
     riskTier: 'medium',
     reliability: {
@@ -174,7 +174,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
       evidence: 'production',
     },
     modelSelection: 'runtime_catalog',
-    capabilities: ['execute', 'stream_events', 'review'],
+    capabilities: ['execute', 'stream_events', 'resume'],
     defaultPermissionProfile: 'read_only',
     riskTier: 'medium',
     reliability: {
@@ -205,7 +205,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
       evidence: 'production',
     },
     modelSelection: 'client_default',
-    capabilities: ['execute', 'stream_events', 'review'],
+    capabilities: ['execute', 'stream_events'],
     defaultPermissionProfile: 'read_only',
     riskTier: 'medium',
     reliability: {
@@ -255,7 +255,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
       evidence: 'production',
     },
     modelSelection: 'runtime_catalog',
-    capabilities: ['execute', 'stream_events', 'review'],
+    capabilities: ['execute', 'stream_events'],
     defaultPermissionProfile: 'read_only',
     riskTier: 'medium',
     reliability: {
@@ -347,7 +347,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
       evidence: 'production',
     },
     modelSelection: 'runtime_catalog',
-    capabilities: ['execute', 'stream_events', 'review'],
+    capabilities: ['execute', 'stream_events'],
     defaultPermissionProfile: 'read_only',
     riskTier: 'medium',
     reliability: {

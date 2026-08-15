@@ -30,7 +30,6 @@ export type AgentEngineRuntimeState =
 export type AgentEngineCapability =
   | 'execute'
   | 'stream_events'
-  | 'import_sessions'
   | 'resume'
   | 'review';
 

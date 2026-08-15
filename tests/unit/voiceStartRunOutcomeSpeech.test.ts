@@ -9,7 +9,7 @@
 // 这里直接测那个单一出口，而不是去构造「账本没活、并发池却满了」的状态不同步局面：
 // 后者的构造成本远高于被测逻辑本身，且构造出来的也只是同一个函数的同一个分支。
 import { describe, it, expect, vi } from 'vitest';
-import type { VoiceSpawnRequest } from '../../src/shared/contract/voice';
+import type { VoiceSpawnRequest } from '../../src/host/services/voice/voiceSpawnRequest';
 
 const promptUserInChat = vi.fn(async () => ({ status: 'cancelled' as const }));
 

@@ -1030,7 +1030,25 @@ async function delegateTask(
       '用户如果追问，先调 task_status 看真实状态再回答。',
     ].join('\n');
   }
-  const result = await startRun(state, request);
+  return describeStartRunOutcome(state, request, await startRun(state, request));
+}
+
+/**
+ * startRun 的四种结果 → 回给通话 brain 的话。**判据只有这一份**。
+ *
+ * 2026-08-15 真机：用户说「写入七六零」时手上那件活已经 done，steerTask 落进 missing
+ * 分支去开新活，那里只处理了 requires_choice——reused 与 queued 一起掉进「我已经开始
+ * 做了」，而活根本没开始。链路自己给了模型一个错误的成功信号，模型照着往下说，用户
+ * 听到的是「已经写入了」而文件纹丝没动。
+ *
+ * 同一个 startRun 结果在两处各写一套处理，第二处漏掉两种分支——这是本仓反复出现的
+ * 形状（一份判据抄成两份，其中一份长歪）。所以这里收成单一出口，两个调用方共用。
+ */
+export function describeStartRunOutcome(
+  state: LedgerState,
+  request: VoiceSpawnRequest,
+  result: StartRunResult,
+): string {
   if (result.outcome === 'reused') {
     return `「${request.shortName}」是本轮重复派发，已复用原任务（reused），没有再开第二件。`;
   }
@@ -1195,8 +1213,12 @@ async function steerTask(state: LedgerState, instruction: string, target?: strin
     const title = fallbackVoiceTaskShortName(instruction);
     const request = normalizeSpawnRequest({ title, prompt: instruction });
     const started = await startRun(state, request);
-    if (started.outcome === 'requires_choice') offerOverflowChoice(state, request);
-    return `刚才没有在跑的活，「${title}」按新任务处理。\n${spawnSpeechDirective(title)}`;
+    const speech = describeStartRunOutcome(state, request, started);
+    // 只有真的开起来了才配说「按新任务处理」：reused / queued / requires_choice 三种
+    // 情况下这件活并没有开始，加这个前缀就是又一次谎报。
+    return started.outcome === 'started'
+      ? `刚才没有在跑的活，「${request.shortName}」按新任务处理。\n${speech}`
+      : speech;
   }
   if (resolution.outcome === 'ambiguous') {
     offerTaskChoice(state, '改方向', resolution.candidates, async (item) => {

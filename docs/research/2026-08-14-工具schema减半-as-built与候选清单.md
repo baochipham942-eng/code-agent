@@ -550,7 +550,7 @@ Markdown 结构那半边（headers / lists / tables / code blocks）没有接回
 - `深入 / 全面 / 系统 + 调研`，以及仓库审计后明确要求报告、方案、关系图、清单的交付结构
 - `写进 INDEX` 这类无扩展名但目标明确的约定文档
 
-可重跑脚本是 `scripts/measure-artifact-task-brief-recall.ts`。它用 SQLite URI `mode=ro` 打开两个真库，按 `session_id, timestamp` 切用户轮，从后续 `Write / Append / Edit` 的 `file_path` 建行为真值，按正文保留首条去重；同一轮同时跑冻结的旧判据和新判据，避免拿另一个意图正则自证。
+可重跑脚本是 `scripts/observability/measure-artifact-task-brief-recall.ts`。它用 SQLite URI `mode=ro` 打开两个真库，按 `session_id, timestamp` 切用户轮，从后续 `Write / Append / Edit` 的 `file_path` 建行为真值，按正文保留首条去重；同一轮同时跑冻结的旧判据和新判据，避免拿另一个意图正则自证。
 
 2026-08-15 复跑时真库已经继续增长，所以今天的活库是 3278 个原始用户轮、1348 个去重轮；2026-08-14 记录的 3238 / 1296 是历史快照，不能假装数据库没变。新旧判据在**今天同一份行为集**上的对比是：
 

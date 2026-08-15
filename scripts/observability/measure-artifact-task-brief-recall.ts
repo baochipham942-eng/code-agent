@@ -3,7 +3,7 @@
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
-import { needsArtifactTaskBrief } from '../src/host/prompts/artifactGeneration';
+import { needsArtifactTaskBrief } from '../../src/host/prompts/artifactGeneration';
 
 type UserRow = {
   sessionId: string;

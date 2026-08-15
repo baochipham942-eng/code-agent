@@ -195,6 +195,86 @@ describe('MessageProcessor persistence', () => {
     expect(persisted.id).toBe((ctx.messages[0] as { id: string }).id);
   });
 
+  // 2026-08-15（N-L7-STEERUI）：辅助运行（语音 steer_task / 指挥台 steer）的 instruction 是
+  // 模型写给执行侧的指令。此前它以 role:'user' 原文进会话流，真机截图里用户看到的是
+  // 「用户纠正：…不是"EDMD"…」——连 ASR 走样产物都被当成他自己说过的话。
+  it('hides an auxiliary-run steer instruction from the conversation flow while the execution side still gets it verbatim', async () => {
+    const ctx = {
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [] as unknown[],
+      historyVisibility: 'meta',
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
+    const instruction = '用户纠正：要创建的是"一点.md"文件，不是"EDMD"。请重新创建名为"一点.md"的文件。';
+
+    await processor.injectSteerMessage(instruction);
+
+    // 承重：执行侧看到的那一条一字未改，也没有被打上任何展示层标记
+    expect(ctx.messages).toEqual([{
+      id: 'steer-message-1',
+      role: 'user',
+      content: instruction,
+      timestamp: expect.any(Number),
+    }]);
+
+    const persisted = sessionManagerState.addMessageToSession.mock.calls.at(-1)![1] as {
+      isMeta?: boolean;
+      source?: string;
+      content: string;
+    };
+    // 展示面：不进会话流（渲染端按 isMeta 过滤）
+    expect(persisted.isMeta).toBe(true);
+    expect(persisted.source).toBe('system');
+    // 原文照留在库里，不做任何字符串清洗
+    expect(persisted.content).toBe(instruction);
+  });
+
+  // 负对照：用户自己在 UI/web 上打断走的是同一个函数，但那条运行不带 historyVisibility。
+  // 把它一起藏掉的话，用户会看不见自己刚说的话。
+  it('keeps a user-authored steer visible when the run has no hidden history', async () => {
+    const ctx = {
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [] as unknown[],
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
+
+    await processor.injectSteerMessage('改成蓝色');
+
+    const persisted = sessionManagerState.addMessageToSession.mock.calls.at(-1)![1] as {
+      isMeta?: boolean;
+      source?: string;
+    };
+    expect(persisted.isMeta).toBeUndefined();
+    expect(persisted.source).toBeUndefined();
+  });
+
+  // 两个面同时在场时也不能串：模型面拿脚手架、展示面拿原话且被藏起来。
+  it('applies both the display content and the meta flag to the persisted steer message', async () => {
+    const ctx = {
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [] as unknown[],
+      historyVisibility: 'meta',
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
+    const scaffolded = '<auxiliary_run_notice>\n后台运行\n</auxiliary_run_notice>\n\n<user_request>\n改方向\n</user_request>';
+
+    await processor.injectSteerMessage(scaffolded, undefined, undefined, undefined, '改方向');
+
+    expect((ctx.messages[0] as { content: string }).content).toBe(scaffolded);
+    const persisted = sessionManagerState.addMessageToSession.mock.calls.at(-1)![1] as {
+      content: string;
+      isMeta?: boolean;
+    };
+    expect(persisted.content).toBe('改方向');
+    expect(persisted.isMeta).toBe(true);
+  });
+
   it('reuses the renderer optimistic message id when provided', () => {
     const ctx = {
       stats: RunStatsState.forTest(),

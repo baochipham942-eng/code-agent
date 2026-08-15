@@ -1148,10 +1148,23 @@ export class MessageProcessor {
     if (process.env.CODE_AGENT_CLI_MODE === 'true' && process.env.CODE_AGENT_WEB_MODE !== 'true') return;
 
     // 同 id 同时间戳，只有 content 不同：渲染端拿到的是原话，模型上下文保留脚手架。
-    const persistedMessage: Message =
-      displayContent === undefined || displayContent === newMessage
-        ? steerMessage
-        : { ...steerMessage, content: displayContent };
+    //
+    // 2026-08-15（N-L7-STEERUI）：这里此前是全仓**唯一**不认 historyVisibility 的落库点。
+    // 辅助运行（语音 steer_task / 指挥台 steer）的 instruction 是模型写给执行侧的指令，
+    // 既不是用户说的也不是模型对用户说的，却以 role:'user' 气泡进了会话流——真机截图里
+    // 用户看到的是「用户纠正：…不是"EDMD"…」，连 ASR 走样产物都被当成他自己的原话展示。
+    // 同一条路上其它落库点（streamHandler / runFinalizer / 本文件 doneWithDeniedTools）
+    // 早就认这个标志，sendMessage 那条路更是在 agentOrchestrator 里统一过了
+    // applyHistoryVisibility，只有转向消息漏了。
+    // 只改**给人看的那一面**：ctx.messages 里那条（模型面）原样不动，执行侧收到的
+    // instruction 一字未改。用户自己在 UI/web 上的打断不带 historyVisibility，照旧可见。
+    const persistedMessage: Message = {
+      ...steerMessage,
+      ...(displayContent === undefined || displayContent === newMessage ? {} : { content: displayContent }),
+      ...(this.ctx.historyVisibility === 'meta'
+        ? { isMeta: true, source: steerMessage.source ?? 'system' }
+        : {}),
+    };
 
     const sessionManager = getSessionManager();
     try {

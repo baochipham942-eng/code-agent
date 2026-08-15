@@ -367,14 +367,6 @@ export class CloudConfigService {
   }
 
   /**
-   * 获取规则
-   */
-  getRule(name: string): string {
-    const config = this.getConfig();
-    return config.rules[name] || '';
-  }
-
-  /**
    * 获取 MCP Servers 配置
    */
   getMCPServers(): MCPServerCloudConfig[] {

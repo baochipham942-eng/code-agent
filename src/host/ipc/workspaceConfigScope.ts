@@ -24,7 +24,6 @@ import {
   getAgentsMdDir,
   getMcpScopedConfigPaths,
   getProjectConfigDir,
-  getRulesDir,
   getSkillsDir,
   getUserConfigDir,
 } from '../config/configPaths';
@@ -532,7 +531,6 @@ export async function buildConfigScopeSummary(
   const mcpPaths = getMcpScopedConfigPaths(workingDirectory ?? undefined);
   const skillsDirs = getSkillsDir(workingDirectory ?? undefined);
   const agentDirs = getAgentsMdDir(workingDirectory ?? undefined);
-  const rulesDirs = getRulesDir(workingDirectory ?? undefined);
   const safetyScan = await buildConfigSafetyScanSummary(workingDirectory, projectConfigDir);
 
   const userItems = await Promise.all([
@@ -573,14 +571,6 @@ export async function buildConfigScopeSummary(
       label: '个人 agents',
       description: '当前用户的自定义 agent 定义。',
       path: agentDirs.user,
-      kind: 'directory',
-      private: true,
-    }),
-    buildItem({
-      id: 'user-rules',
-      label: '个人 rules',
-      description: '跨项目路径规则。',
-      path: rulesDirs.user,
       kind: 'directory',
       private: true,
     }),
@@ -645,13 +635,6 @@ export async function buildConfigScopeSummary(
       label: '项目 agents',
       description: '随项目走的自定义 agent 定义。',
       path: agentDirs.project ?? path.join(projectConfigDir, 'agents'),
-      kind: 'directory',
-    }),
-    buildItem({
-      id: 'project-rules',
-      label: '项目 rules',
-      description: '随项目走的路径规则。',
-      path: rulesDirs.project ?? path.join(projectConfigDir, 'rules'),
       kind: 'directory',
     }),
     buildItem({

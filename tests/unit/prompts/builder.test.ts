@@ -8,7 +8,6 @@
 // - Pre-built SYSTEM_PROMPT cache
 // - Prompt structure validation
 // - Dynamic prompt building
-// - Path-specific rules
 // ============================================================================
 
 import { beforeEach, describe, it, expect } from 'vitest';
@@ -18,7 +17,6 @@ import {
   getPromptForTask,
   buildDynamicPrompt,
   buildDynamicPromptV2,
-  buildPromptWithRules,
   ARTIFACT_TASK_BRIEF_PROMPT,
   GAME_ARTIFACT_CONTRACT_PROMPT,
   needsArtifactTaskBrief,
@@ -313,27 +311,6 @@ describe('Prompt Builder', () => {
       expect(promptText(GAME_ARTIFACT_CONTRACT_PROMPT)).toContain('wallBounceCount');
       expect(promptText(GAME_ARTIFACT_CONTRACT_PROMPT)).toContain('powerup:life');
       expect(needsGameArtifactContract('生成一个弹砖块游戏，写到 /tmp/breakout.html')).toBe(true);
-    });
-  });
-
-  // --------------------------------------------------------------------------
-  // buildPromptWithRules
-  // --------------------------------------------------------------------------
-  describe('buildPromptWithRules', () => {
-    it('should return base prompt when no rules loaded', () => {
-      const prompt = buildPromptWithRules([]);
-      expect(prompt).toBe(buildPrompt());
-    });
-
-    it('should return base prompt for empty file list', () => {
-      const prompt = buildPromptWithRules([]);
-      expect(prompt).toBe(buildPrompt());
-    });
-
-    it('should return base prompt when no rules match', () => {
-      // Without loadRules being called, cachedRules is null
-      const prompt = buildPromptWithRules(['some/file.ts']);
-      expect(prompt).toBe(buildPrompt());
     });
   });
 

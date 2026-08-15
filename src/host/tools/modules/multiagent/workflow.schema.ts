@@ -96,7 +96,7 @@ export function isPtcEnabled(): boolean {
  * 模型照着签名写了却 UNKNOWN_TOOL；反过来 = 没告诉模型却能调 = 扩权）。
  * workflow 自己排除在外（照抄 dsh 对 run_code 的处理），顺带断掉脚本递归起 run 的路。
  */
-export function getPtcProjectedTools(): SdkToolProjection[] {
+export function getPtcProjectedTools(): Array<SdkToolProjection & { permissionLevel: ToolSchema['permissionLevel'] }> {
   return getProtocolToolSchemas()
     .filter((schema) => schema.name !== 'workflow' && schema.inputSchema && schema.outputSchema)
     .map((schema) => ({
@@ -104,6 +104,8 @@ export function getPtcProjectedTools(): SdkToolProjection[] {
       description: schema.description,
       inputSchema: schema.inputSchema,
       outputSchema: schema.outputSchema,
+      // 审批预览要按档判脚本写风险；名单与档位同一份，别再各查各的
+      permissionLevel: schema.permissionLevel,
     }));
 }
 

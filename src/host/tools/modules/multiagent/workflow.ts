@@ -107,6 +107,20 @@ function buildPtcChannel(ctx: ToolContext): Pick<ScriptRunHostDeps, 'executeTool
   };
 }
 
+/**
+ * PTC 脚本的写风险：`tools.<name>()` 里只要有一个不是只读工具，这段脚本就能写。
+ * 跑前审批闸的超时授权按 writeHint 分档（只读自动批准 / 含写自动拒绝），而 writeHint
+ * 原本只看 `agent({tools:'edit'})`——PTC 通道让脚本能绕过子 agent 直接写，
+ * 不补这一条就是「一段只调 tools.Write 的脚本被当只读自动放行」。
+ *
+ * fail-closed 三处：计算成员访问（记 '*'）、注册表里查不到的名字、注册表为空，一律算写风险。
+ */
+function ptcScriptHasWriteRisk(toolCallNames: readonly string[]): boolean {
+  if (toolCallNames.length === 0) return false;
+  const levels = new Map(getPtcProjectedTools().map((tool) => [tool.name, tool.permissionLevel]));
+  return toolCallNames.some((name) => levels.get(name) !== 'read');
+}
+
 /** 把异常归类成 ABORTED / DOMAIN_ERROR（Codex R2：取消别被压成 DOMAIN_ERROR）。 */
 function isAbort(ctx: ToolContext, err: unknown): boolean {
   return ctx.abortSignal.aborted || (err instanceof Error && err.name === 'AbortError');
@@ -168,7 +182,12 @@ async function runWorkflow(
 
     // 跑前审批闸（P3b）：静态预览脚本 → 展示 phases/扇出量/动写 + 4 维度成本 → 等用户决策。
     // 无 renderer（headless）自动批准；超时按 writeHint 分档自动决策。拒绝则不 startRun。
-    const preview = extractScriptPreview(script);
+    const ptcChannel = buildPtcChannel(ctx);
+    const rawPreview = extractScriptPreview(script);
+    // PTC 开着时，脚本自己调的工具也算进写风险（通道关着的话脚本压根碰不到 tools）。
+    const preview = ptcChannel.executeTool && ptcScriptHasWriteRisk(rawPreview.toolCallNames)
+      ? { ...rawPreview, writeHint: true }
+      : rawPreview;
     const launchRequest = buildWorkflowLaunchRequest({
       id: runId,
       preview,
@@ -227,8 +246,6 @@ async function runWorkflow(
           onCallComplete: (i) => journalRepo.recordCall(i),
         }
       : undefined;
-
-    const ptcChannel = buildPtcChannel(ctx);
 
     const deps: ScriptRunHostDeps = {
       baseModelConfig,

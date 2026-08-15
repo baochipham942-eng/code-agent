@@ -20,10 +20,10 @@ vi.mock('../../../../../src/host/agent/scriptRuntime', async (orig) => {
 vi.mock('../../../../../src/host/tools/protocolToolRegistration', async (orig) => ({
   ...(await orig<typeof import('../../../../../src/host/tools/protocolToolRegistration')>()),
   getProtocolToolSchemas: () => [
-    { name: 'Read', description: 'read', inputSchema: { type: 'object' }, outputSchema: { type: 'string' } },
-    { name: 'Bash', description: 'run', inputSchema: { type: 'object' }, outputSchema: { type: 'string' } },
+    { name: 'Read', description: 'read', inputSchema: { type: 'object' }, outputSchema: { type: 'string' }, permissionLevel: 'read' },
+    { name: 'Bash', description: 'run', inputSchema: { type: 'object' }, outputSchema: { type: 'string' }, permissionLevel: 'execute' },
     // workflow 自己不进目录：既是抄 dsh 对 run_code 的处理，也断掉脚本递归起 run 的路
-    { name: 'workflow', description: 'self', inputSchema: { type: 'object' }, outputSchema: { type: 'string' } },
+    { name: 'workflow', description: 'self', inputSchema: { type: 'object' }, outputSchema: { type: 'string' }, permissionLevel: 'execute' },
   ],
 }));
 
@@ -31,12 +31,16 @@ vi.mock('../../../../../src/host/services/eventing/bus', () => ({
   getEventBus: () => ({ publish: vi.fn() }),
 }));
 
+const { launchRequests } = vi.hoisted(() => ({ launchRequests: [] as Array<{ writeHint?: boolean }> }));
 vi.mock('../../../../../src/host/agent/workflowLaunchApproval', async (orig) => {
   const actual = await orig<typeof import('../../../../../src/host/agent/workflowLaunchApproval')>();
   return {
     ...actual,
     getWorkflowLaunchApprovalGate: () => ({
-      requestApproval: async ({ request }: { request: unknown }) => ({ approved: true, autoApproved: true, request }),
+      requestApproval: async ({ request }: { request: { writeHint?: boolean } }) => {
+        launchRequests.push(request);
+        return { approved: true, autoApproved: true, request };
+      },
     }),
   };
 });
@@ -66,14 +70,15 @@ function completedState(): ScriptRunState {
   return { runId: 'x', status: 'completed', scriptHash: 'h', startedAt: 0, agentCallCount: 0, tokensSpent: 0, cacheHits: 0, phases: [], result: 'ok' };
 }
 
-async function run(ctx: ToolContext): Promise<ScriptRunHostDeps> {
+async function run(ctx: ToolContext, script = 'return 1;'): Promise<ScriptRunHostDeps> {
   const handler = await workflowModule.createHandler();
-  await handler.execute({ script: 'return 1;' }, ctx, allowAll, undefined as never);
+  await handler.execute({ script }, ctx, allowAll, undefined as never);
   expect(startRunMock).toHaveBeenCalledTimes(1);
   return startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
 }
 
 beforeEach(() => {
+  launchRequests.length = 0;
   startRunMock.mockReset();
   startRunMock.mockResolvedValue(completedState());
 });
@@ -135,5 +140,39 @@ describe('PTC 执行侧 · 通道注入', () => {
     const deps = await run(makeCtx({ executeTool }));
     await expect(deps.executeTool!({ name: 'Read', args: {}, signal: new AbortController().signal }))
       .resolves.toEqual({ ok: false, error: 'boom' });
+  });
+});
+
+// 跑前审批闸的超时授权按 writeHint 分档（只读自动批准 / 含写自动拒绝）。
+// PTC 让脚本绕过子 agent 直接写，writeHint 只看 agent({tools:'edit'}) 就成了假只读。
+describe('PTC 写风险进审批预览', () => {
+  it('脚本只调只读工具 → 仍判只读', async () => {
+    process.env.CODE_AGENT_PTC_ENABLED = '1';
+    await run(makeCtx({ executeTool: vi.fn() }), "await tools.Read({ file_path: 'a' }); return 1;");
+    expect(launchRequests[0].writeHint).toBe(false);
+  });
+
+  it('脚本调了写档工具 → 判有写风险', async () => {
+    process.env.CODE_AGENT_PTC_ENABLED = '1';
+    await run(makeCtx({ executeTool: vi.fn() }), "await tools.Bash({ command: 'ls' }); return 1;");
+    expect(launchRequests[0].writeHint).toBe(true);
+  });
+
+  it('注册表里没有的工具名 → fail-closed 判有写风险', async () => {
+    process.env.CODE_AGENT_PTC_ENABLED = '1';
+    await run(makeCtx({ executeTool: vi.fn() }), "await tools.NotARealTool({}); return 1;");
+    expect(launchRequests[0].writeHint).toBe(true);
+  });
+
+  it('计算成员访问证不了是谁 → fail-closed 判有写风险', async () => {
+    process.env.CODE_AGENT_PTC_ENABLED = '1';
+    await run(makeCtx({ executeTool: vi.fn() }), "const n = pick(); await tools[n]({}); return 1;");
+    expect(launchRequests[0].writeHint).toBe(true);
+  });
+
+  it('PTC 通道关着时脚本碰不到 tools，不因静态文本误报写风险', async () => {
+    delete process.env.CODE_AGENT_PTC_ENABLED;
+    await run(makeCtx({ executeTool: vi.fn() }), "await tools.Bash({ command: 'ls' }); return 1;");
+    expect(launchRequests[0].writeHint).toBe(false);
   });
 });

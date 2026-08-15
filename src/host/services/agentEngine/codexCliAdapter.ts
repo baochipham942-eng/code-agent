@@ -21,6 +21,7 @@ import { getSessionManager } from '../infra/sessionManager';
 import { getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
+import { assertAgentEngineCapability } from './agentEngineGuards';
 import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
@@ -86,8 +87,12 @@ export class CodexCliAdapter {
     const cwd = assertWorkspaceCwd(request.cwd, request.workspaceRoot);
     const registry = getAgentEngineRegistry();
     const descriptor = await registry.get('codex_cli');
-    if (!descriptor.executable || descriptor.installState !== 'installed') {
+    if (descriptor.installState !== 'installed') {
       throw new Error(descriptor.lastError || 'Codex CLI is not installed or not ready.');
+    }
+    assertAgentEngineCapability('codex_cli', descriptor.capabilities, request.resumeLaunch ? 'resume' : 'execute');
+    if (!descriptor.executable) {
+      throw new Error(descriptor.lastError || 'Codex CLI is not executable.');
     }
 
     const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);

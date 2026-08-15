@@ -1,7 +1,7 @@
 // Schema-only file — dynamic-workflow 命令式脚本运行时入口（P1 命令层接线）
 import type { ToolSchema } from '../../../protocol/tools';
 import { getProtocolToolSchemas } from '../../protocolToolRegistration';
-import { renderToolsSdk } from '../../../agent/scriptRuntime/toolsSdk';
+import { renderToolsSdk, type SdkToolProjection } from '../../../agent/scriptRuntime/toolsSdk';
 
 // 工具描述本身就是「dynamic-workflow 原语文档」：模型读完后当场写一段 JS 编排脚本，
 // 经 script 参数交给 scriptRuntime.startRun 在受限 worker 沙箱后台执行。
@@ -86,8 +86,25 @@ const workflowInputSchema = {
  * （会话组合时定死、整个会话不变，为的是请求前缀稳定 → KV cache 有效），Neo 还没有
  * 那一层。产品形态见 ADR §六第 1 条，由完整 S3 落地。
  */
-function isPtcEnabled(): boolean {
+export function isPtcEnabled(): boolean {
   return process.env.CODE_AGENT_PTC_ENABLED === '1';
+}
+
+/**
+ * PTC 投影的工具集合——**下发侧与执行侧的单一真源**。
+ * 分成两处各写一份名单，就是本仓反复复发的那族漏洞（投影里有、执行里没有 =
+ * 模型照着签名写了却 UNKNOWN_TOOL；反过来 = 没告诉模型却能调 = 扩权）。
+ * workflow 自己排除在外（照抄 dsh 对 run_code 的处理），顺带断掉脚本递归起 run 的路。
+ */
+export function getPtcProjectedTools(): SdkToolProjection[] {
+  return getProtocolToolSchemas()
+    .filter((schema) => schema.name !== 'workflow' && schema.inputSchema && schema.outputSchema)
+    .map((schema) => ({
+      name: schema.name,
+      description: schema.description,
+      inputSchema: schema.inputSchema,
+      outputSchema: schema.outputSchema,
+    }));
 }
 
 /**
@@ -101,14 +118,7 @@ function isPtcEnabled(): boolean {
 function buildDescription(): string {
   if (!isPtcEnabled()) return description;
   try {
-    const projections = getProtocolToolSchemas()
-      .filter((schema) => schema.name !== 'workflow' && schema.inputSchema && schema.outputSchema)
-      .map((schema) => ({
-        name: schema.name,
-        description: schema.description,
-        inputSchema: schema.inputSchema,
-        outputSchema: schema.outputSchema,
-      }));
+    const projections = getPtcProjectedTools();
     // 扫到 0 个工具说明注册表还没填充（getProtocolToolSchemas 未初始化时静默返回 []）——
     // 那时生成的是一份「你一个工具都没有」的 SDK，比不生成更坏，所以按失败处理。
     if (projections.length === 0) {

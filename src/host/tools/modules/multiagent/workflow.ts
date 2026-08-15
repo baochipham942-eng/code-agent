@@ -53,12 +53,59 @@ import {
   buildWorkflowFailureRecoveryProposal,
   recordLongTaskRecoveryProposal,
 } from '../../../handoff/longTaskRecoveryProposal';
-import { workflowSchema } from './workflow.schema';
+import { getPtcProjectedTools, isPtcEnabled, workflowSchema } from './workflow.schema';
 import {
   cleanupAgentWorktree,
   createAgentWorktree,
   discardAgentWorktree,
 } from '../../../agent/agentWorktree';
+
+/**
+ * PTC（Code Mode）执行侧接线：把脚本里的 `tools.<name>(args)` 接到**本次 workflow
+ * 调用所在的那个 ToolExecutor**（`ctx.executeTool`，由 executor 在构造 context 时绑定）。
+ *
+ * 三条承重决定，都不是这里发明的：
+ * ① **不另造 executor**。收缩档（effectiveMode）/ 拓扑 / 审批通道 / subagentPolicy
+ *    全部靠「同一个实例 + 原样透传 options」继承。把收缩档复制一份往下游引，
+ *    就是给它留漂移的机会，而漂宽一档就是扩权洞（toolExecutor.ts forRun 那条注释的教训）。
+ * ② **不另开旁路**。`resolveProtocolTool(name)` 直呼 handler 会绕过 pre-execute/审批/guards，
+ *    正是 dsh「共用同一套执行内核，只是入口不同」要保住的那条。
+ * ③ **名单与下发侧同源**（`getPtcProjectedTools`），再按本轮 run 级 denylist 收窄——
+ *    模型这一轮直接调不到的工具，换个入口也不该调得到。
+ *
+ * 任一前提缺失 ⇒ 返回空对象 ⇒ 通道关闭（child 侧 `tools` 是空对象）。关闭必须留痕：
+ * 静默关闭等于 PTC 悄悄失效且现场零线索。
+ */
+function buildPtcChannel(ctx: ToolContext): Pick<ScriptRunHostDeps, 'executeTool' | 'visibleToolNames'> {
+  if (!isPtcEnabled()) return {};
+  if (!ctx.executeTool) {
+    ctx.logger.warn('workflow: PTC 已开启但本次调用没有工具执行入口（ctx.executeTool 缺失），PTC 通道关闭');
+    return {};
+  }
+  const denied = new Set((ctx.deniedToolNames ?? []).map((name) => name.trim().toLowerCase()));
+  const visibleToolNames = getPtcProjectedTools()
+    .map((tool) => tool.name)
+    .filter((name) => !denied.has(name.toLowerCase()));
+  if (visibleToolNames.length === 0) {
+    ctx.logger.warn('workflow: PTC 已开启但可见工具名单为空（注册表未就绪或全被 denylist 收掉），PTC 通道关闭');
+    return {};
+  }
+  const executeTool = ctx.executeTool;
+  return {
+    visibleToolNames,
+    executeTool: async ({ name, args, signal }) => {
+      if (signal.aborted) return { ok: false, error: 'run aborted' };
+      try {
+        const result = await executeTool(name, args);
+        return result.success
+          ? { ok: true, value: result.result }
+          : { ok: false, error: result.error ?? `${name} 执行失败` };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  };
+}
 
 /** 把异常归类成 ABORTED / DOMAIN_ERROR（Codex R2：取消别被压成 DOMAIN_ERROR）。 */
 function isAbort(ctx: ToolContext, err: unknown): boolean {
@@ -181,6 +228,8 @@ async function runWorkflow(
         }
       : undefined;
 
+    const ptcChannel = buildPtcChannel(ctx);
+
     const deps: ScriptRunHostDeps = {
       baseModelConfig,
       resolveModelConfig: (override) => {
@@ -218,6 +267,7 @@ async function runWorkflow(
       }),
       // 三档工具策略：readonly(默认) / edit / full，模型经 agent({tools}) 按 agent 选档。
       resolveAgentTools: (profile) => resolveToolProfile(profile),
+      ...ptcChannel,
       prepareAgentWorkspace: async ({ agentId, signal }) => {
         if (signal.aborted) throw new Error('run aborted before worktree creation');
         const repoPath = legacyCtx.workingDirectory;

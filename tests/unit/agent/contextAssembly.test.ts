@@ -29,6 +29,8 @@ import { getContextInterventionState } from '../../../src/host/context/contextIn
 import { getContextHealthService } from '../../../src/host/context/contextHealthService';
 import { PROVIDER_VARIANT_MARKER } from '../../../src/host/prompts/providerVariants';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
+import { applyTurnSystemContext } from '../../../src/host/agent/orchestratorTurnContext';
+import { getPermissionModeManager } from '../../../src/host/permissions/modes';
 
 const serviceMocks = vi.hoisted(() => ({
   sessionManager: {
@@ -376,7 +378,7 @@ function buildMessage(id: string, role: Message['role'], content: string): Messa
 }
 
 const CONTEXT_HEALTH_OVERRIDE_KEYS = ['compressionState','persistentSystemContext','pipelineAutocompactNeeded','droppedPromptBlocks','currentSystemPromptHash','checkpointRebuildLastWatermarkId','_networkRetryCount'] as const;
-const TURN_OVERRIDE_KEYS = ['currentTurnId','messageDeltaSeq','currentIterationSpanId','turnStartTime','toolsUsedInTurn','lastStreamedContent','needsReinference','isSimpleTaskMode','effortLevel','thinkingEnabled','thinkingStepCount','_researchModeActive','_researchIterationCount','activeSkillInvocation','activeSkillContextBlock','skillToolBoundary'] as const;
+const TURN_OVERRIDE_KEYS = ['currentTurnId','messageDeltaSeq','currentIterationSpanId','turnStartTime','toolsUsedInTurn','lastStreamedContent','needsReinference','isSimpleTaskMode','modelFacingUserMessage','effortLevel','thinkingEnabled','thinkingStepCount','_researchModeActive','_researchIterationCount','activeSkillInvocation','activeSkillContextBlock','skillToolBoundary'] as const;
 
 function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
   const rest: Record<string, unknown> = { ...overrides };
@@ -549,6 +551,81 @@ describe('ContextAssembly.buildModelMessages()', () => {
     getContextInterventionState().applyIntervention(sessionId, undefined, 'retained-message', 'retain', false);
     getContextInterventionState().applyIntervention(sessionId, undefined, 'excluded-message', 'exclude', false);
   });
+
+  const finalPayloadCases = [
+    {
+      category: '语音权限告知',
+      marker: '<live_voice_permission_notice>',
+      block: [
+        '<live_voice_permission_notice>',
+        '当前处于实时语音通话中，本轮权限档为 acceptEdits。',
+        '</live_voice_permission_notice>',
+      ].join('\n'),
+      liveVoice: true,
+    },
+    {
+      category: '后台辅助块',
+      marker: '你已经在一个独立后台任务槽里，必须亲自执行这件任务。',
+      block: [
+        '你已经在一个独立后台任务槽里，必须亲自执行这件任务。',
+        '禁止调用、搜索或建议 Task、TaskManager、spawn_agent、AgentSpawn、delegate_task、steer_task、cancel_task、task_status 等任务拆分或指挥台工具；上层已经完成任务拆分。',
+      ].join('\n'),
+    },
+    {
+      category: 'workbench 偏好',
+      marker: '优先考虑这些已挂载 skills（仅在相关时使用）：docx',
+      block: '优先考虑这些已挂载 skills（仅在相关时使用）：docx',
+    },
+    {
+      category: '角色资料',
+      marker: '## 角色记忆索引',
+      block: '## 角色记忆索引\n- 角色：牧之\n- 资料架：产品判断',
+    },
+  ] as const;
+
+  it.each(finalPayloadCases)(
+    '把 $category 放进 provider-facing messages，同时共享历史仍只保留用户原话',
+    async ({ category, marker, block, liveVoice }) => {
+      const rawUserRequest = `执行 ${category} 验收`;
+      const sourceMessageId = `turn-system-context-${category}`;
+      const sessionId = `turn-system-context-${category}-session`;
+      if (liveVoice) {
+        getPermissionModeManager().markLiveVoiceSession(sessionId, 'call:test');
+      }
+
+      try {
+        const executionContent = liveVoice
+          ? applyTurnSystemContext(rawUserRequest, undefined, sessionId)
+          : applyTurnSystemContext(
+              rawUserRequest,
+              { turnSystemContext: [block] },
+              sessionId,
+              () => null,
+            );
+        const messages = [buildMessage(sourceMessageId, 'user', rawUserRequest)];
+        const ctx = buildRuntimeContext({
+          sessionId,
+          messages,
+          modelFacingUserMessage: { sourceMessageId, content: executionContent },
+        });
+
+        // buildModelMessages 的返回值就是 inference.ts 原样交给 ModelRouter / provider adapter
+        // 的 messages 参数；这里锚请求边界，不再断言 applyTurnSystemContext 的返回值。
+        const providerFacingMessages = await new ContextAssembly(ctx as never).buildModelMessages();
+        const serializedPayload = JSON.stringify({ messages: providerFacingMessages });
+
+        expect(serializedPayload).toContain(marker);
+        expect(serializedPayload).toContain('<user_request>');
+        expect(serializedPayload).toContain(rawUserRequest);
+        expect(messages[0].content).toBe(rawUserRequest);
+        expect(messages[0].content).not.toContain(marker);
+      } finally {
+        if (liveVoice) {
+          getPermissionModeManager().clearLiveVoiceSession(sessionId, 'call:test');
+        }
+      }
+    },
+  );
 
   it('does not inject hidden continuation proposal instructions into the model prompt', async () => {
     const ctx = buildRuntimeContext({

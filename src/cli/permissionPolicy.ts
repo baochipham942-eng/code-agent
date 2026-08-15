@@ -7,6 +7,7 @@
 // `--dangerously-skip-permissions` 是显式逃生门，恢复全自动批准。
 
 import type { PermissionRequestData } from '../host/tools/types';
+import type { PermissionAskResult } from '../shared/contract/permission';
 
 export interface CLIPermissionPolicyOptions {
   /** 显式逃生门：恢复全自动批准（含危险操作） */
@@ -22,12 +23,12 @@ export function requiresHumanConfirmation(_request: PermissionRequestData): bool
 
 export function createCLIPermissionHandler(
   options: CLIPermissionPolicyOptions = {},
-): (request: PermissionRequestData) => Promise<boolean> {
+): (request: PermissionRequestData) => Promise<PermissionAskResult> {
   const warn = options.warn ?? ((message: string) => console.error(message));
 
-  return async (request: PermissionRequestData): Promise<boolean> => {
+  return async (request: PermissionRequestData): Promise<PermissionAskResult> => {
     if (options.dangerouslySkipPermissions) {
-      return true;
+      return { approved: true };
     }
     if (requiresHumanConfirmation(request)) {
       const target = String(
@@ -37,8 +38,9 @@ export function createCLIPermissionHandler(
         `[permission] 非交互模式自动拒绝需人工确认的操作: ${request.tool} (${target})。`
         + ' 如需放行请使用 --dangerously-skip-permissions（危险）。',
       );
-      return false;
+      // 拒的是这条路的**环境**（没有审批 UI），不是用户——账本/模型文案都不许再写成 user。
+      return { approved: false, denialSource: 'no-approval-ui' };
     }
-    return true;
+    return { approved: true };
   };
 }

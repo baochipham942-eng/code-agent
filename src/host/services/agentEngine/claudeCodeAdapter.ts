@@ -23,6 +23,7 @@ import { getSessionManager } from '../infra/sessionManager';
 import { getShellEnvironmentValue, getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
+import { assertAgentEngineCapability } from './agentEngineGuards';
 import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
@@ -138,6 +139,7 @@ export class ClaudeCodeAdapter {
     if (descriptor.installState !== 'installed' || !descriptor.binaryPath) {
       throw new Error(descriptor.lastError || `${config.label} is not installed or not ready.`);
     }
+    assertAgentEngineCapability(config.kind, descriptor.capabilities, request.resumeLaunch ? 'resume' : 'execute');
 
     const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
     const permissionMode = toClaudePermissionMode(permissionProfile);

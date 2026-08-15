@@ -1,11 +1,38 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { AgentEngineDescriptor, AgentEnginePermissionProfile, AgentEngineSessionMetadata, ExternalAgentEngineKind } from '../../../shared/contract/agentEngine';
-import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
+import type { AgentEngineCapability, AgentEngineDescriptor, AgentEnginePermissionProfile, AgentEngineSessionMetadata, ExternalAgentEngineKind } from '../../../shared/contract/agentEngine';
+import { AgentEngineCapabilityError, normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import type { Session } from '../../../shared/contract/session';
 import type { WorkspaceScope } from '../../../shared/contract/project';
-import { isManifestBackedExternalKind } from '../../../shared/externalEngineManifest';
+import { getExternalEngineManifestForKind, isManifestBackedExternalKind } from '../../../shared/externalEngineManifest';
 import { resolveWorkspacePath } from '../../runtime/workspaceScope';
+import { createLogger } from '../infra/logger';
+
+const logger = createLogger('AgentEngineGuards');
+
+export function assertAgentEngineCapability(
+  engine: AgentEngineSessionMetadata['kind'],
+  capabilities: readonly AgentEngineCapability[] | undefined,
+  capability: AgentEngineCapability,
+): void {
+  const declaredCapabilities = capabilities ?? getExternalEngineManifestForKind(engine)?.capabilities ?? [];
+  if (declaredCapabilities.includes(capability)) return;
+  const error = new AgentEngineCapabilityError(engine, capability);
+  logger.warn('agent engine operation blocked by capability manifest', {
+    code: error.code,
+    engine,
+    capability,
+  });
+  throw error;
+}
+
+export function assertAgentEngineManifestCapability(
+  engine: AgentEngineSessionMetadata['kind'],
+  capability: AgentEngineCapability,
+): void {
+  const capabilities = getExternalEngineManifestForKind(engine)?.capabilities ?? [];
+  assertAgentEngineCapability(engine, capabilities, capability);
+}
 
 export function assertWorkspaceCwd(cwd: string, workspaceRoot: string): string {
   const resolvedCwd = realpathOrThrow(cwd, 'cwd');
@@ -68,8 +95,12 @@ export function buildManualAgentEngineSelection(
 
   assertExternalEngineSessionAllowed(session);
 
-  if (!descriptor.executable || descriptor.installState !== 'installed') {
+  if (descriptor.installState !== 'installed') {
     throw new Error(descriptor.lastError || `${descriptor.label} is not installed or executable.`);
+  }
+  assertAgentEngineCapability(descriptor.kind, descriptor.capabilities, 'execute');
+  if (!descriptor.executable) {
+    throw new Error(descriptor.lastError || `${descriptor.label} is not executable.`);
   }
 
   const permissionProfile = assertReadOnlyExternalProfile(profile ?? descriptor.defaultPermissionProfile);

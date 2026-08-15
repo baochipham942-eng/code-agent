@@ -10,6 +10,7 @@ import type {
   ExternalAgentEngineKind,
 } from '../../shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
+import { AgentEngineCapabilityError } from '../../shared/contract/agentEngine';
 import { getAgentEngineRegistry } from '../services/agentEngine';
 import {
   buildManualAgentEngineSelection,
@@ -227,6 +228,16 @@ export function registerAgentEngineHandlers(ipcMain: IpcMain): void {
 
       return { success: true, data };
     } catch (error) {
+      if (error instanceof AgentEngineCapabilityError) {
+        return {
+          success: false,
+          error: {
+            code: error.code,
+            message: error.message,
+            details: { engine: error.engine, capability: error.capability },
+          },
+        };
+      }
       if (error instanceof AgentEngineHistoryImportError) {
         return {
           success: false,

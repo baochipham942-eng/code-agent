@@ -126,6 +126,7 @@ describe('AgentEngineRegistry mimo/kimi detection', () => {
       'kimi_code',
       'codebuddy_code',
       'grok_cli',
+      'dsh_cli',
     ]);
   });
 
@@ -229,7 +230,7 @@ describe('AgentEngineRegistry mimo/kimi detection', () => {
     const sources = await new AgentEngineRegistry().listSources();
     const cursor = sources.find((source) => source.manifestId === 'cursor_cli');
 
-    expect(sources).toHaveLength(10);
+    expect(sources).toHaveLength(11);
     expect(cursor).toMatchObject({
       detected: false,
       selectable: false,

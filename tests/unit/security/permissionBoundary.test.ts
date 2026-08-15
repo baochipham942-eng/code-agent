@@ -40,6 +40,8 @@ describe('permission and privacy boundary contracts', () => {
       'voice',
       // 声纹单列一条不并进 voice：它是生物识别数据，合规重量与「你说过的话」不同一档
       'voiceprint',
+      // 通话录音单列：它是长期留存的原始音频，与 voice（转写路径、音频只临时落盘）不同一档
+      'call_recording',
       'channel',
       'mcp_plugin',
       'model_provider',

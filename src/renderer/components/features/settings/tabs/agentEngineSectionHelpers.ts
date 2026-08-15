@@ -208,6 +208,7 @@ function defaultModelHintForKind(kind: AgentEngineKind, t: Translations): string
     || kind === 'kimi_code'
     || kind === 'codebuddy_code'
     || kind === 'grok_cli'
+    || kind === 'dsh_cli'
   ) {
     return section.defaultModelCliResolved;
   }

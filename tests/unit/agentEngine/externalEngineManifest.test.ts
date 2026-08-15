@@ -31,7 +31,7 @@ describe('external engine manifest contract', () => {
     const manifests = listExternalEngineManifests();
     const recommendationOnly = manifests.filter((manifest) => !manifest.kind);
 
-    expect(manifests).toHaveLength(10);
+    expect(manifests).toHaveLength(11);
     expect(recommendationOnly.map((manifest) => manifest.id)).toEqual([
       'qoder_work',
       'comate_zulu',

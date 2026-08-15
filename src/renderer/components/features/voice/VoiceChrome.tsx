@@ -193,6 +193,19 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId:
           </span>
         </span>
 
+        {/* 录音进行中的持续可见指示（N-L7-REC 工单 §4：不能开了就忘）。
+            红点用动画而非静态色块——通话条本身信息密，静态小点太容易被扫过去。 */}
+        {store.recording && (
+          <span
+            data-testid="voice-recording-indicator"
+            title={t.voice.live.recordCallsIndicator}
+            className="flex shrink-0 items-center gap-1 rounded-[var(--radius-xl)] bg-badge-danger px-2 text-[10.5px] text-badge-danger"
+          >
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-mark-danger" />
+            {t.voice.live.recordCallsIndicator}
+          </span>
+        )}
+
         {visual !== 'error' && showManualControl && (
           <button /* ds-allow:button: 通话条文字操作键，Button primitive 没有这套紧凑双态形态 */
             type="button"

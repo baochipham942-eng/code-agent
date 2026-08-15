@@ -99,6 +99,13 @@ export interface VoiceLiveSettings {
    * 注册与否是另一件事（显式动作，见 voiceprintStore）；此开关只控运算是否发生。
    */
   voiceprint?: boolean;
+  /**
+   * 通话录音诊断（N-L7-REC）：**默认关**，undefined / false 都是关。
+   * 开 = 本次之后的每通电话把上行麦克风与下行播报两路 PCM 落盘为 WAV，
+   * 供排障回溯；录音只留在本地数据目录，受保留期/体积/条数三重上限管辖，
+   * 且只有导出诊断包时**显式勾选**才会进包。本能力不做任何自动上传。
+   */
+  recordCalls?: boolean;
 }
 
 /**

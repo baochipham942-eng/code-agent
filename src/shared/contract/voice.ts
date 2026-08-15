@@ -252,6 +252,12 @@ export type VoiceEvent =
       /** 可缺失：上游未给或形状不认识时不把未知写成 0。 */
       usage?: VoiceTokenUsage;
     }
+  /**
+   * 本通电话是否正在录音（N-L7-REC）。由 **host** 发，不是 renderer 自己读设置——
+   * 开关开着但录音目录建不出来时 recorder 为 null，那种情况必须显示「没在录」。
+   * 「录音进行中要有持续可见的指示」是工单 §4 的硬要求。
+   */
+  | { type: 'recording'; active: boolean }
   /** Host 注入的 narration 在 response.create 确认窗内被上游拒绝；通话本身仍然存活。 */
   | { type: 'injection.rejected'; message: string }
   /** 语音派出的任务状态。Active Work 条消费（批 B），host 侧同时用它计通话摘要的 workItemCount。 */

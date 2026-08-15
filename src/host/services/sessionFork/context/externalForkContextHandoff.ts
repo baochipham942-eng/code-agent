@@ -88,6 +88,11 @@ export const EXTERNAL_FORK_CONTEXT_CAPABILITIES: Readonly<
     providerNativeFork: false,
     reason: 'Grok Build fork-context launch wiring has not been verified.',
   }),
+  dsh_cli: Object.freeze({
+    deliveryMode: 'unsupported',
+    providerNativeFork: false,
+    reason: 'DeepSeek Harness headless starts a fresh session per run and exposes no session identity.',
+  }),
 });
 
 interface ExternalForkContextTokenPolicy {

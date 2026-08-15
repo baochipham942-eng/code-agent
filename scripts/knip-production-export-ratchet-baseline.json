@@ -7072,6 +7072,21 @@
       "kind": "export"
     },
     {
+      "file": "src/host/services/agentEngine/dshCliAdapter.ts",
+      "name": "buildDshArgs",
+      "kind": "export"
+    },
+    {
+      "file": "src/host/services/agentEngine/dshCliAdapter.ts",
+      "name": "buildDshEnv",
+      "kind": "export"
+    },
+    {
+      "file": "src/host/services/agentEngine/dshCliAdapter.ts",
+      "name": "parseDshLine",
+      "kind": "export"
+    },
+    {
       "file": "src/host/services/agentEngine/externalEngineDurableLifecycle.ts",
       "name": "redactCommandSummary",
       "kind": "export"

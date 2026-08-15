@@ -130,6 +130,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   [IPC_DOMAINS.VOICE]: [
     'reportFailure',
+    // 通话录音（N-L7-REC）：设置页与导出勾选框都读它，旧壳不认识要降级。
+    'recordingOverview',
     // 声纹身份（N-L7-SPK）：热更新的 renderer 会调这四个，旧壳不认识就得降级，
     // 所以要在这里登记成壳能力（renderer-capability-diff 门守的就是这个）。
     'voiceprintClear',

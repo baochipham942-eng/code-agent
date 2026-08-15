@@ -10,6 +10,7 @@ export type PrivacyBoundaryIndexId =
   | 'desktop'
   | 'voice'
   | 'voiceprint'
+  | 'call_recording'
   | 'channel'
   | 'mcp_plugin'
   | 'model_provider'
@@ -70,6 +71,19 @@ export const PRIVACY_BOUNDARY_INDEX: Record<PrivacyBoundaryIndexId, PrivacyBound
     storage: '只保存在本机声纹目录，与账号身份信息隔离；不存任何原始音频。通话内临时比对只在内存进行，通话结束即丢弃。连续 90 天未匹配自动删除。',
     cloud: '永不上传：声纹向量不出本机、不进诊断包。识别准确性无法完全保证，因此声纹只用于个性化与说话人区分，绝不用于解锁或授权。',
     revoke: '在语音设置里关闭声纹识别，或清除已注册的声纹；未注册/清除后核心功能不受影响，只失去跨通话个性化。',
+    actionTarget: { tab: 'voiceLive', label: '打开实时语音设置' },
+    permissionBoundaryIds: ['desktop.audio.microphone'],
+  },
+  // 通话录音是「你说过的话」的原始音频，与 voice（转写路径，音频只临时落盘）性质不同：
+  // 这条是**长期留存**的一份数据面，所以单列。默认关是它的第一属性，文案要先说这个。
+  call_recording: {
+    id: 'call_recording',
+    title: '通话录音（诊断用）',
+    summary: '默认关。只在你为排查问题主动打开后，才把通话的麦克风与助手播报两路音频存到本机。',
+    data: ['麦克风原始音频', '助手播报原始音频', '通话时长与字节数'],
+    storage: '只存本机数据目录的录音文件夹，受三重上限管辖：保留 7 天、总量 500MB、最多 10 通，任一超限自动清理最旧的。每次清理都记台账，在实时语音设置里能看到删了几个、释放多少、触发的是哪条上限。',
+    cloud: '永不自动上传。只有你在导出诊断包时**显式勾选**，录音才会进包；诊断包本身也只导出到你指定的本地路径，发给谁由你决定。',
+    revoke: '在实时语音设置里关掉通话录音开关（关掉后不再产生新录音），已有录音可在录音文件夹里自行删除。',
     actionTarget: { tab: 'voiceLive', label: '打开实时语音设置' },
     permissionBoundaryIds: ['desktop.audio.microphone'],
   },

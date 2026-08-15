@@ -161,6 +161,18 @@ export const DoctorSettings: React.FC = () => {
   } = useDoctorStore();
   const [fixingCode, setFixingCode] = useState<DoctorFixCode | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  // 通话录音进包（N-L7-REC）：默认 false，必须是这次导出的显式勾选。
+  const [includeRecordings, setIncludeRecordings] = useState(false);
+  const [recordingSummary, setRecordingSummary] = useState<{ count: number; totalBytes: number } | null>(null);
+
+  useEffect(() => {
+    void window.domainAPI?.invoke<{ count: number; totalBytes: number }>(IPC_DOMAINS.VOICE, 'recordingOverview')
+      .then((response) => {
+        if (response?.success && response.data && response.data.count > 0) setRecordingSummary(response.data);
+      })
+      // 旧壳不认识这个 action：不显示勾选框即可，不打断诊断页。
+      .catch(() => undefined);
+  }, []);
 
   // 进页面时复用已有报告（如启动静默快检的结果）；没有则自动跑全量
   useEffect(() => {
@@ -189,7 +201,7 @@ export const DoctorSettings: React.FC = () => {
       const response = await window.domainAPI?.invoke<{ content: string; suggestedFileName: string }>(
         IPC_DOMAINS.DIAGNOSTICS,
         'exportAppBundle',
-        { doctorReport: report },
+        { doctorReport: report, includeVoiceRecordings: includeRecordings },
       );
       if (!response?.success || !response.data?.content) {
         throw new Error(response?.error?.message || 'Failed to export diagnostics bundle');
@@ -231,6 +243,23 @@ export const DoctorSettings: React.FC = () => {
       description={doctorText.pageDescription}
       actions={
         <div className="flex items-center gap-2">
+          {report && recordingSummary && (
+            <label
+              className="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer"
+              title={doctorText.includeRecordingsHint}
+              data-testid="doctor-include-recordings"
+            >
+              <input
+                type="checkbox"
+                checked={includeRecordings}
+                onChange={(event) => setIncludeRecordings(event.target.checked)}
+                className="h-3.5 w-3.5 accent-zinc-400"
+              />
+              {doctorText.includeRecordings
+                .replace('{count}', String(recordingSummary.count))
+                .replace('{size}', `${(recordingSummary.totalBytes / 1024 / 1024).toFixed(1)} MB`)}
+            </label>
+          )}
           {report && (
             <Button
               variant="ghost"

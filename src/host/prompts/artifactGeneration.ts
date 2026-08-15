@@ -263,6 +263,32 @@ export function needsArtifactTaskBrief(message: string): boolean {
     return true;
   }
 
+  // Prefer deliverable structure over an ever-growing list of Chinese verbs.
+  // These patterns cover quantified artifacts, explicit file destinations, and
+  // scoped long-form research while keeping bare verbs such as “调研” inert.
+  const hasQuantifiedDeliverable = /(?:[做弄搞整来画写]|撰写?|搭建?|设计)\s*(?:一)?\s*[个张份套版篇组]/i.test(message);
+  const hasQualifiedLongFormResearch = /(?:深入|全面|系统)(?:地)?\s*(?:调研|研究|分析)/i.test(message);
+  const explicitlyRejectsFileOutput = /(?:不要|无需|不必)\s*(?:输出|写入|写到|写进|保存|存放|导出)/i.test(message);
+  const hasFileDestination = !explicitlyRejectsFileOutput
+    && /(?:输出|写入|写到|写进|保存(?:到|至)?|存(?:到|至)?|导出(?:到|至)?)[\s\S]{0,80}?\.(?:html?|md|markdown|csv|xlsx?|pptx?|docx?|pdf|png|jpe?g|gif|webp|svg)(?=$|[\s，。；;!?！？）》」’"'])/i.test(message);
+  const hasConventionalDocDestination = !explicitlyRejectsFileOutput
+    && /(?:写入|写进|保存到)\s+(?:[\w./~-]+\/)?(?:README|INDEX|CHANGELOG)(?:\.md)?\b/i.test(message);
+  const hasExplicitArtifactFormat = /(?:markdown|html|csv|xlsx?|pptx?|docx?|pdf)\s*(?:格式|文档|文件)?\s*(?:输出|交付|导出)/i.test(message);
+  const hasNamedDeliverableRequest = /(?:给出|整理(?:成|为)?|形成)[\s\S]{0,80}?(?:关系图|架构图|流程图|报告|方案|清单)/i.test(message);
+  const hasRepositoryAuditShape = /(?:分析|扫描|查找)[\s\S]{0,30}?(?:项目|代码库)[\s\S]{0,60}?(?:架构|所有)[\s\S]{0,80}?(?:文件|依赖|端点|流程)/i.test(message);
+  const hasSearchThenFinalInventory = /(?:递归|扫描|查找)[\s\S]{0,240}?(?:最终|最后)[\s\S]{0,24}?(?:列出|整理)/i.test(message);
+
+  if (hasQuantifiedDeliverable
+      || hasQualifiedLongFormResearch
+      || hasFileDestination
+      || hasConventionalDocDestination
+      || hasExplicitArtifactFormat
+      || hasNamedDeliverableRequest
+      || hasRepositoryAuditShape
+      || hasSearchThenFinalInventory) {
+    return true;
+  }
+
   const hasRepairIntent = /\b(fix|repair|patch|correct|debug|validate|verify|restore|update)\b|修复|修正|改好|验证|校验|失败|不通过|报错/i.test(message);
   const hasArtifactTarget = /\b\w[\w.-]*\.(html|tsx?|jsx?|css|md|json|csv|xlsx?|pptx?|docx?)\b|\/[\w .@-]+\/[\w .@-]+\.(html|tsx?|jsx?|css|md|json|csv|xlsx?|pptx?|docx?)|\\[\w .@-]+\\[\w .@-]+\.(html|tsx?|jsx?|css|md|json|csv|xlsx?|pptx?|docx?)/i.test(message);
 

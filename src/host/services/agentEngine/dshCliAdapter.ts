@@ -1,6 +1,8 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { AgentEnginePermissionProfile } from '../../../shared/contract/agentEngine';
 import { getShellPath } from '../infra/shellEnvironment';
 import {
@@ -15,6 +17,8 @@ const DSH_PROFILE = 'headless';
 const CLIENT_DEFAULT_MODEL = 'client_default';
 /** dsh 侧承载默认 provider/model 的插件 id（`dsh --profile headless --dump-config` 可见）。 */
 const DEFAULT_MODEL_PLUGIN_ID = 'agent-default-model';
+/** Neo 的事件 sink 插件在 dsh 树上的 id，与 `sink.mjs` 的 `name` 同名，`--dump-config` 可见。 */
+const DSH_EVENT_SINK_ID = 'neo-event-sink';
 /**
  * dsh 的只读档：shipped headless profile 自己就读这个环境变量
  * （`sandbox-policy.mode = process.env.DSH_PERMISSION_MODE ?? 'workspace-write'`，
@@ -42,16 +46,16 @@ const DSH_CONFIG: ClaudeProtocolCliConfig = {
   parseJsonLine: parseDshLine,
   commandSummary: (model) => [
     `DSH_PERMISSION_MODE=${DSH_READ_ONLY_MODE} dsh --profile ${DSH_PROFILE}`,
+    '--patch <event-sink-patch>',
     ...(parseDshModelSelection(model) ? ['--patch <model-patch>'] : []),
     '<prompt:redacted>',
   ].join(' '),
 };
 
 /**
- * DeepSeek Harness（`@deepseek-ai/dsh`）的 headless profile 只往 stdout 打印最终
- * 回答，没有 JSON 事件流可解析（N-DSH1 分叉点探测：`--profile headless --help`
- * 只有 `-h`，`dsh-headless/lib/index.js` 只有一句 `io.stdout.write(outcome.text)`）。
- * 事件流渲染与 durable 恢复要等 dsh 侧的事件 sink 插件，见 N-DSH1b。
+ * DeepSeek Harness（`@deepseek-ai/dsh`）的 headless profile 自己只往 stdout 打印
+ * 最终回答；事件流由 Neo 随包带的 Cordis 插件补上（`resources/dsh-event-sink/sink.mjs`，
+ * 通过 `--patch` 挂进 dsh 的插件树）。N-DSH1b 走的是分叉点探测里的路线 C。
  */
 export class DshCliAdapter extends ClaudeCodeAdapter {
   constructor() {
@@ -113,17 +117,108 @@ export function buildDshArgs(
   return [
     '--profile',
     DSH_PROFILE,
+    '--patch',
+    writeDshEventSinkPatch(),
     ...(selection ? ['--patch', writeDshModelPatch(selection)] : []),
     prompt,
   ];
 }
 
 /**
- * dsh headless 的 stdout 只有最终回答本身，一个事件都没有，所以每一行就是真文本。
- * 空行照样下发（`'\n'`），否则回答里的段落分隔会在渲染时丢掉。
+ * 找到随包带的 dsh 事件 sink 插件。找不到就抛 —— 少了它整条事件流会静默变哑，
+ * 而 Neo 的 manifest 已经声明了 `stream_events`，声明与实际必须一起成立。
+ */
+function resolveDshEventSinkPath(): string {
+  const resourcesPath = String((process as NodeJS.Process & { resourcesPath?: string }).resourcesPath || '');
+  const candidates = [
+    process.env.CODE_AGENT_DSH_EVENT_SINK,
+    path.join(process.cwd(), 'resources', 'dsh-event-sink', 'sink.mjs'),
+    ...(resourcesPath
+      ? [
+          path.join(resourcesPath, 'resources', 'dsh-event-sink', 'sink.mjs'),
+          path.join(resourcesPath, '_up_', 'resources', 'dsh-event-sink', 'sink.mjs'),
+        ]
+      : []),
+  ].filter((value): value is string => Boolean(value));
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (!found) {
+    throw new Error(
+      `DeepSeek Harness 的事件流插件没找到（找过：${candidates.join('、')}）。`
+      + '没有它 dsh 只会打印最终答案，工具调用和流式文本都看不见。',
+    );
+  }
+  return found;
+}
+
+/**
+ * 写一份把事件 sink 插进 dsh 插件树的 patch 层，返回它的路径。
+ *
+ * 名字里带插件路径的哈希：同一个安装位置复用同一份、可重复写入，换了安装位置
+ * （dev 工作树 / 打包后的 app）自然换一份，不会读到上一次的旧路径。
+ */
+function writeDshEventSinkPatch(): string {
+  const sinkPath = resolveDshEventSinkPath();
+  const patchDir = path.join(tmpdir(), 'agent-neo-dsh-sink-patches');
+  mkdirSync(patchDir, { recursive: true });
+  const patchPath = path.join(patchDir, `${createHash('sha256').update(sinkPath).digest('hex').slice(0, 16)}.yml`);
+  // 插件路径下发成 file:// URL：dsh 的 loader 把裸包名按 profile 目录解析，
+  // 只有 URL 形态能指到 Neo 自己的安装目录（`--dump-config` 里能看到这一行）。
+  writeFileSync(
+    patchPath,
+    `- insert:\n    - id: ${DSH_EVENT_SINK_ID}\n      name: '${pathToFileURL(sinkPath).href}'\n`,
+    'utf8',
+  );
+  return patchPath;
+}
+
+/**
+ * 解析事件 sink 吐出来的 NDJSON。
+ *
+ * 非 JSON 行一律丢弃：headless runner 自己在最后还会把最终答案原样打一遍，
+ * 而 `final` 事件里已经带了同一段文本，再渲染一次就是重复。
+ * sink 挂不上不会走到这里 —— dsh 的 `assertEntriesActivated` 会让 boot 直接失败、
+ * 进程非零退出，Neo 侧呈现为一次失败的 run 而不是空洞的成功。
  */
 export function parseDshLine(line: string): ClaudeParsedEvent | null {
-  return { textDelta: `${line}\n`, textDeltaSource: 'stream' };
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('{')) return null;
+  let event: DshSinkEvent;
+  try {
+    event = JSON.parse(trimmed) as DshSinkEvent;
+  } catch {
+    return null;
+  }
+  switch (event.type) {
+    case 'session':
+      return event.sessionId ? { externalSessionId: event.sessionId } : null;
+    case 'text':
+      return event.text ? { textDelta: event.text, textDeltaSource: 'stream' } : null;
+    case 'final':
+      return event.text ? { finalText: event.text } : null;
+    case 'tool_call':
+      return event.name ? { toolName: event.name } : null;
+    case 'tool_result':
+      return event.error ? { error: event.error } : null;
+    case 'turn_end':
+      return event.reason ? { status: event.reason } : null;
+    case 'error':
+      return event.message ? { error: event.message } : null;
+    default:
+      // reasoning 等 Neo 暂不渲染的类型走这里；未知类型同样静默丢弃，
+      // 因为 sink 与本文件同仓同版本，多出来的类型只可能是还没接线的新事件。
+      return null;
+  }
+}
+
+/** 事件 sink 吐出来的行，字段与 `resources/dsh-event-sink/sink.mjs` 一一对应。 */
+interface DshSinkEvent {
+  type: string;
+  sessionId?: string;
+  text?: string;
+  name?: string;
+  error?: string;
+  reason?: string;
+  message?: string;
 }
 
 export function buildDshEnv(): NodeJS.ProcessEnv {

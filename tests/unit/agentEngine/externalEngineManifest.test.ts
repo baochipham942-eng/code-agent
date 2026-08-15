@@ -62,7 +62,7 @@ describe('external engine manifest contract', () => {
       kimi_code: ['execute', 'stream_events'],
       codebuddy_code: ['execute', 'stream_events'],
       grok_cli: ['execute', 'stream_events'],
-      dsh_cli: ['execute'],
+      dsh_cli: ['execute', 'stream_events'],
     });
   });
 

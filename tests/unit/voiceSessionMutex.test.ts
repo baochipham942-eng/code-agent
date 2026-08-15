@@ -100,6 +100,7 @@ const voiceDispatchProbe = vi.hoisted(() => ({
   }) => void),
   fail: null as null | ((item: VoiceWorkItem) => void),
   work: null as null | ((item: VoiceWorkItem) => void),
+  endCall: null as null | (() => void),
 }));
 vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/host/services/voice/voiceAgentCoordinator')>();
@@ -109,6 +110,7 @@ vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOrig
       voiceDispatchProbe.narrate = binding.onWorkNarration as typeof voiceDispatchProbe.narrate;
       voiceDispatchProbe.fail = binding.onWorkFailed;
       voiceDispatchProbe.work = binding.onWorkItem;
+      voiceDispatchProbe.endCall = binding.onEndCall;
       actual.beginVoiceDispatch(binding);
     },
   };
@@ -1233,6 +1235,7 @@ describe('空对话不出通话摘要卡（A3）', () => {
     close.mockClear();
     addMessageToSession.mockClear();
     voiceDispatchProbe.work = null;
+    voiceDispatchProbe.endCall = null;
     lastOnEvent = null;
   });
 
@@ -1299,6 +1302,8 @@ describe('挂断确定性闸（A1）', () => {
   beforeEach(() => {
     connect.mockClear();
     close.mockClear();
+    voiceLogger.warn.mockClear();
+    voiceDispatchProbe.endCall = null;
     lastOnEvent = null;
   });
 
@@ -1343,6 +1348,37 @@ describe('挂断确定性闸（A1）', () => {
 
     expect(getActiveVoiceSessionId()).not.toBeNull();
     expect(close).not.toHaveBeenCalled();
+  });
+
+  it('疑似挂断近邻未命中闸且模型没调 end_call：本轮结束报可区分 warn', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hangup-near-miss');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '请切断电话吧', done: true });
+    lastOnEvent?.({ type: 'response.done' });
+
+    expect(voiceLogger.warn).toHaveBeenCalledWith(
+      'possible hangup intent missed by gate and model end_call',
+      {
+        voiceSessionId: expect.any(String),
+        signal: 'phrase-edit-distance-1',
+      },
+    );
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+  });
+
+  it('疑似挂断近邻后模型调了 end_call：不报盲区 warn', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hangup-near-miss-model-handled');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '请切断电话吧', done: true });
+    voiceDispatchProbe.endCall?.();
+    lastOnEvent?.({ type: 'response.done' });
+
+    expect(voiceLogger.warn).not.toHaveBeenCalledWith(
+      'possible hangup intent missed by gate and model end_call',
+      expect.anything(),
+    );
   });
 
   // R2（2026-07-30 真机 14:39:42）：「先这样吧拜拜」之后紧跟「不要挂断」，电话照样挂了。

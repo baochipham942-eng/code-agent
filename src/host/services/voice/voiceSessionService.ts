@@ -37,7 +37,7 @@ import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import { reportVoiceWorkFailure } from './voiceWorkFailureReporter';
-import { detectHangupIntent } from './hangupIntent';
+import { detectHangupIntent, detectHangupIntentNearMiss } from './hangupIntent';
 import {
   findVoiceInterruptCandidateByItemId,
   resolveInterruptCandidate,
@@ -675,6 +675,8 @@ async function connectAndBind(
     timer: null,
     awaitingUserTurn: false,
   };
+  // 低置信近邻只负责暴露正式闸的盲区。等本轮 response.done 才知道模型也没调 end_call。
+  let pendingHangupNearMiss = false;
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
   const continuity = await loadVoiceContinuity(neoSessionId);
   // 声纹（N-L7-SPK）：embedder 加载与上游建连并行；已注册本人时 continuity 扣住等认人。
@@ -756,7 +758,10 @@ async function connectAndBind(
       enqueueOrInjectNarration(active, narration);
     },
     // 模型自己收线，走统一的收线入口。
-    onEndCall: () => requestEndCall('model-end-call'),
+    onEndCall: () => {
+      pendingHangupNearMiss = false;
+      requestEndCall('model-end-call');
+    },
   });
   let upstream: VoiceTransportHandle;
   try {
@@ -889,8 +894,11 @@ async function connectAndBind(
           // 反过来（R2）：告别窗里的新一句话若不是挂断，就是反悔，解除武装继续通话。
           if (active?.id === id && !voiceQuestionConsumed) {
             if (detectHangupIntent(event.text)) requestEndCall('user-hangup-intent');
-            else if (shouldDisarmHangup(event.text)) disarmEndCall();
-            else endCallRequested.awaitingUserTurn = false;
+            else {
+              pendingHangupNearMiss ||= detectHangupIntentNearMiss(event.text);
+              if (shouldDisarmHangup(event.text)) disarmEndCall();
+              else endCallRequested.awaitingUserTurn = false;
+            }
           }
         } else if (event.type === 'assistant.transcript') {
           const key = event.responseId ?? 'legacy';
@@ -906,6 +914,14 @@ async function connectAndBind(
             }
           } else transcriptBuf.assistantByResponse.set(key, assistantBuffer + event.text);
         } else if (event.type === 'response.done') {
+          if (pendingHangupNearMiss && !endCallRequested.value) {
+            pendingHangupNearMiss = false;
+            // 字幕内容不落日志；signal 足够区分「模型没调工具」与普通未命中。
+            logger.warn('possible hangup intent missed by gate and model end_call', {
+              voiceSessionId: id,
+              signal: 'phrase-edit-distance-1',
+            });
+          }
           if (event.usage && tokenUsage.accepting) {
             tokenUsage.value = addTokenUsage(tokenUsage.value, event.usage);
           }

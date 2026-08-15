@@ -23,7 +23,7 @@ import {
 import { getSessionManager } from '../../../services';
 import { getIncompleteTasks } from '../../../services/planning/taskStore';
 import { getSessionTodos } from '../../../agent/todoParser';
-import type { ContextAssemblyCtx } from './shared';
+import type { CheckAndAutoCompressOptions, ContextAssemblyCtx } from './shared';
 import { cachedReaddirSync, logger } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 import { getCheckpointWriterService } from '../../checkpointWriterService';
@@ -342,7 +342,10 @@ export function nextSummaryFailureState(input: {
   return { streak, cooldownUntil };
 }
 
-export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<void> {
+export async function checkAndAutoCompress(
+  ctx: ContextAssemblyCtx,
+  options?: CheckAndAutoCompressOptions,
+): Promise<void> {
   try {
     // Item2 卡死护栏：已判定窗口太小而暂停，则不再尝试压缩（避免每轮烧 token 摘要）。
     // 消费 pipeline one-shot 信号，避免 stale true 残留。
@@ -390,6 +393,7 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
         && ctx.runtime.contextHealth.checkpointRebuildLastWatermarkId === checkpointWatermark,
       isMainAgent: !ctx.runtime.agentId,
       compressionEnabled: compressorConfig.enabled,
+      providerConfirmedOverflow: options?.providerConfirmedOverflow,
     });
     // one-shot 信号：评估后立即清零，避免跨 turn 残留
     ctx.runtime.contextHealth.setPipelineAutocompactNeeded(false);
@@ -468,9 +472,17 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
       }
     }
 
-    // WP2-3 摘要失败冷却：冷却期内跳过付费 AI 摘要（确定性压缩层不受影响，
-    // 溢出恢复有独立路径兜底），避免连续失败反复烧 token。
-    if (Date.now() < ctx.compressionRecovery._summaryCooldownUntil) {
+    // WP2-3 摘要失败冷却：冷却期内跳过付费 AI 摘要（确定性压缩层不受影响），
+    // 避免连续失败反复烧 token。
+    //
+    // 🔴 provider 已确认溢出时不受冷却拦截：溢出意味着这一轮不压就必然再撞一次墙，
+    // 「省下这次摘要钱」换来的是整个会话卡死。原注释说「溢出恢复有独立路径兜底」——
+    // 那条独立路径（L6 overflowRecovery）实测是个不剪任何 token 的空壳且生产零调用方，
+    // 兜底并不存在，故改由本档直接放行。
+    if (
+      !options?.providerConfirmedOverflow
+      && Date.now() < ctx.compressionRecovery._summaryCooldownUntil
+    ) {
       logger.warn(
         `[AgentLoop] Summary compaction in failure cooldown until ${new Date(ctx.compressionRecovery._summaryCooldownUntil).toISOString()} — skipping paid summary`,
       );

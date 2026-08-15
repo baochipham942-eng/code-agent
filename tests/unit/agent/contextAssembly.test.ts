@@ -2455,6 +2455,76 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     );
     expect(injectedInMessages || injectedViaBuffer).toBe(true);
   });
+
+  // ==========================================================================
+  // N-DSH3：provider 已确认溢出时，压缩不再由本地 token 估算把关。
+  // 这两条是成对的 —— 同一份「估算说完全没压力」的上下文，只差一个标记。
+  // ==========================================================================
+  const buildNoPressureCtx = (sessionId: string) => {
+    vi.mocked(getContextHealthService).mockReturnValue({
+      get: vi.fn().mockReturnValue({ usagePercent: 12, currentTokens: 15_000, maxTokens: 128_000 }),
+      update: vi.fn(),
+    } as never);
+    return {
+      sessionId,
+      agentId: undefined,
+      messages: Array.from({ length: 8 }, (_, i) =>
+        buildMessage(`ovf-${i}`, i === 5 ? 'user' : 'assistant', 'overflow transcript '.repeat(200))),
+      hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
+      onEvent: vi.fn(),
+      modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
+      toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
+      workingDirectory: process.cwd(),
+      isDefaultWorkingDirectory: true,
+      turn: TurnState.forTest({ isSimpleTaskMode: false }),
+      compressionPipeline: new CompressionPipeline(),
+      contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState(), pipelineAutocompactNeeded: false } as never),
+      MAX_CONSECUTIVE_COMPACTS: 2,
+      autoCompressor: {
+        // 估算说远没到阈值 —— 三个触发器全哑
+        shouldTriggerByTokens: vi.fn().mockReturnValue(false),
+        getConfig: vi.fn().mockReturnValue({ enabled: true, warningThreshold: 0.75, preserveRecentCount: 2 }),
+        shouldWrapUp: vi.fn().mockReturnValue(false),
+        getCompactionCount: vi.fn().mockReturnValue(0),
+        getStats: vi.fn().mockReturnValue({ compressionCount: 0, totalSavedTokens: 0 }),
+        recordCompaction: vi.fn(),
+      },
+      systemPrompt: '',
+      hookManager: undefined,
+    };
+  };
+
+  it('skips compaction when every local estimate says there is no pressure (对照组)', async () => {
+    const ctx = buildNoPressureCtx(`session-ovf-baseline-${Date.now()}`);
+    const assembly = new ContextAssembly(ctx as never);
+    await assembly.checkAndAutoCompress();
+    expect(ctx.autoCompressor.recordCompaction).not.toHaveBeenCalled();
+  });
+
+  it('compacts anyway on provider-confirmed overflow — the estimate that said "no pressure" is the falsified one', async () => {
+    const ctx = buildNoPressureCtx(`session-ovf-forced-${Date.now()}`);
+    const assembly = new ContextAssembly(ctx as never);
+    await assembly.checkAndAutoCompress({ providerConfirmedOverflow: true });
+    expect(ctx.autoCompressor.recordCompaction).toHaveBeenCalled();
+  });
+
+  it('ignores the summary failure cooldown on provider-confirmed overflow', async () => {
+    const ctx = buildNoPressureCtx(`session-ovf-cooldown-${Date.now()}`);
+    const assembly = new ContextAssembly(ctx as never);
+    // 冷却中：普通路径此时会跳过付费摘要，溢出档不许跳 —— 不压这一轮下一轮必然再撞墙
+    assembly.compressionRecoveryForTest._summaryCooldownUntil = Date.now() + 10 * 60_000;
+    await assembly.checkAndAutoCompress({ providerConfirmedOverflow: true });
+    expect(ctx.autoCompressor.recordCompaction).toHaveBeenCalled();
+  });
+
+  it('still respects the window-too-small pause on provider-confirmed overflow', async () => {
+    const ctx = buildNoPressureCtx(`session-ovf-paused-${Date.now()}`);
+    const assembly = new ContextAssembly(ctx as never);
+    // 已判定窗口太小压不动 —— 这条护栏溢出档也不许绕，否则每轮白烧摘要钱
+    assembly.compressionRecoveryForTest._autoCompactPaused = true;
+    await assembly.checkAndAutoCompress({ providerConfirmedOverflow: true });
+    expect(ctx.autoCompressor.recordCompaction).not.toHaveBeenCalled();
+  });
 });
 
 // ============================================================================

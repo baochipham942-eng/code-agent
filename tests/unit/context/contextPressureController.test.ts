@@ -94,6 +94,38 @@ describe('assessContextPressure', () => {
     expect(d.trigger).toBe('token-threshold');
   });
 
+  // N-DSH3: provider 确认溢出 —— 本地估算已被证伪，不许再用它决定压不压。
+  it('executes on provider-confirmed overflow even when every estimate says there is no pressure', () => {
+    const d = assessContextPressure({
+      ...BASE,
+      usageRatio: 0.1,
+      compressionEnabled: false,
+      providerConfirmedOverflow: true,
+    });
+    expect(d.action).toBe('execute');
+    expect(d.trigger).toBe('provider-overflow');
+  });
+
+  it('ranks provider-confirmed overflow above the pipeline signal', () => {
+    const d = assessContextPressure({
+      ...BASE,
+      pipelineAutocompactNeeded: true,
+      providerConfirmedOverflow: true,
+    });
+    expect(d.trigger).toBe('provider-overflow');
+  });
+
+  it('still prefers checkpoint rebuild on provider-confirmed overflow when one is available', () => {
+    const d = assessContextPressure({
+      ...BASE,
+      providerConfirmedOverflow: true,
+      checkpointRebuildAvailable: true,
+      isMainAgent: true,
+    });
+    expect(d.action).toBe('checkpoint-rebuild');
+    expect(d.trigger).toBe('provider-overflow');
+  });
+
   it('does not choose checkpoint rebuild for subagent runtimes', () => {
     const d = assessContextPressure({
       ...BASE,

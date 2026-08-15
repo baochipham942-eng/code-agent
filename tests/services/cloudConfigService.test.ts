@@ -81,12 +81,6 @@ describe('CloudConfigService', () => {
   // Configuration Access Tests
   // --------------------------------------------------------------------------
   describe('配置访问', () => {
-    it('getRule 对未定义 key 应该返回空字符串', () => {
-      const service = getCloudConfigService();
-      const rule = service.getRule('nonexistent-rule');
-      expect(typeof rule).toBe('string');
-    });
-
     it('getModelRouting 未配置时返回 undefined（消费方据此降级硬编码链）', () => {
       const service = getCloudConfigService();
       expect(service.getModelRouting()).toBeUndefined();

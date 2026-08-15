@@ -801,7 +801,16 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
 
   const interventionState = getContextInterventionState();
   const effectiveInterventions = interventionState.getEffectiveSnapshot(ctx.runtime.sessionId, ctx.runtime.agentId);
-  const transcriptEntries = ctx.buildContextTranscriptEntries(ctx.runtime.messages);
+  // 当前 run 的模型面 user 内容只投影进最终请求，历史/落库仍保留展示面原话。
+  // 不能直接改 ctx.messages：telemetry backfill、renderer、checkpoint 都依赖原话语义。
+  const modelFacingUserMessage = ctx.runtime.turn.modelFacingUserMessage;
+  const transcriptMessages = modelFacingUserMessage
+    ? ctx.runtime.messages.map((message) =>
+        message.id === modelFacingUserMessage.sourceMessageId && message.role === 'user'
+          ? { ...message, content: modelFacingUserMessage.content }
+          : message)
+    : ctx.runtime.messages;
+  const transcriptEntries = ctx.buildContextTranscriptEntries(transcriptMessages);
   const transcriptInterventions = ctx.mapInterventionsToTranscriptEntries(
     effectiveInterventions,
     transcriptEntries,

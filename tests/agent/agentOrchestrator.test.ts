@@ -1392,17 +1392,17 @@ describe('AgentOrchestrator', () => {
     });
   });
 
-  // 2026-07-26 真机实录：D4 通话态钳档只改了权限判定链，模型完全不知道自己被拦的原因，
-  // 白试 Write→Write→Bash 三种写法。这条门钉的是「注入进最终 executionContent 的说明」，
-  // 不是钉钳档函数本身——钳档已由 liveVoiceClamp.test.ts 钉过。
-  describe('D4 通话态权限说明注入 system context', () => {
+  // 本组只钉 live-voice notice 的生成条件。最终模型请求体由
+  // contextAssembly.test.ts 的四类 provider-facing payload 用例负责，不能再拿这里的
+  // applyTurnSystemContext 返回值冒充“已经发给模型”。
+  describe('D4 通话态权限说明生成条件', () => {
     const SESSION = 'live-voice-turn-context-session';
 
     afterEach(() => {
       getPermissionModeManager().clearLiveVoiceSession(SESSION, 'call:test');
     });
 
-    it('通话态生效时，本轮 executionContent 含权限抬严说明与「别换写法重试」指引', () => {
+    it('通话态生效时生成权限说明与「别换写法重试」指引', () => {
       getPermissionModeManager().markLiveVoiceSession(SESSION, 'call:test');
 
       const result = internals(orchestrator).applyTurnSystemContext('干活', undefined, SESSION);

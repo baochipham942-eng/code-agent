@@ -77,6 +77,13 @@ export interface ScriptRunHostDeps {
   resolveModelConfig: ScriptRunContext['resolveModelConfig'];
   deriveSubagentContext: ScriptRunContext['deriveSubagentContext'];
   resolveAgentTools: ScriptRunContext['resolveAgentTools'];
+  /**
+   * PTC 通道：脚本里 `tools.<name>(args)` 的执行方（命令层注入既有 ToolExecutor）。
+   * 与 visibleToolNames 成对——缺任一即通道关闭（fail-closed），child 侧 tools 是空对象。
+   */
+  executeTool?: ScriptRunContext['executeTool'];
+  /** PTC 通道对本 run 开放的工具名单；child 命名空间与 Host 侧二次判定共用这一份。 */
+  visibleToolNames?: readonly string[];
   prepareAgentWorkspace?: ScriptRunContext['prepareAgentWorkspace'];
   finishAgentWorkspace?: ScriptRunContext['finishAgentWorkspace'];
   emit?: (event: ScriptRunEvent) => void;
@@ -214,6 +221,11 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
       }
     : undefined;
 
+  // PTC 名单：执行方与名单缺任一即为空名单 —— child 侧 tools 是空对象、Host 侧二次
+  // 判定一律 UNKNOWN_TOOL。不给「有名单没执行方」这种半开状态留活口。
+  const ptcToolNames = deps.executeTool && deps.visibleToolNames?.length
+    ? [...deps.visibleToolNames]
+    : [];
   const callCounter = { count: 0 };
   const cacheHitCounter = { count: 0 };
   const ctx: ScriptRunContext = {
@@ -223,6 +235,8 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     resolveModelConfig: deps.resolveModelConfig,
     deriveSubagentContext: deps.deriveSubagentContext,
     resolveAgentTools: deps.resolveAgentTools,
+    executeTool: deps.executeTool,
+    visibleToolNames: ptcToolNames,
     prepareAgentWorkspace: deps.prepareAgentWorkspace,
     finishAgentWorkspace: deps.finishAgentWorkspace,
     handoffs: [],
@@ -288,6 +302,7 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
         controller.abort();
       },
       onRpc: (req) => handleRpc(req, ctx),
+      toolNames: ptcToolNames,
       useOsSandbox: deps.useOsSandbox,
       legacyWorkerFallback: process.env.CODE_AGENT_WORKFLOW_LEGACY_WORKER_FALLBACK === '1',
       traceContext: workflowTraceContext

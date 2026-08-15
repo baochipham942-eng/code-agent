@@ -54,6 +54,11 @@ const DELEGATION_TOOLS = new Set([
   'task',
   'spawn_agent',
   'agentspawn',
+  // workflow 自己一个字节都不写：它跑的是子进程里的编排脚本，真正碰工作树的是
+  // 脚本发起的子 agent（各自独立 worktree）与 PTC 工具调用（各自照常取锁）。
+  // 它按 permissionLevel:'execute' 去拿整个 workspace 锁的话，脚本里第一个写/执行
+  // 类调用就会等在自己父调用握着的锁上——死等到 run 超时。
+  'workflow',
 ]);
 
 function normalizedToolName(toolName: string): string {

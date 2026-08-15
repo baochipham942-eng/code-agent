@@ -158,6 +158,9 @@ export interface ExecuteOptions {
   abortSignal?: AbortSignal;
   // Run-level tool denylist. Dynamic discovery must inherit the same boundary.
   deniedToolNames?: readonly string[];
+  // 内部标记：本次调用由 ctx.executeTool 发起（PTC 脚本里的一次 tools.X()）。
+  // 唯一作用是不给嵌套出来的 context 再签发 executeTool —— 一层封顶，防递归。
+  nestedToolCall?: boolean;
   // Subagent 执行策略 — 存在即表示这是 subagent 调用。
   // ToolExecutor 在权限决策前先过这道闸：工具白名单 + 收缩策略。
   // 策略只能收紧（deny），不能放宽：'deny' 直接拒，'ask' 继续走常规管道
@@ -527,6 +530,22 @@ export class ToolExecutor {
       guardFabricTraceStep = guardFabricGate.traceStep;
     }
 
+    // 嵌套工具再入口（PTC）：绑定 this + 本次 options，让 tools.X() 走回**同一个**
+    // executor 的完整 execute()。收缩档靠「同实例 + 原样透传 options」继承，不复制。
+    // 嵌套调用自身带 nestedToolCall 标记 → 它的 context 不再签发 executeTool（一层封顶）。
+    let nestedCallSeq = 0;
+    const executeNestedTool = options.nestedToolCall
+      ? undefined
+      : (nestedToolName: string, nestedParams: Record<string, unknown>) => this.execute(
+        nestedToolName,
+        nestedParams,
+        {
+          ...options,
+          nestedToolCall: true,
+          currentToolCallId: `${options.currentToolCallId ?? executionToolName}:nested:${++nestedCallSeq}`,
+        },
+      );
+
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       runId: effectiveRunId, turnId: options.turnId,
@@ -567,6 +586,7 @@ export class ToolExecutor {
       modelCallback: options.modelCallback,
       // Hook 系统（subagent/permission 事件触发）
       hookManager: options.hookManager,
+      executeTool: executeNestedTool,
       toolScope: options.toolScope,
       executionIntent: options.executionIntent,
       neoTag: options.neoTag,

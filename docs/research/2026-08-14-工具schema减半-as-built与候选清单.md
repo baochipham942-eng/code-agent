@@ -462,7 +462,13 @@ Markdown 结构那半边（headers / lists / tables / code blocks）没有接回
 
 三单收尾时挂了三条「查出但没处理」。开单前先把它们量到能写验收判据的程度。
 
-### 遗留一：schema 预算门看不见 `dynamicDescription`——今天已经少算 258 token
+### 遗留一：schema 预算门看不见 `dynamicDescription`——已处理（2026-08-15）
+
+**处理结果（N-L8-PVDYN / N-L8-SCHEMAGATE）**：预算门已改为优先量
+`dynamicDescription?.() ?? description`，并用固定时钟消除日期漂移；同时新增防绕过断言，
+要求 CORE 中每个带 `dynamicDescription` 的 schema 都按动态值入账。真 tokenizer 实测基线
+**4349 → 4628（+279）**。这 279 一直存在于模型收到的 WebSearch 工具 schema 中，本次只是补账，
+没有新增任何下发内容；与 N-L8-RULES-SINK 真增加 194 token 常驻内容的基线变更性质不同。
 
 `coreToolSchemaBudget.test.ts` 数的是 `schema.description`，而模型收到的是
 `toolDefinitions.ts:63` 算出来的 `cloud?.description || schema.dynamicDescription?.() || schema.description`。
@@ -472,11 +478,16 @@ Markdown 结构那半边（headers / lists / tables / code blocks）没有接回
 | --- | ---: |
 | 带 `dynamicDescription` 的 schema | **5 个** |
 | 其中在 CORE 里的 | **1 个（`WebSearch`）** |
-| `WebSearch` static / dynamic | 77 / **335**（delta **+258**） |
+| `WebSearch` description static / dynamic | 77 / **335**（delta **+258**） |
+| `WebSearch` 完整 schema static / dynamic | 588 / **867**（delta **+279**） |
 | CORE description 合计：门看到的 | 1504 |
 | CORE description 合计：模型收到的 | **1762** |
 
-**门报 4349，模型实收 4607，低估 5.9%。** 另外 4 个（`Task` / `spawn_agent` / `AgentSpawn` / `workflow_orchestrate`）都不在 CORE，本门不管——但注意本次测得的它们 dynamic≈static 是因为测试环境里 agent 注册表没加载走了 fallback 分支，真实运行时 `Task` 会把子代理目录渲染进去，只会更大。
+**按完整 JSON schema 的门口径，静态总量 4349，模型实收 4628，低估 279 token / 轮（6.0%）。**
+此前写的 4607 / +258 是把两段 description 单独量出的差直接加回 schema 总量；动态文本里的换行
+序列化后会变成 `\\n`，真 tokenizer 的 token 数不可这样线性相加。N-L8-PVDYN 记录的是 description
+差值 258，N-L8-SCHEMAGATE 记录的是完整 schema 差值 279，两张单指向同一个门禁盲区，后者才是
+本门应采用的核算口径。另外 4 个（`Task` / `spawn_agent` / `AgentSpawn` / `workflow_orchestrate`）都不在 CORE，本门不管——但注意本次测得的它们 dynamic≈static 是因为测试环境里 agent 注册表没加载走了 fallback 分支，真实运行时 `Task` 会把子代理目录渲染进去，只会更大。
 
 **为什么当初写成静态**：`WebSearch` 的 `dynamicDescription()` 里嵌了当天日期，直接量会让门每天变。**这不构成不量的理由**——注入一个固定日期再量即可。
 

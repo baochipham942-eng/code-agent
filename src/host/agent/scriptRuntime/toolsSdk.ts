@@ -8,9 +8,11 @@
 //   1. **确定性**：工具按名字字典序输出，同一份工具集渲染两次必须逐字节相同。
 //      呈现档在会话组合时定死、整个会话不变，靠的就是请求前缀稳定 → KV cache 有效；
 //      渲染顺序抖一下，缓存就全废。
-//   2. **只覆盖受支持子集**：类型转换的覆盖面恰好等于 `assertSupportedJsonSchema`
-//      允许的集合（object/string/number/boolean/array）。多一分是没人能触发的死代码，
-//      少一分是静默产出错类型——遇到集合外的形状**直接抛**，不静默降级成 unknown。
+//   2. **产出侧严、入参侧宽，两套口径**：`assertSupportedJsonSchema` 只约束 outputSchema，
+//      所以产出侧集合外**直接抛**（口径漂了要报，静默产出宽类型更坏）；而 inputSchema
+//      不受那道校验管，是既有的真实形状（自由对象、自由数组、enum、integer、联合 type），
+//      入参侧降级而不是抛——否则一个工具的历史 schema 就能让整份 SDK 生不出来。
+//      降级一律在产物里留痕，不悄悄换个宽类型了事。
 // ============================================================================
 
 import type { JSONSchema, JSONSchemaProperty } from '../../../shared/contract';
@@ -146,7 +148,7 @@ function jsonSchemaToTs(
  * 给模型的固定使用说明。跟在它后面的是生成的声明块。
  * 最后一条是本机制的关键约定，必须写给模型看而不是靠系统悄悄裁剪。
  */
-export const SDK_INSTRUCTIONS = `## 在脚本里调用工具
+const SDK_INSTRUCTIONS = `## 在脚本里调用工具
 
 - 用 \`await tools.名字(参数)\` 调用；名字含连字符等特殊字符时写 \`tools["my-tool"](参数)\`。
   每次调用返回该工具的产出值（下方 ToolOutputMap 声明了具体形状）。

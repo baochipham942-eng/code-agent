@@ -138,6 +138,23 @@ export interface ScriptRunContext {
   }) => SubagentContext;
   /** 把 agent({tools}) 的档名解析成工具白名单 + 是否写能力（命令层注入分档策略）。 */
   resolveAgentTools: (profile?: string) => { tools: string[]; writeCapable: boolean };
+  /**
+   * PTC 通道：执行脚本里 `tools.<name>(args)` 发起的一次工具调用。
+   * 命令层持有 ToolExecutor 并注入——**它送进去的是既有的
+   * pre-execute/审批/guards/execute 管线，不是给脚本另开的第二条路**
+   * （形态对齐 dsh Code Mode：「共用同一套执行内核，只是入口不同」）。
+   * 不注入 = PTC 通道关闭，fail-closed。
+   */
+  executeTool?: (input: {
+    name: string;
+    args: Record<string, unknown>;
+    signal: AbortSignal;
+  }) => Promise<{ ok: true; value: unknown } | { ok: false; error: string }>;
+  /**
+   * PTC 通道对本 run 开放的工具名单。与 sandbox 的 `toolNames` 同源，
+   * 但 Host 侧要按它**再判一次**——child 是半信任方，它发来的工具名不作数。
+   */
+  visibleToolNames?: readonly string[];
   /** write-capable agent 的强制 worktree provisioner；缺失时 fail-closed。 */
   prepareAgentWorkspace?: (input: {
     agentId: string;

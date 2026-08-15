@@ -19,6 +19,12 @@ import { dispatchVoiceIntent, type VoiceIntent } from './voiceAgentCoordinator';
 const logger = createLogger('VoiceTools');
 
 /**
+ * 回灌文本落盘的截断长度。最长的是 task_status 列全部在跑的活（每件一行，上限 3 件并发），
+ * 800 字放得下；超了在日志里显式标 truncated，别让「被截断」和「本来就这么短」看起来一样。
+ */
+const VOICE_TOOL_OUTPUT_LOG_LIMIT = 800;
+
+/**
  * 定向参数的说明（R2）。两个工具共用一份措辞：同一个参数在两处各写一半，迟早会长成
  * 两套语义，而这个参数指错了就是「想停 2 号却停了 1 号」。
  *
@@ -152,11 +158,36 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
   },
 ];
 
-/** 上游 function_call 的执行出口。返回值原样回灌给通话 brain（纯文本）。 */
+/**
+ * 上游 function_call 的执行出口。返回值原样回灌给通话 brain（纯文本）。
+ *
+ * 回灌文本是通话 brain 下一句话的唯一事实来源，所以它必须落盘：不记它，事后就分不开
+ * 「模型收到失败却对用户说做完了」和「链路给了它一个错误的成功信号」——这两种要修的
+ * 地方完全不同。2026-08-15 真机实发：steer_task 打在一件已经 done 的活上，模型对用户
+ * 说「我已经在『一点.md』里写入『七六零』了」，而 steerTask 的四条返回路径没有一条是
+ * 这个意思，文件也确实没被改；当时日志里查不到它究竟收到了哪一句，判不出因。
+ */
 export async function executeVoiceTool(
   name: string,
   rawArguments: string,
   origin: VoiceToolCallOrigin = 'function_call',
+): Promise<string> {
+  const output = await runVoiceTool(name, rawArguments, origin);
+  // 三条出口（参数解析失败 / 正常派发 / 抛异常）共用这一个记录点：分散到各出口去记，
+  // 迟早会漏掉一条，而漏掉的那条恰恰是出问题时最想看的。
+  logger.info('voice tool output', {
+    name,
+    origin,
+    output: output.slice(0, VOICE_TOOL_OUTPUT_LOG_LIMIT),
+    truncated: output.length > VOICE_TOOL_OUTPUT_LOG_LIMIT,
+  });
+  return output;
+}
+
+async function runVoiceTool(
+  name: string,
+  rawArguments: string,
+  origin: VoiceToolCallOrigin,
 ): Promise<string> {
   const intent = toIntent(name, rawArguments, origin);
   if (typeof intent === 'string') return intent;

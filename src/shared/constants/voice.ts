@@ -71,9 +71,13 @@ export const GUMMY_REALTIME_PRESTART_FRAME_LIMIT = 40;
 export const QWEN_OMNI_REALTIME_VOICE = 'Tina';
 
 /**
- * `qwen3.5-omni-flash-realtime` 实测可用音色白名单（2026-07-26 真机逐个合成验证）。
+ * `qwen3.5-omni-flash-realtime` 实测可用音色白名单（2026-07-26 首验，2026-08-15 复验未变）。
  * 设置页音色选择器只能从当前模型的 voices 出选项——音色枚举与模型强绑定，换模型必须重新真跑一遍。
  * 只被本文件的 QWEN_OMNI_REALTIME_MODEL_OPTIONS 引用，不单独导出（knip 棘轮）。
+ *
+ * **已知天花板**：这是一份按名字枚举的清单，上游新增音色我们不会知道，只能靠人再跑一次探测
+ * （见 `feedback_deny_list_by_name_leaks_silently`）。上游没有「列出本模型可用音色」的接口，
+ * 唯一的真判据是逐个真合成，所以这条现在没有自动化解法，别以为清单会自己跟上。
  */
 const QWEN_OMNI_REALTIME_VOICE_WHITELIST = ['Tina', 'Ethan', 'Serena'] as const;
 
@@ -84,10 +88,18 @@ const QWEN_OMNI_REALTIME_VOICE_WHITELIST = ['Tina', 'Ethan', 'Serena'] as const;
  * - `supportsTools`：2026-07-26 真机实测——3.5 系接受 session.tools 并真发 function_call；
  *   上一代 `qwen3-omni-flash-realtime` **静默丢弃** tools（session.updated 回显 tools: null，
  *   不报错）。不支持 tools 的模型留在表里是给「只想聊天」的场景，UI 选中时必须当场说清代价。
- * - `voices`：**音色枚举与模型强绑定**——3.5 上 `Chelsie`/`Cherry` 一律 400
- *   `Voice 'X' is not supported`，且这个错不在建连时报，第一次真合成才炸；上游文档
- *   （help.aliyun.com/zh/model-studio/omni-voice-list）的音色表也按模型分节。
- *   3.5 系沿用真机逐个合成验证过的白名单；上一代来自上游文档音色表，未逐个真跑。
+ * - `voices`：**音色枚举与模型强绑定**，两代之间没有包含关系，是交叉的。
+ *   2026-08-15 直连 DashScope 跑满 2 模型 × 5 音色（每格都逼出一次真合成，不看回显）：
+ *
+ *   |                            | Tina | Ethan | Serena | Cherry | Chelsie |
+ *   |----------------------------|------|-------|--------|--------|---------|
+ *   | qwen3.5-omni-flash-realtime| ✅   | ✅    | ✅     | 400    | 400     |
+ *   | qwen3-omni-flash-realtime  | 400  | ✅    | ✅     | ✅     | ✅      |
+ *
+ *   400 一律是 `Voice 'X' is not supported`，且**这个错不在建连时报**——上面 10 格里
+ *   `session.updated` 全部原样回显了所请求的音色，包括那 3 个不支持的。判音色可用只认真合成。
+ *   上一代那行此前来自上游文档音色表（help.aliyun.com/zh/model-studio/omni-voice-list）
+ *   未逐个真跑，08-15 补跑后补上了漏掉的 `Chelsie`（可用但用户选不到）。
  *
  * 这张表只是「我们以为上游会怎样」；上游行为以 session.updated 真实回显为准——
  * qwenOmniTransport 的 tools 丢弃告警钉在回显上，不钉在这张表上。
@@ -101,8 +113,10 @@ export const QWEN_OMNI_REALTIME_MODEL_OPTIONS = [
   {
     id: 'qwen3-omni-flash-realtime',
     supportsTools: false,
-    // 上游文档该模型的默认音色是 Cherry；Tina 是 3.5 系独有，这张表里没有它。
-    voices: ['Cherry', 'Ethan', 'Serena'],
+    // 上游文档该模型的默认音色是 Cherry，排首位兼作回落目标（provider.defaultVoice=Tina
+    // 不在本表内，resolveRealtimeVoiceSelection 会落到 voices[0]）。Tina 是 3.5 系独有，
+    // 2026-08-15 实测在这一代 400。
+    voices: ['Cherry', 'Chelsie', 'Ethan', 'Serena'],
   },
 ] as const;
 

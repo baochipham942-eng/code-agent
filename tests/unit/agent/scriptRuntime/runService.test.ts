@@ -188,8 +188,8 @@ describe('runService · PTC 通道接线', () => {
   it('执行方 + 名单齐全 → 名单下发给 child，RPC 能落到执行方', async () => {
     const executeTool = vi.fn(async () => ({ ok: true as const, value: 'r' }));
     let onRpc: ((req: unknown) => Promise<RpcResponse>) | undefined;
-    vi.mocked(runScriptInSandbox).mockImplementationOnce(async (opts: never) => {
-      onRpc = (opts as { onRpc: (req: unknown) => Promise<RpcResponse> }).onRpc;
+    vi.mocked(runScriptInSandbox).mockImplementationOnce(async (opts) => {
+      onRpc = (opts as unknown as { onRpc: (req: unknown) => Promise<RpcResponse> }).onRpc;
       return { ok: true, result: 'ok' };
     });
 
@@ -214,8 +214,8 @@ describe('runService · PTC 通道接线', () => {
 
   it('只有名单没有执行方 → 名单也不下发，child 侧调什么都是 UNKNOWN_TOOL', async () => {
     let onRpc: ((req: unknown) => Promise<RpcResponse>) | undefined;
-    vi.mocked(runScriptInSandbox).mockImplementationOnce(async (opts: never) => {
-      onRpc = (opts as { onRpc: (req: unknown) => Promise<RpcResponse> }).onRpc;
+    vi.mocked(runScriptInSandbox).mockImplementationOnce(async (opts) => {
+      onRpc = (opts as unknown as { onRpc: (req: unknown) => Promise<RpcResponse> }).onRpc;
       return { ok: true, result: 'ok' };
     });
 

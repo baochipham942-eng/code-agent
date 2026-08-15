@@ -99,7 +99,8 @@ function buildPtcChannel(ctx: ToolContext): Pick<ScriptRunHostDeps, 'executeTool
         const result = await executeTool(name, args);
         return result.success
           ? { ok: true, value: result.result }
-          : { ok: false, error: result.error ?? `${name} 执行失败` };
+          // 这条文案的读者是模型（child 侧包成 ToolCallError.message），走英文稳定串
+          : { ok: false, error: result.error ?? `${name} failed without an error message` };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }

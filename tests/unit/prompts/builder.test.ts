@@ -267,10 +267,28 @@ describe('Prompt Builder', () => {
       expect(needsArtifactTaskBrief('fix /tmp/report.md and verify the artifact output')).toBe(true);
     });
 
+    it('matches structured Chinese document deliverables without enumerating each task verb', () => {
+      expect(needsArtifactTaskBrief('撰写一份关于 AI Agent 在企业中应用的报告')).toBe(true);
+      expect(needsArtifactTaskBrief('设计一组虚构卡券系统的 REST API，markdown 输出')).toBe(true);
+      expect(needsArtifactTaskBrief('帮我深入调研一下 2026 年上海 AI 产品经理市场')).toBe(true);
+      expect(needsArtifactTaskBrief('扫一下 shared/ 写进 INDEX')).toBe(true);
+      expect(needsArtifactTaskBrief('分析模块依赖，给出依赖关系图和改进建议')).toBe(true);
+      expect(needsArtifactTaskBrief('分析这个项目的工具系统架构，找出所有工具定义文件，理解注册和执行流程')).toBe(true);
+      expect(needsArtifactTaskBrief('递归查找所有 JSON.parse，最终列出未被 try/catch 保护的位置')).toBe(true);
+    });
+
+    it('matches explicit artifact file destinations independently of the leading verb', () => {
+      expect(needsArtifactTaskBrief('整理现状、挑战和趋势，输出到 /tmp/ai_report.md')).toBe(true);
+      expect(needsArtifactTaskBrief('先搜索资料，再把结果写入 C:\\reports\\market.csv')).toBe(true);
+    });
+
     it('does not match plain chat', () => {
       expect(needsArtifactTaskBrief('你好')).toBe(false);
       expect(needsArtifactTaskBrief('继续')).toBe(false);
       expect(needsArtifactTaskBrief('修复一下这个想法')).toBe(false);
+      expect(needsArtifactTaskBrief('调研一下周末去哪玩')).toBe(false);
+      expect(needsArtifactTaskBrief('给出一个建议')).toBe(false);
+      expect(needsArtifactTaskBrief('读取 /tmp/report.md，不要输出或修改文件')).toBe(false);
     });
   });
 

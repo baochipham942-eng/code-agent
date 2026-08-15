@@ -33,6 +33,18 @@ export type AgentEngineCapability =
   | 'resume'
   | 'review';
 
+export class AgentEngineCapabilityError extends Error {
+  readonly code = 'AGENT_ENGINE_CAPABILITY_UNSUPPORTED';
+
+  constructor(
+    readonly engine: AgentEngineKind,
+    readonly capability: AgentEngineCapability,
+  ) {
+    super(`Agent engine ${engine} does not declare required capability ${capability}.`);
+    this.name = 'AgentEngineCapabilityError';
+  }
+}
+
 export type AgentEnginePermissionProfile =
   | 'default'
   | 'read_only'

@@ -3,9 +3,11 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  AgentEngineCapabilityError,
   normalizeAgentEngineSession,
 } from '../../../src/shared/contract/agentEngine';
 import {
+  assertAgentEngineCapability,
   assertWorkspaceCwd,
   buildManualAgentEngineSelection,
   resolveExternalEngineLaunch,
@@ -20,6 +22,19 @@ import type { Session } from '../../../src/shared/contract/session';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 
 describe('Agent Engine contract', () => {
+  it('fails with typed engine and capability details before unsupported work starts', () => {
+    expect(() => assertAgentEngineCapability('dsh_cli', ['execute'], 'resume')).toThrowError(
+      expect.objectContaining({
+        name: 'AgentEngineCapabilityError',
+        code: 'AGENT_ENGINE_CAPABILITY_UNSUPPORTED',
+        engine: 'dsh_cli',
+        capability: 'resume',
+      }),
+    );
+    expect(() => assertAgentEngineCapability('codex_cli', ['execute', 'resume'], 'resume')).not.toThrow();
+    expect(new AgentEngineCapabilityError('dsh_cli', 'resume').message).toContain('dsh_cli');
+  });
+
   it('defaults old sessions to native', () => {
     expect(normalizeAgentEngineSession(null)).toEqual({
       kind: 'native',

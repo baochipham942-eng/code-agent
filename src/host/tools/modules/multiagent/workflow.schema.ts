@@ -1,5 +1,7 @@
 // Schema-only file — dynamic-workflow 命令式脚本运行时入口（P1 命令层接线）
 import type { ToolSchema } from '../../../protocol/tools';
+import { getProtocolToolSchemas } from '../../protocolToolRegistration';
+import { renderToolsSdk } from '../../../agent/scriptRuntime/toolsSdk';
 
 // 工具描述本身就是「dynamic-workflow 原语文档」：模型读完后当场写一段 JS 编排脚本，
 // 经 script 参数交给 scriptRuntime.startRun 在受限 worker 沙箱后台执行。
@@ -76,9 +78,56 @@ const workflowInputSchema = {
   required: ['script'] as string[],
 };
 
+/**
+ * PTC（Code Mode）开关。默认关——本仓既有形态（CODEX_SANDBOX_ENABLED /
+ * CROSS_VERIFY_ENABLED 也是显式 env 才启用）。
+ *
+ * 这里是**接线用的临时档位**，不是产品级的呈现档：dsh 把档位放在 agent preset
+ * （会话组合时定死、整个会话不变，为的是请求前缀稳定 → KV cache 有效），Neo 还没有
+ * 那一层。产品形态见 ADR §六第 1 条，由完整 S3 落地。
+ */
+function isPtcEnabled(): boolean {
+  return process.env.CODE_AGENT_PTC_ENABLED === '1';
+}
+
+/**
+ * 开着 PTC 时，把工具目录的 TS SDK 投影附在工具描述后面——模型要写出
+ * `await tools.Read({path})`，前提是它在写脚本前看过签名，而工具描述正是它
+ * 召回这个工具时读到的东西。
+ *
+ * 失败不能打挂整张工具表：渲染抛错（某个工具的 outputSchema 与投影口径漂了）时
+ * 回落到静态描述，但**必须留痕**——静默回落等于 PTC 悄悄失效且现场零线索。
+ */
+function buildDescription(): string {
+  if (!isPtcEnabled()) return description;
+  try {
+    const projections = getProtocolToolSchemas()
+      .filter((schema) => schema.name !== 'workflow' && schema.inputSchema && schema.outputSchema)
+      .map((schema) => ({
+        name: schema.name,
+        description: schema.description,
+        inputSchema: schema.inputSchema,
+        outputSchema: schema.outputSchema,
+      }));
+    // 扫到 0 个工具说明注册表还没填充（getProtocolToolSchemas 未初始化时静默返回 []）——
+    // 那时生成的是一份「你一个工具都没有」的 SDK，比不生成更坏，所以按失败处理。
+    if (projections.length === 0) {
+      console.warn('[workflow] PTC 已开启但工具注册表为空，SDK 投影跳过（回落静态描述）');
+      return description;
+    }
+    return `${description}\n\n${renderToolsSdk(projections)}`;
+  } catch (error) {
+    console.warn(
+      `[workflow] PTC SDK 投影渲染失败，回落静态描述：${error instanceof Error ? error.message : String(error)}`,
+    );
+    return description;
+  }
+}
+
 export const workflowSchema: ToolSchema = {
   name: 'workflow',
   description,
+  dynamicDescription: buildDescription,
   outputSchema: { type: 'string' },
   inputSchema: workflowInputSchema,
   category: 'multiagent',

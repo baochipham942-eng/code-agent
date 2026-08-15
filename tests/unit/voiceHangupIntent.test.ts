@@ -1,7 +1,10 @@
 // 挂断意图匹配器（A1）。这条闸的取向是高精度低召回——误判把还在说话的人挂掉，
 // 漏判只是回到「用户自己点挂断按钮」。所以边界（尤其「先这样」的误伤面）在这里钉死。
 import { describe, it, expect } from 'vitest';
-import { detectHangupIntent } from '../../src/host/services/voice/hangupIntent';
+import {
+  detectHangupIntent,
+  detectHangupIntentNearMiss,
+} from '../../src/host/services/voice/hangupIntent';
 
 describe('detectHangupIntent', () => {
   it.each([
@@ -11,6 +14,10 @@ describe('detectHangupIntent', () => {
     '帮我挂断电话',
     '好了，挂电话',
     '那就挂了',
+    // 「挂掉」是直接的通话收线动词；三层句尾规范化都必须覆盖。
+    '挂掉',
+    '挂掉。',
+    '挂掉吧',
     '结束通话',
     '可以结束对话了',
     '行，先这样',
@@ -33,16 +40,31 @@ describe('detectHangupIntent', () => {
     '不用挂断',
     '不能挂断',
     '还没挂断',
+    '不要挂掉',
+    '别挂掉',
     // 词条在句中不是句尾：这是「怎么处理」，不是「挂了吧」
     '这个先这样处理然后继续',
     '就这样改一下这个函数',
     '你把电话号码写进配置里',
     '结束通话之后要做什么我再想想',
+    '这个先挂掉一会儿再说',
     // 普通句子
     '帮我看一下这个文件',
     '',
     '   ',
   ])('用户说「%s」≠ 挂断意图', (text) => {
     expect(detectHangupIntent(text)).toBe(false);
+  });
+
+  it('正式词表的一次编辑距离近邻会报告盲区，不另建疑似词清单', () => {
+    expect(detectHangupIntentNearMiss('请切断电话吧')).toBe(true);
+  });
+
+  it.each([
+    '挂掉',
+    '不要切断电话',
+    '这个先切断电话一会儿再说',
+  ])('已命中、否定或非句尾「%s」不报告盲区', (text) => {
+    expect(detectHangupIntentNearMiss(text)).toBe(false);
   });
 });

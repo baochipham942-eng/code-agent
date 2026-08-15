@@ -4,7 +4,19 @@
   "description": "Default capabilities for Agent Neo",
   "windows": ["main"],
   "remote": {
-    "urls": ["http://localhost:8180/*", "http://localhost:8181/*"]
+    "//": "端口段 = PROD_WEB_PORT(8180) + 槽位 0..MAX_DEV_SLOT(9)，与 src/shared/devSlot.ts 同源。别手写单个端口：这里原本只列 8180/8181，NEO_SLOT 加出槽 2~9 后没人补，槽≥2 的 renderer 成了未授权 remote，plugin 命令全被 ACL 拒（表现为原生 AEC 静默降级耳机模式）。tests/unit/desktop/tauriCapabilityRemoteUrls.test.ts 钉住这份清单必须等于派生结果。",
+    "urls": [
+      "http://localhost:8180/*",
+      "http://localhost:8181/*",
+      "http://localhost:8182/*",
+      "http://localhost:8183/*",
+      "http://localhost:8184/*",
+      "http://localhost:8185/*",
+      "http://localhost:8186/*",
+      "http://localhost:8187/*",
+      "http://localhost:8188/*",
+      "http://localhost:8189/*"
+    ]
   },
   "permissions": [
     "allow-renderer-commands",

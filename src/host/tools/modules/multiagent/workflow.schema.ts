@@ -79,6 +79,7 @@ const workflowInputSchema = {
 export const workflowSchema: ToolSchema = {
   name: 'workflow',
   description,
+  outputSchema: { type: 'string' },
   inputSchema: workflowInputSchema,
   category: 'multiagent',
   permissionLevel: 'execute',

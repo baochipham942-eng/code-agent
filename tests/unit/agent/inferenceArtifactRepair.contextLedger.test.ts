@@ -20,6 +20,7 @@ function makeTool(name: string, property: string): ToolDefinition {
   return {
     name,
     description: `${name} description`,
+    outputSchema: { type: 'string' },
     inputSchema: {
       type: 'object',
       properties: {

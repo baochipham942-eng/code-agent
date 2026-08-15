@@ -6,6 +6,7 @@ export const gitCommitSchema: ToolSchema = {
   description: `Git 提交管理工具。查看状态、暂存文件、提交、推送和查看日志。
 
 操作类型: status | add | commit | push | log`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

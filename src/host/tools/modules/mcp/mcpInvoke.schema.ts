@@ -18,6 +18,7 @@ export const mcpInvokeSchema: ToolSchema = {
   { "server": "filesystem", "tool": "read_file", "arguments": { "path": "/path/to/file" } }
 - 调用 github 服务器的 search_repositories 工具：
   { "server": "github", "tool": "search_repositories", "arguments": { "query": "electron" } }`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

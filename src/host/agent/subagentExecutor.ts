@@ -366,6 +366,7 @@ export class SubagentExecutor {
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema,
+      outputSchema: tool.outputSchema,
       requiresPermission: tool.requiresPermission,
       permissionLevel: tool.permissionLevel,
     })) : [];

@@ -312,6 +312,7 @@ describe('MCPToolRegistry permission metadata', () => {
       requiresPermission: false,
       permissionLevel: 'read',
       readOnly: true,
+      outputSchema: { type: 'string' },
     });
     expect(definitions.find((definition) => definition.name === 'mcp__github__delete_repo')).toMatchObject({
       requiresPermission: true,

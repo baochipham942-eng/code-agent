@@ -42,6 +42,42 @@ export const photoArchiveSchema: ToolSchema = {
 - clusters: 人脸聚类 [{ clusterId: 'person-1', size, samplePaths[] }]
 - topThemes: top 20 主题 [{ identifier, count }]
 - memoryIds: 入库的 memory id 列表`,
+  outputSchema: {
+    type: 'object',
+    properties: {
+      processed: { type: 'number' },
+      failed: { type: 'number' },
+      faceCount: { type: 'number' },
+      clusters: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            clusterId: { type: 'string' },
+            size: { type: 'number' },
+            samplePaths: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['clusterId', 'size', 'samplePaths'],
+          additionalProperties: false,
+        },
+      },
+      topThemes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            identifier: { type: 'string' },
+            count: { type: 'number' },
+          },
+          required: ['identifier', 'count'],
+          additionalProperties: false,
+        },
+      },
+      memoryIds: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['processed', 'failed', 'faceCount', 'clusters', 'topThemes', 'memoryIds'],
+    additionalProperties: false,
+  },
   inputSchema: {
     type: 'object',
     properties: {

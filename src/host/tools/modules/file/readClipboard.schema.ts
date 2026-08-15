@@ -6,6 +6,7 @@ export const readClipboardSchema: ToolSchema = {
   description: `Read the contents of the system clipboard.
 
 Supports text and image content. Returns base64 PNG for images.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

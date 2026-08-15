@@ -13,6 +13,7 @@ Output formats:
 - csv: CSV format
 
 The output always includes column names, which you should reference exactly when writing analysis scripts.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

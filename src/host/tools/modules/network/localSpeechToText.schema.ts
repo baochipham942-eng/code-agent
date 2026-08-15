@@ -30,6 +30,7 @@ export const localSpeechToTextSchema: ToolSchema = {
 local_speech_to_text { "file_path": "/path/to/audio.wav" }
 local_speech_to_text { "file_path": "meeting.mp3", "language": "en", "output_format": "srt" }
 \`\`\``,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

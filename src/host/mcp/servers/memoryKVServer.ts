@@ -132,6 +132,7 @@ Parameters:
 - value (required): The value to store (can be any JSON-serializable value)
 - ttl (optional): Time to live in seconds (0 = no expiration)
 - metadata (optional): Additional metadata to store with the value`,
+        outputSchema: { type: 'string' },
         inputSchema: {
           type: 'object',
           properties: {
@@ -199,6 +200,7 @@ Parameters:
 Parameters:
 - key (required): The key to retrieve
 - withMetadata (optional): Include metadata in response (default: false)`,
+        outputSchema: { type: 'string' },
         inputSchema: {
           type: 'object',
           properties: {
@@ -270,6 +272,7 @@ Parameters:
 
 Parameters:
 - key (required): The key to delete`,
+        outputSchema: { type: 'string' },
         inputSchema: {
           type: 'object',
           properties: {
@@ -309,6 +312,7 @@ Parameters:
 Parameters:
 - prefix (optional): Filter keys by prefix
 - limit (optional): Maximum number of keys to return (default: 100)`,
+        outputSchema: { type: 'string' },
         inputSchema: {
           type: 'object',
           properties: {
@@ -367,6 +371,7 @@ Parameters:
 
 Parameters:
 - prefix (optional): Only clear keys with this prefix`,
+        outputSchema: { type: 'string' },
         inputSchema: {
           type: 'object',
           properties: {

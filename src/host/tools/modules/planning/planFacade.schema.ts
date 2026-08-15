@@ -16,6 +16,7 @@ Examples:
 - Read: { "action": "read", "summary": true }
 - Update step: { "action": "update", "stepContent": "Implement login", "status": "completed" }
 - Recover work: { "action": "recover_recent_work", "query": "issue #42 memory plan" }`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

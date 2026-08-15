@@ -7,6 +7,7 @@ export const notebookEditSchema: ToolSchema = {
 
 Completely replaces the contents of a specific cell in a Jupyter notebook with new source.
 Edit modes: replace (default) | insert | delete.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

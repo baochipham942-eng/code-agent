@@ -66,6 +66,7 @@ function schemaToDefinition(
     name: schema.name,
     description,
     inputSchema: schema.inputSchema,
+    outputSchema: schema.outputSchema,
     requiresPermission: schema.requiresPermission ?? schema.permissionLevel !== 'read',
     permissionLevel: mapPermissionLevel(schema.permissionLevel),
     pathAuthority: schema.pathAuthority,

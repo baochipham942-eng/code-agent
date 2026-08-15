@@ -5,6 +5,7 @@ export const blobSchema: ToolSchema = {
   name: 'Blob',
   description:
     'Inspect or read a local file as a unified artifact/blob. Use this for binary files, images, generated outputs, downloaded files, or when you need mime/size/hash metadata. For normal source text, Read is still better.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

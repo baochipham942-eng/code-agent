@@ -17,6 +17,7 @@ Optional parameters:
 - completed
 
 Use this when the user wants to edit or complete a real local reminder.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

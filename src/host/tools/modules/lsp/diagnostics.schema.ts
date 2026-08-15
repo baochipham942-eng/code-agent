@@ -35,6 +35,7 @@ export const DIAGNOSTICS_INPUT_SCHEMA = {
 export const diagnosticsSchema: ToolSchema = {
   name: 'diagnostics',
   description: DIAGNOSTICS_DESCRIPTION,
+  outputSchema: { type: 'string' },
   inputSchema: DIAGNOSTICS_INPUT_SCHEMA,
   category: 'lsp',
   permissionLevel: 'read',

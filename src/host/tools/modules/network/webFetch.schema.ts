@@ -20,6 +20,7 @@ Notes:
 - Includes a 15-minute cache — repeated requests to the same URL are fast.
 - Cross-domain redirects are reported; you may need to re-fetch the redirect URL.
 - This tool is read-only and does not modify any files.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

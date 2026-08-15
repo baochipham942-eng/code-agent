@@ -24,6 +24,7 @@ Examples:
 - Read PDF with prompt: { "file_path": "/path/to/paper.pdf", "prompt": "Summarize the key findings" }
 - Read Word: { "file_path": "/path/to/doc.docx", "format": "markdown" }
 - Read Excel: { "file_path": "/path/to/data.xlsx", "format": "json", "sheet": "Sheet2" }`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

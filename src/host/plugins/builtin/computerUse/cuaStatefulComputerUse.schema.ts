@@ -10,6 +10,7 @@ Use one operation at a time:
 3. act with that stateId and exactly one mutation. The state is single-use.
 
 Element mutations must use elementRef from the state. Pixel mutations must use a point whose screenshotId exactly matches the state. Never reuse a state after act, a new observe, expiry, or provider restart. An act result reports delivery and verification separately and returns a full successor state when available. A satisfied postcondition never upgrades rejected or unknown delivery to confirmed. Treat overall=ambiguous as non-retriable until you inspect the successor state; never replay click/type/drag automatically.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

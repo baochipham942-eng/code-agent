@@ -144,6 +144,7 @@ export function wrapLegacyTool(legacyTool: Tool, opts: WrapOptions): ToolModule 
     name: legacyTool.name,
     description: legacyTool.description,
     inputSchema: legacyTool.inputSchema,
+    outputSchema: legacyTool.outputSchema,
     category: opts.category,
     permissionLevel: opts.permissionLevel,
     readOnly: opts.readOnly ?? false,

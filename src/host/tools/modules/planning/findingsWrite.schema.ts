@@ -7,6 +7,7 @@ export const findingsWriteSchema: ToolSchema = {
     'Save important findings and research notes to findings.md. ' +
     'Use this to persist discoveries that should not be lost. ' +
     'Helps maintain knowledge across long sessions and prevents context overflow.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

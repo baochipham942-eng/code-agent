@@ -7,6 +7,7 @@ export const globSchema: ToolSchema = {
     'Fast file pattern matching tool. Use this to find files by name patterns ' +
     "(e.g. '**/*.ts', 'src/**/*.tsx'). Returns matching file paths. " +
     'Use this instead of Bash find or ls commands.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

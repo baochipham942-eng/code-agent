@@ -10,6 +10,7 @@ export const memoryAmendSchema: ToolSchema = {
     + 'Target it by the "[#<id>]" handle shown next to entries in the Stored Memories / Packed Memories '
     + 'context blocks, or by an id returned from memory_search. '
     + '"update" replaces the content (and re-derives its summary); "forget" deletes the record outright.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

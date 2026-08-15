@@ -25,6 +25,7 @@ export const docxGenerateSchema: ToolSchema = {
 docx_generate { "title": "项目报告", "content": "# 概述\\n这是一份报告..." }
 docx_generate { "title": "会议纪要", "content": "## 参会人员\\n- 张三\\n- 李四", "theme": "minimal" }
 \`\`\``,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

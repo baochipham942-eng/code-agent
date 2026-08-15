@@ -6,6 +6,7 @@ export const gitWorktreeSchema: ToolSchema = {
   description: `Git 工作树管理工具。创建、列出、删除和清理工作树。
 
 操作类型: list | add | remove | prune`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

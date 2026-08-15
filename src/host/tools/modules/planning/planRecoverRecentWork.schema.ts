@@ -6,6 +6,7 @@ export const planRecoverRecentWorkSchema: ToolSchema = {
   description:
     'Recover recent desktop/workspace-derived signals into the current plan. ' +
     'Use this when the user asks to continue previous work or when the next task is ambiguous.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

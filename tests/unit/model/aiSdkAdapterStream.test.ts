@@ -34,6 +34,7 @@ const CONFIG: ModelConfig = {
 const READ_TOOL: ToolDefinition = {
   name: 'Read',
   description: 'read a file',
+  outputSchema: { type: 'string' },
   inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
   requiresPermission: false,
   permissionLevel: 'read',

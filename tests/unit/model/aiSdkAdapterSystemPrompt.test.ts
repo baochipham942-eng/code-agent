@@ -33,6 +33,7 @@ const CONFIG: ModelConfig = {
 const TASK_TOOL: ToolDefinition = {
   name: 'Task',
   description: 'launch a subagent',
+  outputSchema: { type: 'string' },
   inputSchema: { type: 'object', properties: { subagent_type: { type: 'string' } }, required: [] },
   requiresPermission: true,
   permissionLevel: 'execute',

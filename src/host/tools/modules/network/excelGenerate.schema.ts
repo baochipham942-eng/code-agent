@@ -24,6 +24,7 @@ excel_generate { "title": "员工名单", "data": [{"姓名": "张三", "部门"
 excel_generate { "title": "销售数据", "data": "| 月份 | 销售额 |\\n|---|---|\\n| 1月 | 10000 |" }
 excel_generate { "title": "数据表", "data": "name,age\\n张三,25\\n李四,30", "theme": "colorful" }
 \`\`\``,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

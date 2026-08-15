@@ -61,6 +61,7 @@ export const LSP_INPUT_SCHEMA = {
 export const lspSchema: ToolSchema = {
   name: 'lsp',
   description: LSP_DESCRIPTION,
+  outputSchema: { type: 'string' },
   inputSchema: LSP_INPUT_SCHEMA,
   category: 'lsp',
   permissionLevel: 'read',

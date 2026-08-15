@@ -25,6 +25,7 @@ export const pptGenerateSchema: ToolSchema = {
 
 **可用布局：** stats、cards-2、cards-3、list、timeline、comparison、quote、chart
 **9 种配色主题：** neon-green（推荐）、neon-blue、neon-purple、neon-orange、glass-light、glass-dark、minimal-mono、corporate、apple-dark`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

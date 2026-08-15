@@ -12,6 +12,7 @@ import { buildPrompt } from '../../../src/host/prompts/builder';
 const probe: ToolDefinition = {
   name: 'probe',
   description: 'probe',
+  outputSchema: { type: 'string' },
   inputSchema: { type: 'object', properties: {}, required: [] },
   requiresPermission: false,
   permissionLevel: 'read',

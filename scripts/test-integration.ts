@@ -24,6 +24,7 @@ const testTools: ToolDefinition[] = [
   {
     name: 'list_directory',
     description: 'List files in a directory',
+    outputSchema: { type: 'string' },
     inputSchema: {
       type: 'object',
       properties: {
@@ -37,6 +38,7 @@ const testTools: ToolDefinition[] = [
   {
     name: 'read_file',
     description: 'Read contents of a file',
+    outputSchema: { type: 'string' },
     inputSchema: {
       type: 'object',
       properties: {

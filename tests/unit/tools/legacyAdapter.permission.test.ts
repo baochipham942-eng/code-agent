@@ -20,6 +20,7 @@ describe('legacyAdapter wrapper permissions', () => {
     const browserUploadTool: Tool = {
       name: 'browser_action',
       description: 'browser action',
+      outputSchema: { type: 'string' },
       inputSchema: { type: 'object', properties: {}, required: [] },
       requiresPermission: true,
       permissionLevel: 'execute',
@@ -80,6 +81,7 @@ describe('legacyAdapter wrapper permissions', () => {
     const computerUseTool: Tool = {
       name: 'computer_use',
       description: 'computer use',
+      outputSchema: { type: 'string' },
       inputSchema: { type: 'object', properties: {}, required: [] },
       requiresPermission: true,
       permissionLevel: 'execute',

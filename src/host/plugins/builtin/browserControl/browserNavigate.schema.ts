@@ -20,6 +20,7 @@ Parameters:
 - action: The browser action to perform
 - url: URL to open (for 'open' and 'navigate' actions)
 - browser: Specific browser to use (optional, default: system default)`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

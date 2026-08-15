@@ -31,7 +31,7 @@ Examples:
 - Fetch a webpage: { "action": "fetch", "url": "https://docs.example.com/guide", "prompt": "Extract the installation steps" }
 - GET API call: { "action": "request", "url": "https://api.example.com/data" }
 - POST with JSON: { "action": "request", "url": "https://api.example.com/create", "method": "POST", "body": "{\\"name\\": \\"test\\"}", "headers": { "Content-Type": "application/json" } }`,
-
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

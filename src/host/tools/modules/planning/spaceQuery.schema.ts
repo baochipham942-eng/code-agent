@@ -5,6 +5,7 @@ export const spaceQuerySchema: ToolSchema = {
   description:
     'Read one Neo collaboration space as an aggregate: cloud members, selected experts, skills, connectors, automations, recent activity, and artifacts. ' +
     'Use it after space_list when you need the configured people, capabilities, work history, or deliverables for a specific space.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

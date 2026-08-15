@@ -54,6 +54,7 @@ Parameters:
 - output_path: Output DOCX file path
 - start_page: Start page (0-indexed)
 - end_page: End page (exclusive)`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

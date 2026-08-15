@@ -18,6 +18,7 @@ const config: ModelConfig = {
 const readTool: ToolDefinition = {
   name: 'Read',
   description: 'Read a file',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {
@@ -32,6 +33,7 @@ const readTool: ToolDefinition = {
 const taskManagerTool: ToolDefinition = {
   name: 'TaskManager',
   description: 'Manage tasks',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {
@@ -46,6 +48,7 @@ const taskManagerTool: ToolDefinition = {
 const delegateTaskTool: ToolDefinition = {
   name: 'delegate_task',
   description: 'Spawn a background task',
+  outputSchema: { type: 'string' },
   inputSchema: { type: 'object', properties: {} },
   requiresPermission: false,
   permissionLevel: 'write',
@@ -54,6 +57,7 @@ const delegateTaskTool: ToolDefinition = {
 const taskStatusTool: ToolDefinition = {
   name: 'task_status',
   description: 'Read background task status',
+  outputSchema: { type: 'string' },
   inputSchema: { type: 'object', properties: {} },
   requiresPermission: false,
   permissionLevel: 'read',
@@ -62,6 +66,7 @@ const taskStatusTool: ToolDefinition = {
 const steerTaskTool: ToolDefinition = {
   name: 'steer_task',
   description: 'Steer a background task',
+  outputSchema: { type: 'string' },
   inputSchema: { type: 'object', properties: {} },
   requiresPermission: false,
   permissionLevel: 'write',
@@ -70,6 +75,7 @@ const steerTaskTool: ToolDefinition = {
 const askUserQuestionTool: ToolDefinition = {
   name: 'AskUserQuestion',
   description: 'Ask the user',
+  outputSchema: { type: 'string' },
   inputSchema: { type: 'object', properties: {} },
   requiresPermission: false,
   permissionLevel: 'execute',

@@ -8,6 +8,7 @@ export const readSchema: ToolSchema = {
     'Supports offset and limit for large files; prefer narrow ranges after the first read instead of re-reading the same file. ' +
     'Cannot read directories — use ListDirectory or Glob for that. ' +
     'If the file does not exist, report that; do not create it to make the read succeed.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

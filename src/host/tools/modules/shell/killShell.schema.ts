@@ -10,6 +10,7 @@ Usage:
 - Returns success or failure status
 
 To find available task IDs: check the task_id returned when starting a background command, or list running tasks via the Process tool with action="list".`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

@@ -6,6 +6,7 @@ export const taskGetSchema: ToolSchema = {
   description:
     'Get full details of a task by its ID. ' +
     'Use this to understand task requirements, dependencies, and context before starting work.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

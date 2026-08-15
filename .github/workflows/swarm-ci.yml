@@ -27,6 +27,8 @@ on:
       # （改窄 include / 删测试目录）溜过门。
       - 'tsconfig.tests.json'
       - 'scripts/tsc-tests-ratchet.mjs'
+      - 'scripts/ci/tool-output-schema-ratchet.ts'
+      - 'scripts/ci/tool-output-schema-ratchet-baseline.json'
       - 'playwright.config.ts'
       - 'tests/e2e/playwright.e2e.config.ts'
       - '.github/workflows/release.yml'
@@ -143,6 +145,11 @@ jobs:
         # 漏改 scripts 调用方 + 测试侧组合断裂都从这里溜进过 main）。用 typescript7 引擎跑
         # tsconfig.tests.json，error 数只降不升，基线锁在 scripts/tsc-tests-ratchet.mjs 头注。
         run: node scripts/tsc-tests-ratchet.mjs
+
+      - name: Tool output schema ratchet
+        # 扫 builtin modules + plugins 的真实 schema exports；0 文件、0 工具、覆盖数回退、
+        # 缺 outputSchema 或不受支持的 JSON Schema 都 fail loud。
+        run: npm run check:tool-output-schemas
 
       - name: Typecheck Vercel control-plane
         # vercel-api 是独立 package，不属于 root npm workspace；root npm ci 不会装它自己的依赖。

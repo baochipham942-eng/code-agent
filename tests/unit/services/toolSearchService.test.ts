@@ -32,6 +32,7 @@ function registerProtocolToolForSearch(name: 'Browser' | 'Computer'): void {
   const schema: ToolSchema = {
     name,
     description: `${name} test schema`,
+    outputSchema: { type: 'string' },
     inputSchema: {
       type: 'object',
       properties: {},

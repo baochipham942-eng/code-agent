@@ -31,6 +31,7 @@ Example:
     confirmText: "删除",
     cancelText: "取消"
   })`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

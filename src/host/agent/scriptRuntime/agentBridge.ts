@@ -378,6 +378,7 @@ async function runForcedStructured(
     description: '返回符合给定 schema 的结构化结果。你必须调用此工具输出最终答案。',
     // schema 已过 validateForcedSchema；JsonSchema 故意放宽为 Record，此处桥接。
     inputSchema: schema as unknown as ToolDefinition['inputSchema'],
+    outputSchema: { type: 'string' },
     requiresPermission: false,
     permissionLevel: 'read',
   };

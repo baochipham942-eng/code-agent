@@ -22,6 +22,7 @@ export const memorySearchSchema: ToolSchema = {
     + 'Use it to find what earlier runs wrote here: OCR text extracted from images (type="ocr_result"), '
     + 'archived photos (type="photo_archive"), and knowledge flushed from compacted context. '
     + 'Typical use: the user asks "find the screenshot that mentions X" — search here instead of scanning the filesystem.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

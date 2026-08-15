@@ -9,6 +9,7 @@ Use for: understanding project layout, browsing directory contents.
 
 For finding specific files by name pattern, use Glob instead — it is faster and supports recursive matching (e.g., "**/*.ts").
 For searching file contents, use Grep.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

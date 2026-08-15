@@ -288,6 +288,7 @@ IMPORTANT:
 - Costs ~84K tokens (~¥0.30) per typical task`,
   requiresPermission: true,
   permissionLevel: 'execute',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

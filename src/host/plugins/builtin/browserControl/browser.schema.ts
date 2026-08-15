@@ -52,6 +52,7 @@ Routing contract:
 - formData: Form fields as {selector: value} pairs (Playwright)
 - analyze: Enable AI analysis for screenshot (Playwright)
 - prompt: Custom prompt for AI analysis (Playwright)`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

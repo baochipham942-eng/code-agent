@@ -35,6 +35,7 @@ chart_generate {
   "datasets": [{"data": [40, 35, 25]}]
 }
 \`\`\``,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

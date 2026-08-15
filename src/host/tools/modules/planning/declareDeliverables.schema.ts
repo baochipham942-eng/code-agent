@@ -17,6 +17,7 @@ const DECLARE_DELIVERABLES_DESCRIPTION = `在产物生成/修复任务开始时�
 export const declareDeliverablesSchema: ToolSchema = {
   name: 'declare_deliverables',
   description: DECLARE_DELIVERABLES_DESCRIPTION,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

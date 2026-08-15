@@ -17,6 +17,7 @@ twitter_fetch { "url": "https://x.com/OpenAI/status/1234567890" }
 - 支持 twitter.com 和 x.com 链接
 - 部分推文可能因隐私设置无法获取
 - 图片/视频链接会一并返回`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

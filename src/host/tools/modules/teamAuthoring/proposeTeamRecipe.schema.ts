@@ -11,6 +11,7 @@ export const proposeTeamRecipeSchema: ToolSchema = {
     'Set lead for an expert team where the lead synthesizes and finalizes; omit lead for an expert group where members answer independently without synthesis. ' +
     'Do not save automatically. If validation reports unknown local roles, explicitly tell the user which document roles have no matching expert and offer to substitute an existing expert or create that role first. ' +
     'When the user revises the definition, call this tool again with the full revised definition.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

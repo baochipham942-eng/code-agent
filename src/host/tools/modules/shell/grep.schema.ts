@@ -8,6 +8,7 @@ export const grepSchema: ToolSchema = {
     'Supports regex syntax, file type filtering, glob patterns, and context lines. ' +
     'Use context params (before_context/after_context/context) to see surrounding lines. ' +
     'Use head_limit + offset for pagination by match group.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

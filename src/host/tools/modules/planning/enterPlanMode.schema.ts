@@ -18,6 +18,7 @@ export const enterPlanModeSchema: ToolSchema = {
 - 用户给出了详细具体的指令
 
 进入后你将专注于探索和设计，完成后使用 exit_plan_mode 提交计划供用户审批。`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

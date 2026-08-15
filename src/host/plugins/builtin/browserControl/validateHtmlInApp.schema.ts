@@ -24,6 +24,7 @@ INPUT:
 - timeoutMs (number, optional, default 30000): total deadline for the whole script.
 
 OUTPUT: a structured pass/fail summary listing each step's result.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

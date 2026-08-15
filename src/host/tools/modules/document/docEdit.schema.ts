@@ -33,6 +33,7 @@ Use the ppt_edit tool directly (8 actions: replace_title, replace_content, repla
 - replace_heading: { action: "replace_heading", index: 0, text: "New Title" }
 - append_paragraph: { action: "append_paragraph", text: "added at end" }
 - set_text_style: { action: "set_text_style", search: "important", bold: true, color: "FF0000" }`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

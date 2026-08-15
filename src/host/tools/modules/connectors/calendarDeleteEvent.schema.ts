@@ -10,6 +10,7 @@ Required parameters:
 - event_uid
 
 Use this only when the user explicitly wants to remove a real local calendar event.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

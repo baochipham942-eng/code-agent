@@ -35,6 +35,7 @@ Features:
 - recency: filter results by day/week/month
 - output_format: "table" for compact markdown output`;
   },
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

@@ -15,6 +15,7 @@ Actions:
 - kill: control a process or PTY session by terminating it (session_id or task_id)
 
 Permission split: list/poll/log/output are observation actions; write/submit/kill are control actions.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

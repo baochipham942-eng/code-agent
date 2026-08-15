@@ -33,6 +33,7 @@ xlwings_execute { "operation": "create_chart", "range": "A1:B10", "chart_type": 
 \`\`\`
 
 **注意**：需要安装 Python 和 xlwings（\`pip install xlwings\`），以及 Excel 应用程序。`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

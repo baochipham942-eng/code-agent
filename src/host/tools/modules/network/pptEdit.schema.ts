@@ -18,6 +18,7 @@ export const pptEditSchema: ToolSchema = {
 - analyze: 分析 PPTX 结构（slide 数量/布局/主题色/字体/内容摘要）
 
 每次编辑前自动创建快照（可回滚）。`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

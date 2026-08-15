@@ -49,6 +49,8 @@ export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: JSONSchema;
+  /** 工具成功产出的 JSON Schema。 */
+  outputSchema: JSONSchema;
   requiresPermission: boolean;
   permissionLevel: PermissionLevel;
 

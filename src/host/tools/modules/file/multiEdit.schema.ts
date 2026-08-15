@@ -16,6 +16,7 @@ How it works:
 Tips:
 - Order edits from bottom to top of the file to avoid line-shift issues
 - Each old_text must be unique in the content at the time it is applied (or use replace_all: true)`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

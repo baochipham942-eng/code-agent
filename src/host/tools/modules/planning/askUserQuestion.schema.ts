@@ -8,6 +8,7 @@ import type { ToolSchema } from '../../../protocol/tools';
 export const askUserQuestionSchema: ToolSchema = {
   name: 'AskUserQuestion',
   description: `Asks the user a question and waits for their response. Use when you need clarification, confirmation, or additional information to proceed. Do NOT use this for simple status updates — just output text directly.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

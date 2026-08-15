@@ -6,6 +6,7 @@ export const planUpdateSchema: ToolSchema = {
   description:
     'Update the status of a step or phase in the task plan. ' +
     'Use this after completing a task step or when a step is blocked.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

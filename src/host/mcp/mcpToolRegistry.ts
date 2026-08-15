@@ -28,6 +28,7 @@ import {
 } from '../telemetry/runTraceContext';
 import { isMcpToolReadOnly } from './mcpToolSafety';
 import { MCP_TASKS_EXTENSION_ID } from './mcpTransport';
+import { assertSupportedJsonSchema } from '../tools/outputSchema';
 
 const logger = createLogger('MCPToolRegistry', { lane: 'mcp' });
 
@@ -436,6 +437,7 @@ export class MCPToolRegistry {
         tool.serverName === CUA_DRIVER_SERVER_NAME
           ? mapCuaToolPermission(tool.name)
           : mapMCPAnnotationsToPermission(tool.annotations);
+      const outputSchema = { type: 'string' } as const;
       const def: ToolDefinition & { metadata?: {
         annotations?: MCPToolAnnotations;
         execution?: MCPToolExecution;
@@ -444,8 +446,13 @@ export class MCPToolRegistry {
         name: `mcp__${tool.serverName}__${tool.name}`,
         description: `[MCP:${tool.serverName}] ${tool.description}`,
         inputSchema: tool.inputSchema as ToolDefinition['inputSchema'],
+        // MCP content/structuredContent is normalized into the string observation
+        // consumed by Neo's tool runtime, so the public definition must describe
+        // that actual boundary rather than the server's pre-normalization payload.
+        outputSchema,
         ...permission,
       };
+      assertSupportedJsonSchema(outputSchema, `${def.name}.outputSchema`);
       const taskCapabilities = this.serverTaskCapabilities.get(tool.serverName);
       if (tool.annotations || tool.execution || taskCapabilities) {
         def.metadata = {

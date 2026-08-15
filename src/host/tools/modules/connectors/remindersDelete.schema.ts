@@ -10,6 +10,7 @@ Required parameters:
 - reminder_id
 
 Use this only when the user explicitly wants to remove a real local reminder.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

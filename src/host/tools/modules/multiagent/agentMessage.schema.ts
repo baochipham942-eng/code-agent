@@ -14,6 +14,7 @@ Use this tool to:
 Parameters:
 - action: What to do (status, list, result, cancel)
 - agentId: Target agent ID (required for status, result, cancel)`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

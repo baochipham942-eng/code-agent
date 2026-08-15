@@ -21,6 +21,7 @@ export const imageGenerateSchema: ToolSchema = {
 image_generate { "prompt": "一只猫", "expand_prompt": true }
 image_generate { "prompt": "产品展示图", "output_path": "./product.png", "style": "photo" }
 \`\`\``,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

@@ -39,6 +39,7 @@ image_process { "input_path": "photo.png", "action": "resize", "width": 800, "he
 \`\`\`
 image_process { "input_path": "icon.png", "action": "upscale", "scale": 2 }
 \`\`\``,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

@@ -10,6 +10,7 @@ export const proposeRoleSchema: ToolSchema = {
     'The draft is NOT saved automatically — it surfaces a confirmation card; the user must approve it. ' +
     'If the tool returns an error (e.g. duplicate name), adjust and call again. ' +
     'Call this again with a refined definition each time the user asks to change something before confirming.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

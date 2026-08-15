@@ -9,6 +9,7 @@ export const memoryWriteSchema: ToolSchema = {
     'Automatically maintains INDEX.md. ' +
     'Use for saving user preferences, feedback, project context, external references, ' +
     'or reusable skills / workflows (procedural knowledge).',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

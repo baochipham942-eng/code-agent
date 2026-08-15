@@ -8,6 +8,7 @@ export const musicGenerateSchema: ToolSchema = {
 
 根据文字描述（风格/情绪/乐器/场景）生成一段音乐，也可附歌词。生成结果是一个可播放的音频产物（MP3）。
 注意：音乐生成为付费调用，请在用户确有音乐需求时再使用，不要重复试探。`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

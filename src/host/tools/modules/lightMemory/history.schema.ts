@@ -17,6 +17,62 @@ export const historySchema: ToolSchema = {
     'Typical flow: search → pick a hit → around(message_id). Query must be ≥ 3 characters ' +
     '(trigram). Plain queries match literally; prefix with `"` for raw FTS5 syntax. ' +
     'Note: system-role messages are not indexed.',
+  outputSchema: {
+    type: 'object',
+    properties: {
+      total: { type: 'number' },
+      sessionId: { type: 'string' },
+      hint: { type: 'string' },
+      hits: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            messageId: { type: 'string' },
+            sessionId: { type: 'string' },
+            kind: { type: 'string' },
+            timestamp: { type: 'number' },
+            timestampIso: { type: 'string' },
+            snippet: { type: 'string' },
+          },
+          required: ['messageId', 'sessionId', 'kind', 'timestamp', 'timestampIso', 'snippet'],
+          additionalProperties: true,
+        },
+      },
+      messages: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            messageId: { type: 'string' },
+            role: { type: 'string' },
+            matched: { type: 'boolean' },
+            timestamp: { type: 'number' },
+            timestampIso: { type: 'string' },
+            content: { type: 'string' },
+            thinking: { type: 'string' },
+            toolCalls: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  arguments: { type: 'string' },
+                  output: { type: 'string' },
+                },
+                required: ['name', 'arguments'],
+                additionalProperties: false,
+              },
+            },
+          },
+          required: ['messageId', 'role', 'matched', 'timestamp', 'timestampIso'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['total'],
+    additionalProperties: false,
+  },
   inputSchema: {
     type: 'object',
     properties: {

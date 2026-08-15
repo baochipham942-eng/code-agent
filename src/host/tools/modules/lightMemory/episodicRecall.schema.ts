@@ -9,6 +9,30 @@ export const episodicRecallSchema: ToolSchema = {
     'then decide if historical context applies. Returns matching message snippets with ' +
     'session id and timestamp. Scope defaults to all sessions; pass session_scope="current" ' +
     'to limit to the active session. Query must be ≥ 3 characters (trigram requirement).',
+  outputSchema: {
+    type: 'object',
+    properties: {
+      total: { type: 'number' },
+      snippets: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            sessionId: { type: 'string' },
+            role: { type: 'string' },
+            timestamp: { type: 'number' },
+            timestampIso: { type: 'string' },
+            snippet: { type: 'string' },
+            messageId: { type: 'string' },
+          },
+          required: ['sessionId', 'role', 'timestamp', 'timestampIso', 'snippet', 'messageId'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['total', 'snippets'],
+    additionalProperties: false,
+  },
   inputSchema: {
     type: 'object',
     properties: {

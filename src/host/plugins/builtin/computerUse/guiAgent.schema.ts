@@ -24,6 +24,7 @@ IMPORTANT:
 - Only works with Volcengine Doubao vision models (GUI grounding trained)
 - Uses doubao-seed-1-6-vision-250815 by default (only model with native UI-TARS coordinate format)
 - Costs ~84K tokens (~¥0.30) per typical task`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

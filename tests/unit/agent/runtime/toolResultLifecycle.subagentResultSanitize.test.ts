@@ -23,12 +23,12 @@ import type { ToolSchema } from '../../../../src/host/protocol/tools';
 
 // 只注册测试需要的多代理 schema 子集 + 一个非 multiagent 对照工具。
 const MULTIAGENT_SCHEMAS: ToolSchema[] = [
-  { name: 'spawn_agent', description: 'spawn', inputSchema: { type: 'object' }, category: 'multiagent', permissionLevel: 'execute' },
-  { name: 'Task', description: 'delegate', inputSchema: { type: 'object' }, category: 'multiagent', permissionLevel: 'execute' },
-  { name: 'collect_agent', description: 'collect', inputSchema: { type: 'object' }, category: 'multiagent', permissionLevel: 'read' },
+  { name: 'spawn_agent', description: 'spawn', inputSchema: { type: 'object' }, outputSchema: { type: 'string' }, category: 'multiagent', permissionLevel: 'execute' },
+  { name: 'Task', description: 'delegate', inputSchema: { type: 'object' }, outputSchema: { type: 'string' }, category: 'multiagent', permissionLevel: 'execute' },
+  { name: 'collect_agent', description: 'collect', inputSchema: { type: 'object' }, outputSchema: { type: 'string' }, category: 'multiagent', permissionLevel: 'read' },
 ];
 const NON_MULTIAGENT_SCHEMA: ToolSchema = {
-  name: 'read_file', description: 'read', inputSchema: { type: 'object' }, category: 'fs', permissionLevel: 'read',
+  name: 'read_file', description: 'read', inputSchema: { type: 'object' }, outputSchema: { type: 'string' }, category: 'fs', permissionLevel: 'read',
 };
 
 function installFakeProtocolToolRegistry(schemas: ToolSchema[]): void {

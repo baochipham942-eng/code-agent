@@ -15,6 +15,7 @@ const target = {
 export const delegateTaskSchema: ToolSchema = {
   name: 'delegate_task',
   description: '只读前台里创建、修改、删除、重命名文件，运行命令，联网查证，或任何会改变工作区的请求，唯一的受理方式就是调用本工具——包括你本轮已经读过文件之后。它不在前台执行任何副作用，而是创建一个带完整写工具的后台任务去做。accepted 只代表已接单，不代表完成。',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {
@@ -36,6 +37,7 @@ export const delegateTaskSchema: ToolSchema = {
 export const steerTaskSchema: ToolSchema = {
   name: 'steer_task',
   description: '给一件正在执行或排队的后台任务补充信息、修正要求或改变方向，不新开任务。',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {
@@ -53,6 +55,7 @@ export const steerTaskSchema: ToolSchema = {
 export const cancelTaskSchema: ToolSchema = {
   name: 'cancel_task',
   description: '取消一件后台任务。目标不唯一时返回候选，随后必须用 AskUserQuestion 让用户按短名选择。',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: { target },
@@ -67,6 +70,7 @@ export const cancelTaskSchema: ToolSchema = {
 export const taskStatusSchema: ToolSchema = {
   name: 'task_status',
   description: '读取当前会话后台任务的真实状态。用户追问进度、完成情况或有哪些活在跑时必须先调用。',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {},

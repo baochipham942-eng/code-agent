@@ -28,6 +28,7 @@ pdf_compress { "input_path": "/path/to/large.pdf", "quality": "screen" }
 \`\`\`
 pdf_compress { "input_path": "report.pdf", "output_path": "report_small.pdf", "quality": "ebook" }
 \`\`\``,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

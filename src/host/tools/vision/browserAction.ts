@@ -122,6 +122,7 @@ Profile login reuse: list_profiles; import_profile_cookies recognizes the legacy
 storageState file path: export_storage_state / import_storage_state for CI/scripts.`,
   requiresPermission: true,
   permissionLevel: 'execute',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

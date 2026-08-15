@@ -37,6 +37,7 @@ export const RECOMMEND_CAPABILITY_INPUT_SCHEMA = {
 export const recommendCapabilitySchema: ToolSchema = {
   name: 'recommend_capability',
   description: RECOMMEND_CAPABILITY_DESCRIPTION,
+  outputSchema: { type: 'string' },
   inputSchema: RECOMMEND_CAPABILITY_INPUT_SCHEMA,
   category: 'planning',
   permissionLevel: 'read',

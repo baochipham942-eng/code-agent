@@ -14,6 +14,7 @@ Supported actions:
 - read_message
 
 For list_messages and read_message, provide mailbox. Account is optional but recommended when mailbox names may overlap.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

@@ -15,6 +15,7 @@ Optional parameters:
 - location
 
 Use this only when the user wants to create a real local calendar event.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

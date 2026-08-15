@@ -92,6 +92,7 @@ Optionally recalculates with LibreOffice first.
 Parameters:
 - file_path (required): Excel file path
 - recalc: Recalculate with LibreOffice before scanning (default: false)`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

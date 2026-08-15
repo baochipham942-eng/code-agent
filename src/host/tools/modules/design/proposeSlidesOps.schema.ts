@@ -9,6 +9,7 @@ export const proposeSlidesOpsSchema: ToolSchema = {
   description: `Generate a slide deck (演示稿/PPTX) in the design workspace from a topic. The deck is produced and opened in a preview tab. The deck content is written by an AI outline pass, so it is only as good as what you feed it. Outline + layout are FREE. Optionally set illustrate=true to also generate one concept image per content slide — that is a PAID operation, and the user must confirm the estimated cost IN THE CONVERSATION before any image is generated.
 
 Provide a concise "topic" (the subject), and — CRITICAL for quality — pass your researched facts, data, and the page-by-page structure you want in "brief". The slides are built from "brief"; if you skip it, the deck falls back to a generic template instead of your research. Use this for presentations/pitch decks/演示稿 — not for single images (use ProposeCanvasOps) or videos (use ProposeVideoOps).`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

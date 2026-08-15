@@ -5,6 +5,7 @@ export const spaceCreateSchema: ToolSchema = {
   description:
     'Create a Neo collaboration space for durable shared work, configured capabilities, activity, and artifacts. ' +
     'Use this only when the user explicitly wants a new collaboration space. This is a write operation and requires approval.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

@@ -4,6 +4,7 @@ import type { ToolSchema } from '../../../protocol/tools';
 export const collectAgentSchema: ToolSchema = {
   name: 'collect_agent',
   description: `Collect the status and result of a background sub-agent previously started via spawn_agent with run_in_background=true. By default waits for it to finish; pass wait=false to poll the current status without blocking.`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

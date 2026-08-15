@@ -109,6 +109,7 @@ Parameters:
 Returns the path to the saved screenshot file, plus AI analysis if analyze=true.`,
   requiresPermission: true,
   permissionLevel: 'write',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

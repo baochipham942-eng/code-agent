@@ -95,6 +95,11 @@ const gates = [
     args: ['scripts/attention-budget-ratchet.mjs'],
   },
   {
+    ci: 'swarm-ci / smoke / Tool output schema ratchet',
+    command: 'npm',
+    args: ['run', 'check:tool-output-schemas'],
+  },
+  {
     ci: 'swarm-ci / smoke / Install Vercel control-plane dependencies',
     command: 'npm',
     args: ['ci', '--prefix', 'vercel-api', '--ignore-scripts'],

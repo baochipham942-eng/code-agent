@@ -12,6 +12,7 @@ export const writeSchema: ToolSchema = {
     'in one Write call when the whole content is already available. ' +
     'When the user pastes code instead of naming a file, do not ask for a path — derive a name from ' +
     'the content and write it under the working directory.',
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

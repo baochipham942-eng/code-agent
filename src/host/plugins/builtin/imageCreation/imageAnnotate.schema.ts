@@ -30,6 +30,7 @@ export const imageAnnotateSchema: ToolSchema = {
 **需要配置**：
 - 百度 OCR API（需要 BAIDU_OCR_API_KEY 和 BAIDU_OCR_SECRET_KEY）
 - 或智谱 API Key（降级方案，坐标不精确）`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

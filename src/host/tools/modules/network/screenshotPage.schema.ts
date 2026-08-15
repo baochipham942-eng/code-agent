@@ -26,6 +26,7 @@ screenshot_page { "url": "https://example.com", "analyze": true, "prompt": "这�
 - delay: 等待页面加载的毫秒数（默认: 0）
 - analyze: 启用 AI 分析（默认: false）
 - prompt: 自定义分析提示词`,
+  outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {

@@ -570,16 +570,19 @@ describe('ContextAssembly.buildModelMessages()', () => {
         '你已经在一个独立后台任务槽里，必须亲自执行这件任务。',
         '禁止调用、搜索或建议 Task、TaskManager、spawn_agent、AgentSpawn、delegate_task、steer_task、cancel_task、task_status 等任务拆分或指挥台工具；上层已经完成任务拆分。',
       ].join('\n'),
+      liveVoice: false,
     },
     {
       category: 'workbench 偏好',
       marker: '优先考虑这些已挂载 skills（仅在相关时使用）：docx',
       block: '优先考虑这些已挂载 skills（仅在相关时使用）：docx',
+      liveVoice: false,
     },
     {
       category: '角色资料',
       marker: '## 角色记忆索引',
       block: '## 角色记忆索引\n- 角色：牧之\n- 资料架：产品判断',
+      liveVoice: false,
     },
   ] as const;
 
@@ -598,7 +601,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
           ? applyTurnSystemContext(rawUserRequest, undefined, sessionId)
           : applyTurnSystemContext(
               rawUserRequest,
-              { turnSystemContext: [block] },
+              { mode: 'normal', turnSystemContext: [block] },
               sessionId,
               () => null,
             );

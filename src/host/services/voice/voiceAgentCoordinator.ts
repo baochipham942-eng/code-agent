@@ -59,6 +59,7 @@ import {
   normalizeVoiceSpawnRequest,
   type VoiceSpawnRequest,
 } from './voiceSpawnRequest';
+import { voiceStartRunSpeech } from './voiceStartRunSpeech';
 import {
   appendVoiceTranscript,
   buildVoiceTranscriptBlock,
@@ -1044,27 +1045,14 @@ async function delegateTask(
  * 同一个 startRun 结果在两处各写一套处理，第二处漏掉两种分支——这是本仓反复出现的
  * 形状（一份判据抄成两份，其中一份长歪）。所以这里收成单一出口，两个调用方共用。
  */
-export function describeStartRunOutcome(
+function describeStartRunOutcome(
   state: LedgerState,
   request: VoiceSpawnRequest,
   result: StartRunResult,
 ): string {
-  if (result.outcome === 'reused') {
-    return `「${request.shortName}」是本轮重复派发，已复用原任务（reused），没有再开第二件。`;
-  }
-  if (result.outcome === 'queued') {
-    return `现在对用户说：「『${request.shortName}』已经排在同一条任务线后面，前一件结束就开始。」`;
-  }
-  if (result.outcome === 'requires_choice') {
-    offerOverflowChoice(state, request);
-    return '并发槽已经占满，已通过 AskUserQuestion 请用户选择排队或顶替哪一件；等待回答，不要替用户选。';
-  }
-  // 谎报的根治（批 X ①，2026-07-30）：上一版返回「已经排上队，还在后台跑，没做完。
-  // 别说已经完成」——「已排队」是个可润色的状态名词，离「已完成」只差一次善意润色，
-  // 真机第三次撞到模型照说「已经建好了」。禁令加狠话是同一招的第三次，不再走。
-  // 换成言语行为指令 + 认知协议：返回值不描述状态，只说「你下一句该说什么」，
-  // 并把「完成」从可推断的状态收窄成协议事件（只认 [BACKEND] 回流）。
-  return spawnSpeechDirective(request.shortName);
+  // 选择框是副作用，留在这里；「该说什么」全部由 voiceStartRunSpeech 一处决定。
+  if (result.outcome === 'requires_choice') offerOverflowChoice(state, request);
+  return voiceStartRunSpeech(request.shortName, result.outcome);
 }
 
 function offerOverflowChoice(state: LedgerState, request: VoiceSpawnRequest): void {
@@ -1093,25 +1081,6 @@ function offerOverflowChoice(state: LedgerState, request: VoiceSpawnRequest): vo
     if (!target || TERMINAL.includes(target.status)) return;
     await requestStop(state, { workItemId: target.id, title: shortName }, request);
   });
-}
-
-/**
- * 派活后回给通话 brain 的话（①）。三段缺一不可：
- * 1. 下一句台词（没有状态名词，无可润色空间）；
- * 2. 认知协议：结果只会以 [BACKEND] 消息送达，没收到就不存在「做完」；
- * 3. 进度问题强制落地 task_status，不许凭记忆答。
- */
-function spawnSpeechDirective(title: string): string {
-  return [
-    // 台词写成**用户听得懂的第一人称**（E4，2026-07-30 真机）：上一版是
-    // 「『X』这件事你开始做了，做完会立刻主动告诉他」——模型照着念出来，用户听到的是
-    // 「你开始做了」，主语错乱、读不懂。「不要复述」类禁令本仓已三连败，所以不加禁令，
-    // 改成即使被整句照读也通顺的话。
-    `现在对用户说：「我已经开始做『${title}』了，做完马上告诉你。」就说这一个意思，不要再多说。`,
-    '关于这件事你目前只知道「已经开始」。它的结果（做成或失败）只会以 [BACKEND] 开头的消息送达；',
-    '在收到那条消息之前，它没有做完，你也不知道任何进展——不存在「应该差不多了」。',
-    '用户如果问「好了吗」「怎么样了」，先调 task_status 看真实状态再回答，不要凭记忆或猜测回答。',
-  ].join('\n');
 }
 
 // ============================================================================

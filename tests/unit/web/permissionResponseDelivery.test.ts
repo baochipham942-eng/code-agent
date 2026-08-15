@@ -16,6 +16,7 @@ import { initTaskManager, type TaskManager } from '../../../src/host/task/TaskMa
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import type { AgentOrchestrator } from '../../../src/host/agent/agentOrchestrator';
 import type { PendingDevPermissionRequest } from '../../../src/web/routes/dev';
+import type { PermissionAskResult } from '../../../src/shared/contract';
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown | Promise<unknown>;
 type IpcResult = { success: boolean; data?: unknown; error?: { code: string; message: string } };
@@ -36,9 +37,11 @@ const configServiceStub = {
  * 从 ToolExecutor 取构造时注入的生产登记入口；它实际绑定到
  * OrchestratorPermissionIsland.requestPermission，而非已经搬走的 orchestrator 方法。
  */
-function requestPermission(orchestrator: AgentOrchestrator): (request: Record<string, unknown>) => Promise<boolean> {
+function requestPermission(
+  orchestrator: AgentOrchestrator,
+): (request: Record<string, unknown>) => Promise<PermissionAskResult> {
   return (orchestrator as unknown as {
-    toolExecutor: { requestPermission: (request: Record<string, unknown>) => Promise<boolean> };
+    toolExecutor: { requestPermission: (request: Record<string, unknown>) => Promise<PermissionAskResult> };
   }).toolExecutor.requestPermission;
 }
 
@@ -98,8 +101,8 @@ describe('审批响应投递链路（web 路径）', () => {
 
     const result = await invoke(requestId, 'allow', sessionId);
     expect(result.success).toBe(true);
-    // 真实行为判据：工具那一侧拿到了 true，而不是「handler 被调用过」
-    await expect(approval).resolves.toBe(true);
+    // 真实行为判据：工具那一侧真的被放行了，而不是「handler 被调用过」
+    await expect(approval).resolves.toEqual({ approved: true });
   });
 
   it('拒绝也真的传到了工具那一侧', async () => {
@@ -112,7 +115,8 @@ describe('审批响应投递链路（web 路径）', () => {
 
     const [requestId] = pendingIds(orchestrator);
     await invoke(requestId, 'deny', sessionId);
-    await expect(approval).resolves.toBe(false);
+    // 人点的拒绝 ⇒ denialSource 必须是 user（机器拒的走别的来源，见 ADR-057）
+    await expect(approval).resolves.toEqual({ approved: false, denialSource: 'user' });
   });
 
   it('不存在的 requestId：报 PENDING_PERMISSION_NOT_FOUND，且日志指名道姓', async () => {
@@ -160,7 +164,7 @@ describe('审批响应投递链路（web 路径）', () => {
 
     const [requestId] = pendingIds(orchestrator);
     await expect(invoke(requestId, 'allow', sessionId)).resolves.toMatchObject({ success: true });
-    await expect(approval).resolves.toBe(true);
+    await expect(approval).resolves.toEqual({ approved: true });
   });
 
   it('dev 审批（/api/dev 真审批）仍走原来的 pendingDevPermissions 出口', async () => {

@@ -543,7 +543,7 @@ Markdown 结构那半边（headers / lists / tables / code blocks）没有接回
 
 **建议验收判据**：① 目标是文档型产物的召回，不是 HTML（HTML 已 100%）；② 放宽后必须在**同一份行为真值集**上回归，HTML 召回不许掉；③ 误触发要先有干净的负例集才谈——它是 `required` 档注入块（真 token **886**），误触发会挤掉 repo map / skills / deferred tools，代价是实的。
 
-### 遗留三：`BUILTIN_RULES` 是这批规则的第二份死副本，客户端侧删除是安全的
+### 遗留三（已处理，2026-08-15，N-L8-DEADRULES）：删除第二份死副本与路径规则幽灵入口
 
 `src/host/services/cloud/builtinConfig.ts` 的 `BUILTIN_RULES` 存着 12 条规则正文（含三单删掉的 gitSafety / errorHandling / codeSnippet / attachmentHandling / htmlGeneration / outputFormat），唯一读者是 `cloudConfigService.getRule()`，而 **`getRule()` 全仓零调用**。
 
@@ -552,4 +552,8 @@ Markdown 结构那半边（headers / lists / tables / code blocks）没有接回
 - 远端配置走 `acceptFetchedConfig` → 验签封套 → 直接当 `CloudConfig` 用，**没有任何按字段的严格 schema 校验**（`src/shared/contract/` 下没有对应的 zod/schema 定义）
 - 因此控制面继续下发 `rules` 字段也只是被忽略，**客户端删字段不会让线上下发失败**
 
-**建议验收判据**：删 `BUILTIN_RULES` + 12 条常量 + `getRule()` + `CloudConfig.rules` 字段；`gates:local` 全绿；knip 两道棘轮基线同步下调（这次会掉十几个死导出）。控制面侧是否停发另说，不阻塞客户端。
+已落地：删除 `BUILTIN_RULES`、12 条正文常量、`CloudConfig.rules`、`getBuiltinConfig().rules`、`cloudConfigService.getRule()` 及其孤儿单测。同一单里还删除了生产零调用的 `rulesLoader.ts`、`builder.ts` 四个路径规则导出与缓存、`configPaths.getRulesDir()`，并从配置作用域面板移除 `user-rules` / `project-rules` 两个会误报「生效中」的条目。
+
+实际变更量：**生产代码删除 323 行，旧测试删除 29 行，knip 基线删除 35 行，共删除 387 行**；新增 203 行配置作用域生产可达性门，整单净减 184 行。面板剩余 20 项全部映射到真实生产读者，闭合断言要求映射表无遗漏、无多余，读者文件与源码锚点必须存在；临时加入 `mutation-fake-config` 后，门以退出码 1 精确点名该幽灵项，撤销变异后恢复 3/3 绿。
+
+knip 基线只收紧本单：默认 dead-export profile **2635 → 2632（-3）**；production dead-export profile 删除 `buildPromptWithRules` / `getRulesForFile` / `loadRules` / `reloadRules` **4 个符号**。生产不可达文件基线不变；当时 `origin/main` 另有 18 个符号和 5 个文件已消失但尚未收紧，未混入本单。控制面是否停发 `rules` 仍是独立事项，不阻塞客户端；旧控制面继续下发时客户端会直接忽略。

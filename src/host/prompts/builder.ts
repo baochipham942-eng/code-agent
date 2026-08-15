@@ -45,12 +45,6 @@ import {
   type ReminderSelectionResult,
 } from './dynamicReminders';
 import type { ReminderContext } from './reminderRegistry';
-import {
-  loadRulesDir,
-  getMatchingRules,
-  type PathRule,
-} from '../config/rulesLoader';
-import { getRulesDir } from '../config/configPaths';
 
 // ----------------------------------------------------------------------------
 // Rule Tiers - Token-optimized rule groupings
@@ -305,54 +299,6 @@ export function getEnhancedReminders(
 }
 
 export { createReminderContext, selectReminders, type ReminderSelectionResult, type ReminderContext };
-
-// ----------------------------------------------------------------------------
-// Path-Specific Rules (from .code-agent/rules/*.md)
-// ----------------------------------------------------------------------------
-
-let cachedRules: PathRule[] | null = null;
-
-export async function loadRules(workingDirectory?: string): Promise<PathRule[]> {
-  const dirs = getRulesDir(workingDirectory);
-  const allRules: PathRule[] = [];
-
-  for (const dir of [dirs.user, dirs.project].filter(Boolean)) {
-    const rules = await loadRulesDir(dir!);
-    allRules.push(...rules);
-  }
-
-  cachedRules = allRules;
-  return allRules;
-}
-
-export async function reloadRules(workingDirectory?: string): Promise<PathRule[]> {
-  cachedRules = null;
-  return loadRules(workingDirectory);
-}
-
-export function getRulesForFile(filePath: string): string[] {
-  if (!cachedRules) return [];
-  return getMatchingRules(cachedRules, filePath);
-}
-
-export function buildPromptWithRules(
-  filePaths: string[]
-): string {
-  const basePrompt = buildPrompt();
-  if (!cachedRules || filePaths.length === 0) return basePrompt;
-
-  const matchedRules = new Set<string>();
-  for (const fp of filePaths) {
-    for (const rule of getMatchingRules(cachedRules, fp)) {
-      matchedRules.add(rule);
-    }
-  }
-
-  if (matchedRules.size === 0) return basePrompt;
-
-  const rulesSection = `\n\n# Path-Specific Rules\n\n${[...matchedRules].join('\n\n')}`;
-  return basePrompt + rulesSection;
-}
 
 // ----------------------------------------------------------------------------
 // Profile-based Prompt Building (M2)

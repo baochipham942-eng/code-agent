@@ -193,22 +193,6 @@ export function getAgentsMdDir(workingDirectory?: string): {
 }
 
 /**
- * Get rules directory paths for path-specific rules
- */
-export function getRulesDir(workingDirectory?: string): {
-  user: string;
-  project?: string;
-} {
-  const result: { user: string; project?: string } = {
-    user: path.join(getUserConfigDir(), 'rules'),
-  };
-  if (workingDirectory) {
-    result.project = path.join(getProjectConfigDir(workingDirectory), 'rules');
-  }
-  return result;
-}
-
-/**
  * Get managed config path for enterprise administration
  */
 export function getManagedConfigPath(): string {

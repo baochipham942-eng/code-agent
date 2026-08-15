@@ -5533,11 +5533,6 @@
     },
     {
       "file": "src/host/prompts/builder.ts",
-      "name": "buildPromptWithRules",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/builder.ts",
       "name": "createReminderContext",
       "kind": "export"
     },
@@ -5578,17 +5573,7 @@
     },
     {
       "file": "src/host/prompts/builder.ts",
-      "name": "getRulesForFile",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/builder.ts",
       "name": "getSystemReminders",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/builder.ts",
-      "name": "loadRules",
       "kind": "export"
     },
     {
@@ -5604,11 +5589,6 @@
     {
       "file": "src/host/prompts/builder.ts",
       "name": "needsGameArtifactContract",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/builder.ts",
-      "name": "reloadRules",
       "kind": "export"
     },
     {

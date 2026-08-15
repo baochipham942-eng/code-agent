@@ -257,7 +257,7 @@ import { approvalParkEvents } from '../../src/host/agent/approvalParkEvents';
 import type { PendingApprovalRepository } from '../../src/host/services/core/repositories/PendingApprovalRepository';
 import { SteerRejectedError } from '../../src/host/agent/runtime/conversationRuntime';
 import type { ConfigService } from '../../src/host/services/core/configService';
-import type { AgentEvent, Message, MessageAttachment } from '../../src/shared/contract';
+import type { AgentEvent, Message, MessageAttachment, PermissionAskResult } from '../../src/shared/contract';
 import type { AgentRunOptions } from '../../src/host/research/types';
 import { getAllToolDefinitions } from '../../src/host/tools/dispatch/toolDefinitions';
 import { createWorkspaceScope } from '../../src/host/runtime/workspaceScope';
@@ -284,7 +284,7 @@ interface OrchestratorInternals {
   isInterrupting: boolean;
   pendingSteerMessages: unknown[];
   pendingPermissions: Map<string, { resolve: (r: string) => void; parked?: boolean; request?: { sessionId?: string } }>;
-  requestPermission(request: { type: string; tool: string; sessionId?: string; details?: Record<string, unknown> }): Promise<boolean>;
+  requestPermission(request: { type: string; tool: string; sessionId?: string; details?: Record<string, unknown> }): Promise<PermissionAskResult>;
   resolveParkedApproval(id: string, response: string, feedbackOverride?: string): void;
   getPendingApprovalRepo(): unknown;
   drainPendingPermissions(response?: string): void;
@@ -1069,7 +1069,7 @@ describe('AgentOrchestrator', () => {
       });
 
     // 短暂等待，确认 promise 未被 resolve（仍在停车）。
-    const isStillPending = async (p: Promise<boolean>) => {
+    const isStillPending = async (p: Promise<PermissionAskResult>) => {
       const sentinel = Symbol('pending');
       const race = await Promise.race([p, Promise.resolve(sentinel)]);
       return race === sentinel;

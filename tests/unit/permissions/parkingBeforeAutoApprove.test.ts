@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppSettings } from '../../../src/shared/contract';
+import type { AppSettings, PermissionAskResult } from '../../../src/shared/contract';
 import type { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 
 vi.mock('../../../src/host/services/infra/logger', () => {
@@ -30,7 +30,7 @@ function makeRepo(): PendingApprovalRepository & { insert: ReturnType<typeof vi.
   } as unknown as PendingApprovalRepository & { insert: ReturnType<typeof vi.fn> };
 }
 
-function isStillPending(promise: Promise<boolean>): Promise<boolean> {
+function isStillPending(promise: Promise<PermissionAskResult>): Promise<boolean> {
   const pending = Symbol('pending');
   return Promise.race([promise, Promise.resolve(pending)]).then((result) => result === pending);
 }

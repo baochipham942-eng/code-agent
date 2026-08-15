@@ -14,7 +14,8 @@ export type PressureTrigger =
   | 'none'
   | 'token-threshold'
   | 'usage-percent'
-  | 'pipeline-signal';
+  | 'pipeline-signal'
+  | 'provider-overflow';
 
 export interface CompressionDecision {
   action: 'none' | 'execute' | 'checkpoint-rebuild';
@@ -43,6 +44,15 @@ export interface PressureInput {
    * 影响，与重构前的行为一致。
    */
   compressionEnabled: boolean;
+  /**
+   * provider 已经返回了 context overflow 错误。
+   *
+   * 这是**最硬的证据**，优先级高于本文件里其它一切判据：其它三个触发器都建立在
+   * 我方的 token 估算之上，而 provider 报溢出恰恰说明那个估算已经被证伪了
+   * （估算说没满、真实已经满）。此时再拿同一个估算去过阈值，得到的 `none` 是
+   * 用一个已知错误的数做出的决定 —— 压缩会整个跳过，调用方却以为压过了。
+   */
+  providerConfirmedOverflow?: boolean;
 }
 
 /**
@@ -58,6 +68,14 @@ export function assessContextPressure(input: PressureInput): CompressionDecision
       : 'execute'
   );
 
+  // 0. provider 已确认溢出 —— 不看任何估算，无条件压。见 PressureInput 的字段注释。
+  if (input.providerConfirmedOverflow) {
+    return {
+      action: pressureAction(),
+      trigger: 'provider-overflow',
+      reason: 'provider returned a context overflow error — local token estimate is already falsified',
+    };
+  }
   // 1. Pipeline 已投影出 ≥85% 压力 —— 此前这个信号只被 log/trace（G12），现在真正进入决策。
   if (input.pipelineAutocompactNeeded) {
     return {

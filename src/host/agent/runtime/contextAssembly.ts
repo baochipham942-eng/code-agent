@@ -24,6 +24,7 @@ import type {
   ContextInjectionSource,
 } from '../../context/contextEventLedger';
 import type {
+  CheckAndAutoCompressOptions,
   ContextAssemblyCtx,
   ContextTranscriptEntry,
   CurrentAttachment,
@@ -278,8 +279,8 @@ export class ContextAssembly {
     return updateContextHealthImpl(this.makeCtx());
   }
 
-  async checkAndAutoCompress(): Promise<void> {
-    return checkAndAutoCompressImpl(this.makeCtx());
+  async checkAndAutoCompress(options?: CheckAndAutoCompressOptions): Promise<void> {
+    return checkAndAutoCompressImpl(this.makeCtx(), options);
   }
 
   shouldThink(hasErrors: boolean): boolean {

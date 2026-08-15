@@ -197,7 +197,12 @@ describe('Provider × Runtime capability matrix', () => {
         path.join(FIXTURE_ROOT, item.fixture),
       );
       expect(fixture.runtime).toBe(item.runtime);
-      expect(item.args).toEqual(fixture.syntheticRequest.args);
+      // dsh 的事件 sink 是一份按安装位置生成的临时 patch 文件，路径逐机不同；
+      // 形状档记的是「这里有一个 --patch」，不是具体路径。
+      const args = item.args.map((arg, index) => (
+        item.args[index - 1] === '--patch' && arg.endsWith('.yml') ? '<event-sink-patch>' : arg
+      ));
+      expect(args).toEqual(fixture.syntheticRequest.args);
     }
   });
 });

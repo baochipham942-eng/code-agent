@@ -35,6 +35,12 @@ export interface AgentCallPayload {
 /** agent() 的返回：无 schema = 文本；有 schema = 校验过的对象。 */
 export type PrimitiveResult = string | Record<string, unknown>;
 
+/** child 侧 tools.<name>(args) marshal 给 Host 的载荷。args 必须是无损 JSON 对象。 */
+export interface ToolCallPayload {
+  name: string;
+  args: Record<string, unknown>;
+}
+
 export interface AgentWorkspaceLease {
   cwd: string;
   workspace: string;
@@ -54,10 +60,25 @@ export interface AgentWorkspaceHandoff {
 }
 
 // ── child process ⇄ Host RPC 协议 ───────────────────────────────────────────
-// 不可信脚本跑在独立进程；agent()/phase()/log() 是 RPC stub。parallel()/pipeline()
-// 不单独 RPC，由 child 用 Promise 组合，真正的并发排队发生在 Host concurrencyGate。
+// 不可信脚本跑在独立进程；agent()/phase()/log()/tools.<name>() 是 RPC stub。
+// parallel()/pipeline() 不单独 RPC，由 child 用 Promise 组合，真正的并发排队发生在
+// Host concurrencyGate。
+//
+// 'tool' 是 PTC（Code Mode）通道：脚本直接调工具，不必为每次调用起一个子 agent。
+// 它**不新建执行路径**——Host 侧把它当成一次普通工具调用送进既有的
+// pre-execute/审批/guards/execute 管线，只是入口不同（形态对齐 DeepSeek Harness
+// Code Mode 的 dispatch bridge）。
 
-export type RpcKind = 'agent' | 'phase' | 'log';
+/**
+ * 全部合法 RPC kind 的**单一真源**。类型与 Host 侧分发白名单都从这里派生。
+ *
+ * 别再在别处写一份字面量数组：本单加 'tool' 时就撞到了——`sandbox.ts` 里另有一份
+ * `['agent','phase','log']` 硬编码白名单，新 kind 静默变成 `unsupported primitive`，
+ * 而类型检查全绿（本仓「按名字枚举的清单是漏洞制造机」第 N 次复发）。
+ */
+export const RPC_KINDS = ['agent', 'phase', 'log', 'tool'] as const;
+
+export type RpcKind = (typeof RPC_KINDS)[number];
 
 export const NESTED_GRAPH_PROTOCOL_VERSION = 'nested-graph:v1' as const;
 export type NestedWorkflowGroupKind = 'single' | 'parallel' | 'pipeline';
@@ -105,7 +126,7 @@ export interface RpcRequest {
   /** child 内自增调用 id，用于把响应配回对应的 pending promise。 */
   id: number;
   kind: RpcKind;
-  payload: AgentCallPayload | { title: string } | { message: string };
+  payload: AgentCallPayload | ToolCallPayload | { title: string } | { message: string };
   /** Child-created W3C context for this RPC node. Contains no prompt or credential values. */
   traceContext?: import('../../telemetry/runTraceContext').SerializedRunTraceContext;
   /** Missing means legacy compatibility mode and must never be treated as recoverable. */
@@ -115,10 +136,20 @@ export interface RpcRequest {
 export interface RpcResponse {
   id: number;
   ok: boolean;
-  result?: PrimitiveResult | null;
+  /**
+   * agent/phase/log 路径回 `PrimitiveResult | null`；tool 路径回工具的产出值本身
+   * （任意无损 JSON，不做二次包装）。故这里是 unknown——别为「工具产出」另起一个
+   * 类型别名，`X | unknown` 会被折叠成 unknown，名字不带来任何约束只带来一个死导出。
+   */
+  result?: unknown;
   error?: string;
   /** agent 调用后回传的累计已花 outputTokens，child 侧 budget.spent() 镜像据此更新。 */
   spent?: number;
+  /**
+   * 失败的工具名。仅 kind==='tool' 的失败响应带它——child 侧据此把 reject 造成
+   * `ToolCallError`（带 toolName）而不是裸 Error，脚本才能 try/catch 后继续跑。
+   */
+  toolName?: string;
 }
 
 // 注：child 的初始化/终态消息形状由 sandbox.ts 内联定义。

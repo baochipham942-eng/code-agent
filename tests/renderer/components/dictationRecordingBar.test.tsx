@@ -128,11 +128,16 @@ describe('ChatInput Dictation 接线（G4）', () => {
     resolve(process.cwd(), 'src/renderer/components/features/chat/ChatInput/index.tsx'),
     'utf8',
   );
+  const coreActionsSource = readFileSync(
+    resolve(process.cwd(), 'src/renderer/components/features/chat/ChatInput/ComposerCoreActions.tsx'),
+    'utf8',
+  );
 
   it('hook 提到 ChatInput 层，录音条与语音按钮共享同一路 voice 状态', () => {
     expect(source).toContain('const voice = useVoiceInput({');
-    expect(source).toContain('<VoiceInputButton');
+    expect(source).toContain('<ComposerCoreActions');
     expect(source).toContain('voice={voice}');
+    expect(coreActionsSource).toContain('<VoiceInputButton');
     expect(source).toContain('<DictationRecordingBar');
   });
 
@@ -149,13 +154,14 @@ describe('ChatInput Dictation 接线（G4）', () => {
     expect(barAt).toBeGreaterThan(addMenuAt);
   });
 
-  it('录音中整行被替换：SendButton / LiveVoiceButton 都在非录音分支里（不会出现第二个发送键）', () => {
+  it('录音中整行被替换：核心操作区在非录音分支里（不会出现第二个发送键）', () => {
     const barAt = source.indexOf('<DictationRecordingBar');
-    // 三者都在底栏，但主按钮必须落在 isDictationActive 的 else 分支（源码里排在录音条之后）
-    expect(source.indexOf('<SendButton')).toBeGreaterThan(barAt);
-    expect(source.indexOf('<LiveVoiceButton')).toBeGreaterThan(barAt);
-    // 录音条自带的发送键就是那个位置本身，不能同时还渲染 VoiceInputButton 的麦克风
-    expect(source.indexOf('<VoiceInputButton')).toBeGreaterThan(barAt);
+    // 核心操作区必须落在 isDictationActive 的 else 分支（源码里排在录音条之后）。
+    expect(source.indexOf('<ComposerCoreActions')).toBeGreaterThan(barAt);
+    // 录音条自带的发送键就是那个位置本身；三种占位者只存在于核心操作区内部。
+    expect(coreActionsSource).toContain('<SendButton');
+    expect(coreActionsSource).toContain('<LiveVoiceButton');
+    expect(coreActionsSource).toContain('<VoiceInputButton');
   });
 
   it('发送按钮 = 停止录音 + 转写完成后自动提交（send-after-transcript）', () => {

@@ -178,3 +178,54 @@ describe('runService activeRuns 异常安全', () => {
     expect(JSON.stringify(journal.onRunFinish.mock.calls)).not.toContain('super-secret-value');
   });
 });
+
+// N-PTCEXEC：PTC 通道从 host deps 到 sandbox/ctx 的接线。
+// 执行方与名单是一对——半开状态（有名单没执行方 / 有执行方没名单）会让脚本拿到
+// 一份调什么都失败的命名空间，比彻底关闭更难排查，所以一律按关闭处理。
+describe('runService · PTC 通道接线', () => {
+  const toolNamesOf = () => (vi.mocked(runScriptInSandbox).mock.calls[0][0] as { toolNames?: string[] }).toolNames;
+
+  it('执行方 + 名单齐全 → 名单下发给 child，RPC 能落到执行方', async () => {
+    const executeTool = vi.fn(async () => ({ ok: true as const, value: 'r' }));
+    let onRpc: ((req: unknown) => Promise<RpcResponse>) | undefined;
+    vi.mocked(runScriptInSandbox).mockImplementationOnce(async (opts) => {
+      onRpc = (opts as unknown as { onRpc: (req: unknown) => Promise<RpcResponse> }).onRpc;
+      return { ok: true, result: 'ok' };
+    });
+
+    await startRun(
+      { runId: 'wf-ptc-on', script: 'return 1', defaultProvider: 'xiaomi', defaultModel: 'm' },
+      makeDeps({ executeTool, visibleToolNames: ['Read'] }),
+    );
+
+    expect(toolNamesOf()).toEqual(['Read']);
+    await expect(onRpc!({ id: 1, kind: 'tool', payload: { name: 'Read', args: {} } }))
+      .resolves.toMatchObject({ ok: true, result: 'r' });
+    expect(executeTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('只有执行方没有名单 → 通道整条关闭', async () => {
+    await startRun(
+      { runId: 'wf-ptc-halfa', script: 'return 1', defaultProvider: 'xiaomi', defaultModel: 'm' },
+      makeDeps({ executeTool: vi.fn(), visibleToolNames: [] }),
+    );
+    expect(toolNamesOf()).toEqual([]);
+  });
+
+  it('只有名单没有执行方 → 名单也不下发，child 侧调什么都是 UNKNOWN_TOOL', async () => {
+    let onRpc: ((req: unknown) => Promise<RpcResponse>) | undefined;
+    vi.mocked(runScriptInSandbox).mockImplementationOnce(async (opts) => {
+      onRpc = (opts as unknown as { onRpc: (req: unknown) => Promise<RpcResponse> }).onRpc;
+      return { ok: true, result: 'ok' };
+    });
+
+    await startRun(
+      { runId: 'wf-ptc-halfb', script: 'return 1', defaultProvider: 'xiaomi', defaultModel: 'm' },
+      makeDeps({ visibleToolNames: ['Read'] }),
+    );
+
+    expect(toolNamesOf()).toEqual([]);
+    await expect(onRpc!({ id: 1, kind: 'tool', payload: { name: 'Read', args: {} } }))
+      .resolves.toMatchObject({ ok: false, error: expect.stringContaining('UNKNOWN_TOOL') });
+  });
+});

@@ -257,7 +257,7 @@ import { approvalParkEvents } from '../../src/host/agent/approvalParkEvents';
 import type { PendingApprovalRepository } from '../../src/host/services/core/repositories/PendingApprovalRepository';
 import { SteerRejectedError } from '../../src/host/agent/runtime/conversationRuntime';
 import type { ConfigService } from '../../src/host/services/core/configService';
-import type { AgentEvent, Message, MessageAttachment } from '../../src/shared/contract';
+import type { AgentEvent, Message, MessageAttachment, PermissionAskResult } from '../../src/shared/contract';
 import type { AgentRunOptions } from '../../src/host/research/types';
 import { getAllToolDefinitions } from '../../src/host/tools/dispatch/toolDefinitions';
 import { createWorkspaceScope } from '../../src/host/runtime/workspaceScope';
@@ -284,7 +284,7 @@ interface OrchestratorInternals {
   isInterrupting: boolean;
   pendingSteerMessages: unknown[];
   pendingPermissions: Map<string, { resolve: (r: string) => void; parked?: boolean; request?: { sessionId?: string } }>;
-  requestPermission(request: { type: string; tool: string; sessionId?: string; details?: Record<string, unknown> }): Promise<boolean>;
+  requestPermission(request: { type: string; tool: string; sessionId?: string; details?: Record<string, unknown> }): Promise<PermissionAskResult>;
   resolveParkedApproval(id: string, response: string, feedbackOverride?: string): void;
   getPendingApprovalRepo(): unknown;
   drainPendingPermissions(response?: string): void;
@@ -1069,7 +1069,7 @@ describe('AgentOrchestrator', () => {
       });
 
     // 短暂等待，确认 promise 未被 resolve（仍在停车）。
-    const isStillPending = async (p: Promise<boolean>) => {
+    const isStillPending = async (p: Promise<PermissionAskResult>) => {
       const sentinel = Symbol('pending');
       const race = await Promise.race([p, Promise.resolve(sentinel)]);
       return race === sentinel;
@@ -1085,7 +1085,7 @@ describe('AgentOrchestrator', () => {
       expect(entry?.parked).toBe(true);
       // 收尾避免悬挂 promise
       internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
-      expect(await promise).toBe(false);
+      expect((await promise).approved).toBe(false);
     });
 
     // 2026-07-26 真机：语音派的 run 在通话结束后才请求审批 → 60s 必然超时自动拒绝，
@@ -1104,7 +1104,7 @@ describe('AgentOrchestrator', () => {
       expect(perm(parkedOrch).pendingPermissions.get(requestId)?.parked).toBe(true);
 
       internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
-      expect(await promise).toBe(false);
+      expect((await promise).approved).toBe(false);
       getPermissionModeManager().clearLiveVoiceSession(voiceSid, 'run:voice-work-1');
     });
 
@@ -1122,7 +1122,7 @@ describe('AgentOrchestrator', () => {
 
       expect(fake.insert).not.toHaveBeenCalled();
       perm(parkedOrch).pendingPermissions.get([...perm(parkedOrch).pendingPermissions.keys()][0])?.resolve('deny');
-      expect(await promise).toBe(false);
+      expect((await promise).approved).toBe(false);
     });
 
     it('有人值守：60s 交互路径不变，不写 pending_approvals', async () => {
@@ -1139,7 +1139,7 @@ describe('AgentOrchestrator', () => {
       const entry = perm(parkedOrch).pendingPermissions.get(requestId);
       expect(entry?.parked).toBeFalsy();
       parkedOrch.handlePermissionResponse(requestId, 'allow');
-      expect(await promise).toBe(true);
+      expect((await promise).approved).toBe(true);
     });
 
     it('双口竞态：以 repo changes 为唯一裁决，第二口静默 no-op（不二次 resolve）', async () => {
@@ -1149,7 +1149,7 @@ describe('AgentOrchestrator', () => {
 
       // 第一口：批准 → repo changes=1，赢裁决
       parkedOrch.handlePermissionResponse(requestId, 'allow');
-      expect(await promise).toBe(true);
+      expect((await promise).approved).toBe(true);
       expect(fake.rows.get(requestId)?.status).toBe('approved');
 
       // 第二口（抢答后到达）：即便手动残留一个内存项，repo changes=0 也不得二次 resolve
@@ -1171,7 +1171,7 @@ describe('AgentOrchestrator', () => {
       expect(fake.rows.get(requestId)?.status).toBe('pending');
 
       perm(parkedOrch).drainPendingPermissions('deny');
-      expect(await promise).toBe(false);
+      expect(await promise).toEqual({ approved: false, denialSource: 'cancelled' });
       const row = fake.rows.get(requestId);
       expect(row?.status).toBe('rejected'); // 不再是 pending 孤儿
       expect(row?.feedback).toBe('run cancelled');
@@ -1184,7 +1184,7 @@ describe('AgentOrchestrator', () => {
         const promise = parkRequest(unattendedSid);
         const requestId = fake.insert.mock.calls[0][0].id as string;
         vi.advanceTimersByTime(86_400_000);
-        expect(await promise).toBe(false);
+        expect(await promise).toEqual({ approved: false, denialSource: 'timeout' });
         expect(fake.rows.get(requestId)?.status).toBe('rejected');
       } finally {
         vi.useRealTimers();
@@ -1206,12 +1206,12 @@ describe('AgentOrchestrator', () => {
         (k) => !perm(parkedOrch).pendingPermissions.get(k)?.parked,
       )!;
       parkedOrch.handlePermissionResponse(bId, 'allow');
-      expect(await promiseB).toBe(true);           // B 全程正常
+      expect((await promiseB).approved).toBe(true);           // B 全程正常
       expect(await isStillPending(promiseA)).toBe(true); // A 仍停车，未受影响
 
       const aId = fake.insert.mock.calls[0][0].id as string;
       internals(parkedOrch).resolveParkedApproval(aId, 'deny');
-      expect(await promiseA).toBe(false);
+      expect((await promiseA).approved).toBe(false);
     });
 
     it('停车发内部 parked 事件（B3 挂点）', async () => {
@@ -1249,7 +1249,7 @@ describe('AgentOrchestrator', () => {
       const entry = perm(parkedOrch).pendingPermissions.get(requestId);
       expect(entry?.parked).toBe(true);
       internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
-      expect(await promise).toBe(false);
+      expect((await promise).approved).toBe(false);
     });
 
     it('directory_access：devModeAutoApprove=true 也不能绕过停车挂起', async () => {
@@ -1298,7 +1298,7 @@ describe('AgentOrchestrator', () => {
         details: { path: '/tmp/some-other-project', requestedAccess: 'read_write' },
       });
 
-      expect(granted).toBe(false);
+      expect(granted).toEqual({ approved: false, denialSource: 'fail-closed' });
     });
   });
 
@@ -1392,17 +1392,17 @@ describe('AgentOrchestrator', () => {
     });
   });
 
-  // 2026-07-26 真机实录：D4 通话态钳档只改了权限判定链，模型完全不知道自己被拦的原因，
-  // 白试 Write→Write→Bash 三种写法。这条门钉的是「注入进最终 executionContent 的说明」，
-  // 不是钉钳档函数本身——钳档已由 liveVoiceClamp.test.ts 钉过。
-  describe('D4 通话态权限说明注入 system context', () => {
+  // 本组只钉 live-voice notice 的生成条件。最终模型请求体由
+  // contextAssembly.test.ts 的四类 provider-facing payload 用例负责，不能再拿这里的
+  // applyTurnSystemContext 返回值冒充“已经发给模型”。
+  describe('D4 通话态权限说明生成条件', () => {
     const SESSION = 'live-voice-turn-context-session';
 
     afterEach(() => {
       getPermissionModeManager().clearLiveVoiceSession(SESSION, 'call:test');
     });
 
-    it('通话态生效时，本轮 executionContent 含权限抬严说明与「别换写法重试」指引', () => {
+    it('通话态生效时生成权限说明与「别换写法重试」指引', () => {
       getPermissionModeManager().markLiveVoiceSession(SESSION, 'call:test');
 
       const result = internals(orchestrator).applyTurnSystemContext('干活', undefined, SESSION);

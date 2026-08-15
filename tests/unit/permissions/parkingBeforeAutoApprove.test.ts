@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppSettings } from '../../../src/shared/contract';
+import type { AppSettings, PermissionAskResult } from '../../../src/shared/contract';
 import type { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 
 vi.mock('../../../src/host/services/infra/logger', () => {
@@ -30,7 +30,7 @@ function makeRepo(): PendingApprovalRepository & { insert: ReturnType<typeof vi.
   } as unknown as PendingApprovalRepository & { insert: ReturnType<typeof vi.fn> };
 }
 
-function isStillPending(promise: Promise<boolean>): Promise<boolean> {
+function isStillPending(promise: Promise<PermissionAskResult>): Promise<boolean> {
   const pending = Symbol('pending');
   return Promise.race([promise, Promise.resolve(pending)]).then((result) => result === pending);
 }
@@ -85,7 +85,7 @@ describe('停车判定先于自动批准', () => {
   it('普通有人值守 + devModeAutoApprove 仍直接放行', async () => {
     const island = makeIsland({ devModeAutoApprove: true }, makeRepo());
 
-    await expect(island.requestPermission({ type: 'file_write', tool: 'write_file', details: { path: '/tmp/x' }, sessionId: 'attended' })).resolves.toBe(true);
+    await expect(island.requestPermission({ type: 'file_write', tool: 'write_file', details: { path: '/tmp/x' }, sessionId: 'attended' })).resolves.toEqual({ approved: true });
   });
 
   it('async_agent 的 catalog 只读 MCP 工具仍免审放行，不停车', async () => {
@@ -99,7 +99,7 @@ describe('停车判定先于自动批准', () => {
       tool: 'mcp__lark__calendar_v4_calendarEvent_list',
       details: {},
       sessionId,
-    })).resolves.toBe(true);
+    })).resolves.toEqual({ approved: true });
     expect(repo.insert).not.toHaveBeenCalled();
   });
 
@@ -113,6 +113,7 @@ describe('停车判定先于自动批准', () => {
 
     expect(await isStillPending(result)).toBe(true);
     await vi.advanceTimersByTimeAsync(60_000);
-    await expect(result).resolves.toBe(false);
+    // N-PERMTRACE：60s 超时是机器拒的，必须自报 timeout，不许冒名 user。
+    await expect(result).resolves.toEqual({ approved: false, denialSource: 'timeout' });
   });
 });

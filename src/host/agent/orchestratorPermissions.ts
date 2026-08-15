@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { AgentEvent, AppSettings, PermissionRequest, PermissionResponse } from '../../shared/contract';
-import type { PermissionDeliveryOutcome } from '../../shared/contract/permission';
+import type { PermissionAskResult, PermissionDeliveryOutcome, PermissionDenialSource } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { generatePermissionRequestId } from '../../shared/utils/id';
@@ -26,9 +26,22 @@ function isApproveResponse(response: PermissionResponse): boolean {
   return response === 'allow' || response === 'allow_session' || response === 'allow_standing';
 }
 
+/**
+ * 审批应答 → 富结果。走到这里的 'deny' 有两种来源：真人点了拒绝，或
+ * `drainPendingPermissions`（取消/新消息）统一解除。后者是机器做的判断，
+ * 账本必须能分出来（N-PERMTRACE）。
+ */
+function toAskResult(
+  response: PermissionResponse,
+  machineDenial?: PermissionDenialSource,
+): PermissionAskResult {
+  if (isApproveResponse(response)) return { approved: true };
+  return { approved: false, denialSource: machineDenial ?? 'user' };
+}
+
 export class OrchestratorPermissionIsland {
   private pendingPermissions: Map<string, {
-    resolve: (response: PermissionResponse) => void;
+    resolve: (response: PermissionResponse, machineDenial?: PermissionDenialSource) => void;
     request: PermissionRequest;
     /** B2: 无人值守停车挂起的审批（有 pending_approvals 行）。resolve 走 repo-changes 裁决口。 */
     parked?: boolean;
@@ -95,6 +108,8 @@ export class OrchestratorPermissionIsland {
     id: string,
     response: PermissionResponse,
     feedbackOverride?: string,
+    /** 非空表示这次 'deny' 是机器做的（24h 兜底过期等），不是用户点的。 */
+    machineDenial?: PermissionDenialSource,
   ): void {
     const pending = this.pendingPermissions.get(id);
     if (!pending) return;
@@ -127,7 +142,7 @@ export class OrchestratorPermissionIsland {
       this.mintStandingGrantFromRequest(pending.request);
     }
     this.pendingPermissions.delete(id);
-    pending.resolve(response);
+    pending.resolve(response, machineDenial);
   }
 
   /** B4：从审批请求解析 target 并在其会话所属 automation 上铸造长期授权规则（幂等、fail-safe）。 */
@@ -175,7 +190,8 @@ export class OrchestratorPermissionIsland {
           logger.warn(`Parked approval cancel-resolve failed for ${id}`, err);
         }
       }
-      entry.resolve(response);
+      // 取消/新消息统一解除 ≠ 用户拒绝（N-PERMTRACE）。
+      entry.resolve(response, 'cancelled');
     }
     this.pendingPermissions.clear();
     logger.info(`Drained ${count} pending permission(s)`, { response });
@@ -195,7 +211,9 @@ export class OrchestratorPermissionIsland {
     }
   }
 
-  async requestPermission(request: Omit<PermissionRequest, 'id' | 'timestamp'>): Promise<boolean> {
+  async requestPermission(
+    request: Omit<PermissionRequest, 'id' | 'timestamp'>,
+  ): Promise<PermissionAskResult> {
     const fullRequest: PermissionRequest = {
       ...request,
       id: generatePermissionRequestId(),
@@ -204,7 +222,7 @@ export class OrchestratorPermissionIsland {
 
     if (process.env.AUTO_TEST) {
       logger.info(`[AUTO_TEST] Auto-approving permission: ${request.type} for ${request.tool}`);
-      return true;
+      return { approved: true };
     }
 
     // 目录访问是信任边界扩权（新增一整个 Project Source），不受 devMode/autoApprove-by-level
@@ -217,7 +235,8 @@ export class OrchestratorPermissionIsland {
         // fail-closed：扩权的失败方向不能是放行。回落常规路径的话，devModeAutoApprove
         // 会把「新增一个目录的访问权」顺带自动批了——那正是上面这段要挡住的事。
         logger.warn('[Permission] 停车台账不可用，directory_access 扩权请求按 fail-closed 拒绝');
-        return false;
+        // N-PERMTRACE：机器按安全侧默认拒的，账本不许记成用户拒。
+        return { approved: false, denialSource: 'fail-closed' };
       }
       return this.parkApproval(fullRequest, getPermissionLevel(request.type), dirRepo, 'directory_access');
     }
@@ -235,7 +254,7 @@ export class OrchestratorPermissionIsland {
       && isUnattendedAllowedReadOnlyTool(request.tool)
     ) {
       logger.info(`[Unattended] Auto-approving declared read-only MCP tool: ${request.tool}`);
-      return true;
+      return { approved: true };
     }
 
     // 无人值守会话（cron/heartbeat/channel）与语音派：审批先于任何自动批准判定，改为「停车挂起」，
@@ -258,11 +277,11 @@ export class OrchestratorPermissionIsland {
     } else {
       if (!forceConfirm && settings.permissions.devModeAutoApprove) {
         logger.info(`[DevMode] Auto-approving permission: ${request.type} for ${request.tool}`);
-        return true;
+        return { approved: true };
       }
 
       if (!forceConfirm && settings.permissions.autoApprove[permissionLevel]) {
-        return true;
+        return { approved: true };
       }
     }
 
@@ -272,16 +291,17 @@ export class OrchestratorPermissionIsland {
       const timeoutId = setTimeout(() => {
         this.pendingPermissions.delete(fullRequest.id);
         logger.warn(`Timeout for ${request.type} on ${request.tool}, denying`);
-        resolve(false);
+        // N-PERMTRACE：超时无人应答 ≠ 用户拒绝。
+        resolve({ approved: false, denialSource: 'timeout' });
       }, PERMISSION_TIMEOUT);
 
       this.pendingPermissions.set(fullRequest.id, {
-        resolve: (response) => {
+        resolve: (response, machineDenial) => {
           clearTimeout(timeoutId);
           if (response === 'allow_session' && fullRequest.sessionId) {
             getConfirmationGate().recordApproval(fullRequest.sessionId, fullRequest.tool);
           }
-          resolve(isApproveResponse(response));
+          resolve(toAskResult(response, machineDenial));
         },
         request: fullRequest,
       });
@@ -298,21 +318,21 @@ export class OrchestratorPermissionIsland {
     permissionLevel: string,
     repo: PendingApprovalRepository,
     kind: PendingApprovalKind = 'tool_approval',
-  ): Promise<boolean> {
+  ): Promise<PermissionAskResult> {
     return new Promise((resolve) => {
       const timeoutId = setTimeout(() => {
         logger.warn(`Parked approval ${fullRequest.id} expired after 24h backstop, denying`);
-        this.resolveParkedApproval(fullRequest.id, 'deny', 'parked approval expired');
+        this.resolveParkedApproval(fullRequest.id, 'deny', 'parked approval expired', 'timeout');
       }, INTERACTION_TIMEOUTS.PARKED_APPROVAL);
 
       this.pendingPermissions.set(fullRequest.id, {
         parked: true,
-        resolve: (response) => {
+        resolve: (response, machineDenial) => {
           clearTimeout(timeoutId);
           if (response === 'allow_session' && fullRequest.sessionId) {
             getConfirmationGate().recordApproval(fullRequest.sessionId, fullRequest.tool);
           }
-          resolve(isApproveResponse(response));
+          resolve(toAskResult(response, machineDenial));
         },
         request: fullRequest,
       });

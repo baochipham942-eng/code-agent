@@ -611,7 +611,7 @@ export class HookManager {
   async triggerPermissionDenied(
     toolName: string,
     reason: string,
-    deniedBy: 'user' | 'hook' | 'policy' | 'classifier',
+    deniedBy: PermissionDeniedContext['deniedBy'],
     sessionId: string
   ): Promise<HookTriggerResult> {
     const context: PermissionDeniedContext = {

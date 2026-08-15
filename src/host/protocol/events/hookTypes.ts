@@ -241,7 +241,11 @@ export interface PermissionDeniedContext extends HookEventContext {
   event: 'PermissionDenied';
   toolName: string;
   reason: string;
-  deniedBy: 'user' | 'hook' | 'policy' | 'classifier';
+  /**
+   * 'runtime' = 运行环境/运行时自动拒（无审批 UI、超时、取消、fail-closed）——
+   * 这些**不是用户拒的**，具体原因在 `reason` 里。
+   */
+  deniedBy: 'user' | 'hook' | 'policy' | 'classifier' | 'runtime';
 }
 
 /**

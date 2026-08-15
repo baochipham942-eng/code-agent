@@ -271,7 +271,7 @@ export const PROVIDER_RUNTIME_CAPABILITY_MATRIX: readonly ProviderRuntimeCapabil
     runtime: 'dsh_cli',
     protocolFamily: 'opaque_cli',
     providerScope: ['cli-owned'],
-    adapterBoundary: 'dsh --profile headless',
+    adapterBoundary: 'dsh --profile headless --patch <event-sink-patch>',
     capabilities: opaqueCliCapabilities(
       'runtime-dsh-cli.json',
       'dsh-cli-local-spike',

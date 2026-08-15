@@ -53,12 +53,74 @@ import {
   buildWorkflowFailureRecoveryProposal,
   recordLongTaskRecoveryProposal,
 } from '../../../handoff/longTaskRecoveryProposal';
-import { workflowSchema } from './workflow.schema';
+import { getPtcProjectedTools, isPtcEnabled, workflowSchema } from './workflow.schema';
 import {
   cleanupAgentWorktree,
   createAgentWorktree,
   discardAgentWorktree,
 } from '../../../agent/agentWorktree';
+
+/**
+ * PTC（Code Mode）执行侧接线：把脚本里的 `tools.<name>(args)` 接到**本次 workflow
+ * 调用所在的那个 ToolExecutor**（`ctx.executeTool`，由 executor 在构造 context 时绑定）。
+ *
+ * 三条承重决定，都不是这里发明的：
+ * ① **不另造 executor**。收缩档（effectiveMode）/ 拓扑 / 审批通道 / subagentPolicy
+ *    全部靠「同一个实例 + 原样透传 options」继承。把收缩档复制一份往下游引，
+ *    就是给它留漂移的机会，而漂宽一档就是扩权洞（toolExecutor.ts forRun 那条注释的教训）。
+ * ② **不另开旁路**。`resolveProtocolTool(name)` 直呼 handler 会绕过 pre-execute/审批/guards，
+ *    正是 dsh「共用同一套执行内核，只是入口不同」要保住的那条。
+ * ③ **名单与下发侧同源**（`getPtcProjectedTools`），再按本轮 run 级 denylist 收窄——
+ *    模型这一轮直接调不到的工具，换个入口也不该调得到。
+ *
+ * 任一前提缺失 ⇒ 返回空对象 ⇒ 通道关闭（child 侧 `tools` 是空对象）。关闭必须留痕：
+ * 静默关闭等于 PTC 悄悄失效且现场零线索。
+ */
+function buildPtcChannel(ctx: ToolContext): Pick<ScriptRunHostDeps, 'executeTool' | 'visibleToolNames'> {
+  if (!isPtcEnabled()) return {};
+  if (!ctx.executeTool) {
+    ctx.logger.warn('workflow: PTC 已开启但本次调用没有工具执行入口（ctx.executeTool 缺失），PTC 通道关闭');
+    return {};
+  }
+  const denied = new Set((ctx.deniedToolNames ?? []).map((name) => name.trim().toLowerCase()));
+  const visibleToolNames = getPtcProjectedTools()
+    .map((tool) => tool.name)
+    .filter((name) => !denied.has(name.toLowerCase()));
+  if (visibleToolNames.length === 0) {
+    ctx.logger.warn('workflow: PTC 已开启但可见工具名单为空（注册表未就绪或全被 denylist 收掉），PTC 通道关闭');
+    return {};
+  }
+  const executeTool = ctx.executeTool;
+  return {
+    visibleToolNames,
+    executeTool: async ({ name, args, signal }) => {
+      if (signal.aborted) return { ok: false, error: 'run aborted' };
+      try {
+        const result = await executeTool(name, args);
+        return result.success
+          ? { ok: true, value: result.result }
+          // 这条文案的读者是模型（child 侧包成 ToolCallError.message），走英文稳定串
+          : { ok: false, error: result.error ?? `${name} failed without an error message` };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  };
+}
+
+/**
+ * PTC 脚本的写风险：`tools.<name>()` 里只要有一个不是只读工具，这段脚本就能写。
+ * 跑前审批闸的超时授权按 writeHint 分档（只读自动批准 / 含写自动拒绝），而 writeHint
+ * 原本只看 `agent({tools:'edit'})`——PTC 通道让脚本能绕过子 agent 直接写，
+ * 不补这一条就是「一段只调 tools.Write 的脚本被当只读自动放行」。
+ *
+ * fail-closed 三处：计算成员访问（记 '*'）、注册表里查不到的名字、注册表为空，一律算写风险。
+ */
+function ptcScriptHasWriteRisk(toolCallNames: readonly string[]): boolean {
+  if (toolCallNames.length === 0) return false;
+  const levels = new Map(getPtcProjectedTools().map((tool) => [tool.name, tool.permissionLevel]));
+  return toolCallNames.some((name) => levels.get(name) !== 'read');
+}
 
 /** 把异常归类成 ABORTED / DOMAIN_ERROR（Codex R2：取消别被压成 DOMAIN_ERROR）。 */
 function isAbort(ctx: ToolContext, err: unknown): boolean {
@@ -121,7 +183,12 @@ async function runWorkflow(
 
     // 跑前审批闸（P3b）：静态预览脚本 → 展示 phases/扇出量/动写 + 4 维度成本 → 等用户决策。
     // 无 renderer（headless）自动批准；超时按 writeHint 分档自动决策。拒绝则不 startRun。
-    const preview = extractScriptPreview(script);
+    const ptcChannel = buildPtcChannel(ctx);
+    const rawPreview = extractScriptPreview(script);
+    // PTC 开着时，脚本自己调的工具也算进写风险（通道关着的话脚本压根碰不到 tools）。
+    const preview = ptcChannel.executeTool && ptcScriptHasWriteRisk(rawPreview.toolCallNames)
+      ? { ...rawPreview, writeHint: true }
+      : rawPreview;
     const launchRequest = buildWorkflowLaunchRequest({
       id: runId,
       preview,
@@ -218,6 +285,7 @@ async function runWorkflow(
       }),
       // 三档工具策略：readonly(默认) / edit / full，模型经 agent({tools}) 按 agent 选档。
       resolveAgentTools: (profile) => resolveToolProfile(profile),
+      ...ptcChannel,
       prepareAgentWorkspace: async ({ agentId, signal }) => {
         if (signal.aborted) throw new Error('run aborted before worktree creation');
         const repoPath = legacyCtx.workingDirectory;

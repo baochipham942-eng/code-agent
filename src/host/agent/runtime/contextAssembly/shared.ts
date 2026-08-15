@@ -11,6 +11,17 @@ import type { ContextEventRecord } from '../../../context/contextEventLedger';
 import type { ContextInjectionSource } from '../../../context/contextEventLedger';
 import type { ProjectableMessage } from '../../../context/projectionEngine';
 import { createLogger } from '../../../services/infra/logger';
+
+export interface CheckAndAutoCompressOptions {
+  /**
+   * provider 已返回 context overflow 错误。置 true 时，压缩不再由本地 token 估算
+   * 把关（那个估算已被 provider 证伪），且摘要失败冷却不再拦截。
+   *
+   * 注意：`_autoCompactPaused`（窗口太小已判定压不动）**仍然生效** —— 那是真的
+   * 压了也没用，绕过它只会每轮白烧摘要钱。
+   */
+  providerConfirmedOverflow?: boolean;
+}
 import { SYSTEM_PROMPT_BUDGET } from '../../../../shared/constants';
 import { resolveContextWindow } from '../../../model/modelLimits';
 import type { RuntimeContext } from '../runtimeContext';
@@ -150,7 +161,7 @@ export interface ContextAssemblyCtx {
   generateId(): string;
   recordContextEventsForMessage(message: Message): void;
   buildContextEventsForMessage(message: Message): ContextEventRecord[];
-  checkAndAutoCompress(): Promise<void>;
+  checkAndAutoCompress(options?: CheckAndAutoCompressOptions): Promise<void>;
   shouldThink(hasErrors: boolean): boolean;
   generateThinkingPrompt(toolCalls: ToolCall[], toolResults: ToolResult[]): string;
   formatArtifactRepairToolResultContent(

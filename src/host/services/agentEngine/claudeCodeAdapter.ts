@@ -23,6 +23,7 @@ import { getSessionManager } from '../infra/sessionManager';
 import { getShellEnvironmentValue, getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
+import { assertAgentEngineCapability } from './agentEngineGuards';
 import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
@@ -138,6 +139,7 @@ export class ClaudeCodeAdapter {
     if (descriptor.installState !== 'installed' || !descriptor.binaryPath) {
       throw new Error(descriptor.lastError || `${config.label} is not installed or not ready.`);
     }
+    assertAgentEngineCapability(config.kind, descriptor.capabilities, request.resumeLaunch ? 'resume' : 'execute');
 
     const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
     const permissionMode = toClaudePermissionMode(permissionProfile);
@@ -338,8 +340,13 @@ export class ClaudeCodeAdapter {
     }, timing.timeoutMs);
 
     const handleJsonLine = (line: string) => {
-      const parsed = config.parseJsonLine?.(line, config.label)
-        ?? parseClaudeProtocolJsonLine(line, config.label);
+      // 自带解析器的引擎独占这一行：它返回 null 的意思是「这行没有 Neo 要渲染的东西」，
+      // 不是「换 Claude 的解析器再试一遍」。以前用 `??` 串着，dsh 的 reasoning 行和
+      // grok 的未知事件都会被 Claude 协议解析器二次翻译成假的文本/工具事件（真机实测：
+      // dsh 一轮 698 条 reasoning 全被当正文渲染出来了）。
+      const parsed = config.parseJsonLine
+        ? config.parseJsonLine(line, config.label)
+        : parseClaudeProtocolJsonLine(line, config.label);
       if (!parsed) return;
       const usage = extractExternalModelUsage(line);
       if (usage) request.durableLifecycle?.observeModelUsage(usage.inputTokens, usage.outputTokens);

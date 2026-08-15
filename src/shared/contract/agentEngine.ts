@@ -30,9 +30,19 @@ export type AgentEngineRuntimeState =
 export type AgentEngineCapability =
   | 'execute'
   | 'stream_events'
-  | 'import_sessions'
-  | 'resume'
-  | 'review';
+  | 'resume';
+
+export class AgentEngineCapabilityError extends Error {
+  readonly code = 'AGENT_ENGINE_CAPABILITY_UNSUPPORTED';
+
+  constructor(
+    readonly engine: AgentEngineKind,
+    readonly capability: AgentEngineCapability,
+  ) {
+    super(`Agent engine ${engine} does not declare required capability ${capability}.`);
+    this.name = 'AgentEngineCapabilityError';
+  }
+}
 
 export type AgentEnginePermissionProfile =
   | 'default'

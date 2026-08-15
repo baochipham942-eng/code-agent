@@ -120,6 +120,29 @@
 | 053 | 通话态权限档跟随会话选择，不再抬严到 readOnly | accepted |
 | 054 | 会话=指挥台：前台持续可输入，文字与语音统一派活语义 | accepted |
 | 055 | 产物角色轴：deliverable/material/receipt 登记制取代反推式识别 | accepted |
+| 057 | 审批拒绝来源由处理器自报，账本不许把机器判断记成 user | accepted |
+
+> **ADR-057（2026-08-15，N-PERMTRACE）审批拒绝路径的可观测性**
+>
+> **问题**：`toolExecutor` 的 ask-denied 分支把 `recordDecision` 的 trace 参数传 `undefined`
+> （含分类器那一步的 `traceBuilder` 被整条丢弃），reason 写死 `'user'`。而桌面真机入口
+> `/api/run` 的审批处理器是 `createCLIPermissionHandler`（`requiresHumanConfirmation` 恒 true）
+> ⇒ 需确认的工具一律 fail-closed 自动拒绝，**用户从没看见过审批卡**。结果是账本把机器做的
+> 判断记成人做的，且「为什么走到问用户这一步」在落库前就丢了——事后无法审计。
+>
+> **决策**：
+> 1. **拒绝来源由审批处理器自报**（`PermissionDenialSource`：`user` / `no-approval-ui` /
+>    `timeout` / `cancelled` / `fail-closed`），**不按调用方名字枚举**——枚举清单一加新入口就漏。
+>    裸 `boolean` 返回仍然合法且等价 `user`，旧实现零改动。
+> 2. **ask-denied / ask-approved / hook-blocked 一律带真 trace 落库**，不再合成单步占位。
+> 3. **分类器抛错不静默**：`logger.warn` + 一条 `rule=classifier_error` 的 trace 步，
+>    ledger reason 记为 `classifier_error/<来源>`，与「分类器正常判 ask」天然可区分。
+> 4. **给模型的文案说实话**：机器拒时说清是环境自动拒了以及出路，不再谎称「用户拒绝」。
+>    同一段拒绝文本同时进审计日志与模型上下文，两个受众一起改。
+>
+> **不变的部分**：拒还是要拒。本 ADR 只改「记成什么 / 说成什么」，不动任何放行与否的判定；
+> 分类器失败仍 fail-closed。ToolContext 侧保留窄 `boolean` 契约——富对象直接喂给
+> `if (!approved)` 会恒真，那是静默 fail-open。
 
 > **ADR-040 执行状态（2026-07-18）**：Word / PPT / Excel locator、共享 picker、generated-PPT resolver 与隐私安全 telemetry 已随 #377/#385 合入 `main`。Poppler `26.07.0` 双原生架构候选由 run `29412794021` 产出并发布到项目控制的不可变 OSS 前缀，`config/poppler-sidecar.lock.json` 已为 `ready`，Poppler promotion stop-ship 已解除；正式版本仍需走常规签名、公证、DMG 与安装版验收。
 

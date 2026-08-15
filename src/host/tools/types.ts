@@ -36,6 +36,15 @@ export interface ToolContext {
   abortSignal?: AbortSignal;
   /** 当前 run 的工具拒绝集；动态工具发现同样必须遵守。 */
   deniedToolNames?: readonly string[];
+  /**
+   * 嵌套工具再入口（PTC / Code Mode）：签发本 context 的那个 ToolExecutor 的完整
+   * execute()，审批/guards/收缩档全在。详见 protocol ToolContext.executeTool。
+   * 只在最外层工具调用上签发，缺省 = 通道关闭。
+   */
+  executeTool?: (
+    toolName: string,
+    params: Record<string, unknown>,
+  ) => Promise<ToolExecutionResult>;
   emit?: (event: string, data: unknown) => void;
   emitEvent?: (event: string, data: unknown) => void; // Alias for emit
   planningService?: unknown; // PlanningService instance for persistent planning

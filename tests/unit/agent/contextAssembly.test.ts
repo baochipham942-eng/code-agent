@@ -29,6 +29,8 @@ import { getContextInterventionState } from '../../../src/host/context/contextIn
 import { getContextHealthService } from '../../../src/host/context/contextHealthService';
 import { PROVIDER_VARIANT_MARKER } from '../../../src/host/prompts/providerVariants';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
+import { applyTurnSystemContext } from '../../../src/host/agent/orchestratorTurnContext';
+import { getPermissionModeManager } from '../../../src/host/permissions/modes';
 
 const serviceMocks = vi.hoisted(() => ({
   sessionManager: {
@@ -376,7 +378,7 @@ function buildMessage(id: string, role: Message['role'], content: string): Messa
 }
 
 const CONTEXT_HEALTH_OVERRIDE_KEYS = ['compressionState','persistentSystemContext','pipelineAutocompactNeeded','droppedPromptBlocks','currentSystemPromptHash','checkpointRebuildLastWatermarkId','_networkRetryCount'] as const;
-const TURN_OVERRIDE_KEYS = ['currentTurnId','messageDeltaSeq','currentIterationSpanId','turnStartTime','toolsUsedInTurn','lastStreamedContent','needsReinference','isSimpleTaskMode','effortLevel','thinkingEnabled','thinkingStepCount','_researchModeActive','_researchIterationCount','activeSkillInvocation','activeSkillContextBlock','skillToolBoundary'] as const;
+const TURN_OVERRIDE_KEYS = ['currentTurnId','messageDeltaSeq','currentIterationSpanId','turnStartTime','toolsUsedInTurn','lastStreamedContent','needsReinference','isSimpleTaskMode','modelFacingUserMessage','effortLevel','thinkingEnabled','thinkingStepCount','_researchModeActive','_researchIterationCount','activeSkillInvocation','activeSkillContextBlock','skillToolBoundary'] as const;
 
 function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
   const rest: Record<string, unknown> = { ...overrides };
@@ -549,6 +551,84 @@ describe('ContextAssembly.buildModelMessages()', () => {
     getContextInterventionState().applyIntervention(sessionId, undefined, 'retained-message', 'retain', false);
     getContextInterventionState().applyIntervention(sessionId, undefined, 'excluded-message', 'exclude', false);
   });
+
+  const finalPayloadCases = [
+    {
+      category: '语音权限告知',
+      marker: '<live_voice_permission_notice>',
+      block: [
+        '<live_voice_permission_notice>',
+        '当前处于实时语音通话中，本轮权限档为 acceptEdits。',
+        '</live_voice_permission_notice>',
+      ].join('\n'),
+      liveVoice: true,
+    },
+    {
+      category: '后台辅助块',
+      marker: '你已经在一个独立后台任务槽里，必须亲自执行这件任务。',
+      block: [
+        '你已经在一个独立后台任务槽里，必须亲自执行这件任务。',
+        '禁止调用、搜索或建议 Task、TaskManager、spawn_agent、AgentSpawn、delegate_task、steer_task、cancel_task、task_status 等任务拆分或指挥台工具；上层已经完成任务拆分。',
+      ].join('\n'),
+      liveVoice: false,
+    },
+    {
+      category: 'workbench 偏好',
+      marker: '优先考虑这些已挂载 skills（仅在相关时使用）：docx',
+      block: '优先考虑这些已挂载 skills（仅在相关时使用）：docx',
+      liveVoice: false,
+    },
+    {
+      category: '角色资料',
+      marker: '## 角色记忆索引',
+      block: '## 角色记忆索引\n- 角色：牧之\n- 资料架：产品判断',
+      liveVoice: false,
+    },
+  ] as const;
+
+  it.each(finalPayloadCases)(
+    '把 $category 放进 provider-facing messages，同时共享历史仍只保留用户原话',
+    async ({ category, marker, block, liveVoice }) => {
+      const rawUserRequest = `执行 ${category} 验收`;
+      const sourceMessageId = `turn-system-context-${category}`;
+      const sessionId = `turn-system-context-${category}-session`;
+      if (liveVoice) {
+        getPermissionModeManager().markLiveVoiceSession(sessionId, 'call:test');
+      }
+
+      try {
+        const executionContent = liveVoice
+          ? applyTurnSystemContext(rawUserRequest, undefined, sessionId)
+          : applyTurnSystemContext(
+              rawUserRequest,
+              { mode: 'normal', turnSystemContext: [block] },
+              sessionId,
+              () => null,
+            );
+        const messages = [buildMessage(sourceMessageId, 'user', rawUserRequest)];
+        const ctx = buildRuntimeContext({
+          sessionId,
+          messages,
+          modelFacingUserMessage: { sourceMessageId, content: executionContent },
+        });
+
+        // buildModelMessages 的返回值就是 inference.ts 原样交给 ModelRouter / provider adapter
+        // 的 messages 参数；这里锚请求边界，不再断言 applyTurnSystemContext 的返回值。
+        const providerFacingMessages = await new ContextAssembly(ctx as never).buildModelMessages();
+        const serializedPayload = JSON.stringify({ messages: providerFacingMessages });
+
+        expect(serializedPayload).toContain(marker);
+        expect(serializedPayload).toContain('<user_request>');
+        expect(serializedPayload).toContain(rawUserRequest);
+        expect(messages[0].content).toBe(rawUserRequest);
+        expect(messages[0].content).not.toContain(marker);
+      } finally {
+        if (liveVoice) {
+          getPermissionModeManager().clearLiveVoiceSession(sessionId, 'call:test');
+        }
+      }
+    },
+  );
 
   it('does not inject hidden continuation proposal instructions into the model prompt', async () => {
     const ctx = buildRuntimeContext({
@@ -2454,6 +2534,76 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('context-window-too-small'),
     );
     expect(injectedInMessages || injectedViaBuffer).toBe(true);
+  });
+
+  // ==========================================================================
+  // N-DSH3：provider 已确认溢出时，压缩不再由本地 token 估算把关。
+  // 这两条是成对的 —— 同一份「估算说完全没压力」的上下文，只差一个标记。
+  // ==========================================================================
+  const buildNoPressureCtx = (sessionId: string) => {
+    vi.mocked(getContextHealthService).mockReturnValue({
+      get: vi.fn().mockReturnValue({ usagePercent: 12, currentTokens: 15_000, maxTokens: 128_000 }),
+      update: vi.fn(),
+    } as never);
+    return {
+      sessionId,
+      agentId: undefined,
+      messages: Array.from({ length: 8 }, (_, i) =>
+        buildMessage(`ovf-${i}`, i === 5 ? 'user' : 'assistant', 'overflow transcript '.repeat(200))),
+      hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
+      onEvent: vi.fn(),
+      modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
+      toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
+      workingDirectory: process.cwd(),
+      isDefaultWorkingDirectory: true,
+      turn: TurnState.forTest({ isSimpleTaskMode: false }),
+      compressionPipeline: new CompressionPipeline(),
+      contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState(), pipelineAutocompactNeeded: false } as never),
+      MAX_CONSECUTIVE_COMPACTS: 2,
+      autoCompressor: {
+        // 估算说远没到阈值 —— 三个触发器全哑
+        shouldTriggerByTokens: vi.fn().mockReturnValue(false),
+        getConfig: vi.fn().mockReturnValue({ enabled: true, warningThreshold: 0.75, preserveRecentCount: 2 }),
+        shouldWrapUp: vi.fn().mockReturnValue(false),
+        getCompactionCount: vi.fn().mockReturnValue(0),
+        getStats: vi.fn().mockReturnValue({ compressionCount: 0, totalSavedTokens: 0 }),
+        recordCompaction: vi.fn(),
+      },
+      systemPrompt: '',
+      hookManager: undefined,
+    };
+  };
+
+  it('skips compaction when every local estimate says there is no pressure (对照组)', async () => {
+    const ctx = buildNoPressureCtx(`session-ovf-baseline-${Date.now()}`);
+    const assembly = new ContextAssembly(ctx as never);
+    await assembly.checkAndAutoCompress();
+    expect(ctx.autoCompressor.recordCompaction).not.toHaveBeenCalled();
+  });
+
+  it('compacts anyway on provider-confirmed overflow — the estimate that said "no pressure" is the falsified one', async () => {
+    const ctx = buildNoPressureCtx(`session-ovf-forced-${Date.now()}`);
+    const assembly = new ContextAssembly(ctx as never);
+    await assembly.checkAndAutoCompress({ providerConfirmedOverflow: true });
+    expect(ctx.autoCompressor.recordCompaction).toHaveBeenCalled();
+  });
+
+  it('ignores the summary failure cooldown on provider-confirmed overflow', async () => {
+    const ctx = buildNoPressureCtx(`session-ovf-cooldown-${Date.now()}`);
+    const assembly = new ContextAssembly(ctx as never);
+    // 冷却中：普通路径此时会跳过付费摘要，溢出档不许跳 —— 不压这一轮下一轮必然再撞墙
+    assembly.compressionRecoveryForTest._summaryCooldownUntil = Date.now() + 10 * 60_000;
+    await assembly.checkAndAutoCompress({ providerConfirmedOverflow: true });
+    expect(ctx.autoCompressor.recordCompaction).toHaveBeenCalled();
+  });
+
+  it('still respects the window-too-small pause on provider-confirmed overflow', async () => {
+    const ctx = buildNoPressureCtx(`session-ovf-paused-${Date.now()}`);
+    const assembly = new ContextAssembly(ctx as never);
+    // 已判定窗口太小压不动 —— 这条护栏溢出档也不许绕，否则每轮白烧摘要钱
+    assembly.compressionRecoveryForTest._autoCompactPaused = true;
+    await assembly.checkAndAutoCompress({ providerConfirmedOverflow: true });
+    expect(ctx.autoCompressor.recordCompaction).not.toHaveBeenCalled();
   });
 });
 

@@ -4,9 +4,11 @@
 // 有消息会话先确认；缺 key（enabled && !configured）降级成可点引导态——
 // 按钮在、可点、点击不拨号，而是弹引导层跳设置（2026-07-30，降级提示不消失）。
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_SPEECH_INPUT_SETTINGS } from '../../../src/shared/contract';
 import { zh } from '../../../src/renderer/i18n/zh';
+import type { UseVoiceInputReturn } from '../../../src/renderer/hooks/useVoiceInput';
 
 const bridgeMock = vi.hoisted(() => ({ dial: vi.fn() }));
 const appStoreMock = vi.hoisted(() => ({ openSettingsTab: vi.fn() }));
@@ -23,13 +25,33 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
 }));
 
 import { LiveVoiceButton, type LiveVoiceButtonProps } from '../../../src/renderer/components/features/voice/LiveVoiceButton';
+import { resolveComposerCoreActions } from '../../../src/renderer/components/features/chat/ChatInput';
+import { ComposerCoreActions } from '../../../src/renderer/components/features/chat/ChatInput/ComposerCoreActions';
 import { useVoiceCallStore } from '../../../src/renderer/stores/voiceCallStore';
 
-const AVAILABLE: LiveVoiceButtonProps['availability'] = { enabled: true, configured: true };
+const IDLE_VOICE = {
+  status: 'idle',
+  duration: 0,
+  isSupported: true,
+  isEnabled: true,
+  settings: DEFAULT_SPEECH_INPUT_SETTINGS,
+  start: vi.fn(),
+  stop: vi.fn(),
+  toggle: vi.fn(),
+  retry: vi.fn(),
+  canRetry: false,
+  clearError: vi.fn(),
+  error: null,
+  errorCode: null,
+  lastResult: null,
+  inputLevel: 0,
+  partialText: '',
+  silenceWarning: false,
+} as UseVoiceInputReturn;
 
 function renderButton(props: Partial<LiveVoiceButtonProps> = {}) {
   return render(
-    <LiveVoiceButton sessionId="s1" hasMessages={false} availability={AVAILABLE} {...props} />,
+    <LiveVoiceButton sessionId="s1" hasMessages={false} configured {...props} />,
   );
 }
 
@@ -42,23 +64,90 @@ describe('LiveVoiceButton', () => {
     useVoiceCallStore.getState().reset();
   });
 
-  it('总开关关 / 无会话：不渲染（§9.3）', () => {
-    const { container, unmount } = renderButton({ availability: { enabled: false, configured: true } });
-    expect(container.querySelector('[data-testid="live-voice-button"]')).toBeNull();
-    unmount();
+  it('故障注入：调度已给 live-voice、占位组件读到非 idle 快照时主位也不能为空', () => {
+    const actions = resolveComposerCoreActions({
+      hasContent: false,
+      isProcessing: false,
+      sessionId: 's1',
+      enabled: true,
+      configured: true,
+      phase: 'idle',
+      hasMessages: false,
+      hadLiveVoice: false,
+    });
+    expect(actions).toEqual(['voice-input', 'live-voice']);
 
-    // 总开关关掉时就算配了 key 也不渲染——用户明确关掉的东西不纠缠
-    const { container: c2, unmount: u2 } = renderButton({ availability: { enabled: false, configured: false } });
-    expect(c2.querySelector('[data-testid="live-voice-button"]')).toBeNull();
-    expect(c2.querySelector('[data-testid="live-voice-button-unconfigured"]')).toBeNull();
-    u2();
+    // 稳定注入父子两次 store 订阅之间的快照错位：父层按 idle 完成调度后，
+    // LiveVoiceButton 再读到 connecting。修复前它会 return null，主位整格为空。
+    useVoiceCallStore.getState().dialStarted('s1', undefined, 'server_vad');
+    const { container } = render(
+      <>
+        {actions.includes('live-voice') && (
+          <LiveVoiceButton sessionId="s1" hasMessages={false} configured />
+        )}
+      </>,
+    );
 
-    const { container: c3 } = renderButton({ sessionId: null });
-    expect(c3.querySelector('[data-testid="live-voice-button"]')).toBeNull();
+    expect(container.querySelector('[data-testid="live-voice-button"]')).not.toBeNull();
+  });
+
+  it('渲染层门：完整状态组合下核心操作区恒有恰好 2 个可见按钮', () => {
+    const phases = ['idle', 'connecting', 'live', 'error'] as const;
+    const availabilityStates = [
+      { enabled: false, configured: false },
+      { enabled: false, configured: true },
+      { enabled: true, configured: false },
+      { enabled: true, configured: true },
+    ];
+    const booleans = [false, true];
+
+    // 覆盖边界：这条门走生产 resolveComposerCoreActions + 生产 JSX 消费点 +
+    // 三个真实按钮组件，能抓「动作表有两项、占位组件却 return null」的缝。
+    // 它不声称覆盖：语音转文字能力被用户关闭、CSS 像素级遮挡、VoiceChrome 层叠、
+    // Tauri 原生挂断时序。后两项必须由独立 headless / real-runtime 证据补齐。
+    for (const phase of phases) {
+      for (const availability of availabilityStates) {
+        for (const hasContent of booleans) {
+          for (const isProcessing of booleans) {
+            for (const hasStoppableBackgroundWork of booleans) {
+              const state = {
+                hasContent,
+                isProcessing,
+                sessionId: 's1',
+                phase,
+                hasMessages: false,
+                hadLiveVoice: false,
+                hasStoppableBackgroundWork,
+                ...availability,
+              };
+              const label = JSON.stringify(state);
+              const actions = resolveComposerCoreActions(state);
+              const { container, unmount } = render(
+                <ComposerCoreActions
+                  actions={actions}
+                  voice={IDLE_VOICE}
+                  sessionId="s1"
+                  hasMessages={false}
+                  configured={availability.configured}
+                  isProcessing={isProcessing}
+                  hasContent={hasContent}
+                />,
+              );
+              const core = container.querySelector('[data-testid="composer-core-actions"]');
+
+              // marker 丢失或扫描到 0 个目标会直接报红，避免门的测量范围静默失效。
+              expect(core, label).not.toBeNull();
+              expect(within(core as HTMLElement).getAllByRole('button'), label).toHaveLength(2);
+              unmount();
+            }
+          }
+        }
+      }
+    }
   });
 
   it('缺 key（enabled && !configured）：降级成可点引导态，不消失、不拨号', () => {
-    renderButton({ availability: { enabled: true, configured: false } });
+    renderButton({ configured: false });
 
     const button = screen.getByTestId('live-voice-button-unconfigured');
     // 正常拨号按钮不出现，但引导按钮在原位置
@@ -72,12 +161,6 @@ describe('LiveVoiceButton', () => {
     fireEvent.click(screen.getByText(zh.voice.live.noKeyAction));
     expect(bridgeMock.dial).not.toHaveBeenCalled();
     expect(appStoreMock.openSettingsTab).toHaveBeenCalledWith('voiceModel');
-  });
-
-  it('通话进行中不渲染（VoiceChrome 接管底栏）', () => {
-    useVoiceCallStore.getState().dialStarted('s1', undefined, 'server_vad');
-    const { container } = renderButton();
-    expect(container.querySelector('[data-testid="live-voice-button"]')).toBeNull();
   });
 
   it('空会话点击直接拨号', () => {

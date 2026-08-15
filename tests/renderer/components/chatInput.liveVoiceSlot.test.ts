@@ -19,6 +19,7 @@ const BASE = {
   isProcessing: false,
   sessionId: 'session-1' as string | null,
   enabled: true,
+  configured: true,
   phase: 'idle' as const,
   hasMessages: false,
   hadLiveVoice: false,
@@ -97,7 +98,7 @@ describe('D1：主 loop idle + swarm 成员在跑', () => {
 });
 
 describe('composer 核心操作区状态矩阵', () => {
-  it('固定产品上限为 2，且所有状态渲染出的同级操作项恒不超过上限', () => {
+  it('固定产品位数为 2，且完整状态矩阵恒调度恰好两个同级操作项', () => {
     expect(COMPOSER_CORE_ACTION_LIMIT).toBe(2);
 
     const sessions = [
@@ -115,28 +116,61 @@ describe('composer 核心操作区状态矩阵', () => {
     ];
     const callPhases = [
       { name: '通话 idle', phase: 'idle' as const },
-      { name: '通话非 idle', phase: 'live' as const },
+      { name: '通话 connecting', phase: 'connecting' as const },
+      { name: '通话 live', phase: 'live' as const },
+      { name: '通话 error', phase: 'error' as const },
+    ];
+    const availabilityStates = [
+      { name: '关闭且未配置', enabled: false, configured: false },
+      { name: '关闭但已配置', enabled: false, configured: true },
+      { name: '开启但未配置', enabled: true, configured: false },
+      { name: '开启且已配置', enabled: true, configured: true },
+    ];
+    const backgroundStates = [
+      { name: '无后台工作', hasStoppableBackgroundWork: false },
+      { name: '有可停止后台工作', hasStoppableBackgroundWork: true },
     ];
 
     for (const session of sessions) {
       for (const input of inputs) {
         for (const run of runs) {
           for (const call of callPhases) {
-            const state = { ...BASE, ...session, ...input, ...run, ...call };
-            const actions = resolveComposerCoreActions(state);
-            const label = `${session.name} / ${input.name} / ${run.name} / ${call.name}`;
-            const shouldShowLiveVoice = call.phase === 'idle'
-              && !run.isProcessing
-              && !input.hasContent
-              && (!session.hasMessages || session.hadLiveVoice);
-            const expectedPrimary = shouldShowLiveVoice
-              ? 'live-voice'
-              : run.isProcessing && !input.hasContent
-                ? 'stop'
-                : 'send';
+            for (const availability of availabilityStates) {
+              for (const background of backgroundStates) {
+                const state = {
+                  ...BASE,
+                  ...session,
+                  ...input,
+                  ...run,
+                  ...call,
+                  ...availability,
+                  ...background,
+                };
+                const actions = resolveComposerCoreActions(state);
+                const label = [
+                  session.name,
+                  input.name,
+                  run.name,
+                  call.name,
+                  availability.name,
+                  background.name,
+                ].join(' / ');
+                const shouldShowLiveVoice = availability.enabled
+                  && call.phase === 'idle'
+                  && !run.isProcessing
+                  && !input.hasContent
+                  && !background.hasStoppableBackgroundWork
+                  && (!session.hasMessages || session.hadLiveVoice);
+                const expectedPrimary = shouldShowLiveVoice
+                  ? 'live-voice'
+                  : (run.isProcessing || background.hasStoppableBackgroundWork) && !input.hasContent
+                    ? 'stop'
+                    : 'send';
 
-            expect(actions.length, label).toBeLessThanOrEqual(COMPOSER_CORE_ACTION_LIMIT);
-            expect(actions, label).toEqual(['voice-input', expectedPrimary]);
+                expect(actions.length, label).toBe(COMPOSER_CORE_ACTION_LIMIT);
+                expect(actions, label).toEqual(['voice-input', expectedPrimary]);
+              }
+            }
           }
         }
       }

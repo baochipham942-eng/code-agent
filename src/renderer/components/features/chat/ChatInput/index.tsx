@@ -20,9 +20,8 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { InputArea, InputAreaRef } from './InputArea';
 import { ComposerSlot, SlotEntry } from './ComposerSlot';
 import { InputAddMenu } from './InputAddMenu';
-import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
-import { VoiceInputButton } from './VoiceInputButton';
+import { ComposerCoreActions, type ComposerCoreAction } from './ComposerCoreActions';
 import { DictationRecordingBar } from './DictationRecordingBar';
 import {
   applyDictationPartial,
@@ -33,7 +32,6 @@ import {
   type DictationComposerAnchor,
 } from './dictationComposerAnchor';
 import { useVoiceInput } from '../../../../hooks/useVoiceInput';
-import { LiveVoiceButton } from '../../voice/LiveVoiceButton';
 import { useVoiceLiveAvailability } from '../../voice/useVoiceLiveAvailability';
 import { useVoiceCallStore, type VoiceCallPhase } from '../../../../stores/voiceCallStore';
 import { VoiceChrome } from '../../voice/VoiceChrome';
@@ -180,9 +178,11 @@ export function resolveLiveVoiceSlot(params: {
 }
 
 export const COMPOSER_CORE_ACTION_LIMIT = 2 as const;
-export type ComposerCoreAction = 'voice-input' | 'live-voice' | 'send' | 'stop';
 
-export function resolveComposerCoreActions(params: Parameters<typeof resolveLiveVoiceSlot>[0]): readonly ComposerCoreAction[] {
+export function resolveComposerCoreActions(params: Parameters<typeof resolveLiveVoiceSlot>[0] & {
+  /** 缺 Provider key 仍占 live-voice 主位，只改变按钮为配置引导态。 */
+  configured: boolean;
+}): readonly ComposerCoreAction[] {
   const liveVoiceSlot = resolveLiveVoiceSlot(params);
   const primaryAction: ComposerCoreAction = liveVoiceSlot === 'primary'
     ? 'live-voice'
@@ -924,6 +924,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     isProcessing: Boolean(isProcessing),
     sessionId: currentSessionId ?? null,
     enabled: liveVoiceAvailability.enabled,
+    configured: liveVoiceAvailability.configured,
     phase: liveVoiceCallPhase,
     hasMessages,
     hadLiveVoice: currentSessionHadLiveVoice,
@@ -1312,37 +1313,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               这里逐项消费 resolveComposerCoreActions；附件 +、身份/连接器/权限/模型、
               审批与提示 chip、上方 VoiceChrome 状态条不属于核心操作区。
             */}
-            {composerCoreActions.map((action) => {
-              if (action === 'voice-input') {
-                return <VoiceInputButton key={action} voice={voice} disabled={disabled} />;
-              }
-              if (action === 'live-voice') {
-                return (
-                  <LiveVoiceButton
-                    key={action}
-                    sessionId={currentSessionId ?? null}
-                    hasMessages={hasMessages}
-                    disabled={disabled}
-                    availability={{
-                      enabled: liveVoiceAvailability.enabled,
-                      configured: liveVoiceAvailability.configured,
-                    }}
-                  />
-                );
-              }
-              return (
-                <SendButton
-                  key={action}
-                  disabled={disabled && !isProcessing}
-                  // action==='stop' 已经含「无草稿」判定，所以这里不会误进排队发送分支。
-                  isProcessing={isProcessing || action === 'stop'}
-                  isInterrupting={isInterrupting}
-                  hasContent={hasContent}
-                  type="submit"
-                  onStop={onStop}
-                />
-              );
-            })}
+            <ComposerCoreActions
+              actions={composerCoreActions}
+              voice={voice}
+              disabled={disabled}
+              sessionId={currentSessionId ?? null}
+              hasMessages={hasMessages}
+              configured={liveVoiceAvailability.configured}
+              isProcessing={Boolean(isProcessing)}
+              isInterrupting={isInterrupting}
+              hasContent={hasContent}
+              onStop={onStop}
+            />
             </>
             )}
           </div>

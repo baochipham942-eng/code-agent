@@ -24,7 +24,7 @@
 //   - 把工具挪出 CORE 会让总量下降，此时**必须**同步下调基线，否则门就松了。
 // ============================================================================
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -40,6 +40,13 @@ import { CORE_TOOLS } from '../../../src/host/services/toolSearch/deferredTools'
  * 纯英文是 0.44 倍），工具 schema 几乎全英文会被高估约一倍，桶间比例直接失真。
  *
  * ## 基线变更记录
+ * - 4349 → 4628（2026-08-15，L8 N-L8-PVDYN / N-L8-SCHEMAGATE，+279）：核算纠偏。
+ *   预算门原来只量静态 `schema.description`，但 CORE 中 WebSearch 实际优先下发
+ *   `dynamicDescription()`。两段 description 单独量是 77 / 335（+258）；按本门口径重新
+ *   序列化完整 `{name, description, parameters}` 后是 588 / 867（+279），动态文本里的换行
+ *   在 JSON 中会转义，不能把单独文本的差值直接加回 schema 总量。这里补进的 279 token
+ *   一直都在模型每轮收到的工具表里，不是本次新增内容，也没有增加常驻成本。它与上条
+ *   N-L8-RULES-SINK「真新增了 194 token 的下发内容」性质不同。
  * - 4155 → 4349（2026-08-14，L8 N-L8-RULES-SINK，+194）：规则分流。`prompts/rules/` 下的
  *   gitSafety / errorHandling / codeSnippet 三块**从来没进过运行时提示词**（RULE_TIERS 全空，
  *   builder.ts 不消费），用户在设置页改了也零效果。按四个成熟产品的一手对标结论——系统提示只
@@ -49,9 +56,17 @@ import { CORE_TOOLS } from '../../../src/host/services/toolSearch/deferredTools'
  *   这 194 不是措辞膨胀，是**从「一分钱不花但也一点用没有」换成「花 194 但真的送到」**；
  *   同批 toolUsagePolicy 的委派判据搬进了 Task（非 CORE，按需下发，不计本门）。
  */
-const CORE_SCHEMA_TOKEN_BASELINE = 4349;
+const CORE_SCHEMA_TOKEN_BASELINE = 4628;
 
 const MODULES_DIR = join(__dirname, '../../../src/host/tools/modules');
+const FIXED_SCHEMA_CLOCK = new Date(2026, 7, 14, 12);
+
+interface CoreSchemaBudgetEntry {
+  name: string;
+  token: number;
+  staticToken: number;
+  dynamicToken?: number;
+}
 
 function walkSchemaFiles(dir: string): string[] {
   const out: string[] = [];
@@ -63,9 +78,17 @@ function walkSchemaFiles(dir: string): string[] {
   return out;
 }
 
-async function collectCoreSchemas(): Promise<{ name: string; token: number }[]> {
+function schemaTokens(schema: Pick<ToolSchema, 'name' | 'description' | 'inputSchema'>, description: string): number {
+  return estimateTokens(JSON.stringify({
+    name: schema.name,
+    description,
+    parameters: schema.inputSchema,
+  }));
+}
+
+async function collectCoreSchemas(): Promise<CoreSchemaBudgetEntry[]> {
   const core = new Set(CORE_TOOLS);
-  const found: { name: string; token: number }[] = [];
+  const found: CoreSchemaBudgetEntry[] = [];
   for (const file of walkSchemaFiles(MODULES_DIR)) {
     let mod: Record<string, unknown>;
     try { mod = (await import(pathToFileURL(file).href)) as Record<string, unknown>; } catch { continue; }
@@ -74,13 +97,15 @@ async function collectCoreSchemas(): Promise<{ name: string; token: number }[]> 
       if (!schema || typeof schema !== 'object') continue;
       if (typeof schema.name !== 'string' || !schema.inputSchema) continue;
       if (!core.has(schema.name)) continue;
+      const typedSchema = schema as ToolSchema;
+      const dynamicDescription = typedSchema.dynamicDescription?.();
       found.push({
         name: schema.name,
-        token: estimateTokens(JSON.stringify({
-          name: schema.name,
-          description: schema.description ?? '',
-          parameters: schema.inputSchema,
-        })),
+        token: schemaTokens(typedSchema, dynamicDescription ?? typedSchema.description),
+        staticToken: schemaTokens(typedSchema, typedSchema.description),
+        dynamicToken: dynamicDescription === undefined
+          ? undefined
+          : schemaTokens(typedSchema, dynamicDescription),
       });
     }
   }
@@ -88,6 +113,15 @@ async function collectCoreSchemas(): Promise<{ name: string; token: number }[]> 
 }
 
 describe('常驻工具表 schema 预算', () => {
+  beforeAll(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(FIXED_SCHEMA_CLOCK);
+  });
+
+  afterAll(() => {
+    vi.useRealTimers();
+  });
+
   it('CORE 工具 schema 总量不超基线（只许降不许涨）', async () => {
     const schemas = await collectCoreSchemas();
 
@@ -106,6 +140,23 @@ describe('常驻工具表 schema 预算', () => {
       `CORE schema 总量 ${total} 超过基线 ${CORE_SCHEMA_TOKEN_BASELINE}。`
       + `每涨 1 token 就是每一轮请求都多花 1 token。逐项：${detail}`,
     ).toBeLessThanOrEqual(CORE_SCHEMA_TOKEN_BASELINE);
+  });
+
+  it('CORE 工具的 dynamicDescription 必须按动态值计入预算', async () => {
+    const dynamicSchemas = (await collectCoreSchemas())
+      .filter((schema) => schema.dynamicToken !== undefined);
+
+    // 防零目标和同值 fallback 假绿：当前 WebSearch 的动态描述显著长于静态描述。
+    expect(dynamicSchemas.length).toBeGreaterThan(0);
+    expect(dynamicSchemas.some((schema) => schema.dynamicToken !== schema.staticToken)).toBe(true);
+
+    const bypassed = dynamicSchemas
+      .filter((schema) => schema.token !== schema.dynamicToken)
+      .map((schema) => schema.name);
+    expect(
+      bypassed,
+      `这些 CORE 工具的 dynamicDescription 没有计入预算：${bypassed.join(', ')}`,
+    ).toEqual([]);
   });
 
   it('基线没有松到失去意义（瘦身后要同步下调）', async () => {

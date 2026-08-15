@@ -158,7 +158,6 @@ const AGENT_ENGINE_CAPABILITIES = new Set<AgentEngineCapability>([
   'execute',
   'stream_events',
   'resume',
-  'review',
 ]);
 
 const AGENT_ENGINE_CLI_STATUSES = new Set<AgentEngineReliability['cliStatus']>([

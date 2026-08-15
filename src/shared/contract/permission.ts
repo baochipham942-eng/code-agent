@@ -100,6 +100,52 @@ export type PermissionDeliveryOutcome =
   /** 请求没带 sessionId，且当前也没有活跃会话可兜底 */
   | 'no_session';
 
+/**
+ * 「这次审批是被谁拒的」——`'user'` 之外**全部是机器做的判断**。
+ *
+ * 2026-08-15 立此类型的原因：`toolExecutor` 的 ask-denied 分支把 reason 写死成 `'user'`，
+ * 而 `/api/run`（桌面 renderer 每次发送都走这条）的审批处理器是 `createCLIPermissionHandler`，
+ * `requiresHumanConfirmation` 恒 true ⇒ **一律自动拒绝，用户压根没看见过审批卡**。
+ * 账本把机器拒的记成人拒的，事后审计分不出来（与 08-13「devModeAutoApprove 冒名 user」同族）。
+ *
+ * 判据来源必须是**处理器自己回报**，不许按调用方名字枚举——那种清单一加新入口就漏。
+ */
+export type PermissionDenialSource =
+  /** 真人在审批界面上点了拒绝 */
+  | 'user'
+  /** 运行环境没有审批界面（非交互 CLI / web headless），需确认的一律 fail-closed 自动拒 */
+  | 'no-approval-ui'
+  /** 审批请求已发出但无人应答，超时自动拒 */
+  | 'timeout'
+  /** 会话取消 / 新消息到达，挂起的审批被统一解除 */
+  | 'cancelled'
+  /** 依赖不可用（停车台账等），按安全侧默认拒 */
+  | 'fail-closed';
+
+/** 审批处理器的富返回值。裸 boolean 仍然合法（等价 `user` 语义），旧实现无需改动。 */
+export interface PermissionAskResult {
+  approved: boolean;
+  /** 仅 approved=false 时有意义；缺省按 `'user'` 解释。 */
+  denialSource?: PermissionDenialSource;
+  /** 给模型看的真实原因文案；缺省由 `permissionDenialError` 按 denialSource 生成。 */
+  message?: string;
+}
+
+export type RequestPermissionResult = boolean | PermissionAskResult;
+
+/** 归一化审批处理器返回值：裸 boolean 的 false 记为真人拒绝（旧契约语义）。 */
+export function normalizePermissionAskResult(
+  result: RequestPermissionResult,
+): PermissionAskResult & { denialSource: PermissionDenialSource | undefined } {
+  if (typeof result === 'boolean') {
+    return { approved: result, denialSource: result ? undefined : 'user' };
+  }
+  return {
+    ...result,
+    denialSource: result.approved ? undefined : (result.denialSource ?? 'user'),
+  };
+}
+
 // ============================================================================
 // Permission Request Reason (enumerated, traceable, i18n-able)
 // ============================================================================

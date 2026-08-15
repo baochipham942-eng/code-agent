@@ -28,11 +28,14 @@ import { recordDecision } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard } from './neoTagToolGuard';
 import type { PermissionMode } from '../permissions/modes';
 import {
+  CLASSIFIER_ERROR_TRACE_RULE,
+  permissionDenialError,
   readOnlyDenialError,
   readOnlyForcesConfirmationFor,
   resolveSessionPermissionMode,
   resolveToolPermissionClassification,
 } from './toolPermissionClassification';
+import { normalizePermissionAskResult, type RequestPermissionResult } from '../../shared/contract/permission';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
@@ -73,7 +76,12 @@ import { validateToolInputSchema, formatToolSchemaValidationError, stripUndeclar
  * @internal
  */
 export interface ToolExecutorConfig {
-  requestPermission: (request: PermissionRequestData) => Promise<boolean>;
+  /**
+   * 审批处理器。返回裸 boolean 仍然合法（false 等价「真人拒绝」）；返回
+   * `PermissionAskResult` 时必须自报 `denialSource`——账本与给模型的文案都靠它区分
+   * 「人拒的」与「机器拒的」（见 `PermissionDenialSource`）。
+   */
+  requestPermission: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
   workingDirectory: string;
   /** Topology used by GuardFabric. Defaults to main for zero behavior change. */
   executionTopology?: ExecutionTopology;
@@ -198,7 +206,13 @@ export interface ExecuteOptions {
  * @see ToolCache - 工具结果缓存
  */
 export class ToolExecutor {
-  private requestPermission: (request: PermissionRequestData) => Promise<boolean>;
+  private requestPermission: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
+  /**
+   * ToolContext 侧的窄契约：工具内联审批只关心放行与否。富返回值只在本文件的权限闸内
+   * 消费——若把富对象直接交给 `if (!approved)` 那类调用点，`{approved:false}` 恒真会变成
+   * **静默 fail-open**。这一层归一化就是为了让那种事不可能发生。
+   */
+  private readonly requestPermissionForTools: (request: PermissionRequestData) => Promise<boolean>;
   private workingDirectory: string;
   private readonly runContext?: RunContext;
   private readonly dispatchTool?: ToolExecutionDelegate;
@@ -209,6 +223,9 @@ export class ToolExecutor {
 
   constructor(config: ToolExecutorConfig) {
     this.requestPermission = config.requestPermission;
+    this.requestPermissionForTools = async (request) => normalizePermissionAskResult(
+      await this.requestPermission(request),
+    ).approved;
     this.workingDirectory = nodePath.resolve(config.workingDirectory);
     this.permissionModeOverride = config.permissionModeOverride;
     this.runContext = config.runContext;
@@ -553,7 +570,7 @@ export class ToolExecutor {
       workspace: this.runtimeWorkspace,
       workspaceScope: this.runContext?.workspaceScope,
       workingDirectory: this.executionCwd,
-      requestPermission: this.requestPermission,
+      requestPermission: this.requestPermissionForTools,
       abortSignal: options.abortSignal,
       deniedToolNames: options.deniedToolNames,
       planningService: options.planningService,
@@ -793,6 +810,8 @@ export class ToolExecutor {
         : null;
       // Lazy trace: only created when needed (deny/ask path)
       const traceBuilder = createTraceBuilder(executionToolName);
+      /** 分类器抛错（≠ 判 ask）时的错误串；非空表示这次「问用户」其实是故障回退。 */
+      let classifierFailedReason: string | undefined;
       if (guardFabricTraceStep) {
         traceBuilder.addStep(
           guardFabricTraceStep.layer,
@@ -886,7 +905,22 @@ export class ToolExecutor {
             }
           }
         } catch (classifierError) {
-          logger.debug('Permission classifier error, falling back to user approval', classifierError);
+          // 分类器抛错和分类器判 ask 都会走到「问用户」，但两者性质完全不同：前者是故障。
+          // 原先只有 logger.debug（默认不进日志文件）⇒ 现场零线索。必须 warn，且落进
+          // decisionTrace（rule=classifier_error，与判 ask 的 rule 天然可区分）。
+          classifierFailedReason = classifierError instanceof Error
+            ? classifierError.message
+            : String(classifierError);
+          traceBuilder.addStep(
+            'permission_classifier',
+            CLASSIFIER_ERROR_TRACE_RULE,
+            'ask',
+            `分类器抛错，回退人工审批：${classifierFailedReason}`,
+          );
+          logger.warn('Permission classifier error, falling back to user approval', {
+            tool: executionToolName,
+            error: classifierFailedReason,
+          });
         }
       }
 
@@ -987,7 +1021,8 @@ export class ToolExecutor {
               executionToolName, hookResult.message || 'blocked', 'hook',
               effectiveSessionId || 'unknown',
             ).catch(() => {});
-            recordDecision(executionToolName, params, 'hook-blocked', hookResult.message || 'hook', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+            traceBuilder.addStep('plugin_hook', 'permission_request_hook', 'deny', hookResult.message || 'blocked');
+            recordDecision(executionToolName, params, 'hook-blocked', hookResult.message || 'hook', permStartTime, traceBuilder.build('deny'), effectiveSessionId, this.ledgerOrigin);
             return {
               success: false,
               error: `Permission denied by hook: ${hookResult.message || 'blocked'}`,
@@ -998,14 +1033,16 @@ export class ToolExecutor {
         }
       }
 
-      const approved = await requestPermissionWithTelemetry({
+      const ask = await requestPermissionWithTelemetry({
         request: permissionRequest,
         toolCallId: options.currentToolCallId,
         requestPermission: this.requestPermission,
       });
+      const approved = ask.approved;
 
       if (approved) {
-        recordDecision(executionToolName, params, 'ask-approved', 'user', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
+        traceBuilder.addStep('plan_approval', 'ask_approved', 'allow', '审批放行');
+        recordDecision(executionToolName, params, 'ask-approved', 'user', permStartTime, traceBuilder.build('allow'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
       }
 
       // P0: prefix_rule 学习 — 用户批准后生成持久化规则
@@ -1018,6 +1055,21 @@ export class ToolExecutor {
       }
 
       if (!approved) {
+        // N-PERMTRACE：拒绝的**真实来源**由处理器自报（裸 boolean 仍解释为 'user'），
+        // 不按调用方名字枚举。ledger 的 reason 同时带上「为什么会走到问用户这一步」——
+        // 分类器抛错回退是故障，不能和用户主动拒绝混成同一条记录。
+        const denialSource = ask.denialSource ?? 'user';
+        const denialReason = classifierFailedReason
+          ? `${CLASSIFIER_ERROR_TRACE_RULE}/${denialSource}`
+          : denialSource;
+        // 只读探索档（审出 MED）：无审批 UI 的运行环境（CLI run/batch 非交互模式）对
+        // forceConfirm 请求自动拒绝（fail-closed）。泛用的 "Permission denied by user"
+        // 在该路径是误导——给模型可转述的真实原因与出路。
+        // 通话态曾有一条专用文案分支，2026-07-29 通话不再钳档后它已死（见 readOnlyDenialError）。
+        const denialError = readOnlyForcesConfirmation
+          ? readOnlyDenialError(executionToolName)
+          : (ask.message ?? permissionDenialError(executionToolName, denialSource));
+
         // Log permission denial
         if (this.auditEnabled) {
           const auditLogger = getAuditLogger();
@@ -1028,23 +1080,21 @@ export class ToolExecutor {
             input: sanitizeToolParams(params),
             duration: 0,
             success: false,
-            error: 'Permission denied by user',
+            error: denialError,
           });
         }
         // Fire-and-forget: emit PermissionDenied hook
+        // deniedBy：真人拒才是 'user'，其余一律 'runtime'（环境/运行时自动拒），细节在 reason 里。
         options.hookManager?.triggerPermissionDenied(
-          executionToolName, 'Permission denied by user', 'user',
+          executionToolName, denialError, denialSource === 'user' ? 'user' : 'runtime',
           effectiveSessionId || 'unknown',
         ).catch(() => {});
-        recordDecision(executionToolName, params, 'ask-denied', 'user', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
+        traceBuilder.addStep('plan_approval', 'ask_denied', 'deny', `审批被拒（来源：${denialSource}）`);
+        recordDecision(executionToolName, params, 'ask-denied', denialReason, permStartTime, traceBuilder.build('deny'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
 
-        // 只读探索档（审出 MED）：无审批 UI 的运行环境（CLI run/batch 非交互模式）对
-        // forceConfirm 请求自动拒绝（fail-closed）。泛用的 "Permission denied by user"
-        // 在该路径是误导——给模型可转述的真实原因与出路。
-        // 通话态曾有一条专用文案分支，2026-07-29 通话不再钳档后它已死（见 readOnlyDenialError）。
         return {
           success: false,
-          error: readOnlyForcesConfirmation ? readOnlyDenialError(executionToolName) : 'Permission denied by user',
+          error: denialError,
         };
       }
       } // end needsUserApproval

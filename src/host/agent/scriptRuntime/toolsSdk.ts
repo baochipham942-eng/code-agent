@@ -155,7 +155,7 @@ export const SDK_INSTRUCTIONS = `## 在脚本里调用工具
 - 调用失败会抛 \`ToolCallError\`（带 \`toolName\` 和可读 \`message\`），
   用 \`try/catch\` 接住就能继续跑，不会中断整个程序。
 - 互不依赖的只读调用可以用 \`Promise.all\` 并发；有依赖关系的用 \`await\` 排序。
-- 用 \`return\` 和 \`console.log(...)\` 输出结果。**只有你打印或返回的内容会回到对话里**——
+- 用 \`return\` 返回结果，或用 \`console.log\` 打印。**只有你打印或返回的内容会回到对话里**——
   中间的工具产出留在运行环境中，所以请自己提取需要的部分。
 
 可用的工具：`;

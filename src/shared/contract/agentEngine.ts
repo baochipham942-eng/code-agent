@@ -30,8 +30,7 @@ export type AgentEngineRuntimeState =
 export type AgentEngineCapability =
   | 'execute'
   | 'stream_events'
-  | 'resume'
-  | 'review';
+  | 'resume';
 
 export class AgentEngineCapabilityError extends Error {
   readonly code = 'AGENT_ENGINE_CAPABILITY_UNSUPPORTED';

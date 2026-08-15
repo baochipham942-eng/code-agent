@@ -102,7 +102,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
       evidence: 'production',
     },
     modelSelection: 'neo_provider',
-    capabilities: ['execute', 'stream_events', 'resume', 'review'],
+    capabilities: ['execute', 'stream_events', 'resume'],
     defaultPermissionProfile: 'default',
     riskTier: 'medium',
     reliability: {

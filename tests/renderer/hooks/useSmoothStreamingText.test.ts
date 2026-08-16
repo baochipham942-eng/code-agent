@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   computeSmoothStreamingNextContent,
   findSmoothStreamingSegmentEnd,
+  getSmoothStreamingSegmentIntervalMs,
   shouldSyncSmoothStreamingText,
   SMOOTH_STREAMING_TEXT_DEFAULTS,
 } from '../../../src/renderer/hooks/useSmoothStreamingText';
@@ -20,31 +21,48 @@ describe('useSmoothStreamingText helpers', () => {
   });
 
   it('does not advance before one segment interval has elapsed', () => {
+    const target = 'hello world, this is a longer streamed answer';
     const next = computeSmoothStreamingNextContent({
       displayContent: 'hello',
-      targetContent: 'hello world, this is a longer streamed answer',
-      elapsedMs: SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS - 1,
+      targetContent: target,
+      elapsedMs: getSmoothStreamingSegmentIntervalMs('hello', target) - 1,
     });
 
     expect(next).toBe('hello');
   });
 
-  it('uses flush mode to land the remaining tail immediately when the stream ends', () => {
+  it('keeps the same bounded drain when the stream ends instead of jumping the tail', () => {
     const target = 'hello world, this is a longer streamed answer';
-    const normal = computeSmoothStreamingNextContent({
+    const interval = getSmoothStreamingSegmentIntervalMs('hello', target);
+    const beforeInterval = computeSmoothStreamingNextContent({
       displayContent: 'hello',
       targetContent: target,
-      elapsedMs: 100,
+      elapsedMs: interval - 1,
     });
     const flushing = computeSmoothStreamingNextContent({
       displayContent: 'hello',
       targetContent: target,
-      elapsedMs: 100,
+      elapsedMs: interval - 1,
       isFlushing: true,
     });
 
-    expect(flushing).toBe(target);
-    expect(flushing.length).toBeGreaterThan(normal.length);
+    expect(flushing).toBe(beforeInterval);
+    expect(flushing).toBe('hello');
+  });
+
+  it('shortens the segment interval as backlog grows and drains within the target window', () => {
+    const shortTarget = 'one two';
+    const longTarget = 'one two three four five six seven eight nine ten';
+    const shortInterval = getSmoothStreamingSegmentIntervalMs('', shortTarget);
+    const longInterval = getSmoothStreamingSegmentIntervalMs('', longTarget);
+
+    expect(longInterval).toBeLessThan(shortInterval);
+    expect(longInterval).toBeLessThanOrEqual(SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS);
+    expect(computeSmoothStreamingNextContent({
+      displayContent: '',
+      targetContent: longTarget,
+      elapsedMs: SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_DRAIN_MS,
+    })).toBe(longTarget);
   });
 
   it('syncs immediately for non-prefix replacement snapshots', () => {
@@ -117,7 +135,7 @@ describe('useSmoothStreamingText 积压直落', () => {
     const segment = computeSmoothStreamingNextContent({
       displayContent: landed,
       targetContent: target,
-      elapsedMs: SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS,
+      elapsedMs: getSmoothStreamingSegmentIntervalMs(landed, target),
     });
     expect(segment).toBe(`${bulk}word`);
   });

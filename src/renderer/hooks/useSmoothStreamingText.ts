@@ -3,14 +3,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 // 流式长内容渲染自然化（工单 2026-08-01）：积压直落 + 只动尾巴 + 块级淡入。
 // - 待播积压超过 BACKLOG_DIRECT_LAND_CHARS 时超出部分立即落地，从左到右的扫描
 //   在任何情况下都不超过约一行；
-// - 只有阈值内的尾巴保留生长感，粒度是「词/短段」而非字符，每段按
-//   TAIL_SEGMENT_INTERVAL_MS 节奏落定（淡入由消费层 CSS 负责）；
+// - 只有阈值内的尾巴保留生长感，粒度是「词/短段」而非字符；播放间隔随
+//   积压动态收紧，目标在 TAIL_DRAIN_MS 内追平（淡入由消费层 CSS 负责）；
 // - prefers-reduced-motion 下全部直落零动画。
 export const SMOOTH_STREAMING_TEXT_DEFAULTS = {
   /** 积压直落阈值（字符）：超出部分立即落地，不参与尾部播放 */
   BACKLOG_DIRECT_LAND_CHARS: 200,
-  /** 尾段落定节奏：每个「词/短段」的播放间隔 */
-  TAIL_SEGMENT_INTERVAL_MS: 120,
+  /** 尾段落定最慢节奏：积压很短时每个「词/短段」的最大播放间隔 */
+  TAIL_SEGMENT_INTERVAL_MS: 40,
+  /** 尾段追赶窗口：当前积压按段均摊，目标在该窗口内追平 */
+  TAIL_DRAIN_MS: 240,
   /** 中文短段长度上限（工单：按标点或 8-12 字切） */
   CJK_SEGMENT_MAX_CHARS: 10,
 } as const;
@@ -41,7 +43,7 @@ export interface SmoothStreamingStepInput {
   displayContent: string;
   targetContent: string;
   elapsedMs: number;
-  /** 流已结束：剩余尾巴立即落定，不再逐段播放 */
+  /** 流已结束：保留字段供调用侧标记；尾巴仍在同一追赶窗口内逐段落定 */
   isFlushing?: boolean;
 }
 
@@ -80,6 +82,38 @@ export function findSmoothStreamingSegmentEnd(content: string, fromIndex: number
   return index;
 }
 
+function countSmoothStreamingSegments(content: string, fromIndex: number): number {
+  let count = 0;
+  let index = fromIndex;
+  while (index < content.length) {
+    const nextIndex = findSmoothStreamingSegmentEnd(content, index);
+    if (nextIndex <= index) break;
+    count += 1;
+    index = nextIndex;
+  }
+  return count;
+}
+
+/**
+ * 短积压维持稳定的最慢节拍；积压越多，段间隔越短，使阈值窗口内的尾巴
+ * 在固定追赶窗口内排完。对应 assistant-ui useSmooth 的 drainMs 思路，保留
+ * Neo 按词/中文短段落定的既有视觉粒度。
+ */
+export function getSmoothStreamingSegmentIntervalMs(
+  displayContent: string,
+  targetContent: string,
+): number {
+  if (!targetContent.startsWith(displayContent)) {
+    return SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS;
+  }
+  const segmentCount = countSmoothStreamingSegments(targetContent, displayContent.length);
+  if (segmentCount <= 0) return SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS;
+  return Math.max(1, Math.min(
+    SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS,
+    SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_DRAIN_MS / segmentCount,
+  ));
+}
+
 export function computeSmoothStreamingNextContent(input: SmoothStreamingStepInput): string {
   const { displayContent, targetContent } = input;
   if (displayContent === targetContent) return targetContent;
@@ -93,12 +127,11 @@ export function computeSmoothStreamingNextContent(input: SmoothStreamingStepInpu
     return targetContent.slice(0, targetContent.length - SMOOTH_STREAMING_TEXT_DEFAULTS.BACKLOG_DIRECT_LAND_CHARS);
   }
 
-  // 流结束追平：剩余尾巴一次落定（工单：直落让 isAnimating 更快变 false，属正向）
-  if (input.isFlushing) return targetContent;
-
-  // 尾部生长：按节奏一次落一个「词/短段」，不做字符级 reveal
+  // 尾部生长：按动态节奏落「词/短段」，不做字符级 reveal。流结束后继续走同一
+  // 追赶窗口，由 isAnimating 挡住完成态动作，避免最后一帧整段跳变。
+  const segmentIntervalMs = getSmoothStreamingSegmentIntervalMs(displayContent, targetContent);
   const segmentBudget = Math.floor(
-    Math.max(input.elapsedMs, 0) / SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS,
+    Math.max(input.elapsedMs, 0) / segmentIntervalMs,
   );
   if (segmentBudget <= 0) return displayContent;
 
@@ -188,7 +221,7 @@ export function useSmoothStreamingText({
       content.startsWith(displayRef.current);
 
     if (shouldFlushAfterStreaming) {
-      // 流结束：剩余尾巴由 tick 以 isFlushing 一次落定
+      // 流结束：保留动画信号，剩余尾巴继续由 tick 在追赶窗口内落定
       setIsAnimating(true);
     } else {
       segmentCreditMsRef.current = 0;
@@ -216,9 +249,8 @@ export function useSmoothStreamingText({
       const directLanding = backlog > SMOOTH_STREAMING_TEXT_DEFAULTS.BACKLOG_DIRECT_LAND_CHARS;
       const flushing = !isStreaming;
       const creditMs = segmentCreditMsRef.current + (timestamp - lastFrameAt);
-      const segmentsSpent = Math.floor(
-        Math.max(creditMs, 0) / SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS,
-      );
+      const segmentIntervalMs = getSmoothStreamingSegmentIntervalMs(prevDisplay, targetRef.current);
+      const segmentsSpent = Math.floor(Math.max(creditMs, 0) / segmentIntervalMs);
 
       const nextDisplay = computeSmoothStreamingNextContent({
         displayContent: prevDisplay,
@@ -228,9 +260,9 @@ export function useSmoothStreamingText({
       });
 
       if (nextDisplay !== prevDisplay) {
-        segmentCreditMsRef.current = nextDisplay === targetRef.current
+        segmentCreditMsRef.current = nextDisplay === targetRef.current || directLanding
           ? 0
-          : Math.max(0, creditMs - segmentsSpent * SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS);
+          : Math.max(0, creditMs - segmentsSpent * segmentIntervalMs);
         // 只有逐段落定的小段淡入；直落/追平的大块立即可读
         const tailStart = !directLanding && !flushing ? prevDisplay.length : null;
         setDisplay(nextDisplay, tailStart);

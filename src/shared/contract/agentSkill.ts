@@ -28,6 +28,18 @@ export interface SkillFrontmatter {
   bins?: string[];           // 需要的命令行工具
   'env-vars'?: string[];     // 需要的环境变量
   references?: string[];     // 引用的参考文件（相对路径）
+
+  // 机器可判适用条件（ADR-034 层③）
+  /** 当前注册工具集必须包含全部声明项 */
+  requires_tools?: string | string[];
+  /** 声明项均不可用时才显示该兜底 skill；任一可用即隐藏 */
+  fallback_for_tools?: string | string[];
+  /** Node.js process.platform 白名单 */
+  platforms?: string | string[];
+  /** 当前进程环境变量必须全部存在且非空 */
+  required_env?: string | string[];
+  /** 当前工作目录下必须存在的相对路径；不接受绝对路径或 .. 越界 */
+  requires_paths?: string | string[];
 }
 
 /**
@@ -89,6 +101,14 @@ export interface ParsedSkill {
   references?: string[];
   referenceContents?: Map<string, string>;
   dependencyStatus?: SkillDependencyStatus;
+
+  // === 机器可判适用条件（ADR-034 层③） ===
+  requiresTools?: string[];
+  fallbackForTools?: string[];
+  platforms?: string[];
+  requiredEnv?: string[];
+  /** 必须存在于当前工作目录下的相对路径（全部满足才可见） */
+  requiresPaths?: string[];
 
   /** Whether the full promptContent has been loaded (for lazy loading) */
   loaded?: boolean;

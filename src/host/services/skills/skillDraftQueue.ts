@@ -13,6 +13,8 @@ import type { SkillDraftOrigin } from '../../../shared/contract/agent';
 import { scanSkillContent } from '../../security/skillContentGuard';
 import { isLowValueSkillName } from '../../lightMemory/conversationReview';
 import { createLogger } from '../infra/logger';
+import { parseSkillMd } from './skillParser';
+import { hasSkillApplicabilityBoundary } from './skillApplicability';
 
 export type { SkillDraftOrigin };
 
@@ -109,6 +111,8 @@ export function generateDraftSkillMd(input: {
   // 只有 telemetry 草稿带可执行工具序列才声明 allowed-tools
   if (input.toolSequence && input.toolSequence.length > 0) {
     fm.push(`allowed-tools: "${input.toolSequence.join(',')}"`);
+    // telemetry 草稿的工具序列本身就是可判适用边界；转正后缺工具时自动隐藏。
+    fm.push(`requires_tools: [${input.toolSequence.join(', ')}]`);
   }
   fm.push('context: inline');
   fm.push('metadata:');
@@ -371,6 +375,17 @@ export async function confirmSkillDraft(
 
   try {
     const skillContent = await fs.readFile(path.join(draftDir, 'SKILL.md'), 'utf-8');
+
+    // ADR-034 层③：没有机器元数据，也没有语义 [IF] 边界的草稿不得转正。
+    // 在确认时检查，允许用户先在待确认目录补写边界再重试。
+    const parsedDraft = await parseSkillMd(draftDir, 'user');
+    if (!hasSkillApplicabilityBoundary(parsedDraft)) {
+      logger.warn('Skill draft blocked: missing applicability boundary', { id, name: meta.name });
+      return {
+        success: false,
+        error: '草稿缺少适用条件：请声明机器可判 frontmatter，或在正文补充 [IF 条件]。',
+      };
+    }
 
     // fail-closed 安全闸：草稿入库前过内容扫描，命中 critical 危险命令 / 明文密钥则拒绝。
     // 反超 Hermes（其 agent-created skill 默认不扫描）；草稿留在队列，用户可查看后删除。

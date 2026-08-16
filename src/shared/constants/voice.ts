@@ -39,8 +39,8 @@ export const QWEN_OMNI_REALTIME_MODEL = 'qwen3.5-omni-flash-realtime';
  * 只用于识别存量 voice.live 配置并给用户明确的回落提示，不把上一代重新放回
  * 通话白名单。模型在其它产品路径是否可用由各自注册表决定。
  */
-export const QWEN_OMNI_RETIRED_CALL_MODEL = 'qwen3-omni-flash-realtime';
-export const QWEN_OMNI_RETIRED_CALL_EXCLUSIVE_VOICES = ['Cherry', 'Chelsie'] as const;
+const QWEN_OMNI_RETIRED_CALL_MODEL = 'qwen3-omni-flash-realtime';
+const QWEN_OMNI_RETIRED_CALL_EXCLUSIVE_VOICES = ['Cherry', 'Chelsie'] as const;
 
 export function isRetiredQwenCallSelection(modelId: string | undefined, voiceId: string | undefined): boolean {
   return modelId === QWEN_OMNI_RETIRED_CALL_MODEL

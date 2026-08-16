@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../src/shared/contract/message';
+import type { ToolResult } from '../../src/shared/contract/tool';
 import type { VoiceWorkItem } from '../../src/shared/contract/voice';
 
 const sessionManager = vi.hoisted(() => ({
@@ -33,6 +34,39 @@ function item(detail?: string): VoiceWorkItem {
   };
 }
 
+const ledgerResults: ToolResult[] = [
+  {
+    toolCallId: 'write-1',
+    success: true,
+    output: 'wrote file',
+    metadata: {
+      artifacts: [{
+        artifactId: 'artifact-12-md',
+        kind: 'document',
+        role: 'deliverable',
+        sourceTool: 'Write',
+        createdAt: '2026-08-16T00:00:00.000Z',
+        path: '/repo/12.md',
+        name: '12.md',
+      }],
+    },
+  },
+  {
+    toolCallId: 'read-1',
+    success: true,
+    metadata: {
+      artifacts: [{
+        artifactId: 'source-notes',
+        kind: 'text',
+        role: 'material',
+        sourceTool: 'Read',
+        createdAt: '2026-08-16T00:00:00.000Z',
+        path: '/repo/source.md',
+      }],
+    },
+  },
+];
+
 beforeEach(() => {
   sessionManager.addMessageToSession.mockClear();
   sessionManager.getSession.mockClear();
@@ -64,5 +98,39 @@ describe('voice task result projector', () => {
     } else {
       expect(message?.metadata?.voiceWorkSettled).toBeUndefined();
     }
+  });
+
+  it.each(['done', 'unverified', 'failed'] as const)(
+    '%s 终态只投影该 run 工具账本里的文件产物',
+    async (status) => {
+      await projectVoiceTaskTerminalResult(
+        'session-1',
+        item(),
+        status,
+        undefined,
+        '摘要里故意写另一个文件 fake.md',
+        ledgerResults,
+      );
+
+      const message = sessionManager.addMessageToSession.mock.calls[0]?.[1];
+      expect(message?.metadata?.backgroundTaskResult?.artifacts).toEqual([
+        expect.objectContaining({
+          path: '/repo/12.md',
+          label: '12.md',
+          sourceTool: 'Write',
+          role: 'deliverable',
+        }),
+      ]);
+      expect(message?.metadata?.backgroundTaskResult?.artifacts).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: '/repo/fake.md' })]),
+      );
+    },
+  );
+
+  it('无工具账本产物时不写空 artifacts', async () => {
+    await projectVoiceTaskTerminalResult('session-1', item(), 'done', undefined, '纯问答完成', []);
+
+    const message = sessionManager.addMessageToSession.mock.calls[0]?.[1];
+    expect(message?.metadata?.backgroundTaskResult).not.toHaveProperty('artifacts');
   });
 });

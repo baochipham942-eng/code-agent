@@ -1,4 +1,8 @@
 import type { VoiceWorkFailureMarker, VoiceWorkItem } from '../../../shared/contract/voice';
+import type { ToolResult } from '../../../shared/contract/tool';
+import type { NormalizedToolArtifactMeta } from '../../../shared/contract/artifactBlob';
+import { collectToolArtifactsFromMetadata } from '../../../shared/contract/artifactBlob';
+import { isDeliverableArtifact } from '../../../shared/contract/artifactRoleRegistry';
 import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
@@ -9,6 +13,19 @@ import { VOICE_CONCLUSION_LOOKBACK_MESSAGES } from '../../../shared/constants/vo
 const logger = createLogger('VoiceTaskResultProjector');
 
 export type VoiceTaskTerminalStatus = 'done' | 'unverified' | 'failed' | 'cancelled';
+
+function collectRunFileArtifacts(toolResults: readonly ToolResult[] = []): NormalizedToolArtifactMeta[] {
+  const artifacts: NormalizedToolArtifactMeta[] = [];
+  const seenPaths = new Set<string>();
+  for (const result of toolResults) {
+    for (const artifact of collectToolArtifactsFromMetadata(result.metadata)) {
+      if (!artifact.path || !isDeliverableArtifact(artifact) || seenPaths.has(artifact.path)) continue;
+      seenPaths.add(artifact.path);
+      artifacts.push({ ...artifact, role: 'deliverable' });
+    }
+  }
+  return artifacts;
+}
 
 function projectedStatus(status: VoiceTaskTerminalStatus) {
   switch (status) {
@@ -53,10 +70,12 @@ export async function projectVoiceTaskTerminalResult(
   status: VoiceTaskTerminalStatus,
   failure?: VoiceWorkFailureMarker,
   conclusion?: string,
+  toolResults?: readonly ToolResult[],
 ): Promise<void> {
   try {
     const summary = await resolveSummary(neoSessionId, item, status, failure, conclusion);
     const resultStatus = projectedStatus(status);
+    const artifacts = collectRunFileArtifacts(toolResults);
     await getSessionManager().addMessageToSession(neoSessionId, {
       id: `voice-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'system',
@@ -70,6 +89,7 @@ export async function projectVoiceTaskTerminalResult(
           shortName: item.shortName ?? item.title,
           status: resultStatus,
           summary,
+          ...(artifacts.length ? { artifacts } : {}),
         },
         ...(status === 'done' || status === 'unverified'
           ? { voiceWorkSettled: { workItemId: item.id, title: item.title, outcome: status } }

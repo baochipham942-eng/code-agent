@@ -14,7 +14,7 @@
 // ============================================================================
 
 import type { TaskManagerEvent } from '../../task/TaskManager';
-import type { AgentEvent } from '../../../shared/contract/agent';
+import type { AgentEvent, ToolResult } from '../../../shared/contract';
 import type { SessionTask, TodoItem } from '../../../shared/contract/planning';
 import type { VoiceFocusContext, VoiceToolCallOrigin, VoiceWorkFailureMarker, VoiceWorkItem, VoiceWorkItemStatus, VoiceWorkNarration } from '../../../shared/contract/voice';
 import type { AppshotCapture } from '../../../shared/contract/appshot';
@@ -173,6 +173,7 @@ interface LedgerState {
   runRequests: Map<string, VoiceSpawnRequest>;
   pendingStartedAtById: Map<string, number>;
   runConclusions: Map<string, string>;
+  runToolResults: Map<string, ToolResult[]>;
   /** 兼容旧 runtime 不带 taskId 的事件；生产后台 run 一律按事件里的 taskId 路由。 */
   legacyEventFallbackId: string | null;
   /** 旧事件兼容任务的派出时刻；真实任务使用 pendingStartedAtById。 */
@@ -274,7 +275,7 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     slots: new VoiceTaskSlotLedger(binding.neoSessionId, getVoiceTaskConcurrencyPool()),
     runRequests: new Map(),
     pendingStartedAtById: new Map(),
-    runConclusions: new Map(),
+    runConclusions: new Map(), runToolResults: new Map(),
     legacyEventFallbackId: null,
     legacyEventFallbackStartedAt: 0,
     listener: (event) => onTaskManagerEvent(event),
@@ -427,8 +428,7 @@ function settle(
     state.neoSessionId,
     settled,
     status,
-    failure,
-    state.runConclusions.get(id),
+    failure, state.runConclusions.get(id), state.runToolResults.get(id),
   );
   getPermissionModeManager().clearLiveVoiceSession(state.neoSessionId, runHoldId(id));
   // 语音的终态四档要映射到账本的三档：只有真正做完（done/unverified）才算 completed，
@@ -439,7 +439,7 @@ function settle(
   );
   state.pendingStartedAtById.delete(id);
   state.runRequests.delete(id);
-  state.runConclusions.delete(id);
+  state.runConclusions.delete(id); state.runToolResults.delete(id);
   if (state.legacyEventFallbackId === id) state.legacyEventFallbackId = null;
   state.supersededIds.delete(id);
   // 硬门的兑现处：等的那件活落终态了，这才轮到 startRun。必须排在 detachIfSettled 之前，
@@ -657,6 +657,9 @@ function onAgentStreamEvent(
   if (sessionId !== state.neoSessionId) return;
   taskId ??= state.legacyEventFallbackId ?? undefined;
   if (!taskId) return;
+  if (event.type === 'tool_call_end') {
+    state.runToolResults.set(taskId, [...(state.runToolResults.get(taskId) ?? []), event.data]);
+  }
   if (event.type === 'message' && event.data?.role === 'assistant' && event.data.content?.trim()) {
     state.runConclusions.set(taskId, event.data.content);
   }

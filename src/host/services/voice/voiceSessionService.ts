@@ -7,13 +7,13 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
+import { isRetiredQwenCallSelection, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
 import {
   REALTIME_VOICE_PROVIDER_PROFILES,
   resolveRealtimeVoiceSelection,
   type RealtimeVoiceProviderProfile,
 } from '../../../shared/constants/realtimeVoiceProviders';
-import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceInterruptClassification, VoiceTokenUsage, VoiceTransport, VoiceTransportHandle, VoiceUserTextInjectionResult } from '../../../shared/contract/voice';
+import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTokenUsage, VoiceTransport, VoiceTransportHandle, VoiceUserTextInjectionResult } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
 import { getConfigService } from '../core/configService';
@@ -631,6 +631,11 @@ async function connectAndBind(
       model: selection.model.id,
       requested: liveSettings.voiceId,
     });
+  }
+  if (profile.id === 'dashscope-qwen-omni'
+    && isRetiredQwenCallSelection(liveSettings?.conversationModel, liveSettings?.voiceId)) {
+    send(client, { type: 'notice', code: 'VOICE_CALL_SETTINGS_FALLBACK',
+      message: `${selection.model.displayName} / ${selection.voice}` });
   }
 
   // 通话录音（N-L7-REC）：闸在拨号这一刻判一次，判完整通不变——每帧读配置是白烧 CPU，

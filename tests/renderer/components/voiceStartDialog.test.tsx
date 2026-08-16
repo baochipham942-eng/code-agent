@@ -53,7 +53,8 @@ describe('VoiceStartDialog 音色就地选（X2）', () => {
 
     await waitFor(() => {
       const setCall = invokeDomainMock.mock.calls.filter(([, action]) => action === 'set').at(-1);
-      const payload = setCall![2] as { voice: { turnDetection: unknown; live: { voiceId?: string } } };
+      const payload = setCall![2] as { voice: { turnDetection: unknown; live: { conversationModel?: string; voiceId?: string } } };
+      expect(payload.voice.live.conversationModel).toBe('qwen3.5-omni-flash-realtime');
       expect(payload.voice.live.voiceId).toBe('Ethan');
       // 运行时真源 turnDetection 与 live 同写不分叉的契约同设置页
       expect(payload.voice.turnDetection).toMatchObject({ type: 'server_vad' });
@@ -61,13 +62,11 @@ describe('VoiceStartDialog 音色就地选（X2）', () => {
     expect(broadcast).toHaveBeenCalled();
   });
 
-  it('存量 voiceId 不在当前模型白名单时落到第一个合法值（音色与模型强绑定）', async () => {
-    settingsGet({ live: { enabled: true, conversationModel: 'qwen3-omni-flash-realtime', voiceId: 'Tina' } });
+  it('上一代模型与独占音色的存量配置在拨号弹层回落到 3.5 白名单', async () => {
+    settingsGet({ live: { enabled: true, conversationModel: 'qwen3-omni-flash-realtime', voiceId: 'Cherry' } });
     render(<VoiceStartDialog isOpen onConfirm={() => {}} onCancel={() => {}} />);
     const select = await screen.findByTestId('voice-start-voice-id') as HTMLSelectElement;
-    // Tina 是 3.5 系独有，上一代模型白名单里没有它（2026-08-15 实测在这一代 400）；
-    // Chelsie 反过来只在这一代可用，同批探测补入。
-    expect(Array.from(select.querySelectorAll('option')).map((o) => o.value)).toEqual(['Cherry', 'Chelsie', 'Ethan', 'Serena']);
-    expect(select.value).toBe('Cherry');
+    expect(Array.from(select.querySelectorAll('option')).map((o) => o.value)).toEqual(['Tina', 'Ethan', 'Serena']);
+    expect(select.value).toBe('Tina');
   });
 });

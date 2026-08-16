@@ -87,6 +87,7 @@ export const voiceZh: VoiceTranslations = {
     messageByCode: {
       VOICE_SESSION_BUSY: '通话正在另一个窗口进行，去那个窗口可以继续；在那里挂断后这里才能再拨',
       VOICE_PROVIDER_UNCONFIGURED: '还没配语音服务的 API Key，去设置里填一个就能打电话',
+      VOICE_CALL_SETTINGS_FALLBACK: '之前选择的通话模型或音色已不再支持通话，已切换到 {selection}',
       VOICE_TOOLS_DROPPED: '当前实时语音模型不支持在通话中派活，这通电话只能聊天',
       VOICE_MODEL_UNRESPONSIVE: '模型没有回应，可以再说一遍，或挂断重拨',
       VOICE_SERVICE_UNSTABLE: '当前语音服务不稳定，我会继续尝试恢复',
@@ -152,7 +153,6 @@ export const voiceZh: VoiceTranslations = {
       providerConfigured: '已配置',
       providerMissing: '未配置 {name} Key，实时语音不可用',
       providerMissingHint: '请在上方输入 {name} API Key，或在设置 → 模型配置对应 Key',
-      modelNoToolsWarning: '该模型不支持在通话里派活，选它这通电话只能聊天',
       conversationModelLabel: '通话模型',
       untestedBadge: '未测试',
       addProvider: '添加 Provider',
@@ -398,6 +398,7 @@ export const voiceEn = {
     messageByCode: {
       VOICE_SESSION_BUSY: 'A call is already in progress in another window — continue there, or end it there and retry here',
       VOICE_PROVIDER_UNCONFIGURED: 'No API key for the voice service yet — add one in settings to start calling',
+      VOICE_CALL_SETTINGS_FALLBACK: 'Your previous call model or voice is no longer supported for calls. Switched to {selection}',
       VOICE_TOOLS_DROPPED: 'This Live Voice model cannot run tasks during a call, so this call is chat only',
       VOICE_MODEL_UNRESPONSIVE: 'The model did not respond. Try saying it again, or hang up and redial',
       VOICE_SERVICE_UNSTABLE: 'The voice service is unstable right now. I will keep trying to recover',
@@ -463,7 +464,6 @@ export const voiceEn = {
       providerConfigured: 'Configured',
       providerMissing: '{name} key not configured — Live Voice is unavailable',
       providerMissingHint: 'Enter a {name} API key above, or set the corresponding key in Settings → Models',
-      modelNoToolsWarning: 'This model cannot dispatch tasks during a call — with it, calls are chat-only',
       conversationModelLabel: 'Conversation model',
       untestedBadge: 'Untested',
       addProvider: 'Add Provider',

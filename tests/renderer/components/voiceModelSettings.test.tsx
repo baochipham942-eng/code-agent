@@ -57,8 +57,7 @@ const BUILTIN_PROVIDERS = [
     builtIn: true,
     configured: true,
     models: [
-      { id: 'qwen3.5-omni-flash-realtime', displayName: 'qwen3.5-omni-flash-realtime', supportsTools: true, voices: ['Tina', 'Ethan', 'Serena'] },
-      { id: 'qwen3-omni-flash-realtime', displayName: 'qwen3-omni-flash-realtime', supportsTools: false, voices: ['Cherry', 'Ethan', 'Serena'] },
+      { id: 'qwen3.5-omni-flash-realtime', displayName: 'qwen3.5-omni-flash-realtime', voices: ['Tina', 'Ethan', 'Serena'] },
     ],
     defaultModel: 'qwen3.5-omni-flash-realtime',
     defaultVoice: 'Tina',
@@ -70,7 +69,7 @@ const BUILTIN_PROVIDERS = [
     builtIn: true,
     configured: false,
     models: [
-      { id: 'gpt-realtime-2.1', displayName: 'GPT Realtime 2.1', supportsTools: true, voices: ['marin', 'cedar', 'alloy'] },
+      { id: 'gpt-realtime-2.1', displayName: 'GPT Realtime 2.1', voices: ['marin', 'cedar', 'alloy'] },
     ],
     defaultModel: 'gpt-realtime-2.1',
     defaultVoice: 'marin',
@@ -191,7 +190,7 @@ describe('VoiceModelSettings（新 tab 收拢三项）', () => {
         builtIn: false,
         configured: false,
         models: [
-          { id: 'acme-1', displayName: 'acme-1', supportsTools: true, voices: ['ada'] },
+          { id: 'acme-1', displayName: 'acme-1', voices: ['ada'] },
         ],
         defaultModel: 'acme-1',
         defaultVoice: 'ada',
@@ -256,35 +255,31 @@ describe('VoiceModelSettings（新 tab 收拢三项）', () => {
     expect(list.textContent).toContain(zh.voice.settings.samplePending);
   });
 
-  // 工单③原契约随迁：选不支持 tools 的模型必须当场说清代价；音色与模型强绑定，
-  // 换模型时 3.5 的音色（Tina）不能留到上一代模型上（第一次合成才 400）。
-  it('换到不支持 tools 的模型：警示行出现，音色回退到该模型第一个合法值并一起持久化', async () => {
-    settingsGet({ live: { enabled: true, voiceId: 'Tina' } });
+  it('上一代存量配置只显示 3.5 与其音色，用户无法再选上一代模型或独占音色', async () => {
+    settingsGet({ live: { enabled: true, conversationModel: 'qwen3-omni-flash-realtime', voiceId: 'Cherry' } });
     render(<VoiceModelSettings />);
     const modelSelect = await screen.findByTestId('voice-conversation-model') as HTMLSelectElement;
+    expect(Array.from(modelSelect.options).map((option) => option.value)).toEqual([
+      'qwen3.5-omni-flash-realtime',
+    ]);
     expect(modelSelect.value).toBe('qwen3.5-omni-flash-realtime');
-    expect(screen.queryByTestId('voice-model-no-tools-warning')).toBeNull();
-
-    fireEvent.change(modelSelect, { target: { value: 'qwen3-omni-flash-realtime' } });
-
-    await waitFor(() => {
-      const setCall = invokeDomainMock.mock.calls.filter(([, action]) => action === 'set').at(-1);
-      const payload = setCall![2] as { voice: { turnDetection: unknown; live: { conversationModel?: string; voiceId?: string } } };
-      expect(payload.voice.live.conversationModel).toBe('qwen3-omni-flash-realtime');
-      expect(payload.voice.live.voiceId).toBe('Cherry'); // Tina 是 3.5 独有，必须跟着回退
-      // turnDetection 同写不分叉的契约在新 tab 一样成立
-      expect(payload.voice.turnDetection).toMatchObject({ type: 'server_vad' });
-    });
-    expect(screen.getByTestId('voice-model-no-tools-warning').textContent).toBe(zh.voice.settings.modelNoToolsWarning);
-
-    // 音色选择器的选项也跟着换成当前模型的白名单
     const voiceList = screen.getByTestId('voice-model-voice-list');
     const rows = Array.from(voiceList.querySelectorAll('[data-testid^="voice-model-voice-"]'));
     expect(rows.map((r) => r.getAttribute('data-testid'))).toEqual([
-      'voice-model-voice-Cherry',
+      'voice-model-voice-Tina',
       'voice-model-voice-Ethan',
       'voice-model-voice-Serena',
     ]);
+
+    fireEvent.click(screen.getByTestId('voice-model-voice-Ethan'));
+    await waitFor(() => {
+      const setCall = invokeDomainMock.mock.calls.filter(([, action]) => action === 'set').at(-1);
+      const payload = setCall![2] as { voice: { live: { conversationModel?: string; voiceId?: string } } };
+      expect(payload.voice.live).toMatchObject({
+        conversationModel: 'qwen3.5-omni-flash-realtime',
+        voiceId: 'Ethan',
+      });
+    });
   });
 
   it('转写模型持久化到 speech.localModel（存储 key 不变）', async () => {

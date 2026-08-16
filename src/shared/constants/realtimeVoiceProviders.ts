@@ -15,7 +15,6 @@ type RealtimeSessionShape = 'dashscope-compatible' | 'openai-realtime';
 export interface RealtimeVoiceModelProfile {
   id: string;
   displayName: string;
-  supportsTools: boolean;
   voices: readonly string[];
 }
 
@@ -70,7 +69,6 @@ const DASH_SCOPE_PROFILE: RealtimeVoiceProviderProfile = {
   models: QWEN_OMNI_REALTIME_MODEL_OPTIONS.map((model) => ({
     id: model.id,
     displayName: model.id,
-    supportsTools: model.supportsTools,
     voices: model.voices,
   })),
   defaultModel: QWEN_OMNI_REALTIME_MODEL,
@@ -100,13 +98,11 @@ const OPENAI_PROFILE: RealtimeVoiceProviderProfile = {
     {
       id: 'gpt-realtime-2.1',
       displayName: 'GPT Realtime 2.1',
-      supportsTools: true,
       voices: OPENAI_REALTIME_VOICES,
     },
     {
       id: 'gpt-realtime-2.1-mini',
       displayName: 'GPT Realtime 2.1 mini',
-      supportsTools: true,
       voices: OPENAI_REALTIME_VOICES,
     },
   ],
@@ -166,7 +162,6 @@ export function createCustomRealtimeVoiceProfile(
     models: [{
       id: provider.model,
       displayName: provider.model,
-      supportsTools: true,
       voices: provider.voices,
     }],
     defaultModel: provider.model,

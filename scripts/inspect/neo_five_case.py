@@ -16,7 +16,8 @@ from inspect_ai.util import sandbox
 
 CODE_AGENT_CLI = "/app/dist/cli/index.cjs"
 SCORER_CLI = "/app/scripts/inspect/score-case.ts"
-DEFAULT_DATASET = ".code-agent/inspect/five-case.jsonl"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DATASET = str(REPO_ROOT / ".code-agent" / "inspect" / "five-case.jsonl")
 
 
 def _message_text(message: Any) -> str:

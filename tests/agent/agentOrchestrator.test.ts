@@ -341,6 +341,8 @@ describe('AgentOrchestrator', () => {
         },
       }),
       getApiKey: vi.fn().mockReturnValue('test-api-key'),
+      // N-L10S3: 同 permissionResponseDelivery——权限岛构造期接线该方法，as unknown 让 typecheck 抓不到缺席
+      isDevModeAutoApproveEnabled: vi.fn().mockReturnValue(false),
     } as unknown as ConfigService;
 
     mockOnEvent = vi.fn();

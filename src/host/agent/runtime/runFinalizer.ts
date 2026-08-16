@@ -59,6 +59,8 @@ import {
 } from '../../session/completionSummaryService';
 import { getConfiguredSurfaceExecutionRuntime } from '../../services/surfaceExecution/SurfaceExecutionRuntime';
 import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
+import type { CompletionSummaryRecord } from '../../../shared/contract/completionSummary';
+import { recordTurnOutcomeStamp } from './turnOutcomeStamp';
 
 const logger = createLogger('AgentLoop');
 
@@ -366,8 +368,9 @@ export class RunFinalizer {
       langfuse.endTrace(this.ctx.stats.traceId, `Completed in ${iterations} iterations`);
     }
 
+    let completionSummary: CompletionSummaryRecord | undefined;
     try {
-      const completionSummary = await buildCompletionSummaryRecord({
+      completionSummary = await buildCompletionSummaryRecord({
         ctx: this.ctx,
         status: terminalStatus,
         iterations,
@@ -386,6 +389,8 @@ export class RunFinalizer {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+
+    await recordTurnOutcomeStamp(this.ctx, terminalStatus, completionSummary);
 
     // 先落内部 completion contract，再通知前端关闭 "组织回复中" loading。
     // 后续 post-processing（hooks / learning / summary）跑在后台，不再阻塞 UI。

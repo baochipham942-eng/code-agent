@@ -40,7 +40,7 @@
 **施工中纠正了 F1 的原始定位**（擂台/记忆把它框在 testRunner 上是错的，核实见下）：
 
 - **testRunner 那条不是 bug**：testRunner.ts:659 的判分纯靠断言（assertionEngine 无任何 LLM judge 路径），`deterministic_assertion`/`self_check` 是**如实标注**不是漏标。不存在"从没产 llm_judge"的缺陷——因为 testRunner 压根没用 LLM 判分。不该在这里凭空造一条 llm_judge 路径。
-- **真正的 F1 缺陷在 harness→canonical 映射**：`toCanonicalEvalHarnessResult`（experimentAdapter L416-457）此前**整个丢了 scoreAuthority**，而 eval-harness 的 medianScore 是 **LLM grader 产出的**（ExperimentRunner「LLM grader failed」路径为证）。结果：LLM 判分进 canonical/DB/Eval Center 时 scoreAuthority=undefined，被 htmlReportGenerator 归 `unknown` 桶，等于 LLM 分冒充"未标注"混进 headline。
+- **真正的 F1 缺陷在 harness→canonical 映射**：`toCanonicalEvalHarnessResult`（experimentAdapter L416-457）此前**整个丢了 scoreAuthority**，而 eval-harness 的 medianScore 是 **LLM grader 产出的**（ExperimentRunner「LLM grader failed」路径为证）。结果：LLM 判分进 canonical/DB/Eval Center 时 scoreAuthority=undefined，被 `reportGenerator` 归 `unknown` 桶，等于 LLM 分冒充"未标注"混进 headline。
 
 **Part 1（已完成）**：`toCanonicalEvalHarnessResult` 如实标注——非 degraded=`llm_judge`（本路径无校准记录=默认未校准）、degraded=`deterministic_assertion`（确定性 replay gate 判失败，score 归零）。纯标注真相，零 headline 数值变化。测试：experimentAdapter.test.ts 两条断言（llm_judge / deterministic）。
 

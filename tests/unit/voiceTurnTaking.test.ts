@@ -63,6 +63,7 @@ describe('声纹门（N-L7-SPK 判据3 协议级正负成对）', () => {
       text: '明天上海的天气还是不错的',
       stage: 'final',
       speakerMismatch: false,
+      evidenceTier: 'strong',
     })).toMatchObject({ classification: 'true_interrupt', cancel: true });
   });
 
@@ -76,13 +77,14 @@ describe('声纹门（N-L7-SPK 判据3 协议级正负成对）', () => {
     })).toMatchObject({ classification: 'true_interrupt', cancel: true });
   });
 
-  it('未提供声纹证据（unknown/未启用）→ 与现状完全一致（fail-open）', () => {
+  it('声纹 unknown 仍由 L2 证据闸兜住：证据不足不再走旧兜底', () => {
     expect(decideVoiceInterrupt({
       assistantPlaying: true,
       durationMs: 2_400,
       text: '明天上海的天气还是不错的',
       stage: 'final',
-    })).toMatchObject({ classification: 'true_interrupt', cancel: true });
+      evidenceTier: 'medium',
+    })).toMatchObject({ classification: 'unverified', cancel: false, shouldRespond: false, evidenceGated: true });
   });
 
   it('声纹 mismatch 不影响豁免枚举（附和仍是附和，不会被误标 gated）', () => {
@@ -93,5 +95,32 @@ describe('声纹门（N-L7-SPK 判据3 协议级正负成对）', () => {
       stage: 'final',
       speakerMismatch: true,
     })).toMatchObject({ classification: 'acknowledgement', cancel: false });
+  });
+});
+
+describe('L2 证据闸 + L3 兜底翻转', () => {
+  it('电视播报的 medium 证据进入 unverified，不取消也不应答', () => {
+    expect(decideVoiceInterrupt({
+      assistantPlaying: true,
+      durationMs: 2_400,
+      text: '明天上海多云转晴，气温十八到二十五度',
+      stage: 'final',
+      evidenceTier: 'medium',
+    })).toMatchObject({
+      classification: 'unverified',
+      cancel: false,
+      shouldRespond: false,
+      evidenceGated: true,
+    });
+  });
+
+  it('真人指向性打断的 strong 证据仍可取消并应答', () => {
+    expect(decideVoiceInterrupt({
+      assistantPlaying: true,
+      durationMs: 1_800,
+      text: '你能不能帮我查一下明天的天气',
+      stage: 'final',
+      evidenceTier: 'strong',
+    })).toMatchObject({ classification: 'true_interrupt', cancel: true, shouldRespond: true });
   });
 });

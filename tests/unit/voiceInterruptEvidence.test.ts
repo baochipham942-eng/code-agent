@@ -1,6 +1,6 @@
-// 证据层走**真实路径**断言：生产里没人调纯函数，调的是 sampleVoiceInterruptEvidence，
-// 而它的产物就是落进遥测的那条记录——shadow mode 要量的正是这个。
-// 所以这里断言遥测收到了什么，而不是给纯函数开一个只为测试存在的 export。
+// 证据层走**真实路径**断言：判定链消费 collect 的结果，再把同一对象交给
+// sampleVoiceInterruptEvidence 落遥测。这里同时钉判决和遥测，防止重新长成
+// 「量的是一套、判的是另一套」。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const telemetry = vi.hoisted(() => ({ recordVoiceInterruptEvidence: vi.fn() }));
@@ -12,6 +12,10 @@ vi.mock('../../src/host/services/infra/logger', () => ({
 const { sampleVoiceInterruptEvidence } = await import(
   '../../src/host/services/voice/voiceInterruptEvidence'
 );
+const {
+  evaluateVoiceInterruptDecision,
+  recordVoiceInterruptDecisionSample,
+} = await import('../../src/host/services/voice/voiceInterruptDecision');
 const {
   VOICE_INTERRUPT_BURST_MIN_COUNT,
   VOICE_INTERRUPT_BURST_WINDOW_MS,
@@ -142,5 +146,96 @@ describe('打断证据层（L2）· 经采样出口的真实路径', () => {
     expect(r.tier).toBe('weak');
     expect(r.decidedClassification).toBe('true_interrupt');
     expect(r.decidedCancel).toBe(true);
+  });
+});
+
+describe('L2 证据被判定链真实消费', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('真机 shadow 对照档位：电视 medium/1 被拦，真人 strong/3 穿过', () => {
+    const tvCandidate = {
+      id: 'turn-tv',
+      startedAt: T0,
+      durationMs: 2_400,
+      playedMs: 7_100,
+      decided: false,
+      responseRequested: false,
+    };
+    const tv = evaluateVoiceInterruptDecision({
+      candidate: tvCandidate,
+      candidates: [tvCandidate],
+      assistantPlaying: true,
+      text: '明天上海多云转晴，气温十八到二十五度',
+      stage: 'final',
+      speakerMismatch: false,
+    });
+    expect(tv.evidence).toMatchObject({ tier: 'medium', score: 1, addressed: false });
+    expect(tv.decision).toMatchObject({
+      classification: 'unverified',
+      cancel: false,
+      shouldRespond: false,
+      evidenceGated: true,
+    });
+
+    const humanCandidate = {
+      id: 'turn-human',
+      startedAt: T0 + 120_000,
+      durationMs: 1_800,
+      playedMs: 6_000,
+      decided: false,
+      responseRequested: false,
+    };
+    const human = evaluateVoiceInterruptDecision({
+      candidate: humanCandidate,
+      candidates: [humanCandidate],
+      assistantPlaying: true,
+      text: '你能不能帮我查一下明天的天气',
+      stage: 'final',
+      speakerMismatch: false,
+    });
+    expect(human.evidence).toMatchObject({ tier: 'strong', score: 3, addressed: true });
+    expect(human.decision).toMatchObject({
+      classification: 'true_interrupt',
+      cancel: true,
+      shouldRespond: true,
+    });
+  });
+
+  it('遥测落的是判定链已消费的同一份 evidence', () => {
+    const candidate = {
+      id: 'turn-tv',
+      startedAt: T0,
+      durationMs: 2_400,
+      playedMs: 7_100,
+      decided: false,
+      responseRequested: false,
+    };
+    const evaluated = evaluateVoiceInterruptDecision({
+      candidate,
+      candidates: [candidate],
+      assistantPlaying: true,
+      text: '明天上海多云转晴，气温十八到二十五度',
+      stage: 'final',
+      speakerMismatch: false,
+    });
+
+    recordVoiceInterruptDecisionSample({
+      provider: 'dashscope-qwen-omni',
+      voiceSessionId: 'vs-wired',
+      candidateId: candidate.id,
+      candidate,
+      assistantPlaying: true,
+      priorStartedAt: evaluated.priorStartedAt,
+      text: '明天上海多云转晴，气温十八到二十五度',
+      decision: evaluated.decision,
+      evidence: evaluated.evidence,
+    });
+
+    expect(telemetry.recordVoiceInterruptEvidence).toHaveBeenCalledWith(expect.objectContaining({
+      tier: evaluated.evidence.tier,
+      score: evaluated.evidence.score,
+      decidedClassification: evaluated.decision.classification,
+      decidedCancel: evaluated.decision.cancel,
+    }));
   });
 });

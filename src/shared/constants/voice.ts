@@ -166,9 +166,8 @@ export const VOICE_STALE_SILENCE_DEFAULTS_MS = [500, 800] as const;
 export const VOICE_STALE_PREFIX_DEFAULTS_MS = [300] as const;
 
 /**
- * 打断证据层（L2）的判别阈值。**当前处于 shadow mode，这四个值是占位口径**：
- * 真实分布（开电视 vs 正常对话两组）拿到之前，它们只决定采样时怎么标注，不决定行为。
- * 接进判定链之前必须按实测分布重定，别把占位值当结论。
+ * 打断证据层（L2）的判别阈值。2026-08-16 shadow 真机分布确认：正常指向性请求
+ * score=3/strong，电视播报 score=1/medium；据此只让 strong 兜底打断穿过证据闸。
  */
 
 /** 触发速率的观察窗。电视人声在窗内会反复触发，真人打断是稀疏事件。 */
@@ -182,6 +181,12 @@ export const VOICE_INTERRUPT_EARLY_OVERLAP_MS = 1_200;
 
 /** 语音多长算「像一句真话」而不是一声杂音。 */
 export const VOICE_INTERRUPT_SUBSTANTIVE_SPEECH_MS = 700;
+
+/**
+ * false interruption 延迟丢弃窗口。对齐设计单引用的 LiveKit 默认值：2 秒内没有
+ * 后续 speech_started 或 final 字幕就判误打断，从暂停点恢复。
+ */
+export const VOICE_FALSE_INTERRUPTION_TIMEOUT_MS = 2_000;
 
 /** 上行麦克风采样率（Hz），厂商要求 16k 单声道 PCM16。 */
 export const VOICE_UPSTREAM_SAMPLE_RATE = 16_000;

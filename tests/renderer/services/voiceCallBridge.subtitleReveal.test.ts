@@ -23,13 +23,20 @@ vi.mock('../../../src/renderer/services/voiceEchoHint', () => ({
   maybeShowSpeakerEchoHint: vi.fn(async () => undefined),
   showVoiceAecFallbackWarning: vi.fn(),
 }));
+let pipelinePlaying = false;
+const pausePlayback = vi.fn(() => { pipelinePlaying = false; });
+const resumePlayback = vi.fn(() => { pipelinePlaying = true; });
+const clearPlayback = vi.fn(() => { pipelinePlaying = false; });
 const pipelineStub = {
   setCaptureOpen() {},
   async start() {},
   stop() {},
   setMuted() {},
-  enqueuePlayback() {},
-  clearPlayback() {},
+  enqueuePlayback() { pipelinePlaying = true; },
+  pausePlayback,
+  resumePlayback,
+  clearPlayback,
+  getPlaybackState: () => ({ playing: pipelinePlaying, playedMs: 1_000, queuedMs: 9_000 }),
 };
 vi.mock('../../../src/renderer/services/voiceAudioPipeline', () => ({
   VoiceAudioPipeline: class { constructor() { return { ...pipelineStub }; } },
@@ -93,6 +100,10 @@ async function dialAndOpen(): Promise<FakeWebSocket> {
 describe('voiceCallBridge 字幕揭示绑播放进度', () => {
   beforeEach(() => {
     sockets = [];
+    pipelinePlaying = false;
+    pausePlayback.mockClear();
+    resumePlayback.mockClear();
+    clearPlayback.mockClear();
     vi.stubGlobal('WebSocket', class extends FakeWebSocket {
       constructor() { super(); sockets.push(this); }
     });
@@ -194,7 +205,7 @@ describe('voiceCallBridge 字幕揭示绑播放进度', () => {
     expect(partial()).toBe('');
   });
 
-  it('边界2 barge-in：onset 只暂停，语义确认后才丢弃', async () => {
+  it('边界2 barge-in：hold 维持暂停，confirm 后才丢弃', async () => {
     const socket = await dialAndOpen();
     vi.useFakeTimers();
 
@@ -210,13 +221,46 @@ describe('voiceCallBridge 字幕揭示绑播放进度', () => {
       type: 'interrupt.decision',
       candidateId: 'turn-old',
       classification: 'true_interrupt',
-      action: 'cancel_discard',
+      action: 'hold',
     });
+    expect(clearPlayback).not.toHaveBeenCalled();
+    expect(partial()).not.toBe('');
+    sendEvent(socket, { type: 'interrupt.confirm', candidateId: 'turn-old' });
+    expect(clearPlayback).toHaveBeenCalledTimes(1);
     expect(partial()).toBe('');
 
     // 剩下的文本永远不会被念出来，揭示器不许继续长
     await vi.advanceTimersByTimeAsync(AUDIO_SECONDS * 1000);
     expect(partial()).toBe('');
+  });
+
+  it('反悔通道：hold 窗内未确认时 revoke 从暂停点恢复，不清 buffer', async () => {
+    const socket = await dialAndOpen();
+    vi.useFakeTimers();
+
+    burstDeltas(socket, FULL_TEXT);
+    sendAudio(socket, AUDIO_SECONDS);
+    await vi.advanceTimersByTimeAsync(1_000);
+    const revealedBefore = partial();
+
+    sendEvent(socket, { type: 'speech.started', candidateId: 'turn-false' });
+    sendEvent(socket, {
+      type: 'interrupt.decision',
+      candidateId: 'turn-false',
+      classification: 'true_interrupt',
+      action: 'hold',
+    });
+    expect(pausePlayback).toHaveBeenCalledTimes(1);
+    expect(clearPlayback).not.toHaveBeenCalled();
+
+    sendEvent(socket, { type: 'interrupt.revoke', candidateId: 'turn-false' });
+    expect(resumePlayback).toHaveBeenCalledTimes(1);
+    expect(clearPlayback).not.toHaveBeenCalled();
+    expect(partial()).toBe(revealedBefore);
+    expect(useVoiceCallStore.getState().partialUser).toBe('');
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(partial().length).toBeGreaterThan(revealedBefore.length);
   });
 
   it('cancel_discard 后同一 response 的晚到 final/done 不得复活字幕', async () => {

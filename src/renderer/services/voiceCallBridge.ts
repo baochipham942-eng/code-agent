@@ -972,6 +972,7 @@ class VoiceCallBridge {
           event.classification === 'background'
           || event.classification === 'acknowledgement'
           || event.classification === 'short_fragment'
+          || event.classification === 'unverified'
         ) {
           delete this.settledPartials.user;
           this.resetUserTranscriptAccumulator();
@@ -986,7 +987,7 @@ class VoiceCallBridge {
               assistantSpeaking: playback?.playing ?? this.store().assistantSpeaking,
             });
           }
-        } else {
+        } else if (event.action === 'cancel_discard') {
           this.audio?.clearPlayback();
           if (!event.responseId || this.revealResponseId === event.responseId) {
             this.pendingHandoffSessionId = null;
@@ -997,10 +998,39 @@ class VoiceCallBridge {
             });
           }
         }
-        if (this.pausedCandidateId === event.candidateId) {
+        if (event.action !== 'hold' && this.pausedCandidateId === event.candidateId) {
           this.pausedCandidateId = null;
           this.playbackPausedAt = 0;
         }
+        break;
+      case 'interrupt.confirm':
+        if (this.pausedCandidateId !== event.candidateId) break;
+        this.audio?.clearPlayback();
+        this.pendingHandoffSessionId = null;
+        this.endRevealCycle();
+        this.store().eventApplied({
+          assistantSpeaking: false,
+          ...(this.settledPartials.assistant === undefined ? { partialAssistant: '' } : {}),
+        });
+        this.pausedCandidateId = null;
+        this.playbackPausedAt = 0;
+        break;
+      case 'interrupt.revoke':
+        if (this.pausedCandidateId !== event.candidateId) break;
+        this.audio?.resumePlayback?.();
+        if (this.playbackPausedAt) this.playbackEndsAt += Date.now() - this.playbackPausedAt;
+        {
+          const playback = this.audio?.getPlaybackState?.();
+          this.store().eventApplied({
+            assistantSpeaking: playback?.playing ?? true,
+            userSpeaking: false,
+            partialUser: '',
+          });
+        }
+        delete this.settledPartials.user;
+        this.resetUserTranscriptAccumulator();
+        this.pausedCandidateId = null;
+        this.playbackPausedAt = 0;
         break;
       case 'user.transcript':
         {

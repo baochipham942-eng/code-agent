@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
 import type { VoiceEvent, VoiceTransport, VoiceWorkItem } from '../../src/shared/contract/voice';
-import { QWEN_OMNI_REALTIME_MODEL, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL, VOICE_MILESTONE_FIRST_DELAY_MS, VOICE_MILESTONE_MAX_PER_WORK_ITEM, VOICE_MILESTONE_MIN_INTERVAL_MS, VOICE_MILESTONE_STALE_MS } from '../../src/shared/constants/voice';
+import { QWEN_OMNI_REALTIME_MODEL, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_FALSE_INTERRUPTION_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_TRANSCRIPT_MERGE_WINDOW_MS, VOICE_WS_CLOSE_TERMINAL, VOICE_MILESTONE_FIRST_DELAY_MS, VOICE_MILESTONE_MAX_PER_WORK_ITEM, VOICE_MILESTONE_MIN_INTERVAL_MS, VOICE_MILESTONE_STALE_MS } from '../../src/shared/constants/voice';
 
 const vocabulary = vi.hoisted(() => ({ block: '' }));
 vi.mock('../../src/host/services/voice/voiceVocabulary', () => ({
@@ -502,10 +502,10 @@ describe('voiceSessionService 互斥与挂断', () => {
     expect(interruptMock).toHaveBeenCalledTimes(1);
     expect(client.sent.map((raw) => raw === '<binary>' ? null : JSON.parse(raw)).filter(Boolean)).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ type: 'response.cancelled', responseId: 'resp-old' }),
-        expect.objectContaining({ type: 'interrupt.decision', action: 'cancel_discard', responseId: 'resp-old' }),
+        expect.objectContaining({ type: 'interrupt.decision', action: 'hold', responseId: 'resp-old' }),
       ]),
     );
+    expect(client.sent.some((raw) => raw.includes('response.cancelled'))).toBe(false);
 
     lastOnEvent?.({
       type: 'assistant.transcript',
@@ -521,6 +521,13 @@ describe('voiceSessionService 互斥与挂断', () => {
       text: '等一下，改成从十倒数到一',
       done: true,
     });
+
+    expect(client.sent.map((raw) => raw === '<binary>' ? null : JSON.parse(raw)).filter(Boolean)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'response.cancelled', responseId: 'resp-old' }),
+        expect.objectContaining({ type: 'interrupt.confirm', candidateId: 'turn-2' }),
+      ]),
+    );
 
     expect(respondMock).toHaveBeenCalledTimes(1);
     expect(respondMock).toHaveBeenCalledWith(
@@ -556,6 +563,99 @@ describe('voiceSessionService 互斥与挂断', () => {
       itemId: 'item-new',
     });
     expect(transcripts.some((message) => message.content.includes('旧回答'))).toBe(false);
+  });
+
+  it('电视播报走证据闸 unverified：不取消、不应答、不落用户字幕', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-tv-evidence-gate');
+    upstreamResponding = true;
+    interruptResponseId = 'resp-story';
+
+    lastOnEvent?.({ type: 'response.created', responseId: 'resp-story' });
+    lastOnEvent?.({ type: 'speech.started', candidateId: 'turn-tv' });
+    client.emit('message', Buffer.from(JSON.stringify({
+      type: 'interrupt.playback',
+      candidateId: 'turn-tv',
+      playing: true,
+      playedMs: 7_100,
+      queuedMs: 16_900,
+    })), false);
+    lastOnEvent?.({ type: 'speech.stopped', candidateId: 'turn-tv', durationMs: 2_400 });
+    lastOnEvent?.({
+      type: 'user.transcript',
+      candidateId: 'turn-tv',
+      itemId: 'item-tv',
+      text: '明天上海多云转晴，气温十八到二十五度',
+      done: true,
+    });
+
+    expect(interruptMock).not.toHaveBeenCalled();
+    expect(respondMock).not.toHaveBeenCalled();
+    expect(addMessageToSession).not.toHaveBeenCalled();
+    const events = client.sent
+      .filter((raw) => raw !== '<binary>')
+      .map((raw) => JSON.parse(raw) as VoiceEvent);
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'interrupt.decision',
+        candidateId: 'turn-tv',
+        classification: 'unverified',
+        action: 'resume',
+      }),
+    ]));
+    expect(events.some((event) => event.type === 'user.transcript' && event.itemId === 'item-tv')).toBe(false);
+    expect(voiceLogger.info).toHaveBeenCalledWith(
+      'voice interrupt decision',
+      expect.objectContaining({
+        candidateId: 'turn-tv',
+        classification: 'unverified',
+        layer: 'evidence_gate',
+        evidenceTier: 'medium',
+        evidenceScore: 1,
+      }),
+    );
+  });
+
+  it('反悔窗内没有 final 或后续 speech：hold 到期 revoke，回复不丢且不误应答', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeClient();
+      await attachVoiceClient(client as never, 'session-false-interruption');
+      upstreamResponding = true;
+      interruptResponseId = 'resp-false-interruption';
+
+      lastOnEvent?.({ type: 'response.created', responseId: 'resp-false-interruption' });
+      lastOnEvent?.({ type: 'speech.started', candidateId: 'turn-false-interruption' });
+      client.emit('message', Buffer.from(JSON.stringify({
+        type: 'interrupt.playback',
+        candidateId: 'turn-false-interruption',
+        playing: true,
+        playedMs: 1_800,
+        queuedMs: 8_000,
+      })), false);
+      // 故障注入：ASR partial 一度误识别成显式打断，之后静默且永远没有 final。
+      lastOnEvent?.({
+        type: 'user.transcript',
+        candidateId: 'turn-false-interruption',
+        text: '等一下',
+        done: false,
+      });
+
+      expect(client.sent.some((raw) => raw.includes('"action":"hold"'))).toBe(true);
+      await vi.advanceTimersByTimeAsync(VOICE_FALSE_INTERRUPTION_TIMEOUT_MS - 1);
+      expect(client.sent.some((raw) => raw.includes('interrupt.revoke'))).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(client.sent.some((raw) => raw.includes('interrupt.revoke'))).toBe(true);
+      expect(client.sent.some((raw) => raw.includes('interrupt.confirm'))).toBe(false);
+      expect(respondMock).not.toHaveBeenCalled();
+      expect(voiceLogger.info).toHaveBeenCalledWith(
+        'voice interrupt delayed discard revoked',
+        expect.objectContaining({ layer: 'false_interruption', reason: 'silence_timeout' }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('附和 final 恢复播放，不取消、不建回复、不落用户消息', async () => {
@@ -704,7 +804,7 @@ describe('voiceSessionService 互斥与挂断', () => {
       lastOnEvent?.({
         type: 'user.transcript',
         itemId: 'item-a',
-        text: '上一段改成从一数到三',
+        text: '请把上一段改成从一数到三',
         done: true,
       });
       await vi.advanceTimersByTimeAsync(0);
@@ -721,12 +821,12 @@ describe('voiceSessionService 互斥与挂断', () => {
         expect.objectContaining({
           type: 'user.transcript',
           itemId: 'item-a',
-          text: '上一段改成从一数到三',
+          text: '请把上一段改成从一数到三',
           done: true,
         }),
       ]));
       expect(addMessageToSession.mock.calls.some(([, message]) => (
-        message.role === 'user' && message.content === '上一段改成从一数到三'
+        message.role === 'user' && message.content === '请把上一段改成从一数到三'
       ))).toBe(true);
     } finally {
       vi.useRealTimers();

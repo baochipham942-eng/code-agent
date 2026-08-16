@@ -77,7 +77,7 @@ function runStatusLabel(run?: RunUiState | null): string | null {
     case 'blocked':
       return '已阻塞';
     case 'waiting_approval':
-      return '等待审批';
+      return '等你确认';
     case 'planning':
       return '正在分析';
     case 'using_tools':

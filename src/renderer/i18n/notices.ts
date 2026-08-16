@@ -80,7 +80,7 @@ export const noticesZh = {
     agentNotice: {
       heartbeatCheckFailed: 'Heartbeat「{name}」检查失败：{error}（连续 {count} 次）',
       heartbeatStatusAlert: 'Heartbeat「{name}」状态：{status}',
-      autoAgentAwaitingApproval: '任务列表已生成，等待审批',
+      autoAgentAwaitingApproval: '任务列表已生成，等你确认',
       delegateModeActive: 'Delegate 模式：任务将委派给子 Agent 执行',
       agentRouted: '使用 Agent：{agentName}',
     },
@@ -158,7 +158,7 @@ export const noticesEn: typeof noticesZh = {
     agentNotice: {
       heartbeatCheckFailed: 'Heartbeat "{name}" check failed: {error} ({count} in a row)',
       heartbeatStatusAlert: 'Heartbeat "{name}" status: {status}',
-      autoAgentAwaitingApproval: 'Task list generated, awaiting approval',
+      autoAgentAwaitingApproval: 'Task list generated, waiting for you to confirm',
       delegateModeActive: 'Delegate mode: the task will be handed off to a sub-agent',
       agentRouted: 'Using agent: {agentName}',
     },

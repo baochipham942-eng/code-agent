@@ -95,7 +95,7 @@ describe('通话模型可配（工单③）', () => {
   it('DashScope 通话白名单只保留 3.5，上一代模型与独占音色都不再下发给 UI', () => {
     expect(REALTIME_VOICE_PROVIDER_PROFILES['dashscope-qwen-omni'].models).toEqual([{
       id: QWEN_OMNI_REALTIME_MODEL,
-      displayName: QWEN_OMNI_REALTIME_MODEL,
+      displayName: 'Qwen3.5 Omni Flash Realtime',
       voices: ['Tina', 'Ethan', 'Serena'],
     }]);
   });
@@ -115,7 +115,7 @@ describe('通话模型可配（工单③）', () => {
     expect(frames).toContainEqual(expect.objectContaining({
       type: 'notice',
       code: 'VOICE_CALL_SETTINGS_FALLBACK',
-      message: `${QWEN_OMNI_REALTIME_MODEL} / Tina`,
+      message: 'Qwen3.5 Omni Flash Realtime / Tina',
     }));
 
     // 这通电话得真说过话，否则按 A3 零字幕通话根本不落摘要卡

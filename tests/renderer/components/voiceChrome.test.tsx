@@ -106,6 +106,14 @@ describe('VoiceChrome 固定槽位', () => {
     expect(screen.getByTestId('voice-call-cost').textContent).toContain('¥0.1340');
   });
 
+  it('还没有可用估算时说明原因，不用破折号暗示免费', () => {
+    dialInto();
+    render(<VoiceChrome sessionId="session-1" />);
+
+    expect(screen.getByTestId('voice-call-cost').textContent).toContain(zh.voice.live.costUnavailable);
+    expect(screen.getByTestId('voice-call-cost').textContent).not.toContain('—');
+  });
+
   it('在干活：统一显示“通话中 mm:ss”，不显示当前任务与剩余工作数，操作数为 2', () => {
     dialInto();
     const store = useVoiceCallStore.getState();

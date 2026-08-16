@@ -339,7 +339,14 @@ export const VoiceModelSettings: React.FC = () => {
                 }`}
               >
                 <span className="w-4 text-xs">{active ? '✓' : ''}</span>
-                <span className="flex-1 font-mono">{voice}</span>
+                <span className="flex-1">
+                  <span className="font-mono">{voice}</span>
+                  {voice in text.voiceDescriptions && (
+                    <span className="ml-1.5 text-xs text-zinc-500">
+                      · {text.voiceDescriptions[voice as keyof typeof text.voiceDescriptions]}
+                    </span>
+                  )}
+                </span>
                 <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-500">
                   {text.samplePending}
                 </span>

@@ -57,11 +57,11 @@ function byteLength(content: string): number {
 function canonicalDynamicTailBlocks(message: ModelMessage, canonical: string): string[] | null {
   if (typeof message.content !== 'string') return null;
   const encodedContent = JSON.stringify(message.content);
-  const marker = `\"content\":${encodedContent}`;
+  const marker = `"content":${encodedContent}`;
   const markerOffset = canonical.indexOf(marker);
   if (markerOffset < 0 || encodedContent.length < 2) return null;
 
-  const encodedOffset = markerOffset + '\"content\":'.length;
+  const encodedOffset = markerOffset + '"content":'.length;
   const prefix = canonical.slice(0, encodedOffset + 1);
   const suffix = canonical.slice(encodedOffset + encodedContent.length - 1);
   const contentBlocks = message.content

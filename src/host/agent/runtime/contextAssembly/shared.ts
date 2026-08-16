@@ -115,6 +115,11 @@ export type CurrentAttachment = {
   mimeType?: string;
 };
 
+export type ModelMessagesWithSources = ModelMessage[] & {
+  /** 与消息数组逐项对齐；特殊拼装内容使用约定的来源哨兵。 */
+  readonly modelMessageSourceIds: readonly string[];
+};
+
 /** 2b: inference 一次性重试恢复状态（原 RuntimeContext 字段，ADR-038 批2b 下沉） */
 export interface InferenceRecoveryState {
   _contextOverflowRetried: boolean;
@@ -143,7 +148,7 @@ export interface ContextAssemblyCtx {
     cache?: { cacheReadTokens?: number; cacheCreationTokens?: number },
   ): void;
   inference(): Promise<ModelResponse>;
-  buildModelMessages(): Promise<ModelMessage[]>;
+  buildModelMessages(): Promise<ModelMessagesWithSources>;
   buildContextTranscriptEntries(messages: Message[]): ContextTranscriptEntry[];
   mapInterventionsToTranscriptEntries(
     interventions: ContextInterventionSnapshot,

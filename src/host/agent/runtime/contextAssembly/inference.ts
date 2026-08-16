@@ -468,7 +468,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   let artifactRequest = false;
   let pendingCapabilityFallback: ModelFallbackInfo | null = null;
 
-  let modelMessages: ModelMessage[] = await ctx.buildModelMessages();
+  const builtModelMessages = await ctx.buildModelMessages();
+  let modelMessages: ModelMessage[] = builtModelMessages;
   if (ctx.runtime.control.forceFinalResponsePrompt) {
     modelMessages = [
       ...modelMessages,

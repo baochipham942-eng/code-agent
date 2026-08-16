@@ -60,7 +60,7 @@ import { logCollector } from '../../../mcp/logCollector.js';
 import { countTraceEntries, recordMemoryInjectionTrace } from '../../../memory/memoryInjectionTrace';
 import { recordTurnMemoryBlock } from '../turnQuality';
 import { createHash } from 'crypto';
-import type { ContextAssemblyCtx, ContextTranscriptEntry } from './shared';
+import type { ContextAssemblyCtx, ContextTranscriptEntry, ModelMessagesWithSources } from './shared';
 import { logger } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 import { appendNativeGenerativeUIPromptBlocks } from './nativeGenerativeUIPrompt';
@@ -653,7 +653,7 @@ ${deferredToolsSummary}
   return { systemPrompt, turnContext };
 }
 
-export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<ModelMessage[]> {
+export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<ModelMessagesWithSources> {
   ctx.flushHookMessageBuffer();
 
   const modelMessages: ModelMessage[] = [];
@@ -1060,5 +1060,11 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   }
 
   flushPromptLayerRecords(ctx);
-  return modelMessages;
+  Object.defineProperty(modelMessages, 'modelMessageSourceIds', {
+    value: Object.freeze([...modelMessageSourceIds]),
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+  return modelMessages as ModelMessagesWithSources;
 }

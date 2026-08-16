@@ -1048,7 +1048,9 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
     ids,
     prediction,
     caseDir,
-    reportFormats: caseDir ? ['markdown', 'json'] : [],
+    // Markdown/JSON 是 judge 的权威交付物；Inspect 负责单次 .eval 回放，不替代成本、
+    // baseline 等 Neo 专用汇总。核心集和外部 case-dir 都必须落这两份报告。
+    reportFormats: ['markdown', 'json'],
   });
 
   // Real 模式：打印本进程实际 token 消耗与成本（budgetService 进程内累计，

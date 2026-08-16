@@ -700,15 +700,13 @@ export class TestRunner {
       turnCount: 0,
       score: 0,
     };
-    const costLimit = testCase.max_cost_usd !== undefined
-      ? createScopedCostLimit(testCase.max_cost_usd)
-      : undefined;
+    // 每个 case 都建独立 usage 账，未声明 hard cap 时用有限的最大安全数，仅做归集不触发闸。
+    const costTracker = createScopedCostLimit(testCase.max_cost_usd ?? Number.MAX_VALUE);
+    const costLimit = testCase.max_cost_usd !== undefined ? costTracker : undefined;
     if (testCase.max_cost_usd !== undefined) {
       result.costLimitUsd = testCase.max_cost_usd;
     }
-    const sendMessage = (prompt: string) => costLimit
-      ? costLimit.run(() => agent.sendMessage(prompt))
-      : agent.sendMessage(prompt);
+    const sendMessage = (prompt: string) => costTracker.run(() => agent.sendMessage(prompt));
     let completedExecution = false;
 
     logger.info('Running test', { testId: testCase.id });
@@ -1096,7 +1094,14 @@ export class TestRunner {
 
       result.endTime = Date.now();
       result.duration = result.endTime - result.startTime;
-      if (costLimit) result.costUsd = costLimit.getCostUsd();
+      const usage = costTracker.getUsage();
+      if (usage) {
+        result.usage = usage;
+        result.usageStatus = 'available';
+        result.costUsd = costTracker.getCostUsd();
+      } else {
+        result.usageStatus = 'usage_unavailable';
+      }
 
       logger.info('Test completed', {
         testId: testCase.id,

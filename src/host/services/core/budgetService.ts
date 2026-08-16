@@ -12,7 +12,7 @@ import {
   type ModelPricingEntry,
 } from '../../../shared/constants';
 import { getDatabase } from './databaseService';
-import { recordScopedCost } from './scopedCostLimit';
+import { recordScopedCost, recordScopedUsage } from './scopedCostLimit';
 
 const logger = createLogger('BudgetService');
 
@@ -76,6 +76,8 @@ export interface TokenUsage {
   timestamp: number;
   /** 归属会话（A7 用量账本落库用，非全部调用点都有） */
   sessionId?: string;
+  /** provider 原始 response 的 usage，或本地估算；评测报告只接受前者。 */
+  source?: 'provider' | 'estimated';
 }
 
 // Pricing sourced from shared constants (per 1M tokens, USD)
@@ -207,6 +209,7 @@ export class BudgetService {
     // eval 的单 case hard cap 独立于全局 budget 开关：即使用户关闭全局告警，
     // case 声明的上限仍必须 fail-closed，不能退化成只显示估算。
     const cost = this.calculateCost(usage);
+    recordScopedUsage(usage);
     recordScopedCost(cost);
     if (!this.config.enabled) return;
 

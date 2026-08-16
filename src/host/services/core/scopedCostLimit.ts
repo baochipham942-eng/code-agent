@@ -3,7 +3,22 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 interface ScopedCostState {
   readonly maxCostUsd: number;
   costUsd: number;
+  promptTokens: number;
+  completionTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  usageRecorded: boolean;
+  /** 一次本地估算就让整 case 不能冒充 provider 实际 usage。 */
+  usageUnavailable: boolean;
   exceeded: boolean;
+}
+
+export interface ScopedTokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
 }
 
 const scopedCostStorage = new AsyncLocalStorage<ScopedCostState>();
@@ -43,9 +58,20 @@ function throwIfExceeded(state: ScopedCostState): void {
 export function createScopedCostLimit(maxCostUsd: number): {
   run<T>(operation: () => Promise<T>): Promise<T>;
   getCostUsd(): number;
+  getUsage(): ScopedTokenUsage | undefined;
 } {
   assertValidLimit(maxCostUsd);
-  const state: ScopedCostState = { maxCostUsd, costUsd: 0, exceeded: false };
+  const state: ScopedCostState = {
+    maxCostUsd,
+    costUsd: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    usageRecorded: false,
+    usageUnavailable: false,
+    exceeded: false,
+  };
   return {
     run<T>(operation: () => Promise<T>): Promise<T> {
       return scopedCostStorage.run(state, async () => {
@@ -58,6 +84,16 @@ export function createScopedCostLimit(maxCostUsd: number): {
     getCostUsd(): number {
       return state.costUsd;
     },
+    getUsage(): ScopedTokenUsage | undefined {
+      if (state.usageUnavailable || !state.usageRecorded) return undefined;
+      return {
+        promptTokens: state.promptTokens + state.cacheReadTokens + state.cacheCreationTokens,
+        completionTokens: state.completionTokens,
+        totalTokens: state.promptTokens + state.cacheReadTokens + state.cacheCreationTokens + state.completionTokens,
+        cacheReadTokens: state.cacheReadTokens,
+        cacheCreationTokens: state.cacheCreationTokens,
+      };
+    },
   };
 }
 
@@ -65,8 +101,32 @@ export function createScopedCostLimit(maxCostUsd: number): {
 export function recordScopedCost(costUsd: number): void {
   const state = scopedCostStorage.getStore();
   if (!state) return;
+  state.usageRecorded = true;
   state.costUsd += costUsd;
   throwIfExceeded(state);
+}
+
+/**
+ * 同 scoped USD 一起采集每 case 的 token 原账。estimated usage 只能用于产品内部
+ * 预算提示，评测报告必须明确标 usage_unavailable，不能显示成 provider 实际账单。
+ */
+export function recordScopedUsage(usage: {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  source?: 'provider' | 'estimated';
+}): void {
+  const state = scopedCostStorage.getStore();
+  if (!state) return;
+  if (usage.source === 'estimated') {
+    state.usageUnavailable = true;
+    return;
+  }
+  state.promptTokens += usage.inputTokens;
+  state.completionTokens += usage.outputTokens;
+  state.cacheReadTokens += usage.cacheReadTokens ?? 0;
+  state.cacheCreationTokens += usage.cacheCreationTokens ?? 0;
 }
 
 export function isScopedCostLimitExceeded(error: unknown): boolean {

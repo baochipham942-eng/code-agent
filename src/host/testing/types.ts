@@ -375,6 +375,15 @@ export interface TestResult {
   score: number;
   /** 本 case 由 BudgetService usage 实际归集的美元成本 */
   costUsd?: number;
+  /** provider response usage；缺失或混入本地估算时，usageStatus 固定为 usage_unavailable。 */
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
+  };
+  usageStatus?: 'available' | 'usage_unavailable';
   /** 本 case 声明的美元成本硬上限 */
   costLimitUsd?: number;
   /** 评分权威桶：分数由确定性断言 / LLM judge / 无外部验证背书 */

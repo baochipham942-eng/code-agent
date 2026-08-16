@@ -257,10 +257,16 @@ export function getVoiceCallTimeline(idOrSummaryMessageId: string): VoiceCallTim
       });
     } else if (meta?.voiceWorkFailure || meta?.voiceWorkSettled || meta?.voiceCallFailure) {
       const kind = meta.voiceWorkFailure ? 'work_failure' : meta.voiceWorkSettled ? 'work_settled' : 'call_failure';
+      const detail = (meta.voiceWorkFailure ?? meta.voiceWorkSettled ?? meta.voiceCallFailure) as unknown as Record<string, unknown>;
+      // 产物账本随终态一起进审计线：同一条消息上 backgroundTaskResult.artifacts 已是
+      // 工具账本的确定性提取结果，这里只转录不再二次判定。
+      const settledArtifacts = meta.backgroundTaskResult?.artifacts;
       outcomes.push({
         at: m.timestamp,
         kind,
-        detail: (meta.voiceWorkFailure ?? meta.voiceWorkSettled ?? meta.voiceCallFailure) as unknown as Record<string, unknown>,
+        detail: settledArtifacts?.length
+          ? { ...detail, artifacts: settledArtifacts.map((a) => ({ label: a.label, ...(a.path ? { path: a.path } : {}) })) }
+          : detail,
       });
     } else if (meta?.source === 'voice' && (m.role === 'user' || m.role === 'assistant')) {
       transcript.push({ at: m.timestamp, role: m.role, text: m.content, keyMatch });

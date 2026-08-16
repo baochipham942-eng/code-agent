@@ -78,6 +78,9 @@ vi.mock('../../src/host/connectors', () => ({ getConnectorRegistry: () => ({ get
 
 const { beginVoiceDispatch, dispatchVoiceIntent, endVoiceDispatch, pushVoiceTranscript } =
   await import('../../src/host/services/voice/voiceAgentCoordinator');
+const { projectVoiceTaskTerminalResult } = await import(
+  '../../src/host/services/voice/voiceTaskResultProjector'
+);
 
 let workItems: VoiceWorkItem[];
 let narrations: VoiceWorkNarration[];
@@ -105,6 +108,7 @@ beforeEach(() => {
   runtime.cancelBackgroundTask.mockClear();
   runtime.interruptBackgroundTask.mockClear();
   runtime.promptUserInChat.mockClear();
+  vi.mocked(projectVoiceTaskTerminalResult).mockClear();
   workItems = [];
   narrations = [];
   beginVoiceDispatch({
@@ -205,5 +209,58 @@ describe('voice multi-slot coordinator', () => {
       '短名1',
       '短名2',
     ]);
+  });
+
+  it('keeps concurrent tool result ledgers isolated by background task id', async () => {
+    await spawn(1);
+    await spawn(2);
+    const firstId = runtime.startBackgroundTask.mock.calls[0][0] as string;
+    const secondId = runtime.startBackgroundTask.mock.calls[1][0] as string;
+    const emitToolResult = (taskId: string, fileName: string) => {
+      for (const observer of runtime.observers) {
+        observer('session-1', {
+          type: 'tool_call_end',
+          data: {
+            toolCallId: `write-${taskId}`,
+            success: true,
+            metadata: {
+              artifacts: [{
+                artifactId: `artifact-${taskId}`,
+                kind: 'document',
+                role: 'deliverable',
+                sourceTool: 'Write',
+                createdAt: '2026-08-16T00:00:00.000Z',
+                path: `/repo/${fileName}`,
+              }],
+            },
+          },
+        }, taskId);
+      }
+    };
+    emitToolResult(firstId, 'first.md');
+    emitToolResult(secondId, 'second.md');
+
+    runtime.emit('task_completed', firstId);
+    await vi.waitFor(() => expect(projectVoiceTaskTerminalResult).toHaveBeenCalled());
+    const firstProjection = vi.mocked(projectVoiceTaskTerminalResult).mock.calls.find(
+      (call) => call[1].id === firstId,
+    );
+
+    expect(firstProjection?.[5]).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          artifacts: [expect.objectContaining({ path: '/repo/first.md' })],
+        }),
+      }),
+    ]);
+    expect(firstProjection?.[5]).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            artifacts: [expect.objectContaining({ path: '/repo/second.md' })],
+          }),
+        }),
+      ]),
+    );
   });
 });

@@ -12,6 +12,7 @@ import {
 import type { NeoWorkCardDetail } from '@shared/contract/tag';
 import type { TraceProjection, TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { SwarmLaunchRequest } from '@shared/contract/swarm';
+import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import { isSkillStatusContent } from '../components/features/chat/MessageBubble/SkillStatusMessage';
 import { isGoalNoticeContent } from '../components/features/chat/goalNotice';
 import { isModelFallbackNoticeContent } from '../components/features/chat/fallbackNotice';
@@ -105,6 +106,43 @@ function buildModelDecisionProjectionKey(decision: MessageModelDecision): string
         ]
       : null,
   });
+}
+
+function projectBackgroundTaskArtifacts(message: Message, turns: TraceTurn[]): void {
+  const result = message.metadata?.backgroundTaskResult;
+  if (!result?.artifacts?.length) return;
+  const matchedTurn = findVoiceWorkTurn(turns, result.taskId);
+  if (!matchedTurn) return;
+
+  const artifactOwnership: TurnArtifactOwnershipItem[] = result.artifacts.flatMap((artifact) => (
+    artifact.path
+      ? [{
+          kind: 'file' as const,
+          label: artifact.label,
+          ownerKind: 'tool' as const,
+          ownerLabel: artifact.sourceTool || 'Tool',
+          role: 'deliverable' as const,
+          path: artifact.path,
+          sourceNodeId: message.id,
+        }]
+      : []
+  ));
+  if (!artifactOwnership.length) return;
+
+  matchedTurn.nodes.push({
+    id: `${message.id}-artifact-ownership`,
+    type: 'turn_timeline',
+    content: '',
+    timestamp: message.timestamp,
+    turnTimeline: {
+      id: `${message.id}-artifact-ownership`,
+      kind: 'artifact_ownership',
+      timestamp: message.timestamp,
+      tone: result.status === 'failed' || result.status === 'unverified' ? 'warning' : 'success',
+      artifactOwnership,
+    },
+  });
+  matchedTurn.endTime = message.timestamp;
 }
 
 export function projectTurns(
@@ -273,6 +311,7 @@ export function projectTurns(
     //   意思是「有人新写了用户可见事件却没登记」；生产档维持现状跳过。
     // 总闸不拆：未匹配的 system 消息一律 continue，绝不外泄给用户。
     if (msg.role === 'system') {
+      projectBackgroundTaskArtifacts(msg, turns);
       const event = findRegisteredSystemEvent(msg.metadata);
       if (!event) {
         reportUnregisteredSystemEventMetadata(msg);

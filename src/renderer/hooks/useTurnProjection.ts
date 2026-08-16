@@ -108,11 +108,11 @@ function buildModelDecisionProjectionKey(decision: MessageModelDecision): string
   });
 }
 
-function projectBackgroundTaskArtifacts(message: Message, turns: TraceTurn[]): void {
+function projectBackgroundTaskArtifacts(message: Message, turns: TraceTurn[]): string | null {
   const result = message.metadata?.backgroundTaskResult;
-  if (!result?.artifacts?.length) return;
+  if (!result?.artifacts?.length) return null;
   const matchedTurn = findVoiceWorkTurn(turns, result.taskId);
-  if (!matchedTurn) return;
+  if (!matchedTurn) return null;
 
   const artifactOwnership: TurnArtifactOwnershipItem[] = result.artifacts.flatMap((artifact) => (
     artifact.path
@@ -123,14 +123,22 @@ function projectBackgroundTaskArtifacts(message: Message, turns: TraceTurn[]): v
           ownerLabel: artifact.sourceTool || 'Tool',
           role: 'deliverable' as const,
           path: artifact.path,
+          fileMetadata: artifact.sha256 || artifact.sizeBytes !== undefined || artifact.mimeType
+            ? {
+                ...(artifact.sha256 ? { sha256: artifact.sha256 } : {}),
+                ...(artifact.sizeBytes !== undefined ? { sizeBytes: artifact.sizeBytes } : {}),
+                ...(artifact.mimeType ? { mimeType: artifact.mimeType } : {}),
+              }
+            : undefined,
           sourceNodeId: message.id,
         }]
       : []
   ));
-  if (!artifactOwnership.length) return;
+  if (!artifactOwnership.length) return null;
 
+  const nodeId = `${message.id}-artifact-ownership`;
   matchedTurn.nodes.push({
-    id: `${message.id}-artifact-ownership`,
+    id: nodeId,
     type: 'turn_timeline',
     content: '',
     timestamp: message.timestamp,
@@ -143,6 +151,34 @@ function projectBackgroundTaskArtifacts(message: Message, turns: TraceTurn[]): v
     },
   });
   matchedTurn.endTime = message.timestamp;
+  return nodeId;
+}
+
+/**
+ * 终态产物先按 workItemId 精确回投到任务轮；若稍后落下真实语音完成播报，则把同一节点
+ * 移到那条播报所在轮。节点只移动、不复制，避免任务卡和视线落点各出现一张大卡。
+ */
+function anchorVoiceTaskArtifactsToCompletionBroadcast(
+  turns: TraceTurn[],
+  artifactNodeIds: ReadonlySet<string>,
+): void {
+  for (const artifactNodeId of artifactNodeIds) {
+    const sourceTurn = turns.find((turn) => turn.nodes.some((node) => node.id === artifactNodeId));
+    const artifactNode = sourceTurn?.nodes.find((node) => node.id === artifactNodeId);
+    if (!sourceTurn || !artifactNode) continue;
+
+    const completionTurn = turns.find((turn) => turn.nodes.some((node) => (
+      node.type === 'assistant_text'
+      && node.metadata?.source === 'voice'
+      && Boolean(node.content?.trim())
+      && node.timestamp >= artifactNode.timestamp
+    )));
+    if (!completionTurn || completionTurn === sourceTurn) continue;
+
+    sourceTurn.nodes = sourceTurn.nodes.filter((node) => node.id !== artifactNodeId);
+    completionTurn.nodes.push(artifactNode);
+    completionTurn.endTime = Math.max(completionTurn.endTime ?? 0, artifactNode.timestamp);
+  }
 }
 
 export function projectTurns(
@@ -160,6 +196,7 @@ export function projectTurns(
   const turns: TraceTurn[] = [];
   let currentTurn: TraceTurn | null = null;
   let turnCounter = 0;
+  const voiceArtifactNodeIds = new Set<string>();
   // 连续相同的模型路由决策只显示首个——agent 一个 turn 内多次 LLM 调用会各发一条
   // "用户选择 mimo"，重复刷没意义；模型变化（降级/角色档位）时 key 不同会照常显示。
   let lastModelDecisionKey: string | null = null;
@@ -311,7 +348,8 @@ export function projectTurns(
     //   意思是「有人新写了用户可见事件却没登记」；生产档维持现状跳过。
     // 总闸不拆：未匹配的 system 消息一律 continue，绝不外泄给用户。
     if (msg.role === 'system') {
-      projectBackgroundTaskArtifacts(msg, turns);
+      const artifactNodeId = projectBackgroundTaskArtifacts(msg, turns);
+      if (artifactNodeId) voiceArtifactNodeIds.add(artifactNodeId);
       const event = findRegisteredSystemEvent(msg.metadata);
       if (!event) {
         reportUnregisteredSystemEventMetadata(msg);
@@ -606,6 +644,8 @@ export function projectTurns(
   // Neo Tag 轻量化重设计（产品负责人拍板 2026-07-02）：@neo = 正常 agent 聊天体验，
   // 会话里不再投影独立的 neo_work_card 卡片。@neo 的运行本就是同会话的正常 agent turn，
   // 其回复已在对话流里；work card 记录仅供账号菜单「Neo 协同」topic 目录做历史视图。
+
+  anchorVoiceTaskArtifactsToCompletionBroadcast(turns, voiceArtifactNodeIds);
 
   // X5.5-D5：语音派出的 run 刻意活得比通话久，挂断后 run 的收尾文本 timestamp
   // 晚于摘要卡的 endedAt——摘要卡因此不在消息流最后。展示层把摘要卡钉到所在轮

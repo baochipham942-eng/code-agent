@@ -188,6 +188,23 @@ describe('StaticHtmlPreview 圈选与反馈', () => {
 });
 
 describe('PreviewPanel 非 HTML 分支', () => {
+  it.each([
+    ['verified', '已验证'],
+    ['unverified', '未验证'],
+  ] as const)('右侧面板如实显示 %s 产物状态', (deliverableStatus, label) => {
+    const tab = loadedTab({
+      path: '/tmp/report.md',
+      content: '# report',
+      savedContent: '# report',
+      deliverableStatus,
+    });
+    useAppStore.setState({ previewTabs: [tab], activePreviewTabId: tab.id });
+
+    render(<PreviewPanel />);
+
+    expect(screen.getByTestId('preview-deliverable-status').textContent).toContain(label);
+  });
+
   it('有真实图片 tab 时渲染图片，不挂 srcdoc 选择面或反馈栏', () => {
     const tab = loadedTab({
       path: '/tmp/cover.png',

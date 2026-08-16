@@ -133,63 +133,26 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe('DeliverableCardList 状态徽标 i18n', () => {
-  it('中文界面显示中文状态徽标', () => {
-    mocks.language = 'zh';
-    const cards: DeliverableCardView[] = [
-      baseCard({ id: 'v', title: '报告 A', status: 'verified' }),
-      baseCard({ id: 'u', title: '报告 B', status: 'unverified' }),
-      baseCard({ id: 'f', title: '报告 C', status: 'failed' }),
-    ];
-    render(<DeliverableCardList cards={cards} />);
+describe('DeliverableCardList 卡面降噪', () => {
+  it('卡面只保留文件名与动作，不显示第二行、验证/质量徽标和眼睛图标', () => {
+    const { container } = render(<DeliverableCardList cards={[baseCard({
+      title: '报告',
+      description: 'Document · Write · Created',
+      status: 'verified',
+      quality: { status: 'passed', summary: 'ok' },
+      secondaryActions: [
+        { kind: 'archive-to-library', label: 'archive', path: '/workspace/report.md', title: 'report.md' },
+        { kind: 'copy-reference', label: 'copy', value: '/workspace/report.md' },
+      ],
+    })]} />);
 
-    expect(screen.getAllByText('已验证')).toHaveLength(1);
-    expect(screen.getAllByText('未验证')).toHaveLength(1);
-    expect(screen.getAllByText('失败')).toHaveLength(1);
-  });
-
-  it('英文界面显示英文状态徽标', () => {
-    mocks.language = 'en';
-    const cards: DeliverableCardView[] = [
-      baseCard({ id: 'v', title: 'Report A', status: 'verified' }),
-      baseCard({ id: 'u', title: 'Report B', status: 'unverified' }),
-      baseCard({ id: 'f', title: 'Report C', status: 'failed' }),
-    ];
-    render(<DeliverableCardList cards={cards} />);
-
-    expect(screen.getAllByText('Verified')).toHaveLength(1);
-    expect(screen.getAllByText('Unverified')).toHaveLength(1);
-    expect(screen.getAllByText('Failed')).toHaveLength(1);
-  });
-
-  it('中文 quality 徽标走 i18n', () => {
-    mocks.language = 'zh';
-    const cards: DeliverableCardView[] = [
-      baseCard({ id: 'p', title: '报告 A', quality: { status: 'passed', summary: 'ok' } }),
-      baseCard({ id: 'n', title: '报告 B', quality: { status: 'needs_review', summary: 'check' } }),
-      baseCard({ id: 'd', title: '报告 C', quality: { status: 'degraded', summary: 'degraded' } }),
-      baseCard({ id: 'f', title: '报告 D', quality: { status: 'failed', summary: 'fail' } }),
-    ];
-    render(<DeliverableCardList cards={cards} />);
-
-    expect(screen.getAllByText('质量通过')).toHaveLength(1);
-    expect(screen.getAllByText('待复核')).toHaveLength(2);
-    expect(screen.getAllByText('质量失败')).toHaveLength(1);
-  });
-
-  it('英文 quality 徽标走 i18n', () => {
-    mocks.language = 'en';
-    const cards: DeliverableCardView[] = [
-      baseCard({ id: 'p', title: 'Report A', quality: { status: 'passed', summary: 'ok' } }),
-      baseCard({ id: 'n', title: 'Report B', quality: { status: 'needs_review', summary: 'check' } }),
-      baseCard({ id: 'd', title: 'Report C', quality: { status: 'degraded', summary: 'degraded' } }),
-      baseCard({ id: 'f', title: 'Report D', quality: { status: 'failed', summary: 'fail' } }),
-    ];
-    render(<DeliverableCardList cards={cards} />);
-
-    expect(screen.getAllByText('Validated')).toHaveLength(1);
-    expect(screen.getAllByText('Needs review')).toHaveLength(2);
-    expect(screen.getAllByText('Quality failed')).toHaveLength(1);
+    expect(screen.getByText('报告')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '归档到资料库: 报告' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '更多: 报告' })).toBeTruthy();
+    expect(screen.queryByText('Document · Write · Created')).toBeNull();
+    expect(screen.queryByText('已验证')).toBeNull();
+    expect(screen.queryByText('质量通过')).toBeNull();
+    expect(container.querySelector('.lucide-eye')).toBeNull();
   });
 });
 
@@ -199,7 +162,9 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
     render(<DeliverableCardList cards={cards} />);
 
     fireEvent.click(screen.getByRole('button', { name: '打开文件预览: 报告' }));
-    expect(mocks.openPreview).toHaveBeenCalledWith('/workspace/report.md');
+    expect(mocks.openPreview).toHaveBeenCalledWith('/workspace/report.md', {
+      deliverableStatus: 'unverified',
+    });
   });
 
   it('点击内容产物卡片一步打开内容 preview tab', () => {
@@ -260,6 +225,21 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
 
     expect(mocks.openPreview).not.toHaveBeenCalled();
     expect(mocks.copyPathToClipboard).toHaveBeenCalledWith('/workspace/report.md');
+  });
+
+  it('点击归档按钮不冒泡到卡片预览', () => {
+    mocks.addLibraryItem.mockResolvedValue({ title: 'report.md' });
+    render(<DeliverableCardList cards={[baseCard({
+      title: '报告',
+      secondaryActions: [
+        { kind: 'archive-to-library', label: 'archive', path: '/workspace/report.md', title: 'report.md' },
+      ],
+    })]} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '归档到资料库: 报告' }));
+
+    expect(mocks.openPreview).not.toHaveBeenCalled();
+    expect(mocks.addLibraryItem).toHaveBeenCalledTimes(1);
   });
 
   it('按 Escape 关闭更多菜单', () => {

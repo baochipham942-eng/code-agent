@@ -1,15 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle,
   Archive,
   BarChart3,
   BookOpen,
-  CheckCircle2,
   Code,
   Copy,
   Download,
   ExternalLink,
-  Eye,
   File,
   FileText,
   FolderOpen,
@@ -67,60 +64,6 @@ export function iconForKind(kind: string): React.ReactNode {
     default:
       return <File className={`${cls} text-zinc-400`} />;
   }
-}
-
-interface StatusMeta {
-  label: string;
-  className: string;
-  icon: React.ReactNode;
-}
-
-function statusMeta(card: DeliverableCardView, labels: ReturnType<typeof useI18n>['t']['deliverable']): StatusMeta {
-  if (card.status === 'failed') {
-    return {
-      label: labels.statusFailed,
-      className: 'bg-rose-500/12 text-badge-danger',
-      icon: <AlertTriangle className="h-3 w-3" />,
-    };
-  }
-  if (card.status === 'verified') {
-    return {
-      label: labels.statusVerified,
-      className: 'bg-emerald-500/12 text-badge-success',
-      icon: <CheckCircle2 className="h-3 w-3" />,
-    };
-  }
-  return {
-    label: labels.statusUnverified,
-    className: 'bg-amber-500/12 text-badge-warning',
-    icon: <AlertTriangle className="h-3 w-3" />,
-  };
-}
-
-function qualityMeta(card: DeliverableCardView, labels: ReturnType<typeof useI18n>['t']['deliverable']): StatusMeta | null {
-  if (!card.quality) return null;
-  if (card.quality.status === 'failed') {
-    return {
-      label: labels.qualityFailed,
-      className: 'bg-rose-500/12 text-badge-danger',
-      icon: <AlertTriangle className="h-3 w-3" />,
-    };
-  }
-  if (card.quality.status === 'needs_review' || card.quality.status === 'degraded') {
-    return {
-      label: labels.qualityNeedsReview,
-      className: 'bg-amber-500/12 text-badge-warning',
-      icon: <AlertTriangle className="h-3 w-3" />,
-    };
-  }
-  if (card.quality.status === 'passed') {
-    return {
-      label: labels.qualityValidated,
-      className: 'bg-emerald-500/12 text-badge-success',
-      icon: <CheckCircle2 className="h-3 w-3" />,
-    };
-  }
-  return null;
 }
 
 function actionLabel(card: DeliverableCardView, labels: ReturnType<typeof useI18n>['t']['deliverable']): string {
@@ -221,8 +164,6 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
     };
   }, [menuOpen]);
 
-  const status = statusMeta(card, labels);
-  const quality = qualityMeta(card, labels);
   const clickable = card.openTarget.kind !== 'none';
   const cardChrome = 'rounded-md border border-border-muted bg-surface-subtle transition-colors';
 
@@ -238,41 +179,23 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
   return (
     <div
       key={card.id}
-      className={`${cardChrome} ${clickable ? 'hover:border-badge-info/25 hover:bg-cyan-500/[0.045]' : ''}`}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      aria-label={clickable ? `${actionLabel(card, labels)}: ${card.title}` : undefined}
+      title={clickable ? actionLabel(card, labels) : undefined}
+      onClick={() => clickable && openCard(card)}
+      onKeyDown={(event) => {
+        if (!clickable || (event.key !== 'Enter' && event.key !== ' ')) return;
+        event.preventDefault();
+        openCard(card);
+      }}
+      className={`${cardChrome} ${clickable ? 'cursor-pointer hover:border-badge-info/25 hover:bg-cyan-500/[0.045]' : ''}`}
     >
       <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => clickable && openCard(card)}
-          className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left disabled:cursor-default"
-          title={actionLabel(card, labels)}
-          aria-label={`${actionLabel(card, labels)}: ${card.title}`}
-          disabled={!clickable}
-        >
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left">
           {iconForKind(card.kind)}
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-xs font-medium text-zinc-100">{card.title}</div>
-            <div className="truncate text-[11px] leading-4 text-zinc-500">{card.description}</div>
-          </div>
-          {quality && (
-            <span
-              className={`inline-flex flex-shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${quality.className}`}
-              title={card.quality?.summary}
-            >
-              {quality.icon}
-              {quality.label}
-            </span>
-          )}
-          <span className={`inline-flex flex-shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${status.className}`}>
-            {status.icon}
-            {status.label}
-          </span>
-          {clickable && (
-            card.openTarget.kind === 'external'
-              ? <ExternalLink className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500" />
-              : <Eye className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500" />
-          )}
-        </button>
+          <div className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-100">{card.title}</div>
+        </div>
         {(archiveAction || overflowActions.length > 0) && (
           <div className="flex flex-shrink-0 items-center gap-0.5 pr-1.5">
             {archiveAction && (
@@ -309,6 +232,7 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
                 {menuOpen && (
                   <div
                     role="menu"
+                    onClick={(event) => event.stopPropagation()}
                     aria-label={`${labels.moreActions}: ${card.title}`}
                     className="absolute right-0 top-full z-30 mt-1 min-w-[160px] rounded-lg border border-border-muted bg-surface-subtle py-1 shadow-xl"
                   >
@@ -364,7 +288,7 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
         {
           const item = workspacePreviewItems.find((candidate) => candidate.id === target.itemId);
           if (item?.file?.path) {
-            openPreview(item.file.path);
+            openPreview(item.file.path, { deliverableStatus: card.status });
             break;
           }
           const content = item?.content?.html
@@ -391,7 +315,7 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
         }
         break;
       case 'file-preview':
-        openPreview(target.path);
+        openPreview(target.path, { deliverableStatus: card.status });
         break;
       case 'external':
         window.open(target.url, '_blank', 'noopener,noreferrer');

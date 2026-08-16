@@ -5,6 +5,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import type { Message } from '../../../src/shared/contract/message';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 import { TraceNodeRenderer } from '../../../src/renderer/components/features/chat/TraceNodeRenderer';
+import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 
 const dispatchMessage: Message = {
   id: 'voice-dispatch',
@@ -36,6 +37,7 @@ function resultMessage(withArtifacts = true): Message {
             sourceTool: 'Write',
             label: '12.md',
             path: '/repo/12.md',
+            sha256: 'a'.repeat(64),
           }],
         } : {}),
       },
@@ -58,7 +60,44 @@ describe('语音派单产物投影', () => {
     ]);
     render(<TraceNodeRenderer node={artifactNode!} sessionId="session-1" />);
     const filename = screen.getByText('12.md');
-    expect(filename.closest('button')).toBeTruthy();
+    expect(filename.closest('[role="button"]')).toBeTruthy();
+  });
+
+  it('把唯一产物卡移到后续完成播报下，不在原任务卡重复渲染', () => {
+    const messages: Message[] = [
+      dispatchMessage,
+      {
+        id: 'voice-user-followup',
+        role: 'user',
+        content: '好的',
+        timestamp: 1_500,
+        metadata: { source: 'voice' },
+      },
+      resultMessage(),
+      {
+        id: 'voice-completion',
+        role: 'assistant',
+        content: '文件已经创建好了。',
+        timestamp: 3_000,
+        metadata: { source: 'voice' },
+      },
+    ];
+    const projection = projectTurns(messages, 'session-1', false);
+    const dispatchTurn = projection.turns.find((turn) => (
+      turn.nodes.some((node) => node.metadata?.voiceDispatch)
+    ));
+    const completionTurn = projection.turns.find((turn) => (
+      turn.nodes.some((node) => node.id === 'voice-completion-text')
+    ));
+
+    expect(dispatchTurn?.nodes.some((node) => node.id === 'voice-result-artifact-ownership')).toBe(false);
+    expect(completionTurn?.nodes.filter((node) => node.id === 'voice-result-artifact-ownership')).toHaveLength(1);
+
+    render(<TurnCard turn={completionTurn!} sessionId="session-1" />);
+    const completion = screen.getByText('文件已经创建好了。');
+    const card = screen.getByRole('button', { name: '打开文件预览: 12.md' });
+    expect(completion.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByText('12.md')).toHaveLength(1);
   });
 
   it('纯问答结果不投影空产物卡', () => {

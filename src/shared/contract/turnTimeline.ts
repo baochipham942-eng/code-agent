@@ -196,6 +196,12 @@ export interface TurnArtifactOwnershipItem {
   role: 'deliverable' | 'material' | 'receipt';
   path?: string;
   url?: string;
+  /** 文件工具账本随产物携带的落盘实证；任一字段存在即可证明工具确实产出了文件。 */
+  fileMetadata?: {
+    sha256?: string;
+    sizeBytes?: number;
+    mimeType?: string;
+  };
   sourceNodeId?: string;
 }
 

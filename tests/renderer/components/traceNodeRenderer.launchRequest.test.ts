@@ -608,7 +608,8 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).not.toContain('Mail');
     expect(html).not.toContain('send');
     expect(html).toContain('report.md');
-    expect(html).toContain('Created');
+    // N-L7-FILECARD 卡面降噪：第二行状态字（Document · Write · Created）已删，钉住不回流
+    expect(html).not.toContain('Created');
   });
 
   it('does not render capability scope timeline nodes in the chat stream', () => {

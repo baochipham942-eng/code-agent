@@ -643,6 +643,22 @@ export function buildTurnArtifactDeliverableCards(
         ref: openTarget.path,
       });
     }
+    if (item.path) {
+      const metadata = item.fileMetadata;
+      refs.push({
+        id: `turn:${item.sourceNodeId || index}:file`,
+        kind: 'file_metadata',
+        status: metadata?.sha256 || metadata?.sizeBytes !== undefined || metadata?.mimeType ? 'pass' : 'metadata',
+        summary: metadata?.sha256
+          ? `File hash ${metadata.sha256.slice(0, 12)}`
+          : metadata?.sizeBytes !== undefined
+            ? `File size ${metadata.sizeBytes} bytes`
+            : metadata?.mimeType
+              ? `File type ${metadata.mimeType}`
+              : 'File path is recorded',
+        ref: item.path,
+      });
+    }
     const evidencePack = buildEvidencePack(refs);
 
     return {

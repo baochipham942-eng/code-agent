@@ -12,6 +12,7 @@ import type {
   TaskProgressData,
   TaskCompleteData,
   UpdateInfo,
+  DeliverableEvidenceStatus,
 } from '@shared/contract';
 import type { ContextHealthState } from '@shared/contract/contextHealth';
 import type { GoalGateVerificationCard } from '@shared/contract/agent';
@@ -96,6 +97,8 @@ export interface PreviewTab {
   // D6: 外部驱动的编辑器跳转（file tab 使用）
   jumpToLine?: number;
   jumpNonce?: number;
+  /** 从产物卡打开时携带的验证结论，只在右侧预览详情中展示。 */
+  deliverableStatus?: DeliverableEvidenceStatus;
 }
 
 // Bridge 回传的元素信息（保持与 shared/livePreview/protocol.ts 中 SelectedElementInfo 同形）
@@ -132,6 +135,7 @@ export type WorkbenchOpenSource = 'user' | 'auto';
 
 export interface OpenWorkbenchTabOptions {
   source?: WorkbenchOpenSource;
+  deliverableStatus?: DeliverableEvidenceStatus;
 }
 
 // 跨 panel 跳转目标
@@ -780,6 +784,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
             t.id === existing.id
               ? {
                   ...t,
+                  ...(options?.deliverableStatus ? { deliverableStatus: options.deliverableStatus } : {}),
                   lastActivatedAt: nextPreviewTabTick(),
                   // 产物可能在上次打开后被修复/重写过；重新打开时若没有未保存的
                   // 编辑（content===savedContent），重置 isLoaded 让加载 effect
@@ -803,6 +808,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         mode: 'preview',
         lastActivatedAt: nextPreviewTabTick(),
         isLoaded: false,
+        ...(options?.deliverableStatus ? { deliverableStatus: options.deliverableStatus } : {}),
       };
       // LRU eviction when at capacity — liveDev and file tabs now share the
       // same one-tab-one-workbench-view scheme (`preview:${path}`), so eviction

@@ -23,6 +23,7 @@ import {
   htmlLocalityLocationLabel,
   type HtmlLocalitySelectionController,
 } from '../utils/htmlLocality';
+import { DeliverableStatusBadge } from './DeliverableStatusBadge';
 
 const CodeEditor = lazy(() => import('./CodeEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
@@ -892,6 +893,7 @@ export const PreviewPanel: React.FC = () => {
         >
           {isVirtual ? activeTab.title : previewFilePath}
         </button>
+        {activeTab.deliverableStatus && <DeliverableStatusBadge status={activeTab.deliverableStatus} />}
         {!isVirtual && (
           <button /* ds-allow:button: compact file-header icon action */
             type="button"

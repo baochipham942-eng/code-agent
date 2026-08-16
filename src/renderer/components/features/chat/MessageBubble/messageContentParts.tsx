@@ -24,6 +24,10 @@ import {
   MediaAssetActionBar,
   MediaAssetLightbox,
 } from './MediaAssetControls';
+import {
+  updateStreamingMarkdownBlockState,
+  type StreamingMarkdownBlockState,
+} from './streamingMarkdownBlocks';
 
 // react-markdown + katex/remark 插件家族(vendor-markdown/vendor-katex)与
 // react-syntax-highlighter(Prism)按需动态加载,只在真正渲染消息正文/代码块时才下载,
@@ -704,16 +708,84 @@ export const IACTNavCard: React.FC<{ href: string; children: React.ReactNode }> 
 // 会把 neo:// 剥成空 href 导致卡片不渲染；放行 neo://，其余仍走默认净化（实现见 MarkdownCore）。
 const NEO_URL_SCHEMES = ['neo://'];
 
-export const MarkdownRenderer = memo(function markdownRenderer({
+const MemoizedMarkdownBlock = memo(function MemoizedMarkdownBlock({
   content,
   components,
+  sourceOffset,
 }: {
   content: string;
   components: Components;
+  sourceOffset: number;
+}) {
+  const offsetComponents = useMemo<Components>(() => {
+    if (sourceOffset === 0 || !components.code) return components;
+    const CodeComponent = components.code;
+    return {
+      ...components,
+      code(props) {
+        const OffsetCodeComponent = CodeComponent as React.ComponentType<typeof props>;
+        const node = props.node?.position
+          ? {
+              ...props.node,
+              position: {
+                ...props.node.position,
+                start: {
+                  ...props.node.position.start,
+                  offset: props.node.position.start.offset == null
+                    ? props.node.position.start.offset
+                    : props.node.position.start.offset + sourceOffset,
+                },
+                end: {
+                  ...props.node.position.end,
+                  offset: props.node.position.end.offset == null
+                    ? props.node.position.end.offset
+                    : props.node.position.end.offset + sourceOffset,
+                },
+              },
+            }
+          : props.node;
+        return <OffsetCodeComponent {...props} node={node} />;
+      },
+    };
+  }, [components, sourceOffset]);
+
+  return (
+    <LazyMarkdownCore
+      content={content}
+      gfm
+      math
+      breaks
+      allowSchemes={NEO_URL_SCHEMES}
+      components={offsetComponents}
+    />
+  );
+});
+
+export const MarkdownRenderer = memo(function markdownRenderer({
+  content,
+  components,
+  isStreaming = false,
+}: {
+  content: string;
+  components: Components;
+  isStreaming?: boolean;
 }) {
   const renderStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function'
     ? performance.now()
     : Date.now();
+  const blockStateRef = React.useRef<StreamingMarkdownBlockState | null>(null);
+  const blocks = useMemo(
+    () => {
+      if (!isStreaming) {
+        blockStateRef.current = null;
+        return null;
+      }
+      const next = updateStreamingMarkdownBlockState(blockStateRef.current, content);
+      blockStateRef.current = next;
+      return next.blocks;
+    },
+    [content, isStreaming],
+  );
 
   useEffect(() => {
     recordStreamingPerformanceCounter('stream.markdown.render');
@@ -725,14 +797,25 @@ export const MarkdownRenderer = memo(function markdownRenderer({
 
   return (
     <Suspense fallback={<div className="whitespace-pre-wrap break-words">{sanitizePlainTextFallback(content)}</div>}>
-      <LazyMarkdownCore
-        content={content}
-        gfm
-        math
-        breaks
-        allowSchemes={NEO_URL_SCHEMES}
-        components={components}
-      />
+      {blocks
+        ? blocks.map((block) => (
+            <MemoizedMarkdownBlock
+              key={block.key}
+              content={block.content}
+              components={components}
+              sourceOffset={block.sourceOffset}
+            />
+          ))
+        : (
+            <LazyMarkdownCore
+              content={content}
+              gfm
+              math
+              breaks
+              allowSchemes={NEO_URL_SCHEMES}
+              components={components}
+            />
+          )}
     </Suspense>
   );
 });

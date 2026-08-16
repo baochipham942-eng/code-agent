@@ -13,7 +13,7 @@ import {
   resolveRealtimeVoiceSelection,
   type RealtimeVoiceProviderProfile,
 } from '../../../shared/constants/realtimeVoiceProviders';
-import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceInterruptClassification, VoiceTokenUsage, VoiceTransport, VoiceTransportHandle, VoiceUserTextInjectionResult } from '../../../shared/contract/voice';
+import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTokenUsage, VoiceTransport, VoiceTransportHandle, VoiceUserTextInjectionResult } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
 import { getConfigService } from '../core/configService';
@@ -43,8 +43,13 @@ import {
   resolveInterruptCandidate,
   type VoiceInterruptCandidate,
 } from './voiceInterruptCandidates';
-import { sampleVoiceInterruptEvidence } from './voiceInterruptEvidence';
-import { decideVoiceInterrupt, shouldDisarmHangup } from './voiceTurnTaking';
+import {
+  evaluateVoiceInterruptDecision,
+  logVoiceInterruptDecision,
+  recordVoiceInterruptDecisionSample,
+} from './voiceInterruptDecision';
+import { beginFalseInterruptionWindow, clearFalseInterruptionWindow, confirmHeldInterrupt } from './voiceFalseInterruption';
+import { shouldDisarmHangup } from './voiceTurnTaking';
 import {
   createNarrationState,
   markNarrationDispatch,
@@ -52,7 +57,6 @@ import {
   enqueueOrInjectNarration,
   flushNarrationQueue,
   handleNarrationInjectionRejected,
-  handleNarrationPlaybackInterrupted,
   handleNarrationPlaybackStarted,
   markNarrationUserTurn,
   settleNarrationsForTeardown,
@@ -290,34 +294,29 @@ function evaluateInterrupt(
     clearTimeout(candidate.finalGraceTimer);
     candidate.finalGraceTimer = undefined;
   }
-  const decision = decideVoiceInterrupt({
-    assistantPlaying: candidate.assistantPlaying
-      ?? (session.upstream.kind === 'relay' && session.upstream.isResponding()),
-    durationMs: candidate.durationMs,
+  const assistantPlaying = candidate.assistantPlaying
+    ?? (session.upstream.kind === 'relay' && session.upstream.isResponding());
+  const { decision, evidence: interruptEvidence, priorStartedAt } = evaluateVoiceInterruptDecision({
+    candidate,
+    candidates: session.interruption.candidates.values(),
+    assistantPlaying,
     text,
     stage,
-    // 声纹门（N-L7-SPK）：只有明确 mismatch 才收紧（拦兜底 cancel）；
-    // unknown（推理没完/模型缺失/片段过短）一律 fail-open 回现状。
     speakerMismatch: session.speaker.tracker?.verdictFor(candidateId) === 'mismatch',
   });
 
-  // 证据层 shadow mode（#1128）：只在终判那一刻采一次，输出不参与上面的 decision。
+  // L2 证据闸：判定与遥测消费同一份 evidence，避免「量的一套、判的另一套」。
   if (decision.terminal && !candidate.decided) {
-    sampleVoiceInterruptEvidence({
+    recordVoiceInterruptDecisionSample({
       provider: session.upstream.provider,
       voiceSessionId: session.id,
       candidateId,
-      startedAt: candidate.startedAt,
-      durationMs: candidate.durationMs,
-      playedMs: candidate.playedMs,
-      assistantPlaying: candidate.assistantPlaying
-        ?? (session.upstream.kind === 'relay' && session.upstream.isResponding()),
-      priorStartedAt: [...session.interruption.candidates.values()]
-        .filter((other) => other !== candidate)
-        .map((other) => other.startedAt),
+      candidate,
+      assistantPlaying,
+      priorStartedAt,
       text,
-      decidedClassification: decision.classification,
-      decidedCancel: decision.cancel,
+      decision,
+      evidence: interruptEvidence,
     });
   }
 
@@ -337,32 +336,34 @@ function evaluateInterrupt(
       if (cancelledResponseId) {
         candidate.cancelledResponseId = cancelledResponseId;
         rememberCancelledResponse(session, cancelledResponseId);
-        send(session.clientRef.current, {
-          type: 'response.cancelled',
-          responseId: cancelledResponseId,
-          reason: 'interrupt',
-        });
       }
     }
+    const action = decision.cancel ? 'hold' : 'resume';
     send(session.clientRef.current, {
       type: 'interrupt.decision',
       candidateId,
       classification: decision.classification,
-      action: decision.cancel ? 'cancel_discard' : 'resume',
+      action,
       ...(cancelledResponseId ? { responseId: cancelledResponseId } : {}),
     });
-    logger.info('voice interrupt decision', {
+    if (decision.cancel) {
+      beginFalseInterruptionWindow(session, candidateId, candidate, () => active?.id === session.id);
+    }
+    logVoiceInterruptDecision({
       voiceSessionId: session.id,
       candidateId,
       transcriptStage: stage,
-      classification: decision.classification,
-      action: decision.cancel ? 'cancel_discard' : 'resume',
+      action,
       responseId: cancelledResponseId ?? undefined,
-      // 声纹拦下的兜底打断单独可查（判据 3 的真机证据就看这个字段）
-      ...(decision.speakerGated ? { speakerGated: true } : {}),
+      decision,
+      evidence: interruptEvidence,
     });
   }
 
+  // partial 先触发 hold 时，后续 final 是「用户确实继续说」的确认信号；此时才真丢。
+  if (stage === 'final' && text.trim()) {
+    confirmHeldInterrupt(session, candidateId, candidate, 'final_transcript');
+  }
   if (stage === 'final' && decision.shouldRespond && !candidate.responseRequested) {
     candidate.responseRequested = true;
     void requestResponse(session, text);
@@ -476,6 +477,7 @@ async function teardown(reason: string): Promise<void> {
   if (session.inboundAudioWatchdogTimer) clearTimeout(session.inboundAudioWatchdogTimer);
   for (const candidate of session.interruption.candidates.values()) {
     if (candidate.finalGraceTimer) clearTimeout(candidate.finalGraceTimer);
+    clearFalseInterruptionWindow(candidate);
   }
   // 声纹临时态（环形缓冲/活跃集/逐候选 verdict）随通话一起丢（§4.3 不建档）。
   releaseVoiceprintForCall(session.speaker);
@@ -780,6 +782,9 @@ async function connectAndBind(
           if (active?.id === id) active.voiceToolsAvailable = false;
         }
         if (active?.id === id && event.type === 'speech.started') {
+          for (const [heldCandidateId, heldCandidate] of active.interruption.candidates) {
+            confirmHeldInterrupt(active, heldCandidateId, heldCandidate, 'continued_speech');
+          }
           const candidateId = event.candidateId ?? `candidate-${Date.now()}`;
           active.interruption.currentCandidateId = candidateId;
           active.interruption.candidates.set(candidateId, {
@@ -792,6 +797,7 @@ async function connectAndBind(
             if (!oldest || oldest === candidateId) break;
             const stale = active.interruption.candidates.get(oldest);
             if (stale?.finalGraceTimer) clearTimeout(stale.finalGraceTimer);
+            if (stale) clearFalseInterruptionWindow(stale);
             active.interruption.candidates.delete(oldest);
           }
           markNarrationUserTurn(active);
@@ -853,7 +859,8 @@ async function connectAndBind(
                 && candidate?.classificationSource !== 'empty-text-fallback'
                 && (classification === 'background'
                   || classification === 'acknowledgement'
-                  || classification === 'short_fragment');
+                  || classification === 'short_fragment'
+                  || classification === 'unverified');
             }
           }
         }
@@ -1204,7 +1211,6 @@ function bindClientHandlers(session: ActiveSession, client: WsSocket): void {
         candidate.assistantPlaying = command.playing;
         candidate.playedMs = command.playedMs;
       }
-      if (command.playing) handleNarrationPlaybackInterrupted(session);
       logger.info('voice interrupt playback observed', {
         voiceSessionId: id,
         candidateId: command.candidateId,

@@ -1,12 +1,11 @@
 // ============================================================================
 // 打断判定的「证据层」（三层判定链的 L2，设计单 2026-08-14-L7-三层打断判定链）
 //
-// 职责只有一个：回答「这段人声是不是冲着助手来的」，**不做判决**。
+// 职责只有一个：回答「这段人声是不是冲着助手来的」，**不做语义判决**。
 // L1（上游 server_vad）答「有没有人声」，L3（voiceTurnTaking）答「说完没有、要不要回应」。
 //
-// 现在处于 shadow mode：本模块的输出只进日志与遥测，**不接进 decideVoiceInterrupt**。
-// 目的是先拿到「开电视」与「正常对话」两组真实分布，阈值从数据里读出来再接线——
-// 直接拍阈值改行为的代价是：真打断被放过时用户体感是「它听不见我说话」，比误打断更糟。
+// 2026-08-16 shadow 分布已把电视（medium/1）和真人指向性请求（strong/3）分开；
+// 输出现已接进 decideVoiceInterrupt，日志与判定仍共用同一份 evidence，避免口径漂移。
 // ============================================================================
 
 import {
@@ -21,7 +20,7 @@ import { recordVoiceInterruptEvidence } from './voiceTelemetry';
 
 const logger = createLogger('VoiceInterruptEvidence');
 
-interface VoiceInterruptEvidenceInput {
+export interface VoiceInterruptEvidenceInput {
   /** 本次候选的 speech_started 时刻 */
   startedAt: number;
   /** 本次语音时长（上游 speech_stopped 带回）；缺席 = 上游没给 */
@@ -36,7 +35,7 @@ interface VoiceInterruptEvidenceInput {
   text: string;
 }
 
-interface VoiceInterruptEvidence {
+export interface VoiceInterruptEvidence {
   /** 短窗内触发次数（含本次） */
   burstCount: number;
   /** 距上一次触发的间隔；本通话首次 = undefined */
@@ -49,7 +48,7 @@ interface VoiceInterruptEvidence {
   substantive?: boolean;
   /** 字幕里有冲着助手来的标记（第二人称 / 祈使 / 疑问） */
   addressed: boolean;
-  /** 综合档位。**临时口径**：真实分布拿到之前，这里的权重是占位的，不要当结论用 */
+  /** 综合档位。兜底打断只允许 strong 穿过；显式打断词不受档位限制。 */
   tier: 'weak' | 'medium' | 'strong';
   /** 打分明细，落遥测用——调阈值时要能看出是哪一维在起作用 */
   score: number;
@@ -76,10 +75,10 @@ function isAddressed(text: string): boolean {
 }
 
 /**
- * 纯函数，无副作用、不读配置——这样 shadow mode 的采样和将来的真判定吃的是同一段逻辑，
+ * 纯函数，无副作用、不读配置——这样历史 shadow 采样和现在的真判定吃的是同一段逻辑，
  * 不会出现「量的是一套、判的是另一套」。
  */
-function collectVoiceInterruptEvidence(
+export function collectVoiceInterruptEvidence(
   input: VoiceInterruptEvidenceInput,
 ): VoiceInterruptEvidence {
   const windowStart = input.startedAt - VOICE_INTERRUPT_BURST_WINDOW_MS;
@@ -148,8 +147,10 @@ export function sampleVoiceInterruptEvidence(input: {
   text: string;
   decidedClassification: string;
   decidedCancel: boolean;
+  /** 判定链已经消费的同一份 evidence；缺席只用于旧调用兼容。 */
+  evidence?: VoiceInterruptEvidence;
 }): void {
-  const evidence = collectVoiceInterruptEvidence({
+  const evidence = input.evidence ?? collectVoiceInterruptEvidence({
     startedAt: input.startedAt,
     ...(input.durationMs === undefined ? {} : { durationMs: input.durationMs }),
     assistantPlaying: input.assistantPlaying,
@@ -164,7 +165,7 @@ export function sampleVoiceInterruptEvidence(input: {
     decidedCancel: input.decidedCancel,
   };
   recordVoiceInterruptEvidence({ provider: input.provider, ...tail });
-  logger.info('voice interrupt evidence (shadow)', {
+  logger.info('voice interrupt evidence', {
     voiceSessionId: input.voiceSessionId,
     candidateId: input.candidateId,
     ...tail,

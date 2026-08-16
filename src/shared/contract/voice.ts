@@ -190,6 +190,7 @@ export type VoiceInterruptClassification =
   | 'acknowledgement'
   | 'supplement'
   | 'short_fragment'
+  | 'unverified'
   | 'true_interrupt';
 
 /** Provider 在 response.done 上报的 token 用量，统一成与协议字段名无关的内部形状。 */
@@ -241,9 +242,13 @@ export type VoiceEvent =
       type: 'interrupt.decision';
       candidateId: string;
       classification: VoiceInterruptClassification;
-      action: 'resume' | 'cancel_discard';
+      action: 'resume' | 'hold' | 'cancel_discard';
       responseId?: string;
     }
+  /** 反悔窗内确认是真打断：Renderer 此时才真正丢弃暂停中的剩余音频。 */
+  | { type: 'interrupt.confirm'; candidateId: string }
+  /** 反悔窗到期仍无后续语音/字幕：恢复暂停中的剩余音频。 */
+  | { type: 'interrupt.revoke'; candidateId: string }
   | {
       type: 'response.done';
       responseId?: string;

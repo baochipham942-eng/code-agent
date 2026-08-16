@@ -24,6 +24,9 @@ export interface VoiceInterruptCandidate {
   cancelledResponseId?: string;
   responseRequested: boolean;
   finalGraceTimer?: NodeJS.Timeout;
+  /** 方案 A：true_interrupt 后先 hold，确认才丢、超时则恢复。 */
+  falseInterruptionState?: 'held' | 'confirmed' | 'revoked';
+  falseInterruptionTimer?: NodeJS.Timeout;
 }
 
 /** 一通电话内的打断候选池。currentCandidateId 是「最近一次 speech_started」。 */

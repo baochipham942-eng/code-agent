@@ -7,15 +7,28 @@ import { test, expect, type Page } from '@playwright/test';
 
 test.setTimeout(60_000);
 
+async function dismissProjectTrust(page: Page) {
+  const trustDialog = page.getByRole('dialog', { name: '信任这个项目文件夹？' });
+  await trustDialog.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
+  if (await trustDialog.isVisible().catch(() => false)) {
+    await trustDialog.getByRole('button', { name: '阻止项目配置' }).click();
+    await expect(trustDialog).toBeHidden();
+  }
+}
+
 async function openVoiceModelSettings(page: Page) {
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
+  // 真机存量会话可能先触发项目级配置的信任弹窗；本用例不消费项目配置，明确阻止即可。
+  // 若不先处理，它的遮罩会盖住稍后出现的 onboarding，Playwright 会一直等点击落下。
+  await dismissProjectTrust(page);
 
   const onboarding = page.getByRole('dialog', { name: '初始化 Neo' });
   // 首启检查在 App mount 后延迟 1.5s 执行，不能用一次即时 isVisible 判定，
   // 否则会先打开设置，再被稍后挂载的 onboarding 盖住。
   await onboarding.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
   if (await onboarding.isVisible().catch(() => false)) {
+    await dismissProjectTrust(page);
     await onboarding.getByRole('button', { name: '跳过，稍后在设置里配置' }).click();
     await expect(onboarding).toBeHidden();
   } else {

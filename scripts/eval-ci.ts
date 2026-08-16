@@ -54,7 +54,7 @@ function providerVariantArm(): 'variant-on' | 'variant-off' {
   return isProviderVariantDisabled() ? 'variant-off' : 'variant-on';
 }
 
-type EvalReportFormat = 'markdown' | 'json' | 'console' | 'html';
+type EvalReportFormat = 'markdown' | 'json' | 'console';
 
 const PROVIDER_KEY_CANDIDATES: Record<string, string[]> = {
   moonshot: ['KIMI_K25_API_KEY', 'MOONSHOT_API_KEY'],
@@ -630,7 +630,9 @@ async function runEvals(
 
     const reportFormats = opts.reportFormats ?? ['markdown', 'json'];
     const savedFiles = await saveReport(summary, config.resultsDir, reportFormats);
-    console.log(chalk.dim(`  Reports saved to: ${savedFiles[0]}`));
+    if (savedFiles.length > 0) {
+      console.log(chalk.dim(`  Reports saved to: ${savedFiles[0]}`));
+    }
 
     if (sandbox) {
       assertRepoUnchanged(workingDir, repoStatusBefore);
@@ -900,7 +902,7 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
       concurrency,
       tags,
       ids,
-      reportFormats: ['markdown', 'json', 'html'],
+      reportFormats: ['markdown', 'json'],
     });
     const commitSha = getCommitSha();
     await manager.promoteMockHarness(summary, commitSha);
@@ -957,7 +959,7 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
       concurrency,
       tags,
       ids,
-      reportFormats: ['markdown', 'json', 'html'],
+      reportFormats: ['markdown', 'json'],
     });
     const commitSha = getCommitSha();
     await manager.promote(summary, commitSha, 'real');
@@ -1046,7 +1048,7 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
     ids,
     prediction,
     caseDir,
-    ...(caseDir ? { reportFormats: ['markdown', 'json', 'html'] } : {}),
+    reportFormats: caseDir ? ['markdown', 'json'] : [],
   });
 
   // Real 模式：打印本进程实际 token 消耗与成本（budgetService 进程内累计，
@@ -1085,8 +1087,13 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
   // Compare to baseline
   const delta = await manager.compare(summary);
   console.log(generateDeltaConsole(summary, delta));
-  const htmlFiles = await saveReport(summary, createDefaultConfig(workingDir).resultsDir, ['html'], delta);
-  console.log(chalk.dim(`  HTML report saved to: ${htmlFiles[0]}`));
+  const reportFiles = await saveReport(
+    summary,
+    createDefaultConfig(workingDir).resultsDir,
+    ['markdown', 'json'],
+    delta,
+  );
+  console.log(chalk.dim(`  Reports saved to: ${reportFiles[0]}`));
 
   // Track trend
   const commitSha = getCommitSha();

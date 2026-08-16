@@ -80,6 +80,8 @@ import { resolveStickyStrictSkillInvocation } from './conversationRuntimeStickyS
 import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
 import { extractUserRequest } from '../turnScaffold';
 import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
+import { classifyIntent } from '../../telemetry/intentClassifier';
+import { markDistilledSkillTurnSignal } from '../../services/skills/distillSignalStore';
 
 
 const logger = createLogger('AgentLoop');
@@ -481,6 +483,16 @@ export class ConversationRuntime {
         if (turnTraceContext) enterRunTraceContext(turnTraceContext);
         if (iterations === 1) {
           userTurnId = this.ctx.turn.currentTurnId;
+          const activeSkill = this.ctx.turn.activeSkillInvocation?.skillName;
+          if (activeSkill) {
+            markDistilledSkillTurnSignal({
+              turnId: this.ctx.turn.currentTurnId,
+              skillName: activeSkill,
+              sessionId: this.ctx.sessionId,
+              taskClass: classifyIntent(extractUserRequest(userMessage)).primary,
+              kind: 'adopted',
+            });
+          }
         }
 
         // Telemetry: record turn start (only first iteration has the real user prompt)

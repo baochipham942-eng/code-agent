@@ -244,6 +244,29 @@ export function registerTelemetryHandlers(getMainWindow: () => AppWindow | null)
       if (!feedback) {
         return { success: false, error: 'Invalid telemetry feedback payload' };
       }
+      const message = payload.messageId
+        ? getDatabase().getMessageById(feedback.sessionId, payload.messageId, { includeRewound: true })
+        : null;
+      const skillName = message?.metadata?.turnQuality?.capabilities?.activeSkillName;
+      if (skillName) {
+        const correlatedTurnId = message?.metadata?.correlation?.turnId;
+        const taskClass = correlatedTurnId
+          ? storage.getTurnDetail(correlatedTurnId)?.turn.intent.primary
+          : undefined;
+        void import('../services/skills/skillEvidenceLifecycle')
+          .then(({ recordDistilledSkillFeedback }) => recordDistilledSkillFeedback({
+            skillName,
+            feedbackId: feedback.id,
+            rating: feedback.rating,
+            sessionId: feedback.sessionId,
+            taskClass,
+          }))
+          .catch((error) => logger.warn('Failed to record skill feedback vote', {
+            skillName,
+            feedbackId: feedback.id,
+            error: error instanceof Error ? error.message : String(error),
+          }));
+      }
       void getTelemetryUploaderService().upload();
       return { success: true, feedbackId: feedback.id };
     },

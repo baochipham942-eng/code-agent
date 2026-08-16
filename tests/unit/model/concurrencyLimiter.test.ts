@@ -49,6 +49,20 @@ describe('ConcurrencyLimiter', () => {
     await p;
     expect(second).toBe(true);
   });
+
+  it('removes an aborted waiter without consuming the next released slot', async () => {
+    const limiter = new ConcurrencyLimiter('test', 1, 0);
+    await limiter.acquire();
+
+    const controller = new AbortController();
+    const queued = limiter.acquire(controller.signal);
+    controller.abort();
+    await expect(queued).rejects.toThrow('cancelled while waiting');
+
+    limiter.release();
+    await expect(limiter.acquire()).resolves.toBeUndefined();
+    limiter.release();
+  });
 });
 
 describe('getProviderLimiter', () => {

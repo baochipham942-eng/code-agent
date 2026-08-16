@@ -61,6 +61,15 @@ vi.mock('../../../../src/host/services/skills/distillSignalStore', () => ({
   hasDistillSuggestionForSession: () => false,
   recordDistillSignal: () => ({ distinctSessionCount: 2, inserted: true }),
   recordDistillSuggestion: vi.fn(),
+  getDistillPositiveEvidenceCount: () => 3,
+  getSkillPromotionEvidenceThreshold: () => 3,
+  registerDistilledSkillPromotion: (input: { skillName: string; patternKey: string; promotedAt: number }) => ({
+    ...input,
+    status: 'active',
+    initialPositiveEvidence: 3,
+    importanceCount: 3,
+    updatedAt: input.promotedAt,
+  }),
 }));
 vi.mock('../../../../src/host/services/infra/timeoutController', () => ({
   withTimeout: <T>(p: Promise<T>) => p,

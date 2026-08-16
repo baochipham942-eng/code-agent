@@ -6,7 +6,10 @@ import {
   buildRequestManifest,
   canonicalizeModelMessage,
 } from '../../src/host/agent/runtime/contextAssembly/requestManifestBuilder';
-import { verifyRequestReplay } from '../../src/host/evaluation/requestReplayGate';
+import {
+  verifyRequestReplay,
+  verifyRequestReplayBatch,
+} from '../../src/host/evaluation/requestReplayGate';
 import { ModelRouter } from '../../src/host/model/modelRouter';
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -95,13 +98,18 @@ async function main(): Promise<void> {
     throw new Error(`E2E local model did not issue the expected Read tool call: ${JSON.stringify(response)}`);
   }
 
-  verifyRequestReplay({
+  const replayCase = {
     manifest,
     ledgerMessages,
     readers,
     actualMessages,
     actualTools: tools,
-  });
+  };
+  const degradedManifest = { ...manifest, requestId: 'replay-smoke-degraded', degraded: true };
+  const batch = verifyRequestReplayBatch([replayCase, { ...replayCase, manifest: degradedManifest }]);
+  if (batch.verified !== 1 || batch.skippedDegraded !== 1) {
+    throw new Error(`unexpected replay batch result: ${JSON.stringify(batch)}`);
+  }
 
   const dynamicRef = manifest.messageRefs.find((ref) => ref.kind === 'content');
   if (!dynamicRef || dynamicRef.kind !== 'content') throw new Error('smoke manifest missing content ref');
@@ -110,13 +118,7 @@ async function main(): Promise<void> {
   content.set(dynamicRef.contentHash, original.replace('tail', 'tall'));
   let mutationWasRejected = false;
   try {
-    verifyRequestReplay({
-      manifest,
-      ledgerMessages,
-      readers,
-      actualMessages,
-      actualTools: tools,
-    });
+    verifyRequestReplay(replayCase);
   } catch {
     mutationWasRejected = true;
   }

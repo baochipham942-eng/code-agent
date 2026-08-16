@@ -60,15 +60,37 @@ export function assertReconstructedRequestMatches(
   }
 }
 
-export function verifyRequestReplay(input: {
+export interface RequestReplayGateCase {
   manifest: TraceEventDataMap['request_manifest'];
   ledgerMessages: readonly Message[];
   readers: RequestReplayContentReaders;
   actualMessages: readonly ModelMessage[];
   actualTools: ToolDefinition[];
-}): ReconstructedRequest {
+}
+
+export function verifyRequestReplay(input: RequestReplayGateCase): ReconstructedRequest {
   const reconstructed = reconstructRequest(input.manifest, input.ledgerMessages, input.readers);
   const actualToolSchemaJson = buildToolSchemaSnapshot(input.actualTools).schemaJson;
   assertReconstructedRequestMatches(input.actualMessages, actualToolSchemaJson, reconstructed);
   return reconstructed;
+}
+
+export function verifyRequestReplayBatch(
+  cases: readonly RequestReplayGateCase[],
+  report: (message: string) => void = console.log,
+): { verified: number; skippedDegraded: number } {
+  let verified = 0;
+  let skippedDegraded = 0;
+  for (const replayCase of cases) {
+    if (replayCase.manifest.degraded) {
+      skippedDegraded += 1;
+      continue;
+    }
+    verifyRequestReplay(replayCase);
+    verified += 1;
+  }
+  if (skippedDegraded > 0) {
+    report(`request replay gate: 跳过 ${skippedDegraded} 轮 degraded`);
+  }
+  return { verified, skippedDegraded };
 }

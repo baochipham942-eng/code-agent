@@ -29,6 +29,7 @@ function baseInput(
     appVersion: '0.32.0',
     engine: 'aisdk' as const,
     contentStore: { store: vi.fn(() => true) },
+    systemPromptStore: { get: vi.fn(() => ({ content: 'stable prompt' })) },
   };
 }
 
@@ -80,5 +81,44 @@ describe('buildRequestManifest', () => {
     input.contentStore = { store: vi.fn(() => false) };
 
     expect(buildRequestManifest(input).degraded).toBe(true);
+  });
+
+  it('falls back to verbatim content when the prompt cache cannot return the hash original', () => {
+    const message: ModelMessage = { role: 'system', content: 'token sk-secret' };
+    const input = baseInput([message], ['__system_prompt__'], []);
+    input.systemPromptStore = { get: vi.fn(() => ({ content: 'token [secret hidden]' })) };
+    const store = vi.fn(() => true);
+    input.contentStore = { store };
+
+    const manifest = buildRequestManifest(input);
+
+    expect(manifest.messageRefs[0]).toMatchObject({
+      kind: 'content',
+      reason: 'system_prompt_fallback',
+    });
+    expect(store).toHaveBeenCalledWith(expect.any(String), canonicalizeModelMessage(message));
+  });
+
+  it('uses ordered shared projections for ledger tool-result messages', () => {
+    const ledger = {
+      id: 'tool-1',
+      role: 'tool',
+      content: '',
+      timestamp: 1,
+      toolResults: [
+        { toolCallId: 'call-1', toolName: 'Read', success: true, output: 'one' },
+        { toolCallId: 'call-2', toolName: 'Read', success: false, error: 'two' },
+      ],
+    } as Message;
+    const messages: ModelMessage[] = [
+      { role: 'tool', content: 'one', toolCallId: 'call-1' },
+      { role: 'tool', content: 'two', toolCallId: 'call-2', toolError: true },
+    ];
+    const input = baseInput(messages, ['tool-1', 'tool-1'], [ledger]);
+
+    expect(buildRequestManifest(input).messageRefs).toEqual([
+      { kind: 'ledger_message', messageId: 'tool-1' },
+      { kind: 'ledger_message', messageId: 'tool-1' },
+    ]);
   });
 });

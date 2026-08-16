@@ -36,7 +36,7 @@ export type RequestManifestMessageRef =
   | {
       kind: 'content';
       contentHash: string;
-      reason: 'dynamic_tail' | 'runtime_injection' | 'post_assembly_rewrite';
+      reason: 'dynamic_tail' | 'runtime_injection' | 'post_assembly_rewrite' | 'system_prompt_fallback';
     };
 
 export interface TraceEventDataMap {

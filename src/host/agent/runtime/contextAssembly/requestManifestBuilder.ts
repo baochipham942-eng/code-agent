@@ -6,9 +6,12 @@ import type { ModelMessage } from '../../../agent/loopTypes';
 import type { CollapsedSpan } from '../../../context/compressionState';
 import { resolveModelMaxOutputTokens } from '../../../model/modelLimits';
 import { getContentCache } from '../../../telemetry/contentCache';
+import { getSystemPromptCache } from '../../../telemetry/systemPromptCache';
 import type { RequestManifestMessageRef, TraceEventDataMap } from '../turnTrace';
+import { projectLedgerMessage } from './ledgerMessageProjection';
 
 type ContentStore = { store(hash: string, content: string): boolean };
+type SystemPromptStore = { get(hash: string): { content: string } | null };
 
 export interface RequestManifestBuildInput {
   requestId: string;
@@ -23,6 +26,7 @@ export interface RequestManifestBuildInput {
   appVersion: string;
   engine: 'aisdk' | 'legacy';
   contentStore?: ContentStore;
+  systemPromptStore?: SystemPromptStore;
 }
 
 export function canonicalizeModelMessage(message: ModelMessage): string {
@@ -31,33 +35,6 @@ export function canonicalizeModelMessage(message: ModelMessage): string {
 
 function hashContent(content: string): string {
   return createHash('sha256').update(content).digest('hex');
-}
-
-function sameJson(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
-}
-
-function matchesLedgerMessage(message: ModelMessage, source: Message): boolean {
-  if (message.role !== source.role || source.attachments?.length) return false;
-  if (message.role === 'tool') {
-    return source.toolResults?.some((result) =>
-      (result.output || result.error || '') === message.content
-      && result.toolCallId === message.toolCallId
-      && !result.success === Boolean(message.toolError)) === true;
-  }
-  if (message.content !== source.content) return false;
-  if (!sameJson(message.thinking, source.thinking)) return false;
-  if (!sameJson(message.responsesOutput, source.responsesOutput)) return false;
-  if (source.toolCalls?.length || message.toolCalls?.length) {
-    if (source.toolCalls?.length !== message.toolCalls?.length) return false;
-    return source.toolCalls?.every((call, index) => {
-      const projected = message.toolCalls?.[index];
-      return projected?.id === call.id
-        && projected.name === call.name
-        && projected.arguments === JSON.stringify(call.arguments);
-    }) === true;
-  }
-  return true;
 }
 
 function resolveAdapterDefaults(
@@ -104,7 +81,9 @@ export function buildRequestManifest(
   input: RequestManifestBuildInput,
 ): TraceEventDataMap['request_manifest'] {
   const contentStore = input.contentStore ?? getContentCache();
+  const systemPromptStore = input.systemPromptStore ?? getSystemPromptCache();
   const transcriptById = new Map(input.transcriptMessages.map((message) => [message.id, message]));
+  const ledgerProjectionOffsets = new Map<string, number>();
   let degraded = false;
   const storeCanonical = (canonical: string): string => {
     const contentHash = hashContent(canonical);
@@ -116,11 +95,20 @@ export function buildRequestManifest(
     const sourceId = input.sourceIds[index];
     const unchangedSinceAssembly = input.assembledCanonicalMessages[index] === canonical;
     if (sourceId === '__system_prompt__' && unchangedSinceAssembly && message.role === 'system' && typeof message.content === 'string') {
-      return { kind: 'system_prompt', contentHash: hashContent(message.content) };
+      const contentHash = hashContent(message.content);
+      if (systemPromptStore.get(contentHash)?.content === message.content) {
+        return { kind: 'system_prompt', contentHash };
+      }
+      return { kind: 'content', contentHash: storeCanonical(canonical), reason: 'system_prompt_fallback' };
     }
     const transcriptMessage = sourceId ? transcriptById.get(sourceId) : undefined;
-    if (unchangedSinceAssembly && transcriptMessage && matchesLedgerMessage(message, transcriptMessage)) {
-      return { kind: 'ledger_message', messageId: sourceId };
+    if (unchangedSinceAssembly && transcriptMessage) {
+      const offset = ledgerProjectionOffsets.get(sourceId) ?? 0;
+      const candidate = projectLedgerMessage(transcriptMessage)[offset];
+      if (candidate && canonicalizeModelMessage(candidate) === canonical) {
+        ledgerProjectionOffsets.set(sourceId, offset + 1);
+        return { kind: 'ledger_message', messageId: sourceId };
+      }
     }
     const reason = sourceId === '__dynamic_tail__'
       ? 'dynamic_tail'

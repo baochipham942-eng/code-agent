@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   openPreview: vi.fn(),
   openContentPreview: vi.fn(),
   openWorkspacePreview: vi.fn(),
+  setWorkbenchCollapsed: vi.fn(),
   addLibraryItem: vi.fn(),
   invokeDomain: vi.fn(),
   copyPathToClipboard: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     openPreview: mocks.openPreview,
     openContentPreview: mocks.openContentPreview,
     openWorkspacePreview: mocks.openWorkspacePreview,
+    setWorkbenchCollapsed: mocks.setWorkbenchCollapsed,
   }),
 }));
 
@@ -162,6 +164,7 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
     render(<DeliverableCardList cards={cards} />);
 
     fireEvent.click(screen.getByRole('button', { name: '打开文件预览: 报告' }));
+    expect(mocks.setWorkbenchCollapsed).toHaveBeenCalledWith(false);
     expect(mocks.openPreview).toHaveBeenCalledWith('/workspace/report.md', {
       deliverableStatus: 'unverified',
     });

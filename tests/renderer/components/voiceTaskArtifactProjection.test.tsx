@@ -100,6 +100,27 @@ describe('语音派单产物投影', () => {
     expect(screen.getAllByText('12.md')).toHaveLength(1);
   });
 
+  it('终态字幕被 host 去重时，用任务结果真摘要补唯一完成锚点', () => {
+    const hiddenConclusion: Message = {
+      id: 'hidden-conclusion',
+      role: 'assistant',
+      content: '文件已经创建好了。',
+      timestamp: 1_900,
+      isMeta: true,
+    };
+    const projection = projectTurns([dispatchMessage, hiddenConclusion, resultMessage()], 'session-1', false);
+    const dispatchTurn = projection.turns.find((turn) => (
+      turn.nodes.some((node) => node.metadata?.voiceDispatch)
+    ));
+
+    render(<TurnCard turn={dispatchTurn!} sessionId="session-1" />);
+    const completion = screen.getByText('已完成');
+    const card = screen.getByRole('button', { name: '打开文件预览: 12.md' });
+    expect(completion.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByText('已完成')).toHaveLength(1);
+    expect(screen.getAllByText('12.md')).toHaveLength(1);
+  });
+
   it('纯问答结果不投影空产物卡', () => {
     const projection = projectTurns([dispatchMessage, resultMessage(false)], 'session-1', false);
     expect(projection.turns.flatMap((turn) => turn.nodes)).not.toEqual(

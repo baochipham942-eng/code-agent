@@ -270,6 +270,7 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
   const openPreview = useAppStore((state) => state.openPreview);
   const openContentPreview = useAppStore((state) => state.openContentPreview);
   const openWorkspacePreview = useAppStore((state) => state.openWorkspacePreview);
+  const setWorkbenchCollapsed = useAppStore((state) => state.setWorkbenchCollapsed);
   const workspacePreviewItems = useWorkspacePreviewModel();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const currentSessionProjectId = useSessionStore(
@@ -282,6 +283,7 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
   if (cards.length === 0) return null;
 
   const openCard = (card: DeliverableCardView) => {
+    setWorkbenchCollapsed(false);
     const target = card.openTarget;
     switch (target.kind) {
       case 'workspace-preview':

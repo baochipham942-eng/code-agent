@@ -8,7 +8,7 @@ const runtime = vi.hoisted(() => ({
   connect: vi.fn(),
   updateInstructions: vi.fn(),
   quickTask: vi.fn(),
-  executeVoiceTool: vi.fn(async () => '已派发'),
+  executeVoiceTool: vi.fn(async (..._args: unknown[]) => '已派发'),
 }));
 const recordVoiceCall = vi.hoisted(() => vi.fn());
 

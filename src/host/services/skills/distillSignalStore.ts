@@ -10,9 +10,9 @@ export interface DistillSignalRecordResult {
   inserted: boolean;
 }
 
-export type DistilledSkillStatus = 'active' | 'split_pending' | 'retired' | 'merged';
+type DistilledSkillStatus = 'active' | 'split_pending' | 'retired' | 'merged';
 export type DistilledSkillVoteOutcome = 'adopted' | 'skipped' | 'negative_feedback';
-export type DistilledSkillLifecycleAction = 'keep' | 'split' | 'retire' | 'merge';
+type DistilledSkillLifecycleAction = 'keep' | 'split' | 'retire' | 'merge';
 
 export interface DistilledSkillLifecycleRecord {
   skillName: string;
@@ -26,7 +26,7 @@ export interface DistilledSkillLifecycleRecord {
   mergedInto?: string;
 }
 
-export interface DistilledSkillTaskBucket {
+interface DistilledSkillTaskBucket {
   taskClass: string;
   positive: number;
   negative: number;
@@ -126,7 +126,7 @@ export function registerDistilledSkillPromotion(input: {
   return getDistilledSkillLifecycle(input.skillName);
 }
 
-export function getDistilledSkillLifecycle(skillName: string): DistilledSkillLifecycleRecord | null {
+function getDistilledSkillLifecycle(skillName: string): DistilledSkillLifecycleRecord | null {
   const db = getDb();
   if (!db) return null;
   const row = db.prepare(`
@@ -163,7 +163,7 @@ function getTaskBuckets(skillName: string): DistilledSkillTaskBucket[] {
 }
 
 /** Assay 顺序：先识别跨任务类异质性，再判断退役，最后才允许合并。 */
-export function decideDistilledSkillLifecycle(input: {
+function decideDistilledSkillLifecycle(input: {
   status?: DistilledSkillStatus;
   importanceCount: number;
   buckets: DistilledSkillTaskBucket[];
@@ -186,6 +186,7 @@ export function recordDistilledSkillVote(input: {
   outcome: DistilledSkillVoteOutcome;
   taskClass?: string;
   sessionId?: string;
+  mergeCandidate?: string;
   createdAt?: number;
 }): DistilledSkillVoteResult | null {
   const db = getDb();
@@ -193,6 +194,10 @@ export function recordDistilledSkillVote(input: {
   const now = input.createdAt ?? Date.now();
   const taskClass = normalizeTaskClass(input.taskClass);
   const delta = input.outcome === 'adopted' ? 1 : -1;
+  const mergeCandidate = input.mergeCandidate?.trim();
+  const eligibleMergeCandidate = mergeCandidate && mergeCandidate !== input.skillName
+    ? mergeCandidate
+    : undefined;
 
   return db.transaction(() => {
     const before = getDistilledSkillLifecycle(input.skillName);
@@ -249,18 +254,31 @@ export function recordDistilledSkillVote(input: {
       status: before.status,
       importanceCount,
       buckets,
+      mergeCandidate: eligibleMergeCandidate,
     });
     const status: DistilledSkillStatus = action === 'split'
       ? 'split_pending'
       : action === 'retire'
         ? 'retired'
-        : before.status;
+        : action === 'merge'
+          ? 'merged'
+          : before.status;
     db.prepare(`
       UPDATE distill_skill_lifecycle
       SET status = ?, importance_count = ?, updated_at = ?,
-          retired_at = CASE WHEN ? = 'retired' THEN ? ELSE retired_at END
+          retired_at = CASE WHEN ? = 'retired' THEN ? ELSE retired_at END,
+          merged_into = CASE WHEN ? = 'merged' THEN ? ELSE merged_into END
       WHERE skill_name = ?
-    `).run(status, importanceCount, now, status, now, input.skillName);
+    `).run(
+      status,
+      importanceCount,
+      now,
+      status,
+      now,
+      status,
+      eligibleMergeCandidate ?? null,
+      input.skillName,
+    );
 
     const record = getDistilledSkillLifecycle(input.skillName);
     return record ? { record, action, buckets, changed: true } : null;
@@ -338,34 +356,6 @@ export function finalizeDistilledSkillTurn(input: {
   }
   db.prepare('DELETE FROM distill_skill_turn_signals WHERE turn_id = ?').run(input.turnId);
   return results;
-}
-
-export function requestDistilledSkillMerge(input: {
-  skillName: string;
-  mergeInto: string;
-  requestedAt?: number;
-}): DistilledSkillVoteResult | null {
-  const db = getDb();
-  if (!db || input.skillName === input.mergeInto) return null;
-  const record = getDistilledSkillLifecycle(input.skillName);
-  if (!record) return null;
-  const buckets = getTaskBuckets(input.skillName);
-  const action = decideDistilledSkillLifecycle({
-    status: record.status,
-    importanceCount: record.importanceCount,
-    buckets,
-    mergeCandidate: input.mergeInto,
-  });
-  if (action !== 'merge') return { record, action, buckets, changed: false };
-
-  const now = input.requestedAt ?? Date.now();
-  db.prepare(`
-    UPDATE distill_skill_lifecycle
-    SET status = 'merged', merged_into = ?, updated_at = ?
-    WHERE skill_name = ?
-  `).run(input.mergeInto, now, input.skillName);
-  const updated = getDistilledSkillLifecycle(input.skillName);
-  return updated ? { record: updated, action, buckets, changed: true } : null;
 }
 
 /** Persist one signal per pattern/session and return its distinct-session frequency. */

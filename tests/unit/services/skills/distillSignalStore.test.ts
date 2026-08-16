@@ -14,16 +14,13 @@ vi.mock('../../../../src/host/services/core/databaseService', () => ({
 
 import { applyDistillSignalsMigration } from '../../../../src/host/services/core/database/migrations/distillSignals';
 import {
-  decideDistilledSkillLifecycle,
   finalizeDistilledSkillTurn,
-  getDistilledSkillLifecycle,
   hasDistillSuggestionForSession,
   markDistilledSkillTurnSignal,
   recordDistillSignal,
   recordDistillSuggestion,
   recordDistilledSkillVote,
   registerDistilledSkillPromotion,
-  requestDistilledSkillMerge,
 } from '../../../../src/host/services/skills/distillSignalStore';
 
 function createLogger() {
@@ -67,8 +64,9 @@ describe('distill signal store', () => {
   it('retires a promoted skill when same-class negative votes reduce importance to zero', () => {
     expect(promote()?.importanceCount).toBe(3);
 
+    let result = null;
     for (let i = 1; i <= 3; i++) {
-      recordDistilledSkillVote({
+      result = recordDistilledSkillVote({
         skillName: 'distilled-skill',
         eventKey: `skip-${i}`,
         outcome: 'skipped',
@@ -77,9 +75,9 @@ describe('distill signal store', () => {
       });
     }
 
-    expect(getDistilledSkillLifecycle('distilled-skill')).toMatchObject({
-      importanceCount: 0,
-      status: 'retired',
+    expect(result).toMatchObject({
+      action: 'retire',
+      record: { importanceCount: 0, status: 'retired' },
     });
   });
 
@@ -98,6 +96,7 @@ describe('distill signal store', () => {
         eventKey: `skip-research-${i}`,
         outcome: 'skipped',
         taskClass: 'research',
+        mergeCandidate: 'similar-skill',
       });
     }
 
@@ -105,15 +104,21 @@ describe('distill signal store', () => {
       action: 'split',
       record: { importanceCount: 0, status: 'split_pending' },
     });
-    expect(decideDistilledSkillLifecycle({
-      importanceCount: 0,
-      buckets: result!.buckets,
-      mergeCandidate: 'similar-skill',
-    })).toBe('split');
-    expect(requestDistilledSkillMerge({
+  });
+
+  it('merges only after split and retirement checks have passed', () => {
+    promote();
+
+    expect(recordDistilledSkillVote({
       skillName: 'distilled-skill',
-      mergeInto: 'similar-skill',
-    })?.action).toBe('split');
+      eventKey: 'adopt-before-merge',
+      outcome: 'adopted',
+      taskClass: 'research',
+      mergeCandidate: 'similar-skill',
+    })).toMatchObject({
+      action: 'merge',
+      record: { status: 'merged', mergedInto: 'similar-skill' },
+    });
   });
 
   it('turn vote is idempotent and selected becomes adopted before finalization', () => {

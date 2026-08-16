@@ -8,6 +8,7 @@ import type { ModelDecisionEventData } from './modelDecision';
 import type { TurnQualitySummary } from './turnQuality';
 import type { SessionAutomationMessageMetadata } from './sessionAutomation';
 import type { ArtifactLocatorV1 } from './artifactLocator';
+import type { NormalizedToolArtifactMeta } from './artifactBlob';
 import type { VoiceCallFailureCode, VoiceCallFailurePhase, VoiceCallSummary, VoiceToolCallOrigin } from './voice';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
@@ -354,6 +355,8 @@ export interface MessageMetadata {
     shortName: string;
     status: 'completed' | 'failed' | 'cancelled' | 'unverified';
     summary: string;
+    /** 该后台 run 的工具结果账本中已确认产生的文件产物。 */
+    artifacts?: NormalizedToolArtifactMeta[];
   };
   voiceDispatch?: {
     title: string;

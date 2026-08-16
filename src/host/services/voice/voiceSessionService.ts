@@ -65,6 +65,7 @@ import {
 } from './voiceQuestionBridge';
 import { isPureToolTagText, persistTranscript, type TranscriptMergeState } from './voiceTranscriptPersistence';
 import { prepareVoiceprintForCall, releaseVoiceprintForCall, type VoiceprintCallState } from './voiceprintService';
+import { createVoiceSayDoGuard, type VoiceSayDoGuard } from './voiceSayDoGuard';
 
 const logger = createLogger('VoiceSession');
 
@@ -127,6 +128,8 @@ interface ActiveSession {
   upstream: VoiceTransportHandle;
   /** 上游是否真实收下了通话工具；VOICE_TOOLS_DROPPED 后 fail-closed。 */
   voiceToolsAvailable: boolean;
+  /** 用户轮、工具账本与语义审计状态；只活在本通电话内。 */
+  sayDoGuard: VoiceSayDoGuard;
   /** teardown 已开始时，新的打字注入必须回退，不能再抢这通电话。 */
   ending: boolean;
   maxDurationTimer: NodeJS.Timeout;
@@ -885,6 +888,7 @@ async function connectAndBind(
         }
         if (event.type === 'user.transcript' && event.done) {
           if (!suppressUserFragment) {
+            if (active?.id === id && !voiceQuestionConsumed) active.sayDoGuard.rememberUserTurn(event.text);
             void persistTranscript(
               neoSessionId,
               'user',
@@ -951,6 +955,7 @@ async function connectAndBind(
                   ...(pending?.itemId ? { itemId: pending.itemId } : {}),
                 },
               );
+              if (active?.id === id && active.voiceToolsAvailable) void active.sayDoGuard.audit(text, event.responseId);
             }
           }
         }
@@ -1000,7 +1005,10 @@ async function connectAndBind(
         if (socket.readyState === socket.OPEN) socket.send(frame, { binary: true });
         recorder?.feedDownstream(frame);
       },
-      onToolCall: (call) => executeVoiceTool(call.name, call.arguments, call.origin),
+      onToolCall: (call) => {
+        if (active?.id === id) active.sayDoGuard.rememberToolCall();
+        return executeVoiceTool(call.name, call.arguments, call.origin);
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'connect failed';
@@ -1042,6 +1050,7 @@ async function connectAndBind(
     clientRef,
     upstream,
     voiceToolsAvailable,
+    sayDoGuard: createVoiceSayDoGuard(id, () => active?.id === id && !active.ending),
     ending: false,
     graceTimer: null,
     inboundAudioFrames: 0,

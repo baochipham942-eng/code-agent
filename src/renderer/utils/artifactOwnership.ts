@@ -93,18 +93,29 @@ export function buildArtifactOwnershipItems(
   routingEvidence?: TurnRoutingEvidence,
 ): TurnArtifactOwnershipItem[] {
   const items: TurnArtifactOwnershipItem[] = [];
-  const seenKeys = new Set<string>();
+  const itemIndexByKey = new Map<string, number>();
   const primaryAgent = routingEvidence?.agentNames?.[0];
   const diffFilePaths = new Set(buildTurnFileChanges(turn).map((change) => change.filePath));
 
   const addItem = (item: TurnArtifactOwnershipItem, dedupeKey: string) => {
-    if (seenKeys.has(dedupeKey)) {
+    const existingIndex = itemIndexByKey.get(dedupeKey);
+    if (existingIndex !== undefined) {
+      const existing = items[existingIndex];
+      if (item.fileMetadata) {
+        items[existingIndex] = {
+          ...existing,
+          fileMetadata: {
+            ...existing.fileMetadata,
+            ...item.fileMetadata,
+          },
+        };
+      }
       return;
     }
     if (item.kind === 'file' && item.path && diffFilePaths.has(item.path)) {
       return;
     }
-    seenKeys.add(dedupeKey);
+    itemIndexByKey.set(dedupeKey, items.length);
     items.push(item);
   };
 
@@ -198,6 +209,13 @@ export function buildArtifactOwnershipItems(
         role: resolveArtifactRole(artifact),
         path: artifact.path,
         url: artifact.url,
+        fileMetadata: artifact.path && (artifact.sha256 || artifact.sizeBytes !== undefined || artifact.mimeType)
+          ? {
+              ...(artifact.sha256 ? { sha256: artifact.sha256 } : {}),
+              ...(artifact.sizeBytes !== undefined ? { sizeBytes: artifact.sizeBytes } : {}),
+              ...(artifact.mimeType ? { mimeType: artifact.mimeType } : {}),
+            }
+          : undefined,
         sourceNodeId: node.id,
       }, dedupeKeyForToolArtifact(artifact, node.id));
     }

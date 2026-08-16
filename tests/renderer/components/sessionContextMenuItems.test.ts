@@ -30,6 +30,7 @@ function makeDeps(overrides: Partial<SessionContextMenuDeps> = {}): SessionConte
     setRenameValue: vi.fn(),
     canOpenSessionReplay: false,
     handleOpenSessionReplay: vi.fn(),
+    handleOpenVoiceAudit: vi.fn(),
     unarchiveSession: vi.fn(),
     archiveSession: vi.fn(),
     softDelete: vi.fn(),
@@ -54,9 +55,18 @@ describe('buildSessionContextMenuItems', () => {
         '删除',
         '导出 Markdown',
         '导出会话日志',
+        '语音审计',
       ]),
     );
     expect(items.find((item) => item.label === '删除')?.danger).toBe(true);
+  });
+
+  it('语音审计入口对所有会话可用并传递目标会话', () => {
+    const handleOpenVoiceAudit = vi.fn();
+    const session = makeSession();
+    const items = buildSessionContextMenuItems(session, makeDeps({ handleOpenVoiceAudit }));
+    items.find((item) => item.label === '语音审计')?.onClick();
+    expect(handleOpenVoiceAudit).toHaveBeenCalledWith(session);
   });
 
   it('非管理员时 Replay 项禁用且文案降级', () => {

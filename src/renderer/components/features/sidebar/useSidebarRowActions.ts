@@ -40,6 +40,11 @@ export interface SidebarReplayDialogState {
   replay: StructuredReplay;
 }
 
+export interface SidebarVoiceAuditDialogState {
+  sessionId: string;
+  sessionTitle: string;
+}
+
 export interface SidebarContextMenuState {
   x: number;
   y: number;
@@ -50,6 +55,7 @@ export interface UseSidebarRowActionsParams {
   showToast: (type: ToastType, message: string, duration?: number) => string;
   canOpenSessionReplay: boolean;
   setReplayDialog: Dispatch<SetStateAction<SidebarReplayDialogState | null>>;
+  setVoiceAuditDialog: Dispatch<SetStateAction<SidebarVoiceAuditDialogState | null>>;
   setContextMenu: Dispatch<SetStateAction<SidebarContextMenuState | null>>;
   renamingId: string | null;
   renameValue: string;
@@ -64,6 +70,7 @@ export interface SidebarRowActions {
   saveExportToDownloads: (fileName: string, content: string) => Promise<void>;
   openRuntimeLogsFolder: () => Promise<boolean>;
   handleOpenSessionReplay: (session: SessionWithMeta) => Promise<void>;
+  handleOpenVoiceAudit: (session: SessionWithMeta) => void;
   handleOpenReplayEvidence: (session: SessionWithMeta, evidence: SessionReplayEvidence) => Promise<void>;
   handleContextMenu: (e: React.MouseEvent, session: SessionWithMeta) => void;
   handleDoubleClick: (e: React.MouseEvent, session: SessionWithMeta) => void;
@@ -82,6 +89,7 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
     showToast,
     canOpenSessionReplay,
     setReplayDialog,
+    setVoiceAuditDialog,
     setContextMenu,
     renamingId,
     renameValue,
@@ -178,6 +186,13 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
     }
   }, [canOpenSessionReplay, setReplayDialog, showToast, menu]);
 
+  const handleOpenVoiceAudit = useCallback((session: SessionWithMeta) => {
+    setVoiceAuditDialog({
+      sessionId: session.id,
+      sessionTitle: getDisplaySessionTitle(session.title),
+    });
+  }, [setVoiceAuditDialog]);
+
   // 会话行 hover 眼睛图标已撤（2026-07-29 侧栏项目区 redesign：hover 只留归档），
   // 评测中心回放 tab 的入口只剩评测中心自身；回放弹窗路径仍保留给证据跳转 / 右键菜单
   // 这些需要 workflowRuns 合并的旧流程。
@@ -235,6 +250,7 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
     saveExportToDownloads,
     openRuntimeLogsFolder,
     handleOpenSessionReplay,
+    handleOpenVoiceAudit,
     handleOpenReplayEvidence,
     handleContextMenu,
     handleDoubleClick,

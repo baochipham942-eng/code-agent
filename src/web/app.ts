@@ -16,7 +16,7 @@ import type { RunRegistry } from '../host/runtime/runRegistry';
 import type { DurableRunRolloutPolicy } from '../host/app/durableRunRollout';
 import type { DurableRunReadService } from '../host/app/durableRunReadService';
 import type { WebRouteLogger } from './routes/routeTypes';
-import type { BuildInfo } from '../shared/contract';
+import type { BuildInfo, PermissionRequest } from '../shared/contract';
 
 import { formatError } from './helpers/utils';
 import { handleTempUpload, handleScreenshot } from './helpers/upload';
@@ -69,6 +69,7 @@ export interface CreateAppDeps {
   getBuildInfo: () => BuildInfo | null;
   getDurableRunRollout: () => { policy: DurableRunRolloutPolicy; ready: boolean };
   getDurableRunReadService: () => DurableRunReadService | undefined;
+  getPendingPermissionRequests?: () => PermissionRequest[];
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
   registerQueuedInputEnqueueHook?: (onEnqueued: (sessionId: string) => void) => void;
 }
@@ -117,6 +118,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     getBuildInfo,
     getDurableRunRollout,
     getDurableRunReadService,
+    getPendingPermissionRequests,
   } = deps;
 
   const app = express();
@@ -148,6 +150,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
       process.env,
       { currentShellVersion: getAppVersion() },
     ),
+    getPendingPermissionRequests,
   }));
 
   // ── File upload ─────────────────────────────────────────────────────

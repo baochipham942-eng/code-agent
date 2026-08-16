@@ -29,13 +29,15 @@ export function recordRequestManifest(
   const appVersion = getAgentVersion();
   let manifest: TraceEventDataMap['request_manifest'];
   try {
+    const compressionSnapshot = ctx.runtime.contextHealth.compressionState.getSnapshot();
     manifest = buildRequestManifest({
       requestId: input.requestId,
       messages: input.messages,
       assembledCanonicalMessages: input.assembledMessages.map(canonicalizeModelMessage),
       sourceIds: input.assembledMessages.modelMessageSourceIds ?? [],
       transcriptMessages: ctx.runtime.messages,
-      collapsedSpans: ctx.runtime.contextHealth.compressionState.getSnapshot().collapsedSpans,
+      collapsedSpans: compressionSnapshot.collapsedSpans,
+      compactionReplacements: compressionSnapshot.compactionReplacements,
       toolSchemaHash: toolSchemaSnapshot.schemaHash,
       toolNames: toolSchemaSnapshot.toolNames,
       requestConfig: input.requestConfig,

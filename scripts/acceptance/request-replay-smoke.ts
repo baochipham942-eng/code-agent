@@ -61,6 +61,7 @@ async function main(): Promise<void> {
     sourceIds,
     transcriptMessages: ledgerMessages,
     collapsedSpans: [],
+    compactionReplacements: [],
     toolSchemaHash: toolSnapshot.schemaHash,
     toolNames: toolSnapshot.toolNames,
     requestConfig: { provider: 'openai', model: 'e2e-local-agent-model' },
@@ -116,9 +117,11 @@ async function main(): Promise<void> {
 
   const dynamicRef = manifest.messageRefs.find((ref) => ref.kind === 'content');
   if (!dynamicRef || dynamicRef.kind !== 'content') throw new Error('smoke manifest missing content ref');
-  const original = content.get(dynamicRef.contentHash);
-  if (!original) throw new Error('smoke content cache missing dynamic tail');
-  content.set(dynamicRef.contentHash, original.replace('tail', 'tall'));
+  const mutationRef = dynamicRef.blocks?.find((block) => content.get(block.contentHash)?.includes('tail'))
+    ?? { contentHash: dynamicRef.contentHash };
+  const original = content.get(mutationRef.contentHash);
+  if (!original) throw new Error('smoke content cache missing dynamic tail block');
+  content.set(mutationRef.contentHash, original.replace('tail', 'tall'));
   let mutationWasRejected = false;
   try {
     verifyRequestReplay(replayCase);
@@ -129,7 +132,7 @@ async function main(): Promise<void> {
   if (!mutationWasRejected) throw new Error('content mutation did not raise RequestNotReconstructableError');
 
   // 反向变异之二：实发侧被篡改（重建正常、对比必须逐字节咬住）
-  content.set(dynamicRef.contentHash, original);
+  content.set(mutationRef.contentHash, original);
   const reconstructed = verifyRequestReplay(replayCase);
   const tamperedActual = actualMessages.map((message, index) =>
     index === 2 ? { ...message, content: 'runtime replay smoke tall' } : message);

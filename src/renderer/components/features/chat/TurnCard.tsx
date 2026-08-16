@@ -51,8 +51,10 @@ import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnershi
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
+import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useVoiceCallStore } from '../../../stores/voiceCallStore';
+import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '../../../utils/sessionNeedsInput';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -99,6 +101,12 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const createForkFromReply = useMessageActionStore((state) => state.createForkFromReply);
   const sessionIsRunning = useSessionStore((state) => (
     sessionId ? Boolean(state.runningSessionIds?.has(sessionId)) : false
+  ));
+  const waitingForApproval = useAppStore((state) => (
+    sessionId
+      ? hasPendingPermissionForSession(sessionId, state)
+        || hasQueuedPermissionForSession(sessionId, state)
+      : false
   ));
   const voiceCallInFlight = useVoiceCallStore((state) => (
     state.phase === 'live' || state.phase === 'connecting'
@@ -450,7 +458,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 runningToolStartTime={runningToolStartTime}
                 showCaret={!lastNodeIsStreamingText}
                 isThinking={isThinkingPhase}
-                waitingReason={getStreamingWaitingReason(turn.nodes, streamingState.status)}
+                waitingReason={getStreamingWaitingReason(
+                  turn.nodes,
+                  streamingState.status,
+                  waitingForApproval,
+                )}
                 subagentCount={getRunningSubagentCount(turn.nodes)}
               />
             )}
@@ -465,7 +477,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             runningToolStartTime={runningToolStartTime}
             showCaret={!lastNodeIsStreamingText}
             isThinking={isThinkingPhase}
-            waitingReason={getStreamingWaitingReason(turn.nodes, streamingState.status)}
+            waitingReason={getStreamingWaitingReason(
+              turn.nodes,
+              streamingState.status,
+              waitingForApproval,
+            )}
             subagentCount={getRunningSubagentCount(turn.nodes)}
           />
         )}

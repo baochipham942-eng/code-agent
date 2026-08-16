@@ -9,7 +9,7 @@ import {
   MarkdownRenderer,
 } from '../../../src/renderer/components/features/chat/MessageBubble/messageContentParts';
 import {
-  splitStreamingMarkdownBlocks,
+
   updateStreamingMarkdownBlockState,
 } from '../../../src/renderer/components/features/chat/MessageBubble/streamingMarkdownBlocks';
 import { renderToStaticMarkupAsync } from './renderToStaticMarkupAsync';
@@ -20,8 +20,8 @@ describe('streaming markdown blocks', () => {
   afterEach(() => cleanup());
 
   it('keeps completed block keys and contents stable while only the tail grows', () => {
-    const first = splitStreamingMarkdownBlocks('# 标题\n\n第一段。\n\n尾段');
-    const second = splitStreamingMarkdownBlocks('# 标题\n\n第一段。\n\n尾段继续增长');
+    const first = updateStreamingMarkdownBlockState(null, '# 标题\n\n第一段。\n\n尾段').blocks;
+    const second = updateStreamingMarkdownBlockState(null, '# 标题\n\n第一段。\n\n尾段继续增长').blocks;
 
     expect(first).toHaveLength(3);
     expect(second).toHaveLength(3);
@@ -46,7 +46,7 @@ describe('streaming markdown blocks', () => {
   });
 
   it('keeps a top-level list and fenced code as single blocks', () => {
-    const blocks = splitStreamingMarkdownBlocks([
+    const blocks = updateStreamingMarkdownBlockState(null, [
       '- 第一项',
       '- 第二项',
       '',
@@ -55,7 +55,7 @@ describe('streaming markdown blocks', () => {
       '```',
       '',
       '尾段',
-    ].join('\n'));
+    ].join('\n')).blocks;
 
     expect(blocks.map((block) => block.content)).toEqual([
       '- 第一项\n- 第二项\n\n',
@@ -65,7 +65,7 @@ describe('streaming markdown blocks', () => {
   });
 
   it('applies remend to the unfinished tail only', () => {
-    const blocks = splitStreamingMarkdownBlocks('完成的 **粗体**。\n\n正在生成 **尾部');
+    const blocks = updateStreamingMarkdownBlockState(null, '完成的 **粗体**。\n\n正在生成 **尾部').blocks;
 
     expect(blocks[0].content).toBe('完成的 **粗体**。\n\n');
     expect(blocks[0].isTail).toBe(false);
@@ -75,7 +75,7 @@ describe('streaming markdown blocks', () => {
 
   it('falls back to one tail block for cross-block reference definitions', () => {
     const source = '阅读 [文档][neo]。\n\n[neo]: https://example.com';
-    const blocks = splitStreamingMarkdownBlocks(source);
+    const blocks = updateStreamingMarkdownBlockState(null, source).blocks;
 
     expect(blocks).toEqual([{ key: 'markdown-block-0', content: source, sourceOffset: 0, isTail: true }]);
   });

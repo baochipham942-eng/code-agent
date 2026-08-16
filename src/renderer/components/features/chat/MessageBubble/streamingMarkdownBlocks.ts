@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import type { Nodes, Root } from 'mdast';
 
-export interface StreamingMarkdownBlock {
+interface StreamingMarkdownBlock {
   key: string;
   content: string;
   sourceOffset: number;
@@ -105,10 +105,6 @@ function parseStreamingMarkdownBlocks(content: string): {
  * as one mutable tail so a reference never resolves differently merely because the
  * renderer split it.
  */
-export function splitStreamingMarkdownBlocks(content: string): StreamingMarkdownBlock[] {
-  return parseStreamingMarkdownBlocks(content).blocks;
-}
-
 /**
  * Incremental companion used by the React renderer. Once a prefix is complete,
  * later appends reparse only the previous tail plus the new bytes. Completed block

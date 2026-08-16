@@ -8,6 +8,7 @@ import {
   Loader2,
   Mic2,
   RefreshCw,
+  X,
 } from 'lucide-react';
 import type { VoiceCallSummary, VoiceTokenUsage } from '@shared/contract/voice';
 import { estimateRealtimeVoiceCost } from '@shared/pricing/estimateRealtimeVoiceCost';
@@ -284,6 +285,14 @@ export const VoiceAuditDialog: React.FC<VoiceAuditDialogProps> = ({ sessionId, s
         <h2 className="text-base font-semibold text-zinc-100">{labels.title}</h2>
         {sessionTitle && <p className="truncate text-xs text-zinc-500">{sessionTitle}</p>}
       </div>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label={t.common.close}
+        className="ml-auto rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+      >
+        <X className="h-4 w-4" />
+      </button>
     </div>
   );
 

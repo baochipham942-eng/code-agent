@@ -2,6 +2,11 @@
 // WorkbenchOverview - 任务工作台。
 // 默认固定展示 Todo / 上下文 / 产物。产物点击直接打开原生 preview tab；
 // 审批与 ask-user 问题留在会话链路，不投影到概览。
+//
+// N-LEDGER-P1：TaskPanel（含检查器 tab）单一挂载点。空态叙事改由
+// overviewContent 注入「概览」tab——没有任务活动/产物的存量会话恰恰是
+// 检查器要服务的对象；且活动态 ⇄ 空态切换不再卸载 TaskPanel，
+// 检查器 tab 的选中态在活会话起跑/收尾时不再被重置（06a 实证 bug）。
 // ============================================================================
 
 import React from 'react';
@@ -27,36 +32,7 @@ export const WorkbenchOverview: React.FC = () => {
     return summary && summary !== PLAIN_CHAT_SUMMARY_LABEL ? summary : null;
   });
 
-  if (!hasTaskActivity && !hasArtifacts) {
-    return (
-      <div
-        data-testid="workbench-overview-view"
-        className="flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900"
-      >
-        <section
-          data-testid="workbench-overview-empty"
-          aria-label={t.workbenchTabs.overviewTitle}
-          className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center"
-        >
-          {/* 空态样式重做（2026-08-04 四模块）：去卡片边框与底面色块，图标 + 一行
-              叙事 + 留白隔开的「最近产物」小节，不用 border-t 分隔线（条款 B2/B4）。 */}
-          <Activity className="h-8 w-8 text-zinc-600" />
-          <div className="mt-3 text-sm text-zinc-400">{t.workbenchTabs.overviewEmptyNarrative}</div>
-          {recentSnapshotSummary && (
-            <div
-              data-testid="workbench-overview-recent"
-              className="mt-8 w-full max-w-sm text-left"
-            >
-              <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-                {t.workbenchTabs.overviewEmptyRecentLabel}
-              </div>
-              <div className="mt-1.5 text-xs leading-relaxed text-zinc-500">{recentSnapshotSummary}</div>
-            </div>
-          )}
-        </section>
-      </div>
-    );
-  }
+  const isEmpty = !hasTaskActivity && !hasArtifacts;
 
   return (
     <div
@@ -64,12 +40,36 @@ export const WorkbenchOverview: React.FC = () => {
       className="flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900"
     >
       <section
-        data-testid="workbench-overview-workspace"
+        data-testid={isEmpty ? undefined : 'workbench-overview-workspace'}
         aria-label={t.workbenchTabs.overviewTitle}
         className="flex min-h-0 flex-1 flex-col"
       >
         <div className="min-h-0 flex-1">
-          <TaskPanel />
+          <TaskPanel
+            overviewContent={isEmpty ? (
+              <section
+                data-testid="workbench-overview-empty"
+                aria-label={t.workbenchTabs.overviewTitle}
+                className="flex h-full flex-col items-center justify-center px-6 text-center"
+              >
+                {/* 空态样式重做（2026-08-04 四模块）：去卡片边框与底面色块，图标 + 一行
+                    叙事 + 留白隔开的「最近产物」小节，不用 border-t 分隔线（条款 B2/B4）。 */}
+                <Activity className="h-8 w-8 text-zinc-600" />
+                <div className="mt-3 text-sm text-zinc-400">{t.workbenchTabs.overviewEmptyNarrative}</div>
+                {recentSnapshotSummary && (
+                  <div
+                    data-testid="workbench-overview-recent"
+                    className="mt-8 w-full max-w-sm text-left"
+                  >
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                      {t.workbenchTabs.overviewEmptyRecentLabel}
+                    </div>
+                    <div className="mt-1.5 text-xs leading-relaxed text-zinc-500">{recentSnapshotSummary}</div>
+                  </div>
+                )}
+              </section>
+            ) : undefined}
+          />
         </div>
       </section>
     </div>

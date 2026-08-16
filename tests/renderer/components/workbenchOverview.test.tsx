@@ -47,7 +47,11 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
   ),
 }));
 vi.mock('../../../src/renderer/components/TaskPanel', () => ({
-  TaskPanel: () => <div data-testid="task-progress-marker">task progress</div>,
+  // N-LEDGER-P1 新合同：空态叙事由 WorkbenchOverview 组装、经 overviewContent
+  // 注入 TaskPanel 的「概览」tab；替身按同一合同渲染，断言内容仍全部来自被测组件。
+  TaskPanel: ({ overviewContent }: { overviewContent?: React.ReactNode }) => (
+    overviewContent ?? <div data-testid="task-progress-marker">task progress</div>
+  ),
 }));
 vi.mock('../../../src/renderer/components/WorkspacePreviewPanel', () => ({
   WorkspacePreviewPanel: () => <div data-testid="artifact-marker">artifacts</div>,

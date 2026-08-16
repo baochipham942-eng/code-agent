@@ -40,6 +40,7 @@ import { activityPanelEn, canvasActorEn } from './domains';
 import { imageNarrationEn } from './imageNarration';
 import { mermaidEn } from './mermaid';
 import { voiceAuditEn } from './voiceAudit';
+import { sessionInspectorEn } from './sessionInspector';
 export const en: Translations = {
   ...canvasActorEn, ...activityPanelEn,
   ...imageNarrationEn, ...mermaidEn,
@@ -902,6 +903,7 @@ export const en: Translations = {
   },
 
   sessionReplay: sessionReplayEn,
+  sessionInspector: sessionInspectorEn,
 
   // Chat transcript (TurnCard / StreamingIndicator, etc.)
 

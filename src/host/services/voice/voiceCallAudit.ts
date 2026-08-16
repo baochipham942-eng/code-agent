@@ -114,12 +114,16 @@ export interface VoiceCallTimeline {
 // ---------------------------------------------------------------------------
 
 export function listVoiceCalls(limit = 50): VoiceCallListItem[] {
-  return getDatabase().listVoiceCallSummaries(limit).map((message) => ({
-    voiceCallId: message.metadata?.voiceCallSummary?.voiceCallId ?? null,
-    summaryMessageId: message.id,
-    neoSessionId: message.sessionId,
-    summary: message.metadata!.voiceCallSummary!,
-  }));
+  return getDatabase().listVoiceCallSummaries(limit).flatMap((message) => {
+    const summary = message.metadata?.voiceCallSummary;
+    if (!summary) return [];
+    return [{
+      voiceCallId: summary.voiceCallId ?? null,
+      summaryMessageId: message.id,
+      neoSessionId: message.sessionId,
+      summary,
+    }];
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -293,14 +297,15 @@ export function getVoiceCallTimeline(idOrSummaryMessageId: string): VoiceCallTim
     recording = { status: 'unavailable', note: legacyNote };
   } else {
     const safeId = callId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
-    let dirs: string[] = [];
+    let dirs: string[];
     try {
       dirs = fs.readdirSync(recordingRoot).filter((d) => d.endsWith(`-${safeId}`));
     } catch {
       dirs = [];
     }
-    if (dirs.length > 0) {
-      const dir = path.join(recordingRoot, dirs[0]!);
+    const matchedDir = dirs[0];
+    if (matchedDir) {
+      const dir = path.join(recordingRoot, matchedDir);
       let files: string[] = [];
       try {
         files = fs.readdirSync(dir);

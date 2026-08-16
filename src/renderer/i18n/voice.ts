@@ -328,7 +328,7 @@ export const voiceZh: VoiceTranslations = {
     echoHint: {
       message: '外放可能让助手听到自己的声音，建议佩戴耳机',
       dontShowAgain: '不再提示',
-      fallback: '原生回声消除当前不可用，已切换到耳机模式；使用外放可能导致打断异常',
+      fallback: '这台设备的回声消除暂时不可用，建议戴耳机通话；开外放时，我可能会把外放的声音误当成你在说话',
     },
   },
 };
@@ -643,7 +643,7 @@ export const voiceEn = {
     echoHint: {
       message: 'Speaker output may let the assistant hear itself. Consider wearing headphones',
       dontShowAgain: "Don't show again",
-      fallback: 'Native echo cancellation is unavailable. Headphone mode is active; speaker output may cause interruption issues',
+      fallback: 'Echo cancellation is temporarily unavailable — headphones are recommended. On speaker, I may mistake the playback for your voice',
     },
   },
 } as const;

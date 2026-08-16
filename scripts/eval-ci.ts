@@ -47,6 +47,7 @@ import { isDynamicCustomProviderId } from '../src/shared/modelRuntime';
 import { isProviderVariantDisabled } from '../src/host/prompts/providerVariants';
 import { isRedlineCase } from '../src/host/testing/testCaseClassification';
 import { getTestDirs } from '../src/host/config/configPaths';
+import { assertMockPolicyCoverage } from '../src/host/testing/mockEvalPolicy';
 
 /** roadmap 2.4 A/B 归因（audit D-R3）：当前 run 的 provider 变体臂 */
 function providerVariantArm(): 'variant-on' | 'variant-off' {
@@ -95,6 +96,7 @@ function parseArgs(argv: string[]) {
   const args = argv.slice(2);
   let scope: 'smoke' | 'full' | undefined;
   let promote = false;
+  let promoteMockHarness = false;
   let baselineInfo = false;
   let trend = false;
   let base: string | undefined;
@@ -125,6 +127,8 @@ function parseArgs(argv: string[]) {
       }
     } else if (arg === '--promote') {
       promote = true;
+    } else if (arg === '--promote-mock-harness') {
+      promoteMockHarness = true;
     } else if (arg === '--baseline-info') {
       baselineInfo = true;
     } else if (arg === '--trend') {
@@ -189,7 +193,7 @@ function parseArgs(argv: string[]) {
     process.exit(1);
   }
 
-  return { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split };
+  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split };
 }
 
 function printUsage() {
@@ -215,6 +219,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --risk-tasks <a,b>       Register case ids this change might break
   npx tsx scripts/eval-ci.ts --case-dir <dir>   External test-case dir (e.g. GAIA)；跳过 baseline 对账与 trend
   npx tsx scripts/eval-ci.ts --promote          Promote current results to baseline
+  npx tsx scripts/eval-ci.ts --promote-mock-harness  Refresh the separate deterministic mock-harness baseline
   npx tsx scripts/eval-ci.ts --baseline-info    Show current baseline
   npx tsx scripts/eval-ci.ts --trend            Show trend chart
   npx tsx scripts/eval-ci.ts --base <ref>       Git ref to diff against (default: HEAD)
@@ -413,6 +418,7 @@ function createEvalSandbox(repoDir: string): { dir: string; cleanup: () => void 
  */
 function createAgent(opts: {
   real: boolean;
+  mockEvalPolicy?: boolean;
   model?: string;
   provider?: string;
   workingDir: string;
@@ -420,6 +426,9 @@ function createAgent(opts: {
 }): AgentInterface {
   if (!opts.real) {
     const mockAgent = new MockAgentAdapter();
+    if (opts.mockEvalPolicy) {
+      mockAgent.enableMockEvalPolicy();
+    }
     mockAgent.setMockResponse('列出当前目录', {
       responses: ['当前目录包含以下文件：package.json, src/, ...'],
       toolExecutions: [
@@ -521,6 +530,7 @@ async function runEvals(
   _scope: 'smoke' | 'full',
   opts: {
     real: boolean;
+    mockEvalPolicy?: boolean;
     model?: string;
     provider?: string;
     concurrency?: number;
@@ -553,6 +563,7 @@ async function runEvals(
 
     const agent = createAgent({
       real: opts.real,
+      mockEvalPolicy: opts.mockEvalPolicy,
       model: opts.model,
       provider: opts.provider,
       workingDir: agentWorkingDir,
@@ -566,6 +577,7 @@ async function runEvals(
       useParallelWorkers
         ? ({ workingDirectory }) => createAgent({
             real: opts.real,
+            mockEvalPolicy: opts.mockEvalPolicy,
             model: opts.model,
             provider: opts.provider,
             workingDir: workingDirectory,
@@ -592,7 +604,9 @@ async function runEvals(
       switch (event.type) {
         case 'case_end': {
           const icon =
-            event.result.status === 'passed'
+            event.result.mockExcluded
+              ? '🧪'
+              : event.result.status === 'passed'
               ? '\u2705'
               : event.result.status === 'failed'
               ? '\u274C'
@@ -771,10 +785,15 @@ async function runCompareCommand(
 // ---------------------------------------------------------------------------
 
 export async function main(argv = process.argv, cwd = process.cwd()) {
-  const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split } = parseArgs(argv);
+  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split } = parseArgs(argv);
   const workingDir = cwd;
-  const manager = new BaselineManager(workingDir);
+  const effectiveReal = real || !!model;
+  const manager = new BaselineManager(
+    workingDir,
+    effectiveReal ? { kind: 'agent' } : { kind: 'mock-harness' },
+  );
   const tracker = new TrendTracker(workingDir);
+  let mockEvalPolicy = false;
 
   // --baseline-info
   if (baselineInfo) {
@@ -819,15 +838,26 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
     } else if (effectiveSplit === 'safety') {
       console.log(chalk.yellow('  ⚠ safety 只允许在 OS jail 生效时执行；无 jail 的运行时安全闸会在模型调用前分流。'));
     }
+    if (!effectiveReal && splitFile.seed === 'core-v1-2026-07-26') {
+      if (effectiveSplit !== 'held-in') {
+        console.error(chalk.red(`  Error: mock policy 当前只覆盖 held-in，--split ${effectiveSplit} 需先显式分类。`));
+        process.exit(1);
+      }
+      try {
+        const coverage = assertMockPolicyCoverage(splitFile.heldIn);
+        mockEvalPolicy = true;
+        console.log(chalk.cyan(`  Mock policy: ${coverage.fixture} fixture / ${coverage.realOnly} real-only`));
+      } catch (error) {
+        console.error(chalk.red(`  Error: ${error instanceof Error ? error.message : String(error)}`));
+        process.exit(1);
+      }
+    }
   }
 
   // WP1-4：任一预测 flag 出现即登记（另一侧默认空列表）
   const prediction = (predictedFixes || riskTasks)
     ? { predictedFixes: predictedFixes ?? [], riskTasks: riskTasks ?? [] }
     : undefined;
-
-  // --model implies --real
-  const effectiveReal = real || !!model;
 
   // --compare: A/B paired blind test (WP1-3)
   if (compare) {
@@ -850,6 +880,33 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
   // --trend
   if (trend) {
     await showTrend(tracker);
+    return;
+  }
+
+  if (promoteMockHarness) {
+    if (effectiveReal) {
+      console.error(chalk.red('  Error: --promote-mock-harness 只接受零付费 mock 运行。'));
+      process.exit(1);
+    }
+    if (caseDir) {
+      console.error(chalk.red('  Error: 外部 --case-dir 不能写入核心 mock-harness baseline。'));
+      process.exit(1);
+    }
+    console.log(chalk.bold('  Running deterministic mock harness before refreshing its separate baseline...'));
+    console.log('');
+    const summary = await runEvals(workingDir, 'full', {
+      real: false,
+      mockEvalPolicy,
+      concurrency,
+      tags,
+      ids,
+      reportFormats: ['markdown', 'json', 'html'],
+    });
+    const commitSha = getCommitSha();
+    await manager.promoteMockHarness(summary, commitSha);
+    console.log(chalk.green(`  Mock harness baseline refreshed (commit: ${commitSha.slice(0, 7)})`));
+    console.log(`  Fixture pass: ${summary.passed}; mock excluded: ${summary.mockExcluded ?? 0}`);
+    console.log('');
     return;
   }
 
@@ -981,6 +1038,7 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
   console.log('');
   const summary = await runEvals(workingDir, effectiveScope, {
     real: effectiveReal,
+    mockEvalPolicy,
     model,
     provider,
     concurrency,

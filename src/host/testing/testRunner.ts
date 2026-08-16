@@ -42,6 +42,7 @@ import { TEST_TIMEOUTS } from '../../shared/constants/timeouts';
 import { getSandboxManager } from '../sandbox';
 import { isRedlineCase } from './testCaseClassification';
 import { createScopedCostLimit, isScopedCostLimitExceeded } from '../services/core/scopedCostLimit';
+import { getMockCasePolicy } from './mockEvalPolicy';
 
 const execAsync = promisify(exec);
 const logger = createLogger('TestRunner');
@@ -102,6 +103,10 @@ export interface AgentInterface {
   configureGoalContract?(contract: EvalGoalContract | undefined): void;
   /** Inject per-case sandbox policy, currently used to force redline cases offline. */
   configureSandboxPolicy?(policy: { redline: boolean } | undefined): void;
+  /** mock adapter 接收 evaluator 侧已分类的 fixture case。 */
+  configureMockCase?(testId: string, workingDirectory: string): void;
+  /** 仅正式 core mock eval 显式启用；普通 provider=mock 的测试替身不进入评测策略。 */
+  usesMockEvalPolicy?(): boolean;
   /** B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据） */
   getGoalRunRecord?(): GoalRunRecord | undefined;
 }
@@ -444,6 +449,7 @@ export class TestRunner {
       passed: results.filter((r) => r.status === 'passed').length,
       failed: results.filter((r) => r.status === 'failed').length,
       skipped: results.filter((r) => r.status === 'skipped').length,
+      mockExcluded: results.filter((r) => r.mockExcluded !== undefined).length,
       partial: results.filter((r) => r.status === 'partial').length,
       infraExcluded: results.filter((r) => r.status === 'infra_excluded').length,
       costExceeded: results.filter((r) => r.status === 'cost_exceeded').length,
@@ -712,6 +718,21 @@ export class TestRunner {
     const injectedFiles: string[] = [];
 
     try {
+      const isMockRun = agent.usesMockEvalPolicy?.() === true;
+      const mockPolicy = isMockRun ? getMockCasePolicy(testCase.id) : undefined;
+      if (isMockRun && !mockPolicy) {
+        result.status = 'failed';
+        result.failureReason = `mock policy 未分类 case: ${testCase.id}`;
+        result.failureStage = 'configuration';
+        return result;
+      }
+      if (mockPolicy?.kind === 'real-only') {
+        result.status = 'skipped';
+        result.failureReason = `mock 不适用: ${mockPolicy.reason}`;
+        result.mockExcluded = { reason: mockPolicy.reason };
+        return result;
+      }
+
       // F3 红线闸（ADR-036）：破坏性/红线 case 期望模型"拒绝"，但顺从模型会真执行
       // 破坏性命令（错题本 2026-07-04：LongCat 真删 15 个项目 node_modules）。护栏
       // 必须是机制不是断言——无可用 OS jail 时直接 infra_excluded，绝不裸跑。
@@ -765,6 +786,13 @@ export class TestRunner {
 
       // Reset agent state
       await agent.reset();
+
+      if (mockPolicy?.kind === 'fixture') {
+        if (!agent.configureMockCase) {
+          throw new Error(`mock adapter 未实现 configureMockCase: ${testCase.id}`);
+        }
+        agent.configureMockCase(testCase.id, workingDirectory);
+      }
 
       agent.configureSandboxPolicy?.({ redline: isRedlineCase(testCase) });
 

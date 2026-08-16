@@ -7,6 +7,7 @@ import type {
   Message,
   MessageAttachment,
   MessageMetadata,
+  PermissionRequest,
   PermissionResponse,
   ModelConfig,
 } from '../../shared/contract';
@@ -437,6 +438,11 @@ export class AgentOrchestrator {
 
   handlePermissionResponse(requestId: string, response: PermissionResponse): PermissionDeliveryOutcome {
     return this.permissions.handlePermissionResponse(requestId, response);
+  }
+
+  /** 当前仍由本 orchestrator 持有 resolver 的审批请求。供 renderer 重建快照使用。 */
+  getPendingPermissionRequests(): PermissionRequest[] {
+    return this.permissions.listPendingRequests();
   }
 
   /**

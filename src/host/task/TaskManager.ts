@@ -14,7 +14,7 @@
 
 import { EventEmitter } from 'events';
 import { app, AppWindow } from '../platform';
-import type { AgentEvent, Message, MessageMetadata, MessageSnapshotData, ToolCall } from '../../shared/contract';
+import type { AgentEvent, Message, MessageMetadata, MessageSnapshotData, PermissionRequest, ToolCall } from '../../shared/contract';
 import type { PermissionDeliveryOutcome, PermissionResponse } from '../../shared/contract/permission';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { AgentRunOptions } from '../research/types';
@@ -777,6 +777,30 @@ export class TaskManager extends EventEmitter {
       return 'no_orchestrator';
     }
     return wrapper.orchestrator.handlePermissionResponse(requestId, response);
+  }
+
+  /**
+   * 当前进程里仍可应答的审批请求。只枚举活 orchestrator 的 host 状态；
+   * DB 中没有 resolver 的重启残留不会被伪装成可批准卡。
+   */
+  listPendingPermissionRequests(): PermissionRequest[] {
+    const requestsById = new Map<string, PermissionRequest>();
+    const collect = (orchestrator: AgentOrchestrator, fallbackSessionId: string) => {
+      for (const request of orchestrator.getPendingPermissionRequests()) {
+        requestsById.set(request.id, {
+          ...request,
+          sessionId: request.sessionId ?? fallbackSessionId,
+        });
+      }
+    };
+
+    for (const wrapper of this.activeOrchestrators.values()) {
+      collect(wrapper.orchestrator, wrapper.sessionId);
+    }
+    for (const run of this.backgroundRuns.values()) {
+      collect(run.orchestrator, run.sessionId);
+    }
+    return [...requestsById.values()];
   }
 
   /**

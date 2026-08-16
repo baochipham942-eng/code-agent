@@ -34,7 +34,7 @@ import { buildRoleContextBlock } from '../roleAssets/roleAssetService';
 import { withWorkbenchTurnSystemContext } from '../../app/workbenchTurnContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getConfigService } from '../core/configService';
-import { buildBlockedNarration, buildMilestoneNarration, buildStopNarration, buildWorkNarration, resolveNarrationSpeaker, type VoiceStopAnnouncementKind } from './voiceNarration';
+import { buildApprovalWaitingNarration, buildBlockedNarration, buildMilestoneNarration, buildStopNarration, buildWorkNarration, resolveNarrationSpeaker, type VoiceStopAnnouncementKind } from './voiceNarration';
 import { describeWorkFailure } from './workFailureDescription';
 import { resolveVoiceWorkOutcome } from './voiceWorkEvidence';
 import { recordVoiceWorkEvent } from './voiceTelemetry';
@@ -216,6 +216,8 @@ interface LedgerState {
   taskSnapshots: Map<string, Map<string, string>>;
   /** milestone 去重键的单调计数器。注入通道按 workItemId 去重，撞键就会静默丢播报。 */
   milestoneSeqById: Map<string, number>;
+  /** 同一审批可能从实时、SSE replay、host snapshot 多次到达；电话里只告知一次。 */
+  announcedPermissionRequestIds: Set<string>;
   /** agent 事件流的退订函数；与 listener 同寿命，落终态时一起摘。 */
   unobserveAgentEvents: (() => void) | null;
 }
@@ -286,6 +288,7 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     todoSnapshots: new Map(),
     taskSnapshots: new Map(),
     milestoneSeqById: new Map(),
+    announcedPermissionRequestIds: new Set(),
     unobserveAgentEvents: null,
   };
 }
@@ -656,6 +659,26 @@ function onAgentStreamEvent(
   if (!taskId) return;
   if (event.type === 'message' && event.data?.role === 'assistant' && event.data.content?.trim()) {
     state.runConclusions.set(taskId, event.data.content);
+  }
+  if (event.type === 'permission_request') {
+    const requestId = event.data?.id;
+    const item = state.items.get(taskId);
+    const narrate = state.narrate;
+    if (
+      typeof requestId === 'string'
+      && item
+      && !TERMINAL.includes(item.status)
+      && narrate
+      && !state.announcedPermissionRequestIds.has(requestId)
+    ) {
+      state.announcedPermissionRequestIds.add(requestId);
+      narrate(buildApprovalWaitingNarration({
+        workItemId: `${item.id}:approval-${requestId}`,
+        title: item.shortName ?? item.title,
+        ...(state.activeAgentId ? { agentId: state.activeAgentId } : {}),
+      }));
+    }
+    return;
   }
   if (event.type !== 'todo_update' && event.type !== 'task_update') return;
   const item = state.items.get(taskId);

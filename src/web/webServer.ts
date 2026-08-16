@@ -33,6 +33,7 @@ import { initPostHogNode } from '../host/observability/posthogNode';
 import type { AuthUser } from '../shared/contract';
 import type { SwarmTraceRepo } from '../shared/contract/swarmTrace';
 import type { PendingApprovalRepository } from '../host/services/core/repositories/PendingApprovalRepository';
+import { getTaskManager } from '../host/task/TaskManager';
 import { installLocalWebAuthStatusHandler } from './webLocalAuth';
 import {
   initializeWebPluginSystem as initializeWebPluginSystemCore,
@@ -977,6 +978,7 @@ async function main(): Promise<void> {
     getBuildInfo,
     getDurableRunRollout,
     getDurableRunReadService,
+    getPendingPermissionRequests: () => getTaskManager().listPendingPermissionRequests(),
     registerQueuedInputStartupSweep: (runStartupSweep) => queuedInputStartupSweep.registerTrigger(runStartupSweep),
     registerQueuedInputEnqueueHook: (onEnqueued) => { onQueuedInputEnqueued = onEnqueued; },
   });

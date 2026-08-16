@@ -116,6 +116,15 @@ describe('StreamingIndicator waiting reason (具名等待)', () => {
     expect(html).not.toContain('streaming-caret');
   });
 
+  it('tells the user the task is waiting for approval instead of claiming it awaits the model', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(StreamingIndicator, { startTime: 100, waitingReason: 'approval' }),
+    );
+    expect(html).toContain('任务在等你批准，请处理审批卡');
+    expect(html).not.toContain('等待模型回响');
+    expect(html).not.toContain('streaming-caret');
+  });
+
   it('renders the fleet-signal label without a count when only one subtask is running', () => {
     const html = renderToStaticMarkup(
       React.createElement(StreamingIndicator, { startTime: 100, waitingReason: 'subagent', subagentCount: 1 }),
@@ -167,6 +176,11 @@ describe('StreamingIndicator waiting reason (具名等待)', () => {
     // 非 drafting/工具态（如 idle/completed）不给理由
     expect(getStreamingWaitingReason([], 'idle')).toBeUndefined();
     expect(getStreamingWaitingReason([], 'completed')).toBeUndefined();
+  });
+
+  it('gives a host-owned pending approval priority over model and tool waiting states', () => {
+    expect(getStreamingWaitingReason([], 'drafting', true)).toBe('approval');
+    expect(getStreamingWaitingReason([], 'using_tools', true)).toBe('approval');
   });
 });
 

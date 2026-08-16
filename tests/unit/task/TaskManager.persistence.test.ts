@@ -28,6 +28,7 @@ const orchestratorMocks = vi.hoisted(() => ({
   setWorkingDirectory: vi.fn(),
   setWorkspaceScopeAuthority: vi.fn(),
   handlePermissionResponse: vi.fn(),
+  getPendingPermissionRequests: vi.fn(),
 }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
@@ -56,6 +57,7 @@ vi.mock('../../../src/host/agent/agentOrchestrator', () => ({
     setWorkingDirectory = (...args: unknown[]) => orchestratorMocks.setWorkingDirectory(...args);
     setWorkspaceScopeAuthority = (...args: unknown[]) => orchestratorMocks.setWorkspaceScopeAuthority(...args);
     handlePermissionResponse = (...args: unknown[]) => orchestratorMocks.handlePermissionResponse(...args);
+    getPendingPermissionRequests = () => orchestratorMocks.getPendingPermissionRequests();
   },
 }));
 
@@ -229,6 +231,28 @@ describe('TaskManager message event persistence', () => {
     expect(orchestratorMocks.handlePermissionResponse).toHaveBeenCalledWith('request-1', 'allow');
     resolveRun?.();
     await run;
+  });
+
+  it('lists host-owned pending requests with the owning session id for renderer recovery', () => {
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });
+    orchestratorMocks.getPendingPermissionRequests.mockReturnValue([{
+      id: 'request-snapshot',
+      type: 'file_write',
+      tool: 'Write',
+      details: { path: '/tmp/probe.md' },
+      timestamp: 1,
+    }]);
+    manager.setSessionContext('session-1', []);
+
+    expect(manager.listPendingPermissionRequests()).toEqual([{
+      id: 'request-snapshot',
+      sessionId: 'session-1',
+      type: 'file_write',
+      tool: 'Write',
+      details: { path: '/tmp/probe.md' },
+      timestamp: 1,
+    }]);
   });
 
   it('does not insert a message event already persisted by ContextAssembly, while keeping tool result updates', async () => {

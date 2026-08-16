@@ -71,6 +71,8 @@ import {
 import { isPureToolTagText, persistTranscript, type TranscriptMergeState } from './voiceTranscriptPersistence';
 import { prepareVoiceprintForCall, releaseVoiceprintForCall, type VoiceprintCallState } from './voiceprintService';
 import { createVoiceSayDoGuard, type VoiceSayDoGuard } from './voiceSayDoGuard';
+import { recordNarrationResponse, shouldPersistNarrationTranscript,
+  type NarrationResponseLedger } from './voiceNarrationTranscript';
 
 const logger = createLogger('VoiceSession');
 
@@ -169,6 +171,8 @@ interface ActiveSession {
   cancelledResponseIds: Set<string>;
   /** assistant final 先暂存，到 response.done 且未取消时才落库。 */
   pendingAssistantFinals: Map<string, { text: string; itemId?: string }>;
+  /** 注入播报的 responseId → narrationId/source message，供主消息流去重与三 ID 留证。 */
+  narrationResponses: NarrationResponseLedger;
   /** 一通电话可有多轮 response；排水窗结束前到达的 provider usage 都归入本通。 */
   tokenUsage: { value?: VoiceTokenUsage; accepting: boolean };
   /** 终态播报只属于这通电话：压住、去重与已播记录都随 active 一起销毁。 */
@@ -262,6 +266,7 @@ function rememberCancelledResponse(session: ActiveSession, responseId: string): 
   session.cancelledResponseIds.add(responseId);
   session.pendingAssistantFinals.delete(responseId);
   session.transcriptBuf.assistantByResponse.delete(responseId);
+  session.narrationResponses.delete(responseId);
   while (session.cancelledResponseIds.size > 32) {
     const oldest = session.cancelledResponseIds.values().next().value as string | undefined;
     if (!oldest) break;
@@ -443,6 +448,11 @@ async function teardown(reason: string): Promise<void> {
   session.tokenUsage.accepting = false;
   for (const [responseId, pendingAssistant] of session.transcriptBuf.assistantByResponse) {
     if (!pendingAssistant.trim() || session.cancelledResponseIds.has(responseId)) continue;
+    if (!shouldPersistNarrationTranscript(session.narrationResponses.get(responseId), {
+      responseId, voiceSessionId: session.id, neoSessionId: session.neoSessionId, phase: 'teardown-drain',
+    })) {
+      continue;
+    }
     await persistTranscript(
       session.neoSessionId,
       session.id,
@@ -454,6 +464,7 @@ async function teardown(reason: string): Promise<void> {
     );
   }
   session.transcriptBuf.assistantByResponse.clear();
+  session.narrationResponses.clear();
   const endedAt = Date.now();
   const { startedAt } = session;
   const durationSec = Math.max(0, Math.round((endedAt - startedAt) / 1000));
@@ -591,6 +602,7 @@ async function connectAndBind(
   const recorder = isVoiceCallRecordingEnabled(liveSettings) ? createVoiceCallRecorder(id) : null;
 
   const transcriptBuf = { assistantByResponse: new Map<string, string>() };
+  const narrationResponses: NarrationResponseLedger = new Map();
   const transcriptMerge: TranscriptMergeState = { messageId: null, text: '', at: 0 };
   // transport 回调属于这通上游连接，不能用全局 active 判断归属：显式挂断会先清 active，
   // 但 response.done usage 仍可能在 1.5 秒排水窗内到达。
@@ -781,6 +793,10 @@ async function connectAndBind(
         const assistantBuffer = event.type === 'assistant.transcript'
           ? transcriptBuf.assistantByResponse.get(event.responseId ?? 'legacy') ?? ''
           : '';
+        if (active?.id === id && event.type === 'response.created' && event.narrationId) {
+          recordNarrationResponse(narrationResponses, event.responseId, event.narrationId,
+            active.narration.inFlight?.narration);
+        }
         // R6：整条只有工具标签的助手字幕不上屏。流式期间按「累计到此刻」判，
         // 半截标签（`<end_c`）也压住；后面真接上正文就恢复下发，正文一个字不动。
         const suppressedToolTag = event.type === 'assistant.transcript'
@@ -886,6 +902,10 @@ async function connectAndBind(
             tokenUsage.value = addTokenUsage(tokenUsage.value, event.usage);
           }
           const key = event.responseId ?? 'legacy';
+          const narrationEvidence = event.responseId
+            ? narrationResponses.get(event.responseId)
+            : undefined;
+          if (event.responseId) narrationResponses.delete(event.responseId);
           if (cancelledResponse) {
             transcriptBuf.assistantByResponse.delete(key);
             active?.pendingAssistantFinals.delete(key);
@@ -895,19 +915,23 @@ async function connectAndBind(
             transcriptBuf.assistantByResponse.delete(key);
             if (event.responseId) active?.pendingAssistantFinals.delete(event.responseId);
             if (text.trim()) {
-              void persistTranscript(
-                neoSessionId,
-                id,
-                'assistant',
-                text,
-                transcriptCounter,
-                transcriptMerge,
-                {
-                  ...(event.responseId ? { responseId: event.responseId } : {}),
-                  ...(pending?.itemId ? { itemId: pending.itemId } : {}),
-                },
-              );
-              if (active?.id === id && active.voiceToolsAvailable) void active.sayDoGuard.audit(text, event.responseId);
+              if (shouldPersistNarrationTranscript(narrationEvidence, {
+                responseId: event.responseId, voiceSessionId: id, neoSessionId,
+              })) {
+                void persistTranscript(
+                  neoSessionId,
+                  id,
+                  'assistant',
+                  text,
+                  transcriptCounter,
+                  transcriptMerge,
+                  {
+                    ...(event.responseId ? { responseId: event.responseId } : {}),
+                    ...(pending?.itemId ? { itemId: pending.itemId } : {}),
+                  },
+                );
+                if (active?.id === id && active.voiceToolsAvailable) void active.sayDoGuard.audit(text, event.responseId);
+              }
             }
           }
         }
@@ -1024,6 +1048,7 @@ async function connectAndBind(
     },
     cancelledResponseIds: new Set(),
     pendingAssistantFinals: new Map(),
+    narrationResponses,
     tokenUsage,
     narration: createNarrationState(),
     maxDurationTimer: setTimeout(() => {

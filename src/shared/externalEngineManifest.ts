@@ -385,7 +385,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
       evidence: 'production',
     },
     modelSelection: 'client_default',
-    capabilities: ['execute', 'stream_events'],
+    capabilities: ['execute', 'stream_events', 'resume'],
     defaultPermissionProfile: 'read_only',
     riskTier: 'medium',
     reliability: {
@@ -401,7 +401,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
       'dsh owns its DeepSeek credentials under ~/.dsh; Neo never reads, copies, or injects them.',
       'Neo pins DSH_PERMISSION_MODE=read-only, the knob the shipped headless profile already reads; a real write attempt was refused and escalation failed closed with no approval channel.',
       'Proxy variables are withheld from the child environment because dsh talks to api.deepseek.com directly.',
-      'The sink now prints the session id, so the durable anchor exists; the headless profile still has no resume entry point, so resume stays unclaimed pending N-DSH1c.',
+      'Resume rides a second bundled plugin (resources/dsh-event-sink/resume-runner.mjs): a --patch overlay disables the shipped headless-runner and mounts a runner that calls agents.resume on the persisted session id, verified end to end on a real session (N-DSH1c).',
     ],
   },
   {

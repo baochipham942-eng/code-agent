@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 
 import type { AgentEnginePermissionProfile } from '../../../shared/contract/agentEngine';
+import { buildDshResumeArgs } from './dshCliAdapter';
 
 export interface ExternalEngineResumeIdentity {
   runId: string;
@@ -113,6 +114,30 @@ export function createClaudeResumeLaunch(input: CommonResumeInput): ExternalEngi
     cwd: input.cwd,
     ...(input.continuationInput !== undefined ? { stdin: input.continuationInput } : {}),
     commandSummary: 'claude --print --resume [session:<redacted>] --output-format stream-json --permission-mode plan [continuation:<redacted>]',
+    permissionProfile: 'read_only',
+  };
+}
+
+/**
+ * dsh 崩溃恢复没有 codex/claude 那种「空输入重放」形态：headless profile 的
+ * `headless-startup` 对空位置参数直接报 usage error，所以恢复必须带一条任务。
+ * 用固定续跑指令，让被打断的那一轮在同一个持久化会话上收尾。
+ */
+const DSH_RECOVERY_TASK = 'Continue the previous task from where it left off. If it already finished, summarize the final result.';
+
+export function createDshResumeLaunch(input: CommonResumeInput): ExternalEngineResumeLaunch {
+  assertResumeInput(input);
+  return {
+    ...resumeIdentity(input),
+    args: buildDshResumeArgs({
+      model: input.model,
+      resumeSessionId: input.externalSessionId,
+      task: input.continuationInput ?? DSH_RECOVERY_TASK,
+    }),
+    cwd: input.cwd,
+    // 不设 stdin：dsh 是 argv 传输（adapter 对 argv 引擎把子进程 stdin 设成 ignore），
+    // 任务已在上面的位置参数里。
+    commandSummary: 'DSH_PERMISSION_MODE=read-only dsh --profile headless --patch <event-sink-patch> --patch <resume-runner-patch> [--patch <model-patch>] [session:<redacted>] <prompt:redacted>',
     permissionProfile: 'read_only',
   };
 }

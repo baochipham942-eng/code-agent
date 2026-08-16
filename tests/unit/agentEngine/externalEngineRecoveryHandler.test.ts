@@ -6,7 +6,7 @@ import { DurableRecoveryDispatcher } from '../../../src/host/runtime/durableReco
 import { createExternalEngineRecoveryHandler } from '../../../src/host/runtime/durableRecoveryHandlers';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 
-function externalPlan(engine: ExternalAgentEngineKind, externalSessionId?: string): RunRehydrationPlan {
+function externalPlan(engine: ExternalAgentEngineKind, externalSessionId?: string, model = 'audited-model'): RunRehydrationPlan {
   const owner = { ownerId: 'owner', processInstanceId: 'new-process', epoch: 4, leaseExpiresAt: Date.now() + 60_000 };
   const operation = {
     runId: 'logical-run', operationId: 'external-engine-launch', attempt: 1, kind: 'external_engine' as const,
@@ -29,7 +29,7 @@ function externalPlan(engine: ExternalAgentEngineKind, externalSessionId?: strin
       state: {
         schemaVersion: 1, engineKind: 'external_cli', engine,
         workspace: { cwd: '/tmp', fingerprint: 'workspace' },
-        permissionProfile: 'read_only', model: 'audited-model',
+        permissionProfile: 'read_only', model,
       },
       checksum: 'checksum', createdAt: 2,
     },
@@ -51,10 +51,12 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('external engine recovery handler', () => {
   it.each([
-    ['codex_cli', 'codex'],
-    ['claude_code', 'claude'],
-  ] as const)('routes %s through its audited resume builder and preserves recovered identity', async (engine, runnerName) => {
-    const candidate = externalPlan(engine, 'external-session');
+    // dsh 的模型形态是 provider/model（裸模型名会被 parseDshModelSelection 拒掉）。
+    ['codex_cli', 'codex', 'audited-model'],
+    ['claude_code', 'claude', 'audited-model'],
+    ['dsh_cli', 'dsh', 'deepseek-official/deepseek-v4'],
+  ] as const)('routes %s through its audited resume builder and preserves recovered identity', async (engine, runnerName, model) => {
+    const candidate = externalPlan(engine, 'external-session', model);
     const registry = registryFor(candidate);
     await registry.recoverDurable();
     const codex = vi.fn(async (request) => ({
@@ -65,11 +67,15 @@ describe('external engine recovery handler', () => {
       runId: request.durableLifecycle!.runId, sessionId: request.sessionId, engine: 'claude_code' as const,
       status: 'completed' as const, exitCode: 0,
     }));
+    const dsh = vi.fn(async (request) => ({
+      runId: request.durableLifecycle!.runId, sessionId: request.sessionId, engine: 'dsh_cli' as const,
+      status: 'completed' as const, exitCode: 0,
+    }));
     const dispatcher = new DurableRecoveryDispatcher();
-    dispatcher.registerEngineHandler(createExternalEngineRecoveryHandler({ registry, runners: { codex, claude } }));
+    dispatcher.registerEngineHandler(createExternalEngineRecoveryHandler({ registry, runners: { codex, claude, dsh } }));
     const first = await dispatcher.dispatch([candidate]);
     const second = await dispatcher.dispatch([candidate]);
-    const runner = runnerName === 'codex' ? codex : claude;
+    const runner = runnerName === 'codex' ? codex : runnerName === 'claude' ? claude : dsh;
     expect(first[0].reason).toBe('external resume completed');
     expect(first[0]).toMatchObject({ status: 'recovered', runId: 'logical-run', attempt: 3, ownerEpoch: 4 });
     expect(runner).toHaveBeenCalledTimes(1);
@@ -80,7 +86,13 @@ describe('external engine recovery handler', () => {
       runId: 'logical-run', sessionId: 'logical-session', attempt: 3, ownerEpoch: 4,
       externalSessionId: 'external-session', permissionProfile: 'read_only',
     });
-    expect(request.resumeLaunch.args).toContain(engine === 'codex_cli' ? 'resume' : '--resume');
+    expect(request.resumeLaunch.args).toContain(engine === 'codex_cli' ? 'resume' : engine === 'claude_code' ? '--resume' : '--profile');
+    if (engine === 'dsh_cli') {
+      // dsh 恢复没有空输入重放形态：固定续跑指令走位置参数，session id 关在 --patch 文件里不进 argv。
+      expect(request.resumeLaunch.args.at(-1)).toMatch(/Continue the previous task/);
+      expect(request.resumeLaunch.args.filter((a: string) => a === '--patch')).toHaveLength(3);
+      expect(request.resumeLaunch.args.join(' ')).not.toContain('external-session');
+    }
     registry.clear();
   });
 

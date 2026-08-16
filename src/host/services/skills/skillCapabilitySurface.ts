@@ -7,6 +7,7 @@ import {
   type CapabilityUnit,
 } from '../capability/capabilityUnitRuntime';
 import { recordCapabilityLifecycle } from '../capability/capabilityLifecycleTrace';
+import { CapabilityBroker } from '../capability/capabilityBroker';
 import type { ToolSearchService } from '../toolSearch';
 
 const logger = createLogger('SkillCapabilitySurface');
@@ -26,7 +27,13 @@ function writeLifecycle(data: Parameters<typeof recordCapabilityLifecycle>[1]): 
 interface SkillCapabilitySurfaceState {
   runtime: CapabilityUnitRuntime;
   signatures: Map<string, string>;
+  registryBroker: CapabilityBroker<SkillRegistryCapability>;
 }
+interface SkillRegistryCapability {
+  register(name: string, description: string, aliases?: string[]): void;
+  unregister(name: string): void;
+}
+const SKILL_REGISTRY_CAPABILITY_KEY: CapabilityKey = 'skill:neo/registration';
 const states = new WeakMap<ToolSearchService, SkillCapabilitySurfaceState>();
 
 function stateFor(toolSearch: ToolSearchService): SkillCapabilitySurfaceState {
@@ -35,21 +42,35 @@ function stateFor(toolSearch: ToolSearchService): SkillCapabilitySurfaceState {
   const created = {
     runtime: new CapabilityUnitRuntime(writeLifecycle),
     signatures: new Map<string, string>(),
+    registryBroker: new CapabilityBroker(SKILL_REGISTRY_CAPABILITY_KEY, [{
+      id: 'tool-search-registry',
+      isAvailable: () => true,
+      implementation: {
+        register: (name: string, description: string, aliases?: string[]) => (
+          toolSearch.registerSkill(name, description, aliases)
+        ),
+        unregister: (name: string) => { toolSearch.unregisterSkill(name); },
+      },
+    }]),
   };
   states.set(toolSearch, created);
   return created;
 }
 
-function declarationForSkill(skill: ParsedSkill, toolSearch: ToolSearchService): CapabilityUnit {
+function declarationForSkill(
+  skill: ParsedSkill,
+  registryBroker: CapabilityBroker<SkillRegistryCapability>,
+): CapabilityUnit {
   return {
     id: skill.name,
     type: 'skill',
     depends: skill.depends as unknown as CapabilityKey[],
     provides: skill.provides as unknown as CapabilityKey[],
     async register(context) {
+      const registry = registryBroker.resolve(SKILL_REGISTRY_CAPABILITY_KEY);
       await context.register({
-        apply: () => toolSearch.registerSkill(skill.name, skill.description, skill.aliases),
-        inverse: () => { toolSearch.unregisterSkill(skill.name); },
+        apply: () => registry.register(skill.name, skill.description, skill.aliases),
+        inverse: () => { registry.unregister(skill.name); },
       });
     },
   };
@@ -69,9 +90,9 @@ export async function synchronizeSkillCapabilitySurface(
   skills: readonly ParsedSkill[],
   toolSearch: ToolSearchService,
 ): Promise<void> {
-  const { runtime, signatures } = stateFor(toolSearch);
+  const { runtime, signatures, registryBroker } = stateFor(toolSearch);
   const desired = new Map(skills.map((skill) => [skill.name, skill]));
-  const desiredUnits = [...desired.values()].map((skill) => declarationForSkill(skill, toolSearch));
+  const desiredUnits = [...desired.values()].map((skill) => declarationForSkill(skill, registryBroker));
   runtime.validate(desiredUnits);
   const changed = new Set<string>();
   for (const [name, skill] of desired) {
@@ -90,7 +111,7 @@ export async function synchronizeSkillCapabilitySurface(
   const additions = [...desired.values()].filter((skill) => !runtime.isLoaded(skill.name));
   const units = rebuild
     ? desiredUnits
-    : additions.map((skill) => declarationForSkill(skill, toolSearch));
+    : additions.map((skill) => declarationForSkill(skill, registryBroker));
   await runtime.loadAll(units);
   for (const skill of additions) signatures.set(skill.name, signature(skill));
 }

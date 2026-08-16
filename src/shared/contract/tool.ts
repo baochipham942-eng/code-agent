@@ -38,6 +38,22 @@ export type ToolPathAuthorityDescriptor =
   | { kind: 'shell'; commandParameter: string }
   | { kind: 'global-memory'; pathParameter: string };
 
+/**
+ * 发射类工具的显式 effect 声明。执行器只消费这份元数据，不按工具名猜测。
+ * external_file_write 还会在运行时核对目标确实越过 workspace 边界。
+ */
+export type ToolEmissionDescriptor =
+  | {
+      kind: 'external_file_write';
+      targetParameter: string;
+      compensationAction: string;
+    }
+  | {
+      kind: 'external_effect';
+      targetParameters: readonly string[];
+      compensationAction: string;
+    };
+
 export interface DirectiveMemoryWriteGrant {
   authority: 'directive-memory-write';
   fingerprint: string;
@@ -56,6 +72,9 @@ export interface ToolDefinition {
 
   /** 文件写目标的声明式来源；路径 authority 统一消费。 */
   pathAuthority?: readonly ToolPathAuthorityDescriptor[];
+
+  /** 成功执行后必须同步登记补偿的发射 effect。 */
+  emission?: ToolEmissionDescriptor;
 
   /**
    * 只读工具标记（来自 protocol schema readOnly / MCP readOnlyHint）。

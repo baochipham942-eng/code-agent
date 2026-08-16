@@ -33,6 +33,11 @@ export const appendSchema: ToolSchema = {
   },
   category: 'fs',
   permissionLevel: 'write',
+  emission: {
+    kind: 'external_file_write',
+    targetParameter: 'file_path',
+    compensationAction: 'remove_appended_content_or_restore_previous_content',
+  },
   readOnly: false,
   allowInPlanMode: false,
 };

@@ -10,6 +10,8 @@ export interface VoiceInterruptEvidence {
    * 只在明确 mismatch 时为 true；unknown/match/未启用一律 false（fail-open）。
    */
   speakerMismatch?: boolean;
+  /** L2 情境证据档位；只有 strong 能让非显式兜底升级为真打断。 */
+  evidenceTier?: 'weak' | 'medium' | 'strong';
 }
 
 export interface VoiceInterruptDecision {
@@ -19,6 +21,8 @@ export interface VoiceInterruptDecision {
   shouldRespond: boolean;
   /** 本会落兜底 cancel、被声纹门拦下：只记账用，行为等同 background。 */
   speakerGated?: boolean;
+  /** 本会落旧兜底 cancel、被 L2 证据闸翻成 unverified。 */
+  evidenceGated?: boolean;
 }
 
 const ACKNOWLEDGEMENT = /^(?:嗯+|唔+|啊+|哦+|对(?:的)?|是(?:的)?|好(?:的)?|行(?:的)?|可以|没错|知道了|好(?:的)?知道了|明白了|收到(?:了)?|ok|okay|yes)(?:啊|呀|呢)?$/i;
@@ -71,6 +75,17 @@ export function decideVoiceInterrupt(evidence: VoiceInterruptEvidence): VoiceInt
   // 判错的后果只能是「体验差一点」，不能把打断做聋（工单 §5 边界的行为面）。
   if (evidence.speakerMismatch) {
     return { classification: 'background', terminal: true, cancel: false, shouldRespond: false, speakerGated: true };
+  }
+  // shadow 真机分布：正常指向性请求 strong/3，电视播报 medium/1。兜底打断从此
+  // 是要靠证据挣到的结论；证据不足静默恢复，避免把电视字幕送给模型继续误应答。
+  if (evidence.evidenceTier !== 'strong') {
+    return {
+      classification: 'unverified',
+      terminal: true,
+      cancel: false,
+      shouldRespond: false,
+      evidenceGated: true,
+    };
   }
   return { classification: 'true_interrupt', terminal: true, cancel: true, shouldRespond: true };
 }

@@ -4,11 +4,14 @@ import type { ModelMessage } from '../agent/loopTypes';
 import { canonicalizeModelMessage } from '../agent/runtime/contextAssembly/requestManifestBuilder';
 import { projectLedgerMessage } from '../agent/runtime/contextAssembly/ledgerMessageProjection';
 import type { TraceEventDataMap } from '../agent/runtime/turnTrace';
+import type { RequestManifestAttachmentBlobRef } from '../agent/runtime/turnTrace';
+import { readRequestReplayBlob } from '../telemetry/requestReplayBlobStore';
 
 export interface RequestReplayContentReaders {
   getSystemPrompt(hash: string): { content: string } | null;
   getContent(hash: string): string | null;
   getToolSchema(hash: string): string | null;
+  getAttachmentBlob?(ref: RequestManifestAttachmentBlobRef): string | null;
 }
 
 export interface ReconstructedRequest {
@@ -48,6 +51,61 @@ function readContentRef(
   label: string,
   reasons: string[],
 ): string | null {
+  if (ref.structureHash) {
+    const structureCanonical = requireHash(
+      readers.getContent(ref.structureHash),
+      ref.structureHash,
+      `${label} attachment structure content_cache`,
+      reasons,
+    );
+    if (structureCanonical == null) return null;
+    let structure: {
+      content?: Array<{ type?: string; source?: { type?: string; data?: unknown } }>;
+    };
+    try {
+      structure = JSON.parse(structureCanonical) as typeof structure;
+    } catch (error) {
+      reasons.push(`${label}附件结构无法解析：${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+    const refs = ref.attachmentBlobs ?? [];
+    const hydrated = new Set<number>();
+    for (const part of structure.content ?? []) {
+      const placeholder = part.source?.data as {
+        requestReplayAttachment?: { index?: unknown; sha256?: unknown; bytes?: unknown };
+      } | undefined;
+      const marker = placeholder?.requestReplayAttachment;
+      if (!marker || typeof marker.index !== 'number') continue;
+      const blobRef = refs[marker.index];
+      if (!blobRef || marker.sha256 !== blobRef.sha256 || marker.bytes !== blobRef.bytes) {
+        reasons.push(`${label}附件占位 #${marker.index} 与 manifest 不符`);
+        continue;
+      }
+      const base64 = readers.getAttachmentBlob
+        ? readers.getAttachmentBlob(blobRef)
+        : readRequestReplayBlob(blobRef);
+      if (base64 == null) {
+        reasons.push(`${label}附件 blob 缺失或校验失败：${blobRef.sha256}`);
+        continue;
+      }
+      const bytes = Buffer.from(base64, 'base64');
+      if (
+        bytes.toString('base64') !== base64
+        || bytes.byteLength !== blobRef.bytes
+        || createHash('sha256').update(bytes).digest('hex') !== blobRef.sha256
+      ) {
+        reasons.push(`${label}附件 blob 内容不符：${blobRef.sha256}`);
+        continue;
+      }
+      if (part.source) part.source.data = base64;
+      hydrated.add(marker.index);
+    }
+    if (hydrated.size !== refs.length) {
+      reasons.push(`${label}附件数量不符：manifest ${refs.length}，装回 ${hydrated.size}`);
+      return null;
+    }
+    return requireHash(JSON.stringify(structure), ref.contentHash, `${label} attachment assembly`, reasons);
+  }
   if (!ref.blocks) {
     return requireHash(readers.getContent(ref.contentHash), ref.contentHash, `${label} content_cache`, reasons);
   }

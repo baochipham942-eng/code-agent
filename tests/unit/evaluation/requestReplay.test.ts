@@ -82,6 +82,57 @@ describe('reconstructRequest', () => {
       .toThrow(RequestNotReconstructableError);
   });
 
+  it('hydrates externalized attachment bytes and reproduces the original canonical message', () => {
+    const value = fixture();
+    const bytes = Buffer.from('image bytes');
+    const base64 = bytes.toString('base64');
+    const blobHash = createHash('sha256').update(bytes).digest('hex');
+    const message = JSON.stringify({
+      role: 'user',
+      content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: base64 } }],
+    });
+    const structure = JSON.stringify({
+      role: 'user',
+      content: [{
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: 'image/png',
+          data: { requestReplayAttachment: { index: 0, sha256: blobHash, bytes: bytes.byteLength } },
+        },
+      }],
+    });
+    value.manifest.messageRefs[2] = {
+      kind: 'content',
+      contentHash: hash(message),
+      reason: 'post_assembly_rewrite',
+      structureHash: hash(structure),
+      attachmentBlobs: [{ version: 1, filePath: '/fixture/image.blob', sha256: blobHash, bytes: bytes.byteLength }],
+    };
+    value.readers.getContent = (contentHash: string) => contentHash === hash(structure) ? structure : null;
+    value.readers.getAttachmentBlob = () => base64;
+
+    expect(reconstructRequest(value.manifest, value.ledger, value.readers).canonicalMessages[2]).toBe(message);
+  });
+
+  it('fails loud when an attachment blob cannot be read', () => {
+    const value = fixture();
+    const structure = JSON.stringify({
+      role: 'user',
+      content: [{ type: 'image', source: { type: 'base64', data: { requestReplayAttachment: { index: 0, sha256: 'a', bytes: 1 } } } }],
+    });
+    value.manifest.messageRefs[2] = {
+      kind: 'content', contentHash: hash('unavailable'), reason: 'post_assembly_rewrite',
+      structureHash: hash(structure),
+      attachmentBlobs: [{ version: 1, filePath: '/fixture/missing.blob', sha256: 'a', bytes: 1 }],
+    };
+    value.readers.getContent = () => structure;
+    value.readers.getAttachmentBlob = () => null;
+
+    expect(() => reconstructRequest(value.manifest, value.ledger, value.readers))
+      .toThrow(RequestNotReconstructableError);
+  });
+
   it.each([
     ['degraded manifest', (value: ReturnType<typeof fixture>) => { value.manifest.degraded = true; }],
     ['missing ledger id', (value: ReturnType<typeof fixture>) => { value.ledger.length = 0; }],

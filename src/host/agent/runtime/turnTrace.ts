@@ -43,7 +43,17 @@ export type RequestManifestMessageRef =
        * Absent on P0/P1 manifests, whose contentHash addresses the full JSON.
        */
       blocks?: Array<{ contentHash: string; bytes: number }>;
+      /** P2 attachment form: structure JSON in content_cache, bytes on disk. */
+      structureHash?: string;
+      attachmentBlobs?: RequestManifestAttachmentBlobRef[];
     };
+
+export interface RequestManifestAttachmentBlobRef {
+  version: 1;
+  filePath: string;
+  sha256: string;
+  bytes: number;
+}
 
 export interface TraceEventDataMap {
   inference: {

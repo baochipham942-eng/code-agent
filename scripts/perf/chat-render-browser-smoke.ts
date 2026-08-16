@@ -31,6 +31,10 @@ interface BrowserPerfResult {
     rendered: Record<string, unknown>;
     metrics: Record<string, unknown>;
     longTasks: Array<{ name: string; startTime: number; duration: number }>;
+    markdownComparison: {
+      legacy: Record<string, unknown>;
+      blockMemo: Record<string, unknown>;
+    };
   };
 }
 
@@ -126,6 +130,18 @@ function formatMarkdown(result: BrowserPerfResult): string {
   }> | undefined ?? {})
     .map(([name, timing]) => `| ${name} | ${timing.count} | ${timing.meanMs} | ${timing.p95Ms} | ${timing.maxMs} | ${timing.lastMs} |`)
     .join('\n');
+  const legacyMarkdown = (result.perf.markdownComparison.legacy.timings as Record<string, {
+    count: number;
+    meanMs: number;
+    p95Ms: number;
+    maxMs: number;
+  }> | undefined)?.['stream.markdown.render_ms'];
+  const blockMemoMarkdown = (result.perf.markdownComparison.blockMemo.timings as Record<string, {
+    count: number;
+    meanMs: number;
+    p95Ms: number;
+    maxMs: number;
+  }> | undefined)?.['stream.markdown.render_ms'];
 
   return [
     '# Chat Render Browser Performance Smoke',
@@ -145,6 +161,7 @@ function formatMarkdown(result: BrowserPerfResult): string {
     `- Code blocks: ${String(result.perf.rendered.codeBlocks)}`,
     `- Code lines per block: ${String(result.perf.rendered.codeLinesPerBlock)}`,
     `- Streaming chars: ${String(result.perf.rendered.streamingChars)}`,
+    `- Streaming markdown blocks: ${String(result.perf.rendered.streamingMarkdownBlocks)}`,
     `- Diff lines: ${String(result.perf.rendered.diffLines)}`,
     `- Diff rows rendered: ${String(result.perf.rendered.diffRows)}`,
     '',
@@ -154,6 +171,13 @@ function formatMarkdown(result: BrowserPerfResult): string {
     `- Long task count: ${result.perf.longTaskCount}`,
     `- Long task total: ${result.perf.longTaskTotalMs} ms`,
     `- Long task max: ${result.perf.longTaskMaxMs} ms`,
+    '',
+    '## Progressive Markdown A/B',
+    '',
+    '| Renderer | Count | Mean ms | P95 ms | Max ms |',
+    '|---|---:|---:|---:|---:|',
+    `| Legacy whole-document | ${legacyMarkdown?.count ?? 0} | ${legacyMarkdown?.meanMs ?? 0} | ${legacyMarkdown?.p95Ms ?? 0} | ${legacyMarkdown?.maxMs ?? 0} |`,
+    `| Top-level block memo | ${blockMemoMarkdown?.count ?? 0} | ${blockMemoMarkdown?.meanMs ?? 0} | ${blockMemoMarkdown?.p95Ms ?? 0} | ${blockMemoMarkdown?.maxMs ?? 0} |`,
     '',
     '## Runtime Metrics Snapshot',
     '',
@@ -260,6 +284,7 @@ async function main(): Promise<void> {
         rendered: raw.rendered,
         // StreamingPerformanceSnapshot is a concrete shape; this report field is an opaque JSON blob.
         metrics: raw.metrics as unknown as Record<string, unknown>,
+        markdownComparison: raw.markdownComparison as unknown as BrowserPerfResult['perf']['markdownComparison'],
         longTasks,
       },
     };

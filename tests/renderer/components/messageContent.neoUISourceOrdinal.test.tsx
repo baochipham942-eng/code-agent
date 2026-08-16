@@ -43,4 +43,31 @@ Visible separator
       { fallback: 'second host', ordinal: 1 },
     ]);
   });
+
+  it('preserves full-document ordinals when streaming markdown is split into blocks', async () => {
+    const content = [
+      '开场段落。',
+      '',
+      '```neo_ui',
+      '{"fallback":"first streaming host"}',
+      '```',
+      '',
+      '中间段落。',
+      '',
+      '```neo_ui',
+      '{"fallback":"second streaming host"}',
+      '```',
+    ].join('\n');
+
+    const html = await renderToStaticMarkupAsync(
+      <MessageContent content={content} isUser={false} isStreaming messageId="assistant-streaming" />,
+    );
+    const hosts = [...html.matchAll(/data-neo-ui-fallback="([^"]+)" data-source-ordinal="(\d+)"/g)]
+      .map(([, fallback, ordinal]) => ({ fallback, ordinal: Number(ordinal) }));
+
+    expect(hosts).toEqual([
+      { fallback: 'first streaming host', ordinal: 0 },
+      { fallback: 'second streaming host', ordinal: 1 },
+    ]);
+  });
 });

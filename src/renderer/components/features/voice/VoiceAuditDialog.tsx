@@ -101,8 +101,8 @@ export function filterVoiceCallsForSession(calls: VoiceCallListItem[], sessionId
 
 export function voiceAuditStatusClass(status: VoiceAuditStatus): string {
   if (status === 'none') return 'border-zinc-600/70 bg-zinc-800/60 text-zinc-300';
-  if (status === 'unavailable') return 'border-amber-500/40 bg-amber-500/10 text-amber-200';
-  return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200';
+  if (status === 'unavailable') return 'border-amber-500/40 bg-amber-500/10 text-mark-warning';
+  return 'border-emerald-500/30 bg-emerald-500/10 text-mark-success';
 }
 
 function withToken(path: string): string {
@@ -142,9 +142,9 @@ const Pill: React.FC<{ children: React.ReactNode; tone?: 'default' | 'host' | 'w
 }) => (
   <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium ${
     tone === 'host'
-      ? 'border-sky-400/40 bg-sky-400/10 text-sky-200'
+      ? 'border-sky-400/40 bg-sky-400/10 text-mark-info'
       : tone === 'warn'
-        ? 'border-amber-400/40 bg-amber-400/10 text-amber-200'
+        ? 'border-amber-400/40 bg-amber-400/10 text-mark-warning'
         : 'border-white/10 bg-white/[0.04] text-zinc-300'
   }`}>
     {children}
@@ -280,7 +280,7 @@ export const VoiceAuditDialog: React.FC<VoiceAuditDialogProps> = ({ sessionId, s
 
   const header = (
     <div className="flex min-w-0 flex-1 items-center gap-3">
-      <div className="rounded-lg bg-violet-500/15 p-2 text-violet-200"><Mic2 className="h-4 w-4" /></div>
+      <div className="rounded-lg bg-violet-500/15 p-2 text-mark-accent"><Mic2 className="h-4 w-4" /></div>
       <div className="min-w-0">
         <h2 className="text-base font-semibold text-zinc-100">{labels.title}</h2>
         {sessionTitle && <p className="truncate text-xs text-zinc-500">{sessionTitle}</p>}
@@ -321,8 +321,8 @@ export const VoiceAuditDialog: React.FC<VoiceAuditDialogProps> = ({ sessionId, s
       {calls === null && !callsError && <LoadingState label={labels.loadingCalls} />}
       {callsError && (
         <div className="flex min-h-56 flex-col items-center justify-center gap-3 px-6 text-center">
-          <AlertTriangle className="h-8 w-8 text-red-300" />
-          <p className="text-sm text-red-200">{labels.callsError.replace('{message}', callsError)}</p>
+          <AlertTriangle className="h-8 w-8 text-mark-danger" />
+          <p className="text-sm text-mark-danger">{labels.callsError.replace('{message}', callsError)}</p>
           <button type="button" onClick={() => { void loadCalls(); }} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-200 hover:bg-white/[0.05]">
             <RefreshCw className="h-3.5 w-3.5" />{labels.retry}
           </button>
@@ -372,8 +372,8 @@ export const VoiceAuditDialog: React.FC<VoiceAuditDialogProps> = ({ sessionId, s
             {!timeline && !timelineError && <LoadingState label={labels.loadingTimeline} />}
             {timelineError && (
               <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
-                <AlertTriangle className="h-8 w-8 text-red-300" />
-                <p className="text-sm text-red-200">{labels.timelineError.replace('{message}', timelineError)}</p>
+                <AlertTriangle className="h-8 w-8 text-mark-danger" />
+                <p className="text-sm text-mark-danger">{labels.timelineError.replace('{message}', timelineError)}</p>
                 <button type="button" onClick={() => { const id = selectedId; setSelectedId(null); queueMicrotask(() => setSelectedId(id)); }} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-200 hover:bg-white/[0.05]">
                   <RefreshCw className="h-3.5 w-3.5" />{labels.retry}
                 </button>
@@ -471,7 +471,7 @@ const TimelineContent: React.FC<{ timeline: VoiceCallTimeline }> = ({ timeline }
       </Section>
 
       <Section title={labels.recording} status={recording.status} note={recording.note} count={recording.files?.length}>
-        {recording.dir && <div className="rounded-lg bg-white/[0.025] p-3 text-xs text-zinc-300"><div className="mb-2 flex items-center gap-2"><FileAudio className="h-4 w-4 text-violet-300" /><span>{labels.recordingDirectory}</span></div><p className="break-all font-mono text-[11px] text-zinc-500">{recording.dir}</p>{recording.files && <ul className="mt-2 space-y-1">{recording.files.map((file) => <li key={file}>{file}</li>)}</ul>}</div>}
+        {recording.dir && <div className="rounded-lg bg-white/[0.025] p-3 text-xs text-zinc-300"><div className="mb-2 flex items-center gap-2"><FileAudio className="h-4 w-4 text-mark-accent" /><span>{labels.recordingDirectory}</span></div><p className="break-all font-mono text-[11px] text-zinc-500">{recording.dir}</p>{recording.files && <ul className="mt-2 space-y-1">{recording.files.map((file) => <li key={file}>{file}</li>)}</ul>}</div>}
       </Section>
     </div>
   );

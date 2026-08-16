@@ -40,7 +40,7 @@ export interface SidebarReplayDialogState {
   replay: StructuredReplay;
 }
 
-export interface SidebarVoiceAuditDialogState {
+interface SidebarVoiceAuditDialogState {
   sessionId: string;
   sessionTitle: string;
 }

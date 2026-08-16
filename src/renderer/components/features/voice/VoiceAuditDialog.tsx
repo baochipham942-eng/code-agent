@@ -17,7 +17,7 @@ import { useUIStore } from '../../../stores/uiStore';
 import { Z_LAYERS } from '../../../styles/zLayers';
 import { Modal } from '../../primitives';
 
-export type VoiceAuditStatus = 'ok' | 'none' | 'unavailable';
+type VoiceAuditStatus = 'ok' | 'none' | 'unavailable';
 
 export interface VoiceCallListItem {
   voiceCallId: string | null;
@@ -99,7 +99,7 @@ export function filterVoiceCallsForSession(calls: VoiceCallListItem[], sessionId
     .sort((a, b) => b.summary.startedAt - a.summary.startedAt);
 }
 
-export function voiceAuditStatusClass(status: VoiceAuditStatus): string {
+function voiceAuditStatusClass(status: VoiceAuditStatus): string {
   if (status === 'none') return 'border-zinc-600/70 bg-zinc-800/60 text-zinc-300';
   if (status === 'unavailable') return 'border-amber-500/40 bg-amber-500/10 text-mark-warning';
   return 'border-emerald-500/30 bg-emerald-500/10 text-mark-success';
@@ -483,5 +483,3 @@ const Metric: React.FC<{ label: string; value: string | number }> = ({ label, va
     <p className="mt-1 text-sm font-medium text-zinc-200">{value}</p>
   </div>
 );
-
-export default VoiceAuditDialog;

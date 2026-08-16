@@ -12,6 +12,11 @@ export interface ActiveSkillInvocation {
   confidence: number;
 }
 
+export interface ModelFacingUserMessage {
+  sourceMessageId: string;
+  content: string;
+}
+
 /**
  * ADR-038 批3a: turn 级共享状态切片。
  * 原 RuntimeContext 顶层散字段收敛于此：字段私有、读走 getter、写走显式方法，
@@ -29,6 +34,11 @@ export class TurnState {
   private _lastStreamedContent = '';
   private _needsReinference = false;
   private _isSimpleTaskMode = false;
+  /**
+   * 普通 sendMessage 的历史/落库保留用户原话；本字段只给 messageBuild 在最终请求投影时使用。
+   * sourceMessageId 把覆盖限制在当前 run 对应的那条 user 消息，避免误改更早历史或 steer 消息。
+   */
+  private _modelFacingUserMessage?: ModelFacingUserMessage;
 
   // --- thinking/effort ---
   private _effortLevel: EffortLevel = 'high';
@@ -61,6 +71,7 @@ export class TurnState {
   get lastStreamedContent(): string { return this._lastStreamedContent; }
   get needsReinference(): boolean { return this._needsReinference; }
   get isSimpleTaskMode(): boolean { return this._isSimpleTaskMode; }
+  get modelFacingUserMessage(): ModelFacingUserMessage | undefined { return this._modelFacingUserMessage; }
   get effortLevel(): EffortLevel { return this._effortLevel; }
   get thinkingEnabled(): boolean { return this._thinkingEnabled; }
   get searchEnabled(): boolean { return this._searchEnabled; }
@@ -118,6 +129,10 @@ export class TurnState {
     this._isSimpleTaskMode = value;
   }
 
+  setModelFacingUserMessage(message: ModelFacingUserMessage | undefined): void {
+    this._modelFacingUserMessage = message;
+  }
+
   resetThinkingSteps(): void {
     this._thinkingStepCount = 0;
   }
@@ -160,6 +175,7 @@ export class TurnState {
     lastStreamedContent?: string;
     needsReinference?: boolean;
     isSimpleTaskMode?: boolean;
+    modelFacingUserMessage?: ModelFacingUserMessage;
     effortLevel?: EffortLevel;
     thinkingEnabled?: boolean;
     searchEnabled?: boolean;
@@ -180,6 +196,7 @@ export class TurnState {
     if (seed.lastStreamedContent !== undefined) state._lastStreamedContent = seed.lastStreamedContent;
     if (seed.needsReinference !== undefined) state._needsReinference = seed.needsReinference;
     if (seed.isSimpleTaskMode !== undefined) state._isSimpleTaskMode = seed.isSimpleTaskMode;
+    if (seed.modelFacingUserMessage !== undefined) state._modelFacingUserMessage = seed.modelFacingUserMessage;
     if (seed.effortLevel !== undefined) state._effortLevel = seed.effortLevel;
     if (seed.thinkingEnabled !== undefined) state._thinkingEnabled = seed.thinkingEnabled;
     if (seed.thinkingStepCount !== undefined) state._thinkingStepCount = seed.thinkingStepCount;

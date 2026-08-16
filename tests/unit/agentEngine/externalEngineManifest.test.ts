@@ -47,6 +47,25 @@ describe('external engine manifest contract', () => {
     expect(serialized).not.toContain('免费半个月');
   });
 
+  it('keeps declared capabilities aligned with distinct host implementations', () => {
+    const capabilitiesByKind = Object.fromEntries(
+      listExternalEngineManifests()
+        .filter((manifest) => manifest.kind)
+        .map((manifest) => [manifest.kind, manifest.capabilities]),
+    );
+
+    expect(capabilitiesByKind).toEqual({
+      native: ['execute', 'stream_events', 'resume'],
+      codex_cli: ['execute', 'stream_events', 'resume'],
+      claude_code: ['execute', 'stream_events', 'resume'],
+      mimo_code: ['execute', 'stream_events'],
+      kimi_code: ['execute', 'stream_events'],
+      codebuddy_code: ['execute', 'stream_events'],
+      grok_cli: ['execute', 'stream_events'],
+      dsh_cli: ['execute', 'stream_events'],
+    });
+  });
+
   it('keeps WorkBuddy on the client default when its current CLI cannot enumerate models', () => {
     const manifest = getExternalEngineManifestForKind('codebuddy_code');
 

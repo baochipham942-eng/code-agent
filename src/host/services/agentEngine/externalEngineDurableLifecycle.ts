@@ -11,6 +11,7 @@ import type { RunHandle } from '../../runtime/runContext';
 import { RunRegistry } from '../../runtime/runRegistry';
 import { getTelemetryService } from '../../telemetry/telemetryService';
 import { createLogger } from '../infra/logger';
+import { assertAgentEngineManifestCapability } from './agentEngineGuards';
 
 const logger = createLogger('ExternalEngineDurableLifecycle');
 
@@ -411,6 +412,7 @@ export function buildExternalEngineRecoveryDecision(plan: RunRehydrationPlan): E
   const externalSessionId = cursor.externalSessionId ?? plan.envelope.engine.externalSessionId;
   const capability = EXTERNAL_ENGINE_RESUME_CAPABILITIES[plan.envelope.engine.engine];
   if (capability === 'resumable' && externalSessionId) {
+    assertAgentEngineManifestCapability(plan.envelope.engine.engine, 'resume');
     return { engine: plan.envelope.engine.engine, capability, action: 'resume', reason: 'stable_external_session_id', externalSessionId };
   }
   if (capability === 'non_resumable') {

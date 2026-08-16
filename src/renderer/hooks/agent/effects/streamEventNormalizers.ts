@@ -157,9 +157,7 @@ const AGENT_ENGINE_RUNTIME_STATES = new Set<ModelExternalEngineSnapshot['runtime
 const AGENT_ENGINE_CAPABILITIES = new Set<AgentEngineCapability>([
   'execute',
   'stream_events',
-  'import_sessions',
   'resume',
-  'review',
 ]);
 
 const AGENT_ENGINE_CLI_STATUSES = new Set<AgentEngineReliability['cliStatus']>([

@@ -79,6 +79,7 @@ import {
   ClaudeCodeAdapter,
   parseClaudeCodeJsonLine,
 } from '../../../src/host/services/agentEngine/claudeCodeAdapter';
+import { DshCliAdapter } from '../../../src/host/services/agentEngine/dshCliAdapter';
 import {
   createClaudeContinuationResumeLaunch,
   createClaudeResumeLaunch,
@@ -938,6 +939,60 @@ describe('ClaudeCodeAdapter.run', () => {
       engine: {
         externalSessionId: 'target-session',
       },
+    });
+  });
+
+  it('lets an engine with its own line parser own every stdout line', async () => {
+    // dsh 自带 NDJSON 解析器：它对 reasoning 行返回 null，意思是「这行没有要渲染的东西」。
+    // 以前这里用 `??` 串着 Claude 协议解析器，null 会被当成「换个解析器再试一遍」，
+    // 真机一轮把 698 条 reasoning 全当正文渲染了出来。
+    mocks.registryGet.mockResolvedValue({
+      kind: 'dsh_cli',
+      installState: 'installed',
+      runtimeState: 'ready',
+      executable: false,
+      binaryPath: '/Users/linchen/.npm-global/bin/dsh',
+    });
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({ type: 'session', sessionId: 'session-dsh-1' }),
+      JSON.stringify({ type: 'reasoning', text: '内部思考不该进正文' }),
+      JSON.stringify({ type: 'tool_call', name: 'read', callId: 'call_1' }),
+      JSON.stringify({ type: 'tool_result', callId: 'call_1' }),
+      JSON.stringify({ type: 'text', text: '真正的' }),
+      JSON.stringify({ type: 'text', text: '答案' }),
+      JSON.stringify({ type: 'final', text: '真正的答案' }),
+      JSON.stringify({ type: 'turn_end', reason: 'completed' }),
+      // headless runner 自己在最后原样再打一遍最终答案——不能被当成第二段正文。
+      '真正的答案',
+    ], 0));
+
+    const deltas: string[] = [];
+    const result = await new DshCliAdapter().run({
+      sessionId: 'session-dsh',
+      prompt: 'read probe.txt',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      permissionProfile: 'read_only',
+      timeoutMs: 20_000,
+      stallWarningMs: 10_000,
+      emitEvent: (event) => {
+        if (event.type === 'message_delta') {
+          deltas.push(String((event.data as { text?: unknown }).text ?? ''));
+        }
+      },
+    });
+
+    expect(deltas).toEqual(['真正的', '答案']);
+    expect(result).toMatchObject({
+      engine: 'dsh_cli',
+      status: 'completed',
+      outputText: '真正的答案',
+      exitCode: 0,
+    });
+    expect(mocks.appendEvent.mock.calls.map((call) => call[0]))
+      .toContainEqual(expect.objectContaining({ type: 'agent_engine.tool_call', message: 'read' }));
+    expect(mocks.updateSession.mock.calls.at(-1)?.[1]).toMatchObject({
+      engine: { kind: 'dsh_cli', externalSessionId: 'session-dsh-1' },
     });
   });
 });

@@ -145,7 +145,7 @@ describe('AgentEngineRegistry mimo/kimi detection', () => {
     expect(descriptor.defaultPermissionProfile).toBe('read_only');
     expect(descriptor.cwdPolicy).toBe('workspace_only');
     expect(descriptor.riskTier).toBe('medium');
-    expect(descriptor.capabilities).toEqual(['execute', 'stream_events', 'review']);
+    expect(descriptor.capabilities).toEqual(['execute', 'stream_events']);
     expect(descriptor.reliability?.cliStatus).toBe('available');
     expect(descriptor.reliability?.streamingMode).toBe('json');
     expect(descriptor.lastError).toBeUndefined();
@@ -178,7 +178,7 @@ describe('AgentEngineRegistry mimo/kimi detection', () => {
     expect(descriptor.defaultPermissionProfile).toBe('read_only');
     expect(descriptor.cwdPolicy).toBe('workspace_only');
     expect(descriptor.riskTier).toBe('medium');
-    expect(descriptor.capabilities).toEqual(['execute', 'stream_events', 'review']);
+    expect(descriptor.capabilities).toEqual(['execute', 'stream_events']);
     expect(descriptor.reliability?.cliStatus).toBe('available');
     expect(descriptor.reliability?.streamingMode).toBe('stream_json');
     expect(descriptor.lastError).toBeUndefined();

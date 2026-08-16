@@ -959,6 +959,11 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       logger.warn(`[AgentLoop] Context length exceeded: ${error.requestedTokens} > ${error.maxTokens}`);
       logCollector.agent('WARN', `Context overflow, attempting auto-recovery`);
 
+      // L6 落一条 overflow-recovery commit 进压缩审计轨迹。在此之前 handleOverflow
+      // 在生产代码里零调用方（只有单测自调），而 renderer 早就备好了 'overflow-recovery'
+      // → 'overflow' 的展示映射在等它 —— 溢出发生过这件事在轨迹上完全看不见。
+      ctx.runtime.compressionPipeline.handleOverflow(ctx.runtime.contextHealth.compressionState);
+
       // 通知用户正在恢复
       ctx.runtime.onEvent({
         type: 'context_compressed',
@@ -971,7 +976,11 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
 
       // 尝试自动压缩 + 重试
       try {
-        await ctx.checkAndAutoCompress();
+        // provider 已确认溢出 ⇒ 压缩不再受本地 token 估算的阈值把关。
+        // 不传这个标记时，checkAndAutoCompress 会拿「刚被 provider 证伪的估算」去过
+        // 50/60/75 三道阈值，估算说没满就直接 return —— 于是「自动恢复」一个 token
+        // 都没压，紧接着把 maxTokens 砍 30% 重试，再撞一次同样的墙。
+        await ctx.checkAndAutoCompress({ providerConfirmedOverflow: true });
 
         if (!ctx.inferenceRecovery._contextOverflowRetried) {
           ctx.inferenceRecovery._contextOverflowRetried = true;

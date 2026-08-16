@@ -21,10 +21,15 @@ export interface ScriptPreview {
   pipelineCallSites: number;
   /** 是否出现 agent({tools:'edit'|'full'})——动写提示（影响审批风险维度）。 */
   writeHint: boolean;
+  /**
+   * PTC 脚本里 `tools.<name>()` 调到的工具名（去重）。计算成员访问记 '*'（证不了是谁）。
+   * 权限档由调用方按注册表解析——预览层是纯静态函数，不认识工具注册表。
+   */
+  toolCallNames: string[];
 }
 
 function emptyPreview(): ScriptPreview {
-  return { phases: [], agentCallSites: 0, parallelCallSites: 0, pipelineCallSites: 0, writeHint: false };
+  return { phases: [], agentCallSites: 0, parallelCallSites: 0, pipelineCallSites: 0, writeHint: false, toolCallNames: [] };
 }
 
 function literalString(node: unknown): string | undefined {
@@ -74,6 +79,19 @@ function walk(node: unknown, acc: ScriptPreview, seenPhases: Set<string>): void 
   if (n.type === 'CallExpression') {
     const callee = n.callee as Record<string, unknown> | undefined;
     const args = Array.isArray(n.arguments) ? (n.arguments as unknown[]) : [];
+    // PTC：`tools.<name>(args)` 是脚本直接碰工具的入口。审批预览必须看得见它——
+    // 否则一段只用 tools.Write 的脚本 writeHint 恒 false，超时授权按「只读」自动批准。
+    // 计算成员访问（tools[x]）静态证不了是哪个工具 ⇒ 记 '*'，由调用方按 fail-closed 处理。
+    if (callee?.type === 'MemberExpression') {
+      const object = callee.object as Record<string, unknown> | undefined;
+      if (object?.type === 'Identifier' && object.name === 'tools') {
+        const property = callee.property as Record<string, unknown> | undefined;
+        const name = callee.computed !== true && property?.type === 'Identifier'
+          ? String(property.name)
+          : literalString(property) ?? '*';
+        if (!acc.toolCallNames.includes(name)) acc.toolCallNames.push(name);
+      }
+    }
     if (callee?.type === 'Identifier') {
       switch (callee.name) {
         case 'phase': {

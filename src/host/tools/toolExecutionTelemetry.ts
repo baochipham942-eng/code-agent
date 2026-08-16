@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
 import type { PermissionRequestData } from './types';
+import {
+  normalizePermissionAskResult,
+  type PermissionAskResult,
+  type PermissionDenialSource,
+  type RequestPermissionResult,
+} from '../../shared/contract/permission';
 import { getTelemetryService } from '../telemetry/telemetryService';
 
 function findToolSpan(toolCallId?: string) {
@@ -122,8 +128,8 @@ function endApprovalWait(toolCallId: string | undefined): void {
 export async function requestPermissionWithTelemetry(input: {
   request: PermissionRequestData;
   toolCallId?: string;
-  requestPermission: (request: PermissionRequestData) => Promise<boolean>;
-}): Promise<boolean> {
+  requestPermission: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
+}): Promise<PermissionAskResult & { denialSource: PermissionDenialSource | undefined }> {
   let approvalSpanId: string | undefined;
   try {
     const toolSpan = findToolSpan(input.toolCallId);
@@ -142,10 +148,10 @@ export async function requestPermissionWithTelemetry(input: {
     // Approval tracing is diagnostic only.
   }
 
-  let approved: boolean;
+  let ask: PermissionAskResult & { denialSource: PermissionDenialSource | undefined };
   beginApprovalWait(input.toolCallId);
   try {
-    approved = await input.requestPermission(input.request);
+    ask = normalizePermissionAskResult(await input.requestPermission(input.request));
   } catch (error) {
     endApprovalWait(input.toolCallId);
     try {
@@ -163,16 +169,17 @@ export async function requestPermissionWithTelemetry(input: {
     if (approvalSpanId) {
       getTelemetryService().addSpanEvent(
         approvalSpanId,
-        approved ? 'approval.resolved' : 'approval.rejected',
+        ask.approved ? 'approval.resolved' : 'approval.rejected',
       );
-      getTelemetryService().endSpan(approvalSpanId, approved ? 'ok' : 'cancelled', {
-        'approval.state': approved ? 'resolved' : 'rejected',
+      getTelemetryService().endSpan(approvalSpanId, ask.approved ? 'ok' : 'cancelled', {
+        'approval.state': ask.approved ? 'resolved' : 'rejected',
+        ...(ask.denialSource ? { 'approval.denial_source': ask.denialSource } : {}),
       });
     }
   } catch {
     // Approval tracing is diagnostic only.
   }
-  return approved;
+  return ask;
 }
 
 export function markToolCacheHit(toolCallId?: string): void {

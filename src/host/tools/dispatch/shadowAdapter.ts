@@ -126,6 +126,9 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     workingDir: input.workingDirectory,
     abortSignal: input.abortSignal ?? new AbortController().signal,
     deniedToolNames: legacy?.deniedToolNames as readonly string[] | undefined,
+    // PTC 再入口原样透传：由 ToolExecutor 绑定，adapter 只搬运不改写
+    // （漏搬 = PTC 通道在真实调用路径上恒关闭，而单测里注入 ctx 又永远是通的）。
+    executeTool: legacy?.executeTool as ProtocolToolContext['executeTool'],
     agentId,
     logger: {
       debug: (msg, meta) => logger.debug(msg, meta),

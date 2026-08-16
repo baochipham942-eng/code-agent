@@ -2,14 +2,17 @@
   "schemaVersion": 1,
   "runtime": "dsh_cli",
   "protocolFamily": "opaque_cli",
-  "adapterBoundary": "dsh --profile headless",
+  "adapterBoundary": "dsh --profile headless --patch <event-sink-patch>",
   "syntheticRequest": {
     "args": [
       "--profile",
       "headless",
+      "--patch",
+      "<event-sink-patch>",
       "<redacted-user-content>"
     ],
     "credentials": "dsh-owned DeepSeek credentials under ~/.dsh; values-not-read-or-recorded",
-    "environment": "DSH_PERMISSION_MODE=read-only; proxy variables withheld"
+    "environment": "DSH_PERMISSION_MODE=read-only; proxy variables withheld",
+    "eventStream": "Neo mounts its own Cordis plugin (resources/dsh-event-sink/sink.mjs) through --patch; the plugin writes session events to stdout as NDJSON"
   }
 }

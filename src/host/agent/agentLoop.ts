@@ -260,14 +260,24 @@ export class AgentLoop {
    *   `<live_voice_permission_notice>` 整块就是这么露给用户的）。省略时按 userMessage 处理。
    */
   async run(userMessage: string, displayPrompt?: string): Promise<void> {
-    // 轮级只判定一次；普通预定义 agent（如 explore）不会取得角色记忆写入身份。
-    this.ctx.persistentRoleId = await resolvePersistentRoleId(this.ctx.agentId);
-    // 每条 user 消息开新的工具 repair 失败统计窗口（Kimi 借鉴 #1）
-    this.toolEngine.resetRepairGate();
-    // 一轮的边界在这里，所以录制器的开轮也在这里（displayPrompt 才是用户原话，
-    // userMessage 可能已被拼上 turnSystemContext 脚手架）。
-    this.beginComboTurn(displayPrompt ?? userMessage);
+    // 普通 sendMessage 先把展示面原话写进共享历史，再把模型面 executionContent 作为
+    // run 首参传进来。messageBuild 只读历史，因此这里为当前 user 消息登记一个纯请求投影；
+    // 不改 ctx.messages，避免脚手架进入会话落库、checkpoint 或 renderer。
+    const sourceUserMessage = displayPrompt !== undefined && displayPrompt !== userMessage
+      ? [...this.ctx.messages].reverse().find((message) => message.role === 'user')
+      : undefined;
+    this.ctx.turn.setModelFacingUserMessage(sourceUserMessage
+      ? { sourceMessageId: sourceUserMessage.id, content: userMessage }
+      : undefined);
+
     try {
+      // 轮级只判定一次；普通预定义 agent（如 explore）不会取得角色记忆写入身份。
+      this.ctx.persistentRoleId = await resolvePersistentRoleId(this.ctx.agentId);
+      // 每条 user 消息开新的工具 repair 失败统计窗口（Kimi 借鉴 #1）
+      this.toolEngine.resetRepairGate();
+      // 一轮的边界在这里，所以录制器的开轮也在这里（displayPrompt 才是用户原话，
+      // userMessage 可能已被拼上 turnSystemContext 脚手架）。
+      this.beginComboTurn(displayPrompt ?? userMessage);
       if (this.ctx.runTraceContext) {
         return await withRunTraceContext(
           this.ctx.runTraceContext,
@@ -276,6 +286,7 @@ export class AgentLoop {
       }
       return await this.conversationRuntime.run(userMessage, displayPrompt);
     } finally {
+      this.ctx.turn.setModelFacingUserMessage(undefined);
       // 缺口探测器（N-CAP1 / F1）：纯记账，不发事件、不弹卡、不通知。
       void recordCapabilityGapTurn(this.ctx.sessionId);
     }

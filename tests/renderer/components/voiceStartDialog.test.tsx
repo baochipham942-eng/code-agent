@@ -65,8 +65,9 @@ describe('VoiceStartDialog 音色就地选（X2）', () => {
     settingsGet({ live: { enabled: true, conversationModel: 'qwen3-omni-flash-realtime', voiceId: 'Tina' } });
     render(<VoiceStartDialog isOpen onConfirm={() => {}} onCancel={() => {}} />);
     const select = await screen.findByTestId('voice-start-voice-id') as HTMLSelectElement;
-    // Tina 是 3.5 系独有，上一代模型白名单里没有它
-    expect(Array.from(select.querySelectorAll('option')).map((o) => o.value)).toEqual(['Cherry', 'Ethan', 'Serena']);
+    // Tina 是 3.5 系独有，上一代模型白名单里没有它（2026-08-15 实测在这一代 400）；
+    // Chelsie 反过来只在这一代可用，同批探测补入。
+    expect(Array.from(select.querySelectorAll('option')).map((o) => o.value)).toEqual(['Cherry', 'Chelsie', 'Ethan', 'Serena']);
     expect(select.value).toBe('Cherry');
   });
 });

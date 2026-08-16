@@ -197,6 +197,26 @@ export interface ToolContext {
    * 注入 mock。
    */
   readonly resolver?: unknown;
+  /**
+   * 嵌套工具再入口（PTC / Code Mode）：把一次工具调用送回**签发本 context 的那个
+   * ToolExecutor 实例**，走完整 execute()——pre-execute / 审批 / guards / 收缩档
+   * 一条不落，与模型直接调该工具完全同路。
+   *
+   * 与 `ctx.resolver.execute` 的区别是承重的：resolver 是旁路（跳过审批与守卫），
+   * 只适合工具内部的实现细分派；模型能左右调用什么、调多少次的场景（PTC 脚本）
+   * 必须走这里。
+   *
+   * 收缩档不需要另行传递：同一个 executor 实例 = 同一份 permissionModeOverride /
+   * 拓扑 / 审批通道，options 原样透传 = 同一份 subagentPolicy。**复制一份收缩档
+   * 往下游引，就是给它留漂移的机会。**
+   *
+   * 只在最外层的工具调用上签发；由它发起的嵌套调用拿不到（一层封顶，防递归）。
+   * 缺省 = 通道关闭（fail-closed）。
+   */
+  readonly executeTool?: (
+    toolName: string,
+    params: Record<string, unknown>,
+  ) => Promise<{ success: boolean; error?: string; result?: unknown }>;
   /** 当前 turn 的显式工具作用域 */
   readonly toolScope?: WorkbenchToolScope;
   /** 当前 turn 的结构化执行意图 */

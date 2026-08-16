@@ -83,3 +83,31 @@ describe('extractScriptPreview', () => {
     expect(p.agentCallSites).toBe(1);
   });
 });
+
+// N-PTCEXEC：PTC 通道让脚本能绕过子 agent 直接碰工具，审批预览必须看得见这些调用点。
+// 不收集 = 一段只调 tools.Write 的脚本 writeHint 恒 false，超时授权按「只读」自动批准。
+describe('PTC tools.<name>() 调用点', () => {
+  it('收集字面量工具名并去重', () => {
+    const p = extractScriptPreview(`
+      const a = await tools.Read({ file_path: 'x' });
+      const b = await tools.Read({ file_path: 'y' });
+      await tools.Write({ file_path: 'z', content: a + b });
+    `);
+    expect(p.toolCallNames).toEqual(['Read', 'Write']);
+  });
+
+  it('计算成员访问记 *（静态证不了是哪个工具，交调用方 fail-closed）', () => {
+    const p = extractScriptPreview("const n = pick(); await tools[n]({});");
+    expect(p.toolCallNames).toEqual(['*']);
+  });
+
+  it('字面量下标能解析出真名', () => {
+    const p = extractScriptPreview("await tools['my-tool']({});");
+    expect(p.toolCallNames).toEqual(['my-tool']);
+  });
+
+  it('没有 tools 调用时为空数组，不误伤纯编排脚本', () => {
+    const p = extractScriptPreview("await agent('hi'); phase('p');");
+    expect(p.toolCallNames).toEqual([]);
+  });
+});

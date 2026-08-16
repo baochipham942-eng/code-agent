@@ -11,6 +11,7 @@ const PREVIEW: ScriptPreview = {
   parallelCallSites: 1,
   pipelineCallSites: 1,
   writeHint: false,
+  toolCallNames: [],
 };
 
 describe('buildWorkflowLaunchRequest', () => {

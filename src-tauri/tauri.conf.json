@@ -53,6 +53,7 @@
       "../dist/bundled-node": "dist/bundled-node",
       "../dist/renderer": "dist/renderer",
       "../resources/browser-relay-extension": "resources/browser-relay-extension",
+      "../resources/dsh-event-sink": "resources/dsh-event-sink",
       "../package.json": "package.json",
       "../node_modules/better-sqlite3/package.json": "node_modules/better-sqlite3/package.json",
       "../node_modules/better-sqlite3/lib": "node_modules/better-sqlite3/lib",

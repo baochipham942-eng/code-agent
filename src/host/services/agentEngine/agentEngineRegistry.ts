@@ -135,7 +135,8 @@ export class AgentEngineRegistry {
     const detected = builtin || Boolean(probe?.binaryPath);
     const adapterVerified = manifest.adapter.evidence === 'production'
       && Boolean(manifest.adapter.adapterId)
-      && Boolean(manifest.kind);
+      && Boolean(manifest.kind)
+      && manifest.capabilities.includes('execute');
     const authenticated = builtin || probe?.authenticated === true;
     return {
       manifestId: manifest.id,
@@ -182,6 +183,7 @@ export class AgentEngineRegistry {
       installed
       && manifest.adapter.evidence === 'production'
       && Boolean(manifest.adapter.adapterId)
+      && manifest.capabilities.includes('execute')
     );
     return {
       manifestId: manifest.id,

@@ -6,6 +6,7 @@ import { classifyPermission, type ClassificationResult } from './permissionClass
 import { isExternalSideEffectTool } from './externalSideEffect';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
+import type { PermissionDenialSource } from '../../shared/contract/permission';
 
 type ToolPermissionLevel = Parameters<typeof permissionModeAutoApproves>[1];
 
@@ -57,6 +58,38 @@ export function readOnlyForcesConfirmationFor(
  */
 export function readOnlyDenialError(toolName: string): string {
   return `只读探索模式：${toolName} 未获用户确认而被拦截（无审批界面的运行环境会自动拒绝）。如需执行该操作，请切换会话权限档后重试。`;
+}
+
+/**
+ * 分类器**抛错**（≠ 判 ask）回退人工审批时写进 decisionTrace 的 rule 名。
+ * 单独一个常量是为了让「故障回退」与「正常判 ask」在账本里天然可区分。
+ */
+export const CLASSIFIER_ERROR_TRACE_RULE = 'classifier_error';
+
+/**
+ * 拒绝文案的唯一来源。**这段文本有两个受众**：模型（会据此向用户转述）和审计日志。
+ * 泛用的 "Permission denied by user" 在机器自动拒的路径上是**假话**——用户什么都没看见，
+ * 模型却会告诉他「你拒绝了」。每种 denialSource 必须给出真实原因 + 可执行的出路。
+ */
+export function permissionDenialError(toolName: string, source: PermissionDenialSource): string {
+  switch (source) {
+    case 'user':
+      return 'Permission denied by user';
+    case 'no-approval-ui':
+      return `${toolName} 被自动拒绝：当前运行环境没有审批界面（非交互 CLI / web headless），`
+        + '需人工确认的操作一律 fail-closed 拒绝——用户并未看到审批请求。'
+        + '出路：把会话权限档抬到 bypassPermissions，或改用无需确认的等价操作。';
+    case 'timeout':
+      return `${toolName} 被自动拒绝：审批请求已发出但超时无人应答。出路：请用户在收件箱/会话卡上处理后重试。`;
+    case 'cancelled':
+      return `${toolName} 被自动拒绝：本次运行已被取消（或有新消息到达），挂起的审批被统一解除。`;
+    case 'fail-closed':
+      return `${toolName} 被自动拒绝：审批链路依赖不可用，按安全侧默认拒绝（fail-closed），并非用户拒绝。`;
+    default: {
+      const _exhaustive: never = source;
+      return _exhaustive;
+    }
+  }
 }
 
 /**

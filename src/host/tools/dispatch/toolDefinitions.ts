@@ -70,6 +70,7 @@ function schemaToDefinition(
     requiresPermission: schema.requiresPermission ?? schema.permissionLevel !== 'read',
     permissionLevel: mapPermissionLevel(schema.permissionLevel),
     pathAuthority: schema.pathAuthority,
+    emission: schema.emission,
     // readOnly 探索档判定依赖：network 档只读工具直通，非只读强制确认
     readOnly: schema.readOnly === true,
     requiresUserPresence: schema.requiresUserPresence === true,

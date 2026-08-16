@@ -166,9 +166,12 @@ export interface TraceEventDataMap {
   /** P3 slot only. Registration wiring is intentionally out of scope for P0A. */
   compensation_registered: {
     compensationId: string;
+    executionId: string;
+    toolName: string;
     action: string;
     target: string;
     order: number;
+    sufficiency: 'unreviewed';
   };
   /** P2 slot only. Capability load/unload wiring is intentionally out of scope for P0A. */
   capability_lifecycle: {

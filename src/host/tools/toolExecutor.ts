@@ -62,6 +62,7 @@ import {
   getActiveRunTraceContext,
   withRunTraceContext,
 } from '../telemetry/runTraceContext';
+import type { TurnTraceRecorder } from '../agent/runtime/turnTrace';
 
 const logger = createLogger('ToolExecutor');
 
@@ -107,6 +108,8 @@ export type ToolExecutionDelegate = (toolName: string, params: Record<string, un
 export interface ExecuteOptions {
   /** Native Run identity only. Never substitute sessionId or Team runId. */
   runId?: string; turnId?: string;
+  /** 当前 agent run 的 JSONL trace；补偿登记必须与所属 turn 同账。 */
+  turnTrace?: TurnTraceRecorder;
   planningService?: unknown; // PlanningService instance for persistent planning
   modelConfig?: unknown; // ModelConfig for subagent execution
   // Plan Mode support (borrowed from Claude Code v2.0)
@@ -1149,6 +1152,10 @@ export class ToolExecutor {
       params,
       startedAt: startTime,
       origin: this.ledgerOrigin,
+      emission: toolDef.emission,
+      workingDirectory: this.executionCwd,
+      workspace: this.runtimeWorkspace,
+      turnTrace: options.turnTrace,
     });
     const { executionId } = executionLedger;
     try {

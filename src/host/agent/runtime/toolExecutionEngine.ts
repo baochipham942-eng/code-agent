@@ -764,6 +764,7 @@ export class ToolExecutionEngine {
         {
           runId: this.ctx.runId,
           turnId: this.ctx.turn.currentTurnId,
+          turnTrace: this.ctx.turnTrace,
           planningService: this.ctx.planningService,
           modelConfig: this.ctx.modelConfig,
           setPlanMode: this.runtimeControl.setPlanMode.bind(this.runtimeControl),

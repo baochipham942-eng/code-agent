@@ -44,6 +44,11 @@ export const writeSchema: ToolSchema = {
   category: 'fs',
   permissionLevel: 'write',
   pathAuthority: [{ kind: 'path', pathParameter: 'file_path' }],
+  emission: {
+    kind: 'external_file_write',
+    targetParameter: 'file_path',
+    compensationAction: 'delete_created_file_or_restore_previous_content',
+  },
   readOnly: false,
   allowInPlanMode: false,
 };

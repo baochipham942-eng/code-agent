@@ -14,7 +14,7 @@ function fixture() {
   const dynamic = JSON.stringify({ role: 'system', content: 'tail', transient: true });
   const tools = JSON.stringify([{ name: 'Read', description: 'read', inputSchema: { type: 'object' } }]);
   const ledger: Message[] = [{ id: 'u1', role: 'user', content: 'hello', timestamp: 1 }];
-  const manifest = {
+  const manifest: TraceEventDataMap['request_manifest'] = {
     requestId: 'r1',
     messageRefs: [
       { kind: 'system_prompt', contentHash: hash(system) },
@@ -30,7 +30,7 @@ function fixture() {
     adapterDefaults: { engine: 'aisdk', temperature: null, maxTokens: null },
     compactionReplacements: [],
     degraded: false,
-  } satisfies TraceEventDataMap['request_manifest'];
+  };
   const readers = {
     getSystemPrompt: () => ({ content: system }),
     getContent: () => dynamic,

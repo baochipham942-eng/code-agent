@@ -106,8 +106,8 @@ describe('buildRequestManifest', () => {
       content: '',
       timestamp: 1,
       toolResults: [
-        { toolCallId: 'call-1', toolName: 'Read', success: true, output: 'one' },
-        { toolCallId: 'call-2', toolName: 'Read', success: false, error: 'two' },
+        { toolCallId: 'call-1', success: true, output: 'one' },
+        { toolCallId: 'call-2', success: false, error: 'two' },
       ],
     } as Message;
     const messages: ModelMessage[] = [

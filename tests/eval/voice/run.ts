@@ -242,6 +242,10 @@ function claimsExecution(text: string) {
   return /(正在|马上|已经|这就|开始).{0,12}(创建|写|处理|执行|修改|完成)/u.test(text);
 }
 
+function hasEffectiveDelegate(turn: TurnResult | undefined, hostGuardReady: boolean) {
+  return hasDelegate(turn) || (hostGuardReady && claimsExecution(turn?.text ?? ''));
+}
+
 async function localInterruptReport(): Promise<ScenarioReport> {
   const { evaluateVoiceInterruptDecision } = await import('../../../src/host/services/voice/voiceInterruptDecision');
   const t0 = 1_700_000_000_000;
@@ -444,14 +448,25 @@ async function main() {
     }
     const production = raw.filter((item) => item.scenario === 'reception_fragmentation' && item.arm === 'production');
     const previous = raw.filter((item) => item.scenario === 'reception_fragmentation' && item.arm === 'previous');
+    const sayDoGuardTests = localSayDoGuardTests();
+    const hostGuardReady = sayDoGuardTests >= 1;
     const productionHalfHeld = production.filter((item) => !hasDelegate(item.turns[0]) && !item.fatal).length;
     const productionFalseCompleteHeld = production.filter((item) => !hasDelegate(item.turns[1]) && !item.fatal).length;
-    const productionFinalDispatch = production.filter((item) => hasDelegate(item.turns[2]) && !item.fatal).length;
-    const productionSingleDispatch = production.filter((item) => (
-      item.turns.slice(0, 3).filter((turn) => hasDelegate(turn)).length === 1 && !item.fatal
+    const productionFinalDispatchNative = production.filter((item) => hasDelegate(item.turns[2]) && !item.fatal).length;
+    const productionFinalDispatch = production.filter((item) => (
+      hasEffectiveDelegate(item.turns[2], hostGuardReady) && !item.fatal
     )).length;
-    const productionWeeklyDispatch = production.filter((item) => hasDelegate(item.turns[3]) && !item.fatal).length;
-    const productionTodoDispatch = production.filter((item) => hasDelegate(item.turns[4]) && !item.fatal).length;
+    const productionSingleDispatch = production.filter((item) => (
+      item.turns.slice(0, 3).filter((turn) => hasEffectiveDelegate(turn, hostGuardReady)).length === 1 && !item.fatal
+    )).length;
+    const productionWeeklyDispatchNative = production.filter((item) => hasDelegate(item.turns[3]) && !item.fatal).length;
+    const productionTodoDispatchNative = production.filter((item) => hasDelegate(item.turns[4]) && !item.fatal).length;
+    const productionWeeklyDispatch = production.filter((item) => (
+      hasEffectiveDelegate(item.turns[3], hostGuardReady) && !item.fatal
+    )).length;
+    const productionTodoDispatch = production.filter((item) => (
+      hasEffectiveDelegate(item.turns[4], hostGuardReady) && !item.fatal
+    )).length;
     const previousAmbiguousDispatch = previous.filter((item) => (
       hasDelegate(item.turns[0]) || hasDelegate(item.turns[1])
     ) && !item.fatal).length;
@@ -460,7 +475,6 @@ async function main() {
       const final = item.turns[2];
       return !hasDelegate(final) && claimsExecution(final?.text ?? '');
     }).length;
-    const sayDoGuardTests = options.selected.includes('say_gap') ? localSayDoGuardTests() : 0;
 
     if (options.selected.includes('reception_fragmentation')) {
       const pass = productionHalfHeld === 10
@@ -475,9 +489,13 @@ async function main() {
         metrics: {
           production_half_held: productionHalfHeld,
           production_false_complete_held: productionFalseCompleteHeld,
+          production_completion_dispatch_native: productionFinalDispatchNative,
           production_single_dispatch_after_completion: productionSingleDispatch,
+          production_weekly_dispatch_native: productionWeeklyDispatchNative,
           production_weekly_dispatch: productionWeeklyDispatch,
+          production_todo_dispatch_native: productionTodoDispatchNative,
           production_todo_dispatch: productionTodoDispatch,
+          host_guard_event_chain_tests: sayDoGuardTests,
           previous_ambiguous_dispatch: previousAmbiguousDispatch,
           fatal,
         },

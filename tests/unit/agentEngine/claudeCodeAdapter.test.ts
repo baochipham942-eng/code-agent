@@ -999,6 +999,33 @@ describe('ClaudeCodeAdapter.run', () => {
     });
   });
 
+  it('persists the external session anchor when observed, not only at a clean finish', async () => {
+    // 崩溃形态：session 行已出、进程随后非正常退出。锚点必须已在 durable 存储里，
+    // 否则 decideExternalRecovery 永远只能 resume_evidence_incomplete。
+    mocks.registryGet.mockResolvedValue({
+      kind: 'dsh_cli', installState: 'installed', runtimeState: 'ready',
+      executable: false, binaryPath: '/Users/linchen/.npm-global/bin/dsh',
+    });
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({ type: 'session', sessionId: 'session-dsh-crash' }),
+      JSON.stringify({ type: 'text', text: '写到一半' }),
+    ], 137));
+    const lifecycle = {
+      runId: 'logical-run', attempt: 1, ownerEpoch: 1,
+      attachProcess: vi.fn(async () => undefined),
+      observeStdout: vi.fn(), observeStderr: vi.fn(), observeModelUsage: vi.fn(), observeNormalizedEvent: vi.fn(),
+      persistExternalSessionId: vi.fn(), terminateProcess: vi.fn(async () => undefined),
+      finish: vi.fn(async () => undefined),
+    } as unknown as ExternalEngineDurableLifecycle;
+    const cwd = await fs.realpath(workspaceRoot);
+    const result = await new DshCliAdapter().run({
+      sessionId: 'session-1', prompt: 'long task', cwd, workspaceRoot: cwd,
+      permissionProfile: 'read_only', durableLifecycle: lifecycle,
+    });
+    expect(result.status).toBe('failed');
+    expect(lifecycle.persistExternalSessionId).toHaveBeenCalledWith('session-dsh-crash');
+  });
+
   it('resumes dsh through the runner-swap patch and confirms the persisted session id', async () => {
     mocks.registryGet.mockResolvedValue({
       kind: 'dsh_cli', installState: 'installed', runtimeState: 'ready',

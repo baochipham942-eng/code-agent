@@ -362,6 +362,13 @@ export class ClaudeCodeAdapter {
           void request.durableLifecycle?.terminateProcess('SIGTERM');
         } else {
           confirmedExternalSessionId = parsed.externalSessionId;
+          // 观测到身份就立刻落 durable 锚点（persistExternalSessionId 幂等，收尾那次成为 no-op）。
+          // 只在收尾落的话，中途崩溃的 run 永远没有恢复锚点——decideExternalRecovery 只能
+          // 收在 resume_evidence_incomplete，「resumable」能力位就成了空话（N-DSH1c 真机撞出来的）。
+          // fork 首跑除外：它的恒等式是「握手消费成功才认这条新外部会话」，锚点仍走收尾路径。
+          if (!request.forkContextHandoff) {
+            request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
+          }
         }
       }
       if (parsed.textDelta && (parsed.textDeltaSource !== 'snapshot' || streamedText.length === 0)) {

@@ -1,0 +1,6 @@
+services:
+  default:
+    image: neo-cli-inspect:latest
+    command: tail -f /dev/null
+    working_dir: /app
+    init: true

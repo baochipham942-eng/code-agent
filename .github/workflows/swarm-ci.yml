@@ -53,6 +53,9 @@ on:
       - 'scripts/check-token-integrity.mjs'
       - 'scripts/check-copy.mjs'
       - 'scripts/host-chinese-error-ratchet.mjs'
+      - 'scripts/attention-budget-ratchet.mjs'
+      # 基线也要触发：只改基线 = 手工放宽棘轮，不能溜过门（与 knip 基线同理）
+      - 'scripts/attention-budget-ratchet-baseline.json'
       - 'scripts/ci/host-esm-cjs-lint.mjs'
       - 'tailwind.config.js'
       - 'scripts/knip-ratchet.mjs'
@@ -186,6 +189,12 @@ jobs:
         # P2 工具错误文案分层保护门：只扫描 host/tools + host/memory 的 error 属性，
         # 含中文字符串字面量的存量只降不升。脚本对 0 文件、0 目标和 TS 解析失败 fail loud。
         run: node scripts/host-chinese-error-ratchet.mjs
+
+      - name: Attention budget ratchet (injection fixed cost)
+        # 注入固定开销棘轮：无守卫静态注入总量 + 实时语音固定文案 token，只降不升（语音 ±10% 容差见基线）。
+        # 此前只在 gates-local 本地跑、CI 零执行——#1199 改语音文案后 CI 全绿合入，把主线门带红（N-L8-ATT11/12）。
+        # 脚本对 0 命中文件 / 找不到语音文案锚点 fail-loud，不会扫空假绿。
+        run: node scripts/attention-budget-ratchet.mjs
 
       - name: Host ESM/CJS static gate
         # 只扫 host 工具和插件的发行源码；根路径/解析/0 文件都会失败，防止 ESM 构建中

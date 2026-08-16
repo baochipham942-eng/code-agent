@@ -1,4 +1,4 @@
-import { quickClassify } from '../../model/quickModel';
+import { quickTask } from '../../model/quickModel';
 import { createLogger } from '../infra/logger';
 import { executeVoiceTool } from './voiceTools';
 
@@ -85,9 +85,10 @@ export function rememberVoiceSayDoToolCall(state: VoiceSayDoGuardState): void {
 function buildAuditInput(userTurns: readonly string[], assistantText: string): string {
   return [
     '判断这轮实时通话是否发生了“说了没做”。',
-    'say_without_do：用户要求执行会改变文件、系统、任务或外部世界的工作，助手本轮声称已经开始、正在执行或已经完成，但本轮实际上没有任何工具调用。',
-    'normal_reply：闲聊、知识回答、口头完成的事、追问缺失信息、拒绝、说明尚未执行，或没有声称工作已开始/完成。',
+    'SAY_GAP：用户要求执行会改变文件、系统、任务或外部世界的工作，助手本轮声称已经开始、正在执行或已经完成，但本轮实际上没有任何工具调用。',
+    'NORMAL：闲聊、知识回答、口头完成的事、追问缺失信息、拒绝、说明尚未执行，或没有声称工作已开始/完成。',
     '只按语义判断，不依赖固定句式。',
+    '只输出 SAY_GAP 或 NORMAL，不要解释。',
     '',
     `最近用户话语：\n${userTurns.map((turn, index) => `${index + 1}. ${turn}`).join('\n')}`,
     `助手本轮回复：\n${assistantText.trim()}`,
@@ -95,8 +96,10 @@ function buildAuditInput(userTurns: readonly string[], assistantText: string): s
 }
 
 async function classifySayDo(input: string): Promise<'say_without_do' | 'normal_reply' | null> {
-  const result = await quickClassify(input, ['say_without_do', 'normal_reply']);
-  if (result?.category === 'say_without_do' || result?.category === 'normal_reply') return result.category;
+  const result = await quickTask(input, 16);
+  const answer = result.content?.trim().toUpperCase();
+  if (answer === 'SAY_GAP') return 'say_without_do';
+  if (answer === 'NORMAL') return 'normal_reply';
   return null;
 }
 

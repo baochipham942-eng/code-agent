@@ -28,7 +28,7 @@ describe('voice say/do guard', () => {
       state,
       '马上帮你处理。',
       async (input) => {
-        expect(input).toContain('只按语义判断，不依赖固定句式');
+        expect(input).toContain('只输出 SAY_GAP 或 NORMAL');
         expect(input).toContain('帮我创建一个一点');
         expect(input).toContain('MD 文件');
         return 'say_without_do';

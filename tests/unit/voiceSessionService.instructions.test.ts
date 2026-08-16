@@ -7,7 +7,7 @@ const runtime = vi.hoisted(() => ({
   settings: { voice: { live: {} as Record<string, unknown> } },
   connect: vi.fn(),
   updateInstructions: vi.fn(),
-  quickClassify: vi.fn(),
+  quickTask: vi.fn(),
   executeVoiceTool: vi.fn(async () => '已派发'),
 }));
 const recordVoiceCall = vi.hoisted(() => vi.fn());
@@ -43,7 +43,7 @@ vi.mock('../../src/host/services/voice/voiceTools', () => ({
   executeVoiceTool: (...args: unknown[]) => runtime.executeVoiceTool(...args),
 }));
 vi.mock('../../src/host/model/quickModel', () => ({
-  quickClassify: (...args: unknown[]) => runtime.quickClassify(...args),
+  quickTask: (...args: unknown[]) => runtime.quickTask(...args),
 }));
 vi.mock('../../src/host/services/voice/voiceUsageLedger', () => ({
   recordVoiceCall,
@@ -117,7 +117,7 @@ beforeEach(() => {
   runtime.settings.voice.live = {};
   runtime.connect.mockReset().mockResolvedValue(makeHandle());
   runtime.updateInstructions.mockClear();
-  runtime.quickClassify.mockReset().mockResolvedValue({ category: 'normal_reply', confidence: 0.9 });
+  runtime.quickTask.mockReset().mockResolvedValue({ success: true, content: 'NORMAL' });
   runtime.executeVoiceTool.mockClear();
   recordVoiceCall.mockClear();
 });
@@ -143,10 +143,10 @@ describe('refreshVoiceInstructions', () => {
       type: 'assistant.transcript', text: '建个什么文件？', done: true, responseId: 'r1', itemId: 'a1',
     });
     connectInput.onEvent({ type: 'response.done', responseId: 'r1' });
-    await vi.waitFor(() => expect(runtime.quickClassify).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(runtime.quickTask).toHaveBeenCalledTimes(1));
     expect(runtime.executeVoiceTool).not.toHaveBeenCalled();
 
-    runtime.quickClassify.mockResolvedValueOnce({ category: 'say_without_do', confidence: 0.9 });
+    runtime.quickTask.mockResolvedValueOnce({ success: true, content: 'SAY_GAP' });
     connectInput.onEvent({ type: 'user.transcript', text: 'MD 文件', done: true, itemId: 'u2' });
     connectInput.onEvent({
       type: 'assistant.transcript', text: '好的，马上帮你处理。', done: true, responseId: 'r2', itemId: 'a2',

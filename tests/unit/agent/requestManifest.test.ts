@@ -83,6 +83,36 @@ describe('buildRequestManifest', () => {
     expect(buildRequestManifest(input).degraded).toBe(true);
   });
 
+  it('stores dynamic tails as ordered deduplicated blocks without caching the full message', () => {
+    const first: ModelMessage = {
+      role: 'system',
+      content: '<repo_map>stable</repo_map>\n\nsession one',
+      transient: true,
+    };
+    const second: ModelMessage = {
+      role: 'system',
+      content: '<repo_map>stable</repo_map>\n\nsession two',
+      transient: true,
+    };
+    const stored = new Map<string, string>();
+    const firstInput = baseInput([first], ['__dynamic_tail__'], []);
+    firstInput.contentStore = { store: vi.fn((hash, content) => (stored.set(hash, content), true)) };
+    const secondInput = baseInput([second], ['__dynamic_tail__'], []);
+    secondInput.contentStore = firstInput.contentStore;
+
+    const firstRef = buildRequestManifest(firstInput).messageRefs[0];
+    const secondRef = buildRequestManifest(secondInput).messageRefs[0];
+
+    expect(firstRef).toMatchObject({ kind: 'content', reason: 'dynamic_tail' });
+    expect(secondRef).toMatchObject({ kind: 'content', reason: 'dynamic_tail' });
+    if (firstRef.kind !== 'content' || secondRef.kind !== 'content') throw new Error('expected content refs');
+    expect(firstRef.blocks?.length).toBeGreaterThan(3);
+    expect(secondRef.blocks?.map((block) => block.contentHash)).toContain(firstRef.blocks?.[1].contentHash);
+    expect(stored.has(firstRef.contentHash)).toBe(false);
+    expect(firstRef.blocks?.map((block) => stored.get(block.contentHash)).join(''))
+      .toBe(canonicalizeModelMessage(first));
+  });
+
   it('falls back to verbatim content when the prompt cache cannot return the hash original', () => {
     const message: ModelMessage = { role: 'system', content: 'token sk-secret' };
     const input = baseInput([message], ['__system_prompt__'], []);

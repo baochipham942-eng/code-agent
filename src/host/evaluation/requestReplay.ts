@@ -42,6 +42,32 @@ function requireHash(content: string | null, expectedHash: string, label: string
   return content;
 }
 
+function readContentRef(
+  ref: Extract<TraceEventDataMap['request_manifest']['messageRefs'][number], { kind: 'content' }>,
+  readers: RequestReplayContentReaders,
+  label: string,
+  reasons: string[],
+): string | null {
+  if (!ref.blocks) {
+    return requireHash(readers.getContent(ref.contentHash), ref.contentHash, `${label} content_cache`, reasons);
+  }
+
+  const blocks: string[] = [];
+  for (const [blockIndex, blockRef] of ref.blocks.entries()) {
+    const blockLabel = `${label}.blocks[${blockIndex}] content_cache`;
+    const block = requireHash(readers.getContent(blockRef.contentHash), blockRef.contentHash, blockLabel, reasons);
+    if (block == null) continue;
+    const bytes = Buffer.byteLength(block, 'utf-8');
+    if (bytes !== blockRef.bytes) {
+      reasons.push(`${blockLabel}字节数不符：期望 ${blockRef.bytes}，实际 ${bytes}`);
+      continue;
+    }
+    blocks.push(block);
+  }
+  if (blocks.length !== ref.blocks.length) return null;
+  return requireHash(blocks.join(''), ref.contentHash, `${label} block assembly`, reasons);
+}
+
 function parseModelMessage(canonical: string, label: string, reasons: string[]): ModelMessage | null {
   try {
     const parsed = JSON.parse(canonical) as ModelMessage;
@@ -109,12 +135,7 @@ export function reconstructRequest(
       continue;
     }
 
-    const canonical = requireHash(
-      readers.getContent(ref.contentHash),
-      ref.contentHash,
-      `${label} content_cache`,
-      reasons,
-    );
+    const canonical = readContentRef(ref, readers, label, reasons);
     if (canonical == null) continue;
     const parsed = parseModelMessage(canonical, label, reasons);
     if (parsed) messages.push(parsed);

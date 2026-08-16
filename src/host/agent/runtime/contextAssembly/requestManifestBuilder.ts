@@ -37,6 +37,32 @@ function hashContent(content: string): string {
   return createHash('sha256').update(content).digest('hex');
 }
 
+function byteLength(content: string): number {
+  return Buffer.byteLength(content, 'utf-8');
+}
+
+/**
+ * Split the dynamic system tail at the same blank-line boundaries used by the
+ * prompt block assembler while retaining the exact canonical JSON envelope.
+ * JSON escaping is performed per block, so concatenation remains byte-exact.
+ */
+function canonicalDynamicTailBlocks(message: ModelMessage, canonical: string): string[] | null {
+  if (typeof message.content !== 'string') return null;
+  const encodedContent = JSON.stringify(message.content);
+  const marker = `\"content\":${encodedContent}`;
+  const markerOffset = canonical.indexOf(marker);
+  if (markerOffset < 0 || encodedContent.length < 2) return null;
+
+  const encodedOffset = markerOffset + '\"content\":'.length;
+  const prefix = canonical.slice(0, encodedOffset + 1);
+  const suffix = canonical.slice(encodedOffset + encodedContent.length - 1);
+  const contentBlocks = message.content
+    .split(/(\n\n+)/)
+    .filter((block) => block.length > 0)
+    .map((block) => JSON.stringify(block).slice(1, -1));
+  return [prefix, ...contentBlocks, suffix].filter((block) => block.length > 0);
+}
+
 function resolveAdapterDefaults(
   config: ModelConfig,
   engine: 'aisdk' | 'legacy',
@@ -90,6 +116,9 @@ export function buildRequestManifest(
     if (!contentStore.store(contentHash, canonical)) degraded = true;
     return contentHash;
   };
+  const storeBlocks = (blocks: readonly string[]): Array<{ contentHash: string; bytes: number }> => (
+    blocks.map((block) => ({ contentHash: storeCanonical(block), bytes: byteLength(block) }))
+  );
   const messageRefs: RequestManifestMessageRef[] = input.messages.map((message, index) => {
     const canonical = canonicalizeModelMessage(message);
     const sourceId = input.sourceIds[index];
@@ -113,6 +142,12 @@ export function buildRequestManifest(
     const reason = sourceId === '__dynamic_tail__'
       ? 'dynamic_tail'
       : sourceId && !transcriptMessage ? 'runtime_injection' : 'post_assembly_rewrite';
+    if (reason === 'dynamic_tail') {
+      const blocks = canonicalDynamicTailBlocks(message, canonical);
+      if (blocks && blocks.length > 0) {
+        return { kind: 'content', contentHash: hashContent(canonical), reason, blocks: storeBlocks(blocks) };
+      }
+    }
     return { kind: 'content', contentHash: storeCanonical(canonical), reason };
   });
   const transcriptIds = new Set(input.transcriptMessages.map((message) => message.id));

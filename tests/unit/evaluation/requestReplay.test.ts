@@ -52,6 +52,36 @@ describe('reconstructRequest', () => {
     expect(result.canonicalTools).toBe(tools);
   });
 
+  it('rebuilds the P2 ordered-block content ref while retaining P1 full-content compatibility', () => {
+    const value = fixture();
+    const parts = [value.dynamic.slice(0, 18), value.dynamic.slice(18, 34), value.dynamic.slice(34)];
+    const content = new Map(parts.map((part) => [hash(part), part]));
+    value.manifest.messageRefs[2] = {
+      kind: 'content',
+      contentHash: hash(value.dynamic),
+      reason: 'dynamic_tail',
+      blocks: parts.map((part) => ({ contentHash: hash(part), bytes: Buffer.byteLength(part) })),
+    };
+    value.readers.getContent = (contentHash: string) => content.get(contentHash) ?? null;
+
+    expect(reconstructRequest(value.manifest, value.ledger, value.readers).canonicalMessages[2])
+      .toBe(value.dynamic);
+  });
+
+  it('fails loud when an ordered content block is missing', () => {
+    const value = fixture();
+    value.manifest.messageRefs[2] = {
+      kind: 'content',
+      contentHash: hash(value.dynamic),
+      reason: 'dynamic_tail',
+      blocks: [{ contentHash: hash('missing'), bytes: 7 }],
+    };
+    value.readers.getContent = () => null;
+
+    expect(() => reconstructRequest(value.manifest, value.ledger, value.readers))
+      .toThrow(RequestNotReconstructableError);
+  });
+
   it.each([
     ['degraded manifest', (value: ReturnType<typeof fixture>) => { value.manifest.degraded = true; }],
     ['missing ledger id', (value: ReturnType<typeof fixture>) => { value.ledger.length = 0; }],

@@ -69,6 +69,7 @@ function dispatchThenLaterTurn(): Message[] {
       role: 'user',
       content: '帮我买菜',
       timestamp: 1_000,
+      isMeta: true,
       metadata: { voiceDispatch: { title: '买菜', workItemId: WORK_ITEM_ID } },
     } as Message,
     { id: 'a-dispatch', role: 'assistant', content: '好，已派出', timestamp: 2_000 },
@@ -88,6 +89,15 @@ function project(messages: Message[]) {
 }
 
 describe('用户可见 system 事件登记制（P0-2）', () => {
+  it('生产落库形状的 isMeta voiceDispatch 成卡且不冒充用户消息', () => {
+    const turns = project(dispatchThenLaterTurn());
+    const dispatchNode = turns
+      .flatMap((turn) => turn.nodes)
+      .find((node) => node.metadata?.voiceDispatch?.workItemId === WORK_ITEM_ID);
+
+    expect(dispatchNode).toMatchObject({ id: 'u-dispatch', type: 'assistant_text' });
+  });
+
   // 表驱动：登记表里的每一项自动生成一条用例——新增登记项自动多一条覆盖，
   // 不许写成四条手抄用例。
   const entries = Object.entries(USER_VISIBLE_SYSTEM_EVENT_REGISTRY) as [
@@ -130,6 +140,32 @@ describe('用户可见 system 事件登记制（P0-2）', () => {
       }
     });
   }
+
+  it.each(['done', 'unverified', 'failed', 'cancelled'] as const)(
+    '生产落库形状的 settlement %s 按 workItemId 对回同一张卡',
+    (outcome) => {
+      const messages = [
+        ...dispatchThenLaterTurn(),
+        {
+          id: `settlement-${outcome}`,
+          role: 'system',
+          content: `任务终态 ${outcome}`,
+          timestamp: 9_000,
+          metadata: {
+            source: 'voice',
+            voiceWorkSettled: { workItemId: WORK_ITEM_ID, title: '买菜', outcome },
+          },
+        } as Message,
+      ];
+
+      const turns = project(messages);
+      const dispatchTurn = turns.find((turn) => (
+        turn.nodes.some((node) => node.metadata?.voiceDispatch?.workItemId === WORK_ITEM_ID)
+      ));
+      expect(dispatchTurn?.voiceWorkOutcome).toBe(outcome);
+      expect(turns.flatMap((turn) => turn.nodes).some((node) => node.id === `settlement-${outcome}`)).toBe(false);
+    },
+  );
 
   it('底线：裸 role:system（无 metadata）仍被总闸跳过——内部指令不外泄', () => {
     const turns = project([

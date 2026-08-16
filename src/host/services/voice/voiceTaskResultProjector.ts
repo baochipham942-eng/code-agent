@@ -76,8 +76,21 @@ export async function projectVoiceTaskTerminalResult(
     const summary = await resolveSummary(neoSessionId, item, status, failure, conclusion);
     const resultStatus = projectedStatus(status);
     const artifacts = collectRunFileArtifacts(toolResults);
+    const messageId = `voice-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const session = await getSessionManager().getSession(neoSessionId, Number.MAX_SAFE_INTEGER);
+    const dispatchMessage = session?.messages.find((message) => (
+      message.metadata?.voiceDispatch?.workItemId === item.id
+    ));
+    if (!dispatchMessage) {
+      logger.warn('voice work settlement projection target missing', {
+        sessionId: neoSessionId,
+        workItemId: item.id,
+        messageId,
+        reason: 'voice_dispatch_not_found',
+      });
+    }
     await getSessionManager().addMessageToSession(neoSessionId, {
-      id: `voice-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: messageId,
       role: 'system',
       content: `[任务结果] ${item.title}｜${resultStatus}｜${summary}`,
       timestamp: Date.now(),
@@ -91,9 +104,7 @@ export async function projectVoiceTaskTerminalResult(
           summary,
           ...(artifacts.length ? { artifacts } : {}),
         },
-        ...(status === 'done' || status === 'unverified'
-          ? { voiceWorkSettled: { workItemId: item.id, title: item.title, outcome: status } }
-          : {}),
+        voiceWorkSettled: { workItemId: item.id, title: item.title, outcome: status },
       } satisfies SystemEventMessageMetadata,
     });
   } catch (error) {

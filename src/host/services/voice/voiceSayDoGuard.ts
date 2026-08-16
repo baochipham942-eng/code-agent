@@ -52,7 +52,8 @@ export function createVoiceSayDoGuard(
         submission_key: `voice-saydo:${voiceSessionId}:${responseId ?? result.turnVersion}`,
         prompt: result.prompt,
       });
-      logger.warn('voice say/do guard intervened', {
+      // 成功代偿是预期内的保护动作，记审计信息即可；WARN 留给分类不可用、工具拒绝等真违约。
+      logger.info('voice say/do guard intervened', {
         voiceSessionId,
         responseId,
         turnVersion: result.turnVersion,

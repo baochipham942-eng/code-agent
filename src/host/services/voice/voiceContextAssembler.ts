@@ -15,6 +15,11 @@ import type { Message } from '../../../shared/contract/message';
 import type { SessionState } from '../../task';
 import { buildVocabularyBlock } from './voiceVocabulary';
 import { buildSpeechPaceDirective } from './voiceRouting';
+import { getConfigService } from '../core/configService';
+import { getSessionManager } from '../infra/sessionManager';
+import { createLogger } from '../infra/logger';
+
+const logger = createLogger('VoiceContextAssembler');
 
 /**
  * 10 条能覆盖约 5 轮来回，足够回答“刚才说到哪了”，又不会让每次拨号固定携带整通历史。
@@ -212,4 +217,49 @@ export function composeVoiceInstructions(
 /** 焦点有没有实质变化。没变就不发 session.update——上游每次刷新都有代价。 */
 export function focusChanged(a: VoiceFocusContext | null, b: VoiceFocusContext | null): boolean {
   return buildFocusBlock(a) !== buildFocusBlock(b);
+}
+
+export function readVoiceLiveSettings(): VoiceLiveSettings | undefined {
+  try {
+    return getConfigService().getSettings().voice?.live;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 新拨号才读取连续性；宽限窗重连直接复用 active，不会重复扫消息流。
+ *
+ * TaskManager.sessionStates 是进程内 Map，app 重启后会回到 idle。此时即使 DB 里还有未结算的
+ * voiceDispatch，也宁可不注入 work item 半段，避免把陈旧记录伪报成仍在运行；transcript 半段
+ * 仍由 DB 正常恢复。消息读取或状态读取失败同样整体降级为空，不阻断拨号。
+ */
+export async function loadVoiceContinuity(neoSessionId: string): Promise<VoiceContinuityContext | null> {
+  try {
+    // 严格顺序：消息源不可用时不要提前拉起 TaskManager 依赖树，降级路径不能留下悬空 import。
+    const messages = await getSessionManager().getMessages(neoSessionId);
+    const { getTaskManager } = await import('../../task');
+    return {
+      neoSessionId,
+      sourceSessionId: neoSessionId,
+      messages,
+      taskState: getTaskManager().getSessionState(neoSessionId),
+      now: Date.now(),
+    };
+  } catch (err) {
+    logger.warn('voice continuity unavailable', {
+      message: err instanceof Error ? err.message : 'unknown',
+    });
+    return null;
+  }
+}
+
+/**
+ * 语言偏好走 instructions 而不是上游参数：DashScope 的 input_audio_transcription
+ * 语言参数本批未真机验证，不赌；在短人设后追加一句对话语言约束是验证过的路径。
+ */
+export function withLanguageDirective(instructions: string, language: VoiceLiveSettings['language']): string {
+  if (language === 'zh') return `${instructions}\n请始终用中文与用户对话。`;
+  if (language === 'en') return `${instructions}\nAlways converse with the user in English.`;
+  return instructions;
 }

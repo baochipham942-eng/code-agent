@@ -48,10 +48,13 @@ test('通话模型与音色只展示 3.5 系白名单', async ({ page }, testInf
   const modelSelect = dialog.getByTestId('voice-conversation-model');
 
   await expect(modelSelect.locator('option')).toHaveCount(1);
-  await expect(modelSelect.locator('option')).toHaveText(['qwen3.5-omni-flash-realtime']);
+  await expect(modelSelect.locator('option')).toHaveText(['Qwen3.5 Omni Flash Realtime']);
   await expect(dialog.getByTestId('voice-model-voice-list')).toContainText('Tina');
   await expect(dialog.getByTestId('voice-model-voice-list')).toContainText('Ethan');
   await expect(dialog.getByTestId('voice-model-voice-list')).toContainText('Serena');
+  await expect(dialog.getByTestId('voice-model-voice-list')).toContainText('普通话·甜暖');
+  await expect(dialog.getByTestId('voice-model-voice-list')).toContainText('普通话·明亮朝气');
+  await expect(dialog.getByTestId('voice-model-voice-list')).toContainText('女声·温柔');
   await expect(dialog.getByTestId('voice-model-voice-list')).not.toContainText('Cherry');
   await expect(dialog.getByTestId('voice-model-voice-list')).not.toContainText('Chelsie');
 

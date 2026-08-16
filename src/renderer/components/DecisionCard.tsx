@@ -46,9 +46,9 @@ export interface DecisionCardProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onConfirm: () => void;
-  onCancel: () => void;
+  onCancel?: () => void;
   confirmLabel: string;
-  cancelLabel: string;
+  cancelLabel?: string;
   /** 提交中：确认键禁用并转 loading */
   submitting?: boolean;
   /** 底部动作行上方的附加区（如反馈输入框、错误提示） */
@@ -121,7 +121,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        if (!editable && !submitting) onCancel();
+        if (!editable && !submitting) onCancel?.();
         return;
       }
       if (editable) return;
@@ -213,9 +213,11 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
         <div className="px-4 pb-3">
           {footerExtra}
           <div className="mt-2.5 flex items-center justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={onCancel} disabled={submitting}>
-              {cancelLabel}
-            </Button>
+            {onCancel && cancelLabel && (
+              <Button size="sm" variant="ghost" onClick={onCancel} disabled={submitting}>
+                {cancelLabel}
+              </Button>
+            )}
             <Button
               size="sm"
               onClick={onConfirm}

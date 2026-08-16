@@ -253,6 +253,9 @@ describe('VoiceModelSettings（新 tab 收拢三项）', () => {
       'voice-model-voice-Serena',
     ]);
     expect(list.textContent).toContain(zh.voice.settings.samplePending);
+    expect(list.textContent).toContain(`Tina· ${zh.voice.settings.voiceDescriptions.Tina}`);
+    expect(list.textContent).toContain(`Ethan· ${zh.voice.settings.voiceDescriptions.Ethan}`);
+    expect(list.textContent).toContain(`Serena· ${zh.voice.settings.voiceDescriptions.Serena}`);
   });
 
   it('上一代存量配置只显示 3.5 与其音色，用户无法再选上一代模型或独占音色', async () => {

@@ -102,6 +102,12 @@ describe('PermissionCard respond path', () => {
     await waitFor(() => expect(setPendingPermissionRequest).toHaveBeenLastCalledWith(null));
   });
 
+  it('同一张卡只显示一个拒绝入口', () => {
+    render(<PermissionCard />);
+
+    expect(screen.getAllByText('拒绝')).toHaveLength(1);
+  });
+
   it('keeps the pending request and allows retry when IPC is unavailable', async () => {
     ipcAvailable.value = false;
     render(<PermissionCard />);

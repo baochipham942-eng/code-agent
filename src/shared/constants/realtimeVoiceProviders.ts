@@ -68,7 +68,7 @@ const DASH_SCOPE_PROFILE: RealtimeVoiceProviderProfile = {
   wsUrl: (model) => `${QWEN_OMNI_REALTIME_WS_URL}?model=${encodeURIComponent(model)}`,
   models: QWEN_OMNI_REALTIME_MODEL_OPTIONS.map((model) => ({
     id: model.id,
-    displayName: model.id,
+    displayName: model.displayName,
     voices: model.voices,
   })),
   defaultModel: QWEN_OMNI_REALTIME_MODEL,

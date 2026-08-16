@@ -120,7 +120,7 @@ describe('StreamingIndicator waiting reason (具名等待)', () => {
     const html = renderToStaticMarkup(
       React.createElement(StreamingIndicator, { startTime: 100, waitingReason: 'approval' }),
     );
-    expect(html).toContain('任务在等你批准，请处理审批卡');
+    expect(html).toContain('任务在等你确认，请处理审批卡');
     expect(html).not.toContain('等待模型回响');
     expect(html).not.toContain('streaming-caret');
   });

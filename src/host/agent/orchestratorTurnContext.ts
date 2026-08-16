@@ -31,7 +31,7 @@ export function applyTurnSystemContext(
 /**
  * D4 通话态权限告知模型。2026-07-26 的事故中，live-voice 会话曾把权限档钳严到
  * readOnly，模型不知道 Write 为何被拒，便依次改用 Write→Write→Bash 白试。
- * ADR-053 已取消这层额外收紧；现在注入会话实际权限档，以及“需要确认时等待审批卡、
+ * ADR-053 已取消这层额外收紧；现在注入会话实际权限档，以及“需要确认时会挂起、
  * 不要换写法重试”的行为指引；它与 buildWorkbenchTurnSystemContext 那批 workbench 偏好
  * 共用 turnSystemContext 数组和渲染方式；权限档判据仍同源于 requestPermission 的停车分支。
  * 当前语义不再把实时通话描述为额外的权限收紧。
@@ -47,8 +47,8 @@ export function buildLiveVoicePermissionNotice(sessionId?: string | null): strin
   return [
     '<live_voice_permission_notice>',
     `当前处于实时语音通话中，本轮权限档为 ${mode}（通话跟随会话自己的权限设置，不额外收紧）。`,
-    '需要用户确认的操作会挂起等待审批卡；用户正在通话、不在键盘前，可能不会立刻确认。',
-    '不要因为一次尝试没有立即成功就反复更换写法重试，等待审批结果即可。',
+    '需要用户确认的操作会挂起，面向用户转述时说「等你确认」；用户正在通话、不在键盘前，可能不会立刻确认。',
+    '不要因为一次尝试没有立即成功就反复更换写法重试，等确认结果即可。',
     '</live_voice_permission_notice>',
   ].join('\n');
 }

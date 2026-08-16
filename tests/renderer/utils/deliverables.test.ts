@@ -237,6 +237,51 @@ describe('deliverable card projection', () => {
     ]);
   });
 
+  it('turn 文件有任一工具账本实证字段即已验证，无实证仍未验证', () => {
+    const cards = buildTurnArtifactDeliverableCards([
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'hash.md',
+        ownerKind: 'tool',
+        ownerLabel: 'Write',
+        path: '/repo/hash.md',
+        fileMetadata: { sha256: 'a'.repeat(64) },
+      },
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'size.md',
+        ownerKind: 'tool',
+        ownerLabel: 'Write',
+        path: '/repo/size.md',
+        fileMetadata: { sizeBytes: 0 },
+      },
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'mime.md',
+        ownerKind: 'tool',
+        ownerLabel: 'Write',
+        path: '/repo/mime.md',
+        fileMetadata: { mimeType: 'text/markdown' },
+      },
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'path-only.md',
+        ownerKind: 'tool',
+        ownerLabel: 'Write',
+        path: '/repo/path-only.md',
+      },
+    ]);
+
+    expect(cards.map((card) => card.status)).toEqual(['verified', 'verified', 'verified', 'unverified']);
+    expect(cards[0].evidencePack.refs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'file_metadata', status: 'pass' }),
+    ]));
+  });
+
   it('projects running image generation as a session-scoped pending deliverable', () => {
     const message: Message = {
       id: 'assistant-image',

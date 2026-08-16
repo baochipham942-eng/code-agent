@@ -535,9 +535,10 @@ pre code {
   50%      { opacity: 0.85; transform: scaleY(1.06); }
 }
 
-/* 尾段淡入（工单 2026-08-01 流式渲染自然化）：useSmoothStreamingText 每 ~120ms
-   落一个「词/短段」，消费层把最新一段包进 .streaming-tail-segment（key 随段首
-   下标变化，mount 时跑一次淡入）。直落的大块不包 span——保持即时可读。 */
+/* 尾段淡入（工单 2026-08-01 流式渲染自然化，N-L5-SMOOTH 动态追赶）：
+   useSmoothStreamingText 按积压动态落「词/短段」，消费层把最新一段包进
+   .streaming-tail-segment（key 随段首变化）。120ms 只控制轻淡入，不承担播放节拍；
+   直落的大块不包 span，保持即时可读。 */
 @keyframes streamingTailSegmentFade {
   from { opacity: 0; }
   to   { opacity: 1; }

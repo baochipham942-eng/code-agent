@@ -46,13 +46,14 @@ vi.mock('react', async () => {
       // reviewItemsBySessionId 由 #12 → #15：派生会话状态（searchScope / messageSearch×2 /
       // reviewItems / projectMeta）抽入 useSidebarDerivedSessions hook 后，hook 内 useState 仍按
       // 渲染顺序计数，reviewItems 排在 replayDialog/renamingId/renameValue + hook 前 3 个 useState 之后。
+      // #16 → #17：N-L7-AUDIT-UI 在 replayDialog 之后新增 voiceAuditDialog useState，整体顺延一位。
       if (reactState.forcedContextMenuSession && reactState.useStateCalls === 9) {
         return [
           { x: 24, y: 24, session: reactState.forcedContextMenuSession },
           vi.fn(),
         ] as const;
       }
-      if (reactState.forcedReviewItemsBySessionId && reactState.useStateCalls === 16) {
+      if (reactState.forcedReviewItemsBySessionId && reactState.useStateCalls === 17) {
         return [
           reactState.forcedReviewItemsBySessionId,
           vi.fn(),

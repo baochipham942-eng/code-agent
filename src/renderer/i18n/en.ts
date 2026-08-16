@@ -39,9 +39,11 @@ import { workbenchTabsEn } from './workbenchTabs';
 import { activityPanelEn, canvasActorEn } from './domains';
 import { imageNarrationEn } from './imageNarration';
 import { mermaidEn } from './mermaid';
+import { voiceAuditEn } from './voiceAudit';
 export const en: Translations = {
   ...canvasActorEn, ...activityPanelEn,
   ...imageNarrationEn, ...mermaidEn,
+  ...voiceAuditEn,
   ...capabilityHubEn,
   ...neoTopicsEn,
   ...projectSpaceEn,

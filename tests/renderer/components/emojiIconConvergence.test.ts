@@ -80,6 +80,7 @@ describe('emoji→lucide 图标收敛棘轮（Toast/CitationList/sessionContextM
       setRenameValue: vi.fn(),
       canOpenSessionReplay: false,
       handleOpenSessionReplay: vi.fn(),
+      handleOpenVoiceAudit: vi.fn(),
       unarchiveSession: vi.fn(),
       archiveSession: vi.fn(),
       softDelete: vi.fn(),

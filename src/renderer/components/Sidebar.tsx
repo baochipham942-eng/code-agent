@@ -35,6 +35,7 @@ import type { SidebarSessionItemSharedProps } from './features/sidebar/SidebarSe
 import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
+import { VoiceAuditDialog } from './features/voice/VoiceAuditDialog';
 import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
@@ -285,6 +286,10 @@ export const Sidebar: React.FC = () => {
     sessionTitle: string;
     replay: StructuredReplay;
   } | null>(null);
+  const [voiceAuditDialog, setVoiceAuditDialog] = useState<{
+    sessionId: string;
+    sessionTitle: string;
+  } | null>(null);
 
   // 内联重命名状态
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -427,6 +432,7 @@ export const Sidebar: React.FC = () => {
     saveExportToDownloads,
     openRuntimeLogsFolder,
     handleOpenSessionReplay,
+    handleOpenVoiceAudit,
     handleOpenReplayEvidence,
     handleContextMenu,
     handleDoubleClick,
@@ -436,6 +442,7 @@ export const Sidebar: React.FC = () => {
     showToast,
     canOpenSessionReplay,
     setReplayDialog,
+    setVoiceAuditDialog,
     setContextMenu,
     renamingId,
     renameValue,
@@ -462,6 +469,7 @@ export const Sidebar: React.FC = () => {
         setRenameValue,
         canOpenSessionReplay,
         handleOpenSessionReplay,
+        handleOpenVoiceAudit,
         unarchiveSession,
         archiveSession,
         softDelete,
@@ -483,6 +491,7 @@ export const Sidebar: React.FC = () => {
       saveExportToDownloads,
       canOpenSessionReplay,
       handleOpenSessionReplay,
+      handleOpenVoiceAudit,
       openRuntimeLogsFolder,
       showToast,
       softDelete,
@@ -871,6 +880,14 @@ export const Sidebar: React.FC = () => {
             }
           }}
           onClose={() => setReplayDialog(null)}
+        />
+      )}
+
+      {voiceAuditDialog && (
+        <VoiceAuditDialog
+          sessionId={voiceAuditDialog.sessionId}
+          sessionTitle={voiceAuditDialog.sessionTitle}
+          onClose={() => setVoiceAuditDialog(null)}
         />
       )}
 

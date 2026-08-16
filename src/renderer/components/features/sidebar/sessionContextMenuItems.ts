@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import {
-  Pin, Pencil, IdCard, Undo2, Archive, Trash2, Wrench, Save, Puzzle, FlaskConical, FileText, ScrollText,
+  Pin, Pencil, IdCard, Undo2, Archive, Trash2, Wrench, Save, Puzzle, FlaskConical, FileText, ScrollText, Mic2,
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import {
@@ -52,6 +52,7 @@ export interface SessionContextMenuDeps {
   setRenameValue: (value: string) => void;
   canOpenSessionReplay: boolean;
   handleOpenSessionReplay: (session: SessionWithMeta) => Promise<void> | void;
+  handleOpenVoiceAudit: (session: SessionWithMeta) => void;
   unarchiveSession: (sessionId: string) => void;
   archiveSession: (sessionId: string) => void;
   softDelete: (sessionIds: string[]) => void;
@@ -83,6 +84,7 @@ export function buildSessionContextMenuItems(
     setRenameValue,
     canOpenSessionReplay,
     handleOpenSessionReplay,
+    handleOpenVoiceAudit,
     unarchiveSession,
     archiveSession,
     softDelete,
@@ -182,6 +184,11 @@ export function buildSessionContextMenuItems(
       onClick: async () => {
         await handleOpenSessionReplay(session);
       },
+    },
+    {
+      label: t.voiceAudit.menuLabel,
+      icon: createElement(Mic2, { className: 'h-4 w-4' }),
+      onClick: () => handleOpenVoiceAudit(session),
     },
     {
       label: isArchived ? menu.unarchive : menu.archive,

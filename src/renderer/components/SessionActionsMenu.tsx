@@ -10,7 +10,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  MoreHorizontal, RotateCcw, TimerReset, Eye, Download, FolderOpen, Play, ClipboardList, ScrollText,
+  MoreHorizontal, RotateCcw, TimerReset, Eye, Download, FolderOpen, Play, ClipboardList, ScrollText, Mic2,
 } from 'lucide-react';
 import type { StructuredReplay } from '@shared/contract/evaluation';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
@@ -37,11 +37,13 @@ import {
   SESSION_DIAGNOSTICS_EXPORT_TIMEOUT_MS,
 } from './features/sidebar/sessionContextMenuItems';
 import { useI18n } from '../hooks/useI18n';
+import { VoiceAuditDialog } from './features/voice/VoiceAuditDialog';
 
 export const SessionActionsMenu: React.FC = () => {
   const { t } = useI18n();
   const sam = t.sessionReplay.sessionActionsMenu;
   const [open, setOpen] = useState(false);
+  const [voiceAuditOpen, setVoiceAuditOpen] = useState(false);
   const [replayDialog, setReplayDialog] = useState<{
     sessionId: string;
     sessionTitle: string;
@@ -337,6 +339,12 @@ export const SessionActionsMenu: React.FC = () => {
     onClick: () => { close(); openWorkbenchTab('audit'); },
   });
   items.push({
+    key: 'voice-audit',
+    label: t.voiceAudit.menuLabel,
+    icon: <Mic2 className="h-3.5 w-3.5" />,
+    onClick: () => { close(); setVoiceAuditOpen(true); },
+  });
+  items.push({
     key: 'export',
     label: sam.exportMarkdownLabel,
     icon: <Download className="h-3.5 w-3.5" />,
@@ -400,6 +408,13 @@ export const SessionActionsMenu: React.FC = () => {
           evidence={replayDialogContext.evidence}
           onOpenEvidence={(evidence) => { void handleOpenReplayEvidence(evidence); }}
           onClose={() => setReplayDialog(null)}
+        />
+      )}
+      {voiceAuditOpen && currentSessionId && (
+        <VoiceAuditDialog
+          sessionId={currentSessionId}
+          sessionTitle={currentSession.title || sam.untitledSession}
+          onClose={() => setVoiceAuditOpen(false)}
         />
       )}
     </div>

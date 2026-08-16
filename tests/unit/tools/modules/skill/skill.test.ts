@@ -49,6 +49,12 @@ vi.mock('../../../../../src/host/services/skills/skillUsageTracker', () => ({
   recordSkillUsage: (...args: Parameters<typeof recordSkillUsage>) => recordSkillUsageMock(...args),
 }));
 
+const markDistilledSkillTurnSignalMock = vi.fn((_input: unknown) => true);
+vi.mock('../../../../../src/host/services/skills/distillSignalStore', () => ({
+  markDistilledSkillTurnSignal: (input: unknown) =>
+    markDistilledSkillTurnSignalMock(input),
+}));
+
 const renderSkillContentMock = vi.fn(
   (content: string, _opts: { arguments?: string; workingDirectory?: string }) => content,
 );
@@ -143,6 +149,8 @@ beforeEach(() => {
   loadSkillContentMock.mockReset();
   loadSkillContentMock.mockImplementation(async () => {});
   recordSkillUsageMock.mockReset();
+  markDistilledSkillTurnSignalMock.mockReset();
+  markDistilledSkillTurnSignalMock.mockReturnValue(true);
   renderSkillContentMock.mockReset();
   renderSkillContentMock.mockImplementation((content) => content);
   subagentExecuteMock.mockReset();
@@ -293,6 +301,29 @@ describe('skillModule (native)', () => {
         expect(artifact.kind).toBe('text');
         expect(artifact.metadata?.skillName).toBe('demo');
       }
+    });
+
+    it('records selected and adopted evidence for a successful distilled skill call', async () => {
+      getSkillMock.mockReturnValue(makeSkill({ name: 'demo' }));
+
+      const result = await run(
+        { command: 'demo' },
+        makeCtx({ turnId: 'turn-usage-1' } as Partial<ToolContext>),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(markDistilledSkillTurnSignalMock).toHaveBeenNthCalledWith(1, {
+        turnId: 'turn-usage-1',
+        skillName: 'demo',
+        sessionId: 'test-session',
+        kind: 'selected',
+      });
+      expect(markDistilledSkillTurnSignalMock).toHaveBeenNthCalledWith(2, {
+        turnId: 'turn-usage-1',
+        skillName: 'demo',
+        sessionId: 'test-session',
+        kind: 'adopted',
+      });
     });
 
     it('appends self-patching hint for user/project skills', async () => {

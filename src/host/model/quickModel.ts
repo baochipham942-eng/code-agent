@@ -183,7 +183,11 @@ function initializeQuickModel(): QuickModelConfig | null {
  * @param prompt - The task prompt
  * @returns The result
  */
-export async function quickTask(prompt: string, maxTokens?: number): Promise<QuickModelResult> {
+export async function quickTask(
+  prompt: string,
+  maxTokens?: number,
+  signal?: AbortSignal,
+): Promise<QuickModelResult> {
   const config = initializeQuickModel();
   if (!config) {
     return { success: false, error: 'Quick model not configured' };
@@ -194,7 +198,7 @@ export async function quickTask(prompt: string, maxTokens?: number): Promise<Qui
   const limiter = getProviderLimiter(config.provider);
 
   try {
-    await limiter?.acquire();
+    await limiter?.acquire(signal);
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
@@ -218,6 +222,7 @@ export async function quickTask(prompt: string, maxTokens?: number): Promise<Qui
         Authorization: `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify(body),
+      signal,
     });
 
     if (!response.ok) {

@@ -910,7 +910,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       ctx.recordTokenUsage(providerUsage.inputTokens, providerUsage.outputTokens, {
         cacheReadTokens: providerUsage.cacheReadTokens,
         cacheCreationTokens: providerUsage.cacheCreationTokens,
-      });
+      }, 'provider');
     } else {
       const estimatedInputTokens = estimateModelMessageTokens(
         modelMessages.map(m => ({
@@ -923,7 +923,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       const estimatedOutputTokens = estimateModelMessageTokens([
         { role: 'assistant', content: outputContent },
       ]);
-      ctx.recordTokenUsage(estimatedInputTokens, estimatedOutputTokens);
+      ctx.recordTokenUsage(estimatedInputTokens, estimatedOutputTokens, undefined, 'estimated');
     }
 
     langfuse.endGeneration(llmCallId, {

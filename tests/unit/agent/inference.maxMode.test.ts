@@ -397,7 +397,7 @@ describe('inference Max Mode wiring', () => {
     expect(ctx.recordTokenUsage).toHaveBeenCalledWith(100, 20, {
       cacheReadTokens: undefined,
       cacheCreationTokens: undefined,
-    });
+    }, 'provider');
     expect(ctx.recordTokenUsage).toHaveBeenCalledTimes(1);
 
     // Codex R1-M1：候选/judge 的静默调用不发 model_decision 事件
@@ -430,7 +430,7 @@ describe('inference Max Mode wiring', () => {
     expect(ctx.recordTokenUsage).toHaveBeenCalledWith(50, 5, {
       cacheReadTokens: undefined,
       cacheCreationTokens: undefined,
-    });
+    }, 'provider');
     expect(mockRecordUsage).not.toHaveBeenCalled();
   });
 

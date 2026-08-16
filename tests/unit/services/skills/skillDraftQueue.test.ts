@@ -31,6 +31,20 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
+const evidenceMocks = vi.hoisted(() => ({
+  getDistillPositiveEvidenceCount: vi.fn((): number | null => 3),
+  getSkillPromotionEvidenceThreshold: vi.fn(() => 3),
+  registerDistilledSkillPromotion: vi.fn((input: { skillName: string; patternKey: string; promotedAt: number }) => ({
+    ...input,
+    status: 'active',
+    initialPositiveEvidence: 3,
+    importanceCount: 3,
+    updatedAt: input.promotedAt,
+  })),
+}));
+
+vi.mock('../../../../src/host/services/skills/distillSignalStore', () => evidenceMocks);
+
 import {
   enqueueSkillDraft,
   listSkillDrafts,
@@ -65,6 +79,11 @@ describe('skillDraftQueue', () => {
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sdq-test-'));
     mockConfigDir.dir = tmpDir;
+    evidenceMocks.getDistillPositiveEvidenceCount.mockReset();
+    evidenceMocks.getDistillPositiveEvidenceCount.mockReturnValue(3);
+    evidenceMocks.getSkillPromotionEvidenceThreshold.mockReset();
+    evidenceMocks.getSkillPromotionEvidenceThreshold.mockReturnValue(3);
+    evidenceMocks.registerDistilledSkillPromotion.mockClear();
   });
 
   afterEach(async () => {
@@ -150,6 +169,20 @@ describe('skillDraftQueue', () => {
   // --------------------------------------------------------------------------
 
   describe('confirmSkillDraft', () => {
+    it('keeps the draft pending when positive usage evidence is below N', async () => {
+      evidenceMocks.getDistillPositiveEvidenceCount.mockReturnValue(2);
+      const meta = await enqueueSkillDraft(makeDraftInput());
+
+      const result = await confirmSkillDraft(meta!.id);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('当前 2 次');
+      expect(result.error).toContain('至少需要 3 次');
+      expect(await listSkillDrafts()).toHaveLength(1);
+      expect(evidenceMocks.registerDistilledSkillPromotion).not.toHaveBeenCalled();
+      await expect(fs.access(path.join(tmpDir, 'skills'))).rejects.toThrow();
+    });
+
     it('should move SKILL.md into user skills dir and remove draft', async () => {
       const meta = await enqueueSkillDraft(makeDraftInput());
       const result = await confirmSkillDraft(meta!.id);

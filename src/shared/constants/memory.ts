@@ -50,6 +50,10 @@ export const SKILL_REVIEW = {
   MIN_USER_TURNS: 2,
   /** 同类信号跨多少个不同会话出现后，才允许调用 LLM 复盘 */
   MIN_DISTINCT_SIGNAL_SESSIONS: 2,
+  /** 草稿转正所需的真实跨会话正向证据默认值；可由下方环境变量覆盖。 */
+  MIN_POSITIVE_USAGE_EVIDENCE: 3,
+  /** 无头/实验环境可调转正门，非法值一律回落默认值。 */
+  PROMOTION_EVIDENCE_ENV: 'CODE_AGENT_SKILL_PROMOTION_MIN_EVIDENCE',
   /** 用户拒绝同类建议后的复议冷却期 */
   REJECTION_COOLDOWN_MS: 30 * 24 * 60 * 60 * 1000,
   /** 自沉淀来源标记（写入草稿 meta.origin / SKILL.md frontmatter，可在设置页筛人建 vs 自沉淀） */

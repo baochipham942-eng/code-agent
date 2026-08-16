@@ -34,6 +34,7 @@ import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { skillSchema as schema } from './skill.schema';
 import { getSkillContentCache, hashSkillContent } from '../../../telemetry/skillContentCache';
 import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
+import { markDistilledSkillTurnSignal } from '../../../services/skills/distillSignalStore';
 
 // ----------------------------------------------------------------------------
 // Helpers — 与 legacy skillMetaTool 行为保真
@@ -384,6 +385,15 @@ export async function executeSkill(
     executionContext: skill.executionContext,
   });
 
+  if (ctx.turnId) {
+    markDistilledSkillTurnSignal({
+      turnId: ctx.turnId,
+      skillName: skill.name,
+      sessionId: ctx.sessionId,
+      kind: 'selected',
+    });
+  }
+
   // 记录 skill 使用（异步，不阻塞执行）
   import('../../../services/skills/skillUsageTracker')
     .then(({ recordSkillUsage }) => recordSkillUsage(skill.name, skill.source))
@@ -396,6 +406,14 @@ export async function executeSkill(
   // 根据执行模式分发
   if (skill.executionContext === 'fork') {
     const result = await handleForkExecution(skill, skillArgs, ctx, canUseTool);
+    if (result.ok && ctx.turnId) {
+      markDistilledSkillTurnSignal({
+        turnId: ctx.turnId,
+        skillName: skill.name,
+        sessionId: ctx.sessionId,
+        kind: 'adopted',
+      });
+    }
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.info('Skill done', { command, ok: result.ok });
     return result;
@@ -421,6 +439,14 @@ export async function executeSkill(
         skillResult,
       },
     };
+  }
+  if (ctx.turnId) {
+    markDistilledSkillTurnSignal({
+      turnId: ctx.turnId,
+      skillName: skill.name,
+      sessionId: ctx.sessionId,
+      kind: 'adopted',
+    });
   }
   const output = `Skill "${skill.name}" activated. Follow the skill instructions.`;
   return {

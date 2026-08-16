@@ -123,7 +123,7 @@ export function createClaudeResumeLaunch(input: CommonResumeInput): ExternalEngi
  * `headless-startup` 对空位置参数直接报 usage error，所以恢复必须带一条任务。
  * 用固定续跑指令，让被打断的那一轮在同一个持久化会话上收尾。
  */
-export const DSH_RECOVERY_TASK = 'Continue the previous task from where it left off. If it already finished, summarize the final result.';
+const DSH_RECOVERY_TASK = 'Continue the previous task from where it left off. If it already finished, summarize the final result.';
 
 export function createDshResumeLaunch(input: CommonResumeInput): ExternalEngineResumeLaunch {
   assertResumeInput(input);

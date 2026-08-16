@@ -85,7 +85,6 @@ import {
   createClaudeContinuationResumeLaunch,
   createClaudeResumeLaunch,
   createDshResumeLaunch,
-  DSH_RECOVERY_TASK,
 } from '../../../src/host/services/agentEngine/externalEngineResumeBuilders';
 import type { ExternalEngineDurableLifecycle } from '../../../src/host/services/agentEngine/externalEngineDurableLifecycle';
 import { buildTestExternalForkContextHandoff } from '../services/sessionFork/externalForkContextTestFixture';
@@ -1055,7 +1054,7 @@ describe('ClaudeCodeAdapter.run', () => {
     expect(result).toMatchObject({ runId: 'logical-run', sessionId: 'session-1', engine: 'dsh_cli', status: 'completed' });
     expect(mocks.spawn.mock.calls[0][1]).toEqual(resumeLaunch.args);
     // 崩溃恢复没有空输入重放形态：固定续跑指令走位置参数。
-    expect(resumeLaunch.args.at(-1)).toBe(DSH_RECOVERY_TASK);
+    expect(resumeLaunch.args.at(-1)).toMatch(/Continue the previous task/);
     expect(lifecycle.persistExternalSessionId).toHaveBeenCalledWith('session-dsh-target');
   });
 

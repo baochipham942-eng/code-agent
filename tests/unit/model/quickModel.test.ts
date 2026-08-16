@@ -125,6 +125,61 @@ describe('thinking 模型回落时自动关闭思考', () => {
   });
 });
 
+describe('瞬态故障分型与候选恢复', () => {
+  it('429/code1305 触发 limiter 后沿 routing.fast → routing.code 恢复', async () => {
+    mockConfig({ keys: { zhipu: 'zk', xiaomi: 'xk' } });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        text: async () => '{"code":1305,"message":"该模型当前访问量过大"}',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: 'SAY_GAP' } }] }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await quickTask('分类');
+
+    expect(result).toMatchObject({ success: true, content: 'SAY_GAP', provider: 'xiaomi', attempts: 2 });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe(DEFAULT_MODELS.quick);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).model).toBe('mimo-v2.5-pro');
+  });
+
+  it.each([
+    [429, 'rate_limited', '{"code":1305,"message":"访问量过大"}'],
+    [503, 'server_error', 'temporarily unavailable'],
+  ] as const)('单候选 HTTP %s 重试一次后保留结构化原因 %s', async (status, failureReason, body) => {
+    mockConfig({ keys: { zhipu: 'zk' }, code: { provider: 'zhipu', model: DEFAULT_MODELS.quick } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status,
+      text: async () => body,
+    }));
+
+    const result = await quickTask('分类');
+
+    expect(result).toMatchObject({ success: false, status, failureReason, attempts: 2 });
+  });
+
+  it('HTTP 200 但空 content 单独标记 empty_response，不伪装成网络错误', async () => {
+    mockConfig({ keys: { zhipu: 'zk' } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: '' } }] }),
+    }));
+
+    await expect(quickTask('分类')).resolves.toMatchObject({
+      success: false,
+      failureReason: 'empty_response',
+      attempts: 1,
+    });
+  });
+});
+
 describe('快模型鉴权失败诊断 + 401 拉黑降级', () => {
   it('401 留下鉴权失败记录且不泄露 API Key；下一次调用自动降级到主模型并清除记录', async () => {
     const apiKey = 'quick-model-secret-canary';

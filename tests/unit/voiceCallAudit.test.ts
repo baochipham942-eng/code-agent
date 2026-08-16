@@ -169,7 +169,13 @@ describe('getVoiceCallTimeline', () => {
       {
         timestamp: new Date(START + 8000).toISOString(), level: 'warn',
         message: 'voice say/do guard intervened',
-        data: [{ voiceSessionId: CALL_ID, responseId: 'resp-1', action: 'host_routed_delegate_task' }],
+        data: [{
+          voiceSessionId: CALL_ID,
+          responseId: 'resp-1',
+          action: 'host_routed_delegate_task',
+          decisionSource: 'deterministic_fallback',
+          classificationFailure: 'rate_limited',
+        }],
       },
       {
         // 别通电话的判定行不得混入
@@ -183,6 +189,7 @@ describe('getVoiceCallTimeline', () => {
     expect(t.sections.decisions.events[0]!.detail.tier).toBe('strong');
     expect(t.sections.sayDo.events).toHaveLength(1);
     expect(t.sections.sayDo.events[0]!.detail.action).toBe('host_routed_delegate_task');
+    expect(t.sections.sayDo.events[0]!.detail.classificationFailure).toBe('rate_limited');
   });
 
   it('旧记录（无 voiceCallId）：日志段/费用/录音报 unavailable 并说明原因，字幕标窗推导', () => {

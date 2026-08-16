@@ -963,7 +963,14 @@ async function launchAdmittedRun(
   getPermissionModeManager().markLiveVoiceSession(state.neoSessionId, runHoldId(workItemId));
   // prompt 是通话 brain 改写出来的，不是用户原话；metadata 让投影层按语音派活展示。
   const metadata = {
-    voiceDispatch: { title: request.shortName, workItemId, ...(speaker ? { speaker } : {}) },
+    // voiceCallId + origin：此前三元组与派法只进 7 天轮转的日志，审计时间线要从 DB 拉（N-L7-AUDIT）。
+    voiceCallId: state.voiceSessionId,
+    voiceDispatch: {
+      title: request.shortName,
+      workItemId,
+      ...(speaker ? { speaker } : {}),
+      ...(request.origin ? { origin: request.origin } : {}),
+    },
   };
   const runPromise = typeof tm.startBackgroundTask === 'function'
     ? tm.startBackgroundTask(

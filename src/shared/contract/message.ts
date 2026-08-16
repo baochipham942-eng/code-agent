@@ -8,7 +8,7 @@ import type { ModelDecisionEventData } from './modelDecision';
 import type { TurnQualitySummary } from './turnQuality';
 import type { SessionAutomationMessageMetadata } from './sessionAutomation';
 import type { ArtifactLocatorV1 } from './artifactLocator';
-import type { VoiceCallFailureCode, VoiceCallFailurePhase, VoiceCallSummary } from './voice';
+import type { VoiceCallFailureCode, VoiceCallFailurePhase, VoiceCallSummary, VoiceToolCallOrigin } from './voice';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageVisibility = 'active' | 'rewound';
@@ -295,6 +295,11 @@ export interface MessageMetadata {
   source?: 'voice' | 'dictation' | 'typed';
   /** 实时语音协议身份。取消轮的 tombstone 与 DB 投影都只认这组稳定 ID。 */
   voiceTranscript?: { responseId?: string; itemId?: string };
+  /**
+   * 这条消息属于哪通语音电话（voice-<ts>-<seq>）。字幕轮与派活轮落库时补上，
+   * 审计时间线按它精确聚合，不再靠时间窗推导（N-L7-AUDIT）。旧记录缺失。
+   */
+  voiceCallId?: string;
   voiceCallSummary?: VoiceCallSummary;
   /** 建连或上游失败的持久留痕；只记结构化失败，不记音频与字幕。 */
   voiceCallFailure?: {
@@ -355,6 +360,12 @@ export interface MessageMetadata {
      * 屏幕上就该只有一个 Neo，和语音层的第一人称同一套规矩。
      */
     speaker?: { agentId: string; displayName: string };
+    /**
+     * 这件活是谁发起的：模型自发（function_call/xml_fallback）还是 host 补派
+     * （host_routed，say-do 守卫或动作路由）。此前只进 7 天轮转的日志，DB 里
+     * 两种派法长一样——审计面要求可区分（N-L7-AUDIT）。旧记录缺失。
+     */
+    origin?: VoiceToolCallOrigin;
   };
   /**
    * ADR-040：用户在预览里点选的产物位置。由 host 补 revision 后生成并校验，

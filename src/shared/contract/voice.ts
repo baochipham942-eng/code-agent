@@ -121,6 +121,10 @@ export interface VoiceCallSummary {
   endedAt: number;
   /** 这通电话落库了多少条字幕。旧记录没有这个字段——字段缺失本身就是「旧版本通话」的判据。 */
   transcriptCount?: number;
+  /** 通话唯一键（voice-<ts>-<seq>），审计时间线按它聚合各账（N-L7-AUDIT）。旧记录缺失 = 只能按时间窗推导。 */
+  voiceCallId?: string;
+  /** 这通电话的 token 用量。月桶只存聚合，单通费用的唯一持久落点在这里；旧记录缺失 = 单通费用不可查。 */
+  tokens?: VoiceTokenUsage;
 }
 
 export type VoiceCallFailureCode =

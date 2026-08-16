@@ -49,9 +49,11 @@ describe('停车判定先于自动批准', () => {
     permissionSettings: Partial<AppSettings['permissions']>,
     repo: PendingApprovalRepository | undefined,
     topology: 'main' | 'async_agent' = 'main',
+    devSlotEnabled = permissionSettings.devModeAutoApprove === true,
   ) {
     return new OrchestratorPermissionIsland({
       getSettings: () => settings(permissionSettings),
+      isDevModeAutoApproveEnabled: () => devSlotEnabled,
       getExecutionTopology: () => topology,
       onEvent: vi.fn(),
       injectedPendingApprovalRepo: repo,
@@ -85,7 +87,31 @@ describe('停车判定先于自动批准', () => {
   it('普通有人值守 + devModeAutoApprove 仍直接放行', async () => {
     const island = makeIsland({ devModeAutoApprove: true }, makeRepo());
 
-    await expect(island.requestPermission({ type: 'file_write', tool: 'write_file', details: { path: '/tmp/x' }, sessionId: 'attended' })).resolves.toEqual({ approved: true });
+    await expect(island.requestPermission({ type: 'file_write', tool: 'write_file', details: { path: '/tmp/x' }, sessionId: 'attended' })).resolves.toEqual({ approved: true, approvalSource: 'dev-auto-approve' });
+  });
+
+  it('非 dev 槽即使原始开关为 true 也必须发起审批', async () => {
+    vi.useFakeTimers();
+    const onEvent = vi.fn();
+    const island = new OrchestratorPermissionIsland({
+      getSettings: () => settings({ devModeAutoApprove: true }),
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'main',
+      onEvent,
+      injectedPendingApprovalRepo: makeRepo(),
+    });
+
+    const result = island.requestPermission({
+      type: 'file_write',
+      tool: 'write_file',
+      details: { path: '/tmp/production-must-ask' },
+      sessionId: 'production',
+    });
+
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'permission_request' }));
+    expect(await isStillPending(result)).toBe(true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await expect(result).resolves.toEqual({ approved: false, denialSource: 'timeout' });
   });
 
   it('async_agent 的 catalog 只读 MCP 工具仍免审放行，不停车', async () => {

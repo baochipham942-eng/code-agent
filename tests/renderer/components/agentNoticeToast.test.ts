@@ -29,8 +29,8 @@ describe('AgentNoticeToast', () => {
 
   it('formats auto_agent_awaiting_approval with no params', () => {
     const event: AgentNoticeEvent = { reasonCode: 'auto_agent_awaiting_approval' };
-    expect(formatAgentNoticeToast(event, zh)).toBe('任务列表已生成，等待审批');
-    expect(formatAgentNoticeToast(event, en)).toBe('Task list generated, awaiting approval');
+    expect(formatAgentNoticeToast(event, zh)).toBe('任务列表已生成，等你确认');
+    expect(formatAgentNoticeToast(event, en)).toBe('Task list generated, waiting for you to confirm');
   });
 
   it('formats delegate_mode_active with no params', () => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ConfigService, isDevSlotRuntime } from '../../../../src/host/services/core/configService';
+import { ConfigService } from '../../../../src/host/services/core/configService';
 
 describe('devModeAutoApprove runtime channel guard', () => {
   const originalNodeEnv = process.env.NODE_ENV;
@@ -12,27 +12,7 @@ describe('devModeAutoApprove runtime channel guard', () => {
     else process.env.CODE_AGENT_DATA_DIR = originalDataDir;
   });
 
-  it('allows strict dev-slot data directories even in release NODE_ENV', () => {
-    process.env.NODE_ENV = 'production';
-    expect(isDevSlotRuntime('/Users/test/.code-agent-dev')).toBe(true);
-    expect(isDevSlotRuntime('/Users/test/.code-agent-dev2')).toBe(true);
-  });
-
-  it('rejects production and near-miss data directories', () => {
-    for (const dataDir of [
-      undefined,
-      '',
-      '/Users/test/.code-agent',
-      '/Users/test/.code-agent-developer',
-      '/Users/test/.code-agent-dev-old',
-      '/Users/test/.code-agent-dev02',
-      '/Users/test/.code-agent-dev10',
-    ]) {
-      expect(isDevSlotRuntime(dataDir)).toBe(false);
-    }
-  });
-
-  it('enables in a release dev slot but the same stored value is ineffective outside it', async () => {
+  it('only enables the stored value for strict dev-slot data directories in release NODE_ENV', async () => {
     process.env.NODE_ENV = 'production';
     process.env.CODE_AGENT_DATA_DIR = '/Users/test/.code-agent-dev3';
     const service = new ConfigService();
@@ -42,10 +22,27 @@ describe('devModeAutoApprove runtime channel guard', () => {
     await service.updateSettings({
       permissions: { ...settings.permissions, devModeAutoApprove: true },
     });
-    expect(service.isDevModeAutoApproveEnabled()).toBe(true);
-
-    process.env.CODE_AGENT_DATA_DIR = '/Users/test/.code-agent';
     expect(service.getSettings().permissions.devModeAutoApprove).toBe(true);
-    expect(service.isDevModeAutoApproveEnabled()).toBe(false);
+
+    for (const dataDir of [
+      '/Users/test/.code-agent-dev',
+      '/Users/test/.code-agent-dev2',
+      '/Users/test/.code-agent-dev9',
+    ]) {
+      process.env.CODE_AGENT_DATA_DIR = dataDir;
+      expect(service.isDevModeAutoApproveEnabled()).toBe(true);
+    }
+
+    for (const dataDir of [
+      '',
+      '/Users/test/.code-agent',
+      '/Users/test/.code-agent-developer',
+      '/Users/test/.code-agent-dev-old',
+      '/Users/test/.code-agent-dev02',
+      '/Users/test/.code-agent-dev10',
+    ]) {
+      process.env.CODE_AGENT_DATA_DIR = dataDir;
+      expect(service.isDevModeAutoApproveEnabled()).toBe(false);
+    }
   });
 });

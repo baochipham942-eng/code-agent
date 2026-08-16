@@ -63,7 +63,7 @@ export function isProduction(): boolean {
  * devModeAutoApprove 只认 Rust dev_slot() 注入的数据目录身份。
  * release 构建的 Dev 测试包同样是 NODE_ENV=production，不能拿构建 profile 判通道。
  */
-export function isDevSlotRuntime(dataDir = process.env.CODE_AGENT_DATA_DIR): boolean {
+function isDevSlotRuntime(dataDir = process.env.CODE_AGENT_DATA_DIR): boolean {
   const normalized = dataDir?.trim();
   if (!normalized) return false;
   return devSlotFromDataDirName(path.basename(normalized)) !== null;

@@ -28,7 +28,10 @@ export type TraceEventType =
   | 'goal_verdict'
   | 'goal_evidence_gate'
   | 'deliverables_declaration'
-  | 'request_manifest';
+  | 'request_manifest'
+  | 'turn_outcome'
+  | 'compensation_registered'
+  | 'capability_lifecycle';
 
 export type RequestManifestMessageRef =
   | { kind: 'ledger_message'; messageId: string }
@@ -61,6 +64,7 @@ export interface TraceEventDataMap {
     durationMs: number;
     inputTokens: number;
     outputTokens: number;
+    cacheReadTokens?: number;
     finishReason: string | null;
     truncated: boolean;
   };
@@ -152,6 +156,25 @@ export interface TraceEventDataMap {
       replacementContentHash: string;
     }>;
     degraded: boolean;
+  };
+  turn_outcome: {
+    terminal: import('./runTerminalStatus').RunTerminalStatus;
+    verdict: 'verified' | 'self_claimed' | 'n_a';
+    evidenceRefs: EvidenceRef[];
+    source: 'generic' | 'goal_gates' | 'voice';
+  };
+  /** P3 slot only. Registration wiring is intentionally out of scope for P0A. */
+  compensation_registered: {
+    compensationId: string;
+    action: string;
+    target: string;
+    order: number;
+  };
+  /** P2 slot only. Capability load/unload wiring is intentionally out of scope for P0A. */
+  capability_lifecycle: {
+    capabilityKey: string;
+    action: 'loaded' | 'unloaded' | 'rolled_back' | 'failed';
+    detail?: string;
   };
 }
 

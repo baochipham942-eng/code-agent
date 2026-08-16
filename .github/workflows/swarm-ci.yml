@@ -146,6 +146,11 @@ jobs:
         # tsconfig.tests.json，error 数只降不升，基线锁在 scripts/tsc-tests-ratchet.mjs 头注。
         run: node scripts/tsc-tests-ratchet.mjs
 
+      - name: Request replay byte-equivalence gate
+        # 无 Key 真跑 E2E 本地模型的一次含工具请求，再从 request_manifest +
+        # 账本 + 内容库重建首发拼装视图。消息和工具表任一字节不等即红。
+        run: npm run acceptance:request-replay
+
       - name: Tool output schema ratchet
         # 扫 builtin modules + plugins 的真实 schema exports；0 文件、0 工具、覆盖数回退、
         # 缺 outputSchema 或不受支持的 JSON Schema 都 fail loud。

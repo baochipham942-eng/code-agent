@@ -186,6 +186,9 @@ async function commitCompactionBlock(
   // Layer 2: only compact the runtime model context. The durable transcript stays
   // append-only below, otherwise old user prompts disappear from session replay.
   const boundary = block.compactedMessageCount;
+  const replacedMessageIds = boundary > 0
+    ? ctx.runtime.messages.slice(0, boundary).map((message) => message.id)
+    : [];
   if (boundary > 0) {
     const preservedCount = ctx.runtime.messages.length - boundary;
     ctx.runtime.messages.splice(0, boundary, compactionMessage);
@@ -211,6 +214,7 @@ async function commitCompactionBlock(
       compactedMessageCount: block.compactedMessageCount,
       compactedTokenCount: block.compactedTokenCount,
       kind: 'compaction_block',
+      replacedMessageIds,
     },
   });
   ctx.runtime.contextHealth.replaceCompressionState(nextCompressionState);

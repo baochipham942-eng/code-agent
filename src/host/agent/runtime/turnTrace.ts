@@ -37,7 +37,23 @@ export type RequestManifestMessageRef =
       kind: 'content';
       contentHash: string;
       reason: 'dynamic_tail' | 'runtime_injection' | 'post_assembly_rewrite' | 'system_prompt_fallback';
+      /**
+       * P2 block-addressed form. Each cache entry is an exact canonical JSON
+       * fragment; concatenating the ordered blocks must hash to contentHash.
+       * Absent on P0/P1 manifests, whose contentHash addresses the full JSON.
+       */
+      blocks?: Array<{ contentHash: string; bytes: number }>;
+      /** P2 attachment form: structure JSON in content_cache, bytes on disk. */
+      structureHash?: string;
+      attachmentBlobs?: RequestManifestAttachmentBlobRef[];
     };
+
+export interface RequestManifestAttachmentBlobRef {
+  version: 1;
+  filePath: string;
+  sha256: string;
+  bytes: number;
+}
 
 export interface TraceEventDataMap {
   inference: {

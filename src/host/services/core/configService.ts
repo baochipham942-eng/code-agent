@@ -32,6 +32,7 @@ import {
   normalizeApiKey,
   normalizeBaseUrl,
 } from './configHelpers';
+import { devSlotFromDataDirName } from '../../../shared/devSlot';
 
 const logger = createLogger('ConfigService');
 
@@ -56,6 +57,16 @@ const moduleDir = typeof __dirname === 'string'
  */
 export function isProduction(): boolean {
   return app?.isPackaged ?? process.env.NODE_ENV === 'production';
+}
+
+/**
+ * devModeAutoApprove 只认 Rust dev_slot() 注入的数据目录身份。
+ * release 构建的 Dev 测试包同样是 NODE_ENV=production，不能拿构建 profile 判通道。
+ */
+function isDevSlotRuntime(dataDir = process.env.CODE_AGENT_DATA_DIR): boolean {
+  const normalized = dataDir?.trim();
+  if (!normalized) return false;
+  return devSlotFromDataDirName(path.basename(normalized)) !== null;
 }
 
 /**
@@ -603,11 +614,10 @@ export class ConfigService implements IReadConfigService {
 
   /**
    * Check if devModeAutoApprove is enabled
-   * SECURITY: Always returns false in production (packaged app)
+   * SECURITY: only effective in an explicitly identified dev slot
    */
   isDevModeAutoApproveEnabled(): boolean {
-    // In production, devModeAutoApprove is ALWAYS disabled
-    if (isProduction()) {
+    if (!isDevSlotRuntime()) {
       return false;
     }
     return this.settings.permissions.devModeAutoApprove;
@@ -615,11 +625,11 @@ export class ConfigService implements IReadConfigService {
 
   /**
    * Set devModeAutoApprove setting
-   * SECURITY: Logs a warning when enabled, ignored in production
+   * SECURITY: Logs a warning when enabled, ignored outside dev slots
    */
   async setDevModeAutoApprove(enabled: boolean): Promise<void> {
-    if (isProduction()) {
-      logger.warn('devModeAutoApprove cannot be enabled in production builds');
+    if (enabled && !isDevSlotRuntime()) {
+      logger.warn('devModeAutoApprove cannot be enabled outside a dev slot');
       return;
     }
 
@@ -633,10 +643,10 @@ export class ConfigService implements IReadConfigService {
   }
 
   async updateSettings(updates: Partial<AppSettings>): Promise<void> {
-    // SECURITY: Prevent enabling devModeAutoApprove in production
+    // SECURITY: Prevent enabling devModeAutoApprove outside an explicit dev slot.
     if (updates.permissions?.devModeAutoApprove !== undefined) {
-      if (isProduction() && updates.permissions.devModeAutoApprove) {
-        logger.warn('Ignoring devModeAutoApprove=true in production');
+      if (!isDevSlotRuntime() && updates.permissions.devModeAutoApprove) {
+        logger.warn('Ignoring devModeAutoApprove=true outside a dev slot');
         updates.permissions.devModeAutoApprove = false;
       }
     }

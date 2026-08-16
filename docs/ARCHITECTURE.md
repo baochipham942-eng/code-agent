@@ -121,6 +121,7 @@
 | 054 | 会话=指挥台：前台持续可输入，文字与语音统一派活语义 | accepted |
 | 055 | 产物角色轴：deliverable/material/receipt 登记制取代反推式识别 | accepted |
 | 057 | 审批拒绝来源由处理器自报，账本不许把机器判断记成 user | accepted |
+| 058 | devModeAutoApprove 只在显式 dev 槽生效，机器批准独立留痕 | accepted |
 
 > **ADR-057（2026-08-15，N-PERMTRACE）审批拒绝路径的可观测性**
 >

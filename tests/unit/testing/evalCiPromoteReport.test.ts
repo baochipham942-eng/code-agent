@@ -94,7 +94,7 @@ let root: string;
 const savedEnv = { ...process.env };
 
 beforeEach(async () => {
-  root = await mkdtemp(path.join(os.tmpdir(), 'code-agent-eval-ci-promote-html-'));
+  root = await mkdtemp(path.join(os.tmpdir(), 'code-agent-eval-ci-promote-report-'));
   await mkdir(path.join(root, '.claude'), { recursive: true });
   await writeFile(
     path.join(root, '.claude', 'eval-splits.json'),
@@ -110,7 +110,7 @@ beforeEach(async () => {
   );
   process.env.AUTO_TEST_API_KEY = 'test-key';
   saveReportMock.mockReset();
-  saveReportMock.mockResolvedValue([path.join(root, '.code-agent', 'test-results', 'report.html')]);
+  saveReportMock.mockResolvedValue([path.join(root, '.code-agent', 'test-results', 'report.md')]);
   compareMock.mockReset();
   promoteMock.mockReset();
   runAllMock.mockReset();
@@ -122,15 +122,15 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-describe('eval-ci promote HTML report', () => {
-  it('saves HTML in promote mode without baseline delta or baseline compare', async () => {
+describe('eval-ci promote reports', () => {
+  it('saves Markdown and JSON in promote mode without baseline delta or baseline compare', async () => {
     const { main } = await import('../../../scripts/eval-ci');
     await main(['node', 'eval-ci.ts', '--promote', '--real', '--max-cases', '1'], root);
 
     expect(saveReportMock).toHaveBeenCalledWith(
       expect.objectContaining({ runId: 'run-promote' }),
       path.join(root, '.code-agent', 'test-results'),
-      ['markdown', 'json', 'html'],
+      ['markdown', 'json'],
     );
     expect(saveReportMock.mock.calls[0][3]).toBeUndefined();
     expect(compareMock).not.toHaveBeenCalled();

@@ -58,7 +58,7 @@ function makeSummary(results: TestResult[]): TestRunSummary {
 }
 
 async function createWorkRoot(): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'code-agent-eval-ci-html-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'code-agent-eval-ci-report-'));
   roots.push(root);
   return root;
 }
@@ -110,7 +110,7 @@ function resultsDir(root: string): string {
   return path.join(root, CONFIG_DIR_NEW, 'test-results');
 }
 
-describe('eval-ci HTML report baseline flow', () => {
+describe('eval-ci report baseline flow', () => {
   it('无 --split 的日常路径从版本化资产只读取 held-in，并兼容仅有 .claude/test-cases 的 worktree', async () => {
     const root = await createWorkRoot();
     const caseDir = path.join(root, '.claude', 'test-cases');
@@ -154,7 +154,7 @@ describe('eval-ci HTML report baseline flow', () => {
     expect(report.results.map((result) => result.testId)).toEqual(['case-a']);
   });
 
-  it('writes the only eval HTML report after baseline compare so latest-report.html includes baseline delta', async () => {
+  it('writes Markdown after baseline compare so latest-report.md includes baseline delta', async () => {
     const root = await createWorkRoot();
     await writeSuite(path.join(root, CONFIG_DIR_NEW, 'test-cases'));
     await writeSplit(root);
@@ -166,23 +166,23 @@ describe('eval-ci HTML report baseline flow', () => {
 
     await runEvalCi(root, ['--scope', 'smoke']);
 
-    const html = await readFile(path.join(resultsDir(root), 'latest-report.html'), 'utf8');
-    expect(html).toContain('Baseline Delta');
-    expect(html).toContain('case-a');
+    const markdown = await readFile(path.join(resultsDir(root), 'latest-report.md'), 'utf8');
+    expect(markdown).toContain('Baseline Delta');
+    expect(markdown).toContain('case-a');
 
     const timestampedHtml = (await readdir(resultsDir(root))).filter((entry) => /^report-[0-9T]+\.html$/.test(entry));
-    expect(timestampedHtml).toHaveLength(1);
+    expect(timestampedHtml).toHaveLength(0);
   });
 
-  it('--case-dir writes HTML without baseline delta', async () => {
+  it('--case-dir writes Markdown without baseline delta', async () => {
     const root = await createWorkRoot();
     const caseDir = path.join(root, 'external-cases');
     await writeSuite(caseDir);
 
     await runEvalCi(root, ['--scope', 'smoke', '--case-dir', caseDir]);
 
-    const html = await readFile(path.join(resultsDir(root), 'latest-report.html'), 'utf8');
-    expect(html).toContain('<!doctype html>');
-    expect(html).not.toContain('Baseline Delta');
+    const markdown = await readFile(path.join(resultsDir(root), 'latest-report.md'), 'utf8');
+    expect(markdown).toContain('# Agent Neo 自动化测试报告');
+    expect(markdown).not.toContain('Baseline Delta');
   });
 });

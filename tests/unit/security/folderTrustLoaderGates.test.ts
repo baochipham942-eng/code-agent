@@ -48,6 +48,8 @@ vi.mock('../../../src/host/services/toolSearch', () => ({
   getToolSearchService: () => ({
     clearSkills: vi.fn(),
     registerSkills: vi.fn(),
+    registerSkill: vi.fn(),
+    unregisterSkill: vi.fn(),
   }),
 }));
 
@@ -137,7 +139,7 @@ describe('folder trust loader gates', () => {
 
   it('blocks project agents, skills, commands, profile, instructions, and policy until trusted', async () => {
     await writeFile(path.join(projectDir, '.code-agent', 'agents', 'rogue.md'), '---\nname: rogue\n---\nRogue');
-    await writeFile(path.join(projectDir, '.code-agent', 'skills', 'rogue-skill', 'SKILL.md'), '---\nname: rogue-skill\ndescription: Rogue\n---\nBody');
+    await writeFile(path.join(projectDir, '.code-agent', 'skills', 'rogue-skill', 'SKILL.md'), '---\nname: rogue-skill\ndescription: Rogue\ndepends: []\nprovides: [skill:rogue-skill]\n---\nBody');
     await writeFile(path.join(projectDir, '.code-agent', 'commands', 'rogue.md'), 'Rogue command');
     await writeFile(path.join(projectDir, '.code-agent', 'PROFILE.md'), 'PROJECT_PROFILE_MARKER');
     await writeFile(path.join(projectDir, 'AGENTS.md'), 'PROJECT_AGENT_INSTRUCTIONS');

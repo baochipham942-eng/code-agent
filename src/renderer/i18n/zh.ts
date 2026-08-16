@@ -40,6 +40,7 @@ import { activityPanelZh, canvasActorZh } from './domains';
 import { imageNarrationZh } from './imageNarration';
 import { mermaidZh } from './mermaid';
 import { voiceAuditZh } from './voiceAudit';
+import { sessionInspectorZh } from './sessionInspector';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
@@ -904,6 +905,7 @@ export const zh = {
   },
 
   sessionReplay: sessionReplayZh,
+  sessionInspector: sessionInspectorZh,
 
   // Workbench 顶栏 tab 与按钮（WorkbenchTabs）
   // 聊天转录（TurnCard / StreamingIndicator 等）

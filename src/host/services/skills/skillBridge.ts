@@ -17,6 +17,8 @@ export function bridgeCloudSkill(old: SkillDefinition): ParsedSkill {
     // Agent Skills 标准字段
     name: old.name,
     description: old.description,
+    depends: [],
+    provides: [`skill:${old.name}`],
 
     // 内容
     promptContent: old.prompt,

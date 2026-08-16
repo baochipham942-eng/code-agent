@@ -30,7 +30,7 @@ describe('Skill frontmatter unknown field warnings (GAP-007)', () => {
   });
 
   function writeSkill(frontmatter: string): string {
-    const content = `---\n${frontmatter}\n---\n\nSkill body content.\n`;
+    const content = `---\n${frontmatter}\ndepends: []\nprovides: [skill:test-skill]\n---\n\nSkill body content.\n`;
     fs.writeFileSync(path.join(tempDir, 'SKILL.md'), content, 'utf-8');
     return tempDir;
   }

@@ -6,21 +6,32 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { BaselineDelta, TestRunSummary, TestResult } from './types';
 import { formatDuration } from '../../shared/utils/format';
-import { formatDate, generateHtmlReport } from './htmlReportGenerator';
 import {
   CALIBRATION_TRUST_THRESHOLDS,
   isTrustedCalibration,
   type JudgeCalibrationRecord,
 } from './calibration/calibrationRegistry';
 
-export { generateHtmlReport } from './htmlReportGenerator';
+type ReportFormat = 'markdown' | 'json' | 'console';
 
-type ReportFormat = 'markdown' | 'json' | 'console' | 'html';
+function formatDate(timestamp: number): string {
+  return new Date(timestamp).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
 
 /**
  * Generate a Markdown test report
  */
-export function generateMarkdownReport(summary: TestRunSummary): string {
+export function generateMarkdownReport(
+  summary: TestRunSummary,
+  baselineDelta?: BaselineDelta,
+): string {
   const lines: string[] = [];
 
   // Header
@@ -52,6 +63,30 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
   lines.push(`| 通过率 | ${getPassRate(summary)}% |`);
   lines.push(`| 平均分数 | ${(summary.averageScore * 100).toFixed(1)}% |`);
   lines.push(`| 总耗时 | ${formatDuration(summary.duration)} |`);
+  lines.push('');
+
+  lines.push('## 成本与用量');
+  lines.push('');
+  lines.push('> Token 与 USD 均来自 provider response usage；缺失或混入本地估算时标为 `usage_unavailable`，不以 0 代替。USD 按 `MODEL_PRICING_PER_1M` 折算。');
+  lines.push('');
+  lines.push('| 用例 ID | Prompt tokens | Completion tokens | Total tokens | 折算 USD |');
+  lines.push('|---------|---------------|-------------------|--------------|----------|');
+  for (const result of summary.results) {
+    if (result.usageStatus !== 'available' || !result.usage || result.costUsd === undefined) {
+      lines.push(`| ${result.testId} | usage_unavailable | usage_unavailable | usage_unavailable | usage_unavailable |`);
+      continue;
+    }
+    lines.push(
+      `| ${result.testId} | ${formatTokenCount(result.usage.promptTokens)} | ${formatTokenCount(result.usage.completionTokens)} | ${formatTokenCount(result.usage.totalTokens)} | $${result.costUsd.toFixed(6)} |`,
+    );
+  }
+  const costSummary = summarizeCostUsage(summary.results);
+  lines.push(
+    `| **汇总（${costSummary.availableCases}/${summary.results.length} 个 case 有 provider usage）** | **${formatTokenCount(costSummary.promptTokens)}** | **${formatTokenCount(costSummary.completionTokens)}** | **${formatTokenCount(costSummary.totalTokens)}** | **$${costSummary.costUsd.toFixed(6)}** |`,
+  );
+  if (costSummary.unavailableCases > 0) {
+    lines.push(`| usage_unavailable case | ${costSummary.unavailableCases} | — | — | — |`);
+  }
   lines.push('');
 
   // Progress bar
@@ -204,7 +239,7 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
     for (const result of costExceededTests) {
       lines.push(
         `- 💸 **${result.testId}**: ${result.failureReason || result.description}`
-        + `（实际 $${(result.costUsd ?? 0).toFixed(6)} / 上限 $${(result.costLimitUsd ?? 0).toFixed(6)}）`,
+        + `（实际 ${result.costUsd === undefined ? 'usage_unavailable' : `$${result.costUsd.toFixed(6)}`} / 上限 $${(result.costLimitUsd ?? 0).toFixed(6)}）`,
       );
     }
     lines.push('');
@@ -335,6 +370,43 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
     lines.push('');
   }
 
+  if (baselineDelta) {
+    lines.push('## Baseline Delta');
+    lines.push('');
+    lines.push('| 指标 | 值 |');
+    lines.push('|------|-----|');
+    lines.push(`| 首次运行 | ${baselineDelta.isFirstRun ? '是' : '否'} |`);
+    lines.push(`| 通过率变化 | ${(baselineDelta.passRateDelta * 100).toFixed(1)}% |`);
+    lines.push(`| 平均分变化 | ${(baselineDelta.scoreDelta * 100).toFixed(1)}% |`);
+    lines.push(`| 回归 | ${baselineDelta.isRegression ? '是' : '否'} |`);
+    lines.push('');
+
+    if (baselineDelta.regressionDetails.length > 0) {
+      lines.push('### 回归详情');
+      lines.push('');
+      baselineDelta.regressionDetails.forEach((detail) => lines.push(`- ${detail}`));
+      lines.push('');
+    }
+
+    if (baselineDelta.newFailures.length > 0) {
+      lines.push('### 新增失败');
+      lines.push('');
+      lines.push('| 用例 | 原状态 | 当前状态 | 原因 |');
+      lines.push('|------|--------|----------|------|');
+      baselineDelta.newFailures.forEach((failure) => {
+        lines.push(`| ${failure.testId} | ${failure.previousStatus} | ${failure.currentStatus} | ${failure.reason ?? '—'} |`);
+      });
+      lines.push('');
+    }
+
+    if (baselineDelta.newPasses.length > 0) {
+      lines.push('### 新增通过');
+      lines.push('');
+      baselineDelta.newPasses.forEach((result) => lines.push(`- ${result.testId}`));
+      lines.push('');
+    }
+  }
+
   // Footer
   lines.push('---');
   lines.push('');
@@ -384,8 +456,10 @@ export function generateConsoleReport(summary: TestRunSummary): string {
   const infraSegment = (summary.infraExcluded ?? 0) > 0 ? `  |  🔌 ${summary.infraExcluded}` : '';
   const costSegment = (summary.costExceeded ?? 0) > 0 ? `  |  💸 ${summary.costExceeded}` : '';
   const mockSegment = (summary.mockExcluded ?? 0) > 0 ? `  |  🧪 mock-excluded ${summary.mockExcluded}` : '';
+  const costSummary = summarizeCostUsage(summary.results);
   lines.push(`  Total: ${summary.total}  |  ✅ ${summary.passed}  |  🟡 ${summary.partial}  |  ❌ ${summary.failed}  |  ⏭️ ${summary.skipped}${mockSegment}${infraSegment}${costSegment}`);
   lines.push(`  Duration: ${formatDuration(summary.duration)}  |  Pass rate: ${getPassRate(summary)}%  |  Avg score: ${(summary.averageScore * 100).toFixed(1)}%`);
+  lines.push(`  Cost: $${costSummary.costUsd.toFixed(6)}  |  Provider usage: ${costSummary.availableCases}/${summary.results.length} cases${costSummary.unavailableCases > 0 ? `  |  usage_unavailable ${costSummary.unavailableCases}` : ''}`);
   lines.push('═══════════════════════════════════════════════════════');
   lines.push('');
 
@@ -408,7 +482,7 @@ export async function saveReport(
 
   if (formats.includes('markdown')) {
     const mdPath = path.join(outputDir, `report-${timestamp}.md`);
-    await fs.writeFile(mdPath, generateMarkdownReport(summary));
+    await fs.writeFile(mdPath, generateMarkdownReport(summary, baselineDelta));
     savedFiles.push(mdPath);
   }
 
@@ -418,26 +492,15 @@ export async function saveReport(
     savedFiles.push(jsonPath);
   }
 
-  if (formats.includes('html')) {
-    const htmlPath = path.join(outputDir, `report-${timestamp}.html`);
-    await fs.writeFile(htmlPath, generateHtmlReport(summary, baselineDelta));
-    savedFiles.push(htmlPath);
-  }
-
   // Also update "latest" symlinks
   if (formats.includes('markdown')) {
     const latestMd = path.join(outputDir, 'latest-report.md');
-    await fs.writeFile(latestMd, generateMarkdownReport(summary));
+    await fs.writeFile(latestMd, generateMarkdownReport(summary, baselineDelta));
   }
 
   if (formats.includes('json')) {
     const latestJson = path.join(outputDir, 'latest-report.json');
     await fs.writeFile(latestJson, generateJsonReport(summary));
-  }
-
-  if (formats.includes('html')) {
-    const latestHtml = path.join(outputDir, 'latest-report.html');
-    await fs.writeFile(latestHtml, generateHtmlReport(summary, baselineDelta));
   }
 
   return savedFiles;
@@ -522,6 +585,39 @@ function getPassRate(summary: TestRunSummary): string {
     - (summary.costExceeded ?? 0);
   if (runTests === 0) return '0';
   return ((summary.passed / runTests) * 100).toFixed(1);
+}
+
+function formatTokenCount(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
+function summarizeCostUsage(results: TestResult[]): {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  availableCases: number;
+  unavailableCases: number;
+} {
+  return results.reduce((summary, result) => {
+    if (result.usageStatus !== 'available' || !result.usage || result.costUsd === undefined) {
+      summary.unavailableCases++;
+      return summary;
+    }
+    summary.promptTokens += result.usage.promptTokens;
+    summary.completionTokens += result.usage.completionTokens;
+    summary.totalTokens += result.usage.totalTokens;
+    summary.costUsd += result.costUsd;
+    summary.availableCases++;
+    return summary;
+  }, {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    costUsd: 0,
+    availableCases: 0,
+    unavailableCases: 0,
+  });
 }
 
 function generateProgressBar(summary: TestRunSummary): string {

@@ -1,6 +1,8 @@
 ---
 name: sample
 description: Test fixture for skill-loader unit tests
+depends: []
+provides: [skill:sample]
 artifact_kind: game
 subtype: platformer
 declared_verbs:

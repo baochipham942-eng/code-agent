@@ -18,6 +18,11 @@ import {
 import { createLogger } from '../infra/logger';
 import { parseSkillMd } from './skillParser';
 import { hasSkillApplicabilityBoundary } from './skillApplicability';
+import {
+  getDistillPositiveEvidenceCount,
+  getSkillPromotionEvidenceThreshold,
+  registerDistilledSkillPromotion,
+} from './distillSignalStore';
 
 export type { SkillDraftOrigin };
 
@@ -30,6 +35,12 @@ const ACCEPTED_LEDGER_FILENAME = 'accepted.json';
 interface RejectedLedgerEntry {
   patternKey: string;
   rejectedAt: number;
+}
+
+interface AcceptedLedgerEntry {
+  patternKey: string;
+  skillName?: string;
+  acceptedAt?: number;
 }
 
 export interface SkillDraftMeta {
@@ -110,6 +121,8 @@ export function generateDraftSkillMd(input: {
     '---',
     `name: ${input.name}`,
     `description: "${input.description.replace(/"/g, "'")}"`,
+    'depends: []',
+    `provides: [skill:${input.name}]`,
     'user-invocable: true',
   ];
   // 只有 telemetry 草稿带可执行工具序列才声明 allowed-tools
@@ -229,29 +242,48 @@ async function saveRejectedEntries(entries: RejectedLedgerEntry[]): Promise<void
 // accepted ledger：草稿确认入库后记账，避免同一 pattern 跨会话反复蒸馏打扰用户。
 // 注：读-改-写无文件锁——失效的最坏后果只是"多弹一次确认卡"（非数据/安全损失），
 // 故不引入锁/原子写的复杂度；但文件损坏要告警，避免 fail-open 静默丢失全部记录。
-async function loadAcceptedKeys(): Promise<Set<string>> {
+async function loadAcceptedEntries(): Promise<Map<string, AcceptedLedgerEntry>> {
   let raw: string;
   try {
     raw = await fs.readFile(getAcceptedLedgerPath(), 'utf-8');
   } catch {
-    return new Set(); // 文件不存在属正常
+    return new Map(); // 文件不存在属正常
   }
   try {
-    const parsed = JSON.parse(raw) as string[];
-    return new Set(Array.isArray(parsed) ? parsed : []);
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Map();
+    const entries = new Map<string, AcceptedLedgerEntry>();
+    for (const item of parsed) {
+      if (typeof item === 'string' && item.trim()) {
+        entries.set(item, { patternKey: item });
+        continue;
+      }
+      if (
+        typeof item === 'object'
+        && item !== null
+        && typeof (item as { patternKey?: unknown }).patternKey === 'string'
+      ) {
+        const entry = item as AcceptedLedgerEntry;
+        if (entry.patternKey.trim()) entries.set(entry.patternKey, entry);
+      }
+    }
+    return entries;
   } catch {
     logger.warn('Accepted ledger corrupted, treating as empty (may re-prompt previously accepted skills)');
-    return new Set();
+    return new Map();
   }
 }
 
-async function recordAcceptedKey(patternKey: string): Promise<void> {
+async function loadAcceptedKeys(): Promise<Set<string>> {
+  return new Set((await loadAcceptedEntries()).keys());
+}
+
+async function recordAcceptedKey(patternKey: string, skillName: string, acceptedAt: number): Promise<void> {
   if (!patternKey) return;
-  const accepted = await loadAcceptedKeys();
-  if (accepted.has(patternKey)) return;
-  accepted.add(patternKey);
+  const accepted = await loadAcceptedEntries();
+  accepted.set(patternKey, { patternKey, skillName, acceptedAt });
   await fs.mkdir(getSkillDraftsDir(), { recursive: true });
-  await fs.writeFile(getAcceptedLedgerPath(), JSON.stringify(Array.from(accepted), null, 2), 'utf-8');
+  await fs.writeFile(getAcceptedLedgerPath(), JSON.stringify(Array.from(accepted.values()), null, 2), 'utf-8');
 }
 
 /**
@@ -407,6 +439,25 @@ export async function confirmSkillDraft(
       };
     }
 
+    // ADR-034 层④：草稿照常生成和保留，但转正必须拿到 N 个不同真实会话的正向证据。
+    // DB 不可用时 fail-closed，不能把“无法核验”当成“证据足够”。
+    const positiveEvidence = getDistillPositiveEvidenceCount(meta.patternKey);
+    const requiredEvidence = getSkillPromotionEvidenceThreshold();
+    if (positiveEvidence === null || positiveEvidence < requiredEvidence) {
+      logger.info('Skill draft promotion blocked: insufficient positive usage evidence', {
+        id,
+        name: meta.name,
+        positiveEvidence,
+        requiredEvidence,
+      });
+      return {
+        success: false,
+        error: positiveEvidence === null
+          ? '使用证据账本不可用，无法安全转正。'
+          : `真实使用正向证据不足：当前 ${positiveEvidence} 次，至少需要 ${requiredEvidence} 次。`,
+      };
+    }
+
     // fail-closed 安全闸：草稿入库前过内容扫描，命中 critical 危险命令 / 明文密钥则拒绝。
     // 反超 Hermes（其 agent-created skill 默认不扫描）；草稿留在队列，用户可查看后删除。
     const guard = scanSkillContent(skillContent);
@@ -421,6 +472,16 @@ export async function confirmSkillDraft(
       };
     }
 
+    const acceptedAt = Date.now();
+    const lifecycle = registerDistilledSkillPromotion({
+      skillName: meta.name,
+      patternKey: meta.patternKey,
+      promotedAt: acceptedAt,
+    });
+    if (!lifecycle) {
+      return { success: false, error: '使用证据账本写入失败，草稿未转正。' };
+    }
+
     const skillsDir = getSkillsDir(workingDirectory);
     const targetDir = path.join(skillsDir.user.new, meta.name);
     await fs.mkdir(targetDir, { recursive: true });
@@ -429,7 +490,7 @@ export async function confirmSkillDraft(
     await fs.writeFile(skillPath, skillContent, 'utf-8');
     await fs.rm(draftDir, { recursive: true, force: true });
     // 记入 accepted ledger：同一 pattern 已采纳后不再跨会话重复蒸馏打扰
-    await recordAcceptedKey(meta.patternKey);
+    await recordAcceptedKey(meta.patternKey, meta.name, acceptedAt);
 
     logger.info('Skill draft confirmed and installed', { id, name: meta.name, skillPath });
     return { success: true, skillPath };

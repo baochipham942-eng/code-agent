@@ -268,6 +268,39 @@ describe('runRoleWriteBack', () => {
     expect(result.written).toBe(0);
   });
 
+  it('aborts the queued/in-flight quick model request when write-back times out', async () => {
+    vi.useFakeTimers();
+    await ensureRoleAssetDirs('研究员');
+    let receivedSignal: AbortSignal | undefined;
+    mockQuickTask.mockImplementation((
+      _prompt: string,
+      _maxTokens: number,
+      signal?: AbortSignal,
+    ) => new Promise((resolve) => {
+      receivedSignal = signal;
+      signal?.addEventListener('abort', () => {
+        resolve({ success: false, error: 'aborted' });
+      }, { once: true });
+    }));
+
+    try {
+      const pending = runRoleWriteBack({
+        roleId: '研究员',
+        taskPrompt: '会触发超时的任务',
+        finalOutput: 'output',
+      });
+      await vi.waitFor(() => expect(mockQuickTask).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(20_000);
+      const result = await pending;
+
+      expect(receivedSignal).toBeDefined();
+      expect(receivedSignal?.aborted).toBe(true);
+      expect(result).toMatchObject({ executed: true, written: 0, historyAppended: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('feeds existing memories to judge for dedup (去重闸输入)', async () => {
     await ensureRoleAssetDirs('研究员');
     await writeScopedMemory(

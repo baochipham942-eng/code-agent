@@ -146,6 +146,7 @@ export interface ContextAssemblyCtx {
     inputTokens: number,
     outputTokens: number,
     cache?: { cacheReadTokens?: number; cacheCreationTokens?: number },
+    source?: 'provider' | 'estimated',
   ): void;
   inference(): Promise<ModelResponse>;
   buildModelMessages(): Promise<ModelMessagesWithSources>;

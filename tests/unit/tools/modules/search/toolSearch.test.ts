@@ -28,6 +28,12 @@ vi.mock('../../../../../src/host/mcp/mcpClient', () => ({
   }),
 }));
 
+const markDistilledSkillTurnSignalMock = vi.fn((_input: unknown) => true);
+vi.mock('../../../../../src/host/services/skills/distillSignalStore', () => ({
+  markDistilledSkillTurnSignal: (input: unknown) =>
+    markDistilledSkillTurnSignalMock(input),
+}));
+
 import { toolSearchModule } from '../../../../../src/host/tools/modules/search/toolSearch';
 import { validateToolInputSchema } from '../../../../../src/host/tools/toolSchemaValidator';
 
@@ -68,6 +74,8 @@ beforeEach(() => {
   searchToolsMock.mockReset();
   discoverLazyServersForSearchMock.mockReset();
   discoverLazyServersForSearchMock.mockResolvedValue([]);
+  markDistilledSkillTurnSignalMock.mockReset();
+  markDistilledSkillTurnSignalMock.mockReturnValue(true);
 });
 
 // -----------------------------------------------------------------------------
@@ -257,13 +265,22 @@ describe('toolSearchModule (native)', () => {
         totalCount: 1,
         hasMore: false,
       });
-      const result = await run({ query: 'commit', max_results: 1 });
+      const result = await run(
+        { query: 'commit', max_results: 1 },
+        makeCtx({ turnId: 'turn-search-1' } as Partial<ToolContext>),
+      );
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.output).toContain('• **skill:commit**');
         expect(result.output).toContain('不可直接调用');
         expect(result.output).toContain('调用入口：Skill({"command":"commit"})');
       }
+      expect(markDistilledSkillTurnSignalMock).toHaveBeenCalledWith({
+        turnId: 'turn-search-1',
+        skillName: 'commit',
+        sessionId: 'test-session',
+        kind: 'selected',
+      });
     });
 
     it('appends hasMore notice when total exceeds tools length', async () => {

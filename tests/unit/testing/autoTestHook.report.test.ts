@@ -88,14 +88,13 @@ let root: string;
 const savedEnv = { ...process.env };
 
 beforeEach(async () => {
-  root = await mkdtemp(path.join(os.tmpdir(), 'code-agent-auto-test-html-'));
+  root = await mkdtemp(path.join(os.tmpdir(), 'code-agent-auto-test-report-'));
   await mkdir(path.join(root, '.code-agent', 'test-cases'), { recursive: true });
   process.env.AUTO_TEST = 'true';
   saveReportMock.mockReset();
   saveReportMock.mockResolvedValue([
     path.join(root, '.code-agent', 'test-results', 'report.md'),
     path.join(root, '.code-agent', 'test-results', 'report.json'),
-    path.join(root, '.code-agent', 'test-results', 'report.html'),
   ]);
   runAllMock.mockReset();
   runAllMock.mockResolvedValue(makeSummary());
@@ -106,8 +105,8 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-describe('autoTestHook HTML report default', () => {
-  it('writes markdown, json, and html reports without baseline delta', async () => {
+describe('autoTestHook report default', () => {
+  it('writes Markdown and JSON reports without baseline delta', async () => {
     const { runAutoTests } = await import('../../../src/host/testing/autoTestHook');
     const summary = await runAutoTests({ workingDirectory: root } as never);
 
@@ -115,7 +114,7 @@ describe('autoTestHook HTML report default', () => {
     expect(saveReportMock).toHaveBeenCalledWith(
       expect.objectContaining({ runId: 'run-1' }),
       path.join(root, '.code-agent', 'test-results'),
-      ['markdown', 'json', 'html'],
+      ['markdown', 'json'],
     );
     expect(saveReportMock.mock.calls[0][3]).toBeUndefined();
   });

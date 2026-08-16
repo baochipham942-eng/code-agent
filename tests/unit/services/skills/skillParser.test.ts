@@ -26,6 +26,8 @@ describe('skillParser allowed-tools validation', () => {
         '---',
         'name: test-skill',
         'description: Test skill',
+        'depends: []',
+        'provides: [skill:test-skill]',
         frontmatter,
         '---',
         '',
@@ -35,6 +37,19 @@ describe('skillParser allowed-tools validation', () => {
       'utf-8',
     );
   }
+
+  it('fails loud with the exact missing capability declaration', async () => {
+    await fs.writeFile(
+      path.join(tmpDir, 'SKILL.md'),
+      ['---', 'name: undeclared', 'description: Missing declaration fixture', '---', '', 'Body.'].join('\n'),
+      'utf-8',
+    );
+
+    await expect(parseSkillMetadataOnly(tmpDir, 'user')).rejects.toMatchObject({
+      name: 'SkillValidationError',
+      field: 'depends',
+    });
+  });
 
   it('accepts tool names, MCP-style names, and scoped Bash prefixes', async () => {
     await writeSkill([

@@ -23,6 +23,8 @@ const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 const KNOWN_FRONTMATTER_FIELDS = new Set([
   'name',
   'description',
+  'depends',
+  'provides',
   'aliases',
   'keywords',
   'license',
@@ -115,6 +117,39 @@ const SUPPORTED_PLATFORMS = new Set([
   'sunos',
   'win32',
 ]);
+const CAPABILITY_KEY_REGEX = /^(skill|tool|plugin|connector|extension):[a-z0-9][a-z0-9._/-]*$/;
+
+function validateCapabilityDeclaration(frontmatter: SkillFrontmatter, skillPath: string): void {
+  for (const field of ['depends', 'provides'] as const) {
+    const value = frontmatter[field];
+    if (!Array.isArray(value)) {
+      throw new SkillValidationError(
+        `Missing required capability declaration: ${field} in ${skillPath}`,
+        field,
+        value,
+      );
+    }
+    const invalid = value.find((key) => typeof key !== 'string' || !CAPABILITY_KEY_REGEX.test(key));
+    if (invalid !== undefined) {
+      throw new SkillValidationError(
+        `Invalid namespaced capability key in ${field}: ${String(invalid)}`,
+        field,
+        invalid,
+      );
+    }
+  }
+  if (frontmatter.provides.length === 0) {
+    throw new SkillValidationError('Capability declaration provides must not be empty', 'provides', []);
+  }
+  const ownKey = `skill:${frontmatter.name}`;
+  if (!frontmatter.provides.includes(ownKey)) {
+    throw new SkillValidationError(
+      `Skill "${frontmatter.name}" must provide its own key "${ownKey}"`,
+      'provides',
+      frontmatter.provides,
+    );
+  }
+}
 
 /**
  * 解析 SKILL.md 文件
@@ -183,6 +218,8 @@ export async function parseSkillMd(
     );
   }
 
+  validateCapabilityDeclaration(frontmatter, skillPath);
+
   // 5. 验证 name 格式
   validateSkillName(frontmatter.name);
 
@@ -208,6 +245,8 @@ export async function parseSkillMd(
   return {
     name: frontmatter.name,
     description: frontmatter.description,
+    depends: frontmatter.depends,
+    provides: frontmatter.provides,
     aliases: parseAliases(frontmatter.aliases),
     license: frontmatter.license,
     compatibility: frontmatter.compatibility,
@@ -437,6 +476,8 @@ export async function parseSkillMetadataOnly(
     );
   }
 
+  validateCapabilityDeclaration(frontmatter, skillPath);
+
   // 5. 验证 name 格式
   validateSkillName(frontmatter.name);
 
@@ -462,6 +503,8 @@ export async function parseSkillMetadataOnly(
   return {
     name: frontmatter.name,
     description: frontmatter.description,
+    depends: frontmatter.depends,
+    provides: frontmatter.provides,
     aliases: parseAliases(frontmatter.aliases),
     license: frontmatter.license,
     compatibility: frontmatter.compatibility,

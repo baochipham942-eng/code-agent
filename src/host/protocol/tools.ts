@@ -18,6 +18,7 @@
 import type {
   DirectiveMemoryWriteGrant,
   JSONSchema,
+  ToolEmissionDescriptor,
   ToolPathAuthorityDescriptor,
 } from '@shared/contract';
 import type {
@@ -59,6 +60,8 @@ export interface ToolSchema {
   readonly permissionLevel: PermissionLevel;
   /** 文件写目标的声明式来源；不按工具名枚举权限。 */
   readonly pathAuthority?: readonly ToolPathAuthorityDescriptor[];
+  /** 成功执行后登记补偿的显式 effect；禁止按工具名推断。 */
+  readonly emission?: ToolEmissionDescriptor;
   /**
    * 覆盖默认权限推导。省略时仍按 permissionLevel !== 'read' 处理。
    * 只用于工具本身就是用户确认入口的场景，避免“先批准提问，才能看到提问”的递归门。

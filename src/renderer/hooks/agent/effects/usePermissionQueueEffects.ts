@@ -26,6 +26,7 @@ export interface PermissionQueueEventDeps {
   debug: (message: string, context: Record<string, unknown>) => void;
   enqueuePermissionRequest: AgentEffectsProps['enqueuePermissionRequest'];
   getCurrentSessionId: () => string | null;
+  hasPermissionRequest: (requestId: string) => boolean;
   getPendingPermissionRequest: () => PermissionRequest | null;
   markSessionUnread: (sessionId: string) => void;
   now: () => number;
@@ -97,6 +98,10 @@ export function applyPermissionQueueEvent(
       deps.debug('Permission request received', { data: event.data });
       const permissionRequest = normalizePermissionRequest(event.data);
       if (!permissionRequest) {
+        break;
+      }
+      if (deps.hasPermissionRequest(permissionRequest.id)) {
+        deps.debug('Duplicate permission request ignored', { requestId: permissionRequest.id });
         break;
       }
 
@@ -171,6 +176,12 @@ export const usePermissionQueueEffects = ({
         debug: (message, context) => logger.debug(message, context),
         enqueuePermissionRequest,
         getCurrentSessionId: () => useSessionStore.getState().currentSessionId,
+        hasPermissionRequest: (requestId) => {
+          const state = useAppStore.getState();
+          if (state.pendingPermissionRequest?.id === requestId) return true;
+          return Object.values(state.queuedPermissionRequests)
+            .some((queue) => queue.some((request) => request.id === requestId));
+        },
         getPendingPermissionRequest: () => useAppStore.getState().pendingPermissionRequest,
         markSessionUnread: (sessionId) => useSessionStore.getState().markSessionUnread(sessionId),
         now: Date.now,

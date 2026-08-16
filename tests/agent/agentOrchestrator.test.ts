@@ -284,6 +284,7 @@ interface OrchestratorInternals {
   isInterrupting: boolean;
   pendingSteerMessages: unknown[];
   pendingPermissions: Map<string, { resolve: (r: string) => void; parked?: boolean; request?: { sessionId?: string } }>;
+  listPendingRequests(): PermissionRequest[];
   requestPermission(request: { type: string; tool: string; sessionId?: string; details?: Record<string, unknown> }): Promise<PermissionAskResult>;
   resolveParkedApproval(id: string, response: string, feedbackOverride?: string): void;
   getPendingApprovalRepo(): unknown;
@@ -297,7 +298,7 @@ function internals(o: AgentOrchestrator): OrchestratorInternals {
 // 摸这些私有成员的测试改走岛；公开委托 handlePermissionResponse/resolveParkedApproval 仍在 orchestrator 上。
 type PermissionInternals = Pick<
   OrchestratorInternals,
-  'pendingPermissions' | 'requestPermission' | 'getPendingApprovalRepo' | 'drainPendingPermissions'
+  'pendingPermissions' | 'listPendingRequests' | 'requestPermission' | 'getPendingApprovalRepo' | 'drainPendingPermissions'
 >;
 function perm(o: AgentOrchestrator): PermissionInternals {
   return (o as unknown as { permissions: PermissionInternals }).permissions;
@@ -941,6 +942,27 @@ describe('AgentOrchestrator', () => {
       orchestrator.handlePermissionResponse('req-1', 'allow');
       expect(resolve).toHaveBeenCalledWith('allow');
       expect(perm(orchestrator).pendingPermissions.has('req-1')).toBe(false);
+    });
+
+    it('host 快照只返回仍有 resolver 的完整审批请求副本', () => {
+      const request: PermissionRequest = {
+        id: 'req-snapshot',
+        sessionId: 'session-1',
+        type: 'file_write',
+        tool: 'Write',
+        details: { path: '/tmp/probe.md' },
+        timestamp: 100,
+      };
+      perm(orchestrator).pendingPermissions.set(request.id, { resolve: vi.fn(), request });
+
+      const snapshot = perm(orchestrator).listPendingRequests();
+      expect(snapshot).toEqual([request]);
+      snapshot[0].details.path = '/tmp/mutated.md';
+      expect((perm(orchestrator).pendingPermissions.get(request.id)?.request as PermissionRequest).details.path)
+        .toBe('/tmp/probe.md');
+
+      orchestrator.handlePermissionResponse(request.id, 'deny');
+      expect(perm(orchestrator).listPendingRequests()).toEqual([]);
     });
   });
 

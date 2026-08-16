@@ -30,6 +30,7 @@ import type {
   CurrentAttachment,
   InferenceRecoveryState,
   CompressionRecoveryState,
+  ModelMessagesWithSources,
 } from './contextAssembly/shared';
 import { inference as inferenceImpl } from './contextAssembly/inference';
 import {
@@ -179,7 +180,7 @@ export class ContextAssembly {
     return inferenceImpl(this.makeCtx());
   }
 
-  async buildModelMessages(): Promise<ModelMessage[]> {
+  async buildModelMessages(): Promise<ModelMessagesWithSources> {
     return buildModelMessagesImpl(this.makeCtx());
   }
 

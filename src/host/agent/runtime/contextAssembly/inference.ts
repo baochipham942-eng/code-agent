@@ -70,7 +70,6 @@ import {
   capOutputTokens,
   dedupeToolDefinitions,
   emitAssistantMessageDelta,
-  emitToolSchemaSnapshot,
   filterToolsForArtifactRepair,
   getNetworkRetryBudget,
   isArtifactRepairFullRewritePriority,
@@ -80,6 +79,8 @@ import {
 } from './inferenceArtifactRepair';
 import { withNativeModelOperation } from './nativeModelCheckpoint';
 import { runInferenceWithTelemetry } from './inferenceTelemetry';
+import { completeRequestManifest, recordRequestManifest, withActualModelIdentity } from './requestManifest';
+import type { TraceEventDataMap } from '../turnTrace';
 import {
   applyCommandCenterPreannounce,
   emitCommandCenterToolStart,
@@ -120,8 +121,12 @@ function runEngineInference(
   if (useAiSdk) {
     if (adaptedConfig) {
       logger.info(`[AgentLoop] inference engine = aisdk (adaptive: ${config.provider}/${config.model} → ${adaptedConfig.provider}/${adaptedConfig.model})`);
-      return inferenceViaAiSdk(messages, tools, adaptedConfig, onStream, signal, options).catch((err: unknown) => {
-        const errMsg = getErrorMessage(err);
+      return withActualModelIdentity(
+        inferenceViaAiSdk(messages, tools, adaptedConfig, onStream, signal, options),
+        adaptedConfig,
+      )
+        .catch((err: unknown) => {
+          const errMsg = getErrorMessage(err);
         // 401/403 是持久性错误（key 过期/无效），禁用 free model 避免重复失败
         if (/401|403|unauthorized|forbidden/i.test(errMsg)) {
           getAdaptiveRouter().disableFreeModel(errMsg.split('\n')[0]);
@@ -142,7 +147,7 @@ function runEngineInference(
             }
             throw fallbackErr;
           });
-      });
+        });
     }
     logger.debug('[AgentLoop] inference engine = aisdk', { provider: effectiveConfig.provider, model: effectiveConfig.model, streaming: typeof onStream === 'function' && options?.forceNonStreaming !== true });
     return runAiSdkInferenceWithProviderFallback(messages, tools, effectiveConfig, onStream, signal, options);
@@ -461,14 +466,13 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   // 顺序 / MCP 连接时序带来的排序漂移——工具 schema 在 provider 侧位于可缓存前缀，
   // 顺序抖动等于打掉整个 prompt cache。排序对两条推理路径（aiSdk / modelRouter）生效。
   tools = [...tools].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  emitToolSchemaSnapshot(ctx, tools);
-
   let effectiveTools = tools;
   let effectiveConfig = ctx.runtime.modelConfig;
   let artifactRequest = false;
   let pendingCapabilityFallback: ModelFallbackInfo | null = null;
 
-  let modelMessages: ModelMessage[] = await ctx.buildModelMessages();
+  const builtModelMessages = await ctx.buildModelMessages();
+  let modelMessages: ModelMessage[] = builtModelMessages;
   if (ctx.runtime.control.forceFinalResponsePrompt) {
     modelMessages = [
       ...modelMessages,
@@ -517,6 +521,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   const artifactRepairWritePriority = isArtifactRepairWritePriority(ctx);
   const artifactRepairFullRewritePriority = isArtifactRepairFullRewritePriority(ctx);
   let requestConfigForRetry: typeof ctx.runtime.modelConfig = effectiveConfig;
+  let requestManifestData: TraceEventDataMap['request_manifest'] | null = null;
 
   try {
     // Capability detection and model fallback
@@ -851,6 +856,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         artifactRepairWritePriority,
         artifactRepairFullRewritePriority,
       };
+      requestManifestData = recordRequestManifest(ctx, { requestId: llmCallId, messages: modelMessages, assembledMessages: builtModelMessages, tools: effectiveTools, requestConfig });
       // 这次模型调用的整个生命周期（prepared → dispatched → succeeded/abandoned）
       // 收在一处：没跑完也必须给终态，否则轮次收尾时 Durable Run 会因为「留着未了结
       // 的操作」把一次成功的轮次报成运行失败。
@@ -869,6 +875,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       response.actualModel = pendingCapabilityFallback.to.model;
       response.fallback = pendingCapabilityFallback;
     }
+    completeRequestManifest(requestManifestData, response, requestConfig);
     const toolStrategy = buildToolStrategyDiagnostics(effectiveTools, response.usage);
     const modelDecision = buildModelDecisionWithToolStrategy(ctx.inferenceRecovery.currentModelDecision, effectiveTools, response.usage, response);
     response.runtimeDiagnostics = {
@@ -1043,6 +1050,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           { forceNonStreaming: true, disableProviderTransientRetry: true },
         );
         ctx.inferenceRecovery._artifactNonStreamingRetried = false;
+        completeRequestManifest(requestManifestData, retryResult, effectiveConfig);
         return retryResult;
       } catch (retryErr) {
         ctx.inferenceRecovery._artifactNonStreamingRetried = false;
@@ -1117,6 +1125,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
               }
             : undefined,
         };
+        completeRequestManifest(requestManifestData, retryResult, compactConfig);
         return retryResult;
       } catch (retryErr) {
         ctx.runtime.control.setInferenceAbortController(null);

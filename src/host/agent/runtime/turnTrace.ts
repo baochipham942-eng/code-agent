@@ -14,6 +14,8 @@ import path from 'path';
 import { appendFileSync, mkdirSync } from 'fs';
 import { getPath } from '../../platform/appPaths';
 import { createLogger } from '../../services/infra/logger';
+import type { EvidenceRef } from '../../../shared/contract/evidence';
+import type { VerificationSkippedCheck } from '../verification';
 
 const logger = createLogger('TurnTrace');
 
@@ -25,15 +27,129 @@ export type TraceEventType =
   | 'verification'
   | 'goal_verdict'
   | 'goal_evidence_gate'
-  | 'deliverables_declaration';
+  | 'deliverables_declaration'
+  | 'request_manifest';
 
-export interface TraceEvent {
+export type RequestManifestMessageRef =
+  | { kind: 'ledger_message'; messageId: string }
+  | { kind: 'system_prompt'; contentHash: string }
+  | {
+      kind: 'content';
+      contentHash: string;
+      reason: 'dynamic_tail' | 'runtime_injection' | 'post_assembly_rewrite';
+    };
+
+export interface TraceEventDataMap {
+  inference: {
+    responseType: string;
+    durationMs: number;
+    inputTokens: number;
+    outputTokens: number;
+    finishReason: string | null;
+    truncated: boolean;
+  };
+  loop_decision: {
+    action: string;
+    execution: string;
+    reason: string;
+    stopReason: string;
+    consecutiveErrors: number;
+    contextRatio: number;
+  };
+  tool_dispatch: {
+    toolName: string;
+    success: boolean;
+    durationMs: number;
+    error: string | null;
+    fromCache: boolean;
+  };
+  compaction: {
+    layersTriggered: string[];
+    totalTokens: number;
+    commitCount: number;
+    autocompactNeeded: boolean;
+  };
+  verification: {
+    status: string;
+    failureType: string | null;
+    evidenceRefs: EvidenceRef[];
+    skippedChecks: VerificationSkippedCheck[];
+    workspaceSideEffects: string[] | null;
+    commands: Array<{
+      id: string;
+      command: string;
+      cwd: string;
+      required: boolean;
+      exitCode: number | null;
+      durationMs: number;
+      timedOut: boolean;
+      pass: boolean;
+    }>;
+  };
+  goal_verdict: {
+    gate: 1 | 2;
+    verdict: string;
+    attempt: number;
+    maxAttempts: number;
+    detail: string;
+  };
+  goal_evidence_gate: {
+    verdict: string;
+    reason: string;
+    evidenceRefs: EvidenceRef[];
+  };
+  deliverables_declaration:
+    | { status: 'rejected'; reason: string }
+    | {
+        status: 'declared' | 'overridden';
+        finalArtifacts: string[];
+        scratchDir: string | null;
+        previous: {
+          finalArtifacts: string[];
+          scratchDir: string | null;
+          declaredAtMs: number;
+        } | null;
+      };
+  request_manifest: {
+    requestId: string;
+    messageRefs: RequestManifestMessageRef[];
+    toolSchemaHash: string;
+    toolNames: string[];
+    requested: {
+      provider: string;
+      model: string;
+      temperature: number | null;
+      maxTokens: number | null;
+      reasoningEffort: string | null;
+      thinkingBudget: number | null;
+    };
+    actualProvider: string | null;
+    actualModel: string | null;
+    appVersion: string;
+    adapterDefaults: {
+      engine: 'aisdk' | 'legacy';
+      temperature: { value: number | null; source: string } | null;
+      maxTokens: { value: number | null; source: string } | null;
+    };
+    compactionReplacements: Array<{
+      replacedMessageIds: string[];
+      replacementContentHash: string;
+    }>;
+    degraded: boolean;
+  };
+}
+
+type TraceEventFor<T extends TraceEventType> = {
   ts: number;
   sessionId: string;
   turnIndex: number;
-  type: TraceEventType;
-  data: Record<string, unknown>;
-}
+  type: T;
+  data: TraceEventDataMap[T];
+};
+
+export type TraceEvent = {
+  [T in TraceEventType]: TraceEventFor<T>;
+}[TraceEventType];
 
 /**
  * 一个 run 内的结构化 turn trace。每个 AgentLoop 实例持有一个。
@@ -55,14 +171,14 @@ export class TurnTraceRecorder {
   }
 
   /** 记一条 trace 事件（仅入内存） */
-  record(type: TraceEventType, data: Record<string, unknown>): void {
+  record<T extends TraceEventType>(type: T, data: TraceEventDataMap[T]): void {
     this.events.push({
       ts: Date.now(),
       sessionId: this.sessionId,
       turnIndex: this.currentTurn,
       type,
       data,
-    });
+    } as TraceEvent);
   }
 
   /** 当前已记录的全部事件（测试 / 进程内消费用） */
@@ -71,16 +187,21 @@ export class TurnTraceRecorder {
   }
 
   /** 增量 append 未落盘的事件到 per-session JSONL。失败只 warn，不抛。 */
-  flush(): void {
+  flush(): boolean {
     const pending = this.events.slice(this.flushedCount);
-    if (pending.length === 0) return;
+    if (pending.length === 0) return true;
     try {
       mkdirSync(path.dirname(this.filePath), { recursive: true });
       const lines = pending.map((e) => JSON.stringify(e)).join('\n') + '\n';
       appendFileSync(this.filePath, lines, 'utf-8');
       this.flushedCount = this.events.length;
+      return true;
     } catch (err) {
+      for (const event of pending) {
+        if (event.type === 'request_manifest') event.data.degraded = true;
+      }
       logger.warn('flush failed', err);
+      return false;
     }
   }
 }

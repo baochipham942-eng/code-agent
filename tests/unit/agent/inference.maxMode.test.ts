@@ -136,6 +136,7 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
     control: ControlState.forTest(),
     contextHealth: ContextHealthState.forTest(),
     messages: [],
+    turnTrace: { record: vi.fn() },
     maxMode: false,
     maxModeCandidates: 3,
     artifact: ArtifactState.forTest(),
@@ -185,6 +186,14 @@ describe('inference Max Mode wiring', () => {
     expect(typeof onStream).toBe('function');
     expect(response.content).toBe('single');
     expect(response.runtimeDiagnostics?.maxMode).toBeUndefined();
+    expect(ctx.runtime.turnTrace.record).toHaveBeenCalledWith(
+      'request_manifest',
+      expect.objectContaining({
+        requested: expect.objectContaining({ provider: 'mock', model: 'test-model' }),
+        actualProvider: 'mock',
+        actualModel: 'test-model',
+      }),
+    );
     // 关闭态 model_decision 事件照常发出（行为与 main 一致）
     const decisionEvents = vi.mocked(ctx.runtime.onEvent).mock.calls.filter(
       (c) => (c[0] as { type: string }).type === 'model_decision',

@@ -7,6 +7,7 @@ import type { ModelResponse } from '../../../agent/loopTypes';
 import type { ModelConfig } from '../../../../shared/contract/model';
 import type { InferenceOptions } from '../../../model/types';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
+import { getToolSchemaCache } from '../../../telemetry/toolSchemaCache';
 import {
   getArtifactRepairToolPolicy,
   isArtifactRepairWritePriority as isArtifactRepairWritePriorityForGuard,
@@ -126,12 +127,36 @@ export function buildArtifactValidationAttemptCompletionResponse(targetFile: str
   };
 }
 
-export function emitToolSchemaSnapshot(ctx: ContextAssemblyCtx, tools: ToolDefinition[]): void {
+export interface ToolSchemaSnapshot {
+  schemaHash: string;
+  toolNames: string[];
+  schemaJson: string;
+  cacheStored?: boolean;
+}
+
+function buildToolSchemaSnapshot(
+  tools: ToolDefinition[],
+): ToolSchemaSnapshot {
   const orderedTools = [...tools].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const toolNames = orderedTools.map((tool) => tool.name);
+  const schemaJson = JSON.stringify(orderedTools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+  })));
   const schemaHash = createHash(CONTEXT_LEDGER.SCHEMA_HASH_ALGORITHM)
-    .update(JSON.stringify(orderedTools.map((tool) => ({ name: tool.name, inputSchema: tool.inputSchema }))))
+    .update(schemaJson)
     .digest('hex');
+  return { schemaHash, toolNames, schemaJson };
+}
+
+export function emitToolSchemaSnapshot(
+  ctx: ContextAssemblyCtx,
+  tools: ToolDefinition[],
+): ToolSchemaSnapshot {
+  const snapshot = buildToolSchemaSnapshot(tools);
+  const { schemaHash, toolNames, schemaJson } = snapshot;
+  snapshot.cacheStored = getToolSchemaCache().store(schemaHash, schemaJson);
   const timestamp = Date.now();
   getContextEventLedger().upsertEvents([
     {
@@ -174,6 +199,7 @@ export function emitToolSchemaSnapshot(ctx: ContextAssemblyCtx, tools: ToolDefin
       })),
     },
   });
+  return snapshot;
 }
 
 export function isArtifactRepairWritePriority(ctx: ContextAssemblyCtx): boolean {

@@ -257,4 +257,23 @@ export function applyTelemetrySchema(db: BetterSqlite3.Database, logger: Logger)
       created_at INTEGER NOT NULL
     )
   `);
+
+  // Tool Schema Cache - 最终模型工具表去重缓存。DDL 与 toolSchemaCache.ts 的
+  // ensureTable 保持一致；同样必须在 retention 首次运行前由中央 schema 建好。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tool_schema_cache (
+      hash TEXT PRIMARY KEY,
+      content TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `);
+
+  // Content Cache - 账本外模型输入的通用去重缓存。DDL 与 contentCache.ts 同步。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS content_cache (
+      hash TEXT PRIMARY KEY,
+      content TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `);
 }

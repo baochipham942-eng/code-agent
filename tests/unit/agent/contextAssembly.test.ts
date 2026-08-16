@@ -642,6 +642,9 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const modelMessages = await assembly.buildModelMessages();
     const systemContent = String(modelMessages[0].content);
 
+    expect(modelMessages.modelMessageSourceIds).toHaveLength(modelMessages.length);
+    expect(modelMessages.modelMessageSourceIds[0]).toBe('__system_prompt__');
+    expect(modelMessages.modelMessageSourceIds).toContain('user-no-hidden-continuation');
     expect(systemContent).not.toContain('handoff-proposal');
     expect(systemContent).not.toContain('worthHandoff');
   });

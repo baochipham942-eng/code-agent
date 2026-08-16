@@ -5,13 +5,13 @@ import { executeVoiceTool } from './voiceTools';
 const MAX_USER_TURNS = 4;
 const MAX_CONTEXT_CHARS = 2_000;
 
-export interface VoiceSayDoGuardState {
+interface VoiceSayDoGuardState {
   turnVersion: number;
   toolObservedVersion: number;
   recentUserTurns: string[];
 }
 
-export type VoiceSayDoAuditResult =
+type VoiceSayDoAuditResult =
   | { kind: 'skip'; reason: 'empty' | 'tool_observed' | 'stale' }
   | { kind: 'normal' }
   | { kind: 'unavailable' }
@@ -63,11 +63,11 @@ export function createVoiceSayDoGuard(
   };
 }
 
-export function createVoiceSayDoGuardState(): VoiceSayDoGuardState {
+function createVoiceSayDoGuardState(): VoiceSayDoGuardState {
   return { turnVersion: 0, toolObservedVersion: 0, recentUserTurns: [] };
 }
 
-export function rememberVoiceSayDoUserTurn(state: VoiceSayDoGuardState, text: string): void {
+function rememberVoiceSayDoUserTurn(state: VoiceSayDoGuardState, text: string): void {
   const trimmed = text.trim();
   if (!trimmed) return;
   state.turnVersion += 1;
@@ -78,7 +78,7 @@ export function rememberVoiceSayDoUserTurn(state: VoiceSayDoGuardState, text: st
   }
 }
 
-export function rememberVoiceSayDoToolCall(state: VoiceSayDoGuardState): void {
+function rememberVoiceSayDoToolCall(state: VoiceSayDoGuardState): void {
   state.toolObservedVersion = state.turnVersion;
 }
 
@@ -103,7 +103,7 @@ async function classifySayDo(input: string): Promise<'say_without_do' | 'normal_
   return null;
 }
 
-export async function auditVoiceSayDoTurn(
+async function auditVoiceSayDoTurn(
   state: VoiceSayDoGuardState,
   assistantText: string,
   classifier: SayDoClassifier = classifySayDo,

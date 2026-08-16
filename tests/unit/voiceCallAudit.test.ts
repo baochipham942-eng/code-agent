@@ -100,6 +100,18 @@ describe('getVoiceCallTimeline', () => {
         timestamp: START + 3000,
         metadata: { voiceCallId: CALL_ID, voiceDispatch: { title: '整理下载', workItemId: 'voice-work-1', origin: 'host_routed' } },
       },
+      {
+        id: 'm4', sessionId: NEO_SESSION, role: 'system', content: '[任务结果] 整理下载｜completed｜已完成',
+        timestamp: START + 8000,
+        metadata: {
+          source: 'voice', voiceCallId: CALL_ID,
+          voiceWorkSettled: { workItemId: 'voice-work-1', title: '整理下载', outcome: 'done' },
+          backgroundTaskResult: {
+            source: 'agent-result', taskId: 'voice-work-1', shortName: '整理下载', status: 'completed', summary: '已完成',
+            artifacts: [{ kind: 'file', label: '12.md', path: '/repo/12.md' }],
+          },
+        },
+      },
     ]);
     dbMock.getPermissionDecisionsBySession.mockReturnValue([
       {
@@ -115,6 +127,16 @@ describe('getVoiceCallTimeline', () => {
 
     const t = getVoiceCallTimeline(CALL_ID)!;
     expect(t.sections.transcript.events).toHaveLength(1);
+    // 终态审计事件转录同消息上的产物账本（N-L7-ARTIFACT 接线）
+    expect(t.sections.outcomes.events).toEqual([
+      expect.objectContaining({
+        kind: 'work_settled',
+        detail: expect.objectContaining({
+          workItemId: 'voice-work-1',
+          artifacts: [{ label: '12.md', path: '/repo/12.md' }],
+        }),
+      }),
+    ]);
     expect(t.sections.transcript.events[0]!.keyMatch).toBe('exact');
     expect(t.sections.dispatches.events).toEqual([
       expect.objectContaining({ workItemId: 'voice-work-1', origin: 'host_routed' }),

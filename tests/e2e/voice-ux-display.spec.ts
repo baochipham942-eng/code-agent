@@ -55,6 +55,74 @@ async function openSettings(page: Page) {
   return dialog;
 }
 
+test('语音派单终态消息把工具账本文件渲染成可点产物卡', async ({ page, request, baseURL }) => {
+  await waitForAppReady(page);
+  await dismissFirstRunDialogs(page);
+  const token = await authToken(page);
+  const runTag = Date.now().toString(36);
+  const workItemId = `artifact-work-${runTag}`;
+
+  const created = await request.post(`${baseURL}/api/sessions?token=${encodeURIComponent(token)}`, {
+    data: { title: `voice-artifact-${runTag}` },
+  });
+  expect(created.status(), await created.text()).toBe(200);
+  const sessionId = ((await created.json()) as { data?: { id?: string } }).data?.id;
+  expect(sessionId).toBeTruthy();
+
+  const startedAt = Date.now();
+  const seed = await request.post(`${baseURL}/api/dev/seed-messages?token=${encodeURIComponent(token)}`, {
+    data: {
+      sessionId,
+      sessionMetadata: { hadLiveVoice: true },
+      messages: [
+        {
+          id: `artifact-dispatch-${runTag}`,
+          role: 'assistant',
+          content: '创建 12.md 文件',
+          timestamp: startedAt,
+          metadata: { source: 'voice', voiceDispatch: { title: '创建 12.md 文件', workItemId } },
+        },
+        {
+          id: `artifact-result-${runTag}`,
+          role: 'system',
+          content: '[任务结果] 创建 12.md 文件｜completed｜文件已创建。',
+          timestamp: startedAt + 1_000,
+          metadata: {
+            source: 'voice',
+            backgroundTaskResult: {
+              source: 'agent-result',
+              taskId: workItemId,
+              shortName: '创建 12.md 文件',
+              status: 'completed',
+              summary: '文件已创建。',
+              artifacts: [{
+                artifactId: `artifact-${runTag}`,
+                kind: 'document',
+                role: 'deliverable',
+                sourceTool: 'Write',
+                label: '12.md',
+                path: '/tmp/voice-artifact/12.md',
+              }],
+            },
+            voiceWorkSettled: { workItemId, title: '创建 12.md 文件', outcome: 'done' },
+          },
+        },
+      ],
+    },
+  });
+  expect(seed.status(), await seed.text()).toBe(200);
+
+  await waitForAppReady(page);
+  const sessionRow = page.locator(`[data-session-id="${sessionId}"]`).first();
+  await expect(sessionRow).toBeVisible({ timeout: 10_000 });
+  await sessionRow.click();
+
+  const fileCard = page.getByRole('button', { name: '打开文件预览: 12.md' });
+  await expect(fileCard).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText('12.md', { exact: true })).toHaveCount(1);
+  await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'voice-task-artifact-card.png'), fullPage: false });
+});
+
 test('字幕、任务标题、模型、音色和费用空态都说人话', async ({ page, request, baseURL }) => {
   await waitForAppReady(page);
   await dismissFirstRunDialogs(page);

@@ -292,15 +292,17 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
     }
 
     let sandboxTimedOut = false;
+    const markSandboxTimedOut = (): void => {
+      sandboxTimedOut = true;
+      controller.abort();
+    };
     const outcome = await runScriptInSandbox({
       script: spec.script,
       goal: spec.goal,
       budgetTotal: budget.total,
       signal: controller.signal,
-      onTimeout: () => {
-        sandboxTimedOut = true;
-        controller.abort();
-      },
+      onTimeout: markSandboxTimedOut,
+      onCpuTimeout: markSandboxTimedOut,
       onRpc: (req) => handleRpc(req, ctx),
       toolNames: ptcToolNames,
       useOsSandbox: deps.useOsSandbox,

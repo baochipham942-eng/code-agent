@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 import type { ScriptRunSpec, ScriptRunState, ScriptRunHostDeps } from '../../../../../src/host/agent/scriptRuntime';
+import { SCRIPT_RUNTIME } from '../../../../../src/shared/constants';
 
 const ORIGINAL_FLAG = process.env.CODE_AGENT_PTC_ENABLED;
 
@@ -140,6 +141,21 @@ describe('PTC 执行侧 · 通道注入', () => {
     const deps = await run(makeCtx({ executeTool }));
     await expect(deps.executeTool!({ name: 'Read', args: {}, signal: new AbortController().signal }))
       .resolves.toEqual({ ok: false, error: 'boom' });
+  });
+
+  it('外层 workflow 输出超过硬上限时按 UTF-8 字节安全截断并显式留痕', async () => {
+    startRunMock.mockResolvedValueOnce({
+      ...completedState(),
+      result: '中'.repeat(SCRIPT_RUNTIME.MAX_OUTER_OUTPUT_BYTES),
+    });
+    const handler = await workflowModule.createHandler();
+    const result = await handler.execute({ script: 'return 1;' }, makeCtx(), allowAll, undefined as never);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.output).toContain('[workflow output truncated: exceeded');
+    expect(Buffer.byteLength(result.output ?? '', 'utf8')).toBeLessThanOrEqual(SCRIPT_RUNTIME.MAX_OUTER_OUTPUT_BYTES);
+    expect(result.output).not.toContain('\uFFFD');
   });
 });
 

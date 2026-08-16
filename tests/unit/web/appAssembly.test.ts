@@ -121,6 +121,8 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['post', '/background/move-to-foreground'],
   // voice router
   ['get', '/voice/status'],
+  ['get', '/voice/calls'],
+  ['get', '/voice/calls/:id/timeline'],
   // admin review queue router
   ['get', '/admin/review-queue'],
   ['post', '/admin/review-queue/issues'],

@@ -6,7 +6,7 @@
 // Node permission model，macOS 再叠加 Seatbelt，child env 使用无凭据 allowlist。
 // ============================================================================
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,7 +25,6 @@ import {
 } from '../../telemetry/runTraceContext';
 import { getTelemetryService } from '../../telemetry/telemetryService';
 
-const MAX_IPC_LINE_BYTES = 8 * 1024 * 1024;
 const STDERR_LIMIT = 16 * 1024;
 const KILL_GRACE_MS = 500;
 
@@ -256,6 +255,8 @@ export interface RunSandboxOptions {
   timeoutMs?: number;
   /** Timeout won the sandbox terminal race; abort host-side in-flight RPC synchronously. */
   onTimeout?: () => void;
+  /** CPU-time limit won the sandbox terminal race; abort host-side in-flight RPC synchronously. */
+  onCpuTimeout?: () => void;
   onProcessSpawn?: (pid: number) => void;
   /** 测试/受限宿主可显式关闭 OS wrapper；生产默认开启且不自动降级。 */
   useOsSandbox?: boolean;
@@ -270,6 +271,12 @@ export interface RunSandboxOptions {
    * （child 是敌对方，它发什么名字都不算数）。
    */
   toolNames?: string[];
+  /** 测试可收紧 CPU 上限；生产不得放宽共享常量。 */
+  cpuTimeLimitMs?: number;
+  /** 测试可缩短 CPU 采样间隔；生产缺省读共享常量。 */
+  cpuPollIntervalMs?: number;
+  /** 测试可收紧 old-generation 上限；生产不得放宽共享常量。 */
+  maxOldGenMb?: number;
 }
 
 export interface WorkerOutcome {
@@ -300,13 +307,50 @@ function childEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function spawnSandboxProcess(cwd: string, useOsSandbox: boolean): ChildProcessWithoutNullStreams {
+function parseProcessCpuTimeMs(value: string): number | null {
+  const match = value.trim().match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/);
+  if (!match) return null;
+  const [, days = '0', hours = '0', minutes, seconds] = match;
+  return (((Number(days) * 24 + Number(hours)) * 60 + Number(minutes)) * 60 + Number(seconds)) * 1000;
+}
+
+function readProcessGroupCpuTimeMs(processGroupId: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    execFile('/bin/ps', ['-axo', 'pgid=,time='], { encoding: 'utf8' }, (error, stdout) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      let totalMs = 0;
+      let matched = 0;
+      for (const row of stdout.split('\n')) {
+        const columns = row.trim().split(/\s+/);
+        if (columns.length !== 2 || Number(columns[0]) !== processGroupId) continue;
+        const cpuMs = parseProcessCpuTimeMs(columns[1]);
+        if (cpuMs === null) continue;
+        totalMs += cpuMs;
+        matched += 1;
+      }
+      if (matched === 0) {
+        reject(new Error(`process group ${processGroupId} not found in ps CPU sample`));
+        return;
+      }
+      resolve(totalMs);
+    });
+  });
+}
+
+function spawnSandboxProcess(
+  cwd: string,
+  useOsSandbox: boolean,
+  maxOldGenMb: number,
+): ChildProcessWithoutNullStreams {
   if (!process.allowedNodeEnvironmentFlags.has('--permission')) {
     throw new Error('Node permission model unavailable; process sandbox refuses to run');
   }
   const nodeArgs = [
     '--permission',
-    `--max-old-space-size=${SCRIPT_RUNTIME.WORKER_MAX_OLD_GEN_MB}`,
+    `--max-old-space-size=${maxOldGenMb}`,
     '--input-type=commonjs',
     '--eval',
     PROCESS_SOURCE,
@@ -354,11 +398,20 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
     return runScriptInLegacyWorker(opts);
   }
   const timeoutMs = opts.timeoutMs ?? SCRIPT_RUNTIME.WORKER_TIMEOUT_MS;
+  const cpuTimeLimitMs = Math.min(
+    opts.cpuTimeLimitMs ?? SCRIPT_RUNTIME.WORKER_CPU_TIME_LIMIT_MS,
+    SCRIPT_RUNTIME.WORKER_CPU_TIME_LIMIT_MS,
+  );
+  const cpuPollIntervalMs = opts.cpuPollIntervalMs ?? SCRIPT_RUNTIME.WORKER_CPU_POLL_INTERVAL_MS;
+  const maxOldGenMb = Math.min(
+    opts.maxOldGenMb ?? SCRIPT_RUNTIME.WORKER_MAX_OLD_GEN_MB,
+    SCRIPT_RUNTIME.WORKER_MAX_OLD_GEN_MB,
+  );
   return new Promise<WorkerOutcome>((resolve) => {
     const cwd = mkdtempSync(join(tmpdir(), 'code-agent-workflow-process-'));
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawnSandboxProcess(cwd, opts.useOsSandbox !== false);
+      child = spawnSandboxProcess(cwd, opts.useOsSandbox !== false, maxOldGenMb);
     } catch (error) {
       rmSync(cwd, { recursive: true, force: true });
       resolve({ ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) });
@@ -370,11 +423,14 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
     let requestedOutcome: WorkerOutcome | undefined;
     let stderr = '';
     let stdoutBuffer = '';
+    let cpuPollInFlight = false;
+    let cpuPollFailures = 0;
     /** 主动终止时的整树退出承诺；未主动终止（脚本自己跑完）时为 undefined。 */
     let treeExit: Promise<void> | undefined;
 
     const cleanup = (): void => {
       clearTimeout(timeoutTimer);
+      clearInterval(cpuTimer);
       opts.signal.removeEventListener('abort', onAbort);
       rmSync(cwd, { recursive: true, force: true });
     };
@@ -426,6 +482,31 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
       stopTree({ ok: false, error: `process sandbox 执行超时 ${timeoutMs}ms` });
       opts.onTimeout?.();
     }, timeoutMs);
+    // 进程组 CPU 计时由 Host 从外部采样：child 忙循环时事件循环已经堵死，child 内 heartbeat
+    // 恰好是最不可信的信号。累计 CPU 达上限，或连续读不到计时导致这道门失明，都复用 stopTree。
+    const cpuTimer = setInterval(() => {
+      if (requestedOutcome || settled || cpuPollInFlight || child.pid === undefined) return;
+      cpuPollInFlight = true;
+      void readProcessGroupCpuTimeMs(child.pid).then(
+        (cpuTimeMs) => {
+          cpuPollFailures = 0;
+          if (cpuTimeMs < cpuTimeLimitMs || requestedOutcome) return;
+          stopTree({ ok: false, error: `process sandbox CPU 时间超限 ${cpuTimeLimitMs}ms` });
+          opts.onCpuTimeout?.();
+        },
+        (error) => {
+          if (requestedOutcome || settled) return;
+          cpuPollFailures += 1;
+          if (cpuPollFailures < SCRIPT_RUNTIME.WORKER_CPU_POLL_MAX_FAILURES) return;
+          stopTree({
+            ok: false,
+            error: redactSecrets(`process sandbox CPU 监控不可用: ${error instanceof Error ? error.message : String(error)}`),
+          });
+        },
+      ).finally(() => {
+        cpuPollInFlight = false;
+      });
+    }, cpuPollIntervalMs);
 
     child.stdin.on('error', onStdinError);
     child.stderr.on('data', (chunk: Buffer | string) => {
@@ -433,10 +514,6 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
     });
     child.stdout.on('data', (chunk: Buffer | string) => {
       stdoutBuffer += chunk.toString();
-      if (Buffer.byteLength(stdoutBuffer) > MAX_IPC_LINE_BYTES) {
-        stopTree({ ok: false, error: 'process sandbox IPC frame exceeded limit' });
-        return;
-      }
       let newline = stdoutBuffer.indexOf('\n');
       while (newline >= 0) {
         const line = stdoutBuffer.slice(0, newline);

@@ -104,6 +104,51 @@ describe('process-level orchestration sandbox', () => {
     });
   });
 
+  it('terminates a CPU-bound process through the independent CPU-time limit and fails loud', async () => {
+    const onCpuTimeout = vi.fn();
+    let pid: number | undefined;
+    const outcome = await runScriptInSandbox({
+      script: 'while (true) {}',
+      signal: new AbortController().signal,
+      onRpc: async (req) => ({ id: req.id, ok: true, result: null }),
+      timeoutMs: 10_000,
+      cpuTimeLimitMs: 100,
+      cpuPollIntervalMs: 25,
+      onCpuTimeout,
+      onProcessSpawn: (childPid) => { pid = childPid; },
+      useOsSandbox: false,
+    });
+
+    expect(outcome).toEqual({ ok: false, error: 'process sandbox CPU 时间超限 100ms' });
+    expect(onCpuTimeout).toHaveBeenCalledTimes(1);
+    expect(pid).toBeTypeOf('number');
+    expect(() => process.kill(pid!, 0)).toThrow();
+  }, 15_000);
+
+  it('enforces the child old-generation cap and exposes the OOM failure', async () => {
+    let pid: number | undefined;
+    const outcome = await runScriptInSandbox({
+      script: `
+        const retained = [];
+        for (let index = 0; index < 1_000_000; index += 1) {
+          retained.push({ index, value: 'retained-' + index });
+        }
+        return retained.length;
+      `,
+      signal: new AbortController().signal,
+      onRpc: async (req) => ({ id: req.id, ok: true, result: null }),
+      timeoutMs: 20_000,
+      maxOldGenMb: 16,
+      onProcessSpawn: (childPid) => { pid = childPid; },
+      useOsSandbox: false,
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error).toMatch(/heap|allocation|out of memory|SIGABRT|exit/i);
+    expect(pid).toBeTypeOf('number');
+    expect(() => process.kill(pid!, 0)).toThrow();
+  }, 30_000);
+
   it('keeps the legacy worker path behind an explicit opt-in', async () => {
     const onProcessSpawn = vi.fn();
     const outcome = await runScriptInSandbox({

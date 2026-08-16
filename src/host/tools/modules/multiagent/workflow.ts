@@ -17,6 +17,7 @@
 // ============================================================================
 
 import { randomUUID } from 'node:crypto';
+import { SCRIPT_RUNTIME } from '../../../../shared/constants';
 import type {
   ToolHandler,
   ToolModule,
@@ -125,6 +126,16 @@ function ptcScriptHasWriteRisk(toolCallNames: readonly string[]): boolean {
 /** 把异常归类成 ABORTED / DOMAIN_ERROR（Codex R2：取消别被压成 DOMAIN_ERROR）。 */
 function isAbort(ctx: ToolContext, err: unknown): boolean {
   return ctx.abortSignal.aborted || (err instanceof Error && err.name === 'AbortError');
+}
+
+function truncateOuterOutput(value: string): string {
+  const bytes = Buffer.from(value, 'utf8');
+  if (bytes.length <= SCRIPT_RUNTIME.MAX_OUTER_OUTPUT_BYTES) return value;
+  const marker = `\n[workflow output truncated: exceeded ${SCRIPT_RUNTIME.MAX_OUTER_OUTPUT_BYTES} UTF-8 bytes]`;
+  const markerBytes = Buffer.byteLength(marker, 'utf8');
+  let end = Math.max(0, SCRIPT_RUNTIME.MAX_OUTER_OUTPUT_BYTES - markerBytes);
+  while (end > 0 && (bytes[end] & 0b1100_0000) === 0b1000_0000) end -= 1;
+  return `${bytes.subarray(0, end).toString('utf8')}${marker}`;
 }
 
 async function runWorkflow(
@@ -450,7 +461,7 @@ async function runWorkflow(
 
     return {
       ok: true,
-      output: resultText,
+      output: truncateOuterOutput(resultText),
       meta: {
         runId, agentCallCount: state.agentCallCount, tokensSpent: state.tokensSpent,
         cacheHits: state.cacheHits, phases: state.phases,

@@ -6,6 +6,52 @@ import {
 } from '../../../src/renderer/utils/artifactOwnership';
 
 describe('buildArtifactOwnershipItems', () => {
+  it('同一路径 outputPath 与工具 artifact 去重时保留 sha/size/mime 实证', () => {
+    const items = buildArtifactOwnershipItems({
+      turnNumber: 1,
+      turnId: 'turn-file-evidence',
+      status: 'completed',
+      startTime: 100,
+      endTime: 120,
+      nodes: [{
+        id: 'tool-write',
+        type: 'tool_call',
+        content: '',
+        timestamp: 110,
+        toolCall: {
+          id: 'tool-write',
+          name: 'ArtifactWriter',
+          args: {},
+          result: 'ok',
+          success: true,
+          outputPath: '/repo/report.md',
+          metadata: {
+            artifact: {
+              artifactId: 'artifact-report',
+              kind: 'document',
+              sourceTool: 'ArtifactWriter',
+              name: 'report.md',
+              path: '/repo/report.md',
+              sha256: 'b'.repeat(64),
+              sizeBytes: 128,
+              mimeType: 'text/markdown',
+            },
+          },
+        },
+      }],
+    } satisfies TraceTurn);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      path: '/repo/report.md',
+      fileMetadata: {
+        sha256: 'b'.repeat(64),
+        sizeBytes: 128,
+        mimeType: 'text/markdown',
+      },
+    });
+  });
+
   it('collects assistant artifacts and non-diff metadata files with owner labels', () => {
     const items = buildArtifactOwnershipItems({
       turnNumber: 1,

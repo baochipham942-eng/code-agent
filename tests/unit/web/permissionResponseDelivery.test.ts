@@ -31,6 +31,8 @@ const configServiceStub = {
   }),
   getApiKey: () => '',
   getServiceApiKey: () => '',
+  // N-L10S3: 权限岛接线调真 ConfigService 的守卫方法，stub 必须同形状（缺了会 TypeError 而非 typecheck 红，因为下面是 as never 注入）
+  isDevModeAutoApproveEnabled: () => false,
 };
 
 /**

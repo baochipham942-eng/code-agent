@@ -3,7 +3,7 @@ import type React from 'react';
 export const HEAVY_TURN_CONTENT_MIN_CHARS = 800;
 export const TURN_CONTENT_INTRINSIC_SIZE_PX = 320;
 
-export const CONTENT_INTRINSIC_SIZE_PX = {
+const CONTENT_INTRINSIC_SIZE_PX = {
   assistantText: TURN_CONTENT_INTRINSIC_SIZE_PX,
   assistantTextMedium: 640,
   assistantTextLong: 960,

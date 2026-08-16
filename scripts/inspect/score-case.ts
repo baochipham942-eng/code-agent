@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { scoreInspectCase, type InspectAssertionContext } from '../../src/host/testing/inspectBridge';
+import { scoreInspectCase, type InspectAssertionContext } from './inspectBridge';
 import type { TestCase } from '../../src/host/testing/types';
 
 interface ScoreRequest {

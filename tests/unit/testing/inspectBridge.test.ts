@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { scoreInspectCase } from '../../../src/host/testing/inspectBridge';
+import { scoreInspectCase } from '../../../scripts/inspect/inspectBridge';
 import type { TestCase } from '../../../src/host/testing/types';
 
 const context = {

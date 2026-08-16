@@ -1,9 +1,9 @@
-import { runAssertions, runExpectations } from './assertionEngine';
+import { runAssertions, runExpectations } from '../../src/host/testing/assertionEngine';
 import type {
   ExpectationResult,
   TestCase,
   ToolExecutionRecord,
-} from './types';
+} from '../../src/host/testing/types';
 
 export interface InspectAssertionContext {
   toolExecutions: ToolExecutionRecord[];

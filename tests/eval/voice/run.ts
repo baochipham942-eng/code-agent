@@ -226,7 +226,7 @@ function claimsExecution(text: string) {
 }
 
 async function localInterruptReport(): Promise<ScenarioReport> {
-  const { evaluateVoiceInterruptDecision } = await import('../../src/host/services/voice/voiceInterruptDecision');
+  const { evaluateVoiceInterruptDecision } = await import('../../../src/host/services/voice/voiceInterruptDecision');
   const t0 = 1_700_000_000_000;
   const tvCandidate = { id: 'tv', startedAt: t0, durationMs: 2_400, playedMs: 7_100, decided: false, responseRequested: false };
   const humanCandidate = { id: 'human', startedAt: t0 + 120_000, durationMs: 1_800, playedMs: 6_000, decided: false, responseRequested: false };
@@ -253,7 +253,7 @@ async function localInterruptReport(): Promise<ScenarioReport> {
 }
 
 async function localApprovalReport(): Promise<ScenarioReport> {
-  const { buildApprovalWaitingNarration } = await import('../../src/host/services/voice/voiceNarration');
+  const { buildApprovalWaitingNarration } = await import('../../../src/host/services/voice/voiceNarration');
   const narration = buildApprovalWaitingNarration({ workItemId: 'eval:approval-1', title: '写验收文件' });
   const wordingPass = narration.worthHearing === true
     && narration.summary.includes('正在等你批准')
@@ -266,7 +266,7 @@ async function localApprovalReport(): Promise<ScenarioReport> {
   const test = spawnSync(process.execPath, [
     vitestBin, 'run', 'tests/unit/voiceWorthHearingSource.test.ts',
     '-t', '审批请求明确告诉用户', '--reporter=json', `--outputFile=${vitestJson}`,
-  ], { cwd: path.resolve(ROOT, '../..'), encoding: 'utf8' });
+  ], { cwd: path.resolve(ROOT, '../../..'), encoding: 'utf8' });
   let eventChainTests: number;
   try {
     const json = JSON.parse(fs.readFileSync(vitestJson, 'utf8'));
@@ -293,7 +293,7 @@ function localSayDoGuardTests(): number {
     vitestBin, 'run', 'tests/unit/voiceSayDoGuard.test.ts',
     '-t', '按语义判为说了没做后用最近用户轮经 host_routed 补派',
     '--reporter=json', `--outputFile=${vitestJson}`,
-  ], { cwd: path.resolve(ROOT, '../..'), encoding: 'utf8' });
+  ], { cwd: path.resolve(ROOT, '../../..'), encoding: 'utf8' });
   let passed: number;
   try {
     const json = JSON.parse(fs.readFileSync(vitestJson, 'utf8'));
@@ -476,7 +476,7 @@ async function main() {
   const report = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
-    sourceHead: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: path.resolve(ROOT, '../..'), encoding: 'utf8' }).trim(),
+    sourceHead: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: path.resolve(ROOT, '../../..'), encoding: 'utf8' }).trim(),
     productionSourceFingerprint: config.fingerprint,
     audioFingerprints: audioFingerprints(),
     paidCalls: options.replayPath ? raw.length : callEstimate,
@@ -486,7 +486,7 @@ async function main() {
     pass: scenarioReports.length === options.selected.length && scenarioReports.every((scenario) => scenario.passed),
     scenarios: scenarioReports,
     baselineComparison: compareBaseline(scenarioReports),
-    rawPath: path.relative(path.resolve(ROOT, '../..'), rawPath),
+    rawPath: path.relative(path.resolve(ROOT, '../../..'), rawPath),
   };
   fs.writeFileSync(jsonPath, JSON.stringify(report, null, 2) + '\n');
   fs.writeFileSync(jsonPath.replace(/\.json$/, '.md'), markdownReport(report));

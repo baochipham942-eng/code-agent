@@ -255,5 +255,5 @@
       ]
     }
   ],
-  "rawPath": "tests/voice-eval/baselines/2026-08-16.jsonl"
+  "rawPath": "tests/eval/voice/baselines/2026-08-16.jsonl"
 }

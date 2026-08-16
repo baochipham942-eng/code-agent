@@ -7,7 +7,7 @@ npm run voice-eval
 npm run voice-eval -- --scenario reception_fragmentation
 npm run voice-eval -- --scenario interrupt_classification,approval_notice
 npm run voice-eval -- --dry-run
-npm run voice-eval -- --replay tests/voice-eval/reports/<run>.jsonl
+npm run voice-eval -- --replay tests/eval/voice/reports/<run>.jsonl
 ```
 
 The full suite estimates cost before reading the API key and is hard-capped at 50 short sessions. The current full plan uses 21: one connectivity/tool echo call plus ten ABAB production/mutation pairs. Terminal dispatch and SAY_GAP reuse the production arm instead of paying for duplicate calls.

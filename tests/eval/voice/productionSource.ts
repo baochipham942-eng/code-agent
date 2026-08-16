@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 
-import { REALTIME_VOICE_PROVIDER_PROFILES } from '../../src/shared/constants/realtimeVoiceProviders';
-import { buildSessionUpdate } from '../../src/host/services/voice/realtimeSessionConfig';
-import { resolveVoiceRouting } from '../../src/host/services/voice/voiceRouting';
-import { VOICE_TOOL_DEFINITIONS } from '../../src/host/services/voice/voiceTools';
+import { REALTIME_VOICE_PROVIDER_PROFILES } from '../../../src/shared/constants/realtimeVoiceProviders';
+import { buildSessionUpdate } from '../../../src/host/services/voice/realtimeSessionConfig';
+import { resolveVoiceRouting } from '../../../src/host/services/voice/voiceRouting';
+import { VOICE_TOOL_DEFINITIONS } from '../../../src/host/services/voice/voiceTools';
 
 export function resolveProductionVoiceEvalConfig() {
   const profile = REALTIME_VOICE_PROVIDER_PROFILES['dashscope-qwen-omni'];

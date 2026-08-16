@@ -39,7 +39,7 @@ export const sessionInspectorZh = {
     failed: '（{count} 次失败）',
   },
   tokenUsage: '消耗 {tokens}',
-  tokenCacheRead: '其中 {tokens} 命中缓存',
+  tokenCacheRead: '另命中缓存 {tokens}',
   devtools: {
     sectionLabel: '技术细节',
     requestTitle: '模型真实请求',
@@ -133,7 +133,7 @@ export const sessionInspectorEn: typeof sessionInspectorZh = {
     failed: ' ({count} failed)',
   },
   tokenUsage: '{tokens} spent',
-  tokenCacheRead: '{tokens} from cache',
+  tokenCacheRead: 'plus {tokens} cache hits',
   devtools: {
     sectionLabel: 'Technical details',
     requestTitle: 'Actual model request',

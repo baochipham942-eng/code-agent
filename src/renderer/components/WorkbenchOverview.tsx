@@ -28,32 +28,38 @@ export const WorkbenchOverview: React.FC = () => {
   });
 
   if (!hasTaskActivity && !hasArtifacts) {
+    // 空态叙事仍归「概览」tab，但 TaskPanel 外壳（含检查器 tab）始终渲染——
+    // 没有任务活动/产物的存量会话恰恰是检查器要服务的对象（N-LEDGER-P1）。
     return (
       <div
         data-testid="workbench-overview-view"
         className="flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900"
       >
-        <section
-          data-testid="workbench-overview-empty"
-          aria-label={t.workbenchTabs.overviewTitle}
-          className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center"
-        >
-          {/* 空态样式重做（2026-08-04 四模块）：去卡片边框与底面色块，图标 + 一行
-              叙事 + 留白隔开的「最近产物」小节，不用 border-t 分隔线（条款 B2/B4）。 */}
-          <Activity className="h-8 w-8 text-zinc-600" />
-          <div className="mt-3 text-sm text-zinc-400">{t.workbenchTabs.overviewEmptyNarrative}</div>
-          {recentSnapshotSummary && (
-            <div
-              data-testid="workbench-overview-recent"
-              className="mt-8 w-full max-w-sm text-left"
+        <TaskPanel
+          overviewContent={(
+            <section
+              data-testid="workbench-overview-empty"
+              aria-label={t.workbenchTabs.overviewTitle}
+              className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center"
             >
-              <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-                {t.workbenchTabs.overviewEmptyRecentLabel}
-              </div>
-              <div className="mt-1.5 text-xs leading-relaxed text-zinc-500">{recentSnapshotSummary}</div>
-            </div>
+              {/* 空态样式重做（2026-08-04 四模块）：去卡片边框与底面色块，图标 + 一行
+                  叙事 + 留白隔开的「最近产物」小节，不用 border-t 分隔线（条款 B2/B4）。 */}
+              <Activity className="h-8 w-8 text-zinc-600" />
+              <div className="mt-3 text-sm text-zinc-400">{t.workbenchTabs.overviewEmptyNarrative}</div>
+              {recentSnapshotSummary && (
+                <div
+                  data-testid="workbench-overview-recent"
+                  className="mt-8 w-full max-w-sm text-left"
+                >
+                  <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                    {t.workbenchTabs.overviewEmptyRecentLabel}
+                  </div>
+                  <div className="mt-1.5 text-xs leading-relaxed text-zinc-500">{recentSnapshotSummary}</div>
+                </div>
+              )}
+            </section>
           )}
-        </section>
+        />
       </div>
     );
   }

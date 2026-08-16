@@ -13,7 +13,7 @@ import { SessionInspector } from './SessionInspector';
 
 type TaskPanelTab = 'overview' | 'inspector';
 
-export const TaskPanel: React.FC = () => {
+export const TaskPanel: React.FC<{ overviewContent?: React.ReactNode }> = ({ overviewContent }) => {
   const { t } = useI18n();
   const [tab, setTab] = useState<TaskPanelTab>('overview');
   const tabs: Array<{ key: TaskPanelTab; label: string }> = [
@@ -41,7 +41,7 @@ export const TaskPanel: React.FC = () => {
         ))}
       </div>
       <div className="flex-1 overflow-y-auto p-4">
-        {tab === 'overview' ? <TaskWorkspaceOverview /> : <SessionInspector />}
+        {tab === 'overview' ? (overviewContent ?? <TaskWorkspaceOverview />) : <SessionInspector />}
       </div>
     </div>
   );

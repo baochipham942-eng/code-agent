@@ -970,7 +970,7 @@ async function evaluateExpectation(
           .filter(te => !toolFilter || toolMatches(te.tool, toolFilter))
           .map(te => te.output)
           .join('\n');
-        passed = texts.every(t => outputs.includes(t));
+        passed = texts.every((text) => matchesAnyAlternative(outputs, text));
         actual = passed ? 'found in tool output' : outputs.substring(0, 200);
         expected = `tool output contains ${JSON.stringify(texts)}`;
         break;

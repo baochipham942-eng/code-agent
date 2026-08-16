@@ -17,11 +17,25 @@ const DEFAULT_THRESHOLDS: EvalBaseline['thresholds'] = {
   maxNewFailures: 2,
 };
 
+const MOCK_HARNESS_THRESHOLDS: EvalBaseline['thresholds'] = {
+  minPassRate: 1,
+  maxScoreDrop: 0,
+  maxNewFailures: 0,
+};
+
+interface BaselineManagerOptions {
+  kind?: 'agent' | 'mock-harness';
+}
+
 export class BaselineManager {
   private baselinePath: string;
+  private kind: 'agent' | 'mock-harness';
 
-  constructor(private workingDir: string) {
-    this.baselinePath = path.join(workingDir, CONFIG_DIR_NEW, 'eval-baseline.json');
+  constructor(private workingDir: string, options: BaselineManagerOptions = {}) {
+    this.kind = options.kind ?? 'agent';
+    this.baselinePath = this.kind === 'mock-harness'
+      ? path.join(workingDir, '.claude', 'eval-mock-baseline.json')
+      : path.join(workingDir, CONFIG_DIR_NEW, 'eval-baseline.json');
   }
 
   async load(): Promise<EvalBaseline | null> {
@@ -205,5 +219,61 @@ export class BaselineManager {
     };
 
     await this.save(baseline);
+  }
+
+  /**
+   * mock 干跑是 harness 协议门，不是 agent 能力基线。
+   * 它只能写入独立的版本化文件，且 fixture 必须全绿、所有跳过都带显式理由。
+   */
+  async promoteMockHarness(summary: TestRunSummary, commitSha: string): Promise<void> {
+    if (this.kind !== 'mock-harness') {
+      throw new Error('mock harness baseline 必须使用 kind=mock-harness 的独立文件');
+    }
+    if (summary.environment?.provider !== 'mock') {
+      throw new Error('mock harness baseline 只接受 provider=mock 的运行');
+    }
+
+    const invalid = summary.results.filter(
+      (result) => result.status !== 'passed' && result.mockExcluded === undefined,
+    );
+    if (invalid.length > 0) {
+      throw new Error(
+        `mock fixture 未全绿，拒绝生成 baseline: ${invalid.map((result) => `${result.testId}=${result.status}`).join(', ')}`,
+      );
+    }
+
+    const passed = summary.results.filter((result) => result.status === 'passed');
+    const excludedCases = Object.fromEntries(
+      summary.results
+        .filter((result) => result.mockExcluded)
+        .map((result) => [result.testId, result.mockExcluded!.reason]),
+    );
+    const caseResults: EvalBaseline['caseResults'] = Object.fromEntries(
+      passed.map((result) => [result.testId, {
+        status: result.status,
+        score: result.score,
+        lastPassedAt: result.endTime,
+        model: 'mock/mock-model',
+      }]),
+    );
+    const averageScore = passed.length > 0
+      ? passed.reduce((sum, result) => sum + result.score, 0) / passed.length
+      : 0;
+
+    await this.save({
+      version: 1,
+      denominatorVersion: BASELINE_DENOMINATOR_VERSION,
+      updatedAt: Date.now(),
+      updatedBy: commitSha,
+      mode: 'mock',
+      globalMetrics: {
+        passRate: passed.length > 0 ? 1 : 0,
+        averageScore,
+        totalCases: passed.length,
+      },
+      caseResults,
+      excludedCases,
+      thresholds: MOCK_HARNESS_THRESHOLDS,
+    });
   }
 }

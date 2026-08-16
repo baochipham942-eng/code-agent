@@ -37,6 +37,7 @@ export function generateHtmlReport(summary: TestRunSummary, baselineDelta?: Base
     metricCard('bucket-fail', '失败', summary.failed, `${summary.performance.totalToolCalls} tool calls`),
     metricCard('bucket-infra', '基础设施排除', summary.infraExcluded ?? 0, '不进能力分母'),
     metricCard('bucket-cost', '成本超限', summary.costExceeded ?? 0, 'fail-closed，不进能力分母'),
+    metricCard('bucket-mock', 'Mock 不适用', summary.mockExcluded ?? 0, '显式排除，不代表通过'),
     '</div>',
     '</header>',
     '<section class="panel summary-grid">',
@@ -46,6 +47,7 @@ export function generateHtmlReport(summary: TestRunSummary, baselineDelta?: Base
     statItem('跳过', summary.skipped),
     statItem('基础设施排除', `<span data-testid="infra-excluded-count">${summary.infraExcluded ?? 0}</span>`, true),
     statItem('成本超限', `<span data-testid="cost-exceeded-count">${summary.costExceeded ?? 0}</span>`, true),
+    statItem('Mock 不适用', `<span data-testid="mock-excluded-count">${summary.mockExcluded ?? 0}</span>`, true),
     statItem('工作目录', summary.environment.workingDirectory),
     statItem('模型', summary.environment.model),
     statItem('提供商', summary.environment.provider),
@@ -54,6 +56,7 @@ export function generateHtmlReport(summary: TestRunSummary, baselineDelta?: Base
     renderCaseDrilldown(summary.results),
     renderInfraSection(summary.results),
     renderCostExceededSection(summary.results),
+    renderMockExcludedSection(summary.results),
     baselineDelta ? renderBaselineDelta(baselineDelta) : '',
     '</main>',
     '</body>',
@@ -539,6 +542,29 @@ function renderCostExceededSection(results: TestResult[]): string {
     '<p class="muted">单 case 实际模型成本越线后立即停止，不计入能力通过率分母。</p>',
     '<table>',
     '<thead><tr><th>Case</th><th>Actual USD</th><th>Limit USD</th><th>Reason</th></tr></thead>',
+    `<tbody>${rows}</tbody>`,
+    '</table>',
+    '</section>',
+  ].join('\n');
+}
+
+function renderMockExcludedSection(results: TestResult[]): string {
+  const excluded = results.filter((result) => result.mockExcluded);
+  if (excluded.length === 0) return '';
+  const rows = excluded.map((result) => [
+    '<tr>',
+    `<td>${escapeHtml(result.testId)}</td>`,
+    `<td>${escapeHtml(result.description)}</td>`,
+    `<td>${escapeHtml(capText(result.mockExcluded!.reason))}</td>`,
+    '</tr>',
+  ].join('')).join('\n');
+
+  return [
+    '<section class="panel">',
+    '<h2>Mock 不适用用例</h2>',
+    '<p class="muted">显式排除于 mock 干跑分母，不代表通过；需由真实 agent 评测。</p>',
+    '<table>',
+    '<thead><tr><th>Case</th><th>Description</th><th>Reason</th></tr></thead>',
     `<tbody>${rows}</tbody>`,
     '</table>',
     '</section>',

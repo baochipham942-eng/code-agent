@@ -110,6 +110,16 @@ const gates = [
     args: ['run', 'check:tool-output-schemas'],
   },
   {
+    ci: 'swarm-ci / smoke / PTC SDK determinism gate',
+    command: 'npm',
+    args: ['run', 'check:ptc-sdk-determinism'],
+  },
+  {
+    ci: 'swarm-ci / smoke / PTC transport-name reservation gate',
+    command: 'npm',
+    args: ['run', 'check:ptc-transport-name'],
+  },
+  {
     ci: 'swarm-ci / smoke / Install Vercel control-plane dependencies',
     command: 'npm',
     args: ['ci', '--prefix', 'vercel-api', '--ignore-scripts'],

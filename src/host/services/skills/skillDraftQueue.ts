@@ -11,8 +11,13 @@ import { getUserConfigDir, getSkillsDir } from '../../config/configPaths';
 import { LEARNING_PIPELINE, SKILL_REVIEW } from '../../../shared/constants';
 import type { SkillDraftOrigin } from '../../../shared/contract/agent';
 import { scanSkillContent } from '../../security/skillContentGuard';
-import { isLowValueSkillName } from '../../lightMemory/conversationReview';
+import {
+  isLowValueSkillName,
+  type ReviewedSkillApplicability,
+} from '../../lightMemory/conversationReview';
 import { createLogger } from '../infra/logger';
+import { parseSkillMd } from './skillParser';
+import { hasSkillApplicabilityBoundary } from './skillApplicability';
 
 export type { SkillDraftOrigin };
 
@@ -98,6 +103,7 @@ export function generateDraftSkillMd(input: {
   occurrences?: number;
   exampleSteps?: SkillDraftStep[];
   body?: string;
+  applicability?: ReviewedSkillApplicability;
 }): string {
   const origin: SkillDraftOrigin = input.origin ?? 'telemetry-distilled';
   const fm: string[] = [
@@ -109,6 +115,21 @@ export function generateDraftSkillMd(input: {
   // 只有 telemetry 草稿带可执行工具序列才声明 allowed-tools
   if (input.toolSequence && input.toolSequence.length > 0) {
     fm.push(`allowed-tools: "${input.toolSequence.join(',')}"`);
+    // telemetry 草稿的工具序列本身就是可判适用边界；转正后缺工具时自动隐藏。
+    fm.push(`requires_tools: [${input.toolSequence.join(', ')}]`);
+  }
+  if (input.applicability) {
+    const fields: Array<[string, string[]]> = [
+      ['requires_tools', input.applicability.requiresTools],
+      ['platforms', input.applicability.platforms],
+      ['required_env', input.applicability.requiredEnv],
+      ['requires_paths', input.applicability.requiresPaths],
+    ];
+    for (const [key, values] of fields) {
+      if (values.length > 0 && !(key === 'requires_tools' && input.toolSequence?.length)) {
+        fm.push(`${key}: ${JSON.stringify(values)}`);
+      }
+    }
   }
   fm.push('context: inline');
   fm.push('metadata:');
@@ -275,6 +296,8 @@ export async function enqueueSkillDraft(input: {
   exampleSteps?: SkillDraftStep[];
   /** LLM 复盘路径用：直接采用的 skill 正文（Markdown） */
   body?: string;
+  /** LLM 复盘生成的机器可判适用字段；语义 [IF] 已固化在 body */
+  applicability?: ReviewedSkillApplicability;
   timestamp?: number;
 }): Promise<SkillDraftMeta | null> {
   const createdAt = input.timestamp ?? Date.now();
@@ -342,6 +365,7 @@ export async function enqueueSkillDraft(input: {
       ),
     })),
     body: input.body,
+    applicability: input.applicability,
     createdAt,
   });
 
@@ -371,6 +395,17 @@ export async function confirmSkillDraft(
 
   try {
     const skillContent = await fs.readFile(path.join(draftDir, 'SKILL.md'), 'utf-8');
+
+    // ADR-034 层③：没有机器元数据，也没有语义 [IF] 边界的草稿不得转正。
+    // 在确认时检查，允许用户先在待确认目录补写边界再重试。
+    const parsedDraft = await parseSkillMd(draftDir, 'user');
+    if (!hasSkillApplicabilityBoundary(parsedDraft)) {
+      logger.warn('Skill draft blocked: missing applicability boundary', { id, name: meta.name });
+      return {
+        success: false,
+        error: '草稿缺少适用条件：请声明机器可判 frontmatter，或在正文补充 [IF 条件]。',
+      };
+    }
 
     // fail-closed 安全闸：草稿入库前过内容扫描，命中 critical 危险命令 / 明文密钥则拒绝。
     // 反超 Hermes（其 agent-created skill 默认不扫描）；草稿留在队列，用户可查看后删除。

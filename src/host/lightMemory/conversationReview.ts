@@ -36,8 +36,19 @@ export interface ReviewedSkill {
   name: string;
   /** 一句话描述这个 skill 覆盖的任务类别 */
   description: string;
+  /** 生成侧声明的适用边界：语义条件必填，机器可判字段按证据选填 */
+  applicability: ReviewedSkillApplicability;
   /** SKILL.md 正文（Markdown：针对这一类任务的可复用步骤/要点/坑） */
   body: string;
+}
+
+export interface ReviewedSkillApplicability {
+  /** 会被固化为正文开头的 `[IF 条件]`，是所有 LLM 草稿的最低边界 */
+  semantic: string;
+  requiresTools: string[];
+  platforms: string[];
+  requiredEnv: string[];
+  requiresPaths: string[];
 }
 
 /** 把任意字符串规整成 kebab-case 的 skill 名 */
@@ -214,16 +225,27 @@ body 用 Markdown，针对这一类任务写【可复用指南】，按以下结
 ## 验证
 （怎么确认这一类任务真的做成了）
 
+适用条件（必填，缺失则整条草稿作废）：
+- applicability.semantic 必须是一句可判断的任务条件，只写 [IF ...] 里的条件正文，例如“当前任务需要在 macOS 上部署 Tauri 桌面应用”。不得写空话“需要时使用”。
+- 能从会话证据确定时，补充机器可判数组：requires_tools（所需注册工具）、platforms（darwin/linux/win32）、required_env（所需环境变量）、requires_paths（工作目录所需相对路径）；不能确定就给空数组，严禁猜测。
+
 只返回一个 JSON 对象，不要任何额外文字、不要 markdown 代码块：
 {
   "shouldCreate": true 或 false,
   "signal": "user_correction" | "remember_request" | "reusable_workflow" | "none",
   "name": "动名词+领域宾语的 kebab-case 技能名，如 deploying-tauri-macos",
   "description": "不超过${SKILL_REVIEW.MAX_DESCRIPTION_CHARS}字、第三人称说明这个技能覆盖哪一类任务、何时该用",
+  "applicability": {
+    "semantic": "当前任务满足什么条件",
+    "requires_tools": [],
+    "platforms": [],
+    "required_env": [],
+    "requires_paths": []
+  },
   "body": "Markdown 正文：何时使用 / 步骤 / 坑 / 验证"
 }
 
-若没有任何可沉淀的学习，返回 {"shouldCreate": false, "signal": "none", "name": "", "description": "", "body": ""}。`;
+若没有任何可沉淀的学习，返回 {"shouldCreate": false, "signal": "none", "name": "", "description": "", "applicability": {"semantic": "", "requires_tools": [], "platforms": [], "required_env": [], "requires_paths": []}, "body": ""}。`;
 
 /** 构造投喂给复盘器的会话片段（最近 N 轮用户消息 + 最后助手回复） */
 export function buildReviewSnippet(input: {
@@ -243,6 +265,38 @@ export function buildReviewSnippet(input: {
 /** 组装完整复盘 prompt */
 export function buildReviewPrompt(input: { userMessages: string[]; lastAssistant?: string }): string {
   return `${REVIEW_PROMPT}\n\n会话内容：\n${buildReviewSnippet(input)}`;
+}
+
+function parseStringArray(value: unknown, accept: (item: string) => boolean = () => true): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0 && item.length <= 200 && accept(item)))]
+    .slice(0, 32);
+}
+
+function parseApplicability(value: unknown): ReviewedSkillApplicability | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.semantic !== 'string') return null;
+
+  let semantic = obj.semantic.trim();
+  const wrapped = /^\[IF\s+([^\]\r\n]+)\](?:\s*适用[。.]?)?$/i.exec(semantic);
+  if (wrapped) semantic = wrapped[1].trim();
+  if (!semantic || semantic.length > 300 || /[\]\r\n]/.test(semantic)) return null;
+
+  return {
+    semantic,
+    requiresTools: parseStringArray(obj.requires_tools),
+    platforms: parseStringArray(obj.platforms, (item) => ['darwin', 'linux', 'win32'].includes(item)),
+    requiredEnv: parseStringArray(obj.required_env, (item) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(item)),
+    requiresPaths: parseStringArray(obj.requires_paths, (item) => (
+      !item.startsWith('/')
+      && !item.startsWith('\\')
+      && !item.split(/[\\/]+/).includes('..')
+    )),
+  };
 }
 
 /**
@@ -269,9 +323,10 @@ export function parseReviewedSkill(raw: string): ReviewedSkill | null {
     ? truncate(obj.description, SKILL_REVIEW.MAX_DESCRIPTION_CHARS)
     : '';
   const body = typeof obj.body === 'string' ? truncate(obj.body, SKILL_REVIEW.MAX_BODY_CHARS) : '';
+  const applicability = parseApplicability(obj.applicability);
 
   // class-level skill 必须有可用的名字 + 描述 + 正文，缺一不可信
-  if (!name || !description || !body) return null;
+  if (!name || !description || !body || !applicability) return null;
 
   // 命名低价值（泛词 / 纯工具名拼接）→ 取不出真实意图，不该沉淀
   if (isLowValueSkillName(name)) {
@@ -286,7 +341,14 @@ export function parseReviewedSkill(raw: string): ReviewedSkill | null {
       ? obj.signal
       : 'reusable_workflow';
 
-  return refineArtifactSkillCandidate({ shouldCreate: true, signal, name, description, body });
+  return refineArtifactSkillCandidate({
+    shouldCreate: true,
+    signal,
+    name,
+    description,
+    applicability,
+    body: `[IF ${applicability.semantic}] 适用。\n\n${body}`,
+  });
 }
 
 /**

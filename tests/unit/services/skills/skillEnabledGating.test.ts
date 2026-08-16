@@ -54,7 +54,7 @@ vi.mock('../../../../src/host/services/skills/skillRepositoryService', () => ({
 
 import { SkillDiscoveryService } from '../../../../src/host/services/skills/skillDiscoveryService';
 
-async function writeSkill(baseDir: string, name: string): Promise<void> {
+async function writeSkill(baseDir: string, name: string, applicability: string[] = []): Promise<void> {
   const skillDir = path.join(baseDir, name);
   await fs.mkdir(skillDir, { recursive: true });
   await fs.writeFile(
@@ -63,6 +63,7 @@ async function writeSkill(baseDir: string, name: string): Promise<void> {
       '---',
       `name: ${name}`,
       `description: ${name} description`,
+      ...applicability,
       '---',
       '',
       'Use this skill.',
@@ -138,6 +139,38 @@ describe('Skill enabled gating (disabledSkills blacklist)', () => {
       .map((s) => s.name)
       .sort();
     expect(reRegisteredNames).toEqual(['skill-a', 'skill-b']);
+  });
+
+  it('filters inapplicable skills from resolver and ToolSearch candidates with observable reasons', async () => {
+    const skillsDir = path.join(homeDir, '.code-agent', 'skills');
+    await writeSkill(skillsDir, 'visible-skill', ['requires_tools: [Read]', 'platforms: [darwin]']);
+    await writeSkill(skillsDir, 'missing-tool-skill', ['requires_tools: [ExternalSearch]']);
+    await writeSkill(skillsDir, 'wrong-platform-skill', ['platforms: [win32]']);
+    await writeSkill(skillsDir, 'hidden-fallback-skill', ['fallback_for_tools: [Read]']);
+    await writeSkill(skillsDir, 'visible-fallback-skill', ['fallback_for_tools: [ExternalSearch]']);
+
+    const service = new SkillDiscoveryService({
+      applicability: {
+        availableToolNames: () => ['Read'],
+        platform: 'darwin',
+      },
+    });
+    await service.initialize(projectDir);
+
+    expect(service.getUserInvocableSkills().map((skill) => skill.name).sort()).toEqual([
+      'visible-fallback-skill',
+      'visible-skill',
+    ]);
+    const registeredNames = (registerSkillsMock.mock.calls.at(-1)?.[0] as Array<{ name: string }>)
+      .map((skill) => skill.name)
+      .sort();
+    expect(registeredNames).toEqual(['visible-fallback-skill', 'visible-skill']);
+
+    expect(service.getApplicabilityFilterReport().hidden).toEqual(expect.arrayContaining([
+      expect.objectContaining({ skillName: 'missing-tool-skill', reason: 'missing_required_tools' }),
+      expect.objectContaining({ skillName: 'wrong-platform-skill', reason: 'platform_mismatch' }),
+      expect.objectContaining({ skillName: 'hidden-fallback-skill', reason: 'fallback_tool_available' }),
+    ]));
   });
 });
 

@@ -180,6 +180,7 @@ export class LearningPipeline {
       patternKey,
       origin: SKILL_REVIEW.ORIGIN,
       body: reviewed.body,
+      applicability: reviewed.applicability,
       sessionId: this.ctx.sessionId,
     });
     if (!draft) return;

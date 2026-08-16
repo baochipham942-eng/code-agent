@@ -87,6 +87,24 @@ describe('skillParser allowed-tools validation', () => {
     expect(arrayAliases.aliases).toEqual(['OpenClaw', 'VPS']);
   });
 
+  it('parses machine-checkable applicability metadata', async () => {
+    await writeSkill([
+      'requires_tools: [Read, mcp__demo__list_items]',
+      'fallback_for_tools: [ExternalSearch]',
+      'platforms: [darwin, linux]',
+      'required_env: [CODE_AGENT_TOKEN]',
+      'requires_paths: [package.json, .code-agent]',
+    ].join('\n'));
+
+    const parsed = await parseSkillMetadataOnly(tmpDir, 'project');
+
+    expect(parsed.requiresTools).toEqual(['Read', 'mcp__demo__list_items']);
+    expect(parsed.fallbackForTools).toEqual(['ExternalSearch']);
+    expect(parsed.platforms).toEqual(['darwin', 'linux']);
+    expect(parsed.requiredEnv).toEqual(['CODE_AGENT_TOKEN']);
+    expect(parsed.requiresPaths).toEqual(['package.json', '.code-agent']);
+  });
+
   it('rejects malformed or shell-like scoped prefixes', async () => {
     await writeSkill('allowed-tools: ["Bash(rm -rf /:*)"]');
 

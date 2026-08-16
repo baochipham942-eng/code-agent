@@ -12,17 +12,24 @@ import { getSkillRepositoryService } from './skillRepositoryService';
 import { getProjectSkillPreferenceStore } from './projectSkillPreferenceService';
 import { getCloudConfigService } from '../cloud';
 import { createLogger } from '../infra/logger';
-import { getToolSearchService } from '../toolSearch';
+import { CORE_TOOLS, DEFERRED_TOOLS_META, getToolSearchService } from '../toolSearch';
 import { getSkillsDir, getUserConfigDir } from '../../config';
 import { isProjectConfigTrusted, isProjectConfigTrustedSync } from '../../security/folderTrustService';
+import {
+  createSkillApplicabilityContext,
+  filterSkillsByApplicability,
+  type SkillApplicabilityFilterReport,
+  type SkillApplicabilityOptions,
+} from './skillApplicability';
 
 const logger = createLogger('SkillDiscoveryService');
 const INCLUDE_CLAUDE_LEGACY_SKILLS_ENV = 'CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS';
-const SKILL_METADATA_CACHE_VERSION = 2;
-const SKILL_METADATA_CACHE_FILE = 'skill-metadata-index-v2.json';
+const SKILL_METADATA_CACHE_VERSION = 3;
+const SKILL_METADATA_CACHE_FILE = 'skill-metadata-index-v3.json';
 
 export interface SkillDiscoveryServiceOptions {
   includeClaudeLegacySkills?: boolean;
+  applicability?: SkillApplicabilityOptions;
 }
 
 function isTruthyEnv(value: string | undefined): boolean {
@@ -86,6 +93,14 @@ class SkillDiscoveryService {
   private initialized = false;
   private workingDirectory = '';
   private readonly includeClaudeLegacySkills: boolean;
+  private readonly applicabilityOptions: SkillApplicabilityOptions;
+  private lastApplicabilityFilterReport: SkillApplicabilityFilterReport = {
+    evaluatedAt: 0,
+    workingDirectory: '',
+    total: 0,
+    visible: 0,
+    hidden: [],
+  };
   private readonly metadataCachePath = path.join(
     getUserConfigDir(),
     'cache',
@@ -99,6 +114,20 @@ class SkillDiscoveryService {
 
   constructor(options: SkillDiscoveryServiceOptions = {}) {
     this.includeClaudeLegacySkills = shouldIncludeClaudeLegacySkills(options);
+    this.applicabilityOptions = {
+      availableToolNames: () => {
+        const toolSearch = getToolSearchService();
+        const mcpTools = typeof toolSearch.getMCPToolsMeta === 'function'
+          ? toolSearch.getMCPToolsMeta().map((tool) => tool.name)
+          : [];
+        return [
+          ...CORE_TOOLS,
+          ...DEFERRED_TOOLS_META.map((tool) => tool.name),
+          ...mcpTools,
+        ];
+      },
+      ...options.applicability,
+    };
   }
 
   private normalizeWorkingDirectory(workingDirectory: string): string {
@@ -232,8 +261,10 @@ class SkillDiscoveryService {
       const toolSearchService = getToolSearchService();
       toolSearchService.clearSkills(); // 清除旧的 skills
 
-      const skillsToRegister = Array.from(this.skills.values())
-        .filter((skill) => this.isSkillEnabled(skill.name))
+      const skillsToRegister = this.filterApplicableSkills(
+        Array.from(this.skills.values()).filter((skill) => this.isSkillEnabled(skill.name)),
+        'tool_search',
+      )
         .map(skill => ({
           name: skill.name,
           description: skill.description,
@@ -452,8 +483,11 @@ class SkillDiscoveryService {
    * 排除 disableModelInvocation = true 和被全局禁用的 Skills
    */
   getSkillsForContext(): ParsedSkill[] {
-    return this.getAllSkills().filter(
-      (s) => !s.disableModelInvocation && this.isSkillEnabled(s.name)
+    return this.filterApplicableSkills(
+      this.getAllSkills().filter(
+        (s) => !s.disableModelInvocation && this.isSkillEnabled(s.name)
+      ),
+      'model_context',
     );
   }
 
@@ -462,9 +496,40 @@ class SkillDiscoveryService {
    * 排除被全局禁用的 Skills
    */
   getUserInvocableSkills(): ParsedSkill[] {
-    return this.getAllSkills().filter(
-      (s) => s.userInvocable && this.isSkillEnabled(s.name)
+    return this.filterApplicableSkills(
+      this.getAllSkills().filter(
+        (s) => s.userInvocable && this.isSkillEnabled(s.name)
+      ),
+      'user_invocation',
     );
+  }
+
+  /** 最近一次候选过滤账本，供日志、诊断和验收统计读取。 */
+  getApplicabilityFilterReport(): SkillApplicabilityFilterReport {
+    return {
+      ...this.lastApplicabilityFilterReport,
+      hidden: this.lastApplicabilityFilterReport.hidden.map((entry) => ({
+        ...entry,
+        expected: [...entry.expected],
+        actual: [...entry.actual],
+      })),
+    };
+  }
+
+  private filterApplicableSkills(skills: ParsedSkill[], surface: string): ParsedSkill[] {
+    const context = createSkillApplicabilityContext(this.workingDirectory, this.applicabilityOptions);
+    const { skills: visible, report } = filterSkillsByApplicability(skills, context);
+    this.lastApplicabilityFilterReport = report;
+    if (report.hidden.length > 0) {
+      logger.info('Skills hidden by applicability metadata', {
+        surface,
+        workingDirectory: report.workingDirectory,
+        total: report.total,
+        visible: report.visible,
+        hidden: report.hidden,
+      });
+    }
+    return visible;
   }
 
   /**
@@ -535,6 +600,11 @@ class SkillDiscoveryService {
       bins: skill.bins ? [...skill.bins] : undefined,
       envVars: skill.envVars ? [...skill.envVars] : undefined,
       references: skill.references ? [...skill.references] : undefined,
+      requiresTools: skill.requiresTools ? [...skill.requiresTools] : undefined,
+      fallbackForTools: skill.fallbackForTools ? [...skill.fallbackForTools] : undefined,
+      platforms: skill.platforms ? [...skill.platforms] : undefined,
+      requiredEnv: skill.requiredEnv ? [...skill.requiredEnv] : undefined,
+      requiresPaths: skill.requiresPaths ? [...skill.requiresPaths] : undefined,
       promptContent: '',
       loaded: false,
       referenceContents: undefined,

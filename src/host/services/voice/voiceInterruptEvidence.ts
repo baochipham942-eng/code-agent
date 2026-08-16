@@ -128,12 +128,13 @@ export function collectVoiceInterruptEvidence(
 }
 
 /**
- * shadow mode 的采样出口：组装输入 → 打分 → 落遥测与日志。**不返回判决**。
+ * 证据采样出口：把判定链已经消费的同一份 evidence 落进遥测与日志。**不返回判决**。
  *
  * 放在证据层自己的文件里而不是散在会话服务里：采样口径和打分口径必须同源，
  * 分在两处迟早长成「量的是一套、判的是另一套」。
  *
  * 只该在**终判那一刻**调一次——partial 阶段的 pending 不是结论，采了会把分布灌满噪声。
+ * evidence 缺席只兼容旧调用；生产判定链必须显式传入，避免采样时二次计算发生口径漂移。
  */
 export function sampleVoiceInterruptEvidence(input: {
   provider: VoiceProviderId;

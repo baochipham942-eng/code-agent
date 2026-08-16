@@ -604,6 +604,16 @@ describe('voiceSessionService 互斥与挂断', () => {
       }),
     ]));
     expect(events.some((event) => event.type === 'user.transcript' && event.itemId === 'item-tv')).toBe(false);
+    expect(voiceLogger.info).toHaveBeenCalledWith(
+      'voice interrupt decision',
+      expect.objectContaining({
+        candidateId: 'turn-tv',
+        classification: 'unverified',
+        layer: 'evidence_gate',
+        evidenceTier: 'medium',
+        evidenceScore: 1,
+      }),
+    );
   });
 
   it('反悔窗内没有 final 或后续 speech：hold 到期 revoke，回复不丢且不误应答', async () => {

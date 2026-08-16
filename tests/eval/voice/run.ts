@@ -26,7 +26,7 @@ type ScenarioName = typeof ALL_SCENARIOS[number];
 interface TurnResult {
   label: string;
   text: string;
-  calls: Array<{ name: string; args: string; callId: string }>;
+  calls: Array<{ name: string; args: string; callId: string; receptionBlocked?: boolean }>;
   done: boolean;
   error?: unknown;
   eventTypes: string[];
@@ -34,7 +34,7 @@ interface TurnResult {
 
 interface SessionResult {
   scenario: string;
-  arm: 'production' | 'mutation';
+  arm: 'production' | 'previous';
   rep: number;
   turns: TurnResult[];
   sessionUpdated: boolean;
@@ -100,12 +100,18 @@ function latestTurnPrompt(latest: string) {
   return `只回应并严格执行用户最新一句话，不要继续被取消回复的目标或内容。\n用户最新一句话：${latest}`;
 }
 
-function removeReceptionRule(instructions: string): string {
+function restorePreviousReceptionRule(instructions: string): string {
   const start = instructions.indexOf('2. **派活前先判用户这句话说完了没有**：');
   const endMarker = '   **绝不要在派活指令里写「需要询问用户」**——用户在打电话，没法回答弹窗。';
   const end = instructions.indexOf(endMarker, start);
   if (start < 0 || end < 0) throw new Error('production reception rule anchor not found; source shape changed');
-  return `${instructions.slice(0, start)}${instructions.slice(end + endMarker.length)}`;
+  const previous = [
+    '2. **派活前先判用户这句话说完了没有**：',
+    '   - 话音明显悬着（停在量词/半个名词/半件事上，像「帮我创建一个一点」这样戛然而止）→ **先别派**：短短应一声，或把缺的那半句问出来（「建个什么文件？」）。下一句到了，把几轮连起来凑成完整一件事，**立刻调 delegate_task 派出去**——不许只嘴上说「正在创建」，没调工具就什么都没发生。',
+    '   - 话说完了，哪怕细节少（「帮我写个周报」）→ 直接派，不要为补细节反问。delegate_task 拿得到这通电话的完整字幕，缺的细节会按最合理的默认补上。',
+    endMarker,
+  ].join('\n');
+  return `${instructions.slice(0, start)}${previous}${instructions.slice(end + endMarker.length)}`;
 }
 
 async function runSession(input: {
@@ -190,16 +196,27 @@ async function runSession(input: {
     }
     ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
     await sleep(150);
-    ws.send(JSON.stringify({ type: 'response.create', response: { instructions: latestTurnPrompt(turn.label) } }));
+    const turnInstructions = input.arm === 'production'
+      ? config.buildVoiceTurnPrompt(turn.label)
+      : latestTurnPrompt(turn.label);
+    ws.send(JSON.stringify({ type: 'response.create', response: { instructions: turnInstructions } }));
     const deadline = Date.now() + 35_000;
     while (!active.done && !active.error && Date.now() < deadline) await sleep(150);
     for (const call of active.calls) {
+      const ambiguity = input.arm === 'production'
+        ? config.detectVoiceReceptionAmbiguity(turn.label)
+        : undefined;
+      if (ambiguity && (call.name === 'delegate_task' || call.name === 'steer_task')) {
+        call.receptionBlocked = true;
+      }
       ws.send(JSON.stringify({
         type: 'conversation.item.create',
         item: {
           type: 'function_call_output',
           call_id: call.callId,
-          output: '已开始处理，我会在完成后告诉你结果。',
+          output: call.receptionBlocked
+            ? '这句可能还没说完，尚未派发。请只向用户确认完整任务；确认后再调用派活工具。'
+            : '已开始处理，我会在完成后告诉你结果。',
         },
       }));
     }
@@ -218,7 +235,7 @@ async function runSession(input: {
 }
 
 function hasDelegate(turn: TurnResult | undefined) {
-  return Boolean(turn?.calls.some((call) => call.name === 'delegate_task'));
+  return Boolean(turn?.calls.some((call) => call.name === 'delegate_task' && !call.receptionBlocked));
 }
 
 function claimsExecution(text: string) {
@@ -401,20 +418,23 @@ async function main() {
     name === 'reception_fragmentation' || name === 'terminal_dispatch' || name === 'say_gap'
   ));
   if (needsBehavior) {
-    const mutantInstructions = removeReceptionRule(config.instructions);
+    const previousInstructions = restorePreviousReceptionRule(config.instructions);
     if (!options.replayPath) for (let rep = 1; rep <= 10; rep += 1) {
       const arms: SessionResult['arm'][] = options.selected.includes('reception_fragmentation')
-        ? ['production', 'mutation']
+        ? ['production', 'previous']
         : ['production'];
       for (const arm of arms) {
         process.stderr.write(`[voice-eval] reception rep ${rep}/10 arm=${arm}\n`);
         try {
           raw.push(await runSession({
             scenario: 'reception_fragmentation', arm, rep, apiKey,
-            instructions: arm === 'production' ? config.instructions : mutantInstructions,
+            instructions: arm === 'production' ? config.instructions : previousInstructions,
             turns: [
               { label: '帮我创建一个一点', pcm: 'fragA1.pcm' },
-              { label: 'MD文件', pcm: 'fragA2.pcm' },
+              { label: '帮我创建一个点', pcm: 'falseComplete.pcm' },
+              { label: 'MD 文件，文件名叫一点，内容写你好', pcm: 'fragAComplete.pcm' },
+              { label: '帮我写个周报', pcm: 'fullB.pcm' },
+              { label: '帮我创建一个 todo.md', pcm: 'fullTodo.pcm' },
             ],
           }));
         } catch (error) {
@@ -423,24 +443,47 @@ async function main() {
       }
     }
     const production = raw.filter((item) => item.scenario === 'reception_fragmentation' && item.arm === 'production');
-    const mutation = raw.filter((item) => item.scenario === 'reception_fragmentation' && item.arm === 'mutation');
+    const previous = raw.filter((item) => item.scenario === 'reception_fragmentation' && item.arm === 'previous');
     const productionHalfHeld = production.filter((item) => !hasDelegate(item.turns[0]) && !item.fatal).length;
-    const productionFinalDispatch = production.filter((item) => hasDelegate(item.turns[1]) && !item.fatal).length;
-    const mutationHalfDispatch = mutation.filter((item) => hasDelegate(item.turns[0]) && !item.fatal).length;
+    const productionFalseCompleteHeld = production.filter((item) => !hasDelegate(item.turns[1]) && !item.fatal).length;
+    const productionFinalDispatch = production.filter((item) => hasDelegate(item.turns[2]) && !item.fatal).length;
+    const productionSingleDispatch = production.filter((item) => (
+      item.turns.slice(0, 3).filter((turn) => hasDelegate(turn)).length === 1 && !item.fatal
+    )).length;
+    const productionWeeklyDispatch = production.filter((item) => hasDelegate(item.turns[3]) && !item.fatal).length;
+    const productionTodoDispatch = production.filter((item) => hasDelegate(item.turns[4]) && !item.fatal).length;
+    const previousAmbiguousDispatch = previous.filter((item) => (
+      hasDelegate(item.turns[0]) || hasDelegate(item.turns[1])
+    ) && !item.fatal).length;
     const fatal = production.filter((item) => item.fatal).length;
     const sayGaps = production.filter((item) => {
-      const final = item.turns[1];
+      const final = item.turns[2];
       return !hasDelegate(final) && claimsExecution(final?.text ?? '');
     }).length;
     const sayDoGuardTests = options.selected.includes('say_gap') ? localSayDoGuardTests() : 0;
 
     if (options.selected.includes('reception_fragmentation')) {
-      const pass = productionHalfHeld === 10 && fatal === 0 && mutationHalfDispatch >= 1;
+      const pass = productionHalfHeld === 10
+        && productionFalseCompleteHeld === 10
+        && productionSingleDispatch === 10
+        && productionWeeklyDispatch === 10
+        && productionTodoDispatch === 10
+        && fatal === 0;
       scenarioReports.push({
         name: 'reception_fragmentation', mode: 'live-upstream', calls: 20, passed: pass,
-        baseline: '生产臂半句 10/10 不派；删除接待规矩后同一断言必须转红',
-        metrics: { production_half_held: productionHalfHeld, mutation_half_dispatched: mutationHalfDispatch, mutation_gate_red: mutationHalfDispatch >= 1, fatal },
-        failures: pass ? [] : [`halfHeld=${productionHalfHeld}/10 mutationHalfDispatch=${mutationHalfDispatch}/10 fatal=${fatal}`],
+        baseline: '新臂截断/假完整句均 10/10 不派，补齐只派一单；周报/todo.md 直派；旧臂同批 ABAB 只作改前对照',
+        metrics: {
+          production_half_held: productionHalfHeld,
+          production_false_complete_held: productionFalseCompleteHeld,
+          production_single_dispatch_after_completion: productionSingleDispatch,
+          production_weekly_dispatch: productionWeeklyDispatch,
+          production_todo_dispatch: productionTodoDispatch,
+          previous_ambiguous_dispatch: previousAmbiguousDispatch,
+          fatal,
+        },
+        failures: pass ? [] : [
+          `halfHeld=${productionHalfHeld}/10 falseCompleteHeld=${productionFalseCompleteHeld}/10 singleDispatch=${productionSingleDispatch}/10 weekly=${productionWeeklyDispatch}/10 todo=${productionTodoDispatch}/10 previousAmbiguousDispatch=${previousAmbiguousDispatch}/10 fatal=${fatal}`,
+        ],
       });
     }
     if (options.selected.includes('terminal_dispatch')) {

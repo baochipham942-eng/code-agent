@@ -27,7 +27,13 @@ import {
   getRealtimeVoiceProviderApiKey,
   resolveConfiguredRealtimeVoiceProfile,
 } from './customRealtimeVoiceProviders';
-import { requiresVoiceActionTool, resolveVoiceActionRoute, resolveVoiceRouting } from './voiceRouting';
+import {
+  buildVoiceTurnPrompt,
+  detectVoiceReceptionAmbiguity,
+  requiresVoiceActionTool,
+  resolveVoiceActionRoute,
+  resolveVoiceRouting,
+} from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import {
   composeVoiceInstructions,
@@ -235,14 +241,19 @@ function rememberCancelledResponse(session: ActiveSession, responseId: string): 
 
 async function requestResponse(session: ActiveSession, userFinal: string): Promise<void> {
   if (session.upstream.kind !== 'relay') return;
-  const latest = userFinal.trim(), route = resolveVoiceActionRoute(latest);
+  const latest = userFinal.trim();
+  const ambiguity = detectVoiceReceptionAmbiguity(latest);
+  const route = ambiguity ? undefined : resolveVoiceActionRoute(latest);
   if (route && session.voiceToolsAvailable) {
     logger.info('voice action tool accepted', { provider: session.upstream.provider, origin: 'host_routed', toolName: route.toolName });
     const output = await executeVoiceTool(route.toolName, route.rawArguments, 'host_routed');
     if (active?.id !== session.id || session.ending || session.upstream.kind !== 'relay') return;
     session.upstream.respond(`Host 已按用户最新一句话执行了对应工具。只简短说明工具结果，不要再次调用工具。\n用户最新一句话：${latest}\n工具结果：${output}`, 'auto'); return;
   }
-  const prompt = latest ? `只回应并严格执行用户最新一句话，不要继续被取消回复的目标或内容。\n用户最新一句话：${latest}` : undefined; session.upstream.respond(prompt, requiresVoiceActionTool(latest) ? 'required' : 'auto');
+  session.upstream.respond(
+    buildVoiceTurnPrompt(latest),
+    !ambiguity && requiresVoiceActionTool(latest) ? 'required' : 'auto',
+  );
 }
 
 function evaluateInterrupt(
@@ -614,6 +625,8 @@ async function connectAndBind(
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
   const clientRef = { current: client };
   let voiceToolsAvailable = VOICE_TOOL_DEFINITIONS.length > 0;
+  // 最近一轮 final 是接待确定性保险的唯一输入。它随下一轮覆盖，不拼接、不计时：补齐后自然放行。
+  let latestUserFinal = '';
   /**
    * 收线的**唯一**入口——模型调 end_call 与 host 从用户字幕判出的挂断意图共用。
    *
@@ -788,6 +801,7 @@ async function connectAndBind(
                   || classification === 'short_fragment'
                   || classification === 'unverified');
             }
+            if (event.done && !voiceQuestionConsumed && !suppressUserFragment) latestUserFinal = event.text.trim();
           }
         }
         if (
@@ -942,6 +956,15 @@ async function connectAndBind(
       },
       onToolCall: (call) => {
         if (active?.id === id) active.sayDoGuard.rememberToolCall();
+        const ambiguity = detectVoiceReceptionAmbiguity(latestUserFinal);
+        if (ambiguity && (call.name === 'delegate_task' || call.name === 'steer_task')) {
+          logger.info('voice reception held ambiguous task tool call', {
+            voiceSessionId: id,
+            toolName: call.name,
+            ambiguity,
+          });
+          return Promise.resolve('这句可能还没说完，尚未派发。请只向用户确认完整任务；确认后再调用派活工具。');
+        }
         return executeVoiceTool(call.name, call.arguments, call.origin);
       },
     });

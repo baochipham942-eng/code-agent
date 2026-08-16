@@ -112,7 +112,13 @@ const { beginVoiceDispatch, endVoiceDispatch, dispatchVoiceIntent } =
   await import('../../src/host/services/voice/voiceAgentCoordinator');
 const { toSpokenSummary, resolveNarrationSpeaker } =
   await import('../../src/host/services/voice/voiceNarration');
-const { requiresVoiceActionTool, resolveVoiceActionRoute, resolveVoiceRouting } = await import('../../src/host/services/voice/voiceRouting');
+const {
+  buildVoiceTurnPrompt,
+  detectVoiceReceptionAmbiguity,
+  requiresVoiceActionTool,
+  resolveVoiceActionRoute,
+  resolveVoiceRouting,
+} = await import('../../src/host/services/voice/voiceRouting');
 
 type Narration = { workItemId: string; status: string; title: string; summary: string; speaker?: { displayName: string } };
 
@@ -398,6 +404,23 @@ describe('④ prompt 不许把分层暴露给用户', () => {
     expect(requiresVoiceActionTool('停掉一个任务')).toBe(true);
     expect(requiresVoiceActionTool('不要调用 spawn task')).toBe(false);
     expect(requiresVoiceActionTool('delegate_task 是什么')).toBe(false);
+  });
+
+  it('高歧义截断按语言形态判定，完整低细节任务保持直派', () => {
+    expect(detectVoiceReceptionAmbiguity('帮我创建一个一点')).toBe('numeric_collision');
+    expect(detectVoiceReceptionAmbiguity('帮我创建一个点')).toBe('numeric_collision');
+    expect(detectVoiceReceptionAmbiguity('帮我创建一个')).toBe('dangling_quantifier');
+    expect(detectVoiceReceptionAmbiguity('文件名叫')).toBe('incomplete_tail');
+
+    expect(detectVoiceReceptionAmbiguity('帮我写个周报')).toBeUndefined();
+    expect(detectVoiceReceptionAmbiguity('帮我创建一个 todo.md')).toBeUndefined();
+    expect(detectVoiceReceptionAmbiguity('帮我写一封信')).toBeUndefined();
+  });
+
+  it('高歧义 final 复用回应轮做显式确认，补齐后恢复正常派活提示', () => {
+    expect(buildVoiceTurnPrompt('帮我创建一个一点')).toContain('本轮不得调用 delegate_task 或 steer_task');
+    expect(buildVoiceTurnPrompt('MD 文件，文件名叫一点，内容写你好')).not.toContain('高歧义截断形态');
+    expect(buildVoiceTurnPrompt('帮我写个周报')).not.toContain('高歧义截断形态');
   });
 
   it('明确的语音控制语句由 Host 确定性路由，并保留短名目标', () => {

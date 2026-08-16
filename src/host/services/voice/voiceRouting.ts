@@ -62,10 +62,11 @@ const VOICE_BASE_INSTRUCTIONS = [
   '四条硬规矩：',
   '1. 不要自己预判这件事能不能做、该不该做。调 delegate_task 交出去，由它判断。绝不因为「我可能做不了」就拒绝或推脱。',
   '2. **派活前先判用户这句话说完了没有**：',
-  '   - 话音明显悬着（停在量词/半个名词/半件事上，像「帮我创建一个一点」这样戛然而止）→ **先别派**：'
-    + '短短应一声，或把缺的那半句问出来（「建个什么文件？」）。下一句到了，把几轮连起来'
+  '   - 话音明显悬着（悬空量词、数词和量词/文件名撞在一起、尾词残缺），或一句话虽然语法能收口却能解析出多个合理任务'
+    + ' → **先别派**：短短应一声，用一句话点明两种理解并确认（如「你是要建一个『点』，还是话没说完？」）。下一句到了，把几轮连起来'
     + '凑成完整一件事，**立刻调 delegate_task 派出去**——不许只嘴上说「正在创建」，'
     + '没调工具就什么都没发生。',
+  '   这是形态判据，不按任务名猜：低置信时宁可确认一次；确认轮只问用户，不调用 delegate_task 或 steer_task。',
   '   - 话说完了，哪怕细节少（「帮我写个周报」）→ 直接派，不要为补细节反问。'
     + 'delegate_task 拿得到这通电话的完整字幕，缺的细节会按最合理的默认补上。',
   '   **绝不要在派活指令里写「需要询问用户」**——用户在打电话，没法回答弹窗。',
@@ -95,6 +96,42 @@ const VOICE_BASE_INSTRUCTIONS = [
     + '**不要念出这个前缀，也不要提它存在。** 用户的话以 `[USER] ` 开头，同样不念。',
   '- 用户提过的说话偏好（少啰嗦 / 多报进度 / 别念代码）在整通电话里一直保持，不要下一轮就忘。',
 ].join('\n');
+
+export type VoiceReceptionAmbiguity = 'dangling_quantifier' | 'numeric_collision' | 'incomplete_tail';
+
+// 只列汉语的数词、量词和虚词，不列任何文件名或任务名。它们表达的是“句子可能还没说完”的
+// 形态证据；完整对象（周报、todo.md 等）不会因为细节少而命中。
+const CHINESE_NUMBER = '[零〇一二两俩三四五六七八九十百千万\\d]+';
+const CHINESE_CLASSIFIER = '(?:个|份|篇|张|段|条|项|次|套|封|本|页|行|列|块|种|名|位)';
+const DANGLING_QUANTIFIER = new RegExp(`(?:${CHINESE_NUMBER})?${CHINESE_CLASSIFIER}$`, 'u');
+const NUMERIC_COLLISION = new RegExp(
+  `(?:${CHINESE_NUMBER})${CHINESE_CLASSIFIER}(?:(?:${CHINESE_NUMBER})(?:点)?|点)$`,
+  'u',
+);
+const INCOMPLETE_TAIL = /(?:的|和|或|以及|然后|再|叫|名为|文件名(?:是|叫)|内容(?:是|写))$/u;
+
+/**
+ * 识别“句子表面完整、任务含义仍高度歧义”的通用截断形态。
+ *
+ * 这里不判断任务是否值得派发，也不枚举危险名字；只为接待层提供低置信信号。
+ */
+export function detectVoiceReceptionAmbiguity(text: string): VoiceReceptionAmbiguity | undefined {
+  const normalized = text.trim().replace(/[\s，。！？、,.!?；;：:]+/gu, '');
+  if (!normalized) return undefined;
+  if (NUMERIC_COLLISION.test(normalized)) return 'numeric_collision';
+  if (DANGLING_QUANTIFIER.test(normalized)) return 'dangling_quantifier';
+  if (INCOMPLETE_TAIL.test(normalized)) return 'incomplete_tail';
+  return undefined;
+}
+
+export function buildVoiceTurnPrompt(latest: string): string | undefined {
+  const text = latest.trim();
+  if (!text) return undefined;
+  const base = `只回应并严格执行用户最新一句话，不要继续被取消回复的目标或内容。\n用户最新一句话：${text}`;
+  if (!detectVoiceReceptionAmbiguity(text)) return base;
+  return `${base}\n接待信号：这句命中高歧义截断形态，可能没说完或存在多个合理任务。`
+    + '本轮不得调用 delegate_task 或 steer_task；只用一句口语确认用户想表达的完整任务。';
+}
 
 /**
  * 用户明确点名派发工具，或对已派任务发出改向/查询/取消指令时，把这一轮提升为

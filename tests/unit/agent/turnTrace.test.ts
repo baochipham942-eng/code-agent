@@ -22,9 +22,23 @@ describe('TurnTraceRecorder', () => {
   it('records events tagged with the current turn index', () => {
     const r = new TurnTraceRecorder('sess-1');
     r.setTurn(1);
-    r.record('inference', { responseType: 'tool_use' });
+    r.record('inference', {
+      responseType: 'tool_use',
+      durationMs: 12,
+      inputTokens: 10,
+      outputTokens: 2,
+      finishReason: 'tool_calls',
+      truncated: false,
+    });
     r.setTurn(2);
-    r.record('loop_decision', { action: 'continue' });
+    r.record('loop_decision', {
+      action: 'continue',
+      execution: 'advisory',
+      reason: 'tool call pending',
+      stopReason: 'tool_calls',
+      consecutiveErrors: 0,
+      contextRatio: 0.1,
+    });
 
     const events = r.getEvents();
     expect(events).toHaveLength(2);
@@ -36,7 +50,14 @@ describe('TurnTraceRecorder', () => {
   it('flushes to a per-session JSONL file incrementally', () => {
     const r = new TurnTraceRecorder('sess-2');
     r.setTurn(1);
-    r.record('inference', { a: 1 });
+    r.record('inference', {
+      responseType: 'text',
+      durationMs: 5,
+      inputTokens: 3,
+      outputTokens: 1,
+      finishReason: 'stop',
+      truncated: false,
+    });
     r.flush();
 
     const file = path.join(traceRoot, 'traces', 'sess-2.jsonl');
@@ -46,7 +67,13 @@ describe('TurnTraceRecorder', () => {
     expect(JSON.parse(lines[0])).toMatchObject({ type: 'inference', turnIndex: 1 });
 
     // second flush appends only the new event
-    r.record('tool_dispatch', { toolName: 'bash' });
+    r.record('tool_dispatch', {
+      toolName: 'bash',
+      success: true,
+      durationMs: 2,
+      error: null,
+      fromCache: false,
+    });
     r.flush();
     lines = readFileSync(file, 'utf-8').trim().split('\n');
     expect(lines).toHaveLength(2);

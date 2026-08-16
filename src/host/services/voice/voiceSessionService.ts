@@ -17,7 +17,6 @@ import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTokenUsage
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
 import { emitVoiceCallHook, markSessionHadLiveVoice } from './voiceCallHooks';
-import { getConfigService } from '../core/configService';
 import { getSessionManager } from '../infra/sessionManager';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
@@ -30,12 +29,18 @@ import {
 } from './customRealtimeVoiceProviders';
 import { requiresVoiceActionTool, resolveVoiceActionRoute, resolveVoiceRouting } from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch, setVoiceDispatchFocus } from './voiceAgentCoordinator';
-import { composeVoiceInstructions, focusChanged, type VoiceContinuityContext } from './voiceContextAssembler';
+import {
+  composeVoiceInstructions,
+  focusChanged,
+  loadVoiceContinuity,
+  readVoiceLiveSettings,
+  withLanguageDirective,
+  type VoiceContinuityContext,
+} from './voiceContextAssembler';
 import { isVoiceScreenContextSupported } from './voiceScreenContext';
 import { addTokenUsage, recordVoiceCall } from './voiceUsageLedger';
 import { consumeVoiceCallFailure, observeVoiceEventFailure, persistVoiceCallFailure } from './voiceFailurePersistence';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
-import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import { reportVoiceWorkFailure } from './voiceWorkFailureReporter';
 import { detectHangupIntent, detectHangupIntentNearMiss } from './hangupIntent';
@@ -77,52 +82,6 @@ import { recordNarrationResponse, shouldPersistNarrationTranscript,
 const logger = createLogger('VoiceSession');
 
 /** 读设置页「实时通话」组；读不到一律 undefined（= 全部走默认），绝不让设置读写炸掉通话。 */
-function readVoiceLiveSettings(): VoiceLiveSettings | undefined {
-  try {
-    return getConfigService().getSettings().voice?.live;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * 新拨号才读取连续性；宽限窗重连直接复用 active，不会重复扫消息流。
- *
- * TaskManager.sessionStates 是进程内 Map，app 重启后会回到 idle。此时即使 DB 里还有未结算的
- * voiceDispatch，也宁可不注入 work item 半段，避免把陈旧记录伪报成仍在运行；transcript 半段
- * 仍由 DB 正常恢复。消息读取或状态读取失败同样整体降级为空，不阻断拨号。
- */
-async function loadVoiceContinuity(neoSessionId: string): Promise<VoiceContinuityContext | null> {
-  try {
-    // 严格顺序：消息源不可用时不要提前拉起 TaskManager 依赖树，降级路径不能留下悬空 import。
-    const messages = await getSessionManager().getMessages(neoSessionId);
-    const { getTaskManager } = await import('../../task');
-    return {
-      neoSessionId,
-      sourceSessionId: neoSessionId,
-      messages,
-      taskState: getTaskManager().getSessionState(neoSessionId),
-      now: Date.now(),
-    };
-  } catch (err) {
-    logger.warn('voice continuity unavailable', {
-      message: err instanceof Error ? err.message : 'unknown',
-    });
-    return null;
-  }
-}
-
-/**
- * 语言偏好走 instructions 而不是上游参数：DashScope 的 input_audio_transcription
- * 语言参数本批未真机验证，不赌；在短人设后追加一句对话语言约束是验证过的路径。
- */
-function withLanguageDirective(instructions: string, language: VoiceLiveSettings['language']): string {
-  if (language === 'zh') return `${instructions}\n请始终用中文与用户对话。`;
-  if (language === 'en') return `${instructions}\nAlways converse with the user in English.`;
-  return instructions;
-}
-
-
 interface ActiveSession {
   id: string;
   neoSessionId: string;

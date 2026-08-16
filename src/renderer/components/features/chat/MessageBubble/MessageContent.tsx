@@ -25,7 +25,8 @@ import { DocumentBlock } from './DocumentBlock';
 import { shouldRenderStreamingContentAsMarkdown, useThrottledStreamingContent } from '../../../../hooks/useThrottledStreamingContent';
 import { recordStreamingPerformanceCounter } from '../../../../utils/streamingPerformanceMetrics';
 import {
-  deferredTurnContentStyle,
+  getAssistantTextDeferredContentKind,
+  getDeferredContentStyle,
   shouldDeferTurnContentLayout,
 } from '../../../../utils/turnContentVisibility';
 import {
@@ -94,6 +95,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     isStreaming,
     isUser: Boolean(isUser),
   });
+  const deferredAssistantContentKind = getAssistantTextDeferredContentKind(content);
 
   useEffect(() => {
     recordStreamingPerformanceCounter('stream.message_content.render');
@@ -223,12 +225,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           if (language === 'document') {
             return <DocumentBlock spec={codeContent} />;
           }
-          return <CodeBlock language={language} code={codeContent} />;
+          return <CodeBlock language={language} code={codeContent} deferOffscreenLayout={!isStreaming} />;
         }
 
         // For inline code that doesn't have a language class
         if (!className && codeContent.includes('\n')) {
-          return <CodeBlock language="" code={codeContent} />;
+          return <CodeBlock language="" code={codeContent} deferOffscreenLayout={!isStreaming} />;
         }
 
         return (
@@ -629,7 +631,8 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     <div
       className={`text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none${streamingDecor}`}
       data-turn-heavy-content={deferCompletedLayout ? 'true' : undefined}
-      style={deferCompletedLayout ? deferredTurnContentStyle : undefined}
+      data-deferred-content-kind={deferCompletedLayout ? deferredAssistantContentKind : undefined}
+      style={deferCompletedLayout ? getDeferredContentStyle(deferredAssistantContentKind) : undefined}
     >
       <MarkdownRenderer
         content={isStreaming ? preparedContent : filteredContent}

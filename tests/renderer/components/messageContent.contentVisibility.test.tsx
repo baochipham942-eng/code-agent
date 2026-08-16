@@ -6,6 +6,7 @@ import {
   HEAVY_TURN_CONTENT_MIN_CHARS,
   TURN_CONTENT_INTRINSIC_SIZE_PX,
 } from '../../../src/renderer/utils/turnContentVisibility';
+import { renderToStaticMarkupAsync } from './renderToStaticMarkupAsync';
 
 describe('MessageContent content visibility', () => {
   const heavyContent = 'Long completed markdown paragraph. '.repeat(
@@ -32,5 +33,38 @@ describe('MessageContent content visibility', () => {
 
     expect(streamingHtml).not.toContain('data-turn-heavy-content');
     expect(shortHtml).not.toContain('data-turn-heavy-content');
+  });
+
+  it('raises completed assistant intrinsic size for medium and long text', () => {
+    const mediumHtml = renderToStaticMarkup(
+      <MessageContent content={'m'.repeat(1800)} isUser={false} />,
+    );
+    const longHtml = renderToStaticMarkup(
+      <MessageContent content={'l'.repeat(3200)} isUser={false} />,
+    );
+
+    expect(mediumHtml).toContain('contain-intrinsic-size:auto 640px');
+    expect(longHtml).toContain('contain-intrinsic-size:auto 960px');
+  });
+
+  it('defers completed code blocks with line-count intrinsic size tiers', async () => {
+    const compactCode = ['```ts', ...Array.from({ length: 6 }, (_, index) => `const n${index} = ${index};`), '```'].join('\n');
+    const largeCode = ['```ts', ...Array.from({ length: 70 }, (_, index) => `const longVariable${index} = ${index};`), '```'].join('\n');
+
+    const compactHtml = await renderToStaticMarkupAsync(
+      <MessageContent content={compactCode} isUser={false} />,
+    );
+    const largeHtml = await renderToStaticMarkupAsync(
+      <MessageContent content={largeCode} isUser={false} />,
+    );
+    const streamingHtml = await renderToStaticMarkupAsync(
+      <MessageContent content={largeCode} isUser={false} isStreaming />,
+    );
+
+    expect(compactHtml).toContain('data-deferred-content="code-block"');
+    expect(compactHtml).toContain('contain-intrinsic-size:auto 220px');
+    expect(largeHtml).toContain('data-deferred-content-kind="assistantCode"');
+    expect(largeHtml).toContain('contain-intrinsic-size:auto 620px');
+    expect(streamingHtml).not.toContain('data-deferred-content="code-block"');
   });
 });

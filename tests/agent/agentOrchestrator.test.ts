@@ -257,7 +257,7 @@ import { approvalParkEvents } from '../../src/host/agent/approvalParkEvents';
 import type { PendingApprovalRepository } from '../../src/host/services/core/repositories/PendingApprovalRepository';
 import { SteerRejectedError } from '../../src/host/agent/runtime/conversationRuntime';
 import type { ConfigService } from '../../src/host/services/core/configService';
-import type { AgentEvent, Message, MessageAttachment, PermissionAskResult } from '../../src/shared/contract';
+import type { AgentEvent, Message, MessageAttachment, PermissionAskResult, PermissionRequest } from '../../src/shared/contract';
 import type { AgentRunOptions } from '../../src/host/research/types';
 import { getAllToolDefinitions } from '../../src/host/tools/dispatch/toolDefinitions';
 import { createWorkspaceScope } from '../../src/host/runtime/workspaceScope';

@@ -3,14 +3,10 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  filterVoiceCallsForSession,
-  VoiceAuditDialog,
-  type VoiceCallListItem,
-  type VoiceCallTimeline,
-} from '../../../src/renderer/components/features/voice/VoiceAuditDialog';
+import { VoiceAuditDialog } from '../../../src/renderer/components/features/voice/VoiceAuditDialog';
 
-const callA: VoiceCallListItem = {
+// 夹具不再 import 组件内部类型（knip 生产档：导出只喂测试=死导出），形状对齐 host 的 VoiceCallListItem
+const callA = {
   voiceCallId: 'voice-a',
   summaryMessageId: 'summary-a',
   neoSessionId: 'session-a',
@@ -24,7 +20,7 @@ const callA: VoiceCallListItem = {
   },
 };
 
-const callB: VoiceCallListItem = {
+const callB = {
   ...callA,
   voiceCallId: null,
   summaryMessageId: 'summary-b',
@@ -32,7 +28,7 @@ const callB: VoiceCallListItem = {
   summary: { ...callA.summary, startedAt: 300 },
 };
 
-function makeTimeline(): VoiceCallTimeline {
+function makeTimeline() {
   return {
     call: callA,
     sections: {
@@ -68,10 +64,23 @@ beforeEach(() => {
 });
 
 describe('VoiceAuditDialog', () => {
-  it('按 neoSessionId 过滤并按开始时间倒序', () => {
+  it('按 neoSessionId 过滤并按开始时间倒序（走组件公共入口）', async () => {
     const older = { ...callA, voiceCallId: 'voice-older', summary: { ...callA.summary, startedAt: 100 } };
-    expect(filterVoiceCallsForSession([older, callB, callA], 'session-a').map((call) => call.voiceCallId))
-      .toEqual(['voice-a', 'voice-older']);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      return url.includes('/timeline')
+        ? jsonResponse(makeTimeline())
+        : jsonResponse({ calls: [older, callB, callA] });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<VoiceAuditDialog sessionId="session-a" onClose={vi.fn()} />);
+
+    // 最新一通 voice-a 自动选中并拉时间线；别的会话（callB=session-b）不得出现在清单里
+    await screen.findByTestId('voice-audit-timeline');
+    const rows = screen.getAllByTestId(/^voice-audit-call-/);
+    expect(rows.map((row) => row.getAttribute('data-testid')))
+      .toEqual(['voice-audit-call-voice-a', 'voice-audit-call-voice-older']);
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/voice/calls/voice-a/timeline'));
   });
 
   it('非通话会话显示明确空态', async () => {

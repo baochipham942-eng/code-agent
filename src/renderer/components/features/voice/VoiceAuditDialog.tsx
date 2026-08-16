@@ -19,7 +19,7 @@ import { Modal } from '../../primitives';
 
 type VoiceAuditStatus = 'ok' | 'none' | 'unavailable';
 
-export interface VoiceCallListItem {
+interface VoiceCallListItem {
   voiceCallId: string | null;
   summaryMessageId: string;
   neoSessionId: string;
@@ -63,7 +63,7 @@ interface ApprovalEvent {
   phase: 'during_call' | 'after_call';
 }
 
-export interface VoiceCallTimeline {
+interface VoiceCallTimeline {
   call: VoiceCallListItem;
   sections: {
     transcript: AuditSection<TranscriptEvent>;
@@ -93,7 +93,7 @@ export interface VoiceAuditDialogProps {
   onClose: () => void;
 }
 
-export function filterVoiceCallsForSession(calls: VoiceCallListItem[], sessionId: string): VoiceCallListItem[] {
+function filterVoiceCallsForSession(calls: VoiceCallListItem[], sessionId: string): VoiceCallListItem[] {
   return calls
     .filter((call) => call.neoSessionId === sessionId)
     .sort((a, b) => b.summary.startedAt - a.summary.startedAt);
@@ -350,6 +350,7 @@ export const VoiceAuditDialog: React.FC<VoiceAuditDialogProps> = ({ sessionId, s
                   <button
                     key={id}
                     type="button"
+                    data-testid={`voice-audit-call-${id}`}
                     onClick={() => setSelectedId(id)}
                     className={`w-full rounded-lg border p-3 text-left transition-colors ${
                       selectedId === id

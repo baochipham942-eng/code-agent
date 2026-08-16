@@ -394,7 +394,7 @@ export class OrchestratorPermissionIsland {
         try {
           notificationService.notifyNeedsInput({
             sessionId: fullRequest.sessionId,
-            title: '有操作等你批准',
+            title: '有操作等你确认',
             body: `无人值守任务请求执行 ${fullRequest.tool}，已挂起等待你在收件箱确认。`,
           });
         } catch (err) {

@@ -276,6 +276,8 @@ function generateSkillMd(name: string, description: string, recording: ComboReco
     '---',
     `name: ${name}`,
     `description: "${description}"`,
+    'depends: []',
+    `provides: [skill:${name}]`,
     'user-invocable: true',
     `allowed-tools: "${toolNames.join(',')}"`,
     'context: inline',

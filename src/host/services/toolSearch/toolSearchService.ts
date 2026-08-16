@@ -297,6 +297,12 @@ export class ToolSearchService {
     logger.info(`Registered ${skills.length} skills`);
   }
 
+  unregisterSkill(name: string): boolean {
+    const removed = this.skillsMeta.delete(`skill:${name}`);
+    if (removed) logger.debug(`Unregistered skill: ${name}`);
+    return removed;
+  }
+
   /**
    * 清除已注册的 Skills（用于刷新）
    */

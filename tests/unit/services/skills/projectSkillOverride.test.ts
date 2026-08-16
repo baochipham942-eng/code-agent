@@ -23,7 +23,12 @@ vi.mock('../../../../src/host/services/cloud', () => ({
 }));
 
 vi.mock('../../../../src/host/services/toolSearch', () => ({
-  getToolSearchService: () => ({ clearSkills: vi.fn(), registerSkills: vi.fn() }),
+  getToolSearchService: () => ({
+    clearSkills: vi.fn(),
+    registerSkills: vi.fn(),
+    registerSkill: vi.fn(),
+    unregisterSkill: vi.fn(),
+  }),
 }));
 
 // 全局黑名单：默认全开，可控禁用
@@ -43,7 +48,7 @@ async function writeSkill(baseDir: string, name: string): Promise<void> {
   await fs.mkdir(skillDir, { recursive: true });
   await fs.writeFile(
     path.join(skillDir, 'SKILL.md'),
-    ['---', `name: ${name}`, `description: ${name} description`, '---', '', 'Use it.', ''].join('\n'),
+    ['---', `name: ${name}`, `description: ${name} description`, 'depends: []', `provides: [skill:${name}]`, '---', '', 'Use it.', ''].join('\n'),
     'utf-8',
   );
 }

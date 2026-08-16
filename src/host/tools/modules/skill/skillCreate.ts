@@ -47,6 +47,8 @@ function buildSkillMd(params: {
     '---',
     `name: ${params.name}`,
     `description: "${params.description.replace(/"/g, '\\"')}"`,
+    'depends: []',
+    `provides: [skill:${params.name}]`,
     'user-invocable: true',
     'context: inline',
   ];

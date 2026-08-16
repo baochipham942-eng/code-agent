@@ -21,6 +21,7 @@ import {
   type SkillApplicabilityFilterReport,
   type SkillApplicabilityOptions,
 } from './skillApplicability';
+import { synchronizeSkillCapabilitySurface } from './skillCapabilitySurface';
 
 const logger = createLogger('SkillDiscoveryService');
 const INCLUDE_CLAUDE_LEGACY_SKILLS_ENV = 'CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS';
@@ -209,7 +210,7 @@ class SkillDiscoveryService {
     }
 
     // 注册 Skills 到 ToolSearchService，支持通过 tool_search 发现
-    this.registerSkillsToToolSearch();
+    await this.registerSkillsToToolSearch();
   }
 
   /**
@@ -256,28 +257,22 @@ class SkillDiscoveryService {
    *
    * 启用状态变更后可再次调用以同步注册表
    */
-  registerSkillsToToolSearch(): void {
+  async registerSkillsToToolSearch(): Promise<void> {
     try {
       const toolSearchService = getToolSearchService();
-      toolSearchService.clearSkills(); // 清除旧的 skills
-
       const skillsToRegister = this.filterApplicableSkills(
         Array.from(this.skills.values()).filter((skill) => this.isSkillEnabled(skill.name)),
         'tool_search',
-      )
-        .map(skill => ({
-          name: skill.name,
-          description: skill.description,
-          aliases: skill.aliases,
-        }));
+      );
 
-      toolSearchService.registerSkills(skillsToRegister);
+      await synchronizeSkillCapabilitySurface(skillsToRegister, toolSearchService);
       logger.debug('Registered skills to ToolSearchService', {
         count: skillsToRegister.length,
         total: this.skills.size,
       });
     } catch (error) {
-      logger.warn('Failed to register skills to ToolSearchService', { error });
+      logger.error('Failed to register skills to ToolSearchService', { error });
+      throw error;
     }
   }
 
@@ -595,6 +590,8 @@ class SkillDiscoveryService {
       ...skill,
       basePath: basePathOverride ?? skill.basePath,
       aliases: skill.aliases ? [...skill.aliases] : undefined,
+      depends: skill.depends ? [...skill.depends] : undefined,
+      provides: skill.provides ? [...skill.provides] : undefined,
       allowedTools: [...skill.allowedTools],
       metadata: skill.metadata ? { ...skill.metadata } : undefined,
       bins: skill.bins ? [...skill.bins] : undefined,

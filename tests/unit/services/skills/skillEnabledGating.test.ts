@@ -32,13 +32,14 @@ vi.mock('../../../../src/host/services/cloud', () => ({
   }),
 }));
 
-const registerSkillsMock = vi.fn();
-const clearSkillsMock = vi.fn();
+const activeRegisteredSkills = new Set<string>();
+const registerSkillMock = vi.fn((name: string) => { activeRegisteredSkills.add(name); });
+const unregisterSkillMock = vi.fn((name: string) => activeRegisteredSkills.delete(name));
 
 vi.mock('../../../../src/host/services/toolSearch', () => ({
   getToolSearchService: () => ({
-    clearSkills: clearSkillsMock,
-    registerSkills: registerSkillsMock,
+    registerSkill: registerSkillMock,
+    unregisterSkill: unregisterSkillMock,
   }),
 }));
 
@@ -63,6 +64,8 @@ async function writeSkill(baseDir: string, name: string, applicability: string[]
       '---',
       `name: ${name}`,
       `description: ${name} description`,
+      'depends: []',
+      `provides: [skill:${name}]`,
       ...applicability,
       '---',
       '',
@@ -80,8 +83,9 @@ describe('Skill enabled gating (disabledSkills blacklist)', () => {
 
   beforeEach(async () => {
     disabledSkills.clear();
-    registerSkillsMock.mockClear();
-    clearSkillsMock.mockClear();
+    registerSkillMock.mockClear();
+    unregisterSkillMock.mockClear();
+    activeRegisteredSkills.clear();
     tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'skill-gating-'));
     homeDir = path.join(tmpRoot, 'home');
     projectDir = path.join(tmpRoot, 'project');
@@ -126,18 +130,14 @@ describe('Skill enabled gating (disabledSkills blacklist)', () => {
     const service = new SkillDiscoveryService();
     await service.initialize(projectDir);
 
-    const registeredNames = (registerSkillsMock.mock.calls.at(-1)?.[0] as Array<{ name: string }>).map(
-      (s) => s.name,
-    );
+    const registeredNames = [...activeRegisteredSkills].sort();
     expect(registeredNames).toEqual(['skill-a']);
 
     // 重新启用后刷新注册表
     disabledSkills.delete('skill-b');
-    service.registerSkillsToToolSearch();
+    await service.registerSkillsToToolSearch();
 
-    const reRegisteredNames = (registerSkillsMock.mock.calls.at(-1)?.[0] as Array<{ name: string }>)
-      .map((s) => s.name)
-      .sort();
+    const reRegisteredNames = [...activeRegisteredSkills].sort();
     expect(reRegisteredNames).toEqual(['skill-a', 'skill-b']);
   });
 
@@ -161,9 +161,7 @@ describe('Skill enabled gating (disabledSkills blacklist)', () => {
       'visible-fallback-skill',
       'visible-skill',
     ]);
-    const registeredNames = (registerSkillsMock.mock.calls.at(-1)?.[0] as Array<{ name: string }>)
-      .map((skill) => skill.name)
-      .sort();
+    const registeredNames = [...activeRegisteredSkills].sort();
     expect(registeredNames).toEqual(['visible-fallback-skill', 'visible-skill']);
 
     expect(service.getApplicabilityFilterReport().hidden).toEqual(expect.arrayContaining([

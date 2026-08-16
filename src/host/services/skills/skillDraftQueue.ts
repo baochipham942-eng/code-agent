@@ -121,6 +121,8 @@ export function generateDraftSkillMd(input: {
     '---',
     `name: ${input.name}`,
     `description: "${input.description.replace(/"/g, "'")}"`,
+    'depends: []',
+    `provides: [skill:${input.name}]`,
     'user-invocable: true',
   ];
   // 只有 telemetry 草稿带可执行工具序列才声明 allowed-tools

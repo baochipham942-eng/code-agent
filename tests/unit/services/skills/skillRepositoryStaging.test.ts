@@ -51,6 +51,8 @@ describe('SkillRepositoryService staged install lifecycle', () => {
         '---',
         'name: preview-skill',
         'description: Preview lifecycle skill',
+        'depends: []',
+        'provides: [skill:preview-skill]',
         '---',
         '',
         'Install only after confirmation.',

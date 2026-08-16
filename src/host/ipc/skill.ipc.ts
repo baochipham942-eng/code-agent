@@ -275,7 +275,7 @@ async function handleSkillDisable(skillName: string) {
 async function refreshToolSearchRegistration(): Promise<void> {
   try {
     await ensureSkillDiscoveryForIpc();
-    getSkillDiscoveryService().registerSkillsToToolSearch();
+    await getSkillDiscoveryService().registerSkillsToToolSearch();
   } catch (error) {
     logger.warn('Failed to refresh ToolSearch registration after toggle', { error });
   }

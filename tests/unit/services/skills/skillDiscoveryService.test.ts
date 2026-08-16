@@ -26,6 +26,8 @@ vi.mock('../../../../src/host/services/toolSearch', () => ({
   getToolSearchService: () => ({
     clearSkills: vi.fn(),
     registerSkills: vi.fn(),
+    registerSkill: vi.fn(),
+    unregisterSkill: vi.fn(),
   }),
 }));
 
@@ -62,6 +64,8 @@ async function writeSkillMd(skillDir: string, name: string): Promise<void> {
       '---',
       `name: ${name}`,
       `description: ${name} description`,
+      'depends: []',
+      `provides: [skill:${name}]`,
       '---',
       '',
       'Use this skill.',

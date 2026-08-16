@@ -9,6 +9,10 @@
 export interface SkillFrontmatter {
   name: string;
   description: string;
+  /** P2 capability-unit dependency keys. Required for loadable SKILL.md units. */
+  depends: string[];
+  /** P2 capability-unit provision keys. Required for loadable SKILL.md units. */
+  provides: string[];
   aliases?: string | string[];
   license?: string;
   compatibility?: string;
@@ -63,6 +67,9 @@ export interface ParsedSkill {
   // === Agent Skills 标准字段 ===
   name: string;
   description: string;
+  /** Namespaced capability-unit declaration. Runtime loading rejects absence. */
+  depends?: string[];
+  provides?: string[];
   aliases?: string[];
   license?: string;
   compatibility?: string;

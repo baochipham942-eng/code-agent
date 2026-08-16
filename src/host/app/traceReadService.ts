@@ -153,7 +153,7 @@ export class TraceReadService {
     }
 
     let skippedLines = 0;
-    let pending = Buffer.alloc(0);
+    let pending: Buffer<ArrayBufferLike> = Buffer.alloc(0);
     const parseLine = (line: Buffer) => {
       const normalized = line.length > 0 && line[line.length - 1] === 13
         ? line.subarray(0, line.length - 1)
@@ -170,7 +170,7 @@ export class TraceReadService {
       }
     };
 
-    const stream = createReadStream(filePath, { start: cursor, end: fileSize - 1 });
+    const stream: AsyncIterable<string | Buffer> = createReadStream(filePath, { start: cursor, end: fileSize - 1 });
     for await (const chunk of stream) {
       const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       pending = pending.length === 0 ? bytes : Buffer.concat([pending, bytes]);

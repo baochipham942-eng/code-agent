@@ -27,7 +27,17 @@ export type TraceEventType =
   | 'verification'
   | 'goal_verdict'
   | 'goal_evidence_gate'
-  | 'deliverables_declaration';
+  | 'deliverables_declaration'
+  | 'request_manifest';
+
+export type RequestManifestMessageRef =
+  | { kind: 'ledger_message'; messageId: string }
+  | { kind: 'system_prompt'; contentHash: string }
+  | {
+      kind: 'content';
+      contentHash: string;
+      reason: 'dynamic_tail' | 'runtime_injection' | 'post_assembly_rewrite';
+    };
 
 export interface TraceEventDataMap {
   inference: {
@@ -100,6 +110,33 @@ export interface TraceEventDataMap {
           declaredAtMs: number;
         } | null;
       };
+  request_manifest: {
+    requestId: string;
+    messageRefs: RequestManifestMessageRef[];
+    toolSchemaHash: string;
+    toolNames: string[];
+    requested: {
+      provider: string;
+      model: string;
+      temperature: number | null;
+      maxTokens: number | null;
+      reasoningEffort: string | null;
+      thinkingBudget: number | null;
+    };
+    actualProvider: string | null;
+    actualModel: string | null;
+    appVersion: string;
+    adapterDefaults: {
+      engine: 'aisdk' | 'legacy';
+      temperature: { value: number | null; source: string } | null;
+      maxTokens: { value: number | null; source: string } | null;
+    };
+    compactionReplacements: Array<{
+      replacedMessageIds: string[];
+      replacementContentHash: string;
+    }>;
+    degraded: boolean;
+  };
 }
 
 type TraceEventFor<T extends TraceEventType> = {
@@ -150,16 +187,21 @@ export class TurnTraceRecorder {
   }
 
   /** 增量 append 未落盘的事件到 per-session JSONL。失败只 warn，不抛。 */
-  flush(): void {
+  flush(): boolean {
     const pending = this.events.slice(this.flushedCount);
-    if (pending.length === 0) return;
+    if (pending.length === 0) return true;
     try {
       mkdirSync(path.dirname(this.filePath), { recursive: true });
       const lines = pending.map((e) => JSON.stringify(e)).join('\n') + '\n';
       appendFileSync(this.filePath, lines, 'utf-8');
       this.flushedCount = this.events.length;
+      return true;
     } catch (err) {
+      for (const event of pending) {
+        if (event.type === 'request_manifest') event.data.degraded = true;
+      }
       logger.warn('flush failed', err);
+      return false;
     }
   }
 }

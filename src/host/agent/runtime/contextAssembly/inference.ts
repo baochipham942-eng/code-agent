@@ -80,6 +80,9 @@ import {
 } from './inferenceArtifactRepair';
 import { withNativeModelOperation } from './nativeModelCheckpoint';
 import { runInferenceWithTelemetry } from './inferenceTelemetry';
+import { getAgentVersion } from '../../../telemetry/diagnosticVersions';
+import { buildRequestManifest, canonicalizeModelMessage } from './requestManifest';
+import type { TraceEventDataMap } from '../turnTrace';
 import {
   applyCommandCenterPreannounce,
   emitCommandCenterToolStart,
@@ -120,7 +123,13 @@ function runEngineInference(
   if (useAiSdk) {
     if (adaptedConfig) {
       logger.info(`[AgentLoop] inference engine = aisdk (adaptive: ${config.provider}/${config.model} → ${adaptedConfig.provider}/${adaptedConfig.model})`);
-      return inferenceViaAiSdk(messages, tools, adaptedConfig, onStream, signal, options).catch((err: unknown) => {
+      return inferenceViaAiSdk(messages, tools, adaptedConfig, onStream, signal, options)
+        .then((response) => {
+          response.actualProvider ??= adaptedConfig.provider;
+          response.actualModel ??= adaptedConfig.model;
+          return response;
+        })
+        .catch((err: unknown) => {
         const errMsg = getErrorMessage(err);
         // 401/403 是持久性错误（key 过期/无效），禁用 free model 避免重复失败
         if (/401|403|unauthorized|forbidden/i.test(errMsg)) {
@@ -142,7 +151,7 @@ function runEngineInference(
             }
             throw fallbackErr;
           });
-      });
+        });
     }
     logger.debug('[AgentLoop] inference engine = aisdk', { provider: effectiveConfig.provider, model: effectiveConfig.model, streaming: typeof onStream === 'function' && options?.forceNonStreaming !== true });
     return runAiSdkInferenceWithProviderFallback(messages, tools, effectiveConfig, onStream, signal, options);
@@ -461,14 +470,14 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   // 顺序 / MCP 连接时序带来的排序漂移——工具 schema 在 provider 侧位于可缓存前缀，
   // 顺序抖动等于打掉整个 prompt cache。排序对两条推理路径（aiSdk / modelRouter）生效。
   tools = [...tools].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  emitToolSchemaSnapshot(ctx, tools);
-
   let effectiveTools = tools;
   let effectiveConfig = ctx.runtime.modelConfig;
   let artifactRequest = false;
   let pendingCapabilityFallback: ModelFallbackInfo | null = null;
 
   const builtModelMessages = await ctx.buildModelMessages();
+  const assembledCanonicalMessages = builtModelMessages.map(canonicalizeModelMessage);
+  const modelMessageSourceIds = builtModelMessages.modelMessageSourceIds ?? [];
   let modelMessages: ModelMessage[] = builtModelMessages;
   if (ctx.runtime.control.forceFinalResponsePrompt) {
     modelMessages = [
@@ -518,6 +527,17 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   const artifactRepairWritePriority = isArtifactRepairWritePriority(ctx);
   const artifactRepairFullRewritePriority = isArtifactRepairFullRewritePriority(ctx);
   let requestConfigForRetry: typeof ctx.runtime.modelConfig = effectiveConfig;
+  let requestManifestData: TraceEventDataMap['request_manifest'] | null = null;
+
+  const completeRequestManifest = (response: ModelResponse, requestedConfig: ModelConfig): void => {
+    if (!requestManifestData) return;
+    requestManifestData.actualProvider = response.actualProvider
+      ?? response.fallback?.to.provider
+      ?? requestedConfig.provider;
+    requestManifestData.actualModel = response.actualModel
+      ?? response.fallback?.to.model
+      ?? requestedConfig.model;
+  };
 
   try {
     // Capability detection and model fallback
@@ -852,6 +872,55 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         artifactRepairWritePriority,
         artifactRepairFullRewritePriority,
       };
+      const toolSchemaSnapshot = emitToolSchemaSnapshot(ctx, effectiveTools);
+      const manifestEngine = process.env.CODE_AGENT_MODEL_ENGINE !== 'legacy'
+        && aiSdkSupportsProvider(requestConfig.provider, requestConfig.model)
+        ? 'aisdk'
+        : 'legacy';
+      const appVersion = getAgentVersion();
+      try {
+        requestManifestData = buildRequestManifest({
+          requestId: llmCallId,
+          messages: modelMessages,
+          assembledCanonicalMessages,
+          sourceIds: modelMessageSourceIds,
+          transcriptMessages: ctx.runtime.messages,
+          collapsedSpans: ctx.runtime.contextHealth.compressionState.getSnapshot().collapsedSpans,
+          toolSchemaHash: toolSchemaSnapshot.schemaHash,
+          toolNames: toolSchemaSnapshot.toolNames,
+          requestConfig,
+          appVersion,
+          engine: manifestEngine,
+        });
+      } catch (error) {
+        logger.warn('[Replay] request manifest assembly degraded; inference will continue', error);
+        requestManifestData = {
+          requestId: llmCallId,
+          messageRefs: [],
+          toolSchemaHash: toolSchemaSnapshot.schemaHash,
+          toolNames: toolSchemaSnapshot.toolNames,
+          requested: {
+            provider: requestConfig.provider,
+            model: requestConfig.model,
+            temperature: requestConfig.temperature ?? null,
+            maxTokens: requestConfig.maxTokens ?? null,
+            reasoningEffort: requestConfig.reasoningEffort ?? null,
+            thinkingBudget: requestConfig.thinkingBudget ?? null,
+          },
+          actualProvider: null,
+          actualModel: null,
+          appVersion,
+          adapterDefaults: {
+            engine: manifestEngine,
+            temperature: null,
+            maxTokens: null,
+          },
+          compactionReplacements: [],
+          degraded: true,
+        };
+      }
+      if (toolSchemaSnapshot.cacheStored === false) requestManifestData.degraded = true;
+      ctx.runtime.turnTrace?.record('request_manifest', requestManifestData);
       // 这次模型调用的整个生命周期（prepared → dispatched → succeeded/abandoned）
       // 收在一处：没跑完也必须给终态，否则轮次收尾时 Durable Run 会因为「留着未了结
       // 的操作」把一次成功的轮次报成运行失败。
@@ -870,6 +939,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       response.actualModel = pendingCapabilityFallback.to.model;
       response.fallback = pendingCapabilityFallback;
     }
+    completeRequestManifest(response, requestConfig);
     const toolStrategy = buildToolStrategyDiagnostics(effectiveTools, response.usage);
     const modelDecision = buildModelDecisionWithToolStrategy(ctx.inferenceRecovery.currentModelDecision, effectiveTools, response.usage, response);
     response.runtimeDiagnostics = {
@@ -1044,6 +1114,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           { forceNonStreaming: true, disableProviderTransientRetry: true },
         );
         ctx.inferenceRecovery._artifactNonStreamingRetried = false;
+        completeRequestManifest(retryResult, effectiveConfig);
         return retryResult;
       } catch (retryErr) {
         ctx.inferenceRecovery._artifactNonStreamingRetried = false;
@@ -1118,6 +1189,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
               }
             : undefined,
         };
+        completeRequestManifest(retryResult, compactConfig);
         return retryResult;
       } catch (retryErr) {
         ctx.runtime.control.setInferenceAbortController(null);

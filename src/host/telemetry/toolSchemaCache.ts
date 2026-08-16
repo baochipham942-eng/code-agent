@@ -37,16 +37,18 @@ export class ToolSchemaCache {
     }
   }
 
-  store(hash: string, content: string): void {
+  store(hash: string, content: string): boolean {
     try {
       const db = this.getDb();
-      if (!db) return;
+      if (!db) return false;
       db.prepare(`
         INSERT OR IGNORE INTO tool_schema_cache (hash, content, created_at)
         VALUES (?, ?, ?)
       `).run(hash, content, Date.now());
+      return true;
     } catch (error) {
       logger.debug('Failed to store tool schema:', { errorMessage: (error as Error).message });
+      return false;
     }
   }
 

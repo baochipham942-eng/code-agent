@@ -267,4 +267,13 @@ export function applyTelemetrySchema(db: BetterSqlite3.Database, logger: Logger)
       created_at INTEGER NOT NULL
     )
   `);
+
+  // Content Cache - 账本外模型输入的通用去重缓存。DDL 与 contentCache.ts 同步。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS content_cache (
+      hash TEXT PRIMARY KEY,
+      content TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `);
 }

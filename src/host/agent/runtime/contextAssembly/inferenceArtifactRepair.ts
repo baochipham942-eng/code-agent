@@ -127,10 +127,16 @@ export function buildArtifactValidationAttemptCompletionResponse(targetFile: str
   };
 }
 
-export function emitToolSchemaSnapshot(
-  ctx: ContextAssemblyCtx,
+export interface ToolSchemaSnapshot {
+  schemaHash: string;
+  toolNames: string[];
+  schemaJson: string;
+  cacheStored?: boolean;
+}
+
+export function buildToolSchemaSnapshot(
   tools: ToolDefinition[],
-): { schemaHash: string; toolNames: string[]; schemaJson: string } {
+): ToolSchemaSnapshot {
   const orderedTools = [...tools].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const toolNames = orderedTools.map((tool) => tool.name);
   const schemaJson = JSON.stringify(orderedTools.map((tool) => ({
@@ -141,7 +147,16 @@ export function emitToolSchemaSnapshot(
   const schemaHash = createHash(CONTEXT_LEDGER.SCHEMA_HASH_ALGORITHM)
     .update(schemaJson)
     .digest('hex');
-  getToolSchemaCache().store(schemaHash, schemaJson);
+  return { schemaHash, toolNames, schemaJson };
+}
+
+export function emitToolSchemaSnapshot(
+  ctx: ContextAssemblyCtx,
+  tools: ToolDefinition[],
+): ToolSchemaSnapshot {
+  const snapshot = buildToolSchemaSnapshot(tools);
+  const { schemaHash, toolNames, schemaJson } = snapshot;
+  snapshot.cacheStored = getToolSchemaCache().store(schemaHash, schemaJson);
   const timestamp = Date.now();
   getContextEventLedger().upsertEvents([
     {
@@ -184,7 +199,7 @@ export function emitToolSchemaSnapshot(
       })),
     },
   });
-  return { schemaHash, toolNames, schemaJson };
+  return snapshot;
 }
 
 export function isArtifactRepairWritePriority(ctx: ContextAssemblyCtx): boolean {

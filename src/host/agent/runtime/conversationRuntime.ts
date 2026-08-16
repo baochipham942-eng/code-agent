@@ -531,6 +531,9 @@ export class ConversationRuntime {
           durationMs: inferenceDuration,
           inputTokens: response.usage?.inputTokens ?? 0,
           outputTokens: response.usage?.outputTokens ?? 0,
+          ...(response.usage?.cacheReadTokens !== undefined
+            ? { cacheReadTokens: response.usage.cacheReadTokens }
+            : {}),
           finishReason: response.finishReason ?? null,
           truncated: response.truncated ?? false,
         });

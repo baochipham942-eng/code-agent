@@ -303,7 +303,7 @@ describe('external engine recovery handler', () => {
       kimi_code: 'unknown',
       codebuddy_code: 'non_resumable',
       grok_cli: 'non_resumable',
-      dsh_cli: 'non_resumable',
+      dsh_cli: 'resumable',
     });
     expect(redactCommandSummary('cmd --token abcdefgh private prompt=secret')).not.toContain('abcdefgh');
     expect(extractExternalModelUsage('{"usage":{"input_tokens":12,"output_tokens":7}}')).toEqual({ inputTokens: 12, outputTokens: 7 });

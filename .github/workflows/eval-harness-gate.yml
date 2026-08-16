@@ -71,7 +71,9 @@ jobs:
           node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('SELECT 1').get(); db.close()"
 
       - name: Typecheck
-        run: npm run typecheck
+        run: |
+          npm run typecheck
+          npm --prefix packages/eval-harness run typecheck
 
       - name: Eval harness 单测
         # 断言引擎 + baseline/trend 来源护栏 + judge 校准计算 + replay gate

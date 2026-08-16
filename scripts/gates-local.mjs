@@ -80,9 +80,14 @@ const gates = [
     args: ['scripts/ci/check-repository-structure.mjs'],
   },
   {
-    ci: 'swarm-ci / smoke / Typecheck (src only) + eval-harness / harness / Typecheck',
+    ci: 'swarm-ci / smoke / Typecheck (src only)',
     command: 'npm',
     args: ['run', 'typecheck'],
+  },
+  {
+    ci: 'eval-harness / harness / Typecheck',
+    command: 'npm',
+    args: ['--prefix', 'packages/eval-harness', 'run', 'typecheck'],
   },
   {
     ci: 'swarm-ci / smoke / Typecheck ratchet (tests + scripts)',

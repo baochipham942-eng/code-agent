@@ -34,7 +34,7 @@ export const voiceZh: VoiceTranslations = {
       noKeyMessage: '实时语音由通义千问（DashScope）提供，配一个 API Key 就能从这里直接发起通话。同一个 Key 也用于图片生成和口述转写。',
       noKeyAction: '去配置',
       estimatedCost: '预估 {cost}',
-      costUnavailable: '预估 —',
+      costUnavailable: '暂无法预估费用',
       costLimitReached: '本次通话预估成本已到上限（{cost}）',
       /** 通话录音进行中的持续可见指示（N-L7-REC）。 */
       recordCallsIndicator: '录音中',
@@ -355,7 +355,7 @@ export const voiceEn = {
       noKeyMessage: 'Live voice is powered by Qwen (DashScope). Add one API key to start calls right from here — the same key also covers image generation and dictation.',
       noKeyAction: 'Set up',
       estimatedCost: 'Est. {cost}',
-      costUnavailable: 'Est. —',
+      costUnavailable: 'Cost estimate unavailable',
       costLimitReached: 'This call reached its estimated cost limit ({cost})',
       recordCallsIndicator: 'Recording',
     },

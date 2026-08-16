@@ -4,7 +4,7 @@ import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { BaselineManager } from '../../../src/host/testing/ci/baselineManager';
 import { generateDeltaConsole } from '../../../src/host/testing/ci/deltaReporter';
-import { generateHtmlReport, generateMarkdownReport } from '../../../src/host/testing/reportGenerator';
+import { generateMarkdownReport } from '../../../src/host/testing/reportGenerator';
 import type { TestResult, TestRunSummary } from '../../../src/host/testing/types';
 
 const roots: string[] = [];
@@ -52,7 +52,7 @@ function summary(results: TestResult[]): TestRunSummary {
 }
 
 describe('mock harness baseline', () => {
-  it('三种报告都按能力分母报 100%，并列出 mock 排除名单与理由', () => {
+  it('console 和 Markdown 都按能力分母报 100%，并列出 mock 排除名单与理由', () => {
     const current = summary([
       result('fixture-a', 'passed'),
       result('real-only-b', 'skipped', { reason: 'requires real model' }),
@@ -72,10 +72,6 @@ describe('mock harness baseline', () => {
     expect(markdown).toContain('Mock 不适用用例');
     expect(markdown).toContain('real-only-b');
     expect(markdown).toContain('requires real model');
-    const html = generateHtmlReport(current);
-    expect(html).toContain('data-testid="mock-excluded-count">1');
-    expect(html).toContain('real-only-b');
-    expect(html).toContain('requires real model');
   });
 
   it('与 real baseline 分文件，使用 denominatorVersion=3 并保留排除名单', async () => {

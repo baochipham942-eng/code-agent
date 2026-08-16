@@ -1922,6 +1922,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       i === 6 ? 'user' : 'assistant',
       `message ${i} ${'hard compaction transcript '.repeat(250)}`,
     ));
+    const originalMessageIds = messages.map((message) => message.id);
     messages[4].toolCalls = [{
       id: 'pending-call-at-compaction-boundary',
       name: 'read_file',
@@ -1968,6 +1969,11 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     expect(ctx.contextHealth.compressionState.getCommitLog()).toHaveLength(1);
     expect(ctx.contextHealth.compressionState.getCommitLog()[0].layer).toBe('autocompact');
     expect(ctx.contextHealth.compressionState.getCommitLog()[0].targetMessageIds).toHaveLength(1);
+    const compactionCommit = ctx.contextHealth.compressionState.getCommitLog()[0];
+    expect(ctx.contextHealth.compressionState.getSnapshot().compactionReplacements).toEqual([{
+      replacedMessageIds: originalMessageIds.slice(0, compactionCommit.metadata?.compactedMessageCount as number),
+      replacementMessageId: compactionCommit.targetMessageIds[0],
+    }]);
     expect(ctx.messages.some((message: Message) => message.compaction)).toBe(true);
     expect(serviceMocks.sessionManager.addMessageToSession).toHaveBeenCalledWith(
       sessionId,

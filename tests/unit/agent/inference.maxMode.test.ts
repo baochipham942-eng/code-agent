@@ -14,11 +14,42 @@ import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
+import type { ModelMessage } from '../../../src/host/agent/loopTypes';
+import type { ModelMessagesWithSources } from '../../../src/host/agent/runtime/contextAssembly/shared';
+import type { TraceEventDataMap } from '../../../src/host/agent/runtime/turnTrace';
+import { buildToolSchemaSnapshot } from '../../../src/host/agent/runtime/contextAssembly/inferenceArtifactRepair';
+import { reconstructRequest } from '../../../src/host/evaluation/requestReplay';
+import { assertReconstructedRequestMatches } from '../../../src/host/evaluation/requestReplayGate';
+import { CompressionState } from '../../../src/host/context/compressionState';
+import type { ToolDefinition } from '../../../src/shared/contract';
 
 const { mockGetApiKey, mockRecordUsage, mockCheckBudget } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
   mockRecordUsage: vi.fn(),
   mockCheckBudget: vi.fn(() => ({ alertLevel: 'none', usagePercentage: 0 })),
+}));
+
+const replayCaches = vi.hoisted(() => ({
+  content: new Map<string, string>(),
+  tools: new Map<string, string>(),
+}));
+
+vi.mock('../../../src/host/telemetry/contentCache', () => ({
+  getContentCache: () => ({
+    store: (hash: string, content: string) => (replayCaches.content.set(hash, content), true),
+    get: (hash: string) => replayCaches.content.get(hash) ?? null,
+  }),
+}));
+
+vi.mock('../../../src/host/telemetry/systemPromptCache', () => ({
+  getSystemPromptCache: () => ({ get: () => null, store: vi.fn() }),
+}));
+
+vi.mock('../../../src/host/telemetry/toolSchemaCache', () => ({
+  getToolSchemaCache: () => ({
+    store: (hash: string, content: string) => (replayCaches.tools.set(hash, content), true),
+    get: (hash: string) => replayCaches.tools.get(hash) ?? null,
+  }),
 }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
@@ -168,6 +199,8 @@ describe('inference Max Mode wiring', () => {
   const prevEngine = process.env.CODE_AGENT_MODEL_ENGINE;
   beforeEach(() => {
     vi.clearAllMocks();
+    replayCaches.content.clear();
+    replayCaches.tools.clear();
     mockGetApiKey.mockReturnValue('mock-key');
     process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
   });
@@ -199,6 +232,53 @@ describe('inference Max Mode wiring', () => {
       (c) => (c[0] as { type: string }).type === 'model_decision',
     );
     expect(decisionEvents).toHaveLength(1);
+  });
+
+  it('真调 inference 后可用 turnTrace manifest 逐字节重建 engine 实收请求', async () => {
+    const ctx = buildCtx({
+      maxMode: false,
+      messages: [{ id: 'user-1', role: 'user', content: '修复这个 bug', timestamp: 1 }],
+      contextHealth: ContextHealthState.forTest({
+        compressionState: new CompressionState(),
+        persistentSystemContext: [],
+      } as never),
+    } as any);
+    const assembled = [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: '修复这个 bug' },
+      { role: 'system', content: 'repo stable\n\nsession current', transient: true },
+    ] as ModelMessage[];
+    Object.defineProperty(assembled, 'modelMessageSourceIds', {
+      value: Object.freeze(['__system_prompt__', 'user-1', '__dynamic_tail__']),
+      enumerable: false,
+    });
+    ctx.buildModelMessages = vi.fn().mockResolvedValue(assembled as ModelMessagesWithSources);
+    let engineMessages: readonly ModelMessage[] = [];
+    let engineTools: ToolDefinition[] = [];
+    ctx.runtime.modelRouter.inference = vi.fn().mockImplementation(async (messages, tools) => {
+      engineMessages = messages;
+      engineTools = tools;
+      return { type: 'text', content: 'single', finishReason: 'stop' };
+    });
+
+    await inference(ctx);
+
+    const manifestCall = vi.mocked(ctx.runtime.turnTrace.record).mock.calls.find(
+      ([type]) => type === 'request_manifest',
+    );
+    const manifest = manifestCall?.[1] as TraceEventDataMap['request_manifest'] | undefined;
+    expect(manifest).toBeDefined();
+    expect(manifest?.degraded, JSON.stringify(manifest)).toBe(false);
+    const reconstructed = reconstructRequest(manifest!, ctx.runtime.messages, {
+      getSystemPrompt: () => null,
+      getContent: (hash) => replayCaches.content.get(hash) ?? null,
+      getToolSchema: (hash) => replayCaches.tools.get(hash) ?? null,
+    });
+    assertReconstructedRequestMatches(
+      engineMessages,
+      buildToolSchemaSnapshot(engineTools).schemaJson,
+      reconstructed,
+    );
   });
 
   // 异常路径漏记 token 修复：普通（非 Max Mode）推理中断时，本轮已派发请求的

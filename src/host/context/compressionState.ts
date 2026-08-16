@@ -24,11 +24,17 @@ export interface CollapsedSpan {
   originalTokens?: number;
 }
 
+export interface CompactionReplacement {
+  replacedMessageIds: string[];
+  replacementMessageId: string;
+}
+
 export interface CompressionSnapshot {
   snippedIds: Set<string>;
   budgetedResults: Map<string, { originalTokens: number; truncatedTokens: number; archiveRef?: ToolResultArchiveRef }>;
   collapsedSpans: CollapsedSpan[];
   microcompactedIds: Set<string>;
+  compactionReplacements: CompactionReplacement[];
 }
 
 // Serializable form of the snapshot (JSON-safe)
@@ -139,6 +145,20 @@ export class CompressionState {
         for (const id of commit.targetMessageIds) {
           this.snapshot.microcompactedIds.add(id);
         }
+        const replacedMessageIds = commit.metadata?.replacedMessageIds;
+        const replacementMessageId = commit.targetMessageIds[0];
+        if (
+          commit.layer === 'autocompact'
+          && Array.isArray(replacedMessageIds)
+          && replacedMessageIds.every((id): id is string => typeof id === 'string')
+          && replacedMessageIds.length > 0
+          && replacementMessageId
+        ) {
+          this.snapshot.compactionReplacements.push({
+            replacedMessageIds: [...replacedMessageIds],
+            replacementMessageId,
+          });
+        }
         break;
       }
 
@@ -162,6 +182,7 @@ export class CompressionState {
       budgetedResults: new Map(),
       collapsedSpans: [],
       microcompactedIds: new Set(),
+      compactionReplacements: [],
     };
   }
 }

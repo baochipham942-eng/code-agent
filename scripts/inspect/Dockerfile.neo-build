@@ -1,0 +1,9 @@
+FROM node:24-bookworm
+
+WORKDIR /app
+COPY . /app
+
+RUN npm_config_cache=/tmp/npm-cache npm ci
+RUN npm_config_cache=/tmp/npm-cache npm run build:cli
+
+CMD ["tail", "-f", "/dev/null"]

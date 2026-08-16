@@ -2,10 +2,20 @@ import { describe, expect, it } from 'vitest';
 import {
   computeSmoothStreamingNextContent,
   findSmoothStreamingSegmentEnd,
-  getSmoothStreamingSegmentIntervalMs,
   shouldSyncSmoothStreamingText,
   SMOOTH_STREAMING_TEXT_DEFAULTS,
 } from '../../../src/renderer/hooks/useSmoothStreamingText';
+
+// 行为推导段间隔：从公共入口逐 ms 找到首次推进时刻。节奏函数不再对外导出（knip 生产档），
+// 测试只依赖可观测行为，实现改节奏公式时这里自动跟随。
+function segmentIntervalMs(displayContent: string, targetContent: string): number {
+  for (let elapsedMs = 1; elapsedMs <= 10_000; elapsedMs++) {
+    if (computeSmoothStreamingNextContent({ displayContent, targetContent, elapsedMs }) !== displayContent) {
+      return elapsedMs;
+    }
+  }
+  throw new Error('segment interval not found within 10s');
+}
 
 describe('useSmoothStreamingText helpers', () => {
   it('advances appended text one segment per interval without jumping to the full target', () => {
@@ -25,7 +35,7 @@ describe('useSmoothStreamingText helpers', () => {
     const next = computeSmoothStreamingNextContent({
       displayContent: 'hello',
       targetContent: target,
-      elapsedMs: getSmoothStreamingSegmentIntervalMs('hello', target) - 1,
+      elapsedMs: segmentIntervalMs('hello', target) - 1,
     });
 
     expect(next).toBe('hello');
@@ -33,7 +43,7 @@ describe('useSmoothStreamingText helpers', () => {
 
   it('keeps the same bounded drain when the stream ends instead of jumping the tail', () => {
     const target = 'hello world, this is a longer streamed answer';
-    const interval = getSmoothStreamingSegmentIntervalMs('hello', target);
+    const interval = segmentIntervalMs('hello', target);
     const beforeInterval = computeSmoothStreamingNextContent({
       displayContent: 'hello',
       targetContent: target,
@@ -53,8 +63,8 @@ describe('useSmoothStreamingText helpers', () => {
   it('shortens the segment interval as backlog grows and drains within the target window', () => {
     const shortTarget = 'one two';
     const longTarget = 'one two three four five six seven eight nine ten';
-    const shortInterval = getSmoothStreamingSegmentIntervalMs('', shortTarget);
-    const longInterval = getSmoothStreamingSegmentIntervalMs('', longTarget);
+    const shortInterval = segmentIntervalMs('', shortTarget);
+    const longInterval = segmentIntervalMs('', longTarget);
 
     expect(longInterval).toBeLessThan(shortInterval);
     expect(longInterval).toBeLessThanOrEqual(SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS);
@@ -135,7 +145,7 @@ describe('useSmoothStreamingText 积压直落', () => {
     const segment = computeSmoothStreamingNextContent({
       displayContent: landed,
       targetContent: target,
-      elapsedMs: getSmoothStreamingSegmentIntervalMs(landed, target),
+      elapsedMs: segmentIntervalMs(landed, target),
     });
     expect(segment).toBe(`${bulk}word`);
   });

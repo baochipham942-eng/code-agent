@@ -99,7 +99,7 @@ function countSmoothStreamingSegments(content: string, fromIndex: number): numbe
  * 在固定追赶窗口内排完。对应 assistant-ui useSmooth 的 drainMs 思路，保留
  * Neo 按词/中文短段落定的既有视觉粒度。
  */
-export function getSmoothStreamingSegmentIntervalMs(
+function getSmoothStreamingSegmentIntervalMs(
   displayContent: string,
   targetContent: string,
 ): number {

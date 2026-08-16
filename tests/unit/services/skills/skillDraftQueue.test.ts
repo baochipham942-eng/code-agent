@@ -91,6 +91,7 @@ describe('skillDraftQueue', () => {
       expect(md).toContain('name: source-change-workflow');
       expect(md).toContain('source: telemetry-distilled');
       expect(md).toContain('allowed-tools: "Grep,Read,Edit"');
+      expect(md).toContain('requires_tools: [Grep, Read, Edit]');
       expect(md).toContain('1. `Grep`');
       expect(md).toContain('3. `Edit`');
     });
@@ -168,6 +169,33 @@ describe('skillDraftQueue', () => {
       const result = await confirmSkillDraft('nonexistent');
       expect(result.success).toBe(false);
       expect(result.error).toContain('not found');
+    });
+
+    it('rejects promotion when a draft has neither machine metadata nor semantic [IF]', async () => {
+      const meta = await enqueueSkillDraft(makeDraftInput({
+        toolSequence: [],
+        exampleSteps: [],
+        body: '[IF]\n\n## 使用方法\n\n直接执行这套流程。',
+      }));
+
+      const result = await confirmSkillDraft(meta!.id);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('适用条件');
+      expect(await listSkillDrafts()).toHaveLength(1);
+      await expect(fs.access(path.join(tmpDir, 'skills'))).rejects.toThrow();
+    });
+
+    it('allows promotion when a draft has a semantic [IF] boundary', async () => {
+      const meta = await enqueueSkillDraft(makeDraftInput({
+        toolSequence: [],
+        exampleSteps: [],
+        body: '[IF 当前任务需要修改源码] 适用。\n\n## 使用方法\n\n执行这套流程。',
+      }));
+
+      const result = await confirmSkillDraft(meta!.id);
+
+      expect(result.success).toBe(true);
     });
   });
 

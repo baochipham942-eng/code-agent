@@ -41,6 +41,11 @@ const KNOWN_FRONTMATTER_FIELDS = new Set([
   'bins',
   'env-vars',
   'references',
+  'requires_tools',
+  'fallback_for_tools',
+  'platforms',
+  'required_env',
+  'requires_paths',
 ]);
 
 /**
@@ -97,6 +102,19 @@ const SKILL_NAME_REGEX = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;
 const TOOL_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_.:-]*$/;
 const TOOL_SCOPED_PREFIX_REGEX = /^([A-Za-z][A-Za-z0-9_.:-]*)\(([A-Za-z0-9._/@+-]+):\*\)$/;
 const ALIAS_SPLIT_REGEX = /[,，、\n]/;
+const SUPPORTED_PLATFORMS = new Set([
+  'aix',
+  'android',
+  'cygwin',
+  'darwin',
+  'freebsd',
+  'haiku',
+  'linux',
+  'netbsd',
+  'openbsd',
+  'sunos',
+  'win32',
+]);
 
 /**
  * 解析 SKILL.md 文件
@@ -208,6 +226,11 @@ export async function parseSkillMd(
     bins: frontmatter.bins,
     envVars: frontmatter['env-vars'],
     references: frontmatter.references,
+    requiresTools: parseStringList(frontmatter.requires_tools, 'requires_tools', validateToolName),
+    fallbackForTools: parseStringList(frontmatter.fallback_for_tools, 'fallback_for_tools', validateToolName),
+    platforms: parseStringList(frontmatter.platforms, 'platforms', validatePlatform),
+    requiredEnv: parseStringList(frontmatter.required_env, 'required_env', validateEnvName),
+    requiresPaths: parseStringList(frontmatter.requires_paths, 'requires_paths', validateRelativePath),
     ...(frontmatterWarnings.length > 0 ? { frontmatterWarnings } : {}),
   };
 }
@@ -268,6 +291,41 @@ function parseAliases(value: SkillFrontmatter['aliases']): string[] | undefined 
   }
 
   return aliases.length > 0 ? Array.from(new Set(aliases)) : undefined;
+}
+
+function parseStringList(
+  value: string | string[] | undefined,
+  field: string,
+  validate: (entry: string) => boolean,
+): string[] | undefined {
+  if (value === undefined) return undefined;
+  const entries = Array.isArray(value) ? value : [value];
+  const normalized: string[] = [];
+  for (const entry of entries) {
+    if (typeof entry !== 'string' || !entry.trim() || !validate(entry.trim())) {
+      throw new SkillValidationError(`${field} entries must be valid non-empty strings`, field, entry);
+    }
+    normalized.push(entry.trim());
+  }
+  return Array.from(new Set(normalized));
+}
+
+function validateToolName(value: string): boolean {
+  return TOOL_NAME_REGEX.test(value);
+}
+
+function validatePlatform(value: string): boolean {
+  return SUPPORTED_PLATFORMS.has(value.toLowerCase());
+}
+
+function validateEnvName(value: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
+
+function validateRelativePath(value: string): boolean {
+  if (path.isAbsolute(value)) return false;
+  const normalized = path.normalize(value);
+  return normalized !== '..' && !normalized.startsWith(`..${path.sep}`);
 }
 
 /**
@@ -421,6 +479,11 @@ export async function parseSkillMetadataOnly(
     bins: frontmatter.bins,
     envVars: frontmatter['env-vars'],
     references: frontmatter.references,
+    requiresTools: parseStringList(frontmatter.requires_tools, 'requires_tools', validateToolName),
+    fallbackForTools: parseStringList(frontmatter.fallback_for_tools, 'fallback_for_tools', validateToolName),
+    platforms: parseStringList(frontmatter.platforms, 'platforms', validatePlatform),
+    requiredEnv: parseStringList(frontmatter.required_env, 'required_env', validateEnvName),
+    requiresPaths: parseStringList(frontmatter.requires_paths, 'requires_paths', validateRelativePath),
     loaded: false,
     ...(frontmatterWarnings.length > 0 ? { frontmatterWarnings } : {}),
   };

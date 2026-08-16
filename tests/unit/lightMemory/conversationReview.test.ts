@@ -89,6 +89,13 @@ describe('parseReviewedSkill', () => {
     signal: 'user_correction',
     name: 'deploy-tauri-macos',
     description: '在 macOS 上打包并安装 Tauri 应用的标准流程',
+    applicability: {
+      semantic: '当前任务需要在 macOS 上部署 Tauri 桌面应用',
+      requires_tools: ['Bash'],
+      platforms: ['darwin'],
+      required_env: [],
+      requires_paths: ['package.json'],
+    },
     body: '## 步骤\n1. typecheck\n2. cargo tauri build\n3. 用安装脚本而非手动 cp',
   };
 
@@ -97,7 +104,25 @@ describe('parseReviewedSkill', () => {
     expect(r).not.toBeNull();
     expect(r!.name).toBe('deploy-tauri-macos');
     expect(r!.signal).toBe('user_correction');
+    expect(r!.body).toContain('[IF 当前任务需要在 macOS 上部署 Tauri 桌面应用]');
+    expect(r!.applicability).toEqual({
+      semantic: '当前任务需要在 macOS 上部署 Tauri 桌面应用',
+      requiresTools: ['Bash'],
+      platforms: ['darwin'],
+      requiredEnv: [],
+      requiresPaths: ['package.json'],
+    });
     expect(r!.body).toContain('cargo tauri build');
+  });
+
+  it('缺少有效适用条件 → null，生成侧不得产出无边界草稿', () => {
+    const withoutApplicability = { ...valid } as Record<string, unknown>;
+    delete withoutApplicability.applicability;
+    expect(parseReviewedSkill(JSON.stringify(withoutApplicability))).toBeNull();
+    expect(parseReviewedSkill(JSON.stringify({
+      ...valid,
+      applicability: { semantic: '   ' },
+    }))).toBeNull();
   });
 
   it('容忍 JSON 前后有多余文字 / 代码块包裹', () => {
@@ -220,6 +245,9 @@ describe('buildReviewPrompt', () => {
     expect(prompt).toContain('shouldCreate');
     expect(prompt).toContain('CLASS-LEVEL');
     expect(prompt).toContain('不要把具体主题写进 skill 名');
+    expect(prompt).toContain('applicability');
+    expect(prompt).toContain('semantic');
+    expect(prompt).toContain('requires_tools');
     expect(prompt).toContain('帮我部署');
   });
 });
@@ -248,6 +276,9 @@ describe('reviewConversationForSkill', () => {
         signal: 'user_correction',
         name: 'install-via-script',
         description: '安装桌面应用时优先用安装脚本而非手动 cp',
+        applicability: {
+          semantic: '当前任务需要安装 Tauri 桌面应用',
+        },
         body: '## 要点\n用 scripts/tauri-install.sh，手动 cp 会残留旧文件',
       }),
     });

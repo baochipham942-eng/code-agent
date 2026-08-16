@@ -26,6 +26,18 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
+vi.mock('../../../../src/host/services/skills/distillSignalStore', () => ({
+  getDistillPositiveEvidenceCount: () => 3,
+  getSkillPromotionEvidenceThreshold: () => 3,
+  registerDistilledSkillPromotion: (input: { skillName: string; patternKey: string; promotedAt: number }) => ({
+    ...input,
+    status: 'active',
+    initialPositiveEvidence: 3,
+    importanceCount: 3,
+    updatedAt: input.promotedAt,
+  }),
+}));
+
 import {
   enqueueSkillDraft,
   confirmSkillDraft,

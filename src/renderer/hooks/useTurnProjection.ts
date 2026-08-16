@@ -232,8 +232,10 @@ export function projectTurns(
       continue;
     }
 
-    // Skip other isMeta messages (Skill system internal)
-    if (msg.isMeta) continue;
+    // 语音派活指令虽然以 role:'user' 驱动执行引擎，但 historyVisibility:'meta' 会让它
+    // 落库为 isMeta=true。它仍是任务卡的稳定锚点，必须进入下面既有 voiceDispatch 投影；
+    // 其它 meta 消息继续保持隐藏，避免内部上下文泄到消息流。
+    if (msg.isMeta && !msg.metadata?.voiceDispatch) continue;
     // Skip tool role messages (results shown in toolCalls)
     if (msg.role === 'tool') continue;
 

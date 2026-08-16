@@ -17,7 +17,6 @@ import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTokenUsage
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
 import { emitVoiceCallHook, markSessionHadLiveVoice } from './voiceCallHooks';
-import { getConfigService } from '../core/configService';
 import { getSessionManager } from '../infra/sessionManager';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
@@ -30,12 +29,18 @@ import {
 } from './customRealtimeVoiceProviders';
 import { requiresVoiceActionTool, resolveVoiceActionRoute, resolveVoiceRouting } from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch, setVoiceDispatchFocus } from './voiceAgentCoordinator';
-import { composeVoiceInstructions, focusChanged, type VoiceContinuityContext } from './voiceContextAssembler';
+import {
+  composeVoiceInstructions,
+  focusChanged,
+  loadVoiceContinuity,
+  readVoiceLiveSettings,
+  withLanguageDirective,
+  type VoiceContinuityContext,
+} from './voiceContextAssembler';
 import { isVoiceScreenContextSupported } from './voiceScreenContext';
 import { addTokenUsage, recordVoiceCall } from './voiceUsageLedger';
 import { consumeVoiceCallFailure, observeVoiceEventFailure, persistVoiceCallFailure } from './voiceFailurePersistence';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
-import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 import type { SystemEventMessageMetadata } from '../../../shared/contract/systemEventRegistry';
 import { reportVoiceWorkFailure } from './voiceWorkFailureReporter';
 import { detectHangupIntent, detectHangupIntentNearMiss } from './hangupIntent';
@@ -71,56 +76,12 @@ import {
 import { isPureToolTagText, persistTranscript, type TranscriptMergeState } from './voiceTranscriptPersistence';
 import { prepareVoiceprintForCall, releaseVoiceprintForCall, type VoiceprintCallState } from './voiceprintService';
 import { createVoiceSayDoGuard, type VoiceSayDoGuard } from './voiceSayDoGuard';
+import { recordNarrationResponse, shouldPersistNarrationTranscript,
+  type NarrationResponseLedger } from './voiceNarrationTranscript';
 
 const logger = createLogger('VoiceSession');
 
 /** 读设置页「实时通话」组；读不到一律 undefined（= 全部走默认），绝不让设置读写炸掉通话。 */
-function readVoiceLiveSettings(): VoiceLiveSettings | undefined {
-  try {
-    return getConfigService().getSettings().voice?.live;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * 新拨号才读取连续性；宽限窗重连直接复用 active，不会重复扫消息流。
- *
- * TaskManager.sessionStates 是进程内 Map，app 重启后会回到 idle。此时即使 DB 里还有未结算的
- * voiceDispatch，也宁可不注入 work item 半段，避免把陈旧记录伪报成仍在运行；transcript 半段
- * 仍由 DB 正常恢复。消息读取或状态读取失败同样整体降级为空，不阻断拨号。
- */
-async function loadVoiceContinuity(neoSessionId: string): Promise<VoiceContinuityContext | null> {
-  try {
-    // 严格顺序：消息源不可用时不要提前拉起 TaskManager 依赖树，降级路径不能留下悬空 import。
-    const messages = await getSessionManager().getMessages(neoSessionId);
-    const { getTaskManager } = await import('../../task');
-    return {
-      neoSessionId,
-      sourceSessionId: neoSessionId,
-      messages,
-      taskState: getTaskManager().getSessionState(neoSessionId),
-      now: Date.now(),
-    };
-  } catch (err) {
-    logger.warn('voice continuity unavailable', {
-      message: err instanceof Error ? err.message : 'unknown',
-    });
-    return null;
-  }
-}
-
-/**
- * 语言偏好走 instructions 而不是上游参数：DashScope 的 input_audio_transcription
- * 语言参数本批未真机验证，不赌；在短人设后追加一句对话语言约束是验证过的路径。
- */
-function withLanguageDirective(instructions: string, language: VoiceLiveSettings['language']): string {
-  if (language === 'zh') return `${instructions}\n请始终用中文与用户对话。`;
-  if (language === 'en') return `${instructions}\nAlways converse with the user in English.`;
-  return instructions;
-}
-
-
 interface ActiveSession {
   id: string;
   neoSessionId: string;
@@ -169,6 +130,8 @@ interface ActiveSession {
   cancelledResponseIds: Set<string>;
   /** assistant final 先暂存，到 response.done 且未取消时才落库。 */
   pendingAssistantFinals: Map<string, { text: string; itemId?: string }>;
+  /** 注入播报的 responseId → narrationId/source message，供主消息流去重与三 ID 留证。 */
+  narrationResponses: NarrationResponseLedger;
   /** 一通电话可有多轮 response；排水窗结束前到达的 provider usage 都归入本通。 */
   tokenUsage: { value?: VoiceTokenUsage; accepting: boolean };
   /** 终态播报只属于这通电话：压住、去重与已播记录都随 active 一起销毁。 */
@@ -262,6 +225,7 @@ function rememberCancelledResponse(session: ActiveSession, responseId: string): 
   session.cancelledResponseIds.add(responseId);
   session.pendingAssistantFinals.delete(responseId);
   session.transcriptBuf.assistantByResponse.delete(responseId);
+  session.narrationResponses.delete(responseId);
   while (session.cancelledResponseIds.size > 32) {
     const oldest = session.cancelledResponseIds.values().next().value as string | undefined;
     if (!oldest) break;
@@ -443,6 +407,11 @@ async function teardown(reason: string): Promise<void> {
   session.tokenUsage.accepting = false;
   for (const [responseId, pendingAssistant] of session.transcriptBuf.assistantByResponse) {
     if (!pendingAssistant.trim() || session.cancelledResponseIds.has(responseId)) continue;
+    if (!shouldPersistNarrationTranscript(session.narrationResponses.get(responseId), {
+      responseId, voiceSessionId: session.id, neoSessionId: session.neoSessionId, phase: 'teardown-drain',
+    })) {
+      continue;
+    }
     await persistTranscript(
       session.neoSessionId,
       session.id,
@@ -454,6 +423,7 @@ async function teardown(reason: string): Promise<void> {
     );
   }
   session.transcriptBuf.assistantByResponse.clear();
+  session.narrationResponses.clear();
   const endedAt = Date.now();
   const { startedAt } = session;
   const durationSec = Math.max(0, Math.round((endedAt - startedAt) / 1000));
@@ -591,6 +561,7 @@ async function connectAndBind(
   const recorder = isVoiceCallRecordingEnabled(liveSettings) ? createVoiceCallRecorder(id) : null;
 
   const transcriptBuf = { assistantByResponse: new Map<string, string>() };
+  const narrationResponses: NarrationResponseLedger = new Map();
   const transcriptMerge: TranscriptMergeState = { messageId: null, text: '', at: 0 };
   // transport 回调属于这通上游连接，不能用全局 active 判断归属：显式挂断会先清 active，
   // 但 response.done usage 仍可能在 1.5 秒排水窗内到达。
@@ -781,6 +752,10 @@ async function connectAndBind(
         const assistantBuffer = event.type === 'assistant.transcript'
           ? transcriptBuf.assistantByResponse.get(event.responseId ?? 'legacy') ?? ''
           : '';
+        if (active?.id === id && event.type === 'response.created' && event.narrationId) {
+          recordNarrationResponse(narrationResponses, event.responseId, event.narrationId,
+            active.narration.inFlight?.narration);
+        }
         // R6：整条只有工具标签的助手字幕不上屏。流式期间按「累计到此刻」判，
         // 半截标签（`<end_c`）也压住；后面真接上正文就恢复下发，正文一个字不动。
         const suppressedToolTag = event.type === 'assistant.transcript'
@@ -886,6 +861,10 @@ async function connectAndBind(
             tokenUsage.value = addTokenUsage(tokenUsage.value, event.usage);
           }
           const key = event.responseId ?? 'legacy';
+          const narrationEvidence = event.responseId
+            ? narrationResponses.get(event.responseId)
+            : undefined;
+          if (event.responseId) narrationResponses.delete(event.responseId);
           if (cancelledResponse) {
             transcriptBuf.assistantByResponse.delete(key);
             active?.pendingAssistantFinals.delete(key);
@@ -895,19 +874,23 @@ async function connectAndBind(
             transcriptBuf.assistantByResponse.delete(key);
             if (event.responseId) active?.pendingAssistantFinals.delete(event.responseId);
             if (text.trim()) {
-              void persistTranscript(
-                neoSessionId,
-                id,
-                'assistant',
-                text,
-                transcriptCounter,
-                transcriptMerge,
-                {
-                  ...(event.responseId ? { responseId: event.responseId } : {}),
-                  ...(pending?.itemId ? { itemId: pending.itemId } : {}),
-                },
-              );
-              if (active?.id === id && active.voiceToolsAvailable) void active.sayDoGuard.audit(text, event.responseId);
+              if (shouldPersistNarrationTranscript(narrationEvidence, {
+                responseId: event.responseId, voiceSessionId: id, neoSessionId,
+              })) {
+                void persistTranscript(
+                  neoSessionId,
+                  id,
+                  'assistant',
+                  text,
+                  transcriptCounter,
+                  transcriptMerge,
+                  {
+                    ...(event.responseId ? { responseId: event.responseId } : {}),
+                    ...(pending?.itemId ? { itemId: pending.itemId } : {}),
+                  },
+                );
+                if (active?.id === id && active.voiceToolsAvailable) void active.sayDoGuard.audit(text, event.responseId);
+              }
             }
           }
         }
@@ -1024,6 +1007,7 @@ async function connectAndBind(
     },
     cancelledResponseIds: new Set(),
     pendingAssistantFinals: new Map(),
+    narrationResponses,
     tokenUsage,
     narration: createNarrationState(),
     maxDurationTimer: setTimeout(() => {

@@ -205,6 +205,7 @@ function injectNarration(session: NarrationSession, narration: VoiceWorkNarratio
   // §4.3：注入侧同样带三元组，与派活侧对上就能还原一条完整链路。
   logger.info('narration injected', {
     workItemId: narration.workItemId,
+    sourceMessageId: narration.sourceMessageId,
     voiceSessionId: session.id,
     neoSessionId: session.neoSessionId,
     status: narration.status,

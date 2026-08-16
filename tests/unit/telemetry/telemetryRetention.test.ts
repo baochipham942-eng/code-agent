@@ -58,6 +58,9 @@ describe('TelemetryStorage.pruneAgedTelemetry', () => {
       CREATE TABLE system_prompt_cache (
         hash TEXT PRIMARY KEY, content TEXT NOT NULL, tokens INTEGER, created_at INTEGER NOT NULL
       );
+      CREATE TABLE tool_schema_cache (
+        hash TEXT PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER NOT NULL
+      );
     `);
     // 每张重量表塞一条过期 + 一条新鲜
     dbState.sqlite.exec(`
@@ -75,6 +78,8 @@ describe('TelemetryStorage.pruneAgedTelemetry', () => {
         VALUES ('b-old', 's-old', 'x', ${OLD}, '{}', ${OLD}), ('b-new', 's-new', 'x', ${FRESH}, '{}', ${FRESH});
       INSERT INTO system_prompt_cache (hash, content, tokens, created_at)
         VALUES ('h-old', 'c', 1, ${OLD}), ('h-new', 'c', 1, ${FRESH});
+      INSERT INTO tool_schema_cache (hash, content, created_at)
+        VALUES ('t-old', '[]', ${OLD}), ('t-new', '[]', ${FRESH});
     `);
     database = getDatabase();
     originalGetDb = database.getDb.bind(database);
@@ -99,13 +104,15 @@ describe('TelemetryStorage.pruneAgedTelemetry', () => {
     }
   });
 
-  it('按 created_at 删除过期 diagnostic_bundles 和 system_prompt_cache', () => {
+  it('按 created_at 删除过期 diagnostic_bundles 和内容缓存', () => {
     new TelemetryStorage().pruneAgedTelemetry(NOW);
 
     expect(count('telemetry_diagnostic_bundles')).toBe(1);
     expect(count('system_prompt_cache')).toBe(1);
+    expect(count('tool_schema_cache')).toBe(1);
     expect(dbState.sqlite!.prepare("SELECT id FROM telemetry_diagnostic_bundles").get()).toEqual({ id: 'b-new' });
     expect(dbState.sqlite!.prepare("SELECT hash FROM system_prompt_cache").get()).toEqual({ hash: 'h-new' });
+    expect(dbState.sqlite!.prepare("SELECT hash FROM tool_schema_cache").get()).toEqual({ hash: 't-new' });
   });
 
   it('保留 telemetry_sessions/turns 分析主干(不删,历史用量分析不丢)', () => {

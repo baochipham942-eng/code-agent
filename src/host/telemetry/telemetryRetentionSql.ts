@@ -16,5 +16,6 @@ export function deleteAgedTelemetryRows(db: Database.Database, now: number): voi
     db.prepare('DELETE FROM telemetry_tool_calls WHERE timestamp < ?').run(cutoff);
     db.prepare('DELETE FROM telemetry_diagnostic_bundles WHERE created_at < ?').run(cutoff);
     db.prepare('DELETE FROM system_prompt_cache WHERE created_at < ?').run(cutoff);
+    db.prepare('DELETE FROM tool_schema_cache WHERE created_at < ?').run(cutoff);
   })();
 }

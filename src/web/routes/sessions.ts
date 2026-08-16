@@ -20,6 +20,7 @@ import {
   projectDurableRunToSessionPayload,
   type DurableRunReadService,
 } from '../../host/app/durableRunReadService';
+import type { TraceReadService } from '../../host/app/traceReadService';
 
 interface SessionManagerLike {
   listSessions(options: { includeArchived?: boolean }): Promise<unknown[]>;
@@ -77,6 +78,7 @@ interface SessionsRouterDeps {
   tryGetSessionManager: () => Promise<SessionManagerLike | null>;
   getSupabaseForSession: () => Promise<SupabaseSessionBinding | null>;
   getDurableRunReadService?: () => DurableRunReadService | undefined;
+  getTraceReadService?: () => TraceReadService | undefined;
 }
 
 type DurableRestoredSessionPayload = Session & { messages: Message[]; durableWaitingInput?: true };
@@ -352,6 +354,73 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
     } catch (error) {
       logger.error('GET /api/sessions/:id/messages failed:', error);
       res.json({ success: false, error: { code: 'DB_ERROR', message: formatError(error) } });
+    }
+  });
+
+  router.get('/sessions/:id/trace', async (req: Request, res: Response) => {
+    try {
+      const service = deps.getTraceReadService?.();
+      if (!service) {
+        res.status(503).json({ success: false, error: { code: 'TRACE_UNAVAILABLE', message: 'Trace reader unavailable' } });
+        return;
+      }
+      const data = await service.readSession(req.params.id as string);
+      res.json({ success: true, data });
+    } catch (error) {
+      const invalid = error instanceof RangeError;
+      logger.error('GET /api/sessions/:id/trace failed:', error);
+      res.status(invalid ? 400 : 500).json({
+        success: false,
+        error: { code: invalid ? 'INVALID_TRACE_REQUEST' : 'TRACE_READ_ERROR', message: formatError(error) },
+      });
+    }
+  });
+
+  router.get('/sessions/:id/trace/tail', async (req: Request, res: Response) => {
+    try {
+      const service = deps.getTraceReadService?.();
+      if (!service) {
+        res.status(503).json({ success: false, error: { code: 'TRACE_UNAVAILABLE', message: 'Trace reader unavailable' } });
+        return;
+      }
+      const rawCursor = req.query.cursor;
+      const cursor = rawCursor === undefined ? 0 : Number(rawCursor);
+      const data = await service.tailSession(req.params.id as string, cursor);
+      res.json({ success: true, data });
+    } catch (error) {
+      const invalid = error instanceof RangeError;
+      logger.error('GET /api/sessions/:id/trace/tail failed:', error);
+      res.status(invalid ? 400 : 500).json({
+        success: false,
+        error: { code: invalid ? 'INVALID_TRACE_REQUEST' : 'TRACE_READ_ERROR', message: formatError(error) },
+      });
+    }
+  });
+
+  router.post('/sessions/traces/summary', async (req: Request, res: Response) => {
+    try {
+      const service = deps.getTraceReadService?.();
+      if (!service) {
+        res.status(503).json({ success: false, error: { code: 'TRACE_UNAVAILABLE', message: 'Trace reader unavailable' } });
+        return;
+      }
+      const sessionIds = (req.body as { sessionIds?: unknown } | null)?.sessionIds;
+      if (
+        !Array.isArray(sessionIds)
+        || sessionIds.length > 500
+        || sessionIds.some((sessionId) => typeof sessionId !== 'string')
+      ) {
+        throw new RangeError('sessionIds must be an array of at most 500 strings');
+      }
+      const data = await service.summarizeSessions(sessionIds as string[]);
+      res.json({ success: true, data });
+    } catch (error) {
+      const invalid = error instanceof RangeError;
+      logger.error('POST /api/sessions/traces/summary failed:', error);
+      res.status(invalid ? 400 : 500).json({
+        success: false,
+        error: { code: invalid ? 'INVALID_TRACE_REQUEST' : 'TRACE_READ_ERROR', message: formatError(error) },
+      });
     }
   });
 

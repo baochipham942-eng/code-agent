@@ -1,0 +1,10 @@
+.git
+.code-agent
+.venv*
+node_modules
+dist
+target
+coverage
+test-results
+playwright-report
+*.log

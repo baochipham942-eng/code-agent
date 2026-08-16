@@ -34,6 +34,7 @@ import { StreamingIndicator, getRunningSubagentCount, getRunningToolStartTime, g
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
 import { isFileChangeCardOwnedNode } from '../../../utils/turnDiffSummary';
 import { TurnFeedback } from './TurnFeedback';
+import { TurnOutcomeBadge } from './TurnOutcomeBadge';
 import { ToolStepGroup } from './ToolStepGroup';
 import {
   groupAdjacentToolCalls,
@@ -366,6 +367,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         )}
 
         <TurnRunHeader turn={turn} streamingState={streamingState} />
+        <TurnOutcomeBadge turn={turn} sessionId={sessionId} />
         {shouldShowStreamingState(streamingState) && (
           <StreamingStateBanner state={streamingState} />
         )}

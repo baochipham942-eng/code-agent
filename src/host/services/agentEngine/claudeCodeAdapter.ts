@@ -113,8 +113,13 @@ export class ClaudeCodeAdapter {
   async run(request: ClaudeCodeRunRequest): Promise<AgentEngineRunResult> {
     const { config } = this;
     assertExternalRuntimeAttachments(config.kind, request.attachmentsCount, config.label);
-    if (config.kind !== 'claude_code' && (request.resumeLaunch || request.forkContextHandoff)) {
-      throw new Error(`${config.label} continuation and fork context are not verified.`);
+    // 两道闸分开拆：resume 按引擎逐个真机验过才放行（N-DSH1c 只验了 dsh 的 resume），
+    // fork context 仍只有 claude_code 验过——不许因为放 resume 顺手把 fork 一起放开。
+    if (config.kind !== 'claude_code' && config.kind !== 'dsh_cli' && request.resumeLaunch) {
+      throw new Error(`${config.label} continuation is not verified.`);
+    }
+    if (config.kind !== 'claude_code' && request.forkContextHandoff) {
+      throw new Error(`${config.label} fork context is not verified.`);
     }
     const launchPrompt = request.forkContextHandoff
       ? composeExternalForkLaunchPrompt({
@@ -357,6 +362,13 @@ export class ClaudeCodeAdapter {
           void request.durableLifecycle?.terminateProcess('SIGTERM');
         } else {
           confirmedExternalSessionId = parsed.externalSessionId;
+          // 观测到身份就立刻落 durable 锚点（persistExternalSessionId 幂等，收尾那次成为 no-op）。
+          // 只在收尾落的话，中途崩溃的 run 永远没有恢复锚点——decideExternalRecovery 只能
+          // 收在 resume_evidence_incomplete，「resumable」能力位就成了空话（N-DSH1c 真机撞出来的）。
+          // fork 首跑除外：它的恒等式是「握手消费成功才认这条新外部会话」，锚点仍走收尾路径。
+          if (!request.forkContextHandoff) {
+            request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
+          }
         }
       }
       if (parsed.textDelta && (parsed.textDeltaSource !== 'snapshot' || streamedText.length === 0)) {

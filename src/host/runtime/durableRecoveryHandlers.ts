@@ -22,6 +22,7 @@ import {
 import type { MCPClient } from '../mcp/mcpClient';
 import { ClaudeCodeAdapter } from '../services/agentEngine/claudeCodeAdapter';
 import { CodexCliAdapter } from '../services/agentEngine/codexCliAdapter';
+import { DshCliAdapter } from '../services/agentEngine/dshCliAdapter';
 import {
   ExternalEngineDurableLifecycle,
   buildExternalEngineRecoveryDecision,
@@ -33,6 +34,7 @@ import {
 import {
   createClaudeResumeLaunch,
   createCodexResumeLaunch,
+  createDshResumeLaunch,
 } from '../services/agentEngine/externalEngineResumeBuilders';
 import { getLogsPath } from '../platform/appPaths';
 import type { RunKernelAdapter } from './durableRunKernel';
@@ -56,6 +58,7 @@ import { AutoAgentRecoveryHost } from './autoAgentRecoveryHost';
 export interface ExternalResumeRunners {
   codex(input: Parameters<CodexCliAdapter['run']>[0]): Promise<AgentEngineRunResult>;
   claude(input: Parameters<ClaudeCodeAdapter['run']>[0]): Promise<AgentEngineRunResult>;
+  dsh(input: Parameters<DshCliAdapter['run']>[0]): Promise<AgentEngineRunResult>;
 }
 
 export function createNativeRecoveryHandler(input: {
@@ -139,6 +142,7 @@ export function createExternalEngineRecoveryHandler(input: {
   const runners = input.runners ?? {
     codex: (request) => new CodexCliAdapter().run(request),
     claude: (request) => new ClaudeCodeAdapter().run(request),
+    dsh: (request) => new DshCliAdapter().run(request),
   };
   return {
     name: 'external_cli',
@@ -236,6 +240,19 @@ async function runExternalResume(
   if (decision.engine === 'claude_code') {
     const resumeLaunch = createClaudeResumeLaunch(common);
     return runners.claude({
+      sessionId: plan.envelope.sessionId,
+      prompt: '',
+      cwd: context.cwd,
+      workspaceRoot: context.workspace,
+      model: context.model,
+      permissionProfile: context.permissionProfile,
+      durableLifecycle: lifecycle,
+      resumeLaunch,
+    });
+  }
+  if (decision.engine === 'dsh_cli') {
+    const resumeLaunch = createDshResumeLaunch(common);
+    return runners.dsh({
       sessionId: plan.envelope.sessionId,
       prompt: '',
       cwd: context.cwd,

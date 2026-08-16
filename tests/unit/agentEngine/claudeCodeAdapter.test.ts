@@ -80,9 +80,12 @@ import {
   parseClaudeCodeJsonLine,
 } from '../../../src/host/services/agentEngine/claudeCodeAdapter';
 import { DshCliAdapter } from '../../../src/host/services/agentEngine/dshCliAdapter';
+import { GrokCliAdapter } from '../../../src/host/services/agentEngine/grokCliAdapter';
 import {
   createClaudeContinuationResumeLaunch,
   createClaudeResumeLaunch,
+  createDshResumeLaunch,
+  DSH_RECOVERY_TASK,
 } from '../../../src/host/services/agentEngine/externalEngineResumeBuilders';
 import type { ExternalEngineDurableLifecycle } from '../../../src/host/services/agentEngine/externalEngineDurableLifecycle';
 import { buildTestExternalForkContextHandoff } from '../services/sessionFork/externalForkContextTestFixture';
@@ -994,6 +997,93 @@ describe('ClaudeCodeAdapter.run', () => {
     expect(mocks.updateSession.mock.calls.at(-1)?.[1]).toMatchObject({
       engine: { kind: 'dsh_cli', externalSessionId: 'session-dsh-1' },
     });
+  });
+
+  it('resumes dsh through the runner-swap patch and confirms the persisted session id', async () => {
+    mocks.registryGet.mockResolvedValue({
+      kind: 'dsh_cli', installState: 'installed', runtimeState: 'ready',
+      executable: false, binaryPath: '/Users/linchen/.npm-global/bin/dsh',
+    });
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({ type: 'session', sessionId: 'session-dsh-target' }),
+      JSON.stringify({ type: 'final', text: '接着上次的活干完了' }),
+      JSON.stringify({ type: 'turn_end', reason: 'completed' }),
+    ], 0));
+    const cwd = await fs.realpath(workspaceRoot);
+    const lifecycle = {
+      runId: 'logical-run', attempt: 3, ownerEpoch: 6,
+      attachProcess: vi.fn(async () => undefined),
+      observeStdout: vi.fn(), observeStderr: vi.fn(), observeModelUsage: vi.fn(), observeNormalizedEvent: vi.fn(),
+      persistExternalSessionId: vi.fn(), terminateProcess: vi.fn(async () => undefined),
+      finish: vi.fn(async () => undefined),
+    } as unknown as ExternalEngineDurableLifecycle;
+    const resumeLaunch = createDshResumeLaunch({
+      runId: 'logical-run', sessionId: 'session-1', attempt: 3, ownerEpoch: 6,
+      externalSessionId: 'session-dsh-target', cwd, permissionProfile: 'read_only',
+    });
+    const result = await new DshCliAdapter().run({
+      sessionId: 'session-1', prompt: '', cwd, workspaceRoot: cwd,
+      permissionProfile: 'read_only', durableLifecycle: lifecycle, resumeLaunch,
+    });
+    expect(result).toMatchObject({ runId: 'logical-run', sessionId: 'session-1', engine: 'dsh_cli', status: 'completed' });
+    expect(mocks.spawn.mock.calls[0][1]).toEqual(resumeLaunch.args);
+    // 崩溃恢复没有空输入重放形态：固定续跑指令走位置参数。
+    expect(resumeLaunch.args.at(-1)).toBe(DSH_RECOVERY_TASK);
+    expect(lifecycle.persistExternalSessionId).toHaveBeenCalledWith('session-dsh-target');
+  });
+
+  it('fails closed when dsh resume announces a different session id', async () => {
+    mocks.registryGet.mockResolvedValue({
+      kind: 'dsh_cli', installState: 'installed', runtimeState: 'ready',
+      executable: false, binaryPath: '/Users/linchen/.npm-global/bin/dsh',
+    });
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({ type: 'session', sessionId: 'session-dsh-other' }),
+      JSON.stringify({ type: 'final', text: '这是别人的会话' }),
+      JSON.stringify({ type: 'turn_end', reason: 'completed' }),
+    ], 0));
+    const cwd = await fs.realpath(workspaceRoot);
+    const lifecycle = {
+      runId: 'logical-run', attempt: 3, ownerEpoch: 6,
+      attachProcess: vi.fn(async () => undefined),
+      observeStdout: vi.fn(), observeStderr: vi.fn(), observeModelUsage: vi.fn(), observeNormalizedEvent: vi.fn(),
+      persistExternalSessionId: vi.fn(), terminateProcess: vi.fn(async () => undefined),
+      finish: vi.fn(async () => undefined),
+    } as unknown as ExternalEngineDurableLifecycle;
+    const resumeLaunch = createDshResumeLaunch({
+      runId: 'logical-run', sessionId: 'session-1', attempt: 3, ownerEpoch: 6,
+      externalSessionId: 'session-dsh-target', cwd, permissionProfile: 'read_only',
+    });
+    const result = await new DshCliAdapter().run({
+      sessionId: 'session-1', prompt: '', cwd, workspaceRoot: cwd,
+      permissionProfile: 'read_only', durableLifecycle: lifecycle, resumeLaunch,
+    });
+    expect(result).toMatchObject({ status: 'failed', error: 'Claude resumed a different external session' });
+    expect(lifecycle.persistExternalSessionId).not.toHaveBeenCalled();
+  });
+
+  it('keeps fork context closed for dsh even though resume is open', async () => {
+    // 硬闸是拆开的两条：放开 resume 不许连带放开 fork context（本单没验 fork）。
+    const cwd = await fs.realpath(workspaceRoot);
+    await expect(new DshCliAdapter().run({
+      sessionId: 'session-1', prompt: 'hi', cwd, workspaceRoot: cwd,
+      permissionProfile: 'read_only',
+      forkContextHandoff: buildTestExternalForkContextHandoff('claude_code'),
+    })).rejects.toThrow('DeepSeek Harness fork context is not verified.');
+    expect(mocks.spawn).not.toHaveBeenCalled();
+  });
+
+  it('keeps continuation closed for engines whose resume is unverified', async () => {
+    const cwd = await fs.realpath(workspaceRoot);
+    await expect(new GrokCliAdapter().run({
+      sessionId: 'session-1', prompt: '', cwd, workspaceRoot: cwd,
+      permissionProfile: 'read_only',
+      resumeLaunch: {
+        runId: 'logical-run', sessionId: 'session-1', attempt: 1, ownerEpoch: 1,
+        externalSessionId: 'x', args: [], cwd, commandSummary: 'x', permissionProfile: 'read_only',
+      },
+    })).rejects.toThrow('continuation is not verified');
+    expect(mocks.spawn).not.toHaveBeenCalled();
   });
 });
 

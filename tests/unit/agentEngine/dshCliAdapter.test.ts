@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDshArgs,
   buildDshEnv,
+  buildDshResumeArgs,
   parseDshLine,
 } from '../../../src/host/services/agentEngine/dshCliAdapter';
 
@@ -55,6 +56,68 @@ describe('DshCliAdapter protocol', () => {
     } finally {
       process.chdir(previousCwd);
       if (previousOverride !== undefined) process.env.CODE_AGENT_DSH_EVENT_SINK = previousOverride;
+      fs.rmSync(empty, { recursive: true, force: true });
+    }
+  });
+
+  it('builds resume args: sink patch first, then a runner-swap patch, task as the positional', () => {
+    const args = buildDshResumeArgs({ resumeSessionId: 'session-abc', task: 'what number did I ask you to remember?' });
+    expect(args.slice(0, 3)).toEqual(['--profile', 'headless', '--patch']);
+    expect(args[4]).toBe('--patch');
+    expect(args[6]).toBe('what number did I ask you to remember?');
+    expect(args).toHaveLength(7);
+    // 恢复的那一轮同样要事件流：sink patch 原样在最前。
+    expect(fs.readFileSync(args[SINK_PATCH_INDEX], 'utf8')).toContain('neo-event-sink');
+    // resume patch：关掉 shipped runner、换上 Neo 的 runner；headless-startup 不动，
+    // task 仍由它解析（!!js），session id 以受限字符集写死在 config 里。
+    expect(fs.readFileSync(args[5], 'utf8')).toMatch(
+      new RegExp(
+        '^- id: headless-runner\n'
+        + '  disabled: true\n'
+        + '- insert:\n'
+        + ' {4}- id: neo-resume-runner\n'
+        + " {6}name: 'file://.*/resources/dsh-event-sink/resume-runner\\.mjs'\n"
+        + ' {6}inject: \\[headlessStartup\\]\n'
+        + ' {6}config:\n'
+        + ' {8}task: !!js ctx\\.headlessStartup\\.task\n'
+        + " {8}resumeSessionId: 'session-abc'\n$",
+      ),
+    );
+  });
+
+  it('layers the model overlay after the resume patch when a provider/model is chosen', () => {
+    const args = buildDshResumeArgs({
+      model: 'deepseek-official/deepseek-v4-pro',
+      resumeSessionId: 'session-abc',
+      task: 'nonce',
+    });
+    expect(args.filter((value) => value === '--patch')).toHaveLength(3);
+    expect(args.at(-1)).toBe('nonce');
+    expect(fs.readFileSync(args[7], 'utf8')).toContain('provider: deepseek-official');
+  });
+
+  it('refuses a resume session id that smuggles YAML and an empty task', () => {
+    expect(() => buildDshResumeArgs({ resumeSessionId: "x'\n- pwned", task: 'nonce' })).toThrow(/只允许字母/);
+    expect(() => buildDshResumeArgs({ resumeSessionId: 'session-abc', task: '  ' })).toThrow(/non-empty task/);
+  });
+
+  it('refuses to resume when the resume runner plugin is missing', () => {
+    // manifest 已声明 resume——少了 runner 只会「新开会话装作恢复」，宁可开不起来。
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-runner-missing-'));
+    const previousCwd = process.cwd();
+    const previousSink = process.env.CODE_AGENT_DSH_EVENT_SINK;
+    const previousRunner = process.env.CODE_AGENT_DSH_RESUME_RUNNER;
+    // sink 指到真文件，让失败只可能来自 runner 缺失。
+    process.env.CODE_AGENT_DSH_EVENT_SINK = path.join(previousCwd, 'resources', 'dsh-event-sink', 'sink.mjs');
+    delete process.env.CODE_AGENT_DSH_RESUME_RUNNER;
+    process.chdir(empty);
+    try {
+      expect(() => buildDshResumeArgs({ resumeSessionId: 'session-abc', task: 'nonce' })).toThrow(/resume runner 插件没找到/);
+    } finally {
+      process.chdir(previousCwd);
+      if (previousSink !== undefined) process.env.CODE_AGENT_DSH_EVENT_SINK = previousSink;
+      else delete process.env.CODE_AGENT_DSH_EVENT_SINK;
+      if (previousRunner !== undefined) process.env.CODE_AGENT_DSH_RESUME_RUNNER = previousRunner;
       fs.rmSync(empty, { recursive: true, force: true });
     }
   });

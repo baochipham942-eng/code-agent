@@ -19,6 +19,10 @@ const CLIENT_DEFAULT_MODEL = 'client_default';
 const DEFAULT_MODEL_PLUGIN_ID = 'agent-default-model';
 /** Neo 的事件 sink 插件在 dsh 树上的 id，与 `sink.mjs` 的 `name` 同名，`--dump-config` 可见。 */
 const DSH_EVENT_SINK_ID = 'neo-event-sink';
+/** Neo 的 resume runner 插件在 dsh 树上的 id，与 `resume-runner.mjs` 的 `name` 同名。 */
+const DSH_RESUME_RUNNER_ID = 'neo-resume-runner';
+/** shipped 的一次性 runner 在 dsh 树上的 id；resume patch 会对它 `disabled: true`。 */
+const DSH_HEADLESS_RUNNER_ID = 'headless-runner';
 /**
  * dsh 的只读档：shipped headless profile 自己就读这个环境变量
  * （`sandbox-policy.mode = process.env.DSH_PERMISSION_MODE ?? 'workspace-write'`，
@@ -125,29 +129,45 @@ export function buildDshArgs(
 }
 
 /**
- * 找到随包带的 dsh 事件 sink 插件。找不到就抛 —— 少了它整条事件流会静默变哑，
- * 而 Neo 的 manifest 已经声明了 `stream_events`，声明与实际必须一起成立。
+ * 找到随包带的 dsh 插件（sink / resume runner 同一目录同一套候选表）。找不到就抛：
+ * 少了 sink 整条事件流会静默变哑，少了 resume runner 恢复只会新开会话丢上下文，
+ * 而 Neo 的 manifest 已经声明了 `stream_events` / `resume`，声明与实际必须一起成立。
  */
-function resolveDshEventSinkPath(): string {
+function resolveDshPluginPath(fileName: string, envOverride: string | undefined, label: string, missingConsequence: string): string {
   const resourcesPath = String((process as NodeJS.Process & { resourcesPath?: string }).resourcesPath || '');
   const candidates = [
-    process.env.CODE_AGENT_DSH_EVENT_SINK,
-    path.join(process.cwd(), 'resources', 'dsh-event-sink', 'sink.mjs'),
+    envOverride,
+    path.join(process.cwd(), 'resources', 'dsh-event-sink', fileName),
     ...(resourcesPath
       ? [
-          path.join(resourcesPath, 'resources', 'dsh-event-sink', 'sink.mjs'),
-          path.join(resourcesPath, '_up_', 'resources', 'dsh-event-sink', 'sink.mjs'),
+          path.join(resourcesPath, 'resources', 'dsh-event-sink', fileName),
+          path.join(resourcesPath, '_up_', 'resources', 'dsh-event-sink', fileName),
         ]
       : []),
   ].filter((value): value is string => Boolean(value));
   const found = candidates.find((candidate) => existsSync(candidate));
   if (!found) {
-    throw new Error(
-      `DeepSeek Harness 的事件流插件没找到（找过：${candidates.join('、')}）。`
-      + '没有它 dsh 只会打印最终答案，工具调用和流式文本都看不见。',
-    );
+    throw new Error(`DeepSeek Harness 的${label}插件没找到（找过：${candidates.join('、')}）。${missingConsequence}`);
   }
   return found;
+}
+
+function resolveDshEventSinkPath(): string {
+  return resolveDshPluginPath(
+    'sink.mjs',
+    process.env.CODE_AGENT_DSH_EVENT_SINK,
+    '事件流',
+    '没有它 dsh 只会打印最终答案，工具调用和流式文本都看不见。',
+  );
+}
+
+function resolveDshResumeRunnerPath(): string {
+  return resolveDshPluginPath(
+    'resume-runner.mjs',
+    process.env.CODE_AGENT_DSH_RESUME_RUNNER,
+    'resume runner ',
+    '没有它恢复只会新开一个 dsh 会话、丢掉之前的上下文。',
+  );
 }
 
 /**
@@ -169,6 +189,64 @@ function writeDshEventSinkPatch(): string {
     'utf8',
   );
   return patchPath;
+}
+
+/**
+ * 写一份「关掉 shipped runner、换上 Neo 的 resume runner」的 dsh patch 层，返回它的路径。
+ *
+ * `headless-startup` 那行留着不动：task 仍走位置参数，由它解析后经 `!!js` 喂给
+ * resume runner（空 task 它自己报 usage error，天然挡住空恢复指令）。
+ * 文件名带 runner 路径与 session id 的哈希：同一组合复用同一份、可重复写入。
+ */
+function writeDshResumePatch(resumeSessionId: string): string {
+  const normalized = resumeSessionId.trim();
+  if (!DSH_ID_PATTERN.test(normalized)) {
+    throw new Error(`DeepSeek Harness 会话 id 只允许字母、数字、点、下划线和连字符，收到 "${resumeSessionId}"。`);
+  }
+  const runnerPath = resolveDshResumeRunnerPath();
+  const patchDir = path.join(tmpdir(), 'agent-neo-dsh-resume-patches');
+  mkdirSync(patchDir, { recursive: true });
+  const digest = createHash('sha256').update(`${runnerPath}\n${normalized}`).digest('hex').slice(0, 16);
+  const patchPath = path.join(patchDir, `${digest}.yml`);
+  writeFileSync(
+    patchPath,
+    `- id: ${DSH_HEADLESS_RUNNER_ID}\n`
+    + '  disabled: true\n'
+    + '- insert:\n'
+    + `    - id: ${DSH_RESUME_RUNNER_ID}\n`
+    + `      name: '${pathToFileURL(runnerPath).href}'\n`
+    + '      inject: [headlessStartup]\n'
+    + '      config:\n'
+    + '        task: !!js ctx.headlessStartup.task\n'
+    + `        resumeSessionId: '${normalized}'\n`,
+    'utf8',
+  );
+  return patchPath;
+}
+
+/**
+ * 恢复一条 dsh 会话的完整 argv：事件 sink 照常挂（恢复的那一轮同样要逐帧事件 +
+ * session 行做身份确认），再叠 resume patch，模型选择与普通跑法同规则。
+ */
+export function buildDshResumeArgs(input: {
+  model?: string | null;
+  resumeSessionId: string;
+  task: string;
+}): string[] {
+  if (!input.task.trim()) {
+    throw new Error('DeepSeek Harness resume requires a non-empty task.');
+  }
+  const selection = parseDshModelSelection(input.model);
+  return [
+    '--profile',
+    DSH_PROFILE,
+    '--patch',
+    writeDshEventSinkPatch(),
+    '--patch',
+    writeDshResumePatch(input.resumeSessionId),
+    ...(selection ? ['--patch', writeDshModelPatch(selection)] : []),
+    input.task,
+  ];
 }
 
 /**

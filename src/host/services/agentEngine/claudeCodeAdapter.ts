@@ -113,8 +113,13 @@ export class ClaudeCodeAdapter {
   async run(request: ClaudeCodeRunRequest): Promise<AgentEngineRunResult> {
     const { config } = this;
     assertExternalRuntimeAttachments(config.kind, request.attachmentsCount, config.label);
-    if (config.kind !== 'claude_code' && (request.resumeLaunch || request.forkContextHandoff)) {
-      throw new Error(`${config.label} continuation and fork context are not verified.`);
+    // 两道闸分开拆：resume 按引擎逐个真机验过才放行（N-DSH1c 只验了 dsh 的 resume），
+    // fork context 仍只有 claude_code 验过——不许因为放 resume 顺手把 fork 一起放开。
+    if (config.kind !== 'claude_code' && config.kind !== 'dsh_cli' && request.resumeLaunch) {
+      throw new Error(`${config.label} continuation is not verified.`);
+    }
+    if (config.kind !== 'claude_code' && request.forkContextHandoff) {
+      throw new Error(`${config.label} fork context is not verified.`);
     }
     const launchPrompt = request.forkContextHandoff
       ? composeExternalForkLaunchPrompt({

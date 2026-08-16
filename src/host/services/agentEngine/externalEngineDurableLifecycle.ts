@@ -36,7 +36,7 @@ export const EXTERNAL_ENGINE_RESUME_CAPABILITIES: Readonly<Record<ExternalAgentE
   kimi_code: 'unknown',
   codebuddy_code: 'non_resumable',
   grok_cli: 'non_resumable',
-  dsh_cli: 'non_resumable',
+  dsh_cli: 'resumable',
 });
 
 interface ExternalCheckpointState {

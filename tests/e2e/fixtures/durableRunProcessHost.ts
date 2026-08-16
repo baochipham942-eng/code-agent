@@ -430,7 +430,7 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
     env: { CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' },
     leaseDurationMs: 2_000,
     now: Date.now(),
-    externalRunners: { codex: fakeExternalRunner as never, claude: fakeExternalRunner as never },
+    externalRunners: { codex: fakeExternalRunner as never, claude: fakeExternalRunner as never, dsh: fakeExternalRunner as never },
     getMcpClient: () => fakeMcpClient as never,
     trustedMcpServerIdentities: new Set(['trusted-server']),
     dynamicWorkflowHost,

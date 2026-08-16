@@ -34,7 +34,7 @@ export const voiceZh: VoiceTranslations = {
       noKeyMessage: '实时语音由通义千问（DashScope）提供，配一个 API Key 就能从这里直接发起通话。同一个 Key 也用于图片生成和口述转写。',
       noKeyAction: '去配置',
       estimatedCost: '预估 {cost}',
-      costUnavailable: '预估 —',
+      costUnavailable: '暂无法预估费用',
       costLimitReached: '本次通话预估成本已到上限（{cost}）',
       /** 通话录音进行中的持续可见指示（N-L7-REC）。 */
       recordCallsIndicator: '录音中',
@@ -154,6 +154,8 @@ export const voiceZh: VoiceTranslations = {
       providerMissing: '未配置 {name} Key，实时语音不可用',
       providerMissingHint: '请在上方输入 {name} API Key，或在设置 → 模型配置对应 Key',
       conversationModelLabel: '通话模型',
+      callModelLabel: '实时语音模型',
+      callModelDistinction: '输入框显示的是文字对话模型；这通电话使用上面的实时语音模型，模型切换请到设置。',
       untestedBadge: '未测试',
       addProvider: '添加 Provider',
       addProviderTitle: '添加 Provider',
@@ -198,6 +200,13 @@ export const voiceZh: VoiceTranslations = {
       customProviderIdExists: 'providerId「{id}」已存在，请换一个。',
       samplePending: '样音待生成',
       audition: '试听',
+      // 阿里云百炼官方 Qwen-Omni-Realtime 音色表：
+      // https://help.aliyun.com/zh/model-studio/omni-voice-list
+      voiceDescriptions: {
+        Tina: '普通话·甜暖',
+        Ethan: '普通话·明亮朝气',
+        Serena: '女声·温柔',
+      },
       customProviderSaved: 'Provider「{name}」已保存，并切换为当前 Provider',
       executionModelTitle: '执行引擎',
       executionModelDescription: '实时语音模型只负责听和说；派出去的活由这里的模型真干。不选就跟随会话默认引擎。',
@@ -319,7 +328,7 @@ export const voiceZh: VoiceTranslations = {
     echoHint: {
       message: '外放可能让助手听到自己的声音，建议佩戴耳机',
       dontShowAgain: '不再提示',
-      fallback: '原生回声消除当前不可用，已切换到耳机模式；使用外放可能导致打断异常',
+      fallback: '回声消除暂不可用，建议戴耳机通话；开外放时，人声识别可能不精准',
     },
   },
 };
@@ -346,7 +355,7 @@ export const voiceEn = {
       noKeyMessage: 'Live voice is powered by Qwen (DashScope). Add one API key to start calls right from here — the same key also covers image generation and dictation.',
       noKeyAction: 'Set up',
       estimatedCost: 'Est. {cost}',
-      costUnavailable: 'Est. —',
+      costUnavailable: 'Cost estimate unavailable',
       costLimitReached: 'This call reached its estimated cost limit ({cost})',
       recordCallsIndicator: 'Recording',
     },
@@ -465,6 +474,8 @@ export const voiceEn = {
       providerMissing: '{name} key not configured — Live Voice is unavailable',
       providerMissingHint: 'Enter a {name} API key above, or set the corresponding key in Settings → Models',
       conversationModelLabel: 'Conversation model',
+      callModelLabel: 'Live Voice model',
+      callModelDistinction: 'The composer shows the text conversation model. This call uses the Live Voice model above; switch it in Settings.',
       untestedBadge: 'Untested',
       addProvider: 'Add Provider',
       addProviderTitle: 'Add Provider',
@@ -509,6 +520,13 @@ export const voiceEn = {
       customProviderIdExists: 'providerId "{id}" already exists; choose another.',
       samplePending: 'Sample pending',
       audition: 'Audition',
+      // Official Alibaba Cloud Model Studio Qwen-Omni-Realtime voice list:
+      // https://help.aliyun.com/en/model-studio/omni-voice-list
+      voiceDescriptions: {
+        Tina: 'Mandarin · sweet and warm',
+        Ethan: 'Mandarin · bright and energetic',
+        Serena: 'Female · gentle',
+      },
       customProviderSaved: 'Provider "{name}" saved and switched to current provider',
       executionModelTitle: 'Execution engine',
       executionModelDescription: 'The Live Voice model only listens and speaks; dispatched work runs on this model. Leave unset to follow the session default.',
@@ -625,7 +643,7 @@ export const voiceEn = {
     echoHint: {
       message: 'Speaker output may let the assistant hear itself. Consider wearing headphones',
       dontShowAgain: "Don't show again",
-      fallback: 'Native echo cancellation is unavailable. Headphone mode is active; speaker output may cause interruption issues',
+      fallback: 'Echo cancellation unavailable — headphones recommended; voice recognition may be less accurate on speaker',
     },
   },
 } as const;

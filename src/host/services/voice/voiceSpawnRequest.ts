@@ -11,8 +11,8 @@ export interface VoiceSpawnRequest {
 
 export function fallbackVoiceTaskShortName(title: string): string {
   const chars = Array.from(title.trim());
-  if (chars.length >= 2) return chars.slice(0, 4).join('');
-  return `${chars[0] ?? '新'}任务`.slice(0, 4);
+  if (chars.length >= 2) return chars.slice(0, 6).join('');
+  return `${chars[0] ?? '新'}任务`.slice(0, 6);
 }
 
 /** Preserve registered tool identifiers after speech recognition splits or cases them. */

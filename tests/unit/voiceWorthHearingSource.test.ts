@@ -181,7 +181,7 @@ describe('刚刚卡住 → worth-hearing', () => {
 
     const spoken = worthHearing();
     expect(spoken).toHaveLength(1);
-    expect(spoken[0]?.summary).toContain('『写验收文』正在等你批准');
+    expect(spoken[0]?.summary).toContain('『写验收文件』正在等你确认');
     expect(spoken[0]?.summary).toContain('选择允许或拒绝');
     expect(spoken[0]?.summary).toContain('还没有做完，也不会自动放行');
     expect(spoken[0]?.summary).not.toContain('我已经开始做');

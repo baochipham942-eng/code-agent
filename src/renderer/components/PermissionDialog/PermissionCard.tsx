@@ -324,9 +324,7 @@ export function PermissionCard() {
       onConfirm={() => {
         if (selectedLevel) void handleApproval(selectedLevel);
       }}
-      onCancel={() => void handleApproval('deny')}
       confirmLabel={t.decisionCard.confirm}
-      cancelLabel={p.optionDeny}
     />
   );
 }

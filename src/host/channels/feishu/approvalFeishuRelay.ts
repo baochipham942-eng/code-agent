@@ -2,7 +2,7 @@
 // Approval → Feishu relay (B3)
 // ============================================================================
 //
-// 无人值守工具审批停车挂起（B2）后，把「有操作等你批准」镜像到关联的飞书会话，
+// 无人值守工具审批停车挂起（B2）后，把「有操作等你确认」镜像到关联的飞书会话，
 // 并支持点飞书卡片按钮直接批准/拒绝。收件箱仍是主入口，飞书是镜像增强：
 //   - 出站：订阅 approvalParkEvents('parked') → 发交互卡片（人话 + external 徽标 + 双按钮）
 //   - 入站：飞书按钮回调 → channelManager('card_action') → 解码 → resolveParkedApproval
@@ -91,7 +91,7 @@ export function decodeApprovalValue(value: string | undefined | null): DecodedAp
 
 /** 卡片人话正文：工具名 + external 徽标 + 「收件箱也能处理」提示。 */
 function buildParkedCardText(tool: string, riskClass: string | null | undefined): string {
-  const lines = ['**有操作等你批准**', `无人值守任务想执行 \`${tool}\`。`];
+  const lines = ['**有操作等你确认**', `无人值守任务想执行 \`${tool}\`。`];
   if (riskClass === 'external') {
     lines.push('⚠️ 离开本机：该操作会发送到外部，发出后收不回。');
   }

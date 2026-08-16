@@ -24,6 +24,8 @@ export const VOICE_STARTUP_FAILURE_TIER: Record<VoiceMessageCode, VoiceStartupFa
   VOICE_SESSION_BUSY: 'actionable',
   // 没配 Key：去设置里配一个就能打，用户可行动。
   VOICE_PROVIDER_UNCONFIGURED: 'actionable',
+  // 存量模型/音色已在拨号时回落到可用配置，通话继续；这里只负责把变化告诉用户。
+  VOICE_CALL_SETTINGS_FALLBACK: 'actionable',
   // 以下三条只在通话中产生（提示/派活失败），不会落到启动失败出口；归 actionable 保持既有呈现。
   VOICE_TOOLS_DROPPED: 'actionable',
   VOICE_MODEL_UNRESPONSIVE: 'actionable',

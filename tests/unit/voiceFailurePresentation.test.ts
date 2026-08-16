@@ -18,6 +18,15 @@ describe('语音上游错误展示', () => {
     expect(resolveVoiceMessage(zh, error)).not.toContain(error.detail);
     expect(resolveVoiceErrorTitle(zh, error)).toBe(error.detail);
   });
+
+  it('存量通话配置回落提示走 i18n，并把最终模型与音色插入文案', () => {
+    expect(resolveVoiceMessage(zh, {
+      code: 'VOICE_CALL_SETTINGS_FALLBACK',
+      message: 'qwen3.5-omni-flash-realtime / Tina',
+    })).toBe(
+      '之前选择的通话模型或音色已不再支持通话，已切换到 qwen3.5-omni-flash-realtime / Tina',
+    );
+  });
 });
 
 describe('语音派活失败文案出口', () => {

@@ -90,7 +90,11 @@ export const VoiceStartDialog: React.FC<VoiceStartDialogProps> = ({ isOpen, onCo
 
   const persistVoiceId = async (voiceId: string) => {
     if (!voiceState) return;
-    const nextLive: VoiceLiveSettings = { ...voiceState.live, voiceId };
+    const nextLive: VoiceLiveSettings = {
+      ...voiceState.live,
+      conversationModel: conversationModelOption.id,
+      voiceId,
+    };
     // 运行时真源 turnDetection 与 live 同写，两侧不分叉（契约同 VoiceModelSettings.persistLive）
     const interrupt = deriveInterruptMode({ turnDetection: voiceState.turnDetection, live: nextLive });
     const sensitivity = deriveVadSensitivity({ turnDetection: voiceState.turnDetection, live: nextLive });

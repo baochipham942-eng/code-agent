@@ -123,7 +123,7 @@ export type PermissionDenialSource =
   | 'fail-closed';
 
 /** 「这次审批是谁批准的」；机器批准必须显式自报，不能沿用真人批准的默认值。 */
-export type PermissionApprovalSource =
+type PermissionApprovalSource =
   /** 真人在审批界面上点了允许；也是旧 boolean true 的兼容语义 */
   | 'user'
   /** dev 槽里的 devModeAutoApprove 机器放行 */

@@ -39,10 +39,12 @@ import { workbenchTabsZh } from './workbenchTabs';
 import { activityPanelZh, canvasActorZh } from './domains';
 import { imageNarrationZh } from './imageNarration';
 import { mermaidZh } from './mermaid';
+import { voiceAuditZh } from './voiceAudit';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
   ...imageNarrationZh, ...mermaidZh,
+  ...voiceAuditZh,
   ...capabilityHubZh,
   ...neoTopicsZh,
   ...projectSpaceZh,

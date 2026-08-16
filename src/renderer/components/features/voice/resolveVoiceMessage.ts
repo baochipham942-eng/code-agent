@@ -17,7 +17,9 @@ export function resolveVoiceMessage(t: Translations, entry: VoiceCallError): str
   // 「服务认证异常」）——只说「失败了」等于没说。原因文本来自上游/执行侧，
   // 没法进 i18n 表，所以文案框架在 i18n、原因由 message 填。
   // 同 t.voice.work.remaining 的 `{n}` 先例；没有占位符的 code 不受影响。
-  return (t.voice.messageByCode[entry.code] ?? entry.message).replace('{reason}', entry.message);
+  return (t.voice.messageByCode[entry.code] ?? entry.message)
+    .replace('{reason}', entry.message)
+    .replace('{selection}', entry.message);
 }
 
 /** 错误条的 title：有原始详情时只放在悬停层，没有时沿用主文案。 */

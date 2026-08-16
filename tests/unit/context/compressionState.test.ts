@@ -31,6 +31,7 @@ describe('CompressionState', () => {
       expect(snapshot.budgetedResults.size).toBe(0);
       expect(snapshot.collapsedSpans).toHaveLength(0);
       expect(snapshot.microcompactedIds.size).toBe(0);
+      expect(snapshot.compactionReplacements).toHaveLength(0);
     });
   });
 
@@ -180,6 +181,21 @@ describe('CompressionState', () => {
       expect(snapshot.microcompactedIds.has('msg1')).toBe(true);
       expect(snapshot.microcompactedIds.has('msg2')).toBe(true);
     });
+
+    it('records autocompact replaced ids against the surviving block id', () => {
+      state.applyCommit({
+        layer: 'autocompact',
+        operation: 'compact',
+        targetMessageIds: ['compact-1'],
+        timestamp: 1000,
+        metadata: { replacedMessageIds: ['msg1', 'msg2'] },
+      });
+
+      expect(state.getSnapshot().compactionReplacements).toEqual([{
+        replacedMessageIds: ['msg1', 'msg2'],
+        replacementMessageId: 'compact-1',
+      }]);
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -206,6 +222,7 @@ describe('CompressionState', () => {
       expect(snapshot.budgetedResults.size).toBe(0);
       expect(snapshot.collapsedSpans).toHaveLength(0);
       expect(snapshot.microcompactedIds.size).toBe(0);
+      expect(snapshot.compactionReplacements).toHaveLength(0);
     });
 
     it('should record a reset commit in the log', () => {

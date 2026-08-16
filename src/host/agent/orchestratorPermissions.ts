@@ -99,6 +99,17 @@ export class OrchestratorPermissionIsland {
   }
 
   /**
+   * Renderer 重建时的只读快照源。审批的 resolver 与完整请求一直归 host 持有；
+   * 返回副本，避免 UI 恢复链拿到内部 Map 里的可变对象。
+   */
+  listPendingRequests(): PermissionRequest[] {
+    return [...this.pendingPermissions.values()].map(({ request }) => ({
+      ...request,
+      details: request.details ? { ...request.details } : request.details,
+    }));
+  }
+
+  /**
    * B2 first-responder-wins 裁决口。会话内 permissionResponse 和收件箱 resolve 两个入口
    * 都汇入这里：以 pending_approvals 的 UPDATE changes 数为唯一裁决——changes=0 表示
    * 该行已被抢答/过期/orphaned，第二口静默 no-op，绝不二次 resolve 内存 Promise。

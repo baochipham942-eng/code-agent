@@ -201,6 +201,29 @@ export function buildBlockedNarration(input: {
   };
 }
 
+/**
+ * 审批等待是用户必须听见的卡点。台词给显式出口：去审批卡选择允许或拒绝；
+ * 不把“已开始”润色成“正在做”，也不暗示审批会自动通过。
+ */
+export function buildApprovalWaitingNarration(input: {
+  workItemId: string;
+  title: string;
+  agentId?: string;
+}): VoiceWorkNarration {
+  const speaker = resolveNarrationSpeaker(input.agentId);
+  return {
+    workItemId: input.workItemId,
+    status: 'milestone',
+    worthHearing: true,
+    title: input.title,
+    summary: [
+      `现在对用户说：「『${input.title}』正在等你批准。请在屏幕上的审批卡选择允许或拒绝，我收到后才会继续。」`,
+      '这件事还没有做完，也不会自动放行。就说这一个卡点和出口，不要再说“已经开始做了”。',
+    ].join('\n'),
+    ...(speaker ? { speaker } : {}),
+  };
+}
+
 /** 组装终态回流事件。summary 为空（模型一句话没留）时也照发——状态本身就是结论。 */
 export function buildWorkNarration(input: {
   workItemId: string;

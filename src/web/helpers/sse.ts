@@ -60,6 +60,11 @@ export function sendSSE(res: http.ServerResponse, event: string, data: unknown):
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+/** 向单个 EventSource 客户端发送普通 onmessage 载荷，不写 replay buffer。 */
+export function sendSSEPayload(res: http.ServerResponse, channel: string, args: unknown): void {
+  res.write(`data: ${JSON.stringify({ channel, args })}\n\n`);
+}
+
 /**
  * 客户端重连时调用：把 replay buffer 里 id 大于 lastEventId 的事件按顺序
  * 写入响应。返回已重放的事件数量。

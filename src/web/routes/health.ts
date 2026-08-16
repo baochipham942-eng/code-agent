@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { HandlerFn } from '../electronMock';
-import { sseClients, replayFromLastEventId } from '../helpers/sse';
+import { sseClients, replayFromLastEventId, sendSSEPayload } from '../helpers/sse';
 import type {
   BuildInfo,
+  PermissionRequest,
   PersistenceHealth,
   RendererServeDecision,
   WebHealthResponse,
@@ -15,6 +16,22 @@ interface HealthDeps {
   getPersistenceHealth: () => PersistenceHealth;
   getDurableRunReady: () => boolean;
   getRendererServeDecision?: () => RendererServeDecision | null;
+  getPendingPermissionRequests?: () => PermissionRequest[];
+}
+
+function sendPendingPermissionSnapshots(
+  res: Response,
+  requests: PermissionRequest[],
+): number {
+  for (const request of requests) {
+    sendSSEPayload(res, 'agent:event', {
+      type: 'permission_request',
+      data: request,
+      sessionId: request.sessionId,
+      snapshot: true,
+    });
+  }
+  return requests.length;
 }
 
 export function createHealthRouter(deps: HealthDeps): Router {
@@ -53,14 +70,27 @@ export function createHealthRouter(deps: HealthDeps): Router {
     const headerLastId = _req.header('Last-Event-ID');
     const queryLastId = typeof _req.query.lastEventId === 'string' ? _req.query.lastEventId : undefined;
     const rawLastId = headerLastId ?? queryLastId;
+    let needsHostSnapshot = rawLastId === undefined;
     if (rawLastId !== undefined) {
       const parsed = Number.parseInt(rawLastId, 10);
       if (Number.isFinite(parsed) && parsed >= 0) {
-        replayFromLastEventId(res, parsed);
+        needsHostSnapshot = replayFromLastEventId(res, parsed) < 0;
+      } else {
+        needsHostSnapshot = true;
       }
     }
 
     sseClients.add(res);
+
+    // 新 renderer 没有旧游标；replay buffer 覆盖时同样无法补齐。两种情况都从
+    // host 当前仍持有 resolver 的请求恢复审批卡，不重发工具，也不新建审批。
+    if (needsHostSnapshot) {
+      try {
+        sendPendingPermissionSnapshots(res, deps.getPendingPermissionRequests?.() ?? []);
+      } catch {
+        // SSE 主连接仍可继续；后续实时 permission_request 不受一次快照读取失败影响。
+      }
+    }
 
     _req.on('close', () => {
       sseClients.delete(res);

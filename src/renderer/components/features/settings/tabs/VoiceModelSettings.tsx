@@ -53,7 +53,6 @@ function mergeSpeechSettings(value?: Partial<SpeechInputSettings>): SpeechInputS
 interface ListedVoiceModel {
   id: string;
   displayName: string;
-  supportsTools: boolean;
   voices: readonly string[];
 }
 
@@ -303,7 +302,7 @@ export const VoiceModelSettings: React.FC = () => {
         />
       )}
 
-      {/* 通话模型 / Provider：白名单可配。不支持 tools 的模型选中时当场说清代价 */}
+      {/* 通话模型 / Provider：只展示具备完整通话能力的白名单模型。 */}
       <div className="border-t border-zinc-700 pt-4">
         <label className="block space-y-2">
           <span className="text-sm font-medium text-zinc-200">{text.conversationModelLabel}</span>
@@ -317,11 +316,6 @@ export const VoiceModelSettings: React.FC = () => {
               <option key={model.id} value={model.id}>{model.displayName}</option>
             ))}
           </select>
-          {currentModel && !currentModel.supportsTools && (
-            <p data-testid="voice-model-no-tools-warning" className="text-xs text-badge-warning/80">
-              {text.modelNoToolsWarning}
-            </p>
-          )}
         </label>
       </div>
 
@@ -339,7 +333,7 @@ export const VoiceModelSettings: React.FC = () => {
                 key={voice}
                 type="button"
                 data-testid={`voice-model-voice-${voice}`}
-                onClick={() => void persistLive({ voiceId: voice })}
+                onClick={() => void persistLive({ conversationModel: currentModel.id, voiceId: voice })}
                 className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
                   active ? 'bg-sky-500/10 text-badge-info' : 'text-zinc-300 hover:bg-zinc-800'
                 }`}

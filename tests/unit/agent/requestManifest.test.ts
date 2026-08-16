@@ -23,6 +23,7 @@ function baseInput(
     sourceIds,
     transcriptMessages,
     collapsedSpans: [],
+    compactionReplacements: [],
     toolSchemaHash: 'f'.repeat(64),
     toolNames: ['Read'],
     requestConfig: { provider: 'openai', model: 'gpt-5.5', maxTokens: 8192 },
@@ -75,12 +76,60 @@ describe('buildRequestManifest', () => {
     }]);
   });
 
+  it('records autocompact spliced ledger ids against the surviving compaction message', () => {
+    const replacementLedger = transcriptMessage('compact-1', 'assistant', 'summary');
+    replacementLedger.role = 'system';
+    const replacement: ModelMessage = { role: 'system', content: 'summary' };
+    const input = baseInput([replacement], ['compact-1'], [replacementLedger]);
+    input.compactionReplacements = [{
+      replacedMessageIds: ['user-old', 'assistant-old'],
+      replacementMessageId: 'compact-1',
+    }];
+
+    const manifest = buildRequestManifest(input);
+
+    expect(manifest.compactionReplacements).toEqual([{
+      replacedMessageIds: ['user-old', 'assistant-old'],
+      replacementContentHash: expect.any(String),
+    }]);
+  });
+
   it('marks the manifest degraded when content cache persistence fails', () => {
     const message: ModelMessage = { role: 'system', content: 'runtime only', transient: true };
     const input = baseInput([message], ['__dynamic_tail__'], []);
     input.contentStore = { store: vi.fn(() => false) };
 
     expect(buildRequestManifest(input).degraded).toBe(true);
+  });
+
+  it('stores dynamic tails as ordered deduplicated blocks without caching the full message', () => {
+    const first: ModelMessage = {
+      role: 'system',
+      content: '<repo_map>stable</repo_map>\n\nsession one',
+      transient: true,
+    };
+    const second: ModelMessage = {
+      role: 'system',
+      content: '<repo_map>stable</repo_map>\n\nsession two',
+      transient: true,
+    };
+    const stored = new Map<string, string>();
+    const firstInput = baseInput([first], ['__dynamic_tail__'], []);
+    firstInput.contentStore = { store: vi.fn((hash, content) => (stored.set(hash, content), true)) };
+    const secondInput = baseInput([second], ['__dynamic_tail__'], []);
+    secondInput.contentStore = firstInput.contentStore;
+
+    const firstRef = buildRequestManifest(firstInput).messageRefs[0];
+    const secondRef = buildRequestManifest(secondInput).messageRefs[0];
+
+    expect(firstRef).toMatchObject({ kind: 'content', reason: 'dynamic_tail' });
+    expect(secondRef).toMatchObject({ kind: 'content', reason: 'dynamic_tail' });
+    if (firstRef.kind !== 'content' || secondRef.kind !== 'content') throw new Error('expected content refs');
+    expect(firstRef.blocks?.length).toBeGreaterThan(3);
+    expect(secondRef.blocks?.map((block) => block.contentHash)).toContain(firstRef.blocks?.[1].contentHash);
+    expect(stored.has(firstRef.contentHash)).toBe(false);
+    expect(firstRef.blocks?.map((block) => stored.get(block.contentHash)).join(''))
+      .toBe(canonicalizeModelMessage(first));
   });
 
   it('falls back to verbatim content when the prompt cache cannot return the hash original', () => {
@@ -97,6 +146,54 @@ describe('buildRequestManifest', () => {
       reason: 'system_prompt_fallback',
     });
     expect(store).toHaveBeenCalledWith(expect.any(String), canonicalizeModelMessage(message));
+  });
+
+  it('externalizes attachment bytes and stores only placeholder structure in content_cache', () => {
+    const base64 = Buffer.from('image bytes').toString('base64');
+    const message: ModelMessage = {
+      role: 'user',
+      content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: base64 } }],
+    };
+    const ledger = {
+      id: 'user-image', role: 'user', content: 'look', timestamp: 1,
+      attachments: [{ id: 'a1', type: 'image', category: 'image', name: 'a.png', size: 11, mimeType: 'image/png', data: base64 }],
+    } as Message;
+    const stored: string[] = [];
+    const input = baseInput([message], ['user-image'], [ledger]);
+    input.contentStore = { store: vi.fn((_hash, content) => (stored.push(content), true)) };
+    input.attachmentBlobStore = {
+      store: vi.fn(() => ({ version: 1 as const, filePath: '/tmp/blob', sha256: 'a'.repeat(64), bytes: 11 })),
+    };
+
+    const manifest = buildRequestManifest(input);
+    const ref = manifest.messageRefs[0];
+
+    expect(ref).toMatchObject({
+      kind: 'content',
+      structureHash: expect.any(String),
+      attachmentBlobs: [{ sha256: 'a'.repeat(64), bytes: 11 }],
+    });
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).not.toContain(base64);
+    expect(stored[0]).toContain('requestReplayAttachment');
+    expect(manifest.degraded).toBe(false);
+  });
+
+  it('marks the manifest degraded without falling back to SQLite when attachment externalization fails', () => {
+    const base64 = Buffer.from('image bytes').toString('base64');
+    const message: ModelMessage = {
+      role: 'user',
+      content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: base64 } }],
+    };
+    const store = vi.fn((_hash: string, _content: string) => true);
+    const input = baseInput([message], ['runtime-image'], []);
+    input.contentStore = { store };
+    input.attachmentBlobStore = { store: vi.fn(() => null) };
+
+    const manifest = buildRequestManifest(input);
+
+    expect(manifest.degraded).toBe(true);
+    expect(store.mock.calls.every(([, content]) => !String(content).includes(base64))).toBe(true);
   });
 
   it('uses ordered shared projections for ledger tool-result messages', () => {

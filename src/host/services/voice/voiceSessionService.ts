@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
+import { isRetiredQwenCallSelection, VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_END_CALL_GOODBYE_TIMEOUT_MS, VOICE_HANGUP_REACTION_WINDOW_MS, VOICE_INBOUND_AUDIO_STARTUP_TIMEOUT_MS, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS, VOICE_WS_CLOSE_TERMINAL } from '../../../shared/constants/voice';
 import {
   REALTIME_VOICE_PROVIDER_PROFILES,
   resolveRealtimeVoiceSelection,
@@ -16,6 +16,7 @@ import {
 import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTokenUsage, VoiceTransport, VoiceTransportHandle, VoiceUserTextInjectionResult } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
+import { emitVoiceCallHook, markSessionHadLiveVoice } from './voiceCallHooks';
 import { getConfigService } from '../core/configService';
 import { getSessionManager } from '../infra/sessionManager';
 import { getPermissionModeManager } from '../../permissions/modes';
@@ -69,6 +70,7 @@ import {
 } from './voiceQuestionBridge';
 import { isPureToolTagText, persistTranscript, type TranscriptMergeState } from './voiceTranscriptPersistence';
 import { prepareVoiceprintForCall, releaseVoiceprintForCall, type VoiceprintCallState } from './voiceprintService';
+import { createVoiceSayDoGuard, type VoiceSayDoGuard } from './voiceSayDoGuard';
 
 const logger = createLogger('VoiceSession');
 
@@ -131,6 +133,8 @@ interface ActiveSession {
   upstream: VoiceTransportHandle;
   /** 上游是否真实收下了通话工具；VOICE_TOOLS_DROPPED 后 fail-closed。 */
   voiceToolsAvailable: boolean;
+  /** 用户轮、工具账本与语义审计状态；只活在本通电话内。 */
+  sayDoGuard: VoiceSayDoGuard;
   /** teardown 已开始时，新的打字注入必须回退，不能再抢这通电话。 */
   ending: boolean;
   maxDurationTimer: NodeJS.Timeout;
@@ -383,68 +387,6 @@ function closeClientTerminal(client: WsSocket): void {
   if (client.readyState === client.OPEN) client.close(VOICE_WS_CLOSE_TERMINAL);
 }
 
-/**
- * 会话级标记：这条会话用过实时语音。侧栏据此在标题旁挂一个语音图标
- * （产品负责人 2026-07-27）——是**身份**不是状态，所以写在会话 metadata 上，
- * 不去每次列会话时翻消息。
- *
- * 用 patchSessionMetadata 而不是 updateSession({metadata})：后者是整份覆盖，
- * 会把别人写的 key 冲掉。失败只告警不影响通话。
- */
-function markSessionHadLiveVoice(neoSessionId: string): void {
-  void getSessionManager()
-    .patchSessionMetadata(neoSessionId, { hadLiveVoice: true }, { notifyRenderer: true })
-    .catch((err: unknown) => {
-      logger.warn('failed to mark session as live-voice', {
-        message: err instanceof Error ? err.message : 'unknown',
-      });
-    });
-}
-
-/**
- * 通话生命周期事件（observer-only）：暂停/结束要让 agent 侧可编排，
- * 典型用例是会议形态的通话结束后问一句「要我整理一下吗」。
- *
- * 三条纪律：
- * 1. **fire-and-forget**：hook 是用户脚本，不能让它拖住建连或收尾，也不能把通话搞挂；
- * 2. **懒加载 task 依赖树**：建连是关键路径，不为一个可能没人订阅的事件把它拉进来
- *    （同 voiceAgentCoordinator 的 taskManager() 先例）；
- * 3. **重连不重复发 started**：宽限窗内接回来走 reattachVoiceClient，不经过这里。
- */
-function emitVoiceCallHook(
-  event: 'VoiceCallStarted' | 'VoiceCallPaused' | 'VoiceCallEnded',
-  params: { voiceCallId: string; sessionId: string; durationSec: number; workItemCount?: number; reason?: string },
-): void {
-  void (async () => {
-    try {
-      const { getTaskManager } = await import('../../task');
-      // 已存在的 manager 挂着 onTrigger / aiCompletion，优先复用；纯语音会话没有
-      // orchestrator 时才临时创建，避免为了观察事件拉起整棵 agent 运行时。
-      let hooks = getTaskManager()?.getOrchestrator(params.sessionId)?.getHookManager?.();
-      if (!hooks) {
-        try {
-          const session = await getSessionManager().getSession(params.sessionId, 1);
-          const { createHookManager } = await import('../../hooks');
-          hooks = createHookManager({
-            workingDirectory: session?.workingDirectory?.trim() || process.cwd(),
-          });
-          await hooks.initialize();
-          if (!hooks.hasHooksFor(event)) return;
-        } catch (err) {
-          logger.info('voice call hook skipped: existing and temporary hook managers unavailable', {
-            event,
-            sessionId: params.sessionId,
-            message: err instanceof Error ? err.message : 'unknown',
-          });
-          return;
-        }
-      }
-      await hooks.triggerVoiceCall(event, params);
-    } catch (err) {
-      logger.warn('voice call hook failed', { event, message: err instanceof Error ? err.message : 'unknown' });
-    }
-  })();
-}
 
 /**
  * 客户端断了先进宽限窗，不立刻挂断上游（批 H · sticky）。
@@ -633,6 +575,11 @@ async function connectAndBind(
       model: selection.model.id,
       requested: liveSettings.voiceId,
     });
+  }
+  if (profile.id === 'dashscope-qwen-omni'
+    && isRetiredQwenCallSelection(liveSettings?.conversationModel, liveSettings?.voiceId)) {
+    send(client, { type: 'notice', code: 'VOICE_CALL_SETTINGS_FALLBACK',
+      message: `${selection.model.displayName} / ${selection.voice}` });
   }
 
   // 通话录音（N-L7-REC）：闸在拨号这一刻判一次，判完整通不变——每帧读配置是白烧 CPU，
@@ -887,6 +834,7 @@ async function connectAndBind(
         }
         if (event.type === 'user.transcript' && event.done) {
           if (!suppressUserFragment) {
+            if (active?.id === id && !voiceQuestionConsumed) active.sayDoGuard.rememberUserTurn(event.text);
             void persistTranscript(
               neoSessionId,
               'user',
@@ -953,6 +901,7 @@ async function connectAndBind(
                   ...(pending?.itemId ? { itemId: pending.itemId } : {}),
                 },
               );
+              if (active?.id === id && active.voiceToolsAvailable) void active.sayDoGuard.audit(text, event.responseId);
             }
           }
         }
@@ -1002,7 +951,10 @@ async function connectAndBind(
         if (socket.readyState === socket.OPEN) socket.send(frame, { binary: true });
         recorder?.feedDownstream(frame);
       },
-      onToolCall: (call) => executeVoiceTool(call.name, call.arguments, call.origin),
+      onToolCall: (call) => {
+        if (active?.id === id) active.sayDoGuard.rememberToolCall();
+        return executeVoiceTool(call.name, call.arguments, call.origin);
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'connect failed';
@@ -1044,6 +996,7 @@ async function connectAndBind(
     clientRef,
     upstream,
     voiceToolsAvailable,
+    sayDoGuard: createVoiceSayDoGuard(id, () => active?.id === id && !active.ending),
     ending: false,
     graceTimer: null,
     inboundAudioFrames: 0,

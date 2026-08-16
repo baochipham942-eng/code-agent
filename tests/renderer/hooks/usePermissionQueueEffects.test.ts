@@ -65,6 +65,12 @@ function createHarness(overrides: Partial<PermissionQueueState> = {}) {
     debug: () => {},
     enqueuePermissionRequest,
     getCurrentSessionId: () => state.currentSessionId,
+    hasPermissionRequest: (requestId) => (
+      state.pendingPermissionRequest?.id === requestId
+      || Object.values(state.queuedPermissionRequests).some(
+        (queue) => queue.some((request) => request.id === requestId),
+      )
+    ),
     getPendingPermissionRequest: () => state.pendingPermissionRequest,
     markSessionUnread: (sessionId) => {
       state.unreadSessionIds.push(sessionId);
@@ -162,6 +168,24 @@ describe('applyPermissionQueueEvent', () => {
 
     expect(state.lastEventAt).toBe(500);
     expect(state.pendingPermissionRequest).toBeNull();
+    expect(state.queuedPermissionRequests).toEqual({});
+    expect(state.unreadSessionIds).toEqual([]);
+  });
+
+  it('deduplicates the same request id across realtime, replay, and host snapshot delivery', () => {
+    const request = permissionRequest('same-request');
+    const { deps, state } = createHarness({ currentSessionId: 'session-current' });
+
+    applyPermissionQueueEvent(
+      { type: 'permission_request', data: request, sessionId: 'session-current' },
+      deps,
+    );
+    applyPermissionQueueEvent(
+      { type: 'permission_request', data: { ...request }, sessionId: 'session-current' },
+      deps,
+    );
+
+    expect(state.pendingPermissionRequest).toEqual(request);
     expect(state.queuedPermissionRequests).toEqual({});
     expect(state.unreadSessionIds).toEqual([]);
   });

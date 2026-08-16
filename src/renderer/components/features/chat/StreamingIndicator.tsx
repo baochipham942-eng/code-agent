@@ -21,7 +21,7 @@ interface StreamingIndicatorProps {
   showCaret?: boolean;
   /** 当前正在接收思考/推理增量（尚无可见正文、也不是在等工具）。 */
   isThinking?: boolean;
-  /** 等待期具名：'model'=等模型响应，'subagent'=等子任务。缺省时维持呼吸光标。 */
+  /** 等待期具名：模型、子任务或用户审批。缺省时维持呼吸光标。 */
   waitingReason?: StreamingWaitingReason;
   /** 真实并发子任务数（当前回合 trace 里仍在运行的子 agent 阻塞类工具调用数，
       由 TurnCard 用 getRunningSubagentCount 算好传入）。≥2 才亮数字——
@@ -58,12 +58,14 @@ export function getStreamingIndicatorState(
 // 后、首 token 前，或工具结束后、下一段推理前）。静态文字，不加秒表不加动画。
 const SUBAGENT_WAIT_TOOLS = new Set(['spawn_agent', 'agentspawn', 'task', 'collect_agent', 'wait_agent']);
 
-export type StreamingWaitingReason = 'model' | 'subagent';
+export type StreamingWaitingReason = 'model' | 'subagent' | 'approval';
 
 export function getStreamingWaitingReason(
   nodes: TraceNode[],
   streamingStatus: string,
+  waitingForApproval = false,
 ): StreamingWaitingReason | undefined {
+  if (waitingForApproval) return 'approval';
   if (streamingStatus === 'using_tools' || streamingStatus === 'waiting_tool') {
     const running = nodes.find((node) => {
       const toolCall = node.toolCall;
@@ -180,7 +182,9 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
   // 但依旧不放计时器：等待长短不该被演成焦虑。
   if (waitingReason) {
     const label =
-      waitingReason === 'subagent'
+      waitingReason === 'approval'
+        ? t.chat.waitingApproval
+        : waitingReason === 'subagent'
         ? subagentCount !== undefined && subagentCount >= 2
           ? t.chat.waitingSubagentFleet.replace('{count}', String(subagentCount))
           : t.chat.waitingSubagent

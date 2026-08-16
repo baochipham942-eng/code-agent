@@ -161,6 +161,32 @@ afterEach(() => {
 });
 
 describe('刚刚卡住 → worth-hearing', () => {
+  it('审批请求明确告诉用户在等批准并给出允许/拒绝出口，同一 requestId 只念一次', async () => {
+    await spawnRunning('写验收文件');
+    narrations.length = 0;
+    const event = {
+      type: 'permission_request',
+      data: {
+        id: 'permission-1',
+        sessionId: 'session-1',
+        type: 'file_write',
+        tool: 'Write',
+        details: { path: '/tmp/验收.md' },
+        timestamp: 1,
+      },
+    } as AgentEvent;
+
+    runtime.emitAgent(event);
+    runtime.emitAgent(event);
+
+    const spoken = worthHearing();
+    expect(spoken).toHaveLength(1);
+    expect(spoken[0]?.summary).toContain('『写验收文』正在等你批准');
+    expect(spoken[0]?.summary).toContain('选择允许或拒绝');
+    expect(spoken[0]?.summary).toContain('还没有做完，也不会自动放行');
+    expect(spoken[0]?.summary).not.toContain('我已经开始做');
+  });
+
   it('从非 blocked 跃迁到 blocked 时产一条带标记的进度，并说清卡在哪一步', async () => {
     await spawnRunning('写周报');
     await pushTasks([task({ id: 't1', status: 'in_progress' })]);

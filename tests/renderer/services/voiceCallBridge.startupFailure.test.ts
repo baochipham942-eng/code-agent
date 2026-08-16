@@ -112,6 +112,7 @@ describe('voiceStartupFailureTier 分档表', () => {
       // 用户动得了手：换个窗口 / 去设置配 Key / 开权限 / 换设备 / 戴耳机
       VOICE_SESSION_BUSY: 'actionable',
       VOICE_PROVIDER_UNCONFIGURED: 'actionable',
+      VOICE_CALL_SETTINGS_FALLBACK: 'actionable',
       MICROPHONE_PERMISSION_DENIED: 'actionable',
       AUDIO_CAPTURE_FAILED: 'actionable',
       NATIVE_AEC_FAILED: 'actionable',

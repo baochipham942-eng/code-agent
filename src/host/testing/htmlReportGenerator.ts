@@ -555,7 +555,7 @@ function renderMockExcludedSection(results: TestResult[]): string {
     '<tr>',
     `<td>${escapeHtml(result.testId)}</td>`,
     `<td>${escapeHtml(result.description)}</td>`,
-    `<td>${escapeHtml(capText(result.mockExcluded!.reason))}</td>`,
+    `<td>${escapeHtml(capText(result.mockExcluded?.reason ?? ''))}</td>`,
     '</tr>',
   ].join('')).join('\n');
 

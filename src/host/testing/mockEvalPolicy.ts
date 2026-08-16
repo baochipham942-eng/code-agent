@@ -86,38 +86,38 @@ async function replaceFixture(
 
 const fixtureReason = '确定性 mock fixture 可独立产生文件/工具协议形态，由现有断言器验证';
 
-const FIXTURES: Record<string, MockFixturePolicy['run']> = {
-  'bash-pwd': async (workingDirectory) => result(
+const FIXTURES: ReadonlyMap<string, MockFixturePolicy['run']> = new Map<string, MockFixturePolicy['run']>([
+  ['bash-pwd', async (workingDirectory) => result(
     [workingDirectory],
     [execution('bash', { command: 'pwd' }, workingDirectory)],
-  ),
-  'bash-echo': async () => result(
+  )],
+  ['bash-echo', async () => result(
     ['Hello Test'],
     [execution('bash', { command: 'echo "Hello Test"' }, 'Hello Test')],
-  ),
-  'read-file-not-exists': async (workingDirectory) => {
+  )],
+  ['read-file-not-exists', async (workingDirectory) => {
     const target = path.join(workingDirectory, 'this-file-does-not-exist-12345.txt');
     return result(
       ['The requested file does not exist.'],
       [execution('Read', { file_path: target }, '', false, 'ENOENT: no such file')],
     );
-  },
-  'write-file-new': (workingDirectory) => writeFixture(
+  }],
+  ['write-file-new', (workingDirectory) => writeFixture(
     workingDirectory,
     'test-write-temp.txt',
     'Test content 123\n',
-  ),
-  'edit-file-modify': (workingDirectory) => replaceFixture(
+  )],
+  ['edit-file-modify', (workingDirectory) => replaceFixture(
     workingDirectory,
     'test-edit-temp.txt',
     [['OLD', 'NEW']],
-  ),
-  'task-create-json-config': (workingDirectory) => writeFixture(
+  )],
+  ['task-create-json-config', (workingDirectory) => writeFixture(
     workingDirectory,
     'test-config.json',
     JSON.stringify({ name: 'mock-app', version: '1.0.0', enabled: true }, null, 2),
-  ),
-  'error-recovery-retry': async (workingDirectory) => {
+  )],
+  ['error-recovery-retry', async (workingDirectory) => {
     const target = path.join(workingDirectory, 'nonexistent.txt');
     await fs.writeFile(target, 'Created after error\n', 'utf8');
     return result(
@@ -127,13 +127,13 @@ const FIXTURES: Record<string, MockFixturePolicy['run']> = {
         execution('Write', { file_path: target, content: 'Created after error' }, 'Created nonexistent.txt'),
       ],
     );
-  },
-  'codegen-typescript': (workingDirectory) => writeFixture(
+  }],
+  ['codegen-typescript', (workingDirectory) => writeFixture(
     workingDirectory,
     'test-stack.ts',
     'export class Stack<T> {\n  private items: T[] = [];\n  push(value: T) { this.items.push(value); }\n  pop() { return this.items.pop(); }\n  peek() { return this.items.at(-1); }\n  isEmpty() { return this.items.length === 0; }\n}\n',
-  ),
-  'data-cleaning': async (workingDirectory) => {
+  )],
+  ['data-cleaning', async (workingDirectory) => {
     const target = path.join(workingDirectory, 'test-clean-data.csv');
     const content = 'name,age,score\nAlice,25,88\nEve,22,91\n';
     await fs.writeFile(target, content, 'utf8');
@@ -144,8 +144,8 @@ const FIXTURES: Record<string, MockFixturePolicy['run']> = {
         execution('Write', { file_path: target, content }, 'Wrote test-clean-data.csv'),
       ],
     );
-  },
-  'workflow-multi-file': async (workingDirectory) => {
+  }],
+  ['workflow-multi-file', async (workingDirectory) => {
     const typesPath = path.join(workingDirectory, 'test-multifile/types.ts');
     const servicePath = path.join(workingDirectory, 'test-multifile/service.ts');
     const utilsPath = path.join(workingDirectory, 'test-multifile/utils.ts');
@@ -160,55 +160,55 @@ const FIXTURES: Record<string, MockFixturePolicy['run']> = {
       execution('Edit', { file_path: servicePath }, 'Added role data'),
       execution('Write', { file_path: utilsPath }, 'Created utils.ts'),
     ]);
-  },
-  'git-status': async () => result(
+  }],
+  ['git-status', async () => result(
     ['On branch main; working tree clean'],
     [execution('bash', { command: 'git -C test-git-repo status' }, 'On branch main\nnothing to commit, working tree clean')],
-  ),
-  'edge-unicode-filename': (workingDirectory) => writeFixture(
+  )],
+  ['edge-unicode-filename', (workingDirectory) => writeFixture(
     workingDirectory,
     'test-中文文件.txt',
     '测试中文文件名\n',
-  ),
-  'multi-turn-incremental-task': (workingDirectory) => writeFixture(
+  )],
+  ['multi-turn-incremental-task', (workingDirectory) => writeFixture(
     workingDirectory,
     'test-multi-step.ts',
     'export const add = (a: number, b: number): number => a + b;\nexport const multiply = (a: number, b: number): number => a * b;\n',
-  ),
-  'multi-turn-correction': (workingDirectory) => writeFixture(
+  )],
+  ['multi-turn-correction', (workingDirectory) => writeFixture(
     workingDirectory,
     'test-greeting.ts',
     "export const greet = (name: string): string => `你好，${name}`;\n",
-  ),
-  'prompt-smoke-write-file': (workingDirectory) => writeFixture(
+  )],
+  ['prompt-smoke-write-file', (workingDirectory) => writeFixture(
     workingDirectory,
     'prompt-smoke-write.txt',
     'prompt smoke write ok',
-  ),
-  'prompt-smoke-edit-multiple-replacements': (workingDirectory) => replaceFixture(
+  )],
+  ['prompt-smoke-edit-multiple-replacements', (workingDirectory) => replaceFixture(
     workingDirectory,
     'prompt-smoke-multi-edit.txt',
     [['alpha=old', 'alpha=new'], ['beta=old', 'beta=new']],
-  ),
-  'prompt-smoke-grep-current-name': async () => result(
+  )],
+  ['prompt-smoke-grep-current-name', async () => result(
     ['code-agent appears in package.json'],
     [execution('Grep', { pattern: 'code-agent', path: 'package.json' }, '"name": "code-agent"')],
-  ),
-  'prompt-smoke-toolsearch-json-arguments': async () => result(
+  )],
+  ['prompt-smoke-toolsearch-json-arguments', async () => result(
     ['Loaded Browser tooling.'],
     [execution('ToolSearch', { query: 'browser tooling' }, 'Browser')],
-  ),
-  'prompt-smoke-task-single-delegate': async () => result(
+  )],
+  ['prompt-smoke-task-single-delegate', async () => result(
     ['code-agent'],
     [execution('Task', { prompt: 'inspect package.json' }, 'code-agent')],
-  ),
-  'prompt-smoke-git-status-no-commit': async () => result(
+  )],
+  ['prompt-smoke-git-status-no-commit', async () => result(
     ['Changes not staged for commit.'],
     [execution('Bash', { command: 'git -C prompt-smoke-git status' }, 'Changes not staged for commit:\n modified: file.txt')],
-  ),
-};
+  )],
+]);
 
-const MOCK_FIXTURE_CASE_IDS = Object.freeze(Object.keys(FIXTURES));
+const MOCK_FIXTURE_CASE_IDS = Object.freeze([...FIXTURES.keys()]);
 
 const MOCK_REAL_ONLY_CASE_IDS = Object.freeze([
   'conv-ask-clarification',
@@ -272,7 +272,7 @@ const MOCK_REAL_ONLY_CASE_IDS = Object.freeze([
 const REAL_ONLY = new Set<string>(MOCK_REAL_ONLY_CASE_IDS);
 
 export function getMockCasePolicy(testId: string): MockCasePolicy | undefined {
-  const fixture = FIXTURES[testId];
+  const fixture = FIXTURES.get(testId);
   if (fixture) return { kind: 'fixture', reason: fixtureReason, run: fixture };
   if (!REAL_ONLY.has(testId)) return undefined;
   const reason = testId === 'prompt-smoke-read-package'

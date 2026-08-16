@@ -217,7 +217,7 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
     lines.push('> 这些 case 依赖真实 agent 语义或产物能力，显式排除于 mock 干跑分母；不代表通过。');
     lines.push('');
     for (const result of mockExcludedTests) {
-      lines.push(`- 🧪 **${result.testId}**: ${result.mockExcluded!.reason}`);
+      lines.push(`- 🧪 **${result.testId}**: ${result.mockExcluded?.reason ?? ''}`);
     }
     lines.push('');
   }

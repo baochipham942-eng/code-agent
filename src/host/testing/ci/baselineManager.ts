@@ -246,7 +246,7 @@ export class BaselineManager {
     const excludedCases = Object.fromEntries(
       summary.results
         .filter((result) => result.mockExcluded)
-        .map((result) => [result.testId, result.mockExcluded!.reason]),
+        .map((result) => [result.testId, result.mockExcluded?.reason ?? '']),
     );
     const caseResults: EvalBaseline['caseResults'] = Object.fromEntries(
       passed.map((result) => [result.testId, {

@@ -24,19 +24,6 @@ interface StreamRenderTimeline {
   finishedAtMs: number | null;
 }
 
-interface StreamRenderDemoDriver {
-  push: (chunk: string) => void;
-  finish: () => void;
-  snapshot: () => StreamRenderSnapshot;
-  timeline: () => StreamRenderTimeline;
-}
-
-declare global {
-  interface Window {
-    __STREAM_RENDER_DEMO__?: StreamRenderDemoDriver;
-  }
-}
-
 // 模拟大块吐字：一整段 ~1500 字中文长文一次到达（不含 markdown 触发符，走纯文本
 // 流式路径——尾段淡入 span 生效的那条）。
 const LONG_CHUNK = [

@@ -336,7 +336,7 @@ export const VoiceAuditDialog: React.FC<VoiceAuditDialogProps> = ({ sessionId, s
         </div>
       )}
       {calls && calls.length > 0 && (
-        <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)] overflow-hidden">
+        <div className="grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] overflow-hidden">
           <aside className="overflow-y-auto border-r border-white/[0.08] bg-zinc-950/30 p-3">
             <div className="mb-3 flex items-center justify-between px-1">
               <h3 className="text-xs font-semibold text-zinc-300">{labels.callList}</h3>

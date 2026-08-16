@@ -5,7 +5,7 @@ import {
   buildRequestManifest,
   canonicalizeModelMessage,
   type RequestManifestBuildInput,
-} from '../../../src/host/agent/runtime/contextAssembly/requestManifest';
+} from '../../../src/host/agent/runtime/contextAssembly/requestManifestBuilder';
 
 function transcriptMessage(id: string, role: 'user' | 'assistant', content: string): Message {
   return { id, role, content, timestamp: 1 } as Message;

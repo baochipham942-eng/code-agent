@@ -1,7 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type { QuickModelResult } from '../../src/host/model/quickModel';
 
 const runtime = vi.hoisted(() => ({
-  quickTask: vi.fn(async (..._args: unknown[]) => ({ success: true, content: 'NORMAL' })),
+  quickTask: vi.fn<(...args: unknown[]) => Promise<QuickModelResult>>(
+    async (..._args: unknown[]) => ({ success: true, content: 'NORMAL' }),
+  ),
   executeVoiceTool: vi.fn(async (..._args: unknown[]) => '已派发'),
   info: vi.fn(),
   warn: vi.fn(),

@@ -223,12 +223,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           if (language === 'document') {
             return <DocumentBlock spec={codeContent} />;
           }
-          return <CodeBlock language={language} code={codeContent} />;
+          return <CodeBlock language={language} code={codeContent} deferOffscreenLayout={!isStreaming} />;
         }
 
         // For inline code that doesn't have a language class
         if (!className && codeContent.includes('\n')) {
-          return <CodeBlock language="" code={codeContent} />;
+          return <CodeBlock language="" code={codeContent} deferOffscreenLayout={!isStreaming} />;
         }
 
         return (

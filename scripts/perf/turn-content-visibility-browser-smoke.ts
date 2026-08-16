@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { createServer, type ViteDevServer } from 'vite';
 import { chromium, type Browser, type Page } from 'playwright';
@@ -7,11 +8,19 @@ interface Sample {
   scrollRenderMs: number;
   mountedTurns: number;
   deferredContentBlocks: number;
-  computedStyle: {
+  deferredByType: Record<string, number>;
+  activeTurnDeferredBlocks: number;
+  scrollFrames: {
+    p95Ms: number;
+    droppedFramesOver25Ms: number;
+    anchorDriftPx: number | null;
+    scrollHeightDriftPx: number;
+  };
+  computedStyle: Record<string, {
     contentVisibility: string;
     containIntrinsicSize: string;
-    scrollerScrollBehavior: string;
-  };
+    scrollBehavior?: string;
+  }>;
   streamingPerformanceMetrics: {
     timings: Record<string, { meanMs: number; p95Ms: number; count: number }>;
   };
@@ -51,6 +60,9 @@ async function startViteServer(): Promise<ViteDevServer> {
       html[data-content-visibility="off"] [data-turn-heavy-content="true"]{
         content-visibility:visible!important;contain-intrinsic-size:none!important
       }
+      html[data-content-visibility="off"] [data-deferred-content]{
+        content-visibility:visible!important;contain-intrinsic-size:none!important
+      }
     </style></head><body><div id="root"></div><script type="module" src="/scripts/perf/turn-content-visibility-browser-harness.tsx"></script></body></html>`);
   });
   await server.listen();
@@ -82,10 +94,18 @@ async function main(): Promise<void> {
     if (!base) throw new Error('Vite did not expose a local URL.');
 
     const samples: Record<'before' | 'after', Sample[]> = { before: [], after: [] };
+    const evidenceDir = process.env.CONTENT_VISIBILITY_EVIDENCE_DIR;
+    if (evidenceDir) fs.mkdirSync(evidenceDir, { recursive: true });
     for (let run = 0; run < RUNS_PER_MODE; run += 1) {
       for (const mode of ['before', 'after'] as const) {
         const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
         samples[mode].push(await runSample(page, base, mode));
+        if (run === 0 && evidenceDir) {
+          await page.screenshot({
+            path: path.join(evidenceDir, `content-visibility-${mode}.png`),
+            fullPage: false,
+          });
+        }
         await page.close();
       }
     }
@@ -108,6 +128,12 @@ async function main(): Promise<void> {
       mountedEvidence: {
         turns: samples.after[0]?.mountedTurns ?? 0,
         deferredContentBlocks: samples.after[0]?.deferredContentBlocks ?? 0,
+        deferredByType: samples.after[0]?.deferredByType ?? {},
+        activeTurnDeferredBlocks: samples.after[0]?.activeTurnDeferredBlocks ?? -1,
+      },
+      scrollFrames: {
+        before: samples.before.map((sample) => sample.scrollFrames),
+        after: samples.after.map((sample) => sample.scrollFrames),
       },
       streamingPerformanceMetrics: {
         before: samples.before.map((sample) => sample.streamingPerformanceMetrics.timings['stream.markdown.render_ms']),
@@ -115,14 +141,31 @@ async function main(): Promise<void> {
       },
       samples,
     };
+    if (evidenceDir) {
+      fs.writeFileSync(
+        path.join(evidenceDir, 'content-visibility-perf.json'),
+        `${JSON.stringify(report, null, 2)}\n`,
+      );
+    }
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 
-    const cssApplied = afterStyle?.contentVisibility === 'auto'
-      && afterStyle.containIntrinsicSize.includes('320px');
+    const requiredStyleKeys = ['turnText', 'turnTool', 'turnCode', 'toolCard', 'codeBlock'];
+    const cssApplied = requiredStyleKeys.every((key) => (
+      afterStyle?.[key]?.contentVisibility === 'auto'
+      && afterStyle[key].containIntrinsicSize.includes('px')
+    ));
     const scrollBehaviorSafe = samples.after.every(
-      (sample) => sample.computedStyle.scrollerScrollBehavior === 'auto',
+      (sample) => sample.computedStyle.scroller?.scrollBehavior === 'auto',
     );
-    if (!cssApplied || !scrollBehaviorSafe || report.mountedEvidence.deferredContentBlocks === 0) {
+    const allKindsMounted = ['turn', 'toolCard', 'codeBlock'].every(
+      (key) => (report.mountedEvidence.deferredByType[key] ?? 0) > 0,
+    );
+    const activeTurnSafe = samples.after.every((sample) => sample.activeTurnDeferredBlocks === 0);
+    const anchorStable = samples.after.every(
+      (sample) => typeof sample.scrollFrames.anchorDriftPx === 'number'
+        && sample.scrollFrames.anchorDriftPx <= 16,
+    );
+    if (!cssApplied || !scrollBehaviorSafe || !allKindsMounted || !activeTurnSafe || !anchorStable) {
       process.exitCode = 1;
     }
   } finally {

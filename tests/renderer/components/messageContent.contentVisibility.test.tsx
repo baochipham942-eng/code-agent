@@ -3,9 +3,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { MessageContent } from '../../../src/renderer/components/features/chat/MessageBubble/MessageContent';
 import {
+  CONTENT_INTRINSIC_SIZE_PX,
   HEAVY_TURN_CONTENT_MIN_CHARS,
   TURN_CONTENT_INTRINSIC_SIZE_PX,
 } from '../../../src/renderer/utils/turnContentVisibility';
+import { renderToStaticMarkupAsync } from './renderToStaticMarkupAsync';
 
 describe('MessageContent content visibility', () => {
   const heavyContent = 'Long completed markdown paragraph. '.repeat(
@@ -32,5 +34,25 @@ describe('MessageContent content visibility', () => {
 
     expect(streamingHtml).not.toContain('data-turn-heavy-content');
     expect(shortHtml).not.toContain('data-turn-heavy-content');
+  });
+
+  it('defers completed code blocks with line-count intrinsic size tiers', async () => {
+    const compactCode = ['```ts', ...Array.from({ length: 6 }, (_, index) => `const n${index} = ${index};`), '```'].join('\n');
+    const largeCode = ['```ts', ...Array.from({ length: 40 }, (_, index) => `const n${index} = ${index};`), '```'].join('\n');
+
+    const compactHtml = await renderToStaticMarkupAsync(
+      <MessageContent content={compactCode} isUser={false} />,
+    );
+    const largeHtml = await renderToStaticMarkupAsync(
+      <MessageContent content={largeCode} isUser={false} />,
+    );
+    const streamingHtml = await renderToStaticMarkupAsync(
+      <MessageContent content={largeCode} isUser={false} isStreaming />,
+    );
+
+    expect(compactHtml).toContain('data-deferred-content="code-block"');
+    expect(compactHtml).toContain(`contain-intrinsic-size:auto ${CONTENT_INTRINSIC_SIZE_PX.codeCompact}px`);
+    expect(largeHtml).toContain(`contain-intrinsic-size:auto ${CONTENT_INTRINSIC_SIZE_PX.codeCollapsed}px`);
+    expect(streamingHtml).not.toContain('data-deferred-content="code-block"');
   });
 });

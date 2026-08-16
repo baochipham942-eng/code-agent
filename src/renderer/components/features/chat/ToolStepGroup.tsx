@@ -23,6 +23,7 @@ import {
 } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
+import { getDeferredContentStyle } from '../../../utils/turnContentVisibility';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
@@ -192,7 +193,11 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   }
 
   return (
-    <div className="my-0.5">
+    <div
+      className="my-0.5"
+      data-deferred-content={!isStreamingTurn ? 'tool-card' : undefined}
+      style={!isStreamingTurn ? getDeferredContentStyle('toolCard') : undefined}
+    >
       <button
         onClick={() => {
           setUserToggled(true);

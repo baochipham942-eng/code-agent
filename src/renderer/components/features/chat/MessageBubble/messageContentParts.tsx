@@ -28,6 +28,10 @@ import {
   updateStreamingMarkdownBlockState,
   type StreamingMarkdownBlockState,
 } from './streamingMarkdownBlocks';
+import {
+  getCodeBlockDeferredContentKind,
+  getDeferredContentStyle,
+} from '../../../../utils/turnContentVisibility';
 
 // react-markdown + katex/remark 插件家族(vendor-markdown/vendor-katex)与
 // react-syntax-highlighter(Prism)按需动态加载,只在真正渲染消息正文/代码块时才下载,
@@ -245,9 +249,11 @@ const HighlightedCodeChunk = memo(function HighlightedCodeChunk({
 export const CodeBlock = memo(function CodeBlock({
   language,
   code,
+  deferOffscreenLayout = false,
 }: {
   language: string;
   code: string;
+  deferOffscreenLayout?: boolean;
 }) {
   const { t } = useI18n();
   const renderStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -336,13 +342,16 @@ export const CodeBlock = memo(function CodeBlock({
     ? lineChunks.slice(0, highlightedChunkCount)
     : [];
   const isHighlightComplete = !isLong || collapsed || highlightedLineCount >= lines.length;
+  const deferredContentKind = getCodeBlockDeferredContentKind(lines.length);
 
   return (
     <div
       className="my-3 rounded-xl bg-[var(--code-bg)] overflow-hidden border border-zinc-700 shadow-lg"
+      data-deferred-content={deferOffscreenLayout ? 'code-block' : undefined}
       data-code-block-lines={lines.length}
       data-code-highlighted-lines={collapsed ? 0 : highlightedLineCount}
       data-code-highlight-complete={isHighlightComplete ? 'true' : 'false'}
+      style={deferOffscreenLayout ? getDeferredContentStyle(deferredContentKind) : undefined}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">

@@ -5,8 +5,6 @@ import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MockAgentAdapter } from '../../../src/host/testing/agentAdapter';
 import {
-  MOCK_FIXTURE_CASE_IDS,
-  MOCK_REAL_ONLY_CASE_IDS,
   assertMockPolicyCoverage,
   getMockCasePolicy,
 } from '../../../src/host/testing/mockEvalPolicy';
@@ -25,10 +23,7 @@ describe('mock eval policy', () => {
       heldIn: string[];
     };
 
-    expect(() => assertMockPolicyCoverage(split.heldIn)).not.toThrow();
-    expect(MOCK_FIXTURE_CASE_IDS).toHaveLength(20);
-    expect(MOCK_REAL_ONLY_CASE_IDS).toHaveLength(56);
-    expect(new Set([...MOCK_FIXTURE_CASE_IDS, ...MOCK_REAL_ONLY_CASE_IDS]).size).toBe(76);
+    expect(assertMockPolicyCoverage(split.heldIn)).toEqual({ fixture: 20, realOnly: 56 });
   });
 
   it('五个诊断样本的 A/B 裁决固定下来', () => {

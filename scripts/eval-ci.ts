@@ -844,8 +844,9 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
         process.exit(1);
       }
       try {
-        assertMockPolicyCoverage(splitFile.heldIn);
+        const coverage = assertMockPolicyCoverage(splitFile.heldIn);
         mockEvalPolicy = true;
+        console.log(chalk.cyan(`  Mock policy: ${coverage.fixture} fixture / ${coverage.realOnly} real-only`));
       } catch (error) {
         console.error(chalk.red(`  Error: ${error instanceof Error ? error.message : String(error)}`));
         process.exit(1);

@@ -208,9 +208,9 @@ const FIXTURES: Record<string, MockFixturePolicy['run']> = {
   ),
 };
 
-export const MOCK_FIXTURE_CASE_IDS = Object.freeze(Object.keys(FIXTURES));
+const MOCK_FIXTURE_CASE_IDS = Object.freeze(Object.keys(FIXTURES));
 
-export const MOCK_REAL_ONLY_CASE_IDS = Object.freeze([
+const MOCK_REAL_ONLY_CASE_IDS = Object.freeze([
   'conv-ask-clarification',
   'conv-handle-ambiguous',
   'conv-understand-context',
@@ -281,7 +281,7 @@ export function getMockCasePolicy(testId: string): MockCasePolicy | undefined {
   return { kind: 'real-only', reason };
 }
 
-export function assertMockPolicyCoverage(testIds: string[]): void {
+export function assertMockPolicyCoverage(testIds: string[]): { fixture: number; realOnly: number } {
   const fixtureIds = new Set(MOCK_FIXTURE_CASE_IDS);
   const duplicates = MOCK_REAL_ONLY_CASE_IDS.filter((testId) => fixtureIds.has(testId));
   const missing = testIds.filter((testId) => !getMockCasePolicy(testId));
@@ -293,4 +293,8 @@ export function assertMockPolicyCoverage(testIds: string[]): void {
       + `duplicates=[${duplicates.join(', ')}], missing=[${missing.join(', ')}], stale=[${stale.join(', ')}]`,
     );
   }
+  return {
+    fixture: MOCK_FIXTURE_CASE_IDS.length,
+    realOnly: MOCK_REAL_ONLY_CASE_IDS.length,
+  };
 }

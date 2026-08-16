@@ -56,6 +56,8 @@ vi.mock('../../../../src/host/services/toolSearch', () => ({
   getToolSearchService: () => ({
     clearSkills: vi.fn(),
     registerSkills: vi.fn(),
+    registerSkill: vi.fn(),
+    unregisterSkill: vi.fn(),
   }),
 }));
 

@@ -25,7 +25,7 @@ async function applyLifecycleAction(result: DistilledSkillVoteResult): Promise<v
   const repository = getSkillRepositoryService();
   await repository.initialize();
   repository.disableSkill(result.record.skillName);
-  getSkillDiscoveryService().registerSkillsToToolSearch();
+  await getSkillDiscoveryService().registerSkillsToToolSearch();
   logger.info('Distilled skill soft-retired from runtime discovery', {
     skillName: result.record.skillName,
     action: result.action,

@@ -3072,6 +3072,8 @@ const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
 
 // 一次性把分类回填到 metadata.category（idempotent；所有 getter 共享同一引用）
 for (const skill of BUILTIN_SKILLS) {
+  skill.depends = [];
+  skill.provides = [`skill:${skill.name}`];
   const category = BUILTIN_SKILL_CATEGORY[skill.name];
   if (category) {
     skill.metadata = { ...skill.metadata, category };

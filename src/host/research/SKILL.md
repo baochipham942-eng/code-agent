@@ -1,6 +1,8 @@
 ---
 name: deep-research
 description: 深度研究方法论 — 4 阶段结构化研究框架
+depends: []
+provides: [skill:deep-research]
 version: "1.0.0"
 allowedTools:
   - web_search

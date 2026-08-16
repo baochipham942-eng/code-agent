@@ -11,13 +11,34 @@ import '../../src/renderer/styles/global.css';
 interface StreamRenderDemoDriver {
   push: (chunk: string) => void;
   finish: () => void;
-  snapshot: () => {
-    contentLength: number;
-    displayLength: number;
-    isAnimating: boolean;
-    tailStartIndex: number | null;
-    tailSegmentInDom: boolean;
-  };
+  snapshot: () => StreamRenderSnapshot;
+  timeline: () => StreamRenderTimeline;
+}
+
+interface StreamRenderSnapshot {
+  atMs: number;
+  contentLength: number;
+  displayLength: number;
+  isAnimating: boolean;
+  tailStartIndex: number | null;
+  tailSegmentInDom: boolean;
+}
+
+interface StreamRenderArrival {
+  atMs: number;
+  targetLength: number;
+  displayLength: number;
+}
+
+interface StreamRenderMutation extends StreamRenderSnapshot {
+  sequence: number;
+}
+
+interface StreamRenderTimeline {
+  startedAtMs: number;
+  arrivals: StreamRenderArrival[];
+  mutations: StreamRenderMutation[];
+  finishedAtMs: number | null;
 }
 
 declare global {
@@ -30,18 +51,57 @@ function StreamRenderDemo(): React.ReactElement {
   const [content, setContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(true);
   const { displayContent, isAnimating, tailStartIndex } = useSmoothStreamingText({ content, isStreaming });
+  const timelineRef = React.useRef<StreamRenderTimeline>({
+    startedAtMs: performance.now(),
+    arrivals: [],
+    mutations: [],
+    finishedAtMs: null,
+  });
+
+  const readSnapshot = (): StreamRenderSnapshot => ({
+    atMs: performance.now(),
+    contentLength: content.length,
+    displayLength: displayContent.length,
+    isAnimating,
+    tailStartIndex,
+    tailSegmentInDom: document.querySelector('.streaming-tail-segment') !== null,
+  });
+
+  useEffect(() => {
+    const snapshot = readSnapshot();
+    const previous = timelineRef.current.mutations.at(-1);
+    if (
+      previous
+      && previous.contentLength === snapshot.contentLength
+      && previous.displayLength === snapshot.displayLength
+      && previous.isAnimating === snapshot.isAnimating
+      && previous.tailStartIndex === snapshot.tailStartIndex
+    ) {
+      return;
+    }
+    timelineRef.current.mutations.push({
+      ...snapshot,
+      sequence: timelineRef.current.mutations.length,
+    });
+  }, [content.length, displayContent.length, isAnimating, tailStartIndex]);
 
   useEffect(() => {
     window.__STREAM_RENDER_DEMO__ = {
-      push: (chunk) => setContent((prev) => prev + chunk),
-      finish: () => setIsStreaming(false),
-      snapshot: () => ({
-        contentLength: content.length,
-        displayLength: displayContent.length,
-        isAnimating,
-        tailStartIndex,
-        tailSegmentInDom: document.querySelector('.streaming-tail-segment') !== null,
+      push: (chunk) => setContent((previous) => {
+        const next = previous + chunk;
+        timelineRef.current.arrivals.push({
+          atMs: performance.now(),
+          targetLength: next.length,
+          displayLength: displayContent.length,
+        });
+        return next;
       }),
+      finish: () => {
+        timelineRef.current.finishedAtMs = performance.now();
+        setIsStreaming(false);
+      },
+      snapshot: readSnapshot,
+      timeline: () => structuredClone(timelineRef.current),
     };
     document.body.setAttribute('data-stream-demo-ready', 'true');
   });

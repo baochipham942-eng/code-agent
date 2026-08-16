@@ -256,7 +256,7 @@ async function localApprovalReport(): Promise<ScenarioReport> {
   const { buildApprovalWaitingNarration } = await import('../../../src/host/services/voice/voiceNarration');
   const narration = buildApprovalWaitingNarration({ workItemId: 'eval:approval-1', title: '写验收文件' });
   const wordingPass = narration.worthHearing === true
-    && narration.summary.includes('正在等你批准')
+    && narration.summary.includes('正在等你确认')
     && narration.summary.includes('选择允许或拒绝')
     && narration.summary.includes('还没有做完')
     && narration.summary.includes('不会自动放行');

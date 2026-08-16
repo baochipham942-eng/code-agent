@@ -40,6 +40,14 @@ describe('VoiceStartDialog 音色就地选（X2）', () => {
     expect(Array.from(select.querySelectorAll('option')).map((o) => o.value)).toEqual(['Tina', 'Ethan', 'Serena']);
     expect(select.value).toBe('Ethan');
     expect(screen.getByText(zh.voice.settings.voiceLabel)).toBeTruthy();
+    expect(screen.getByTestId('voice-start-model-identity').textContent).toContain('Qwen3.5 Omni Flash Realtime');
+    expect(screen.getByTestId('voice-start-model-identity').textContent).toContain('DashScope');
+    expect(screen.getByText(zh.voice.settings.callModelDistinction)).toBeTruthy();
+    expect(Array.from(select.querySelectorAll('option')).map((o) => o.textContent)).toEqual([
+      `Tina · ${zh.voice.settings.voiceDescriptions.Tina}`,
+      `Ethan · ${zh.voice.settings.voiceDescriptions.Ethan}`,
+      `Serena · ${zh.voice.settings.voiceDescriptions.Serena}`,
+    ]);
   });
 
   it('变更音色即写回 voice.live.voiceId（turnDetection 同写）并广播设置更新事件', async () => {

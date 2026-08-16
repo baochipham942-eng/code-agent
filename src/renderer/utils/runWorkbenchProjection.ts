@@ -87,7 +87,7 @@ function phaseFromStatus(status: RunUiStatus, taskProgress?: TaskProgressData | 
   const labels: Record<RunUiStatus, string> = {
     planning: '规划任务',
     running: '执行中',
-    waiting_approval: '等待审批',
+    waiting_approval: '等你确认',
     using_tools: '调用工具',
     verifying: '验证结果',
     completed: '已完成',

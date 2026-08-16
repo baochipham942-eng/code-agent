@@ -6,6 +6,17 @@ import {
   SMOOTH_STREAMING_TEXT_DEFAULTS,
 } from '../../../src/renderer/hooks/useSmoothStreamingText';
 
+// 行为推导段间隔：从公共入口逐 ms 找到首次推进时刻。节奏函数不再对外导出（knip 生产档），
+// 测试只依赖可观测行为，实现改节奏公式时这里自动跟随。
+function segmentIntervalMs(displayContent: string, targetContent: string): number {
+  for (let elapsedMs = 1; elapsedMs <= 10_000; elapsedMs++) {
+    if (computeSmoothStreamingNextContent({ displayContent, targetContent, elapsedMs }) !== displayContent) {
+      return elapsedMs;
+    }
+  }
+  throw new Error('segment interval not found within 10s');
+}
+
 describe('useSmoothStreamingText helpers', () => {
   it('advances appended text one segment per interval without jumping to the full target', () => {
     const next = computeSmoothStreamingNextContent({
@@ -20,31 +31,48 @@ describe('useSmoothStreamingText helpers', () => {
   });
 
   it('does not advance before one segment interval has elapsed', () => {
+    const target = 'hello world, this is a longer streamed answer';
     const next = computeSmoothStreamingNextContent({
       displayContent: 'hello',
-      targetContent: 'hello world, this is a longer streamed answer',
-      elapsedMs: SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS - 1,
+      targetContent: target,
+      elapsedMs: segmentIntervalMs('hello', target) - 1,
     });
 
     expect(next).toBe('hello');
   });
 
-  it('uses flush mode to land the remaining tail immediately when the stream ends', () => {
+  it('keeps the same bounded drain when the stream ends instead of jumping the tail', () => {
     const target = 'hello world, this is a longer streamed answer';
-    const normal = computeSmoothStreamingNextContent({
+    const interval = segmentIntervalMs('hello', target);
+    const beforeInterval = computeSmoothStreamingNextContent({
       displayContent: 'hello',
       targetContent: target,
-      elapsedMs: 100,
+      elapsedMs: interval - 1,
     });
     const flushing = computeSmoothStreamingNextContent({
       displayContent: 'hello',
       targetContent: target,
-      elapsedMs: 100,
+      elapsedMs: interval - 1,
       isFlushing: true,
     });
 
-    expect(flushing).toBe(target);
-    expect(flushing.length).toBeGreaterThan(normal.length);
+    expect(flushing).toBe(beforeInterval);
+    expect(flushing).toBe('hello');
+  });
+
+  it('shortens the segment interval as backlog grows and drains within the target window', () => {
+    const shortTarget = 'one two';
+    const longTarget = 'one two three four five six seven eight nine ten';
+    const shortInterval = segmentIntervalMs('', shortTarget);
+    const longInterval = segmentIntervalMs('', longTarget);
+
+    expect(longInterval).toBeLessThan(shortInterval);
+    expect(longInterval).toBeLessThanOrEqual(SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS);
+    expect(computeSmoothStreamingNextContent({
+      displayContent: '',
+      targetContent: longTarget,
+      elapsedMs: SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_DRAIN_MS,
+    })).toBe(longTarget);
   });
 
   it('syncs immediately for non-prefix replacement snapshots', () => {
@@ -117,7 +145,7 @@ describe('useSmoothStreamingText 积压直落', () => {
     const segment = computeSmoothStreamingNextContent({
       displayContent: landed,
       targetContent: target,
-      elapsedMs: SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS,
+      elapsedMs: segmentIntervalMs(landed, target),
     });
     expect(segment).toBe(`${bulk}word`);
   });

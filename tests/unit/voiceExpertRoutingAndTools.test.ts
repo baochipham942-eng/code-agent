@@ -26,6 +26,7 @@ const runtime = vi.hoisted(() => ({
     _message: string,
     _attachments: unknown,
     _options: AgentRunOptions,
+    _messageMetadata?: unknown,
   ) => undefined),
   interruptAndContinue: vi.fn(async (_sessionId: string, _message: string) => ({ outcome: 'steered' as const })),
   cancelTask: vi.fn(async (_sessionId: string) => undefined),
@@ -332,6 +333,41 @@ describe('A4 窄工具 / H1 指挥台', () => {
     expect(options.agentOverrideId).toBe('muzhi');
     expect(options.turnSystemContext?.[0]).toContain('全量 L0/L1');
     expect(buildRoleContextBlock).toHaveBeenCalledWith('muzhi');
+  });
+
+  it('派活标题归一文件名，聊天 metadata 传完整标题而非短名', async () => {
+    bind();
+
+    await executeVoiceTool('delegate_task', JSON.stringify({
+      title: '创建壹二点md',
+      short_name: '建文件',
+      prompt: '创建壹二点md',
+    }));
+
+    await vi.waitFor(() => expect(runtime.startTask).toHaveBeenCalled());
+    expect(workItems.value.at(-1)).toMatchObject({ title: '创建12.md', shortName: '建文件' });
+    expect(runtime.startTask.mock.calls.at(-1)?.[4]).toEqual(expect.objectContaining({
+      voiceDispatch: expect.objectContaining({ title: '创建12.md' }),
+    }));
+  });
+
+  it('短名允许 2-6 个字，超过 6 个字拒绝派发', async () => {
+    bind();
+
+    await executeVoiceTool('delegate_task', JSON.stringify({
+      title: '写周报',
+      short_name: '创建周报文件',
+      prompt: '写周报',
+    }));
+    expect(runtime.startTask).toHaveBeenCalledOnce();
+
+    const result = await executeVoiceTool('delegate_task', JSON.stringify({
+      title: '写周报',
+      short_name: '创建周报文件夹',
+      prompt: '写周报',
+    }));
+    expect(result).toContain('2-6');
+    expect(runtime.startTask).toHaveBeenCalledOnce();
   });
 
   it('delegate_task 那一轮真过了连接器收窄（专家声明的 connectors 进 toolScope）', async () => {

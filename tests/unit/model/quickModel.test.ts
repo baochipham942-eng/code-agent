@@ -113,6 +113,16 @@ describe('thinking 模型回落时自动关闭思考', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.thinking).toBeUndefined();
   });
+
+  it('passes the caller abort signal through to fetch', async () => {
+    mockConfig({ keys: { zhipu: 'zk' } });
+    const fetchMock = mockFetchOnce('ok');
+    const controller = new AbortController();
+
+    await quickTask('hi', 32, controller.signal);
+
+    expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal);
+  });
 });
 
 describe('快模型鉴权失败诊断 + 401 拉黑降级', () => {

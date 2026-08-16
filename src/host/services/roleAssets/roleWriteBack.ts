@@ -197,10 +197,15 @@ ${transcript}`;
 async function judgeWriteBack(input: WriteBackInput): Promise<WriteBackJudgment | null> {
   const existingRole = await listScopedMemories({ scope: 'role', roleId: input.roleId });
   const existingIndex = existingRole.map((m) => `- [${m.filename}] ${m.description}`).join('\n');
+  const controller = new AbortController();
 
   try {
     const result = await withTimeout(
-      quickTask(buildJudgePrompt(input, existingIndex), ROLE_ASSETS.WRITE_BACK_MAX_TOKENS),
+      quickTask(
+        buildJudgePrompt(input, existingIndex),
+        ROLE_ASSETS.WRITE_BACK_MAX_TOKENS,
+        controller.signal,
+      ),
       ROLE_ASSETS.WRITE_BACK_TIMEOUT_MS,
       'Role write-back judgment timed out',
     );
@@ -212,6 +217,10 @@ async function judgeWriteBack(input: WriteBackInput): Promise<WriteBackJudgment 
   } catch (err) {
     logger.warn('Write-back judgment failed', { error: String(err) });
     return null;
+  } finally {
+    // withTimeout 只结束调用方等待；必须主动 abort 才能把 limiter 排队项移除，
+    // 或中止在途 fetch 并由 quickTask 的 finally 释放 provider 槽。
+    controller.abort();
   }
 }
 

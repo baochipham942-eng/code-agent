@@ -15,6 +15,7 @@ import type { HandlerFn } from '../host/platform';
 import type { RunRegistry } from '../host/runtime/runRegistry';
 import type { DurableRunRolloutPolicy } from '../host/app/durableRunRollout';
 import type { DurableRunReadService } from '../host/app/durableRunReadService';
+import { TraceReadService } from '../host/app/traceReadService';
 import type { WebRouteLogger } from './routes/routeTypes';
 import type { BuildInfo, PermissionRequest } from '../shared/contract';
 
@@ -122,6 +123,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   } = deps;
 
   const app = express();
+  const traceReadService = new TraceReadService(resolveCodeAgentDataDir());
 
   // HTML 产物人工编辑落库后让 web 消息投影失效（dogfood 抓到的崩法 A 根因）
   wireGenerativeUiEditProjectionInvalidation();
@@ -210,6 +212,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     tryGetSessionManager,
     getSupabaseForSession,
     getDurableRunReadService: () => getDurableRunReadService(),
+    getTraceReadService: () => traceReadService,
   }));
 
   // ── Settings (extracted to routes/settings.ts) ─────────────────────

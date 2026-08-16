@@ -636,6 +636,15 @@ export class TelemetryCollector {
       toolCalls: this.turnToolCalls,
       events: this.turnEvents
     });
+    void import('../services/skills/skillEvidenceLifecycle')
+      .then(({ finalizeDistilledSkillEvidenceTurn }) => finalizeDistilledSkillEvidenceTurn({
+        turnId,
+        taskClass: intent.primary,
+      }))
+      .catch((error) => logger.warn('[TelemetryCollector] skill evidence finalization failed', {
+        turnId,
+        error: error instanceof Error ? error.message : String(error),
+      }));
 
     // Update session aggregates
     if (this.activeSession) {
@@ -782,6 +791,15 @@ export class TelemetryCollector {
 
     getTelemetryStorage().insertTurn(turn);
     getTelemetryStorage().batchInsert({ modelCalls, toolCalls, events });
+    void import('../services/skills/skillEvidenceLifecycle')
+      .then(({ finalizeDistilledSkillEvidenceTurn }) => finalizeDistilledSkillEvidenceTurn({
+        turnId: input.turnId,
+        taskClass: turn.intent.primary,
+      }))
+      .catch((error) => logger.warn('[TelemetryCollector] detached skill evidence finalization failed', {
+        turnId: input.turnId,
+        error: error instanceof Error ? error.message : String(error),
+      }));
 
     if (this.activeSession?.id === input.sessionId) {
       this.activeSession.turnCount++;

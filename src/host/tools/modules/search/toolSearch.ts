@@ -26,6 +26,7 @@ import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { toolSearchSchema as schema } from './toolSearch.schema';
 import { getCapabilityRecommender } from '../../../services/capability';
 import { renderGaps } from '../planning/recommendCapability';
+import { markDistilledSkillTurnSignal } from '../../../services/skills/distillSignalStore';
 
 const MAX_RESULTS_HARD_CAP = 10;
 const DEFAULT_MAX_RESULTS = 5;
@@ -79,6 +80,20 @@ export async function executeToolSearch(
       includeMCP: true,
       ...(ctx.deniedToolNames?.length ? { deniedToolNames: ctx.deniedToolNames } : {}),
     });
+
+    // ToolSearch 返回的蒸馏 skill 是本轮真实进入候选集的技能。先记 selected，
+    // turn 收尾时若没有后续 Skill 激活就形成 skipped -1；若激活则同 turn 覆盖为 adopted +1。
+    if (ctx.turnId) {
+      for (const item of result.tools) {
+        if (!item.name.startsWith('skill:')) continue;
+        markDistilledSkillTurnSignal({
+          turnId: ctx.turnId,
+          skillName: item.name.slice('skill:'.length),
+          sessionId: ctx.sessionId,
+          kind: 'selected',
+        });
+      }
+    }
 
     onProgress?.({ stage: 'completing', percent: 100 });
 

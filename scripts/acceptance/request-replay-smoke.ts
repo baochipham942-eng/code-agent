@@ -61,6 +61,7 @@ async function main(): Promise<void> {
     sourceIds,
     transcriptMessages: ledgerMessages,
     collapsedSpans: [],
+    compactionReplacements: [],
     toolSchemaHash: toolSnapshot.schemaHash,
     toolNames: toolSnapshot.toolNames,
     requestConfig: { provider: 'openai', model: 'e2e-local-agent-model' },

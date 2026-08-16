@@ -23,6 +23,7 @@ function baseInput(
     sourceIds,
     transcriptMessages,
     collapsedSpans: [],
+    compactionReplacements: [],
     toolSchemaHash: 'f'.repeat(64),
     toolNames: ['Read'],
     requestConfig: { provider: 'openai', model: 'gpt-5.5', maxTokens: 8192 },
@@ -72,6 +73,24 @@ describe('buildRequestManifest', () => {
     expect(manifest.compactionReplacements).toEqual([{
       replacedMessageIds: ['user-1', 'assistant-1'],
       replacementContentHash: ref.kind === 'content' ? ref.contentHash : '',
+    }]);
+  });
+
+  it('records autocompact spliced ledger ids against the surviving compaction message', () => {
+    const replacementLedger = transcriptMessage('compact-1', 'assistant', 'summary');
+    replacementLedger.role = 'system';
+    const replacement: ModelMessage = { role: 'system', content: 'summary' };
+    const input = baseInput([replacement], ['compact-1'], [replacementLedger]);
+    input.compactionReplacements = [{
+      replacedMessageIds: ['user-old', 'assistant-old'],
+      replacementMessageId: 'compact-1',
+    }];
+
+    const manifest = buildRequestManifest(input);
+
+    expect(manifest.compactionReplacements).toEqual([{
+      replacedMessageIds: ['user-old', 'assistant-old'],
+      replacementContentHash: expect.any(String),
     }]);
   });
 

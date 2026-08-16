@@ -3,7 +3,7 @@ import type { Message } from '../../../../shared/contract';
 import type { ModelConfig } from '../../../../shared/contract/model';
 import { resolveModelRequestTemperature } from '../../../../shared/modelSampling';
 import type { ModelMessage } from '../../../agent/loopTypes';
-import type { CollapsedSpan } from '../../../context/compressionState';
+import type { CollapsedSpan, CompactionReplacement } from '../../../context/compressionState';
 import { resolveModelMaxOutputTokens } from '../../../model/modelLimits';
 import { getContentCache } from '../../../telemetry/contentCache';
 import { getSystemPromptCache } from '../../../telemetry/systemPromptCache';
@@ -20,6 +20,7 @@ export interface RequestManifestBuildInput {
   sourceIds: readonly string[];
   transcriptMessages: readonly Message[];
   collapsedSpans: readonly CollapsedSpan[];
+  compactionReplacements: readonly CompactionReplacement[];
   toolSchemaHash: string;
   toolNames: string[];
   requestConfig: ModelConfig;
@@ -151,7 +152,7 @@ export function buildRequestManifest(
     return { kind: 'content', contentHash: storeCanonical(canonical), reason };
   });
   const transcriptIds = new Set(input.transcriptMessages.map((message) => message.id));
-  const compactionReplacements = input.collapsedSpans.flatMap((span) => {
+  const collapseReplacements = input.collapsedSpans.flatMap((span) => {
     const replacedMessageIds = Array.from(new Set(span.messageIds
       .map((id) => ledgerIdForProjectionId(id, transcriptIds))
       .filter((id): id is string => Boolean(id))));
@@ -164,6 +165,21 @@ export function buildRequestManifest(
       : storeCanonical(canonicalizeModelMessage(input.messages[replacementIndex]));
     return [{ replacedMessageIds, replacementContentHash }];
   });
+  const autocompactReplacements = input.compactionReplacements.flatMap((replacement) => {
+    const replacementIndex = input.sourceIds.findIndex(
+      (sourceId) => sourceId === replacement.replacementMessageId,
+    );
+    if (replacementIndex < 0) return [];
+    const replacementRef = messageRefs[replacementIndex];
+    const replacementContentHash = replacementRef.kind === 'content'
+      ? replacementRef.contentHash
+      : storeCanonical(canonicalizeModelMessage(input.messages[replacementIndex]));
+    return [{
+      replacedMessageIds: [...new Set(replacement.replacedMessageIds)],
+      replacementContentHash,
+    }];
+  });
+  const compactionReplacements = [...collapseReplacements, ...autocompactReplacements];
   return {
     requestId: input.requestId,
     messageRefs,

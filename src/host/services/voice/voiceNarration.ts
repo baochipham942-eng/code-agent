@@ -217,7 +217,7 @@ export function buildApprovalWaitingNarration(input: {
     worthHearing: true,
     title: input.title,
     summary: [
-      `现在对用户说：「『${input.title}』正在等你批准。请在屏幕上的审批卡选择允许或拒绝，我收到后才会继续。」`,
+      `现在对用户说：「『${input.title}』正在等你确认。请在屏幕上的审批卡选择允许或拒绝，我收到后才会继续。」`,
       '这件事还没有做完，也不会自动放行。就说这一个卡点和出口，不要再说“已经开始做了”。',
     ].join('\n'),
     ...(speaker ? { speaker } : {}),

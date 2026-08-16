@@ -132,6 +132,43 @@ afterEach(async () => {
 });
 
 describe('refreshVoiceInstructions', () => {
+  it('高歧义截断 final 即使模型抢调工具也不派，补齐后只派一单', async () => {
+    await attachVoiceClient(new FakeClient() as never, 'session-reception-hold');
+    const connectInput = runtime.connect.mock.calls.at(-1)?.[0] as {
+      onEvent: (event: import('../../src/shared/contract/voice').VoiceEvent) => void;
+      onToolCall: (call: {
+        callId: string;
+        name: string;
+        arguments: string;
+        origin: 'function_call';
+      }) => Promise<string>;
+    };
+
+    connectInput.onEvent({ type: 'user.transcript', text: '帮我创建一个一点', done: true, itemId: 'u1' });
+    const held = await connectInput.onToolCall({
+      callId: 'call-1',
+      name: 'delegate_task',
+      arguments: JSON.stringify({ title: '创建点', prompt: '创建 dot.html' }),
+      origin: 'function_call',
+    });
+    expect(held).toContain('尚未派发');
+    expect(runtime.executeVoiceTool).not.toHaveBeenCalled();
+
+    connectInput.onEvent({
+      type: 'user.transcript',
+      text: 'MD 文件，文件名叫一点，内容写你好',
+      done: true,
+      itemId: 'u2',
+    });
+    await connectInput.onToolCall({
+      callId: 'call-2',
+      name: 'delegate_task',
+      arguments: JSON.stringify({ title: '创建一点.md', prompt: '创建一点.md，内容写你好' }),
+      origin: 'function_call',
+    });
+    expect(runtime.executeVoiceTool).toHaveBeenCalledTimes(1);
+  });
+
   it('response.done 发现说了没做时经 host_routed 补派，并携带最近用户轮', async () => {
     await attachVoiceClient(new FakeClient() as never, 'session-saydo');
     const connectInput = runtime.connect.mock.calls.at(-1)?.[0] as {

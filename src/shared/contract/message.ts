@@ -334,7 +334,11 @@ export interface MessageMetadata {
    * 反推完成，那条反推等于把模型的一句「我已经建好了」当成事实。
    * 这条消息不进对话（投影层只取 metadata，不成节点）。
    */
-  voiceWorkSettled?: { workItemId: string; title: string; outcome: 'done' | 'unverified' };
+  voiceWorkSettled?: {
+    workItemId: string;
+    title: string;
+    outcome: 'done' | 'unverified' | 'failed' | 'cancelled';
+  };
   /**
    * 模型这次做了什么补救动作的过程说明（`role:'system'`，2026-08-08 notification 事件
    * 零消费者工单乙类）：视觉降级为纯文本 / artifact 生成流中断切非流式重试 / 已用视觉模型

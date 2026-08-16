@@ -159,6 +159,7 @@ describe('语音派活任务卡（W6-5）', () => {
         role: 'user',
         content: '改写后的派活指令全文',
         timestamp: 1_000,
+        isMeta: true,
         metadata: { voiceDispatch: { title: '建 test3.txt', workItemId: 'voice-work-1' } },
       },
       {
@@ -228,6 +229,7 @@ describe('语音派活任务卡（W6-5）', () => {
         role: 'user',
         content: '改写后的派活指令全文',
         timestamp: 1_000,
+        isMeta: true,
         metadata: { voiceDispatch: { title: '建 test3.txt', workItemId: 'voice-work-1' } },
       },
       {

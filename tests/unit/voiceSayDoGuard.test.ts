@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 const runtime = vi.hoisted(() => ({
   quickTask: vi.fn(async (..._args: unknown[]) => ({ content: 'NORMAL' })),
   executeVoiceTool: vi.fn(async (..._args: unknown[]) => '已派发'),
+  info: vi.fn(),
   warn: vi.fn(),
 }));
 vi.mock('../../src/host/model/quickModel', () => ({
@@ -12,7 +13,7 @@ vi.mock('../../src/host/services/voice/voiceTools', () => ({
   executeVoiceTool: (...args: unknown[]) => runtime.executeVoiceTool(...args),
 }));
 vi.mock('../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: runtime.warn, error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => ({ info: runtime.info, warn: runtime.warn, error: vi.fn(), debug: vi.fn() }),
 }));
 
 import { createVoiceSayDoGuard } from '../../src/host/services/voice/voiceSayDoGuard';
@@ -23,6 +24,7 @@ const makeGuard = (isCurrent: () => boolean = () => true) =>
 beforeEach(() => {
   runtime.quickTask.mockReset().mockResolvedValue({ content: 'NORMAL' });
   runtime.executeVoiceTool.mockClear();
+  runtime.info.mockClear();
   runtime.warn.mockClear();
 });
 
@@ -57,6 +59,11 @@ describe('voice say/do guard（公共入口）', () => {
     const parsed = JSON.parse(rawArguments) as { prompt: string };
     expect(parsed.prompt).toContain('[USER] 帮我创建一个一点');
     expect(parsed.prompt).toContain('[USER] MD 文件');
+    expect(runtime.info).toHaveBeenCalledWith(
+      'voice say/do guard intervened',
+      expect.objectContaining({ action: 'host_routed_delegate_task' }),
+    );
+    expect(runtime.warn).not.toHaveBeenCalled();
   });
 
   it('干预后同一轮不重复补派', async () => {

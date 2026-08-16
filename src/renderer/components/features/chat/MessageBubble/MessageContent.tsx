@@ -2,7 +2,7 @@
 // MessageContent - Markdown rendering using react-markdown
 // ============================================================================
 
-import React, { useMemo, useCallback, memo, useEffect } from 'react';
+import React, { useMemo, useCallback, memo, useEffect, useRef } from 'react';
 import { Send, PenLine, Terminal, Eye, ExternalLink, Play } from 'lucide-react';
 import remend from 'remend';
 import type { Components } from 'react-markdown';
@@ -157,13 +157,18 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
   // Filter out system tags, auto-link ticket IDs, wrap file paths,
   // then close incomplete markdown tokens for streaming-safe rendering
-  const filteredContent = useMemo(() => {
+  const preparedContent = useMemo(() => {
     const cleaned = filterSystemTags(markdownSource);
     const noRawHtml = stripRawHtmlOutsideCode(cleaned);
     const withTickets = wrapTicketsAsLinks(noRawHtml);
-    const wrapped = wrapFilePathsInBackticks(withTickets);
-    return remend(wrapped);
+    return wrapFilePathsInBackticks(withTickets);
   }, [markdownSource]);
+  const filteredContent = useMemo(
+    () => isStreaming ? preparedContent : remend(preparedContent),
+    [isStreaming, preparedContent],
+  );
+  const markdownSourceRef = useRef(preparedContent);
+  markdownSourceRef.current = preparedContent;
 
   // Custom components for react-markdown
   const components: Components = useMemo(
@@ -196,7 +201,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
                 code={codeContent}
                 messageId={messageId}
                 sessionId={mediaContext?.sessionId}
-                sourceOrdinal={generativeUiOrdinalAtOffset(filteredContent, node?.position?.start.offset)}
+                sourceOrdinal={generativeUiOrdinalAtOffset(markdownSourceRef.current, node?.position?.start.offset)}
                 isStreaming={isStreaming}
               />
             );
@@ -207,7 +212,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
                 rawSpec={codeContent}
                 sessionId={mediaContext?.sessionId}
                 messageId={messageId}
-                sourceOrdinal={neoUIOrdinalAtOffset(filteredContent, node?.position?.start.offset)}
+                sourceOrdinal={neoUIOrdinalAtOffset(markdownSourceRef.current, node?.position?.start.offset)}
                 isStreaming={isStreaming}
               />
             );
@@ -571,7 +576,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
     }),
-    [filteredContent, handleOpenFile, handleOpenHttpLink, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
+    [handleOpenFile, handleOpenHttpLink, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
   );
 
   // For user messages, render as plain text (no markdown processing)
@@ -626,7 +631,11 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       data-turn-heavy-content={deferCompletedLayout ? 'true' : undefined}
       style={deferCompletedLayout ? deferredTurnContentStyle : undefined}
     >
-      <MarkdownRenderer content={filteredContent} components={components} />
+      <MarkdownRenderer
+        content={isStreaming ? preparedContent : filteredContent}
+        components={components}
+        isStreaming={isStreaming}
+      />
     </div>
   );
 });

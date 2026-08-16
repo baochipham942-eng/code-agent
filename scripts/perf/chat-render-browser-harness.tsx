@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import type { Components } from 'react-markdown';
 import { createRoot } from 'react-dom/client';
 import { DiffView } from '../../src/renderer/components/DiffView';
 import { MessageContent } from '../../src/renderer/components/features/chat/MessageBubble/MessageContent';
+import { MarkdownRenderer } from '../../src/renderer/components/features/chat/MessageBubble/messageContentParts';
 import {
   getStreamingPerformanceSnapshot,
   resetStreamingPerformanceMetrics,
@@ -16,8 +18,13 @@ interface ChatRenderBrowserResult {
     streamingChars: number;
     diffLines: number;
     diffRows: number;
+    streamingMarkdownBlocks: number;
   };
   metrics: ReturnType<typeof getStreamingPerformanceSnapshot>;
+  markdownComparison: {
+    legacy: ReturnType<typeof getStreamingPerformanceSnapshot>;
+    blockMemo: ReturnType<typeof getStreamingPerformanceSnapshot>;
+  };
 }
 
 declare global {
@@ -31,6 +38,9 @@ declare global {
 const CODE_BLOCKS = 10;
 const CODE_LINES_PER_BLOCK = 500;
 const DIFF_LINES = 5_000;
+const STREAMING_MARKDOWN_BLOCKS = 48;
+const STREAMING_MARKDOWN_TICK_MS = 110;
+const EMPTY_MARKDOWN_COMPONENTS: Components = {};
 
 function makeCodeLines(prefix: string, count: number): string {
   return Array.from({ length: count }, (_, index) => {
@@ -78,6 +88,41 @@ function installLongTaskObserver(): void {
   }
 }
 
+function ProgressiveMarkdownBenchmark({
+  chunks,
+  blockMemo,
+  onComplete,
+}: {
+  chunks: string[];
+  blockMemo: boolean;
+  onComplete: (snapshot: ReturnType<typeof getStreamingPerformanceSnapshot>) => void;
+}): React.ReactElement {
+  const [content, setContent] = useState(chunks[0]);
+
+  useEffect(() => {
+    let nextChunk = 1;
+    const timer = window.setInterval(() => {
+      if (nextChunk >= chunks.length) {
+        window.clearInterval(timer);
+        window.setTimeout(() => onComplete(getStreamingPerformanceSnapshot()), 250);
+        return;
+      }
+      const chunk = chunks[nextChunk];
+      nextChunk += 1;
+      setContent((current) => current + chunk);
+    }, STREAMING_MARKDOWN_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [chunks, onComplete]);
+
+  return (
+    <MarkdownRenderer
+      content={content}
+      components={EMPTY_MARKDOWN_COMPONENTS}
+      isStreaming={blockMemo}
+    />
+  );
+}
+
 function BrowserHarness(): React.ReactElement {
   const markdown = useMemo(
     () => makeMarkdownWithCodeBlocks(CODE_BLOCKS, CODE_LINES_PER_BLOCK),
@@ -89,8 +134,43 @@ function BrowserHarness(): React.ReactElement {
   );
   const oldText = useMemo(() => makeTextLines('old-browser', DIFF_LINES), []);
   const newText = useMemo(() => makeTextLines('new-browser', DIFF_LINES), []);
+  const streamingMarkdownChunks = useMemo(
+    () => Array.from({ length: STREAMING_MARKDOWN_BLOCKS }, (_, index) => [
+      `### 流式块 ${index + 1}`,
+      '',
+      `第 ${index + 1} 块包含 **markdown**、[链接](https://example.com/${index + 1}) 和 \`inline_${index + 1}\`。`.repeat(8),
+      '',
+    ].join('\n')),
+    [],
+  );
+  const [benchmarkPhase, setBenchmarkPhase] = useState<'warmup' | 'legacy' | 'block-memo' | 'done'>('warmup');
+  const [markdownComparison, setMarkdownComparison] = useState<ChatRenderBrowserResult['markdownComparison'] | null>(null);
+  const [, setLegacyMetrics] = useState<ReturnType<typeof getStreamingPerformanceSnapshot> | null>(null);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      resetStreamingPerformanceMetrics();
+      setBenchmarkPhase('legacy');
+    }, 750);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const handleLegacyComplete = useCallback((snapshot: ReturnType<typeof getStreamingPerformanceSnapshot>) => {
+    setLegacyMetrics(snapshot);
+    resetStreamingPerformanceMetrics();
+    setBenchmarkPhase('block-memo');
+  }, []);
+
+  const handleBlockMemoComplete = useCallback((snapshot: ReturnType<typeof getStreamingPerformanceSnapshot>) => {
+    setLegacyMetrics((legacy) => {
+      if (legacy) setMarkdownComparison({ legacy, blockMemo: snapshot });
+      return legacy;
+    });
+    setBenchmarkPhase('done');
+  }, []);
+
+  useEffect(() => {
+    if (benchmarkPhase !== 'done' || !markdownComparison) return;
     const timer = window.setTimeout(() => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -105,16 +185,18 @@ function BrowserHarness(): React.ReactElement {
               streamingChars: streamingText.length,
               diffLines: DIFF_LINES,
               diffRows,
+              streamingMarkdownBlocks: STREAMING_MARKDOWN_BLOCKS,
             },
             metrics: getStreamingPerformanceSnapshot(),
+            markdownComparison,
           };
           document.body.setAttribute('data-chat-perf-ready', 'true');
         });
       });
-    }, 100);
+    }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [streamingText.length]);
+  }, [benchmarkPhase, markdownComparison, streamingText.length]);
 
   return (
     <main className="min-h-screen bg-zinc-950 px-6 py-6 text-zinc-100">
@@ -134,6 +216,28 @@ function BrowserHarness(): React.ReactElement {
             isStreaming
             messageId="browser-perf-streaming"
           />
+        </section>
+
+        <section className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
+          <h2 className="mb-3 text-sm font-medium text-zinc-300">Progressive Markdown Stream</h2>
+          {benchmarkPhase === 'warmup' && <p>Preparing isolated markdown benchmark…</p>}
+          {benchmarkPhase === 'legacy' && (
+            <ProgressiveMarkdownBenchmark
+              key="legacy"
+              chunks={streamingMarkdownChunks}
+              blockMemo={false}
+              onComplete={handleLegacyComplete}
+            />
+          )}
+          {benchmarkPhase === 'block-memo' && (
+            <ProgressiveMarkdownBenchmark
+              key="block-memo"
+              chunks={streamingMarkdownChunks}
+              blockMemo
+              onComplete={handleBlockMemoComplete}
+            />
+          )}
+          {benchmarkPhase === 'done' && <p>Markdown benchmark complete.</p>}
         </section>
 
         <section className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">

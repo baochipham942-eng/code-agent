@@ -180,13 +180,13 @@ function initializeQuickModelCandidates(): QuickModelConfig[] {
     }
   }
 
-  if (resolved.length === 0) {
+  const [primary] = resolved;
+  if (!primary) {
     logger.warn('Quick model unavailable: no fast-model key, no main-model key, no Zhipu key');
     lastResolvedLogKey = null;
     return [];
   }
 
-  const primary = resolved[0]!;
   const logKey = `${primary.provider}:${primary.model}`;
   if (logKey !== lastResolvedLogKey) {
     lastResolvedLogKey = logKey;
@@ -337,7 +337,8 @@ async function executeQuickAttempt(
  */
 export async function quickTask(prompt: string, maxTokens?: number): Promise<QuickModelResult> {
   const candidates = initializeQuickModelCandidates();
-  if (candidates.length === 0) {
+  const [primary] = candidates;
+  if (!primary) {
     return {
       success: false,
       error: 'Quick model not configured',
@@ -348,29 +349,25 @@ export async function quickTask(prompt: string, maxTokens?: number): Promise<Qui
 
   const effectiveMaxTokens = maxTokens ?? 512;
   // fast 过载/服务端异常时切 routing.code；只有一个候选时经同一 limiter/backoff 再试一次。
-  const attempts = candidates.length > 1 ? candidates.slice(0, 2) : [candidates[0]!, candidates[0]!];
-  let lastFailure: QuickModelResult | null = null;
-  for (let index = 0; index < attempts.length; index += 1) {
-    const config = attempts[index]!;
+  const attempts = candidates.length > 1 ? candidates.slice(0, 2) : [primary, primary];
+  for (const [index, config] of attempts.entries()) {
     const result = await executeQuickAttempt(config, prompt, effectiveMaxTokens);
     const withAttempts = { ...result, attempts: index + 1 };
     if (withAttempts.success) return withAttempts;
-    lastFailure = withAttempts;
     if (withAttempts.failureReason !== 'rate_limited' && withAttempts.failureReason !== 'server_error') {
       return withAttempts;
     }
     const next = attempts[index + 1];
-    if (next) {
-      logger.info('Quick task retrying after transient failure', {
-        failureReason: withAttempts.failureReason,
-        fromProvider: config.provider,
-        fromModel: config.model,
-        toProvider: next.provider,
-        toModel: next.model,
-      });
-    }
+    if (!next) return withAttempts;
+    logger.info('Quick task retrying after transient failure', {
+      failureReason: withAttempts.failureReason,
+      fromProvider: config.provider,
+      fromModel: config.model,
+      toProvider: next.provider,
+      toModel: next.model,
+    });
   }
-  return lastFailure!;
+  return quickFailure(primary, 'transport_error', 'Quick task ended without an attempt');
 }
 
 /**

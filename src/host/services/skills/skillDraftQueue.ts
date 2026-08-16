@@ -11,7 +11,10 @@ import { getUserConfigDir, getSkillsDir } from '../../config/configPaths';
 import { LEARNING_PIPELINE, SKILL_REVIEW } from '../../../shared/constants';
 import type { SkillDraftOrigin } from '../../../shared/contract/agent';
 import { scanSkillContent } from '../../security/skillContentGuard';
-import { isLowValueSkillName } from '../../lightMemory/conversationReview';
+import {
+  isLowValueSkillName,
+  type ReviewedSkillApplicability,
+} from '../../lightMemory/conversationReview';
 import { createLogger } from '../infra/logger';
 import { parseSkillMd } from './skillParser';
 import { hasSkillApplicabilityBoundary } from './skillApplicability';
@@ -100,6 +103,7 @@ export function generateDraftSkillMd(input: {
   occurrences?: number;
   exampleSteps?: SkillDraftStep[];
   body?: string;
+  applicability?: ReviewedSkillApplicability;
 }): string {
   const origin: SkillDraftOrigin = input.origin ?? 'telemetry-distilled';
   const fm: string[] = [
@@ -113,6 +117,19 @@ export function generateDraftSkillMd(input: {
     fm.push(`allowed-tools: "${input.toolSequence.join(',')}"`);
     // telemetry 草稿的工具序列本身就是可判适用边界；转正后缺工具时自动隐藏。
     fm.push(`requires_tools: [${input.toolSequence.join(', ')}]`);
+  }
+  if (input.applicability) {
+    const fields: Array<[string, string[]]> = [
+      ['requires_tools', input.applicability.requiresTools],
+      ['platforms', input.applicability.platforms],
+      ['required_env', input.applicability.requiredEnv],
+      ['requires_paths', input.applicability.requiresPaths],
+    ];
+    for (const [key, values] of fields) {
+      if (values.length > 0 && !(key === 'requires_tools' && input.toolSequence?.length)) {
+        fm.push(`${key}: ${JSON.stringify(values)}`);
+      }
+    }
   }
   fm.push('context: inline');
   fm.push('metadata:');
@@ -279,6 +296,8 @@ export async function enqueueSkillDraft(input: {
   exampleSteps?: SkillDraftStep[];
   /** LLM 复盘路径用：直接采用的 skill 正文（Markdown） */
   body?: string;
+  /** LLM 复盘生成的机器可判适用字段；语义 [IF] 已固化在 body */
+  applicability?: ReviewedSkillApplicability;
   timestamp?: number;
 }): Promise<SkillDraftMeta | null> {
   const createdAt = input.timestamp ?? Date.now();
@@ -346,6 +365,7 @@ export async function enqueueSkillDraft(input: {
       ),
     })),
     body: input.body,
+    applicability: input.applicability,
     createdAt,
   });
 

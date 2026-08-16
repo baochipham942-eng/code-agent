@@ -44,6 +44,12 @@ const quickMocks = vi.hoisted(() => ({
       signal: 'remember_request',
       name: 'deploy-tauri-macos',
       description: '部署 Tauri 桌面应用的标准流程',
+      applicability: {
+        semantic: '当前任务需要在 macOS 上部署 Tauri 桌面应用',
+        requires_tools: ['Bash'],
+        platforms: ['darwin'],
+        requires_paths: ['package.json'],
+      },
       body: '## 要点\n- 先 `npm run typecheck`\n- 用 `scripts/tauri-install.sh` 安装',
     }),
   })),
@@ -112,6 +118,10 @@ describe('LLM 复盘链真穿透', () => {
       'utf-8',
     );
     expect(installed).toContain('source: llm-review');
+    expect(installed).toContain('requires_tools: ["Bash"]');
+    expect(installed).toContain('platforms: ["darwin"]');
+    expect(installed).toContain('requires_paths: ["package.json"]');
+    expect(installed).toContain('[IF 当前任务需要在 macOS 上部署 Tauri 桌面应用]');
   });
 
   it('已采纳的同 pattern 不再重复入队（accepted ledger 生效）', async () => {

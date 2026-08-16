@@ -9,6 +9,12 @@ npx tsx scripts/inspect/export-cases.ts
 docker build -f scripts/inspect/Dockerfile.neo-build -t neo-cli-inspect:latest .
 
 source .venv-inspect/bin/activate
+export TOKENRHYTHM_API_KEY="$(
+  CODE_AGENT_CLI_MODE=1 \
+  CODE_AGENT_DATA_DIR=/Users/linchen/.code-agent-dev3 \
+  npx tsx -e \
+    "import { getSecureStorage } from './src/host/services/core/secureStorage.ts'; process.stdout.write(getSecureStorage().getApiKey('custom-tokenrhythm') ?? '')"
+)"
 export OPENAI_BASE_URL="https://tokenrhythm.studio/v1"
 export OPENAI_API_KEY="$TOKENRHYTHM_API_KEY"
 inspect eval scripts/inspect/neo_five_case.py \

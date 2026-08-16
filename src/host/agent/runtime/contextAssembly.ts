@@ -132,6 +132,7 @@ export class ContextAssembly {
     inputTokens: number,
     outputTokens: number,
     cache?: { cacheReadTokens?: number; cacheCreationTokens?: number },
+    source: 'provider' | 'estimated' = 'provider',
   ): void {
     const budgetService = getBudgetService();
     budgetService.recordUsage({
@@ -143,6 +144,7 @@ export class ContextAssembly {
       provider: this.ctx.modelConfig.provider,
       timestamp: Date.now(),
       sessionId: this.ctx.sessionId,
+      source,
     });
   }
 

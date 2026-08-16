@@ -65,6 +65,24 @@ async function runSuite(
 }
 
 describe('testRunner report fields', () => {
+  it('缺 provider usage 时显式标 usage_unavailable，不伪造零 token/零费用', async () => {
+    const summary = await runSuite([
+      'name: missing-usage',
+      'cases:',
+      '  - id: no-provider-usage',
+      '    type: task',
+      '    description: no provider usage fixture',
+      '    prompt: respond',
+      '    expect:',
+      '      response_contains: [response]',
+      '',
+    ].join('\n'));
+
+    expect(summary.results[0]).toMatchObject({ usageStatus: 'usage_unavailable' });
+    expect(summary.results[0].usage).toBeUndefined();
+    expect(summary.results[0].costUsd).toBeUndefined();
+  });
+
   it('copies prompt and follow_up_prompts into TestResult for report drill-down', async () => {
     const summary = await runSuite([
       'name: report-fields',

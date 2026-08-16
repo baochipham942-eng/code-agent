@@ -59,6 +59,12 @@ describe('单 case 成本硬上限', () => {
     expect(result.failureStage).toBe('cost_limit');
     expect(result.failureReason).toContain('成本超限');
     expect(result.costUsd).toBeGreaterThan(result.costLimitUsd!);
+    expect(result.usageStatus).toBe('available');
+    expect(result.usage).toMatchObject({
+      promptTokens: 1_000,
+      completionTokens: 1_000,
+      totalTokens: 2_000,
+    });
   });
 
   it('多 trial 在第一次越线后立即停，summary 与 baseline 都把它单列', async () => {

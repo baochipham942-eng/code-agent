@@ -49,6 +49,7 @@ import { resetDecisionHistory, getDecisionHistory } from '../../../src/host/secu
 import { createCLIPermissionHandler } from '../../../src/cli/permissionPolicy';
 import { ToolExecutor, type ToolExecutorConfig } from '../../../src/host/tools/toolExecutor';
 import { CLASSIFIER_ERROR_TRACE_RULE } from '../../../src/host/tools/toolPermissionClassification';
+import { getToolLedgerSink, setToolLedgerSink } from '../../../src/host/tools/toolLedgerSink';
 
 describe('ToolExecutor decision trace history', () => {
   beforeEach(() => {
@@ -258,5 +259,52 @@ describe('N-PERMTRACE 审批拒绝路径可观测性', () => {
 
     expect(result.success).toBe(true);
     expect(getDecisionHistory().getRecent(1)[0]).toMatchObject({ outcome: 'ask-approved' });
+  });
+});
+
+describe('N-L10S3 机器批准来源可审计', () => {
+  beforeEach(() => {
+    resetDecisionHistory();
+    classifierState.shouldThrow = false;
+    resolverState.getDefinition.mockReset();
+    resolverState.execute.mockReset();
+    resolverState.execute.mockResolvedValue({ success: true, result: 'ok' });
+    resolverState.getDefinition.mockReturnValue(WRITE_TOOL_DEF);
+  });
+
+  it('dev 自动批准与真人批准能按账本 reason 直接过滤', async () => {
+    const previousSink = getToolLedgerSink();
+    const appendPermissionDecision = vi.fn();
+    setToolLedgerSink({
+      appendPermissionDecision,
+      appendToolExecutionBegin: vi.fn(),
+      appendToolExecutionComplete: vi.fn(),
+    });
+    try {
+      const machineExecutor = new ToolExecutor({
+        requestPermission: vi.fn().mockResolvedValue({
+          approved: true,
+          approvalSource: 'dev-auto-approve',
+        }),
+        workingDirectory: '/tmp/workbench',
+      });
+      await expect(machineExecutor.execute('Write', EXTERNAL_WRITE_PARAMS, { sessionId: 'machine' }))
+        .resolves.toMatchObject({ success: true });
+
+      const userExecutor = new ToolExecutor({
+        requestPermission: vi.fn().mockResolvedValue(true),
+        workingDirectory: '/tmp/workbench',
+      });
+      await expect(userExecutor.execute('Write', EXTERNAL_WRITE_PARAMS, { sessionId: 'user' }))
+        .resolves.toMatchObject({ success: true });
+
+      const decisions = getDecisionHistory().getRecent(2);
+      expect(decisions.filter((entry) => entry.reason === 'dev-auto-approve')).toHaveLength(1);
+      expect(decisions.filter((entry) => entry.reason === 'user')).toHaveLength(1);
+      expect(appendPermissionDecision.mock.calls.map(([entry]) => entry.reason))
+        .toEqual(expect.arrayContaining(['dev-auto-approve', 'user']));
+    } finally {
+      setToolLedgerSink(previousSink);
+    }
   });
 });

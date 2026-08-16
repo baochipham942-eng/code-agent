@@ -1041,8 +1041,9 @@ export class ToolExecutor {
       const approved = ask.approved;
 
       if (approved) {
-        traceBuilder.addStep('plan_approval', 'ask_approved', 'allow', '审批放行');
-        recordDecision(executionToolName, params, 'ask-approved', 'user', permStartTime, traceBuilder.build('allow'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
+        const approvalSource = ask.approvalSource ?? 'user';
+        traceBuilder.addStep('plan_approval', 'ask_approved', 'allow', `审批放行（来源：${approvalSource}）`);
+        recordDecision(executionToolName, params, 'ask-approved', approvalSource, permStartTime, traceBuilder.build('allow'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
       }
 
       // P0: prefix_rule 学习 — 用户批准后生成持久化规则

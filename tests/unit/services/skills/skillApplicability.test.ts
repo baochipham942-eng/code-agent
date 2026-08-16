@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { ParsedSkill } from '../../../../src/shared/contract/agentSkill';
 import {
-  evaluateSkillApplicability,
-  hasSemanticApplicabilityBoundary,
+  filterSkillsByApplicability,
+  hasSkillApplicabilityBoundary,
   type SkillApplicabilityContext,
 } from '../../../../src/host/services/skills/skillApplicability';
 
@@ -32,37 +32,45 @@ function context(overrides: Partial<SkillApplicabilityContext> = {}): SkillAppli
   };
 }
 
+// 一律走生产入口 filterSkillsByApplicability / hasSkillApplicabilityBoundary 断言，
+// 不按名 import 内部求值函数（knip 生产档不留 test-only export）。
 describe('skillApplicability', () => {
   it('hides skills when required env or workdir paths are missing', () => {
-    expect(evaluateSkillApplicability(
-      skill({ requiredEnv: ['NEO_TOKEN'] }),
+    const missingEnv = filterSkillsByApplicability(
+      [skill({ requiredEnv: ['NEO_TOKEN'] })],
       context(),
-    )?.reason).toBe('missing_required_env');
+    );
+    expect(missingEnv.skills).toHaveLength(0);
+    expect(missingEnv.report.hidden[0]?.reason).toBe('missing_required_env');
 
-    expect(evaluateSkillApplicability(
-      skill({ requiresPaths: ['package.json'] }),
+    const missingPaths = filterSkillsByApplicability(
+      [skill({ requiresPaths: ['package.json'] })],
       context({ pathExists: () => false }),
-    )).toMatchObject({
+    );
+    expect(missingPaths.skills).toHaveLength(0);
+    expect(missingPaths.report.hidden[0]).toMatchObject({
       reason: 'missing_required_paths',
       actual: ['package.json'],
     });
   });
 
   it('accepts machine conditions only when every declared requirement is satisfied', () => {
-    expect(evaluateSkillApplicability(
-      skill({
+    const { skills: visible, report } = filterSkillsByApplicability(
+      [skill({
         requiresTools: ['Read'],
         fallbackForTools: ['ExternalSearch'],
         platforms: ['darwin'],
         requiredEnv: ['NEO_TOKEN'],
         requiresPaths: ['package.json'],
-      }),
+      })],
       context({ env: { NEO_TOKEN: 'configured' } }),
-    )).toBeNull();
+    );
+    expect(visible).toHaveLength(1);
+    expect(report.hidden).toHaveLength(0);
   });
 
   it('requires an actual condition inside semantic [IF] markers', () => {
-    expect(hasSemanticApplicabilityBoundary('[IF]')).toBe(false);
-    expect(hasSemanticApplicabilityBoundary('[IF 当前目录是 Node 项目] 适用。')).toBe(true);
+    expect(hasSkillApplicabilityBoundary(skill({ promptContent: '[IF]' }))).toBe(false);
+    expect(hasSkillApplicabilityBoundary(skill({ promptContent: '[IF 当前目录是 Node 项目] 适用。' }))).toBe(true);
   });
 });

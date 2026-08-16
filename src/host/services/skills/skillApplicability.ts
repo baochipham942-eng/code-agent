@@ -9,7 +9,7 @@ type SkillApplicabilityReason =
   | 'missing_required_env'
   | 'missing_required_paths';
 
-export interface SkillApplicabilityHiddenEntry {
+interface SkillApplicabilityHiddenEntry {
   skillName: string;
   reason: SkillApplicabilityReason;
   expected: string[];
@@ -62,7 +62,7 @@ function normalizedSet(values: readonly string[]): Set<string> {
   return new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean));
 }
 
-export function evaluateSkillApplicability(
+function evaluateSkillApplicability(
   skill: ParsedSkill,
   context: SkillApplicabilityContext,
 ): SkillApplicabilityHiddenEntry | null {
@@ -165,7 +165,7 @@ function hasMachineApplicabilityBoundary(skill: ParsedSkill): boolean {
   );
 }
 
-export function hasSemanticApplicabilityBoundary(promptContent: string): boolean {
+function hasSemanticApplicabilityBoundary(promptContent: string): boolean {
   return /\[IF\s+[^\]\r\n]+\]/i.test(promptContent);
 }
 

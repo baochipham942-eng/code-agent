@@ -32,11 +32,6 @@ function getEntry(sessionId: string): StampCacheEntry {
   return entry;
 }
 
-/** 测试专用：清空跨用例的会话级缓存。 */
-export function resetTurnOutcomeStampCache(): void {
-  cache.clear();
-}
-
 export function useTurnOutcomeStamps(sessionId: string | undefined): TurnOutcomeStamp[] {
   const [stamps, setStamps] = useState<TurnOutcomeStamp[]>(() =>
     sessionId ? getEntry(sessionId).stamps : [],

@@ -11,7 +11,7 @@
 // 绝不臆造账本内容。
 // ============================================================================
 
-export type TraceLedgerState = 'missing' | 'empty' | 'present';
+type TraceLedgerState = 'missing' | 'empty' | 'present';
 
 export interface TraceLedgerEvent {
   ts?: unknown;

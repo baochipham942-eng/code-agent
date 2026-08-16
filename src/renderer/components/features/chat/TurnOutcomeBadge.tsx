@@ -47,5 +47,3 @@ export const TurnOutcomeBadge: React.FC<{ turn: TraceTurn; sessionId?: string }>
   }
   return null;
 };
-
-export default TurnOutcomeBadge;

@@ -49,7 +49,7 @@ function fill(template: string, values: Record<string, string>): string {
 
 // ── 印章 chip：verified / self_claimed 可区分但不刺眼；n_a 按终态说人话 ────
 
-export function StampChip({ segment }: { segment: TurnSegment }) {
+function StampChip({ segment }: { segment: TurnSegment }) {
   const { t } = useI18n();
   const stamp = t.sessionInspector.stamp;
   if (segment.inProgress) {
@@ -496,5 +496,3 @@ export const SessionInspector: React.FC = () => {
     </div>
   );
 };
-
-export default SessionInspector;

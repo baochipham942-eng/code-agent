@@ -4,7 +4,6 @@ import type { TraceLedgerEvent, TraceSessionRead } from '../../../src/renderer/s
 import {
   applyTail,
   buildAssemblyModel,
-  classifyToolActivity,
   formatTokenCount,
   readTurnOutcome,
   segmentTurns,
@@ -165,15 +164,16 @@ describe('buildAssemblyModel', () => {
   });
 });
 
-describe('classifyToolActivity / formatTokenCount', () => {
+describe('工具归桶（走 segmentTurns 公共入口）/ formatTokenCount', () => {
   it('工具名按模式归桶', () => {
-    expect(classifyToolActivity('Read')).toBe('read');
-    expect(classifyToolActivity('Grep')).toBe('read');
-    expect(classifyToolActivity('Edit')).toBe('write');
-    expect(classifyToolActivity('Bash')).toBe('command');
-    expect(classifyToolActivity('browser_navigate')).toBe('browser');
-    expect(classifyToolActivity('TodoWrite')).toBe('write');
-    expect(classifyToolActivity('SomeMysteryTool')).toBe('other');
+    const dispatch = (toolName: string) =>
+      event('tool_dispatch', { toolName, success: true, durationMs: 1, error: null, fromCache: false }, 1, 1100);
+    const [segment] = segmentTurns([
+      dispatch('Read'), dispatch('Grep'), dispatch('Edit'), dispatch('Bash'),
+      dispatch('browser_navigate'), dispatch('TodoWrite'), dispatch('SomeMysteryTool'),
+      outcome('verified', 'completed', 2000),
+    ]);
+    expect(segment.toolCounts).toEqual({ read: 2, write: 2, command: 1, browser: 1, other: 1 });
   });
 
   it('token 人话格式化', () => {

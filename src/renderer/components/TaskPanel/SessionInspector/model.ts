@@ -31,9 +31,9 @@ function strArray(value: unknown): string[] {
 
 // ── 印章（turn_outcome）──────────────────────────────────────────────────
 
-export type TurnOutcomeVerdict = 'verified' | 'self_claimed' | 'n_a';
+type TurnOutcomeVerdict = 'verified' | 'self_claimed' | 'n_a';
 
-export type TurnTerminal =
+type TurnTerminal =
   | 'completed'
   | 'cancelled'
   | 'interrupted'
@@ -64,7 +64,7 @@ export function readTurnOutcome(event: TraceLedgerEvent): TurnOutcomeStamp | nul
 
 // ── 轮（turn segment）：相邻印章之间的事件段 ─────────────────────────────
 
-export interface ToolDispatchRow {
+interface ToolDispatchRow {
   toolName: string;
   success: boolean;
   durationMs: number | null;
@@ -72,13 +72,13 @@ export interface ToolDispatchRow {
   fromCache: boolean;
 }
 
-export interface LoopDecisionRow {
+interface LoopDecisionRow {
   action: string | null;
   reason: string | null;
   stopReason: string | null;
 }
 
-export interface InferenceRow {
+interface InferenceRow {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -109,7 +109,7 @@ export interface RequestManifestView {
   compactionReplacementCount: number;
 }
 
-export type ToolActivityBucket = 'read' | 'write' | 'command' | 'browser' | 'other';
+type ToolActivityBucket = 'read' | 'write' | 'command' | 'browser' | 'other';
 
 export interface TurnSegment {
   /** 1-based 轮号（按事件流顺序） */
@@ -134,7 +134,7 @@ export interface TurnSegment {
 
 // ── 工具名 → 人话活动桶（层1 用；名字只做模式归类，不逐名硬编码）─────────
 
-export function classifyToolActivity(toolName: string): ToolActivityBucket {
+function classifyToolActivity(toolName: string): ToolActivityBucket {
   const name = toolName.toLowerCase();
   if (/bash|shell|exec|command|terminal|process/.test(name)) return 'command';
   if (/browser|click|navigate|playwright|computer/.test(name)) return 'browser';
@@ -203,9 +203,9 @@ function readManifest(event: TraceLedgerEvent): RequestManifestView | null {
       }
       const kind = ref.kind === 'ledger_message' || ref.kind === 'system_prompt' ? ref.kind : ref.kind === 'content' ? 'content' as const : 'unknown' as const;
       const hash = str(ref.contentHash);
-      const blocks = Array.isArray(ref.blocks) ? ref.blocks : null;
+      const blocks: unknown[] | null = Array.isArray(ref.blocks) ? (ref.blocks as unknown[]) : null;
       const blockBytes = blocks
-        ? blocks.reduce((sum, block) => sum + (isRecord(block) ? num(block.bytes) ?? 0 : 0), 0)
+        ? blocks.reduce<number>((sum, block) => sum + (isRecord(block) ? num(block.bytes) ?? 0 : 0), 0)
         : null;
       return {
         kind,

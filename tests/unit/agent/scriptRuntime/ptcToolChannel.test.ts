@@ -196,6 +196,17 @@ describe('PTC 工具通道 · child 侧命名空间（真进程）', () => {
     });
   });
 
+  it('大中间值留在 child 内处理，不套外层输出字节上限', async () => {
+    const intermediate = 'x'.repeat(9 * 1024 * 1024);
+    const outcome = await run(
+      `const value = await tools.Read({ path: '/tmp/large' }); return value.length;`,
+      ['Read'],
+      () => intermediate,
+    );
+
+    expect(outcome).toEqual({ ok: true, result: intermediate.length });
+  }, 20_000);
+
   it('失败的调用 reject 成 ToolCallError（带 toolName），脚本可 catch 后继续', async () => {
     const outcome = await run(
       `let caught;

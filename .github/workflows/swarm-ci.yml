@@ -156,6 +156,15 @@ jobs:
         # 缺 outputSchema 或不受支持的 JSON Schema 都 fail loud。
         run: npm run check:tool-output-schemas
 
+      - name: PTC SDK determinism gate
+        # 独立点名确定性合同；脚本先确认测试目标非 0，再运行，避免大子集里路径漂掉后假绿。
+        run: npm run check:ptc-sdk-determinism
+
+      - name: PTC transport-name reservation gate
+        # Neo 的 PTC 复用 workflow 作为 run_code transport；必须排除自身，防递归占用。
+        # 脚本对 0 个目标 fail-loud，不能把「vitest 大子集绿」冒充这道门仍在。
+        run: npm run check:ptc-transport-name
+
       - name: Typecheck Vercel control-plane
         # vercel-api 是独立 package，不属于 root npm workspace；root npm ci 不会装它自己的依赖。
         # 当前 renderer hot-update 的生产门正卡在 control-plane artifact，PR 阶段必须独立编译这层。

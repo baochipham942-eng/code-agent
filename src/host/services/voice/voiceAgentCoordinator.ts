@@ -38,7 +38,8 @@ import { buildApprovalWaitingNarration, buildBlockedNarration, buildMilestoneNar
 import { describeWorkFailure } from './workFailureDescription';
 import { resolveVoiceWorkOutcome } from './voiceWorkEvidence';
 import { recordVoiceWorkEvent } from './voiceTelemetry';
-import { captureVoiceScreenContext, screenCaptureFailureSpeech, screenCapturedSpeech } from './voiceScreenContext';
+import { captureVoiceScreenContext } from './voiceScreenContext';
+import { screenCaptureFailureSpeech, screenCapturedSpeech } from './voiceScreenSpeech';
 import {
   projectVoiceTaskTerminalResult,
   type VoiceTaskTerminalStatus,

@@ -702,7 +702,6 @@ export class TestRunner {
     };
     // 每个 case 都建独立 usage 账，未声明 hard cap 时用有限的最大安全数，仅做归集不触发闸。
     const costTracker = createScopedCostLimit(testCase.max_cost_usd ?? Number.MAX_VALUE);
-    const costLimit = testCase.max_cost_usd !== undefined ? costTracker : undefined;
     if (testCase.max_cost_usd !== undefined) {
       result.costLimitUsd = testCase.max_cost_usd;
     }

@@ -228,7 +228,7 @@ describe('SkillDiscoveryService discovery', () => {
       homeDir,
       '.code-agent',
       'cache',
-      'skill-metadata-index-v2.json',
+      'skill-metadata-index-v3.json',
     );
     const cacheContent = await fs.readFile(cachePath, 'utf-8');
     expect(cacheContent).toContain('user-claude');

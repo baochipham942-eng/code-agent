@@ -90,6 +90,11 @@ const gates = [
     args: ['scripts/tsc-tests-ratchet.mjs'],
   },
   {
+    ci: 'swarm-ci / smoke / Request replay byte-equivalence gate',
+    command: 'npm',
+    args: ['run', 'acceptance:request-replay'],
+  },
+  {
     ci: 'swarm-ci / smoke / Attention budget ratchet',
     command: 'node',
     args: ['scripts/attention-budget-ratchet.mjs'],

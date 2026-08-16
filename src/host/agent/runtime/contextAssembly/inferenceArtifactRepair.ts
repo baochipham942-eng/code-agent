@@ -134,7 +134,7 @@ export interface ToolSchemaSnapshot {
   cacheStored?: boolean;
 }
 
-function buildToolSchemaSnapshot(
+export function buildToolSchemaSnapshot(
   tools: ToolDefinition[],
 ): ToolSchemaSnapshot {
   const orderedTools = [...tools].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));

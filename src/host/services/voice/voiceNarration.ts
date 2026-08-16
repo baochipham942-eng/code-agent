@@ -230,6 +230,7 @@ export function buildWorkNarration(input: {
   status: Exclude<VoiceWorkNarration['status'], 'announcement'>;
   title: string;
   conclusion: string;
+  sourceMessageId?: string;
   agentId?: string;
 }): VoiceWorkNarration {
   const speaker = resolveNarrationSpeaker(input.agentId);
@@ -238,6 +239,7 @@ export function buildWorkNarration(input: {
     status: input.status,
     title: input.title,
     summary: toSpokenSummary(input.conclusion),
+    ...(input.sourceMessageId ? { sourceMessageId: input.sourceMessageId } : {}),
     ...(speaker ? { speaker } : {}),
   };
 }

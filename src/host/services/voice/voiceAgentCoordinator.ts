@@ -38,7 +38,8 @@ import { buildApprovalWaitingNarration, buildBlockedNarration, buildMilestoneNar
 import { describeWorkFailure } from './workFailureDescription';
 import { resolveVoiceWorkOutcome } from './voiceWorkEvidence';
 import { recordVoiceWorkEvent } from './voiceTelemetry';
-import { captureVoiceScreenContext, type VoiceScreenCaptureFailure } from './voiceScreenContext';
+import { captureVoiceScreenContext } from './voiceScreenContext';
+import { screenCaptureFailureSpeech, screenCapturedSpeech } from './voiceScreenSpeech';
 import {
   projectVoiceTaskTerminalResult,
   type VoiceTaskTerminalStatus,
@@ -172,7 +173,7 @@ interface LedgerState {
   slots: VoiceTaskSlotLedger;
   runRequests: Map<string, VoiceSpawnRequest>;
   pendingStartedAtById: Map<string, number>;
-  runConclusions: Map<string, string>;
+  runConclusions: Map<string, { content: string; messageId: string }>;
   /** 兼容旧 runtime 不带 taskId 的事件；生产后台 run 一律按事件里的 taskId 路由。 */
   legacyEventFallbackId: string | null;
   /** 旧事件兼容任务的派出时刻；真实任务使用 pendingStartedAtById。 */
@@ -428,7 +429,7 @@ function settle(
     settled,
     status,
     failure,
-    state.runConclusions.get(id),
+    state.runConclusions.get(id)?.content,
   );
   getPermissionModeManager().clearLiveVoiceSession(state.neoSessionId, runHoldId(id));
   // 语音的终态四档要映射到账本的三档：只有真正做完（done/unverified）才算 completed，
@@ -582,7 +583,7 @@ async function narrateSettled(state: LedgerState, item: VoiceWorkItem, status: S
   const recordedConclusion = state.runConclusions.get(item.id);
   try {
     const conclusion = status === 'failed'
-      ? describeWorkFailure(item.detail, item.failure).spoken
+      ? { content: describeWorkFailure(item.detail, item.failure).spoken }
       : recordedConclusion ?? await readRunConclusion(state.neoSessionId);
     // await 之后 narrate 可能已被挂断置 null——此刻再念没人听。
     // **但也不能就这么算了**：那正是「说完就挂、活刚好这时跑完」这个最常见的场景，
@@ -596,7 +597,8 @@ async function narrateSettled(state: LedgerState, item: VoiceWorkItem, status: S
       workItemId: item.id,
       status,
       title: item.shortName ?? item.title,
-      conclusion,
+      conclusion: conclusion.content,
+      ...('messageId' in conclusion ? { sourceMessageId: conclusion.messageId } : {}),
       ...(state.activeAgentId ? { agentId: state.activeAgentId } : {}),
     }));
   } catch (err) {
@@ -605,14 +607,18 @@ async function narrateSettled(state: LedgerState, item: VoiceWorkItem, status: S
 }
 
 /** 会话里最后一条有正文的 assistant 消息。task_completed 发在 sendMessage await 之后，此时它已落库。 */
-async function readRunConclusion(neoSessionId: string): Promise<string> {
+async function readRunConclusion(
+  neoSessionId: string,
+): Promise<{ content: string; messageId: string } | { content: '' }> {
   const session = await getSessionManager().getSession(neoSessionId, VOICE_CONCLUSION_LOOKBACK_MESSAGES);
   const messages = session?.messages ?? [];
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
-    if (message.role === 'assistant' && message.content?.trim()) return message.content;
+    if (message.role === 'assistant' && message.content?.trim()) {
+      return { content: message.content, messageId: message.id };
+    }
   }
-  return '';
+  return { content: '' };
 }
 
 function runHoldId(workItemId: string): string {
@@ -658,7 +664,7 @@ function onAgentStreamEvent(
   taskId ??= state.legacyEventFallbackId ?? undefined;
   if (!taskId) return;
   if (event.type === 'message' && event.data?.role === 'assistant' && event.data.content?.trim()) {
-    state.runConclusions.set(taskId, event.data.content);
+    state.runConclusions.set(taskId, { content: event.data.content, messageId: event.data.id });
   }
   if (event.type === 'permission_request') {
     const requestId = event.data?.id;
@@ -1116,54 +1122,6 @@ function offerOverflowChoice(state: LedgerState, request: VoiceSpawnRequest): vo
 // ============================================================================
 // 看屏（Appshots Phase 3）：采一张，挂账本，等下一次派活捎走
 // ============================================================================
-
-/** 系统设置里那条路。三处失败文案共用一份措辞，免得各写一半各指一处。 */
-const SCREEN_PERMISSION_PATH = '「系统设置 → 隐私与安全性 → 屏幕录制」里允许 Neo（勾完要把 Neo 重开一次）';
-
-/**
- * 没拍到时回给通话 brain 的话。
- *
- * 三条共同的硬要求：**先说没拍到**，再说去哪开权限，最后明令不许描述画面。
- * 这条链上最坏的失败不是拍不到，是拍不到却回一句听起来像成功的话——那样模型会顺着
- * 编一段「你屏幕上这个按钮」，而用户根本没法分辨它在瞎说。
- */
-function screenCaptureFailureSpeech(reason: VoiceScreenCaptureFailure): string {
-  const deny = '**你没有拿到任何画面**，不许描述屏幕上有什么，也不许说「我看到…」。';
-  switch (reason) {
-    case 'unsupported_platform':
-      return [
-        '没能拍到屏幕：这台电脑不支持看屏（这个能力只有 macOS 有）。',
-        '现在对用户说：「我在这台机器上看不了你的屏幕，你直接讲给我听吧。」',
-        deny,
-      ].join('\n');
-    case 'no_permission':
-      return [
-        '没能拍到屏幕：系统没给屏幕录制权限。',
-        `现在对用户说：「我没能拍到你的屏幕，要先去${SCREEN_PERMISSION_PATH}，弄好了再叫我。」`,
-        deny,
-      ].join('\n');
-    case 'capture_failed':
-      return [
-        '没能拍到屏幕：这次截图失败了。',
-        `现在对用户说：「我没能拍到你的屏幕，可以再说一次让我重试；一直不行的话，去${SCREEN_PERMISSION_PATH}看看。」`,
-        deny,
-      ].join('\n');
-  }
-}
-
-/** 拍到之后回给通话 brain 的话。重点全在「你看不到它」——它确实看不到。 */
-function screenCapturedSpeech(capture: AppshotCapture): string {
-  const frontmost = capture.appName
-    ? `（前台是 ${capture.appName}${capture.windowTitle ? ` · ${capture.windowTitle}` : ''}）`
-    : '';
-  return [
-    `已经拍下用户此刻的屏幕${frontmost}。`,
-    '**这张图不会给你看**：你不知道画面里有什么，不要描述它，也不要说「我看到…」。',
-    '它会自动跟着你下一次 delegate_task / steer_task 交给执行侧，由执行侧去看图。',
-    '所以：用户要你就这张图做点什么，直接调 delegate_task 把事情派出去（图会自己带上，不用你转述画面）；',
-    '他只是先让你知道他在看什么，就说「我拍下来了，你要我做什么？」。',
-  ].join('\n');
-}
 
 async function captureScreenContext(state: LedgerState): Promise<string> {
   const result = await captureVoiceScreenContext();

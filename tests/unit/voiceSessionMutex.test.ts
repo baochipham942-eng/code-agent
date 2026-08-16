@@ -96,6 +96,7 @@ const voiceDispatchProbe = vi.hoisted(() => ({
     status: 'done' | 'milestone';
     title: string;
     summary: string;
+    sourceMessageId?: string;
     worthHearing?: true;
   }) => void),
   fail: null as null | ((item: VoiceWorkItem) => void),
@@ -563,6 +564,45 @@ describe('voiceSessionService 互斥与挂断', () => {
       itemId: 'item-new',
     });
     expect(transcripts.some((message) => message.content.includes('旧回答'))).toBe(false);
+  });
+
+  it('终态回流只播不重复落主消息流，并用 responseId/narrationId/messageId 留证', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-terminal-dedupe');
+    addMessageToSession.mockClear();
+
+    voiceDispatchProbe.narrate?.({
+      workItemId: 'work-terminal-1',
+      status: 'done',
+      title: '写周报',
+      summary: '周报已经写好。',
+      sourceMessageId: 'assistant-result-1',
+    });
+    lastOnEvent?.({
+      type: 'response.created',
+      responseId: 'response-terminal-1',
+      narrationId: 'work-terminal-1',
+    });
+    lastOnEvent?.({
+      type: 'assistant.transcript',
+      responseId: 'response-terminal-1',
+      itemId: 'item-terminal-1',
+      text: '「写周报」做完了。周报已经写好。',
+      done: true,
+    });
+    lastOnEvent?.({ type: 'response.done', responseId: 'response-terminal-1' });
+
+    await vi.waitFor(() => expect(voiceLogger.info).toHaveBeenCalledWith(
+      'terminal narration transcript suppressed from main message stream',
+      expect.objectContaining({
+        responseId: 'response-terminal-1',
+        narrationId: 'work-terminal-1',
+        messageId: 'assistant-result-1',
+      }),
+    ));
+    expect(addMessageToSession.mock.calls
+      .map(([, message]) => message)
+      .filter((message) => message.role === 'assistant')).toHaveLength(0);
   });
 
   it('电视播报走证据闸 unverified：不取消、不应答、不落用户字幕', async () => {

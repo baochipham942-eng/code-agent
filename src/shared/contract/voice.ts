@@ -68,6 +68,8 @@ export interface VoiceWorkItem {
  */
 export interface VoiceWorkNarration {
   workItemId: string;
+  /** 执行侧终态正文的落库消息 id；回流语音只播它，不再把转述字幕重复写进主消息流。 */
+  sourceMessageId?: string;
   /**
    * 终态三档 + 一档播报。
    *

@@ -16,6 +16,7 @@ interface TurnContentVisibilityBrowserResult {
   mountedTurns: number;
   deferredContentBlocks: number;
   deferredByType: Record<string, number>;
+  observedTurnHeights: Record<string, number[]>;
   activeTurnDeferredBlocks: number;
   scrollFrames: {
     p95Ms: number;
@@ -40,6 +41,15 @@ const TURN_COUNT = 500;
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+}
+
+async function waitForElement(selector: string, maxFrames = 120): Promise<HTMLElement | null> {
+  for (let frame = 0; frame < maxFrames; frame += 1) {
+    const element = document.querySelector<HTMLElement>(selector);
+    if (element) return element;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  }
+  return null;
 }
 
 function round(value: number): number {
@@ -121,7 +131,7 @@ function Harness(): React.ReactElement {
       scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
       await nextFrame();
       const scrollRenderMs = performance.now() - scrollStartedAt;
-      const deferredBlock = document.querySelector<HTMLElement>('[data-deferred-content]');
+      const deferredBlock = await waitForElement('[data-deferred-content]');
       if (!deferredBlock) throw new Error('Deferred turn content was not mounted.');
 
       const styleSelectors = {
@@ -132,6 +142,7 @@ function Harness(): React.ReactElement {
         codeBlock: '[data-deferred-content="code-block"]',
       } as const;
       const observedStyles: Record<string, { contentVisibility: string; containIntrinsicSize: string }> = {};
+      const observedTurnHeights: Record<string, number[]> = {};
       const captureMountedStyles = () => {
         for (const [key, selector] of Object.entries(styleSelectors)) {
           if (observedStyles[key]) continue;
@@ -142,6 +153,17 @@ function Harness(): React.ReactElement {
             contentVisibility: style.contentVisibility,
             containIntrinsicSize: style.containIntrinsicSize,
           };
+        }
+        for (const element of document.querySelectorAll<HTMLElement>('[data-deferred-content="turn"]')) {
+          const kind = element.dataset.deferredContentKind;
+          if (!kind) continue;
+          const rect = element.getBoundingClientRect();
+          const scrollerRect = scroller.getBoundingClientRect();
+          if (rect.bottom <= scrollerRect.top || rect.top >= scrollerRect.bottom) continue;
+          const heights = observedTurnHeights[kind] ?? [];
+          const height = round(rect.height);
+          if (!heights.includes(height)) heights.push(height);
+          observedTurnHeights[kind] = heights;
         }
       };
       captureMountedStyles();
@@ -191,6 +213,7 @@ function Harness(): React.ReactElement {
           codeBlock: document.querySelectorAll('[data-deferred-content="code-block"]').length,
           assistantText: document.querySelectorAll('[data-turn-heavy-content="true"]').length,
         },
+        observedTurnHeights,
         activeTurnDeferredBlocks: document.querySelectorAll(
           `[data-trace-turn-id="perf-turn-${TURN_COUNT}"] [data-deferred-content], [data-trace-turn-id="perf-turn-${TURN_COUNT}"] [data-turn-heavy-content="true"]`,
         ).length,

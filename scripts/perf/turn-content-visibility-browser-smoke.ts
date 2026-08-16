@@ -9,6 +9,7 @@ interface Sample {
   mountedTurns: number;
   deferredContentBlocks: number;
   deferredByType: Record<string, number>;
+  observedTurnHeights: Record<string, number[]>;
   activeTurnDeferredBlocks: number;
   scrollFrames: {
     p95Ms: number;
@@ -129,6 +130,10 @@ async function main(): Promise<void> {
         turns: samples.after[0]?.mountedTurns ?? 0,
         deferredContentBlocks: samples.after[0]?.deferredContentBlocks ?? 0,
         deferredByType: samples.after[0]?.deferredByType ?? {},
+        observedTurnHeights: {
+          before: samples.before.map((sample) => sample.observedTurnHeights),
+          after: samples.after.map((sample) => sample.observedTurnHeights),
+        },
         activeTurnDeferredBlocks: samples.after[0]?.activeTurnDeferredBlocks ?? -1,
       },
       scrollFrames: {

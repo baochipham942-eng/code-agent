@@ -36,6 +36,18 @@ describe('MessageContent content visibility', () => {
     expect(shortHtml).not.toContain('data-turn-heavy-content');
   });
 
+  it('raises completed assistant intrinsic size for medium and long text', () => {
+    const mediumHtml = renderToStaticMarkup(
+      <MessageContent content={'m'.repeat(1800)} isUser={false} />,
+    );
+    const longHtml = renderToStaticMarkup(
+      <MessageContent content={'l'.repeat(3200)} isUser={false} />,
+    );
+
+    expect(mediumHtml).toContain(`contain-intrinsic-size:auto ${CONTENT_INTRINSIC_SIZE_PX.assistantTextMedium}px`);
+    expect(longHtml).toContain(`contain-intrinsic-size:auto ${CONTENT_INTRINSIC_SIZE_PX.assistantTextLong}px`);
+  });
+
   it('defers completed code blocks with line-count intrinsic size tiers', async () => {
     const compactCode = ['```ts', ...Array.from({ length: 6 }, (_, index) => `const n${index} = ${index};`), '```'].join('\n');
     const largeCode = ['```ts', ...Array.from({ length: 40 }, (_, index) => `const n${index} = ${index};`), '```'].join('\n');
@@ -53,6 +65,7 @@ describe('MessageContent content visibility', () => {
     expect(compactHtml).toContain('data-deferred-content="code-block"');
     expect(compactHtml).toContain(`contain-intrinsic-size:auto ${CONTENT_INTRINSIC_SIZE_PX.codeCompact}px`);
     expect(largeHtml).toContain(`contain-intrinsic-size:auto ${CONTENT_INTRINSIC_SIZE_PX.codeCollapsed}px`);
+    expect(largeHtml).toContain(`contain-intrinsic-size:auto ${CONTENT_INTRINSIC_SIZE_PX.assistantCode}px`);
     expect(streamingHtml).not.toContain('data-deferred-content="code-block"');
   });
 });

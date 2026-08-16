@@ -5,13 +5,16 @@ export const TURN_CONTENT_INTRINSIC_SIZE_PX = 320;
 
 export const CONTENT_INTRINSIC_SIZE_PX = {
   assistantText: TURN_CONTENT_INTRINSIC_SIZE_PX,
+  assistantTextMedium: 640,
+  assistantTextLong: 960,
+  assistantCode: 620,
   toolCard: 160,
   codeCompact: 220,
   codeStandard: 420,
   codeCollapsed: 620,
-  turnText: 420,
-  turnTool: 560,
-  turnCode: 760,
+  turnText: 1040,
+  turnTool: 1060,
+  turnCode: 680,
 } as const;
 
 export type DeferredContentKind = keyof typeof CONTENT_INTRINSIC_SIZE_PX;
@@ -23,7 +26,13 @@ export function getDeferredContentStyle(kind: DeferredContentKind): React.CSSPro
   };
 }
 
-export const deferredTurnContentStyle = getDeferredContentStyle('assistantText');
+export function getAssistantTextDeferredContentKind(content: string): DeferredContentKind {
+  if (content.includes('```')) return 'assistantCode';
+  const contentLength = content.length;
+  if (contentLength >= 3000) return 'assistantTextLong';
+  if (contentLength >= 1600) return 'assistantTextMedium';
+  return 'assistantText';
+}
 
 export function getCodeBlockDeferredContentKind(lineCount: number): DeferredContentKind {
   if (lineCount <= 8) return 'codeCompact';

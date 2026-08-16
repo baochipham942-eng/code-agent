@@ -11,7 +11,7 @@ docker build -f scripts/inspect/Dockerfile.neo-build -t neo-cli-inspect:latest .
 source .venv-inspect/bin/activate
 export TOKENRHYTHM_API_KEY="$(
   CODE_AGENT_CLI_MODE=1 \
-  CODE_AGENT_DATA_DIR=/Users/linchen/.code-agent-dev3 \
+  CODE_AGENT_DATA_DIR=/Users/linchen/.code-agent \
   npx tsx -e \
     "import { getSecureStorage } from './src/host/services/core/secureStorage.ts'; process.stdout.write(getSecureStorage().getApiKey('custom-tokenrhythm') ?? '')"
 )"
@@ -27,7 +27,8 @@ Run the existing harness against the identical IDs with the same model and
 endpoint, then compare each JSON result's score with the Inspect scorer metadata:
 
 ```bash
-npx tsx scripts/eval-ci.ts --real --ids \
+npx tsx scripts/eval-ci.ts --scope full --real \
+  --case-dir .claude/test-cases --ids \
   bash-ls,bash-pwd,conv-understand-intent,error-file-not-found,prompt-smoke-read-package \
   --provider custom-tokenrhythm --model deepseek-v4-flash
 ```
@@ -39,5 +40,5 @@ each score's `metadata.tool_evidence`; an independent `ToolEvent` is not expecte
 Replay the generated `.eval` transcript locally with:
 
 ```bash
-inspect view --log-dir .code-agent/inspect/logs
+inspect view start --log-dir .code-agent/inspect/logs
 ```

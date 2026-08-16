@@ -17,6 +17,11 @@ import {
 } from '../../host/services/voice/customRealtimeVoiceProviders';
 import { getActiveVoiceSessionId } from '../../host/services/voice/voiceSessionService';
 import { getVoiceUsageSummary } from '../../host/services/voice/voiceUsageLedger';
+import {
+  formatVoiceCallTimelineMarkdown,
+  getVoiceCallTimeline,
+  listVoiceCalls,
+} from '../../host/services/voice/voiceCallAudit';
 
 export function createVoiceRouter(): Router {
   const router = Router();
@@ -37,6 +42,26 @@ export function createVoiceRouter(): Router {
       usage: getVoiceUsageSummary(Date.now()),
     };
     res.json(payload);
+  });
+
+  // 语音审计（N-L7-AUDIT）：通话清单 + 单通时间线（六本账读取聚合，只读）。
+  router.get('/voice/calls', (req: Request, res: Response) => {
+    const limit = Number(req.query.limit) || 50;
+    res.json({ calls: listVoiceCalls(Math.min(Math.max(limit, 1), 500)) });
+  });
+
+  router.get('/voice/calls/:id/timeline', (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    const timeline = getVoiceCallTimeline(id);
+    if (!timeline) {
+      res.status(404).json({ error: 'voice call not found', id });
+      return;
+    }
+    if (req.query.format === 'markdown') {
+      res.type('text/markdown; charset=utf-8').send(formatVoiceCallTimelineMarkdown(timeline));
+      return;
+    }
+    res.json(timeline);
   });
 
   return router;

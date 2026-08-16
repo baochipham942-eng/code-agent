@@ -55,6 +55,10 @@ export {
   type PermissionDecisionRecord,
 } from './PermissionDecisionRepository';
 export {
+  VoiceCallAuditRepository,
+  type VoiceAuditMessage,
+} from './VoiceCallAuditRepository';
+export {
   ToolExecutionEventRepository,
   type ToolExecutionBeginInput,
   type ToolExecutionCompleteInput,

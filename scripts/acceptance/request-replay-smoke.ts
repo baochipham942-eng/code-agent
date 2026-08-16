@@ -7,9 +7,12 @@ import {
   canonicalizeModelMessage,
 } from '../../src/host/agent/runtime/contextAssembly/requestManifestBuilder';
 import {
+  assertReconstructedRequestMatches,
+  RequestReplayMismatchError,
   verifyRequestReplay,
   verifyRequestReplayBatch,
 } from '../../src/host/evaluation/requestReplayGate';
+import { RequestNotReconstructableError } from '../../src/host/evaluation/requestReplay';
 import { ModelRouter } from '../../src/host/model/modelRouter';
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -119,12 +122,26 @@ async function main(): Promise<void> {
   let mutationWasRejected = false;
   try {
     verifyRequestReplay(replayCase);
-  } catch {
-    mutationWasRejected = true;
+  } catch (error) {
+    // 内容库被篡改 = 哈希对不上 = 不可重建；其它错误形态（崩溃 bug）不许冒充变异被拒
+    mutationWasRejected = error instanceof RequestNotReconstructableError;
   }
-  if (!mutationWasRejected) throw new Error('mutation control did not make the replay gate fail');
+  if (!mutationWasRejected) throw new Error('content mutation did not raise RequestNotReconstructableError');
 
-  console.log('request replay smoke passed: 1 keyless tool-call request, 3 ref kinds, mutation rejected');
+  // 反向变异之二：实发侧被篡改（重建正常、对比必须逐字节咬住）
+  content.set(dynamicRef.contentHash, original);
+  const reconstructed = verifyRequestReplay(replayCase);
+  const tamperedActual = actualMessages.map((message, index) =>
+    index === 2 ? { ...message, content: 'runtime replay smoke tall' } : message);
+  let mismatchWasRejected = false;
+  try {
+    assertReconstructedRequestMatches(tamperedActual, toolSnapshot.schemaJson, reconstructed);
+  } catch (error) {
+    mismatchWasRejected = error instanceof RequestReplayMismatchError;
+  }
+  if (!mismatchWasRejected) throw new Error('actual-side mutation did not raise RequestReplayMismatchError');
+
+  console.log('request replay smoke passed: 1 keyless tool-call request, 3 ref kinds, both mutation controls rejected');
 }
 
 main().catch((error) => {

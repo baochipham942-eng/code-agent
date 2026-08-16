@@ -173,6 +173,7 @@ export async function requestPermissionWithTelemetry(input: {
       );
       getTelemetryService().endSpan(approvalSpanId, ask.approved ? 'ok' : 'cancelled', {
         'approval.state': ask.approved ? 'resolved' : 'rejected',
+        ...(ask.approvalSource ? { 'approval.approval_source': ask.approvalSource } : {}),
         ...(ask.denialSource ? { 'approval.denial_source': ask.denialSource } : {}),
       });
     }

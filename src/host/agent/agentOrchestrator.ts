@@ -146,6 +146,7 @@ export class AgentOrchestrator {
     this.messageHistory = new OrchestratorMessageHistory(() => this.agentLoop);
     this.permissions = new OrchestratorPermissionIsland({
       getSettings: () => this.configService.getSettings(),
+      isDevModeAutoApproveEnabled: () => this.configService.isDevModeAutoApproveEnabled(),
       getExecutionTopology: () => this.toolExecutor.getExecutionTopology(),
       onEvent: (event) => this.onEvent(event),
       injectedPendingApprovalRepo: config.pendingApprovalRepo,

@@ -122,9 +122,18 @@ export type PermissionDenialSource =
   /** 依赖不可用（停车台账等），按安全侧默认拒 */
   | 'fail-closed';
 
+/** 「这次审批是谁批准的」；机器批准必须显式自报，不能沿用真人批准的默认值。 */
+export type PermissionApprovalSource =
+  /** 真人在审批界面上点了允许；也是旧 boolean true 的兼容语义 */
+  | 'user'
+  /** dev 槽里的 devModeAutoApprove 机器放行 */
+  | 'dev-auto-approve';
+
 /** 审批处理器的富返回值。裸 boolean 仍然合法（等价 `user` 语义），旧实现无需改动。 */
 export interface PermissionAskResult {
   approved: boolean;
+  /** 仅 approved=true 时有意义；缺省按 `'user'` 解释。 */
+  approvalSource?: PermissionApprovalSource;
   /** 仅 approved=false 时有意义；缺省按 `'user'` 解释。 */
   denialSource?: PermissionDenialSource;
   /** 给模型看的真实原因文案；缺省由 `permissionDenialError` 按 denialSource 生成。 */

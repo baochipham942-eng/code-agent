@@ -51,22 +51,26 @@ export class OrchestratorPermissionIsland {
 
   constructor({
     getSettings,
+    isDevModeAutoApproveEnabled,
     getExecutionTopology,
     onEvent,
     injectedPendingApprovalRepo,
   }: {
     getSettings: () => AppSettings;
+    isDevModeAutoApproveEnabled: () => boolean;
     getExecutionTopology: () => ExecutionTopology;
     onEvent: (event: AgentEvent) => void;
     injectedPendingApprovalRepo?: PendingApprovalRepository;
   }) {
     this.getSettings = getSettings;
+    this.isDevModeAutoApproveEnabled = isDevModeAutoApproveEnabled;
     this.getExecutionTopology = getExecutionTopology;
     this.onEvent = onEvent;
     this.injectedPendingApprovalRepo = injectedPendingApprovalRepo;
   }
 
   private readonly getSettings: () => AppSettings;
+  private readonly isDevModeAutoApproveEnabled: () => boolean;
   private readonly getExecutionTopology: () => ExecutionTopology;
   private readonly onEvent: (event: AgentEvent) => void;
 
@@ -286,9 +290,12 @@ export class OrchestratorPermissionIsland {
         return this.parkApproval(fullRequest, permissionLevel, parkRepo);
       }
     } else {
-      if (!forceConfirm && settings.permissions.devModeAutoApprove) {
-        logger.info(`[DevMode] Auto-approving permission: ${request.type} for ${request.tool}`);
-        return { approved: true };
+      if (!forceConfirm && this.isDevModeAutoApproveEnabled()) {
+        logger.info(
+          `[Permission] Machine-approved via devModeAutoApprove: ${request.type} for ${request.tool}`,
+          { approvalSource: 'dev-auto-approve' },
+        );
+        return { approved: true, approvalSource: 'dev-auto-approve' };
       }
 
       if (!forceConfirm && settings.permissions.autoApprove[permissionLevel]) {

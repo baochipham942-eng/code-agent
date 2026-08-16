@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "denominatorVersion": 3,
+  "updatedAt": 1786884181889,
+  "updatedBy": "c95aca575fbf6061c36a106863900b21f65cc3df",
+  "mode": "mock",
+  "globalMetrics": {
+    "passRate": 1,
+    "averageScore": 1,
+    "totalCases": 20
+  },
+  "caseResults": {
+    "bash-pwd": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884180648,
+      "model": "mock/mock-model"
+    },
+    "bash-echo": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884180648,
+      "model": "mock/mock-model"
+    },
+    "read-file-not-exists": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884180649,
+      "model": "mock/mock-model"
+    },
+    "write-file-new": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884180661,
+      "model": "mock/mock-model"
+    },
+    "edit-file-modify": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884180672,
+      "model": "mock/mock-model"
+    },
+    "task-create-json-config": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884180681,
+      "model": "mock/mock-model"
+    },
+    "error-recovery-retry": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884180689,
+      "model": "mock/mock-model"
+    },
+    "codegen-typescript": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884180714,
+      "model": "mock/mock-model"
+    },
+    "data-cleaning": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884180772,
+      "model": "mock/mock-model"
+    },
+    "workflow-multi-file": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884180798,
+      "model": "mock/mock-model"
+    },
+    "git-status": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884180887,
+      "model": "mock/mock-model"
+    },
+    "edge-unicode-filename": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884180946,
+      "model": "mock/mock-model"
+    },
+    "multi-turn-incremental-task": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884180960,
+      "model": "mock/mock-model"
+    },
+    "multi-turn-correction": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884180967,
+      "model": "mock/mock-model"
+    },
+    "prompt-smoke-write-file": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884181049,
+      "model": "mock/mock-model"
+    },
+    "prompt-smoke-edit-multiple-replacements": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884181063,
+      "model": "mock/mock-model"
+    },
+    "prompt-smoke-grep-current-name": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884181064,
+      "model": "mock/mock-model"
+    },
+    "prompt-smoke-toolsearch-json-arguments": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884181064,
+      "model": "mock/mock-model"
+    },
+    "prompt-smoke-task-single-delegate": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884181064,
+      "model": "mock/mock-model"
+    },
+    "prompt-smoke-git-status-no-commit": {
+      "status": "passed",
+      "score": 1,
+      "lastPassedAt": 1786884181161,
+      "model": "mock/mock-model"
+    }
+  },
+  "excludedCases": {
+    "task-analyze-structure": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "task-explain-code": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "conv-understand-intent": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "conv-understand-context": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "conv-ask-clarification": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "conv-handle-ambiguous": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "error-file-not-found": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "error-directory-not-found": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "error-command-failed": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "error-graceful-fallback": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "debug-syntax-error": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "debug-runtime-error": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "refactor-extract-function": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "refactor-rename-variable": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "recovery-tool-fallback": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "recovery-path-fallback": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "recovery-write-readonly": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "recovery-partial-success": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "recovery-command-retry": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "recovery-binary-file": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "data-csv-basic": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "workflow-read-modify-verify": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "workflow-analyze-and-document": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "workflow-e2e-improve": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "git-log": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "git-diff-analysis": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "git-branch-create": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "git-conflict-awareness": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "web-search-basic": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "web-search-chinese": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "web-fetch-page": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "web-fetch-json-api": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "longtext-read-large-file": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "longtext-scan-directory": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "longtext-generate-doc": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "ppt-from-outline": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "doc-data-to-report": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "edge-single-word": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "edge-emoji-input": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "edge-malformed-json": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "multi-turn-context-memory": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "multi-turn-drill-down": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "multi-turn-build-on-previous": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "multi-turn-misunderstand-fix": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "vision-screenshot-describe": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "multiagent-workflow-analysis": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "multiagent-cross-file-analysis": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "excel-bench-59196": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "excel-bench-66-1": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "excel-bench-46167": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "excel-bench-55427": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "reread-loop-trap": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "modify-verify-modify": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "cross-file-consistent-edit": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "long-chain-budget-15": "核心断言依赖真实 agent 的语义、策略或产物能力，确定性 mock 没有有效信号",
+    "prompt-smoke-read-package": "需要真实 agent 读取并回答；case 仍断言历史版本 0.16，mock 不应伪造通过"
+  },
+  "thresholds": {
+    "minPassRate": 1,
+    "maxScoreDrop": 0,
+    "maxNewFailures": 0
+  }
+}

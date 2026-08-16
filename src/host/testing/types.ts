@@ -347,6 +347,8 @@ export interface TestResult {
   goalRun?: GoalRunRecord;
   /** Status */
   status: TestStatus;
+  /** mock 模式显式排除：case 需要真实 agent，reason 必须进入报告。 */
+  mockExcluded?: { reason: string };
   /** Duration in ms */
   duration: number;
   /** Start time */
@@ -436,6 +438,8 @@ export interface TestRunSummary {
   failed: number;
   /** Skipped count */
   skipped: number;
+  /** mock 模式因真实 agent 语义而显式排除的 case 数（是 skipped 的子集） */
+  mockExcluded?: number;
   /** Partial pass count */
   partial: number;
   /** 基础设施故障排除数（429/超时/5xx/网络），不进能力分母 */
@@ -978,6 +982,8 @@ export interface EvalBaseline {
     /** 该分数出自哪个模型（"provider/model"，取 run 级 environment——分数没有模型归因就没法跨基线对比） */
     model?: string;
   }>;
+  /** mock-harness baseline 的显式排除名单；real baseline 不写。 */
+  excludedCases?: Record<string, string>;
   thresholds: {
     minPassRate: number;
     maxScoreDrop: number;

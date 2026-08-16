@@ -16,6 +16,7 @@ import { MODEL_MAX_TOKENS } from '../../shared/constants';
 import { app } from '../platform';
 import { runWithCompressionPipelineOverride } from '../context/compressionPipeline';
 import { runWithScaffoldProfileOverrides } from '../agent/runtime/scaffoldProfile';
+import { getMockCasePolicy } from './mockEvalPolicy';
 
 const logger = createLogger('AgentAdapter');
 
@@ -181,6 +182,23 @@ export class MockAgentAdapter implements AgentInterface {
     provider: 'mock',
   };
 
+  private configuredCase?: { testId: string; workingDirectory: string };
+  private fixtureExecuted = false;
+  private mockEvalPolicyEnabled = false;
+
+  enableMockEvalPolicy(): void {
+    this.mockEvalPolicyEnabled = true;
+  }
+
+  usesMockEvalPolicy(): boolean {
+    return this.mockEvalPolicyEnabled;
+  }
+
+  configureMockCase(testId: string, workingDirectory: string): void {
+    this.configuredCase = { testId, workingDirectory };
+    this.fixtureExecuted = false;
+  }
+
   /**
    * Configure mock response for a prompt
    */
@@ -207,6 +225,23 @@ export class MockAgentAdapter implements AgentInterface {
     turnCount: number;
     errors: string[];
   }> {
+    if (this.configuredCase) {
+      const policy = getMockCasePolicy(this.configuredCase.testId);
+      if (policy?.kind !== 'fixture') {
+        throw new Error(`mock fixture 未定义: ${this.configuredCase.testId}`);
+      }
+      if (this.fixtureExecuted) {
+        return {
+          responses: [`Mock fixture follow-up acknowledged: ${prompt}`],
+          toolExecutions: [],
+          turnCount: 1,
+          errors: [],
+        };
+      }
+      this.fixtureExecuted = true;
+      return policy.run(this.configuredCase.workingDirectory);
+    }
+
     // Find matching mock response
     for (const [pattern, response] of this.responses) {
       if (prompt.includes(pattern) || new RegExp(pattern).test(prompt)) {
@@ -224,7 +259,7 @@ export class MockAgentAdapter implements AgentInterface {
   }
 
   async reset(): Promise<void> {
-    // No-op for mock
+    this.fixtureExecuted = false;
   }
 
   getAgentInfo(): { name: string; model: string; provider: string } {

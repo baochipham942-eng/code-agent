@@ -53,7 +53,7 @@ export function generateDeltaMarkdown(
   trendChart?: string,
 ): string {
   const lines: string[] = [];
-  const passRate = summary.total > 0 ? summary.passed / summary.total : 0;
+  const passRate = getCapabilityPassRate(summary);
 
   lines.push('## Eval Delta Report');
   lines.push('');
@@ -156,7 +156,7 @@ export function generateDeltaConsole(
   delta: BaselineDelta,
 ): string {
   const lines: string[] = [];
-  const passRate = summary.total > 0 ? summary.passed / summary.total : 0;
+  const passRate = getCapabilityPassRate(summary);
 
   lines.push('');
   lines.push(chalk.bold('  Eval Delta Report'));
@@ -238,6 +238,14 @@ export function generateDeltaConsole(
 
 // ---------------------------------------------------------------------------
 // Helpers
+
+function getCapabilityPassRate(summary: TestRunSummary): number {
+  const denominator = summary.total
+    - summary.skipped
+    - (summary.infraExcluded ?? 0)
+    - (summary.costExceeded ?? 0);
+  return denominator > 0 ? summary.passed / denominator : 0;
+}
 // ---------------------------------------------------------------------------
 
 function fmtIdList(ids: string[]): string {

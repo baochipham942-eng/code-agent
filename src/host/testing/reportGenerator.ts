@@ -40,6 +40,9 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
   lines.push(`| 部分通过 | ${summary.partial} 🟡 |`);
   lines.push(`| 失败 | ${summary.failed} ❌ |`);
   lines.push(`| 跳过 | ${summary.skipped} ⏭️ |`);
+  if ((summary.mockExcluded ?? 0) > 0) {
+    lines.push(`| Mock 不适用 | ${summary.mockExcluded} 🧪 |`);
+  }
   if ((summary.infraExcluded ?? 0) > 0) {
     lines.push(`| 基础设施排除 | ${summary.infraExcluded} 🔌 |`);
   }
@@ -207,8 +210,20 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
     lines.push('');
   }
 
-  // Skipped tests
-  const skippedTests = summary.results.filter((r) => r.status === 'skipped');
+  const mockExcludedTests = summary.results.filter((result) => result.mockExcluded);
+  if (mockExcludedTests.length > 0) {
+    lines.push('## Mock 不适用用例');
+    lines.push('');
+    lines.push('> 这些 case 依赖真实 agent 语义或产物能力，显式排除于 mock 干跑分母；不代表通过。');
+    lines.push('');
+    for (const result of mockExcludedTests) {
+      lines.push(`- 🧪 **${result.testId}**: ${result.mockExcluded?.reason ?? ''}`);
+    }
+    lines.push('');
+  }
+
+  // Skipped tests（mock 不适用已单列，避免重复）
+  const skippedTests = summary.results.filter((r) => r.status === 'skipped' && !r.mockExcluded);
   if (skippedTests.length > 0) {
     lines.push('## 跳过用例');
     lines.push('');
@@ -349,7 +364,8 @@ export function generateConsoleReport(summary: TestRunSummary): string {
 
   // Results by status
   for (const result of summary.results) {
-    const icon = result.status === 'passed' ? '✅' :
+    const icon = result.mockExcluded ? '🧪' :
+                 result.status === 'passed' ? '✅' :
                  result.status === 'partial' ? '🟡' :
                  result.status === 'failed' ? '❌' :
                  result.status === 'infra_excluded' ? '🔌' :
@@ -358,7 +374,7 @@ export function generateConsoleReport(summary: TestRunSummary): string {
     const scoreStr = result.status === 'partial' ? ` (${(result.score * 100).toFixed(0)}%)` : '';
     lines.push(`  ${icon} ${result.testId.padEnd(30)} ${duration}${scoreStr}`);
 
-    if ((result.status === 'failed' || result.status === 'partial') && result.failureReason) {
+    if ((result.status === 'failed' || result.status === 'partial' || result.mockExcluded) && result.failureReason) {
       lines.push(`     └─ ${result.failureReason}`);
     }
   }
@@ -367,7 +383,8 @@ export function generateConsoleReport(summary: TestRunSummary): string {
   lines.push('───────────────────────────────────────────────────────');
   const infraSegment = (summary.infraExcluded ?? 0) > 0 ? `  |  🔌 ${summary.infraExcluded}` : '';
   const costSegment = (summary.costExceeded ?? 0) > 0 ? `  |  💸 ${summary.costExceeded}` : '';
-  lines.push(`  Total: ${summary.total}  |  ✅ ${summary.passed}  |  🟡 ${summary.partial}  |  ❌ ${summary.failed}  |  ⏭️ ${summary.skipped}${infraSegment}${costSegment}`);
+  const mockSegment = (summary.mockExcluded ?? 0) > 0 ? `  |  🧪 mock-excluded ${summary.mockExcluded}` : '';
+  lines.push(`  Total: ${summary.total}  |  ✅ ${summary.passed}  |  🟡 ${summary.partial}  |  ❌ ${summary.failed}  |  ⏭️ ${summary.skipped}${mockSegment}${infraSegment}${costSegment}`);
   lines.push(`  Duration: ${formatDuration(summary.duration)}  |  Pass rate: ${getPassRate(summary)}%  |  Avg score: ${(summary.averageScore * 100).toFixed(1)}%`);
   lines.push('═══════════════════════════════════════════════════════');
   lines.push('');

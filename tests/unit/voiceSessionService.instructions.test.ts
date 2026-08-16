@@ -7,6 +7,8 @@ const runtime = vi.hoisted(() => ({
   settings: { voice: { live: {} as Record<string, unknown> } },
   connect: vi.fn(),
   updateInstructions: vi.fn(),
+  quickClassify: vi.fn(),
+  executeVoiceTool: vi.fn(async () => '已派发'),
 }));
 const recordVoiceCall = vi.hoisted(() => vi.fn());
 
@@ -32,8 +34,16 @@ vi.mock('../../src/host/services/voice/voiceAgentCoordinator', () => ({
   setVoiceDispatchFocus: vi.fn(),
 }));
 vi.mock('../../src/host/services/voice/voiceTools', () => ({
-  VOICE_TOOL_DEFINITIONS: [],
-  executeVoiceTool: vi.fn(async () => ''),
+  VOICE_TOOL_DEFINITIONS: [{
+    type: 'function',
+    name: 'delegate_task',
+    description: '派发任务',
+    parameters: { type: 'object', properties: {}, required: [] },
+  }],
+  executeVoiceTool: (...args: unknown[]) => runtime.executeVoiceTool(...args),
+}));
+vi.mock('../../src/host/model/quickModel', () => ({
+  quickClassify: (...args: unknown[]) => runtime.quickClassify(...args),
 }));
 vi.mock('../../src/host/services/voice/voiceUsageLedger', () => ({
   recordVoiceCall,
@@ -107,6 +117,8 @@ beforeEach(() => {
   runtime.settings.voice.live = {};
   runtime.connect.mockReset().mockResolvedValue(makeHandle());
   runtime.updateInstructions.mockClear();
+  runtime.quickClassify.mockReset().mockResolvedValue({ category: 'normal_reply', confidence: 0.9 });
+  runtime.executeVoiceTool.mockClear();
   recordVoiceCall.mockClear();
 });
 
@@ -120,6 +132,39 @@ afterEach(async () => {
 });
 
 describe('refreshVoiceInstructions', () => {
+  it('response.done 发现说了没做时经 host_routed 补派，并携带最近用户轮', async () => {
+    await attachVoiceClient(new FakeClient() as never, 'session-saydo');
+    const connectInput = runtime.connect.mock.calls.at(-1)?.[0] as {
+      onEvent: (event: import('../../src/shared/contract/voice').VoiceEvent) => void;
+    };
+
+    connectInput.onEvent({ type: 'user.transcript', text: '帮我创建一个一点', done: true, itemId: 'u1' });
+    connectInput.onEvent({
+      type: 'assistant.transcript', text: '建个什么文件？', done: true, responseId: 'r1', itemId: 'a1',
+    });
+    connectInput.onEvent({ type: 'response.done', responseId: 'r1' });
+    await vi.waitFor(() => expect(runtime.quickClassify).toHaveBeenCalledTimes(1));
+    expect(runtime.executeVoiceTool).not.toHaveBeenCalled();
+
+    runtime.quickClassify.mockResolvedValueOnce({ category: 'say_without_do', confidence: 0.9 });
+    connectInput.onEvent({ type: 'user.transcript', text: 'MD 文件', done: true, itemId: 'u2' });
+    connectInput.onEvent({
+      type: 'assistant.transcript', text: '好的，马上帮你处理。', done: true, responseId: 'r2', itemId: 'a2',
+    });
+    connectInput.onEvent({ type: 'response.done', responseId: 'r2' });
+
+    await vi.waitFor(() => expect(runtime.executeVoiceTool).toHaveBeenCalledTimes(1));
+    const [name, rawArguments, origin] = runtime.executeVoiceTool.mock.calls[0] as [string, string, string];
+    expect(name).toBe('delegate_task');
+    expect(origin).toBe('host_routed');
+    expect(JSON.parse(rawArguments)).toMatchObject({
+      title: 'MD 文件',
+      short_name: '语音任务',
+      prompt: expect.stringContaining('[USER] 帮我创建一个一点'),
+    });
+    expect(JSON.parse(rawArguments).prompt).toContain('[USER] MD 文件');
+  });
+
   it('一通电话的多轮 response usage 逐维累加后只入账一次', async () => {
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-token-usage');

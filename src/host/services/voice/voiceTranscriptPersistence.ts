@@ -39,6 +39,7 @@ export interface TranscriptMergeState {
 
 export async function persistTranscript(
   neoSessionId: string,
+  voiceCallId: string,
   role: 'user' | 'assistant',
   text: string,
   counter?: { count: number },
@@ -82,6 +83,7 @@ export async function persistTranscript(
       timestamp: now,
       metadata: {
         source: 'voice',
+        voiceCallId,
         ...(identity && (identity.responseId || identity.itemId) ? { voiceTranscript: identity } : {}),
       },
     });

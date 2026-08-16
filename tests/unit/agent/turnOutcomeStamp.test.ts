@@ -13,7 +13,6 @@ vi.mock('../../../src/host/platform/appPaths', () => ({ getPath: () => traceRoot
 import { TurnTraceRecorder } from '../../../src/host/agent/runtime/turnTrace';
 import type { RunTerminalStatus } from '../../../src/host/agent/runtime/runTerminalStatus';
 import {
-  buildTurnOutcome,
   recordTurnOutcomeStamp,
   type TurnOutcomeStampContext,
 } from '../../../src/host/agent/runtime/turnOutcomeStamp';
@@ -64,6 +63,12 @@ function outcomeEvents(recorder: TurnTraceRecorder) {
   return recorder.getEvents().filter((event) => event.type === 'turn_outcome');
 }
 
+function latestOutcome(recorder: TurnTraceRecorder) {
+  const event = outcomeEvents(recorder).at(-1);
+  if (!event || event.type !== 'turn_outcome') throw new Error('turn_outcome was not recorded');
+  return event.data;
+}
+
 describe('turn outcome stamp', () => {
   afterEach(() => {
     if (existsSync(traceRoot)) rmSync(traceRoot, { recursive: true, force: true });
@@ -111,9 +116,9 @@ describe('turn outcome stamp', () => {
       }),
     ];
 
-    const outcome = await buildTurnOutcome(context(recorder, messages), 'completed', summary({ toolCallCount: 1 }));
+    await recordTurnOutcomeStamp(context(recorder, messages), 'completed', summary({ toolCallCount: 1 }));
 
-    expect(outcome).toMatchObject({
+    expect(latestOutcome(recorder)).toMatchObject({
       terminal: 'completed',
       verdict: 'verified',
       source: 'generic',
@@ -161,13 +166,13 @@ describe('turn outcome stamp', () => {
       }),
     ];
 
-    const outcome = await buildTurnOutcome(
+    await recordTurnOutcomeStamp(
       context(recorder, messages, {} as TurnOutcomeStampContext['goalMode']),
       'goal_met',
       summary({ status: 'goal_met', toolCallCount: 1 }),
     );
 
-    expect(outcome).toEqual({
+    expect(latestOutcome(recorder)).toEqual({
       terminal: 'goal_met',
       verdict: 'n_a',
       evidenceRefs: [gateEvidence],
@@ -192,7 +197,7 @@ describe('turn outcome stamp', () => {
       }),
     ];
 
-    const outcome = await buildTurnOutcome(
+    await recordTurnOutcomeStamp(
       context(recorder, messages),
       'completed',
       summary({ toolCallCount: 1 }),
@@ -200,7 +205,7 @@ describe('turn outcome stamp', () => {
     );
 
     expect(voiceResolver).toHaveBeenCalledWith('session-1', 1_700_000_000_000);
-    expect(outcome).toEqual({
+    expect(latestOutcome(recorder)).toEqual({
       terminal: 'completed',
       verdict: 'self_claimed',
       evidenceRefs: [],

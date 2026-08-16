@@ -91,7 +91,7 @@ async function resolveVoiceOutcome(
   return voiceEvidence.resolveVoiceWorkOutcome(ctx.sessionId, dispatch.timestamp);
 }
 
-export async function buildTurnOutcome(
+async function buildTurnOutcome(
   ctx: TurnOutcomeStampContext,
   terminal: RunTerminalStatus,
   summary?: CompletionSummaryRecord,

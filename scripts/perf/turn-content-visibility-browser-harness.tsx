@@ -27,7 +27,8 @@ interface TurnContentVisibilityBrowserResult {
   computedStyle: Record<string, {
     contentVisibility: string;
     containIntrinsicSize: string;
-  }> & { scroller: { contentVisibility: string; containIntrinsicSize: string; scrollBehavior: string } };
+    scrollBehavior?: string;
+  }>;
   streamingPerformanceMetrics: StreamingPerformanceSnapshot;
 }
 

@@ -6,21 +6,32 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { BaselineDelta, TestRunSummary, TestResult } from './types';
 import { formatDuration } from '../../shared/utils/format';
-import { formatDate, generateHtmlReport } from './htmlReportGenerator';
 import {
   CALIBRATION_TRUST_THRESHOLDS,
   isTrustedCalibration,
   type JudgeCalibrationRecord,
 } from './calibration/calibrationRegistry';
 
-export { generateHtmlReport } from './htmlReportGenerator';
+type ReportFormat = 'markdown' | 'json' | 'console';
 
-type ReportFormat = 'markdown' | 'json' | 'console' | 'html';
+function formatDate(timestamp: number): string {
+  return new Date(timestamp).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
 
 /**
  * Generate a Markdown test report
  */
-export function generateMarkdownReport(summary: TestRunSummary): string {
+export function generateMarkdownReport(
+  summary: TestRunSummary,
+  baselineDelta?: BaselineDelta,
+): string {
   const lines: string[] = [];
 
   // Header
@@ -335,6 +346,43 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
     lines.push('');
   }
 
+  if (baselineDelta) {
+    lines.push('## Baseline Delta');
+    lines.push('');
+    lines.push('| 指标 | 值 |');
+    lines.push('|------|-----|');
+    lines.push(`| 首次运行 | ${baselineDelta.isFirstRun ? '是' : '否'} |`);
+    lines.push(`| 通过率变化 | ${(baselineDelta.passRateDelta * 100).toFixed(1)}% |`);
+    lines.push(`| 平均分变化 | ${(baselineDelta.scoreDelta * 100).toFixed(1)}% |`);
+    lines.push(`| 回归 | ${baselineDelta.isRegression ? '是' : '否'} |`);
+    lines.push('');
+
+    if (baselineDelta.regressionDetails.length > 0) {
+      lines.push('### 回归详情');
+      lines.push('');
+      baselineDelta.regressionDetails.forEach((detail) => lines.push(`- ${detail}`));
+      lines.push('');
+    }
+
+    if (baselineDelta.newFailures.length > 0) {
+      lines.push('### 新增失败');
+      lines.push('');
+      lines.push('| 用例 | 原状态 | 当前状态 | 原因 |');
+      lines.push('|------|--------|----------|------|');
+      baselineDelta.newFailures.forEach((failure) => {
+        lines.push(`| ${failure.testId} | ${failure.previousStatus} | ${failure.currentStatus} | ${failure.reason ?? '—'} |`);
+      });
+      lines.push('');
+    }
+
+    if (baselineDelta.newPasses.length > 0) {
+      lines.push('### 新增通过');
+      lines.push('');
+      baselineDelta.newPasses.forEach((result) => lines.push(`- ${result.testId}`));
+      lines.push('');
+    }
+  }
+
   // Footer
   lines.push('---');
   lines.push('');
@@ -408,7 +456,7 @@ export async function saveReport(
 
   if (formats.includes('markdown')) {
     const mdPath = path.join(outputDir, `report-${timestamp}.md`);
-    await fs.writeFile(mdPath, generateMarkdownReport(summary));
+    await fs.writeFile(mdPath, generateMarkdownReport(summary, baselineDelta));
     savedFiles.push(mdPath);
   }
 
@@ -418,26 +466,15 @@ export async function saveReport(
     savedFiles.push(jsonPath);
   }
 
-  if (formats.includes('html')) {
-    const htmlPath = path.join(outputDir, `report-${timestamp}.html`);
-    await fs.writeFile(htmlPath, generateHtmlReport(summary, baselineDelta));
-    savedFiles.push(htmlPath);
-  }
-
   // Also update "latest" symlinks
   if (formats.includes('markdown')) {
     const latestMd = path.join(outputDir, 'latest-report.md');
-    await fs.writeFile(latestMd, generateMarkdownReport(summary));
+    await fs.writeFile(latestMd, generateMarkdownReport(summary, baselineDelta));
   }
 
   if (formats.includes('json')) {
     const latestJson = path.join(outputDir, 'latest-report.json');
     await fs.writeFile(latestJson, generateJsonReport(summary));
-  }
-
-  if (formats.includes('html')) {
-    const latestHtml = path.join(outputDir, 'latest-report.html');
-    await fs.writeFile(latestHtml, generateHtmlReport(summary, baselineDelta));
   }
 
   return savedFiles;

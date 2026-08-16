@@ -30,7 +30,7 @@ import { SessionForkError } from '../../../shared/contract/sessionFork';
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, SessionForkRepository, SessionForkWorkspaceRepository, ConversationBranchRepository, SessionForkPortabilityRepository, digestSessionForkAnchorMessage, isCompletedSessionForkAnchor, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository, TurnCostRepository } from './repositories';
+import { SessionRepository, SessionForkRepository, SessionForkWorkspaceRepository, ConversationBranchRepository, SessionForkPortabilityRepository, digestSessionForkAnchorMessage, isCompletedSessionForkAnchor, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, VoiceCallAuditRepository, type VoiceAuditMessage, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository, TurnCostRepository } from './repositories';
 import type {
   CreateForkRepositoryInput,
   CreateForkRepositoryResult,
@@ -242,6 +242,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   private pendingApprovalRepo!: PendingApprovalRepository;
   private agentWakeRepo!: AgentWakeRepository;
   private permissionDecisionRepo!: PermissionDecisionRepository;
+  private voiceCallAuditRepo!: VoiceCallAuditRepository;
   private toolExecutionEventRepo!: ToolExecutionEventRepository;
   private swarmLedgerRepo!: SwarmLedgerRepository;
   private usageLedgerRepo!: UsageLedgerRepository;
@@ -404,6 +405,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       this.agentWakeRepo = new AgentWakeRepository(this.db);
       new GenerativeUIRepository(this.db).markOpenManifestsOrphaned(Date.now());
       this.permissionDecisionRepo = new PermissionDecisionRepository(this.db);
+      this.voiceCallAuditRepo = new VoiceCallAuditRepository(this.db);
       this.toolExecutionEventRepo = new ToolExecutionEventRepository(this.db);
       this.swarmLedgerRepo = new SwarmLedgerRepository(this.db);
       this.usageLedgerRepo = new UsageLedgerRepository(this.db);
@@ -705,6 +707,26 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     if (!this.db || !this.toolExecutionEventRepo) return [];
     try {
       return this.toolExecutionEventRepo.getBySession(sessionId, limit);
+    } catch {
+      return [];
+    }
+  }
+
+  /** 全库通话摘要卡（语音审计时间线入口，N-L7-AUDIT）。fail-safe，失败返回空。 */
+  listVoiceCallSummaries(limit = 50): VoiceAuditMessage[] {
+    if (!this.db || !this.voiceCallAuditRepo) return [];
+    try {
+      return this.voiceCallAuditRepo.listCallSummaries(limit);
+    } catch {
+      return [];
+    }
+  }
+
+  /** 一通电话窗口内的语音相关消息（语音审计时间线）。fail-safe，失败返回空。 */
+  getVoiceMessagesInWindow(sessionId: string, from: number, to: number): VoiceAuditMessage[] {
+    if (!this.db || !this.voiceCallAuditRepo) return [];
+    try {
+      return this.voiceCallAuditRepo.getVoiceMessagesInWindow(sessionId, from, to);
     } catch {
       return [];
     }

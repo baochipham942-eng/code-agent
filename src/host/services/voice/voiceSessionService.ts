@@ -445,6 +445,7 @@ async function teardown(reason: string): Promise<void> {
     if (!pendingAssistant.trim() || session.cancelledResponseIds.has(responseId)) continue;
     await persistTranscript(
       session.neoSessionId,
+      session.id,
       'assistant',
       pendingAssistant,
       session.transcriptCounter,
@@ -484,6 +485,9 @@ async function teardown(reason: string): Promise<void> {
           startedAt,
           endedAt,
           transcriptCount: session.transcriptCounter.count,
+          voiceCallId: session.id,
+          // 单通费用的唯一持久落点：月桶只存聚合（N-L7-AUDIT 判据 5）。
+          ...(session.tokenUsage.value ? { tokens: session.tokenUsage.value } : {}),
         },
       } satisfies SystemEventMessageMetadata,
     });
@@ -837,6 +841,7 @@ async function connectAndBind(
             if (active?.id === id && !voiceQuestionConsumed) active.sayDoGuard.rememberUserTurn(event.text);
             void persistTranscript(
               neoSessionId,
+              id,
               'user',
               event.text,
               transcriptCounter,
@@ -892,6 +897,7 @@ async function connectAndBind(
             if (text.trim()) {
               void persistTranscript(
                 neoSessionId,
+                id,
                 'assistant',
                 text,
                 transcriptCounter,

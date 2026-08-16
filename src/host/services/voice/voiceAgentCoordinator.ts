@@ -972,7 +972,7 @@ async function launchAdmittedRun(
     // voiceCallId + origin：此前三元组与派法只进 7 天轮转的日志，审计时间线要从 DB 拉（N-L7-AUDIT）。
     voiceCallId: state.voiceSessionId,
     voiceDispatch: {
-      title: request.shortName,
+      title: request.title,
       workItemId,
       ...(speaker ? { speaker } : {}),
       ...(request.origin ? { origin: request.origin } : {}),

@@ -13,6 +13,7 @@
 // ============================================================================
 
 import type { VoiceToolCallOrigin, VoiceToolDefinition } from '../../../shared/contract/voice';
+import { normalizeSpokenFileName } from '../../../shared/utils/normalizeSpokenFileName';
 import { createLogger } from '../infra/logger';
 import { dispatchVoiceIntent, type VoiceIntent } from './voiceAgentCoordinator';
 
@@ -72,8 +73,8 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        title: { type: 'string', description: '一句话任务标题，用于展示' },
-        short_name: { type: 'string', description: '2-4 个汉字的任务短名，用于播报、追问和取消，例如「周报」「机票」' },
+        title: { type: 'string', description: '陈述式任务标题，用名词短语概括要做的事，不要照抄用户原话的祈使句' },
+        short_name: { type: 'string', description: '人话短名：2-6 个字的自然词组，普通人一听就懂，如「写周报」「建文件」「查机票」；禁止生造缩写（如「创文」「建文」）' },
         lane_key: { type: 'string', description: '目标或主题 lane 的稳定键；继续处理同一对象时必须沿用同一个键' },
         submission_key: { type: 'string', description: '本轮派发的稳定幂等键；同一轮重试必须原样复用' },
         prompt: { type: 'string', description: '给执行侧的完整指令，要包含用户的原话要点' },
@@ -238,8 +239,8 @@ function toIntent(name: string, rawArguments: string, origin: VoiceToolCallOrigi
       const shortName = str(args.short_name);
       const laneKey = str(args.lane_key);
       const submissionKey = str(args.submission_key);
-      if (shortName && (Array.from(shortName).length < 2 || Array.from(shortName).length > 4)) {
-        return '任务参数 short_name 必须是 2-4 个字，请重新起一个短名。';
+      if (shortName && (Array.from(shortName).length < 2 || Array.from(shortName).length > 6)) {
+        return '任务参数 short_name 必须是 2-6 个字的自然词组，请重新起一个人话短名。';
       }
       // 只认真正的 true。上游把布尔发成字符串 "false" 的情况不是没有，
       // 而 `!!'false'` 是 true——那会让「派一件新活」变成「顶掉正在跑的活」。
@@ -247,7 +248,7 @@ function toIntent(name: string, rawArguments: string, origin: VoiceToolCallOrigi
       return {
         kind: 'delegate_task',
         origin,
-        title: str(args.title) || prompt.slice(0, 30),
+        title: normalizeSpokenFileName(str(args.title) || prompt.slice(0, 30)),
         ...(shortName ? { shortName } : {}),
         ...(laneKey ? { laneKey } : {}),
         ...(submissionKey ? { submissionKey } : {}),

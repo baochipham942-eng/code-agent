@@ -144,6 +144,15 @@ export const VoiceStartDialog: React.FC<VoiceStartDialogProps> = ({ isOpen, onCo
           <h3 className="text-base font-semibold text-zinc-100">{text.confirmTitle}</h3>
           <p className="mt-1.5 text-sm leading-relaxed text-zinc-400">{text.confirmMessage}</p>
         </div>
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2.5">
+          <p className="text-xs font-medium text-zinc-300">{t.voice.settings.callModelLabel}</p>
+          <p className="mt-1 text-sm text-zinc-100" data-testid="voice-start-model-identity">
+            {conversationModelOption.displayName} · {conversationModelOption.provider}
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+            {t.voice.settings.callModelDistinction}
+          </p>
+        </div>
         {voiceState && (
           <label className="flex items-center justify-between gap-3 text-xs text-zinc-400">
             <span>{t.voice.settings.voiceLabel}</span>
@@ -154,7 +163,9 @@ export const VoiceStartDialog: React.FC<VoiceStartDialogProps> = ({ isOpen, onCo
               className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-accent-accessible"
             >
               {conversationModelOption.voices.map((id) => (
-                <option key={id} value={id}>{id}</option>
+                <option key={id} value={id}>
+                  {id} · {t.voice.settings.voiceDescriptions[id]}
+                </option>
               ))}
             </select>
           </label>

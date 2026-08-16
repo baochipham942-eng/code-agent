@@ -54,7 +54,7 @@ describe('TaskDashboardSummary 运行中空态（UI 审计 #8）', () => {
   it('运行状态徽章显示人话文案，不是裸英文枚举值', () => {
     const cases: Array<[string, string]> = [
       ['using_tools', '使用工具中'],
-      ['waiting_approval', '等待确认'],
+      ['waiting_approval', '等你确认'],
       ['verifying', '核实中'],
       ['planning', '进行中'],
       ['running', '进行中'],
@@ -123,4 +123,3 @@ describe('TaskDashboardSummary', () => {
     expect(html).not.toContain('其他运行');
   });
 });
-

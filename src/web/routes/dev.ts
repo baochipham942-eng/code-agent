@@ -668,17 +668,36 @@ export function createDevRouter(deps: DevRouterDeps): Router {
       return;
     }
 
-    const body = req.body as { sessionId?: unknown; messages?: unknown } | undefined;
+    const body = req.body as {
+      sessionId?: unknown;
+      messages?: unknown;
+      sessionMetadata?: unknown;
+    } | undefined;
     if (typeof body?.sessionId !== 'string' || !body.sessionId || !Array.isArray(body?.messages)) {
       res.status(400).json({ error: 'Body must be { sessionId: string, messages: Message[] }' });
+      return;
+    }
+    if (
+      body.sessionMetadata !== undefined
+      && (!body.sessionMetadata || typeof body.sessionMetadata !== 'object' || Array.isArray(body.sessionMetadata))
+    ) {
+      res.status(400).json({ error: 'sessionMetadata must be an object when provided.' });
       return;
     }
 
     try {
       const { getSessionManager } = await import('../../host/services/infra/sessionManager');
+      const sessionManager = getSessionManager();
+      if (body.sessionMetadata) {
+        await sessionManager.patchSessionMetadata(
+          body.sessionId,
+          body.sessionMetadata as Record<string, unknown>,
+          { notifyRenderer: true },
+        );
+      }
       const messages = body.messages as Message[];
       for (const message of messages) {
-        await getSessionManager().addMessageToSession(body.sessionId, message);
+        await sessionManager.addMessageToSession(body.sessionId, message);
       }
       res.json({ ok: true, count: messages.length });
     } catch (error) {

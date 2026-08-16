@@ -121,6 +121,8 @@ const QWEN_OMNI_REALTIME_VOICE_WHITELIST = ['Tina', 'Ethan', 'Serena'] as const;
 export const QWEN_OMNI_REALTIME_MODEL_OPTIONS = [
   {
     id: QWEN_OMNI_REALTIME_MODEL,
+    displayName: 'Qwen3.5 Omni Flash Realtime',
+    provider: 'DashScope',
     voices: QWEN_OMNI_REALTIME_VOICE_WHITELIST,
   },
 ] as const;

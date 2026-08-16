@@ -2,7 +2,7 @@ import { existsSync } from 'fs';
 import * as path from 'path';
 import type { ParsedSkill } from '../../../shared/contract/agentSkill';
 
-export type SkillApplicabilityReason =
+type SkillApplicabilityReason =
   | 'missing_required_tools'
   | 'fallback_tool_available'
   | 'platform_mismatch'
@@ -155,7 +155,7 @@ export function filterSkillsByApplicability(
   };
 }
 
-export function hasMachineApplicabilityBoundary(skill: ParsedSkill): boolean {
+function hasMachineApplicabilityBoundary(skill: ParsedSkill): boolean {
   return Boolean(
     skill.requiresTools?.length
     || skill.fallbackForTools?.length

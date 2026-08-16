@@ -19,7 +19,7 @@ interface HealthDeps {
   getPendingPermissionRequests?: () => PermissionRequest[];
 }
 
-export function sendPendingPermissionSnapshots(
+function sendPendingPermissionSnapshots(
   res: Response,
   requests: PermissionRequest[],
 ): number {

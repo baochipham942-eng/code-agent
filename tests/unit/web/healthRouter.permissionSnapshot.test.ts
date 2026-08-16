@@ -1,9 +1,8 @@
 import express from 'express';
 import http from 'http';
-import type { Response } from 'express';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { PermissionRequest } from '../../../src/shared/contract';
-import { createHealthRouter, sendPendingPermissionSnapshots } from '../../../src/web/routes/health';
+import { createHealthRouter } from '../../../src/web/routes/health';
 import { sseClients } from '../../../src/web/helpers/sse';
 
 let server: http.Server | undefined;
@@ -29,25 +28,6 @@ function request(): PermissionRequest {
 }
 
 describe('health SSE pending permission snapshots', () => {
-  it('sends the original request id as an agent permission event without adding it to replay', () => {
-    const chunks: string[] = [];
-    const response = {
-      write: (chunk: string) => {
-        chunks.push(chunk);
-        return true;
-      },
-    } as unknown as Response;
-    const pending = request();
-
-    expect(sendPendingPermissionSnapshots(response, [pending])).toBe(1);
-    expect(chunks).toHaveLength(1);
-    expect(chunks[0]).not.toContain('id:');
-    expect(chunks[0]).toContain('"channel":"agent:event"');
-    expect(chunks[0]).toContain('"type":"permission_request"');
-    expect(chunks[0]).toContain('"id":"permission-original"');
-    expect(chunks[0]).toContain('"snapshot":true');
-  });
-
   it('sends the host snapshot on a fresh renderer SSE connection with no Last-Event-ID', async () => {
     const app = express();
     app.use('/api', createHealthRouter({
@@ -81,7 +61,12 @@ describe('health SSE pending permission snapshots', () => {
     await reader.cancel().catch(() => undefined);
 
     expect(text).toContain('"channel":"connected"');
-    expect(text).toContain('"type":"permission_request"');
-    expect(text).toContain('"id":"permission-original"');
+    const snapshotBlock = text.split('\n\n').find((block) => block.includes('"type":"permission_request"'));
+    expect(snapshotBlock).toBeDefined();
+    expect(snapshotBlock).toContain('"channel":"agent:event"');
+    expect(snapshotBlock).toContain('"id":"permission-original"');
+    expect(snapshotBlock).toContain('"snapshot":true');
+    // 快照不进 replay：事件块不能带 SSE 游标行（id:）
+    expect(snapshotBlock).not.toContain('id:');
   });
 });

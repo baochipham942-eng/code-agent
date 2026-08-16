@@ -162,7 +162,7 @@ describe('buildRequestManifest', () => {
     const input = baseInput([message], ['user-image'], [ledger]);
     input.contentStore = { store: vi.fn((_hash, content) => (stored.push(content), true)) };
     input.attachmentBlobStore = {
-      store: vi.fn(() => ({ version: 1, filePath: '/tmp/blob', sha256: 'a'.repeat(64), bytes: 11 })),
+      store: vi.fn(() => ({ version: 1 as const, filePath: '/tmp/blob', sha256: 'a'.repeat(64), bytes: 11 })),
     };
 
     const manifest = buildRequestManifest(input);
@@ -185,7 +185,7 @@ describe('buildRequestManifest', () => {
       role: 'user',
       content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: base64 } }],
     };
-    const store = vi.fn(() => true);
+    const store = vi.fn((_hash: string, _content: string) => true);
     const input = baseInput([message], ['runtime-image'], []);
     input.contentStore = { store };
     input.attachmentBlobStore = { store: vi.fn(() => null) };

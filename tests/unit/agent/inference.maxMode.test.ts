@@ -21,6 +21,7 @@ import { buildToolSchemaSnapshot } from '../../../src/host/agent/runtime/context
 import { reconstructRequest } from '../../../src/host/evaluation/requestReplay';
 import { assertReconstructedRequestMatches } from '../../../src/host/evaluation/requestReplayGate';
 import { CompressionState } from '../../../src/host/context/compressionState';
+import type { ToolDefinition } from '../../../src/shared/contract';
 
 const { mockGetApiKey, mockRecordUsage, mockCheckBudget } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
@@ -253,7 +254,7 @@ describe('inference Max Mode wiring', () => {
     });
     ctx.buildModelMessages = vi.fn().mockResolvedValue(assembled as ModelMessagesWithSources);
     let engineMessages: readonly ModelMessage[] = [];
-    let engineTools: typeof mockToolDefinitions = [];
+    let engineTools: ToolDefinition[] = [];
     ctx.runtime.modelRouter.inference = vi.fn().mockImplementation(async (messages, tools) => {
       engineMessages = messages;
       engineTools = tools;

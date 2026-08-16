@@ -5,6 +5,7 @@ import type { TraceEventDataMap } from '../../../src/host/agent/runtime/turnTrac
 import {
   reconstructRequest,
   RequestNotReconstructableError,
+  type RequestReplayContentReaders,
 } from '../../../src/host/evaluation/requestReplay';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -31,10 +32,10 @@ function fixture() {
     compactionReplacements: [],
     degraded: false,
   };
-  const readers = {
-    getSystemPrompt: () => ({ content: system }),
-    getContent: () => dynamic,
-    getToolSchema: () => tools,
+  const readers: RequestReplayContentReaders = {
+    getSystemPrompt: (_contentHash: string) => ({ content: system }),
+    getContent: (_contentHash: string) => dynamic,
+    getToolSchema: (_contentHash: string) => tools,
   };
   return { manifest, ledger, readers, dynamic, tools };
 }

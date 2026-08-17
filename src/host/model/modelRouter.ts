@@ -158,6 +158,8 @@ export class ModelRouter {
     ['custom', new OpenAIProvider()],
   ]);
 
+  private loggedProtocolOverrides = new Set<string>();
+
   private recordProviderHardFailure(provider: string): void {
     getProviderHealthMonitor().recordFailure(provider);
     getProviderHealthMonitor().recordFailure(provider);
@@ -936,7 +938,17 @@ export class ModelRouter {
     const effectiveProtocol = matrixProtocol === 'responses' && config.protocol !== 'claude'
       ? 'responses'
       : config.protocol ?? matrixProtocol;
-    if (effectiveProtocol === 'responses') return this.providers.get('responses');
+    if (effectiveProtocol === 'responses') {
+      // 「配了但不生效」要在现场日志可见（N-PROTOROUTE）：矩阵覆盖 config.protocol 时报一次。
+      if (config.protocol && config.protocol !== 'responses') {
+        const overrideKey = `${config.provider}/${config.model}`;
+        if (!this.loggedProtocolOverrides.has(overrideKey)) {
+          this.loggedProtocolOverrides.add(overrideKey);
+          logger.info(`[ModelRouter] ${overrideKey} 按能力矩阵改走 Responses 协议（config.protocol='${config.protocol}' 被矩阵覆盖，见 modelCapabilityMatrix）`);
+        }
+      }
+      return this.providers.get('responses');
+    }
     if (this.providers.has(config.provider)) return undefined;
     if (config.protocol === 'claude') return this.providers.get('claude');
     if (config.protocol === 'openai') return this.providers.get('custom');

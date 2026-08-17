@@ -22,7 +22,7 @@ The baseline package remains isolated under this directory; production CodeMirro
 rtk proxy npm ci --prefix tests/eval/diffbench
 DIFFBENCH_HEAD=$(git rev-parse HEAD) \
 DIFFBENCH_BRANCH=$(git branch --show-current) \
-rtk proxy npx tsx tests/eval/diffbench/run.mts --warmups 1 --repetitions 3
+rtk proxy npx tsx tests/eval/diffbench/run.mts --warmups 1 --repetitions 5
 ```
 
 On macOS workers, Chromium may need to run outside the filesystem/process sandbox because Mach port registration is denied inside it. The output is `results/2026-08-17.json`.
@@ -36,3 +36,9 @@ rtk proxy npx tsx tests/eval/diffbench/run.mts --warmups 1 --repetitions 1
 ```
 
 The `codemirror` renderer preserves the spike baseline settings. The `current` renderer exercises production defaults, including collapsed unchanged sections and inline changes.
+
+## Performance comparison
+
+Committed `artifacts/` record the machine and harness version that generated them; they are not a valid performance control. Judge a regression only with a same-machine A/B capture: run the before and after revisions consecutively on the same machine.
+
+At least two samples must reproduce a regression. For `history-5000`, use at least 5 repetitions: its metric is bimodal by roughly one 16.7ms frame, so a median from 3 repetitions can land in either cluster and produce a false regression.

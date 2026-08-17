@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import type { AgentEvent, SessionTask } from '../../src/shared/contract';
+import { dismissFirstRunDialogs } from './firstRunDialogs';
 
 type RendererAgentEvent = AgentEvent & { sessionId?: string };
 
@@ -14,7 +15,7 @@ async function getAuthToken(page: Page): Promise<string> {
 }
 
 async function createCleanSession(page: Page): Promise<string> {
-  const newSessionBtn = page.getByRole('button', { name: '新会话' });
+  const newSessionBtn = page.getByRole('button', { name: '新任务' });
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
 
@@ -102,6 +103,7 @@ test('task_update renders SessionTask lifecycle and dependencies in the task pan
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
   await ssePromise;
+  await dismissFirstRunDialogs(page);
 
   const token = await getAuthToken(page);
   const sessionId = await createCleanSession(page);
@@ -201,6 +203,7 @@ test('task panel loads persisted SessionTask records when a session is opened', 
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
   await ssePromise;
+  await dismissFirstRunDialogs(page);
 
   const token = await getAuthToken(page);
   const uniqueSuffix = Date.now();

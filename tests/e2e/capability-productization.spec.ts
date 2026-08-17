@@ -11,6 +11,7 @@
 // ============================================================================
 
 import { test, expect, type Page } from '@playwright/test';
+import { dismissFirstRunDialogs } from './firstRunDialogs';
 
 test.setTimeout(60_000);
 
@@ -18,6 +19,7 @@ test.setTimeout(60_000);
 async function openCapabilitySettings(page: Page) {
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
+  await dismissFirstRunDialogs(page);
 
   const addPanelButton = page.getByRole('button', { name: '打开面板' });
   await expect(addPanelButton).toBeVisible({ timeout: 15_000 });

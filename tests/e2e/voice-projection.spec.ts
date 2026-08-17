@@ -15,6 +15,7 @@ import { test, expect, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
+import { dismissFirstRunDialogs } from './firstRunDialogs';
 
 test.setTimeout(60_000);
 
@@ -30,6 +31,7 @@ async function waitForAppReady(page: Page): Promise<void> {
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
   await ssePromise;
+  await dismissFirstRunDialogs(page);
 }
 
 async function getAuthToken(page: Page): Promise<string> {
@@ -43,7 +45,7 @@ async function getAuthToken(page: Page): Promise<string> {
 async function ensureActiveSession(page: Page): Promise<string> {
   const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
   if (!(await activeSession.isVisible())) {
-    const newSessionBtn = page.getByRole('button', { name: '新会话' });
+    const newSessionBtn = page.getByRole('button', { name: '新任务' });
     await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
     await newSessionBtn.click();
   }

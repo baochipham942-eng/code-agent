@@ -40,6 +40,7 @@ import { claimDesignCanvasForSession } from './design/designCanvasLaunch';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { RailTabShell } from './composites/RailTabShell';
 import { IconButton } from './primitives/IconButton';
+import { artifactFollowKey, useArtifactFollowStore } from '../stores/artifactFollowStore';
 
 const PREVIEW_PREFIX = 'preview:';
 
@@ -102,6 +103,7 @@ interface TabMeta {
   /** 浏览器页签 favicon；与动态标题同一数据源（managed session activeTab） */
   iconSrc?: string | null;
   isDirty: boolean;
+  needsAttention?: boolean;
 }
 
 interface WorkbenchViewLauncherProps {
@@ -210,6 +212,8 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
   const workbenchFocused = useWorkbenchFocusStore((s) => s.workbenchFocused);
   const setWorkbenchFocused = useWorkbenchFocusStore((s) => s.setWorkbenchFocused);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const artifactFollowEntries = useArtifactFollowStore((s) => s.entries);
+  const clearArtifactFollowAttention = useArtifactFollowStore((s) => s.clearAttention);
   // 二期 N2：浏览器页签动态显示当前页标题（无页面回落「浏览器」）。
   const browserSession = useWorkbenchBrowserSession();
   // 有机跳转后 managed tab 先于 surface activeTarget 更新；页签标题跟地址栏同源
@@ -307,6 +311,10 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
       icon: isLiveDev ? Globe2 : FileText,
       iconClassName: isLiveDev ? 'text-badge-success/80' : 'text-zinc-400',
       isDirty: previewTab ? previewTab.content !== previewTab.savedContent : false,
+      needsAttention: Boolean(
+        currentSessionId
+        && artifactFollowEntries[artifactFollowKey(currentSessionId, path)]?.attention,
+      ),
     };
   });
 
@@ -352,6 +360,9 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
 
   const selectView = (id: string) => {
     openWorkbenchTab(id as WorkbenchViewId, { source: 'user' });
+    if (currentSessionId && id.startsWith(PREVIEW_PREFIX)) {
+      clearArtifactFollowAttention(currentSessionId, id.slice(PREVIEW_PREFIX.length));
+    }
     setMenuOpen(false);
   };
 
@@ -369,6 +380,13 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
             <>
               {meta.isDirty && (
                 <span className="text-[10px] leading-none text-badge-warning" title={t.workbenchTabs.unsavedChanges}>●</span>
+              )}
+              {meta.needsAttention && (
+                <span
+                  data-testid={`artifact-follow-attention-${meta.id}`}
+                  className="h-1.5 w-1.5 rounded-full bg-badge-info animate-pulse"
+                  aria-hidden
+                />
               )}
               <button /* ds-allow:button: tab 内 10px 超小关闭钮（对齐 FileExplorerPanel TabBar 的 ×），primitive 变体不适配 */
                 type="button"

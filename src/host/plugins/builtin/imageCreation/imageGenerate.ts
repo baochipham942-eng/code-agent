@@ -363,6 +363,17 @@ export async function executeImageGenerate(
   const outputPath = params.output_path || defaultImageOutputPath(ctx.workingDir);
   const isDefaultOutputPath = !params.output_path;
 
+  if (ctx.currentToolCallId) {
+    ctx.emit({
+      type: 'artifact_write_started',
+      data: {
+        toolCallId: ctx.currentToolCallId,
+        toolName: schema.name,
+        filePath: outputPath,
+      },
+    });
+  }
+
   // 复述句里承诺过「出完存到 X」，失败收口要据实说 X 到底有没有落盘，故这里记账。
   let wroteFile = false;
   let briefed = false;

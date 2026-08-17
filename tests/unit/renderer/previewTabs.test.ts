@@ -30,6 +30,18 @@ describe('appStore preview tabs', () => {
     expect(state.activePreviewTabId).toBe(firstId);
   });
 
+  it('background auto-open creates a tab without stealing the active workbench view', () => {
+    const { openPreview, openWorkbenchTab } = useAppStore.getState();
+    openWorkbenchTab('browser');
+
+    openPreview('/tmp/report.html', { source: 'auto', activate: false });
+
+    const state = useAppStore.getState();
+    expect(state.previewTabs.some((tab) => tab.path === '/tmp/report.html')).toBe(true);
+    expect(state.workbenchTabs).toContain('preview:/tmp/report.html');
+    expect(state.activeWorkbenchTab).toBe('browser');
+  });
+
   it('openPreview re-activation resets isLoaded so repaired artifacts reload from disk', () => {
     const { openPreview, markPreviewTabLoaded } = useAppStore.getState();
     openPreview('/tmp/game.html');

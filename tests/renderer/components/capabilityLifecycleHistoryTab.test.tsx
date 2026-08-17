@@ -132,6 +132,32 @@ describe('CapabilityLifecycleHistoryTab', () => {
     expect(screen.getByTestId('capability-history-fold-toggle').textContent).toContain('收起');
   });
 
+  it('⑧ 命名空间不上屏：skill:xxx 显示成「技能 · xxx」，认不出的命名空间原样露出', async () => {
+    traceApi.read = read([
+      lifecycle('skill:internal-comms', 'loaded', NOW - 1000),
+      lifecycle('weird:thing', 'loaded', NOW - 2000),
+    ]);
+    render(<CapabilityLifecycleHistoryTab />);
+
+    await waitFor(() => expect(screen.getAllByTestId('capability-history-group')).toHaveLength(2));
+    expect(screen.getByText('技能 · internal-comms')).toBeTruthy();
+    // 原始 key 形态（带命名空间冒号）不许出现在屏上
+    expect(screen.queryByText('skill:internal-comms')).toBeNull();
+    // 认不出的命名空间宁可露原文，不臆造标签
+    expect(screen.getByText('weird:thing')).toBeTruthy();
+  });
+
+  it('⑨ 账本有内容但一行都读不懂 → 空态说实话，不与「还没有记录」同形', async () => {
+    traceApi.read = read([
+      { ts: 1, type: 'capability_lifecycle', data: null },
+      { ts: 2, type: 'capability_lifecycle', data: { capabilityKey: 'skill-a', action: 'exploded' } },
+    ]);
+    render(<CapabilityLifecycleHistoryTab />);
+
+    await waitFor(() => expect(screen.getByText('有 2 条记录读不出来，先当没有记录处理。')).toBeTruthy());
+    expect(screen.queryByText('等你关掉再打开某个技能、或有能力装载失败时，这里会自己出现记录。')).toBeNull();
+  });
+
   it('零打断纪律：只在挂载拉一次，点刷新再拉一次（无轮询无订阅）', async () => {
     traceApi.read = read([lifecycle('skill-a', 'loaded', NOW - 1000)]);
     render(<CapabilityLifecycleHistoryTab />);

@@ -15,11 +15,12 @@
 // 组内默认只展开最近 3 条把这种爆发收进各自组里，不做全局大流水。
 // ============================================================================
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { fetchSessionTrace, type TraceSessionRead } from '../../../services/traceLedgerClient';
 import {
   projectCapabilityLifecycleHistory,
+  splitCapabilityKey,
   type CapabilityLifecycleAction,
   type CapabilityLifecycleEntry,
   type CapabilityLifecycleGroup,
@@ -44,6 +45,12 @@ function actionDot(action: CapabilityLifecycleAction): string {
   if (action === 'unloaded') return 'bg-mark-neutral';
   if (action === 'rolled_back') return 'bg-mark-warning';
   return 'bg-mark-danger';
+}
+
+/** 命名空间是实现概念，不许直接上屏：`skill:foo` → 「技能 · foo」；认不出的原样露出 */
+function capabilityDisplayName(capabilityKey: string, text: HistoryText): string {
+  const split = splitCapabilityKey(capabilityKey);
+  return split ? `${text[split.namespaceKey]} · ${split.name}` : capabilityKey;
 }
 
 function actionLabel(action: CapabilityLifecycleAction, text: HistoryText): string {
@@ -101,7 +108,9 @@ const GroupCard: React.FC<GroupCardProps> = ({ group, text, relativeTime, absolu
       className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3"
     >
       <div className="flex items-baseline justify-between gap-3">
-        <h2 className="truncate text-sm font-medium text-zinc-100">{group.capabilityKey}</h2>
+        <h2 className="truncate text-sm font-medium text-zinc-100">
+          {capabilityDisplayName(group.capabilityKey, text)}
+        </h2>
         <span className="shrink-0 text-xs text-zinc-500">
           {text.entryCount.replace('{count}', String(group.entries.length))}
         </span>
@@ -162,9 +171,13 @@ export const CapabilityLifecycleHistoryTab: React.FC = () => {
     [language],
   );
 
-  const history = read?.state === 'present'
-    ? projectCapabilityLifecycleHistory(read.events)
-    : { groups: [], dropped: 0 };
+  // 450 条量级的过滤+两轮排序，别每次 render 重算
+  const history = useMemo(
+    () => (read?.state === 'present'
+      ? projectCapabilityLifecycleHistory(read.events)
+      : { groups: [], unreadable: 0 }),
+    [read],
+  );
 
   return (
     <div data-testid="capability-history-tab">
@@ -183,7 +196,14 @@ export const CapabilityLifecycleHistoryTab: React.FC = () => {
       <p className="mb-3 text-xs text-zinc-500">{text.intro}</p>
 
       {history.groups.length === 0 ? (
-        <EmptyState variant="panel" title={text.emptyTitle} text={text.emptyText} />
+        // 有账本但读不出来时说实话，别和「还没有记录」长得一样
+        <EmptyState
+          variant="panel"
+          title={text.emptyTitle}
+          text={history.unreadable > 0
+            ? text.emptyUnreadable.replace('{count}', String(history.unreadable))
+            : text.emptyText}
+        />
       ) : (
         <div className="space-y-2">
           {history.groups.map((group) => (

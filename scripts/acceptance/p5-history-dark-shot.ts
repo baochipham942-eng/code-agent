@@ -22,7 +22,8 @@ async function main(): Promise<void> {
   await page.click('[data-testid="sidebar-capability-hub"]');
   await page.waitForSelector('[data-testid="capability-hub-tab-history"]', { timeout: 15_000 });
   await page.click('[data-testid="capability-hub-tab-history"]');
-  await page.waitForSelector('[data-testid="capability-history-batch"]', { timeout: 15_000 });
+  // P5B 前后两种形状都等：批次行（新）或事件行（旧）
+  await page.waitForSelector('[data-testid="capability-history-batch"], [data-testid="capability-history-event"]', { timeout: 15_000 });
   await delay(1200);
   await page.screenshot({ path: `${OUT}/04-history-tab-dark.png` });
   await browser.close();

@@ -62,14 +62,17 @@ async function main(): Promise<void> {
   const summary = await page.evaluate(() => ({
     batches: document.querySelectorAll('[data-testid="capability-history-batch"]').length,
     members: document.querySelectorAll('[data-testid="capability-history-batch-member"]').length,
+    // P5B 前的旧形状（按能力分组）：before 对照拍摄时只有这两个 testid
+    groups: document.querySelectorAll('[data-testid="capability-history-group"]').length,
+    events: document.querySelectorAll('[data-testid="capability-history-event"]').length,
     text: document.querySelector('[data-testid="capability-history-tab"]')?.textContent?.slice(0, 400) ?? '',
   }));
-  console.log(`历史 tab: batches=${summary.batches} members=${summary.members}`);
+  console.log(`历史 tab: batches=${summary.batches} members=${summary.members} groups=${summary.groups} events=${summary.events}`);
   console.log(`可见文本: ${summary.text}`);
 
   await browser.close();
-  if (summary.batches === 0) {
-    console.error('FAIL: 历史 tab 没有批次——toggle 路径未触发装卸事件');
+  if (summary.batches === 0 && summary.groups === 0) {
+    console.error('FAIL: 历史 tab 既没有批次也没有分组——toggle 路径未触发装卸事件');
     process.exit(2);
   }
 }

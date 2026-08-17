@@ -1,13 +1,13 @@
 // ============================================================================
-// SessionInspector 层1 轮行（N-LEDGER-UX1：A 汇总句可展开 / B 异常黄条）
+// SessionInspector 层1 轮行（N-LEDGER-UX1：A 汇总句可展开 / B 异常黄条 / C 活行）
 // ----------------------------------------------------------------------------
 // 层1 面向非程序员协作者：
 //   A · ≥2 次工具调用的轮，汇总句下可点开逐条明细（明细与账本 tool_dispatch 逐条对应）；
 //       单工具轮不聚合、不出明细入口（保持原样）。
 //   B · 层1 不显示任何 token/缓存数字；仅当本轮消耗触发甲口径异常
 //       （> 其余轮均值 ×3 且 > 20k，model.ts 判定）时出黄点+一句人话，点开进层2 看数字。
-// （C 进行中活行已撤：轮内事件只在 run 收尾整块 flush（conversationRuntime finally），
-//   tail 游标在「账本写入侧不动」边界内看不到未 settle 轮——详见 UX1 证据档 §五。）
+//   C · 未 settle 的当前轮渲染活行（呼吸点 + 「正在做…（第 M 步）」），settle 后
+//       同位置转为常规轮行（key 不变，不重复行、不整段重渲染）。
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -190,6 +190,36 @@ export function TurnRow({ segment }: { segment: TurnSegment }) {
       <div className="pl-5">
         <TurnActivitySummary segment={segment} />
         {open && <TurnDevtools segment={segment} />}
+      </div>
+    </div>
+  );
+}
+
+// ── C · 进行中活行：未 settle 的当前轮；settle 后同位置转常规 TurnRow ──────
+
+export function LiveTurnRow({ segment }: { segment: TurnSegment }) {
+  const { t } = useI18n();
+  const live = t.sessionInspector.live;
+  const bucketLabel = t.sessionInspector.activityDetail.bucketLabel;
+  const stepCount = segment.toolDispatches.length;
+  const doing = segment.lastToolBucket !== null && stepCount > 0
+    ? fill(live.doing, { activity: bucketLabel[segment.lastToolBucket], step: String(stepCount) })
+    : live.waiting;
+  return (
+    <div data-testid="inspector-live-turn" className="px-0.5 py-1">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-mark-warning" data-testid="inspector-live-dot" />
+        <span className="shrink-0 text-xs font-medium text-zinc-300">
+          {fill(t.sessionInspector.turnLabel, { count: String(segment.index) })}
+        </span>
+        <span className="text-[11px] text-zinc-500">
+          {t.sessionInspector.turnInProgress} —— {doing}
+        </span>
+        {segment.startedAt !== null && (
+          <span className="ml-auto shrink-0 text-[10px] text-zinc-600">
+            {new Date(segment.startedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
       </div>
     </div>
   );

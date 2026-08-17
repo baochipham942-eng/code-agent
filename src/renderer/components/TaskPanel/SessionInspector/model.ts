@@ -152,6 +152,8 @@ export interface TurnSegment {
   failedToolCount: number;
   /** B 项（甲口径）：单轮 token > 本会话其余轮均值 × 3 且绝对值 > 20k */
   tokenAnomaly: boolean;
+  /** C 项：最新一条工具调用的活动桶（活行「正在做…」用），无工具调用为 null */
+  lastToolBucket: ToolActivityBucket | null;
   /** D 项：轮内 per-call 推理调用分卡（空数组 = 账本无 inference 细分，层2 降级轮级汇总） */
   inferenceCalls: InferenceCallRow[];
   /** D 项：首条 inference 之前的工具调用（挂不到任何卡下，层2 单独列出） */
@@ -366,6 +368,9 @@ function buildSegment(index: number, events: TraceLedgerEvent[]): TurnSegment {
     toolCounts,
     failedToolCount,
     tokenAnomaly: false,
+    lastToolBucket: toolDispatches.length > 0
+      ? toolDispatches[toolDispatches.length - 1].bucket
+      : null,
     inferenceCalls,
     orphanToolDispatches,
     startedAt: timestamps.length > 0 ? Math.min(...timestamps) : null,

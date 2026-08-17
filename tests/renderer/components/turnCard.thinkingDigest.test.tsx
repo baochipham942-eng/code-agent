@@ -25,9 +25,6 @@ vi.mock('../../../src/renderer/components/features/chat/ToolStepGroup', () => ({
   ToolStepGroup: () => React.createElement('div', null, 'tool group'),
 }));
 
-import {
-  isThinkingScrollerPinnedToBottom,
-} from '../../../src/renderer/components/features/chat/ThinkingDigestBanner';
 import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 
 afterEach(() => {
@@ -174,7 +171,25 @@ describe('TurnCard 思考展示状态机', () => {
 
 describe('思考容器贴底判定', () => {
   it('距底 2px 以内跟随，用户上滚到 3px 后停止抢滚动', () => {
-    expect(isThinkingScrollerPinnedToBottom({ scrollHeight: 100, scrollTop: 78, clientHeight: 20 })).toBe(true);
-    expect(isThinkingScrollerPinnedToBottom({ scrollHeight: 100, scrollTop: 77, clientHeight: 20 })).toBe(false);
+    const firstReasoning = reasoningNode('reasoning-1', '第一行');
+    const { rerender } = render(<TurnCard turn={makeTurn([firstReasoning])} />);
+    const scroller = screen.getByTestId('thinking-digest').querySelector<HTMLElement>(
+      '.thinking-digest-scroller',
+    )!;
+    let scrollHeight = 100;
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, get: () => scrollHeight });
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, get: () => 20 });
+
+    scroller.scrollTop = 78;
+    fireEvent.scroll(scroller);
+    scrollHeight = 120;
+    rerender(<TurnCard turn={makeTurn([{ ...firstReasoning, reasoning: '第一行\n第二行' }])} />);
+    expect(scroller.scrollTop).toBe(120);
+
+    scroller.scrollTop = 97;
+    fireEvent.scroll(scroller);
+    scrollHeight = 140;
+    rerender(<TurnCard turn={makeTurn([{ ...firstReasoning, reasoning: '第一行\n第二行\n第三行' }])} />);
+    expect(scroller.scrollTop).toBe(97);
   });
 });

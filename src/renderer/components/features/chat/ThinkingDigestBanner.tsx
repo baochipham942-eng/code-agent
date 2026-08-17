@@ -51,7 +51,7 @@ export function getHasNonThinkingContentAfterThinking(
   ));
 }
 
-export function isThinkingScrollerPinnedToBottom(
+function isThinkingScrollerPinnedToBottom(
   scroller: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'>,
   threshold = 2,
 ): boolean {

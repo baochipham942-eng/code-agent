@@ -16,6 +16,8 @@ export interface PlanApprovalRecord {
   status: PlanApprovalStatus;
   originalPlan: string;
   steps: PlanApprovalStep[];
+  removedSteps?: PlanApprovalStep[];
+  reordered?: boolean;
   decidedAt?: number;
   feedback?: string;
 }

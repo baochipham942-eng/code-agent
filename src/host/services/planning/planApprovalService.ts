@@ -32,20 +32,28 @@ function requiredId(value: unknown, field: string): string {
   return value.trim();
 }
 
-function normalizeSteps(rawSteps: PlanApprovalStep[] | undefined): PlanApprovalStep[] {
+function normalizeSteps(
+  rawSteps: PlanApprovalStep[] | undefined,
+  originalSteps: readonly PlanApprovalStep[],
+): PlanApprovalStep[] {
   if (!Array.isArray(rawSteps) || rawSteps.length === 0 || rawSteps.length > MAX_PLAN_STEPS) {
     throw new PlanApprovalError('INVALID_STEPS', `steps must contain 1-${MAX_PLAN_STEPS} items`);
   }
+  const originalById = new Map(originalSteps.map((step) => [step.id, step]));
+  const seenIds = new Set<string>();
   return rawSteps.map((step, index) => {
     const content = typeof step?.content === 'string' ? step.content.trim() : '';
     if (!content || content.length > MAX_STEP_LENGTH) {
       throw new PlanApprovalError('INVALID_STEPS', `steps[${index}].content is invalid`);
     }
-    const originalContent = typeof step.originalContent === 'string' && step.originalContent.trim()
-      ? step.originalContent.trim()
-      : content;
+    const id = typeof step.id === 'string' && step.id.trim() ? step.id.trim() : `step-${index + 1}`;
+    if (seenIds.has(id)) {
+      throw new PlanApprovalError('INVALID_STEPS', `steps[${index}].id is duplicated`);
+    }
+    seenIds.add(id);
+    const originalContent = originalById.get(id)?.content ?? '';
     return {
-      id: typeof step.id === 'string' && step.id.trim() ? step.id.trim() : `step-${index + 1}`,
+      id,
       content,
       originalContent,
       ...(content !== originalContent ? { edited: true } : {}),
@@ -132,8 +140,24 @@ export async function resolvePlanApproval(
   const decidedAt = Date.now();
 
   if (normalizedRequest.decision === 'approve') {
-    const steps = normalizeSteps(normalizedRequest.steps);
-    const approval: PlanApprovalRecord = { ...target.approval, status: 'approved', steps, decidedAt };
+    const steps = normalizeSteps(normalizedRequest.steps, target.approval.steps);
+    const submittedIds = new Set(steps.map((step) => step.id));
+    const removedSteps = target.approval.steps.filter((step) => !submittedIds.has(step.id));
+    const originalRetainedOrder = target.approval.steps
+      .filter((step) => submittedIds.has(step.id))
+      .map((step) => step.id);
+    const submittedRetainedOrder = steps
+      .filter((step) => target.approval.steps.some((original) => original.id === step.id))
+      .map((step) => step.id);
+    const reordered = originalRetainedOrder.some((id, index) => submittedRetainedOrder[index] !== id);
+    const approval: PlanApprovalRecord = {
+      ...target.approval,
+      status: 'approved',
+      steps,
+      ...(removedSteps.length > 0 ? { removedSteps } : {}),
+      ...(reordered ? { reordered: true } : {}),
+      decidedAt,
+    };
     const tasks = replaceTasksAtomically(normalizedRequest.sessionId, steps.map((step) => step.content));
     await persistApproval(target.message, normalizedRequest.toolCallId, approval);
     deps.taskManager.emitAgentEventForSession(normalizedRequest.sessionId, {

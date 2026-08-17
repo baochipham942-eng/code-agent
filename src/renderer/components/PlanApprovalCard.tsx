@@ -60,6 +60,7 @@ export const PlanApprovalEvidence: React.FC<{ approval: PlanApprovalRecord }> = 
         {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         {approved && <Check className="h-3.5 w-3.5" />}
         <span className="font-medium">{summary}</span>
+        {approval.reordered && <span className="text-[10px] text-badge-warning">{t.planApproval.reordered}</span>}
         <span className="ml-auto text-[10px] text-zinc-500">{t.planApproval.evidenceHint}</span>
       </button>
       {expanded && (
@@ -73,6 +74,13 @@ export const PlanApprovalEvidence: React.FC<{ approval: PlanApprovalRecord }> = 
                   {t.planApproval.changed}
                 </span>
               )}
+            </li>
+          ))}
+          {approval.removedSteps?.map((step) => (
+            <li key={`removed-${step.id}`} className="flex gap-2 text-xs leading-5 text-zinc-600">
+              <span className="w-4 shrink-0" />
+              <span className="min-w-0 flex-1 line-through">{step.content}</span>
+              <span className="shrink-0 text-[10px] text-badge-danger">{t.planApproval.removed}</span>
             </li>
           ))}
         </ol>

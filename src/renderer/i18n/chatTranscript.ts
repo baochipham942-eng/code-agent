@@ -4,6 +4,8 @@
 // 拆出独立文件是为了让 zh.ts/en.ts 不撞 max-lines 棘轮（同 sessionReplay.ts 先例）。
 // ============================================================================
 
+import { turnDiffEn, turnDiffZh } from './turnDiff';
+
 export const chatTranscriptZh = {
 chat: {
   thinking: '正在思考…',
@@ -333,22 +335,7 @@ turnFeedback: {
   helpful: '这一轮回答有帮助',
   problem: '这一轮回答有问题',
 },
-turnDiff: {
-  filesEdited: '已编辑 {count} 个文件',
-  undo: '撤销',
-  undone: '已撤销',
-  undoFailed: '撤销失败',
-  undoAllTitle: '撤销本轮所有文件变更',
-  sessionRunning: '会话进行中',
-  noCheckpoint: '无可用 checkpoint',
-  undoToastFailed: '撤销文件变更失败：{message}',
-  confirmTitle: '撤销本轮文件变更？',
-  confirmMessage: '将回滚本轮对 {count} 个文件的全部修改，当前内容会被 checkpoint 覆盖。',
-  confirmAction: '撤销变更',
-  newFileBadge: '新建',
-  expandDiff: '展开改动',
-  collapseDiff: '收起改动',
-},
+turnDiff: turnDiffZh,
 
 // 会话里那行 Hooks：只说「哪个时机、是哪几个 hook、放行还是拦下」。
 // hook 的输出内容不在这里显示（契约层已无该字段）——它是任意文本，曾把整份记忆索引原文漏给用户。
@@ -894,22 +881,7 @@ turnFeedback: {
   helpful: 'This answer was helpful',
   problem: 'Something is wrong with this answer',
 },
-turnDiff: {
-  filesEdited: 'Edited {count} file(s)',
-  undo: 'Undo',
-  undone: 'Undone',
-  undoFailed: 'Undo failed',
-  undoAllTitle: 'Undo all file changes from this turn',
-  sessionRunning: 'Session in progress',
-  noCheckpoint: 'No checkpoint available',
-  undoToastFailed: 'Failed to undo file changes: {message}',
-  confirmTitle: 'Undo this turn’s file changes?',
-  confirmMessage: 'This rolls back all changes to {count} files from this turn; current contents will be overwritten by the checkpoint.',
-  confirmAction: 'Undo changes',
-  newFileBadge: 'new',
-  expandDiff: 'Expand diff',
-  collapseDiff: 'Collapse diff',
-},
+turnDiff: turnDiffEn,
 
 // Turn run status (TurnCard header chip + streaming state banner) — shared key set
 turnHooks: {

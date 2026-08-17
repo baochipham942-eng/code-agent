@@ -11,7 +11,6 @@ import type { TraceTurn } from '../../src/shared/contract/trace';
 import { projectTurns } from '../../src/renderer/hooks/useTurnProjection';
 import { applyStreamingMessageDeltasToProjection } from '../../src/renderer/utils/streamingProjectionOverlay';
 import { buildTurnFileChanges } from '../../src/renderer/utils/turnDiffSummary';
-import { diffLinesWithFastPath } from '../../src/renderer/utils/fastDiff';
 import { mergeMessageUpdates, type MessageUpdate } from '../../src/renderer/hooks/useMessageBatcher';
 import {
   getStreamingPerformanceSnapshot,
@@ -259,8 +258,6 @@ function buildReport(options: { deep: boolean }): BaselineReport {
   const streaming = makeStreamingMessages(999);
   const streamingProjection = projectTurns(streaming.messages, SESSION_ID, true, []);
   const diffTurn = makeDiffTurn(10, 500);
-  const rawOld = makeTextLines('raw-old', 5000, 0);
-  const rawNew = makeTextLines('raw-new', 5000, 10);
   const markdown = makeMarkdownWithCodeBlocks(10, 500);
   const streamingChunks: MessageUpdate[] = Array.from({ length: 200 }, (_, index) => ({
     type: 'append',
@@ -346,22 +343,6 @@ function buildReport(options: { deep: boolean }): BaselineReport {
       { iterations: options.deep ? 10 : 5 },
     ),
     benchmark(
-      'diffLines.5000-lines',
-      'Run the renderer diff-lines path for a 5000-line file pair.',
-      () => {
-        const changes = measureStreamingPerformanceTiming(
-          'stream.diff.lines_ms',
-          () => diffLinesWithFastPath(rawOld, rawNew),
-        );
-        return {
-          chunks: changes.length,
-          addedChunks: changes.filter((change) => change.added).length,
-          removedChunks: changes.filter((change) => change.removed).length,
-        };
-      },
-      { iterations: options.deep ? 10 : 3 },
-    ),
-    benchmark(
       'markdownHighlight.10x500-line-code-blocks',
       'Server-render ReactMarkdown with the current collapsed long-code preview path.',
       () => renderMarkdownWithHighlight(markdown),
@@ -385,7 +366,6 @@ function buildReport(options: { deep: boolean }): BaselineReport {
       streamingDeltaChars: streaming.delta.length,
       codeBlocks: { count: 10, linesPerBlock: 500 },
       diffFiles: { count: 10, linesPerFile: 500 },
-      rawDiffLines: 5000,
     },
     results,
     runtimeMetrics: getStreamingPerformanceSnapshot(),
@@ -420,7 +400,6 @@ function formatMarkdown(report: BaselineReport): string {
     `- Streaming delta chars: ${report.fixtures.streamingDeltaChars}`,
     `- Code blocks: ${JSON.stringify(report.fixtures.codeBlocks)}`,
     `- Diff files: ${JSON.stringify(report.fixtures.diffFiles)}`,
-    `- Raw diff lines: ${report.fixtures.rawDiffLines}`,
     '',
     '## Results',
     '',

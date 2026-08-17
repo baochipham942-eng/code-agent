@@ -159,7 +159,7 @@ describe('DeliverableCardList 卡面降噪', () => {
     expect(screen.getByRole('button', { name: '归档到资料库: 报告' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '更多: 报告' })).toBeTruthy();
     expect(screen.queryByText('Document · Write · Created')).toBeNull();
-    expect(screen.queryByText('已验证')).toBeNull();
+    expect(screen.queryByText('已就绪')).toBeNull();
     expect(screen.queryByText('质量通过')).toBeNull();
     expect(screen.queryByTestId('deliverable-evidence-status')).toBeNull();
     expect(container.querySelector('.lucide-eye')).toBeNull();
@@ -167,9 +167,9 @@ describe('DeliverableCardList 卡面降噪', () => {
 
   // 三种状态一个都不许漏到卡面上——只断言 verified 会让 unverified/failed 从别的分支漏出来。
   it.each([
-    ['verified', '已验证'],
-    ['unverified', '未验证'],
-    ['failed', '失败'],
+    ['verified', '已就绪'],
+    ['unverified', '未检查'],
+    ['failed', '有问题'],
   ] as const)('evidencePack.status=%s 时卡面仍不出现「%s」徽章', (status, label) => {
     render(<DeliverableCardList cards={[baseCard({
       status,

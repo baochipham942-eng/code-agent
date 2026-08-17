@@ -1,7 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type { QuickModelResult } from '../../src/host/model/quickModel';
 
 const runtime = vi.hoisted(() => ({
-  quickTask: vi.fn(async (..._args: unknown[]) => ({ content: 'NORMAL' })),
+  quickTask: vi.fn<(...args: unknown[]) => Promise<QuickModelResult>>(
+    async (..._args: unknown[]) => ({ success: true, content: 'NORMAL' }),
+  ),
   executeVoiceTool: vi.fn(async (..._args: unknown[]) => '已派发'),
   info: vi.fn(),
   warn: vi.fn(),
@@ -22,7 +25,7 @@ const makeGuard = (isCurrent: () => boolean = () => true) =>
   createVoiceSayDoGuard('voice-session-test', isCurrent);
 
 beforeEach(() => {
-  runtime.quickTask.mockReset().mockResolvedValue({ content: 'NORMAL' });
+  runtime.quickTask.mockReset().mockResolvedValue({ success: true, content: 'NORMAL' });
   runtime.executeVoiceTool.mockClear();
   runtime.info.mockClear();
   runtime.warn.mockClear();
@@ -47,7 +50,7 @@ describe('voice say/do guard（公共入口）', () => {
       expect(String(input)).toContain('只输出 SAY_GAP 或 NORMAL');
       expect(String(input)).toContain('帮我创建一个一点');
       expect(String(input)).toContain('MD 文件');
-      return { content: 'SAY_GAP' };
+      return { success: true, content: 'SAY_GAP' };
     });
 
     await guard.audit('马上帮你处理。', 'r2');
@@ -69,11 +72,11 @@ describe('voice say/do guard（公共入口）', () => {
   it('干预后同一轮不重复补派', async () => {
     const guard = makeGuard();
     guard.rememberUserTurn('帮我创建文件');
-    runtime.quickTask.mockResolvedValueOnce({ content: 'SAY_GAP' });
+    runtime.quickTask.mockResolvedValueOnce({ success: true, content: 'SAY_GAP' });
     await guard.audit('马上处理。', 'r1');
     expect(runtime.executeVoiceTool).toHaveBeenCalledTimes(1);
 
-    runtime.quickTask.mockResolvedValueOnce({ content: 'SAY_GAP' });
+    runtime.quickTask.mockResolvedValueOnce({ success: true, content: 'SAY_GAP' });
     await guard.audit('已经在做了。', 'r1-followup');
     expect(runtime.executeVoiceTool).toHaveBeenCalledTimes(1);
   });
@@ -88,35 +91,72 @@ describe('voice say/do guard（公共入口）', () => {
   it('审计期间来了更新的用户轮就丢弃旧判定，避免补派过期要求', async () => {
     const guard = makeGuard();
     guard.rememberUserTurn('帮我改文件');
-    let resolveClassify!: (value: { content: string }) => void;
+    let resolveClassify!: (value: { success: boolean; content: string }) => void;
     runtime.quickTask.mockImplementationOnce(
-      () => new Promise<{ content: string }>((done) => { resolveClassify = done; }),
+      () => new Promise<{ success: boolean; content: string }>((done) => { resolveClassify = done; }),
     );
     const audit = guard.audit('我开始修改。', 'r4');
     guard.rememberUserTurn('算了，先别改');
-    resolveClassify({ content: 'SAY_GAP' });
+    resolveClassify({ success: true, content: 'SAY_GAP' });
 
     await audit;
     expect(runtime.executeVoiceTool).not.toHaveBeenCalled();
   });
 
-  it('分类服务不可用时不干预并留下可查告警', async () => {
+  it.each([
+    ['rate_limited', { success: false, failureReason: 'rate_limited', status: 429, error: '429 code 1305' }],
+    ['server_error', { success: false, failureReason: 'server_error', status: 503, error: '503 overloaded' }],
+    ['empty_response', { success: false, failureReason: 'empty_response', error: 'empty response' }],
+    ['invalid_contract_output', { success: true, content: '我认为需要执行' }],
+  ] as const)('分类器 %s 时三条件兜底只补派一次，错误原因随 host_routed 入审计', async (reason, quickResult) => {
     const guard = makeGuard();
-    guard.rememberUserTurn('帮我跑测试');
-    runtime.quickTask.mockResolvedValueOnce({ content: '嗯，好的' });
+    guard.rememberUserTurn('请帮我创建测试.md，内容写你好');
+    runtime.quickTask.mockResolvedValue(quickResult);
 
-    await guard.audit('我现在跑。', 'r5');
+    await guard.audit('好的，我正在为你创建测试文件。', `fault-${reason}`);
+    await guard.audit('好的，我正在为你创建测试文件。', `fault-${reason}-duplicate`);
+
+    expect(runtime.executeVoiceTool).toHaveBeenCalledTimes(1);
+    expect(runtime.executeVoiceTool.mock.calls[0]?.[2]).toBe('host_routed');
+    expect(runtime.info).toHaveBeenCalledWith(
+      'voice say/do guard intervened',
+      expect.objectContaining({
+        action: 'host_routed_delegate_task',
+        decisionSource: 'deterministic_fallback',
+        classificationFailure: reason,
+      }),
+    );
+    expect(runtime.warn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['闲聊', '你好，今天心情怎么样', '我正在想怎么回答你'],
+    ['知识问答', 'MD 文件是什么', '我正在解释它的格式'],
+    ['追问', '请帮我创建一个文件', '你希望文件叫什么名字？'],
+    ['助手未声称执行', '麻烦你整理下载目录', '等你确认范围后我再动手'],
+  ])('分类器不可用时反例“%s”不触发确定性补派', async (_name, userText, assistantText) => {
+    const guard = makeGuard();
+    guard.rememberUserTurn(userText);
+    runtime.quickTask.mockResolvedValueOnce({
+      success: false,
+      failureReason: 'rate_limited',
+      status: 429,
+      error: '429 code 1305',
+    });
+
+    await guard.audit(assistantText, 'negative');
+
     expect(runtime.executeVoiceTool).not.toHaveBeenCalled();
     expect(runtime.warn).toHaveBeenCalledWith(
       'voice say/do guard unavailable',
-      expect.objectContaining({ action: 'no_intervention' }),
+      expect.objectContaining({ failureReason: 'rate_limited', action: 'no_intervention' }),
     );
   });
 
   it('会话已切换（isCurrent=false）时判定结果作废不补派', async () => {
     const guard = makeGuard(() => false);
     guard.rememberUserTurn('帮我建个文档');
-    runtime.quickTask.mockResolvedValueOnce({ content: 'SAY_GAP' });
+    runtime.quickTask.mockResolvedValueOnce({ success: true, content: 'SAY_GAP' });
 
     await guard.audit('马上建。', 'r6');
     expect(runtime.executeVoiceTool).not.toHaveBeenCalled();

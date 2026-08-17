@@ -20,5 +20,6 @@ Gates:
 - reception: the production arm holds all 10 half utterances; deleting the production reception rule must make the same gate fail;
 - terminal dispatch: at least 9/10 completed fragmented requests dispatch;
 - SAY_GAP: preserve the native upstream gap count, then require the production Host semantic-guard event chain to reduce final SAY_GAP to 0/10;
+- classifier fault injection: deterministically inject 429, 5xx, empty, and non-contract quick-model results; require one `host_routed` compensation for each and zero dispatch for four counterexamples;
 - interruption: production decision code keeps television speech and accepts addressed human barge-in;
 - approval: the real coordinator event-chain test proves a permission event produces one worth-hearing notice with an explicit allow/deny exit.

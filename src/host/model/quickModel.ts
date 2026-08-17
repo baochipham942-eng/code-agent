@@ -25,7 +25,22 @@ export interface QuickModelResult {
   content?: string;
   error?: string;
   authFailed?: boolean;
+  failureReason?: QuickModelFailureReason;
+  status?: number;
+  provider?: string;
+  model?: string;
+  attempts?: number;
 }
+
+export type QuickModelFailureReason =
+  | 'not_configured'
+  | 'limiter_unavailable'
+  | 'rate_limited'
+  | 'server_error'
+  | 'http_error'
+  | 'auth_failed'
+  | 'empty_response'
+  | 'transport_error';
 
 export interface QuickModelAuthFailure {
   provider: string;
@@ -136,71 +151,95 @@ function resolveRole(provider: string, model: string): QuickModelConfig | null {
  *  3) config 路径完全失败 → 兜底直连智谱官方（历史行为）
  *  4) 都拿不到 → null（调用方：intent 走关键词兜底，其余 quick 任务 skip）
  */
-function initializeQuickModel(): QuickModelConfig | null {
-  let resolved: QuickModelConfig | null = null;
+function initializeQuickModelCandidates(): QuickModelConfig[] {
+  const resolved: QuickModelConfig[] = [];
   try {
     const routing = getConfigService().getSettings().models.routing;
-    resolved = resolveRole(routing.fast.provider, routing.fast.model)
-      ?? resolveRole(routing.code.provider, routing.code.model);
+    const fast = resolveRole(routing.fast.provider, routing.fast.model);
+    const code = resolveRole(routing.code.provider, routing.code.model);
+    if (fast) resolved.push(fast);
+    if (code && !resolved.some((candidate) => (
+      candidate.provider === code.provider
+      && candidate.model === code.model
+      && candidate.apiKey === code.apiKey
+    ))) resolved.push(code);
   } catch (error) {
     logger.warn('Quick model config resolution failed, falling back to env', { error: String(error) });
   }
 
-  if (!resolved) {
+  if (resolved.length === 0) {
     const apiKey = process.env.ZHIPU_OFFICIAL_API_KEY || process.env.ZHIPU_API_KEY;
     if (apiKey && !isAuthBlacklisted('zhipu', DEFAULT_MODELS.quick, apiKey)) {
-      resolved = {
+      resolved.push({
         apiKey,
         baseUrl: MODEL_API_ENDPOINTS.zhipuOfficial,
         model: DEFAULT_MODELS.quick,
         provider: 'zhipu',
         disableThinking: false,
-      };
+      });
     }
   }
 
-  if (!resolved) {
+  const [primary] = resolved;
+  if (!primary) {
     logger.warn('Quick model unavailable: no fast-model key, no main-model key, no Zhipu key');
     lastResolvedLogKey = null;
-    return null;
+    return [];
   }
 
-  const logKey = `${resolved.provider}:${resolved.model}`;
+  const logKey = `${primary.provider}:${primary.model}`;
   if (logKey !== lastResolvedLogKey) {
     lastResolvedLogKey = logKey;
     logger.info('Quick model resolved', {
-      provider: resolved.provider,
-      model: resolved.model,
-      disableThinking: resolved.disableThinking,
+      provider: primary.provider,
+      model: primary.model,
+      disableThinking: primary.disableThinking,
     });
   }
   return resolved;
 }
 
-/**
- * Execute a quick task with the fast model
- *
- * @param prompt - The task prompt
- * @returns The result
- */
-export async function quickTask(
+function initializeQuickModel(): QuickModelConfig | null {
+  return initializeQuickModelCandidates()[0] ?? null;
+}
+
+function quickFailure(
+  config: QuickModelConfig,
+  failureReason: QuickModelFailureReason,
+  error: string,
+  extra: Pick<QuickModelResult, 'authFailed' | 'status'> = {},
+): QuickModelResult {
+  return {
+    success: false,
+    error,
+    failureReason,
+    provider: config.provider,
+    model: config.model,
+    ...extra,
+  };
+}
+
+function isRateLimitFailure(status: number, body: string): boolean {
+  return status === 429
+    || /(?:code\D*)?(?:1302|1305)|速率限制|访问量过大/u.test(body);
+}
+
+async function executeQuickAttempt(
+  config: QuickModelConfig,
   prompt: string,
-  maxTokens?: number,
+  effectiveMaxTokens: number,
   signal?: AbortSignal,
 ): Promise<QuickModelResult> {
-  const config = initializeQuickModel();
-  if (!config) {
-    return { success: false, error: 'Quick model not configured' };
-  }
-
-  const effectiveMaxTokens = maxTokens ?? 512;
-  // 对声明了并发上限的 provider（如智谱）走节流；与主模型路径共用同一限流器
   const limiter = getProviderLimiter(config.provider);
 
   try {
     await limiter?.acquire(signal);
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : String(error) };
+    return quickFailure(
+      config,
+      'limiter_unavailable',
+      error instanceof Error ? error.message : String(error),
+    );
   }
 
   try {
@@ -227,7 +266,6 @@ export async function quickTask(
 
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
-        // 拉黑该候选（本 key 指纹），下一次调用重解析时自动降到下一级
         quickAuthBlacklist.set(blacklistKey(config.provider, config.model, config.apiKey), Date.now());
         quickModelAuthFailure = {
           provider: config.provider,
@@ -240,17 +278,37 @@ export async function quickTask(
           model: config.model,
           status: response.status,
         });
-        return {
-          success: false,
-          error: `${response.status} 快模型鉴权失败：API Key 可能无效或已过期`,
-          authFailed: true,
-        };
+        return quickFailure(
+          config,
+          'auth_failed',
+          `${response.status} 快模型鉴权失败：API Key 可能无效或已过期`,
+          { authFailed: true, status: response.status },
+        );
       }
-      const text = await response.text();
-      if (response.status === 429 || text.includes('1302') || text.includes('速率限制')) {
+      const responseBody = await response.text();
+      if (isRateLimitFailure(response.status, responseBody)) {
         limiter?.onRateLimit();
+        return quickFailure(
+          config,
+          'rate_limited',
+          `${response.status} ${responseBody.slice(0, 200)}`,
+          { status: response.status },
+        );
       }
-      return { success: false, error: `${response.status} ${text.slice(0, 200)}` };
+      if (response.status >= 500 && response.status <= 599) {
+        return quickFailure(
+          config,
+          'server_error',
+          `${response.status} ${responseBody.slice(0, 200)}`,
+          { status: response.status },
+        );
+      }
+      return quickFailure(
+        config,
+        'http_error',
+        `${response.status} ${responseBody.slice(0, 200)}`,
+        { status: response.status },
+      );
     }
 
     quickModelAuthFailure = null;
@@ -258,18 +316,64 @@ export async function quickTask(
     const data: unknown = await response.json();
     const content = parseChatCompletionContent(data);
     if (content) {
-      return { success: true, content };
+      return { success: true, content, provider: config.provider, model: config.model };
     }
-    return { success: false, error: 'Empty response from quick model' };
+    return quickFailure(config, 'empty_response', 'Empty response from quick model');
   } catch (error) {
     logger.error('Quick task failed', { error });
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
+    return quickFailure(
+      config,
+      'transport_error',
+      error instanceof Error ? error.message : String(error),
+    );
   } finally {
     limiter?.release();
   }
+}
+
+/**
+ * Execute a quick task with the fast model
+ *
+ * @param prompt - The task prompt
+ * @returns The result
+ */
+export async function quickTask(
+  prompt: string,
+  maxTokens?: number,
+  signal?: AbortSignal,
+): Promise<QuickModelResult> {
+  const candidates = initializeQuickModelCandidates();
+  const [primary] = candidates;
+  if (!primary) {
+    return {
+      success: false,
+      error: 'Quick model not configured',
+      failureReason: 'not_configured',
+      attempts: 0,
+    };
+  }
+
+  const effectiveMaxTokens = maxTokens ?? 512;
+  // fast 过载/服务端异常时切 routing.code；只有一个候选时经同一 limiter/backoff 再试一次。
+  const attempts = candidates.length > 1 ? candidates.slice(0, 2) : [primary, primary];
+  for (const [index, config] of attempts.entries()) {
+    const result = await executeQuickAttempt(config, prompt, effectiveMaxTokens, signal);
+    const withAttempts = { ...result, attempts: index + 1 };
+    if (withAttempts.success) return withAttempts;
+    if (withAttempts.failureReason !== 'rate_limited' && withAttempts.failureReason !== 'server_error') {
+      return withAttempts;
+    }
+    const next = attempts[index + 1];
+    if (!next) return withAttempts;
+    logger.info('Quick task retrying after transient failure', {
+      failureReason: withAttempts.failureReason,
+      fromProvider: config.provider,
+      fromModel: config.model,
+      toProvider: next.provider,
+      toModel: next.model,
+    });
+  }
+  return quickFailure(primary, 'transport_error', 'Quick task ended without an attempt');
 }
 
 /**

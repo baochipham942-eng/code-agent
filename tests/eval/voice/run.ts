@@ -18,6 +18,7 @@ const ALL_SCENARIOS = [
   'reception_fragmentation',
   'terminal_dispatch',
   'say_gap',
+  'classifier_fault_injection',
   'interrupt_classification',
   'approval_notice',
 ] as const;
@@ -306,13 +307,13 @@ async function localApprovalReport(): Promise<ScenarioReport> {
   };
 }
 
-function localSayDoGuardTests(): number {
+function localSayDoGuardTests(pattern = '按语义判为说了没做后用最近用户轮经 host_routed 补派'): number {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'voice-eval-saydo-'));
   const vitestJson = path.join(tmpDir, 'vitest.json');
   const vitestBin = path.join(path.dirname(require.resolve('vitest/package.json')), 'vitest.mjs');
   const test = spawnSync(process.execPath, [
     vitestBin, 'run', 'tests/unit/voiceSayDoGuard.test.ts',
-    '-t', '按语义判为说了没做后用最近用户轮经 host_routed 补派',
+    '-t', pattern,
     '--reporter=json', `--outputFile=${vitestJson}`,
   ], { cwd: path.resolve(ROOT, '../../..'), encoding: 'utf8' });
   let passed: number;
@@ -324,6 +325,22 @@ function localSayDoGuardTests(): number {
   }
   fs.rmSync(tmpDir, { recursive: true, force: true });
   return test.status === 0 ? passed : 0;
+}
+
+function localClassifierFaultReport(): ScenarioReport {
+  const compensated = localSayDoGuardTests('分类器 .* 时三条件兜底');
+  const counterexamples = localSayDoGuardTests('分类器不可用时反例');
+  const pass = compensated === 4 && counterexamples === 4;
+  return {
+    name: 'classifier_fault_injection', mode: 'production-local', calls: 0, passed: pass,
+    baseline: '429/5xx/空返回/非合同输出各补派一次；闲聊/知识/追问/未声称执行零误派',
+    metrics: {
+      compensated_faults: compensated,
+      counterexamples_held: counterexamples,
+      paid_calls: 0,
+    },
+    failures: pass ? [] : [`compensated=${compensated}/4 counterexamples=${counterexamples}/4`],
+  };
 }
 
 function sha256(file: string) {
@@ -529,6 +546,7 @@ async function main() {
 
   if (options.selected.includes('interrupt_classification')) scenarioReports.push(await localInterruptReport());
   if (options.selected.includes('approval_notice')) scenarioReports.push(await localApprovalReport());
+  if (options.selected.includes('classifier_fault_injection')) scenarioReports.push(localClassifierFaultReport());
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const jsonPath = options.reportPath ? path.resolve(options.reportPath) : path.join(REPORTS, `${stamp}.json`);

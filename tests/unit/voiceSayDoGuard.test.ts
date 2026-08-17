@@ -6,6 +6,7 @@ const runtime = vi.hoisted(() => ({
     async (..._args: unknown[]) => ({ success: true, content: 'NORMAL' }),
   ),
   executeVoiceTool: vi.fn(async (..._args: unknown[]) => '已派发'),
+  queueAssistantItemDeletion: vi.fn((_itemId: string, _onDeleted: () => void) => true),
   info: vi.fn(),
   warn: vi.fn(),
 }));
@@ -22,24 +23,52 @@ vi.mock('../../src/host/services/infra/logger', () => ({
 import { createVoiceSayDoGuard } from '../../src/host/services/voice/voiceSayDoGuard';
 
 const makeGuard = (isCurrent: () => boolean = () => true) =>
-  createVoiceSayDoGuard('voice-session-test', isCurrent);
+  createVoiceSayDoGuard('voice-session-test', isCurrent, runtime.queueAssistantItemDeletion);
 
 beforeEach(() => {
   runtime.quickTask.mockReset().mockResolvedValue({ success: true, content: 'NORMAL' });
   runtime.executeVoiceTool.mockClear();
+  runtime.queueAssistantItemDeletion.mockClear().mockReturnValue(true);
   runtime.info.mockClear();
   runtime.warn.mockClear();
 });
 
 describe('voice say/do guard（公共入口）', () => {
-  it('本轮已经有工具调用时不再做语义审计', async () => {
+  it('有工具调用且无执行声称时照旧跳过，不做语义审计或上下文剔除', async () => {
     const guard = makeGuard();
     guard.rememberUserTurn('帮我创建一个文件');
     guard.rememberToolCall();
 
-    await guard.audit('我正在创建', 'r1');
+    await guard.audit('工具结果返回后我再告诉你。', 'r1', 'a1');
     expect(runtime.quickTask).not.toHaveBeenCalled();
     expect(runtime.executeVoiceTool).not.toHaveBeenCalled();
+    expect(runtime.queueAssistantItemDeletion).not.toHaveBeenCalled();
+  });
+
+  it('有工具调用且有执行声称时排队剔除 assistant item，并在真正删除后留审计事件', async () => {
+    const guard = makeGuard();
+    guard.rememberUserTurn('帮我创建一个文件');
+    guard.rememberToolCall();
+
+    await guard.audit('好的，我正在为你创建文件。', 'r-polluted', 'a-polluted');
+
+    expect(runtime.quickTask).not.toHaveBeenCalled();
+    expect(runtime.executeVoiceTool).not.toHaveBeenCalled();
+    expect(runtime.queueAssistantItemDeletion).toHaveBeenCalledWith('a-polluted', expect.any(Function));
+    expect(runtime.info).not.toHaveBeenCalled();
+
+    const onDeleted = runtime.queueAssistantItemDeletion.mock.calls[0]?.[1];
+    onDeleted?.();
+    expect(runtime.info).toHaveBeenCalledWith(
+      'voice say/do context pollution removed',
+      expect.objectContaining({
+        responseId: 'r-polluted',
+        assistantItemId: 'a-polluted',
+        summary: '本轮模型违规输出执行声称，已从上游对话上下文剔除',
+        violation: 'execution_claim_with_tool_call',
+        action: 'assistant_item_removed_from_upstream_context',
+      }),
+    );
   });
 
   it('按语义判为说了没做后用最近用户轮经 host_routed 补派', async () => {
@@ -85,7 +114,9 @@ describe('voice say/do guard（公共入口）', () => {
     const guard = makeGuard();
     guard.rememberUserTurn('这个文件要怎么命名比较好');
     await guard.audit('你想偏正式还是偏口语一点？', 'r3');
+    expect(runtime.quickTask).toHaveBeenCalledTimes(1);
     expect(runtime.executeVoiceTool).not.toHaveBeenCalled();
+    expect(runtime.queueAssistantItemDeletion).not.toHaveBeenCalled();
   });
 
   it('审计期间来了更新的用户轮就丢弃旧判定，避免补派过期要求', async () => {

@@ -178,6 +178,18 @@ describe('getVoiceCallTimeline', () => {
         }],
       },
       {
+        timestamp: new Date(START + 8500).toISOString(), level: 'info',
+        message: 'voice say/do context pollution removed',
+        data: [{
+          voiceSessionId: CALL_ID,
+          responseId: 'resp-polluted',
+          assistantItemId: 'item-polluted',
+          summary: '本轮模型违规输出执行声称，已从上游对话上下文剔除',
+          violation: 'execution_claim_with_tool_call',
+          action: 'assistant_item_removed_from_upstream_context',
+        }],
+      },
+      {
         // 别通电话的判定行不得混入
         timestamp: new Date(START + 9000).toISOString(), level: 'info',
         message: 'voice interrupt evidence',
@@ -187,9 +199,17 @@ describe('getVoiceCallTimeline', () => {
     const t = getVoiceCallTimeline(CALL_ID)!;
     expect(t.sections.decisions.events).toHaveLength(1);
     expect(t.sections.decisions.events[0]!.detail.tier).toBe('strong');
-    expect(t.sections.sayDo.events).toHaveLength(1);
+    expect(t.sections.sayDo.events).toHaveLength(2);
     expect(t.sections.sayDo.events[0]!.detail.action).toBe('host_routed_delegate_task');
     expect(t.sections.sayDo.events[0]!.detail.classificationFailure).toBe('rate_limited');
+    expect(t.sections.sayDo.events[1]).toMatchObject({
+      kind: 'voice say/do context pollution removed',
+      detail: {
+        summary: '本轮模型违规输出执行声称，已从上游对话上下文剔除',
+        violation: 'execution_claim_with_tool_call',
+        action: 'assistant_item_removed_from_upstream_context',
+      },
+    });
   });
 
   it('旧记录（无 voiceCallId）：日志段/费用/录音报 unavailable 并说明原因，字幕标窗推导', () => {

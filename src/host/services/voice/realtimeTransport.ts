@@ -24,12 +24,7 @@ import type {
   VoiceTransportHandle,
 } from '../../../shared/contract/voice';
 import { parseResponseUsage } from './realtimeUsage';
-import {
-  parseEvent,
-  resolveUpstreamUrlOverride,
-  responseIdOf,
-  upstreamAcceptedTools,
-} from './realtimeUpstream';
+import { parseEvent, resolveUpstreamUrlOverride, responseIdOf, upstreamAcceptedTools } from './realtimeUpstream';
 import {
   buildSessionUpdate,
   resolveTurnDetectionConfig,
@@ -38,11 +33,8 @@ import {
 import { createLogger } from '../infra/logger';
 import { getHttpsAgent } from '../../model/providers/providerHttp';
 import { recordVoiceToolCall, recordVoiceWatchdogTakeover } from './voiceTelemetry';
-import {
-  mayBeVoiceXmlFallback,
-  parseVoiceXmlToolFallback,
-  validateVoiceToolArguments,
-} from './voiceXmlToolFallback';
+import { mayBeVoiceXmlFallback, parseVoiceXmlToolFallback, validateVoiceToolArguments } from './voiceXmlToolFallback';
+import { createAssistantItemDeletionQueue } from './assistantContextSanitizer';
 
 const logger = createLogger('RealtimeVoice');
 const RESPONSE_IDLE_TIMEOUT_CODE = 'response_idle_timeout';
@@ -182,6 +174,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     // 与上面集合分开——那个还要给 stale done 隔离用，不能被吞错消费掉。
     let watchdogCancelBenignErrorBudget = 0;
     const cancellingResponseItemIds = new Map<string, string>();
+    const queuedAssistantItemDeletions = createAssistantItemDeletionQueue();
     let responseCreateQueued = false;
     let responseCreateInFlight = false;
     let queuedResponseInstructions = '';
@@ -517,6 +510,9 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         ws.send(JSON.stringify({ type: 'conversation.item.delete', item_id: itemId }));
       }
       cancellingResponseItemIds.clear();
+      queuedAssistantItemDeletions.flush((itemId) => {
+        ws.send(JSON.stringify({ type: 'conversation.item.delete', item_id: itemId }));
+      });
       ws.send(JSON.stringify({
         type: 'response.create',
         ...(sentResponseInstructions
@@ -927,6 +923,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
             cancellingResponseIds.clear();
             watchdogCancelledResponseIds.clear();
             cancellingResponseItemIds.clear();
+            queuedAssistantItemDeletions.clear();
             responseItemIds.clear();
             responseCreateQueued = false;
             responseCreateInFlight = false;
@@ -1060,6 +1057,9 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         queuedResponseInstructions = instructions?.trim() ?? '';
         queuedResponseToolChoice = toolChoice;
         sendResponseCreate();
+      },
+      queueAssistantItemDeletion(itemId: string, onDeleted: () => void) {
+        return ws.readyState === WebSocket.OPEN && queuedAssistantItemDeletions.queue(itemId, onDeleted);
       },
       injectItem(text: string, narrationId?: string) {
         // 与工具结果回灌同一套路：写进对话项后必须再发一次 response.create，

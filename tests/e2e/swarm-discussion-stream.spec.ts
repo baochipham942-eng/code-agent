@@ -39,7 +39,7 @@ async function emitSwarmEvent(
 async function ensureActiveSession(page: Page): Promise<string> {
   const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
   if (!(await activeSession.isVisible())) {
-    const newSessionBtn = page.getByRole('button', { name: '新会话' });
+    const newSessionBtn = page.getByRole('button', { name: '新任务' });
     await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
     await newSessionBtn.click();
   }

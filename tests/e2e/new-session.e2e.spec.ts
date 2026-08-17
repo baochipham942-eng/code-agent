@@ -47,7 +47,7 @@ async function getAuthToken(page: Page): Promise<string> {
 async function ensureActiveSession(page: Page): Promise<string> {
   const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
   if (!(await activeSession.isVisible())) {
-    const newSessionBtn = page.getByRole('button', { name: '新会话' });
+    const newSessionBtn = page.getByRole('button', { name: '新任务' });
     await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
     await newSessionBtn.click();
   }
@@ -65,7 +65,7 @@ async function ensureActiveSession(page: Page): Promise<string> {
 test('PoC: 点击新会话按钮, 出现 active session 和 chat 输入框', async ({ page }) => {
   await waitForAppReady(page);
 
-  const newSessionBtn = page.getByRole('button', { name: '新会话' });
+  const newSessionBtn = page.getByRole('button', { name: '新任务' });
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
 
@@ -82,7 +82,7 @@ test('PoC: 点击新会话按钮, 出现 active session 和 chat 输入框', asy
 test('PoC: 新会话空 composer 输入 slash 能打开统一 picker', async ({ page }) => {
   await waitForAppReady(page);
 
-  const newSessionBtn = page.getByRole('button', { name: '新会话' });
+  const newSessionBtn = page.getByRole('button', { name: '新任务' });
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
 
@@ -172,7 +172,7 @@ test('PoC: 应用 ready 后 token 已注入, SSE 通道接收 dev 事件', async
 test('PoC: 创建后新 session 出现在侧边栏', async ({ page }) => {
   await waitForAppReady(page);
 
-  const newSessionBtn = page.getByRole('button', { name: '新会话' });
+  const newSessionBtn = page.getByRole('button', { name: '新任务' });
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
 

@@ -928,6 +928,58 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     await handle.close();
   });
 
+  it('违规 assistant item 等到下一轮用户 ASR final 且 Host 请求回复后才从上下文删除', async () => {
+    const onDeleted = vi.fn();
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: vi.fn(),
+      onAudio: vi.fn(),
+    });
+    if (handle.kind !== 'relay' || !handle.queueAssistantItemDeletion) {
+      throw new Error('missing assistant item deletion queue');
+    }
+    const upstream = upstreams[upstreams.length - 1];
+    upstream.emit('message', JSON.stringify({
+      type: 'response.created',
+      response: { id: 'resp-polluted' },
+    }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.output_item.added',
+      response_id: 'resp-polluted',
+      item: { id: 'item-polluted' },
+    }));
+    upstream.emit('message', JSON.stringify({
+      type: 'response.done',
+      response: { id: 'resp-polluted' },
+    }));
+
+    expect(handle.queueAssistantItemDeletion('item-polluted', onDeleted)).toBe(true);
+    expect(upstream.sent.map((raw) => JSON.parse(raw)).filter((frame) =>
+      frame.type === 'conversation.item.delete',
+    )).toHaveLength(0);
+
+    upstream.emit('message', JSON.stringify({
+      type: 'conversation.item.input_audio_transcription.completed',
+      item_id: 'user-current',
+      transcript: '帮我写个周报',
+    }));
+    expect(upstream.sent.map((raw) => JSON.parse(raw)).filter((frame) =>
+      frame.type === 'conversation.item.delete',
+    )).toHaveLength(0);
+
+    handle.respond('当前用户 final');
+    expect(upstream.sent.map((raw) => JSON.parse(raw)).filter((frame) =>
+      frame.type === 'conversation.item.delete' || frame.type === 'response.create',
+    )).toEqual([
+      { type: 'conversation.item.delete', item_id: 'item-polluted' },
+      { type: 'response.create', response: { instructions: '当前用户 final' } },
+    ]);
+    expect(onDeleted).toHaveBeenCalledTimes(1);
+
+    await handle.close();
+  });
+
   it('已提交轮次持续哑火时先 nudge，再发一次性 notice；看门狗 response.create 不算注入', async () => {
     vi.useFakeTimers();
     const events: VoiceEvent[] = [];

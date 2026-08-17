@@ -181,7 +181,7 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
       >
         <div
           ref={scrollerRef}
-          className="thinking-digest-scroller ml-7 mt-1 space-y-2 overflow-y-auto text-[13px] leading-5 text-zinc-500"
+          className="thinking-digest-scroller ml-7 mt-1 space-y-1 overflow-y-auto text-[13px] leading-[1.4] text-zinc-500"
           onScroll={(event) => {
             shouldFollowBottomRef.current = isThinkingScrollerPinnedToBottom(event.currentTarget);
           }}
@@ -190,7 +190,8 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
           {segments.map((segment, index) => (
             <p key={segment.id} className="whitespace-pre-line font-mono">
               {segments.length > 1 ? `${index + 1}. ` : ''}
-              {segment.text}
+              {/* 思考是高速流式日志：连续空行压成单换行，否则 pre-line 保留的段落断让阅读割裂（爸 08-17 点名） */}
+              {segment.text.replace(/\n{2,}/g, '\n')}
             </p>
           ))}
         </div>

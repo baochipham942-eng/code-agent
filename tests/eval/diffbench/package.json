@@ -3,7 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@codemirror/merge": "6.12.2",
-    "@pierre/diffs": "1.3.5"
+    "@codemirror/merge": "6.12.2"
   }
 }

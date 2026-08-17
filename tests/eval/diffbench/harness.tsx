@@ -1,8 +1,8 @@
 import React from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import { createRoot } from 'react-dom/client';
 import { DiffView } from '../../../src/renderer/components/DiffView';
 
-type RendererId = 'current' | 'codemirror' | 'pierre';
+type RendererId = 'current' | 'codemirror';
 
 interface Fixture {
   id: string;
@@ -34,6 +34,7 @@ export interface HarnessResult {
   scrollHeight: number;
   logicalOldLines: number;
   logicalNewLines: number;
+  statsText: string;
 }
 
 declare global {
@@ -53,9 +54,11 @@ const codeMirrorModules = requestedRenderer === 'codemirror'
       import('@codemirror/merge'),
     ])
   : null;
-const pierreModules = requestedRenderer === 'pierre'
-  ? await Promise.all([import('@pierre/diffs'), import('@pierre/diffs/react')])
-  : null;
+if (requestedRenderer === 'current') {
+  // The spike preloads each candidate before starting its mount timer. Prime the
+  // production lazy chunk here to keep the renderer comparison on that same boundary.
+  await import('../../../src/renderer/components/CodeMirrorDiffView');
+}
 
 function percentile(values: number[], quantile: number): number {
   if (values.length === 0) return 0;
@@ -124,21 +127,22 @@ async function waitForStableCompletion(
   }
 }
 
-function makeFile(name: string, contents: string, cacheKey: string) {
-  return { name, contents, lang: 'text' as const, cacheKey };
-}
-
 function mountCurrent(rootNode: HTMLElement, fixture: Fixture) {
+  const counts = fixture.provenance.counts as { added?: unknown; removed?: unknown } | undefined;
+  const stats = typeof counts?.added === 'number' && typeof counts.removed === 'number'
+    ? { added: counts.added, removed: counts.removed }
+    : undefined;
   const reactRoot = createRoot(rootNode);
   reactRoot.render(
     <DiffView
       oldText={fixture.oldText}
       newText={fixture.newText}
       fileName={`${fixture.id}.ts`}
+      stats={stats}
     />,
   );
   return {
-    isFirstPaint: () => rootNode.querySelector('tbody tr') !== null,
+    isFirstPaint: () => rootNode.querySelector('.cm-line') !== null,
     isComplete: () => rootNode.querySelector('[data-diff-render-complete="true"]') !== null,
     cleanup: () => reactRoot.unmount(),
   };
@@ -174,56 +178,8 @@ function mountCodeMirror(rootNode: HTMLElement, fixture: Fixture) {
   };
 }
 
-function PierreSurface({ fixture, onPostRender }: {
-  fixture: Fixture;
-  onPostRender: () => void;
-}) {
-  if (!pierreModules) throw new Error('Pierre modules were not preloaded');
-  const [{ parseDiffFromFile }, { FileDiff: PierreFileDiff }] = pierreModules;
-  const oldFile = fixture.oldText === ''
-    ? null
-    : makeFile(`${fixture.id}.txt`, fixture.oldText, `${fixture.id}:old`);
-  const newFile = makeFile(`${fixture.id}.txt`, fixture.newText, `${fixture.id}:new`);
-  const context = Math.max(countLines(fixture.oldText), countLines(fixture.newText)) + 1;
-  const fileDiff = parseDiffFromFile(oldFile, newFile, { context });
-  return (
-    <PierreFileDiff
-      fileDiff={fileDiff}
-      disableWorkerPool
-      options={{
-        diffStyle: 'unified',
-        diffIndicators: 'classic',
-        expandUnchanged: true,
-        lineDiffType: 'none',
-        overflow: 'scroll',
-        themeType: 'dark',
-        tokenizeMaxLength: 0,
-        tokenizeMaxLineLength: 0,
-        onPostRender,
-      }}
-    />
-  );
-}
-
-function mountPierre(rootNode: HTMLElement, fixture: Fixture) {
-  let postRenderCount = 0;
-  const reactRoot: Root = createRoot(rootNode);
-  reactRoot.render(
-    <PierreSurface fixture={fixture} onPostRender={() => { postRenderCount += 1; }} />,
-  );
-  const renderedLines = () => rootNode
-    .querySelector<HTMLElement>('diffs-container')
-    ?.shadowRoot
-    ?.querySelectorAll('[data-line]').length ?? 0;
-  return {
-    isFirstPaint: () => renderedLines() > 0,
-    isComplete: () => postRenderCount > 0 && renderedLines() > 0,
-    cleanup: () => reactRoot.unmount(),
-  };
-}
-
 function pickScrollTarget(renderer: RendererId, wrapper: HTMLElement): HTMLElement {
-  if (renderer === 'codemirror') {
+  if (renderer === 'current' || renderer === 'codemirror') {
     return wrapper.querySelector<HTMLElement>('.cm-scroller') ?? wrapper;
   }
   return wrapper;
@@ -248,19 +204,16 @@ async function animateScroll(target: HTMLElement, fraction: number): Promise<Scr
 }
 
 function renderedDomRows(renderer: RendererId, wrapper: HTMLElement): number {
-  if (renderer === 'current') return wrapper.querySelectorAll('tbody tr').length;
-  if (renderer === 'codemirror') return wrapper.querySelectorAll('.cm-line').length;
-  return wrapper
-    .querySelector<HTMLElement>('diffs-container')
-    ?.shadowRoot
-    ?.querySelectorAll('[data-line]').length ?? 0;
+  if (renderer === 'current' || renderer === 'codemirror') return wrapper.querySelectorAll('.cm-line').length;
+  return 0;
 }
 
 async function run(): Promise<void> {
   const query = new URLSearchParams(window.location.search);
   const renderer = query.get('renderer') as RendererId | null;
   const fixtureId = query.get('fixture');
-  if (!renderer || !['current', 'codemirror', 'pierre'].includes(renderer)) {
+  const keepMounted = query.get('keepMounted') === '1';
+  if (!renderer || !['current', 'codemirror'].includes(renderer)) {
     throw new Error(`Unknown renderer: ${String(renderer)}`);
   }
   if (!fixtureId || !/^[a-z0-9-]+$/.test(fixtureId)) {
@@ -275,14 +228,28 @@ async function run(): Promise<void> {
   const rootNode = document.querySelector<HTMLElement>('#root');
   if (!wrapper || !rootNode) throw new Error('Harness mount nodes are missing');
 
+  if (renderer === 'current') {
+    const primed = mountCurrent(rootNode, {
+      ...fixture,
+      oldText: 'module warmup',
+      newText: 'module warmup',
+    });
+    await waitUntil(
+      () => rootNode.textContent?.includes('No changes') === true
+        || rootNode.textContent?.includes('无变化') === true,
+      60_000,
+    );
+    primed.cleanup();
+    rootNode.replaceChildren();
+    await nextFrame();
+  }
+
   window.__DIFFBENCH_PHASE__ = 'mounting';
   const startedAt = performance.now();
   const sampler = startFrameSampler(startedAt);
   const mounted = renderer === 'current'
     ? mountCurrent(rootNode, fixture)
-    : renderer === 'codemirror'
-      ? mountCodeMirror(rootNode, fixture)
-      : mountPierre(rootNode, fixture);
+    : mountCodeMirror(rootNode, fixture);
 
   await waitUntil(mounted.isFirstPaint, 60_000);
   await nextFrame();
@@ -316,8 +283,9 @@ async function run(): Promise<void> {
     scrollHeight: scrollTarget.scrollHeight,
     logicalOldLines: countLines(fixture.oldText),
     logicalNewLines: countLines(fixture.newText),
+    statsText: rootNode.querySelector('.diff-stats')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
   };
-  mounted.cleanup();
+  if (!keepMounted) mounted.cleanup();
   window.__DIFFBENCH_RESULT__ = result;
   window.__DIFFBENCH_PHASE__ = 'done';
   document.body.dataset.diffbenchDone = 'true';

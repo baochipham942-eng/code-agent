@@ -7,7 +7,7 @@ import { chromium, type Browser, type CDPSession } from 'playwright';
 import { createServer, type ViteDevServer } from 'vite';
 import type { HarnessResult } from './harness';
 
-type RendererId = 'current' | 'codemirror' | 'pierre';
+type RendererId = 'current' | 'codemirror';
 
 interface MeasuredRun extends HarnessResult {
   repetition: number;
@@ -19,7 +19,7 @@ interface MeasuredRun extends HarnessResult {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(__dirname, '../../..');
 const resultsDir = path.join(__dirname, 'results');
-const renderers: RendererId[] = ['current', 'codemirror', 'pierre'];
+const renderers: RendererId[] = ['current', 'codemirror'];
 const fixtures = ['history-500', 'history-2000', 'history-5000', 'long-line-2400', 'pure-add-5000'];
 
 function selectedRenderers(): RendererId[] {
@@ -95,6 +95,7 @@ async function startServer(): Promise<{ server: ViteDevServer; url: string }> {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Neo Diffbench</title>
+    <link rel="stylesheet" href="/src/renderer/styles/global.css" />
     <style>
       :root {
         color-scheme: dark;
@@ -187,8 +188,12 @@ async function runCase(
   })();
 
   try {
+    const shouldCapture = Boolean(process.env.DIFFBENCH_SCREENSHOT_DIR)
+      && renderer === 'current'
+      && fixture === 'history-5000'
+      && repetition === 1;
     await page.goto(
-      `${baseUrl}/__diffbench.html?renderer=${renderer}&fixture=${fixture}`,
+      `${baseUrl}/__diffbench.html?renderer=${renderer}&fixture=${fixture}${shouldCapture ? '&keepMounted=1' : ''}`,
       { waitUntil: 'domcontentloaded', timeout: 30_000 },
     );
     const deadline = Date.now() + 120_000;
@@ -211,6 +216,22 @@ async function runCase(
     }));
     if (state.error || !state.result) {
       throw new Error(`${renderer}/${fixture} failed in ${state.phase}: ${state.error ?? 'missing result'}`);
+    }
+    const screenshotDir = process.env.DIFFBENCH_SCREENSHOT_DIR;
+    if (screenshotDir && shouldCapture) {
+      fs.mkdirSync(screenshotDir, { recursive: true });
+      await page.locator('.cm-scroller').evaluate((node) => { node.scrollTop = 0; });
+      for (const theme of ['light', 'dark'] as const) {
+        await page.evaluate((nextTheme) => {
+          document.documentElement.setAttribute('data-theme', nextTheme);
+          document.documentElement.className = nextTheme;
+        }, theme);
+        await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+        await page.screenshot({
+          path: path.join(screenshotDir, `diff-5000-${theme}.png`),
+          clip: { x: 0, y: 0, width: 1180, height: 720 },
+        });
+      }
     }
     heapPeakMb = Math.max(heapPeakMb, await heapUsedMb(session));
     return {
@@ -314,7 +335,8 @@ async function main(): Promise<void> {
       longestFrame: 'mount 起点至 full render 完成期间相邻 requestAnimationFrame 的最大间隔。',
       memory: 'CDP Performance.getMetrics 的 JSHeapUsedSize，10ms 轮询；记录绝对峰值与相对 about:blank 基线增量。',
       scroll: '统一 720px 高 viewport，18 帧线性滚到中部，再 18 帧滚到底部；报告帧间隔 P95 与 max。',
-      fairness: '统一只读 unified 视图、展开全部上下文、关闭字级 diff 和语法高亮；能力差另列，不让附加能力污染主性能判断。',
+      fairness: '两者统一只读 unified、展开全部上下文、关闭字级 diff 与语法高亮；生产 current 仍保留行/chunk 高亮，折叠、双栏、字级能力由 UI 开关触发。',
+      lazyBoundary: '生产 current 在计时前仅预热懒加载模块和一个微型 editor；首开模块加载成本不计入 renderer mount，与 spike 候选预加载口径一致。',
     },
     fixtures: activeFixtures,
     aggregate: aggregate(runs, activeRenderers, activeFixtures),

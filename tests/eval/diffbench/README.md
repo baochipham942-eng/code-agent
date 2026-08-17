@@ -1,6 +1,6 @@
 # Neo diff renderer benchmark
 
-This harness compares the production `DiffView`, CodeMirror Merge, and `@pierre/diffs` in headless Chromium. It changes no production source.
+This harness compares the production `DiffView` with the isolated CodeMirror Merge baseline in headless Chromium.
 
 ## Fixtures
 
@@ -16,7 +16,7 @@ rtk proxy node tests/eval/diffbench/generate-fixtures.mjs
 
 ## Install and run
 
-Candidate packages are isolated under this directory and do not enter the production dependency graph.
+The baseline package remains isolated under this directory; production CodeMirror dependencies are declared at the repository root.
 
 ```bash
 rtk proxy npm ci --prefix tests/eval/diffbench
@@ -35,4 +35,4 @@ DIFFBENCH_FIXTURE=history-5000 \
 rtk proxy npx tsx tests/eval/diffbench/run.mts --warmups 1 --repetitions 1
 ```
 
-The primary comparison holds visible capability constant: read-only unified layout, all context expanded, word/character diff disabled, and syntax highlighting disabled. Capability differences are evaluated separately.
+The `codemirror` renderer preserves the spike baseline settings. The `current` renderer exercises production defaults, including collapsed unchanged sections and inline changes.

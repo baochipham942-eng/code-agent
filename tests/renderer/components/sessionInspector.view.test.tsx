@@ -252,46 +252,6 @@ describe('B · 层1 撤 token 数字，只报异常', () => {
   });
 });
 
-describe('C · 进行中活行', () => {
-  it('未 settle 轮显示活行与步进；settle 后原地转常规轮行，不重复渲染', async () => {
-    traceApi.read = readWith([
-      event('inference', { inputTokens: 10, outputTokens: 5 }, 1, 1000),
-      event('tool_dispatch', { toolName: 'Bash', success: true, durationMs: 5, error: null, fromCache: false }, 1, 1100),
-      event('tool_dispatch', { toolName: 'Bash', success: true, durationMs: 5, error: null, fromCache: false }, 1, 1200),
-    ]);
-    traceApi.tails = [
-      {
-        sessionId: 'session_test',
-        state: 'present',
-        events: [outcome('verified', 'completed', 2000)],
-        skippedLines: 0,
-        cursor: 2000,
-      },
-    ];
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      render(<SessionInspector />);
-      // 活行：呼吸点 + 「正在…（第 2 步）」
-      const live = await screen.findByTestId('inspector-live-turn');
-      expect(live.textContent).toContain('第 1 轮');
-      expect(live.textContent).toContain('进行中');
-      expect(live.textContent).toContain('第 2 步');
-      expect(screen.getByTestId('inspector-live-dot')).not.toBeNull();
-      expect(screen.queryByTestId('inspector-turn')).toBeNull();
-      // settle：tail 推入印章，活行原地转常规轮行
-      await vi.advanceTimersByTimeAsync(2600);
-      await waitFor(() => {
-        expect(screen.queryByTestId('inspector-live-turn')).toBeNull();
-      });
-      const turns = screen.getAllByTestId('inspector-turn');
-      expect(turns).toHaveLength(1);
-      expect(screen.getByTestId('inspector-stamp').dataset.verdict).toBe('verified');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
 describe('D · 层2 per-call 推理调用分卡', () => {
   const manifest = (requestId: string, model: string, ts: number) =>
     event('request_manifest', {

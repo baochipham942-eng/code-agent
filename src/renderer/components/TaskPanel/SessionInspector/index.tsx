@@ -5,7 +5,9 @@
 //   层1 人话时间线：每轮一行「读了什么 / 做了什么 / 结局如何」，轮头显示印章
 //     （verified=完成有据 / self_claimed=自称完成 / n_a 按终态说人话）。
 //     N-LEDGER-UX1 加法：A 汇总句可展开逐条明细、B 层1 撤 token 数字只报异常
-//     黄条（甲口径）、C 未 settle 轮活行（settle 后原地转常规轮行）——见 turnRow.tsx。
+//     黄条（甲口径）——见 turnRow.tsx。
+//     （UX1-C 进行中活行未随本批交付：轮内事件只在 run 收尾整块落盘，
+//       「写入侧不动」边界内 tail 看不到未 settle 轮，详见 UX1 证据档。）
 //   层2 DevTools：点开任一轮——模型真实请求还原（manifest 三态：有清单→还原视图 /
 //     存量会话无清单→「不可回放」/ 清单降级→如实标注）、逐 step 工具调用与裁决、
 //     per-call 推理调用分卡（含 cacheRead；无 inference 细分降级轮级汇总）
@@ -31,7 +33,7 @@ import {
   segmentTurns,
   type AssemblyModel,
 } from './model';
-import { LiveTurnRow, TurnRow } from './turnRow';
+import { TurnRow } from './turnRow';
 
 const TAIL_POLL_MS = 2500;
 
@@ -206,14 +208,9 @@ export const SessionInspector: React.FC = () => {
           </div>
         ) : (
           <div className="divide-y divide-white/[0.04]" data-testid="inspector-timeline">
-            {segments.map((segment) =>
-              // C：未 settle 的当前轮渲染活行；settle 后同 key 位置转为常规轮行
-              segment.inProgress ? (
-                <LiveTurnRow key={`${segment.index}-${segment.startedAt ?? 0}`} segment={segment} />
-              ) : (
-                <TurnRow key={`${segment.index}-${segment.startedAt ?? 0}`} segment={segment} />
-              ),
-            )}
+            {segments.map((segment) => (
+              <TurnRow key={`${segment.index}-${segment.startedAt ?? 0}`} segment={segment} />
+            ))}
           </div>
         )}
       </section>

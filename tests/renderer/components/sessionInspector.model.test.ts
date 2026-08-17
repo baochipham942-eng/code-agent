@@ -227,20 +227,6 @@ describe('B · 层1 token 异常判定（甲口径：> 其余轮均值×3 且 > 
   });
 });
 
-describe('C · 活行数据（lastToolBucket）', () => {
-  it('进行中段带最新工具桶；无工具为 null', () => {
-    const segments = segmentTurns([
-      event('inference', { inputTokens: 1, outputTokens: 1 }, 1, 1000),
-      event('tool_dispatch', { toolName: 'Bash', success: true, durationMs: 5, error: null, fromCache: false }, 1, 1100),
-    ]);
-    expect(segments[0].inProgress).toBe(true);
-    expect(segments[0].lastToolBucket).toBe('command');
-    expect(segments[0].toolDispatches).toHaveLength(1);
-    const idle = segmentTurns([event('inference', { inputTokens: 1, outputTokens: 1 }, 1, 1000)]);
-    expect(idle[0].lastToolBucket).toBeNull();
-  });
-});
-
 describe('D · 轮内 per-call 推理调用分卡', () => {
   const manifest = (requestId: string, model: string, ts: number) =>
     event('request_manifest', {

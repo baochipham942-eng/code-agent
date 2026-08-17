@@ -403,6 +403,11 @@ export type VoiceTransportHandle =
        */
       respond(instructions?: string, toolChoice?: 'auto' | 'required'): void;
       /**
+       * 将违规 assistant item 排队到下一次 Host 明确请求回复时删除。
+       * transport 必须等当前用户 ASR final 到达后，由调用方触发 respond，才可真正发删除帧。
+       */
+      queueAssistantItemDeletion?: (itemId: string, onDeleted: () => void) => boolean;
+      /**
        * 把一条外部消息塞进实时会话并让模型就它开口（发言人协议回流，W6-2）。
        *
        * 走会话项而不是改 instructions：instructions 是「你是谁」，一件活的结论是

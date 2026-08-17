@@ -9,6 +9,7 @@ export const capabilityHubZh = {
     tabPlugins: '插件',
     tabInventory: '能力清单',
     tabCandidates: '候选能力',
+    tabHistory: '装卸历史',
   },
   // 候选能力（N-CAP1 / F12）。文案纪律：这一区只出现「能力」，
   // 不许出现 插件 / plugin / manifest / cordis / 意图簇 这类实现概念。
@@ -39,6 +40,29 @@ export const capabilityHubZh = {
     hideFolded: '收起较少发生的',
     refresh: '刷新',
   },
+  // 装卸历史（N-LEDGER-P5 / P5B）。文案纪律同 F-25「说人话」：
+  // 不许出现 unit / lifecycle / trace / 账本 / turnTrace / rollback / batch / 批次 这类实现词。
+  capabilityHistory: {
+    title: '装卸历史',
+    intro: '这里记的是能力什么时候被装上、卸下、回滚或失败。只记账，不打扰——想回看才来。',
+    emptyTitle: '还没有装卸记录',
+    emptyText: '等你关掉再打开某个技能、或有能力装载失败时，这里会自己出现记录。',
+    // 有账本但一行都读不懂时用这句：不许和「还没有记录」长得一样（那是假绿）
+    emptyUnreadable: '有 {count} 条记录读不出来，先当没有记录处理。',
+    refresh: '刷新',
+    nsSkill: '技能',
+    nsTool: '工具',
+    nsPlugin: '插件',
+    nsConnector: '连接器',
+    nsExtension: '扩展',
+    actionLoaded: '装上了',
+    actionUnloaded: '卸下了',
+    actionRolledBack: '回滚了',
+    actionFailed: '失败了',
+    batchCount: '{count} 个能力',
+    showMembers: '展开名单',
+    hideMembers: '收起',
+  },
 };
 
 export const capabilityHubEn = {
@@ -52,6 +76,7 @@ export const capabilityHubEn = {
     tabPlugins: 'Plugins',
     tabInventory: 'Capability Inventory',
     tabCandidates: 'Candidates',
+    tabHistory: 'Load history',
   },
   capabilityCandidates: {
     title: 'Candidate capabilities',
@@ -79,5 +104,25 @@ export const capabilityHubEn = {
     showFolded: 'Show {count} less frequent',
     hideFolded: 'Hide less frequent',
     refresh: 'Refresh',
+  },
+  capabilityHistory: {
+    title: 'Load history',
+    intro: 'When capabilities were loaded, unloaded, rolled back, or failed. Logged only — it never interrupts you.',
+    emptyTitle: 'No records yet',
+    emptyText: 'Once you turn a skill off and back on, or a capability fails to load, records show up here on their own.',
+    emptyUnreadable: '{count} records could not be read — treating this as no records for now.',
+    refresh: 'Refresh',
+    nsSkill: 'Skill',
+    nsTool: 'Tool',
+    nsPlugin: 'Plugin',
+    nsConnector: 'Connector',
+    nsExtension: 'Extension',
+    actionLoaded: 'Loaded',
+    actionUnloaded: 'Unloaded',
+    actionRolledBack: 'Rolled back',
+    actionFailed: 'Failed',
+    batchCount: '{count} capabilities',
+    showMembers: 'Show names',
+    hideMembers: 'Show less',
   },
 };

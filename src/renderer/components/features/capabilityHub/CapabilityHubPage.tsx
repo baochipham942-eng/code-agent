@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { Blocks, Boxes, Lightbulb, Link2, Sparkles } from 'lucide-react';
+import { Blocks, Boxes, History, Lightbulb, Link2, Sparkles } from 'lucide-react';
 import { useAppStore, type CapabilityHubTab } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -16,6 +16,7 @@ const SkillsSettings = React.lazy(() => import('../settings/tabs/SkillsSettings'
 const MCPSettings = React.lazy(() => import('../settings/tabs/MCPSettings').then((m) => ({ default: m.MCPSettings })));
 const PluginsSettings = React.lazy(() => import('../settings/tabs/PluginsSettings').then((m) => ({ default: m.PluginsSettings })));
 const CapabilityCandidatesTab = React.lazy(() => import('./CapabilityCandidatesTab').then((m) => ({ default: m.CapabilityCandidatesTab })));
+const CapabilityLifecycleHistoryTab = React.lazy(() => import('./CapabilityLifecycleHistoryTab').then((m) => ({ default: m.CapabilityLifecycleHistoryTab })));
 
 const HUB_TABS: Array<{ key: CapabilityHubTab; icon: React.ReactNode; label: (t: ReturnType<typeof useI18n>['t']) => string }> = [
   { key: 'experts', icon: <Boxes className="h-4 w-4" />, label: (t) => t.capabilityHub.tabExperts },
@@ -23,6 +24,7 @@ const HUB_TABS: Array<{ key: CapabilityHubTab; icon: React.ReactNode; label: (t:
   { key: 'connectors', icon: <Link2 className="h-4 w-4" />, label: (t) => t.capabilityHub.tabConnectors },
   { key: 'plugins', icon: <Blocks className="h-4 w-4" />, label: (t) => t.capabilityHub.tabPlugins },
   { key: 'candidates', icon: <Lightbulb className="h-4 w-4" />, label: (t) => t.capabilityHub.tabCandidates },
+  { key: 'history', icon: <History className="h-4 w-4" />, label: (t) => t.capabilityHub.tabHistory },
 ];
 
 export const CapabilityHubPage: React.FC = () => {
@@ -50,6 +52,7 @@ export const CapabilityHubPage: React.FC = () => {
     : capabilityHubTab === 'connectors' ? <MCPSettings />
     : capabilityHubTab === 'plugins' && canAccessSettingsTab('plugins', accessSubject) ? <PluginsSettings />
     : capabilityHubTab === 'candidates' ? <CapabilityCandidatesTab />
+    : capabilityHubTab === 'history' ? <CapabilityLifecycleHistoryTab />
     : null;
 
   const activeTabLabel = (visibleTabs.find((tab) => tab.key === capabilityHubTab) ?? visibleTabs[0]).label(t);

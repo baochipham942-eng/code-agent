@@ -227,6 +227,30 @@ async function semanticChecks(page: Page): Promise<Record<string, unknown>[]> {
   return output;
 }
 
+async function captureShikiThemes(page: Page): Promise<Record<string, string>[]> {
+  const fixture = fixtures.find((candidate) => candidate.id === 'long-mixed-code')!;
+  const captures: Record<string, string>[] = [];
+  for (const theme of ['dark', 'light'] as const) {
+    await page.evaluate((dataTheme) => {
+      const root = document.documentElement;
+      root.setAttribute('data-theme', dataTheme);
+      root.classList.remove('light', 'dark', 'high-contrast-light', 'high-contrast-dark');
+      root.classList.add(dataTheme);
+    }, theme);
+    await page.evaluate((request) => window.mdswap.render(request), {
+      side: 'neo' as const,
+      content: fixture.content,
+      phase: 'static' as const,
+    });
+    await page.getByRole('button', { name: /展开全部/ }).click();
+    await page.locator('[data-code-preview="shiki"]').first().waitFor({ timeout: 5000 });
+    const name = `long-mixed-code-shiki-${theme}.png`;
+    await page.locator('#surface').screenshot({ path: path.join(screenshotDir, name) });
+    captures.push({ theme, screenshot: `screenshots/${name}` });
+  }
+  return captures;
+}
+
 await fs.mkdir(screenshotDir, { recursive: true });
 const semanticsOnly = process.argv.includes('--semantics-only');
 const previousPayload = semanticsOnly
@@ -258,6 +282,7 @@ try {
     }
   }
   const semantics = await semanticChecks(page);
+  const shikiThemeScreenshots = await captureShikiThemes(page);
   const payload = {
     metadata: {
       generatedAt: new Date().toISOString(),
@@ -271,6 +296,7 @@ try {
     fixtureLengths: fixtures.map(({ id, family, purpose, content }) => ({ id, family, purpose, chars: content.length, bytes: new TextEncoder().encode(content).length })),
     results,
     semantics,
+    shikiThemeScreenshots,
     consoleErrors,
   };
   await fs.writeFile(path.join(outputDir, 'results.json'), `${JSON.stringify(payload, null, 2)}\n`);

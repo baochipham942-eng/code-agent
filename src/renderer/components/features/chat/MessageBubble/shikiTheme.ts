@@ -8,7 +8,7 @@ export type ShikiThemeName =
 
 const DATA_THEME_FALLBACK = 'dark';
 
-export function getShikiThemeForDataTheme(theme: string | null): ShikiThemeName {
+function getShikiThemeForDataTheme(theme: string | null): ShikiThemeName {
   switch (theme) {
     case 'light':
       return 'one-light';

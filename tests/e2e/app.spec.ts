@@ -29,7 +29,7 @@ test('侧边栏显示', async ({ page }) => {
   await page.goto('/');
 
   // 侧边栏包含「新会话」按钮
-  const newSessionBtn = page.getByRole('button', { name: '新会话' });
+  const newSessionBtn = page.getByRole('button', { name: '新任务' });
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
 
   // 底部账号入口在未登录时显示「登录」，已登录时显示「用户菜单」。
@@ -60,7 +60,7 @@ test('可以新建会话', async ({ page }) => {
   await page.goto('/');
 
   // 点击「新会话」按钮
-  const newSessionBtn = page.getByRole('button', { name: '新会话' });
+  const newSessionBtn = page.getByRole('button', { name: '新任务' });
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
 
@@ -81,7 +81,7 @@ test('可以从侧边栏切换会话', async ({ page }) => {
   );
 
   if (sessionIds.length < 2) {
-    const newSessionBtn = page.getByRole('button', { name: '新会话' });
+    const newSessionBtn = page.getByRole('button', { name: '新任务' });
     await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
     await newSessionBtn.click();
     await expect(sessionItems.nth(1)).toBeVisible({ timeout: 10_000 });
@@ -183,7 +183,7 @@ test('TitleBar 按钮可点击', async ({ page }) => {
   await sidebarToggle.click();
 
   // 折叠后「新会话」按钮应该不可见
-  const newSessionBtn = page.getByRole('button', { name: '新会话' });
+  const newSessionBtn = page.getByRole('button', { name: '新任务' });
   await expect(newSessionBtn).not.toBeVisible({ timeout: 3_000 });
 
   // 再次点击展开

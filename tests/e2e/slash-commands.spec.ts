@@ -196,7 +196,7 @@ async function openAppWithCleanSession(page: Page, baseUrl: string) {
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
   await ssePromise;
 
-  const newSessionBtn = page.getByRole('button', { name: '新会话' });
+  const newSessionBtn = page.getByRole('button', { name: '新任务' });
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
 

@@ -28,7 +28,6 @@ import ipcService from '../../../../services/ipcService';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
-import { DeliverableStatusBadge } from '../../../DeliverableStatusBadge';
 
 interface Props {
   cards: DeliverableCardView[];
@@ -196,7 +195,6 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
         <div className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left">
           {iconForKind(card.kind)}
           <div className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-100">{card.title}</div>
-          <DeliverableStatusBadge status={card.evidencePack.status} testId="deliverable-evidence-status" />
         </div>
         {(archiveAction || overflowActions.length > 0) && (
           <div className="flex flex-shrink-0 items-center gap-0.5 pr-1.5">

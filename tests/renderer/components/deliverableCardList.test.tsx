@@ -135,8 +135,14 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe('DeliverableCardList 卡面证据', () => {
-  it('卡面保留文件名与动作，并直接亮出已有证据状态', () => {
+// 🔴 这一组断言是产品决策的机器化，不是实现细节的快照。
+// 爸 2026-08-16 看图拍板卡面降噪（#1208），2026-08-17 复述并给出更根本的理由：
+// **「已验证」完全是内部术语，用户看到卡片就该默认它是已验证的**，所以卡面不展示验证状态。
+// #1221 曾把本组断言整体反转（queryByText('已验证')).toBeNull() → getByTestId(...).toContain('已验证')
+// 并追加三个「卡面 badge 映射」用例，CI 因此全绿放行、降噪成果被静默推翻。
+// ⇒ 要改本组断言的方向，必须先拿到爸的新拍板并在 PR 里引用单号，不许顺手反转。
+describe('DeliverableCardList 卡面降噪', () => {
+  it('卡面只保留文件名与动作，不显示第二行、验证/质量徽标和眼睛图标', () => {
     const { container } = render(<DeliverableCardList cards={[baseCard({
       title: '报告',
       description: 'Document · Write · Created',
@@ -153,22 +159,25 @@ describe('DeliverableCardList 卡面证据', () => {
     expect(screen.getByRole('button', { name: '归档到资料库: 报告' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '更多: 报告' })).toBeTruthy();
     expect(screen.queryByText('Document · Write · Created')).toBeNull();
-    expect(screen.getByTestId('deliverable-evidence-status').textContent).toContain('已验证');
+    expect(screen.queryByText('已验证')).toBeNull();
     expect(screen.queryByText('质量通过')).toBeNull();
+    expect(screen.queryByTestId('deliverable-evidence-status')).toBeNull();
     expect(container.querySelector('.lucide-eye')).toBeNull();
   });
 
+  // 三种状态一个都不许漏到卡面上——只断言 verified 会让 unverified/failed 从别的分支漏出来。
   it.each([
     ['verified', '已验证'],
     ['unverified', '未验证'],
     ['failed', '失败'],
-  ] as const)('把 evidencePack.status=%s 映射到 %s 徽章', (status, label) => {
+  ] as const)('evidencePack.status=%s 时卡面仍不出现「%s」徽章', (status, label) => {
     render(<DeliverableCardList cards={[baseCard({
       status,
       evidencePack: { status, summary: label, refs: [] },
     })]} />);
 
-    expect(screen.getByTestId('deliverable-evidence-status').textContent).toContain(label);
+    expect(screen.queryByTestId('deliverable-evidence-status')).toBeNull();
+    expect(screen.queryByText(label)).toBeNull();
   });
 });
 

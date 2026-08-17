@@ -1,7 +1,7 @@
 import type { ToolCall, ToolResult } from '@shared/contract';
 
-export const ARTIFACT_FOLLOW_REFRESH_MS = 1_000;
-export const ARTIFACT_FOLLOW_INTERACTION_GRACE_MS = 3_000;
+const ARTIFACT_FOLLOW_REFRESH_MS = 1_000;
+const ARTIFACT_FOLLOW_INTERACTION_GRACE_MS = 3_000;
 
 const FOLLOWABLE_EXTENSIONS = new Set([
   'html', 'htm', 'md', 'mdx', 'markdown',

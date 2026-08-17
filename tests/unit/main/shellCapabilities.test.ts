@@ -43,6 +43,7 @@ describe('shell capabilities', () => {
     ['domain:surfaceExecution', 'getSnapshot'],
     ['domain:surfaceExecution', 'persistTerminalFrame'],
     ['domain:voice', 'reportFailure'],
+    ['domain:workspace', 'getFileMetadata'],
   ])('advertises newly registered handler %s/%s in the capability manifest', (domain, action) => {
     const supported = new Set(getShellCapabilityIds());
     expect(supported.has(makeShellCapabilityId(domain, action))).toBe(true);

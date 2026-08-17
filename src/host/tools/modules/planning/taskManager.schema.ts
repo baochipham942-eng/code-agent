@@ -1,10 +1,9 @@
 // Schema-only file (P1 Wave 3 — planning native migration)
 import type { ToolSchema } from '../../../protocol/tools';
+import { resolveProviderFamily } from '../../../prompts/providerVariants';
 import { TASK_EVIDENCE_PROPERTIES, TASK_STATUS_DESCRIPTION } from './taskUpdate.schema';
 
-export const taskManagerSchema: ToolSchema = {
-  name: 'TaskManager',
-  description: `维护本次会话的任务清单。写进去的 SessionTask 就是用户右侧任务面板看到的内容，也是你自己跨轮次的执行状态。
+export const TASK_MANAGER_DESCRIPTION_LONG = `维护本次会话的任务清单。写进去的 SessionTask 就是用户右侧任务面板看到的内容，也是你自己跨轮次的执行状态。
 
 ## 什么时候该用
 
@@ -54,7 +53,36 @@ export const taskManagerSchema: ToolSchema = {
 - 开工: { "action": "update", "taskId": "1", "status": "in_progress" }
 - 完成（必须带证据）: { "action": "update", "taskId": "1", "status": "completed", "completionEvidence": "跑了 npm test，42 passed；页面能正常跳转回首页" }
 - 卡住: { "action": "update", "taskId": "2", "status": "blocked", "blockedReason": "这个报表页要公司账号登录，我们拿不到" }
-- 批量推进: { "action": "patch", "tasks": [{ "taskId": "1", "status": "completed", "completionEvidence": "…" }, { "taskId": "2", "status": "in_progress" }] }`,
+- 批量推进: { "action": "patch", "tasks": [{ "taskId": "1", "status": "completed", "completionEvidence": "…" }, { "taskId": "2", "status": "in_progress" }] }`;
+
+export const TASK_MANAGER_DESCRIPTION_SHORT = `维护本次会话的任务清单。写进去的 SessionTask 就是用户右侧任务面板看到的内容，也是你自己跨轮次的执行状态。
+
+3 步以上 / 用户一次给了多件事 / 需要让用户看见进度的长活 → 建任务；一两步能做完的小事直接做，记账比干活贵。开工前标 in_progress，做完立刻标 completed。
+
+## 证据门（强制，与其他产品最大的不同）
+
+任务账本记的是"你声称做了什么"，绝不能用它覆盖真实的文件/git/测试结果。
+
+- \`status="completed"\` 必须带 \`completionEvidence\`：一句话写你实际核过什么。写不出来就说明还没验证，先去验证。子代理报成功不算证据。
+- \`status="blocked"\` 必须带 \`blockedReason\`，用人话讲卡在哪——看面板的是不懂技术的协作者，别贴 raw 报错。\`blocked\` 专指外部障碍；等前置任务用 \`addBlockedBy\`（任务仍是 pending）。
+- \`replace\` / \`patch\` 批量改计划时同样要带。
+
+任务标题写"要完成的结果"（接通数据流），不是工具调用日志（读取文件）。
+
+## Actions
+
+create / get / list / update（改状态与详情）/ replace（tasks[] 整体替换）/ patch（tasks[] 批量更新或新建）。replace 与 patch 会把开放任务归一为恰好一条 in_progress。
+
+例: { "action": "update", "taskId": "1", "status": "completed", "completionEvidence": "跑了 npm test，42 passed；页面能跳回首页" }`;
+
+export const taskManagerSchema: ToolSchema = {
+  name: 'TaskManager',
+  description: TASK_MANAGER_DESCRIPTION_LONG,
+  dynamicDescription: (ctx) => (
+    resolveProviderFamily(ctx?.provider, ctx?.model) === 'claude'
+      ? TASK_MANAGER_DESCRIPTION_SHORT
+      : TASK_MANAGER_DESCRIPTION_LONG
+  ),
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',

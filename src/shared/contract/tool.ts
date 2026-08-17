@@ -29,6 +29,11 @@ export type ToolTag =
  */
 export type ToolSource = 'builtin' | 'mcp' | 'dynamic';
 
+export interface ToolDescriptionContext {
+  readonly provider?: string;
+  readonly model?: string;
+}
+
 /**
  * 声明工具的文件写目标来自哪里，供路径 authority 在 dispatch 前统一裁决。
  * 这是 effect 元数据，不是工具名白名单；新增写能力必须声明自己的目标来源。
@@ -109,7 +114,7 @@ export interface ToolDefinition {
   mcpServer?: string;
 
   /** 动态描述生成器（优先于静态 description） */
-  dynamicDescription?: () => string;
+  dynamicDescription?: (ctx?: ToolDescriptionContext) => string;
 }
 
 export interface JSONSchema {

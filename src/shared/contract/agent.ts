@@ -381,11 +381,19 @@ export interface BackgroundTaskLedgerChangedData {
   sessionId?: string;
 }
 
+/** A file-producing tool resolved its real output path and is about to write. */
+export interface ArtifactWriteStartedData {
+  toolCallId: string;
+  toolName: string;
+  filePath: string;
+}
+
 export type AgentEvent =
   | { type: 'message'; data: Message }
   | { type: 'surface_execution'; data: SurfaceExecutionEventV1 }
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string } }
   | { type: 'tool_call_end'; data: ToolResult & { parentToolUseId?: string } }
+  | { type: 'artifact_write_started'; data: ArtifactWriteStartedData }
   | { type: 'permission_request'; data: PermissionRequest }
   | { type: 'model_decision'; data: ModelDecisionEventData }
   | { type: 'hook_trigger'; data: HookTriggerEventData }

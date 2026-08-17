@@ -223,3 +223,26 @@ describe('PreviewPanel 非 HTML 分支', () => {
     expect(screen.queryByPlaceholderText('这里改成…（回车发送）')).toBeNull();
   });
 });
+
+describe('PreviewPanel 三态工具栏', () => {
+  it('HTML 可在预览、只读源码、编辑三态间切换', async () => {
+    const tab = loadedTab({
+      path: '/tmp/report.html',
+      content: '<main>report</main>',
+      savedContent: '<main>report</main>',
+    });
+    useAppStore.setState({ previewTabs: [tab], activePreviewTabId: tab.id });
+    render(<PreviewPanel />);
+
+    fireEvent.click(screen.getByTestId('preview-mode-source'));
+    expect(useAppStore.getState().previewTabs[0].mode).toBe('source');
+    await waitFor(() => {
+      expect(screen.getByTestId('preview-mode-source').getAttribute('aria-pressed')).toBe('true');
+    });
+
+    fireEvent.click(screen.getByTestId('preview-mode-edit'));
+    expect(useAppStore.getState().previewTabs[0].mode).toBe('edit');
+    fireEvent.click(screen.getByTestId('preview-mode-preview'));
+    expect(useAppStore.getState().previewTabs[0].mode).toBe('preview');
+  });
+});

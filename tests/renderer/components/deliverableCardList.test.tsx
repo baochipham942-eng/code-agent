@@ -135,12 +135,13 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe('DeliverableCardList 卡面降噪', () => {
-  it('卡面只保留文件名与动作，不显示第二行、验证/质量徽标和眼睛图标', () => {
+describe('DeliverableCardList 卡面证据', () => {
+  it('卡面保留文件名与动作，并直接亮出已有证据状态', () => {
     const { container } = render(<DeliverableCardList cards={[baseCard({
       title: '报告',
       description: 'Document · Write · Created',
       status: 'verified',
+      evidencePack: { status: 'verified', summary: 'ok', refs: [] },
       quality: { status: 'passed', summary: 'ok' },
       secondaryActions: [
         { kind: 'archive-to-library', label: 'archive', path: '/workspace/report.md', title: 'report.md' },
@@ -152,9 +153,22 @@ describe('DeliverableCardList 卡面降噪', () => {
     expect(screen.getByRole('button', { name: '归档到资料库: 报告' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '更多: 报告' })).toBeTruthy();
     expect(screen.queryByText('Document · Write · Created')).toBeNull();
-    expect(screen.queryByText('已验证')).toBeNull();
+    expect(screen.getByTestId('deliverable-evidence-status').textContent).toContain('已验证');
     expect(screen.queryByText('质量通过')).toBeNull();
     expect(container.querySelector('.lucide-eye')).toBeNull();
+  });
+
+  it.each([
+    ['verified', '已验证'],
+    ['unverified', '未验证'],
+    ['failed', '失败'],
+  ] as const)('把 evidencePack.status=%s 映射到 %s 徽章', (status, label) => {
+    render(<DeliverableCardList cards={[baseCard({
+      status,
+      evidencePack: { status, summary: label, refs: [] },
+    })]} />);
+
+    expect(screen.getByTestId('deliverable-evidence-status').textContent).toContain(label);
   });
 });
 

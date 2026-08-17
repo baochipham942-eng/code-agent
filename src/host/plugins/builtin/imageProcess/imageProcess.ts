@@ -242,6 +242,17 @@ export async function executeImageProcess(
       : ctx.workingDir;
     const finalPath = params.output_path || path.join(outputDir, outputFileName);
 
+    if (ctx.currentToolCallId) {
+      ctx.emit({
+        type: 'artifact_write_started',
+        data: {
+          toolCallId: ctx.currentToolCallId,
+          toolName: schema.name,
+          filePath: finalPath,
+        },
+      });
+    }
+
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }

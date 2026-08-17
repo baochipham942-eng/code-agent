@@ -3,14 +3,17 @@ import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import type { DeliverableEvidenceStatus } from '@shared/contract';
 import { useI18n } from '../hooks/useI18n';
 
-export const DeliverableStatusBadge: React.FC<{ status: DeliverableEvidenceStatus }> = ({ status }) => {
+export const DeliverableStatusBadge: React.FC<{
+  status: DeliverableEvidenceStatus;
+  testId?: string;
+}> = ({ status, testId = 'preview-deliverable-status' }) => {
   const { t } = useI18n();
   const verified = status === 'verified';
   const failed = status === 'failed';
 
   return (
     <span
-      data-testid="preview-deliverable-status"
+      data-testid={testId}
       className={`inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${
         verified
           ? 'bg-emerald-500/12 text-badge-success'

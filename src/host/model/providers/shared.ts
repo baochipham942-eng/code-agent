@@ -938,6 +938,7 @@ export async function handleGeminiStream(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let fullContent = '';
+  let fullThinking = '';
   let buffer = '';
   const toolCalls: ToolCall[] = [];
 
@@ -979,8 +980,13 @@ export async function handleGeminiStream(
         const parts = chunk.candidates?.[0].content?.parts ?? [];
         for (const part of parts) {
           if (part.text) {
-            fullContent += part.text;
-            onStream({ type: 'text', content: part.text });
+            if (part.thought === true) {
+              fullThinking += part.text;
+              onStream({ type: 'reasoning', content: part.text });
+            } else {
+              fullContent += part.text;
+              onStream({ type: 'text', content: part.text });
+            }
           }
           if (part.functionCall) {
             const index = toolCalls.length;
@@ -1006,6 +1012,7 @@ export async function handleGeminiStream(
   return {
     type: toolCalls.length > 0 ? 'tool_use' : 'text',
     content: fullContent,
+    ...(fullThinking ? { thinking: fullThinking } : {}),
     toolCalls,
   };
 }

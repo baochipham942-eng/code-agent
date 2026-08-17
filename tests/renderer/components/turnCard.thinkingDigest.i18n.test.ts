@@ -65,7 +65,7 @@ describe('TurnCard — 思考折叠块 en 态接线（不中英混排）', () =>
 
     const html = renderToStaticMarkup(React.createElement(TurnCard, { turn, defaultExpanded: true }));
 
-    expect(html).toContain('Thinking · 2 segments');
+    expect(html).toContain('Thought for 1s · 2 segments');
     expect(html).toContain('title="Expand thinking"');
     expect(html).not.toContain('思考');
     expect(html).not.toContain('展开思考');

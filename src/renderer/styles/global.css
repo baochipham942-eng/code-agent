@@ -600,11 +600,41 @@ pre code {
   animation: streamingThinkingShimmer 1.8s linear infinite;
 }
 
+.thinking-digest-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+
+.thinking-digest-content > * {
+  min-height: 0;
+}
+
+.thinking-digest-content.is-expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.thinking-digest-scroller {
+  max-height: 12rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .streaming-thinking-shimmer {
     animation: none;
     background-image: none;
     color: var(--cc-muted);
+  }
+
+  .thinking-digest-content {
+    transition: none;
+  }
+
+  .thinking-digest-scroller {
+    scroll-behavior: auto !important;
   }
 }
 

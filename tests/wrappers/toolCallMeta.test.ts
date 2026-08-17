@@ -117,6 +117,36 @@ describe.each(metaShapes)('tool-call _meta chokepoint / $name', ({ value, semant
     expect(result.type).toBe('tool_use');
     expectStripped(result.toolCalls![0], semantic);
   });
+
+  it('forwards streaming Gemini thought summaries as reasoning deltas', async () => {
+    const payload = JSON.stringify({
+      candidates: [{
+        content: {
+          parts: [
+            { text: 'thought summary', thought: true },
+            { text: 'answer text' },
+          ],
+        },
+      }],
+    });
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(`data: ${payload}\n`));
+        controller.close();
+      },
+    });
+    const deltas: Array<{ type: string; content?: string }> = [];
+    const result = await handleGeminiStream(body, (delta) => {
+      if (typeof delta !== 'string') deltas.push(delta);
+    });
+
+    expect(deltas).toEqual([
+      { type: 'reasoning', content: 'thought summary' },
+      { type: 'text', content: 'answer text' },
+    ]);
+    expect(result.thinking).toBe('thought summary');
+    expect(result.content).toBe('answer text');
+  });
 });
 
 describe('schema-level narration routing', () => {

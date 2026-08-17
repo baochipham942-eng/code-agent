@@ -50,6 +50,10 @@ export const sessionInspectorZh = {
     },
   },
   tokenAnomaly: '这轮消耗明显偏高（点开看数字）。',
+  live: {
+    doing: '正在{activity}（第 {step} 步）',
+    waiting: '等待模型响应',
+  },
   devtools: {
     sectionLabel: '技术细节',
     requestTitle: '模型真实请求',
@@ -157,6 +161,10 @@ export const sessionInspectorEn: typeof sessionInspectorZh = {
     },
   },
   tokenAnomaly: 'This turn spent noticeably more than usual (expand for the numbers).',
+  live: {
+    doing: '{activity} (step {step})',
+    waiting: 'Waiting for the model',
+  },
   devtools: {
     sectionLabel: 'Technical details',
     requestTitle: 'Actual model request',

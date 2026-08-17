@@ -590,7 +590,7 @@ env block 在新 session 注入当前 git 状态，让"继续昨天的活"无需
 - **防重复**：已带 `SPILL_NOTICE_MARKER` 落盘提示的内容跳过二次落盘；该 marker 同时让 CompactionService 的 `compressToolResult` 在压缩后保留落盘提示
 - **路径消毒**：sessionId / toolName 经 `sanitizeSegment` 过滤，防 `..` 遍历
 
-关键文件：`src/host/utils/toolResultSpill.ts`，常量 `TOOL_RESULT_SPILL`（`src/shared/constants.ts`）。
+关键文件：`src/host/utils/toolResultSpill.ts`，常量 `TOOL_RESULT_SPILL`（`src/shared/constants/`）。
 
 ### 工具结果归档 + 自动回水（spill 演进，2026-06-24）
 

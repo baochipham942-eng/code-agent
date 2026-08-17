@@ -9,7 +9,6 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, '../../../src/renderer'),
       '@shared': path.resolve(__dirname, '../../../src/shared'),
-      '@pacing/convex-smooth': path.resolve(__dirname, '../../../node_modules/@convex-dev/agent/dist/react/useSmoothText.js'),
     },
   },
   server: { host: '127.0.0.1', port: 4178, strictPort: true },

@@ -11,10 +11,11 @@ import {
   InlineCode,
   MarkdownRenderer,
 } from '../../../src/renderer/components/features/chat/MessageBubble/messageContentParts';
-import { useSmoothText as useConvexSmoothText } from '@pacing/convex-smooth';
+// spike 阶段的 Convex 候选对拍已完成并入档（N-L5-PACING/SMOOTHSWAP 证据档）；
+// 算法已移植进 useSmoothStreamingText，临时包已卸载，'convex' 模式随之退役。
 import '../../../src/renderer/styles/global.css';
 
-export type PacingMode = 'smooth' | 'direct' | 'convex';
+export type PacingMode = 'smooth' | 'direct';
 export type PipelineMode = 'production' | 'comparison';
 
 export interface ProfilerSample {
@@ -106,13 +107,8 @@ function RenderedText({
   onDisplay: (length: number) => void;
 }) {
   const smooth = useSmoothStreamingText({ content, isStreaming });
-  const [convexDisplay, convexState] = useConvexSmoothText(content, { startStreaming: true });
   const direct = DirectText({ content });
-  const selected = mode === 'smooth'
-    ? smooth
-    : mode === 'convex'
-      ? { displayContent: convexDisplay, isAnimating: convexState.isStreaming }
-      : direct;
+  const selected = mode === 'smooth' ? smooth : direct;
   const markdown = shouldRenderStreamingContentAsMarkdown(selected.displayContent);
   const renderedContent = useThrottledStreamingContent(
     selected.displayContent,

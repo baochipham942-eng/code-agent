@@ -202,7 +202,7 @@ async function main() {
 
     const partB: RunSummary[] = [];
     for (const fixture of pacingFixtures) {
-      for (const mode of ['smooth', 'direct', 'convex'] as const) {
+      for (const mode of ['smooth', 'direct'] as const) {
         process.stdout.write(`[pacing] Part B ${fixture.id} ${mode}\n`);
         partB.push(await runOne(page, fixture, mode, 'comparison', true));
       }

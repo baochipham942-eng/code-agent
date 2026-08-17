@@ -19,8 +19,6 @@ interface StreamingIndicatorProps {
   onForceStop?: () => void;
   /** 正文已自带内联光标时（正在流式输出文字），状态槽隐去光标避免重复。 */
   showCaret?: boolean;
-  /** 当前正在接收思考/推理增量（尚无可见正文、也不是在等工具）。 */
-  isThinking?: boolean;
   /** 等待期具名：模型、子任务或用户审批。缺省时维持呼吸光标。 */
   waitingReason?: StreamingWaitingReason;
   /** 真实并发子任务数（当前回合 trace 里仍在运行的子 agent 阻塞类工具调用数，
@@ -110,7 +108,6 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
   runningToolStartTime,
   onForceStop,
   showCaret = true,
-  isThinking = false,
   waitingReason,
   subagentCount,
 }) => {
@@ -167,16 +164,6 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
 
   // active：仅一个呼吸光标 = 「还活着」，别无他物。正文正在流式时由正文自带光标，此处隐去。
   if (!showCaret) return null;
-
-  // 正在接收思考增量：扫光文字替代光标，思考阶段一结束（isThinking 转 false 或
-  // showCaret 转 false）这个分支就不再命中，不留残影。
-  if (isThinking) {
-    return (
-      <div className="py-1" aria-label={t.chat.thinking}>
-        <span className="streaming-thinking-shimmer text-xs font-medium">{t.chat.thinking}</span>
-      </div>
-    );
-  }
 
   // 具名等待（回响/编队信号）：点名在等谁，中性静态文字——比裸光标多一句交代，
   // 但依旧不放计时器：等待长短不该被演成焦虑。

@@ -82,6 +82,22 @@ describe('geminiWrapper / parseGeminiResponse', () => {
     expect(result.content).toBe('I cannot help with that.');
   });
 
+  it('routes Gemini thought summaries to thinking instead of visible answer text', () => {
+    const result = parseGeminiResponse({
+      candidates: [{
+        content: {
+          parts: [
+            { text: 'summary of the internal reasoning', thought: true },
+            { text: 'final answer' },
+          ],
+        },
+      }],
+    });
+
+    expect(result.thinking).toBe('summary of the internal reasoning');
+    expect(result.content).toBe('final answer');
+  });
+
   it('unknown_field_passthrough: tolerates inlineData + unknown fields', () => {
     const raw = {
       candidates: [
@@ -125,6 +141,13 @@ describe('geminiWrapper / parseGeminiStreamChunk', () => {
     };
     const chunk = parseGeminiStreamChunk(raw);
     expect(chunk?.candidates?.[0].content?.parts?.[0].text).toBe('streamed text');
+  });
+
+  it('preserves the thought discriminator on summary chunks', () => {
+    const chunk = parseGeminiStreamChunk({
+      candidates: [{ content: { parts: [{ text: 'thought summary', thought: true }] } }],
+    });
+    expect(chunk?.candidates?.[0].content?.parts?.[0].thought).toBe(true);
   });
 
   it('returns null on completely malformed chunk (hot path safe)', () => {

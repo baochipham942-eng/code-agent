@@ -11,7 +11,6 @@ import {
   Anchor,
   AlertTriangle,
   AudioLines,
-  Brain,
   ChevronRight,
   ChevronDown,
   Check,
@@ -37,10 +36,14 @@ import { TurnFeedback } from './TurnFeedback';
 import { TurnOutcomeBadge } from './TurnOutcomeBadge';
 import { ToolStepGroup } from './ToolStepGroup';
 import {
+  ThinkingDigestBanner,
+  getHasNonThinkingContentAfterThinking,
+  getTurnThinkingSegments,
+} from './ThinkingDigestBanner';
+import {
   groupAdjacentToolCalls,
   formatTurnDuration,
 } from '../../../utils/toolStepGrouping';
-import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 import {
   buildStreamingUiState,
   hasCancelledRunMarker,
@@ -228,6 +231,13 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     [turn.nodes],
   );
   const thinkingSegments = useMemo(() => getTurnThinkingSegments(turn), [turn]);
+  const activeThinkingSegmentId = isThinkingPhase
+    ? thinkingSegments[thinkingSegments.length - 1]?.id ?? null
+    : null;
+  const hasNonThinkingContentAfterThinking = useMemo(
+    () => getHasNonThinkingContentAfterThinking(turn, thinkingSegments),
+    [thinkingSegments, turn],
+  );
   // 投影层已经挑好了这一轮该被评价的那个节点（markFeedbackEligibleNodes），
   // 这里只借它的 messageId 当锚点，判定逻辑不搬也不复制一份。
   const feedbackAnchor = useMemo(() => {
@@ -401,10 +411,14 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {/* Middle content (folded: hide; expanded: show all except user) */}
         {!folded && (
           <>
-            {/* 一个回合内所有思考段合并成一行「思考」，不再按节点单列（产品拍板）。
-                2026-07-28 品质感打磨③：流式思考阶段由 StreamingIndicator 的扫光
-                「正在思考…」讲，digest 行让位，不与它并存成两行静态文本。 */}
-            {!isThinkingPhase && <ThinkingDigestBanner segments={thinkingSegments} />}
+            {/* 一个回合内所有思考段继续合并成一个横幅。流式 reasoning 自己承担唯一的
+                「正在思考」信号；底部 StreamingIndicator 在此阶段让位，避免双显。 */}
+            <ThinkingDigestBanner
+              segments={thinkingSegments}
+              activeSegmentId={activeThinkingSegmentId}
+              hasNonThinkingContentAfterThinking={hasNonThinkingContentAfterThinking}
+              turnEndTime={turn.endTime}
+            />
             {displayNodes.map((d, i) => {
               if (d.kind === 'tool_group') {
                 return (
@@ -470,8 +484,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               <StreamingIndicator
                 startTime={turn.startTime}
                 runningToolStartTime={runningToolStartTime}
-                showCaret={!lastNodeIsStreamingText}
-                isThinking={isThinkingPhase}
+                showCaret={!lastNodeIsStreamingText && !isThinkingPhase}
                 waitingReason={getStreamingWaitingReason(
                   turn.nodes,
                   streamingState.status,
@@ -490,7 +503,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             startTime={turn.startTime}
             runningToolStartTime={runningToolStartTime}
             showCaret={!lastNodeIsStreamingText}
-            isThinking={isThinkingPhase}
             waitingReason={getStreamingWaitingReason(
               turn.nodes,
               streamingState.status,
@@ -852,65 +864,6 @@ const SkillActivityBanner: React.FC<{ activity: TurnSkillActivity }> = ({ activi
               <span className="min-w-0 truncate text-zinc-400">{item.label}</span>
               <span className="shrink-0">{getSkillActionLabel(item.action)}</span>
             </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-interface TurnThinkingSegment {
-  id: string;
-  text: string;
-}
-
-/**
- * 一个回合内所有思考段合并展示的数据源：按时序收集每个 assistant_text 节点上
- * 的 thinking/reasoning，过滤掉清洗后为空的。产品拍板：主流视野里一回合最多
- * 一行「思考」，不再按节点单列——这里只负责收集，展示在 ThinkingDigestBanner。
- */
-function getTurnThinkingSegments(turn: TraceTurn): TurnThinkingSegment[] {
-  const segments: TurnThinkingSegment[] = [];
-  for (const node of turn.nodes) {
-    if (node.type !== 'assistant_text') continue;
-    const text = sanitizeThinkingForDisplay(node.thinking || node.reasoning)?.trim();
-    if (text) segments.push({ id: node.id, text });
-  }
-  return segments;
-}
-
-const ThinkingDigestBanner: React.FC<{ segments: TurnThinkingSegment[] }> = ({ segments }) => {
-  const { t } = useI18n();
-  const [expanded, setExpanded] = useState(false);
-  if (segments.length === 0) return null;
-
-  const digestLabel = t.chat.thinkingDigest
-    + (segments.length > 1 ? t.chat.thinkingSegments.replace('{count}', String(segments.length)) : '');
-
-  return (
-    <div className="py-0.5 text-sm text-zinc-500">
-      <button
-        type="button"
-        className="flex min-w-0 items-center gap-2 rounded-md py-0.5 text-left text-zinc-500 transition-colors hover:text-zinc-300"
-        onClick={() => setExpanded((value) => !value)}
-        aria-expanded={expanded}
-        title={expanded ? t.chat.collapseThinking : t.chat.expandThinking}
-      >
-        <Brain className="h-4 w-4 shrink-0" />
-        <span className="min-w-0 truncate font-medium">{digestLabel}</span>
-        {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
-        )}
-      </button>
-      {expanded && (
-        <div className="ml-7 mt-1 space-y-2 text-[13px] leading-5 text-zinc-500">
-          {segments.map((segment, index) => (
-            <p key={segment.id} className="whitespace-pre-line font-mono">
-              {segments.length > 1 ? `${index + 1}. ` : ''}
-              {segment.text}
-            </p>
           ))}
         </div>
       )}

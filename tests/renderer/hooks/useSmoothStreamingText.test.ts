@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeSmoothStreamingFrame,
-  findSmoothStreamingSegmentEnd,
   shouldSyncSmoothStreamingText,
   SMOOTH_STREAMING_TEXT_DEFAULTS,
   type SmoothStreamingRateState,
-} from '../../../src/renderer/hooks/useSmoothStreamingText';
+} from '../../../src/renderer/hooks/smoothStreamingAlgorithm';
 
 function rateState(overrides: Partial<SmoothStreamingRateState> = {}): SmoothStreamingRateState {
   return {
@@ -107,13 +106,23 @@ describe('useSmoothStreamingText local CJK grouping', () => {
 
   it('bounds unpunctuated Chinese groups at ten characters', () => {
     const target = '中'.repeat(30);
-    expect(findSmoothStreamingSegmentEnd(target, 0)).toBe(
+    const frame = computeSmoothStreamingFrame({
+      state: rateState({ charsPerMs: 0.128 }),
+      targetContent: target,
+      now: 50,
+    });
+    expect(frame.displayContent.length).toBe(
       SMOOTH_STREAMING_TEXT_DEFAULTS.CJK_SEGMENT_MAX_CHARS,
     );
   });
 
   it('keeps Latin pacing character-based like upstream', () => {
-    expect(findSmoothStreamingSegmentEnd('hello world', 0)).toBe(1);
+    const frame = computeSmoothStreamingFrame({
+      state: rateState({ charsPerMs: 0.128 }),
+      targetContent: 'hello world',
+      now: 50,
+    });
+    expect(frame.displayContent).toBe('hello ');
   });
 });
 

@@ -3,7 +3,7 @@ import type { ToolSchema } from '../../../protocol/tools';
 import { resolveProviderFamily } from '../../../prompts/providerVariants';
 import { TASK_EVIDENCE_PROPERTIES, TASK_STATUS_DESCRIPTION } from './taskUpdate.schema';
 
-export const TASK_MANAGER_DESCRIPTION_LONG = `维护本次会话的任务清单。写进去的 SessionTask 就是用户右侧任务面板看到的内容，也是你自己跨轮次的执行状态。
+const TASK_MANAGER_DESCRIPTION_LONG = `维护本次会话的任务清单。写进去的 SessionTask 就是用户右侧任务面板看到的内容，也是你自己跨轮次的执行状态。
 
 ## 什么时候该用
 
@@ -55,7 +55,7 @@ export const TASK_MANAGER_DESCRIPTION_LONG = `维护本次会话的任务清单�
 - 卡住: { "action": "update", "taskId": "2", "status": "blocked", "blockedReason": "这个报表页要公司账号登录，我们拿不到" }
 - 批量推进: { "action": "patch", "tasks": [{ "taskId": "1", "status": "completed", "completionEvidence": "…" }, { "taskId": "2", "status": "in_progress" }] }`;
 
-export const TASK_MANAGER_DESCRIPTION_SHORT = `维护本次会话的任务清单。写进去的 SessionTask 就是用户右侧任务面板看到的内容，也是你自己跨轮次的执行状态。
+const TASK_MANAGER_DESCRIPTION_SHORT = `维护本次会话的任务清单。写进去的 SessionTask 就是用户右侧任务面板看到的内容，也是你自己跨轮次的执行状态。
 
 3 步以上 / 用户一次给了多件事 / 需要让用户看见进度的长活 → 建任务；一两步能做完的小事直接做，记账比干活贵。开工前标 in_progress，做完立刻标 completed。
 

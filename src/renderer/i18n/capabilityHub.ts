@@ -40,11 +40,11 @@ export const capabilityHubZh = {
     hideFolded: '收起较少发生的',
     refresh: '刷新',
   },
-  // 装卸历史（N-LEDGER-P5）。文案纪律同 F-25「说人话」：
-  // 不许出现 unit / lifecycle / trace / 账本 / turnTrace / rollback 这类实现词。
+  // 装卸历史（N-LEDGER-P5 / P5B）。文案纪律同 F-25「说人话」：
+  // 不许出现 unit / lifecycle / trace / 账本 / turnTrace / rollback / batch / 批次 这类实现词。
   capabilityHistory: {
     title: '装卸历史',
-    intro: '这里记的是每个能力什么时候被装上、卸下、回滚或失败。只记账，不打扰——想回看才来。',
+    intro: '这里记的是能力什么时候被装上、卸下、回滚或失败。只记账，不打扰——想回看才来。',
     emptyTitle: '还没有装卸记录',
     emptyText: '等你关掉再打开某个技能、或有能力装载失败时，这里会自己出现记录。',
     // 有账本但一行都读不懂时用这句：不许和「还没有记录」长得一样（那是假绿）
@@ -59,9 +59,9 @@ export const capabilityHubZh = {
     actionUnloaded: '卸下了',
     actionRolledBack: '回滚了',
     actionFailed: '失败了',
-    entryCount: '{count} 条记录',
-    showMore: '展开剩余 {count} 条',
-    hideMore: '收起',
+    batchCount: '{count} 个能力',
+    showMembers: '展开名单',
+    hideMembers: '收起',
   },
 };
 
@@ -107,7 +107,7 @@ export const capabilityHubEn = {
   },
   capabilityHistory: {
     title: 'Load history',
-    intro: 'When each capability was loaded, unloaded, rolled back, or failed. Logged only — it never interrupts you.',
+    intro: 'When capabilities were loaded, unloaded, rolled back, or failed. Logged only — it never interrupts you.',
     emptyTitle: 'No records yet',
     emptyText: 'Once you turn a skill off and back on, or a capability fails to load, records show up here on their own.',
     emptyUnreadable: '{count} records could not be read — treating this as no records for now.',
@@ -121,8 +121,8 @@ export const capabilityHubEn = {
     actionUnloaded: 'Unloaded',
     actionRolledBack: 'Rolled back',
     actionFailed: 'Failed',
-    entryCount: '{count} entries',
-    showMore: 'Show {count} more',
-    hideMore: 'Show less',
+    batchCount: '{count} capabilities',
+    showMembers: 'Show names',
+    hideMembers: 'Show less',
   },
 };

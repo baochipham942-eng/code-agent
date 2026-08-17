@@ -5,7 +5,7 @@ import { mkdir } from 'fs/promises';
 import { setTimeout as delay } from 'timers/promises';
 import { loadPlaywrightChromium } from '../../src/host/agent/runtime/browser/playwrightRuntime';
 
-const BASE = 'http://127.0.0.1:8186';
+const BASE = `http://127.0.0.1:${process.env.WEB_PORT ?? '8186'}`;
 const OUT = process.argv[2] ?? '/tmp/p5-accept';
 
 async function main(): Promise<void> {
@@ -60,16 +60,16 @@ async function main(): Promise<void> {
   await page.screenshot({ path: `${OUT}/03-history-tab.png`, fullPage: true });
 
   const summary = await page.evaluate(() => ({
-    groups: document.querySelectorAll('[data-testid="capability-history-group"]').length,
-    events: document.querySelectorAll('[data-testid="capability-history-event"]').length,
+    batches: document.querySelectorAll('[data-testid="capability-history-batch"]').length,
+    members: document.querySelectorAll('[data-testid="capability-history-batch-member"]').length,
     text: document.querySelector('[data-testid="capability-history-tab"]')?.textContent?.slice(0, 400) ?? '',
   }));
-  console.log(`历史 tab: groups=${summary.groups} events=${summary.events}`);
+  console.log(`历史 tab: batches=${summary.batches} members=${summary.members}`);
   console.log(`可见文本: ${summary.text}`);
 
   await browser.close();
-  if (summary.events === 0) {
-    console.error('FAIL: 历史 tab 没有事件——toggle 路径未触发装卸事件');
+  if (summary.batches === 0) {
+    console.error('FAIL: 历史 tab 没有批次——toggle 路径未触发装卸事件');
     process.exit(2);
   }
 }

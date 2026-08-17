@@ -4,7 +4,7 @@ import { mkdir } from 'fs/promises';
 import { setTimeout as delay } from 'timers/promises';
 import { loadPlaywrightChromium } from '../../src/host/agent/runtime/browser/playwrightRuntime';
 
-const BASE = 'http://127.0.0.1:8186';
+const BASE = `http://127.0.0.1:${process.env.WEB_PORT ?? '8186'}`;
 const OUT = process.argv[2] ?? '/tmp/p5-accept';
 
 async function main(): Promise<void> {
@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   await page.click('[data-testid="sidebar-capability-hub"]');
   await page.waitForSelector('[data-testid="capability-hub-tab-history"]', { timeout: 15_000 });
   await page.click('[data-testid="capability-hub-tab-history"]');
-  await page.waitForSelector('[data-testid="capability-history-event"]', { timeout: 15_000 });
+  await page.waitForSelector('[data-testid="capability-history-batch"]', { timeout: 15_000 });
   await delay(1200);
   await page.screenshot({ path: `${OUT}/04-history-tab-dark.png` });
   await browser.close();

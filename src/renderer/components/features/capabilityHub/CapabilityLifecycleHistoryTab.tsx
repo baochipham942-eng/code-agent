@@ -1,18 +1,20 @@
 // ============================================================================
-// 装卸历史（N-LEDGER-P5）—— 能力中心第 6 个 tab
+// 装卸历史（N-LEDGER-P5B）—— 能力中心第 6 个 tab
 // ----------------------------------------------------------------------------
 // 把 capability-runtime 账本里的 capability_lifecycle 四类事件
-// （loaded / unloaded / rolled_back / failed）按能力单元分组，只读时间线展示。
+// （loaded / unloaded / rolled_back / failed）按批次（时间簇）聚成一行一条，
+// 批内列能力名字，只读展示。
 //
 // 三条纪律（与候选能力 tab 同款）：
 //   1. 零打断：只有拉式——没有订阅、没有轮询、没有红点。挂载和用户点刷新各拉一次。
 //   2. 只读：本屏没有任何干预操作（不做装载/卸载/重试按钮）。
 //   3. 人话：UI 只出现「装上了 / 卸下了 / 回滚了 / 失败了」，
-//      unit / lifecycle / trace / 账本 / rollback 一个都不许进文案。
+//      unit / lifecycle / trace / 账本 / rollback / batch / 批次 一个都不许进文案。
 //
-// 噪声吸收：synchronizeSkillCapabilitySurface 任一技能签名变化就全量
-// unload + load（一次变更 = N 条 unloaded + N 条 loaded）。按能力分组 +
-// 组内默认只展开最近 3 条把这种爆发收进各自组里，不做全局大流水。
+// 噪声吸收（P5B 方案 B）：synchronizeSkillCapabilitySurface 任一技能签名变化
+// 就全量 unload + load（一次变更 = 一批 ~50 条 unloaded + 一批 ~50 条 loaded）。
+// 批次主轴把爆发聚成一行；多能力批次默认折叠，展开是名字的横向流式列表
+// （50 个名字约 3 行），绝不做成一个能力一行——那是把噪音搬回来。
 // ============================================================================
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -22,8 +24,7 @@ import {
   projectCapabilityLifecycleHistory,
   splitCapabilityKey,
   type CapabilityLifecycleAction,
-  type CapabilityLifecycleEntry,
-  type CapabilityLifecycleGroup,
+  type CapabilityLifecycleBatch,
 } from '../../../utils/capabilityLifecycleHistory';
 import { formatRelativeTime } from '../../../utils/i18nTime';
 import { useI18n } from '../../../hooks/useI18n';
@@ -34,8 +35,6 @@ import { HubTabHeader } from './HubTabHeader';
 
 /** 写侧 sessionId 字面量（skillCapabilitySurface.ts）：全量装卸历史恒落这一个会话账本 */
 const CAPABILITY_RUNTIME_SESSION = 'capability-runtime';
-/** 组内默认展开最近 3 条，其余折叠吸收 rebuild 爆发 */
-const DEFAULT_VISIBLE = 3;
 
 type HistoryText = ReturnType<typeof useI18n>['t']['capabilityHistory'];
 
@@ -60,82 +59,76 @@ function actionLabel(action: CapabilityLifecycleAction, text: HistoryText): stri
   return text.actionFailed;
 }
 
-interface EventRowProps {
-  entry: CapabilityLifecycleEntry;
+interface BatchRowProps {
+  batch: CapabilityLifecycleBatch;
   text: HistoryText;
   relativeTime: (ts: number) => string;
   absoluteTime: (ts: number) => string;
 }
 
-const EventRow: React.FC<EventRowProps> = ({ entry, text, relativeTime, absoluteTime }) => (
-  <li
-    data-testid="capability-history-event"
-    data-capability-key={entry.capabilityKey}
-    data-action={entry.action}
-    className="flex items-start gap-2.5 py-1.5"
-  >
-    <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${actionDot(entry.action)}`} />
-    <div className="min-w-0 flex-1">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-sm text-zinc-200">{actionLabel(entry.action, text)}</span>
-        <span className="shrink-0 text-xs text-zinc-500" title={absoluteTime(entry.ts)}>
-          {relativeTime(entry.ts)}
-        </span>
-      </div>
-      {/* failed 的 detail 是 host 的 error.message：原文展示，不翻译不加工 */}
-      {entry.detail ? (
-        <p className="mt-0.5 break-words text-xs text-zinc-500">{entry.detail}</p>
-      ) : null}
-    </div>
-  </li>
-);
-
-interface GroupCardProps {
-  group: CapabilityLifecycleGroup;
-  text: HistoryText;
-  relativeTime: (ts: number) => string;
-  absoluteTime: (ts: number) => string;
-}
-
-const GroupCard: React.FC<GroupCardProps> = ({ group, text, relativeTime, absoluteTime }) => {
+const BatchRow: React.FC<BatchRowProps> = ({ batch, text, relativeTime, absoluteTime }) => {
   const [expanded, setExpanded] = useState(false);
-  const visible = expanded ? group.entries : group.entries.slice(0, DEFAULT_VISIBLE);
-  const foldedCount = group.entries.length - DEFAULT_VISIBLE;
+  const label = actionLabel(batch.action, text);
+  const single = batch.capabilityKeys.length === 1;
   return (
     <section
-      data-testid="capability-history-group"
-      data-capability-key={group.capabilityKey}
+      data-testid="capability-history-batch"
+      data-action={batch.action}
+      data-count={batch.capabilityKeys.length}
       className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3"
     >
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="truncate text-sm font-medium text-zinc-100">
-          {capabilityDisplayName(group.capabilityKey, text)}
-        </h2>
-        <span className="shrink-0 text-xs text-zinc-500">
-          {text.entryCount.replace('{count}', String(group.entries.length))}
-        </span>
+      <div className="flex items-start gap-2.5">
+        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${actionDot(batch.action)}`} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-sm text-zinc-200">
+              {single
+                // 只有 1 个能力时名字直接写进行里，不废一步「1 个能力 + 展开」
+                ? `${label} · ${capabilityDisplayName(batch.capabilityKeys[0], text)}`
+                : `${label} ${text.batchCount.replace('{count}', String(batch.capabilityKeys.length))}`}
+            </span>
+            <span className="shrink-0 text-xs text-zinc-500" title={absoluteTime(batch.ts)}>
+              {relativeTime(batch.ts)}
+            </span>
+          </div>
+          {/* failed 的 detail 是 host 的 error.message：原文展示，不翻译不加工 */}
+          {single && batch.details[batch.capabilityKeys[0]] ? (
+            <p className="mt-0.5 break-words text-xs text-zinc-500">
+              {batch.details[batch.capabilityKeys[0]]}
+            </p>
+          ) : null}
+        </div>
       </div>
-      <ul className="mt-1 divide-y divide-zinc-800/60">
-        {visible.map((entry, index) => (
-          <EventRow
-            key={`${entry.ts}-${index}`}
-            entry={entry}
-            text={text}
-            relativeTime={relativeTime}
-            absoluteTime={absoluteTime}
-          />
-        ))}
-      </ul>
-      {foldedCount > 0 ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="mt-1"
-          onClick={() => setExpanded((open) => !open)}
-          data-testid="capability-history-fold-toggle"
-        >
-          {expanded ? text.hideMore : text.showMore.replace('{count}', String(foldedCount))}
-        </Button>
+      {!single ? (
+        <>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="mt-1"
+            onClick={() => setExpanded((open) => !open)}
+            data-testid="capability-history-fold-toggle"
+          >
+            {expanded ? text.hideMembers : text.showMembers}
+          </Button>
+          {expanded ? (
+            // 横向流式列表：50 个名字约 3 行；failed 的名字后面带自己的 detail 原文
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {batch.capabilityKeys.map((capabilityKey) => (
+                <span
+                  key={capabilityKey}
+                  data-testid="capability-history-batch-member"
+                  data-capability-key={capabilityKey}
+                  className="max-w-full break-words rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300"
+                >
+                  {capabilityDisplayName(capabilityKey, text)}
+                  {batch.details[capabilityKey] ? (
+                    <span className="text-zinc-500">{` — ${batch.details[capabilityKey]}`}</span>
+                  ) : null}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </>
       ) : null}
     </section>
   );
@@ -171,11 +164,11 @@ export const CapabilityLifecycleHistoryTab: React.FC = () => {
     [language],
   );
 
-  // 450 条量级的过滤+两轮排序，别每次 render 重算
+  // 450 条量级的过滤+排序+聚簇，别每次 render 重算
   const history = useMemo(
     () => (read?.state === 'present'
       ? projectCapabilityLifecycleHistory(read.events)
-      : { groups: [], unreadable: 0 }),
+      : { batches: [] as CapabilityLifecycleBatch[], unreadable: 0 }),
     [read],
   );
 
@@ -195,7 +188,7 @@ export const CapabilityLifecycleHistoryTab: React.FC = () => {
       />
       <p className="mb-3 text-xs text-zinc-500">{text.intro}</p>
 
-      {history.groups.length === 0 ? (
+      {history.batches.length === 0 ? (
         // 有账本但读不出来时说实话，别和「还没有记录」长得一样
         <EmptyState
           variant="panel"
@@ -206,10 +199,10 @@ export const CapabilityLifecycleHistoryTab: React.FC = () => {
         />
       ) : (
         <div className="space-y-2">
-          {history.groups.map((group) => (
-            <GroupCard
-              key={group.capabilityKey}
-              group={group}
+          {history.batches.map((batch) => (
+            <BatchRow
+              key={`${batch.action}-${batch.ts}-${batch.capabilityKeys.length}`}
+              batch={batch}
               text={text}
               relativeTime={relativeTime}
               absoluteTime={absoluteTime}

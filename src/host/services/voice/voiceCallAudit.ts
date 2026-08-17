@@ -140,6 +140,7 @@ const DECISION_LOG_MESSAGES = new Set([
 const SAYDO_LOG_MESSAGES = new Set([
   'voice say/do guard intervened',
   'voice say/do guard unavailable',
+  'voice say/do context pollution removed',
 ]);
 
 interface ParsedLogLine {

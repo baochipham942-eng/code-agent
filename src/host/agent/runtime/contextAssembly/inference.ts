@@ -398,17 +398,13 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   if (ctx.runtime.enableToolDeferredLoading) {
     preloadDeferredToolsForTurn(ctx.runtime);
     // 使用核心工具 + 已加载的延迟工具
-    const coreTools = getCoreToolDefinitions(
-      { searchEnabled: ctx.runtime.turn.searchEnabled },
-      ctx.runtime.modelConfig,
-    );
+    const coreTools = getCoreToolDefinitions({ searchEnabled: ctx.runtime.turn.searchEnabled }, ctx.runtime.modelConfig);
     const loadedDeferredTools = getLoadedDeferredToolDefinitions(ctx.runtime.modelConfig);
     tools = [...coreTools, ...loadedDeferredTools];
     logger.debug(`Tools (deferred loading): ${coreTools.length} core + ${loadedDeferredTools.length} deferred = ${tools.length} total`);
   } else {
     // 传统模式：发送所有工具（逐轮「联网搜索」关闭时 ExternalSearch 同样不进表）
-    tools = getAllToolDefinitions(ctx.runtime.modelConfig)
-      .filter((tool) => ctx.runtime.turn.searchEnabled || tool.name !== 'ExternalSearch');
+    tools = getAllToolDefinitions(ctx.runtime.modelConfig).filter((tool) => ctx.runtime.turn.searchEnabled || tool.name !== 'ExternalSearch');
     logger.debug('Tools:', tools.map((t) => t.name));
   }
 

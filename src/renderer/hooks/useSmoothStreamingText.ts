@@ -50,10 +50,13 @@ export function useSmoothStreamingText({
   content,
   isStreaming = false,
 }: SmoothStreamingTextInput): SmoothStreamingTextResult {
-  const [displayContent, setDisplayContent] = useState(isStreaming ? '' : content);
-  const [isAnimating, setIsAnimating] = useState(isStreaming && content.length > 0);
+  // 挂载直落：mount 时已有的内容立即可见（与移植前语义一致——占位消失的同一帧正文必须在场，
+  // 否则出现"占位没了正文也没出"的空窗；真机回归见 traceNodeRenderer.streamGapPlaceholder）。
+  // Convex 节奏只作用于挂载后的增量。
+  const [displayContent, setDisplayContent] = useState(content);
+  const [isAnimating, setIsAnimating] = useState(false);
   const rateStateRef = useRef(createRateState(content, isStreaming));
-  const displayRef = useRef(isStreaming ? '' : content);
+  const displayRef = useRef(content);
   const tailStartRef = useRef<number | null>(null);
   const wasStreamingRef = useRef(isStreaming);
 

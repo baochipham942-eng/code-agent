@@ -228,11 +228,12 @@ async function executeQuickAttempt(
   config: QuickModelConfig,
   prompt: string,
   effectiveMaxTokens: number,
+  signal?: AbortSignal,
 ): Promise<QuickModelResult> {
   const limiter = getProviderLimiter(config.provider);
 
   try {
-    await limiter?.acquire();
+    await limiter?.acquire(signal);
   } catch (error) {
     return quickFailure(
       config,
@@ -260,6 +261,7 @@ async function executeQuickAttempt(
         Authorization: `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify(body),
+      signal,
     });
 
     if (!response.ok) {
@@ -335,7 +337,11 @@ async function executeQuickAttempt(
  * @param prompt - The task prompt
  * @returns The result
  */
-export async function quickTask(prompt: string, maxTokens?: number): Promise<QuickModelResult> {
+export async function quickTask(
+  prompt: string,
+  maxTokens?: number,
+  signal?: AbortSignal,
+): Promise<QuickModelResult> {
   const candidates = initializeQuickModelCandidates();
   const [primary] = candidates;
   if (!primary) {
@@ -351,7 +357,7 @@ export async function quickTask(prompt: string, maxTokens?: number): Promise<Qui
   // fast 过载/服务端异常时切 routing.code；只有一个候选时经同一 limiter/backoff 再试一次。
   const attempts = candidates.length > 1 ? candidates.slice(0, 2) : [primary, primary];
   for (const [index, config] of attempts.entries()) {
-    const result = await executeQuickAttempt(config, prompt, effectiveMaxTokens);
+    const result = await executeQuickAttempt(config, prompt, effectiveMaxTokens, signal);
     const withAttempts = { ...result, attempts: index + 1 };
     if (withAttempts.success) return withAttempts;
     if (withAttempts.failureReason !== 'rate_limited' && withAttempts.failureReason !== 'server_error') {

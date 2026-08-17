@@ -435,6 +435,50 @@ export function clearTasks(sessionId: string): void {
 }
 
 /**
+ * Replace the approved execution ledger in one in-memory swap and one durable write.
+ * The first row starts immediately; later rows remain pending until TaskManager advances them.
+ */
+export function replaceTasksAtomically(
+  sessionId: string,
+  subjects: readonly string[],
+): SessionTask[] {
+  hydrateTasks(sessionId);
+  const now = Date.now();
+  const taskMap = new Map<string, SessionTask>();
+  const startCounter = sessionTaskCounters.get(sessionId) ?? 0;
+
+  subjects.forEach((rawSubject, index) => {
+    const subject = rawSubject.trim();
+    const id = String(startCounter + index + 1);
+    taskMap.set(id, {
+      id,
+      subject,
+      description: subject,
+      activeForm: subject,
+      status: index === 0 ? 'in_progress' : 'pending',
+      priority: 'normal',
+      blocks: [],
+      blockedBy: [],
+      metadata: { source: 'plan_approval' },
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+
+  sessionTasks.set(sessionId, taskMap);
+  sessionTaskCounters.set(sessionId, startCounter + subjects.length);
+  hydratedSessions.add(sessionId);
+  persistTasks(sessionId);
+  for (const task of taskMap.values()) {
+    recordTaskEvent(sessionId, task.id, 'created', { summary: task.subject });
+    if (task.status === 'in_progress') {
+      recordTaskEvent(sessionId, task.id, 'started');
+    }
+  }
+  return Array.from(taskMap.values());
+}
+
+/**
  * 导出 session 的所有任务和计数器（用于持久化）
  */
 export function exportTasks(sessionId: string): { tasks: SessionTask[]; counter: number } {

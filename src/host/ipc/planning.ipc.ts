@@ -7,6 +7,13 @@ import path from 'path';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { PlanningState } from '../../shared/contract';
 import type { PlanningService } from '../planning';
+import type { AgentApplicationService } from '../../shared/contract/appService';
+import type { TaskManager } from '../task';
+import type { PlanApprovalRequest } from '../../shared/contract/planApproval';
+import {
+  PlanApprovalError,
+  resolvePlanApproval,
+} from '../services/planning/planApprovalService';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('PlanningIPC');
@@ -109,7 +116,9 @@ async function handleGetErrors(
  */
 export function registerPlanningHandlers(
   ipcMain: IpcMain,
-  getPlanningService: () => PlanningService | null
+  getPlanningService: () => PlanningService | null,
+  getAppService: () => AgentApplicationService | null,
+  getTaskManager: () => TaskManager | null,
 ): void {
   // ========== New Domain Handler (TASK-04) ==========
   ipcMain.handle(IPC_DOMAINS.PLANNING, async (_, request: IPCRequest): Promise<IPCResponse> => {
@@ -132,13 +141,31 @@ export function registerPlanningHandlers(
         case 'getErrors':
           data = await handleGetErrors(getPlanningService, sessionId);
           break;
+        case 'respondApproval': {
+          const appService = getAppService();
+          const taskManager = getTaskManager();
+          if (!appService || !taskManager) {
+            return { success: false, error: { code: 'NOT_INITIALIZED', message: 'Agent runtime is not initialized' } };
+          }
+          data = await resolvePlanApproval(request.payload as PlanApprovalRequest, {
+            appService,
+            taskManager,
+          });
+          break;
+        }
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
       }
 
       return { success: true, data };
     } catch (error) {
-      return { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) } };
+      return {
+        success: false,
+        error: {
+          code: error instanceof PlanApprovalError ? error.code : 'INTERNAL_ERROR',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      };
     }
   });
 

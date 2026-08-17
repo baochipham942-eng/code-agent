@@ -65,6 +65,7 @@ import { generateTruncationWarning } from './truncationPrompts';
 import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
+import { shouldEndRunForPlanApproval } from './planApprovalRunBoundary';
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
 
@@ -897,6 +898,34 @@ export class MessageProcessor {
     };
     await this.contextAssembly.addAndPersistMessage(toolMessage);
     this.applyDeferredSkillActivations(toolResults);
+
+    // Desktop plan approval is a hard run boundary. The plan tool has already
+    // left plan mode, so allowing another inference here would expose normal
+    // execution tools before the user approves. CLI/testing opts into the
+    // established auto-approval path and continues unchanged.
+    const waitsForPlanApproval = shouldEndRunForPlanApproval(toolResults, this.ctx.autoApprovePlan);
+    if (waitsForPlanApproval) {
+      this.contextAssembly.flushHookMessageBuffer();
+      langfuse.endSpan(this.ctx.turn.currentIterationSpanId, {
+        type: 'tool_calls',
+        toolCount: toolCalls.length,
+        successCount: toolResults.filter((result: ToolResult) => result.success).length,
+        waitingForPlanApproval: true,
+      });
+      this.ctx.telemetryAdapter?.onTurnEnd(
+        this.ctx.turn.currentTurnId,
+        '',
+        response.thinking,
+        this.ctx.contextHealth.currentSystemPromptHash,
+      );
+      this.ctx.onEvent({
+        type: 'turn_end',
+        data: { turnId: this.ctx.turn.currentTurnId },
+      });
+      this.contextAssembly.updateContextHealth();
+      logger.info('[AgentLoop] Plan proposal is waiting for desktop approval; ending run');
+      return 'break';
+    }
 
     const artifactDirOnlyBootstrap = toolCalls.length === 1
       && toolResults.length === 1

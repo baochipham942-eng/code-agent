@@ -14,6 +14,7 @@ import { previewWorkspaceEn } from './previewWorkspace';
 import { modalPrimitivesEn } from './modalPrimitives';
 import { userQuestionEn } from './userQuestion';
 import { decisionCardEn } from './decisionCard';
+import { planApprovalEn } from './planApproval';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
 import { agentErrorEn } from './agentError';
@@ -925,6 +926,7 @@ export const en: Translations = {
   ...modalPrimitivesEn,
   ...userQuestionEn,
   ...decisionCardEn,
+  ...planApprovalEn,
   ...taskStatusPanelsEn,
   ...noticesEn,
   ...agentErrorEn,

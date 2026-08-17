@@ -51,7 +51,9 @@ export type CapabilityHubTab =
   | 'plugins'
   // 候选能力（N-CAP1 / F12）：只读列表，没有对应的 SettingsTab 深链——
   // 它不是从设置页搬来的东西，是新开的一区。
-  | 'candidates';
+  | 'candidates'
+  // 装卸历史（N-LEDGER-P5）：只读回看视图，同样没有 SettingsTab 深链，放末位不抢主入口。
+  | 'history';
 
 // 能力中心是专家 / 技能 / 连接器 / 插件的唯一入口；SettingsTab id 仍保留给搜索和深链入口。
 // capabilities（旧能力治理 tab，管理组迁 admin-console 后下线）同样重定向进能力中心默认 tab。

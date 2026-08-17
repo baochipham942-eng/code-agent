@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 vi.mock('../../../src/renderer/components/features/expert/ExpertPanel', () => ({ ExpertPanel: () => <div /> }));
 vi.mock('../../../src/renderer/components/features/settings/tabs/SkillsSettings', () => ({ SkillsSettings: () => <div /> }));
 vi.mock('../../../src/renderer/components/features/settings/tabs/MCPSettings', () => ({ MCPSettings: () => <div /> }));
 vi.mock('../../../src/renderer/components/features/settings/tabs/PluginsSettings', () => ({ PluginsSettings: () => <div /> }));
+vi.mock('../../../src/renderer/components/features/capabilityHub/CapabilityLifecycleHistoryTab', () => ({
+  CapabilityLifecycleHistoryTab: () => <div data-testid="capability-history-tab" />,
+}));
 
 import { CapabilityHubPage } from '../../../src/renderer/components/features/capabilityHub/CapabilityHubPage';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -63,5 +66,19 @@ describe('CapabilityHubPage', () => {
     useAuthStore.setState({ user: user(false) });
     const { container } = render(<CapabilityHubPage />);
     expect(container.querySelector('header[data-tauri-drag-region="deep"]')).not.toBeNull();
+  });
+
+  // N-LEDGER-P5 判据⑥：装卸历史是第 6 个 tab（末位），可点、点了渲染本 tab。
+  it('装卸历史 tab 注册在末位，点击后渲染本 tab', async () => {
+    useAuthStore.setState({ user: user(false) });
+    render(<CapabilityHubPage />);
+
+    const tab = screen.getByTestId('capability-hub-tab-history');
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs[tabs.length - 1]).toBe(tab);
+
+    fireEvent.click(tab);
+    expect(useAppStore.getState().capabilityHubTab).toBe('history');
+    await waitFor(() => expect(screen.getByTestId('capability-history-tab')).toBeTruthy());
   });
 });

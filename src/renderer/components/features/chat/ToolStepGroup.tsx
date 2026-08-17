@@ -24,6 +24,8 @@ import {
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { getDeferredContentStyle } from '../../../utils/turnContentVisibility';
+import { getPlanApprovalRecord } from '../../../utils/planApprovalView';
+import { PlanApprovalEvidence } from '../../PlanApprovalCard';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
@@ -120,6 +122,10 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       })
       .filter((x): x is ToolCall => !!x);
   }, [nodes]);
+  const planApproval = useMemo(
+    () => toolCalls.map(getPlanApprovalRecord).find((record) => record !== null) ?? null,
+    [toolCalls],
+  );
 
   // 组里是否存在需要用户介入的失败（鉴权失效/额度耗尽/限流），而非 agent 试错的
   // 探索性失败（工具未安装、非零退出码、反爬墙/限流类瞬态噪音等未分类错误）。
@@ -188,6 +194,9 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
 
   // 纯内部动作组：不渲染主流行（对齐「内部流水不进用户主视角」）。
   // 必须放在全部 hooks 之后，避免条件性调用 hooks。
+  if (planApproval && toolCalls.length === 1) {
+    return planApproval.status === 'pending' ? null : <PlanApprovalEvidence approval={planApproval} />;
+  }
   if (streamVisibleNodes.length === 0 || !label) {
     return null;
   }

@@ -161,7 +161,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerMemoryHandlers(ipcMain);
 
   // Planning handlers
-  registerPlanningHandlers(ipcMain, getPlanningService);
+  registerPlanningHandlers(ipcMain, getPlanningService, getAppService, getTaskManager);
 
   // Data/Cache handlers
   registerDataHandlers(ipcMain);

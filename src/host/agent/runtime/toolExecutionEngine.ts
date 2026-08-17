@@ -76,6 +76,7 @@ import { getArtifactLocatorPreflightBlock } from '../../tools/artifacts/artifact
 import { clearApprovalWait, getApprovalWaitMs } from '../../tools/toolExecutionTelemetry';
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { formatSystemReminderForCompletions } from '../subagentCompletionNotification';
+import { planContextTag } from './planApprovalRunBoundary';
 
 const logger = createLogger('AgentLoop');
 
@@ -1034,17 +1035,19 @@ export class ToolExecutionEngine {
         for (const msg of savedMessages) {
           this.ctx.messages.push(msg);
         }
-        // Inject approved plan as system message
+        // Desktop has only a proposal at this point. CLI/testing keeps its explicit
+        // auto-approval compatibility path and therefore retains the approved tag.
         if (planText) {
+          const planTag = planContextTag(this.ctx.autoApprovePlan);
           this.ctx.messages.push({
             id: this.contextAssembly.generateId(),
             role: 'system',
-            content: `<approved-plan>\n${planText}\n</approved-plan>`,
+            content: `<${planTag}>\n${planText}\n</${planTag}>`,
             timestamp: Date.now(),
           });
         }
         this.ctx.control.clearSavedMessages();
-        logger.info('[AgentLoop] Plan mode exited: context restored, plan injected');
+        logger.info('[AgentLoop] Plan mode exited: context restored, plan proposal injected');
         this.ctx.onEvent({
           type: 'plan_mode_exited',
           data: { plan: planText },

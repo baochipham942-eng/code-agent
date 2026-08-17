@@ -14,6 +14,7 @@ import { previewWorkspaceZh } from './previewWorkspace';
 import { modalPrimitivesZh } from './modalPrimitives';
 import { userQuestionZh } from './userQuestion';
 import { decisionCardZh } from './decisionCard';
+import { planApprovalZh } from './planApproval';
 import { taskStatusPanelsZh } from './taskStatusPanels';
 import { noticesZh } from './notices';
 import { agentErrorZh } from './agentError';
@@ -928,6 +929,7 @@ export const zh = {
   ...modalPrimitivesZh,
   ...userQuestionZh,
   ...decisionCardZh,
+  ...planApprovalZh,
   ...taskStatusPanelsZh,
   ...noticesZh,
   ...agentErrorZh,

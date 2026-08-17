@@ -24,8 +24,12 @@ import type {
   PlanModeController,
 } from '../../../protocol/tools';
 import { exitPlanModeSchema as schema } from './exitPlanMode.schema';
+import {
+  createPendingPlanApproval,
+  PLAN_APPROVAL_CONFIRMATION_TYPE,
+} from '../../../../shared/contract/planApproval';
 
-export const PLAN_CONFIRMATION_TYPE = 'plan_approval';
+export const PLAN_CONFIRMATION_TYPE = PLAN_APPROVAL_CONFIRMATION_TYPE;
 
 /** 构造退出规划模式的提示文本（和 legacy 完全一致） */
 export function buildExitPlanModeOutput(plan: string): string {
@@ -100,6 +104,7 @@ export async function executeExitPlanMode(
       requiresUserConfirmation: true,
       confirmationType: PLAN_CONFIRMATION_TYPE,
       plan,
+      planApproval: createPendingPlanApproval(plan),
     },
   };
 }

@@ -29,6 +29,7 @@ export * from './contract/canvasProposal';
 export * from './contract/canvasVideo';
 export * from './contract/designAutonomy';
 export * from './contract/planning';
+export * from './contract/planApproval';
 export * from './contract/question';
 export * from './contract/elicitation';
 export * from './contract/agent';

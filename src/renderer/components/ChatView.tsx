@@ -38,6 +38,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
 import { ChatInput } from './features/chat/ChatInput';
 import { UserQuestionCard } from './UserQuestionCard';
+import { PlanApprovalCard } from './PlanApprovalCard';
 import { applyVoicePartialsToProjection } from '../utils/voicePartialOverlay';
 import { useVoiceCallStore } from '../stores/voiceCallStore';
 import { GoalStatusBar } from './features/chat/GoalStatusBar';
@@ -83,6 +84,7 @@ import { recordStreamingPerformanceCounter } from '../utils/streamingPerformance
 import { findSearchMatchForPendingJump } from '../utils/sessionSearchJump';
 import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
 import { isDragPointInsideVisibleRect } from '../utils/dragBounds';
+import { findPendingPlanApproval, hasPlanApproval } from '../utils/planApprovalView';
 import { Image, AlertTriangle, MessageSquare, X } from 'lucide-react';
 
 export const ChatView: React.FC = () => {
@@ -135,6 +137,8 @@ export const ChatView: React.FC = () => {
       ? (state.pendingUserQuestionsBySessionId?.get(currentSessionId)?.[0] ?? null)
       : null,
   );
+  const pendingPlanApproval = findPendingPlanApproval(messages, currentSessionId);
+  const hasPlanApprovalEvidence = hasPlanApproval(messages);
   const currentSessionWorkingDirectory = currentSession
     ? currentSession.workingDirectory ?? null
     : appWorkingDirectory ?? null;
@@ -867,7 +871,7 @@ export const ChatView: React.FC = () => {
           <InlineStrip />
 
           {/* Pinned todo progress bar — visible above the input */}
-          <PinnedTodoBar plan={plan} sessionId={currentSessionId} />
+          {!hasPlanApprovalEvidence && <PinnedTodoBar plan={plan} sessionId={currentSessionId} />}
 
           {/* Background agents inline monitor (Codex 风格 sticky 浮层) */}
           <SwarmInlineMonitor />
@@ -886,8 +890,12 @@ export const ChatView: React.FC = () => {
             <UserQuestionCard request={pendingUserQuestion} />
           )}
 
-          {/* Input —— 待答问题期间保持挂载但隐藏（草稿不丢），卡片答复后自动恢复 */}
-          <div className={pendingUserQuestion ? 'hidden' : undefined}>
+          {pendingPlanApproval && !pendingUserQuestion && (
+            <PlanApprovalCard target={pendingPlanApproval} />
+          )}
+
+          {/* Input —— 待答问题/计划审批期间保持挂载但隐藏（草稿不丢），卡片答复后自动恢复 */}
+          <div className={pendingUserQuestion || pendingPlanApproval ? 'hidden' : undefined}>
             <ChatInput
               ref={chatInputRef}
               onSend={handleSendEnvelope}

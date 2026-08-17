@@ -256,6 +256,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'getFindings',
     'getPlan',
     'getState',
+    'respondApproval',
   ],
   [IPC_DOMAINS.PROJECT]: [
     'addGoal',

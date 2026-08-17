@@ -7,6 +7,7 @@ const runtime = vi.hoisted(() => ({
   settings: { voice: { live: {} as Record<string, unknown> } },
   connect: vi.fn(),
   updateInstructions: vi.fn(),
+  queueAssistantItemDeletion: vi.fn((_itemId: string, _onDeleted: () => void) => true),
   quickTask: vi.fn(),
   executeVoiceTool: vi.fn(async (..._args: unknown[]) => '已派发'),
 }));
@@ -107,6 +108,7 @@ function makeHandle(): VoiceTransportHandle {
     sendAudio: vi.fn(),
     commit: vi.fn(),
     respond: vi.fn(),
+    queueAssistantItemDeletion: runtime.queueAssistantItemDeletion,
     injectItem: vi.fn(),
     isResponding: vi.fn(() => false),
   };
@@ -117,6 +119,7 @@ beforeEach(() => {
   runtime.settings.voice.live = {};
   runtime.connect.mockReset().mockResolvedValue(makeHandle());
   runtime.updateInstructions.mockClear();
+  runtime.queueAssistantItemDeletion.mockClear().mockReturnValue(true);
   runtime.quickTask.mockReset().mockResolvedValue({ success: true, content: 'NORMAL' });
   runtime.executeVoiceTool.mockClear();
   recordVoiceCall.mockClear();
@@ -200,6 +203,41 @@ describe('refreshVoiceInstructions', () => {
       prompt: expect.stringContaining('[USER] 帮我创建一个一点'),
     });
     expect(JSON.parse(rawArguments).prompt).toContain('[USER] MD 文件');
+  });
+
+  it('同轮工具调用与执行声称并存时，把该 assistant item 交给 transport 延迟剔除', async () => {
+    await attachVoiceClient(new FakeClient() as never, 'session-saydo-pollution');
+    const connectInput = runtime.connect.mock.calls.at(-1)?.[0] as {
+      onEvent: (event: import('../../src/shared/contract/voice').VoiceEvent) => void;
+      onToolCall: (call: {
+        callId: string;
+        name: string;
+        arguments: string;
+        origin: 'function_call';
+      }) => Promise<string>;
+    };
+
+    connectInput.onEvent({ type: 'user.transcript', text: '帮我创建 todo.md', done: true, itemId: 'u1' });
+    await connectInput.onToolCall({
+      callId: 'call-polluted',
+      name: 'delegate_task',
+      arguments: JSON.stringify({ title: '创建 todo.md', prompt: '创建 todo.md' }),
+      origin: 'function_call',
+    });
+    connectInput.onEvent({
+      type: 'assistant.transcript',
+      text: '好的，我正在为你创建 todo.md。',
+      done: true,
+      responseId: 'r-polluted',
+      itemId: 'a-polluted',
+    });
+    connectInput.onEvent({ type: 'response.done', responseId: 'r-polluted' });
+
+    await vi.waitFor(() => expect(runtime.queueAssistantItemDeletion).toHaveBeenCalledWith(
+      'a-polluted',
+      expect.any(Function),
+    ));
+    expect(runtime.quickTask).not.toHaveBeenCalled();
   });
 
   it('一通电话的多轮 response usage 逐维累加后只入账一次', async () => {

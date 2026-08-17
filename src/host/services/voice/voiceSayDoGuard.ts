@@ -8,11 +8,13 @@ const MAX_CONTEXT_CHARS = 2_000;
 interface VoiceSayDoGuardState {
   turnVersion: number;
   toolObservedVersion: number;
+  intervenedVersion: number;
   recentUserTurns: string[];
 }
 
 type VoiceSayDoAuditResult =
   | { kind: 'skip'; reason: 'empty' | 'tool_observed' | 'stale' }
+  | { kind: 'remove_context_pollution'; turnVersion: number }
   | { kind: 'normal' }
   | { kind: 'unavailable'; reason: SayDoClassificationFailure }
   | {
@@ -33,20 +35,43 @@ const logger = createLogger('VoiceSayDoGuard');
 export interface VoiceSayDoGuard {
   rememberUserTurn(text: string): void;
   rememberToolCall(): void;
-  audit(assistantText: string, responseId?: string): Promise<void>;
+  audit(assistantText: string, responseId?: string, assistantItemId?: string): Promise<void>;
 }
 
 export function createVoiceSayDoGuard(
   voiceSessionId: string,
   isCurrent: () => boolean,
+  queueAssistantItemDeletion: (itemId: string, onDeleted: () => void) => boolean = () => false,
 ): VoiceSayDoGuard {
   const state = createVoiceSayDoGuardState();
   return {
     rememberUserTurn: (text) => rememberVoiceSayDoUserTurn(state, text),
     rememberToolCall: () => rememberVoiceSayDoToolCall(state),
-    async audit(assistantText, responseId) {
+    async audit(assistantText, responseId, assistantItemId) {
       const result = await auditVoiceSayDoTurn(state, assistantText);
       if (!isCurrent()) return;
+      if (result.kind === 'remove_context_pollution') {
+        if (!assistantItemId || !queueAssistantItemDeletion(assistantItemId, () => {
+          logger.info('voice say/do context pollution removed', {
+            voiceSessionId,
+            responseId,
+            assistantItemId,
+            turnVersion: result.turnVersion,
+            summary: '本轮模型违规输出执行声称，已从上游对话上下文剔除',
+            violation: 'execution_claim_with_tool_call',
+            action: 'assistant_item_removed_from_upstream_context',
+          });
+        })) {
+          logger.warn('voice say/do context removal unavailable', {
+            voiceSessionId,
+            responseId,
+            turnVersion: result.turnVersion,
+            reason: assistantItemId ? 'transport_unavailable' : 'assistant_item_id_missing',
+            action: 'context_pollution_retained',
+          });
+        }
+        return;
+      }
       if (result.kind === 'unavailable') {
         logger.warn('voice say/do guard unavailable', {
           voiceSessionId,
@@ -58,7 +83,7 @@ export function createVoiceSayDoGuard(
       }
       if (result.kind !== 'intervene') return;
 
-      rememberVoiceSayDoToolCall(state);
+      state.intervenedVersion = result.turnVersion;
       const latest = state.recentUserTurns.at(-1) ?? '语音请求';
       const rawArguments = JSON.stringify({
         title: latest.slice(0, 30),
@@ -82,7 +107,7 @@ export function createVoiceSayDoGuard(
 }
 
 function createVoiceSayDoGuardState(): VoiceSayDoGuardState {
-  return { turnVersion: 0, toolObservedVersion: 0, recentUserTurns: [] };
+  return { turnVersion: 0, toolObservedVersion: 0, intervenedVersion: 0, recentUserTurns: [] };
 }
 
 function rememberVoiceSayDoUserTurn(state: VoiceSayDoGuardState, text: string): void {
@@ -152,7 +177,12 @@ async function auditVoiceSayDoTurn(
   const text = assistantText.trim();
   if (!text || state.turnVersion === 0) return { kind: 'skip', reason: 'empty' };
   const auditedVersion = state.turnVersion;
-  if (state.toolObservedVersion === auditedVersion) return { kind: 'skip', reason: 'tool_observed' };
+  if (state.intervenedVersion === auditedVersion) return { kind: 'skip', reason: 'tool_observed' };
+  if (state.toolObservedVersion === auditedVersion) {
+    return hasExplicitExecutionClaim(text)
+      ? { kind: 'remove_context_pollution', turnVersion: auditedVersion }
+      : { kind: 'skip', reason: 'tool_observed' };
+  }
 
   const userTurns = [...state.recentUserTurns];
   const classification = await classifier(buildAuditInput(userTurns, text));

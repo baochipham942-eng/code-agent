@@ -23,17 +23,9 @@ import { qwenOmniTransport } from './qwenOmniTransport';
 import { createRealtimeTransport } from './realtimeTransport';
 import { createVoiceCallRecorder, isVoiceCallRecordingEnabled, type VoiceCallRecorder } from './voiceCallRecorder';
 import { runVoiceRecordingRetention } from './voiceRecordingRetention';
-import {
-  getRealtimeVoiceProviderApiKey,
-  resolveConfiguredRealtimeVoiceProfile,
-} from './customRealtimeVoiceProviders';
-import {
-  buildVoiceTurnPrompt,
-  detectVoiceReceptionAmbiguity,
-  requiresVoiceActionTool,
-  resolveVoiceActionRoute,
-  resolveVoiceRouting,
-} from './voiceRouting';
+import { getRealtimeVoiceProviderApiKey, resolveConfiguredRealtimeVoiceProfile } from './customRealtimeVoiceProviders';
+import { buildVoiceTurnPrompt, detectVoiceReceptionAmbiguity, requiresVoiceActionTool,
+  resolveVoiceActionRoute, resolveVoiceRouting } from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import {
   composeVoiceInstructions,
@@ -903,7 +895,7 @@ async function connectAndBind(
                     ...(pending?.itemId ? { itemId: pending.itemId } : {}),
                   },
                 );
-                if (active?.id === id && active.voiceToolsAvailable) void active.sayDoGuard.audit(text, event.responseId);
+                if (active?.id === id && active.voiceToolsAvailable) void active.sayDoGuard.audit(text, event.responseId, pending?.itemId);
               }
             }
           }
@@ -1008,7 +1000,14 @@ async function connectAndBind(
     clientRef,
     upstream,
     voiceToolsAvailable,
-    sayDoGuard: createVoiceSayDoGuard(id, () => active?.id === id && !active.ending),
+    sayDoGuard: createVoiceSayDoGuard(
+      id,
+      () => active?.id === id && !active.ending,
+      (itemId, onDeleted) => {
+        if (active?.id !== id || active.upstream.kind !== 'relay' || !active.upstream.queueAssistantItemDeletion) return false;
+        return active.upstream.queueAssistantItemDeletion(itemId, onDeleted);
+      },
+    ),
     ending: false,
     graceTimer: null,
     inboundAudioFrames: 0,

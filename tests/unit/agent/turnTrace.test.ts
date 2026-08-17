@@ -42,6 +42,7 @@ const manifestData = {
 
 describe('TurnTraceRecorder', () => {
   afterEach(() => {
+    vi.useRealTimers();
     fsMocks.appendFileSync.mockClear();
     if (existsSync(traceRoot)) rmSync(traceRoot, { recursive: true, force: true });
   });
@@ -137,5 +138,74 @@ describe('TurnTraceRecorder', () => {
     r.flush();
     lines = readFileSync(file, 'utf-8').trim().split('\n');
     expect(lines).toHaveLength(2);
+  });
+
+  it('incrementally flushes when eight events are buffered', () => {
+    vi.useFakeTimers();
+    const r = new TurnTraceRecorder('sess-event-throttle');
+    for (let index = 0; index < 7; index += 1) {
+      r.record('tool_dispatch', {
+        toolName: `tool-${index}`,
+        success: true,
+        durationMs: index,
+        error: null,
+        fromCache: false,
+      });
+    }
+    expect(fsMocks.appendFileSync).not.toHaveBeenCalled();
+
+    r.record('tool_dispatch', {
+      toolName: 'tool-7',
+      success: true,
+      durationMs: 7,
+      error: null,
+      fromCache: false,
+    });
+
+    expect(fsMocks.appendFileSync).toHaveBeenCalledTimes(1);
+    const file = path.join(traceRoot, 'traces', 'sess-event-throttle.jsonl');
+    expect(readFileSync(file, 'utf-8').trim().split('\n')).toHaveLength(8);
+    vi.advanceTimersByTime(2_000);
+    expect(fsMocks.appendFileSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('incrementally flushes after two seconds when fewer than eight events are buffered', () => {
+    vi.useFakeTimers();
+    const r = new TurnTraceRecorder('sess-time-throttle');
+    r.record('inference', {
+      responseType: 'text',
+      durationMs: 5,
+      inputTokens: 3,
+      outputTokens: 1,
+      finishReason: 'stop',
+      truncated: false,
+    });
+
+    vi.advanceTimersByTime(1_999);
+    expect(fsMocks.appendFileSync).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(fsMocks.appendFileSync).toHaveBeenCalledTimes(1);
+    const file = path.join(traceRoot, 'traces', 'sess-time-throttle.jsonl');
+    expect(readFileSync(file, 'utf-8').trim().split('\n')).toHaveLength(1);
+  });
+
+  it('final flush cancels the throttle timer and never rewrites persisted events', () => {
+    vi.useFakeTimers();
+    const r = new TurnTraceRecorder('sess-final-idempotent');
+    r.record('tool_dispatch', {
+      toolName: 'Read',
+      success: true,
+      durationMs: 2,
+      error: null,
+      fromCache: false,
+    });
+
+    expect(r.flush()).toBe(true);
+    expect(r.flush()).toBe(true);
+    vi.advanceTimersByTime(2_000);
+
+    expect(fsMocks.appendFileSync).toHaveBeenCalledTimes(1);
+    const file = path.join(traceRoot, 'traces', 'sess-final-idempotent.jsonl');
+    expect(readFileSync(file, 'utf-8').trim().split('\n')).toHaveLength(1);
   });
 });

@@ -19,6 +19,11 @@ import type { VerificationSkippedCheck } from '../verification';
 
 const logger = createLogger('TurnTrace');
 
+// Incremental durability cadence. Keep these internal constants until production
+// evidence shows that operators need a different trade-off (YAGNI).
+const INCREMENTAL_FLUSH_EVENT_COUNT = 8;
+const INCREMENTAL_FLUSH_INTERVAL_MS = 2_000;
+
 export type TraceEventType =
   | 'inference'
   | 'loop_decision'
@@ -195,12 +200,14 @@ export type TraceEvent = {
 
 /**
  * 一个 run 内的结构化 turn trace。每个 AgentLoop 实例持有一个。
- * record() 只入内存；flush() 增量落盘，fire-and-forget 安全（失败只 warn）。
+ * record() 入内存后按事件数 / 时间双路节流增量落盘；flush() 可用于收尾强制落盘，
+ * fire-and-forget 安全（失败只 warn）。
  */
 export class TurnTraceRecorder {
   private events: TraceEvent[] = [];
   private flushedCount = 0;
   private currentTurn = 0;
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly filePath: string;
 
   constructor(
@@ -215,7 +222,7 @@ export class TurnTraceRecorder {
     this.currentTurn = turnIndex;
   }
 
-  /** 记一条 trace 事件（仅入内存） */
+  /** 记一条 trace 事件，并按 8 条 / 2 秒（先到者）增量 append。 */
   record<T extends TraceEventType>(type: T, data: TraceEventDataMap[T]): void {
     this.events.push({
       ts: Date.now(),
@@ -224,6 +231,12 @@ export class TurnTraceRecorder {
       type,
       data,
     } as TraceEvent);
+
+    if (this.events.length - this.flushedCount >= INCREMENTAL_FLUSH_EVENT_COUNT) {
+      this.flush();
+      return;
+    }
+    this.scheduleIncrementalFlush();
   }
 
   /** 当前已记录的全部事件（测试 / 进程内消费用） */
@@ -233,6 +246,7 @@ export class TurnTraceRecorder {
 
   /** 增量 append 未落盘的事件到 per-session JSONL。失败只 warn，不抛。 */
   flush(): boolean {
+    this.clearFlushTimer();
     const pending = this.events.slice(this.flushedCount);
     if (pending.length === 0) return true;
     try {
@@ -248,5 +262,20 @@ export class TurnTraceRecorder {
       logger.warn('flush failed', err);
       return false;
     }
+  }
+
+  private scheduleIncrementalFlush(): void {
+    if (this.flushTimer !== null) return;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      this.flush();
+    }, INCREMENTAL_FLUSH_INTERVAL_MS);
+    this.flushTimer.unref?.();
+  }
+
+  private clearFlushTimer(): void {
+    if (this.flushTimer === null) return;
+    clearTimeout(this.flushTimer);
+    this.flushTimer = null;
   }
 }

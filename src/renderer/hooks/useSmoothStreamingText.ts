@@ -1,27 +1,27 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+/**
+ * Smooth pacing algorithm ported from get-convex/agent@0.6.4
+ * `src/react/useSmoothText.ts` / `dist/react/useSmoothText.js`.
+ * Ported on 2026-08-17. Licensed under Apache-2.0.
+ * Copyright the Convex contributors; see `useSmoothStreamingText.LICENSE`.
+ *
+ * This file has been modified for Agent Neo. The rate estimation, lag catch-up,
+ * weighted smoothing, and per-update 2x rate cap follow the upstream algorithm.
+ * Local extensions preserve Neo's public hook API, reduced-motion direct landing,
+ * a 200-character backlog cap, and punctuation/10-character CJK landing groups.
+ */
+import { useEffect, useRef, useState } from 'react';
 
-// 流式长内容渲染自然化（工单 2026-08-01）：积压直落 + 只动尾巴 + 块级淡入。
-// - 待播积压超过 BACKLOG_DIRECT_LAND_CHARS 时超出部分立即落地，从左到右的扫描
-//   在任何情况下都不超过约一行；
-// - 只有阈值内的尾巴保留生长感，粒度是「词/短段」而非字符；播放间隔随
-//   积压动态收紧，目标在 TAIL_DRAIN_MS 内追平（淡入由消费层 CSS 负责）；
-// - prefers-reduced-motion 下全部直落零动画。
 export const SMOOTH_STREAMING_TEXT_DEFAULTS = {
-  /** 积压直落阈值（字符）：超出部分立即落地，不参与尾部播放 */
+  FPS: 20,
+  INITIAL_CHARS_PER_SEC: 128,
+  /** Neo local extension: never leave more than this many characters queued. */
   BACKLOG_DIRECT_LAND_CHARS: 200,
-  /** 尾段落定最慢节奏：积压很短时每个「词/短段」的最大播放间隔 */
-  TAIL_SEGMENT_INTERVAL_MS: 40,
-  /** 尾段追赶窗口：当前积压按段均摊，目标在该窗口内追平 */
-  TAIL_DRAIN_MS: 240,
-  /** 中文短段长度上限（工单：按标点或 8-12 字切） */
+  /** Neo local extension: preserve punctuation/8-12 character Chinese groups. */
   CJK_SEGMENT_MAX_CHARS: 10,
 } as const;
 
-const DEFAULT_FRAME_MS = 16;
-
-// CJK 表意文字 + 常用全角标点（段内字符）
+const MS_PER_FRAME = 1000 / SMOOTH_STREAMING_TEXT_DEFAULTS.FPS;
 const CJK_CHAR_PATTERN = /[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]/;
-// 中文句读：短段切到标点（含）为止
 const CJK_BREAK_PATTERN = /[，。！？；：、…—·]/;
 
 export interface SmoothStreamingTextInput {
@@ -32,119 +32,144 @@ export interface SmoothStreamingTextInput {
 export interface SmoothStreamingTextResult {
   displayContent: string;
   isAnimating: boolean;
-  /**
-   * 最近一次逐段落定的尾段在 displayContent 里的起始下标；无尾段
-   * （直落/追平/同步/静止）为 null。消费层用它给尾段包淡入 span。
-   */
+  /** Latest locally grouped CJK/character landing; null for direct/synchronous updates. */
   tailStartIndex: number | null;
 }
 
-export interface SmoothStreamingStepInput {
-  displayContent: string;
+export interface SmoothStreamingRateState {
+  tick: number;
+  cursor: number;
+  lastUpdate: number;
+  lastUpdateLength: number;
+  charsPerMs: number;
+  initial: boolean;
+}
+
+export interface SmoothStreamingFrameInput {
+  state: SmoothStreamingRateState;
   targetContent: string;
-  elapsedMs: number;
-  /** 流已结束：保留字段供调用侧标记；尾巴仍在同一追赶窗口内逐段落定 */
-  isFlushing?: boolean;
+  now: number;
+  /** True exactly once when a new target snapshot is observed. */
+  targetChanged?: boolean;
+}
+
+export interface SmoothStreamingFrameResult {
+  displayContent: string;
+  state: SmoothStreamingRateState;
+  directLanding: boolean;
+  tailStartIndex: number | null;
 }
 
 /**
- * 从 fromIndex 找一个「词/短段」的结束下标（不含）：
- * - 前导空白（不含换行）并入本段，换行连同自身自成一段；
- * - 中文：切到句读（含）为止，最多 CJK_SEGMENT_MAX_CHARS 字；
- * - 拉丁/数字等：一个连续非空白非 CJK 的「词」。
+ * Neo local CJK extension. Once the upstream character budget reaches a CJK
+ * group, land through punctuation or at most ten UTF-16 code units. Charging
+ * the whole group against `tick` keeps the upstream average character rate.
  */
 export function findSmoothStreamingSegmentEnd(content: string, fromIndex: number): number {
-  const length = content.length;
-  if (fromIndex >= length) return length;
+  if (fromIndex >= content.length) return content.length;
+  if (!CJK_CHAR_PATTERN.test(content[fromIndex])) return fromIndex + 1;
 
   let index = fromIndex;
-  while (index < length && content[index] !== '\n' && /\s/.test(content[index])) index += 1;
-  if (index >= length) return length;
-  if (content[index] === '\n') return index + 1;
-
-  if (CJK_CHAR_PATTERN.test(content[index])) {
-    while (index < length) {
-      const ch = content[index];
-      if (ch === '\n') break;
-      if (!CJK_CHAR_PATTERN.test(ch) && index > fromIndex) break;
-      index += 1;
-      if (CJK_BREAK_PATTERN.test(ch)) break;
-      if (index - fromIndex >= SMOOTH_STREAMING_TEXT_DEFAULTS.CJK_SEGMENT_MAX_CHARS) break;
-    }
-    return index;
-  }
-
-  while (index < length) {
-    const ch = content[index];
-    if (/\s/.test(ch) || CJK_CHAR_PATTERN.test(ch)) break;
+  while (index < content.length) {
+    const character = content[index];
+    if (character === '\n') break;
+    if (!CJK_CHAR_PATTERN.test(character) && index > fromIndex) break;
     index += 1;
+    if (CJK_BREAK_PATTERN.test(character)) break;
+    if (index - fromIndex >= SMOOTH_STREAMING_TEXT_DEFAULTS.CJK_SEGMENT_MAX_CHARS) break;
   }
   return index;
 }
 
-function countSmoothStreamingSegments(content: string, fromIndex: number): number {
-  let count = 0;
-  let index = fromIndex;
-  while (index < content.length) {
-    const nextIndex = findSmoothStreamingSegmentEnd(content, index);
-    if (nextIndex <= index) break;
-    count += 1;
-    index = nextIndex;
+export function shouldSyncSmoothStreamingText(displayContent: string, targetContent: string): boolean {
+  return displayContent !== targetContent
+    && (displayContent.length > targetContent.length || !targetContent.startsWith(displayContent));
+}
+
+function observeTarget(
+  state: SmoothStreamingRateState,
+  targetLength: number,
+  now: number,
+): SmoothStreamingRateState {
+  let next = { ...state };
+  if (next.lastUpdateLength !== targetLength) {
+    // Kept faithful to upstream. A same-millisecond update can produce Infinity,
+    // which is still bounded by the final 2x cap.
+    const timeSinceLastUpdate = now - next.lastUpdate;
+    const latestCharsPerMs = (targetLength - next.lastUpdateLength) / timeSinceLastUpdate;
+    const rateError = latestCharsPerMs - next.charsPerMs;
+    const charLag = next.lastUpdateLength - next.cursor;
+    const lagRate = charLag / timeSinceLastUpdate;
+    const charsPerMs = latestCharsPerMs
+      + (next.initial ? 0 : Math.max(0, (rateError + lagRate) / 2));
+    next.initial = false;
+    next.charsPerMs = Math.min(
+      (2 * charsPerMs + next.charsPerMs) / 3,
+      next.charsPerMs * 2,
+    );
   }
-  return count;
+  next.tick = Math.max(next.tick, now - MS_PER_FRAME);
+  next.lastUpdate = now;
+  next.lastUpdateLength = targetLength;
+  return next;
 }
 
 /**
- * 短积压维持稳定的最慢节拍；积压越多，段间隔越短，使阈值窗口内的尾巴
- * 在固定追赶窗口内排完。对应 assistant-ui useSmooth 的 drainMs 思路，保留
- * Neo 按词/中文短段落定的既有视觉粒度。
+ * One deterministic upstream pacing tick plus Neo's documented local landing
+ * extensions. Production and unit tests share this exact state transition.
  */
-function getSmoothStreamingSegmentIntervalMs(
-  displayContent: string,
-  targetContent: string,
-): number {
-  if (!targetContent.startsWith(displayContent)) {
-    return SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS;
+export function computeSmoothStreamingFrame({
+  state,
+  targetContent,
+  now,
+  targetChanged = false,
+}: SmoothStreamingFrameInput): SmoothStreamingFrameResult {
+  let next = targetChanged ? observeTarget(state, targetContent.length, now) : { ...state };
+
+  if (next.cursor >= targetContent.length) {
+    next.cursor = targetContent.length;
+    return {
+      displayContent: targetContent,
+      state: next,
+      directLanding: false,
+      tailStartIndex: null,
+    };
   }
-  const segmentCount = countSmoothStreamingSegments(targetContent, displayContent.length);
-  if (segmentCount <= 0) return SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS;
-  return Math.max(1, Math.min(
-    SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_SEGMENT_INTERVAL_MS,
-    SMOOTH_STREAMING_TEXT_DEFAULTS.TAIL_DRAIN_MS / segmentCount,
-  ));
-}
 
-export function computeSmoothStreamingNextContent(input: SmoothStreamingStepInput): string {
-  const { displayContent, targetContent } = input;
-  if (displayContent === targetContent) return targetContent;
-  if (!targetContent.startsWith(displayContent)) return targetContent;
-
-  const backlog = targetContent.length - displayContent.length;
-  if (backlog <= 0) return targetContent;
-
-  // 积压直落：超出阈值的部分立即落地，只把最后一段窗口留给尾部播放
+  const backlog = targetContent.length - next.cursor;
   if (backlog > SMOOTH_STREAMING_TEXT_DEFAULTS.BACKLOG_DIRECT_LAND_CHARS) {
-    return targetContent.slice(0, targetContent.length - SMOOTH_STREAMING_TEXT_DEFAULTS.BACKLOG_DIRECT_LAND_CHARS);
+    next.cursor = targetContent.length - SMOOTH_STREAMING_TEXT_DEFAULTS.BACKLOG_DIRECT_LAND_CHARS;
+    next.tick = now;
+    return {
+      displayContent: targetContent.slice(0, next.cursor),
+      state: next,
+      directLanding: true,
+      tailStartIndex: null,
+    };
   }
 
-  // 尾部生长：按动态节奏落「词/短段」，不做字符级 reveal。流结束后继续走同一
-  // 追赶窗口，由 isAnimating 挡住完成态动作，避免最后一帧整段跳变。
-  const segmentIntervalMs = getSmoothStreamingSegmentIntervalMs(displayContent, targetContent);
-  const segmentBudget = Math.floor(
-    Math.max(input.elapsedMs, 0) / segmentIntervalMs,
-  );
-  if (segmentBudget <= 0) return displayContent;
-
-  let nextLength = displayContent.length;
-  for (let landed = 0; landed < segmentBudget && nextLength < targetContent.length; landed += 1) {
-    nextLength = findSmoothStreamingSegmentEnd(targetContent, nextLength);
+  const previousCursor = next.cursor;
+  const timeSinceLastUpdate = now - next.tick;
+  const charsSinceLastUpdate = Math.floor(timeSinceLastUpdate * next.charsPerMs);
+  const chars = Math.min(charsSinceLastUpdate, targetContent.length - next.cursor);
+  if (chars > 0) {
+    next.cursor += chars;
+    if (CJK_CHAR_PATTERN.test(targetContent[previousCursor])) {
+      next.cursor = Math.max(
+        next.cursor,
+        findSmoothStreamingSegmentEnd(targetContent, previousCursor),
+      );
+    }
+    next.cursor = Math.min(next.cursor, targetContent.length);
+    next.tick += (next.cursor - previousCursor) / next.charsPerMs;
   }
-  return targetContent.slice(0, nextLength);
-}
 
-export function shouldSyncSmoothStreamingText(displayContent: string, targetContent: string): boolean {
-  if (displayContent === targetContent) return false;
-  return displayContent.length > targetContent.length || !targetContent.startsWith(displayContent);
+  return {
+    displayContent: targetContent.slice(0, next.cursor),
+    state: next,
+    directLanding: false,
+    tailStartIndex: next.cursor > previousCursor ? previousCursor : null,
+  };
 }
 
 function prefersReducedMotion(): boolean {
@@ -153,149 +178,90 @@ function prefersReducedMotion(): boolean {
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-function getFrameScheduler(): {
-  request: (callback: FrameRequestCallback) => number;
-  cancel: (id: number) => void;
-  now: () => number;
-} {
-  const request = globalThis.requestAnimationFrame
-    ? globalThis.requestAnimationFrame.bind(globalThis)
-    : ((callback: FrameRequestCallback) => globalThis.setTimeout(() => callback(Date.now()), DEFAULT_FRAME_MS) as unknown as number);
-  const cancel = globalThis.cancelAnimationFrame
-    ? globalThis.cancelAnimationFrame.bind(globalThis)
-    : ((id: number) => globalThis.clearTimeout(id));
-  const now = globalThis.performance?.now
-    ? globalThis.performance.now.bind(globalThis.performance)
-    : Date.now;
-
-  return { request, cancel, now };
+function createRateState(content: string, startStreaming: boolean): SmoothStreamingRateState {
+  const now = Date.now();
+  return {
+    tick: now,
+    cursor: startStreaming ? 0 : content.length,
+    lastUpdate: now,
+    lastUpdateLength: content.length,
+    charsPerMs: SMOOTH_STREAMING_TEXT_DEFAULTS.INITIAL_CHARS_PER_SEC / 1000,
+    initial: true,
+  };
 }
 
 export function useSmoothStreamingText({
   content,
   isStreaming = false,
 }: SmoothStreamingTextInput): SmoothStreamingTextResult {
-  const scheduler = useMemo(() => getFrameScheduler(), []);
-  const [displayContent, setDisplayContent] = useState(content);
-  const [isAnimating, setIsAnimating] = useState(false);
-
-  const displayRef = useRef(content);
-  const targetRef = useRef(content);
-  const wasStreamingRef = useRef(isStreaming);
-  const frameRef = useRef<number | null>(null);
-  const lastFrameAtRef = useRef<number | null>(null);
-  // 跨帧累积的播放时长额度：rAF 每帧 ~16ms，攒够一个段落间隔才落一段
-  const segmentCreditMsRef = useRef(0);
+  const [displayContent, setDisplayContent] = useState(isStreaming ? '' : content);
+  const [isAnimating, setIsAnimating] = useState(isStreaming && content.length > 0);
+  const rateStateRef = useRef(createRateState(content, isStreaming));
+  const displayRef = useRef(isStreaming ? '' : content);
   const tailStartRef = useRef<number | null>(null);
+  const wasStreamingRef = useRef(isStreaming);
 
-  const setDisplay = (next: string, tailStart: number | null = null) => {
-    displayRef.current = next;
-    tailStartRef.current = tailStart;
-    setDisplayContent(next);
+  const syncDisplay = (nextContent: string, tailStartIndex: number | null) => {
+    displayRef.current = nextContent;
+    tailStartRef.current = tailStartIndex;
+    setDisplayContent(nextContent);
   };
 
   useEffect(() => {
-    targetRef.current = content;
-
-    // prefers-reduced-motion：全部直落零动画
     if (prefersReducedMotion()) {
-      segmentCreditMsRef.current = 0;
-      setDisplay(content);
+      rateStateRef.current = createRateState(content, false);
+      syncDisplay(content, null);
       setIsAnimating(false);
       wasStreamingRef.current = isStreaming;
       return;
     }
 
-    if (isStreaming) {
-      if (shouldSyncSmoothStreamingText(displayRef.current, content)) {
-        setDisplay(content);
-      }
-      setIsAnimating(displayRef.current !== targetRef.current);
-      wasStreamingRef.current = true;
+    if (shouldSyncSmoothStreamingText(displayRef.current, content)) {
+      rateStateRef.current = createRateState(content, false);
+      syncDisplay(content, null);
+      setIsAnimating(false);
+      wasStreamingRef.current = isStreaming;
       return;
     }
 
-    const shouldFlushAfterStreaming =
-      wasStreamingRef.current &&
-      displayRef.current !== content &&
-      content.startsWith(displayRef.current);
-
-    if (shouldFlushAfterStreaming) {
-      // 流结束：保留动画信号，剩余尾巴继续由 tick 在追赶窗口内落定
-      setIsAnimating(true);
-    } else {
-      segmentCreditMsRef.current = 0;
-      setDisplay(content);
+    if (!isStreaming && !wasStreamingRef.current) {
+      rateStateRef.current = createRateState(content, false);
+      syncDisplay(content, null);
       setIsAnimating(false);
-      wasStreamingRef.current = false;
+      return;
     }
-  }, [content, isStreaming, scheduler]);
 
-  useEffect(() => {
-    const cancelFrame = () => {
-      if (frameRef.current !== null) {
-        scheduler.cancel(frameRef.current);
-        frameRef.current = null;
-      }
-    };
+    wasStreamingRef.current = wasStreamingRef.current || isStreaming;
+    let targetChanged = rateStateRef.current.lastUpdateLength !== content.length;
 
-    const tick: FrameRequestCallback = (timestamp) => {
-      frameRef.current = null;
-      const lastFrameAt = lastFrameAtRef.current ?? timestamp;
-      lastFrameAtRef.current = timestamp;
-
-      const prevDisplay = displayRef.current;
-      const backlog = targetRef.current.length - prevDisplay.length;
-      const directLanding = backlog > SMOOTH_STREAMING_TEXT_DEFAULTS.BACKLOG_DIRECT_LAND_CHARS;
-      const flushing = !isStreaming;
-      const creditMs = segmentCreditMsRef.current + (timestamp - lastFrameAt);
-      const segmentIntervalMs = getSmoothStreamingSegmentIntervalMs(prevDisplay, targetRef.current);
-      const segmentsSpent = Math.floor(Math.max(creditMs, 0) / segmentIntervalMs);
-
-      const nextDisplay = computeSmoothStreamingNextContent({
-        displayContent: prevDisplay,
-        targetContent: targetRef.current,
-        elapsedMs: creditMs,
-        isFlushing: flushing,
+    const update = () => {
+      const previousDisplay = displayRef.current;
+      const frame = computeSmoothStreamingFrame({
+        state: rateStateRef.current,
+        targetContent: content,
+        now: Date.now(),
+        targetChanged,
       });
+      targetChanged = false;
+      rateStateRef.current = frame.state;
 
-      if (nextDisplay !== prevDisplay) {
-        segmentCreditMsRef.current = nextDisplay === targetRef.current || directLanding
-          ? 0
-          : Math.max(0, creditMs - segmentsSpent * segmentIntervalMs);
-        // 只有逐段落定的小段淡入；直落/追平的大块立即可读
-        const tailStart = !directLanding && !flushing ? prevDisplay.length : null;
-        setDisplay(nextDisplay, tailStart);
-      } else {
-        segmentCreditMsRef.current = creditMs;
+      if (frame.displayContent !== previousDisplay) {
+        syncDisplay(
+          frame.displayContent,
+          isStreaming && !frame.directLanding ? frame.tailStartIndex : null,
+        );
       }
 
-      if (nextDisplay === targetRef.current) {
-        // 落定完成：保留 tailStartRef（最后一段的淡入仍在跑），只停动画信号
-        displayRef.current = targetRef.current;
-        setDisplayContent(targetRef.current);
-        setIsAnimating(false);
-        wasStreamingRef.current = isStreaming;
-        lastFrameAtRef.current = null;
-        return;
-      }
-
-      frameRef.current = scheduler.request(tick);
+      const caughtUp = frame.state.cursor >= content.length;
+      setIsAnimating(!caughtUp);
+      if (caughtUp && !isStreaming) wasStreamingRef.current = false;
     };
 
-    if (!prefersReducedMotion() && displayRef.current !== targetRef.current) {
-      setIsAnimating(true);
-      cancelFrame();
-      lastFrameAtRef.current = scheduler.now();
-      frameRef.current = scheduler.request(tick);
-    } else {
-      setIsAnimating(false);
-      cancelFrame();
-      lastFrameAtRef.current = null;
-    }
-
-    return cancelFrame;
-  }, [content, isStreaming, scheduler]);
+    update();
+    if (rateStateRef.current.cursor >= content.length) return;
+    const interval = globalThis.setInterval(update, MS_PER_FRAME);
+    return () => globalThis.clearInterval(interval);
+  }, [content, isStreaming]);
 
   if (!isStreaming && !isAnimating && displayContent !== content) {
     return { displayContent: content, isAnimating: false, tailStartIndex: null };

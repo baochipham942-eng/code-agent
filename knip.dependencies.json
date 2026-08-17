@@ -21,7 +21,7 @@
     "tests/e2e/claude-e2e/fixtures/**"
   ],
   "ignoreDependencies": [
-    "avr-vad",
-    "@anthropic-ai/sdk"
+    "@anthropic-ai/sdk",
+    "avr-vad"
   ]
 }

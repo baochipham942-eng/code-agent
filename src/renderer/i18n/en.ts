@@ -86,9 +86,10 @@ export const en: Translations = {
     download: 'Download',
     archiveToLibrary: 'Archive to library',
     exportBundle: 'Export bundle',
-    statusVerified: 'Verified',
-    statusUnverified: 'Unverified',
-    statusFailed: 'Failed',
+    // Dad's 2026-08-18 call: plain user-facing wording instead of internal verification jargon.
+    statusVerified: 'Ready',
+    statusUnverified: 'Not checked',
+    statusFailed: 'Problem found',
     qualityValidated: 'Validated',
     qualityNeedsReview: 'Needs review',
     qualityFailed: 'Quality failed',

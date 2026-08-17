@@ -2,8 +2,8 @@ import type { SessionTask } from './planning';
 
 export const PLAN_APPROVAL_CONFIRMATION_TYPE = 'plan_approval';
 
-export type PlanApprovalStatus = 'pending' | 'approved' | 'cancelled' | 'revision_requested';
-export type PlanApprovalDecision = 'approve' | 'cancel' | 'revise';
+type PlanApprovalStatus = 'pending' | 'approved' | 'cancelled' | 'revision_requested';
+type PlanApprovalDecision = 'approve' | 'cancel' | 'revise';
 
 export interface PlanApprovalStep {
   id: string;
@@ -42,7 +42,7 @@ function stripStepMarker(line: string): string | null {
 }
 
 /** Convert the free-form plan emitted by existing plan tools into stable editable rows. */
-export function planApprovalStepsFromText(plan: string): PlanApprovalStep[] {
+function planApprovalStepsFromText(plan: string): PlanApprovalStep[] {
   const listItems = plan
     .split('\n')
     .map(stripStepMarker)

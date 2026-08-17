@@ -393,18 +393,18 @@ export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse>
 async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse> {
   seedArtifactRepairGuardFromContext(ctx.runtime);
 
-  // 根据配置决定使用全量工具还是核心+延迟工具
+  // 根据配置决定使用全量工具还是核心+延迟工具。description 档位上下文只取 provider/model 两字段——modelConfig 还带着 apiKey，别整个交给 description 生成器
+  const descCtx = { provider: ctx.runtime.modelConfig.provider, model: ctx.runtime.modelConfig.model };
   let tools;
   if (ctx.runtime.enableToolDeferredLoading) {
     preloadDeferredToolsForTurn(ctx.runtime);
-    // 使用核心工具 + 已加载的延迟工具
-    const coreTools = getCoreToolDefinitions({ searchEnabled: ctx.runtime.turn.searchEnabled }, ctx.runtime.modelConfig);
-    const loadedDeferredTools = getLoadedDeferredToolDefinitions(ctx.runtime.modelConfig);
+    const coreTools = getCoreToolDefinitions({ searchEnabled: ctx.runtime.turn.searchEnabled }, descCtx);
+    const loadedDeferredTools = getLoadedDeferredToolDefinitions(descCtx);
     tools = [...coreTools, ...loadedDeferredTools];
     logger.debug(`Tools (deferred loading): ${coreTools.length} core + ${loadedDeferredTools.length} deferred = ${tools.length} total`);
   } else {
     // 传统模式：发送所有工具（逐轮「联网搜索」关闭时 ExternalSearch 同样不进表）
-    tools = getAllToolDefinitions(ctx.runtime.modelConfig).filter((tool) => ctx.runtime.turn.searchEnabled || tool.name !== 'ExternalSearch');
+    tools = getAllToolDefinitions(descCtx).filter((tool) => ctx.runtime.turn.searchEnabled || tool.name !== 'ExternalSearch');
     logger.debug('Tools:', tools.map((t) => t.name));
   }
 

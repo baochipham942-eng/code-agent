@@ -16,7 +16,7 @@ describe('App/ChatView user question wiring（G2 打断式选项卡）', () => {
 
   it('ChatView 有待答问题时渲染打断式选项卡并遮盖 composer', () => {
     expect(chatViewSource).toContain('<UserQuestionCard request={pendingUserQuestion} />');
-    expect(chatViewSource).toContain("pendingUserQuestion ? 'hidden' : undefined");
+    expect(chatViewSource).toContain("pendingUserQuestion || pendingPlanApproval ? 'hidden' : undefined");
   });
 
   it('卡片回答/跳过成功后自己出队', () => {

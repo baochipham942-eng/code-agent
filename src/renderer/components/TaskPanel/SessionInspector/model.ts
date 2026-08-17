@@ -70,6 +70,8 @@ interface ToolDispatchRow {
   durationMs: number | null;
   error: string | null;
   fromCache: boolean;
+  /** 人话活动桶（层1 明细行/活行用；归类规则集中在 classifyToolActivity） */
+  bucket: ToolActivityBucket;
 }
 
 interface LoopDecisionRow {
@@ -85,6 +87,26 @@ interface InferenceRow {
   durationMs: number | null;
   finishReason: string | null;
   truncated: boolean;
+}
+
+/**
+ * 层2 per-call 推理调用卡（N-LEDGER-UX1 D 项）：一轮内每次模型调用一卡。
+ * 归属规则纯按事件顺序：inference 事件开一张新卡，其后到下一条 inference
+ * 之前的 tool_dispatch 挂在该卡下；模型取该 inference 之前最近一份
+ * request_manifest 的 actualModel/requestedModel（账本没有更细的关联字段，
+ * 缺 manifest 时如实显示「未记录」）。首条 inference 之前的工具进 orphan 桶。
+ */
+interface InferenceCallRow {
+  seq: number;
+  ts: number | null;
+  model: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  durationMs: number | null;
+  finishReason: string | null;
+  truncated: boolean;
+  tools: ToolDispatchRow[];
 }
 
 export interface RequestManifestView {
@@ -128,6 +150,12 @@ export interface TurnSegment {
   tokens: { input: number; output: number; cacheRead: number };
   toolCounts: Record<ToolActivityBucket, number>;
   failedToolCount: number;
+  /** B 项（甲口径）：单轮 token > 本会话其余轮均值 × 3 且绝对值 > 20k */
+  tokenAnomaly: boolean;
+  /** D 项：轮内 per-call 推理调用分卡（空数组 = 账本无 inference 细分，层2 降级轮级汇总） */
+  inferenceCalls: InferenceCallRow[];
+  /** D 项：首条 inference 之前的工具调用（挂不到任何卡下，层2 单独列出） */
+  orphanToolDispatches: ToolDispatchRow[];
   startedAt: number | null;
   endedAt: number | null;
 }
@@ -146,12 +174,14 @@ function classifyToolActivity(toolName: string): ToolActivityBucket {
 function readToolDispatch(event: TraceLedgerEvent): ToolDispatchRow | null {
   if (event.type !== 'tool_dispatch' || !isRecord(event.data)) return null;
   const data = event.data;
+  const toolName = str(data.toolName) ?? '?';
   return {
-    toolName: str(data.toolName) ?? '?',
+    toolName,
     success: data.success === true,
     durationMs: num(data.durationMs),
     error: str(data.error),
     fromCache: data.fromCache === true,
+    bucket: classifyToolActivity(toolName),
   };
 }
 
@@ -237,7 +267,60 @@ export function segmentTurns(events: readonly TraceLedgerEvent[]): TurnSegment[]
     }
   }
   if (current.length > 0) segments.push(current);
-  return segments.map((segmentEvents, index) => buildSegment(index + 1, segmentEvents));
+  const turns = segments.map((segmentEvents, index) => buildSegment(index + 1, segmentEvents));
+  markTokenAnomalies(turns);
+  return turns;
+}
+
+// B 项异常判据（甲口径，已拍板）：单轮 token（input+output）同时满足
+// 「> 本会话其余有消耗轮的均值 × 3」与「> 20k」才报；缓存命中率不单独提示。
+const TOKEN_ANOMALY_MEAN_RATIO = 3;
+const TOKEN_ANOMALY_ABSOLUTE_MIN = 20_000;
+
+function markTokenAnomalies(turns: TurnSegment[]): void {
+  const totals = turns.map((turn) => turn.tokens.input + turn.tokens.output);
+  turns.forEach((turn, index) => {
+    const total = totals[index];
+    const others = totals.filter((value, otherIndex) => otherIndex !== index && value > 0);
+    if (total <= 0 || others.length === 0) return;
+    const mean = others.reduce((sum, value) => sum + value, 0) / others.length;
+    turn.tokenAnomaly =
+      total > mean * TOKEN_ANOMALY_MEAN_RATIO && total > TOKEN_ANOMALY_ABSOLUTE_MIN;
+  });
+}
+
+/** D 项：按事件顺序把 inference/tool_dispatch 组成 per-call 卡（纯投影，不推断账本外事实）。 */
+function buildInferenceCalls(
+  events: readonly TraceLedgerEvent[],
+): { calls: InferenceCallRow[]; orphans: ToolDispatchRow[] } {
+  const calls: InferenceCallRow[] = [];
+  const orphans: ToolDispatchRow[] = [];
+  let currentModel: string | null = null;
+  for (const event of events) {
+    const manifest = readManifest(event);
+    if (manifest) {
+      currentModel = manifest.actualModel ?? manifest.requestedModel;
+      continue;
+    }
+    const inference = readInference(event);
+    if (inference) {
+      calls.push({
+        seq: calls.length + 1,
+        ts: num(event.ts),
+        model: currentModel,
+        ...inference,
+        tools: [],
+      });
+      continue;
+    }
+    const dispatch = readToolDispatch(event);
+    if (dispatch) {
+      const currentCall = calls[calls.length - 1];
+      if (currentCall) currentCall.tools.push(dispatch);
+      else orphans.push(dispatch);
+    }
+  }
+  return { calls, orphans };
 }
 
 function buildSegment(index: number, events: TraceLedgerEvent[]): TurnSegment {
@@ -251,7 +334,7 @@ function buildSegment(index: number, events: TraceLedgerEvent[]): TurnSegment {
   const toolCounts: Record<ToolActivityBucket, number> = { read: 0, write: 0, command: 0, browser: 0, other: 0 };
   let failedToolCount = 0;
   for (const dispatch of toolDispatches) {
-    toolCounts[classifyToolActivity(dispatch.toolName)] += 1;
+    toolCounts[dispatch.bucket] += 1;
     if (!dispatch.success) failedToolCount += 1;
   }
 
@@ -264,6 +347,7 @@ function buildSegment(index: number, events: TraceLedgerEvent[]): TurnSegment {
     { input: 0, output: 0, cacheRead: 0 },
   );
 
+  const { calls: inferenceCalls, orphans: orphanToolDispatches } = buildInferenceCalls(events);
   const timestamps = events.map((event) => num(event.ts)).filter((ts): ts is number => ts !== null);
 
   return {
@@ -281,6 +365,9 @@ function buildSegment(index: number, events: TraceLedgerEvent[]): TurnSegment {
     tokens,
     toolCounts,
     failedToolCount,
+    tokenAnomaly: false,
+    inferenceCalls,
+    orphanToolDispatches,
     startedAt: timestamps.length > 0 ? Math.min(...timestamps) : null,
     endedAt: timestamps.length > 0 ? Math.max(...timestamps) : null,
   };

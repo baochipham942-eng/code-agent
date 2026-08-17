@@ -18,6 +18,7 @@
 import type {
   DirectiveMemoryWriteGrant,
   JSONSchema,
+  ToolDescriptionContext as SharedToolDescriptionContext,
   ToolEmissionDescriptor,
   ToolPathAuthorityDescriptor,
 } from '@shared/contract';
@@ -48,7 +49,7 @@ export type ToolCategory =
 
 export type PermissionLevel = 'read' | 'write' | 'execute' | 'network' | 'dangerous';
 
-export interface ToolDescriptionContext {
+export interface ToolDescriptionContext extends SharedToolDescriptionContext {
   readonly provider?: string;
   readonly model?: string;
 }

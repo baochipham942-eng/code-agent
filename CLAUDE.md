@@ -90,7 +90,7 @@ cargo tauri build    # 打包 macOS（~33MB DMG）
 
 ### 禁止硬编码（强制）
 
-以下值 **必须** 从 `src/shared/constants.ts` 导入，禁止在业务代码中写字面量：
+以下值 **必须** 从 `src/shared/constants/`（barrel 目录，import 路径仍是 `src/shared/constants`）导入，禁止在业务代码中写字面量：
 
 | 值 | 常量名 | 说明 |
 |----|--------|------|
@@ -111,7 +111,7 @@ cargo tauri build    # 打包 macOS（~33MB DMG）
 | 降级链 | `PROVIDER_FALLBACK_CHAIN` | 禁止在 modelRouter 中硬编码降级目标 |
 | 时间戳更新 | 参数传入或 `?? Date.now()` | **禁止在 DB 操作中直接写 `Date.now()`**。所有写入 `updated_at` 的方法必须支持可选时间戳参数，未传时才 fallback `Date.now()`。云端同步场景必须保留远程原始时间戳 |
 
-**新增 provider/模型/超时/价格时**，只在 `shared/constants.ts` 添加，然后引用。
+**新增 provider/模型/超时/价格时**，只在 `shared/constants/` 对应分组文件添加，然后引用。
 
 **自检清单**（提交前）：
 ```bash

@@ -68,6 +68,22 @@ export interface ElectronFetchResponse<T = unknown> {
   body?: ReadableStream<Uint8Array>;
 }
 
+function isNodeReadable(data: unknown): data is NodeJS.ReadableStream {
+  return !!data && typeof (data as NodeJS.ReadableStream).pipe === 'function';
+}
+
+async function drainBodyText(data: unknown): Promise<string> {
+  if (typeof data === 'string') return data;
+  if (isNodeReadable(data)) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of data as unknown as AsyncIterable<Buffer | string>) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    }
+    return Buffer.concat(chunks).toString('utf8');
+  }
+  return JSON.stringify(data);
+}
+
 export async function electronFetch<T = unknown>(
   url: string,
   options: ElectronFetchOptions,
@@ -90,8 +106,13 @@ export async function electronFetch<T = unknown>(
     return {
       ok: response.status >= 200 && response.status < 300,
       status: response.status,
-      text: async () => typeof response.data === 'string' ? response.data : JSON.stringify(response.data),
-      json: async (): Promise<T> => response.data,
+      // stream:true 时 axios 的 response.data 是 Node Readable——包括非 2xx 的错误响应
+      // （validateStatus 全放行）。直接 JSON.stringify 会得到 {"_events":{},...} 的流壳，
+      // 上游拒绝原文全丢（N-MODELERR）；必须先把流读完再返回文本。
+      text: async () => drainBodyText(response.data),
+      json: async (): Promise<T> => isNodeReadable(response.data)
+        ? JSON.parse(await drainBodyText(response.data)) as T
+        : response.data,
       // Axios 在 Node/Electron stream adapter 下返回 NodeJS.ReadableStream；保留 fetch
       // 兼容的 public contract，协议侧再按运行时形态读取。
       ...(options.stream ? { body: response.data as unknown as ReadableStream<Uint8Array> } : {}),

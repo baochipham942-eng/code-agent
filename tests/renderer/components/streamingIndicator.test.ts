@@ -76,30 +76,20 @@ describe('StreamingIndicator state', () => {
   });
 });
 
-// 产品拍板：思考流式进行中用「正在思考…」扫光文字替代呼吸光标，思考阶段一结束
-// 立刻消失，不留残影；不是思考阶段（等工具/长跑工具）保持原样。
+// 产品拍板翻案：思考流式进行中由展开的 ThinkingDigestBanner 独占信号，
+// StreamingIndicator 只保留非思考阶段的呼吸光标与具名等待。
 describe('StreamingIndicator rendering', () => {
-  it('shows the shimmering "正在思考…" text when isThinking is true', () => {
+  it('does not own or render a thinking label', () => {
     const html = renderToStaticMarkup(
-      React.createElement(StreamingIndicator, { startTime: 100, isThinking: true }),
-    );
-    expect(html).toContain('正在思考');
-    expect(html).toContain('streaming-thinking-shimmer');
-    // 思考态不应该再画独立的呼吸光标
-    expect(html).not.toContain('streaming-caret');
-  });
-
-  it('falls back to the plain breathing caret when not thinking', () => {
-    const html = renderToStaticMarkup(
-      React.createElement(StreamingIndicator, { startTime: 100, isThinking: false }),
+      React.createElement(StreamingIndicator, { startTime: 100 }),
     );
     expect(html).not.toContain('正在思考');
     expect(html).toContain('streaming-caret');
   });
 
-  it('hides entirely when showCaret is false, even if isThinking is true (visible text already streaming)', () => {
+  it('hides entirely when the caller yields the slot to visible text or the reasoning block', () => {
     const html = renderToStaticMarkup(
-      React.createElement(StreamingIndicator, { startTime: 100, isThinking: true, showCaret: false }),
+      React.createElement(StreamingIndicator, { startTime: 100, showCaret: false }),
     );
     expect(html).toBe('');
   });

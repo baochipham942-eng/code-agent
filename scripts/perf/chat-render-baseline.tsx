@@ -6,14 +6,11 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Message } from '../../src/shared/contract/message';
 import type { TraceTurn } from '../../src/shared/contract/trace';
 import { projectTurns } from '../../src/renderer/hooks/useTurnProjection';
 import { applyStreamingMessageDeltasToProjection } from '../../src/renderer/utils/streamingProjectionOverlay';
 import { buildTurnFileChanges } from '../../src/renderer/utils/turnDiffSummary';
-import { diffLinesWithFastPath } from '../../src/renderer/utils/fastDiff';
 import { mergeMessageUpdates, type MessageUpdate } from '../../src/renderer/hooks/useMessageBatcher';
 import {
   getStreamingPerformanceSnapshot,
@@ -222,15 +219,12 @@ function makeDiffTurn(fileCount: number, linesPerFile: number): TraceTurn {
   };
 }
 
-const highlighterComponent = SyntaxHighlighter as unknown as React.ComponentType<Record<string, unknown>>;
-
 function MarkdownHighlightHarness({ content }: { content: string }): React.ReactElement {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
         code({ className, children }) {
-          const language = /language-(\w+)/.exec(className || '')?.[1] || 'text';
           const code = String(children).replace(/\n$/, '');
           const lines = code.split('\n');
           const displayCode = lines.length > 25 ? lines.slice(0, 25).join('\n') : code;
@@ -240,22 +234,7 @@ function MarkdownHighlightHarness({ content }: { content: string }): React.React
           if (lines.length > 25) {
             return <pre><code>{displayCode}</code></pre>;
           }
-          return React.createElement(
-            highlighterComponent,
-            {
-              style: oneDark,
-              language,
-              showLineNumbers: lines.length > 3,
-              customStyle: {
-                margin: 0,
-                padding: '1rem',
-                background: 'transparent',
-                fontSize: '0.75rem',
-                lineHeight: '1.25rem',
-              },
-            },
-            displayCode,
-          );
+          return <pre><code>{displayCode}</code></pre>;
         },
       }}
     >
@@ -279,8 +258,6 @@ function buildReport(options: { deep: boolean }): BaselineReport {
   const streaming = makeStreamingMessages(999);
   const streamingProjection = projectTurns(streaming.messages, SESSION_ID, true, []);
   const diffTurn = makeDiffTurn(10, 500);
-  const rawOld = makeTextLines('raw-old', 5000, 0);
-  const rawNew = makeTextLines('raw-new', 5000, 10);
   const markdown = makeMarkdownWithCodeBlocks(10, 500);
   const streamingChunks: MessageUpdate[] = Array.from({ length: 200 }, (_, index) => ({
     type: 'append',
@@ -366,22 +343,6 @@ function buildReport(options: { deep: boolean }): BaselineReport {
       { iterations: options.deep ? 10 : 5 },
     ),
     benchmark(
-      'diffLines.5000-lines',
-      'Run the renderer diff-lines path for a 5000-line file pair.',
-      () => {
-        const changes = measureStreamingPerformanceTiming(
-          'stream.diff.lines_ms',
-          () => diffLinesWithFastPath(rawOld, rawNew),
-        );
-        return {
-          chunks: changes.length,
-          addedChunks: changes.filter((change) => change.added).length,
-          removedChunks: changes.filter((change) => change.removed).length,
-        };
-      },
-      { iterations: options.deep ? 10 : 3 },
-    ),
-    benchmark(
       'markdownHighlight.10x500-line-code-blocks',
       'Server-render ReactMarkdown with the current collapsed long-code preview path.',
       () => renderMarkdownWithHighlight(markdown),
@@ -405,7 +366,6 @@ function buildReport(options: { deep: boolean }): BaselineReport {
       streamingDeltaChars: streaming.delta.length,
       codeBlocks: { count: 10, linesPerBlock: 500 },
       diffFiles: { count: 10, linesPerFile: 500 },
-      rawDiffLines: 5000,
     },
     results,
     runtimeMetrics: getStreamingPerformanceSnapshot(),
@@ -440,7 +400,6 @@ function formatMarkdown(report: BaselineReport): string {
     `- Streaming delta chars: ${report.fixtures.streamingDeltaChars}`,
     `- Code blocks: ${JSON.stringify(report.fixtures.codeBlocks)}`,
     `- Diff files: ${JSON.stringify(report.fixtures.diffFiles)}`,
-    `- Raw diff lines: ${report.fixtures.rawDiffLines}`,
     '',
     '## Results',
     '',

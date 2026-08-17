@@ -1,0 +1,8 @@
+{
+  "name": "@neo-eval/diffbench",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@codemirror/merge": "6.12.2"
+  }
+}

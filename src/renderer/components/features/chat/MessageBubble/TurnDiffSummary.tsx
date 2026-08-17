@@ -282,6 +282,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
                     oldText={fc.oldText}
                     newText={fc.newText}
                     fileName={fileName}
+                    stats={{ added: fc.added, removed: fc.removed }}
                     className="border border-zinc-800 rounded-md overflow-hidden"
                   />
                 </div>

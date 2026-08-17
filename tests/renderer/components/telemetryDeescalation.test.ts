@@ -1,8 +1,8 @@
 // ============================================================================
 // 工程遥测降级锚点测试（2026-07-28 品质感视觉层打磨 ③）
 // 拍板：直接上屏的工程师数据（已恢复 pill、组级时长）默认不上屏，
-// hover（或键盘 focus-visible）才浮出；流式思考阶段只留 StreamingIndicator 的
-// 扫光「正在思考…」，不再与 ThinkingDigestBanner 并存成两行静态文本。
+// hover（或键盘 focus-visible）才浮出；流式思考阶段由 ThinkingDigestBanner
+// 独占扫光「正在思考…」，StreamingIndicator 让位。
 // 例外（UX round2 20i，2026-07-29）：轮时间戳改为常驻可见（低透明度常态、hover 提亮）——
 // hover 门控在滚动时随卡片边界高速翻转，是「时间戳随页面滑动偶尔消失」的闪烁根因。
 // ============================================================================
@@ -28,8 +28,10 @@ describe('TurnCard 轮时间戳常驻（UX round2 20i）', () => {
 });
 
 describe('TurnCard 思考行不重复', () => {
-  it('流式思考阶段 ThinkingDigestBanner 让位给 StreamingIndicator 扫光行', () => {
-    expect(turnCard).toContain('{!isThinkingPhase && <ThinkingDigestBanner');
+  it('流式思考阶段始终渲染 ThinkingDigestBanner，底部状态槽不再重复出思考信号', () => {
+    expect(turnCard).toContain('<ThinkingDigestBanner');
+    expect(turnCard).toContain('showCaret={!lastNodeIsStreamingText && !isThinkingPhase}');
+    expect(turnCard).not.toContain('isThinking={isThinkingPhase}');
   });
 });
 

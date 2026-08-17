@@ -9,7 +9,7 @@
 
 import type { TraceNode, TraceTurn } from '@shared/contract/trace';
 import { measureStreamingPerformanceTiming } from './streamingPerformanceMetrics';
-import { diffLinesWithFastPath } from './fastDiff';
+import { diffLines } from 'diff';
 
 export const FILE_WRITE_TOOLS = ['Edit', 'Write', 'edit_file', 'write_file'];
 
@@ -111,7 +111,7 @@ export function buildTurnFileChanges(turn: TraceTurn): FileChange[] {
       added = contentLines;
       removed = 0;
     } else if (oldText || newText) {
-      const diffChanges = diffLinesWithFastPath(oldText, newText);
+      const diffChanges = diffLines(oldText, newText);
       for (const c of diffChanges) {
         const lines = countNonEmptyLines(c.value);
         if (c.added) added += lines;

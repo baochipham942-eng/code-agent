@@ -1,0 +1,17 @@
+{
+  "neo": {
+    "bytes": 6532192,
+    "gzipBytes": 2070840,
+    "jsChunks": 889
+  },
+  "streamdown-core": {
+    "bytes": 515730,
+    "gzipBytes": 151912,
+    "jsChunks": 4
+  },
+  "streamdown-full": {
+    "bytes": 13332932,
+    "gzipBytes": 2899836,
+    "jsChunks": 432
+  }
+}

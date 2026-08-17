@@ -281,7 +281,7 @@ export const PlanApprovalCard: React.FC<{ target: PendingPlanApprovalTarget }> =
                 size="sm"
                 variant="ghost"
                 className="mt-2"
-                leftIcon={<Plus />}
+                leftIcon={<Plus className="h-3.5 w-3.5" />}
                 onClick={() => {
                   const id = `step-added-${Date.now()}`;
                   setSteps((current) => [...current, { id, content: t.planApproval.newStep, originalContent: '', edited: true }]);

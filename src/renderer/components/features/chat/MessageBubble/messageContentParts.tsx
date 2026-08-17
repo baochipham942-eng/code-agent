@@ -34,10 +34,10 @@ import {
 } from '../../../../utils/turnContentVisibility';
 
 // react-markdown + katex/remark 插件家族(vendor-markdown/vendor-katex)与
-// react-syntax-highlighter(Prism)按需动态加载,只在真正渲染消息正文/代码块时才下载,
+// Shiki core/主题/语法按需动态加载,只在真正渲染消息正文/代码块时才下载,
 // 移出首屏关键路径(同 mermaidLoader.ts 的设计动机)。
 const LazyMarkdownCore = lazy(() => import('./MarkdownCore'));
-const LazyPrismCodeBlock = lazy(() => import('./PrismCodeBlock'));
+const LazyShikiCodeBlock = lazy(() => import('./ShikiCodeBlock'));
 
 // Language display names and colors
 const languageConfig: Record<string, { color: string; name: string }> = {
@@ -107,7 +107,6 @@ export {
 
 // Threshold for collapsible code blocks
 const CODE_COLLAPSE_LINES = 25;
-const CODE_PROGRESSIVE_HIGHLIGHT_LINES = 30;
 
 const codeBlockStyle = {
   margin: 0,
@@ -125,27 +124,6 @@ const codeLineNumberStyle = {
   color: 'var(--text-tertiary)',
   userSelect: 'none',
 } as const;
-
-function getScheduleFrame(): {
-  requestFrame: (callback: FrameRequestCallback) => number | ReturnType<typeof globalThis.setTimeout>;
-  cancelFrame: (id: number | ReturnType<typeof globalThis.setTimeout>) => void;
-} {
-  const hasAnimationFrame = typeof window !== 'undefined'
-    && typeof window.requestAnimationFrame === 'function'
-    && typeof window.cancelAnimationFrame === 'function';
-
-  if (hasAnimationFrame) {
-    return {
-      requestFrame: window.requestAnimationFrame.bind(window),
-      cancelFrame: window.cancelAnimationFrame.bind(window) as (id: number | ReturnType<typeof globalThis.setTimeout>) => void,
-    };
-  }
-
-  return {
-    requestFrame: (callback) => globalThis.setTimeout(() => callback(Date.now()), 16),
-    cancelFrame: (id) => globalThis.clearTimeout(id as ReturnType<typeof globalThis.setTimeout>),
-  };
-}
 
 const PlainCodeLines = memo(function PlainCodeLines({
   lines,
@@ -185,66 +163,6 @@ const PlainCodeLines = memo(function PlainCodeLines({
   );
 });
 
-interface CodeLineChunk {
-  startIndex: number;
-  code: string;
-  lineCount: number;
-}
-
-function chunkLines(lines: string[], chunkSize: number): CodeLineChunk[] {
-  const chunks: CodeLineChunk[] = [];
-  for (let startIndex = 0; startIndex < lines.length; startIndex += chunkSize) {
-    const chunk = lines.slice(startIndex, startIndex + chunkSize);
-    chunks.push({
-      startIndex,
-      code: chunk.join('\n'),
-      lineCount: chunk.length,
-    });
-  }
-  return chunks;
-}
-
-const HighlightedCodeChunk = memo(function HighlightedCodeChunk({
-  chunk,
-  language,
-  showLineNumbers,
-  wrapLines,
-}: {
-  chunk: CodeLineChunk;
-  language: string;
-  showLineNumbers: boolean;
-  wrapLines: boolean;
-}) {
-  return (
-    <Suspense
-      fallback={
-        <PlainCodeLines
-          lines={chunk.code.split('\n')}
-          showLineNumbers={showLineNumbers}
-          startLineNumber={chunk.startIndex + 1}
-          wrapLines={wrapLines}
-        />
-      }
-    >
-      <LazyPrismCodeBlock
-        className="scrollbar-hidden"
-        language={language || 'text'}
-        showLineNumbers={showLineNumbers}
-        startingLineNumber={chunk.startIndex + 1}
-        customStyle={codeBlockStyle}
-        lineNumberStyle={codeLineNumberStyle}
-        wrapLongLines={wrapLines}
-        code={chunk.code}
-      />
-    </Suspense>
-  );
-}, (prev, next) => (
-  prev.chunk === next.chunk
-  && prev.language === next.language
-  && prev.showLineNumbers === next.showLineNumbers
-  && prev.wrapLines === next.wrapLines
-));
-
 // Code block with copy button and syntax highlighting
 export const CodeBlock = memo(function CodeBlock({
   language,
@@ -261,63 +179,14 @@ export const CodeBlock = memo(function CodeBlock({
     : Date.now();
   const config = languageConfig[language] || { color: 'text-zinc-400', name: language || 'code' };
   const lines = useMemo(() => code.split('\n'), [code]);
-  const lineChunks = useMemo(
-    () => chunkLines(lines, CODE_PROGRESSIVE_HIGHLIGHT_LINES),
-    [lines],
-  );
   const showLineNumbers = lines.length > 3;
   const isLong = lines.length > CODE_COLLAPSE_LINES;
   const [copied, setCopied] = useState(false);
   const [wrapLines, setWrapLines] = useState(false);
   const [collapsed, setCollapsed] = useState(() => isLong);
-  const [highlightedChunkCount, setHighlightedChunkCount] = useState(() => (
-    isLong ? 0 : lineChunks.length
-  ));
-  const highlightedLineCount = collapsed
-    ? 0
-    : Math.min(
-        lineChunks.slice(0, highlightedChunkCount).reduce((sum, chunk) => sum + chunk.lineCount, 0),
-        lines.length,
-      );
 
   // 仅在初次 mount 时按长度折叠（见上方 useState 初始化），不再在流式过程中
   // 因跨过阈值而强制塌陷——否则用户正在阅读的代码块会在生成中途突然折叠、布局跳变。
-
-  useEffect(() => {
-    if (collapsed) {
-      setHighlightedChunkCount(0);
-      return;
-    }
-    if (!isLong) {
-      setHighlightedChunkCount(lineChunks.length);
-      return;
-    }
-
-    let cancelled = false;
-    let frameId: number | ReturnType<typeof globalThis.setTimeout> | null = null;
-    const { requestFrame, cancelFrame } = getScheduleFrame();
-    setHighlightedChunkCount(0);
-
-    const scheduleNextChunk = () => {
-      frameId = requestFrame(() => {
-        if (cancelled) return;
-        setHighlightedChunkCount((current) => {
-          const next = Math.min(current + 1, lineChunks.length);
-          if (next < lineChunks.length) {
-            scheduleNextChunk();
-          }
-          return next;
-        });
-      });
-    };
-
-    scheduleNextChunk();
-
-    return () => {
-      cancelled = true;
-      if (frameId !== null) cancelFrame(frameId);
-    };
-  }, [collapsed, isLong, lineChunks.length]);
 
   useEffect(() => {
     const now = typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -337,11 +206,6 @@ export const CodeBlock = memo(function CodeBlock({
 
   const displayCode = collapsed ? lines.slice(0, CODE_COLLAPSE_LINES).join('\n') : code;
   const displayLines = collapsed ? displayCode.split('\n') : [];
-  const remainingPlainLines = !collapsed && isLong ? lines.slice(highlightedLineCount) : [];
-  const highlightedLineChunks = !collapsed && isLong
-    ? lineChunks.slice(0, highlightedChunkCount)
-    : [];
-  const isHighlightComplete = !isLong || collapsed || highlightedLineCount >= lines.length;
   const deferredContentKind = getCodeBlockDeferredContentKind(lines.length);
 
   return (
@@ -349,8 +213,8 @@ export const CodeBlock = memo(function CodeBlock({
       className="my-3 rounded-xl bg-[var(--code-bg)] overflow-hidden border border-zinc-700 shadow-lg"
       data-deferred-content={deferOffscreenLayout ? 'code-block' : undefined}
       data-code-block-lines={lines.length}
-      data-code-highlighted-lines={collapsed ? 0 : highlightedLineCount}
-      data-code-highlight-complete={isHighlightComplete ? 'true' : 'false'}
+      data-code-highlighted-lines={collapsed ? 0 : lines.length}
+      data-code-highlight-complete="true"
       style={deferOffscreenLayout ? getDeferredContentStyle(deferredContentKind) : undefined}
     >
       {/* Header */}
@@ -405,26 +269,6 @@ export const CodeBlock = memo(function CodeBlock({
             startLineNumber={1}
             wrapLines={wrapLines}
           />
-        ) : isLong ? (
-          <>
-            {highlightedLineChunks.map((chunk) => (
-              <HighlightedCodeChunk
-                key={chunk.startIndex}
-                chunk={chunk}
-                language={language}
-                showLineNumbers={showLineNumbers}
-                wrapLines={wrapLines}
-              />
-            ))}
-            {remainingPlainLines.length > 0 && (
-              <PlainCodeLines
-                lines={remainingPlainLines}
-                showLineNumbers={showLineNumbers}
-                startLineNumber={highlightedLineCount + 1}
-                wrapLines={wrapLines}
-              />
-            )}
-          </>
         ) : (
           <Suspense
             fallback={
@@ -436,7 +280,7 @@ export const CodeBlock = memo(function CodeBlock({
               />
             }
           >
-            <LazyPrismCodeBlock
+            <LazyShikiCodeBlock
               className="scrollbar-hidden"
               language={language || 'text'}
               showLineNumbers={showLineNumbers}

@@ -8,9 +8,9 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({ t: zh, language: 'zh' }),
 }));
 
-// PrismCodeBlock 走 lazy import，测试里不需要真高亮
+// ShikiCodeBlock 走 lazy import，测试里不需要真高亮
 vi.mock(
-  '../../../src/renderer/components/features/chat/MessageBubble/PrismCodeBlock',
+  '../../../src/renderer/components/features/chat/MessageBubble/ShikiCodeBlock',
   () => ({ default: ({ code }: { code: string }) => <pre>{code}</pre> }),
 );
 

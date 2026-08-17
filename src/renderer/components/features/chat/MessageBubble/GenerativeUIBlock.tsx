@@ -25,8 +25,8 @@ import { GenerativeUIEditPanel } from './GenerativeUIEditPanel';
 import { generativeUIClient } from '../../../../services/generativeUIClient';
 import { hashGenerativeUiBody, stripEditMarker } from '@shared/generativeUIEdit';
 
-// Prism 语法高亮按需动态加载,只在用户点开"查看源码"时才下载。
-const LazyPrismCodeBlock = lazy(() => import('./PrismCodeBlock'));
+// Shiki 高亮内核按需动态加载,只在用户点开"查看源码"时才下载。
+const LazyShikiCodeBlock = lazy(() => import('./ShikiCodeBlock'));
 
 const MIN_IFRAME_HEIGHT = 100;
 const MAX_IFRAME_HEIGHT = 600;
@@ -54,7 +54,7 @@ const SourceView = memo(function SourceView({ code }: { code: string }) {
           </pre>
         }
       >
-        <LazyPrismCodeBlock
+        <LazyShikiCodeBlock
           language="html"
           showLineNumbers={showLineNumbers}
           customStyle={{

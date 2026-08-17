@@ -158,6 +158,25 @@ const NAMESPACE_LABEL_KEY: Readonly<Record<string, CapabilityNamespaceKey>> = {
  * 屏上不该出现（命名空间是实现概念）。认不出的命名空间返回 null，让展示层
  * 原样露出整串——宁可露原文，也不臆造一个人话标签。
  */
+/**
+ * 一批能力是否同属一个命名空间。同质时展示层把命名空间从每个名字上摘掉——
+ * 50 个 chip 各重复一遍「技能 ·」是零信息量的噪音，还吃掉近四成宽度。
+ * 混合批返回 null，此时命名空间是真正的区分信息，必须逐个带上。
+ */
+export function sharedNamespaceKey(
+  capabilityKeys: readonly string[],
+): CapabilityNamespaceKey | null {
+  if (capabilityKeys.length === 0) return null;
+  let shared: CapabilityNamespaceKey | null = null;
+  for (const key of capabilityKeys) {
+    const split = splitCapabilityKey(key);
+    if (!split) return null;               // 认不出的 key 一律走逐个带前缀（露原文）
+    if (shared === null) shared = split.namespaceKey;
+    else if (shared !== split.namespaceKey) return null;
+  }
+  return shared;
+}
+
 export function splitCapabilityKey(
   capabilityKey: string,
 ): { namespaceKey: CapabilityNamespaceKey; name: string } | null {

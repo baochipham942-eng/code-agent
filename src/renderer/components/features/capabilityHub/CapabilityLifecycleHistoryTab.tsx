@@ -22,6 +22,7 @@ import { RefreshCw } from 'lucide-react';
 import { fetchSessionTrace, type TraceSessionRead } from '../../../services/traceLedgerClient';
 import {
   projectCapabilityLifecycleHistory,
+  sharedNamespaceKey,
   splitCapabilityKey,
   type CapabilityLifecycleAction,
   type CapabilityLifecycleBatch,
@@ -70,6 +71,9 @@ const BatchRow: React.FC<BatchRowProps> = ({ batch, text, relativeTime, absolute
   const [expanded, setExpanded] = useState(false);
   const label = actionLabel(batch.action, text);
   const single = batch.capabilityKeys.length === 1;
+  // 整批同属一个命名空间时，名单里的名字不再各带一遍「技能 ·」（50 遍等于噪音）；
+  // 混合批里命名空间是真区分信息，逐个保留。单能力批走行内形态，始终带。
+  const homogeneous = sharedNamespaceKey(batch.capabilityKeys) !== null;
   return (
     <section
       data-testid="capability-history-batch"
@@ -120,7 +124,9 @@ const BatchRow: React.FC<BatchRowProps> = ({ batch, text, relativeTime, absolute
                   data-capability-key={capabilityKey}
                   className="max-w-full break-words rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300"
                 >
-                  {capabilityDisplayName(capabilityKey, text)}
+                  {homogeneous
+                    ? (splitCapabilityKey(capabilityKey)?.name ?? capabilityKey)
+                    : capabilityDisplayName(capabilityKey, text)}
                   {batch.details[capabilityKey] ? (
                     <span className="text-zinc-500">{` — ${batch.details[capabilityKey]}`}</span>
                   ) : null}

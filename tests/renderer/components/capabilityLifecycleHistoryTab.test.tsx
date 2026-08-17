@@ -112,12 +112,26 @@ describe('CapabilityLifecycleHistoryTab', () => {
     const members = screen.getAllByTestId('capability-history-batch-member');
     expect(members).toHaveLength(50);
     expect(members[0].getAttribute('data-capability-key')).toBe('skill:k00');
-    expect(members[0].textContent).toBe('技能 · k00');
+    // 整批同属一个命名空间 ⇒ 名字不再各带一遍「技能 ·」（50 遍等于噪音）
+    expect(members[0].textContent).toBe('k00');
     // 整屏不许出现 skill: 原始 key 形态
     expect(container.textContent).not.toContain('skill:');
     // 再点收起
     fireEvent.click(screen.getByTestId('capability-history-fold-toggle'));
     expect(screen.queryByTestId('capability-history-batch-member')).toBeNull();
+  });
+
+  it('⑨c 混合命名空间的批次：命名空间是真区分信息，逐个名字都要带', async () => {
+    traceApi.read = read([
+      lifecycle('skill:alpha', 'loaded', NOW - 2000),
+      lifecycle('connector:lark', 'loaded', NOW - 1999),
+    ]);
+    render(<CapabilityLifecycleHistoryTab />);
+
+    await waitFor(() => expect(screen.getByText('装上了 2 个能力')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('capability-history-fold-toggle'));
+    const members = screen.getAllByTestId('capability-history-batch-member');
+    expect(members.map((m) => m.textContent)).toEqual(['连接器 · lark', '技能 · alpha']);
   });
 
   it('⑨b 多能力 failed 批次展开后每个名字带自己的 detail 原文', async () => {
@@ -131,7 +145,7 @@ describe('CapabilityLifecycleHistoryTab', () => {
     fireEvent.click(screen.getByTestId('capability-history-fold-toggle'));
     const members = screen.getAllByTestId('capability-history-batch-member');
     expect(members).toHaveLength(2);
-    expect(members[0].textContent).toContain('技能 · a');
+    expect(members[0].textContent).toContain('a');   // 同质批：名字不带命名空间前缀
     expect(members[0].textContent).toContain('ENOENT: a broken');
     expect(members[1].textContent).toContain('EACCES: b denied');
   });

@@ -1,6 +1,6 @@
 // 装卸历史投影纯函数（N-LEDGER-P5B 判据①~⑥ + 变异验证锚点）
 import { describe, expect, it } from 'vitest';
-import { projectCapabilityLifecycleHistory, splitCapabilityKey } from '../../../src/renderer/utils/capabilityLifecycleHistory';
+import { projectCapabilityLifecycleHistory, sharedNamespaceKey, splitCapabilityKey } from '../../../src/renderer/utils/capabilityLifecycleHistory';
 import type { TraceLedgerEvent } from '../../../src/renderer/services/traceLedgerClient';
 
 function ev(type: string, data: unknown, ts: number): TraceLedgerEvent {
@@ -152,5 +152,18 @@ describe('splitCapabilityKey', () => {
     expect(splitCapabilityKey('skill:')).toBeNull();        // 缺名字
     expect(splitCapabilityKey(':internal-comms')).toBeNull(); // 缺命名空间
     expect(splitCapabilityKey('no-separator')).toBeNull();
+  });
+});
+
+describe('sharedNamespaceKey', () => {
+  it('整批同命名空间 → 返回该命名空间；混合 → null（此时前缀是真区分信息）', () => {
+    expect(sharedNamespaceKey(['skill:a', 'skill:b'])).toBe('nsSkill');
+    expect(sharedNamespaceKey(['skill:a', 'connector:lark'])).toBeNull();
+  });
+
+  it('空批 / 含认不出的 key → null（走逐个带前缀，露原文）', () => {
+    expect(sharedNamespaceKey([])).toBeNull();
+    expect(sharedNamespaceKey(['skill:a', 'weird:thing'])).toBeNull();
+    expect(sharedNamespaceKey(['no-separator'])).toBeNull();
   });
 });

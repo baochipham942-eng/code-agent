@@ -188,9 +188,11 @@ describe('StaticHtmlPreview 圈选与反馈', () => {
 });
 
 describe('PreviewPanel 非 HTML 分支', () => {
+  // 🔴 文案是产品决策：爸 2026-08-18 拍板右栏这几句换人话（原「已验证/未验证」是内部术语，
+  // 与 #1234 卡面撤徽章同一理由）。要改回内部术语必须先拿新拍板并在 PR 里引用单号。
   it.each([
-    ['verified', '已验证'],
-    ['unverified', '未验证'],
+    ['verified', '已就绪'],
+    ['unverified', '未检查'],
   ] as const)('右侧面板如实显示 %s 产物状态', (deliverableStatus, label) => {
     const tab = loadedTab({
       path: '/tmp/report.md',

@@ -87,9 +87,11 @@ export const zh = {
     download: '下载',
     archiveToLibrary: '归档到资料库',
     exportBundle: '导出文件包',
-    statusVerified: '已验证',
-    statusUnverified: '未验证',
-    statusFailed: '失败',
+    // 爸 2026-08-18 拍板：右栏这三句原是内部术语（已验证/未验证/失败），换成用户视角的人话。
+    // 事实层面它们说的是「证据检查」的结果：有通过证据 / 无任何证据 / 有失败证据。
+    statusVerified: '已就绪',
+    statusUnverified: '未检查',
+    statusFailed: '有问题',
     qualityValidated: '质量通过',
     qualityNeedsReview: '待复核',
     qualityFailed: '质量失败',

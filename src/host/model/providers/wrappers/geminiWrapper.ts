@@ -35,6 +35,8 @@ const InlineDataPartSchema = z
 const GeminiPartSchema = z
   .object({
     text: z.string().optional(),
+    /** Gemini thought summary part; text belongs on Neo's reasoning track. */
+    thought: z.boolean().optional(),
     functionCall: FunctionCallPartSchema.optional(),
     inlineData: InlineDataPartSchema.optional(),
   })
@@ -101,7 +103,14 @@ export function parseGeminiResponse(raw: unknown): ModelResponse {
   }
 
   const parts = candidate.content?.parts ?? [];
-  const content = parts[0]?.text ?? '';
+  const content = parts
+    .filter((part) => part.thought !== true)
+    .map((part) => part.text ?? '')
+    .join('');
+  const thinking = parts
+    .filter((part) => part.thought === true)
+    .map((part) => part.text ?? '')
+    .join('');
 
   const toolCalls: ToolCall[] = [];
   const functionCallParts = parts.filter((p) => p.functionCall);
@@ -122,6 +131,7 @@ export function parseGeminiResponse(raw: unknown): ModelResponse {
   return {
     type: toolCalls.length > 0 ? 'tool_use' : 'text',
     content,
+    ...(thinking ? { thinking } : {}),
     toolCalls,
     ...(usage ? { usage } : {}),
   };

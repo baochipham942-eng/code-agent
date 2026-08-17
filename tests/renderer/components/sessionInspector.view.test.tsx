@@ -173,3 +173,178 @@ describe('活会话 tail 跟随', () => {
     }
   });
 });
+
+describe('A · 层1 工具汇总句（可展开逐条明细）', () => {
+  const tool = (toolName: string, ts: number) =>
+    event('tool_dispatch', { toolName, success: true, durationMs: 12, error: null, fromCache: false }, 1, ts);
+
+  it('≥2 次工具调用：汇总句 + 明细入口，展开后逐条与账本对上', async () => {
+    traceApi.read = readWith([
+      tool('Read', 1100), tool('Grep', 1200), tool('Read', 1300),
+      tool('Bash', 1400), tool('Bash', 1500),
+      outcome('verified', 'completed', 2000),
+    ]);
+    render(<SessionInspector />);
+    const summary = await screen.findByTestId('inspector-turn-activity');
+    expect(summary.textContent).toContain('查阅 3 次');
+    expect(summary.textContent).toContain('运行命令 2 次');
+    // 明细默认收起，点开逐条与账本一致
+    expect(screen.queryByTestId('inspector-activity-detail')).toBeNull();
+    fireEvent.click(screen.getByTestId('inspector-activity-detail-toggle'));
+    const rows = await screen.findAllByTestId('inspector-activity-detail-row');
+    expect(rows).toHaveLength(5);
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining('Read'),
+      expect.stringContaining('Grep'),
+      expect.stringContaining('Read'),
+      expect.stringContaining('Bash'),
+      expect.stringContaining('Bash'),
+    ]);
+  });
+
+  it('单工具轮不聚合、无明细入口（保持原样）', async () => {
+    traceApi.read = readWith([
+      event('tool_dispatch', { toolName: 'Read', success: true, durationMs: 5, error: null, fromCache: false }, 1, 1100),
+      outcome('verified', 'completed', 2000),
+    ]);
+    render(<SessionInspector />);
+    const summary = await screen.findByTestId('inspector-turn-activity');
+    expect(summary.textContent).toContain('查阅 1 次');
+    expect(screen.queryByTestId('inspector-activity-detail-toggle')).toBeNull();
+  });
+});
+
+describe('B · 层1 撤 token 数字，只报异常', () => {
+  const turnWithTokens = (total: number, ts: number): TraceLedgerEvent[] => [
+    event('inference', { inputTokens: total, outputTokens: 0 }, 1, ts),
+    outcome('verified', 'completed', ts + 500),
+  ];
+
+  it('正常会话层1 全程零 token 数字', async () => {
+    traceApi.read = readWith([
+      event('inference', { inputTokens: 6400, outputTokens: 100, cacheReadTokens: 17000 }, 1, 1000),
+      outcome('verified', 'completed', 2000),
+    ]);
+    render(<SessionInspector />);
+    await screen.findByTestId('inspector-turn-activity');
+    expect(screen.queryByTestId('inspector-turn-tokens')).toBeNull();
+    expect(screen.queryByTestId('inspector-token-anomaly')).toBeNull();
+    expect(screen.getByTestId('inspector-timeline').textContent).not.toContain('消耗');
+    expect(screen.getByTestId('inspector-timeline').textContent).not.toContain('缓存');
+  });
+
+  it('高耗轮夹具（>均值×3 且 >20k）→ 黄条出现', async () => {
+    traceApi.read = readWith([
+      ...turnWithTokens(4_000, 1000),
+      ...turnWithTokens(4_000, 3000),
+      ...turnWithTokens(4_000, 5000),
+      ...turnWithTokens(100_000, 7000),
+    ]);
+    render(<SessionInspector />);
+    const anomalies = await screen.findAllByTestId('inspector-token-anomaly');
+    expect(anomalies).toHaveLength(1);
+    expect(anomalies[0].textContent).toContain('消耗明显偏高');
+    // 层2 数字保留：点开异常轮仍能看到 in/out 数字
+    const toggles = screen.getAllByTestId('inspector-turn-toggle');
+    fireEvent.click(toggles[3]);
+    const calls = await screen.findAllByTestId('inspector-inference-call');
+    expect(calls[0].textContent).toContain('100k');
+  });
+});
+
+describe('C · 进行中活行', () => {
+  it('未 settle 轮显示活行与步进；settle 后原地转常规轮行，不重复渲染', async () => {
+    traceApi.read = readWith([
+      event('inference', { inputTokens: 10, outputTokens: 5 }, 1, 1000),
+      event('tool_dispatch', { toolName: 'Bash', success: true, durationMs: 5, error: null, fromCache: false }, 1, 1100),
+      event('tool_dispatch', { toolName: 'Bash', success: true, durationMs: 5, error: null, fromCache: false }, 1, 1200),
+    ]);
+    traceApi.tails = [
+      {
+        sessionId: 'session_test',
+        state: 'present',
+        events: [outcome('verified', 'completed', 2000)],
+        skippedLines: 0,
+        cursor: 2000,
+      },
+    ];
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<SessionInspector />);
+      // 活行：呼吸点 + 「正在…（第 2 步）」
+      const live = await screen.findByTestId('inspector-live-turn');
+      expect(live.textContent).toContain('第 1 轮');
+      expect(live.textContent).toContain('进行中');
+      expect(live.textContent).toContain('第 2 步');
+      expect(screen.getByTestId('inspector-live-dot')).not.toBeNull();
+      expect(screen.queryByTestId('inspector-turn')).toBeNull();
+      // settle：tail 推入印章，活行原地转常规轮行
+      await vi.advanceTimersByTimeAsync(2600);
+      await waitFor(() => {
+        expect(screen.queryByTestId('inspector-live-turn')).toBeNull();
+      });
+      const turns = screen.getAllByTestId('inspector-turn');
+      expect(turns).toHaveLength(1);
+      expect(screen.getByTestId('inspector-stamp').dataset.verdict).toBe('verified');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('D · 层2 per-call 推理调用分卡', () => {
+  const manifest = (requestId: string, model: string, ts: number) =>
+    event('request_manifest', {
+      requestId,
+      messageRefs: [],
+      toolSchemaHash: 'd'.repeat(64),
+      toolNames: ['Read'],
+      requested: { provider: 'p', model, temperature: null, maxTokens: null, reasoningEffort: null, thinkingBudget: null },
+      actualProvider: 'p',
+      actualModel: model,
+      appVersion: '0.32.0',
+      adapterDefaults: { engine: 'aisdk', temperature: null, maxTokens: null },
+      compactionReplacements: [],
+      degraded: false,
+    }, 1, ts);
+
+  it('多调用轮逐卡：模型/耗时/结束原因/in-out-cache 上卡，工具挂卡下', async () => {
+    traceApi.read = readWith([
+      manifest('r1', 'model-a', 1000),
+      event('inference', { inputTokens: 19216, outputTokens: 45, cacheReadTokens: 17000, durationMs: 15200, finishReason: 'tool_calls' }, 1, 1100),
+      event('tool_dispatch', { toolName: 'Read', success: true, durationMs: 51, error: null, fromCache: false }, 1, 1200),
+      manifest('r2', 'model-a', 1300),
+      event('inference', { inputTokens: 19265, outputTokens: 17, durationMs: 3800, finishReason: 'stop' }, 1, 1400),
+      outcome('verified', 'completed', 2000),
+    ]);
+    render(<SessionInspector />);
+    fireEvent.click(await screen.findByTestId('inspector-turn-toggle'));
+    const cards = await screen.findAllByTestId('inspector-inference-call');
+    expect(cards).toHaveLength(2);
+    expect(cards[0].textContent).toContain('#1');
+    expect(cards[0].textContent).toContain('model-a');
+    expect(cards[0].textContent).toContain('tool_calls');
+    expect(cards[0].textContent).toContain('19k');
+    expect(cards[0].textContent).toContain('17k');
+    // 工具挂在所属 call 卡下
+    expect(within(cards[0]).getByTestId('inspector-call-tools').textContent).toContain('Read');
+    expect(cards[1].textContent).toContain('#2');
+    expect(cards[1].textContent).toContain('stop');
+    expect(within(cards[1]).queryByTestId('inspector-call-tools')).toBeNull();
+    // 有分卡且无 orphan/决策时平铺 steps 清单不渲染（工具只出现在卡下）
+    expect(screen.queryByTestId('inspector-steps')).toBeNull();
+  });
+
+  it('存量会话缺 inference 细分 → 降级轮级汇总并如实标注', async () => {
+    traceApi.read = readWith([
+      event('tool_dispatch', { toolName: 'Read', success: true, durationMs: 5, error: null, fromCache: false }, 1, 1000),
+      outcome('verified', 'completed', 2000),
+    ]);
+    render(<SessionInspector />);
+    fireEvent.click(await screen.findByTestId('inspector-turn-toggle'));
+    expect(await screen.findByTestId('inspector-steps')).not.toBeNull();
+    expect(screen.getByTestId('inspector-steps').textContent).toContain('Read');
+    expect(screen.queryByTestId('inspector-inference-call')).toBeNull();
+    expect(screen.getByTestId('inspector-calls-degraded').textContent).toContain('轮级汇总');
+  });
+});

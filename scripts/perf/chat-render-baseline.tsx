@@ -6,8 +6,6 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Message } from '../../src/shared/contract/message';
 import type { TraceTurn } from '../../src/shared/contract/trace';
 import { projectTurns } from '../../src/renderer/hooks/useTurnProjection';
@@ -221,15 +219,12 @@ function makeDiffTurn(fileCount: number, linesPerFile: number): TraceTurn {
   };
 }
 
-const highlighterComponent = SyntaxHighlighter as unknown as React.ComponentType<Record<string, unknown>>;
-
 function MarkdownHighlightHarness({ content }: { content: string }): React.ReactElement {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
         code({ className, children }) {
-          const language = /language-(\w+)/.exec(className || '')?.[1] || 'text';
           const code = String(children).replace(/\n$/, '');
           const lines = code.split('\n');
           const displayCode = lines.length > 25 ? lines.slice(0, 25).join('\n') : code;
@@ -239,22 +234,7 @@ function MarkdownHighlightHarness({ content }: { content: string }): React.React
           if (lines.length > 25) {
             return <pre><code>{displayCode}</code></pre>;
           }
-          return React.createElement(
-            highlighterComponent,
-            {
-              style: oneDark,
-              language,
-              showLineNumbers: lines.length > 3,
-              customStyle: {
-                margin: 0,
-                padding: '1rem',
-                background: 'transparent',
-                fontSize: '0.75rem',
-                lineHeight: '1.25rem',
-              },
-            },
-            displayCode,
-          );
+          return <pre><code>{displayCode}</code></pre>;
         },
       }}
     >

@@ -34,8 +34,8 @@ import {
   VideoResultDisplay,
 } from './ToolResultMediaDisplays';
 
-// Prism 语法高亮(~react-syntax-highlighter)按需动态加载,只在真的渲染 JSON 高亮时才下载。
-const LazyPrismCodeBlock = lazy(() => import('../PrismCodeBlock'));
+// Shiki 高亮内核按需动态加载,只在真的渲染 JSON 高亮时才下载。
+const LazyShikiCodeBlock = lazy(() => import('../ShikiCodeBlock'));
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
@@ -58,7 +58,7 @@ function stripAnsiCodes(str: string): string {
 }
 
 // JSON 语法高亮 - 仅用于结构化 JSON（参数 default 分支 / 对象型 result.output）。
-// 复用 MessageContent 同款 Prism（palette 随 data-theme，见 prismTheme）。纯文本/日志/带行号输出不走这里，
+// 复用 MessageContent 同款 Shiki（palette 随 data-theme，见 shikiTheme）。纯文本/日志/带行号输出不走这里，
 // 避免把 Read 的 "  1→code" 行号前缀或 Bash 日志当代码高亮弄乱。
 const JSON_HIGHLIGHT_STYLE: React.CSSProperties = {
   margin: 0,
@@ -82,7 +82,7 @@ function JsonHighlight({ code, error }: { code: string; error?: boolean }) {
         </pre>
       }
     >
-      <LazyPrismCodeBlock
+      <LazyShikiCodeBlock
         language="json"
         customStyle={JSON_HIGHLIGHT_STYLE}
         codeTagProps={{ style: { fontSize: '0.75rem', background: 'transparent' } }}

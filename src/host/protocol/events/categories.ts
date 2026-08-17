@@ -55,6 +55,7 @@ export const IMMEDIATE_EVENT_TYPES = new Set<AgentEventType>([
   'hook_started',
   'tool_call_start',
   'tool_call_end',
+  'artifact_write_started',
   'surface_execution',
   'tool_cancel_local',
   'budget_exceeded',

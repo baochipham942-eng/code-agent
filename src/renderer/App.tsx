@@ -53,6 +53,7 @@ import { useBackgroundTaskSync } from './hooks/useBackgroundTaskSync';
 import { useOpenPreviewBridge } from './hooks/useOpenPreviewBridge';
 import { useTerminalRevealBridge } from './hooks/useTerminalRevealBridge';
 import { useArtifactSurfaceIntent } from './hooks/useArtifactSurfaceIntent';
+import { useArtifactFollow } from './hooks/useArtifactFollow';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { MemoFloater } from './components/features/memo/MemoFloater';
 import { useAppshots } from './hooks/useAppshots';
@@ -275,6 +276,7 @@ export const App: React.FC = () => {
   useOpenPreviewBridge();
   useTerminalRevealBridge();
   useArtifactSurfaceIntent();
+  useArtifactFollow();
   useRendererBundleAutoReload();
 
   // 全局快捷键（命令面板、设置、会话导航等；compact 只有用户显式绑定后才会触发）

@@ -331,6 +331,14 @@ async function handleReadFile(payload: { filePath: string }): Promise<string> {
   return fs.readFile(payload.filePath, 'utf-8');
 }
 
+async function handleGetFileMetadata(
+  payload: { filePath: string },
+): Promise<{ path: string; size: number; modifiedAt: number }> {
+  const fs = await import('fs/promises');
+  const stat = await fs.stat(payload.filePath);
+  return { path: payload.filePath, size: stat.size, modifiedAt: stat.mtimeMs };
+}
+
 // Map extensions to IANA mime types for PreviewPanel image/pdf rendering.
 // Only covers what PREVIEWABLE_EXTENSIONS advertises for media; anything
 // else defaults to application/octet-stream.
@@ -880,6 +888,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'readBinary':
           data = await handleReadBinary(payload as { filePath: string });
+          break;
+        case 'getFileMetadata':
+          data = await handleGetFileMetadata(payload as { filePath: string });
           break;
         case 'writeFile':
           data = await handleWriteFile(payload as { filePath: string; content: string });

@@ -55,6 +55,11 @@ export function noteSurfaceIntentNavigation(
   }
 }
 
+export function suppressSurfaceIntentForCurrentTurn(): void {
+  if (!activeContext) return;
+  getTurnState(activeContext).userSwitchedAway = true;
+}
+
 export function requestSurfaceIntent(input: {
   artifact: SurfaceArtifact;
   artifactSessionId?: string;

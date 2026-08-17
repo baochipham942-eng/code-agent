@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, File, Folder, X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Eye, Pencil, Save, FolderOpen, Presentation, MousePointerClick, MoreHorizontal } from 'lucide-react';
+import { Archive, File, Folder, X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Save, FolderOpen, Presentation, MousePointerClick, MoreHorizontal } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
@@ -24,6 +24,11 @@ import {
   type HtmlLocalitySelectionController,
 } from '../utils/htmlLocality';
 import { DeliverableStatusBadge } from './DeliverableStatusBadge';
+import { ArtifactFollowToolbar, ArtifactPreviewLoading } from './ArtifactFollowToolbar';
+import { ArtifactSourceEditor } from './ArtifactSourceEditor';
+import { useSessionStore } from '../stores/sessionStore';
+import { artifactFollowKey, useArtifactFollowStore } from '../stores/artifactFollowStore';
+import { artifactCompletionMeta, usePreviewFileMetadata } from '../hooks/usePreviewFileMetadata';
 
 const CodeEditor = lazy(() => import('./CodeEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
@@ -32,6 +37,7 @@ const MarkdownCore = lazy(() => import('./features/chat/MessageBubble/MarkdownCo
 const logger = createLogger('PreviewPanel');
 
 const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown']);
+const HTML_EXTS = new Set(['html', 'htm']);
 const CSV_EXTS: Record<string, ',' | '\t'> = { csv: ',', tsv: '\t' };
 // Code files render in edit-only mode (no rendered form exists) via CodeEditor.
 const CODE_LANGUAGE_BY_EXT: Record<string, 'json' | 'yaml' | 'typescript' | 'javascript'> = {
@@ -598,7 +604,7 @@ export function StaticHtmlPreview({
 }
 
 export const PreviewPanel: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const pv = t.previewWorkspace.preview;
   const previewTabs = useAppStore((s) => s.previewTabs);
   const activePreviewTabId = useAppStore((s) => s.activePreviewTabId);
@@ -611,6 +617,12 @@ export const PreviewPanel: React.FC = () => {
     () => previewTabs.find((t) => t.id === activePreviewTabId) ?? null,
     [previewTabs, activePreviewTabId],
   );
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const previewFilePath = activeTab?.path ?? null;
+  const followEntry = useArtifactFollowStore((state) => currentSessionId && previewFilePath ? state.entries[artifactFollowKey(currentSessionId, previewFilePath)] : undefined);
+  const followPaused = useArtifactFollowStore((state) => currentSessionId ? state.pausedSessionIds.has(currentSessionId) : false);
+  const setSessionPaused = useArtifactFollowStore((state) => state.setSessionPaused);
+  const clearFollowAttention = useArtifactFollowStore((state) => state.clearAttention);
 
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -629,19 +641,21 @@ export const PreviewPanel: React.FC = () => {
   const [isMaximized, setIsMaximized] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [moreActionsOpen, setMoreActionsOpen] = useState(false);
+  const { fileMetadata, refreshFileMetadata } = usePreviewFileMetadata(previewFilePath);
   const moreActionsRef = useRef<HTMLDivElement | null>(null);
   // 预览用 HTML：把同目录相对 css/js 内联进来（srcDoc iframe 无法解析相对引用）。
   // 与可编辑/保存的 content 分开，保存仍写原始 content。
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const previewFilePath = activeTab?.path ?? null;
   const content = activeTab?.content ?? '';
   const savedContent = activeTab?.savedContent ?? '';
   const mode = activeTab?.mode ?? 'preview';
 
   const ext = getExtension(previewFilePath);
   const isMarkdown = MARKDOWN_EXTS.has(ext);
+  const isHtml = HTML_EXTS.has(ext);
+  const hasSourceModes = isMarkdown || isHtml;
   const csvDelimiter = CSV_EXTS[ext];
   const isCsv = csvDelimiter !== undefined;
   const codeLanguage = CODE_LANGUAGE_BY_EXT[ext];
@@ -680,7 +694,7 @@ export const PreviewPanel: React.FC = () => {
     if (!activeTab) return;
     if (activeTab.isLoaded) return;
     void loadContent(activeTab.id, activeTab.path);
-  }, [activeTab?.id, activeTab?.isLoaded]);
+  }, [activeTab?.id, activeTab?.isLoaded, activeTab?.reloadNonce]);
 
   // 产物更新回执：只在同一 tab 的磁盘重载落地、且新内容不是用户刚看到/刚保存的
   // 内容时闪现（首次加载、切 tab、用户自己保存都不闪）。
@@ -754,6 +768,7 @@ export const PreviewPanel: React.FC = () => {
         // readFile returns '' for empty files — that's valid content, not an error.
         markPreviewTabLoaded(tabId, fetched ?? '');
       }
+      void refreshFileMetadata(filePath);
     } catch (err) {
       logger.error('Failed to load file', err);
       const { message, detail } = toPreviewErrorState(err, pv.loadFileFailed);
@@ -765,6 +780,13 @@ export const PreviewPanel: React.FC = () => {
 
   const handleRefresh = () => {
     if (activeTab) void loadContent(activeTab.id, activeTab.path);
+  };
+
+  const handleFollowToggle = () => {
+    if (!currentSessionId || !activeTab) return;
+    setSessionPaused(currentSessionId, !followPaused);
+    if (!followPaused) return;
+    clearFollowAttention(currentSessionId, activeTab.path); void loadContent(activeTab.id, activeTab.path);
   };
 
   const handleSave = async () => {
@@ -876,6 +898,8 @@ export const PreviewPanel: React.FC = () => {
   if (!activeTab) return null;
   if (activeTab.kind === 'liveDev') return null;
 
+  const completedMeta = artifactCompletionMeta({ entry: followEntry, metadata: fileMetadata, filePath: activeTab.path, language, label: pv.generationComplete });
+
   return (
     <div
       className={`flex flex-col bg-zinc-900 transition-all duration-300 ${
@@ -918,13 +942,7 @@ export const PreviewPanel: React.FC = () => {
           </button>
           {moreActionsOpen && (
             <div className="absolute right-0 top-full z-10 mt-1 w-48 rounded-lg bg-zinc-800 p-1 shadow-xl">
-              {isMarkdown && !isVirtual && (
-                <button type="button" onClick={() => { updatePreviewTabMode(activeTab.id, mode === 'edit' ? 'preview' : 'edit'); setMoreActionsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700">
-                  {mode === 'edit' ? <Eye className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-                  {mode === 'edit' ? pv.switchToPreview : pv.switchToEdit}
-                </button>
-              )}
-              {(isMarkdown || isCode) && !isVirtual && (
+              {(hasSourceModes || isCode) && !isVirtual && (
                 <button type="button" onClick={() => { void handleSave(); setMoreActionsOpen(false); }} disabled={!isDirty || isSaving} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-40">
                   <Save className={`h-4 w-4 ${isSaving ? 'animate-pulse' : ''}`} />{isDirty ? pv.saveShortcut : pv.saved}
                 </button>
@@ -950,6 +968,16 @@ export const PreviewPanel: React.FC = () => {
         </div>
       </div>
 
+      <ArtifactFollowToolbar
+        phase={followEntry?.phase}
+        paused={followPaused}
+        hasSourceModes={hasSourceModes}
+        mode={mode}
+        completedMeta={completedMeta}
+        onModeChange={(nextMode) => updatePreviewTabMode(activeTab.id, nextMode)}
+        onFollowToggle={handleFollowToggle}
+      />
+
       {/* Content */}
       <div
         className={`flex-1 overflow-hidden ${isMarkdown || isCsv || isImage || isAudio || isVideo || isArchive || isOffice ? 'bg-zinc-900' : 'bg-white'}${artifactFlash ? ' artifact-flash' : ''}`}
@@ -959,13 +987,8 @@ export const PreviewPanel: React.FC = () => {
           }
         }}
       >
-        {isLoading ? (
-          <div className="flex items-center justify-center h-full bg-zinc-700">
-            <div className="flex flex-col items-center gap-3">
-              <RefreshCw className="w-8 h-8 text-zinc-400 animate-spin" />
-              <span className="text-sm text-zinc-400">{pv.loading}</span>
-            </div>
-          </div>
+        {isLoading || (followEntry?.phase === 'generating' && !activeTab.isLoaded) ? (
+          <ArtifactPreviewLoading label={followEntry?.phase === 'generating' ? pv.waitingForFile : pv.loading} />
         ) : error ? (
           <PreviewErrorState message={error} detail={errorDetail} onRetry={handleRefresh} />
         ) : isImage ? (
@@ -1027,6 +1050,17 @@ export const PreviewPanel: React.FC = () => {
               <SpreadsheetBlock spec={content} filePath={previewFilePath ?? undefined} />
             </Suspense>
           </div>
+        ) : hasSourceModes && mode !== 'preview' ? (
+          <ArtifactSourceEditor
+            mode={mode}
+            content={content}
+            markdown={isMarkdown}
+            loadingLabel={pv.loadingEditor}
+            onChange={(next) => updatePreviewTabContent(activeTab.id, next)}
+            onSave={handleSave}
+            jumpToLine={activeTab.jumpToLine}
+            jumpNonce={activeTab.jumpNonce}
+          />
         ) : isCode && codeLanguage ? (
           <Suspense
             fallback={
@@ -1040,23 +1074,6 @@ export const PreviewPanel: React.FC = () => {
               onChange={(next: string) => updatePreviewTabContent(activeTab.id, next)}
               onSave={handleSave}
               language={codeLanguage}
-              jumpToLine={activeTab.jumpToLine}
-              jumpNonce={activeTab.jumpNonce}
-            />
-          </Suspense>
-        ) : isMarkdown && mode === 'edit' ? (
-          <Suspense
-            fallback={
-              <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
-                {pv.loadingEditor}
-              </div>
-            }
-          >
-            <CodeEditor
-              value={content}
-              onChange={(next: string) => updatePreviewTabContent(activeTab.id, next)}
-              onSave={handleSave}
-              language="markdown"
               jumpToLine={activeTab.jumpToLine}
               jumpNonce={activeTab.jumpNonce}
             />

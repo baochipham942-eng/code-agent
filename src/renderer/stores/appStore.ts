@@ -83,9 +83,10 @@ export interface PreviewTab {
   path: string;
   content: string;      // editor buffer (may differ from saved)
   savedContent: string; // last-known on-disk content
-  mode: 'preview' | 'edit';
+  mode: 'preview' | 'source' | 'edit';
   lastActivatedAt: number;
   isLoaded: boolean;    // whether readFile has populated savedContent yet
+  reloadNonce?: number; // disk refresh trigger even when isLoaded is already false
   // Live Preview (D3+) — 存在时覆盖文件语义
   kind?: 'file' | 'virtual' | 'liveDev';
   /** Human title for generated content that has no on-disk path. */
@@ -136,6 +137,8 @@ export type WorkbenchOpenSource = 'user' | 'auto';
 export interface OpenWorkbenchTabOptions {
   source?: WorkbenchOpenSource;
   deliverableStatus?: DeliverableEvidenceStatus;
+  /** Background auto-open creates/refreshes the tab without stealing the active view. */
+  activate?: boolean;
 }
 
 // 跨 panel 跳转目标
@@ -447,7 +450,7 @@ export interface AppState {
   syncTaskWorkbenchForActivity: (hasActivity: boolean) => void;
   setWorkbenchHighlight: (highlight: Omit<WorkbenchHighlight, 'nonce'> | null) => void;
   updatePreviewTabContent: (id: string, content: string) => void;
-  updatePreviewTabMode: (id: string, mode: 'preview' | 'edit') => void;
+  updatePreviewTabMode: (id: string, mode: 'preview' | 'source' | 'edit') => void;
   markPreviewTabLoaded: (id: string, savedContent: string) => void;
   markPreviewTabSaved: (id: string) => void;
   setPendingPermissionRequest: (request: PermissionRequest | null, sessionId?: string | null) => void;
@@ -767,6 +770,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   openPreview: (filePath, options) => {
     noteSurfaceIntentNavigation('preview', options?.source ?? 'user');
+    const activate = options?.activate !== false;
     // Resolve relative paths against workingDirectory
     let resolved = filePath;
     if (filePath && !filePath.startsWith('/')) {
@@ -779,24 +783,26 @@ export const useAppStore = create<AppState>()((set, get) => ({
       if (existing) {
         return {
           ...state,
-          activePreviewTabId: existing.id,
+          activePreviewTabId: activate ? existing.id : state.activePreviewTabId,
           previewTabs: state.previewTabs.map((t) =>
             t.id === existing.id
               ? {
                   ...t,
                   ...(options?.deliverableStatus ? { deliverableStatus: options.deliverableStatus } : {}),
-                  lastActivatedAt: nextPreviewTabTick(),
+                  lastActivatedAt: activate ? nextPreviewTabTick() : t.lastActivatedAt,
                   // 产物可能在上次打开后被修复/重写过；重新打开时若没有未保存的
                   // 编辑（content===savedContent），重置 isLoaded 让加载 effect
                   // 重读磁盘，避免 iframe 一直渲染修复前的旧版本。
                   isLoaded: t.content !== t.savedContent ? t.isLoaded : false,
+                  reloadNonce: t.content !== t.savedContent ? t.reloadNonce : (t.reloadNonce ?? 0) + 1,
                 }
               : t,
           ),
           workbenchTabs: state.workbenchTabs.includes(newWorkbenchId)
             ? state.workbenchTabs
             : [...state.workbenchTabs, newWorkbenchId],
-          activeWorkbenchTab: newWorkbenchId,
+          activeWorkbenchTab: activate ? newWorkbenchId : state.activeWorkbenchTab,
+          workbenchCollapsed: activate ? options?.source === 'auto' && state.workbenchCollapsedByUser : state.workbenchCollapsed,
         };
       }
       const id = `ptab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -808,6 +814,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         mode: 'preview',
         lastActivatedAt: nextPreviewTabTick(),
         isLoaded: false,
+        reloadNonce: 0,
         ...(options?.deliverableStatus ? { deliverableStatus: options.deliverableStatus } : {}),
       };
       // LRU eviction when at capacity — liveDev and file tabs now share the
@@ -824,9 +831,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
       return {
         ...state,
         previewTabs: [...carried, tab],
-        activePreviewTabId: id,
+        activePreviewTabId: activate ? id : state.activePreviewTabId,
         workbenchTabs: [...workbenchCarried, newWorkbenchId],
-        activeWorkbenchTab: newWorkbenchId,
+        activeWorkbenchTab: activate ? newWorkbenchId : state.activeWorkbenchTab,
+        workbenchCollapsed: activate ? options?.source === 'auto' && state.workbenchCollapsedByUser : state.workbenchCollapsed,
       };
     });
   },

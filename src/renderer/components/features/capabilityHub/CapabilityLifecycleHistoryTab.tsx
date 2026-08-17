@@ -162,7 +162,7 @@ export const CapabilityLifecycleHistoryTab: React.FC = () => {
     [language],
   );
 
-  const history = read && read.state === 'present'
+  const history = read?.state === 'present'
     ? projectCapabilityLifecycleHistory(read.events)
     : { groups: [], dropped: 0 };
 

@@ -9,10 +9,9 @@
 // 格式: { rules: [{ pattern, decision, createdAt, source }] }
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
-import { getProjectConfigDir } from '../config/configPaths';
+import { getProjectConfigDir, getUserConfigDir } from '../config/configPaths';
 
 const logger = createLogger('ExecPolicy');
 
@@ -56,8 +55,11 @@ export class ExecPolicyStore {
   private filePath: string;
   private dirty = false;
 
-  constructor(projectDir: string) {
-    this.filePath = path.join(getProjectConfigDir(projectDir), 'exec-policy.json');
+  constructor(location: string | { dataDir: string }) {
+    const configDir = typeof location === 'string'
+      ? getProjectConfigDir(location)
+      : location.dataDir;
+    this.filePath = path.join(configDir, 'exec-policy.json');
     this.load();
   }
 
@@ -259,8 +261,7 @@ export function getExecPolicyStore(projectDir?: string): ExecPolicyStore {
     instance = new ExecPolicyStore(projectDir);
   }
   if (!instance) {
-    // Fallback: use home directory
-    instance = new ExecPolicyStore(os.homedir() || os.tmpdir());
+    instance = new ExecPolicyStore({ dataDir: getUserConfigDir() });
   }
   return instance;
 }

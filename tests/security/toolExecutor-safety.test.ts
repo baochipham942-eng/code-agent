@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ToolExecutor } from '../../src/host/tools/toolExecutor';
 import { resetToolResolver } from '../../src/host/tools/dispatch/toolResolver';
 
+const learnFromApproval = vi.hoisted(() => vi.fn(() => false));
+
 // Mock tool resolver — register a fake 'bash' tool with permission required
 vi.mock('../../src/host/tools/dispatch/toolResolver', () => {
   const bashDef = {
@@ -45,7 +47,7 @@ vi.mock('../../src/host/security', async (importOriginal) => {
     // 隔离 exec policy — 返回空 store，避免加载磁盘上的持久化规则
     getExecPolicyStore: () => ({
       match: () => null,
-      learnFromApproval: () => false,
+      learnFromApproval,
     }),
   };
 });
@@ -83,6 +85,7 @@ describe('ToolExecutor safety integration', () => {
 
   beforeEach(() => {
     permissionRequested = false;
+    learnFromApproval.mockClear();
     resetToolResolver();
 
     executor = new ToolExecutor({
@@ -130,6 +133,36 @@ describe('ToolExecutor safety integration', () => {
   });
 
   describe('unsafe commands still request permission', () => {
+    it('does not learn persistent rules from dev auto-approval', async () => {
+      const machineExecutor = new ToolExecutor({
+        requestPermission: async () => ({ approved: true, approvalSource: 'dev-auto-approve' }),
+        workingDirectory: '/tmp',
+      });
+      machineExecutor.setAuditEnabled(false);
+
+      await machineExecutor.execute('bash', { command: 'npm install lodash' }, execOptions);
+
+      expect(learnFromApproval).not.toHaveBeenCalled();
+    });
+
+    it('learns persistent rules from explicit user approval', async () => {
+      const userExecutor = new ToolExecutor({
+        requestPermission: async () => ({ approved: true, approvalSource: 'user' }),
+        workingDirectory: '/tmp',
+      });
+      userExecutor.setAuditEnabled(false);
+
+      await userExecutor.execute('bash', { command: 'npm install lodash' }, execOptions);
+
+      expect(learnFromApproval).toHaveBeenCalledOnce();
+    });
+
+    it('keeps learning persistent rules from legacy boolean approval', async () => {
+      await executor.execute('bash', { command: 'npm install lodash' }, execOptions);
+
+      expect(learnFromApproval).toHaveBeenCalledOnce();
+    });
+
     it('npm install requests permission', async () => {
       await executor.execute('bash', { command: 'npm install lodash' }, execOptions);
       expect(permissionRequested).toBe(true);

@@ -130,7 +130,7 @@ type PermissionApprovalSource =
   | 'user'
   /** dev 槽里的 devModeAutoApprove 机器放行 */
   | 'dev-auto-approve'
-  /** 评测脚本按预设策略批准；本单尚无生产写入方，后续单启用 */
+  /** 评测脚本按预设策略批准 */
   | 'scripted';
 
 /** 审批处理器的富返回值。裸 boolean 仍然合法（等价 `user` 语义），旧实现无需改动。 */

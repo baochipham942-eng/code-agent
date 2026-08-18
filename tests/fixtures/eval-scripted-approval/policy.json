@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "deny-write-outside-eval-sandbox",
+      "effect": "deny",
+      "tool": "Write",
+      "match": {
+        "path": "/tmp/neo-scripted-approval-outside-N-APPROVALINJECT-EVAL.txt"
+      }
+    }
+  ]
+}

@@ -48,6 +48,7 @@ import { isProviderVariantDisabled } from '../src/host/prompts/providerVariants'
 import { isRedlineCase } from '../src/host/testing/testCaseClassification';
 import { getTestDirs } from '../src/host/config/configPaths';
 import { assertMockPolicyCoverage } from '../src/host/testing/mockEvalPolicy';
+import { getScriptedRunPermissionHandler } from '../src/host/permissions/scriptedRunPermissionPolicy';
 
 /** roadmap 2.4 A/B 归因（audit D-R3）：当前 run 的 provider 变体臂 */
 function providerVariantArm(): 'variant-on' | 'variant-off' {
@@ -481,6 +482,7 @@ function createAgent(opts: {
 
   return new StandaloneAgentAdapter({
     workingDirectory: opts.workingDir,
+    requestPermission: getScriptedRunPermissionHandler(),
     modelConfig: {
       provider: resolvedProvider,
       model: resolvedModel,

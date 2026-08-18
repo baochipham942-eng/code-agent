@@ -15,6 +15,7 @@
 import { IPC_CHANNELS } from '../shared/ipc';
 import { getTaskManager } from '../host/task/TaskManager';
 import { closeDeadParkedApproval } from '../host/agent/parkedApprovalHydration';
+import { deliverForegroundPermissionResponse } from './foregroundPermissionRegistry';
 import type { PermissionDeliveryOutcome, PermissionResponse } from '../shared/contract/permission';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import type { WebRouteLogger } from './routes/routeTypes';
@@ -57,6 +58,29 @@ export function installPermissionResponseHandler(deps: PermissionResponseDeps): 
       }
 
       const targetSessionId = sessionId || getCurrentSessionId();
+      const foregroundOutcome = targetSessionId
+        ? deliverForegroundPermissionResponse(targetSessionId, requestId, response)
+        : undefined;
+      if (foregroundOutcome !== undefined) {
+        if (foregroundOutcome === 'delivered') {
+          logger.info('Permission response delivered (web foreground)', { requestId, response, sessionId: targetSessionId });
+          return { success: true, data: { requestId, sessionId: targetSessionId, source: 'foreground-permission-island' } };
+        }
+        logger.warn('Permission response not delivered (web foreground)', {
+          requestId,
+          response,
+          sessionId: targetSessionId,
+          outcome: foregroundOutcome,
+        });
+        return {
+          success: false,
+          error: {
+            code: FAILURE_CODES[foregroundOutcome],
+            message: `Permission response for ${requestId} not delivered (${foregroundOutcome}, session=${targetSessionId})`,
+          },
+        };
+      }
+
       const outcome: PermissionDeliveryOutcome = targetSessionId
         ? getTaskManager().handlePermissionResponse(targetSessionId, requestId, response)
         : 'no_session';

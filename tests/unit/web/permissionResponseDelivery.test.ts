@@ -17,6 +17,11 @@ import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import type { AgentOrchestrator } from '../../../src/host/agent/agentOrchestrator';
 import type { PendingDevPermissionRequest } from '../../../src/web/routes/dev';
 import type { PermissionAskResult } from '../../../src/shared/contract';
+import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
+import {
+  registerForegroundPermissionIsland,
+  unregisterForegroundPermissionIsland,
+} from '../../../src/web/foregroundPermissionRegistry';
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown | Promise<unknown>;
 type IpcResult = { success: boolean; data?: unknown; error?: { code: string; message: string } };
@@ -182,5 +187,60 @@ describe('审批响应投递链路（web 路径）', () => {
     const result = await invoke('dev-req', 'allow');
     expect(result.success).toBe(true);
     expect(resolve).toHaveBeenCalledWith('allow');
+  });
+
+  it('前台审批岛在 TaskManager 之前接到响应，真的放行等待中的工具调用', async () => {
+    const sessionId = 'sess-foreground';
+    const island = new OrchestratorPermissionIsland({
+      getSettings: configServiceStub.getSettings as never,
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'main',
+      onEvent: () => {},
+    });
+    registerForegroundPermissionIsland(sessionId, island);
+    install();
+    try {
+      const approval = island.requestPermission({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate', details: {} });
+      await Promise.resolve();
+      const requestId = island.listPendingRequests()[0]?.id;
+      expect(requestId).toBeTruthy();
+
+      await expect(invoke(requestId!, 'allow', sessionId)).resolves.toMatchObject({
+        success: true,
+        data: { source: 'foreground-permission-island' },
+      });
+      await expect(approval).resolves.toEqual({ approved: true });
+    } finally {
+      island.drainPendingPermissions();
+      unregisterForegroundPermissionIsland(sessionId, island);
+    }
+  });
+
+  it('同会话前台岛与后台任务并存时，后台审批的响应不被前台岛吞掉', async () => {
+    const sessionId = 'sess-mixed';
+    const island = new OrchestratorPermissionIsland({
+      getSettings: configServiceStub.getSettings as never,
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'main',
+      onEvent: () => {},
+    });
+    registerForegroundPermissionIsland(sessionId, island);
+    const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId)!;
+    install();
+    try {
+      // 审批挂在 TaskManager 的 orchestrator 上，前台岛此刻没有任何挂起项
+      const approval = requestPermission(orchestrator)({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate' });
+      await Promise.resolve();
+      const [requestId] = pendingIds(orchestrator);
+      expect(requestId).toBeTruthy();
+
+      const result = await invoke(requestId, 'allow', sessionId);
+      // 必须穿过前台岛落到 TaskManager，而不是被岛的 unknown_request 短路成失败
+      expect(result).toMatchObject({ success: true, data: { source: 'task-manager' } });
+      await expect(approval).resolves.toEqual({ approved: true });
+    } finally {
+      island.drainPendingPermissions();
+      unregisterForegroundPermissionIsland(sessionId, island);
+    }
   });
 });

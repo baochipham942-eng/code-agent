@@ -85,6 +85,8 @@ export function permissionDenialError(toolName: string, source: PermissionDenial
       return `${toolName} 被自动拒绝：本次运行已被取消（或有新消息到达），挂起的审批被统一解除。`;
     case 'fail-closed':
       return `${toolName} 被自动拒绝：审批链路依赖不可用，按安全侧默认拒绝（fail-closed），并非用户拒绝。`;
+    case 'scripted':
+      return `${toolName} 被评测脚本自动拒绝：当前为 scripted approval eval 模式，并非用户拒绝。`;
     default: {
       const _exhaustive: never = source;
       return _exhaustive;

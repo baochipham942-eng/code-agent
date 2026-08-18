@@ -28,6 +28,16 @@ const mockRun = vi.fn();
 const mockCancel = vi.fn();
 const mockSteer = vi.fn();
 const mockCreateAgentLoop = vi.fn();
+const configServiceMocks = vi.hoisted(() => ({
+  getSettings: vi.fn(() => ({
+    permissions: {
+      autoApprove: { read: true, write: false, execute: false, network: false },
+      devModeAutoApprove: false,
+    },
+    models: { default: 'openai', providers: {}, routing: {} },
+  })),
+  isDevModeAutoApproveEnabled: vi.fn(() => false),
+}));
 const mockBroadcastSSE = vi.hoisted(() => vi.fn());
 const agentEngineMocks = vi.hoisted(() => ({
   codexRun: vi.fn(),
@@ -85,6 +95,16 @@ vi.mock('../../../src/cli/bootstrap', () => ({
   createRunToolExecutor: vi.fn(() => ({ execute: vi.fn() })),
   getToolExecutor: vi.fn(() => undefined),
 }));
+
+vi.mock('../../../src/host/services/core/configService', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/host/services/core/configService')>(
+    '../../../src/host/services/core/configService',
+  );
+  return {
+    ...actual,
+    getConfigService: () => configServiceMocks,
+  };
+});
 
 vi.mock('../../../src/web/helpers/sse', async () => {
   const actual = await vi.importActual<typeof import('../../../src/web/helpers/sse')>(

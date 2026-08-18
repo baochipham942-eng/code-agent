@@ -253,9 +253,13 @@ export class ToolExecutor {
   }
 
   /** Create an executor whose workspace/cwd cannot be changed after construction. */
-  forRun(runContext: RunContext, dispatchTool?: ToolExecutionDelegate): ToolExecutor {
+  forRun(
+    runContext: RunContext,
+    dispatchTool?: ToolExecutionDelegate,
+    requestPermission?: ToolExecutorConfig['requestPermission'],
+  ): ToolExecutor {
     const executor = new ToolExecutor({
-      requestPermission: this.requestPermission,
+      requestPermission: requestPermission ?? this.requestPermission,
       workingDirectory: runContext.cwd,
       // run-scoped 派生必须继承收缩档，否则子 agent 的 effectiveMode 在此丢失、扩权洞重开
       permissionModeOverride: this.permissionModeOverride,

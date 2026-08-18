@@ -21,6 +21,8 @@ import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('AgentOrchestrator');
 
+type OrchestratorPermissionRequest = Omit<PermissionRequest, 'id' | 'timestamp'>;
+
 /** 归一化审批响应为「放行/拒绝」。allow_standing（B4 铸权）在放行语义上等价 allow。 */
 function isApproveResponse(response: PermissionResponse): boolean {
   return response === 'allow' || response === 'allow_session' || response === 'allow_standing';
@@ -47,6 +49,7 @@ export class OrchestratorPermissionIsland {
     parked?: boolean;
   }> = new Map();
   private readonly injectedPendingApprovalRepo?: PendingApprovalRepository;
+  private readonly injectedPermissionHandler?: (request: OrchestratorPermissionRequest) => Promise<PermissionAskResult>;
   private cachedPendingApprovalRepo: PendingApprovalRepository | null = null;
 
   constructor({
@@ -55,18 +58,22 @@ export class OrchestratorPermissionIsland {
     getExecutionTopology,
     onEvent,
     injectedPendingApprovalRepo,
+    injectedPermissionHandler,
   }: {
     getSettings: () => AppSettings;
     isDevModeAutoApproveEnabled: () => boolean;
     getExecutionTopology: () => ExecutionTopology;
     onEvent: (event: AgentEvent) => void;
     injectedPendingApprovalRepo?: PendingApprovalRepository;
+    /** 显式 run 级审批策略优先于 AUTO_TEST 兜底。 */
+    injectedPermissionHandler?: (request: OrchestratorPermissionRequest) => Promise<PermissionAskResult>;
   }) {
     this.getSettings = getSettings;
     this.isDevModeAutoApproveEnabled = isDevModeAutoApproveEnabled;
     this.getExecutionTopology = getExecutionTopology;
     this.onEvent = onEvent;
     this.injectedPendingApprovalRepo = injectedPendingApprovalRepo;
+    this.injectedPermissionHandler = injectedPermissionHandler;
   }
 
   private readonly getSettings: () => AppSettings;
@@ -227,7 +234,7 @@ export class OrchestratorPermissionIsland {
   }
 
   async requestPermission(
-    request: Omit<PermissionRequest, 'id' | 'timestamp'>,
+    request: OrchestratorPermissionRequest,
   ): Promise<PermissionAskResult> {
     const fullRequest: PermissionRequest = {
       ...request,
@@ -235,7 +242,11 @@ export class OrchestratorPermissionIsland {
       timestamp: Date.now(),
     };
 
-    if (process.env.AUTO_TEST) {
+    if (this.injectedPermissionHandler) {
+      return this.injectedPermissionHandler(request);
+    }
+
+    if (process.env.AUTO_TEST === 'true') {
       logger.info(`[AUTO_TEST] Auto-approving permission: ${request.type} for ${request.tool}`);
       return { approved: true };
     }

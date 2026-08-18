@@ -42,6 +42,7 @@ describe('停车判定先于自动批准', () => {
 
   afterEach(() => {
     resetPermissionModeManager();
+    vi.unstubAllEnvs();
     vi.useRealTimers();
   });
 
@@ -88,6 +89,62 @@ describe('停车判定先于自动批准', () => {
     const island = makeIsland({ devModeAutoApprove: true }, makeRepo());
 
     await expect(island.requestPermission({ type: 'file_write', tool: 'write_file', details: { path: '/tmp/x' }, sessionId: 'attended' })).resolves.toEqual({ approved: true, approvalSource: 'dev-auto-approve' });
+  });
+
+  it('显式审批处理器优先于 AUTO_TEST=true 兜底', async () => {
+    vi.stubEnv('AUTO_TEST', 'true');
+    const scripted = vi.fn(async () => ({
+      approved: false,
+      denialSource: 'scripted' as const,
+    }));
+    const repo = makeRepo();
+    const island = new OrchestratorPermissionIsland({
+      getSettings: () => settings(),
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'main',
+      onEvent: vi.fn(),
+      injectedPendingApprovalRepo: repo,
+      injectedPermissionHandler: scripted,
+    });
+    const request = {
+      type: 'directory_access' as const,
+      tool: 'request_directory',
+      details: { path: '/tmp/scripted-deny' },
+      sessionId: 'scripted-policy',
+    };
+
+    await expect(island.requestPermission(request)).resolves.toEqual({
+      approved: false,
+      denialSource: 'scripted',
+    });
+    expect(scripted).toHaveBeenCalledWith(request);
+    expect(repo.insert).not.toHaveBeenCalled();
+  });
+
+  it('没有显式审批处理器时保留 AUTO_TEST=true 兜底放行', async () => {
+    vi.stubEnv('AUTO_TEST', 'true');
+    const repo = makeRepo();
+    const island = makeIsland({}, repo);
+
+    await expect(island.requestPermission({
+      type: 'directory_access',
+      tool: 'request_directory',
+      details: { path: '/tmp/legacy-auto-test' },
+      sessionId: 'legacy-auto-test',
+    })).resolves.toEqual({ approved: true });
+    expect(repo.insert).not.toHaveBeenCalled();
+  });
+
+  it('AUTO_TEST=false 不放行目录扩权请求', async () => {
+    vi.stubEnv('AUTO_TEST', 'false');
+    const island = makeIsland({}, undefined);
+
+    await expect(island.requestPermission({
+      type: 'directory_access',
+      tool: 'request_directory',
+      details: { path: '/tmp/not-auto-test' },
+      sessionId: 'auto-test-false',
+    })).resolves.toEqual({ approved: false, denialSource: 'fail-closed' });
   });
 
   it('非 dev 槽即使原始开关为 true 也必须发起审批', async () => {

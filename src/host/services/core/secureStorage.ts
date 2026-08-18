@@ -145,6 +145,11 @@ interface LocalEncryptedStoreOptions {
   name: string;
   encryptionKey: string;
   /**
+   * 存储文件所在目录。缺省 = 本进程自己的数据目录（resolveStoreBaseDir）。
+   * 只有 dev 槽首启动导入生产模型凭据时才显式传别的目录（只读，见 readModelCredentialsFromDataDir）。
+   */
+  baseDir?: string;
+  /**
    * Legacy 密钥（可选）。用于从旧的派生 key 平滑迁移：
    * 如果用新 key decrypt 失败，会回退用 legacy key 再试；成功后用新 key 重写文件。
    * 永远不会因 decrypt 失败而清空文件。
@@ -178,7 +183,7 @@ class LocalEncryptedStore<T extends object> {
   private data: Partial<T>;
 
   constructor(options: LocalEncryptedStoreOptions) {
-    this.filePath = path.join(resolveStoreBaseDir(), `${options.name}.json`);
+    this.filePath = path.join(options.baseDir ?? resolveStoreBaseDir(), `${options.name}.json`);
     this.key = crypto.createHash('sha256').update(options.encryptionKey).digest();
     this.legacyKey = options.legacyEncryptionKey
       ? crypto.createHash('sha256').update(options.legacyEncryptionKey).digest()
@@ -202,6 +207,10 @@ class LocalEncryptedStore<T extends object> {
 
   has<K extends keyof T>(key: K): boolean {
     return this.data[key] !== undefined;
+  }
+
+  keys(): string[] {
+    return Object.keys(this.data);
   }
 
   private load(): Partial<T> {
@@ -574,6 +583,42 @@ class SecureStorageService {
 
 // Singleton
 let secureStorageInstance: SecureStorageService | null = null;
+
+/**
+ * 只读地从**另一个**数据目录的 secure store 里取出模型凭据（`apikey.*` / `serviceBaseUrl.*`）。
+ *
+ * 唯一消费方是 dev 槽首启动的一次性导入（devSlotSeed.ts）。刻意只回这两类前缀：
+ * 生产库里还躺着 `auth.*` / `supabase.session` / `settings.devModeAutoApprove` /
+ * `mcp-oauth:*`，那些是会话与**审批策略**，按 U-1238 立的口径必须按数据目录隔离，
+ * 一律不许跨槽流动（整文件拷贝 `.secure-key` + `secure-storage.json` 就会把它们一起带走，
+ * 所以这里走选择性解密而不是拷文件）。
+ *
+ * 不传 legacyEncryptionKey：legacy 回退路径会**写回**源文件，而源是生产目录，只读操作不许写它。
+ * 代价是极老的 legacy 加密文件读不出来 → 返回空对象（调用方照常继续，只是没导入到 key）。
+ */
+export function readModelCredentialsFromDataDir(dataDir: string): Record<string, string> {
+  const keyFile = path.join(dataDir, '.secure-key');
+  let encryptionKey: string;
+  try {
+    encryptionKey = fs.readFileSync(keyFile, 'utf-8').trim();
+  } catch {
+    return {};
+  }
+  if (encryptionKey.length < 32) return {};
+
+  const store = new LocalEncryptedStore<SecureStorageData>({
+    name: 'secure-storage',
+    encryptionKey,
+    baseDir: dataDir,
+  });
+  const out: Record<string, string> = {};
+  for (const key of store.keys()) {
+    if (!key.startsWith('apikey.') && !key.startsWith('serviceBaseUrl.')) continue;
+    const value = store.get(key as keyof SecureStorageData);
+    if (typeof value === 'string' && value) out[key] = value;
+  }
+  return out;
+}
 
 export function getSecureStorage(): SecureStorageService {
   if (!secureStorageInstance) {

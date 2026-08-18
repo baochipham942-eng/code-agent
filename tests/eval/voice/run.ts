@@ -12,7 +12,7 @@ const WebSocket: typeof import('ws').default = require('ws');
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const AUDIO = path.join(ROOT, 'fixtures/audio');
 const REPORTS = path.join(ROOT, 'reports');
-const BASELINE_PATH = path.join(ROOT, 'baselines/2026-08-16.json');
+const BASELINE_PATH = path.join(ROOT, 'baselines/2026-08-17.json');
 const ALL_SCENARIOS = [
   'connectivity_tool_echo',
   'reception_fragmentation',

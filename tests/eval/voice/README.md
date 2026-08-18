@@ -12,7 +12,7 @@ npm run voice-eval -- --replay tests/eval/voice/reports/<run>.jsonl
 
 The full suite estimates cost before reading the API key and is hard-capped at 50 short sessions. The current full plan uses 21: one connectivity/tool echo call plus ten ABAB production/mutation pairs. Terminal dispatch and SAY_GAP reuse the production arm instead of paying for duplicate calls.
 
-This suite is manual by design and must not be added to default CI. Raw per-call JSONL and JSON/Markdown reports are written to `reports/`. `baselines/2026-08-16.json` is the first accepted live baseline.
+This suite is manual by design and must not be added to default CI. Raw per-call JSONL and JSON/Markdown reports are written to `reports/`. `baselines/2026-08-17.json` is the current accepted live baseline (`2026-08-16.json` is kept as the first one; its reception metric keys predate the current production-arm naming and no longer compare).
 
 Gates:
 

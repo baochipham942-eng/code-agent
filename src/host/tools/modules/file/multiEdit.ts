@@ -41,6 +41,7 @@ import { getPostEditDiagnostics } from '../../lsp/diagnosticsHelper';
 import { multiEditSchema as schema } from './multiEdit.schema';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { confineEvalPath } from '../../file/pathUtils';
+import { getFileMutationActorId } from './fileMutationIdentity';
 
 interface EditOperation {
   old_text: string;
@@ -109,6 +110,14 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
       ? path.resolve(inputPath)
       : path.resolve(ctx.workingDir, inputPath);
     const filePath = confineEvalPath(inputFilePath, ctx.workingDir);
+    const actorId = getFileMutationActorId(ctx);
+    if (!actorId) {
+      return {
+        ok: false,
+        error: 'Edit requires a non-empty agentId to isolate concurrent file mutations.',
+        code: 'MISSING_AGENT_IDENTITY',
+      };
+    }
 
     if (force && !forceReason) {
       return {
@@ -145,7 +154,7 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
     onProgress?.({ stage: 'starting', detail: `edit ${path.basename(filePath)}` });
 
     const lockManager = getResourceLockManager();
-    const holderId = ctx.sessionId || `multi_edit_${Date.now()}`;
+    const holderId = actorId;
 
     const lockResult = await lockManager.acquire(holderId, filePath, 'exclusive', {
       type: 'file',

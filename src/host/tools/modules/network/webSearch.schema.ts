@@ -101,6 +101,7 @@ Features:
   },
   category: 'network',
   permissionLevel: 'network',
+  readsUntrustedContent: true,
   readOnly: true,
   allowInPlanMode: true,
 };

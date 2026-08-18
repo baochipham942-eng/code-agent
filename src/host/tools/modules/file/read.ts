@@ -30,6 +30,7 @@ import type {
 } from '../../../protocol/tools';
 import { makeEvidenceRef } from '../../../../shared/contract/evidence';
 import { computeContentDigest, fileReadTracker } from '../../fileReadTracker';
+import { getFileMutationActorId } from './fileMutationIdentity';
 import { extractFileFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readSchema as schema } from './read.schema';
@@ -190,6 +191,7 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
         digest,
         evidenceRef,
         shownRange,
+        actorId: getFileMutationActorId(ctx),
       });
 
       const formatted = selectedLines
@@ -240,7 +242,7 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
 
       return {
         ok: true,
-        output: result,
+        output: `Read version digest: ${digest}\n${result}`,
         meta: {
           artifact,
           evidenceRef,

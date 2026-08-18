@@ -293,6 +293,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
   },
   category: 'vision',
   permissionLevel: 'execute',
+  readsUntrustedContent: true,
   readOnly: false,
   allowInPlanMode: false,
 };

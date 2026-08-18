@@ -32,6 +32,7 @@ For searching file contents, use Grep.`,
   },
   category: 'fs',
   permissionLevel: 'read',
+  allowInTextForeground: true,
   readOnly: true,
   allowInPlanMode: true,
 };

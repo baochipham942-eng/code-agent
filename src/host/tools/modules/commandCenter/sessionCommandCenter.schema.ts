@@ -5,16 +5,12 @@ const target = {
   description: '任务 id、task_status 返回的序号、2-4 字短名或唯一标题片段。省略时只在当前恰好一件活跃任务时生效。',
 } as const;
 
-// 描述是这个工具的承重件，不是文案。真机实测（ADR-056 对照组 FAIL）：只把「写请求请派活」
-// 写进系统提示词时，模型读 tool schema 推出「我只有只读工具」，宁可回复「Edit/Write/Bash 均被
-// 禁用」也不调这里——function calling 微调把工具表训成了能力边界的权威信号，system prompt
-// 与 schema 冲突时模型信 schema。竞品一致做法是把路由契约写进工具 description
-// （Zed 的 create_thread、Cline 的 switch_to_act_mode、Claude Code 的 ExitPlanMode 同理），
-// 且以「产出什么」命名而非「管理什么」。改这段前先读
-// docs 侧的竞品对照结论，别改回「把一件工作交给后台任务」那种任务调度口吻。
+// 描述是路由契约，不是普通文案。ADR-059 后短小文件读写由文字前台直接完成；命令、联网、
+// 等审批、多步骤与生成级长任务仍通过本工具进后台槽。schema 与 system prompt 必须保持一致，
+// 否则模型会优先相信工具表和工具描述，重现「环境受限」类错误解释。
 export const delegateTaskSchema: ToolSchema = {
   name: 'delegate_task',
-  description: '只读前台里创建、修改、删除、重命名文件，运行命令，联网查证，或任何会改变工作区的请求，唯一的受理方式就是调用本工具——包括你本轮已经读过文件之后。它不在前台执行任何副作用，而是创建一个带完整写工具的后台任务去做。accepted 只代表已接单，不代表完成。',
+  description: '需要运行命令、联网查证、等待审批、多步骤执行，或生成报告/网页等长任务时，调用本工具创建一个带完整工具面的后台任务。短小的本地文件读写由文字前台直接完成。accepted 只代表已接单，不代表完成。',
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
@@ -31,6 +27,7 @@ export const delegateTaskSchema: ToolSchema = {
   },
   category: 'planning',
   permissionLevel: 'execute',
+  allowInTextForeground: true,
   requiresPermission: false,
 };
 
@@ -49,6 +46,7 @@ export const steerTaskSchema: ToolSchema = {
   },
   category: 'planning',
   permissionLevel: 'execute',
+  allowInTextForeground: true,
   requiresPermission: false,
 };
 
@@ -64,6 +62,7 @@ export const cancelTaskSchema: ToolSchema = {
   },
   category: 'planning',
   permissionLevel: 'execute',
+  allowInTextForeground: true,
   requiresPermission: false,
 };
 
@@ -79,6 +78,7 @@ export const taskStatusSchema: ToolSchema = {
   },
   category: 'planning',
   permissionLevel: 'read',
+  allowInTextForeground: true,
   requiresPermission: false,
   readOnly: true,
 };

@@ -55,6 +55,7 @@ export const askUserQuestionSchema: ToolSchema = {
   },
   category: 'planning',
   permissionLevel: 'execute',
+  allowInTextForeground: true,
   // 本工具就是用户确认入口；若顶层权限门再要求一次批准，会形成递归等待。
   requiresPermission: false,
   requiresUserPresence: true,

@@ -28,8 +28,8 @@ import { SESSION_COMMAND_CENTER_BRAIN_CONTEXT } from '../../host/app/sessionComm
 import {
   isSessionCommandCenterTurn,
   SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
-  SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES,
 } from '../../shared/constants/sessionCommandCenter';
+import { getTextForegroundToolNames } from '../../host/tools/protocolRegistry';
 import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
 import { buildCapabilityCandidateNotice } from '../../host/agent/capabilityCandidateNotice';
 import { getLibraryService } from '../../host/services/library/libraryService';
@@ -796,7 +796,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       const commandCenterBrain = isSessionCommandCenterTurn({ prompt, hasGoal: Boolean(body.goal) });
       if (commandCenterBrain) {
-        config.allowedToolNames = [...SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES];
+        config.allowedToolNames = getTextForegroundToolNames();
         config.maxIterations = Math.min(
           config.maxIterations ?? SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
           SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,

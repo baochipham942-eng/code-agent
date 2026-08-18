@@ -23,7 +23,14 @@ vi.mock('../../../src/host/tools/shell/dynamicDescription', () => ({
 
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
 import { fileReadTracker } from '../../../src/host/tools/fileReadTracker';
-import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import {
+  getProtocolRegistry,
+  getTextForegroundToolNames,
+} from '../../../src/host/tools/protocolRegistry';
+import {
+  getPermissionModeManager,
+  resetPermissionModeManager,
+} from '../../../src/host/permissions/modes';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
 
@@ -45,9 +52,11 @@ describe('基座 ToolExecutor 写边界宽度校验（无 runContext 回落）',
     permissionRequests = [];
     getToolCache().clear();
     fileReadTracker.clear();
+    resetPermissionModeManager();
   });
 
   afterEach(async () => {
+    resetPermissionModeManager();
     if (prevHome === undefined) delete process.env.CODE_AGENT_HOME;
     else process.env.CODE_AGENT_HOME = prevHome;
     await fs.rm(fakeHome, { recursive: true, force: true });
@@ -95,6 +104,28 @@ describe('基座 ToolExecutor 写边界宽度校验（无 runContext 回落）',
     );
     expect(permissionRequests.length).toBeGreaterThan(0);
     expect(permissionRequests[0].forceConfirm).toBe(true);
+  });
+
+  it('文字前台放开 Write 后，folder-trust、权限档与审批链仍然 fail-closed', async () => {
+    expect(getTextForegroundToolNames()).toContain('Write');
+    getPermissionModeManager().setSessionMode('foreground-write-session', 'readOnly');
+
+    const executor = buildExecutor(fakeHome, false);
+    const probe = path.join(fakeHome, 'foreground-write-permission-probe.txt');
+    const result = await executor.execute(
+      'Write',
+      { file_path: probe, content: 'must-not-land' },
+      { sessionId: 'foreground-write-session' },
+    );
+
+    expect(permissionRequests).toHaveLength(1);
+    expect(permissionRequests[0]).toMatchObject({
+      type: 'file_write',
+      forceConfirm: true,
+      sessionId: 'foreground-write-session',
+    });
+    expect(result.success).toBe(false);
+    expect(existsSync(probe)).toBe(false);
   });
 
   it('正向：workingDirectory=具体项目目录时，写边界保持该目录（1914 个存量会话不误伤）', async () => {

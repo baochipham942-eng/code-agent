@@ -55,4 +55,9 @@ Scripted 组：
 
 ## 最终门
 
-待最终代码冻结后回填。
+- 消费层全量：309 files passed，3102 tests passed，0 failed，0 skipped。
+- `npm run typecheck`：通过。
+- `node scripts/eslint-ratchet.mjs`：通过，0 errors（baseline 0），414 warnings（baseline 414）。
+- `node scripts/tsc-tests-ratchet.mjs`：通过，0 errors（baseline 0）。
+- `node scripts/knip-ratchet.mjs`：通过。
+- `node scripts/knip-ratchet.mjs --profile production`：通过。

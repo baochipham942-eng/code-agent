@@ -1,0 +1,282 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-17T12:23:16.709Z",
+  "sourceHead": "1eaf4cb42bc4c34e3f4c752054f40f72d8d332b7",
+  "productionSourceFingerprint": "e4812dcc9f913dffe501b1638cecb454087eb7e5795d79b78e6f24afabe4596c",
+  "audioFingerprints": {
+    "falseComplete.pcm": "587331c066629ed05266c01ae0792242725b81d80328967ad4beacd61388a032",
+    "fragA1.pcm": "9a8039874224aaadaf0d6816c88a8be18529f77782fbf2e7915111f98af097a7",
+    "fragA2.pcm": "4b2fed9d0f4c47859bfbcd76057cf277d80db768613c5ec7ad03ecff98428695",
+    "fragA3.pcm": "6db1eccb43f878ea4ea6ccf3c8597d5d21f25169039df7ac80c1da7ce022668a",
+    "fragAComplete.pcm": "e33ba1c947e589a4a22be270d11ce2c3c53fb26483123328d39b733c827426d5",
+    "fullB.pcm": "86dcac75cc2a61605c31bbf5a5df0f7ea490a7ceccedb4ad4af9e4d6d785e09e",
+    "fullC.pcm": "e8d5c1030558878593084ea799d97ace2797a750a54f029ccdfa8eb7ba3ad9e3",
+    "fullTodo.pcm": "390cb1d0f6ffe3c16ada1a919557475c090564bbb2fb9c761c251d0692dd69d4",
+    "reverse-chat.pcm": "5ea57743d3fcb1111cfd4fe84f364a6639ddf2864ee37466ea09132c2d811042",
+    "reverse-question.pcm": "621a9bcc83a3eeb905b464f4cd1700098adc66db2ae6d6951f8d2aee35aca5f8",
+    "reverse-spoken.pcm": "827cf3aeca8a25bfcb61620ea6bffdb98461b50fc9926ff7225357113244abad"
+  },
+  "paidCalls": 21,
+  "newPaidCalls": 21,
+  "costLimit": 50,
+  "selectedScenarios": [
+    "connectivity_tool_echo",
+    "reception_fragmentation",
+    "terminal_dispatch",
+    "say_gap",
+    "classifier_fault_injection",
+    "interrupt_classification",
+    "approval_notice"
+  ],
+  "pass": true,
+  "scenarios": [
+    {
+      "name": "connectivity_tool_echo",
+      "mode": "live-upstream",
+      "calls": 1,
+      "passed": true,
+      "baseline": "session.updated 回显生产工具表；完整执行请求产生 delegate_task",
+      "metrics": {
+        "session_updated": true,
+        "tools_expected": 9,
+        "tools_echoed": 9,
+        "delegate_calls": 1
+      },
+      "failures": []
+    },
+    {
+      "name": "reception_fragmentation",
+      "mode": "live-upstream",
+      "calls": 20,
+      "passed": true,
+      "baseline": "新臂截断/假完整句均 10/10 不派，补齐只派一单；周报/todo.md 直派；旧臂同批 ABAB 只作改前对照",
+      "metrics": {
+        "production_half_held": 10,
+        "production_false_complete_held": 10,
+        "production_completion_dispatch_native": 10,
+        "production_single_dispatch_after_completion": 10,
+        "production_weekly_dispatch_native": 8,
+        "production_weekly_dispatch": 10,
+        "production_todo_dispatch_native": 8,
+        "production_todo_dispatch": 10,
+        "host_guard_event_chain_tests": 1,
+        "previous_ambiguous_dispatch": 1,
+        "fatal": 0
+      },
+      "failures": []
+    },
+    {
+      "name": "terminal_dispatch",
+      "mode": "live-upstream",
+      "calls": 0,
+      "passed": true,
+      "baseline": "补全轮终派 ≥9/10",
+      "metrics": {
+        "final_dispatch": 10,
+        "attempts": 10,
+        "fatal": 0
+      },
+      "failures": []
+    },
+    {
+      "name": "say_gap",
+      "mode": "live-upstream",
+      "calls": 0,
+      "passed": true,
+      "baseline": "经过生产 Host semantic guard 后 SAY_GAP=0/10",
+      "metrics": {
+        "native_say_gap": 0,
+        "say_gap": 0,
+        "host_guard_event_chain_tests": 1,
+        "attempts": 10,
+        "fatal": 0
+      },
+      "failures": []
+    },
+    {
+      "name": "interrupt_classification",
+      "mode": "production-local",
+      "calls": 0,
+      "passed": true,
+      "baseline": "电视 medium/1 不误杀；真人 strong/3 可打断",
+      "metrics": {
+        "tv_score": 1,
+        "tv_cancel": false,
+        "human_score": 3,
+        "human_cancel": true
+      },
+      "failures": []
+    },
+    {
+      "name": "approval_notice",
+      "mode": "production-local",
+      "calls": 0,
+      "passed": true,
+      "baseline": "permission_request 1 次告知；含允许/拒绝出口；不声称已做完或自动放行",
+      "metrics": {
+        "worth_hearing": true,
+        "event_chain_tests": 1
+      },
+      "failures": []
+    },
+    {
+      "name": "classifier_fault_injection",
+      "mode": "production-local",
+      "calls": 0,
+      "passed": true,
+      "baseline": "429/5xx/空返回/非合同输出各补派一次；闲聊/知识/追问/未声称执行零误派",
+      "metrics": {
+        "compensated_faults": 4,
+        "counterexamples_held": 4,
+        "paid_calls": 0
+      },
+      "failures": []
+    }
+  ],
+  "baselineComparison": [
+    {
+      "name": "connectivity_tool_echo",
+      "baselinePassed": true,
+      "currentPassed": true,
+      "metrics": [
+        {
+          "key": "tools_expected",
+          "baseline": 9,
+          "current": 9,
+          "delta": 0
+        },
+        {
+          "key": "tools_echoed",
+          "baseline": 9,
+          "current": 9,
+          "delta": 0
+        },
+        {
+          "key": "delegate_calls",
+          "baseline": 1,
+          "current": 1,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "name": "reception_fragmentation",
+      "baselinePassed": true,
+      "currentPassed": true,
+      "metrics": [
+        {
+          "key": "production_half_held",
+          "baseline": 10,
+          "current": 10,
+          "delta": 0
+        },
+        {
+          "key": "fatal",
+          "baseline": 0,
+          "current": 0,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "name": "terminal_dispatch",
+      "baselinePassed": true,
+      "currentPassed": true,
+      "metrics": [
+        {
+          "key": "final_dispatch",
+          "baseline": 9,
+          "current": 10,
+          "delta": 1
+        },
+        {
+          "key": "attempts",
+          "baseline": 10,
+          "current": 10,
+          "delta": 0
+        },
+        {
+          "key": "fatal",
+          "baseline": 0,
+          "current": 0,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "name": "say_gap",
+      "baselinePassed": true,
+      "currentPassed": true,
+      "metrics": [
+        {
+          "key": "native_say_gap",
+          "baseline": 1,
+          "current": 0,
+          "delta": -1
+        },
+        {
+          "key": "say_gap",
+          "baseline": 0,
+          "current": 0,
+          "delta": 0
+        },
+        {
+          "key": "host_guard_event_chain_tests",
+          "baseline": 1,
+          "current": 1,
+          "delta": 0
+        },
+        {
+          "key": "attempts",
+          "baseline": 10,
+          "current": 10,
+          "delta": 0
+        },
+        {
+          "key": "fatal",
+          "baseline": 0,
+          "current": 0,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "name": "interrupt_classification",
+      "baselinePassed": true,
+      "currentPassed": true,
+      "metrics": [
+        {
+          "key": "tv_score",
+          "baseline": 1,
+          "current": 1,
+          "delta": 0
+        },
+        {
+          "key": "human_score",
+          "baseline": 3,
+          "current": 3,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "name": "approval_notice",
+      "baselinePassed": true,
+      "currentPassed": true,
+      "metrics": [
+        {
+          "key": "event_chain_tests",
+          "baseline": 1,
+          "current": 1,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "name": "classifier_fault_injection",
+      "currentPassed": true,
+      "metrics": []
+    }
+  ],
+  "rawPath": "tests/eval/voice/baselines/2026-08-17.jsonl"
+}

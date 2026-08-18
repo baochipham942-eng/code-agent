@@ -25,7 +25,7 @@ import {
 import { getToolSearchService, resetToolSearchService } from '../../../src/host/services/toolSearch';
 import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
-import { SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES } from '../../../src/shared/constants/sessionCommandCenter';
+import { getTextForegroundToolNames } from '../../../src/host/tools/protocolRegistry';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -354,7 +354,7 @@ describe('deferred tool preload', () => {
     it('自然语句 + 指挥台 allowlist ⇒ spawn_agent 进得来', () => {
       expect(getDeferredToolsToPreloadForTurn(runtime({
         messages: [{ id: 'm1', role: 'user', content: NATURAL, timestamp: 1 }],
-        allowedToolNames: [...SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES],
+        allowedToolNames: getTextForegroundToolNames(),
       }))).toContain('spawn_agent');
     });
 
@@ -367,7 +367,7 @@ describe('deferred tool preload', () => {
     it('常驻 core 工具不塞进预加载清单（与 skill boundary 那条对称）', () => {
       const preloaded = getDeferredToolsToPreloadForTurn(runtime({
         messages: [{ id: 'm1', role: 'user', content: NATURAL, timestamp: 1 }],
-        allowedToolNames: [...SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES],
+        allowedToolNames: getTextForegroundToolNames(),
       }));
       for (const core of ['Read', 'Grep', 'Glob', 'ListDirectory']) {
         expect(preloaded).not.toContain(core);
@@ -388,7 +388,7 @@ describe('deferred tool preload', () => {
     it('denylist 仍然压过 allowlist（后台槽的防递归不能被这条绕开）', () => {
       expect(getDeferredToolsToPreloadForTurn(runtime({
         messages: [{ id: 'm1', role: 'user', content: NATURAL, timestamp: 1 }],
-        allowedToolNames: [...SESSION_COMMAND_CENTER_BRAIN_TOOL_NAMES],
+        allowedToolNames: getTextForegroundToolNames(),
         deniedToolNames: ['spawn_agent'],
       }))).not.toContain('spawn_agent');
     });

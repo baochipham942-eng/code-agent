@@ -47,6 +47,8 @@ Tips:
   },
   category: 'fs',
   permissionLevel: 'write',
+  allowInTextForeground: true,
+  pathAuthority: [{ kind: 'path', pathParameter: 'file_path' }],
   readOnly: false,
   allowInPlanMode: false,
 };

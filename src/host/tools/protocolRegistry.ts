@@ -34,6 +34,19 @@ export function isProtocolToolName(name: string): boolean {
   return getProtocolRegistry().has(name);
 }
 
+/**
+ * 文字指挥台前台工具面（ADR-059）。
+ *
+ * 工具是否适用由各自 schema 的 allowInTextForeground 声明决定；这里不维护工具名清单。
+ * 每轮重新读取 registry，确保启动后注册的 builtin plugin 也遵循同一判据。
+ */
+export function getTextForegroundToolNames(): string[] {
+  return getProtocolRegistry()
+    .getSchemas()
+    .filter((schema) => schema.allowInTextForeground === true)
+    .map((schema) => schema.name);
+}
+
 setProtocolToolNameChecker(isProtocolToolName);
 setProtocolToolRegistryPort({
   register: (schema, loader) => getProtocolRegistry().register(schema, loader),

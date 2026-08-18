@@ -61,6 +61,7 @@ export const grepSchema: ToolSchema = {
   },
   category: 'fs',
   permissionLevel: 'read',
+  allowInTextForeground: true,
   readOnly: true,
   allowInPlanMode: true,
 };

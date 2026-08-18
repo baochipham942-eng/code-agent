@@ -30,6 +30,7 @@ export const readSchema: ToolSchema = {
   },
   category: 'fs',
   permissionLevel: 'read',
+  allowInTextForeground: true,
   readOnly: true,
   allowInPlanMode: true,
 };

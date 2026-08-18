@@ -191,7 +191,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
        一条滚动条宽的窄带 ⇒ 顶行/能力区/账号行都缩到同一条内轨；本滚动容器再用等宽负 margin
        把那条窄带"要回来"，`overflow-y-scroll` 恒定占位把滚动条正好摆进去 ⇒ 它的内容盒宽度
        回到与兄弟块相同的内轨。滚动条照常可见，且与列表溢不溢出无关。 */
-    <div className="flex-1 overflow-y-scroll px-1 min-h-0 mr-[calc(var(--scrollbar-size)*-1)]" data-testid="sidebar-session-scroll">
+    <div className="scrollbar-band flex-1 overflow-y-scroll px-1 min-h-0 mr-[calc(var(--scrollbar-size)*-1)]" data-testid="sidebar-session-scroll">
       {isLoading && !hasAnySessions ? (
         <div className="flex flex-col items-center justify-center py-12 gap-3">
           <Loader2 className="w-6 h-6 animate-spin text-badge-accent" />

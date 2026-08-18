@@ -205,8 +205,8 @@ describe('PermissionClassifier', () => {
     expect(result.reason).toContain('Fork bomb');
   });
 
-  it('does not reuse a safe npm-run cache decision for a different package script', async () => {
-    const safe = await classifyPermission(
+  it('asks for every npm script because package script names do not prove safety', async () => {
+    const typecheck = await classifyPermission(
       'bash',
       { command: 'npm run typecheck' },
       { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'execute' },
@@ -217,7 +217,7 @@ describe('PermissionClassifier', () => {
       { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'execute' },
     );
 
-    expect(safe.decision).toBe('approve');
+    expect(typecheck.decision).toBe('ask');
     expect(risky.decision).toBe('ask');
     expect(risky.cached).toBe(false);
   });

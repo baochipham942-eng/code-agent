@@ -1,0 +1,108 @@
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { existsSync } from 'node:fs';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../../src/host/tools/shell/dynamicDescription', () => ({
+  generateBashDescription: async () => null,
+}));
+
+import { getToolCache } from '../../../src/host/services/infra/toolCache';
+import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import type { PermissionRequestData } from '../../../src/host/tools/types';
+
+describe('ToolExecutor Bash 安全命令单一判据', () => {
+  let workspace: string;
+  let permissionRequests: PermissionRequestData[];
+  let previousSafetyMode: string | undefined;
+
+  beforeAll(() => {
+    getProtocolRegistry();
+  });
+
+  beforeEach(async () => {
+    workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-command-permission-'));
+    await fs.writeFile(path.join(workspace, 'bar'), 'foo\n', 'utf8');
+    permissionRequests = [];
+    previousSafetyMode = process.env.CODE_AGENT_SHELL_SAFETY_MODE;
+    process.env.CODE_AGENT_SHELL_SAFETY_MODE = 'strict';
+    getToolCache().clear();
+  });
+
+  afterEach(async () => {
+    if (previousSafetyMode === undefined) delete process.env.CODE_AGENT_SHELL_SAFETY_MODE;
+    else process.env.CODE_AGENT_SHELL_SAFETY_MODE = previousSafetyMode;
+    await fs.rm(workspace, { recursive: true, force: true });
+  });
+
+  function buildRejectingExecutor(): ToolExecutor {
+    const executor = new ToolExecutor({
+      workingDirectory: workspace,
+      requestPermission: async (request) => {
+        permissionRequests.push(request);
+        return false;
+      },
+    });
+    executor.setAuditEnabled(false);
+    return executor;
+  }
+
+  it('find -delete 必须请求一次审批，拒绝后命令失败且目标保留', async () => {
+    const target = path.join(workspace, 'dummy.tmp');
+    await fs.writeFile(target, 'keep', 'utf8');
+    const executor = buildRejectingExecutor();
+
+    const result = await executor.execute(
+      'Bash',
+      { command: 'find . -name dummy.tmp -delete' },
+      { sessionId: 'safe-command-find-delete' },
+    );
+
+    expect(permissionRequests).toHaveLength(1);
+    expect(permissionRequests[0]).toMatchObject({
+      type: 'command',
+      details: { command: 'find . -name dummy.tmp -delete' },
+    });
+    expect(result.success).toBe(false);
+    expect(existsSync(target)).toBe(true);
+  });
+
+  it('printf 重定向必须请求一次审批，拒绝后命令失败且文件不存在', async () => {
+    const target = path.join(workspace, 'printf-output.txt');
+    const command = `printf 'x' > ${JSON.stringify(target)}`;
+    const executor = buildRejectingExecutor();
+
+    const result = await executor.execute(
+      'Bash',
+      { command },
+      { sessionId: 'safe-command-printf-redirection' },
+    );
+
+    expect(permissionRequests).toHaveLength(1);
+    expect(permissionRequests[0]).toMatchObject({
+      type: 'command',
+      details: { command },
+    });
+    expect(result.success).toBe(false);
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it.each([
+    "printf 'x'",
+    'grep foo bar',
+    'git status',
+    'find . -name x',
+  ])('%s 仍免审批', async (command) => {
+    const executor = buildRejectingExecutor();
+
+    await executor.execute(
+      'Bash',
+      { command },
+      { sessionId: `safe-command-positive-${command}` },
+    );
+
+    expect(permissionRequests).toHaveLength(0);
+  });
+});

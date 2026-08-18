@@ -100,6 +100,18 @@ describe('isKnownSafeCommand', () => {
     it('npm audit is safe', () => {
       expect(isKnownSafeCommand('npm audit')).toBe(true);
     });
+    it.each([
+      'python3 --version',
+      'npm -v',
+      'cargo --version',
+      'rustc --version',
+      'curl --version',
+      'wget --version',
+      'fd',
+      'type',
+    ])('%s is safe', (command) => {
+      expect(isKnownSafeCommand(command)).toBe(true);
+    });
     it('npm install is NOT safe', () => {
       expect(isKnownSafeCommand('npm install')).toBe(false);
     });
@@ -296,6 +308,9 @@ describe('isKnownSafeCommand', () => {
     });
     it('npm run build is NOT safe', () => {
       expect(isKnownSafeCommand('npm run build')).toBe(false);
+    });
+    it('npx tsc --noEmit is NOT safe', () => {
+      expect(isKnownSafeCommand('npx tsc --noEmit')).toBe(false);
     });
     it('python3 script.py is NOT safe', () => {
       expect(isKnownSafeCommand('python3 script.py')).toBe(false);

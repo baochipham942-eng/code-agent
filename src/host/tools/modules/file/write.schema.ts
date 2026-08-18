@@ -38,11 +38,6 @@ export const writeSchema: ToolSchema = {
         description:
           'Required with force=true when overwriting. Copy the version digest returned by your Read of this file.',
       },
-      force_reason: {
-        type: 'string',
-        description:
-          'Optional audit explanation for intentionally overwriting a file that changed after Read.',
-      },
     },
     required: ['file_path', 'content'],
   },

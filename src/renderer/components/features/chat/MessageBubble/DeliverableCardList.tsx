@@ -32,6 +32,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 interface Props {
   cards: DeliverableCardView[];
   className?: string;
+  renderCardDetail?: (card: DeliverableCardView) => React.ReactNode;
 }
 
 export function iconForKind(kind: string): React.ReactNode {
@@ -140,9 +141,10 @@ interface CardRowProps {
   labels: ReturnType<typeof useI18n>['t']['deliverable'];
   openCard: (card: DeliverableCardView) => void;
   runSecondaryAction: (action: DeliverableSecondaryAction, card: DeliverableCardView) => Promise<void>;
+  detail?: React.ReactNode;
 }
 
-const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryAction }) => {
+const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryAction, detail }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -260,11 +262,12 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
           </div>
         )}
       </div>
+      {detail}
     </div>
   );
 };
 
-export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2' }) => {
+export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2', renderCardDetail }) => {
   const { t } = useI18n();
   const deliverableLabels = t.deliverable;
   const openPreview = useAppStore((state) => state.openPreview);
@@ -426,6 +429,7 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
           labels={deliverableLabels}
           openCard={openCard}
           runSecondaryAction={runSecondaryAction}
+          detail={renderCardDetail?.(card)}
         />
       ))}
     </div>

@@ -31,7 +31,7 @@ import { UI } from '@shared/constants';
 import { TraceNodeRenderer } from './TraceNodeRenderer';
 import { StreamingIndicator, getRunningSubagentCount, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
-import { isFileChangeCardOwnedNode } from '../../../utils/turnDiffSummary';
+import { buildTurnFileChanges, isFileChangeCardOwnedNode } from '../../../utils/turnDiffSummary';
 import { TurnFeedback } from './TurnFeedback';
 import { TurnOutcomeBadge } from './TurnOutcomeBadge';
 import { ToolStepGroup } from './ToolStepGroup';
@@ -141,6 +141,21 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     () => groupAdjacentToolCalls(turn.nodes),
     [turn.nodes]
   );
+
+  const artifactNode = useMemo(
+    () => turn.nodes.find((node) => node.turnTimeline?.kind === 'artifact_ownership'),
+    [turn.nodes],
+  );
+  const deliverableDiffPaths = useMemo(() => new Set(
+    (artifactNode?.turnTimeline?.artifactOwnership || [])
+      .filter((item) => item.role === 'deliverable' && item.kind === 'file')
+      .flatMap((item) => (item.path ? [item.path] : [])),
+  ), [artifactNode]);
+  const deliverableFileChanges = useMemo(() => new Map(
+    buildTurnFileChanges(turn)
+      .filter((change) => deliverableDiffPaths.has(change.filePath))
+      .map((change) => [change.filePath, change]),
+  ), [deliverableDiffPaths, turn]);
 
   // 语音派活任务卡（W6-5）：一通电话里派出去的活，整轮折叠成一张任务卡——
   // 卡头说清「这件活是什么 + 谁做的 + 什么结果」，过程（工具调用、中间文本）默认折叠，
@@ -526,16 +541,18 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {/* 产物/来源固定锚点：始终渲染在最终答案之后，位置稳定（与正文内 Sources 一致），
             不再随工具调用在流中的位置而在答案上方/下方漂移。 */}
         {(() => {
-          const artifactNode = turn.nodes.find(
-            (node) => node.turnTimeline?.kind === 'artifact_ownership',
-          );
           return artifactNode ? (
-            <TraceNodeRenderer key={artifactNode.id} node={artifactNode} sessionId={sessionId} />
+            <TraceNodeRenderer
+              key={artifactNode.id}
+              node={artifactNode}
+              sessionId={sessionId}
+              fileChangesByPath={deliverableFileChanges}
+            />
           ) : null;
         })()}
 
-        {/* Turn-level aggregated diff card — always visible */}
-        <TurnDiffSummary turn={turn} />
+        {/* 非交付物继续走轮级 diff；deliverable 的 diff 收在产物卡内。 */}
+        <TurnDiffSummary turn={turn} excludedFilePaths={deliverableDiffPaths} />
 
         {/* 评价对象是这一轮的回答，所以位置在整轮最后——挂在正文节点里会插在答案和
             它产出的文件卡之间，看起来像在给上面那一句话打分。

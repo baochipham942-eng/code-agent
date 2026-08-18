@@ -9,6 +9,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { TraceNode } from '@shared/contract/trace';
 import type { ToolCall } from '@shared/contract';
 import type { TurnTimelineNode as TurnTimelinePayload, TurnTimelineTone } from '@shared/contract/turnTimeline';
+import type { FileChange } from '../../../utils/turnDiffSummary';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { extractUserRequest, stripSystemReminderBlocks } from '@shared/utils/turnScaffold';
 import { normalizeSpokenFileName } from '@shared/utils/normalizeSpokenFileName';
@@ -51,6 +52,7 @@ interface TraceNodeRendererProps {
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
   onRewindUserPrompt?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
+  fileChangesByPath?: ReadonlyMap<string, FileChange>;
 }
 
 export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
@@ -62,6 +64,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   onStreamingDisplayUpdate,
   onRewindUserPrompt,
   rewindDisabled,
+  fileChangesByPath,
 }) => {
   let content: React.ReactNode;
 
@@ -113,7 +116,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       ) {
         return null;
       }
-      content = <TurnTimelineNodeRenderer node={node} sessionId={sessionId} />;
+      content = <TurnTimelineNodeRenderer node={node} sessionId={sessionId} fileChangesByPath={fileChangesByPath} />;
       break;
     default:
       return null;
@@ -468,7 +471,11 @@ const LaunchRequestNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   );
 };
 
-const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
+const TurnTimelineNodeRenderer: React.FC<{
+  node: TraceNode;
+  sessionId?: string;
+  fileChangesByPath?: ReadonlyMap<string, FileChange>;
+}> = ({ node, sessionId, fileChangesByPath }) => {
   if (!node.turnTimeline) return null;
 
   switch (node.turnTimeline.kind) {
@@ -494,7 +501,7 @@ const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode; sessionId?: string }
     case 'skill_activity':
       return <SkillActivityNode timeline={node.turnTimeline} />;
     case 'artifact_ownership':
-      return <ArtifactOwnershipNode timeline={node.turnTimeline} sessionId={sessionId} />;
+      return <ArtifactOwnershipNode timeline={node.turnTimeline} sessionId={sessionId} fileChangesByPath={fileChangesByPath} />;
     default:
       return null;
   }
@@ -759,7 +766,11 @@ const ArtifactItemPills: React.FC<{ items: ArtifactItem[]; className?: string }>
   </div>
 );
 
-const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId?: string }> = ({ timeline, sessionId }) => {
+const ArtifactOwnershipNode: React.FC<{
+  timeline: TurnTimelinePayload;
+  sessionId?: string;
+  fileChangesByPath?: ReadonlyMap<string, FileChange>;
+}> = ({ timeline, sessionId, fileChangesByPath }) => {
   const { t } = useI18n();
   // Sources（溯源来源）默认折叠：保留可信/溯源能力但不扰民（产品决策，林晨 2026-06-29）。
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -787,7 +798,7 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
 
   // 纯文件、且无来源：保持原来的一行入口（无标题/无强调边框）。
   if (outputItems.length > 0 && nonFileOutputItems.length === 0 && !hasMaterials) {
-    return <FileArtifactCard items={fileItems} mediaContext={mediaContext} />;
+    return <FileArtifactCard items={fileItems} mediaContext={mediaContext} fileChangesByPath={fileChangesByPath} />;
   }
 
   const outputsCard = outputItems.length > 0 ? (
@@ -796,7 +807,9 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
         <FileText className="h-3.5 w-3.5 text-badge-success" />
         <span>{t.turnSections.outputs}</span>
       </div>
-      {fileItems.length > 0 && <FileArtifactCard items={fileItems} mediaContext={mediaContext} />}
+      {fileItems.length > 0 && (
+        <FileArtifactCard items={fileItems} mediaContext={mediaContext} fileChangesByPath={fileChangesByPath} />
+      )}
       {nonFileOutputItems.length > 0 && (
         <ArtifactItemPills items={nonFileOutputItems} className={fileItems.length > 0 ? 'mt-1.5' : ''} />
       )}

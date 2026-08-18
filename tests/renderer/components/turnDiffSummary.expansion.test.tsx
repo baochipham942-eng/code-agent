@@ -73,6 +73,17 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('TurnDiffSummary 展开态稳定（X5.5-B2）', () => {
+  it('由产物卡承接的文件不再另起轮级 diff 卡', () => {
+    render(
+      <TurnDiffSummary
+        turn={makeTurn()}
+        excludedFilePaths={new Set(['/tmp/example.ts'])}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: /展开改动|收起改动|Expand diff|Collapse diff/i })).toBeNull();
+  });
+
   it('执行中默认收起，程序不自动弹开', () => {
     render(<TurnDiffSummary turn={makeTurn()} />);
     expect(expandBtn().getAttribute('aria-expanded')).toBe('false');

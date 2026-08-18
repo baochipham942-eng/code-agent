@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render } from '@testing-library/react';
 import { TraceNodeRenderer } from '../../../src/renderer/components/features/chat/TraceNodeRenderer';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import type { TurnArtifactOwnershipItem } from '../../../src/shared/contract/turnTimeline';
+import type { FileChange } from '../../../src/renderer/utils/turnDiffSummary';
 
 function makeNode(items: TurnArtifactOwnershipItem[]): TraceNode {
   return {
@@ -114,5 +115,21 @@ describe('Sources (纯链接来源) 视觉降级 — 不长得像交付物卡', 
     fireEvent.click(toggle!);
     expect(container.textContent).toContain('sohu.com');
     expect(container.textContent).toContain('cnyes.com');
+  });
+
+  it('交付文件的 diff 收进产物卡内，保留次要变更量入口', () => {
+    const change: FileChange = {
+      filePath: '/work/简报.md', oldText: '', newText: '内容', added: 1, removed: 0, isNewFile: true, editCount: 1,
+    };
+    const html = renderToStaticMarkup(
+      <TraceNodeRenderer
+        node={makeNode([fileItem('简报.md')])}
+        fileChangesByPath={new Map([[change.filePath, change]])}
+      />,
+    );
+
+    expect(html).toContain('简报.md');
+    expect(html).toContain('本次变更');
+    expect(html).toContain('+1 行');
   });
 });

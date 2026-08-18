@@ -31,11 +31,13 @@ interface CheckpointListItem {
 
 interface TurnDiffSummaryProps {
   turn: TraceTurn;
+  /** 已由产物卡承接的交付物变更，不再另起一张 diff 卡。 */
+  excludedFilePaths?: ReadonlySet<string>;
 }
 
 type UndoState = 'idle' | 'done' | 'error';
 
-export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
+export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn, excludedFilePaths }) => {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   // 会话自己的工作目录优先——多根/切目录时全局那个不一定是这轮改动所在的根
   const workingDirectory = useSessionStore(
@@ -58,7 +60,10 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
   // 聚合 turn.nodes 里成功的 Edit/Write，按 filePath 合并（纯逻辑抽到 utils 便于单测）
-  const fileChanges = useMemo(() => buildTurnFileChanges(turn), [turn]);
+  const fileChanges = useMemo(
+    () => buildTurnFileChanges(turn).filter((change) => !excludedFilePaths?.has(change.filePath)),
+    [excludedFilePaths, turn],
+  );
 
   // 查 checkpoint 找本 turn 的 rewind 锚点 messageId
   useEffect(() => {

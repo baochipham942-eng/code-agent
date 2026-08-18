@@ -17,11 +17,12 @@ import { registerArtifactRepairBlockedToolTurn } from './artifactRepairAdmission
 
 const logger = createLogger('AgentLoop');
 
-const EXTERNAL_DATA_TOOLS = ['web_fetch', 'web_search', 'mcp', 'read_pdf', 'read_xlsx', 'read_docx', 'mcp_read_resource'];
-
 function isExternalDataTool(toolName: string): boolean {
   const canonicalName = canonicalToolName(toolName);
-  return EXTERNAL_DATA_TOOLS.some(t => canonicalName.startsWith(t));
+  return getProtocolToolSchemas().some((schema) => (
+    schema.readsUntrustedContent === true
+    && canonicalName.startsWith(canonicalToolName(schema.name))
+  ));
 }
 
 // 子代理产出回填父上下文前的注入扫描：任何 category 'multiagent' 的工具（spawn_agent/

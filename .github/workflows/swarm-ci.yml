@@ -216,6 +216,19 @@ jobs:
         # god-file 债务在 main 上红了都没人知道（2026-07-02 抓到 4 文件超线）。整套接入。
         run: npx vitest run tests/scripts --retry=1
 
+      - name: Read Playwright version
+        id: playwright-version
+        run: |
+          version="$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright browser cache
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+
       - name: Install Playwright browsers
         # 主链路子集里有真跑交互 smoke 的用例（gameArtifactValidator 等，走 playwright
         # 启浏览器）。本 job 此前不装浏览器，全靠 runner 镜像里碰巧有匹配版本的缓存——
@@ -223,7 +236,9 @@ jobs:
         # doesn't exist at ~/.cache/ms-playwright/chromium_headless_shell-<build>。
         # 即这道门当时是抽奖：跑不起浏览器时 runtimeChecks 为空，断言"有 runtime 证据"
         # 反而落空，红得跟被测代码毫无关系。与本 workflow 的 full job / main-full-gate
-        # 保持同一手法，显式装。
+        # 保持同一手法，显式装。缓存 key 绑定 lockfile 解析的 Playwright 版本，命中的是
+        # 同一浏览器 revision；未命中时仍在本步显式下载。
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Main-chain vitest subset (agent / tools / ipc / services / design / renderer)
@@ -391,7 +406,21 @@ jobs:
           npm rebuild node-pty --build-from-source
           test -f node_modules/node-pty/build/Release/pty.node
 
+      - name: Read Playwright version
+        id: playwright-version
+        run: |
+          version="$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright browser cache
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Run smoke suite

@@ -162,6 +162,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
   },
   category: 'vision',
   permissionLevel: 'execute',
+  readsUntrustedContent: true,
   readOnly: false,
   allowInPlanMode: false,
 };

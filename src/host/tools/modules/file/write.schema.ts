@@ -31,18 +31,19 @@ export const writeSchema: ToolSchema = {
       force: {
         type: 'boolean',
         description:
-          'Bypass the existing-file pre-read and stale digest gate. Only valid for overwrites when force_reason is provided.',
+          'Override a stale-file rejection after Read. It never bypasses the existing-file pre-read gate.',
       },
-      force_reason: {
+      read_digest: {
         type: 'string',
         description:
-          'Required when force=true for overwriting an existing file. Explain why bypassing the read/digest safety gate is intentional.',
+          'Required with force=true when overwriting. Copy the version digest returned by your Read of this file.',
       },
     },
     required: ['file_path', 'content'],
   },
   category: 'fs',
   permissionLevel: 'write',
+  allowInTextForeground: true,
   pathAuthority: [{ kind: 'path', pathParameter: 'file_path' }],
   emission: {
     kind: 'external_file_write',

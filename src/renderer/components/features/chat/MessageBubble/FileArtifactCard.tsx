@@ -19,6 +19,8 @@ import {
 import { useAppStore } from '../../../../stores/appStore';
 import { buildTurnArtifactDeliverableCards } from '../../../../utils/deliverables';
 import { DeliverableCardList } from './DeliverableCardList';
+import { DiffView } from '../../../DiffView';
+import type { FileChange } from '../../../../utils/turnDiffSummary';
 import {
   getRenderableMediaSrc,
   MediaAssetActionBar,
@@ -28,7 +30,47 @@ import {
 interface Props {
   items: TurnArtifactOwnershipItem[];
   mediaContext?: SessionMediaContext;
+  fileChangesByPath?: ReadonlyMap<string, FileChange>;
 }
+
+const DeliverableDiffDetail: React.FC<{ change: FileChange }> = ({ change }) => {
+  const [expanded, setExpanded] = useState(false);
+  const hasLineChanges = change.added > 0 || change.removed > 0;
+
+  return (
+    <div className="border-t border-border-muted px-2.5 py-1.5">
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          setExpanded((value) => !value);
+        }}
+        aria-expanded={expanded}
+        className="flex items-center gap-1.5 text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
+      >
+        {expanded ? <span aria-hidden="true">⌄</span> : <span aria-hidden="true">›</span>}
+        <span>本次变更</span>
+        {hasLineChanges && (
+          <span className="flex items-center gap-1">
+            {change.added > 0 && <span className="text-badge-success">+{change.added} 行</span>}
+            {change.removed > 0 && <span className="text-badge-danger">-{change.removed} 行</span>}
+          </span>
+        )}
+      </button>
+      {expanded && (
+        <div className="mt-1.5">
+          <DiffView
+            oldText={change.oldText}
+            newText={change.newText}
+            fileName={change.filePath.split('/').pop() || change.filePath}
+            stats={{ added: change.added, removed: change.removed }}
+            className="overflow-hidden rounded-md border border-border-muted"
+          />
+        </div>
+      )}
+    </div>
+  );
+};
 
 function getExt(fileName: string): string {
   const dot = fileName.lastIndexOf('.');
@@ -45,7 +87,7 @@ function pickIcon(ext: string): React.ReactNode {
   return <File className={`${cls} text-zinc-500`} />;
 }
 
-export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
+export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext, fileChangesByPath }) => {
   const [expandedMedia, setExpandedMedia] = useState<SessionMediaAsset | null>(null);
   const openFilePreview = useAppStore((state) => state.openPreview);
 
@@ -134,11 +176,23 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
                 onOpenLightbox={() => setExpandedMedia(mediaAsset)}
               />
             </div>
+            {(() => {
+              const change = item.path ? fileChangesByPath?.get(item.path) : undefined;
+              return change ? <DeliverableDiffDetail change={change} /> : null;
+            })()}
           </div>
         );
       })}
 
-      <DeliverableCardList cards={deliverableCards} className="" />
+      <DeliverableCardList
+        cards={deliverableCards}
+        className=""
+        renderCardDetail={(card) => {
+          const path = card.openTarget.kind === 'file-preview' ? card.openTarget.path : undefined;
+          const change = path ? fileChangesByPath?.get(path) : undefined;
+          return change ? <DeliverableDiffDetail change={change} /> : null;
+        }}
+      />
 
       {expandedMedia && (
         <MediaAssetLightbox

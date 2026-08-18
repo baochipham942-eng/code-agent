@@ -566,6 +566,11 @@ export class ToolExecutor {
         },
       );
 
+    // Root executions have a stable agent identity across turns. Spawned executions must
+    // supply their concrete agent id; leaving it undefined makes file mutations fail loud.
+    const contextAgentId = options.agentId?.trim()
+      || ((options.spawnDepth ?? 0) === 0 ? 'primary' : undefined);
+
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       runId: effectiveRunId, turnId: options.turnId,
@@ -585,7 +590,7 @@ export class ToolExecutor {
       // Also set emit as alias for emitEvent (tools use context.emit)
       emit: options.emitEvent,
       // Per-agent BrowserPool / ComputerSurface isolation
-      agentId: options.agentId,
+      agentId: contextAgentId,
       spawnDepth: options.spawnDepth,
       spawnMaxDepth: options.spawnMaxDepth,
       spawnTreeId: options.spawnTreeId,

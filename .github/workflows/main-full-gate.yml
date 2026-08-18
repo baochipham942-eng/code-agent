@@ -54,9 +54,23 @@ jobs:
           test -f "node_modules/better-sqlite3/prebuilds/darwin-$(node -p 'process.arch').node"
           node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('SELECT 1').get(); db.close()"
 
+      - name: Read Playwright version
+        id: playwright-version
+        run: |
+          version="$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright browser cache
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+
       - name: Install Playwright Chromium
         # browser 族测试(mediaAssetLightbox/artifactPreviewHealth/designPreviewRepair/
         # goalCompletionGate 冒烟)依赖内置 Chromium,runner 上缺席会连环红。
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install chromium
 
       - name: Full typecheck (root tsc --noEmit)

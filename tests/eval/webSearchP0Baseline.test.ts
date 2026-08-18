@@ -12,6 +12,8 @@ import { extractCitations } from '../../src/host/services/citation/citationExtra
 import type { AgentEvent, ToolCall, ToolResult } from '../../src/shared/contract';
 import type { ToolExecutionResult } from '../../src/host/tools/types';
 import { ControlState } from '../../src/host/agent/runtime/controlState';
+import { setProtocolToolRegistryPort } from '../../src/host/tools/protocolToolRegistration';
+import { webSearchSchema } from '../../src/host/tools/modules/network/webSearch.schema';
 
 type WebSearchEvalCase = {
   id: string;
@@ -139,6 +141,13 @@ describe('WebSearch P0 eval baseline', () => {
   beforeEach(() => {
     resetInputSanitizer();
     resetCitationService();
+    setProtocolToolRegistryPort({
+      register: () => undefined,
+      unregister: () => false,
+      has: (name: string) => name === webSearchSchema.name,
+      getSchemas: () => [webSearchSchema],
+      resolve: async () => { throw new Error('unused in this test'); },
+    });
   });
 
   it('locks the sanitized fixture shape used by the P0/P1/P2 smoke baseline', () => {

@@ -252,3 +252,41 @@ describe('角色轴 · 只读工具的读取路径不混进产物', () => {
     expect(items.filter((i) => i.role !== 'material')).toEqual([]);
   });
 });
+
+describe('角色轴 · diff 不能吃掉交付物', () => {
+  function turnWithWriteArtifact(role: 'deliverable' | 'material', toolName = 'Write'): TraceTurn {
+    const turn = turnWith(toolName, {
+      artifact: {
+        artifactId: 'a-intro', kind: 'text', role, sourceTool: toolName,
+        path: '/repo/app/neo-intro.html',
+      },
+    });
+    turn.nodes[1].toolCall!.args = {
+      file_path: '/repo/app/neo-intro.html',
+      content: '<main>Neo</main>',
+    };
+    turn.nodes[1].toolCall!.result = 'Created file: /repo/app/neo-intro.html';
+    return turn;
+  }
+
+  it('deliverable 文件即使同轮有 diff，仍进入产物条目', () => {
+    const items = buildArtifactOwnershipItems(turnWithWriteArtifact('deliverable'));
+
+    expect(items).toMatchObject([{
+      role: 'deliverable',
+      path: '/repo/app/neo-intro.html',
+    }]);
+  });
+
+  it('非 deliverable 文件同轮有 diff 时仍被丢弃', () => {
+    const items = buildArtifactOwnershipItems(turnWithWriteArtifact('material'));
+
+    expect(items).toEqual([]);
+  });
+
+  it('只读工具即使错误标为 deliverable，也不进入产物区', () => {
+    const items = buildArtifactOwnershipItems(turnWithWriteArtifact('deliverable', 'read'));
+
+    expect(items).toEqual([]);
+  });
+});

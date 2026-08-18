@@ -47,6 +47,7 @@ Parameters:
   },
   category: 'vision',
   permissionLevel: 'execute',
+  readsUntrustedContent: true,
   readOnly: false,
   allowInPlanMode: false,
 };

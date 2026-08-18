@@ -112,7 +112,7 @@ export function buildArtifactOwnershipItems(
       }
       return;
     }
-    if (item.kind === 'file' && item.path && diffFilePaths.has(item.path)) {
+    if (item.kind === 'file' && item.path && item.role !== 'deliverable' && diffFilePaths.has(item.path)) {
       return;
     }
     itemIndexByKey.set(dedupeKey, items.length);

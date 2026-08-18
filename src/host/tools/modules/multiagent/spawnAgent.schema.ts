@@ -167,6 +167,7 @@ export const spawnAgentSchema: ToolSchema = {
   inputSchema: spawnInputSchema,
   category: 'multiagent',
   permissionLevel: 'execute',
+  allowInTextForeground: true,
 };
 
 export const agentSpawnSchema: ToolSchema = {

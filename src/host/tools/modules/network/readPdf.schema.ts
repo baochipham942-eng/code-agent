@@ -33,6 +33,7 @@ Best for:
   },
   category: 'network',
   permissionLevel: 'read',
+  readsUntrustedContent: true,
   readOnly: true,
   allowInPlanMode: true,
 };

@@ -45,9 +45,10 @@ export interface ModificationCheckResult {
  * @returns Result indicating if file was modified
  */
 export async function checkExternalModification(
-  filePath: string
+  filePath: string,
+  actorId?: string,
 ): Promise<ModificationCheckResult> {
-  const record = fileReadTracker.getReadRecord(filePath);
+  const record = fileReadTracker.getReadRecord(filePath, actorId);
 
   // If file was never read, we can't detect external modification
   if (!record) {

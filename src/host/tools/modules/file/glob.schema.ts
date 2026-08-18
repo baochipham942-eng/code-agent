@@ -41,6 +41,7 @@ export const globSchema: ToolSchema = {
   },
   category: 'fs',
   permissionLevel: 'read',
+  allowInTextForeground: true,
   readOnly: true,
   allowInPlanMode: true,
 };

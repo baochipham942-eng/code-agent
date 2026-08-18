@@ -928,6 +928,34 @@ describe('createAgentRouter', () => {
   });
 
   describe('/api/run 逐轮设置接线（QE-01：桌面主链走本路由，不经 appService envelope 分支）', () => {
+    it('自然语言轮次按 schema 声明装配文字前台工具面', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '把这个文件的标题改成 X',
+          sessionId: 'session-foreground-write-tools',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as {
+        allowedToolNames?: string[];
+        maxIterations?: number;
+      };
+      expect(config.allowedToolNames).toEqual(expect.arrayContaining(['Read', 'Edit', 'Write']));
+      expect(config.allowedToolNames).not.toEqual(expect.arrayContaining(['Append', 'Bash']));
+      expect(config.maxIterations).toBe(8);
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
     it('body 带 thinkingEnabled=false + effortLevel=low → 原样落进 agent config', async () => {
       const controller = new AbortController();
       const response = await fetch(`${baseUrl}/api/run`, {

@@ -117,6 +117,17 @@ describe('buildArtifactOwnershipItems', () => {
         sourceNodeId: 'assistant-1',
       },
       {
+        // N-DELIVCARD（2026-08-18 爸拍板）：交付物即便同时进了本轮 diff 也留在产物区，
+        // 去重改由 TurnDiffSummary 的 excludedFilePaths 在 diff 卡那侧完成。
+        kind: 'file',
+        role: 'deliverable',
+        label: 'report.md',
+        ownerKind: 'tool',
+        ownerLabel: 'reviewer · Write',
+        path: '/repo/app/report.md',
+        sourceNodeId: 'tool-1',
+      },
+      {
         kind: 'file',
         role: 'deliverable',
         label: 'preview.png',
@@ -221,7 +232,12 @@ describe('buildArtifactOwnershipItems', () => {
     ]);
   });
 
-  it('does not duplicate files already represented by the turn diff summary', () => {
+  // 2026-08-18（爸拍板，N-DELIVCARD）：去重不变量「同一文件不出现两张卡」不变，但**赢家换成产物卡**。
+  // 此前是产物条目让位给 diff 卡，导致用户要的网页只显示「+243 行」这种程序员语言（Neo 是 cowork
+  // 产品、产物为主轴，呈现反了）。现在 deliverable 保留在产物区，改由 TurnDiffSummary 的
+  // excludedFilePaths 把它从轮级 diff 卡排除（对侧用例见 turnDiffSummary.expansion.test.tsx
+  // 「由产物卡承接的文件不再另起轮级 diff 卡」）。非 deliverable 仍按旧规则让位。
+  it('keeps deliverables in the artifact list even when the turn diff summary covers them', () => {
     const items = buildArtifactOwnershipItems({
       turnNumber: 2,
       turnId: 'turn-2',
@@ -254,6 +270,15 @@ describe('buildArtifactOwnershipItems', () => {
     } satisfies TraceTurn);
 
     expect(items).toEqual([
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'report.md',
+        ownerKind: 'tool',
+        ownerLabel: 'Write',
+        path: '/repo/app/report.md',
+        sourceNodeId: 'tool-2',
+      },
       {
         kind: 'file',
         role: 'deliverable',

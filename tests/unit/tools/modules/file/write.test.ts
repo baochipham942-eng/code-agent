@@ -22,6 +22,26 @@ vi.mock('../../../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
+const atomicWriteTestState = vi.hoisted(() => ({
+  blockedContent: undefined as string | undefined,
+  entered: undefined as (() => void) | undefined,
+  release: undefined as Promise<void> | undefined,
+}));
+
+vi.mock('../../../../../src/host/tools/utils/atomicWrite', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../../src/host/tools/utils/atomicWrite')>();
+  return {
+    ...actual,
+    atomicWriteFile: async (filePath: string, content: string, encoding?: BufferEncoding) => {
+      if (content === atomicWriteTestState.blockedContent) {
+        atomicWriteTestState.entered?.();
+        await atomicWriteTestState.release;
+      }
+      return actual.atomicWriteFile(filePath, content, encoding);
+    },
+  };
+});
+
 // LSP 诊断桩 — 不做实际 LSP 查询
 vi.mock('../../../../../src/host/tools/lsp/diagnosticsHelper', () => ({
   getPostEditDiagnostics: async () => null,
@@ -37,7 +57,8 @@ function makeLogger(): Logger {
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   const ctrl = new AbortController();
   return {
-    sessionId: `test-session-${Date.now()}-${Math.random()}`,
+    sessionId: 'test-session',
+    agentId: 'test-agent',
     workingDir: process.cwd(),
     abortSignal: ctrl.signal,
     logger: makeLogger(),
@@ -55,6 +76,9 @@ describe('writeModule (native)', () => {
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'write-native-'));
     fileReadTracker.clear();
+    atomicWriteTestState.blockedContent = undefined;
+    atomicWriteTestState.entered = undefined;
+    atomicWriteTestState.release = undefined;
   });
 
   afterEach(async () => {
@@ -167,7 +191,7 @@ describe('writeModule (native)', () => {
     it('overwrites an existing file and reports "Updated"', async () => {
       const file = path.join(tmpDir, 'exist.txt');
       await fs.writeFile(file, 'old', 'utf-8');
-      await fileReadTracker.recordReadWithStats(file);
+      await fileReadTracker.recordReadWithStats(file, { actorId: 'test-session:test-agent' });
 
       const handler = await writeModule.createHandler();
       const result = await handler.execute(
@@ -201,7 +225,7 @@ describe('writeModule (native)', () => {
     it('rejects overwrite when digest changed after read even if size and mtime are restored', async () => {
       const file = path.join(tmpDir, 'stale-same-shape.txt');
       await fs.writeFile(file, 'abc', 'utf-8');
-      await fileReadTracker.recordReadWithStats(file);
+      await fileReadTracker.recordReadWithStats(file, { actorId: 'test-session:test-agent' });
       const originalStats = await fs.stat(file);
 
       await fs.writeFile(file, 'xyz', 'utf-8');
@@ -226,26 +250,8 @@ describe('writeModule (native)', () => {
       expect(await fs.readFile(file, 'utf-8')).toBe('xyz');
     });
 
-    it('requires force_reason when force overwrites an existing file', async () => {
-      const file = path.join(tmpDir, 'force-needs-reason.txt');
-      await fs.writeFile(file, 'old', 'utf-8');
-
-      const handler = await writeModule.createHandler();
-      const result = await handler.execute(
-        { file_path: file, content: 'new', force: true },
-        makeCtx(),
-        allowAll,
-      );
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.code).toBe('FORCE_REASON_REQUIRED');
-      }
-      expect(await fs.readFile(file, 'utf-8')).toBe('old');
-    });
-
-    it('allows force overwrite with an audited reason', async () => {
-      const file = path.join(tmpDir, 'force-with-reason.txt');
+    it('rejects force overwrite when this agent has no read record', async () => {
+      const file = path.join(tmpDir, 'force-without-read.txt');
       await fs.writeFile(file, 'old', 'utf-8');
 
       const handler = await writeModule.createHandler();
@@ -254,7 +260,34 @@ describe('writeModule (native)', () => {
           file_path: file,
           content: 'new',
           force: true,
-          force_reason: 'user confirmed overwrite of generated output',
+          read_digest: 'invented',
+          force_reason: 'attempted blind overwrite',
+        },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('NOT_READ_FOR_OVERWRITE');
+      }
+      expect(await fs.readFile(file, 'utf-8')).toBe('old');
+    });
+
+    it('allows a stale force overwrite with this agent\'s read digest and audits it', async () => {
+      const file = path.join(tmpDir, 'force-with-reason.txt');
+      await fs.writeFile(file, 'old', 'utf-8');
+      await fileReadTracker.recordReadWithStats(file, { actorId: 'test-session:test-agent' });
+      const readDigest = fileReadTracker.getReadRecord(file, 'test-session:test-agent')?.digest;
+      await fs.writeFile(file, 'externally changed', 'utf-8');
+
+      const handler = await writeModule.createHandler();
+      const result = await handler.execute(
+        {
+          file_path: file,
+          content: 'new',
+          force: true,
+          read_digest: readDigest,
         },
         makeCtx(),
         allowAll,
@@ -266,11 +299,98 @@ describe('writeModule (native)', () => {
         expect(result.meta?.audit).toMatchObject({
           action: 'write_overwrite_force',
           path: file,
-          reason: 'user confirmed overwrite of generated output',
-          hadRead: false,
+          reason: '',
+          hadRead: true,
+          readDigest,
+          currentDigest: expect.any(String),
         });
       }
       expect(await fs.readFile(file, 'utf-8')).toBe('new');
+    });
+
+    it('rejects force when the supplied digest is not from this agent latest Read', async () => {
+      const file = path.join(tmpDir, 'force-wrong-digest.txt');
+      await fs.writeFile(file, 'old', 'utf-8');
+      await fileReadTracker.recordReadWithStats(file, { actorId: 'test-session:test-agent' });
+      await fs.writeFile(file, 'externally changed', 'utf-8');
+
+      const handler = await writeModule.createHandler();
+      const result = await handler.execute(
+        { file_path: file, content: 'new', force: true, read_digest: 'not-the-read-digest' },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('READ_DIGEST_MISMATCH');
+      expect(await fs.readFile(file, 'utf-8')).toBe('externally changed');
+    });
+
+    it('does not accept a sibling agent read record', async () => {
+      const file = path.join(tmpDir, 'sibling-read.txt');
+      await fs.writeFile(file, 'old', 'utf-8');
+      await fileReadTracker.recordReadWithStats(file, { actorId: 'test-session:agent-a' });
+      const siblingDigest = fileReadTracker.getReadRecord(file, 'test-session:agent-a')?.digest;
+
+      const handler = await writeModule.createHandler();
+      const result = await handler.execute(
+        { file_path: file, content: 'new', force: true, read_digest: siblingDigest },
+        makeCtx({ agentId: 'agent-b' }),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('NOT_READ_FOR_OVERWRITE');
+      expect(await fs.readFile(file, 'utf-8')).toBe('old');
+    });
+
+    it('serializes sibling agents that share a session when they write the same path', async () => {
+      const file = path.join(tmpDir, 'concurrent.txt');
+      let releaseFirst!: () => void;
+      let markFirstEntered!: () => void;
+      const firstEntered = new Promise<void>((resolve) => { markFirstEntered = resolve; });
+      atomicWriteTestState.blockedContent = 'first';
+      atomicWriteTestState.entered = markFirstEntered;
+      atomicWriteTestState.release = new Promise<void>((resolve) => { releaseFirst = resolve; });
+
+      const firstHandler = await writeModule.createHandler();
+      const secondHandler = await writeModule.createHandler();
+      const first = firstHandler.execute(
+        { file_path: file, content: 'first' },
+        makeCtx({ agentId: 'agent-a' }),
+        allowAll,
+      );
+      await firstEntered;
+
+      let secondSettled = false;
+      const second = secondHandler.execute(
+        { file_path: file, content: 'second' },
+        makeCtx({ agentId: 'agent-b' }),
+        allowAll,
+      ).finally(() => { secondSettled = true; });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(secondSettled).toBe(false);
+
+      releaseFirst();
+      expect((await first).ok).toBe(true);
+      const secondResult = await second;
+      expect(secondResult.ok).toBe(false);
+      if (!secondResult.ok) expect(secondResult.code).toBe('NOT_READ_FOR_OVERWRITE');
+      expect(await fs.readFile(file, 'utf-8')).toBe('first');
+    });
+
+    it('fails loudly when agent identity is unavailable', async () => {
+      const file = path.join(tmpDir, 'missing-agent.txt');
+      const handler = await writeModule.createHandler();
+      const result = await handler.execute(
+        { file_path: file, content: 'new' },
+        makeCtx({ agentId: undefined }),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('MISSING_AGENT_IDENTITY');
+      await expect(fs.access(file)).rejects.toThrow();
     });
 
     it('creates parent directories automatically', async () => {

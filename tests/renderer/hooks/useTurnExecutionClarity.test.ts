@@ -177,10 +177,12 @@ describe('buildTurnExecutionClarityProjection', () => {
     // 「挂载」项不再进 skill_activity（2026-07-29 拍板）：只挂载没触发的轮次不产生该节点
     expect(enriched.turns[0]?.nodes.some((node) => node.turnTimeline?.kind === 'skill_activity')).toBe(false);
     expect(enriched.turns[0]?.nodes[5]?.turnTimeline?.routingEvidence?.summary).toContain('Direct');
-    // report.md 是 Write 的 outputPath，已作为 tool_call/file-change 可见；
-    // 9c7cb06bc 起 artifact-ownership 去重不再重复列入（避免与 file-change 双列）。
+    // report.md 是 Write 的 outputPath。9c7cb06bc 起去重让它从产物区退出（避免与 file-change 双列），
+    // N-DELIVCARD（2026-08-18 爸拍板）把赢家换成产物卡：交付物留在产物区，去重改由
+    // TurnDiffSummary 的 excludedFilePaths 在 diff 卡那侧完成，双列不变量仍然成立。
     expect(enriched.turns[0]?.nodes[6]?.turnTimeline?.artifactOwnership?.map((item) => item.label)).toEqual([
       'Execution Chart',
+      'report.md',
       'preview.png',
     ]);
   });

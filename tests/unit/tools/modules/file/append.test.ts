@@ -26,7 +26,8 @@ function makeLogger(): Logger {
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   const ctrl = new AbortController();
   return {
-    sessionId: `test-session-${Date.now()}-${Math.random()}`,
+    sessionId: 'test-session',
+    agentId: 'test-agent',
     workingDir: process.cwd(),
     abortSignal: ctrl.signal,
     logger: makeLogger(),

@@ -38,6 +38,8 @@ export interface RecordReadOptions {
   digest?: string;
   evidenceRef?: EvidenceRef;
   shownRange?: FileReadShownRange;
+  /** Session + agent identity that performed the read. */
+  actorId?: string;
 }
 
 export function computeContentDigest(content: string | Buffer): string {
@@ -56,6 +58,7 @@ export function computeContentDigest(content: string | Buffer): string {
 class FileReadTracker {
   private static instance: FileReadTracker;
   private readFiles: Map<string, FileReadRecord> = new Map();
+  private scopedReadFiles: Map<string, Map<string, FileReadRecord>> = new Map();
 
   private constructor() {}
 
@@ -73,14 +76,20 @@ class FileReadTracker {
    * @param size - File size in bytes
    */
   recordRead(filePath: string, mtime: number, size: number, options: RecordReadOptions = {}): void {
-    this.readFiles.set(filePath, {
+    const record: FileReadRecord = {
       mtime,
       readTime: Date.now(),
       size,
       ...(options.digest ? { digest: options.digest } : {}),
       ...(options.evidenceRef ? { evidenceRef: options.evidenceRef } : {}),
       ...(options.shownRange ? { shownRange: options.shownRange } : {}),
-    });
+    };
+    this.readFiles.set(filePath, record);
+    if (options.actorId) {
+      const actorRecords = this.scopedReadFiles.get(filePath) ?? new Map<string, FileReadRecord>();
+      actorRecords.set(options.actorId, record);
+      this.scopedReadFiles.set(filePath, actorRecords);
+    }
     logger.debug('Recorded file read', { filePath, mtime, size, digest: options.digest });
   }
 
@@ -116,7 +125,8 @@ class FileReadTracker {
    * @param filePath - Absolute path to the file
    * @returns The read record or undefined
    */
-  getReadRecord(filePath: string): FileReadRecord | undefined {
+  getReadRecord(filePath: string, actorId?: string): FileReadRecord | undefined {
+    if (actorId) return this.scopedReadFiles.get(filePath)?.get(actorId);
     return this.readFiles.get(filePath);
   }
 
@@ -189,8 +199,10 @@ class FileReadTracker {
    * @param newMtime - New modification time after edit
    * @param newSize - New file size after edit
    */
-  updateAfterEdit(filePath: string, newMtime: number, newSize: number, newDigest?: string): void {
-    const record = this.readFiles.get(filePath);
+  updateAfterEdit(filePath: string, newMtime: number, newSize: number, newDigest?: string, actorId?: string): void {
+    const record = actorId
+      ? this.scopedReadFiles.get(filePath)?.get(actorId)
+      : this.readFiles.get(filePath);
     if (record) {
       record.mtime = newMtime;
       record.size = newSize;
@@ -207,6 +219,7 @@ class FileReadTracker {
    */
   removeTracking(filePath: string): void {
     this.readFiles.delete(filePath);
+    this.scopedReadFiles.delete(filePath);
   }
 
   /**
@@ -214,6 +227,7 @@ class FileReadTracker {
    */
   clear(): void {
     this.readFiles.clear();
+    this.scopedReadFiles.clear();
     logger.debug('Cleared all file read tracking records');
   }
 

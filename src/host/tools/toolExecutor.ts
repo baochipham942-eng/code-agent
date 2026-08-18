@@ -1050,7 +1050,12 @@ export class ToolExecutor {
       }
 
       // P0: prefix_rule 学习 — 用户批准后生成持久化规则
-      if (approved && isBashToolName(policyToolName) && params.command) {
+      if (
+        approved
+        && (ask.approvalSource === undefined || ask.approvalSource === 'user')
+        && isBashToolName(policyToolName)
+        && params.command
+      ) {
         try {
           getExecPolicyStore().learnFromApproval(params.command as string);
         } catch {

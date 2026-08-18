@@ -13,6 +13,7 @@ import { getResourceLockManager } from '../../../services/infra/resourceLockMana
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { confineEvalPath } from '../../file/pathUtils';
 import { appendSchema as schema } from './append.schema';
+import { getFileMutationActorId } from './fileMutationIdentity';
 
 const LOCK_HOLD_TIMEOUT_MS = 60_000;
 const LOCK_WAIT_TIMEOUT_MS = 10_000;
@@ -72,11 +73,19 @@ class AppendHandler implements ToolHandler<Record<string, unknown>, string> {
 
     const filePath = resolveInputPath(rawPath, ctx.workingDir);
     const resolvedPath = confineEvalPath(path.resolve(filePath), ctx.workingDir);
+    const actorId = getFileMutationActorId(ctx);
+    if (!actorId) {
+      return {
+        ok: false,
+        error: 'Append requires a non-empty agentId to isolate concurrent file mutations.',
+        code: 'MISSING_AGENT_IDENTITY',
+      };
+    }
 
     onProgress?.({ stage: 'starting', detail: `append ${path.basename(filePath)}` });
 
     const lockManager = getResourceLockManager();
-    const holderId = ctx.sessionId || `append_${Date.now()}`;
+    const holderId = actorId;
 
     const lockResult = await lockManager.acquire(holderId, resolvedPath, 'exclusive', {
       type: 'file',

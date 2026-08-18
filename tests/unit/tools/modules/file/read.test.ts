@@ -32,6 +32,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   const ctrl = new AbortController();
   return {
     sessionId: 'test-session',
+    agentId: 'test-agent',
     workingDir: process.cwd(),
     abortSignal: ctrl.signal,
     logger: makeLogger(),

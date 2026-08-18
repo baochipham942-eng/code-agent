@@ -1,8 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { ExecPolicyStore } from '../../src/host/security/execPolicy';
+import {
+  ExecPolicyStore,
+  getExecPolicyStore,
+  resetExecPolicyStore,
+} from '../../src/host/security/execPolicy';
 
 describe('ExecPolicyStore', () => {
   let tmpDir: string;
@@ -14,7 +18,61 @@ describe('ExecPolicyStore', () => {
   });
 
   afterEach(() => {
+    resetExecPolicyStore();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  describe('data directory isolation', () => {
+    it('stores policy directly in CODE_AGENT_DATA_DIR', async () => {
+      const dataDir = path.join(tmpDir, 'slot-a');
+      vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
+
+      const slotStore = getExecPolicyStore();
+      slotStore.addRule(['slot-a-probe'], 'allow');
+      await slotStore.save();
+
+      expect(fs.existsSync(path.join(dataDir, 'exec-policy.json'))).toBe(true);
+      expect(fs.existsSync(path.join(dataDir, '.code-agent', 'exec-policy.json'))).toBe(false);
+    });
+
+    it('falls back to the home config directory when CODE_AGENT_DATA_DIR is unset', async () => {
+      const homeDir = path.join(tmpDir, 'home');
+      vi.stubEnv('CODE_AGENT_DATA_DIR', '');
+      vi.stubEnv('CODE_AGENT_HOME', '');
+      vi.stubEnv('HOME', homeDir);
+
+      const fallbackStore = getExecPolicyStore();
+      fallbackStore.addRule(['home-probe'], 'allow');
+      await fallbackStore.save();
+
+      expect(fs.existsSync(path.join(homeDir, '.code-agent', 'exec-policy.json'))).toBe(true);
+    });
+
+    it('keeps rules isolated between different data directories', async () => {
+      const dataDirA = path.join(tmpDir, 'slot-a');
+      const dataDirB = path.join(tmpDir, 'slot-b');
+      vi.stubEnv('HOME', path.join(tmpDir, 'home'));
+
+      vi.stubEnv('CODE_AGENT_DATA_DIR', dataDirA);
+      const storeA = getExecPolicyStore();
+      storeA.addRule(['slot-a-probe'], 'allow');
+      await storeA.save();
+
+      resetExecPolicyStore();
+      vi.stubEnv('CODE_AGENT_DATA_DIR', dataDirB);
+      const storeB = getExecPolicyStore();
+      expect(storeB.match('slot-a-probe')).toBeNull();
+      storeB.addRule(['slot-b-probe'], 'allow');
+      await storeB.save();
+
+      resetExecPolicyStore();
+      vi.stubEnv('CODE_AGENT_DATA_DIR', dataDirA);
+      const reloadedStoreA = getExecPolicyStore();
+      expect(reloadedStoreA.match('slot-a-probe')).toBe('allow');
+      expect(reloadedStoreA.match('slot-b-probe')).toBeNull();
+    });
   });
 
   // ========================================================================

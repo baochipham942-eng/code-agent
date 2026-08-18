@@ -111,4 +111,5 @@ Element mutations must use elementRef from the state. Pixel mutations must use a
   },
   category: 'vision',
   permissionLevel: 'execute',
+  readsUntrustedContent: true,
 };

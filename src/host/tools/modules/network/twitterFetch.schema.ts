@@ -30,6 +30,7 @@ twitter_fetch { "url": "https://x.com/OpenAI/status/1234567890" }
   },
   category: 'network',
   permissionLevel: 'network',
+  readsUntrustedContent: true,
   readOnly: true,
   allowInPlanMode: true,
 };

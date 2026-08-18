@@ -57,6 +57,7 @@ academic_search { "query": "大语言模型", "limit": 10, "source": "arxiv" }
   },
   category: 'network',
   permissionLevel: 'network',
+  readsUntrustedContent: true,
   readOnly: true,
   allowInPlanMode: true,
 };

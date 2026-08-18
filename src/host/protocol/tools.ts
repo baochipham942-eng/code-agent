@@ -64,6 +64,8 @@ export interface ToolSchema {
   readonly outputSchema: JSONSchema;
   readonly category: ToolCategory;
   readonly permissionLevel: PermissionLevel;
+  /** 工具输出可能包含来自网页、远端文档或外部服务的不可信内容，进入模型上下文前必须扫描。 */
+  readonly readsUntrustedContent?: true;
   /** 文件写目标的声明式来源；不按工具名枚举权限。 */
   readonly pathAuthority?: readonly ToolPathAuthorityDescriptor[];
   /** 成功执行后登记补偿的显式 effect；禁止按工具名推断。 */

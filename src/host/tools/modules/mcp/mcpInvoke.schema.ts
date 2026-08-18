@@ -40,4 +40,5 @@ export const mcpInvokeSchema: ToolSchema = {
   },
   category: 'mcp',
   permissionLevel: 'network',
+  readsUntrustedContent: true,
 };

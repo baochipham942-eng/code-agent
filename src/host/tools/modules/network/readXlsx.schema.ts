@@ -41,6 +41,7 @@ The output always includes column names, which you should reference exactly when
   },
   category: 'network',
   permissionLevel: 'read',
+  readsUntrustedContent: true,
   readOnly: true,
   allowInPlanMode: true,
 };

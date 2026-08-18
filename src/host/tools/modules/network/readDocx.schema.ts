@@ -34,6 +34,7 @@ read_docx { "file_path": "report.docx", "format": "markdown" }
   },
   category: 'network',
   permissionLevel: 'read',
+  readsUntrustedContent: true,
   readOnly: true,
   allowInPlanMode: true,
 };

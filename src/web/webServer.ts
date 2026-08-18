@@ -440,6 +440,18 @@ async function initializeServices(): Promise<void> {
     fs.mkdirSync(dataDir, { recursive: true });
   }
   process.env.CODE_AGENT_DATA_DIR = dataDir;
+
+  // Dev 槽首启动（数据目录里还没有 config.json）时，从生产数据目录一次性导入模型配置 +
+  // 模型凭据，省掉「换槽 = 新机器、所有 key 重配」。必须排在 initConfigService /
+  // getSecureStorage 之前——它俩一构造就会各自读盘并写回。
+  // 🔴 只服务本机人工验版；e2e/CI 的环境前提**不许**依赖它（见 devSlotSeed.ts 顶部）。
+  try {
+    const { seedDevSlotFromProduction } = await import('../host/services/core/devSlotSeed');
+    seedDevSlotFromProduction(dataDir);
+  } catch (e) {
+    logger.warn('Dev slot seeding skipped:', (e as Error).message);
+  }
+
   cleanupUploadDirs();
   ensureUploadRootDir();
 

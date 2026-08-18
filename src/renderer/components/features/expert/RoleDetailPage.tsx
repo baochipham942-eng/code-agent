@@ -538,6 +538,10 @@ const ProactivitySelector: React.FC<{
               level
             }
             type="button"
+            // 选中态此前只体现在 class 上，e2e 只能拿 `button.border-emerald-600/70` 这种
+            // 类名断言去够——2026-08-18 该类名一改，断言就静默腐烂。给它一个语义标记
+            // （与专家分类 chip 同一套 aria-pressed 写法），顺带补上这组按钮缺失的可访问状态。
+            aria-pressed={selected}
             disabled={busy}
             onClick={() => void handleSelect(level)}
             className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${selected ? "border-badge-success/70 bg-emerald-900/20" : "border-zinc-700/70 bg-zinc-900/40 hover:border-zinc-500"} ${busy ? "opacity-60" : ""}`}

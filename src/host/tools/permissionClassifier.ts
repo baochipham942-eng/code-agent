@@ -15,6 +15,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import { createTraceStep } from '../security/decisionTraceBuilder';
+import { isKnownSafeCommand } from '../security/commandSafety';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { isBashToolName, normalizeToolName } from './toolNames';
@@ -489,31 +490,14 @@ export class PermissionClassifier {
       }
     }
 
-    // B2: 只读命令模式 — 常见的信息查看命令
-    const readOnlyPrefixes = [
-      'ls', 'cat', 'head', 'tail', 'wc', 'file', 'stat', 'du', 'df',
-      'pwd', 'whoami', 'uname', 'date', 'which', 'where', 'type',
-      'echo', 'printf',
-      'git status', 'git log', 'git diff', 'git branch', 'git show',
-      'git rev-parse', 'git describe', 'git remote -v', 'git tag',
-      'node -v', 'npm -v', 'npx tsc --noEmit', 'npm run typecheck',
-      'npm run lint', 'npm run test', 'npm run build',
-      'python --version', 'python3 --version',
-      'cargo --version', 'rustc --version',
-      'grep', 'rg', 'find', 'fd',
-      'jq', 'yq',
-      'curl --version', 'wget --version',
-    ];
-
-    for (const prefix of readOnlyPrefixes) {
-      if (trimmed === prefix || trimmed.startsWith(prefix + ' ') || trimmed.startsWith(prefix + '\t')) {
-        return {
-          decision: 'approve',
-          reason: `安全命令: ${prefix}`,
-          confidence: 0.95,
-          cached: false,
-        };
-      }
+    // B2: Bash 安全判据统一由 commandSafety 解析重定向、复合命令与危险参数。
+    if (isKnownSafeCommand(trimmed)) {
+      return {
+        decision: 'approve',
+        reason: '安全命令',
+        confidence: 0.95,
+        cached: false,
+      };
     }
 
     // B3: 包管理器命令可能安装依赖、运行任意 package script 或访问网络，默认 ask。

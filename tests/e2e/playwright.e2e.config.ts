@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test';
 import os from 'node:os';
 import path from 'node:path';
 import { resolveE2eWebPort } from './e2eWebPort';
+import { seedE2eSettings } from './seedE2eSettings';
 
 delete process.env.FORCE_COLOR;
 delete process.env.NO_COLOR;
@@ -20,10 +21,26 @@ const e2eHome = process.env.CODE_AGENT_E2E_HOME
   || path.join(os.tmpdir(), `code-agent-e2e-home-${webPort}`);
 const e2eDataDir = process.env.CODE_AGENT_E2E_DATA_DIR
   || path.join(os.tmpdir(), `code-agent-e2e-data-${webPort}`);
+// 「已过引导」固件必须在 webServer 启动前落盘，否则 App 起来就被登录/引导弹层盖住。
+// 放在 config 模块顶层（而不是 globalSetup）是刻意的：config 求值必然早于 webServer 启动，
+// 而 globalSetup 与 webServer 的先后在 Playwright 各版本间变过。
+seedE2eSettings(e2eDataDir);
 
 export default defineConfig({
   testDir: '.',
   testMatch: ['**/*.spec.ts'],
+  // 这三个剧本**自带 webServer**（prepareFakeHome + spawn dist/web/webServer.cjs）和自己的
+  // 系统 Chrome，归 playwright.system-chrome.config.ts 管（见 package.json 的
+  // test:e2e:goal-mode / test:e2e:model-strategy）。之前它们也被本 config 收进来，
+  // 于是一次全量跑里同时活着两套 webServer——2026-08-18 实测：跑到
+  // model-strategy-recommendation 时**共享 webServer 直接消失**（日志无任何关闭记录），
+  // 其后 32 个用例全挂在 ERR_CONNECTION_REFUSED，把真实红点整个淹掉。
+  // 「不带文件名跑本 config」必须是一件可复现的事，所以在契约层把它们排除。
+  testIgnore: [
+    '**/goal-mode.spec.ts',
+    '**/model-strategy-recommendation.spec.ts',
+    '**/slash-commands.spec.ts',
+  ],
   fullyParallel: false,
   workers: 1,
   // ADR-010 #1: CI flake 重试上限 1 次，本地开发保持 0。

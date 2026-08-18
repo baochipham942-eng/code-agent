@@ -13,22 +13,16 @@ import { test, expect, type Page } from '@playwright/test';
 
 test.setTimeout(60_000);
 
-/** 打开设置弹窗（复用 model-settings spec 已验证的 Workbench 路径） */
+// 打开设置弹窗。2026-08-18 改走 settings.open 快捷键（Cmd+, / Ctrl+,，
+// src/shared/keybindings/actions.ts 的出厂绑定）：原来那条
+// 「打开面板」→ Skills 面板 →「在设置中管理 Skill 库」的路，三个环节按 ADR-049 全已下线
+// （「打开面板」按钮在 src 里已不存在）。侧栏账号菜单里的「设置」入口只在**已登录**时挂载，
+// e2e 从不登录，所以不能走它。
 async function openSettings(page: Page) {
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
 
-  const addPanelButton = page.getByRole('button', { name: '打开面板' });
-  if (!(await addPanelButton.isVisible().catch(() => false))) {
-    const showTaskPanel = page.getByRole('button', { name: 'Show task panel' });
-    await expect(showTaskPanel).toBeVisible({ timeout: 15_000 });
-    await showTaskPanel.click();
-  }
-  await expect(addPanelButton).toBeVisible({ timeout: 15_000 });
-  await addPanelButton.click();
-  await page.getByRole('button', { name: 'Skills', exact: true }).click();
-  await page.getByText('在设置中管理 Skill 库').click();
-
+  await page.keyboard.press('ControlOrMeta+Comma');
   const settingsDialog = page.getByRole('dialog', { name: '设置' });
   await expect(settingsDialog).toBeVisible({ timeout: 10_000 });
   // 侧栏 nav 单独取范围（内容区也可能出现"高级"等字样，侧栏断言必须锁定 nav）
@@ -49,8 +43,9 @@ test('设置侧栏默认 5 组 + 高级组折叠', async ({ page }) => {
   await expect(nav.getByRole('button', { name: 'MCP', exact: true })).toHaveCount(0);
   await expect(nav.getByRole('button', { name: '插件管理', exact: true })).toHaveCount(0);
 
-  // 默认可见的用户向 tab 在场
-  await expect(nav.getByRole('button', { name: '角色', exact: true })).toBeVisible();
+  // 默认可见的用户向 tab 在场。原来这里断言的是「角色」——它已按 ADR-049 搬进侧栏
+  // 「能力中心」→ 专家 tab，设置侧栏里不再有（2026-08-18 实测 count=0），换成仍在的两项。
+  await expect(nav.getByRole('button', { name: '外观', exact: true })).toBeVisible();
   await expect(nav.getByRole('button', { name: '隐私防线', exact: true })).toBeVisible();
 });
 
@@ -61,13 +56,15 @@ test('高级组展开后普通用户可进 MCP/插件/Hook', async ({ page }) =>
   await advancedHeader.click();
   await expect(advancedHeader).toHaveAttribute('aria-expanded', 'true');
 
-  for (const label of ['MCP', '插件管理', 'Hook', '应用截图', '数据与存储']) {
+  // MCP / 插件管理已按 ADR-049 搬进能力中心（连接器 / 插件 tab），设置侧栏里不再有；
+  // 「高级」组现在剩下这三项（2026-08-18 实测）。
+  for (const label of ['Hook', '应用截图', '数据与存储']) {
     await expect(nav.getByRole('button', { name: label, exact: true })).toBeVisible();
   }
 
-  // 点入 MCP 验证内容区切换（可自行配置，非只读）
-  await nav.getByRole('button', { name: 'MCP', exact: true }).click();
-  await expect(dialog.getByRole('heading', { name: 'MCP' })).toBeVisible();
+  // 点入 Hook 验证内容区切换（可自行配置，非只读）
+  await nav.getByRole('button', { name: 'Hook', exact: true }).click();
+  await expect(dialog.locator('main')).toContainText('Hook', { timeout: 10_000 });
 
   // 再点组头收起
   await advancedHeader.click();

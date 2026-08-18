@@ -44,13 +44,14 @@ test('侧边栏显示', async ({ page }) => {
 test('聊天输入框可输入', async ({ page }) => {
   await page.goto('/');
 
-  // 找到 textarea（通过 aria-label 或 data-chat-input 属性）
-  const textarea = page.locator('[data-chat-input]');
-  await expect(textarea).toBeVisible({ timeout: 15_000 });
+  // 输入区是 contentEditable 的 div（role=textbox），不是 <input>/<textarea>：
+  // toHaveValue 在它身上永远报 "Not an input element"，断言要走文本内容。
+  const composer = page.locator('[data-chat-input]');
+  await expect(composer).toBeVisible({ timeout: 15_000 });
 
   // 输入文字
-  await textarea.fill('你好，这是一条测试消息');
-  await expect(textarea).toHaveValue('你好，这是一条测试消息');
+  await composer.fill('你好，这是一条测试消息');
+  await expect(composer).toHaveText('你好，这是一条测试消息');
 });
 
 // ----------------------------------------------------------------------------
@@ -70,7 +71,7 @@ test('可以新建会话', async ({ page }) => {
   await expect(sessionItem.first()).toBeVisible({ timeout: 10_000 });
 });
 
-test('可以从侧边栏切换会话', async ({ page }) => {
+test('可以从侧边栏切换会话', async ({ page, request }) => {
   await page.goto('/');
 
   const sessionItems = page.locator('[data-session-id]');
@@ -81,9 +82,18 @@ test('可以从侧边栏切换会话', async ({ page }) => {
   );
 
   if (sessionIds.length < 2) {
-    const newSessionBtn = page.getByRole('button', { name: '新任务' });
-    await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
-    await newSessionBtn.click();
+    // 不能靠再点一次「新任务」：全新数据目录上第一条本来就是空的「新对话」，
+    // 产品行为是复用它而不是再开一条（2026-08-18 实测连点两次仍然只有 1 行）。
+    // 用 REST 建第二条（new-session.e2e.spec.ts 已验证过的同一条路），SSE 会把它推进侧栏。
+    const token = await page.evaluate(() =>
+      (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ as string | undefined,
+    );
+    expect(token, 'window.__CODE_AGENT_TOKEN__ missing — static.ts token injection broke').toBeTruthy();
+    const response = await request.post('/api/sessions', {
+      data: { title: `切会话用第二条 ${Date.now()}` },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(response.ok(), `POST /api/sessions failed: ${response.status()}`).toBe(true);
     await expect(sessionItems.nth(1)).toBeVisible({ timeout: 10_000 });
     sessionIds = await sessionItems.evaluateAll((items) =>
       Array.from(new Set(items.map((item) => item.getAttribute('data-session-id')).filter(Boolean))),
@@ -126,43 +136,28 @@ test('账号入口可打开登录或设置面板', async ({ page }) => {
   }
 });
 
-test('Workbench 可打开 Skills、上下文与 MCP 设置页', async ({ page }) => {
+// 原名「Workbench 可打开 Skills、上下文与 MCP 设置页」。ADR-049（07-23 拍、07-27 修订）
+// 把 Skills/连接器的唯一入口收进侧栏「能力中心」：workbench 的 Skills/上下文面板已下线
+// （SkillsPanel 在 renderer 里已无挂载点，「打开面板」按钮在 src 里也已不存在，
+// WorkbenchTabs 现在只剩 概览/文件/浏览器/终端/画布）。断言随之改测现在的入口。
+test('侧栏能力中心可打开 Skills 与连接器', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
 
-  // 右侧 workbench 面板默认折叠；'打开面板'(+) 在 WorkbenchTabs 内，需先展开面板才挂载。
-  const addPanelButton = page.getByRole('button', { name: '打开面板' });
-  if (!(await addPanelButton.isVisible().catch(() => false))) {
-    const showTaskPanel = page.getByRole('button', { name: 'Show task panel' });
-    await expect(showTaskPanel).toBeVisible({ timeout: 15_000 });
-    await showTaskPanel.click();
-  }
-  await expect(addPanelButton).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('sidebar-capability-hub').click();
+  const hub = page.getByTestId('capability-hub-page');
+  await expect(hub).toBeVisible({ timeout: 15_000 });
 
-  await addPanelButton.click();
-  await page.getByRole('button', { name: 'Skills', exact: true }).click();
-  await expect(page.getByText('当前挂载')).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText('在设置中管理 Skill 库')).toBeVisible();
+  await hub.getByTestId('capability-hub-tab-skills').click();
+  // Skills 页结构为「已安装 (N) / 发现安装」子 tab；断言稳定的子 tab 标签而非 heading 文案。
+  await expect(hub.getByText('发现安装')).toBeVisible({ timeout: 10_000 });
+  await expect(hub.getByText(/已安装 \(\d+\)/)).toBeVisible();
 
-  await addPanelButton.click();
-  await page.getByRole('button', { name: '上下文', exact: true }).click();
-  // fresh-home 无会话上下文数据时面板显示空态；有数据时显示健康度面板。两者都说明上下文 tab 已打开。
-  await expect(
-    page.getByText('上下文健康度').or(page.getByText('暂无上下文数据。')),
-  ).toBeVisible({ timeout: 10_000 });
-
-  await page.locator('[title="Session Skills"]').click();
-  await page.getByText('在设置中管理 Skill 库').click();
-  const settingsDialog = page.getByRole('dialog', { name: '设置' });
-  await expect(settingsDialog).toBeVisible({ timeout: 10_000 });
-
-  await settingsDialog.getByRole('button', { name: 'MCP' }).click();
-  await expect(settingsDialog.getByText('服务器配置')).toBeVisible({ timeout: 10_000 });
-  await expect(settingsDialog.getByText('运行状态与本地桥接')).toBeVisible();
-
-  await settingsDialog.getByRole('button', { name: 'Skills' }).click();
-  // Skills 设置页结构为「已安装 / 发现安装」子 tab；断言稳定的子 tab 标签而非旧 heading 文案。
-  await expect(settingsDialog.getByText('发现安装')).toBeVisible({ timeout: 10_000 });
+  // 连接器页同样是两个子 tab，默认落「发现连接」；「服务器配置」在「已连接 (N)」下。
+  await hub.getByTestId('capability-hub-tab-connectors').click();
+  await expect(hub.getByText('发现连接')).toBeVisible({ timeout: 10_000 });
+  await hub.getByText(/已连接 \(\d+\)/).click();
+  await expect(hub.getByText('服务器配置')).toBeVisible({ timeout: 10_000 });
 });
 
 // ----------------------------------------------------------------------------
@@ -175,19 +170,19 @@ test('TitleBar 按钮可点击', async ({ page }) => {
   const titleBar = page.locator('.h-12.flex.items-center');
   await expect(titleBar.first()).toBeVisible({ timeout: 15_000 });
 
-  // 侧边栏折叠/展开按钮
-  const sidebarToggle = page.getByLabel(/Show sidebar|Hide sidebar/);
-  await expect(sidebarToggle).toBeVisible();
+  // 收起开关坐在侧栏自己头上，展开入口在 TitleBar（侧栏收起时它不存在，按钮得另有落脚点）
+  const collapseBtn = page.getByTestId('sidebar-collapse');
+  await expect(collapseBtn).toBeVisible();
 
   // 点击折叠侧边栏
-  await sidebarToggle.click();
+  await collapseBtn.click();
 
   // 折叠后「新会话」按钮应该不可见
   const newSessionBtn = page.getByRole('button', { name: '新任务' });
   await expect(newSessionBtn).not.toBeVisible({ timeout: 3_000 });
 
-  // 再次点击展开
-  await sidebarToggle.click();
+  // 从 TitleBar 的展开入口再展开
+  await page.getByTestId('titlebar-expand-sidebar').click();
   await expect(newSessionBtn).toBeVisible({ timeout: 3_000 });
 });
 

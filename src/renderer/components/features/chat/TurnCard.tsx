@@ -148,8 +148,8 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   );
   const deliverableDiffPaths = useMemo(() => new Set(
     (artifactNode?.turnTimeline?.artifactOwnership || [])
-      .filter((item) => item.role === 'deliverable' && item.kind === 'file' && item.path)
-      .map((item) => item.path!),
+      .filter((item) => item.role === 'deliverable' && item.kind === 'file')
+      .flatMap((item) => (item.path ? [item.path] : [])),
   ), [artifactNode]);
   const deliverableFileChanges = useMemo(() => new Map(
     buildTurnFileChanges(turn)

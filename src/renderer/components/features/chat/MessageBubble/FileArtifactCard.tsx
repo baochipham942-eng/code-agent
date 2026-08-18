@@ -176,9 +176,10 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext, fileCha
                 onOpenLightbox={() => setExpandedMedia(mediaAsset)}
               />
             </div>
-            {item.path && fileChangesByPath?.get(item.path) && (
-              <DeliverableDiffDetail change={fileChangesByPath.get(item.path)!} />
-            )}
+            {(() => {
+              const change = item.path ? fileChangesByPath?.get(item.path) : undefined;
+              return change ? <DeliverableDiffDetail change={change} /> : null;
+            })()}
           </div>
         );
       })}

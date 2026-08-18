@@ -150,6 +150,17 @@ body.theme-switching * {
   height: var(--scrollbar-size);
 }
 
+/* 「滚动条独占一条窄带、内容轨不受它影响」这套布局的第二个必要条件（N-SCROLLGUTTER，2026-08-18）。
+   父层 pr 让出 --scrollbar-size、滚动子层用等宽负 margin 要回去——这个补偿只有在滚动条**真的占位**
+   时才抵消得掉。macOS 默认与 CI headless 用的是**悬浮式滚动条**：::-webkit-scrollbar 的宽度照样
+   画出来，但它不占布局宽度（实测 offsetWidth - clientWidth = 0），于是负 margin 变成净多出 6px，
+   滚动区反而比兄弟块**右探 6px**——正是这套布局要防的错轴，方向反过来而已。
+   scrollbar-gutter: stable 让浏览器**恒**预留那条带（实测：同一台机器上 overflow-y:scroll 量到 0，
+   加了它量到 6），两种滚动条平台行为统一，负 margin 的前提才恒成立。 */
+.scrollbar-band {
+  scrollbar-gutter: stable;
+}
+
 ::-webkit-scrollbar-track {
   background: var(--scrollbar-track);
 }
@@ -192,6 +203,8 @@ body.theme-switching * {
    布局配合：ChatView 主栏 pr 让出窄带 + TurnBasedTraceView 负 margin 要回。 */
 [data-virtuoso-first-item-index] [data-virtuoso-scroller='true'] {
   overflow-y: scroll !important; /* ds-allow:important Virtuoso 在 scroller 上内联写死 overflowY:auto，内联样式只有它能压，别无他法 */
+  /* 这层是 Virtuoso 造的，挂不上 .scrollbar-band 类，只能在这里点名（同一条契约，见上）。 */
+  scrollbar-gutter: stable;
 }
 
 .scrollbar-hidden::-webkit-scrollbar,

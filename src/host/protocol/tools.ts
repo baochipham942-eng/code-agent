@@ -18,6 +18,7 @@
 import type {
   DirectiveMemoryWriteGrant,
   JSONSchema,
+  ToolDescriptionContext as SharedToolDescriptionContext,
   ToolEmissionDescriptor,
   ToolPathAuthorityDescriptor,
 } from '@shared/contract';
@@ -48,11 +49,16 @@ export type ToolCategory =
 
 export type PermissionLevel = 'read' | 'write' | 'execute' | 'network' | 'dangerous';
 
+export interface ToolDescriptionContext extends SharedToolDescriptionContext {
+  readonly provider?: string;
+  readonly model?: string;
+}
+
 export interface ToolSchema {
   readonly name: string;
   readonly description: string;
   /** 动态描述，运行时计算（例如注入当前日期）。有则优先于 description */
-  readonly dynamicDescription?: () => string;
+  readonly dynamicDescription?: (ctx?: ToolDescriptionContext) => string;
   readonly inputSchema: JSONSchema;
   /** 工具成功产出的 JSON Schema。 */
   readonly outputSchema: JSONSchema;

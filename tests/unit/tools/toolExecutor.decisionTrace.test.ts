@@ -322,6 +322,7 @@ describe('N-L10S3 机器批准来源可审计', () => {
           approved: true,
           approvalSource: 'scripted',
         }),
+        forcePermissionHandler: true,
         workingDirectory: '/tmp/workbench',
         ledgerOrigin: 'eval',
       });
@@ -333,6 +334,7 @@ describe('N-L10S3 机器批准来源可审计', () => {
           approved: false,
           denialSource: 'scripted',
         }),
+        forcePermissionHandler: true,
         workingDirectory: '/tmp/workbench',
         ledgerOrigin: 'eval',
       });
@@ -357,5 +359,31 @@ describe('N-L10S3 机器批准来源可审计', () => {
     } finally {
       setToolLedgerSink(previousSink);
     }
+  });
+
+  it('scripted handler can deny a temp write that the classifier would auto-approve', async () => {
+    const requestPermission = vi.fn().mockResolvedValue({
+      approved: false,
+      denialSource: 'scripted',
+    });
+    const executor = new ToolExecutor({
+      requestPermission,
+      forcePermissionHandler: true,
+      workingDirectory: '/tmp/workbench',
+      ledgerOrigin: 'eval',
+    });
+
+    const result = await executor.execute('Write', {
+      file_path: '/tmp/scripted-policy-probe.txt',
+      content: 'probe',
+    }, { sessionId: 'scripted-temp-deny' });
+
+    expect(requestPermission).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ success: false });
+    expect(resolverState.execute).not.toHaveBeenCalled();
+    expect(getDecisionHistory().getRecent(1)[0]).toMatchObject({
+      outcome: 'ask-denied',
+      reason: 'scripted',
+    });
   });
 });

@@ -14,6 +14,7 @@ import type { RequestPermissionResult } from '../../../src/shared/contract/permi
 const capturedPermissionHandlers: Array<(
   req: PermissionRequestData,
 ) => Promise<RequestPermissionResult>> = [];
+const capturedForcePermissionHandler: boolean[] = [];
 
 vi.mock('../../../src/host/agent/agentLoop', () => ({
   AgentLoop: class {
@@ -30,8 +31,10 @@ vi.mock('../../../src/host/tools/toolExecutor', () => ({
   ToolExecutor: class {
     constructor(config: {
       requestPermission: (req: PermissionRequestData) => Promise<RequestPermissionResult>;
+      forcePermissionHandler?: boolean;
     }) {
       capturedPermissionHandlers.push(config.requestPermission);
+      capturedForcePermissionHandler.push(config.forcePermissionHandler === true);
     }
   },
 }));
@@ -65,6 +68,7 @@ function makeAdapter(
 
 beforeEach(() => {
   capturedPermissionHandlers.length = 0;
+  capturedForcePermissionHandler.length = 0;
 });
 
 describe('StandaloneAgentAdapter permission policy injection', () => {
@@ -72,6 +76,7 @@ describe('StandaloneAgentAdapter permission policy injection', () => {
     const adapter = makeAdapter();
     await adapter.sendMessage('hello');
     expect(capturedPermissionHandlers).toHaveLength(1);
+    expect(capturedForcePermissionHandler).toEqual([false]);
     await expect(capturedPermissionHandlers[0](permissionRequest('Write'))).resolves.toBe(true);
   });
 
@@ -88,6 +93,7 @@ describe('StandaloneAgentAdapter permission policy injection', () => {
     });
 
     await adapter.sendMessage('hello');
+    expect(capturedForcePermissionHandler).toEqual([true]);
     await expect(capturedPermissionHandlers[0](permissionRequest('Write'))).resolves.toEqual({
       approved: false,
       denialSource: 'scripted',

@@ -288,11 +288,17 @@ export function createRunToolExecutor(
   runContext: RunContext,
   dispatchTool?: ToolExecutionDelegate,
   requestPermission?: ToolExecutorConfig['requestPermission'],
+  forcePermissionHandler = false,
 ): InstanceType<typeof ToolExecutor> {
   if (!toolExecutor) {
     throw new Error('CLI services not initialized. Call initializeCLIServices() first.');
   }
-  return toolExecutor.forRun(runContext, dispatchTool, requestPermission) as InstanceType<typeof ToolExecutor>;
+  return toolExecutor.forRun(
+    runContext,
+    dispatchTool,
+    requestPermission,
+    forcePermissionHandler,
+  ) as InstanceType<typeof ToolExecutor>;
 }
 
 /**

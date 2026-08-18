@@ -83,6 +83,8 @@ export interface ToolExecutorConfig {
    * 「人拒的」与「机器拒的」（见 `PermissionDenialSource`）。
    */
   requestPermission: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
+  /** Route every permissioned tool through requestPermission, bypassing auto-approve shortcuts. */
+  forcePermissionHandler?: boolean;
   workingDirectory: string;
   /** Topology used by GuardFabric. Defaults to main for zero behavior change. */
   executionTopology?: ExecutionTopology;
@@ -222,6 +224,7 @@ export class ToolExecutor {
   private executionTopology: ExecutionTopology;
   private auditEnabled = true;
   private permissionModeOverride?: PermissionMode;
+  private readonly forcePermissionHandler: boolean;
   private readonly ledgerOrigin: ToolLedgerOrigin;
 
   constructor(config: ToolExecutorConfig) {
@@ -231,6 +234,7 @@ export class ToolExecutor {
     ).approved;
     this.workingDirectory = nodePath.resolve(config.workingDirectory);
     this.permissionModeOverride = config.permissionModeOverride;
+    this.forcePermissionHandler = config.forcePermissionHandler === true;
     this.runContext = config.runContext;
     this.dispatchTool = config.dispatchTool;
     this.executionTopology = config.executionTopology ?? 'main';
@@ -257,9 +261,11 @@ export class ToolExecutor {
     runContext: RunContext,
     dispatchTool?: ToolExecutionDelegate,
     requestPermission?: ToolExecutorConfig['requestPermission'],
+    forcePermissionHandler = false,
   ): ToolExecutor {
     const executor = new ToolExecutor({
       requestPermission: requestPermission ?? this.requestPermission,
+      forcePermissionHandler: forcePermissionHandler || this.forcePermissionHandler,
       workingDirectory: runContext.cwd,
       // run-scoped 派生必须继承收缩档，否则子 agent 的 effectiveMode 在此丢失、扩权洞重开
       permissionModeOverride: this.permissionModeOverride,
@@ -759,6 +765,7 @@ export class ToolExecutor {
     // Skill 系统：预授权工具跳过权限检查（但不能跳过边界违规检查）
     const isPreApproved = !boundaryViolation
       && !guardFabricForcesApproval
+      && !this.forcePermissionHandler
       && options.preApprovedTools !== undefined
       && options.preApprovedTools.size > 0
       && toolMatchesPatternSet(executionToolName, params, options.preApprovedTools);
@@ -769,7 +776,7 @@ export class ToolExecutor {
 
     // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批
     let isSafeCommand = false;
-    if (isBashToolName(policyToolName) && params.command && !isPreApproved && !guardFabricForcesApproval) {
+    if (isBashToolName(policyToolName) && params.command && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler) {
       const cmd = params.command as string;
 
       // 1. 检查 exec policy 持久化规则
@@ -810,7 +817,7 @@ export class ToolExecutor {
       }
     }
 
-    if (toolDef.requiresPermission && (writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
+    if (toolDef.requiresPermission && (this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
@@ -855,7 +862,7 @@ export class ToolExecutor {
           if (classification.external) {
             traceBuilder.addStep('permission_classifier', EXTERNAL_SIDE_EFFECT_TRACE_RULE, 'allow', EXTERNAL_SIDE_EFFECT_TRACE_REASON);
           }
-          if (classification.decision === 'approve') {
+          if (classification.decision === 'approve' && !this.forcePermissionHandler) {
             logger.info('Auto-approved by classifier', {
               tool: executionToolName,
               reason: classification.reason,
@@ -905,6 +912,14 @@ export class ToolExecutor {
               error: `Denied: ${classification.reason}`,
             };
           } else {
+            if (classification.decision === 'approve') {
+              traceBuilder.addStep(
+                'plan_approval',
+                'injected_permission_handler',
+                'ask',
+                'Run-scoped permission handler must decide this tool call',
+              );
+            }
             // 'ask' — collect trace step for permission request
             if (classification.trustBoundary) boundaryAskForcesConfirmation = true;
             if (classification.traceStep) {

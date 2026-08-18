@@ -451,6 +451,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
           ?? (permissionDecider
             ? async (request) => permissionDecider({ ...request, toolName: request.tool })
             : async () => true),
+        forcePermissionHandler: this.requestPermission !== undefined,
         workingDirectory: this.workingDirectory,
         ledgerOrigin: 'eval',
       });

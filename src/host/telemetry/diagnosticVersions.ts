@@ -15,6 +15,7 @@ import { getAppVersion } from '../platform/appPaths';
 import { PROMPT_VERSION } from '../../shared/constants';
 import { getProtocolRegistry } from '../tools/protocolRegistry';
 import { createLogger } from '../services/infra/logger';
+import { TOOL_DESCRIPTION_TIER_RULE_VERSION } from './toolDescriptionTierRuleVersion';
 
 const logger = createLogger('DiagnosticVersions');
 
@@ -39,15 +40,18 @@ export function getToolSchemaVersion(): string {
   if (cachedToolSchemaVersion) return cachedToolSchemaVersion;
   try {
     const schemas = getProtocolRegistry().getSchemas();
-    const normalized = schemas
-      .map((s) => ({
-        name: s.name,
-        description: s.description,
-        inputSchema: s.inputSchema,
-        category: s.category,
-        permissionLevel: s.permissionLevel,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const normalized = {
+      toolDescriptionTierRuleVersion: TOOL_DESCRIPTION_TIER_RULE_VERSION,
+      schemas: schemas
+        .map((s) => ({
+          name: s.name,
+          description: s.description,
+          inputSchema: s.inputSchema,
+          category: s.category,
+          permissionLevel: s.permissionLevel,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    };
     const hash = createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
     cachedToolSchemaVersion = `tools-${hash.slice(0, 12)}`;
   } catch (error) {

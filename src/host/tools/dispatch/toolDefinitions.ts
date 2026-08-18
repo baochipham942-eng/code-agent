@@ -18,7 +18,11 @@
 // ============================================================================
 
 import type { ToolDefinition } from '../../../shared/contract';
-import type { ToolSchema, PermissionLevel } from '../../protocol/tools';
+import type {
+  ToolDescriptionContext,
+  ToolSchema,
+  PermissionLevel,
+} from '../../protocol/tools';
 import { getProtocolToolSchemas } from '../protocolToolRegistration';
 import { getCloudConfigService } from '../../services/cloud';
 import { getMCPClient } from '../../mcp';
@@ -58,10 +62,11 @@ function findSchemaByName(schemas: readonly ToolSchema[], name: string): ToolSch
 function schemaToDefinition(
   schema: ToolSchema,
   cloudMeta: Record<string, { description?: string }>,
+  descriptionContext?: ToolDescriptionContext,
 ): ToolDefinition {
   const cloud = cloudMeta[schema.name];
   const description =
-    cloud?.description || schema.dynamicDescription?.() || schema.description;
+    cloud?.description || schema.dynamicDescription?.(descriptionContext) || schema.description;
   return {
     name: schema.name,
     description,
@@ -84,7 +89,10 @@ function schemaToDefinition(
  * 核心工具是最常用的基础工具，始终包含在模型请求中。
  * 其他工具需要通过 tool_search 发现和加载。
  */
-export function getCoreToolDefinitions(options?: { searchEnabled?: boolean }): ToolDefinition[] {
+export function getCoreToolDefinitions(
+  options?: { searchEnabled?: boolean },
+  descriptionContext?: ToolDescriptionContext,
+): ToolDefinition[] {
   const cloudToolMeta = getCloudConfigService().getAllToolMeta();
   const core = new Set(CORE_TOOLS);
 
@@ -99,7 +107,7 @@ export function getCoreToolDefinitions(options?: { searchEnabled?: boolean }): T
     .filter((schema) => schema.name !== 'ExternalSearch'
       || (options?.searchEnabled !== false
         && hasConfiguredExternalSearchCredential(process.env, (service) => getConfigService().getServiceApiKey(service))))
-    .map((schema) => schemaToDefinition(schema, cloudToolMeta));
+    .map((schema) => schemaToDefinition(schema, cloudToolMeta, descriptionContext));
 }
 
 /**
@@ -121,7 +129,9 @@ export function getDeferredToolDefinitions(): ToolDefinition[] {
  *
  * 只返回已通过 tool_search 加载的延迟工具。
  */
-export function getLoadedDeferredToolDefinitions(): ToolDefinition[] {
+export function getLoadedDeferredToolDefinitions(
+  descriptionContext?: ToolDescriptionContext,
+): ToolDefinition[] {
   const toolSearchService = getToolSearchService();
   const core = new Set(CORE_TOOLS);
   const loadedNames = new Set(
@@ -131,7 +141,7 @@ export function getLoadedDeferredToolDefinitions(): ToolDefinition[] {
 
   const protocolDefinitions = getProtocolToolSchemas()
     .filter((schema) => loadedNames.has(schema.name))
-    .map((schema) => schemaToDefinition(schema, cloudToolMeta));
+    .map((schema) => schemaToDefinition(schema, cloudToolMeta, descriptionContext));
 
   const mcpDefinitions = getMCPClient()
     .getToolDefinitions()
@@ -266,10 +276,12 @@ export function getToolDefinitionWithCloudMeta(name: string): ToolDefinition | u
 /**
  * 获取全部已注册工具的定义（core + deferred 全集，带 cloud meta）
  */
-export function getAllToolDefinitions(): ToolDefinition[] {
+export function getAllToolDefinitions(
+  descriptionContext?: ToolDescriptionContext,
+): ToolDefinition[] {
   const cloudToolMeta = getCloudConfigService().getAllToolMeta();
   return [
-    ...getProtocolToolSchemas().map((schema) => schemaToDefinition(schema, cloudToolMeta)),
+    ...getProtocolToolSchemas().map((schema) => schemaToDefinition(schema, cloudToolMeta, descriptionContext)),
     ...getMCPClient().getToolDefinitions(),
   ];
 }

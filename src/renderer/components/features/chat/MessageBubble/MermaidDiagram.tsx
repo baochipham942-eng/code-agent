@@ -6,6 +6,7 @@
 import React, { useState, useCallback, memo, useRef, useEffect } from 'react';
 import { Code2, Copy, Check, ZoomIn, ZoomOut } from 'lucide-react';
 import { loadMermaid } from './mermaidLoader';
+import { useMermaidTheme } from './mermaidTheme';
 import { UI } from '@shared/constants';
 import { useAppStore } from '../../../../stores/appStore';
 import { useMessageActionStore } from '../../../../stores/messageActionStore';
@@ -83,6 +84,7 @@ export function mermaidWheelZoomFactor(deltaY: number): number {
 // Mermaid diagram renderer — wheel 缩放 / drag 平移 / 点选节点一句话改图
 export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: string }) {
   const { t } = useI18n();
+  const mermaidTheme = useMermaidTheme();
   const tm = t.mermaid;
   // agent 跑动中禁发：run 未结束时 /api/agent/run 会 409（already has active run）
   const isProcessing = useAppStore((state) => state.isProcessing);
@@ -140,7 +142,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
     let cancelled = false;
     const id = `mermaid-${++mermaidIdCounter}`;
     // 按需动态加载 mermaid(~2.7MB 移出首屏),用到含 mermaid 的消息时才下载 chunk。
-    loadMermaid()
+    loadMermaid(mermaidTheme)
       .then((mermaid) => mermaid.render(id, code))
       .then(({ svg }) => {
         if (cancelled) return;
@@ -155,7 +157,8 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
       });
 
     return () => { cancelled = true; };
-  }, [code]);
+    // 主题进 deps：切换明暗要重画已渲染的图，否则只有切换后新出现的图才跟随（装了没接电）
+  }, [code, mermaidTheme]);
 
   // svg 写入 DOM + 量尺寸 + fit（error 清空后 container 才挂载，所以与渲染解耦）
   useEffect(() => {

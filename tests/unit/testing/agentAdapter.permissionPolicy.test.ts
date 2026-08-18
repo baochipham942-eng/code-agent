@@ -9,8 +9,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StandaloneAgentAdapter } from '../../../src/host/testing/agentAdapter';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
+import type { RequestPermissionResult } from '../../../src/shared/contract/permission';
 
-const capturedPermissionHandlers: Array<(req: PermissionRequestData) => Promise<boolean>> = [];
+const capturedPermissionHandlers: Array<(
+  req: PermissionRequestData,
+) => Promise<RequestPermissionResult>> = [];
 
 vi.mock('../../../src/host/agent/agentLoop', () => ({
   AgentLoop: class {
@@ -25,7 +28,9 @@ vi.mock('../../../src/host/prompts/builder', () => ({
 
 vi.mock('../../../src/host/tools/toolExecutor', () => ({
   ToolExecutor: class {
-    constructor(config: { requestPermission: (req: PermissionRequestData) => Promise<boolean> }) {
+    constructor(config: {
+      requestPermission: (req: PermissionRequestData) => Promise<RequestPermissionResult>;
+    }) {
       capturedPermissionHandlers.push(config.requestPermission);
     }
   },
@@ -48,10 +53,13 @@ function permissionRequest(tool: string): PermissionRequestData {
   return { type: 'file_write', tool, details: {} };
 }
 
-function makeAdapter(): StandaloneAgentAdapter {
+function makeAdapter(
+  requestPermission?: (request: PermissionRequestData) => Promise<RequestPermissionResult>,
+): StandaloneAgentAdapter {
   return new StandaloneAgentAdapter({
     workingDirectory: '/tmp',
     modelConfig: { provider: 'mock', model: 'mock-model' },
+    requestPermission,
   });
 }
 
@@ -65,6 +73,26 @@ describe('StandaloneAgentAdapter permission policy injection', () => {
     await adapter.sendMessage('hello');
     expect(capturedPermissionHandlers).toHaveLength(1);
     await expect(capturedPermissionHandlers[0](permissionRequest('Write'))).resolves.toBe(true);
+  });
+
+  it('uses an injected scripted policy before AUTO_TEST and user simulation', async () => {
+    vi.stubEnv('AUTO_TEST', 'true');
+    const scripted = vi.fn(async () => ({
+      approved: false,
+      denialSource: 'scripted' as const,
+    }));
+    const adapter = makeAdapter(scripted);
+    adapter.configureUserSimulation({
+      permission_policy: 'approve',
+      rules: [{ id: 'r', when: { question_asked: true }, respond: 'ok' }],
+    });
+
+    await adapter.sendMessage('hello');
+    await expect(capturedPermissionHandlers[0](permissionRequest('Write'))).resolves.toEqual({
+      approved: false,
+      denialSource: 'scripted',
+    });
+    expect(scripted).toHaveBeenCalledOnce();
   });
 
   it('reject policy denies permission requests', async () => {

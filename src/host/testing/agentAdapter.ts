@@ -17,6 +17,8 @@ import { app } from '../platform';
 import { runWithCompressionPipelineOverride } from '../context/compressionPipeline';
 import { runWithScaffoldProfileOverrides } from '../agent/runtime/scaffoldProfile';
 import { getMockCasePolicy } from './mockEvalPolicy';
+import type { PermissionRequestData } from '../tools/types';
+import type { RequestPermissionResult } from '../../shared/contract/permission';
 
 const logger = createLogger('AgentAdapter');
 
@@ -344,6 +346,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
   // goal 观测事件（goal_gate / goal_complete）的行为落账，断言锚点数据
   private goalRun?: GoalRunRecord;
   private sandboxPolicy?: { redline: boolean };
+  private requestPermission?: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
 
   constructor(config: {
     workingDirectory: string;
@@ -359,6 +362,8 @@ export class StandaloneAgentAdapter implements AgentInterface {
     harness?: HarnessVariantConfig;
     /** WP1-3: A/B 对比的 candidate prompt（缺省用产线 SYSTEM_PROMPT） */
     systemPromptOverride?: string;
+    /** Run-scoped eval approval policy. Takes precedence over AUTO_TEST/user simulation. */
+    requestPermission?: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
   }) {
     this.workingDirectory = config.workingDirectory;
     this.modelConfig = config.modelConfig;
@@ -366,6 +371,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.maxIterations = config.maxIterations;
     this.harness = config.harness;
     this.systemPromptOverride = config.systemPromptOverride;
+    this.requestPermission = config.requestPermission;
     // harness.toolMode 优先于顶层 toolMode（对照实验显式控制工具集维度）
     this.toolMode = config.harness?.toolMode ?? config.toolMode ?? 'deferred';
     // Eval-mode signal: prevents cross-case prompt contamination via recent_conversations.
@@ -437,13 +443,14 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
       // 1. System prompt
 
-      // 2. ToolExecutor —— 默认 auto-approve；case 配了 permission_policy 时
-      // 按 user simulator 的审批门策略应答（批 6 B6a）
+      // 2. ToolExecutor —— 显式 scripted 策略优先；否则 case permission_policy，
+      // 最后才保留存量 eval auto-approve 行为。
       const permissionDecider = this.simConfig ? buildPermissionDecider(this.simConfig) : null;
       const toolExecutor = new ToolExecutor({
-        requestPermission: permissionDecider
-          ? async (request) => permissionDecider({ ...request, toolName: request.tool })
-          : async () => true,
+        requestPermission: this.requestPermission
+          ?? (permissionDecider
+            ? async (request) => permissionDecider({ ...request, toolName: request.tool })
+            : async () => true),
         workingDirectory: this.workingDirectory,
         ledgerOrigin: 'eval',
       });

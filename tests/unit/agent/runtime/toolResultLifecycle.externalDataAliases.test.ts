@@ -25,6 +25,11 @@ import { readXlsxSchema } from '../../../../src/host/tools/modules/network/readX
 import { webFetchSchema } from '../../../../src/host/tools/modules/network/webFetch.schema';
 import { webFetchUnifiedSchema } from '../../../../src/host/tools/modules/network/webFetchUnified.schema';
 import { webSearchSchema } from '../../../../src/host/tools/modules/network/webSearch.schema';
+import { httpRequestSchema } from '../../../../src/host/tools/modules/network/httpRequest.schema';
+import { externalSearchSchema } from '../../../../src/host/tools/modules/network/externalSearch.schema';
+import { academicSearchSchema } from '../../../../src/host/tools/modules/network/academicSearch.schema';
+import { twitterFetchSchema } from '../../../../src/host/tools/modules/network/twitterFetch.schema';
+import { readDocumentSchema } from '../../../../src/host/tools/modules/network/readDocument.schema';
 
 const UNTRUSTED_CONTENT_SCHEMAS = [
   browserSchema,
@@ -41,6 +46,11 @@ const UNTRUSTED_CONTENT_SCHEMAS = [
   webFetchSchema,
   webFetchUnifiedSchema,
   webSearchSchema,
+  httpRequestSchema,
+  externalSearchSchema,
+  academicSearchSchema,
+  twitterFetchSchema,
+  readDocumentSchema,
 ] satisfies readonly ToolSchema[];
 
 function installFakeProtocolToolRegistry(schemas: readonly ToolSchema[]): void {

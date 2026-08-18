@@ -54,6 +54,7 @@ Examples:
   },
   category: 'network',
   permissionLevel: 'network',
+  readsUntrustedContent: true,
   readOnly: false,
   allowInPlanMode: false,
 };

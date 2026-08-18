@@ -45,7 +45,7 @@ import {
   resolveCanonicalRunPath,
   type RunContext,
 } from '../host/runtime/runContext';
-import type { ToolExecutionDelegate } from '../host/tools/toolExecutor';
+import type { ToolExecutionDelegate, ToolExecutorConfig } from '../host/tools/toolExecutor';
 import {
   createRunTraceContext,
   type RunTraceContext,
@@ -287,11 +287,12 @@ export function getToolExecutor(): InstanceType<typeof ToolExecutor> | null {
 export function createRunToolExecutor(
   runContext: RunContext,
   dispatchTool?: ToolExecutionDelegate,
+  requestPermission?: ToolExecutorConfig['requestPermission'],
 ): InstanceType<typeof ToolExecutor> {
   if (!toolExecutor) {
     throw new Error('CLI services not initialized. Call initializeCLIServices() first.');
   }
-  return toolExecutor.forRun(runContext, dispatchTool) as InstanceType<typeof ToolExecutor>;
+  return toolExecutor.forRun(runContext, dispatchTool, requestPermission) as InstanceType<typeof ToolExecutor>;
 }
 
 /**

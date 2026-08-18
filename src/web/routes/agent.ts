@@ -99,6 +99,13 @@ import {
   createCodexContinuationResumeLaunch,
 } from '../../host/services/agentEngine/externalEngineResumeBuilders';
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { OrchestratorPermissionIsland } from '../../host/agent/orchestratorPermissions';
+import { getScriptedRunPermissionHandler } from '../../host/permissions/scriptedRunPermissionPolicy';
+import { getConfigService as getHostConfigService } from '../../host/services/core/configService';
+import {
+  registerForegroundPermissionIsland,
+  unregisterForegroundPermissionIsland,
+} from '../foregroundPermissionRegistry';
 import {
   createOfflineAgentRunResponseSink,
   createWebQueuedInputDrain,
@@ -411,6 +418,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     let runContext: RunContext | undefined;
     let runHandle: RunHandle | undefined;
+    let foregroundPermissionIsland: OrchestratorPermissionIsland | undefined;
     const durableRunLifecycle = createAgentDurableRouteRunLifecycle({
       runRegistry,
       sessionId,
@@ -938,7 +946,23 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           traceContext: runHandle.traceContext,
         })
         : undefined;
-      const runToolExecutor = createRunToolExecutor(runContext, bridgeDispatch);
+      // TaskManager constructs its desktop orchestrator from this same main
+      // ConfigService singleton (getSettings + isDevModeAutoApproveEnabled).
+      const configService = getHostConfigService();
+      foregroundPermissionIsland = new OrchestratorPermissionIsland({
+        // Must stay identical to TaskManager → AgentOrchestrator wiring.
+        getSettings: () => configService.getSettings(),
+        isDevModeAutoApproveEnabled: () => configService.isDevModeAutoApproveEnabled(),
+        getExecutionTopology: () => 'main',
+        onEvent: (event) => runController.emitAgentEvent(event),
+      });
+      registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
+      const scripted = getScriptedRunPermissionHandler();
+      const runToolExecutor = createRunToolExecutor(
+        runContext,
+        bridgeDispatch,
+        scripted ?? foregroundPermissionIsland.requestPermission.bind(foregroundPermissionIsland),
+      );
 
       const runEventCollector = new AgentRunEventCollector({
         sessionId,
@@ -1128,6 +1152,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         throw error;
       }
     } finally {
+      foregroundPermissionIsland?.drainPendingPermissions();
+      if (foregroundPermissionIsland) {
+        unregisterForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
+      }
       runController.markSettled();
       if (transport.connectedClient) {
         res.off('close', runController.cancelForDisconnect);

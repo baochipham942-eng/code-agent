@@ -21,6 +21,7 @@ import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { registerProtocolTool, unregisterProtocolTool } from '../../../src/host/tools/protocolToolRegistration';
 import { ToolExecutor, type ExecuteOptions } from '../../../src/host/tools/toolExecutor';
 import type { PermissionRequestData, ToolExecutionResult } from '../../../src/host/tools/types';
+import type { PermissionAskResult } from '../../../src/shared/contract/permission';
 import type { ToolContext as ProtocolToolContext, ToolSchema } from '../../../src/host/protocol/tools';
 import type { SwarmRunScope } from '../../../src/shared/contract/swarm';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
@@ -85,6 +86,31 @@ describe('ToolExecutor per-run workspace isolation', () => {
     getToolCache().resetStats();
     fileReadTracker.clear();
     await fs.rm(tempRoot, { recursive: true, force: true });
+  });
+
+  it('allows a run-scoped permission handler to override the inherited handler', async () => {
+    const workspace = path.join(tempRoot, 'permission-override');
+    await fs.mkdir(workspace, { recursive: true });
+    const run = createAuthoritativeRunContext({
+      runId: 'run-permission-override',
+      sessionId: 'session-permission-override',
+      workspace,
+    });
+    const override = vi.fn(async (): Promise<PermissionAskResult> => ({
+      approved: false,
+      denialSource: 'scripted',
+    }));
+    const inheritedHandler = (baseExecutor.forRun(run) as unknown as {
+      requestPermission: (request: PermissionRequestData) => Promise<PermissionAskResult>;
+    }).requestPermission;
+    const overriddenHandler = (baseExecutor.forRun(run, undefined, override) as unknown as {
+      requestPermission: (request: PermissionRequestData) => Promise<PermissionAskResult>;
+    }).requestPermission;
+
+    const request = { type: 'command', tool: 'Bash', details: { command: 'true' } } as PermissionRequestData;
+    await expect(inheritedHandler(request)).resolves.toBe(true);
+    await expect(overriddenHandler(request)).resolves.toEqual({ approved: false, denialSource: 'scripted' });
+    expect(override).toHaveBeenCalledWith(request);
   });
 
   it('keeps unscoped background reads running while routing writes to approval', async () => {

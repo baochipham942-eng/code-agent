@@ -120,14 +120,18 @@ export type PermissionDenialSource =
   /** 会话取消 / 新消息到达，挂起的审批被统一解除 */
   | 'cancelled'
   /** 依赖不可用（停车台账等），按安全侧默认拒 */
-  | 'fail-closed';
+  | 'fail-closed'
+  /** 评测脚本按预设策略拒绝 */
+  | 'scripted';
 
 /** 「这次审批是谁批准的」；机器批准必须显式自报，不能沿用真人批准的默认值。 */
 type PermissionApprovalSource =
   /** 真人在审批界面上点了允许；也是旧 boolean true 的兼容语义 */
   | 'user'
   /** dev 槽里的 devModeAutoApprove 机器放行 */
-  | 'dev-auto-approve';
+  | 'dev-auto-approve'
+  /** 评测脚本按预设策略批准；本单尚无生产写入方，后续单启用 */
+  | 'scripted';
 
 /** 审批处理器的富返回值。裸 boolean 仍然合法（等价 `user` 语义），旧实现无需改动。 */
 export interface PermissionAskResult {

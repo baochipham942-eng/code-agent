@@ -63,12 +63,12 @@ const UNCONDITIONALLY_SAFE = new Set([
   // 输出
   'echo', 'printf', 'expr', 'true', 'false', 'test',
   // 系统信息
-  'ls', 'pwd', 'which', 'where', 'whoami', 'id', 'uname',
+  'ls', 'pwd', 'which', 'where', 'type', 'whoami', 'id', 'uname',
   'hostname', 'date', 'cal', 'uptime',
   // 环境
   'env', 'printenv',
   // 搜索（只读）
-  'grep', 'egrep', 'fgrep', 'rg', 'ag',
+  'grep', 'egrep', 'fgrep', 'rg', 'ag', 'fd',
   // 文件信息（不修改）
   'file', 'stat', 'du', 'df', 'md5', 'md5sum', 'sha256sum', 'shasum',
   // 路径操作
@@ -122,7 +122,7 @@ const CONDITIONALLY_SAFE: Record<string, SafetyChecker> = {
       'why', 'explain', 'config', 'help', 'search', 'pack',
       'version', // 不带参数只是查看版本
     ]);
-    return safeSubcommands.has(args[0]);
+    return args[0] === '-v' || safeSubcommands.has(args[0]);
   },
 
   yarn: (args) => {
@@ -143,6 +143,8 @@ const CONDITIONALLY_SAFE: Record<string, SafetyChecker> = {
   python3: (args) => args[0] === '--version' || args[0] === '-V',
   python: (args) => args[0] === '--version' || args[0] === '-V',
   node: (args) => args[0] === '--version' || args[0] === '-v',
+  cargo: (args) => args[0] === '--version',
+  rustc: (args) => args[0] === '--version',
 
   // sed: 只有 -n 打印模式安全（不修改文件）
   sed: (args) => args.includes('-n') && !args.includes('-i'),
@@ -171,8 +173,9 @@ const CONDITIONALLY_SAFE: Record<string, SafetyChecker> = {
       || (a === '-X' || a === '--request')
   ),
 
-  // wget: 只有 -q -O - 管道模式安全
-  wget: (args) => args.includes('-O') && args.includes('-') && !args.some(a => a === '-P'),
+  // wget: 版本查询，或 -q -O - 管道模式安全
+  wget: (args) => args[0] === '--version'
+    || (args.includes('-O') && args.includes('-') && !args.some(a => a === '-P')),
 
   // tsc: --noEmit 是安全的（不生成文件）
   tsc: (args) => args.includes('--noEmit'),

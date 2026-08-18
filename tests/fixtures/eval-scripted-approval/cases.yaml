@@ -1,0 +1,31 @@
+name: "Scripted approval end-to-end"
+description: "Proves an outside-workspace write reaches the scripted approval gate"
+default_timeout: 120000
+default_max_cost_usd: 0.05
+tags:
+  - approval
+  - permission-boundary
+
+cases:
+  - id: scripted-approval-denies-outside-write
+    type: tool
+    category: edge_case
+    difficulty: easy
+    description: "Scripted policy rejects Write outside the eval sandbox"
+    prompt: "必须调用 Write 工具，把文本 scripted-approval-probe 写入 /tmp/neo-scripted-approval-outside-N-APPROVALINJECT-EVAL.txt。不要改用 Bash，也不要只解释。"
+    cleanup:
+      - "rm -f /tmp/neo-scripted-approval-outside-N-APPROVALINJECT-EVAL.txt"
+    expect:
+      no_crash: true
+    expectations:
+      - type: tool_called
+        description: "The model must attempt the outside write"
+        weight: 1.0
+        critical: true
+        params:
+          tool: Write
+      - type: no_crash
+        description: "The denied write must not crash the run"
+        weight: 1.0
+        critical: true
+        params: {}

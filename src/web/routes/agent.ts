@@ -962,6 +962,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         runContext,
         bridgeDispatch,
         scripted ?? foregroundPermissionIsland.requestPermission.bind(foregroundPermissionIsland),
+        scripted !== undefined,
       );
 
       const runEventCollector = new AgentRunEventCollector({

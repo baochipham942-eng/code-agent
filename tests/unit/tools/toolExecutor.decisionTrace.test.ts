@@ -307,4 +307,83 @@ describe('N-L10S3 机器批准来源可审计', () => {
       setToolLedgerSink(previousSink);
     }
   });
+
+  it('scripted 批准与拒绝都把来源写进评测账本', async () => {
+    const previousSink = getToolLedgerSink();
+    const appendPermissionDecision = vi.fn();
+    setToolLedgerSink({
+      appendPermissionDecision,
+      appendToolExecutionBegin: vi.fn(),
+      appendToolExecutionComplete: vi.fn(),
+    });
+    try {
+      const allowExecutor = new ToolExecutor({
+        requestPermission: vi.fn().mockResolvedValue({
+          approved: true,
+          approvalSource: 'scripted',
+        }),
+        forcePermissionHandler: true,
+        workingDirectory: '/tmp/workbench',
+        ledgerOrigin: 'eval',
+      });
+      await expect(allowExecutor.execute('Write', EXTERNAL_WRITE_PARAMS, { sessionId: 'scripted-allow' }))
+        .resolves.toMatchObject({ success: true });
+
+      const denyExecutor = new ToolExecutor({
+        requestPermission: vi.fn().mockResolvedValue({
+          approved: false,
+          denialSource: 'scripted',
+        }),
+        forcePermissionHandler: true,
+        workingDirectory: '/tmp/workbench',
+        ledgerOrigin: 'eval',
+      });
+      await expect(denyExecutor.execute('Write', EXTERNAL_WRITE_PARAMS, { sessionId: 'scripted-deny' }))
+        .resolves.toMatchObject({ success: false });
+
+      expect(appendPermissionDecision.mock.calls.map(([entry]) => entry))
+        .toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            sessionId: 'scripted-allow',
+            origin: 'eval',
+            historyOutcome: 'ask-approved',
+            reason: 'scripted',
+          }),
+          expect.objectContaining({
+            sessionId: 'scripted-deny',
+            origin: 'eval',
+            historyOutcome: 'ask-denied',
+            reason: 'scripted',
+          }),
+        ]));
+    } finally {
+      setToolLedgerSink(previousSink);
+    }
+  });
+
+  it('scripted handler can deny a temp write that the classifier would auto-approve', async () => {
+    const requestPermission = vi.fn().mockResolvedValue({
+      approved: false,
+      denialSource: 'scripted',
+    });
+    const executor = new ToolExecutor({
+      requestPermission,
+      forcePermissionHandler: true,
+      workingDirectory: '/tmp/workbench',
+      ledgerOrigin: 'eval',
+    });
+
+    const result = await executor.execute('Write', {
+      file_path: '/tmp/scripted-policy-probe.txt',
+      content: 'probe',
+    }, { sessionId: 'scripted-temp-deny' });
+
+    expect(requestPermission).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ success: false });
+    expect(resolverState.execute).not.toHaveBeenCalled();
+    expect(getDecisionHistory().getRecent(1)[0]).toMatchObject({
+      outcome: 'ask-denied',
+      reason: 'scripted',
+    });
+  });
 });

@@ -114,6 +114,51 @@ describe('ResponsesProvider', () => {
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
+  it('reconstructs a paired function_call from durable toolCalls when responsesOutput was lost', async () => {
+    electronFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) });
+    await new ResponsesProvider().inference([
+      {
+        role: 'assistant',
+        content: 'I will write it.',
+        toolCalls: [{ id: 'call_durable_pair', name: 'write_file', arguments: '{"path":"a.txt"}' }],
+      },
+      { role: 'tool', toolCallId: 'call_durable_pair', content: 'Permission denied by user' },
+    ], [READ_TOOL], { provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'test-key' } as any);
+
+    expect(JSON.parse(electronFetch.mock.calls[0][1].body).input).toEqual([
+      { role: 'assistant', content: 'I will write it.' },
+      { type: 'function_call', call_id: 'call_durable_pair', name: 'write_file', arguments: '{"path":"a.txt"}' },
+      { type: 'function_call_output', call_id: 'call_durable_pair', output: 'Permission denied by user' },
+    ]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('call_durable_pair'),
+      expect.objectContaining({
+        callId: 'call_durable_pair',
+        missingSide: 'responses_output',
+        messageIndex: 0,
+        source: 'assistant.toolCalls',
+      }),
+    );
+  });
+
+  it('does not pair an output that appears before its function_call', async () => {
+    electronFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) });
+    const lateCall = { type: 'function_call', call_id: 'call_wrong_order', name: 'write_file', arguments: '{}' };
+    await new ResponsesProvider().inference([
+      { role: 'tool', toolCallId: 'call_wrong_order', content: 'stale result' },
+      { role: 'assistant', content: '', responsesOutput: [lateCall] },
+    ], [READ_TOOL], { provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'test-key' } as any);
+
+    expect(JSON.parse(electronFetch.mock.calls[0][1].body).input).toEqual([
+      lateCall,
+      expect.objectContaining({ type: 'function_call_output', call_id: 'call_wrong_order' }),
+    ]);
+    expect(warnSpy.mock.calls.map(([message]) => String(message))).toEqual(expect.arrayContaining([
+      expect.stringContaining('Dropped orphan function_call_output call_wrong_order'),
+      expect.stringContaining('Repaired orphan function_call call_wrong_order'),
+    ]));
+  });
+
   it('synthesizes an output for an orphan function_call and logs its call_id and history position', async () => {
     electronFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) });
     const orphanCall = { type: 'function_call', call_id: 'call_orphan_call', name: 'write_file', arguments: '{}' };

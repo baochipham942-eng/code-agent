@@ -39,6 +39,8 @@ export interface TaskStrategySettingsPanelProps {
   disabled?: boolean;
   /** 改动即存：开关 / 三类模型修改后立即调用持久化 */
   onChange: (strategy: TaskModelStrategySettings) => void;
+  /** 记忆整理只有这一处配置入口；未配置时由 Host 跟随 routing.fast。 */
+  onMemoryRouteChange: (route: { provider: ModelProvider; model: string }) => void;
 }
 
 export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps> = ({
@@ -48,6 +50,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   strategy,
   disabled,
   onChange,
+  onMemoryRouteChange,
 }) => {
   const { t } = useI18n();
   const strategyText = t.settings.model.taskStrategy;
@@ -66,9 +69,14 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     };
   }, [providerConfigs, settings, strategy]);
 
+  const memoryRoute = settings?.models.routing.memory;
+  const effectiveMemoryRoute = memoryRoute ?? settings?.models.routing.fast;
   const profileProviders = useMemo(
-    () => strategy ? Object.values(strategy.profiles).map((slot) => slot.provider) : [],
-    [strategy],
+    () => [
+      ...(strategy ? Object.values(strategy.profiles).map((slot) => slot.provider) : []),
+      ...(effectiveMemoryRoute ? [effectiveMemoryRoute.provider] : []),
+    ],
+    [effectiveMemoryRoute, strategy],
   );
 
   const modelOptions = useMemo(() => buildRuntimeModelOptions(
@@ -192,6 +200,42 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
           })}
         </div>
       )}
+
+      {effectiveMemoryRoute ? (
+        <div className="space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-950/40 p-2.5">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-200">
+            <Brain className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+            <span>{strategyText.memory.label}</span>
+          </div>
+          <p className="text-xs text-zinc-500">{strategyText.memory.description}</p>
+          <Select
+            value={optionValue(effectiveMemoryRoute.provider, effectiveMemoryRoute.model)}
+            onChange={(event) => {
+              const parsed = parseOptionValue(event.target.value);
+              if (parsed) onMemoryRouteChange(parsed);
+            }}
+            disabled={disabled}
+            className="w-full"
+            aria-label={strategyText.memory.label}
+          >
+            {!selectedOptionSet.has(optionValue(effectiveMemoryRoute.provider, effectiveMemoryRoute.model)) ? (
+              <option value={optionValue(effectiveMemoryRoute.provider, effectiveMemoryRoute.model)}>
+                {modelLabel(effectiveMemoryRoute.provider, effectiveMemoryRoute.model)}{strategyText.unavailableSuffix}
+              </option>
+            ) : null}
+            {groupedOptions.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.options.map((option) => (
+                  <option key={optionValue(option.provider, option.model)} value={optionValue(option.provider, option.model)}>
+                    {option.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </Select>
+          <p className="text-xs text-badge-warning/90">{strategyText.memory.costHint}</p>
+        </div>
+      ) : null}
     </div>
   );
 };

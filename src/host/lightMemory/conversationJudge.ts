@@ -1,16 +1,16 @@
 // ============================================================================
 // Conversation Judge — Session-end LLM judgment for Light Memory
-// Replaces the old "slice first 50 chars as title" heuristic with a quick-model
+// Replaces the old "slice first 50 chars as title" heuristic with a memory-model
 // judgment: is this conversation worth keeping, is it a meeting, a real title,
 // and the durable knowledge worth remembering.
 //
-// Runs on the quick (cheap/fast) model and degrades gracefully to the previous
-// truncation heuristic when the quick model is unavailable or fails, so a model
+// Runs on the configurable memory model (default: routing.fast) and degrades
+// gracefully to the previous truncation heuristic when the model is unavailable or fails, so a model
 // outage never drops summaries.
 // ============================================================================
 
 import * as path from 'path';
-import { quickTask } from '../model/quickModel';
+import { memoryTask } from '../model/quickModel';
 import { withTimeout } from '../services/infra/timeoutController';
 import { createLogger } from '../services/infra/logger';
 import { SESSION_JUDGE } from '../../shared/constants';
@@ -210,7 +210,7 @@ function buildConversationSnippet(userMessages: string[], lastAssistant?: string
 /**
  * Judge a conversation for Light Memory archival.
  *
- * Uses the quick model with a hard timeout; falls back to the truncation
+ * Uses the configurable memory model with a hard timeout; falls back to the truncation
  * heuristic on any failure so summaries are never silently lost.
  */
 export async function judgeConversation(input: {
@@ -232,7 +232,7 @@ export async function judgeConversation(input: {
   try {
     const prompt = `${JUDGE_PROMPT}\n\n会话内容：\n${buildConversationSnippet(userMessages, input.lastAssistant)}`;
     const result = await withTimeout(
-      quickTask(prompt, SESSION_JUDGE.MAX_TOKENS),
+      memoryTask(prompt, SESSION_JUDGE.MAX_TOKENS),
       SESSION_JUDGE.TIMEOUT_MS,
       'Conversation judgment timed out',
     );

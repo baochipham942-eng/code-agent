@@ -12,11 +12,11 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 const quickModelMocks = vi.hoisted(() => ({
-  quickTask: vi.fn<(prompt: string, maxTokens?: number) => Promise<{ success: boolean; content?: string; error?: string }>>(),
+  memoryTask: vi.fn<(prompt: string, maxTokens?: number) => Promise<{ success: boolean; content?: string; error?: string }>>(),
 }));
 
 vi.mock('../../../src/host/model/quickModel', () => ({
-  quickTask: quickModelMocks.quickTask,
+  memoryTask: quickModelMocks.memoryTask,
 }));
 
 // withTimeout 直接透传被包裹的 promise（超时分支单独用 reject 模拟）
@@ -35,7 +35,7 @@ import {
 import { SKILL_REVIEW, SESSION_JUDGE } from '../../../src/shared/constants';
 
 beforeEach(() => {
-  quickModelMocks.quickTask.mockReset();
+  quickModelMocks.memoryTask.mockReset();
 });
 
 // ── toSkillName ──
@@ -265,11 +265,11 @@ describe('reviewConversationForSkill', () => {
   it('用户轮数不足 MIN_USER_TURNS → 直接 null，不调用模型', async () => {
     const r = await reviewConversationForSkill({ userMessages: ['只有一轮'] });
     expect(r).toBeNull();
-    expect(quickModelMocks.quickTask).not.toHaveBeenCalled();
+    expect(quickModelMocks.memoryTask).not.toHaveBeenCalled();
   });
 
   it('模型返回合法草稿 → 返回 ReviewedSkill', async () => {
-    quickModelMocks.quickTask.mockResolvedValue({
+    quickModelMocks.memoryTask.mockResolvedValue({
       success: true,
       content: JSON.stringify({
         shouldCreate: true,
@@ -288,17 +288,17 @@ describe('reviewConversationForSkill', () => {
   });
 
   it('模型不可用 → null（不抛错）', async () => {
-    quickModelMocks.quickTask.mockResolvedValue({ success: false, error: 'not configured' });
+    quickModelMocks.memoryTask.mockResolvedValue({ success: false, error: 'not configured' });
     expect(await reviewConversationForSkill({ userMessages: turns })).toBeNull();
   });
 
   it('模型抛错 / 超时 → null（静默降级）', async () => {
-    quickModelMocks.quickTask.mockRejectedValue(new Error('timeout'));
+    quickModelMocks.memoryTask.mockRejectedValue(new Error('timeout'));
     expect(await reviewConversationForSkill({ userMessages: turns })).toBeNull();
   });
 
   it('模型返回 shouldCreate=false → null', async () => {
-    quickModelMocks.quickTask.mockResolvedValue({
+    quickModelMocks.memoryTask.mockResolvedValue({
       success: true,
       content: JSON.stringify({ shouldCreate: false, signal: 'none', name: '', description: '', body: '' }),
     });

@@ -22,7 +22,7 @@ import {
   rebuildLightMemoryIndex,
   type LightMemoryFile,
 } from './lightMemoryIpc';
-import { quickTask } from '../model/quickModel';
+import { memoryTask } from '../model/quickModel';
 import { withTimeout } from '../services/infra/timeoutController';
 import { createLogger } from '../services/infra/logger';
 import { MEMORY_CONSOLIDATION } from '../../shared/constants';
@@ -301,12 +301,12 @@ export async function consolidateLightMemory(
     };
   }
 
-  // Ask the quick model for a compress-without-loss plan.
+  // Ask the configurable memory model for a compress-without-loss plan.
   const prompt = `${CONSOLIDATION_PROMPT}\n\n记忆文件：\n${buildFilesDump(files)}`;
   let planRaw: string;
   try {
     const result = await withTimeout(
-      quickTask(prompt, MEMORY_CONSOLIDATION.MAX_TOKENS),
+      memoryTask(prompt, MEMORY_CONSOLIDATION.MAX_TOKENS),
       MEMORY_CONSOLIDATION.TIMEOUT_MS,
       'Consolidation LLM timed out',
     );

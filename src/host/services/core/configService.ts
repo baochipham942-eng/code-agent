@@ -564,7 +564,7 @@ export class ConfigService implements IReadConfigService {
         // Restore model routing
         if (keychainSettings.modelRouting && typeof keychainSettings.modelRouting === 'object') {
           const routing = keychainSettings.modelRouting as Record<string, { provider: string; model: string }>;
-          for (const key of ['code', 'vision', 'fast', 'gui'] as const) {
+          for (const key of ['code', 'vision', 'fast', 'memory', 'gui'] as const) {
             if (routing[key]?.provider && routing[key]?.model) {
               this.settings.models.routing[key] = routing[key] as { provider: ModelProvider; model: string };
             }
@@ -1071,8 +1071,8 @@ export class ConfigService implements IReadConfigService {
 
   // 模型路由方法
   getModelForCapability(
-    capability: 'code' | 'vision' | 'fast' | 'gui'
-  ): { provider: ModelProvider; model: string } {
+    capability: 'code' | 'vision' | 'fast' | 'memory' | 'gui'
+  ): { provider: ModelProvider; model: string } | undefined {
     return this.settings.models.routing[capability];
   }
 
@@ -1107,7 +1107,7 @@ export class ConfigService implements IReadConfigService {
   }
 
   async setModelRouting(
-    capability: 'code' | 'vision' | 'fast' | 'gui',
+    capability: 'code' | 'vision' | 'fast' | 'memory' | 'gui',
     config: { provider: ModelProvider; model: string }
   ): Promise<void> {
     this.settings.models.routing[capability] = config;

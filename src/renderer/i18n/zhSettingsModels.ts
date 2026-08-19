@@ -76,6 +76,11 @@ export const zhSettingsModels = {
           deep: { label: '深度任务模型', description: '研究、规划、重构' },
           vision: { label: '视觉任务模型', description: '图片、截图、视觉输入' },
         },
+        memory: {
+          label: '记忆整理模型',
+          description: '用于会话落卡、复盘与记忆合并；未单独配置时跟随快速模型。',
+          costHint: '升到更强模型会消耗更高额度，按量计费 API 会产生更高费用。',
+        },
       },
       providerSection: {
         title: '模型提供商',
@@ -214,6 +219,7 @@ export const zhSettingsModels = {
         defaultModelSaveFailedPrefix: '主任务模型保存失败: ',
         defaultPromotedPrefix: '原主任务模型未配置 API Key，主任务模型已自动切换到 ',
         taskStrategySaveFailedPrefix: '自动切换保存失败: ',
+        memoryRoutingSaveFailedPrefix: '记忆整理模型保存失败: ',
         apiKeyRequired: '请先填写 API Key',
         connectionSuccessPrefix: '连接成功，延迟 ',
         connectionSuccessSuffix: 'ms',

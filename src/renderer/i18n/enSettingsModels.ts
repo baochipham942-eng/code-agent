@@ -76,6 +76,11 @@ export const enSettingsModels = {
           deep: { label: 'Deep task model', description: 'Research, planning, refactoring' },
           vision: { label: 'Vision task model', description: 'Images, screenshots, visual input' },
         },
+        memory: {
+          label: 'Memory organization model',
+          description: 'Used for conversation capture, review, and memory consolidation. It follows the fast model until configured separately.',
+          costHint: 'Choosing a stronger model consumes more quota and may increase pay-as-you-go API charges.',
+        },
       },
       providerSection: {
         title: 'Model Providers',
@@ -213,6 +218,7 @@ export const enSettingsModels = {
         defaultModelSaveFailedPrefix: 'Failed to save main task model: ',
         defaultPromotedPrefix: 'The original main task model had no API Key, so the main task model was switched to ',
         taskStrategySaveFailedPrefix: 'Failed to save automatic switching: ',
+        memoryRoutingSaveFailedPrefix: 'Failed to save memory organization model: ',
         apiKeyRequired: 'Enter an API Key first',
         connectionSuccessPrefix: 'Connected. Latency ',
         connectionSuccessSuffix: 'ms',

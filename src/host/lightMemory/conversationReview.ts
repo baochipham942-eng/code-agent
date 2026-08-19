@@ -1,6 +1,6 @@
 // ============================================================================
 // Conversation Review — 运行时 skill 自沉淀的 LLM 语义复盘链
-// 借鉴 Hermes Agent 的 background_review：session 收尾时让 quick model 读对话内容，
+// 借鉴 Hermes Agent 的 background_review：session 收尾时让可配的记忆模型读对话内容，
 // 判断本轮有没有"值得沉淀成一类技能"的可复用学习，产出一份 class-level skill 草稿。
 //
 // 与 learningPipeline 的 telemetry n-gram 蒸馏并联、互补：
@@ -12,7 +12,7 @@
 // 静默降级，绝不阻塞会话、绝不污染主对话。
 // ============================================================================
 
-import { quickTask } from '../model/quickModel';
+import { memoryTask } from '../model/quickModel';
 import { withTimeout } from '../services/infra/timeoutController';
 import { createLogger } from '../services/infra/logger';
 import { SKILL_REVIEW } from '../../shared/constants';
@@ -353,7 +353,7 @@ export function parseReviewedSkill(raw: string): ReviewedSkill | null {
 
 /**
  * 对一段会话做 LLM 语义复盘，返回一条值得沉淀的 class-level skill，或 null（本轮不沉淀）。
- * 用 quick（便宜/快）模型 + 硬超时；任何失败都返回 null，绝不抛错、绝不阻塞会话。
+ * 用可配的记忆整理模型 + 硬超时；任何失败都返回 null，绝不抛错、绝不阻塞会话。
  */
 export async function reviewConversationForSkill(input: {
   userMessages: string[];
@@ -365,7 +365,7 @@ export async function reviewConversationForSkill(input: {
   try {
     const prompt = buildReviewPrompt({ userMessages, lastAssistant: input.lastAssistant });
     const result = await withTimeout(
-      quickTask(prompt, SKILL_REVIEW.MAX_TOKENS),
+      memoryTask(prompt, SKILL_REVIEW.MAX_TOKENS),
       SKILL_REVIEW.TIMEOUT_MS,
       'Skill review timed out',
     );

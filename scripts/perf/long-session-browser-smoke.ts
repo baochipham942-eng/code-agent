@@ -2,11 +2,69 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { createServer, type ViteDevServer } from 'vite';
 import { chromium, type Browser } from 'playwright';
 
 const OUT_DIR = path.resolve(process.cwd(), 'docs/perf');
 const JSON_OUT = path.join(OUT_DIR, 'long-session-gold-latest.json');
+const CORRECTNESS_GATE_NAMES = ['anchorDrift', 'search', 'streamingFollow'] as const;
+
+export type LongSessionGateProfile = 'full' | 'correctness';
+
+export interface LongSessionBrowserSmokeOptions {
+  gateProfile: LongSessionGateProfile;
+  outputPath: string;
+  help: boolean;
+}
+
+export function parseLongSessionBrowserSmokeOptions(
+  argv: string[],
+  defaultOutputPath = JSON_OUT,
+): LongSessionBrowserSmokeOptions {
+  let gateProfile: LongSessionGateProfile = 'full';
+  let outputPath = defaultOutputPath;
+  let help = false;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === '--help') {
+      help = true;
+      continue;
+    }
+    if (argument === '--out') {
+      const value = argv[index + 1];
+      if (!value || value.startsWith('--')) throw new Error('--out requires a file path.');
+      outputPath = path.resolve(value);
+      index += 1;
+      continue;
+    }
+    if (argument === '--gate-profile') {
+      const value = argv[index + 1];
+      if (value !== 'full' && value !== 'correctness') {
+        throw new Error('--gate-profile must be "full" or "correctness".');
+      }
+      gateProfile = value;
+      index += 1;
+      continue;
+    }
+    throw new Error(`Unknown argument: ${argument}`);
+  }
+
+  return { gateProfile, outputPath, help };
+}
+
+export function selectLongSessionGates(
+  allGates: Record<string, boolean>,
+  gateProfile: LongSessionGateProfile,
+): Record<string, boolean> {
+  if (gateProfile === 'full') return allGates;
+  return Object.fromEntries(CORRECTNESS_GATE_NAMES.map((name) => [name, allGates[name] === true]));
+}
+
+function usage(): void {
+  process.stdout.write(`Long-session browser smoke\n\nUsage:\n  npm run perf:long-session -- [options]\n\nOptions:\n  --out <path>                  Write the report outside the release evidence path.\n  --gate-profile <profile>      full (default) or correctness.\n  --help                        Show this help.\n`);
+}
 
 function gitHead(): string {
   try {
@@ -45,6 +103,11 @@ async function startViteServer(): Promise<ViteDevServer> {
 }
 
 async function main(): Promise<void> {
+  const options = parseLongSessionBrowserSmokeOptions(process.argv.slice(2));
+  if (options.help) {
+    usage();
+    return;
+  }
   let server: ViteDevServer | null = null;
   let browser: Browser | null = null;
   try {
@@ -63,7 +126,7 @@ async function main(): Promise<void> {
     const browserResult = await page.evaluate(() => window.__LONG_SESSION_RESULT__);
     if (!browserResult) throw new Error('Long-session harness did not publish a result.');
 
-    const gates = {
+    const allGates = {
       turns500Interactive: browserResult.scenarios.turns500.interactiveMs <= 2_000,
       anchorDrift: typeof browserResult.scenarios.historyPrepend.anchorDriftPx === 'number'
         && Number.isFinite(browserResult.scenarios.historyPrepend.anchorDriftPx)
@@ -74,6 +137,7 @@ async function main(): Promise<void> {
       mainThread: browserResult.mainThread.over500ms === 0,
       memoryRecorded: browserResult.memory.supported,
     };
+    const gates = selectLongSessionGates(allGates, options.gateProfile);
     const report = {
       schemaVersion: 1,
       generatedAt: new Date().toISOString(),
@@ -104,8 +168,8 @@ async function main(): Promise<void> {
       gates,
       passed: Object.values(gates).every(Boolean),
     };
-    fs.mkdirSync(OUT_DIR, { recursive: true });
-    fs.writeFileSync(JSON_OUT, `${JSON.stringify(report, null, 2)}\n`);
+    fs.mkdirSync(path.dirname(options.outputPath), { recursive: true });
+    fs.writeFileSync(options.outputPath, `${JSON.stringify(report, null, 2)}\n`);
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     if (!report.passed) process.exitCode = 1;
   } finally {
@@ -114,7 +178,9 @@ async function main(): Promise<void> {
   }
 }
 
-void main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+  void main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

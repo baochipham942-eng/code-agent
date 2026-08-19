@@ -57,7 +57,10 @@ const limits = {
   // 验收：kill-restart/pause-resume/renderer-hot-update。此前 Windows 只在手动构建与
   // 发版 tag 被碰到，孤儿进程/-shm 残留类回归的发现窗口 = 到下次发版；nightly 压到 24h。
   // 不能折进 swarm-ci.yml：触发方式（cron）与 runner 矩阵（含 windows）都不同。
-  workflows: 19,
+  // 20: long-session-scroll-gate.yml — 每个 PR 都跑的窄浏览器正确性门。故意不设
+  // paths：共享状态、样式、依赖和构建配置都能影响 renderer 滚动，按目录收窄会漏检。
+  // 性能指标只报告，anchor/search/streaming-follow 三条确定性判据才阻塞。
+  workflows: 20,
 };
 
 const navigationFiles = [

@@ -12,6 +12,31 @@ import { LIGHT_MEMORY } from '../../shared/constants';
 
 const logger = createLogger('LightMemory');
 
+function indexTarget(line: string): string | null {
+  const match = line.match(/^- \[[^\]]+\]\(([^)]+)\) — .*$/);
+  if (!match) return null;
+  const target = match[1].trim();
+  return path.basename(target) === target && target.endsWith('.md') ? target : null;
+}
+
+async function filterArchivedIndexEntries(content: string): Promise<string> {
+  const dir = getMemoryDir();
+  const lines = content.split('\n');
+  const kept = await Promise.all(lines.map(async (line) => {
+    const target = indexTarget(line);
+    if (!target) return line;
+    try {
+      const source = await fs.readFile(path.join(dir, target), 'utf-8');
+      return /^status:\s*archived\s*$/m.test(source) ? null : line;
+    } catch {
+      // Health diagnostics owns missing/orphan reporting. Keep legacy INDEX
+      // behavior here and only suppress archives we can positively identify.
+      return line;
+    }
+  }));
+  return kept.filter((line): line is string => line !== null).join('\n');
+}
+
 /** Memory directory path: ~/.code-agent/memory/ */
 export function getMemoryDir(): string {
   return path.join(getUserConfigDir(), 'memory');
@@ -34,7 +59,8 @@ export function getMemoryIndexPath(): string {
 export async function loadMemoryIndex(): Promise<string | null> {
   const indexPath = getMemoryIndexPath();
   try {
-    const content = await fs.readFile(indexPath, 'utf-8');
+    const rawContent = await fs.readFile(indexPath, 'utf-8');
+    const content = await filterArchivedIndexEntries(rawContent);
     if (!content.trim()) return null;
 
     // Truncate to keep system prompt lean

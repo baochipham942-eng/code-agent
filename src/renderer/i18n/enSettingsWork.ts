@@ -516,12 +516,12 @@ export const enSettingsWork = {
       },
       files: {
         pageTitle: 'Memory',
-        pageDescription: 'Manage file-based memory, recent session summaries, and model usage stats. File deletion is sensitive and still requires confirmation.',
+        pageDescription: 'Manage file-based memory, recent session summaries, and model usage stats. Forgetting archives the entry and keeps the original recoverable.',
         loadFailed: 'Failed to load memory',
         focusFoundPrefix: 'Located ',
         focusMissingPrefix: 'Not found: ',
-        deleteSuccessPrefix: 'Deleted ',
-        deleteFailed: 'Delete failed',
+        deleteSuccessPrefix: 'Archived ',
+        deleteFailed: 'Archive failed',
         managementTitle: 'Memory file management',
         managementDescription: 'View local Light Memory files, types, update times, and content length.',
         stats: {
@@ -545,7 +545,7 @@ export const enSettingsWork = {
         charSuffix: ' chars',
         cancel: 'Cancel',
         confirm: 'Confirm',
-        delete: 'Delete',
+        delete: 'Archive',
         empty: 'No memory files yet. AI will create memory automatically during conversations.',
         noMatches: 'No matching memory files',
         detailTitle: 'File details',
@@ -601,6 +601,7 @@ export const enSettingsWork = {
           allStatus: 'All statuses',
           allKind: 'All types',
           allSource: 'All sources',
+          showArchived: 'Show archived',
         },
         table: {
           status: 'Status',

@@ -7,13 +7,11 @@ import {
   RotateCcw,
   Save,
   Search,
-  Trash2,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { IPC_DOMAINS } from '@shared/ipc/domains';
 import type {
   MemoryEntry,
-  MemoryEntryDeleteResult,
   MemoryEntryKind,
   MemoryEntryListResult,
   MemoryEntrySourceOfTruth,
@@ -36,8 +34,7 @@ type MemorySettingsText = typeof zh.settings.memory;
 
 type MemoryEntryCommand =
   | { action: 'memoryEntries' }
-  | ({ action: 'memoryEntryUpdate' } & MemoryEntryUpdateRequest)
-  | { action: 'memoryEntryDelete'; entryId: string };
+  | ({ action: 'memoryEntryUpdate' } & MemoryEntryUpdateRequest);
 
 interface MemoryEntryCommandResponse<T> {
   success: boolean;
@@ -106,6 +103,7 @@ export function buildMemoryEntryRows({
   selectedEntryId,
   searchQuery,
   statusFilter,
+  showArchived = false,
   kindFilter,
   sourceFilter,
   now = Date.now(),
@@ -116,6 +114,7 @@ export function buildMemoryEntryRows({
   selectedEntryId: string | null;
   searchQuery: string;
   statusFilter: EntryStatusFilter;
+  showArchived?: boolean;
   kindFilter: EntryKindFilter;
   sourceFilter: EntrySourceFilter;
   now?: number;
@@ -124,6 +123,7 @@ export function buildMemoryEntryRows({
 }): MemoryEntryManagerRow[] {
   const query = searchQuery.trim().toLowerCase();
   return entries
+    .filter((entry) => showArchived || entry.status !== 'archived')
     .filter((entry) => statusFilter === 'all' || entry.status === statusFilter)
     .filter((entry) => kindFilter === 'all' || entry.kind === kindFilter)
     .filter((entry) => sourceFilter === 'all' || entry.source.sourceOfTruth === sourceFilter)
@@ -190,15 +190,15 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
   const [draft, setDraft] = useState<MemoryEntryDraft | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<EntryStatusFilter>('all');
+  const [showArchived, setShowArchived] = useState(false);
   const [kindFilter, setKindFilter] = useState<EntryKindFilter>('all');
   const [sourceFilter, setSourceFilter] = useState<EntrySourceFilter>('all');
-  const [busy, setBusy] = useState<'load' | 'save' | 'delete' | null>('load');
+  const [busy, setBusy] = useState<'load' | 'save' | null>('load');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const entries = result?.entries ?? [];
   const selectedEntry = useMemo(
-    () => entries.find((entry) => entry.id === selectedEntryId) ?? entries[0] ?? null,
+    () => entries.find((entry) => entry.id === selectedEntryId) ?? null,
     [entries, selectedEntryId],
   );
   const rows = useMemo(
@@ -207,12 +207,13 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
       selectedEntryId: selectedEntry?.id ?? null,
       searchQuery,
       statusFilter,
+      showArchived,
       kindFilter,
       sourceFilter,
       labels: memoryText,
       locale: localeForLanguage(language),
     }),
-    [entries, kindFilter, language, memoryText, searchQuery, selectedEntry?.id, sourceFilter, statusFilter],
+    [entries, kindFilter, language, memoryText, searchQuery, selectedEntry?.id, showArchived, sourceFilter, statusFilter],
   );
 
   const loadEntries = async () => {
@@ -222,7 +223,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
       setResult(response.data);
       setSelectedEntryId((current) => {
         if (current && response.data?.entries.some((entry) => entry.id === current)) return current;
-        return response.data?.entries[0]?.id ?? null;
+        return response.data?.entries.find((entry) => entry.status !== 'archived')?.id ?? null;
       });
     } else {
       setMessage({ type: 'error', text: response.error || memoryText.entries.loadFailed });
@@ -251,29 +252,11 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
     });
     if (response.success && response.data) {
       setMessage({ type: 'success', text: memoryText.entries.updateSuccess });
+      if (next.status === 'archived') setShowArchived(true);
       await loadEntries();
       await onChanged?.();
     } else {
       setMessage({ type: 'error', text: response.error || memoryText.entries.updateFailed });
-    }
-    setBusy(null);
-  };
-
-  const deleteSelected = async () => {
-    if (!selectedEntry) return;
-    setBusy('delete');
-    const response = await invokeMemoryEntryCommand<MemoryEntryDeleteResult>({
-      action: 'memoryEntryDelete',
-      entryId: selectedEntry.id,
-    });
-    if (response.success && response.data?.deleted) {
-      setMessage({ type: 'success', text: memoryText.entries.deleteSuccess });
-      setDeleteConfirmId(null);
-      setSelectedEntryId(null);
-      await loadEntries();
-      await onChanged?.();
-    } else {
-      setMessage({ type: 'error', text: response.error || memoryText.entries.deleteFailed });
     }
     setBusy(null);
   };
@@ -312,7 +295,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
 
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0 border-b border-zinc-800 lg:border-b-0 lg:border-r">
-            <div className="grid gap-2 border-b border-zinc-800 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_120px_120px_120px]">
+            <div className="grid gap-2 border-b border-zinc-800 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_120px_120px_120px_auto]">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                 <Input
@@ -325,7 +308,11 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
               </div>
               <select
                 value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as EntryStatusFilter)}
+                onChange={(event) => {
+                  const nextStatus = event.target.value as EntryStatusFilter;
+                  setStatusFilter(nextStatus);
+                  if (nextStatus === 'archived') setShowArchived(true);
+                }}
                 className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
               >
                 <option value="all">{memoryText.entries.filters.allStatus}</option>
@@ -333,6 +320,21 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   <option key={status} value={status}>{getMemoryEntryStatusLabel(status, memoryText.entries.statusLabels)}</option>
                 ))}
               </select>
+              <label className="inline-flex items-center gap-2 whitespace-nowrap rounded border border-zinc-700 px-2 py-2 text-xs text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={showArchived}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setShowArchived(checked);
+                    if (!checked && selectedEntry?.status === 'archived') {
+                      setSelectedEntryId(entries.find((entry) => entry.status !== 'archived')?.id ?? null);
+                    }
+                  }}
+                  data-testid="memory-entry-show-archived"
+                />
+                {memoryText.entries.filters.showArchived}
+              </label>
               <select
                 value={kindFilter}
                 onChange={(event) => setKindFilter(event.target.value as EntryKindFilter)}
@@ -497,35 +499,6 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     <Archive className="h-3.5 w-3.5" />
                     {draft.status === 'archived' ? memoryText.entries.activate : memoryText.entries.archive}
                   </button>
-                  {deleteConfirmId === selectedEntry.id ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteConfirmId(null)}
-                        className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800"
-                      >
-                        {memoryText.entries.cancel}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={deleteSelected}
-                        disabled={busy !== null || isWebMode()}
-                        className="inline-flex items-center gap-1.5 rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-badge-danger hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {busy === 'delete' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                        {memoryText.entries.confirmDelete}
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setDeleteConfirmId(selectedEntry.id)}
-                      className="inline-flex items-center gap-1.5 rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-badge-danger"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      {memoryText.entries.delete}
-                    </button>
-                  )}
                 </div>
 
                 <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500">

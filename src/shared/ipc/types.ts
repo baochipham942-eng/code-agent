@@ -200,6 +200,8 @@ export interface MemoryRecord {
   createdAt: number;
   updatedAt: number;
   metadata: Record<string, unknown>;
+  status: 'candidate' | 'active' | 'rejected' | 'stale' | 'archived';
+  deprecatedBy: string | null;
 }
 
 export interface MemoryListFilter {

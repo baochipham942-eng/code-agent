@@ -22,6 +22,7 @@ export interface LightMemoryFile {
   content: string;
   entryId?: string;
   status?: MemoryEntryStatus;
+  deprecatedBy?: string;
   source?: string;
   schemaVersion?: number;
   /** File modification time (ISO) */
@@ -153,6 +154,7 @@ function toLightMemoryFile(filename: string, content: string, updatedAt: Date): 
     content: body,
     entryId: metadata.entry_id,
     status: parseMemoryEntryStatus(metadata.status),
+    deprecatedBy: metadata.deprecated_by || undefined,
     source: metadata.source,
     schemaVersion: parseSchemaVersion(metadata.schema_version),
     updatedAt: updatedAt.toISOString(),
@@ -253,6 +255,7 @@ export async function writeLightMemoryFile(input: {
   content: string;
   entryId?: string;
   status?: MemoryEntryStatus;
+  deprecatedBy?: string | null;
   source?: string;
   schemaVersion?: number;
   /** Only the interactive directive confirmation path may set this. */
@@ -269,6 +272,7 @@ export async function writeLightMemoryFile(input: {
     ['type', input.type || 'reference'],
     ['entry_id', input.entryId],
     ['status', input.status],
+    ['deprecated_by', input.deprecatedBy || undefined],
     ['source', input.source],
     ['schema_version', input.schemaVersion],
   ];
@@ -319,6 +323,32 @@ export async function deleteMemoryFile(filename: string): Promise<boolean> {
   }
 
   return true;
+}
+
+/**
+ * User-facing "forget" keeps the file and only removes it from active recall.
+ * Physical deletion remains private to the future consolidation migration path.
+ */
+export async function archiveMemoryFile(filename: string, deprecatedBy?: string | null): Promise<LightMemoryFile | null> {
+  const current = await readMemoryFile(filename);
+  if (!current) return null;
+  const archived = await writeLightMemoryFile({
+    filename: current.filename,
+    name: current.name,
+    description: current.description,
+    type: current.type,
+    content: current.content,
+    entryId: current.entryId,
+    status: 'archived',
+    deprecatedBy,
+    source: current.source,
+    schemaVersion: current.schemaVersion,
+    // This path only changes an existing record to archived; it never creates
+    // directive authority. The user's forget/archive action is the grant.
+    directiveConfirmedByUser: current.type === 'directive',
+  });
+  await rebuildLightMemoryIndex();
+  return archived;
 }
 
 /**
@@ -383,6 +413,9 @@ export async function getLightMemoryHealth(): Promise<LightMemoryHealthReport> {
         const issue = frontmatterHealthIssue(parsed);
         if (issue) {
           invalidFrontmatter.push({ filename: entry, reason: issue });
+          continue;
+        }
+        if (parseMemoryEntryStatus(parsed.metadata.status) === 'archived') {
           continue;
         }
         validFiles.add(entry);
@@ -460,6 +493,9 @@ export async function rebuildLightMemoryIndex(): Promise<LightMemoryRebuildResul
       const issue = frontmatterHealthIssue(parsed);
       if (issue) {
         skippedFiles.push({ filename: entry, reason: issue });
+        continue;
+      }
+      if (parseMemoryEntryStatus(parsed.metadata.status) === 'archived') {
         continue;
       }
       indexEntries.push({ filename: entry, description: parsed.description.trim() });

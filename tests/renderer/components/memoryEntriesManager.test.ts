@@ -75,6 +75,7 @@ describe('MemoryEntriesManager helpers', () => {
       selectedEntryId: 'mem_entry_db',
       searchQuery: 'pattern',
       statusFilter: 'archived',
+      showArchived: true,
       kindFilter: 'pattern',
       sourceFilter: 'db_memory',
       now,
@@ -88,5 +89,16 @@ describe('MemoryEntriesManager helpers', () => {
         selected: true,
       }),
     ]);
+
+    expect(buildMemoryEntryRows({
+      entries: [light, db],
+      selectedEntryId: null,
+      searchQuery: '',
+      statusFilter: 'all',
+      showArchived: false,
+      kindFilter: 'all',
+      sourceFilter: 'all',
+      now,
+    }).map((row) => row.id)).toEqual(['mem_entry_light']);
   });
 });

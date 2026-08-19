@@ -9,7 +9,7 @@ export const memoryAmendSchema: ToolSchema = {
     + 'Use when the user says a stored memory is wrong, outdated, or should be forgotten. '
     + 'Target it by the "[#<id>]" handle shown next to entries in the Stored Memories / Packed Memories '
     + 'context blocks, or by an id returned from memory_search. '
-    + '"update" replaces the content (and re-derives its summary); "forget" deletes the record outright.',
+    + '"update" replaces the content (and re-derives its summary); "forget" archives the record without deleting its original content.',
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
@@ -21,11 +21,15 @@ export const memoryAmendSchema: ToolSchema = {
       action: {
         type: 'string',
         enum: ['update', 'forget'],
-        description: '"update" corrects the content of the record. "forget" deletes it.',
+        description: '"update" corrects the content of the record. "forget" archives it and removes it from default recall.',
       },
       content: {
         type: 'string',
         description: '[update] The corrected content. Required when action is "update".',
+      },
+      deprecated_by: {
+        type: 'string',
+        description: '[forget] Optional replacement memory id that supersedes this archived record.',
       },
     },
     required: ['id', 'action'],

@@ -694,6 +694,7 @@ export class CLIDatabaseService {
     sessionId?: string;
     confidence: number;
     metadata?: Record<string, unknown>;
+    status?: 'candidate' | 'active' | 'rejected' | 'stale' | 'archived'; deprecatedBy?: string;
   }): { id: string; createdAt: number; updatedAt: number } {
     if (!this.db) throw new Error('Database not initialized');
     const id = `mem_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
@@ -702,8 +703,8 @@ export class CLIDatabaseService {
     this.db
       .prepare(
         `
-        INSERT INTO memories (id, type, category, content, summary, source, project_path, session_id, confidence, metadata, access_count, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+        INSERT INTO memories (id, type, category, content, summary, source, project_path, session_id, confidence, metadata, status, deprecated_by, access_count, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
         `,
       )
       .run(
@@ -717,6 +718,8 @@ export class CLIDatabaseService {
         data.sessionId ?? null,
         data.confidence,
         JSON.stringify(data.metadata ?? {}),
+        data.status ?? 'active',
+        data.deprecatedBy ?? null,
         now,
         now,
       );
@@ -734,6 +737,7 @@ export class CLIDatabaseService {
     offset?: number;
     orderBy?: string;
     orderDir?: 'ASC' | 'DESC';
+    includeArchived?: boolean;
   } = {}): Array<{
     id: string;
     type: string;
@@ -748,10 +752,13 @@ export class CLIDatabaseService {
     accessCount: number;
     createdAt: number;
     updatedAt: number;
+    status: 'candidate' | 'active' | 'rejected' | 'stale' | 'archived'; deprecatedBy: string | null;
   }> {
     if (!this.db) return [];
     const conditions: string[] = [];
     const params: unknown[] = [];
+
+    if (!options.includeArchived) conditions.push("COALESCE(status, 'active') != 'archived'");
 
     if (options.type) {
       conditions.push('type = ?');
@@ -804,6 +811,7 @@ export class CLIDatabaseService {
       accessCount: Number(row.access_count ?? 0),
       createdAt: Number(row.created_at ?? 0),
       updatedAt: Number(row.updated_at ?? 0),
+      status: (row.status == null ? 'active' : String(row.status)) as 'candidate' | 'active' | 'rejected' | 'stale' | 'archived', deprecatedBy: row.deprecated_by == null ? null : String(row.deprecated_by),
     }));
   }
 

@@ -998,7 +998,7 @@ describe('ConversationRuntime', () => {
       await runtime.initializeRun('hello');
 
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
-        expect.stringContaining('<user-memory>\nThis block contains personalization evidence only.'),
+        expect.stringContaining('<user-memory>\nThis block contains historical personalization evidence only.'),
         'user-memory',
       );
       expect(listMemoryInjectionTraces({ sessionId: 'test-session-1' })).toContainEqual(
@@ -1013,7 +1013,7 @@ describe('ConversationRuntime', () => {
       );
     });
 
-    it('injects user directives and ordinary memory as independent authority blocks', async () => {
+    it('injects user directives and ordinary memory as separate historical-background blocks', async () => {
       vi.mocked(buildPackedUserDirectives).mockResolvedValue({
         block: '## User Directives\n<memory-pack>\n- [1] Keep PRs fail closed\n</memory-pack>',
         packed: { items: [{
@@ -1036,11 +1036,11 @@ describe('ConversationRuntime', () => {
 
       expect(buildSeedMemoryBlock).not.toHaveBeenCalled();
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
-        expect.stringContaining('<user-directives>\nThese are explicit user-decided rules.'),
+        expect.stringContaining('<user-directives>\nThis block contains historical user-decided rules.'),
         'user-directives',
       );
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
-        expect.stringContaining('<user-memory>\nThis block contains personalization evidence only.'),
+        expect.stringContaining('<user-memory>\nThis block contains historical personalization evidence only.'),
         'user-memory',
       );
       expect(listMemoryInjectionTraces({ sessionId: 'test-session-1' })).toContainEqual(

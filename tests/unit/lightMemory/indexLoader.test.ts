@@ -120,6 +120,23 @@ describe('indexLoader', () => {
       expect(result).toBe(content);
     });
 
+    it('filters archived file entries even when a stale INDEX still links them', async () => {
+      const memDir = path.join(tmpDir, 'memory');
+      await fs.mkdir(memDir, { recursive: true });
+      await fs.writeFile(path.join(memDir, 'active.md'), '---\nname: Active\ndescription: Active memory\ntype: project\nstatus: active\n---\n\nActive body.\n', 'utf-8');
+      await fs.writeFile(path.join(memDir, 'archived.md'), '---\nname: Archived\ndescription: Archived memory\ntype: project\nstatus: archived\n---\n\nArchived original body.\n', 'utf-8');
+      await fs.writeFile(
+        path.join(memDir, 'INDEX.md'),
+        '# Memory Index\n\n- [active.md](active.md) — Active memory\n- [archived.md](archived.md) — Archived memory\n',
+        'utf-8',
+      );
+
+      const result = await loadMemoryIndex();
+      expect(result).toContain('active.md');
+      expect(result).not.toContain('archived.md');
+      expect(await fs.readFile(path.join(memDir, 'archived.md'), 'utf-8')).toContain('Archived original body.');
+    });
+
     it('should truncate INDEX.md exceeding 200 lines', async () => {
       const memDir = path.join(tmpDir, 'memory');
       await fs.mkdir(memDir, { recursive: true });

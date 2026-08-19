@@ -324,7 +324,7 @@ describe('memoryWriteModule (native)', () => {
   });
 
   describe('delete action', () => {
-    it('deletes an existing memory file', async () => {
+    it('soft-archives an existing memory file without deleting its original content', async () => {
       await runWrite({
         action: 'write',
         filename: 'to_delete.md',
@@ -344,6 +344,7 @@ describe('memoryWriteModule (native)', () => {
       if (result.ok) {
         expect(result.meta).toMatchObject({
           action: 'delete',
+          status: 'archived',
           filename: 'to_delete.md',
           existed: true,
         });
@@ -355,7 +356,10 @@ describe('memoryWriteModule (native)', () => {
       const existsAfter = await fs
         .stat(path.join(memDir, 'to_delete.md'))
         .then(() => true, () => false);
-      expect(existsAfter).toBe(false);
+      expect(existsAfter).toBe(true);
+      const archived = await fs.readFile(path.join(memDir, 'to_delete.md'), 'utf-8');
+      expect(archived).toContain('status: archived');
+      expect(archived).toContain('Temporary');
     });
 
     it('removes entry from INDEX.md on delete', async () => {
@@ -392,6 +396,7 @@ describe('memoryWriteModule (native)', () => {
       if (result.ok) {
         expect(result.meta).toMatchObject({
           action: 'delete',
+          status: 'archived',
           filename: 'nonexistent.md',
           existed: false,
         });

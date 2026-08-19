@@ -4,7 +4,7 @@ import type { ToolSchema } from '../../../protocol/tools';
 export const memoryWriteSchema: ToolSchema = {
   name: 'MemoryWrite',
   description:
-    'Write, update, or delete a memory file in the persistent file-based memory system. ' +
+    'Write, update, or archive a memory file in the persistent file-based memory system. ' +
     'Each memory is a markdown file with frontmatter (name, description, type). ' +
     'Automatically maintains INDEX.md. ' +
     'Use for saving user preferences, feedback, project context, external references, ' +
@@ -16,7 +16,7 @@ export const memoryWriteSchema: ToolSchema = {
       action: {
         type: 'string',
         enum: ['write', 'delete'],
-        description: '"write" creates or overwrites a memory file. "delete" removes it.',
+        description: '"write" creates or overwrites a memory file. "delete" soft-archives it: the original file is retained and removed from default recall.',
       },
       scope: {
         type: 'string',

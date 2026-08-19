@@ -146,12 +146,36 @@ export function createCliTables(db: CliDb): void {
       session_id TEXT,
       confidence REAL NOT NULL DEFAULT 1.0,
       metadata TEXT DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'active',
+      deprecated_by TEXT,
       access_count INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       last_accessed_at INTEGER
     )
   `);
+  const memoryStatusWasPresent = (db.prepare('PRAGMA table_info(memories)').all() as Array<{ name: string }>)
+    .some((column) => column.name === 'status');
+  addColumnIfMissing(db, `ALTER TABLE memories ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`);
+  addColumnIfMissing(db, `ALTER TABLE memories ADD COLUMN deprecated_by TEXT`);
+  if (!memoryStatusWasPresent) {
+    try {
+      db.exec(`
+        UPDATE memories
+        SET status = json_extract(metadata, '$.memoryEntry.status'),
+            deprecated_by = CASE
+              WHEN json_type(metadata, '$.memoryEntry.deprecatedBy') = 'text'
+                THEN json_extract(metadata, '$.memoryEntry.deprecatedBy')
+              ELSE deprecated_by
+            END
+        WHERE json_valid(metadata)
+          AND json_extract(metadata, '$.memoryEntry.status') IN ('candidate', 'active', 'rejected', 'stale', 'archived')
+      `);
+    } catch {
+      // JSON1 is bundled in supported SQLite builds. An older runtime keeps the
+      // safe defaults; the migration is not replayed after user edits status.
+    }
+  }
 
   // Memories FTS5 — BM25 检索通道（roadmap 2.5），DDL 与桌面侧共用
   applyMemoriesFtsSchema(db);

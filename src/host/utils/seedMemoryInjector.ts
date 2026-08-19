@@ -18,6 +18,7 @@ import {
 import { packMemoryEntries } from '../memory/memoryEntryRuntime';
 import type { MemoryPackResult } from '../../shared/contract/memory';
 import { estimateTokens } from '../context/tokenEstimator';
+import { withMemoryBackgroundGuidance } from '../memory/memoryContextGuidance';
 
 const logger = createLogger('SeedMemoryInjector');
 
@@ -101,6 +102,7 @@ export function buildSeedMemoryBlock(projectPath?: string): string | null {
       orderBy: 'updated_at',
       orderDir: 'DESC',
     })
+      .filter((memory) => memory.status !== 'archived')
       .filter((memory) => memory.type !== 'desktop_activity')
       .filter((memory) => {
         const entry = memory.metadata?.memoryEntry;
@@ -145,7 +147,7 @@ export function buildSeedMemoryBlock(projectPath?: string): string | null {
 
     logger.info(`[SeedMemory] Injecting ${entries.length} seed memories (~${estimateTokens(block)} tokens)`);
 
-    return block;
+    return withMemoryBackgroundGuidance(block);
   } catch (error) {
     // Memory failures must never block the agent loop
     logger.warn('[SeedMemory] Failed to build seed memory block, skipping', { error: String(error) });

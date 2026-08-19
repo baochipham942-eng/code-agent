@@ -3,7 +3,7 @@
 // ----------------------------------------------------------------------------
 // 背景：写入 memories 表的自动化路径（flush-before-compaction / OCR / 照片归档等）
 // 只进不改，模型没法在用户指出"这条记错了"时就地修正或删除。这里补上纠错/遗忘的
-// 工具外壳，复用已有的 MemoryRepository.updateMemory/deleteMemory。
+// 工具外壳，复用已有的 MemoryRepository.updateMemory；forget 软归档保留原文。
 // ============================================================================
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -100,13 +100,35 @@ describe('memory_amend 工具', () => {
     expect(dbMocks.updateMemory).not.toHaveBeenCalled();
   });
 
-  it('forget：删除记录', async () => {
+  it('forget：软归档记录并保留原文', async () => {
     dbMocks.getMemory.mockReturnValue(record());
 
     const result = await (await handler()).execute({ id: 'mem-target', action: 'forget' }, makeCtx(), allow);
 
     expect(result.ok).toBe(true);
-    expect(dbMocks.deleteMemory).toHaveBeenCalledWith('mem-target');
+    expect(dbMocks.updateMemory).toHaveBeenCalledWith('mem-target', {
+      status: 'archived',
+      deprecatedBy: null,
+      metadata: {},
+    });
+    expect(dbMocks.deleteMemory).not.toHaveBeenCalled();
+    expect(result.ok && result.output).toContain('archived');
+  });
+
+  it('forget：可记录替代记忆 deprecated_by', async () => {
+    dbMocks.getMemory.mockReturnValue(record());
+
+    await (await handler()).execute(
+      { id: 'mem-target', action: 'forget', deprecated_by: 'mem-replacement' },
+      makeCtx(),
+      allow,
+    );
+
+    expect(dbMocks.updateMemory).toHaveBeenCalledWith('mem-target', {
+      status: 'archived',
+      deprecatedBy: 'mem-replacement',
+      metadata: {},
+    });
   });
 
   it('坏 id：明确报错，不静默', async () => {

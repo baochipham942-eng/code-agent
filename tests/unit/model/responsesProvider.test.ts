@@ -54,6 +54,7 @@ describe('ResponsesProvider', () => {
   beforeEach(() => {
     electronFetch.mockReset();
     warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    warnSpy.mockClear();
   });
 
   it('uses /responses beside a /v1 base URL and gates DeepSeek web_search by the matrix', async () => {
@@ -139,6 +140,25 @@ describe('ResponsesProvider', () => {
         source: 'assistant.toolCalls',
       }),
     );
+  });
+
+  it('moves a paired output ahead of runtime system guidance injected between call and output', async () => {
+    electronFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) });
+    const call = { type: 'function_call', call_id: 'call_interleaved', name: 'write_file', arguments: '{}' };
+    await new ResponsesProvider().inference([
+      { role: 'assistant', content: '', responsesOutput: [call] },
+      { role: 'system', content: '<strike-1-guidance>Permission denied</strike-1-guidance>' },
+      { role: 'tool', toolCallId: 'call_interleaved', content: 'Permission denied by user' },
+      { role: 'system', content: '<thinking>analyze failure</thinking>' },
+    ], [READ_TOOL], { provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'test-key' } as any);
+
+    expect(JSON.parse(electronFetch.mock.calls[0][1].body).input).toEqual([
+      call,
+      { type: 'function_call_output', call_id: 'call_interleaved', output: 'Permission denied by user' },
+      { role: 'system', content: '<strike-1-guidance>Permission denied</strike-1-guidance>' },
+      { role: 'system', content: '<thinking>analyze failure</thinking>' },
+    ]);
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it('does not pair an output that appears before its function_call', async () => {

@@ -99,6 +99,7 @@ function buildResponsesInput(messages: ModelMessage[]): unknown[] {
   const pendingCallIndexes = new Map<string, number[]>();
   const matchedCallIndexes = new Set<number>();
   const matchedOutputIndexes = new Set<number>();
+  const outputIndexByCallIndex = new Map<number, number>();
   for (let index = 0; index < located.length; index += 1) {
     const item = located[index].item;
     const callId = typeof item.call_id === 'string' ? item.call_id : undefined;
@@ -113,6 +114,7 @@ function buildResponsesInput(messages: ModelMessage[]): unknown[] {
       if (callIndex !== undefined) {
         matchedCallIndexes.add(callIndex);
         matchedOutputIndexes.add(index);
+        outputIndexByCallIndex.set(callIndex, index);
       }
     }
   }
@@ -131,6 +133,11 @@ function buildResponsesInput(messages: ModelMessage[]): unknown[] {
       continue;
     }
 
+    // 已配对 output 统一跟到所属 assistant output 组后面。运行时会在 assistant 与 tool
+    // 消息之间注入 strike/thinking system 提示；部分 Responses 兼容端把这视为配对中断，
+    // 即使稍后存在同 call_id 的 output 仍返回「No tool output found」。
+    if (item.type === 'function_call_output' && matchedOutputIndexes.has(index)) continue;
+
     repaired.push(item);
 
     // 一个 assistant responsesOutput 可能含多个 function_call；先完整保留该 output 的原始顺序，
@@ -140,14 +147,22 @@ function buildResponsesInput(messages: ModelMessage[]): unknown[] {
       && next?.messageIndex !== current.messageIndex;
     if (!atEndOfAssistantOutput) continue;
 
-    for (let outputIndex = index; outputIndex >= 0; outputIndex -= 1) {
+    let assistantStartIndex = index;
+    while (assistantStartIndex > 0 && located[assistantStartIndex - 1].messageIndex === current.messageIndex) {
+      assistantStartIndex -= 1;
+    }
+    for (let outputIndex = assistantStartIndex; outputIndex <= index; outputIndex += 1) {
       const candidate = located[outputIndex];
-      if (candidate.messageIndex !== current.messageIndex) break;
       const candidateCallId = candidate.item.type === 'function_call'
         && typeof candidate.item.call_id === 'string'
         ? candidate.item.call_id
         : undefined;
-      if (!candidateCallId || matchedCallIndexes.has(outputIndex)) continue;
+      if (!candidateCallId) continue;
+      const matchedOutputIndex = outputIndexByCallIndex.get(outputIndex);
+      if (matchedOutputIndex !== undefined) {
+        repaired.push(located[matchedOutputIndex].item);
+        continue;
+      }
       logger.warn(
         `[ResponsesProvider] Repaired orphan function_call ${candidateCallId}: missing function_call_output in history`,
         {

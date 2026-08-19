@@ -6,7 +6,7 @@
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - inline canUseTool 闸门 + onProgress 事件
 // - 走 ctx.logger (不 import services/infra/logger)
-// - 行为保真：action write/delete、frontmatter 格式、INDEX.md 自动维护、
+// - action delete 对全局记忆执行软归档，保留原文件并从 INDEX.md 移除；
 //   path traversal 拒绝、delete 幂等（ENOENT 也更新 INDEX）
 // ============================================================================
 
@@ -26,6 +26,7 @@ import {
   getMemoryDir,
   getMemoryIndexPath,
 } from '../../../lightMemory/indexLoader';
+import { archiveMemoryFile } from '../../../lightMemory/lightMemoryIpc';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { guardSensitiveText } from '../../../security/sensitiveDataGuard';
 import { atomicWriteMemoryText } from '../../../memory/atomicMemoryFile';
@@ -354,38 +355,25 @@ ${safeContent}
 }
 
 // ---------------------------------------------------------------------------
-// Delete
+// Soft archive (backward-compatible action name: delete)
 // ---------------------------------------------------------------------------
 async function executeDelete(filename: string, ctx: ToolContext): Promise<ToolResult<string>> {
   const memDir = getMemoryDir();
   const filePath = path.join(memDir, filename);
-  let existed = true;
-
-  try {
-    await fs.unlink(filePath);
-  } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      return {
-        ok: false,
-        error: `Failed to delete: ${(err as Error).message}`,
-        code: 'FS_ERROR',
-      };
-    }
-    // File didn't exist — still remove from index (idempotent)
-    existed = false;
-  }
-
-  await removeFromIndex(filename);
+  const archived = await archiveMemoryFile(filename);
+  const existed = archived !== null;
+  if (!existed) await removeFromIndex(filename);
   const artifact = createVirtualArtifact({
     sourceTool: schema.name,
     kind: 'text',
     sessionId: ctx.sessionId,
     name: filename,
     mimeType: 'text/markdown',
-    contentLength: 0,
-    preview: `Memory deleted: ${filename}`,
+    contentLength: archived?.content.length ?? 0,
+    preview: `Memory archived: ${filename}`,
     metadata: {
       action: 'delete',
+      status: 'archived',
       filename,
       path: filePath,
       existed,
@@ -394,9 +382,12 @@ async function executeDelete(filename: string, ctx: ToolContext): Promise<ToolRe
   });
   return {
     ok: true,
-    output: `Memory deleted: ${filename}`,
+    output: existed
+      ? `Memory archived: ${filename}. Original content is retained and excluded from default recall.`
+      : `Memory not found: ${filename}. Active index entry was removed if present.`,
     meta: {
       action: 'delete',
+      status: 'archived',
       filename,
       path: filePath,
       existed,

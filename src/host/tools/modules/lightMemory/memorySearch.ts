@@ -21,6 +21,7 @@ import type {
 } from '../../../protocol/tools';
 import { getDatabase } from '../../../services/core/databaseService';
 import { memorySearchSchema } from './memorySearch.schema';
+import { withMemoryBackgroundGuidance } from '../../../memory/memoryContextGuidance';
 
 const schema: ToolSchema = memorySearchSchema;
 
@@ -76,7 +77,7 @@ class MemorySearchHandler implements ToolHandler<Record<string, unknown>, string
 
     return {
       ok: true,
-      output: lines.join('\n'),
+      output: withMemoryBackgroundGuidance(lines.join('\n')),
       meta: {
         count: records.length,
         records: records.map((record) => ({

@@ -516,12 +516,12 @@ export const zhSettingsWork = {
       },
       files: {
         pageTitle: '记忆',
-        pageDescription: '管理文件式记忆、最近会话摘要和模型使用统计。删除文件属于敏感动作，仍保留确认。',
+        pageDescription: '管理文件式记忆、最近会话摘要和模型使用统计。遗忘会软归档，原文仍可恢复。',
         loadFailed: '加载记忆失败',
         focusFoundPrefix: '已定位 ',
         focusMissingPrefix: '未找到 ',
-        deleteSuccessPrefix: '已删除 ',
-        deleteFailed: '删除失败',
+        deleteSuccessPrefix: '已归档 ',
+        deleteFailed: '归档失败',
         managementTitle: '记忆文件管理',
         managementDescription: '查看本地 Light Memory 文件、类型、更新时间和内容长度。',
         stats: {
@@ -545,7 +545,7 @@ export const zhSettingsWork = {
         charSuffix: ' 字符',
         cancel: '取消',
         confirm: '确认',
-        delete: '删除',
+        delete: '归档',
         empty: '暂无记忆文件。AI 会在对话中自动创建记忆。',
         noMatches: '没有匹配的记忆文件',
         detailTitle: '文件详情',
@@ -601,6 +601,7 @@ export const zhSettingsWork = {
           allStatus: '全部状态',
           allKind: '全部类型',
           allSource: '全部来源',
+          showArchived: '显示已归档',
         },
         table: {
           status: '状态',

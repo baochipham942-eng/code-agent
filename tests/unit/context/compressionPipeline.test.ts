@@ -232,6 +232,37 @@ describe('CompressionPipeline', () => {
       expect(summarize).toHaveBeenCalled();
       expect(result.layersTriggered).toContain('contextCollapse');
     });
+
+    it('keeps a structured tool call and its output together while collapsing unrelated tool history', async () => {
+      const summarize = vi.fn().mockResolvedValue('Older unrelated tool results');
+      const pairedCall = {
+        ...makeMsg('a_pair', 'assistant', '', 1),
+        toolCalls: [{ id: 'call_pair', name: 'Write', arguments: '{}' }],
+      };
+      const pairedOutput = {
+        ...makeMsg('t_pair', 'tool', 'Denied by user', 1),
+        toolCallId: 'call_pair',
+      };
+      const unrelated = Array.from({ length: 3 }, (_, index) => ({
+        ...makeMsg(`t_old_${index}`, 'tool', makeText(700), index + 2),
+        toolCallId: `old_${index}`,
+      }));
+      const transcript = [pairedCall, pairedOutput, ...unrelated];
+
+      const result = await pipeline.evaluate(transcript, state, {
+        ...BASE_CONFIG,
+        maxTokens: 1800,
+        summarize,
+        enableSnip: false,
+        enableMicrocompact: false,
+      });
+
+      expect(summarize).toHaveBeenCalledTimes(1);
+      expect(result.apiView).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'a_pair', role: 'assistant' }),
+        expect.objectContaining({ id: 't_pair', role: 'tool', toolCallId: 'call_pair' }),
+      ]));
+    });
   });
 
   // --------------------------------------------------------------------------

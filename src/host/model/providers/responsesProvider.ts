@@ -20,17 +20,167 @@ function resolveResponsesEndpoint(baseUrl: string, atApiRoot: boolean): string {
 }
 
 function buildResponsesInput(messages: ModelMessage[]): unknown[] {
-  return messages.flatMap((message) => {
+  type LocatedInput = {
+    item: Record<string, unknown>;
+    messageIndex: number;
+    assistantItemIndex?: number;
+    responsesOutputIndex?: number;
+  };
+
+  const located = messages.flatMap((message, messageIndex): LocatedInput[] => {
     // 无状态续聊的唯一可靠写法：把服务端整个 output（含 web_search_call）原样送回。
-    if (message.role === 'assistant' && message.responsesOutput?.length) return message.responsesOutput;
+    if (message.role === 'assistant' && message.responsesOutput?.length) {
+      const rawItems: LocatedInput[] = message.responsesOutput.map((item, responsesOutputIndex) => ({
+        item: item as Record<string, unknown>,
+        messageIndex,
+        assistantItemIndex: responsesOutputIndex,
+        responsesOutputIndex,
+      }));
+      const rawCallIds = new Set(rawItems.flatMap(({ item }) =>
+        item.type === 'function_call' && typeof item.call_id === 'string' ? [item.call_id] : []
+      ));
+      const missingRawCalls = (message.toolCalls ?? []).filter((call) => !rawCallIds.has(call.id));
+      for (const call of missingRawCalls) {
+        logger.warn(
+          `[ResponsesProvider] Reconstructed function_call ${call.id}: assistant responsesOutput lost this structured tool call`,
+          {
+            callId: call.id,
+            missingSide: 'responses_output.function_call',
+            messageIndex,
+            source: 'assistant.toolCalls',
+          },
+        );
+        rawItems.push({
+          item: { type: 'function_call', call_id: call.id, name: call.name, arguments: call.arguments },
+          messageIndex,
+          assistantItemIndex: rawItems.length,
+          responsesOutputIndex: undefined,
+        });
+      }
+      return rawItems;
+    }
+    if (message.role === 'assistant' && message.toolCalls?.length) {
+      const items: LocatedInput[] = [];
+      if (message.content) {
+        items.push({ item: { role: message.role, content: message.content }, messageIndex, assistantItemIndex: 0 });
+      }
+      for (const call of message.toolCalls) {
+        logger.warn(
+          `[ResponsesProvider] Reconstructed function_call ${call.id}: assistant responsesOutput is missing`,
+          {
+            callId: call.id,
+            missingSide: 'responses_output',
+            messageIndex,
+            source: 'assistant.toolCalls',
+          },
+        );
+        items.push({
+          item: { type: 'function_call', call_id: call.id, name: call.name, arguments: call.arguments },
+          messageIndex,
+          assistantItemIndex: items.length,
+        });
+      }
+      return items;
+    }
     const content = typeof message.content === 'string'
       ? message.content
       : message.content.map((part) => part.type === 'text' ? part.text ?? '' : '').join('');
     if (message.role === 'tool' && message.toolCallId) {
-      return [{ type: 'function_call_output', call_id: message.toolCallId, output: content }];
+      return [{
+        item: { type: 'function_call_output', call_id: message.toolCallId, output: content },
+        messageIndex,
+      }];
     }
-    return [{ role: message.role, content }];
+    return [{ item: { role: message.role, content }, messageIndex }];
   });
+
+  // 供应商要求 output 必须匹配它之前出现的 call。只做全局 Set 会把
+  // 「旧 orphan output 在前、重建 call 在后」误判成有效配对，仍会触发 400。
+  const pendingCallIndexes = new Map<string, number[]>();
+  const matchedCallIndexes = new Set<number>();
+  const matchedOutputIndexes = new Set<number>();
+  const outputIndexByCallIndex = new Map<number, number>();
+  for (let index = 0; index < located.length; index += 1) {
+    const item = located[index].item;
+    const callId = typeof item.call_id === 'string' ? item.call_id : undefined;
+    if (!callId) continue;
+    if (item.type === 'function_call') {
+      const indexes = pendingCallIndexes.get(callId) ?? [];
+      indexes.push(index);
+      pendingCallIndexes.set(callId, indexes);
+    } else if (item.type === 'function_call_output') {
+      const indexes = pendingCallIndexes.get(callId);
+      const callIndex = indexes?.shift();
+      if (callIndex !== undefined) {
+        matchedCallIndexes.add(callIndex);
+        matchedOutputIndexes.add(index);
+        outputIndexByCallIndex.set(callIndex, index);
+      }
+    }
+  }
+
+  const repaired: unknown[] = [];
+  for (let index = 0; index < located.length; index += 1) {
+    const current = located[index];
+    const { item } = current;
+    const callId = typeof item.call_id === 'string' ? item.call_id : undefined;
+
+    if (item.type === 'function_call_output' && callId && !matchedOutputIndexes.has(index)) {
+      logger.warn(
+        `[ResponsesProvider] Dropped orphan function_call_output ${callId}: missing function_call in history`,
+        { callId, missingSide: 'function_call', messageIndex: current.messageIndex },
+      );
+      continue;
+    }
+
+    // 已配对 output 统一跟到所属 assistant output 组后面。运行时会在 assistant 与 tool
+    // 消息之间注入 strike/thinking system 提示；部分 Responses 兼容端把这视为配对中断，
+    // 即使稍后存在同 call_id 的 output 仍返回「No tool output found」。
+    if (item.type === 'function_call_output' && matchedOutputIndexes.has(index)) continue;
+
+    repaired.push(item);
+
+    // 一个 assistant responsesOutput 可能含多个 function_call；先完整保留该 output 的原始顺序，
+    // 再把缺失结果补在这条 assistant 历史之后，避免把占位结果插进同轮 output items 中间。
+    const next = located[index + 1];
+    const atEndOfAssistantOutput = current.assistantItemIndex !== undefined
+      && next?.messageIndex !== current.messageIndex;
+    if (!atEndOfAssistantOutput) continue;
+
+    let assistantStartIndex = index;
+    while (assistantStartIndex > 0 && located[assistantStartIndex - 1].messageIndex === current.messageIndex) {
+      assistantStartIndex -= 1;
+    }
+    for (let outputIndex = assistantStartIndex; outputIndex <= index; outputIndex += 1) {
+      const candidate = located[outputIndex];
+      const candidateCallId = candidate.item.type === 'function_call'
+        && typeof candidate.item.call_id === 'string'
+        ? candidate.item.call_id
+        : undefined;
+      if (!candidateCallId) continue;
+      const matchedOutputIndex = outputIndexByCallIndex.get(outputIndex);
+      if (matchedOutputIndex !== undefined) {
+        repaired.push(located[matchedOutputIndex].item);
+        continue;
+      }
+      logger.warn(
+        `[ResponsesProvider] Repaired orphan function_call ${candidateCallId}: missing function_call_output in history`,
+        {
+          callId: candidateCallId,
+          missingSide: 'function_call_output',
+          messageIndex: candidate.messageIndex,
+          responsesOutputIndex: candidate.responsesOutputIndex,
+        },
+      );
+      repaired.push({
+        type: 'function_call_output',
+        call_id: candidateCallId,
+        output: '[no result: this tool call did not produce a result or was denied; do not assume it succeeded]',
+      });
+    }
+  }
+
+  return repaired;
 }
 
 async function* chunksOf(body: ReadableStream<Uint8Array> | NodeJS.ReadableStream): AsyncGenerator<string> {

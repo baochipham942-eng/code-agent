@@ -175,6 +175,7 @@ export class SessionRepository {
       timestamp: message.timestamp,
       toolCalls: message.toolCalls ?? null,
       toolResults: message.toolResults ?? null,
+      responsesOutput: message.responsesOutput ?? null,
       attachments: message.attachments ?? null,
       thinking: message.thinking ?? message.reasoning ?? null,
       effortLevel: message.effortLevel ?? null,
@@ -567,11 +568,11 @@ export class SessionRepository {
     const insertVerb = options?.syncOrigin === 'remote' ? 'INSERT OR IGNORE' : 'INSERT';
     const stmt = this.db.prepare(`
       ${insertVerb} INTO messages (
-        id, session_id, role, content, timestamp, tool_calls, tool_results,
+        id, session_id, role, content, timestamp, tool_calls, tool_results, responses_output,
         attachments, thinking, effort_level, synced_at, content_parts, metadata, is_meta,
         compaction, visibility, hidden_by_rewind_id, hidden_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const attachmentsMeta = buildAttachmentMetadata(message.attachments);
@@ -587,6 +588,7 @@ export class SessionRepository {
         message.timestamp,
         toolCallsForStorage ? JSON.stringify(toolCallsForStorage) : null,
         message.toolResults ? JSON.stringify(message.toolResults) : null,
+        message.responsesOutput ? JSON.stringify(message.responsesOutput) : null,
         attachmentsMeta ? JSON.stringify(attachmentsMeta) : null,
         thinkingContent,
         message.effortLevel || null,
@@ -725,10 +727,8 @@ export class SessionRepository {
       setClauses.push('tool_calls = ?');
       values.push(JSON.stringify(ensureToolCallShortDescription(updates.toolCalls)));
     }
-    if (updates.toolResults !== undefined) {
-      setClauses.push('tool_results = ?');
-      values.push(JSON.stringify(updates.toolResults));
-    }
+    if (updates.toolResults !== undefined) { setClauses.push('tool_results = ?'); values.push(JSON.stringify(updates.toolResults)); }
+    if (updates.responsesOutput !== undefined) { setClauses.push('responses_output = ?'); values.push(updates.responsesOutput ? JSON.stringify(updates.responsesOutput) : null); }
     if (updates.attachments !== undefined) {
       setClauses.push('attachments = ?');
       const attachmentsMeta = buildAttachmentMetadata(updates.attachments);

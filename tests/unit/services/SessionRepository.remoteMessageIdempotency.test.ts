@@ -82,4 +82,30 @@ describe('SessionRepository.addMessage 对同 id 消息的幂等契约（T6 mess
       timestamp: 20,
     })).toThrow(/UNIQUE constraint failed/);
   });
+
+  it('持久化并回读 Responses 原生 output，session 重建后 function_call 不丢失', () => {
+    const sessions = setUp();
+    const responsesOutput = [{
+      type: 'function_call',
+      id: 'fc_1',
+      call_id: 'call_persisted',
+      name: 'write_file',
+      arguments: '{"path":"a.txt"}',
+    }];
+    sessions.addMessage('sess-1', {
+      id: 'm-response',
+      role: 'assistant',
+      content: '',
+      timestamp: 10,
+      toolCalls: [{ id: 'call_persisted', name: 'write_file', arguments: { path: 'a.txt' } }],
+      responsesOutput,
+    });
+
+    expect(sessions.getMessages('sess-1')).toContainEqual(expect.objectContaining({
+      id: 'm-response',
+      responsesOutput,
+    }));
+    const row = db.prepare('SELECT responses_output FROM messages WHERE id = ?').get('m-response') as { responses_output: string };
+    expect(JSON.parse(row.responses_output)).toEqual(responsesOutput);
+  });
 });

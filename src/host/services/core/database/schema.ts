@@ -56,6 +56,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       timestamp INTEGER NOT NULL,
       tool_calls TEXT,
       tool_results TEXT,
+      responses_output TEXT,
       attachments TEXT,
       compaction TEXT,
       metadata TEXT,
@@ -73,6 +74,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE messages ADD COLUMN effort_level TEXT`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN synced_at INTEGER`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN content_parts TEXT`, logger);
+  safeAlter(db, `ALTER TABLE messages ADD COLUMN responses_output TEXT`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN metadata TEXT`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN is_meta INTEGER NOT NULL DEFAULT 0`, logger);
   safeAlter(db, `ALTER TABLE messages ADD COLUMN compaction TEXT`, logger);

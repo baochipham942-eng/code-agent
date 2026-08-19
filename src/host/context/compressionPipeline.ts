@@ -118,6 +118,38 @@ function withTurnIndex(
   }));
 }
 
+/** L4 会删除/改写整条消息；已配对的 call/result 必须作为协议原子保留，不能只折叠一侧。 */
+function getPairedToolMessageIds(messages: ProjectableMessage[]): Set<string> {
+  const callMessageIds = new Map<string, Set<string>>();
+  const resultMessageIds = new Map<string, Set<string>>();
+  const remember = (map: Map<string, Set<string>>, callId: string, messageId: string): void => {
+    const ids = map.get(callId) ?? new Set<string>();
+    ids.add(messageId);
+    map.set(callId, ids);
+  };
+
+  for (const message of messages) {
+    const toolCalls = Array.isArray(message.toolCalls)
+      ? message.toolCalls as Array<{ id?: unknown }>
+      : [];
+    for (const toolCall of toolCalls) {
+      if (typeof toolCall.id === 'string') remember(callMessageIds, toolCall.id, message.id);
+    }
+    if (typeof message.toolCallId === 'string') {
+      remember(resultMessageIds, message.toolCallId, message.id);
+    }
+  }
+
+  const pairedMessageIds = new Set<string>();
+  for (const [callId, calls] of callMessageIds) {
+    const results = resultMessageIds.get(callId);
+    if (!results) continue;
+    for (const id of calls) pairedMessageIds.add(id);
+    for (const id of results) pairedMessageIds.add(id);
+  }
+  return pairedMessageIds;
+}
+
 export class CompressionPipeline {
   private projectionEngine = new ProjectionEngine();
 
@@ -218,11 +250,15 @@ export class CompressionPipeline {
     if (postMicroUsage >= THRESHOLDS.contextCollapse && config.enableContextCollapse) {
       if (config.summarize !== undefined) {
         const messagesWithTurnIndex = withTurnIndex(transcript);
+        const collapseProtectedMessageIds = new Set(protectedMessageIds);
+        for (const messageId of getPairedToolMessageIds(transcript)) {
+          collapseProtectedMessageIds.add(messageId);
+        }
         await applyContextCollapse(messagesWithTurnIndex, state, {
           minSpanSize: 3,
           summarize: config.summarize,
           maxSummaryTokens: 200,
-          protectedMessageIds,
+          protectedMessageIds: collapseProtectedMessageIds,
         });
         layersTriggered.push('contextCollapse');
 

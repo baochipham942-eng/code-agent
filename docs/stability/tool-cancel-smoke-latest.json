@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "smoke": "tool-cancel",
-  "generatedAt": "2026-08-19T07:52:29.695Z",
-  "gitHead": "ffa42d31c629b4a3596df6ea2394e94b4226b2be",
+  "generatedAt": "2026-08-19T09:23:52.083Z",
+  "gitHead": "5716f0462fdff225846e14c3d87c1a5e39eec090",
   "passed": true,
   "scenarios": {
     "Bash": {

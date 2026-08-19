@@ -49,7 +49,6 @@ export class OrchestratorPermissionIsland {
     parked?: boolean;
   }> = new Map();
   private readonly injectedPendingApprovalRepo?: PendingApprovalRepository;
-  private readonly injectedPermissionHandler?: (request: OrchestratorPermissionRequest) => Promise<PermissionAskResult>;
   private cachedPendingApprovalRepo: PendingApprovalRepository | null = null;
 
   constructor({
@@ -58,22 +57,18 @@ export class OrchestratorPermissionIsland {
     getExecutionTopology,
     onEvent,
     injectedPendingApprovalRepo,
-    injectedPermissionHandler,
   }: {
     getSettings: () => AppSettings;
     isDevModeAutoApproveEnabled: () => boolean;
     getExecutionTopology: () => ExecutionTopology;
     onEvent: (event: AgentEvent) => void;
     injectedPendingApprovalRepo?: PendingApprovalRepository;
-    /** 显式 run 级审批策略优先于 AUTO_TEST 兜底。 */
-    injectedPermissionHandler?: (request: OrchestratorPermissionRequest) => Promise<PermissionAskResult>;
   }) {
     this.getSettings = getSettings;
     this.isDevModeAutoApproveEnabled = isDevModeAutoApproveEnabled;
     this.getExecutionTopology = getExecutionTopology;
     this.onEvent = onEvent;
     this.injectedPendingApprovalRepo = injectedPendingApprovalRepo;
-    this.injectedPermissionHandler = injectedPermissionHandler;
   }
 
   private readonly getSettings: () => AppSettings;
@@ -241,10 +236,6 @@ export class OrchestratorPermissionIsland {
       id: generatePermissionRequestId(),
       timestamp: Date.now(),
     };
-
-    if (this.injectedPermissionHandler) {
-      return this.injectedPermissionHandler(request);
-    }
 
     if (process.env.AUTO_TEST === 'true') {
       logger.info(`[AUTO_TEST] Auto-approving permission: ${request.type} for ${request.tool}`);

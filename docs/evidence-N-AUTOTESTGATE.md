@@ -71,3 +71,31 @@ Duration 663.70s
 ## 证据档位
 
 `static-contract`（typecheck、eslint ratchet、tests TypeScript ratchet、knip 默认与 production profile）+ `hermetic-protocol`（权限岛真实方法级单测与 Web 审批投递单测）+ `fault-injection`（恢复 AUTO_TEST 无条件放行后两条安全用例转红，再还原复验）。未做 `real-runtime` 真机 dogfood。
+
+
+## 🔴 收活后监工改动：删掉没接电的注入口（2026-08-19）
+
+工人实现里同时加了 `injectedPermissionHandler` 注入口（排在 AUTO_TEST 之前）。
+监工用 `rtk proxy grep` 复核：**7 处命中全在 `orchestratorPermissions.ts` 自身 + 1 处测试，
+生产零消费方** ⇒「注入优先」这条逻辑在生产里永远不执行，属于「装好了没接电」。
+
+产品负责人拍板删掉。已删：
+- `src/host/agent/orchestratorPermissions.ts` 的字段/构造参数/类型声明/优先分支（4 处）
+- `tests/unit/permissions/parkingBeforeAutoApprove.test.ts` 中依赖它的用例
+  「显式审批处理器优先于 AUTO_TEST=true 兜底」
+
+⇒ **本单真实生效的收口只有一条：判据由 `process.env.AUTO_TEST`（truthy）收窄为 `=== 'true'`**，
+与 `autoTestHook.ts:22` 同源。保留的两条断言仍钉死行为：
+「没有显式处理器时保留 AUTO_TEST=true 兜底放行」「AUTO_TEST=false 不放行（fail-closed）」。
+
+为什么不留着备用：与 PR#1250 的 `forcePermissionHandler` 不同（那个有真实生产消费方——eval 链路），
+这个没有。今天一整天在治的正是「看起来有门、实际没有路径经过它」，不该自己再造一个。
+等真有单需要给 agentOrchestrator / web 前台注入 run 级审批策略时再加，那时才知道接口该长什么样。
+
+删后重跑门（**门的有效期只到下一次改动为止**）：
+- 定向测试 `parkingBeforeAutoApprove` + `permissionResponseDelivery`：**17 passed / 0 failed**
+- `npm run typecheck`：通过
+- `tsc-tests-ratchet`：current=0 / baseline=0
+- `eslint-ratchet`：warnings 414/414 持平
+- `knip-ratchet` 默认档与 `--profile production`：均未新增
+- `check-design-system`：通过

@@ -12,9 +12,6 @@ const CONTENT_INTRINSIC_SIZE_PX = {
   codeCompact: 220,
   codeStandard: 420,
   codeCollapsed: 620,
-  turnText: 1040,
-  turnTool: 1060,
-  turnCode: 680,
 } as const;
 
 export type DeferredContentKind = keyof typeof CONTENT_INTRINSIC_SIZE_PX;

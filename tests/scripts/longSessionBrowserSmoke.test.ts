@@ -65,5 +65,8 @@ describe('long-session browser smoke options', () => {
     expect(workflow).toContain('${{ runner.temp }}/long-session-pr-${{ github.sha }}.json');
     expect(workflow).toContain('--out "$LONG_SESSION_REPORT" --gate-profile correctness');
     expect(workflow).toContain('git diff --exit-code -- docs/perf/long-session-gold-latest.json');
+    expect(workflow).toContain('timeout-minutes: 20');
+    expect(workflow).toContain('run: npx playwright install chromium');
+    expect(workflow).not.toContain('npx playwright install --with-deps chromium');
   });
 });

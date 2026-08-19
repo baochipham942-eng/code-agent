@@ -23,7 +23,10 @@ jobs:
   correctness:
     name: Long-session scroll correctness
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # A cold Playwright cache can spend most of 10 minutes downloading browser
+    # inputs before the correctness test starts. Keep a bounded ceiling, but
+    # leave enough room for the actual gate to run on a cold runner.
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -52,7 +55,10 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        # ubuntu-latest already carries the browser system dependencies. Avoid
+        # a second apt pass here; the Playwright-managed browser remains pinned
+        # by package-lock and the cache key above.
+        run: npx playwright install chromium
 
       - name: Run deterministic long-session correctness gates
         env:

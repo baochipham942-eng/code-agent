@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createCLIPermissionHandler } from '../../../src/cli/permissionPolicy';
-import { getDevCancellableToolPermissionHandler } from '../../../src/web/routes/devCancellableToolSmoke';
+import { getDevCancellableToolPermissionHandler } from '../../../src/web/routes/devCancellableToolPermissionPolicy';
 
 const permissionRequest = {
   type: 'dangerous_command' as const,

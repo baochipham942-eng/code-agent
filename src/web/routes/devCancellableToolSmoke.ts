@@ -6,8 +6,8 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import type { ToolExecutionResult } from '../../host/tools/types';
-import type { PermissionAskResult } from '../../shared/contract/permission';
 import { formatError } from '../helpers/utils';
+import { getDevCancellableToolPermissionHandler } from './devCancellableToolPermissionPolicy';
 import type { WebRouteLogger } from './routeTypes';
 
 type DevCancellableToolName = 'Bash' | 'http_request';
@@ -41,18 +41,6 @@ interface DevCancellableToolSmokeDeps {
 }
 
 const activeCancellableTools = new Map<string, DevCancellableToolEntry>();
-const E2E_APPROVAL_POLICY = 'e2e-scripted-allow';
-
-export function getDevCancellableToolPermissionHandler(
-  body: unknown,
-  env: NodeJS.ProcessEnv = process.env,
-): (() => Promise<PermissionAskResult>) | undefined {
-  const record = readObjectBody(body);
-  if (record.approvalPolicy !== E2E_APPROVAL_POLICY || env.CODE_AGENT_E2E !== '1') {
-    return undefined;
-  }
-  return async () => ({ approved: true, approvalSource: 'scripted' });
-}
 
 function readObjectBody(body: unknown): Record<string, unknown> {
   return body && typeof body === 'object' && !Array.isArray(body)

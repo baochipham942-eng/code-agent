@@ -5,9 +5,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { DEFAULT_MODELS, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../../src/shared/constants';
 
-const { getConfigServiceMock, loggerErrorMock } = vi.hoisted(() => ({
+const { getConfigServiceMock, loggerErrorMock, loggerInfoMock } = vi.hoisted(() => ({
   getConfigServiceMock: vi.fn(),
   loggerErrorMock: vi.fn(),
+  loggerInfoMock: vi.fn(),
 }));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
@@ -15,18 +16,20 @@ vi.mock('../../../src/host/services/core/configService', () => ({
 }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: loggerErrorMock, debug: vi.fn() }),
+  createLogger: () => ({ info: loggerInfoMock, warn: vi.fn(), error: loggerErrorMock, debug: vi.fn() }),
 }));
 
 import {
   getQuickModelAuthFailure,
   getQuickModelInfo,
+  memoryTask,
   quickTask,
   resetQuickModel,
 } from '../../../src/host/model/quickModel';
 
 /** 构造一个 configService mock，可指定哪些 provider 有 key */
 function mockConfig(opts: {
+  memory?: { provider: string; model: string };
   fast?: { provider: string; model: string };
   code?: { provider: string; model: string };
   keys?: Record<string, string>;
@@ -37,6 +40,7 @@ function mockConfig(opts: {
     getSettings: () => ({
       models: {
         routing: {
+          ...(opts.memory ? { memory: opts.memory } : {}),
           fast: opts.fast ?? { provider: 'zhipu', model: DEFAULT_MODELS.quick },
           code: opts.code ?? { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
         },
@@ -61,6 +65,7 @@ beforeEach(() => {
   resetQuickModel();
   getConfigServiceMock.mockReset();
   loggerErrorMock.mockReset();
+  loggerInfoMock.mockReset();
 });
 
 afterEach(() => {
@@ -88,6 +93,91 @@ describe('quick model 策略解析', () => {
     } finally {
       if (prevA !== undefined) process.env.ZHIPU_OFFICIAL_API_KEY = prevA;
       if (prevB !== undefined) process.env.ZHIPU_API_KEY = prevB;
+    }
+  });
+});
+
+describe('memory model 专档与回落', () => {
+  it('默认未配 routing.memory 时，同 prompt 与 quickTask 走同模型、同请求体', async () => {
+    mockConfig({ keys: { zhipu: 'zk', xiaomi: 'xk' } });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: 'same' } }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const quick = await quickTask('整理这段记忆', 321);
+    const memory = await memoryTask('整理这段记忆', 321);
+
+    expect(quick).toMatchObject({ success: true, provider: 'zhipu', model: DEFAULT_MODELS.quick });
+    expect(memory).toMatchObject({ success: true, provider: 'zhipu', model: DEFAULT_MODELS.quick });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(JSON.parse(fetchMock.mock.calls[0][1].body));
+  });
+
+  it('配置 routing.memory 升档后使用指定模型，日志带出生效 provider/model', async () => {
+    mockConfig({
+      memory: { provider: 'openai', model: 'gpt-5.4-mini' },
+      keys: { openai: 'ok', zhipu: 'zk', xiaomi: 'xk' },
+    });
+    const fetchMock = mockFetchOnce('organized');
+
+    const result = await memoryTask('整理');
+
+    expect(result).toMatchObject({ success: true, provider: 'openai', model: 'gpt-5.4-mini' });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe('gpt-5.4-mini');
+    expect(loggerInfoMock).toHaveBeenCalledWith('Memory model resolved', {
+      provider: 'openai',
+      model: 'gpt-5.4-mini',
+      routeSource: 'memory',
+      disableThinking: false,
+    });
+  });
+
+  it('routing.memory 无 key 时先回落 routing.fast，fast 也无 key 时继续回落 routing.code', async () => {
+    mockConfig({
+      memory: { provider: 'openai', model: 'gpt-5.4-mini' },
+      keys: { zhipu: 'zk', xiaomi: 'xk' },
+    });
+    let fetchMock = mockFetchOnce('fast fallback');
+    await expect(memoryTask('整理')).resolves.toMatchObject({
+      success: true,
+      provider: 'zhipu',
+      model: DEFAULT_MODELS.quick,
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe(DEFAULT_MODELS.quick);
+
+    mockConfig({
+      memory: { provider: 'openai', model: 'gpt-5.4-mini' },
+      keys: { xiaomi: 'xk' },
+    });
+    fetchMock = mockFetchOnce('code fallback');
+    await expect(memoryTask('整理')).resolves.toMatchObject({
+      success: true,
+      provider: 'xiaomi',
+      model: 'mimo-v2.5-pro',
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe('mimo-v2.5-pro');
+  });
+
+  it('memory / fast / code 都无 key 时保留现有智谱环境变量兜底', async () => {
+    mockConfig({
+      memory: { provider: 'openai', model: 'gpt-5.4-mini' },
+      keys: {},
+    });
+    const previous = process.env.ZHIPU_OFFICIAL_API_KEY;
+    process.env.ZHIPU_OFFICIAL_API_KEY = 'env-zhipu-key';
+    const fetchMock = mockFetchOnce('env fallback');
+    try {
+      await expect(memoryTask('整理')).resolves.toMatchObject({
+        success: true,
+        provider: 'zhipu',
+        model: DEFAULT_MODELS.quick,
+      });
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe(DEFAULT_MODELS.quick);
+    } finally {
+      if (previous === undefined) delete process.env.ZHIPU_OFFICIAL_API_KEY;
+      else process.env.ZHIPU_OFFICIAL_API_KEY = previous;
     }
   });
 });

@@ -66,6 +66,7 @@ interface QuickModelConfig {
   provider: string;
   /** thinking 模型（如 mimo）当 quick model 时需关闭思考，否则短输出额度被 reasoning 吃光返回空 */
   disableThinking: boolean;
+  routeSource: 'memory' | 'fast' | 'code' | 'env';
 }
 
 let quickModelAuthFailure: QuickModelAuthFailure | null = null;
@@ -76,7 +77,7 @@ let quickModelAuthFailure: QuickModelAuthFailure | null = null;
 const quickAuthBlacklist = new Map<string, number>();
 // 每次调用都重解析（getSettings 是内存读，成本远小于随后的 LLM 请求），
 // 只在解析结果变化时打 info，恒定结果不刷屏。
-let lastResolvedLogKey: string | null = null;
+const lastResolvedLogKeys: Partial<Record<'quick' | 'memory', string>> = {};
 
 function blacklistKey(provider: string, model: string, apiKey: string): string {
   return `${provider}:${model}:${apiKey.length}:${apiKey.slice(-4)}`;
@@ -128,7 +129,11 @@ function isThinkingModel(model: string): boolean {
  * 拿不到 API key 或 endpoint 时返回 null（交由上层回落）。
  * 智谱免费档走官方端点 bigmodel.cn（0ki 代理不稳定支持免费 ID）。
  */
-function resolveRole(provider: string, model: string): QuickModelConfig | null {
+function resolveRole(
+  provider: string,
+  model: string,
+  routeSource: QuickModelConfig['routeSource'],
+): QuickModelConfig | null {
   const cfg = getConfigService();
   const apiKey = provider === 'zhipu'
     ? cfg.getZhipuOfficialKey()
@@ -141,7 +146,17 @@ function resolveRole(provider: string, model: string): QuickModelConfig | null {
     : getProviderEndpoint(provider);
   if (!baseUrl) return null;
 
-  return { apiKey, baseUrl, model, provider, disableThinking: isThinkingModel(model) };
+  return { apiKey, baseUrl, model, provider, disableThinking: isThinkingModel(model), routeSource };
+}
+
+function pushUniqueCandidate(resolved: QuickModelConfig[], candidate: QuickModelConfig | null): void {
+  if (!candidate) return;
+  if (resolved.some((current) => (
+    current.provider === candidate.provider
+    && current.model === candidate.model
+    && current.apiKey === candidate.apiKey
+  ))) return;
+  resolved.push(candidate);
 }
 
 /**
@@ -151,20 +166,22 @@ function resolveRole(provider: string, model: string): QuickModelConfig | null {
  *  3) config 路径完全失败 → 兜底直连智谱官方（历史行为）
  *  4) 都拿不到 → null（调用方：intent 走关键词兜底，其余 quick 任务 skip）
  */
-function initializeQuickModelCandidates(): QuickModelConfig[] {
+function initializeQuickModelCandidates(route: 'quick' | 'memory' = 'quick'): QuickModelConfig[] {
   const resolved: QuickModelConfig[] = [];
   try {
     const routing = getConfigService().getSettings().models.routing;
-    const fast = resolveRole(routing.fast.provider, routing.fast.model);
-    const code = resolveRole(routing.code.provider, routing.code.model);
-    if (fast) resolved.push(fast);
-    if (code && !resolved.some((candidate) => (
-      candidate.provider === code.provider
-      && candidate.model === code.model
-      && candidate.apiKey === code.apiKey
-    ))) resolved.push(code);
+    if (route === 'memory' && routing.memory) {
+      pushUniqueCandidate(
+        resolved,
+        resolveRole(routing.memory.provider, routing.memory.model, 'memory'),
+      );
+    }
+    pushUniqueCandidate(resolved, resolveRole(routing.fast.provider, routing.fast.model, 'fast'));
+    pushUniqueCandidate(resolved, resolveRole(routing.code.provider, routing.code.model, 'code'));
   } catch (error) {
-    logger.warn('Quick model config resolution failed, falling back to env', { error: String(error) });
+    logger.warn(`${route === 'memory' ? 'Memory' : 'Quick'} model config resolution failed, falling back to env`, {
+      error: String(error),
+    });
   }
 
   if (resolved.length === 0) {
@@ -176,25 +193,32 @@ function initializeQuickModelCandidates(): QuickModelConfig[] {
         model: DEFAULT_MODELS.quick,
         provider: 'zhipu',
         disableThinking: false,
+        routeSource: 'env',
       });
     }
   }
 
   const [primary] = resolved;
   if (!primary) {
-    logger.warn('Quick model unavailable: no fast-model key, no main-model key, no Zhipu key');
-    lastResolvedLogKey = null;
+    logger.warn(route === 'memory'
+      ? 'Memory model unavailable: no memory-model key, no fast-model key, no main-model key, no Zhipu key'
+      : 'Quick model unavailable: no fast-model key, no main-model key, no Zhipu key');
+    delete lastResolvedLogKeys[route];
     return [];
   }
 
-  const logKey = `${primary.provider}:${primary.model}`;
-  if (logKey !== lastResolvedLogKey) {
-    lastResolvedLogKey = logKey;
-    logger.info('Quick model resolved', {
+  const logKey = `${primary.routeSource}:${primary.provider}:${primary.model}`;
+  if (logKey !== lastResolvedLogKeys[route]) {
+    lastResolvedLogKeys[route] = logKey;
+    const details = {
       provider: primary.provider,
       model: primary.model,
       disableThinking: primary.disableThinking,
-    });
+    };
+    logger.info(
+      route === 'memory' ? 'Memory model resolved' : 'Quick model resolved',
+      route === 'memory' ? { ...details, routeSource: primary.routeSource } : details,
+    );
   }
   return resolved;
 }
@@ -377,6 +401,51 @@ export async function quickTask(
 }
 
 /**
+ * Execute a memory organization task.
+ *
+ * Candidate order is routing.memory -> routing.fast -> routing.code ->
+ * the historical Zhipu env fallback. When routing.memory is absent, the
+ * prompt and model selection are identical to quickTask.
+ */
+export async function memoryTask(
+  prompt: string,
+  maxTokens?: number,
+  signal?: AbortSignal,
+): Promise<QuickModelResult> {
+  const candidates = initializeQuickModelCandidates('memory');
+  const [primary] = candidates;
+  if (!primary) {
+    return {
+      success: false,
+      error: 'Memory model not configured',
+      failureReason: 'not_configured',
+      attempts: 0,
+    };
+  }
+
+  const effectiveMaxTokens = maxTokens ?? 512;
+  const attempts = candidates.length > 1 ? candidates.slice(0, 2) : [primary, primary];
+  for (const [index, config] of attempts.entries()) {
+    const result = await executeQuickAttempt(config, prompt, effectiveMaxTokens, signal);
+    const withAttempts = { ...result, attempts: index + 1 };
+    if (withAttempts.success) return withAttempts;
+    if (withAttempts.failureReason !== 'rate_limited' && withAttempts.failureReason !== 'server_error') {
+      return withAttempts;
+    }
+    const next = attempts[index + 1];
+    if (!next) return withAttempts;
+    logger.info('Memory task retrying after transient failure', {
+      failureReason: withAttempts.failureReason,
+      fromProvider: config.provider,
+      fromModel: config.model,
+      toProvider: next.provider,
+      toModel: next.model,
+    });
+  }
+  return quickFailure(primary, 'transport_error', 'Memory task ended without an attempt');
+}
+
+/**
  * Quick yes/no decision
  *
  * @param question - The question to decide
@@ -463,7 +532,8 @@ Provide only the extracted/transformed result, nothing else.`;
 export function resetQuickModel(): void {
   quickAuthBlacklist.clear();
   quickModelAuthFailure = null;
-  lastResolvedLogKey = null;
+  delete lastResolvedLogKeys.quick;
+  delete lastResolvedLogKeys.memory;
   logger.debug('Quick model configuration reset');
 }
 

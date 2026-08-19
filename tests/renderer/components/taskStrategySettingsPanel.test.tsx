@@ -53,6 +53,7 @@ describe('TaskStrategySettingsPanel', () => {
         config={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
         strategy={strategy}
         onChange={vi.fn()}
+        onMemoryRouteChange={vi.fn()}
       />,
     );
 
@@ -60,6 +61,9 @@ describe('TaskStrategySettingsPanel', () => {
     expect(html).toContain('快速任务模型');
     expect(html).toContain('深度任务模型');
     expect(html).toContain('视觉任务模型');
+    expect(html.match(/aria-label="记忆整理模型"/g)).toHaveLength(1);
+    expect(html).toContain('未单独配置时跟随快速模型');
+    expect(html).toContain('按量计费 API 会产生更高费用');
     // 改动即存：无保存按钮；不展示主任务档（主=默认模型）、fallback/规则。
     expect(html).not.toContain('保存策略');
     expect(html).not.toContain('任务主模型');

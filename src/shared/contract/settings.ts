@@ -222,6 +222,8 @@ export interface AppSettings {
       code: { provider: ModelProvider; model: string };
       vision: { provider: ModelProvider; model: string };
       fast: { provider: ModelProvider; model: string };
+      /** 记忆整理专档；未配置时运行时沿用 fast，保持旧配置行为不变。 */
+      memory?: { provider: ModelProvider; model: string };
       gui: { provider: ModelProvider; model: string };
     };
     taskStrategy?: TaskModelStrategySettings;

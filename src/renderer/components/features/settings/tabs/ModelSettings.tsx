@@ -532,6 +532,24 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     }
   }, [modelText.toast.taskStrategySaveFailedPrefix, modelText.unknownError]);
 
+  const persistMemoryRouting = useCallback(async (route: { provider: ModelProvider; model: string }) => {
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
+        models: { routing: { memory: route } },
+      });
+      setAppSettings((prev) => prev ? {
+        ...prev,
+        models: {
+          ...prev.models,
+          routing: { ...prev.models.routing, memory: route },
+        },
+      } : prev);
+    } catch (error) {
+      logger.error('Failed to save memory model routing', error);
+      toast.error(modelText.toast.memoryRoutingSaveFailedPrefix + (error instanceof Error ? error.message : modelText.unknownError));
+    }
+  }, [modelText.toast.memoryRoutingSaveFailedPrefix, modelText.unknownError]);
+
   const handleTestConnection = async () => {
     if (needsApiKey && !config.apiKey && !hasStoredApiKey) {
       toast.warning(modelText.toast.apiKeyRequired);
@@ -850,6 +868,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
         strategy={taskStrategy}
         disabled={isWebMode()}
         onChange={persistTaskStrategy}
+        onMemoryRouteChange={persistMemoryRouting}
       />
 
       {/* ── 模型提供商：左 Provider 列表 + 右详情 ── */}

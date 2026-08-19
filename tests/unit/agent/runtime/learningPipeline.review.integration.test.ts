@@ -1,11 +1,11 @@
 // ============================================================================
-// LearningPipeline LLM 复盘链 — 真穿透集成测试（Codex 审计 MED：补真 quickTask 链路）
-// 只 mock quick model（fake 返回）+ telemetry，不 mock conversationReview / skillDraftQueue / 安全闸，
-// 证明 runSessionEndLearning → 真 reviewConversationForSkill → quickTask → 真 enqueue → 事件 → 真 confirm 落盘
+// LearningPipeline LLM 复盘链 — 真穿透集成测试（Codex 审计 MED：补真 memoryTask 链路）
+// 只 mock memory model（fake 返回）+ telemetry，不 mock conversationReview / skillDraftQueue / 安全闸，
+// 证明 runSessionEndLearning → 真 reviewConversationForSkill → memoryTask → 真 enqueue → 事件 → 真 confirm 落盘
 // 整条链活着穿透，而不是各段单测各自 mock。
 //
 // 这是【单元集成测试】，不是 provider 级 e2e。仍未覆盖（需真 app/真模型）：
-// 真实 quick model 配置与 fetch、真实 timeout race、SSE→renderer 事件桥、IPC confirm handler。
+// 真实 memory model 配置与 fetch、真实 timeout race、SSE→renderer 事件桥、IPC confirm handler。
 // 那部分留给真模型 E2E（起 app 跑一轮）。
 // ============================================================================
 
@@ -35,9 +35,9 @@ vi.mock('../../../../src/host/telemetry/telemetryStorage', () => ({
   getTelemetryStorage: () => ({ getToolCallsBySession: () => [] }),
 }));
 
-// fake quick model：返回一份合法的 class-level skill JSON
-const quickMocks = vi.hoisted(() => ({
-  quickTask: vi.fn(async () => ({
+// fake memory model：返回一份合法的 class-level skill JSON
+const memoryMocks = vi.hoisted(() => ({
+  memoryTask: vi.fn(async () => ({
     success: true,
     content: JSON.stringify({
       shouldCreate: true,
@@ -54,7 +54,7 @@ const quickMocks = vi.hoisted(() => ({
     }),
   })),
 }));
-vi.mock('../../../../src/host/model/quickModel', () => ({ quickTask: quickMocks.quickTask }));
+vi.mock('../../../../src/host/model/quickModel', () => ({ memoryTask: memoryMocks.memoryTask }));
 // 止血层信号闸走 SQLite（hermetic 环境无 DB）：mock 成"跨会话复现已达标"，
 // 让本测试继续专注验证 LLM 复盘→enqueue→confirm 整条链的穿透；闸本身的行为有专门单测。
 vi.mock('../../../../src/host/services/skills/distillSignalStore', () => ({
@@ -81,7 +81,7 @@ import type { AgentEvent } from '../../../../src/shared/contract';
 
 beforeEach(async () => {
   mockConfigDir.dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lp-review-'));
-  quickMocks.quickTask.mockClear();
+  memoryMocks.memoryTask.mockClear();
 });
 afterEach(async () => {
   await fs.rm(mockConfigDir.dir, { recursive: true, force: true });
@@ -100,12 +100,12 @@ function makeCtx(events: AgentEvent[]) {
 }
 
 describe('LLM 复盘链真穿透', () => {
-  it('runSessionEndLearning → 真复盘 → quickTask → 真 enqueue → 事件 → 真 confirm 落盘', async () => {
+  it('runSessionEndLearning → 真复盘 → memoryTask → 真 enqueue → 事件 → 真 confirm 落盘', async () => {
     const events: AgentEvent[] = [];
     await new LearningPipeline(makeCtx(events)).runSessionEndLearning();
 
-    // 1) 真的调了 quick model
-    expect(quickMocks.quickTask).toHaveBeenCalledTimes(1);
+    // 1) 真的调了 memory model
+    expect(memoryMocks.memoryTask).toHaveBeenCalledTimes(1);
 
     // 2) 真 enqueue：草稿落盘 + origin=llm-review
     const drafts = await listSkillDrafts();

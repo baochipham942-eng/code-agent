@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TraceProjection, TraceTurn } from '../../../src/shared/contract/trace';
 import {
@@ -30,6 +30,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   scrollToIndex: vi.fn(),
+  autoscrollToBottom: vi.fn(),
   virtuosoProps: {} as Record<string, any>,
 }));
 
@@ -37,7 +38,10 @@ vi.mock('react-virtuoso', async () => {
   const ReactModule = await import('react');
   return {
     Virtuoso: ReactModule.forwardRef(function MockVirtuoso(props: Record<string, any>, ref) {
-      ReactModule.useImperativeHandle(ref, () => ({ scrollToIndex: mocks.scrollToIndex }));
+      ReactModule.useImperativeHandle(ref, () => ({
+        scrollToIndex: mocks.scrollToIndex,
+        autoscrollToBottom: mocks.autoscrollToBottom,
+      }));
       // 真实 Virtuoso 每渲染都把全量 props 发布进自己的 store，所以这里记下最后一次
       // 收到的 props，测试才能断言"没变的东西不许换引用"。
       mocks.virtuosoProps = props;
@@ -91,6 +95,7 @@ function rect(top: number, bottom: number): DOMRect {
 beforeEach(() => {
   vi.useFakeTimers();
   mocks.scrollToIndex.mockReset();
+  mocks.autoscrollToBottom.mockReset();
   animationFrames = new Map();
   nextAnimationFrameId = 1;
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -464,11 +469,11 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
   });
 
   it('流式跟随期间 ResizeObserver 只观察活动 turn 且高度变化不再调度 scrollToIndex', () => {
-    let observerCallback: ResizeObserverCallback | null = null;
+    const observerCallbacks: ResizeObserverCallback[] = [];
     const observe = vi.fn();
     vi.stubGlobal('ResizeObserver', class {
       constructor(callback: ResizeObserverCallback) {
-        observerCallback = callback;
+        observerCallbacks.push(callback);
       }
       observe = observe;
       unobserve = vi.fn();
@@ -493,10 +498,16 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     }
 
     mocks.scrollToIndex.mockClear();
+    mocks.autoscrollToBottom.mockClear();
     act(() => {
-      observerCallback?.([
-        { target: observed[0], contentRect: rect(0, 480) } as unknown as ResizeObserverEntry,
-      ], {} as ResizeObserver);
+      mocks.virtuosoProps.atBottomStateChange(true);
+    });
+    act(() => {
+      for (const observerCallback of observerCallbacks) {
+        observerCallback([
+          { target: observed[0], contentRect: rect(0, 480) } as unknown as ResizeObserverEntry,
+        ], {} as ResizeObserver);
+      }
     });
     act(() => {
       vi.advanceTimersByTime(ACTIVE_DISPLAY_SCROLL_INTERVAL_MS + 20);
@@ -505,6 +516,7 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     });
 
     expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+    expect(mocks.autoscrollToBottom).toHaveBeenCalled();
   });
 
   it('流式跟随期间 assistant anchor id 翻转不再上拉（无 align start / scrollIntoView）', () => {
@@ -667,6 +679,34 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     expect(mocks.scrollToIndex).not.toHaveBeenCalledWith(
       expect.objectContaining({ align: 'start' }),
     );
+  });
+
+  it('显式回到底部会覆盖旧的手势抑制并恢复跟随', () => {
+    const projection = makeStreamingProjection(makeStreamingTurn());
+    const view = render(React.createElement(TurnBasedTraceView, { projection }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    Object.defineProperty(scroller, 'scrollHeight', { value: 1_200, configurable: true });
+    Object.defineProperty(scroller, 'scrollTop', { value: 100, writable: true });
+
+    fireEvent.wheel(scroller, { deltaY: -120 });
+    act(() => {
+      mocks.virtuosoProps.atBottomStateChange(false);
+    });
+    const jumpButton = view.container.querySelector<HTMLButtonElement>('button[aria-label]');
+    expect(jumpButton).not.toBeNull();
+    fireEvent.click(jumpButton!);
+    flushView();
+    flushView();
+
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({
+      index: 0,
+      align: 'end',
+      behavior: 'auto',
+    });
+    expect(mocks.autoscrollToBottom).toHaveBeenCalled();
+    flushView();
+    expect(scroller.scrollTop).toBe(1_200);
+    expect(mocks.virtuosoProps.followOutput(false)).toBe('auto');
   });
 
   it('同一会话内新轮开始（非进入场景）仍把新轮顶置到视口上方', () => {

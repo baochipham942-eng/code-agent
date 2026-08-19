@@ -40,18 +40,6 @@ export function getCodeBlockDeferredContentKind(lineCount: number): DeferredCont
   return 'codeCollapsed';
 }
 
-export function getTurnDeferredContentKind({
-  hasCodeBlock,
-  hasToolCard,
-}: {
-  hasCodeBlock: boolean;
-  hasToolCard: boolean;
-}): DeferredContentKind {
-  if (hasCodeBlock) return 'turnCode';
-  if (hasToolCard) return 'turnTool';
-  return 'turnText';
-}
-
 export function shouldDeferTurnContentLayout({
   content,
   isStreaming,

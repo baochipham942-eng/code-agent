@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-11T04:04:10.094Z",
+  "generatedAt": "2026-08-19T08:28:06.518Z",
   "environment": {
-    "gitHead": "d4ab51de9fb28bc1626862cde2eb46517ee6bf4c",
+    "gitHead": "04ec19170eb185650cd8d0437669b48b694cd525",
     "node": "v24.15.0",
     "platform": "darwin/arm64",
     "cpu": "Apple M1",
     "cpuCount": 8,
     "totalMemoryBytes": 17179869184,
-    "browser": "151.0.7922.77",
+    "browser": "151.0.7922.138",
     "viewport": {
       "width": 1440,
       "height": 900
@@ -29,35 +29,35 @@
   },
   "scenarios": {
     "turns500": {
-      "interactiveMs": 51,
+      "interactiveMs": 46.2,
       "renderedTurns": 500
     },
     "turns1000": {
-      "updateMs": 79,
+      "updateMs": 85.6,
       "renderedTurns": 1000
     },
     "denseCodeStreaming": {
       "codeBlocks": 100,
       "updates": 20,
-      "durationMs": 1604.4
+      "durationMs": 886.9
     },
     "historyPrepend": {
       "prependedTurns": 30,
       "anchorTurnId": "turn-115",
       "anchorMounted": true,
       "visibleAfterTurnId": "turn-115",
-      "scrollTopBefore": 9209,
-      "scrollTopAfter": 11578,
+      "scrollTopBefore": 9222,
+      "scrollTopAfter": 11591,
       "anchorDriftPx": 0.344,
       "firstItemIndex": 999970
     },
     "userScroll": {
       "retainedPosition": true,
-      "distanceFromBottomPx": 93492
+      "distanceFromBottomPx": 93405
     },
     "streamingFollow": {
       "resumedAtBottom": true,
-      "distanceFromBottomPx": 10
+      "distanceFromBottomPx": 0
     },
     "search": {
       "targetTurnIndex": 120,
@@ -65,21 +65,21 @@
       "targetVisible": true
     },
     "uiStateSimulation": {
-      "convergenceMs": 33,
+      "convergenceMs": 31.8,
       "terminal": true
     }
   },
   "mainThread": {
-    "longTaskCount": 13,
-    "longTaskMaxMs": 176,
-    "longTaskTotalMs": 1406,
+    "longTaskCount": 5,
+    "longTaskMaxMs": 103,
+    "longTaskTotalMs": 413,
     "over500ms": 0
   },
   "memory": {
     "supported": true,
-    "baselineBytes": 33647506,
-    "peakBytes": 106448415,
-    "deltaBytes": 72800909
+    "baselineBytes": 35739911,
+    "peakBytes": 57872787,
+    "deltaBytes": 22132876
   },
   "gates": {
     "turns500Interactive": true,

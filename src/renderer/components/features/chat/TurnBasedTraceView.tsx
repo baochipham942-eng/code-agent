@@ -300,6 +300,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     firstTurnId: projection.turns[0]?.turnId ?? null,
     firstItemIndex: 1_000_000,
   });
+  const projectionTurnsRef = useRef(projection.turns);
+  projectionTurnsRef.current = projection.turns;
   const activeDisplayScrollCancelRef = useRef<(() => void) | null>(null);
   const activeDisplayScrollLastAtRef = useRef(0);
   const userScrollSuppressUntilRef = useRef(0);
@@ -827,12 +829,18 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       const nextHeight = entries[0]?.contentRect.height;
       if (nextHeight === undefined || nextHeight === lastHeight) return;
       lastHeight = nextHeight;
+      if (outputFollowStreamingRef.current) {
+        if (keepActiveOutputVisibleRef.current && !isFollowReengageSuppressed()) {
+          virtuosoRef.current?.autoscrollToBottom();
+        }
+        return;
+      }
       scheduleActiveDisplayScroll(outputFollowTurnIndex);
     });
 
     observer.observe(target);
     return () => observer.disconnect();
-  }, [outputFollowTurn?.turnId, outputFollowTurnIndex, scheduleActiveDisplayScroll, scrollerElement]);
+  }, [isFollowReengageSuppressed, outputFollowTurn?.turnId, outputFollowTurnIndex, scheduleActiveDisplayScroll, scrollerElement]);
 
   // F3：活动流式 turn 的只增 min-height 锁。流式 overlay 的 live 节点在工具边界
   // 换 id 重挂载，turn 内部高度瞬时塌陷 → virtuoso 重测量把列表总高压到视口高、
@@ -888,9 +896,50 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const handleJumpToBottom = useCallback(() => {
     const lastIndex = projection.turns.length - 1;
     if (lastIndex < 0) return;
+    userScrollSuppressUntilRef.current = 0;
+    userScrollLastInteractionAtRef.current = 0;
     keepActiveOutputVisibleRef.current = true;
     virtuosoRef.current?.scrollToIndex({ index: lastIndex, align: 'end', behavior: 'auto' });
-  }, [projection.turns.length]);
+    virtuosoRef.current?.autoscrollToBottom();
+    activeDisplayScrollCancelRef.current?.();
+    const turnsAtJump = projection.turns;
+    let remainingFrames = 60;
+    let frame: number | ReturnType<typeof setTimeout> | null = null;
+    const cancelSettlement = () => {
+      if (frame !== null) {
+        if (typeof cancelAnimationFrame === 'function' && typeof frame === 'number') {
+          cancelAnimationFrame(frame);
+        } else {
+          clearTimeout(frame);
+        }
+      }
+      frame = null;
+      if (activeDisplayScrollCancelRef.current === cancelSettlement) {
+        activeDisplayScrollCancelRef.current = null;
+      }
+    };
+    const settleBottom = () => {
+      frame = null;
+      if (projectionTurnsRef.current !== turnsAtJump || !keepActiveOutputVisibleRef.current) {
+        cancelSettlement();
+        return;
+      }
+      const scroller = scrollerElementRef.current;
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      remainingFrames -= 1;
+      if (remainingFrames <= 0) {
+        cancelSettlement();
+        return;
+      }
+      frame = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame(settleBottom)
+        : setTimeout(settleBottom, 16);
+    };
+    activeDisplayScrollCancelRef.current = cancelSettlement;
+    frame = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame(settleBottom)
+      : setTimeout(settleBottom, 16);
+  }, [projection.turns]);
 
   // Render individual turn card
   const itemContent = useCallback(

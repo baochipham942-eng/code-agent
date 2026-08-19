@@ -41,9 +41,14 @@ describe('turn/tool content visibility tiers', () => {
     expect(active).not.toContain('data-deferred-content="tool-card"');
   });
 
-  it('uses text/tool/code estimates for completed turns and never defers the active turn', () => {
+  it('keeps the virtualized turn shell measurable and only defers nested heavy content', () => {
     const userNode: TraceNode = { id: 'user-1', type: 'user', content: 'question', timestamp: 100 };
-    const textNode: TraceNode = { id: 'assistant-1', type: 'assistant_text', content: 'answer', timestamp: 101 };
+    const textNode: TraceNode = {
+      id: 'assistant-1',
+      type: 'assistant_text',
+      content: 'answer '.repeat(140),
+      timestamp: 101,
+    };
     const codeNode: TraceNode = { ...textNode, content: '```ts\nconst value = 1;\n```' };
 
     const textHtml = renderToStaticMarkup(<TurnCard turn={turn('completed', [userNode, textNode])} />);
@@ -53,9 +58,12 @@ describe('turn/tool content visibility tiers', () => {
       <TurnCard turn={turn('streaming', [userNode, codeNode])} isActiveTurn />,
     );
 
-    expect(textHtml).toContain('contain-intrinsic-size:auto 1040px');
-    expect(toolHtml).toContain('contain-intrinsic-size:auto 1060px');
-    expect(codeHtml).toContain('contain-intrinsic-size:auto 680px');
+    expect(textHtml).not.toContain('data-deferred-content="turn"');
+    expect(toolHtml).not.toContain('data-deferred-content="turn"');
+    expect(codeHtml).not.toContain('data-deferred-content="turn"');
+    expect(textHtml).toContain('data-turn-heavy-content="true"');
+    expect(textHtml).toContain('contain-intrinsic-size:auto 320px');
+    expect(toolHtml).toContain('data-deferred-content="tool-card"');
     expect(activeHtml).not.toContain('data-deferred-content="turn"');
     expect(activeHtml).not.toContain('data-deferred-content="code-block"');
     expect(activeHtml).not.toContain('data-deferred-content="tool-card"');

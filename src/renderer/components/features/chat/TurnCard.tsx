@@ -59,10 +59,6 @@ import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useVoiceCallStore } from '../../../stores/voiceCallStore';
 import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '../../../utils/sessionNeedsInput';
-import {
-  getDeferredContentStyle,
-  getTurnDeferredContentKind,
-} from '../../../utils/turnContentVisibility';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -130,11 +126,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   }, [turn]);
 
   const isStreaming = turn.status === 'streaming';
-  const deferTurnLayout = !isActiveTurn && !isStreaming;
-  const turnDeferredContentKind = getTurnDeferredContentKind({
-    hasCodeBlock: turn.nodes.some((node) => node.type === 'assistant_text' && node.content.includes('```')),
-    hasToolCard: turn.nodes.some((node) => node.type === 'tool_call'),
-  });
 
   // 把相邻的非 Edit/Write 工具调用聚合成 tool_group
   const displayNodes = useMemo(
@@ -334,9 +325,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
       className={`mb-2 transition-colors group/turncard ${
         highlightActive ? 'bg-amber-500/5' : ''
       }`}
-      data-deferred-content={deferTurnLayout ? 'turn' : undefined}
-      data-deferred-content-kind={deferTurnLayout ? turnDeferredContentKind : undefined}
-      style={deferTurnLayout ? getDeferredContentStyle(turnDeferredContentKind) : undefined}
     >
       {showSeparator && (
         <div className="flex items-center gap-2 py-1.5">

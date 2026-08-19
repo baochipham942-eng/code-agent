@@ -7,6 +7,7 @@ import os from 'os';
 import path from 'path';
 import type { ToolExecutionResult } from '../../host/tools/types';
 import { formatError } from '../helpers/utils';
+import { getDevCancellableToolPermissionHandler } from './devCancellableToolPermissionPolicy';
 import type { WebRouteLogger } from './routeTypes';
 
 type DevCancellableToolName = 'Bash' | 'http_request';
@@ -178,11 +179,19 @@ async function startCancellableTool(body: unknown): Promise<DevCancellableToolEn
   const controller = new AbortController();
   const id = randomUUID();
 
-  const [{ initializeCLIServices, getToolExecutor }] = await Promise.all([
+  const [{ initializeCLIServices, getToolExecutor }, { ToolExecutor }] = await Promise.all([
     import('../../cli/bootstrap'),
+    import('../../host/tools/toolExecutor'),
   ]);
   await initializeCLIServices();
-  const executor = getToolExecutor();
+  const requestPermission = getDevCancellableToolPermissionHandler(body);
+  const executor = requestPermission
+    ? new ToolExecutor({
+        requestPermission,
+        workingDirectory,
+        ledgerOrigin: 'cli',
+      })
+    : getToolExecutor();
   if (!executor) {
     throw new Error('ToolExecutor is not available.');
   }

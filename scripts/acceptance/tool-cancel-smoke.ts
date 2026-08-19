@@ -237,6 +237,7 @@ async function runCancellableToolSmoke(
       tool: request.tool,
       sessionId: request.sessionId,
       workingDirectory: process.cwd(),
+      approvalPolicy: 'e2e-scripted-allow',
     },
   );
   cleanupRunIds.add(started.id);

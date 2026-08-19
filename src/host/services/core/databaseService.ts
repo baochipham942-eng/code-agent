@@ -2883,7 +2883,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.memoryRepo.getMemory(id);
   }
-  listMemories(options?: { type?: string; category?: string; source?: string; projectPath?: string; sessionId?: string; limit?: number; offset?: number; orderBy?: string; orderDir?: 'ASC' | 'DESC' }): import('./repositories').MemoryRecord[] {
+  listMemories(options?: { type?: string; category?: string; source?: string; projectPath?: string; sessionId?: string; limit?: number; offset?: number; orderBy?: string; orderDir?: 'ASC' | 'DESC'; includeArchived?: boolean }): import('./repositories').MemoryRecord[] {
     this.ensureDb();
     return this.memoryRepo.listMemories(options);
   }

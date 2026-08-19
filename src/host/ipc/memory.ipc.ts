@@ -11,7 +11,7 @@ import { createLogger } from '../services/infra/logger';
 import {
   listMemoryFiles,
   readMemoryFile,
-  deleteMemoryFile,
+  archiveMemoryFile,
   getLightMemoryStats,
   getLightMemoryHealth,
   rebuildLightMemoryIndex,
@@ -86,6 +86,8 @@ interface SerializedAuditMemory {
   updatedAt: number;
   lastAccessedAt: number | null;
   metadata: Record<string, unknown>;
+  status: StoredMemoryRecord['status'];
+  deprecatedBy: string | null;
 }
 
 // ----------------------------------------------------------------------------
@@ -391,6 +393,8 @@ function serializeAuditMemory(memory: StoredMemoryRecord): SerializedAuditMemory
     updatedAt: memory.updatedAt,
     lastAccessedAt: memory.lastAccessedAt ?? null,
     metadata: memory.metadata ?? {},
+    status: memory.status || 'active',
+    deprecatedBy: memory.deprecatedBy ?? null,
   };
 }
 
@@ -531,6 +535,13 @@ async function handleMemoryEntryUpdate(payload: MemoryEntryUpdateRequest): Promi
 async function handleMemoryEntryDelete(payload: MemoryEntryDeleteRequest): Promise<Awaited<ReturnType<typeof deleteMemoryEntry>>> {
   if (!payload?.entryId) throw new Error('memory entry delete requires entryId');
   return deleteMemoryEntry(getDatabase(), payload);
+}
+
+async function handleLightMemoryArchive(filename: string): Promise<boolean> {
+  const archived = await archiveMemoryFile(filename);
+  if (!archived) return false;
+  await rebuildMemoryMirrorFromLightFiles(getDatabase());
+  return true;
 }
 
 async function handleMemoryPack(payload: MemoryPackRequest): Promise<Awaited<ReturnType<typeof packMemoryEntries>>> {
@@ -811,7 +822,7 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           data = await readMemoryFile((payload as { filename?: string })?.filename || '');
           break;
         case 'lightDelete':
-          data = await deleteMemoryFile((payload as { filename?: string })?.filename || '');
+          data = await handleLightMemoryArchive((payload as { filename?: string })?.filename || '');
           break;
         case 'lightStats':
           data = await getLightMemoryStats();
@@ -899,7 +910,7 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           data = await readMemoryFile(request.filename as string);
           break;
         case 'lightDelete':
-          data = await deleteMemoryFile(request.filename as string);
+          data = await handleLightMemoryArchive(request.filename as string);
           break;
         case 'lightStats':
           data = await getLightMemoryStats();

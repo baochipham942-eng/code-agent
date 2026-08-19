@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   getSessionManager: vi.fn(),
   listMemoryFiles: vi.fn(),
   readMemoryFile: vi.fn(),
-  deleteMemoryFile: vi.fn(),
+  archiveMemoryFile: vi.fn(),
   getLightMemoryStats: vi.fn(),
   getLightMemoryHealth: vi.fn(),
   rebuildLightMemoryIndex: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock('../../../src/host/services', () => ({
 vi.mock('../../../src/host/lightMemory/lightMemoryIpc', () => ({
   listMemoryFiles: mocks.listMemoryFiles,
   readMemoryFile: mocks.readMemoryFile,
-  deleteMemoryFile: mocks.deleteMemoryFile,
+  archiveMemoryFile: mocks.archiveMemoryFile,
   getLightMemoryStats: mocks.getLightMemoryStats,
   getLightMemoryHealth: mocks.getLightMemoryHealth,
   rebuildLightMemoryIndex: mocks.rebuildLightMemoryIndex,
@@ -139,7 +139,15 @@ describe('memory.ipc memoryAudit', () => {
       duplicateNames: [],
       duplicateDescriptions: [],
     });
-    mocks.deleteMemoryFile.mockResolvedValue(true);
+    mocks.archiveMemoryFile.mockResolvedValue({
+      filename: 'project_rules.md',
+      name: 'Project Rules',
+      description: 'Follow project rules',
+      type: 'project',
+      content: 'Use existing UI patterns.',
+      status: 'archived',
+      updatedAt: '2026-05-13T12:30:00.000Z',
+    });
     mocks.rebuildLightMemoryIndex.mockResolvedValue({
       indexPath: '/tmp/memory/INDEX.md',
       totalFiles: 1,
@@ -550,7 +558,7 @@ describe('memory.ipc memoryAudit', () => {
     }));
   });
 
-  it('routes unified memory entry update and delete through the simple memory channel', async () => {
+  it('routes unified memory entry update and soft archive through the simple memory channel', async () => {
     const mirror = memory({
       id: 'mem-mirror',
       content: 'Memory audit should explain why a rule was injected.',
@@ -655,8 +663,15 @@ describe('memory.ipc memoryAudit', () => {
         sourceOfTruth: 'light_file',
       },
     });
-    expect(mocks.deleteMemoryFile).toHaveBeenCalledWith('project_rules.md');
-    expect(mocks.database.deleteMemory).toHaveBeenCalledWith('mem-mirror');
+    expect(mocks.writeLightMemoryFile).toHaveBeenLastCalledWith(expect.objectContaining({
+      filename: 'project_rules.md',
+      status: 'archived',
+      content: 'Archived memory content.',
+    }));
+    expect(mocks.database.updateMemory).toHaveBeenLastCalledWith('mem-mirror', expect.objectContaining({
+      status: 'archived',
+    }));
+    expect(mocks.database.deleteMemory).not.toHaveBeenCalled();
   });
 
   it('resolves a Knowledge Inbox approval into a seedable project memory and audit tombstone', async () => {

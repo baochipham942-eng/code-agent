@@ -47,6 +47,8 @@ export interface MemoryRecord {
   sessionId?: string;
   confidence: number;
   metadata: Record<string, unknown>;
+  status?: 'candidate' | 'active' | 'rejected' | 'stale' | 'archived';
+  deprecatedBy?: string | null;
   accessCount: number;
   createdAt: number;
   updatedAt: number;

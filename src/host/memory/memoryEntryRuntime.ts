@@ -21,7 +21,6 @@ import * as fs from 'fs/promises';
 import type { MemoryRecord } from '../services/core/repositories';
 import { getMemoryIndexPath } from '../lightMemory/indexLoader';
 import {
-  deleteMemoryFile,
   listMemoryFiles,
   rebuildLightMemoryIndex,
   writeLightMemoryFile,
@@ -30,6 +29,7 @@ import {
 import { hashInboxContent } from './knowledgeInboxDecision';
 import { sanitizeMemoryContent } from '../utils/sanitizeMemoryContent';
 import { MEMORY } from '../../shared/constants';
+import { withMemoryBackgroundGuidance } from './memoryContextGuidance';
 
 interface MemoryEntryDatabase {
   listMemories(options?: {
@@ -42,10 +42,10 @@ interface MemoryEntryDatabase {
     offset?: number;
     orderBy?: string;
     orderDir?: 'ASC' | 'DESC';
+    includeArchived?: boolean;
   }): MemoryRecord[];
   createMemory(data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): MemoryRecord;
   updateMemory(id: string, updates: Partial<MemoryRecord>): MemoryRecord | null;
-  deleteMemory?(id: string): boolean;
   /** BM25/FTS 关键词召回（roadmap 2.5）；缺省实现时混合召回静默跳过 */
   searchMemories?(query: string, options?: { limit?: number; applyDecay?: boolean }): MemoryRecord[];
 }
@@ -250,7 +250,7 @@ function antiLostInMiddleOrder(items: PackedMemoryItem[]): PackedMemoryItem[] {
 
 function renderPackedMemoryBlock(items: PackedMemoryItem[]): string {
   if (items.length === 0) return '';
-  return [
+  const block = [
     '<memory-pack>',
     ...items.map((item, index) => [
       `- [${index + 1}] ${item.title}${item.source.memoryId ? ` [#${item.source.memoryId}]` : ''}`,
@@ -261,6 +261,7 @@ function renderPackedMemoryBlock(items: PackedMemoryItem[]): string {
     ].join('\n')),
     '</memory-pack>',
   ].join('\n');
+  return withMemoryBackgroundGuidance(block);
 }
 
 function sanitizePackedMemoryText(value: string): string {
@@ -331,6 +332,7 @@ export function lightMemoryFileToEntry(file: LightMemoryFile): MemoryEntry {
     id: memoryEntryIdForLightFile(file),
     schemaVersion: 2,
     status: file.status || 'active',
+    deprecatedBy: file.deprecatedBy ?? null,
     kind,
     scope: scopeForEntry(kind),
     title: file.name || file.filename.replace(/\.md$/, ''),
@@ -355,13 +357,17 @@ export function storedMemoryToEntry(memory: MemoryRecord): MemoryEntry {
   const meta = memoryEntryMetadata(memory);
   const kind = (meta?.kind as MemoryEntryKind | undefined)
     || (memory.type === 'user_preference' ? 'user' : memory.category === 'pattern' ? 'pattern' : 'project');
-  const status = meta?.status === 'candidate'
+  const metadataStatus = meta?.status === 'candidate'
     || meta?.status === 'active'
     || meta?.status === 'rejected'
     || meta?.status === 'stale'
     || meta?.status === 'archived'
     ? meta.status
-    : memory.source === 'session_extracted' ? 'candidate' : 'active';
+    : undefined;
+  const status = normalizeEntryStatus(
+    memory.status,
+    metadataStatus || (memory.source === 'session_extracted' ? 'candidate' : 'active'),
+  );
   const sourceOfTruth = meta?.sourceOfTruth === 'light_file' ? 'light_file' : 'db_memory';
   const evidence = Array.isArray(meta?.evidence)
     ? meta.evidence as MemoryEntryEvidence[]
@@ -371,6 +377,8 @@ export function storedMemoryToEntry(memory: MemoryRecord): MemoryEntry {
     id: typeof meta?.id === 'string' ? meta.id : `db:${memory.id}`,
     schemaVersion: 2,
     status,
+    deprecatedBy: memory.deprecatedBy
+      ?? (typeof meta?.deprecatedBy === 'string' ? meta.deprecatedBy : null),
     kind,
     scope: scopeForEntry(kind, memory.projectPath ?? null, memory.sessionId ?? null),
     title: compactText(memory.summary || memory.content, 120) || memory.category,
@@ -401,6 +409,7 @@ export function buildActiveMemoryEntryFromInbox(input: BuildActiveMemoryEntryInp
     id,
     schemaVersion: 2,
     status: 'active',
+    deprecatedBy: null,
     kind,
     scope: scopeForEntry(kind, input.projectPath, input.sessionId),
     title: compactText(input.title || input.content, 120) || id,
@@ -435,6 +444,7 @@ export async function writeActiveEntryToLightMemory(entry: MemoryEntry): Promise
     content: entry.content,
     entryId: entry.id,
     status: entry.status,
+    deprecatedBy: entry.deprecatedBy,
     source: entry.source.kind,
     schemaVersion: entry.schemaVersion,
   });
@@ -459,12 +469,15 @@ export function createMemoryMirrorRecord(
     projectPath: entry.projectPath ?? undefined,
     sessionId: entry.sessionId ?? undefined,
     confidence: entry.confidence,
+    status: entry.status,
+    deprecatedBy: entry.deprecatedBy,
     metadata: {
       ...(options.metadata || {}),
       memoryEntry: {
         schemaVersion: entry.schemaVersion,
         id: entry.id,
         status: entry.status,
+        deprecatedBy: entry.deprecatedBy ?? null,
         kind: entry.kind,
         scope: entry.scope,
         sourceOfTruth: 'light_file',
@@ -478,7 +491,7 @@ export function createMemoryMirrorRecord(
 export async function listUnifiedMemoryEntries(db?: MemoryEntryDatabase): Promise<MemoryEntryListResult> {
   const lightEntries = (await listMemoryFiles()).map(lightMemoryFileToEntry);
   const dbEntries = db
-    ? db.listMemories({ limit: 500, orderBy: 'updated_at', orderDir: 'DESC' }).map(storedMemoryToEntry)
+    ? db.listMemories({ includeArchived: true, limit: 500, orderBy: 'updated_at', orderDir: 'DESC' }).map(storedMemoryToEntry)
     : [];
   const lightEntryIds = new Set(lightEntries.map((entry) => entry.id));
   const entries = [
@@ -497,7 +510,7 @@ export async function listUnifiedMemoryEntries(db?: MemoryEntryDatabase): Promis
 
 export async function rebuildMemoryMirrorFromLightFiles(db: MemoryEntryDatabase): Promise<MemoryMirrorRebuildResult> {
   const files = await listMemoryFiles();
-  const existingMirrors = db.listMemories({ limit: 1000, orderBy: 'updated_at', orderDir: 'DESC' })
+  const existingMirrors = db.listMemories({ includeArchived: true, limit: 1000, orderBy: 'updated_at', orderDir: 'DESC' })
     .filter((memory) => memoryEntryMetadata(memory)?.sourceOfTruth === 'light_file');
   const existingByEntryId = new Map<string, MemoryRecord>();
   const existingByFilePath = new Map<string, MemoryRecord>();
@@ -522,12 +535,15 @@ export async function rebuildMemoryMirrorFromLightFiles(db: MemoryEntryDatabase)
           summary: entry.title || entry.summary,
           category: categoryForMemoryEntryKind(entry.kind),
           confidence: 1,
+          status: entry.status,
+          deprecatedBy: entry.deprecatedBy,
           metadata: {
             ...existing.metadata,
             memoryEntry: {
               schemaVersion: entry.schemaVersion,
               id: entry.id,
               status: entry.status,
+              deprecatedBy: entry.deprecatedBy ?? null,
               kind: entry.kind,
               scope: entry.scope,
               sourceOfTruth: 'light_file',
@@ -771,6 +787,7 @@ function metadataForImportedEntry(entry: MemoryEntry, sourceOfTruth = entry.sour
       schemaVersion: entry.schemaVersion,
       id: entry.id,
       status: entry.status,
+      deprecatedBy: entry.deprecatedBy ?? null,
       kind: entry.kind,
       scope: entry.scope,
       sourceOfTruth,
@@ -790,12 +807,14 @@ function memoryRecordInputForImportedEntry(entry: MemoryEntry): Omit<MemoryRecor
     projectPath: entry.projectPath ?? undefined,
     sessionId: entry.sessionId ?? undefined,
     confidence: entry.confidence,
+    status: entry.status,
+    deprecatedBy: entry.deprecatedBy,
     metadata: metadataForImportedEntry(entry, entry.source.sourceOfTruth),
   };
 }
 
 function memoryRecordsByEntryId(db: MemoryEntryDatabase): Map<string, MemoryRecord> {
-  const records = db.listMemories({ limit: 1000, orderBy: 'updated_at', orderDir: 'DESC' });
+  const records = db.listMemories({ includeArchived: true, limit: 1000, orderBy: 'updated_at', orderDir: 'DESC' });
   const map = new Map<string, MemoryRecord>();
   for (const record of records) {
     const meta = memoryEntryMetadata(record);
@@ -807,7 +826,7 @@ function memoryRecordsByEntryId(db: MemoryEntryDatabase): Map<string, MemoryReco
 }
 
 function findMemoryRecordForEntry(db: MemoryEntryDatabase, entry: MemoryEntry): MemoryRecord | null {
-  const records = db.listMemories({ limit: 1000, orderBy: 'updated_at', orderDir: 'DESC' });
+  const records = db.listMemories({ includeArchived: true, limit: 1000, orderBy: 'updated_at', orderDir: 'DESC' });
   const memoryId = entry.source.memoryId || (entry.id.startsWith('db:') ? entry.id.slice(3) : null);
   return records.find((record) => memoryEntryMetadata(record)?.id === entry.id)
     || records.find((record) => Boolean(memoryId) && record.id === memoryId)
@@ -828,6 +847,9 @@ function buildUpdatedMemoryEntry(current: MemoryEntry, request: MemoryEntryUpdat
   return {
     ...current,
     status: normalizeEntryStatus(request.status, current.status),
+    deprecatedBy: request.status === 'active'
+      ? null
+      : request.deprecatedBy !== undefined ? request.deprecatedBy : current.deprecatedBy,
     kind,
     scope: normalizeEntryScope(request.scope, current.scope),
     title,
@@ -854,6 +876,7 @@ export async function updateMemoryEntry(
       content: next.content,
       entryId: next.id,
       status: next.status,
+      deprecatedBy: next.deprecatedBy,
       source: current.source.kind,
       schemaVersion: next.schemaVersion,
     });
@@ -879,6 +902,8 @@ export async function updateMemoryEntry(
     content: next.content,
     summary: next.title || next.summary,
     confidence: next.confidence,
+    status: next.status,
+    deprecatedBy: next.deprecatedBy,
     metadata: {
       ...record.metadata,
       ...metadataForImportedEntry({
@@ -904,35 +929,16 @@ export async function deleteMemoryEntry(
 ): Promise<MemoryEntryDeleteResult> {
   const current = (await listUnifiedMemoryEntries(db)).entries.find((entry) => entry.id === request.entryId);
   if (!current) return { deleted: false };
-
-  if (current.source.sourceOfTruth === 'light_file') {
-    const filename = current.source.filePath;
-    if (!filename) throw new Error(`Light memory filename missing for entry: ${request.entryId}`);
-    const deleted = await deleteMemoryFile(filename);
-    const mirrorRecord = findMemoryRecordForEntry(db, current);
-    if (mirrorRecord && db.deleteMemory) {
-      db.deleteMemory(mirrorRecord.id);
-    }
-    await rebuildLightMemoryIndex();
-    const mirrorRebuild = await rebuildMemoryMirrorFromLightFiles(db);
-    return {
-      deleted,
-      sourceOfTruth: 'light_file',
-      mirrorRebuild,
-    };
-  }
-
-  const record = findMemoryRecordForEntry(db, current);
-  if (!record || !db.deleteMemory) {
-    return {
-      deleted: false,
-      sourceOfTruth: 'db_memory',
-    };
-  }
-
+  const archived = await updateMemoryEntry(db, {
+    entryId: request.entryId,
+    status: 'archived',
+    deprecatedBy: null,
+  });
   return {
-    deleted: db.deleteMemory(record.id),
-    sourceOfTruth: 'db_memory',
+    // Backward-compatible field name: removed from active recall, retained on disk/DB.
+    deleted: archived.entry.status === 'archived',
+    sourceOfTruth: current.source.sourceOfTruth,
+    mirrorRebuild: archived.mirrorRebuild,
   };
 }
 
@@ -945,6 +951,7 @@ async function writeImportedLightEntry(entry: MemoryEntry): Promise<string> {
     content: entry.content,
     entryId: entry.id,
     status: entry.status,
+    deprecatedBy: entry.deprecatedBy,
     source: entry.source.kind,
     schemaVersion: entry.schemaVersion,
   });
@@ -988,6 +995,8 @@ export async function applyImportMemoryBundleV2(
           content: entry.content,
           summary: entry.title || entry.summary,
           confidence: entry.confidence,
+          status: entry.status,
+          deprecatedBy: entry.deprecatedBy,
           metadata: {
             ...existing.metadata,
             ...metadataForImportedEntry(entry, entry.source.sourceOfTruth),

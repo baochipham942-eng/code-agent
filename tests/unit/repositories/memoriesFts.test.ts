@@ -34,6 +34,8 @@ function createMemoriesSchema(db: BetterSqlite3.Database): void {
       session_id TEXT,
       confidence REAL NOT NULL DEFAULT 1.0,
       metadata TEXT DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'active',
+      deprecated_by TEXT,
       access_count INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
@@ -122,6 +124,28 @@ describe('MemoryRepository — memories FTS5/BM25 channel', () => {
     const byCategory = repo.searchMemories('tapir fact', { category: 'context', applyDecay: false });
     expect(byCategory.length).toBe(1);
     expect(byCategory[0].category).toBe('context');
+  });
+
+  it('excludes archived rows from both FTS and LIKE recall by default', () => {
+    const active = repo.createMemory(makeMemoryInput('softforget shared marker active'));
+    const archived = repo.createMemory(makeMemoryInput('softforget shared marker archived'));
+    repo.updateMemory(archived.id, { status: 'archived', deprecatedBy: active.id });
+
+    expect(repo.getMemory(archived.id)).toMatchObject({
+      id: archived.id,
+      status: 'archived',
+      deprecatedBy: active.id,
+      content: expect.stringContaining('archived'),
+    });
+    expect(repo.searchMemories('softforget shared marker', { applyDecay: false }).map((item) => item.id))
+      .toEqual([active.id]);
+    expect(repo.searchMemories('so', { applyDecay: false }).map((item) => item.id))
+      .toEqual([active.id]);
+    expect(repo.searchMemories('softforget shared marker', { applyDecay: false, includeArchived: true }).map((item) => item.id))
+      .toEqual(expect.arrayContaining([active.id, archived.id]));
+    expect(repo.listMemories().map((item) => item.id)).toEqual([active.id]);
+    expect(repo.listMemories({ includeArchived: true }).map((item) => item.id))
+      .toEqual(expect.arrayContaining([active.id, archived.id]));
   });
 
   it('supports CJK queries via trigram', () => {

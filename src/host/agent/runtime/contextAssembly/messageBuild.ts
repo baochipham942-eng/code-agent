@@ -11,6 +11,7 @@ import {
   buildGitStatusBlock,
 } from '../../../agent/messageHandling/contextBuilder';
 import { loadMemoryIndex } from '../../../lightMemory/indexLoader';
+import { withMemoryBackgroundGuidance } from '../../../memory/memoryContextGuidance';
 import { buildFailureJournalBlock } from '../../../lightMemory/failureJournal';
 import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../lightMemory/skillLoader';
 import { getRepoMap } from '../../../context/repoMap';
@@ -447,7 +448,7 @@ ${deferredToolsSummary}
   if (memoryContextEnabled) {
     const memoryIndex = await loadMemoryIndex();
     if (memoryIndex) {
-      const memoryIndexBlock = `<memory_index>\n${memoryIndex}\n</memory_index>`;
+      const memoryIndexBlock = `<memory_index>\n${withMemoryBackgroundGuidance(memoryIndex)}\n</memory_index>`;
       const beforeMemoryIndex = systemPrompt;
       systemPrompt = appendPromptBlockWithinBudget(
         systemPrompt,

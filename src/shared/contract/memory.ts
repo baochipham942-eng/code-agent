@@ -82,6 +82,8 @@ export interface MemoryEntry {
   id: string;
   schemaVersion: 2;
   status: MemoryEntryStatus;
+  /** Replacement entry, when an archive was superseded by a newer memory. */
+  deprecatedBy?: string | null;
   kind: MemoryEntryKind;
   scope: MemoryEntryScope;
   title: string;
@@ -115,6 +117,7 @@ export interface MemoryEntryUpdateRequest {
   summary?: string;
   content?: string;
   status?: MemoryEntryStatus;
+  deprecatedBy?: string | null;
   kind?: MemoryEntryKind;
   scope?: MemoryEntryScope;
 }

@@ -7,7 +7,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Search,
   Loader2,
-  Trash2,
+  Archive,
   FileText,
   Activity,
   MessageSquare,
@@ -892,7 +892,7 @@ export const MemoryTab: React.FC = () => {
                               className="inline-flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-badge-danger"
                               title={memoryText.files.delete}
                             >
-                              <Trash2 className="h-3 w-3" />
+                              <Archive className="h-3 w-3" />
                               {memoryText.files.delete}
                             </button>
                           )}

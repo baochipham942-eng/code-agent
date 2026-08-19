@@ -63,5 +63,35 @@ describe('CLI schema 列迁移错误处理', () => {
     for (const required of ['attachments', 'content_parts', 'is_meta', 'thinking', 'metadata']) {
       expect(names).toContain(required);
     }
+    const memoryColumns = db.prepare('PRAGMA table_info(memories)').all() as Array<{ name: string }>;
+    expect(memoryColumns.map((column) => column.name)).toEqual(expect.arrayContaining(['status', 'deprecated_by']));
+  });
+
+  it('createCliTables 把旧 metadata 里的 archived 状态兼容回填到新列', () => {
+    db.exec(`
+      CREATE TABLE memories (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        category TEXT NOT NULL,
+        content TEXT NOT NULL,
+        summary TEXT,
+        source TEXT NOT NULL,
+        project_path TEXT,
+        session_id TEXT,
+        confidence REAL NOT NULL DEFAULT 1.0,
+        metadata TEXT DEFAULT '{}',
+        access_count INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        last_accessed_at INTEGER
+      );
+      INSERT INTO memories (id, type, category, content, source, confidence, metadata, created_at, updated_at)
+      VALUES ('legacy', 'project_knowledge', 'context', 'kept', 'user_defined', 1, '{"memoryEntry":{"status":"archived","deprecatedBy":"replacement"}}', 1, 1);
+    `);
+
+    createCliTables(db);
+
+    expect(db.prepare('SELECT status, deprecated_by, content FROM memories WHERE id = ?').get('legacy'))
+      .toEqual({ status: 'archived', deprecated_by: 'replacement', content: 'kept' });
   });
 });

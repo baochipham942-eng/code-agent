@@ -42,8 +42,8 @@ export class MemoryRepository {
     const safeMetadata = guardMemoryMetadata(data.metadata || {});
 
     this.db.prepare(`
-      INSERT INTO memories (id, type, category, content, summary, source, project_path, session_id, confidence, metadata, access_count, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+      INSERT INTO memories (id, type, category, content, summary, source, project_path, session_id, confidence, metadata, status, deprecated_by, access_count, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
     `).run(
       id,
       data.type,
@@ -55,6 +55,8 @@ export class MemoryRepository {
       data.sessionId || null,
       data.confidence,
       JSON.stringify(safeMetadata),
+      data.status || 'active',
+      data.deprecatedBy || null,
       now,
       now
     );
@@ -65,6 +67,8 @@ export class MemoryRepository {
       content: safeContent,
       summary: safeSummary,
       metadata: safeMetadata,
+      status: data.status || 'active',
+      deprecatedBy: data.deprecatedBy,
       accessCount: 0,
       createdAt: now,
       updatedAt: now,
@@ -88,9 +92,14 @@ export class MemoryRepository {
     offset?: number;
     orderBy?: string;
     orderDir?: 'ASC' | 'DESC';
+    includeArchived?: boolean;
   } = {}): MemoryRecord[] {
     const conditions: string[] = [];
     const params: unknown[] = [];
+
+    if (!options.includeArchived) {
+      conditions.push("COALESCE(status, 'active') != 'archived'");
+    }
 
     if (options.type) {
       conditions.push('type = ?');
@@ -152,6 +161,14 @@ export class MemoryRepository {
       sets.push('metadata = ?');
       params.push(JSON.stringify(guardMemoryMetadata(updates.metadata)));
     }
+    if (updates.status !== undefined) {
+      sets.push('status = ?');
+      params.push(updates.status);
+    }
+    if (updates.deprecatedBy !== undefined) {
+      sets.push('deprecated_by = ?');
+      params.push(updates.deprecatedBy || null);
+    }
 
     params.push(id);
     this.db.prepare(`UPDATE memories SET ${sets.join(', ')} WHERE id = ?`).run(...params);
@@ -209,7 +226,7 @@ export class MemoryRepository {
    * raw FTS 语法错误、FTS 零命中（历史数据缺口兜底）。
    * 读时 decay 在两条通道之上统一应用。
    */
-  searchMemories(query: string, options: { type?: string; category?: string; limit?: number; applyDecay?: boolean } = {}): MemoryRecord[] {
+  searchMemories(query: string, options: { type?: string; category?: string; limit?: number; applyDecay?: boolean; includeArchived?: boolean } = {}): MemoryRecord[] {
     // Fetch more rows than needed so decay filtering still returns enough
     const requestedLimit = options.limit || 20;
     const fetchLimit = (options.applyDecay !== false) ? requestedLimit * 3 : requestedLimit;
@@ -242,7 +259,7 @@ export class MemoryRepository {
   /** BM25 召回；不可用/不适用时返回 null 让调用方走 LIKE 兜底 */
   private searchMemoriesFtsRows(
     query: string,
-    options: { type?: string; category?: string },
+    options: { type?: string; category?: string; includeArchived?: boolean },
     fetchLimit: number
   ): SQLiteRow[] | null {
     const trimmed = query.trim();
@@ -259,6 +276,9 @@ export class MemoryRepository {
     if (options.category) {
       conditions.push('memories_fts.category = ?');
       params.push(options.category);
+    }
+    if (!options.includeArchived) {
+      conditions.push("COALESCE(m.status, 'active') != 'archived'");
     }
     const extra = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
 
@@ -280,7 +300,7 @@ export class MemoryRepository {
   /** 旧 LIKE 全扫通道（兜底） */
   private searchMemoriesLikeRows(
     query: string,
-    options: { type?: string; category?: string },
+    options: { type?: string; category?: string; includeArchived?: boolean },
     fetchLimit: number
   ): SQLiteRow[] {
     const conditions: string[] = ['(content LIKE ? OR summary LIKE ?)'];
@@ -293,6 +313,9 @@ export class MemoryRepository {
     if (options.category) {
       conditions.push('category = ?');
       params.push(options.category);
+    }
+    if (!options.includeArchived) {
+      conditions.push("COALESCE(status, 'active') != 'archived'");
     }
 
     return this.db.prepare(`
@@ -373,6 +396,8 @@ export class MemoryRepository {
       sessionId: row.session_id as string | undefined,
       confidence: row.confidence as number,
       metadata: parseJsonRecord(row.metadata),
+      status: (row.status as MemoryRecord['status']) || 'active',
+      deprecatedBy: row.deprecated_by as string | undefined,
       accessCount: row.access_count as number,
       createdAt: row.created_at as number,
       updatedAt: row.updated_at as number,

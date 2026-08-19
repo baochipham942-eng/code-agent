@@ -33,6 +33,7 @@ import {
   getLightMemoryHealth,
   rebuildLightMemoryIndex,
   writeLightMemoryFile,
+  archiveMemoryFile,
 } from '../../../src/host/lightMemory/lightMemoryIpc';
 
 describe('lightMemoryIpc', () => {
@@ -280,6 +281,37 @@ ${body}
     it('should return true even for non-existent file (ENOENT)', async () => {
       const result = await deleteMemoryFile('nonexistent.md');
       expect(result).toBe(true);
+    });
+  });
+
+  describe('archiveMemoryFile', () => {
+    it('keeps original content while removing the entry from rebuilt INDEX', async () => {
+      await writeLightMemoryFile({
+        filename: 'soft-forget.md',
+        name: 'Soft Forget',
+        description: 'Keep original evidence',
+        type: 'project',
+        content: 'Original evidence remains readable.',
+        entryId: 'mem_entry_soft_forget',
+        status: 'active',
+        schemaVersion: 2,
+      });
+      await rebuildLightMemoryIndex();
+
+      const archived = await archiveMemoryFile('soft-forget.md', 'mem_entry_replacement');
+
+      expect(archived).toMatchObject({
+        status: 'archived',
+        deprecatedBy: 'mem_entry_replacement',
+        content: 'Original evidence remains readable.',
+      });
+      const raw = await fs.readFile(path.join(memDir, 'soft-forget.md'), 'utf-8');
+      expect(raw).toContain('status: archived');
+      expect(raw).toContain('deprecated_by: mem_entry_replacement');
+      expect(raw).toContain('Original evidence remains readable.');
+      expect(await fs.readFile(path.join(memDir, 'INDEX.md'), 'utf-8')).not.toContain('soft-forget.md');
+      const health = await getLightMemoryHealth();
+      expect(health.missingInIndex).not.toContain('soft-forget.md');
     });
   });
 

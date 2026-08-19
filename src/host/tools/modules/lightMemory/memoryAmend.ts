@@ -4,7 +4,7 @@
 // 背景：写入 memories 表的自动化路径（flush-before-compaction / OCR 文字识别 /
 // 照片归档等）只进不改——模型没法在用户指出"这条记错了"时就地修正或删除。
 // 检索侧配对：memory_search（同一张 memories 表）。这里只补纠错/遗忘的工具外壳，
-// 复用已有的 MemoryRepository.updateMemory/deleteMemory，不另造存储层。
+// 复用已有的 MemoryRepository.updateMemory，不另造存储层；forget 只归档，不物理删除。
 //
 // 注意：这个工具只管 DB 侧 MemoryRecord，不碰文件式记忆（那是 MemoryRead/MemoryWrite
 // 的地盘，memory/*.md）。
@@ -55,12 +55,26 @@ class MemoryAmendHandler implements ToolHandler<Record<string, unknown>, string>
     }
 
     if (action === 'forget') {
-      db.deleteMemory(id);
-      ctx.logger.info('memory_amend forget done', { id });
+      const deprecatedBy = typeof args.deprecated_by === 'string' && args.deprecated_by.trim()
+        ? args.deprecated_by.trim()
+        : undefined;
+      const existingEntry = existing.metadata?.memoryEntry;
+      const metadata = existingEntry && typeof existingEntry === 'object'
+        ? {
+            ...existing.metadata,
+            memoryEntry: {
+              ...existingEntry,
+              status: 'archived',
+              deprecatedBy: deprecatedBy ?? null,
+            },
+          }
+        : existing.metadata;
+      db.updateMemory(id, { status: 'archived', deprecatedBy: deprecatedBy ?? null, metadata });
+      ctx.logger.info('memory_amend forget archived', { id, deprecatedBy });
       return {
         ok: true,
-        output: `Memory forgotten: ${id}`,
-        meta: { action, id },
+        output: `Memory archived and removed from default recall: ${id}`,
+        meta: { action, id, status: 'archived', deprecatedBy: deprecatedBy ?? null },
       };
     }
 

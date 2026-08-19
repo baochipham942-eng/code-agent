@@ -727,14 +727,8 @@ export class SessionRepository {
       setClauses.push('tool_calls = ?');
       values.push(JSON.stringify(ensureToolCallShortDescription(updates.toolCalls)));
     }
-    if (updates.toolResults !== undefined) {
-      setClauses.push('tool_results = ?');
-      values.push(JSON.stringify(updates.toolResults));
-    }
-    if (updates.responsesOutput !== undefined) {
-      setClauses.push('responses_output = ?');
-      values.push(updates.responsesOutput ? JSON.stringify(updates.responsesOutput) : null);
-    }
+    if (updates.toolResults !== undefined) { setClauses.push('tool_results = ?'); values.push(JSON.stringify(updates.toolResults)); }
+    if (updates.responsesOutput !== undefined) { setClauses.push('responses_output = ?'); values.push(updates.responsesOutput ? JSON.stringify(updates.responsesOutput) : null); }
     if (updates.attachments !== undefined) {
       setClauses.push('attachments = ?');
       const attachmentsMeta = buildAttachmentMetadata(updates.attachments);

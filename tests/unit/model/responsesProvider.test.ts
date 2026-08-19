@@ -173,7 +173,7 @@ describe('ResponsesProvider', () => {
       lateCall,
       expect.objectContaining({ type: 'function_call_output', call_id: 'call_wrong_order' }),
     ]);
-    expect(warnSpy.mock.calls.map(([message]) => String(message))).toEqual(expect.arrayContaining([
+    expect(warnSpy.mock.calls.map((call: unknown[]) => String(call[0]))).toEqual(expect.arrayContaining([
       expect.stringContaining('Dropped orphan function_call_output call_wrong_order'),
       expect.stringContaining('Repaired orphan function_call call_wrong_order'),
     ]));
@@ -229,7 +229,7 @@ describe('ResponsesProvider', () => {
     expect(input).toContainEqual({ type: 'function_call_output', call_id: 'call_valid', output: 'valid result' });
     expect(input).toContainEqual(expect.objectContaining({ type: 'function_call_output', call_id: 'call_missing_output' }));
     expect(input).not.toContainEqual(expect.objectContaining({ call_id: 'call_missing_call' }));
-    expect(warnSpy.mock.calls.map(([message]) => String(message))).toEqual(expect.arrayContaining([
+    expect(warnSpy.mock.calls.map((call: unknown[]) => String(call[0]))).toEqual(expect.arrayContaining([
       expect.stringContaining('call_missing_output'),
       expect.stringContaining('call_missing_call'),
     ]));

@@ -276,6 +276,7 @@ export class ConversationProjectionRepairRepository {
     timestamp: number;
     toolCalls: string | null;
     toolResults: string | null;
+    responsesOutput: string | null;
     attachments: string | null;
     thinking: string | null;
     effortLevel: string | null;
@@ -309,6 +310,7 @@ export class ConversationProjectionRepairRepository {
       timestamp: replayMessage.message.timestamp,
       toolCalls: jsonValue(snapshot.toolCalls),
       toolResults: jsonValue(snapshot.toolResults),
+      responsesOutput: jsonValue(snapshot.responsesOutput),
       attachments: jsonValue(snapshot.readOnlyAttachmentProvenance),
       thinking,
       effortLevel: typeof snapshot.effortLevel === 'string' ? snapshot.effortLevel : null,
@@ -327,7 +329,7 @@ export class ConversationProjectionRepairRepository {
     this.db.prepare(`
       UPDATE messages
       SET role = ?, content = ?, timestamp = ?,
-          tool_calls = ?, tool_results = ?, attachments = ?,
+          tool_calls = ?, tool_results = ?, responses_output = ?, attachments = ?,
           thinking = ?, effort_level = ?, synced_at = NULL,
           content_parts = ?, metadata = ?, is_meta = ?, compaction = ?,
           visibility = 'active', hidden_by_rewind_id = NULL, hidden_at = NULL
@@ -338,6 +340,7 @@ export class ConversationProjectionRepairRepository {
       values.timestamp,
       values.toolCalls,
       values.toolResults,
+      values.responsesOutput,
       values.attachments,
       values.thinking,
       values.effortLevel,
@@ -357,10 +360,10 @@ export class ConversationProjectionRepairRepository {
   ): void {
     this.db.prepare(`
       INSERT INTO messages (
-        id, session_id, role, content, timestamp, tool_calls, tool_results,
+        id, session_id, role, content, timestamp, tool_calls, tool_results, responses_output,
         attachments, thinking, effort_level, synced_at, content_parts, metadata,
         is_meta, compaction, visibility, hidden_by_rewind_id, hidden_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'active', NULL, NULL)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'active', NULL, NULL)
     `).run(
       messageId,
       sessionId,
@@ -369,6 +372,7 @@ export class ConversationProjectionRepairRepository {
       values.timestamp,
       values.toolCalls,
       values.toolResults,
+      values.responsesOutput,
       values.attachments,
       values.thinking,
       values.effortLevel,

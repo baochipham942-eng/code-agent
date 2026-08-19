@@ -94,6 +94,7 @@ function forkPrefixProjection(row: SQLiteRow, sourceMessageId?: string): Record<
     timestamp: row.timestamp,
     tool_calls: row.tool_calls,
     tool_results: row.tool_results,
+    responses_output: row.responses_output,
     attachments: row.attachments,
     content_parts: row.content_parts,
     metadata: row.metadata,
@@ -310,11 +311,11 @@ export class SessionForkRepository {
         const sourceOrderKey = `${Number(sourceMessage.timestamp)}:${Number(sourceMessage.__rowid)}`;
         this.db.prepare(`
           INSERT INTO messages (
-            id, session_id, role, content, timestamp, tool_calls, tool_results,
+            id, session_id, role, content, timestamp, tool_calls, tool_results, responses_output,
             attachments, thinking, effort_level, synced_at, content_parts, metadata,
             is_meta, compaction, visibility, hidden_by_rewind_id, hidden_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'active', NULL, NULL)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'active', NULL, NULL)
         `).run(
           childMessageId,
           input.childSessionId,
@@ -323,6 +324,7 @@ export class SessionForkRepository {
           sourceMessage.timestamp,
           sourceMessage.tool_calls ?? null,
           sourceMessage.tool_results ?? null,
+          sourceMessage.responses_output ?? null,
           sourceMessage.attachments ?? null,
           sourceMessage.thinking ?? null,
           sourceMessage.effort_level ?? null,

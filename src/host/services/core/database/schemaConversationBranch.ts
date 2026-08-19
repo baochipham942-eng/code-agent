@@ -49,6 +49,7 @@ export function canonicalConversationMessagePayload(
   const keyAliases: Record<string, string> = {
     tool_calls: 'toolCalls',
     tool_results: 'toolResults',
+    responses_output: 'responsesOutput',
     content_parts: 'contentParts',
     is_meta: 'isMeta',
     effort_level: 'effortLevel',
@@ -67,6 +68,7 @@ function parseLegacyJsonColumn(key: string, value: unknown): unknown {
     || ![
       'tool_calls',
       'tool_results',
+      'responses_output',
       'attachments',
       'content_parts',
       'metadata',

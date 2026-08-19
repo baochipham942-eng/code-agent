@@ -4,6 +4,7 @@ const electronFetch = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/host/model/providers/providerHttp', () => ({ electronFetch }));
 
 import { ResponsesProvider } from '../../../src/host/model/providers/responsesProvider';
+import { logger } from '../../../src/host/model/providers/providerRuntime';
 // 直接从 wrapper 取：provider 侧不为测试单独 re-export（那条 re-export 在生产侧无消费者，
 // production profile 的 knip 门会判成新增 dead export）。
 import { convertToolsToResponses } from '../../../src/host/model/providers/wrappers/responsesWrapper';
@@ -48,7 +49,12 @@ describe('responses endpoint per provider', () => {
 });
 
 describe('ResponsesProvider', () => {
-  beforeEach(() => electronFetch.mockReset());
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    electronFetch.mockReset();
+    warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+  });
 
   it('uses /responses beside a /v1 base URL and gates DeepSeek web_search by the matrix', async () => {
     electronFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) });
@@ -105,6 +111,82 @@ describe('ResponsesProvider', () => {
     expect(JSON.parse(electronFetch.mock.calls[0][1].body).input).toEqual([
       ...priorOutput, { type: 'function_call_output', call_id: 'call_1', output: 'file contents' },
     ]);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('synthesizes an output for an orphan function_call and logs its call_id and history position', async () => {
+    electronFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) });
+    const orphanCall = { type: 'function_call', call_id: 'call_orphan_call', name: 'write_file', arguments: '{}' };
+    await new ResponsesProvider().inference([
+      { role: 'assistant', content: '', responsesOutput: [orphanCall] },
+      { role: 'user', content: 'continue' },
+    ], [READ_TOOL], { provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'test-key' } as any);
+
+    expect(JSON.parse(electronFetch.mock.calls[0][1].body).input).toEqual([
+      orphanCall,
+      expect.objectContaining({ type: 'function_call_output', call_id: 'call_orphan_call' }),
+      { role: 'user', content: 'continue' },
+    ]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('call_orphan_call'),
+      expect.objectContaining({ callId: 'call_orphan_call', missingSide: 'function_call_output', messageIndex: 0 }),
+    );
+  });
+
+  it('drops an orphan function_call_output and logs its call_id and history position', async () => {
+    electronFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) });
+    await new ResponsesProvider().inference([
+      { role: 'user', content: 'continue' },
+      { role: 'tool', toolCallId: 'call_orphan_output', content: 'stale result' },
+    ], [READ_TOOL], { provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'test-key' } as any);
+
+    expect(JSON.parse(electronFetch.mock.calls[0][1].body).input).toEqual([
+      { role: 'user', content: 'continue' },
+    ]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('call_orphan_output'),
+      expect.objectContaining({ callId: 'call_orphan_output', missingSide: 'function_call', messageIndex: 1 }),
+    );
+  });
+
+  it('repairs both orphan directions in one history without changing a valid pair', async () => {
+    electronFetch.mockResolvedValue({ ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) });
+    const validCall = { type: 'function_call', call_id: 'call_valid', name: 'read_file', arguments: '{}' };
+    const orphanCall = { type: 'function_call', call_id: 'call_missing_output', name: 'write_file', arguments: '{}' };
+    await new ResponsesProvider().inference([
+      { role: 'assistant', content: '', responsesOutput: [validCall, orphanCall] },
+      { role: 'tool', toolCallId: 'call_valid', content: 'valid result' },
+      { role: 'tool', toolCallId: 'call_missing_call', content: 'orphan result' },
+    ], [READ_TOOL], { provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'test-key' } as any);
+
+    const input = JSON.parse(electronFetch.mock.calls[0][1].body).input;
+    expect(input).toContainEqual(validCall);
+    expect(input).toContainEqual({ type: 'function_call_output', call_id: 'call_valid', output: 'valid result' });
+    expect(input).toContainEqual(expect.objectContaining({ type: 'function_call_output', call_id: 'call_missing_output' }));
+    expect(input).not.toContainEqual(expect.objectContaining({ call_id: 'call_missing_call' }));
+    expect(warnSpy.mock.calls.map(([message]) => String(message))).toEqual(expect.arrayContaining([
+      expect.stringContaining('call_missing_output'),
+      expect.stringContaining('call_missing_call'),
+    ]));
+  });
+
+  it('prevents the upstream 400 shape for an orphan function_call', async () => {
+    electronFetch.mockImplementation(async (_url, init) => {
+      const input = JSON.parse(init.body).input as Array<Record<string, unknown>>;
+      const calls = new Set(input.filter((item) => item.type === 'function_call').map((item) => item.call_id));
+      const outputs = new Set(input.filter((item) => item.type === 'function_call_output').map((item) => item.call_id));
+      const missing = [...calls].find((callId) => !outputs.has(callId));
+      if (missing) {
+        return { ok: false, status: 400, text: vi.fn().mockResolvedValue(`No tool output found for tool call ${missing}.`) };
+      }
+      return { ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }) };
+    });
+
+    await expect(new ResponsesProvider().inference([
+      { role: 'assistant', content: '', responsesOutput: [
+        { type: 'function_call', call_id: 'call_mutation_probe', name: 'write_file', arguments: '{}' },
+      ] },
+    ], [READ_TOOL], { provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: 'test-key' } as any)).resolves.toBeDefined();
   });
 
   it('streams answer deltas, reasoning/search progress, function arguments and cached usage without leaking process messages into text', async () => {

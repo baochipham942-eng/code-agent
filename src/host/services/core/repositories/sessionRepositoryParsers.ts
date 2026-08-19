@@ -139,6 +139,7 @@ export function rowToMessage(row: SQLiteRow): Message {
     hiddenAt: (row.hidden_at as number) || undefined,
     toolCalls: parseStoredJson<Message['toolCalls']>(row.tool_calls),
     toolResults: parseStoredJson<Message['toolResults']>(row.tool_results),
+    responsesOutput: parseStoredJson<Message['responsesOutput']>(row.responses_output),
     attachments: sanitizeAttachmentsForPersistence(parseStoredJson<Message['attachments']>(row.attachments)),
     thinking: (row.thinking as string) || undefined,
     effortLevel: (row.effort_level as Message['effortLevel']) || undefined,

@@ -44,6 +44,7 @@ function createSchema(db: BetterSqlite3.Database): void {
       timestamp INTEGER NOT NULL,
       tool_calls TEXT,
       tool_results TEXT,
+      responses_output TEXT,
       attachments TEXT,
       thinking TEXT,
       effort_level TEXT,

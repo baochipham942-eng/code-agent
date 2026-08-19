@@ -10,7 +10,7 @@
 | Renderer | `renderer-bundle.yml` | renderer capability diff、hot-update smoke、bundle 发布 |
 | 平台构建 | `build-windows-test.yml`、`build-x64-test.yml` | Windows 和 Intel macOS 构建验证 |
 | Poppler promotion | `build-poppler-sidecar.yml` | 在原生 arm64 / Intel runner 生成待复核的 sidecar、完整源码包和 manifest；不发布、不修改 lock |
-| 运行时质量门 | `webserver-boot.yml`、`swarm-ci.yml`、`eval-harness-gate.yml`、`main-full-gate.yml`、`rust-ci.yml`、`release-evidence-gate.yml`、`desktop-lifecycle.yml` | webServer 启动、Swarm、评测框架回归、main 合后全量组合检测、src-tauri 的 cargo test + clippy、发版证据产出器的类型与静态合同、nightly 双平台生命周期验收（kill-restart / pause-resume / renderer 热更新） |
+| 运行时质量门 | `webserver-boot.yml`、`swarm-ci.yml`、`eval-harness-gate.yml`、`main-full-gate.yml`、`rust-ci.yml`、`release-evidence-gate.yml`、`long-session-scroll-gate.yml`、`desktop-lifecycle.yml` | webServer 启动、Swarm、评测框架回归、main 合后全量组合检测、src-tauri 的 cargo test + clippy、发版证据产出器合同、每 PR 长会话滚动正确性、nightly 双平台生命周期验收 |
 | 能力与 provider | `capability-evidence.yml`、`provider-symmetry.yml` | 能力证据和 provider 对称性合同 |
 | 云与数据 | `vercel-control-plane.yml`、`supabase-migrate.yml`、`supabase-keepalive.yml` | 控制面部署、数据库迁移和保活 |
 | 仓库治理 | `repository-structure.yml` | 导航链接、目录边界和增长 ratchet |
@@ -20,5 +20,5 @@
 1. workflow 文件名表达触发对象或交付物，不使用 `ci-2`、`misc` 等无业务含义名称。
 2. shell/Node 逻辑超过一个可独立验证步骤时移入 `scripts/`，workflow 只负责权限、环境、缓存和编排。
 3. 发布主链新增平台时优先拆 reusable workflow，避免继续扩大 `release.yml`。
-4. 新 workflow 必须配置明确的 `paths`、超时和 concurrency；需要写权限时按 job 最小授权。
+4. 新 workflow 必须配置超时和 concurrency；默认用明确的 `paths` 控制成本。只有经过评审、确实要覆盖所有 PR 的 repo-wide 门可以省略 `paths`，并须在 workflow 头注写清盲区与成本理由。
 5. 更新工作流职责时同步更新本页。

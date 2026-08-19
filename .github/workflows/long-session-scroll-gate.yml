@@ -1,0 +1,74 @@
+name: Long-session Scroll Gate
+
+# Repo-wide PR gate by design: renderer scrolling can regress through shared state, styles,
+# dependencies, or build configuration outside src/renderer. Do not add a paths filter.
+# Runtime-sensitive performance metrics remain in the JSON/stdout report, while only the
+# deterministic anchor/search/streaming-follow correctness checks block PRs.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: long-session-scroll-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  correctness:
+    name: Long-session scroll correctness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm ci --ignore-scripts
+          npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
+
+      - name: Read Playwright version
+        id: playwright-version
+        run: |
+          version="$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run deterministic long-session correctness gates
+        env:
+          E2E_BROWSER_CHANNEL: chromium
+          LONG_SESSION_REPORT: ${{ runner.temp }}/long-session-pr-${{ github.sha }}.json
+        run: npm run perf:long-session -- --out "$LONG_SESSION_REPORT" --gate-profile correctness
+
+      - name: Protect release evidence from PR runs
+        if: always()
+        run: git diff --exit-code -- docs/perf/long-session-gold-latest.json
+
+      - name: Upload metrics and correctness evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: long-session-pr-${{ github.run_id }}
+          path: ${{ runner.temp }}/long-session-pr-${{ github.sha }}.json
+          if-no-files-found: error
+          retention-days: 14

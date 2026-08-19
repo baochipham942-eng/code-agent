@@ -733,6 +733,10 @@ async function main(): Promise<void> {
 
     await installUiCancelRunInterception(page, uiCancelRunRequests);
     await installIsolatedFolderTrustSafetyRoute(page);
+    const startupDoctorSettled = page.waitForResponse(
+      (response) => response.url().includes('/api/domain/provider/run_doctor'),
+      { timeout: 20_000 },
+    ).catch(() => null);
     const folderTrustEvaluated = page.waitForResponse(
       (response) => response.url().includes('/api/domain/folderTrust/get'),
       { timeout: 20_000 },
@@ -799,6 +803,10 @@ async function main(): Promise<void> {
       failures.push(`dev agent event hook failed with ${devSignalResponse.status}: ${devSignalResponse.text.slice(0, 500)}`);
     }
 
+    // App schedules a local doctor check 10s after mount. On a cold post-build run it can
+    // occupy the event loop for ~2.5s and manufacture a false >1s cancellation result.
+    // Measure the cancel path only after that unrelated startup work has settled.
+    await startupDoctorSettled;
     const uiCancel = await verifyRendererCancelClick(page, uiCancelRunRequests, failures);
 
     if (consoleErrors.length > 0) {

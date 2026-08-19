@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.33.0] - 2026-08-19
 
+> 面向用户的发版说明见 [docs/releases/v0.33.0.md](docs/releases/v0.33.0.md)。
+
 自 v0.32.0 起 main 累计 177 个提交。本版主线是**把「声明」变成「机器闸」**：模型能力、工具可达性、账本登记、审批边界四处此前都靠约定维持，这一版各自立了门。同时语音线完成 L7 全部收口，注意力预算完成 L8 第一轮瘦身（常驻工具表每轮省约 4.5k token）。
 
 ### Added

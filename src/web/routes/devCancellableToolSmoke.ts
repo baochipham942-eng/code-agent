@@ -6,6 +6,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import type { ToolExecutionResult } from '../../host/tools/types';
+import type { PermissionAskResult } from '../../shared/contract/permission';
 import { formatError } from '../helpers/utils';
 import type { WebRouteLogger } from './routeTypes';
 
@@ -40,6 +41,18 @@ interface DevCancellableToolSmokeDeps {
 }
 
 const activeCancellableTools = new Map<string, DevCancellableToolEntry>();
+const E2E_APPROVAL_POLICY = 'e2e-scripted-allow';
+
+export function getDevCancellableToolPermissionHandler(
+  body: unknown,
+  env: NodeJS.ProcessEnv = process.env,
+): (() => Promise<PermissionAskResult>) | undefined {
+  const record = readObjectBody(body);
+  if (record.approvalPolicy !== E2E_APPROVAL_POLICY || env.CODE_AGENT_E2E !== '1') {
+    return undefined;
+  }
+  return async () => ({ approved: true, approvalSource: 'scripted' });
+}
 
 function readObjectBody(body: unknown): Record<string, unknown> {
   return body && typeof body === 'object' && !Array.isArray(body)
@@ -178,11 +191,19 @@ async function startCancellableTool(body: unknown): Promise<DevCancellableToolEn
   const controller = new AbortController();
   const id = randomUUID();
 
-  const [{ initializeCLIServices, getToolExecutor }] = await Promise.all([
+  const [{ initializeCLIServices, getToolExecutor }, { ToolExecutor }] = await Promise.all([
     import('../../cli/bootstrap'),
+    import('../../host/tools/toolExecutor'),
   ]);
   await initializeCLIServices();
-  const executor = getToolExecutor();
+  const requestPermission = getDevCancellableToolPermissionHandler(body);
+  const executor = requestPermission
+    ? new ToolExecutor({
+        requestPermission,
+        workingDirectory,
+        ledgerOrigin: 'cli',
+      })
+    : getToolExecutor();
   if (!executor) {
     throw new Error('ToolExecutor is not available.');
   }

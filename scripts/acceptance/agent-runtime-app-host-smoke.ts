@@ -171,6 +171,7 @@ function startAppHost(port: number, dataDir: string): { child: ChildProcessByStd
       CODE_AGENT_DATA_DIR: dataDir,
       CODE_AGENT_ENABLE_DEV_API: 'true',
       CODE_AGENT_E2E: '1',
+      CODE_AGENT_E2E_LOCAL_AGENT_MODEL: '1',
       // Keep fresh-profile onboarding from covering the renderer stop control.
       // The smoke intercepts /api/run and never sends this local-only value to a provider.
       OPENAI_API_KEY: 'agent-runtime-app-host-smoke-local-only',
@@ -382,6 +383,41 @@ async function fetchFromRenderer<T>(
   }, { requestPath: path, requestInit: init });
 }
 
+async function seedRuntimeModelForSmoke(page: Page): Promise<void> {
+  const response = await fetchFromRenderer<{ success?: boolean; error?: { message?: string } }>(
+    page,
+    '/api/domain/settings/set',
+    {
+      method: 'POST',
+      body: {
+        payload: {
+          models: {
+            default: 'openai',
+            defaultProvider: 'openai',
+            providers: {
+              openai: {
+                enabled: true,
+                apiKeyConfigured: true,
+                model: 'gpt-5',
+                models: { 'gpt-5': { enabled: true } },
+              },
+            },
+          },
+          onboarding: {
+            completedAt: Date.now(),
+            defaultEngine: 'native',
+          },
+        },
+      },
+    },
+  );
+  if (!response.ok || response.data?.success === false) {
+    throw new Error(
+      `agent-runtime smoke could not seed its isolated runtime model: ${response.status} ${response.text.slice(0, 500)}`,
+    );
+  }
+}
+
 async function installUiCancelRunInterception(
   page: Page,
   runRequests: UiCancelRunRequest[],
@@ -492,6 +528,11 @@ async function verifyRendererCancelClick(
   cancelToRunReleaseMs: number | null;
   cancelToUiCleanupMs: number | null;
 }> {
+  const observedRequests: string[] = [];
+  const observeRequest = (request: { method(): string; url(): string }) => {
+    observedRequests.push(`${request.method()} ${request.url()}`);
+  };
+  page.on('request', observeRequest);
   const input = page.locator('[data-chat-input]').first();
   await input.scrollIntoViewIfNeeded();
   await input.fill(UI_CANCEL_PROMPT);
@@ -509,9 +550,24 @@ async function verifyRendererCancelClick(
   ).then(() => true).catch(() => false);
   const latestRun = await readLatestUiCancelRunRequest(page);
   const sessionId = latestRun?.sessionId ?? runRequests[runRequests.length - 1]?.sessionId ?? null;
+  page.off('request', observeRequest);
 
   if (!runIntercepted || !sessionId) {
-    failures.push('renderer cancel smoke did not reach a held /api/run request with a sessionId.');
+    const diagnostics = await page.evaluate(() => ({
+      href: window.location.href,
+      bodyText: (document.body.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 800),
+      inputText: document.querySelector('[data-chat-input]')?.textContent ?? null,
+      visibleDialogs: [...document.querySelectorAll('[role="dialog"]')]
+        .filter((element) => element instanceof HTMLElement && element.offsetParent !== null)
+        .map((element) => (element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 300)),
+      visibleToasts: [...document.querySelectorAll('[data-sonner-toast]')]
+        .filter((element) => element instanceof HTMLElement && element.offsetParent !== null)
+        .map((element) => (element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 300)),
+    }));
+    failures.push(
+      'renderer cancel smoke did not reach a held /api/run request with a sessionId. '
+      + `diagnostics=${JSON.stringify({ diagnostics, observedRequests })}`,
+    );
     return {
       prompt: UI_CANCEL_PROMPT,
       sessionId,
@@ -720,6 +776,8 @@ async function main(): Promise<void> {
     if (!authResponse.ok || !authAuthenticated) {
       failures.push(`auth gate failed with ${authResponse.status}: ${authResponse.text.slice(0, 500)}`);
     }
+
+    await seedRuntimeModelForSmoke(page);
 
     const devEvent = {
       type: 'notification',

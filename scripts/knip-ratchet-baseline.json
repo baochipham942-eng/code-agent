@@ -1353,11 +1353,6 @@
     },
     {
       "file": "src/host/agent/verification.ts",
-      "name": "VerificationSkippedCheck",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/verification.ts",
       "name": "VerificationStatus",
       "kind": "type"
     },
@@ -4707,11 +4702,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/security/execPolicy.ts",
-      "name": "resetExecPolicyStore",
-      "kind": "export"
-    },
-    {
       "file": "src/host/security/inputSanitizer.ts",
       "name": "SanitizationMode",
       "kind": "type"
@@ -6288,27 +6278,12 @@
     },
     {
       "file": "src/host/services/toolSearch/index.ts",
-      "name": "CORE_TOOLS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/toolSearch/index.ts",
-      "name": "DEFERRED_TOOLS_META",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/toolSearch/index.ts",
       "name": "isCoreToolName",
       "kind": "export"
     },
     {
       "file": "src/host/services/toolSearch/index.ts",
       "name": "setProtocolToolNameChecker",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/toolSearch/index.ts",
-      "name": "ToolSearchService",
       "kind": "export"
     },
     {
@@ -6593,22 +6568,7 @@
     },
     {
       "file": "src/host/telemetry/diagnosticVersions.ts",
-      "name": "getAgentVersion",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/diagnosticVersions.ts",
       "name": "getPromptVersion",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/diagnosticVersions.ts",
-      "name": "getToolSchemaVersion",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/diagnosticVersions.ts",
-      "name": "resetToolSchemaVersionCache",
       "kind": "export"
     },
     {
@@ -6920,11 +6880,6 @@
       "file": "src/host/testing/harnessComparison.ts",
       "name": "HarnessVariantRunResult",
       "kind": "type"
-    },
-    {
-      "file": "src/host/testing/reportGenerator.ts",
-      "name": "generateJsonReport",
-      "kind": "export"
     },
     {
       "file": "src/host/testing/testRunner.ts",
@@ -7914,11 +7869,6 @@
     {
       "file": "src/renderer/components/DiffView.tsx",
       "name": "default",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/DiffView.tsx",
-      "name": "DiffPreview",
       "kind": "export"
     },
     {
@@ -10752,11 +10702,6 @@
       "kind": "export"
     },
     {
-      "file": "src/shared/contract/artifactRoleRegistry.ts",
-      "name": "isDeliverableArtifact",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/contract/authInventory.ts",
       "name": "AUTH_INVENTORY",
       "kind": "export"
@@ -11099,11 +11044,6 @@
     {
       "file": "src/shared/contract/deliverable.ts",
       "name": "DeliverableEvidenceKind",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/deliverable.ts",
-      "name": "DeliverableEvidenceStatus",
       "kind": "type"
     },
     {

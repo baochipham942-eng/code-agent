@@ -81,7 +81,7 @@ describe('审批响应投递链路（web 路径）', () => {
   const warnText = () => JSON.stringify(logger.warn.mock.calls);
 
   beforeEach(() => {
-    // 测试环境默认开着 AUTO_TEST（requestPermission 会直接放行），本套件要的正是真实审批等待
+    // 仓库测试环境不默认设置 AUTO_TEST；这里显式清空，避免调用方 shell 遗留变量绕过真实审批等待。
     vi.stubEnv('AUTO_TEST', '');
     handlers = new Map();
     pendingDevPermissions = new Map();

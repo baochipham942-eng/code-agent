@@ -341,8 +341,13 @@ class VadProcessor {
     try {
       const runtime = loadVadRuntime(__dirname);
       if (!runtime.ok && runtime.reason === 'missing-runtime') {
-        logger.warn('[音频采集] VAD 运行组件未安装，等待本地能力组件准备完成', {
+        const message = process.platform === 'darwin' && process.arch === 'x64'
+          ? '[音频采集] Intel Mac 不支持 VAD 运行组件，桌面环境音采集未启动'
+          : '[音频采集] 本地推理运行时缺失（onnxruntime 按需资产未安装），桌面环境音采集未启动';
+        logger.warn(message, {
           module: 'onnxruntime-node',
+          platform: process.platform,
+          arch: process.arch,
         });
         return false;
       }

@@ -1,6 +1,6 @@
 # Intel Mac (x86_64) 适配方案
 
-> 状态：草案 v3（已过艾克斯交叉验证 + PII/VAD 澄清，待真机验证）｜创建 2026-06-09｜linchen + 艾克斯(Codex)
+> 状态：草案 v4（已修正 VAD 实际影响面，Intel 真机验证未完成）｜创建 2026-06-09｜linchen + 艾克斯(Codex)
 > 背景：同事用 Intel Mac，当前 Agent Neo 仅发 arm64，无法运行。
 > 验证记录见 §7。
 
@@ -12,8 +12,9 @@
   - 不拆 `stable-x64` 通道：Tauri 2 updater 支持**一个 `stable/latest.json` 同时含 `darwin-aarch64` + `darwin-x86_64`**，客户端按自身架构选包，无需双通道。
 - **rtk 带上 x64**（已决策，2026-06-09）：上游 `rtk v0.39.0+` 有 `rtk-x86_64-apple-darwin.tar.gz`，跟 uv 同级好拿，x64 用户功能与 arm64 对齐。
 - **PII 脱敏在 x64 不受影响**：脱敏走 **Python 子进程**（uv → venv → pip 装 `onnxruntime` + GLiNER），Python 版 onnxruntime 有 macOS x64 wheel，只要 uv x64 跑起来即可，**不依赖 node `onnxruntime-node`**。
-- **VAD 语音活动检测不适配 x64**（已决策，2026-06-09）：node `onnxruntime-node` 包只带 `darwin/arm64` 无 x64。VAD 走 runtime-asset 分发（不在 tauri.conf 资源里，不卡 build），且代码已对 `missing-runtime` 优雅降级（`audioVadRuntime.ts` + `desktopAudioCapture.ts:343`）。x64 只需**不产 `onnxruntime-vad` runtime-asset**，VAD 自动静默关闭，**零代码改动**。
-- **唯一硬约束：真机验证**。交叉编译容易，验证 native 加载、签名公证、音频采集只能上真机 —— 由同事提供 Intel Mac 跑 §5 验收。
+- **桌面环境音采集在 x64 不可用**（已决策，2026-06-09）：node `onnxruntime-node` 包只带 `darwin/arm64`，x64 构建不产 `onnxruntime-vad` runtime-asset。当前代码在 VAD 初始化失败后直接返回，因此 Intel Mac 上整条桌面环境音采集不会启动，不会产生音频分段、ASR 转写或活动记录。
+- **实时语音通话和 renderer 语音输入不受影响**：两者走 renderer 侧 `getUserMedia` / `AudioWorklet` 路径，不依赖 host 侧桌面环境音采集或 `onnxruntime-node`。
+- **唯一硬约束：真机验证**。交叉编译容易，验证 native 加载、签名公证和实际运行只能上真机。当前开发机为 arm64，Intel 真机验证未完成，不能据此写成已验通过。
 
 ## 1. 现状盘点：哪些地方死锁了 arm64
 
@@ -31,7 +32,7 @@
 | 8 | keytar | 只 rebuild 了 arm64 `.node` | `node_modules/keytar/build/Release/` | 中 |
 | 9 | sharp + libvips | 只装/打了 arm64；**package-lock 已含 x64 条目** | `tauri.conf.json:76-80`、`build-runtime-assets.mjs:50,57` | 中 |
 | 10a | PII 脱敏（gliner） | 走 Python 子进程（uv+venv），**不依赖 node onnxruntime** | `piiEntityDetector.ts`、`scripts/pii/gliner_onnx_runner.py` | ✅ 随 uv x64 即可 |
-| 10b | VAD（onnxruntime-node，音频） | npm 包只有 darwin/arm64；runtime-asset 分发，已优雅降级 | `audioVadRuntime.ts`、`build-runtime-assets.mjs:22` | x64 不适配（决策） |
+| 10b | VAD（onnxruntime-node，桌面环境音采集） | npm 包只有 darwin/arm64；runtime 缺失时采集入口直接返回 | `audioVadRuntime.ts`、`desktopAudioCapture.ts`、`build-runtime-assets.mjs` | x64 不适配，桌面环境音采集不启动 |
 | 11 | tauri.conf.json resources | 写死 `darwin-arm64`/`sharp-darwin-arm64`/`scripts/rtk` 路径 | `tauri.conf.json:70,76-80,86` | 中 |
 | 12 | 更新 manifest | `latest.json` / DMG URL 写死 arm64 | `build-stable-release-json.mjs` | 中 |
 | 13 | runtimeAssetRegistry | sharp 资源硬编码 arm64 | `runtimeAssetRegistry.ts` | 中 |
@@ -53,7 +54,7 @@
 | `better-sqlite3` / `keytar` | **在 Intel runner 原生 rebuild**（C++ 模块，arm64 交叉编 x64 易卡 node-gyp/ABI/codesign） | 中 |
 | `sharp` + libvips | package-lock 已含 `@img/sharp-darwin-x64` / `sharp-libvips-darwin-x64`，按架构选打包路径 | 中 |
 | PII 脱敏（gliner） | Python 子进程跑，Python `onnxruntime` 有 x64 wheel，随 uv x64 自动可用 | 免 |
-| VAD（onnxruntime-node） | **x64 不适配**（决策）：不产 `onnxruntime-vad` runtime-asset，代码已对 missing-runtime 降级 | 免 |
+| VAD（onnxruntime-node） | **x64 不适配**（决策）：不产 `onnxruntime-vad` runtime-asset；当前行为是桌面环境音采集不启动 | 能力缺口，待独立方案处理 |
 
 ## 3. 推荐策略：独立 x64 构建 + 单 manifest
 
@@ -85,7 +86,7 @@ arm64 构建（现状不动）          x64 构建（新增）
 - [ ] 原生 rebuild `better-sqlite3` / `keytar`
 - [ ] sharp 按架构选 `@img/sharp-darwin-x64` + libvips-x64（lock 已有条目）
 - [ ] PII：确认 x64 上 `setup-gliner-pii.mjs`（2026-06-11 Node 化，原 .sh）用 x64 uv 建 venv、装 Python `onnxruntime` x64 wheel 正常
-- [ ] VAD：x64 构建跳过 `onnxruntime-vad` runtime-asset（`build-runtime-assets.mjs` 的 darwin/arm64 路径 x64 不产），依赖现成 missing-runtime 降级，无需改 VAD 代码
+- [ ] VAD：x64 构建跳过 `onnxruntime-vad` runtime-asset；验收预期为桌面环境音采集明确失败且日志说明能力缺口，不能记录为仅缺端点检测
 
 **P1 配置 / 资源**
 - [ ] `tauri.conf.json` resources 按架构注入（rtk/sharp/node-pty 走对应架构路径）
@@ -122,15 +123,15 @@ arm64 构建（现状不动）          x64 构建（新增）
 | 6 | 终端工具 | Agent 跑 bash 命令看到输出 | node-pty |
 | 7 | 图像 | 触发任意图片生成/处理 | sharp + libvips |
 | 8 | 截图/视觉 | computerUse 截图或 OCR | vision-ocr/tagger |
-| 9 | 音频 | 语音输入/系统音频采集 | system-audio-capture（+ ScreenCaptureKit） |
+| 9 | 实时语音通话与语音输入 | renderer 侧麦克风输入、实时通话可正常使用 | renderer `getUserMedia` / `AudioWorklet`，不依赖 VAD runtime asset |
 | 10 | PII 脱敏 | 触发 PII 脱敏，敏感信息被打码 | gliner（Python+uv，x64 应正常） |
-| 11 | 语音活动检测 | x64 上语音输入无自动端点检测 | VAD（**x64 预期不可用，属正常**，不算失败） |
+| 11 | 桌面环境音采集 | 启动请求明确失败，日志说明 Intel Mac 不支持 VAD 运行组件且采集未启动；不产生音频分段、ASR 转写或活动记录 | host VAD / 桌面环境音采集；当前能力缺口 |
 | 12 | 自动更新 | 检查更新能拉到 x64 包（不是 arm64 DMG） | latest.json + Vercel api arch 路由 |
 
 ## 6. 风险与未决
 
-- **VAD x64 关闭**（已决策）：x64 用户无自动语音端点检测（影响语音输入体验，不影响脱敏/核心功能）。PII 脱敏在 x64 正常（Python 路径）。
-- **真机依赖**：开发机 arm64，§5 全部靠同事真机，回归周期受其时间约束。
+- **桌面环境音采集缺失**（已决策）：x64 缺少 VAD runtime 后，host 侧桌面环境音采集直接停止启动。实时语音通话和 renderer 语音输入不受影响；PII 脱敏走 Python `onnxruntime` 路径，也不受影响。
+- **真机依赖**：开发机 arm64，无法证明 Intel Mac 的安装、启动、native 加载和运行表现。§5 Intel 真机验证仍未完成，回归周期受真机提供时间约束。
 - **CI 并发覆盖**：矩阵双架构若不隔离命名，会污染 stable 通道，必须先解决再开矩阵。
 - **签名公证**：x64 .app 走同一 Developer ID 链，理论无差异，需真机验 Gatekeeper 放行。
 - **Intel runner 长期**：`macos-15-intel` 支持到 2027.08，之后需自托管 Intel mac 或本地 x64 Mac 构建。
@@ -148,7 +149,7 @@ arm64 构建（现状不动）          x64 构建（新增）
 
 ### 关键实测结论（写代码时发现）
 - **audio sidecar x64 最低 macOS 13.0**：`SCStream`(12.3)+`capturesAudio`(13.0)；macOS 26 Tahoe 已弃 Intel，13.0 是 Intel 可用区间地板。
-- **onnxruntime-node npm 仅 darwin/arm64**（实 `find` 确认）→ x64 跳 `onnxruntime-vad` runtime-asset，VAD 走现成 `missing-runtime` 降级。
+- **onnxruntime-node npm 仅 darwin/arm64**（实 `find` 确认）→ x64 跳 `onnxruntime-vad` runtime-asset；`missing-runtime` 会让桌面环境音采集入口直接返回。
 - **rtk/uv x64 真实 sha256 已实拉计算并锁定**（非伪造）。
 
 ## 8. CI 矩阵 + updater 端点实施细则（待预发布 tag 验证）
@@ -187,6 +188,6 @@ arm64 构建（现状不动）          x64 构建（新增）
 
 外部依据：[Tauri updater docs](https://v2.tauri.app/plugin/updater/)、[actions/runner-images](https://github.com/actions/runner-images)（Intel 迁移 [#13045](https://github.com/actions/runner-images/issues/13045)）、[uv 0.11.16](https://api.github.com/repos/astral-sh/uv/releases/tags/0.11.16)、[rtk v0.39.0](https://api.github.com/repos/rtk-ai/rtk/releases/tags/v0.39.0)。
 
-**v3 追加澄清（2026-06-09，本地核查）**：v2 把 onnxruntime 笼统当作"最大未决"，实为两条独立路径——① PII 脱敏走 Python 子进程（uv+venv+pip onnxruntime，有 x64 wheel），x64 不受影响；② VAD 走 node `onnxruntime-node`（仅 arm64），但它是 runtime-asset（不卡 build）且代码已对 `missing-runtime` 优雅降级（`audioVadRuntime.ts`、`desktopAudioCapture.ts:343`）。决策：**VAD 不适配 x64，零代码改动自动降级**。onnxruntime 不再是阻塞项，工期由 3–5 天回落到 2–4 天。
+**v4 影响面修正（2026-08-19，本地核查）**：PII 脱敏与 VAD 仍是两条独立路径。① PII 脱敏走 Python 子进程（uv+venv+pip `onnxruntime`，有 x64 wheel），x64 不受影响；② 桌面环境音采集依赖 node `onnxruntime-node`（仅 arm64），VAD 初始化失败后 `startDesktopAudioCapture()` 直接返回。此前“仅缺自动端点检测”的描述与代码不符，现修正为：**Intel Mac 上桌面环境音采集不启动**。实时语音通话和 renderer 语音输入不走这条 host 链路，仍可使用。
 
-总体：**v3 可作施工依据**。剩余真正要做的：native rebuild（Intel runner）+ rtk/uv/sharp/swift x64 + CI 防覆盖 + updater 单 manifest + Vercel api 加 arch。
+总体：**v4 可作施工依据**。剩余真正要做的：native rebuild（Intel runner）+ rtk/uv/sharp/swift x64 + CI 防覆盖 + updater 单 manifest + Vercel api 加 arch；桌面环境音采集能力缺口需单独立项，不能混入 x64 构建适配。

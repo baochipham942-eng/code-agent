@@ -11,9 +11,12 @@ import { type Page } from '@playwright/test';
 // web e2e 是**自动登录**的（侧栏显示 Local Web Test User / 管理员），所以走的是后者：
 // 全新数据目录下弹层约在 t≈3s 才盖上来，t≈1s 时 DOM 里还什么都没有。
 // ⇒ 只在开头点一次是有竞态的：先跑完的断言侥幸绿，之后的被盖住。
-// 真正的兜底是 seedE2eSettings.ts 的「已过引导」固件（onboarding.completedAt 有值 ⇒
-// 上面那个函数直接 return，弹层从源头不出现）；本 helper 留着管「信任这个项目文件夹？」，
-// 以及别人手工起 server（没走 playwright config、没落固件）时的防御。
+// 曾经有过一个「已过引导」固件（seedE2eSettings，从源头让弹层不出现），
+// 但它的反向变异两轮都没红、拿不出承重证据，2026-08-19 由产品负责人拍板撤除
+// ——退役理由与「什么信号出现时该加回来」写在 playwright.e2e.config.ts 的退役标注里。
+// ⇒ 现在**这个 helper 就是唯一的处理路径**：点掉已经弹出来的层，
+//   并且它本身带竞态（弹层 t≈3s 才盖上来，开头点一次点不到后来的）。
+//   剧本若在开头 3 秒内断言并成片报「找不到元素/被遮挡」，先怀疑这个竞态。
 //
 // 这段逻辑此前在 9 个 spec 里各存一份（voice-ux-display / goal-mode / slash-commands …），
 // 第 10 份起收在这里；存量那 9 份不动（改它们不在本单范围内）。

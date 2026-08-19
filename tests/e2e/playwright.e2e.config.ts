@@ -2,7 +2,6 @@ import { defineConfig } from '@playwright/test';
 import os from 'node:os';
 import path from 'node:path';
 import { resolveE2eWebPort } from './e2eWebPort';
-import { seedE2eSettings } from './seedE2eSettings';
 
 delete process.env.FORCE_COLOR;
 delete process.env.NO_COLOR;
@@ -21,10 +20,29 @@ const e2eHome = process.env.CODE_AGENT_E2E_HOME
   || path.join(os.tmpdir(), `code-agent-e2e-home-${webPort}`);
 const e2eDataDir = process.env.CODE_AGENT_E2E_DATA_DIR
   || path.join(os.tmpdir(), `code-agent-e2e-data-${webPort}`);
-// 「已过引导」固件必须在 webServer 启动前落盘，否则 App 起来就被登录/引导弹层盖住。
-// 放在 config 模块顶层（而不是 globalSetup）是刻意的：config 求值必然早于 webServer 启动，
-// 而 globalSetup 与 webServer 的先后在 Playwright 各版本间变过。
-seedE2eSettings(e2eDataDir);
+// ============================================================================
+// 【已退役】「已过引导」设置固件 seedE2eSettings（2026-08-19 产品负责人拍板撤除）
+// ============================================================================
+// 曾经在这里调用 seedE2eSettings(e2eDataDir)：webServer 启动前往数据目录写一份
+// config.json，让 settings.ipc.ts:326 的 handleCheckApiKeyConfigured 认为引导已完成
+// （判据是 settings.onboarding.completedAt 有值），从源头不弹 AuthModal / ModelOnboardingModal。
+//
+// 🔴 为什么撤：**它的反向变异两轮都没红**——摘掉固件跑，用例该绿的照样绿，
+//    也就是拿不出「这个固件在承重」的证据。唯一量到的差别是
+//    「裸数据目录 t≈3s 时 dialogs=1，加固件全程 dialogs=0」。
+//    按本仓规矩（门必须能报告自己的盲区、验收断言要有承重证据），
+//    一个证明不了自己有用的稳定器留在门里，将来排查时会是第一个可疑对象却又无法排除。
+//
+// 🔴 什么信号出现时该把它加回来（这是撤除时约定的复发判据，别凭印象改）：
+//    e2e 出现**成片**的「元素找不到 / 被遮挡」，且失败集中在剧本开头 3 秒内的断言，
+//    手工复现时能看到 AuthModal 或 ModelOnboardingModal 盖住界面
+//    ——那就是这里描述的竞态真的发生了（机器慢、CI 抢占、启动延迟变长都可能触发）。
+//    到那时它有了承重证据，加回来是对的，而且**那时才写得出会红的反向变异**。
+//
+// 实现原文见 git：`git show a055e75d8 -- tests/e2e/seedE2eSettings.ts`（PR #1246 引入），
+// 撤除经过见私档 docs/evidence/2026-08-18-N-E2E-CONTRACT.md 与本次退役记录。
+// 兜底仍在：tests/e2e/firstRunDialogs.ts 的 dismissFirstRunDialogs（点掉已经弹出来的层）。
+// ============================================================================
 
 export default defineConfig({
   testDir: '.',

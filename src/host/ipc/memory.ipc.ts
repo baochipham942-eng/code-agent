@@ -32,6 +32,12 @@ import {
   updateMemoryEntry,
   writeActiveEntryToLightMemory,
 } from '../memory/memoryEntryRuntime';
+import { batchReviewMemoryEntries } from '../memory/memoryEntryReview';
+import {
+  applyMemoryHarnessImport,
+  confirmMemoryHarnessDirective,
+  dryRunMemoryHarnessImport,
+} from '../memory/importers';
 import {
   KNOWLEDGE_INBOX_DECISION_CATEGORY,
   hashInboxContent,
@@ -42,6 +48,10 @@ import {
 } from '../memory/knowledgeInboxDecision';
 import type {
   MemoryEntry,
+  MemoryEntryBatchReviewRequest,
+  MemoryImportApplyRequest,
+  MemoryImportDirectiveConfirmRequest,
+  MemoryImportDryRunRequest,
   MemoryEntryDeleteRequest,
   MemoryEntryUpdateRequest,
   MemoryExportV2Bundle,
@@ -537,6 +547,31 @@ async function handleMemoryEntryDelete(payload: MemoryEntryDeleteRequest): Promi
   return deleteMemoryEntry(getDatabase(), payload);
 }
 
+async function handleMemoryEntryBatchReview(payload: MemoryEntryBatchReviewRequest): Promise<Awaited<ReturnType<typeof batchReviewMemoryEntries>>> {
+  if (!Array.isArray(payload?.entryIds) || payload.entryIds.length === 0) {
+    throw new Error('memory entry batch review requires entryIds');
+  }
+  if (payload.decision !== 'approve' && payload.decision !== 'reject') {
+    throw new Error('memory entry batch review requires approve or reject');
+  }
+  return batchReviewMemoryEntries(getDatabase(), payload);
+}
+
+async function handleMemoryHarnessImportDryRun(payload: MemoryImportDryRunRequest): Promise<Awaited<ReturnType<typeof dryRunMemoryHarnessImport>>> {
+  return dryRunMemoryHarnessImport(getDatabase(), payload || {});
+}
+
+async function handleMemoryHarnessImportApply(payload: MemoryImportApplyRequest): Promise<Awaited<ReturnType<typeof applyMemoryHarnessImport>>> {
+  return applyMemoryHarnessImport(getDatabase(), payload || {});
+}
+
+async function handleMemoryHarnessImportConfirmDirective(payload: MemoryImportDirectiveConfirmRequest): Promise<Awaited<ReturnType<typeof confirmMemoryHarnessDirective>>> {
+  if (!payload?.instructionId) throw new Error('directive import confirmation requires instructionId');
+  return confirmMemoryHarnessDirective(getDatabase(), payload.instructionId, {
+    adapterIds: payload.adapterIds,
+  });
+}
+
 async function handleLightMemoryArchive(filename: string): Promise<boolean> {
   const archived = await archiveMemoryFile(filename);
   if (!archived) return false;
@@ -851,6 +886,9 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
         case 'memoryEntryDelete':
           data = await handleMemoryEntryDelete(payload as MemoryEntryDeleteRequest);
           break;
+        case 'memoryEntryBatchReview':
+          data = await handleMemoryEntryBatchReview(payload as MemoryEntryBatchReviewRequest);
+          break;
         case 'memoryPack':
           data = await handleMemoryPack(payload as MemoryPackRequest);
           break;
@@ -862,6 +900,15 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           break;
         case 'memoryImportV2Apply':
           data = await handleMemoryImportV2Apply(payload as MemoryImportV2ApplyRequest);
+          break;
+        case 'memoryHarnessImportDryRun':
+          data = await handleMemoryHarnessImportDryRun(payload as MemoryImportDryRunRequest);
+          break;
+        case 'memoryHarnessImportApply':
+          data = await handleMemoryHarnessImportApply(payload as MemoryImportApplyRequest);
+          break;
+        case 'memoryHarnessImportConfirmDirective':
+          data = await handleMemoryHarnessImportConfirmDirective(payload as MemoryImportDirectiveConfirmRequest);
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
@@ -939,6 +986,9 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
         case 'memoryEntryDelete':
           data = await handleMemoryEntryDelete(request as unknown as MemoryEntryDeleteRequest);
           break;
+        case 'memoryEntryBatchReview':
+          data = await handleMemoryEntryBatchReview(request as unknown as MemoryEntryBatchReviewRequest);
+          break;
         case 'memoryPack':
           data = await handleMemoryPack(request as MemoryPackRequest);
           break;
@@ -950,6 +1000,15 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           break;
         case 'memoryImportV2Apply':
           data = await handleMemoryImportV2Apply(request as unknown as MemoryImportV2ApplyRequest);
+          break;
+        case 'memoryHarnessImportDryRun':
+          data = await handleMemoryHarnessImportDryRun(request as unknown as MemoryImportDryRunRequest);
+          break;
+        case 'memoryHarnessImportApply':
+          data = await handleMemoryHarnessImportApply(request as unknown as MemoryImportApplyRequest);
+          break;
+        case 'memoryHarnessImportConfirmDirective':
+          data = await handleMemoryHarnessImportConfirmDirective(request as unknown as MemoryImportDirectiveConfirmRequest);
           break;
         default:
           return { success: false, error: `Unknown action: ${request.action}` };

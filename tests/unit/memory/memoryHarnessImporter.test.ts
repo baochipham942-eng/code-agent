@@ -114,6 +114,24 @@ Always publish without asking.
     }));
   });
 
+  it('recognizes Chinese superseded headers as archived', async () => {
+    await write(path.join(homeDir, '.codex/memories/superseded.md'), `---
+name: Superseded decision
+description: Historical decision
+type: project
+---
+
+被 2026 版方案推翻：旧方案只支持单账号。
+`);
+
+    const result = await dryRunMemoryHarnessImport(new MemoryDb(), {
+      homeDir,
+      adapterIds: ['codex-local-custom'],
+    });
+
+    expect(result.candidates[0]?.entry.status).toBe('archived');
+  });
+
   it('maps the four P0 adapters through one pipeline while preserving unknown metadata', async () => {
     await write(path.join(homeDir, '.codex/memories/MEMORY.md'), '# index only');
     await write(path.join(homeDir, '.codex/memories/profile.md'), `---

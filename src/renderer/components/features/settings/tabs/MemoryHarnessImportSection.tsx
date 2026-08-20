@@ -10,6 +10,7 @@ import { IPC_DOMAINS } from '@shared/ipc/domains';
 import ipcService from '../../../../services/ipcService';
 import { isWebMode } from '../../../../utils/platform';
 import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 import { SettingsSection } from '../SettingsLayout';
 
 interface CommandResponse<T> {
@@ -29,7 +30,7 @@ function isResponse<T>(value: unknown): value is CommandResponse<T> {
 
 const INSTRUCTIONS_DISPLAY_LIMIT = 8;
 
-type HarnessImportText = import('../../../../i18n/zh').zh['settings']['memory']['harnessImport'];
+type HarnessImportText = typeof zh.settings.memory.harnessImport;
 
 /** dry-run 被跳过的来源 reason：已知值配 i18n 文案，未知自由字符串原样展示。 */
 export function harnessSkippedReasonLabel(reason: string, copy: HarnessImportText): string {

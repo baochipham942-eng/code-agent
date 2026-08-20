@@ -495,7 +495,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                         <td className="px-3 py-3 align-top">
                           {(() => {
                             const entry = entries.find((item) => item.id === row.id);
-                            if (!entry || entry.status !== 'candidate') return null;
+                            if (entry?.status !== 'candidate') return null;
                             if (entry.kind === 'directive') {
                               return (
                                 <span

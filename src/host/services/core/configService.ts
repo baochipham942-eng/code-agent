@@ -766,7 +766,8 @@ export class ConfigService implements IReadConfigService {
         if (firstModel) {
           this.settings.models.default = firstId;
           this.settings.models.defaultProvider = firstId as ModelProvider;
-          this.settings.models.providers[firstId]!.model = firstModel;
+          const providerSettings = this.settings.models.providers[firstId];
+          if (providerSettings) providerSettings.model = firstModel;
           changed = true;
           logger.info('Set shared provider as default model (no usable model before)', {
             provider: firstId,

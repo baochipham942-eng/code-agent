@@ -563,7 +563,7 @@ export async function rebuildLightMemoryIndex(): Promise<LightMemoryRebuildResul
         skippedFiles.push({ filename: entry, reason: issue });
         continue;
       }
-      if (parseMemoryEntryStatus(parsed.metadata.status) === 'archived') {
+      if ((parseMemoryEntryStatus(parsed.metadata.status) || 'active') !== 'active') {
         continue;
       }
       indexEntries.push({ filename: entry, description: parsed.description.trim() });

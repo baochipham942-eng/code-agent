@@ -68,7 +68,7 @@ export function parseImportMarkdown(raw: string, fallbackTitle: string): ParsedI
   const status = typeof metadata.status === 'string' ? metadata.status.toLowerCase() : '';
   const archived = status === 'archived'
     || Boolean(metadata.deprecated_by || metadata.deprecatedBy)
-    || /^(?:#{1,3}\s*)?(?:已作废|已归档|deprecated\b|archived\b|superseded\b)/i.test(body);
+    || /^(?:#{1,3}\s*)?(?:已作废|已归档|被.+推翻|deprecated\b|archived\b|superseded\b)/i.test(body);
 
   return { title, description, body, metadata, kind, hasExplicitKind, archived };
 }
@@ -85,6 +85,14 @@ export async function readMarkdownFile(filePath: string): Promise<{
     return stat.isFile() ? { raw, mtimeMs: stat.mtimeMs } : null;
   } catch {
     return null;
+  }
+}
+
+export async function directoryExists(root: string): Promise<boolean> {
+  try {
+    return (await fs.stat(root)).isDirectory();
+  } catch {
+    return false;
   }
 }
 

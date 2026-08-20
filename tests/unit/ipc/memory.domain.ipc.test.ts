@@ -53,7 +53,7 @@ vi.mock('../../../src/host/memory/memoryEntryRuntime', () => ({
   createMemoryMirrorRecord: vi.fn(),
   lightMemoryFileToEntry: vi.fn(),
   storedMemoryToEntry: vi.fn(),
-  writeActiveEntryToLightMemory: vi.fn(),
+  writeEntryToLightMemory: vi.fn(),
 }));
 vi.mock('../../../src/host/memory/importers', () => importer);
 vi.mock('../../../src/host/memory/memoryEntryReview', () => review);

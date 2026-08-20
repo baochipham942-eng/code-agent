@@ -29,7 +29,7 @@ import {
   packMemoryEntries,
   rebuildMemoryMirrorFromLightFiles,
   updateMemoryEntry,
-  writeActiveEntryToLightMemory,
+  writeEntryToLightMemory,
 } from '../../../src/host/memory/memoryEntryRuntime';
 
 function record(overrides: Partial<MemoryRecord>): MemoryRecord {
@@ -79,7 +79,7 @@ describe('memoryEntryRuntime', () => {
       now: 1778666000000,
     });
 
-    const file = await writeActiveEntryToLightMemory(entry);
+    const file = await writeEntryToLightMemory(entry);
 
     expect(file).toMatchObject({
       entryId: entry.id,

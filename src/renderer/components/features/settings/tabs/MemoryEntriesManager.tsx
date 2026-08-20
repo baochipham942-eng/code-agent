@@ -67,11 +67,27 @@ export interface MemoryEntryManagerRow {
   selected: boolean;
 }
 
-function visibleCandidateEntryIds(entries: MemoryEntry[], rows: MemoryEntryManagerRow[]): string[] {
+export function visibleCandidateEntryIds(entries: MemoryEntry[], rows: MemoryEntryManagerRow[]): string[] {
   const visible = new Set(rows.map((row) => row.id));
   return entries
-    .filter((entry) => entry.status === 'candidate' && visible.has(entry.id))
+    .filter((entry) => entry.status === 'candidate' && entry.kind !== 'directive' && visible.has(entry.id))
     .map((entry) => entry.id);
+}
+
+/** 批量转正被跳过的条目翻成人话：已知 reason 配文案，未知原样展示，并列出条目标题。 */
+export function formatBatchReviewSkippedDetail(
+  skipped: MemoryEntryBatchReviewResult['skipped'],
+  entries: MemoryEntry[],
+  labels: MemorySettingsText['entries']['batchReview'],
+): string {
+  const reasonLabels: Record<string, string> = labels.skippedReasonLabels;
+  return skipped
+    .map((item) => {
+      const title = entries.find((entry) => entry.id === item.entryId)?.title || item.entryId;
+      const reason = reasonLabels[item.reason] ?? item.reason;
+      return labels.skippedItem.replace('{title}', title).replace('{reason}', reason);
+    })
+    .join(labels.skippedItemSeparator);
 }
 
 const STATUS_OPTIONS: MemoryEntryStatus[] = ['candidate', 'active', 'rejected', 'stale', 'archived'];
@@ -263,12 +279,17 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
       decision,
     });
     if (response.success && response.data) {
-      const skipped = response.data.skipped.length;
+      const skippedItems = response.data.skipped;
+      let text = memoryText.entries.batchReview.result
+        .replace('{updated}', String(response.data.updated.length))
+        .replace('{skipped}', String(skippedItems.length));
+      if (skippedItems.length > 0) {
+        text += memoryText.entries.batchReview.skippedDetailPrefix
+          + formatBatchReviewSkippedDetail(skippedItems, entries, memoryText.entries.batchReview);
+      }
       setMessage({
-        type: skipped ? 'error' : 'success',
-        text: memoryText.entries.batchReview.result
-          .replace('{updated}', String(response.data.updated.length))
-          .replace('{skipped}', String(skipped)),
+        type: skippedItems.length ? 'error' : 'success',
+        text,
       });
       setSelectedCandidateIds(new Set());
       await loadEntries();
@@ -472,22 +493,41 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                         className={`cursor-pointer ${row.selected ? 'bg-indigo-500/10' : 'bg-zinc-900/30 hover:bg-zinc-800/60'}`}
                       >
                         <td className="px-3 py-3 align-top">
-                          {entries.find((entry) => entry.id === row.id)?.status === 'candidate' && (
-                            <input
-                              type="checkbox"
-                              checked={selectedCandidateIds.has(row.id)}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={(event) => {
-                                setSelectedCandidateIds((current) => {
-                                  const next = new Set(current);
-                                  if (event.target.checked) next.add(row.id);
-                                  else next.delete(row.id);
-                                  return next;
-                                });
-                              }}
-                              aria-label={memoryText.entries.batchReview.selectEntry.replace('{title}', row.title)}
-                            />
-                          )}
+                          {(() => {
+                            const entry = entries.find((item) => item.id === row.id);
+                            if (!entry || entry.status !== 'candidate') return null;
+                            if (entry.kind === 'directive') {
+                              return (
+                                <span
+                                  className="inline-flex items-center gap-1 text-[11px] text-zinc-500"
+                                  title={memoryText.entries.batchReview.directiveNeedsConfirmation}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    disabled
+                                    aria-label={memoryText.entries.batchReview.directiveNeedsConfirmation}
+                                  />
+                                  {memoryText.entries.batchReview.directiveNeedsConfirmation}
+                                </span>
+                              );
+                            }
+                            return (
+                              <input
+                                type="checkbox"
+                                checked={selectedCandidateIds.has(row.id)}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={(event) => {
+                                  setSelectedCandidateIds((current) => {
+                                    const next = new Set(current);
+                                    if (event.target.checked) next.add(row.id);
+                                    else next.delete(row.id);
+                                    return next;
+                                  });
+                                }}
+                                aria-label={memoryText.entries.batchReview.selectEntry.replace('{title}', row.title)}
+                              />
+                            );
+                          })()}
                         </td>
                         <td className="px-3 py-3 align-top">
                           <div className="max-w-[340px] truncate text-sm font-medium text-zinc-200">{row.title}</div>

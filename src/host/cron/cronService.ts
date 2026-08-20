@@ -893,9 +893,13 @@ export class CronService implements Disposable {
       }
 
       case 'memory-consolidation': {
-        // Internal maintenance: compress Light Memory without losing information.
+        // Internal maintenance: file truth + SQLite mirror are one lifecycle change.
         const { consolidateLightMemory } = await import('../lightMemory/consolidation');
-        const report = await consolidateLightMemory({ dryRun: action.dryRun ?? false });
+        const { getDatabase } = await import('../services/core/databaseService');
+        const report = await consolidateLightMemory({
+          dryRun: action.dryRun ?? false,
+          db: getDatabase(),
+        });
         console.error(
           `[CronService] Memory consolidation ${report.applied ? 'applied' : 'no-op'}`
           + ` (dryRun=${report.dryRun}, triggered=${report.triggered}, actions=${report.actions.length}): ${report.reason}`,

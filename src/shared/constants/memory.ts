@@ -86,10 +86,10 @@ export const MEMORY_CONSOLIDATION = {
   CRON_EXPRESSION: '0 0 4 * * 1',
   /**
    * 内置 consolidation job 是否 dry-run。
-   * 首版 = true（只输出计划/diff、不落盘），dry-run 验证信息无损后再改 false 开真写。
-   * 复查 2026-08-25：翻开关前提 = 指定验证人 + 「信息无损」判据落档（2026-07-25 费曼审计 P1-3）。
+   * 刀6 已完成软归档、双账同步、指令层对账与审计护栏，默认真写。
+   * 手动调用仍可显式传 dryRun=true 做零写入预演。
    */
-  DRY_RUN_DEFAULT: true,
+  DRY_RUN_DEFAULT: false,
   /** 触发 consolidation 的 memory 文件数阈值（低于此且 INDEX 未超预算则跳过，不烧 token） */
   FILE_COUNT_THRESHOLD: 40,
   /** LLM 压缩调用 max_tokens（要容纳合并后的多份文件正文） */
@@ -102,6 +102,8 @@ export const MEMORY_CONSOLIDATION = {
   MIN_FILE_BODY_CHARS: 200,
   /** 内置 job 识别标签（启动时按此 tag 查重，避免重复注册） */
   JOB_TAG: 'light-memory-consolidation',
+  /** 每次真跑追加一行 JSON，保留合并/降级/索引/镜像的可回放证据。 */
+  AUDIT_FILENAME: 'consolidation-audit.jsonl',
 } as const;
 
 /** 持久化角色资产（roles/<name>/ 三层记忆 + 履历 + 写回，内部文档） */

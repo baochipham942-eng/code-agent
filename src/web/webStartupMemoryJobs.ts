@@ -5,10 +5,8 @@
 // Electron main 路径，见 src/host/index.ts 头注释），所以**发行版里这个 job 从未被
 // 创建过**——记忆只写不整理。
 //
-// 重要：job 仍按 MEMORY_CONSOLIDATION.DRY_RUN_DEFAULT（当前 = true）注册，
-// 即只输出"打算怎么合并/删除"的计划与 diff、不落盘。这是 consolidation 作者的原意
-// （见该常量注释："dry-run 验证信息无损后再改 false 开真写"）。接线让计划变得可观测，
-// 翻成真写是另一个决定——那会动用户的记忆文件，必须先看过至少一次 dry-run 输出。
+// 刀6 已翻真写。启动时不只创建缺失 job，也会把旧版本遗留的 dryRun=true action
+// 原位升级为当前默认值，避免“代码已真写、存量调度仍永远空跑”的双态。
 //
 // 成本：consolidation 走 quick model，但有健康门——记忆文件数低于
 // MEMORY_CONSOLIDATION.FILE_COUNT_THRESHOLD 且 INDEX 未超预算时直接跳过、不烧 token。
@@ -30,7 +28,24 @@ export async function registerMemoryConsolidationJob(): Promise<void> {
   try {
     const { getCronService } = await import('../host/cron/cronService');
     const cron = getCronService();
-    if (cron.listJobs({ tags: [MEMORY_CONSOLIDATION.JOB_TAG] }).length > 0) return;
+    const existing = cron.listJobs({ tags: [MEMORY_CONSOLIDATION.JOB_TAG] })[0];
+    if (existing) {
+      const expectedAction = {
+        type: 'memory-consolidation' as const,
+        dryRun: MEMORY_CONSOLIDATION.DRY_RUN_DEFAULT,
+      };
+      if (
+        existing.action.type !== 'memory-consolidation'
+        || existing.action.dryRun !== expectedAction.dryRun
+      ) {
+        await cron.updateJob(existing.id, { action: expectedAction });
+        logger.info('Light Memory consolidation job action updated', {
+          jobId: existing.id,
+          dryRun: expectedAction.dryRun,
+        });
+      }
+      return;
+    }
     await cron.createJob({
       name: '[Maintenance] Light Memory consolidation',
       description: 'Compress ~/.code-agent/memory without losing information (quick model).',

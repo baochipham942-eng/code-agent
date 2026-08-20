@@ -856,9 +856,9 @@ Light Memory 是 Neo 唯一的跨会话记忆系统（File-as-Memory，`~/.code-
 | 环节 | 做什么 | 关键设计 |
 |------|--------|----------|
 | **WS4-A 写入端** | `runFinalizer` → `conversationJudge` 用 quick model 判会话是否值得记 + 抽 title/知识点 | 过滤"hi/ok/继续"类无价值会话；async fire-and-forget 不阻塞收尾；失败回退启发式，永不丢摘要 |
-| **WS4-B 整理端** | 周一 04:00 cron 跑 `consolidation`：gate 判定 → quick model 合并计划 → 落盘 + 重建 INDEX | gate 健康时零 token（INDEX≤200 行/无重复/文件<40 直接跳过）；信息无损 guard 拒绝孤立删除（裸删=丢信息）；默认 dry-run 验证后再真写 |
+| **WS4-B 整理端** | 周一 04:00 cron 跑 `consolidation`：gate 判定 → `routing.memory` 合并/指令冲突计划 → 新卡 + 来源软归档 + INDEX 指针更新 + DB mirror + JSONL 审计 | gate 健康时零 token；真写永不 rm、旧卡原文保留并用 `deprecated_by` 指向新卡；冲突记忆降级并标 `contradicts 指令层——verify`，指令文件只读 |
 
-> 设计文档 ws4-memory-consolidation.md，as-built 与设计零偏差。
+> 初始闭环见 ws4-memory-consolidation.md；2026-08-20 刀6在其上补齐软归档、双账、指令对账和审计真写护栏。
 
 ### W3: MCP 只读安全边界（WS5）
 
@@ -1188,10 +1188,10 @@ Parent Agent
 | **Session Metadata** | `src/host/lightMemory/sessionMetadata.ts` | 追踪使用频率/模型分布（借鉴 ChatGPT） |
 | **Recent Conversations** | `src/host/lightMemory/recentConversations.ts` | ~15 条近期对话摘要（借鉴 ChatGPT） |
 | **前端面板** | `src/renderer/.../settings/tabs/MemoryTab.tsx` | Light Memory 文件浏览器（替代旧 10+ 组件） |
-| **IPC 服务** | `src/host/lightMemory/lightMemoryIpc.ts` | 列出/读取/删除记忆文件 + 综合统计 |
+| **IPC 服务** | `src/host/lightMemory/lightMemoryIpc.ts` | 列出/读取/软归档记忆文件 + 综合统计 |
 | **会话判定（WS4-A, 2026-05-27）** | `src/host/lightMemory/conversationJudge.ts` | 会话收尾（`runFinalizer`）用 quick model 判 `worth/isMeeting/title/worthKnowledge`，过滤无价值对话（打招呼/确认）；async fire-and-forget 不阻塞；失败回退 `heuristicJudgment`。常量 `SESSION_JUDGE` |
-| **记忆整理（WS4-B, 2026-05-27）** | `src/host/lightMemory/consolidation.ts` | 周期压缩：gate 判定是否触发（INDEX>200 行 / 重复 name·description / 文件数≥40），quick model 生成合并计划，信息无损 guard 拒绝孤立删除 + 净删上限闸；默认 dry-run。常量 `MEMORY_CONSOLIDATION` |
-| **整理 cron（WS4-B, 2026-05-27）** | `cronService.ts` + `initBackgroundServices.ts` | 新 action `memory-consolidation`，内置 job 周一 04:00 本地时间跑，按 `JOB_TAG` 幂等注册；走 CronService（面板可见 + 执行历史），不起完整 agent 会话 |
+| **记忆整理（WS4-B, 2026-05-27；刀6 2026-08-20）** | `src/host/lightMemory/consolidation.ts` | 周期压缩：gate 判定是否触发（INDEX>200 行 / 重复 name·description / active 文件数≥40），`routing.memory` 生成合并与指令冲突计划；合并创建新卡、来源软归档、双账同步，INDEX 只改指针，每次真跑写 JSONL 审计；默认真写。常量 `MEMORY_CONSOLIDATION` |
+| **整理 cron（WS4-B, 2026-05-27；刀6 2026-08-20）** | `cronService.ts` + `webStartupMemoryJobs.ts` | action `memory-consolidation` 周一 04:00 本地时间跑，按 `JOB_TAG` 幂等注册；启动时把存量 dry-run action 升级到当前真写默认；走 CronService（面板可见 + 执行历史），不起完整 agent 会话 |
 
 **6 层上下文注入架构**（对标 ChatGPT 逆向工程发现的 6 层结构）:
 ```

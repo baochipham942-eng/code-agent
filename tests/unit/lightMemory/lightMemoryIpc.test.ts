@@ -28,12 +28,12 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 import {
   listMemoryFiles,
   readMemoryFile,
-  deleteMemoryFile,
   getLightMemoryStats,
   getLightMemoryHealth,
   rebuildLightMemoryIndex,
   writeLightMemoryFile,
   archiveMemoryFile,
+  updateLightMemoryIndexPointers,
 } from '../../../src/host/lightMemory/lightMemoryIpc';
 
 describe('lightMemoryIpc', () => {
@@ -159,6 +159,36 @@ ${body}
     });
   });
 
+  describe('updateLightMemoryIndexPointers', () => {
+    it('changes only memory pointers and preserves INDEX prose verbatim', async () => {
+      const original = [
+        '# Memory Index',
+        '',
+        'Keep this owner-written explanation.',
+        '',
+        '- [old-a.md](old-a.md) — Old A',
+        '- [old-b.md](old-b.md) — Old B',
+        '',
+        '<!-- owner note must survive -->',
+        '',
+      ].join('\n');
+      await fs.writeFile(path.join(memDir, 'INDEX.md'), original, 'utf-8');
+
+      const result = await updateLightMemoryIndexPointers({
+        remove: ['old-a.md', 'old-b.md'],
+        add: [{ filename: 'merged.md', description: 'Merged memory' }],
+      });
+
+      const updated = await fs.readFile(path.join(memDir, 'INDEX.md'), 'utf-8');
+      expect(result).toEqual({ removed: ['old-a.md', 'old-b.md'], added: ['merged.md'] });
+      expect(updated).toContain('Keep this owner-written explanation.');
+      expect(updated).toContain('<!-- owner note must survive -->');
+      expect(updated).not.toContain('old-a.md');
+      expect(updated).not.toContain('old-b.md');
+      expect(updated).toContain('- [merged.md](merged.md) — Merged memory');
+    });
+  });
+
   // --------------------------------------------------------------------------
   // readMemoryFile
   // --------------------------------------------------------------------------
@@ -236,51 +266,6 @@ ${body}
       expect(raw).toContain('entry_id: mem_entry_abc123');
       expect(raw).toContain('status: active');
       expect(raw).toContain('schema_version: 2');
-    });
-  });
-
-  // --------------------------------------------------------------------------
-  // deleteMemoryFile
-  // --------------------------------------------------------------------------
-
-  describe('deleteMemoryFile', () => {
-    it('should delete an existing memory file', async () => {
-      await writeMemoryFile('to_delete.md', {
-        name: 'Delete',
-        description: 'To be deleted',
-        type: 'feedback',
-      }, 'Temporary');
-
-      const result = await deleteMemoryFile('to_delete.md');
-      expect(result).toBe(true);
-
-      // Verify file is gone
-      const exists = await fs.stat(path.join(memDir, 'to_delete.md')).then(() => true, () => false);
-      expect(exists).toBe(false);
-    });
-
-    it('should remove entry from INDEX.md', async () => {
-      // Create INDEX.md with two entries
-      await fs.writeFile(path.join(memDir, 'INDEX.md'),
-        '# Memory Index\n\n- [keep.md](keep.md) — Keep this\n- [remove.md](remove.md) — Remove this\n',
-        'utf-8'
-      );
-      await writeMemoryFile('remove.md', {
-        name: 'Remove',
-        description: 'Remove this',
-        type: 'user',
-      }, 'content');
-
-      await deleteMemoryFile('remove.md');
-
-      const indexContent = await fs.readFile(path.join(memDir, 'INDEX.md'), 'utf-8');
-      expect(indexContent).toContain('[keep.md]');
-      expect(indexContent).not.toContain('[remove.md]');
-    });
-
-    it('should return true even for non-existent file (ENOENT)', async () => {
-      const result = await deleteMemoryFile('nonexistent.md');
-      expect(result).toBe(true);
     });
   });
 

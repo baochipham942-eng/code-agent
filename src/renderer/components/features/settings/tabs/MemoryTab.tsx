@@ -34,6 +34,7 @@ import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 import { useAppStore, type SettingsMemoryFocus } from '../../../../stores/appStore';
 import { MemoryEntriesManager } from './MemoryEntriesManager';
+import { MemoryHarnessImportSection } from './MemoryHarnessImportSection';
 import { KnowledgeInboxSection } from './KnowledgeInboxSection';
 import { MemoryDiagnosticsSection } from './MemoryDiagnosticsSections';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -596,6 +597,8 @@ export const MemoryTab: React.FC = () => {
           <span>{message.text}</span>
         </div>
       )}
+
+      <MemoryHarnessImportSection onChanged={loadData} />
 
       <MemoryEntriesManager onChanged={loadData} />
 

@@ -1,17 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Archive,
+  CheckCircle2,
   Database,
   FileText,
   Loader2,
   RotateCcw,
   Save,
   Search,
+  XCircle,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { IPC_DOMAINS } from '@shared/ipc/domains';
 import type {
   MemoryEntry,
+  MemoryEntryBatchReviewResult,
   MemoryEntryKind,
   MemoryEntryListResult,
   MemoryEntrySourceOfTruth,
@@ -34,7 +37,8 @@ type MemorySettingsText = typeof zh.settings.memory;
 
 type MemoryEntryCommand =
   | { action: 'memoryEntries' }
-  | ({ action: 'memoryEntryUpdate' } & MemoryEntryUpdateRequest);
+  | ({ action: 'memoryEntryUpdate' } & MemoryEntryUpdateRequest)
+  | { action: 'memoryEntryBatchReview'; entryIds: string[]; decision: 'approve' | 'reject' };
 
 interface MemoryEntryCommandResponse<T> {
   success: boolean;
@@ -48,6 +52,7 @@ interface MemoryEntryDraft {
   content: string;
   status: MemoryEntryStatus;
   kind: MemoryEntryKind;
+  projectPath: string;
 }
 
 export interface MemoryEntryManagerRow {
@@ -59,6 +64,13 @@ export interface MemoryEntryManagerRow {
   sourceLabel: string;
   updatedAtLabel: string;
   selected: boolean;
+}
+
+function visibleCandidateEntryIds(entries: MemoryEntry[], rows: MemoryEntryManagerRow[]): string[] {
+  const visible = new Set(rows.map((row) => row.id));
+  return entries
+    .filter((entry) => entry.status === 'candidate' && visible.has(entry.id))
+    .map((entry) => entry.id);
 }
 
 const STATUS_OPTIONS: MemoryEntryStatus[] = ['candidate', 'active', 'rejected', 'stale', 'archived'];
@@ -179,6 +191,7 @@ function createDraft(entry: MemoryEntry): MemoryEntryDraft {
     content: entry.content,
     status: entry.status,
     kind: entry.kind,
+    projectPath: entry.projectPath || '',
   };
 }
 
@@ -193,7 +206,8 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
   const [showArchived, setShowArchived] = useState(false);
   const [kindFilter, setKindFilter] = useState<EntryKindFilter>('all');
   const [sourceFilter, setSourceFilter] = useState<EntrySourceFilter>('all');
-  const [busy, setBusy] = useState<'load' | 'save' | null>('load');
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState<'load' | 'save' | 'batch' | null>('load');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const entries = result?.entries ?? [];
@@ -215,12 +229,18 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
     }),
     [entries, kindFilter, language, memoryText, searchQuery, selectedEntry?.id, showArchived, sourceFilter, statusFilter],
   );
+  const visibleCandidateIds = useMemo(() => {
+    return visibleCandidateEntryIds(entries, rows);
+  }, [entries, rows]);
 
   const loadEntries = async () => {
     setBusy((current) => current || 'load');
     const response = await invokeMemoryEntryCommand<MemoryEntryListResult>({ action: 'memoryEntries' });
     if (response.success && response.data) {
       setResult(response.data);
+      setSelectedCandidateIds((current) => new Set(
+        Array.from(current).filter((id) => response.data?.entries.some((entry) => entry.id === id && entry.status === 'candidate')),
+      ));
       setSelectedEntryId((current) => {
         if (current && response.data?.entries.some((entry) => entry.id === current)) return current;
         return response.data?.entries.find((entry) => entry.status !== 'archived')?.id ?? null;
@@ -229,6 +249,32 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
       setMessage({ type: 'error', text: response.error || memoryText.entries.loadFailed });
     }
     setBusy((current) => (current === 'load' ? null : current));
+  };
+
+  const reviewCandidates = async (decision: 'approve' | 'reject') => {
+    const entryIds = Array.from(selectedCandidateIds);
+    if (entryIds.length === 0) return;
+    setBusy('batch');
+    const response = await invokeMemoryEntryCommand<MemoryEntryBatchReviewResult>({
+      action: 'memoryEntryBatchReview',
+      entryIds,
+      decision,
+    });
+    if (response.success && response.data) {
+      const skipped = response.data.skipped.length;
+      setMessage({
+        type: skipped ? 'error' : 'success',
+        text: memoryText.entries.batchReview.result
+          .replace('{updated}', String(response.data.updated.length))
+          .replace('{skipped}', String(skipped)),
+      });
+      setSelectedCandidateIds(new Set());
+      await loadEntries();
+      await onChanged?.();
+    } else {
+      setMessage({ type: 'error', text: response.error || memoryText.entries.batchReview.failed });
+    }
+    setBusy(null);
   };
 
   useEffect(() => { loadEntries(); }, []);
@@ -249,6 +295,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
       content: next.content,
       status: next.status,
       kind: next.kind,
+      projectPath: next.projectPath || null,
     });
     if (response.success && response.data) {
       setMessage({ type: 'success', text: memoryText.entries.updateSuccess });
@@ -356,6 +403,47 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
               </select>
             </div>
 
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2 text-xs">
+              <label className="inline-flex items-center gap-2 text-zinc-400">
+                <input
+                  type="checkbox"
+                  checked={visibleCandidateIds.length > 0 && visibleCandidateIds.every((id) => selectedCandidateIds.has(id))}
+                  onChange={(event) => {
+                    setSelectedCandidateIds((current) => {
+                      const next = new Set(current);
+                      for (const id of visibleCandidateIds) {
+                        if (event.target.checked) next.add(id);
+                        else next.delete(id);
+                      }
+                      return next;
+                    });
+                  }}
+                  data-testid="memory-entry-select-visible-candidates"
+                />
+                {memoryText.entries.batchReview.selectVisible.replace('{count}', String(visibleCandidateIds.length))}
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={busy !== null || selectedCandidateIds.size === 0}
+                  onClick={() => reviewCandidates('approve')}
+                  className="inline-flex items-center gap-1 rounded border border-badge-success/40 bg-emerald-500/10 px-2 py-1 text-badge-success disabled:opacity-50"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {memoryText.entries.batchReview.approve.replace('{count}', String(selectedCandidateIds.size))}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy !== null || selectedCandidateIds.size === 0}
+                  onClick={() => reviewCandidates('reject')}
+                  className="inline-flex items-center gap-1 rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-badge-danger disabled:opacity-50"
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                  {memoryText.entries.batchReview.reject.replace('{count}', String(selectedCandidateIds.size))}
+                </button>
+              </div>
+            </div>
+
             <div className="max-h-[520px] overflow-auto">
               {busy === 'load' ? (
                 <div className="flex h-40 items-center justify-center">
@@ -365,6 +453,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                 <table className="w-full min-w-[720px] text-left text-xs">
                   <thead className="sticky top-0 border-b border-zinc-800 bg-zinc-950 text-[11px] uppercase tracking-[0.08em] text-zinc-500">
                     <tr>
+                      <th className="w-10 px-3 py-2 font-medium" aria-label={memoryText.entries.batchReview.selection} />
                       <th className="px-3 py-2 font-medium">Entry</th>
                       <th className="px-3 py-2 font-medium">{memoryText.entries.table.status}</th>
                       <th className="px-3 py-2 font-medium">{memoryText.entries.table.kind}</th>
@@ -381,6 +470,24 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                         className={`cursor-pointer ${row.selected ? 'bg-indigo-500/10' : 'bg-zinc-900/30 hover:bg-zinc-800/60'}`}
                       >
                         <td className="px-3 py-3 align-top">
+                          {entries.find((entry) => entry.id === row.id)?.status === 'candidate' && (
+                            <input
+                              type="checkbox"
+                              checked={selectedCandidateIds.has(row.id)}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => {
+                                setSelectedCandidateIds((current) => {
+                                  const next = new Set(current);
+                                  if (event.target.checked) next.add(row.id);
+                                  else next.delete(row.id);
+                                  return next;
+                                });
+                              }}
+                              aria-label={memoryText.entries.batchReview.selectEntry.replace('{title}', row.title)}
+                            />
+                          )}
+                        </td>
+                        <td className="px-3 py-3 align-top">
                           <div className="max-w-[340px] truncate text-sm font-medium text-zinc-200">{row.title}</div>
                           <div className="mt-1 max-w-[380px] truncate text-zinc-500">{row.summary || row.id}</div>
                         </td>
@@ -392,7 +499,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     ))}
                     {rows.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="px-3 py-10 text-center text-zinc-500">
+                        <td colSpan={6} className="px-3 py-10 text-center text-zinc-500">
                           {memoryText.entries.noMatches}
                         </td>
                       </tr>
@@ -463,6 +570,17 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     className="mt-1"
                   />
                 </label>
+                {selectedEntry.scope === 'project' && (
+                  <label className="block text-xs text-zinc-500">
+                    {memoryText.entries.fields.projectPath}
+                    <Input
+                      value={draft.projectPath}
+                      onChange={(event) => setDraft({ ...draft, projectPath: event.target.value })}
+                      placeholder={memoryText.entries.fields.projectPathPlaceholder}
+                      className="mt-1"
+                    />
+                  </label>
+                )}
                 <label className="block text-xs text-zinc-500">
                   {memoryText.entries.fields.summary}
                   <Input

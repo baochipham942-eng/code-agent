@@ -101,4 +101,5 @@ describe('MemoryEntriesManager helpers', () => {
       now,
     }).map((row) => row.id)).toEqual(['mem_entry_light']);
   });
+
 });

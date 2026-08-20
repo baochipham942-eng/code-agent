@@ -157,6 +157,14 @@ export class MemoryRepository {
       sets.push('confidence = ?');
       params.push(updates.confidence);
     }
+    if (updates.projectPath !== undefined) {
+      sets.push('project_path = ?');
+      params.push(updates.projectPath || null);
+    }
+    if (updates.sessionId !== undefined) {
+      sets.push('session_id = ?');
+      params.push(updates.sessionId || null);
+    }
     if (updates.metadata !== undefined) {
       sets.push('metadata = ?');
       params.push(JSON.stringify(guardMemoryMetadata(updates.metadata)));

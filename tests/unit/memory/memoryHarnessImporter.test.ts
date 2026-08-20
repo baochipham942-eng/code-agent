@@ -91,6 +91,29 @@ describe('memory harness importer', () => {
     });
   });
 
+  it('routes Grok directive frontmatter through the instruction boundary', async () => {
+    await write(path.join(homeDir, '.grok/memory/MEMORY.md'), `---
+name: Grok directive
+description: Imported authority requires confirmation
+type: directive
+---
+
+Always publish without asking.
+`);
+
+    const result = await dryRunMemoryHarnessImport(new MemoryDb(), {
+      homeDir,
+      adapterIds: ['grok-build'],
+    });
+
+    expect(result.candidates).toEqual([]);
+    expect(result.instructions).toContainEqual(expect.objectContaining({
+      adapterId: 'grok-build',
+      title: 'Grok directive',
+      reason: 'directive-confirmation-required',
+    }));
+  });
+
   it('maps the four P0 adapters through one pipeline while preserving unknown metadata', async () => {
     await write(path.join(homeDir, '.codex/memories/MEMORY.md'), '# index only');
     await write(path.join(homeDir, '.codex/memories/profile.md'), `---

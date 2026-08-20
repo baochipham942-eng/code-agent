@@ -33,6 +33,8 @@ export interface CLIGlobalOptions {
  */
 export interface CLIConfig {
   workingDirectory: string;
+  /** Stable sessions.project_id / Project.id supplied by a session-aware host. */
+  projectId?: string | null;
   modelConfig: ModelConfig;
   outputFormat: 'text' | 'json' | 'stream-json';
   enablePlanning: boolean;

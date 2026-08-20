@@ -931,6 +931,7 @@ export class AgentOrchestrator {
       planningService: this.planningService,
       runId: nativeRunId,
       sessionId,
+      projectId: runSession?.projectId ?? null,
       agentId: routingResolution?.agent?.id ?? 'default',
       agentName: routingResolution?.agent?.name ?? 'default',
       requestedAgentId,

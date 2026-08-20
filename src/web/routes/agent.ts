@@ -727,6 +727,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
 
       const config = agent.getConfig();
+      // recent-conversations uses the product Project identity. The cwd may move and
+      // WorkspaceScope may be absent on this web-native route, so bind the persisted row.
+      config.projectId = persistedSession?.projectId ?? null;
 
       // 每轮执行意图透传（web HTTP 路径）：renderer 的 context.executionIntent 必须进 AgentLoop
       // config → RuntimeContext.executionIntent，否则设计会话的 designCanvasActive 丢失，画布工具

@@ -124,6 +124,7 @@ export class AgentLoop {
       runId: config.runId || `run-${generateMessageId()}`,
       runTraceContext: config.runTraceContext,
       sessionId: resolvedSessionId,
+      projectId: config.projectId,
       agentId: config.agentId,
       agentName: config.agentName,
       requestedAgentId: config.requestedAgentId,

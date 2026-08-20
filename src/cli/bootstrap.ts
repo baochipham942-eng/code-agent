@@ -529,6 +529,7 @@ export function createAgentLoop(
     enableHooks: config.enableHooks ?? true,
     planningService,
     sessionId: effectiveSessionId,
+    projectId: config.projectId,
     runId: effectiveRunContext.runId,
     runTraceContext: effectiveRunTraceContext,
     workingDirectory: effectiveRunContext.cwd,

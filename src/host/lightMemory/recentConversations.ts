@@ -7,6 +7,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { UNSORTED_PROJECT_ID } from '../../shared/contract/project';
 import { ensureMemoryDir, getMemoryDir } from './indexLoader';
 import { createLogger } from '../services/infra/logger';
 
@@ -14,6 +15,7 @@ const logger = createLogger('RecentConversations');
 
 const SUMMARY_FILE = 'recent-conversations.md';
 const MAX_ENTRIES = 15;
+const RECENT_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 const LOOP_AUTOMATION_SUMMARY_PATTERN = /(?:【循环模式\s*·\s*第\s*\d+\s*轮】|\[\[LOOP_WAIT\]\]|--max-turns|只回复一句|连续跑[一二两三四五六七八九十\d]+轮)/i;
 
 function getSummaryPath(): string {
@@ -27,10 +29,18 @@ export interface ConversationSummary {
   title: string;
   /** Key user intents/requests (1-3 bullet points) */
   highlights: string[];
+  /** Stable product Project.id from sessions.project_id. Missing means global/legacy. */
+  projectId?: string;
+}
+
+function normalizeProjectId(projectId: string | null | undefined): string | undefined {
+  const normalized = projectId?.trim();
+  if (!normalized || normalized === UNSORTED_PROJECT_ID) return undefined;
+  return normalized;
 }
 
 function normalizeSummaryKey(summary: ConversationSummary): string {
-  return `${summary.date}\u0000${summary.title.trim().replace(/\s+/g, ' ').toLowerCase()}`;
+  return `${normalizeProjectId(summary.projectId) ?? ''}\u0000${summary.date}\u0000${summary.title.trim().replace(/\s+/g, ' ').toLowerCase()}`;
 }
 
 function mergeHighlights(existing: string[], next: string[]): string[] {
@@ -78,13 +88,15 @@ function parseSummaries(content: string): ConversationSummary[] {
   const lines = content.split('\n').filter(l => l.startsWith('- **'));
 
   for (const line of lines) {
-    // - **2026-03-15**: "Title" — highlight1, highlight2
-    const match = line.match(/^- \*\*(.+?)\*\*: "(.+?)" — (.+)$/);
+    // New:    - **2026-03-15** [project:proj_abc]: "Title" — highlight1, highlight2
+    // Legacy: - **2026-03-15**: "Title" — highlight1, highlight2
+    const match = line.match(/^- \*\*(.+?)\*\*(?: \[project:([^\]]+)\])?: "(.+?)" — (.*)$/);
     if (match) {
       entries.push({
         date: match[1],
-        title: match[2],
-        highlights: match[3].split(', ').map(s => s.trim()),
+        ...(normalizeProjectId(match[2]) ? { projectId: normalizeProjectId(match[2]) } : {}),
+        title: match[3],
+        highlights: match[4] ? match[4].split(', ').map(s => s.trim()) : [],
       });
     }
   }
@@ -96,10 +108,22 @@ function parseSummaries(content: string): ConversationSummary[] {
  */
 function formatSummaries(summaries: ConversationSummary[]): string {
   if (summaries.length === 0) return '';
-  const lines = summaries.map(s =>
-    `- **${s.date}**: "${s.title}" — ${s.highlights.join(', ')}`
-  );
+  const lines = summaries.map((summary) => {
+    const projectId = normalizeProjectId(summary.projectId);
+    const projectTag = projectId ? ` [project:${projectId}]` : '';
+    return `- **${summary.date}**${projectTag}: "${summary.title}" — ${summary.highlights.join(', ')}`;
+  });
   return lines.join('\n');
+}
+
+function isWithinRecentWindow(summary: ConversationSummary, now: Date): boolean {
+  // Summary dates are calendar dates. Treat the whole recorded day as eligible so an
+  // entry does not expire midway through its fourteenth day.
+  const endOfSummaryDay = Date.parse(`${summary.date}T23:59:59.999Z`);
+  if (!Number.isFinite(endOfSummaryDay)) return false;
+  const nowMs = now.getTime();
+  return endOfSummaryDay >= nowMs - RECENT_WINDOW_MS
+    && summary.date <= now.toISOString().slice(0, 10);
 }
 
 /**
@@ -117,17 +141,21 @@ export async function appendConversationSummary(summary: ConversationSummary): P
     let summaries = await loadSummaries();
     summaries = summaries.filter((item) => !isLoopAutomationSummary(item));
 
-    const summaryKey = normalizeSummaryKey(summary);
+    const normalizedSummary: ConversationSummary = { ...summary };
+    const normalizedProjectId = normalizeProjectId(summary.projectId);
+    if (normalizedProjectId) normalizedSummary.projectId = normalizedProjectId;
+    else delete normalizedSummary.projectId;
+    const summaryKey = normalizeSummaryKey(normalizedSummary);
     const existingIndex = summaries.findIndex((item) => normalizeSummaryKey(item) === summaryKey);
     if (existingIndex >= 0) {
       const existing = summaries[existingIndex];
       summaries.splice(existingIndex, 1);
       summaries.push({
-        ...summary,
-        highlights: mergeHighlights(existing.highlights, summary.highlights),
+        ...normalizedSummary,
+        highlights: mergeHighlights(existing.highlights, normalizedSummary.highlights),
       });
     } else {
-      summaries.push(summary);
+      summaries.push(normalizedSummary);
     }
 
     // Keep only the last MAX_ENTRIES
@@ -148,10 +176,24 @@ export async function appendConversationSummary(summary: ConversationSummary): P
  * Build recent conversations block for system prompt injection.
  * Returns null if no summaries exist.
  */
-export async function buildRecentConversationsBlock(): Promise<string | null> {
+export async function buildRecentConversationsBlock(options: {
+  projectId?: string | null;
+  now?: Date;
+} = {}): Promise<string | null> {
   if (process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS === 'true') return null;
   try {
-    const summaries = (await loadSummaries()).filter((item) => !isLoopAutomationSummary(item));
+    const recentSummaries = (await loadSummaries())
+      .filter((item) => !isLoopAutomationSummary(item))
+      .filter((item) => isWithinRecentWindow(item, options.now ?? new Date()));
+    const projectId = normalizeProjectId(options.projectId);
+    const projectSummaries = projectId
+      ? recentSummaries.filter((item) => normalizeProjectId(item.projectId) === projectId)
+      : recentSummaries;
+    // A project sees only its own recent work. If it has none, legacy/unscoped
+    // entries are the safe global fallback; another project's entries never leak in.
+    const summaries = projectId && projectSummaries.length === 0
+      ? recentSummaries.filter((item) => !normalizeProjectId(item.projectId))
+      : projectSummaries;
     if (summaries.length === 0) return null;
 
     const formatted = formatSummaries(summaries);

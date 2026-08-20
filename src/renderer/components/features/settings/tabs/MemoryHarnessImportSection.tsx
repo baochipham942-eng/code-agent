@@ -144,7 +144,7 @@ export const MemoryHarnessImportSection: React.FC<{ onChanged?: () => void | Pro
               type="button"
               disabled={busy !== null || selectedIds.size === 0}
               onClick={apply}
-              className="inline-flex items-center gap-1.5 rounded border border-badge-success/40 bg-emerald-500/10 px-3 py-1.5 text-xs text-badge-success disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded border border-badge-success/40 bg-badge-success px-3 py-1.5 text-xs text-badge-success disabled:opacity-50"
             >
               {busy === 'apply' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
               {copy.confirmImport.replace('{count}', String(selectedIds.size))}
@@ -217,7 +217,7 @@ export const MemoryHarnessImportSection: React.FC<{ onChanged?: () => void | Pro
             </div>
 
             {preview.instructions.length > 0 && (
-              <div className="rounded border border-amber-500/20 bg-amber-500/5 p-3">
+              <div className="rounded border border-badge-warning/20 bg-badge-warning p-3">
                 <div className="flex items-center gap-2 text-xs font-medium text-badge-warning">
                   <ShieldAlert className="h-4 w-4" />
                   {copy.instructionsTitle.replace('{count}', String(preview.instructions.length))}
@@ -231,7 +231,7 @@ export const MemoryHarnessImportSection: React.FC<{ onChanged?: () => void | Pro
                           type="button"
                           disabled={busy !== null}
                           onClick={() => confirmDirective(item.id)}
-                          className="shrink-0 rounded border border-amber-500/30 px-2 py-1 text-badge-warning disabled:opacity-50"
+                          className="shrink-0 rounded border border-badge-warning/30 px-2 py-1 text-badge-warning disabled:opacity-50"
                         >
                           {busy === `directive:${item.id}` ? copy.confirmingDirective : copy.confirmDirective}
                         </button>

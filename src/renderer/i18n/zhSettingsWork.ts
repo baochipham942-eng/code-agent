@@ -567,6 +567,7 @@ export const zhSettingsWork = {
         noStats: '暂无会话统计。',
       },
       entries: {
+        sectionTitle: '全部记忆',
         description: '统一查看 Light Memory 和 DB memory，编辑后会同步对应 source of truth。',
         loadFailed: '加载统一记忆失败',
         updateSuccess: '记忆已更新',
@@ -606,6 +607,7 @@ export const zhSettingsWork = {
           showArchived: '显示已归档',
         },
         table: {
+          entry: '条目',
           status: '状态',
           kind: '类型',
           source: '来源',

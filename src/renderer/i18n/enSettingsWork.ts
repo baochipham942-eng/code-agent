@@ -567,6 +567,7 @@ export const enSettingsWork = {
         noStats: 'No session stats yet.',
       },
       entries: {
+        sectionTitle: 'All Memory',
         description: 'View Light Memory and DB memory together. Edits sync back to the matching source of truth.',
         loadFailed: 'Failed to load unified memory',
         updateSuccess: 'Memory updated',
@@ -606,6 +607,7 @@ export const enSettingsWork = {
           showArchived: 'Show archived',
         },
         table: {
+          entry: 'Entry',
           status: 'Status',
           kind: 'Type',
           source: 'Source',

@@ -333,7 +333,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
 
   return (
     <SettingsSection
-      title="All Memory"
+      title={memoryText.entries.sectionTitle}
       description={memoryText.entries.description}
     >
       <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
@@ -422,7 +422,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
               >
                 <option value="all">{memoryText.entries.filters.allSource}</option>
                 <option value="light_file">{getMemoryEntrySourceLabel('light_file', memoryText.sourceLabels)}</option>
-                <option value="db_memory">DB memory</option>
+                <option value="db_memory">{getMemoryEntrySourceLabel('db_memory', memoryText.sourceLabels)}</option>
               </select>
             </div>
 
@@ -477,7 +477,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   <thead className="sticky top-0 border-b border-zinc-800 bg-zinc-950 text-[11px] uppercase tracking-[0.08em] text-zinc-500">
                     <tr>
                       <th className="w-10 px-3 py-2 font-medium" aria-label={memoryText.entries.batchReview.selection} />
-                      <th className="px-3 py-2 font-medium">Entry</th>
+                      <th className="px-3 py-2 font-medium">{memoryText.entries.table.entry}</th>
                       <th className="px-3 py-2 font-medium">{memoryText.entries.table.status}</th>
                       <th className="px-3 py-2 font-medium">{memoryText.entries.table.kind}</th>
                       <th className="px-3 py-2 font-medium">{memoryText.entries.table.source}</th>

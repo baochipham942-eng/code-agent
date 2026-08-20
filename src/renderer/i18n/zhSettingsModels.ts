@@ -79,6 +79,7 @@ export const zhSettingsModels = {
         memory: {
           label: '记忆整理模型',
           description: '用于会话落卡、复盘与记忆合并；未单独配置时跟随快速模型。',
+          followFast: '跟随快速模型（默认）',
           costHint: '升到更强模型会消耗更高额度，按量计费 API 会产生更高费用。',
         },
       },

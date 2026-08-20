@@ -22,7 +22,9 @@ import type {
   MemoryEntryUpdateRequest,
   MemoryEntryUpdateResult,
 } from '@shared/contract/memory';
+import { formatBatchReviewSkippedDetail, visibleCandidateEntryIds } from './MemoryEntriesManager.helpers';
 import { Input } from '../../../primitives';
+import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
 import { isWebMode } from '../../../../utils/platform';
 import ipcService from '../../../../services/ipcService';
@@ -64,13 +66,6 @@ export interface MemoryEntryManagerRow {
   sourceLabel: string;
   updatedAtLabel: string;
   selected: boolean;
-}
-
-function visibleCandidateEntryIds(entries: MemoryEntry[], rows: MemoryEntryManagerRow[]): string[] {
-  const visible = new Set(rows.map((row) => row.id));
-  return entries
-    .filter((entry) => entry.status === 'candidate' && visible.has(entry.id))
-    .map((entry) => entry.id);
 }
 
 const STATUS_OPTIONS: MemoryEntryStatus[] = ['candidate', 'active', 'rejected', 'stale', 'archived'];
@@ -207,6 +202,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
   const [kindFilter, setKindFilter] = useState<EntryKindFilter>('all');
   const [sourceFilter, setSourceFilter] = useState<EntrySourceFilter>('all');
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set());
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [busy, setBusy] = useState<'load' | 'save' | 'batch' | null>('load');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -261,12 +257,17 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
       decision,
     });
     if (response.success && response.data) {
-      const skipped = response.data.skipped.length;
+      const skippedItems = response.data.skipped;
+      let text = memoryText.entries.batchReview.result
+        .replace('{updated}', String(response.data.updated.length))
+        .replace('{skipped}', String(skippedItems.length));
+      if (skippedItems.length > 0) {
+        text += memoryText.entries.batchReview.skippedDetailPrefix
+          + formatBatchReviewSkippedDetail(skippedItems, entries, memoryText.entries.batchReview);
+      }
       setMessage({
-        type: skipped ? 'error' : 'success',
-        text: memoryText.entries.batchReview.result
-          .replace('{updated}', String(response.data.updated.length))
-          .replace('{skipped}', String(skipped)),
+        type: skippedItems.length ? 'error' : 'success',
+        text,
       });
       setSelectedCandidateIds(new Set());
       await loadEntries();
@@ -310,7 +311,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
 
   return (
     <SettingsSection
-      title="All Memory"
+      title={memoryText.entries.sectionTitle}
       description={memoryText.entries.description}
     >
       <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
@@ -399,7 +400,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
               >
                 <option value="all">{memoryText.entries.filters.allSource}</option>
                 <option value="light_file">{getMemoryEntrySourceLabel('light_file', memoryText.sourceLabels)}</option>
-                <option value="db_memory">DB memory</option>
+                <option value="db_memory">{getMemoryEntrySourceLabel('db_memory', memoryText.sourceLabels)}</option>
               </select>
             </div>
 
@@ -454,7 +455,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   <thead className="sticky top-0 border-b border-zinc-800 bg-zinc-950 text-[11px] uppercase tracking-[0.08em] text-zinc-500">
                     <tr>
                       <th className="w-10 px-3 py-2 font-medium" aria-label={memoryText.entries.batchReview.selection} />
-                      <th className="px-3 py-2 font-medium">Entry</th>
+                      <th className="px-3 py-2 font-medium">{memoryText.entries.table.entry}</th>
                       <th className="px-3 py-2 font-medium">{memoryText.entries.table.status}</th>
                       <th className="px-3 py-2 font-medium">{memoryText.entries.table.kind}</th>
                       <th className="px-3 py-2 font-medium">{memoryText.entries.table.source}</th>
@@ -470,22 +471,41 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                         className={`cursor-pointer ${row.selected ? 'bg-indigo-500/10' : 'bg-zinc-900/30 hover:bg-zinc-800/60'}`}
                       >
                         <td className="px-3 py-3 align-top">
-                          {entries.find((entry) => entry.id === row.id)?.status === 'candidate' && (
-                            <input
-                              type="checkbox"
-                              checked={selectedCandidateIds.has(row.id)}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={(event) => {
-                                setSelectedCandidateIds((current) => {
-                                  const next = new Set(current);
-                                  if (event.target.checked) next.add(row.id);
-                                  else next.delete(row.id);
-                                  return next;
-                                });
-                              }}
-                              aria-label={memoryText.entries.batchReview.selectEntry.replace('{title}', row.title)}
-                            />
-                          )}
+                          {(() => {
+                            const entry = entries.find((item) => item.id === row.id);
+                            if (entry?.status !== 'candidate') return null;
+                            if (entry.kind === 'directive') {
+                              return (
+                                <span
+                                  className="inline-flex items-center gap-1 text-[11px] text-zinc-500"
+                                  title={memoryText.entries.batchReview.directiveNeedsConfirmation}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    disabled
+                                    aria-label={memoryText.entries.batchReview.directiveNeedsConfirmation}
+                                  />
+                                  {memoryText.entries.batchReview.directiveNeedsConfirmation}
+                                </span>
+                              );
+                            }
+                            return (
+                              <input
+                                type="checkbox"
+                                checked={selectedCandidateIds.has(row.id)}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={(event) => {
+                                  setSelectedCandidateIds((current) => {
+                                    const next = new Set(current);
+                                    if (event.target.checked) next.add(row.id);
+                                    else next.delete(row.id);
+                                    return next;
+                                  });
+                                }}
+                                aria-label={memoryText.entries.batchReview.selectEntry.replace('{title}', row.title)}
+                              />
+                            );
+                          })()}
                         </td>
                         <td className="px-3 py-3 align-top">
                           <div className="max-w-[340px] truncate text-sm font-medium text-zinc-200">{row.title}</div>
@@ -610,7 +630,13 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   </button>
                   <button
                     type="button"
-                    onClick={() => saveDraft({ status: draft.status === 'archived' ? 'active' : 'archived' })}
+                    onClick={() => {
+                      if (draft.status === 'archived') {
+                        saveDraft({ status: 'active' });
+                      } else {
+                        setArchiveConfirmOpen(true);
+                      }
+                    }}
                     disabled={busy !== null}
                     className="inline-flex items-center gap-1.5 rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -642,6 +668,19 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={archiveConfirmOpen}
+        title={memoryText.entries.archiveConfirmTitle}
+        message={memoryText.entries.archiveConfirmMessage}
+        variant="warning"
+        confirmText={memoryText.entries.archive}
+        cancelText={memoryText.entries.cancel}
+        onConfirm={() => {
+          setArchiveConfirmOpen(false);
+          saveDraft({ status: 'archived' });
+        }}
+        onCancel={() => setArchiveConfirmOpen(false)}
+      />
     </SettingsSection>
   );
 };

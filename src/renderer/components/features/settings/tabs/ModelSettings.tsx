@@ -532,18 +532,22 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     }
   }, [modelText.toast.taskStrategySaveFailedPrefix, modelText.unknownError]);
 
-  const persistMemoryRouting = useCallback(async (route: { provider: ModelProvider; model: string }) => {
+  const persistMemoryRouting = useCallback(async (route: { provider: ModelProvider; model: string } | null) => {
     try {
+      // route 为 null 时是显式清除（null 哨兵）：Host merge 遇 routing.memory=null 删除该键，回到跟随快速模型
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         models: { routing: { memory: route } },
       });
-      setAppSettings((prev) => prev ? {
-        ...prev,
-        models: {
-          ...prev.models,
-          routing: { ...prev.models.routing, memory: route },
-        },
-      } : prev);
+      setAppSettings((prev) => {
+        if (!prev) return prev;
+        const routing = { ...prev.models.routing };
+        if (route) routing.memory = route;
+        else delete routing.memory;
+        return {
+          ...prev,
+          models: { ...prev.models, routing },
+        };
+      });
     } catch (error) {
       logger.error('Failed to save memory model routing', error);
       toast.error(modelText.toast.memoryRoutingSaveFailedPrefix + (error instanceof Error ? error.message : modelText.unknownError));

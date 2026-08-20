@@ -79,6 +79,7 @@ export const enSettingsModels = {
         memory: {
           label: 'Memory organization model',
           description: 'Used for conversation capture, review, and memory consolidation. It follows the fast model until configured separately.',
+          followFast: 'Follow fast model (default)',
           costHint: 'Choosing a stronger model consumes more quota and may increase pay-as-you-go API charges.',
         },
       },

@@ -766,7 +766,8 @@ export class ConfigService implements IReadConfigService {
         if (firstModel) {
           this.settings.models.default = firstId;
           this.settings.models.defaultProvider = firstId as ModelProvider;
-          this.settings.models.providers[firstId]!.model = firstModel;
+          const providerSettings = this.settings.models.providers[firstId];
+          if (providerSettings) providerSettings.model = firstModel;
           changed = true;
           logger.info('Set shared provider as default model (no usable model before)', {
             provider: firstId,
@@ -1203,12 +1204,24 @@ export class ConfigService implements IReadConfigService {
     return merged;
   }
 
-  private mergeSettings<T extends object>(base: T, updates: Partial<T>): T {
+  private mergeSettings<T extends object>(base: T, updates: Partial<T>, path: string[] = []): T {
     const result = { ...base } as T;
 
     for (const key in updates) {
       const updateKey = key as keyof T;
       const value = updates[updateKey];
+      // null 哨兵：仅 models.routing.memory 支持显式清除（回到跟随快速模型）。
+      // 不做全局 null 语义改造——其他路径的 null 仍按原样赋值。
+      if (
+        value === null &&
+        updateKey === 'memory' &&
+        path.length === 2 &&
+        path[0] === 'models' &&
+        path[1] === 'routing'
+      ) {
+        delete result[updateKey];
+        continue;
+      }
       if (value !== undefined) {
         if (
           typeof value === 'object' &&
@@ -1217,7 +1230,7 @@ export class ConfigService implements IReadConfigService {
         ) {
           // 递归合并对象属性
           const baseValue = (base[updateKey] ?? {}) as object;
-          const mergedValue = this.mergeSettings(baseValue, value as Partial<typeof baseValue>);
+          const mergedValue = this.mergeSettings(baseValue, value as Partial<typeof baseValue>, [...path, String(updateKey)]);
           result[updateKey] = mergedValue as T[keyof T];
         } else {
           result[updateKey] = value as T[keyof T];

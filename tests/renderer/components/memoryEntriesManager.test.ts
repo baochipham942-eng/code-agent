@@ -7,6 +7,11 @@ import {
   getMemoryEntrySourceLabel,
   getMemoryEntryStatusLabel,
 } from '../../../src/renderer/components/features/settings/tabs/MemoryEntriesManager';
+import {
+  formatBatchReviewSkippedDetail,
+  visibleCandidateEntryIds,
+} from '../../../src/renderer/components/features/settings/tabs/MemoryEntriesManager.helpers';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 const now = Date.parse('2026-05-15T08:00:00.000Z');
 
@@ -100,6 +105,40 @@ describe('MemoryEntriesManager helpers', () => {
       sourceFilter: 'all',
       now,
     }).map((row) => row.id)).toEqual(['mem_entry_light']);
+  });
+
+  it('directive candidates stay out of the batch-selectable set', () => {
+    const normal = entry({ id: 'mem_candidate_user', status: 'candidate', kind: 'user' });
+    const directive = entry({ id: 'mem_candidate_directive', status: 'candidate', kind: 'directive' });
+    const stale = entry({ id: 'mem_stale', status: 'stale', kind: 'pattern' });
+    const rows = buildMemoryEntryRows({
+      entries: [normal, directive, stale],
+      selectedEntryId: null,
+      searchQuery: '',
+      statusFilter: 'all',
+      kindFilter: 'all',
+      sourceFilter: 'all',
+      now,
+    });
+
+    expect(visibleCandidateEntryIds([normal, directive, stale], rows)).toEqual(['mem_candidate_user']);
+  });
+
+  it('translates known skip reasons and lists skipped titles; unknown reasons pass through', () => {
+    const directive = entry({ id: 'mem_candidate_directive', status: 'candidate', kind: 'directive', title: 'Always rebase' });
+    const detail = formatBatchReviewSkippedDetail(
+      [
+        { entryId: 'mem_candidate_directive', reason: 'directive-requires-explicit-confirmation' },
+        { entryId: 'mem_missing', reason: 'some-future-reason' },
+      ],
+      [directive],
+      zh.settings.memory.entries.batchReview,
+    );
+
+    expect(detail).toContain('Always rebase');
+    expect(detail).toContain('指令类条目');
+    expect(detail).toContain('mem_missing');
+    expect(detail).toContain('some-future-reason');
   });
 
 });

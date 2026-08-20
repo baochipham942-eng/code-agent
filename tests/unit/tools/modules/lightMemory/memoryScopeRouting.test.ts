@@ -175,7 +175,7 @@ describe('memory scope routing (三层记忆)', () => {
       ).toBe(false);
     });
 
-    it('deletes scoped memory with scope param', async () => {
+    it('soft-archives scoped memory with scope param', async () => {
       await ensureRoleAssetDirs('研究员');
       const handler = await memoryWriteModule.createHandler();
       const ctx = makeCtx({ subagent: { agentRole: '研究员' } });
@@ -187,9 +187,14 @@ describe('memory scope routing (三层记忆)', () => {
         allowAll,
       );
       expect(result.ok).toBe(true);
+      if (result.ok) expect(result.output).toContain('archived');
 
       const roleFile = path.join(mockConfigDir.dir, 'roles', '研究员', 'memories', 'scoped-test.md');
-      expect(await fs.access(roleFile).then(() => true, () => false)).toBe(false);
+      const archived = await fs.readFile(roleFile, 'utf-8');
+      expect(archived).toContain('status: archived');
+      expect(archived).toContain('测试内容：用户的业务口径是 GMV 不含退款。');
+      const roleIndex = await fs.readFile(path.join(mockConfigDir.dir, 'roles', '研究员', 'MEMORY.md'), 'utf-8');
+      expect(roleIndex).not.toContain('[scoped-test.md]');
     });
 
     it('rejects unknown scope', async () => {

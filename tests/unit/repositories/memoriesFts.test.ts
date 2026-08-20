@@ -148,6 +148,21 @@ describe('MemoryRepository — memories FTS5/BM25 channel', () => {
       .toEqual(expect.arrayContaining([active.id, archived.id]));
   });
 
+  it('excludes candidate rows from list, FTS, and LIKE recall by default', () => {
+    const active = repo.createMemory(makeMemoryInput('candidatefilter shared marker active'));
+    const candidate = repo.createMemory(makeMemoryInput('candidatefilter shared marker candidate', { status: 'candidate' }));
+
+    expect(repo.searchMemories('candidatefilter shared marker', { applyDecay: false }).map((item) => item.id))
+      .toEqual([active.id]);
+    expect(repo.searchMemories('ca', { applyDecay: false }).map((item) => item.id))
+      .toEqual([active.id]);
+    expect(repo.listMemories().map((item) => item.id)).toEqual([active.id]);
+    expect(repo.searchMemories('candidatefilter shared marker', { applyDecay: false, includeCandidates: true }).map((item) => item.id))
+      .toEqual(expect.arrayContaining([active.id, candidate.id]));
+    expect(repo.listMemories({ includeCandidates: true }).map((item) => item.id))
+      .toEqual(expect.arrayContaining([active.id, candidate.id]));
+  });
+
   it('supports CJK queries via trigram', () => {
     repo.createMemory(makeMemoryInput('保时捷卡券核销流程的注意事项'));
     const results = repo.searchMemories('卡券核销', { applyDecay: false });

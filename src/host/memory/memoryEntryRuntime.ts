@@ -48,6 +48,7 @@ export interface MemoryEntryDatabase {
     orderBy?: string;
     orderDir?: 'ASC' | 'DESC';
     includeArchived?: boolean;
+    includeCandidates?: boolean;
   }): MemoryRecord[];
   createMemory(data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): MemoryRecord;
   updateMemory(id: string, updates: Partial<MemoryRecord>): MemoryRecord | null;
@@ -442,7 +443,7 @@ export function buildActiveMemoryEntryFromInbox(input: BuildActiveMemoryEntryInp
   };
 }
 
-export async function writeActiveEntryToLightMemory(
+export async function writeEntryToLightMemory(
   entry: MemoryEntry,
   options: { directiveConfirmedByUser?: boolean } = {},
 ): Promise<LightMemoryFile> {
@@ -508,7 +509,7 @@ export function createMemoryMirrorRecord(
 export async function listUnifiedMemoryEntries(db?: MemoryEntryDatabase): Promise<MemoryEntryListResult> {
   const lightEntries = (await listMemoryFiles()).map(lightMemoryFileToEntry);
   const dbEntries = db
-    ? db.listMemories({ includeArchived: true, limit: 500, orderBy: 'updated_at', orderDir: 'DESC' }).map(storedMemoryToEntry)
+    ? db.listMemories({ includeArchived: true, includeCandidates: true, limit: 500, orderBy: 'updated_at', orderDir: 'DESC' }).map(storedMemoryToEntry)
     : [];
   const lightEntryIds = new Set(lightEntries.map((entry) => entry.id));
   const entries = [

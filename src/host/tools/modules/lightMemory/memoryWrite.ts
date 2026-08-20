@@ -37,7 +37,7 @@ import {
 import { DIRECTIVE_MEMORY_WRITE_NO_GRANT_ERROR } from '../../../memory/directiveMemoryMessages';
 import {
   writeScopedMemory,
-  deleteScopedMemory,
+  archiveScopedMemory,
   type ScopedMemoryTarget,
 } from '../../../services/roleAssets/roleAssetService';
 
@@ -249,7 +249,7 @@ async function executeScopedDelete(
   target: ScopedMemoryTarget,
   ctx: ToolContext,
 ): Promise<ToolResult<string>> {
-  const existed = await deleteScopedMemory(target, filename);
+  const existed = await archiveScopedMemory(target, filename);
   const artifact = createVirtualArtifact({
     sourceTool: schema.name,
     kind: 'text',
@@ -257,13 +257,15 @@ async function executeScopedDelete(
     name: filename,
     mimeType: 'text/markdown',
     contentLength: 0,
-    preview: `Memory deleted: ${filename}`,
-    metadata: { action: 'delete', filename, scope: target.scope, existed },
+    preview: `Memory archived: ${filename}`,
+    metadata: { action: 'delete', status: 'archived', filename, scope: target.scope, existed },
   });
   return {
     ok: true,
-    output: `Memory deleted: ${filename} (scope: ${target.scope})`,
-    meta: { action: 'delete', filename, scope: target.scope, existed, artifact },
+    output: existed
+      ? `Memory archived: ${filename} (scope: ${target.scope}). Original content is retained and excluded from default recall.`
+      : `Memory not found: ${filename} (scope: ${target.scope}). Active index entry was removed if present.`,
+    meta: { action: 'delete', status: 'archived', filename, scope: target.scope, existed, artifact },
   };
 }
 

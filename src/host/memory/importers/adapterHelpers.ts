@@ -15,7 +15,30 @@ export async function memoryItemFromMarkdown(input: {
 }): Promise<RawMemoryImportItem | null> {
   const file = await readMarkdownFile(input.sourcePath);
   if (!file) return null;
-  const parsed = parseImportMarkdown(file.raw, path.basename(input.sourcePath, path.extname(input.sourcePath)));
+  return memoryItemFromMarkdownContent({
+    ...input,
+    raw: file.raw,
+    sourceMtime: file.mtimeMs,
+    fallbackTitle: path.basename(input.sourcePath, path.extname(input.sourcePath)),
+  });
+}
+
+export function memoryItemFromMarkdownContent(input: {
+  adapterId: MemoryImportAdapterId;
+  sourceVendor: string;
+  sourcePath: string;
+  sourceScope: string;
+  scope: MemoryEntryScope;
+  projectPath?: string | null;
+  sourceVersion?: string | null;
+  verifiedOnDevice: boolean;
+  raw: string;
+  sourceMtime: number;
+  fallbackTitle: string;
+  sourceFormat?: string;
+  metadata?: Record<string, unknown>;
+}): RawMemoryImportItem | null {
+  const parsed = parseImportMarkdown(input.raw, input.fallbackTitle);
   if (!parsed.body) return null;
   const scope = parsed.kind === 'user' || parsed.kind === 'feedback' || parsed.kind === 'directive'
     ? 'global'
@@ -28,13 +51,13 @@ export async function memoryItemFromMarkdown(input: {
     sourceVersion: input.sourceVersion,
     sourcePath: input.sourcePath,
     sourceScope: input.sourceScope,
-    sourceFormat: parsed.hasExplicitKind ? 'markdown-frontmatter' : 'markdown',
-    sourceMtime: file.mtimeMs,
+    sourceFormat: input.sourceFormat || (parsed.hasExplicitKind ? 'markdown-frontmatter' : 'markdown'),
+    sourceMtime: input.sourceMtime,
     verifiedOnDevice: input.verifiedOnDevice,
     title: parsed.title,
     summary: parsed.description,
     content: parsed.body,
-    metadata: parsed.metadata,
+    metadata: { ...parsed.metadata, ...input.metadata },
     kind: parsed.kind,
     scope,
     projectPath: scope === 'project' ? input.projectPath ?? null : null,

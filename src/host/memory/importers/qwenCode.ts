@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { instructionItem, memoryItemFromMarkdown } from './adapterHelpers';
-import { listMarkdownFiles } from './markdown';
+import { directoryExists, listMarkdownFiles } from './markdown';
 import type { MemoryImporterAdapter, RawMemoryImportItem } from './types';
 
 export const qwenCodeAdapter: MemoryImporterAdapter = {
@@ -15,6 +15,9 @@ export const qwenCodeAdapter: MemoryImporterAdapter = {
       { path: path.join(root, 'projects'), scope: 'project' as const, sourceScope: 'projects' },
     ];
     for (const sourceRoot of roots) {
+      if (!await directoryExists(sourceRoot.path)) {
+        skipped.push({ sourcePath: sourceRoot.path, reason: 'source-not-found' });
+      }
       for (const sourcePath of await listMarkdownFiles(sourceRoot.path, true)) {
         if (path.basename(sourcePath).toUpperCase() === 'MEMORY.MD') {
           skipped.push({ sourcePath, reason: 'memory-index' });

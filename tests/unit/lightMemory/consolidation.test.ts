@@ -202,10 +202,13 @@ describe('Light Memory consolidation live contract', () => {
       path.join(memoryDir, MEMORY_CONSOLIDATION.AUDIT_FILENAME),
       'utf-8',
     )).trim().split('\n');
-    expect(auditLines).toHaveLength(1);
-    const audit = JSON.parse(auditLines[0]) as Record<string, unknown>;
+    expect(auditLines).toHaveLength(2);
+    const pendingAudit = JSON.parse(auditLines[0]) as Record<string, unknown>;
+    const audit = JSON.parse(auditLines[1]) as Record<string, unknown>;
+    expect(pendingAudit).toMatchObject({ outcome: 'pending', auditId: report.auditId });
     expect(audit).toMatchObject({
       outcome: 'applied',
+      auditId: report.auditId,
       instructionLayerUnchanged: true,
     });
     expect(JSON.stringify(audit)).toContain('alpha.md');
@@ -233,5 +236,28 @@ describe('Light Memory consolidation live contract', () => {
       'utf-8',
     )).trim()) as Record<string, unknown>;
     expect(audit).toMatchObject({ outcome: 'no-op', merges: [], conflicts: [] });
+  });
+
+  it('aborts before changing memory files when the pending audit cannot be written', async () => {
+    const beforeIndex = await fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8');
+    const beforeAlpha = await fs.readFile(path.join(memoryDir, 'alpha.md'), 'utf-8');
+    const beforeBeta = await fs.readFile(path.join(memoryDir, 'beta.md'), 'utf-8');
+    await fs.mkdir(path.join(memoryDir, MEMORY_CONSOLIDATION.AUDIT_FILENAME));
+    const db = new FakeMemoryDb();
+
+    const report = await consolidateLightMemory({
+      dryRun: false,
+      force: true,
+      db,
+      instructionFiles: [{ path: instructionsPath, content: instructions }],
+    });
+
+    expect(report.applied).toBe(false);
+    expect(report.error).toContain('pending audit append failed');
+    expect(await fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8')).toBe(beforeIndex);
+    expect(await fs.readFile(path.join(memoryDir, 'alpha.md'), 'utf-8')).toBe(beforeAlpha);
+    expect(await fs.readFile(path.join(memoryDir, 'beta.md'), 'utf-8')).toBe(beforeBeta);
+    await expect(fs.stat(path.join(memoryDir, 'release-governance.md'))).rejects.toThrow();
+    expect(db.records).toEqual([]);
   });
 });

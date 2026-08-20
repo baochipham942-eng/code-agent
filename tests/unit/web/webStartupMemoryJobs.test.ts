@@ -28,19 +28,19 @@ describe('registerMemoryConsolidationJob', () => {
     mocks.updateJob.mockReset().mockResolvedValue({});
   });
 
-  it('registers new scheduled consolidation in live mode', async () => {
+  it('registers new scheduled consolidation in dry-run mode', async () => {
     mocks.listJobs.mockReturnValue([]);
 
     await registerMemoryConsolidationJob();
 
-    expect(MEMORY_CONSOLIDATION.DRY_RUN_DEFAULT).toBe(false);
+    expect(MEMORY_CONSOLIDATION.DRY_RUN_DEFAULT).toBe(true);
     expect(mocks.createJob).toHaveBeenCalledWith(expect.objectContaining({
-      action: { type: 'memory-consolidation', dryRun: false },
+      action: { type: 'memory-consolidation', dryRun: true },
       tags: [MEMORY_CONSOLIDATION.JOB_TAG],
     }));
   });
 
-  it('upgrades an existing dry-run job instead of leaving the old action stale', async () => {
+  it('leaves an existing job action unchanged', async () => {
     mocks.listJobs.mockReturnValue([{
       id: 'memory-job',
       action: { type: 'memory-consolidation', dryRun: true },
@@ -48,9 +48,7 @@ describe('registerMemoryConsolidationJob', () => {
 
     await registerMemoryConsolidationJob();
 
-    expect(mocks.updateJob).toHaveBeenCalledWith('memory-job', {
-      action: { type: 'memory-consolidation', dryRun: false },
-    });
+    expect(mocks.updateJob).not.toHaveBeenCalled();
     expect(mocks.createJob).not.toHaveBeenCalled();
   });
 });

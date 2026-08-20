@@ -29,7 +29,6 @@ const rt = vi.hoisted(() => ({
 const light = vi.hoisted(() => ({
   listMemoryFiles: vi.fn(async () => ['a.md']),
   readMemoryFile: vi.fn(async () => 'content'),
-  deleteMemoryFile: vi.fn(async () => true),
   getLightMemoryStats: vi.fn(async () => ({ files: 1 })),
   getLightMemoryHealth: vi.fn(async () => ({ healthy: true })),
   rebuildLightMemoryIndex: vi.fn(async () => ({ rebuilt: true })),

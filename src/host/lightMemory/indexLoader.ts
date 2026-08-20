@@ -51,10 +51,8 @@ export function getMemoryIndexPath(): string {
  * Load INDEX.md content for system prompt injection.
  * Returns null if file doesn't exist (first run).
  * Truncates to INDEX_MAX_LINES to keep token cost low (~500 tokens).
- * ⚠️ 现实：consolidation cron 目前是 dry-run（MEMORY_CONSOLIDATION.DRY_RUN_DEFAULT=true，
- * 复查 2026-08-25），从不落盘压缩——本截断不是「兜底」，而是超预算 INDEX 的唯一真实
- * 处置：尾部每个会话都会被静默省略。因此截断标记必须对模型可见并带省略行数，
- * 让它在记忆相关回答里能向用户说明缺口（2026-07-25 费曼审计 P1-3）。
+ * 截断仍是同步读取时的最后护栏；consolidation 周期任务会用软归档 + 指针更新
+ * 收敛超预算 INDEX。截断标记必须对模型可见并带省略行数，避免把尾部省略伪装成完整召回。
  */
 export async function loadMemoryIndex(): Promise<string | null> {
   const indexPath = getMemoryIndexPath();

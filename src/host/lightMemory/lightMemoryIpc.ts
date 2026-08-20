@@ -170,13 +170,17 @@ function frontmatterHealthIssue(parsed: ParsedFrontmatter): string | null {
 function parseIndexEntries(content: string): IndexEntry[] {
   const entries: IndexEntry[] = [];
   for (const line of content.split('\n')) {
-    const match = line.match(/^- \[[^\]]+\]\(([^)]+)\) — .*$/);
-    if (!match) continue;
-    const rawTarget = match[1].trim();
-    const filename = path.basename(rawTarget);
-    entries.push({ filename, rawTarget });
+    const entry = parseIndexEntry(line);
+    if (entry) entries.push(entry);
   }
   return entries;
+}
+
+function parseIndexEntry(line: string): IndexEntry | null {
+  const match = line.match(/^- \[[^\]]+\]\(([^)]+)\) — .*$/);
+  if (!match) return null;
+  const rawTarget = match[1].trim();
+  return { filename: path.basename(rawTarget), rawTarget };
 }
 
 function duplicateGroups(values: Array<{ value: string; filename: string }>): Array<{ value: string; filenames: string[] }> {
@@ -299,35 +303,7 @@ export async function writeLightMemoryFile(input: {
 }
 
 /**
- * Delete a memory file and remove from INDEX.md.
- */
-export async function deleteMemoryFile(filename: string): Promise<boolean> {
-  const sanitized = path.basename(filename);
-  const filePath = path.join(getMemoryDir(), sanitized);
-
-  try {
-    await fs.unlink(filePath);
-  } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return false;
-  }
-
-  // Remove from INDEX.md
-  try {
-    const indexPath = getMemoryIndexPath();
-    const existing = await fs.readFile(indexPath, 'utf-8');
-    const pattern = new RegExp(`^- \\[${sanitized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\].*$`, 'gm');
-    const updated = existing.replace(pattern, '').replace(/\n{3,}/g, '\n\n');
-    await atomicWriteMemoryText(indexPath, updated);
-  } catch {
-    // INDEX.md might not exist
-  }
-
-  return true;
-}
-
-/**
  * User-facing "forget" keeps the file and only removes it from active recall.
- * Physical deletion remains private to the future consolidation migration path.
  */
 export async function archiveMemoryFile(filename: string, deprecatedBy?: string | null): Promise<LightMemoryFile | null> {
   const current = await readMemoryFile(filename);
@@ -349,6 +325,52 @@ export async function archiveMemoryFile(filename: string, deprecatedBy?: string 
   });
   await rebuildLightMemoryIndex();
   return archived;
+}
+
+/**
+ * Apply pointer-only changes to INDEX.md. Non-pointer prose, headings, comments,
+ * and ordering stay untouched; consolidation must never regenerate INDEX body.
+ */
+export async function updateLightMemoryIndexPointers(input: {
+  remove: string[];
+  add: Array<{ filename: string; description: string }>;
+}): Promise<{ removed: string[]; added: string[] }> {
+  const dir = getMemoryDir();
+  await fs.mkdir(dir, { recursive: true });
+  const indexPath = getMemoryIndexPath();
+  let existing: string;
+  try {
+    existing = await fs.readFile(indexPath, 'utf-8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    existing = '# Memory Index\n';
+  }
+
+  const remove = new Set(input.remove.map((filename) => path.basename(filename)));
+  const addByFilename = new Map(input.add.map((entry) => [
+    path.basename(entry.filename),
+    entry.description.replace(/\r?\n/g, ' ').trim(),
+  ]));
+  const removed: string[] = [];
+  const retainedLines = existing.split('\n').filter((line) => {
+    const entry = parseIndexEntry(line);
+    if (!entry) return true;
+    if (remove.has(entry.filename) || addByFilename.has(entry.filename)) {
+      if (remove.has(entry.filename)) removed.push(entry.filename);
+      return false;
+    }
+    return true;
+  });
+
+  while (retainedLines.length > 0 && retainedLines.at(-1) === '') retainedLines.pop();
+  if (retainedLines.length > 0 && retainedLines.at(-1)?.trim() !== '') retainedLines.push('');
+  const added = Array.from(addByFilename.keys()).sort();
+  for (const filename of added) {
+    retainedLines.push(`- [${filename}](${filename}) — ${addByFilename.get(filename) || filename}`);
+  }
+  retainedLines.push('');
+  await atomicWriteMemoryText(indexPath, retainedLines.join('\n'));
+  return { removed: Array.from(new Set(removed)).sort(), added };
 }
 
 /**

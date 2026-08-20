@@ -11,7 +11,7 @@ import { requestDirectiveMemoryConfirmation } from '../directiveMemoryConfirmati
 import {
   listUnifiedMemoryEntries,
   rebuildMemoryMirrorFromLightFiles,
-  writeActiveEntryToLightMemory,
+  writeEntryToLightMemory,
 } from '../memoryEntryRuntime';
 import { codexLocalCustomAdapter } from './codexLocalCustom';
 import { claudeCodeAdapter } from './claudeCode';
@@ -207,7 +207,7 @@ export async function applyMemoryHarnessImport(
     if (candidate.entry.kind === 'directive') {
       throw new Error('Directive import requires explicit user confirmation and cannot enter the batch importer.');
     }
-    const written = await writeActiveEntryToLightMemory(candidate.entry);
+    const written = await writeEntryToLightMemory(candidate.entry);
     entries.push({
       ...candidate.entry,
       source: { ...candidate.entry.source, filePath: written.filename },
@@ -261,7 +261,7 @@ export async function confirmMemoryHarnessDirective(
   if (hash && existingHashes.has(hash)) {
     return { instructionId, confirmed: true, imported: false };
   }
-  const written = await writeActiveEntryToLightMemory(entry, { directiveConfirmedByUser: true });
+  const written = await writeEntryToLightMemory(entry, { directiveConfirmedByUser: true });
   const importedEntry = {
     ...entry,
     source: { ...entry.source, filePath: written.filename },

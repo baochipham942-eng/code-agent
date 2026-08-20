@@ -11,7 +11,7 @@ import {
   createMemoryMirrorRecord,
   listUnifiedMemoryEntries,
   updateMemoryEntry,
-  writeActiveEntryToLightMemory,
+  writeEntryToLightMemory,
 } from '../../memory/memoryEntryRuntime';
 import {
   TranscriptHistoryService,
@@ -114,7 +114,7 @@ export interface DreamRunOptions {
 
 const defaultMemoryIO: DreamMemoryIO = {
   listEntries: listUnifiedMemoryEntries,
-  writeEntry: writeActiveEntryToLightMemory,
+  writeEntry: writeEntryToLightMemory,
   createMirror: createMemoryMirrorRecord,
   updateEntry: updateMemoryEntry,
 };

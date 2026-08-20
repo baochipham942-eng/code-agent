@@ -443,7 +443,7 @@ export function buildActiveMemoryEntryFromInbox(input: BuildActiveMemoryEntryInp
   };
 }
 
-export async function writeActiveEntryToLightMemory(
+export async function writeEntryToLightMemory(
   entry: MemoryEntry,
   options: { directiveConfirmedByUser?: boolean } = {},
 ): Promise<LightMemoryFile> {

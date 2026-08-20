@@ -6,7 +6,11 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getMemoryDir, getMemoryIndexPath } from './indexLoader';
-import type { MemoryEntryStatus } from '../../shared/contract/memory';
+import type {
+  MemoryEntryScope,
+  MemoryEntryStatus,
+  MemoryImportProvenance,
+} from '../../shared/contract/memory';
 import { LIGHT_MEMORY } from '../../shared/constants';
 import { atomicWriteMemoryText } from '../memory/atomicMemoryFile';
 import { assertDirectivePersistenceAuthorized } from '../memory/directiveMemoryConfirmation';
@@ -25,6 +29,10 @@ export interface LightMemoryFile {
   deprecatedBy?: string;
   source?: string;
   schemaVersion?: number;
+  scope?: MemoryEntryScope;
+  projectPath?: string;
+  sessionId?: string;
+  importProvenance?: MemoryImportProvenance;
   /** File modification time (ISO) */
   updatedAt: string;
 }
@@ -129,6 +137,28 @@ function parseSchemaVersion(value: string | undefined): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function parseMemoryEntryScope(value: string | undefined): MemoryEntryScope | undefined {
+  if (value === 'global' || value === 'project' || value === 'session') return value;
+  return undefined;
+}
+
+function parseImportProvenance(value: string | undefined): MemoryImportProvenance | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as MemoryImportProvenance
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function encodeImportProvenance(value: MemoryImportProvenance | undefined): string | undefined {
+  if (!value) return undefined;
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+}
+
 function sanitizeFrontmatterValue(value: string | number | boolean): string {
   return String(value).replace(/\r?\n/g, ' ').replace(/:/g, ' -').trim();
 }
@@ -157,6 +187,10 @@ function toLightMemoryFile(filename: string, content: string, updatedAt: Date): 
     deprecatedBy: metadata.deprecated_by || undefined,
     source: metadata.source,
     schemaVersion: parseSchemaVersion(metadata.schema_version),
+    scope: parseMemoryEntryScope(metadata.scope),
+    projectPath: metadata.project_path || undefined,
+    sessionId: metadata.session_id || undefined,
+    importProvenance: parseImportProvenance(metadata.import_provenance_b64),
     updatedAt: updatedAt.toISOString(),
   };
 }
@@ -262,6 +296,10 @@ export async function writeLightMemoryFile(input: {
   deprecatedBy?: string | null;
   source?: string;
   schemaVersion?: number;
+  scope?: MemoryEntryScope;
+  projectPath?: string | null;
+  sessionId?: string | null;
+  importProvenance?: MemoryImportProvenance | null;
   /** Only the interactive directive confirmation path may set this. */
   directiveConfirmedByUser?: boolean;
 }): Promise<LightMemoryFile> {
@@ -279,6 +317,10 @@ export async function writeLightMemoryFile(input: {
     ['deprecated_by', input.deprecatedBy || undefined],
     ['source', input.source],
     ['schema_version', input.schemaVersion],
+    ['scope', input.scope],
+    ['project_path', input.projectPath || undefined],
+    ['session_id', input.sessionId || undefined],
+    ['import_provenance_b64', encodeImportProvenance(input.importProvenance || undefined)],
   ];
 
   const frontmatter = metadata
@@ -319,6 +361,10 @@ export async function archiveMemoryFile(filename: string, deprecatedBy?: string 
     deprecatedBy,
     source: current.source,
     schemaVersion: current.schemaVersion,
+    scope: current.scope,
+    projectPath: current.projectPath,
+    sessionId: current.sessionId,
+    importProvenance: current.importProvenance,
     // This path only changes an existing record to archived; it never creates
     // directive authority. The user's forget/archive action is the grant.
     directiveConfirmedByUser: current.type === 'directive',
@@ -388,7 +434,7 @@ export async function getLightMemoryStats(): Promise<LightMemoryStats> {
   let sessionStats: SessionStatsData | null = null;
   try {
     const raw = await fs.readFile(path.join(getMemoryDir(), 'session-stats.json'), 'utf-8');
-    sessionStats = JSON.parse(raw);
+    sessionStats = JSON.parse(raw) as SessionStatsData;
   } catch {
     // No stats yet
   }

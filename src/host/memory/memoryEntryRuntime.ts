@@ -30,8 +30,13 @@ import { hashInboxContent } from './knowledgeInboxDecision';
 import { sanitizeMemoryContent } from '../utils/sanitizeMemoryContent';
 import { MEMORY } from '../../shared/constants';
 import { withMemoryBackgroundGuidance } from './memoryContextGuidance';
+import {
+  memoryEntryMetadata,
+  metadataForImportedEntry,
+  sourceKindForLightFile,
+} from './memoryEntryMetadata';
 
-interface MemoryEntryDatabase {
+export interface MemoryEntryDatabase {
   listMemories(options?: {
     type?: string;
     category?: string;
@@ -320,11 +325,6 @@ function memoryEntryFilenameForId(id: string): string {
   return `memory-${rawId}.md`;
 }
 
-function memoryEntryMetadata(memory: MemoryRecord): Record<string, unknown> | null {
-  const value = memory.metadata?.memoryEntry;
-  return value && typeof value === 'object' ? value as Record<string, unknown> : null;
-}
-
 export function lightMemoryFileToEntry(file: LightMemoryFile): MemoryEntry {
   const kind = memoryEntryKindForLightType(file.type);
   const updatedAt = Date.parse(file.updatedAt) || Date.now();
@@ -334,19 +334,20 @@ export function lightMemoryFileToEntry(file: LightMemoryFile): MemoryEntry {
     status: file.status || 'active',
     deprecatedBy: file.deprecatedBy ?? null,
     kind,
-    scope: scopeForEntry(kind),
+    scope: file.scope || scopeForEntry(kind, file.projectPath, file.sessionId),
     title: file.name || file.filename.replace(/\.md$/, ''),
     summary: file.description || compactText(file.content, 160),
     content: file.content,
     source: {
-      kind: 'light_file',
+      kind: sourceKindForLightFile(file),
       sourceOfTruth: 'light_file',
       filePath: file.filename,
       label: `~/.code-agent/memory/${file.filename}`,
+      importProvenance: file.importProvenance ?? null,
     },
     evidence: [{ filePath: file.filename, source: file.source || 'light-memory' }],
-    projectPath: null,
-    sessionId: null,
+    projectPath: file.projectPath ?? null,
+    sessionId: file.sessionId ?? null,
     confidence: 1,
     createdAt: updatedAt,
     updatedAt,
@@ -380,16 +381,22 @@ export function storedMemoryToEntry(memory: MemoryRecord): MemoryEntry {
     deprecatedBy: memory.deprecatedBy
       ?? (typeof meta?.deprecatedBy === 'string' ? meta.deprecatedBy : null),
     kind,
-    scope: scopeForEntry(kind, memory.projectPath ?? null, memory.sessionId ?? null),
+    scope: normalizeEntryScope(
+      meta?.scope as MemoryEntryScope | undefined,
+      scopeForEntry(kind, memory.projectPath ?? null, memory.sessionId ?? null),
+    ),
     title: compactText(memory.summary || memory.content, 120) || memory.category,
     summary: compactText(memory.content, 180),
     content: memory.content,
     source: {
-      kind: 'db_memory',
+      kind: meta?.sourceKind === 'import' ? 'import' : 'db_memory',
       sourceOfTruth,
       filePath: typeof meta?.filePath === 'string' ? meta.filePath : null,
       memoryId: memory.id,
       label: sourceOfTruth === 'light_file' ? 'DB mirror of Light Memory' : 'legacy DB memory',
+      importProvenance: meta?.importProvenance && typeof meta.importProvenance === 'object'
+        ? meta.importProvenance as MemoryEntry['source']['importProvenance']
+        : null,
     },
     evidence,
     projectPath: memory.projectPath ?? null,
@@ -435,7 +442,10 @@ export function buildActiveMemoryEntryFromInbox(input: BuildActiveMemoryEntryInp
   };
 }
 
-export async function writeActiveEntryToLightMemory(entry: MemoryEntry): Promise<LightMemoryFile> {
+export async function writeActiveEntryToLightMemory(
+  entry: MemoryEntry,
+  options: { directiveConfirmedByUser?: boolean } = {},
+): Promise<LightMemoryFile> {
   const file = await writeLightMemoryFile({
     filename: entry.source.filePath || memoryEntryFilenameForId(entry.id),
     name: entry.title,
@@ -447,6 +457,11 @@ export async function writeActiveEntryToLightMemory(entry: MemoryEntry): Promise
     deprecatedBy: entry.deprecatedBy,
     source: entry.source.kind,
     schemaVersion: entry.schemaVersion,
+    scope: entry.scope,
+    projectPath: entry.projectPath,
+    sessionId: entry.sessionId,
+    importProvenance: entry.source.importProvenance,
+    directiveConfirmedByUser: options.directiveConfirmedByUser,
   });
   await rebuildLightMemoryIndex();
   return file;
@@ -480,9 +495,11 @@ export function createMemoryMirrorRecord(
         deprecatedBy: entry.deprecatedBy ?? null,
         kind: entry.kind,
         scope: entry.scope,
+        sourceKind: entry.source.kind,
         sourceOfTruth: 'light_file',
         filePath: entry.source.filePath,
         evidence: entry.evidence,
+        importProvenance: entry.source.importProvenance ?? null,
       },
     },
   });
@@ -546,9 +563,11 @@ export async function rebuildMemoryMirrorFromLightFiles(db: MemoryEntryDatabase)
               deprecatedBy: entry.deprecatedBy ?? null,
               kind: entry.kind,
               scope: entry.scope,
+              sourceKind: entry.source.kind,
               sourceOfTruth: 'light_file',
               filePath: file.filename,
               evidence: entry.evidence,
+              importProvenance: entry.source.importProvenance ?? null,
             },
           },
         });
@@ -781,22 +800,6 @@ export async function dryRunImportMemoryBundleV2(
   };
 }
 
-function metadataForImportedEntry(entry: MemoryEntry, sourceOfTruth = entry.source.sourceOfTruth): Record<string, unknown> {
-  return {
-    memoryEntry: {
-      schemaVersion: entry.schemaVersion,
-      id: entry.id,
-      status: entry.status,
-      deprecatedBy: entry.deprecatedBy ?? null,
-      kind: entry.kind,
-      scope: entry.scope,
-      sourceOfTruth,
-      filePath: entry.source.filePath ?? null,
-      evidence: entry.evidence,
-    },
-  };
-}
-
 function memoryRecordInputForImportedEntry(entry: MemoryEntry): Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'> {
   return {
     type: entry.kind === 'user' ? 'user_preference' : 'project_knowledge',
@@ -852,6 +855,9 @@ function buildUpdatedMemoryEntry(current: MemoryEntry, request: MemoryEntryUpdat
       : request.deprecatedBy !== undefined ? request.deprecatedBy : current.deprecatedBy,
     kind,
     scope: normalizeEntryScope(request.scope, current.scope),
+    projectPath: request.projectPath !== undefined
+      ? request.projectPath?.trim() || null
+      : current.projectPath,
     title,
     summary,
     content,
@@ -879,6 +885,10 @@ export async function updateMemoryEntry(
       deprecatedBy: next.deprecatedBy,
       source: current.source.kind,
       schemaVersion: next.schemaVersion,
+      scope: next.scope,
+      projectPath: next.projectPath,
+      sessionId: next.sessionId,
+      importProvenance: next.source.importProvenance,
     });
     await rebuildLightMemoryIndex();
     const mirrorRebuild = await rebuildMemoryMirrorFromLightFiles(db);
@@ -886,8 +896,8 @@ export async function updateMemoryEntry(
       entry: {
         ...lightMemoryFileToEntry(file),
         evidence: current.evidence,
-        projectPath: current.projectPath,
-        sessionId: current.sessionId,
+        projectPath: next.projectPath,
+        sessionId: next.sessionId,
         confidence: current.confidence,
         createdAt: current.createdAt,
       },
@@ -902,6 +912,7 @@ export async function updateMemoryEntry(
     content: next.content,
     summary: next.title || next.summary,
     confidence: next.confidence,
+    projectPath: next.projectPath ?? undefined,
     status: next.status,
     deprecatedBy: next.deprecatedBy,
     metadata: {
@@ -954,6 +965,10 @@ async function writeImportedLightEntry(entry: MemoryEntry): Promise<string> {
     deprecatedBy: entry.deprecatedBy,
     source: entry.source.kind,
     schemaVersion: entry.schemaVersion,
+    scope: entry.scope,
+    projectPath: entry.projectPath,
+    sessionId: entry.sessionId,
+    importProvenance: entry.source.importProvenance,
   });
   return file.filename;
 }

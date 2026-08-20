@@ -58,6 +58,29 @@ export type MemoryEntrySourceKind =
   | 'precompact_flush'
   | 'import';
 
+export type MemoryImportAdapterId =
+  | 'codex-local-custom'
+  | 'claude-code'
+  | 'grok-build'
+  | 'qwen-code'
+  | 'gemini-cli';
+
+type MemoryImportProviderAlias = 'zai' | 'deepseek';
+
+export interface MemoryImportProvenance {
+  sourceVendor: string;
+  sourceHarness: MemoryImportAdapterId;
+  sourceVersion?: string | null;
+  sourcePath: string;
+  sourceScope: string;
+  sourceHash: string;
+  sourceMtime: number;
+  sourceFormat: string;
+  sourceMetadata: Record<string, unknown>;
+  verifiedOnDevice: boolean;
+  modelProvider?: MemoryImportProviderAlias | null;
+}
+
 export interface MemoryEntryEvidence {
   sessionId?: string | null;
   messageId?: string | null;
@@ -76,6 +99,87 @@ export interface MemoryEntrySourceRef {
   filePath?: string | null;
   memoryId?: string | null;
   label?: string | null;
+  importProvenance?: MemoryImportProvenance | null;
+}
+
+interface MemoryImportInstructionCandidate {
+  id: string;
+  adapterId: MemoryImportAdapterId;
+  title: string;
+  content: string;
+  sourcePath: string;
+  reason: 'instruction-file' | 'directive-confirmation-required';
+  contentHash: string;
+  sourceMetadata: Record<string, unknown>;
+}
+
+interface MemoryImportSkippedItem {
+  adapterId: MemoryImportAdapterId;
+  sourcePath: string;
+  reason: string;
+}
+
+interface MemoryImportDryRunCandidate {
+  id: string;
+  entry: MemoryEntry;
+  disposition: 'add' | 'skip';
+  reason: 'new-content' | 'duplicate-content-hash';
+}
+
+export interface MemoryImportDryRunResult {
+  scannedAdapters: MemoryImportAdapterId[];
+  candidates: MemoryImportDryRunCandidate[];
+  instructions: MemoryImportInstructionCandidate[];
+  skipped: MemoryImportSkippedItem[];
+  summary: {
+    discoveredMemory: number;
+    readyToImport: number;
+    duplicates: number;
+    instructionOnly: number;
+    archived: number;
+  };
+}
+
+export interface MemoryImportDryRunRequest {
+  adapterIds?: MemoryImportAdapterId[];
+  modelProvider?: MemoryImportProviderAlias | null;
+}
+
+export interface MemoryImportApplyRequest {
+  adapterIds?: MemoryImportAdapterId[];
+  candidateIds?: string[];
+  modelProvider?: MemoryImportProviderAlias | null;
+}
+
+export interface MemoryImportApplyResult {
+  imported: number;
+  skipped: number;
+  writtenFiles: string[];
+  entries: MemoryEntry[];
+  mirrorRebuild: MemoryMirrorRebuildResult;
+}
+
+export interface MemoryImportDirectiveConfirmRequest {
+  instructionId: string;
+  adapterIds?: MemoryImportAdapterId[];
+}
+
+export interface MemoryImportDirectiveConfirmResult {
+  instructionId: string;
+  confirmed: boolean;
+  imported: boolean;
+  entry?: MemoryEntry;
+  mirrorRebuild?: MemoryMirrorRebuildResult;
+}
+
+export interface MemoryEntryBatchReviewRequest {
+  entryIds: string[];
+  decision: 'approve' | 'reject';
+}
+
+export interface MemoryEntryBatchReviewResult {
+  updated: MemoryEntry[];
+  skipped: Array<{ entryId: string; reason: string }>;
 }
 
 export interface MemoryEntry {
@@ -120,6 +224,7 @@ export interface MemoryEntryUpdateRequest {
   deprecatedBy?: string | null;
   kind?: MemoryEntryKind;
   scope?: MemoryEntryScope;
+  projectPath?: string | null;
 }
 
 export interface MemoryEntryUpdateResult {

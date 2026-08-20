@@ -26,6 +26,14 @@ const rt = vi.hoisted(() => ({
   dryRunImportMemoryBundleV2: vi.fn(async () => ({ willImport: 1 })),
   applyImportMemoryBundleV2: vi.fn(async () => ({ imported: 1 })),
 }));
+const review = vi.hoisted(() => ({
+  batchReviewMemoryEntries: vi.fn(async () => ({ updated: [{ id: 'e1' }], skipped: [] })),
+}));
+const importer = vi.hoisted(() => ({
+  dryRunMemoryHarnessImport: vi.fn(async () => ({ summary: { readyToImport: 2 } })),
+  applyMemoryHarnessImport: vi.fn(async () => ({ imported: 2, skipped: 0 })),
+  confirmMemoryHarnessDirective: vi.fn(async () => ({ confirmed: true, imported: true })),
+}));
 const light = vi.hoisted(() => ({
   listMemoryFiles: vi.fn(async () => ['a.md']),
   readMemoryFile: vi.fn(async () => 'content'),
@@ -47,6 +55,8 @@ vi.mock('../../../src/host/memory/memoryEntryRuntime', () => ({
   storedMemoryToEntry: vi.fn(),
   writeActiveEntryToLightMemory: vi.fn(),
 }));
+vi.mock('../../../src/host/memory/importers', () => importer);
+vi.mock('../../../src/host/memory/memoryEntryReview', () => review);
 vi.mock('../../../src/host/memory/memoryInjectionTrace', () => ({ listMemoryInjectionTraces: vi.fn(async () => []) }));
 vi.mock('../../../src/host/memory/knowledgeInboxDecision', () => ({
   KNOWLEDGE_INBOX_DECISION_CATEGORY: 'inbox',
@@ -89,6 +99,26 @@ describe('dispatch', () => {
       throw new Error('db down');
     });
     expect(await call('list')).toMatchObject({ success: false, error: { code: 'INTERNAL_ERROR', message: 'db down' } });
+  });
+});
+
+describe('harness import and batch review dispatch', () => {
+  it('routes dry-run/apply and batch review through the memory domain', async () => {
+    expect((await call('memoryHarnessImportDryRun', {})).data).toEqual({ summary: { readyToImport: 2 } });
+    expect((await call('memoryHarnessImportApply', { candidateIds: ['import:1'] })).data).toEqual({ imported: 2, skipped: 0 });
+    expect((await call('memoryHarnessImportConfirmDirective', { instructionId: 'instruction:1' })).data)
+      .toEqual({ confirmed: true, imported: true });
+    expect((await call('memoryEntryBatchReview', { entryIds: ['import:1'], decision: 'approve' })).data)
+      .toEqual({ updated: [{ id: 'e1' }], skipped: [] });
+    expect(importer.applyMemoryHarnessImport).toHaveBeenCalledWith(db, { candidateIds: ['import:1'] });
+    expect(importer.confirmMemoryHarnessDirective).toHaveBeenCalledWith(db, 'instruction:1', { adapterIds: undefined });
+    expect(review.batchReviewMemoryEntries).toHaveBeenCalledWith(db, { entryIds: ['import:1'], decision: 'approve' });
+  });
+
+  it('rejects malformed batch review before touching storage', async () => {
+    expect(await call('memoryEntryBatchReview', { entryIds: [], decision: 'approve' }))
+      .toMatchObject({ success: false, error: { code: 'INTERNAL_ERROR' } });
+    expect(review.batchReviewMemoryEntries).not.toHaveBeenCalled();
   });
 });
 

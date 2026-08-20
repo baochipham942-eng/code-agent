@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { listMarkdownFiles } from './markdown';
+import { directoryExists, listMarkdownFiles } from './markdown';
 import { instructionItem, memoryItemFromMarkdown } from './adapterHelpers';
 import type { MemoryImporterAdapter, RawMemoryImportItem } from './types';
 
@@ -8,9 +8,13 @@ export const codexLocalCustomAdapter: MemoryImporterAdapter = {
   phase: 'p0',
   async discover(options) {
     const root = path.join(options.homeDir, '.codex');
+    const memoriesRoot = path.join(root, 'memories');
     const items: RawMemoryImportItem[] = [];
     const skipped: Array<{ sourcePath: string; reason: string }> = [];
-    for (const sourcePath of await listMarkdownFiles(path.join(root, 'memories'))) {
+    if (!await directoryExists(memoriesRoot)) {
+      skipped.push({ sourcePath: memoriesRoot, reason: 'source-not-found' });
+    }
+    for (const sourcePath of await listMarkdownFiles(memoriesRoot)) {
       if (path.basename(sourcePath).toUpperCase() === 'MEMORY.MD') {
         skipped.push({ sourcePath, reason: 'memory-index' });
         continue;

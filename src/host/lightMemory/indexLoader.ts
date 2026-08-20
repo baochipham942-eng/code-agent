@@ -19,7 +19,12 @@ function indexTarget(line: string): string | null {
   return path.basename(target) === target && target.endsWith('.md') ? target : null;
 }
 
-async function filterArchivedIndexEntries(content: string): Promise<string> {
+function indexedFileIsActive(source: string): boolean {
+  const status = source.match(/^status:\s*(\S+)\s*$/m)?.[1];
+  return !status || status === 'active';
+}
+
+async function filterInactiveIndexEntries(content: string): Promise<string> {
   const dir = getMemoryDir();
   const lines = content.split('\n');
   const kept = await Promise.all(lines.map(async (line) => {
@@ -27,10 +32,10 @@ async function filterArchivedIndexEntries(content: string): Promise<string> {
     if (!target) return line;
     try {
       const source = await fs.readFile(path.join(dir, target), 'utf-8');
-      return /^status:\s*archived\s*$/m.test(source) ? null : line;
+      return indexedFileIsActive(source) ? line : null;
     } catch {
       // Health diagnostics owns missing/orphan reporting. Keep legacy INDEX
-      // behavior here and only suppress archives we can positively identify.
+      // behavior here and only suppress inactive entries we can positively identify.
       return line;
     }
   }));
@@ -58,7 +63,7 @@ export async function loadMemoryIndex(): Promise<string | null> {
   const indexPath = getMemoryIndexPath();
   try {
     const rawContent = await fs.readFile(indexPath, 'utf-8');
-    const content = await filterArchivedIndexEntries(rawContent);
+    const content = await filterInactiveIndexEntries(rawContent);
     if (!content.trim()) return null;
 
     // Truncate to keep system prompt lean

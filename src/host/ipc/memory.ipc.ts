@@ -30,7 +30,7 @@ import {
   rebuildMemoryMirrorFromLightFiles,
   storedMemoryToEntry,
   updateMemoryEntry,
-  writeActiveEntryToLightMemory,
+  writeEntryToLightMemory,
 } from '../memory/memoryEntryRuntime';
 import { batchReviewMemoryEntries } from '../memory/memoryEntryReview';
 import {
@@ -677,7 +677,7 @@ async function handleMemoryInboxResolve(payload: MemoryInboxResolveRequest): Pro
       sessionId,
       contentHash,
     });
-    const writtenFile = await writeActiveEntryToLightMemory(activeEntry);
+    const writtenFile = await writeEntryToLightMemory(activeEntry);
     const mirroredEntry: MemoryEntry = {
       ...activeEntry,
       source: {

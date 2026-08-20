@@ -30,6 +30,7 @@ import {
   ensureProjectMemoryDirs,
   writeScopedMemory,
   readScopedMemory,
+  archiveScopedMemory,
   deleteScopedMemory,
   listScopedMemories,
   loadScopedMemoryIndex,
@@ -224,6 +225,21 @@ describe('roleAssetService', () => {
       expect(index || '').not.toContain('[to-delete.md]');
       // 幂等：再删一次不报错
       expect(await deleteScopedMemory(target, 'to-delete.md')).toBe(false);
+    });
+
+    it('archives memory in place and removes its index entry', async () => {
+      const target = { scope: 'role' as const, roleId: '研究员' };
+      await writeScopedMemory(target, {
+        filename: 'to-archive.md',
+        name: 'A',
+        description: 'retained',
+        content: 'original body',
+      });
+
+      expect(await archiveScopedMemory(target, 'to-archive.md')).toBe(true);
+      expect(await readScopedMemory(target, 'to-archive.md')).toContain('status: archived');
+      expect(await readScopedMemory(target, 'to-archive.md')).toContain('original body');
+      expect((await loadScopedMemoryIndex(target)) || '').not.toContain('[to-archive.md]');
     });
 
     it('lists memories with parsed frontmatter', async () => {

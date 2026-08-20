@@ -27,6 +27,17 @@ function parseJsonRecord(value: unknown): Record<string, unknown> {
   }
 }
 
+function memoryStatusCondition(
+  options: { includeArchived?: boolean; includeCandidates?: boolean },
+  column = 'status',
+): string {
+  const status = `COALESCE(${column}, 'active')`;
+  if (options.includeArchived && options.includeCandidates) return '1 = 1';
+  if (options.includeArchived) return `${status} IN ('active', 'archived')`;
+  if (options.includeCandidates) return `${status} != 'archived'`;
+  return `${status} = 'active'`;
+}
+
 export class MemoryRepository {
   constructor(private db: BetterSqlite3.Database) {}
 
@@ -93,13 +104,12 @@ export class MemoryRepository {
     orderBy?: string;
     orderDir?: 'ASC' | 'DESC';
     includeArchived?: boolean;
+    includeCandidates?: boolean;
   } = {}): MemoryRecord[] {
     const conditions: string[] = [];
     const params: unknown[] = [];
 
-    if (!options.includeArchived) {
-      conditions.push("COALESCE(status, 'active') != 'archived'");
-    }
+    conditions.push(memoryStatusCondition(options));
 
     if (options.type) {
       conditions.push('type = ?');
@@ -234,7 +244,7 @@ export class MemoryRepository {
    * raw FTS 语法错误、FTS 零命中（历史数据缺口兜底）。
    * 读时 decay 在两条通道之上统一应用。
    */
-  searchMemories(query: string, options: { type?: string; category?: string; limit?: number; applyDecay?: boolean; includeArchived?: boolean } = {}): MemoryRecord[] {
+  searchMemories(query: string, options: { type?: string; category?: string; limit?: number; applyDecay?: boolean; includeArchived?: boolean; includeCandidates?: boolean } = {}): MemoryRecord[] {
     // Fetch more rows than needed so decay filtering still returns enough
     const requestedLimit = options.limit || 20;
     const fetchLimit = (options.applyDecay !== false) ? requestedLimit * 3 : requestedLimit;
@@ -267,7 +277,7 @@ export class MemoryRepository {
   /** BM25 召回；不可用/不适用时返回 null 让调用方走 LIKE 兜底 */
   private searchMemoriesFtsRows(
     query: string,
-    options: { type?: string; category?: string; includeArchived?: boolean },
+    options: { type?: string; category?: string; includeArchived?: boolean; includeCandidates?: boolean },
     fetchLimit: number
   ): SQLiteRow[] | null {
     const trimmed = query.trim();
@@ -285,9 +295,7 @@ export class MemoryRepository {
       conditions.push('memories_fts.category = ?');
       params.push(options.category);
     }
-    if (!options.includeArchived) {
-      conditions.push("COALESCE(m.status, 'active') != 'archived'");
-    }
+    conditions.push(memoryStatusCondition(options, 'm.status'));
     const extra = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
 
     try {
@@ -308,7 +316,7 @@ export class MemoryRepository {
   /** 旧 LIKE 全扫通道（兜底） */
   private searchMemoriesLikeRows(
     query: string,
-    options: { type?: string; category?: string; includeArchived?: boolean },
+    options: { type?: string; category?: string; includeArchived?: boolean; includeCandidates?: boolean },
     fetchLimit: number
   ): SQLiteRow[] {
     const conditions: string[] = ['(content LIKE ? OR summary LIKE ?)'];
@@ -322,9 +330,7 @@ export class MemoryRepository {
       conditions.push('category = ?');
       params.push(options.category);
     }
-    if (!options.includeArchived) {
-      conditions.push("COALESCE(status, 'active') != 'archived'");
-    }
+    conditions.push(memoryStatusCondition(options));
 
     return this.db.prepare(`
       SELECT * FROM memories WHERE ${conditions.join(' AND ')}

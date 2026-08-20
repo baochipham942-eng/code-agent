@@ -8,8 +8,8 @@ import * as os from 'os';
 import * as path from 'path';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
-const quickModelMocks = vi.hoisted(() => ({
-  quickTask: vi.fn<(
+const memoryModelMocks = vi.hoisted(() => ({
+  memoryTask: vi.fn<(
     prompt: string,
     maxTokens?: number,
   ) => Promise<{ success: boolean; content?: string; error?: string }>>(),
@@ -24,7 +24,7 @@ vi.mock('../../../../src/host/config/configPaths', async (importOriginal) => {
 });
 
 vi.mock('../../../../src/host/model/quickModel', () => ({
-  quickTask: quickModelMocks.quickTask,
+  memoryTask: memoryModelMocks.memoryTask,
 }));
 
 vi.mock('../../../../src/host/services/infra/timeoutController', () => ({
@@ -117,7 +117,7 @@ describe('默认助手长期事实写回', () => {
   let memoryDir: string;
 
   beforeEach(async () => {
-    quickModelMocks.quickTask.mockReset();
+    memoryModelMocks.memoryTask.mockReset();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'durable-facts-'));
     mockConfigDir.dir = tempDir;
     memoryDir = path.join(tempDir, 'memory');
@@ -128,14 +128,14 @@ describe('默认助手长期事实写回', () => {
   });
 
   it('判断器返回两条合格事实时写入两个文件并维护索引', async () => {
-    quickModelMocks.quickTask.mockResolvedValue(llmResult({
+    memoryModelMocks.memoryTask.mockResolvedValue(llmResult({
       durableFacts: [makeFact(1), makeFact(2)],
     }));
 
     await runSummaryExtraction();
 
     await waitForFactFiles(memoryDir, ['fact-1.md', 'fact-2.md']);
-    expect(quickModelMocks.quickTask).toHaveBeenCalledTimes(1);
+    expect(memoryModelMocks.memoryTask).toHaveBeenCalledTimes(1);
     const index = await fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8');
     expect(index.match(/\[fact-1\.md\]/g)).toHaveLength(1);
     expect(index.match(/\[fact-2\.md\]/g)).toHaveLength(1);
@@ -154,7 +154,7 @@ describe('默认助手长期事实写回', () => {
   });
 
   it('worth 为 false 时不写入长期事实', async () => {
-    quickModelMocks.quickTask.mockResolvedValue(llmResult({
+    memoryModelMocks.memoryTask.mockResolvedValue(llmResult({
       worth: false,
       durableFacts: [makeFact(1)],
     }));
@@ -164,8 +164,8 @@ describe('默认助手长期事实写回', () => {
     expect(await listFactFiles(memoryDir)).toEqual([]);
   });
 
-  it('quick model 降级为 heuristic 时不写入长期事实', async () => {
-    quickModelMocks.quickTask.mockResolvedValue({ success: false, error: '模型不可用' });
+  it('memory model 降级为 heuristic 时不写入长期事实', async () => {
+    memoryModelMocks.memoryTask.mockResolvedValue({ success: false, error: '模型不可用' });
 
     await runSummaryExtraction();
 
@@ -173,7 +173,7 @@ describe('默认助手长期事实写回', () => {
   });
 
   it('逐条拒绝非法文件名和类型，同批合法条目照常写入', async () => {
-    quickModelMocks.quickTask.mockResolvedValue(llmResult({
+    memoryModelMocks.memoryTask.mockResolvedValue(llmResult({
       durableFacts: [
         makeFact(1),
         makeFact(2, { filename: '../path-traversal.md' }),
@@ -192,7 +192,7 @@ describe('默认助手长期事实写回', () => {
   });
 
   it('模型返回五条事实时只保留并写入前三条', async () => {
-    quickModelMocks.quickTask.mockResolvedValue(llmResult({
+    memoryModelMocks.memoryTask.mockResolvedValue(llmResult({
       durableFacts: Array.from({ length: 5 }, (_, index) => makeFact(index + 1, {
         content: index === 0
           ? '长'.repeat(SESSION_JUDGE.MAX_DURABLE_FACT_CHARS + 100)

@@ -260,4 +260,77 @@ describe('Light Memory consolidation live contract', () => {
     await expect(fs.stat(path.join(memoryDir, 'release-governance.md'))).rejects.toThrow();
     expect(db.records).toEqual([]);
   });
+
+  it('skips healthy small stores without calling the model', async () => {
+    await fs.rm(path.join(memoryDir, 'beta.md'));
+    await fs.rm(path.join(memoryDir, 'conflict.md'));
+    await fs.writeFile(path.join(memoryDir, 'INDEX.md'), [
+      '# Memory Index',
+      '',
+      '- [alpha.md](alpha.md) — Release facts',
+      '',
+    ].join('\n'), 'utf-8');
+
+    const report = await consolidateLightMemory({ dryRun: true });
+
+    expect(report).toMatchObject({ triggered: false, applied: false });
+    expect(report.reason).toContain('healthy: 1 files');
+    expect(mocks.memoryTask).not.toHaveBeenCalled();
+  });
+
+  it('drops model-proposed delete actions without changing their source cards', async () => {
+    const beforeAlpha = await fs.readFile(path.join(memoryDir, 'alpha.md'), 'utf-8');
+    const beforeIndex = await fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8');
+    mocks.memoryTask.mockResolvedValueOnce({
+      success: true,
+      content: JSON.stringify({
+        actions: [{ kind: 'delete', sources: ['alpha.md'], reason: 'model requested deletion' }],
+        conflicts: [],
+      }),
+    });
+
+    const report = await consolidateLightMemory({
+      dryRun: true,
+      force: true,
+      instructionFiles: [{ path: instructionsPath, content: instructions }],
+    });
+
+    expect(report.actions).toEqual([]);
+    expect(report.applied).toBe(false);
+    expect(await fs.readFile(path.join(memoryDir, 'alpha.md'), 'utf-8')).toBe(beforeAlpha);
+    expect(await fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8')).toBe(beforeIndex);
+  });
+
+  it('rejects merge results that try to create directive memory', async () => {
+    const beforeAlpha = await fs.readFile(path.join(memoryDir, 'alpha.md'), 'utf-8');
+    mocks.memoryTask.mockResolvedValueOnce({
+      success: true,
+      content: JSON.stringify({
+        actions: [{
+          kind: 'merge',
+          sources: ['alpha.md', 'beta.md'],
+          result: {
+            filename: 'unsafe-directive',
+            name: 'Unsafe directive',
+            description: 'Must be rejected',
+            type: 'directive',
+            content: 'Alpha and beta facts combined into a directive that must never be persisted.',
+          },
+          reason: 'unsafe escalation',
+        }],
+        conflicts: [],
+      }),
+    });
+
+    const report = await consolidateLightMemory({
+      dryRun: true,
+      force: true,
+      instructionFiles: [{ path: instructionsPath, content: instructions }],
+    });
+
+    expect(report.actions).toEqual([]);
+    expect(report.diff).toContain('REJECTED');
+    expect(await fs.readFile(path.join(memoryDir, 'alpha.md'), 'utf-8')).toBe(beforeAlpha);
+    await expect(fs.stat(path.join(memoryDir, 'unsafe-directive.md'))).rejects.toThrow();
+  });
 });

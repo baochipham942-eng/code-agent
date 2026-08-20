@@ -264,6 +264,11 @@ export interface AppSettings {
     /** 实时通话（Live Voice）UI 设置；运行时断句真源仍是上面的 turnDetection */
     live?: VoiceLiveSettings;
   };
+  // 记忆维护配置（N-MEM-CONSOLSAFE）。可选，未配置 = 自动整理只演练（dry-run）。
+  memory?: {
+    /** true = 定时整理真写回记忆文件（有审计）；false/缺省 = 只出演练报告不落盘 */
+    autoConsolidate?: boolean;
+  };
   // API 超时配置
   timeouts?: {
     /** 任务复杂度（用户设置） */

@@ -16,6 +16,7 @@ import { isRuntimeProviderConfigured } from '../../shared/modelRuntime';
 import { resolveProviderIconAsset, saveProviderIconAsset } from '../services/providerIconAssets';
 import { handleDiscoverModels, type DiscoveredProviderModel, type DiscoverModelsResult } from './provider.ipc';
 import { refreshVoiceInstructions } from '../services/voice/voiceSessionService';
+import { createLogger } from '../services/infra/logger';
 import { extractDocxParagraphsFromBuffer } from '../tools/artifacts/docxParagraphLocator';
 import {
   resolveSheetCoordinate,
@@ -25,6 +26,8 @@ import {
 // ----------------------------------------------------------------------------
 // Internal Handlers
 // ----------------------------------------------------------------------------
+
+const logger = createLogger('SettingsIpc');
 
 const LOCAL_PROVIDER_DISCOVERY_TTL_MS = 10_000;
 const LOCAL_PROVIDER_DISCOVERY_TIMEOUT_MS = 1_200;
@@ -269,6 +272,15 @@ async function handleSet(
   const liveUpdates = updates.voice?.live;
   if (liveUpdates && Object.prototype.hasOwnProperty.call(liveUpdates, 'speechRate')) {
     refreshVoiceInstructions();
+  }
+  // 自动整理开关变更 → 立即对齐 consolidation cron job 的 dryRun（失败不阻塞设置保存）
+  if (updates.memory && Object.prototype.hasOwnProperty.call(updates.memory, 'autoConsolidate')) {
+    try {
+      const { syncMemoryConsolidationJob } = await import('../lightMemory/consolidationJobSync');
+      await syncMemoryConsolidationJob(updates.memory.autoConsolidate === true);
+    } catch (error) {
+      logger.warn('memory consolidation job sync failed (settings saved):', (error as Error).message);
+    }
   }
 }
 

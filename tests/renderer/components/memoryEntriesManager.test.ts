@@ -2,13 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { MemoryEntry } from '../../../src/shared/contract/memory';
 import {
   buildMemoryEntryRows,
-  formatBatchReviewSkippedDetail,
   formatMemoryEntryUpdatedAt,
   getMemoryEntryKindLabel,
   getMemoryEntrySourceLabel,
   getMemoryEntryStatusLabel,
-  visibleCandidateEntryIds,
 } from '../../../src/renderer/components/features/settings/tabs/MemoryEntriesManager';
+import {
+  formatBatchReviewSkippedDetail,
+  visibleCandidateEntryIds,
+} from '../../../src/renderer/components/features/settings/tabs/MemoryEntriesManager.helpers';
 import { zh } from '../../../src/renderer/i18n/zh';
 
 const now = Date.parse('2026-05-15T08:00:00.000Z');

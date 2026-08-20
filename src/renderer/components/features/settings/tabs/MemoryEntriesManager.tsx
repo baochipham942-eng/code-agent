@@ -22,6 +22,7 @@ import type {
   MemoryEntryUpdateRequest,
   MemoryEntryUpdateResult,
 } from '@shared/contract/memory';
+import { formatBatchReviewSkippedDetail, visibleCandidateEntryIds } from './MemoryEntriesManager.helpers';
 import { Input } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
@@ -65,29 +66,6 @@ export interface MemoryEntryManagerRow {
   sourceLabel: string;
   updatedAtLabel: string;
   selected: boolean;
-}
-
-export function visibleCandidateEntryIds(entries: MemoryEntry[], rows: MemoryEntryManagerRow[]): string[] {
-  const visible = new Set(rows.map((row) => row.id));
-  return entries
-    .filter((entry) => entry.status === 'candidate' && entry.kind !== 'directive' && visible.has(entry.id))
-    .map((entry) => entry.id);
-}
-
-/** 批量转正被跳过的条目翻成人话：已知 reason 配文案，未知原样展示，并列出条目标题。 */
-export function formatBatchReviewSkippedDetail(
-  skipped: MemoryEntryBatchReviewResult['skipped'],
-  entries: MemoryEntry[],
-  labels: MemorySettingsText['entries']['batchReview'],
-): string {
-  const reasonLabels: Record<string, string> = labels.skippedReasonLabels;
-  return skipped
-    .map((item) => {
-      const title = entries.find((entry) => entry.id === item.entryId)?.title || item.entryId;
-      const reason = reasonLabels[item.reason] ?? item.reason;
-      return labels.skippedItem.replace('{title}', title).replace('{reason}', reason);
-    })
-    .join(labels.skippedItemSeparator);
 }
 
 const STATUS_OPTIONS: MemoryEntryStatus[] = ['candidate', 'active', 'rejected', 'stale', 'archived'];

@@ -33,7 +33,7 @@ const INSTRUCTIONS_DISPLAY_LIMIT = 8;
 type HarnessImportText = typeof zh.settings.memory.harnessImport;
 
 /** dry-run 被跳过的来源 reason：已知值配 i18n 文案，未知自由字符串原样展示。 */
-export function harnessSkippedReasonLabel(reason: string, copy: HarnessImportText): string {
+function harnessSkippedReasonLabel(reason: string, copy: HarnessImportText): string {
   const labels: Record<string, string> = copy.skippedReasonLabels;
   return labels[reason] ?? reason;
 }

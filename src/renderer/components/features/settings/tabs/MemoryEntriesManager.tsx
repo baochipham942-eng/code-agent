@@ -23,6 +23,7 @@ import type {
   MemoryEntryUpdateResult,
 } from '@shared/contract/memory';
 import { Input } from '../../../primitives';
+import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
 import { isWebMode } from '../../../../utils/platform';
 import ipcService from '../../../../services/ipcService';
@@ -207,6 +208,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
   const [kindFilter, setKindFilter] = useState<EntryKindFilter>('all');
   const [sourceFilter, setSourceFilter] = useState<EntrySourceFilter>('all');
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set());
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [busy, setBusy] = useState<'load' | 'save' | 'batch' | null>('load');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -610,7 +612,13 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   </button>
                   <button
                     type="button"
-                    onClick={() => saveDraft({ status: draft.status === 'archived' ? 'active' : 'archived' })}
+                    onClick={() => {
+                      if (draft.status === 'archived') {
+                        saveDraft({ status: 'active' });
+                      } else {
+                        setArchiveConfirmOpen(true);
+                      }
+                    }}
                     disabled={busy !== null}
                     className="inline-flex items-center gap-1.5 rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -642,6 +650,19 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={archiveConfirmOpen}
+        title={memoryText.entries.archiveConfirmTitle}
+        message={memoryText.entries.archiveConfirmMessage}
+        variant="warning"
+        confirmText={memoryText.entries.archive}
+        cancelText={memoryText.entries.cancel}
+        onConfirm={() => {
+          setArchiveConfirmOpen(false);
+          saveDraft({ status: 'archived' });
+        }}
+        onCancel={() => setArchiveConfirmOpen(false)}
+      />
     </SettingsSection>
   );
 };

@@ -31,6 +31,7 @@ import type {
 } from '@shared/contract/memory';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import ipcService from '../../../../services/ipcService';
 import { useAppStore, type SettingsMemoryFocus } from '../../../../stores/appStore';
 import { MemoryEntriesManager } from './MemoryEntriesManager';
@@ -861,44 +862,18 @@ export const MemoryTab: React.FC = () => {
                       </td>
                       <td className="px-3 py-3 align-top">
                         <div className="flex justify-end gap-2">
-                          {deletingFile === row.filename ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setDeletingFile(null);
-                                }}
-                                className="rounded border border-zinc-700 px-2 py-1 text-zinc-300 hover:bg-zinc-800"
-                              >
-                                {memoryText.files.cancel}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  handleDelete(row.filename);
-                                }}
-                                className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-badge-danger hover:bg-red-500/20 disabled:opacity-50"
-                                disabled={isWebMode()}
-                              >
-                                {memoryText.files.confirm}
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setDeletingFile(row.filename);
-                              }}
-                              className="inline-flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-badge-danger"
-                              title={memoryText.files.delete}
-                            >
-                              <Archive className="h-3 w-3" />
-                              {memoryText.files.delete}
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setDeletingFile(row.filename);
+                            }}
+                            className="inline-flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-zinc-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-badge-danger"
+                            title={memoryText.files.delete}
+                          >
+                            <Archive className="h-3 w-3" />
+                            {memoryText.files.delete}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1011,6 +986,19 @@ export const MemoryTab: React.FC = () => {
           )}
         </div>
       </SettingsDetails>
+      <ConfirmDialog
+        isOpen={deletingFile !== null}
+        title={memoryText.files.archiveConfirmTitle}
+        message={memoryText.files.archiveConfirmMessage}
+        variant="warning"
+        confirmText={memoryText.files.delete}
+        cancelText={memoryText.files.cancel}
+        confirmDisabled={isWebMode()}
+        onConfirm={() => {
+          if (deletingFile) handleDelete(deletingFile);
+        }}
+        onCancel={() => setDeletingFile(null)}
+      />
       </div>
     </SettingsPage>
   );

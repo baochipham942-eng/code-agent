@@ -120,20 +120,22 @@ describe('indexLoader', () => {
       expect(result).toBe(content);
     });
 
-    it('filters archived file entries even when a stale INDEX still links them', async () => {
+    it('filters inactive file entries even when a stale INDEX still links them', async () => {
       const memDir = path.join(tmpDir, 'memory');
       await fs.mkdir(memDir, { recursive: true });
       await fs.writeFile(path.join(memDir, 'active.md'), '---\nname: Active\ndescription: Active memory\ntype: project\nstatus: active\n---\n\nActive body.\n', 'utf-8');
       await fs.writeFile(path.join(memDir, 'archived.md'), '---\nname: Archived\ndescription: Archived memory\ntype: project\nstatus: archived\n---\n\nArchived original body.\n', 'utf-8');
+      await fs.writeFile(path.join(memDir, 'candidate.md'), '---\nname: Candidate\ndescription: Candidate memory\ntype: project\nstatus: candidate\n---\n\nCandidate body.\n', 'utf-8');
       await fs.writeFile(
         path.join(memDir, 'INDEX.md'),
-        '# Memory Index\n\n- [active.md](active.md) — Active memory\n- [archived.md](archived.md) — Archived memory\n',
+        '# Memory Index\n\n- [active.md](active.md) — Active memory\n- [archived.md](archived.md) — Archived memory\n- [candidate.md](candidate.md) — Candidate memory\n',
         'utf-8',
       );
 
       const result = await loadMemoryIndex();
       expect(result).toContain('active.md');
       expect(result).not.toContain('archived.md');
+      expect(result).not.toContain('candidate.md');
       expect(await fs.readFile(path.join(memDir, 'archived.md'), 'utf-8')).toContain('Archived original body.');
     });
 

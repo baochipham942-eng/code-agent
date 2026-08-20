@@ -27,6 +27,7 @@ interface MemoryImporterDatabase {
     orderBy?: string;
     orderDir?: 'ASC' | 'DESC';
     includeArchived?: boolean;
+    includeCandidates?: boolean;
   }): MemoryRecord[];
   createMemory(data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): MemoryRecord;
   updateMemory(id: string, updates: Partial<MemoryRecord>): MemoryRecord | null;

@@ -168,6 +168,8 @@ The stable fact body.
     expect(first.entries[0]).toMatchObject({ status: 'candidate', kind: 'reference' });
     const files = await fs.readdir(path.join(configDir, 'memory'));
     expect(files.filter((file) => file.startsWith('import-') && file.endsWith('.md'))).toHaveLength(1);
+    const index = await fs.readFile(path.join(configDir, 'memory', 'INDEX.md'), 'utf-8');
+    expect(index).not.toContain(files.find((file) => file.startsWith('import-')));
     expect(db.records).toHaveLength(1);
     expect(db.records[0]).toMatchObject({
       status: 'candidate',

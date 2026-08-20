@@ -446,6 +446,14 @@ export const enSettingsWork = {
       },
     },
     memory: {
+      consolidation: {
+        title: 'Auto-consolidate memory',
+        description: 'Periodically compress and merge memory files with the fast model (health-gated: skips automatically and costs no tokens when memory volume is low).',
+        toggleLabel: 'Write consolidation results back to memory files',
+        toggleOnHint: 'On: results are written back for real, with an audit record before every write.',
+        toggleOffHint: 'Off (default): each scheduled run only produces a dry-run report and never touches memory files.',
+        saveFailed: 'Failed to save, please retry',
+      },
       relativeDate: {
         today: 'Today',
         yesterday: 'Yesterday',

@@ -446,6 +446,14 @@ export const zhSettingsWork = {
       },
     },
     memory: {
+      consolidation: {
+        title: '自动整理记忆',
+        description: '定时用快速模型压缩合并记忆文件（有健康门，记忆量不足时自动跳过、不消耗 token）。',
+        toggleLabel: '整理结果写回记忆文件',
+        toggleOnHint: '已开启：整理结果会真实写回，每次写回前先落审计记录，可追溯。',
+        toggleOffHint: '未开启（默认）：每次定时整理只生成演练报告，不改动任何记忆文件。',
+        saveFailed: '保存失败，请重试',
+      },
       relativeDate: {
         today: '今天',
         yesterday: '昨天',

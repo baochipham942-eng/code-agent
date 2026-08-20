@@ -661,7 +661,12 @@ export const zhSettingsWork = {
         applyFailed: '导入失败',
         applyResult: '已导入 {imported} 条，跳过 {skipped} 条',
         noCandidates: '没有新的可导入记忆。',
+        skippedTitle: '已跳过 {count} 个来源',
+        skippedReasonLabels: {
+          'source-not-found': '未检测到该来源（未安装或目录不存在）',
+        },
         instructionsTitle: '{count} 条家规或 directive 只供对照，未写入记忆',
+        instructionsMore: '还有 {count} 条未显示',
         confirmDirective: '逐条确认',
         confirmingDirective: '等待确认…',
         directiveImported: 'directive 已经人工确认并写入',

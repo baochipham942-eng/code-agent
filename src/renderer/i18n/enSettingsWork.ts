@@ -661,7 +661,12 @@ export const enSettingsWork = {
         applyFailed: 'Import failed',
         applyResult: 'Imported {imported}; skipped {skipped}',
         noCandidates: 'No new memories are ready to import.',
+        skippedTitle: 'Skipped {count} sources',
+        skippedReasonLabels: {
+          'source-not-found': 'Source not detected (not installed or directory missing)',
+        },
         instructionsTitle: '{count} rule or directive items are comparison-only and were not written to memory',
+        instructionsMore: '{count} more not shown',
         confirmDirective: 'Confirm one by one',
         confirmingDirective: 'Awaiting confirmation...',
         directiveImported: 'Directive confirmed by the user and imported',

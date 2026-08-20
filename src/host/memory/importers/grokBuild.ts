@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { instructionItem } from './adapterHelpers';
-import { parseImportMarkdown, readMarkdownFile, splitMarkdownSections } from './markdown';
+import { directoryExists, parseImportMarkdown, readMarkdownFile, splitMarkdownSections } from './markdown';
 import type { MemoryImporterAdapter, RawMemoryImportItem } from './types';
 
 async function memoryFiles(root: string): Promise<Array<{ sourcePath: string; sourceScope: string; scope: 'global' | 'project' }>> {
@@ -29,9 +29,13 @@ export const grokBuildAdapter: MemoryImporterAdapter = {
   phase: 'p0',
   async discover(options) {
     const grokRoot = path.join(options.homeDir, '.grok');
+    const memoryRoot = path.join(grokRoot, 'memory');
     const items: RawMemoryImportItem[] = [];
     const skipped: Array<{ sourcePath: string; reason: string }> = [];
-    for (const source of await memoryFiles(path.join(grokRoot, 'memory'))) {
+    if (!await directoryExists(memoryRoot)) {
+      skipped.push({ sourcePath: memoryRoot, reason: 'source-not-found' });
+    }
+    for (const source of await memoryFiles(memoryRoot)) {
       const file = await readMarkdownFile(source.sourcePath);
       if (!file) continue;
       for (const section of splitMarkdownSections(file.raw, path.basename(path.dirname(source.sourcePath)))) {

@@ -78,6 +78,19 @@ describe('memory harness importer', () => {
     await fs.rm(configDir, { recursive: true, force: true });
   });
 
+  it('reports a missing adapter source root in skipped', async () => {
+    const result = await dryRunMemoryHarnessImport(new MemoryDb(), {
+      homeDir,
+      adapterIds: ['claude-code'],
+    });
+
+    expect(result.skipped).toContainEqual({
+      adapterId: 'claude-code',
+      sourcePath: path.join(homeDir, '.claude', 'projects'),
+      reason: 'source-not-found',
+    });
+  });
+
   it('maps the four P0 adapters through one pipeline while preserving unknown metadata', async () => {
     await write(path.join(homeDir, '.codex/memories/MEMORY.md'), '# index only');
     await write(path.join(homeDir, '.codex/memories/profile.md'), `---

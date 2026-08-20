@@ -88,6 +88,14 @@ export async function readMarkdownFile(filePath: string): Promise<{
   }
 }
 
+export async function directoryExists(root: string): Promise<boolean> {
+  try {
+    return (await fs.stat(root)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 export async function listMarkdownFiles(root: string, recursive = false): Promise<string[]> {
   const files: string[] = [];
   async function walk(current: string): Promise<void> {

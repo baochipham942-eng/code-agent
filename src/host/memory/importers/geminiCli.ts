@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { instructionItem, memoryItemFromMarkdown } from './adapterHelpers';
-import { listMarkdownFiles } from './markdown';
+import { directoryExists, listMarkdownFiles } from './markdown';
 import type { MemoryImporterAdapter, RawMemoryImportItem } from './types';
 
 export const geminiCliAdapter: MemoryImporterAdapter = {
@@ -8,10 +8,14 @@ export const geminiCliAdapter: MemoryImporterAdapter = {
   phase: 'p1',
   async discover(options) {
     const root = path.join(options.homeDir, '.gemini');
+    const tmpRoot = path.join(root, 'tmp');
     const items: RawMemoryImportItem[] = [];
     const skipped: Array<{ sourcePath: string; reason: string }> = [];
-    for (const sourcePath of await listMarkdownFiles(path.join(root, 'tmp'), true)) {
-      const relative = path.relative(path.join(root, 'tmp'), sourcePath);
+    if (!await directoryExists(tmpRoot)) {
+      skipped.push({ sourcePath: tmpRoot, reason: 'source-not-found' });
+    }
+    for (const sourcePath of await listMarkdownFiles(tmpRoot, true)) {
+      const relative = path.relative(tmpRoot, sourcePath);
       if (!relative.split(path.sep).includes('memory')) continue;
       if (relative.split(path.sep).includes('.inbox') || relative.split(path.sep).includes('chats')) {
         skipped.push({ sourcePath, reason: 'unapproved-inbox-or-session' });

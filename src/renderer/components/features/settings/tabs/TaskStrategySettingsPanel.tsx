@@ -31,6 +31,9 @@ function modelLabel(provider: string, model: string): string {
   return `${provider}/${model}`;
 }
 
+// 记忆整理模型 Select 的「跟随快速模型」哨兵值：选中即清除 routing.memory 覆盖。
+const FOLLOW_FAST_VALUE = '__follow_fast__';
+
 export interface TaskStrategySettingsPanelProps {
   settings: AppSettings | null;
   providerConfigs: Partial<Record<string, ModelProviderSettings>>;
@@ -39,8 +42,8 @@ export interface TaskStrategySettingsPanelProps {
   disabled?: boolean;
   /** 改动即存：开关 / 三类模型修改后立即调用持久化 */
   onChange: (strategy: TaskModelStrategySettings) => void;
-  /** 记忆整理只有这一处配置入口；未配置时由 Host 跟随 routing.fast。 */
-  onMemoryRouteChange: (route: { provider: ModelProvider; model: string }) => void;
+  /** 记忆整理只有这一处配置入口；传 null 清除覆盖、回到跟随 routing.fast。 */
+  onMemoryRouteChange: (route: { provider: ModelProvider; model: string } | null) => void;
 }
 
 export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps> = ({
@@ -209,8 +212,12 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
           </div>
           <p className="text-xs text-zinc-500">{strategyText.memory.description}</p>
           <Select
-            value={optionValue(effectiveMemoryRoute.provider, effectiveMemoryRoute.model)}
+            value={memoryRoute ? optionValue(memoryRoute.provider, memoryRoute.model) : FOLLOW_FAST_VALUE}
             onChange={(event) => {
+              if (event.target.value === FOLLOW_FAST_VALUE) {
+                onMemoryRouteChange(null);
+                return;
+              }
               const parsed = parseOptionValue(event.target.value);
               if (parsed) onMemoryRouteChange(parsed);
             }}
@@ -218,9 +225,10 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
             className="w-full"
             aria-label={strategyText.memory.label}
           >
-            {!selectedOptionSet.has(optionValue(effectiveMemoryRoute.provider, effectiveMemoryRoute.model)) ? (
-              <option value={optionValue(effectiveMemoryRoute.provider, effectiveMemoryRoute.model)}>
-                {modelLabel(effectiveMemoryRoute.provider, effectiveMemoryRoute.model)}{strategyText.unavailableSuffix}
+            <option value={FOLLOW_FAST_VALUE}>{strategyText.memory.followFast}</option>
+            {memoryRoute && !selectedOptionSet.has(optionValue(memoryRoute.provider, memoryRoute.model)) ? (
+              <option value={optionValue(memoryRoute.provider, memoryRoute.model)}>
+                {modelLabel(memoryRoute.provider, memoryRoute.model)}{strategyText.unavailableSuffix}
               </option>
             ) : null}
             {groupedOptions.map((group) => (

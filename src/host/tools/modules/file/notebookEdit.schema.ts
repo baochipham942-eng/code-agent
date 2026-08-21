@@ -21,6 +21,7 @@ Edit modes: replace (default) | insert | delete.`,
   },
   category: 'fs',
   permissionLevel: 'write',
+  pathAuthority: [{ kind: 'path', pathParameter: 'notebook_path', mutation: 'edit' }],
   readOnly: false,
   allowInPlanMode: false,
 };

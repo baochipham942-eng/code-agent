@@ -46,6 +46,7 @@ excel_generate { "title": "数据表", "data": "name,age\\n张三,25\\n李四,30
         type: 'string',
         description: '输出文件路径（默认: 工作目录下的 spreadsheet-{timestamp}.xlsx）',
       },
+      overwrite: { type: 'boolean', description: 'output_path 已存在且确认替换时必须设为 true' },
       sheet_name: {
         type: 'string',
         description: '工作表名称（默认: Sheet1）',
@@ -55,6 +56,7 @@ excel_generate { "title": "数据表", "data": "name,age\\n张三,25\\n李四,30
   },
   category: 'network',
   permissionLevel: 'write',
+  pathAuthority: [{ kind: 'path', pathParameter: 'output_path', mutation: 'overwrite' }],
   readOnly: false,
   allowInPlanMode: false,
 };

@@ -46,6 +46,7 @@ qrcode_generate { "content": "WIFI:T:WPA;S:MyNetwork;P:MyPassword;;" }
         type: 'string',
         description: '输出文件路径（默认: 工作目录下的 qrcode-{timestamp}.png）',
       },
+      overwrite: { type: 'boolean', description: 'output_path 已存在且确认替换时必须设为 true' },
       size: {
         type: 'number',
         description: '二维码尺寸（默认: 300）',
@@ -67,6 +68,7 @@ qrcode_generate { "content": "WIFI:T:WPA;S:MyNetwork;P:MyPassword;;" }
   },
   category: 'network',
   permissionLevel: 'write',
+  pathAuthority: [{ kind: 'path', pathParameter: 'output_path', mutation: 'overwrite' }],
   readOnly: false,
   allowInPlanMode: false,
 };

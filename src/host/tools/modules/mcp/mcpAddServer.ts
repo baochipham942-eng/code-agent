@@ -43,7 +43,12 @@ import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { extractSecrets } from '../../../mcp/secretRef';
 import { getConfigService } from '../../../services/core/configService';
 import { isSensitiveMcpCredentialKey } from '../../../../shared/security/mcpSecretKeys';
+import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
+import { getFileMutationActorId } from '../file/fileMutationIdentity';
 import { mcpAddServerSchema as schema } from './mcpAddServer.schema';
+
+const MCP_CONFIG_LOCK_HOLD_TIMEOUT_MS = 60_000;
+const MCP_CONFIG_LOCK_WAIT_TIMEOUT_MS = 10_000;
 
 // ----------------------------------------------------------------------------
 // Constants & validators (1:1 from legacy)
@@ -177,9 +182,12 @@ function buildMcpAddServerSuccessMeta(input: {
 async function persistMCPConfig(
   workingDirectory: string,
   serverConfig: MCPServerConfig,
-  logger: ToolContext['logger'],
-): Promise<{ success: boolean; error?: string; filePath?: string }> {
+  ctx: ToolContext,
+): Promise<{ success: boolean; error?: string; filePath?: string; code?: string }> {
   const mcpPaths = getMcpConfigPath(workingDirectory);
+  const holderId = getFileMutationActorId(ctx);
+  const lockManager = getResourceLockManager();
+  let lockedPath: string | undefined;
 
   try {
     const legacyExists = await pathExists(mcpPaths.legacy);
@@ -192,13 +200,33 @@ async function persistMCPConfig(
       configPath = mcpPaths.new;
       isNewFormat = true;
     } else if (legacyExists) {
-      logger.info('Using legacy MCP config. Consider migrating to .code-agent/mcp.json');
+      ctx.logger.info('Using legacy MCP config. Consider migrating to .code-agent/mcp.json');
       configPath = mcpPaths.legacy;
       isNewFormat = false;
     } else {
       await ensureConfigDir(workingDirectory);
       configPath = mcpPaths.new;
       isNewFormat = true;
+    }
+
+    if (!holderId) {
+      ctx.logger.debug('Skipping MCP config file lock without agent identity', { path: configPath });
+    } else {
+      const lockResult = await lockManager.acquire(holderId, configPath, 'exclusive', {
+        type: 'file',
+        timeout: MCP_CONFIG_LOCK_HOLD_TIMEOUT_MS,
+        wait: true,
+        waitTimeout: MCP_CONFIG_LOCK_WAIT_TIMEOUT_MS,
+      });
+      if (!lockResult.acquired) {
+        return {
+          success: false,
+          error: '该文件正被另一个操作使用，请稍后重试或换输出路径',
+          filePath: configPath,
+          code: 'FILE_LOCK_BUSY',
+        };
+      }
+      lockedPath = configPath;
     }
 
     let config: Record<string, unknown> = {};
@@ -243,6 +271,8 @@ async function persistMCPConfig(
       success: false,
       error: error instanceof Error ? error.message : 'Failed to save configuration',
     };
+  } finally {
+    if (holderId && lockedPath) lockManager.release(holderId, lockedPath);
   }
 }
 
@@ -439,9 +469,17 @@ export async function executeMcpAddServer(
   }
 
   // ── Persist configuration（fs 写入，不走 ConfigService）──
-  const persistResult = await persistMCPConfig(ctx.workingDir, configToPersist, ctx.logger);
+  const persistResult = await persistMCPConfig(ctx.workingDir, configToPersist, ctx);
   if (!persistResult.success) {
     ctx.logger.warn('Failed to persist MCP config:', persistResult.error);
+    if (persistResult.code === 'FILE_LOCK_BUSY') {
+      return {
+        ok: false,
+        error: persistResult.error ?? '该文件正被另一个操作使用，请稍后重试或换输出路径',
+        code: persistResult.code,
+        meta: { path: persistResult.filePath },
+      };
+    }
   } else if (Object.keys(extractedSecrets).length > 0) {
     // ADR-051：persist 成功后再写 SecureStorage，persist 失败则不留孤儿密钥
     await getConfigService().setIntegration(integrationId, extractedSecrets);

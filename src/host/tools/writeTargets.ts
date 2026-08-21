@@ -1,6 +1,10 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { ToolDefinition, ToolPathAuthorityDescriptor } from '../../shared/contract';
+import type {
+  ToolDefinition,
+  ToolPathAuthorityDescriptor,
+  ToolPathMutationKind,
+} from '../../shared/contract';
 import { getMemoryDir } from '../lightMemory/indexLoader';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 
@@ -14,6 +18,7 @@ export interface ResolveToolWriteTargetsInput {
 export interface ToolWriteTargets {
   targets: string[];
   uncertain: string[];
+  mutations: Record<string, ToolPathMutationKind>;
 }
 
 const PATH_LIKE_SUFFIXES = new Set(['file', 'path', 'directory', 'destination', 'target']);
@@ -111,14 +116,14 @@ function genericPathAssessment(
   key?: string,
 ): ToolWriteTargets {
   if (typeof value === 'string') {
-    if (!key || !isPathLikeParameter(key)) return { targets: [], uncertain: [] };
-    if (value.trim() === '') return { targets: [], uncertain: [`uncertain:${key}`] };
-    return { targets: [resolveToolPath(value, workingDirectory)], uncertain: [] };
+    if (!key || !isPathLikeParameter(key)) return { targets: [], uncertain: [], mutations: {} };
+    if (value.trim() === '') return { targets: [], uncertain: [`uncertain:${key}`], mutations: {} };
+    return { targets: [resolveToolPath(value, workingDirectory)], uncertain: [], mutations: {} };
   }
   if (Array.isArray(value)) {
     return mergeAssessments(value.map((entry) => genericPathAssessment(entry, workingDirectory, key)));
   }
-  if (!value || typeof value !== 'object') return { targets: [], uncertain: [] };
+  if (!value || typeof value !== 'object') return { targets: [], uncertain: [], mutations: {} };
   return mergeAssessments(Object.entries(value as Record<string, unknown>).map(
     ([childKey, childValue]) => genericPathAssessment(childValue, workingDirectory, childKey),
   ));
@@ -129,8 +134,15 @@ function descriptorAssessment(
   input: ResolveToolWriteTargetsInput,
 ): ToolWriteTargets {
   if (descriptor.kind === 'path') {
+    if (
+      descriptor.whenParameter
+      && descriptor.whenValues
+      && !descriptor.whenValues.includes(String(input.params[descriptor.whenParameter]))
+    ) {
+      return { targets: [], uncertain: [], mutations: {} };
+    }
     const rawPath = input.params[descriptor.pathParameter];
-    if (rawPath === undefined) return { targets: [], uncertain: [] };
+    if (rawPath === undefined) return { targets: [], uncertain: [], mutations: {} };
     const declaredValues: string[] = [];
     const collect = (value: unknown): void => {
       if (typeof value === 'string') {
@@ -146,26 +158,34 @@ function descriptorAssessment(
       }
     };
     collect(rawPath);
-    return declaredValues.length > 0
-      ? { targets: declaredValues.map((value) => resolveToolPath(value, input.workingDirectory)), uncertain: [] }
-      : { targets: [], uncertain: [`uncertain:${descriptor.pathParameter}`] };
+    if (declaredValues.length === 0) {
+      return { targets: [], uncertain: [`uncertain:${descriptor.pathParameter}`], mutations: {} };
+    }
+    const targets = declaredValues.map((value) => resolveToolPath(value, input.workingDirectory));
+    return {
+      targets,
+      uncertain: [],
+      mutations: descriptor.mutation
+        ? Object.fromEntries(targets.map((target) => [target, descriptor.mutation!]))
+        : {},
+    };
   }
 
   const memoryDir = resolveCanonicalRunPath(getMemoryDir());
   if (descriptor.kind === 'global-memory') {
     const scope = typeof input.params.scope === 'string' ? input.params.scope : undefined;
     if (scope === 'role' || scope === 'project' || (!scope && input.agentRole)) {
-      return { targets: [], uncertain: [] };
+      return { targets: [], uncertain: [], mutations: {} };
     }
     const rawPath = input.params[descriptor.pathParameter];
     return typeof rawPath === 'string' && rawPath.trim() !== ''
-      ? { targets: [resolveCanonicalRunPath(path.join(memoryDir, path.basename(rawPath)))], uncertain: [] }
-      : { targets: [], uncertain: [`uncertain:${descriptor.pathParameter}`] };
+      ? { targets: [resolveCanonicalRunPath(path.join(memoryDir, path.basename(rawPath)))], uncertain: [], mutations: {} }
+      : { targets: [], uncertain: [`uncertain:${descriptor.pathParameter}`], mutations: {} };
   }
 
   const command = input.params[descriptor.commandParameter];
   if (typeof command !== 'string' || command.trim() === '') {
-    return { targets: [], uncertain: [`uncertain:${descriptor.commandParameter}`] };
+    return { targets: [], uncertain: [`uncertain:${descriptor.commandParameter}`], mutations: {} };
   }
   const targets: string[] = [];
   const uncertain: string[] = [];
@@ -179,26 +199,36 @@ function descriptorAssessment(
       targets.push(resolveToolPath(target, input.workingDirectory));
     }
   }
-  return { targets, uncertain };
+  return { targets, uncertain, mutations: {} };
 }
 
 function mergeAssessments(assessments: ToolWriteTargets[]): ToolWriteTargets {
   return {
     targets: assessments.flatMap((assessment) => assessment.targets),
     uncertain: assessments.flatMap((assessment) => assessment.uncertain),
+    mutations: Object.assign({}, ...assessments.map((assessment) => assessment.mutations)),
   };
 }
 
 /** Resolve write-shaped tool parameters without enumerating tool names. */
 export function resolveToolWriteTargets(input: ResolveToolWriteTargetsInput): ToolWriteTargets {
+  const declaredPathParameters = new Set(
+    (input.definition.pathAuthority ?? [])
+      .filter((descriptor) => descriptor.kind === 'path')
+      .map((descriptor) => descriptor.pathParameter),
+  );
+  const genericParams = Object.fromEntries(
+    Object.entries(input.params).filter(([key]) => !declaredPathParameters.has(key)),
+  );
   const assessment = mergeAssessments([
     ...(input.definition.permissionLevel !== 'read'
-      ? [genericPathAssessment(input.params, input.workingDirectory)]
+      ? [genericPathAssessment(genericParams, input.workingDirectory)]
       : []),
     ...(input.definition.pathAuthority ?? []).map((descriptor) => descriptorAssessment(descriptor, input)),
   ]);
   return {
     targets: [...new Set(assessment.targets)].sort(),
     uncertain: [...new Set(assessment.uncertain)].sort(),
+    mutations: assessment.mutations,
   };
 }

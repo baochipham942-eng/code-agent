@@ -38,8 +38,16 @@ export interface ToolDescriptionContext {
  * 声明工具的文件写目标来自哪里，供路径 authority 在 dispatch 前统一裁决。
  * 这是 effect 元数据，不是工具名白名单；新增写能力必须声明自己的目标来源。
  */
+export type ToolPathMutationKind = 'create' | 'overwrite' | 'edit' | 'append';
+
 export type ToolPathAuthorityDescriptor =
-  | { kind: 'path'; pathParameter: string }
+  | {
+      kind: 'path';
+      pathParameter: string;
+      mutation?: ToolPathMutationKind;
+      whenParameter?: string;
+      whenValues?: readonly string[];
+    }
   | { kind: 'shell'; commandParameter: string }
   | { kind: 'global-memory'; pathParameter: string };
 

@@ -53,6 +53,7 @@ mermaid_export {
         type: 'string',
         description: '输出文件路径（默认: 工作目录下的 mermaid-{timestamp}.{format}）',
       },
+      overwrite: { type: 'boolean', description: 'output_path 已存在且确认替换时必须设为 true' },
       theme: {
         type: 'string',
         enum: ['default', 'dark', 'forest', 'neutral'],
@@ -71,6 +72,7 @@ mermaid_export {
   },
   category: 'network',
   permissionLevel: 'write',
+  pathAuthority: [{ kind: 'path', pathParameter: 'output_path', mutation: 'overwrite' }],
   readOnly: false,
   allowInPlanMode: false,
 };

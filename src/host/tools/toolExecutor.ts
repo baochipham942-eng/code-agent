@@ -4,6 +4,7 @@
 
 import type { ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
 import * as nodePath from 'path';
+import * as nodeFs from 'node:fs/promises';
 import type { ToolDefinition } from '../../shared/contract';
 import type { PermissionBoundaryId } from '../../shared/contract/permissionBoundary';
 import { PermissionRequestReason } from '../../shared/contract/permission';
@@ -62,6 +63,10 @@ import {
   createFileOwnershipActor,
   getFileOwnershipRegistry,
 } from '../services/infra/fileOwnershipRegistry';
+import { getResourceLockManager } from '../services/infra/resourceLockManager';
+import { fileReadTracker } from './fileReadTracker';
+import { checkExternalModification } from './utils/externalModificationDetector';
+import { getFileMutationActorId } from './modules/file/fileMutationIdentity';
 import {
   createChildRunTraceContext,
   getActiveRunTraceContext,
@@ -70,6 +75,18 @@ import {
 import type { TurnTraceRecorder } from '../agent/runtime/turnTrace';
 
 const logger = createLogger('ToolExecutor');
+const FILE_MUTATION_LOCK_HOLD_TIMEOUT_MS = 60_000;
+const FILE_MUTATION_LOCK_WAIT_TIMEOUT_MS = 10_000;
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await nodeFs.access(filePath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+}
 
 import { validateToolInputSchema, formatToolSchemaValidationError, stripUndeclaredToolParams } from './toolSchemaValidator';
 
@@ -521,7 +538,25 @@ export class ToolExecutor {
       );
     }
 
-    if (toolDef.permissionLevel !== 'read') {
+    const writeTargets = toolDef.permissionLevel !== 'read'
+      ? resolveToolWriteTargets({
+        definition: toolDef,
+        params,
+        workingDirectory: this.executionCwd,
+        agentRole: options.agentRole,
+      })
+      : { targets: [], uncertain: [], mutations: {} };
+    const mutationActorId = effectiveSessionId
+      ? getFileMutationActorId({ sessionId: effectiveSessionId, agentId: options.agentId })
+      : undefined;
+    const acquiredMutationTargets: string[] = [];
+    const mutationLockManager = getResourceLockManager();
+    const usesDedicatedMemorySerialization = toolDef.pathAuthority?.some(
+      (descriptor) => descriptor.kind === 'global-memory',
+    ) ?? false;
+
+    try {
+      if (toolDef.permissionLevel !== 'read') {
       const ownershipActor = effectiveSessionId
         ? createFileOwnershipActor({
           sessionId: effectiveSessionId,
@@ -536,12 +571,6 @@ export class ToolExecutor {
           sessionId: effectiveSessionId,
         });
       } else {
-        const writeTargets = resolveToolWriteTargets({
-          definition: toolDef,
-          params,
-          workingDirectory: this.executionCwd,
-          agentRole: options.agentRole,
-        });
         const ownershipRegistry = getFileOwnershipRegistry();
         ownershipRegistry.recordUncertain(ownershipActor, writeTargets.uncertain);
         if (writeTargets.uncertain.length > 0) {
@@ -568,7 +597,85 @@ export class ToolExecutor {
           }
         }
       }
-    }
+
+      if (usesDedicatedMemorySerialization) {
+        logger.debug('Skipping generic mutation locks for memory-service target', {
+          toolName: executionToolName,
+          targets: writeTargets.targets,
+        });
+      } else if (!mutationActorId) {
+        logger.debug('Skipping file mutation locks without agent identity', {
+          toolName: executionToolName,
+          sessionId: effectiveSessionId,
+          targets: writeTargets.targets,
+        });
+      } else {
+        for (const target of writeTargets.targets) {
+          const lockResult = await mutationLockManager.acquire(
+            mutationActorId,
+            target,
+            'exclusive',
+            {
+              type: 'file',
+              timeout: FILE_MUTATION_LOCK_HOLD_TIMEOUT_MS,
+              wait: true,
+              waitTimeout: FILE_MUTATION_LOCK_WAIT_TIMEOUT_MS,
+            },
+          );
+          if (!lockResult.acquired) {
+            for (const acquiredTarget of acquiredMutationTargets.reverse()) {
+              mutationLockManager.release(mutationActorId, acquiredTarget);
+            }
+            acquiredMutationTargets.length = 0;
+            return {
+              success: false,
+              error: '该文件正被另一个操作使用，请稍后重试或换输出路径',
+              metadata: { code: 'FILE_LOCK_BUSY', path: target },
+            };
+          }
+          acquiredMutationTargets.push(target);
+        }
+      }
+
+      for (const target of writeTargets.targets) {
+        const mutation = writeTargets.mutations[target];
+        if (!mutation) continue;
+        const existed = await fileExists(target);
+        if (existed && (mutation === 'create' || (mutation === 'overwrite' && params.overwrite !== true))) {
+          return {
+            success: false,
+            error: '输出文件已存在；确认覆盖请带 overwrite=true，或换一个输出名',
+            metadata: { code: 'TARGET_EXISTS', path: target },
+          };
+        }
+        if (existed && mutation === 'overwrite' && params.overwrite === true) {
+          logger.warn('Tool target overwrite safety explicitly confirmed', {
+            action: 'tool_target_overwrite',
+            toolName: executionToolName,
+            path: target,
+            actorId: mutationActorId,
+          });
+        }
+        if (existed && mutation === 'edit' && mutationActorId) {
+          const readRecord = fileReadTracker.getReadRecord(target, mutationActorId);
+          if (readRecord) {
+            const modification = await checkExternalModification(target, mutationActorId);
+            if (modification.modified) {
+              return {
+                success: false,
+                error: `${modification.message}. 请重新读取文件后再编辑`,
+                metadata: {
+                  code: 'STALE_FILE',
+                  path: target,
+                  modification: modification.details,
+                  evidenceRef: readRecord.evidenceRef,
+                },
+              };
+            }
+          }
+        }
+      }
+      }
 
     const permStartTime = Date.now();
     const executionTopology = options.executionTopology ?? this.executionTopology;
@@ -1378,6 +1485,13 @@ export class ToolExecutor {
       };
     } finally {
       releaseWriteIsolation?.();
+    }
+    } finally {
+      if (mutationActorId) {
+        for (const target of acquiredMutationTargets.reverse()) {
+          mutationLockManager.release(mutationActorId, target);
+        }
+      }
     }
   }
 

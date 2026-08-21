@@ -341,6 +341,25 @@ describe('ToolExecutor file ownership authority', () => {
     registry.release(secondActor);
   });
 
+  it('rejects a second live sibling after the first tool call releases its file lock', async () => {
+    const scope = nextScope();
+    const filePath = path.join(tmpDir, 'sequential-claim.txt');
+    mocks.execute.mockImplementation(async (params: Record<string, unknown>) => {
+      await fs.writeFile(params.file_path as string, params.content as string, 'utf8');
+      return { ok: true, output: 'written' };
+    });
+    const executor = new ToolExecutor({ workingDirectory: tmpDir, requestPermission: vi.fn(async () => true) });
+    executor.setAuditEnabled(false);
+
+    expect((await executeWrite(executor, scope, 'agent-a', filePath, 'from-a')).success).toBe(true);
+    const sibling = await executeWrite(executor, scope, 'agent-b', filePath, 'from-b');
+    expect(sibling.metadata?.code).toBe('WRITE_OWNERSHIP_CONFLICT');
+    expect(await fs.readFile(filePath, 'utf8')).toBe('from-a');
+
+    getFileOwnershipRegistry().release(actor(scope, 'agent-a'));
+    getFileOwnershipRegistry().release(actor(scope, 'agent-b'));
+  });
+
   it('deduplicates the same conflict when a write action is retried', async () => {
     const scope = nextScope();
     const filePath = path.join(tmpDir, 'conflict.txt');

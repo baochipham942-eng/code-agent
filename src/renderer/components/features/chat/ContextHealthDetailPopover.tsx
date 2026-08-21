@@ -102,6 +102,16 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
   const buckets = contextHealth ? buildBuckets(contextHealth, ch) : [];
   const total = contextHealth?.currentTokens ?? 0;
 
+  // N-CTXTRUTH: 总量真源标注。缺省（老状态）视同 estimated。
+  // 估/实偏差只在 provider 实报轮次有意义：本地估算总量（缩放前）相对实报的偏离。
+  const isEstimated = contextHealth?.tokenSource !== 'provider';
+  const estimateDeviation =
+    contextHealth?.tokenSource === 'provider' &&
+    contextHealth.estimatedTokens !== undefined &&
+    contextHealth.currentTokens > 0
+      ? ((contextHealth.estimatedTokens - contextHealth.currentTokens) / contextHealth.currentTokens) * 100
+      : null;
+
   return (
     <div
       className="absolute bottom-full right-0 z-30 mb-2 w-[380px] max-w-[calc(100vw-2rem)] rounded-xl border border-border-hover bg-zinc-900/95 shadow-2xl backdrop-blur"
@@ -135,6 +145,23 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                 {ch.tokensFraction
                   .replace('{used}', formatTokens(contextHealth.currentTokens))
                   .replace('{max}', formatTokens(contextHealth.maxTokens))}
+                {isEstimated && (
+                  <span className="ml-1.5 text-zinc-500" data-testid="context-health-estimated-badge">
+                    {ch.estimatedBadge}
+                  </span>
+                )}
+                {estimateDeviation !== null && Math.abs(estimateDeviation) >= 0.05 && (
+                  <span
+                    className="ml-1.5 text-zinc-500"
+                    data-testid="context-health-deviation"
+                    title={ch.estimateDeviationTitle}
+                  >
+                    {ch.estimateDeviation.replace(
+                      '{percent}',
+                      `${estimateDeviation > 0 ? '+' : ''}${estimateDeviation.toFixed(1)}`,
+                    )}
+                  </span>
+                )}
               </span>
             </div>
 

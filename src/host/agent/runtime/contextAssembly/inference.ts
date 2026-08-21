@@ -911,6 +911,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         cacheReadTokens: providerUsage.cacheReadTokens,
         cacheCreationTokens: providerUsage.cacheCreationTokens,
       }, 'provider');
+      // N-CTXTRUTH: 真源透传给当轮健康更新（turn 末 updateContextHealth 消费；cache 口径在 service 内统一相加）
+      ctx.runtime.contextHealth.setLastTurnProviderUsage(providerUsage);
     } else {
       const estimatedInputTokens = estimateModelMessageTokens(
         modelMessages.map(m => ({
@@ -924,7 +926,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         { role: 'assistant', content: outputContent },
       ]);
       ctx.recordTokenUsage(estimatedInputTokens, estimatedOutputTokens, undefined, 'estimated');
-    }
+      // N-CTXTRUTH: 显式标估算，避免上一轮的真源残留污染当轮圆环
+      ctx.runtime.contextHealth.setLastTurnProviderUsage(undefined);    }
 
     langfuse.endGeneration(llmCallId, {
       type: response.type,
@@ -947,7 +950,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       if (abortedInputTokens > 0) {
         ctx.recordTokenUsage(abortedInputTokens, 0);
       }
-      return { type: 'text', content: '' };
+      // N-CTXTRUTH: 中断路径是估算口径，清掉可能残留的真源标记
+      ctx.runtime.contextHealth.setLastTurnProviderUsage(undefined);      return { type: 'text', content: '' };
     }
 
     emitModelFallbackNoticeFromResponse(ctx, getModelFallbackFromError(error));

@@ -508,6 +508,8 @@ per-agent Stop UI 见 [multiagent-system.md](./multiagent-system.md) 的取消�
 
 ### Context Health Token 溯源
 
+总量真源（N-CTXTRUTH）：每轮推理后优先用 provider 实报 input tokens（含 cacheRead/cacheCreation，各 wrapper 归一口径见 `src/host/model/providers/wrappers/usageNormalization.ts`）作 `currentTokens`/`usagePercent`，本地 gpt-tokenizer 估算只决定桶内比例（breakdown 各桶等比缩放到真总量）；provider 未回报（inputTokens=0，如 SSE 断流）或冷启动重算路径退回估算，状态上标 `tokenSource='estimated'`，弹层大数字旁显示「估算」标注或估/实偏差。真源经 ADR-038 contextHealth 切片的 `lastTurnProviderUsage` 从 inference 记账点透传到 `updateContextHealth`，不挂全局变量。
+
 `TokenBreakdown` 在原有「消息结构维度」（systemPrompt / messages / toolResults / toolDefinitions）之外新增可选的 `bySource`，按产品来源拆分 token 占用：
 
 ```ts
@@ -521,7 +523,7 @@ interface SourceBreakdown {
 }
 ```
 
-`ContextHealthService.recordSourceContribution(sessionId, source, tokens, mode)` 支持 `add`（累加，如每次 fileRead / MCP 结果）和 `set`（替换，如 skill mount）；`clearSourceContribution` / `resetSourceContributions` / `clearMcpServerAcrossSessions` 负责卸载与压缩后清零。更新经 200ms 防抖后通过 `context:health:event` 广播到 renderer。
+`ContextHealthService.recordSourceContribution(sessionId, source, tokens, mode)` 支持 `add`（累加，如每次 fileRead / MCP 结果）和 `set`（替换，如 skill mount）；`clearSourceContribution` / `resetSourceContributions` / `clearMcpServerAcrossSessions` 负责卸载与压缩后清零。写入落独立累加器（`sourceAccumulators`，永远未缩放估算口径；provider 真源轮次 state 里的 bySource 只是缩放快照，不能当累加基底），更新经 200ms 防抖后通过 `context:health:event` 广播到 renderer。
 
 上报点遍布主链路：skill mount/unmount（`sessionSkillService`）、SessionStart AGENTS.md 注入（`agentsHooks`）、fileRead（`read.ts`）、MCP 工具结果（`mcpInvoke`）、subagent 输出（`task.ts` / `spawnAgent.ts`）。renderer 侧 `ContextPanel` / `ContextHealthPanel` 的二级展开与卸载交互见 [workbench.md](./workbench.md)。
 

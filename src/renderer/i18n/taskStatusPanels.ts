@@ -316,6 +316,9 @@ export const taskStatusPanelsZh = {
       compactButtonTitle: '主动压缩上下文',
       freedTokens: '释放 {tokens} Token',
       compactedCount: '已压缩 {count} 次',
+      estimatedBadge: '估算',
+      estimateDeviation: '估算偏差 {percent}%',
+      estimateDeviationTitle: '本地估算总量相对 provider 实报的偏差',
     },
   },
 };
@@ -632,6 +635,9 @@ export const taskStatusPanelsEn: typeof taskStatusPanelsZh = {
       compactButtonTitle: 'Actively compact context',
       freedTokens: 'Freed {tokens} tokens',
       compactedCount: 'Compacted {count} times',
+      estimatedBadge: 'Estimated',
+      estimateDeviation: 'Est. deviation {percent}%',
+      estimateDeviationTitle: 'Local estimate vs provider-reported total',
     },
   },
 };

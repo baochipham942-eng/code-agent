@@ -162,6 +162,19 @@ export interface ContextHealthState {
    * 用于 context health 面板可见化——agent 能力缩水时用户能看到原因，不再静默。
    */
   droppedPromptBlocks?: string[];
+  /**
+   * N-CTXTRUTH: currentTokens/usagePercent 的总量真源。
+   * - 'provider'：本轮 provider 实报 input tokens（含 cacheRead/cacheCreation）作总量，
+   *   breakdown 各桶为本地估算等比缩放到真总量的展示值；
+   * - 'estimated'：provider 未回报（或冷启动重算路径），全程本地 gpt-tokenizer 估算。
+   * 老状态缺省此字段，消费方视同 'estimated'。
+   */
+  tokenSource?: 'provider' | 'estimated';
+  /**
+   * N-CTXTRUTH: 仅 tokenSource='provider' 时有值——同一轮消息的本地估算总量（缩放前），
+   * 弹层据此显示估/实偏差。estimated 路径下无意义，不设置。
+   */
+  estimatedTokens?: number;
 }
 
 /**

@@ -130,8 +130,23 @@ function descriptorAssessment(
 ): ToolWriteTargets {
   if (descriptor.kind === 'path') {
     const rawPath = input.params[descriptor.pathParameter];
-    return typeof rawPath === 'string' && rawPath.trim() !== ''
-      ? { targets: [resolveToolPath(rawPath, input.workingDirectory)], uncertain: [] }
+    const declaredValues: string[] = [];
+    const collect = (value: unknown): void => {
+      if (typeof value === 'string') {
+        if (value.trim() !== '') declaredValues.push(value);
+        return;
+      }
+      if (Array.isArray(value)) {
+        value.forEach(collect);
+        return;
+      }
+      if (value && typeof value === 'object') {
+        Object.values(value as Record<string, unknown>).forEach(collect);
+      }
+    };
+    collect(rawPath);
+    return declaredValues.length > 0
+      ? { targets: declaredValues.map((value) => resolveToolPath(value, input.workingDirectory)), uncertain: [] }
       : { targets: [], uncertain: [`uncertain:${descriptor.pathParameter}`] };
   }
 

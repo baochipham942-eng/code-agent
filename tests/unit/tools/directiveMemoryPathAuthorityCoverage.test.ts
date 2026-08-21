@@ -35,6 +35,7 @@ import type { ToolSchema } from '../../../src/host/protocol/tools';
 import { registerMigratedTools } from '../../../src/host/tools/modules';
 import { sameToolName } from '../../../src/host/tools/toolNames';
 import { assessDirectiveMemoryWrite } from '../../../src/host/memory/directiveMemoryPathAuthority';
+import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
 
 // 与 directiveMemoryPathAuthority.isPathLikeParameter 同口径。这里刻意复写一份而不是
 // 导出复用：两边同时改错才会一起绿，单边漂移会被下面的用例照出来。
@@ -123,6 +124,18 @@ describe('记忆路径权威的覆盖面', () => {
       workingDirectory: os.tmpdir(),
     });
     expect(assessment.requiresConfirmation).toBe(true);
+  });
+
+  it('PdfAutomate.ranges 通过显式 pathAuthority 解析结构体内的 split 输出', () => {
+    const pdfAutomate = SCHEMAS.find((schema) => schema.name === 'PdfAutomate');
+    expect(pdfAutomate?.pathAuthority).toContainEqual({ kind: 'path', pathParameter: 'ranges' });
+    const output = path.join(MEMORY_DIR, 'part-1.pdf');
+    const assessment = assessDirectiveMemoryWrite({
+      definition: toDefinition(pdfAutomate!),
+      params: { action: 'split', ranges: [{ start: 1, end: 2, output }] },
+      workingDirectory: os.tmpdir(),
+    });
+    expect(assessment.targets).toContain(resolveCanonicalRunPath(output));
   });
 
   it('命令字符串里的重定向目标真的会被拦下', () => {

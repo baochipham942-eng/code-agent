@@ -23,6 +23,7 @@ import {
 import { createLogger } from '../services/infra/logger';
 import { getSessionStateManager } from '../session/sessionStateManager';
 import type { ToolCall } from '../../shared/contract';
+import type { CompactionBlock } from '../../shared/contract/message';
 
 /**
  * Extended message type for context health tracking
@@ -36,6 +37,8 @@ export interface ContextMessage {
     output?: string;
     error?: string;
   }>;
+  /** 压缩摘要消息标记（compactionService 构造的 CompactionBlock），用于 bySource.summary 分桶 */
+  compaction?: CompactionBlock;
 }
 
 const logger = createLogger('ContextHealthService');
@@ -110,13 +113,19 @@ export class ContextHealthService {
     // 同时把 conversation 字段按扣减法重算：messages - 其他 source 之和
     const bySource: SourceBreakdown =
       previousHealth?.breakdown.bySource ?? createEmptySourceBreakdown();
+    // 压缩摘要消息（带 compaction 标记）单独进 summary 桶，不再混进 conversation
+    const summaryTokens = messages.reduce(
+      (sum, msg) => (msg.compaction ? sum + estimateTokens(msg.content) : sum),
+      0,
+    );
+    bySource.summary = summaryTokens;
     const otherSourceSum =
       bySource.rules +
       Object.values(bySource.skills).reduce((a, b) => a + b, 0) +
       Object.values(bySource.mcp).reduce((a, b) => a + b, 0) +
       Object.values(bySource.subagents).reduce((a, b) => a + b, 0) +
       bySource.fileReads;
-    bySource.conversation = Math.max(0, messagesTokens - otherSourceSum);
+    bySource.conversation = Math.max(0, messagesTokens - otherSourceSum - summaryTokens);
 
     const breakdown: TokenBreakdown = {
       systemPrompt: systemPromptTokens,
@@ -220,8 +229,8 @@ export class ContextHealthService {
   //   - clearSourceContribution：skill 卸载/MCP 断开时调用，从 bySource 移除
   //   - resetSourceContributions：压缩或 session reset 时整体清零
   //
-  // 注意：conversation 字段是派生值（messages - 其他 source 之和），
-  // 不应直接 record，调用会被忽略。
+  // 注意：conversation / summary 字段是派生值（前者按 messages 扣减法、后者按摘要消息
+  // content 估算，都在 update() 里重算），不应直接 record，调用会被忽略。
   // --------------------------------------------------------------------------
 
   /**
@@ -260,8 +269,9 @@ export class ContextHealthService {
       case 'fileRead':
         bs.fileReads = mode === 'set' ? tokens : bs.fileReads + tokens;
         break;
+      case 'summary':
       case 'conversation':
-        // 派生值，update() 时按扣减法计算，不接受直接写入
+        // 派生值，update() 时按扣减法/摘要消息估算计算，不接受直接写入
         return;
     }
 
@@ -291,6 +301,9 @@ export class ContextHealthService {
         break;
       case 'fileRead':
         bs.fileReads = 0;
+        break;
+      case 'summary':
+        bs.summary = 0;
         break;
       case 'conversation':
         bs.conversation = 0;

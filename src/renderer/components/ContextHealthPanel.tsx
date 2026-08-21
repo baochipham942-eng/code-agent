@@ -261,6 +261,18 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                     total={health.currentTokens}
                   />
 
+                  {/* Summary — 派生值：压缩摘要消息估算，仅在压过之后渲染 */}
+                  {(health.breakdown.bySource.summary ?? 0) > 0 && (
+                    <BreakdownItem
+                      label={ch.bkSummary.replace(
+                        '{count}',
+                        String(health.compression?.compressionCount ?? 0),
+                      )}
+                      tokens={health.breakdown.bySource.summary}
+                      total={health.currentTokens}
+                    />
+                  )}
+
                   {/* Conversation — 派生值 */}
                   <BreakdownItem
                     label={ch.bkConversation}

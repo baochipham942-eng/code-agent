@@ -573,6 +573,7 @@ export class AgentOrchestrator {
             output: result.output,
             error: result.error,
           })),
+          compaction: message.compaction,
         })),
         SYSTEM_PROMPT,
         model,

@@ -11,15 +11,49 @@ import { useContextCompactionStore } from '../../../stores/contextCompactionStor
 import { useI18n } from '../../../hooks/useI18n';
 import { useBudgetStatus } from '../../../hooks/useBudgetStatus';
 import { CostDisplay } from '../../StatusBar/CostDisplay';
+import { ContextHealthDetailModal } from '../../ContextHealthDetailModal';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import { formatContextUsagePercent } from '../../../utils/contextUsageFormat';
 import { OPEN_CONTEXT_HEALTH_EVENT } from '../../../utils/workbenchViews';
+import type { SourceBreakdown } from '@shared/contract/contextHealth';
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
   return String(n);
+}
+
+// 分桶条段：颜色用显式 zinc/accent 色（弹层是固定深色 bg-zinc-900/95，
+// 不引入主题变量，跟弹层现有语言一致）
+interface SourceSegment {
+  key: string;
+  name: string;
+  tokens: number;
+  barClass: string;
+}
+
+function buildSourceSegments(
+  bySource: SourceBreakdown,
+  ch: Record<string, string>,
+  compressionCount: number,
+): SourceSegment[] {
+  const sumRecord = (rec: Record<string, number>) =>
+    Object.values(rec).reduce((a, b) => a + b, 0);
+  return [
+    { key: 'rules', name: ch.bkRules, tokens: bySource.rules, barClass: 'bg-zinc-500' },
+    { key: 'skills', name: 'Skills', tokens: sumRecord(bySource.skills), barClass: 'bg-indigo-500' },
+    { key: 'mcp', name: 'MCP', tokens: sumRecord(bySource.mcp), barClass: 'bg-amber-500' },
+    { key: 'subagents', name: 'Subagents', tokens: sumRecord(bySource.subagents), barClass: 'bg-cyan-500' },
+    { key: 'fileReads', name: ch.bkFileReads, tokens: bySource.fileReads, barClass: 'bg-emerald-600' },
+    {
+      key: 'summary',
+      name: ch.bkSummary.replace('{count}', String(compressionCount)),
+      tokens: bySource.summary ?? 0,
+      barClass: 'bg-violet-500',
+    },
+    { key: 'conversation', name: ch.bkConversation, tokens: bySource.conversation, barClass: 'bg-zinc-400' },
+  ].filter((seg) => seg.tokens > 0);
 }
 
 type Tone = 'normal' | 'warning' | 'critical';
@@ -45,6 +79,7 @@ export const ContextUsagePill: React.FC = () => {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const clearTimerRef = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const compactionStatus = useContextCompactionStore((s) => s.status);
   const compactResult = useContextCompactionStore((s) => s.result);
   const compactError = useContextCompactionStore((s) => s.error);
@@ -61,7 +96,8 @@ export const ContextUsagePill: React.FC = () => {
   const budgetStatus = useBudgetStatus(sessionCost, isStreaming);
 
   useEffect(() => {
-    const handleDeepLink = () => setOpen(true);
+    // context 深链直接落到明细 modal（不再只开弹层）
+    const handleDeepLink = () => setDetailOpen(true);
     window.addEventListener(OPEN_CONTEXT_HEALTH_EVENT, handleDeepLink);
     return () => window.removeEventListener(OPEN_CONTEXT_HEALTH_EVENT, handleDeepLink);
   }, []);
@@ -143,6 +179,13 @@ export const ContextUsagePill: React.FC = () => {
   const hasData = !!contextHealth && maxTokens > 0;
   const isCompacting = compactionStatus === 'active';
 
+  // 弹层分桶条：bySource 为空/全 0 时不渲染
+  const bySource = contextHealth?.breakdown?.bySource;
+  const sourceSegments = bySource
+    ? buildSourceSegments(bySource, ch, contextHealth?.compression?.compressionCount ?? 0)
+    : [];
+  const sourceTotal = sourceSegments.reduce((a, seg) => a + seg.tokens, 0);
+
   // SVG 圆环参数
   const size = 14;
   const strokeWidth = 2;
@@ -210,6 +253,25 @@ export const ContextUsagePill: React.FC = () => {
               : ch.waitingCapacity}
           </div>
 
+          {sourceSegments.length > 0 && sourceTotal > 0 && (
+            <div
+              className="mt-2 flex h-1.5 w-full overflow-hidden rounded-full bg-zinc-800"
+              data-testid="context-source-bar"
+            >
+              {sourceSegments.map((seg) => (
+                <div
+                  key={seg.key}
+                  className={`h-full ${seg.barClass}`}
+                  style={{ width: `${(seg.tokens / sourceTotal) * 100}%` }}
+                  title={ch.sourceBucketTitle
+                    .replace('{name}', seg.name)
+                    .replace('{tokens}', formatTokens(seg.tokens))
+                    .replace('{percent}', ((seg.tokens / sourceTotal) * 100).toFixed(1))}
+                />
+              ))}
+            </div>
+          )}
+
           {(sessionCost > 0 || unknownCostTurns > 0) && (
             <div className="mt-2 border-t border-border-muted pt-2 text-[11px] text-zinc-400 tabular-nums">
               <CostDisplay cost={sessionCost} isStreaming={isStreaming} budget={budgetStatus} />
@@ -243,8 +305,26 @@ export const ContextUsagePill: React.FC = () => {
           {compactError && (
             <div className="mt-2 text-[11px] text-badge-danger">{compactError}</div>
           )}
+
+          {hasData && (
+            <button
+              type="button"
+              onClick={() => {
+                setDetailOpen(true);
+                setOpen(false);
+              }}
+              className="mt-3 inline-flex h-7 items-center justify-center rounded-lg border border-border-muted px-3 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-white/[0.08]"
+            >
+              {ch.viewDetails}
+            </button>
+          )}
         </div>
       )}
+
+      <ContextHealthDetailModal
+        isOpen={detailOpen}
+        onClose={() => setDetailOpen(false)}
+      />
     </div>
   );
 };

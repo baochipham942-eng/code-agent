@@ -175,6 +175,7 @@ function toContextMessages(messages: Message[]) {
       output: result.output,
       error: result.error,
     })),
+    compaction: message.compaction,
   }));
 }
 

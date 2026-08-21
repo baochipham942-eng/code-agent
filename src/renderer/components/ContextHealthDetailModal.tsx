@@ -1,24 +1,39 @@
 // ============================================================================
-// ContextPanel - 右侧 Context Tab 容器
-// 挂载 ContextHealthPanel 并提供面板级 padding/scroll；
-// navigate/unload/compact handlers 走共享 hook useContextHealthActions
-// （与 ContextUsagePill 的明细 modal 同一份逻辑）。
+// ContextHealthDetailModal - 上下文健康明细弹窗
+// 复用现成的 ContextHealthPanel（不新造面板组件），handlers 走共享
+// useContextHealthActions。两个打开入口：ContextUsagePill 弹层的「查看明细」
+// 按钮、context 深链（OPEN_CONTEXT_HEALTH_EVENT）。
 // ============================================================================
 
 import React from 'react';
+import { Modal } from './primitives/Modal';
+import { ContextHealthPanel } from './ContextHealthPanel';
 import { useI18n } from '../hooks/useI18n';
 import { useAppStore } from '../stores/appStore';
 import { useContextHealthActions } from '../hooks/useContextHealthActions';
-import { ContextHealthPanel } from './ContextHealthPanel';
 
-export const ContextPanel: React.FC = () => {
+interface ContextHealthDetailModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export const ContextHealthDetailModal: React.FC<ContextHealthDetailModalProps> = ({
+  isOpen,
+  onClose,
+}) => {
   const { t } = useI18n();
   const ch = t.taskStatusPanels.contextHealth;
   const contextHealth = useAppStore((s) => s.contextHealth);
   const { handleNavigate, handleUnload, handleCompact, isCompacting } = useContextHealthActions();
 
   return (
-    <div className="h-full overflow-y-auto bg-zinc-950">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={ch.detailModalTitle}
+      size="lg"
+      portal
+    >
       {contextHealth ? (
         <ContextHealthPanel
           health={contextHealth}
@@ -29,13 +44,15 @@ export const ContextPanel: React.FC = () => {
           isCompacting={isCompacting}
         />
       ) : (
-        <div className="p-6 text-sm text-zinc-500">
+        <div className="py-6 text-sm text-zinc-500">
           <p>{ch.emptyStateTitle}</p>
           <p className="mt-2 text-xs text-zinc-600">
             {ch.emptyStateHint}
           </p>
         </div>
       )}
-    </div>
+    </Modal>
   );
 };
+
+export default ContextHealthDetailModal;

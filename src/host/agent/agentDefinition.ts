@@ -65,6 +65,7 @@ import { getConfigService } from '../services/core/configService';
 import type { FullAgentConfig } from '../../shared/contract/agentTypes';
 import type { PermissionPreset } from '@shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
+import type { AgentEngineKind } from '../../shared/contract/agentEngine';
 
 // ============================================================================
 // 核心角色到完整配置的适配
@@ -357,6 +358,15 @@ export function getSubagentModelConfig(agentId: string): { provider: ModelProvid
   }
 
   return resolveTierModelConfig(tier, MODEL_CONFIG[tier], getTierResolutionSettingsSafe(), resolved?.modelOverride);
+}
+
+export function getSubagentEngine(agentId: string): AgentEngineKind | undefined {
+  return registryResolveAgent(agentId)?.engine;
+}
+
+export function getSubagentModelOverride(agentId: string): string | undefined {
+  const override = registryResolveAgent(agentId)?.modelOverride;
+  return override ? `${override.provider}/${override.model}` : undefined;
 }
 
 /** 从 configService 取档位解析所需的 settings 切片；不可用（测试/CLI）返回 undefined → 沿用内置默认 */

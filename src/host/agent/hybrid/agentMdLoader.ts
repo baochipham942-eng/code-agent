@@ -17,6 +17,8 @@ import {
 } from '../../tools/knownToolNames';
 import type { RoleProactivityLevel, RoleVisual } from '../../../shared/contract/roleAssets';
 import type { SkillCategory } from '../../../shared/contract/skillRepository';
+import type { AgentEngineKind } from '../../../shared/contract/agentEngine';
+import { isManifestBackedAgentEngineKind } from '../../../shared/externalEngineManifest';
 import type { CoreAgentConfig, CoreAgentId, ModelTier } from './types';
 
 function stringValue(value: unknown): string | undefined {
@@ -133,6 +135,8 @@ export interface AgentMdEquipment {
   skills: string[];
   tools: string[];
   model: ModelTier;
+  /** 子代理执行引擎；缺省、null 或 native 写回时删除该行。 */
+  engine?: AgentEngineKind | null;
   /** 指定具体模型；缺省或留空表示跟随 model 档位（写回时会删掉这行）。 */
   modelOverride?: { provider: string; model: string } | null;
   maxIterations: number;
@@ -150,6 +154,7 @@ export function updateAgentMdEquipment(content: string, equipment: AgentMdEquipm
     ['skills', block('skills', equipment.skills, newline)],
     ['tools', block('tools', equipment.tools, newline)],
     ['model', `model: ${equipment.model}`],
+    ['engine', equipment.engine && equipment.engine !== 'native' ? `engine: ${equipment.engine}` : ''],
     // 空串会让下面的替换逻辑删掉这一行 —— 取消指定模型即回到档位。
     ['model-override', equipment.modelOverride
       ? `model-override: ${scalar(equipment.modelOverride.provider)}/${scalar(equipment.modelOverride.model)}`
@@ -194,6 +199,14 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
   const proactivityLevel = proactivityLevelValue(frontmatter['proactivity-level']);
   const proactivityCadence = stringValue(frontmatter['proactivity-cadence']);
   const connectors = parseExpertConnectors(stringArrayValue(frontmatter.connectors));
+  const rawEngine = frontmatter.engine;
+  const engine = isManifestBackedAgentEngineKind(rawEngine) ? rawEngine : undefined;
+  if (rawEngine !== undefined && !engine) {
+    logger.warn('忽略 agent.md 中不受 manifest 支持的 engine', {
+      file: filename,
+      engine: rawEngine,
+    });
+  }
 
   return {
     id: name as CoreAgentId,
@@ -206,6 +219,7 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
     inputs: nonEmptyStringArrayValue(frontmatter.inputs),
     outputs: nonEmptyStringArrayValue(frontmatter.outputs),
     model: modelTierValue(frontmatter.model) || 'balanced',
+    ...(engine ? { engine } : {}),
     ...(modelOverrideValue(frontmatter['model-override'])
       ? { modelOverride: modelOverrideValue(frontmatter['model-override']) }
       : {}),

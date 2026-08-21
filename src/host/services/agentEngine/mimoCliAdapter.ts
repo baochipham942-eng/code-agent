@@ -28,18 +28,19 @@ import {
   MIMO_CODE_PERMISSION_ENV,
   MIMO_CODE_READ_ONLY_PERMISSION,
 } from '../../../shared/constants';
-import { getSessionManager } from '../infra/sessionManager';
 import { getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
 import { assertAgentEngineCapability } from './agentEngineGuards';
-import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
+import { assertExternalSubagentProfile, assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 import { emitExternalAgentEvent } from './agentEngineEventSink';
+import { bindExternalEngineAbort } from './agentEngineAbort';
+import { getAgentEngineSessionSink } from './agentEngineSessionSink';
 
 // 容错：OpenAI 兼容后端偶发流式完成（exit 0）但空响应。与 Kimi 对称，按 empty response
 // 归一成可识别失败，不让它静默落到「completed without text output」兜底文案。
@@ -79,13 +80,15 @@ export class MimoCliAdapter {
       throw new Error(descriptor.lastError || 'MiMo-Code CLI is not executable.');
     }
 
-    const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
+    const permissionProfile = request.executionOrigin === 'subagent'
+      ? assertExternalSubagentProfile(request.permissionProfile, { origin: 'subagent', cwd })
+      : assertReadOnlyExternalProfile(request.permissionProfile);
     const model = request.model?.trim();
     const startedAt = Date.now();
     const runId = request.durableLifecycle?.runId ?? `mimo_${startedAt}_${randomUUID().slice(0, 8)}`;
     const taskId = `agent-engine:${runId}`;
     const turnId = generateMessageId();
-    const sessionManager = getSessionManager();
+    const sessionManager = getAgentEngineSessionSink(request.executionOrigin);
     const ledger = getBackgroundTaskLedger();
     const logDir = path.join(getLogsPath(), 'agent-engines', 'mimo-code');
     await fs.mkdir(logDir, { recursive: true });
@@ -172,6 +175,10 @@ export class MimoCliAdapter {
       env,
       detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const unbindAbort = bindExternalEngineAbort(request.abortSignal, () => {
+      if (request.durableLifecycle) void request.durableLifecycle.terminateProcess('SIGTERM');
+      else child.kill('SIGTERM');
     });
     await request.durableLifecycle?.attachProcess(child, {
       binary: descriptor.binaryPath || 'mimo',
@@ -316,6 +323,7 @@ export class MimoCliAdapter {
     const exitCode = await new Promise<number | null>((resolve) => {
       child.on('close', (code) => resolve(code));
     });
+    unbindAbort();
     clearTimeout(stallTimer);
     clearTimeout(timeoutTimer);
 

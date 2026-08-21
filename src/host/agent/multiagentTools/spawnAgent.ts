@@ -32,6 +32,7 @@ import {
   getAgentMaxIterations,
   getAgentPermissionPreset,
   getAgentMaxBudget,
+  getSubagentEngine,
 } from '../agentDefinition';
 import { SUBAGENT_SUFFIXES, type CoreAgentId, isCoreAgent } from '../hybrid/coreAgents';
 import { isToolWriteReadonlyRole } from '../routingToolPolicy';
@@ -77,6 +78,8 @@ import {
   stableAgentTeamRunId,
 } from '../agentTeamDurableAdapter';
 import { withRunTraceContext } from '../../telemetry/runTraceContext';
+import type { AgentEngineKind } from '../../../shared/contract/agentEngine';
+import { isManifestBackedAgentEngineKind } from '../../../shared/externalEngineManifest';
 import type { AgentTeamDurableController } from '../agentTeamDurableTypes';
 import type { SubagentExecutionContext } from '../subagentExecutorTypes';
 import type { MultiagentExecutionResult } from '../multiagentExecutionTypes';
@@ -96,6 +99,10 @@ export async function executeSpawnAgent(
 ): Promise<MultiagentExecutionResult> {
     const parallel = params.parallel as boolean | undefined;
     const agents = params.agents as Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }> | undefined;
+    const requestedEngine = params.engine;
+    if (requestedEngine !== undefined && parallel) {
+      return { success: false, error: 'engine override is only supported for a single declarative role.' };
+    }
 
     // Check for required context
     if (!context.modelConfig) {
@@ -173,6 +180,9 @@ export async function executeSpawnAgent(
     let tools: string[];
 
     if (isDynamicMode) {
+      if (requestedEngine !== undefined) {
+        return { success: false, error: 'engine override requires a declarative role.' };
+      }
       // Dynamic mode: use customPrompt and customTools
       agentName = 'Dynamic Agent';
       systemPrompt = customPrompt!;
@@ -199,6 +209,13 @@ export async function executeSpawnAgent(
       systemPrompt = customPrompt || getAgentPrompt(agentConfig);
       tools = customTools || getAgentTools(agentConfig);
     }
+
+    if (requestedEngine !== undefined && !isManifestBackedAgentEngineKind(requestedEngine)) {
+      return { success: false, error: `Unsupported subagent engine: ${String(requestedEngine)}` };
+    }
+    const effectiveEngine: AgentEngineKind = (requestedEngine as AgentEngineKind | undefined)
+      ?? (role ? getSubagentEngine(role) : undefined)
+      ?? 'native';
 
     // ========================================================================
     // Phase 1: Subagent suffix 注入（借鉴 Cline + Codex 行为规范）
@@ -362,6 +379,7 @@ export async function executeSpawnAgent(
         tools, cwd,
         role,
         explicit: params.isolation as string | undefined,
+        forceWorktree: effectiveEngine !== 'native',
       });
       if (effectiveIsolation === 'worktree') {
         try {
@@ -421,6 +439,7 @@ export async function executeSpawnAgent(
 
       const executorContext: SubagentExecutionContext = {
         ...context,
+        cwd,
         // swarm 护栏 P1-2 #2：把递增后的深度沿 execution context 传递
         agentId,
         spawnDepth: childDepth,
@@ -446,6 +465,7 @@ export async function executeSpawnAgent(
 
       const executorConfig = {
         name: agentName,
+        engine: effectiveEngine,
         // 持久化角色资产绑定 key（roles/<roleId>/）。declarative 模式下 role 即 agent 注册 id；
         // dynamic 模式没有 role，不参与角色资产链路。
         roleId: role || undefined,

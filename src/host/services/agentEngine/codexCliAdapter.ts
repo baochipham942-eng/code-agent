@@ -16,18 +16,19 @@ import type {
 } from '../../../shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import { generateMessageId } from '../../../shared/utils/id';
-import { getSessionManager } from '../infra/sessionManager';
 import { getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
 import { assertAgentEngineCapability } from './agentEngineGuards';
-import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
+import { assertExternalSubagentProfile, assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 import { emitExternalAgentEvent } from './agentEngineEventSink';
+import { bindExternalEngineAbort } from './agentEngineAbort';
+import { getAgentEngineSessionSink } from './agentEngineSessionSink';
 import type { ExternalEngineResumeLaunch } from './externalEngineResumeBuilders';
 import {
   assertExternalForkContextDispatchLifecycle,
@@ -95,7 +96,9 @@ export class CodexCliAdapter {
       throw new Error(descriptor.lastError || 'Codex CLI is not executable.');
     }
 
-    const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
+    const permissionProfile = request.executionOrigin === 'subagent'
+      ? assertExternalSubagentProfile(request.permissionProfile, { origin: 'subagent', cwd })
+      : assertReadOnlyExternalProfile(request.permissionProfile);
     const sandbox = toCodexSandbox(permissionProfile);
     const model = request.model?.trim();
     const startedAt = Date.now();
@@ -103,7 +106,7 @@ export class CodexCliAdapter {
     assertResumeLaunchBinding(request.resumeLaunch, request.durableLifecycle, runId, request.sessionId, cwd);
     const taskId = `agent-engine:${runId}`;
     const turnId = generateMessageId();
-    const sessionManager = getSessionManager();
+    const sessionManager = getAgentEngineSessionSink(request.executionOrigin);
     const ledger = getBackgroundTaskLedger();
     const logDir = path.join(getLogsPath(), 'agent-engines', 'codex-cli');
     await fs.mkdir(logDir, { recursive: true });
@@ -198,6 +201,10 @@ export class CodexCliAdapter {
       detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    const unbindAbort = bindExternalEngineAbort(request.abortSignal, () => {
+      if (request.durableLifecycle) void request.durableLifecycle.terminateProcess('SIGTERM');
+      else child.kill('SIGTERM');
+    });
     await request.durableLifecycle?.attachProcess(child, {
       binary: descriptor.binaryPath || 'codex',
       version: descriptor.version,
@@ -219,6 +226,7 @@ export class CodexCliAdapter {
         child.stdin.end(request.resumeLaunch?.stdin ?? (request.resumeLaunch ? undefined : launchPrompt));
       }
     } catch (error) {
+      unbindAbort();
       logStream.end();
       try {
         if (request.durableLifecycle) await request.durableLifecycle.terminateProcess('SIGTERM');
@@ -352,6 +360,7 @@ export class CodexCliAdapter {
     const exitCode = await new Promise<number | null>((resolve) => {
       child.on('close', (code) => resolve(code));
     });
+    unbindAbort();
     clearTimeout(stallTimer);
     clearTimeout(timeoutTimer);
 

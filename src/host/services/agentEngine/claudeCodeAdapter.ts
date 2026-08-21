@@ -18,18 +18,19 @@ import type {
 } from '../../../shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import { generateMessageId } from '../../../shared/utils/id';
-import { getSessionManager } from '../infra/sessionManager';
 import { getShellEnvironmentValue, getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
 import { assertAgentEngineCapability } from './agentEngineGuards';
-import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
+import { assertExternalSubagentProfile, assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 import { emitExternalAgentEvent } from './agentEngineEventSink';
+import { bindExternalEngineAbort } from './agentEngineAbort';
+import { getAgentEngineSessionSink } from './agentEngineSessionSink';
 import type { ExternalEngineResumeLaunch } from './externalEngineResumeBuilders';
 import {
   assertExternalForkContextDispatchLifecycle,
@@ -146,7 +147,9 @@ export class ClaudeCodeAdapter {
     }
     assertAgentEngineCapability(config.kind, descriptor.capabilities, request.resumeLaunch ? 'resume' : 'execute');
 
-    const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
+    const permissionProfile = request.executionOrigin === 'subagent'
+      ? assertExternalSubagentProfile(request.permissionProfile, { origin: 'subagent', cwd })
+      : assertReadOnlyExternalProfile(request.permissionProfile);
     const permissionMode = toClaudePermissionMode(permissionProfile);
     const model = request.model?.trim();
     const startedAt = Date.now();
@@ -154,7 +157,7 @@ export class ClaudeCodeAdapter {
     assertResumeLaunchBinding(request.resumeLaunch, request.durableLifecycle, runId, request.sessionId, cwd);
     const taskId = `agent-engine:${runId}`;
     const turnId = generateMessageId();
-    const sessionManager = getSessionManager();
+    const sessionManager = getAgentEngineSessionSink(request.executionOrigin);
     const ledger = getBackgroundTaskLedger();
     const logDir = path.join(getLogsPath(), 'agent-engines', config.logSlug);
     await fs.mkdir(logDir, { recursive: true });
@@ -248,6 +251,10 @@ export class ClaudeCodeAdapter {
     if (!stdout || !stderr) {
       throw new Error(`${config.label} did not expose the required output streams.`);
     }
+    const unbindAbort = bindExternalEngineAbort(request.abortSignal, () => {
+      if (request.durableLifecycle) void request.durableLifecycle.terminateProcess('SIGTERM');
+      else child.kill('SIGTERM');
+    });
     await request.durableLifecycle?.attachProcess(child, {
       binary: descriptor.binaryPath,
       version: descriptor.version,
@@ -273,6 +280,7 @@ export class ClaudeCodeAdapter {
         child.stdin.end(request.resumeLaunch?.stdin ?? (request.resumeLaunch ? undefined : launchPrompt));
       }
     } catch (error) {
+      unbindAbort();
       logStream.end();
       try {
         if (request.durableLifecycle) await request.durableLifecycle.terminateProcess('SIGTERM');
@@ -442,6 +450,7 @@ export class ClaudeCodeAdapter {
     const exitCode = await new Promise<number | null>((resolve) => {
       child.on('close', (code) => resolve(code));
     });
+    unbindAbort();
     clearTimeout(stallTimer);
     clearTimeout(timeoutTimer);
 
@@ -704,6 +713,9 @@ export function buildClaudeCodeArgs(
   model?: string | null,
 ): string[] {
   const permissionMode = toClaudePermissionMode(profile);
+  const tools = profile === 'workspace_write'
+    ? 'Read,Glob,Grep,LS,Edit,Write,MultiEdit'
+    : 'Read,Glob,Grep,LS';
   return [
     '-p',
     '--verbose',
@@ -717,17 +729,17 @@ export function buildClaudeCodeArgs(
     '--permission-mode',
     permissionMode,
     '--tools',
-    'Read,Glob,Grep,LS',
+    tools,
     '--allowedTools',
-    'Read,Glob,Grep,LS',
+    tools,
     '--no-chrome',
     '--strict-mcp-config',
     '--include-partial-messages',
   ];
 }
 
-export function toClaudePermissionMode(_profile: AgentEnginePermissionProfile): 'plan' {
-  return 'plan';
+export function toClaudePermissionMode(profile: AgentEnginePermissionProfile): 'plan' | 'acceptEdits' {
+  return profile === 'workspace_write' ? 'acceptEdits' : 'plan';
 }
 
 export function parseClaudeCodeJsonLine(line: string): ClaudeParsedEvent | null {

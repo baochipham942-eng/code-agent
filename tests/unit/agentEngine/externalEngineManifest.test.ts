@@ -56,8 +56,8 @@ describe('external engine manifest contract', () => {
 
     expect(capabilitiesByKind).toEqual({
       native: ['execute', 'stream_events', 'resume'],
-      codex_cli: ['execute', 'stream_events', 'resume'],
-      claude_code: ['execute', 'stream_events', 'resume'],
+      codex_cli: ['execute', 'stream_events', 'resume', 'workspace_write'],
+      claude_code: ['execute', 'stream_events', 'resume', 'workspace_write'],
       mimo_code: ['execute', 'stream_events'],
       kimi_code: ['execute', 'stream_events'],
       codebuddy_code: ['execute', 'stream_events'],

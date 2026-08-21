@@ -363,18 +363,34 @@ describe('roles.ipc (domain:roles)', () => {
       const frontmatter = '---\nname: 自定义角色\nunknown-key: keep\nskills: [old]\ntools: [Read]\nmodel: fast\nmax-iterations: 3\n---';
       await fs.writeFile(definitionPath, `${frontmatter}\n旧正文`, 'utf8');
 
-      const equipment = await invoke('updateEquipment', { roleId: '自定义角色', equipment: { skills: ['commit'], tools: ['Read'], model: 'powerful', maxIterations: 22 } });
+      const equipment = await invoke('updateEquipment', { roleId: '自定义角色', equipment: { skills: ['commit'], tools: ['Read'], model: 'powerful', engine: 'codex_cli', maxIterations: 22 } });
       expect(equipment.success).toBe(true);
       const afterEquipment = await fs.readFile(definitionPath, 'utf8');
       expect(afterEquipment).toContain('unknown-key: keep');
       expect(afterEquipment).toContain('skills:\n  - commit');
+      expect(afterEquipment).toContain('engine: codex_cli');
       expect(afterEquipment.endsWith('\n旧正文')).toBe(true);
+
+      const modelOnly = await invoke('updateEquipment', { roleId: '自定义角色', equipment: { skills: ['commit'], tools: ['Read'], model: 'fast', maxIterations: 22 } });
+      expect(modelOnly.success).toBe(true);
+      const afterModelOnly = await fs.readFile(definitionPath, 'utf8');
+      expect(afterModelOnly).toContain('engine: codex_cli');
 
       const body = await invoke('updateDefinitionBody', { roleId: '自定义角色', body: '新正文\n第二行' });
       expect(body.success).toBe(true);
       const afterBody = await fs.readFile(definitionPath, 'utf8');
-      expect(afterBody.slice(0, afterBody.indexOf('---', 4) + 3)).toBe(afterEquipment.slice(0, afterEquipment.indexOf('---', 4) + 3));
+      expect(afterBody.slice(0, afterBody.indexOf('---', 4) + 3)).toBe(afterModelOnly.slice(0, afterModelOnly.indexOf('---', 4) + 3));
       expect(afterBody.endsWith('新正文\n第二行')).toBe(true);
+    });
+
+    it('拒绝不在 manifest 中的 engine', async () => {
+      const res = await invoke('updateEquipment', {
+        roleId: '自定义角色',
+        equipment: { skills: [], tools: [], model: 'balanced', engine: 'imaginary_cli', maxIterations: 30 },
+      });
+
+      expect(res.success).toBe(false);
+      expect(res.error?.message).toContain('Invalid agent engine');
     });
 
     it('内置角色还原逐字回到 BUILTIN_ROLES，且不动记忆履历；自建角色不提供还原入口', async () => {

@@ -28,18 +28,19 @@ import type {
 } from '../../../shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import { generateMessageId } from '../../../shared/utils/id';
-import { getSessionManager } from '../infra/sessionManager';
 import { getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
 import { assertAgentEngineCapability } from './agentEngineGuards';
-import { assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
+import { assertExternalSubagentProfile, assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 import { emitExternalAgentEvent } from './agentEngineEventSink';
+import { bindExternalEngineAbort } from './agentEngineAbort';
+import { getAgentEngineSessionSink } from './agentEngineSessionSink';
 
 const EMPTY_RESPONSE_MESSAGE = 'Kimi Code returned an empty response.';
 
@@ -84,13 +85,15 @@ export class KimiCliAdapter {
       throw new Error(descriptor.lastError || 'Kimi Code CLI is not executable.');
     }
 
-    const permissionProfile = assertReadOnlyExternalProfile(request.permissionProfile);
+    const permissionProfile = request.executionOrigin === 'subagent'
+      ? assertExternalSubagentProfile(request.permissionProfile, { origin: 'subagent', cwd })
+      : assertReadOnlyExternalProfile(request.permissionProfile);
     const model = request.model?.trim();
     const startedAt = Date.now();
     const runId = request.durableLifecycle?.runId ?? `kimi_${startedAt}_${randomUUID().slice(0, 8)}`;
     const taskId = `agent-engine:${runId}`;
     const turnId = generateMessageId();
-    const sessionManager = getSessionManager();
+    const sessionManager = getAgentEngineSessionSink(request.executionOrigin);
     const ledger = getBackgroundTaskLedger();
     const logDir = path.join(getLogsPath(), 'agent-engines', 'kimi-code');
     await fs.mkdir(logDir, { recursive: true });
@@ -178,6 +181,10 @@ export class KimiCliAdapter {
       env,
       detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const unbindAbort = bindExternalEngineAbort(request.abortSignal, () => {
+      if (request.durableLifecycle) void request.durableLifecycle.terminateProcess('SIGTERM');
+      else child.kill('SIGTERM');
     });
     await request.durableLifecycle?.attachProcess(child, {
       binary: descriptor.binaryPath || 'kimi',
@@ -328,6 +335,7 @@ export class KimiCliAdapter {
     const exitCode = await new Promise<number | null>((resolve) => {
       child.on('close', (code) => resolve(code));
     });
+    unbindAbort();
     clearTimeout(stallTimer);
     clearTimeout(timeoutTimer);
 

@@ -24,12 +24,13 @@ import type {
   AgentWorktreeArtifact,
   AgentWorktreeReview,
 } from '../../shared/contract/agentTree';
+import { WORKTREE_BASE_DIR } from './agentWorktreePath';
+export { WORKTREE_BASE_DIR, isAgentWorktreePath } from './agentWorktreePath';
 
 const execAsync = promisify(exec);
 const logger = createLogger('AgentWorktree');
 
 const WORKTREE_TIMEOUT = 30_000;
-const WORKTREE_BASE_DIR = path.join(os.tmpdir(), 'code-agent-worktrees');
 const MAX_WORKTREE_DIFF_CHARS = 20_000;
 const MAX_AGENT_REF_COMPONENT_BYTES = 120;
 const ROLE_DEFAULT_ISOLATION: Record<string, 'worktree' | 'none'> = {
@@ -46,7 +47,10 @@ export function resolveAgentWorktreeIsolation(input: {
   explicit?: string;
   /** 子 agent 的工作目录；非 git 仓库时隔离没有意义且必然失败，直接判 none */
   cwd?: string;
+  /** 外部写执行器要求 Neo 管理的 worktree；非 git 场景也不允许降级。 */
+  forceWorktree?: boolean;
 }): 'worktree' | 'none' {
+  if (input.forceWorktree) return 'worktree';
   if (input.cwd !== undefined && !isInsideGitRepo(input.cwd)) {
     logger.warn(`${input.cwd} 不在 git 仓库内，子 agent 降级为无 worktree 隔离`);
     return 'none';

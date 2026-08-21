@@ -57,7 +57,7 @@ function modelInfoOf(config: ModelConfig) {
 }
 
 /** zhipu 免费档（走官方 bigmodel.cn + ZHIPU_OFFICIAL_API_KEY，0ki 不稳支持免费 ID）。 */
-function isZhipuFree(config: ModelConfig): boolean {
+export function isZhipuFreeModel(config: ModelConfig): boolean {
   if (config.provider !== 'zhipu') return false;
   return modelInfoOf(config).model?.costType === 'free';
 }
@@ -152,7 +152,7 @@ export function resolveProviderApiKey(config: ModelConfig, opts: ResolveApiKeyOp
   const trustConfigKey = opts.trustConfigKey !== false;
 
   // vendor 专用官方 key 始终最高优先（不依赖 config.apiKey 是否可信）
-  const officialKey = isZhipuFree(config)
+  const officialKey = isZhipuFreeModel(config)
     ? normalizeApiKey(process.env.ZHIPU_OFFICIAL_API_KEY)
     : isKimiK25(config)
       ? normalizeApiKey(process.env.KIMI_K25_API_KEY)

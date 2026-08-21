@@ -220,6 +220,8 @@ export const MODEL_FEATURES: Record<string, ('tool' | 'vision' | 'reasoning')[]>
   'moonshot-v1-32k': ['tool'],
   'moonshot-v1-128k': ['tool'],
   // deepseek
+  'deepseek-v4-flash': ['tool', 'reasoning'],
+  'deepseek-v4-pro': ['tool', 'reasoning'],
   'deepseek-chat': ['tool'],
   'deepseek-coder': ['tool'],
   'deepseek-reasoner': ['reasoning'],

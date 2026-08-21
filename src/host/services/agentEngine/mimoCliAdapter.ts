@@ -15,8 +15,7 @@ import { createWriteStream } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-import { AppWindow, getLogsPath } from '../../platform';
-import { IPC_CHANNELS } from '../../../shared/ipc';
+import { getLogsPath } from '../../platform';
 import type { AgentEventEnvelope, Message, MessageMetadata } from '../../../shared/contract';
 import type {
   AgentEnginePermissionProfile,
@@ -40,6 +39,7 @@ import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
+import { emitExternalAgentEvent } from './agentEngineEventSink';
 
 // 容错：OpenAI 兼容后端偶发流式完成（exit 0）但空响应。与 Kimi 对称，按 empty response
 // 归一成可识别失败，不让它静默落到「completed without text output」兜底文案。
@@ -718,12 +718,5 @@ function emitAgentEvent(
   event: AgentEventEnvelope,
   localSink?: (event: AgentEventEnvelope) => void,
 ): void {
-  localSink?.(event);
-  const payload = {
-    ...event,
-    sessionId,
-  };
-  for (const win of AppWindow.getAllWindows()) {
-    win.webContents.send(IPC_CHANNELS.AGENT_EVENT, payload);
-  }
+  emitExternalAgentEvent(sessionId, event, localSink);
 }

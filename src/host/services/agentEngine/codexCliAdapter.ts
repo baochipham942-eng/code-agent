@@ -7,8 +7,7 @@ import { createWriteStream } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-import { AppWindow, getLogsPath } from '../../platform';
-import { IPC_CHANNELS } from '../../../shared/ipc';
+import { getLogsPath } from '../../platform';
 import type { AgentEventEnvelope, Message, MessageMetadata } from '../../../shared/contract';
 import type {
   AgentEnginePermissionProfile,
@@ -28,6 +27,7 @@ import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
+import { emitExternalAgentEvent } from './agentEngineEventSink';
 import type { ExternalEngineResumeLaunch } from './externalEngineResumeBuilders';
 import {
   assertExternalForkContextDispatchLifecycle,
@@ -778,12 +778,5 @@ function emitAgentEvent(
   event: AgentEventEnvelope,
   localSink?: (event: AgentEventEnvelope) => void,
 ): void {
-  localSink?.(event);
-  const payload = {
-    ...event,
-    sessionId,
-  };
-  for (const win of AppWindow.getAllWindows()) {
-    win.webContents.send(IPC_CHANNELS.AGENT_EVENT, payload);
-  }
+  emitExternalAgentEvent(sessionId, event, localSink);
 }

@@ -13,10 +13,12 @@
 7. **弹层内压缩入口唯一化**：弹层操作区承担压缩（≥70%），不再给面板传 `onCompact`，避免 critical 时操作区与面板内按钮重复。
 8. **压缩摘要横幅降级（爸 08-21 三轮拍板）**：消息流里整条「上下文已压缩」横幅退役，降级为压缩点所在轮操作行（复制/点赞/点踩/分叉）最右端的 Archive 标记，点开仍可读摘要原文；操作行不渲染的轮（流式/语音在飞）降级为右对齐独立小行，信息不消失。
 9. **CI 修复**：`hoverActionsKeyboardVisibility` 的 bySource fixture 补 `summary` 字段（契约新增必填字段导致 Swarm CI 的 tests typecheck ratchet 超基线）。
+10. **明细弹层 Cursor 化（爸 08-21 五轮拍板）**：0 值桶不占位（`BreakdownItem`/`NestedGroup` tokens≤0 不渲染——全是 0 (0.0%) 的空桶占位看着就像数据坏了）；面板在弹层语境下 `hideHeader`+`hideProgressBar`，弹层标题栏 + 分桶总条 + 大数字行各就各位，不再有重复横条/重复头部。
 
 ## 验收证据（私档 `code-agent-private-archive/docs/evidence/2026-08-21-N-CTXPANEL/`）
 
-- 终版（四轮反馈后，构建指纹 kimi/N-CTXPANEL@3539e4c）：`popover-dark/` `popover-light/`——`01-bubble` hover 只读气泡；`02` 点击圆环展开长在输入框上方的明细弹层（无遮罩不割裂）；`03`/`04` 压缩横幅消失、标记在操作行最右端、点开读摘要原文；`05` 未压缩对照会话明细无摘要桶（对话 100%），与压缩会话（摘要 32.6%）对照证明「压缩完成后面板直接看出变化」。
+- 终版（五轮反馈后，构建指纹 kimi/N-CTXPANEL@9de42e5）：`final2-dark/` `final2-light/`——`01-bubble` hover 只读气泡；`02` 明细弹层 Cursor 化：大数字行 + 一条分桶总条 + 只列非零桶（压缩会话=摘要 408(32.6%) + 对话 844(67.4%)，未压缩对照=对话 840(100%) 一行）；`03`/`04` 压缩横幅消失、操作行最右端 Archive 标记点开读摘要原文。
+- 四轮版（弹层刚落地、面板头部/进度条未让位，@3539e4c）：`popover-dark/` `popover-light/`，仅存档对照。
 - 三轮版（横幅降级时还是居中 modal，@65c6e7f）：`marker-dark/` `marker-light/`，仅存档对照。
 - 中间版（交互修正，@b1bba3f）：`final-dark/` `final-light/`，hover 气泡 + 点击开明细。
 - 初版（交互修正前，@b91c6a7）：`dark/` `light/`，仅存档对照。

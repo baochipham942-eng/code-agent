@@ -6,6 +6,51 @@ import {
   parseLongSessionBrowserSmokeOptions,
   selectLongSessionGates,
 } from '../../scripts/perf/long-session-browser-smoke.ts';
+import {
+  waitForStable,
+  waitForStableWithRetry,
+} from '../../scripts/perf/wait-for-stable.ts';
+
+describe('long-session browser settling', () => {
+  it('does not accept a transiently true scroll or visibility condition', async () => {
+    let sample = 0;
+    const result = await waitForStable(
+      () => {
+        sample += 1;
+        if (sample === 2 || sample >= 5) return sample;
+        return null;
+      },
+      { timeoutMs: 100, stableForMs: 2, pollIntervalMs: 1 },
+    );
+
+    expect(result).toBeGreaterThanOrEqual(6);
+  });
+
+  it('fails closed when the condition never remains true', async () => {
+    let sample = 0;
+    const result = await waitForStable(
+      () => {
+        sample += 1;
+        return sample % 2 === 0 ? true : null;
+      },
+      { timeoutMs: 10, stableForMs: 3, pollIntervalMs: 1 },
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('reissues an exact navigation after a bounded settling timeout', async () => {
+    let retries = 0;
+    const result = await waitForStableWithRetry(
+      () => retries > 0 ? 'visible' : null,
+      () => { retries += 1; },
+      { attempts: 2, timeoutMs: 5, stableForMs: 1, pollIntervalMs: 1 },
+    );
+
+    expect(result).toBe('visible');
+    expect(retries).toBe(1);
+  });
+});
 
 describe('long-session browser smoke options', () => {
   it('preserves the release evidence path and all seven gates by default', () => {

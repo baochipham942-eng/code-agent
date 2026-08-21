@@ -9,7 +9,6 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { createHash } from 'crypto';

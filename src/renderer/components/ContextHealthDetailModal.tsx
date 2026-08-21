@@ -87,6 +87,9 @@ export const ContextHealthDetailModal: React.FC<ContextHealthDetailModalProps> =
 
   const usagePercent = contextHealth?.usagePercent ?? 0;
   const canCompact = usagePercent >= 70;
+  // 操作区（费用 / 压缩反馈 / 压缩钮）按需整体渲染，避免全空时只剩一条分隔线
+  const hasCost = sessionCost > 0 || unknownCostTurns > 0;
+  const showActionRow = hasCost || canCompact || !!compactResult || !!compactError;
 
   // 分桶条：bySource 为空/全 0 时不渲染
   const bySource = contextHealth?.breakdown?.bySource;
@@ -132,11 +135,12 @@ export const ContextHealthDetailModal: React.FC<ContextHealthDetailModalProps> =
             isCompacting={isCompacting}
           />
 
-          <div className="mt-3 flex items-center justify-between gap-3 border-t border-border-muted pt-3">
-            <div className="min-w-0 text-[11px] text-zinc-400 tabular-nums">
-              {(sessionCost > 0 || unknownCostTurns > 0) && (
-                <CostDisplay cost={sessionCost} isStreaming={isStreaming} budget={budgetStatus} />
-              )}
+          {showActionRow && (
+            <div className="mt-3 flex items-center justify-between gap-3 border-t border-border-muted pt-3">
+              <div className="min-w-0 text-[11px] text-zinc-400 tabular-nums">
+                {hasCost && (
+                  <CostDisplay cost={sessionCost} isStreaming={isStreaming} budget={budgetStatus} />
+                )}
               {compactResult && (
                 <div className="mt-1 text-badge-success">
                   {compactResult.totalSavedTokens > 0
@@ -164,7 +168,8 @@ export const ContextHealthDetailModal: React.FC<ContextHealthDetailModalProps> =
                 <span>{isCompacting ? ch.compacting : ch.compactNow}</span>
               </button>
             )}
-          </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="py-6 text-sm text-zinc-500">

@@ -14,10 +14,12 @@
 8. **压缩摘要横幅降级（爸 08-21 三轮拍板）**：消息流里整条「上下文已压缩」横幅退役，降级为压缩点所在轮操作行（复制/点赞/点踩/分叉）最右端的 Archive 标记，点开仍可读摘要原文；操作行不渲染的轮（流式/语音在飞）降级为右对齐独立小行，信息不消失。
 9. **CI 修复**：`hoverActionsKeyboardVisibility` 的 bySource fixture 补 `summary` 字段（契约新增必填字段导致 Swarm CI 的 tests typecheck ratchet 超基线）。
 10. **明细弹层 Cursor 化（爸 08-21 五轮拍板）**：0 值桶不占位（`BreakdownItem`/`NestedGroup` tokens≤0 不渲染——全是 0 (0.0%) 的空桶占位看着就像数据坏了）；面板在弹层语境下 `hideHeader`+`hideProgressBar`，弹层标题栏 + 分桶总条 + 大数字行各就各位，不再有重复横条/重复头部。
+11. **平铺清单定稿施工（爸 08-21 六轮拍板，按对比页 After 稿）**：弹层不再挂载 ContextHealthPanel，九桶平铺清单——组装序（系统提示→工具定义→规则→技能→连接器→子代理→文件读取→摘要→对话，与 prefix cache 命中方向同构、行序逐轮稳定）；聚合类目走 i18n（技能/连接器/子代理），不列具体挂载名、无跳转/卸载（覆盖工单验收①的「可跳转卸载」，面板的 NestedGroup 跳转卸载能力保留在组件里）；配色：摘要 rose / 系统提示浅灰 / 对话深灰 / 规则 teal / 挂载能力鲜色。设计稿：`code-agent-private-archive/docs/competitive/2026-08-21-cursor-vs-neo-context-panel.html`。
 
 ## 验收证据（私档 `code-agent-private-archive/docs/evidence/2026-08-21-N-CTXPANEL/`）
 
-- 终版（五轮反馈后，构建指纹 kimi/N-CTXPANEL@9de42e5）：`final2-dark/` `final2-light/`——`01-bubble` hover 只读气泡；`02` 明细弹层 Cursor 化：大数字行 + 一条分桶总条 + 只列非零桶（压缩会话=摘要 408(32.6%) + 对话 844(67.4%)，未压缩对照=对话 840(100%) 一行）；`03`/`04` 压缩横幅消失、操作行最右端 Archive 标记点开读摘要原文。
+- 终版（六轮反馈后，构建指纹 kimi/N-CTXPANEL@fc97304）：`after-dark/` `after-light/`——九桶平铺清单真机（压缩会话=摘要 rose 408(32.6%) + 对话深灰 844(67.4%)，0 值桶不占位；未压缩对照=对话一行）。
+- 五轮版（Cursor 化但未平铺，@9de42e5）：`final2-dark/` `final2-light/`——`01-bubble` hover 只读气泡；`02` 明细弹层 Cursor 化：大数字行 + 一条分桶总条 + 只列非零桶（压缩会话=摘要 408(32.6%) + 对话 844(67.4%)，未压缩对照=对话 840(100%) 一行）；`03`/`04` 压缩横幅消失、操作行最右端 Archive 标记点开读摘要原文。
 - 四轮版（弹层刚落地、面板头部/进度条未让位，@3539e4c）：`popover-dark/` `popover-light/`，仅存档对照。
 - 三轮版（横幅降级时还是居中 modal，@65c6e7f）：`marker-dark/` `marker-light/`，仅存档对照。
 - 中间版（交互修正，@b1bba3f）：`final-dark/` `final-light/`，hover 气泡 + 点击开明细。

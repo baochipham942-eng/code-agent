@@ -10,7 +10,6 @@ import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browser
 import {
   Anchor,
   AlertTriangle,
-  Archive,
   AudioLines,
   ChevronRight,
   ChevronDown,
@@ -35,6 +34,7 @@ import { StreamingIndicator, getRunningSubagentCount, getRunningToolStartTime, g
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
 import { buildTurnFileChanges, isFileChangeCardOwnedNode } from '../../../utils/turnDiffSummary';
 import { TurnFeedback } from './TurnFeedback';
+import { TurnCompactionMarker } from './TurnCompactionMarker';
 import { TurnOutcomeBadge } from './TurnOutcomeBadge';
 import { ToolStepGroup } from './ToolStepGroup';
 import {
@@ -595,17 +595,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               </button>
             )}
             {compactionNodes.length > 0 && (
-              <button /* ds-allow:button: 与同操作行其他图标同形的紧凑标记按钮 */
-                type="button"
-                data-testid="turn-compaction-marker"
-                aria-label={t.turnCard.contextCompacted}
-                title={t.turnCard.contextCompacted}
-                aria-expanded={compactionExpanded}
-                onClick={() => setCompactionExpanded((v) => !v)}
-                className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-zinc-500 transition-colors hover:border-badge-warning/40 hover:bg-amber-500/10 hover:text-badge-warning focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
-              >
-                <Archive className="h-3.5 w-3.5" />
-              </button>
+              <TurnCompactionMarker
+                expanded={compactionExpanded}
+                onToggle={() => setCompactionExpanded((v) => !v)}
+              />
             )}
           </div>
         )}
@@ -625,17 +618,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             不让「压过」这件事在消息流里彻底消失。 */}
         {!showReplyActions && compactionNodes.length > 0 && (
           <div className="flex justify-end">
-            <button /* ds-allow:button: 与操作行压缩标记同形 */
-              type="button"
-              data-testid="turn-compaction-marker"
-              aria-label={t.turnCard.contextCompacted}
-              title={t.turnCard.contextCompacted}
-              aria-expanded={compactionExpanded}
-              onClick={() => setCompactionExpanded((v) => !v)}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-zinc-500 transition-colors hover:border-badge-warning/40 hover:bg-amber-500/10 hover:text-badge-warning focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
-            >
-              <Archive className="h-3.5 w-3.5" />
-            </button>
+            <TurnCompactionMarker
+              expanded={compactionExpanded}
+              onToggle={() => setCompactionExpanded((v) => !v)}
+            />
           </div>
         )}
       </div>

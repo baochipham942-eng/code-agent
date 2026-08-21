@@ -1,15 +1,20 @@
 // ============================================================================
 // ContextHealthDetailPopover - 上下文健康明细弹层
-// 长在输入框上方（锚在圆环上、bottom-full 展开，Cursor 同款不割裂形态），
-// 复用现成的 ContextHealthPanel（不新造面板组件），handlers 走共享
-// useContextHealthActions。两个打开入口：点击 ContextUsagePill 圆环、
-// context 深链（OPEN_CONTEXT_HEALTH_EVENT）。分桶条 / 累计费用 / 压缩钮
-// 都收在本弹层，点击圆环一步到位。
+// 长在输入框上方（锚在圆环上、bottom-full 展开，Cursor 同款不割裂形态）。
+// 两个打开入口：点击 ContextUsagePill 圆环、context 深链（OPEN_CONTEXT_HEALTH_EVENT）。
+//
+// 桶清单口径（2026-08-21 爸拍板定稿，设计稿见私档
+// docs/competitive/2026-08-21-cursor-vs-neo-context-panel.html）：
+// - 九桶一张平铺清单（结构维度的系统提示/工具定义与来源维度同表），0 值不占位
+// - 顺序 = 上下文组装序（固定开销在前 → 挂载能力 → 动态读入 → 摘要 → 对话），
+//   每轮占比变化时行序稳定可扫读，且与 prefix cache 命中方向同构
+// - 聚合类目走界面语言（技能/连接器/子代理），不列具体挂载名，桶行无跳转/卸载
+// - 配色：摘要独立 rose（压缩是动作产物）；系统提示浅灰；对话深灰；
+//   规则 teal；挂载能力鲜色（技能 indigo / 连接器 amber / 子代理 cyan）
 // ============================================================================
 
 import React, { useEffect } from 'react';
 import { Loader2, Shrink, X as XIcon } from 'lucide-react';
-import { ContextHealthPanel } from '../../ContextHealthPanel';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { useStatusStore } from '../../../stores/statusStore';
@@ -18,43 +23,46 @@ import { useBudgetStatus } from '../../../hooks/useBudgetStatus';
 import { CostDisplay } from '../../StatusBar/CostDisplay';
 import { useContextHealthActions } from '../../../hooks/useContextHealthActions';
 import { formatContextUsagePercent } from '../../../utils/contextUsageFormat';
-import type { SourceBreakdown } from '@shared/contract/contextHealth';
+import type { ContextHealthState } from '@shared/contract/contextHealth';
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
 }
 
-// 分桶条段：颜色用显式 zinc/accent 色（深浅主题下都可读，不走主题变量）
-interface SourceSegment {
+interface BucketSpec {
   key: string;
   name: string;
   tokens: number;
-  barClass: string;
+  color: string;
 }
 
-function buildSourceSegments(
-  bySource: SourceBreakdown,
-  ch: Record<string, string>,
-  compressionCount: number,
-): SourceSegment[] {
-  const sumRecord = (rec: Record<string, number>) =>
-    Object.values(rec).reduce((a, b) => a + b, 0);
+/**
+ * 九桶清单（组装序）。颜色用显式 hex：弹层是固定深色面（bg-zinc-900/95），
+ * 不随主题翻转，不走 surface token（surfaceTokenConvergence 白名单已登记）。
+ */
+function buildBuckets(health: ContextHealthState, ch: Record<string, string>): BucketSpec[] {
+  const bs = health.breakdown.bySource;
+  const sumRecord = (rec?: Record<string, number>) =>
+    Object.values(rec ?? {}).reduce((a, b) => a + b, 0);
+  const compressionCount = health.compression?.compressionCount ?? 0;
   return [
-    { key: 'rules', name: ch.bkRules, tokens: bySource.rules, barClass: 'bg-zinc-500' },
-    { key: 'skills', name: 'Skills', tokens: sumRecord(bySource.skills), barClass: 'bg-indigo-500' },
-    { key: 'mcp', name: 'MCP', tokens: sumRecord(bySource.mcp), barClass: 'bg-amber-500' },
-    { key: 'subagents', name: 'Subagents', tokens: sumRecord(bySource.subagents), barClass: 'bg-cyan-500' },
-    { key: 'fileReads', name: ch.bkFileReads, tokens: bySource.fileReads, barClass: 'bg-emerald-600' },
+    { key: 'systemPrompt', name: ch.bkSystemPrompt, tokens: health.breakdown.systemPrompt, color: '#a8a8b0' },
+    { key: 'toolDefs', name: ch.bkToolDefs, tokens: health.breakdown.toolDefinitions ?? 0, color: '#60a5fa' },
+    { key: 'rules', name: ch.bkRules, tokens: bs?.rules ?? 0, color: '#2dd4bf' },
+    { key: 'skills', name: ch.bkSkills, tokens: sumRecord(bs?.skills), color: '#818cf8' },
+    { key: 'mcp', name: ch.bkMcp, tokens: sumRecord(bs?.mcp), color: '#f59e0b' },
+    { key: 'subagents', name: ch.bkSubagents, tokens: sumRecord(bs?.subagents), color: '#22d3ee' },
+    { key: 'fileReads', name: ch.bkFileReads, tokens: bs?.fileReads ?? 0, color: '#10b981' },
     {
       key: 'summary',
       name: ch.bkSummary.replace('{count}', String(compressionCount)),
-      tokens: bySource.summary ?? 0,
-      barClass: 'bg-violet-500',
+      tokens: bs?.summary ?? 0,
+      color: '#fb7185',
     },
-    { key: 'conversation', name: ch.bkConversation, tokens: bySource.conversation, barClass: 'bg-zinc-400' },
-  ].filter((seg) => seg.tokens > 0);
+    { key: 'conversation', name: ch.bkConversation, tokens: bs?.conversation ?? 0, color: '#52525b' },
+  ].filter((bucket) => bucket.tokens > 0);
 }
 
 interface ContextHealthDetailPopoverProps {
@@ -67,7 +75,7 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
   const { t } = useI18n();
   const ch = t.taskStatusPanels.contextHealth;
   const contextHealth = useAppStore((s) => s.contextHealth);
-  const { handleNavigate, handleUnload, handleCompact, isCompacting } = useContextHealthActions();
+  const { handleCompact, isCompacting } = useContextHealthActions();
   // 累计费用接线沿用 CostDisplay 预算感知口径（cache-aware 成本 + 缓存节省 tooltip
   // + 告警染色），useBudgetStatus 非轮询。从原圆环弹层搬来，口径未变。
   const sessionCost = useStatusStore((s) => s.sessionCost);
@@ -87,12 +95,8 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
   const hasCost = sessionCost > 0 || unknownCostTurns > 0;
   const showActionRow = hasCost || canCompact || !!compactResult || !!compactError;
 
-  // 分桶条：bySource 为空/全 0 时不渲染
-  const bySource = contextHealth?.breakdown?.bySource;
-  const sourceSegments = bySource
-    ? buildSourceSegments(bySource, ch, contextHealth?.compression?.compressionCount ?? 0)
-    : [];
-  const sourceTotal = sourceSegments.reduce((a, seg) => a + seg.tokens, 0);
+  const buckets = contextHealth ? buildBuckets(contextHealth, ch) : [];
+  const total = contextHealth?.currentTokens ?? 0;
 
   return (
     <div
@@ -116,7 +120,7 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
       <div className="max-h-[60vh] overflow-y-auto px-4 pb-3">
         {contextHealth ? (
           <div>
-            {/* 大数字行：弹层里唯一讲「总量」的地方（面板自身的进度条和折叠头已让位） */}
+            {/* 大数字行 + 分段总条：总量的唯一出口 */}
             <div className="mb-2 flex items-baseline justify-between tabular-nums">
               <span className="text-sm font-semibold text-zinc-50">
                 {ch.usageSummary
@@ -129,34 +133,43 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                   .replace('{max}', formatTokens(contextHealth.maxTokens))}
               </span>
             </div>
-            {sourceSegments.length > 0 && sourceTotal > 0 && (
-              <div
-                className="mb-3 flex h-1.5 w-full overflow-hidden rounded-full bg-zinc-800"
-                data-testid="context-source-bar"
-              >
-                {sourceSegments.map((seg) => (
-                  <div
-                    key={seg.key}
-                    className={`h-full ${seg.barClass}`}
-                    style={{ width: `${(seg.tokens / sourceTotal) * 100}%` }}
-                    title={ch.sourceBucketTitle
-                      .replace('{name}', seg.name)
-                      .replace('{tokens}', formatTokens(seg.tokens))
-                      .replace('{percent}', ((seg.tokens / sourceTotal) * 100).toFixed(1))}
-                  />
-                ))}
-              </div>
-            )}
 
-            <ContextHealthPanel
-              health={contextHealth}
-              collapsed={false}
-              onNavigate={handleNavigate}
-              onUnload={handleUnload}
-              isCompacting={isCompacting}
-              hideHeader
-              hideProgressBar
-            />
+            {buckets.length > 0 && total > 0 && (
+              <>
+                <div
+                  className="mb-3 flex h-1.5 w-full overflow-hidden rounded-full bg-zinc-800"
+                  data-testid="context-source-bar"
+                >
+                  {buckets.map((bucket) => (
+                    <div
+                      key={bucket.key}
+                      className="h-full"
+                      style={{ width: `${(bucket.tokens / total) * 100}%`, background: bucket.color }}
+                      title={ch.sourceBucketTitle
+                        .replace('{name}', bucket.name)
+                        .replace('{tokens}', formatTokens(bucket.tokens))
+                        .replace('{percent}', ((bucket.tokens / total) * 100).toFixed(1))}
+                    />
+                  ))}
+                </div>
+
+                {/* 平铺桶清单：颜色点 + 类目 + token + 占比（相对窗口总量） */}
+                <div data-testid="context-bucket-list">
+                  {buckets.map((bucket) => (
+                    <div key={bucket.key} className="flex items-center gap-2 py-1 text-xs">
+                      <span
+                        className="h-2 w-2 flex-shrink-0 rounded-sm"
+                        style={{ background: bucket.color }}
+                      />
+                      <span className="text-zinc-300">{bucket.name}</span>
+                      <span className="ml-auto text-[11px] text-zinc-400 tabular-nums">
+                        {formatTokens(bucket.tokens)} · {((bucket.tokens / total) * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
 
             {showActionRow && (
               <div className="mt-3 flex items-center justify-between gap-3 border-t border-border-muted pt-3">

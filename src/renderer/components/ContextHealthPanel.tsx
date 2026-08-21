@@ -35,10 +35,6 @@ interface ContextHealthPanelProps {
   onCompact?: () => void;
   /** 压缩进行中——按钮 disabled，避免重复触发 */
   isCompacting?: boolean;
-  /** 弹层语境：外层已有标题栏时隐藏面板自身的可折叠头（强制展开） */
-  hideHeader?: boolean;
-  /** 弹层语境：外层已有分桶总条时隐藏面板自带的进度条（两条横条并排是重复） */
-  hideProgressBar?: boolean;
 }
 
 /**
@@ -88,8 +84,6 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
   onUnload,
   onCompact,
   isCompacting = false,
-  hideHeader = false,
-  hideProgressBar = false,
 }) => {
   const { t } = useI18n();
   const ch = t.taskStatusPanels.contextHealth;
@@ -114,8 +108,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
 
   const colors = getWarningColors(health.warningLevel);
   const IconComponent = colors.icon;
-  // 弹层语境（hideHeader）下内容强制展开，折叠交互由外层承担
-  const contentExpanded = isExpanded || hideHeader;
+
 
   const handleToggle = () => {
     const newExpanded = !isExpanded;
@@ -126,30 +119,27 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
   return (
     <div className={`border-b border-zinc-700 ${colors.bgColor}`}>
       {/* 头部 - 可点击折叠 */}
-      {!hideHeader && (
-        <button
-          onClick={handleToggle}
-          className="w-full flex items-center gap-2 p-3 hover:bg-zinc-800 transition-colors"
-        >
-          {isExpanded ? (
-            <ChevronDown className="w-4 h-4 text-zinc-500" />
-          ) : (
-            <ChevronRight className="w-4 h-4 text-zinc-500" />
-          )}
-          <IconComponent className={`w-4 h-4 ${colors.iconColor}`} />
-          <span className="text-sm font-medium text-zinc-200">{ch.title}</span>
-          <span className={`ml-auto text-sm font-mono ${colors.textColor}`}>
-            {health.usagePercent.toFixed(1)}%
-          </span>
-        </button>
-      )}
+      <button
+        onClick={handleToggle}
+        className="w-full flex items-center gap-2 p-3 hover:bg-zinc-800 transition-colors"
+      >
+        {isExpanded ? (
+          <ChevronDown className="w-4 h-4 text-zinc-500" />
+        ) : (
+          <ChevronRight className="w-4 h-4 text-zinc-500" />
+        )}
+        <IconComponent className={`w-4 h-4 ${colors.iconColor}`} />
+        <span className="text-sm font-medium text-zinc-200">{ch.title}</span>
+        <span className={`ml-auto text-sm font-mono ${colors.textColor}`}>
+          {health.usagePercent.toFixed(1)}%
+        </span>
+      </button>
 
       {/* 展开内容 */}
-      {contentExpanded && (
+      {isExpanded && (
         <div className="px-3 pb-3 space-y-3">
-          {/* 进度条：弹层语境由外层分桶总条承担，不重复渲染 */}
-          {!hideProgressBar && (
-            <div className="space-y-1.5">
+          {/* 进度条 */}
+          <div className="space-y-1.5">
               <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
                 <div
                   className={`h-full ${colors.barColor} transition-all duration-300`}
@@ -162,7 +152,6 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                 </span>
               </div>
             </div>
-          )}
 
           {/* 分解详情 - 可展开 */}
           <div>

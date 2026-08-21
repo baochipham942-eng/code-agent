@@ -137,16 +137,23 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
     fireEvent.click(pillButton());
 
     expect(screen.getByText('上下文健康度明细')).toBeTruthy();
-    // modal 顶部分桶条：摘要段 title 带名称/token/占比
+    // 弹层顶部分桶条：摘要段 title 带名称/token/占比
     const bar = screen.getByTestId('context-source-bar');
     expect(bar.innerHTML).toContain('摘要（压了 2 轮）');
     expect(bar.innerHTML).toContain('200');
-    // 明细 modal 里挂的是现成 ContextHealthPanel：bySource 区与摘要桶都在
-    expect(screen.getByText('按产品来源')).toBeTruthy();
-    expect(screen.getByText('摘要（压了 2 轮）')).toBeTruthy();
+    // 平铺桶清单（After 稿口径）：聚合类目中文名，0 值桶不占位
+    const list = screen.getByTestId('context-bucket-list');
+    expect(list.textContent).toContain('摘要（压了 2 轮）');
+    expect(list.textContent).toContain('对话');
+    expect(list.textContent).toContain('技能');
+    expect(list.textContent).toContain('规则');
+    // fixture 里 mcp/subagents/fileReads 为 0 → 不占位
+    expect(list.textContent).not.toContain('连接器');
+    expect(list.textContent).not.toContain('子代理');
+    expect(list.textContent).not.toContain('文件读取');
   });
 
-  it('bySource 全 0 时明细弹层不渲染分桶条', () => {
+  it('bySource 全 0 时来源桶不占位（结构桶仍在）', () => {
     pillMocks.appState.contextHealth = {
       ...contextHealth,
       breakdown: {
@@ -166,7 +173,10 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
     fireEvent.click(pillButton());
 
     expect(screen.getByText('上下文健康度明细')).toBeTruthy();
-    expect(screen.queryByTestId('context-source-bar')).toBeNull();
+    // bySource 全 0：来源桶不占位，但结构桶（系统提示 100）仍在清单里
+    const list = screen.getByTestId('context-bucket-list');
+    expect(list.textContent).toContain('系统提示');
+    expect(list.textContent).not.toContain('对话');
   });
 
   it('context 深链（OPEN_CONTEXT_HEALTH_EVENT）直接打开明细弹层', () => {
@@ -177,7 +187,7 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
     });
 
     expect(screen.getByText('上下文健康度明细')).toBeTruthy();
-    expect(screen.getByText('按产品来源')).toBeTruthy();
+    expect(screen.getByTestId('context-bucket-list')).toBeTruthy();
   });
 
   it('明细弹层里压缩入口沿用 ≥70% 门槛：20% 不显示，80% 显示', () => {

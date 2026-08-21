@@ -38,6 +38,7 @@ import type { EffortLevel } from '../../shared/contract/agent';
 import { getTaskListManager, type TaskListManager } from './taskList';
 import { getEventBus } from '../services/eventing';
 import { getComboRecorder } from '../services/skills/comboRecorder';
+import { getSessionSkillService } from '../services/skills/sessionSkillService';
 import { resolveAgent as registryResolveAgent } from './agentRegistry';
 import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { assembleTurnDenylist } from './routingToolPolicy';
@@ -569,7 +570,10 @@ export class AgentOrchestrator {
         this.messageHistory.getMessagesForRun().map((message) => ({
           role: message.role,
           content: message.content || '',
+          toolCalls: message.toolCalls,
           toolResults: message.toolResults?.map((result) => ({
+            // N-CTXCURRENT: toolCallId 透传，构成算法据此把结果按工具名归桶
+            toolCallId: result.toolCallId,
             output: result.output,
             error: result.error,
           })),
@@ -577,6 +581,11 @@ export class AgentOrchestrator {
         })),
         SYSTEM_PROMPT,
         model,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { skills: getSessionSkillService().getMountedSkillTokens(sessionId) },
       );
     } catch (error) {
       logger.warn('Failed to update context health after user message:', error);

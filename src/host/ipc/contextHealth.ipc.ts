@@ -26,6 +26,7 @@ import { getTaskManager as getTaskManagerSingleton } from '../task';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService, getSessionManager } from '../services';
 import { getDatabase } from '../services/core/databaseService';
+import { getSessionSkillService } from '../services/skills/sessionSkillService';
 import { DEFAULT_MODEL, DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
 import type { ContextHealthState } from '../../shared/contract/contextHealth';
 import type { Message } from '../../shared/contract';
@@ -172,6 +173,8 @@ function toContextMessages(messages: Message[]) {
     content: message.content || '',
     toolCalls: message.toolCalls,
     toolResults: message.toolResults?.map((result) => ({
+      // N-CTXCURRENT: toolCallId 透传，构成算法据此把结果按工具名归桶
+      toolCallId: result.toolCallId,
       output: result.output,
       error: result.error,
     })),
@@ -404,6 +407,12 @@ export async function resolveContextHealthForSession(
       toContextMessages(messages),
       systemPrompt,
       model,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      // N-CTXCURRENT: 当前挂载 skills（重启后 mounts 为空 = 当前态本就什么都没挂）
+      { skills: getSessionSkillService().getMountedSkillTokens(sessionId) },
     );
   } catch (error) {
     logger.warn('Failed to derive context health from session messages:', {
@@ -552,6 +561,10 @@ async function compactSession(
     systemPrompt,
     model,
     compressionStats,
+    undefined,
+    undefined,
+    undefined,
+    { skills: getSessionSkillService().getMountedSkillTokens(sessionId) },
   );
 
   const result: CompactResult = {

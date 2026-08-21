@@ -33,7 +33,6 @@ import type {
 import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../../shared/constants';
 import { getChannelManager } from '../../channels';
 import { getConnectorRegistry } from '../../connectors';
-import { getContextHealthService } from '../../context/contextHealthService';
 import { getMemoryDir } from '../../lightMemory/indexLoader';
 import {
   getMCPClient,
@@ -657,7 +656,6 @@ class CapabilityCenterService {
       request.id,
     );
     await getMCPClient().removeServer(draftState.config.name);
-    getContextHealthService().clearMcpServerAcrossSessions(draftState.config.name);
 
     return this.listCapabilities(options);
   }
@@ -1018,9 +1016,6 @@ class CapabilityCenterService {
     await getMCPClient().setServerEnabled(serverName, enabled);
     // 持久化 enabled（连接器住 user scope），否则重启读回旧值 → 飞书重启变 disabled、Tool not found。
     await updateMcpServerEnabledInConfigFiles(serverName, enabled);
-    if (!enabled) {
-      getContextHealthService().clearMcpServerAcrossSessions(serverName);
-    }
   }
 
   private async setConnectorEnabled(

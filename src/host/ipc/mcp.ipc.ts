@@ -21,7 +21,6 @@ import {
   getMcpScopedConfigPaths,
   pathExists,
 } from '../config';
-import { getContextHealthService } from '../context/contextHealthService';
 import { getCloudConfigService } from '../services/cloud';
 import { getConfigService } from '../services/core/configService';
 import { getSecureStorage } from '../services/core/secureStorage';
@@ -583,14 +582,11 @@ async function handleSetServerEnabled(
       await client.disconnect(serverName).catch(() => {});
       await Promise.resolve(client.setServerEnabled(serverName, false)).catch(() => {});
       await updateMcpServerEnabledInConfigFiles(serverName, false, workingDirectory);
-      getContextHealthService().clearMcpServerAcrossSessions(serverName);
     }
     throw error;
   }
-  // 被禁用后跨 session 清掉 bySource.mcp[serverName] 占用，让 ContextPanel UI 立即反映
-  if (!enabled) {
-    getContextHealthService().clearMcpServerAcrossSessions(serverName);
-  }
+  // N-CTXCURRENT: 不再跨 session 清 bySource.mcp——当前态构成只反映「现在装进模型
+  // 的内容」，历史里仍存在的 MCP 结果属于当前态；禁用后新轮次自然不再产生新占用。
 }
 
 async function handleReconnectServer(serverName: string): Promise<{ success: boolean; error?: string }> {

@@ -87,12 +87,6 @@ vi.mock('../../../src/host/mcp/mcpClient', () => ({
   refreshMCPServersFromCloud: vi.fn(),
 }));
 
-vi.mock('../../../src/host/context/contextHealthService', () => ({
-  getContextHealthService: () => ({
-    clearMcpServerAcrossSessions: vi.fn(),
-  }),
-}));
-
 vi.mock('../../../src/host/config', () => ({
   getMcpConfigPath: vi.fn(),
   ensureConfigDir: vi.fn(),

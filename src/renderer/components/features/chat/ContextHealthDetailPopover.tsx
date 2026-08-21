@@ -206,5 +206,3 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
     </div>
   );
 };
-
-export default ContextHealthDetailPopover;

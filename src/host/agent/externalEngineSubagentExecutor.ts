@@ -74,7 +74,7 @@ export class ExternalEngineSubagentExecutor implements SubagentExecutorPort {
   }
 }
 
-export function resolveSubagentPermissionProfile(
+function resolveSubagentPermissionProfile(
   engine: ExternalAgentEngineKind,
   cwd: string,
 ): AgentEnginePermissionProfile {

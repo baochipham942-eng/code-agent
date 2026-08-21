@@ -25,7 +25,6 @@ import type {
   AgentWorktreeReview,
 } from '../../shared/contract/agentTree';
 import { WORKTREE_BASE_DIR } from './agentWorktreePath';
-export { WORKTREE_BASE_DIR, isAgentWorktreePath } from './agentWorktreePath';
 
 const execAsync = promisify(exec);
 const logger = createLogger('AgentWorktree');

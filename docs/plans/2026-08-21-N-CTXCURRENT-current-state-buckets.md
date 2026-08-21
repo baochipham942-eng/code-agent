@@ -62,3 +62,7 @@ provider 真源缩放（N-CTXTRUTH）不变：真源定总量，构成函数定�
 
 - skills 桶按「挂载列表」而非「历史里实际注入过的 skill 内容消息」取值：skill 经 Skill 工具调用后内容以 isMeta user 消息进历史（这部分同时被 conversation 基底覆盖），挂载估算是从 systemPrompt 侧的归因展开——与原 set 模式口径一致，爸已拍板这个方向
 - rules/skills 物理上住在 systemPrompt 里，但从对话基底扣除是 N-CTXPANEL 定稿的混合维度口径（弹层九桶：结构桶与来源桶同表），不是双计 bug
+
+## 真机验收（2026-08-21，基拉）
+
+构建指纹 kimi/N-CTXCURRENT@aa9fad8（Agent Neo Dev 2）。验收①：app 重启后打开种子会话（消息史带 mcp__lark-doc__ / Read / Task 调用），冷启动重算路径画出连接器 347(10.2%) / 子代理 222(6.5%) / 文件读取 252(7.4%) / 对话 2.6k(76.0%)，「估算」标注正常，0 值桶不占位。证据：`code-agent-private-archive/docs/evidence/2026-08-21-N-CTXCURRENT/`（seed-current-state.py + verify-current.mjs + current-state-popover.png）。验收②运行中 A/B 与语义收窄差异已在构成函数单测锁定（累计账→当前态，压缩后桶值收窄为预期语义）。

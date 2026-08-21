@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => {
   const jsonHandleEvent = vi.fn();
   const jsonHandleSwarm = vi.fn();
   const retryOn = vi.fn();
+  const resolveExplicitAgentOverride = vi.fn();
 
   return {
     buildCLIConfig,
@@ -35,6 +36,7 @@ const mocks = vi.hoisted(() => {
     jsonHandleEvent,
     jsonHandleSwarm,
     retryOn,
+    resolveExplicitAgentOverride,
   };
 });
 
@@ -87,6 +89,10 @@ vi.mock('../../../src/host/agent/metricsCollector', () => ({
   },
 }));
 
+vi.mock('../../../src/host/agent/explicitAgentOverride', () => ({
+  resolveExplicitAgentOverride: mocks.resolveExplicitAgentOverride,
+}));
+
 import { CLIAgent, createCLIAgent } from '../../../src/cli/adapter';
 
 const baseConfig: CLIConfig = {
@@ -106,6 +112,7 @@ const baseConfig: CLIConfig = {
 function makeSessionManager(overrides: Record<string, unknown> = {}) {
   return {
     getOrCreateCurrentSession: vi.fn().mockResolvedValue({ id: 'sess-1' }),
+    getSession: vi.fn().mockResolvedValue({ id: 'sess-1', metadata: undefined }),
     addMessage: vi.fn().mockResolvedValue(undefined),
     restoreSession: vi.fn(),
     updateSession: vi.fn().mockResolvedValue(undefined),
@@ -163,6 +170,7 @@ describe('CLIAgent', () => {
       getApiKey: vi.fn().mockReturnValue('resolved-key'),
     });
     mocks.addSwarmEventListener.mockReturnValue(() => {});
+    mocks.resolveExplicitAgentOverride.mockReturnValue(null);
   });
 
   afterEach(() => {
@@ -211,6 +219,39 @@ describe('CLIAgent', () => {
     expect(mocks.terminalHandleEvent).toHaveBeenCalled();
     expect(sessionManager.addMessage).toHaveBeenCalledWith(
       expect.objectContaining({ role: 'user', content: 'say hi' }),
+    );
+  });
+
+  it('restores the persisted expertThread role before creating the CLI AgentLoop', async () => {
+    const override = {
+      id: '牧之',
+      name: '牧之',
+      systemPrompt: '专家提示词',
+      deniedToolNames: [],
+    };
+    sessionManager.getSession.mockResolvedValue({
+      id: 'sess-1',
+      metadata: { expertThread: { roleId: '牧之', setAt: 42 } },
+    });
+    mocks.resolveExplicitAgentOverride.mockReturnValue(override);
+    installLoop(async (ctl) => {
+      ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+    });
+
+    const agent = new CLIAgent();
+    await agent.run('继续');
+
+    expect(mocks.createAgentLoop).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentOverride: override,
+        requestedAgentId: '牧之',
+      }),
+      expect.any(Function),
+      expect.any(Array),
+      'sess-1',
+      undefined,
+      undefined,
+      expect.objectContaining({ sessionId: 'sess-1' }),
     );
   });
 

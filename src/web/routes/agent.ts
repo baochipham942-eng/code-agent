@@ -13,6 +13,7 @@ import type {
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
 import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
+import { readPersistedExpertThread } from '../../shared/contract/expertThread';
 import { broadcastSSE } from '../helpers/sse';
 import { agentRunSseLimiter, extractRequestToken } from '../helpers/sseConnectionLimit';
 import { formatError } from '../helpers/utils';
@@ -732,9 +733,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // /agent 显式选择透传（P0：此前 web 独立 HTTP 路径完全丢弃 preferredAgentId，
       // /agent 切换在生产 web 路径是 no-op——与 executionIntent 当年同款漏接）。
       // trim 规整：未规整 id 会在 requestedAgentId !== agentId 比较上产生假降级警示
-      const preferredAgentId = typeof body.context?.preferredAgentId === 'string'
+      const explicitPreferredAgentId = typeof body.context?.preferredAgentId === 'string'
         ? body.context.preferredAgentId.trim() || undefined
         : undefined;
+      const preferredAgentId = explicitPreferredAgentId
+        ?? readPersistedExpertThread(getDatabase().getSession(sessionId)?.metadata)?.roleId;
       if (preferredAgentId) {
         const { resolveExplicitAgentOverride } = await import('../../host/agent/explicitAgentOverride');
         const { buildRoutingResolvedEventData } = await import('../../host/agent/routingResolvedEvent');

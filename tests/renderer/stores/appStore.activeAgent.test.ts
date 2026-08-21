@@ -41,6 +41,25 @@ describe('appStore activeAgentId per-session', () => {
     expect(stored['session-a']).toBe('coder');
   });
 
+  it('宿主 expertThread 优先于 localStorage 并回写缓存', () => {
+    localStorage.setItem(SESSION_MAP_KEY, JSON.stringify({ 'session-a': '旧专家' }));
+
+    useAppStore.getState().syncActiveAgentForSession('session-a', {
+      metadata: { expertThread: { roleId: '牧之', setAt: 42 } },
+    });
+
+    expect(useAppStore.getState().activeAgentId).toBe('牧之');
+    expect(JSON.parse(localStorage.getItem(SESSION_MAP_KEY) || '{}')['session-a']).toBe('牧之');
+  });
+
+  it('宿主没有 expertThread 时兼容读取 localStorage', () => {
+    localStorage.setItem(SESSION_MAP_KEY, JSON.stringify({ 'session-a': '存量专家' }));
+
+    useAppStore.getState().syncActiveAgentForSession('session-a', { metadata: { teamLead: { roleId: '主理人' } } });
+
+    expect(useAppStore.getState().activeAgentId).toBe('存量专家');
+  });
+
   it('清除选择（null）同时从 map 移除', () => {
     useAppStore.getState().syncActiveAgentForSession('session-a');
     useAppStore.getState().setActiveAgentId('coder');

@@ -729,6 +729,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const workbenchOptions = withWorkbenchTurnSystemContext(
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
+      getSessionManager().getSessionMetadata?.(resolvedSessionId),
     );
     const optionsWithTurnSettings: AppServiceRunOptions = {
       ...(workbenchOptions ?? {}),
@@ -909,6 +910,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const workbenchOptions = withWorkbenchTurnSystemContext(
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
+      getSessionManager().getSessionMetadata?.(resolvedSessionId),
     );
     const options = isSessionCommandCenterTurn({
       prompt: envelope.content,

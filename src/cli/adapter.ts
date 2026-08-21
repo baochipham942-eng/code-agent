@@ -17,6 +17,8 @@ import { retryEvents } from '../host/model/providers/retryStrategy';
 import { getAgentDispatchInfo } from './agentDispatch';
 import { createRunContext, type RunContext } from '../host/runtime/runContext';
 import { generateMessageId } from '../shared/utils/id';
+import { readPersistedExpertThread } from '../shared/contract/expertThread';
+import { resolveExplicitAgentOverride } from '../host/agent/explicitAgentOverride';
 
 export { getAgentDispatchInfo, isAgentDispatchToolName } from './agentDispatch';
 
@@ -155,9 +157,27 @@ export class CLIAgent {
     if (!this.sessionId) {
       throw new Error('CLI session initialization did not produce a sessionId');
     }
+    const persistedSession = await getSessionManager().getSession(this.sessionId, 0).catch(() => null);
+    const persistedExpertRoleId = readPersistedExpertThread(persistedSession?.metadata)?.roleId;
+    const persistedExpertOverride = !this.config.agentOverride && persistedExpertRoleId
+      ? resolveExplicitAgentOverride(persistedExpertRoleId)
+      : null;
+    if (persistedExpertRoleId && !this.config.agentOverride && !persistedExpertOverride) {
+      logger.warn('Persisted expert thread role is unavailable; using the default agent', {
+        sessionId: this.sessionId,
+        roleId: persistedExpertRoleId,
+      });
+    }
+    const runConfig: CLIConfig = persistedExpertOverride
+      ? {
+          ...this.config,
+          agentOverride: persistedExpertOverride,
+          requestedAgentId: persistedExpertRoleId,
+        }
+      : this.config;
     const runContext = createRunContext({
       sessionId: this.sessionId,
-      workspace: this.config.workingDirectory,
+      workspace: runConfig.workingDirectory,
     });
     this.lastRunContext = runContext;
 
@@ -209,7 +229,7 @@ export class CLIAgent {
 
     // 创建 AgentLoop（传入真实 sessionId + optional MetricsCollector）
     const agentLoop = createAgentLoop(
-      this.config,
+      runConfig,
       this.handleEvent.bind(this),
       this.messages,
       this.sessionId || undefined,

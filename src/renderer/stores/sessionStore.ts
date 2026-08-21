@@ -145,6 +145,7 @@ export type SessionFilter = 'active' | 'archived' | 'all';
 export interface CreateSessionOptions {
   workingDirectory?: string | null;
   engine?: Partial<AgentEngineSessionMetadata> | null;
+  expertRoleId?: string;
 }
 
 function normalizeDraftDirectory(value?: string | null): string {
@@ -363,7 +364,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       useAppStore.getState().setContextHealth(null);
       useAppStore.getState().setWorkingDirectory(previewSession?.workingDirectory ?? null);
       // per-session agent 选择随会话切换同步（S3：消灭全局 activeAgentId 跨会话残留）
-      useAppStore.getState().syncActiveAgentForSession(sessionId);
+      useAppStore.getState().syncActiveAgentForSession(sessionId, {
+        metadata: previewSession?.metadata,
+      });
       useAppStore.getState().syncWorkbenchForSession(sessionId);
       set({
         currentSessionId: sessionId,
@@ -404,6 +407,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             hydrateToolCallResults(session.messages || []),
             streamSnapshot,
           );
+          useAppStore.getState().syncActiveAgentForSession(sessionId, {
+            metadata: session.metadata,
+          });
           const totalCount = (session as SessionWithMeta).messageCount ?? loadedMessages.length;
           useAppStore.getState().setWorkingDirectory(session.workingDirectory ?? null);
           set({

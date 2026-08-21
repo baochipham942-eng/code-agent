@@ -478,6 +478,26 @@ describe('workbenchTurnContext', () => {
     expect(withWorkbenchTurnSystemContext(options, undefined)).toBe(options);
   });
 
+  it('falls back to the host expertThread marker when the envelope has no preferred agent', () => {
+    const merged = withWorkbenchTurnSystemContext(
+      { mode: 'normal' },
+      undefined,
+      { expertThread: { roleId: '牧之', setAt: 42 } },
+    );
+
+    expect(merged?.agentOverrideId).toBe('牧之');
+  });
+
+  it('keeps the envelope preferred agent ahead of the host expertThread marker', () => {
+    const merged = withWorkbenchTurnSystemContext(
+      { mode: 'normal' },
+      { preferredAgentId: '溯真' },
+      { expertThread: { roleId: '牧之', setAt: 42 } },
+    );
+
+    expect(merged?.agentOverrideId).toBe('溯真');
+  });
+
   // 定点反馈 loop：main 侧消费 envelope.livePreviewSelection（此前是死数据）。
   it('injects a live_preview_selection block guiding visual_edit when an element is selected', () => {
     const blocks = buildWorkbenchTurnSystemContext({

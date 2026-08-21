@@ -22,7 +22,9 @@ export async function inviteExpert(roleId: string, options?: InviteExpertOptions
   app.setShowSettings(false);
   app.setShowCapabilityHub(false);
 
-  const session = await useSessionStore.getState().createSession(options?.title || roleId);
+  const session = await useSessionStore.getState().createSession(options?.title || roleId, {
+    expertRoleId: roleId,
+  });
   if (!session) return;
 
   app.bindAgentForSession(session.id, roleId);

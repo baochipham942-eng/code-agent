@@ -16,4 +16,8 @@
 // 这里保留 re-export，host 侧既有 import 路径不变。
 // ============================================================================
 
-export { wrapWithTurnSystemContext, extractUserRequest } from '../../shared/utils/turnScaffold';
+export {
+  extractUserRequest,
+  mergeTurnSystemContext,
+  wrapWithTurnSystemContext,
+} from '../../shared/utils/turnScaffold';

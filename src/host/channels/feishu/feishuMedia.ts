@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Readable } from 'stream';
+import { Readable } from 'node:stream';
 import type { ChannelAttachment } from '../../../shared/contract/channel';
 import { createLogger } from '../../services/infra/logger';
 

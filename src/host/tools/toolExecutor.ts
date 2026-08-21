@@ -557,7 +557,7 @@ export class ToolExecutor {
             const { conflict } = claim;
             return {
               success: false,
-              error: `该文件当前由兄弟 agent ${conflict.ownerAgentId} 持有写权。请等待它完成后再写，或把对该文件的修改交给它/上报父 agent 合并；不要改名绕写。`,
+              error: `Sibling agent ${conflict.ownerAgentId} currently owns this file. Wait for it to finish, delegate the edit to it, or report the merge need to the parent agent; do not rename the file to bypass ownership.`,
               metadata: {
                 code: 'WRITE_OWNERSHIP_CONFLICT',
                 path: conflict.path,

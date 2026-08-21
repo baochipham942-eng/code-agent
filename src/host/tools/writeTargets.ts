@@ -130,6 +130,7 @@ function descriptorAssessment(
 ): ToolWriteTargets {
   if (descriptor.kind === 'path') {
     const rawPath = input.params[descriptor.pathParameter];
+    if (rawPath === undefined) return { targets: [], uncertain: [] };
     const declaredValues: string[] = [];
     const collect = (value: unknown): void => {
       if (typeof value === 'string') {

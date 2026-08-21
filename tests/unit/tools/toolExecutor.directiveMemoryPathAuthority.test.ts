@@ -293,7 +293,7 @@ describe('ToolExecutor file ownership authority', () => {
         requesterAgentId: 'agent-b',
       },
     });
-    expect(second.error).toContain('等待它完成后再写');
+    expect(second.error).toContain('Wait for it to finish');
     expect(await fs.readFile(filePath, 'utf8')).toBe('from-a');
     const snapshot = getFileOwnershipRegistry().snapshot(scope);
     expect(snapshot.conflicts).toHaveLength(1);

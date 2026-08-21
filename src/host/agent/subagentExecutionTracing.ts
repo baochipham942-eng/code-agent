@@ -4,14 +4,22 @@ import {
   withRunTraceContext,
 } from '../telemetry/runTraceContext';
 import type { SubagentExecutionRequest, SubagentResult } from './subagentExecutorTypes';
+import { withFileOwnership } from '../services/infra/fileOwnershipRegistry';
 
 export async function runSubagentExecutionWithTrace(
   request: SubagentExecutionRequest,
   run: () => Promise<SubagentResult>,
 ): Promise<SubagentResult> {
   const { config, context } = request;
+  const runWithOwnership = () => withFileOwnership({
+    sessionId: context.sessionId,
+    agentId: context.agentId,
+    swarmRunScope: context.swarmRunScope,
+    workingDirectory: context.cwd,
+    ownedPaths: context.ownedPaths,
+  }, run);
   const parentTraceContext = context.traceContext;
-  if (!parentTraceContext) return run();
+  if (!parentTraceContext) return runWithOwnership();
 
   const teamScope = context.swarmRunScope;
   const executionAgentId = context.executionAgentId || context.spawnGuardId || config.name;
@@ -44,7 +52,7 @@ export async function runSubagentExecutionWithTrace(
 
   return withRunTraceContext(childTraceContext, async () => {
     try {
-      const result = await run();
+      const result = await runWithOwnership();
       try {
         if (spanId) {
           getTelemetryService().endSpan(

@@ -97,10 +97,6 @@ import {
   resolveSubagentParentContext,
 } from './subagentProtocolContext';
 import { startSubagentLifecycle } from './subagentLifecycleHooks';
-import {
-  createFileOwnershipActor,
-  getFileOwnershipRegistry,
-} from '../services/infra/fileOwnershipRegistry';
 
 export type {
   SubagentConfig,
@@ -145,23 +141,10 @@ export class SubagentExecutor {
   ): Promise<SubagentResult> {
     const request = normalizeSubagentExecutionRequest(requestOrPrompt, legacyConfig, legacyContext);
     const { prompt, config, context } = request;
-    const ownershipActor = createFileOwnershipActor({
-      sessionId: context.sessionId,
-      agentId: context.agentId,
-      swarmRunScope: context.swarmRunScope,
-      workingDirectory: context.cwd,
-    });
-    if (ownershipActor) {
-      getFileOwnershipRegistry().declare(ownershipActor, context.ownedPaths ?? []);
-    }
-    try {
-      return await runSubagentExecutionWithTrace(
-        request,
-        () => this.executeInternal(prompt, config, context),
-      );
-    } finally {
-      if (ownershipActor) getFileOwnershipRegistry().release(ownershipActor);
-    }
+    return runSubagentExecutionWithTrace(
+      request,
+      () => this.executeInternal(prompt, config, context),
+    );
   }
 
   private async executeInternal(

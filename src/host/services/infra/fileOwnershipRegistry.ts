@@ -238,6 +238,19 @@ export function createFileOwnershipActor(input: {
   };
 }
 
+export async function withFileOwnership<T>(
+  input: Parameters<typeof createFileOwnershipActor>[0] & { ownedPaths?: string[] },
+  run: () => Promise<T>,
+): Promise<T> {
+  const actor = createFileOwnershipActor(input);
+  if (actor) fileOwnershipRegistry.declare(actor, input.ownedPaths ?? []);
+  try {
+    return await run();
+  } finally {
+    if (actor) fileOwnershipRegistry.release(actor);
+  }
+}
+
 export function bindFileOwnershipReleaseHook(guard: CompletionHook): void {
   if (boundCompletionHooks.has(guard)) return;
   boundCompletionHooks.add(guard);

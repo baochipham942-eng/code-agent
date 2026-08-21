@@ -500,4 +500,3 @@ const NestedGroup: React.FC<{
   );
 };
 
-export default ContextHealthPanel;

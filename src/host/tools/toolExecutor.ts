@@ -57,6 +57,11 @@ import {
   assessDirectiveMemoryWrite,
   createDirectiveMemoryWriteGrant,
 } from '../memory/directiveMemoryPathAuthority';
+import { resolveToolWriteTargets } from './writeTargets';
+import {
+  createFileOwnershipActor,
+  getFileOwnershipRegistry,
+} from '../services/infra/fileOwnershipRegistry';
 import {
   createChildRunTraceContext,
   getActiveRunTraceContext,
@@ -404,20 +409,9 @@ export class ToolExecutor {
     );
 
     if (this.runContext?.workspaceScope && toolDef.permissionLevel === 'write' && !isBashToolName(policyToolName)) {
-      const rawTarget = [
-        params.file_path,
-        params.path,
-        params.output_path,
-        params.outputPath,
-        params.notebook_path,
-        params.document_path,
-        params.presentation_path,
-      ].find((value) => typeof value === 'string' && value.trim()) as string | undefined;
-      const target = rawTarget
-        ? (nodePath.isAbsolute(rawTarget)
-          ? nodePath.resolve(rawTarget)
-          : nodePath.resolve(this.executionCwd, rawTarget))
-        : this.executionCwd;
+      const target = resolveToolWriteTargets({
+        definition: toolDef, params, workingDirectory: this.executionCwd,
+      }).targets[0] ?? this.executionCwd;
       const readableMatch = resolveWorkspacePath(this.runContext.workspaceScope, target, 'read');
       if (readableMatch && readableMatch.root.access !== 'read_write') {
         return {
@@ -525,6 +519,55 @@ export class ToolExecutor {
         directiveMemoryAssessment,
         confirmation,
       );
+    }
+
+    if (toolDef.permissionLevel !== 'read') {
+      const ownershipActor = effectiveSessionId
+        ? createFileOwnershipActor({
+          sessionId: effectiveSessionId,
+          agentId: options.agentId,
+          swarmRunScope: options.swarmRunScope,
+          workingDirectory: this.executionCwd,
+        })
+        : undefined;
+      if (!ownershipActor) {
+        logger.debug('Skipping file ownership claim without parallel agent identity', {
+          toolName: executionToolName,
+          sessionId: effectiveSessionId,
+        });
+      } else {
+        const writeTargets = resolveToolWriteTargets({
+          definition: toolDef,
+          params,
+          workingDirectory: this.executionCwd,
+          agentRole: options.agentRole,
+        });
+        const ownershipRegistry = getFileOwnershipRegistry();
+        ownershipRegistry.recordUncertain(ownershipActor, writeTargets.uncertain);
+        if (writeTargets.uncertain.length > 0) {
+          logger.debug('File ownership write targets remain uncertain', {
+            toolName: executionToolName,
+            agentId: ownershipActor.agentId,
+            uncertain: writeTargets.uncertain,
+          });
+        }
+        for (const target of writeTargets.targets) {
+          const claim = ownershipRegistry.checkAndClaim(ownershipActor, target);
+          if (!claim.ok) {
+            const { conflict } = claim;
+            return {
+              success: false,
+              error: `该文件当前由兄弟 agent ${conflict.ownerAgentId} 持有写权。请等待它完成后再写，或把对该文件的修改交给它/上报父 agent 合并；不要改名绕写。`,
+              metadata: {
+                code: 'WRITE_OWNERSHIP_CONFLICT',
+                path: conflict.path,
+                ownerAgentId: conflict.ownerAgentId,
+                requesterAgentId: conflict.requesterAgentId,
+              },
+            };
+          }
+        }
+      }
     }
 
     const permStartTime = Date.now();

@@ -103,7 +103,7 @@ function computeCallHash(
 ): string {
   const o = call.options ?? {};
   const semantic = {
-    schema: o.schema, model: o.model, agentType: o.agentType, tools: o.tools,
+    schema: o.schema, model: o.model, agentType: o.agentType, tools: o.tools, ownedPaths: o.ownedPaths,
     _provider: resolvedProvider, _model: resolvedModel, _runInputHash: runInputHash,
   };
   return createHash('sha256').update(`${call.prompt}\u0000${stableStringify(semantic)}`).digest('hex').slice(0, 16);
@@ -135,6 +135,7 @@ export interface ScriptRunContext {
     signal: AbortSignal;
     capabilities: Readonly<CapabilityManifest>;
     workspace?: AgentWorkspaceLease;
+    ownedPaths?: string[];
   }) => SubagentContext;
   /** 把 agent({tools}) 的档名解析成工具白名单 + 是否写能力（命令层注入分档策略）。 */
   resolveAgentTools: (profile?: string) => { tools: string[]; writeCapable: boolean };
@@ -305,6 +306,7 @@ export async function runAgentCall(call: AgentCallPayload, ctx: ScriptRunContext
             signal: ctx.signal,
             capabilities,
             workspace,
+            ownedPaths: call.options?.ownedPaths,
           }),
         });
         actualTokens = sub.tokensUsed ?? 0; // 成功或失败（return-style）都已消耗，先记账

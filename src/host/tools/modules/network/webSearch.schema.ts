@@ -108,5 +108,5 @@ Features:
   pathAuthority: [{ kind: 'path', pathParameter: 'save_to', mutation: 'overwrite' }],
   readsUntrustedContent: true,
   readOnly: false,
-  allowInPlanMode: false,
+  allowInPlanMode: true,
 };

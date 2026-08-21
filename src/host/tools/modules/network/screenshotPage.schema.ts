@@ -81,5 +81,5 @@ screenshot_page { "url": "https://example.com", "analyze": true, "prompt": "è¿™ä
   permissionLevel: 'network',
   pathAuthority: [{ kind: 'path', pathParameter: 'output_path', mutation: 'overwrite' }],
   readOnly: false,
-  allowInPlanMode: false,
+  allowInPlanMode: true,
 };

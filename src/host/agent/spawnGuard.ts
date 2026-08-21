@@ -778,6 +778,7 @@ class SpawnGuard {
     agent.status = 'cancelled';
     agent.completedAt = Date.now();
     agent.error = agent.error ?? reason;
+    this.fireOnComplete(agent);
     this.releaseAgentSlot(agent);
   }
 

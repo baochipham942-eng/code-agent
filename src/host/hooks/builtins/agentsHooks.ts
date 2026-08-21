@@ -6,8 +6,6 @@ import type { SessionContext, HookExecutionResult } from '../../protocol/events'
 import path from 'path';
 import { discoverAgentFilesCached } from '../../context/agentsDiscovery';
 import { createLogger } from '../../services/infra/logger';
-import { getContextHealthService } from '../../context/contextHealthService';
-import { estimateTokens } from '../../context/tokenEstimator';
 import { isPathWithinRoot } from '../../runtime/workspaceScope';
 
 const logger = createLogger('AgentsHooks');
@@ -138,17 +136,9 @@ export async function sessionStartAgentsInjectHook(
       truncated,
     });
 
-    // 上报 rules 维度的 token 贡献（set 模式：session 内只有一次 AGENTS 注入）
-    try {
-      getContextHealthService().recordSourceContribution(
-        context.sessionId,
-        { type: 'rule', name: 'agents-instructions' },
-        estimateTokens(injectedContent),
-        'set',
-      );
-    } catch (err) {
-      logger.debug('Failed to report agents-instructions token contribution', { err });
-    }
+    // N-CTXCURRENT: 不再上报 rules token——注入段会作为 system 消息持久化，
+    // context health 的当前态构成（contextComposition）每轮从消息/systemPrompt 里
+    // 定位 <agents-instructions> 段重算，无需带外记账。
 
     return {
       action: 'continue',

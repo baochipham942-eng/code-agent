@@ -50,8 +50,6 @@ import {
 import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
 import { taskSchema as schema } from './task.schema';
 import { withMultiagentMeta } from './resultMeta';
-import { getContextHealthService } from '../../../context/contextHealthService';
-import { estimateTokens } from '../../../context/tokenEstimator';
 import { getSpawnGuard } from '../../../agent/spawnGuard';
 import { routeFailureCode } from '../../../../shared/contract/cancellation';
 import {
@@ -397,17 +395,8 @@ Stats:
 - Iterations: ${result.iterations}
 - Tools used: ${result.toolsUsed.join(', ') || 'none'}${result.cost !== undefined ? `\n- Cost: $${result.cost.toFixed(4)}` : ''}`;
 
-      // 上报 subagent 维度的 token 贡献（add 模式，按 agentName 累加）
-      try {
-        getContextHealthService().recordSourceContribution(
-          ctx.sessionId,
-          { type: 'subagent', name: agentName },
-          estimateTokens(output),
-          'add',
-        );
-      } catch (err) {
-        ctx.logger.debug('Failed to report subagent token contribution', { agentName, err });
-      }
+      // N-CTXCURRENT: 不再上报 subagent token 累计账——输出已在消息历史里，
+      // 当前态构成（contextComposition）按 Task 类工具名扫历史重算。
 
       taskDeduplication.completeTask(taskHash, result.output);
       return withMultiagentMeta(

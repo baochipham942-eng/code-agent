@@ -523,11 +523,11 @@ interface SourceBreakdown {
 }
 ```
 
-`ContextHealthService.recordSourceContribution(sessionId, source, tokens, mode)` 支持 `add`（累加，如每次 fileRead / MCP 结果）和 `set`（替换，如 skill mount）；`clearSourceContribution` / `resetSourceContributions` / `clearMcpServerAcrossSessions` 负责卸载与压缩后清零。写入落独立累加器（`sourceAccumulators`，永远未缩放估算口径；provider 真源轮次 state 里的 bySource 只是缩放快照，不能当累加基底），更新经 200ms 防抖后通过 `context:health:event` 广播到 renderer。
+`ContextHealthService.recordSourceContribution` 系列（record/clear/reset/clearMcpServerAcrossSessions + `sourceAccumulators` 累加器）已在 N-CTXCURRENT 退役。bySource 语义统一为「当前态」：每轮 `update()` 用 `computeSourceBreakdown`（`src/host/context/contextComposition.ts`）从当前消息列表 + systemPrompt + 当前挂载 skills 全量重算，重算路径（重启后 `resolveContextHealthForSession`）与运行时路径（`updateContextHealth`）共用同一算法——重启后历史会话桶不再归零。各桶取数：rules = 持久化 system 消息 / systemPrompt 里的 `<agents-instructions>` 段；skills = `sessionSkillService.getMountedSkillTokens()` 当前挂载列表；mcp / subagents / fileReads = 扫消息历史按工具名归类（`mcp__server__tool` / legacy `mcp_server_tool`，Read 类，Task/spawn_agent 类，含 toolCalls 参数与 toolResults 内容，按 toolCallId 归桶）；summary = compaction 标记消息估算；conversation = 扣减法（消息+工具结果总量 − 各来源桶），保持弹层九桶合计=总量。
 
-上报点遍布主链路：skill mount/unmount（`sessionSkillService`）、SessionStart AGENTS.md 注入（`agentsHooks`）、fileRead（`read.ts`）、MCP 工具结果（`mcpInvoke`）、subagent 输出（`task.ts` / `spawnAgent.ts`）。renderer 侧 `ContextPanel` / `ContextHealthPanel` 的二级展开与卸载交互见 [workbench.md](./workbench.md)。
+renderer 侧 `ContextPanel` / `ContextHealthPanel` 的二级展开与卸载交互见 [workbench.md](./workbench.md)。
 
-关键文件：`src/host/context/contextHealthService.ts`、`src/shared/contract/contextHealth.ts`、`src/renderer/components/ContextHealthPanel.tsx`。
+关键文件：`src/host/context/contextHealthService.ts`、`src/host/context/contextComposition.ts`、`src/shared/contract/contextHealth.ts`、`src/renderer/components/ContextHealthPanel.tsx`。
 
 ---
 

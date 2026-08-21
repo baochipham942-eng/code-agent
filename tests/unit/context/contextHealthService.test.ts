@@ -69,10 +69,11 @@ describe('ContextHealthService — bySource.summary 摘要桶', () => {
     );
   });
 
-  it('summary 与 conversation 同为派生值：recordSourceContribution 不接受写入', () => {
-    service.update('s3', [{ role: 'user', content: 'hi' }], '', 'kimi-k2.5');
-
-    service.recordSourceContribution('s3', { type: 'summary' }, 500);
-    expect(service.get('s3').breakdown.bySource!.summary).toBe(0);
+  it('summary 与 conversation 是构成函数派生值：update() 全量重算，无带外写入口', () => {
+    const health = service.update('s3', [{ role: 'user', content: 'hi' }], '', 'kimi-k2.5');
+    // N-CTXCURRENT: bySource 每轮从消息重算（computeSourceBreakdown），
+    // summary/conversation 不存在 record 写入路径；无摘要消息时 summary 恒为 0
+    expect(health.breakdown.bySource!.summary).toBe(0);
+    expect(health.breakdown.bySource!.conversation).toBeGreaterThan(0);
   });
 });

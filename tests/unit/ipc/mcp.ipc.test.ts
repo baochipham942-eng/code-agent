@@ -9,7 +9,6 @@ const readFileMock = vi.fn();
 const writeFileMock = vi.fn();
 const setIntegrationMock = vi.hoisted(() => vi.fn());
 const getIntegrationMock = vi.hoisted(() => vi.fn());
-const clearMcpServerAcrossSessionsMock = vi.hoisted(() => vi.fn());
 const mcpClientMock = vi.hoisted(() => ({
   getStatus: vi.fn(),
   getTools: vi.fn(),
@@ -58,12 +57,6 @@ vi.mock('../../../src/host/services/core/configService', () => ({
   }),
 }));
 
-vi.mock('../../../src/host/context/contextHealthService', () => ({
-  getContextHealthService: () => ({
-    clearMcpServerAcrossSessions: clearMcpServerAcrossSessionsMock,
-  }),
-}));
-
 vi.mock('../../../src/host/config', () => ({
   getMcpConfigPath: (...args: unknown[]) => getMcpConfigPathMock(...args),
   getMcpScopedConfigPaths: (...args: unknown[]) => getMcpScopedConfigPathsMock(...args),
@@ -105,7 +98,6 @@ beforeEach(() => {
   writeFileMock.mockReset();
   setIntegrationMock.mockReset();
   getIntegrationMock.mockReset();
-  clearMcpServerAcrossSessionsMock.mockReset();
   setIntegrationMock.mockResolvedValue(undefined);
   getIntegrationMock.mockReturnValue(null);
 
@@ -751,7 +743,6 @@ describe('setServerEnabled 持久化（P0b：重启不再丢启用状态）', ()
       error: { code: 'CANCELLED' },
     });
     expect(mcpClientMock.disconnect).toHaveBeenCalledWith('slow_remote');
-    expect(clearMcpServerAcrossSessionsMock).toHaveBeenCalledWith('slow_remote');
     expect(writeFileMock.mock.calls.every(([, content]) => {
       const parsed = JSON.parse(String(content)) as typeof fakeConfig;
       return parsed.servers[0]?.enabled !== true;

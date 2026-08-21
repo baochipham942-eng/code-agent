@@ -28,8 +28,6 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getMCPClient } from '../../../mcp/mcpClient';
-import { getContextHealthService } from '../../../context/contextHealthService';
-import { estimateTokens } from '../../../context/tokenEstimator';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mcpInvokeSchema as schema } from './mcpInvoke.schema';
 
@@ -185,17 +183,8 @@ export async function executeMcpInvoke(
       ctx.logger.debug('mcp done', { server, tool, ok: true });
       onProgress?.({ stage: 'completing', percent: 100 });
 
-      // 上报 MCP 维度的 token 贡献（add 模式，按 server 名累加）
-      try {
-        getContextHealthService().recordSourceContribution(
-          ctx.sessionId,
-          { type: 'mcp', server },
-          estimateTokens(output),
-          'add',
-        );
-      } catch (err) {
-        ctx.logger.debug('Failed to report MCP token contribution', { server, err });
-      }
+      // N-CTXCURRENT: 不再上报 MCP token 累计账——结果已在消息历史里，
+      // 当前态构成（contextComposition）按 mcp__server__tool 工具名扫历史重算。
 
       return {
         ok: true,

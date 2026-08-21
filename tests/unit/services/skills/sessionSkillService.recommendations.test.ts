@@ -20,13 +20,6 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../../src/host/context/contextHealthService', () => ({
-  getContextHealthService: () => ({
-    recordSourceContribution: vi.fn(),
-    clearSourceContribution: vi.fn(),
-  }),
-}));
-
 vi.mock('../../../../src/host/context/tokenEstimator', () => ({
   estimateTokens: () => 1,
 }));

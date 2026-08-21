@@ -22,6 +22,7 @@ import {
 } from '../../../tools/dispatch/toolDefinitions';
 import { getSessionManager } from '../../../services';
 import { getIncompleteTasks } from '../../../services/planning/taskStore';
+import { getSessionSkillService } from '../../../services/skills/sessionSkillService';
 import { getSessionTodos } from '../../../agent/todoParser';
 import type { CheckAndAutoCompressOptions, ContextAssemblyCtx } from './shared';
 import { cachedReaddirSync, logger } from './shared';
@@ -267,6 +268,8 @@ export function updateContextHealth(ctx: ContextAssemblyCtx): void {
       content: msg.content,
       toolCalls: msg.toolCalls,
       toolResults: msg.toolResults?.map(tr => ({
+        // N-CTXCURRENT: toolCallId 透传，构成算法据此把结果按工具名归桶
+        toolCallId: tr.toolCallId,
         output: tr.output,
         error: tr.error,
       })),
@@ -286,6 +289,8 @@ export function updateContextHealth(ctx: ContextAssemblyCtx): void {
       // N-CTXTRUTH: 本轮 provider 实报用量（inference 记账点写入切片）作圆环总量真源；
       // 本轮没跑推理或未回报时为 undefined，service 自动走估算并标 tokenSource='estimated'
       ctx.runtime.contextHealth.lastTurnProviderUsage,
+      // N-CTXCURRENT: 当前挂载 skills 的 token 估算（当前态构成的带外输入）
+      { skills: getSessionSkillService().getMountedSkillTokens(ctx.runtime.sessionId) },
     );
 
     // 更新压缩统计到健康状态

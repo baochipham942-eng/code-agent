@@ -27,8 +27,6 @@ import type { SubagentExecutionContext } from '../../../agent/subagentExecutorTy
 import type { ToolResolver } from '../../dispatch/toolResolver';
 import { spawnAgentSchema, agentSpawnSchema } from './spawnAgent.schema';
 import { withMultiagentMeta } from './resultMeta';
-import { getContextHealthService } from '../../../context/contextHealthService';
-import { estimateTokens } from '../../../context/tokenEstimator';
 import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
 import { scheduleBackgroundSubagentIdleWake } from '../../../agent/backgroundSubagentIdleWake';
 import type { SubagentResult } from '../../../agent/subagentExecutorTypes';
@@ -198,27 +196,8 @@ async function runSpawnAgent(
     : { ok: false, error: serviceResult.error ?? 'unknown error', meta: serviceResult.metadata };
   const serviceAgentId = serviceResult.metadata?.agentId;
 
-  // 上报 subagent 维度 token 贡献（与 task.ts 路径对齐：仅 ok 时累加）
-  if (result.ok && typeof result.output === 'string') {
-    const subagentName =
-      (typeof normalizedArgs.agentId === 'string' && normalizedArgs.agentId) ||
-      (typeof serviceAgentId === 'string' && serviceAgentId) ||
-      (typeof normalizedArgs.role === 'string' && normalizedArgs.role) ||
-      schemaName;
-    try {
-      getContextHealthService().recordSourceContribution(
-        ctx.sessionId,
-        { type: 'subagent', name: subagentName },
-        estimateTokens(result.output),
-        'add',
-      );
-    } catch (err) {
-      ctx.logger.debug('Failed to report spawnAgent subagent token contribution', {
-        subagentName,
-        err,
-      });
-    }
-  }
+  // N-CTXCURRENT: 不再上报 subagent token 累计账——输出已在消息历史里，
+  // 当前态构成（contextComposition）按 spawn_agent 类工具名扫历史重算。
 
   return withMultiagentMeta(result, ctx, schemaName, {
     action: 'spawn',

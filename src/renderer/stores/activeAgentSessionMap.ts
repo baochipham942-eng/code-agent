@@ -4,21 +4,39 @@
 // 新 key 存 sessionId → agentId map。
 // ============================================================================
 
+import { readPersistedExpertThread } from '@shared/contract/expertThread';
+
 const LEGACY_ACTIVE_AGENT_STORAGE_KEY = 'app:activeAgentId';
 const ACTIVE_AGENT_SESSION_MAP_KEY = 'app:activeAgentIdBySession';
 
-export function readActiveAgentSessionMap(): Record<string, string> {
+function parseActiveAgentSessionMap(raw: string | null): Record<string, string> {
   try {
-    if (typeof localStorage === 'undefined') return {};
-    const raw = localStorage.getItem(ACTIVE_AGENT_SESSION_MAP_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed = raw ? JSON.parse(raw) as unknown : {};
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
     return Object.fromEntries(
       Object.entries(parsed as Record<string, unknown>).filter(
         (entry): entry is [string, string] => typeof entry[1] === 'string',
       ),
     );
+  } catch {
+    return {};
+  }
+}
+
+export function readActiveAgentSessionMap(
+  sessionId?: string,
+  metadata?: Record<string, unknown>,
+): Record<string, string> {
+  try {
+    if (typeof localStorage === 'undefined') return {};
+    const raw = localStorage.getItem(ACTIVE_AGENT_SESSION_MAP_KEY);
+    const map = parseActiveAgentSessionMap(raw);
+    const persisted = readPersistedExpertThread(metadata);
+    if (sessionId && persisted) {
+      map[sessionId] = persisted.roleId;
+      writeActiveAgentSessionMap(map);
+    }
+    return map;
   } catch {
     return {};
   }

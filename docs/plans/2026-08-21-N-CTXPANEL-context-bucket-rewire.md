@@ -11,12 +11,15 @@
 5. **深链改落点**：`OPEN_CONTEXT_HEALTH_EVENT` 从「只开弹层」改为「直接开明细 modal」。
 6. **分桶条**：bySource 七桶（rules/skills/mcp/subagents/fileReads/summary/conversation），在明细 modal 顶部，0 值段不渲染；颜色用显式 zinc/accent 色（深浅主题都可读），不走主题变量。
 7. **modal 内压缩入口唯一化**：modal 操作区承担压缩（≥70%），不再给面板传 `onCompact`，避免 critical 时操作区与面板内按钮重复。
+8. **压缩摘要横幅降级（爸 08-21 三轮拍板）**：消息流里整条「上下文已压缩」横幅退役，降级为压缩点所在轮操作行（复制/点赞/点踩/分叉）最右端的 Archive 标记，点开仍可读摘要原文；操作行不渲染的轮（流式/语音在飞）降级为右对齐独立小行，信息不消失。
+9. **CI 修复**：`hoverActionsKeyboardVisibility` 的 bySource fixture 补 `summary` 字段（契约新增必填字段导致 Swarm CI 的 tests typecheck ratchet 超基线）。
 
 ## 验收证据（私档 `code-agent-private-archive/docs/evidence/2026-08-21-N-CTXPANEL/`）
 
-- 终版（交互修正后，构建指纹 kimi/N-CTXPANEL@b1bba3f）：`final-dark/01-bubble.png` `final-dark/02-detail-modal.png` `final-light/01-bubble.png` `final-light/02-detail-modal.png`——hover 出只读气泡，点击圆环直开明细 modal，顶部七桶分桶条（摘要桶 violet 段可见），bySource 区「摘要（压了 N 轮）」408 tok（32.6%）与对话 844 tok（67.4%）分列。
-- 初版（交互修正前，@b91c6a7）：`dark/` `light/` 各两张，仅存档对照。
-- 种子与驱动脚本：`seed-verify-session.py`（合成带 compaction 标记消息的会话，零付费调用）、`take-shots.mjs`（playwright 驱动 web standalone :8182）。
+- 终版（三轮反馈后，构建指纹 kimi/N-CTXPANEL@65c6e7f）：`marker-dark/` `marker-light/`——`03-marker-action-row` 横幅消失、标记在操作行最右端；`04-marker-expanded` 点开标记读摘要原文；`05-clean-session-modal` 未压缩对照会话明细无摘要桶（对话 100%），与压缩会话（摘要 32.6%）对照证明「压缩完成后面板直接看出变化」。
+- 中间版（交互修正，@b1bba3f）：`final-dark/` `final-light/`，hover 气泡 + 点击开明细。
+- 初版（交互修正前，@b91c6a7）：`dark/` `light/`，仅存档对照。
+- 种子与驱动脚本：`seed-verify-session.py`（合成带/不带 compaction 标记的两条对照会话，零付费调用）、`take-shots.mjs`（playwright 驱动 web standalone :8182）。
 
 ## 验收点逐条
 

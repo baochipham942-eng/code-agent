@@ -34,13 +34,8 @@ import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
 import { buildCapabilityCandidateNotice } from '../../host/agent/capabilityCandidateNotice';
 import { getLibraryService } from '../../host/services/library/libraryService';
 import {
-  ClaudeCodeAdapter,
-  CodeBuddyCliAdapter,
-  CodexCliAdapter,
-  DshCliAdapter,
-  GrokCliAdapter,
-  KimiCliAdapter,
-  MimoCliAdapter,
+  type ExternalEngineAdapter,
+  getExternalEngineAdapter,
   getRemoteAgentEngineModelCatalogService,
   isExternalAgentEngine,
   resolveExternalEngineLaunch,
@@ -611,37 +606,30 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         };
         // codex/claude 走签名 catalog 的 resolveModelId；mimo/kimi 未注册签名 catalog，
         // resolveModelId 对未注册 kind 返回 undefined 会丢掉用户所选模型，故直传 launch.model。
-        let adapter:
-          | CodexCliAdapter
-          | ClaudeCodeAdapter
-          | MimoCliAdapter
-          | KimiCliAdapter
-          | CodeBuddyCliAdapter
-          | GrokCliAdapter
-          | DshCliAdapter;
+        let adapter: ExternalEngineAdapter;
         let resolvedEngineModel: string | undefined;
         if (selectedEngine.kind === 'codex_cli') {
-          adapter = new CodexCliAdapter();
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('codex_cli', launch.model, { strict: true });
         } else if (selectedEngine.kind === 'claude_code') {
-          adapter = new ClaudeCodeAdapter();
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('claude_code', launch.model, { strict: true });
         } else if (selectedEngine.kind === 'mimo_code') {
-          adapter = new MimoCliAdapter();
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = launch.model;
         } else if (selectedEngine.kind === 'kimi_code') {
-          adapter = new KimiCliAdapter();
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = launch.model;
         } else if (selectedEngine.kind === 'codebuddy_code') {
-          adapter = new CodeBuddyCliAdapter();
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = await getRemoteAgentEngineModelCatalogService()
             .resolveModelId('codebuddy_code', launch.model);
         } else if (selectedEngine.kind === 'grok_cli') {
-          adapter = new GrokCliAdapter();
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = await getRemoteAgentEngineModelCatalogService()
             .resolveModelId('grok_cli', launch.model, { strict: true });
         } else if (selectedEngine.kind === 'dsh_cli') {
-          adapter = new DshCliAdapter();
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
           // 同 mimo/kimi：无签名 catalog，直传才不会把用户选的 provider/model 丢掉。
           resolvedEngineModel = launch.model;
         } else {

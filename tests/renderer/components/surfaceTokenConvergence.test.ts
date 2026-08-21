@@ -32,6 +32,7 @@ const SCOPED_FILES = [
   'components/features/chat/TurnCard.tsx',
   'components/features/chat/SessionDiffSummary.tsx',
   'components/features/chat/ContextUsagePill.tsx',
+  'components/features/chat/ContextHealthDetailPopover.tsx',
   'components/features/chat/TraceNodeRenderer.tsx',
   'components/features/chat/InlineStrip.tsx',
   'components/TitleBar.tsx',
@@ -42,7 +43,8 @@ const SCOPED_FILES = [
  * 保留原字面量以保证「视觉终态无可感变化」。 */
 const ALLOWLIST: Record<string, number> = {
   'components/features/chat/MessageBubble/messageContentParts.tsx': 1, // 行内 code 淡底 bg-white/[0.06]（轻呈现拍板值，比 surface-hover(0.05) 略亮一档）
-  'components/features/chat/ContextUsagePill.tsx': 1, // hover:bg-white/[0.1]，同上
+  // 固定深色弹层（bg-zinc-900/95，不随主题翻转）上的 hover 提亮，不能用会随主题翻转的 surface token
+  'components/features/chat/ContextHealthDetailPopover.tsx': 2, // 关闭钮 hover:bg-white/[0.08] + 压缩钮 hover:bg-white/[0.1]
   'components/features/chat/InlineStrip.tsx': 1, // bg-white/[0.08]，离 surface-hover(0.05) 太远
 };
 

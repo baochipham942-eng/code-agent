@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 // ============================================================================
-// ContextUsagePill — hover 气泡 / 点击开明细 modal / context 深链（N-CTXPANEL 病A）
-// 交互口径（2026-08-21 爸拍板）：hover 圆环出只读气泡，点击圆环直接展开明细
-// 窗口；分桶条/费用/压缩钮都在明细 modal 里。
-// 反向变异承重：删掉明细 modal 的 ContextHealthPanel 挂载点，用例 2/4 必须红；
-// 拿掉 modal 顶部分桶条，用例 2 必须红。
+// ContextUsagePill — hover 气泡 / 点击开明细弹层 / context 深链（N-CTXPANEL 病A）
+// 交互口径（2026-08-21 爸拍板）：hover 圆环出只读气泡，点击圆环展开长在输入框
+// 上方的明细弹层（Cursor 同款不割裂形态）；分桶条/费用/压缩钮都在明细弹层里。
+// 反向变异承重：删掉明细弹层的 ContextHealthPanel 挂载点，用例 2/4 必须红；
+// 拿掉弹层顶部分桶条，用例 2 必须红。
 // ============================================================================
 
 import React from 'react';
@@ -113,7 +113,7 @@ function hoverPill() {
   fireEvent.mouseOver(pillButton());
 }
 
-describe('ContextUsagePill — hover 气泡与明细 modal', () => {
+describe('ContextUsagePill — hover 气泡与明细弹层', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     pillMocks.appState.contextHealth = contextHealth;
@@ -132,7 +132,7 @@ describe('ContextUsagePill — hover 气泡与明细 modal', () => {
     expect(screen.queryByRole('button', { name: '立即压缩' })).toBeNull();
   });
 
-  it('点击圆环直接打开明细 modal：分桶条 + 面板 bySource 区 + 摘要桶都在', () => {
+  it('点击圆环直接打开明细弹层：分桶条 + 面板 bySource 区 + 摘要桶都在', () => {
     render(<ContextUsagePill />);
     fireEvent.click(pillButton());
 
@@ -146,7 +146,7 @@ describe('ContextUsagePill — hover 气泡与明细 modal', () => {
     expect(screen.getByText('摘要（压了 2 轮）')).toBeTruthy();
   });
 
-  it('bySource 全 0 时明细 modal 不渲染分桶条', () => {
+  it('bySource 全 0 时明细弹层不渲染分桶条', () => {
     pillMocks.appState.contextHealth = {
       ...contextHealth,
       breakdown: {
@@ -169,7 +169,7 @@ describe('ContextUsagePill — hover 气泡与明细 modal', () => {
     expect(screen.queryByTestId('context-source-bar')).toBeNull();
   });
 
-  it('context 深链（OPEN_CONTEXT_HEALTH_EVENT）直接打开明细 modal', () => {
+  it('context 深链（OPEN_CONTEXT_HEALTH_EVENT）直接打开明细弹层', () => {
     render(<ContextUsagePill />);
 
     act(() => {
@@ -180,7 +180,7 @@ describe('ContextUsagePill — hover 气泡与明细 modal', () => {
     expect(screen.getByText('按产品来源')).toBeTruthy();
   });
 
-  it('明细 modal 里压缩入口沿用 ≥70% 门槛：20% 不显示，80% 显示', () => {
+  it('明细弹层里压缩入口沿用 ≥70% 门槛：20% 不显示，80% 显示', () => {
     render(<ContextUsagePill />);
     fireEvent.click(pillButton());
     expect(screen.queryByRole('button', { name: '立即压缩' })).toBeNull();

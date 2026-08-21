@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../../stores/appStore';
 import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { ContextHealthDetailModal } from '../../ContextHealthDetailModal';
+import { ContextHealthDetailPopover } from './ContextHealthDetailPopover';
 import { formatContextUsagePercent } from '../../../utils/contextUsageFormat';
 import { OPEN_CONTEXT_HEALTH_EVENT } from '../../../utils/workbenchViews';
 
@@ -39,25 +39,29 @@ export const ContextUsagePill: React.FC = () => {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
-  // 压缩结果/失败的反馈行：压缩动作在明细 modal 里触发，这里只读 store 展示结果
+  // 压缩结果/失败的反馈行：压缩动作在明细弹层里触发，气泡只读 store 展示结果
   const compactResult = useContextCompactionStore((s) => s.result);
   const compactError = useContextCompactionStore((s) => s.error);
 
   useEffect(() => {
-    // context 深链直接落到明细 modal（不再只开弹层）
+    // context 深链直接落到明细弹层（不再只开气泡）
     const handleDeepLink = () => setDetailOpen(true);
     window.addEventListener(OPEN_CONTEXT_HEALTH_EVENT, handleDeepLink);
     return () => window.removeEventListener(OPEN_CONTEXT_HEALTH_EVENT, handleDeepLink);
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open && !detailOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        setOpen(false);
+        setDetailOpen(false);
+      }
     };
     const onPointerDown = (e: MouseEvent) => {
       if (!wrapperRef.current?.contains(e.target as Node)) {
         setOpen(false);
+        setDetailOpen(false);
       }
     };
     document.addEventListener('keydown', onKey);
@@ -66,7 +70,7 @@ export const ContextUsagePill: React.FC = () => {
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('mousedown', onPointerDown);
     };
-  }, [open]);
+  }, [open, detailOpen]);
 
   const usagePercent = contextHealth?.usagePercent ?? 0;
   const currentTokens = contextHealth?.currentTokens ?? 0;
@@ -90,17 +94,21 @@ export const ContextUsagePill: React.FC = () => {
     <div
       ref={wrapperRef}
       className="relative flex-shrink-0"
-      onMouseEnter={() => setOpen(true)}
+      onMouseEnter={() => {
+        // 明细弹层展开时不再叠气泡
+        if (!detailOpen) setOpen(true);
+      }}
       onMouseLeave={() => setOpen(false)}
     >
       <button
         type="button"
         onClick={() => {
-          // 点击直接展开上下文明细窗口（hover 气泡只是只读预览，操作都在明细里）
-          setDetailOpen(true);
+          // 点击圆环 = 展开/收起长在输入框上方的明细弹层（hover 气泡只是只读预览）
+          setDetailOpen((prev) => !prev);
           setOpen(false);
         }}
         onFocus={() => setOpen(true)}
+        aria-expanded={detailOpen}
         className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg px-1.5 text-xs tabular-nums transition-colors ${styles.text} ${styles.hoverBg}`}
         aria-label={ch.usageAriaLabel}
         title={hasData
@@ -161,10 +169,9 @@ export const ContextUsagePill: React.FC = () => {
         </div>
       )}
 
-      <ContextHealthDetailModal
-        isOpen={detailOpen}
-        onClose={() => setDetailOpen(false)}
-      />
+      {detailOpen && (
+        <ContextHealthDetailPopover onClose={() => setDetailOpen(false)} />
+      )}
     </div>
   );
 };

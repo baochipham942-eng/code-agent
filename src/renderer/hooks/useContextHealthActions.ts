@@ -1,6 +1,6 @@
 // ============================================================================
 // useContextHealthActions - ContextHealthPanel 的 navigate/unload/compact handlers
-// 从 ContextPanel 抽出共享：右栏 ContextPanel 与 ContextUsagePill 的明细 modal
+// 从 ContextPanel 抽出共享：右栏 ContextPanel 与 ContextUsagePill 的明细弹层
 // 挂载同一个 ContextHealthPanel，handler 逻辑只维护一份。
 // ============================================================================
 

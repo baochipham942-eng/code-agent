@@ -9,10 +9,11 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import { DEFAULT_MODELS, MODEL_API_ENDPOINTS, MODEL_FEATURES, QUICK_MODEL_AUTH_BLACKLIST_MS, getProviderEndpoint } from '../../shared/constants';
+import { DEFAULT_MODELS, MODEL_API_ENDPOINTS, MODEL_FEATURES, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../shared/constants';
 import { getConfigService } from '../services/core/configService';
 import { getProviderLimiter } from './concurrencyLimiter';
-import type { ModelProvider } from '../../shared/contract';
+import { isZhipuFreeModel, resolveProviderApiKey, resolveProviderBaseUrl } from './providers/providerResolution';
+import type { ModelConfig, ModelProvider } from '../../shared/contract';
 
 const logger = createLogger('QuickModel');
 
@@ -124,6 +125,22 @@ function isThinkingModel(model: string): boolean {
   return (MODEL_FEATURES[model] ?? []).includes('reasoning');
 }
 
+function isProviderExplicitlyDisabled(provider: string): boolean {
+  try {
+    return getConfigService().getSettings().models.providers?.[provider]?.enabled === false;
+  } catch {
+    return false;
+  }
+}
+
+function getConfiguredProviderBaseUrl(provider: string): string | undefined {
+  try {
+    return getConfigService().getSettings().models.providers?.[provider]?.baseUrl;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * 把一个路由角色（provider + model）解析成 quick model config。
  * 拿不到 API key 或 endpoint 时返回 null（交由上层回落）。
@@ -134,16 +151,19 @@ function resolveRole(
   model: string,
   routeSource: QuickModelConfig['routeSource'],
 ): QuickModelConfig | null {
-  const cfg = getConfigService();
-  const apiKey = provider === 'zhipu'
-    ? cfg.getZhipuOfficialKey()
-    : cfg.getApiKey(provider as ModelProvider);
+  if (isProviderExplicitlyDisabled(provider)) return null;
+
+  const identityConfig = { provider: provider as ModelProvider, model } as ModelConfig;
+  const modelConfig = {
+    provider: provider as ModelProvider,
+    model,
+    baseUrl: isZhipuFreeModel(identityConfig) ? undefined : getConfiguredProviderBaseUrl(provider),
+  } as ModelConfig;
+  const apiKey = resolveProviderApiKey(modelConfig, { trustConfigKey: false });
   if (!apiKey) return null;
   if (isAuthBlacklisted(provider, model, apiKey)) return null;
 
-  const baseUrl = provider === 'zhipu'
-    ? MODEL_API_ENDPOINTS.zhipuOfficial
-    : getProviderEndpoint(provider);
+  const baseUrl = resolveProviderBaseUrl({ ...modelConfig, apiKey });
   if (!baseUrl) return null;
 
   return { apiKey, baseUrl, model, provider, disableThinking: isThinkingModel(model), routeSource };
@@ -186,7 +206,7 @@ function initializeQuickModelCandidates(route: 'quick' | 'memory' = 'quick'): Qu
 
   if (resolved.length === 0) {
     const apiKey = process.env.ZHIPU_OFFICIAL_API_KEY || process.env.ZHIPU_API_KEY;
-    if (apiKey && !isAuthBlacklisted('zhipu', DEFAULT_MODELS.quick, apiKey)) {
+    if (!isProviderExplicitlyDisabled('zhipu') && apiKey && !isAuthBlacklisted('zhipu', DEFAULT_MODELS.quick, apiKey)) {
       resolved.push({
         apiKey,
         baseUrl: MODEL_API_ENDPOINTS.zhipuOfficial,

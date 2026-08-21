@@ -33,12 +33,14 @@ function mockConfig(opts: {
   fast?: { provider: string; model: string };
   code?: { provider: string; model: string };
   keys?: Record<string, string>;
+  providers?: Record<string, { enabled: boolean; baseUrl?: string }>;
   zhipuOfficialKey?: string;
 }) {
   const keys = opts.keys ?? {};
   getConfigServiceMock.mockReturnValue({
     getSettings: () => ({
       models: {
+        providers: opts.providers ?? {},
         routing: {
           ...(opts.memory ? { memory: opts.memory } : {}),
           fast: opts.fast ?? { provider: 'zhipu', model: DEFAULT_MODELS.quick },
@@ -98,6 +100,54 @@ describe('quick model 策略解析', () => {
 });
 
 describe('memory model 专档与回落', () => {
+  it('动态 custom provider 使用设置中的 baseUrl，不静默回落 fast', async () => {
+    mockConfig({
+      memory: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash-0731' },
+      keys: { 'custom-tokenrhythm': 'tokenrhythm-key', zhipu: 'zk' },
+      providers: {
+        'custom-tokenrhythm': { enabled: true, baseUrl: 'https://tokenrhythm.example/v1/' },
+      },
+    });
+    const fetchMock = mockFetchOnce('organized');
+
+    await expect(memoryTask('整理')).resolves.toMatchObject({
+      success: true,
+      provider: 'custom-tokenrhythm',
+      model: 'deepseek-v4-flash-0731',
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://tokenrhythm.example/v1/chat/completions',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('zhipu 下的非免费 0ki 模型尊重配置 baseUrl，免费 quick 模型仍走官方端点', async () => {
+    mockConfig({
+      memory: { provider: 'zhipu', model: 'DeepSeek-V4-Flash-0731' },
+      keys: { zhipu: '0ki-key' },
+      providers: {
+        zhipu: { enabled: true, baseUrl: 'https://api.0ki.example/api/paas/v4/' },
+      },
+    });
+    const fetchMock = mockFetchOnce('organized');
+
+    await expect(memoryTask('整理')).resolves.toMatchObject({
+      success: true,
+      provider: 'zhipu',
+      model: 'DeepSeek-V4-Flash-0731',
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.0ki.example/api/paas/v4/chat/completions');
+
+    mockConfig({
+      keys: { zhipu: 'official-fallback-key' },
+      providers: {
+        zhipu: { enabled: true, baseUrl: 'https://api.0ki.example/api/paas/v4/' },
+      },
+    });
+    await quickTask('分类');
+    expect(fetchMock.mock.calls[1][0]).toBe('https://open.bigmodel.cn/api/paas/v4/chat/completions');
+  });
+
   it('默认未配 routing.memory 时，同 prompt 与 quickTask 走同模型、同请求体', async () => {
     mockConfig({ keys: { zhipu: 'zk', xiaomi: 'xk' } });
     const fetchMock = vi.fn().mockResolvedValue({
@@ -160,6 +210,46 @@ describe('memory model 专档与回落', () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe('mimo-v2.5-pro');
   });
 
+  it('明确关闭的 routing.memory provider 不参与路由，直接使用 routing.fast', async () => {
+    mockConfig({
+      memory: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      keys: { deepseek: 'invalid-key', zhipu: 'zk' },
+      providers: {
+        deepseek: { enabled: false },
+        zhipu: { enabled: true },
+      },
+    });
+    const fetchMock = mockFetchOnce('fast fallback');
+
+    await expect(memoryTask('整理')).resolves.toMatchObject({
+      success: true,
+      provider: 'zhipu',
+      model: DEFAULT_MODELS.quick,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe(DEFAULT_MODELS.quick);
+  });
+
+  it('明确关闭 zhipu 时环境变量兜底也不能重新启用它', async () => {
+    mockConfig({
+      fast: { provider: 'zhipu', model: DEFAULT_MODELS.quick },
+      code: { provider: 'zhipu', model: DEFAULT_MODELS.quick },
+      providers: { zhipu: { enabled: false } },
+      keys: {},
+    });
+    const previous = process.env.ZHIPU_OFFICIAL_API_KEY;
+    process.env.ZHIPU_OFFICIAL_API_KEY = 'disabled-provider-key';
+    try {
+      await expect(memoryTask('整理')).resolves.toMatchObject({
+        success: false,
+        failureReason: 'not_configured',
+      });
+    } finally {
+      if (previous === undefined) delete process.env.ZHIPU_OFFICIAL_API_KEY;
+      else process.env.ZHIPU_OFFICIAL_API_KEY = previous;
+    }
+  });
+
   it('memory / fast / code 都无 key 时保留现有智谱环境变量兜底', async () => {
     mockConfig({
       memory: { provider: 'openai', model: 'gpt-5.4-mini' },
@@ -203,6 +293,27 @@ describe('thinking 模型回落时自动关闭思考', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.thinking).toBeUndefined();
   });
+
+  it.each(['deepseek-v4-flash', 'deepseek-v4-pro'])(
+    '%s 用作记忆模型时关闭 thinking，正文不会被 reasoning_content 挤空',
+    async (model) => {
+      mockConfig({
+        memory: { provider: 'deepseek', model },
+        keys: { deepseek: 'dk' },
+        providers: { deepseek: { enabled: true } },
+      });
+      const fetchMock = mockFetchOnce('organized');
+
+      await expect(memoryTask('整理')).resolves.toMatchObject({
+        success: true,
+        content: 'organized',
+        provider: 'deepseek',
+        model,
+      });
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(body.thinking).toEqual({ type: 'disabled' });
+    },
+  );
 
   it('passes the caller abort signal through to fetch', async () => {
     mockConfig({ keys: { zhipu: 'zk' } });

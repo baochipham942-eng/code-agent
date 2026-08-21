@@ -459,6 +459,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
           ...executionContext,
           ...(recovered.worktreePath ? { cwd: recovered.worktreePath, worktreePath: recovered.worktreePath } : {}),
           agentId: task.id,
+          ownedPaths: task.ownedPaths,
           parentToolUseId: executionContext.currentToolCallId,
           executionAgentId: task.id,
           spawnGuardId: task.id,

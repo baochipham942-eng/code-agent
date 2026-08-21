@@ -91,6 +91,7 @@ Parameters:
   },
   category: 'network',
   permissionLevel: 'write',
+  pathAuthority: [{ kind: 'path', pathParameter: 'ranges' }],
   readOnly: false,
   allowInPlanMode: false,
 };

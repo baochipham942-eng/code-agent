@@ -46,6 +46,7 @@ import { resolveAgentDisplayNames } from '../resolveAgentDisplayNames';
 import { checkReadonlyParentRule, type ParentContext } from '../childContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getSpawnGuard } from '../spawnGuard';
+import { bindFileOwnershipReleaseHook } from '../../services/infra/fileOwnershipRegistry';
 import { routeFailureCode } from '../../../shared/contract/cancellation';
 import {
   AgentFailureCode,
@@ -96,7 +97,7 @@ export async function executeSpawnAgent(
   context: SubagentExecutionContext,
 ): Promise<MultiagentExecutionResult> {
     const parallel = params.parallel as boolean | undefined;
-    const agents = params.agents as Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }> | undefined;
+    const agents = params.agents as Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[]; ownedPaths?: string[] }> | undefined;
 
     // Check for required context
     if (!context.modelConfig) {
@@ -110,6 +111,7 @@ export async function executeSpawnAgent(
     }
 
     const guard = getSpawnGuard();
+    bindFileOwnershipReleaseHook(guard);
 
     // ========================================================================
     // spawn 嵌套深度截断（执行层防线）
@@ -154,6 +156,7 @@ export async function executeSpawnAgent(
     const customPrompt = params.customPrompt as string | undefined;
     const customTools = params.customTools as string[] | undefined;
     const maxBudget = params.maxBudget as number | undefined;
+    const ownedPaths = params.ownedPaths as string[] | undefined;
     const waitForCompletion = params.waitForCompletion !== false;
     const maxIterations = (params.maxIterations as number) || 20;
     const foregroundBlockingBudgetMs = resolveForegroundBlockingBudgetMs(params.foregroundBlockingBudgetMs);
@@ -429,6 +432,7 @@ export async function executeSpawnAgent(
         ...context, cwd,
         // swarm 护栏 P1-2 #2：把递增后的深度沿 execution context 传递
         agentId,
+        ownedPaths,
         spawnDepth: childDepth,
         spawnMaxDepth: context.spawnMaxDepth,
         spawnTreeId: treeId,
@@ -704,10 +708,10 @@ export function getAvailableAgents(): Array<{ id: string; name: string; descript
 // dispatch to executeSpawnAgent above.
 
 // Execute multiple agents in parallel using the ParallelAgentCoordinator
-export async function launchAgentTeam(agents: Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[] }>, context: SubagentExecutionContext): Promise<MultiagentExecutionResult> { return executeParallelAgents(agents, context); }
+export async function launchAgentTeam(agents: Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[]; ownedPaths?: string[] }>, context: SubagentExecutionContext): Promise<MultiagentExecutionResult> { return executeParallelAgents(agents, context); }
 
 async function executeParallelAgents(
-  agents: Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[] }>,
+  agents: Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[]; ownedPaths?: string[] }>,
   context: SubagentExecutionContext,
 ): Promise<MultiagentExecutionResult> {
   if (!context.sessionId) {
@@ -858,6 +862,7 @@ async function executeParallelAgents(
       tools,
       maxIterations: getAgentMaxIterations(agentConfig),
       dependsOn: agent.dependsOn,
+      ownedPaths: agent.ownedPaths,
     };
   });
 

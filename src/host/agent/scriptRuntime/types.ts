@@ -24,6 +24,8 @@ export interface AgentCallOptions {
   agentType?: string;
   /** 工具档：'readonly'(默认) | 'edit'(+Edit/Write) | 'full'(+Bash)。仅 full-agent 路径（无 schema）生效。 */
   tools?: string;
+  /** Paths or glob ranges this agent owns while it is live. */
+  ownedPaths?: string[];
 }
 
 /** child 侧 agent() 调用 marshal 给 Host 的载荷。 */

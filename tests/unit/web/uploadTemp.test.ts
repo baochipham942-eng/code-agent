@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { Readable } from 'stream';
+import { Readable } from 'node:stream';
 import type { Request, Response } from 'express';
 import {
   MAX_UPLOAD_SIZE,

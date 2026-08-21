@@ -150,6 +150,8 @@ export interface SubagentExecutionContext {
   agentId?: string;
   agentName?: string;
   agentRole?: string;
+  /** Paths or glob ranges this agent owns while its execution is live. */
+  ownedPaths?: string[];
   messages?: Message[];
   modifiedFiles?: Set<string>;
   todos?: Array<{

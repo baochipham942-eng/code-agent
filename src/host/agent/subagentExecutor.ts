@@ -21,8 +21,7 @@ import {
   getAgentPermissionPreset,
   getAgentMaxBudget,
 } from './agentDefinition';
-import { getExternalEngineSubagentExecutor } from './externalEngineSubagentExecutor';
-import { resolveSubagentEngine } from './subagentEngineResolution';
+import { routeExternalSubagentExecution } from './subagentExecutionRouter';
 import { PROVIDER_REGISTRY } from '../model/modelRouter';
 import { compactSubagentMessages } from './subagentCompaction';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
@@ -142,17 +141,8 @@ export class SubagentExecutor {
     legacyContext?: LegacySubagentContextInput,
   ): Promise<SubagentResult> {
     const request = normalizeSubagentExecutionRequest(requestOrPrompt, legacyConfig, legacyContext);
-    const engine = resolveSubagentEngine(request.config);
-    if (engine !== 'native') {
-      const externalRequest: SubagentExecutionRequest = {
-        ...request,
-        config: { ...request.config, engine },
-      };
-      return runSubagentExecutionWithTrace(
-        externalRequest,
-        () => getExternalEngineSubagentExecutor().execute(externalRequest),
-      );
-    }
+    const externalExecution = routeExternalSubagentExecution(request);
+    if (externalExecution) return externalExecution;
     const { prompt, config, context } = request;
     return runSubagentExecutionWithTrace(
       request,

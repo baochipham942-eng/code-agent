@@ -39,14 +39,17 @@ interface BucketSpec {
 }
 
 /**
- * 九桶清单（组装序）。颜色用显式 hex：弹层是固定深色面（bg-zinc-900/95），
- * 不随主题翻转，不走 surface token（surfaceTokenConvergence 白名单已登记）。
+ * 九桶清单（组装序）。桶色是定稿的分类调色板（2026-08-21 爸拍板，设计稿见私档
+ * docs/competitive/2026-08-21-cursor-vs-neo-context-panel.html）：弹层是固定深色面
+ * （bg-zinc-900/95）不随主题翻转，surface token 会翻所以不能走 token——分类色板属
+ * viz 语义，按 design-system §5 行内登记豁免。
  */
 function buildBuckets(health: ContextHealthState, ch: Record<string, string>): BucketSpec[] {
   const bs = health.breakdown.bySource;
   const sumRecord = (rec?: Record<string, number>) =>
     Object.values(rec ?? {}).reduce((a, b) => a + b, 0);
   const compressionCount = health.compression?.compressionCount ?? 0;
+  // ds-allow:start — viz：分类调色板（固定深色面上的桶色，见函数头注释）
   return [
     { key: 'systemPrompt', name: ch.bkSystemPrompt, tokens: health.breakdown.systemPrompt, color: '#a8a8b0' },
     { key: 'toolDefs', name: ch.bkToolDefs, tokens: health.breakdown.toolDefinitions ?? 0, color: '#60a5fa' },
@@ -63,6 +66,7 @@ function buildBuckets(health: ContextHealthState, ch: Record<string, string>): B
     },
     { key: 'conversation', name: ch.bkConversation, tokens: bs?.conversation ?? 0, color: '#52525b' },
   ].filter((bucket) => bucket.tokens > 0);
+  // ds-allow:end
 }
 
 interface ContextHealthDetailPopoverProps {

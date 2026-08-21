@@ -7,6 +7,7 @@ import type { WorkspaceScope } from '../../../shared/contract/project';
 import { getExternalEngineManifestForKind, isManifestBackedExternalKind } from '../../../shared/externalEngineManifest';
 import { resolveWorkspacePath } from '../../runtime/workspaceScope';
 import { createLogger } from '../infra/logger';
+import { isAgentWorktreePath } from '../../agent/agentWorktreePath';
 
 const logger = createLogger('AgentEngineGuards');
 
@@ -57,6 +58,20 @@ export function assertReadOnlyExternalProfile(
     throw new Error('External Agent Engine execution is read-only in this release.');
   }
   return 'read_only';
+}
+
+export function assertExternalSubagentProfile(
+  profile: AgentEnginePermissionProfile | undefined,
+  input: { origin: 'subagent'; cwd: string },
+): 'read_only' | 'workspace_write' {
+  if (!profile || profile === 'read_only') return 'read_only';
+  if (profile === 'workspace_write' && isAgentWorktreePath(input.cwd)) {
+    return 'workspace_write';
+  }
+  if (profile === 'workspace_write') {
+    throw new Error('External subagent workspace write is only allowed inside a Neo-managed worktree.');
+  }
+  throw new Error('External subagent permission profile must be read_only or workspace_write.');
 }
 
 export function assertExternalEngineSessionAllowed(

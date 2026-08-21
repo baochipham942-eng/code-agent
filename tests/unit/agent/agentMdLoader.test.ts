@@ -3,10 +3,23 @@
 // 测试自定义 agent .md frontmatter 解析（含 GAP-011 skills 字段）
 // ============================================================================
 
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({ loggerWarn: vi.fn() }));
+
+vi.mock('../../../src/host/services/infra/logger', () => ({
+  createLogger: () => ({
+    debug: vi.fn(),
+    error: vi.fn(),
+    warn: mocks.loggerWarn,
+  }),
+}));
 import { parseAgentMd, parseAgentMdVisual, updateAgentMdBody, updateAgentMdEquipment, updateAgentMdVisual } from '../../../src/host/agent/hybrid/agentMdLoader';
 
 describe('parseAgentMd', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
   it('should return null for content without frontmatter', () => {
     expect(parseAgentMd('just a prompt', 'foo.md')).toBeNull();
   });
@@ -175,6 +188,29 @@ describe('parseAgentMd', () => {
   it('模型名自带斜杠时按第一个斜杠切分 provider', () => {
     const content = ['---', 'name: 自建专家', 'model-override: openrouter/anthropic/claude-x', '---', '正文。'].join('\n');
     expect(parseAgentMd(content, '自建专家.md')?.modelOverride).toEqual({ provider: 'openrouter', model: 'anthropic/claude-x' });
+  });
+
+  it('round-trips a manifest-backed subagent engine and removes native', () => {
+    const base = ['---', 'name: 自建专家', 'model: balanced', 'max-iterations: 30', '---', '正文。'].join('\n');
+    const equipment = { skills: [], tools: ['Read'], model: 'balanced' as const, maxIterations: 30 };
+
+    const external = updateAgentMdEquipment(base, { ...equipment, engine: 'codex_cli' });
+    expect(external).toContain('engine: codex_cli');
+    expect(parseAgentMd(external, '自建专家.md')?.engine).toBe('codex_cli');
+
+    const native = updateAgentMdEquipment(external, { ...equipment, engine: 'native' });
+    expect(native).not.toContain('engine:');
+    expect(parseAgentMd(native, '自建专家.md')?.engine).toBeUndefined();
+  });
+
+  it('warns and ignores an engine that is not manifest-backed', () => {
+    const content = ['---', 'name: 自建专家', 'engine: imaginary_cli', '---', '正文。'].join('\n');
+
+    expect(parseAgentMd(content, '自建专家.md')?.engine).toBeUndefined();
+    expect(mocks.loggerWarn).toHaveBeenCalledWith(
+      '忽略 agent.md 中不受 manifest 支持的 engine',
+      { file: '自建专家.md', engine: 'imaginary_cli' },
+    );
   });
 
   it('updates body only and leaves frontmatter byte-for-byte unchanged', () => {

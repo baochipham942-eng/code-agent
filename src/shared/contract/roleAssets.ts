@@ -197,6 +197,8 @@ export interface RolePanelDetail {
     skills: string[];
     tools: string[];
     model: 'fast' | 'balanced' | 'powerful';
+    /** 子代理执行引擎装备；缺省表示 native。 */
+    engine?: import('./agentEngine').AgentEngineKind;
     /** 指定的具体模型；缺省表示跟随档位。 */
     modelOverride?: { provider: string; model: string };
     /** 审批松紧档；缺省表示跟随通用设置。 */

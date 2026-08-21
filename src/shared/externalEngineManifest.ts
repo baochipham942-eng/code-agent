@@ -6,6 +6,7 @@ import type {
   AgentEngineRiskTier,
   ExternalAgentEngineKind,
 } from './contract/agentEngine';
+import { isAgentEngineKind } from './contract/agentEngine';
 
 export type ExternalEngineModelSelection =
   | 'neo_provider'
@@ -135,7 +136,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
       evidence: 'production',
     },
     modelSelection: 'runtime_catalog',
-    capabilities: ['execute', 'stream_events', 'resume'],
+    capabilities: ['execute', 'stream_events', 'resume', 'workspace_write'],
     defaultPermissionProfile: 'read_only',
     riskTier: 'medium',
     reliability: {
@@ -174,7 +175,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
       evidence: 'production',
     },
     modelSelection: 'runtime_catalog',
-    capabilities: ['execute', 'stream_events', 'resume'],
+    capabilities: ['execute', 'stream_events', 'resume', 'workspace_write'],
     defaultPermissionProfile: 'read_only',
     riskTier: 'medium',
     reliability: {
@@ -526,4 +527,9 @@ export function isManifestBackedExternalKind(
   kind: AgentEngineKind,
 ): kind is ExternalAgentEngineKind {
   return kind !== 'native' && Boolean(getExternalEngineManifestForKind(kind)?.adapter.adapterId);
+}
+
+export function isManifestBackedAgentEngineKind(value: unknown): value is AgentEngineKind {
+  return value === 'native'
+    || (isAgentEngineKind(value) && isManifestBackedExternalKind(value));
 }

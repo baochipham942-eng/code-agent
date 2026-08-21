@@ -91,26 +91,21 @@ import { buildTestExternalForkContextHandoff } from '../services/sessionFork/ext
 
 describe('Claude Code adapter helpers', () => {
   it('uses Claude Code print mode with plan permissions and read-only tools', () => {
+    expect(buildClaudeCodeArgs('read_only', 'sonnet')).toEqual([
+      '-p', '--verbose', '--model', 'sonnet', '--safe-mode', '--disable-slash-commands',
+      '--output-format', 'stream-json', '--input-format', 'text', '--permission-mode', 'plan',
+      '--tools', 'Read,Glob,Grep,LS', '--allowedTools', 'Read,Glob,Grep,LS', '--no-chrome',
+      '--strict-mcp-config', '--include-partial-messages',
+    ]);
+  });
+
+  it('uses acceptEdits with only file edit tools for workspace write', () => {
     const args = buildClaudeCodeArgs('workspace_write', 'sonnet');
 
-    expect(args).toContain('-p');
-    expect(args).toContain('--verbose');
-    expect(args).toContain('--model');
-    expect(args[args.indexOf('--model') + 1]).toBe('sonnet');
-    expect(args).toContain('--safe-mode');
-    expect(args).not.toContain('--setting-sources');
-    expect(args).toContain('--disable-slash-commands');
-    expect(args).toContain('stream-json');
-    expect(args).toContain('plan');
-    expect(args).toContain('--tools');
-    expect(args).toContain('Read,Glob,Grep,LS');
-    expect(args).toContain('--no-chrome');
-    expect(args).toContain('--strict-mcp-config');
-    expect(args).toContain('--include-partial-messages');
-    expect(args).not.toContain('--no-session-persistence');
-    expect(args).not.toContain('--dangerously-skip-permissions');
-    expect(args).not.toContain('--allow-dangerously-skip-permissions');
-    expect(args).not.toContain('bypassPermissions');
+    expect(args[args.indexOf('--permission-mode') + 1]).toBe('acceptEdits');
+    expect(args[args.indexOf('--tools') + 1]).toBe('Read,Glob,Grep,LS,Edit,Write,MultiEdit');
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe('Read,Glob,Grep,LS,Edit,Write,MultiEdit');
+    expect(args[args.indexOf('--allowedTools') + 1].split(',')).not.toContain('Bash');
   });
 
   it('parses Claude Code stream-json assistant, tool, and result events', () => {

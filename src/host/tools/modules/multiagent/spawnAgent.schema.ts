@@ -58,6 +58,7 @@ When NOT to spawn:
 - parallel: Set true + agents array for multiple agents with dependencies
 - waitForCompletion: false to run in background (default true)
 - forkContext: true to inherit parent conversation history
+- engine: Optional execution engine override for a declared role; external engines always use a Neo-managed worktree
 - ownedPaths: Paths or glob ranges this agent owns while live. Siblings must wait, delegate the edit, or report a merge need instead of writing around ownership.
 - isolation: "worktree" to give coder agent an isolated git branch (auto-cleanup if no changes)`;
 
@@ -85,6 +86,11 @@ const spawnInputSchema = {
       get description() {
         return renderAgentRoleDescription(staticRoleDescription);
       },
+    },
+    engine: {
+      type: 'string',
+      enum: ['native', 'codex_cli', 'claude_code', 'mimo_code', 'kimi_code', 'codebuddy_code', 'grok_cli', 'dsh_cli'],
+      description: 'Optional execution engine override. Only valid with a declared role; external engines force worktree isolation.',
     },
     task: {
       type: 'string',

@@ -134,6 +134,14 @@ vi.mock('../../../src/host/services/agentEngine', async () => {
   );
   return ({
   ...actual,
+  getExternalEngineAdapter: vi.fn((kind: string) => ({
+    run: {
+      codex_cli: agentEngineMocks.codexRun,
+      claude_code: agentEngineMocks.claudeRun,
+      mimo_code: agentEngineMocks.mimoRun,
+      kimi_code: agentEngineMocks.kimiRun,
+    }[kind],
+  })),
   CodexCliAdapter: vi.fn(function CodexCliAdapterMock() {
     return {
       run: agentEngineMocks.codexRun,

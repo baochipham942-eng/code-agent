@@ -17,6 +17,7 @@ import { useContextCompactionStore } from '../../../stores/contextCompactionStor
 import { useBudgetStatus } from '../../../hooks/useBudgetStatus';
 import { CostDisplay } from '../../StatusBar/CostDisplay';
 import { useContextHealthActions } from '../../../hooks/useContextHealthActions';
+import { formatContextUsagePercent } from '../../../utils/contextUsageFormat';
 import type { SourceBreakdown } from '@shared/contract/contextHealth';
 
 function formatTokens(n: number): string {
@@ -115,6 +116,19 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
       <div className="max-h-[60vh] overflow-y-auto px-4 pb-3">
         {contextHealth ? (
           <div>
+            {/* 大数字行：弹层里唯一讲「总量」的地方（面板自身的进度条和折叠头已让位） */}
+            <div className="mb-2 flex items-baseline justify-between tabular-nums">
+              <span className="text-sm font-semibold text-zinc-50">
+                {ch.usageSummary
+                  .replace('{percent}', formatContextUsagePercent(Math.max(0, Math.min(100, usagePercent))))
+                  .replace('{remaining}', formatContextUsagePercent(Math.max(0, 100 - Math.max(0, Math.min(100, usagePercent)))))}
+              </span>
+              <span className="text-[11px] text-zinc-400">
+                {ch.tokensFraction
+                  .replace('{used}', formatTokens(contextHealth.currentTokens))
+                  .replace('{max}', formatTokens(contextHealth.maxTokens))}
+              </span>
+            </div>
             {sourceSegments.length > 0 && sourceTotal > 0 && (
               <div
                 className="mb-3 flex h-1.5 w-full overflow-hidden rounded-full bg-zinc-800"
@@ -140,6 +154,8 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
               onNavigate={handleNavigate}
               onUnload={handleUnload}
               isCompacting={isCompacting}
+              hideHeader
+              hideProgressBar
             />
 
             {showActionRow && (

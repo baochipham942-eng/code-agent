@@ -32,7 +32,7 @@ describe('external subagent worktree isolation', () => {
       'utf8',
     );
 
-    expect(source).toContain('const executorContext: SubagentExecutionContext = {\n        ...context,\n        cwd,');
+    expect(source).toContain('const executorContext: SubagentExecutionContext = {\n        ...context, cwd,');
     expect(source).toContain("forceWorktree: effectiveEngine !== 'native'");
   });
 });

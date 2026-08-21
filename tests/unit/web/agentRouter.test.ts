@@ -58,7 +58,7 @@ const forkContextBuilderMocks = vi.hoisted(() => ({
 }));
 const mockDb = vi.hoisted(() => ({
   getDb: vi.fn(() => ({})),
-  getSession: vi.fn(() => ({
+  getSession: vi.fn<() => { id: string; title: string; metadata?: Record<string, unknown> }>(() => ({
     id: 'session-existing',
     title: 'Existing',
   })),
@@ -569,6 +569,36 @@ describe('createAgentRouter', () => {
       await waitForAssertion(() => {
         expect(mockCancel).toHaveBeenCalledWith('user');
       });
+    });
+
+    it('信封无 preferredAgentId 时从宿主 expertThread 恢复，显式选择仍优先', async () => {
+      mockDb.getSession.mockReturnValue({
+        id: 'session-expert-thread',
+        title: '牧之',
+        metadata: { expertThread: { roleId: 'explore', setAt: 42 } },
+      });
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '继续检查仓库',
+          sessionId: 'session-expert-thread',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+
+      await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
+      const config = mockCreateAgentLoop.mock.calls[0][0] as {
+        agentOverride?: { id: string };
+        requestedAgentId?: string;
+      };
+      expect(config.agentOverride?.id).toBe('explore');
+      expect(config.requestedAgentId).toBe('explore');
+
+      controller.abort();
+      await waitForAssertion(() => expect(mockCancel).toHaveBeenCalledWith('user'));
     });
 
     it('显式选择解析失败 → SSE routing_resolved 降级信号（fallbackToDefault+requestedAgentId），不再静默', async () => {

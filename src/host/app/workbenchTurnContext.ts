@@ -26,6 +26,7 @@ import { getConnectorRegistry } from '../connectors';
 import { buildSelfCritiquePromptSection } from '../prompts/selfCritique';
 import { formatCanvasSnapshotForPrompt } from '../../shared/contract/canvasProposal';
 import { formatDesignCanvasSessionReminder } from '../../shared/design/canvasSessionReminder';
+import { readPersistedExpertThread } from '../../shared/contract/expertThread';
 
 function formatBrowserSnapshotTimestamp(timestamp?: number | null): string | null {
   if (!timestamp) {
@@ -450,20 +451,24 @@ export function buildWorkbenchToolScope(
 function resolveTurnRoleId(
   options: AppServiceRunOptions | undefined,
   context: ConversationEnvelopeContext | undefined,
-): { roleId: string | undefined; source: 'context' | 'options' | null } {
+  sessionMetadata?: Record<string, unknown>,
+): { roleId: string | undefined; source: 'context' | 'options' | 'session' | null } {
   if (context?.preferredAgentId) return { roleId: context.preferredAgentId, source: 'context' };
   if (options?.agentOverrideId) return { roleId: options.agentOverrideId, source: 'options' };
+  const persistedExpert = readPersistedExpertThread(sessionMetadata);
+  if (persistedExpert) return { roleId: persistedExpert.roleId, source: 'session' };
   return { roleId: undefined, source: null };
 }
 
 export function withWorkbenchTurnSystemContext(
   options: AppServiceRunOptions | undefined,
   context?: ConversationEnvelopeContext,
+  sessionMetadata?: Record<string, unknown>,
 ): AppServiceRunOptions | undefined {
   const turnSystemContext = buildWorkbenchTurnSystemContext(context);
   const workbenchToolScope = buildWorkbenchToolScope(context);
 
-  const { roleId: turnRoleId, source: roleIdSource } = resolveTurnRoleId(options, context);
+  const { roleId: turnRoleId, source: roleIdSource } = resolveTurnRoleId(options, context, sessionMetadata);
   const expertConnectors = turnRoleId ? resolveAgent(turnRoleId)?.connectors : undefined;
   trackNode(POSTHOG_EVENTS.EXPERT_SCOPE_IDENTITY, {
     present: Boolean(turnRoleId),
@@ -497,6 +502,7 @@ export function withWorkbenchTurnSystemContext(
     turnSystemContext.length === 0
     && !toolScope
     && !context?.preferredAgentId
+    && !turnRoleId
     && !context?.executionIntent
     && !context?.runtimeInput
   ) {
@@ -505,7 +511,7 @@ export function withWorkbenchTurnSystemContext(
 
   return {
     ...(options || {}),
-    ...(context?.preferredAgentId ? { agentOverrideId: context.preferredAgentId } : {}),
+    ...(turnRoleId && roleIdSource !== 'options' ? { agentOverrideId: turnRoleId } : {}),
     ...(turnSystemContext.length > 0 ? { turnSystemContext } : {}),
     ...(toolScope ? { toolScope } : {}),
     ...(context?.executionIntent ? { executionIntent: { ...context.executionIntent } } : {}),

@@ -63,6 +63,7 @@ interface SessionCreateMeta extends Session {
 export interface CreateSessionOptionsInput {
   workingDirectory?: string | null;
   engine?: Partial<AgentEngineSessionMetadata> | null;
+  expertRoleId?: string;
 }
 
 function normalizeSession(session: Session & {
@@ -225,6 +226,7 @@ export async function executeCreateSession(
       title: nextTitle,
       workingDirectory: inheritedWorkingDirectory,
       engine: options?.engine ?? null,
+      ...(options?.expertRoleId ? { expertRoleId: options.expertRoleId } : {}),
     });
     if (session) {
       const newSessionWithMeta = normalizeSession({
@@ -267,6 +269,7 @@ export async function executeCreateSession(
       // 可能仍是旧会话，必须靠 handoff 而非 inheritCurrent。
       useAppStore.getState().syncActiveAgentForSession(session.id, {
         inheritCurrent: !previousSessionId && !handedOffFromDraftOrSpace,
+        metadata: newSessionWithMeta.metadata,
       });
       useAppStore.getState().syncWorkbenchForSession(session.id);
       set({

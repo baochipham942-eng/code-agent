@@ -33,7 +33,7 @@ describe('inviteExpert', () => {
     createSession.mockResolvedValue({ id: 'session_new_1' });
     await inviteExpert('牧之', { seed: '帮我梳理需求', title: '牧之' });
 
-    expect(createSession).toHaveBeenCalledWith('牧之');
+    expect(createSession).toHaveBeenCalledWith('牧之', { expertRoleId: '牧之' });
     const map = JSON.parse(localStorage.getItem(SESSION_MAP_KEY) ?? '{}');
     expect(map['session_new_1']).toBe('牧之');
 

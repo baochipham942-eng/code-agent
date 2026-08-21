@@ -2,58 +2,18 @@
 // ContextUsagePill - ChatInput toolbar context budget control
 // ============================================================================
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Shrink } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../../stores/appStore';
-import { useSessionStore } from '../../../stores/sessionStore';
-import { useStatusStore } from '../../../stores/statusStore';
 import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { useBudgetStatus } from '../../../hooks/useBudgetStatus';
-import { CostDisplay } from '../../StatusBar/CostDisplay';
 import { ContextHealthDetailModal } from '../../ContextHealthDetailModal';
-import { IPC_CHANNELS } from '@shared/ipc';
-import ipcService from '../../../services/ipcService';
 import { formatContextUsagePercent } from '../../../utils/contextUsageFormat';
 import { OPEN_CONTEXT_HEALTH_EVENT } from '../../../utils/workbenchViews';
-import type { SourceBreakdown } from '@shared/contract/contextHealth';
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
   return String(n);
-}
-
-// 分桶条段：颜色用显式 zinc/accent 色（弹层是固定深色 bg-zinc-900/95，
-// 不引入主题变量，跟弹层现有语言一致）
-interface SourceSegment {
-  key: string;
-  name: string;
-  tokens: number;
-  barClass: string;
-}
-
-function buildSourceSegments(
-  bySource: SourceBreakdown,
-  ch: Record<string, string>,
-  compressionCount: number,
-): SourceSegment[] {
-  const sumRecord = (rec: Record<string, number>) =>
-    Object.values(rec).reduce((a, b) => a + b, 0);
-  return [
-    { key: 'rules', name: ch.bkRules, tokens: bySource.rules, barClass: 'bg-zinc-500' },
-    { key: 'skills', name: 'Skills', tokens: sumRecord(bySource.skills), barClass: 'bg-indigo-500' },
-    { key: 'mcp', name: 'MCP', tokens: sumRecord(bySource.mcp), barClass: 'bg-amber-500' },
-    { key: 'subagents', name: 'Subagents', tokens: sumRecord(bySource.subagents), barClass: 'bg-cyan-500' },
-    { key: 'fileReads', name: ch.bkFileReads, tokens: bySource.fileReads, barClass: 'bg-emerald-600' },
-    {
-      key: 'summary',
-      name: ch.bkSummary.replace('{count}', String(compressionCount)),
-      tokens: bySource.summary ?? 0,
-      barClass: 'bg-violet-500',
-    },
-    { key: 'conversation', name: ch.bkConversation, tokens: bySource.conversation, barClass: 'bg-zinc-400' },
-  ].filter((seg) => seg.tokens > 0);
 }
 
 type Tone = 'normal' | 'warning' | 'critical';
@@ -77,23 +37,11 @@ export const ContextUsagePill: React.FC = () => {
   const ch = t.taskStatusPanels.contextHealth;
   const contextHealth = useAppStore((s) => s.contextHealth);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const clearTimerRef = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
-  const compactionStatus = useContextCompactionStore((s) => s.status);
+  // 压缩结果/失败的反馈行：压缩动作在明细 modal 里触发，这里只读 store 展示结果
   const compactResult = useContextCompactionStore((s) => s.result);
   const compactError = useContextCompactionStore((s) => s.error);
-  const startCompaction = useContextCompactionStore((s) => s.start);
-  const succeedCompaction = useContextCompactionStore((s) => s.succeed);
-  const failCompaction = useContextCompactionStore((s) => s.fail);
-  const clearCompaction = useContextCompactionStore((s) => s.clear);
-  // 底栏收敛（2026-07-26 拍板）：累计费用从 composer 底栏收进本面板，
-  // 与上下文用量同一个 hover 出口。budget 接线沿用 CostDisplay 预算感知口径
-  // （cache-aware 成本 + 缓存节省 tooltip + 告警染色），useBudgetStatus 非轮询。
-  const sessionCost = useStatusStore((s) => s.sessionCost);
-  const unknownCostTurns = useStatusStore((s) => s.unknownCostTurns);
-  const isStreaming = useStatusStore((s) => s.isStreaming);
-  const budgetStatus = useBudgetStatus(sessionCost, isStreaming);
 
   useEffect(() => {
     // context 深链直接落到明细 modal（不再只开弹层）
@@ -120,53 +68,6 @@ export const ContextUsagePill: React.FC = () => {
     };
   }, [open]);
 
-  useEffect(() => () => {
-    if (clearTimerRef.current !== null) {
-      window.clearTimeout(clearTimerRef.current);
-    }
-  }, []);
-
-  const scheduleFeedbackClear = useCallback((delayMs: number) => {
-    if (clearTimerRef.current !== null) {
-      window.clearTimeout(clearTimerRef.current);
-    }
-    clearTimerRef.current = window.setTimeout(() => {
-      clearCompaction();
-      clearTimerRef.current = null;
-    }, delayMs);
-  }, [clearCompaction]);
-
-  const handleCompact = useCallback(async () => {
-    if (compactionStatus === 'active') return;
-    const sessionId = useSessionStore.getState().currentSessionId;
-    startCompaction();
-    setOpen(false);
-    try {
-      const result = await ipcService.invoke(
-        IPC_CHANNELS.CONTEXT_COMPACT_CURRENT,
-        sessionId ?? undefined,
-      );
-      if (result.success) {
-        succeedCompaction(result);
-        if (sessionId) {
-          void useSessionStore.getState().refreshContextHealth(sessionId);
-        }
-      } else {
-        failCompaction(ch.compactFailed);
-      }
-      scheduleFeedbackClear(4500);
-    } catch {
-      failCompaction(ch.compactFailed);
-      scheduleFeedbackClear(3500);
-    }
-  }, [
-    compactionStatus,
-    failCompaction,
-    scheduleFeedbackClear,
-    startCompaction,
-    succeedCompaction,
-  ]);
-
   const usagePercent = contextHealth?.usagePercent ?? 0;
   const currentTokens = contextHealth?.currentTokens ?? 0;
   const maxTokens = contextHealth?.maxTokens ?? 0;
@@ -175,16 +76,7 @@ export const ContextUsagePill: React.FC = () => {
   const displayRemainingPct = formatContextUsagePercent(Math.max(0, 100 - pct));
   const tone = toneFromPercent(pct);
   const styles = TONE_STYLES[tone];
-  const canCompact = pct >= 70;
   const hasData = !!contextHealth && maxTokens > 0;
-  const isCompacting = compactionStatus === 'active';
-
-  // 弹层分桶条：bySource 为空/全 0 时不渲染
-  const bySource = contextHealth?.breakdown?.bySource;
-  const sourceSegments = bySource
-    ? buildSourceSegments(bySource, ch, contextHealth?.compression?.compressionCount ?? 0)
-    : [];
-  const sourceTotal = sourceSegments.reduce((a, seg) => a + seg.tokens, 0);
 
   // SVG 圆环参数
   const size = 14;
@@ -203,7 +95,11 @@ export const ContextUsagePill: React.FC = () => {
     >
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => {
+          // 点击直接展开上下文明细窗口（hover 气泡只是只读预览，操作都在明细里）
+          setDetailOpen(true);
+          setOpen(false);
+        }}
         onFocus={() => setOpen(true)}
         className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg px-1.5 text-xs tabular-nums transition-colors ${styles.text} ${styles.hoverBg}`}
         aria-label={ch.usageAriaLabel}
@@ -241,8 +137,7 @@ export const ContextUsagePill: React.FC = () => {
 
       {open && (
         <div className="absolute bottom-full right-0 z-30 mb-2 min-w-[200px] rounded-xl border border-border-hover bg-zinc-900/95 px-4 py-3 text-center shadow-2xl backdrop-blur">
-          <div className="text-[11px] font-medium text-zinc-400">{ch.windowLabel}</div>
-          <div className="mt-1.5 text-sm font-semibold leading-tight tracking-normal text-zinc-50 tabular-nums">
+          <div className="text-sm font-semibold leading-tight tracking-normal text-zinc-50 tabular-nums">
             {hasData
               ? ch.usageSummary.replace('{percent}', displayPct).replace('{remaining}', displayRemainingPct)
               : ch.waitingFirstTurn}
@@ -253,48 +148,6 @@ export const ContextUsagePill: React.FC = () => {
               : ch.waitingCapacity}
           </div>
 
-          {sourceSegments.length > 0 && sourceTotal > 0 && (
-            <div
-              className="mt-2 flex h-1.5 w-full overflow-hidden rounded-full bg-zinc-800"
-              data-testid="context-source-bar"
-            >
-              {sourceSegments.map((seg) => (
-                <div
-                  key={seg.key}
-                  className={`h-full ${seg.barClass}`}
-                  style={{ width: `${(seg.tokens / sourceTotal) * 100}%` }}
-                  title={ch.sourceBucketTitle
-                    .replace('{name}', seg.name)
-                    .replace('{tokens}', formatTokens(seg.tokens))
-                    .replace('{percent}', ((seg.tokens / sourceTotal) * 100).toFixed(1))}
-                />
-              ))}
-            </div>
-          )}
-
-          {(sessionCost > 0 || unknownCostTurns > 0) && (
-            <div className="mt-2 border-t border-border-muted pt-2 text-[11px] text-zinc-400 tabular-nums">
-              <CostDisplay cost={sessionCost} isStreaming={isStreaming} budget={budgetStatus} />
-            </div>
-          )}
-
-          {canCompact && (
-            <button
-              type="button"
-              onClick={handleCompact}
-              disabled={isCompacting}
-              className="mt-3 inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border-muted bg-surface-hover px-3 text-xs font-medium text-zinc-100 transition-colors hover:bg-white/[0.1] disabled:cursor-wait disabled:opacity-70"
-              title={ch.compactButtonTitle}
-            >
-              {isCompacting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Shrink className="h-3.5 w-3.5" />
-              )}
-              <span>{isCompacting ? ch.compacting : ch.compactNow}</span>
-            </button>
-          )}
-
           {compactResult && (
             <div className="mt-2 text-[11px] text-badge-success">
               {compactResult.totalSavedTokens > 0
@@ -304,19 +157,6 @@ export const ContextUsagePill: React.FC = () => {
           )}
           {compactError && (
             <div className="mt-2 text-[11px] text-badge-danger">{compactError}</div>
-          )}
-
-          {hasData && (
-            <button
-              type="button"
-              onClick={() => {
-                setDetailOpen(true);
-                setOpen(false);
-              }}
-              className="mt-3 inline-flex h-7 items-center justify-center rounded-lg border border-border-muted px-3 text-[11px] font-medium text-zinc-300 transition-colors hover:bg-white/[0.08]"
-            >
-              {ch.viewDetails}
-            </button>
           )}
         </div>
       )}

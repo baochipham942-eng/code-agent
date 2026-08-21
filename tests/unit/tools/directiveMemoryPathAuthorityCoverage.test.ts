@@ -114,6 +114,17 @@ describe('记忆路径权威的覆盖面', () => {
     ).toBe(true);
   });
 
+  it('WebSearch.save_to 通过显式 pathAuthority 覆盖非路径后缀参数', () => {
+    const webSearch = SCHEMAS.find((schema) => schema.name === 'WebSearch');
+    expect(webSearch?.pathAuthority).toContainEqual({ kind: 'path', pathParameter: 'save_to' });
+    const assessment = assessDirectiveMemoryWrite({
+      definition: toDefinition(webSearch!),
+      params: { query: 'ownership', save_to: path.join(MEMORY_DIR, 'search.md') },
+      workingDirectory: os.tmpdir(),
+    });
+    expect(assessment.requiresConfirmation).toBe(true);
+  });
+
   it('命令字符串里的重定向目标真的会被拦下', () => {
     const terminalWrite = SCHEMAS.find((s) => s.name === 'terminal_write');
     const assessment = assessDirectiveMemoryWrite({

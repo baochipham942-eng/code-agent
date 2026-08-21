@@ -101,6 +101,7 @@ Features:
   },
   category: 'network',
   permissionLevel: 'network',
+  pathAuthority: [{ kind: 'path', pathParameter: 'save_to' }],
   readsUntrustedContent: true,
   readOnly: true,
   allowInPlanMode: true,

@@ -9,10 +9,11 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import { DEFAULT_MODELS, MODEL_API_ENDPOINTS, MODEL_FEATURES, QUICK_MODEL_AUTH_BLACKLIST_MS, getProviderEndpoint } from '../../shared/constants';
+import { DEFAULT_MODELS, MODEL_API_ENDPOINTS, MODEL_FEATURES, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../shared/constants';
 import { getConfigService } from '../services/core/configService';
 import { getProviderLimiter } from './concurrencyLimiter';
-import type { ModelProvider } from '../../shared/contract';
+import { resolveProviderBaseUrl } from './providers/providerResolution';
+import type { ModelConfig, ModelProvider } from '../../shared/contract';
 
 const logger = createLogger('QuickModel');
 
@@ -143,7 +144,7 @@ function resolveRole(
 
   const baseUrl = provider === 'zhipu'
     ? MODEL_API_ENDPOINTS.zhipuOfficial
-    : getProviderEndpoint(provider);
+    : resolveProviderBaseUrl({ provider: provider as ModelProvider, model, apiKey } as ModelConfig);
   if (!baseUrl) return null;
 
   return { apiKey, baseUrl, model, provider, disableThinking: isThinkingModel(model), routeSource };

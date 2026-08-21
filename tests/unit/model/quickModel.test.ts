@@ -34,11 +34,16 @@ function mockConfig(opts: {
   code?: { provider: string; model: string };
   keys?: Record<string, string>;
   zhipuOfficialKey?: string;
+  providerBaseUrls?: Record<string, string>;
 }) {
   const keys = opts.keys ?? {};
   getConfigServiceMock.mockReturnValue({
     getSettings: () => ({
       models: {
+        providers: Object.fromEntries(Object.entries(opts.providerBaseUrls ?? {}).map(([provider, baseUrl]) => [
+          provider,
+          { baseUrl },
+        ])),
         routing: {
           ...(opts.memory ? { memory: opts.memory } : {}),
           fast: opts.fast ?? { provider: 'zhipu', model: DEFAULT_MODELS.quick },
@@ -98,6 +103,25 @@ describe('quick model 策略解析', () => {
 });
 
 describe('memory model 专档与回落', () => {
+  it('动态 custom provider 使用设置中的 baseUrl，不静默回落 fast', async () => {
+    mockConfig({
+      memory: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash-0731' },
+      keys: { 'custom-tokenrhythm': 'tokenrhythm-key', zhipu: 'zk' },
+      providerBaseUrls: { 'custom-tokenrhythm': 'https://tokenrhythm.example/v1/' },
+    });
+    const fetchMock = mockFetchOnce('organized');
+
+    await expect(memoryTask('整理')).resolves.toMatchObject({
+      success: true,
+      provider: 'custom-tokenrhythm',
+      model: 'deepseek-v4-flash-0731',
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://tokenrhythm.example/v1/chat/completions',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
   it('默认未配 routing.memory 时，同 prompt 与 quickTask 走同模型、同请求体', async () => {
     mockConfig({ keys: { zhipu: 'zk', xiaomi: 'xk' } });
     const fetchMock = vi.fn().mockResolvedValue({

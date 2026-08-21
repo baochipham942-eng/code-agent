@@ -442,6 +442,12 @@ describe('ToolExecutor path mutation guard', () => {
 
   it('serializes different sessions through the real executor so notebook edits do not lose updates', async () => {
     const notebookPath = path.join(tmpDir, 'shared.ipynb');
+    const firstWorkspace = path.join(tmpDir, 'workspace-a');
+    const secondWorkspace = path.join(tmpDir, 'workspace-b');
+    await Promise.all([
+      fs.mkdir(firstWorkspace),
+      fs.mkdir(secondWorkspace),
+    ]);
     await fs.writeFile(notebookPath, JSON.stringify({
       cells: [{ source: ['base-0'] }, { source: ['base-1'] }],
     }), 'utf8');
@@ -466,10 +472,12 @@ describe('ToolExecutor path mutation guard', () => {
       await fs.writeFile(params.notebook_path as string, JSON.stringify(notebook), 'utf8');
       return { ok: true, output: 'edited' };
     });
-    const executor = new ToolExecutor({ workingDirectory: tmpDir, requestPermission: vi.fn(async () => true) });
-    executor.setAuditEnabled(false);
+    const firstExecutor = new ToolExecutor({ workingDirectory: firstWorkspace, requestPermission: vi.fn(async () => true) });
+    const secondExecutor = new ToolExecutor({ workingDirectory: secondWorkspace, requestPermission: vi.fn(async () => true) });
+    firstExecutor.setAuditEnabled(false);
+    secondExecutor.setAuditEnabled(false);
 
-    const first = executor.execute('notebook_edit', {
+    const first = firstExecutor.execute('notebook_edit', {
       notebook_path: notebookPath,
       cell_id: 0,
       new_source: 'first',
@@ -479,7 +487,7 @@ describe('ToolExecutor path mutation guard', () => {
       agentId: 'agent-a',
     });
     await firstEntered;
-    const second = executor.execute('notebook_edit', {
+    const second = secondExecutor.execute('notebook_edit', {
       notebook_path: notebookPath,
       cell_id: 1,
       new_source: 'second',

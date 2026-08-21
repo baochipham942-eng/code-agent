@@ -40,6 +40,7 @@ pdf_compress { "input_path": "report.pdf", "output_path": "report_small.pdf", "q
         type: 'string',
         description: '输出文件路径（默认: 原文件名_compressed.pdf）',
       },
+      overwrite: { type: 'boolean', description: 'output_path 已存在且确认替换时必须设为 true' },
       quality: {
         type: 'string',
         enum: ['screen', 'ebook', 'printer', 'prepress'],
@@ -51,6 +52,7 @@ pdf_compress { "input_path": "report.pdf", "output_path": "report_small.pdf", "q
   },
   category: 'network',
   permissionLevel: 'write',
+  pathAuthority: [{ kind: 'path', pathParameter: 'output_path', mutation: 'overwrite' }],
   readOnly: false,
   allowInPlanMode: false,
 };

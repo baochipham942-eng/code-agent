@@ -39,6 +39,7 @@ pdf_generate { "title": "论文", "content": "## 摘要\\n...", "theme": "academ
         type: 'string',
         description: '输出文件路径（默认: 工作目录下的 {title}.pdf）',
       },
+      overwrite: { type: 'boolean', description: 'output_path 已存在且确认替换时必须设为 true' },
       theme: {
         type: 'string',
         enum: ['default', 'academic', 'minimal'],
@@ -60,6 +61,7 @@ pdf_generate { "title": "论文", "content": "## 摘要\\n...", "theme": "academ
   },
   category: 'network',
   permissionLevel: 'write',
+  pathAuthority: [{ kind: 'path', pathParameter: 'output_path', mutation: 'overwrite' }],
   readOnly: false,
   allowInPlanMode: false,
 };

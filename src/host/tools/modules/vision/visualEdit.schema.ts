@@ -92,6 +92,7 @@ export const visualEditSchema: ToolSchema = {
   },
   category: 'vision',
   permissionLevel: 'write',
+  pathAuthority: [{ kind: 'path', pathParameter: 'file', mutation: 'edit' }],
   readOnly: false,
   allowInPlanMode: false,
 };

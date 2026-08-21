@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   execute: vi.fn(),
   getSchemas: vi.fn(),
   has: vi.fn(),
+  loggerWarn: vi.fn(),
   resolve: vi.fn(),
 }));
 
@@ -63,11 +64,14 @@ vi.mock('../../../src/host/tools/middleware/fileCheckpointMiddleware', () => ({
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: mocks.loggerWarn, error: vi.fn() }),
 }));
 
 const { ToolExecutor } = await import('../../../src/host/tools/toolExecutor');
 const { getToolResolver, resetToolResolver } = await import('../../../src/host/tools/dispatch/toolResolver');
+const { resolveToolWriteTargets } = await import('../../../src/host/tools/writeTargets');
+const { webSearchSchema } = await import('../../../src/host/tools/modules/network/webSearch.schema');
+const { screenshotPageSchema } = await import('../../../src/host/tools/modules/network/screenshotPage.schema');
 const {
   createFileOwnershipActor,
   getFileOwnershipRegistry,
@@ -125,6 +129,40 @@ const schemas = [
     category: 'fs',
     permissionLevel: 'write',
   },
+  {
+    name: 'notebook_edit',
+    description: 'edit notebook',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        notebook_path: { type: 'string' },
+        cell_id: { type: 'number' },
+        new_source: { type: 'string' },
+      },
+      required: ['notebook_path', 'cell_id', 'new_source'],
+    },
+    category: 'fs',
+    permissionLevel: 'write',
+    pathAuthority: [{ kind: 'path', pathParameter: 'notebook_path', mutation: 'edit' }],
+  },
+  {
+    name: 'ArtifactGenerator',
+    description: 'generate artifact',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        output_path: { type: 'string' },
+        content: { type: 'string' },
+        overwrite: { type: 'boolean' },
+      },
+      required: ['output_path', 'content'],
+    },
+    category: 'fs',
+    permissionLevel: 'write',
+    pathAuthority: [{ kind: 'path', pathParameter: 'output_path', mutation: 'overwrite' }],
+  },
+  webSearchSchema,
+  screenshotPageSchema,
 ] as const;
 
 describe('ToolExecutor directive memory path authority', () => {
@@ -381,5 +419,226 @@ describe('ToolExecutor file ownership authority', () => {
 
     registry.release(owner);
     registry.release(requester);
+  });
+});
+
+describe('ToolExecutor path mutation guard', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'path-mutation-guard-'));
+    tmpDir = await fs.realpath(tmpDir);
+    resetToolResolver();
+    mocks.getSchemas.mockReturnValue(schemas);
+    mocks.has.mockReturnValue(true);
+    mocks.resolve.mockResolvedValue({ execute: mocks.execute });
+    mocks.execute.mockReset();
+    mocks.loggerWarn.mockReset();
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('serializes different sessions through the real executor so notebook edits do not lose updates', async () => {
+    const notebookPath = path.join(tmpDir, 'shared.ipynb');
+    const firstWorkspace = path.join(tmpDir, 'workspace-a');
+    const secondWorkspace = path.join(tmpDir, 'workspace-b');
+    await Promise.all([
+      fs.mkdir(firstWorkspace),
+      fs.mkdir(secondWorkspace),
+    ]);
+    await fs.writeFile(notebookPath, JSON.stringify({
+      cells: [{ source: ['base-0'] }, { source: ['base-1'] }],
+    }), 'utf8');
+
+    let releaseFirst!: () => void;
+    let markFirstEntered!: () => void;
+    let markSecondEntered!: () => void;
+    const firstEntered = new Promise<void>((resolve) => { markFirstEntered = resolve; });
+    const secondEntered = new Promise<void>((resolve) => { markSecondEntered = resolve; });
+    const firstBlocked = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    mocks.execute.mockImplementation(async (params: Record<string, unknown>) => {
+      const notebook = JSON.parse(await fs.readFile(params.notebook_path as string, 'utf8')) as {
+        cells: Array<{ source: string[] }>;
+      };
+      if (params.new_source === 'first') {
+        markFirstEntered();
+        await firstBlocked;
+      } else {
+        markSecondEntered();
+      }
+      notebook.cells[params.cell_id as number].source = [params.new_source as string];
+      await fs.writeFile(params.notebook_path as string, JSON.stringify(notebook), 'utf8');
+      return { ok: true, output: 'edited' };
+    });
+    const firstExecutor = new ToolExecutor({ workingDirectory: firstWorkspace, requestPermission: vi.fn(async () => true) });
+    const secondExecutor = new ToolExecutor({ workingDirectory: secondWorkspace, requestPermission: vi.fn(async () => true) });
+    firstExecutor.setAuditEnabled(false);
+    secondExecutor.setAuditEnabled(false);
+
+    const first = firstExecutor.execute('notebook_edit', {
+      notebook_path: notebookPath,
+      cell_id: 0,
+      new_source: 'first',
+    }, {
+      preApprovedTools: new Set(['notebook_edit']),
+      sessionId: 'mutation-session-a',
+      agentId: 'agent-a',
+    });
+    await firstEntered;
+    const second = secondExecutor.execute('notebook_edit', {
+      notebook_path: notebookPath,
+      cell_id: 1,
+      new_source: 'second',
+    }, {
+      preApprovedTools: new Set(['notebook_edit']),
+      sessionId: 'mutation-session-b',
+      agentId: 'agent-b',
+    });
+
+    const enteredBeforeRelease = await Promise.race([
+      secondEntered.then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 50)),
+    ]);
+    expect(enteredBeforeRelease).toBe(false);
+    releaseFirst();
+    expect((await first).success).toBe(true);
+    expect((await second).success).toBe(true);
+    const notebook = JSON.parse(await fs.readFile(notebookPath, 'utf8')) as {
+      cells: Array<{ source: string[] }>;
+    };
+    expect(notebook.cells.map((cell) => cell.source)).toEqual([['first'], ['second']]);
+  });
+
+  it('preserves an existing artifact unless overwrite=true and audits explicit replacement', async () => {
+    const outputPath = path.join(tmpDir, 'artifact.bin');
+    const original = Buffer.from([0, 1, 2, 3, 255]);
+    await fs.writeFile(outputPath, original);
+    mocks.execute.mockImplementation(async (params: Record<string, unknown>) => {
+      await fs.writeFile(params.output_path as string, params.content as string, 'utf8');
+      return { ok: true, output: 'generated' };
+    });
+    const executor = new ToolExecutor({ workingDirectory: tmpDir, requestPermission: vi.fn(async () => true) });
+    executor.setAuditEnabled(false);
+    const options = {
+      preApprovedTools: new Set(['ArtifactGenerator']),
+      sessionId: 'generator-session',
+      agentId: 'generator-agent',
+    };
+
+    const refused = await executor.execute('ArtifactGenerator', {
+      output_path: outputPath,
+      content: 'replacement',
+    }, options);
+    expect(refused).toMatchObject({
+      success: false,
+      metadata: { code: 'TARGET_EXISTS', path: outputPath },
+    });
+    expect(await fs.readFile(outputPath)).toEqual(original);
+    expect(mocks.execute).not.toHaveBeenCalled();
+
+    const replaced = await executor.execute('ArtifactGenerator', {
+      output_path: outputPath,
+      content: 'replacement',
+      overwrite: true,
+    }, options);
+    expect(replaced.success).toBe(true);
+    expect(await fs.readFile(outputPath, 'utf8')).toBe('replacement');
+    expect(mocks.loggerWarn).toHaveBeenCalledWith(
+      'Tool target overwrite safety explicitly confirmed',
+      expect.objectContaining({
+        action: 'tool_target_overwrite',
+        toolName: 'ArtifactGenerator',
+        path: outputPath,
+      }),
+    );
+  });
+
+  it.each([
+    ['WebSearch', { query: 'safe mutation guard', save_to: 'search.md' }, 'search.md'],
+    ['screenshot_page', { url: 'https://example.com', output_path: 'page.png' }, 'page.png'],
+  ])('guards the real %s schema output and no longer declares it read-only', async (toolName, params, fileName) => {
+    const outputPath = path.join(tmpDir, fileName);
+    const absoluteParams = toolName === 'WebSearch'
+      ? { ...params, save_to: outputPath }
+      : { ...params, output_path: outputPath };
+    await fs.writeFile(outputPath, 'original', 'utf8');
+    mocks.execute.mockImplementation(async (callParams: Record<string, unknown>) => {
+      const target = (callParams.save_to ?? callParams.output_path) as string;
+      await fs.writeFile(target, 'replacement', 'utf8');
+      return { ok: true, output: 'written' };
+    });
+    const executor = new ToolExecutor({ workingDirectory: tmpDir, requestPermission: vi.fn(async () => true) });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute(toolName, absoluteParams, {
+      preApprovedTools: new Set([toolName]),
+      sessionId: `${toolName}-session`,
+      agentId: `${toolName}-agent`,
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      metadata: { code: 'TARGET_EXISTS', path: outputPath },
+    });
+    expect(await fs.readFile(outputPath, 'utf8')).toBe('original');
+    expect(mocks.execute).not.toHaveBeenCalled();
+    expect(toolName === 'WebSearch' ? webSearchSchema.readOnly : screenshotPageSchema.readOnly).toBe(false);
+
+    const replaced = await executor.execute(toolName, { ...absoluteParams, overwrite: true }, {
+      preApprovedTools: new Set([toolName]),
+      sessionId: `${toolName}-session`,
+      agentId: `${toolName}-agent`,
+    });
+    expect(replaced.success).toBe(true);
+    expect(await fs.readFile(outputPath, 'utf8')).toBe('replacement');
+  });
+
+  it('keeps read-only actions as conservative generic targets without a mutation kind', async () => {
+    const { excelAutomateSchema } = await import('../../../src/host/tools/modules/excel/excelAutomate.schema');
+    const { pptEditSchema } = await import('../../../src/host/tools/modules/network/pptEdit.schema');
+    const workbookPath = path.join(tmpDir, 'book.xlsx');
+    const slidePath = path.join(tmpDir, 'slides.pptx');
+
+    expect(resolveToolWriteTargets({
+      definition: {
+        name: excelAutomateSchema.name,
+        description: excelAutomateSchema.description,
+        inputSchema: excelAutomateSchema.inputSchema,
+        outputSchema: excelAutomateSchema.outputSchema,
+        permissionLevel: 'write',
+        requiresPermission: true,
+        pathAuthority: excelAutomateSchema.pathAuthority,
+      },
+      params: { action: 'read', file_path: workbookPath },
+      workingDirectory: tmpDir,
+    })).toMatchObject({ targets: [workbookPath], mutations: {} });
+    expect(resolveToolWriteTargets({
+      definition: {
+        name: excelAutomateSchema.name,
+        description: excelAutomateSchema.description,
+        inputSchema: excelAutomateSchema.inputSchema,
+        outputSchema: excelAutomateSchema.outputSchema,
+        permissionLevel: 'write',
+        requiresPermission: true,
+        pathAuthority: excelAutomateSchema.pathAuthority,
+      },
+      params: { action: 'edit', file_path: workbookPath },
+      workingDirectory: tmpDir,
+    })).toMatchObject({ targets: [workbookPath], mutations: { [workbookPath]: 'edit' } });
+    expect(resolveToolWriteTargets({
+      definition: {
+        name: pptEditSchema.name,
+        description: pptEditSchema.description,
+        inputSchema: pptEditSchema.inputSchema,
+        outputSchema: pptEditSchema.outputSchema,
+        permissionLevel: 'write',
+        requiresPermission: true,
+        pathAuthority: pptEditSchema.pathAuthority,
+      },
+      params: { action: 'extract_style', file_path: slidePath },
+      workingDirectory: tmpDir,
+    })).toMatchObject({ targets: [slidePath], mutations: {} });
   });
 });

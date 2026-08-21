@@ -92,6 +92,10 @@ Features:
         type: 'string',
         description: 'File path to automatically save results. The tool writes the file directly — no need to call Write separately.',
       },
+      overwrite: {
+        type: 'boolean',
+        description: 'Required as true when save_to already exists and you intend to replace it.',
+      },
       language: {
         type: 'string',
         description: 'Output language for results. When set (e.g., "zh"), titles and snippets are translated at the tool level. Requires output_format="table".',
@@ -101,8 +105,8 @@ Features:
   },
   category: 'network',
   permissionLevel: 'network',
-  pathAuthority: [{ kind: 'path', pathParameter: 'save_to' }],
+  pathAuthority: [{ kind: 'path', pathParameter: 'save_to', mutation: 'overwrite' }],
   readsUntrustedContent: true,
-  readOnly: true,
+  readOnly: false,
   allowInPlanMode: true,
 };

@@ -58,7 +58,9 @@ describe('screenshot_page — schema', () => {
     expect(screenshotPageModule.schema.name).toBe('screenshot_page');
     expect(screenshotPageModule.schema.category).toBe('network');
     expect(screenshotPageModule.schema.permissionLevel).toBe('network');
-    expect(screenshotPageModule.schema.readOnly).toBe(true);
+    // N-PATHMUTGUARD（2026-08-21 爸拍板）：screenshot_page 会把截图写到 output_path，readOnly 标注改为真值 false；
+    // 仍允许在计划模式使用（读网页为主，落盘受 mutation guard 管）。
+    expect(screenshotPageModule.schema.readOnly).toBe(false);
     expect(screenshotPageModule.schema.allowInPlanMode).toBe(true);
   });
 

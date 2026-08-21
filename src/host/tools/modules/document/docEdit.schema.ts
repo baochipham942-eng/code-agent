@@ -54,6 +54,7 @@ Use the ppt_edit tool directly (8 actions: replace_title, replace_content, repla
   },
   category: 'document',
   permissionLevel: 'write',
+  pathAuthority: [{ kind: 'path', pathParameter: 'file_path', mutation: 'edit' }],
   readOnly: false,
   allowInPlanMode: false,
 };

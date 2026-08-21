@@ -22,7 +22,12 @@ import type {
 } from '../../../protocol/tools';
 import { getSkillDiscoveryService } from '../../../services/skills';
 import { getSkillsDir } from '../../../config/configPaths';
+import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
+import { getFileMutationActorId } from '../file/fileMutationIdentity';
 import { skillCreateSchema as schema } from './skillCreate.schema';
+
+const SKILL_CREATE_LOCK_HOLD_TIMEOUT_MS = 60_000;
+const SKILL_CREATE_LOCK_WAIT_TIMEOUT_MS = 10_000;
 
 const SKILL_NAME_REGEX = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;
 
@@ -142,38 +147,67 @@ export async function executeSkillCreate(
       : path.join(skillsDirs.user.new, name);
 
   const skillPath = path.join(targetDir, 'SKILL.md');
+  const holderId = getFileMutationActorId(ctx);
+  const lockManager = getResourceLockManager();
+  if (!holderId) {
+    ctx.logger.debug('Skipping skill-create file lock without agent identity', { path: skillPath });
+  } else {
+    const lockResult = await lockManager.acquire(holderId, skillPath, 'exclusive', {
+      type: 'file',
+      timeout: SKILL_CREATE_LOCK_HOLD_TIMEOUT_MS,
+      wait: true,
+      waitTimeout: SKILL_CREATE_LOCK_WAIT_TIMEOUT_MS,
+    });
+    if (!lockResult.acquired) {
+      return {
+        ok: false,
+        error: 'This file is currently in use by another operation. Retry shortly or choose a different output path.',
+        code: 'FILE_LOCK_BUSY',
+        meta: { path: skillPath },
+      };
+    }
+  }
 
   // 6. 构建 + 写入
   const skillMd = buildSkillMd({ name, description, content, allowedTools });
 
   try {
     await fs.mkdir(targetDir, { recursive: true });
-    await fs.writeFile(skillPath, skillMd, 'utf-8');
+    await fs.writeFile(skillPath, skillMd, { encoding: 'utf-8', flag: 'wx' });
+    ctx.logger.info('Auto-created skill', { name, scope, path: skillPath });
+
+    onProgress?.({ stage: 'completing', percent: 100 });
+
+    // 7. skillWatcher 会自动 reload（500ms 防抖），这里不需要主动调用
+    return {
+      ok: true,
+      output: [
+        `Skill "${name}" 已创建`,
+        `路径: ${skillPath}`,
+        `描述: ${description}`,
+        `范围: ${scope}`,
+        '',
+        `使用方式: skill({ command: "${name}" }) 或 /${name}`,
+      ].join('\n'),
+      meta: { name, scope, path: skillPath },
+    };
   } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      return {
+        ok: false,
+        error: `Skill "${name}" already exists (path: ${skillPath})`,
+        code: 'SKILL_EXISTS',
+        meta: { path: skillPath },
+      };
+    }
     return {
       ok: false,
       error: `写入失败: ${error instanceof Error ? error.message : String(error)}`,
       code: 'FS_ERROR',
     };
+  } finally {
+    if (holderId) lockManager.release(holderId, skillPath);
   }
-
-  ctx.logger.info('Auto-created skill', { name, scope, path: skillPath });
-
-  onProgress?.({ stage: 'completing', percent: 100 });
-
-  // 7. skillWatcher 会自动 reload（500ms 防抖），这里不需要主动调用
-  return {
-    ok: true,
-    output: [
-      `Skill "${name}" 已创建`,
-      `路径: ${skillPath}`,
-      `描述: ${description}`,
-      `范围: ${scope}`,
-      '',
-      `使用方式: skill({ command: "${name}" }) 或 /${name}`,
-    ].join('\n'),
-    meta: { name, scope, path: skillPath },
-  };
 }
 
 class SkillCreateHandler implements ToolHandler<Record<string, unknown>, string> {

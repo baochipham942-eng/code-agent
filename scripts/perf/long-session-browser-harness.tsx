@@ -4,6 +4,7 @@ import '../../src/renderer/styles/global.css';
 import { TurnBasedTraceView } from '../../src/renderer/components/features/chat/TurnBasedTraceView';
 import type { SearchMatch } from '../../src/renderer/components/features/chat/ChatSearchBar';
 import type { TraceProjection, TraceTurn } from '../../src/shared/contract/trace';
+import { waitForStable, waitForStableWithRetry } from './wait-for-stable';
 
 interface LongTaskEntry {
   startTime: number;
@@ -150,6 +151,12 @@ function distanceFromBottom(scroller: HTMLElement): number {
   return Math.max(0, scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight);
 }
 
+function isVisibleInScroller(element: HTMLElement, scroller: HTMLElement): boolean {
+  const elementRect = element.getBoundingClientRect();
+  const scrollerRect = scroller.getBoundingClientRect();
+  return elementRect.bottom >= scrollerRect.top && elementRect.top <= scrollerRect.bottom;
+}
+
 function getVisibleAnchor(scroller: HTMLElement): HTMLElement | null {
   const scrollerRect = scroller.getBoundingClientRect();
   return Array.from(scroller.querySelectorAll<HTMLElement>('[data-trace-turn-id]'))
@@ -228,7 +235,13 @@ function LongSessionHarness(): React.ReactElement {
 
       const jumpButton = await waitFor(() => document.querySelector<HTMLButtonElement>('button[aria-label="回到底部"]'));
       jumpButton?.click();
-      await delay(500);
+      const settledAtBottom = await waitForStable(
+        () => distanceFromBottom(scroller) <= 96
+          && !document.querySelector('button[aria-label="回到底部"]')
+          ? true
+          : null,
+        { timeoutMs: 5_000 },
+      );
       const resumedDistance = distanceFromBottom(scroller);
 
       const targetIndex = 120;
@@ -238,13 +251,23 @@ function LongSessionHarness(): React.ReactElement {
         { turnIndex: targetIndex, nodeIndex: 1, offset: 0 },
       ]);
       setActiveMatchIndex(1);
-      const searchTarget = await waitFor(
-        () => document.querySelector<HTMLElement>('[data-trace-turn-id="turn-121"]'),
-        5_000,
+      const settledSearchTarget = await waitForStableWithRetry(
+        () => {
+          const target = document.querySelector<HTMLElement>('[data-trace-turn-id="turn-121"]');
+          return target && isVisibleInScroller(target, scroller) ? target : null;
+        },
+        async () => {
+          setActiveMatchIndex(0);
+          await nextFrame();
+          setActiveMatchIndex(1);
+          await nextFrame();
+        },
+        { attempts: 5, timeoutMs: 1_000 },
       );
-      const searchRect = searchTarget?.getBoundingClientRect();
-      const scrollerRect = scroller.getBoundingClientRect();
-      const searchVisible = Boolean(searchRect && searchRect.bottom >= scrollerRect.top && searchRect.top <= scrollerRect.bottom);
+      const searchTarget = document.querySelector<HTMLElement>('[data-trace-turn-id="turn-121"]');
+      const searchVisible = Boolean(
+        settledSearchTarget && searchTarget && isVisibleInScroller(searchTarget, scroller),
+      );
 
       // Search navigation and history prepend have independent gates. Clear the
       // active search before measuring prepend so its scroll effect cannot race
@@ -300,7 +323,10 @@ function LongSessionHarness(): React.ReactElement {
             firstItemIndex: Number(document.querySelector('[data-virtuoso-first-item-index]')?.getAttribute('data-virtuoso-first-item-index')) || null,
           },
           userScroll: { retainedPosition: userScrollDistance > 96, distanceFromBottomPx: round(userScrollDistance) },
-          streamingFollow: { resumedAtBottom: resumedDistance <= 96, distanceFromBottomPx: round(resumedDistance) },
+          streamingFollow: {
+            resumedAtBottom: Boolean(settledAtBottom) && resumedDistance <= 96,
+            distanceFromBottomPx: round(resumedDistance),
+          },
           search: { targetTurnIndex: targetIndex, targetMounted: Boolean(searchTarget), targetVisible: searchVisible },
           uiStateSimulation: { convergenceMs, terminal },
         },

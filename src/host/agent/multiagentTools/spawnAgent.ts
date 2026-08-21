@@ -55,7 +55,6 @@ import {
 } from '../../../shared/contract/agentFailure';
 import { isParentRunAlive } from '../orphanLiveness';
 import {
-  createAgentWorktree,
   cleanupAgentWorktree,
   cleanupOrphanedWorktrees,
   discardAgentWorktree,
@@ -88,6 +87,7 @@ import {
 } from '../agentTeamDurableLaunch';
 import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget } from './spawnAgentForegroundBackground';
 import { resolveSpawnAgentEngine } from './spawnAgentEngine';
+import { prepareSpawnAgentWorktree } from './spawnAgentWorktree';
 
 /**
  * spawn_agent / AgentSpawn protocol-native execution service.
@@ -206,7 +206,6 @@ export async function executeSpawnAgent(
 
     const engineResolution = resolveSpawnAgentEngine(params.engine, parallel, !!isDynamicMode, role);
     if ('error' in engineResolution) return { success: false, error: engineResolution.error };
-    const effectiveEngine = engineResolution.engine;
 
     // ========================================================================
     // Phase 1: Subagent suffix 注入（借鉴 Cline + Codex 行为规范）
@@ -370,25 +369,12 @@ export async function executeSpawnAgent(
         tools, cwd,
         role,
         explicit: params.isolation as string | undefined,
-        forceWorktree: effectiveEngine !== 'native',
+        forceWorktree: engineResolution.engine !== 'native',
       });
       if (effectiveIsolation === 'worktree') {
-        try {
-          worktreeInfo = await createAgentWorktree(agentId, cwd);
-          cwd = worktreeInfo.worktreePath;
-          if (context.swarmRunScope) await getParallelAgentCoordinatorRegistry().get(context.swarmRunScope)?.recordTaskWorktree(context.agentId ?? '', worktreeInfo.worktreePath);
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : 'Unknown error';
-          slotLease?.release();
-          slotLease = undefined;
-          return {
-            success: false,
-            error: `Failed to create worktree for agent: ${errMsg}. Ensure you are in a git repository.`,
-            metadata: {
-              failureCode: AgentFailureCode.WorktreeCreateFailed,
-            },
-          };
-        }
+        const prepared = await prepareSpawnAgentWorktree(agentId, cwd, context);
+        if (!prepared.ok) { slotLease?.release(); slotLease = undefined; return prepared.failure; }
+        worktreeInfo = prepared.worktreeInfo; cwd = worktreeInfo.worktreePath;
       }
 
       const enrichedTask = `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${task}`;
@@ -456,7 +442,7 @@ export async function executeSpawnAgent(
 
       const executorConfig = {
         name: agentName,
-        engine: effectiveEngine,
+        engine: engineResolution.engine,
         // 持久化角色资产绑定 key（roles/<roleId>/）。declarative 模式下 role 即 agent 注册 id；
         // dynamic 模式没有 role，不参与角色资产链路。
         roleId: role || undefined,

@@ -18,7 +18,7 @@ export interface FileOwnershipActor {
   workingDirectory: string;
 }
 
-export interface FileOwnershipConflict {
+interface FileOwnershipConflict {
   requesterActor: string;
   requesterAgentId: string;
   path: string;
@@ -27,11 +27,11 @@ export interface FileOwnershipConflict {
   kind: 'declared' | 'claimed';
 }
 
-export type FileOwnershipClaimResult =
+type FileOwnershipClaimResult =
   | { ok: true }
   | { ok: false; conflict: FileOwnershipConflict };
 
-export interface FileOwnershipSnapshot {
+interface FileOwnershipSnapshot {
   scope: string;
   actors: Array<{
     actorId: string;

@@ -364,7 +364,7 @@ export interface AppState {
   /** 设置默认 agent；传 null 表示回到 builtin 'coder'（spawn 端处理）。 */
   setActiveAgentId: (agentId: string | null) => void;
   /** 会话切换/创建/清空时同步当前会话的 agent 选择；inheritCurrent=会话创建时继承 draft 期选择。 */
-  syncActiveAgentForSession: (sessionId: string | null, opts?: { inheritCurrent?: boolean }) => void;
+  syncActiveAgentForSession: (sessionId: string | null, opts?: { inheritCurrent?: boolean; metadata?: Record<string, unknown> }) => void;
   /**
    * 直接把 agent 绑到指定会话（E2「请 TA 来」）：先落盘 per-session map，再更新内存值。
    * 与 setActiveAgentId 的区别：不依赖 activeAgentSessionKey 已同步到该会话——
@@ -659,7 +659,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       set({ activeAgentSessionKey: null, activeAgentId: null });
       return;
     }
-    const map = readActiveAgentSessionMap();
+    const map = readActiveAgentSessionMap(sessionId, opts?.metadata);
     if (opts?.inheritCurrent) {
       const draftSelection = get().activeAgentId;
       if (draftSelection && !map[sessionId]) {

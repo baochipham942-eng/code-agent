@@ -17,6 +17,24 @@ export function wrapWithTurnSystemContext(blocks: string[], content: string): st
 }
 
 /**
+ * 给已经可能带 turnSystemContext 的模型面请求追加上下文块。
+ * 已包装时复用同一层 user_request，避免共同运行层再次包装形成嵌套脚手架。
+ */
+export function mergeTurnSystemContext(blocks: string[], content: string): string {
+  const additions = blocks.filter((block) => block.trim().length > 0);
+  if (additions.length === 0) return content;
+
+  const trimmed = content.trimEnd();
+  const requestOpen = trimmed.indexOf(USER_REQUEST_OPEN);
+  if (requestOpen !== -1 && trimmed.endsWith(USER_REQUEST_CLOSE)) {
+    const prefix = trimmed.slice(0, requestOpen).trimEnd();
+    const request = trimmed.slice(requestOpen);
+    return [prefix, ...additions, request].filter(Boolean).join('\n\n');
+  }
+  return wrapWithTurnSystemContext(additions, content);
+}
+
+/**
  * 取回用户原话。没有包装（绝大多数轮）时原样返回——判据是「有没有这层包装」，
  * 不是「有没有系统上下文」，所以对没走 turnSystemContext 的路径零影响。
  *

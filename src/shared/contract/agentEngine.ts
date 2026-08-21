@@ -30,7 +30,8 @@ export type AgentEngineRuntimeState =
 export type AgentEngineCapability =
   | 'execute'
   | 'stream_events'
-  | 'resume';
+  | 'resume'
+  | 'workspace_write';
 
 export class AgentEngineCapabilityError extends Error {
   readonly code = 'AGENT_ENGINE_CAPABILITY_UNSUPPORTED';
@@ -194,6 +195,9 @@ export interface AgentEngineRunRequest {
   permissionProfile?: AgentEnginePermissionProfile;
   clientMessageId?: string;
   workspaceScope?: WorkspaceScope;
+  /** 子代理专用执行来源；会话级调用保持缺省。 */
+  executionOrigin?: 'subagent';
+  abortSignal?: AbortSignal;
 }
 
 export interface AgentEngineRunResult {

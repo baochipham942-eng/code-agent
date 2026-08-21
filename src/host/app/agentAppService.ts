@@ -83,14 +83,8 @@ import type { CancellationReason } from '../../shared/contract/cancellation';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
 import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import {
-  ClaudeCodeAdapter,
-  CodeBuddyCliAdapter,
-  CodexCliAdapter,
-  DshCliAdapter,
-  GrokCliAdapter,
-  KimiCliAdapter,
-  MimoCliAdapter,
   ExternalEngineDurableLifecycle,
+  getExternalEngineAdapter,
   getRemoteAgentEngineModelCatalogService,
   isExternalAgentEngine,
   resolveExternalEngineLaunch,
@@ -506,7 +500,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
             logsRoot: getLogsPath(),
           })
         : undefined;
-      await this.executeExternalRun(durableLifecycle, () => new CodexCliAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,
@@ -567,7 +561,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
             permissionProfile: launch.permissionProfile,
           })
         : undefined;
-      await this.executeExternalRun(durableLifecycle, () => new ClaudeCodeAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,
@@ -592,7 +586,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       orchestrator?.setWorkingDirectory(launch.cwd);
       const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('mimo_code', launch.model);
       const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
-      await this.executeExternalRun(durableLifecycle, () => new MimoCliAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,
@@ -613,7 +607,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
       // Kimi CLI 不读 env API key；per-user KIMI_CODE_HOME 凭据隔离目录由后续凭据接口派生后
       // 通过 KimiCliRunRequest.kimiCodeHome 注入（当前沿用 env.KIMI_CODE_HOME / CLI 默认）。
-      await this.executeExternalRun(durableLifecycle, () => new KimiCliAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,
@@ -643,7 +637,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         workspace: launch.workspaceRoot,
         cwd: launch.cwd,
       });
-      await this.executeExternalRun(durableLifecycle, () => new CodeBuddyCliAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,
@@ -673,7 +667,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         workspace: launch.workspaceRoot,
         cwd: launch.cwd,
       });
-      await this.executeExternalRun(durableLifecycle, () => new GrokCliAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,
@@ -704,7 +698,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         workspace: launch.workspaceRoot,
         cwd: launch.cwd,
       });
-      await this.executeExternalRun(durableLifecycle, () => new DshCliAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
         cwd: launch.cwd,
@@ -735,6 +729,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const workbenchOptions = withWorkbenchTurnSystemContext(
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
+      getSessionManager().getSessionMetadata?.(resolvedSessionId),
     );
     const optionsWithTurnSettings: AppServiceRunOptions = {
       ...(workbenchOptions ?? {}),
@@ -915,6 +910,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const workbenchOptions = withWorkbenchTurnSystemContext(
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
+      getSessionManager().getSessionMetadata?.(resolvedSessionId),
     );
     const options = isSessionCommandCenterTurn({
       prompt: envelope.content,

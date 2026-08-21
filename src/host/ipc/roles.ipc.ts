@@ -60,6 +60,7 @@ import { getSkillRepositoryService } from '../services/skills/skillRepositorySer
 import { TOOL_ALIASES } from '../services/toolSearch/deferredTools';
 import { getProtocolRegistry } from '../tools/protocolRegistry';
 import { findRecommendedMcpServer } from '../../shared/constants/mcpCatalog';
+import { isManifestBackedAgentEngineKind } from '../../shared/externalEngineManifest';
 
 const logger = createLogger('RolesIPC');
 
@@ -283,7 +284,7 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
           })),
         }
       : {}),
-    ...(parsed ? { equipment: { skills: parsed.skills ?? [], tools: parsed.tools, model: parsed.model, ...(parsed.modelOverride ? { modelOverride: parsed.modelOverride } : {}), ...(parsed.permissionPreset ? { permissionPreset: parsed.permissionPreset } : {}), maxIterations: parsed.maxIterations, availableSkills, availableTools } } : {}),
+    ...(parsed ? { equipment: { skills: parsed.skills ?? [], tools: parsed.tools, model: parsed.model, ...(parsed.engine ? { engine: parsed.engine } : {}), ...(parsed.modelOverride ? { modelOverride: parsed.modelOverride } : {}), ...(parsed.permissionPreset ? { permissionPreset: parsed.permissionPreset } : {}), maxIterations: parsed.maxIterations, availableSkills, availableTools } } : {}),
     ...(packState ? { locallyModified: packState.locallyModified } : {}),
     ...(restore ? { restore } : {}),
   };
@@ -301,6 +302,9 @@ async function handleUpdateEquipment(roleId: string, equipment: AgentMdEquipment
   if (!['fast', 'balanced', 'powerful'].includes(equipment.model) || !Number.isInteger(equipment.maxIterations) || equipment.maxIterations < 1 || equipment.maxIterations > 200) {
     throw new Error('Invalid equipment configuration');
   }
+  if (equipment.engine != null && !isManifestBackedAgentEngineKind(equipment.engine)) {
+    throw new Error('Invalid agent engine');
+  }
   // 只接受三个合法档位或显式清除；不认的值一律拒绝，避免把脏值写进 frontmatter。
   const preset = equipment.permissionPreset;
   if (preset != null && !['strict', 'development', 'ci'].includes(preset)) {
@@ -313,13 +317,20 @@ async function handleUpdateEquipment(roleId: string, equipment: AgentMdEquipment
   }
   const definitionPath = path.join(getAgentsMdDir().user, `${roleId}.md`);
   const definition = await fs.readFile(definitionPath, 'utf-8');
+  const persistedEngine = equipment.engine === undefined
+    ? parseAgentMd(definition, `${roleId}.md`)?.engine
+    : equipment.engine;
   const detail = await handleDetail(roleId);
   const validSkills = new Set(detail.equipment?.availableSkills ?? []);
   const validTools = new Set(detail.equipment?.availableTools ?? []);
   if (equipment.skills.some((skill) => !validSkills.has(skill)) || equipment.tools.some((tool) => !validTools.has(tool))) {
     throw new Error('Equipment includes an unavailable skill or tool');
   }
-  await fs.writeFile(definitionPath, updateAgentMdEquipment(definition, equipment), 'utf-8');
+  await fs.writeFile(
+    definitionPath,
+    updateAgentMdEquipment(definition, { ...equipment, engine: persistedEngine }),
+    'utf-8',
+  );
 }
 
 async function handleUpdateDefinitionBody(roleId: string, body: string): Promise<void> {

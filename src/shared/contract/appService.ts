@@ -126,11 +126,13 @@ export interface AppServiceRunOptions {
  * 会话创建配置
  */
 export interface CreateSessionConfig {
-	  title?: string;
-	  workingDirectory?: string | null;
-	  engine?: Partial<AgentEngineSessionMetadata> | null;
-	  metadata?: Record<string, unknown>;
-	}
+  title?: string;
+  workingDirectory?: string | null;
+  engine?: Partial<AgentEngineSessionMetadata> | null;
+  metadata?: Record<string, unknown>;
+  /** 宿主创建后持久化为 sessions.metadata.expertThread。 */
+  expertRoleId?: string;
+}
 
 /**
  * 模型切换参数

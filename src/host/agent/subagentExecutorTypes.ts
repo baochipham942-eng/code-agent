@@ -12,9 +12,12 @@ import type {
   WorkbenchToolScope,
 } from '../../shared/contract/conversationEnvelope';
 import type { WorkspaceScope } from '../../shared/contract/project';
+import type { AgentEngineKind } from '../../shared/contract/agentEngine';
 
 export interface SubagentConfig {
   name: string;
+  /** 声明式角色的执行引擎；缺省由角色装备解析，再缺省走 native。 */
+  engine?: AgentEngineKind;
   /**
    * 角色 ID（agent 注册 id，即 agents/<id>.md 的 frontmatter name）。
    * 持久化角色资产（roles/<roleId>/）按这个 id 绑定——config.name 是显示名

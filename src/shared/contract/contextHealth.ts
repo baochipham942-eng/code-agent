@@ -20,12 +20,14 @@ export type SourceTag =
   | { type: 'mcp'; server: string }
   | { type: 'subagent'; name: string }
   | { type: 'fileRead' }
+  | { type: 'summary' }
   | { type: 'conversation' };
 
 /**
  * 按产品来源拆分的 token 占用
  * 与 TokenBreakdown 的 systemPrompt/messages/toolResults（消息结构维度）正交
  * conversation 字段用扣减法：messages 总数 - 其他 source 之和
+ * summary 字段同样是派生值：压缩摘要消息（带 compaction 标记）的 content 估算之和
  */
 export interface SourceBreakdown {
   rules: number;
@@ -33,6 +35,7 @@ export interface SourceBreakdown {
   mcp: Record<string, number>;
   subagents: Record<string, number>;
   fileReads: number;
+  summary: number;
   conversation: number;
 }
 
@@ -65,6 +68,7 @@ export function createEmptySourceBreakdown(): SourceBreakdown {
     mcp: {},
     subagents: {},
     fileReads: 0,
+    summary: 0,
     conversation: 0,
   };
 }

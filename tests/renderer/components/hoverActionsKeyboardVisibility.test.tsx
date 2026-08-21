@@ -150,6 +150,7 @@ describe('hover actions remain visible to keyboard users', () => {
               mcp: {},
               subagents: {},
               fileReads: 0,
+              summary: 0,
               conversation: 80,
             },
           },

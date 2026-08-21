@@ -29,10 +29,12 @@ import {
 import { Button } from '../../primitives';
 import { UI } from '@shared/constants';
 import { TraceNodeRenderer } from './TraceNodeRenderer';
+import { ExpandableContent } from './ExpandableContent';
 import { StreamingIndicator, getRunningSubagentCount, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
 import { buildTurnFileChanges, isFileChangeCardOwnedNode } from '../../../utils/turnDiffSummary';
 import { TurnFeedback } from './TurnFeedback';
+import { TurnCompactionMarker } from './TurnCompactionMarker';
 import { TurnOutcomeBadge } from './TurnOutcomeBadge';
 import { ToolStepGroup } from './ToolStepGroup';
 import {
@@ -309,6 +311,17 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     // 打分，而且正文每长一行动作条就往下跳一次（真机反馈 2026-08-01）。
     || (isLastTurn && (Boolean(isSessionProcessing) || sessionIsRunning));
 
+  // 压缩摘要不再以整条横幅插在消息流里（2026-08-21 爸拍板：太扎眼），降级为操作行
+  // 最右侧的一枚象征性标记（Archive 图标），点开仍可读摘要原文。标记锚在压缩点
+  // 所在轮（投影层把 compaction 节点挂到压缩前那一轮的末尾）的操作行右端。
+  const compactionNodes = useMemo(
+    () => turn.nodes.filter((n) => n.type === 'system' && n.subtype === 'compaction'),
+    [turn.nodes],
+  );
+  const [compactionExpanded, setCompactionExpanded] = useState(false);
+  const showReplyActions =
+    Boolean(forkAnchor || feedbackAnchor) && !suppressReplyActions && anchorTypewriterCaughtUp;
+
   const handleFork = async () => {
     if (!forkAnchor || isForking || isSessionProcessing || sessionIsRunning) return;
     setIsForking(true);
@@ -450,6 +463,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               if (node.subtype === 'skill_status') {
                 return null;
               }
+              // 压缩摘要不占消息流一整行，标记挪到操作行右端（见下方 turn-reply-actions）
+              if (node.type === 'system' && node.subtype === 'compaction') {
+                return null;
+              }
               // 文件改动只由下方的文件变更卡讲一遍：卡片带相对路径 + 增删行数 + diff + 撤销，
               // 节点流里那行工具步骤是纯重复（同一个文件名在一屏里出现三次）。
               if (isFileChangeCardOwnedNode(node)) {
@@ -548,7 +565,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             避免多轮会话里每轮都拖一条操作行造成的割裂感（2026-07-29 产品反馈）。
             anchorTypewriterCaughtUp：等正文打字机追平 content 再挂载，别让按钮抢跑在
             仍在 flush 追帧的正文前面（排查报告 §2 序列③④）。 */}
-        {(forkAnchor || feedbackAnchor) && !suppressReplyActions && anchorTypewriterCaughtUp && (
+        {showReplyActions && (
           <div
             className={`flex items-center gap-2 ${isLastTurn ? '' : 'opacity-0 transition-opacity duration-150 group-hover/turncard:opacity-100'}`}
             data-testid="turn-reply-actions"
@@ -577,6 +594,34 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   : <GitFork className="h-3.5 w-3.5" />}
               </button>
             )}
+            {compactionNodes.length > 0 && (
+              <TurnCompactionMarker
+                expanded={compactionExpanded}
+                onToggle={() => setCompactionExpanded((v) => !v)}
+              />
+            )}
+          </div>
+        )}
+
+        {/* 压缩标记点开后的摘要原文：只在要读的时候占地方 */}
+        {compactionExpanded && compactionNodes.map((node) => (
+          <div
+            key={node.id}
+            className="mt-1 px-3 py-2.5 rounded-md bg-amber-500/5 border border-badge-warning/10"
+            data-testid="turn-compaction-summary"
+          >
+            <ExpandableContent content={node.content} maxLines={30} />
+          </div>
+        ))}
+
+        {/* 操作行不渲染的轮（流式中/语音在飞等），压缩标记降级为独立的右对齐小行，
+            不让「压过」这件事在消息流里彻底消失。 */}
+        {!showReplyActions && compactionNodes.length > 0 && (
+          <div className="flex justify-end">
+            <TurnCompactionMarker
+              expanded={compactionExpanded}
+              onToggle={() => setCompactionExpanded((v) => !v)}
+            />
           </div>
         )}
       </div>

@@ -270,6 +270,8 @@ export function updateContextHealth(ctx: ContextAssemblyCtx): void {
         output: tr.output,
         error: tr.error,
       })),
+      // 压缩摘要消息标记透传，contextHealthService 据此把摘要拆进 bySource.summary
+      compaction: msg.compaction,
     }));
 
     const health = contextHealthService.update(

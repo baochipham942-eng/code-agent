@@ -2,17 +2,11 @@
 // ContextUsagePill - ChatInput toolbar context budget control
 // ============================================================================
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Shrink } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../../stores/appStore';
-import { useSessionStore } from '../../../stores/sessionStore';
-import { useStatusStore } from '../../../stores/statusStore';
 import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { useBudgetStatus } from '../../../hooks/useBudgetStatus';
-import { CostDisplay } from '../../StatusBar/CostDisplay';
-import { IPC_CHANNELS } from '@shared/ipc';
-import ipcService from '../../../services/ipcService';
+import { ContextHealthDetailPopover } from './ContextHealthDetailPopover';
 import { formatContextUsagePercent } from '../../../utils/contextUsageFormat';
 import { OPEN_CONTEXT_HEALTH_EVENT } from '../../../utils/workbenchViews';
 
@@ -43,37 +37,31 @@ export const ContextUsagePill: React.FC = () => {
   const ch = t.taskStatusPanels.contextHealth;
   const contextHealth = useAppStore((s) => s.contextHealth);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const clearTimerRef = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
-  const compactionStatus = useContextCompactionStore((s) => s.status);
+  const [detailOpen, setDetailOpen] = useState(false);
+  // 压缩结果/失败的反馈行：压缩动作在明细弹层里触发，气泡只读 store 展示结果
   const compactResult = useContextCompactionStore((s) => s.result);
   const compactError = useContextCompactionStore((s) => s.error);
-  const startCompaction = useContextCompactionStore((s) => s.start);
-  const succeedCompaction = useContextCompactionStore((s) => s.succeed);
-  const failCompaction = useContextCompactionStore((s) => s.fail);
-  const clearCompaction = useContextCompactionStore((s) => s.clear);
-  // 底栏收敛（2026-07-26 拍板）：累计费用从 composer 底栏收进本面板，
-  // 与上下文用量同一个 hover 出口。budget 接线沿用 CostDisplay 预算感知口径
-  // （cache-aware 成本 + 缓存节省 tooltip + 告警染色），useBudgetStatus 非轮询。
-  const sessionCost = useStatusStore((s) => s.sessionCost);
-  const unknownCostTurns = useStatusStore((s) => s.unknownCostTurns);
-  const isStreaming = useStatusStore((s) => s.isStreaming);
-  const budgetStatus = useBudgetStatus(sessionCost, isStreaming);
 
   useEffect(() => {
-    const handleDeepLink = () => setOpen(true);
+    // context 深链直接落到明细弹层（不再只开气泡）
+    const handleDeepLink = () => setDetailOpen(true);
     window.addEventListener(OPEN_CONTEXT_HEALTH_EVENT, handleDeepLink);
     return () => window.removeEventListener(OPEN_CONTEXT_HEALTH_EVENT, handleDeepLink);
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open && !detailOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        setOpen(false);
+        setDetailOpen(false);
+      }
     };
     const onPointerDown = (e: MouseEvent) => {
       if (!wrapperRef.current?.contains(e.target as Node)) {
         setOpen(false);
+        setDetailOpen(false);
       }
     };
     document.addEventListener('keydown', onKey);
@@ -82,54 +70,7 @@ export const ContextUsagePill: React.FC = () => {
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('mousedown', onPointerDown);
     };
-  }, [open]);
-
-  useEffect(() => () => {
-    if (clearTimerRef.current !== null) {
-      window.clearTimeout(clearTimerRef.current);
-    }
-  }, []);
-
-  const scheduleFeedbackClear = useCallback((delayMs: number) => {
-    if (clearTimerRef.current !== null) {
-      window.clearTimeout(clearTimerRef.current);
-    }
-    clearTimerRef.current = window.setTimeout(() => {
-      clearCompaction();
-      clearTimerRef.current = null;
-    }, delayMs);
-  }, [clearCompaction]);
-
-  const handleCompact = useCallback(async () => {
-    if (compactionStatus === 'active') return;
-    const sessionId = useSessionStore.getState().currentSessionId;
-    startCompaction();
-    setOpen(false);
-    try {
-      const result = await ipcService.invoke(
-        IPC_CHANNELS.CONTEXT_COMPACT_CURRENT,
-        sessionId ?? undefined,
-      );
-      if (result.success) {
-        succeedCompaction(result);
-        if (sessionId) {
-          void useSessionStore.getState().refreshContextHealth(sessionId);
-        }
-      } else {
-        failCompaction(ch.compactFailed);
-      }
-      scheduleFeedbackClear(4500);
-    } catch {
-      failCompaction(ch.compactFailed);
-      scheduleFeedbackClear(3500);
-    }
-  }, [
-    compactionStatus,
-    failCompaction,
-    scheduleFeedbackClear,
-    startCompaction,
-    succeedCompaction,
-  ]);
+  }, [open, detailOpen]);
 
   const usagePercent = contextHealth?.usagePercent ?? 0;
   const currentTokens = contextHealth?.currentTokens ?? 0;
@@ -139,9 +80,7 @@ export const ContextUsagePill: React.FC = () => {
   const displayRemainingPct = formatContextUsagePercent(Math.max(0, 100 - pct));
   const tone = toneFromPercent(pct);
   const styles = TONE_STYLES[tone];
-  const canCompact = pct >= 70;
   const hasData = !!contextHealth && maxTokens > 0;
-  const isCompacting = compactionStatus === 'active';
 
   // SVG 圆环参数
   const size = 14;
@@ -155,13 +94,21 @@ export const ContextUsagePill: React.FC = () => {
     <div
       ref={wrapperRef}
       className="relative flex-shrink-0"
-      onMouseEnter={() => setOpen(true)}
+      onMouseEnter={() => {
+        // 明细弹层展开时不再叠气泡
+        if (!detailOpen) setOpen(true);
+      }}
       onMouseLeave={() => setOpen(false)}
     >
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => {
+          // 点击圆环 = 展开/收起长在输入框上方的明细弹层（hover 气泡只是只读预览）
+          setDetailOpen((prev) => !prev);
+          setOpen(false);
+        }}
         onFocus={() => setOpen(true)}
+        aria-expanded={detailOpen}
         className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg px-1.5 text-xs tabular-nums transition-colors ${styles.text} ${styles.hoverBg}`}
         aria-label={ch.usageAriaLabel}
         title={hasData
@@ -198,8 +145,7 @@ export const ContextUsagePill: React.FC = () => {
 
       {open && (
         <div className="absolute bottom-full right-0 z-30 mb-2 min-w-[200px] rounded-xl border border-border-hover bg-zinc-900/95 px-4 py-3 text-center shadow-2xl backdrop-blur">
-          <div className="text-[11px] font-medium text-zinc-400">{ch.windowLabel}</div>
-          <div className="mt-1.5 text-sm font-semibold leading-tight tracking-normal text-zinc-50 tabular-nums">
+          <div className="text-sm font-semibold leading-tight tracking-normal text-zinc-50 tabular-nums">
             {hasData
               ? ch.usageSummary.replace('{percent}', displayPct).replace('{remaining}', displayRemainingPct)
               : ch.waitingFirstTurn}
@@ -209,29 +155,6 @@ export const ContextUsagePill: React.FC = () => {
               ? ch.tokensFraction.replace('{used}', formatTokens(currentTokens)).replace('{max}', formatTokens(maxTokens))
               : ch.waitingCapacity}
           </div>
-
-          {(sessionCost > 0 || unknownCostTurns > 0) && (
-            <div className="mt-2 border-t border-border-muted pt-2 text-[11px] text-zinc-400 tabular-nums">
-              <CostDisplay cost={sessionCost} isStreaming={isStreaming} budget={budgetStatus} />
-            </div>
-          )}
-
-          {canCompact && (
-            <button
-              type="button"
-              onClick={handleCompact}
-              disabled={isCompacting}
-              className="mt-3 inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border-muted bg-surface-hover px-3 text-xs font-medium text-zinc-100 transition-colors hover:bg-white/[0.1] disabled:cursor-wait disabled:opacity-70"
-              title={ch.compactButtonTitle}
-            >
-              {isCompacting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Shrink className="h-3.5 w-3.5" />
-              )}
-              <span>{isCompacting ? ch.compacting : ch.compactNow}</span>
-            </button>
-          )}
 
           {compactResult && (
             <div className="mt-2 text-[11px] text-badge-success">
@@ -244,6 +167,10 @@ export const ContextUsagePill: React.FC = () => {
             <div className="mt-2 text-[11px] text-badge-danger">{compactError}</div>
           )}
         </div>
+      )}
+
+      {detailOpen && (
+        <ContextHealthDetailPopover onClose={() => setDetailOpen(false)} />
       )}
     </div>
   );

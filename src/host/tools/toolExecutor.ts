@@ -629,7 +629,7 @@ export class ToolExecutor {
             acquiredMutationTargets.length = 0;
             return {
               success: false,
-              error: '该文件正被另一个操作使用，请稍后重试或换输出路径',
+              error: 'This file is currently in use by another operation. Retry shortly or choose a different output path.',
               metadata: { code: 'FILE_LOCK_BUSY', path: target },
             };
           }
@@ -644,7 +644,7 @@ export class ToolExecutor {
         if (existed && (mutation === 'create' || (mutation === 'overwrite' && params.overwrite !== true))) {
           return {
             success: false,
-            error: '输出文件已存在；确认覆盖请带 overwrite=true，或换一个输出名',
+            error: 'Output file already exists. Pass overwrite=true to confirm overwriting it, or choose a different output name.',
             metadata: { code: 'TARGET_EXISTS', path: target },
           };
         }
@@ -663,7 +663,7 @@ export class ToolExecutor {
             if (modification.modified) {
               return {
                 success: false,
-                error: `${modification.message}. 请重新读取文件后再编辑`,
+                error: `${modification.message}. Re-read the file before editing it.`,
                 metadata: {
                   code: 'STALE_FILE',
                   path: target,

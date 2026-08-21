@@ -117,7 +117,7 @@ describe('记忆路径权威的覆盖面', () => {
 
   it('WebSearch.save_to 通过显式 pathAuthority 覆盖非路径后缀参数', () => {
     const webSearch = SCHEMAS.find((schema) => schema.name === 'WebSearch');
-    expect(webSearch?.pathAuthority).toContainEqual({ kind: 'path', pathParameter: 'save_to' });
+    expect(webSearch?.pathAuthority).toContainEqual(expect.objectContaining({ kind: 'path', pathParameter: 'save_to' }));
     const assessment = assessDirectiveMemoryWrite({
       definition: toDefinition(webSearch!),
       params: { query: 'ownership', save_to: path.join(MEMORY_DIR, 'search.md') },
@@ -128,7 +128,7 @@ describe('记忆路径权威的覆盖面', () => {
 
   it('PdfAutomate.ranges 通过显式 pathAuthority 解析结构体内的 split 输出', () => {
     const pdfAutomate = SCHEMAS.find((schema) => schema.name === 'PdfAutomate');
-    expect(pdfAutomate?.pathAuthority).toContainEqual({ kind: 'path', pathParameter: 'ranges' });
+    expect(pdfAutomate?.pathAuthority).toContainEqual(expect.objectContaining({ kind: 'path', pathParameter: 'ranges' }));
     const output = path.join(MEMORY_DIR, 'part-1.pdf');
     const assessment = assessDirectiveMemoryWrite({
       definition: toDefinition(pdfAutomate!),

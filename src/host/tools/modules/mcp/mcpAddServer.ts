@@ -221,7 +221,7 @@ async function persistMCPConfig(
       if (!lockResult.acquired) {
         return {
           success: false,
-          error: '该文件正被另一个操作使用，请稍后重试或换输出路径',
+          error: 'This file is currently in use by another operation. Retry shortly or choose a different output path.',
           filePath: configPath,
           code: 'FILE_LOCK_BUSY',
         };
@@ -475,7 +475,7 @@ export async function executeMcpAddServer(
     if (persistResult.code === 'FILE_LOCK_BUSY') {
       return {
         ok: false,
-        error: persistResult.error ?? '该文件正被另一个操作使用，请稍后重试或换输出路径',
+        error: persistResult.error ?? 'This file is currently in use by another operation. Retry shortly or choose a different output path.',
         code: persistResult.code,
         meta: { path: persistResult.filePath },
       };

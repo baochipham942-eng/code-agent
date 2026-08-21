@@ -162,11 +162,12 @@ function descriptorAssessment(
       return { targets: [], uncertain: [`uncertain:${descriptor.pathParameter}`], mutations: {} };
     }
     const targets = declaredValues.map((value) => resolveToolPath(value, input.workingDirectory));
+    const declaredMutation = descriptor.mutation;
     return {
       targets,
       uncertain: [],
-      mutations: descriptor.mutation
-        ? Object.fromEntries(targets.map((target) => [target, descriptor.mutation!]))
+      mutations: declaredMutation
+        ? Object.fromEntries(targets.map((target) => [target, declaredMutation]))
         : {},
     };
   }
@@ -206,23 +207,21 @@ function mergeAssessments(assessments: ToolWriteTargets[]): ToolWriteTargets {
   return {
     targets: assessments.flatMap((assessment) => assessment.targets),
     uncertain: assessments.flatMap((assessment) => assessment.uncertain),
-    mutations: Object.assign({}, ...assessments.map((assessment) => assessment.mutations)),
+    mutations: assessments.reduce<ToolWriteTargets['mutations']>(
+      (merged, assessment) => Object.assign(merged, assessment.mutations),
+      {},
+    ),
   };
 }
 
 /** Resolve write-shaped tool parameters without enumerating tool names. */
 export function resolveToolWriteTargets(input: ResolveToolWriteTargetsInput): ToolWriteTargets {
-  const declaredPathParameters = new Set(
-    (input.definition.pathAuthority ?? [])
-      .filter((descriptor) => descriptor.kind === 'path')
-      .map((descriptor) => descriptor.pathParameter),
-  );
-  const genericParams = Object.fromEntries(
-    Object.entries(input.params).filter(([key]) => !declaredPathParameters.has(key)),
-  );
+  // generic 扫描对声明过的参数照扫不让位：directive-memory 权威靠它兜底（非 read 一律扫，
+  // 条件声明不命中的只读 action 也要被看见）；声明只负责叠加 mutation 档，不收窄目标集合。
+  // 代价=多动作工具的只读 action 会被保守拿锁（无覆盖门），已记入证据档盲区。
   const assessment = mergeAssessments([
     ...(input.definition.permissionLevel !== 'read'
-      ? [genericPathAssessment(genericParams, input.workingDirectory)]
+      ? [genericPathAssessment(input.params, input.workingDirectory)]
       : []),
     ...(input.definition.pathAuthority ?? []).map((descriptor) => descriptorAssessment(descriptor, input)),
   ]);

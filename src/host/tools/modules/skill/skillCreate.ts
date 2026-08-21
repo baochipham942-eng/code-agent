@@ -161,7 +161,7 @@ export async function executeSkillCreate(
     if (!lockResult.acquired) {
       return {
         ok: false,
-        error: '该文件正被另一个操作使用，请稍后重试或换输出路径',
+        error: 'This file is currently in use by another operation. Retry shortly or choose a different output path.',
         code: 'FILE_LOCK_BUSY',
         meta: { path: skillPath },
       };
@@ -195,7 +195,7 @@ export async function executeSkillCreate(
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
       return {
         ok: false,
-        error: `Skill "${name}" 已存在（路径: ${skillPath}）`,
+        error: `Skill "${name}" already exists (path: ${skillPath})`,
         code: 'SKILL_EXISTS',
         meta: { path: skillPath },
       };

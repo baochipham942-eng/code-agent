@@ -595,7 +595,7 @@ describe('ToolExecutor path mutation guard', () => {
     expect(await fs.readFile(outputPath, 'utf8')).toBe('replacement');
   });
 
-  it('uses conditional declarations to exclude read-only actions from write targets', async () => {
+  it('keeps read-only actions as conservative generic targets without a mutation kind', async () => {
     const { excelAutomateSchema } = await import('../../../src/host/tools/modules/excel/excelAutomate.schema');
     const { pptEditSchema } = await import('../../../src/host/tools/modules/network/pptEdit.schema');
     const workbookPath = path.join(tmpDir, 'book.xlsx');
@@ -613,7 +613,7 @@ describe('ToolExecutor path mutation guard', () => {
       },
       params: { action: 'read', file_path: workbookPath },
       workingDirectory: tmpDir,
-    })).toMatchObject({ targets: [], mutations: {} });
+    })).toMatchObject({ targets: [workbookPath], mutations: {} });
     expect(resolveToolWriteTargets({
       definition: {
         name: excelAutomateSchema.name,
@@ -639,6 +639,6 @@ describe('ToolExecutor path mutation guard', () => {
       },
       params: { action: 'extract_style', file_path: slidePath },
       workingDirectory: tmpDir,
-    })).toMatchObject({ targets: [], mutations: {} });
+    })).toMatchObject({ targets: [slidePath], mutations: {} });
   });
 });

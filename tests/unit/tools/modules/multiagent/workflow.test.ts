@@ -93,6 +93,7 @@ describe('workflow tool', () => {
     expect(workflowModule.schema.name).toBe('workflow');
     expect(workflowModule.schema.category).toBe('multiagent');
     expect(workflowModule.schema.inputSchema.required).toEqual(['script']);
+    expect(workflowModule.schema.description).toContain('ownedPaths');
   });
 
   it('rejects empty script with INVALID_ARGS', async () => {

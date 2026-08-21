@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as path from 'node:path';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import type { SwarmRunScope } from '../../../src/shared/contract/swarm';
 
 const mocks = vi.hoisted(() => ({
   confirmation: vi.fn(),
@@ -65,6 +68,10 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 
 const { ToolExecutor } = await import('../../../src/host/tools/toolExecutor');
 const { getToolResolver, resetToolResolver } = await import('../../../src/host/tools/dispatch/toolResolver');
+const {
+  createFileOwnershipActor,
+  getFileOwnershipRegistry,
+} = await import('../../../src/host/services/infra/fileOwnershipRegistry');
 
 const schemas = [
   {
@@ -196,5 +203,183 @@ describe('ToolExecutor directive memory path authority', () => {
       metadata: { code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' },
     });
     expect(mocks.execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('ToolExecutor file ownership authority', () => {
+  let tmpDir: string;
+  let sequence = 0;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'single-writer-executor-'));
+    resetToolResolver();
+    mocks.getSchemas.mockReturnValue(schemas);
+    mocks.has.mockReturnValue(true);
+    mocks.resolve.mockResolvedValue({ execute: mocks.execute });
+    mocks.execute.mockReset();
+    mocks.confirmation.mockReset();
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  function nextScope(): SwarmRunScope {
+    sequence += 1;
+    return { sessionId: `single-writer-session-${sequence}`, runId: `run-${sequence}`, treeId: `tree-${sequence}` };
+  }
+
+  function actor(scope: SwarmRunScope, agentId: string) {
+    const result = createFileOwnershipActor({
+      sessionId: scope.sessionId,
+      agentId,
+      swarmRunScope: scope,
+      workingDirectory: tmpDir,
+    });
+    if (!result) throw new Error('expected ownership actor');
+    return result;
+  }
+
+  function executeWrite(
+    executor: InstanceType<typeof ToolExecutor>,
+    scope: SwarmRunScope,
+    agentId: string,
+    filePath: string,
+    content: string,
+  ) {
+    return executor.execute('Write', { file_path: filePath, content }, {
+      preApprovedTools: new Set(['Write']),
+      sessionId: scope.sessionId,
+      agentId,
+      swarmRunScope: scope,
+      spawnDepth: 1,
+    });
+  }
+
+  it('allows exactly one live sibling through the real executor path for one target', async () => {
+    const scope = nextScope();
+    const filePath = path.join(tmpDir, 'shared.txt');
+    const canonicalPath = path.join(await fs.realpath(tmpDir), 'shared.txt');
+    let unblockFirst!: () => void;
+    let markEntered!: () => void;
+    const entered = new Promise<void>((resolve) => { markEntered = resolve; });
+    const blocked = new Promise<void>((resolve) => { unblockFirst = resolve; });
+    mocks.execute.mockImplementation(async (params: Record<string, unknown>) => {
+      await fs.writeFile(params.file_path as string, params.content as string, 'utf8');
+      return { ok: true, output: 'written' };
+    });
+    mocks.execute.mockImplementationOnce(async (params: Record<string, unknown>) => {
+      markEntered();
+      await blocked;
+      await fs.writeFile(params.file_path as string, params.content as string, 'utf8');
+      return { ok: true, output: 'written' };
+    });
+    const executor = new ToolExecutor({ workingDirectory: tmpDir, requestPermission: vi.fn(async () => true) });
+    executor.setAuditEnabled(false);
+
+    const first = executeWrite(executor, scope, 'agent-a', filePath, 'from-a');
+    await entered;
+    const second = await executeWrite(executor, scope, 'agent-b', filePath, 'from-b');
+    unblockFirst();
+    const firstResult = await first;
+
+    expect(firstResult).toMatchObject({ success: true });
+    expect(second).toMatchObject({
+      success: false,
+      metadata: {
+        code: 'WRITE_OWNERSHIP_CONFLICT',
+        path: canonicalPath,
+        ownerAgentId: 'agent-a',
+        requesterAgentId: 'agent-b',
+      },
+    });
+    expect(second.error).toContain('Wait for it to finish');
+    expect(await fs.readFile(filePath, 'utf8')).toBe('from-a');
+    const snapshot = getFileOwnershipRegistry().snapshot(scope);
+    expect(snapshot.conflicts).toHaveLength(1);
+    expect(snapshot.actors.filter((entry) => entry.claimed.includes(canonicalPath))).toHaveLength(1);
+
+    getFileOwnershipRegistry().release(actor(scope, 'agent-a'));
+    getFileOwnershipRegistry().release(actor(scope, 'agent-b'));
+  });
+
+  it('keeps disjoint declarations collaborative and idempotent', async () => {
+    const scope = nextScope();
+    const firstPath = path.join(tmpDir, 'a.txt');
+    const secondPath = path.join(tmpDir, 'b.txt');
+    const firstActor = actor(scope, 'agent-a');
+    const secondActor = actor(scope, 'agent-b');
+    const registry = getFileOwnershipRegistry();
+    registry.declare(firstActor, ['a.txt']);
+    registry.declare(firstActor, ['a.txt']);
+    registry.declare(secondActor, ['b.txt']);
+    mocks.execute.mockImplementation(async (params: Record<string, unknown>) => {
+      await fs.writeFile(params.file_path as string, params.content as string, 'utf8');
+      return { ok: true, output: 'written' };
+    });
+    const executor = new ToolExecutor({ workingDirectory: tmpDir, requestPermission: vi.fn(async () => true) });
+    executor.setAuditEnabled(false);
+
+    const results = await Promise.all([
+      executeWrite(executor, scope, 'agent-a', firstPath, 'a'),
+      executeWrite(executor, scope, 'agent-b', secondPath, 'b'),
+    ]);
+    expect(results.every((result) => result.success)).toBe(true);
+    const beforeRetry = registry.snapshot(scope);
+    expect((await executeWrite(executor, scope, 'agent-a', firstPath, 'a2')).success).toBe(true);
+    const afterRetry = registry.snapshot(scope);
+    expect(afterRetry).toEqual(beforeRetry);
+    expect(await fs.readFile(firstPath, 'utf8')).toBe('a2');
+    expect(await fs.readFile(secondPath, 'utf8')).toBe('b');
+    for (const entry of afterRetry.actors) {
+      for (const claimed of entry.claimed) {
+        expect(await fs.readFile(claimed, 'utf8')).toBe(entry.agentId === 'agent-a' ? 'a2' : 'b');
+      }
+    }
+
+    registry.release(firstActor);
+    registry.release(secondActor);
+  });
+
+  it('rejects a second live sibling after the first tool call releases its file lock', async () => {
+    const scope = nextScope();
+    const filePath = path.join(tmpDir, 'sequential-claim.txt');
+    mocks.execute.mockImplementation(async (params: Record<string, unknown>) => {
+      await fs.writeFile(params.file_path as string, params.content as string, 'utf8');
+      return { ok: true, output: 'written' };
+    });
+    const executor = new ToolExecutor({ workingDirectory: tmpDir, requestPermission: vi.fn(async () => true) });
+    executor.setAuditEnabled(false);
+
+    expect((await executeWrite(executor, scope, 'agent-a', filePath, 'from-a')).success).toBe(true);
+    const sibling = await executeWrite(executor, scope, 'agent-b', filePath, 'from-b');
+    expect(sibling.metadata?.code).toBe('WRITE_OWNERSHIP_CONFLICT');
+    expect(await fs.readFile(filePath, 'utf8')).toBe('from-a');
+
+    getFileOwnershipRegistry().release(actor(scope, 'agent-a'));
+    getFileOwnershipRegistry().release(actor(scope, 'agent-b'));
+  });
+
+  it('deduplicates the same conflict when a write action is retried', async () => {
+    const scope = nextScope();
+    const filePath = path.join(tmpDir, 'conflict.txt');
+    const registry = getFileOwnershipRegistry();
+    const owner = actor(scope, 'agent-a');
+    const requester = actor(scope, 'agent-b');
+    registry.declare(owner, [filePath]);
+    const executor = new ToolExecutor({ workingDirectory: tmpDir, requestPermission: vi.fn(async () => true) });
+    executor.setAuditEnabled(false);
+
+    const first = await executeWrite(executor, scope, 'agent-b', filePath, 'blocked');
+    const afterFirst = registry.snapshot(scope);
+    const second = await executeWrite(executor, scope, 'agent-b', filePath, 'blocked');
+    expect(first.metadata?.code).toBe('WRITE_OWNERSHIP_CONFLICT');
+    expect(second.metadata?.code).toBe('WRITE_OWNERSHIP_CONFLICT');
+    expect(registry.snapshot(scope)).toEqual(afterFirst);
+    expect(afterFirst.conflicts).toHaveLength(1);
+    expect(mocks.execute).not.toHaveBeenCalled();
+
+    registry.release(owner);
+    registry.release(requester);
   });
 });

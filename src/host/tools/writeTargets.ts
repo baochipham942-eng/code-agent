@@ -1,0 +1,204 @@
+import * as os from 'node:os';
+import * as path from 'node:path';
+import type { ToolDefinition, ToolPathAuthorityDescriptor } from '../../shared/contract';
+import { getMemoryDir } from '../lightMemory/indexLoader';
+import { resolveCanonicalRunPath } from '../runtime/runContext';
+
+export interface ResolveToolWriteTargetsInput {
+  definition: ToolDefinition;
+  params: Record<string, unknown>;
+  workingDirectory: string;
+  agentRole?: string;
+}
+
+export interface ToolWriteTargets {
+  targets: string[];
+  uncertain: string[];
+}
+
+const PATH_LIKE_SUFFIXES = new Set(['file', 'path', 'directory', 'destination', 'target']);
+
+function isPathLikeParameter(key: string): boolean {
+  const normalized = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  return PATH_LIKE_SUFFIXES.has(normalized.split('_').at(-1) ?? '');
+}
+
+function resolveToolPath(rawPath: string, workingDirectory: string): string {
+  const expanded = rawPath === '~'
+    ? os.homedir()
+    : rawPath.startsWith('~/')
+      ? path.join(os.homedir(), rawPath.slice(2))
+      : rawPath;
+  return resolveCanonicalRunPath(
+    path.isAbsolute(expanded) ? expanded : path.resolve(workingDirectory, expanded),
+  );
+}
+
+function readShellWord(command: string, start: number): { raw: string; end: number } {
+  let index = start;
+  while (index < command.length && /\s/.test(command[index])) index += 1;
+  const wordStart = index;
+  let quote: "'" | '"' | undefined;
+  let escaped = false;
+  for (; index < command.length; index += 1) {
+    const char = command[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\' && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+    if (/\s/.test(char) || char === ';' || char === '|' || char === '&') break;
+  }
+  return { raw: command.slice(wordStart, index), end: index };
+}
+
+function unquoteShellWord(raw: string): string {
+  if (raw.length >= 2) {
+    const first = raw[0];
+    const last = raw[raw.length - 1];
+    if ((first === "'" && last === "'") || (first === '"' && last === '"')) {
+      return raw.slice(1, -1);
+    }
+  }
+  return raw.replace(/\\([\\'"\s])/g, '$1');
+}
+
+function shellRedirectTargets(command: string): string[] {
+  const targets: string[] = [];
+  let quote: "'" | '"' | undefined;
+  let escaped = false;
+  for (let index = 0; index < command.length; index += 1) {
+    const char = command[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\' && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+    if (char !== '>') continue;
+    while (command[index + 1] === '>') index += 1;
+    const target = readShellWord(command, index + 1);
+    targets.push(target.raw);
+    index = Math.max(index, target.end - 1);
+  }
+  return targets;
+}
+
+function genericPathAssessment(
+  value: unknown,
+  workingDirectory: string,
+  key?: string,
+): ToolWriteTargets {
+  if (typeof value === 'string') {
+    if (!key || !isPathLikeParameter(key)) return { targets: [], uncertain: [] };
+    if (value.trim() === '') return { targets: [], uncertain: [`uncertain:${key}`] };
+    return { targets: [resolveToolPath(value, workingDirectory)], uncertain: [] };
+  }
+  if (Array.isArray(value)) {
+    return mergeAssessments(value.map((entry) => genericPathAssessment(entry, workingDirectory, key)));
+  }
+  if (!value || typeof value !== 'object') return { targets: [], uncertain: [] };
+  return mergeAssessments(Object.entries(value as Record<string, unknown>).map(
+    ([childKey, childValue]) => genericPathAssessment(childValue, workingDirectory, childKey),
+  ));
+}
+
+function descriptorAssessment(
+  descriptor: ToolPathAuthorityDescriptor,
+  input: ResolveToolWriteTargetsInput,
+): ToolWriteTargets {
+  if (descriptor.kind === 'path') {
+    const rawPath = input.params[descriptor.pathParameter];
+    if (rawPath === undefined) return { targets: [], uncertain: [] };
+    const declaredValues: string[] = [];
+    const collect = (value: unknown): void => {
+      if (typeof value === 'string') {
+        if (value.trim() !== '') declaredValues.push(value);
+        return;
+      }
+      if (Array.isArray(value)) {
+        value.forEach(collect);
+        return;
+      }
+      if (value && typeof value === 'object') {
+        Object.values(value as Record<string, unknown>).forEach(collect);
+      }
+    };
+    collect(rawPath);
+    return declaredValues.length > 0
+      ? { targets: declaredValues.map((value) => resolveToolPath(value, input.workingDirectory)), uncertain: [] }
+      : { targets: [], uncertain: [`uncertain:${descriptor.pathParameter}`] };
+  }
+
+  const memoryDir = resolveCanonicalRunPath(getMemoryDir());
+  if (descriptor.kind === 'global-memory') {
+    const scope = typeof input.params.scope === 'string' ? input.params.scope : undefined;
+    if (scope === 'role' || scope === 'project' || (!scope && input.agentRole)) {
+      return { targets: [], uncertain: [] };
+    }
+    const rawPath = input.params[descriptor.pathParameter];
+    return typeof rawPath === 'string' && rawPath.trim() !== ''
+      ? { targets: [resolveCanonicalRunPath(path.join(memoryDir, path.basename(rawPath)))], uncertain: [] }
+      : { targets: [], uncertain: [`uncertain:${descriptor.pathParameter}`] };
+  }
+
+  const command = input.params[descriptor.commandParameter];
+  if (typeof command !== 'string' || command.trim() === '') {
+    return { targets: [], uncertain: [`uncertain:${descriptor.commandParameter}`] };
+  }
+  const targets: string[] = [];
+  const uncertain: string[] = [];
+  const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
+  if (command.includes(memoryDir) || command.includes(memoryAlias)) targets.push(memoryDir);
+  for (const rawTarget of shellRedirectTargets(command)) {
+    const target = unquoteShellWord(rawTarget);
+    if (!target || /[$`*?{}]/.test(target)) {
+      uncertain.push(`uncertain-redirection:${rawTarget || '<missing>'}`);
+    } else {
+      targets.push(resolveToolPath(target, input.workingDirectory));
+    }
+  }
+  return { targets, uncertain };
+}
+
+function mergeAssessments(assessments: ToolWriteTargets[]): ToolWriteTargets {
+  return {
+    targets: assessments.flatMap((assessment) => assessment.targets),
+    uncertain: assessments.flatMap((assessment) => assessment.uncertain),
+  };
+}
+
+/** Resolve write-shaped tool parameters without enumerating tool names. */
+export function resolveToolWriteTargets(input: ResolveToolWriteTargetsInput): ToolWriteTargets {
+  const assessment = mergeAssessments([
+    ...(input.definition.permissionLevel !== 'read'
+      ? [genericPathAssessment(input.params, input.workingDirectory)]
+      : []),
+    ...(input.definition.pathAuthority ?? []).map((descriptor) => descriptorAssessment(descriptor, input)),
+  ]);
+  return {
+    targets: [...new Set(assessment.targets)].sort(),
+    uncertain: [...new Set(assessment.uncertain)].sort(),
+  };
+}

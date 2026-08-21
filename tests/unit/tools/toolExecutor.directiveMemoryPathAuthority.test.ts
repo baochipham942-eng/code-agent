@@ -264,6 +264,10 @@ describe('ToolExecutor file ownership authority', () => {
     let markEntered!: () => void;
     const entered = new Promise<void>((resolve) => { markEntered = resolve; });
     const blocked = new Promise<void>((resolve) => { unblockFirst = resolve; });
+    mocks.execute.mockImplementation(async (params: Record<string, unknown>) => {
+      await fs.writeFile(params.file_path as string, params.content as string, 'utf8');
+      return { ok: true, output: 'written' };
+    });
     mocks.execute.mockImplementationOnce(async (params: Record<string, unknown>) => {
       markEntered();
       await blocked;

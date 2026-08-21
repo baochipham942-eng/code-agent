@@ -4,8 +4,6 @@ import path from 'path';
 export default defineConfig({
   resolve: {
     alias: {
-      // Worktree node_modules 指向主仓时，Vitest 4.1.7 会把裸 builtin 误解成 <cwd>/stream。
-      stream: 'node:stream',
       // electron alias 保留作为安全网（第三方库可能 require('electron')）
       electron: path.resolve(__dirname, 'src/host/platform/index.ts'),
       // keytar 原生模块为 Electron Node.js 编译，在系统 Node.js 中会 SIGSEGV

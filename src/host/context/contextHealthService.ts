@@ -45,6 +45,48 @@ const logger = createLogger('ContextHealthService');
 
 // Context window sizes sourced from shared constants
 
+/**
+ * N-CTXTRUTH: provider 实报的本轮输入用量（inference.ts 记账点透传）。
+ * 口径统一在 usageNormalization.ts：归一化后 inputTokens 一律「不含缓存」，
+ * 所以上下文占用总量 = inputTokens + cacheReadTokens + cacheCreationTokens。
+ */
+export interface ProviderContextUsage {
+  inputTokens: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+}
+
+function scaleValue(value: number, scale: number): number {
+  return Math.round(value * scale);
+}
+
+function scaleSourceBreakdown(bs: SourceBreakdown, scale: number): SourceBreakdown {
+  const scaleRecord = (rec: Record<string, number>) =>
+    Object.fromEntries(Object.entries(rec).map(([k, v]) => [k, scaleValue(v, scale)]));
+  return {
+    rules: scaleValue(bs.rules, scale),
+    skills: scaleRecord(bs.skills),
+    mcp: scaleRecord(bs.mcp),
+    subagents: scaleRecord(bs.subagents),
+    fileReads: scaleValue(bs.fileReads, scale),
+    summary: scaleValue(bs.summary, scale),
+    conversation: scaleValue(bs.conversation, scale),
+  };
+}
+
+/** 等比缩放整个 breakdown（桶间比例不变），用于把本地估算桶贴合到 provider 真总量 */
+function scaleTokenBreakdown(breakdown: TokenBreakdown, scale: number): TokenBreakdown {
+  return {
+    systemPrompt: scaleValue(breakdown.systemPrompt, scale),
+    messages: scaleValue(breakdown.messages, scale),
+    toolResults: scaleValue(breakdown.toolResults, scale),
+    ...(breakdown.toolDefinitions !== undefined
+      ? { toolDefinitions: scaleValue(breakdown.toolDefinitions, scale) }
+      : {}),
+    ...(breakdown.bySource ? { bySource: scaleSourceBreakdown(breakdown.bySource, scale) } : {}),
+  };
+}
+
 // ----------------------------------------------------------------------------
 // Context Health Service
 // ----------------------------------------------------------------------------
@@ -60,6 +102,12 @@ const SOURCE_CONTRIBUTION_DEBOUNCE_MS = 200;
 
 export class ContextHealthService {
   private sessionStates: Map<string, ContextHealthState> = new Map();
+  /**
+   * N-CTXTRUTH: bySource 累加器（永远是本地估算口径的未缩放值）。
+   * provider 真源轮次里 state.breakdown.bySource 是缩放快照，不能直接当累加基底，
+   * 否则逐轮复合缩放会漂移；record/clear/reset 一律写这里，展示时缩放。
+   */
+  private sourceAccumulators: Map<string, SourceBreakdown> = new Map();
   private mainWindow: AppWindow | null = null;
   private averageUserMessageTokens: number = 200; // 用户消息平均 tokens
   private averageAssistantMessageTokens: number = 800; // 助手消息平均 tokens
@@ -88,6 +136,10 @@ export class ContextHealthService {
    * @param messages - 当前消息历史
    * @param systemPrompt - 系统提示词
    * @param model - 模型名称
+   * @param providerUsage - N-CTXTRUTH: 本轮 provider 实报用量（inputTokens 不含缓存，
+   *   真总量内部会加上 cacheRead/cacheCreation）。有真源时 currentTokens/usagePercent
+   *   按真源算、breakdown 各桶等比缩放到真总量；缺省或总量为 0 时全走本地估算，
+   *   tokenSource='estimated'。
    */
   update(
     sessionId: string,
@@ -97,6 +149,7 @@ export class ContextHealthService {
     compression?: CompressionStats,
     toolDefinitionsTokens?: number,
     droppedPromptBlocks?: string[],
+    providerUsage?: ProviderContextUsage,
   ): ContextHealthState {
     const maxTokens = this.getModelContextLimit(model);
     const previousHealth = this.sessionStates.get(sessionId);
@@ -109,10 +162,13 @@ export class ContextHealthService {
     // 优先用调用方显式传值，否则自动从工具 registry 估算（registry 不可用时回退 0）。
     const toolDefTokens = toolDefinitionsTokens ?? 0;
 
-    // 保留上轮的 bySource 累加值（recordSourceContribution 之间的状态）
-    // 同时把 conversation 字段按扣减法重算：messages - 其他 source 之和
+    // 保留上轮累加的 bySource（recordSourceContribution 之间的状态），累加器独立存放，
+    // 永远是未缩放的估算口径——provider 轮次的 state 里只是缩放快照，不能当累加基底
     const bySource: SourceBreakdown =
-      previousHealth?.breakdown.bySource ?? createEmptySourceBreakdown();
+      this.sourceAccumulators.get(sessionId) ??
+      previousHealth?.breakdown.bySource ??
+      createEmptySourceBreakdown();
+    this.sourceAccumulators.set(sessionId, bySource);
     // 压缩摘要消息（带 compaction 标记）单独进 summary 桶，不再混进 conversation
     const summaryTokens = messages.reduce(
       (sum, msg) => (msg.compaction ? sum + estimateTokens(msg.content) : sum),
@@ -127,15 +183,28 @@ export class ContextHealthService {
       bySource.fileReads;
     bySource.conversation = Math.max(0, messagesTokens - otherSourceSum - summaryTokens);
 
-    const breakdown: TokenBreakdown = {
+    const estimatedBreakdown: TokenBreakdown = {
       systemPrompt: systemPromptTokens,
       messages: messagesTokens,
       toolResults: toolResultsTokens,
       toolDefinitions: toolDefTokens,
       bySource,
     };
+    const estimatedTotal = systemPromptTokens + messagesTokens + toolResultsTokens + toolDefTokens;
 
-    const currentTokens = systemPromptTokens + messagesTokens + toolResultsTokens + toolDefTokens;
+    // N-CTXTRUTH: provider 实报总量（含缓存读/写）作真源；本地估算只决定桶内比例
+    const providerTotal = providerUsage
+      ? providerUsage.inputTokens +
+        (providerUsage.cacheReadTokens ?? 0) +
+        (providerUsage.cacheCreationTokens ?? 0)
+      : 0;
+    const useProviderTruth = providerTotal > 0;
+
+    const currentTokens = useProviderTruth ? providerTotal : estimatedTotal;
+    const breakdown: TokenBreakdown =
+      useProviderTruth && estimatedTotal > 0
+        ? scaleTokenBreakdown(estimatedBreakdown, providerTotal / estimatedTotal)
+        : estimatedBreakdown;
     const usagePercent = Math.round((currentTokens / maxTokens) * 1000) / 10; // 保留一位小数
 
     // 计算预估剩余轮数
@@ -154,6 +223,8 @@ export class ContextHealthService {
       compression: compression ?? previousHealth?.compression,
       // GAP-023: 被预算丢弃的 prompt 块可见化（undefined = 调用方没传，沿用上次；[] = 明确无丢弃）
       droppedPromptBlocks: droppedPromptBlocks ?? previousHealth?.droppedPromptBlocks,
+      tokenSource: useProviderTruth ? 'provider' : 'estimated',
+      ...(useProviderTruth ? { estimatedTokens: estimatedTotal } : {}),
     };
 
     // 保存状态
@@ -202,6 +273,7 @@ export class ContextHealthService {
    */
   cleanup(sessionId: string): void {
     this.sessionStates.delete(sessionId);
+    this.sourceAccumulators.delete(sessionId);
     const timer = this.sourceDebounceTimers.get(sessionId);
     if (timer) {
       clearTimeout(timer);
@@ -214,6 +286,7 @@ export class ContextHealthService {
    */
   clear(): void {
     this.sessionStates.clear();
+    this.sourceAccumulators.clear();
     for (const timer of this.sourceDebounceTimers.values()) {
       clearTimeout(timer);
     }
@@ -247,8 +320,8 @@ export class ContextHealthService {
       return;
     }
 
-    const state = this.ensureStateWithBySource(sessionId);
-    const bs = state.breakdown.bySource!;
+    this.ensureStateWithBySource(sessionId);
+    const bs = this.ensureSourceAccumulator(sessionId);
 
     switch (source.type) {
       case 'rule':
@@ -282,9 +355,8 @@ export class ContextHealthService {
    * 清除某个具名来源的贡献（skill 卸载 / MCP 断开 / 标量来源归 0）
    */
   clearSourceContribution(sessionId: string, source: SourceTag): void {
-    const state = this.sessionStates.get(sessionId);
-    if (!state?.breakdown.bySource) return;
-    const bs = state.breakdown.bySource;
+    const bs = this.sourceAccumulators.get(sessionId);
+    if (!bs) return;
 
     switch (source.type) {
       case 'rule':
@@ -317,10 +389,14 @@ export class ContextHealthService {
    * 重置 session 的 bySource（压缩后或 session 重启时调用）
    */
   resetSourceContributions(sessionId: string): void {
+    const fresh = createEmptySourceBreakdown();
+    this.sourceAccumulators.set(sessionId, fresh);
     const state = this.sessionStates.get(sessionId);
-    if (!state) return;
-    state.breakdown.bySource = createEmptySourceBreakdown();
-    this.emitSourceUpdateDebounced(sessionId);
+    if (state) {
+      // 清零后估算/provider 口径的展示值都是 0，直接换成新累加器引用即可
+      state.breakdown.bySource = fresh;
+      this.emitSourceUpdateDebounced(sessionId);
+    }
   }
 
   /**
@@ -328,18 +404,31 @@ export class ContextHealthService {
    * 用于全局事件：MCP server 被 disable 时，所有 session 应同步清掉
    */
   clearMcpServerAcrossSessions(serverName: string): void {
-    for (const [sid, state] of this.sessionStates.entries()) {
-      if (!state.breakdown.bySource) continue;
-      if (state.breakdown.bySource.mcp[serverName] !== undefined) {
-        delete state.breakdown.bySource.mcp[serverName];
+    for (const [sid, accumulator] of this.sourceAccumulators.entries()) {
+      if (accumulator.mcp[serverName] !== undefined) {
+        delete accumulator.mcp[serverName];
         this.emitSourceUpdateDebounced(sid);
       }
     }
   }
 
   /**
-   * 确保 session 状态存在且 bySource 已初始化
-   * 在 record 路径上需要：若没有 update() 跑过，先用空 health state 兜底
+   * 取 session 的 bySource 累加器（永远是未缩放的估算口径）
+   */
+  private ensureSourceAccumulator(sessionId: string): SourceBreakdown {
+    let accumulator = this.sourceAccumulators.get(sessionId);
+    if (!accumulator) {
+      accumulator =
+        this.sessionStates.get(sessionId)?.breakdown.bySource ?? createEmptySourceBreakdown();
+      this.sourceAccumulators.set(sessionId, accumulator);
+    }
+    return accumulator;
+  }
+
+  /**
+   * 确保 session 状态存在（record 路径上需要：若 update() 没跑过，先用空 health state 兜底），
+   * 且估算口径下 state.breakdown.bySource 指向累加器本体（突变即所见）；
+   * provider 口径下 state 里是缩放快照，发送前经 toDisplayState 按累加器重缩放。
    */
   private ensureStateWithBySource(sessionId: string): ContextHealthState {
     let state = this.sessionStates.get(sessionId);
@@ -347,10 +436,28 @@ export class ContextHealthService {
       state = createEmptyHealthState();
       this.sessionStates.set(sessionId, state);
     }
-    if (!state.breakdown.bySource) {
-      state.breakdown.bySource = createEmptySourceBreakdown();
+    const accumulator = this.ensureSourceAccumulator(sessionId);
+    if (state.tokenSource !== 'provider') {
+      state.breakdown.bySource = accumulator;
     }
     return state;
+  }
+
+  /**
+   * 生成对外发送的展示态：provider 真源轮次里 bySource 要按累加器最新值重缩放
+   * （recordSourceContribution 在两次 update() 之间写的是累加器，不是 state 里的快照）
+   */
+  private toDisplayState(sessionId: string, state: ContextHealthState): ContextHealthState {
+    if (state.tokenSource !== 'provider' || !state.estimatedTokens || state.estimatedTokens <= 0) {
+      return state;
+    }
+    const accumulator = this.sourceAccumulators.get(sessionId);
+    if (!accumulator) return state;
+    const scale = state.currentTokens / state.estimatedTokens;
+    return {
+      ...state,
+      breakdown: { ...state.breakdown, bySource: scaleSourceBreakdown(accumulator, scale) },
+    };
   }
 
   /**
@@ -363,7 +470,7 @@ export class ContextHealthService {
     const timer = setTimeout(() => {
       this.sourceDebounceTimers.delete(sessionId);
       const state = this.sessionStates.get(sessionId);
-      if (state) this.emitHealthUpdate(sessionId, state);
+      if (state) this.emitHealthUpdate(sessionId, this.toDisplayState(sessionId, state));
     }, SOURCE_CONTRIBUTION_DEBOUNCE_MS);
     this.sourceDebounceTimers.set(sessionId, timer);
   }

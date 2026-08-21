@@ -283,6 +283,9 @@ export function updateContextHealth(ctx: ContextAssemblyCtx): void {
       estimateActiveToolDefinitionsTokens(),
       // GAP-023: 被预算丢弃的 prompt 块可见化到 context health 面板
       ctx.runtime.contextHealth.droppedPromptBlocks ? [...ctx.runtime.contextHealth.droppedPromptBlocks] : undefined,
+      // N-CTXTRUTH: 本轮 provider 实报用量（inference 记账点写入切片）作圆环总量真源；
+      // 本轮没跑推理或未回报时为 undefined，service 自动走估算并标 tokenSource='estimated'
+      ctx.runtime.contextHealth.lastTurnProviderUsage,
     );
 
     // 更新压缩统计到健康状态

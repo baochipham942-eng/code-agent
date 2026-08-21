@@ -1,4 +1,5 @@
 import type { CompressionState } from '../../context/compressionState';
+import type { ProviderContextUsage } from '../../context/contextHealthService';
 
 /**
  * ADR-038 批3c: 上下文健康/压缩域切片。
@@ -15,6 +16,12 @@ export class ContextHealthState {
   private _currentSystemPromptHash?: string;
   private _checkpointRebuildLastWatermarkId?: string;
   private _networkRetryCount?: number = 0;
+  /**
+   * N-CTXTRUTH: 本轮推理 provider 实报用量（inference.ts 记账点写入，
+   * estimated/中断路径显式写 undefined）。turn 末 updateContextHealth 读它
+   * 决定圆环总量走真源还是估算——不挂全局变量，走本切片。
+   */
+  private _lastTurnProviderUsage?: ProviderContextUsage;
 
   constructor(init: { compressionState: CompressionState; persistentSystemContext: string[] }) {
     this._compressionState = init.compressionState;
@@ -28,6 +35,7 @@ export class ContextHealthState {
   get currentSystemPromptHash(): string | undefined { return this._currentSystemPromptHash; }
   get checkpointRebuildLastWatermarkId(): string | undefined { return this._checkpointRebuildLastWatermarkId; }
   get networkRetryCount(): number | undefined { return this._networkRetryCount; }
+  get lastTurnProviderUsage(): ProviderContextUsage | undefined { return this._lastTurnProviderUsage; }
 
   /** 压缩态整体替换（建/克隆新实例 → 变异 → 替换槽，pipeline 不碰活体） */
   replaceCompressionState(next: CompressionState): void {
@@ -62,6 +70,11 @@ export class ContextHealthState {
 
   setNetworkRetryCount(count: number): void {
     this._networkRetryCount = count;
+  }
+
+  /** N-CTXTRUTH: 每轮推理记账点显式写入；undefined = 本轮无 provider 真源（走估算） */
+  setLastTurnProviderUsage(usage: ProviderContextUsage | undefined): void {
+    this._lastTurnProviderUsage = usage;
   }
 
   /** @internal 测试专用：按种子构造任意初始状态，生产代码禁止调用 */

@@ -79,3 +79,11 @@ Cursor 的对应数字来自本轮真实 usedTokens。
 - [x] 弹层显示估/实偏差（仅 provider 轮有意义时）
 - [x] 老状态兼容（缺省 tokenSource 视同 estimated）
 - [x] 门禁：typecheck / tsc tests / eslint（0 error）/ knip 双档 / design-system / 两个测试目录全量
+
+## 真机验收（2026-08-21，基拉）
+
+构建指纹 kimi/N-CTXTRUTH@8a99bcc（Agent Neo Dev 2）。一条最小真实消息（deepseek-v4-flash，单轮，费用 $0.01）：
+- 账本 traces 该轮 `inference.inputTokens=12326`，弹层总量 12.3k——数字一致（验收①）。
+- 弹层显示「估算偏差 +3.4%」（本地估算相对实报偏高 3.4%，估算口径偏保守方向可见）；无「估算」标注（provider 轮）。
+- 平铺桶清单同步缩放：系统提示 5.8k(46.8%) / 工具定义 6.3k(51.2%) / 对话 248(2.0%)。
+- 证据：`code-agent-private-archive/docs/evidence/2026-08-21-N-CTXTRUTH/`（verify-truth.mjs + truth-popover.png）。

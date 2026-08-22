@@ -3,8 +3,8 @@
 // ============================================================================
 //
 // Tab「发现」（默认）：内置专家包卡片（花名/职业/tags/quickPrompts），点 quickPrompt
-// 直接以该句开场请 TA 来（inviteExpert 的 pendingRoleChatSeed 通道）。
-// Tab「我的」：全部持久化角色（含用户自建），带记忆条数/最近履历 +「请 TA 来」；
+// 直接以该句开场去 TA 的会话（goToExpertThread 的 pendingRoleChatSeed 通道）。
+// Tab「我的」：全部持久化角色（含用户自建），带记忆条数/最近履历 +「去 TA 的会话」；
 // 为空时给指向「发现」的引导。新用户「我的」是空的，默认落发现视角。
 //
 // 货架卡片统一契约（专家团 / 专家 / 云货架共用一套语言，紫底渐变已退役）：
@@ -30,7 +30,7 @@ import {
   type RolePackListItem,
 } from '../../../services/rolesClient';
 import { createTeamRecipe, deleteTeamRecipe, listTeamRecipes } from '../../../services/teamRecipeClient';
-import { inviteExpert } from '../../../utils/inviteExpert';
+import { goToExpertThread } from '../../../utils/inviteExpert';
 import { startCreateTeamChat } from '../../../utils/startCreateTeamChat';
 import { startCreateRoleChat } from '../../../utils/startCreateRoleChat';
 import { useAppStore } from '../../../stores/appStore';
@@ -110,7 +110,8 @@ const ExpertCard: React.FC<{
     {entry.quickPrompts?.[0] ? (
       <div className="flex flex-col gap-1">
         <span className="text-[10px] uppercase tracking-wide text-zinc-600">{text.quickPromptsTitle}</span>
-        {/* 引用条是这张卡最好的用法教学：点击 = 以该句发起新会话（inviteExpert seed 通道）。
+        {/* 引用条是这张卡最好的用法教学：点击 = 以该句发起（goToExpertThread seed 通道，
+            已有专家主 thread 就续上再发 seed，没有才新建）。
             用边框 + 引号图标 + hover 提亮把「可点」做出来，不再伪装成灰底装饰。 */}
         <button /* ds-allow:button: quickPrompt 引导句列表行（左对齐引号文案），Button primitive 是居中动作按钮形状 */ type="button" data-testid="expert-quick-prompt" onClick={() => onInvite(entry.quickPrompts?.[0])} className="flex items-start gap-1.5 rounded-md border border-zinc-700/60 bg-zinc-800/40 px-2 py-1.5 text-left text-xs text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-700/60 hover:text-zinc-100">
           <Quote className="mt-0.5 h-3 w-3 flex-shrink-0 text-zinc-500" />
@@ -203,7 +204,7 @@ export const ExpertPanel: React.FC = () => {
   }, [tab]);
 
   const invite = (entry: RolePanelEntry, seed?: string) => {
-    void inviteExpert(entry.roleId, { seed, title: entry.displayName || entry.roleId });
+    void goToExpertThread(entry.roleId, { seed, title: entry.displayName || entry.roleId });
   };
 
   const loadRolePacks = async () => {

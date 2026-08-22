@@ -553,6 +553,98 @@ describe('MessageProcessor persistence', () => {
     );
   });
 
+  it('treats wake_noop as a terminal hidden action with no visible assistant text or tool row', async () => {
+    const ctx = {
+      artifact: ArtifactState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
+      allowedToolNames: ['wake_noop'],
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 4096 },
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
+      control: ControlState.forTest({
+        isCancelled: false,
+        isInterrupted: false,
+        runAbortController: { signal: { aborted: false } },
+      } as never),
+      turn: TurnState.forTest({
+        effortLevel: 'medium',
+        currentTurnId: 'turn-1',
+        currentIterationSpanId: 'iteration-1',
+        needsReinference: false,
+        toolsUsedInTurn: [],
+      } as never),
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-wake-noop')
+        .mockReturnValueOnce('tool-wake-noop'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [
+        { toolCallId: 'wake-noop-1', success: true, output: '' },
+      ]),
+    };
+    const processor = createProcessor(
+      ctx as DeepPartial<RuntimeContext>,
+      contextAssembly,
+      runFinalizer,
+      toolEngine,
+    );
+    const span = { endSpan: vi.fn() };
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '收到。',
+        toolCalls: [{ id: 'wake-noop-1', name: 'wake_noop', arguments: {} }],
+      } as ModelResponse,
+      false,
+      1,
+      span,
+    );
+
+    expect(action).toBe('break');
+    expect(ctx.messages).toEqual([
+      expect.objectContaining({
+        id: 'assistant-wake-noop',
+        role: 'assistant',
+        content: '收到。',
+        isMeta: true,
+      }),
+      expect.objectContaining({
+        id: 'tool-wake-noop',
+        role: 'tool',
+        isMeta: true,
+      }),
+    ]);
+    expect(ctx.onEvent).toHaveBeenCalledWith({
+      type: 'turn_end',
+      data: { turnId: 'turn-1' },
+    });
+    expect(ctx.telemetryAdapter.onTurnEnd).toHaveBeenCalledTimes(1);
+  });
+
   it('continues when a provider reports stop on an obviously unfinished sentence', async () => {
     const ctx = {
       stats: RunStatsState.forTest(),

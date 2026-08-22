@@ -1,4 +1,5 @@
 import React from 'react';
+import { RoleIcon } from '../shared/RoleIcon';
 import { getRoleAvatarAsset } from './roleAvatarAssets';
 
 export function roleInitial(value: string): string {
@@ -15,8 +16,10 @@ export function roleAvatarColor(roleId: string): string {
 export const RoleInitialAvatar: React.FC<{
   roleId: string;
   name?: string;
+  /** 角色 lucide 图标名（AgentListEntry.icon）：三级回落的中间档——真人头像资产 → icon → 首字 */
+  icon?: string;
   className?: string;
-}> = ({ roleId, name, className = 'h-8 w-8 text-xs' }) => {
+}> = ({ roleId, name, icon, className = 'h-8 w-8 text-xs' }) => {
   const label = name || roleId;
   const avatarAsset = getRoleAvatarAsset(roleId);
 
@@ -29,6 +32,19 @@ export const RoleInitialAvatar: React.FC<{
         className={`inline-flex shrink-0 rounded-full object-cover ${className}`}
         aria-label={label}
       />
+    );
+  }
+
+  // 无真人头像资产但有角色 icon 时走 RoleIcon（与 RoleAvatarTile 同一回落），首字只兜底
+  if (icon) {
+    return (
+      <span
+        data-testid={`role-initial-avatar-${roleId}`}
+        className={`inline-flex shrink-0 items-center justify-center rounded-full bg-violet-500/10 ${className}`}
+        aria-label={label}
+      >
+        <RoleIcon name={icon} className="h-[62%] w-[62%]" />
+      </span>
     );
   }
 

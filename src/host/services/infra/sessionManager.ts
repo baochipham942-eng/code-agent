@@ -532,6 +532,9 @@ export class SessionManager implements Disposable {
     return db.listArchivedSessions(limit, offset, this.currentOwnerUserId());
   }
 
+  /** 按专家 roleId 找最近活跃的专家主 thread（「去 TA 的会话」续聊判定，N-NAMEDMATE 刀 1）。纯 SQL 查询，不触发云端列表同步。 */
+  async findLatestExpertThreadSession(roleId: string): Promise<StoredSession | null> { return getDatabase().findLatestExpertThreadSession(roleId, this.currentOwnerUserId()); }
+
   /**
    * 从云端同步会话列表（仅元数据）
    */

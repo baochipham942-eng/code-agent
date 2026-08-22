@@ -1,4 +1,6 @@
-import type { MessageAttachment } from '../../../shared/contract';
+import type { AgentEvent, MessageAttachment, TaskProgressData } from '../../../shared/contract';
+import type { TaskProgress } from '../../../shared/contract/backgroundTask';
+import type { NormalizedToolArtifactMeta } from '../../../shared/contract/artifactBlob';
 import type { WorkspaceScope } from '../../../shared/contract/project';
 import type { AgentRunOptions } from '../../research/types';
 import { getSessionManager } from '../infra/sessionManager';
@@ -9,6 +11,7 @@ import {
   getSessionTaskConcurrencyPool,
 } from './sessionTaskSlotLedger';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
+import { createForegroundWake } from './foregroundWake';
 
 const logger = createLogger('SessionCommandCenter');
 
@@ -39,6 +42,7 @@ export interface SessionCommandTask {
   parentRunId?: string;
   parentTurnId?: string;
   toolCallId?: string;
+  progress?: TaskProgress;
 }
 
 export interface SpawnSessionTaskInput {
@@ -73,6 +77,7 @@ type TerminalTaskStatus = Extract<SessionCommandTaskStatus, 'completed' | 'faile
 
 interface SessionCommandCenterDependencies {
   projectTerminalResult?: (task: SessionCommandTask, status: TerminalTaskStatus) => Promise<void>;
+  wakeForegroundBrain?: (task: SessionCommandTask, status: TerminalTaskStatus) => Promise<void>;
 }
 
 function taskId(): string {
@@ -90,6 +95,8 @@ export class SessionCommandCenter {
   private readonly ledgers = new Map<string, SessionTaskSlotLedger>();
   private readonly manager: TaskManager;
   private readonly projectTerminalResult: NonNullable<SessionCommandCenterDependencies['projectTerminalResult']>;
+  private readonly wakeForegroundBrain: NonNullable<SessionCommandCenterDependencies['wakeForegroundBrain']>;
+  private readonly stopAgentEventObservation?: () => void;
   private readonly onTaskEvent = (event: TaskManagerEvent): void => {
     void this.handleTaskEvent(event);
   };
@@ -100,8 +107,14 @@ export class SessionCommandCenter {
   ) {
     this.manager = manager;
     this.projectTerminalResult = dependencies.projectTerminalResult ?? projectTerminalResult;
+    this.wakeForegroundBrain = dependencies.wakeForegroundBrain ?? createForegroundWake();
     for (const eventName of TASK_LIFECYCLE_EVENTS) {
       this.manager.on(eventName, this.onTaskEvent);
+    }
+    if (typeof this.manager.observeAgentEvents === 'function') {
+      this.stopAgentEventObservation = this.manager.observeAgentEvents((sessionId, event, taskId) => {
+        this.handleAgentProgressEvent(sessionId, event, taskId);
+      });
     }
   }
 
@@ -241,6 +254,7 @@ export class SessionCommandCenter {
       this.manager.off(eventName, this.onTaskEvent);
     }
     for (const ledger of this.ledgers.values()) ledger.dispose();
+    this.stopAgentEventObservation?.();
   }
 
   private tasks(sessionId: string): Map<string, SessionCommandTask> {
@@ -285,7 +299,12 @@ export class SessionCommandCenter {
   }
 
   private async handleTaskEvent(event: TaskManagerEvent): Promise<void> {
-    const data = event.data as { taskId?: unknown; error?: unknown; conclusion?: unknown } | undefined;
+    const data = event.data as {
+      taskId?: unknown;
+      error?: unknown;
+      conclusion?: unknown;
+      artifacts?: unknown;
+    } | undefined;
     const id = typeof data?.taskId === 'string' ? data.taskId : undefined;
     if (!id) return;
     const task = this.tasksBySession.get(event.sessionId)?.get(id);
@@ -298,7 +317,10 @@ export class SessionCommandCenter {
     }
     if (event.type === 'task_completed') {
       const conclusion = typeof data?.conclusion === 'string' ? data.conclusion : undefined;
-      await this.settle(task, 'completed', conclusion);
+      const artifacts = Array.isArray(data?.artifacts)
+        ? data.artifacts as NormalizedToolArtifactMeta[]
+        : undefined;
+      await this.settle(task, 'completed', conclusion, artifacts);
       return;
     }
     if (event.type === 'task_error') {
@@ -310,10 +332,37 @@ export class SessionCommandCenter {
     }
   }
 
+  private handleAgentProgressEvent(sessionId: string, event: AgentEvent, taskId?: string): void {
+    if (event.type !== 'task_progress' || !taskId) return;
+    const task = this.tasksBySession.get(sessionId)?.get(taskId);
+    if (!task || TERMINAL.has(task.status)) return;
+    const data = event.data as TaskProgressData | undefined;
+    if (!data?.tool) return;
+
+    const current = data.toolIndex === undefined ? task.progress?.current : data.toolIndex + 1;
+    task.progress = {
+      ...task.progress,
+      ...(current === undefined ? {} : { current }),
+      ...(data.toolTotal === undefined ? {} : { total: data.toolTotal }),
+      ...(data.progress === undefined ? {} : { percent: data.progress }),
+      ...(data.step ? { label: data.step } : {}),
+      lastToolStep: {
+        tool: data.tool,
+        ...(data.toolIndex === undefined ? {} : { toolIndex: data.toolIndex }),
+        ...(data.toolTotal === undefined ? {} : { toolTotal: data.toolTotal }),
+        ...(data.target ? { target: data.target } : {}),
+        at: Date.now(),
+      },
+    };
+    task.updatedAt = Date.now();
+    this.projectTask(task);
+  }
+
   private async settle(
     task: SessionCommandTask,
     status: TerminalTaskStatus,
     detail?: string,
+    artifacts?: NormalizedToolArtifactMeta[],
   ): Promise<void> {
     if (TERMINAL.has(task.status)) return;
     task.status = status;
@@ -324,6 +373,9 @@ export class SessionCommandCenter {
     );
     task.updatedAt = Date.now();
     this.projectTask(task);
+    if (status === 'completed' && artifacts?.length) {
+      this.projectOutputRefs(task, artifacts);
+    }
 
     // 账本落终态必须**先于**下面那个 await：task.status 在上面已经同步变成 failed 且投影出去了，
     // 而账本要等投影 Promise 落地才记终态。中间这段窗口里，前台从 task_status 已经看得到
@@ -333,6 +385,12 @@ export class SessionCommandCenter {
 
     try {
       await this.projectTerminalResult(task, status);
+      void this.wakeForegroundBrain(task, status).catch((error) => {
+        logger.warn('Failed to wake text foreground brain after task settlement', {
+          taskId: task.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
     } catch (error) {
       logger.warn('Failed to project text command task result', {
         taskId: task.id,
@@ -363,6 +421,7 @@ export class SessionCommandCenter {
         updatedAt: task.updatedAt,
         startedAt: task.status === 'running' ? task.updatedAt : undefined,
         completedAt: TERMINAL.has(task.status) ? task.updatedAt : undefined,
+        progress: task.progress,
         ...(task.status === 'failed' && task.detail
           ? { failure: { message: task.detail, reason: 'session_command_task_failed' } }
           : {}),
@@ -382,6 +441,30 @@ export class SessionCommandCenter {
         message: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private projectOutputRefs(task: SessionCommandTask, artifacts: NormalizedToolArtifactMeta[]): void {
+    const ledger = getBackgroundTaskLedger();
+    artifacts.forEach((artifact, index) => {
+      ledger.addOutputRef({
+        id: `${task.id}:output:${index + 1}`,
+        taskId: task.id,
+        type: artifact.path ? 'file' : 'url',
+        label: artifact.label,
+        path: artifact.path,
+        uri: artifact.url,
+        mimeType: artifact.mimeType,
+        size: artifact.sizeBytes,
+        createdAt: task.updatedAt,
+        metadata: {
+          artifactId: artifact.artifactId,
+          kind: artifact.kind,
+          role: artifact.role,
+          sourceTool: artifact.sourceTool,
+          sha256: artifact.sha256,
+        },
+      });
+    });
   }
 
   private previousTaskId(sessionId: string, submissionKey: string, currentTaskId: string): string | undefined {

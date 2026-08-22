@@ -3,10 +3,11 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RENDERER_POLLING } from '../../../src/shared/constants';
+import type { TaskNotification } from '../../../src/shared/contract/backgroundTask';
 
 const backgroundTaskStore = vi.hoisted(() => ({
   refreshTasks: vi.fn(async () => {}),
-  drainNotifications: vi.fn(async () => []),
+  drainNotifications: vi.fn<() => Promise<TaskNotification[]>>(async () => []),
   readRetryNonce: 0,
   readFailure: null as { message: string; failedAt: number } | null,
 }));
@@ -16,6 +17,12 @@ const ipc = vi.hoisted(() => ({
   unsubscribe: vi.fn(),
 }));
 const transport = vi.hoisted(() => ({ native: true }));
+const toast = vi.hoisted(() => ({
+  error: vi.fn(),
+  success: vi.fn(),
+  info: vi.fn(),
+  warning: vi.fn(),
+}));
 const poller = vi.hoisted(() => {
   const start = vi.fn();
   const stop = vi.fn();
@@ -40,6 +47,16 @@ vi.mock('../../../src/renderer/stores/backgroundTaskStore', () => ({
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector: (state: typeof sessionStore) => unknown) => selector(sessionStore),
 }));
+vi.mock('../../../src/renderer/stores/appStore', () => {
+  const state = {
+    language: 'zh' as const,
+    setLanguage: vi.fn(),
+    cloudUIStrings: undefined,
+  };
+  return {
+    useAppStore: () => state,
+  };
+});
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     on: (_channel: string, handler: typeof ipc.handler) => {
@@ -58,7 +75,7 @@ vi.mock('../../../src/renderer/utils/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn() }),
 }));
 vi.mock('../../../src/renderer/hooks/useToast', () => ({
-  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
+  toast,
 }));
 
 import { useBackgroundTaskSync } from '../../../src/renderer/hooks/useBackgroundTaskSync';
@@ -123,6 +140,24 @@ describe('useBackgroundTaskSync', () => {
     expect(backgroundTaskStore.refreshTasks).not.toHaveBeenCalled();
     unmount();
     expect(ipc.unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('formats completion toast copy through zh/en i18n', async () => {
+    backgroundTaskStore.drainNotifications.mockResolvedValueOnce([{
+      id: 'notice-1',
+      taskId: 'task-1',
+      sessionId: 'session-current',
+      type: 'task_completed',
+      message: '报告生成完成',
+      createdAt: 1,
+    }]);
+    renderHook(() => useBackgroundTaskSync({ pollInterval: 0 }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(toast.success).toHaveBeenCalledWith('报告生成完成。可在任务面板查看日志。');
   });
 
   it('uses a 30 second fallback only when the native push bridge is available', () => {

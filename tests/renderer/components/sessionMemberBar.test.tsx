@@ -224,6 +224,51 @@ describe('SessionMemberBar', () => {
     expect(screen.queryByTestId('member-pill-leader')).toBeNull();
   });
 
+  // 刀 1（N-NAMEDMATE）：成员条头像三级回落——真人头像资产 → 角色 icon（RoleIcon）→ 首字兜底
+  it('待命名单头像：无资产有 icon 渲染 RoleIcon 不渲染首字，无 icon 才首字兜底', async () => {
+    useAgentRegistryStore.setState({
+      entries: [
+        { id: 'researcher', name: '调研员', description: '', source: 'builtin', modelTier: 'balanced', readonly: true, tools: [], profession: '研究调研', icon: 'Microscope' },
+        { id: 'writer', name: '撰稿员', description: '', source: 'builtin', modelTier: 'balanced', readonly: true, tools: [] },
+      ],
+      isLoaded: true,
+    });
+    useTeamRecipeStore.setState({
+      recipes: [{ id: 'r1', name: '上线评审', description: '', category: 'automation', members: [{ roleId: 'researcher', taskTemplate: '调研 {topic}' }, { roleId: 'writer', taskTemplate: '写作 {topic}' }] }],
+      isLoaded: true,
+    });
+    useComposerStore.setState({ selectedTeamRecipeId: 'r1' });
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-pill-researcher')).toBeTruthy());
+
+    const iconAvatar = screen.getByTestId('role-initial-avatar-researcher');
+    expect(iconAvatar.querySelector('svg')).toBeTruthy();
+    expect(iconAvatar.textContent).toBe('');
+
+    const initialAvatar = screen.getByTestId('role-initial-avatar-writer');
+    expect(initialAvatar.querySelector('svg')).toBeNull();
+    expect(initialAvatar.textContent).toBe('W');
+  });
+
+  it('有真人头像资产的角色仍渲染头像图（资产档优先于 icon）', async () => {
+    useAgentRegistryStore.setState({
+      entries: [{ id: '牧之', name: '牧之', description: '', source: 'builtin', modelTier: 'balanced', readonly: true, tools: [], profession: '资深产品经理', icon: 'ClipboardList' }],
+      isLoaded: true,
+    });
+    useTeamRecipeStore.setState({
+      recipes: [{ id: 'r1', name: '上线评审', description: '', category: 'automation', members: [{ roleId: '牧之', taskTemplate: '评审 {topic}' }] }],
+      isLoaded: true,
+    });
+    useComposerStore.setState({ selectedTeamRecipeId: 'r1' });
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-pill-牧之')).toBeTruthy());
+
+    const avatar = screen.getByTestId('role-initial-avatar-牧之');
+    expect(avatar.tagName).toBe('IMG');
+  });
+
   it('待命成员 pill 的 × 把该成员排除出本次预选，配方预选本身保留', async () => {
     useTeamRecipeStore.setState({
       recipes: [{ id: 'r1', name: '上线评审', description: '', category: 'automation', lead: { roleId: '牧之', briefTemplate: '汇总 {topic}' }, members: [{ roleId: '溯真', taskTemplate: '调研 {topic}' }, { roleId: '青禾', taskTemplate: '写作 {topic}' }] }],

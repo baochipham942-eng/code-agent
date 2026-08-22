@@ -108,7 +108,7 @@ function session(metadata?: Record<string, unknown>): SessionWithMeta {
 }
 
 function expectOnlyLead(roleId: string): void {
-  expect(screen.getByTestId(`member-lead-badge-${roleId}`).textContent).toBe('主理人');
+  expect(screen.getByTestId(`member-lead-badge-${roleId}`).textContent).toBe('牵头专家');
   for (const other of ['researcher', 'writer', '牧之', '溯真'].filter((id) => id !== roleId)) {
     expect(screen.queryByTestId(`member-lead-badge-${other}`)).toBeNull();
   }

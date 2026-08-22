@@ -50,6 +50,7 @@ function makeAppService(
     loadSession: async () => { throw new Error('not implemented'); },
     deleteSession: async () => { throw new Error('not implemented'); },
     listSessions: async () => [],
+    findExpertThreadSession: async () => ({ sessionId: null }),
     updateSession: async () => {},
     archiveSession: async () => null,
     unarchiveSession: async () => null,

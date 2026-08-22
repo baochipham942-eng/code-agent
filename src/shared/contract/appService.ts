@@ -245,6 +245,8 @@ export interface AgentApplicationService {
   loadSession(sessionId: string): Promise<Session>;
   deleteSession(sessionId: string): Promise<void>;
   listSessions(options?: SessionListQueryOptions): Promise<Session[]>;
+  /** 「去 TA 的会话」续聊判定：该专家最近活跃的专家主 thread（无则 null） */
+  findExpertThreadSession(roleId: string): Promise<{ sessionId: string | null }>;
   updateSession(sessionId: string, updates: Partial<Session>): Promise<void>;
   archiveSession(sessionId: string): Promise<Session | null>;
   unarchiveSession(sessionId: string): Promise<Session | null>;

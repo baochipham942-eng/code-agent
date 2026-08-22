@@ -147,6 +147,11 @@ export interface ConversationEnvelope {
   content: string;
   clientMessageId?: string;
   sessionId?: string;
+  /**
+   * 运行中改道发起时 renderer 正在看的 turn。host 只在它仍等于当前 turn 时注入；
+   * 省略表示 legacy 调用方，不启用这道竞态保护。
+   */
+  expectedTurnId?: string;
   attachments?: MessageAttachment[];
   /** Per-turn web search switch. Omitted by legacy clients means enabled. */
   searchEnabled?: boolean;

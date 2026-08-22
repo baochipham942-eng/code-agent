@@ -405,8 +405,9 @@ export class AgentLoop {
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
     displayContent?: string,
+    expectedTurnId?: string,
   ): Promise<void> {
-    await this.conversationRuntime.steer(newMessage, clientMessageId, attachments, metadata, displayContent);
+    await this.conversationRuntime.steer(newMessage, clientMessageId, attachments, metadata, displayContent, expectedTurnId);
   }
 
   wasInterrupted(): boolean {

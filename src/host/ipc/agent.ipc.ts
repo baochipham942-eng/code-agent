@@ -42,6 +42,7 @@ interface SendMessagePayload {
   content: string;
   clientMessageId?: string;
   sessionId?: string;
+  expectedTurnId?: string;
   attachments?: unknown[];
   searchEnabled?: boolean;
   thinkingEnabled?: boolean;
@@ -61,6 +62,9 @@ function normalizeEnvelope(
     content: payload.content,
     ...('clientMessageId' in payload && payload.clientMessageId ? { clientMessageId: payload.clientMessageId } : {}),
     ...(payload.sessionId ? { sessionId: payload.sessionId } : {}),
+    ...('expectedTurnId' in payload && typeof payload.expectedTurnId === 'string'
+      ? { expectedTurnId: payload.expectedTurnId }
+      : {}),
     ...(payload.attachments ? { attachments: payload.attachments as ConversationEnvelope['attachments'] } : {}),
     ...(typeof payload.searchEnabled === 'boolean' ? { searchEnabled: payload.searchEnabled } : {}),
     ...(typeof payload.thinkingEnabled === 'boolean' ? { thinkingEnabled: payload.thinkingEnabled } : {}),
@@ -106,6 +110,7 @@ interface InterruptPayload {
   content: string;
   clientMessageId?: string;
   sessionId?: string;
+  expectedTurnId?: string;
   attachments?: unknown[];
   options?: AppServiceRunOptions;
   context?: ConversationEnvelope['context'];

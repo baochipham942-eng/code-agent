@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from 'react';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SteerOrQueueOutcome } from '../../../src/shared/contract/appService';
 import type { ConversationEnvelope } from '../../../src/shared/contract/conversationEnvelope';
 
@@ -14,6 +14,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 import { InputArea, type InputAreaRef } from '../../../src/renderer/components/features/chat/ChatInput/InputArea';
 import {
 } from '../../../src/renderer/components/features/chat/ChatInput';
+import { RuntimeInputChoice } from '../../../src/renderer/components/features/chat/ChatInput/RuntimeInputChoice';
 import {
   useChatInputSubmit,
   type UseChatInputSubmitParams,
@@ -59,6 +60,24 @@ function makeParams(overrides: Partial<UseChatInputSubmitParams> = {}): UseChatI
   };
 }
 
+const domainInvoke = vi.fn();
+
+beforeEach(() => {
+  domainInvoke.mockResolvedValue({
+    success: true,
+    data: {
+      id: 'queued-input-1',
+      sessionId: 'session-running',
+      envelope: { content: '请改成更简洁的方案' },
+      status: 'queued',
+      retryCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  });
+  window.codeAgentDomainAPI = { invoke: domainInvoke } as typeof window.codeAgentDomainAPI;
+});
+
 function SubmitHarness({
   isProcessing,
   onSend,
@@ -69,6 +88,7 @@ function SubmitHarness({
   onSteer: (envelope: ConversationEnvelope) => Promise<SteerOrQueueOutcome | undefined>;
 }) {
   const [value, setValue] = useState('请改成更简洁的方案');
+  const [runtimeInputChoice, setRuntimeInputChoice] = useState<'queue' | 'redirect'>('queue');
   const inputAreaRef = useRef<InputAreaRef>(null);
   const { handleSubmit } = useChatInputSubmit(makeParams({
     value,
@@ -81,21 +101,32 @@ function SubmitHarness({
   }));
 
   return (
-    <InputArea
-      ref={inputAreaRef}
-      value={value}
-      onChange={setValue}
-      onSubmit={(opts) => { void handleSubmit(undefined, opts); }}
-      onFileSelect={vi.fn()}
-      isFocused={false}
-      onFocusChange={vi.fn()}
-    />
+    <>
+      {isProcessing && (
+        <RuntimeInputChoice value={runtimeInputChoice} onChange={setRuntimeInputChoice} />
+      )}
+      <InputArea
+        ref={inputAreaRef}
+        value={value}
+        onChange={setValue}
+        onSubmit={(opts) => {
+          void handleSubmit(undefined, {
+            ...opts,
+            steer: opts?.steer ?? (isProcessing && runtimeInputChoice === 'redirect'),
+          });
+        }}
+        onFileSelect={vi.fn()}
+        isFocused={false}
+        onFocusChange={vi.fn()}
+      />
+    </>
   );
 }
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  window.codeAgentDomainAPI = undefined;
 });
 
 describe('mid-turn composer submission', () => {
@@ -109,20 +140,57 @@ describe('mid-turn composer submission', () => {
     await waitFor(() => expect(onSteer).toHaveBeenCalledTimes(1));
     expect(onSteer).toHaveBeenCalledWith(expect.objectContaining({
       content: '请改成更简洁的方案',
-      context: { runtimeInput: { mode: 'supplement' } },
+      context: { runtimeInput: { mode: 'redirect' } },
     }));
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it('keeps ordinary Enter on the existing running-turn queue path', async () => {
+  it('puts ordinary Enter into the durable list while running', async () => {
     const onSend = vi.fn().mockResolvedValue(true);
     const onSteer = vi.fn().mockResolvedValue({ outcome: 'steered' });
     render(<SubmitHarness isProcessing onSend={onSend} onSteer={onSteer} />);
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
 
-    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(domainInvoke).toHaveBeenCalledTimes(1));
+    expect(domainInvoke).toHaveBeenCalledWith(
+      'domain:queuedInput',
+      'enqueue',
+      expect.objectContaining({
+        sessionId: 'session-running',
+        envelope: expect.objectContaining({
+          content: '请改成更简洁的方案',
+          context: { runtimeInput: { mode: 'supplement' } },
+        }),
+      }),
+    );
+    expect(onSend).not.toHaveBeenCalled();
     expect(onSteer).not.toHaveBeenCalled();
+  });
+
+  it('uses the selected Now choice for ordinary Enter while running', async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const onSteer = vi.fn().mockResolvedValue({ outcome: 'steered' });
+    render(<SubmitHarness isProcessing onSend={onSend} onSteer={onSteer} />);
+
+    fireEvent.click(screen.getByRole('radio', { name: '改道' }));
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+
+    await waitFor(() => expect(onSteer).toHaveBeenCalledTimes(1));
+    expect(domainInvoke).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('shows the two running choices with Later selected by default and hides them when idle', () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const onSteer = vi.fn().mockResolvedValue({ outcome: 'steered' });
+    const { rerender } = render(<SubmitHarness isProcessing onSend={onSend} onSteer={onSteer} />);
+
+    expect(screen.getByRole('radio', { name: '排队' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('radio', { name: '改道' }).getAttribute('aria-checked')).toBe('false');
+
+    rerender(<SubmitHarness isProcessing={false} onSend={onSend} onSteer={onSteer} />);
+    expect(screen.queryByTestId('runtime-input-choice')).toBeNull();
   });
 
   it('treats Alt/Option+Enter as ordinary send while idle', async () => {

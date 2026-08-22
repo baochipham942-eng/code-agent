@@ -58,6 +58,13 @@ const SAMPLE_PAYLOADS: { [K in UserVisibleSystemEventKey]: NonNullable<MessageMe
     changedFileCount: 2,
     externalSideEffectsWarning: 'Changes caused by external commands are not rolled back.',
   },
+  inputRedirectReceipt: {
+    receiptId: 'sys-inputRedirectReceipt',
+    originalContent: '改用更简洁的结构',
+    expectedTurnId: 'turn-1',
+    partial: { charCount: 88, trailingText: '写到这里' },
+    interruptedTools: ['Bash'],
+  },
 };
 
 function systemEventMessage<K extends UserVisibleSystemEventKey>(key: K): Message {

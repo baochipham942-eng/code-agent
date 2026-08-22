@@ -41,7 +41,7 @@ describe('SubagentExecutor Agent Team scope propagation', () => {
       /subagentToolExecutor\.execute\([\s\S]*?agentId:\s*executionAgentId,[\s\S]*?swarmRunScope:\s*context\.swarmRunScope/,
     );
     expect(source).toMatch(
-      /subagentToolExecutor\.execute\([\s\S]*?runId:\s*context\.runId,[\s\S]*?swarmRunScope:\s*context\.swarmRunScope/,
+      /subagentToolExecutor\.execute\([\s\S]*?runId:\s*executionRunId,[\s\S]*?swarmRunScope:\s*context\.swarmRunScope/,
     );
     expect(source).toMatch(
       /subagentToolExecutor\.execute\([\s\S]*?sourceMessageId:\s*context\.sourceMessageId/,

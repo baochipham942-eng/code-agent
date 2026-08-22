@@ -63,6 +63,7 @@ describe('SessionCommandCenter', () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
     });
     const spawned = await center.spawn({
       ...input(1),
@@ -105,6 +106,7 @@ describe('SessionCommandCenter', () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
     });
 
     const first = await center.spawn(input(1, 'report'));
@@ -183,10 +185,12 @@ describe('SessionCommandCenter', () => {
   it('returns terminal results to the foreground and starts the next lane item', async () => {
     const manager = new FakeTaskManager();
     const projected: Array<{ task: SessionCommandTask; status: string }> = [];
+    const wakeForegroundBrain = vi.fn();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(async (task, status) => {
         projected.push({ task: { ...task }, status });
       }),
+      wakeForegroundBrain,
     });
     const first = await center.spawn(input(1, 'report'));
     const second = await center.spawn(input(2, 'report'));
@@ -206,6 +210,34 @@ describe('SessionCommandCenter', () => {
       ]);
       expect(manager.startBackgroundTask).toHaveBeenCalledTimes(2);
     });
+    expect(center.list('session-a')).toMatchObject([
+      { status: 'completed' },
+      { status: 'running' },
+    ]);
+    expect(wakeForegroundBrain).toHaveBeenCalledWith(
+      expect.objectContaining({ id: first.task.id, summary: '报告已生成并通过检查。' }),
+      'completed',
+    );
+    center.dispose();
+  });
+
+  it('releases the next slot when the fire-and-forget foreground wake rejects', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn().mockRejectedValue(new Error('wake failed')),
+    });
+    const first = await center.spawn(input(1, 'report'));
+    await center.spawn(input(2, 'report'));
+    if (first.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    manager.emitTask({
+      type: 'task_completed',
+      sessionId: 'session-a',
+      data: { taskId: first.task.id, conclusion: 'done' },
+    });
+
+    await vi.waitFor(() => expect(manager.startBackgroundTask).toHaveBeenCalledTimes(2));
     expect(center.list('session-a')).toMatchObject([
       { status: 'completed' },
       { status: 'running' },
@@ -255,6 +287,7 @@ describe('SessionCommandCenter', () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
     });
     const first = await center.spawn(input(1));
     if (first.outcome === 'requires_choice') throw new Error('unexpected admission result');
@@ -285,6 +318,7 @@ describe('SessionCommandCenter', () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
     });
     const first = await center.spawn(input(1, 'report'));
     await center.spawn(input(2, 'research'));

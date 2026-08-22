@@ -87,6 +87,16 @@ describe('ToolSearchService loadable results', () => {
     expect(service.isToolLoaded('Task')).toBe(true);
   });
 
+  it('loads wake_noop when a hidden wake explicitly allowlists it', () => {
+    const service = new ToolSearchService();
+
+    const result = service.selectTool('wake_noop');
+
+    expect(result.loadedTools).toEqual(['wake_noop']);
+    expect(result.tools[0]?.loadable).toBe(true);
+    expect(service.isToolLoaded('wake_noop')).toBe(true);
+  });
+
   it('does not let ToolSearch reload a tool denied by the current run', async () => {
     const service = new ToolSearchService();
 

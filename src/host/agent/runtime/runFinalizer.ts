@@ -162,6 +162,19 @@ function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
   return !seenLastUser;
 }
 
+function hasTerminalWakeNoopAfterLastUser(messages: Message[]): boolean {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === 'user') return false;
+    if (
+      message.role === 'assistant'
+      && message.isMeta === true
+      && message.toolCalls?.some((toolCall) => toolCall.name === 'wake_noop')
+    ) return true;
+  }
+  return false;
+}
+
 // ----------------------------------------------------------------------------
 // Agent Loop
 // ----------------------------------------------------------------------------
@@ -355,7 +368,10 @@ export class RunFinalizer {
 
       langfuse.endTrace(this.ctx.stats.traceId, `Max iterations (${this.ctx.maxIterations}) reached`, 'WARNING');
     } else {
-      if (!hasVisibleAssistantTextAfterLastUser(this.ctx.messages)) {
+      if (
+        !hasVisibleAssistantTextAfterLastUser(this.ctx.messages)
+        && !hasTerminalWakeNoopAfterLastUser(this.ctx.messages)
+      ) {
         const fallbackMessage: Message = {
           id: this.messageWriter.generateId(),
           role: 'assistant',

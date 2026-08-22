@@ -45,6 +45,8 @@ import {
   type SupportedEveryTimeUnit,
 } from './cronNormalizers';
 import { buildCronAgentRunOptions } from './cronAgentRoleContext';
+import { BACKGROUND_AGENT_EVENT_FILTER } from '../protocol/events/eventFilter';
+import type { AgentRunOptions } from '../research/types';
 
 const execAsync = promisify(exec);
 
@@ -779,7 +781,11 @@ export class CronService implements Disposable {
         if (cronSession.workingDirectory) {
           tm.setWorkingDirectory(cronSession.id, cronSession.workingDirectory);
         }
-        const agentRunOptions = await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory);
+        const agentRunOptions: AgentRunOptions = {
+          mode: 'normal',
+          ...await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory),
+          eventFilter: BACKGROUND_AGENT_EVENT_FILTER,
+        };
         const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
         const snapshotTrackingEnabled = ctx?.[CRON_AGENT_SNAPSHOT.ENABLED_KEY] === true;
         // external_event（业务事件监听）任务：无 <cron_alert> = 无新料 = 本次安静。

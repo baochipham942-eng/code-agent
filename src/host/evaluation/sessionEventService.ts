@@ -7,7 +7,7 @@
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 import { getServiceRegistry } from '../services/serviceRegistry';
-import type { AgentEvent } from '../../shared/contract';
+import { STABLE_EVENT_TYPES, type AgentEvent } from '../../shared/contract';
 import type Database from 'better-sqlite3';
 import { getActiveRunTraceContext } from '../telemetry/runTraceContext';
 
@@ -224,6 +224,15 @@ export class SessionEventService {
     const timeline: Array<{ time: number; type: string; summary: string }> = [];
 
     for (const event of events) {
+      // Eval summaries consume the stable public contract by default. Keep the two
+      // pre-contract aliases readable for historical rows already on disk.
+      if (
+        event.eventType !== 'tool_start'
+        && event.eventType !== 'tool_result'
+        && !STABLE_EVENT_TYPES.has(event.eventType as AgentEvent['type'])
+      ) {
+        continue;
+      }
       // 统计事件类型
       eventStats[event.eventType] = (eventStats[event.eventType] || 0) + 1;
 

@@ -14,6 +14,19 @@ export const sseClients = new Set<Response>();
  */
 const SSE_REPLAY_BUFFER_SIZE = 256;
 
+// Three failed writes cap per-client buffered growth to a few event payloads;
+// five seconds is long enough for transient network stalls but bounds retention.
+const SSE_MAX_CONSECUTIVE_BACKPRESSURE_WRITES = 3;
+const SSE_DRAIN_TIMEOUT_MS = 5_000;
+
+interface SSEBackpressureState {
+  consecutiveWrites: number;
+  drainTimer: ReturnType<typeof setTimeout>;
+  onDrain: () => void;
+}
+
+let sseBackpressureStates = new WeakMap<Response, SSEBackpressureState>();
+
 interface BufferedSSEEvent {
   id: number;
   channel: string;
@@ -35,6 +48,37 @@ function serializeEvent(entry: BufferedSSEEvent): string {
   return `id: ${entry.id}\ndata: ${payload}\n\n`;
 }
 
+function clearSSEBackpressure(client: Response): void {
+  const state = sseBackpressureStates.get(client);
+  if (!state) return;
+  clearTimeout(state.drainTimer);
+  client.removeListener('drain', state.onDrain);
+  sseBackpressureStates.delete(client);
+}
+
+function disconnectSSEClient(client: Response): void {
+  clearSSEBackpressure(client);
+  sseClients.delete(client);
+  const destroy = (client as Response & { destroy?: () => void }).destroy;
+  if (!client.destroyed && destroy) destroy.call(client);
+}
+
+function recordSSEBackpressure(client: Response): void {
+  let state = sseBackpressureStates.get(client);
+  if (!state) {
+    const onDrain = () => clearSSEBackpressure(client);
+    const drainTimer = setTimeout(() => disconnectSSEClient(client), SSE_DRAIN_TIMEOUT_MS);
+    drainTimer.unref?.();
+    state = { consecutiveWrites: 0, drainTimer, onDrain };
+    sseBackpressureStates.set(client, state);
+    client.once('drain', onDrain);
+  }
+  state.consecutiveWrites += 1;
+  if (state.consecutiveWrites >= SSE_MAX_CONSECUTIVE_BACKPRESSURE_WRITES) {
+    disconnectSSEClient(client);
+  }
+}
+
 /**
  * 向所有 SSE 客户端推送事件。事件被分配单调递增的 id，同时写入 ring buffer
  * 以便客户端重连时按 Last-Event-ID 重放。
@@ -45,9 +89,13 @@ export function broadcastSSE(channel: string, args: unknown): void {
   const payload = serializeEvent(entry);
   for (const client of sseClients) {
     try {
-      client.write(payload);
+      if (!client.write(payload)) {
+        recordSSEBackpressure(client);
+      } else {
+        clearSSEBackpressure(client);
+      }
     } catch {
-      sseClients.delete(client);
+      disconnectSSEClient(client);
     }
   }
 }
@@ -99,4 +147,5 @@ export function replayFromLastEventId(res: Response, lastEventId: number): numbe
 export function __resetSSEReplayBufferForTests(): void {
   nextSSEEventId = 0;
   sseReplayBuffer.length = 0;
+  sseBackpressureStates = new WeakMap<Response, SSEBackpressureState>();
 }

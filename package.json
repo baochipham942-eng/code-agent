@@ -27,6 +27,7 @@
     "lint:shell-fail-loud": "node scripts/shell-fail-loud-lint.mjs",
     "debt:report": "node scripts/architecture-debt-report.mjs",
     "gates:local": "node scripts/gates-local.mjs",
+    "check:agent-event-schema": "node scripts/ci/agent-event-schema-gate.mjs",
     "acceptance:request-replay": "npx tsx scripts/acceptance/request-replay-smoke.ts",
     "closure:task": "node scripts/task-closure.mjs",
     "closure:delivery": "node scripts/delivery-closure.mjs",

@@ -184,6 +184,29 @@ describe('createServeRequestHandler', () => {
     expect(secondTaskId).not.toBe(firstTaskId);
   });
 
+  it('applies the requested AgentEvent filter while keeping task protocol events', async () => {
+    mocks.createCLIAgent.mockResolvedValue({
+      getConfig: () => ({ model: 'filtered-config' }),
+    });
+    mocks.createAgentLoop.mockImplementation((_config: unknown, emit: (event: { type: string; data: unknown }) => void) => ({
+      run: vi.fn(async () => {
+        emit({ type: 'message_delta', data: { text: 'hidden' } });
+        emit({ type: 'permission_request', data: { id: 'p1' } });
+      }),
+      cancel: vi.fn(async () => undefined),
+    }));
+    await startServeApi();
+
+    const stream = await (await postRun({
+      prompt: 'filtered task',
+      eventFilter: { include: ['permission_request'] },
+    })).text();
+
+    expect(stream).toContain('event: task_start');
+    expect(stream).toContain('event: permission_request');
+    expect(stream).not.toContain('event: message_delta');
+  });
+
   it('streams run events, exposes running status, rejects concurrent runs, and dispatches cancel requests', async () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
     let finishRun!: () => void;

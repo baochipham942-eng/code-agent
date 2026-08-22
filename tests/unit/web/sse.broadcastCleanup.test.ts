@@ -2,7 +2,7 @@
 // sse helpers：死连接从 sseClients 剔除、sendSSE 帧格式、空 buffer replay。
 // tests/web/sse.replay.test.ts 覆盖 ring buffer；本文件补断连清理与单播。
 // ============================================================================
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Response } from 'express';
 import {
   __resetSSEReplayBufferForTests,
@@ -29,6 +29,10 @@ function fakeClient(options: { failWrite?: boolean } = {}) {
 beforeEach(() => {
   sseClients.clear();
   __resetSSEReplayBufferForTests();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('broadcastSSE client cleanup', () => {
@@ -58,6 +62,65 @@ describe('broadcastSSE client cleanup', () => {
 
     expect(replayed).toBe(1);
     expect(reconnecting.chunks[0]).toMatch(/^id: 1\n/);
+  });
+
+  it('disconnects a non-reading client without dropping events for a healthy client', () => {
+    const normal = fakeClient();
+    let slowWrites = 0;
+    let bufferedBytes = 0;
+    let destroyed = false;
+    const drainListeners = new Set<() => void>();
+    const slow = {
+      get destroyed() { return destroyed; },
+      write(chunk: string) {
+        slowWrites += 1;
+        bufferedBytes += Buffer.byteLength(chunk);
+        return false;
+      },
+      once(event: string, listener: () => void) {
+        if (event === 'drain') drainListeners.add(listener);
+      },
+      removeListener(_event: string, listener: () => void) {
+        drainListeners.delete(listener);
+      },
+      destroy() {
+        destroyed = true;
+        drainListeners.clear();
+      },
+    };
+    sseClients.add(normal as unknown as Response);
+    sseClients.add(slow as unknown as Response);
+
+    for (let index = 0; index < 2_000; index += 1) {
+      broadcastSSE('agent:event', { index, text: 'x'.repeat(128) });
+    }
+
+    expect(destroyed).toBe(true);
+    expect(sseClients.has(slow as unknown as Response)).toBe(false);
+    expect(slowWrites).toBe(3);
+    expect(bufferedBytes).toBeLessThan(2_000);
+    expect(normal.chunks).toHaveLength(2_000);
+  });
+
+  it('disconnects a client that never drains after its first backpressure signal', () => {
+    vi.useFakeTimers();
+    let destroyed = false;
+    const slow = {
+      get destroyed() { return destroyed; },
+      write: () => false,
+      once: () => undefined,
+      removeListener: () => undefined,
+      destroy: () => { destroyed = true; },
+    };
+    sseClients.add(slow as unknown as Response);
+
+    broadcastSSE('agent:event', { type: 'blocked' });
+    vi.advanceTimersByTime(4_999);
+    expect(destroyed).toBe(false);
+    vi.advanceTimersByTime(1);
+
+    expect(destroyed).toBe(true);
+    expect(sseClients.has(slow as unknown as Response)).toBe(false);
   });
 });
 

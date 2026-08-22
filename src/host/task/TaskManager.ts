@@ -442,6 +442,7 @@ export class TaskManager extends EventEmitter {
     options?: AgentRunOptions,
     messageMetadata?: MessageMetadata,
     clientMessageId?: string,
+    expectedTurnId?: string,
   ): Promise<SteerOrQueueOutcome> {
     const state = this.getSessionState(sessionId);
 
@@ -466,6 +467,7 @@ export class TaskManager extends EventEmitter {
         options,
         messageMetadata,
         clientMessageId,
+        expectedTurnId,
       );
     }
 

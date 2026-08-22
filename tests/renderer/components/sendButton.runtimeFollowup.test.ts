@@ -9,7 +9,7 @@ describe('SendButton runtime follow-up state', () => {
       React.createElement(SendButton, { isProcessing: true, hasContent: true, type: 'submit' }),
     );
 
-    expect(html).toContain('发送给当前对话');
+    expect(html).toContain('发送消息');
     expect(html).not.toContain('中断');
   });
 });

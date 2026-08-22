@@ -713,7 +713,12 @@ describe('AgentOrchestrator', () => {
         undefined,
         { workbench: { workingDirectory: '/workspace/late' } },
         'late-steer-id',
-      )).resolves.toEqual({ outcome: 'queued', queuedInputId: 'late-steer-id' });
+      )).resolves.toEqual({
+        outcome: 'queued',
+        queuedInputId: 'late-steer-id',
+        code: 'RUN_SETTLED',
+        message: '这条先排上了，手头这轮做完就做',
+      });
       expect(queuedInputMocks.enqueue).toHaveBeenCalledWith({
         id: 'late-steer-id',
         sessionId: 'test-session-id',

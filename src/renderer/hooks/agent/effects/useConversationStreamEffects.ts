@@ -19,6 +19,7 @@ const LIVE_STATE_NEUTRAL_AGENT_EVENTS: ReadonlySet<string> = new Set([
   'agent_cancelled',
   'subagent_run_end',
   'error',
+  'input_redirected',
 ]);
 import { buildGoalNoticeMessage } from '../../../components/features/chat/goalNotice';
 import { buildModelFallbackNoticeMessage } from '../../../components/features/chat/fallbackNotice';
@@ -32,6 +33,7 @@ import {
   normalizeAssistantMessagePayload,
   normalizeHookStartedData,
   normalizeHookTriggerData,
+  normalizeInputRedirectReceiptData,
   normalizeMessageDeltaPayload,
   normalizeMessageSnapshotPayload,
   normalizeModelDecisionPayload,
@@ -127,6 +129,19 @@ export function applyConversationStreamEvent(
   const getFreshMessages = actions.getMessages;
 
   switch (event.type) {
+    case 'input_redirected': {
+      const receipt = normalizeInputRedirectReceiptData(event.data);
+      if (!receipt || getFreshMessages().some((message) => message.id === receipt.receiptId)) break;
+      actions.addMessage({
+        id: receipt.receiptId,
+        role: 'system',
+        content: '已按你的纠正改了方向',
+        timestamp: now(),
+        metadata: { inputRedirectReceipt: receipt },
+      });
+      break;
+    }
+
     case 'turn_start':
       if (
         state.currentTurnMessageId &&
@@ -607,6 +622,34 @@ export const useConversationStreamEffects = ({
           }
           flushRef.current();
           flushStreamingMessages();
+          applyConversationStreamEvent(
+            event,
+            {
+              get currentTurnMessageId() {
+                return currentTurnMessageIdRef.current;
+              },
+              set currentTurnMessageId(value) {
+                currentTurnMessageIdRef.current = value;
+              },
+              committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+            },
+            {
+              addMessage,
+              appendStreamingMessageDelta,
+              updateMessage,
+              setMessages: (messages) => useSessionStore.getState().setMessages(messages),
+              getMessages: getFreshMessages,
+              queueUpdate,
+            },
+          );
+          break;
+
+        case 'input_redirected':
+          lastEventAtRef.current = Date.now();
+          logHandledEvent();
+          if (!isCurrentSessionEvent) {
+            break;
+          }
           applyConversationStreamEvent(
             event,
             {

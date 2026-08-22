@@ -606,12 +606,17 @@ export const ChatView: React.FC = () => {
     sendMessage,
   ]);
 
-  const handleSteerEnvelope = useCallback((envelope: ConversationEnvelope) => (
-    submitSteerEnvelope(
+  const handleSteerEnvelope = useCallback(async (envelope: ConversationEnvelope) => {
+    const outcome = await submitSteerEnvelope(
       envelope,
       currentSessionId,
-    )
-  ), [currentSessionId]);
+      streamSnapshot?.turnId,
+    );
+    if (outcome?.outcome === 'queued') {
+      toast.info(t.chatInputSubmit.queuedInputHint);
+    }
+    return outcome;
+  }, [currentSessionId, streamSnapshot?.turnId, t.chatInputSubmit.queuedInputHint]);
 
   const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
     return handleSendEnvelope(buildEnvelope(content, attachments));

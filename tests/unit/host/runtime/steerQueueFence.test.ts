@@ -102,7 +102,7 @@ describe('steerOrQueue', () => {
       repository,
     )).resolves.toEqual({ outcome: 'steered' });
 
-    expect(steer).toHaveBeenCalledWith('new direction', 'message-1', undefined, undefined, undefined);
+    expect(steer).toHaveBeenCalledWith('new direction', 'message-1', undefined, undefined, undefined, undefined);
     expect(repository.enqueue).not.toHaveBeenCalled();
   });
 
@@ -119,8 +119,13 @@ describe('steerOrQueue', () => {
       repository,
     );
 
-    expect(outcome).toEqual({ outcome: 'queued', queuedInputId: 'message-9' });
-    expect(steer).toHaveBeenCalledWith(scaffolded, 'message-9', undefined, undefined, '改成蓝色');
+    expect(outcome).toEqual({
+      outcome: 'queued',
+      queuedInputId: 'message-9',
+      code: 'RUN_SETTLED',
+      message: '这条先排上了，手头这轮做完就做',
+    });
+    expect(steer).toHaveBeenCalledWith(scaffolded, 'message-9', undefined, undefined, '改成蓝色', undefined);
     const enqueued = repository.enqueue.mock.calls.at(-1)![0] as { envelope: { content: string } };
     expect(enqueued.envelope.content).toBe('改成蓝色');
     expect(enqueued.envelope.content).not.toContain('<user_request>');
@@ -145,7 +150,12 @@ describe('steerOrQueue', () => {
       },
       repository,
       { generateId: () => 'generated-message-id', now: () => 123 },
-    )).resolves.toEqual({ outcome: 'queued', queuedInputId: 'generated-message-id' });
+    )).resolves.toEqual({
+      outcome: 'queued',
+      queuedInputId: 'generated-message-id',
+      code: 'RUN_SETTLED',
+      message: '这条先排上了，手头这轮做完就做',
+    });
 
     expect(repository.enqueue).toHaveBeenCalledOnce();
     expect(repository.enqueue).toHaveBeenCalledWith({
@@ -183,7 +193,12 @@ describe('steerOrQueue', () => {
         metadata,
       },
       repository,
-    )).resolves.toEqual({ outcome: 'queued', queuedInputId: 'caller-message-id' });
+    )).resolves.toEqual({
+      outcome: 'queued',
+      queuedInputId: 'caller-message-id',
+      code: 'STEER_UNSUPPORTED',
+      message: '这条先排上了，手头这轮做完就做',
+    });
 
     expect(repository.enqueue).toHaveBeenCalledOnce();
     expect(repository.enqueue).toHaveBeenCalledWith(expect.objectContaining({
@@ -201,6 +216,40 @@ describe('steerOrQueue', () => {
         runtimeInput: { mode: 'supplement' },
       },
     });
+  });
+
+  it('puts a changed-turn request into the durable list without injecting it', async () => {
+    const repository = createRepository();
+    const steer = vi.fn().mockRejectedValue(new SteerRejectedError('TURN_CHANGED'));
+
+    const outcome = await steerOrQueue(
+      { steer },
+      {
+        sessionId: 'session-race',
+        content: '改用另一份数据',
+        clientMessageId: 'race-message',
+        expectedTurnId: 'turn-old',
+        context: { runtimeInput: { mode: 'redirect' } },
+      },
+      repository,
+    );
+
+    expect(steer).toHaveBeenCalledWith(
+      '改用另一份数据',
+      'race-message',
+      undefined,
+      undefined,
+      undefined,
+      'turn-old',
+    );
+    expect(outcome).toEqual({
+      outcome: 'queued',
+      queuedInputId: 'race-message',
+      code: 'TURN_CHANGED',
+      message: '这条先排上了，手头这轮做完就做',
+    });
+    expect(repository.enqueue).toHaveBeenCalledOnce();
+    expect(enqueuedEnvelope(repository).context).toEqual({ runtimeInput: { mode: 'supplement' } });
   });
 
   it('rethrows an unrelated error unchanged and does not queue it', async () => {
@@ -292,7 +341,7 @@ describe('queuePendingSteerMessages', () => {
           sessionId: 'session-pending',
           attachments: attachments[2],
           context: {
-            runtimeInput: { mode: 'redirect' },
+            runtimeInput: { mode: 'supplement' },
           },
         },
         now: 456,

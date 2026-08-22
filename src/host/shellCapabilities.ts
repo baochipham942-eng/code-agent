@@ -292,6 +292,13 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'updateProject',
     'updateSourceAccess',
   ],
+  [IPC_DOMAINS.QUEUED_INPUT]: [
+    'enqueue',
+    'list',
+    'markSending',
+    'reportSendOutcome',
+    'retract',
+  ],
   [IPC_DOMAINS.LIBRARY]: [
     'addItem',
     'delete',

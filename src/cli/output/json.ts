@@ -131,7 +131,16 @@ export class JSONOutput {
   /**
    * 输出最终结果
    */
-  result(result: CLIRunResult): void {
+  result(result: CLIRunResult, asEvent = false): void {
+    if (asEvent) {
+      this.emitEvent({
+        type: 'result',
+        timestamp: Date.now(),
+        data: result,
+      });
+      return;
+    }
+
     console.log(JSON.stringify(result, null, 2));
   }
 

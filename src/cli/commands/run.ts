@@ -269,7 +269,7 @@ export const runCommand = new Command('run')
 
       // 输出最终结果（JSON 模式，无 schema 验证时）
       if (isJson && !outputSchema) {
-        jsonOutput.result(result);
+        jsonOutput.result(result, globalOpts?.outputFormat === 'stream-json');
       } else if (isJson && outputSchema) {
         // schema 模式下 JSON 输出：包含结构化数据和验证状态
         const extracted = extractJSON(result.output || '', globalOpts?.project);
@@ -279,7 +279,7 @@ export const runCommand = new Command('run')
           structuredOutput: extracted,
           schemaValid: validation?.valid ?? false,
           schemaErrors: validation?.valid === false ? validation.errors : undefined,
-        });
+        }, globalOpts?.outputFormat === 'stream-json');
       }
 
       // 设置退出码并退出

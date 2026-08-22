@@ -102,8 +102,13 @@ describe('CLI stream-json stdout', () => {
         }
       });
       expect(nonJsonLines).toEqual([]);
+      expect(lines.map((line) => JSON.parse(line))).toContainEqual({
+        type: 'result',
+        timestamp: expect.any(Number),
+        data: expect.objectContaining({ success: true, output: 'ok' }),
+      });
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
-  }, 20_000);
+  }, 30_000);
 });

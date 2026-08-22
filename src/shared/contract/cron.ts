@@ -17,6 +17,12 @@ export type CronScheduleType = 'at' | 'every' | 'cron';
  */
 export type CronJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused' | 'interrupted';
 
+export interface CronMissedEvent {
+  jobId: string;
+  scheduledAt: number;
+  reason: 'app-offline';
+}
+
 /**
  * Time unit for interval-based scheduling.
  *

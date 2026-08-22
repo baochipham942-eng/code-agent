@@ -13,6 +13,8 @@ export interface QueuedInput {
   envelope: ConversationEnvelope;
   status: QueuedInputStatus;
   retryCount: number;
+  position: number;
+  pausedReason: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -39,4 +41,12 @@ export interface MarkQueuedInputSendingResult {
 export interface QueuedInputSendOutcomeResult {
   status: QueuedInputStatus;
   retryCount: number;
+}
+
+export interface UpdateQueuedInputResult {
+  updated: boolean;
+}
+
+export interface ReorderQueuedInputsResult {
+  reordered: boolean;
 }

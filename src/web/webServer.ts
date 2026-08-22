@@ -379,6 +379,7 @@ const queuedInputStartupSweep = createQueuedInputStartupSweepGate();
  * 没有它，「入队时 session 已空闲」的那条消息就没人抽（release 时的 drain 早跑完了）。
  */
 let onQueuedInputEnqueued: ((sessionId: string) => void) | null = null;
+let onQueuedInputSendNow: IpcDependencies['onQueuedInputSendNow'] | null = null;
 let webMcpInitialized = false;
 
 // createApp() 的 durable run 状态注入：函数形式保证 app.ts 读到的始终是最新值
@@ -833,6 +834,10 @@ function registerHandlers(): void {
       currentSessionId = id;
     },
     onQueuedInputEnqueued: (sessionId) => onQueuedInputEnqueued?.(sessionId),
+    onQueuedInputSendNow: async (input, route) => {
+      if (!onQueuedInputSendNow) throw new Error('Queued input delivery route is unavailable');
+      return onQueuedInputSendNow(input, route);
+    },
   };
 
   // setupAllIpcHandlers 会同时处理:
@@ -993,6 +998,7 @@ async function main(): Promise<void> {
     getPendingPermissionRequests: () => getTaskManager().listPendingPermissionRequests(),
     registerQueuedInputStartupSweep: (runStartupSweep) => queuedInputStartupSweep.registerTrigger(runStartupSweep),
     registerQueuedInputEnqueueHook: (onEnqueued) => { onQueuedInputEnqueued = onEnqueued; },
+    registerQueuedInputSendNowHook: (sendNow) => { onQueuedInputSendNow = sendNow; },
   });
   queuedInputStartupSweep.maybeRun();
 

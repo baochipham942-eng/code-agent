@@ -25,6 +25,8 @@ export interface QueuedInputRecord {
   envelopeJson: string;
   status: QueuedInputStatus;
   retryCount: number;
+  position: number;
+  pausedReason: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -47,6 +49,8 @@ function rowToRecord(row: SQLiteRow): QueuedInputRecord {
     envelopeJson: String(row.envelope_json ?? 'null'),
     status: row.status as QueuedInputStatus,
     retryCount: Number(row.retry_count) || 0,
+    position: Number(row.position) || 0,
+    pausedReason: typeof row.paused_reason === 'string' ? row.paused_reason : null,
     createdAt: Number(row.created_at) || 0,
     updatedAt: Number(row.updated_at) || 0,
   };
@@ -71,10 +75,15 @@ export class QueuedInputRepository {
     this.db
       .prepare(
         `INSERT OR IGNORE INTO queued_inputs (
-          id, session_id, envelope_json, status, retry_count, created_at, updated_at
-        ) VALUES (?, ?, ?, 'queued', 0, ?, ?)`,
+          id, session_id, envelope_json, status, retry_count, position,
+          paused_reason, created_at, updated_at
+        ) VALUES (
+          ?, ?, ?, 'queued', 0,
+          COALESCE((SELECT MAX(position) + 1 FROM queued_inputs WHERE session_id = ?), 0),
+          NULL, ?, ?
+        )`,
       )
-      .run(input.id, input.sessionId, envelopeJson, now, now);
+      .run(input.id, input.sessionId, envelopeJson, input.sessionId, now, now);
   }
 
   listBySession(sessionId: string, status?: QueuedInputStatus): QueuedInputRecord[] {
@@ -83,14 +92,14 @@ export class QueuedInputRepository {
           .prepare(
             `SELECT * FROM queued_inputs
              WHERE session_id = ? AND status = ?
-             ORDER BY created_at ASC`,
+             ORDER BY position ASC, created_at ASC, id ASC`,
           )
           .all(sessionId, status)
       : this.db
           .prepare(
             `SELECT * FROM queued_inputs
              WHERE session_id = ?
-             ORDER BY created_at ASC`,
+             ORDER BY position ASC, created_at ASC, id ASC`,
           )
           .all(sessionId);
 
@@ -98,25 +107,45 @@ export class QueuedInputRepository {
   }
 
   listSessionsWithQueuedInputs(): string[] {
-    // sending 孤儿行本阶段不恢复，避免进程重启后重复派发。
     const rows = this.db
       .prepare(
-        `SELECT session_id, MIN(created_at) AS first_created
+        `SELECT session_id, MIN(position) AS first_position, MIN(created_at) AS first_created
          FROM queued_inputs
-         WHERE status = 'queued'
+         WHERE status = 'queued' AND paused_reason IS NULL
          GROUP BY session_id
-         ORDER BY first_created ASC`,
+         ORDER BY first_position ASC, first_created ASC, session_id ASC`,
       )
       .all() as { session_id: string }[];
     return rows.map((row) => row.session_id);
+  }
+
+  getNextDispatchable(sessionId: string): QueuedInputRecord | null {
+    const row = this.db.prepare(
+      `SELECT * FROM queued_inputs
+       WHERE session_id = ? AND status = 'queued' AND paused_reason IS NULL
+       ORDER BY position ASC, created_at ASC, id ASC
+       LIMIT 1`,
+    ).get(sessionId) as SQLiteRow | undefined;
+    return row ? rowToRecord(row) : null;
   }
 
   markSending(id: string, now?: number): boolean {
     const result = this.db
       .prepare(
         `UPDATE queued_inputs
-         SET status = 'sending', updated_at = ?
+         SET status = 'sending', paused_reason = NULL, updated_at = ?
          WHERE id = ? AND status = 'queued'`,
+      )
+      .run(now ?? Date.now(), id);
+    return result.changes === 1;
+  }
+
+  markSendingForRetry(id: string, now?: number): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE queued_inputs
+         SET status = 'sending', paused_reason = NULL, updated_at = ?
+         WHERE id = ? AND status = 'failed' AND paused_reason IS NOT NULL`,
       )
       .run(now ?? Date.now(), id);
     return result.changes === 1;
@@ -133,14 +162,14 @@ export class QueuedInputRepository {
     return result.changes === 1;
   }
 
-  markFailed(id: string, now?: number): boolean {
+  markFailed(id: string, now?: number, pausedReason = 'send_failed'): boolean {
     const result = this.db
       .prepare(
         `UPDATE queued_inputs
-         SET status = 'failed', updated_at = ?
+         SET status = 'failed', paused_reason = ?, updated_at = ?
          WHERE id = ? AND status IN ('queued', 'sending')`,
       )
-      .run(now ?? Date.now(), id);
+      .run(pausedReason, now ?? Date.now(), id);
     return result.changes === 1;
   }
 
@@ -148,7 +177,8 @@ export class QueuedInputRepository {
     const row = this.db
       .prepare(
         `UPDATE queued_inputs
-         SET status = 'queued', retry_count = retry_count + 1, updated_at = ?
+         SET status = 'queued', retry_count = retry_count + 1,
+             paused_reason = NULL, updated_at = ?
          WHERE id = ? AND status = 'sending'
          RETURNING retry_count`,
       )
@@ -162,9 +192,60 @@ export class QueuedInputRepository {
       .prepare(
         `UPDATE queued_inputs
          SET status = 'retracted', updated_at = ?
-         WHERE id = ? AND status = 'queued'`,
+         WHERE id = ? AND status IN ('queued', 'failed')`,
       )
       .run(now ?? Date.now(), id);
+    return result.changes === 1;
+  }
+
+  updateEnvelope(id: string, envelopeJson: string, now?: number): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE queued_inputs
+         SET envelope_json = ?, updated_at = ?
+         WHERE id = ? AND status = 'queued'`,
+      )
+      .run(envelopeJson, now ?? Date.now(), id);
+    return result.changes === 1;
+  }
+
+  reorder(sessionId: string, orderedIds: string[], now?: number): boolean {
+    const reorderTransaction = this.db.transaction(() => {
+      const rows = this.db.prepare(
+        `SELECT id FROM queued_inputs
+         WHERE session_id = ? AND status IN ('queued', 'failed')`,
+      ).all(sessionId) as Array<{ id: string }>;
+      if (rows.length !== orderedIds.length) return false;
+      const currentIds = new Set(rows.map((row) => row.id));
+      if (currentIds.size !== orderedIds.length || orderedIds.some((id) => !currentIds.has(id))) {
+        return false;
+      }
+      const update = this.db.prepare(
+        `UPDATE queued_inputs SET position = ?, updated_at = ?
+         WHERE id = ? AND session_id = ? AND status IN ('queued', 'failed')`,
+      );
+      const timestamp = now ?? Date.now();
+      orderedIds.forEach((id, position) => update.run(position, timestamp, id, sessionId));
+      return true;
+    });
+    return reorderTransaction();
+  }
+
+  recoverSendingOrphans(now?: number): number {
+    const result = this.db.prepare(
+      `UPDATE queued_inputs
+       SET status = 'queued', paused_reason = 'restart', updated_at = ?
+       WHERE status = 'sending'`,
+    ).run(now ?? Date.now());
+    return result.changes;
+  }
+
+  requeueRedirectedInput(id: string, now?: number): boolean {
+    const result = this.db.prepare(
+      `UPDATE queued_inputs
+       SET status = 'queued', paused_reason = NULL, updated_at = ?
+       WHERE id = ? AND status = 'sending'`,
+    ).run(now ?? Date.now(), id);
     return result.changes === 1;
   }
 

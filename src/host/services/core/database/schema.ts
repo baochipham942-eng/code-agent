@@ -1021,13 +1021,42 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       envelope_json TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'queued',
       retry_count INTEGER NOT NULL DEFAULT 0,
+      position INTEGER NOT NULL DEFAULT 0,
+      paused_reason TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )
   `);
+  const queuedInputColumns = new Set(
+    (db.prepare('PRAGMA table_info(queued_inputs)').all() as Array<{ name: string }>)
+      .map((column) => column.name),
+  );
+  const queuedInputPositionWasPresent = queuedInputColumns.has('position');
+  safeAlter(db, 'ALTER TABLE queued_inputs ADD COLUMN position INTEGER NOT NULL DEFAULT 0', logger);
+  safeAlter(db, 'ALTER TABLE queued_inputs ADD COLUMN paused_reason TEXT', logger);
+  if (!queuedInputPositionWasPresent) {
+    db.exec(`
+      WITH ranked AS (
+        SELECT id,
+          ROW_NUMBER() OVER (
+            PARTITION BY session_id
+            ORDER BY created_at ASC, id ASC
+          ) - 1 AS migrated_position
+        FROM queued_inputs
+      )
+      UPDATE queued_inputs
+      SET position = (
+        SELECT migrated_position FROM ranked WHERE ranked.id = queued_inputs.id
+      )
+    `);
+  }
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_queued_inputs_session
     ON queued_inputs (session_id, status, created_at)
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_queued_inputs_position
+    ON queued_inputs (session_id, position)
   `);
 
   // Agent Neo native Generative UI. Mutable state remains local by design;

@@ -139,6 +139,11 @@ interface AgentRouterDeps extends AgentDurableRouteDeps {
   getSupabaseForSession: () => Promise<SupabaseAgentBinding | null>;
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
   registerQueuedInputEnqueueHook?: (onEnqueued: (sessionId: string) => void) => void;
+  registerQueuedInputSendNowHook?: (sendNow: (input: {
+    id: string;
+    sessionId: string;
+    envelope: ConversationEnvelope;
+  }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>) => void;
 }
 
 export type ActiveAgentLoop = RunControlTarget;
@@ -294,6 +299,48 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
   });
   deps.registerQueuedInputStartupSweep?.(() => queuedInputDrain.runStartupSweep());
   deps.registerQueuedInputEnqueueHook?.((sessionId) => queuedInputDrain.handleEnqueued(sessionId));
+  deps.registerQueuedInputSendNowHook?.(async ({ id, sessionId, envelope }, route) => {
+    if (route === 'idle') {
+      await runAgentTurn(
+        buildQueuedAgentRunBody({
+          ...envelope,
+          clientMessageId: id,
+          sessionId,
+        }),
+        createOfflineAgentRunResponseSink(),
+        { connectedClient: false },
+      );
+      return 'sent';
+    }
+
+    const activeLoop = runRegistry.getBySessionId(sessionId);
+    if (!activeLoop) throw new Error(`Active queued input run disappeared: ${sessionId}`);
+    const db = getDatabase().getDb();
+    if (!db) throw new Error('Queued input database is unavailable');
+    const repository = new QueuedInputRepository(db);
+    const metadata = (() => {
+      const base = toWorkbenchMetadata(envelope.context);
+      const pinnedLibraryItems = getPinnedLibrarySnapshot(sessionId);
+      if (!pinnedLibraryItems) return base;
+      return { ...base, workbench: { ...(base?.workbench ?? {}), pinnedLibraryItems } };
+    })();
+    const outcome = await steerOrQueue(activeLoop, {
+      sessionId,
+      content: envelope.content,
+      clientMessageId: id,
+      attachments: envelope.attachments,
+      metadata,
+      context: envelope.context,
+      expectedTurnId: envelope.expectedTurnId,
+    }, {
+      enqueue: () => {
+        if (!repository.requeueRedirectedInput(id)) {
+          throw new Error(`Queued input could not return to waiting state: ${id}`);
+        }
+      },
+    });
+    return outcome.outcome === 'queued' ? 'queued' : 'steered';
+  });
 
   // ── Agent Run (SSE streaming) ──────────────────────────────────────
   async function runAgentTurn(

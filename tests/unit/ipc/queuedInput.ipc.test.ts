@@ -32,6 +32,8 @@ function createSchema(db: BetterSqlite3.Database): void {
       envelope_json TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'queued',
       retry_count INTEGER NOT NULL DEFAULT 0,
+      position INTEGER NOT NULL DEFAULT 0,
+      paused_reason TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -44,6 +46,8 @@ describe('queued input IPC', () => {
   const handlers = new Map<string, WebRouteHandler>();
   let db: BetterSqlite3.Database;
   let currentModelSpec: ConversationModelSpec | undefined;
+  let activeRun = false;
+  const sendNow = vi.fn();
 
   beforeEach(() => {
     db = new Database(':memory:');
@@ -51,10 +55,14 @@ describe('queued input IPC', () => {
     databaseState.db = db;
     handlers.clear();
     currentModelSpec = undefined;
+    activeRun = false;
+    sendNow.mockReset().mockResolvedValue('sent');
     registerQueuedInputHandlers({
       handle: (channel: string, handler: WebRouteHandler) => handlers.set(channel, handler),
     } as never, {
       resolveModelSpec: () => currentModelSpec,
+      hasActiveRun: () => activeRun,
+      sendNow,
     });
   });
 
@@ -173,6 +181,54 @@ describe('queued input IPC', () => {
       .resolves.toEqual({ success: true, data: { retracted: true } });
     await expect(invoke({ action: 'retract', payload: { id: 'sending-input' } }))
       .resolves.toEqual({ success: true, data: { retracted: false } });
+  });
+
+  it('update 只修改 queued 行的 envelope 文本并保留其余字段', async () => {
+    await enqueue('editable', {
+      content: 'before',
+      context: { runtimeInput: { mode: 'supplement' } },
+    });
+    await expect(invoke({
+      action: 'update',
+      payload: { id: 'editable', content: 'after' },
+    })).resolves.toEqual({ success: true, data: { updated: true } });
+    const listed = await invoke({ action: 'list', payload: { sessionId: 'session-1' } });
+    expect((listed.data as QueuedInput[])[0]?.envelope).toEqual({
+      content: 'after',
+      context: { runtimeInput: { mode: 'supplement' } },
+    });
+
+    await invoke({ action: 'markSending', payload: { id: 'editable' } });
+    await expect(invoke({
+      action: 'update',
+      payload: { id: 'editable', content: 'too late' },
+    })).resolves.toMatchObject({ success: false, error: { code: 'INVALID_STATE' } });
+  });
+
+  it('sendNow 有活跃 run 时选择改道路由并结算 consumed', async () => {
+    activeRun = true;
+    sendNow.mockResolvedValueOnce('steered');
+    await enqueue('active-input', { content: 'say this now' }, 'active-session');
+
+    await expect(invoke({ action: 'sendNow', payload: { id: 'active-input' } }))
+      .resolves.toEqual({ success: true, data: { status: 'consumed', retryCount: 0 } });
+    expect(sendNow).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'active-input',
+      sessionId: 'active-session',
+      envelope: { content: 'say this now' },
+    }), 'active');
+  });
+
+  it('sendNow 无活跃 run 时选择新一轮路由并结算 consumed', async () => {
+    sendNow.mockResolvedValueOnce('sent');
+    await enqueue('idle-input', { content: 'start the next turn' }, 'idle-session');
+
+    await expect(invoke({ action: 'sendNow', payload: { id: 'idle-input' } }))
+      .resolves.toEqual({ success: true, data: { status: 'consumed', retryCount: 0 } });
+    expect(sendNow).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'idle-input',
+      sessionId: 'idle-session',
+    }), 'idle');
   });
 
   it('markSending 首次返回 true，重复调用返回 false', async () => {

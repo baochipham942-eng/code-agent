@@ -74,7 +74,7 @@ export interface UseChatInputSubmitParams {
   isUploading: boolean;
   onSend: (envelope: ConversationEnvelope) => boolean | Promise<boolean>;
   onSteer?: (envelope: ConversationEnvelope) => Promise<SteerOrQueueOutcome | undefined>;
-  onQueuedInput?: (queuedInput: QueuedInput) => void;
+  onQueuedInputChanged?: () => void;
   agentEntries: Parameters<typeof parseAgentSlashCommand>[1];
   buildEnvelope: BuildEnvelope;
   openAgentCommand: () => void;
@@ -149,7 +149,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     isUploading,
     onSend,
     onSteer,
-    onQueuedInput,
+    onQueuedInputChanged,
     agentEntries,
     buildEnvelope,
     openAgentCommand,
@@ -555,16 +555,18 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
             clientMessageId: id,
             sessionId: envelope.sessionId ?? currentSessionId,
           };
-          const queuedInput = await ipcService.invokeDomain<QueuedInput>(
+          await ipcService.invokeDomain<QueuedInput>(
             IPC_DOMAINS.QUEUED_INPUT,
             'enqueue',
             { id, sessionId: currentSessionId, envelope: queuedEnvelope },
           );
-          onQueuedInput?.(queuedInput);
+          onQueuedInputChanged?.();
           return true;
         }
         if (isProcessing && opts?.steer && onSteer) {
-          return (await onSteer(envelope)) !== undefined;
+          const outcome = await onSteer(envelope);
+          if (outcome?.outcome === 'queued') onQueuedInputChanged?.();
+          return outcome !== undefined;
         }
         return settleSendWithinTimeout(onSend(envelope));
       };

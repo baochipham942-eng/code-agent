@@ -15,7 +15,7 @@ import type {
 } from '@shared/contract/conversationEnvelope';
 import type { SteerOrQueueOutcome } from '@shared/contract/appService';
 import { UI } from '@shared/constants';
-import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 
 import { InputArea, InputAreaRef } from './InputArea';
 import { ComposerSlot, SlotEntry } from './ComposerSlot';
@@ -105,6 +105,7 @@ import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
 import { ComposerUploadStatus } from './ComposerUploadStatus';
 import { RuntimeInputChoice, type RuntimeInputChoiceValue } from './RuntimeInputChoice';
+import { QueuedInputTray } from './QueuedInputTray';
 
 // ============================================================================
 // 类型定义
@@ -225,8 +226,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   } | null>(null);
   const [isFocused, setIsFocused] = useState(false);
   const [runtimeInputChoice, setRuntimeInputChoice] = useState<RuntimeInputChoiceValue>('queue');
-  const [pendingQueuedInputIds, setPendingQueuedInputIds] = useState<Set<string>>(() => new Set());
-  const settledBeforeEnqueueRef = useRef<Set<string>>(new Set());
+  const [queuedInputRevision, setQueuedInputRevision] = useState(0);
+  const [editingQueuedInputId, setEditingQueuedInputId] = useState<string | null>(null);
 
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   // 会话作用域：currentSessionId / engine 类型 / 切换会话时清空草稿
@@ -235,24 +236,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   useEffect(() => {
     setRuntimeInputChoice('queue');
-    setPendingQueuedInputIds(new Set());
-    settledBeforeEnqueueRef.current.clear();
-  }, [currentSessionId]);
-
-  useEffect(() => {
-    const unsubscribe = ipcService.on(IPC_CHANNELS.QUEUED_INPUT_SETTLED, (settled) => {
-      if (settled.sessionId !== currentSessionId) return;
-      setPendingQueuedInputIds((current) => {
-        if (!current.has(settled.id)) {
-          settledBeforeEnqueueRef.current.add(settled.id);
-          return current;
-        }
-        const next = new Set(current);
-        next.delete(settled.id);
-        return next;
-      });
-    });
-    return () => unsubscribe?.();
+    setEditingQueuedInputId(null);
   }, [currentSessionId]);
   const pendingAppshot = useAppshotsStore((s) =>
     s.pendingSessionId === currentSessionId ? s.pending : null
@@ -788,10 +772,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     isUploading,
     onSend,
     onSteer,
-    onQueuedInput: (queuedInput) => {
-      if (settledBeforeEnqueueRef.current.delete(queuedInput.id)) return;
-      setPendingQueuedInputIds((current) => new Set(current).add(queuedInput.id));
-    },
+    onQueuedInputChanged: () => setQueuedInputRevision((value) => value + 1),
     agentEntries,
     buildEnvelope,
     openAgentCommand,
@@ -810,12 +791,29 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setActiveAgentId,
   });
 
-  const submitWithRuntimeChoice = useCallback((_event?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => (
-    handleSubmit(undefined, {
+  const submitWithRuntimeChoice = useCallback(async (event?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {
+    event?.preventDefault();
+    if (editingQueuedInputId) {
+      const content = (opts?.content ?? value).trim();
+      if (!content) return;
+      const result = await ipcService.invokeDomain<{ updated: boolean }>(
+        IPC_DOMAINS.QUEUED_INPUT,
+        'update',
+        { id: editingQueuedInputId, content },
+      );
+      if (result.updated) {
+        setEditingQueuedInputId(null);
+        setValue('');
+        setQueuedInputRevision((current) => current + 1);
+      }
+      inputAreaRef.current?.focus();
+      return;
+    }
+    return handleSubmit(undefined, {
       ...opts,
       steer: opts?.steer ?? Boolean(isProcessing && runtimeInputChoice === 'redirect'),
-    })
-  ), [handleSubmit, isProcessing, runtimeInputChoice]);
+    });
+  }, [editingQueuedInputId, handleSubmit, isProcessing, runtimeInputChoice, value]);
 
   // 附件 / 语音动作单元
   const {
@@ -981,7 +979,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       <form
         ref={formRef}
         onSubmit={(event) => {
-          void handleSubmit(event, {
+          void submitWithRuntimeChoice(event, {
             steer: Boolean(isProcessing && runtimeInputChoice === 'redirect'),
           });
         }}
@@ -1137,6 +1135,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           </div>
         )}
 
+        <QueuedInputTray
+          sessionId={currentSessionId}
+          revision={queuedInputRevision}
+          editingId={editingQueuedInputId}
+          onEdit={(input) => {
+            setEditingQueuedInputId(input.id);
+            setValue(input.envelope.content);
+            setAttachments([]);
+            setVoiceInputContext(null);
+            inputAreaRef.current?.focus();
+          }}
+        />
+
         {/* composer 浮起（2026-08-04 §3.1）：L2 底 + 投影，默认无边框、聚焦描边显现，
             与聊天内容拉开亮度层级，样式真源在 global.css .composer-elevated */}
         <div className="relative composer-elevated rounded-2xl">
@@ -1272,11 +1283,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             />
           )}
           {/* @neo 交互已从 composer 移除（2026-07-29 拍板）：工作卡/续接改从 Neo 协同页发起 */}
-          {pendingQueuedInputIds.size > 0 && (
-            <div className="px-4 pt-2 text-[11px] text-zinc-500" role="status" data-testid="queued-input-hint">
-              {t.chatInputSubmit.queuedInputHint}
-            </div>
-          )}
           <InputArea
             ref={inputAreaRef}
             value={value}

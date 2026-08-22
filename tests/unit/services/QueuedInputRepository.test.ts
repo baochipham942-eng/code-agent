@@ -253,7 +253,13 @@ describe('QueuedInputRepository', () => {
         ('earlier', 's1', '{}', 'queued', 0, 100, 100),
         ('other', 's2', '{}', 'queued', 0, 150, 150);
     `);
-    applySchema(legacy, { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() });
+    const migrationLogger = {
+      warn: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      debug: vi.fn(),
+    } as unknown as Parameters<typeof applySchema>[1];
+    applySchema(legacy, migrationLogger);
 
     const migrated = legacy.prepare(
       'SELECT id, position, paused_reason FROM queued_inputs ORDER BY session_id, position',

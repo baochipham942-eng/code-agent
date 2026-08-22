@@ -231,6 +231,15 @@ describe('e2eLocalAgentModel', () => {
       content: '',
       toolCalls: [{ id: 'e2e-task-wake-noop', name: 'wake_noop', arguments: {} }],
     });
+
+    const dispatch = buildE2ELocalAgentModelResponse(
+      [{ role: 'user', content: 'E2E_SESSION_COMMAND_CENTER E2E_TASK_WAKE_DELIVER SPAWN' }],
+      [delegateTaskTool],
+      config,
+    );
+    expect(dispatch.toolCalls?.[0]?.arguments).toMatchObject({
+      prompt: expect.stringContaining('E2E_TASK_WAKE_DELIVER'),
+    });
   });
 
   it('calls the real Read tool before producing the final eval response', () => {

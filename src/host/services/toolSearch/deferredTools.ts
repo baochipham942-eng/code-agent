@@ -127,6 +127,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     aliases: ['cancel', 'abort task', '取消任务', '停掉任务'],
     source: 'builtin',
   },
+  {
+    name: 'wake_noop',
+    shortDescription: '隐藏后台完成唤醒回合的显式无输出终止动作',
+    tags: ['planning'],
+    aliases: ['hidden wake noop'],
+    source: 'builtin',
+  },
 
   // ============================================================================
   // Gen 1: 扩展 Shell 工具

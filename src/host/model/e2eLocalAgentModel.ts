@@ -177,6 +177,11 @@ function buildCommandCenterE2EResponse(
   const statusRequested = userText.includes('STATUS');
   const steerRequested = userText.includes('STEER');
   const secondRequested = userText.includes('SECOND');
+  const wakeMarker = userText.includes(E2E_TASK_WAKE_NOOP_MARKER)
+    ? E2E_TASK_WAKE_NOOP_MARKER
+    : userText.includes(E2E_TASK_WAKE_DELIVER_MARKER)
+      ? E2E_TASK_WAKE_DELIVER_MARKER
+      : '';
   const callId = statusRequested
     ? E2E_COMMAND_CENTER_STATUS_CALL_ID
     : steerRequested
@@ -244,7 +249,10 @@ function buildCommandCenterE2EResponse(
         short_name: '项目身份',
         lane_key: 'acceptance-read',
         submission_key: 'e2e-command-center-project-identity',
-        prompt: '只读检查当前项目 package.json 的 name 与 version，并用一句话给出结论。',
+        prompt: [
+          '只读检查当前项目 package.json 的 name 与 version，并用一句话给出结论。',
+          wakeMarker,
+        ].filter(Boolean).join(' '),
       },
     };
   onStream?.({
@@ -561,7 +569,12 @@ export function buildE2ELocalAgentModelResponse(
     const content = [
       'E2E real agent replay eval smoke completed.',
       `${E2E_FIXTURE_MARKER} observed through a real Read tool result.`,
-    ].join(' ');
+      messages.some((message) => getMessageText(message).includes(E2E_TASK_WAKE_NOOP_MARKER))
+        ? E2E_TASK_WAKE_NOOP_MARKER
+        : messages.some((message) => getMessageText(message).includes(E2E_TASK_WAKE_DELIVER_MARKER))
+          ? E2E_TASK_WAKE_DELIVER_MARKER
+          : '',
+    ].filter(Boolean).join(' ');
     onStream?.({ type: 'text', content });
     onStream?.({ type: 'complete', finishReason: 'stop' });
     return {

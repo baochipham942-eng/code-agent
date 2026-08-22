@@ -16,6 +16,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { formatFileSize } from '../../utils/fileSize';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { qrcodeGenerateSchema as schema } from './qrcodeGenerate.schema';
 
@@ -59,8 +60,8 @@ async function executeQrcodeGenerate(
   try {
     const timestamp = Date.now();
     const fileName = `qrcode-${timestamp}.png`;
-    const outputDir = output_path ? path.dirname(output_path) : ctx.workingDir;
-    const finalPath = output_path || path.join(outputDir, fileName);
+    const finalPath = resolveInputPath(output_path ?? fileName, ctx.workingDir);
+    const outputDir = path.dirname(finalPath);
 
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });

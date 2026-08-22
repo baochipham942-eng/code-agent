@@ -20,6 +20,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { formatFileSize } from '../../utils/fileSize';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { excelGenerateSchema as schema } from './excelGenerate.schema';
 
@@ -239,8 +240,8 @@ export async function executeExcelGenerate(
 
     const timestamp = Date.now();
     const fileName = `spreadsheet-${timestamp}.xlsx`;
-    const outputDir = output_path ? path.dirname(output_path) : ctx.workingDir;
-    const finalPath = output_path || path.join(outputDir, fileName);
+    const finalPath = resolveInputPath(output_path ?? fileName, ctx.workingDir);
+    const outputDir = path.dirname(finalPath);
 
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });

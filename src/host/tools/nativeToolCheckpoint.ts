@@ -9,6 +9,7 @@ export interface NativeToolCheckpoint {
 export async function prepareNativeToolCheckpoint(input: {
   runId?: string;
   sessionId?: string;
+  sourceMessageId?: string;
   toolName: string;
   toolDefinition: ToolDefinition;
   toolCallId?: string;
@@ -21,11 +22,11 @@ export async function prepareNativeToolCheckpoint(input: {
     return { complete: async () => {} };
   }
 
-  const sourceMessageId = input.sessionId
+  const sourceMessageId = input.sourceMessageId ?? (input.sessionId
     ? [...getDatabase().getMessages(input.sessionId)]
       .reverse()
       .find((message) => message.role === 'user')?.id
-    : undefined;
+    : undefined);
   if (!sourceMessageId) {
     throw new Error('Native Durable tool checkpoint requires a stable source message id');
   }

@@ -15,6 +15,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import type {
   ToolHandler,
   ToolModule,
@@ -291,8 +292,8 @@ export async function executeScreenshotPage(
     const timestamp = Date.now();
     const hostname = parsedUrl.hostname.replace(/\./g, '_');
     const fileName = `screenshot_${hostname}_${timestamp}.${format}`;
-    const outputDir = params.output_path ? path.dirname(params.output_path) : ctx.workingDir;
-    const finalPath = params.output_path || path.join(outputDir, fileName);
+    const finalPath = resolveInputPath(params.output_path ?? fileName, ctx.workingDir);
+    const outputDir = path.dirname(finalPath);
 
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });

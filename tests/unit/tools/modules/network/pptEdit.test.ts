@@ -153,10 +153,13 @@ describe('pptEditModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
     });
 
-    it('non-existent file_path → 文件不存在', async () => {
+    it('returns an actionable English error for a non-existent file_path', async () => {
       const result = await run({ file_path: '/nonexistent/x.pptx', action: 'analyze' });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error).toMatch(/文件不存在/);
+      if (!result.ok) {
+        expect(result.error).toContain('File not found: /nonexistent/x.pptx');
+        expect(result.error).toContain('Check the path and retry.');
+      }
     });
   });
 

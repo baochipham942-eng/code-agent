@@ -3,6 +3,9 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -263,6 +266,21 @@ describe('excelGenerateModule (native)', () => {
         output_path: '/tmp/work/custom.xlsx',
       });
       expect(writeFileMock).toHaveBeenCalledWith('/tmp/work/custom.xlsx');
+    });
+
+    it('resolves a relative output_path inside ctx.workingDir and writes there', async () => {
+      const workingDir = await mkdtemp(join(tmpdir(), 'excel-generate-'));
+      const expectedPath = join(workingDir, 'report.xlsx');
+      try {
+        writeFileMock.mockImplementationOnce((filePath: string) => writeFile(filePath, Buffer.from('xlsx')));
+        const result = await run({ title: 'T', data: [{ a: 1 }], output_path: 'report.xlsx' }, makeCtx({ workingDir }));
+        expect(result.ok).toBe(true);
+        expect(writeFileMock).toHaveBeenCalledWith(expectedPath);
+        expect(await readFile(expectedPath, 'utf8')).toBe('xlsx');
+        if (result.ok) expect(result.output).toContain(expectedPath);
+      } finally {
+        await rm(workingDir, { recursive: true, force: true });
+      }
     });
 
     it('creates output directory if missing', async () => {

@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => {
   const initializeCLIServices = vi.fn().mockResolvedValue(undefined);
   const getSessionManager = vi.fn();
   const getConfigService = vi.fn();
+  const startCLIDurableRun = vi.fn().mockResolvedValue(null);
+  const terminalCLIDurableRun = vi.fn().mockResolvedValue(undefined);
   const getSessionSkillService = vi.fn();
   const addSwarmEventListener = vi.fn().mockReturnValue(() => {});
   const terminalHandleEvent = vi.fn();
@@ -28,6 +30,8 @@ const mocks = vi.hoisted(() => {
     initializeCLIServices,
     getSessionManager,
     getConfigService,
+    startCLIDurableRun,
+    terminalCLIDurableRun,
     getSessionSkillService,
     addSwarmEventListener,
     terminalHandleEvent,
@@ -46,6 +50,8 @@ vi.mock('../../../src/cli/bootstrap', () => ({
   initializeCLIServices: mocks.initializeCLIServices,
   getSessionManager: mocks.getSessionManager,
   getConfigService: mocks.getConfigService,
+  startCLIDurableRun: mocks.startCLIDurableRun,
+  terminalCLIDurableRun: mocks.terminalCLIDurableRun,
 }));
 
 vi.mock('../../../src/host/services/skills/sessionSkillService', () => ({
@@ -222,6 +228,37 @@ describe('CLIAgent', () => {
     );
   });
 
+  it('uses the CLI durable parent context and terminals it after the turn', async () => {
+    const durableRun = {
+      context: {
+        runId: 'durable-run-1',
+        sessionId: 'sess-1',
+        workspace: '/tmp/project',
+        cwd: '/tmp/project',
+      },
+      traceContext: { runId: 'durable-run-1' },
+    };
+    mocks.startCLIDurableRun.mockResolvedValueOnce(durableRun);
+    installLoop(async (ctl) => {
+      ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+    });
+
+    const agent = new CLIAgent();
+    await agent.run('durable turn');
+
+    expect(mocks.createAgentLoop).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Function),
+      expect.any(Array),
+      'sess-1',
+      undefined,
+      undefined,
+      durableRun.context,
+      durableRun.traceContext,
+    );
+    expect(mocks.terminalCLIDurableRun).toHaveBeenCalledWith(durableRun, true);
+  });
+
   it('restores the persisted expertThread role before creating the CLI AgentLoop', async () => {
     const override = {
       id: '牧之',
@@ -252,6 +289,7 @@ describe('CLIAgent', () => {
       undefined,
       undefined,
       expect.objectContaining({ sessionId: 'sess-1' }),
+      undefined,
     );
   });
 

@@ -297,7 +297,10 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'list',
     'markSending',
     'reportSendOutcome',
+    'reorder',
     'retract',
+    'sendNow',
+    'update',
   ],
   [IPC_DOMAINS.LIBRARY]: [
     'addItem',

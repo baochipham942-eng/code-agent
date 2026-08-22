@@ -45,7 +45,6 @@ import { GoalStatusBar } from './features/chat/GoalStatusBar';
 import { buildGoalNoticeMessage } from './features/chat/goalNotice';
 import type { ChatInputHandle } from './features/chat/ChatInput';
 import { useFileUpload } from './features/chat/ChatInput/useFileUpload';
-import { SwarmInlineMonitor } from './features/swarm/SwarmInlineMonitor';
 import { WorkflowInlineMonitor } from './features/workflow/WorkflowInlineMonitor';
 import { WorkflowLaunchCard } from './features/workflow/WorkflowLaunchCard';
 import { TaskStatusBar } from './features/chat/TaskStatusBar';
@@ -873,8 +872,8 @@ export const ChatView: React.FC = () => {
           {/* Pinned todo progress bar — visible above the input */}
           {!hasPlanApprovalEvidence && <PinnedTodoBar plan={plan} sessionId={currentSessionId} />}
 
-          {/* Background agents inline monitor (Codex 风格 sticky 浮层) */}
-          <SwarmInlineMonitor />
+          {/* 讨论流浮层已收进右侧「本会话的代理」面板的「事件」折叠区（N-L6-AGENTVIEW S2），
+              输入框上方不再另起浮层 */}
 
           {/* dynamic-workflow 启动审批卡（仅有 pending 审批时显示，跑前确认） */}
           <WorkflowLaunchCard />

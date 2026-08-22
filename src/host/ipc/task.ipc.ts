@@ -73,6 +73,17 @@ async function handleCancelTask(
   await taskManager.cancelTask(payload.sessionId);
 }
 
+interface BackgroundTaskIdPayload {
+  taskId: string;
+}
+
+async function handleCancelBackgroundTask(
+  taskManager: TaskManager,
+  payload: BackgroundTaskIdPayload
+): Promise<boolean> {
+  return taskManager.cancelBackgroundTask(payload.taskId);
+}
+
 function handleGetState(
   taskManager: TaskManager,
   payload: TaskIdPayload
@@ -210,6 +221,16 @@ export function registerTaskHandlers(
         case 'cancel':
           await handleCancelTask(taskManager, payload as TaskIdPayload);
           return { success: true, data: null };
+
+        case 'cancelBackgroundTask': {
+          // 行级停单个 delegate_task 后台任务（SessionAgentsPanel）：TaskManager 既有
+          // cancelBackgroundTask(taskId)，此前只有 cancel_task 工具内部用，IPC 无出口。
+          const cancelled = await handleCancelBackgroundTask(
+            taskManager,
+            payload as BackgroundTaskIdPayload,
+          );
+          return { success: true, data: { cancelled } };
+        }
 
         case 'getState':
           return { success: true, data: handleGetState(taskManager, payload as TaskIdPayload) };

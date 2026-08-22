@@ -232,6 +232,23 @@ describe('IPC Handlers', () => {
       expect(response.error?.code).toBe('INVALID_AGENT_ID');
     });
 
+    it('closeAgent validates agentId and reports cancelled=false for unknown agents', async () => {
+      registerAgentHandlers(ipc.mock, () => null as any);
+
+      const invalid = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, {
+        action: 'closeAgent',
+        payload: {},
+      } satisfies IPCRequest);
+      expect(invalid.success).toBe(false);
+      expect(invalid.error?.code).toBe('INVALID_AGENT_ID');
+
+      const unknown = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, {
+        action: 'closeAgent',
+        payload: { agentId: 'no-such-agent', sessionId: 'session-1' },
+      } satisfies IPCRequest);
+      expect(unknown).toEqual({ success: true, data: { cancelled: false } });
+    });
+
     it('normalizes rich envelope payload for send', async () => {
       const mockAppService = {
         sendMessage: vi.fn().mockResolvedValue(undefined),

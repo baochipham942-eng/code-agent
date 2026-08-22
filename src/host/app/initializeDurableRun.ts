@@ -26,6 +26,9 @@ export class DurableRunRolloutInitializationError extends Error {
   }
 }
 
+const DEFAULT_DURABLE_RUN_LEASE_DURATION_MS = 15_000;
+const DURABLE_RECOVERY_SWEEP_INTERVAL_DIVISOR = 2;
+
 export interface DurableRunApplicationRuntime {
   policy: DurableRunRolloutPolicy;
   kernel: DurableRunKernel | null;
@@ -54,8 +57,8 @@ export async function initializeDurableRun(input: {
   /** Used only by the child-process acceptance entry point. */
   recoveryHandlerOverrides?: DurableRecoveryHandlerOverrides
     | ((kernel: DurableRunKernel) => DurableRecoveryHandlerOverrides);
-  onDelayedResults?: (results: DurableRunApplicationRuntime['recoveryResults']) => void;
-  onDelayedError?: (error: unknown) => void;
+  onSweepResults?: (results: DurableRunApplicationRuntime['recoveryResults']) => void;
+  onSweepError?: (error: unknown) => void;
 }): Promise<DurableRunApplicationRuntime> {
   const policy = resolveDurableRunRollout(input.env);
   const readService = new DurableRunReadService(policy, input.repository);
@@ -75,7 +78,7 @@ export async function initializeDurableRun(input: {
     );
   }
 
-  const leaseDurationMs = input.leaseDurationMs ?? 15_000;
+  const leaseDurationMs = input.leaseDurationMs ?? DEFAULT_DURABLE_RUN_LEASE_DURATION_MS;
   try {
     const kernel = new DurableRunKernel({
       stores: input.repository,
@@ -100,9 +103,12 @@ export async function initializeDurableRun(input: {
       handlerOverrides,
     });
     const recoveryResults = await recoveryRuntime.recoverAndDispatch(input.now ?? Date.now());
-    recoveryRuntime.scheduleDelayedScan(leaseDurationMs + 100, {
-      onResults: input.onDelayedResults,
-      onError: input.onDelayedError,
+    recoveryRuntime.startSweeper(Math.max(
+      1,
+      Math.floor(leaseDurationMs / DURABLE_RECOVERY_SWEEP_INTERVAL_DIVISOR),
+    ), {
+      onResults: input.onSweepResults,
+      onError: input.onSweepError,
     });
     return {
       policy,

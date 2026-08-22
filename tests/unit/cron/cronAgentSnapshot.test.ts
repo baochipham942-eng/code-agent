@@ -5,6 +5,7 @@ import type {
   CronJobDefinition,
 } from '../../../src/shared/contract/cron';
 import { CRON_AGENT_SNAPSHOT, EXTERNAL_WATCH } from '../../../src/shared/constants';
+import { shouldDeliverAgentEvent } from '../../../src/host/protocol/events/eventFilter';
 
 const dbState = vi.hoisted(() => ({
   savedRows: [] as unknown[][],
@@ -137,6 +138,17 @@ beforeEach(() => {
 });
 
 describe('CronService agent run snapshot wiring', () => {
+  it('subscribes unattended cron and heartbeat runs without streaming deltas', async () => {
+    await runAgentAction({ heartbeatTask: true }, 'heartbeat done');
+
+    const [, , options] = agentState.sendMessage.mock.calls[0] as [string, unknown, {
+      eventFilter?: import('../../../src/host/protocol/events/eventFilter').AgentEventFilter;
+    }];
+    expect(shouldDeliverAgentEvent('message_delta', options.eventFilter)).toBe(false);
+    expect(shouldDeliverAgentEvent('stream_chunk', options.eventFilter)).toBe(false);
+    expect(shouldDeliverAgentEvent('permission_request', options.eventFilter)).toBe(true);
+  });
+
   it('没开变化追踪的任务：不注入快照对比要求，但仍带当前时间锚点，也不落任何快照', async () => {
     const { service, definition, updateJob } = await runAgentAction(
       { heartbeatTask: true },

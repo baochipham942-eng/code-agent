@@ -65,6 +65,21 @@ describe('AgentRunBodySchema', () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it('accepts AgentEvent include/exclude filters and rejects malformed lists', () => {
+    const result = AgentRunBodySchema.safeParse({
+      prompt: 'run',
+      eventFilter: {
+        include: ['turn_end', 'permission_request'],
+        exclude: ['message_delta'],
+      },
+    });
+    expect(result.success).toBe(true);
+    expect(AgentRunBodySchema.safeParse({
+      prompt: 'run',
+      eventFilter: { include: 'turn_end' },
+    }).success).toBe(false);
+  });
 });
 
 describe('AgentCancelBodySchema', () => {

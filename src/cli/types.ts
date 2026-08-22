@@ -103,6 +103,7 @@ export interface CLIRunResult {
  */
 export interface APIRunRequest {
   prompt: string;
+  eventFilter?: import('../host/protocol/events/eventFilter').AgentEventFilter;
   project?: string;
   generation?: string;
   model?: string;

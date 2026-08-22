@@ -65,6 +65,7 @@ function createSchema(db: BetterSqlite3.Database): void {
         anchor_prompt TEXT NOT NULL,
         anchor_timestamp INTEGER NOT NULL,
         checkpoint_message_id TEXT,
+        redo_checkpoint_message_id TEXT,
         hidden_message_count INTEGER NOT NULL DEFAULT 0,
         hidden_message_ids TEXT,
         files_restored INTEGER NOT NULL DEFAULT 0,

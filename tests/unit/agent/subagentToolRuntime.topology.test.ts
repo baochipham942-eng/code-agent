@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const resolverState = vi.hoisted(() => ({
   getDefinition: vi.fn(),
@@ -46,8 +49,10 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 import { resetGuardFabric } from '../../../src/host/permissions';
+import { WORKTREE_BASE_DIR } from '../../../src/host/agent/agentWorktreePath';
 import { createSubagentToolRuntime } from '../../../src/host/agent/subagentToolRuntime';
 import type { SubagentExecutionContext } from '../../../src/host/agent/subagentExecutorTypes';
+import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 
 function defineAgentSpawn(): void {
   resolverState.getDefinition.mockImplementation((name: string) => {
@@ -129,5 +134,75 @@ describe('createSubagentToolRuntime execution topology pipe', () => {
 
     expect(result.success).toBe(true);
     expect(resolverState.execute).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createSubagentToolRuntime workspace authority', () => {
+  const cleanupPaths: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(cleanupPaths.splice(0).map((target) => fs.rm(target, { recursive: true, force: true })));
+  });
+
+  async function makeWorkspace(prefix: string): Promise<string> {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+    cleanupPaths.push(workspace);
+    return fs.realpath(workspace);
+  }
+
+  function scopeFor(workspace: string) {
+    return createWorkspaceScope('subagent-runtime-test', [{
+      sourceId: 'primary',
+      path: workspace,
+      role: 'primary',
+      access: 'read_write',
+    }]);
+  }
+
+  it('uses an agent worktree as the native run workspace and sole scope root', async () => {
+    const parentWorkspace = await makeWorkspace('subagent-parent-');
+    await fs.mkdir(WORKTREE_BASE_DIR, { recursive: true });
+    const worktree = await fs.mkdtemp(path.join(WORKTREE_BASE_DIR, 'agent_coder_runtime-test-'));
+    cleanupPaths.push(worktree);
+    const canonicalWorktree = await fs.realpath(worktree);
+    const parentScope = scopeFor(parentWorkspace);
+
+    const { executor } = makeRuntime(makeContext({
+      runId: 'run-worktree',
+      workspace: parentWorkspace,
+      workspaceScope: parentScope,
+      cwd: canonicalWorktree,
+    }));
+
+    const runContext = executor.getRunContext();
+    expect(runContext?.workspace).toBe(canonicalWorktree);
+    expect(runContext?.cwd).toBe(canonicalWorktree);
+    expect(runContext?.workspaceScope?.primaryRoot).toBe(canonicalWorktree);
+    expect(runContext?.workspaceScope?.roots).toHaveLength(1);
+    expect(runContext?.workspaceScope?.roots[0]).toMatchObject({
+      path: canonicalWorktree,
+      role: 'primary',
+      access: 'read_write',
+    });
+    expect(runContext?.workspaceScope).not.toBe(parentScope);
+  });
+
+  it('preserves the parent workspace and scope for a non-worktree child cwd', async () => {
+    const parentWorkspace = await makeWorkspace('subagent-parent-');
+    const childCwd = path.join(parentWorkspace, 'child');
+    await fs.mkdir(childCwd);
+    const parentScope = scopeFor(parentWorkspace);
+
+    const { executor } = makeRuntime(makeContext({
+      runId: 'run-none',
+      workspace: parentWorkspace,
+      workspaceScope: parentScope,
+      cwd: childCwd,
+    }));
+
+    const runContext = executor.getRunContext();
+    expect(runContext?.workspace).toBe(parentWorkspace);
+    expect(runContext?.cwd).toBe(childCwd);
+    expect(runContext?.workspaceScope).toBe(parentScope);
   });
 });

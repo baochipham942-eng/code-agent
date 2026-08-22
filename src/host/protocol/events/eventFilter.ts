@@ -17,7 +17,7 @@ export interface AgentEventFilter {
   exclude?: readonly AgentEventType[];
 }
 
-export function defineAgentEventFilter(filter: AgentEventFilter): AgentEventFilter {
+function defineAgentEventFilter(filter: AgentEventFilter): AgentEventFilter {
   return filter;
 }
 

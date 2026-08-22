@@ -3,13 +3,22 @@
 // ============================================================================
 
 import type { ModelConfig } from './model';
-import type { Message } from './message';
-import type { ToolCall, ToolResult } from './tool';
+import type { ToolCall } from './tool';
 import type { PermissionRequest } from './permission';
 import type { SessionTask, TodoItem } from './planning';
-import type { EvidenceRef } from './evidence';
-import type { ModelDecisionEventData, ModelFallbackInfo, ModelFallbackStrategy, ModelFallbackToolPolicy, ModelFallbackTraceStep, ModelProviderIdentity, ModelToolStrategyDiagnostics } from './modelDecision';
-import type { SurfaceExecutionEventV1 } from './surfaceExecution';
+import {
+  AgentEventEnvelopeSchema,
+  AgentEventSchema,
+  EVENT_STABILITY,
+  STABLE_EVENT_TYPES,
+} from './agentEventSchemas';
+
+export {
+  AgentEventEnvelopeSchema,
+  AgentEventSchema,
+  EVENT_STABILITY,
+  STABLE_EVENT_TYPES,
+};
 
 // Adaptive Thinking: 思考深度级别
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra_code';
@@ -388,150 +397,8 @@ export interface ArtifactWriteStartedData {
   filePath: string;
 }
 
-export type AgentEvent =
-  | { type: 'message'; data: Message }
-  | { type: 'surface_execution'; data: SurfaceExecutionEventV1 }
-  | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string } }
-  | { type: 'tool_call_end'; data: ToolResult & { parentToolUseId?: string } }
-  | { type: 'artifact_write_started'; data: ArtifactWriteStartedData }
-  | { type: 'permission_request'; data: PermissionRequest }
-  | { type: 'model_decision'; data: ModelDecisionEventData }
-  | { type: 'hook_trigger'; data: HookTriggerEventData }
-  | { type: 'hook_started'; data: HookStartedEventData }
-  | { type: 'error'; data: { message: string; code?: string; suggestion?: string; details?: Record<string, unknown>; parentToolUseId?: string } }
-  | { type: 'message_delta'; data: MessageDeltaData }
-  | { type: 'message_snapshot'; data: MessageSnapshotData }
-  | { type: 'stream_chunk'; data: { content: string | undefined; turnId?: string; parentToolUseId?: string } }
-  | { type: 'stream_reasoning'; data: { content: string | undefined; turnId?: string; parentToolUseId?: string } }
-  | { type: 'stream_tool_call_start'; data: { index?: number; id?: string; name?: string; turnId?: string; parentToolUseId?: string } }
-  | { type: 'stream_tool_call_delta'; data: { index?: number; name?: string; argumentsDelta?: string; turnId?: string; parentToolUseId?: string } }
-  | { type: 'todo_update'; data: TodoItem[] }
-  | { type: 'task_update'; data: TaskUpdateEventData }
-  | { type: 'notification'; data: { message: string; parentToolUseId?: string } }
-  | { type: 'routing_resolved'; data: RoutingResolvedEventData }
-  | { type: 'artifact_locator'; data: ArtifactLocatorTelemetryEventData }
-  | { type: 'agent_complete'; data: null }
-  | { type: 'agent_cancelled'; data: null }
-  // /goal 自治模式观测事件
-  | { type: 'goal_iteration'; data: { turn: number; maxTurns: number; goalStatus: string; tokensUsed: number; tokenBudget: number; wallClockBudgetMs?: number; parentToolUseId?: string } }
-  | { type: 'goal_gate'; data: { gate: number; pass: boolean; exitCode?: number | null; timedOut?: boolean; reason?: string; parentToolUseId?: string; verdict?: GoalGateVerdict; attempt?: number; verificationStatus?: GoalGateVerificationStatus; failureType?: GoalGateVerificationFailureType; evidenceRefs?: EvidenceRef[]; skippedChecks?: GoalGateSkippedCheck[]; plannedOptionalCommands?: GoalGatePlannedCommand[]; verificationCard?: GoalGateVerificationCard } }
-  // /goal 终态：三闸全过(met) 或 闸3 兜底中止(aborted)。前端据此展示"已完成/已中止"+停表。
-  // degraded：到限放行（修复预算耗尽仍未过验证）——met 但带安静降级标识。
-  | { type: 'goal_complete'; data: { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number; degraded?: boolean; degradedReason?: string; parentToolUseId?: string } }
-  // Auto Agent 思考/规划事件
-  | { type: 'agent_thinking'; data: { message: string; agentId?: string; progress?: number; parentToolUseId?: string } }
-  // Turn-based message events (行业最佳实践: Vercel AI SDK / LangGraph 模式)
-  | { type: 'turn_start'; data: { turnId: string; iteration?: number; parentToolUseId?: string } }
-  | { type: 'turn_end'; data: { turnId: string; parentToolUseId?: string } }
-  | { type: 'tool_schema_snapshot'; data: {
-      turnId?: string;
-      toolCount: number;
-      tools: Array<{
-        name: string;
-        inputSchema?: Record<string, unknown>;
-        requiresPermission?: boolean;
-        permissionLevel?: string;
-      }>;
-      parentToolUseId?: string;
-    } }
-  | { type: 'model_response'; data: {
-      model: string;
-      provider?: string;
-      responseType: string;
-      duration: number;
-      toolCalls: string[];
-      textLength: number;
-      inputTokens?: number;
-      outputTokens?: number;
-      requestedModel?: string;
-      requestedProvider?: string;
-      fallback?: ModelFallbackInfo;
-      runtimeDiagnostics?: {
-        visibleToolNames?: string[];
-        toolStrategy?: ModelToolStrategyDiagnostics;
-        modelDecision?: ModelDecisionEventData;
-        artifactRepairGuard?: {
-          targetFile?: string;
-          attempts?: number;
-          phase?: string;
-          patched?: boolean;
-          noProgressTurns?: number;
-          activeIssueCodes?: string[];
-        };
-        /** Max Mode（best-of-N）本步诊断（Codex R1-LOW：补齐事件契约类型） */
-        maxMode?: {
-          candidates: number;
-          survivors: number;
-          winner: number;
-          degraded: boolean;
-          judgeParsed: boolean;
-          overheadInputTokens: number;
-          overheadOutputTokens: number;
-        };
-      };
-    } }
-  // Model capability fallback event (能力补充)
-  | { type: 'model_fallback'; data: { reason: string; from: string; to: string; category?: string; strategy?: ModelFallbackStrategy; tried?: ModelFallbackTraceStep[]; skipped?: ModelFallbackTraceStep[]; toolPolicy?: ModelFallbackToolPolicy; fromIdentity?: ModelProviderIdentity; toIdentity?: ModelProviderIdentity; turnId?: string } }
-  // API Key 缺失提示
-  | { type: 'api_key_required'; data: { provider: string; capability: string; message: string } }
-  // 长时任务进度追踪（P0 新增）
-  | { type: 'task_progress'; data: TaskProgressData & { parentToolUseId?: string } }
-  | { type: 'task_complete'; data: TaskCompleteData & { parentToolUseId?: string } }
-  | { type: 'background_task_ledger_changed'; data: BackgroundTaskLedgerChangedData }
-  // Memory 学习事件
-  | { type: 'memory_learned'; data: MemoryLearnedData }
-  // GAP-005: Skill 蒸馏草稿待确认事件（session 结束学习产出，弹用户确认）
-  | { type: 'skill_draft_pending'; data: SkillDraftPendingData }
-  // role-creation-flow: 对话式建角色草稿待确认事件
-  | { type: 'role_draft_pending'; data: RoleDraftPendingData }
-  | { type: 'team_recipe_draft_pending'; data: TeamRecipeDraftPendingData }
-  // Deep Research 事件
-  | { type: 'research_mode_started'; data: ResearchModeStartedData }
-  | { type: 'research_progress'; data: ResearchProgressData }
-  | { type: 'research_complete'; data: ResearchCompleteData }
-  | { type: 'research_error'; data: ResearchErrorData }
-  // Semantic Research 事件（语义自动触发）
-  | { type: 'research_detected'; data: ResearchDetectedData }
-  // Budget 预警事件
-  | { type: 'budget_warning'; data: BudgetEventData }
-  | { type: 'budget_exceeded'; data: BudgetEventData }
-  // 上下文压缩事件
-  | { type: 'context_compressed'; data: ContextCompressedData }
-  // 中断事件（Claude Code 风格）
-  | { type: 'interrupt_start'; data: InterruptEventData }
-  | { type: 'interrupt_acknowledged'; data: InterruptEventData }
-  | { type: 'interrupt_complete'; data: InterruptEventData }
-  // E1: 引用溯源
-  | { type: 'citations_updated'; data: { citations: import('./citation').Citation[] } }
-  // E4: 模型切换
-  | { type: 'model_switched'; data: { from: string; to: string; provider?: string } }
-  // 工具执行进度（每 5 秒发射，前端展示耗时）
-  | { type: 'tool_progress'; data: ToolProgressData }
-  // 工具输出增量（前台 Bash 等长命令边跑边显示 stdout/stderr）
-  | { type: 'tool_output_delta'; data: ToolOutputDeltaData }
-  // 工具执行超时警告（超过阈值时发射）
-  | { type: 'tool_timeout'; data: ToolTimeoutData }
-  // Plan mode events
-  | { type: 'plan_mode_entered'; data: { reason: string } }
-  | { type: 'plan_mode_exited'; data: { plan: string } }
-  // Task stats event
-  | { type: 'task_stats'; data: TaskStatsData }
-  // Context compaction events (Claude Code style)
-  | { type: 'context_compacting'; data: { tokensBefore: number; messagesCount: number } }
-  | { type: 'context_compacted'; data: { tokensBefore: number; tokensAfter: number; messagesRemoved: number; duration_ms: number } }
-  // 实时 token 用量（SSE usage / token_estimate 事件）
-  | { type: 'stream_usage'; data: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number; turnId?: string } }
-  | { type: 'stream_token_estimate'; data: { inputTokens: number; outputTokens: number; turnId?: string } }
-  // Web Bridge: 本地工具调用请求（webServer → 前端 → Bridge）
-  | { type: 'tool_call_local'; data: LocalToolCallData }
-  | { type: 'tool_cancel_local'; data: LocalToolCancelData }
-  // Context-aware follow-up suggestions
-  | { type: 'suggestions_update'; data: Array<{ id: string; text: string; source: string }> };
-
-export type AgentEventEnvelope = AgentEvent & {
-  sessionId?: string;
-  seq?: number;
-};
+export type AgentEvent = import('zod').infer<typeof AgentEventSchema>;
+export type AgentEventEnvelope = import('zod').infer<typeof AgentEventEnvelopeSchema>;
 
 // 上下文压缩事件数据
 export interface ContextCompressedData {

@@ -27,6 +27,10 @@ on:
       # （改窄 include / 删测试目录）溜过门。
       - 'tsconfig.tests.json'
       - 'scripts/tsc-tests-ratchet.mjs'
+      - 'scripts/agent-event-schema-gate.mjs'
+      - 'src/shared/contract/agent.ts'
+      - 'src/shared/contract/agentEventSchemas.ts'
+      - 'src/shared/contract/generated/agent-events.schema.json'
       - 'scripts/ci/tool-output-schema-ratchet.ts'
       - 'scripts/ci/tool-output-schema-ratchet-baseline.json'
       - 'playwright.config.ts'
@@ -142,6 +146,9 @@ jobs:
         # 棘轮门抓。（历史坑：tests/e2e/claude-e2e/fixtures/bug-syntax-error 是**故意**写坏的
         # 样例工程，会抛 TS1005 让 tsc 提前中止，tsconfig.tests.json 已在 exclude 里排除它。）
         run: npm run typecheck
+
+      - name: Agent event JSON Schema drift gate
+        run: node scripts/agent-event-schema-gate.mjs
 
       - name: Typecheck ratchet (tests/ + scripts/)
         # 根 typecheck 只管 src/；这道棘轮门补上 tests/ 和 scripts/（一直在 tsc 门外，A-8 那类

@@ -85,6 +85,11 @@ const gates = [
     args: ['run', 'typecheck'],
   },
   {
+    ci: 'swarm-ci / smoke / Agent event JSON Schema drift gate',
+    command: 'node',
+    args: ['scripts/agent-event-schema-gate.mjs'],
+  },
+  {
     ci: 'eval-harness / harness / Typecheck',
     command: 'npm',
     args: ['--prefix', 'packages/eval-harness', 'run', 'typecheck'],

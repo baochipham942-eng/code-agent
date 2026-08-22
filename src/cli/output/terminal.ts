@@ -718,6 +718,15 @@ export class TerminalOutput {
         }
         break;
 
+      case 'turn_diff': {
+        const added = event.data.files.reduce((total, file) => total + file.added, 0);
+        const removed = event.data.files.reduce((total, file) => total + file.removed, 0);
+        console.log(chalk.dim(
+          `  ${event.data.files.length} files changed ${chalk.green(`+${added}`)} ${chalk.red(`-${removed}`)}`,
+        ));
+        break;
+      }
+
       case 'message':
         if (event.data?.role === 'assistant' && event.data?.content) {
           if (!this.isStreaming && !this.currentContent) {

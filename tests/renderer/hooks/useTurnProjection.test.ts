@@ -6,6 +6,33 @@ import { encodeGoalNotice } from '../../../src/renderer/components/features/chat
 import { encodeModelFallbackNotice } from '../../../src/renderer/components/features/chat/fallbackNotice';
 
 describe('projectTurns', () => {
+  it('projects persisted turn_diff metadata onto the owning turn', () => {
+    const turnDiff = {
+      turnId: 'assistant-1',
+      files: [{
+        filePath: '/repo/bash-output.txt',
+        oldText: '',
+        newText: 'written by bash',
+        added: 1,
+        removed: 0,
+        isNewFile: true,
+        editCount: 1,
+      }],
+    };
+    const projection = projectTurns([
+      { id: 'user-1', role: 'user', content: '写文件', timestamp: 100 },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '完成',
+        timestamp: 150,
+        metadata: { turnDiff },
+      },
+    ], 'session-1', false);
+
+    expect(projection.turns[0].turnDiff).toEqual(turnDiff);
+  });
+
   it('projects session launch requests including resolved history and pending', () => {
     const messages: Message[] = [
       {

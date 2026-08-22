@@ -124,6 +124,33 @@ function createHarness(overrides: Partial<ToolExecutionState> = {}) {
 }
 
 describe('applyToolExecutionEvent', () => {
+  it('attaches turn_diff to its assistant message for turn projection', () => {
+    const { deps, state } = createHarness({
+      messages: [assistantMessage('turn-current')],
+    });
+    const turnDiff = {
+      turnId: 'turn-current',
+      files: [{
+        filePath: '/repo/generated.txt',
+        oldText: '',
+        newText: 'one\ntwo',
+        added: 2,
+        removed: 0,
+        isNewFile: true,
+        editCount: 1,
+      }],
+    };
+
+    applyToolExecutionEvent({
+      type: 'turn_diff',
+      data: turnDiff,
+      sessionId: 'session-current',
+    }, deps);
+
+    expect(state.messages[0].metadata?.turnDiff).toEqual(turnDiff);
+    expect(state.lastEventAt).toBe(500);
+  });
+
   it('adds streamed tool calls to the turn and queues their argument deltas', () => {
     const existingCall: ToolCall = {
       id: 'existing-tool',

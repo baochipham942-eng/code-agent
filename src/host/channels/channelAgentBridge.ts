@@ -449,6 +449,9 @@ export class ChannelAgentBridge {
         case 'tool_call_end':
           await safeWrite(`data: ${JSON.stringify({ type: 'tool_call_end', toolCallId: event.data.toolCallId })}\n\n`);
           break;
+        case 'turn_diff':
+          await safeWrite(`data: ${JSON.stringify({ type: 'turn_diff', data: event.data })}\n\n`);
+          break;
         case 'error':
           await safeWrite(`data: ${JSON.stringify({ type: 'error', error: event.data.message })}\n\n`);
           break;

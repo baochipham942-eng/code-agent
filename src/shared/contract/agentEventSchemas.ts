@@ -50,6 +50,7 @@ import type { PermissionRequest } from './permission';
 import type { SessionTask, TodoItem } from './planning';
 import type { SurfaceExecutionEventV1 } from './surfaceExecution';
 import type { ToolCall, ToolResult } from './tool';
+import type { TurnDiffEventData } from './turnDiff';
 
 type EventStability = 'stable' | 'experimental';
 
@@ -425,6 +426,7 @@ const stabilityByType = {
   stream_tool_call_delta: 'experimental',
   todo_update: 'experimental',
   task_update: 'experimental',
+  turn_diff: 'experimental',
   notification: 'experimental',
   routing_resolved: 'experimental',
   artifact_locator: 'stable',
@@ -509,6 +511,18 @@ const StreamToolCallStartEventSchema = event('stream_tool_call_start', z.object(
 const StreamToolCallDeltaEventSchema = event('stream_tool_call_delta', z.object({ index: z.number().optional(), name: z.string().optional(), argumentsDelta: z.string().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() }));
 const TodoUpdateEventSchema = event('todo_update', z.array(todoItemSchema));
 const TaskUpdateEventSchema = event('task_update', taskUpdateSchema);
+const TurnDiffEventSchema = event('turn_diff', typed<TurnDiffEventData>(z.object({
+  turnId: z.string(),
+  files: z.array(z.object({
+    filePath: z.string(),
+    oldText: z.string(),
+    newText: z.string(),
+    added: z.number(),
+    removed: z.number(),
+    isNewFile: z.boolean(),
+    editCount: z.number(),
+  })),
+})));
 const NotificationEventSchema = event('notification', z.object({ message: z.string(), parentToolUseId: z.string().optional() }));
 const RoutingResolvedEventSchema = event('routing_resolved', typed<RoutingResolvedEventData>(z.object({ mode: z.enum(['auto', 'explicit']), agentId: z.string(), agentName: z.string(), reason: z.string(), score: z.number(), fallbackToDefault: z.boolean().optional(), requestedAgentId: z.string().optional(), timestamp: z.number().optional() })));
 const ArtifactLocatorEventSchema = event('artifact_locator', typed<ArtifactLocatorTelemetryEventData>(z.object({ state: z.enum(['resolved', 'stale', 'blocked']), kind: z.enum(['spreadsheet', 'presentation', 'document']), reason: z.string() })));
@@ -581,7 +595,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   ArtifactWriteStartedEventSchema, PermissionRequestEventSchema, ModelDecisionEventSchema, HookTriggerEventSchema,
   HookStartedEventSchema, ErrorEventSchema, MessageDeltaEventSchema, MessageSnapshotEventSchema, StreamChunkEventSchema,
   StreamReasoningEventSchema, StreamToolCallStartEventSchema, StreamToolCallDeltaEventSchema, TodoUpdateEventSchema,
-  TaskUpdateEventSchema, NotificationEventSchema, RoutingResolvedEventSchema, ArtifactLocatorEventSchema,
+  TaskUpdateEventSchema, TurnDiffEventSchema, NotificationEventSchema, RoutingResolvedEventSchema, ArtifactLocatorEventSchema,
   AgentCompleteEventSchema, AgentCancelledEventSchema, GoalIterationEventSchema, GoalGateEventSchema,
   GoalCompleteEventSchema, AgentThinkingEventSchema, TurnStartEventSchema, TurnEndEventSchema,
   ToolSchemaSnapshotEventSchema, ModelResponseEventSchema, ModelFallbackEventSchema, ApiKeyRequiredEventSchema,

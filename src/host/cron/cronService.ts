@@ -19,6 +19,7 @@ import type {
   CronScheduleType,
   CronJobAction,
   CronServiceStats,
+  CronMissedEvent,
 } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
 import type { Disposable } from '../services/serviceRegistry';
@@ -47,6 +48,8 @@ import {
 import { buildCronAgentRunOptions } from './cronAgentRoleContext';
 import { BACKGROUND_AGENT_EVENT_FILTER } from '../protocol/events/eventFilter';
 import type { AgentRunOptions } from '../research/types';
+import { getEventBus } from '../services/eventing/bus';
+import { persistCronMissedTrace } from './cronMissedTrace';
 
 const execAsync = promisify(exec);
 
@@ -150,6 +153,7 @@ export class CronService implements Disposable {
   private executions: Map<string, CronJobExecution[]> = new Map();
   private isInitialized = false;
   private disposed = false;
+  private unsubscribeCronMissed?: () => void;
 
   // --------------------------------------------------------------------------
   // Initialization
@@ -157,6 +161,13 @@ export class CronService implements Disposable {
 
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
+
+    this.unsubscribeCronMissed ??= getEventBus().subscribe<CronMissedEvent>(
+      'system:cron.missed',
+      (event) => {
+        console.error(`[CronService] cron.missed consumed for job ${event.data.jobId}`);
+      },
+    );
 
     // 中断可见性（maka 护栏自查 A5-④遗留）：上次运行中途被杀掉的执行记录会永远
     // 停在 running，让用户误以为还在跑。启动时先把这些残留行标记为 interrupted。
@@ -179,6 +190,8 @@ export class CronService implements Disposable {
     }
 
     this.jobs.clear();
+    this.unsubscribeCronMissed?.();
+    this.unsubscribeCronMissed = undefined;
     this.isInitialized = false;
     console.error('[CronService] Shutdown complete');
   }
@@ -1066,6 +1079,7 @@ export class CronService implements Disposable {
       }
       const rows = db.prepare('SELECT * FROM cron_jobs').all() as unknown[];
       let loadedCount = 0;
+      const now = Date.now();
       for (const row of rows) {
         const job = normalizeCronJobRow(row);
         if (!job) {
@@ -1080,10 +1094,13 @@ export class CronService implements Disposable {
           const ts = typeof job.schedule.datetime === 'number'
             ? job.schedule.datetime
             : Date.parse(String(job.schedule.datetime));
-          if (!Number.isFinite(ts) || ts <= Date.now()) {
-            const disabled = { ...job, enabled: false, updatedAt: Date.now() };
+          if (!Number.isFinite(ts) || ts <= now) {
+            const disabled = { ...job, enabled: false, updatedAt: now };
             this.jobs.set(disabled.id, { definition: disabled });
             await this.saveJobToDatabase(disabled);
+            if (Number.isFinite(ts)) {
+              await this.recordMissedJob(disabled, ts);
+            }
             console.error(`[CronService] One-time job ${job.id} missed its schedule while app was offline; disabled`);
             loadedCount += 1;
             continue;
@@ -1092,6 +1109,16 @@ export class CronService implements Disposable {
 
         if (job.enabled) {
           this.registerJob(job);
+          const activeJob = this.jobs.get(job.id);
+          const previousScheduledAt = activeJob?.cronInstance
+            ?.previousRuns(1, new Date(now))[0]
+            ?.getTime();
+          if (previousScheduledAt != null && previousScheduledAt < now) {
+            const lastRunAt = this.loadLastRunAt(job.id) ?? job.createdAt;
+            if (lastRunAt < previousScheduledAt) {
+              await this.recordMissedJob(job, previousScheduledAt, activeJob?.cronInstance?.nextRun()?.getTime());
+            }
+          }
         } else {
           this.jobs.set(job.id, { definition: job });
         }
@@ -1101,6 +1128,32 @@ export class CronService implements Disposable {
     } catch (error) {
       console.error('[CronService] Failed to load jobs from database:', error);
     }
+  }
+
+  private loadLastRunAt(jobId: string): number | undefined {
+    try {
+      const db = getDatabase().getDb();
+      if (!db) return undefined;
+      const row = db.prepare(`
+        SELECT MAX(started_at) AS last_run_at
+        FROM cron_executions
+        WHERE job_id = ? AND started_at IS NOT NULL
+      `).get(jobId) as { last_run_at?: number | null } | undefined;
+      return typeof row?.last_run_at === 'number' ? row.last_run_at : undefined;
+    } catch (error) {
+      console.error('[CronService] Failed to load cron last-run timestamp:', error);
+      return undefined;
+    }
+  }
+
+  private async recordMissedJob(
+    definition: CronJobDefinition,
+    scheduledAt: number,
+    nextRunAt?: number,
+  ): Promise<void> {
+    const event: CronMissedEvent = { jobId: definition.id, scheduledAt, reason: 'app-offline' };
+    await persistCronMissedTrace(definition, event, nextRunAt);
+    getEventBus().publish('system', 'cron.missed', event, { bridgeToRenderer: false });
   }
 
   private async saveJobToDatabase(job: CronJobDefinition): Promise<void> {

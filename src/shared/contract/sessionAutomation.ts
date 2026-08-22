@@ -18,6 +18,7 @@ export type SessionAutomationStatus =
 export type SessionAutomationEventKind =
   | 'created'
   | 'running'
+  | 'missed'
   | 'completed'
   | 'failed'
   | 'cancelled'
@@ -54,6 +55,8 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
   nextStage?: SessionAutomationNextStageConfig;
   /** 最近一次成功运行的待过目标记；用户过目/归档后清除。recurring 任务记录保持 active，靠它进待审收件箱。 */
   pendingReview?: { resultSessionId?: string; at: number };
+  /** 启动时发现漏跑且无法回写源会话时，由自动化收件箱承接。 */
+  missedNotice?: { scheduledAt: number; reason: 'app-offline' };
   /** B4：本 automation 上人工铸造的 target 粒度长期授权规则。删/archive 即失效（消费时按 status 钳制）。 */
   standingGrants?: StandingGrant[];
 }

@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
-import {
-  INBOUND_PAIRING_TTL_MS,
-  InboundPairingService,
-} from '../../../src/host/channels/inboundPairingService';
+import { InboundPairingService } from '../../../src/host/channels/inboundPairingService';
+
+const TEN_MINUTES_MS = 10 * 60 * 1000;
 
 function createHarness() {
   let now = 1_000;
@@ -37,7 +36,7 @@ describe('InboundPairingService', () => {
     expect(await h.service.request(request)).toBe('042731');
     expect(h.insert).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'channel_pairing',
-      payload: expect.objectContaining({ code: '042731', expiresAt: 1_000 + INBOUND_PAIRING_TTL_MS }),
+      payload: expect.objectContaining({ code: '042731', expiresAt: 1_000 + TEN_MINUTES_MS }),
     }));
     expect(h.sendControlReply).toHaveBeenCalledWith(
       'feishu-account', 'oc_chat', 'om_1', expect.stringContaining('Pairing code: 042731'),
@@ -59,7 +58,7 @@ describe('InboundPairingService', () => {
     const h = createHarness();
     await h.service.request(request);
     const requestId = h.insert.mock.calls[0][0].id as string;
-    h.advance(INBOUND_PAIRING_TTL_MS + 1);
+    h.advance(TEN_MINUTES_MS + 1);
 
     expect(h.service.resolve(requestId, 'allow')).toBe(false);
     expect(h.addPairedSender).not.toHaveBeenCalled();

@@ -1,4 +1,4 @@
-export type FeishuGroupAccessMode = 'all_members' | 'allowlist' | 'disabled';
+type FeishuGroupAccessMode = 'all_members' | 'allowlist' | 'disabled';
 
 export type InboundAccessDecision =
   | { action: 'allow'; auth: 'paired'; reason: 'paired' | 'telegram_allowlist' }

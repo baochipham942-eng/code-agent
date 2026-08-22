@@ -305,7 +305,7 @@ export class ChannelManager extends EventEmitter {
     });
 
     channel.on('pairing_request', (request: InboundPairingRequest) => {
-      void getInboundPairingService().request(request).catch((error) => {
+      void getInboundPairingService().request(request).catch((error: unknown) => {
         logger.error('Failed to create inbound pairing request', { accountId, error });
       });
     });

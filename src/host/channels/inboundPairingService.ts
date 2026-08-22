@@ -8,8 +8,8 @@ import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('InboundPairingService');
 
-export const INBOUND_PAIRING_CODE_DIGITS = 6;
-export const INBOUND_PAIRING_TTL_MS = 10 * 60 * 1000;
+const INBOUND_PAIRING_CODE_DIGITS = 6;
+const INBOUND_PAIRING_TTL_MS = 10 * 60 * 1000;
 
 export interface InboundPairingRequest {
   accountId: string;

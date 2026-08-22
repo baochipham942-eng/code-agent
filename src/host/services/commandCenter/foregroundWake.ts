@@ -14,7 +14,7 @@ import { getSessionManager, type SessionWithMessages } from '../infra/sessionMan
 import { createLogger } from '../infra/logger';
 import type { SessionCommandTask } from './sessionCommandCenter';
 
-export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
+import { WAKE_NOOP_TOOL_NAME } from '../../../shared/constants/agent';
 
 const FOREGROUND_WAKE_CONTRACT = [
   '<background_task_hidden_wake>',

@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionCommandTask } from '../../../src/host/services/commandCenter/sessionCommandCenter';
 import {
   createForegroundWake,
-  WAKE_NOOP_TOOL_NAME,
   type ForegroundWakeDependencies,
 } from '../../../src/host/services/commandCenter/foregroundWake';
+import { WAKE_NOOP_TOOL_NAME } from '../../../src/shared/constants/agent';
 import { SESSION_COMMAND_CENTER_BRAIN_CONTEXT } from '../../../src/host/app/sessionCommandCenterBrain';
 import { MAX_CONSECUTIVE_WAKES } from '../../../src/shared/constants/sessionCommandCenter';
 

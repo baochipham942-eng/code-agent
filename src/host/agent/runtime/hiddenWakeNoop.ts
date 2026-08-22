@@ -8,7 +8,7 @@
 
 import type { ToolCall, ToolResult } from '../../../shared/contract';
 import { createLogger } from '../../services/infra/logger';
-import { WAKE_NOOP_TOOL_NAME } from '../../services/commandCenter/foregroundWake';
+import { WAKE_NOOP_TOOL_NAME } from '../../../shared/constants/agent';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 

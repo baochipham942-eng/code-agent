@@ -172,7 +172,7 @@ export function listPublishedVersions(filePath: string): PublishedDeliverableVer
     .sort((left, right) => right.version - left.version);
 }
 
-export function hasUnpublishedChanges(filePath: string): boolean {
+function hasUnpublishedChanges(filePath: string): boolean {
   const latest = (loadMeta(filePath).publishedVersions ?? [])
     .reduce<PublishedVersionMeta | undefined>(
       (current, item) => (!current || item.version > current.version ? item : current),

@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import {
   createSnapshot,
   getPublishState,
-  hasUnpublishedChanges,
   listPublishedVersions,
   listSnapshots,
   publishVersion,
@@ -47,7 +46,6 @@ describe('document published snapshots', () => {
     expect(getPublishState(filePath)).toEqual({ kind: 'draft' });
 
     const first = publishVersion(filePath);
-    expect(hasUnpublishedChanges(filePath)).toBe(false);
     expect(getPublishState(filePath)).toEqual({
       kind: 'published',
       version: 1,
@@ -55,11 +53,9 @@ describe('document published snapshots', () => {
     });
 
     await writeFile(filePath, 'edited working copy');
-    expect(hasUnpublishedChanges(filePath)).toBe(true);
     expect(getPublishState(filePath).kind).toBe('published-dirty');
 
     publishVersion(filePath);
-    expect(hasUnpublishedChanges(filePath)).toBe(false);
     expect(getPublishState(filePath).kind).toBe('published');
   });
 });

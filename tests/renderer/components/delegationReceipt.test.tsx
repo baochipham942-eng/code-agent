@@ -187,7 +187,7 @@ describe('delegation receipt', () => {
       generatedAt: 5,
       roots: [runningNode, peerNode],
       nodes: [runningNode, peerNode],
-      summary: { total: 2, running: 2, completed: 0, failed: 0, cancelled: 0, blocked: 0, withWorktree: 0 },
+      summary: { total: 2, running: 2, completed: 0, failed: 0, cancelled: 0, blocked: 0, withWorktree: 0, ownershipConflicts: [] },
     };
     const view = renderCall(spawnCall);
     expect(view.getByTestId('delegation-activity').textContent).toBe('正在跟 研究代理 说话');

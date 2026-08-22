@@ -171,4 +171,23 @@ describe('agentTreeService', () => {
     expect(node?.sources).toContain('agentWorktree');
     expect(snapshot.summary.withWorktree).toBe(1);
   });
+
+  it('sources.ownershipConflicts 原样带进 snapshot.summary（path/ownerAgentId/requesterAgentId）', () => {
+    const snapshot = buildAgentTreeSnapshot({
+      now: 300,
+      ownershipConflicts: [
+        { path: 'src/host/agent/foo.ts', ownerAgentId: 'coder-1', requesterAgentId: 'reviewer-1' },
+      ],
+    });
+
+    expect(snapshot.summary.ownershipConflicts).toEqual([
+      { path: 'src/host/agent/foo.ts', ownerAgentId: 'coder-1', requesterAgentId: 'reviewer-1' },
+    ]);
+  });
+
+  it('不传 ownershipConflicts 时 snapshot.summary.ownershipConflicts 为空数组', () => {
+    const snapshot = buildAgentTreeSnapshot({ now: 400 });
+
+    expect(snapshot.summary.ownershipConflicts).toEqual([]);
+  });
 });

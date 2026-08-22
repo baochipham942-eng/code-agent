@@ -213,8 +213,9 @@ export class TurnTraceRecorder {
   constructor(
     private readonly sessionId: string,
     traceDir = path.join(getPath('userData'), 'traces'),
+    fileKey = sessionId,
   ) {
-    this.filePath = path.join(traceDir, `${sessionId}.jsonl`);
+    this.filePath = path.join(traceDir, `${fileKey}.jsonl`);
   }
 
   /** 切换当前 turn index，后续 record 的事件归属此 turn */

@@ -2090,6 +2090,15 @@
             ],
             "additionalProperties": false
           }
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "parentToolUseId": {
+          "type": "string"
         }
       },
       "required": [

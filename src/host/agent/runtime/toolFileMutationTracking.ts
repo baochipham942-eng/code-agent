@@ -3,14 +3,33 @@ import type { ToolExecutionResult } from '../../tools/types';
 import type { RuntimeContext } from './runtimeContext';
 import { isSameArtifactRepairPath } from './artifactRepairGuard';
 import { getModifiedFilePath, isFileMutationTool } from './toolArtifactRepairPolicy';
-import { listWorkspaceChangedPaths } from '../../services/checkpoint/turnDiffService';
+import {
+  listWorkspacePathsChangedSince,
+  type WorkspaceMutationSnapshot,
+} from '../../services/checkpoint/turnDiffService';
 
 type TrackFileMutationSideEffectsArgs = {
   ctx: RuntimeContext;
   toolCall: ToolCall;
   normalizedResult: ToolExecutionResult;
   toolResult: ToolResult;
+  workspaceMutationSnapshot?: WorkspaceMutationSnapshot;
 };
+
+const WORKSPACE_DISCOVERY_TOOLS = new Set([
+  'bash',
+  'shell',
+  'exec_command',
+  'task',
+  'agent',
+  'spawn_agent',
+  'workflow',
+  'run_workflow',
+]);
+
+export function isWorkspaceDiscoveryMutationTool(toolName: string): boolean {
+  return WORKSPACE_DISCOVERY_TOOLS.has(toolName.toLowerCase());
+}
 
 /**
  * 工具执行成功后的文件改动副作用跟踪（P3 Nudge 完成度跟踪）。
@@ -21,6 +40,7 @@ export async function trackFileMutationSideEffects({
   toolCall,
   normalizedResult,
   toolResult,
+  workspaceMutationSnapshot,
 }: TrackFileMutationSideEffectsArgs): Promise<void> {
   // P3 Nudge: Track modified files for completion checking
   if (isFileMutationTool(toolCall.name) && normalizedResult.success) {
@@ -53,18 +73,15 @@ export async function trackFileMutationSideEffects({
   // successful mutation-capable tool, join Git's disk truth back into the same
   // per-run path tracker used by Edit/Write. Final aggregation stays centralized
   // in runFinalizer and does not need tool-specific args.
-  const discoveryTools = new Set([
-    'bash',
-    'shell',
-    'exec_command',
-    'task',
-    'agent',
-    'spawn_agent',
-    'workflow',
-    'run_workflow',
-  ]);
-  if (normalizedResult.success && discoveryTools.has(toolCall.name.toLowerCase())) {
-    const changedPaths = await listWorkspaceChangedPaths(ctx.workingDirectory || process.cwd());
+  if (
+    normalizedResult.success
+    && workspaceMutationSnapshot
+    && isWorkspaceDiscoveryMutationTool(toolCall.name)
+  ) {
+    const changedPaths = await listWorkspacePathsChangedSince(
+      ctx.workingDirectory || process.cwd(),
+      workspaceMutationSnapshot,
+    );
     for (const filePath of changedPaths) {
       ctx.nudgeManager.trackModifiedFile(filePath);
     }

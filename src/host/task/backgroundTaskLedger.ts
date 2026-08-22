@@ -366,7 +366,12 @@ function cloneMetadata(metadata?: TaskMetadata): TaskMetadata | undefined {
 }
 
 function cloneProgress(progress?: TaskProgress): TaskProgress | undefined {
-  return progress ? { ...progress } : undefined;
+  return progress
+    ? {
+      ...progress,
+      lastToolStep: progress.lastToolStep ? { ...progress.lastToolStep } : undefined,
+    }
+    : undefined;
 }
 
 function cloneFailure(failure?: TaskFailure): TaskFailure | undefined {

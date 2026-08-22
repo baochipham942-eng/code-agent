@@ -913,6 +913,7 @@ export class SubagentExecutor {
                 {
                   runId: context.runId,
                   sessionId: context.sessionId,
+                  sourceMessageId: context.sourceMessageId,
                   agentId: executionAgentId,
                   spawnDepth: context.spawnDepth,
                   spawnMaxDepth: context.spawnMaxDepth,

@@ -129,6 +129,8 @@ export interface SubagentAttachment {
 export interface SubagentExecutionContext {
   /** Native run identity; never inferred from a process singleton. */
   runId?: string;
+  /** Stable user message that originated the parent native turn. */
+  sourceMessageId?: string;
   /**
    * GuardFabric 拓扑标注（2026-07-13 激活批）：构造点显式声明该子 agent 的执行拓扑，
    * subagentToolRuntime 透传给 ToolExecutor。缺省 = 'main'（无 TOPOLOGY_RULES 约束，

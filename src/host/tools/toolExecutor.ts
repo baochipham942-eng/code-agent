@@ -132,6 +132,8 @@ export type ToolExecutionDelegate = (toolName: string, params: Record<string, un
 export interface ExecuteOptions {
   /** Native Run identity only. Never substitute sessionId or Team runId. */
   runId?: string; turnId?: string;
+  /** Stable user message that originated this native turn. */
+  sourceMessageId?: string;
   /** 当前 agent run 的 JSONL trace；补偿登记必须与所属 turn 同账。 */
   turnTrace?: TurnTraceRecorder;
   planningService?: unknown; // PlanningService instance for persistent planning
@@ -734,6 +736,7 @@ export class ToolExecutor {
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       runId: effectiveRunId, turnId: options.turnId,
+      sourceMessageId: options.sourceMessageId,
       sessionId: effectiveSessionId,
       workspace: this.runtimeWorkspace,
       workspaceScope: this.runContext?.workspaceScope,
@@ -1371,6 +1374,7 @@ export class ToolExecutor {
       const durableCheckpoint = await prepareNativeToolCheckpoint({
         runId: effectiveRunId,
         sessionId: effectiveSessionId,
+        sourceMessageId: options.sourceMessageId,
         toolName: executionToolName,
         toolDefinition: toolDef,
         toolCallId: options.currentToolCallId,

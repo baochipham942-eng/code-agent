@@ -13,10 +13,25 @@ const SUBAGENT_TOOL_RUNTIME_PATH = path.resolve(
   __dirname,
   '../../../src/host/agent/subagentToolRuntime.ts',
 );
+const SUBAGENT_CONTEXT_PATH = path.resolve(
+  __dirname,
+  '../../../src/host/agent/subagentExecutionContext.ts',
+);
+const TOOL_EXECUTOR_PATH = path.resolve(
+  __dirname,
+  '../../../src/host/tools/toolExecutor.ts',
+);
+const SHADOW_ADAPTER_PATH = path.resolve(
+  __dirname,
+  '../../../src/host/tools/dispatch/shadowAdapter.ts',
+);
 
 describe('SubagentExecutor Agent Team scope propagation', () => {
   const source = readFileSync(SUBAGENT_EXECUTOR_PATH, 'utf8');
   const toolRuntimeSource = readFileSync(SUBAGENT_TOOL_RUNTIME_PATH, 'utf8');
+  const subagentContextSource = readFileSync(SUBAGENT_CONTEXT_PATH, 'utf8');
+  const toolExecutorSource = readFileSync(TOOL_EXECUTOR_PATH, 'utf8');
+  const shadowAdapterSource = readFileSync(SHADOW_ADAPTER_PATH, 'utf8');
 
   it('uses the caller composite execution identity for child tool context', () => {
     expect(source).toMatch(
@@ -28,6 +43,12 @@ describe('SubagentExecutor Agent Team scope propagation', () => {
     expect(source).toMatch(
       /subagentToolExecutor\.execute\([\s\S]*?runId:\s*context\.runId,[\s\S]*?swarmRunScope:\s*context\.swarmRunScope/,
     );
+    expect(source).toMatch(
+      /subagentToolExecutor\.execute\([\s\S]*?sourceMessageId:\s*context\.sourceMessageId/,
+    );
+    expect(toolExecutorSource).toMatch(/sourceMessageId:\s*options\.sourceMessageId/);
+    expect(shadowAdapterSource).toMatch(/sourceMessageId:\s*input\.legacyCtx\.sourceMessageId/);
+    expect(subagentContextSource).toMatch(/sourceMessageId:\s*ctx\.sourceMessageId/);
     expect(toolRuntimeSource).toMatch(
       /createRunContext\(\{[\s\S]*?runId:\s*context\.runId,[\s\S]*?sessionId:\s*input\.sessionId,[\s\S]*?workspace:\s*context\.workspace,[\s\S]*?cwd:\s*context\.cwd/,
     );

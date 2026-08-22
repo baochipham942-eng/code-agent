@@ -94,7 +94,7 @@ function isMessagingMcpTool(server: string, tool: string): boolean {
 type ToolCategory =
   | 'read' | 'write' | 'edit' | 'bash' | 'search' | 'listDir'
   | 'webSearch' | 'webFetch' | 'mcpChannel' | 'mcp'
-  | 'subagentSpawn' | 'subagentMessage' | 'todo' | 'planUpdate' | 'planRead'
+  | 'subagentSpawn' | 'subagentMessage' | 'agentConversation' | 'todo' | 'planUpdate' | 'planRead'
   | 'delegateTask' | 'taskStatus' | 'steerTask' | 'cancelTask'
   | 'taskManager' | 'skill' | 'screenshot' | 'computerUse' | 'browserAction'
   | 'askUser' | 'memoryStore' | 'memorySearch' | 'toolSearch' | 'unknown';
@@ -111,7 +111,8 @@ const LISTDIR_TOOLS = new Set(['LS', 'list_directory']);
 const WEBSEARCH_TOOLS = new Set(['WebSearch']);
 const WEBFETCH_TOOLS = new Set(['WebFetch', 'web_fetch', 'http_request', 'screenshot_page', 'twitter_fetch', 'youtube_transcript']);
 const SUBAGENT_SPAWN_TOOLS = new Set(['spawn_agent', 'AgentSpawn', 'Task', 'Explore']);
-const SUBAGENT_MESSAGE_TOOLS = new Set(['agent_message', 'send_input', 'wait_agent', 'close_agent']);
+const AGENT_CONVERSATION_TOOLS = new Set(['teammate', 'agent_message', 'send_input', 'send_message']);
+const SUBAGENT_MESSAGE_TOOLS = new Set(['wait_agent', 'close_agent']);
 const DELEGATE_TASK_TOOLS = new Set(['delegate_task']);
 const TASK_STATUS_TOOLS = new Set(['task_status']);
 const STEER_TASK_TOOLS = new Set(['steer_task']);
@@ -142,6 +143,7 @@ function classifyToolName(name: string): ToolCategory {
   if (WEBSEARCH_TOOLS.has(name)) return 'webSearch';
   if (WEBFETCH_TOOLS.has(name)) return 'webFetch';
   if (SUBAGENT_SPAWN_TOOLS.has(name)) return 'subagentSpawn';
+  if (AGENT_CONVERSATION_TOOLS.has(name)) return 'agentConversation';
   if (SUBAGENT_MESSAGE_TOOLS.has(name)) return 'subagentMessage';
   if (DELEGATE_TASK_TOOLS.has(name)) return 'delegateTask';
   if (TASK_STATUS_TOOLS.has(name)) return 'taskStatus';
@@ -303,6 +305,12 @@ export function humanizeToolStep(
     }
     case 'subagentMessage':
       return h.subagentMessage;
+    case 'agentConversation': {
+      const name = firstString(a, ['name', 'role', 'agentName', 'agent_name', 'agentId', 'target']);
+      return name
+        ? h.agentConversation.replace('{name}', name)
+        : h.agentConversationFallback;
+    }
     case 'delegateTask': {
       const description = firstString(a, ['description', 'title']);
       return description
@@ -383,6 +391,7 @@ function groupBucketFor(category: ToolCategory): GroupBucket | null {
       return 'mcp';
     case 'subagentSpawn':
     case 'subagentMessage':
+    case 'agentConversation':
     case 'delegateTask':
     case 'taskStatus':
     case 'steerTask':

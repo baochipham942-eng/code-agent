@@ -265,7 +265,7 @@ describe('excelAutomateModule (native)', () => {
       }
       expect(executeExcelEditMock).toHaveBeenCalledTimes(1);
       const [params] = executeExcelEditMock.mock.calls[0];
-      expect(params).toMatchObject({ file_path: 'a.xlsx', dry_run: true });
+      expect(params).toMatchObject({ file_path: '/tmp/a.xlsx', dry_run: true });
     });
 
     it('adds spreadsheet artifact metadata when edit writes a workbook', async () => {

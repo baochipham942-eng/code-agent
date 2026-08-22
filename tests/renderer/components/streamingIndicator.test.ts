@@ -115,19 +115,19 @@ describe('StreamingIndicator waiting reason (具名等待)', () => {
     expect(html).not.toContain('streaming-caret');
   });
 
-  it('renders the fleet-signal label without a count when only one subtask is running', () => {
+  it('uses singular agent copy when only one delegated task is running', () => {
     const html = renderToStaticMarkup(
       React.createElement(StreamingIndicator, { startTime: 100, waitingReason: 'subagent', subagentCount: 1 }),
     );
-    expect(html).toContain('编队作业中，子舰并行中');
+    expect(html).toContain('代理工作中');
     expect(html).not.toContain('streaming-caret');
   });
 
-  it('renders the fleet-signal label with the real concurrency count when ≥2 subtasks run', () => {
+  it('uses the real agent count when at least two delegated tasks run', () => {
     const html = renderToStaticMarkup(
       React.createElement(StreamingIndicator, { startTime: 100, waitingReason: 'subagent', subagentCount: 3 }),
     );
-    expect(html).toContain('编队作业中，3 艘子舰并行');
+    expect(html).toContain('3 个代理并行中');
     expect(html).not.toContain('streaming-caret');
   });
 

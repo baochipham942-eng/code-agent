@@ -89,7 +89,7 @@ describe('Feishu ingress access', () => {
     expect(result.messages).toHaveLength(0);
   });
 
-  it('enforces disabled, allowlist, and all_members group modes', async () => {
+  it('enforces disabled and allowlist group modes', async () => {
     const disabled = await drive(
       { inboundAllowlist: ['ou_sender'], groupAccessMode: 'disabled' },
       event({ chatType: 'group', mentioned: true, id: 'om_disabled' }),
@@ -98,18 +98,18 @@ describe('Feishu ingress access', () => {
       { groupAccessMode: 'allowlist', inboundLocale: 'en-US' },
       event({ chatType: 'group', mentioned: true, id: 'om_allowlist' }),
     );
-    const allMembers = await drive(
-      { groupAccessMode: 'all_members' },
-      event({ chatType: 'group', mentioned: true, id: 'om_guest' }),
-    );
-
     expect(disabled.messages).toHaveLength(0);
     expect(allowlist.messages).toHaveLength(0);
     expect(allowlist.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ content: expect.stringContaining('Unauthorized') }),
     }));
-    expect(allMembers.messages).toHaveLength(1);
-    expect(allMembers.messages[0].ingressAuth).toBe('guest');
+  });
+
+  it('routes all_members through a guest session with a physically cropped tool table', async () => {
+    const allMembers = await drive(
+      { groupAccessMode: 'all_members' },
+      event({ chatType: 'group', mentioned: true, id: 'om_guest' }),
+    );
 
     let allowedToolNames: string[] | undefined;
     const orchestrator = {
@@ -130,6 +130,8 @@ describe('Feishu ingress access', () => {
       undefined,
       { sendText: vi.fn(async () => ({ success: true })) },
     );
+    expect(allMembers.messages).toHaveLength(1);
+    expect(allMembers.messages[0].ingressAuth).toBe('guest');
     expect(allowedToolNames).toEqual(['Read']);
   });
 });

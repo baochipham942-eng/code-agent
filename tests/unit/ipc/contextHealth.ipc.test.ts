@@ -157,6 +157,7 @@ function makeAppService(sessionId: string, messages: Message[], modelOverride?: 
     loadSession: async () => { throw new Error('not implemented'); },
     deleteSession: async () => {},
     listSessions: async () => [],
+    findExpertThreadSession: async () => ({ sessionId: null }),
     updateSession: async () => {},
     archiveSession: async () => null,
     unarchiveSession: async () => null,

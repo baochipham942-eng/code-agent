@@ -178,9 +178,10 @@ function toListEntry(
     tools: agent.tools,
     inputs: agent.inputs,
     outputs: agent.outputs,
-    // 预设角色的 profession 在 BuiltinRoleVisual 里（不写进 agent.md frontmatter），
+    // 预设角色的 profession/icon 在 BuiltinRoleVisual 里（不写进 agent.md frontmatter），
     // 自定义角色写在 frontmatter 由 agentMdLoader 解析进 visual
     profession: agent.visual?.profession ?? getBuiltinRoleVisual(agent.id)?.profession,
+    icon: agent.visual?.icon ?? getBuiltinRoleVisual(agent.id)?.icon,
   };
 }
 

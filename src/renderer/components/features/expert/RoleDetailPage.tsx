@@ -27,6 +27,7 @@ import type { SkillCategory } from "@shared/contract/skillRepository";
 import ipcService from "../../../services/ipcService";
 import { createLogger } from "../../../utils/logger";
 import { startEditRoleChat } from "../../../utils/startEditRoleChat";
+import { goToExpertThread } from "../../../utils/inviteExpert";
 import { useI18n } from "../../../hooks/useI18n";
 import { useMcpServerStates } from "../../../hooks/useMcpServerStates";
 import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
@@ -35,6 +36,7 @@ import { getRoleAvatarAsset } from "./roleAvatarAssets";
 import { SettingsSection } from "../settings/SettingsLayout";
 import { RoleBindingsSection } from "../settings/tabs/RoleBindingsSection";
 import { useAppStore } from "../../../stores/appStore";
+import { Button } from "../../primitives/Button";
 import { FullScreenPage, FullScreenPageHeader } from "../shared/FullScreenPage";
 import { RoleBasicTab } from './RoleBasicTab';
 import { RoleEquipmentTab } from './RoleEquipmentTab';
@@ -763,7 +765,13 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
         description={detail?.visual.profession || roleText.detail.subtitle}
         onClose={closeDetail}
         closeLabel={t.capabilityHub.title}
-        actions={<div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">{ROLE_DETAIL_TABS.map((key) => <button /* ds-allow:button: 详情页内部 tab 使用语义分段控件 */ key={key} type="button" role="tab" aria-selected={tab === key} data-testid={`role-detail-tab-${key}`} onClick={() => setTab(key)} className={`rounded px-2.5 py-1 text-xs transition-colors ${tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}>{expertText.detailTabs[key]}</button>)}</div>}
+        actions={<div className="flex items-center gap-2">
+          {/* 刀 1（N-NAMEDMATE）拍板：详情页顶部动作区 =「去 TA 的会话」(主) +「配置」(次，
+              = 切到本页「技能」tab，详情页本身就是配置处) + 原有 tab 分段控件 */}
+          <Button variant="primary" size="sm" data-testid="role-detail-go-thread" onClick={() => void goToExpertThread(roleId, { title: detail?.visual.displayName || roleId })}>{expertText.invite}</Button>
+          <Button variant="secondary" size="sm" data-testid="role-detail-configure" onClick={() => setTab('skills')}>{expertText.configure}</Button>
+          <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">{ROLE_DETAIL_TABS.map((key) => <button /* ds-allow:button: 详情页内部 tab 使用语义分段控件 */ key={key} type="button" role="tab" aria-selected={tab === key} data-testid={`role-detail-tab-${key}`} onClick={() => setTab(key)} className={`rounded px-2.5 py-1 text-xs transition-colors ${tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}>{expertText.detailTabs[key]}</button>)}</div>
+        </div>}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-12 pt-5">
       {loading ? (

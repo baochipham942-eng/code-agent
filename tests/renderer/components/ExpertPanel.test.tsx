@@ -13,6 +13,7 @@ const installRolePack = vi.fn();
 const uninstallRolePack = vi.fn();
 const retryRolePackMissingSkills = vi.fn();
 const inviteExpert = vi.fn().mockResolvedValue(undefined);
+const goToExpertThread = vi.fn().mockResolvedValue(undefined);
 const invokeDomain = vi.fn();
 const listTeamRecipes = vi.fn<() => Promise<TeamRecipe[]>>();
 const createTeamRecipe = vi.fn();
@@ -48,6 +49,7 @@ vi.mock('../../../src/renderer/services/rolesClient', async (importOriginal) => 
 
 vi.mock('../../../src/renderer/utils/inviteExpert', () => ({
   inviteExpert: (...args: unknown[]) => inviteExpert(...args),
+  goToExpertThread: (...args: unknown[]) => goToExpertThread(...args),
 }));
 
 vi.mock('../../../src/renderer/services/teamRecipeClient', () => ({
@@ -183,7 +185,7 @@ describe('ExpertPanel', () => {
     expect(Object.values(teamEn.team).join('\n').toLowerCase()).not.toContain('recipe');
   });
 
-  it('「发现」只展示内置专家，quickPrompt 点击以该句请 TA 来', async () => {
+  it('「发现」只展示内置专家，quickPrompt 点击以该句去 TA 的会话', async () => {
     listRoles.mockResolvedValue([
       makeEntry(),
       makeEntry({ roleId: '自定义客服', source: 'user', displayName: undefined }),
@@ -196,7 +198,7 @@ describe('ExpertPanel', () => {
     expect(screen.getByText('需求梳理')).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('expert-quick-prompt'));
-    expect(inviteExpert).toHaveBeenCalledWith('牧之', {
+    expect(goToExpertThread).toHaveBeenCalledWith('牧之', {
       seed: '我有个产品想法，帮我梳理成需求清单',
       title: '牧之',
     });
@@ -316,14 +318,27 @@ describe('ExpertPanel', () => {
     await waitFor(() => expect(deleteTeamRecipe).toHaveBeenCalledWith('user-recipe-1'));
   });
 
-  it('「请 TA 来」按钮不带 seed 只建绑定会话', async () => {
+  it('「去 TA 的会话」按钮走 goToExpertThread（有 thread 续聊、没有新建）', async () => {
     listRoles.mockResolvedValue([makeEntry()]);
     render(<ExpertPanel />);
     await waitFor(() => expect(screen.getByText('牧之')).toBeTruthy());
     fireEvent.click(screen.getByTestId('expert-invite-牧之'));
-    expect(inviteExpert).toHaveBeenCalledWith('牧之', { seed: undefined, title: '牧之' });
+    expect(goToExpertThread).toHaveBeenCalledWith('牧之', { seed: undefined, title: '牧之' });
+    expect(inviteExpert).not.toHaveBeenCalled();
   });
 
+
+  it('详情页顶部动作区：「去 TA 的会话」走 goToExpertThread，「配置」切到技能 tab', async () => {
+    render(<RoleDetailPage roleId="牧之" />);
+    await waitFor(() => expect(screen.getByTestId('role-detail-page-牧之')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('role-detail-configure'));
+    expect(screen.getByTestId('role-detail-tab-skills').getAttribute('aria-selected')).toBe('true');
+    await waitFor(() => expect(screen.getByTestId('role-equipment-editor')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('role-detail-go-thread'));
+    expect(goToExpertThread).toHaveBeenCalledWith('牧之', { title: '牧之' });
+  });
 
   it('点「详情」请求打开独立全屏详情页', async () => {
     listRoles.mockResolvedValue([makeEntry()]);

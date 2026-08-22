@@ -206,6 +206,28 @@ describe('atomic turn checkout integration', () => {
     expect(repository.getMessages('session-turn').map((message) => message.id)).toEqual(['user-target']);
   });
 
+  it('uses the retained synthetic checkpoint as the direct Redo data source', async () => {
+    const checkout = await service().checkout({
+      sessionId: 'session-turn',
+      userMessageId: 'user-target',
+      idempotencyKey: 'checkout-direct-redo-source',
+    }, checkpointMessageId);
+    const audit = repository.rewindRepo.getPromptRewindAudit(
+      'session-turn',
+      checkout.rewindId!,
+      null,
+    );
+
+    const redo = await service().redo({
+      sessionId: 'session-turn',
+      rewindId: checkout.rewindId!,
+    }, audit.redoCheckpointMessageId);
+
+    expect(redo.state).toBe('success');
+    expect(await fs.readFile(fileA, 'utf-8')).toBe('latest-a');
+    expect(await fs.readFile(fileB, 'utf-8')).toBe('latest-b');
+  });
+
   it('returns partial when conversation step fails after files were already written', async () => {
     const result = await service({
       rewindConversation: vi.fn(async () => {

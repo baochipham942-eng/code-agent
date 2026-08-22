@@ -18,6 +18,9 @@ const E2E_COMMAND_CENTER_SPAWN_CALL_ID = 'e2e-command-center-spawn';
 const E2E_COMMAND_CENTER_SECOND_CALL_ID = 'e2e-command-center-second';
 const E2E_COMMAND_CENTER_STATUS_CALL_ID = 'e2e-command-center-status';
 const E2E_COMMAND_CENTER_STEER_CALL_ID = 'e2e-command-center-steer';
+const E2E_TASK_WAKE_DELIVER_MARKER = 'E2E_TASK_WAKE_DELIVER';
+const E2E_TASK_WAKE_NOOP_MARKER = 'E2E_TASK_WAKE_NOOP';
+const E2E_TASK_WAKE_NOOP_CALL_ID = 'e2e-task-wake-noop';
 const E2E_BACKGROUND_APPROVAL_MARKER = 'E2E_BACKGROUND_APPROVAL';
 const E2E_BACKGROUND_APPROVAL_CALL_ID = 'e2e-background-approval';
 
@@ -261,6 +264,56 @@ function buildCommandCenterE2EResponse(
   };
 }
 
+function buildTaskWakeE2EResponse(
+  messages: ModelMessage[],
+  tools: ToolDefinition[],
+  onStream?: StreamCallback,
+): ModelResponse | null {
+  const latest = latestUserText(messages);
+  if (!latest.startsWith('后台任务 ')) return null;
+  const allText = messages.map(getMessageText).join('\n');
+  const noop = allText.includes(E2E_TASK_WAKE_NOOP_MARKER);
+  if (!noop && !allText.includes(E2E_TASK_WAKE_DELIVER_MARKER)) return null;
+
+  const actualProvider = 'acceptance';
+  const actualModel = 'e2e-local-agent-model';
+  if (noop) {
+    if (!hasTool(tools, 'wake_noop')) {
+      const content = 'E2E task wake could not find wake_noop.';
+      onStream?.({ type: 'text', content });
+      onStream?.({ type: 'complete', finishReason: 'stop' });
+      return {
+        type: 'text', content, finishReason: 'stop', actualProvider, actualModel,
+        usage: { inputTokens: 80, outputTokens: 12 },
+      };
+    }
+    const toolCall = { id: E2E_TASK_WAKE_NOOP_CALL_ID, name: 'wake_noop', arguments: {} };
+    onStream?.({
+      type: 'tool_call_start',
+      toolCall: { index: 0, id: toolCall.id, name: toolCall.name },
+    });
+    onStream?.({ type: 'complete', finishReason: 'tool_calls' });
+    return {
+      type: 'tool_use',
+      content: '',
+      toolCalls: [toolCall],
+      finishReason: 'tool_calls',
+      actualProvider,
+      actualModel,
+      usage: { inputTokens: 90, outputTokens: 8 },
+      contentParts: [{ type: 'tool_call', toolCallId: toolCall.id }],
+    };
+  }
+
+  const content = '项目身份核验完成：后台只读检查已返回结果，结论已写入当前会话。';
+  onStream?.({ type: 'text', content });
+  onStream?.({ type: 'complete', finishReason: 'stop' });
+  return {
+    type: 'text', content, finishReason: 'stop', actualProvider, actualModel,
+    usage: { inputTokens: 90, outputTokens: 20 },
+  };
+}
+
 function buildTaskPanelE2EResponse(
   messages: ModelMessage[],
   tools: ToolDefinition[],
@@ -488,6 +541,9 @@ export function buildE2ELocalAgentModelResponse(
 ): ModelResponse {
   const backgroundApprovalResponse = buildBackgroundApprovalE2EResponse(messages, tools, onStream);
   if (backgroundApprovalResponse) return backgroundApprovalResponse;
+
+  const taskWakeResponse = buildTaskWakeE2EResponse(messages, tools, onStream);
+  if (taskWakeResponse) return taskWakeResponse;
 
   const commandCenterResponse = buildCommandCenterE2EResponse(messages, tools, onStream);
   if (commandCenterResponse) return commandCenterResponse;

@@ -81,6 +81,15 @@ const askUserQuestionTool: ToolDefinition = {
   permissionLevel: 'execute',
 };
 
+const wakeNoopTool: ToolDefinition = {
+  name: 'wake_noop',
+  description: 'End a hidden wake without output',
+  outputSchema: { type: 'string' },
+  inputSchema: { type: 'object', properties: {} },
+  requiresPermission: false,
+  permissionLevel: 'read',
+};
+
 describe('e2eLocalAgentModel', () => {
   it('requires both E2E env guards', () => {
     expect(shouldUseE2ELocalAgentModel({ CODE_AGENT_E2E: '1' })).toBe(false);
@@ -192,6 +201,35 @@ describe('e2eLocalAgentModel', () => {
     expect(foregroundStatus.toolCalls?.[0]).toMatchObject({
       id: 'e2e-command-center-status',
       name: 'task_status',
+    });
+  });
+
+  it('drives both task-wake outcomes deterministically for the standalone web smoke', () => {
+    const delivered = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_TASK_WAKE_DELIVER E2E_SESSION_COMMAND_CENTER' },
+        { role: 'user', content: '后台任务 项目身份 已完成，结果摘要：done。' },
+      ],
+      [wakeNoopTool],
+      config,
+    );
+    expect(delivered).toMatchObject({
+      type: 'text',
+      content: expect.stringContaining('项目身份核验完成'),
+    });
+
+    const noop = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_TASK_WAKE_NOOP E2E_SESSION_COMMAND_CENTER' },
+        { role: 'user', content: '后台任务 项目身份 已完成，结果摘要：done。' },
+      ],
+      [wakeNoopTool],
+      config,
+    );
+    expect(noop).toMatchObject({
+      type: 'tool_use',
+      content: '',
+      toolCalls: [{ id: 'e2e-task-wake-noop', name: 'wake_noop', arguments: {} }],
     });
   });
 

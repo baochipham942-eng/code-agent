@@ -218,6 +218,20 @@ describe('e2eLocalAgentModel', () => {
       content: expect.stringContaining('项目身份核验完成'),
     });
 
+    const deliveredWithMetaInputProjectedAway = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'system', content: '<background_task_hidden_wake>hidden wake contract</background_task_hidden_wake>' },
+        { role: 'user', content: 'E2E_TASK_WAKE_DELIVER E2E_SESSION_COMMAND_CENTER' },
+        { role: 'system', content: '[任务结果] 项目身份｜completed｜E2E_TASK_WAKE_DELIVER' },
+      ],
+      [wakeNoopTool],
+      config,
+    );
+    expect(deliveredWithMetaInputProjectedAway).toMatchObject({
+      type: 'text',
+      content: expect.stringContaining('项目身份核验完成'),
+    });
+
     const noop = buildE2ELocalAgentModelResponse(
       [
         { role: 'user', content: 'E2E_TASK_WAKE_NOOP E2E_SESSION_COMMAND_CENTER' },

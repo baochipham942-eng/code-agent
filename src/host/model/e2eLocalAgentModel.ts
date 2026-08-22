@@ -278,8 +278,13 @@ function buildTaskWakeE2EResponse(
   onStream?: StreamCallback,
 ): ModelResponse | null {
   const latest = latestUserText(messages);
-  if (!latest.startsWith('后台任务 ')) return null;
   const allText = messages.map(getMessageText).join('\n');
+  // The hidden input is persisted as meta and some context projections keep the prior visible
+  // user message as `latest`. The wake-only system contract is the authoritative discriminator.
+  if (
+    !latest.startsWith('后台任务 ')
+    && !allText.includes('<background_task_hidden_wake>')
+  ) return null;
   const noop = allText.includes(E2E_TASK_WAKE_NOOP_MARKER);
   if (!noop && !allText.includes(E2E_TASK_WAKE_DELIVER_MARKER)) return null;
 

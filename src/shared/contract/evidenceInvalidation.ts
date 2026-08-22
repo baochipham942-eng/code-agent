@@ -37,7 +37,7 @@ export function isEvidenceInvalidationRecord(value: unknown): value is EvidenceI
     && value.invalidateRunEvidence === true;
 }
 
-export function evidenceInvalidationFromTraceEvent(
+function evidenceInvalidationFromTraceEvent(
   value: unknown,
 ): EvidenceInvalidationRecord | null {
   if (!isRecord(value) || value.type !== 'evidence_invalidation') return null;

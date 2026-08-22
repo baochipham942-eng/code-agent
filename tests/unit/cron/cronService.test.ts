@@ -31,6 +31,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
         ),
         run: (...args: unknown[]) => {
           dbState.savedRows.push(args);
+          return { changes: 0 };
         },
       }),
     }),
@@ -63,7 +64,7 @@ vi.mock('../../../src/host/services/sessionAutomation', () => ({
 
 import { CronService } from '../../../src/host/cron/cronService';
 import { formatCronMissedMessage } from '../../../src/host/cron/cronMissedTrace';
-import { getEventBus } from '../../../src/host/services/eventing/bus';
+import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
 import { getSessionManager } from '../../../src/host/services/infra/sessionManager';
 
 const NOW = Date.UTC(2026, 5, 12, 9, 0, 0);
@@ -92,6 +93,7 @@ afterEach(() => {
   automationState.getBySourceRef.mockClear();
   automationState.getBySourceRef.mockReturnValue(null);
   automationState.upsert.mockClear();
+  shutdownEventBus();
 });
 
 function persistedJob(input: {

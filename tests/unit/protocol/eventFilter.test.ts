@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BACKGROUND_AGENT_EXPERIMENTAL_EVENT_TYPES,
   BACKGROUND_AGENT_EVENT_FILTER,
   shouldDeliverAgentEvent,
 } from '../../../src/host/protocol/events/eventFilter';
@@ -28,5 +29,21 @@ describe('AgentEvent filters', () => {
     expect(shouldDeliverAgentEvent('tool_call_end', BACKGROUND_AGENT_EVENT_FILTER)).toBe(true);
     expect(shouldDeliverAgentEvent('artifact_locator', BACKGROUND_AGENT_EVENT_FILTER)).toBe(true);
     expect(shouldDeliverAgentEvent('turn_diff', BACKGROUND_AGENT_EVENT_FILTER)).toBe(true);
+  });
+
+  it('keeps the unattended allowlist behavior stable while sourcing its stable segment from the schema', () => {
+    expect([...BACKGROUND_AGENT_EVENT_FILTER.include ?? []].sort()).toEqual([
+      'agent_cancelled',
+      'agent_complete',
+      'artifact_locator',
+      'artifact_write_started',
+      'error',
+      'permission_request',
+      'tool_call_end',
+      'turn_diff',
+      'turn_end',
+      'turn_start',
+    ]);
+    expect(BACKGROUND_AGENT_EXPERIMENTAL_EVENT_TYPES).toEqual(['turn_diff']);
   });
 });

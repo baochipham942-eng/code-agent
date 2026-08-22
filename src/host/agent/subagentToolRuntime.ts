@@ -4,11 +4,13 @@ import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
 import type { ToolExecutionRequest } from './subagentPipeline';
 import type { SubagentExecutionContext } from './subagentExecutorTypes';
+import type { SubagentEventIdentity } from './subagentLifecycleEvents';
 
 export function createSubagentToolRuntime(input: {
   context: SubagentExecutionContext;
   sessionId: string;
   effectiveMode: string;
+  identity: SubagentEventIdentity;
   allowedToolNames: Set<string>;
   checkToolExecution(request: ToolExecutionRequest): boolean;
 }) {
@@ -39,7 +41,7 @@ export function createSubagentToolRuntime(input: {
           || permissionModeAutoApproves(input.effectiveMode, getPermissionLevel(request.type))
         )
       ) return true;
-      return context.permission.request(request);
+      return context.permission.request({ ...request, ...input.identity });
     },
   });
   const policy = {

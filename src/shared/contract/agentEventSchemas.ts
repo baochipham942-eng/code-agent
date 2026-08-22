@@ -148,6 +148,9 @@ const messageSchema = typed<Message>(z.object({
 const permissionRequestSchema = typed<PermissionRequest>(z.object({
   id: z.string(),
   sessionId: z.string().optional(),
+  agentId: z.string().optional(),
+  runId: z.string().optional(),
+  parentToolUseId: z.string().optional(),
   forceConfirm: z.boolean().optional(),
   type: z.enum(['file_read', 'file_write', 'file_edit', 'file_delete', 'command', 'dangerous_command', 'network', 'mcp', 'directory_access']),
   tool: z.string(),
@@ -438,6 +441,7 @@ const stabilityByType = {
   agent_thinking: 'experimental',
   turn_start: 'stable',
   turn_end: 'stable',
+  subagent_run_end: 'experimental',
   tool_schema_snapshot: 'experimental',
   model_response: 'experimental',
   model_fallback: 'experimental',
@@ -489,8 +493,8 @@ function event<T extends keyof typeof stabilityByType, S extends z.ZodType>(type
 
 const MessageEventSchema = event('message', messageSchema);
 const SurfaceExecutionEventSchema = event('surface_execution', surfaceExecutionSchema);
-const ToolCallStartEventSchema = event('tool_call_start', typed<ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string }>(toolCallSchema.and(z.object({ _index: z.number().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() }))));
-const ToolCallEndEventSchema = event('tool_call_end', typed<ToolResult & { parentToolUseId?: string }>(toolResultSchema.and(z.object({ parentToolUseId: z.string().optional() }))));
+const ToolCallStartEventSchema = event('tool_call_start', typed<ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string; agentId?: string; runId?: string }>(toolCallSchema.and(z.object({ _index: z.number().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional(), agentId: z.string().optional(), runId: z.string().optional() }))));
+const ToolCallEndEventSchema = event('tool_call_end', typed<ToolResult & { parentToolUseId?: string; agentId?: string; runId?: string }>(toolResultSchema.and(z.object({ parentToolUseId: z.string().optional(), agentId: z.string().optional(), runId: z.string().optional() }))));
 const ArtifactWriteStartedEventSchema = event('artifact_write_started', typed<ArtifactWriteStartedData>(z.object({ toolCallId: z.string(), toolName: z.string(), filePath: z.string() })));
 const PermissionRequestEventSchema = event('permission_request', permissionRequestSchema);
 const ModelDecisionEventSchema = event('model_decision', modelDecisionSchema);
@@ -537,8 +541,15 @@ const GoalGateEventSchema = event('goal_gate', z.object({
 }));
 const GoalCompleteEventSchema = event('goal_complete', z.object({ status: z.enum(['met', 'aborted']), reason: z.string().optional(), turns: z.number(), tokensUsed: z.number(), degraded: z.boolean().optional(), degradedReason: z.string().optional(), parentToolUseId: z.string().optional() }));
 const AgentThinkingEventSchema = event('agent_thinking', z.object({ message: z.string(), agentId: z.string().optional(), progress: z.number().optional(), parentToolUseId: z.string().optional() }));
-const TurnStartEventSchema = event('turn_start', z.object({ turnId: z.string(), iteration: z.number().optional(), parentToolUseId: z.string().optional() }));
-const TurnEndEventSchema = event('turn_end', z.object({ turnId: z.string(), parentToolUseId: z.string().optional() }));
+const TurnStartEventSchema = event('turn_start', z.object({ turnId: z.string(), iteration: z.number().optional(), parentToolUseId: z.string().optional(), agentId: z.string().optional(), runId: z.string().optional() }));
+const TurnEndEventSchema = event('turn_end', z.object({ turnId: z.string(), parentToolUseId: z.string().optional(), agentId: z.string().optional(), runId: z.string().optional() }));
+const SubagentRunEndEventSchema = event('subagent_run_end', z.object({
+  agentId: z.string(),
+  runId: z.string(),
+  parentToolUseId: z.string().optional(),
+  status: z.enum(['completed', 'cancelled', 'failed']),
+  error: z.string().optional(),
+}));
 const ToolSchemaSnapshotEventSchema = event('tool_schema_snapshot', z.object({
   turnId: z.string().optional(), toolCount: z.number(), tools: z.array(z.object({ name: z.string(), inputSchema: unknownRecordSchema.optional(), requiresPermission: z.boolean().optional(), permissionLevel: z.string().optional() })), parentToolUseId: z.string().optional(),
 }));
@@ -598,6 +609,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   TaskUpdateEventSchema, TurnDiffEventSchema, NotificationEventSchema, RoutingResolvedEventSchema, ArtifactLocatorEventSchema,
   AgentCompleteEventSchema, AgentCancelledEventSchema, GoalIterationEventSchema, GoalGateEventSchema,
   GoalCompleteEventSchema, AgentThinkingEventSchema, TurnStartEventSchema, TurnEndEventSchema,
+  SubagentRunEndEventSchema,
   ToolSchemaSnapshotEventSchema, ModelResponseEventSchema, ModelFallbackEventSchema, ApiKeyRequiredEventSchema,
   TaskProgressEventSchema, TaskCompleteEventSchema, BackgroundTaskLedgerChangedEventSchema, MemoryLearnedEventSchema,
   SkillDraftPendingEventSchema, RoleDraftPendingEventSchema, TeamRecipeDraftPendingEventSchema,

@@ -433,6 +433,28 @@ describe('protocolAdapter — buildCanUseToolFromLegacy', () => {
     expect(r.allow).toBe(false);
   });
 
+  it('keeps subagent execution identity on permission requests', async () => {
+    const requestPermission = vi.fn(async () => true);
+    const ctx = {
+      workingDirectory: '/tmp',
+      requestPermission,
+    } as unknown as LegacyToolContext;
+    const canUseTool = buildCanUseToolFromLegacy(ctx, 'Write');
+
+    await canUseTool('Write', { path: '/tmp/x' }, undefined, {
+      type: 'file_write',
+      agentId: 'agent-a',
+      runId: 'run-a',
+      parentToolUseId: 'call-a',
+    });
+
+    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: 'agent-a',
+      runId: 'run-a',
+      parentToolUseId: 'call-a',
+    }));
+  });
+
   it('input 含 url → type=network', async () => {
     let captured: { type?: string } | null = null;
     const ctx = {

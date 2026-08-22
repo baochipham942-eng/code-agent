@@ -10,8 +10,12 @@ import {
 
 describe('AgentEventSchema', () => {
   const legalEvents = [
-    { type: 'turn_start', data: { turnId: 'turn-1', iteration: 1 } },
-    { type: 'turn_end', data: { turnId: 'turn-1' } },
+    { type: 'turn_start', data: { turnId: 'turn-1', iteration: 1, agentId: 'agent-1', runId: 'run-1' } },
+    { type: 'turn_end', data: { turnId: 'turn-1', agentId: 'agent-1', runId: 'run-1' } },
+    {
+      type: 'subagent_run_end',
+      data: { agentId: 'agent-1', runId: 'run-1', status: 'completed' },
+    },
     { type: 'tool_call_start', data: { id: 'call-1', name: 'Read', arguments: { path: 'README.md' } } },
     { type: 'tool_call_end', data: { toolCallId: 'call-1', success: true, output: 'ok' } },
     {
@@ -73,9 +77,9 @@ describe('AgentEventSchema', () => {
 
   it('exports stability metadata and the stable type set from the same source', () => {
     const stabilityMetadata = AgentEventSchema.options.map((schema) => schema.meta()?.stability);
-    expect(stabilityMetadata).toHaveLength(67);
+    expect(stabilityMetadata).toHaveLength(68);
     expect(stabilityMetadata.filter((stability) => stability === 'stable')).toHaveLength(12);
-    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(55);
+    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(56);
     expect(STABLE_EVENT_TYPES).toEqual(new Set([
       'message',
       'tool_call_start',

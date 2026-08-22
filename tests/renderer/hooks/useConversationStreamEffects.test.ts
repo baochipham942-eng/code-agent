@@ -675,6 +675,39 @@ describe('applyConversationStreamEvent model_fallback', () => {
 });
 
 describe('applyConversationStreamEvent meta turns', () => {
+  it('ignores a correlated background turn without adding or retargeting a message', () => {
+    const addMessage = vi.fn();
+    const state = {
+      currentTurnMessageId: 'foreground-turn',
+      committedAssistantMessageIds: new Set<string>(['foreground-turn']),
+      foregroundAgentId: 'foreground-agent',
+    };
+
+    applyConversationStreamEvent(
+      {
+        type: 'turn_start',
+        data: {
+          turnId: 'background-turn',
+          iteration: 1,
+          agentId: 'background-agent',
+          runId: 'background-run',
+          parentToolUseId: 'delegate-tool-1',
+        },
+      },
+      state,
+      {
+        addMessage,
+        updateMessage: vi.fn(),
+        setMessages: vi.fn(),
+        getMessages: () => [],
+        queueUpdate: vi.fn(),
+      },
+    );
+
+    expect(addMessage).not.toHaveBeenCalled();
+    expect(state.currentTurnMessageId).toBe('foreground-turn');
+  });
+
   it('does not render meta loop turn starts or append their stream chunks to the previous assistant', () => {
     const appendStreamingMessageDelta = vi.fn();
     const queueUpdate = vi.fn();

@@ -46,6 +46,7 @@ const BACKGROUND_STABLE_EVENT_TYPES = [...STABLE_EVENT_TYPES]
 /** Experimental events intentionally delivered to unattended consumers. */
 const BACKGROUND_AGENT_EXPERIMENTAL_EVENT_TYPES: readonly AgentEventType[] = [
   'turn_diff',
+  'subagent_run_end',
 ];
 
 /** Shared allowlist for unattended consumers that do not render stream deltas. */

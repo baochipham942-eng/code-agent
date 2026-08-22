@@ -56,5 +56,6 @@ describe('ChannelAgentBridge event declaration', () => {
     expect(shouldDeliverAgentEvent('message_delta', declaredFilter)).toBe(false);
     expect(shouldDeliverAgentEvent('stream_chunk', declaredFilter)).toBe(false);
     expect(shouldDeliverAgentEvent('permission_request', declaredFilter)).toBe(true);
+    expect(shouldDeliverAgentEvent('subagent_run_end', declaredFilter)).toBe(true);
   });
 });

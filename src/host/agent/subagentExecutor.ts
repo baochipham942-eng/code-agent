@@ -98,6 +98,7 @@ import {
   resolveSubagentParentContext,
 } from './subagentProtocolContext';
 import { startSubagentLifecycle } from './subagentLifecycleHooks';
+import { createSubagentEventScope, type SubagentRunEndStatus } from './subagentLifecycleEvents';
 
 export type {
   SubagentConfig,
@@ -264,6 +265,13 @@ export class SubagentExecutor {
       undefined,
       { parentRemainingBudget: context.parentRemainingBudget },
     );
+    const executionAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
+    const executionRunId = context.runId || context.swarmRunScope?.runId
+      || context.traceContext?.runId || agentTask.id;
+    const eventScope = createSubagentEventScope({
+      events: context.events,
+      identity: { agentId: executionAgentId, runId: executionRunId, parentToolUseId: context.parentToolUseId },
+    });
     const getTotalCost = (): number => {
       const ownCost = pipeline.getBudgetStatus(pipelineContext).subagentCost ?? 0;
       return ownCost + descendantUsage.cost;
@@ -353,6 +361,7 @@ export class SubagentExecutor {
       context,
       sessionId,
       effectiveMode: subagentEffectiveMode,
+      identity: eventScope.identity,
       allowedToolNames: allowedNames,
       checkToolExecution: (request) => pipeline.checkToolExecution(pipelineContext, request).allowed,
     });
@@ -383,7 +392,6 @@ export class SubagentExecutor {
     // Keep the pipeline's internal random id private to the pipeline registry;
     // user-facing events, tool calls, approvals and results must stay in the
     // caller's run scope.
-    const executionAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
     const telemetryCollector = getTelemetryCollector();
     let telemetryTurnNumber = 0;
 
@@ -437,10 +445,14 @@ export class SubagentExecutor {
       });
     }
 
+    let terminalStatus: SubagentRunEndStatus = 'failed';
+    let terminalError: string | undefined;
+
     try {
       // Initial budget check
       const budgetCheck = pipeline.checkBudget(pipelineContext);
       if (!budgetCheck.allowed) {
+        terminalError = budgetCheck.reason || 'Budget exceeded';
         pipeline.completeContext(pipelineContext.agentId, false, budgetCheck.reason);
         agentTask.fail(budgetCheck.reason || 'budget exceeded');
         // orphan 接管（roadmap 2.6）：subagent 名下未收口任务释放回主会话
@@ -553,6 +565,8 @@ export class SubagentExecutor {
             : cancellationReason === 'idle-timeout'
               ? `子代理 ${Math.round(getSubagentIdleTimeout(timeout) / 1000)}s 无 stream/progress, 已自动取消 (idle-timeout)`
               : `任务已取消 (${cancellationReason})`;
+          terminalStatus = 'cancelled';
+          terminalError = errorMsg;
           agentTask.fail(errorMsg);
           // orphan 接管（roadmap 2.6）
           adoptOrphanTasks(sessionId, pipelineContext.agentId);
@@ -628,11 +642,12 @@ export class SubagentExecutor {
         );
         const inferenceMessages = applyInterventionsToMessages(messages, effectiveInterventions);
         const providerMessages = buildInferenceMessages(inferenceMessages);
-        const telemetryTurnId = generateMessageId();
+        const telemetryTurnId = eventScope.startTurn(iterations);
         const telemetryTurnStartedAt = Date.now();
         const currentTelemetryTurnNumber = ++telemetryTurnNumber;
         const telemetryToolCalls: SubagentTelemetryToolCall[] = [];
 
+        try {
         const inferenceStartedAt = Date.now();
         // effectiveSignal 把父 abort + 内部 timeout 都桥接进来；
         // 不传给 inference 的话，父 abort 后这一轮 LLM call 还会跑完才被循环开头 check 拦截，
@@ -896,14 +911,7 @@ export class SubagentExecutor {
             logger.info(`[${config.name}] Executing tool: ${toolCall.name}`);
 
             // 发射 subagent 工具调用开始事件
-            if (parentToolUseId) {
-              context.events.emit('tool_call_start', {
-                id: toolCall.id,
-                name: toolCall.name,
-                arguments: toolCall.arguments,
-                parentToolUseId,
-              });
-            }
+            eventScope.emitToolCallStart(toolCall);
 
             const toolStartTime = Date.now();
             try {
@@ -911,7 +919,7 @@ export class SubagentExecutor {
                 toolCall.name,
                 toolCall.arguments,
                 {
-                  runId: context.runId,
+                  runId: executionRunId,
                   sessionId: context.sessionId,
                   sourceMessageId: context.sourceMessageId,
                   agentId: executionAgentId,
@@ -979,16 +987,7 @@ export class SubagentExecutor {
               });
 
               // 发射 subagent 工具调用结束事件
-              if (parentToolUseId) {
-                context.events.emit('tool_call_end', {
-                  toolCallId: toolCall.id,
-                  success: result.success,
-                  output: result.output,
-                  error: result.error,
-                  duration: toolDuration,
-                  parentToolUseId,
-                });
-              }
+              eventScope.emitToolCallEnd(toolCall.id, result, toolDuration);
             } catch (error) {
               const toolDuration = Date.now() - toolStartTime;
               const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -1019,15 +1018,7 @@ export class SubagentExecutor {
               });
 
               // 发射 subagent 工具调用错误事件
-              if (parentToolUseId) {
-                context.events.emit('tool_call_end', {
-                  toolCallId: toolCall.id,
-                  success: false,
-                  error: errorMessage,
-                  duration: toolDuration,
-                  parentToolUseId,
-                });
-              }
+              eventScope.emitToolCallError(toolCall.id, errorMessage, toolDuration);
             }
           }
 
@@ -1078,6 +1069,9 @@ export class SubagentExecutor {
 
         // No response, break
         break;
+        } finally {
+          eventScope.endTurn(telemetryTurnId);
+        }
       }
 
       // Get final cost
@@ -1126,6 +1120,7 @@ export class SubagentExecutor {
         recordRoleParticipation(sessionId, config.roleId);
       }
 
+      terminalStatus = 'completed';
       return {
         success: true,
         output: finalOutput || 'Subagent completed without output',
@@ -1137,6 +1132,10 @@ export class SubagentExecutor {
         contextSnapshot: latestContextSnapshot,
       };
     } catch (error) {
+      if (effectiveSignal.aborted) {
+        terminalStatus = 'cancelled';
+      }
+      terminalError = error instanceof Error ? error.message : String(error);
       cleanupTimer();
       stopIdleWatchdog();
       pipeline.completeContext(
@@ -1173,6 +1172,8 @@ export class SubagentExecutor {
         } catch { /* frozen error, ignore */ }
       }
       throw error; // re-throw to preserve existing error handling
+    } finally {
+      eventScope.endRun(terminalStatus, terminalError);
     }
   }
 

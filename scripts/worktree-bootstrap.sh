@@ -11,6 +11,11 @@
 #
 # 软链 vs 拷贝是批 1 实测得出的硬约束，不是随便选的：
 #   - 软链（构建期只读）：node_modules、scripts/rtk、scripts/uv、scripts/poppler
+#   - 软链（构建期可写但本就是共享缓存）：src-tauri/target —— cargo 自带 target 目录文件锁，
+#     多 worktree 共用一份增量编译产物是它的设计用法；不软链则每个 worktree 各编一份 2~3G
+#     （2026-08-22 实付：一个 worktree 落了 2.7G target，磁盘只剩 12G）。
+#     ponytail: 代价=worktree 的 tauri bundle 会落进主树 target/release/bundle 覆盖同名产物；
+#     主树正式发版前照旧 tauri:prebuild-cleanup 重打即可。
 #   - 拷贝（构建期会被写，软链会写穿透污染主树）：dist/native、dist/bundled-node、
 #     以及 4 个 swift helper（tauri-prebuild-cleanup 阶段会原地重编它们）
 #
@@ -29,6 +34,7 @@ usage() {
 
 把 gitignored 的构建输入从主树引导进一个**新开的** git worktree：
   - 软链（构建期只读）：node_modules、scripts/rtk、scripts/uv、scripts/poppler
+  - 软链（共享编译缓存）：src-tauri/target
   - 拷贝（构建期会被写）：dist/native、dist/bundled-node、4 个 swift helper
 幂等，重复跑不报错；绝不写主树。
 EOF
@@ -117,6 +123,7 @@ remedy_for() {
     scripts/rtk)                   echo "bash scripts/fetch-rtk.sh" ;;
     scripts/uv)                    echo "bash scripts/fetch-uv.sh" ;;
     scripts/poppler)               echo "bash scripts/fetch-poppler.sh" ;;
+    src-tauri/target)              echo "mkdir -p src-tauri/target" ;;
     dist/native)                   echo "npm run rebuild-native:system" ;;
     dist/bundled-node)             echo "node scripts/prepare-bundled-node.mjs" ;;
     scripts/system-audio-capture)  echo "bash scripts/build-audio-capture.sh" ;;
@@ -132,6 +139,7 @@ LINK_ITEMS=(
   "scripts/rtk"
   "scripts/uv"
   "scripts/poppler"
+  "src-tauri/target"
 )
 COPY_ITEMS=(
   "dist/native"

@@ -166,6 +166,8 @@ export interface ResearchProgressData {
  */
 export interface AgentRunOptions {
   mode: 'normal' | 'deep-research';
+  /** Optional per-run allow/deny list for externally delivered AgentEvents. */
+  eventFilter?: import('../protocol/events/eventFilter').AgentEventFilter;
   reportStyle?: ReportStyle;
   agentOverrideId?: string | null;
   turnSystemContext?: string[];

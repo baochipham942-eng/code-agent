@@ -12,6 +12,7 @@ import type {
   ModelConfig,
 } from '../../shared/contract';
 import type { AgentRunOptions, ResearchUserSettings } from '../research/types';
+import { shouldDeliverAgentEvent } from '../protocol/events/eventFilter';
 import { AgentLoop } from './agentLoop';
 import { buildGoalContract } from './goalModeController';
 import { SYSTEM_PROMPT } from '../prompts/builder';
@@ -257,7 +258,9 @@ export class AgentOrchestrator {
     }
     const telemetryCollector = getTelemetryCollector();
     const sessionAwareOnEvent = (event: AgentEvent) => {
-      this.onEvent({ ...event, sessionId } as AgentEvent & { sessionId?: string });
+      if (shouldDeliverAgentEvent(event, options?.eventFilter)) {
+        this.onEvent({ ...event, sessionId } as AgentEvent & { sessionId?: string });
+      }
       if (sessionId) {
         eventService?.saveEvent(sessionId, event);
         telemetryCollector.handleEvent(sessionId, event);

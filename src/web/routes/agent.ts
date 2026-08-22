@@ -303,7 +303,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       | { connectedClient: true; requestToken: string }
       | { connectedClient: false },
   ): Promise<void> {
-    const { prompt, project, sessionDir, model, provider } = body;
+    const { prompt, project, sessionDir, model, provider, eventFilter } = body;
     const clientMessageId = body.clientMessageId?.trim()
       ? body.clientMessageId.trim()
       : undefined;
@@ -483,6 +483,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       logger,
       tryGetSessionManager,
       mirrorToBroadcast: !transport.connectedClient,
+      eventFilter,
     });
 
     if (transport.connectedClient) {

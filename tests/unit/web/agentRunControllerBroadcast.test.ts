@@ -41,6 +41,18 @@ function createController(mirrorToBroadcast: boolean, streamClosed = false) {
   });
 }
 
+function createFilteredController() {
+  return new AgentRunController({
+    res: createSink(false),
+    runId: 'run-filtered',
+    sessionId: 'session-1',
+    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    tryGetSessionManager: async () => null,
+    mirrorToBroadcast: false,
+    eventFilter: { include: ['permission_request'] },
+  });
+}
+
 const surfaceEvent = {
   version: 1,
   eventId: 'surface_event_1',
@@ -101,6 +113,25 @@ describe('AgentRunController 广播镜像', () => {
     createController(false).emitSSE('turn_start', { turnId: 't1' });
 
     expect(sendSSE).toHaveBeenCalledWith(expect.anything(), 'turn_start', { turnId: 't1' });
+  });
+
+  it('只把请求声明的 AgentEvent 写进响应流', () => {
+    const controller = createFilteredController();
+    controller.emitAgentEvent({ type: 'stream_chunk', data: { content: 'hidden' } });
+    controller.emitAgentEvent({
+      type: 'permission_request',
+      data: {
+        id: 'p1',
+        type: 'command',
+        tool: 'bash',
+        details: { command: 'npm test' },
+        timestamp: 1,
+      },
+    });
+    controller.flush();
+
+    expect(sendSSE).not.toHaveBeenCalledWith(expect.anything(), 'stream_chunk', expect.anything());
+    expect(sendSSE).toHaveBeenCalledWith(expect.anything(), 'permission_request', expect.anything());
   });
 });
 

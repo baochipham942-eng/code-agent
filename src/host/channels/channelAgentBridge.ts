@@ -20,6 +20,7 @@ import { summarizeChannelError } from './channelErrorSummary';
 import { CHANNEL_INGRESS } from '../../shared/constants';
 import { transcribeAudioFile } from '../services/media/audioTranscriptionService';
 import { sanitizeChannelText } from './privacy/channelPrivacyFirewall';
+import { BACKGROUND_AGENT_EVENT_FILTER } from '../protocol/events/eventFilter';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -332,7 +333,7 @@ export class ChannelAgentBridge {
       await orchestrator.sendMessage(
         message.content,
         attachments,
-        undefined,
+        { mode: 'normal', eventFilter: BACKGROUND_AGENT_EVENT_FILTER },
         this.buildChannelMessageMetadata(accountId, message),
       );
       logCollector.log('agent', 'INFO', '[Channel] orchestrator.sendMessage completed');

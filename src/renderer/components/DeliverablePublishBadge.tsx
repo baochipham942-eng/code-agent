@@ -23,7 +23,7 @@ export const DeliverablePublishBadge: React.FC<{
 
   return (
     <span className="inline-flex shrink-0 items-center gap-1" data-testid={testId}>
-      <span className="inline-flex items-center gap-1 rounded border border-teal-500/60 bg-teal-500/10 px-1.5 py-0.5 text-[10px] font-medium text-teal-300">
+      <span className="inline-flex items-center gap-1 rounded border border-teal-500/60 bg-teal-500/10 px-1.5 py-0.5 text-[10px] font-medium text-badge-success">
         <CheckCircle2 className="h-3 w-3" />
         {t.deliverable.publishedVersion.replace('{version}', String(state.version))}
       </span>

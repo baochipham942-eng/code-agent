@@ -527,7 +527,7 @@ export const LibraryPanel: React.FC = () => {
                               <div className="min-w-0">
                                 <div className="flex min-w-0 items-center gap-1.5">
                                   {publishModel.publishedVersions.length > 0 && (
-                                    <button type="button" onClick={() => toggleVersions(item.id)} className="shrink-0 rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200" aria-label={t.deliverable.versions} aria-expanded={expanded}>
+                                    <button /* ds-allow:button: 条目标题旁的极小版本展开热区 */ type="button" onClick={() => toggleVersions(item.id)} className="shrink-0 rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200" aria-label={t.deliverable.versions} aria-expanded={expanded}>
                                       {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                                     </button>
                                   )}
@@ -553,13 +553,13 @@ export const LibraryPanel: React.FC = () => {
                                 {publishModel.publishedVersions.map((version, index) => (
                                   <div key={version.version} className="flex items-center gap-2 border-b border-zinc-800/70 px-3 py-2 text-xs last:border-b-0">
                                     <span className="font-medium text-zinc-200">v{version.version}</span>
-                                    {index === 0 && <span className="rounded bg-teal-500/10 px-1.5 py-0.5 text-[10px] text-teal-300">{t.deliverable.currentPublished}</span>}
+                                    {index === 0 && <span className="rounded bg-teal-500/10 px-1.5 py-0.5 text-[10px] text-badge-success">{t.deliverable.currentPublished}</span>}
                                     <span className="text-zinc-500">{new Date(version.publishedAt).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}</span>
                                     {version.note && <span className="min-w-0 flex-1 truncate text-zinc-400">{version.note}</span>}
                                     {!version.note && <span className="flex-1" />}
-                                    <button type="button" onClick={() => handlePreviewVersion(version.snapshotPath)} className="inline-flex items-center gap-1 text-badge-info hover:underline"><Eye className="h-3 w-3" />{t.deliverable.viewVersion}</button>
+                                    <button /* ds-allow:button: 版本行内文字动作 */ type="button" onClick={() => handlePreviewVersion(version.snapshotPath)} className="inline-flex items-center gap-1 text-badge-info hover:underline"><Eye className="h-3 w-3" />{t.deliverable.viewVersion}</button>
                                     {index === 0 && (
-                                      <button type="button" onClick={() => void handleSharePublished(item, version)} className="inline-flex items-center gap-1 text-teal-300 hover:underline"><Share2 className="h-3 w-3" />{t.deliverable.exportBundle}</button>
+                                      <button /* ds-allow:button: 版本行内文字动作 */ type="button" onClick={() => void handleSharePublished(item, version)} className="inline-flex items-center gap-1 text-badge-success hover:underline"><Share2 className="h-3 w-3" />{t.deliverable.exportBundle}</button>
                                     )}
                                   </div>
                                 ))}
@@ -568,7 +568,7 @@ export const LibraryPanel: React.FC = () => {
                                     <span className="font-medium text-zinc-300">{t.deliverable.draft}</span>
                                     <span className="text-badge-warning">{t.deliverable.unpublishedChanges}</span>
                                     <span className="flex-1" />
-                                    <button type="button" onClick={() => handlePreview(item)} className="inline-flex items-center gap-1 text-badge-info hover:underline"><Eye className="h-3 w-3" />{t.deliverable.viewVersion}</button>
+                                    <button /* ds-allow:button: 草稿行内文字动作 */ type="button" onClick={() => handlePreview(item)} className="inline-flex items-center gap-1 text-badge-info hover:underline"><Eye className="h-3 w-3" />{t.deliverable.viewVersion}</button>
                                   </div>
                                 )}
                               </div>

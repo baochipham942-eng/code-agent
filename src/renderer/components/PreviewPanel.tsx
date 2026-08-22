@@ -30,6 +30,24 @@ import { ArtifactSourceEditor } from './ArtifactSourceEditor';
 import { useSessionStore } from '../stores/sessionStore';
 import { artifactFollowKey, useArtifactFollowStore } from '../stores/artifactFollowStore';
 import { artifactCompletionMeta, usePreviewFileMetadata } from '../hooks/usePreviewFileMetadata';
+import {
+  basename,
+  buildDocxPreviewSpec,
+  buildExcelPreviewSpec,
+  getExtension,
+  parseArchiveInspection,
+  parseDesignPptArtifactContent,
+  shouldFlashOnDiskLoad,
+  toPreviewErrorState,
+  type ArchiveInspection,
+  type DesignPptScreenshotArtifact,
+  type DocxPreviewResult,
+  type ExcelPreviewResult,
+  type LoadedSnapshot,
+  type PresentationInspection,
+} from './previewPanelModel';
+
+export { parseDesignPptArtifactContent, shouldFlashOnDiskLoad, toPreviewErrorState } from './previewPanelModel';
 
 const CodeEditor = lazy(() => import('./CodeEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
@@ -60,176 +78,8 @@ const DOCX_EXTS = new Set(['docx']);
 const EXCEL_EXTS = new Set(['xlsx', 'xls']);
 const PRESENTATION_EXTS = new Set(['pptx']);
 
-type DocumentParagraphType = 'heading' | 'paragraph' | 'list-item';
-
-interface DocxPreviewResult {
-  html: string;
-  paragraphs: Array<{
-    index: number;
-    type: string;
-    text: string;
-    level?: number;
-    textFingerprint?: string;
-    previousTextFingerprint?: string;
-    nextTextFingerprint?: string;
-  }>;
-  text: string;
-  wordCount: number;
-}
-
-interface ExcelPreviewResult {
-  sheets: Array<{ name: string; headers: string[]; rows: unknown[][]; rowCount: number }>;
-  sheetCount: number;
-}
-
-interface PresentationInspection {
-  filePath: string;
-  format: 'pptx';
-  slideCount: number;
-  shownCount: number;
-  truncated: boolean;
-  slides: Array<{
-    index: number;
-    name: string;
-    title?: string;
-    text: string[];
-  }>;
-}
-
-// 设计模式生成的 PPT 会在同目录写一份 <baseName>.design-artifact.json，
-// 内含 LibreOffice 渲染的逐页截图路径。预览面板优先读它走可视截图预览，
-// 缺失（非设计模式产出 / LibreOffice 不在）才 fallback 到 outline 文本巡检。
-interface DesignPptScreenshotArtifact {
-  kind: 'design_ppt';
-  title?: string;
-  theme?: string;
-  outputPath?: string;
-  screenshots: string[];
-  slidesCount?: number;
-}
-
-// ============================================================================
-// 产物更新回执（闪现渐隐）判据
-//
-// 只有「同一 tab 的磁盘重载带来了不是用户刚看到的内容」才算 agent 更新：
-//   - 首次加载 / 切 tab（prev 为空或 tabId 变了）→ 不闪
-//   - savedContent 没变（普通重渲染）→ 不闪
-//   - 用户自己保存（savedContent 追上了当时显示的 content）→ 不闪
-// ============================================================================
-interface LoadedSnapshot {
-  tabId: string;
-  savedContent: string;
-  /** 快照时用户正看到的内容（含未保存编辑），用于区分"用户保存"和"外来更新"。 */
-  content: string;
-}
-
-export function shouldFlashOnDiskLoad(
-  prev: LoadedSnapshot | null,
-  next: { tabId: string; savedContent: string },
-): boolean {
-  if (prev?.tabId !== next.tabId) return false;
-  if (next.savedContent === prev.savedContent) return false;
-  if (next.savedContent === prev.content) return false;
-  return true;
-}
-
-export function parseDesignPptArtifactContent(content: string): DesignPptScreenshotArtifact | null {
-  try {
-    const parsed = JSON.parse(content) as Partial<DesignPptScreenshotArtifact>;
-    if (
-      parsed?.kind === 'design_ppt'
-      && Array.isArray(parsed.screenshots)
-      && parsed.screenshots.length > 0
-    ) {
-      return parsed as DesignPptScreenshotArtifact;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-interface ArchiveInspection {
-  filePath: string;
-  format: 'zip';
-  entryCount: number;
-  shownCount: number;
-  truncated: boolean;
-  entries: Array<{
-    name: string;
-    isDirectory: boolean;
-    depth: number;
-    extension?: string;
-  }>;
-}
-
-function getExtension(filePath: string | null | undefined): string {
-  if (!filePath) return '';
-  const idx = filePath.lastIndexOf('.');
-  return idx < 0 ? '' : filePath.slice(idx + 1).toLowerCase();
-}
-
-function basename(filePath: string): string {
-  return filePath.split('/').filter(Boolean).pop() || filePath;
-}
-
 function commandApi() {
   return window.codeAgentAPI || window.electronAPI;
-}
-
-function normalizeDocumentParagraphType(value: string): DocumentParagraphType {
-  if (value === 'heading' || value === 'list-item') return value;
-  return 'paragraph';
-}
-
-function paragraphsFromRawText(text: string): DocxPreviewResult['paragraphs'] {
-  return text
-    .split(/\n{2,}|\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 500)
-    .map((line, index) => ({
-      index,
-      type: 'paragraph',
-      text: line,
-    }));
-}
-
-function buildDocxPreviewSpec(filePath: string, result: DocxPreviewResult): string {
-  const normalized = result.paragraphs
-    .map((paragraph, index) => ({
-      index: typeof paragraph.index === 'number' ? paragraph.index : index,
-      type: normalizeDocumentParagraphType(paragraph.type),
-      text: paragraph.text.trim(),
-      level: paragraph.level,
-      textFingerprint: paragraph.textFingerprint,
-      previousTextFingerprint: paragraph.previousTextFingerprint,
-      nextTextFingerprint: paragraph.nextTextFingerprint,
-    }))
-    .filter((paragraph) => paragraph.text.length > 0);
-  const paragraphs = normalized.length > 0 ? normalized : paragraphsFromRawText(result.text);
-  if (paragraphs.length === 0) {
-    throw new Error('DOCX preview has no readable paragraphs');
-  }
-
-  return JSON.stringify({
-    title: basename(filePath).replace(/\.docx$/i, ''),
-    paragraphs,
-    text: result.text,
-    wordCount: result.wordCount,
-  });
-}
-
-function buildExcelPreviewSpec(filePath: string, result: ExcelPreviewResult): string {
-  const sheets = result.sheets.filter((sheet) => sheet.headers.length > 0 || sheet.rows.length > 0);
-  if (sheets.length === 0) {
-    throw new Error('Excel preview has no readable sheets');
-  }
-  return JSON.stringify({
-    title: basename(filePath).replace(/\.(xlsx|xls)$/i, ''),
-    sheets,
-    sheetCount: result.sheetCount || sheets.length,
-  });
 }
 
 async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T> {
@@ -238,31 +88,6 @@ async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T>
     throw new Error(response?.error?.message || `Workspace action failed: ${action}`);
   }
   return response.data as T;
-}
-
-/**
- * IPC/引擎报错 → 展示层错误状态。message 永远是调用方传入的人话 fallback
- * （loadFileFailed/saveFailed 等既有键），原始异常文本只进 detail（挂 tooltip，
- * 不裸露成可见文案）——別把这两个反过来。
- */
-export function toPreviewErrorState(
-  err: unknown,
-  fallbackMessage: string,
-): { message: string; detail: string } {
-  return {
-    message: fallbackMessage,
-    detail: err instanceof Error ? err.message : String(err),
-  };
-}
-
-function parseArchiveInspection(content: string): ArchiveInspection | null {
-  try {
-    const parsed = JSON.parse(content) as ArchiveInspection;
-    if (!parsed || !Array.isArray(parsed.entries)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
 }
 
 function ArchivePreview({ content }: { content: string }) {
@@ -958,7 +783,7 @@ export const PreviewPanel: React.FC = () => {
         )}
         {!isVirtual && publishInfo && (
           <div className="relative" ref={versionsRef}>
-            <button
+            <button /* ds-allow:button: 标题旁徽记本身即版本切换热区 */
               type="button"
               onClick={() => setVersionsOpen((open) => !open)}
               className="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-zinc-700/60"
@@ -975,12 +800,12 @@ export const PreviewPanel: React.FC = () => {
             </button>
             {versionsOpen && (
               <div className="absolute left-0 top-full z-20 mt-1 min-w-52 rounded-lg border border-zinc-700 bg-zinc-800 p-1 shadow-xl" data-testid="preview-version-menu">
-                <button type="button" onClick={() => handleVersionSelect(null)} className="flex w-full items-center justify-between gap-3 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700">
+                <button /* ds-allow:button: 版本菜单紧凑文字项 */ type="button" onClick={() => handleVersionSelect(null)} className="flex w-full items-center justify-between gap-3 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700">
                   <span>{t.deliverable.versionDraft.replace('{version}', String((publishInfo.publishedVersions[0]?.version ?? 0) + 1))}</span>
                   <span className="text-[10px] text-badge-warning">{t.deliverable.unpublished}</span>
                 </button>
                 {publishInfo.publishedVersions.map((version, index) => (
-                  <button key={version.version} type="button" onClick={() => handleVersionSelect(version)} className={`flex w-full items-center justify-between gap-3 rounded px-2.5 py-2 text-left text-xs hover:bg-zinc-700 ${selectedPublishedVersion?.version === version.version ? 'bg-teal-500/10 text-teal-300' : 'text-zinc-300'}`}>
+                  <button /* ds-allow:button: 版本菜单紧凑文字项 */ key={version.version} type="button" onClick={() => handleVersionSelect(version)} className={`flex w-full items-center justify-between gap-3 rounded px-2.5 py-2 text-left text-xs hover:bg-zinc-700 ${selectedPublishedVersion?.version === version.version ? 'bg-teal-500/10 text-badge-success' : 'text-zinc-300'}`}>
                     <span>v{version.version} {index === 0 ? t.deliverable.currentPublished : new Date(version.publishedAt).toLocaleDateString()}</span>
                     {selectedPublishedVersion?.version === version.version && <Check className="h-3.5 w-3.5" />}
                   </button>

@@ -50,6 +50,12 @@ interface PublishVersionResponse extends DeliverablePublishInfo {
   publishedVersion: PublishedDeliverableVersion;
 }
 
+function isPublishInfo(value: unknown): value is DeliverablePublishInfo {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<DeliverablePublishInfo>;
+  return Boolean(candidate.publishState) && Array.isArray(candidate.publishedVersions);
+}
+
 function publishActionForCard(
   card: DeliverableCardView,
 ): Extract<DeliverableSecondaryAction, { kind: 'publish-version' }> | undefined {
@@ -241,13 +247,13 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
         {(publishAction || overflowActions.length > 0) && (
           <div className="flex flex-shrink-0 items-center gap-0.5 pr-1.5">
             {publishAction && (
-              <button
+              <button /* ds-allow:button: 产物卡窄版专用主动作，通用 Button 尺寸不适配 */
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   requestPublish(publishAction, card);
                 }}
-                className="inline-flex h-6 items-center justify-center gap-1 rounded border border-teal-500/50 px-1.5 text-[11px] text-teal-300 hover:bg-teal-500/10"
+                className="inline-flex h-6 items-center justify-center gap-1 rounded border border-teal-500/50 px-1.5 text-[11px] text-badge-success hover:bg-teal-500/10"
                 title={labels.publishVersion}
                 aria-label={`${labels.publishVersion}: ${card.title}`}
               >
@@ -257,7 +263,7 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
             )}
             {overflowActions.length > 0 && (
               <div className="relative" ref={menuRef}>
-                <button
+                <button /* ds-allow:button: 产物卡窄版溢出菜单图标按钮 */
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -279,7 +285,7 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
                     className="absolute right-0 top-full z-30 mt-1 min-w-[160px] rounded-lg border border-border-muted bg-surface-subtle py-1 shadow-xl"
                   >
                     {overflowActions.map((action) => (
-                      <button
+                      <button /* ds-allow:button: 紧凑菜单项承载可选副文案 */
                         key={secondaryActionKey(action)}
                         type="button"
                         role="menuitem"
@@ -363,7 +369,7 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
           'getPublishInfo',
           { filePath },
         );
-        return [filePath, info] as const;
+        return isPublishInfo(info) ? [filePath, info] as const : null;
       } catch {
         return null;
       }

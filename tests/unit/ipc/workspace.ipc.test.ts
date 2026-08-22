@@ -11,6 +11,7 @@ import {
   handleInspectPresentation,
   handleWriteFile,
 } from '../../../src/host/ipc/workspace.ipc';
+import { publishVersion } from '../../../src/host/tools/document/snapshotManager';
 
 describe('workspace.ipc create handlers', () => {
   let workDir: string;
@@ -140,6 +141,29 @@ describe('workspace.ipc create handlers', () => {
         ],
         skipped: [],
       });
+    });
+
+    it('exports the latest published snapshot instead of the edited working copy', async () => {
+      const filePath = join(workDir, 'published-report.md');
+      await writeFile(filePath, 'published content');
+      publishVersion(filePath);
+      await writeFile(filePath, 'unpublished draft');
+
+      const result = await handleExportBundle({
+        outputDir: workDir,
+        bundleName: 'published-delivery.zip',
+        files: [{
+          path: filePath,
+          source: 'latest-published',
+          name: 'published-report.md',
+          role: 'primary',
+        }],
+      });
+
+      const JSZip = await import('jszip');
+      const zip = await JSZip.default.loadAsync(await readFile(result.filePath));
+      expect(await zip.file('files/published-report.md')?.async('string')).toBe('published content');
+      expect(await readFile(filePath, 'utf8')).toBe('unpublished draft');
     });
 
     it('resolves relative file paths against the session workingDirectory', async () => {

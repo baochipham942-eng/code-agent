@@ -15,6 +15,7 @@ const saveBrand = vi.fn<() => Promise<string | null>>();
 const deleteBrand = vi.fn().mockResolvedValue(true);
 const setActiveBrand = vi.fn().mockResolvedValue(true);
 const extractBrandFromImage = vi.fn();
+const invokeDomain = vi.fn();
 
 vi.mock('../../../src/renderer/services/libraryClient', () => ({
   listLibraryItems: (...args: unknown[]) => listLibraryItems(...(args as [])),
@@ -25,6 +26,13 @@ vi.mock('../../../src/renderer/services/libraryClient', () => ({
 
 vi.mock('../../../src/renderer/services/projectClient', () => ({
   listProjects: vi.fn().mockResolvedValue([{ id: 'proj_1', name: '示例项目', status: 'active', createdAt: 1, updatedAt: 1 }]),
+}));
+
+vi.mock('../../../src/renderer/services/ipcService', () => ({
+  default: {
+    invokeDomain: (...args: unknown[]) => invokeDomain(...args),
+    getPathForFile: vi.fn(),
+  },
 }));
 
 vi.mock('../../../src/renderer/components/design/designFiles', () => ({
@@ -66,6 +74,7 @@ beforeEach(() => {
   listBrands.mockResolvedValue({ brands: [] });
   readBrand.mockResolvedValue(null);
   saveBrand.mockResolvedValue('brand-new');
+  invokeDomain.mockResolvedValue({ publishState: { kind: 'draft' }, publishedVersions: [] });
 });
 
 describe('LibraryPanel', () => {
@@ -109,6 +118,33 @@ describe('LibraryPanel', () => {
     await waitFor(() => {
       expect(listLibraryItems).toHaveBeenCalledWith({ projectId: 'proj_1' });
     });
+  });
+
+  it('显示发布徽记并展开只读版本列表', async () => {
+    listLibraryItems.mockResolvedValue([makeItem({
+      id: 'lib_published',
+      title: 'Growth.md',
+      kind: 'artifact',
+      pathOrUri: '/data/Growth.md',
+    })]);
+    invokeDomain.mockResolvedValue({
+      publishState: { kind: 'published-dirty', version: 2, publishedAt: 200 },
+      publishedVersions: [
+        { version: 2, publishedAt: 200, snapshotPath: '/data/.doc-snapshots/Growth.published-v2.md', note: '客户版' },
+        { version: 1, publishedAt: 100, snapshotPath: '/data/.doc-snapshots/Growth.published-v1.md' },
+      ],
+    });
+    render(<LibraryPanel />);
+
+    await screen.findByText('Growth.md');
+    expect(screen.getByText('已发布 v2')).toBeTruthy();
+    expect(screen.getByText('有未发布改动')).toBeTruthy();
+    const { fireEvent } = await import('@testing-library/react');
+    fireEvent.click(screen.getByRole('button', { name: '版本' }));
+    expect(screen.getByTestId('library-versions-lib_published')).toBeTruthy();
+    expect(screen.getByText('客户版')).toBeTruthy();
+    expect(screen.getAllByText('查看')).toHaveLength(3);
+    expect(screen.getByText('分享发布版')).toBeTruthy();
   });
 
   it('按会话标题分组，找不到会话标题时归入未分组而不暴露会话 id', async () => {

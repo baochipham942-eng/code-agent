@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { DeliverableCardView } from '../../../src/shared/contract';
 
 const mocks = vi.hoisted(() => ({
@@ -123,6 +123,7 @@ function baseCard(overrides: Partial<DeliverableCardView> = {}): DeliverableCard
       summary: 'pending',
       refs: [],
     },
+    publishState: { kind: 'draft' },
     ...overrides,
   };
 }
@@ -156,8 +157,8 @@ describe('DeliverableCardList 卡面降噪', () => {
     })]} />);
 
     expect(screen.getByText('报告')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '归档到资料库: 报告' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '更多: 报告' })).toBeTruthy();
+    expect(screen.getByText('草稿')).toBeTruthy();
     expect(screen.queryByText('Document · Write · Created')).toBeNull();
     expect(screen.queryByText('已就绪')).toBeNull();
     expect(screen.queryByText('质量通过')).toBeNull();
@@ -212,11 +213,12 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
     expect(mocks.openWorkspacePreview).not.toHaveBeenCalled();
   });
 
-  it('归档按钮常驻，其他动作收进更多菜单', () => {
+  it('发布按钮常驻，归档和其他动作收进更多菜单', () => {
     const cards = [
       baseCard({
         title: '报告',
         secondaryActions: [
+          { kind: 'publish-version', label: 'publish', path: '/workspace/report.md', title: 'report.md' },
           { kind: 'archive-to-library', label: 'archive', path: '/workspace/report.md', title: 'report.md' },
           { kind: 'reveal-file', label: 'reveal', path: '/workspace/report.md' },
           { kind: 'copy-reference', label: 'copy', value: '/workspace/report.md' },
@@ -225,11 +227,13 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
     ];
     render(<DeliverableCardList cards={cards} />);
 
-    expect(screen.getByRole('button', { name: '归档到资料库: 报告' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '发布这一版: 报告' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '归档到资料库: 报告' })).toBeNull();
     expect(screen.queryByRole('button', { name: '在文件夹中显示: 报告' })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: '在文件夹中显示: 报告' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: '更多: 报告' }));
+    expect(screen.getByRole('menuitem', { name: '归档到资料库: 报告' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: '在文件夹中显示: 报告' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: '复制路径或链接: 报告' })).toBeTruthy();
   });
@@ -253,7 +257,7 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
     expect(mocks.copyPathToClipboard).toHaveBeenCalledWith('/workspace/report.md');
   });
 
-  it('点击归档按钮不冒泡到卡片预览', () => {
+  it('点击菜单里的归档不冒泡到卡片预览', () => {
     mocks.addLibraryItem.mockResolvedValue({ title: 'report.md' });
     render(<DeliverableCardList cards={[baseCard({
       title: '报告',
@@ -262,7 +266,8 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
       ],
     })]} />);
 
-    fireEvent.click(screen.getByRole('button', { name: '归档到资料库: 报告' }));
+    fireEvent.click(screen.getByRole('button', { name: '更多: 报告' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '归档到资料库: 报告' }));
 
     expect(mocks.openPreview).not.toHaveBeenCalled();
     expect(mocks.addLibraryItem).toHaveBeenCalledTimes(1);
@@ -309,19 +314,17 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
     expect(screen.queryByRole('menuitem')).toBeNull();
   });
 
-  it('disabled 动作不显示，且无其他动作时不显示更多按钮', () => {
+  it('disabled 动作不显示，且无可用动作时不显示更多按钮', () => {
     const cards = [
       baseCard({
         title: '报告',
         secondaryActions: [
-          { kind: 'archive-to-library', label: 'archive', path: '/workspace/report.md', title: 'report.md' },
           { kind: 'reveal-file', label: 'reveal', path: '/workspace/report.md', disabled: true },
         ],
       }),
     ];
     render(<DeliverableCardList cards={cards} />);
 
-    expect(screen.getByRole('button', { name: '归档到资料库: 报告' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '更多: 报告' })).toBeNull();
   });
 
@@ -355,5 +358,39 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '在文件夹中显示: 报告' }));
 
     expect(screen.queryByRole('menuitem')).toBeNull();
+  });
+
+  it('发布走极小确认并在成功后更新版本徽记', async () => {
+    mocks.invokeDomain.mockImplementation(async (_domain, action) => {
+      if (action === 'getPublishInfo') {
+        return { publishState: { kind: 'draft' }, publishedVersions: [] };
+      }
+      if (action === 'publishVersion') {
+        return {
+          publishedVersion: { version: 1, publishedAt: 100, snapshotPath: '/workspace/.doc-snapshots/report.published-v1.md' },
+          publishState: { kind: 'published', version: 1, publishedAt: 100 },
+          publishedVersions: [{ version: 1, publishedAt: 100, snapshotPath: '/workspace/.doc-snapshots/report.published-v1.md' }],
+        };
+      }
+      return undefined;
+    });
+    render(<DeliverableCardList cards={[baseCard({
+      title: '报告',
+      secondaryActions: [
+        { kind: 'publish-version', label: 'publish', path: '/workspace/report.md', title: 'report.md' },
+      ],
+    })]} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '发布这一版: 报告' }));
+    expect(screen.getByRole('dialog', { name: '发布这一版' })).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText('例：给客户看的终稿'), { target: { value: '客户版' } });
+    fireEvent.click(screen.getByRole('button', { name: '发布' }));
+
+    await waitFor(() => expect(screen.getByText('已发布 v1')).toBeTruthy());
+    expect(mocks.invokeDomain).toHaveBeenCalledWith('domain:workspace', 'publishVersion', {
+      filePath: '/workspace/report.md',
+      note: '客户版',
+    });
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('已发布 v1 · 资料库里的版本列表已更新');
   });
 });

@@ -12,6 +12,7 @@ interface ArtifactSourceEditorProps {
   onSave: () => void;
   jumpToLine?: number;
   jumpNonce?: number;
+  readOnly?: boolean;
 }
 
 export const ArtifactSourceEditor: React.FC<ArtifactSourceEditorProps> = ({
@@ -23,6 +24,7 @@ export const ArtifactSourceEditor: React.FC<ArtifactSourceEditorProps> = ({
   onSave,
   jumpToLine,
   jumpNonce,
+  readOnly = false,
 }) => (
   <Suspense
     fallback={(
@@ -33,10 +35,10 @@ export const ArtifactSourceEditor: React.FC<ArtifactSourceEditorProps> = ({
   >
     <CodeEditor
       value={content}
-      onChange={mode === 'source' ? () => {} : onChange}
-      onSave={mode === 'source' ? () => {} : onSave}
+      onChange={mode === 'source' || readOnly ? () => {} : onChange}
+      onSave={mode === 'source' || readOnly ? () => {} : onSave}
       language={markdown ? 'markdown' : 'text'}
-      readOnly={mode === 'source'}
+      readOnly={mode === 'source' || readOnly}
       jumpToLine={mode === 'edit' ? jumpToLine : undefined}
       jumpNonce={mode === 'edit' ? jumpNonce : undefined}
     />

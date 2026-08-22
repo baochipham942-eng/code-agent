@@ -913,6 +913,9 @@ export class SubagentExecutor {
                 {
                   runId: context.runId,
                   sessionId: context.sessionId,
+                  sourceMessageId: [...(context.messages ?? [])]
+                    .reverse()
+                    .find((message) => message.role === 'user')?.id,
                   agentId: executionAgentId,
                   spawnDepth: context.spawnDepth,
                   spawnMaxDepth: context.spawnMaxDepth,

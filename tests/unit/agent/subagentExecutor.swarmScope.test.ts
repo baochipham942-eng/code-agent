@@ -28,6 +28,9 @@ describe('SubagentExecutor Agent Team scope propagation', () => {
     expect(source).toMatch(
       /subagentToolExecutor\.execute\([\s\S]*?runId:\s*context\.runId,[\s\S]*?swarmRunScope:\s*context\.swarmRunScope/,
     );
+    expect(source).toMatch(
+      /subagentToolExecutor\.execute\([\s\S]*?sourceMessageId:[\s\S]*?context\.messages[\s\S]*?message\.role === 'user'/,
+    );
     expect(toolRuntimeSource).toMatch(
       /createRunContext\(\{[\s\S]*?runId:\s*context\.runId,[\s\S]*?sessionId:\s*input\.sessionId,[\s\S]*?workspace:\s*context\.workspace,[\s\S]*?cwd:\s*context\.cwd/,
     );

@@ -49,7 +49,7 @@ export async function listWorkspaceChangedPaths(workingDir: string): Promise<str
   const repoRoot = await resolveRepoRoot(workingDir);
   if (!repoRoot) return [];
 
-  let tracked: string[] = [];
+  let tracked: string[];
   try {
     tracked = splitNullTerminated(await git(repoRoot, [
       'diff', '--name-only', '-z', 'HEAD', '--',
@@ -64,7 +64,7 @@ export async function listWorkspaceChangedPaths(workingDir: string): Promise<str
     }
   }
 
-  let untracked: string[] = [];
+  let untracked: string[];
   try {
     untracked = splitNullTerminated(await git(repoRoot, [
       'ls-files', '--others', '--exclude-standard', '-z',

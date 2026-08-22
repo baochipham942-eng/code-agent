@@ -47,6 +47,7 @@ import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrap
 import { applyGroundTruthGate } from './groundTruthGate';
 import { applyDesktopActionClaimGate } from './desktopActionClaimGate';
 import { isLikelyIncompleteStopText } from './incompleteStopDetector';
+import { finishHiddenWakeNoop, isTerminalWakeNoop as isTerminalWakeNoopCall } from './hiddenWakeNoop';
 import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
 import { getHandoffProposalService } from '../../handoff/handoffProposalService';
 import { extractHandoffProposalTail } from '../../handoff/handoffTail';
@@ -778,9 +779,7 @@ export class MessageProcessor {
     // 清理模型输出中模仿内部格式的文本
     const cleanedContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
 
-    const isTerminalWakeNoop = toolCalls.length === 1
-      && toolCalls[0]?.name === 'wake_noop'
-      && this.ctx.allowedToolNames?.includes('wake_noop') === true;
+    const isTerminalWakeNoop = isTerminalWakeNoopCall(toolCalls, this.ctx.allowedToolNames);
     const assistantMessage: Message = {
       id: this.contextAssembly.generateId(),
       role: 'assistant',
@@ -904,28 +903,7 @@ export class MessageProcessor {
     await this.contextAssembly.addAndPersistMessage(toolMessage);
     this.applyDeferredSkillActivations(toolResults);
 
-    if (isTerminalWakeNoop) {
-      this.contextAssembly.flushHookMessageBuffer();
-      langfuse.endSpan(this.ctx.turn.currentIterationSpanId, {
-        type: 'tool_calls',
-        toolCount: 1,
-        successCount: toolResults.filter((result: ToolResult) => result.success).length,
-        wakeNoop: true,
-      });
-      this.ctx.telemetryAdapter?.onTurnEnd(
-        this.ctx.turn.currentTurnId,
-        '',
-        response.thinking,
-        this.ctx.contextHealth.currentSystemPromptHash,
-      );
-      this.ctx.onEvent({
-        type: 'turn_end',
-        data: { turnId: this.ctx.turn.currentTurnId },
-      });
-      this.contextAssembly.updateContextHealth();
-      logger.info('[AgentLoop] wake_noop ended hidden foreground wake without visible output');
-      return 'break';
-    }
+    if (isTerminalWakeNoop) return finishHiddenWakeNoop({ ctx: this.ctx, contextAssembly: this.contextAssembly, langfuse, toolResults, thinking: response.thinking });
 
     // Desktop plan approval is a hard run boundary. The plan tool has already
     // left plan mode, so allowing another inference here would expose normal

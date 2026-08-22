@@ -16,7 +16,7 @@ import type { SessionCommandTask } from './sessionCommandCenter';
 
 export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 
-export const FOREGROUND_WAKE_CONTRACT = [
+const FOREGROUND_WAKE_CONTRACT = [
   '<background_task_hidden_wake>',
   '这一轮由后台任务终态触发，不是用户正在等待你确认的消息。',
   '不要写“收到”“好的”等承接语，不要把后台结果当成用户消息引用。',
@@ -218,4 +218,3 @@ export function createForegroundWake(
   };
 }
 
-export const wakeForegroundBrain = createForegroundWake();

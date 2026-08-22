@@ -9,7 +9,7 @@ import {
   getSessionTaskConcurrencyPool,
 } from './sessionTaskSlotLedger';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
-import { wakeForegroundBrain as defaultWakeForegroundBrain } from './foregroundWake';
+import { createForegroundWake } from './foregroundWake';
 
 const logger = createLogger('SessionCommandCenter');
 
@@ -103,7 +103,7 @@ export class SessionCommandCenter {
   ) {
     this.manager = manager;
     this.projectTerminalResult = dependencies.projectTerminalResult ?? projectTerminalResult;
-    this.wakeForegroundBrain = dependencies.wakeForegroundBrain ?? defaultWakeForegroundBrain;
+    this.wakeForegroundBrain = dependencies.wakeForegroundBrain ?? createForegroundWake();
     for (const eventName of TASK_LIFECYCLE_EVENTS) {
       this.manager.on(eventName, this.onTaskEvent);
     }

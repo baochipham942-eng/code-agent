@@ -42,7 +42,10 @@ import { registerCheckpointHandlers } from './checkpoint.ipc';
 import { registerLSPHandlers } from './lsp.ipc';
 import { registerBackgroundHandlers } from './background.ipc';
 import { registerBackgroundTaskLedgerHandlers } from './backgroundTaskLedger.ipc';
-import { registerQueuedInputHandlers } from './queuedInput.ipc';
+import {
+  registerQueuedInputHandlers,
+  type QueuedInputHandlerDependencies,
+} from './queuedInput.ipc';
 import { registerSwarmHandlers } from './swarm.ipc';
 // 模块加载即自装 workflow EventBus → renderer 专用 bridge（P3a 进度树）；
 // registerWorkflowHandlers 注册启动审批 approve/reject 回传（P3b）。
@@ -101,6 +104,7 @@ export interface IpcDependencies {
    * 空闲就立刻抽——release 时的那次 drain 早于入队跑完，没有这条通知它会一直躺着。
    */
   onQueuedInputEnqueued?: (sessionId: string) => void;
+  onQueuedInputSendNow?: NonNullable<QueuedInputHandlerDependencies['sendNow']>;
 }
 
 /**
@@ -217,6 +221,8 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerBackgroundTaskLedgerHandlers(ipcMain);
   registerQueuedInputHandlers(ipcMain, {
     onEnqueued: deps.onQueuedInputEnqueued,
+    hasActiveRun: (sessionId) => getApplicationRunRegistry().hasSession(sessionId),
+    sendNow: deps.onQueuedInputSendNow,
     resolveModelSpec: (sessionId) => {
       const activeRunModelSpec = getApplicationRunRegistry().getModelSpecBySessionId(sessionId);
       if (activeRunModelSpec) return activeRunModelSpec;

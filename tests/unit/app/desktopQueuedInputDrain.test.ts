@@ -96,6 +96,8 @@ function createSchema(db: BetterSqlite3.Database): void {
       envelope_json TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'queued',
       retry_count INTEGER NOT NULL DEFAULT 0,
+      position INTEGER NOT NULL DEFAULT 0,
+      paused_reason TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -328,7 +330,7 @@ describe('desktop queued input drain', () => {
     }]);
   });
 
-  it('drains multiple records serially in createdAt order through real busy-to-idle turns', async () => {
+  it('drains multiple records serially in position order through real busy-to-idle turns', async () => {
     const repository = createRepository();
     repository.enqueue({
       id: 'queued-later',
@@ -362,7 +364,7 @@ describe('desktop queued input drain', () => {
     await vi.waitFor(() => {
       expect(repository.listBySession('session-serial', 'consumed')).toHaveLength(2);
     });
-    expect(sentIds).toEqual(['queued-earlier', 'queued-later']);
+    expect(sentIds).toEqual(['queued-later', 'queued-earlier']);
     expect(maxConcurrentSends).toBe(1);
   });
 });

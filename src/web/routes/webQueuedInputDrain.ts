@@ -7,12 +7,13 @@ import type { WebRouteLogger } from './routeTypes';
 
 type WebQueuedInputDrainRepository = Pick<
   QueuedInputRepository,
-  | 'listBySession'
+  | 'getNextDispatchable'
   | 'markSending'
   | 'markConsumed'
   | 'requeueAfterFailure'
   | 'markFailed'
   | 'listSessionsWithQueuedInputs'
+  | 'recoverSendingOrphans'
 >;
 
 interface WebQueuedInputDrainDependencies {
@@ -137,7 +138,7 @@ export function createWebQueuedInputDrain({
   const drainOne = async (sessionId: string): Promise<void> => {
     try {
       const repository = getRepository();
-      const record = repository.listBySession(sessionId, 'queued')[0];
+      const record = repository.getNextDispatchable(sessionId);
       if (!record || !repository.markSending(record.id)) {
         return;
       }
@@ -199,6 +200,8 @@ export function createWebQueuedInputDrain({
         return;
       }
       startupSweepDone = true;
+
+      getRepository().recoverSendingOrphans();
 
       for (const sessionId of getRepository().listSessionsWithQueuedInputs()) {
         if (hasActiveRun(sessionId)) {

@@ -38,6 +38,8 @@ function createSchema(db: BetterSqlite3.Database): void {
       envelope_json TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'queued',
       retry_count INTEGER NOT NULL DEFAULT 0,
+      position INTEGER NOT NULL DEFAULT 0,
+      paused_reason TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );

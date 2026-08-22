@@ -18,6 +18,7 @@ import type { DurableRunReadService } from '../host/app/durableRunReadService';
 import { TraceReadService } from '../host/app/traceReadService';
 import type { WebRouteLogger } from './routes/routeTypes';
 import type { BuildInfo, PermissionRequest } from '../shared/contract';
+import type { ConversationEnvelope } from '../shared/contract/conversationEnvelope';
 
 import { formatError } from './helpers/utils';
 import { handleTempUpload, handleScreenshot } from './helpers/upload';
@@ -73,6 +74,11 @@ export interface CreateAppDeps {
   getPendingPermissionRequests?: () => PermissionRequest[];
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
   registerQueuedInputEnqueueHook?: (onEnqueued: (sessionId: string) => void) => void;
+  registerQueuedInputSendNowHook?: (sendNow: (input: {
+    id: string;
+    sessionId: string;
+    envelope: ConversationEnvelope;
+  }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>) => void;
 }
 
 /**
@@ -200,6 +206,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     getDurableRunReadService: () => getDurableRunReadService(),
     registerQueuedInputStartupSweep: deps.registerQueuedInputStartupSweep,
     registerQueuedInputEnqueueHook: deps.registerQueuedInputEnqueueHook,
+    registerQueuedInputSendNowHook: deps.registerQueuedInputSendNowHook,
   }));
 
   app.use('/api', createBackgroundRouter({ logger }));

@@ -32,6 +32,8 @@ function toQueuedInput(record: QueuedInputRecord): QueuedInput {
     envelope: JSON.parse(record.envelopeJson) as ConversationEnvelope,
     status: record.status,
     retryCount: record.retryCount,
+    position: record.position,
+    pausedReason: record.pausedReason,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
@@ -44,10 +46,54 @@ function invalidState(message: string) {
   };
 }
 
+function reportSendOutcome(
+  repository: QueuedInputRepository,
+  id: string,
+  outcome: 'success' | 'failure',
+) {
+  if (outcome === 'success') {
+    if (!repository.markConsumed(id)) {
+      return invalidState(`Queued input is not sending: ${id}`);
+    }
+    const consumed = repository.getById(id);
+    if (!consumed) {
+      return invalidState(`Queued input disappeared after send success: ${id}`);
+    }
+    return {
+      success: true,
+      data: { status: 'consumed' as const, retryCount: consumed.retryCount },
+    } satisfies IPCResponse;
+  }
+
+  const requeued = repository.requeueAfterFailure(id);
+  if (!requeued) {
+    return invalidState(`Queued input is not sending: ${id}`);
+  }
+  if (requeued.retryCount > QUEUED_INPUT_RETRY.MAX_RESEND_ATTEMPTS) {
+    if (!repository.markFailed(id)) {
+      return invalidState(`Queued input could not transition to failed: ${id}`);
+    }
+    return {
+      success: true,
+      data: { status: 'failed' as const, retryCount: requeued.retryCount },
+    } satisfies IPCResponse;
+  }
+  return {
+    success: true,
+    data: { status: 'queued' as const, retryCount: requeued.retryCount },
+  } satisfies IPCResponse;
+}
+
 export interface QueuedInputHandlerDependencies {
   resolveModelSpec?: (sessionId: string) => ConversationModelSpec | undefined;
   /** 入队完成后通知宿主：若该 session 此刻已空闲，宿主要立刻把它抽走。 */
   onEnqueued?: (sessionId: string) => void;
+  hasActiveRun?: (sessionId: string) => boolean;
+  sendNow?: (input: {
+    id: string;
+    sessionId: string;
+    envelope: ConversationEnvelope;
+  }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>;
 }
 
 function stampModelSpec(
@@ -106,6 +152,65 @@ export function registerQueuedInputHandlers(
           } satisfies IPCResponse;
         }
 
+        case 'update': {
+          const repository = getRepository();
+          const record = repository.getById(payload.id);
+          if (record?.status !== 'queued') {
+            return invalidState(`Queued input is not editable: ${payload.id}`);
+          }
+          const envelope = JSON.parse(record.envelopeJson) as ConversationEnvelope;
+          const updated = repository.updateEnvelope(
+            payload.id,
+            JSON.stringify({ ...envelope, content: payload.content }),
+          );
+          return { success: true, data: { updated } } satisfies IPCResponse;
+        }
+
+        case 'reorder': {
+          const repository = getRepository();
+          return {
+            success: true,
+            data: { reordered: repository.reorder(payload.sessionId, payload.orderedIds) },
+          } satisfies IPCResponse;
+        }
+
+        case 'sendNow': {
+          const repository = getRepository();
+          const record = repository.getById(payload.id);
+          if (!record || !deps.sendNow) {
+            return invalidState(`Queued input cannot be sent now: ${payload.id}`);
+          }
+          const claimed = record.status === 'queued'
+            ? repository.markSending(payload.id)
+            : repository.markSendingForRetry(payload.id);
+          if (!claimed) {
+            return invalidState(`Queued input is not ready to send: ${payload.id}`);
+          }
+
+          let delivery: 'sent' | 'steered' | 'queued';
+          try {
+            delivery = await deps.sendNow({
+              id: record.id,
+              sessionId: record.sessionId,
+              envelope: JSON.parse(record.envelopeJson) as ConversationEnvelope,
+            }, deps.hasActiveRun?.(record.sessionId) ? 'active' : 'idle');
+          } catch {
+            return reportSendOutcome(repository, payload.id, 'failure');
+          }
+
+          if (delivery === 'queued') {
+            const queued = repository.getById(payload.id);
+            if (queued?.status !== 'queued') {
+              return invalidState(`Queued input was not restored after redirect: ${payload.id}`);
+            }
+            return {
+              success: true,
+              data: { status: 'queued' as const, retryCount: queued.retryCount },
+            } satisfies IPCResponse;
+          }
+          return reportSendOutcome(repository, payload.id, 'success');
+        }
+
         case 'retract': {
           const repository = getRepository();
           return {
@@ -124,39 +229,7 @@ export function registerQueuedInputHandlers(
 
         case 'reportSendOutcome': {
           const repository = getRepository();
-          if (payload.outcome === 'success') {
-            if (!repository.markConsumed(payload.id)) {
-              return invalidState(`Queued input is not sending: ${payload.id}`);
-            }
-            const consumed = repository.getById(payload.id);
-            if (!consumed) {
-              return invalidState(`Queued input disappeared after send success: ${payload.id}`);
-            }
-            return {
-              success: true,
-              data: { status: 'consumed' as const, retryCount: consumed.retryCount },
-            } satisfies IPCResponse;
-          }
-
-          const requeued = repository.requeueAfterFailure(payload.id);
-          if (!requeued) {
-            return invalidState(`Queued input is not sending: ${payload.id}`);
-          }
-
-          if (requeued.retryCount > QUEUED_INPUT_RETRY.MAX_RESEND_ATTEMPTS) {
-            if (!repository.markFailed(payload.id)) {
-              return invalidState(`Queued input could not transition to failed: ${payload.id}`);
-            }
-            return {
-              success: true,
-              data: { status: 'failed' as const, retryCount: requeued.retryCount },
-            } satisfies IPCResponse;
-          }
-
-          return {
-            success: true,
-            data: { status: 'queued' as const, retryCount: requeued.retryCount },
-          } satisfies IPCResponse;
+          return reportSendOutcome(repository, payload.id, payload.outcome);
         }
 
         default:

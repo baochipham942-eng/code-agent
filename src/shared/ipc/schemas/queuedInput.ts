@@ -4,7 +4,9 @@ import type {
   MarkQueuedInputSendingResult,
   QueuedInput,
   QueuedInputSendOutcomeResult,
+  ReorderQueuedInputsResult,
   RetractQueuedInputResult,
+  UpdateQueuedInputResult,
 } from '../../contract/queuedInput';
 import { IPC_DOMAINS } from '../domains';
 import { IPCResponseSchema, channelSchema } from './core';
@@ -35,6 +37,8 @@ export const QueuedInputSchema: z.ZodType<QueuedInput> = z.object({
   envelope: ConversationEnvelopeSchema,
   status: QueuedInputStatusSchema,
   retryCount: z.number().int().nonnegative(),
+  position: z.number().int().nonnegative(),
+  pausedReason: z.string().nullable(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -64,6 +68,27 @@ const RetractQueuedInputRequestSchema = z.object({
   requestId: z.string().optional(),
 });
 
+const UpdateQueuedInputRequestSchema = z.object({
+  action: z.literal('update'),
+  payload: z.object({ id: z.string(), content: z.string() }),
+  requestId: z.string().optional(),
+});
+
+const ReorderQueuedInputsRequestSchema = z.object({
+  action: z.literal('reorder'),
+  payload: z.object({
+    sessionId: z.string(),
+    orderedIds: z.array(z.string()).min(1),
+  }),
+  requestId: z.string().optional(),
+});
+
+const SendNowQueuedInputRequestSchema = z.object({
+  action: z.literal('sendNow'),
+  payload: z.object({ id: z.string() }),
+  requestId: z.string().optional(),
+});
+
 const MarkQueuedInputSendingRequestSchema = z.object({
   action: z.literal('markSending'),
   payload: z.object({ id: z.string() }),
@@ -82,6 +107,9 @@ const ReportQueuedInputSendOutcomeRequestSchema = z.object({
 const QueuedInputRequestSchema = z.discriminatedUnion('action', [
   EnqueueQueuedInputRequestSchema,
   ListQueuedInputsRequestSchema,
+  UpdateQueuedInputRequestSchema,
+  ReorderQueuedInputsRequestSchema,
+  SendNowQueuedInputRequestSchema,
   RetractQueuedInputRequestSchema,
   MarkQueuedInputSendingRequestSchema,
   ReportQueuedInputSendOutcomeRequestSchema,
@@ -91,6 +119,12 @@ const EnqueueQueuedInputResponseSchema = IPCResponseSchema(QueuedInputSchema);
 const ListQueuedInputsResponseSchema = IPCResponseSchema(z.array(QueuedInputSchema));
 const RetractQueuedInputResponseSchema = IPCResponseSchema(
   z.object({ retracted: z.boolean() }) satisfies z.ZodType<RetractQueuedInputResult>,
+);
+const UpdateQueuedInputResponseSchema = IPCResponseSchema(
+  z.object({ updated: z.boolean() }) satisfies z.ZodType<UpdateQueuedInputResult>,
+);
+const ReorderQueuedInputsResponseSchema = IPCResponseSchema(
+  z.object({ reordered: z.boolean() }) satisfies z.ZodType<ReorderQueuedInputsResult>,
 );
 const MarkQueuedInputSendingResponseSchema = IPCResponseSchema(
   z.object({ marked: z.boolean() }) satisfies z.ZodType<MarkQueuedInputSendingResult>,
@@ -105,6 +139,8 @@ const ReportQueuedInputSendOutcomeResponseSchema = IPCResponseSchema(
 const QueuedInputResponseSchema = z.union([
   EnqueueQueuedInputResponseSchema,
   ListQueuedInputsResponseSchema,
+  UpdateQueuedInputResponseSchema,
+  ReorderQueuedInputsResponseSchema,
   RetractQueuedInputResponseSchema,
   MarkQueuedInputSendingResponseSchema,
   ReportQueuedInputSendOutcomeResponseSchema,
@@ -125,6 +161,21 @@ export const QueuedInputSchemas = {
     channel: IPC_DOMAINS.QUEUED_INPUT,
     payload: ListQueuedInputsRequestSchema,
     response: ListQueuedInputsResponseSchema,
+  }),
+  UPDATE: channelSchema({
+    channel: IPC_DOMAINS.QUEUED_INPUT,
+    payload: UpdateQueuedInputRequestSchema,
+    response: UpdateQueuedInputResponseSchema,
+  }),
+  REORDER: channelSchema({
+    channel: IPC_DOMAINS.QUEUED_INPUT,
+    payload: ReorderQueuedInputsRequestSchema,
+    response: ReorderQueuedInputsResponseSchema,
+  }),
+  SEND_NOW: channelSchema({
+    channel: IPC_DOMAINS.QUEUED_INPUT,
+    payload: SendNowQueuedInputRequestSchema,
+    response: ReportQueuedInputSendOutcomeResponseSchema,
   }),
   RETRACT: channelSchema({
     channel: IPC_DOMAINS.QUEUED_INPUT,

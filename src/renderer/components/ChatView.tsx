@@ -612,11 +612,8 @@ export const ChatView: React.FC = () => {
       currentSessionId,
       streamSnapshot?.turnId,
     );
-    if (outcome?.outcome === 'queued') {
-      toast.info(t.chatInputSubmit.queuedInputHint);
-    }
     return outcome;
-  }, [currentSessionId, streamSnapshot?.turnId, t.chatInputSubmit.queuedInputHint]);
+  }, [currentSessionId, streamSnapshot?.turnId]);
 
   const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
     return handleSendEnvelope(buildEnvelope(content, attachments));

@@ -2,9 +2,9 @@ import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { LastToolStep, Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ToolCall } from '@shared/contract';
 
-export type DelegationReceiptState = 'working' | 'completed' | 'failed';
+type DelegationReceiptState = 'working' | 'completed' | 'failed';
 
-export interface DelegationReceiptOutput {
+interface DelegationReceiptOutput {
   id: string;
   label: string;
   target: string;
@@ -67,7 +67,7 @@ function fromTask(task: Task): DelegationPresentation {
   };
 }
 
-export function extractSpawnAgentId(toolCall: ToolCall): string | undefined {
+function extractSpawnAgentId(toolCall: ToolCall): string | undefined {
   const metadataAgentId = toolCall.result?.metadata?.agentId;
   if (typeof metadataAgentId === 'string' && metadataAgentId.trim()) return metadataAgentId.trim();
   const match = toolCall.result?.output?.match(/^- Agent ID:\s*(\S+)\s*$/m);

@@ -138,7 +138,12 @@ describe('delegation receipt', () => {
     const view = renderCall();
     expect(view.getByTestId('delegation-activity')).toBeTruthy();
 
-    mocks.tasks = [];
+    mocks.tasks = [task({
+      id: 'unrelated-task',
+      toolCallId: 'different-call',
+      title: '另一件任务',
+      progress: { lastToolStep: { tool: 'Read', target: '/repo/other-stale.md', at: 4 } },
+    })];
     view.rerender(<ToolCallDisplay toolCall={delegateCall()} index={0} total={1} />);
 
     expect(view.queryByTestId('delegation-activity')).toBeNull();

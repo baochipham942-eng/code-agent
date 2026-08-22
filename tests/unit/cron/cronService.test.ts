@@ -12,6 +12,8 @@ const sessionState = vi.hoisted(() => ({
   broadcasts: [] as unknown[],
 }));
 
+const configState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+
 const automationState = vi.hoisted(() => ({
   recordCreated: vi.fn(async () => undefined),
   recordEvent: vi.fn(async () => undefined),
@@ -40,7 +42,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 }));
 
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: configState.language } }) }),
 }));
 
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
@@ -63,7 +65,6 @@ vi.mock('../../../src/host/services/sessionAutomation', () => ({
 }));
 
 import { CronService } from '../../../src/host/cron/cronService';
-import { formatCronMissedMessage } from '../../../src/host/cron/cronMissedTrace';
 import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
 import { getSessionManager } from '../../../src/host/services/infra/sessionManager';
 
@@ -88,6 +89,7 @@ afterEach(() => {
   dbState.sessionIds.clear();
   sessionState.messages.clear();
   sessionState.broadcasts = [];
+  configState.language = 'zh';
   automationState.recordCreated.mockClear();
   automationState.recordEvent.mockClear();
   automationState.getBySourceRef.mockClear();
@@ -127,11 +129,6 @@ describe('CronService missed schedule traces', () => {
     vi.useRealTimers();
   });
 
-  it('formats the persisted human message in zh/en', () => {
-    expect(formatCronMissedMessage({ name: 'Daily brief' }, NOW, true, 'zh')).toContain('已停用');
-    expect(formatCronMissedMessage({ name: 'Daily brief' }, NOW, true, 'en')).toContain('has been disabled');
-  });
-
   it('disables an overdue one-time job, writes a system message, and emits cron.missed', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
@@ -168,6 +165,7 @@ describe('CronService missed schedule traces', () => {
   it('traces a missed recurring tick and keeps its next run scheduled', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
+    configState.language = 'en';
     dbState.sessionIds.add('source-recurring');
     dbState.cronRows = [persistedJob({
       id: 'job-recurring-missed',
@@ -186,7 +184,7 @@ describe('CronService missed schedule traces', () => {
     const messages = await getSessionManager().getMessages('source-recurring');
     expect(messages).toEqual([expect.objectContaining({
       role: 'system',
-      content: expect.stringContaining('后续仍按原计划运行'),
+      content: expect.stringContaining('Its next run remains scheduled'),
     })]);
     expect(events).toEqual([expect.objectContaining({
       jobId: 'job-recurring-missed',

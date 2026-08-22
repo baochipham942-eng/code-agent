@@ -20,7 +20,7 @@ function readUiLanguage(): 'zh' | 'en' {
   }
 }
 
-export function formatCronMissedMessage(
+function formatCronMissedMessage(
   definition: Pick<CronJobDefinition, 'name'>,
   scheduledAt: number,
   disabled: boolean,

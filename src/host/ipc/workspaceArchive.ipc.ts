@@ -18,7 +18,7 @@ import { computeArtifactRevision } from '../tools/artifacts/artifactLocatorHost'
 import { loadPresentationPackageIndex } from '../tools/artifacts/presentationPackageIndex';
 import { convertToScreenshots, isLibreOfficeAvailable } from '../tools/media/ppt/visualReview';
 import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../tools/media/ppt/constants';
-import { listPublishedVersions } from '../tools/document/snapshotManager';
+import { listPublishedVersions } from '../tools/modules/document/publishedVersions';
 
 interface WorkspaceBundleFileInput {
   path: string;

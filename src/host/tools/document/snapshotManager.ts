@@ -60,7 +60,8 @@ function loadMeta(filePath: string): SnapshotMeta {
   const metaPath = getMetaPath(filePath);
   if (fs.existsSync(metaPath)) {
     try {
-      return JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+      const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')) as SnapshotMeta;
+      return meta;
     } catch {
       return { snapshots: [] };
     }

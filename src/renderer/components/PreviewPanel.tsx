@@ -41,8 +41,6 @@ import {
   toPreviewErrorState,
   type ArchiveInspection,
   type DesignPptScreenshotArtifact,
-  type DocxPreviewResult,
-  type ExcelPreviewResult,
   type LoadedSnapshot,
   type PresentationInspection,
 } from './previewPanelModel';

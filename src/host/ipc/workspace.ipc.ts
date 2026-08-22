@@ -38,7 +38,7 @@ import {
   getPublishState,
   listPublishedVersions,
   publishVersion,
-} from '../tools/document/snapshotManager';
+} from '../tools/modules/document/publishedVersions';
 export { handleExportBundle, handleInspectArchive, handleInspectPresentation };
 // buildConfigScopeSummary 历史上是 workspace.ipc 的公开导出，保持向后兼容（测试依赖）。
 export { buildConfigScopeSummary } from './workspaceConfigScope';

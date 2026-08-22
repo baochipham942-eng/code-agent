@@ -20,6 +20,15 @@ describe('subagent turn trace and diff slots', () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
 
+  it('allocates independent mutation path slots for concurrent agent runs', () => {
+    const firstRun = createSubagentMutationPathSlot();
+    const secondRun = createSubagentMutationPathSlot();
+    firstRun.add('/repo/first-run.txt');
+
+    expect(secondRun).not.toBe(firstRun);
+    expect(secondRun).not.toContain('/repo/first-run.txt');
+  });
+
   it('replays one delegated turn with its tool dispatch and 200-line disk diff', async () => {
     const repo = await mkdtemp(join(tmpdir(), 'subagent-turn-diff-'));
     const traceDir = await mkdtemp(join(tmpdir(), 'subagent-turn-trace-'));

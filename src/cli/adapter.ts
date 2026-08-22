@@ -2,7 +2,15 @@
 // CLI Adapter - 适配 AgentLoop 到 CLI
 // ============================================================================
 
-import { createAgentLoop, buildCLIConfig, initializeCLIServices, getSessionManager, getConfigService } from './bootstrap';
+import {
+  createAgentLoop,
+  buildCLIConfig,
+  initializeCLIServices,
+  getSessionManager,
+  getConfigService,
+  startCLIDurableRun,
+  terminalCLIDurableRun,
+} from './bootstrap';
 import { terminalOutput, jsonOutput } from './output';
 import { addSwarmEventListener } from '../host/ipc/swarm.ipc';
 import fs from 'fs';
@@ -15,7 +23,7 @@ import { getSessionSkillService } from '../host/services/skills/sessionSkillServ
 import { MetricsCollector } from '../host/agent/metricsCollector';
 import { retryEvents } from '../host/model/providers/retryStrategy';
 import { getAgentDispatchInfo } from './agentDispatch';
-import { createRunContext, type RunContext } from '../host/runtime/runContext';
+import { createRunContext, type RunContext, type RunHandle } from '../host/runtime/runContext';
 import { generateMessageId } from '../shared/utils/id';
 import { readPersistedExpertThread } from '../shared/contract/expertThread';
 import { resolveExplicitAgentOverride } from '../host/agent/explicitAgentOverride';
@@ -68,6 +76,7 @@ export class CLIAgent {
   private runErrorMessage: string | null = null;
   /** Most recently started turn; a new context is created for every run(). */
   private lastRunContext: RunContext | null = null;
+  private currentDurableRun: RunHandle | null = null;
 
   private systemPrompt: string | undefined;
 
@@ -175,10 +184,13 @@ export class CLIAgent {
           requestedAgentId: persistedExpertRoleId,
         }
       : this.config;
-    const runContext = createRunContext({
+    const runInput = {
       sessionId: this.sessionId,
       workspace: runConfig.workingDirectory,
-    });
+    };
+    const durableRun = await startCLIDurableRun(runInput);
+    const runContext = durableRun?.context ?? createRunContext(runInput);
+    this.currentDurableRun = durableRun;
     this.lastRunContext = runContext;
 
     // Inject system prompt if provided (before user message)
@@ -236,6 +248,7 @@ export class CLIAgent {
       this.metricsCollector || undefined,
       undefined,
       runContext,
+      durableRun?.traceContext,
     );
     this.currentAgentLoop = agentLoop;
     this.lastHookManager = agentLoop.getHookManager?.() ?? this.lastHookManager;
@@ -246,7 +259,7 @@ export class CLIAgent {
       // 运行 Agent
       agentLoop.run(prompt).catch((error: unknown) => {
         logger.error('Agent run error', error);
-        this.finishRun({
+        void this.finishRun({
           success: false,
           error: getErrorMessage(error),
         });
@@ -387,7 +400,7 @@ export class CLIAgent {
 
     // Agent 完成
     if (event.type === 'agent_complete') {
-      this.finishRun({
+      void this.finishRun({
         success: !this.runErrorMessage,
         output: this.lastContent || this.getLastAssistantMessage()?.content,
         ...(this.runErrorMessage ? { error: this.runErrorMessage } : {}),
@@ -400,10 +413,15 @@ export class CLIAgent {
   /**
    * 完成运行
    */
-  private finishRun(result: CLIRunResult): void {
+  private async finishRun(result: CLIRunResult): Promise<void> {
+    const resolveRun = this.resolveRun;
+    if (!resolveRun) return;
+    this.resolveRun = null;
     this.isRunning = false;
     this.currentResult = result;
     this.currentAgentLoop = null;
+    const durableRun = this.currentDurableRun;
+    this.currentDurableRun = null;
 
     // Write metrics JSON if collector is active
     if (this.metricsCollector && this.config.metricsPath) {
@@ -429,10 +447,14 @@ export class CLIAgent {
       this.unsubscribeSwarm = null;
     }
 
-    if (this.resolveRun) {
-      this.resolveRun(result);
-      this.resolveRun = null;
+    if (durableRun) {
+      try {
+        await terminalCLIDurableRun(durableRun, result.success);
+      } catch (error) {
+        logger.warn('Failed to terminal CLI Durable Run', { error: getErrorMessage(error) });
+      }
     }
+    resolveRun(result);
   }
 
   /**

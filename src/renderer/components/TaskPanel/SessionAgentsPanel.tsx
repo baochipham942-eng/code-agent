@@ -10,10 +10,9 @@
 // 面板不画输入框：对代理续话是后置单 N-SUBAGENT-INPUT。
 // ============================================================================
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Clock, Square, X, Zap } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
-import type { AgentStatus } from '@shared/contract/swarm';
 import { cancelSwarmRunOrFallback } from '../features/swarm/SwarmInlineMonitor';
 import ipcService from '../../services/ipcService';
 import { useI18n } from '../../hooks/useI18n';
@@ -30,9 +29,6 @@ import type { AgentRow } from '../../utils/agentRows';
 import { RoleInitialAvatar } from '../features/expert/RoleInitialAvatar';
 import { DiscussionStream } from '../features/swarm/DiscussionStream';
 
-function isActiveAgentStatus(status: AgentStatus): boolean {
-  return status === 'pending' || status === 'ready' || status === 'running';
-}
 
 // ponytail: 三行格式化，与成员条历史实现同口径，不提前抽 util
 function formatPanelTokens(tokens: number): string {
@@ -66,10 +62,6 @@ export const SessionAgentsPanel: React.FC = () => {
   const [eventsOpen, setEventsOpen] = useState(false);
 
   const mergeState = deriveAgentMergeState(rows, conflicts);
-  const activeAgents = useMemo(
-    () => (durableDetail?.agents ?? []).filter((agent) => isActiveAgentStatus(agent.status)),
-    [durableDetail],
-  );
   const stoppableRows = rows.filter((row) => row.stoppable);
   const totalTokens = durableDetail
     ? durableDetail.run.totalTokensIn + durableDetail.run.totalTokensOut

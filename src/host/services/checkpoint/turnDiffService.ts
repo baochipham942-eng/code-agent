@@ -2,6 +2,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import { diffLines } from 'diff';
 import type {
   TurnDiffEventData,
@@ -45,7 +46,7 @@ function splitNullTerminated(value: string): string[] {
  * This is the same disk/Git truth source used by workspace patch capture, but
  * exposes paths so Bash/scripts can join the normal mutation tracker.
  */
-export async function listWorkspaceChangedPaths(workingDir: string): Promise<string[]> {
+async function listWorkspaceChangedPaths(workingDir: string): Promise<string[]> {
   const repoRoot = await resolveRepoRoot(workingDir);
   if (!repoRoot) return [];
 
@@ -75,6 +76,40 @@ export async function listWorkspaceChangedPaths(workingDir: string): Promise<str
 
   return [...new Set([...tracked, ...untracked])]
     .map((filePath) => path.resolve(repoRoot, filePath));
+}
+
+export type WorkspaceMutationSnapshot = ReadonlyMap<string, string>;
+
+async function fingerprintWorkspacePath(filePath: string): Promise<string> {
+  try {
+    const stat = await fs.stat(filePath);
+    if (!stat.isFile()) return `non-file:${stat.mode}:${stat.size}`;
+    const content = await fs.readFile(filePath);
+    return createHash('sha256').update(content).digest('hex');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing';
+    return `unreadable:${(error as NodeJS.ErrnoException).code ?? 'unknown'}`;
+  }
+}
+
+/** Snapshot current Git-visible mutations so a later tool can claim only its own disk delta. */
+export async function captureWorkspaceMutationSnapshot(
+  workingDir: string,
+): Promise<WorkspaceMutationSnapshot> {
+  const paths = await listWorkspaceChangedPaths(workingDir);
+  return new Map(await Promise.all(paths.map(async (filePath) => (
+    [filePath, await fingerprintWorkspacePath(filePath)] as const
+  ))));
+}
+
+/** Return paths whose Git-visible state changed after the supplied snapshot. */
+export async function listWorkspacePathsChangedSince(
+  workingDir: string,
+  before: WorkspaceMutationSnapshot,
+): Promise<string[]> {
+  const after = await captureWorkspaceMutationSnapshot(workingDir);
+  const candidates = new Set([...before.keys(), ...after.keys()]);
+  return [...candidates].filter((filePath) => before.get(filePath) !== after.get(filePath));
 }
 
 function isInsideRoot(repoRoot: string, absolutePath: string): boolean {

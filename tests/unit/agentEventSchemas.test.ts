@@ -33,6 +33,9 @@ describe('AgentEventSchema', () => {
       type: 'turn_diff',
       data: {
         turnId: 'turn-1',
+        agentId: 'agent-1',
+        runId: 'run-1',
+        parentToolUseId: 'parent-tool-1',
         files: [{
           filePath: '/repo/generated.txt',
           oldText: '',

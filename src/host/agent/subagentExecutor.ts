@@ -92,8 +92,8 @@ import {
   resolveSubagentParentContext,
 } from './subagentProtocolContext';
 import { startSubagentLifecycle } from './subagentLifecycleHooks';
-import { createSubagentEventScope, type SubagentRunEndStatus } from './subagentLifecycleEvents';
 import { SubagentDoomLoopGuard, SubagentDoomLoopStopError } from './subagentDoomLoopGuard';
+import { createSubagentTurnObservability, type SubagentRunEndStatus } from './subagentTurnTrace';
 
 export type {
   SubagentConfig,
@@ -262,11 +262,11 @@ export class SubagentExecutor {
       { parentRemainingBudget: context.parentRemainingBudget },
     );
     const executionAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
-    const executionRunId = context.runId || context.swarmRunScope?.runId
-      || context.traceContext?.runId || agentTask.id;
-    const eventScope = createSubagentEventScope({
-      events: context.events,
+    const executionRunId = context.runId || context.swarmRunScope?.runId || context.traceContext?.runId || agentTask.id;
+    const turnObservability = createSubagentTurnObservability({
+      sessionId, events: context.events,
       identity: { agentId: executionAgentId, runId: executionRunId, parentToolUseId: context.parentToolUseId },
+      workingDirectory: context.worktreePath || context.cwd, warn: (message, error) => logger.warn(`[${config.name}] ${message}`, error),
     });
     const getTotalCost = (): number => {
       const ownCost = pipeline.getBudgetStatus(pipelineContext).subagentCost ?? 0;
@@ -357,7 +357,7 @@ export class SubagentExecutor {
       context,
       sessionId,
       effectiveMode: subagentEffectiveMode,
-      identity: eventScope.identity,
+      identity: turnObservability.identity,
       allowedToolNames: allowedNames,
       checkToolExecution: (request) => pipeline.checkToolExecution(pipelineContext, request).allowed,
     });
@@ -441,8 +441,7 @@ export class SubagentExecutor {
       });
     }
 
-    let terminalStatus: SubagentRunEndStatus = 'failed';
-    let terminalError: string | undefined;
+    let terminalStatus: SubagentRunEndStatus = 'failed'; let terminalError: string | undefined;
 
     try {
       // Initial budget check
@@ -616,9 +615,11 @@ export class SubagentExecutor {
           break;
         }
 
+        const telemetryTurnId = turnObservability.startTurn(iterations);
         // Auto-compaction: truncate old messages if approaching context limit
         if (iterations > SUBAGENT_COMPACTION.SKIP_FIRST_ITERATIONS) {
           if (compactSubagentMessages(messages, context.modelConfig.model, context.modelConfig.provider)) {
+            turnObservability.recordCompaction(latestContextSnapshot.currentTokens);
             for (const message of messages) {
               if (typeof message.content === 'string' && message.content.includes('[truncated]')) {
                 message.observation = buildObservation('compression_survivor', 'subagent_compaction', {
@@ -638,7 +639,6 @@ export class SubagentExecutor {
         );
         const inferenceMessages = applyInterventionsToMessages(messages, effectiveInterventions);
         const providerMessages = buildInferenceMessages(inferenceMessages);
-        const telemetryTurnId = eventScope.startTurn(iterations);
         const telemetryTurnStartedAt = Date.now();
         const currentTelemetryTurnNumber = ++telemetryTurnNumber;
         const telemetryToolCalls: SubagentTelemetryToolCall[] = [];
@@ -911,9 +911,10 @@ export class SubagentExecutor {
             logger.info(`[${config.name}] Executing tool: ${toolCall.name}`);
 
             // 发射 subagent 工具调用开始事件
-            eventScope.emitToolCallStart(toolCall);
+            turnObservability.emitToolCallStart(toolCall);
 
             const toolStartTime = Date.now();
+            const workspaceMutationSnapshot = await turnObservability.beginTool(toolCall.name);
             try {
               const result = await subagentToolExecutor.execute(
                 toolCall.name,
@@ -987,7 +988,7 @@ export class SubagentExecutor {
               });
 
               // 发射 subagent 工具调用结束事件
-              eventScope.emitToolCallEnd(toolCall.id, result, toolDuration);
+              await turnObservability.recordToolResult(toolCall, result, toolDuration, workspaceMutationSnapshot);
             } catch (error) {
               const toolDuration = Date.now() - toolStartTime;
               const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -1018,7 +1019,7 @@ export class SubagentExecutor {
               });
 
               // 发射 subagent 工具调用错误事件
-              eventScope.emitToolCallError(toolCall.id, errorMessage, toolDuration);
+              turnObservability.recordToolError(toolCall, errorMessage, toolDuration);
             }
           }
 
@@ -1071,7 +1072,7 @@ export class SubagentExecutor {
         // No response, break
         break;
         } finally {
-          eventScope.endTurn(telemetryTurnId);
+          await turnObservability.endTurn(telemetryTurnId);
         }
       }
 
@@ -1176,7 +1177,7 @@ export class SubagentExecutor {
       }
       throw error; // re-throw to preserve existing error handling
     } finally {
-      eventScope.endRun(terminalStatus, terminalError);
+      turnObservability.endRun(terminalStatus, terminalError);
     }
   }
 

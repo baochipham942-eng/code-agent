@@ -527,6 +527,9 @@ const TurnDiffEventSchema = event('turn_diff', typed<TurnDiffEventData>(z.object
     isNewFile: z.boolean(),
     editCount: z.number(),
   })),
+  agentId: z.string().optional(),
+  runId: z.string().optional(),
+  parentToolUseId: z.string().optional(),
 })));
 const NotificationEventSchema = event('notification', z.object({ message: z.string(), parentToolUseId: z.string().optional() }));
 const RoutingResolvedEventSchema = event('routing_resolved', typed<RoutingResolvedEventData>(z.object({ mode: z.enum(['auto', 'explicit']), agentId: z.string(), agentName: z.string(), reason: z.string(), score: z.number(), fallbackToDefault: z.boolean().optional(), requestedAgentId: z.string().optional(), timestamp: z.number().optional() })));

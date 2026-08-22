@@ -133,6 +133,9 @@ export function applyToolExecutionEvent(
       deps.setLastEventAt(deps.now());
       logHandledEvent();
       if (!isCurrentSessionEvent) break;
+      // Background diffs belong to the delegation replay/card. Folding them into
+      // the current foreground assistant message would cross the run boundary.
+      if (event.data.parentToolUseId) break;
       {
         const messages = deps.getMessages();
         const targetMessage = messages.find((message) => message.id === event.data.turnId)

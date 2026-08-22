@@ -11,4 +11,7 @@ export interface TurnDiffFileChange {
 export interface TurnDiffEventData {
   turnId: string;
   files: TurnDiffFileChange[];
+  agentId?: string;
+  runId?: string;
+  parentToolUseId?: string;
 }

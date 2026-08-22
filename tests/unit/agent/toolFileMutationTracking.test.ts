@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'child_process';
-import { mkdtemp, realpath, rm } from 'fs/promises';
+import { mkdtemp, realpath, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { trackFileMutationSideEffects } from '../../../src/host/agent/runtime/toolFileMutationTracking';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
+import { captureWorkspaceMutationSnapshot } from '../../../src/host/services/checkpoint/turnDiffService';
 
 describe('trackFileMutationSideEffects', () => {
   const tempDirs: string[] = [];
@@ -17,6 +18,7 @@ describe('trackFileMutationSideEffects', () => {
     const repo = await mkdtemp(join(tmpdir(), 'turn-diff-bash-'));
     tempDirs.push(repo);
     execFileSync('git', ['init', '-q'], { cwd: repo });
+    const workspaceMutationSnapshot = await captureWorkspaceMutationSnapshot(repo);
     execFileSync('bash', [
       '-lc',
       'for n in $(seq 1 3); do printf "bash line %s\\n" "$n"; done > "$1"',
@@ -38,9 +40,39 @@ describe('trackFileMutationSideEffects', () => {
       },
       normalizedResult: { success: true, result: 'ok' } as any,
       toolResult: { toolCallId: 'tool-bash', success: true, duration: 1 },
+      workspaceMutationSnapshot,
     });
 
     expect(trackedFiles).toContain(join(await realpath(repo), 'bash-output.txt'));
+  });
+
+  it('does not claim a background path that was already dirty before the foreground tool', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'turn-diff-slot-isolation-'));
+    tempDirs.push(repo);
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+    const backgroundPath = join(repo, 'background-output.txt');
+    await writeFile(backgroundPath, 'background change\n', 'utf8');
+    const workspaceMutationSnapshot = await captureWorkspaceMutationSnapshot(repo);
+
+    const trackedFiles: string[] = [];
+    await trackFileMutationSideEffects({
+      ctx: {
+        workingDirectory: repo,
+        nudgeManager: { trackModifiedFile: (filePath: string) => trackedFiles.push(filePath) },
+        artifact: ArtifactState.forTest(),
+      } as any,
+      toolCall: {
+        id: 'tool-foreground-bash',
+        name: 'Bash',
+        arguments: { command: 'true' },
+      },
+      normalizedResult: { success: true, result: 'ok' } as any,
+      toolResult: { toolCallId: 'tool-foreground-bash', success: true, duration: 1 },
+      workspaceMutationSnapshot,
+    });
+
+    expect(trackedFiles).not.toContain(backgroundPath);
+    expect(trackedFiles).toEqual([]);
   });
 
   it('clears the blocked-tool repair counter after a successful target file mutation', async () => {

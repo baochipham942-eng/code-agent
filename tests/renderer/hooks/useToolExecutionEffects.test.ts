@@ -151,6 +151,35 @@ describe('applyToolExecutionEvent', () => {
     expect(state.lastEventAt).toBe(500);
   });
 
+  it('keeps a correlated background turn_diff out of the foreground turn', () => {
+    const { deps, state } = createHarness({
+      messages: [assistantMessage('turn-current')],
+    });
+
+    applyToolExecutionEvent({
+      type: 'turn_diff',
+      data: {
+        turnId: 'background-turn-1',
+        agentId: 'agent-background',
+        runId: 'run-background',
+        parentToolUseId: 'delegate-tool-1',
+        files: [{
+          filePath: '/repo/background.txt',
+          oldText: '',
+          newText: 'background',
+          added: 1,
+          removed: 0,
+          isNewFile: true,
+          editCount: 1,
+        }],
+      },
+      sessionId: 'session-current',
+    }, deps);
+
+    expect(state.messages[0].metadata?.turnDiff).toBeUndefined();
+    expect(state.lastEventAt).toBe(500);
+  });
+
   it('adds streamed tool calls to the turn and queues their argument deltas', () => {
     const existingCall: ToolCall = {
       id: 'existing-tool',

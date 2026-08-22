@@ -60,7 +60,11 @@ import { registerArtifactRepairBlockedToolTurn } from './artifactRepairAdmission
 import { maybeRepairArtifactContractEditAnchors } from './toolArtifactContractAnchors';
 import { handleModifiedArtifactValidation } from './toolArtifactValidationLifecycle';
 import { handleToolResultBookkeeping } from './toolResultLifecycle';
-import { trackFileMutationSideEffects } from './toolFileMutationTracking';
+import {
+  isWorkspaceDiscoveryMutationTool,
+  trackFileMutationSideEffects,
+} from './toolFileMutationTracking';
+import { captureWorkspaceMutationSnapshot } from '../../services/checkpoint/turnDiffService';
 import { isTaskMutationToolCall } from '../nudgeManager';
 import { handleToolExecutionError } from './toolExecutionErrorHandler';
 import { applySwarmBudgetClamp, recordSwarmSpend } from './swarmGoalIntegration';
@@ -768,6 +772,9 @@ export class ToolExecutionEngine {
 
       const currentAttachments = this.contextAssembly.getCurrentAttachments();
       const artifactRepairRollbackSnapshot = captureArtifactRepairRollbackSnapshot(this.ctx, toolCall);
+      const workspaceMutationSnapshot = isWorkspaceDiscoveryMutationTool(toolCall.name)
+        ? await captureWorkspaceMutationSnapshot(this.ctx.workingDirectory || process.cwd())
+        : undefined;
 
       const result = await this.ctx.toolExecutor.execute(
         toolCall.name,
@@ -900,6 +907,7 @@ export class ToolExecutionEngine {
         toolCall,
         normalizedResult,
         toolResult,
+        workspaceMutationSnapshot,
       });
 
       // taskGate（roadmap 1.3）：模型主动写过任务（task_create/task_update 或

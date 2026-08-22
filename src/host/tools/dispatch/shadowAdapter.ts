@@ -120,6 +120,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
 
   return {
     runId: input.runId,
+    sourceMessageId: input.legacyCtx.sourceMessageId,
     sessionId: input.sessionId ?? 'protocol-unknown',
     workspace: input.workspace,
     workspaceScope: input.workspaceScope ?? input.legacyCtx.workspaceScope,

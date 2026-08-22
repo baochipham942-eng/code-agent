@@ -31,6 +31,7 @@ import {
 } from '../context/subagentContextStore';
 import type { SubagentResult } from './subagentExecutorTypes';
 import { listAgentWorktreeArtifacts } from './agentWorktree';
+import { extractToolStepTarget } from './toolStepTarget';
 
 export interface AgentTreeSpawnAgentSource {
   id: string;
@@ -271,6 +272,31 @@ function activeToolFromContext(record: SubagentContextRecord): string | undefine
   return tools && tools.length > 0 ? tools[tools.length - 1] : undefined;
 }
 
+function lastToolStepFromContext(record: SubagentContextRecord) {
+  const tool = activeToolFromContext(record);
+  if (!tool) return undefined;
+
+  for (let messageIndex = record.messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const message = record.messages[messageIndex];
+    const calls = message.toolCalls ?? [];
+    for (let callIndex = calls.length - 1; callIndex >= 0; callIndex -= 1) {
+      const call = calls[callIndex];
+      if (call.name !== tool) continue;
+      const target = extractToolStepTarget(call.arguments);
+      return {
+        tool,
+        ...(target ? { target } : {}),
+        at: message.timestamp || record.snapshot?.lastUpdated || record.updatedAt,
+      };
+    }
+  }
+
+  return {
+    tool,
+    at: record.snapshot?.lastUpdated || record.updatedAt,
+  };
+}
+
 function progressFromContext(record: SubagentContextRecord): string | undefined {
   const previews = record.snapshot?.previews;
   if (previews && previews.length > 0) {
@@ -384,6 +410,8 @@ function mergeContextRecord(
   node.updatedAt = Math.max(node.updatedAt ?? 0, record.updatedAt);
   const activeTool = activeToolFromContext(record);
   if (activeTool) node.activeTool = activeTool;
+  const lastToolStep = lastToolStepFromContext(record);
+  if (lastToolStep) node.lastToolStep = lastToolStep;
   node.budgetSummary = mergeBudget(node.budgetSummary, budgetFromContext(record));
 
   const progress = progressFromContext(record);

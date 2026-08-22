@@ -128,6 +128,8 @@ export interface ToolContext {
   readonly runId?: string;
   /** Conversation turn that owns this tool call and its durable projections. */
   readonly turnId?: string;
+  /** Stable user message that originated this native turn. */
+  readonly sourceMessageId?: string;
   readonly sessionId: string;
   /** Immutable authorization/artifact boundary for this run. */
   readonly workspace?: string;

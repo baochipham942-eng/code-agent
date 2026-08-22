@@ -20,6 +20,7 @@ import type {
 } from '../../../protocol/tools';
 import { createSnapshot, restoreLatest } from '../../document/snapshotManager';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { pptEditSchema as schema } from './pptEdit.schema';
 
 type EditAction =
@@ -127,14 +128,15 @@ export async function executePptEdit(
       code: 'INVALID_ARGS',
     };
   }
+  const resolvedFilePath = resolveInputPath(file_path, ctx.workingDir);
 
-  if (!fs.existsSync(file_path)) {
-    return { ok: false, error: `文件不存在: ${file_path}` };
+  if (!fs.existsSync(resolvedFilePath)) {
+    return { ok: false, error: `File not found: ${resolvedFilePath}. Check the path and retry.` };
   }
 
   try {
-    const snapshot = createSnapshot(file_path, `ppt-edit: ${action}`);
-    const data = fs.readFileSync(file_path);
+    const snapshot = createSnapshot(resolvedFilePath, `ppt-edit: ${action}`);
+    const data = fs.readFileSync(resolvedFilePath);
     const zip = await JSZip.loadAsync(data);
 
     let resultMessage = '';
@@ -222,7 +224,7 @@ export async function executePptEdit(
 
       case 'extract_style': {
         const { extractStyleFromPptx } = await import('../../media/ppt/styleExtractor');
-        const styleConfig = await extractStyleFromPptx(file_path);
+        const styleConfig = await extractStyleFromPptx(resolvedFilePath);
         if (!styleConfig) {
           return { ok: false, error: '无法提取样式，可能不是有效的 PPTX 文件' };
         }
@@ -242,15 +244,15 @@ export async function executePptEdit(
               sourceTool: schema.name,
               kind: 'text',
               sessionId: ctx.sessionId,
-              name: `PPT style: ${file_path}`,
+              name: `PPT style: ${resolvedFilePath}`,
               mimeType: 'application/json',
               contentLength: JSON.stringify(styleConfig).length,
               preview: JSON.stringify(styleConfig).slice(0, 500),
-              metadata: { action, filePath: file_path },
+              metadata: { action, filePath: resolvedFilePath },
             }),
             styleConfig,
             action,
-            filePath: file_path,
+            filePath: resolvedFilePath,
             contentLength: JSON.stringify(styleConfig).length,
             truncated: false,
           },
@@ -386,13 +388,13 @@ export async function executePptEdit(
               sourceTool: schema.name,
               kind: 'text',
               sessionId: ctx.sessionId,
-              name: `PPT analysis: ${file_path}`,
+              name: `PPT analysis: ${resolvedFilePath}`,
               mimeType: 'text/markdown',
               contentLength: output.length,
               preview: output.slice(0, 500),
               metadata: {
                 action,
-                filePath: file_path,
+                filePath: resolvedFilePath,
                 slideCount,
                 masterCount: masterFiles.length,
                 layoutCount: layoutFiles.length,
@@ -405,7 +407,7 @@ export async function executePptEdit(
             masterCount: masterFiles.length,
             layoutCount: layoutFiles.length,
             action,
-            filePath: file_path,
+            filePath: resolvedFilePath,
             resultCount: slideCount,
             contentLength: output.length,
             truncated: false,
@@ -441,7 +443,7 @@ export async function executePptEdit(
     const noWriteActions = new Set(['extract_style', 'analyze']);
     if (!noWriteActions.has(action)) {
       const outputBuffer = await zip.generateAsync({ type: 'nodebuffer' });
-      fs.writeFileSync(file_path, outputBuffer);
+      fs.writeFileSync(resolvedFilePath, outputBuffer);
     }
 
     onProgress?.({ stage: 'completing', percent: 100 });
@@ -449,7 +451,7 @@ export async function executePptEdit(
       ok: true,
       output: `${resultMessage}\nSnapshot: ${snapshot.id}`,
       meta: {
-        artifact: await createFileArtifact(file_path, schema.name, ctx, {
+        artifact: await createFileArtifact(resolvedFilePath, schema.name, ctx, {
           kind: 'document',
           mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
           metadata: {
@@ -461,14 +463,14 @@ export async function executePptEdit(
         snapshotId: snapshot.id,
         action,
         slideIndex: slide_index,
-        filePath: file_path,
-        outputPath: file_path,
-        contentLength: fs.statSync(file_path).size,
+        filePath: resolvedFilePath,
+        outputPath: resolvedFilePath,
+        contentLength: fs.statSync(resolvedFilePath).size,
         truncated: false,
       },
     };
   } catch (error: unknown) {
-    restoreLatest(file_path);
+    restoreLatest(resolvedFilePath);
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, error: `PPT 编辑失败 (已从快照恢复): ${message}` };
   }

@@ -3,6 +3,9 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -166,6 +169,23 @@ describe('qrcodeGenerateModule (native)', () => {
       const result = await run({ content: 'hello world' });
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.output).toContain('类型: 文本');
+    });
+  });
+
+  describe('output path', () => {
+    it('resolves a relative output_path inside ctx.workingDir and writes there', async () => {
+      const workingDir = await mkdtemp(join(tmpdir(), 'qrcode-generate-'));
+      const expectedPath = join(workingDir, 'code.png');
+      try {
+        toFileMock.mockImplementationOnce((filePath: string) => writeFile(filePath, Buffer.from('png')));
+        const result = await run({ content: 'hello', output_path: 'code.png' }, makeCtx({ workingDir }));
+        expect(result.ok).toBe(true);
+        expect(toFileMock).toHaveBeenCalledWith(expectedPath, 'hello', expect.any(Object));
+        expect(await readFile(expectedPath, 'utf8')).toBe('png');
+        if (result.ok) expect(result.output).toContain(expectedPath);
+      } finally {
+        await rm(workingDir, { recursive: true, force: true });
+      }
     });
   });
 

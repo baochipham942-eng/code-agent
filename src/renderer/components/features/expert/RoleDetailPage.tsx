@@ -96,7 +96,7 @@ async function updateRoleVisual(roleId: string, visual: RoleVisual): Promise<Rol
 
 type Equipment = NonNullable<RolePanelDetail["equipment"]>;
 
-async function updateRoleEquipment(roleId: string, equipment: Pick<Equipment, "skills" | "tools" | "model" | "maxIterations"> & { modelOverride?: Equipment["modelOverride"] | null; permissionPreset?: Equipment["permissionPreset"] | null }): Promise<void> {
+async function updateRoleEquipment(roleId: string, equipment: Pick<Equipment, "skills" | "tools" | "model" | "maxIterations"> & { modelOverride?: Equipment["modelOverride"] | null; permissionPreset?: Equipment["permissionPreset"] | null; engine?: Equipment["engine"] }): Promise<void> {
   await ipcService.invokeDomain(IPC_DOMAINS.ROLES, "updateEquipment", { roleId, equipment });
 }
 

@@ -4,6 +4,7 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { IPC_DOMAINS, type IPCResponse } from '../../../src/shared/ipc';
 import { BACKGROUND_TASK_LOG } from '../../../src/shared/constants';
+import { TaskProgressSchema } from '../../../src/shared/ipc/schemas/backgroundTask';
 
 const sourceMocks = vi.hoisted(() => ({
   getAllBackgroundTasks: vi.fn(() => []),
@@ -90,6 +91,21 @@ describe('background task ledger typed IPC', () => {
     expect(response).toMatchObject({
       success: false,
       error: { code: 'INVALID_PAYLOAD' },
+    });
+  });
+
+  it('keeps lastToolStep in the typed progress schema', () => {
+    expect(TaskProgressSchema.parse({
+      current: 1,
+      lastToolStep: {
+        tool: 'Read',
+        toolIndex: 0,
+        toolTotal: 2,
+        target: '/repo/spec.md',
+        at: 123,
+      },
+    })).toMatchObject({
+      lastToolStep: { tool: 'Read', target: '/repo/spec.md', at: 123 },
     });
   });
 

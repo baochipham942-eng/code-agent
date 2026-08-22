@@ -54,6 +54,12 @@ import type {
   RewindConversationRequest,
   RewindConversationResult,
 } from '../../shared/contract/sessionRewind';
+import type {
+  TurnCheckoutRequest,
+  TurnCheckoutResult,
+  TurnRedoRequest,
+  TurnRedoResult,
+} from '../../shared/contract/turnCheckout';
 
 const logger = createLogger('AgentAppService');
 import { getModelSessionState } from '../session/modelSessionState';
@@ -1125,6 +1131,14 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     params: RestoreWorkspaceFilesAtCheckpointRequest,
   ): Promise<RestoreWorkspaceFilesAtCheckpointResult> {
     return this.sessionHistory.restoreWorkspaceFilesAtCheckpoint(params);
+  }
+
+  async turnCheckout(params: TurnCheckoutRequest): Promise<TurnCheckoutResult> {
+    return this.sessionHistory.turnCheckout(params);
+  }
+
+  async turnRedo(params: TurnRedoRequest): Promise<TurnRedoResult> {
+    return this.sessionHistory.turnRedo(params);
   }
 
   async restoreConversationRewind(

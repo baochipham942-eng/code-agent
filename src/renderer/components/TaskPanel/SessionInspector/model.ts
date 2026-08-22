@@ -10,6 +10,7 @@
 // ============================================================================
 
 import type { TraceLedgerEvent, TraceSessionRead } from '../../../services/traceLedgerClient';
+import { projectEvidenceInvalidationSequence } from '@shared/contract/evidenceInvalidation';
 
 // ── 开放包络的安全读取 ────────────────────────────────────────────────────
 
@@ -52,12 +53,13 @@ export interface TurnOutcomeStamp {
 export function readTurnOutcome(event: TraceLedgerEvent): TurnOutcomeStamp | null {
   if (event.type !== 'turn_outcome' || !isRecord(event.data)) return null;
   const data = event.data;
-  const verdict = str(data.verdict);
+  const invalidated = typeof event.evidenceInvalidatedAt === 'number';
+  const verdict = invalidated ? 'self_claimed' : str(data.verdict);
   return {
     ts: num(event.ts),
     terminal: str(data.terminal) as TurnTerminal | null,
     verdict: verdict === 'verified' || verdict === 'self_claimed' || verdict === 'n_a' ? verdict : null,
-    evidenceCount: Array.isArray(data.evidenceRefs) ? data.evidenceRefs.length : 0,
+    evidenceCount: invalidated ? 0 : Array.isArray(data.evidenceRefs) ? data.evidenceRefs.length : 0,
     source: str(data.source),
   };
 }
@@ -259,9 +261,10 @@ function readVerificationSkippedCount(event: TraceLedgerEvent): number | null {
 
 /** 把事件流切分成轮：每枚 turn_outcome 收一轮；末尾无印章的段是进行中。 */
 export function segmentTurns(events: readonly TraceLedgerEvent[]): TurnSegment[] {
+  const projectedEvents = projectEvidenceInvalidationSequence(events);
   const segments: TraceLedgerEvent[][] = [];
   let current: TraceLedgerEvent[] = [];
-  for (const event of events) {
+  for (const event of projectedEvents) {
     current.push(event);
     if (event.type === 'turn_outcome') {
       segments.push(current);

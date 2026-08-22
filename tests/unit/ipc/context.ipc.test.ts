@@ -76,6 +76,8 @@ function makeAppService(
     rewindConversation: unsupportedAppServiceOperation,
     restoreConversationRewind: unsupportedAppServiceOperation,
     restoreWorkspaceFilesAtCheckpoint: unsupportedAppServiceOperation,
+    turnCheckout: unsupportedAppServiceOperation,
+    turnRedo: unsupportedAppServiceOperation,
     loadOlderMessages: async () => ({ messages: [], hasMore: false }),
     exportSession: async () => null,
     importSession: async () => sessionId,

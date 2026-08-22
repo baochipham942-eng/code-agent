@@ -3,6 +3,10 @@ import fs from 'fs';
 import path from 'path';
 import { getUserConfigDir } from '../config/configPaths';
 import type { ToolExecutionResult } from '../tools/types';
+import {
+  isEvidenceInvalidationRecord,
+  markDurableRecordInvalidated,
+} from '../../shared/contract/evidenceInvalidation';
 
 const LEDGER_FILE = 'browser-computer-proof-ledger.jsonl';
 const SCHEMA_VERSION = 1;
@@ -25,6 +29,8 @@ export interface BrowserComputerProofRecord {
   /** V1 semantic card/scope are additive; legacy proof/card readers remain compatible. */
   surfaceEvidenceCard?: unknown;
   surfaceScope?: unknown;
+  /** Projection of an append-only turn-checkout invalidation record. */
+  evidenceInvalidatedAt?: number;
 }
 
 export interface PersistBrowserComputerProofInput {
@@ -203,9 +209,19 @@ export function readBrowserComputerProofRecordsBySession(
   const records: BrowserComputerProofRecord[] = [];
   for (const line of lines) {
     try {
-      const parsed = JSON.parse(line) as BrowserComputerProofRecord;
-      if (parsed?.schemaVersion === SCHEMA_VERSION && parsed.sessionId === sessionId) {
-        records.push(parsed);
+      const parsed = JSON.parse(line) as unknown;
+      if (isEvidenceInvalidationRecord(parsed)) {
+        if (parsed.sessionId === sessionId) {
+          for (let index = 0; index < records.length; index += 1) {
+            records[index] = markDurableRecordInvalidated(records[index], parsed);
+          }
+        }
+      } else if (
+        isRecord(parsed)
+        && parsed.schemaVersion === SCHEMA_VERSION
+        && parsed.sessionId === sessionId
+      ) {
+        records.push(parsed as unknown as BrowserComputerProofRecord);
       }
     } catch {
       // Ignore malformed historical lines; the ledger is append-only.

@@ -451,6 +451,7 @@ export interface IpcInvokeHandlers {
       id: string;
       timestamp: number;
       messageId: string;
+      anchorUserMessageId?: string;
       description?: string;
       fileCount: number;
     }>

@@ -183,6 +183,8 @@ function makeAppService(sessionId: string, messages: Message[], modelOverride?: 
     rewindConversation: unsupportedAppServiceOperation,
     restoreConversationRewind: unsupportedAppServiceOperation,
     restoreWorkspaceFilesAtCheckpoint: unsupportedAppServiceOperation,
+    turnCheckout: unsupportedAppServiceOperation,
+    turnRedo: unsupportedAppServiceOperation,
     loadOlderMessages: async () => ({ messages: [], hasMore: false }),
     exportSession: async () => null,
     exportSessionMarkdown: async () => ({ markdown: '', suggestedFileName: 'session.md' }),

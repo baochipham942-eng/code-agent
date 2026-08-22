@@ -51,6 +51,8 @@ export interface RunControlTarget {
     clientMessageId?: string,
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
+    displayContent?: string,
+    expectedTurnId?: string,
   ): void | Promise<void>;
 }
 
@@ -67,6 +69,8 @@ export interface RunHandle extends RunControlTarget {
     clientMessageId?: string,
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
+    displayContent?: string,
+    expectedTurnId?: string,
   ): Promise<void>;
   attach(target: RunControlTarget): Promise<void>;
 }
@@ -239,12 +243,14 @@ class AttachedRunHandle implements RunHandle {
     clientMessageId?: string,
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
+    displayContent?: string,
+    expectedTurnId?: string,
   ): Promise<void> {
     const target = this.requireAttachedTarget('steer');
     if (typeof target.steer !== 'function') {
       throw new SteerUnsupportedError(this.context.runId);
     }
-    await target.steer(newMessage, clientMessageId, attachments, metadata);
+    await target.steer(newMessage, clientMessageId, attachments, metadata, displayContent, expectedTurnId);
   }
 
   private deliverCancellation(): Promise<void> {

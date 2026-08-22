@@ -210,7 +210,13 @@ export interface PromptRewindResult {
 
 export type SteerOrQueueOutcome =
   | { outcome: 'steered' }
-  | { outcome: 'queued'; queuedInputId: string };
+  | {
+      outcome: 'queued';
+      queuedInputId: string;
+      /** 机器判断仍看 code；message 只给缺少 i18n 的旧客户端兜底。 */
+      code: 'RUN_SETTLED' | 'TURN_CHANGED' | 'STEER_UNSUPPORTED';
+      message: string;
+    };
 
 /**
  * 会话列表查询参数（侧栏分页用）。

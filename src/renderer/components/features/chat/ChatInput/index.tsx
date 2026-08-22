@@ -15,7 +15,7 @@ import type {
 } from '@shared/contract/conversationEnvelope';
 import type { SteerOrQueueOutcome } from '@shared/contract/appService';
 import { UI } from '@shared/constants';
-import { IPC_DOMAINS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 
 import { InputArea, InputAreaRef } from './InputArea';
 import { ComposerSlot, SlotEntry } from './ComposerSlot';
@@ -104,6 +104,7 @@ import { AgentChip } from './AgentChip';
 import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
 import { ComposerUploadStatus } from './ComposerUploadStatus';
+import { RuntimeInputChoice, type RuntimeInputChoiceValue } from './RuntimeInputChoice';
 
 // ============================================================================
 // 类型定义
@@ -223,10 +224,36 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     metadata: ConversationVoiceInputMetadata;
   } | null>(null);
   const [isFocused, setIsFocused] = useState(false);
+  const [runtimeInputChoice, setRuntimeInputChoice] = useState<RuntimeInputChoiceValue>('queue');
+  const [pendingQueuedInputIds, setPendingQueuedInputIds] = useState<Set<string>>(() => new Set());
+  const settledBeforeEnqueueRef = useRef<Set<string>>(new Set());
+
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   // 会话作用域：currentSessionId / engine 类型 / 切换会话时清空草稿
   // （sessionless 时强制 null——项目页等无会话语境，见 ChatInputProps.sessionless）
   const { currentSessionId } = useChatInputSessionScope(setValue, setAttachments, sessionless);
+
+  useEffect(() => {
+    setRuntimeInputChoice('queue');
+    setPendingQueuedInputIds(new Set());
+    settledBeforeEnqueueRef.current.clear();
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    const unsubscribe = ipcService.on(IPC_CHANNELS.QUEUED_INPUT_SETTLED, (settled) => {
+      if (settled.sessionId !== currentSessionId) return;
+      setPendingQueuedInputIds((current) => {
+        if (!current.has(settled.id)) {
+          settledBeforeEnqueueRef.current.add(settled.id);
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(settled.id);
+        return next;
+      });
+    });
+    return () => unsubscribe?.();
+  }, [currentSessionId]);
   const pendingAppshot = useAppshotsStore((s) =>
     s.pendingSessionId === currentSessionId ? s.pending : null
   );
@@ -761,6 +788,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     isUploading,
     onSend,
     onSteer,
+    onQueuedInput: (queuedInput) => {
+      if (settledBeforeEnqueueRef.current.delete(queuedInput.id)) return;
+      setPendingQueuedInputIds((current) => new Set(current).add(queuedInput.id));
+    },
     agentEntries,
     buildEnvelope,
     openAgentCommand,
@@ -778,6 +809,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     openSeedComposer: (kind) => setSeedComposer({ kind, initialText: '' }),
     setActiveAgentId,
   });
+
+  const submitWithRuntimeChoice = useCallback((_event?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => (
+    handleSubmit(undefined, {
+      ...opts,
+      steer: opts?.steer ?? Boolean(isProcessing && runtimeInputChoice === 'redirect'),
+    })
+  ), [handleSubmit, isProcessing, runtimeInputChoice]);
 
   // 附件 / 语音动作单元
   const {
@@ -800,8 +838,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // 自动提交（send-after-transcript）；停止按钮 = 转写后文本落回输入框可编辑。
   const handleVoiceTranscriptRef = useRef(handleVoiceTranscript);
   handleVoiceTranscriptRef.current = handleVoiceTranscript;
-  const handleSubmitRef = useRef(handleSubmit);
-  handleSubmitRef.current = handleSubmit;
+  const handleSubmitRef = useRef(submitWithRuntimeChoice);
+  handleSubmitRef.current = submitWithRuntimeChoice;
   // 浏览器批注（N3）：appshotsStore 已写 pending 后，把 pin 文案塞进输入框并走主提交链路
   // （appshot 附件/XML 与用户手动发送同路径）。必须挂在 handleSubmitRef 之后。
   useEffect(() => {
@@ -940,7 +978,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     >
       {/* Command Palette triggered by / */}
       <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
-      <form ref={formRef} onSubmit={handleSubmit} className="max-w-3xl mx-auto">
+      <form
+        ref={formRef}
+        onSubmit={(event) => {
+          void handleSubmit(event, {
+            steer: Boolean(isProcessing && runtimeInputChoice === 'redirect'),
+          });
+        }}
+        className="max-w-3xl mx-auto"
+      >
         {/* 输入框上方那一格：全部占用者统一走 <ComposerSlot>/<SlotEntry id>。
             层级登记与让位规则在 composerNoticeStore 的 COMPOSER_SLOT_LAYER；
             裸挂任何未登记组件都会被 ComposerSlot 拒渲染（防以后又塞进来一个不声明层级的）。
@@ -1226,11 +1272,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             />
           )}
           {/* @neo 交互已从 composer 移除（2026-07-29 拍板）：工作卡/续接改从 Neo 协同页发起 */}
+          {pendingQueuedInputIds.size > 0 && (
+            <div className="px-4 pt-2 text-[11px] text-zinc-500" role="status" data-testid="queued-input-hint">
+              {t.chatInputSubmit.queuedInputHint}
+            </div>
+          )}
           <InputArea
             ref={inputAreaRef}
             value={value}
             onChange={handleDictationAwareValueChange}
-            onSubmit={(opts) => { void handleSubmit(undefined, opts); }}
+            onSubmit={(opts) => { void submitWithRuntimeChoice(undefined, opts); }}
             onFileSelect={handleFileSelect}
             onImagePaste={handleImagePaste}
             disabled={disabled && !isProcessing}
@@ -1267,6 +1318,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               onFileSelect={handleFileSelect}
               onSelectCapability={selectWorkbenchCapabilityForCurrentTurn}
             />
+
+            {isProcessing && (
+              <RuntimeInputChoice value={runtimeInputChoice} onChange={setRuntimeInputChoice} />
+            )}
 
             {isDictationActive ? (
               <DictationRecordingBar

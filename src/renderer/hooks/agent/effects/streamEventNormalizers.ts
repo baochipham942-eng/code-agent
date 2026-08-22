@@ -7,6 +7,7 @@ import type {
   AgentEngineReliability,
   HookTriggerEventData,
   HookStartedEventData,
+  InputRedirectReceiptMetadata,
   Message,
   ModelCapabilityNeed,
   ModelCostPolicy,
@@ -40,6 +41,30 @@ import type {
   StreamTextPayload,
   TurnIdPayload,
 } from './streamEventTypes';
+
+export function normalizeInputRedirectReceiptData(data: unknown): InputRedirectReceiptMetadata | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const raw = data as Partial<InputRedirectReceiptMetadata>;
+  if (
+    typeof raw.receiptId !== 'string'
+    || typeof raw.originalContent !== 'string'
+    || !raw.partial
+    || typeof raw.partial.charCount !== 'number'
+    || !Array.isArray(raw.interruptedTools)
+  ) {
+    return null;
+  }
+  return {
+    receiptId: raw.receiptId,
+    originalContent: raw.originalContent,
+    ...(typeof raw.expectedTurnId === 'string' ? { expectedTurnId: raw.expectedTurnId } : {}),
+    partial: {
+      charCount: raw.partial.charCount,
+      ...(typeof raw.partial.trailingText === 'string' ? { trailingText: raw.partial.trailingText } : {}),
+    },
+    interruptedTools: raw.interruptedTools.filter((name): name is string => typeof name === 'string'),
+  };
+}
 
 const MODEL_DECISION_REASONS = new Set<ModelDecisionReason>([
   'user-selected',

@@ -931,6 +931,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       toAgentRunOptions(options),
       await this.getMessageMetadataWithLocator(envelope),
       envelope.clientMessageId,
+      envelope.expectedTurnId,
     );
   }
 

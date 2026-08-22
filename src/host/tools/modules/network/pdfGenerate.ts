@@ -21,6 +21,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { formatFileSize } from '../../utils/fileSize';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { pdfGenerateSchema as schema } from './pdfGenerate.schema';
 
@@ -206,8 +207,8 @@ export async function executePdfGenerate(
 
     const safeTitle = title.replace(/[^a-zA-Z0-9一-龥]/g, '_');
     const fileName = `${safeTitle}.pdf`;
-    const outputDir = output_path ? path.dirname(output_path) : ctx.workingDir;
-    const finalPath = output_path || path.join(outputDir, fileName);
+    const finalPath = resolveInputPath(output_path ?? fileName, ctx.workingDir);
+    const outputDir = path.dirname(finalPath);
 
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });

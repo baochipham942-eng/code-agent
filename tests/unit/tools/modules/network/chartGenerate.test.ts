@@ -3,6 +3,9 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -154,6 +157,28 @@ describe('chartGenerateModule (native)', () => {
   });
 
   describe('happy paths', () => {
+    it('resolves a relative output_path inside ctx.workingDir and writes there', async () => {
+      const workingDir = await mkdtemp(join(tmpdir(), 'chart-generate-'));
+      const expectedPath = join(workingDir, 'chart.png');
+      try {
+        fetchMock.mockResolvedValue(makeFetchOk());
+        let diskWrite: Promise<void> | undefined;
+        writeFileSyncMock.mockImplementationOnce((filePath: string, data: Buffer) => {
+          diskWrite = writeFile(filePath, data);
+        });
+        const result = await run({
+          type: 'bar', labels: ['a'], datasets: [{ data: [1] }], output_path: 'chart.png',
+        }, makeCtx({ workingDir }));
+        await diskWrite;
+        expect(result.ok).toBe(true);
+        expect(writeFileSyncMock).toHaveBeenCalledWith(expectedPath, expect.any(Buffer));
+        expect((await readFile(expectedPath)).length).toBeGreaterThan(0);
+        if (result.ok) expect(result.output).toContain(expectedPath);
+      } finally {
+        await rm(workingDir, { recursive: true, force: true });
+      }
+    });
+
     it('generates a bar chart and writes file', async () => {
       fetchMock.mockResolvedValue(makeFetchOk());
       const result = await run({

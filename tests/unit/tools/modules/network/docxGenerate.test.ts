@@ -3,6 +3,9 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -176,6 +179,25 @@ describe('docxGenerateModule (native)', () => {
       expect(result.ok).toBe(true);
       const callPath = writeFileSyncMock.mock.calls[0][0] as string;
       expect(callPath).toBe('/tmp/work/custom.docx');
+    });
+
+    it('resolves a relative output_path inside ctx.workingDir and writes there', async () => {
+      const workingDir = await mkdtemp(join(tmpdir(), 'docx-generate-'));
+      const expectedPath = join(workingDir, 'report.docx');
+      try {
+        let diskWrite: Promise<void> | undefined;
+        writeFileSyncMock.mockImplementationOnce((filePath: string, data: Buffer) => {
+          diskWrite = writeFile(filePath, data);
+        });
+        const result = await run({ title: 'T', content: 'body', output_path: 'report.docx' }, makeCtx({ workingDir }));
+        await diskWrite;
+        expect(result.ok).toBe(true);
+        expect(writeFileSyncMock).toHaveBeenCalledWith(expectedPath, expect.any(Buffer));
+        expect((await readFile(expectedPath)).length).toBeGreaterThan(0);
+        if (result.ok) expect(result.output).toContain(expectedPath);
+      } finally {
+        await rm(workingDir, { recursive: true, force: true });
+      }
     });
 
     it('creates output directory if missing', async () => {

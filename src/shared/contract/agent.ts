@@ -46,6 +46,7 @@ export interface TaskProgressData {
   tool?: string;           // 当前工具名
   toolIndex?: number;      // 当前工具索引
   toolTotal?: number;      // 工具总数
+  target?: string;         // 当前工具最像宾语的一个参数（已截断）
 }
 
 // 任务完成事件数据

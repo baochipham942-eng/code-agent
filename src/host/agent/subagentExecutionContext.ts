@@ -51,6 +51,7 @@ export function createProtocolSubagentExecutionContext(
 
   return {
     runId: ctx.runId,
+    sourceMessageId: ctx.sourceMessageId,
     sessionId: ctx.sessionId,
     workspace: ctx.workspace,
     workspaceScope: ctx.workspaceScope,

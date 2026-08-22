@@ -17,6 +17,7 @@ import type {
 } from '../../../protocol/tools';
 import { QUICKCHART_API } from '../../../../shared/constants';
 import { formatFileSize } from '../../utils/fileSize';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { chartGenerateSchema as schema } from './chartGenerate.schema';
 
@@ -149,8 +150,8 @@ async function executeChartGenerate(
 
     const timestamp = Date.now();
     const fileName = `chart-${timestamp}.png`;
-    const outputDir = output_path ? path.dirname(output_path) : ctx.workingDir;
-    const finalPath = output_path || path.join(outputDir, fileName);
+    const finalPath = resolveInputPath(output_path ?? fileName, ctx.workingDir);
+    const outputDir = path.dirname(finalPath);
 
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });

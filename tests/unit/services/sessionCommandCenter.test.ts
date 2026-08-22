@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskManager, TaskManagerEvent } from '../../../src/host/task/TaskManager';
+import type { AgentEvent } from '../../../src/shared/contract';
 import {
   SessionCommandCenter,
   type SessionCommandTask,
@@ -24,6 +25,16 @@ class FakeTaskManager extends EventEmitter {
   startBackgroundTask = vi.fn().mockResolvedValue(undefined);
   interruptBackgroundTask = vi.fn().mockResolvedValue(true);
   cancelBackgroundTask = vi.fn().mockResolvedValue(true);
+  private readonly agentObservers = new Set<(sessionId: string, event: AgentEvent, taskId?: string) => void>();
+
+  observeAgentEvents(observer: (sessionId: string, event: AgentEvent, taskId?: string) => void): () => void {
+    this.agentObservers.add(observer);
+    return () => this.agentObservers.delete(observer);
+  }
+
+  emitAgent(sessionId: string, event: AgentEvent, taskId?: string): void {
+    this.agentObservers.forEach((observer) => observer(sessionId, event, taskId));
+  }
 
   emitTask(event: TaskManagerEvent): void {
     this.emit(event.type, event);
@@ -113,6 +124,64 @@ describe('SessionCommandCenter', () => {
     center.dispose();
   });
 
+  it('projects task_progress to the exact taskId when two background runs share one session', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+    });
+    const first = await center.spawn(input(1, 'report'));
+    const second = await center.spawn(input(2, 'research'));
+    if (first.outcome === 'requires_choice' || second.outcome === 'requires_choice') {
+      throw new Error('unexpected admission result');
+    }
+
+    manager.emitAgent('session-a', {
+      type: 'task_progress',
+      data: {
+        turnId: 'turn-a',
+        phase: 'tool_running',
+        step: '执行 Read',
+        tool: 'Read',
+        toolIndex: 0,
+        toolTotal: 2,
+        target: '/repo/a.md',
+      },
+    }, first.task.id);
+    manager.emitAgent('session-a', {
+      type: 'task_progress',
+      data: {
+        turnId: 'turn-b',
+        phase: 'tool_running',
+        step: '执行 Bash',
+        tool: 'Bash',
+        toolIndex: 1,
+        toolTotal: 3,
+        target: 'npm test',
+      },
+    }, second.task.id);
+    manager.emitAgent('session-a', {
+      type: 'task_progress',
+      data: { turnId: 'turn-front', phase: 'tool_running', tool: 'Write' },
+    });
+
+    const ledgerTasks = getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' });
+    expect(ledgerTasks.find((task) => task.id === first.task.id)?.progress?.lastToolStep).toEqual({
+      tool: 'Read',
+      toolIndex: 0,
+      toolTotal: 2,
+      target: '/repo/a.md',
+      at: expect.any(Number),
+    });
+    expect(ledgerTasks.find((task) => task.id === second.task.id)?.progress?.lastToolStep).toEqual({
+      tool: 'Bash',
+      toolIndex: 1,
+      toolTotal: 3,
+      target: 'npm test',
+      at: expect.any(Number),
+    });
+    center.dispose();
+  });
+
   it('returns terminal results to the foreground and starts the next lane item', async () => {
     const manager = new FakeTaskManager();
     const projected: Array<{ task: SessionCommandTask; status: string }> = [];
@@ -173,6 +242,44 @@ describe('SessionCommandCenter', () => {
       { status: 'completed' },
       { status: 'running' },
     ]);
+    center.dispose();
+  });
+
+  it('projects existing deliverable artifact metadata into completed task outputRefs', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+    });
+    const spawned = await center.spawn(input(1));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    manager.emitTask({
+      type: 'task_completed',
+      sessionId: 'session-a',
+      data: {
+        taskId: spawned.task.id,
+        conclusion: '报告已生成。',
+        artifacts: [{
+          artifactId: 'report-1',
+          kind: 'document',
+          role: 'deliverable',
+          label: '最终报告',
+          path: '/repo/report.md',
+          mimeType: 'text/markdown',
+        }],
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' })[0]?.outputRefs).toEqual([
+        expect.objectContaining({
+          type: 'file',
+          label: '最终报告',
+          path: '/repo/report.md',
+          mimeType: 'text/markdown',
+        }),
+      ]);
+    });
     center.dispose();
   });
 

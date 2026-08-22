@@ -634,7 +634,7 @@ export class RunFinalizer {
   emitTaskProgress(
     phase: AgentTaskPhase,
     step?: string,
-    extra?: { progress?: number; tool?: string; toolIndex?: number; toolTotal?: number; parallel?: boolean }
+    extra?: { progress?: number; tool?: string; toolIndex?: number; toolTotal?: number; target?: string; parallel?: boolean }
   ): void {
     this.ctx.onEvent({
       type: 'task_progress',

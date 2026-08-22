@@ -77,6 +77,7 @@ import { clearApprovalWait, getApprovalWaitMs } from '../../tools/toolExecutionT
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { formatSystemReminderForCompletions } from '../subagentCompletionNotification';
 import { planContextTag } from './planApprovalRunBoundary';
+import { extractToolStepTarget } from '../toolStepTarget';
 
 const logger = createLogger('AgentLoop');
 
@@ -235,6 +236,7 @@ export class ToolExecutionEngine {
             tool: toolCall.name,
             toolIndex: index,
             toolTotal: toolCalls.length,
+            target: extractToolStepTarget(toolCall.arguments),
             parallel: true,
           });
         }
@@ -261,6 +263,7 @@ export class ToolExecutionEngine {
         tool: toolCall.name,
         toolIndex: index,
         toolTotal: toolCalls.length,
+        target: extractToolStepTarget(toolCall.arguments),
       });
       results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length, false);
     }
@@ -282,6 +285,7 @@ export class ToolExecutionEngine {
         tool: toolCall.name,
         toolIndex: index,
         toolTotal: toolCalls.length,
+        target: extractToolStepTarget(toolCall.arguments),
         progress,
       });
       results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length, false);
@@ -765,6 +769,9 @@ export class ToolExecutionEngine {
         {
           runId: this.ctx.runId,
           turnId: this.ctx.turn.currentTurnId,
+          sourceMessageId: [...this.ctx.messages]
+            .reverse()
+            .find((message) => message.role === 'user')?.id,
           turnTrace: this.ctx.turnTrace,
           planningService: this.ctx.planningService,
           modelConfig: this.ctx.modelConfig,

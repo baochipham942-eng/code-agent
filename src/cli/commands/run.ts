@@ -83,7 +83,8 @@ export const runCommand = new Command('run')
     dangerouslySkipPermissions?: boolean;
   }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
-    const isJson = globalOpts?.json || globalOpts?.outputFormat === 'json' || globalOpts?.outputFormat === 'stream-json';
+    const isStreamJson = globalOpts?.outputFormat === 'stream-json';
+    const isJson = globalOpts?.json || globalOpts?.outputFormat === 'json' || isStreamJson;
 
     // Read stdin and prepend to prompt if available
     const stdinContent = await readStdin();
@@ -269,17 +270,26 @@ export const runCommand = new Command('run')
 
       // 输出最终结果（JSON 模式，无 schema 验证时）
       if (isJson && !outputSchema) {
-        jsonOutput.result(result, globalOpts?.outputFormat === 'stream-json');
+        if (isStreamJson) {
+          jsonOutput.result(result, true);
+        } else {
+          jsonOutput.result(result);
+        }
       } else if (isJson && outputSchema) {
         // schema 模式下 JSON 输出：包含结构化数据和验证状态
         const extracted = extractJSON(result.output || '', globalOpts?.project);
         const validation = extracted ? validateSchema(extracted, outputSchema) : null;
-        jsonOutput.result({
+        const finalResult = {
           ...result,
           structuredOutput: extracted,
           schemaValid: validation?.valid ?? false,
           schemaErrors: validation?.valid === false ? validation.errors : undefined,
-        }, globalOpts?.outputFormat === 'stream-json');
+        };
+        if (isStreamJson) {
+          jsonOutput.result(finalResult, true);
+        } else {
+          jsonOutput.result(finalResult);
+        }
       }
 
       // 设置退出码并退出

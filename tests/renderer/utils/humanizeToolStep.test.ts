@@ -89,15 +89,20 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
 
   it('subagent spawn: with description', () => {
     expect(humanizeToolStep('spawn_agent', { description: '核对发版清单' }, zh))
-      .toBe('启动了子任务 — 核对发版清单');
+      .toBe('启动了代理 — 核对发版清单');
   });
 
   it('subagent spawn: fallback with no description', () => {
-    expect(humanizeToolStep('Task', {}, zh)).toBe('启动了一个子任务');
+    expect(humanizeToolStep('Task', {}, zh)).toBe('启动了一个代理');
   });
 
   it('subagent message', () => {
-    expect(humanizeToolStep('agent_message', {}, zh)).toBe('给子任务发了条消息');
+    expect(humanizeToolStep('agent_message', {}, zh)).toBe('正在跟代理说话');
+  });
+
+  it('agent conversation uses the peer name from caller-provided arguments', () => {
+    expect(humanizeToolStep('teammate', { name: '研究代理' }, zh)).toBe('正在跟 研究代理 说话');
+    expect(humanizeToolStep('send_input', { agentId: '审阅代理' }, zh)).toBe('正在跟 审阅代理 说话');
   });
 
   it('delegate_task: uses args.description when present', () => {
@@ -283,7 +288,7 @@ describe('humanizeToolGroupLabel', () => {
 
   it('buckets mcp and subagent tools separately from explored/ran', () => {
     expect(humanizeToolGroupLabel(['mcp__github__create_issue', 'spawn_agent'], zh))
-      .toBe('调用了 1 次工具、派发了 1 次子任务');
+      .toBe('调用了 1 次工具、派发了 1 次代理任务');
   });
 
   it('TaskManager/todo land in planned bucket — never "使用了 N 次工具"', () => {

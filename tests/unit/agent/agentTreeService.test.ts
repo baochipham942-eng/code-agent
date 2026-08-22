@@ -62,7 +62,17 @@ describe('agentTreeService', () => {
         {
           sessionId: 'session-1',
           agentId: 'child',
-          messages: [],
+          messages: [{
+            id: 'message-tool-edit',
+            role: 'assistant',
+            content: '',
+            timestamp: 55,
+            toolCalls: [{
+              id: 'tool-edit',
+              name: 'Edit',
+              arguments: { file_path: '/repo/src/main.ts' },
+            }],
+          }],
           updatedAt: 60,
           snapshot: {
             currentTokens: 1900,
@@ -96,6 +106,11 @@ describe('agentTreeService', () => {
     expect(child?.failureCode).toBe(AgentFailureCode.BudgetExhausted);
     expect(child?.failureReason).toBe('可用预算已经用完');
     expect(child?.activeTool).toBe('Edit');
+    expect(child?.lastToolStep).toEqual({
+      tool: 'Edit',
+      target: '/repo/src/main.ts',
+      at: 55,
+    });
     expect(child?.budgetSummary).toMatchObject({
       costUsd: 0.42,
       tokensUsed: 1900,

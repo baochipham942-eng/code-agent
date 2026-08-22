@@ -99,6 +99,7 @@ import {
 } from './subagentProtocolContext';
 import { startSubagentLifecycle } from './subagentLifecycleHooks';
 import { createSubagentEventScope, type SubagentRunEndStatus } from './subagentLifecycleEvents';
+import { DoomLoopGuard } from './runtime/doomLoopGuard';
 
 export type {
   SubagentConfig,
@@ -189,6 +190,9 @@ export class SubagentExecutor {
     let toolCallsAttempted = 0;
     let iterations = 0;
     let finalOutput = '';
+    // One guard per subagent run, matching the foreground run lifecycle.
+    const doomLoopGuard = new DoomLoopGuard();
+    let doomLoopStopError: string | undefined;
     // 跨迭代累加 outputTokens，供 dynamic-workflow 的 BudgetTracker 计费（每次推理后累加）。
     let outputTokensUsed = 0;
     let descendantUsage: SubagentUsage = { cost: 0, tokensUsed: 0 };
@@ -716,6 +720,25 @@ export class SubagentExecutor {
           });
         };
 
+        // Empty model output must not silently end a background run. Reuse the
+        // foreground continuation limit and preserve partial state when it stops.
+        if (response.type === 'text' && !response.content?.trim()) {
+          const emptyCheck = doomLoopGuard.recordEmptyOutput();
+          persistTelemetryTurn('', response.thinking);
+          if (emptyCheck.action === 'continue' && emptyCheck.nudge) {
+            logger.warn(`[${config.name}] Empty model output; continuing with doom-loop nudge`);
+            messages.push(createRuntimeMessage({
+              role: 'system',
+              content: emptyCheck.nudge,
+            }));
+            emitContextSnapshot();
+            continue;
+          }
+          logger.warn(`[${config.name}] Empty model output limit reached; stopping subagent run`);
+          doomLoopStopError = 'Subagent stopped by doom-loop guard after repeated empty model output.';
+          break;
+        }
+
         // Handle text response - subagent is done
         if (response.type === 'text' && response.content) {
           // taskGate（roadmap 2.6）：收口前检查名下未收口任务，重入督办（上限 2）
@@ -756,6 +779,19 @@ export class SubagentExecutor {
 
         // Handle tool calls
         if (response.type === 'tool_use' && response.toolCalls) {
+          const doomCheck = doomLoopGuard.recordStep(
+            response.toolCalls.map((toolCall) => ({
+              name: toolCall.name,
+              arguments: toolCall.arguments,
+            })),
+          );
+          if (doomCheck.level === 'doom-loop-abort') {
+            logger.warn(`[${config.name}] Identical tool call repeated after doom-loop nudge; stopping subagent run`);
+            doomLoopStopError = 'Subagent stopped by doom-loop guard after repeating the same tool call.';
+            break;
+          }
+          const doomLoopNudge = doomCheck.nudge;
+
           const toolResults: string[] = [];
           const assistantToolCalls: ToolCall[] = response.toolCalls.map((toolCall) => ({
             id: toolCall.id,
@@ -1050,6 +1086,13 @@ export class SubagentExecutor {
               },
             ),
           }));
+          if (doomLoopNudge) {
+            logger.warn(`[${config.name}] ${doomCheck.level} detected; injecting doom-loop nudge`);
+            messages.push(createRuntimeMessage({
+              role: 'system',
+              content: doomLoopNudge,
+            }));
+          }
           pushObservabilityMessage({
             id: generateMessageId(),
             role: 'user',
@@ -1077,6 +1120,35 @@ export class SubagentExecutor {
       // Get final cost
       cleanupTimer();
       stopIdleWatchdog();
+
+      if (doomLoopStopError) {
+        pipeline.completeContext(pipelineContext.agentId, false, doomLoopStopError);
+        agentTask.fail(doomLoopStopError);
+        adoptOrphanTasks(sessionId, pipelineContext.agentId);
+        if (context.spawnGuardId) {
+          getSpawnGuard().cancelDescendants(context.spawnGuardId, 'parent-gone');
+        }
+        context.hooks?.triggerSubagentStop(
+          config.name,
+          finalOutput || undefined,
+          sessionId,
+          agentTask.id,
+        ).catch(silence(logger, 'triggerSubagentStop:doom-loop', 'warn'));
+        terminalStatus = 'cancelled';
+        terminalError = doomLoopStopError;
+        return {
+          success: false,
+          output: finalOutput || '',
+          error: doomLoopStopError,
+          toolsUsed: [...new Set(toolsUsed)],
+          iterations,
+          tokensUsed: getTotalTokens(),
+          cost: getTotalCost(),
+          agentId: executionAgentId,
+          contextSnapshot: latestContextSnapshot,
+        };
+      }
+
       pipeline.completeContext(pipelineContext.agentId, true);
 
       // Record final output in transcript and close AgentTask lifecycle

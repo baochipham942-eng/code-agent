@@ -161,6 +161,16 @@ export const expertZh = {
       overrideDescription: '想让这位专家固定用某个模型就在这里选。选了就不再走上面的自动挑选。',
       overrideEmpty: '还没有可用的模型。先到能力中心配好模型服务，这里就会出现。',
       overrideClear: '取消指定，回到自动挑选',
+      engineTitle: '跑在哪个引擎上',
+      engineDescription: '这位专家起活时用哪个引擎执行。不确定就保持 Neo 原生。',
+      engineNative: 'Neo 原生',
+      engineHelp: '外部引擎只在隔离的工作目录里干活，做完把改动交回给你审；它不会碰你当前目录。',
+      engineReason: {
+        missing: '本机未安装',
+        notConfigured: '未配置/未登录',
+        unavailable: '暂不可用',
+        unknown: '状态未知',
+      },
     },
     roleSecurity: {
       title: '授权方式',
@@ -385,6 +395,16 @@ export const expertEn: typeof expertZh = {
       overrideDescription: 'Pin this expert to one model. Once picked, smart selection above no longer applies.',
       overrideEmpty: 'No models available yet. Set up a model service in the Capability Hub and they will show up here.',
       overrideClear: 'Clear and go back to smart selection',
+      engineTitle: 'Which engine it runs on',
+      engineDescription: 'The engine that does the work when this expert takes a task. When in doubt, keep Neo (native).',
+      engineNative: 'Neo (native)',
+      engineHelp: 'An external engine only works in a separate folder Neo manages, then hands the changes back to you for review — it never touches your current folder.',
+      engineReason: {
+        missing: 'Not installed on this machine',
+        notConfigured: 'Not configured / not signed in',
+        unavailable: 'Unavailable for now',
+        unknown: 'Status unknown',
+      },
     },
     roleSecurity: {
       title: 'How this expert asks',

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
+import { projectEvidenceInvalidationSequence } from '../../shared/contract/evidenceInvalidation';
 
 type TraceLedgerState = 'missing' | 'empty' | 'present';
 
@@ -99,10 +100,12 @@ export class TraceReadService {
   async summarizeSessions(sessionIds: readonly string[]): Promise<TraceSessionSummary[]> {
     const summaries: TraceSessionSummary[] = [];
     for (const sessionId of sessionIds) {
+      const events: TraceLedgerEvent[] = [];
       const turnOutcomes: TraceLedgerEvent[] = [];
       const turns = new Set<number>();
       const tokenUsage: TraceTokenSummary = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
-      const scan = await this.scanSession(sessionId, 0, (event) => {
+      const scan = await this.scanSession(sessionId, 0, (event) => events.push(event));
+      for (const event of projectEvidenceInvalidationSequence(events)) {
         if (typeof event.turnIndex === 'number' && Number.isSafeInteger(event.turnIndex) && event.turnIndex >= 0) {
           turns.add(event.turnIndex);
         }
@@ -114,7 +117,7 @@ export class TraceReadService {
           tokenUsage.outputTokens += finiteNonNegative(event.data.outputTokens);
           tokenUsage.cacheReadTokens += finiteNonNegative(event.data.cacheReadTokens);
         }
-      });
+      }
       summaries.push({
         sessionId,
         state: scan.state,

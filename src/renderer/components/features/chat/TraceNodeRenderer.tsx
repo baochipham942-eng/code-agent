@@ -883,6 +883,40 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
 // ---- System Node ----
 const SystemNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   const [expanded, setExpanded] = useState(false);
+  const { t } = useI18n();
+
+  const checkoutNote = node.metadata?.turnCheckoutNote;
+  if (checkoutNote) {
+    const title = checkoutNote.operation === 'redo'
+      ? checkoutNote.state === 'success'
+        ? t.chat.turnCheckoutNoteRedoSuccess
+        : t.chat.turnCheckoutNoteRedoPartial
+      : checkoutNote.state === 'success'
+        ? t.chat.turnCheckoutSuccess
+        : t.chat.turnCheckoutPartial;
+    const skipped = checkoutNote.skippedFiles.map((item) => {
+      const file = item.filePath.split(/[\\/]/).filter(Boolean).at(-1) ?? item.filePath;
+      const template = item.reason === 'human_edit'
+        ? t.chat.turnCheckoutNoteHumanEdit
+        : item.reason === 'missing_post_write_digest'
+          ? t.chat.turnCheckoutNoteLegacyDigest
+          : t.chat.turnCheckoutNoteSnapshotFailed;
+      return template.replace('{file}', file);
+    });
+    const otherFailures = checkoutNote.failed
+      .filter((item) => item.step !== 'workspace')
+      .map((item) => `${item.step}: ${item.reason}`);
+    return (
+      <div className="mx-3 my-1.5 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
+        <div className="font-medium text-zinc-300">{title}</div>
+        <div className="mt-1">
+          {t.chat.turnCheckoutNoteChanged.replace('{count}', String(checkoutNote.changedFileCount))}
+        </div>
+        {[...skipped, ...otherFailures].map((line) => <div key={line} className="mt-1">{line}</div>)}
+        <div className="mt-1 text-zinc-500">{t.chat.turnCheckoutExternalEffects}</div>
+      </div>
+    );
+  }
 
   if (node.subtype === 'compaction') {
     return (

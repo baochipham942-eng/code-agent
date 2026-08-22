@@ -92,6 +92,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       anchor_prompt TEXT NOT NULL,
       anchor_timestamp INTEGER NOT NULL,
       checkpoint_message_id TEXT,
+      redo_checkpoint_message_id TEXT,
       hidden_message_count INTEGER NOT NULL DEFAULT 0,
       hidden_message_ids TEXT NOT NULL DEFAULT '[]',
       files_restored INTEGER NOT NULL DEFAULT 0,
@@ -109,6 +110,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN request_digest TEXT`, logger);
   safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'`, logger);
   safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN restored_at INTEGER`, logger);
+  safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN redo_checkpoint_message_id TEXT`, logger);
 
   // User-visible Session Fork is distinct from parent_session_id. The latter
   // remains a compatibility projection used by subagents and older clients.
@@ -691,12 +693,16 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       workspace_scope_version TEXT,
       original_content TEXT,
       file_existed INTEGER NOT NULL,
+      post_write_digest TEXT,
+      restored_from TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `);
   safeAlter(db, `ALTER TABLE file_checkpoints ADD COLUMN source_id TEXT`, logger);
   safeAlter(db, `ALTER TABLE file_checkpoints ADD COLUMN workspace_scope_version TEXT`, logger);
+  safeAlter(db, `ALTER TABLE file_checkpoints ADD COLUMN post_write_digest TEXT`, logger);
+  safeAlter(db, `ALTER TABLE file_checkpoints ADD COLUMN restored_from TEXT`, logger);
 
   // Session Events 表 (完整 SSE 事件日志，用于评测分析)
   db.exec(`

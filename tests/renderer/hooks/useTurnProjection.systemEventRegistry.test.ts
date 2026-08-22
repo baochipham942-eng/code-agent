@@ -49,6 +49,15 @@ const SAMPLE_PAYLOADS: { [K in UserVisibleSystemEventKey]: NonNullable<MessageMe
   voiceWorkFailure: { workItemId: WORK_ITEM_ID, title: '买菜' },
   voiceWorkSettled: { workItemId: WORK_ITEM_ID, title: '买菜', outcome: 'done' },
   agentRecoveryNotice: { kind: 'vision_tool_unsupported' },
+  turnCheckoutNote: {
+    operation: 'checkout',
+    state: 'success',
+    done: ['workspace', 'conversation', 'manifest', 'evidence'],
+    failed: [],
+    skippedFiles: [],
+    changedFileCount: 2,
+    externalSideEffectsWarning: 'Changes caused by external commands are not rolled back.',
+  },
 };
 
 function systemEventMessage<K extends UserVisibleSystemEventKey>(key: K): Message {

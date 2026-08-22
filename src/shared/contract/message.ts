@@ -351,6 +351,16 @@ export interface MessageMetadata {
   agentRecoveryNotice?: {
     kind: 'vision_tool_unsupported' | 'artifact_stream_retry' | 'vision_preflight_used' | 'unresolved_tasks';
   };
+  /** User-visible audit note for atomic turn checkout / Redo, including partial outcomes. */
+  turnCheckoutNote?: {
+    operation: 'checkout' | 'redo';
+    state: 'success' | 'partial';
+    done: string[];
+    failed: Array<{ step: string; reason: string; filePath?: string }>;
+    skippedFiles: Array<{ filePath: string; reason: string; detail: string }>;
+    changedFileCount: number;
+    externalSideEffectsWarning: string;
+  };
   /** 后台任务统一终态投影，供后续 turn 做短名指代与状态追问。 */
   backgroundTaskResult?: {
     source: 'agent-result';

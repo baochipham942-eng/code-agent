@@ -11,7 +11,21 @@ import {
 const mocks = vi.hoisted(() => ({
   rewindConversation: vi.fn(),
   restoreConversation: vi.fn(),
+  turnCheckout: vi.fn(),
+  turnRedo: vi.fn(),
   invalidateSessionCache: vi.fn(),
+}));
+
+vi.mock('../../../src/host/app/agentAppService', () => ({
+  AgentAppServiceImpl: class {
+    turnCheckout(...args: unknown[]) {
+      return mocks.turnCheckout(...args);
+    }
+
+    turnRedo(...args: unknown[]) {
+      return mocks.turnRedo(...args);
+    }
+  },
 }));
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
@@ -81,6 +95,20 @@ describe('Web session Rewind projection parity', () => {
     });
     mocks.restoreConversation.mockResolvedValue({
       rewindId: 'rewind-1',
+      activeMessages: cachedHistory(),
+    });
+    mocks.turnCheckout.mockResolvedValue({
+      success: true,
+      state: 'success',
+      sessionId: 'session-1',
+      rewindId: 'rewind-atomic-1',
+      activeMessages: cachedHistory().slice(0, 1),
+    });
+    mocks.turnRedo.mockResolvedValue({
+      success: true,
+      state: 'success',
+      sessionId: 'session-1',
+      rewindId: 'rewind-atomic-1',
       activeMessages: cachedHistory(),
     });
   });
@@ -165,5 +193,37 @@ describe('Web session Rewind projection parity', () => {
     });
     expect(mocks.invalidateSessionCache).not.toHaveBeenCalled();
     expect(sessionMessagesProjection.has('session-1')).toBe(true);
+  });
+
+  it('invalidates Web projections after atomic checkout and Redo', async () => {
+    const handler = installHandler();
+    sessionMessagesProjection.set('session-1', cachedHistory());
+
+    await expect(handler({}, {
+      action: 'turnCheckout',
+      payload: {
+        sessionId: 'session-1',
+        userMessageId: 'u2',
+        idempotencyKey: 'checkout-web-1',
+      },
+    })).resolves.toMatchObject({ success: true });
+    expect(mocks.turnCheckout).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      userMessageId: 'u2',
+      idempotencyKey: 'checkout-web-1',
+    });
+    expect(sessionMessagesProjection.has('session-1')).toBe(false);
+
+    sessionMessagesProjection.set('session-1', cachedHistory().slice(0, 1));
+    await expect(handler({}, {
+      action: 'turnRedo',
+      payload: { sessionId: 'session-1', rewindId: 'rewind-atomic-1' },
+    })).resolves.toMatchObject({ success: true });
+    expect(mocks.turnRedo).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      rewindId: 'rewind-atomic-1',
+    });
+    expect(sessionMessagesProjection.has('session-1')).toBe(false);
+    expect(mocks.invalidateSessionCache).toHaveBeenCalledTimes(2);
   });
 });

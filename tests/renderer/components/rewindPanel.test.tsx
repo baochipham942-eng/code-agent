@@ -34,10 +34,19 @@ beforeEach(() => {
   mocks.invokeDomain.mockReset();
   mocks.invokeDomain.mockResolvedValue({
     success: true,
-    restoredFileCount: 1,
-    deletedFileCount: 0,
-    workspaceChanged: true,
-    conversationChanged: false,
+    state: 'success',
+    sessionId: 'sess-1',
+    rewindId: 'rewind-1',
+    done: ['workspace', 'conversation', 'manifest', 'evidence', 'note'],
+    failed: [],
+    skippedFiles: [],
+    restoredFiles: ['/workspace/a.ts'],
+    deletedFiles: [],
+    activeMessages: [],
+    hiddenMessageCount: 1,
+    staleEvidenceCount: 1,
+    redoAvailable: true,
+    externalSideEffectsWarning: 'Changes caused by external commands are not rolled back.',
   });
 });
 
@@ -55,10 +64,10 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
 
     expect(html).toContain('role="dialog"');
     expect(html).toContain('aria-modal="true"');
-    expect(html).toContain('恢复工作区文件');
+    expect(html).toContain('回到这一轮');
     expect(html).toContain('暂无可用检查点');
     expect(html).toContain('取消');
-    expect(html).toContain('恢复文件');
+    expect(html).toContain('仅恢复文件');
   });
 
   it('puts checkpoint rows in the Tab order and previews on Enter', async () => {
@@ -67,6 +76,7 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
         {
           id: 'checkpoint-1',
           messageId: 'message-1',
+          anchorUserMessageId: 'user-1',
           timestamp: 1,
           description: 'Before edit',
           fileCount: 1,
@@ -94,7 +104,7 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
   it('confirms the final rewind without interrupting checkpoint selection', async () => {
     mocks.invoke
       .mockResolvedValueOnce([
-        { id: 'checkpoint-1', messageId: 'message-1', timestamp: 1, description: 'Before edit', fileCount: 1 },
+        { id: 'checkpoint-1', messageId: 'message-1', anchorUserMessageId: 'user-1', timestamp: 1, description: 'Before edit', fileCount: 1 },
       ])
       .mockResolvedValueOnce([]);
     const onClose = vi.fn();
@@ -104,26 +114,27 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(2));
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole('button', { name: '恢复文件' }));
+    fireEvent.click(screen.getByRole('button', { name: '回到这一轮' }));
     expect(screen.getAllByRole('dialog')).toHaveLength(2);
     expect(mocks.invokeDomain).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: '取消恢复' }));
     expect(mocks.invokeDomain).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: '恢复文件' }));
-    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }));
+    fireEvent.click(screen.getByRole('button', { name: '回到这一轮' }));
+    fireEvent.click(screen.getAllByRole('button', { name: '回到这一轮' }).at(-1)!);
     await waitFor(() => {
       expect(mocks.invokeDomain).toHaveBeenCalledWith(
         IPC_DOMAINS.SESSION,
-        'restoreWorkspaceFilesAtCheckpoint',
-        {
+        'turnCheckout',
+        expect.objectContaining({
           sessionId: 'sess-1',
-          checkpointMessageId: 'message-1',
-        },
+          userMessageId: 'user-1',
+        }),
       );
     });
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('文件和对话已一起回去')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
     expect(mocks.invoke).not.toHaveBeenCalledWith(
       IPC_CHANNELS.CHECKPOINT_REWIND,
       expect.anything(),
@@ -134,7 +145,7 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
   it('shows rewind failures inside the panel and leaves retry available', async () => {
     mocks.invoke
       .mockResolvedValueOnce([
-        { id: 'checkpoint-1', messageId: 'message-1', timestamp: 1, description: 'Before edit', fileCount: 1 },
+        { id: 'checkpoint-1', messageId: 'message-1', anchorUserMessageId: 'user-1', timestamp: 1, description: 'Before edit', fileCount: 1 },
       ])
       .mockResolvedValueOnce([]);
     mocks.invokeDomain.mockRejectedValueOnce(new Error('workspace locked'));
@@ -143,11 +154,11 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Before edit/ }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(2));
-    fireEvent.click(screen.getByRole('button', { name: '恢复文件' }));
+    fireEvent.click(screen.getByRole('button', { name: '仅恢复文件' }));
     fireEvent.click(screen.getByRole('button', { name: '确认恢复' }));
 
     expect(await screen.findByText(/workspace locked/)).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: '恢复文件' }).getAttribute('disabled')).toBeNull();
+    expect(screen.getByRole('button', { name: '仅恢复文件' }).getAttribute('disabled')).toBeNull();
   });
 });

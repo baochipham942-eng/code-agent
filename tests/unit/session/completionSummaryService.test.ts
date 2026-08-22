@@ -6,6 +6,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import type { Message } from '../../../src/shared/contract';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
+import { EVIDENCE_INVALIDATION_RECORD_TYPE } from '../../../src/shared/contract/evidenceInvalidation';
 
 const mockConfig = vi.hoisted(() => ({
   userConfigDir: '',
@@ -258,6 +259,45 @@ describe('completionSummaryService', () => {
 
       const missing = await readLatestCompletionSummaryRecord('missing-session');
       expect(missing).toBeNull();
+    } finally {
+      await rm(workingDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it('projects append-only evidence invalidations over old records without staling later runs', async () => {
+    const workingDirectory = await makeGitWorkdir();
+    try {
+      const oldRecord = await buildCompletionSummaryRecord({
+        ctx: makeRuntimeContext(workingDirectory, [], 'session-1'),
+        status: 'completed',
+        iterations: 1,
+        userMessage: 'Old run',
+      });
+      const laterRecord = await buildCompletionSummaryRecord({
+        ctx: makeRuntimeContext(workingDirectory, [], 'session-1'),
+        status: 'completed',
+        iterations: 1,
+        userMessage: 'Later run',
+      });
+      const invalidation = {
+        schemaVersion: 1,
+        recordType: EVIDENCE_INVALIDATION_RECORD_TYPE,
+        sessionId: 'session-1',
+        createdAt: Date.now(),
+        changedFilePaths: [path.join(workingDirectory, 'src', 'a.ts')],
+        invalidateRunEvidence: true,
+      } as const;
+      await writeFile(
+        path.join(tempRoot, 'completion-summaries.jsonl'),
+        `${JSON.stringify(oldRecord)}\n${JSON.stringify(invalidation)}\n${JSON.stringify(laterRecord)}\n`,
+        'utf-8',
+      );
+
+      const records = await readCompletionSummaryRecordsBySession('session-1');
+      expect(records[0].id).toBe(laterRecord.id);
+      expect(records[0].evidenceInvalidatedAt).toBeUndefined();
+      expect(records[1].id).toBe(oldRecord.id);
+      expect(records[1].evidenceInvalidatedAt).toBe(invalidation.createdAt);
     } finally {
       await rm(workingDirectory, { recursive: true, force: true });
     }

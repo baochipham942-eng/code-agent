@@ -28,6 +28,8 @@ export interface CompletionSummaryVerificationEvidence {
   success: boolean;
   exitCode?: number | null;
   outputPreview?: string;
+  /** Persisted evidence identity/freshness; absent on pre-N-TURNCHECKOUT records. */
+  evidenceRef?: import('./evidence').EvidenceRef;
 }
 
 export interface CompletionSummaryDirtyState {
@@ -93,4 +95,6 @@ export interface CompletionSummaryRecord {
   blockers: string[];
   artifactRefs: CompletionSummaryArtifactRef[];
   visibleFinalAnswer?: CompletionSummaryVisibleFinalAnswerRef;
+  /** Projection of an append-only turn-checkout invalidation record. */
+  evidenceInvalidatedAt?: number;
 }

@@ -24,6 +24,8 @@ export * from './sessionFork';
 export * from './sessionForkPortability';
 export * from './conversationHistory';
 export * from './sessionRewind';
+export * from './turnCheckout';
+export * from './evidenceInvalidation';
 export * from './project';
 export * from './workspace';
 export * from './workspacePreview';

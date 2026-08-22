@@ -20,6 +20,11 @@ import type {
   ToolCall,
   ToolResult,
 } from '../../shared/contract';
+import { makeEvidenceRef, type EvidenceKind } from '../../shared/contract/evidence';
+import {
+  isEvidenceInvalidationRecord,
+  markDurableRecordInvalidated,
+} from '../../shared/contract/evidenceInvalidation';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { getProjectSourceGitStates } from '../services/git/gitStatusService';
 
@@ -38,8 +43,14 @@ export interface BuildCompletionSummaryInput {
   error?: unknown;
 }
 
-function getCompletionSummaryPath(): string {
+export function getCompletionSummaryPath(): string {
   return path.join(getUserConfigDir(), COMPLETION_SUMMARY_FILE);
+}
+
+function verificationEvidenceKind(command: string): EvidenceKind {
+  if (/\btypecheck\b|tsc(?:\s|$)/i.test(command)) return 'typecheck';
+  if (/\bbuild\b/i.test(command)) return 'build';
+  return 'test';
 }
 
 function compactText(value: string | undefined, maxLength: number): string | undefined {
@@ -138,6 +149,13 @@ function collectVerificationEvidence(commands: CompletionSummaryCommand[]): Comp
       success: command.success,
       exitCode: command.exitCode,
       outputPreview: command.outputPreview,
+      evidenceRef: makeEvidenceRef({
+        id: command.toolCallId,
+        kind: verificationEvidenceKind(command.command),
+        ref: `${command.cwd ?? ''}$ ${command.command}`.trim(),
+        source: 'completionSummary.verification',
+        state: 'fresh',
+      }),
     }));
 }
 
@@ -344,17 +362,33 @@ export async function persistCompletionSummaryRecord(record: CompletionSummaryRe
 async function readCompletionSummaryFile(): Promise<CompletionSummaryRecord[]> {
   try {
     const content = await fs.readFile(getCompletionSummaryPath(), 'utf-8');
-    return content
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .flatMap((line) => {
-        try {
-          return [JSON.parse(line) as CompletionSummaryRecord];
-        } catch {
-          return [];
+    const records: CompletionSummaryRecord[] = [];
+    for (const line of content.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const value = JSON.parse(line) as unknown;
+        if (isEvidenceInvalidationRecord(value)) {
+          for (let index = 0; index < records.length; index += 1) {
+            if (records[index].sessionId === value.sessionId) {
+              records[index] = markDurableRecordInvalidated(records[index], value);
+            }
+          }
+          continue;
         }
-      });
+        if (
+          value
+          && typeof value === 'object'
+          && !Array.isArray(value)
+          && (value as { schemaVersion?: unknown }).schemaVersion === 1
+          && typeof (value as { sessionId?: unknown }).sessionId === 'string'
+        ) {
+          records.push(value as CompletionSummaryRecord);
+        }
+      } catch {
+        // Malformed historical lines remain ignored.
+      }
+    }
+    return records;
   } catch {
     return [];
   }
@@ -402,7 +436,9 @@ export function formatCompletionSummaryForHandoff(record: CompletionSummaryRecor
   if (record.verificationEvidence.length > 0) {
     lines.push('verification:');
     for (const evidence of record.verificationEvidence.slice(0, 10)) {
-      lines.push(`- ${evidence.success ? 'pass' : 'fail'} exit=${evidence.exitCode ?? 'unknown'} command=${escapeHandoffText(evidence.command)}`);
+      const stale = evidence.evidenceRef?.freshness.state === 'stale'
+        || record.evidenceInvalidatedAt !== undefined;
+      lines.push(`- ${stale ? 'stale' : evidence.success ? 'pass' : 'fail'} exit=${evidence.exitCode ?? 'unknown'} command=${escapeHandoffText(evidence.command)}`);
     }
   }
 

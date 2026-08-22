@@ -413,10 +413,24 @@ describe('IPC Handlers', () => {
         workspaceChanged: true,
         conversationChanged: false,
       };
+      const checkoutResult = {
+        success: true,
+        state: 'success',
+        sessionId: 'session-1',
+        rewindId: 'rewind-atomic-1',
+      };
+      const redoResult = {
+        success: true,
+        state: 'success',
+        sessionId: 'session-1',
+        rewindId: 'rewind-atomic-1',
+      };
       const mockAppService = {
         rewindConversation: vi.fn().mockResolvedValue(rewindResult),
         restoreConversationRewind: vi.fn().mockResolvedValue(restoreResult),
         restoreWorkspaceFilesAtCheckpoint: vi.fn().mockResolvedValue(fileRestoreResult),
+        turnCheckout: vi.fn().mockResolvedValue(checkoutResult),
+        turnRedo: vi.fn().mockResolvedValue(redoResult),
       };
       registerSessionHandlers(ipc.mock, () => mockAppService as any);
 
@@ -437,6 +451,18 @@ describe('IPC Handlers', () => {
         action: 'restoreWorkspaceFilesAtCheckpoint',
         payload: { sessionId: 'session-1', checkpointMessageId: 'a2' },
       })).resolves.toEqual({ success: true, data: fileRestoreResult });
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'turnCheckout',
+        payload: {
+          sessionId: 'session-1',
+          userMessageId: 'u2',
+          idempotencyKey: 'checkout-request-1',
+        },
+      })).resolves.toEqual({ success: true, data: checkoutResult });
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'turnRedo',
+        payload: { sessionId: 'session-1', rewindId: 'rewind-atomic-1' },
+      })).resolves.toEqual({ success: true, data: redoResult });
       expect(mockAppService.rewindConversation).toHaveBeenCalledWith(rewindPayload);
       expect(mockAppService.restoreConversationRewind).toHaveBeenCalledWith({
         sessionId: 'session-1',
@@ -445,6 +471,15 @@ describe('IPC Handlers', () => {
       expect(mockAppService.restoreWorkspaceFilesAtCheckpoint).toHaveBeenCalledWith({
         sessionId: 'session-1',
         checkpointMessageId: 'a2',
+      });
+      expect(mockAppService.turnCheckout).toHaveBeenCalledWith({
+        sessionId: 'session-1',
+        userMessageId: 'u2',
+        idempotencyKey: 'checkout-request-1',
+      });
+      expect(mockAppService.turnRedo).toHaveBeenCalledWith({
+        sessionId: 'session-1',
+        rewindId: 'rewind-atomic-1',
       });
     });
 

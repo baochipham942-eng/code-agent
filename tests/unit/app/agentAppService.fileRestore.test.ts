@@ -74,6 +74,7 @@ describe('AgentAppService explicit workspace file restore', () => {
       success: true,
       restoredFiles: ['/workspace/file.ts'],
       deletedFiles: ['/workspace/new-file.ts'],
+      skippedFiles: [],
       errors: [],
     });
 
@@ -120,6 +121,7 @@ describe('AgentAppService explicit workspace file restore', () => {
       success: false,
       restoredFiles: ['/workspace/partial.ts'],
       deletedFiles: [],
+      skippedFiles: [],
       errors: [{ filePath: '/workspace/failed.ts', error: 'injected write failure' }],
     });
 

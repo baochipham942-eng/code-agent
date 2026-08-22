@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { turnDiffEn, turnDiffZh } from './turnDiff';
+import { turnCheckoutChatEn, turnCheckoutChatZh } from './turnCheckout';
 
 export const chatTranscriptZh = {
 chat: {
@@ -44,14 +45,15 @@ chat: {
   configureModelKeyFirst: '当前主任务模型未配置 API Key，请切换到已配置的模型后再发送。',
   configureModelFirst: '先配置一个模型后再发送。',
   rewindWhileRunning: '会话还在运行，先停止后再回退。',
-  rewindSuccess: '已回退到这条提示词；当前工作区文件保持不变。',
-  rewindSuccessWithPrompt: '已回退到「{prompt}」；当前工作区文件保持不变。',
+  rewindSuccess: '已回到这一轮；可以反悔。',
+  rewindSuccessWithPrompt: '已回到「{prompt}」；可以反悔。',
   rewindRestoreAction: '恢复对话',
+  ...turnCheckoutChatZh,
   rewindRestored: '已恢复 {count} 条历史消息。',
-  rewindConfirmTitle: '回到这条提示词？',
-  rewindConfirmLine1: '会软隐藏这条提示词及之后的对话，历史仍保留并可恢复。',
-  rewindConfirmLine2: '当前工作区文件不会改变；文件恢复需要通过独立操作完成。',
-  rewindConfirmAction: '确认回退',
+  rewindConfirmTitle: '回到这一轮？',
+  rewindConfirmLine1: '文件和对话会一起回到这一轮开始前，后缀历史仍保留，可以反悔。',
+  rewindConfirmLine2: '检测到人工编辑的文件不会被覆盖。外部命令造成的改动不会回滚。',
+  rewindConfirmAction: '回到这一轮',
   rewindInProgress: '回退中…',
   streamInterruptedTitle: '上次回复在流式输出中断',
   streamInterruptedToolCalls: '{count} 个 tool call 只保留为恢复快照，未执行：{names}',
@@ -603,14 +605,15 @@ chat: {
   configureModelKeyFirst: 'The main task model has no API key configured. Switch to a configured model before sending.',
   configureModelFirst: 'Configure a model before sending.',
   rewindWhileRunning: 'The session is still running. Stop it before rewinding.',
-  rewindSuccess: 'Rewound to this prompt; current workspace files are unchanged.',
-  rewindSuccessWithPrompt: 'Rewound to "{prompt}"; current workspace files are unchanged.',
+  rewindSuccess: 'Went back to this turn; you can undo it.',
+  rewindSuccessWithPrompt: 'Went back to "{prompt}"; you can undo it.',
   rewindRestoreAction: 'Restore conversation',
+  ...turnCheckoutChatEn,
   rewindRestored: 'Restored {count} history messages.',
-  rewindConfirmTitle: 'Rewind to this prompt?',
-  rewindConfirmLine1: 'This prompt and everything after it will be softly hidden; history remains recoverable.',
-  rewindConfirmLine2: 'Current workspace files stay unchanged; restoring files is a separate explicit action.',
-  rewindConfirmAction: 'Rewind',
+  rewindConfirmTitle: 'Go back to this turn?',
+  rewindConfirmLine1: 'Files and conversation go back together to the start of this turn. The suffix stays recoverable, so you can undo it.',
+  rewindConfirmLine2: 'Files with manual edits are not overwritten. Changes caused by external commands are not rolled back.',
+  rewindConfirmAction: 'Go back to this turn',
   rewindInProgress: 'Rewinding…',
   streamInterruptedTitle: 'The last reply was interrupted mid-stream',
   streamInterruptedToolCalls: '{count} tool calls were kept as a recovery snapshot and not executed: {names}',

@@ -39,6 +39,7 @@ describe('AgentEvent filters', () => {
       'artifact_write_started',
       'error',
       'permission_request',
+      'subagent_run_end',
       'tool_call_end',
       'turn_diff',
       'turn_end',

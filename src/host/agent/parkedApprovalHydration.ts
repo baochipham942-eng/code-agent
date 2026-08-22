@@ -16,7 +16,7 @@ import { createLogger } from '../services/infra/logger';
 const logger = createLogger('ParkedApprovalHydration');
 
 /** 停车挂起类审批的 kind 全集；plan/launch 各有自己的 gate hydrate，不在此列。 */
-const PARKED_KINDS = ['tool_approval', 'directory_access'] as const;
+const PARKED_KINDS = ['tool_approval', 'directory_access', 'channel_pairing'] as const;
 
 /**
  * 启动 hydrate 一站式：plan / launch 走各自 gate 的 attachPersistence（行为不变），

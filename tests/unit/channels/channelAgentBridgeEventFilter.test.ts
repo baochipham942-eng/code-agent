@@ -7,6 +7,19 @@ import {
   type AgentEventFilter,
 } from '../../../src/host/protocol/events/eventFilter';
 
+vi.mock('../../../src/host/tools/dispatch/toolDefinitions', () => ({
+  getAllToolDefinitions: () => [
+    { name: 'Read', permissionLevel: 'read', source: 'builtin' },
+    { name: 'Bash', permissionLevel: 'execute', source: 'builtin' },
+    { name: 'BrowserNavigate', permissionLevel: 'read', source: 'builtin' },
+    { name: 'ComputerUse', permissionLevel: 'read', source: 'builtin' },
+    { name: 'Write', permissionLevel: 'write', source: 'builtin' },
+    { name: 'mcp__demo__read', permissionLevel: 'read', source: 'mcp' },
+    { name: 'CronCreate', permissionLevel: 'read', source: 'builtin' },
+    { name: 'delegate_task', permissionLevel: 'read', source: 'builtin' },
+  ],
+}));
+
 interface ChannelAgentBridgeHarness {
   handleSyncMessage(
     accountId: string,
@@ -15,6 +28,7 @@ interface ChannelAgentBridgeHarness {
     attachments: undefined,
     responseCallback: ChannelResponseCallback,
   ): Promise<void>;
+  getSessionKey(accountId: string, message: ChannelMessage): string;
 }
 
 describe('ChannelAgentBridge event declaration', () => {
@@ -57,5 +71,61 @@ describe('ChannelAgentBridge event declaration', () => {
     expect(shouldDeliverAgentEvent('stream_chunk', declaredFilter)).toBe(false);
     expect(shouldDeliverAgentEvent('permission_request', declaredFilter)).toBe(true);
     expect(shouldDeliverAgentEvent('subagent_run_end', declaredFilter)).toBe(true);
+  });
+
+  it('passes guest sessions a physically narrowed read-only tool allowlist', async () => {
+    let allowedToolNames: string[] | undefined;
+    const orchestrator = {
+      getMessages: vi.fn()
+        .mockReturnValueOnce([])
+        .mockReturnValueOnce([{ role: 'assistant', content: 'done' }]),
+      sendMessage: vi.fn(async (
+        _content: string,
+        _attachments: unknown,
+        options: { allowedToolNames?: string[] } | undefined,
+      ) => {
+        allowedToolNames = options?.allowedToolNames;
+      }),
+    };
+    const responseCallback: ChannelResponseCallback = {
+      sendText: vi.fn(async () => ({ success: true })),
+    };
+    const message: ChannelMessage = {
+      id: 'guest-message',
+      channelId: 'feishu-1',
+      sender: { id: 'guest-1', name: 'Guest' },
+      context: { chatId: 'group-1', chatType: 'group' },
+      content: 'hello',
+      timestamp: 1,
+      ingressAuth: 'guest',
+    };
+    const bridge = new ChannelAgentBridge({ configService: {} as never });
+
+    await (bridge as unknown as ChannelAgentBridgeHarness).handleSyncMessage(
+      'account-1', message, orchestrator, undefined, responseCallback,
+    );
+
+    expect(allowedToolNames).toEqual(['Read']);
+    expect(allowedToolNames).not.toEqual(expect.arrayContaining([
+      'Bash', 'BrowserNavigate', 'ComputerUse', 'Write', 'mcp__demo__read',
+      'CronCreate', 'delegate_task',
+    ]));
+  });
+
+  it('keeps paired and guest conversations on different session keys', () => {
+    const bridge = new ChannelAgentBridge({ configService: {} as never }) as unknown as ChannelAgentBridgeHarness;
+    const base: ChannelMessage = {
+      id: 'message',
+      channelId: 'feishu-1',
+      sender: { id: 'sender', name: 'Sender' },
+      context: { chatId: 'group-1', chatType: 'group' },
+      content: 'hello',
+      timestamp: 1,
+    };
+
+    expect(bridge.getSessionKey('account-1', { ...base, ingressAuth: 'guest' }))
+      .toBe('account-1:group-1:auth=guest');
+    expect(bridge.getSessionKey('account-1', { ...base, ingressAuth: 'paired' }))
+      .toBe('account-1:group-1:auth=paired');
   });
 });

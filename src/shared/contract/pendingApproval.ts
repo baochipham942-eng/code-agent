@@ -7,6 +7,7 @@
 //   - kind = 'launch'           → SwarmLaunchApprovalGate.requests
 //   - kind = 'tool_approval'    → AgentOrchestrator 无人值守停车挂起（B2）
 //   - kind = 'directory_access' → request_directory 工具的目录授权停车挂起
+//   - kind = 'channel_pairing'  → 飞书/Lark 私聊发送者配对
 //     （复用 B2 同一套停车/收件箱/first-responder-wins 机制，payload 复用
 //     ToolApprovalPayload；不论 attended/unattended 一律停车，见
 //     AgentOrchestrator.requestPermission 的 directory_access 分支）
@@ -16,7 +17,7 @@
 // 必须显式 retry 或 cancel 才能放行后续流程。
 // ============================================================================
 
-export type PendingApprovalKind = 'plan' | 'launch' | 'tool_approval' | 'directory_access';
+export type PendingApprovalKind = 'plan' | 'launch' | 'tool_approval' | 'directory_access' | 'channel_pairing';
 
 /**
  * kind='tool_approval' 停车行的 payload（B2）。无人值守会话的工具审批请求超时不再 deny，
@@ -51,6 +52,7 @@ export interface ToolApprovalPayload {
 /** 收件箱「等待批准的操作」分组的行数据（B2）。id=requestId，回传 permissionResponse 用。 */
 export interface ParkedApprovalInboxItem {
   id: string;
+  kind?: 'tool_approval' | 'directory_access' | 'channel_pairing';
   sessionId: string | null;
   tool: string;
   displayTool?: string;
@@ -61,6 +63,9 @@ export interface ParkedApprovalInboxItem {
   riskClass?: string | null;
   /** B4 授权目标精确串；非空 = 可铸造 target 粒度长期授权（出「每次都允许发 <target>」按钮） */
   standingGrantTarget?: string | null;
+  pairingCode?: string;
+  pairingSender?: string;
+  pairingChannel?: 'feishu' | 'lark';
 }
 
 /**

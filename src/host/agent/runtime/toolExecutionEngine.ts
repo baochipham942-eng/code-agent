@@ -765,6 +765,9 @@ export class ToolExecutionEngine {
         {
           runId: this.ctx.runId,
           turnId: this.ctx.turn.currentTurnId,
+          sourceMessageId: [...this.ctx.messages]
+            .reverse()
+            .find((message) => message.role === 'user')?.id,
           turnTrace: this.ctx.turnTrace,
           planningService: this.ctx.planningService,
           modelConfig: this.ctx.modelConfig,

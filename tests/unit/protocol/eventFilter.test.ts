@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BACKGROUND_AGENT_EXPERIMENTAL_EVENT_TYPES,
   BACKGROUND_AGENT_EVENT_FILTER,
   shouldDeliverAgentEvent,
 } from '../../../src/host/protocol/events/eventFilter';
@@ -44,6 +43,5 @@ describe('AgentEvent filters', () => {
       'turn_end',
       'turn_start',
     ]);
-    expect(BACKGROUND_AGENT_EXPERIMENTAL_EVENT_TYPES).toEqual(['turn_diff']);
   });
 });

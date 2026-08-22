@@ -44,7 +44,7 @@ const BACKGROUND_STABLE_EVENT_TYPES = [...STABLE_EVENT_TYPES]
   .filter((type) => BACKGROUND_STABLE_EVENT_TYPE_ALLOWLIST.has(type));
 
 /** Experimental events intentionally delivered to unattended consumers. */
-export const BACKGROUND_AGENT_EXPERIMENTAL_EVENT_TYPES: readonly AgentEventType[] = [
+const BACKGROUND_AGENT_EXPERIMENTAL_EVENT_TYPES: readonly AgentEventType[] = [
   'turn_diff',
 ];
 

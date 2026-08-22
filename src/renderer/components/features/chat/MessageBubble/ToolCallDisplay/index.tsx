@@ -29,6 +29,14 @@ import {
 } from '../../../../../utils/askUserQuestionRecord';
 import { useI18n } from '../../../../../hooks/useI18n';
 import type { Translations } from '../../../../../i18n';
+import { useBackgroundTaskStore } from '../../../../../stores/backgroundTaskStore';
+import { useAgentTreeSnapshot } from '../../../../../hooks/useAgentTreeSnapshot';
+import { isDelegationTool } from '../../../../../utils/agentActivity';
+import { DelegationHeader, DelegationReceipt } from './DelegationReceipt';
+import {
+  deriveDelegationPresentation,
+  resolveAgentActivityTarget,
+} from './delegationPresentation';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -111,16 +119,42 @@ export function ToolCallDisplay({
   const processingSessionIds = useAppStore(
     (state) => state.processingSessionIds
   );
+  const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
+  const sessionId = mediaContext?.sessionId || currentSessionId;
+  const delegationTool = isDelegationTool(toolCall.name);
+  const { snapshot: agentTree } = useAgentTreeSnapshot(
+    sessionId ?? null,
+    delegationTool && toolCall.name === 'spawn_agent',
+  );
+  const delegationPresentation = useMemo(() => {
+    if (!delegationTool) return null;
+    const presentation = deriveDelegationPresentation(
+      toolCall,
+      backgroundTasks,
+      agentTree?.nodes ?? [],
+    );
+    if (!presentation) return null;
+    return {
+      ...presentation,
+      lastToolStep: resolveAgentActivityTarget(
+        presentation.lastToolStep,
+        agentTree?.nodes ?? [],
+      ),
+    };
+  }, [agentTree?.nodes, backgroundTasks, delegationTool, toolCall]);
 
   // Calculate status
   const status: ToolStatus = useMemo(() => {
+    if (delegationPresentation?.state === 'working') return 'pending';
+    if (delegationPresentation?.state === 'completed') return 'success';
+    if (delegationPresentation?.state === 'failed') return 'error';
     return getToolStatus(toolCall, currentSessionId, processingSessionIds);
-  }, [toolCall, currentSessionId, processingSessionIds]);
+  }, [delegationPresentation?.state, toolCall, currentSessionId, processingSessionIds]);
 
   // 探索性失败（工具未安装、非零退出码、超时等未分类错误）是 agent 试错的正常一部分，
   // 不是需要用户关注的错误——安静展示，跟成功行视觉权重接近。真正需要用户介入的错误
   // （鉴权失效/额度耗尽/限流）保留醒目红色样式。
-  const quietError = status === 'error' && !isEscalatedToolError(toolCall);
+  const quietError = status === 'error' && !delegationPresentation && !isEscalatedToolError(toolCall);
 
   // 工具行默认折叠（含 error）：失败回合常常一连十几条同样的报错，全展开会糊成
   // 一面墙（2026-06-25 dogfood：工件修复死锁 trace 不可读）。折叠态仍保留红左边框 +
@@ -190,14 +224,18 @@ export function ToolCallDisplay({
         }}
       >
         <StatusIndicator status={status} quietError={quietError} />
-        <ToolHeader toolCall={toolCall} status={status} showDetailName={expanded} />
+        {delegationPresentation
+          ? <DelegationHeader presentation={delegationPresentation} />
+          : <ToolHeader toolCall={toolCall} status={status} showDetailName={expanded} />}
       </div>
 
-      {actionPreview && (
+      {delegationPresentation && <DelegationReceipt presentation={delegationPresentation} />}
+
+      {!delegationPresentation && actionPreview && (
         <BrowserComputerActionPreviewLine preview={actionPreview} />
       )}
 
-      {!compact && (expanded || (status !== 'success' && !quietError)) && (
+      {!compact && !delegationPresentation && (expanded || (status !== 'success' && !quietError)) && (
         <ToolExecutionMetaRow toolCall={toolCall} status={status} quietError={quietError} />
       )}
 
@@ -215,7 +253,7 @@ export function ToolCallDisplay({
       )}
 
       {/* Result summary line - hidden by default, show on hover or when expanded */}
-      {toolCall.result && !expanded && !isBashTool(toolCall) && (
+      {toolCall.result && !delegationPresentation && !expanded && !isBashTool(toolCall) && (
         <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
           <ResultSummary toolCall={toolCall} />
         </div>

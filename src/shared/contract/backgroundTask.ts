@@ -72,11 +72,20 @@ export interface TaskFailure {
   category?: string;
 }
 
+export interface LastToolStep {
+  tool: string;
+  toolIndex?: number;
+  toolTotal?: number;
+  target?: string;
+  at: number;
+}
+
 export interface TaskProgress {
   current?: number;
   total?: number;
   percent?: number;
   label?: string;
+  lastToolStep?: LastToolStep;
 }
 
 export interface TaskNotification {

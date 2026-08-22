@@ -140,6 +140,7 @@ export * from './persistence';
 export * from './buildInfo';
 export * from './desktopShell';
 export * from './turnCost';
+export * from './turnDiff';
 export * from './capabilityCandidate';
 
 // Conversation envelope types (chat-native workbench context)

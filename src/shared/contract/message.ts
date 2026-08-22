@@ -10,6 +10,7 @@ import type { SessionAutomationMessageMetadata } from './sessionAutomation';
 import type { ArtifactLocatorV1 } from './artifactLocator';
 import type { NormalizedToolArtifactMeta } from './artifactBlob';
 import type { VoiceCallFailureCode, VoiceCallFailurePhase, VoiceCallSummary, VoiceToolCallOrigin } from './voice';
+import type { TurnDiffEventData } from './turnDiff';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageVisibility = 'active' | 'rewound';
@@ -289,6 +290,8 @@ export interface MessageMetadata {
     turnId: string;
     traceId?: string;
   };
+  /** Backend-authoritative filesystem diff captured when this run finishes. */
+  turnDiff?: TurnDiffEventData;
   /**
    * 方案 §8.2 的用户输入来源；缺省视为 typed。
    * 注意：Message 顶层 source 是系统生产者来源，这是另一条轴。

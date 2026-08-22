@@ -22,6 +22,36 @@ function turnWithWrite(args: Record<string, unknown>, result = 'Created file: /x
 }
 
 describe('buildTurnFileChanges — Bug 1: diff line count on truncated Write content', () => {
+  it('prefers the backend turn_diff over lossy tool arguments', () => {
+    const turn = turnWithWrite({
+      file_path: '/x/generated.txt',
+      content: 'line 1...[truncated]...line 200',
+    });
+    turn.turnDiff = {
+      turnId: 'turn-1',
+      files: [{
+        filePath: '/x/generated.txt',
+        oldText: '',
+        newText: Array.from({ length: 200 }, (_, index) => `line ${index + 1}`).join('\n'),
+        added: 200,
+        removed: 0,
+        isNewFile: true,
+        editCount: 1,
+      }],
+    };
+
+    const change = buildTurnFileChanges(turn)[0];
+    expect(change.added).toBe(200);
+    expect(change.newText.split('\n')).toHaveLength(200);
+  });
+
+  it('treats an authoritative empty turn_diff as no net filesystem change', () => {
+    const turn = turnWithWrite({ file_path: '/x/no-op.txt', content: 'lossy fallback' });
+    turn.turnDiff = { turnId: 'turn-1', files: [] };
+
+    expect(buildTurnFileChanges(turn)).toEqual([]);
+  });
+
   it('uses authoritative content_lines when content was truncated to a fragment', () => {
     // 模拟事件流里被 sanitize 压成片段的 Write：content 是片段，content_lines 是真实行数
     const change = buildTurnFileChanges(

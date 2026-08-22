@@ -7,6 +7,10 @@ import { broadcastSSE, sendSSE } from '../helpers/sse';
 import type { AgentSessionManagerLike } from './agentRouteTypes';
 import type { WebRouteLogger } from './routeTypes';
 import type { RunHandle } from '../../host/runtime/runContext';
+import {
+  shouldDeliverAgentEvent,
+  type AgentEventFilter,
+} from '../../host/protocol/events/eventFilter';
 
 interface AgentRunControllerDeps {
   res: Response;
@@ -22,6 +26,7 @@ interface AgentRunControllerDeps {
    * 直连轮不能开：客户端已经从自己的响应流拿到了，再广播就是重复投递。
    */
   mirrorToBroadcast?: boolean;
+  eventFilter?: AgentEventFilter;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -147,10 +152,12 @@ export class AgentRunController {
     )
       ? this.messageAccumulator.getSnapshot(this.deps.sessionId, true)
       : null;
-    if (finalSnapshot) {
+    if (finalSnapshot && shouldDeliverAgentEvent('message_snapshot', this.deps.eventFilter)) {
       this.agentSSEBatcher.emit({ type: 'message_snapshot', data: finalSnapshot });
     }
-    this.agentSSEBatcher.emit(event);
+    if (shouldDeliverAgentEvent(event, this.deps.eventFilter)) {
+      this.agentSSEBatcher.emit(event);
+    }
     if (finalSnapshot) {
       this.messageAccumulator.clear(this.deps.sessionId);
     }

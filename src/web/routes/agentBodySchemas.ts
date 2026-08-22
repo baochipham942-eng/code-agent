@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { MessageAttachment } from '../../shared/contract/message';
 import type { ConversationEnvelopeContext } from '../../shared/contract/conversationEnvelope';
+import type { AgentEventFilter } from '../../host/protocol/events/eventFilter';
 
 const LooseObjectSchema = z.object({}).passthrough();
 
@@ -11,6 +12,11 @@ const MessageAttachmentBodySchema = LooseObjectSchema.transform(
 const ConversationEnvelopeContextBodySchema = LooseObjectSchema.transform(
   (value) => value as unknown as ConversationEnvelopeContext,
 );
+
+const AgentEventFilterBodySchema = z.object({
+  include: z.array(z.string().min(1)).optional(),
+  exclude: z.array(z.string().min(1)).optional(),
+}).transform((value) => value as AgentEventFilter);
 
 // /goal 自治模式契约。verify / review 至少给一个（设计 §4）：
 // - 只给 verify → 硬目标（闸1 确定性验证）
@@ -34,6 +40,7 @@ export const AgentRunBodySchema = z.object({
   sessionDir: z.string().optional(),
   model: z.string().optional(),
   provider: z.string().optional(),
+  eventFilter: AgentEventFilterBodySchema.optional(),
   sessionId: z.string().optional(),
   clientMessageId: z.string().optional(),
   attachments: z.array(MessageAttachmentBodySchema).optional(),

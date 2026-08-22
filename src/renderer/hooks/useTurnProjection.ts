@@ -500,6 +500,10 @@ export function projectTurns(
         turns.push(currentTurn);
       }
 
+      if (msg.metadata?.turnDiff) {
+        currentTurn.turnDiff = msg.metadata.turnDiff;
+      }
+
       const hasContent = msg.content && msg.content.trim().length > 0;
       const hasReasoning = Boolean(
         msg.reasoning?.trim().length || msg.thinking?.trim().length,

@@ -25,6 +25,21 @@ describe('AgentEventSchema', () => {
       },
     },
     { type: 'artifact_locator', data: { state: 'resolved', kind: 'document', reason: 'user-selected' } },
+    {
+      type: 'turn_diff',
+      data: {
+        turnId: 'turn-1',
+        files: [{
+          filePath: '/repo/generated.txt',
+          oldText: '',
+          newText: 'line 1\nline 2',
+          added: 2,
+          removed: 0,
+          isNewFile: true,
+          editCount: 1,
+        }],
+      },
+    },
     { type: 'agent_complete', data: null },
   ] as const;
 
@@ -58,9 +73,9 @@ describe('AgentEventSchema', () => {
 
   it('exports stability metadata and the stable type set from the same source', () => {
     const stabilityMetadata = AgentEventSchema.options.map((schema) => schema.meta()?.stability);
-    expect(stabilityMetadata).toHaveLength(66);
+    expect(stabilityMetadata).toHaveLength(67);
     expect(stabilityMetadata.filter((stability) => stability === 'stable')).toHaveLength(12);
-    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(54);
+    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(55);
     expect(STABLE_EVENT_TYPES).toEqual(new Set([
       'message',
       'tool_call_start',

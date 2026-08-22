@@ -129,6 +129,22 @@ export function applyToolExecutionEvent(
       }
       break;
 
+    case 'turn_diff':
+      deps.setLastEventAt(deps.now());
+      logHandledEvent();
+      if (!isCurrentSessionEvent) break;
+      {
+        const messages = deps.getMessages();
+        const targetMessage = messages.find((message) => message.id === event.data.turnId)
+          ?? [...messages].reverse().find((message) => message.role === 'assistant');
+        if (targetMessage) {
+          deps.updateMessage(targetMessage.id, {
+            metadata: { ...targetMessage.metadata, turnDiff: event.data },
+          });
+        }
+      }
+      break;
+
     case 'stream_tool_call_delta':
       deps.setLastEventAt(deps.now());
       logHandledEvent();

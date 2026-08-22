@@ -85,6 +85,10 @@ export class JSONOutput {
         }
         break;
 
+      case 'turn_diff':
+        this.emitEvent({ type: 'turn_diff', timestamp, data: event.data });
+        break;
+
       case 'message':
         if (event.data?.role === 'assistant' && event.data?.content) {
           this.emitEvent({
@@ -131,7 +135,16 @@ export class JSONOutput {
   /**
    * 输出最终结果
    */
-  result(result: CLIRunResult): void {
+  result(result: CLIRunResult, asEvent = false): void {
+    if (asEvent) {
+      this.emitEvent({
+        type: 'result',
+        timestamp: Date.now(),
+        data: result,
+      });
+      return;
+    }
+
     console.log(JSON.stringify(result, null, 2));
   }
 

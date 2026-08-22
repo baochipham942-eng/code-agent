@@ -16,13 +16,13 @@ describe('durable recovery production startup ordering', () => {
     expect(source).toContain('durableRunRuntime?.shutdown()');
   });
 
-  it('the shared initializer claims leases, dispatches recovery, and schedules the delayed scan', () => {
+  it('the shared initializer claims leases, dispatches recovery, and starts the lease sweeper', () => {
     const source = readFileSync(path.join(root, 'src/host/app/initializeDurableRun.ts'), 'utf8');
     const runtime = source.indexOf('createDurableRecoveryRuntime({');
     const recovery = source.indexOf('recoverAndDispatch(', runtime);
-    const delayed = source.indexOf('scheduleDelayedScan(', recovery);
+    const sweeper = source.indexOf('startSweeper(', recovery);
     expect(runtime).toBeGreaterThan(0);
     expect(recovery).toBeGreaterThan(runtime);
-    expect(delayed).toBeGreaterThan(recovery);
+    expect(sweeper).toBeGreaterThan(recovery);
   });
 });

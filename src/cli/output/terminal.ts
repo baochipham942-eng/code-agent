@@ -721,9 +721,9 @@ export class TerminalOutput {
       case 'turn_diff': {
         const added = event.data.files.reduce((total, file) => total + file.added, 0);
         const removed = event.data.files.reduce((total, file) => total + file.removed, 0);
-        console.log(chalk.dim(
+        process.stdout.write(`${chalk.dim(
           `  ${event.data.files.length} files changed ${chalk.green(`+${added}`)} ${chalk.red(`-${removed}`)}`,
-        ));
+        )}\n`);
         break;
       }
 

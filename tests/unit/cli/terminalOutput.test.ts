@@ -126,7 +126,7 @@ describe('TerminalOutput', () => {
 
   it('renders the backend turn diff summary directly', () => {
     const output = new TerminalOutput();
-    const { logs } = captureOutput();
+    const { writes } = captureOutput();
 
     output.handleEvent({
       type: 'turn_diff',
@@ -144,8 +144,8 @@ describe('TerminalOutput', () => {
       },
     } as AgentEvent);
 
-    expect(logs.join('\n')).toContain('1 files changed');
-    expect(logs.join('\n')).toContain('+2');
-    expect(logs.join('\n')).toContain('-1');
+    expect(writes.join('')).toContain('1 files changed');
+    expect(writes.join('')).toContain('+2');
+    expect(writes.join('')).toContain('-1');
   });
 });

@@ -131,7 +131,7 @@ describe('Feishu ingress access', () => {
       { sendText: vi.fn(async () => ({ success: true })) },
     );
     expect(allMembers.messages).toHaveLength(1);
-    expect(allMembers.messages[0].ingressAuth).toBe('guest');
     expect(allowedToolNames).toEqual(['Read']);
+    expect(allMembers.messages[0].ingressAuth).toBe('guest');
   });
 });

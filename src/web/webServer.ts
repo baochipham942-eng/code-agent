@@ -605,8 +605,8 @@ async function initializeServices(): Promise<void> {
         processInstanceId: `web-${process.pid}-${randomUUID()}`,
         autoAgentRecoveryHost: createApplicationAutoAgentRecoveryHost(runRegistry),
         nativeRecoveryPorts: createApplicationNativeRecoveryPorts(),
-        onDelayedResults: (results) => logger.info('Durable delayed recovery dispatched', { results }),
-        onDelayedError: (recoveryError) => logger.error('Durable Run delayed recovery failed:', recoveryError),
+        onSweepResults: (results) => logger.debug('Durable sweeper recovery dispatched', { results }),
+        onSweepError: (recoveryError) => logger.error('Durable Run sweeper recovery failed:', recoveryError),
       });
       durableRunRolloutReady = true;
       queuedInputStartupSweep.setReady(true);

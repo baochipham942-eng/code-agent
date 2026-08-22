@@ -19,7 +19,7 @@ export function RuntimeInputChoice({ value, onChange }: RuntimeInputChoiceProps)
     <div
       role="radiogroup"
       aria-label={t.chatInputSubmit.runtimeInputChoiceAria}
-      className="flex h-7 items-center rounded-full bg-white/[0.05] p-0.5 ring-1 ring-white/[0.06]"
+      className="flex h-7 items-center rounded-full bg-surface-faint p-0.5 ring-1 ring-border-faint"
       data-testid="runtime-input-choice"
     >
       {options.map((option) => {

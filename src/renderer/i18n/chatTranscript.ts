@@ -26,14 +26,7 @@ chat: {
     steps: '做了 {count} 步',
     output: '产出',
   },
-  inputRedirectReceipt: {
-    title: '已按你的纠正改了方向：',
-    viewOriginal: '查看原话',
-    hideOriginal: '收起原话',
-    stoppedAt: '上一轮写到 {count} 字处停下',
-    stoppedBeforeOutput: '上一轮还没写出内容就停下',
-    workingOn: '当时正在处理 {names}',
-  },
+  inputRedirectReceipt: { title: '已按你的纠正改了方向：', viewOriginal: '查看原话', hideOriginal: '收起原话', stoppedAt: '上一轮写到 {count} 字处停下', stoppedBeforeOutput: '上一轮还没写出内容就停下', workingOn: '当时正在处理 {names}' },
   taskNotificationWithLog: '{message}。可在任务面板查看日志。',
   // 巡航信号（长任务 ≥45s）：{elapsed} 为 mm:ss 秒表，中性陈述「一切正常」
   longToolCruise: '深空巡航中 · 已航行 {elapsed} · 链路正常',
@@ -594,14 +587,7 @@ chat: {
     steps: 'Completed {count} steps',
     output: 'Output',
   },
-  inputRedirectReceipt: {
-    title: 'Changed direction based on your correction: ',
-    viewOriginal: 'View original',
-    hideOriginal: 'Hide original',
-    stoppedAt: 'The previous reply stopped at {count} characters',
-    stoppedBeforeOutput: 'The previous reply stopped before producing text',
-    workingOn: 'It was working on {names}',
-  },
+  inputRedirectReceipt: { title: 'Changed direction based on your correction: ', viewOriginal: 'View original', hideOriginal: 'Hide original', stoppedAt: 'The previous reply stopped at {count} characters', stoppedBeforeOutput: 'The previous reply stopped before producing text', workingOn: 'It was working on {names}' },
   taskNotificationWithLog: '{message}. View logs in the task panel.',
   // Cruise signal (long-running tool ≥45s): {elapsed} is the mm:ss stopwatch, a neutral "all is well" statement
   longToolCruise: 'Deep-space cruise · {elapsed} elapsed · link nominal',

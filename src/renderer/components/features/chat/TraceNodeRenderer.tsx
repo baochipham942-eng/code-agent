@@ -900,7 +900,7 @@ const InputRedirectReceiptNode: React.FC<{ receipt: InputRedirectReceiptMetadata
 
   return (
     <div className="py-1" data-testid="input-redirect-receipt">
-      <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2">
+      <div className="rounded-lg border border-border-muted bg-surface-faint px-3 py-2">
         <div className="flex items-start gap-2">
           <CornerDownRight className="mt-0.5 h-4 w-4 shrink-0 text-badge-success" />
           <div className="min-w-0 flex-1">
@@ -922,7 +922,7 @@ const InputRedirectReceiptNode: React.FC<{ receipt: InputRedirectReceiptMetadata
           </button>
         </div>
         {expanded && (
-          <div className="mt-2 border-t border-white/[0.06] pt-2 text-xs text-zinc-400">
+          <div className="mt-2 border-t border-border-muted pt-2 text-xs text-zinc-400">
             <ExpandableContent content={originalContent} maxLines={20} />
           </div>
         )}

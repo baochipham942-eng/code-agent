@@ -7,6 +7,18 @@
 // pin 候选 = 当前项目 ∪ 全局架（与 host 端注入口径一致），并按 scope 分组展示。
 
 import type { LibraryItem } from '@shared/contract/library';
+import type { DeliverablePublishInfo, DeliverablePublishState, PublishedDeliverableVersion } from '@shared/contract';
+
+export interface LibraryItemPublishModel {
+  publishState: DeliverablePublishState;
+  publishedVersions: PublishedDeliverableVersion[];
+}
+
+export function projectLibraryItemPublishModel(
+  info?: DeliverablePublishInfo,
+): LibraryItemPublishModel {
+  return info ?? { publishState: { kind: 'draft' }, publishedVersions: [] };
+}
 
 /** 标题 / 摘要 / 路径 / 标签任一命中即算匹配（大小写不敏感）。 */
 export function matchesLibraryItemSearch(item: LibraryItem, query: string): boolean {

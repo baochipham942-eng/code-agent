@@ -34,6 +34,11 @@ import {
   handlePreviewPresentation,
   type WorkspaceExportBundlePayload,
 } from './workspaceArchive.ipc';
+import {
+  getPublishState,
+  listPublishedVersions,
+  publishVersion,
+} from '../tools/document/snapshotManager';
 export { handleExportBundle, handleInspectArchive, handleInspectPresentation };
 // buildConfigScopeSummary 历史上是 workspace.ipc 的公开导出，保持向后兼容（测试依赖）。
 export { buildConfigScopeSummary } from './workspaceConfigScope';
@@ -892,6 +897,24 @@ export function registerWorkspaceHandlers(
         case 'getFileMetadata':
           data = await handleGetFileMetadata(payload as { filePath: string });
           break;
+        case 'getPublishInfo': {
+          const { filePath } = payload as { filePath: string };
+          data = {
+            publishState: getPublishState(filePath),
+            publishedVersions: listPublishedVersions(filePath),
+          };
+          break;
+        }
+        case 'publishVersion': {
+          const publishPayload = payload as { filePath: string; note?: string };
+          const publishedVersion = publishVersion(publishPayload.filePath, publishPayload.note);
+          data = {
+            publishedVersion,
+            publishState: getPublishState(publishPayload.filePath),
+            publishedVersions: listPublishedVersions(publishPayload.filePath),
+          };
+          break;
+        }
         case 'writeFile':
           data = await handleWriteFile(payload as { filePath: string; content: string });
           break;

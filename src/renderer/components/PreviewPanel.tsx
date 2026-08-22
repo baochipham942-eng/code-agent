@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, File, Folder, X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Save, FolderOpen, Presentation, MousePointerClick, MoreHorizontal } from 'lucide-react';
+import { Archive, Check, ChevronDown, File, Folder, X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Save, FolderOpen, Presentation, MousePointerClick, MoreHorizontal } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
@@ -15,7 +15,7 @@ import { revealNativePath } from '../services/tauriPluginFacade';
 import { DocumentBlock } from './features/chat/MessageBubble/DocumentBlock';
 import { SpreadsheetBlock } from './features/chat/MessageBubble/SpreadsheetBlock';
 import { PresentationPagePicker } from './PresentationPagePicker';
-import type { PresentationPagePreviewResult } from '@shared/contract';
+import type { DeliverablePublishInfo, PresentationPagePreviewResult, PublishedDeliverableVersion } from '@shared/contract';
 import type { HtmlLocalityAnchor } from '@shared/livePreview/localityFeedback';
 import { LocalityFeedbackBar } from './LivePreview/LocalityFeedbackBar';
 import {
@@ -24,6 +24,7 @@ import {
   type HtmlLocalitySelectionController,
 } from '../utils/htmlLocality';
 import { DeliverableStatusBadge } from './DeliverableStatusBadge';
+import { DeliverablePublishBadge } from './DeliverablePublishBadge';
 import { ArtifactFollowToolbar, ArtifactPreviewLoading } from './ArtifactFollowToolbar';
 import { ArtifactSourceEditor } from './ArtifactSourceEditor';
 import { useSessionStore } from '../stores/sessionStore';
@@ -641,8 +642,12 @@ export const PreviewPanel: React.FC = () => {
   const [isMaximized, setIsMaximized] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [moreActionsOpen, setMoreActionsOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [publishInfo, setPublishInfo] = useState<DeliverablePublishInfo | null>(null);
+  const [selectedPublishedVersion, setSelectedPublishedVersion] = useState<PublishedDeliverableVersion | null>(null);
   const { fileMetadata, refreshFileMetadata } = usePreviewFileMetadata(previewFilePath);
   const moreActionsRef = useRef<HTMLDivElement | null>(null);
+  const versionsRef = useRef<HTMLDivElement | null>(null);
   // 预览用 HTML：把同目录相对 css/js 内联进来（srcDoc iframe 无法解析相对引用）。
   // 与可编辑/保存的 content 分开，保存仍写原始 content。
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
@@ -672,11 +677,28 @@ export const PreviewPanel: React.FC = () => {
   const isBinary = isImage || isPdf || isAudio || isVideo;
   const isDirty = !isBinary && !isArchive && !isOffice && content !== savedContent;
   const isVirtual = activeTab?.kind === 'virtual';
+  const directPublishedVersion = previewFilePath?.match(/\.published-v(\d+)(?:\.[^./]+)?$/)?.[1];
+  const viewingPublishedVersion = selectedPublishedVersion !== null || directPublishedVersion !== undefined;
 
   useEffect(() => {
-    if (!moreActionsOpen) return;
+    setSelectedPublishedVersion(null);
+    setVersionsOpen(false);
+    if (!previewFilePath || isVirtual || directPublishedVersion) {
+      setPublishInfo(null);
+      return;
+    }
+    let cancelled = false;
+    void invokeWorkspace<DeliverablePublishInfo>('getPublishInfo', { filePath: previewFilePath })
+      .then((info) => { if (!cancelled) setPublishInfo(info); })
+      .catch(() => { if (!cancelled) setPublishInfo(null); });
+    return () => { cancelled = true; };
+  }, [previewFilePath, isVirtual, directPublishedVersion]);
+
+  useEffect(() => {
+    if (!moreActionsOpen && !versionsOpen) return;
     const closeOnOutsideClick = (event: MouseEvent) => {
       if (!moreActionsRef.current?.contains(event.target as Node)) setMoreActionsOpen(false);
+      if (!versionsRef.current?.contains(event.target as Node)) setVersionsOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setMoreActionsOpen(false);
@@ -687,7 +709,7 @@ export const PreviewPanel: React.FC = () => {
       document.removeEventListener('mousedown', closeOnOutsideClick);
       document.removeEventListener('keydown', closeOnEscape);
     };
-  }, [moreActionsOpen]);
+  }, [moreActionsOpen, versionsOpen]);
 
   // Load content when the active tab changes and hasn't been loaded yet.
   useEffect(() => {
@@ -779,7 +801,14 @@ export const PreviewPanel: React.FC = () => {
   };
 
   const handleRefresh = () => {
-    if (activeTab) void loadContent(activeTab.id, activeTab.path);
+    if (activeTab) void loadContent(activeTab.id, selectedPublishedVersion?.snapshotPath ?? activeTab.path);
+  };
+
+  const handleVersionSelect = (version: PublishedDeliverableVersion | null) => {
+    if (!activeTab) return;
+    setSelectedPublishedVersion(version);
+    setVersionsOpen(false);
+    void loadContent(activeTab.id, version?.snapshotPath ?? activeTab.path);
   };
 
   const handleFollowToggle = () => {
@@ -790,12 +819,15 @@ export const PreviewPanel: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!activeTab || !isDirty || isSaving) return;
+    if (!activeTab || !isDirty || isSaving || viewingPublishedVersion) return;
     setIsSaving(true);
     setErrorState(null);
     try {
       await invokeWorkspace('writeFile', { filePath: activeTab.path, content: activeTab.content });
       markPreviewTabSaved(activeTab.id);
+      void invokeWorkspace<DeliverablePublishInfo>('getPublishInfo', { filePath: activeTab.path })
+        .then(setPublishInfo)
+        .catch(() => undefined);
     } catch (err) {
       logger.error('Failed to save file', err);
       const { message, detail } = toPreviewErrorState(err, pv.saveFailed);
@@ -918,6 +950,45 @@ export const PreviewPanel: React.FC = () => {
           {isVirtual ? activeTab.title : previewFilePath}
         </button>
         {activeTab.deliverableStatus && <DeliverableStatusBadge status={activeTab.deliverableStatus} />}
+        {directPublishedVersion && (
+          <DeliverablePublishBadge
+            state={{ kind: 'published', version: Number(directPublishedVersion), publishedAt: 0 }}
+            testId="preview-publish-state"
+          />
+        )}
+        {!isVirtual && publishInfo && (
+          <div className="relative" ref={versionsRef}>
+            <button
+              type="button"
+              onClick={() => setVersionsOpen((open) => !open)}
+              className="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-zinc-700/60"
+              aria-label={t.deliverable.versions}
+              aria-expanded={versionsOpen}
+            >
+              <DeliverablePublishBadge
+                state={selectedPublishedVersion
+                  ? { kind: 'published', version: selectedPublishedVersion.version, publishedAt: selectedPublishedVersion.publishedAt }
+                  : publishInfo.publishState}
+                testId="preview-publish-state"
+              />
+              <ChevronDown className="h-3 w-3 text-zinc-500" />
+            </button>
+            {versionsOpen && (
+              <div className="absolute left-0 top-full z-20 mt-1 min-w-52 rounded-lg border border-zinc-700 bg-zinc-800 p-1 shadow-xl" data-testid="preview-version-menu">
+                <button type="button" onClick={() => handleVersionSelect(null)} className="flex w-full items-center justify-between gap-3 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700">
+                  <span>{t.deliverable.versionDraft.replace('{version}', String((publishInfo.publishedVersions[0]?.version ?? 0) + 1))}</span>
+                  <span className="text-[10px] text-badge-warning">{t.deliverable.unpublished}</span>
+                </button>
+                {publishInfo.publishedVersions.map((version, index) => (
+                  <button key={version.version} type="button" onClick={() => handleVersionSelect(version)} className={`flex w-full items-center justify-between gap-3 rounded px-2.5 py-2 text-left text-xs hover:bg-zinc-700 ${selectedPublishedVersion?.version === version.version ? 'bg-teal-500/10 text-teal-300' : 'text-zinc-300'}`}>
+                    <span>v{version.version} {index === 0 ? t.deliverable.currentPublished : new Date(version.publishedAt).toLocaleDateString()}</span>
+                    {selectedPublishedVersion?.version === version.version && <Check className="h-3.5 w-3.5" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {!isVirtual && (
           <button /* ds-allow:button: compact file-header icon action */
             type="button"
@@ -943,7 +1014,7 @@ export const PreviewPanel: React.FC = () => {
           {moreActionsOpen && (
             <div className="absolute right-0 top-full z-10 mt-1 w-48 rounded-lg bg-zinc-800 p-1 shadow-xl">
               {(hasSourceModes || isCode) && !isVirtual && (
-                <button type="button" onClick={() => { void handleSave(); setMoreActionsOpen(false); }} disabled={!isDirty || isSaving} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-40">
+                <button type="button" onClick={() => { void handleSave(); setMoreActionsOpen(false); }} disabled={!isDirty || isSaving || viewingPublishedVersion} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-40">
                   <Save className={`h-4 w-4 ${isSaving ? 'animate-pulse' : ''}`} />{isDirty ? pv.saveShortcut : pv.saved}
                 </button>
               )}
@@ -1060,6 +1131,7 @@ export const PreviewPanel: React.FC = () => {
             onSave={handleSave}
             jumpToLine={activeTab.jumpToLine}
             jumpNonce={activeTab.jumpNonce}
+            readOnly={viewingPublishedVersion}
           />
         ) : isCode && codeLanguage ? (
           <Suspense
@@ -1074,6 +1146,7 @@ export const PreviewPanel: React.FC = () => {
               onChange={(next: string) => updatePreviewTabContent(activeTab.id, next)}
               onSave={handleSave}
               language={codeLanguage}
+              readOnly={viewingPublishedVersion}
               jumpToLine={activeTab.jumpToLine}
               jumpNonce={activeTab.jumpNonce}
             />

@@ -8,6 +8,11 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'crypto';
+import type {
+  DeliverablePublishState,
+  PublishedDeliverableVersion,
+} from '../../../shared/contract/deliverable';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,6 +29,11 @@ export interface Snapshot {
 
 interface SnapshotMeta {
   snapshots: Snapshot[];
+  publishedVersions?: PublishedVersionMeta[];
+}
+
+interface PublishedVersionMeta extends PublishedDeliverableVersion {
+  contentHash: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +66,10 @@ function loadMeta(filePath: string): SnapshotMeta {
     }
   }
   return { snapshots: [] };
+}
+
+function hashFile(filePath: string): string {
+  return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
 function saveMeta(filePath: string, meta: SnapshotMeta): void {
@@ -111,6 +125,71 @@ export function createSnapshot(filePath: string, description = 'pre-edit'): Snap
   cleanup(filePath);
 
   return snapshot;
+}
+
+/**
+ * Freeze the current working copy as an immutable, named published version.
+ * Published snapshots have their own list and never count toward the edit-snapshot quota.
+ */
+export function publishVersion(filePath: string, note?: string): PublishedDeliverableVersion {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`File not found: ${filePath}`);
+  }
+
+  const snapshotDir = getSnapshotDir(filePath);
+  fs.mkdirSync(snapshotDir, { recursive: true });
+  const meta = loadMeta(filePath);
+  const publishedVersions = meta.publishedVersions ?? [];
+  const version = publishedVersions.reduce((max, item) => Math.max(max, item.version), 0) + 1;
+  const publishedAt = Date.now();
+  const ext = path.extname(filePath);
+  const base = path.basename(filePath, ext);
+  const snapshotPath = path.join(snapshotDir, `${base}.published-v${version}${ext}`);
+
+  fs.copyFileSync(filePath, snapshotPath);
+  fs.chmodSync(snapshotPath, 0o444);
+  const trimmedNote = note?.trim();
+  const published: PublishedVersionMeta = {
+    version,
+    publishedAt,
+    snapshotPath,
+    ...(trimmedNote ? { note: trimmedNote } : {}),
+    contentHash: hashFile(filePath),
+  };
+  publishedVersions.push(published);
+  meta.publishedVersions = publishedVersions;
+  saveMeta(filePath, meta);
+
+  const { contentHash: _contentHash, ...publicVersion } = published;
+  return publicVersion;
+}
+
+export function listPublishedVersions(filePath: string): PublishedDeliverableVersion[] {
+  const publishedVersions = loadMeta(filePath).publishedVersions ?? [];
+  return publishedVersions
+    .filter((item) => fs.existsSync(item.snapshotPath))
+    .map(({ contentHash: _contentHash, ...item }) => item)
+    .sort((left, right) => right.version - left.version);
+}
+
+export function hasUnpublishedChanges(filePath: string): boolean {
+  const latest = (loadMeta(filePath).publishedVersions ?? [])
+    .reduce<PublishedVersionMeta | undefined>(
+      (current, item) => (!current || item.version > current.version ? item : current),
+      undefined,
+    );
+  if (!latest || !fs.existsSync(filePath)) return false;
+  return hashFile(filePath) !== latest.contentHash;
+}
+
+export function getPublishState(filePath: string): DeliverablePublishState {
+  const latest = listPublishedVersions(filePath)[0];
+  if (!latest) return { kind: 'draft' };
+  return {
+    kind: hasUnpublishedChanges(filePath) ? 'published-dirty' : 'published',
+    version: latest.version,
+    publishedAt: latest.publishedAt,
+  };
 }
 
 /**

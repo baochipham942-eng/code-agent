@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Message, WorkspacePreviewItem } from '../../../src/shared/contract';
 import {
+  applyPublishInfoToDeliverableCard,
   buildDeliverableCardFromWorkspaceItem,
   buildMessageArtifactDeliverableCards,
   buildPendingImageDeliverableCards,
@@ -93,6 +94,7 @@ describe('deliverable card projection', () => {
     expect(card.evidencePack.refs.some((ref) => ref.kind === 'file_metadata' && ref.status === 'pass')).toBe(true);
     expect(card.contract.requiredChecks).toContain('File hash is recorded');
     expect(card.secondaryActions).toEqual([
+      { kind: 'publish-version', label: 'publish-version', path: '/repo/out/hero.png', title: 'hero.png' },
       { kind: 'reveal-file', label: 'reveal-file', path: '/repo/out/hero.png' },
       { kind: 'copy-reference', label: 'copy-reference', value: '/repo/out/hero.png' },
       expect.objectContaining({
@@ -106,6 +108,7 @@ describe('deliverable card projection', () => {
         files: [
           {
             path: '/repo/out/hero.png',
+            source: 'latest-published',
             name: 'hero.png',
             role: 'primary',
             mimeType: 'image/png',
@@ -219,6 +222,7 @@ describe('deliverable card projection', () => {
       },
     });
     expect(cards[0].secondaryActions).toEqual([
+      { kind: 'publish-version', label: 'publish-version', path: '/repo/out/diagram.png', title: 'diagram.png' },
       { kind: 'reveal-file', label: 'reveal-file', path: '/repo/out/diagram.png' },
       { kind: 'copy-reference', label: 'copy-reference', value: '/repo/out/diagram.png' },
       expect.objectContaining({
@@ -235,6 +239,43 @@ describe('deliverable card projection', () => {
         ],
       }),
     ]);
+  });
+
+  it('projects draft, published, and published-dirty states and enables sharing from the published snapshot', () => {
+    const [draft] = buildTurnArtifactDeliverableCards([{
+      kind: 'file',
+      role: 'deliverable',
+      label: 'report.md',
+      ownerKind: 'tool',
+      ownerLabel: 'Write',
+      path: '/repo/report.md',
+    }]);
+    expect(draft.publishState).toEqual({ kind: 'draft' });
+
+    const version = {
+      version: 2,
+      publishedAt: 200,
+      snapshotPath: '/repo/.doc-snapshots/report.published-v2.md',
+    };
+    const published = applyPublishInfoToDeliverableCard(draft, {
+      publishState: { kind: 'published', version: 2, publishedAt: 200 },
+      publishedVersions: [version],
+    });
+    const dirty = applyPublishInfoToDeliverableCard(draft, {
+      publishState: { kind: 'published-dirty', version: 2, publishedAt: 200 },
+      publishedVersions: [version],
+    });
+
+    expect(published.publishState.kind).toBe('published');
+    expect(dirty.publishState.kind).toBe('published-dirty');
+    expect(published.secondaryActions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'export-bundle',
+        disabled: false,
+        sourceVersion: 2,
+        files: [expect.objectContaining({ source: 'latest-published' })],
+      }),
+    ]));
   });
 
   it('turn 文件有任一工具账本实证字段即已验证，无实证仍未验证', () => {

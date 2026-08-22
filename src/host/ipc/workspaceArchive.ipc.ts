@@ -18,9 +18,11 @@ import { computeArtifactRevision } from '../tools/artifacts/artifactLocatorHost'
 import { loadPresentationPackageIndex } from '../tools/artifacts/presentationPackageIndex';
 import { convertToScreenshots, isLibreOfficeAvailable } from '../tools/media/ppt/visualReview';
 import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../tools/media/ppt/constants';
+import { listPublishedVersions } from '../tools/document/snapshotManager';
 
 interface WorkspaceBundleFileInput {
   path: string;
+  source?: 'working-copy' | 'latest-published';
   name?: string;
   role?: string;
   mimeType?: string;
@@ -136,6 +138,19 @@ function resolveBundlePath(filePath: string, workingDirectory?: string | null): 
   return path.join(workingDirectory, filePath);
 }
 
+function resolveBundleSourcePath(
+  file: WorkspaceBundleFileInput,
+  workingDirectory?: string | null,
+): string {
+  const workingCopyPath = resolveBundlePath(file.path, workingDirectory);
+  if (file.source !== 'latest-published') return workingCopyPath;
+  const latest = listPublishedVersions(workingCopyPath)[0];
+  if (!latest) {
+    throw new Error(`No published version is available for ${workingCopyPath}`);
+  }
+  return latest.snapshotPath;
+}
+
 /**
  * 导出 base 目录解析优先级：
  * 1. payload.workingDirectory
@@ -196,7 +211,7 @@ export async function handleExportBundle(
   for (const file of files.slice(0, 100)) {
     if (!file?.path) continue;
     // resolveBundlePath 对相对路径无 base 直接抛错（fail-loud，不进 skipped）
-    const resolvedPath = resolveBundlePath(file.path, workingDirectory);
+    const resolvedPath = resolveBundleSourcePath(file, workingDirectory);
     try {
       const data = await fs.readFile(resolvedPath);
       const stat = await fs.stat(resolvedPath);
@@ -205,6 +220,10 @@ export async function handleExportBundle(
       manifestFiles.push({
         entry: `files/${entryName}`,
         path: resolvedPath,
+        workingCopyPath: file.source === 'latest-published'
+          ? resolveBundlePath(file.path, workingDirectory)
+          : undefined,
+        source: file.source,
         name: file.name,
         role: file.role,
         mimeType: file.mimeType,

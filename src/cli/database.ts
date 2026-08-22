@@ -21,6 +21,7 @@ import {
   type TranscriptKind,
 } from '../shared/transcriptFts.sql';
 import { MEMORY } from '../shared/constants';
+import { SERVICE_TIMEOUTS } from '../shared/constants/timeouts';
 import {
   sanitizeAttachmentsForPersistence,
   stripInlineAttachmentBlocks,
@@ -181,7 +182,9 @@ export class CLIDatabaseService {
 
     const DatabaseCtor = Database;
     if (!DatabaseCtor) throw new Error('better-sqlite3 constructor not loaded');
-    this.db = new DatabaseCtor(this.dbPath);
+    // CLI 与桌面端、维护脚本共享同一 SQLite。连接建立后的第一条 WAL
+    // pragma 也可能撞上写锁，因此 timeout 必须在 open 时就生效。
+    this.db = new DatabaseCtor(this.dbPath, { timeout: SERVICE_TIMEOUTS.BOOTSTRAP });
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
 

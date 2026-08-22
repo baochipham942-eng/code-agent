@@ -9,6 +9,8 @@ import { hasNativeBridge } from '../api/transport';
 import { createBackoffPoller } from '../utils/backoffPoller';
 import { createLogger } from '../utils/logger';
 import { toast } from './useToast';
+import { useI18n } from './useI18n';
+import type { Translations } from '../i18n';
 
 const logger = createLogger('useBackgroundTaskSync');
 
@@ -17,8 +19,8 @@ interface UseBackgroundTaskSyncOptions {
   pollInterval?: number;
 }
 
-function showTaskNotification(notification: TaskNotification): void {
-  const message = `${notification.message}。可在 TaskPanel 查看日志。`;
+function showTaskNotification(notification: TaskNotification, t: Translations): void {
+  const message = t.chat.taskNotificationWithLog.replace('{message}', notification.message);
   if (notification.type === 'task_failed') {
     toast.error(message);
     return;
@@ -35,6 +37,7 @@ function showTaskNotification(notification: TaskNotification): void {
 }
 
 export function useBackgroundTaskSync(options: UseBackgroundTaskSyncOptions = {}): void {
+  const { t } = useI18n();
   const {
     enabled = true,
   } = options;
@@ -59,7 +62,7 @@ export function useBackgroundTaskSync(options: UseBackgroundTaskSyncOptions = {}
       await refreshTasks();
       if (!currentSessionId) return;
       const notifications = await drainNotifications(currentSessionId);
-      notifications.forEach(showTaskNotification);
+      notifications.forEach((notification) => showTaskNotification(notification, t));
     };
 
     const syncUntilReadFailure = async () => {
@@ -113,5 +116,5 @@ export function useBackgroundTaskSync(options: UseBackgroundTaskSyncOptions = {}
       stopPoller?.();
       if (invalidationTimer !== null) clearTimeout(invalidationTimer);
     };
-  }, [currentSessionId, drainNotifications, enabled, pollInterval, readRetryNonce, refreshTasks]);
+  }, [currentSessionId, drainNotifications, enabled, pollInterval, readRetryNonce, refreshTasks, t]);
 }

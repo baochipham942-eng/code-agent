@@ -20,6 +20,8 @@ type SessionDomainPayload = {
   title?: string;
   workingDirectory?: string;
   expertRoleId?: string;
+  /** findExpertThread：按专家 roleId 查最近活跃的专家主 thread */
+  roleId?: string;
   userMessageId?: string;
   anchorUserMessageId?: string;
   anchorAssistantMessageId?: string;
@@ -135,6 +137,17 @@ export function installSessionDomainHandler(deps: SessionDomainHandlerDependenci
         case 'list':
           data = await sm.listSessions(payload as { includeArchived?: boolean } | undefined);
           break;
+        case 'findExpertThread': {
+          // web standalone 的 session domain handler 是独立于桌面 IPC 的一份（src/host/ipc/session.ipc.ts
+          // 只服务 Electron），同一个 action 必须在两边各注册一次；通用桥 /api/domain/:domain/:action 不变。
+          const roleId = typeof payload?.roleId === 'string' ? payload.roleId.trim() : '';
+          if (!roleId) {
+            return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'roleId is required' } };
+          }
+          const session = await sm.findLatestExpertThreadSession(roleId);
+          data = { sessionId: session?.id ?? null };
+          break;
+        }
         case 'create':
           data = await (await createSessionApplicationService(deps)).createSession({
             title: payload?.title || 'New Session',

@@ -30,7 +30,7 @@ import { SessionForkError } from '../../../shared/contract/sessionFork';
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, SessionForkRepository, SessionForkWorkspaceRepository, ConversationBranchRepository, SessionForkPortabilityRepository, digestSessionForkAnchorMessage, isCompletedSessionForkAnchor, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, VoiceCallAuditRepository, type VoiceAuditMessage, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository, TurnCostRepository } from './repositories';
+import { SessionRepository, SessionForkRepository, SessionForkWorkspaceRepository, ConversationBranchRepository, SessionForkPortabilityRepository, digestSessionForkAnchorMessage, isCompletedSessionForkAnchor, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, VoiceCallAuditRepository, type VoiceAuditMessage, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository, TurnCostRepository, findLatestExpertThreadSession } from './repositories';
 import type {
   CreateForkRepositoryInput,
   CreateForkRepositoryResult,
@@ -1012,6 +1012,12 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false, userId?: string | null): import('./repositories').StoredSession[] {
     this.ensureDb();
     return this.sessionRepo.listSessions(limit, offset, includeArchived, userId);
+  }
+  findLatestExpertThreadSession(roleId: string, userId?: string | null): import('./repositories').StoredSession | null {
+    this.ensureDb();
+    const db = this.getDb();
+    if (!db) throw new Error('DatabaseService: db is null after ensureDb');
+    return findLatestExpertThreadSession(db, roleId, userId);
   }
   updateSession(sessionId: string, updates: Partial<Session>, options?: { syncOrigin?: 'local' | 'remote'; isDeleted?: boolean }): void {
     this.ensureDb();

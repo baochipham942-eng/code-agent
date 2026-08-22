@@ -13,6 +13,15 @@ export const SESSION_COMMAND_CENTER_TOOL_NAMES = [
 /** Foreground brain should route or answer without growing into an execution run. */
 export const SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS = 8;
 
+/** Hidden task-result wakes get a deliberately small reasoning budget. */
+export const SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS = 4;
+
+/**
+ * Prevent an autonomous task chain from waking the same conversation forever.
+ * A new visible user message resets this counter.
+ */
+export const MAX_CONSECUTIVE_WAKES = 3;
+
 /**
  * 判据单一真源：本轮是否套用指挥台 brain。
  *

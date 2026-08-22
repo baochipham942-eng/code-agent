@@ -21,6 +21,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { executePythonScript } from '../../utils/pythonBridge';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { executePdfGenerate } from './pdfGenerate';
 import { executePdfCompress } from './pdfCompress';
@@ -74,7 +75,7 @@ interface PdfAutomateParams {
 }
 
 function resolveAbs(p: string, ctx: ToolContext): string {
-  return path.isAbsolute(p) ? p : path.join(ctx.workingDir, p);
+  return resolveInputPath(p, ctx.workingDir);
 }
 
 function withPdfAutomateMeta(

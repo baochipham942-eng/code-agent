@@ -968,6 +968,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return Promise.all(sessions.map((session) => this.withDurableSessionReplayPayload(session)));
   }
 
+  async findExpertThreadSession(roleId: string): Promise<{ sessionId: string | null }> {
+    const session = await getSessionManager().findLatestExpertThreadSession(roleId);
+    return { sessionId: session?.id ?? null };
+  }
+
   async updateSession(sessionId: string, updates: Partial<Session>): Promise<void> {
     if (updates.engine !== undefined) {
       throw new Error('Agent Engine metadata must be changed through the Agent Engine selector.');

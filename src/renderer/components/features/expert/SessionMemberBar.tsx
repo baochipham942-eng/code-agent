@@ -66,6 +66,8 @@ export interface MemberPill {
   roleId: string;
   name: string;
   profession?: string;
+  /** 角色 lucide 图标名（与 profession 同取自 agentRegistry entries）：头像 asset → icon → 首字 三级回落的中间档 */
+  icon?: string;
   status: 'standby' | 'running' | 'completed' | 'failed';
   isLead: boolean;
   /** standby 成员的排除键（member 的 id ?? roleId；lead 用 roleId），× 掉时写进 composerStore */
@@ -120,6 +122,12 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
     return (roleId: string) => map.get(roleId);
   }, [agentEntries]);
 
+  // 与 professionOf 同源：角色 icon（lucide 名）供成员条头像三级回落的中间档
+  const iconOf = useMemo(() => {
+    const map = new Map(agentEntries.map((entry) => [entry.id, entry.icon]));
+    return (roleId: string) => map.get(roleId);
+  }, [agentEntries]);
+
   const pills = useMemo<MemberPill[]>(() => {
     const fromAgents = (list: SwarmAgentState[], records?: SwarmRunAgentRecord[]) => list.map((agent, index) => {
       const roleId = agent.role || agent.id;
@@ -128,6 +136,7 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
         roleId,
         name: agent.name || roleId,
         profession: professionOf(roleId),
+        icon: iconOf(roleId),
         status: pillStatusOf(agent.status),
         isLead: roleId === teamLeadRoleId,
         agent,
@@ -152,11 +161,12 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
         roleId: entry.roleId,
         name: entry.roleId,
         profession: professionOf(entry.roleId),
+        icon: iconOf(entry.roleId),
         status: 'standby' as const,
         isLead: entry.roleId === teamLeadRoleId,
         standbyKey: entry.standbyKey,
       }));
-  }, [persistedAgents, selectedTeamRecipeId, standbyExcludedMemberKeys, recipes, professionOf, teamLeadRoleId]);
+  }, [persistedAgents, selectedTeamRecipeId, standbyExcludedMemberKeys, recipes, professionOf, iconOf, teamLeadRoleId]);
 
   return pills;
 }
@@ -239,7 +249,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
       >
         <span className="flex -space-x-1.5">
           {pills.slice(0, 4).map((pill) => (
-            <RoleInitialAvatar key={pill.key} roleId={pill.roleId} name={pill.name} className="h-4 w-4 border border-zinc-900 text-[8px]" />
+            <RoleInitialAvatar key={pill.key} roleId={pill.roleId} name={pill.name} icon={pill.icon} className="h-4 w-4 border border-zinc-900 text-[8px]" />
           ))}
         </span>
         <span className="truncate">{summary}</span>
@@ -287,7 +297,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
                 }}
                 className="group flex shrink-0 cursor-default items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/60 py-1 pl-1 pr-2.5 text-left text-zinc-500 transition-colors"
               >
-                <RoleInitialAvatar roleId={pill.roleId} name={pill.name} className="h-5 w-5 text-[10px]" />
+                <RoleInitialAvatar roleId={pill.roleId} name={pill.name} icon={pill.icon} className="h-5 w-5 text-[10px]" />
                 <span className="flex min-w-0 flex-col items-start leading-tight">
                   {pill.profession && <span className="text-xs font-semibold text-zinc-100">{pill.profession}</span>}
                   <span className={pill.profession ? 'text-[10px] text-zinc-400' : 'text-xs font-medium text-zinc-100'}>{pill.name}</span>
@@ -333,7 +343,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
                   : 'border-zinc-700 bg-zinc-800/70 hover:border-zinc-500'
             }`}
           >
-            <RoleInitialAvatar roleId={pill.roleId} name={pill.name} className="h-5 w-5 text-[10px]" />
+            <RoleInitialAvatar roleId={pill.roleId} name={pill.name} icon={pill.icon} className="h-5 w-5 text-[10px]" />
             {/* 职业在上、花名在下：非程序员看「内容主理人」比看「青禾」有用得多 */}
             <span className="flex min-w-0 flex-col items-start leading-tight">
               {pill.profession && <span className="text-xs font-semibold text-zinc-100">{pill.profession}</span>}

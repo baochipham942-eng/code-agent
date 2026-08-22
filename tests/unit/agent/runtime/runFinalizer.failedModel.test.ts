@@ -83,4 +83,54 @@ describe('RunFinalizer 失败事件', () => {
       details: { provider: 'custom-100xlabs', model: 'claude-opus-4-8' },
     });
   });
+
+  it('does not synthesize visible fallback text after terminal wake_noop', async () => {
+    const events: AgentEvent[] = [];
+    const addAndPersistMessage = vi.fn();
+    const finalizer = new RunFinalizer({
+      sessionId: 'sess-wake-noop',
+      onEvent: (event: AgentEvent) => events.push(event),
+      modelConfig: { provider: 'acceptance', model: 'e2e-local-agent-model' },
+      messages: [
+        { id: 'wake-user', role: 'user', content: '后台任务已完成', timestamp: 1, isMeta: true },
+        {
+          id: 'wake-assistant',
+          role: 'assistant',
+          content: '',
+          timestamp: 2,
+          isMeta: true,
+          toolCalls: [{ id: 'wake-noop-call', name: 'wake_noop', arguments: {} }],
+        },
+        { id: 'wake-tool', role: 'tool', content: '[]', timestamp: 3, isMeta: true },
+      ],
+      maxIterations: 10,
+      stats: {
+        traceId: 'trace-wake-noop',
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        queueDiagnostic: vi.fn(),
+      },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      turn: { currentTurnId: null },
+    } as never);
+    finalizer.setModules(
+      { generateId: () => 'fallback-message', addAndPersistMessage } as never,
+      { runPostRun: vi.fn(), runSessionEndLearning: vi.fn(async () => undefined) } as never,
+    );
+
+    await finalizer.finalizeRun(
+      1,
+      '后台任务已完成',
+      { endTrace: vi.fn() } as never,
+      8,
+      { status: 'completed' },
+    ).catch(() => { /* 后续轻记忆依赖不在本断言范围 */ });
+
+    expect(addAndPersistMessage).not.toHaveBeenCalled();
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: 'message',
+      data: expect.objectContaining({ content: expect.stringContaining('没有生成最终说明') }),
+    }));
+  });
 });

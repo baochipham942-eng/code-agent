@@ -352,6 +352,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'exportSessionFork',
     'fork',
     'getForkLineage',
+    'findExpertThread',
     'getMemoryContext',
     'getMessages',
     'getModelOverride',

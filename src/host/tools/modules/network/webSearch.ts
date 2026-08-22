@@ -7,7 +7,6 @@
 // ============================================================================
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import type {
   ToolHandler,
@@ -40,14 +39,8 @@ import {
   autoExtractFallback,
 } from '../../web/search/contentExtractor';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { webSearchSchema as schema } from './webSearch.schema';
-
-function resolveSavePath(input: string, workingDir: string): string {
-  const expanded = input.startsWith('~/')
-    ? path.join(os.homedir(), input.slice(2))
-    : input.replace(/^~$/, os.homedir());
-  return path.isAbsolute(expanded) ? expanded : path.join(workingDir, expanded);
-}
 
 function asStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -206,7 +199,7 @@ async function translateOutputIfNeeded(
 }
 
 async function saveSearchOutput(saveTo: string, workingDir: string, query: string, output: string): Promise<string> {
-  const resolvedPath = resolveSavePath(saveTo, workingDir);
+  const resolvedPath = resolveInputPath(saveTo, workingDir);
   const dir = path.dirname(resolvedPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });

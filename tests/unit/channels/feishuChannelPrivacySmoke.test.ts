@@ -32,7 +32,7 @@ function createTextEvent(text: string): unknown {
       parent_id: '',
       create_time: '1800000000000',
       chat_id: 'oc_realistic_chat',
-      chat_type: 'group',
+      chat_type: 'p2p',
       message_type: 'text',
       content: JSON.stringify({ text }),
       mentions: [{
@@ -67,6 +67,7 @@ async function emitFeishuMessage(
     appId: 'cli_test',
     appSecret: 'app_secret_test',
     privacyMode,
+    inboundAllowlist: ['ou_sender'],
   });
 
   await (channel as unknown as FeishuChannelHarness).handleMessageEvent(createTextEvent(text));
@@ -91,6 +92,7 @@ async function postFeishuWebhook(text: string): Promise<{
     webhookHost: '127.0.0.1',
     webhookPort: 0,
     privacyMode: 'local-redact',
+    inboundAllowlist: ['ou_sender'],
   });
 
   await channel.connect();
@@ -136,6 +138,7 @@ async function postLarkWebhook(text: string): Promise<{
     webhookHost: '127.0.0.1',
     webhookPort: 0,
     privacyMode: 'local-redact',
+    inboundAllowlist: ['ou_sender'],
   });
   const sdkDomain = (channel as unknown as FeishuChannelHarness).client?.domain;
 

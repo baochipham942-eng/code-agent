@@ -135,6 +135,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
               <div className="space-y-1.5">
                 {parked.map((item) => {
                   const isOrphaned = item.status === 'orphaned';
+                  const isPairing = item.kind === 'channel_pairing';
                   const isExternal = item.riskClass === 'external';
                   // A4 作用域提示：external 动作离开本机（暖色边框强调）；有 target 时点名去向。
                   // 非 external 审批卡不变（不加 scopeNote、不换边框）。
@@ -151,13 +152,25 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 truncate text-sm text-zinc-200">
-                          {item.displayTool ?? item.tool}
+                          {isPairing
+                            ? cc.pairingTitle.replace('{channel}', item.pairingChannel === 'lark' ? 'Lark' : 'Feishu')
+                            : (item.displayTool ?? item.tool)}
                           {isExternal && (
                             <span className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning">
                               {cc.parkedExternalBadge}
                             </span>
                           )}
                         </div>
+                        {isPairing && item.pairingCode && (
+                          <div className="text-xs font-medium text-badge-warning" data-testid="pairing-code">
+                            {cc.pairingCode.replace('{code}', item.pairingCode)}
+                          </div>
+                        )}
+                        {isPairing && item.pairingSender && (
+                          <div className="truncate text-[11px] text-zinc-400">
+                            {cc.pairingSender.replace('{sender}', item.pairingSender)}
+                          </div>
+                        )}
                         {scopeNote && (
                           <div className="truncate text-[11px] text-badge-warning/80" data-testid="parked-scope-note">
                             {scopeNote}

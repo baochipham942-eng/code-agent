@@ -21,6 +21,8 @@ import { CHANNEL_INGRESS } from '../../shared/constants';
 import { transcribeAudioFile } from '../services/media/audioTranscriptionService';
 import { sanitizeChannelText } from './privacy/channelPrivacyFirewall';
 import { BACKGROUND_AGENT_EVENT_FILTER } from '../protocol/events/eventFilter';
+import { getAllToolDefinitions } from '../tools/dispatch/toolDefinitions';
+import { selectGuestChannelAllowedToolNames } from './channelGuestToolPolicy';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -333,7 +335,13 @@ export class ChannelAgentBridge {
       await orchestrator.sendMessage(
         message.content,
         attachments,
-        { mode: 'normal', eventFilter: BACKGROUND_AGENT_EVENT_FILTER },
+        {
+          mode: 'normal',
+          eventFilter: BACKGROUND_AGENT_EVENT_FILTER,
+          allowedToolNames: message.ingressAuth === 'guest'
+            ? selectGuestChannelAllowedToolNames(getAllToolDefinitions())
+            : undefined,
+        },
         this.buildChannelMessageMetadata(accountId, message),
       );
       logCollector.log('agent', 'INFO', '[Channel] orchestrator.sendMessage completed');
@@ -598,7 +606,7 @@ export class ChannelAgentBridge {
   }
 
   private getSessionKey(accountId: string, message: ChannelMessage): string {
-    return `${accountId}:${message.context.chatId}`;
+    return `${accountId}:${message.context.chatId}:auth=${message.ingressAuth ?? 'paired'}`;
   }
 
   private async getOrCreateChannelSessionId(
@@ -633,6 +641,7 @@ export class ChannelAgentBridge {
           accountName: account?.name,
           chatType: message.context.chatType,
           chatName: message.context.chatName,
+          ingressAuth: message.ingressAuth ?? 'paired',
         },
       },
     });

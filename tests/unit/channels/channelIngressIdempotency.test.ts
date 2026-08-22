@@ -40,6 +40,7 @@ describe('BoundedDedupeSet', () => {
 type FeishuHarness = {
   handleMessageEvent(event: unknown): Promise<void>;
   webhookServer?: Server | null;
+  botOpenId: string | null;
 };
 
 function createFeishuTextEvent(messageId: string, text = 'hello'): unknown {
@@ -53,7 +54,7 @@ function createFeishuTextEvent(messageId: string, text = 'hello'): unknown {
       chat_type: 'group',
       message_type: 'text',
       content: JSON.stringify({ text }),
-      mentions: [],
+      mentions: [{ key: '@Aix', id: { open_id: 'ou_bot' }, name: 'Aix' }],
     },
     sender: {
       sender_id: { open_id: 'ou_sender', user_id: 'sender_user' },
@@ -66,7 +67,13 @@ async function makeFeishuChannel(): Promise<{ channel: FeishuChannel; emitted: C
   const channel = new FeishuChannel('feishu-idem');
   const emitted: ChannelMessage[] = [];
   channel.on('message', (m: ChannelMessage) => emitted.push(m));
-  await channel.initialize({ type: 'feishu', appId: 'cli_test', appSecret: 'secret_test' });
+  await channel.initialize({
+    type: 'feishu',
+    appId: 'cli_test',
+    appSecret: 'secret_test',
+    inboundAllowlist: ['ou_sender'],
+  });
+  (channel as unknown as FeishuHarness).botOpenId = 'ou_bot';
   return { channel, emitted };
 }
 
@@ -99,7 +106,9 @@ describe('feishu 入站 message_id 幂等', () => {
       appSecret: 'secret_test',
       webhookHost: '127.0.0.1',
       webhookPort: 0,
+      inboundAllowlist: ['ou_sender'],
     });
+    (channel as unknown as FeishuHarness).botOpenId = 'ou_bot';
     await channel.connect();
     try {
       const server = (channel as unknown as FeishuHarness).webhookServer;

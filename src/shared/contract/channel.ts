@@ -147,6 +147,8 @@ export interface ChannelMessage {
   timestamp: number;
   /** 被@提及的用户 ID 列表 */
   mentions?: string[];
+  /** 入站授权等级；缺省保持既有通道的 paired 语义 */
+  ingressAuth?: 'paired' | 'guest';
   /** 原始消息对象 (平台特定) */
   raw?: unknown;
 }
@@ -243,6 +245,12 @@ export interface FeishuChannelConfig extends ChannelPrivacyConfig {
   webhookUrl?: string;
   /** 出站 send-target 白名单（WP3-3）：未配置=功能关；配置后不在名单一律拒发（fail-closed，空数组即全拒） */
   outboundAllowlist?: string[];
+  /** 已完成入站配对的发送者 open_id；与账号配置一同持久化 */
+  inboundAllowlist?: string[];
+  /** 群聊入站策略，默认 allowlist */
+  groupAccessMode?: 'all_members' | 'allowlist' | 'disabled';
+  /** 入站准入控制消息语言，默认 zh-CN */
+  inboundLocale?: 'zh-CN' | 'en-US';
 }
 
 /**
@@ -268,6 +276,12 @@ export interface LarkChannelConfig extends ChannelPrivacyConfig {
   webhookUrl?: string;
   /** 出站 send-target 白名单（WP3-3）：未配置=功能关；配置后不在名单一律拒发（fail-closed，空数组即全拒） */
   outboundAllowlist?: string[];
+  /** 已完成入站配对的发送者 open_id；与账号配置一同持久化 */
+  inboundAllowlist?: string[];
+  /** 群聊入站策略，默认 allowlist */
+  groupAccessMode?: 'all_members' | 'allowlist' | 'disabled';
+  /** 入站准入控制消息语言，默认 zh-CN */
+  inboundLocale?: 'zh-CN' | 'en-US';
 }
 
 /**

@@ -14,6 +14,7 @@ import {
 } from '../../shared/ipc';
 import type { PermissionResponse } from '../../shared/contract';
 import type { PermissionDeliveryOutcome } from '../../shared/contract/permission';
+import { getInboundPairingService } from '../channels/inboundPairingService';
 import type { AgentApplicationService, AppServiceRunOptions } from '../../shared/contract/appService';
 import type { ConversationEnvelope } from '../../shared/contract/conversationEnvelope';
 import type {
@@ -91,6 +92,9 @@ async function handlePermissionResponse(
   getAppService: () => AgentApplicationService | null,
   payload: AgentPermissionResponseRequest
 ): Promise<{ outcome: PermissionDeliveryOutcome }> {
+  if (getInboundPairingService().resolve(payload.requestId, payload.response)) {
+    return { outcome: 'delivered' };
+  }
   const appService = getAppService();
   if (!appService) throw new Error('Agent not initialized');
   // outcome 回传给收件箱：'no_orchestrator'/'unknown_request' = 停车审批已失效转灰态

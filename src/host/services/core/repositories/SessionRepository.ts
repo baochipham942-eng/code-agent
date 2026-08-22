@@ -81,7 +81,7 @@ interface MessageWriteOptions {
 
 export class SessionRepository {
   private readonly conversationBranchRepo: ConversationBranchRepository | null;
-  private readonly rewindRepo: SessionRewindRepository;
+  readonly rewindRepo: SessionRewindRepository;
   private readonly ftsRepo: SessionFtsRepository;
   private readonly sessionsHaveProjectId: boolean;
 

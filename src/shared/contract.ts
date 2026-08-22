@@ -19,6 +19,8 @@ export * from './contract/authInventory';
 
 // Domain types
 export * from './contract/session';
+export * from './contract/turnCheckout';
+export * from './contract/evidenceInvalidation';
 export * from './contract/workspace';
 export * from './contract/workspacePreview';
 export * from './contract/artifactLocator';

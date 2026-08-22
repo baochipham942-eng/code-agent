@@ -27,6 +27,12 @@ import type {
   RestoreWorkspaceFilesAtCheckpointResult,
 } from './fileRestore';
 import type {
+  TurnCheckoutRequest,
+  TurnCheckoutResult,
+  TurnRedoRequest,
+  TurnRedoResult,
+} from './turnCheckout';
+import type {
   ConversationBranchComparison,
   ConversationEvaluationAttribution,
   ConversationLineageAudit,
@@ -313,6 +319,8 @@ export interface AgentApplicationService {
   restoreWorkspaceFilesAtCheckpoint(
     params: RestoreWorkspaceFilesAtCheckpointRequest,
   ): Promise<RestoreWorkspaceFilesAtCheckpointResult>;
+  turnCheckout(params: TurnCheckoutRequest): Promise<TurnCheckoutResult>;
+  turnRedo(params: TurnRedoRequest): Promise<TurnRedoResult>;
   rewindToPrompt(params: { sessionId: string; userMessageId: string; idempotencyKey?: string }): Promise<PromptRewindResult>;
   getSerializedCompressionState(sessionId?: string): string | null;
   loadOlderMessages(sessionId: string, beforeTimestamp: number, limit: number): Promise<{ messages: Message[]; hasMore: boolean }>;

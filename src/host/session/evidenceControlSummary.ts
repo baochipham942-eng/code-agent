@@ -280,19 +280,20 @@ function collectVerificationFromSession(session: CachedSession, now: number): Ev
 function collectVerificationFromCompletionSummaries(records: CompletionSummaryRecord[], now: number): EvidenceControlItem[] {
   return records.flatMap((record) =>
     record.verificationEvidence.map((evidence) => {
-      const ref = makeEvidenceRef({
+      const ref = evidence.evidenceRef ?? makeEvidenceRef({
         kind: commandKind(evidence.command),
         ref: `completion:${record.id}:${evidence.toolCallId}`,
         source: 'completionSummary.verification',
         capturedAtMs: record.endedAt || now,
-        state: 'read',
+        state: record.evidenceInvalidatedAt === undefined ? 'read' : 'stale',
       });
+      const stale = ref.freshness.state === 'stale' || ref.freshness.state === 'needs_re_read';
       return makeItem({
         id: `verification:${compactId(record.id)}:${compactId(evidence.toolCallId)}`,
         source: 'verification',
         title: 'Verification command',
-        status: evidence.success ? 'passed' : 'failed',
-        summary: `${evidence.success ? 'passed' : 'failed'} exit=${evidence.exitCode ?? 'unknown'} ${evidence.command}`,
+        status: stale ? 'warning' : evidence.success ? 'passed' : 'failed',
+        summary: `${stale ? 'stale' : evidence.success ? 'passed' : 'failed'} exit=${evidence.exitCode ?? 'unknown'} ${evidence.command}`,
         createdAt: record.endedAt || now,
         evidenceRefs: [ref],
       });
@@ -309,16 +310,20 @@ function collectBrowserComputerProofItems(records: BrowserComputerProofRecord[],
       ref: record.traceId || record.id,
       source: 'browserComputerProofStore',
       capturedAtMs: record.createdAt || now,
-      state: 'read',
+      state: record.evidenceInvalidatedAt === undefined ? 'read' : 'stale',
     });
+    const evidenceRefs = refs.length > 0 ? refs : [fallbackRef];
+    const stale = evidenceRefs.some((ref) => (
+      ref.freshness.state === 'stale' || ref.freshness.state === 'needs_re_read'
+    ));
     return makeItem({
       id: `browser_computer:${compactId(record.id)}`,
       source: 'browser_computer',
       title: `${record.toolName} proof`,
-      status: statusFromBrowserComputer(record.status),
+      status: stale ? 'warning' : statusFromBrowserComputer(record.status),
       summary: record.summary,
       createdAt: record.createdAt || now,
-      evidenceRefs: refs.length > 0 ? refs : [fallbackRef],
+      evidenceRefs,
       metadata: {
         toolName: record.toolName,
         targetKind: record.targetKind,

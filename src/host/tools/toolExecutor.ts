@@ -13,6 +13,7 @@ import { getSessionAutomationService } from '../services/sessionAutomation/sessi
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
+import { getFileCheckpointService } from '../services/checkpoint';
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { type ClassificationResult } from './permissionClassifier';
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
@@ -1353,7 +1354,7 @@ export class ToolExecutor {
       }
 
       // 文件检查点：写隔离锁拿到后再保存原文件，避免并行 worker 竞争同一目标。
-      await createFileCheckpointIfNeeded(executionToolName, params, () => {
+      const fileCheckpoint = await createFileCheckpointIfNeeded(executionToolName, params, () => {
         if (!effectiveSessionId) return null;
         // messageId 从 context 中获取，如果没有则使用工具调用 ID
         const messageId = options.currentToolCallId || `msg_${Date.now()}`;
@@ -1386,6 +1387,12 @@ export class ToolExecutor {
         : null;
       const rawResult = delegatedResult
         ?? await resolver.execute(executionToolName, params, context);
+      if (rawResult.success && fileCheckpoint) {
+        await getFileCheckpointService().finalizeCheckpointDigest(
+          fileCheckpoint.checkpointId,
+          fileCheckpoint.filePath,
+        );
+      }
       const resultWithSurfaceProjection = ensureFailedToolResultError(
         executionToolName,
         await finalizeSurfaceAwareToolResult({

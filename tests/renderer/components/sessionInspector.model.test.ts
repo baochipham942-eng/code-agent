@@ -65,6 +65,22 @@ describe('segmentTurns', () => {
     expect(segment.toolCounts).toEqual({ read: 1, write: 1, command: 1, browser: 0, other: 0 });
     expect(segment.failedToolCount).toBe(1);
   });
+
+  it('checkout 失效记录会让先前 verified 印章降为 self_claimed', () => {
+    const invalidation = event('evidence_invalidation', {
+      schemaVersion: 1,
+      recordType: 'turn_checkout_evidence_invalidation',
+      sessionId: 's1',
+      createdAt: 3000,
+      changedFilePaths: ['/workspace/a.ts'],
+      invalidateRunEvidence: true,
+    }, 0, 3000);
+    const segments = segmentTurns([outcome('verified', 'completed', 2000), invalidation]);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0].stamp?.verdict).toBe('self_claimed');
+    expect(segments[0].stamp?.evidenceCount).toBe(0);
+  });
 });
 
 describe('readTurnOutcome', () => {

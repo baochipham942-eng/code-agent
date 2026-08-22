@@ -236,6 +236,16 @@ export function registerSessionHandlers(
             payload as import('../../shared/contract/fileRestore').RestoreWorkspaceFilesAtCheckpointRequest,
           );
           break;
+        case 'turnCheckout':
+          data = await requireAppService().turnCheckout(
+            payload as import('../../shared/contract/turnCheckout').TurnCheckoutRequest,
+          );
+          break;
+        case 'turnRedo':
+          data = await requireAppService().turnRedo(
+            payload as import('../../shared/contract/turnCheckout').TurnRedoRequest,
+          );
+          break;
         case 'export':
           data = await requireAppService().exportSession((payload as { sessionId: string }).sessionId);
           break;

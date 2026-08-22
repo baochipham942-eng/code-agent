@@ -53,7 +53,10 @@ export class SessionRewindService {
     this.now = options.now ?? Date.now;
   }
 
-  async rewindConversation(request: RewindConversationRequest): Promise<RewindConversationResult> {
+  async rewindConversation(
+    request: RewindConversationRequest,
+    record: Omit<PromptRewindRecordInput, 'idempotencyKey' | 'ownerUserId'> = {},
+  ): Promise<RewindConversationResult> {
     if (
       typeof request.sessionId !== 'string'
       || typeof request.anchorUserMessageId !== 'string'
@@ -73,7 +76,7 @@ export class SessionRewindService {
       result = this.database.applyPromptRewind(
         request.sessionId,
         request.anchorUserMessageId,
-        { idempotencyKey: request.idempotencyKey, ownerUserId },
+        { ...record, idempotencyKey: request.idempotencyKey, ownerUserId },
       );
     } catch (error) {
       throw this.normalizeError(error);

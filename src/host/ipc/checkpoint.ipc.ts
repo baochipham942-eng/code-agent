@@ -2,6 +2,7 @@
 
 import type { IpcMain } from '../platform';
 import { getFileCheckpointService } from '../services/checkpoint';
+import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 import type { FileCheckpoint } from '../../shared/contract';
 import type { AgentApplicationService } from '../../shared/contract/appService';
@@ -20,21 +21,40 @@ export function registerCheckpointHandlers(
   ipcMain.handle(IPC_CHANNELS.CHECKPOINT_LIST, async (_, sessionId: string) => {
     try {
       const service = getFileCheckpointService();
-      const checkpoints = await service.getCheckpoints(sessionId);
-      const messageMap = new Map<string, { checkpoint: FileCheckpoint; fileCount: number }>();
+      const checkpoints = (await service.getCheckpoints(sessionId))
+        .filter((checkpoint) => !checkpoint.messageId.startsWith('turn_redo_snapshot_'));
+      const userMessages = getDatabase().getMessages(sessionId)
+        .filter((message) => message.role === 'user')
+        .sort((left, right) => left.timestamp - right.timestamp);
+      const messageMap = new Map<string, {
+        checkpoint: FileCheckpoint;
+        anchorUserMessageId?: string;
+        filePaths: Set<string>;
+      }>();
       for (const cp of checkpoints) {
-        const existing = messageMap.get(cp.messageId);
+        const anchor = [...userMessages].reverse().find((message) => message.timestamp <= cp.createdAt);
+        const groupId = anchor?.id ?? cp.messageId;
+        const existing = messageMap.get(groupId);
         if (existing) {
-          existing.fileCount++;
+          existing.filePaths.add(cp.filePath);
+          if (cp.createdAt < existing.checkpoint.createdAt) existing.checkpoint = cp;
         } else {
-          messageMap.set(cp.messageId, { checkpoint: cp, fileCount: 1 });
+          messageMap.set(groupId, {
+            checkpoint: cp,
+            anchorUserMessageId: anchor?.id,
+            filePaths: new Set([cp.filePath]),
+          });
         }
       }
-      return Array.from(messageMap.values()).map(({ checkpoint, fileCount }) => ({
+      return Array.from(messageMap.values()).map(({ checkpoint, anchorUserMessageId, filePaths }) => ({
         id: checkpoint.id,
         timestamp: checkpoint.createdAt,
         messageId: checkpoint.messageId,
-        fileCount,
+        anchorUserMessageId,
+        description: anchorUserMessageId
+          ? userMessages.find((message) => message.id === anchorUserMessageId)?.content.slice(0, 80)
+          : undefined,
+        fileCount: filePaths.size,
       }));
     } catch (error) {
       logger.error('Failed to list checkpoints', { error, sessionId });

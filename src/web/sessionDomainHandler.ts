@@ -503,6 +503,29 @@ export function installSessionDomainHandler(deps: SessionDomainHandlerDependenci
           });
           break;
         }
+        case 'turnCheckout': {
+          const appService = await createSessionApplicationService(deps);
+          data = await appService.turnCheckout({
+            sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
+            userMessageId: typeof payload?.userMessageId === 'string' ? payload.userMessageId : '',
+            ...(typeof payload?.idempotencyKey === 'string'
+              ? { idempotencyKey: payload.idempotencyKey }
+              : {}),
+          });
+          sm.invalidateSessionCache(typeof payload?.sessionId === 'string' ? payload.sessionId : '');
+          invalidateSessionMessagesProjection(typeof payload?.sessionId === 'string' ? payload.sessionId : '');
+          break;
+        }
+        case 'turnRedo': {
+          const appService = await createSessionApplicationService(deps);
+          data = await appService.turnRedo({
+            sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
+            rewindId: typeof payload?.rewindId === 'string' ? payload.rewindId : '',
+          });
+          sm.invalidateSessionCache(typeof payload?.sessionId === 'string' ? payload.sessionId : '');
+          invalidateSessionMessagesProjection(typeof payload?.sessionId === 'string' ? payload.sessionId : '');
+          break;
+        }
         case 'export':
           data = await sm.exportSession(payload?.sessionId as string);
           break;

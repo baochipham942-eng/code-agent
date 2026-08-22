@@ -1729,6 +1729,14 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.restorePromptRewind(sessionId, rewindId, restoredAt, ownerUserId);
   }
+  getPromptRewindAudit(
+    sessionId: string,
+    rewindId: string,
+    ownerUserId?: string | null,
+  ): import('./repositories/SessionRewindRepository').PromptRewindAudit {
+    this.ensureDb();
+    return this.sessionRepo.rewindRepo.getPromptRewindAudit(sessionId, rewindId, ownerUserId);
+  }
   replayConversationBranch(
     sessionId: string,
     boundary: import('../../../shared/contract/conversationBranch').ConversationBoundary,

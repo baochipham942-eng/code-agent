@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { History, Loader2 } from 'lucide-react';
 
 import type { ConversationReplay } from '@shared/contract/conversationBranch';
-import type { RestoreConversationRewindResult } from '@shared/contract/sessionRewind';
+import type { TurnRedoResult } from '@shared/contract/turnCheckout';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
@@ -12,7 +12,7 @@ interface ActiveConversationRewindBannerProps {
   sessionId: string | null;
   refreshToken?: number;
   disabled?: boolean;
-  onRestored: (result: RestoreConversationRewindResult) => void;
+  onRestored: (result: TurnRedoResult) => void;
 }
 
 function latestOpenRewindId(replay: ConversationReplay): string | null {
@@ -96,9 +96,9 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
     const expectedRewindId = activeRewindId;
     setIsRestoring(true);
     try {
-      const result = await ipcService.invokeDomain<RestoreConversationRewindResult>(
+      const result = await ipcService.invokeDomain<TurnRedoResult>(
         IPC_DOMAINS.SESSION,
-        'restoreConversationRewind',
+        'turnRedo',
         {
           sessionId: expectedSessionId,
           rewindId: expectedRewindId,
@@ -106,8 +106,10 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
       );
       if (currentSessionIdRef.current !== expectedSessionId) return;
       onRestored(result);
-      setActiveRewindId(null);
-      setAnchorExcerpt(null);
+      if (result.done.includes('conversation')) {
+        setActiveRewindId(null);
+        setAnchorExcerpt(null);
+      }
       try {
         const next = await readActiveRewind(expectedSessionId);
         if (currentSessionIdRef.current === expectedSessionId) {
@@ -150,7 +152,7 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
         className="inline-flex shrink-0 items-center gap-1 rounded-md border border-badge-warning/70 px-2 py-1 text-badge-warning hover:border-badge-warning hover:text-badge-warning disabled:cursor-not-allowed disabled:opacity-50"
       >
         {isRestoring && <Loader2 className="h-3 w-3 animate-spin" />}
-        {t.chat.rewindRestoreAction}
+        {t.chat.turnRedoAction}
       </button>
     </div>
   );

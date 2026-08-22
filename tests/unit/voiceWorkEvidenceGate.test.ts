@@ -176,6 +176,10 @@ describe('证据判据（什么算产物证据）', () => {
     expect(hasVoiceWorkEvidence(recordOf({
       verificationEvidence: [{ kind: 'command', toolCallId: 'tc-1', command: 'npm test', success: false }],
     }))).toBe(false);
+    expect(hasVoiceWorkEvidence(recordOf({
+      changedFiles: ['/tmp/a.txt'],
+      evidenceInvalidatedAt: Date.now(),
+    }))).toBe(false);
   });
 
   it('压根没有 run 记录 = 没有证据（不是「默认通过」）', () => {

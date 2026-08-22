@@ -30,11 +30,13 @@ const logger = createLogger('VoiceWorkEvidence');
  * 把它当证据等于把门开在门里。
  */
 export function hasVoiceWorkEvidence(record: CompletionSummaryRecord | null | undefined): boolean {
-  if (!record) return false;
+  if (!record || record.evidenceInvalidatedAt !== undefined) return false;
   return record.changedFiles.length > 0
     || record.artifactRefs.length > 0
     || record.commitIds.length > 0
-    || record.verificationEvidence.some((evidence) => evidence.success);
+    || record.verificationEvidence.some((evidence) => (
+      evidence.success && evidence.evidenceRef?.freshness.state !== 'stale'
+    ));
 }
 
 /**

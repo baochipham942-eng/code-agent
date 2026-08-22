@@ -12,6 +12,7 @@ type SQLiteRow = Record<string, unknown>;
 export interface PromptRewindRecordInput {
   idempotencyKey?: string;
   checkpointMessageId?: string | null;
+  redoCheckpointMessageId?: string | null;
   filesRestored?: number;
   filesDeleted?: number;
   errors?: string[];
@@ -36,6 +37,14 @@ export interface PromptRewindRestoreResult {
   rewindId: string;
   restoredMessageCount: number;
   activeMessages: Message[];
+}
+
+export interface PromptRewindAudit {
+  rewindId: string;
+  status: string;
+  isLatestCompleted: boolean;
+  checkpointMessageId: string | null;
+  redoCheckpointMessageId: string | null;
 }
 
 const FORBIDDEN_SESSION_STATES = new Set([
@@ -153,11 +162,11 @@ export class SessionRewindRepository {
       this.db.prepare(`
         INSERT INTO session_rewinds (
           id, session_id, anchor_message_id, anchor_prompt, anchor_timestamp,
-          checkpoint_message_id, hidden_message_count, hidden_message_ids,
+          checkpoint_message_id, redo_checkpoint_message_id, hidden_message_count, hidden_message_ids,
           files_restored, files_deleted, errors_json, idempotency_key,
           request_digest, status, restored_at, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', NULL, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', NULL, ?)
       `).run(
         rewindId,
         sessionId,
@@ -165,6 +174,7 @@ export class SessionRewindRepository {
         anchorMessage.content,
         anchorMessage.timestamp,
         record.checkpointMessageId ?? null,
+        record.redoCheckpointMessageId ?? null,
         hiddenMessageIds.length,
         JSON.stringify(hiddenMessageIds),
         record.filesRestored ?? 0,
@@ -273,6 +283,39 @@ export class SessionRewindRepository {
       };
     });
     return restoreFn.immediate();
+  }
+
+  getPromptRewindAudit(
+    sessionId: string,
+    rewindId: string,
+    ownerUserId?: string | null,
+  ): PromptRewindAudit {
+    this.assertMutationAllowed(sessionId, ownerUserId);
+    const row = this.db.prepare(`
+      SELECT id, status, checkpoint_message_id, redo_checkpoint_message_id
+      FROM session_rewinds
+      WHERE id = ? AND session_id = ?
+      LIMIT 1
+    `).get(rewindId, sessionId) as SQLiteRow | undefined;
+    if (!row) throw new Error(`Rewind not found: ${rewindId}`);
+    const latestCompleted = this.db.prepare(`
+      SELECT id
+      FROM session_rewinds
+      WHERE session_id = ? AND status = 'completed'
+      ORDER BY rowid DESC
+      LIMIT 1
+    `).get(sessionId) as { id: string } | undefined;
+    return {
+      rewindId: String(row.id),
+      status: String(row.status),
+      isLatestCompleted: row.status === 'completed' && latestCompleted?.id === rewindId,
+      checkpointMessageId: row.checkpoint_message_id == null
+        ? null
+        : String(row.checkpoint_message_id),
+      redoCheckpointMessageId: row.redo_checkpoint_message_id == null
+        ? null
+        : String(row.redo_checkpoint_message_id),
+    };
   }
 
   private assertMutationAllowed(

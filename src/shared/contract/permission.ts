@@ -36,6 +36,10 @@ export type ApprovalLevel =
 export interface PermissionRequest {
   id: string;
   sessionId?: string;
+  /** Background execution identity for correlating approvals to a subagent slot. */
+  agentId?: string;
+  runId?: string;
+  parentToolUseId?: string;
   forceConfirm?: boolean;
   type: PermissionType;
   tool: string;

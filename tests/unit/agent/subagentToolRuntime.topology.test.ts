@@ -81,6 +81,7 @@ function makeRuntime(context: SubagentExecutionContext) {
     context,
     sessionId: 's1',
     effectiveMode: 'default',
+    identity: { agentId: 'agent-1', runId: 'run-1' },
     allowedToolNames: new Set(['AgentSpawn']),
     checkToolExecution: () => true,
   });

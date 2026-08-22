@@ -293,6 +293,9 @@ export interface ToolDecision {
 
 export interface CanUseToolRequestHint {
   readonly sessionId?: string;
+  readonly agentId?: string;
+  readonly runId?: string;
+  readonly parentToolUseId?: string;
   readonly forceConfirm?: boolean;
   readonly type?: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command' | 'directory_access';
   readonly tool?: string;

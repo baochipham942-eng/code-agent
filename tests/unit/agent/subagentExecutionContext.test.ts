@@ -55,6 +55,9 @@ describe('protocol-native SubagentExecutionContext', () => {
 
     await expect(context.permission.request({
       sessionId: 'session-a',
+      agentId: 'agent-a',
+      runId: 'run-a',
+      parentToolUseId: 'call-a',
       type: 'network',
       tool: 'web_fetch',
       details: { url: 'https://example.com' },
@@ -64,7 +67,13 @@ describe('protocol-native SubagentExecutionContext', () => {
       'web_fetch',
       { url: 'https://example.com' },
       'fetch evidence',
-      expect.objectContaining({ sessionId: 'session-a', type: 'network' }),
+      expect.objectContaining({
+        sessionId: 'session-a',
+        agentId: 'agent-a',
+        runId: 'run-a',
+        parentToolUseId: 'call-a',
+        type: 'network',
+      }),
     );
   });
 

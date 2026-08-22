@@ -79,6 +79,9 @@ export interface SubagentToolResolverPort {
 
 export interface SubagentPermissionRequest {
   sessionId?: string;
+  agentId?: string;
+  runId?: string;
+  parentToolUseId?: string;
   forceConfirm?: boolean;
   type: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command' | 'directory_access';
   tool: string;

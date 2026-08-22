@@ -44,6 +44,7 @@ describe('createSubagentToolRuntime permission forwarding', () => {
       } as any,
       sessionId: 'session-1',
       effectiveMode: input.effectiveMode,
+      identity: { agentId: 'agent-1', runId: 'run-1', parentToolUseId: 'parent-tool-1' },
       allowedToolNames: new Set(['Write', 'Bash']),
       checkToolExecution: vi.fn(() => true),
     });
@@ -77,7 +78,10 @@ describe('createSubagentToolRuntime permission forwarding', () => {
     expect(approved).toBe(false);
     expect(permissionRequest).toHaveBeenCalledTimes(1);
     expect(permissionRequest).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: 'agent-1',
       forceConfirm: true,
+      parentToolUseId: 'parent-tool-1',
+      runId: 'run-1',
       tool,
       type,
     }));

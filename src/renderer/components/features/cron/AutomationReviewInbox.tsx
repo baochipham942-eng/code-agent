@@ -38,7 +38,7 @@ interface AutomationReviewInboxProps {
 }
 
 export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
@@ -222,7 +222,14 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                   >
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm text-zinc-200">{record.title}</div>
-                      {record.config?.pendingReview?.at != null && (
+                      {record.config?.missedNotice ? (
+                        <div className="text-[11px] text-badge-warning" data-testid="automation-review-missed">
+                          {cc.inboxMissedAt.replace(
+                            '{time}',
+                            new Date(record.config.missedNotice.scheduledAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
+                          )}
+                        </div>
+                      ) : record.config?.pendingReview?.at != null && (
                         <div className="text-[11px] text-zinc-500">
                           {new Date(record.config.pendingReview.at).toLocaleString()}
                         </div>

@@ -121,6 +121,22 @@ describe('AutomationReviewInbox', () => {
     });
   });
 
+  it('目标会话已删除时，在收件箱显示本地化漏跑原因', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({
+      sourceSessionId: 'deleted-session',
+      config: {
+        pendingReview: { at: 1700000000000 },
+        missedNotice: { scheduledAt: 1700000000000, reason: 'app-offline' },
+      },
+    })]);
+
+    render(<AutomationReviewInbox />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-missed').textContent).toContain('应用离线');
+    });
+  });
+
   it('查看结果：标记已读并跳结果会话', async () => {
     listPendingReview.mockResolvedValue([makeRecord({})]);
     render(<AutomationReviewInbox />);

@@ -22,6 +22,7 @@ import type {
 } from '../../shared/contract/agentTree';
 import { getAgentTreeSnapshot } from '../agent/agentTreeService';
 import { getAgentWorktreeReview } from '../agent/agentWorktree';
+import { getSpawnGuard } from '../agent/spawnGuard';
 import {
   MODE_CONFIGS,
   getPermissionModeManager,
@@ -222,6 +223,26 @@ export function registerAgentHandlers(
             success: true,
             data: getAgentTreeSnapshot(payload as AgentTreeRequest | undefined),
           };
+        case 'closeAgent': {
+          // 行级停单个普通代理（close_agent 工具的 IPC 形态）：spawnGuard.cancel 按
+          // AbortController 取消并连带后代；带 sessionId 时限域防误停别的会话。
+          const req = (payload ?? {}) as { agentId?: unknown; sessionId?: unknown };
+          const agentId = typeof req.agentId === 'string' ? req.agentId.trim() : '';
+          if (!agentId) {
+            return {
+              success: false,
+              error: { code: 'INVALID_AGENT_ID', message: 'agentId is required' },
+            };
+          }
+          const sessionId = typeof req.sessionId === 'string' && req.sessionId.trim()
+            ? req.sessionId.trim()
+            : undefined;
+          const cancelled = getSpawnGuard().cancel(
+            agentId,
+            sessionId ? { sessionId } : undefined,
+          );
+          return { success: true, data: { cancelled } };
+        }
         case 'getWorktreeReview': {
           const agentId = (payload as AgentWorktreeReviewRequest | undefined)?.agentId?.trim();
           if (!agentId) {

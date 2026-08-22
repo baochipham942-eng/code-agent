@@ -32,6 +32,7 @@ import {
 import type { SubagentResult } from './subagentExecutorTypes';
 import { listAgentWorktreeArtifacts } from './agentWorktree';
 import { extractToolStepTarget } from './toolStepTarget';
+import { getFileOwnershipRegistry } from '../services/infra/fileOwnershipRegistry';
 
 export interface AgentTreeSpawnAgentSource {
   id: string;
@@ -54,6 +55,8 @@ export interface AgentTreeSnapshotSources {
   contextRecords?: SubagentContextRecord[];
   backgroundAgents?: BackgroundSubagentHandle[];
   worktrees?: AgentWorktreeArtifact[];
+  /** 文件所有权冲突（调用方从 fileOwnershipRegistry 取；缺省 = 无冲突）。 */
+  ownershipConflicts?: Array<{ path: string; ownerAgentId: string; requesterAgentId: string }>;
 }
 
 export interface GetAgentTreeSnapshotOptions {
@@ -531,6 +534,7 @@ function summarize(nodes: AgentTreeNode[]): AgentTreeSnapshot['summary'] {
     withWorktree: nodes.filter((node) => node.worktreeState.status !== 'none').length,
     ...(sawCost ? { totalCostUsd } : {}),
     ...(sawTokens ? { totalTokensUsed } : {}),
+    ownershipConflicts: [],
   };
 }
 
@@ -560,12 +564,18 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
   }
 
   const { roots, flat } = attachChildren(Array.from(nodes.values()));
+  const summary = summarize(flat);
+  summary.ownershipConflicts = (sources.ownershipConflicts ?? []).map((conflict) => ({
+    path: conflict.path,
+    ownerAgentId: conflict.ownerAgentId,
+    requesterAgentId: conflict.requesterAgentId,
+  }));
   return {
     generatedAt: sources.now ?? Date.now(),
     ...(sessionId ? { sessionId } : {}),
     roots,
     nodes: flat,
-    summary: summarize(flat),
+    summary,
   };
 }
 
@@ -579,5 +589,10 @@ export function getAgentTreeSnapshot(options: GetAgentTreeSnapshotOptions = {}):
     contextRecords: getSubagentContextStore().list(sessionId),
     backgroundAgents: getBackgroundSubagentRegistry().list(),
     worktrees: options.worktrees ?? listAgentWorktreeArtifacts(),
+    // 同一根脊柱：冲突从 fileOwnershipRegistry 拉（string scope = session:<id>），
+    // 不给 renderer 新开 channel。
+    ownershipConflicts: sessionId
+      ? getFileOwnershipRegistry().listConflicts(sessionId)
+      : [],
   });
 }

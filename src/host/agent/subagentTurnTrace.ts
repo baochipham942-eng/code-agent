@@ -1,6 +1,4 @@
 import path from 'node:path';
-import type { AgentEvent } from '../../shared/contract';
-import type { TurnDiffFileChange } from '../../shared/contract/turnDiff';
 import {
   captureTurnDiff,
   captureWorkspaceMutationSnapshot,
@@ -12,10 +10,7 @@ import {
   isFileMutationTool,
 } from './runtime/toolArtifactRepairPolicy';
 import { isWorkspaceDiscoveryMutationTool } from './runtime/toolFileMutationTracking';
-import {
-  TurnTraceRecorder,
-  type TraceEvent,
-} from './runtime/turnTrace';
+import { TurnTraceRecorder } from './runtime/turnTrace';
 import {
   createSubagentEventScope,
   type SubagentEventIdentity,
@@ -29,7 +24,7 @@ function traceSlotSegment(value: string): string {
   return Buffer.from(value, 'utf8').toString('base64url');
 }
 
-export function getSubagentTraceFileKey(
+function getSubagentTraceFileKey(
   sessionId: string,
   identity: Pick<SubagentEventIdentity, 'agentId' | 'runId'>,
 ): string {
@@ -41,7 +36,7 @@ export function getSubagentTraceFileKey(
   );
 }
 
-export function createSubagentTurnTraceRecorder(input: {
+function createSubagentTurnTraceRecorder(input: {
   sessionId: string;
   identity: SubagentEventIdentity;
   traceDir?: string;
@@ -53,7 +48,7 @@ export function createSubagentTurnTraceRecorder(input: {
   );
 }
 
-export async function emitSubagentTurnDiff(input: {
+async function emitSubagentTurnDiff(input: {
   events: SubagentEventPort;
   identity: SubagentEventIdentity;
   workingDirectory: string;
@@ -75,7 +70,7 @@ export async function emitSubagentTurnDiff(input: {
   return true;
 }
 
-export async function recordSubagentMutationPaths(input: {
+async function recordSubagentMutationPaths(input: {
   toolCall: { name: string; arguments: Record<string, unknown> };
   success: boolean;
   workingDirectory: string;
@@ -99,7 +94,7 @@ export async function recordSubagentMutationPaths(input: {
   }
 }
 
-export function createSubagentMutationPathSlot(): Set<string> {
+function createSubagentMutationPathSlot(): Set<string> {
   return new Set<string>();
 }
 
@@ -109,9 +104,15 @@ export function createSubagentTurnObservability(input: {
   events: SubagentEventPort;
   workingDirectory: string;
   warn: (message: string, error: unknown) => void;
+  /** Override the trace ledger directory (defaults to userData/traces); used by tests. */
+  traceDir?: string;
 }) {
   const eventScope = createSubagentEventScope({ events: input.events, identity: input.identity });
-  const recorder = createSubagentTurnTraceRecorder({ sessionId: input.sessionId, identity: eventScope.identity });
+  const recorder = createSubagentTurnTraceRecorder({
+    sessionId: input.sessionId,
+    identity: eventScope.identity,
+    traceDir: input.traceDir,
+  });
   let mutationPaths = createSubagentMutationPathSlot();
   return {
     identity: eventScope.identity,
@@ -179,64 +180,4 @@ export function createSubagentTurnObservability(input: {
       eventScope.endRun(status, error);
     },
   };
-}
-
-export interface SubagentTurnReplay {
-  turnId: string;
-  turnIndex: number;
-  tools: Array<{
-    toolName: string;
-    success: boolean;
-    durationMs: number;
-    error: string | null;
-  }>;
-  files: TurnDiffFileChange[];
-}
-
-/** Join a run-scoped trace ledger with correlated lifecycle/diff events for delegation replay. */
-export function buildSubagentTurnReplay(input: {
-  identity: SubagentEventIdentity;
-  traceEvents: readonly TraceEvent[];
-  agentEvents: readonly AgentEvent[];
-}): SubagentTurnReplay[] {
-  const belongsToRun = (event: AgentEvent): boolean => {
-    const data = event.data;
-    return Boolean(
-      data
-      && typeof data === 'object'
-      && 'agentId' in data
-      && 'runId' in data
-      && data.agentId === input.identity.agentId
-      && data.runId === input.identity.runId
-      && (
-        input.identity.parentToolUseId === undefined
-        || ('parentToolUseId' in data && data.parentToolUseId === input.identity.parentToolUseId)
-      )
-    );
-  };
-  const runEvents = input.agentEvents.filter(belongsToRun);
-  const starts = runEvents.flatMap((event) => (
-    event.type === 'turn_start'
-      ? [{ turnId: event.data.turnId, turnIndex: event.data.iteration ?? 0 }]
-      : []
-  ));
-  const diffsByTurn = new Map(runEvents.flatMap((event) => (
-    event.type === 'turn_diff' ? [[event.data.turnId, event.data.files] as const] : []
-  )));
-
-  return starts.map(({ turnId, turnIndex }) => ({
-    turnId,
-    turnIndex,
-    tools: input.traceEvents.flatMap((event) => (
-      event.turnIndex === turnIndex && event.type === 'tool_dispatch'
-        ? [{
-            toolName: event.data.toolName,
-            success: event.data.success,
-            durationMs: event.data.durationMs,
-            error: event.data.error,
-          }]
-        : []
-    )),
-    files: diffsByTurn.get(turnId) ?? [],
-  }));
 }

@@ -21,32 +21,28 @@ describe('ChatView mid-turn adjustment boundary', () => {
   });
 
   it.each(['steered', 'queued'] as const)(
-    'projects an accepted %s foreground message without queue UI state',
+    'sends an accepted %s request without projecting the original as a user bubble',
     async (outcomeName) => {
       invoke.mockResolvedValue({
         success: true,
         data: outcomeName === 'steered'
           ? { outcome: 'steered' }
-          : { outcome: 'queued', queuedInputId: 'buffered-1' },
+          : { outcome: 'queued', queuedInputId: 'buffered-1', code: 'TURN_CHANGED', message: '这条先排上了，手头这轮做完就做' },
       });
 
       const outcome = await submitSteerEnvelope({
         content: '改用简洁方案',
         attachments: [],
-        context: { workingDirectory: '/repo', runtimeInput: { mode: 'supplement' } },
-      }, 'session-running');
+        context: { workingDirectory: '/repo', runtimeInput: { mode: 'redirect' } },
+      }, 'session-running', 'turn-visible');
 
       expect(outcome?.outcome).toBe(outcomeName);
       expect(invoke).toHaveBeenCalledWith(
         IPC_DOMAINS.AGENT,
         'interrupt',
-        expect.objectContaining({ content: '改用简洁方案', sessionId: 'session-running' }),
+        expect.objectContaining({ content: '改用简洁方案', sessionId: 'session-running', expectedTurnId: 'turn-visible' }),
       );
-      expect(useSessionStore.getState().messages.at(-1)).toMatchObject({
-        role: 'user',
-        content: '改用简洁方案',
-        metadata: { workbench: { workingDirectory: '/repo', runtimeInputMode: 'supplement' } },
-      });
+      expect(useSessionStore.getState().messages).toEqual([]);
     },
   );
 });

@@ -70,8 +70,8 @@ export const SendButton: React.FC<SendButtonProps> = ({
         type={type}
         onClick={onClick}
         className={`${baseIconButtonClass} bg-brand text-white shadow-[0_10px_24px_var(--brand-primary-glow)] hover:bg-brand-hover active:scale-95`}
-        aria-label={t.chatInput.steerCurrentTurnAria}
-        title={t.chatInput.steerCurrentTurnAria}
+        aria-label={t.chatInput.sendAria}
+        title={t.chatInput.sendAria}
       >
         <ArrowUp className="h-3.5 w-3.5 stroke-[2.4]" />
       </button>

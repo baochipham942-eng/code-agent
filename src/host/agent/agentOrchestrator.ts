@@ -103,6 +103,7 @@ interface PendingSteerMessage {
   clientMessageId?: string;
   attachments?: MessageAttachment[];
   messageMetadata?: MessageMetadata;
+  expectedTurnId?: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -358,6 +359,7 @@ export class AgentOrchestrator {
     options?: AgentRunOptions,
     messageMetadata?: MessageMetadata,
     clientMessageId?: string,
+    expectedTurnId?: string,
   ): Promise<SteerOrQueueOutcome> {
     logger.info('Interrupt and continue requested');
     const sessionManager = getSessionManager();
@@ -372,6 +374,7 @@ export class AgentOrchestrator {
         clientMessageId,
         attachments: attachments as MessageAttachment[] | undefined,
         messageMetadata,
+        expectedTurnId,
       });
       return { outcome: 'steered' };
     }
@@ -387,13 +390,13 @@ export class AgentOrchestrator {
     if (this.agentLoop) {
       try {
         const outcome = await steerOrQueue(this.agentLoop, {
-          sessionId, content: effectiveMessage, displayContent: newMessage, clientMessageId, attachments: attachments as MessageAttachment[] | undefined, metadata: messageMetadata,
+          sessionId, content: effectiveMessage, displayContent: newMessage, clientMessageId, attachments: attachments as MessageAttachment[] | undefined, metadata: messageMetadata, expectedTurnId,
         });
 
         while (this.pendingSteerMessages.length > 0) {
           const queued = this.pendingSteerMessages.shift()!;
           await steerOrQueue(this.agentLoop, {
-            sessionId, content: queued.content, displayContent: queued.displayContent, clientMessageId: queued.clientMessageId, attachments: queued.attachments, metadata: queued.messageMetadata,
+            sessionId, content: queued.content, displayContent: queued.displayContent, clientMessageId: queued.clientMessageId, attachments: queued.attachments, metadata: queued.messageMetadata, expectedTurnId: queued.expectedTurnId,
           });
           logger.info('[AgentOrchestrator] Processed queued steer message');
         }

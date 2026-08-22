@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentTreeNode } from '../../../src/shared/contract/agentTree';
 import type { LastToolStep, Task } from '../../../src/shared/contract/backgroundTask';
-import { agentRowStatus, buildAgentRows, type MemberRowSource } from '../../../src/renderer/utils/agentRows';
+import { buildAgentRows, type MemberRowSource } from '../../../src/renderer/utils/agentRows';
 
 const step: LastToolStep = { tool: 'Read', target: '/repo/a.ts', at: 1 };
 const describeStep = (input: LastToolStep | undefined): string => (input ? `做了 ${input.tool}` : '正在整理任务…');
@@ -31,7 +31,15 @@ function task(overrides: Partial<Task>): Task {
   };
 }
 
-describe('agentRowStatus 九态→四态全表', () => {
+/** 九态→四态只在 agentRows 内部一处；对外只经 buildAgentRows 可见，所以全表走公共入口。 */
+function rowStatusOf(status: string) {
+  return buildAgentRows({
+    members: [], tasks: [], describeStep: () => '',
+    nodes: [node({ id: `n-${status}`, status: status as AgentTreeNode['status'] })],
+  })[0]?.status;
+}
+
+describe('agentRowStatus 九态→四态全表（经 buildAgentRows）', () => {
   it.each([
     ['queued', 'working'],
     ['running', 'working'],
@@ -49,11 +57,11 @@ describe('agentRowStatus 九态→四态全表', () => {
     ['expired', 'failed'],
     ['orphaned', 'failed'],
   ] as const)('%s → %s', (input, expected) => {
-    expect(agentRowStatus(input)).toBe(expected);
+    expect(rowStatusOf(input)).toBe(expected);
   });
 
   it('表外状态宁可说在干（working），别说死', () => {
-    expect(agentRowStatus('some-future-status')).toBe('working');
+    expect(rowStatusOf('some-future-status')).toBe('working');
   });
 });
 

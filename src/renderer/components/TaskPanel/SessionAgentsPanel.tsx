@@ -14,6 +14,7 @@ import React, { useMemo, useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Clock, Square, X, Zap } from 'lucide-react';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { AgentStatus } from '@shared/contract/swarm';
+import { cancelSwarmRunOrFallback } from '../features/swarm/SwarmInlineMonitor';
 import ipcService from '../../services/ipcService';
 import { useI18n } from '../../hooks/useI18n';
 import { useSessionAgentRows } from '../../hooks/useSessionAgentRows';
@@ -123,13 +124,12 @@ export const SessionAgentsPanel: React.FC = () => {
     if (stoppingAll || stoppableRows.length === 0) return;
     setStoppingAll(true);
     try {
-      await Promise.all(stoppableRows.map((row) => {
-        if (row.kind === 'expert') {
-          if (!sessionId || !activeRunId) return Promise.resolve();
-          return ipcService
-            .invoke(IPC_CHANNELS.SWARM_CANCEL_AGENT, { sessionId, runId: activeRunId, agentId: row.key })
-            .catch(() => false);
-        }
+      const expertRows = stoppableRows.filter((row) => row.kind === 'expert');
+      const swarmStop = sessionId && activeRunId && expertRows.length > 0
+        ? cancelSwarmRunOrFallback({ sessionId, runId: activeRunId }, expertRows.map((row) => ({ id: row.key })))
+        : Promise.resolve();
+      await Promise.all([swarmStop, ...stoppableRows.map((row) => {
+        if (row.kind === 'expert') return Promise.resolve();
         if (row.kind === 'agent') {
           return ipcService
             .invokeDomain(IPC_DOMAINS.AGENT, 'closeAgent', { agentId: row.key, sessionId })
@@ -138,7 +138,7 @@ export const SessionAgentsPanel: React.FC = () => {
         return window.domainAPI
           ?.invoke(IPC_DOMAINS.TASK, 'cancelBackgroundTask', { taskId: row.key })
           .catch(() => null);
-      }));
+      })]);
     } finally {
       setStoppingAll(false);
     }

@@ -153,12 +153,6 @@ export const selectSlotVisible = (
 
 /** L3 专用：被 L1 挤时收成一行极窄摘要，而不是整条消失。
     不要求占用者先登记活跃——L3 组件自己知道有没有内容，这里只回答「现在挤不挤」。 */
-export const selectSlotCollapsed = (
-  state: ComposerNoticeState,
-  id: ComposerSlotOccupantId,
-): boolean =>
-  COMPOSER_SLOT_LAYER[id] === 3 && selectLayerHasActive(state, 1);
-
 /**
  * 占用者登记自己的显示意愿，并读取统一优先级结果。卸载时撤销登记，避免幽灵占位。
  */

@@ -15,7 +15,7 @@ import type { LastToolStep, Task, TaskStatus } from '@shared/contract/background
 /** 用户可见四态 + 待命（预选名单）。 */
 export type AgentRowStatus = 'working' | 'done' | 'failed' | 'waiting' | 'standby';
 
-export type AgentRowKind = 'expert' | 'agent' | 'task';
+type AgentRowKind = 'expert' | 'agent' | 'task';
 
 /** Team 成员入参的最小结构（MemberPill 天然满足；这里结构化解耦，避免 utils → 组件反向依赖）。 */
 export interface MemberRowSource {
@@ -75,7 +75,7 @@ const AGENT_ROW_STATUS_TABLE: Record<string, AgentRowStatus> = {
   orphaned: 'failed',
 };
 
-export function agentRowStatus(status: AgentTreeNodeStatus | TaskStatus | string): AgentRowStatus {
+function agentRowStatus(status: AgentTreeNodeStatus | TaskStatus | string): AgentRowStatus {
   return AGENT_ROW_STATUS_TABLE[status] ?? 'working';
 }
 

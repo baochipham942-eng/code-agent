@@ -6,7 +6,7 @@
 // 2. 那一格出现非 SlotEntry 的直接子节点就报错
 // 3. 自闸占用者不能被「没登记就不挂 → 不挂就登记不了」死锁
 // 4. L1 阻塞层同时来两张就摞，都不让位
-// 5. L3 上下文层不让位；被 L1 挤时由 selectSlotCollapsed 回答「挤不挤」
+// 5. L3 上下文层不让位（成员条常态即一行 chip，不再有「挤不挤」收缩态——N-L6-AGENTVIEW）
 // 6. L4 建议层：L1 或 L2 有货整层隐藏；L3 有货**不**隐藏（多人会话不能永久没建议）
 // 7. 挂载清单与 COMPOSER_SLOT_LAYER 双向对齐（登记了没接 / 接了没登记都报红）
 // ============================================================================
@@ -20,7 +20,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ComposerSlot, SlotEntry } from '../../../src/renderer/components/features/chat/ChatInput/ComposerSlot';
 import {
   COMPOSER_SLOT_LAYER,
-  selectSlotCollapsed,
   useComposerNoticeStore,
 } from '../../../src/renderer/stores/composerNoticeStore';
 import type { ComposerSlotOccupantId } from '../../../src/renderer/stores/composerNoticeStore';
@@ -129,19 +128,6 @@ describe('ComposerSlot 容器', () => {
     expect(screen.getByTestId('occupant-member-bar')).toBeTruthy();
   });
 
-  it('L3 收缩判定：L1 阻塞卡在场时成员条收摘要', () => {
-    const collapsed = () => selectSlotCollapsed(useComposerNoticeStore.getState(), 'member-bar');
-    expect(collapsed()).toBe(false);
-
-    act(() => { useComposerNoticeStore.getState().setNotice('team-recipe-draft', true); });
-    expect(collapsed()).toBe(true);
-    act(() => { useComposerNoticeStore.getState().setNotice('team-recipe-draft', false); });
-    expect(collapsed()).toBe(false);
-
-    // 定时/目标/种子三张创建卡与草稿卡同属 L1，同样让成员条收摘要
-    act(() => { useComposerNoticeStore.getState().setSlotActive('seed-composer', true); });
-    expect(collapsed()).toBe(true);
-  });
 
   // ── 判据 6：L4 让位 ──
   it('L4 建议层：L1 有阻塞卡时整层不渲染，卡收掉后恢复', () => {

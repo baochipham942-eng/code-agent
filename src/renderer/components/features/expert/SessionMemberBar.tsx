@@ -30,7 +30,7 @@ import { deriveAgentMergeState } from '../../../utils/agentMergeState';
 import type { AgentRow } from '../../../utils/agentRows';
 
 /** 打开右侧「本会话的代理」面板：切 TaskPanel 页签 + 确保右栏展开。 */
-export function openSessionAgentsPanel(): void {
+function openSessionAgentsPanel(): void {
   useTaskPanelViewStore.getState().setView('agents');
   useAppStore.getState().openWorkbenchTab('overview', { source: 'user' });
 }

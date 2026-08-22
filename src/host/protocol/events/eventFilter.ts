@@ -1,17 +1,9 @@
 import type { AgentEvent } from './categories';
-import {
-  IMMEDIATE_EVENT_TYPES,
-  isTurnLifecycleEvent,
-  type AgentEventType,
-} from './categories';
+import { STABLE_EVENT_TYPES } from '@shared/contract';
+import { type AgentEventType } from './categories';
 
 export type { AgentEventType } from './categories';
 
-/**
- * AgentEvent type names currently come from the shared discriminated union.
- * N-EVTSCHEMA will replace that source with its schema-stable set; keep that
- * source swap and all runtime matching in this module.
- */
 export interface AgentEventFilter {
   include?: readonly AgentEventType[];
   exclude?: readonly AgentEventType[];
@@ -31,15 +23,32 @@ export function shouldDeliverAgentEvent(
   return !filter.exclude?.includes(type);
 }
 
-const BACKGROUND_IMMEDIATE_EVENT_TYPES = [...IMMEDIATE_EVENT_TYPES].filter((type) => (
-  isTurnLifecycleEvent(type)
-  || type === 'tool_call_end'
-  || type === 'artifact_write_started'
-  || type === 'permission_request'
-  || type === 'error'
-));
+/**
+ * Stable events eligible for unattended delivery. This preserves the current
+ * background delivery set while taking its source from the schema-stable
+ * contract: stable events outside this set remain excluded.
+ */
+const BACKGROUND_STABLE_EVENT_TYPE_ALLOWLIST = new Set<AgentEventType>([
+  'turn_start',
+  'turn_end',
+  'agent_complete',
+  'agent_cancelled',
+  'tool_call_end',
+  'artifact_write_started',
+  'artifact_locator',
+  'permission_request',
+  'error',
+]);
+
+const BACKGROUND_STABLE_EVENT_TYPES = [...STABLE_EVENT_TYPES]
+  .filter((type) => BACKGROUND_STABLE_EVENT_TYPE_ALLOWLIST.has(type));
+
+/** Experimental events intentionally delivered to unattended consumers. */
+const BACKGROUND_AGENT_EXPERIMENTAL_EVENT_TYPES: readonly AgentEventType[] = [
+  'turn_diff',
+];
 
 /** Shared allowlist for unattended consumers that do not render stream deltas. */
 export const BACKGROUND_AGENT_EVENT_FILTER = defineAgentEventFilter({
-  include: [...BACKGROUND_IMMEDIATE_EVENT_TYPES, 'artifact_locator', 'turn_diff'],
+  include: [...BACKGROUND_STABLE_EVENT_TYPES, ...BACKGROUND_AGENT_EXPERIMENTAL_EVENT_TYPES],
 });

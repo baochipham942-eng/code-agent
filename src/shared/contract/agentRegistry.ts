@@ -27,6 +27,11 @@ export interface AgentListEntry {
    * 预设角色取 BuiltinRoleVisual，自定义角色取 agent.md frontmatter 的 profession；都没有则缺省。
    */
   profession?: string;
+  /**
+   * lucide 图标名（curated 子集）：与 profession 同源（BuiltinRoleVisual / frontmatter visual）。
+   * 成员条头像三级回落的中间档：真人头像资产 → icon → 首字。
+   */
+  icon?: string;
 }
 
 /**

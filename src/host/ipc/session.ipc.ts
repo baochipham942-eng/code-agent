@@ -66,6 +66,9 @@ export function registerSessionHandlers(
         case 'list':
           data = await requireAppService().listSessions(payload as import('../../shared/contract/appService').SessionListQueryOptions | undefined);
           break;
+        case 'findExpertThread':
+          data = await requireAppService().findExpertThreadSession((payload as { roleId: string }).roleId);
+          break;
         case 'create':
           data = await requireAppService().createSession(payload as import('../../shared/contract/appService').CreateSessionConfig);
           break;

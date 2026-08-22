@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createSubagentEventScope,
-  createSubagentLifecycleEvents,
 } from '../../../src/host/agent/subagentLifecycleEvents';
 
 interface CapturedEvent {
@@ -15,7 +14,7 @@ function makeLifecycle(
   runId: string,
   turnIds: string[],
 ) {
-  return createSubagentLifecycleEvents({
+  return createSubagentEventScope({
     events: {
       emit: (type, data) => events.push({ type, data: data as Record<string, unknown> }),
     },

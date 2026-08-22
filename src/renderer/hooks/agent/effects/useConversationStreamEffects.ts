@@ -88,7 +88,7 @@ export interface ConversationStreamState {
   foregroundAgentId?: string | null;
 }
 
-export function isBackgroundTurnLifecycleEvent(
+function isBackgroundTurnLifecycleEvent(
   event: AgentEvent,
   foregroundAgentId?: string | null,
 ): boolean {

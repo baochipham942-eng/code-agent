@@ -9,7 +9,7 @@ export interface SubagentEventIdentity {
   parentToolUseId?: string;
 }
 
-export function buildSubagentEventIdentity(
+function buildSubagentEventIdentity(
   identity: SubagentEventIdentity,
 ): SubagentEventIdentity {
   return {
@@ -21,7 +21,7 @@ export function buildSubagentEventIdentity(
   };
 }
 
-export function createSubagentLifecycleEvents(input: {
+function createSubagentLifecycleEvents(input: {
   events: SubagentEventPort;
   identity: SubagentEventIdentity;
   generateTurnId?: () => string;
@@ -61,9 +61,14 @@ export function createSubagentLifecycleEvents(input: {
 export function createSubagentEventScope(input: {
   events: SubagentEventPort;
   identity: SubagentEventIdentity;
+  generateTurnId?: () => string;
 }) {
   const identity = buildSubagentEventIdentity(input.identity);
-  const lifecycle = createSubagentLifecycleEvents({ events: input.events, identity });
+  const lifecycle = createSubagentLifecycleEvents({
+    events: input.events,
+    identity,
+    generateTurnId: input.generateTurnId,
+  });
   return {
     identity,
     ...lifecycle,

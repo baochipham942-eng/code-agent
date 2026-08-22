@@ -154,4 +154,18 @@ describe('CLI JSONOutput', () => {
       data: {},
     });
   });
+
+  it('writes stream final results in the event envelope', () => {
+    const output = new JSONOutput();
+    const { log } = mockConsole();
+    vi.spyOn(Date, 'now').mockReturnValue(4000);
+
+    output.result({ success: true, output: 'done' }, true);
+
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
+      type: 'result',
+      timestamp: 4000,
+      data: { success: true, output: 'done' },
+    });
+  });
 });

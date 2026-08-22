@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  AgentEventEnvelopeSchema,
-  AgentEventSchema,
-  EVENT_STABILITY,
   STABLE_EVENT_TYPES,
 } from '../../src/shared/contract/agent';
+import {
+  AgentEventEnvelopeSchema,
+  AgentEventSchema,
+} from '../../src/shared/contract/agentEventSchemas';
 
 describe('AgentEventSchema', () => {
   const legalEvents = [
@@ -56,7 +57,10 @@ describe('AgentEventSchema', () => {
   });
 
   it('exports stability metadata and the stable type set from the same source', () => {
-    expect(Object.keys(EVENT_STABILITY)).toHaveLength(66);
+    const stabilityMetadata = AgentEventSchema.options.map((schema) => schema.meta()?.stability);
+    expect(stabilityMetadata).toHaveLength(66);
+    expect(stabilityMetadata.filter((stability) => stability === 'stable')).toHaveLength(12);
+    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(54);
     expect(STABLE_EVENT_TYPES).toEqual(new Set([
       'message',
       'tool_call_start',
@@ -71,7 +75,5 @@ describe('AgentEventSchema', () => {
       'turn_end',
       'stream_usage',
     ]));
-    expect(EVENT_STABILITY.permission_request).toBe('stable');
-    expect(EVENT_STABILITY.message_delta).toBe('experimental');
   });
 });

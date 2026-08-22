@@ -6,19 +6,13 @@ import type { ModelConfig } from './model';
 import type { ToolCall } from './tool';
 import type { PermissionRequest } from './permission';
 import type { SessionTask, TodoItem } from './planning';
-import {
+import type {
   AgentEventEnvelopeSchema,
   AgentEventSchema,
-  EVENT_STABILITY,
-  STABLE_EVENT_TYPES,
 } from './agentEventSchemas';
+import { STABLE_EVENT_TYPES } from './agentEventSchemas';
 
-export {
-  AgentEventEnvelopeSchema,
-  AgentEventSchema,
-  EVENT_STABILITY,
-  STABLE_EVENT_TYPES,
-};
+export { STABLE_EVENT_TYPES };
 
 // Adaptive Thinking: 思考深度级别
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra_code';

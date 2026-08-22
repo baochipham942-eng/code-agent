@@ -51,7 +51,7 @@ import type { SessionTask, TodoItem } from './planning';
 import type { SurfaceExecutionEventV1 } from './surfaceExecution';
 import type { ToolCall, ToolResult } from './tool';
 
-export type EventStability = 'stable' | 'experimental';
+type EventStability = 'stable' | 'experimental';
 
 const unknownRecordSchema = z.record(z.string(), z.unknown());
 const stringArraySchema = z.array(z.string());
@@ -485,50 +485,50 @@ function event<T extends keyof typeof stabilityByType, S extends z.ZodType>(type
   });
 }
 
-export const MessageEventSchema = event('message', messageSchema);
-export const SurfaceExecutionEventSchema = event('surface_execution', surfaceExecutionSchema);
-export const ToolCallStartEventSchema = event('tool_call_start', typed<ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string }>(toolCallSchema.and(z.object({ _index: z.number().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() }))));
-export const ToolCallEndEventSchema = event('tool_call_end', typed<ToolResult & { parentToolUseId?: string }>(toolResultSchema.and(z.object({ parentToolUseId: z.string().optional() }))));
-export const ArtifactWriteStartedEventSchema = event('artifact_write_started', typed<ArtifactWriteStartedData>(z.object({ toolCallId: z.string(), toolName: z.string(), filePath: z.string() })));
-export const PermissionRequestEventSchema = event('permission_request', permissionRequestSchema);
-export const ModelDecisionEventSchema = event('model_decision', modelDecisionSchema);
-export const HookTriggerEventSchema = event('hook_trigger', typed<HookTriggerEventData>(z.object({
+const MessageEventSchema = event('message', messageSchema);
+const SurfaceExecutionEventSchema = event('surface_execution', surfaceExecutionSchema);
+const ToolCallStartEventSchema = event('tool_call_start', typed<ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string }>(toolCallSchema.and(z.object({ _index: z.number().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() }))));
+const ToolCallEndEventSchema = event('tool_call_end', typed<ToolResult & { parentToolUseId?: string }>(toolResultSchema.and(z.object({ parentToolUseId: z.string().optional() }))));
+const ArtifactWriteStartedEventSchema = event('artifact_write_started', typed<ArtifactWriteStartedData>(z.object({ toolCallId: z.string(), toolName: z.string(), filePath: z.string() })));
+const PermissionRequestEventSchema = event('permission_request', permissionRequestSchema);
+const ModelDecisionEventSchema = event('model_decision', modelDecisionSchema);
+const HookTriggerEventSchema = event('hook_trigger', typed<HookTriggerEventData>(z.object({
   timestamp: z.number(), event: z.string(), action: z.enum(['allow', 'block']), durationMs: z.number(), hookCount: z.number(), modified: z.boolean(),
   sources: z.array(z.enum(['global', 'project'])), hookType: z.enum(['decision', 'observer']), names: stringArraySchema.optional(), errorCount: z.number().optional(),
   message: z.string().optional(), reason: z.string().optional(), sessionId: z.string().optional(), turnId: z.string().optional(), toolName: z.string().optional(), matcher: z.string().optional(),
 })));
-export const HookStartedEventSchema = event('hook_started', typed<HookStartedEventData>(z.object({
+const HookStartedEventSchema = event('hook_started', typed<HookStartedEventData>(z.object({
   timestamp: z.number(), event: z.string(), names: stringArraySchema.optional(), sessionId: z.string().optional(), turnId: z.string().optional(), toolName: z.string().optional(), matcher: z.string().optional(),
 })));
-export const ErrorEventSchema = event('error', z.object({ message: z.string(), code: z.string().optional(), suggestion: z.string().optional(), details: unknownRecordSchema.optional(), parentToolUseId: z.string().optional() }));
-export const MessageDeltaEventSchema = event('message_delta', messageDeltaSchema);
-export const MessageSnapshotEventSchema = event('message_snapshot', messageSnapshotSchema);
-export const StreamChunkEventSchema = event('stream_chunk', typed<{ content: string | undefined; turnId?: string; parentToolUseId?: string }>(z.object({ content: z.string().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() })));
-export const StreamReasoningEventSchema = event('stream_reasoning', typed<{ content: string | undefined; turnId?: string; parentToolUseId?: string }>(z.object({ content: z.string().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() })));
-export const StreamToolCallStartEventSchema = event('stream_tool_call_start', z.object({ index: z.number().optional(), id: z.string().optional(), name: z.string().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() }));
-export const StreamToolCallDeltaEventSchema = event('stream_tool_call_delta', z.object({ index: z.number().optional(), name: z.string().optional(), argumentsDelta: z.string().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() }));
-export const TodoUpdateEventSchema = event('todo_update', z.array(todoItemSchema));
-export const TaskUpdateEventSchema = event('task_update', taskUpdateSchema);
-export const NotificationEventSchema = event('notification', z.object({ message: z.string(), parentToolUseId: z.string().optional() }));
-export const RoutingResolvedEventSchema = event('routing_resolved', typed<RoutingResolvedEventData>(z.object({ mode: z.enum(['auto', 'explicit']), agentId: z.string(), agentName: z.string(), reason: z.string(), score: z.number(), fallbackToDefault: z.boolean().optional(), requestedAgentId: z.string().optional(), timestamp: z.number().optional() })));
-export const ArtifactLocatorEventSchema = event('artifact_locator', typed<ArtifactLocatorTelemetryEventData>(z.object({ state: z.enum(['resolved', 'stale', 'blocked']), kind: z.enum(['spreadsheet', 'presentation', 'document']), reason: z.string() })));
-export const AgentCompleteEventSchema = event('agent_complete', z.null());
-export const AgentCancelledEventSchema = event('agent_cancelled', z.null());
-export const GoalIterationEventSchema = event('goal_iteration', z.object({ turn: z.number(), maxTurns: z.number(), goalStatus: z.string(), tokensUsed: z.number(), tokenBudget: z.number(), wallClockBudgetMs: z.number().optional(), parentToolUseId: z.string().optional() }));
-export const GoalGateEventSchema = event('goal_gate', z.object({
+const ErrorEventSchema = event('error', z.object({ message: z.string(), code: z.string().optional(), suggestion: z.string().optional(), details: unknownRecordSchema.optional(), parentToolUseId: z.string().optional() }));
+const MessageDeltaEventSchema = event('message_delta', messageDeltaSchema);
+const MessageSnapshotEventSchema = event('message_snapshot', messageSnapshotSchema);
+const StreamChunkEventSchema = event('stream_chunk', typed<{ content: string | undefined; turnId?: string; parentToolUseId?: string }>(z.object({ content: z.string().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() })));
+const StreamReasoningEventSchema = event('stream_reasoning', typed<{ content: string | undefined; turnId?: string; parentToolUseId?: string }>(z.object({ content: z.string().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() })));
+const StreamToolCallStartEventSchema = event('stream_tool_call_start', z.object({ index: z.number().optional(), id: z.string().optional(), name: z.string().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() }));
+const StreamToolCallDeltaEventSchema = event('stream_tool_call_delta', z.object({ index: z.number().optional(), name: z.string().optional(), argumentsDelta: z.string().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() }));
+const TodoUpdateEventSchema = event('todo_update', z.array(todoItemSchema));
+const TaskUpdateEventSchema = event('task_update', taskUpdateSchema);
+const NotificationEventSchema = event('notification', z.object({ message: z.string(), parentToolUseId: z.string().optional() }));
+const RoutingResolvedEventSchema = event('routing_resolved', typed<RoutingResolvedEventData>(z.object({ mode: z.enum(['auto', 'explicit']), agentId: z.string(), agentName: z.string(), reason: z.string(), score: z.number(), fallbackToDefault: z.boolean().optional(), requestedAgentId: z.string().optional(), timestamp: z.number().optional() })));
+const ArtifactLocatorEventSchema = event('artifact_locator', typed<ArtifactLocatorTelemetryEventData>(z.object({ state: z.enum(['resolved', 'stale', 'blocked']), kind: z.enum(['spreadsheet', 'presentation', 'document']), reason: z.string() })));
+const AgentCompleteEventSchema = event('agent_complete', z.null());
+const AgentCancelledEventSchema = event('agent_cancelled', z.null());
+const GoalIterationEventSchema = event('goal_iteration', z.object({ turn: z.number(), maxTurns: z.number(), goalStatus: z.string(), tokensUsed: z.number(), tokenBudget: z.number(), wallClockBudgetMs: z.number().optional(), parentToolUseId: z.string().optional() }));
+const GoalGateEventSchema = event('goal_gate', z.object({
   gate: z.number(), pass: z.boolean(), exitCode: z.number().nullable().optional(), timedOut: z.boolean().optional(), reason: z.string().optional(), parentToolUseId: z.string().optional(),
   verdict: z.enum(['allow_finalize', 'repair_prompt', 'exhausted_release']).optional(), attempt: z.number().optional(), verificationStatus: z.enum(['passed', 'failed', 'not_run']).optional(),
   failureType: z.enum(['test', 'lint', 'typecheck', 'build', 'env_missing', 'dependency_missing', 'timeout', 'unverifiable']).optional(), evidenceRefs: z.array(evidenceRefSchema).optional(),
   skippedChecks: z.array(goalSkippedCheckSchema).optional(), plannedOptionalCommands: z.array(goalPlannedCommandSchema).optional(), verificationCard: goalVerificationCardSchema.optional(),
 }));
-export const GoalCompleteEventSchema = event('goal_complete', z.object({ status: z.enum(['met', 'aborted']), reason: z.string().optional(), turns: z.number(), tokensUsed: z.number(), degraded: z.boolean().optional(), degradedReason: z.string().optional(), parentToolUseId: z.string().optional() }));
-export const AgentThinkingEventSchema = event('agent_thinking', z.object({ message: z.string(), agentId: z.string().optional(), progress: z.number().optional(), parentToolUseId: z.string().optional() }));
-export const TurnStartEventSchema = event('turn_start', z.object({ turnId: z.string(), iteration: z.number().optional(), parentToolUseId: z.string().optional() }));
-export const TurnEndEventSchema = event('turn_end', z.object({ turnId: z.string(), parentToolUseId: z.string().optional() }));
-export const ToolSchemaSnapshotEventSchema = event('tool_schema_snapshot', z.object({
+const GoalCompleteEventSchema = event('goal_complete', z.object({ status: z.enum(['met', 'aborted']), reason: z.string().optional(), turns: z.number(), tokensUsed: z.number(), degraded: z.boolean().optional(), degradedReason: z.string().optional(), parentToolUseId: z.string().optional() }));
+const AgentThinkingEventSchema = event('agent_thinking', z.object({ message: z.string(), agentId: z.string().optional(), progress: z.number().optional(), parentToolUseId: z.string().optional() }));
+const TurnStartEventSchema = event('turn_start', z.object({ turnId: z.string(), iteration: z.number().optional(), parentToolUseId: z.string().optional() }));
+const TurnEndEventSchema = event('turn_end', z.object({ turnId: z.string(), parentToolUseId: z.string().optional() }));
+const ToolSchemaSnapshotEventSchema = event('tool_schema_snapshot', z.object({
   turnId: z.string().optional(), toolCount: z.number(), tools: z.array(z.object({ name: z.string(), inputSchema: unknownRecordSchema.optional(), requiresPermission: z.boolean().optional(), permissionLevel: z.string().optional() })), parentToolUseId: z.string().optional(),
 }));
-export const ModelResponseEventSchema = event('model_response', z.object({
+const ModelResponseEventSchema = event('model_response', z.object({
   model: z.string(), provider: z.string().optional(), responseType: z.string(), duration: z.number(), toolCalls: stringArraySchema, textLength: z.number(), inputTokens: z.number().optional(), outputTokens: z.number().optional(),
   requestedModel: z.string().optional(), requestedProvider: z.string().optional(), fallback: modelFallbackInfoSchema.optional(),
   runtimeDiagnostics: z.object({
@@ -537,44 +537,44 @@ export const ModelResponseEventSchema = event('model_response', z.object({
     maxMode: z.object({ candidates: z.number(), survivors: z.number(), winner: z.number(), degraded: z.boolean(), judgeParsed: z.boolean(), overheadInputTokens: z.number(), overheadOutputTokens: z.number() }).optional(),
   }).optional(),
 }));
-export const ModelFallbackEventSchema = event('model_fallback', z.object({
+const ModelFallbackEventSchema = event('model_fallback', z.object({
   reason: z.string(), from: z.string(), to: z.string(), category: z.string().optional(), strategy: modelFallbackStrategySchema.optional(), tried: z.array(modelFallbackTraceStepSchema).optional(), skipped: z.array(modelFallbackTraceStepSchema).optional(), toolPolicy: modelFallbackToolPolicySchema.optional(), fromIdentity: modelProviderIdentitySchema.optional(), toIdentity: modelProviderIdentitySchema.optional(), turnId: z.string().optional(),
 }));
-export const ApiKeyRequiredEventSchema = event('api_key_required', z.object({ provider: z.string(), capability: z.string(), message: z.string() }));
-export const TaskProgressEventSchema = event('task_progress', typed<TaskProgressData & { parentToolUseId?: string }>(z.object({ turnId: z.string(), phase: z.enum(['thinking', 'tool_pending', 'tool_running', 'generating', 'completed', 'failed']), step: z.string().optional(), progress: z.number().optional(), tool: z.string().optional(), toolIndex: z.number().optional(), toolTotal: z.number().optional(), parentToolUseId: z.string().optional() })));
-export const TaskCompleteEventSchema = event('task_complete', typed<TaskCompleteData & { parentToolUseId?: string }>(z.object({ turnId: z.string(), summary: z.string().optional(), duration: z.number(), toolsUsed: stringArraySchema, parentToolUseId: z.string().optional() })));
-export const BackgroundTaskLedgerChangedEventSchema = event('background_task_ledger_changed', typed<BackgroundTaskLedgerChangedData>(z.object({ taskId: z.string(), sessionId: z.string().optional() })));
-export const MemoryLearnedEventSchema = event('memory_learned', typed<MemoryLearnedData>(z.object({ sessionId: z.string(), knowledgeExtracted: z.number(), codeStylesLearned: z.number(), toolPreferencesUpdated: z.number() })));
-export const SkillDraftPendingEventSchema = event('skill_draft_pending', typed<SkillDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), name: z.string(), description: z.string(), toolSequence: stringArraySchema, occurrences: z.number(), origin: z.enum(['telemetry-distilled', 'llm-review']) })) })));
-export const RoleDraftPendingEventSchema = event('role_draft_pending', typed<RoleDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), roleId: z.string(), description: z.string(), category: z.string().optional(), tools: stringArraySchema, editingRoleId: z.string().optional() })) })));
-export const TeamRecipeDraftPendingEventSchema = event('team_recipe_draft_pending', typed<TeamRecipeDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), name: z.string(), description: z.string(), lead: z.object({ roleId: z.string(), briefTemplate: z.string() }).optional(), members: z.array(z.object({ id: z.string().optional(), roleId: z.string(), taskTemplate: z.string() })), unknownRoleNames: stringArraySchema.optional() })) })));
-export const ResearchModeStartedEventSchema = event('research_mode_started', typed<ResearchModeStartedData>(z.object({ topic: z.string(), reportStyle: z.enum(['default', 'academic', 'popular_science', 'news', 'social_media', 'strategic_investment']), triggeredBy: z.enum(['semantic', 'manual']).optional() })));
-export const ResearchProgressEventSchema = event('research_progress', typed<ResearchProgressData>(z.object({ phase: z.enum(['planning', 'researching', 'reporting', 'complete', 'error']), message: z.string(), percent: z.number(), currentStep: z.object({ title: z.string(), status: z.enum(['running', 'completed', 'failed']) }).optional(), triggeredBy: z.enum(['semantic', 'manual']).optional(), currentIteration: z.number().optional(), maxIterations: z.number().optional(), coverage: z.number().optional(), activeSources: stringArraySchema.optional(), canDeepen: z.boolean().optional() })));
-export const ResearchCompleteEventSchema = event('research_complete', typed<ResearchCompleteData>(z.object({ success: z.boolean(), report: z.object({ title: z.string(), content: z.string(), sources: z.array(z.object({ title: z.string(), url: z.string() })) }).optional() })));
-export const ResearchErrorEventSchema = event('research_error', typed<ResearchErrorData>(z.object({ error: z.string() })));
-export const ResearchDetectedEventSchema = event('research_detected', typed<ResearchDetectedData>(z.object({ intent: z.string(), confidence: z.number(), suggestedDepth: z.enum(['quick', 'standard', 'deep']), reasoning: z.string() })));
-export const BudgetWarningEventSchema = event('budget_warning', typed<BudgetEventData>(z.object({ currentCost: z.number(), maxBudget: z.number(), usagePercentage: z.number(), remaining: z.number(), alertLevel: z.enum(['silent', 'warning', 'blocked']), message: z.string().optional() })));
-export const BudgetExceededEventSchema = event('budget_exceeded', typed<BudgetEventData>(z.object({ currentCost: z.number(), maxBudget: z.number(), usagePercentage: z.number(), remaining: z.number(), alertLevel: z.enum(['silent', 'warning', 'blocked']), message: z.string().optional() })));
-export const ContextCompressedEventSchema = event('context_compressed', typed<ContextCompressedData>(z.object({ savedTokens: z.number(), strategy: z.string().optional(), newMessageCount: z.number() })));
+const ApiKeyRequiredEventSchema = event('api_key_required', z.object({ provider: z.string(), capability: z.string(), message: z.string() }));
+const TaskProgressEventSchema = event('task_progress', typed<TaskProgressData & { parentToolUseId?: string }>(z.object({ turnId: z.string(), phase: z.enum(['thinking', 'tool_pending', 'tool_running', 'generating', 'completed', 'failed']), step: z.string().optional(), progress: z.number().optional(), tool: z.string().optional(), toolIndex: z.number().optional(), toolTotal: z.number().optional(), parentToolUseId: z.string().optional() })));
+const TaskCompleteEventSchema = event('task_complete', typed<TaskCompleteData & { parentToolUseId?: string }>(z.object({ turnId: z.string(), summary: z.string().optional(), duration: z.number(), toolsUsed: stringArraySchema, parentToolUseId: z.string().optional() })));
+const BackgroundTaskLedgerChangedEventSchema = event('background_task_ledger_changed', typed<BackgroundTaskLedgerChangedData>(z.object({ taskId: z.string(), sessionId: z.string().optional() })));
+const MemoryLearnedEventSchema = event('memory_learned', typed<MemoryLearnedData>(z.object({ sessionId: z.string(), knowledgeExtracted: z.number(), codeStylesLearned: z.number(), toolPreferencesUpdated: z.number() })));
+const SkillDraftPendingEventSchema = event('skill_draft_pending', typed<SkillDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), name: z.string(), description: z.string(), toolSequence: stringArraySchema, occurrences: z.number(), origin: z.enum(['telemetry-distilled', 'llm-review']) })) })));
+const RoleDraftPendingEventSchema = event('role_draft_pending', typed<RoleDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), roleId: z.string(), description: z.string(), category: z.string().optional(), tools: stringArraySchema, editingRoleId: z.string().optional() })) })));
+const TeamRecipeDraftPendingEventSchema = event('team_recipe_draft_pending', typed<TeamRecipeDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), name: z.string(), description: z.string(), lead: z.object({ roleId: z.string(), briefTemplate: z.string() }).optional(), members: z.array(z.object({ id: z.string().optional(), roleId: z.string(), taskTemplate: z.string() })), unknownRoleNames: stringArraySchema.optional() })) })));
+const ResearchModeStartedEventSchema = event('research_mode_started', typed<ResearchModeStartedData>(z.object({ topic: z.string(), reportStyle: z.enum(['default', 'academic', 'popular_science', 'news', 'social_media', 'strategic_investment']), triggeredBy: z.enum(['semantic', 'manual']).optional() })));
+const ResearchProgressEventSchema = event('research_progress', typed<ResearchProgressData>(z.object({ phase: z.enum(['planning', 'researching', 'reporting', 'complete', 'error']), message: z.string(), percent: z.number(), currentStep: z.object({ title: z.string(), status: z.enum(['running', 'completed', 'failed']) }).optional(), triggeredBy: z.enum(['semantic', 'manual']).optional(), currentIteration: z.number().optional(), maxIterations: z.number().optional(), coverage: z.number().optional(), activeSources: stringArraySchema.optional(), canDeepen: z.boolean().optional() })));
+const ResearchCompleteEventSchema = event('research_complete', typed<ResearchCompleteData>(z.object({ success: z.boolean(), report: z.object({ title: z.string(), content: z.string(), sources: z.array(z.object({ title: z.string(), url: z.string() })) }).optional() })));
+const ResearchErrorEventSchema = event('research_error', typed<ResearchErrorData>(z.object({ error: z.string() })));
+const ResearchDetectedEventSchema = event('research_detected', typed<ResearchDetectedData>(z.object({ intent: z.string(), confidence: z.number(), suggestedDepth: z.enum(['quick', 'standard', 'deep']), reasoning: z.string() })));
+const BudgetWarningEventSchema = event('budget_warning', typed<BudgetEventData>(z.object({ currentCost: z.number(), maxBudget: z.number(), usagePercentage: z.number(), remaining: z.number(), alertLevel: z.enum(['silent', 'warning', 'blocked']), message: z.string().optional() })));
+const BudgetExceededEventSchema = event('budget_exceeded', typed<BudgetEventData>(z.object({ currentCost: z.number(), maxBudget: z.number(), usagePercentage: z.number(), remaining: z.number(), alertLevel: z.enum(['silent', 'warning', 'blocked']), message: z.string().optional() })));
+const ContextCompressedEventSchema = event('context_compressed', typed<ContextCompressedData>(z.object({ savedTokens: z.number(), strategy: z.string().optional(), newMessageCount: z.number() })));
 const interruptSchema = typed<InterruptEventData>(z.object({ message: z.string(), newUserMessage: z.string().optional() }));
-export const InterruptStartEventSchema = event('interrupt_start', interruptSchema);
-export const InterruptAcknowledgedEventSchema = event('interrupt_acknowledged', interruptSchema);
-export const InterruptCompleteEventSchema = event('interrupt_complete', interruptSchema);
-export const CitationsUpdatedEventSchema = event('citations_updated', z.object({ citations: z.array(citationSchema) }));
-export const ModelSwitchedEventSchema = event('model_switched', z.object({ from: z.string(), to: z.string(), provider: z.string().optional() }));
-export const ToolProgressEventSchema = event('tool_progress', typed<ToolProgressData>(z.object({ toolCallId: z.string(), toolName: z.string(), elapsedMs: z.number(), detail: z.string().optional() })));
-export const ToolOutputDeltaEventSchema = event('tool_output_delta', typed<ToolOutputDeltaData>(z.object({ toolCallId: z.string(), toolName: z.string(), stream: z.enum(['stdout', 'stderr']), content: z.string(), elapsedMs: z.number().optional(), truncated: z.boolean().optional() })));
-export const ToolTimeoutEventSchema = event('tool_timeout', typed<ToolTimeoutData>(z.object({ toolCallId: z.string(), toolName: z.string(), elapsedMs: z.number(), threshold: z.number() })));
-export const PlanModeEnteredEventSchema = event('plan_mode_entered', z.object({ reason: z.string() }));
-export const PlanModeExitedEventSchema = event('plan_mode_exited', z.object({ plan: z.string() }));
-export const TaskStatsEventSchema = event('task_stats', typed<TaskStatsData>(z.object({ elapsed_ms: z.number(), iterations: z.number(), tokensUsed: z.number(), contextUsage: z.number(), toolCallCount: z.number(), contextWindow: z.number() })));
-export const ContextCompactingEventSchema = event('context_compacting', z.object({ tokensBefore: z.number(), messagesCount: z.number() }));
-export const ContextCompactedEventSchema = event('context_compacted', z.object({ tokensBefore: z.number(), tokensAfter: z.number(), messagesRemoved: z.number(), duration_ms: z.number() }));
-export const StreamUsageEventSchema = event('stream_usage', z.object({ inputTokens: z.number(), outputTokens: z.number(), cacheReadTokens: z.number().optional(), cacheCreationTokens: z.number().optional(), turnId: z.string().optional() }));
-export const StreamTokenEstimateEventSchema = event('stream_token_estimate', z.object({ inputTokens: z.number(), outputTokens: z.number(), turnId: z.string().optional() }));
-export const ToolCallLocalEventSchema = event('tool_call_local', typed<LocalToolCallData>(z.object({ toolCallId: z.string(), tool: z.string(), originalTool: z.string().optional(), params: unknownRecordSchema, permissionLevel: z.enum(['L1', 'L2', 'L3']), runId: z.string(), sessionId: z.string(), workspace: z.string(), cwd: z.string() })));
-export const ToolCancelLocalEventSchema = event('tool_cancel_local', typed<LocalToolCancelData>(z.object({ toolCallId: z.string(), runId: z.string(), sessionId: z.string() })));
-export const SuggestionsUpdateEventSchema = event('suggestions_update', z.array(z.object({ id: z.string(), text: z.string(), source: z.string() })));
+const InterruptStartEventSchema = event('interrupt_start', interruptSchema);
+const InterruptAcknowledgedEventSchema = event('interrupt_acknowledged', interruptSchema);
+const InterruptCompleteEventSchema = event('interrupt_complete', interruptSchema);
+const CitationsUpdatedEventSchema = event('citations_updated', z.object({ citations: z.array(citationSchema) }));
+const ModelSwitchedEventSchema = event('model_switched', z.object({ from: z.string(), to: z.string(), provider: z.string().optional() }));
+const ToolProgressEventSchema = event('tool_progress', typed<ToolProgressData>(z.object({ toolCallId: z.string(), toolName: z.string(), elapsedMs: z.number(), detail: z.string().optional() })));
+const ToolOutputDeltaEventSchema = event('tool_output_delta', typed<ToolOutputDeltaData>(z.object({ toolCallId: z.string(), toolName: z.string(), stream: z.enum(['stdout', 'stderr']), content: z.string(), elapsedMs: z.number().optional(), truncated: z.boolean().optional() })));
+const ToolTimeoutEventSchema = event('tool_timeout', typed<ToolTimeoutData>(z.object({ toolCallId: z.string(), toolName: z.string(), elapsedMs: z.number(), threshold: z.number() })));
+const PlanModeEnteredEventSchema = event('plan_mode_entered', z.object({ reason: z.string() }));
+const PlanModeExitedEventSchema = event('plan_mode_exited', z.object({ plan: z.string() }));
+const TaskStatsEventSchema = event('task_stats', typed<TaskStatsData>(z.object({ elapsed_ms: z.number(), iterations: z.number(), tokensUsed: z.number(), contextUsage: z.number(), toolCallCount: z.number(), contextWindow: z.number() })));
+const ContextCompactingEventSchema = event('context_compacting', z.object({ tokensBefore: z.number(), messagesCount: z.number() }));
+const ContextCompactedEventSchema = event('context_compacted', z.object({ tokensBefore: z.number(), tokensAfter: z.number(), messagesRemoved: z.number(), duration_ms: z.number() }));
+const StreamUsageEventSchema = event('stream_usage', z.object({ inputTokens: z.number(), outputTokens: z.number(), cacheReadTokens: z.number().optional(), cacheCreationTokens: z.number().optional(), turnId: z.string().optional() }));
+const StreamTokenEstimateEventSchema = event('stream_token_estimate', z.object({ inputTokens: z.number(), outputTokens: z.number(), turnId: z.string().optional() }));
+const ToolCallLocalEventSchema = event('tool_call_local', typed<LocalToolCallData>(z.object({ toolCallId: z.string(), tool: z.string(), originalTool: z.string().optional(), params: unknownRecordSchema, permissionLevel: z.enum(['L1', 'L2', 'L3']), runId: z.string(), sessionId: z.string(), workspace: z.string(), cwd: z.string() })));
+const ToolCancelLocalEventSchema = event('tool_cancel_local', typed<LocalToolCancelData>(z.object({ toolCallId: z.string(), runId: z.string(), sessionId: z.string() })));
+const SuggestionsUpdateEventSchema = event('suggestions_update', z.array(z.object({ id: z.string(), text: z.string(), source: z.string() })));
 
 export const AgentEventSchema = z.discriminatedUnion('type', [
   MessageEventSchema, SurfaceExecutionEventSchema, ToolCallStartEventSchema, ToolCallEndEventSchema,
@@ -599,7 +599,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   description: 'Neo public agent event contract. New events default to experimental; stable event shapes are additive-only.',
 });
 
-export type AgentEventFromSchema = z.infer<typeof AgentEventSchema>;
+type AgentEventFromSchema = z.infer<typeof AgentEventSchema>;
 
 export const AgentEventEnvelopeSchema = AgentEventSchema.and(z.object({
   sessionId: z.string().optional(),
@@ -609,11 +609,8 @@ export const AgentEventEnvelopeSchema = AgentEventSchema.and(z.object({
   description: 'Self-contained AgentEvent envelope for transport, persistence, and replay.',
 });
 
-export type AgentEventEnvelopeFromSchema = z.infer<typeof AgentEventEnvelopeSchema>;
-
 const stableEventTypeValues = Object.entries(stabilityByType)
   .filter(([, stability]) => stability === 'stable')
   .map(([type]) => type as AgentEventFromSchema['type']);
 
-export const EVENT_STABILITY: Readonly<Record<AgentEventFromSchema['type'], EventStability>> = stabilityByType;
 export const STABLE_EVENT_TYPES: ReadonlySet<AgentEventFromSchema['type']> = new Set(stableEventTypeValues);

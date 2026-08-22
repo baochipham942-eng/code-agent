@@ -8,7 +8,7 @@ import { tsImport } from 'tsx/esm/api';
 import { z } from 'zod';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(scriptDir, '..');
+const repoRoot = path.resolve(scriptDir, '../..');
 const schemaModulePath = path.join(repoRoot, 'src/shared/contract/agentEventSchemas.ts');
 const generatedPath = path.join(repoRoot, 'src/shared/contract/generated/agent-events.schema.json');
 const write = process.argv.includes('--write');
@@ -55,7 +55,7 @@ if (committed !== generated) {
   while (firstDifference < limit && committed[firstDifference] === generated[firstDifference]) {
     firstDifference += 1;
   }
-  console.error(`[agent-event-schema-gate] ✗ schema drift at byte ${firstDifference}; run node scripts/agent-event-schema-gate.mjs --write`);
+  console.error(`[agent-event-schema-gate] ✗ schema drift at byte ${firstDifference}; run node scripts/ci/agent-event-schema-gate.mjs --write`);
   process.exit(1);
 }
 

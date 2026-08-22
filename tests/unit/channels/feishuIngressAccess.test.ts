@@ -1,11 +1,36 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ChannelMessage, FeishuChannelConfig } from '../../../src/shared/contract/channel';
 import { FeishuChannel } from '../../../src/host/channels/feishu/feishuChannel';
+import { ChannelAgentBridge } from '../../../src/host/channels/channelAgentBridge';
+import type { ChannelResponseCallback } from '../../../src/host/channels/channelInterface';
+
+vi.mock('../../../src/host/tools/dispatch/toolDefinitions', () => ({
+  getAllToolDefinitions: () => [
+    { name: 'Read', permissionLevel: 'read', source: 'builtin' },
+    { name: 'Bash', permissionLevel: 'execute', source: 'builtin' },
+    { name: 'BrowserNavigate', permissionLevel: 'read', source: 'builtin' },
+    { name: 'ComputerUse', permissionLevel: 'read', source: 'builtin' },
+    { name: 'Write', permissionLevel: 'write', source: 'builtin' },
+    { name: 'mcp__demo__read', permissionLevel: 'read', source: 'mcp' },
+    { name: 'CronCreate', permissionLevel: 'read', source: 'builtin' },
+    { name: 'delegate_task', permissionLevel: 'read', source: 'builtin' },
+  ],
+}));
 
 type Harness = {
   handleMessageEvent(event: unknown): Promise<void>;
   botOpenId: string | null;
   client: unknown;
+};
+
+type BridgeHarness = {
+  handleSyncMessage(
+    accountId: string,
+    message: ChannelMessage,
+    orchestrator: unknown,
+    attachments: undefined,
+    responseCallback: ChannelResponseCallback,
+  ): Promise<void>;
 };
 
 function event(options: { chatType: 'p2p' | 'group'; mentioned?: boolean; id?: string }): unknown {
@@ -85,5 +110,26 @@ describe('Feishu ingress access', () => {
     }));
     expect(allMembers.messages).toHaveLength(1);
     expect(allMembers.messages[0].ingressAuth).toBe('guest');
+
+    let allowedToolNames: string[] | undefined;
+    const orchestrator = {
+      getMessages: vi.fn()
+        .mockReturnValueOnce([])
+        .mockReturnValueOnce([{ role: 'assistant', content: 'done' }]),
+      sendMessage: vi.fn(async (
+        _content: string,
+        _attachments: unknown,
+        options: { allowedToolNames?: string[] } | undefined,
+      ) => { allowedToolNames = options?.allowedToolNames; }),
+    };
+    const bridge = new ChannelAgentBridge({ configService: {} as never }) as unknown as BridgeHarness;
+    await bridge.handleSyncMessage(
+      'feishu-account',
+      allMembers.messages[0],
+      orchestrator,
+      undefined,
+      { sendText: vi.fn(async () => ({ success: true })) },
+    );
+    expect(allowedToolNames).toEqual(['Read']);
   });
 });

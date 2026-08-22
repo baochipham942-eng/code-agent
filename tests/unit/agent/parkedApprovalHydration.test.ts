@@ -1,6 +1,6 @@
 // ============================================================================
 // 停车审批重启收口（D0 host 根因修复，2026-07-27）
-// 判据：① 启动 hydrate 后 tool_approval / directory_access 残留 pending 必须
+// 判据：① 启动 hydrate 后 tool_approval / directory_access / channel_pairing 残留 pending 必须
 // fail-closed 拒绝；② 宿主已死的权限响应同样收尾，且只认停车类 kind、不碰 plan 行。
 // ============================================================================
 
@@ -76,20 +76,22 @@ describe('parkedApprovalHydration', () => {
     vi.clearAllMocks();
   });
 
-  it('启动 hydrate 把 tool_approval / directory_access 残留 pending 自动拒绝', () => {
+  it('启动 hydrate 把工具、目录与通道配对的残留 pending 自动拒绝', () => {
     seed(repo, 'tool-1', 'tool_approval');
     seed(repo, 'dir-1', 'directory_access');
+    seed(repo, 'pairing-1', 'channel_pairing');
     seed(repo, 'plan-1', 'plan');
 
     const counts = hydrateApprovalGatesAtBoot(repo, 2_000);
 
-    expect(counts.parked).toBe(2);
+    expect(counts.parked).toBe(3);
     expect(repo.getById('tool-1')).toMatchObject({
       status: 'rejected',
       resolvedAt: 2_000,
       feedback: expect.stringContaining('Auto-rejected'),
     });
     expect(repo.getById('dir-1')?.status).toBe('rejected');
+    expect(repo.getById('pairing-1')?.status).toBe('rejected');
     // plan 行归 plan gate 管（此处 gate 被 mock 成 no-op），本函数不得越权碰它
     expect(repo.getById('plan-1')?.status).toBe('pending');
     expect(planAttach).toHaveBeenCalledWith(repo, 2_000);

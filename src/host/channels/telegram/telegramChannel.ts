@@ -25,6 +25,7 @@ import type {
 import { createLogger } from '../../services/infra/logger';
 import { BoundedDedupeSet } from '../inboundDedupe';
 import { checkOutboundTarget } from '../outboundAllowlist';
+import { checkInboundAccess } from '../inboundAccess';
 import { CHANNEL_INGRESS } from '../../../shared/constants';
 
 const logger = createLogger('TelegramChannel');
@@ -448,8 +449,8 @@ export class TelegramChannel extends BaseChannelPlugin {
     if (!ctx.message?.text || !ctx.from || ctx.from.is_bot) return;
     if (!this.markInboundSeen(ctx)) return;
 
-    // 白名单检查
-    if (!this.isAllowed(ctx.from.id, ctx.chat?.id)) {
+    // 入站白名单与其他通道共用同一判定 helper。
+    if (!this.checkTelegramIngress(ctx.from.id, ctx.chat?.id)) {
       logger.info('Message from unauthorized user/chat', {
         userId: ctx.from.id,
         chatId: ctx.chat?.id,
@@ -467,7 +468,7 @@ export class TelegramChannel extends BaseChannelPlugin {
   private async handlePhotoMessage(ctx: Context): Promise<void> {
     if (!ctx.message?.photo || !ctx.from || ctx.from.is_bot) return;
     if (!this.markInboundSeen(ctx)) return;
-    if (!this.isAllowed(ctx.from.id, ctx.chat?.id)) return;
+    if (!this.checkTelegramIngress(ctx.from.id, ctx.chat?.id)) return;
 
     const caption = ctx.message.caption || '[图片]';
     const channelMessage = this.buildChannelMessage(ctx, caption, [{
@@ -485,7 +486,7 @@ export class TelegramChannel extends BaseChannelPlugin {
   private async handleDocumentMessage(ctx: Context): Promise<void> {
     if (!ctx.message?.document || !ctx.from || ctx.from.is_bot) return;
     if (!this.markInboundSeen(ctx)) return;
-    if (!this.isAllowed(ctx.from.id, ctx.chat?.id)) return;
+    if (!this.checkTelegramIngress(ctx.from.id, ctx.chat?.id)) return;
 
     const caption = ctx.message.caption || `[文件: ${ctx.message.document.file_name}]`;
     const channelMessage = this.buildChannelMessage(ctx, caption, [{
@@ -538,25 +539,15 @@ export class TelegramChannel extends BaseChannelPlugin {
     };
   }
 
-  /**
-   * 白名单检查
-   */
-  private isAllowed(userId: number, chatId?: number): boolean {
+  private checkTelegramIngress(userId: number, chatId?: number): boolean {
     if (!this.telegramConfig) return false;
-
-    const { allowedUserIds, allowedChatIds } = this.telegramConfig;
-
-    // 用户白名单检查
-    if (allowedUserIds && allowedUserIds.length > 0) {
-      if (!allowedUserIds.includes(userId)) return false;
-    }
-
-    // 群组白名单检查
-    if (chatId && allowedChatIds && allowedChatIds.length > 0) {
-      if (!allowedChatIds.includes(chatId)) return false;
-    }
-
-    return true;
+    return checkInboundAccess({
+      channel: 'telegram',
+      senderId: userId,
+      chatId,
+      allowedUserIds: this.telegramConfig.allowedUserIds,
+      allowedChatIds: this.telegramConfig.allowedChatIds,
+    }).action === 'allow';
   }
 
   /**

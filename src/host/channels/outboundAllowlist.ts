@@ -2,7 +2,7 @@
 // IM 出站 send-target 白名单（WP3-3，fail-closed）。
 //
 // 出站错发（把会话内容发到未授权 chat）是数据泄露，代价远高于漏发，故护栏自身
-// fail-closed：配置形态异常 / 空 target 一律拒发。与入站白名单（telegram isAllowed
+// fail-closed：配置形态异常 / 空 target 一律拒发。与入站白名单（Telegram 入站判定
 // 空数组=允许所有的 fail-open 语义）刻意不同——
 //   - 未配置（undefined/null）= 功能关：保持存量部署行为不破坏
 //   - 配置了（含空数组）= 显式启用：不在名单一律拒，空数组即全拒

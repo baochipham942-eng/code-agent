@@ -30,6 +30,10 @@ import { getSecureStorage } from '../services/core/secureStorage';
 import { createLogger } from '../services/infra/logger';
 import { summarizeUserFacingError } from '../security/userFacingError';
 import { summarizeChannelError } from './channelErrorSummary';
+import {
+  getInboundPairingService,
+  type InboundPairingRequest,
+} from './inboundPairingService';
 
 const logger = createLogger('ChannelManager');
 
@@ -73,6 +77,15 @@ export class ChannelManager extends EventEmitter {
   private constructor() {
     super();
     this.registerBuiltinPlugins();
+    getInboundPairingService().configureAdapter({
+      addPairedSender: (accountId, senderId) => this.addPairedSender(accountId, senderId),
+      sendControlReply: async (accountId, chatId, replyToMessageId, content) => {
+        const channel = this.activeChannels.get(accountId);
+        if (!channel) throw new Error(`Channel account is not connected: ${accountId}`);
+        const result = await channel.sendMessage({ chatId, replyToMessageId, content });
+        if (!result.success) throw new Error(result.error || 'Failed to send channel control reply');
+      },
+    });
   }
 
   static getInstance(): ChannelManager {
@@ -289,6 +302,12 @@ export class ChannelManager extends EventEmitter {
     // 卡片按钮回传（B3 审批回批）：透传给上层 relay，带上是哪个账号发来的。
     channel.on('card_action', (payload: { value?: string }) => {
       this.emit('card_action', accountId, payload);
+    });
+
+    channel.on('pairing_request', (request: InboundPairingRequest) => {
+      void getInboundPairingService().request(request).catch((error: unknown) => {
+        logger.error('Failed to create inbound pairing request', { accountId, error });
+      });
     });
 
     try {
@@ -730,6 +749,22 @@ export class ChannelManager extends EventEmitter {
     }
 
     this.emit('account_status_change', accountId, status, error);
+  }
+
+  private addPairedSender(accountId: string, senderId: string): boolean {
+    const account = this.accounts.get(accountId);
+    if (!account || (account.config.type !== 'feishu' && account.config.type !== 'lark')) {
+      return false;
+    }
+    const allowlist = account.config.inboundAllowlist ?? [];
+    if (!allowlist.includes(senderId)) {
+      allowlist.push(senderId);
+      account.config.inboundAllowlist = allowlist;
+      this.accounts.set(accountId, account);
+      this.saveAccounts();
+      this.emit('accounts_changed', this.getAccounts());
+    }
+    return true;
   }
 }
 

@@ -736,6 +736,7 @@ export class ToolExecutor {
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       runId: effectiveRunId, turnId: options.turnId,
+      sourceMessageId: options.sourceMessageId,
       sessionId: effectiveSessionId,
       workspace: this.runtimeWorkspace,
       workspaceScope: this.runContext?.workspaceScope,

@@ -12,6 +12,7 @@ import {
   FolderOpen,
   GitBranch,
   Image as ImageIcon,
+  Link,
   MoreHorizontal,
   Music,
   Presentation,
@@ -117,6 +118,7 @@ function actionLabel(card: DeliverableCardView, labels: ReturnType<typeof useI18
 function secondaryActionKey(action: DeliverableSecondaryAction): string {
   switch (action.kind) {
     case 'publish-version':
+    case 'share-link':
       return `${action.kind}:${action.path}`;
     case 'reveal-file':
     case 'open-file':
@@ -139,6 +141,8 @@ function secondaryIcon(action: DeliverableSecondaryAction): React.ReactNode {
   switch (action.kind) {
     case 'publish-version':
       return <Rocket className={cls} />;
+    case 'share-link':
+      return <Link className={cls} />;
     case 'reveal-file':
       return <FolderOpen className={cls} />;
     case 'download-url':
@@ -163,6 +167,8 @@ function secondaryActionLabel(
   switch (action.kind) {
     case 'publish-version':
       return labels.publishVersion;
+    case 'share-link':
+      return labels.generateShareLink;
     case 'reveal-file':
       return labels.reveal;
     case 'open-file':

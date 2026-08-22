@@ -88,6 +88,7 @@ export const en: Translations = {
     exportBundle: 'Share published version',
     exportBundleSource: 'Source: published snapshot v{version}',
     publishVersion: 'Publish this version',
+    generateShareLink: 'Generate link',
     publishConfirmTitle: 'Publish this version',
     publishConfirmDescription: 'Freeze the current content of “{title}” as read-only snapshot v{version}. Later edits become a draft.',
     publishNote: 'Version note (optional)',

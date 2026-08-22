@@ -89,6 +89,7 @@ export const zh = {
     exportBundle: '分享发布版',
     exportBundleSource: '来源：发布快照 v{version}',
     publishVersion: '发布这一版',
+    generateShareLink: '生成链接',
     publishConfirmTitle: '发布这一版',
     publishConfirmDescription: '把《{title}》当前内容冻结为只读快照 v{version}；之后改动自动算草稿。',
     publishNote: '版本备注（可空）',

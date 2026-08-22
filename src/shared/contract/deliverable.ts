@@ -100,8 +100,28 @@ export interface DeliverablePublishInfo {
   publishedVersions: PublishedDeliverableVersion[];
 }
 
+export interface DeliverableShareLink {
+  token: string;
+  url: string;
+  expiresAt: number | null;
+  createdAt: number;
+  ttlSeconds: number;
+  revokedAt?: number;
+  pushedVersion: number;
+  pushedHash: string;
+  lastError?: string;
+}
+
+export interface DeliverableShareLinkInfo {
+  share: DeliverableShareLink | null;
+  stale: boolean;
+  latestPublishedVersion?: number;
+  tokenConfigured: boolean;
+}
+
 export type DeliverableSecondaryAction =
   | { kind: 'publish-version'; label: string; path: string; title: string; disabled?: boolean; reason?: string }
+  | { kind: 'share-link'; label: string; path: string; title: string; disabled?: boolean; reason?: string }
   | { kind: 'reveal-file'; label: string; path: string; disabled?: boolean; reason?: string }
   | { kind: 'open-file'; label: string; path: string; disabled?: boolean; reason?: string }
   | { kind: 'copy-reference'; label: string; value: string; disabled?: boolean; reason?: string }

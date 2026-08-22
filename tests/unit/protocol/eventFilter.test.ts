@@ -27,5 +27,6 @@ describe('AgentEvent filters', () => {
     expect(shouldDeliverAgentEvent('turn_end', BACKGROUND_AGENT_EVENT_FILTER)).toBe(true);
     expect(shouldDeliverAgentEvent('tool_call_end', BACKGROUND_AGENT_EVENT_FILTER)).toBe(true);
     expect(shouldDeliverAgentEvent('artifact_locator', BACKGROUND_AGENT_EVENT_FILTER)).toBe(true);
+    expect(shouldDeliverAgentEvent('turn_diff', BACKGROUND_AGENT_EVENT_FILTER)).toBe(true);
   });
 });

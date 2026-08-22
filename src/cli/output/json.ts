@@ -85,6 +85,10 @@ export class JSONOutput {
         }
         break;
 
+      case 'turn_diff':
+        this.emitEvent({ type: 'turn_diff', timestamp, data: event.data });
+        break;
+
       case 'message':
         if (event.data?.role === 'assistant' && event.data?.content) {
           this.emitEvent({

@@ -69,7 +69,7 @@ export interface CLIConfig {
  * CLI 输出事件
  */
 export interface CLIOutputEvent {
-  type: 'thinking' | 'tool_call' | 'tool_result' | 'message' | 'error' | 'complete' | 'result';
+  type: 'thinking' | 'tool_call' | 'tool_result' | 'turn_diff' | 'message' | 'error' | 'complete' | 'result';
   timestamp: number;
   data: unknown;
 }

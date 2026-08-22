@@ -61,6 +61,7 @@ import { getConfiguredSurfaceExecutionRuntime } from '../../services/surfaceExec
 import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
 import type { CompletionSummaryRecord } from '../../../shared/contract/completionSummary';
 import { recordTurnOutcomeStamp } from './turnOutcomeStamp';
+import { captureTurnDiff } from '../../services/checkpoint/turnDiffService';
 
 const logger = createLogger('AgentLoop');
 
@@ -224,6 +225,49 @@ export class RunFinalizer {
     } catch (error) {
       logger.warn('[RunFinalizer] terminal message not persisted', {
         messageId: message.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async emitTurnDiff(): Promise<void> {
+    const modifiedFiles = this.ctx.nudgeManager.getModifiedFiles();
+    if (modifiedFiles.size === 0) return;
+
+    const latestAssistant = [...this.ctx.messages]
+      .reverse()
+      .find((message) => message.role === 'assistant');
+    const turnId = this.ctx.turn.currentTurnId || latestAssistant?.id;
+    if (!turnId) return;
+
+    try {
+      const turnDiff = await captureTurnDiff(
+        this.ctx.workingDirectory,
+        turnId,
+        modifiedFiles,
+      );
+      if (!turnDiff) return;
+
+      const targetMessage = this.ctx.messages.find((message) => message.id === turnId)
+        ?? latestAssistant;
+      if (targetMessage) {
+        targetMessage.metadata = { ...targetMessage.metadata, turnDiff };
+        try {
+          await this.ctx.persistMessage?.(targetMessage);
+        } catch (error) {
+          logger.warn('[RunFinalizer] turn diff metadata not persisted', {
+            sessionId: this.ctx.sessionId,
+            turnId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      this.ctx.onEvent({ type: 'turn_diff', data: turnDiff });
+    } catch (error) {
+      logger.warn('[RunFinalizer] turn diff capture failed', {
+        sessionId: this.ctx.sessionId,
+        turnId,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -407,6 +451,8 @@ export class RunFinalizer {
     }
 
     await recordTurnOutcomeStamp(this.ctx, terminalStatus, completionSummary);
+
+    await this.emitTurnDiff();
 
     // 先落内部 completion contract，再通知前端关闭 "组织回复中" loading。
     // 后续 post-processing（hooks / learning / summary）跑在后台，不再阻塞 UI。

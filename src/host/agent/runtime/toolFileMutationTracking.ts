@@ -3,6 +3,7 @@ import type { ToolExecutionResult } from '../../tools/types';
 import type { RuntimeContext } from './runtimeContext';
 import { isSameArtifactRepairPath } from './artifactRepairGuard';
 import { getModifiedFilePath, isFileMutationTool } from './toolArtifactRepairPolicy';
+import { listWorkspaceChangedPaths } from '../../services/checkpoint/turnDiffService';
 
 type TrackFileMutationSideEffectsArgs = {
   ctx: RuntimeContext;
@@ -45,6 +46,27 @@ export async function trackFileMutationSideEffects({
           ctx.artifact.markTargetPatched();
         }
       }
+    }
+  }
+
+  // Bash/scripts/subagents do not carry a reliable file_path argument. After a
+  // successful mutation-capable tool, join Git's disk truth back into the same
+  // per-run path tracker used by Edit/Write. Final aggregation stays centralized
+  // in runFinalizer and does not need tool-specific args.
+  const discoveryTools = new Set([
+    'bash',
+    'shell',
+    'exec_command',
+    'task',
+    'agent',
+    'spawn_agent',
+    'workflow',
+    'run_workflow',
+  ]);
+  if (normalizedResult.success && discoveryTools.has(toolCall.name.toLowerCase())) {
+    const changedPaths = await listWorkspaceChangedPaths(ctx.workingDirectory || process.cwd());
+    for (const filePath of changedPaths) {
+      ctx.nudgeManager.trackModifiedFile(filePath);
     }
   }
 }

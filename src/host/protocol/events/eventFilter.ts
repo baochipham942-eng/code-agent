@@ -41,5 +41,5 @@ const BACKGROUND_IMMEDIATE_EVENT_TYPES = [...IMMEDIATE_EVENT_TYPES].filter((type
 
 /** Shared allowlist for unattended consumers that do not render stream deltas. */
 export const BACKGROUND_AGENT_EVENT_FILTER = defineAgentEventFilter({
-  include: [...BACKGROUND_IMMEDIATE_EVENT_TYPES, 'artifact_locator'],
+  include: [...BACKGROUND_IMMEDIATE_EVENT_TYPES, 'artifact_locator', 'turn_diff'],
 });

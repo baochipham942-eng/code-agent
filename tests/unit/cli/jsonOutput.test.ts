@@ -99,6 +99,21 @@ describe('CLI JSONOutput', () => {
     output.start();
     output.handleEvent({ type: 'stream_chunk', data: { content: 'partial' } } as AgentEvent);
     output.handleEvent({
+      type: 'turn_diff',
+      data: {
+        turnId: 'turn-1',
+        files: [{
+          filePath: '/repo/a.ts',
+          oldText: '',
+          newText: 'one\ntwo',
+          added: 2,
+          removed: 0,
+          isNewFile: true,
+          editCount: 1,
+        }],
+      },
+    } as AgentEvent);
+    output.handleEvent({
       type: 'tool_call_end',
       data: {
         toolCallId: 'call-1',
@@ -111,6 +126,22 @@ describe('CLI JSONOutput', () => {
 
     expect(now).toHaveBeenCalled();
     expect(loggedObjects(log)).toEqual([
+      {
+        type: 'turn_diff',
+        timestamp: 2000,
+        data: {
+          turnId: 'turn-1',
+          files: [{
+            filePath: '/repo/a.ts',
+            oldText: '',
+            newText: 'one\ntwo',
+            added: 2,
+            removed: 0,
+            isNewFile: true,
+            editCount: 1,
+          }],
+        },
+      },
       {
         type: 'tool_result',
         timestamp: 2000,

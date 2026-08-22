@@ -69,6 +69,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   [IPC_DOMAINS.AGENT]: [
     'cancel',
+    'closeAgent',
     'getSessionPermissionMode',
     'getTree',
     'getWorktreeReview',

@@ -213,7 +213,12 @@ export class AgentOrchestrator {
       attachments: attachments as MessageAttachment[] | undefined,
       metadata: messageMetadata,
     };
-    this.applyHistoryVisibility(userMessage, options);
+    this.applyHistoryVisibility(
+      userMessage,
+      options?.inputHistoryVisibility
+        ? { ...options, historyVisibility: options.inputHistoryVisibility }
+        : options,
+    );
 
     this.addMessage(userMessage);
     logger.debug('User message added, hasAttachments:', !!userMessage.attachments?.length, 'count:', userMessage.attachments?.length || 0);

@@ -9,6 +9,7 @@ import {
   getSessionTaskConcurrencyPool,
 } from './sessionTaskSlotLedger';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
+import { wakeForegroundBrain as defaultWakeForegroundBrain } from './foregroundWake';
 
 const logger = createLogger('SessionCommandCenter');
 
@@ -73,6 +74,7 @@ type TerminalTaskStatus = Extract<SessionCommandTaskStatus, 'completed' | 'faile
 
 interface SessionCommandCenterDependencies {
   projectTerminalResult?: (task: SessionCommandTask, status: TerminalTaskStatus) => Promise<void>;
+  wakeForegroundBrain?: (task: SessionCommandTask, status: TerminalTaskStatus) => Promise<void>;
 }
 
 function taskId(): string {
@@ -90,6 +92,7 @@ export class SessionCommandCenter {
   private readonly ledgers = new Map<string, SessionTaskSlotLedger>();
   private readonly manager: TaskManager;
   private readonly projectTerminalResult: NonNullable<SessionCommandCenterDependencies['projectTerminalResult']>;
+  private readonly wakeForegroundBrain: NonNullable<SessionCommandCenterDependencies['wakeForegroundBrain']>;
   private readonly onTaskEvent = (event: TaskManagerEvent): void => {
     void this.handleTaskEvent(event);
   };
@@ -100,6 +103,7 @@ export class SessionCommandCenter {
   ) {
     this.manager = manager;
     this.projectTerminalResult = dependencies.projectTerminalResult ?? projectTerminalResult;
+    this.wakeForegroundBrain = dependencies.wakeForegroundBrain ?? defaultWakeForegroundBrain;
     for (const eventName of TASK_LIFECYCLE_EVENTS) {
       this.manager.on(eventName, this.onTaskEvent);
     }
@@ -333,6 +337,12 @@ export class SessionCommandCenter {
 
     try {
       await this.projectTerminalResult(task, status);
+      void this.wakeForegroundBrain(task, status).catch((error) => {
+        logger.warn('Failed to wake text foreground brain after task settlement', {
+          taskId: task.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
     } catch (error) {
       logger.warn('Failed to project text command task result', {
         taskId: task.id,

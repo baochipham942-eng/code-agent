@@ -617,6 +617,15 @@ export class TaskManager extends EventEmitter {
   }
 
   /**
+   * Primary runs include the direct web AgentLoop path, which does not update
+   * TaskManager.sessionStates. Auxiliary background/wake runs deliberately do
+   * not occupy this per-session control index.
+   */
+  hasActivePrimaryRun(sessionId: string): boolean {
+    return this.runRegistry?.hasSession(sessionId) ?? false;
+  }
+
+  /**
    * 获取统计信息
    */
   getStats(): {

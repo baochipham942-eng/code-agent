@@ -180,6 +180,7 @@ import {
   steerTaskSchema,
   taskStatusSchema,
 } from './commandCenter/sessionCommandCenter.schema';
+import { wakeNoopSchema } from './commandCenter/wakeNoop.schema';
 
 export function registerMigratedTools(
   registry: ToolRegistry,
@@ -200,6 +201,10 @@ export function registerMigratedTools(
   registry.register(
     taskStatusSchema,
     async () => (await import('./commandCenter/sessionCommandCenter')).taskStatusModule,
+  );
+  registry.register(
+    wakeNoopSchema,
+    async () => (await import('./commandCenter/wakeNoop')).wakeNoopModule,
   );
 
   // ── file/ batch 1 ─────────────────────────────────────────────────────

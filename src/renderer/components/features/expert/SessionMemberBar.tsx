@@ -1,44 +1,38 @@
 // ============================================================================
-// SessionMemberBar - 输入框正上方的团队成员条
+// SessionMemberBar - 输入框正上方的折叠 chip（N-L6-AGENTVIEW S1）
 // ============================================================================
 // 两种数据源，同一条：
 //   1) 预选：用户在「＋ → 团队」选了配方但还没发第一句话 —— 灰态名单，让他先知道
 //      这个团队由谁组成（WorkBuddy 不做这一步，只在真 spawn 后才铺；我们多给一层可预期性）
 //   2) 运行时：会话真的跑起来了（持久化账本/API 回灌）—— 带状态
-// 第一颗 pill 永远是「主会话」（团长位），点它回主对话；点成员打开他的工作记录。
+// 08-22 拍板：常态只渲染一条折叠 chip「N 个代理工作中 · 当前一句」+ 尾部「合没合」
+// 总账 +「›」，不再有 pill 展开态；点 chip 打开右侧「本会话的代理」面板
+// （TaskPanel 第三页签），停止全部 / token / 成员 pill 都搬进了面板。
 // ============================================================================
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { Square, X, Zap } from 'lucide-react';
-import { useSwarmStore } from '../../../stores/swarmStore';
+import React, { useEffect, useMemo } from 'react';
+import { Bot } from 'lucide-react';
+import { useAppStore } from '../../../stores/appStore';
 import { useComposerStore } from '../../../stores/composerStore';
 import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useTaskPanelViewStore } from '../../../stores/taskPanelViewStore';
 import { useI18n } from '../../../hooks/useI18n';
-import type { AgentStatus, SwarmAgentState } from '@shared/contract/swarm';
+import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 import { readPersistedTeamLead, teamRecipeMemberKey } from '@shared/contract/teamRecipe';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
-import { useComposerNoticeStore, selectSlotCollapsed } from '../../../stores/composerNoticeStore';
-import { useVoiceCallStore } from '../../../stores/voiceCallStore';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetail';
-import { cancelSwarmRunOrFallback } from '../swarm/SwarmInlineMonitor';
+import { useSessionAgentRows } from '../../../hooks/useSessionAgentRows';
+import { deriveAgentMergeState } from '../../../utils/agentMergeState';
+import type { AgentRow } from '../../../utils/agentRows';
 
-function isActiveAgentStatus(status: AgentStatus): boolean {
-  return status === 'pending' || status === 'ready' || status === 'running';
-}
-
-function standbyLike(pills: MemberPill[]): boolean {
-  return pills[0]?.status === 'standby';
-}
-
-// ponytail: 三行格式化，与 SwarmInlineMonitor 历史实现同口径，不提前抽 util
-function formatMemberBarTokens(tokens: number): string {
-  if (tokens < 1000) return String(tokens);
-  if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(1)}K`;
-  return `${(tokens / 1_000_000).toFixed(2)}M`;
+/** 打开右侧「本会话的代理」面板：切 TaskPanel 页签 + 确保右栏展开。 */
+export function openSessionAgentsPanel(): void {
+  useTaskPanelViewStore.getState().setView('agents');
+  useAppStore.getState().openWorkbenchTab('overview', { source: 'user' });
 }
 
 export function swarmRunAgentRecordToState(record: SwarmRunAgentRecord): SwarmAgentState {
@@ -81,17 +75,6 @@ function pillStatusOf(status: SwarmAgentState['status']): MemberPill['status'] {
   if (status === 'failed') return 'failed';
   return 'running';
 }
-
-const StatusBadge: React.FC<{ status: MemberPill['status'] }> = ({ status }) => {
-  if (status === 'standby') return null;
-  if (status === 'running') {
-    return <span data-testid="member-status-running" className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-zinc-500 border-t-transparent" />;
-  }
-  if (status === 'completed') {
-    return <span data-testid="member-status-completed" className="shrink-0 text-[11px] leading-none text-badge-success">✓</span>;
-  }
-  return <span data-testid="member-status-failed" className="shrink-0 text-[11px] leading-none text-badge-danger">✕</span>;
-};
 
 /**
  * 本会话的团队成员（持久化账本/API > 预选配方名单）。
@@ -171,238 +154,72 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
   return pills;
 }
 
+/** chip 左侧头像叠：专家用角色头像三级回落，普通代理/后台任务一律 lucide Bot（08-22 拍板）。 */
+const ChipAvatar: React.FC<{ row: AgentRow }> = ({ row }) => {
+  if (row.kind === 'expert') {
+    return (
+      <RoleInitialAvatar
+        roleId={row.roleId ?? row.name}
+        name={row.name}
+        icon={row.icon}
+        className="h-4 w-4 border border-zinc-900 text-[8px]"
+      />
+    );
+  }
+  return (
+    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-zinc-900 bg-zinc-800 text-zinc-400">
+      <Bot className="h-2.5 w-2.5" aria-hidden />
+    </span>
+  );
+};
+
 export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
   const { t } = useI18n();
   const text = t.expert.memberBar;
-  const pills = useSessionMembers(sessionId);
-  const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
-  // L3 上下文层：被 L1 阻塞决策卡（三张草稿卡 + 定时/目标/种子三张创建卡）挤时
-  // 收成一行摘要而不是整条消失。判定收在 composerNoticeStore 一处，这里不自己数卡。
-  const blockedByNotice = useComposerNoticeStore((state) => selectSlotCollapsed(state, 'member-bar'));
-  const [expandedOverNotice, setExpandedOverNotice] = useState(false);
-  const [stopping, setStopping] = useState(false);
-  // 通话中高亮通话身份（§6.7.7；只展示，点击切换 set_active_agent 是 Phase 2）
-  const voiceCallLive = useVoiceCallStore((state) => state.phase === 'live' || state.phase === 'connecting');
-  const voiceActiveAgentId = useVoiceCallStore((state) => state.activeAgentId);
-  const activeRunId = useSwarmStore((state) => state.activeRunId);
-  const durableDetail = useDurableSwarmRunDetail(sessionId);
-  const totalTokens = durableDetail
-    ? durableDetail.run.totalTokensIn + durableDetail.run.totalTokensOut
-    : 0;
-  const activeAgents = useMemo(
-    () => (durableDetail?.agents ?? []).filter((agent) => isActiveAgentStatus(agent.status)),
-    [durableDetail],
-  );
-  const showSwarmActions = !standbyLike(pills) && activeAgents.length > 0 && Boolean(sessionId && activeRunId);
+  const { rows, conflicts } = useSessionAgentRows(sessionId);
 
   // 换会话必须退出成员视图，否则会拿上一个会话的成员去渲染这一个
   useEffect(() => { setViewingMemberId(null); }, [sessionId, setViewingMemberId]);
-  // 确认卡收掉后回到常态，别把「展开」黏在下一次
-  useEffect(() => { if (!blockedByNotice) setExpandedOverNotice(false); }, [blockedByNotice]);
 
-  // standby ×：把该成员从本次预选排除（启动时少起这个人）；
-  // × 到最后一个不剩 = 整团取消，清掉配方预选本身（排除标记随 setSelectedTeamRecipeId 一并复位）
-  const removeStandbyMember = (pill: MemberPill) => {
-    if (!pill.standbyKey) return;
-    const store = useComposerStore.getState();
-    const remaining = pills.filter((candidate) => candidate.standbyKey !== pill.standbyKey);
-    if (remaining.length === 0) {
-      store.setSelectedTeamRecipeId(null);
-      return;
-    }
-    store.setStandbyExcludedMemberKeys([...store.standbyExcludedMemberKeys, pill.standbyKey]);
-  };
+  const standby = rows.length > 0 && rows.every((row) => row.status === 'standby');
+  const working = rows.filter((row) => row.status === 'working');
+  const mergeState = standby ? null : deriveAgentMergeState(rows, conflicts);
 
-  const handleStopAll = async () => {
-    if (stopping || !sessionId || !activeRunId || activeAgents.length === 0) return;
-    setStopping(true);
-    try {
-      await cancelSwarmRunOrFallback(
-        { sessionId, runId: activeRunId },
-        activeAgents.map((agent) => ({ id: agent.agentId })),
-      );
-    } finally {
-      setStopping(false);
-    }
-  };
+  if (rows.length === 0) return null;
 
-  if (pills.length === 0) return null;
-
-  const standby = pills[0]?.status === 'standby';
-
-  // 确认卡是阻塞性决策，优先占位；成员条退成一行摘要而不是整条消失
-  // （WorkBuddy 的做法是直接吞掉，用户看不到成员也不知道为什么）
-  if (blockedByNotice && !expandedOverNotice) {
-    const running = pills.filter((pill) => pill.status === 'running').length;
-    const summary = standby
-      ? text.collapsedStandby.replace('{count}', String(pills.length))
-      : running > 0
-        ? text.collapsedWorking.replace('{count}', String(running))
-        : text.collapsedDone.replace('{count}', String(pills.length));
-    return (
-      <button /* ds-allow:button: 被确认卡挤掉时的一行摘要，点开恢复完整成员条 */
-        type="button"
-        data-testid="session-member-bar-collapsed"
-        onClick={() => setExpandedOverNotice(true)}
-        className="mb-1.5 flex w-full items-center gap-1.5 px-2 text-left text-[11px] text-zinc-500 hover:text-zinc-300"
-      >
-        <span className="flex -space-x-1.5">
-          {pills.slice(0, 4).map((pill) => (
-            <RoleInitialAvatar key={pill.key} roleId={pill.roleId} name={pill.name} icon={pill.icon} className="h-4 w-4 border border-zinc-900 text-[8px]" />
-          ))}
-        </span>
-        <span className="truncate">{summary}</span>
-        <span aria-hidden>›</span>
-      </button>
-    );
-  }
+  // 「N 个代理工作中 · 当前一句」：当前一句 = 第一个 running 代理的最近工具步人话
+  const firstWorking = working[0];
+  const summary = standby
+    ? text.collapsedStandby.replace('{count}', String(rows.length))
+    : firstWorking
+      ? `${text.collapsedWorking.replace('{count}', String(working.length))} · ${firstWorking.name} ${firstWorking.activity ?? ''}`
+      : text.collapsedDone.replace('{count}', String(rows.length));
+  const mergeLabel = mergeState === 'merged'
+    ? text.mergeState.chipMerged
+    : mergeState === 'conflict'
+      ? text.mergeState.chipConflict.replace('{count}', String(conflicts.length))
+      : mergeState === 'waiting'
+        ? text.mergeState.chipWaiting
+        : null;
 
   return (
-    <>
-      <div data-testid="session-member-bar" className="mb-2 flex w-full items-center gap-1.5 overflow-x-auto px-2 pb-0.5">
-        {!standby && (
-          <button /* ds-allow:button: 成员条首位是回主对话的入口，与成员 pill 同构 */
-            type="button"
-            data-testid="member-pill-leader"
-            data-selected={!viewingMemberId}
-            onClick={() => setViewingMemberId(null)}
-            title={text.leaderTitle}
-            className={`flex shrink-0 items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-left ${
-              viewingMemberId ? 'border-zinc-700 bg-zinc-800/70 hover:border-zinc-500' : 'border-zinc-400 bg-zinc-800'
-            }`}
-          >
-            <RoleInitialAvatar roleId="neo" name={text.leader} className="h-5 w-5 text-[10px]" />
-            <span className="text-xs font-medium text-zinc-100">{text.leader}</span>
-          </button>
-        )}
-        {pills.map((pill) => {
-          const voiceActive = voiceCallLive && (pill.key === voiceActiveAgentId || pill.roleId === voiceActiveAgentId);
-          // standby pill 本体点击是无操作（还没有对话可看），语义保持；
-          // 取消预选走 hover 浮现的 × 按钮或聚焦后 Delete/Backspace，与 composer chip 口径一致
-          if (pill.status === 'standby') {
-            return (
-              <div
-                key={pill.key}
-                role="group"
-                tabIndex={0}
-                data-testid={`member-pill-${pill.roleId}`}
-                data-voice-active={voiceActive || undefined}
-                title={pill.profession ? `${pill.name} · ${pill.profession}` : pill.name}
-                aria-label={pill.name}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Delete' && event.key !== 'Backspace') return;
-                  event.preventDefault();
-                  removeStandbyMember(pill);
-                }}
-                className="group flex shrink-0 cursor-default items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/60 py-1 pl-1 pr-2.5 text-left text-zinc-500 transition-colors"
-              >
-                <RoleInitialAvatar roleId={pill.roleId} name={pill.name} icon={pill.icon} className="h-5 w-5 text-[10px]" />
-                <span className="flex min-w-0 flex-col items-start leading-tight">
-                  {pill.profession && <span className="text-xs font-semibold text-zinc-100">{pill.profession}</span>}
-                  <span className={pill.profession ? 'text-[10px] text-zinc-400' : 'text-xs font-medium text-zinc-100'}>{pill.name}</span>
-                </span>
-                {pill.isLead && (
-                  <span
-                    data-testid={`member-lead-badge-${pill.roleId}`}
-                    className="shrink-0 rounded bg-amber-400/15 px-1 py-0.5 text-[9px] font-medium leading-none text-badge-warning"
-                  >
-                    {text.leadLabel}
-                  </span>
-                )}
-                <button /* ds-allow:button: standby 成员 pill 的删除是图标级小按钮，Button primitive 无此紧凑图标变体 */
-                  type="button"
-                  tabIndex={-1}
-                  data-testid={`member-standby-remove-${pill.roleId}`}
-                  onClick={() => removeStandbyMember(pill)}
-                  aria-label={text.standbyRemoveAria.replace('{name}', pill.name)}
-                  className="-mr-1 shrink-0 rounded-full p-0.5 text-zinc-500 opacity-0 transition-opacity hover:bg-zinc-700 hover:text-zinc-200 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
-                >
-                  <X className="h-3 w-3" aria-hidden />
-                </button>
-              </div>
-            );
-          }
-          return (
-          <button /* ds-allow:button: 成员 pill 需承载头像、两行文字和状态徽标，Button primitive 的居中按钮形态不适配 */
-            key={pill.key}
-            type="button"
-            data-testid={`member-pill-${pill.roleId}`}
-            data-selected={viewingMemberId === pill.key}
-            data-voice-active={voiceActive || undefined}
-            onClick={() => {
-              // 再点同一个人回主会话（standby 走上方 div 分支，不会到这里）
-              setViewingMemberId(viewingMemberId === pill.key ? null : pill.key);
-            }}
-            title={pill.profession ? `${pill.name} · ${pill.profession}` : pill.name}
-            className={`flex shrink-0 items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-left transition-colors ${
-              voiceActive
-                ? 'border-badge-success/70 bg-emerald-500/10 ring-1 ring-emerald-400/40'
-                : viewingMemberId === pill.key
-                  ? 'border-zinc-300 bg-zinc-800'
-                  : 'border-zinc-700 bg-zinc-800/70 hover:border-zinc-500'
-            }`}
-          >
-            <RoleInitialAvatar roleId={pill.roleId} name={pill.name} icon={pill.icon} className="h-5 w-5 text-[10px]" />
-            {/* 职业在上、花名在下：非程序员看「内容主理人」比看「青禾」有用得多 */}
-            <span className="flex min-w-0 flex-col items-start leading-tight">
-              {pill.profession && <span className="text-xs font-semibold text-zinc-100">{pill.profession}</span>}
-              <span className={pill.profession ? 'text-[10px] text-zinc-400' : 'text-xs font-medium text-zinc-100'}>{pill.name}</span>
-            </span>
-            {pill.isLead && (
-              <span
-                data-testid={`member-lead-badge-${pill.roleId}`}
-                className="shrink-0 rounded bg-amber-400/15 px-1 py-0.5 text-[9px] font-medium leading-none text-badge-warning"
-              >
-                {text.leadLabel}
-              </span>
-            )}
-            <StatusBadge status={pill.status} />
-          </button>
-          );
-        })}
-        {standby && <span className="shrink-0 text-[11px] text-zinc-500">{text.standbyHint}</span>}
-        {/* A3：停止全部 + token 迁到成员条右端；核心操作区只放停止一个动作 */}
-        {(totalTokens > 0 || showSwarmActions) && (
-          <div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
-            {totalTokens > 0 && (
-              <span
-                data-testid="member-bar-tokens"
-                className="flex items-center gap-1 text-[11px] text-badge-info/80"
-                title={text.tokensTitle}
-              >
-                <Zap className="h-3 w-3" aria-hidden />
-                {formatMemberBarTokens(totalTokens)}
-              </span>
-            )}
-            {showSwarmActions && (
-              <button /* ds-allow:button: 成员条右端停止全部是图标级小按钮，Button primitive 无此紧凑变体 */
-                type="button"
-                data-testid="member-bar-stop-all"
-                onClick={() => { void handleStopAll(); }}
-                disabled={stopping || activeAgents.length === 0 || !sessionId || !activeRunId}
-                className={`rounded-full p-1 transition-colors ${
-                  stopping
-                    ? 'cursor-wait text-zinc-600'
-                    : 'text-zinc-400 hover:bg-zinc-700 hover:text-badge-danger'
-                } disabled:cursor-not-allowed disabled:opacity-50`}
-                title={
-                  stopping
-                    ? text.stopAllStopping
-                    : text.stopAllTitle.replace('{count}', String(activeAgents.length))
-                }
-                aria-label={
-                  stopping
-                    ? text.stopAllStopping
-                    : text.stopAllTitle.replace('{count}', String(activeAgents.length))
-                }
-              >
-                <Square className="h-3 w-3" aria-hidden />
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </>
+    <button /* ds-allow:button: 折叠 chip 是整行摘要入口（头像叠+两行信息），Button primitive 无此形态 */
+      type="button"
+      data-testid="session-member-bar-collapsed"
+      onClick={openSessionAgentsPanel}
+      className="mb-1.5 flex w-full items-center gap-1.5 px-2 text-left text-[11px] text-zinc-500 hover:text-zinc-300"
+    >
+      <span className="flex -space-x-1.5">
+        {rows.slice(0, 4).map((row) => <ChipAvatar key={row.key} row={row} />)}
+      </span>
+      <span className="truncate">{summary}</span>
+      {mergeLabel && (
+        <span data-testid="member-bar-merge-state" className="ml-auto shrink-0 pl-2 text-zinc-400">
+          {mergeLabel}
+        </span>
+      )}
+      <span aria-hidden>›</span>
+    </button>
   );
 };

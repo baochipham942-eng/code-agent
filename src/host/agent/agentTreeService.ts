@@ -587,7 +587,9 @@ export function getAgentTreeSnapshot(options: GetAgentTreeSnapshotOptions = {}):
     spawnAgents: getSpawnGuard().list(),
     parallelTasks: getParallelAgentCoordinator().getTaskSnapshots(),
     contextRecords: getSubagentContextStore().list(sessionId),
-    backgroundAgents: getBackgroundSubagentRegistry().list(),
+    // 会话隔离：能归属到别的会话的后台代理不进本会话快照（无 sessionId 的保留原口径）
+    backgroundAgents: getBackgroundSubagentRegistry().list()
+      .filter((handle) => !sessionId || !handle.sessionId || handle.sessionId === sessionId),
     worktrees: options.worktrees ?? listAgentWorktreeArtifacts(),
     // 同一根脊柱：冲突从 fileOwnershipRegistry 拉（string scope = session:<id>），
     // 不给 renderer 新开 channel。

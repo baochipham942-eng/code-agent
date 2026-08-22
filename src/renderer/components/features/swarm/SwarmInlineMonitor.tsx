@@ -1,16 +1,14 @@
 // ============================================================================
-// SwarmInlineMonitor - 讨论流浮层壳（施工单二 A3）
-// ============================================================================
-// 成员列表已收敛到 SessionMemberBar；停止全部 / totalTokens 也迁到成员条。
-// 本组件只保留 DiscussionStream 挂载壳 + cancelSwarmRunOrFallback 导出
-// （成员条与单测复用停止语义）。
+// SwarmInlineMonitor - 停止语义工具（原讨论流浮层壳，N-L6-AGENTVIEW 拆壳）
+// ----------------------------------------------------------------------------
+// 讨论流浮层已收进右侧「本会话的代理」面板的「事件」折叠区（DiscussionStream
+// 直接复用），浮层壳组件删除；本文件只留 cancelSwarmRunOrFallback 导出
+// （单测复用停止语义）。
 // ============================================================================
 
 import type { SwarmAgentState, SwarmRunRef } from '@shared/contract/swarm';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
-import { useSwarmStore } from '../../../stores/swarmStore';
-import { DiscussionStream } from './DiscussionStream';
 
 export async function cancelSwarmRunOrFallback(
   scope: SwarmRunRef,
@@ -28,18 +26,5 @@ export async function cancelSwarmRunOrFallback(
         // 单个 cancel 失败不阻塞其他 agent，swarm event 会让 UI 自动收敛。
       }),
     ),
-  );
-}
-
-export function SwarmInlineMonitor() {
-  const eventLogLength = useSwarmStore((s) => (s.eventLog ?? []).length);
-  if (eventLogLength === 0) return null;
-
-  return (
-    <div className="w-full shrink-0 chat-col-pad">
-      <div className="mx-auto max-w-3xl rounded-lg border border-zinc-700/70 bg-zinc-900/95 backdrop-blur-sm shadow-xl text-xs">
-        <DiscussionStream />
-      </div>
-    </div>
   );
 }

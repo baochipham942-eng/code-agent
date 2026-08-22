@@ -226,7 +226,7 @@ describe('ExpertPanel', () => {
     fireEvent.click(screen.getByTestId('expert-tab-discover'));
     expect(screen.getByText('出厂专家团')).toBeTruthy();
     expect(screen.getByText('我的专家团')).toBeTruthy();
-    expect(screen.getByTestId('team-recipe-product-spec').textContent).toContain('专家团 · 主理人 牧之');
+    expect(screen.getByTestId('team-recipe-product-spec').textContent).toContain('专家团 · 牵头专家 牧之');
     expect(screen.getByTestId('team-recipe-user-recipe-1').textContent).toContain('专家小组 · 1 人各自作答');
     expect(within(screen.getByTestId('team-recipe-product-spec')).getByText('复制为我的')).toBeTruthy();
     expect(within(screen.getByTestId('team-recipe-user-recipe-1')).getByText('详情')).toBeTruthy();
@@ -276,7 +276,7 @@ describe('ExpertPanel', () => {
     fireEvent.click(screen.getByTestId('expert-tab-discover'));
     fireEvent.click(screen.getByRole('button', { name: '详情 产品规格' }));
     expect(screen.getByTestId('team-recipe-detail-product-spec')).toBeTruthy();
-    expect(screen.getByText('专家团 · 主理人 牧之')).toBeTruthy();
+    expect(screen.getByText('专家团 · 牵头专家 牧之')).toBeTruthy();
     expect(screen.getByText('预计并发 2 人')).toBeTruthy();
   });
 

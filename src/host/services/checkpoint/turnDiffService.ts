@@ -46,7 +46,7 @@ function splitNullTerminated(value: string): string[] {
  * This is the same disk/Git truth source used by workspace patch capture, but
  * exposes paths so Bash/scripts can join the normal mutation tracker.
  */
-export async function listWorkspaceChangedPaths(workingDir: string): Promise<string[]> {
+async function listWorkspaceChangedPaths(workingDir: string): Promise<string[]> {
   const repoRoot = await resolveRepoRoot(workingDir);
   if (!repoRoot) return [];
 

@@ -2,7 +2,7 @@
 // Pending Approval Persistence Types — ADR-010 #2
 // ============================================================================
 //
-// 用一张 `pending_approvals` 表统一持久化四类 gate 的中途状态：
+// 用一张 `pending_approvals` 表统一持久化五类 gate 的中途状态：
 //   - kind = 'plan'             → PlanApprovalGate.pendingPlans
 //   - kind = 'launch'           → SwarmLaunchApprovalGate.requests
 //   - kind = 'tool_approval'    → AgentOrchestrator 无人值守停车挂起（B2）

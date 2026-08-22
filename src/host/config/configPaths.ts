@@ -295,13 +295,6 @@ export function getPermissionsConfig(workingDirectory?: string): {
 }
 
 /**
- * Get dynamic tools directory (for persisted tool_create results)
- */
-export function getDynamicToolsDir(workingDirectory: string): string {
-  return path.join(getProjectConfigDir(workingDirectory), 'tools');
-}
-
-/**
  * Get test directories
  */
 export function getTestDirs(workingDirectory: string): {

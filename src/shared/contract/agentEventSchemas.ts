@@ -464,6 +464,7 @@ const stabilityByType = {
   interrupt_start: 'experimental',
   interrupt_acknowledged: 'experimental',
   interrupt_complete: 'experimental',
+  input_redirected: 'experimental',
   citations_updated: 'experimental',
   model_switched: 'experimental',
   tool_progress: 'experimental',
@@ -585,6 +586,16 @@ const interruptSchema = typed<InterruptEventData>(z.object({ message: z.string()
 const InterruptStartEventSchema = event('interrupt_start', interruptSchema);
 const InterruptAcknowledgedEventSchema = event('interrupt_acknowledged', interruptSchema);
 const InterruptCompleteEventSchema = event('interrupt_complete', interruptSchema);
+const InputRedirectedEventSchema = event('input_redirected', z.object({
+  receiptId: z.string(),
+  originalContent: z.string(),
+  expectedTurnId: z.string().optional(),
+  partial: z.object({
+    charCount: z.number().int().nonnegative(),
+    trailingText: z.string().optional(),
+  }),
+  interruptedTools: stringArraySchema,
+}));
 const CitationsUpdatedEventSchema = event('citations_updated', z.object({ citations: z.array(citationSchema) }));
 const ModelSwitchedEventSchema = event('model_switched', z.object({ from: z.string(), to: z.string(), provider: z.string().optional() }));
 const ToolProgressEventSchema = event('tool_progress', typed<ToolProgressData>(z.object({ toolCallId: z.string(), toolName: z.string(), elapsedMs: z.number(), detail: z.string().optional() })));
@@ -615,7 +626,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   SkillDraftPendingEventSchema, RoleDraftPendingEventSchema, TeamRecipeDraftPendingEventSchema,
   ResearchModeStartedEventSchema, ResearchProgressEventSchema, ResearchCompleteEventSchema, ResearchErrorEventSchema,
   ResearchDetectedEventSchema, BudgetWarningEventSchema, BudgetExceededEventSchema, ContextCompressedEventSchema,
-  InterruptStartEventSchema, InterruptAcknowledgedEventSchema, InterruptCompleteEventSchema, CitationsUpdatedEventSchema,
+  InterruptStartEventSchema, InterruptAcknowledgedEventSchema, InterruptCompleteEventSchema, InputRedirectedEventSchema, CitationsUpdatedEventSchema,
   ModelSwitchedEventSchema, ToolProgressEventSchema, ToolOutputDeltaEventSchema, ToolTimeoutEventSchema,
   PlanModeEnteredEventSchema, PlanModeExitedEventSchema, TaskStatsEventSchema, ContextCompactingEventSchema,
   ContextCompactedEventSchema, StreamUsageEventSchema, StreamTokenEstimateEventSchema, ToolCallLocalEventSchema,

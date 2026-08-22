@@ -552,6 +552,7 @@ describe('AgentAppService lifecycle routing', () => {
         }),
       }),
       'client-msg-1',
+      undefined,
     );
     expect(outcome).toBe(expectedOutcome);
   });
@@ -707,6 +708,7 @@ describe('AgentAppService lifecycle routing', () => {
       }),
       undefined,
       'client-msg-2',
+      undefined,
     );
   });
 

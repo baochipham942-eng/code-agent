@@ -284,6 +284,19 @@ export interface AgentErrorMetadata {
   maxTokens?: number;
 }
 
+export interface InputRedirectReceiptMetadata {
+  /** 与 agent event 共用的稳定 id，renderer 乐观投影与历史回放按它去重。 */
+  receiptId: string;
+  /** 用户本次改道原话；只在「查看原话」展开层出现。 */
+  originalContent: string;
+  expectedTurnId?: string;
+  partial: {
+    charCount: number;
+    trailingText?: string;
+  };
+  interruptedTools: string[];
+}
+
 export interface MessageMetadata {
   /** Stable join keys for reconstructing a persisted message's runtime turn. */
   correlation?: {
@@ -361,6 +374,8 @@ export interface MessageMetadata {
     changedFileCount: number;
     externalSideEffectsWarning: string;
   };
+  /** 显式改道成功后的动作回执；原话不投成用户气泡。 */
+  inputRedirectReceipt?: InputRedirectReceiptMetadata;
   /** 后台任务统一终态投影，供后续 turn 做短名指代与状态追问。 */
   backgroundTaskResult?: {
     source: 'agent-result';

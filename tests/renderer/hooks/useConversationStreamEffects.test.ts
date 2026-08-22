@@ -173,6 +173,48 @@ describe('removeUncommittedAssistantDraft', () => {
   });
 });
 
+describe('applyConversationStreamEvent input redirect receipt', () => {
+  it('projects the action receipt once without creating a user bubble', () => {
+    let messages: Message[] = [];
+    const actions = {
+      addMessage: (message: Message) => { messages = [...messages, message]; },
+      updateMessage: () => {},
+      setMessages: (next: Message[]) => { messages = next; },
+      getMessages: () => messages,
+      queueUpdate: () => {},
+      now: () => 123,
+    };
+    const event = {
+      type: 'input_redirected',
+      data: {
+        receiptId: 'redirect-receipt-1',
+        originalContent: '改用更简洁的结构',
+        expectedTurnId: 'turn-1',
+        partial: { charCount: 88, trailingText: '写到这里' },
+        interruptedTools: ['Bash'],
+      },
+    };
+    const state = { currentTurnMessageId: 'turn-1', committedAssistantMessageIds: new Set<string>() };
+
+    applyConversationStreamEvent(event, state, actions);
+    applyConversationStreamEvent(event, state, actions);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: 'redirect-receipt-1',
+      role: 'system',
+      content: '已按你的纠正改了方向',
+      metadata: {
+        inputRedirectReceipt: {
+          originalContent: '改用更简洁的结构',
+          partial: { charCount: 88, trailingText: '写到这里' },
+        },
+      },
+    });
+    expect(messages.some((message) => message.role === 'user')).toBe(false);
+  });
+});
+
 // 2026-08-01 验收截图：宿主抽干排队消息那一轮，屏幕上只有回答「丙一收到」，
 // 对应的问题一个字都没有——那条用户消息只有宿主知道，前端没有本地乐观副本。
 describe('applyConversationStreamEvent host-owned user message', () => {

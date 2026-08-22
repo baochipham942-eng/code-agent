@@ -843,7 +843,12 @@ describe('createAgentRouter', () => {
     expect(queued.ok).toBe(true);
     await expect(queued.json()).resolves.toEqual({
       success: true,
-      data: { outcome: 'queued', queuedInputId: 'drained-user' },
+      data: {
+        outcome: 'queued',
+        queuedInputId: 'drained-user',
+        code: 'RUN_SETTLED',
+        message: '这条先排上了，手头这轮做完就做',
+      },
     });
 
     controller.abort();
@@ -2196,6 +2201,7 @@ describe('createAgentRouter', () => {
         content: '补一句',
         sessionId: 'session-steer',
         clientMessageId: 'client-msg-1',
+        expectedTurnId: 'turn-visible',
         attachments: [{ name: 'note.txt' }],
         context: {
           workingDirectory: '/tmp/project',
@@ -2217,6 +2223,8 @@ describe('createAgentRouter', () => {
           runtimeInputMode: 'supplement',
         },
       },
+      undefined,
+      'turn-visible',
     );
     expect(mockBroadcastSSE.mock.calls.map(([, event]) => event.type)).toEqual([
       'interrupt_start',
@@ -2256,7 +2264,12 @@ describe('createAgentRouter', () => {
     expect(response.ok).toBe(true);
     expect(body).toEqual({
       success: true,
-      data: { outcome: 'queued', queuedInputId: 'late-web-message-id' },
+      data: {
+        outcome: 'queued',
+        queuedInputId: 'late-web-message-id',
+        code: 'RUN_SETTLED',
+        message: '这条先排上了，手头这轮做完就做',
+      },
     });
     expect(mockQueuedInputEnqueue).toHaveBeenCalledWith({
       id: 'late-web-message-id',

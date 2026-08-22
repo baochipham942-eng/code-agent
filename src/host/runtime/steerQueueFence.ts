@@ -83,6 +83,7 @@ export interface SteerAttemptTarget {
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
     displayContent?: string,
+    expectedTurnId?: string,
   ): void | Promise<void>;
 }
 
@@ -102,6 +103,7 @@ export interface SteerOrQueueInput {
   clientMessageId?: string;
   attachments?: MessageAttachment[];
   metadata?: MessageMetadata;
+  expectedTurnId?: string;
   /**
    * Caller's raw envelope context, when available (web has it; desktop doesn't
    * and falls back to workbenchMetadataToEnvelopeContext(metadata?.workbench)).
@@ -131,6 +133,11 @@ function buildQueuedSteerEnvelope(
   options?: QueueBuildOptions,
 ): { id: string; envelope: ConversationEnvelope } {
   const id = input.clientMessageId ?? options?.generateId?.() ?? generateMessageId();
+  const sourceContext = input.context
+    ?? workbenchMetadataToEnvelopeContext(input.metadata?.workbench);
+  const context = sourceContext?.runtimeInput
+    ? { ...sourceContext, runtimeInput: { ...sourceContext.runtimeInput, mode: 'supplement' as const } }
+    : sourceContext;
   return {
     id,
     envelope: {
@@ -138,8 +145,7 @@ function buildQueuedSteerEnvelope(
       clientMessageId: id,
       sessionId: input.sessionId,
       attachments: input.attachments,
-      context: input.context
-        ?? workbenchMetadataToEnvelopeContext(input.metadata?.workbench),
+      context,
     },
   };
 }
@@ -157,6 +163,7 @@ export async function steerOrQueue(
       input.attachments,
       input.metadata,
       input.displayContent,
+      input.expectedTurnId,
     );
     return { outcome: 'steered' };
   } catch (error) {
@@ -174,7 +181,13 @@ export async function steerOrQueue(
       envelope: queued.envelope,
       now: options?.now?.(),
     });
-    return { outcome: 'queued', queuedInputId: queued.id };
+    const code = error.code;
+    return {
+      outcome: 'queued',
+      queuedInputId: queued.id,
+      code,
+      message: '这条先排上了，手头这轮做完就做',
+    };
   }
 }
 

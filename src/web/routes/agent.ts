@@ -1199,6 +1199,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     const runId = typeof body.runId === 'string' ? body.runId : undefined;
     const sessionId = typeof body.sessionId === 'string' ? body.sessionId : undefined;
     const clientMessageId = typeof body.clientMessageId === 'string' ? body.clientMessageId : undefined;
+    const expectedTurnId = typeof body.expectedTurnId === 'string' ? body.expectedTurnId : undefined;
     const attachments = Array.isArray(body.attachments)
       ? body.attachments as MessageAttachment[]
       : undefined;
@@ -1220,6 +1221,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         content,
         sessionId,
         clientMessageId,
+        expectedTurnId,
         attachments,
         context,
       };
@@ -1264,6 +1266,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           return { ...base, workbench: { ...(base?.workbench ?? {}), pinnedLibraryItems } };
         })(),
         context,
+        expectedTurnId,
       });
       broadcastSSE('agent:event', {
         type: 'interrupt_complete',

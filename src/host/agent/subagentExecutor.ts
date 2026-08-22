@@ -9,10 +9,7 @@ import { ModelRouter } from '../model/modelRouter';
 import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../model/adapters/aiSdkAdapter';
 import { createLogger } from '../services/infra/logger';
 import { silence } from '../utils/errorHandling';
-import {
-  getSubagentPipeline,
-  type ToolExecutionRequest,
-} from './subagentPipeline';
+import { getSubagentPipeline, type ToolExecutionRequest } from './subagentPipeline';
 import type { AgentDefinition, DynamicAgentConfig } from './agentDefinition';
 import {
   getAgentPrompt,
@@ -87,10 +84,7 @@ import {
   type LegacySubagentContextInput,
 } from './subagentExecutorLegacyAdapter';
 import { getIncompleteTasks, adoptOrphanTasks } from '../services/planning/taskStore';
-import {
-  addSubagentUsage,
-  type SubagentUsage,
-} from './subagentUsageAccounting';
+import { addSubagentUsage, type SubagentUsage } from './subagentUsageAccounting';
 import { runSubagentExecutionWithTrace } from './subagentExecutionTracing';
 import { createSubagentToolRuntime } from './subagentToolRuntime';
 import {
@@ -99,6 +93,7 @@ import {
 } from './subagentProtocolContext';
 import { startSubagentLifecycle } from './subagentLifecycleHooks';
 import { createSubagentEventScope, type SubagentRunEndStatus } from './subagentLifecycleEvents';
+import { SubagentDoomLoopGuard, SubagentDoomLoopStopError } from './subagentDoomLoopGuard';
 
 export type {
   SubagentConfig,
@@ -189,6 +184,7 @@ export class SubagentExecutor {
     let toolCallsAttempted = 0;
     let iterations = 0;
     let finalOutput = '';
+    const doomLoopGuard = new SubagentDoomLoopGuard();
     // 跨迭代累加 outputTokens，供 dynamic-workflow 的 BudgetTracker 计费（每次推理后累加）。
     let outputTokensUsed = 0;
     let descendantUsage: SubagentUsage = { cost: 0, tokensUsed: 0 };
@@ -716,6 +712,8 @@ export class SubagentExecutor {
           });
         };
 
+        if (doomLoopGuard.handleEmptyOutput(response, messages, emitContextSnapshot, persistTelemetryTurn)) continue;
+
         // Handle text response - subagent is done
         if (response.type === 'text' && response.content) {
           // taskGate（roadmap 2.6）：收口前检查名下未收口任务，重入督办（上限 2）
@@ -756,6 +754,8 @@ export class SubagentExecutor {
 
         // Handle tool calls
         if (response.type === 'tool_use' && response.toolCalls) {
+          doomLoopGuard.recordStep(response.toolCalls);
+
           const toolResults: string[] = [];
           const assistantToolCalls: ToolCall[] = response.toolCalls.map((toolCall) => ({
             id: toolCall.id,
@@ -1050,6 +1050,7 @@ export class SubagentExecutor {
               },
             ),
           }));
+          doomLoopGuard.injectPendingNudge(messages);
           pushObservabilityMessage({
             id: generateMessageId(),
             role: 'user',
@@ -1132,7 +1133,7 @@ export class SubagentExecutor {
         contextSnapshot: latestContextSnapshot,
       };
     } catch (error) {
-      if (effectiveSignal.aborted) {
+      if (effectiveSignal.aborted || error instanceof SubagentDoomLoopStopError) {
         terminalStatus = 'cancelled';
       }
       terminalError = error instanceof Error ? error.message : String(error);
@@ -1162,6 +1163,8 @@ export class SubagentExecutor {
           agentTask.id,
         ).catch(() => {});
       }
+
+      if (error instanceof SubagentDoomLoopStopError) return error.toResult(finalOutput, toolsUsed, iterations, getTotalTokens(), getTotalCost(), executionAgentId, latestContextSnapshot);
 
       // 把已消耗的 outputTokens 挂到 error 上，让 dynamic-workflow 的 BudgetTracker 在抛出路径
       // 也能记账（provider 产出部分 output 后崩的场景，Codex R2 MED#4）。不影响既有错误处理。

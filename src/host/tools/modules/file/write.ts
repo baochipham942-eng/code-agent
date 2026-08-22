@@ -18,9 +18,9 @@
 // ============================================================================
 
 import * as fs from 'fs/promises';
-import * as os from 'os';
 import * as path from 'path';
 import { confineEvalPath } from '../../file/pathUtils';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import type {
   ToolHandler,
   ToolModule,
@@ -48,20 +48,6 @@ const CODE_EXTENSIONS = new Set([
   '.css', '.scss', '.less', '.json', '.mjs', '.cjs',
   '.vue', '.svelte',
 ]);
-
-/** 展开 ~ 开头的 home 路径 */
-function expandTilde(filePath: string): string {
-  if (!filePath) return filePath;
-  if (filePath === '~') return os.homedir();
-  if (filePath.startsWith('~/')) return path.join(os.homedir(), filePath.slice(2));
-  return filePath;
-}
-
-function resolveInputPath(inputPath: string, workingDir: string): string {
-  const expanded = expandTilde(inputPath);
-  if (path.isAbsolute(expanded)) return expanded;
-  return path.join(workingDir, expanded);
-}
 
 // ----------------------------------------------------------------------------
 // 代码完整性检测（legacy 保真）

@@ -16,6 +16,7 @@ import type {
 } from '../../../protocol/tools';
 import { MERMAID_INK_API } from '../../../../shared/constants';
 import { formatFileSize } from '../../utils/fileSize';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { mermaidExportSchema as schema } from './mermaidExport.schema';
 
@@ -128,8 +129,8 @@ async function executeMermaidExport(
 
     const timestamp = Date.now();
     const fileName = `mermaid-${timestamp}.${format}`;
-    const outputDir = output_path ? path.dirname(output_path) : ctx.workingDir;
-    const finalPath = output_path || path.join(outputDir, fileName);
+    const finalPath = resolveInputPath(output_path ?? fileName, ctx.workingDir);
+    const outputDir = path.dirname(finalPath);
 
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });

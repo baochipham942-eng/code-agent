@@ -29,6 +29,7 @@ import { executeExcelEdit, type ExcelEditParams } from '../../excel/excelEdit';
 import { executeDocxEdit, type DocxEditParams } from './docxEditCore';
 import { docEditSchema as schema } from './docEdit.schema';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 
 type DocFormat = 'xlsx' | 'pptx' | 'docx';
 
@@ -140,17 +141,18 @@ async function executeDocEdit(
   canUseTool: CanUseToolFn,
   onProgress?: ToolProgressFn,
 ): Promise<ToolResult<string>> {
-  const filePath = args.file_path;
+  const inputPath = args.file_path;
   const operations = args.operations;
   const dryRun = args.dry_run as boolean | undefined;
 
-  if (typeof filePath !== 'string' || filePath.length === 0) {
+  if (typeof inputPath !== 'string' || inputPath.length === 0) {
     return { ok: false, error: 'file_path is required', code: 'INVALID_ARGS' };
   }
   if (!Array.isArray(operations) || operations.length === 0) {
     return { ok: false, error: 'operations must be a non-empty array', code: 'INVALID_ARGS' };
   }
 
+  const filePath = resolveInputPath(inputPath, ctx.workingDir);
   const ext = path.extname(filePath).toLowerCase();
   const format = FORMAT_MAP[ext];
   if (!format) {

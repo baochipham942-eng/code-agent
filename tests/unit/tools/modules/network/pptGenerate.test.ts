@@ -6,6 +6,9 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -197,6 +200,32 @@ describe('pptGenerateModule (native)', () => {
       expect(result.ok).toBe(true);
       expect(stages).toContain('starting');
       expect(stages).toContain('completing');
+    });
+  });
+
+  describe('output path', () => {
+    beforeEach(() => {
+      process.env[ENV_FLAG] = '1';
+    });
+
+    it('resolves a relative output_path inside ctx.workingDir and writes there', async () => {
+      const workingDir = await mkdtemp(join(tmpdir(), 'ppt-generate-'));
+      const expectedPath = join(workingDir, 'report.pptx');
+      try {
+        const result = await run({
+          topic: 'Path test',
+          slides: [{ layout: 'list', title: 'One', points: ['body'] }],
+          output_path: 'report.pptx',
+          research: false,
+          review: false,
+          auto_illustrate: false,
+        }, makeCtx({ workingDir }));
+        expect(result.ok).toBe(true);
+        expect((await readFile(expectedPath)).length).toBeGreaterThan(0);
+        if (result.ok) expect(result.output).toContain(expectedPath);
+      } finally {
+        await rm(workingDir, { recursive: true, force: true });
+      }
     });
   });
 

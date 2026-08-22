@@ -10,6 +10,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import * as https from 'https';
 import { createRequire } from 'node:module';
 import type {
@@ -205,8 +206,8 @@ export async function executePptGenerate(
   try {
     const timestamp = Date.now();
     const fileName = `presentation-${timestamp}.pptx`;
-    const outputDir = output_path ? path.dirname(output_path) : ctx.workingDir;
-    const finalPath = output_path || path.join(outputDir, fileName);
+    const finalPath = resolveInputPath(output_path ?? fileName, ctx.workingDir);
+    const outputDir = path.dirname(finalPath);
 
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });

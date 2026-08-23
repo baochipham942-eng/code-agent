@@ -1,7 +1,7 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const jiraSchema: ToolSchema = {
+export const jiraSchema: UntrustedContentToolSchema = {
   name: 'jira',
   description: `Jira 问题管理：查询、获取、创建 Issue。
 
@@ -93,6 +93,7 @@ jira {
   },
   category: 'network',
   permissionLevel: 'network',
+  readsUntrustedContent: 'annotate',
   readOnly: false,
   allowInPlanMode: false,
 };

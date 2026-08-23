@@ -28,6 +28,7 @@ describe('AgentEvent filters', () => {
     expect(shouldDeliverAgentEvent('tool_call_end', BACKGROUND_AGENT_EVENT_FILTER)).toBe(true);
     expect(shouldDeliverAgentEvent('artifact_locator', BACKGROUND_AGENT_EVENT_FILTER)).toBe(true);
     expect(shouldDeliverAgentEvent('turn_diff', BACKGROUND_AGENT_EVENT_FILTER)).toBe(true);
+    expect(shouldDeliverAgentEvent('subagent_activity', BACKGROUND_AGENT_EVENT_FILTER)).toBe(true);
     expect(shouldDeliverAgentEvent('subagent_run_end', BACKGROUND_AGENT_EVENT_FILTER)).toBe(true);
   });
 
@@ -39,6 +40,7 @@ describe('AgentEvent filters', () => {
       'artifact_write_started',
       'error',
       'permission_request',
+      'subagent_activity',
       'subagent_run_end',
       'tool_call_end',
       'turn_diff',

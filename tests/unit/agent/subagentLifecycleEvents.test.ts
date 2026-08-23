@@ -44,35 +44,30 @@ describe('subagent lifecycle events', () => {
     ))).toBe(true);
   });
 
-  it('keeps interleaved concurrent turns paired within each agent/run slot', () => {
+  it('emits one start receipt and one terminal for N turns without parent turn boundaries', () => {
     const events: CapturedEvent[] = [];
-    const first = makeLifecycle(events, 'agent-a', 'run-a', ['a-1', 'a-2']);
-    const second = makeLifecycle(events, 'agent-b', 'run-b', ['b-1', 'b-2']);
+    const lifecycle = makeLifecycle(events, 'agent-a', 'run-a', ['a-1', 'a-2', 'a-3']);
 
-    const a1 = first.startTurn(1);
-    const b1 = second.startTurn(1);
-    first.endTurn(a1);
-    const a2 = first.startTurn(2);
-    second.endTurn(b1);
-    const b2 = second.startTurn(2);
-    second.endTurn(b2);
-    first.endTurn(a2);
+    const turnIds = [1, 2, 3].map((iteration) => {
+      const turnId = lifecycle.startTurn(iteration);
+      expect(lifecycle.endTurn(turnId)).toBe(true);
+      return turnId;
+    });
+    lifecycle.endRun('completed');
 
-    for (const [agentId, runId] of [['agent-a', 'run-a'], ['agent-b', 'run-b']]) {
-      const slotEvents = events.filter((event) => (
-        event.data.agentId === agentId && event.data.runId === runId
-      ));
-      const starts = slotEvents.filter((event) => event.type === 'turn_start');
-      const ends = slotEvents.filter((event) => event.type === 'turn_end');
-      expect(starts).toHaveLength(2);
-      expect(ends).toHaveLength(2);
-      expect(ends.map((event) => event.data.turnId).sort()).toEqual(
-        starts.map((event) => event.data.turnId).sort(),
-      );
-      expect(slotEvents.every((event) => (
-        event.data.parentToolUseId === `parent-${agentId}`
-      ))).toBe(true);
-    }
+    expect(turnIds).toEqual(['a-1', 'a-2', 'a-3']);
+    expect(events.filter((event) => event.type === 'subagent_activity')).toEqual([{
+      type: 'subagent_activity',
+      data: {
+        agentId: 'agent-a',
+        runId: 'run-a',
+        parentToolUseId: 'parent-agent-a',
+        kind: 'started',
+      },
+    }]);
+    expect(events.filter((event) => event.type === 'subagent_run_end')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'turn_start')).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'turn_end')).toHaveLength(0);
   });
 
   it.each([
@@ -99,7 +94,16 @@ describe('subagent lifecycle events', () => {
     expect(events.filter((event) => (
       event.type === 'agent_complete' || event.type === 'agent_cancelled'
     ))).toHaveLength(0);
-    expect(events.filter((event) => event.type === 'turn_start')).toHaveLength(1);
-    expect(events.filter((event) => event.type === 'turn_end')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'subagent_activity')).toEqual([{
+      type: 'subagent_activity',
+      data: {
+        agentId: `agent-${status}`,
+        runId: `run-${status}`,
+        parentToolUseId: `parent-agent-${status}`,
+        kind: 'started',
+      },
+    }]);
+    expect(events.filter((event) => event.type === 'turn_start')).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'turn_end')).toHaveLength(0);
   });
 });

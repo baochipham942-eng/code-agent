@@ -14,6 +14,7 @@ import type { Translations } from '../i18n';
 const WARNING_REASON_CODES = new Set<AgentNoticeEvent['reasonCode']>([
   'heartbeat_check_failed',
   'heartbeat_status_alert',
+  'historical_images_omitted',
 ]);
 
 export function formatAgentNoticeToast(event: AgentNoticeEvent, t: Translations): string {
@@ -35,6 +36,8 @@ export function formatAgentNoticeToast(event: AgentNoticeEvent, t: Translations)
       return an.delegateModeActive;
     case 'agent_routed':
       return an.agentRouted.replace('{agentName}', params.agentName ?? '');
+    case 'historical_images_omitted':
+      return an.historicalImagesOmitted.replace('{count}', String(params.count ?? 0));
     default: {
       // 穷举检查：新增 reasonCode 忘记在这里加分支会在此处报编译错误
       const exhaustive: never = event.reasonCode;

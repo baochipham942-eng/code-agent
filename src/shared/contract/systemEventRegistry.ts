@@ -47,7 +47,6 @@ export const USER_VISIBLE_SYSTEM_EVENT_REGISTRY = {
   // 与「弹 toast 打断」的 agent:notice 通道正交（ADR：2026-08-08 notification 零消费者工单乙类）。
   agentRecoveryNotice: { presentation: 'info', attach: 'current-turn' },
   turnCheckoutNote: { presentation: 'info', attach: 'current-turn' },
-  inputRedirectReceipt: { presentation: 'info', subtype: 'input_redirect_receipt', attach: 'current-turn' },
 } as const satisfies Record<string, UserVisibleSystemEventSpec>;
 
 export type UserVisibleSystemEventKey = keyof typeof USER_VISIBLE_SYSTEM_EVENT_REGISTRY;
@@ -62,7 +61,7 @@ void _registryKeysExist;
  * 允许出现在 role:'system' 消息上、但不构成用户可见事件的 metadata 键（内部投影用，
  * 投影层静默跳过）。写 system 消息时用到本档以外的未登记键，开发档会报错。
  */
-const INTERNAL_SYSTEM_METADATA_KEYS = ['backgroundTaskResult'] as const;
+const INTERNAL_SYSTEM_METADATA_KEYS = ['backgroundTaskResult', 'inputRedirectReceipt'] as const;
 type InternalSystemMetadataKey = (typeof INTERNAL_SYSTEM_METADATA_KEYS)[number];
 
 /** 通用标注轴（任何 role 的消息都可能带），不参与 system 事件的登记判定。 */

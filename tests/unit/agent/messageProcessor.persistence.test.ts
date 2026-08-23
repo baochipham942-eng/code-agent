@@ -195,6 +195,39 @@ describe('MessageProcessor persistence', () => {
     expect(persisted.id).toBe((ctx.messages[0] as { id: string }).id);
   });
 
+  it('adds the natural redirect acknowledgement instruction only to the model-facing content', async () => {
+    const ctx = {
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [] as unknown[],
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
+    const scaffolded = '<turn_context>保留现有结构</turn_context>\n\n<user_request>改成先给结论</user_request>';
+
+    await processor.injectSteerMessage(
+      scaffolded,
+      'redirect-message-1',
+      undefined,
+      { workbench: { runtimeInputMode: 'redirect' } },
+      '改成先给结论',
+    );
+
+    const modelContent = (ctx.messages[0] as { content: string }).content;
+    expect(modelContent).toContain('先用一句自然的话承接');
+    expect(modelContent).toContain('不要用道歉式开场');
+    expect(modelContent.endsWith('</redirect_response_instruction>')).toBe(true);
+
+    const persisted = sessionManagerState.addMessageToSession.mock.calls.at(-1)![1] as {
+      content: string;
+      isMeta?: boolean;
+    };
+    expect(persisted.content).toBe('改成先给结论');
+    expect(persisted.content).not.toContain('redirect_response_instruction');
+    expect(persisted.content).not.toContain('先用一句自然的话承接');
+    expect(persisted.isMeta).toBeUndefined();
+  });
+
   // 2026-08-15（N-L7-STEERUI）：辅助运行（语音 steer_task / 指挥台 steer）的 instruction 是
   // 模型写给执行侧的指令。此前它以 role:'user' 原文进会话流，真机截图里用户看到的是
   // 「用户纠正：…不是"EDMD"…」——连 ASR 走样产物都被当成他自己说过的话。

@@ -33,7 +33,6 @@ import {
   normalizeAssistantMessagePayload,
   normalizeHookStartedData,
   normalizeHookTriggerData,
-  normalizeInputRedirectReceiptData,
   normalizeMessageDeltaPayload,
   normalizeMessageSnapshotPayload,
   normalizeModelDecisionPayload,
@@ -129,18 +128,9 @@ export function applyConversationStreamEvent(
   const getFreshMessages = actions.getMessages;
 
   switch (event.type) {
-    case 'input_redirected': {
-      const receipt = normalizeInputRedirectReceiptData(event.data);
-      if (!receipt || getFreshMessages().some((message) => message.id === receipt.receiptId)) break;
-      actions.addMessage({
-        id: receipt.receiptId,
-        role: 'system',
-        content: '已按你的纠正改了方向',
-        timestamp: now(),
-        metadata: { inputRedirectReceipt: receipt },
-      });
+    case 'input_redirected':
+      // 事件继续供账本 / Inspector / trace 消费；聊天流由用户原话气泡和助理正文承接。
       break;
-    }
 
     case 'turn_start':
       if (

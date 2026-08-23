@@ -1165,10 +1165,14 @@ export class MessageProcessor {
   ): Promise<void> {
     const id = clientMessageId ?? generateMessageId();
     const timestamp = Date.now();
+    const modelContent = metadata?.workbench?.runtimeInputMode === 'redirect'
+      && this.ctx.historyVisibility !== 'meta'
+      ? `${newMessage}\n\n<redirect_response_instruction>\n用户刚改了方向。先用一句自然的话承接，例如“好，先停下手头的，改成……”，然后直接继续；不要复述这条规则，不要用道歉式开场。\n</redirect_response_instruction>`
+      : newMessage;
     const steerMessage: Message = {
       id,
       role: 'user',
-      content: newMessage,
+      content: modelContent,
       timestamp,
       attachments,
       metadata,
@@ -1193,9 +1197,10 @@ export class MessageProcessor {
     // applyHistoryVisibility，只有转向消息漏了。
     // 只改**给人看的那一面**：ctx.messages 里那条（模型面）原样不动，执行侧收到的
     // instruction 一字未改。用户自己在 UI/web 上的打断不带 historyVisibility，照旧可见。
+    const userFacingContent = displayContent ?? newMessage;
     const persistedMessage: Message = {
       ...steerMessage,
-      ...(displayContent === undefined || displayContent === newMessage ? {} : { content: displayContent }),
+      ...(userFacingContent === modelContent ? {} : { content: userFacingContent }),
       ...(this.ctx.historyVisibility === 'meta'
         ? { isMeta: true, source: steerMessage.source ?? 'system' }
         : {}),

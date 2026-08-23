@@ -64,7 +64,7 @@ import {
 
 const logger = createLogger('ModelRouter');
 import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
-export { ContextLengthExceededError, ImagePayloadExceededError } from './types';
+export { ContextLengthExceededError } from './types';
 
 function fallbackTargetLabel(provider: string, model?: string): string {
   return model ? `${provider}/${model}` : provider;

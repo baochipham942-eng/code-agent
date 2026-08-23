@@ -89,11 +89,28 @@ describe('shell desktop automation approval boundary', () => {
     expect(permissionRequests).toHaveLength(1);
   });
 
+  // 主控 2026-08-24 探针补：首版判据漏过 AppleScript 官方缩写 tell app、
+  // 以及 pyautogui/pydirectinput 这类「任意模块名 + 屏幕坐标」的 GUI 驱动。
+  it.each([
+    `osascript -e 'tell app "System Events" to keystroke "hello"'`,
+    'python3 -c "import pyautogui; pyautogui.click(100,200)"',
+    `python3 -c "import pyautogui; pyautogui.typewrite('secret')"`,
+    `python3 -c "import pyautogui; pyautogui.hotkey('cmd','q')"`,
+    'python3 -c "import pydirectinput; pydirectinput.moveTo(10, 20)"',
+  ])('catches GUI drivers the first draft missed: %s', async (command) => {
+    expect((await executor.execute('Bash', { command }, {})).success).toBe(true);
+    expect(permissionRequests).toHaveLength(1);
+  });
+
   it.each([
     'npm test',
     'npm run build',
     'git status --short',
     'git log --grep="click at" -1',
+    // 没有屏幕坐标的普通调用不许被误伤——判据靠坐标形态区分，不是靠方法名
+    `node -e "document.querySelector('#b').click()"`,
+    `node -e "page.click('#submit')"`,
+    'python3 -c "btn.press()"',
   ])('does not slow down ordinary shell work: %s', async (command) => {
     expect((await executor.execute('Bash', { command }, {
       preApprovedTools: new Set(['Bash']),

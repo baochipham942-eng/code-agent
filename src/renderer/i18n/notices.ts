@@ -83,6 +83,7 @@ export const noticesZh = {
       autoAgentAwaitingApproval: '任务列表已生成，等你确认',
       delegateModeActive: 'Delegate 模式：任务将委派给子 Agent 执行',
       agentRouted: '使用 Agent：{agentName}',
+      historicalImagesOmitted: '为控制模型请求大小，本轮已省略 {count} 张较早图片；聊天记录中的原图仍保留',
     },
   },
 };
@@ -161,6 +162,7 @@ export const noticesEn: typeof noticesZh = {
       autoAgentAwaitingApproval: 'Task list generated, waiting for you to confirm',
       delegateModeActive: 'Delegate mode: the task will be handed off to a sub-agent',
       agentRouted: 'Using agent: {agentName}',
+      historicalImagesOmitted: '{count} older images were omitted from this model request; the originals remain in chat history',
     },
   },
 };

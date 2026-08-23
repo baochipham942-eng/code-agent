@@ -112,6 +112,34 @@ describe('CompressionPipeline', () => {
   // Threshold-based layer triggering
   // --------------------------------------------------------------------------
   describe('threshold-based triggering', () => {
+    it('counts image attachments toward compression pressure', async () => {
+      const pngHeader = Buffer.alloc(24);
+      pngHeader.set(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+      pngHeader.writeUInt32BE(1280, 16);
+      pngHeader.writeUInt32BE(720, 20);
+      const transcript: ProjectableMessage[] = [{
+        ...makeMsg('u-image', 'user', 'image', 0),
+        attachments: [{
+          id: 'image-1',
+          type: 'image',
+          category: 'image',
+          data: `data:image/png;base64,${pngHeader.toString('base64')}`,
+        }],
+      }];
+
+      const result = await pipeline.evaluate(transcript, state, {
+        ...BASE_CONFIG,
+        provider: 'anthropic',
+        model: 'claude-sonnet',
+        maxTokens: 100_000,
+        enableSnip: false,
+        enableMicrocompact: false,
+        enableContextCollapse: false,
+      });
+
+      expect(result.totalTokens).toBeGreaterThanOrEqual(1196);
+    });
+
     it('should not trigger snip when usage is under 50%', async () => {
       // 4000 tokens on 10000 max = 40%
       const transcript: ProjectableMessage[] = [

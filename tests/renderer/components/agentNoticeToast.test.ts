@@ -49,4 +49,17 @@ describe('AgentNoticeToast', () => {
     expect(formatAgentNoticeToast(event, zh)).toBe('使用 Agent：code-reviewer');
     expect(formatAgentNoticeToast(event, en)).toBe('Using agent: code-reviewer');
   });
+
+  it('formats historical image omission with localized user-visible copy', () => {
+    const event: AgentNoticeEvent = {
+      reasonCode: 'historical_images_omitted',
+      params: { count: 7 },
+    };
+    expect(formatAgentNoticeToast(event, zh)).toBe(
+      '为控制模型请求大小，本轮已省略 7 张较早图片；聊天记录中的原图仍保留',
+    );
+    expect(formatAgentNoticeToast(event, en)).toBe(
+      '7 older images were omitted from this model request; the originals remain in chat history',
+    );
+  });
 });

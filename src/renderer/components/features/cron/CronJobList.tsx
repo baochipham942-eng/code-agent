@@ -5,7 +5,8 @@
 // 语义对齐 contract 的 SessionAutomationType，由 getCronTriggerKind 推导。
 // ============================================================================
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import type { CronRunsOn } from '@shared/contract';
 import { Plus, RefreshCw } from 'lucide-react';
 import { Input } from '../../primitives/Input';
 import { Select } from '../../primitives/Select';
@@ -17,6 +18,9 @@ import {
   formatScheduleSummary,
   getLatestExecutionStatus,
 } from './types';
+import { CronRunsOnPill } from './CronRunsOnSelector';
+
+type LocationFilter = 'all' | CronRunsOn;
 
 export const CronJobList: React.FC = () => {
   const { t, language } = useI18n();
@@ -34,11 +38,13 @@ export const CronJobList: React.FC = () => {
     openCreateEditor,
     refresh,
   } = useCronStore();
+  const [locationFilter, setLocationFilter] = useState<LocationFilter>('all');
 
   const filteredJobs = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return jobs;
     return jobs.filter((job) => {
+      if (locationFilter !== 'all' && job.runsOn !== locationFilter) return false;
+      if (!q) return true;
       const haystacks = [
         job.name,
         job.description || '',
@@ -46,7 +52,7 @@ export const CronJobList: React.FC = () => {
       ];
       return haystacks.some((value) => value.toLowerCase().includes(q));
     });
-  }, [jobs, searchQuery]);
+  }, [jobs, searchQuery, locationFilter]);
 
   return (
     <div className="flex h-full flex-col border-r border-zinc-800 bg-zinc-950/80">
@@ -81,6 +87,25 @@ export const CronJobList: React.FC = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={cc.searchPlaceholder}
           />
+          <div className="flex rounded-lg border border-zinc-800 bg-zinc-950/60 p-0.5" role="group" aria-label={cc.executionLocationTitle}>
+            {([
+              ['all', cc.locationFilterAll],
+              ['local', cc.locationLocal],
+              ['cloud', cc.locationCloud],
+            ] as Array<[LocationFilter, string]>).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setLocationFilter(value)}
+                className={`flex-1 rounded-md px-2 py-1 text-xs transition-colors ${locationFilter === value
+                  ? 'bg-zinc-700 text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-300'}`}
+                data-testid={`cron-location-filter-${value}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <Select
             value={filterMode}
             onChange={(e) => setFilterMode(e.target.value as typeof filterMode)}
@@ -118,7 +143,10 @@ export const CronJobList: React.FC = () => {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-zinc-100">{job.name}</div>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="truncate text-sm font-medium text-zinc-100">{job.name}</div>
+                        <CronRunsOnPill runsOn={job.runsOn} localLabel={cc.locationLocal} cloudLabel={cc.locationCloud} />
+                      </div>
                       <div className="mt-1 text-xs text-zinc-500" data-testid="cron-job-schedule-summary">
                         {formatScheduleSummary(job, language)}
                       </div>

@@ -24,10 +24,12 @@ import {
 } from './cronTemplates';
 import { CronSimpleCreate } from './CronSimpleCreate';
 import { useI18n } from '../../../hooks/useI18n';
+import { CronRunsOnSelector } from './CronRunsOnSelector';
 
 interface CronJobEditorProps {
   isOpen: boolean;
   job: CronJobDefinition | null;
+  copySource?: CronJobDefinition | null;
   onClose: () => void;
 }
 
@@ -44,9 +46,16 @@ const TABS: { key: EditorTab; label: string; icon: React.ReactNode }[] = [
   { key: 'advanced', label: '高级选项', icon: <Settings className="h-3.5 w-3.5" /> },
 ];
 
-export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClose }) => {
+export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copySource, onClose }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
+  const saveErrorMessage = (error: unknown, fallback: string): string => {
+    const message = error instanceof Error ? error.message : '';
+    if (message.includes('Cloud jobs must have an interval')) return cc.cloudIntervalHint;
+    if (message.includes('Local jobs must have an interval')) return cc.localIntervalHint;
+    if (message.includes('runsOn is immutable')) return cc.locationImmutable;
+    return message || fallback;
+  };
   const { createJob, updateJob } = useCronStore();
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const mcpServerStates = useMcpServerStates();
@@ -73,6 +82,14 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
     if (job) {
       setDraft(buildDraftFromJob(job));
       setStep('manual');
+    } else if (copySource) {
+      setDraft({
+        ...buildDraftFromJob(copySource),
+        name: `${copySource.name} (${copySource.runsOn === 'local' ? cc.locationCloud : cc.locationLocal})`,
+        runsOn: copySource.runsOn === 'local' ? 'cloud' : 'local',
+        enabled: false,
+      });
+      setStep('manual');
     } else {
       setDraft(createDefaultCronJobDraft());
       setStep('simple');
@@ -81,10 +98,12 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
     }
     setErrors({});
     setActiveTab('basic');
-  }, [isOpen, job]);
+  }, [isOpen, job, copySource, cc.locationCloud, cc.locationLocal]);
 
   const title = job
     ? '编辑定时任务'
+    : copySource
+      ? cc.copyTitle
     : step === 'simple'
       ? cc.simpleTitle
       : step === 'pick'
@@ -139,11 +158,12 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
     setErrors({});
     try {
       const generatedDraft = selectedTemplate.generate(templateValues);
+      generatedDraft.runsOn = draft.runsOn;
       const input = buildCronJobInput(generatedDraft);
       await createJob(input);
       onClose();
     } catch (error) {
-      setErrors({ form: error instanceof Error ? error.message : '创建失败' });
+      setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });
     } finally {
       setSubmitting(false);
     }
@@ -163,7 +183,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
       onClose();
     } catch (error) {
       setErrors({
-        form: error instanceof Error ? error.message : '保存失败',
+        form: saveErrorMessage(error, cc.simpleCreateFailed),
       });
     } finally {
       setSubmitting(false);
@@ -351,6 +371,11 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
               )}
             </FormField>
           ))}
+
+          <CronRunsOnSelector
+            value={draft.runsOn}
+            onChange={(runsOn) => setField('runsOn', runsOn)}
+          />
         </div>
       </Modal>
     );
@@ -375,7 +400,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
       )}
     >
       {/* Back to template picker (only for new jobs in manual mode) */}
-      {!job && (
+      {!job && !copySource && (
         <div className="-mx-6 -mt-4 border-b border-zinc-800 px-6 py-3">
           <button
             onClick={() => setStep('pick')}
@@ -452,6 +477,12 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
             </div>
           </div>
 
+          <CronRunsOnSelector
+            value={draft.runsOn}
+            onChange={(runsOn) => setField('runsOn', runsOn)}
+            readOnly={Boolean(job)}
+          />
+
           <div className="border-t border-zinc-800 pt-4">
             <h4 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-zinc-500">
               <Clock className="h-3.5 w-3.5" />
@@ -484,6 +515,9 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
                     <FormField label="间隔值" required error={errors.everyInterval}>
                       <Input
                         type="number"
+                        min={draft.runsOn === 'cloud'
+                          ? (draft.everyUnit === 'minutes' ? 60 : 1)
+                          : (draft.everyUnit === 'minutes' ? 5 : 1)}
                         value={draft.everyInterval}
                         onChange={(e) => setField('everyInterval', e.target.value)}
                       />
@@ -493,7 +527,6 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
                         value={draft.everyUnit}
                         onChange={(e) => setField('everyUnit', e.target.value as CronJobDraft['everyUnit'])}
                         options={[
-                          { value: 'seconds', label: '秒' },
                           { value: 'minutes', label: '分钟' },
                           { value: 'hours', label: '小时' },
                           { value: 'days', label: '天' },
@@ -501,6 +534,9 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
                       />
                     </FormField>
                   </div>
+                  <p className="text-xs text-zinc-500" data-testid="cron-min-interval-hint">
+                    {draft.runsOn === 'cloud' ? cc.cloudIntervalHint : cc.localIntervalHint}
+                  </p>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <FormField label="开始时间">
                       <Input

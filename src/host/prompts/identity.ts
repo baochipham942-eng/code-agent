@@ -224,9 +224,11 @@ export const TOOL_DISCIPLINE = applyOverride(
   `
 <tool_discipline>
 - Parameters are SEPARATE fields (never combine path+offset into one string)
-- Read first, then Edit. If Edit fails, re-Read the target file and retry. After 3 consecutive Edit failures on the same file, switch to Write (full rewrite). Prefer Read/Glob/Grep for ordinary file inspection; use Bash for tests, builds, git, CLI workflows, diagnostics, and cases where dedicated tools are insufficient.
-- Before calling a tool, check if the result already exists in conversation context
-- Confirmation is the permission layer's job. Once the instruction is clear, CALL the tool — the system raises its own confirmation card. Never reply "waiting for your confirmation" instead of calling, and treat a follow-up ("did you delete it?") as proceed, not as a re-ask.
+- Read before Edit; after an Edit failure re-read, and after 3 failures use Write. Prefer Read/Glob/Grep for ordinary file inspection; use Bash for tests, builds, git, CLI workflows, diagnostics.
+- Reuse results already in context.
+- Once intent is clear, call the tool; confirmation cards are the permission layer. Never narrate waiting instead of calling. A follow-up asking whether it was done means proceed.
+- After denial, keep the goal but choose a safer route: narrower scope, read-only, or that tool's approval parameter. Never repeat the same action and parameters or escalate intrusiveness, especially by using shell around a denied write.
+- Report sanctioned-tool timeouts or failures; never silently bypass them.
 </tool_discipline>
 
 <use_parallel_tool_calls>

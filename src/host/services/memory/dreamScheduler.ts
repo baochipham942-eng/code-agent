@@ -35,6 +35,7 @@ export interface DreamCronService {
 export function buildDreamCronJobDefinition(options: DreamCronBuildOptions = {}): DreamCronDefinition {
   const now = options.now ?? Date.now();
   return {
+    runsOn: 'local',
     name: '[Maintenance] Dream memory consolidation',
     description: 'Review recent sessions and write History-verified durable memory.',
     scheduleType: 'every',

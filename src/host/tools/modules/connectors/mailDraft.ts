@@ -122,8 +122,9 @@ async function executeMailDraft(
         artifact: createVirtualArtifact({
           sourceTool: schema.name,
           kind: 'text',
+          role: 'receipt',
           sessionId: ctx.sessionId,
-          name: `mail-draft-${draft.subject}`,
+          name: `已创建邮件草稿：${draft.subject}`,
           mimeType: 'text/markdown',
           contentLength: output.length,
           preview: output.slice(0, 500),

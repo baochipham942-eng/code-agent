@@ -139,6 +139,18 @@ export const expertZh = {
     rolePersonalization: {
       save: '保存',
       saving: '保存中…',
+      boundarySection: {
+        title: '常驻边界',
+        description: '这位专家的硬约束，系统强制执行，与下面几段正文无关。',
+      },
+      hardBoundary: {
+        label: '不允许对外发送',
+        description: '硬约束：勾选并保存后，对外发送工具会从这位专家的可用工具表中移除。',
+      },
+      softGuidance: {
+        label: '写在「行为准则」里的话不构成拦截',
+        description: '那段自由文本会进入 TA 的提示词，模型会读，但不会让工具真的被挡下来。要真拦住，勾上面的硬约束。',
+      },
       segments: {
         identity: {
           title: '我是谁',
@@ -396,6 +408,18 @@ export const expertEn: typeof expertZh = {
     rolePersonalization: {
       save: 'Save',
       saving: 'Saving…',
+      boundarySection: {
+        title: 'Standing boundaries',
+        description: "Hard constraints for this expert. The system enforces them, independent of the prose below.",
+      },
+      hardBoundary: {
+        label: 'Disallow external sending',
+        description: "Hard constraint: once checked and saved, external send tools are removed from this expert's tool table.",
+      },
+      softGuidance: {
+        label: 'Text in "Working rules" is not a block',
+        description: 'That prose goes into the expert prompt. The model reads it, but it will not actually stop a tool. To really block one, check the hard constraint above.',
+      },
       segments: {
         identity: {
           title: 'Who they are',
@@ -408,9 +432,9 @@ export const expertEn: typeof expertZh = {
           placeholder: 'e.g. I want a data analyst who queries, charts, and concludes end to end, turning raw data into something leadership can read.',
         },
         soul: {
-          title: 'Ground rules',
-          description: 'Rules that apply to this expert only. Leave empty to follow the global settings.',
-          placeholder: 'e.g. Lead with the conclusion, then the evidence. Say when you are unsure instead of guessing.',
+          title: 'Working rules',
+          description: 'House rules that apply only to this expert. Leave it empty to follow the global setting.',
+          placeholder: 'e.g. Lead with the conclusion, then the reasoning. Say so plainly when you are unsure instead of guessing.',
         },
       },
     },

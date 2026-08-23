@@ -731,7 +731,7 @@ export class RunFinalizer {
   // --------------------------------------------------------------------------
 
   checkAndEmitBudgetStatus(): boolean {
-    const budgetService = getBudgetService();
+    const budgetService = getBudgetService(this.ctx.budgetScope);
     const status = budgetService.checkBudget();
 
     const eventData: BudgetEventData = {

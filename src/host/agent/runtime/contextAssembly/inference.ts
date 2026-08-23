@@ -55,7 +55,7 @@ import {
   broadcastVisionPreflightUnavailable,
   buildAiSdkAdaptiveFallbackInfo,
   emitModelFallbackNoticeFromResponse,
-  getErrorMessage,
+  getErrorMessage, handleImagePayloadExceededError,
   getModelFallbackFromError,
   runAiSdkInferenceWithProviderFallback,
   type VisionPreflightAttempt,
@@ -304,9 +304,9 @@ function assertInputTokenBudget(
  * budgetService 的事后记账拦不住一次 step 内并发花出去的 N+1 笔调用，
  * 临界状态下直接退回正常单次调用（行为与开关关一致）。
  */
-function maxModeBudgetHeadroomOk(): boolean {
+function maxModeBudgetHeadroomOk(ctx: ContextAssemblyCtx): boolean {
   try {
-    const { alertLevel } = getBudgetService().checkBudget();
+    const { alertLevel } = getBudgetService(ctx.runtime.budgetScope).checkBudget();
     const ok = alertLevel !== BudgetAlertLevel.WARNING && alertLevel !== BudgetAlertLevel.BLOCKED;
     if (!ok) {
       logger.warn(`[MaxMode] budget alertLevel=${alertLevel}; skipping best-of-N fanout for this step`);
@@ -336,7 +336,7 @@ async function runMaxModeInference(
   // 不走 ctx.recordTokenUsage——那条路径固定记在请求模型名下
   const recordOverheadEntries = (entries: Array<{ inputTokens: number; outputTokens: number; actualProvider?: string; actualModel?: string }>) => {
     for (const entry of entries) {
-      getBudgetService().recordUsage({
+      getBudgetService(ctx.runtime.budgetScope).recordUsage({
         inputTokens: entry.inputTokens,
         outputTokens: entry.outputTokens,
         model: entry.actualModel ?? requestConfig.model,
@@ -861,7 +861,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       // 收在一处：没跑完也必须给终态，否则轮次收尾时 Durable Run 会因为「留着未了结
       // 的操作」把一次成功的轮次报成运行失败。
       response = await withNativeModelOperation(ctx, requestConfig, inferenceAbortController.signal, () => (
-        ctx.runtime.maxMode && maxModeBudgetHeadroomOk()
+        ctx.runtime.maxMode && maxModeBudgetHeadroomOk(ctx)
           ? runMaxModeInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, engineOptions)
           : runEngineInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, inferenceAbortController.signal, engineOptions)
       ));
@@ -912,7 +912,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         cacheCreationTokens: providerUsage.cacheCreationTokens,
       }, 'provider');
       // N-CTXTRUTH: 真源透传给当轮健康更新（turn 末 updateContextHealth 消费；cache 口径在 service 内统一相加）
-      ctx.runtime.contextHealth.setLastTurnProviderUsage(providerUsage);
+      ctx.runtime.contextHealth.setLastTurnProviderUsage({ ...providerUsage, provider: ctx.runtime.modelConfig.provider });
     } else {
       const estimatedInputTokens = estimateModelMessageTokens(
         modelMessages.map(m => ({
@@ -954,8 +954,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       ctx.runtime.contextHealth.setLastTurnProviderUsage(undefined);      return { type: 'text', content: '' };
     }
 
-    emitModelFallbackNoticeFromResponse(ctx, getModelFallbackFromError(error));
-
+    emitModelFallbackNoticeFromResponse(ctx, getModelFallbackFromError(error)); if (handleImagePayloadExceededError({ ctx, error, llmCallId, langfuse })) return { type: 'text', content: '' };
     logger.error('[AgentLoop] Model inference error:', error);
 
     langfuse.endGeneration(

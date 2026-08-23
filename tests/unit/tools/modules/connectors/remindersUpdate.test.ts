@@ -109,6 +109,7 @@ describe('remindersUpdateModule (native)', () => {
       const result = await run(validArgs);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toContain('Reminders update failed: boom');
+      expect((result as { meta?: { artifact?: unknown } }).meta?.artifact).toBeUndefined();
     });
   });
 
@@ -131,8 +132,17 @@ describe('remindersUpdateModule (native)', () => {
           title: 'Ship PR',
           completed: false,
         });
-        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
-        expect(artifact.kind).toBe('text');
+        const artifact = result.meta?.artifact as {
+          kind?: string;
+          role?: string;
+          name?: string;
+          metadata?: Record<string, unknown>;
+        };
+        expect(artifact).toMatchObject({
+          kind: 'text',
+          role: 'receipt',
+          name: '已更新提醒：Ship PR',
+        });
         expect(artifact.metadata?.action).toBe('update_reminder');
       }
       expect(execMock).toHaveBeenCalledWith('update_reminder', expect.objectContaining({ list: 'Work', reminder_id: 'r1' }));

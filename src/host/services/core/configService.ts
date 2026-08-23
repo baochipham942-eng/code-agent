@@ -1080,13 +1080,20 @@ export class ConfigService implements IReadConfigService {
 
   // Budget 配置方法
   async setBudgetConfig(config: Partial<NonNullable<AppSettings['budget']>>): Promise<void> {
+    const current = this.settings.budget;
     this.settings.budget = {
-      enabled: config.enabled ?? this.settings.budget?.enabled ?? true,
-      maxBudget: config.maxBudget ?? this.settings.budget?.maxBudget ?? 0,
-      silentThreshold: config.silentThreshold ?? this.settings.budget?.silentThreshold ?? 0.7,
-      warningThreshold: config.warningThreshold ?? this.settings.budget?.warningThreshold ?? 0.85,
-      blockThreshold: config.blockThreshold ?? this.settings.budget?.blockThreshold ?? 1.0,
-      resetPeriodHours: config.resetPeriodHours ?? this.settings.budget?.resetPeriodHours ?? 24,
+      enabled: config.enabled ?? current?.enabled ?? true,
+      maxBudget: config.maxBudget ?? current?.maxBudget ?? 0,
+      silentThreshold: config.silentThreshold ?? current?.silentThreshold ?? 0.7,
+      warningThreshold: config.warningThreshold ?? current?.warningThreshold ?? 0.85,
+      blockThreshold: config.blockThreshold ?? current?.blockThreshold ?? 1.0,
+      resetPeriodHours: config.resetPeriodHours ?? current?.resetPeriodHours ?? 24,
+      foreground: config.foreground
+        ? { ...current?.foreground, ...config.foreground }
+        : current?.foreground,
+      unattended: config.unattended
+        ? { ...current?.unattended, ...config.unattended }
+        : current?.unattended,
     };
     await this.save();
   }
@@ -1101,6 +1108,8 @@ export class ConfigService implements IReadConfigService {
       warningThreshold: this.settings.budget?.warningThreshold ?? 0.85,
       blockThreshold: this.settings.budget?.blockThreshold ?? 1.0,
       resetPeriodHours: this.settings.budget?.resetPeriodHours ?? 24,
+      foreground: this.settings.budget?.foreground,
+      unattended: this.settings.budget?.unattended,
     };
   }
 

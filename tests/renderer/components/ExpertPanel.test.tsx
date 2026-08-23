@@ -123,7 +123,7 @@ function makeRoleDetail(overrides: Partial<RolePanelDetail> = {}): RolePanelDeta
     proactivity: { level: 'silent' },
     visual: { displayName: '牧之', profession: '资深产品经理', icon: 'ClipboardList', category: 'product', tags: ['需求梳理', 'PRD 撰写'], quickPrompts: ['我有个产品想法，帮我梳理成需求清单'] },
     isBuiltin: true,
-    personalization: { userExpectation: '', soul: '' },
+    personalization: { userExpectation: '', soul: '', boundaries: { disallowExternalSending: false } },
     equipment: { skills: ['research'], tools: ['Read'], model: 'balanced', maxIterations: 20, availableSkills: ['research', 'xlsx'], availableTools: ['Read', 'WebSearch'] },
     restore: { available: true },
     ...overrides,
@@ -545,7 +545,18 @@ describe('ExpertPanel', () => {
     fireEvent.click(screen.getByTestId('role-personalization-save-expectation'));
     await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updatePersonalization', { roleId: '自定义专家', userExpectation: '要能直接汇报' }));
 
+    // 常驻边界是独立的硬约束块（芯片上方常驻），与三段正文各自保存：
+    // 勾选后只提交 boundaries，不夹带任何一段正文；正文保存也不夹带 boundaries。
+    // 把两者焊在一起会让「在行为准则里写一句就能拦住」的误解更深——K2 续工治的就是这个。
+    fireEvent.click(screen.getByTestId('role-personalization-boundary-external-sending'));
+    fireEvent.click(screen.getByTestId('role-personalization-save-boundary'));
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updatePersonalization', {
+      roleId: '自定义专家',
+      boundaries: { disallowExternalSending: true },
+    }));
+
     fireEvent.click(screen.getByTestId('role-personalization-segment-soul'));
+    expect(screen.getByText(/不会让工具真的被挡下来/)).toBeTruthy();
     fireEvent.change(screen.getByTestId('role-personalization-soul'), { target: { value: '别猜数' } });
     fireEvent.click(screen.getByTestId('role-personalization-save-soul'));
     await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updatePersonalization', { roleId: '自定义专家', soul: '别猜数' }));

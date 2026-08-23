@@ -66,8 +66,9 @@ async function executeCalendarDeleteEvent(
         artifact: createVirtualArtifact({
           sourceTool: schema.name,
           kind: 'text',
+          role: 'receipt',
           sessionId: ctx.sessionId,
-          name: `calendar-event-delete-${event.uid}`,
+          name: `已删除日历事件：${event.title}`,
           mimeType: 'text/markdown',
           contentLength: output.length,
           preview: output.slice(0, 500),

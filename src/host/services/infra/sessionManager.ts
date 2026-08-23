@@ -826,6 +826,7 @@ export class SessionManager implements Disposable {
   async deleteSession(sessionId: string): Promise<void> {
     const db = getDatabase();
     this.assertAccessibleSession(sessionId);
+    await (await import('../surfaceExecution/ManagedBrowserProviderAdapter')).getManagedBrowserProviderAdapter().clearConversationResumeState(sessionId);
     // 先删帧再写会话 tombstone。帧删失败时会话仍可见，不能让用户得到“已删除”假象。
     await this.deleteTerminalFrames(sessionId);
     db.deleteSession(sessionId);
@@ -1221,9 +1222,9 @@ export class SessionManager implements Disposable {
     const targetSessionId = sessionId || this.currentSessionId;
     if (!targetSessionId) return;
 
-    logger.info('Ending session, generating summary', {
-      sessionId: targetSessionId
-    });
+    logger.info('Ending session, generating summary', { sessionId: targetSessionId });
+
+    await (await import('../surfaceExecution/ManagedBrowserProviderAdapter')).getManagedBrowserProviderAdapter().clearConversationResumeState(targetSessionId);
 
     // Legacy summary generation and preference learning removed (memory module deleted)
 

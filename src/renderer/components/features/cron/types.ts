@@ -12,6 +12,7 @@ import type {
 import { humanizeCronExpression, humanizeEverySchedule, type CronHumanLang } from '../../../utils/cronHumanize';
 
 export interface CronJobDraft {
+  runsOn: CronJobDefinition['runsOn'];
   name: string;
   description: string;
   enabled: boolean;
@@ -48,6 +49,7 @@ export interface CronJobDraft {
 
 export function createDefaultCronJobDraft(): CronJobDraft {
   return {
+    runsOn: 'local',
     name: '',
     description: '',
     enabled: true,
@@ -103,6 +105,7 @@ function stringifyJson(value: unknown): string {
 
 export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
   const draft = createDefaultCronJobDraft();
+  draft.runsOn = job.runsOn;
   draft.name = job.name;
   draft.description = job.description || '';
   draft.enabled = job.enabled;
@@ -195,6 +198,7 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
   }
 
   const common = {
+    runsOn: draft.runsOn,
     name: draft.name.trim(),
     description: draft.description.trim() || undefined,
     enabled: draft.enabled,

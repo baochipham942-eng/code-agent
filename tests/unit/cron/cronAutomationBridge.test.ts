@@ -51,6 +51,7 @@ import { SessionAutomationService } from '../../../src/host/services/sessionAuto
 
 const def = (over: Partial<CronJobDefinition> = {}): CronJobDefinition => ({
   id: 'job-1',
+  runsOn: 'local',
   name: 'My Job',
   scheduleType: 'every',
   schedule: { type: 'every', interval: 5, unit: 'minutes' },
@@ -205,6 +206,7 @@ describe('buildCronAutomationConfig', () => {
   it('defaults createdVia to "cron" and omits absent optional fields', () => {
     const config = buildCronAutomationConfig(def());
     expect(config.createdVia).toBe('cron');
+    expect(config.runsOn).toBe('local');
     expect(config.scheduleType).toBe('every');
     expect(config.actionType).toBe('shell');
     expect(config).not.toHaveProperty('handoffPrompt');

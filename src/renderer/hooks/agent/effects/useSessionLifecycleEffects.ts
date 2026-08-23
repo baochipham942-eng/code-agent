@@ -86,7 +86,8 @@ export function classifyAgentError(
   };
   const explicitStatus = getNumberPayloadField(payload, 'httpStatus')
     ?? getNumberPayloadField(payload, 'statusCode')
-    ?? getNumberPayloadField(payload, 'status');
+    ?? getNumberPayloadField(payload, 'status')
+    ?? getNumberPayloadField(payload.details, 'httpStatus');
 
   if (payload.code === 'CONTEXT_LENGTH_EXCEEDED') {
     const details = payload.details;
@@ -96,6 +97,14 @@ export function classifyAgentError(
       httpStatus: explicitStatus,
       requestedTokens: getNumberPayloadField(details, 'requested'),
       maxTokens: getNumberPayloadField(details, 'max'),
+    };
+  }
+
+  if (payload.code === 'IMAGE_PAYLOAD_EXCEEDED') {
+    return {
+      ...base,
+      category: 'image_payload',
+      httpStatus: explicitStatus,
     };
   }
 

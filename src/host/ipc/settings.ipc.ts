@@ -441,6 +441,7 @@ async function handleGetBudgetStatus(): Promise<unknown> {
     ...service.checkBudget(),
     config: service.getConfig(),
     cacheSavings: service.getCacheSavingsSummary(),
+    cacheCostSplit: service.getCacheCostSplitSummary(),
     tokenUsage: service.getTokenUsageSummary(),
   };
 }

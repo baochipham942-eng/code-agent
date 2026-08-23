@@ -27,6 +27,7 @@ import { AgentErrorCard, buildAgentErrorReport, resolveAgentErrorCopy } from '..
 import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 import { OPEN_MODEL_SWITCHER_EVENT } from '../../../src/renderer/components/StatusBar/ModelSwitcher';
 
 function makeError(overrides: Partial<AgentErrorMetadata> = {}): AgentErrorMetadata {
@@ -111,6 +112,19 @@ describe('AgentErrorCard', () => {
 
     expect(screen.getByText(/4481K tokens/)).toBeTruthy();
     expect(screen.getByText(/4000K tokens/)).toBeTruthy();
+  });
+
+  it('shows localized image-limit guidance and avoids a guaranteed-failing retry', () => {
+    renderCard(makeError({
+      category: 'image_payload',
+      code: 'IMAGE_PAYLOAD_EXCEEDED',
+      httpStatus: 413,
+    }));
+
+    expect(screen.getByText('图片太多或文件太大，模型无法接收')).toBeTruthy();
+    expect(screen.getByText(/分批发送/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /重试/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /新开会话/ })).toBeTruthy();
   });
 
   it('hides the detail line when no code/httpStatus/traceId/model present', () => {
@@ -209,6 +223,17 @@ describe('resolveAgentErrorCopy / buildAgentErrorReport', () => {
   it('resolves copy per category with zh i18n', () => {
     expect(resolveAgentErrorCopy({ category: 'concurrency' }, zh).title).toBe('模型账号并发已满');
     expect(resolveAgentErrorCopy({ category: 'generic' }, zh).title).toBe('运行失败');
+  });
+
+  it('resolves image-limit copy in both languages', () => {
+    expect(resolveAgentErrorCopy({ category: 'image_payload' }, zh)).toEqual({
+      title: '图片太多或文件太大，模型无法接收',
+      suggestion: '请新开会话，只带这次需要的图片；图片较多时分批发送，单张过大时先压缩后再发。',
+    });
+    expect(resolveAgentErrorCopy({ category: 'image_payload' }, en)).toEqual({
+      title: 'There are too many images or the image files are too large',
+      suggestion: 'Start a new session with only the images needed for this request. Send large sets in smaller batches, and compress oversized images before sending them.',
+    });
   });
 
   it('falls back to generic copy for unknown categories', () => {

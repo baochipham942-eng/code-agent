@@ -16,10 +16,10 @@ import {
 import type {
   CronJobDefinition,
   CronJobExecution,
-  CronScheduleType,
   CronJobAction,
   CronServiceStats,
   CronMissedEvent,
+  CreateCronJobDefinition,
 } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
 import type { Disposable } from '../services/serviceRegistry';
@@ -50,26 +50,16 @@ import { BACKGROUND_AGENT_EVENT_FILTER } from '../protocol/events/eventFilter';
 import type { AgentRunOptions } from '../research/types';
 import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
+import {
+  assertExecutionLocationConstraints,
+  computeCronFireJitterMs,
+  minimumIntervalSecondsForLocation,
+  runWithCronJobBudget,
+  scheduleBoundToDate,
+} from './cronExecutionPolicy';
+export { computeCronFireJitterMs } from './cronExecutionPolicy';
 
 const execAsync = promisify(exec);
-
-/**
- * 循环任务触发抖动（防惊群，maka automation 护栏自查 A5-③）：
- * 同刻到点的多个 every/cron 任务错开 0..FIRE_JITTER_MAX_MS 再执行，
- * 避免同一 tick 同时拉起多个 agent 会话 / API 突发。一次性 at 任务不抖动。
- */
-export function computeCronFireJitterMs(
-  scheduleType: CronScheduleType,
-  rand: () => number = Math.random,
-): number {
-  if (scheduleType === 'at') return 0;
-  return Math.floor(rand() * CRON_GUARDRAILS.FIRE_JITTER_MAX_MS);
-}
-
-/** 契约里的 startAt/endAt（string|number）转 Date，供 croner 原生窗口选项使用。 */
-function scheduleBoundToDate(value: string | number): Date {
-  return new Date(typeof value === 'number' ? value : Date.parse(value));
-}
 
 /**
  * 只有开了变化追踪的任务才包装 prompt；没开的任务原样发送，行为完全不变。
@@ -215,7 +205,7 @@ export class CronService implements Disposable {
    * Create a new cron job
    */
   async createJob(
-    definition: Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'>
+    definition: CreateCronJobDefinition
   ): Promise<CronJobDefinition> {
     const now = Date.now();
 
@@ -235,8 +225,16 @@ export class CronService implements Disposable {
     }
     assertSupportedEveryScheduleUnit(definition.schedule);
 
+    const runsOn = definition.runsOn ?? 'local';
+    assertExecutionLocationConstraints({
+      runsOn,
+      schedule: definition.schedule,
+      maxRunBudget: definition.maxRunBudget,
+    });
+
     const job: CronJobDefinition = {
       ...definition,
+      runsOn,
       id: uuidv4(),
       createdAt: now,
       updatedAt: now,
@@ -267,6 +265,10 @@ export class CronService implements Disposable {
     const existingJob = this.jobs.get(jobId);
     if (!existingJob) return null;
 
+    if (updates.runsOn !== undefined && updates.runsOn !== existingJob.definition.runsOn) {
+      throw new Error('runsOn is immutable after creation; create a new job to change execution location.');
+    }
+
     // Stop existing cron instance
     if (existingJob.cronInstance) {
       existingJob.cronInstance.stop();
@@ -278,6 +280,7 @@ export class CronService implements Disposable {
       updatedAt: Date.now(),
     };
     assertSupportedEveryScheduleUnit(updatedJob.schedule);
+    assertExecutionLocationConstraints(updatedJob);
 
     // Save to database
     await this.saveJobToDatabase(updatedJob);
@@ -612,6 +615,7 @@ export class CronService implements Disposable {
     const execution: CronJobExecution = {
       id: uuidv4(),
       jobId: definition.id,
+      runsOn: definition.runsOn,
       status: 'running',
       scheduledAt: Date.now(),
       startedAt: Date.now(),
@@ -635,6 +639,9 @@ export class CronService implements Disposable {
     await this.saveExecutionToDatabase(execution);
 
     try {
+      if (definition.runsOn === 'cloud') {
+        throw new Error('Cloud execution is not wired yet (N-L3-MINLOOP-SRV).');
+      }
       const result = await this.executeAction(definition, definition.action, definition.timeout, execution.id);
       if (isCronAgentActionResult(result)) {
         execution.sessionId = result.sessionId;
@@ -646,7 +653,7 @@ export class CronService implements Disposable {
       execution.error = error instanceof Error ? error.message : String(error);
 
       // Handle retries
-      if (definition.maxRetries && execution.retryAttempt < definition.maxRetries) {
+      if (definition.runsOn === 'local' && definition.maxRetries && execution.retryAttempt < definition.maxRetries) {
         await this.retryExecution(definition, execution);
       }
     } finally {
@@ -808,11 +815,12 @@ export class CronService implements Disposable {
 
         let result: unknown;
         try {
-          result = await orchestrator.sendMessage(
-            buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled),
-            undefined,
-            agentRunOptions,
-          );
+          const sendMessage = () => orchestrator.sendMessage(
+              buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled),
+              undefined,
+              agentRunOptions,
+            );
+          result = await runWithCronJobBudget(definition.maxRunBudget, sendMessage);
 
           const messages = orchestrator.getMessages();
           const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
@@ -1162,11 +1170,13 @@ export class CronService implements Disposable {
       if (!db) return;
       db.prepare(`
         INSERT OR REPLACE INTO cron_jobs
-        (id, name, description, schedule_type, schedule, action, enabled, max_retries, retry_delay, timeout, tags, metadata, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, name, description, schedule_type, schedule, action, runs_on, max_run_budget, min_interval_seconds, enabled, max_retries, retry_delay, timeout, tags, metadata, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         job.id, job.name, job.description || null,
         job.scheduleType, JSON.stringify(job.schedule), JSON.stringify(job.action),
+        job.runsOn, job.maxRunBudget ?? null,
+        minimumIntervalSecondsForLocation(job.runsOn),
         job.enabled ? 1 : 0, job.maxRetries || 0, job.retryDelay || 5000,
         job.timeout || 60000, job.tags ? JSON.stringify(job.tags) : null,
         job.metadata ? JSON.stringify(job.metadata) : '{}',
@@ -1181,6 +1191,7 @@ export class CronService implements Disposable {
     return rows.map(normalizeCronExecutionRow).filter((row): row is CronExecutionRow => row !== null).map((row) => ({
       id: row.id,
       jobId: row.job_id,
+      runsOn: row.runs_on,
       sessionId: row.session_id || undefined,
       status: row.status,
       scheduledAt: row.scheduled_at,
@@ -1200,10 +1211,11 @@ export class CronService implements Disposable {
       if (!db) return [];
 
       const rows = db.prepare(`
-        SELECT *
+        SELECT cron_executions.*, cron_jobs.runs_on AS runs_on
         FROM cron_executions
-        WHERE job_id = ?
-        ORDER BY scheduled_at DESC
+        JOIN cron_jobs ON cron_jobs.id = cron_executions.job_id
+        WHERE cron_executions.job_id = ?
+        ORDER BY cron_executions.scheduled_at DESC
         LIMIT ?
       `).all(jobId, limit) as unknown[];
 
@@ -1223,9 +1235,10 @@ export class CronService implements Disposable {
       const db = getDatabase().getDb();
       if (!db) return [];
       const rows = db.prepare(`
-        SELECT *
+        SELECT cron_executions.*, cron_jobs.runs_on AS runs_on
         FROM cron_executions
-        ORDER BY scheduled_at DESC
+        JOIN cron_jobs ON cron_jobs.id = cron_executions.job_id
+        ORDER BY cron_executions.scheduled_at DESC
         LIMIT ?
       `).all(limit) as unknown[];
       return this.mapExecutionRows(rows);

@@ -8,6 +8,8 @@ import type {
   CanUseToolFn,
   Logger,
 } from '../../../../../src/host/protocol/tools';
+import { collectToolArtifactsFromMetadata } from '../../../../../src/shared/contract/artifactBlob';
+import { resolveArtifactRole } from '../../../../../src/shared/contract/artifactRoleRegistry';
 
 const execMock = vi.fn();
 const getMock = vi.fn();
@@ -121,6 +123,7 @@ describe('mailSendModule (native)', () => {
       const result = await run(validArgs);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toContain('Mail send failed: smtp down');
+      expect((result as { meta?: { artifact?: unknown } }).meta?.artifact).toBeUndefined();
     });
   });
 
@@ -151,9 +154,26 @@ describe('mailSendModule (native)', () => {
           subject: 'Hi',
           toCount: 1,
         });
-        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
-        expect(artifact.kind).toBe('text');
+        const artifact = result.meta?.artifact as {
+          kind?: string;
+          role?: string;
+          name?: string;
+          metadata?: Record<string, unknown>;
+        };
+        expect(artifact).toMatchObject({
+          kind: 'text',
+          role: 'receipt',
+          name: '已发送邮件：Hi',
+        });
+        expect(artifact.name).not.toContain('@');
         expect(artifact.metadata?.action).toBe('send_message');
+        const [normalized] = collectToolArtifactsFromMetadata(result.meta);
+        expect(normalized).toMatchObject({
+          kind: 'text',
+          role: 'receipt',
+          label: '已发送邮件：Hi',
+        });
+        expect(resolveArtifactRole(normalized)).toBe('receipt');
       }
       expect(execMock).toHaveBeenCalledWith('send_message', validArgs);
     });

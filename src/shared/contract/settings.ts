@@ -425,6 +425,24 @@ export interface AppSettings {
     blockThreshold?: number;
     /** 重置周期 (小时, 默认 24) */
     resetPeriodHours?: number;
+    /** 前台会话预算覆盖；缺省继承旧顶层字段。 */
+    foreground?: {
+      enabled?: boolean;
+      maxBudget?: number;
+      silentThreshold?: number;
+      warningThreshold?: number;
+      blockThreshold?: number;
+      resetPeriodHours?: number;
+    };
+    /** 无人值守预算覆盖；缺省继承旧顶层字段。 */
+    unattended?: {
+      enabled?: boolean;
+      maxBudget?: number;
+      silentThreshold?: number;
+      warningThreshold?: number;
+      blockThreshold?: number;
+      resetPeriodHours?: number;
+    };
   };
   // 上下文压缩配置
   contextCompression?: ContextCompressionConfig;

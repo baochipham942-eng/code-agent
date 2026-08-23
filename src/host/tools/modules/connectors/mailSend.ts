@@ -79,8 +79,9 @@ async function executeMailSend(
         artifact: createVirtualArtifact({
           sourceTool: schema.name,
           kind: 'text',
+          role: 'receipt',
           sessionId: ctx.sessionId,
-          name: `mail-send-${sent.subject}`,
+          name: `已发送邮件：${sent.subject}`,
           mimeType: 'text/markdown',
           contentLength: output.length,
           preview: output.slice(0, 500),

@@ -83,6 +83,7 @@ export function buildCronAutomationConfig(definition: CronJobDefinition): Sessio
   const nextStage = readAutomationNextStage(definition.metadata?.nextStage);
   return {
     createdVia: typeof definition.metadata?.createdVia === 'string' ? definition.metadata.createdVia : 'cron',
+    runsOn: definition.runsOn,
     sourceMessageId: typeof definition.metadata?.sourceMessageId === 'string' ? definition.metadata.sourceMessageId : undefined,
     scheduleType: definition.scheduleType,
     actionType: definition.action.type,

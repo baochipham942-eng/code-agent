@@ -32,6 +32,11 @@ afterEach(() => {
   }
 });
 
+// macOS 上 /tmp → /private/tmp、/var → /private/var 是软链，才构造得出「词法路径 ≠ 规范路径」。
+// Linux CI 的 os.tmpdir() 没有这层别名，下面两条别名用例的场景在该平台根本不存在——
+// 跳过并留痕，而不是让前提断言变成假红（也不让它静默降级成普通用例假绿）。
+const TMP_HAS_ALIAS = fs.realpathSync.native(os.tmpdir()) !== path.resolve(os.tmpdir());
+
 describe('Path Utilities', () => {
   const homeDir = os.homedir();
 
@@ -110,7 +115,7 @@ describe('Path Utilities', () => {
   });
 
   describe('confineEvalPath', () => {
-    it('confines a nonexistent target when the real root uses its canonical tmp alias', () => {
+    it.skipIf(!TMP_HAS_ALIAS)('confines a nonexistent target when the real root uses its canonical tmp alias', () => {
       const lexicalRoot = createTemporaryDirectory('eval-real-root-');
       const canonicalRoot = fs.realpathSync.native(lexicalRoot);
       const sandbox = createTemporaryDirectory('eval-sandbox-');
@@ -133,7 +138,7 @@ describe('Path Utilities', () => {
       expect(confineEvalPath(outside, sandbox)).toBe(outside);
     });
 
-    it('preserves paths for an in-place run expressed through different aliases', () => {
+    it.skipIf(!TMP_HAS_ALIAS)('preserves paths for an in-place run expressed through different aliases', () => {
       const lexicalRoot = createTemporaryDirectory('eval-in-place-');
       const canonicalRoot = fs.realpathSync.native(lexicalRoot);
       const target = path.join(canonicalRoot, 'x.md');

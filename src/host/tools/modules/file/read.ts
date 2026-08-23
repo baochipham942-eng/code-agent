@@ -30,6 +30,7 @@ import type {
 } from '../../../protocol/tools';
 import { makeEvidenceRef } from '../../../../shared/contract/evidence';
 import { computeContentDigest, fileReadTracker } from '../../fileReadTracker';
+import { confineEvalPath } from '../../file/pathUtils';
 import { getFileMutationActorId } from './fileMutationIdentity';
 import { extractFileFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
@@ -145,7 +146,10 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
       return { ok: false, error: 'aborted', code: 'ABORTED' };
     }
 
-    const filePath = resolveInputPath(parsed.inputPath, ctx.workingDir);
+    const filePath = confineEvalPath(
+      resolveInputPath(parsed.inputPath, ctx.workingDir),
+      ctx.workingDir,
+    );
 
     onProgress?.({ stage: 'starting', detail: `read ${path.basename(filePath)}` });
 

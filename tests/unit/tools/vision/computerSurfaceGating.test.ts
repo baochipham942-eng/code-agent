@@ -687,6 +687,75 @@ describe('computer surface gating', () => {
     expect(result.output).not.toContain(text);
   });
 
+  it('forces an observe after an external-side-effect computer action', async () => {
+    setProcessPlatform('darwin');
+    surfaceMocks.state.allow = true;
+
+    const result = await computerUseTool.execute(
+      {
+        action: 'write_clipboard',
+        text: 'review me',
+        targetApp: 'Safari',
+      },
+      makeContext(),
+    );
+
+    expect(result.success).toBe(true);
+    expect(surfaceMocks.surface.observe).toHaveBeenCalledOnce();
+    expect(surfaceMocks.surface.observe).toHaveBeenCalledWith({
+      includeScreenshot: false,
+      targetApp: 'Safari',
+    });
+    expect(result.metadata).toMatchObject({
+      postActionObserveRequired: true,
+      postActionConsequence: 'external_side_effect',
+      postActionObserve: expect.objectContaining({
+        appName: 'Safari',
+        windowTitle: 'Example Page',
+      }),
+    });
+  });
+
+  it('does not add an observe to a no-external-side-effect computer action', async () => {
+    setProcessPlatform('darwin');
+    surfaceMocks.state.allow = true;
+
+    const result = await computerUseTool.execute(
+      {
+        action: 'click',
+        x: 10,
+        y: 20,
+        targetApp: 'Safari',
+      },
+      makeContext(),
+    );
+
+    expect(result.success).toBe(true);
+    expect(surfaceMocks.surface.observe).not.toHaveBeenCalled();
+    expect(result.metadata?.postActionObserveRequired).toBeUndefined();
+  });
+
+  it('forces one observe after computer_batch when observeAfter is omitted', async () => {
+    setProcessPlatform('darwin');
+    surfaceMocks.state.allow = true;
+
+    const result = await computerUseTool.execute(
+      {
+        action: 'computer_batch',
+        actions: [{ action: 'click', x: 10, y: 20 }],
+      },
+      makeContext(),
+    );
+
+    expect(result.success).toBe(true);
+    expect(surfaceMocks.surface.observe).toHaveBeenCalledOnce();
+    expect(result.metadata).toMatchObject({
+      postActionObserveRequired: true,
+      postActionConsequence: 'external_side_effect',
+      postBatchObserve: expect.objectContaining({ appName: 'Safari' }),
+    });
+  });
+
   it('routes approved background AX actions through the computer surface executor', async () => {
     const backgroundState = {
       id: 'default-computer-surface',

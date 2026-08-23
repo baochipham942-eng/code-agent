@@ -11,6 +11,8 @@ import {
   getStrictBrowserComputerActionCatalogForArgs,
   normalizeBrowserComputerCatalogToolName,
 } from '../../shared/utils/browserComputerActionCatalog';
+import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
+import { isBashToolName } from './toolNames';
 
 type ToolPermissionLevel = Parameters<typeof permissionModeAutoApproves>[1];
 
@@ -220,15 +222,36 @@ export async function resolveToolPermissionClassification(input: {
       ),
     };
   }
-  let classification = classifyBrowserComputerConsequence(
-    input.executionToolName,
-    input.params,
-    input.permStartTime,
-  ) ?? await classifyPermission(input.policyToolName, input.params, {
-    workingDirectory: input.workingDirectory,
-    workspaceRoot: input.workspaceRoot,
-    permissionLevel: input.permissionLevel,
-  });
+  const shellDesktopAutomation = isBashToolName(input.policyToolName)
+    ? classifyShellDesktopAutomation(input.params.command)
+    : null;
+  let classification: ClassificationResult;
+  if (shellDesktopAutomation) {
+    const reason = `Shell command drives desktop GUI input (${shellDesktopAutomation.semantic}); use computer_use so consequence approval and post-action verification apply.`;
+    classification = {
+      decision: 'ask',
+      reason,
+      confidence: 1,
+      cached: false,
+      traceStep: createTraceStep(
+        'permission_classifier',
+        'shell_desktop_automation',
+        'ask',
+        reason,
+        input.permStartTime,
+      ),
+    };
+  } else {
+    classification = classifyBrowserComputerConsequence(
+      input.executionToolName,
+      input.params,
+      input.permStartTime,
+    ) ?? await classifyPermission(input.policyToolName, input.params, {
+      workingDirectory: input.workingDirectory,
+      workspaceRoot: input.workspaceRoot,
+      permissionLevel: input.permissionLevel,
+    });
+  }
   if (input.readOnlyForcesConfirmation && classification.decision === 'approve') {
     const opLabel = input.permissionLevel === 'write' ? '写入'
       : input.permissionLevel === 'network' ? '网络变更'

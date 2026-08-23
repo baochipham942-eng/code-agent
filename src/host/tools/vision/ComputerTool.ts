@@ -43,7 +43,7 @@ Desktop routing contract:
 - mouse_down / mouse_up: Press or release the mouse button at x,y without the matching counterpart. Use to build custom drag rhythms (sliders/canvas) or hold-to-select. Always pair them — every mouse_down must be followed by a mouse_up.
 - open_application: Launch or activate a macOS app. Pass the app name via targetApp (e.g. "Safari", "Visual Studio Code"). Chain observe to confirm it became frontmost.
 - write_clipboard: Set the system pasteboard to text (text param). Faster and focus-shift-immune compared to type for large/formatted text.
-- computer_batch: Execute a list of actions sequentially in one tool call (actions param, e.g. [{action:"click",x:100,y:200},{action:"type",text:"hi"}]). Stops on first failure. Nested computer_batch is rejected. Pass settleMs (~150-300) to insert a delay between sub-actions so the UI can settle; pass observeAfter:true to capture an observe snapshot after the batch into metadata.postBatchObserve.
+- computer_batch: Execute a list of actions sequentially in one tool call (actions param, e.g. [{action:"click",x:100,y:200},{action:"type",text:"hi"}]). Stops on first failure. Nested computer_batch is rejected. Pass settleMs (~150-300) to insert a delay between sub-actions so the UI can settle. External-side-effect batches always capture an observe snapshot after execution; observeAfter:true requests the same verification for other batches.
 - hold_key: Press one or more modifier keys (cmd/alt/ctrl/shift/fn) for a duration (ms), then release. Pass via modifiers (preferred) or single key. Use for shift-multi-select, hold-space-to-pan, hold-cmd-to-drop-copy.
 - triple_click: Triple-click at x,y to select a line/paragraph. Fallback: doubleClick + click if target app does not respond.
 - cursor_position: Return current cursor coordinates without moving the mouse. Output is "x,y" plus metadata.x / metadata.y.
@@ -233,7 +233,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       observeAfter: {
         type: 'boolean',
-        description: '[computer_batch] When true, capture an observe snapshot after the batch completes into metadata.postBatchObserve so you can verify the end state. Default false.',
+        description: '[computer_batch] Request an observe snapshot after the batch. External-side-effect batches observe automatically; otherwise default false.',
       },
       toX: {
         type: 'number',

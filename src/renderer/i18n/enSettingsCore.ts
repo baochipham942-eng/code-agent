@@ -296,7 +296,7 @@ export const enSettingsCore = {
         },
         semantics: {
           title: 'Permission semantics',
-          description: 'Low-frequency explanations are folded into the advanced area so they do not distract most users.',
+          description: `${permissionVocabularyEn.approvalEffectBoundary} ${permissionVocabularyEn.uncertainActionWarning}`,
           priorityTitle: 'Permission priority',
           priorityDescription: 'Deny takes priority over Ask, and Ask takes priority over Allow. User deny rules override local Agent and sub-agent configuration.',
           boundaryTitle: 'Sub-agent safety boundary',

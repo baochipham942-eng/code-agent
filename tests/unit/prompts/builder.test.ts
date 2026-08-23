@@ -83,6 +83,14 @@ describe('Prompt Builder', () => {
       expect(prompt).toContain(promptText(TASK_TOOL_DESCRIPTION));
     });
 
+    it('should send the post-denial tool contract to the model', () => {
+      const prompt = buildPrompt();
+      expect(prompt).toContain('After denial, keep the goal but choose a safer route');
+      expect(prompt).toContain("narrower scope, read-only, or that tool's approval parameter");
+      expect(prompt).toContain('Never repeat the same action and parameters or escalate intrusiveness');
+      expect(prompt).toContain('Report sanctioned-tool timeouts or failures; never silently bypass them');
+    });
+
     it('should return consistent results across calls', () => {
       const prompt1 = buildPrompt();
       const prompt2 = buildPrompt();

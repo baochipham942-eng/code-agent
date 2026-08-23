@@ -296,7 +296,7 @@ export const zhSettingsCore = {
         },
         semantics: {
           title: '权限语义说明',
-          description: '把低频解释折叠在高级区，避免干扰普通用户。',
+          description: `${permissionVocabularyZh.approvalEffectBoundary} ${permissionVocabularyZh.uncertainActionWarning}`,
           priorityTitle: '权限优先级',
           priorityDescription: 'Deny 优先于 Ask，Ask 优先于 Allow；用户 deny 会覆盖 Agent 与子 Agent 的局部配置。',
           boundaryTitle: '子 Agent 安全边界',

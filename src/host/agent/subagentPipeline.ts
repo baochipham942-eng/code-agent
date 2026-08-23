@@ -380,11 +380,13 @@ export class SubagentPipeline {
       }
 
       // For write/execute/network, check if path is in working directory
+      let pathOutsideWorkingDirectory = false;
       if (request.path) {
         const inWorkingDir = isPathWithinRoot(request.path, context.workingDirectory);
         if (inWorkingDir) {
           return { allowed: true, warnings };
         }
+        pathOutsideWorkingDirectory = true;
       }
 
       // Deny for operations outside working directory in non-autoApprove mode
@@ -403,7 +405,9 @@ export class SubagentPipeline {
 
       return {
         allowed: false,
-        reason: `Permission denied: ${request.permissionLevel} operation requires approval`,
+        reason: pathOutsideWorkingDirectory
+          ? `Permission denied: ${request.path} is outside this agent's working directory ${context.workingDirectory}`
+          : `Permission denied: ${request.permissionLevel} operation requires approval`,
         warnings,
       };
     }

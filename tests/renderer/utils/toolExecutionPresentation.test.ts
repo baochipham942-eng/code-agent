@@ -60,6 +60,20 @@ describe('toolExecutionPresentation', () => {
     expect(isAutoLoadedRetry(undefined)).toBe(false);
   });
 
+  it('localizes managed-browser resume import failures from the host error code', () => {
+    const humanized = humanizeToolError(
+      'Browser login state could not be restored.',
+      'browser_action',
+      zh,
+      { code: 'BROWSER_RESUME_STATE_IMPORT_FAILED' },
+    );
+
+    expect(humanized).toEqual({
+      summary: '浏览器登录状态恢复失败',
+      detail: '新浏览器已启动，但未带上一轮的登录状态。',
+    });
+  });
+
   it('humanizes search-source quota errors with a settings hint', () => {
     const raw = [
       'All search sources failed:',

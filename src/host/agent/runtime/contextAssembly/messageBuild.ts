@@ -82,6 +82,10 @@ import {
   REQUIRED_REPAIR_TRIM_CANDIDATES,
 } from './promptBudget';
 import { buildSpaceContextPrompt } from '../../../prompts/spaceContextPrompt';
+import { getConfigService } from '../../../services/core/configService';
+import { IPC_CHANNELS } from '../../../../shared/ipc';
+import type { AgentNoticeEvent } from '../../../../shared/ipc/handlers';
+import { applyHistoricalImageBudget } from './imageBudget';
 
 export { formatArtifactRepairToolResultContent } from './artifactRepairProjection';
 export {
@@ -129,6 +133,7 @@ type RuntimeAssemblyCache = {
     apiView: ContextTranscriptEntry[];
     state: string;
   };
+  imageBudgetNoticeKey?: string;
 };
 
 const runtimeAssemblyCaches = new WeakMap<object, RuntimeAssemblyCache>();
@@ -144,6 +149,23 @@ function getRuntimeAssemblyCache(ctx: ContextAssemblyCtx): RuntimeAssemblyCache 
 
 function getLastUserMessage(ctx: ContextAssemblyCtx): Message | undefined {
   return [...ctx.runtime.messages].reverse().find((message) => message.role === 'user');
+}
+
+function readImageBudgetLocale(): 'zh' | 'en' {
+  try {
+    return getConfigService().getSettings().ui.language === 'en' ? 'en' : 'zh';
+  } catch {
+    return 'zh';
+  }
+}
+
+async function broadcastImageBudgetNotice(event: AgentNoticeEvent): Promise<void> {
+  try {
+    const { broadcastToRenderer } = await import('../../../platform/windowBridge');
+    broadcastToRenderer?.(IPC_CHANNELS.AGENT_NOTICE, event);
+  } catch {
+    // The model request remains valid in CLI/headless runs where no renderer exists.
+  }
 }
 
 export function buildDynamicPromptCacheKey(
@@ -861,6 +883,8 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
         nextCompressionState,
         {
           maxTokens: contextWindowSize,
+          provider: ctx.runtime.modelConfig.provider,
+          model: ctx.runtime.modelConfig.model,
           currentTurnIndex,
           isMainThread: !ctx.runtime.agentId,
           cacheHot: idleMinutes < 2,
@@ -937,6 +961,33 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     ctx.runtime.contextHealth.replaceCompressionState(new CompressionState());
   }
   contextApiView = applyArchiveHydration(contextApiView, ctx.runtime.contextHealth.compressionState, ctx.runtime.sessionId);
+
+  const currentUserMessageId = getLastUserMessage(ctx)?.id;
+  const imageBudgetResult = applyHistoricalImageBudget(contextApiView, {
+    modelConfig: ctx.runtime.modelConfig,
+    currentUserMessageId,
+    locale: readImageBudgetLocale(),
+  });
+  contextApiView = imageBudgetResult.entries;
+  if (imageBudgetResult.omittedImages > 0) {
+    logger.info('[ContextAssembly] Historical images omitted by request budget', {
+      providerFamily: imageBudgetResult.family,
+      omittedImages: imageBudgetResult.omittedImages,
+      keptImages: imageBudgetResult.keptImages,
+      estimatedRequestBytes: imageBudgetResult.estimatedRequestBytes,
+      maxRequestBytes: imageBudgetResult.budget.maxRequestBytes,
+      currentImagesExceedBudget: imageBudgetResult.currentImagesExceedBudget,
+    });
+    const cache = getRuntimeAssemblyCache(ctx);
+    const noticeKey = `${currentUserMessageId ?? ''}:${imageBudgetResult.family}:${imageBudgetResult.omittedImages}`;
+    if (cache.imageBudgetNoticeKey !== noticeKey) {
+      cache.imageBudgetNoticeKey = noticeKey;
+      void broadcastImageBudgetNotice({
+        reasonCode: 'historical_images_omitted',
+        params: { count: imageBudgetResult.omittedImages },
+      });
+    }
+  }
 
   if (!ctx.runtime.agentId) {
     try {
@@ -1050,7 +1101,11 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   // Proactive compression check: trigger at 75% capacity to prevent hitting hard limits
   // 注意：maxTokens 是模型的最大输出限制，不是上下文窗口大小
   // 上下文窗口大小应该更大（如 64K-128K），这里使用保守估计 64000
-  const currentTokens = estimateModelMessageTokens(modelMessages);
+  const currentTokens = estimateModelMessageTokens(
+    modelMessages,
+    ctx.runtime.modelConfig.provider,
+    ctx.runtime.modelConfig.model,
+  );
   if (ctx.runtime.messageHistoryCompressor.shouldProactivelyCompress(currentTokens, contextWindowSize)) {
     logger.info(`[AgentLoop] Proactive compression triggered: ${currentTokens}/${contextWindowSize} tokens (${Math.round(currentTokens / contextWindowSize * 100)}%)`);
     logCollector.agent('INFO', 'Proactive compression triggered', {

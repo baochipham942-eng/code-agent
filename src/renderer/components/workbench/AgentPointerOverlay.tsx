@@ -1,11 +1,11 @@
 import React from 'react';
 import type {
   AgentPointerEvent,
-  AgentPointerPhase,
   AgentPointerPoint,
   AgentPointerTone,
 } from '@shared/contract';
-import { getAgentPointerLabel } from '../../utils/agentPointer';
+import { useI18n } from '../../hooks/useI18n';
+import { getAgentPointerNarration } from '../../utils/agentPointerNarration';
 import type { AgentPointerTimelineEntry } from '../../stores/agentPointerStore';
 
 // ds-allow:start agent 指针可视化色板（SVG 字面色，按模式区分，非 UI token 场景）
@@ -58,28 +58,6 @@ function pointerPosition(point: AgentPointerPoint | null | undefined): React.CSS
   };
 }
 
-function phaseText(phase: AgentPointerPhase): string {
-  switch (phase) {
-    case 'click':
-      return 'click';
-    case 'drag':
-      return 'drag';
-    case 'type':
-      return 'input';
-    case 'scroll':
-      return 'scroll';
-    case 'move':
-      return 'move';
-    case 'read':
-      return 'observe';
-    case 'failed':
-    case 'blocked':
-      return 'blocked';
-    default:
-      return 'target';
-  }
-}
-
 export function AgentPointerGlyph({
   tone = 'idle',
   phase = 'preview',
@@ -87,7 +65,7 @@ export function AgentPointerGlyph({
   className = '',
 }: {
   tone?: AgentPointerTone;
-  phase?: AgentPointerPhase;
+  phase?: AgentPointerEvent['phase'];
   size?: number;
   className?: string;
 }) {
@@ -143,8 +121,9 @@ export function AgentPointerOverlay({
   /** false = idle 态：光标停留在最后位置变暗，不显示标签和脉冲环 */
   live?: boolean;
 }) {
+  const { t } = useI18n();
   const colors = TONE_COLORS[event.tone];
-  const label = getAgentPointerLabel(event);
+  const label = getAgentPointerNarration(event, t.workbenchTabs.agentWindow.pointerNarration);
   const size = compact ? 22 : 34;
   const shouldRing = live && (event.phase === 'click' || event.phase === 'failed' || event.phase === 'blocked');
 
@@ -171,8 +150,7 @@ export function AgentPointerOverlay({
         <AgentPointerGlyph tone={event.tone} phase={event.phase} size={size} />
         {showLabel && live && (
           <span className="mt-1 max-w-[240px] truncate rounded-md border border-white/[0.08] bg-zinc-950/85 px-2 py-1 text-[11px] font-medium text-zinc-100 shadow-lg backdrop-blur-xs">
-            {phaseText(event.phase)}
-            {event.targetLabel ? <span className="text-zinc-400"> · {event.targetLabel}</span> : null}
+            {label}
           </span>
         )}
       </div>
@@ -226,6 +204,7 @@ export function AgentPointerTimelineList({
   entries: AgentPointerTimelineEntry[];
   title?: string;
 }) {
+  const { t } = useI18n();
   if (entries.length === 0) {
     return null;
   }
@@ -239,9 +218,11 @@ export function AgentPointerTimelineList({
           <div key={`${entry.event.id}-${entry.receivedAtMs}`} className="grid grid-cols-[54px_22px_minmax(0,1fr)] items-center gap-2 px-3 py-2 text-[11px]">
             <span className="font-mono text-zinc-600">{formatPointerTime(entry)}</span>
             <AgentPointerGlyph tone={entry.event.tone} phase={entry.event.phase} size={14} />
-            <span className="truncate text-zinc-300" title={getAgentPointerLabel(entry.event)}>
-              {phaseText(entry.event.phase)}
-              {entry.event.targetLabel ? <span className="text-zinc-500"> · {entry.event.targetLabel}</span> : null}
+            <span
+              className="truncate text-zinc-300"
+              title={getAgentPointerNarration(entry.event, t.workbenchTabs.agentWindow.pointerNarration)}
+            >
+              {getAgentPointerNarration(entry.event, t.workbenchTabs.agentWindow.pointerNarration)}
             </span>
           </div>
         ))}

@@ -115,6 +115,7 @@ describe('mailDraftModule (native)', () => {
       const result = await run(validArgs);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toContain('Mail draft failed: mail locked');
+      expect((result as { meta?: { artifact?: unknown } }).meta?.artifact).toBeUndefined();
     });
   });
 
@@ -153,8 +154,18 @@ describe('mailDraftModule (native)', () => {
           subject: 'Draft',
           to: ['a@x.com'],
         });
-        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
-        expect(artifact.kind).toBe('text');
+        const artifact = result.meta?.artifact as {
+          kind?: string;
+          role?: string;
+          name?: string;
+          metadata?: Record<string, unknown>;
+        };
+        expect(artifact).toMatchObject({
+          kind: 'text',
+          role: 'receipt',
+          name: '已创建邮件草稿：Draft',
+        });
+        expect(artifact.name).not.toContain('@');
         expect(artifact.metadata?.action).toBe('draft_message');
       }
       expect(execMock).toHaveBeenCalledWith('draft_message', validArgs);

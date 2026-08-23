@@ -66,8 +66,9 @@ async function executeRemindersDelete(
         artifact: createVirtualArtifact({
           sourceTool: schema.name,
           kind: 'text',
+          role: 'receipt',
           sessionId: ctx.sessionId,
-          name: `reminder-delete-${reminder.id}`,
+          name: `已删除提醒：${reminder.title}`,
           mimeType: 'text/markdown',
           contentLength: output.length,
           preview: output.slice(0, 500),

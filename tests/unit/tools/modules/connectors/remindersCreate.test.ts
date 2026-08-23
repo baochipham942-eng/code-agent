@@ -115,6 +115,7 @@ describe('remindersCreateModule (native)', () => {
       const result = await run(validArgs);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toContain('Reminders create failed: boom');
+      expect((result as { meta?: { artifact?: unknown } }).meta?.artifact).toBeUndefined();
     });
   });
 
@@ -142,8 +143,17 @@ describe('remindersCreateModule (native)', () => {
           title: 'Ship PR',
           completed: false,
         });
-        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
-        expect(artifact.kind).toBe('text');
+        const artifact = result.meta?.artifact as {
+          kind?: string;
+          role?: string;
+          name?: string;
+          metadata?: Record<string, unknown>;
+        };
+        expect(artifact).toMatchObject({
+          kind: 'text',
+          role: 'receipt',
+          name: '已创建提醒：Ship PR',
+        });
         expect(artifact.metadata?.action).toBe('create_reminder');
       }
       expect(execMock).toHaveBeenCalledWith('create_reminder', validArgs);

@@ -109,6 +109,7 @@ describe('remindersDeleteModule (native)', () => {
       const result = await run(validArgs);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toContain('Reminders delete failed: boom');
+      expect((result as { meta?: { artifact?: unknown } }).meta?.artifact).toBeUndefined();
     });
   });
 
@@ -130,8 +131,17 @@ describe('remindersDeleteModule (native)', () => {
           title: 'Ship PR',
           deleted: true,
         });
-        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
-        expect(artifact.kind).toBe('text');
+        const artifact = result.meta?.artifact as {
+          kind?: string;
+          role?: string;
+          name?: string;
+          metadata?: Record<string, unknown>;
+        };
+        expect(artifact).toMatchObject({
+          kind: 'text',
+          role: 'receipt',
+          name: '已删除提醒：Ship PR',
+        });
         expect(artifact.metadata?.action).toBe('delete_reminder');
       }
       expect(execMock).toHaveBeenCalledWith('delete_reminder', validArgs);

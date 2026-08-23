@@ -125,6 +125,7 @@ describe('calendarCreateEventModule (native)', () => {
       const result = await run(validArgs);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toContain('Calendar create failed: boom');
+      expect((result as { meta?: { artifact?: unknown } }).meta?.artifact).toBeUndefined();
     });
   });
 
@@ -158,8 +159,17 @@ describe('calendarCreateEventModule (native)', () => {
           calendar: 'Work',
           title: 'Standup',
         });
-        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
-        expect(artifact.kind).toBe('text');
+        const artifact = result.meta?.artifact as {
+          kind?: string;
+          role?: string;
+          name?: string;
+          metadata?: Record<string, unknown>;
+        };
+        expect(artifact).toMatchObject({
+          kind: 'text',
+          role: 'receipt',
+          name: `已创建日历事件：Standup（${new Date(1700000000000).toLocaleString('zh-CN')}）`,
+        });
         expect(artifact.metadata?.action).toBe('create_event');
       }
       expect(execMock).toHaveBeenCalledWith('create_event', validArgs);

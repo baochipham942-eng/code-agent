@@ -125,6 +125,7 @@ function agentJob(roleId?: string): CronJobDefinition {
       roleId,
     },
     enabled: true,
+    runsOn: 'local',
     createdAt: 1,
     updatedAt: 1,
   };

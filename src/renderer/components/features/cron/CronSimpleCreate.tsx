@@ -17,6 +17,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { listProjects } from '../../../services/projectClient';
 import { listRoles } from '../../../services/rolesClient';
 import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from './types';
+import { CronRunsOnSelector } from './CronRunsOnSelector';
 
 type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
 
@@ -58,9 +59,11 @@ export function buildSimpleDraft(
   schedule: Partial<CronJobDraft>,
   roleId?: string,
   libraryProjectId?: string,
+  runsOn: CronJobDraft['runsOn'] = 'local',
 ): CronJobDraft {
   return {
     ...createDefaultCronJobDraft(),
+    runsOn,
     name: name.trim() || goal.trim().slice(0, 48),
     actionType: 'agent',
     agentType: 'default',
@@ -88,6 +91,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
   const [onceAt, setOnceAt] = useState('');
   const [roleId, setRoleId] = useState('');
   const [libraryProjectId, setLibraryProjectId] = useState('');
+  const [runsOn, setRunsOn] = useState<CronJobDraft['runsOn']>('local');
   const [roles, setRoles] = useState<RolePanelEntry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -112,11 +116,17 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         compileSimpleSchedule({ freq, time, weekday, intervalHours, onceAt }),
         roleId,
         libraryProjectId,
+        runsOn,
       );
       await createJob(buildCronJobInput(draft));
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : cc.simpleCreateFailed);
+      const message = err instanceof Error ? err.message : '';
+      setError(message.includes('Cloud jobs must have an interval')
+        ? cc.cloudIntervalHint
+        : message.includes('Local jobs must have an interval')
+          ? cc.localIntervalHint
+          : message || cc.simpleCreateFailed);
     } finally {
       setSubmitting(false);
     }
@@ -171,6 +181,8 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
           />
         </FormField>
       </div>
+
+      <CronRunsOnSelector value={runsOn} onChange={setRunsOn} />
 
       <div className="grid gap-3 sm:grid-cols-2">
         <FormField label={cc.simpleFreqLabel}>

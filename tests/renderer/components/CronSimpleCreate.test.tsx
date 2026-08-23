@@ -141,5 +141,29 @@ describe('CronSimpleCreate', () => {
     expect(submitted.action.type).toBe('agent');
     expect(submitted.schedule).toEqual({ type: 'cron', expression: '0 9 * * *', timezone: undefined });
     expect(submitted.enabled).toBe(true);
+    expect(submitted.runsOn).toBe('local');
+  });
+
+  it('常显冻结说明，并可原地展开五行本地/云端对照后创建云端任务', async () => {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object),
+      id: 'new-cloud-job',
+      createdAt: 1,
+      updatedAt: 1,
+    } as CronJobDefinition));
+    render(<CronSimpleCreate onDone={() => undefined} />);
+
+    expect(screen.getByText('选定后不能改——想换执行位置，需要新建一个任务')).toBeTruthy();
+    fireEvent.click(screen.getByText('有什么不同?'));
+    const table = screen.getByTestId('cron-location-comparison');
+    for (const label of ['需要 app 开着', '访问本机文件 / 已登录浏览器', '每次执行环境', '权限提示', '最小触发间隔']) {
+      expect(table.textContent).toContain(label);
+    }
+
+    fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '整理云端简报' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+    await waitFor(() => expect(createJob).toHaveBeenCalled());
+    expect(createJob.mock.calls[0][0]).toMatchObject({ runsOn: 'cloud' });
   });
 });

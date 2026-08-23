@@ -137,6 +137,19 @@ describe('AutomationReviewInbox', () => {
     });
   });
 
+  it('云端结果显示位置徽标和离线完成副行', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({
+      config: {
+        runsOn: 'cloud',
+        pendingReview: { resultSessionId: 'result-1', at: 1700000000000 },
+      },
+    })]);
+    render(<AutomationReviewInbox />);
+
+    await waitFor(() => expect(screen.getByText('云端')).toBeTruthy());
+    expect(screen.getByText(/你不在的时候跑完的 · 完成于/)).toBeTruthy();
+  });
+
   it('查看结果：标记已读并跳结果会话', async () => {
     listPendingReview.mockResolvedValue([makeRecord({})]);
     render(<AutomationReviewInbox />);

@@ -30,6 +30,7 @@ interface CronServiceHarness {
 function makeDefinition(name: string, context?: Record<string, unknown>): CronJobDefinition {
   return {
     id: 'job-1',
+    runsOn: 'local',
     name,
     scheduleType: 'every',
     schedule: { type: 'every', interval: 15, unit: 'minutes' },

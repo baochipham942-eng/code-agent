@@ -3,6 +3,7 @@ import type {
   CronJobDefinition,
   CronJobExecution,
   CronServiceStats,
+  CreateCronJobDefinition,
 } from '@shared/contract';
 
 export type CronJobFilter = {
@@ -10,7 +11,7 @@ export type CronJobFilter = {
   tags?: string[];
 };
 
-export type CreateCronJobInput = Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'>;
+export type CreateCronJobInput = CreateCronJobDefinition;
 export type UpdateCronJobInput = Partial<Omit<CronJobDefinition, 'id' | 'createdAt'>>;
 
 async function invokeCron<T>(action: string, payload?: unknown): Promise<T> {

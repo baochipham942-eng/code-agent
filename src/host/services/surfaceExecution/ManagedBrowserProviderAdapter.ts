@@ -27,9 +27,17 @@ import {
   type SurfaceRuntimeIdentityV1,
 } from './SurfaceExecutionRuntime';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
+import {
+  SecureBrowserResumeStateStore,
+  type BrowserResumeStateStore,
+} from './BrowserResumeStateStore';
 
 const DEFAULT_PROVIDER = 'system-chrome-cdp';
 const SURFACE_PROFILE_TTL_MS = 30 * 60_000;
+
+interface BrowserResumeLogger {
+  error(message: string, metadata?: unknown): void;
+}
 
 /**
  * User-driven browser (address bar / takeover) reuses the pool default service so
@@ -51,6 +59,18 @@ interface ManagedBrowserBinding {
   surfaceSessionId: string;
   predecessorStateId: string;
   target: Extract<SurfaceTargetRefV1, { kind: 'browser' }>;
+  abortShutdown?: Promise<void>;
+}
+
+type BrowserResumeFailureCode =
+  | 'BROWSER_RESUME_STATE_EXPORT_FAILED'
+  | 'BROWSER_RESUME_STATE_IMPORT_FAILED';
+
+class BrowserResumeStateError extends Error {
+  constructor(readonly code: BrowserResumeFailureCode, message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'BrowserResumeStateError';
+  }
 }
 
 export interface ManagedBrowserActionInput {
@@ -180,6 +200,8 @@ export class ManagedBrowserProviderAdapter {
     private readonly releaseBrowser: (serviceKey: string) => Promise<void> = (serviceKey) => (
       browserPool.releaseAgent(serviceKey)
     ),
+    private readonly resumeStateStore: BrowserResumeStateStore = new SecureBrowserResumeStateStore(),
+    private readonly resumeLogger: BrowserResumeLogger = createLogger('ManagedBrowserResume'),
   ) {}
 
   getBrowserService(identity: SurfaceRuntimeIdentityV1): BrowserService {
@@ -191,6 +213,14 @@ export class ManagedBrowserProviderAdapter {
   getBinding(identity: SurfaceRuntimeIdentityV1): Readonly<ManagedBrowserBinding> | null {
     const binding = this.bindings.get(this.ownerKey(identity));
     return binding ? { ...binding, identity: { ...binding.identity }, target: { ...binding.target } } : null;
+  }
+
+  async clearConversationResumeState(conversationId: string): Promise<void> {
+    await this.resumeStateStore.clearConversation(conversationId);
+  }
+
+  activateConversationResumeState(conversationId: string): void {
+    this.resumeStateStore.activateConversation(conversationId);
   }
 
   /**
@@ -362,6 +392,31 @@ export class ManagedBrowserProviderAdapter {
       leaseOwner,
       leaseTtlMs: SURFACE_PROFILE_TTL_MS,
     });
+    try {
+      await this.resumeStateStore.importForConversation(identity.conversationId, browserService);
+    } catch (error) {
+      this.resumeLogger.error('Failed to restore managed browser login state', {
+        conversationIdHash: hashIdentity([identity.conversationId]),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      if (!shared) {
+        await browserService.close().catch((closeError) => {
+          this.resumeLogger.error('Failed to close managed browser after resume import failure', {
+            error: closeError instanceof Error ? closeError.message : String(closeError),
+          });
+        });
+        await this.releaseBrowser(serviceKey).catch((releaseError) => {
+          this.resumeLogger.error('Failed to release managed browser after resume import failure', {
+            error: releaseError instanceof Error ? releaseError.message : String(releaseError),
+          });
+        });
+      }
+      throw new BrowserResumeStateError(
+        'BROWSER_RESUME_STATE_IMPORT_FAILED',
+        'Browser login state could not be restored. The browser started without the previous login state.',
+        { cause: error },
+      );
+    }
     const state = browserService.getSessionState();
     const provider = state.provider || DEFAULT_PROVIDER;
     const prepared = this.runtime.prepareBrowserSession({ identity, provider });
@@ -452,6 +507,12 @@ export class ManagedBrowserProviderAdapter {
   }
 
   private async releaseBinding(key: string, binding: ManagedBrowserBinding): Promise<void> {
+    let abortShutdownError: unknown;
+    try {
+      await binding.abortShutdown;
+    } catch (error) {
+      abortShutdownError = error;
+    }
     if (this.bindings.get(key) === binding) this.bindings.delete(key);
     const stillShared = Array.from(this.bindings.values()).some((candidate) => (
       candidate.serviceKey === binding.serviceKey
@@ -462,6 +523,7 @@ export class ManagedBrowserProviderAdapter {
     if (!stillShared && binding.serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
       await this.releaseBrowser(binding.serviceKey);
     }
+    if (abortShutdownError) throw abortShutdownError;
   }
 
   private async captureObservation(
@@ -531,7 +593,11 @@ export class ManagedBrowserProviderAdapter {
     const signal = runtimeSignal || input.abortSignal || new AbortController().signal;
     if (signal.aborted) throw this.cancelledError(binding, input.operationId, signal.reason);
     const closeOnAbort = () => {
-      void binding.browserService.close().catch(() => undefined);
+      if (binding.abortShutdown) return;
+      binding.abortShutdown = this.exportResumeStateAndClose(binding);
+      // releaseBinding / dispatch finally await the same promise and rethrow it. Attach a
+      // handler immediately as the Surface coordinator may reject on abort before cleanup runs.
+      void binding.abortShutdown.catch(() => undefined);
     };
     signal.addEventListener('abort', closeOnAbort, { once: true });
     try {
@@ -540,7 +606,43 @@ export class ManagedBrowserProviderAdapter {
       return result;
     } finally {
       signal.removeEventListener('abort', closeOnAbort);
+      await binding.abortShutdown;
     }
+  }
+
+  private async exportResumeStateAndClose(binding: ManagedBrowserBinding): Promise<void> {
+    let exportError: unknown;
+    try {
+      await this.resumeStateStore.exportForConversation(
+        binding.identity.conversationId,
+        binding.browserService,
+      );
+    } catch (error) {
+      exportError = error;
+      this.resumeLogger.error('Failed to save managed browser login state before close', {
+        conversationIdHash: hashIdentity([binding.identity.conversationId]),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    let closeError: unknown;
+    try {
+      await binding.browserService.close();
+    } catch (error) {
+      closeError = error;
+      this.resumeLogger.error('Failed to close managed browser after abort', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    if (exportError) {
+      throw new BrowserResumeStateError(
+        'BROWSER_RESUME_STATE_EXPORT_FAILED',
+        'Browser login state could not be saved before the browser closed. The next run may require login again.',
+        { cause: exportError },
+      );
+    }
+    if (closeError) throw closeError;
   }
 
   private attachSurfaceMetadata(
@@ -570,6 +672,13 @@ export class ManagedBrowserProviderAdapter {
   }
 
   private failure(error: unknown): ToolExecutionResult {
+    if (error instanceof BrowserResumeStateError) {
+      return {
+        success: false,
+        error: error.message,
+        metadata: { provider: DEFAULT_PROVIDER, engine: 'managed', code: error.code },
+      };
+    }
     if (error instanceof SurfaceExecutionRuntimeError) {
       return {
         success: false,

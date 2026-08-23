@@ -117,19 +117,33 @@ function isInsideRoot(repoRoot: string, absolutePath: string): boolean {
   return relative !== '' && !relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative);
 }
 
-function resolveTrackedPath(repoRoot: string, workingDir: string, candidate: string): string | null {
+async function bestEffortRealpath(filePath: string): Promise<string> {
+  try {
+    return await fs.realpath(filePath);
+  } catch {
+    return filePath;
+  }
+}
+
+async function resolveTrackedPath(repoRoot: string, workingDir: string, candidate: string): Promise<string | null> {
+  const [normalizedRepoRoot, normalizedWorkingDir] = await Promise.all([
+    bestEffortRealpath(repoRoot),
+    bestEffortRealpath(workingDir),
+  ]);
   const direct = path.isAbsolute(candidate)
     ? path.resolve(candidate)
-    : path.resolve(workingDir, candidate);
-  if (isInsideRoot(repoRoot, direct)) return direct;
+    : path.resolve(normalizedWorkingDir, candidate);
+  const normalizedDirect = await bestEffortRealpath(direct);
+  if (isInsideRoot(normalizedRepoRoot, normalizedDirect)) return normalizedDirect;
 
   // NudgeManager historically strips the leading slash from absolute paths.
   // Recover that legacy representation without changing its other consumers.
-  const rootWithoutSlash = repoRoot.replace(/^[/\\]+/, '');
+  const rootWithoutSlash = normalizedRepoRoot.replace(/^[/\\]+/, '');
   const normalizedCandidate = candidate.replace(/^[/\\]+/, '');
   if (normalizedCandidate.startsWith(`${rootWithoutSlash}${path.sep}`)) {
-    const recovered = path.resolve(path.parse(repoRoot).root, normalizedCandidate);
-    if (isInsideRoot(repoRoot, recovered)) return recovered;
+    const recovered = path.resolve(path.parse(normalizedRepoRoot).root, normalizedCandidate);
+    const normalizedRecovered = await bestEffortRealpath(recovered);
+    if (isInsideRoot(normalizedRepoRoot, normalizedRecovered)) return normalizedRecovered;
   }
   return null;
 }
@@ -198,10 +212,11 @@ export async function captureTurnDiff(
   const repoRoot = await resolveRepoRoot(workingDir);
   if (!repoRoot) return null;
 
+  const resolvedPaths = await Promise.all(
+    [...modifiedPaths].map((candidate) => resolveTrackedPath(repoRoot, workingDir, candidate)),
+  );
   const absolutePaths = [...new Set(
-    [...modifiedPaths]
-      .map((candidate) => resolveTrackedPath(repoRoot, workingDir, candidate))
-      .filter((candidate): candidate is string => Boolean(candidate)),
+    resolvedPaths.filter((candidate): candidate is string => Boolean(candidate)),
   )];
 
   const files: TurnDiffFileChange[] = [];

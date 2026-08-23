@@ -89,6 +89,15 @@ let currentTelemetrySessionId: string | null = null;
 let currentAgentLoopSessionId: string | null = null;
 let cliDurableRunRuntime: DurableRunApplicationRuntime | null = null;
 
+// CLI run/chat/serve do not initialize TaskManager, so its command-center tools
+// must stay out of the model-visible tool table on this surface.
+const CLI_TASK_MANAGER_TOOL_DENYLIST = [
+  'delegate_task',
+  'steer_task',
+  'cancel_task',
+  'task_status',
+] as const;
+
 type AgentLoopMessageSessionManager = Pick<CLISessionManager, 'addMessage' | 'addMessageToSession'>;
 
 export async function persistAgentLoopMessageToSession(
@@ -607,9 +616,10 @@ export function createAgentLoop(
     agentId: config.agentOverride?.id ?? 'default',
     agentName: config.agentOverride?.name ?? 'default',
     requestedAgentId: config.requestedAgentId,
-    deniedToolNames: config.agentOverride && config.agentOverride.deniedToolNames.length > 0
-      ? [...config.agentOverride.deniedToolNames]
-      : undefined,
+    deniedToolNames: Array.from(new Set([
+      ...CLI_TASK_MANAGER_TOOL_DENYLIST,
+      ...(config.agentOverride?.deniedToolNames ?? []),
+    ])),
     allowedToolNames: config.allowedToolNames,
     telemetryAdapter,
     // CLI 消息持久化回调（包含 tool_results）

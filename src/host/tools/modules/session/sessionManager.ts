@@ -17,7 +17,7 @@ import { getSessionManager } from '../../../services/infra/sessionManager';
 import { getTaskManager } from '../../../task/TaskManager';
 import { sessionManagerSchema as schema } from './sessionManager.schema';
 
-type SessionManagerAction = 'list' | 'get' | 'create' | 'fork' | 'archive' | 'unarchive' | 'rename';
+type SessionManagerAction = 'list' | 'get' | 'read' | 'create' | 'fork' | 'archive' | 'unarchive' | 'rename';
 type ListScope = 'active' | 'archived' | 'all';
 
 const MUTATING_ACTIONS = new Set<SessionManagerAction>(['create', 'fork', 'archive', 'unarchive', 'rename']);
@@ -29,7 +29,7 @@ function asTrimmedString(value: unknown): string | undefined {
 
 function normalizeAction(value: unknown): SessionManagerAction | null {
   if (typeof value !== 'string') return null;
-  if (['list', 'get', 'create', 'fork', 'archive', 'unarchive', 'rename'].includes(value)) {
+  if (['list', 'get', 'read', 'create', 'fork', 'archive', 'unarchive', 'rename'].includes(value)) {
     return value as SessionManagerAction;
   }
   return null;
@@ -187,6 +187,120 @@ async function executeGet(args: Record<string, unknown>): Promise<ToolResult<str
     meta: {
       action: 'get',
       session: getSessionSummary(session),
+    },
+  };
+}
+
+function normalizePositiveInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function formatMessage(message: Message, position: number): string {
+  const timestamp = Number.isFinite(message.timestamp)
+    ? new Date(message.timestamp).toISOString()
+    : 'unknown time';
+  return `[${position}] ${message.role} (${message.id}, ${timestamp})\n${message.content}`;
+}
+
+async function executeRead(args: Record<string, unknown>): Promise<ToolResult<string>> {
+  const sessionId = asTrimmedString(args.sessionId);
+  if (!sessionId) {
+    return { ok: false, error: 'sessionId is required', code: 'INVALID_ARGS' };
+  }
+
+  const hasStart = Object.prototype.hasOwnProperty.call(args, 'start');
+  const hasEnd = Object.prototype.hasOwnProperty.call(args, 'end');
+  const hasRecent = Object.prototype.hasOwnProperty.call(args, 'recent');
+  const hasLimit = Object.prototype.hasOwnProperty.call(args, 'limit');
+  const startArg = normalizePositiveInteger(args.start);
+  const endArg = normalizePositiveInteger(args.end);
+  const recentArg = normalizePositiveInteger(args.recent);
+  const limitArg = normalizePositiveInteger(args.limit);
+
+  if ((hasStart && startArg === null) || (hasEnd && endArg === null) || (hasRecent && recentArg === null)) {
+    return {
+      ok: false,
+      error: 'start, end, and recent must be positive integers',
+      code: 'INVALID_ARGS',
+    };
+  }
+  if (hasLimit && limitArg === null) {
+    return { ok: false, error: 'limit must be a positive integer', code: 'INVALID_ARGS' };
+  }
+  if (hasRecent && (hasStart || hasEnd)) {
+    return {
+      ok: false,
+      error: 'recent cannot be combined with start or end',
+      code: 'INVALID_ARGS',
+    };
+  }
+
+  const sessionManager = getSessionManager();
+  const session = await sessionManager.getSession(sessionId, 1);
+  if (!session) {
+    return { ok: false, error: `Session not found: ${sessionId}`, code: 'NOT_FOUND' };
+  }
+
+  const messages = await sessionManager.getMessages(sessionId);
+  const totalMessages = messages.length;
+  const requestedStart = recentArg
+    ? Math.max(totalMessages - recentArg + 1, 1)
+    : startArg ?? 1;
+  const requestedEnd = recentArg ? totalMessages : endArg ?? totalMessages;
+
+  if (totalMessages === 0) {
+    if (hasStart || hasEnd) {
+      return {
+        ok: false,
+        error: `Requested range is outside session ${sessionId}, which has 0 messages`,
+        code: 'RANGE_OUT_OF_BOUNDS',
+      };
+    }
+  } else if (requestedStart > requestedEnd || requestedStart > totalMessages || requestedEnd > totalMessages) {
+    return {
+      ok: false,
+      error: `Requested range ${requestedStart}-${requestedEnd} is outside session ${sessionId} with ${totalMessages} messages`,
+      code: 'RANGE_OUT_OF_BOUNDS',
+    };
+  }
+
+  const keyword = asTrimmedString(args.keyword);
+  const normalizedKeyword = keyword?.toLowerCase();
+  const selected = messages
+    .map((message, index) => ({ message, position: index + 1 }))
+    .filter(({ position }) => position >= requestedStart && position <= requestedEnd)
+    .filter(({ message }) => !normalizedKeyword || message.content.toLowerCase().includes(normalizedKeyword));
+  const limit = Math.min(limitArg ?? recentArg ?? 20, 100);
+  const returned = selected.slice(0, limit);
+  const positions = returned.map(({ position }) => position);
+  const rangeLabel = totalMessages === 0 ? 'empty' : `${requestedStart}-${requestedEnd}`;
+  const positionsLabel = positions.length > 0 ? positions.join(',') : 'none';
+  const hasMore = selected.length > returned.length;
+  const header = [
+    `Session ${session.id}: ${session.title}`,
+    `Total messages: ${totalMessages}. Selected range: ${rangeLabel}.`,
+    `Returned positions: ${positionsLabel} (${returned.length} of ${selected.length} matching messages, limit=${limit}, hasMore=${hasMore}).`,
+  ];
+  if (keyword) header.push(`Keyword filter: ${JSON.stringify(keyword)}.`);
+
+  return {
+    ok: true,
+    output: [...header, ...returned.map(({ message, position }) => formatMessage(message, position))].join('\n'),
+    meta: {
+      action: 'read',
+      session: getSessionSummary(session),
+      totalMessages,
+      selection: {
+        start: totalMessages === 0 ? null : requestedStart,
+        end: totalMessages === 0 ? null : requestedEnd,
+        recent: recentArg,
+        keyword: keyword ?? null,
+        limit,
+        matchedCount: selected.length,
+        returnedCount: returned.length,
+        positions,
+        hasMore,
+      },
     },
   };
 }
@@ -546,7 +660,7 @@ export async function executeSessionManager(
   if (!action) {
     return {
       ok: false,
-      error: `Unknown action: ${String(args.action)}. Valid actions: list, get, create, fork, archive, unarchive, rename`,
+      error: `Unknown action: ${String(args.action)}. Valid actions: list, get, read, create, fork, archive, unarchive, rename`,
       code: 'INVALID_ARGS',
     };
   }
@@ -563,6 +677,9 @@ export async function executeSessionManager(
       break;
     case 'get':
       result = await executeGet(args);
+      break;
+    case 'read':
+      result = await executeRead(args);
       break;
     case 'create':
       result = await executeCreate(args, ctx, canUseTool);

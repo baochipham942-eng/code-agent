@@ -393,6 +393,18 @@ export const zhSettingsModels = {
           placeholder: 'MiniMax Token Plan key（与模型 key 不同）…',
         },
       },
+      shareService: {
+        title: '分享服务',
+        description: '配置产物托管链接使用的龙虾服务。上传 token 与模型 key 相互独立。',
+        baseUrlLabel: '服务地址',
+        tokenLabel: '上传 token',
+        tokenPlaceholder: '输入龙虾侧 UPLOAD_TOKEN…',
+        changeToken: '更换',
+        hostingNote: '链接由你自己的龙虾服务器托管。',
+        save: '保存分享服务',
+        saved: '分享服务已保存',
+        saveFailed: '保存分享服务失败',
+      },
     },
     soul: {
       loading: '加载人格设置…',

@@ -391,6 +391,18 @@ export const enSettingsModels = {
           placeholder: 'MiniMax Token Plan key (not your model key)…',
         },
       },
+      shareService: {
+        title: 'Share service',
+        description: 'Configure the Lobster service used for hosted artifact links. Its upload token is separate from model keys.',
+        baseUrlLabel: 'Service URL',
+        tokenLabel: 'Upload token',
+        tokenPlaceholder: 'Enter the Lobster UPLOAD_TOKEN…',
+        changeToken: 'Change',
+        hostingNote: 'Links are hosted by your own Lobster server.',
+        save: 'Save share service',
+        saved: 'Share service saved',
+        saveFailed: 'Failed to save share service',
+      },
     },
     soul: {
       loading: 'Loading persona settings…',

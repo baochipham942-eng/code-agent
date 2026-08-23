@@ -42,6 +42,7 @@ import { imageNarrationZh } from './imageNarration';
 import { mermaidZh } from './mermaid';
 import { voiceAuditZh } from './voiceAudit';
 import { sessionInspectorZh } from './sessionInspector';
+import { artifactShareZh } from './artifactShare';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
@@ -90,6 +91,8 @@ export const zh = {
     exportBundleSource: '来源：发布快照 v{version}',
     publishVersion: '发布这一版',
     generateShareLink: '生成链接',
+    shareLinkExisting: '链接',
+    shareLink: artifactShareZh,
     publishConfirmTitle: '发布这一版',
     publishConfirmDescription: '把《{title}》当前内容冻结为只读快照 v{version}；之后改动自动算草稿。',
     publishNote: '版本备注（可空）',

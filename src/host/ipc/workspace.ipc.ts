@@ -40,12 +40,10 @@ import {
   publishVersion,
 } from '../tools/modules/document/publishedVersions';
 import {
-  createShareLink,
   getShareLink,
   pushLatestToShareLink,
-  revokeShareLink,
-  updateShareLinkTtl,
-} from '../tools/document/shareLink';
+} from '../tools/modules/document/shareLink';
+import { handleWorkspaceShareLinkAction } from './workspaceShareLink.ipc';
 export { handleExportBundle, handleInspectArchive, handleInspectPresentation };
 // buildConfigScopeSummary 历史上是 workspace.ipc 的公开导出，保持向后兼容（测试依赖）。
 export { buildConfigScopeSummary } from './workspaceConfigScope';
@@ -926,29 +924,12 @@ export function registerWorkspaceHandlers(
           }
           break;
         }
-        case 'getShareLink': {
-          const { filePath } = payload as { filePath: string };
-          data = getShareLink(filePath);
-          break;
-        }
-        case 'createShareLink': {
-          const { filePath, ttlSeconds } = payload as { filePath: string; ttlSeconds: number };
-          data = await createShareLink(filePath, ttlSeconds);
-          break;
-        }
-        case 'updateShareLinkTtl': {
-          const { filePath, ttlSeconds } = payload as { filePath: string; ttlSeconds: number };
-          data = await updateShareLinkTtl(filePath, ttlSeconds);
-          break;
-        }
-        case 'pushShareLink': {
-          const { filePath } = payload as { filePath: string };
-          data = await pushLatestToShareLink(filePath);
-          break;
-        }
+        case 'getShareLink':
+        case 'createShareLink':
+        case 'updateShareLinkTtl':
+        case 'pushShareLink':
         case 'revokeShareLink': {
-          const { filePath } = payload as { filePath: string };
-          data = await revokeShareLink(filePath);
+          data = await handleWorkspaceShareLinkAction(action, payload);
           break;
         }
         case 'writeFile':

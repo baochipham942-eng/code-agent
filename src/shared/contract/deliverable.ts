@@ -162,6 +162,7 @@ export interface DeliverableCardView {
   quality?: DeliverableQualitySummary;
   publishState: DeliverablePublishState;
   publishedVersions?: PublishedDeliverableVersion[];
+  shareLinkInfo?: DeliverableShareLinkInfo;
   secondaryActions?: DeliverableSecondaryAction[];
   tone?: DeliverableCardTone;
 }

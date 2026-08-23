@@ -160,6 +160,9 @@ vi.mock('../../../src/host/services/roleAssets', () => ({
   buildRoleContextBlock: vi.fn(),
   runRoleWriteBack: vi.fn(),
   recordRoleParticipation: vi.fn(),
+  // K2：子代理分流前统一收窄 request；本用例不测边界，透传即可（不许在这里模拟收窄，
+  // 否则 doomLoop 的断言会被无关的工具表变化带偏）。
+  applyRoleBoundaryToSubagentRequest: vi.fn((request: unknown) => request),
 }));
 
 vi.mock('../../../src/host/agent/spawnGuard', () => ({

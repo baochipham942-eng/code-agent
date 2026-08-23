@@ -36,6 +36,7 @@ const runtime = vi.hoisted(() => ({
 }));
 
 const buildRoleContextBlock = vi.hoisted(() => vi.fn(async () => '<role>全量 L0/L1 资料架</role>'));
+const voiceRoleBoundaries = vi.hoisted(() => new Map<string, string>());
 const voiceSettings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 const incompleteTasks = vi.hoisted(() => ({ value: [] as Array<{ subject: string; status: string }> }));
 type FakeAgent = { id: string; name: string; description?: string; source?: string; connectors?: Array<{ id: string; level: string }> };
@@ -61,6 +62,9 @@ vi.mock('../../src/host/task', () => ({
   }),
 }));
 vi.mock('../../src/host/services/roleAssets/roleAssetService', () => ({ buildRoleContextBlock }));
+vi.mock('../../src/host/services/roleAssets/rolePersonalization', () => ({
+  buildVoiceRoleBoundaryDirective: (roleId: string) => voiceRoleBoundaries.get(roleId) ?? '',
+}));
 vi.mock('../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ voice: { live: voiceSettings.value } }) }),
 }));
@@ -103,6 +107,10 @@ const { resolveVoiceRouting } = await import('../../src/host/services/voice/voic
 
 const workItems = vi.hoisted(() => ({ value: [] as Array<{ id: string; status: string; title: string; detail?: string }> }));
 
+beforeEach(() => {
+  voiceRoleBoundaries.clear();
+});
+
 function bind(activeAgentId?: string): void {
   beginVoiceDispatch({
     neoSessionId: 'session-1',
@@ -135,6 +143,7 @@ describe('A3 通话身份解析', () => {
   beforeEach(() => {
     resolvedAgent.value = undefined;
     resolvedAgent.byId = undefined;
+    voiceRoleBoundaries.clear();
   });
 
   it('没选专家时不编人设，只给通话基线', () => {
@@ -171,6 +180,17 @@ describe('A3 通话身份解析', () => {
     // prompt 迭代误报成隐私回归。
     const personaOnly = routing.personaInstructions.replace(resolveVoiceRouting(undefined).personaInstructions, '');
     expect(personaOnly.length).toBeLessThan(200);
+  });
+
+  it('语音 brain 吃安全边界，但仍不注入全量角色资料', () => {
+    resolvedAgent.value = { id: 'muzhi', name: '牧之', description: '内容主理人' };
+    voiceRoleBoundaries.set('muzhi', '常驻边界：不允许对外发送');
+
+    const routing = resolveVoiceRouting('muzhi');
+
+    expect(routing.personaInstructions).toContain('常驻边界：不允许对外发送');
+    expect(buildRoleContextBlock).not.toHaveBeenCalled();
+    expect(routing.personaInstructions).not.toContain('资料架');
   });
 });
 

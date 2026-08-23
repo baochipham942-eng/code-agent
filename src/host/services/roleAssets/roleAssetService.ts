@@ -29,6 +29,7 @@ import {
   getProjectMetaPath,
   isSafeRoleId,
 } from './roleAssetPaths';
+import { buildRoleBoundaryContextSection } from './rolePersonalization';
 
 const logger = createLogger('RoleAssets');
 
@@ -346,6 +347,11 @@ export async function buildRoleContextBlock(roleId: string, workspacePath?: stri
   if (!(await isPersistentRole(roleId))) return null;
 
   const sections: string[] = [];
+
+  const boundarySection = buildRoleBoundaryContextSection(roleId);
+  if (boundarySection) {
+    sections.push(boundarySection);
+  }
 
   const roleIndex = await loadScopedMemoryIndex({ scope: 'role', roleId });
   sections.push(`## 角色记忆索引\n${roleIndex || '（暂无角色记忆）'}`);

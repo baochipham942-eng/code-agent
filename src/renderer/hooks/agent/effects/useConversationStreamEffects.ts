@@ -86,18 +86,6 @@ export function mergeCommittedAssistantContent(
 export interface ConversationStreamState {
   currentTurnMessageId: string | null;
   committedAssistantMessageIds: Set<string>;
-  foregroundAgentId?: string | null;
-}
-
-function isBackgroundTurnLifecycleEvent(
-  event: AgentEvent,
-  foregroundAgentId?: string | null,
-): boolean {
-  if (event.type !== 'turn_start' && event.type !== 'turn_end') return false;
-  if (!isRecord(event.data)) return false;
-  if (typeof event.data.parentToolUseId === 'string') return true;
-  const eventAgentId = typeof event.data.agentId === 'string' ? event.data.agentId : undefined;
-  return Boolean(eventAgentId && eventAgentId !== foregroundAgentId);
 }
 
 function appendAssistantStreamDelta(
@@ -122,7 +110,6 @@ export function applyConversationStreamEvent(
   state: ConversationStreamState,
   actions: ConversationStreamEventActions,
 ): void {
-  if (isBackgroundTurnLifecycleEvent(event, state.foregroundAgentId)) return;
   const now = actions.now ?? Date.now;
   const makeId = actions.generateId ?? generateMessageId;
   const getFreshMessages = actions.getMessages;
@@ -436,7 +423,6 @@ export const useConversationStreamEffects = ({
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: AgentEvent) => {
       const currentSessionId = useSessionStore.getState().currentSessionId;
-      const foregroundAgentId = useAppStore.getState().activeAgentId;
       const eventSessionId = getAgentEventSessionId(event);
       const isCurrentSessionEvent = isAgentEventForCurrentSession(event, currentSessionId);
       const getFreshMessages = () => useSessionStore.getState().messages;
@@ -446,10 +432,6 @@ export const useConversationStreamEffects = ({
           logger.debug('Received event', { type: event.type, sessionId: event.sessionId });
         }
       };
-
-      if (isBackgroundTurnLifecycleEvent(event, foregroundAgentId)) {
-        return;
-      }
 
       // 以宿主为准补齐运行态：只要收到一个属于某会话的「还在跑」类事件，而前端却认为它空闲，
       // 那就是前端错了——轮次不一定由前端发起（队列抽干、崩溃恢复、别的窗口）。
@@ -558,7 +540,6 @@ export const useConversationStreamEffects = ({
                 currentTurnMessageIdRef.current = value;
               },
               committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
-              foregroundAgentId,
             },
             {
               addMessage,

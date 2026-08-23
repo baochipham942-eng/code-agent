@@ -4,57 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentEvent } from '../../../src/shared/contract';
-import type { TurnDiffFileChange } from '../../../src/shared/contract/turnDiff';
 import type { TraceEvent } from '../../../src/host/agent/runtime/turnTrace';
 import { createSubagentTurnObservability } from '../../../src/host/agent/subagentTurnTrace';
-
-// Fixture-side replay: join one run's trace ledger with its correlated lifecycle/diff events.
-// Production has no delegation-card replay consumer yet (N-DELEGRECEIPT territory), so the
-// contract lives with the fixture instead of as a dead production export.
-interface SubagentTurnReplay {
-  turnId: string;
-  turnIndex: number;
-  tools: Array<{ toolName: string; success: boolean; durationMs: number; error: string | null }>;
-  files: TurnDiffFileChange[];
-}
-
-function replaySubagentTurns(input: {
-  identity: { agentId: string; runId: string; parentToolUseId?: string };
-  traceEvents: readonly TraceEvent[];
-  agentEvents: readonly AgentEvent[];
-}): SubagentTurnReplay[] {
-  const belongsToRun = (event: AgentEvent): boolean => {
-    const data = event.data as Record<string, unknown> | null | undefined;
-    return Boolean(
-      data
-      && data.agentId === input.identity.agentId
-      && data.runId === input.identity.runId
-      && (input.identity.parentToolUseId === undefined || data.parentToolUseId === input.identity.parentToolUseId),
-    );
-  };
-  const runEvents = input.agentEvents.filter(belongsToRun);
-  const starts = runEvents.flatMap((event) => (
-    event.type === 'turn_start' ? [{ turnId: event.data.turnId, turnIndex: event.data.iteration ?? 0 }] : []
-  ));
-  const diffsByTurn = new Map(runEvents.flatMap((event) => (
-    event.type === 'turn_diff' ? [[event.data.turnId, event.data.files] as const] : []
-  )));
-  return starts.map(({ turnId, turnIndex }) => ({
-    turnId,
-    turnIndex,
-    tools: input.traceEvents.flatMap((event) => (
-      event.turnIndex === turnIndex && event.type === 'tool_dispatch'
-        ? [{
-            toolName: event.data.toolName,
-            success: event.data.success,
-            durationMs: event.data.durationMs,
-            error: event.data.error,
-          }]
-        : []
-    )),
-    files: diffsByTurn.get(turnId) ?? [],
-  }));
-}
 
 async function listFilesRecursive(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true, recursive: true });
@@ -108,7 +59,7 @@ describe('subagent turn trace and diff slots', () => {
     expect(diffs[0]).toMatchObject({ data: { turnId: firstTurn, agentId: 'agent-1', runId: 'run-1' } });
   });
 
-  it('replays one delegated turn with its tool dispatch and 200-line disk diff', async () => {
+  it('keeps delegated turn detail in the split trace while the parent gets receipts', async () => {
     const { repoRoot, traceDir } = await makeRepo();
     const outputPath = join(repoRoot, 'generated.txt');
     const content = Array.from({ length: 200 }, (_, index) => `line ${index + 1}`).join('\n');
@@ -131,6 +82,19 @@ describe('subagent turn trace and diff slots', () => {
       { success: true }, 9,
     );
     await observability.endTurn(turnId);
+    observability.endRun('completed');
+
+    expect(agentEvents.filter((event) => (
+      event.type === 'turn_start' || event.type === 'turn_end'
+    ))).toHaveLength(0);
+    expect(agentEvents.filter((event) => event.type === 'subagent_activity')).toEqual([{
+      type: 'subagent_activity',
+      data: { ...identity, kind: 'started' },
+    }]);
+    expect(agentEvents.filter((event) => event.type === 'subagent_run_end')).toEqual([{
+      type: 'subagent_run_end',
+      data: { ...identity, status: 'completed' },
+    }]);
 
     const turnDiff = agentEvents.find((event) => event.type === 'turn_diff');
     expect(turnDiff).toMatchObject({
@@ -148,14 +112,11 @@ describe('subagent turn trace and diff slots', () => {
     expect(traceFiles).toHaveLength(1);
     const persisted = (await readFile(traceFiles[0], 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as TraceEvent);
     expect(persisted).toHaveLength(1);
-    expect(persisted[0]).toMatchObject({ sessionId: 'session-parent', turnIndex: 1, type: 'tool_dispatch' });
-
-    const replay = replaySubagentTurns({ identity, traceEvents: persisted, agentEvents });
-    expect(replay).toEqual([{
-      turnId,
+    expect(persisted[0]).toMatchObject({
+      sessionId: 'session-parent',
       turnIndex: 1,
-      tools: [{ toolName: 'Write', success: true, durationMs: 9, error: null }],
-      files: [expect.objectContaining({ filePath: outputPath, added: 200 })],
-    }]);
+      type: 'tool_dispatch',
+      data: { toolName: 'Write', success: true, durationMs: 9, error: null },
+    });
   });
 });

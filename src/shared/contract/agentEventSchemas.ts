@@ -441,6 +441,7 @@ const stabilityByType = {
   agent_thinking: 'experimental',
   turn_start: 'stable',
   turn_end: 'stable',
+  subagent_activity: 'experimental',
   subagent_run_end: 'experimental',
   tool_schema_snapshot: 'experimental',
   model_response: 'experimental',
@@ -547,6 +548,12 @@ const GoalCompleteEventSchema = event('goal_complete', z.object({ status: z.enum
 const AgentThinkingEventSchema = event('agent_thinking', z.object({ message: z.string(), agentId: z.string().optional(), progress: z.number().optional(), parentToolUseId: z.string().optional() }));
 const TurnStartEventSchema = event('turn_start', z.object({ turnId: z.string(), iteration: z.number().optional(), parentToolUseId: z.string().optional(), agentId: z.string().optional(), runId: z.string().optional() }));
 const TurnEndEventSchema = event('turn_end', z.object({ turnId: z.string(), parentToolUseId: z.string().optional(), agentId: z.string().optional(), runId: z.string().optional() }));
+const SubagentActivityEventSchema = event('subagent_activity', z.object({
+  agentId: z.string(),
+  runId: z.string(),
+  parentToolUseId: z.string().optional(),
+  kind: z.enum(['started']),
+}));
 const SubagentRunEndEventSchema = event('subagent_run_end', z.object({
   agentId: z.string(),
   runId: z.string(),
@@ -623,7 +630,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   TaskUpdateEventSchema, TurnDiffEventSchema, NotificationEventSchema, RoutingResolvedEventSchema, ArtifactLocatorEventSchema,
   AgentCompleteEventSchema, AgentCancelledEventSchema, GoalIterationEventSchema, GoalGateEventSchema,
   GoalCompleteEventSchema, AgentThinkingEventSchema, TurnStartEventSchema, TurnEndEventSchema,
-  SubagentRunEndEventSchema,
+  SubagentActivityEventSchema, SubagentRunEndEventSchema,
   ToolSchemaSnapshotEventSchema, ModelResponseEventSchema, ModelFallbackEventSchema, ApiKeyRequiredEventSchema,
   TaskProgressEventSchema, TaskCompleteEventSchema, BackgroundTaskLedgerChangedEventSchema, MemoryLearnedEventSchema,
   SkillDraftPendingEventSchema, RoleDraftPendingEventSchema, TeamRecipeDraftPendingEventSchema,

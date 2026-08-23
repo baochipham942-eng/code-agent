@@ -28,19 +28,25 @@ function createSubagentLifecycleEvents(input: {
 }) {
   const correlation = buildSubagentEventIdentity(input.identity);
   const activeTurnIds = new Set<string>();
+  let activityStarted = false;
   let runEnded = false;
 
   const endTurn = (turnId: string): boolean => {
     if (!activeTurnIds.delete(turnId)) return false;
-    input.events.emit('turn_end', { turnId, ...correlation });
     return true;
   };
 
   return {
-    startTurn(iteration: number): string {
+    startTurn(_iteration: number): string {
       const turnId = input.generateTurnId?.() ?? generateMessageId();
       activeTurnIds.add(turnId);
-      input.events.emit('turn_start', { turnId, iteration, ...correlation });
+      if (!activityStarted) {
+        activityStarted = true;
+        input.events.emit('subagent_activity', {
+          ...correlation,
+          kind: 'started',
+        });
+      }
       return turnId;
     },
     endTurn,

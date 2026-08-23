@@ -333,6 +333,10 @@ export class CLIAgent {
       } else if (event.type === 'turn_end') {
         // turn_end is a boundary marker — server uses it for context accumulation
         this.writeStreamJson('turn_end', {});
+      } else if (event.type === 'subagent_activity') {
+        this.writeStreamJson('subagent_activity', event.data);
+      } else if (event.type === 'subagent_run_end') {
+        this.writeStreamJson('subagent_run_end', event.data);
       } else if (event.type === 'error') {
         this.writeStreamJson('error', event.data?.message);
       } else if (event.type === 'message' && event.data?.role === 'assistant' && event.data?.content) {

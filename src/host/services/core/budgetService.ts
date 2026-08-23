@@ -345,6 +345,50 @@ export class BudgetService {
   }
 
   /**
+   * 当前周期全部输入的缓存两分。cacheCreation 属于未命中后写缓存的一侧，
+   * 按 cacheWrite 价计费；这里只回答缓存总体省钱效果，不映射到上下文展示桶。
+   */
+  getCacheCostSplitSummary(): {
+    cachedTokens: number;
+    uncachedTokens: number;
+    cachedCostUsd: number;
+    uncachedCostUsd: number;
+    cachedCostPercent: number;
+    uncachedCostPercent: number;
+  } {
+    this.checkPeriodReset();
+    let cachedTokens = 0;
+    let uncachedTokens = 0;
+    let cachedCostUsd = 0;
+    let uncachedCostUsd = 0;
+
+    for (const usage of this.usageHistory) {
+      const read = usage.cacheReadTokens ?? 0;
+      const write = usage.cacheCreationTokens ?? 0;
+      const pricing = this.getModelPricing(usage.model, usage.provider);
+      const cacheReadPrice = pricing.cacheRead ?? pricing.input * DEFAULT_CACHE_READ_PRICE_RATIO;
+      const cacheWritePrice = pricing.cacheWrite ?? pricing.input * DEFAULT_CACHE_WRITE_PRICE_RATIO;
+
+      cachedTokens += read;
+      uncachedTokens += usage.inputTokens + write;
+      cachedCostUsd += (read / 1_000_000) * cacheReadPrice;
+      uncachedCostUsd +=
+        (usage.inputTokens / 1_000_000) * pricing.input
+        + (write / 1_000_000) * cacheWritePrice;
+    }
+
+    const totalInputCostUsd = cachedCostUsd + uncachedCostUsd;
+    return {
+      cachedTokens,
+      uncachedTokens,
+      cachedCostUsd,
+      uncachedCostUsd,
+      cachedCostPercent: totalInputCostUsd > 0 ? (cachedCostUsd / totalInputCostUsd) * 100 : 0,
+      uncachedCostPercent: totalInputCostUsd > 0 ? (uncachedCostUsd / totalInputCostUsd) * 100 : 0,
+    };
+  }
+
+  /**
    * 当前周期 token 用量汇总（WP-2 token 状态栏活值）。
    * inputTokens 为非缓存输入（归一化口径），缓存读/写独立返回，显示层自行求和。
    */

@@ -912,7 +912,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         cacheCreationTokens: providerUsage.cacheCreationTokens,
       }, 'provider');
       // N-CTXTRUTH: 真源透传给当轮健康更新（turn 末 updateContextHealth 消费；cache 口径在 service 内统一相加）
-      ctx.runtime.contextHealth.setLastTurnProviderUsage(providerUsage);
+      ctx.runtime.contextHealth.setLastTurnProviderUsage({ ...providerUsage, provider: ctx.runtime.modelConfig.provider });
     } else {
       const estimatedInputTokens = estimateModelMessageTokens(
         modelMessages.map(m => ({

@@ -59,4 +59,39 @@ describe('normalizeBudgetStatus — defensive clamping (audit F4)', () => {
     })!;
     expect(bad.cacheSavings).toEqual({ cacheReadTokens: 0, cacheCreationTokens: 0, netSavedUsd: 0 });
   });
+
+  it('passes through the cached/uncached cost split and clamps invalid values', () => {
+    const v = normalizeBudgetStatus({
+      currentCost: 1,
+      cacheCostSplit: {
+        cachedTokens: 8_000,
+        uncachedTokens: 2_000,
+        cachedCostUsd: 0.08,
+        uncachedCostUsd: 0.18,
+        cachedCostPercent: 30.8,
+        uncachedCostPercent: 69.2,
+      },
+    })!;
+    expect(v.cacheCostSplit).toEqual({
+      cachedTokens: 8_000,
+      uncachedTokens: 2_000,
+      cachedCostUsd: 0.08,
+      uncachedCostUsd: 0.18,
+      cachedCostPercent: 30.8,
+      uncachedCostPercent: 69.2,
+    });
+
+    const bad = normalizeBudgetStatus({
+      cacheCostSplit: {
+        cachedTokens: -1,
+        cachedCostPercent: Number.POSITIVE_INFINITY,
+        uncachedCostPercent: 200,
+      },
+    })!;
+    expect(bad.cacheCostSplit).toMatchObject({
+      cachedTokens: 0,
+      cachedCostPercent: 0,
+      uncachedCostPercent: 100,
+    });
+  });
 });

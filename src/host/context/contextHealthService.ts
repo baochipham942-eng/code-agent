@@ -24,6 +24,7 @@ import {
 } from './contextComposition';
 import { createLogger } from '../services/infra/logger';
 import { getSessionStateManager } from '../session/sessionStateManager';
+import { calculateSystemPromptCacheCost } from './contextCacheEconomics';
 
 /**
  * Extended message type for context health tracking
@@ -47,6 +48,8 @@ export interface ProviderContextUsage {
   inputTokens: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
+  /** 定价只接受官方 provider；缺省时沿用 BudgetService 的 default 回退。 */
+  provider?: string;
 }
 
 function scaleValue(value: number, scale: number): number {
@@ -196,6 +199,15 @@ export class ContextHealthService {
       droppedPromptBlocks: droppedPromptBlocks ?? previousHealth?.droppedPromptBlocks,
       tokenSource: useProviderTruth ? 'provider' : 'estimated',
       ...(useProviderTruth ? { estimatedTokens: estimatedTotal } : {}),
+      ...(useProviderTruth && providerUsage
+        ? {
+            systemPromptCacheCost: calculateSystemPromptCacheCost(
+              systemPromptTokens,
+              providerUsage,
+              model,
+            ),
+          }
+        : {}),
     };
 
     // 保存状态

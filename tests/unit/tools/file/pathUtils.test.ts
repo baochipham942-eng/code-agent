@@ -2,9 +2,40 @@
 // Path Utils Tests
 // ============================================================================
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
+import fs from 'node:fs';
 import os from 'os';
-import { expandTilde, resolvePath } from '../../../../src/host/tools/file/pathUtils';
+import path from 'node:path';
+import {
+  confineEvalPath,
+  expandTilde,
+  resolvePath,
+} from '../../../../src/host/tools/file/pathUtils';
+
+const originalEvalRealRoot = process.env.CODE_AGENT_EVAL_REAL_ROOT;
+const temporaryDirectories: string[] = [];
+
+function createTemporaryDirectory(prefix: string): string {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  temporaryDirectories.push(directory);
+  return directory;
+}
+
+afterEach(() => {
+  if (originalEvalRealRoot === undefined) {
+    delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+  } else {
+    process.env.CODE_AGENT_EVAL_REAL_ROOT = originalEvalRealRoot;
+  }
+  while (temporaryDirectories.length > 0) {
+    fs.rmSync(temporaryDirectories.pop()!, { recursive: true, force: true });
+  }
+});
+
+// macOS 上 /tmp → /private/tmp、/var → /private/var 是软链，才构造得出「词法路径 ≠ 规范路径」。
+// Linux CI 的 os.tmpdir() 没有这层别名，下面两条别名用例的场景在该平台根本不存在——
+// 跳过并留痕，而不是让前提断言变成假红（也不让它静默降级成普通用例假绿）。
+const TMP_HAS_ALIAS = fs.realpathSync.native(os.tmpdir()) !== path.resolve(os.tmpdir());
 
 describe('Path Utilities', () => {
   const homeDir = os.homedir();
@@ -80,6 +111,64 @@ describe('Path Utilities', () => {
     it('should handle ~ as absolute path (home dir)', () => {
       const result = resolvePath('~', workingDir);
       expect(result).toBe(homeDir);
+    });
+  });
+
+  describe('confineEvalPath', () => {
+    it.skipIf(!TMP_HAS_ALIAS)('confines a nonexistent target when the real root uses its canonical tmp alias', () => {
+      const lexicalRoot = createTemporaryDirectory('eval-real-root-');
+      const canonicalRoot = fs.realpathSync.native(lexicalRoot);
+      const sandbox = createTemporaryDirectory('eval-sandbox-');
+      const target = path.join(lexicalRoot, 'x.md');
+      process.env.CODE_AGENT_EVAL_REAL_ROOT = canonicalRoot;
+
+      expect(canonicalRoot).not.toBe(path.resolve(lexicalRoot));
+      expect(confineEvalPath(target, sandbox)).toBe(
+        path.join(fs.realpathSync.native(sandbox), 'x.md'),
+      );
+      expect(fs.existsSync(target)).toBe(false);
+    });
+
+    it('preserves a path that is actually outside the real root', () => {
+      const lexicalRoot = createTemporaryDirectory('eval-real-root-');
+      const outside = path.join(createTemporaryDirectory('eval-outside-'), 'x.md');
+      const sandbox = createTemporaryDirectory('eval-sandbox-');
+      process.env.CODE_AGENT_EVAL_REAL_ROOT = fs.realpathSync.native(lexicalRoot);
+
+      expect(confineEvalPath(outside, sandbox)).toBe(outside);
+    });
+
+    it.skipIf(!TMP_HAS_ALIAS)('preserves paths for an in-place run expressed through different aliases', () => {
+      const lexicalRoot = createTemporaryDirectory('eval-in-place-');
+      const canonicalRoot = fs.realpathSync.native(lexicalRoot);
+      const target = path.join(canonicalRoot, 'x.md');
+      process.env.CODE_AGENT_EVAL_REAL_ROOT = canonicalRoot;
+
+      expect(confineEvalPath(target, lexicalRoot)).toBe(target);
+    });
+
+    it('returns the input byte-for-byte when eval confinement is disabled', () => {
+      delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+      const target = '/var/../var/not-created/x.md';
+
+      expect(confineEvalPath(target, '/private/var/sandbox')).toBe(target);
+    });
+
+    it('falls back to lexical confinement when canonical resolution throws', () => {
+      const linksDirectory = createTemporaryDirectory('eval-deep-links-');
+      const destination = path.join(linksDirectory, 'destination');
+      fs.mkdirSync(destination);
+      for (let index = 41; index >= 0; index -= 1) {
+        const target = index === 41 ? 'destination' : `link-${index + 1}`;
+        fs.symlinkSync(target, path.join(linksDirectory, `link-${index}`));
+      }
+      const lexicalRoot = path.join(linksDirectory, 'link-0');
+      const target = path.join(lexicalRoot, 'x.md');
+      const sandbox = createTemporaryDirectory('eval-sandbox-');
+      process.env.CODE_AGENT_EVAL_REAL_ROOT = lexicalRoot;
+
+      expect(() => confineEvalPath(target, sandbox)).not.toThrow();
+      expect(confineEvalPath(target, sandbox)).toBe(path.join(sandbox, 'x.md'));
     });
   });
 });

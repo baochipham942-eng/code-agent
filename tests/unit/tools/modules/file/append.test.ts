@@ -127,7 +127,7 @@ describe('appendModule (native)', () => {
       expect(result.ok).toBe(true);
       expect(await fs.readFile(sandboxFile, 'utf-8')).toBe('chunk');
       await expect(fs.access(realFile)).rejects.toThrow();
-      if (result.ok) expect(result.meta?.outputPath).toBe(sandboxFile);
+      if (result.ok) expect(result.meta?.outputPath).toBe(await fs.realpath(sandboxFile));
     } finally {
       if (previousRealRoot === undefined) {
         delete process.env.CODE_AGENT_EVAL_REAL_ROOT;

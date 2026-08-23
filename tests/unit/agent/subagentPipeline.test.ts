@@ -485,6 +485,32 @@ describe('SubagentPipeline', () => {
         permissionLevel: 'execute',
       });
       expect(ordinaryExecute.allowed).toBe(false);
+      expect(ordinaryExecute.reason).toBe('Permission denied: execute operation requires approval');
+    });
+
+    it('explains when a requested path is outside the agent working directory', () => {
+      const agentDef = {
+        id: 'strict-path-agent',
+        name: 'Strict Path Agent',
+        description: 'Strict path boundary',
+        prompt: 'Strict path boundary',
+        tools: ['write_file'],
+        permissionPreset: 'strict',
+      } as AgentDefinition;
+
+      const workingDirectory = '/test/worktree';
+      const outsidePath = '/test/parent/report.md';
+      const context = pipeline.createContext(agentDef, workingDirectory);
+
+      const result = pipeline.checkToolExecution(context, {
+        toolName: 'write_file',
+        permissionLevel: 'write',
+        path: outsidePath,
+      });
+
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain(outsidePath);
+      expect(result.reason).toContain(workingDirectory);
     });
 
     it('should warn on dangerous commands', () => {

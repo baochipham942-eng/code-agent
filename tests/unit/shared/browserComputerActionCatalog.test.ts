@@ -5,7 +5,6 @@ import {
   getBrowserComputerSurfaceCapabilityDescriptor,
   getStrictBrowserComputerActionCatalogEntry,
   isBrowserScopedComputerUseAction,
-  listBrowserComputerActionCatalogEntries,
 } from '../../../src/shared/utils/browserComputerActionCatalog';
 import { browserActionSchema } from '../../../src/host/plugins/builtin/browserControl/browserAction.schema';
 import { computerUseSchema } from '../../../src/host/plugins/builtin/computerUse/computerUse.schema';
@@ -20,29 +19,41 @@ function stringEnum(schema: typeof browserActionSchema, property: string): strin
 
 describe('browser/computer action catalog', () => {
   it('covers every action exposed by browser_action, computer_use, Computer, and gui_agent', () => {
-    const browserDeclared = listBrowserComputerActionCatalogEntries('browser_action');
-    const computerDeclared = listBrowserComputerActionCatalogEntries('computer_use');
-    const computerAliasDeclared = listBrowserComputerActionCatalogEntries('Computer');
-    const guiDeclared = listBrowserComputerActionCatalogEntries('gui_agent');
+    // 判据取 schema 暴露给模型的 action 全集：schema 有而 catalog 漏声明 ⇒ strict 查表返回 null ⇒ 立红。
+    // 不枚举 catalog 自己（那只能证明它自洽），也不按名字写死清单。
+    const browserActions = stringEnum(browserActionSchema, 'action');
+    expect(browserActions.length).toBeGreaterThan(0);
 
-    expect(browserDeclared.map((entry) => entry.action).sort())
-      .toEqual(stringEnum(browserActionSchema, 'action').sort());
-
-    const computerSchemaActions = new Set([
+    const computerActions = Array.from(new Set([
       ...stringEnum(computerUseSchema as typeof browserActionSchema, 'action'),
       ...stringEnum(computerSchema as typeof browserActionSchema, 'action'),
       ...stringEnum(cuaStatefulComputerUseSchema as typeof browserActionSchema, 'operation'),
-    ]);
-    expect(computerDeclared.map((entry) => entry.action).sort())
-      .toEqual(Array.from(computerSchemaActions).sort());
-    expect(computerAliasDeclared).toEqual(computerDeclared);
-    expect(guiAgentSchema.inputSchema.required).toContain('task');
-    expect(guiDeclared).toMatchObject([{ tool: 'gui_agent', action: 'run', consequence: 'external_side_effect' }]);
+    ]));
+    expect(computerActions.length).toBeGreaterThan(0);
 
-    for (const entry of [...browserDeclared, ...computerDeclared, ...guiDeclared]) {
+    const declared: Array<[string, string, Record<string, unknown>]> = [
+      ...browserActions.map((action): [string, string, Record<string, unknown>] => (
+        ['browser_action', action, { action }]
+      )),
+      ...computerActions.map((action): [string, string, Record<string, unknown>] => (
+        ['computer_use', action, { action }]
+      )),
+      ...computerActions.map((action): [string, string, Record<string, unknown>] => (
+        ['Computer', action, { action }]
+      )),
+      ['gui_agent', 'run', { action: 'run' }],
+    ];
+
+    for (const [tool, action, args] of declared) {
+      const entry = getStrictBrowserComputerActionCatalogEntry(tool, action, args);
+      expect(entry, `${tool}.${action} 未在 catalog 中声明后果等级`).not.toBeNull();
       expect(['no_external_side_effect', 'external_side_effect', 'high_risk'])
-        .toContain(entry.consequence);
+        .toContain(entry!.consequence);
     }
+
+    expect(guiAgentSchema.inputSchema.required).toContain('task');
+    expect(getStrictBrowserComputerActionCatalogEntry('gui_agent', 'run', { action: 'run' }))
+      .toMatchObject({ tool: 'gui_agent', action: 'run', consequence: 'external_side_effect' });
   });
 
   it('describes browser file actions without changing approval ownership', () => {

@@ -465,27 +465,6 @@ export function getStrictBrowserComputerActionCatalogEntry(
   return getBrowserComputerActionCatalogEntry(catalogTool, action, args);
 }
 
-export function listBrowserComputerActionCatalogEntries(
-  toolName: unknown,
-): BrowserComputerActionCatalogEntry[] {
-  const catalogTool = normalizeBrowserComputerCatalogToolName(toolName);
-  if (!catalogTool) return [];
-  if (catalogTool === "browser_action") {
-    return Object.keys(BROWSER_ACTION_CATALOG).map((action) =>
-      buildCatalogEntry(catalogTool, action, BROWSER_ACTION_CATALOG[action]));
-  }
-  if (catalogTool === "gui_agent") {
-    return Object.keys(GUI_AGENT_CATALOG).map((action) =>
-      buildCatalogEntry(catalogTool, action, GUI_AGENT_CATALOG[action]));
-  }
-  const declarations = new Map<string, ActionCatalogDeclaration>([
-    ...Object.entries(COMPUTER_USE_DESKTOP_CATALOG),
-    ...Object.entries(COMPUTER_USE_BROWSER_SCOPED_CATALOG),
-  ]);
-  return Array.from(declarations, ([action, declaration]) =>
-    buildCatalogEntry(catalogTool, action, declaration));
-}
-
 function capabilitiesForCatalogEntry(
   entry: BrowserComputerActionCatalogEntry,
   args?: Record<string, unknown>,

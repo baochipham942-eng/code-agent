@@ -70,7 +70,7 @@ export function readOnlyDenialError(toolName: string): string {
  */
 export const CLASSIFIER_ERROR_TRACE_RULE = 'classifier_error';
 const BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE = 'browser_computer_consequence';
-export const BROWSER_COMPUTER_HIGH_RISK_BLOCKED_CODE = 'BROWSER_COMPUTER_HIGH_RISK_BLOCKED';
+const BROWSER_COMPUTER_HIGH_RISK_BLOCKED_CODE = 'BROWSER_COMPUTER_HIGH_RISK_BLOCKED';
 
 function classifyBrowserComputerConsequence(
   toolName: string,

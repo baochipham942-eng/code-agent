@@ -31,7 +31,7 @@ export interface RolePersonalization {
   boundaries: RoleBoundaries;
 }
 
-export interface RoleBoundaries {
+interface RoleBoundaries {
   disallowExternalSending: boolean;
 }
 

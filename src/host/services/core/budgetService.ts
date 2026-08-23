@@ -47,6 +47,26 @@ export interface BudgetConfig {
   resetPeriodHours: number;
 }
 
+export type BudgetScope = 'foreground' | 'unattended';
+
+/**
+ * Legacy top-level fields remain the shared compatibility baseline. Scoped
+ * fields override that baseline for one pool only.
+ */
+export type ScopedBudgetConfig = Partial<BudgetConfig> & {
+  foreground?: Partial<BudgetConfig>;
+  unattended?: Partial<BudgetConfig>;
+};
+
+/**
+ * Only the existing async_agent topology is an unattended run. Unknown or
+ * missing markers deliberately fall back to foreground: misclassifying a user
+ * turn as unattended could reject interactive work with no recovery path.
+ */
+export function resolveBudgetScope(executionTopology: unknown): BudgetScope {
+  return executionTopology === 'async_agent' ? 'unattended' : 'foreground';
+}
+
 /**
  * Budget status returned from checks
  */
@@ -525,34 +545,65 @@ export class BudgetService {
 // Singleton
 // ----------------------------------------------------------------------------
 
-let budgetServiceInstance: BudgetService | null = null;
+const budgetServiceInstances: Record<BudgetScope, BudgetService | null> = {
+  foreground: null,
+  unattended: null,
+};
+
+const BUDGET_CONFIG_KEYS: Array<keyof BudgetConfig> = [
+  'enabled',
+  'maxBudget',
+  'silentThreshold',
+  'warningThreshold',
+  'blockThreshold',
+  'resetPeriodHours',
+];
+
+function configForScope(config: ScopedBudgetConfig | undefined, scope: BudgetScope): Partial<BudgetConfig> {
+  if (!config) return {};
+  const legacy: Partial<BudgetConfig> = {};
+  for (const key of BUDGET_CONFIG_KEYS) {
+    const value = config[key];
+    if (value !== undefined) {
+      Object.assign(legacy, { [key]: value });
+    }
+  }
+  return { ...legacy, ...config[scope] };
+}
 
 /**
  * Initialize BudgetService with configuration
  */
-export function initBudgetService(config?: Partial<BudgetConfig>): BudgetService {
-  if (!budgetServiceInstance) {
-    budgetServiceInstance = new BudgetService(config);
-  } else if (config) {
-    budgetServiceInstance.updateConfig(config);
+export function initBudgetService(config?: ScopedBudgetConfig): BudgetService {
+  for (const scope of ['foreground', 'unattended'] as const) {
+    const scopedConfig = configForScope(config, scope);
+    const existing = budgetServiceInstances[scope];
+    if (!existing) {
+      budgetServiceInstances[scope] = new BudgetService(scopedConfig);
+    } else if (config) {
+      existing.updateConfig(scopedConfig);
+    }
   }
-  return budgetServiceInstance;
+  return getBudgetService('foreground');
 }
 
 /**
  * Get the singleton BudgetService instance
  */
-export function getBudgetService(): BudgetService {
-  if (!budgetServiceInstance) {
-    budgetServiceInstance = new BudgetService();
-  }
-  return budgetServiceInstance;
+export function getBudgetService(scope: BudgetScope = 'foreground'): BudgetService {
+  const existing = budgetServiceInstances[scope];
+  if (existing) return existing;
+  const created = new BudgetService();
+  budgetServiceInstances[scope] = created;
+  return created;
 }
 
 /**
  * 把持久化的预算配置写回运行时单例（Item4①）。
  * 抽成独立函数便于 IPC 写路径复用 + 单测，避免在 1300+ 行的 configService 里加逻辑。
  */
-export function syncBudgetServiceFromConfig(budgetConfig: Partial<BudgetConfig>): void {
-  getBudgetService().updateConfig(budgetConfig);
+export function syncBudgetServiceFromConfig(budgetConfig: ScopedBudgetConfig): void {
+  for (const scope of ['foreground', 'unattended'] as const) {
+    getBudgetService(scope).updateConfig(configForScope(budgetConfig, scope));
+  }
 }

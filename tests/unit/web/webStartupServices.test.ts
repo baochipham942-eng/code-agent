@@ -93,6 +93,7 @@ describe('web startup service chain', () => {
       message?: string;
     }) => void;
     const listenerRef: { current: BudgetAlertListener | null } = { current: null };
+    const unattendedListenerRef: { current: BudgetAlertListener | null } = { current: null };
     const initBudget = vi.fn(() => ({
       setAlertListener(next: BudgetAlertListener) {
         listenerRef.current = next;
@@ -103,7 +104,14 @@ describe('web startup service chain', () => {
     wireBudgetService(
       { getBudgetConfig: () => config },
       push,
-      { initBudgetService: initBudget as never },
+      {
+        initBudgetService: initBudget as never,
+        getBudgetService: vi.fn(() => ({
+          setAlertListener(next: BudgetAlertListener) {
+            unattendedListenerRef.current = next;
+          },
+        })) as never,
+      },
     );
 
     expect(initBudget).toHaveBeenCalledWith(config);
@@ -116,11 +124,27 @@ describe('web startup service chain', () => {
       message: 'blocked',
     });
     expect(push).toHaveBeenCalledWith(IPC_CHANNELS.BUDGET_ALERT, {
+      scope: 'foreground',
       level: 'blocked',
       currentCost: 42,
       maxBudget: 42,
       usagePercentage: 1,
       message: 'blocked',
+    });
+    unattendedListenerRef.current?.({
+      alertLevel: BudgetAlertLevel.WARNING,
+      currentCost: 21,
+      maxBudget: 42,
+      usagePercentage: 0.5,
+      message: 'warning',
+    });
+    expect(push).toHaveBeenLastCalledWith(IPC_CHANNELS.BUDGET_ALERT, {
+      scope: 'unattended',
+      level: 'warning',
+      currentCost: 21,
+      maxBudget: 42,
+      usagePercentage: 0.5,
+      message: 'warning',
     });
   });
 

@@ -21,6 +21,7 @@ vi.mock('../../../src/host/services/core/budgetService', () => ({
     WARNING: 'warning',
     BLOCKED: 'blocked',
   },
+  resolveBudgetScope: (topology: unknown) => topology === 'async_agent' ? 'unattended' : 'foreground',
   getBudgetService: () => ({
     checkBudget: vi.fn().mockReturnValue({
       alertLevel: 'normal',
@@ -79,6 +80,25 @@ describe('SubagentPipeline', () => {
   // Context Creation
   // --------------------------------------------------------------------------
   describe('Context Creation', () => {
+    it('inherits unattended scope from async_agent topology and defaults unknown topology to foreground', () => {
+      const config = {
+        name: 'Scoped Agent',
+        prompt: 'test',
+        tools: ['read_file'],
+        permissionPreset: 'development',
+      } as DynamicAgentConfig;
+
+      const unattended = pipeline.createContext(config, '/test/project', undefined, {
+        executionTopology: 'async_agent',
+      });
+      const foreground = pipeline.createContext(config, '/test/project', undefined, {
+        executionTopology: 'future_topology',
+      });
+
+      expect(unattended.budgetScope).toBe('unattended');
+      expect(foreground.budgetScope).toBe('foreground');
+    });
+
     it('should create context with AgentDefinition', () => {
       const agentDef = {
         id: 'test-agent',

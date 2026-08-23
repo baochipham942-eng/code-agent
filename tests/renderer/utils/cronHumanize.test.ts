@@ -78,6 +78,7 @@ describe('getCronTriggerKind', () => {
   function makeJob(overrides: Partial<CronJobDefinition>): CronJobDefinition {
     return {
       id: 'job-1',
+      runsOn: 'local',
       name: 'demo',
       scheduleType: 'cron',
       schedule: { type: 'cron', expression: '30 8 * * *' },

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 
@@ -13,10 +13,12 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
 }));
 
 import { CronJobDetail } from '../../../src/renderer/components/features/cron/CronJobDetail';
+import { useCronStore } from '../../../src/renderer/stores/cronStore';
 
 function makeJob(overrides: Partial<CronJobDefinition>): CronJobDefinition {
   return {
     id: 'job-1',
+    runsOn: 'local',
     name: '英语单词',
     scheduleType: 'cron',
     schedule: { type: 'cron', expression: '30 8 * * *' },
@@ -31,6 +33,7 @@ function makeJob(overrides: Partial<CronJobDefinition>): CronJobDefinition {
 
 afterEach(() => {
   cleanup();
+  useCronStore.setState({ isEditorOpen: false, editingJobId: null, copyingJobId: null });
 });
 
 describe('CronJobDetail', () => {
@@ -73,5 +76,18 @@ describe('CronJobDetail', () => {
     render(<CronJobDetail job={makeJob({ description: '每天背 5 个单词' })} />);
     expect(screen.getByText('每天背 5 个单词')).toBeTruthy();
     expect(screen.queryByTestId('cron-detail-description-guide')).toBeNull();
+  });
+
+  it('执行位置只读展示冻结说明，复制出口打开新任务编辑态', () => {
+    render(<CronJobDetail job={makeJob({ runsOn: 'cloud' })} />);
+    expect(screen.getByTestId('cron-runs-on-pill-cloud').textContent).toContain('云端');
+    expect(screen.getByText('创建后不可更改')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('cron-copy-by-location'));
+    expect(useCronStore.getState()).toMatchObject({
+      isEditorOpen: true,
+      editingJobId: null,
+      copyingJobId: 'job-1',
+    });
   });
 });

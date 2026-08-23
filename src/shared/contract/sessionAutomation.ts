@@ -50,6 +50,8 @@ export interface StandingGrant {
 
 export interface SessionAutomationConfig extends Record<string, unknown> {
   createdVia?: string;
+  /** Execution location snapshot for review-inbox presentation. */
+  runsOn?: 'local' | 'cloud';
   sourceMessageId?: string;
   handoffPrompt?: string;
   nextStage?: SessionAutomationNextStageConfig;

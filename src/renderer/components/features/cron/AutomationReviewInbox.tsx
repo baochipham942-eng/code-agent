@@ -11,7 +11,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
-import { Check, CircleCheck, Inbox, MessageSquareText, ShieldAlert, ShieldCheck, X } from 'lucide-react';
+import { Check, CircleCheck, Cloud, Inbox, MessageSquareText, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -227,14 +227,24 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                 {cc.inboxTitle.replace('{count}', String(items.length))}
               </div>
               <div className="space-y-1.5">
-                {items.map((record) => (
+                {items.map((record) => {
+                  const isCloud = record.config?.runsOn === 'cloud';
+                  return (
                   <div
                     key={record.id}
                     className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2"
                     data-testid="automation-review-item"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm text-zinc-200">{record.title}</div>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="truncate text-sm text-zinc-200">{record.title}</div>
+                        {isCloud && (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-badge-info/30 bg-blue-500/10 px-2 py-0.5 text-[10px] text-badge-info">
+                            <Cloud className="h-3 w-3" />
+                            {cc.locationCloud}
+                          </span>
+                        )}
+                      </div>
                       {record.config?.missedNotice ? (
                         <div className="text-[11px] text-badge-warning" data-testid="automation-review-missed">
                           {cc.inboxMissedAt.replace(
@@ -244,7 +254,12 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                         </div>
                       ) : record.config?.pendingReview?.at != null && (
                         <div className="text-[11px] text-zinc-500">
-                          {new Date(record.config.pendingReview.at).toLocaleString()}
+                          {isCloud
+                            ? cc.inboxCloudCompleted.replace(
+                              '{time}',
+                              new Date(record.config.pendingReview.at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
+                            )
+                            : new Date(record.config.pendingReview.at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN')}
                         </div>
                       )}
                     </div>
@@ -271,7 +286,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                       {cc.inboxMarkDone}
                     </Button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           )}

@@ -259,6 +259,7 @@ export type AgentErrorCategory =
   | 'concurrency'
   | 'network'
   | 'context_length'
+  | 'image_payload'
   | 'generic';
 
 /**

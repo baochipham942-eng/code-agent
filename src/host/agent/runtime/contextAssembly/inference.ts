@@ -55,7 +55,7 @@ import {
   broadcastVisionPreflightUnavailable,
   buildAiSdkAdaptiveFallbackInfo,
   emitModelFallbackNoticeFromResponse,
-  getErrorMessage,
+  getErrorMessage, handleImagePayloadExceededError,
   getModelFallbackFromError,
   runAiSdkInferenceWithProviderFallback,
   type VisionPreflightAttempt,
@@ -954,8 +954,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       ctx.runtime.contextHealth.setLastTurnProviderUsage(undefined);      return { type: 'text', content: '' };
     }
 
-    emitModelFallbackNoticeFromResponse(ctx, getModelFallbackFromError(error));
-
+    emitModelFallbackNoticeFromResponse(ctx, getModelFallbackFromError(error)); if (handleImagePayloadExceededError({ ctx, error, llmCallId, langfuse })) return { type: 'text', content: '' };
     logger.error('[AgentLoop] Model inference error:', error);
 
     langfuse.endGeneration(

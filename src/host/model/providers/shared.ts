@@ -4,7 +4,7 @@
 
 import type { ToolDefinition, ToolCall } from '../../../shared/contract';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
-import { ContextLengthExceededError } from '../types';
+import { ContextLengthExceededError, ImagePayloadExceededError } from '../types';
 import { logger, safeJsonParse } from './providerRuntime';
 export { safeJsonStringify } from './providerJson';
 export {
@@ -153,6 +153,30 @@ export function parseContextLengthError(errorMessage: string, provider: string):
       const sorted = numbers.map(n => parseInt(n)).sort((a, b) => b - a);
       return new ContextLengthExceededError(sorted[0], sorted[1], provider);
     }
+  }
+
+  return null;
+}
+
+/**
+ * 识别图片请求体超限。HTTP 413 与 request_too_large 表示请求体过大；
+ * 各供应商的图片数量限制文案不同，因此单独匹配常见语义形状。
+ */
+export function parseImagePayloadError(
+  errorMessage: string,
+  provider: string,
+  httpStatus?: number,
+): ImagePayloadExceededError | null {
+  const normalized = errorMessage.trim().toLowerCase();
+  const tooManyImages = /too many images|at most \d+[\s,]*images|maximum (?:number of )?images|image count[^.\n]*(?:exceed|limit)|images? (?:limit|maximum)[^.\n]*(?:exceed|reached)|images may be provided/.test(normalized);
+  if (tooManyImages) {
+    return new ImagePayloadExceededError('too_many_images', provider, httpStatus);
+  }
+
+  const payloadTooLarge = httpStatus === 413
+    || /request_too_large|request too large|payload too large|request entity too large|maximum allowed (?:request )?size/.test(normalized);
+  if (payloadTooLarge) {
+    return new ImagePayloadExceededError('payload_too_large', provider, httpStatus ?? 413);
   }
 
   return null;

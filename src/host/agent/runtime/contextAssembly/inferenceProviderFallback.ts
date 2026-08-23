@@ -14,6 +14,7 @@ import { getProviderHealthMonitor } from '../../../model/providerHealthMonitor';
 import { isFallbackEligible } from '../../../model/providers/retryStrategy';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
+export { handleImagePayloadExceededError } from './inferenceImagePayloadError';
 
 export function formatFallbackEndpoint(target: { provider: string; model?: string }): string {
   return target.model ? `${target.provider}/${target.model}` : target.provider;

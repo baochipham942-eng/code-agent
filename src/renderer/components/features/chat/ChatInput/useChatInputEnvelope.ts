@@ -5,6 +5,8 @@ import type {
   ComposerPromptCommandSelection,
   ConversationEnvelope,
   ConversationEnvelopeContext,
+  ConversationArtifactReference,
+  ConversationSessionReference,
   ConversationVoiceInputMetadata,
   RuntimeInputMode,
 } from '@shared/contract/conversationEnvelope';
@@ -29,6 +31,8 @@ export interface UseChatInputEnvelopeParams {
   buildContext: () => ConversationEnvelopeContext | undefined;
   pendingPromptCommand: ComposerPromptCommandSelection | null;
   pendingAgentSelection: ComposerAgentSelection | null;
+  sessionReferences?: ConversationSessionReference[];
+  artifactReferences?: ConversationArtifactReference[];
 }
 
 export type BuildEnvelope = (
@@ -54,6 +58,8 @@ export function useChatInputEnvelope(params: UseChatInputEnvelopeParams): BuildE
     buildContext,
     pendingPromptCommand,
     pendingAgentSelection,
+    sessionReferences = [],
+    artifactReferences = [],
   } = params;
 
   return useCallback((
@@ -105,6 +111,8 @@ export function useChatInputEnvelope(params: UseChatInputEnvelopeParams): BuildE
           ...(promptCommand ? { selectedPromptCommand: promptCommand } : {}),
           ...(pendingCommandSnapshot ? { pendingCommand: pendingCommandSnapshot } : {}),
           ...(voiceInput ? { voiceInput } : {}),
+          ...(sessionReferences.length > 0 ? { sessionReferences } : {}),
+          ...(artifactReferences.length > 0 ? { artifactReferences } : {}),
           routing: {
             mode: 'direct' as const,
             targetAgentIds: parsedMentions.targetAgentIds,
@@ -118,6 +126,8 @@ export function useChatInputEnvelope(params: UseChatInputEnvelopeParams): BuildE
           ...(promptCommand ? { selectedPromptCommand: promptCommand } : {}),
           ...(pendingCommandSnapshot ? { pendingCommand: pendingCommandSnapshot } : {}),
           ...(voiceInput ? { voiceInput } : {}),
+          ...(sessionReferences.length > 0 ? { sessionReferences } : {}),
+          ...(artifactReferences.length > 0 ? { artifactReferences } : {}),
         };
     const browserSessionMode = nextContext?.executionIntent?.browserSessionMode;
     const context = browserSessionMode
@@ -156,10 +166,12 @@ export function useChatInputEnvelope(params: UseChatInputEnvelopeParams): BuildE
   }, [
     activeAgentId,
     agentEntries,
+    artifactReferences,
     browserSession,
     buildContext,
     pendingAgentSelection,
     pendingPromptCommand,
+    sessionReferences,
     swarmAgents,
     voiceInputContext,
   ]);

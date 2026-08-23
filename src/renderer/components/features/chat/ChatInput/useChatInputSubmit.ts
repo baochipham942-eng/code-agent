@@ -6,6 +6,8 @@ import type {
   ComposerAgentSelection,
   ComposerPromptCommandSelection,
   ConversationEnvelope,
+  ConversationArtifactReference,
+  ConversationSessionReference,
   ConversationVoiceInputMetadata,
   RuntimeInputMode,
 } from '@shared/contract/conversationEnvelope';
@@ -68,6 +70,8 @@ export interface UseChatInputSubmitParams {
   pendingAppshot: Parameters<typeof buildAppshotAttachment>[0] | null;
   pendingPromptCommand: ComposerPromptCommandSelection | null;
   pendingAgentSelection: ComposerAgentSelection | null;
+  sessionReferences?: ConversationSessionReference[];
+  artifactReferences?: ConversationArtifactReference[];
   currentSessionId: string | null;
   isProcessing?: boolean;
   disabled?: boolean;
@@ -86,6 +90,8 @@ export interface UseChatInputSubmitParams {
   setVoiceInputContext: React.Dispatch<React.SetStateAction<VoiceInputContextValue>>;
   setPendingPromptCommand: React.Dispatch<React.SetStateAction<ComposerPromptCommandSelection | null>>;
   setPendingAgentSelection: React.Dispatch<React.SetStateAction<ComposerAgentSelection | null>>;
+  setSessionReferences?: React.Dispatch<React.SetStateAction<ConversationSessionReference[]>>;
+  setArtifactReferences?: React.Dispatch<React.SetStateAction<ConversationArtifactReference[]>>;
   setScheduleComposerOpen: React.Dispatch<React.SetStateAction<boolean>>;
   /** 打开 /goal 安静确认卡（initialGoal = 用户自然语言原话，空串 = 引导态） */
   openGoalConfirm: (initialGoal: string) => void;
@@ -143,6 +149,8 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     pendingAppshot,
     pendingPromptCommand,
     pendingAgentSelection,
+    sessionReferences = [],
+    artifactReferences = [],
     currentSessionId,
     isProcessing,
     disabled,
@@ -161,6 +169,8 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     setVoiceInputContext,
     setPendingPromptCommand,
     setPendingAgentSelection,
+    setSessionReferences,
+    setArtifactReferences,
     setScheduleComposerOpen,
     openGoalConfirm,
     closeGoalConfirm,
@@ -512,12 +522,16 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         appshot: pendingAppshot,
         pendingPromptCommand,
         pendingAgentSelection,
+        sessionReferences,
+        artifactReferences,
       };
         const restoreDraft = () => {
           setValue(draftSnapshot.value);
           setAttachments(draftSnapshot.attachments);
           setPendingPromptCommand(draftSnapshot.pendingPromptCommand);
           setPendingAgentSelection(draftSnapshot.pendingAgentSelection);
+          if (typeof setSessionReferences === 'function') setSessionReferences(draftSnapshot.sessionReferences);
+          if (typeof setArtifactReferences === 'function') setArtifactReferences(draftSnapshot.artifactReferences);
           setVoiceInputContext(draftSnapshot.voiceInputContext);
           // 命令 chip 也随草稿一起还回来，跟文本输入框的回滚口径一致
           if (pendingCommand) useComposerStore.getState().setPendingCommand(pendingCommand);
@@ -535,6 +549,8 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       setAttachments([]);
       setPendingPromptCommand(null);
       setPendingAgentSelection(null);
+      if (typeof setSessionReferences === 'function') setSessionReferences([]);
+      if (typeof setArtifactReferences === 'function') setArtifactReferences([]);
       clearPendingCommand();
       clearAppshot();
 

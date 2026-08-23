@@ -7,11 +7,17 @@ import React from 'react';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LibraryItem } from '../../../src/shared/contract/library';
+import type { ProjectArtifact } from '../../../src/shared/contract/project';
+import type { Session } from '../../../src/shared/contract/session';
 import {
+  buildArtifactRows,
   buildFileRows,
   buildLibraryRows,
+  buildSessionRows,
   deriveFileDir,
   flattenAtMentionRows,
+  groupLimitForTab,
+  shiftAtMentionTab,
   wrapIndex,
 } from '../../../src/renderer/components/features/chat/ChatInput/atMentionPanelModel';
 
@@ -19,6 +25,8 @@ const mocks = vi.hoisted(() => ({
   listLibraryItems: vi.fn(),
   getSessionPin: vi.fn(),
   setSessionPin: vi.fn(),
+  listProjects: vi.fn(),
+  getProjectArtifacts: vi.fn(),
   toast: { error: vi.fn(), warning: vi.fn(), info: vi.fn(), success: vi.fn() },
 }));
 
@@ -26,6 +34,10 @@ vi.mock('../../../src/renderer/services/libraryClient', () => ({
   listLibraryItems: mocks.listLibraryItems,
   getSessionPin: mocks.getSessionPin,
   setSessionPin: mocks.setSessionPin,
+}));
+vi.mock('../../../src/renderer/services/projectClient', () => ({
+  listProjects: mocks.listProjects,
+  getProjectArtifacts: mocks.getProjectArtifacts,
 }));
 vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: mocks.toast }));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
@@ -45,6 +57,18 @@ function libraryItem(id: string, projectId: string | null, title = id): LibraryI
     tags: [],
     createdAt: 0,
     updatedAt: 0,
+  };
+}
+
+function session(id: string, title: string, projectId = 'proj-1'): Session & { messageCount: number } {
+  return {
+    id,
+    title,
+    projectId,
+    modelConfig: {} as Session['modelConfig'],
+    createdAt: 1,
+    updatedAt: 2,
+    messageCount: 6,
   };
 }
 
@@ -100,6 +124,33 @@ describe('atMentionPanelModel', () => {
     expect(wrapIndex(2, 1, flat.length)).toBe(0);
     expect(wrapIndex(0, -1, flat.length)).toBe(2);
   });
+
+  it('会话与产物按标题/来源过滤，全部档每组 2 条、单类档 8 条', () => {
+    const sessions = Array.from({ length: 10 }, (_, index) => session(`s${index}`, `设计会话 ${index}`));
+    const sessionRows = buildSessionRows(sessions, new Map([['proj-1', 'Neo 项目']]), '设计', null, groupLimitForTab('all'));
+    expect(sessionRows).toHaveLength(2);
+    expect(sessionRows[0]).toMatchObject({ title: '设计会话 0', projectName: 'Neo 项目', messageCount: 6 });
+
+    const artifacts = Array.from({ length: 10 }, (_, index) => ({
+      id: `a${index}`,
+      sessionId: 's0',
+      sessionTitle: '设计会话 0',
+      kind: index === 0 ? 'generic_html' : 'file',
+      title: `方案-${index}.html`,
+      createdAt: 3,
+    })) as ProjectArtifact[];
+    const artifactRows = buildArtifactRows(artifacts, '方案', groupLimitForTab('artifacts'));
+    expect(artifactRows).toHaveLength(8);
+    expect(artifactRows[0]).toMatchObject({ artifactType: 'html', sessionTitle: '设计会话 0' });
+  });
+
+  it('Tab 循环切换有五档，分组平铺包含会话与产物', () => {
+    expect(shiftAtMentionTab('all', -1)).toBe('artifacts');
+    expect(shiftAtMentionTab('artifacts', 1)).toBe('all');
+    expect(flattenAtMentionRows([], [], [buildSessionRows([session('s1', '会话')], new Map(), '', null)[0]], [
+      buildArtifactRows([{ id: 'a1', sessionId: 's1', kind: 'file', title: '报告.docx', createdAt: 1 }], '')[0],
+    ]).map((row) => row.kind)).toEqual(['session', 'artifact']);
+  });
 });
 
 describe('useAtMentionPanel', () => {
@@ -112,14 +163,20 @@ describe('useAtMentionPanel', () => {
     ]);
     mocks.getSessionPin.mockResolvedValue({ sessionId: 'session-1', itemIds: ['g1'] });
     mocks.setSessionPin.mockResolvedValue({ sessionId: 'session-1', itemIds: [] });
+    mocks.listProjects.mockResolvedValue([{ id: 'proj-1', name: 'Neo 项目' }]);
+    mocks.getProjectArtifacts.mockResolvedValue([
+      { id: 'a1', sessionId: 'past-1', sessionTitle: '历史设计', kind: 'generic_html', title: 'demo.html', createdAt: 3 },
+    ]);
     (window as { domainAPI?: unknown }).domainAPI = {
-      invoke: vi.fn().mockResolvedValue({
+      invoke: vi.fn().mockImplementation((_domain: string, action: string) => Promise.resolve({
         success: true,
-        data: [
-          { name: 'alpha.ts', path: 'src/alpha.ts', isDirectory: false },
-          { name: 'docs', path: 'docs', isDirectory: true },
-        ],
-      }),
+        data: action === 'list'
+          ? [session('past-1', '历史设计')]
+          : [
+              { name: 'alpha.ts', path: 'src/alpha.ts', isDirectory: false },
+              { name: 'docs', path: 'docs', isDirectory: true },
+            ],
+      })),
     };
   });
 
@@ -127,11 +184,13 @@ describe('useAtMentionPanel', () => {
     vi.useRealTimers();
   });
 
-  function setup(onFileSelect = vi.fn()) {
+  function setup(onFileSelect = vi.fn(), onSessionSelect = vi.fn(), onArtifactSelect = vi.fn()) {
     return renderHook(() => useAtMentionPanel({
       sessionId: 'session-1',
       projectId: 'proj-1',
       onFileSelect,
+      onSessionSelect,
+      onArtifactSelect,
     }));
   }
 
@@ -149,7 +208,9 @@ describe('useAtMentionPanel', () => {
     expect(result.current.isOpen).toBe(true);
     expect(result.current.libraryRows.map((row) => [row.item.id, row.pinned])).toEqual([['p1', false], ['g1', true]]);
     expect(result.current.fileRows.map((row) => row.name)).toEqual(['alpha.ts', 'docs']);
-    expect(result.current.flatRows).toHaveLength(4);
+    expect(result.current.sessionRows.map((row) => row.id)).toEqual(['past-1']);
+    expect(result.current.artifactRows.map((row) => row.id)).toEqual(['a1']);
+    expect(result.current.flatRows).toHaveLength(6);
   });
 
   it('↑↓ 跨组循环，Enter 选中资料库行 = 切换 pin（乐观更新），选中文件行 = 插入并关闭', async () => {
@@ -159,7 +220,7 @@ describe('useAtMentionPanel', () => {
 
     // 从 0 向上 = 循环到最后一行（文件 docs）
     act(() => { result.current.handleKeyDown(keyEvent('ArrowUp')); });
-    expect(result.current.selectedIndex).toBe(3);
+    expect(result.current.selectedIndex).toBe(5);
     act(() => { result.current.handleKeyDown(keyEvent('ArrowDown')); });
     expect(result.current.selectedIndex).toBe(0);
 
@@ -175,6 +236,24 @@ describe('useAtMentionPanel', () => {
     act(() => { result.current.handleKeyDown(keyEvent('Enter')); });
     // 文件行选中把整行交给组件（文件 → 内联 chip + 附件；目录 → @path 文本）
     expect(onFileSelect).toHaveBeenCalledWith(expect.objectContaining({ path: 'src/alpha.ts', name: 'alpha.ts', isDirectory: false }));
+    expect(result.current.isOpen).toBe(false);
+  });
+
+  it('Ctrl+←/→ 切 Tab，裸 ←/→ 留给输入框；会话 Enter 交给引用 chip 入口', async () => {
+    const onSessionSelect = vi.fn();
+    const { result } = setup(vi.fn(), onSessionSelect);
+    await openPanel(result);
+
+    expect(result.current.handleKeyDown(keyEvent('ArrowRight'))).toBe(false);
+    const ctrlRight = { ...keyEvent('ArrowRight'), ctrlKey: true } as React.KeyboardEvent<HTMLTextAreaElement>;
+    act(() => { result.current.handleKeyDown(ctrlRight); });
+    expect(result.current.activeTab).toBe('library');
+    act(() => { result.current.handleKeyDown(ctrlRight); });
+    expect(result.current.activeTab).toBe('files');
+    act(() => { result.current.handleKeyDown(ctrlRight); });
+    expect(result.current.activeTab).toBe('sessions');
+    act(() => { result.current.handleKeyDown(keyEvent('Enter')); });
+    expect(onSessionSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'past-1', kind: 'session' }));
     expect(result.current.isOpen).toBe(false);
   });
 

@@ -1,4 +1,4 @@
-import type { ToolCall, ToolResult } from '../../../shared/contract';
+import type { MessageMetadata, ToolCall, ToolResult } from '../../../shared/contract';
 import {
   sanitizeBrowserComputerToolArguments,
   sanitizeBrowserComputerToolResult,
@@ -6,6 +6,17 @@ import {
 } from '../../../shared/utils/browserComputerRedaction';
 import type { RuntimeContext } from './runtimeContext';
 import type { ArtifactRepairToolPolicy } from './artifactRepairGuard';
+
+export function buildSteerModelContent(
+  content: string,
+  metadata: MessageMetadata | undefined,
+  historyVisibility: RuntimeContext['historyVisibility'],
+): string {
+  if (metadata?.workbench?.runtimeInputMode !== 'redirect' || historyVisibility === 'meta') {
+    return content;
+  }
+  return `${content}\n\n<redirect_response_instruction>\n用户刚改了方向。先用一句自然的话承接，例如“好，先停下手头的，改成……”，然后直接继续；不要复述这条规则，不要用道歉式开场。\n</redirect_response_instruction>`;
+}
 
 export function sanitizeToolArgumentsForObservation(
   toolCall: Pick<ToolCall, 'name' | 'arguments'>,

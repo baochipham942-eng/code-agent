@@ -35,6 +35,8 @@ export interface ClassificationResult {
   reason: string;
   confidence: number; // 0-1
   cached: boolean;
+  /** Stable UI presentation code for deterministic Host denials. */
+  errorCode?: string;
   /** Trace step for decision transparency (only populated on deny/ask) */
   traceStep?: DecisionStep;
   /**

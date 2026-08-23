@@ -5,9 +5,46 @@ import {
   getBrowserComputerSurfaceCapabilityDescriptor,
   getStrictBrowserComputerActionCatalogEntry,
   isBrowserScopedComputerUseAction,
+  listBrowserComputerActionCatalogEntries,
 } from '../../../src/shared/utils/browserComputerActionCatalog';
+import { browserActionSchema } from '../../../src/host/plugins/builtin/browserControl/browserAction.schema';
+import { computerUseSchema } from '../../../src/host/plugins/builtin/computerUse/computerUse.schema';
+import { computerSchema } from '../../../src/host/plugins/builtin/computerUse/computer.schema';
+import { guiAgentSchema } from '../../../src/host/plugins/builtin/computerUse/guiAgent.schema';
+import { cuaStatefulComputerUseSchema } from '../../../src/host/plugins/builtin/computerUse/cuaStatefulComputerUse.schema';
+
+function stringEnum(schema: typeof browserActionSchema, property: string): string[] {
+  const values = schema.inputSchema.properties?.[property]?.enum;
+  return Array.isArray(values) ? values.filter((value): value is string => typeof value === 'string') : [];
+}
 
 describe('browser/computer action catalog', () => {
+  it('covers every action exposed by browser_action, computer_use, Computer, and gui_agent', () => {
+    const browserDeclared = listBrowserComputerActionCatalogEntries('browser_action');
+    const computerDeclared = listBrowserComputerActionCatalogEntries('computer_use');
+    const computerAliasDeclared = listBrowserComputerActionCatalogEntries('Computer');
+    const guiDeclared = listBrowserComputerActionCatalogEntries('gui_agent');
+
+    expect(browserDeclared.map((entry) => entry.action).sort())
+      .toEqual(stringEnum(browserActionSchema, 'action').sort());
+
+    const computerSchemaActions = new Set([
+      ...stringEnum(computerUseSchema as typeof browserActionSchema, 'action'),
+      ...stringEnum(computerSchema as typeof browserActionSchema, 'action'),
+      ...stringEnum(cuaStatefulComputerUseSchema as typeof browserActionSchema, 'operation'),
+    ]);
+    expect(computerDeclared.map((entry) => entry.action).sort())
+      .toEqual(Array.from(computerSchemaActions).sort());
+    expect(computerAliasDeclared).toEqual(computerDeclared);
+    expect(guiAgentSchema.inputSchema.required).toContain('task');
+    expect(guiDeclared).toMatchObject([{ tool: 'gui_agent', action: 'run', consequence: 'external_side_effect' }]);
+
+    for (const entry of [...browserDeclared, ...computerDeclared, ...guiDeclared]) {
+      expect(['no_external_side_effect', 'external_side_effect', 'high_risk'])
+        .toContain(entry.consequence);
+    }
+  });
+
   it('describes browser file actions without changing approval ownership', () => {
     expect(getBrowserComputerActionCatalogEntry('browser_action', 'upload_file', {
       action: 'upload_file',

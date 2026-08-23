@@ -7,6 +7,10 @@ import { isExternalSideEffectTool } from './externalSideEffect';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
 import type { PermissionDenialSource } from '../../shared/contract/permission';
+import {
+  getStrictBrowserComputerActionCatalogForArgs,
+  normalizeBrowserComputerCatalogToolName,
+} from '../../shared/utils/browserComputerActionCatalog';
 
 type ToolPermissionLevel = Parameters<typeof permissionModeAutoApproves>[1];
 
@@ -65,6 +69,71 @@ export function readOnlyDenialError(toolName: string): string {
  * 单独一个常量是为了让「故障回退」与「正常判 ask」在账本里天然可区分。
  */
 export const CLASSIFIER_ERROR_TRACE_RULE = 'classifier_error';
+export const BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE = 'browser_computer_consequence';
+export const BROWSER_COMPUTER_HIGH_RISK_BLOCKED_CODE = 'BROWSER_COMPUTER_HIGH_RISK_BLOCKED';
+
+export function classifyBrowserComputerConsequence(
+  toolName: string,
+  params: Record<string, unknown>,
+  startedAt: number,
+): ClassificationResult | null {
+  const catalogTool = normalizeBrowserComputerCatalogToolName(toolName);
+  if (!catalogTool) return null;
+  const entry = getStrictBrowserComputerActionCatalogForArgs({
+    toolName: catalogTool,
+    arguments: params,
+  });
+  if (!entry) {
+    const reason = `Browser/computer action is not registered in the consequence catalog: ${catalogTool}`;
+    return {
+      decision: 'deny',
+      reason,
+      confidence: 1,
+      cached: false,
+      traceStep: createTraceStep(
+        'permission_classifier',
+        BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE,
+        'deny',
+        reason,
+        startedAt,
+      ),
+    };
+  }
+  if (entry.consequence === 'high_risk') {
+    const reason = `High-risk browser/computer action is blocked by policy: ${entry.tool}.${entry.action}`;
+    return {
+      decision: 'deny',
+      reason,
+      confidence: 1,
+      cached: false,
+      errorCode: BROWSER_COMPUTER_HIGH_RISK_BLOCKED_CODE,
+      traceStep: createTraceStep(
+        'permission_classifier',
+        BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE,
+        'deny',
+        reason,
+        startedAt,
+      ),
+    };
+  }
+  const decision = entry.consequence === 'external_side_effect' ? 'ask' : 'approve';
+  const reason = decision === 'ask'
+    ? `Browser/computer action changes external state and requires confirmation: ${entry.tool}.${entry.action}`
+    : `Browser/computer action has no external side effect: ${entry.tool}.${entry.action}`;
+  return {
+    decision,
+    reason,
+    confidence: 1,
+    cached: false,
+    traceStep: createTraceStep(
+      'permission_classifier',
+      BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE,
+      decision === 'approve' ? 'allow' : 'ask',
+      reason,
+      startedAt,
+    ),
+  };
+}
 
 /**
  * 拒绝文案的唯一来源。**这段文本有两个受众**：模型（会据此向用户转述）和审计日志。
@@ -151,7 +220,11 @@ export async function resolveToolPermissionClassification(input: {
       ),
     };
   }
-  let classification = await classifyPermission(input.policyToolName, input.params, {
+  let classification = classifyBrowserComputerConsequence(
+    input.executionToolName,
+    input.params,
+    input.permStartTime,
+  ) ?? await classifyPermission(input.policyToolName, input.params, {
     workingDirectory: input.workingDirectory,
     workspaceRoot: input.workspaceRoot,
     permissionLevel: input.permissionLevel,

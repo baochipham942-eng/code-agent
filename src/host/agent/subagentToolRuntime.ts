@@ -1,7 +1,9 @@
 import { createRunContext } from '../runtime/runContext';
+import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
 import { ToolExecutor } from '../tools/toolExecutor';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
+import { isAgentWorktreePath } from './agentWorktreePath';
 import type { ToolExecutionRequest } from './subagentPipeline';
 import type { SubagentExecutionContext } from './subagentExecutorTypes';
 import type { SubagentEventIdentity } from './subagentLifecycleEvents';
@@ -15,12 +17,17 @@ export function createSubagentToolRuntime(input: {
   checkToolExecution(request: ToolExecutionRequest): boolean;
 }) {
   const { context } = input;
-  const nativeRunContext = context.runId && input.sessionId && context.workspace
+  const worktreeWorkspace = isAgentWorktreePath(context.cwd) ? context.cwd : undefined;
+  const runWorkspace = worktreeWorkspace ?? context.workspace;
+  const runWorkspaceScope = worktreeWorkspace
+    ? resolveBackgroundWorkspaceAuthority({ workspace: worktreeWorkspace })
+    : context.workspaceScope;
+  const nativeRunContext = context.runId && input.sessionId && runWorkspace
     ? createRunContext({
       runId: context.runId,
       sessionId: input.sessionId,
-      workspace: context.workspace,
-      workspaceScope: context.workspaceScope,
+      workspace: runWorkspace,
+      workspaceScope: runWorkspaceScope,
       cwd: context.cwd,
     })
     : undefined;

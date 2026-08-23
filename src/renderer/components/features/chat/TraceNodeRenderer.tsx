@@ -7,7 +7,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { TraceNode } from '@shared/contract/trace';
-import type { InputRedirectReceiptMetadata, ToolCall } from '@shared/contract';
+import type { ToolCall } from '@shared/contract';
 import type { TurnTimelineNode as TurnTimelinePayload, TurnTimelineTone } from '@shared/contract/turnTimeline';
 import type { FileChange } from '../../../utils/turnDiffSummary';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
@@ -32,7 +32,7 @@ import { TurnQualityStrip } from './TurnQualityStrip';
 import { AgentErrorCard } from './AgentErrorCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
-import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, RotateCcw, Wrench, CornerDownRight } from 'lucide-react';
+import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, RotateCcw, Wrench } from 'lucide-react';
 import { UI } from '@shared/constants';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
@@ -880,57 +880,6 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   );
 };
 
-function summarizeRedirectContent(content: string): string {
-  const compact = content.replace(/\s+/g, ' ').trim();
-  return compact.length > 48 ? `${compact.slice(0, 48)}…` : compact;
-}
-
-const InputRedirectReceiptNode: React.FC<{ receipt: InputRedirectReceiptMetadata }> = ({ receipt }) => {
-  const { t } = useI18n();
-  const [expanded, setExpanded] = useState(false);
-  const copy = t.chat.inputRedirectReceipt;
-  const originalContent = stripAppshotBlocks(receipt.originalContent).trim();
-  const summary = summarizeRedirectContent(originalContent);
-  const stoppedAt = receipt.partial.charCount > 0
-    ? copy.stoppedAt.replace('{count}', String(receipt.partial.charCount))
-    : copy.stoppedBeforeOutput;
-  const toolDetail = receipt.interruptedTools.length > 0
-    ? copy.workingOn.replace('{names}', receipt.interruptedTools.join('、'))
-    : '';
-
-  return (
-    <div className="py-1" data-testid="input-redirect-receipt">
-      <div className="rounded-lg border border-border-muted bg-surface-faint px-3 py-2">
-        <div className="flex items-start gap-2">
-          <CornerDownRight className="mt-0.5 h-4 w-4 shrink-0 text-badge-success" />
-          <div className="min-w-0 flex-1">
-            <div className="text-xs text-zinc-300">
-              <span className="font-medium text-zinc-200">{copy.title}</span>
-              {summary}
-            </div>
-          </div>
-          <button
-            type="button"
-            aria-expanded={expanded}
-            onClick={() => setExpanded((value) => !value)}
-            className="shrink-0 text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
-          >
-            {expanded ? copy.hideOriginal : copy.viewOriginal}
-          </button>
-        </div>
-        {expanded && (
-          <div className="mt-2 border-t border-border-muted pt-2 text-xs text-zinc-400">
-            <div className="mb-1.5 text-[11px] text-zinc-500">
-              {stoppedAt}{toolDetail ? ` · ${toolDetail}` : ''}
-            </div>
-            <ExpandableContent content={originalContent} maxLines={20} />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
 // ---- System Node ----
 const SystemNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   const [expanded, setExpanded] = useState(false);
@@ -967,10 +916,6 @@ const SystemNode: React.FC<{ node: TraceNode }> = ({ node }) => {
         <div className="mt-1 text-zinc-500">{t.chat.turnCheckoutExternalEffects}</div>
       </div>
     );
-  }
-
-  if (node.subtype === 'input_redirect_receipt' && node.metadata?.inputRedirectReceipt) {
-    return <InputRedirectReceiptNode receipt={node.metadata.inputRedirectReceipt} />;
   }
 
   if (node.subtype === 'compaction') {

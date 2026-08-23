@@ -6,6 +6,11 @@ import { getAgentSendFailureMessage } from '../../../hooks/agent/useAgentIPC';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
 
+function removeOptimisticMessage(messageId: string): void {
+  const store = useSessionStore.getState();
+  store.setMessages(store.messages.filter((message) => message.id !== messageId));
+}
+
 export async function submitSteerEnvelope(
   envelope: ConversationEnvelope,
   currentSessionId: string | null,
@@ -19,14 +24,34 @@ export async function submitSteerEnvelope(
     expectedTurnId,
   };
 
+  const sessionState = useSessionStore.getState();
+  const addedOptimisticMessage = steerEnvelope.sessionId === sessionState.currentSessionId
+    && !sessionState.messages.some((message) => message.id === clientMessageId);
+  if (addedOptimisticMessage) {
+    useSessionStore.getState().addMessage({
+      id: clientMessageId,
+      role: 'user',
+      content: steerEnvelope.content,
+      attachments: steerEnvelope.attachments,
+      timestamp: Date.now(),
+      metadata: steerEnvelope.context?.runtimeInput
+        ? { workbench: { runtimeInputMode: steerEnvelope.context.runtimeInput.mode } }
+        : undefined,
+    });
+  }
+
   try {
     const outcome = await ipcService.invokeDomain<SteerOrQueueOutcome>(
       IPC_DOMAINS.AGENT,
       'interrupt',
       steerEnvelope,
     );
+    if (outcome.outcome === 'queued' && addedOptimisticMessage) {
+      removeOptimisticMessage(clientMessageId);
+    }
     return outcome;
   } catch (error) {
+    if (addedOptimisticMessage) removeOptimisticMessage(clientMessageId);
     useSessionStore.getState().addMessage({
       id: generateMessageId(),
       role: 'assistant',

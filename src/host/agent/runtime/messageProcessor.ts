@@ -52,7 +52,7 @@ import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
 import { getHandoffProposalService } from '../../handoff/handoffProposalService';
 import { extractHandoffProposalTail } from '../../handoff/handoffTail';
 import {
-  buildForcedFinalAssistantContent,
+  buildSteerModelContent, buildForcedFinalAssistantContent,
   hasOnlySoftValidationFailures,
   isArtifactDirectoryBootstrapOnly,
   isArtifactRepairTargetFileRead,
@@ -1165,10 +1165,11 @@ export class MessageProcessor {
   ): Promise<void> {
     const id = clientMessageId ?? generateMessageId();
     const timestamp = Date.now();
+    const modelContent = buildSteerModelContent(newMessage, metadata, this.ctx.historyVisibility);
     const steerMessage: Message = {
       id,
       role: 'user',
-      content: newMessage,
+      content: modelContent,
       timestamp,
       attachments,
       metadata,
@@ -1195,7 +1196,7 @@ export class MessageProcessor {
     // instruction 一字未改。用户自己在 UI/web 上的打断不带 historyVisibility，照旧可见。
     const persistedMessage: Message = {
       ...steerMessage,
-      ...(displayContent === undefined || displayContent === newMessage ? {} : { content: displayContent }),
+      content: displayContent ?? newMessage,
       ...(this.ctx.historyVisibility === 'meta'
         ? { isMeta: true, source: steerMessage.source ?? 'system' }
         : {}),

@@ -174,8 +174,13 @@ describe('removeUncommittedAssistantDraft', () => {
 });
 
 describe('applyConversationStreamEvent input redirect receipt', () => {
-  it('projects the action receipt once without creating a user bubble', () => {
-    let messages: Message[] = [];
+  it('keeps the user bubble and does not project a receipt card', () => {
+    let messages: Message[] = [{
+      id: 'redirect-message-1',
+      role: 'user',
+      content: '改用更简洁的结构',
+      timestamp: 100,
+    }];
     const actions = {
       addMessage: (message: Message) => { messages = [...messages, message]; },
       updateMessage: () => {},
@@ -199,19 +204,12 @@ describe('applyConversationStreamEvent input redirect receipt', () => {
     applyConversationStreamEvent(event, state, actions);
     applyConversationStreamEvent(event, state, actions);
 
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({
-      id: 'redirect-receipt-1',
-      role: 'system',
-      content: '已按你的纠正改了方向',
-      metadata: {
-        inputRedirectReceipt: {
-          originalContent: '改用更简洁的结构',
-          partial: { charCount: 88, trailingText: '写到这里' },
-        },
-      },
-    });
-    expect(messages.some((message) => message.role === 'user')).toBe(false);
+    expect(messages).toEqual([expect.objectContaining({
+      id: 'redirect-message-1',
+      role: 'user',
+      content: '改用更简洁的结构',
+    })]);
+    expect(messages.some((message) => message.metadata?.inputRedirectReceipt)).toBe(false);
   });
 });
 

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ToolDefinition } from '../../../src/shared/contract';
 
 const mocks = vi.hoisted(() => {
   const rawDb = {};
@@ -9,6 +10,7 @@ const mocks = vi.hoisted(() => {
     terminalDurable: vi.fn(),
   };
   const migrate = vi.fn();
+  const agentLoopConfigs: unknown[] = [];
   const initializeDurableRun = vi.fn().mockResolvedValue({
     kernel: {},
     policy: { mode: 'durable_preferred' },
@@ -23,6 +25,7 @@ const mocks = vi.hoisted(() => {
     databaseService,
     registry,
     migrate,
+    agentLoopConfigs,
     initializeDurableRun,
     configInitialize: vi.fn().mockResolvedValue(undefined),
   };
@@ -51,7 +54,13 @@ vi.mock('../../../src/host/app/applicationRunRegistry', () => ({
 vi.mock('../../../src/host/app/initializeDurableRun', () => ({
   initializeDurableRun: mocks.initializeDurableRun,
 }));
-vi.mock('../../../src/host/agent/agentLoop', () => ({ AgentLoop: class {} }));
+vi.mock('../../../src/host/agent/agentLoop', () => ({
+  AgentLoop: class {
+    constructor(config: unknown) {
+      mocks.agentLoopConfigs.push(config);
+    }
+  },
+}));
 vi.mock('../../../src/host/tools/toolExecutor', () => ({
   ToolExecutor: class {
     forRun(): this { return this; }
@@ -83,5 +92,48 @@ describe('initializeCLIServices durable wiring', () => {
       dataDir: expect.any(String),
       processInstanceId: expect.stringMatching(/^cli-\d+-/),
     }));
+  });
+
+  it('removes TaskManager-backed command-center tools from the CLI model tool table', async () => {
+    const { createAgentLoop, initializeCLIServices } = await import('../../../src/cli/bootstrap');
+    const { filterToolsByRunPolicy } = await import('../../../src/host/agent/runtime/toolRunPolicy');
+    const {
+      cancelTaskSchema,
+      delegateTaskSchema,
+      steerTaskSchema,
+      taskStatusSchema,
+    } = await import('../../../src/host/tools/modules/commandCenter/sessionCommandCenter.schema');
+
+    await initializeCLIServices();
+    createAgentLoop({
+      workingDirectory: process.cwd(),
+      modelConfig: { provider: 'openai', model: 'test-model' },
+      outputFormat: 'text',
+      enablePlanning: false,
+      enableHooks: false,
+      debug: false,
+      autoApprovePlan: true,
+    }, vi.fn());
+
+    const runtimeConfig = mocks.agentLoopConfigs.at(-1) as Parameters<typeof filterToolsByRunPolicy>[1];
+    const commandCenterSchemas = [
+      delegateTaskSchema,
+      steerTaskSchema,
+      cancelTaskSchema,
+      taskStatusSchema,
+    ];
+    const commandCenterTools = commandCenterSchemas.map((schema): ToolDefinition => ({
+      name: schema.name,
+      description: schema.description,
+      inputSchema: { type: 'object', properties: {} },
+      outputSchema: { type: 'string' },
+      permissionLevel: 'read',
+      requiresPermission: false,
+    }));
+
+    expect(filterToolsByRunPolicy(commandCenterTools, runtimeConfig)).toEqual([]);
+    expect(runtimeConfig.deniedToolNames).toEqual(expect.arrayContaining(
+      commandCenterTools.map((tool) => tool.name),
+    ));
   });
 });

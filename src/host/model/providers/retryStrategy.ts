@@ -40,6 +40,13 @@ const NON_RETRYABLE_PATTERNS = [
   'context length',
   'prompt is too long',
   'input is too long',
+  // 图片请求体超限：原样重试不会变小；可直接进入跨 Provider fallback 或上层人话错误。
+  '413',
+  'request_too_large',
+  'request too large',
+  'payload too large',
+  'too many images',
+  'images may be provided',
 ];
 
 /** 瞬态错误匹配模式（检查 message + code） */

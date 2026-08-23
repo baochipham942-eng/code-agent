@@ -125,6 +125,27 @@ describe('classifyAgentError', () => {
     expect(error?.timestamp).toBeGreaterThan(0);
   });
 
+  it('classifies image payload limits without exposing a generic provider card', () => {
+    const error = classifyAgentError({
+      code: 'IMAGE_PAYLOAD_EXCEEDED',
+      message: 'The model request contains too many images. Remove some images and try again.',
+      details: {
+        provider: 'claude',
+        model: 'claude-sonnet-4-6',
+        reason: 'too_many_images',
+        httpStatus: 400,
+      },
+    });
+
+    expect(error).toMatchObject({
+      category: 'image_payload',
+      code: 'IMAGE_PAYLOAD_EXCEEDED',
+      httpStatus: 400,
+      provider: 'claude',
+      modelId: 'claude-sonnet-4-6',
+    });
+  });
+
   it('classifies 403 Forbidden as forbidden with http status', () => {
     const error = classifyAgentError({ code: 'RUN_FAILED', message: 'Forbidden' });
 

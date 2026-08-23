@@ -233,3 +233,24 @@ export class ContextLengthExceededError extends Error {
     this.name = 'ContextLengthExceededError';
   }
 }
+
+export type ImagePayloadExceededReason = 'payload_too_large' | 'too_many_images';
+
+/**
+ * 图片请求体超出供应商限制。
+ * message 会进入模型侧诊断与技术报告，必须保持英文；用户文案由 renderer i18n 生成。
+ */
+export class ImagePayloadExceededError extends Error {
+  public readonly code = 'IMAGE_PAYLOAD_EXCEEDED';
+
+  constructor(
+    public readonly reason: ImagePayloadExceededReason,
+    public readonly provider: string,
+    public readonly httpStatus?: number,
+  ) {
+    super(reason === 'too_many_images'
+      ? 'The model request contains too many images. Remove some images or start a new session with fewer images, then try again.'
+      : 'The model request is too large because it contains too much image data. Remove some images, use smaller images, or start a new session, then try again.');
+    this.name = 'ImagePayloadExceededError';
+  }
+}

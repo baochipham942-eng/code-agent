@@ -309,6 +309,7 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     // 种子）和一个更早的 `contextHealth:` 键（compressionState 种子），都是对象字面量
     // 重复键（TS1117）。JS 运行时只有后一个生效，故删掉两处死代码，不改变既有行为。
     control: ControlState.forTest({} as never),
+    budgetScope: 'foreground',
     consecutiveErrors: 0,
     stats: RunStatsState.forTest({ traceId: 'trace-1', totalInputTokens: 0, totalOutputTokens: 0, runStartTime: Date.now(), totalTokensUsed: 0, totalToolCallCount: 0 } as never),
     MAX_CONSECUTIVE_TRUNCATIONS: 3,

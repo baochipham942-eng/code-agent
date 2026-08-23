@@ -16,8 +16,10 @@ import { IPC_CHANNELS } from '../shared/ipc';
 import type { ConfigService } from '../host/services/core/configService';
 import {
   BudgetAlertLevel,
+  getBudgetService,
   initBudgetService,
-  type BudgetConfig,
+  type BudgetScope,
+  type ScopedBudgetConfig,
   type BudgetService,
 } from '../host/services/core/budgetService';
 import { initWebEventBridge } from '../host/services/eventing/bridge';
@@ -42,7 +44,8 @@ type PostHogIdentityDependencies = {
 };
 
 type BudgetWiringDependencies = {
-  initBudgetService(config: Partial<BudgetConfig>): Pick<BudgetService, 'setAlertListener'>;
+  initBudgetService(config: ScopedBudgetConfig): Pick<BudgetService, 'setAlertListener'>;
+  getBudgetService?(scope: BudgetScope): Pick<BudgetService, 'setAlertListener'>;
 };
 
 export type WebStartupTaskName =
@@ -118,18 +121,27 @@ function getWebStartupWorkingDirectory(configService: StartupConfigService): str
 export function wireBudgetService(
   configService: Pick<StartupConfigService, 'getBudgetConfig'>,
   broadcastSSE: BroadcastSSE,
-  dependencies: BudgetWiringDependencies = { initBudgetService },
+  dependencies: BudgetWiringDependencies = { initBudgetService, getBudgetService },
 ): void {
-  const budgetService = dependencies.initBudgetService(configService.getBudgetConfig());
-  budgetService.setAlertListener((status) => {
-    broadcastSSE(IPC_CHANNELS.BUDGET_ALERT, {
-      level: status.alertLevel === BudgetAlertLevel.BLOCKED ? 'blocked' : 'warning',
-      currentCost: status.currentCost,
-      maxBudget: status.maxBudget,
-      usagePercentage: status.usagePercentage,
-      message: status.message,
+  const foreground = dependencies.initBudgetService(configService.getBudgetConfig());
+  const services: Array<[BudgetScope, Pick<BudgetService, 'setAlertListener'>]> = [
+    ['foreground', foreground],
+  ];
+  if (dependencies.getBudgetService) {
+    services.push(['unattended', dependencies.getBudgetService('unattended')]);
+  }
+  for (const [scope, budgetService] of services) {
+    budgetService.setAlertListener((status) => {
+      broadcastSSE(IPC_CHANNELS.BUDGET_ALERT, {
+        scope,
+        level: status.alertLevel === BudgetAlertLevel.BLOCKED ? 'blocked' : 'warning',
+        currentCost: status.currentCost,
+        maxBudget: status.maxBudget,
+        usagePercentage: status.usagePercentage,
+        message: status.message,
+      });
     });
-  });
+  }
 }
 
 /**

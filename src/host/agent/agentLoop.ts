@@ -56,6 +56,7 @@ export type { AgentLoopConfig };
  */
 import type { RuntimeContext } from './runtime/runtimeContext';
 import { ConversationRuntime } from './runtime/conversationRuntime';
+import { resolveBudgetScope } from '../services/core/budgetService';
 import { ToolExecutionEngine } from './runtime/toolExecutionEngine';
 import { ContextAssembly } from './runtime/contextAssembly';
 import { RunFinalizer } from './runtime/runFinalizer';
@@ -211,6 +212,7 @@ export class AgentLoop {
       goalEvidenceState: { bounces: 0 },
 
       // Budget
+      budgetScope: resolveBudgetScope(config.toolExecutor.getExecutionTopology?.()),
       consecutiveErrors: 0,
 
       // Thinking

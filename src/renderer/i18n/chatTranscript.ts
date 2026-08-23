@@ -509,10 +509,9 @@ toolErrors: {
       summary: '有未提交的更改，不能创建 PR',
       detail: '先提交（commit）这些更改，再创建 PR。',
     },
-    ENV_DEPENDENCY_MISSING: {
-      summary: '缺少依赖 {dependency}，无法执行',
-      detail: '请先安装：{installHint}，装好后重试。',
-    },
+    ENV_DEPENDENCY_MISSING: { summary: '缺少依赖 {dependency}，无法执行', detail: '请先安装：{installHint}，装好后重试。' },
+    BROWSER_RESUME_STATE_EXPORT_FAILED: { summary: '浏览器登录状态没有保存成功', detail: '浏览器已正常关闭；下一轮可能需要重新登录。' },
+    BROWSER_RESUME_STATE_IMPORT_FAILED: { summary: '浏览器登录状态恢复失败', detail: '新浏览器已启动，但未带上一轮的登录状态。' },
   },
 },
 
@@ -1068,10 +1067,9 @@ toolErrors: {
       summary: 'There are uncommitted changes; cannot create a PR',
       detail: 'Commit these changes first, then create the PR.',
     },
-    ENV_DEPENDENCY_MISSING: {
-      summary: 'Missing dependency {dependency}; cannot run',
-      detail: 'Install it first: {installHint}, then retry.',
-    },
+    ENV_DEPENDENCY_MISSING: { summary: 'Missing dependency {dependency}; cannot run', detail: 'Install it first: {installHint}, then retry.' },
+    BROWSER_RESUME_STATE_EXPORT_FAILED: { summary: 'Browser login state could not be saved', detail: 'The browser closed normally; the next run may require login again.' },
+    BROWSER_RESUME_STATE_IMPORT_FAILED: { summary: 'Browser login state could not be restored', detail: 'The new browser started without the previous run\'s login state.' },
   },
 },
 

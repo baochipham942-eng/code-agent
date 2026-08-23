@@ -34,4 +34,19 @@ describe('SurfaceSemanticTimeline', () => {
     expect(view.container.textContent).not.toContain('surface_switch');
     expect(view.container.textContent).not.toContain('from:computer-workbuddy');
   });
+
+  it('localizes browser resume degradation instead of rendering the host error text', () => {
+    const event = surfaceEvent(surfaceScope('resume-export-failed'), {
+      phase: 'cleanup',
+      status: 'failed',
+      userSummary: 'Browser login state could not be saved before the browser closed. The next run may require login again.',
+    });
+
+    const view = render(
+      <SurfaceSemanticTimeline events={[event]} copy={surfaceExecutionZh} />,
+    );
+
+    expect(screen.getByText(surfaceExecutionZh.resumeState.exportFailed)).toBeTruthy();
+    expect(view.container.textContent).not.toContain('Browser login state could not be saved');
+  });
 });

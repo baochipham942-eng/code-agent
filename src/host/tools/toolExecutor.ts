@@ -51,6 +51,7 @@ import { createToolExecutionLedger } from './toolExecutionLedger';
 import { type ExecutionTopology } from '../permissions';
 import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { evaluateGuardFabricGate } from './guardFabricGate';
+import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
 import { ensureFailedToolResultError } from './toolResultError';
 import { requestDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
@@ -914,11 +915,15 @@ export class ToolExecutor {
     // B1 第 4 档「只读探索」判定：语义与档位改写规则集中在 toolPermissionClassification.ts
     const sessionPermissionMode = resolveSessionPermissionMode(this.permissionModeOverride, options.sessionId);
     const readOnlyForcesConfirmation = readOnlyForcesConfirmationFor(sessionPermissionMode, toolDef);
+    const shellDesktopAutomation = isBashToolName(policyToolName)
+      ? classifyShellDesktopAutomation(params.command)
+      : null;
 
     // Check permission if required
     // Skill 系统：预授权工具跳过权限检查（但不能跳过边界违规检查）
     const isPreApproved = !boundaryViolation
       && !guardFabricForcesApproval
+      && !shellDesktopAutomation
       && !this.forcePermissionHandler
       && options.preApprovedTools !== undefined
       && options.preApprovedTools.size > 0
@@ -930,7 +935,7 @@ export class ToolExecutor {
 
     // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批
     let isSafeCommand = false;
-    if (isBashToolName(policyToolName) && params.command && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler) {
+    if (isBashToolName(policyToolName) && params.command && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler) {
       const cmd = params.command as string;
 
       // 1. 检查 exec policy 持久化规则
@@ -971,7 +976,7 @@ export class ToolExecutor {
       }
     }
 
-    if (toolDef.requiresPermission && (this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
+    if (toolDef.requiresPermission && (this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。

@@ -12,6 +12,7 @@ import {
   FolderOpen,
   GitBranch,
   Image as ImageIcon,
+  Link,
   MoreHorizontal,
   Music,
   Presentation,
@@ -22,6 +23,7 @@ import {
 import type {
   DeliverableCardView,
   DeliverablePublishInfo,
+  DeliverableShareLinkInfo,
   DeliverableSecondaryAction,
   PublishedDeliverableVersion,
 } from '@shared/contract';
@@ -38,7 +40,8 @@ import { Modal } from '../../../primitives/Modal';
 import { Button } from '../../../primitives/Button';
 import { Input } from '../../../primitives/Input';
 import { DeliverablePublishBadge } from '../../../DeliverablePublishBadge';
-import { applyPublishInfoToDeliverableCard } from '../../../../utils/deliverables';
+import { applyPublishInfoToDeliverableCard, applyShareInfoToDeliverableCard } from '../../../../utils/deliverables';
+import { ShareLinkPanel } from './ShareLinkPanel';
 
 interface Props {
   cards: DeliverableCardView[];
@@ -117,6 +120,7 @@ function actionLabel(card: DeliverableCardView, labels: ReturnType<typeof useI18
 function secondaryActionKey(action: DeliverableSecondaryAction): string {
   switch (action.kind) {
     case 'publish-version':
+    case 'share-link':
       return `${action.kind}:${action.path}`;
     case 'reveal-file':
     case 'open-file':
@@ -139,6 +143,8 @@ function secondaryIcon(action: DeliverableSecondaryAction): React.ReactNode {
   switch (action.kind) {
     case 'publish-version':
       return <Rocket className={cls} />;
+    case 'share-link':
+      return <Link className={cls} />;
     case 'reveal-file':
       return <FolderOpen className={cls} />;
     case 'download-url':
@@ -163,6 +169,8 @@ function secondaryActionLabel(
   switch (action.kind) {
     case 'publish-version':
       return labels.publishVersion;
+    case 'share-link':
+      return action.label === 'share-link-active' ? labels.shareLinkExisting : labels.generateShareLink;
     case 'reveal-file':
       return labels.reveal;
     case 'open-file':
@@ -243,6 +251,11 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
           {iconForKind(card.kind)}
           <div className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-100">{card.title}</div>
           <DeliverablePublishBadge state={card.publishState} testId={`deliverable-publish-state-${card.id}`} />
+          {card.shareLinkInfo?.stale && card.shareLinkInfo.share && !card.shareLinkInfo.share.revokedAt && (
+            <span className="max-w-48 truncate text-[10px] text-badge-warning" data-testid={`deliverable-share-stale-${card.id}`}>
+              {labels.shareLink.stale.replace('{version}', String(card.shareLinkInfo.latestPublishedVersion ?? card.shareLinkInfo.share.pushedVersion))}
+            </span>
+          )}
         </div>
         {(publishAction || overflowActions.length > 0) && (
           <div className="flex flex-shrink-0 items-center gap-0.5 pr-1.5">
@@ -337,6 +350,7 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
   );
 
   const [publishInfoByPath, setPublishInfoByPath] = useState<Record<string, DeliverablePublishInfo>>({});
+  const [shareInfoByPath, setShareInfoByPath] = useState<Record<string, DeliverableShareLinkInfo>>({});
   const [publishTarget, setPublishTarget] = useState<{
     action: Extract<DeliverableSecondaryAction, { kind: 'publish-version' }>;
     card: DeliverableCardView;
@@ -344,6 +358,11 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
   const [publishNote, setPublishNote] = useState('');
   const [isPublishing, setIsPublishing] = useState(false);
   const publishInfoRequestRef = useRef(0);
+  const shareInfoRequestRef = useRef(0);
+  const [shareTarget, setShareTarget] = useState<{
+    filePath: string;
+    title: string;
+  } | null>(null);
 
   const publishPaths = useMemo(() => Array.from(new Set(cards.flatMap((card) => {
     const action = publishActionForCard(card);
@@ -383,13 +402,41 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
     return () => { cancelled = true; };
   }, [publishPathsKey, publishRevisionKey]);
 
+  useEffect(() => {
+    if (!publishPathsKey) return;
+    const paths = publishPathsKey.split('\n');
+    const requestId = ++shareInfoRequestRef.current;
+    let cancelled = false;
+    void Promise.all(paths.map(async (filePath) => {
+      try {
+        const info = await ipcService.invokeDomain<DeliverableShareLinkInfo>(
+          IPC_DOMAINS.WORKSPACE,
+          'getShareLink',
+          { filePath },
+        );
+        return [filePath, info] as const;
+      } catch {
+        return null;
+      }
+    })).then((entries) => {
+      if (cancelled || requestId !== shareInfoRequestRef.current) return;
+      setShareInfoByPath((current) => ({
+        ...current,
+        ...Object.fromEntries(entries.filter((entry): entry is readonly [string, DeliverableShareLinkInfo] => entry !== null)),
+      }));
+    });
+    return () => { cancelled = true; };
+  }, [publishPathsKey, publishRevisionKey]);
+
   const displayCards = useMemo(() => cards.map((card) => {
     const action = publishActionForCard(card);
     if (!action) return card;
     const filePath = resolveDeliverablePath(action.path, currentSessionWorkingDirectory);
-    const info = publishInfoByPath[filePath];
-    return info ? applyPublishInfoToDeliverableCard(card, info) : card;
-  }), [cards, currentSessionWorkingDirectory, publishInfoByPath]);
+    const publishInfo = publishInfoByPath[filePath];
+    const shareInfo = shareInfoByPath[filePath];
+    const publishedCard = publishInfo ? applyPublishInfoToDeliverableCard(card, publishInfo) : card;
+    return shareInfo ? applyShareInfoToDeliverableCard(publishedCard, shareInfo) : publishedCard;
+  }), [cards, currentSessionWorkingDirectory, publishInfoByPath, shareInfoByPath]);
 
   const requestPublish = (
     action: Extract<DeliverableSecondaryAction, { kind: 'publish-version' }>,
@@ -411,6 +458,18 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
       );
       publishInfoRequestRef.current += 1;
       setPublishInfoByPath((current) => ({ ...current, [filePath]: response }));
+      setShareInfoByPath((current) => {
+        const existing = current[filePath];
+        if (!existing?.share || existing.share.revokedAt) return current;
+        return {
+          ...current,
+          [filePath]: {
+            ...existing,
+            stale: true,
+            latestPublishedVersion: response.publishedVersion.version,
+          },
+        };
+      });
       setPublishTarget(null);
       toast.success(deliverableLabels.publishSuccess.replace('{version}', String(response.publishedVersion.version)));
     } catch (error) {
@@ -526,6 +585,12 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
           }
           break;
         }
+        case 'share-link':
+          setShareTarget({
+            filePath: resolveDeliverablePath(action.path, currentSessionWorkingDirectory),
+            title: action.title || card.title,
+          });
+          break;
         case 'export-bundle': {
           const response = await window.domainAPI?.invoke<{ filePath: string }>('workspace', 'exportBundle', {
             files: action.files,
@@ -611,6 +676,18 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
           </label>
         </div>
       </Modal>
+      {shareTarget && (
+        <ShareLinkPanel
+          isOpen
+          filePath={shareTarget.filePath}
+          title={shareTarget.title}
+          onClose={() => setShareTarget(null)}
+          onInfoChange={(next) => setShareInfoByPath((current) => ({
+            ...current,
+            [shareTarget.filePath]: next,
+          }))}
+        />
+      )}
     </>
   );
 };

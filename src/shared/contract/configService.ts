@@ -41,7 +41,8 @@ export type ServiceApiKey =
   | 'tavily'
   | 'zhipu-search'
   | 'minimax-search'
-  | 'skillsmp';
+  | 'skillsmp'
+  | 'neo-share';
 
 /**
  * settings.getAllServiceKeys 枚举并打码返回的服务 Key 列表。
@@ -64,6 +65,7 @@ export const MASKED_SERVICE_KEY_LIST = [
   'tavily',
   'zhipu-search',
   'minimax-search',
+  'neo-share',
 ] as const satisfies readonly ServiceApiKey[];
 
 /** getAllServiceKeys 的返回形状：打码后的 key（前 8 位 + `...`），未配置的服务不出现。 */

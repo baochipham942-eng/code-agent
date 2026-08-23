@@ -43,6 +43,25 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('SearchSettings 搜索源 API Key', () => {
+  it('分享服务预填默认地址，token 保存走 neo-share 并打码回显', async () => {
+    render(<SearchSettings />);
+    const baseUrl = await screen.findByTestId('share-service-base-url');
+    const tokenInput = screen.getByTestId('share-service-token-input');
+
+    expect((baseUrl as HTMLInputElement).value).toBe('https://share-aix-7c8f2d.bja.sealos.run');
+    fireEvent.change(tokenInput, { target: { value: 'lobster-upload-token' } });
+    fireEvent.click(screen.getByTestId('share-service-save'));
+
+    await waitFor(() => {
+      expect(invokeDomain).toHaveBeenCalledWith(
+        IPC_DOMAINS.SETTINGS,
+        'setServiceApiKey',
+        { service: 'neo-share', apiKey: 'lobster-upload-token' },
+      );
+    });
+    expect((await screen.findByTestId('share-service-token-masked')).textContent).toBe('lobster-...');
+  });
+
   it('未配 Key 的源渲染输入框；保存调 setServiceApiKey 且状态就地翻成「已配 Key」', async () => {
     render(<SearchSettings />);
     const input = await screen.findByTestId('search-key-input-tavily');

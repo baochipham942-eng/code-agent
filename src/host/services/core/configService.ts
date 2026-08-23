@@ -972,6 +972,7 @@ export class ConfigService implements IReadConfigService {
       'zhipu-search': 'ZHIPU_OFFICIAL_API_KEY',
       'minimax-search': 'MINIMAX_SEARCH_API_KEY',
       skillsmp: 'SKILLSMP_API_KEY',
+      'neo-share': 'NEO_SHARE_UPLOAD_TOKEN',
     };
 
     const envKey = envKeyMap[service];

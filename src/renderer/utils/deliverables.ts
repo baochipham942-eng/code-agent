@@ -11,6 +11,7 @@ import type {
   DeliverableQualitySummary,
   DeliverableSecondaryAction,
   DeliverableRevisionContext,
+  DeliverableShareLinkInfo,
   Message,
   WorkspacePreviewItem,
   WorkspacePreviewKind,
@@ -258,6 +259,14 @@ function secondaryActionsForWorkspaceItem(
       label: 'publish-version',
       path: item.file.path,
       title: item.file.name || basename(item.file.path),
+    });
+    actions.push({
+      kind: 'share-link',
+      label: 'share-link',
+      path: item.file.path,
+      title: item.file.name || basename(item.file.path),
+      disabled: true,
+      reason: 'publish-first',
     });
     actions.push({ kind: 'reveal-file', label: 'reveal-file', path: item.file.path });
     actions.push({ kind: 'copy-reference', label: 'copy-reference', value: item.file.path });
@@ -575,6 +584,14 @@ function secondaryActionsForTurnArtifact(item: TurnArtifactOwnershipItem): Deliv
       path: item.path,
       title: item.label || basename(item.path),
     });
+    actions.push({
+      kind: 'share-link',
+      label: 'share-link',
+      path: item.path,
+      title: item.label || basename(item.path),
+      disabled: true,
+      reason: 'publish-first',
+    });
     actions.push({ kind: 'reveal-file', label: 'reveal-file', path: item.path });
     actions.push({ kind: 'copy-reference', label: 'copy-reference', value: item.path });
     actions.push({
@@ -719,6 +736,13 @@ export function applyPublishInfoToDeliverableCard(
     publishState: info.publishState,
     publishedVersions: info.publishedVersions,
     secondaryActions: card.secondaryActions?.map((action) => {
+      if (action.kind === 'share-link') {
+        return {
+          ...action,
+          disabled: !latest,
+          reason: latest ? undefined : 'publish-first',
+        };
+      }
       if (action.kind !== 'export-bundle') return action;
       return {
         ...action,
@@ -734,5 +758,20 @@ export function applyPublishInfoToDeliverableCard(
         },
       };
     }),
+  };
+}
+
+export function applyShareInfoToDeliverableCard(
+  card: DeliverableCardView,
+  info: DeliverableShareLinkInfo,
+): DeliverableCardView {
+  const active = Boolean(info.share && !info.share.revokedAt && (!info.share.expiresAt || info.share.expiresAt > Date.now()));
+  return {
+    ...card,
+    shareLinkInfo: info,
+    secondaryActions: card.secondaryActions?.map((action) => action.kind === 'share-link' ? {
+      ...action,
+      label: active ? 'share-link-active' : 'share-link',
+    } : action),
   };
 }

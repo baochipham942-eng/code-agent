@@ -95,6 +95,7 @@ describe('deliverable card projection', () => {
     expect(card.contract.requiredChecks).toContain('File hash is recorded');
     expect(card.secondaryActions).toEqual([
       { kind: 'publish-version', label: 'publish-version', path: '/repo/out/hero.png', title: 'hero.png' },
+      { kind: 'share-link', label: 'share-link', path: '/repo/out/hero.png', title: 'hero.png', disabled: true, reason: 'publish-first' },
       { kind: 'reveal-file', label: 'reveal-file', path: '/repo/out/hero.png' },
       { kind: 'copy-reference', label: 'copy-reference', value: '/repo/out/hero.png' },
       expect.objectContaining({
@@ -223,6 +224,7 @@ describe('deliverable card projection', () => {
     });
     expect(cards[0].secondaryActions).toEqual([
       { kind: 'publish-version', label: 'publish-version', path: '/repo/out/diagram.png', title: 'diagram.png' },
+      { kind: 'share-link', label: 'share-link', path: '/repo/out/diagram.png', title: 'diagram.png', disabled: true, reason: 'publish-first' },
       { kind: 'reveal-file', label: 'reveal-file', path: '/repo/out/diagram.png' },
       { kind: 'copy-reference', label: 'copy-reference', value: '/repo/out/diagram.png' },
       expect.objectContaining({
@@ -269,6 +271,11 @@ describe('deliverable card projection', () => {
     expect(published.publishState.kind).toBe('published');
     expect(dirty.publishState.kind).toBe('published-dirty');
     expect(published.secondaryActions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'share-link',
+        disabled: false,
+        reason: undefined,
+      }),
       expect.objectContaining({
         kind: 'export-bundle',
         disabled: false,

@@ -43,3 +43,4 @@ export * from './voice';
 export * from './doctor';
 export * from './toolLedger';
 export * from './capabilityCandidates';
+export * from './shareService';

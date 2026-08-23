@@ -15,7 +15,7 @@
 // 用 PageContent 的 flex 容器形态（scroll/padding 关闭），布局由被嵌组件自管。
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronDown, ChevronRight, Eye, FileText, Globe, Loader2, Package, Pencil, RefreshCw, Share2, Trash2, Upload, X } from 'lucide-react';
+import { BookOpen, ChevronDown, ChevronRight, Eye, FileText, Globe, Link, Loader2, Package, Pencil, RefreshCw, Share2, Trash2, Upload, X } from 'lucide-react';
 import { LIBRARY_ITEM_KINDS, type LibraryItem, type LibraryItemKind } from '@shared/contract/library';
 import type { DeliverablePublishInfo, PublishedDeliverableVersion } from '@shared/contract';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -40,6 +40,7 @@ import { Textarea } from '../../primitives/Textarea';
 import { BrandManager } from '../../design/BrandManager';
 import { DRAFT_SCOPE_KEY, useComposerStore } from '../../../stores/composerStore';
 import { DeliverablePublishBadge } from '../../DeliverablePublishBadge';
+import { ShareLinkPanel } from '../chat/MessageBubble/ShareLinkPanel';
 
 const GLOBAL_SCOPE = 'global';
 const closeEmbeddedBrandManager = () => undefined;
@@ -101,6 +102,7 @@ export const LibraryPanel: React.FC = () => {
   const [bringing, setBringing] = useState(false);
   const [publishInfoByPath, setPublishInfoByPath] = useState<Record<string, DeliverablePublishInfo>>({});
   const [expandedVersionItemIds, setExpandedVersionItemIds] = useState<Set<string>>(new Set());
+  const [shareTarget, setShareTarget] = useState<LibraryItem | null>(null);
 
   const projectId = scope === GLOBAL_SCOPE ? null : scope;
   const sessionTitles = useMemo(() => new Map<string, string>(
@@ -559,7 +561,10 @@ export const LibraryPanel: React.FC = () => {
                                     {!version.note && <span className="flex-1" />}
                                     <button /* ds-allow:button: 版本行内文字动作 */ type="button" onClick={() => handlePreviewVersion(version.snapshotPath)} className="inline-flex items-center gap-1 text-badge-info hover:underline"><Eye className="h-3 w-3" />{t.deliverable.viewVersion}</button>
                                     {index === 0 && (
-                                      <button /* ds-allow:button: 版本行内文字动作 */ type="button" onClick={() => void handleSharePublished(item, version)} className="inline-flex items-center gap-1 text-badge-success hover:underline"><Share2 className="h-3 w-3" />{t.deliverable.exportBundle}</button>
+                                      <>
+                                        <button /* ds-allow:button: 版本行内文字动作 */ type="button" onClick={() => void handleSharePublished(item, version)} className="inline-flex items-center gap-1 text-badge-success hover:underline"><Share2 className="h-3 w-3" />{t.deliverable.exportBundle}</button>
+                                        <button /* ds-allow:button: 版本行内文字动作 */ type="button" onClick={() => setShareTarget(item)} className="inline-flex items-center gap-1 text-badge-info hover:underline"><Link className="h-3 w-3" />{t.deliverable.generateShareLink}</button>
+                                      </>
                                     )}
                                   </div>
                                 ))}
@@ -678,6 +683,14 @@ export const LibraryPanel: React.FC = () => {
           </label>
         </div>
       </Modal>
+      {shareTarget && (
+        <ShareLinkPanel
+          isOpen
+          filePath={shareTarget.pathOrUri}
+          title={shareTarget.title}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
     </FullScreenPage>
   );
 };

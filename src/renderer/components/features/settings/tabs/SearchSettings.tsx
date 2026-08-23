@@ -5,10 +5,10 @@
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronUp, ChevronDown, KeyRound, Search } from 'lucide-react';
+import { ChevronUp, ChevronDown, KeyRound, Search, Share2 } from 'lucide-react';
 import type { AppSettings } from '@shared/contract';
 import type { ServiceApiKey } from '@shared/contract/configService';
-import { SEARCH_SOURCE_CATALOG, type SearchSourceCatalogEntry } from '@shared/constants';
+import { SEARCH_SOURCE_CATALOG, SHARE_SERVICE, type SearchSourceCatalogEntry } from '@shared/constants';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { Button } from '../../../primitives';
@@ -48,6 +48,7 @@ function orderCatalog(order?: string[]): SearchSourceCatalogEntry[] {
 export function SearchSettings() {
   const { t } = useI18n();
   const searchText = t.settings.search;
+  const shareText = searchText.shareService;
   const [orderedIds, setOrderedIds] = useState<string[]>(() => orderCatalog().map((s) => s.id));
   const [disabled, setDisabled] = useState<Set<string>>(new Set());
   const [externalSource, setExternalSource] = useState<'auto' | 'zhipu' | 'minimax'>('auto');
@@ -60,6 +61,10 @@ export function SearchSettings() {
   const [editorOpen, setEditorOpen] = useState<Set<string>>(new Set());
   const [keySavingId, setKeySavingId] = useState<string | null>(null);
   const [pendingClear, setPendingClear] = useState<KeyEditableEntry | null>(null);
+  const [shareBaseUrl, setShareBaseUrl] = useState<string>(SHARE_SERVICE.DEFAULT_BASE_URL);
+  const [shareTokenDraft, setShareTokenDraft] = useState('');
+  const [shareTokenEditing, setShareTokenEditing] = useState(false);
+  const [shareSaving, setShareSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +79,7 @@ export function SearchSettings() {
         setDisabled(new Set(prefs?.disabledSources ?? []));
         setExternalSource(prefs?.externalSource ?? 'auto');
         setServiceKeys(keys ?? {});
+        setShareBaseUrl(settings?.shareService?.baseUrl?.trim() || SHARE_SERVICE.DEFAULT_BASE_URL);
       })
       .catch(() => {
         if (!cancelled) toast.error(searchText.loadFailed);
@@ -178,6 +184,27 @@ export function SearchSettings() {
       toast.success(searchText.keyCleared);
     } catch (error) {
       toast.error(`${searchText.keySaveFailedPrefix}${error instanceof Error ? error.message : t.settings.general.permissions.unknownError}`);
+    }
+  };
+
+  const handleSaveShareService = async () => {
+    const baseUrl = shareBaseUrl.trim().replace(/\/+$/, '') || SHARE_SERVICE.DEFAULT_BASE_URL;
+    const token = shareTokenDraft.trim();
+    setShareSaving(true);
+    try {
+      await invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { settings: { shareService: { baseUrl } } });
+      if (token) {
+        await invokeDomain(IPC_DOMAINS.SETTINGS, 'setServiceApiKey', { service: 'neo-share', apiKey: token });
+        setServiceKeys((current) => ({ ...current, 'neo-share': maskApiKey(token) }));
+        setShareTokenDraft('');
+        setShareTokenEditing(false);
+      }
+      setShareBaseUrl(baseUrl);
+      toast.success(shareText.saved);
+    } catch (error) {
+      toast.error(`${shareText.saveFailed}: ${error instanceof Error ? error.message : t.settings.general.permissions.unknownError}`);
+    } finally {
+      setShareSaving(false);
     }
   };
 
@@ -387,6 +414,57 @@ export function SearchSettings() {
               </div>
             );
           })}
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title={shareText.title}
+        description={shareText.description}
+      >
+        <div className="space-y-4 rounded-lg border border-zinc-700 bg-zinc-900/60 p-4">
+          <label className="block space-y-1.5 text-xs text-zinc-300">
+            <span>{shareText.baseUrlLabel}</span>
+            <input
+              type="url"
+              value={shareBaseUrl}
+              onChange={(event) => setShareBaseUrl(event.target.value)}
+              placeholder={SHARE_SERVICE.DEFAULT_BASE_URL}
+              data-testid="share-service-base-url"
+              className="h-8 w-full rounded border border-zinc-700 bg-zinc-950 px-2.5 text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-badge-info/60"
+            />
+          </label>
+          <div className="space-y-1.5 text-xs text-zinc-300">
+            <span>{shareText.tokenLabel}</span>
+            {serviceKeys['neo-share'] && !shareTokenEditing ? (
+              <div className="flex items-center gap-2 text-zinc-400">
+                <KeyRound className="h-3.5 w-3.5 text-zinc-500" />
+                <span className="font-mono" data-testid="share-service-token-masked">{serviceKeys['neo-share']}</span>
+                <Button variant="ghost" size="sm" onClick={() => setShareTokenEditing(true)}>
+                  {shareText.changeToken}
+                </Button>
+              </div>
+            ) : (
+              <input
+                type="password"
+                value={shareTokenDraft}
+                onChange={(event) => setShareTokenDraft(event.target.value)}
+                placeholder={shareText.tokenPlaceholder}
+                data-testid="share-service-token-input"
+                className="h-8 w-full rounded border border-zinc-700 bg-zinc-950 px-2.5 text-xs text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-badge-info/60"
+              />
+            )}
+          </div>
+          <p className="text-xs leading-5 text-zinc-500">{shareText.hostingNote}</p>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => void handleSaveShareService()}
+            loading={shareSaving}
+            leftIcon={<Share2 className="h-3.5 w-3.5" />}
+            data-testid="share-service-save"
+          >
+            {shareText.save}
+          </Button>
         </div>
       </SettingsSection>
 

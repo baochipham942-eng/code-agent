@@ -1,9 +1,9 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
 // Pure type-only — does not pull legacy tool code at import time.
 // dynamicDescription is inlined as a pure function (no legacy deps).
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const webSearchSchema: ToolSchema = {
+export const webSearchSchema: UntrustedContentToolSchema = {
   name: 'WebSearch',
   description:
     'Searches the web for information. REQUIRED parameter: `query` (non-empty string — do not call without it). Use for finding documentation, researching APIs, checking current facts, or answering questions that require up-to-date information. Returns search results with titles, URLs, and snippets. Stop once the returned results are enough; do not repeat the same search just to add more sources.',
@@ -92,6 +92,10 @@ Features:
         type: 'string',
         description: 'File path to automatically save results. The tool writes the file directly — no need to call Write separately.',
       },
+      overwrite: {
+        type: 'boolean',
+        description: 'Required as true when save_to already exists and you intend to replace it.',
+      },
       language: {
         type: 'string',
         description: 'Output language for results. When set (e.g., "zh"), titles and snippets are translated at the tool level. Requires output_format="table".',
@@ -101,7 +105,8 @@ Features:
   },
   category: 'network',
   permissionLevel: 'network',
-  readsUntrustedContent: true,
-  readOnly: true,
+  pathAuthority: [{ kind: 'path', pathParameter: 'save_to', mutation: 'overwrite' }],
+  readsUntrustedContent: 'block',
+  readOnly: false,
   allowInPlanMode: true,
 };

@@ -31,7 +31,7 @@ When NOT to spawn:
 1. Plan first: analyze the task, identify critical path vs side-quests
 2. Keep blocking work local — only delegate non-blocking parallel tasks
 3. Subtasks must be concrete, self-contained, and non-overlapping
-4. For code edits, assign disjoint file ownership per agent
+4. For coders sharing one working tree, declare disjoint ownedPaths. Undeclared paths are first-write-wins and cannot be taken from a live sibling.
 5. Tell workers they are not alone — don't revert others' changes
 
 ## After delegation
@@ -58,6 +58,8 @@ When NOT to spawn:
 - parallel: Set true + agents array for multiple agents with dependencies
 - waitForCompletion: false to run in background (default true)
 - forkContext: true to inherit parent conversation history
+- engine: Optional execution engine override for a declared role; external engines always use a Neo-managed worktree
+- ownedPaths: Paths or glob ranges this agent owns while live. Siblings must wait, delegate the edit, or report a merge need instead of writing around ownership.
 - isolation: "worktree" to give coder agent an isolated git branch (auto-cleanup if no changes)`;
 
 function buildSpawnAgentDescription(): string {
@@ -85,6 +87,11 @@ const spawnInputSchema = {
         return renderAgentRoleDescription(staticRoleDescription);
       },
     },
+    engine: {
+      type: 'string',
+      enum: ['native', 'codex_cli', 'claude_code', 'mimo_code', 'kimi_code', 'codebuddy_code', 'grok_cli', 'dsh_cli'],
+      description: 'Optional execution engine override. Only valid with a declared role; external engines force worktree isolation.',
+    },
     task: {
       type: 'string',
       description: 'The task for the agent to complete',
@@ -101,6 +108,11 @@ const spawnInputSchema = {
     maxBudget: {
       type: 'number',
       description: 'Maximum budget in USD for this agent',
+    },
+    ownedPaths: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Paths or glob ranges owned by this agent while live. Use disjoint ownedPaths for coders sharing a working tree; undeclared paths are first-write-wins until the writer finishes.',
     },
     waitForCompletion: {
       type: 'boolean',
@@ -142,6 +154,11 @@ const spawnInputSchema = {
               'Optional display name for this agent instance. Prefer distinct names when the same role appears more than once (e.g. 溯真-权威资料 / 溯真-行业研究).',
           },
           maxBudget: { type: 'number' },
+          ownedPaths: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Paths or glob ranges owned by this agent while live. Parallel coders sharing a working tree should declare disjoint ranges.',
+          },
           dependsOn: {
             type: 'array',
             items: { type: 'string' },

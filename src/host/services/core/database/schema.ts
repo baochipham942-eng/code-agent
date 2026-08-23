@@ -46,6 +46,20 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN project_id TEXT`, logger);
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0`, logger);
 
+  // Historical session references are summarized lazily. The message fingerprint
+  // makes a cached digest invalid as soon as the visible conversation changes.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_reference_digests (
+      session_id TEXT PRIMARY KEY,
+      message_count INTEGER NOT NULL,
+      content_hash TEXT NOT NULL,
+      digest TEXT NOT NULL,
+      topics TEXT NOT NULL,
+      generated_at INTEGER NOT NULL,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    )
+  `);
+
   // Messages 表
   db.exec(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -92,6 +106,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       anchor_prompt TEXT NOT NULL,
       anchor_timestamp INTEGER NOT NULL,
       checkpoint_message_id TEXT,
+      redo_checkpoint_message_id TEXT,
       hidden_message_count INTEGER NOT NULL DEFAULT 0,
       hidden_message_ids TEXT NOT NULL DEFAULT '[]',
       files_restored INTEGER NOT NULL DEFAULT 0,
@@ -109,6 +124,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN request_digest TEXT`, logger);
   safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'`, logger);
   safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN restored_at INTEGER`, logger);
+  safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN redo_checkpoint_message_id TEXT`, logger);
 
   // User-visible Session Fork is distinct from parent_session_id. The latter
   // remains a compatibility projection used by subagents and older clients.
@@ -603,6 +619,11 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       schedule_type TEXT NOT NULL,
       schedule TEXT NOT NULL,
       action TEXT NOT NULL,
+      runs_on TEXT NOT NULL DEFAULT 'local' CHECK (runs_on IN ('local', 'cloud')),
+      max_run_budget REAL CHECK (max_run_budget IS NULL OR max_run_budget >= 0),
+      min_interval_seconds INTEGER NOT NULL DEFAULT 60 CHECK (min_interval_seconds >= 60),
+      result_channel TEXT,
+      cloud_job_id TEXT,
       enabled INTEGER NOT NULL DEFAULT 1,
       max_retries INTEGER DEFAULT 0,
       retry_delay INTEGER DEFAULT 5000,
@@ -613,6 +634,14 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       updated_at INTEGER NOT NULL
     )
   `);
+
+  // N-L3-MINLOOP：一次补齐执行位置、单次预算槽位和位置派生的频率下限。
+  // max_run_budget 是 unattended 全局预算池之上的每任务闸，绝不替代全局池。
+  safeAlter(db, "ALTER TABLE cron_jobs ADD COLUMN runs_on TEXT NOT NULL DEFAULT 'local' CHECK (runs_on IN ('local', 'cloud'))", logger);
+  safeAlter(db, 'ALTER TABLE cron_jobs ADD COLUMN max_run_budget REAL CHECK (max_run_budget IS NULL OR max_run_budget >= 0)', logger);
+  safeAlter(db, 'ALTER TABLE cron_jobs ADD COLUMN min_interval_seconds INTEGER NOT NULL DEFAULT 60 CHECK (min_interval_seconds >= 60)', logger);
+  safeAlter(db, 'ALTER TABLE cron_jobs ADD COLUMN result_channel TEXT', logger);
+  safeAlter(db, 'ALTER TABLE cron_jobs ADD COLUMN cloud_job_id TEXT', logger);
 
   // Cron Executions 表 (任务执行记录)
   db.exec(`
@@ -691,12 +720,16 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       workspace_scope_version TEXT,
       original_content TEXT,
       file_existed INTEGER NOT NULL,
+      post_write_digest TEXT,
+      restored_from TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `);
   safeAlter(db, `ALTER TABLE file_checkpoints ADD COLUMN source_id TEXT`, logger);
   safeAlter(db, `ALTER TABLE file_checkpoints ADD COLUMN workspace_scope_version TEXT`, logger);
+  safeAlter(db, `ALTER TABLE file_checkpoints ADD COLUMN post_write_digest TEXT`, logger);
+  safeAlter(db, `ALTER TABLE file_checkpoints ADD COLUMN restored_from TEXT`, logger);
 
   // Session Events 表 (完整 SSE 事件日志，用于评测分析)
   db.exec(`
@@ -1015,13 +1048,42 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       envelope_json TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'queued',
       retry_count INTEGER NOT NULL DEFAULT 0,
+      position INTEGER NOT NULL DEFAULT 0,
+      paused_reason TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )
   `);
+  const queuedInputColumns = new Set(
+    (db.prepare('PRAGMA table_info(queued_inputs)').all() as Array<{ name: string }>)
+      .map((column) => column.name),
+  );
+  const queuedInputPositionWasPresent = queuedInputColumns.has('position');
+  safeAlter(db, 'ALTER TABLE queued_inputs ADD COLUMN position INTEGER NOT NULL DEFAULT 0', logger);
+  safeAlter(db, 'ALTER TABLE queued_inputs ADD COLUMN paused_reason TEXT', logger);
+  if (!queuedInputPositionWasPresent) {
+    db.exec(`
+      WITH ranked AS (
+        SELECT id,
+          ROW_NUMBER() OVER (
+            PARTITION BY session_id
+            ORDER BY created_at ASC, id ASC
+          ) - 1 AS migrated_position
+        FROM queued_inputs
+      )
+      UPDATE queued_inputs
+      SET position = (
+        SELECT migrated_position FROM ranked WHERE ranked.id = queued_inputs.id
+      )
+    `);
+  }
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_queued_inputs_session
     ON queued_inputs (session_id, status, created_at)
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_queued_inputs_position
+    ON queued_inputs (session_id, position)
   `);
 
   // Agent Neo native Generative UI. Mutable state remains local by design;

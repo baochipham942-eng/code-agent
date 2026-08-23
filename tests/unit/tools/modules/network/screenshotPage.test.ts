@@ -3,6 +3,9 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -58,7 +61,9 @@ describe('screenshot_page — schema', () => {
     expect(screenshotPageModule.schema.name).toBe('screenshot_page');
     expect(screenshotPageModule.schema.category).toBe('network');
     expect(screenshotPageModule.schema.permissionLevel).toBe('network');
-    expect(screenshotPageModule.schema.readOnly).toBe(true);
+    // N-PATHMUTGUARD（2026-08-21 爸拍板）：screenshot_page 会把截图写到 output_path，readOnly 标注改为真值 false；
+    // 仍允许在计划模式使用（读网页为主，落盘受 mutation guard 管）。
+    expect(screenshotPageModule.schema.readOnly).toBe(false);
     expect(screenshotPageModule.schema.allowInPlanMode).toBe(true);
   });
 
@@ -110,6 +115,33 @@ describe('screenshot_page — execute', () => {
       });
       expect(writeFileSyncMock).toHaveBeenCalled();
       expect((result.meta?.attachment as Record<string, unknown>)?.category).toBe('image');
+    }
+  });
+
+  it('resolves a relative output_path inside ctx.workingDir and writes there', async () => {
+    const workingDir = await mkdtemp(join(tmpdir(), 'screenshot-page-'));
+    const expectedPath = join(workingDir, 'page.png');
+    try {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+      });
+      let diskWrite: Promise<void> | undefined;
+      writeFileSyncMock.mockImplementationOnce((filePath: string, data: Buffer) => {
+        diskWrite = writeFile(filePath, data);
+      });
+      const result = await executeScreenshotPage(
+        { url: 'https://example.com', output_path: 'page.png' },
+        makeCtx({ workingDir }),
+        allowAll,
+      );
+      await diskWrite;
+      expect(result.ok).toBe(true);
+      expect(writeFileSyncMock).toHaveBeenCalledWith(expectedPath, expect.any(Buffer));
+      expect((await readFile(expectedPath)).length).toBeGreaterThan(0);
+      if (result.ok) expect(result.output).toContain(expectedPath);
+    } finally {
+      await rm(workingDir, { recursive: true, force: true });
     }
   });
 

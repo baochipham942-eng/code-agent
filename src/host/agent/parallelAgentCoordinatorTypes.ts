@@ -17,6 +17,7 @@ export interface AgentTask {
   tools: string[];
   maxIterations?: number;
   dependsOn?: string[];
+  ownedPaths?: string[];
   priority?: number;
 }
 

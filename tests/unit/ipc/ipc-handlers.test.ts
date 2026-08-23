@@ -232,6 +232,23 @@ describe('IPC Handlers', () => {
       expect(response.error?.code).toBe('INVALID_AGENT_ID');
     });
 
+    it('closeAgent validates agentId and reports cancelled=false for unknown agents', async () => {
+      registerAgentHandlers(ipc.mock, () => null as any);
+
+      const invalid = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, {
+        action: 'closeAgent',
+        payload: {},
+      } satisfies IPCRequest);
+      expect(invalid.success).toBe(false);
+      expect(invalid.error?.code).toBe('INVALID_AGENT_ID');
+
+      const unknown = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, {
+        action: 'closeAgent',
+        payload: { agentId: 'no-such-agent', sessionId: 'session-1' },
+      } satisfies IPCRequest);
+      expect(unknown).toEqual({ success: true, data: { cancelled: false } });
+    });
+
     it('normalizes rich envelope payload for send', async () => {
       const mockAppService = {
         sendMessage: vi.fn().mockResolvedValue(undefined),
@@ -396,10 +413,24 @@ describe('IPC Handlers', () => {
         workspaceChanged: true,
         conversationChanged: false,
       };
+      const checkoutResult = {
+        success: true,
+        state: 'success',
+        sessionId: 'session-1',
+        rewindId: 'rewind-atomic-1',
+      };
+      const redoResult = {
+        success: true,
+        state: 'success',
+        sessionId: 'session-1',
+        rewindId: 'rewind-atomic-1',
+      };
       const mockAppService = {
         rewindConversation: vi.fn().mockResolvedValue(rewindResult),
         restoreConversationRewind: vi.fn().mockResolvedValue(restoreResult),
         restoreWorkspaceFilesAtCheckpoint: vi.fn().mockResolvedValue(fileRestoreResult),
+        turnCheckout: vi.fn().mockResolvedValue(checkoutResult),
+        turnRedo: vi.fn().mockResolvedValue(redoResult),
       };
       registerSessionHandlers(ipc.mock, () => mockAppService as any);
 
@@ -420,6 +451,18 @@ describe('IPC Handlers', () => {
         action: 'restoreWorkspaceFilesAtCheckpoint',
         payload: { sessionId: 'session-1', checkpointMessageId: 'a2' },
       })).resolves.toEqual({ success: true, data: fileRestoreResult });
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'turnCheckout',
+        payload: {
+          sessionId: 'session-1',
+          userMessageId: 'u2',
+          idempotencyKey: 'checkout-request-1',
+        },
+      })).resolves.toEqual({ success: true, data: checkoutResult });
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'turnRedo',
+        payload: { sessionId: 'session-1', rewindId: 'rewind-atomic-1' },
+      })).resolves.toEqual({ success: true, data: redoResult });
       expect(mockAppService.rewindConversation).toHaveBeenCalledWith(rewindPayload);
       expect(mockAppService.restoreConversationRewind).toHaveBeenCalledWith({
         sessionId: 'session-1',
@@ -428,6 +471,15 @@ describe('IPC Handlers', () => {
       expect(mockAppService.restoreWorkspaceFilesAtCheckpoint).toHaveBeenCalledWith({
         sessionId: 'session-1',
         checkpointMessageId: 'a2',
+      });
+      expect(mockAppService.turnCheckout).toHaveBeenCalledWith({
+        sessionId: 'session-1',
+        userMessageId: 'u2',
+        idempotencyKey: 'checkout-request-1',
+      });
+      expect(mockAppService.turnRedo).toHaveBeenCalledWith({
+        sessionId: 'session-1',
+        rewindId: 'rewind-atomic-1',
       });
     });
 

@@ -278,7 +278,7 @@ async function runWorkflow(
         }
         return resolved;
       },
-      deriveSubagentContext: ({ agentId, modelConfig, signal, capabilities, workspace }): SubagentContext => ({
+      deriveSubagentContext: ({ agentId, modelConfig, signal, capabilities, workspace, ownedPaths }): SubagentContext => ({
         ...baseSubagentContext,
         modelConfig,
         cwd: workspace?.cwd ?? baseSubagentContext.cwd,
@@ -286,6 +286,7 @@ async function runWorkflow(
         abortSignal: signal,
         currentToolCallId: undefined,
         agentId,
+        ownedPaths,
         messages: undefined,
         todos: undefined,
         modifiedFiles: undefined,

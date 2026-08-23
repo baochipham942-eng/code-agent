@@ -28,7 +28,11 @@ function TimelineEvent({ event, copy }: {
   event: SurfaceExecutionEventV1;
   copy: SurfaceExecutionTranslationsV1;
 }) {
-  const summary = safeSurfaceText(event.userSummary, copy.fallback.stage, 220);
+  const summary = event.userSummary.startsWith('Browser login state could not be saved')
+    ? copy.resumeState.exportFailed
+    : event.userSummary.startsWith('Browser login state could not be restored')
+      ? copy.resumeState.importFailed
+      : safeSurfaceText(event.userSummary, copy.fallback.stage, 220);
   const findings = (event.observation?.findings ?? []).slice(0, 3);
 
   return (

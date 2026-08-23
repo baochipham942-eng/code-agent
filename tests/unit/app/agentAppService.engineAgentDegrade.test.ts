@@ -36,6 +36,7 @@ const engineMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../src/host/services/agentEngine', () => ({
+  getExternalEngineAdapter: vi.fn(() => ({ run: engineMocks.codexRun })),
   CodexCliAdapter: vi.fn(function CodexCliAdapterMock() {
     return { run: engineMocks.codexRun };
   }),

@@ -173,9 +173,9 @@ describe('过期一次性任务加载时停用（防僵尸 enabled 任务）', (
     const job = service.getJob('job-missed-at');
     expect(job).not.toBeNull();
     expect(job!.enabled).toBe(false);
-    // 落库：INSERT OR REPLACE 参数第 7 位是 enabled，应写 0
+    // 落库：新增 resultChannel/cloudJobId 后 enabled 是第 12 位，应写 0
     const saved = dbState.savedRows.find((row) => row[0] === 'job-missed-at');
-    expect(saved?.[6]).toBe(0);
+    expect(saved?.[11]).toBe(0);
     await service.shutdown();
   });
 

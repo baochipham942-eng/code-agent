@@ -86,6 +86,7 @@ describe('AgentAppService lifecycle routing', () => {
 	    getSession: ReturnType<typeof vi.fn>;
 	    listSessions: ReturnType<typeof vi.fn>;
 	    createSession: ReturnType<typeof vi.fn>;
+	    patchSessionMetadata: ReturnType<typeof vi.fn>;
 	    setCurrentSession: ReturnType<typeof vi.fn>;
 	    updateSession: ReturnType<typeof vi.fn>;
 	    restoreSession: ReturnType<typeof vi.fn>;
@@ -133,9 +134,11 @@ describe('AgentAppService lifecycle routing', () => {
 	        title: options.title,
 	        modelConfig: options.modelConfig,
 	        workingDirectory: options.workingDirectory,
+	        metadata: options.metadata,
 	        createdAt: 1,
 	        updatedAt: 1,
 	      })),
+	      patchSessionMetadata: vi.fn().mockResolvedValue(true),
 	      setCurrentSession: vi.fn(),
 	      updateSession: vi.fn().mockResolvedValue(undefined),
 	      restoreSession: vi.fn(),
@@ -275,6 +278,37 @@ describe('AgentAppService lifecycle routing', () => {
       workingDirectory: '/current/project',
     }));
     expect(orchestrator.setWorkingDirectory).toHaveBeenCalledWith('/current/project');
+  });
+
+  it('persists only expertThread after creating an expert session and preserves existing metadata', async () => {
+    const service = createServiceWithConfig(taskManager, {
+      getSettings: () => ({ model: { provider: 'openai', model: 'gpt-5.4' } }),
+    });
+
+    const session = await service.createSession({
+      title: '牧之',
+      expertRoleId: '牧之',
+      metadata: { teamLead: { roleId: '主理人', recipeId: 'recipe-1', setAt: 1 } },
+    });
+
+    expect(sessionManager.patchSessionMetadata).toHaveBeenCalledOnce();
+    expect(sessionManager.patchSessionMetadata).toHaveBeenCalledWith('created-session', {
+      expertThread: { roleId: '牧之', setAt: expect.any(Number) },
+    });
+    expect(session.metadata).toMatchObject({
+      teamLead: { roleId: '主理人', recipeId: 'recipe-1', setAt: 1 },
+      expertThread: { roleId: '牧之', setAt: expect.any(Number) },
+    });
+  });
+
+  it('does not block session creation when expertThread persistence fails', async () => {
+    sessionManager.patchSessionMetadata.mockRejectedValueOnce(new Error('db unavailable'));
+    const service = createServiceWithConfig(taskManager, {
+      getSettings: () => ({ model: { provider: 'openai', model: 'gpt-5.4' } }),
+    });
+
+    await expect(service.createSession({ title: '牧之', expertRoleId: '牧之' }))
+      .resolves.toMatchObject({ id: 'created-session' });
   });
 
   it('annotates listed durable waiting sessions without changing the running projection', async () => {
@@ -518,6 +552,7 @@ describe('AgentAppService lifecycle routing', () => {
         }),
       }),
       'client-msg-1',
+      undefined,
     );
     expect(outcome).toBe(expectedOutcome);
   });
@@ -673,6 +708,7 @@ describe('AgentAppService lifecycle routing', () => {
       }),
       undefined,
       'client-msg-2',
+      undefined,
     );
   });
 

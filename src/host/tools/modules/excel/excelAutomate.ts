@@ -34,6 +34,7 @@ import { executePythonScript } from '../../utils/pythonBridge';
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
 import { excelAutomateSchema as schema } from './excelAutomate.schema';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 
 type ExcelAction = 'read' | 'generate' | 'edit' | 'automate' | 'list_sheets' | 'get_range' | 'validate_formulas';
 
@@ -153,10 +154,11 @@ export async function executeExcelAutomate(
           code: 'INVALID_ARGS',
         };
       }
+      const resolvedPath = resolveInputPath(args.file_path as string, ctx.workingDir);
       const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
       const legacyResult = await executeExcelEdit(
         {
-          file_path: args.file_path as string,
+          file_path: resolvedPath,
           operations: args.operations as ExcelEditParams['operations'],
           dry_run: args.dry_run as boolean | undefined,
         },
@@ -166,8 +168,6 @@ export async function executeExcelAutomate(
       ctx.logger.debug('ExcelAutomate done', { action, ok: legacyResult.success });
       const result = adaptLegacyResult(legacyResult);
       if (!result.ok) return result;
-      const filePath = args.file_path as string;
-      const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(ctx.workingDir, filePath);
       const artifact = args.dry_run
         ? undefined
         : await createFileArtifact(resolvedPath, schema.name, ctx, {

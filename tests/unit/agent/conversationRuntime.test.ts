@@ -827,6 +827,65 @@ describe('ConversationRuntime', () => {
       );
     });
 
+    it('emits a redirect receipt with the original words and partial location', async () => {
+      const persistMessage = vi.fn();
+      ctx.persistMessage = persistMessage;
+      ctx.turn.beginTurn('turn-current', '');
+      ctx.turn.appendStreamedContent('partial answer');
+      modules.toolEngine.getActiveToolNames = vi.fn().mockReturnValue(['Bash']);
+
+      await runtime.steer(
+        '<notice/>\n\n<user_request>改用新方案</user_request>',
+        'client-message-receipt',
+        undefined,
+        { workbench: { runtimeInputMode: 'redirect' } },
+        '改用新方案',
+        'turn-current',
+      );
+
+      expect(ctx.onEvent).toHaveBeenCalledWith({
+        type: 'input_redirected',
+        data: {
+          receiptId: 'mock-msg-id',
+          originalContent: '改用新方案',
+          expectedTurnId: 'turn-current',
+          partial: { charCount: 14, trailingText: 'partial answer' },
+          interruptedTools: ['Bash'],
+        },
+      });
+      expect(persistMessage).toHaveBeenCalledWith(expect.objectContaining({
+        role: 'system',
+        metadata: {
+          inputRedirectReceipt: expect.objectContaining({
+            originalContent: '改用新方案',
+            partial: { charCount: 14, trailingText: 'partial answer' },
+          }),
+        },
+      }));
+    });
+
+    it('rejects when the visible turn changed before injection', async () => {
+      const abortInference = vi.spyOn(ctx.control, 'abortInference');
+      ctx.turn.beginTurn('turn-current', '');
+
+      const result = runtime.steer(
+        '改用新方案',
+        'client-message-race',
+        undefined,
+        { workbench: { runtimeInputMode: 'redirect' } },
+        '改用新方案',
+        'turn-visible-before-send',
+      );
+
+      await expect(result).rejects.toMatchObject({
+        name: 'SteerRejectedError',
+        code: 'TURN_CHANGED',
+      });
+      expect((runtime as any).messageProcessor.injectSteerMessage).not.toHaveBeenCalled();
+      expect(abortInference).not.toHaveBeenCalled();
+      expect(ctx.onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'input_redirected' }));
+    });
+
     it('propagates persistence failure after applying synchronous live steer state', async () => {
       const controller = new AbortController();
       ctx.control.setInferenceAbortController(controller);

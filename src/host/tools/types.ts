@@ -27,6 +27,8 @@ export interface ToolContext {
   runId?: string;
   /** Conversation turn that owns this tool call and its durable projections. */
   turnId?: string;
+  /** Stable user message that originated this native turn. */
+  sourceMessageId?: string;
   /** Immutable authorization/artifact boundary for a run-scoped executor. */
   workspace?: string;
   workspaceScope?: WorkspaceScope;
@@ -162,6 +164,9 @@ export interface ToolContext {
 
 export interface PermissionRequestData {
   sessionId?: string;
+  agentId?: string;
+  runId?: string;
+  parentToolUseId?: string;
   forceConfirm?: boolean;
   type: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command' | 'directory_access';
   tool: string;

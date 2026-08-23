@@ -191,12 +191,22 @@ const agentLoopProbe = vi.hoisted(() => ({
   onRun: undefined as undefined | (() => void),
   lastConfig: undefined as undefined | {
     deniedToolNames?: string[];
+    allowedToolNames?: string[];
     searchEnabled?: boolean;
     thinkingEnabled?: boolean;
     effortLevel?: import('../../src/shared/contract/agent').EffortLevel;
     toolExecutor?: { runContext?: { workspace?: string } };
     workspaceScope?: { primaryRoot: string };
   },
+}));
+const roleBoundaryProbe = vi.hoisted(() => vi.fn(() => null as null | {
+  boundaryText: string;
+  allowedTools: string[];
+  blockedTools: string[];
+}));
+vi.mock('../../src/host/services/roleAssets/rolePersonalization', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/host/services/roleAssets/rolePersonalization')>()),
+  resolveRoleToolBoundary: roleBoundaryProbe,
 }));
 vi.mock('../../src/host/agent/agentLoop', () => ({
   AgentLoop: class {
@@ -327,6 +337,7 @@ describe('AgentOrchestrator', () => {
   let mockOnEvent: ReturnType<typeof vi.fn<(event: AgentEvent) => void>>;
 
   beforeEach(() => {
+    roleBoundaryProbe.mockReset().mockReturnValue(null);
     // Mock ConfigService
     mockConfigService = {
       getSettings: vi.fn().mockReturnValue({
@@ -713,7 +724,12 @@ describe('AgentOrchestrator', () => {
         undefined,
         { workbench: { workingDirectory: '/workspace/late' } },
         'late-steer-id',
-      )).resolves.toEqual({ outcome: 'queued', queuedInputId: 'late-steer-id' });
+      )).resolves.toEqual({
+        outcome: 'queued',
+        queuedInputId: 'late-steer-id',
+        code: 'RUN_SETTLED',
+        message: '这条先排上了，手头这轮做完就做',
+      });
       expect(queuedInputMocks.enqueue).toHaveBeenCalledWith({
         id: 'late-steer-id',
         sessionId: 'test-session-id',
@@ -1323,6 +1339,61 @@ describe('AgentOrchestrator', () => {
       });
 
       expect(granted).toEqual({ approved: false, denialSource: 'fail-closed' });
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // named 专家的常驻边界 → 主轮实际工具表
+  // --------------------------------------------------------------------------
+  describe('named role standing boundary tool gate', () => {
+    const ROLE = 'draft-only-mailer';
+
+    beforeEach(() => {
+      setCustomAgentMapForTest(new Map([[
+        ROLE,
+        {
+          id: ROLE as never,
+          name: ROLE,
+          description: 'd',
+          prompt: 'p',
+          tools: ['Read', 'mail_draft', 'mail_send'],
+          model: 'balanced',
+          maxIterations: 5,
+          readonly: false,
+          source: 'user',
+        },
+      ]]));
+      roleBoundaryProbe.mockReturnValue({
+        boundaryText: '不允许对外发送',
+        allowedTools: ['Read', 'mail_draft'],
+        blockedTools: ['mail_send'],
+      });
+    });
+
+    afterEach(() => {
+      setCustomAgentMapForTest(new Map());
+    });
+
+    it('passes the translated allowlist to the AgentLoop that runs the foreground turn', async () => {
+      await (orchestrator as unknown as {
+        runStandardAgentLoop(
+          content: string,
+          onEvent: (e: AgentEvent) => void,
+          modelConfig: unknown,
+          sessionId?: string,
+          executionContent?: string,
+          toolScope?: unknown,
+          executionIntent?: unknown,
+          options?: AgentRunOptions,
+        ): Promise<void>;
+      }).runStandardAgentLoop(
+        '发送这封邮件', mockOnEvent, { provider: 'deepseek', model: 'deepseek-chat' },
+        'boundary-session', undefined, undefined, undefined,
+        { agentOverrideId: ROLE } as AgentRunOptions,
+      );
+
+      expect(lastAgentLoopConfig()?.allowedToolNames).toEqual(['Read', 'mail_draft']);
+      expect(lastAgentLoopConfig()?.allowedToolNames).not.toContain('mail_send');
     });
   });
 

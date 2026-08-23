@@ -186,7 +186,7 @@ export function isSameSwarmRun(
 /**
  * Agent 执行状态（复制自 agentSwarm.ts 避免循环依赖）
  */
-export type AgentStatus =
+type AgentStatus =
   | 'pending'     // 等待依赖
   | 'ready'       // 可执行
   | 'running'     // 执行中

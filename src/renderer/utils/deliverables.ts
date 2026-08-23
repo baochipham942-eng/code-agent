@@ -7,9 +7,11 @@ import type {
   DeliverableEvidencePack,
   DeliverableEvidenceRef,
   DeliverableOpenTarget,
+  DeliverablePublishInfo,
   DeliverableQualitySummary,
   DeliverableSecondaryAction,
   DeliverableRevisionContext,
+  DeliverableShareLinkInfo,
   Message,
   WorkspacePreviewItem,
   WorkspacePreviewKind,
@@ -205,6 +207,7 @@ export function buildPendingImageDeliverableCards(
         requiredChecks: contextPack.acceptance,
       },
       evidencePack,
+      publishState: { kind: 'draft' },
       tone: 'info',
     };
   });
@@ -251,6 +254,20 @@ function secondaryActionsForWorkspaceItem(
 ): DeliverableSecondaryAction[] {
   const actions: DeliverableSecondaryAction[] = [];
   if (item.file?.path) {
+    actions.push({
+      kind: 'publish-version',
+      label: 'publish-version',
+      path: item.file.path,
+      title: item.file.name || basename(item.file.path),
+    });
+    actions.push({
+      kind: 'share-link',
+      label: 'share-link',
+      path: item.file.path,
+      title: item.file.name || basename(item.file.path),
+      disabled: true,
+      reason: 'publish-first',
+    });
     actions.push({ kind: 'reveal-file', label: 'reveal-file', path: item.file.path });
     actions.push({ kind: 'copy-reference', label: 'copy-reference', value: item.file.path });
     actions.push({
@@ -265,6 +282,7 @@ function secondaryActionsForWorkspaceItem(
       bundleName: `${basename(item.file.name || item.title || 'deliverable')}-bundle.zip`,
       files: [{
         path: item.file.path,
+        source: 'latest-published',
         name: item.file.name || basename(item.file.path),
         role: 'primary',
         mimeType: item.file.mimeType,
@@ -280,6 +298,7 @@ function secondaryActionsForWorkspaceItem(
         revision: item.revision,
         quality: item.quality,
       },
+      disabled: true,
     });
   } else if (openTarget.kind === 'workspace-preview') {
     actions.push({ kind: 'copy-reference', label: 'copy-reference', value: openTarget.itemId });
@@ -452,6 +471,7 @@ export function buildDeliverableCardFromWorkspaceItem(item: WorkspacePreviewItem
     evidencePack,
     revisionContext,
     quality,
+    publishState: { kind: 'draft' },
     secondaryActions: secondaryActionsForWorkspaceItem(item, openTarget),
     tone: toneFromQuality(quality) || toneFromEvidence(evidencePack.status),
   };
@@ -535,6 +555,7 @@ export function buildMessageArtifactDeliverableCards(
       },
       evidencePack,
       revisionContext,
+      publishState: { kind: 'draft' },
       tone: toneFromEvidence(evidencePack.status),
     };
   });
@@ -557,6 +578,20 @@ function openTargetForTurnArtifact(item: TurnArtifactOwnershipItem): Deliverable
 function secondaryActionsForTurnArtifact(item: TurnArtifactOwnershipItem): DeliverableSecondaryAction[] {
   const actions: DeliverableSecondaryAction[] = [];
   if (item.path) {
+    actions.push({
+      kind: 'publish-version',
+      label: 'publish-version',
+      path: item.path,
+      title: item.label || basename(item.path),
+    });
+    actions.push({
+      kind: 'share-link',
+      label: 'share-link',
+      path: item.path,
+      title: item.label || basename(item.path),
+      disabled: true,
+      reason: 'publish-first',
+    });
     actions.push({ kind: 'reveal-file', label: 'reveal-file', path: item.path });
     actions.push({ kind: 'copy-reference', label: 'copy-reference', value: item.path });
     actions.push({
@@ -571,6 +606,7 @@ function secondaryActionsForTurnArtifact(item: TurnArtifactOwnershipItem): Deliv
       bundleName: `${basename(item.label || item.path)}-bundle.zip`,
       files: [{
         path: item.path,
+        source: 'latest-published',
         name: basename(item.path),
         role: 'primary',
       }],
@@ -581,6 +617,7 @@ function secondaryActionsForTurnArtifact(item: TurnArtifactOwnershipItem): Deliv
         ownerLabel: item.ownerLabel,
         sourceNodeId: item.sourceNodeId,
       },
+      disabled: true,
     });
   } else if (item.url) {
     actions.push({ kind: 'copy-reference', label: 'copy-reference', value: item.url });
@@ -677,8 +714,64 @@ export function buildTurnArtifactDeliverableCards(
         requiredChecks: contextPack.acceptance,
       },
       evidencePack,
+      revisionContext: item.path ? {
+        artifactId: `file:${item.path}`,
+        filePath: item.path,
+        sourceTool: item.ownerLabel,
+      } : undefined,
+      publishState: { kind: 'draft' },
       secondaryActions: secondaryActionsForTurnArtifact(item),
       tone: toneFromEvidence(evidencePack.status),
     };
   });
+}
+
+export function applyPublishInfoToDeliverableCard(
+  card: DeliverableCardView,
+  info: DeliverablePublishInfo,
+): DeliverableCardView {
+  const latest = info.publishedVersions[0];
+  return {
+    ...card,
+    publishState: info.publishState,
+    publishedVersions: info.publishedVersions,
+    secondaryActions: card.secondaryActions?.map((action) => {
+      if (action.kind === 'share-link') {
+        return {
+          ...action,
+          disabled: !latest,
+          reason: latest ? undefined : 'publish-first',
+        };
+      }
+      if (action.kind !== 'export-bundle') return action;
+      return {
+        ...action,
+        disabled: !latest,
+        sourceVersion: latest?.version,
+        files: action.files.map((file) => ({
+          ...file,
+          source: 'latest-published' as const,
+        })),
+        manifest: {
+          ...action.manifest,
+          publishedVersion: latest?.version,
+        },
+      };
+    }),
+  };
+}
+
+export function applyShareInfoToDeliverableCard(
+  card: DeliverableCardView,
+  info: DeliverableShareLinkInfo,
+): DeliverableCardView {
+  const active = Boolean(info.share && !info.share.revokedAt && (!info.share.expiresAt || info.share.expiresAt > Date.now()));
+  return {
+    ...card,
+    shareLinkInfo: info,
+    secondaryActions: card.secondaryActions?.map((action) => action.kind === 'share-link' ? {
+      ...action,
+      label: active ? 'share-link-active' : 'share-link',
+    } : action),
+  };
 }

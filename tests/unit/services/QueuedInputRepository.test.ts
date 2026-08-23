@@ -5,6 +5,7 @@ import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
+import { applySchema } from '../../../src/host/services/core/database/schema';
 
 function createSchema(db: BetterSqlite3.Database): void {
   db.exec(`
@@ -14,6 +15,8 @@ function createSchema(db: BetterSqlite3.Database): void {
       envelope_json TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'queued',
       retry_count INTEGER NOT NULL DEFAULT 0,
+      position INTEGER NOT NULL DEFAULT 0,
+      paused_reason TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -50,6 +53,8 @@ describe('QueuedInputRepository', () => {
       envelopeJson: JSON.stringify({ content: 'first input' }),
       status: 'queued',
       retryCount: 0,
+      position: 0,
+      pausedReason: null,
       createdAt: 100,
       updatedAt: 100,
     });
@@ -75,20 +80,22 @@ describe('QueuedInputRepository', () => {
       envelopeJson: JSON.stringify({ content: 'first input' }),
       status: 'queued',
       retryCount: 0,
+      position: 0,
+      pausedReason: null,
       createdAt: 100,
       updatedAt: 100,
     });
   });
 
-  it('listBySession 只返回指定 session 并按 created_at 升序排列', () => {
+  it('listBySession 只返回指定 session 并按 position 排列', () => {
     repo.enqueue({ id: 'a-later', sessionId: 'session-a', envelope: { order: 2 }, now: 300 });
     repo.enqueue({ id: 'b-middle', sessionId: 'session-b', envelope: { order: 9 }, now: 200 });
     repo.enqueue({ id: 'a-first', sessionId: 'session-a', envelope: { order: 1 }, now: 100 });
 
     const sessionA = repo.listBySession('session-a');
 
-    expect(sessionA.map((record) => record.id)).toEqual(['a-first', 'a-later']);
-    expect(sessionA.map((record) => record.createdAt)).toEqual([100, 300]);
+    expect(sessionA.map((record) => record.id)).toEqual(['a-later', 'a-first']);
+    expect(sessionA.map((record) => record.position)).toEqual([0, 1]);
     expect(sessionA.every((record) => record.sessionId === 'session-a')).toBe(true);
     expect(repo.listBySession('session-b').map((record) => record.id)).toEqual(['b-middle']);
   });
@@ -198,5 +205,72 @@ describe('QueuedInputRepository', () => {
 
     expect(repo.markSending('input-1', fixedTimestamp)).toBe(true);
     expect(repo.getById('input-1')?.updatedAt).toBe(fixedTimestamp);
+  });
+
+  it('reorder 在一个事务内批量改 position，listBySession 立即反映新顺序', () => {
+    repo.enqueue({ id: 'first', sessionId: 'session-1', envelope: {}, now: 100 });
+    repo.enqueue({ id: 'second', sessionId: 'session-1', envelope: {}, now: 200 });
+    repo.enqueue({ id: 'third', sessionId: 'session-1', envelope: {}, now: 300 });
+
+    expect(repo.reorder('session-1', ['third', 'first', 'second'], 400)).toBe(true);
+    expect(repo.listBySession('session-1').map((record) => record.id))
+      .toEqual(['third', 'first', 'second']);
+    expect(repo.listBySession('session-1').map((record) => record.position))
+      .toEqual([0, 1, 2]);
+  });
+
+  it('reorder 中途写失败时整段 position 回滚', () => {
+    repo.enqueue({ id: 'first', sessionId: 'session-1', envelope: {}, now: 100 });
+    repo.enqueue({ id: 'second', sessionId: 'session-1', envelope: {}, now: 200 });
+    db.exec(`
+      CREATE TRIGGER reject_second_position
+      BEFORE UPDATE OF position ON queued_inputs
+      WHEN NEW.id = 'second'
+      BEGIN
+        SELECT RAISE(ABORT, 'reject second');
+      END;
+    `);
+
+    expect(() => repo.reorder('session-1', ['second', 'first'], 300)).toThrow('reject second');
+    expect(repo.listBySession('session-1').map((record) => [record.id, record.position]))
+      .toEqual([['first', 0], ['second', 1]]);
+  });
+
+  it('旧表迁移按 created_at 回填 position，并补 paused_reason 与 position 索引', () => {
+    const legacy = new Database(':memory:');
+    legacy.exec(`
+      CREATE TABLE queued_inputs (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        envelope_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued',
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO queued_inputs VALUES
+        ('later', 's1', '{}', 'queued', 0, 200, 200),
+        ('earlier', 's1', '{}', 'queued', 0, 100, 100),
+        ('other', 's2', '{}', 'queued', 0, 150, 150);
+    `);
+    const migrationLogger = {
+      warn: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      debug: vi.fn(),
+    } as unknown as Parameters<typeof applySchema>[1];
+    applySchema(legacy, migrationLogger);
+
+    const migrated = legacy.prepare(
+      'SELECT id, position, paused_reason FROM queued_inputs ORDER BY session_id, position',
+    ).all();
+    expect(migrated).toEqual([
+      { id: 'earlier', position: 0, paused_reason: null },
+      { id: 'later', position: 1, paused_reason: null },
+      { id: 'other', position: 0, paused_reason: null },
+    ]);
+    const indexes = legacy.prepare("PRAGMA index_list('queued_inputs')").all() as Array<{ name: string }>;
+    expect(indexes.map((index) => index.name)).toContain('idx_queued_inputs_position');
+    legacy.close();
   });
 });

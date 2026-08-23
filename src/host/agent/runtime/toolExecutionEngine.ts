@@ -60,7 +60,11 @@ import { registerArtifactRepairBlockedToolTurn } from './artifactRepairAdmission
 import { maybeRepairArtifactContractEditAnchors } from './toolArtifactContractAnchors';
 import { handleModifiedArtifactValidation } from './toolArtifactValidationLifecycle';
 import { handleToolResultBookkeeping } from './toolResultLifecycle';
-import { trackFileMutationSideEffects } from './toolFileMutationTracking';
+import {
+  isWorkspaceDiscoveryMutationTool,
+  trackFileMutationSideEffects,
+} from './toolFileMutationTracking';
+import { captureWorkspaceMutationSnapshot } from '../../services/checkpoint/turnDiffService';
 import { isTaskMutationToolCall } from '../nudgeManager';
 import { handleToolExecutionError } from './toolExecutionErrorHandler';
 import { applySwarmBudgetClamp, recordSwarmSpend } from './swarmGoalIntegration';
@@ -77,6 +81,7 @@ import { clearApprovalWait, getApprovalWaitMs } from '../../tools/toolExecutionT
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { formatSystemReminderForCompletions } from '../subagentCompletionNotification';
 import { planContextTag } from './planApprovalRunBoundary';
+import { extractToolStepTarget } from '../toolStepTarget';
 
 const logger = createLogger('AgentLoop');
 
@@ -104,6 +109,7 @@ export class ToolExecutionEngine {
   runtimeControl!: RuntimeControlPort;
   private forceFinalResponseReasonAtBatchStart: string | undefined;
   private forceFinalResponseBatchActive = false;
+  private readonly activeToolNames = new Map<string, string>();
   // 工具入参 repair 节流闸：按 toolName 统计连续校验失败，超上限切终止指引
   // （Kimi 借鉴 #1）。引擎实例随 AgentLoop 跨多轮复用，run 起点须 reset。
   private readonly repairGate = new ToolArgsRepairGate(TOOL_ARGS_REPAIR_MAX_ATTEMPTS);
@@ -113,6 +119,10 @@ export class ToolExecutionEngine {
   /** run 起点重置 repair 计数（每条 user 消息开新的连续失败统计窗口）。 */
   resetRepairGate(): void {
     this.repairGate.reset();
+  }
+
+  getActiveToolNames(): string[] {
+    return [...new Set(this.activeToolNames.values())];
   }
 
   setModules(
@@ -235,6 +245,7 @@ export class ToolExecutionEngine {
             tool: toolCall.name,
             toolIndex: index,
             toolTotal: toolCalls.length,
+            target: extractToolStepTarget(toolCall.arguments),
             parallel: true,
           });
         }
@@ -261,6 +272,7 @@ export class ToolExecutionEngine {
         tool: toolCall.name,
         toolIndex: index,
         toolTotal: toolCalls.length,
+        target: extractToolStepTarget(toolCall.arguments),
       });
       results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length, false);
     }
@@ -282,6 +294,7 @@ export class ToolExecutionEngine {
         tool: toolCall.name,
         toolIndex: index,
         toolTotal: toolCalls.length,
+        target: extractToolStepTarget(toolCall.arguments),
         progress,
       });
       results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length, false);
@@ -753,11 +766,15 @@ export class ToolExecutionEngine {
       }
     }, TOOL_PROGRESS.REPORT_INTERVAL);
 
+    this.activeToolNames.set(toolCall.id, toolCall.name);
     try {
       logger.debug(` Calling toolExecutor.execute for ${toolCall.name}...`);
 
       const currentAttachments = this.contextAssembly.getCurrentAttachments();
       const artifactRepairRollbackSnapshot = captureArtifactRepairRollbackSnapshot(this.ctx, toolCall);
+      const workspaceMutationSnapshot = isWorkspaceDiscoveryMutationTool(toolCall.name)
+        ? await captureWorkspaceMutationSnapshot(this.ctx.workingDirectory || process.cwd())
+        : undefined;
 
       const result = await this.ctx.toolExecutor.execute(
         toolCall.name,
@@ -765,6 +782,9 @@ export class ToolExecutionEngine {
         {
           runId: this.ctx.runId,
           turnId: this.ctx.turn.currentTurnId,
+          sourceMessageId: [...this.ctx.messages]
+            .reverse()
+            .find((message) => message.role === 'user')?.id,
           turnTrace: this.ctx.turnTrace,
           planningService: this.ctx.planningService,
           modelConfig: this.ctx.modelConfig,
@@ -887,6 +907,7 @@ export class ToolExecutionEngine {
         toolCall,
         normalizedResult,
         toolResult,
+        workspaceMutationSnapshot,
       });
 
       // taskGate（roadmap 1.3）：模型主动写过任务（task_create/task_update 或
@@ -1132,6 +1153,8 @@ export class ToolExecutionEngine {
         langfuse,
         toolSpanId,
       });
+    } finally {
+      this.activeToolNames.delete(toolCall.id);
     }
   }
 

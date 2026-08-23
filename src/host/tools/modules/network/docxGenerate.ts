@@ -9,6 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import {
   Document,
   Packer,
@@ -415,8 +416,8 @@ export async function executeDocxGenerate(
 
     const timestamp = Date.now();
     const fileName = `document-${timestamp}.docx`;
-    const outputDir = output_path ? path.dirname(output_path) : ctx.workingDir;
-    const finalPath = output_path || path.join(outputDir, fileName);
+    const finalPath = resolveInputPath(output_path ?? fileName, ctx.workingDir);
+    const outputDir = path.dirname(finalPath);
 
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });

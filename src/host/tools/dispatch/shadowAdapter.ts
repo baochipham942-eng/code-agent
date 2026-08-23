@@ -120,6 +120,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
 
   return {
     runId: input.runId,
+    sourceMessageId: input.legacyCtx.sourceMessageId,
     sessionId: input.sessionId ?? 'protocol-unknown',
     workspace: input.workspace,
     workspaceScope: input.workspaceScope ?? input.legacyCtx.workspaceScope,
@@ -205,6 +206,9 @@ export function buildCanUseToolFromLegacy(
     try {
       const allowed = await legacyCtx.requestPermission({
         sessionId: requestHint?.sessionId,
+        agentId: requestHint?.agentId,
+        runId: requestHint?.runId,
+        parentToolUseId: requestHint?.parentToolUseId,
         forceConfirm: requestHint?.forceConfirm,
         type,
         tool: requestedToolName,

@@ -20,6 +20,9 @@ import type { RunRegistry } from './runRegistry';
 import type { DynamicWorkflowRecoveryHost } from './dynamicWorkflowRecovery';
 import type { NativeRecoveryHostPorts } from './nativeRecoveryHost';
 import type { AutoAgentRecoveryHost } from './autoAgentRecoveryHost';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('DurableRecoveryRuntime');
 export interface DurableRecoveryHandlerOverrides {
   native?: DurableEngineRecoveryHandler;
   agentTeam?: DurableEngineRecoveryHandler;
@@ -31,7 +34,7 @@ export interface DurableRecoveryHandlerOverrides {
 export interface DurableRecoveryRuntime {
   readonly dispatcher: DurableRecoveryDispatcher;
   recoverAndDispatch(now?: number): Promise<DurableRecoveryDispatchResult[]>;
-  scheduleDelayedScan(delayMs: number, callbacks?: {
+  startSweeper(intervalMs: number, callbacks?: {
     onResults?: (results: DurableRecoveryDispatchResult[]) => void;
     onError?: (error: unknown) => void;
   }): void;
@@ -75,31 +78,45 @@ export function createDurableRecoveryRuntime(input: {
     trustedServerIdentities: input.trustedMcpServerIdentities ?? readTrustedMcpServerIdentities(),
   }));
 
-  let delayedTimer: ReturnType<typeof setTimeout> | undefined;
+  let sweepTimer: ReturnType<typeof setInterval> | undefined;
+  let activeSweep: Promise<void> | undefined;
   let stopped = false;
+  const recoverAndDispatch = async (now = Date.now()) => {
+    if (stopped) throw new Error('Durable recovery runtime is stopped');
+    // The sweeper stays on the canonical claim path:
+    // recoverDurable -> recoverOnStartup -> stores.listRecoverable -> fenced claimLease.
+    const plans = await input.registry.recoverDurable(now);
+    return dispatcher.dispatch(plans, now);
+  };
   return {
     dispatcher,
-    async recoverAndDispatch(now = Date.now()) {
+    recoverAndDispatch,
+    startSweeper(intervalMs, callbacks = {}) {
       if (stopped) throw new Error('Durable recovery runtime is stopped');
-      const plans = await input.registry.recoverDurable(now);
-      return dispatcher.dispatch(plans, now);
-    },
-    scheduleDelayedScan(delayMs, callbacks = {}) {
-      if (stopped) throw new Error('Durable recovery runtime is stopped');
-      if (delayedTimer) clearTimeout(delayedTimer);
-      delayedTimer = setTimeout(() => {
-        delayedTimer = undefined;
-        void this.recoverAndDispatch(Date.now())
-          .then((results) => callbacks.onResults?.(results))
-          .catch((error) => callbacks.onError?.(error));
-      }, delayMs);
-      delayedTimer.unref?.();
+      if (sweepTimer) clearInterval(sweepTimer);
+      const tick = () => {
+        if (stopped || activeSweep) return;
+        activeSweep = recoverAndDispatch(Date.now())
+          .then((results) => {
+            for (const runId of new Set(results.map((result) => result.runId))) {
+              logger.info(`[durable-sweeper] reclaimed runId=${runId}`);
+            }
+            callbacks.onResults?.(results);
+          })
+          .catch((error) => callbacks.onError?.(error))
+          .finally(() => {
+            activeSweep = undefined;
+          });
+      };
+      sweepTimer = setInterval(tick, intervalMs);
+      sweepTimer.unref?.();
     },
     async shutdown() {
       if (stopped) return;
       stopped = true;
-      if (delayedTimer) clearTimeout(delayedTimer);
-      delayedTimer = undefined;
+      if (sweepTimer) clearInterval(sweepTimer);
+      sweepTimer = undefined;
+      await activeSweep;
       await dispatcher.shutdown();
     },
   };

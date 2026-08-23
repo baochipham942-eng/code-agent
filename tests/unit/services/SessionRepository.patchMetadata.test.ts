@@ -50,6 +50,20 @@ describe('SessionRepository.patchSessionMetadata', () => {
     expect(state.updatedAt).toBe(42);
   });
 
+  it('adds expertThread without overwriting an existing teamLead marker', () => {
+    const teamLead = { roleId: '主理人', recipeId: 'recipe-1', setAt: 1 };
+    const { db, state } = createFakeDb(JSON.stringify({ teamLead }));
+    const repo = makeRepo(db);
+
+    expect(repo.patchSessionMetadata('s1', {
+      expertThread: { roleId: '牧之', setAt: 42 },
+    })).toBe(true);
+    expect(JSON.parse(state.metadata!)).toEqual({
+      teamLead,
+      expertThread: { roleId: '牧之', setAt: 42 },
+    });
+  });
+
   it('null value deletes the key', () => {
     const { db, state } = createFakeDb(JSON.stringify({ foo: 1, modelOverride: { provider: 'zhipu', model: 'glm-5' } }));
     const repo = makeRepo(db);

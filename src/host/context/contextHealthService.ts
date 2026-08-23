@@ -11,36 +11,77 @@ import {
   CompressionStats,
   getWarningLevel,
   createEmptyHealthState,
-  createEmptySourceBreakdown,
   TokenBreakdown,
-  SourceTag,
   SourceBreakdown,
 } from '../../shared/contract/contextHealth';
+import { estimateTokens } from './tokenEstimator';
 import {
-  estimateTokens,
-  estimateConversationTokens,
-} from './tokenEstimator';
+  computeSourceBreakdown,
+  compositionMessagesTokens,
+  compositionToolResultsTokens,
+  type CompositionMessage,
+  type SourceCompositionHints,
+} from './contextComposition';
 import { createLogger } from '../services/infra/logger';
 import { getSessionStateManager } from '../session/sessionStateManager';
-import type { ToolCall } from '../../shared/contract';
+import { calculateSystemPromptCacheCost } from './contextCacheEconomics';
 
 /**
  * Extended message type for context health tracking
  * Supports tool messages and tool results from AgentLoop
+ *
+ * N-CTXCURRENT: 与构成算法输入同构（contextComposition.CompositionMessage），
+ * toolResults 需带 toolCallId 才能按工具名归桶。
  */
-export interface ContextMessage {
-  role: 'user' | 'assistant' | 'system' | 'tool';
-  content: string;
-  toolCalls?: ToolCall[];
-  toolResults?: Array<{
-    output?: string;
-    error?: string;
-  }>;
-}
+export type ContextMessage = CompositionMessage;
 
 const logger = createLogger('ContextHealthService');
 
 // Context window sizes sourced from shared constants
+
+/**
+ * N-CTXTRUTH: provider 实报的本轮输入用量（inference.ts 记账点透传）。
+ * 口径统一在 usageNormalization.ts：归一化后 inputTokens 一律「不含缓存」，
+ * 所以上下文占用总量 = inputTokens + cacheReadTokens + cacheCreationTokens。
+ */
+export interface ProviderContextUsage {
+  inputTokens: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  /** 定价只接受官方 provider；缺省时沿用 BudgetService 的 default 回退。 */
+  provider?: string;
+}
+
+function scaleValue(value: number, scale: number): number {
+  return Math.round(value * scale);
+}
+
+function scaleSourceBreakdown(bs: SourceBreakdown, scale: number): SourceBreakdown {
+  const scaleRecord = (rec: Record<string, number>) =>
+    Object.fromEntries(Object.entries(rec).map(([k, v]) => [k, scaleValue(v, scale)]));
+  return {
+    rules: scaleValue(bs.rules, scale),
+    skills: scaleRecord(bs.skills),
+    mcp: scaleRecord(bs.mcp),
+    subagents: scaleRecord(bs.subagents),
+    fileReads: scaleValue(bs.fileReads, scale),
+    summary: scaleValue(bs.summary, scale),
+    conversation: scaleValue(bs.conversation, scale),
+  };
+}
+
+/** 等比缩放整个 breakdown（桶间比例不变），用于把本地估算桶贴合到 provider 真总量 */
+function scaleTokenBreakdown(breakdown: TokenBreakdown, scale: number): TokenBreakdown {
+  return {
+    systemPrompt: scaleValue(breakdown.systemPrompt, scale),
+    messages: scaleValue(breakdown.messages, scale),
+    toolResults: scaleValue(breakdown.toolResults, scale),
+    ...(breakdown.toolDefinitions !== undefined
+      ? { toolDefinitions: scaleValue(breakdown.toolDefinitions, scale) }
+      : {}),
+    ...(breakdown.bySource ? { bySource: scaleSourceBreakdown(breakdown.bySource, scale) } : {}),
+  };
+}
 
 // ----------------------------------------------------------------------------
 // Context Health Service
@@ -50,19 +91,17 @@ const logger = createLogger('ContextHealthService');
  * 上下文健康服务
  *
  * 负责跟踪和报告每个会话的上下文使用情况
+ *
+ * N-CTXCURRENT: bySource 是「当前态」构成——每轮 update() 用
+ * computeSourceBreakdown 从当前消息列表 + systemPrompt + 当前挂载 skills 全量重算，
+ * 不再保留运行时累计账（recordSourceContribution 系列已退役）。重启后走
+ * resolveContextHealthForSession 重算路径，同源同算法，历史会话桶不归零。
  */
-// IPC 广播 debounce 间隔：recordSourceContribution 在单 turn 内可能被高频调用
-// （多次 tool result），避免风暴
-const SOURCE_CONTRIBUTION_DEBOUNCE_MS = 200;
-
 export class ContextHealthService {
   private sessionStates: Map<string, ContextHealthState> = new Map();
   private mainWindow: AppWindow | null = null;
   private averageUserMessageTokens: number = 200; // 用户消息平均 tokens
   private averageAssistantMessageTokens: number = 800; // 助手消息平均 tokens
-
-  // bySource 更新的 debounce 定时器（每 session 一个）
-  private sourceDebounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   /**
    * 设置主窗口用于发送事件
@@ -85,6 +124,13 @@ export class ContextHealthService {
    * @param messages - 当前消息历史
    * @param systemPrompt - 系统提示词
    * @param model - 模型名称
+   * @param providerUsage - N-CTXTRUTH: 本轮 provider 实报用量（inputTokens 不含缓存，
+   *   真总量内部会加上 cacheRead/cacheCreation）。有真源时 currentTokens/usagePercent
+   *   按真源算、breakdown 各桶等比缩放到真总量；缺省或总量为 0 时全走本地估算，
+   *   tokenSource='estimated'。
+   * @param sourceHints - N-CTXCURRENT: 当前态构成的带外输入（目前只有当前挂载
+   *   skills 的 token 估算；rules/mcp/subagents/fileReads/summary 全部从
+   *   messages + systemPrompt 重算）
    */
   update(
     sessionId: string,
@@ -94,39 +140,45 @@ export class ContextHealthService {
     compression?: CompressionStats,
     toolDefinitionsTokens?: number,
     droppedPromptBlocks?: string[],
+    providerUsage?: ProviderContextUsage,
+    sourceHints?: SourceCompositionHints,
   ): ContextHealthState {
     const maxTokens = this.getModelContextLimit(model);
     const previousHealth = this.sessionStates.get(sessionId);
 
     // 计算各部分的 token 使用量
     const systemPromptTokens = estimateTokens(systemPrompt);
-    const messagesTokens = this.calculateMessagesTokens(messages) + this.calculateToolCallTokens(messages);
-    const toolResultsTokens = this.calculateToolResultsTokens(messages);
+    const messagesTokens = compositionMessagesTokens(messages);
+    const toolResultsTokens = compositionToolResultsTokens(messages);
     // 工具 schema 定义：每次请求都会发给模型（包含 name/description/inputSchema JSON）。
     // 优先用调用方显式传值，否则自动从工具 registry 估算（registry 不可用时回退 0）。
     const toolDefTokens = toolDefinitionsTokens ?? 0;
 
-    // 保留上轮的 bySource 累加值（recordSourceContribution 之间的状态）
-    // 同时把 conversation 字段按扣减法重算：messages - 其他 source 之和
-    const bySource: SourceBreakdown =
-      previousHealth?.breakdown.bySource ?? createEmptySourceBreakdown();
-    const otherSourceSum =
-      bySource.rules +
-      Object.values(bySource.skills).reduce((a, b) => a + b, 0) +
-      Object.values(bySource.mcp).reduce((a, b) => a + b, 0) +
-      Object.values(bySource.subagents).reduce((a, b) => a + b, 0) +
-      bySource.fileReads;
-    bySource.conversation = Math.max(0, messagesTokens - otherSourceSum);
+    // N-CTXCURRENT: bySource 当前态快照——每轮全量重算，与上轮状态无关
+    const bySource = computeSourceBreakdown(messages, systemPrompt, sourceHints);
 
-    const breakdown: TokenBreakdown = {
+    const estimatedBreakdown: TokenBreakdown = {
       systemPrompt: systemPromptTokens,
       messages: messagesTokens,
       toolResults: toolResultsTokens,
       toolDefinitions: toolDefTokens,
       bySource,
     };
+    const estimatedTotal = systemPromptTokens + messagesTokens + toolResultsTokens + toolDefTokens;
 
-    const currentTokens = systemPromptTokens + messagesTokens + toolResultsTokens + toolDefTokens;
+    // N-CTXTRUTH: provider 实报总量（含缓存读/写）作真源；本地估算只决定桶内比例
+    const providerTotal = providerUsage
+      ? providerUsage.inputTokens +
+        (providerUsage.cacheReadTokens ?? 0) +
+        (providerUsage.cacheCreationTokens ?? 0)
+      : 0;
+    const useProviderTruth = providerTotal > 0;
+
+    const currentTokens = useProviderTruth ? providerTotal : estimatedTotal;
+    const breakdown: TokenBreakdown =
+      useProviderTruth && estimatedTotal > 0
+        ? scaleTokenBreakdown(estimatedBreakdown, providerTotal / estimatedTotal)
+        : estimatedBreakdown;
     const usagePercent = Math.round((currentTokens / maxTokens) * 1000) / 10; // 保留一位小数
 
     // 计算预估剩余轮数
@@ -145,6 +197,17 @@ export class ContextHealthService {
       compression: compression ?? previousHealth?.compression,
       // GAP-023: 被预算丢弃的 prompt 块可见化（undefined = 调用方没传，沿用上次；[] = 明确无丢弃）
       droppedPromptBlocks: droppedPromptBlocks ?? previousHealth?.droppedPromptBlocks,
+      tokenSource: useProviderTruth ? 'provider' : 'estimated',
+      ...(useProviderTruth ? { estimatedTokens: estimatedTotal } : {}),
+      ...(useProviderTruth && providerUsage
+        ? {
+            systemPromptCacheCost: calculateSystemPromptCacheCost(
+              systemPromptTokens,
+              providerUsage,
+              model,
+            ),
+          }
+        : {}),
     };
 
     // 保存状态
@@ -193,11 +256,6 @@ export class ContextHealthService {
    */
   cleanup(sessionId: string): void {
     this.sessionStates.delete(sessionId);
-    const timer = this.sourceDebounceTimers.get(sessionId);
-    if (timer) {
-      clearTimeout(timer);
-      this.sourceDebounceTimers.delete(sessionId);
-    }
   }
 
   /**
@@ -205,154 +263,6 @@ export class ContextHealthService {
    */
   clear(): void {
     this.sessionStates.clear();
-    for (const timer of this.sourceDebounceTimers.values()) {
-      clearTimeout(timer);
-    }
-    this.sourceDebounceTimers.clear();
-  }
-
-  // --------------------------------------------------------------------------
-  // bySource 上下文来源追踪（产品维度）
-  //
-  // 用法语义：
-  //   - mode='add'（默认）：累加。tool result/fileRead/subagent 输出每次有新内容时调用
-  //   - mode='set'：替换。skill 挂载/MCP 注册时调用，给出该来源当前总占用
-  //   - clearSourceContribution：skill 卸载/MCP 断开时调用，从 bySource 移除
-  //   - resetSourceContributions：压缩或 session reset 时整体清零
-  //
-  // 注意：conversation 字段是派生值（messages - 其他 source 之和），
-  // 不应直接 record，调用会被忽略。
-  // --------------------------------------------------------------------------
-
-  /**
-   * 记录某个产品来源的 token 贡献
-   */
-  recordSourceContribution(
-    sessionId: string,
-    source: SourceTag,
-    tokens: number,
-    mode: 'add' | 'set' = 'add',
-  ): void {
-    if (tokens < 0 || !Number.isFinite(tokens)) {
-      logger.debug('recordSourceContribution ignored invalid tokens:', { source, tokens });
-      return;
-    }
-
-    const state = this.ensureStateWithBySource(sessionId);
-    const bs = state.breakdown.bySource!;
-
-    switch (source.type) {
-      case 'rule':
-        bs.rules = mode === 'set' ? tokens : bs.rules + tokens;
-        break;
-      case 'skill':
-        bs.skills[source.name] =
-          mode === 'set' ? tokens : (bs.skills[source.name] ?? 0) + tokens;
-        break;
-      case 'mcp':
-        bs.mcp[source.server] =
-          mode === 'set' ? tokens : (bs.mcp[source.server] ?? 0) + tokens;
-        break;
-      case 'subagent':
-        bs.subagents[source.name] =
-          mode === 'set' ? tokens : (bs.subagents[source.name] ?? 0) + tokens;
-        break;
-      case 'fileRead':
-        bs.fileReads = mode === 'set' ? tokens : bs.fileReads + tokens;
-        break;
-      case 'conversation':
-        // 派生值，update() 时按扣减法计算，不接受直接写入
-        return;
-    }
-
-    this.emitSourceUpdateDebounced(sessionId);
-  }
-
-  /**
-   * 清除某个具名来源的贡献（skill 卸载 / MCP 断开 / 标量来源归 0）
-   */
-  clearSourceContribution(sessionId: string, source: SourceTag): void {
-    const state = this.sessionStates.get(sessionId);
-    if (!state?.breakdown.bySource) return;
-    const bs = state.breakdown.bySource;
-
-    switch (source.type) {
-      case 'rule':
-        bs.rules = 0;
-        break;
-      case 'skill':
-        delete bs.skills[source.name];
-        break;
-      case 'mcp':
-        delete bs.mcp[source.server];
-        break;
-      case 'subagent':
-        delete bs.subagents[source.name];
-        break;
-      case 'fileRead':
-        bs.fileReads = 0;
-        break;
-      case 'conversation':
-        bs.conversation = 0;
-        break;
-    }
-
-    this.emitSourceUpdateDebounced(sessionId);
-  }
-
-  /**
-   * 重置 session 的 bySource（压缩后或 session 重启时调用）
-   */
-  resetSourceContributions(sessionId: string): void {
-    const state = this.sessionStates.get(sessionId);
-    if (!state) return;
-    state.breakdown.bySource = createEmptySourceBreakdown();
-    this.emitSourceUpdateDebounced(sessionId);
-  }
-
-  /**
-   * 跨所有 session 清除某个 MCP server 的 bySource 占用
-   * 用于全局事件：MCP server 被 disable 时，所有 session 应同步清掉
-   */
-  clearMcpServerAcrossSessions(serverName: string): void {
-    for (const [sid, state] of this.sessionStates.entries()) {
-      if (!state.breakdown.bySource) continue;
-      if (state.breakdown.bySource.mcp[serverName] !== undefined) {
-        delete state.breakdown.bySource.mcp[serverName];
-        this.emitSourceUpdateDebounced(sid);
-      }
-    }
-  }
-
-  /**
-   * 确保 session 状态存在且 bySource 已初始化
-   * 在 record 路径上需要：若没有 update() 跑过，先用空 health state 兜底
-   */
-  private ensureStateWithBySource(sessionId: string): ContextHealthState {
-    let state = this.sessionStates.get(sessionId);
-    if (!state) {
-      state = createEmptyHealthState();
-      this.sessionStates.set(sessionId, state);
-    }
-    if (!state.breakdown.bySource) {
-      state.breakdown.bySource = createEmptySourceBreakdown();
-    }
-    return state;
-  }
-
-  /**
-   * 防抖广播 source 维度更新
-   * 单 turn 内多次 record 不会触发 IPC 风暴
-   */
-  private emitSourceUpdateDebounced(sessionId: string): void {
-    const existing = this.sourceDebounceTimers.get(sessionId);
-    if (existing) clearTimeout(existing);
-    const timer = setTimeout(() => {
-      this.sourceDebounceTimers.delete(sessionId);
-      const state = this.sessionStates.get(sessionId);
-      if (state) this.emitHealthUpdate(sessionId, state);
-    }, SOURCE_CONTRIBUTION_DEBOUNCE_MS);
-    this.sourceDebounceTimers.set(sessionId, timer);
   }
 
   /**
@@ -366,74 +276,6 @@ export class ContextHealthService {
     this.averageAssistantMessageTokens = Math.round(
       this.averageAssistantMessageTokens * 0.9 + assistantTokens * 0.1
     );
-  }
-
-  // --------------------------------------------------------------------------
-  // Private Methods
-  // --------------------------------------------------------------------------
-
-  /**
-   * 计算消息历史的 token 数（不含工具结果）
-   */
-  private calculateMessagesTokens(messages: ContextMessage[]): number {
-    // 过滤掉工具结果消息，并转换为 tokenEstimator 需要的格式
-    const nonToolMessages = messages
-      .filter((msg) => msg.role !== 'tool')
-      .map(msg => ({
-        role: msg.role as 'user' | 'assistant' | 'system',
-        content: msg.content,
-      }));
-    return estimateConversationTokens(nonToolMessages);
-  }
-
-  /**
-   * 计算 assistant tool calls 的 token 数。
-   *
-   * 许多运行轨迹会把 assistant 消息正文留空，只把真实模型上下文放在
-   * tool_calls JSON 里；如果不计这部分，Context Usage 会被低估到接近 0。
-   */
-  private calculateToolCallTokens(messages: ContextMessage[]): number {
-    let totalTokens = 0;
-
-    for (const message of messages) {
-      if (!message.toolCalls?.length) continue;
-
-      for (const toolCall of message.toolCalls) {
-        let args: string;
-        try {
-          args = JSON.stringify(toolCall.arguments ?? {});
-        } catch {
-          args = String(toolCall.arguments ?? '');
-        }
-
-        const text = [
-          toolCall.name,
-          toolCall.shortDescription || '',
-          args,
-        ].filter(Boolean).join('\n');
-
-        totalTokens += estimateTokens(text);
-      }
-    }
-
-    return totalTokens;
-  }
-
-  /**
-   * 计算工具结果的 token 数
-   */
-  private calculateToolResultsTokens(messages: ContextMessage[]): number {
-    let totalTokens = 0;
-
-    for (const message of messages) {
-      // role=tool 消息：content 已是 JSON.stringify(toolResults)，直接计 content 即可。
-      // 不再计 message.toolResults 数组，避免与 content 双计。
-      if (message.role === 'tool') {
-        totalTokens += estimateTokens(message.content);
-      }
-    }
-
-    return totalTokens;
   }
 
   /**

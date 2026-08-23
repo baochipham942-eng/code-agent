@@ -38,7 +38,7 @@ async function loadModules(dataDir: string) {
 // 复现 settings.ipc.ts setBudgetConfig handler 的核心序列：持久化 + 同步运行时单例。
 async function applyBudgetUpdate(
   configService: Pick<ConfigService, 'setBudgetConfig' | 'getBudgetConfig'>,
-  budgetModule: { syncBudgetServiceFromConfig: (c: never) => void; getBudgetService: () => { getConfig: () => { maxBudget: number; enabled: boolean } } },
+  budgetModule: { syncBudgetServiceFromConfig: (c: never) => void; getBudgetService: (scope?: 'foreground' | 'unattended') => { getConfig: () => { maxBudget: number; enabled: boolean; resetPeriodHours: number } } },
   budget: Record<string, unknown>,
 ): Promise<void> {
   await configService.setBudgetConfig(budget);
@@ -83,5 +83,29 @@ describe('Item4① setBudgetConfig → runtime singleton sync', () => {
     const cfg = budgetModule.getBudgetService().getConfig();
     expect(cfg.enabled).toBe(false);
     expect(cfg.maxBudget).toBe(99); // 未覆盖字段保留
+  });
+
+  it('persists and syncs independent foreground and unattended overrides', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'code-agent-budget-scoped-cfgsync-'));
+    const { configModule, budgetModule } = await loadModules(dataDir);
+    const configService = new configModule.ConfigService();
+    await configService.initialize();
+
+    await applyBudgetUpdate(configService, budgetModule, {
+      maxBudget: 10,
+      foreground: { maxBudget: 6 },
+      unattended: { maxBudget: 2, resetPeriodHours: 4 },
+    });
+
+    expect(budgetModule.getBudgetService('foreground').getConfig().maxBudget).toBe(6);
+    expect(budgetModule.getBudgetService('unattended').getConfig()).toMatchObject({
+      maxBudget: 2,
+      resetPeriodHours: 4,
+    });
+    expect(configService.getBudgetConfig()).toMatchObject({
+      maxBudget: 10,
+      foreground: { maxBudget: 6 },
+      unattended: { maxBudget: 2, resetPeriodHours: 4 },
+    });
   });
 });

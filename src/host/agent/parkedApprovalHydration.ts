@@ -2,7 +2,7 @@
 // 停车审批的重启收口（D0 上报的 host 根因，2026-07-27）
 //
 // 病灶：启动 hydrate 只对 kind='plan'/'launch' 做 orphan，tool_approval /
-// directory_access 没有任何启动收尾路径——重启后 DB 残留 pending 行被收件箱
+// directory_access / channel_pairing 没有任何启动收尾路径——重启后 DB 残留 pending 行被收件箱
 // 渲染成可点按钮，点击落到已丢失的内存 pending 被静默丢弃（「批准点不动」现场）。
 // 收件箱的 orphaned 灰态早已存在，缺的只是「谁在启动时打这个标」。
 // ============================================================================
@@ -16,11 +16,11 @@ import { createLogger } from '../services/infra/logger';
 const logger = createLogger('ParkedApprovalHydration');
 
 /** 停车挂起类审批的 kind 全集；plan/launch 各有自己的 gate hydrate，不在此列。 */
-const PARKED_KINDS = ['tool_approval', 'directory_access'] as const;
+const PARKED_KINDS = ['tool_approval', 'directory_access', 'channel_pairing'] as const;
 
 /**
  * 启动 hydrate 一站式：plan / launch 走各自 gate 的 attachPersistence（行为不变），
- * tool_approval / directory_access 的残留 pending 行直接 fail-closed 拒绝，避免
+ * tool_approval / directory_access / channel_pairing 的残留 pending 行直接 fail-closed 拒绝，避免
  * orphaned 灰态永久占住收件箱。返回各类收尾计数（进启动日志）。
  */
 export function hydrateApprovalGatesAtBoot(

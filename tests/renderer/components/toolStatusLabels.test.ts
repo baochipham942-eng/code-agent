@@ -32,6 +32,27 @@ function makeMutationCall(name: string, overrides: Partial<ToolCall> = {}): Tool
 }
 
 describe('ToolCallDisplay status labels', () => {
+  it('reports spawn completion according to foreground versus background facts', () => {
+    const foreground: ToolCall = {
+      id: 'spawn-foreground',
+      name: 'spawn_agent',
+      arguments: { task: '核对清单' },
+      result: { toolCallId: 'spawn-foreground', success: true, output: '- Agent ID: agent-1\nResult: done' },
+    };
+    const background: ToolCall = {
+      ...foreground,
+      id: 'spawn-background',
+      result: {
+        toolCallId: 'spawn-background',
+        success: true,
+        output: 'spawned in background\n- Agent ID: agent-2\n- Status: running',
+      },
+    };
+
+    expect(getToolStatusLabel(foreground, 'success', zh)).toBe('已完成');
+    expect(getToolStatusLabel(background, 'success', zh)).toBe('已派出');
+  });
+
   it('distinguishes artifact validation failure after a successful file write', () => {
     const label = getToolStatusLabel(
       makeWriteCall({

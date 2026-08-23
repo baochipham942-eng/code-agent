@@ -1,6 +1,8 @@
 import type { AgentRunOptions } from '../research/types';
+import { resolveAgent } from '../agent/agentRegistry';
+import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from '../services/roleAssets/rolePersonalization';
 
-type CronAgentRunOptions = Pick<AgentRunOptions, 'mode' | 'agentOverrideId' | 'turnSystemContext'>;
+type CronAgentRunOptions = Pick<AgentRunOptions, 'mode' | 'agentOverrideId' | 'turnSystemContext' | 'allowedToolNames'>;
 
 /**
  * Resolve the persistent-role context for an unattended cron agent run.
@@ -20,6 +22,13 @@ export async function buildCronAgentRunOptions(
     return undefined;
   }
 
+  const role = resolveAgent(roleId);
+  const toolBoundary = role ? resolveRoleToolBoundary(roleId, role.tools) : null;
   console.error(`[CronService] agent 以角色身份跑 role=${roleId}（已注入 role context）`);
-  return { mode: 'normal', agentOverrideId: roleId, turnSystemContext: [contextBlock] };
+  return {
+    mode: 'normal',
+    agentOverrideId: roleId,
+    turnSystemContext: [contextBlock],
+    ...(toolBoundary ? { allowedToolNames: toRoleBoundaryRunAllowlist(toolBoundary.allowedTools) } : {}),
+  };
 }

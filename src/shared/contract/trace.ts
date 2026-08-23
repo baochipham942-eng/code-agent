@@ -59,6 +59,8 @@ export interface TraceTurn {
   status: 'streaming' | 'completed' | 'error';
   startTime: number;
   endTime?: number;
+  /** Backend-authoritative filesystem diff; absent on legacy/fallback turns. */
+  turnDiff?: import('./turnDiff').TurnDiffEventData;
   /**
    * 语音派活轮的结局印章（X5.5-A2-a）：host 查过产物证据后落库、投影层按 workItemId
    * 对回这一轮。任务卡的「已完成 / 已结束·待核验」只认它；缺印章就不报结局。

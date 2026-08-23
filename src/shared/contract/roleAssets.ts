@@ -188,8 +188,12 @@ export interface RolePanelDetail {
   visual: RoleVisual;
   /** 内置角色也允许写入个人展示偏好，但产品更新不会再覆盖这份定义。 */
   isBuiltin: boolean;
-  /** 每专家一份的两段可编辑正文；没设置过就是空串。 */
-  personalization: { userExpectation: string; soul: string };
+  /** 每专家一份的两段可编辑正文与结构化硬边界。 */
+  personalization: {
+    userExpectation: string;
+    soul: string;
+    boundaries: { disallowExternalSending: boolean };
+  };
   /** 专家在 agent.md 里声明的推荐连接器。没声明就没有这个字段。 */
   recommendedConnectors?: RoleRecommendedConnector[];
   /** 装备层当前生效配置及由 host 解析出的本机可选项。 */
@@ -197,6 +201,8 @@ export interface RolePanelDetail {
     skills: string[];
     tools: string[];
     model: 'fast' | 'balanced' | 'powerful';
+    /** 子代理执行引擎装备；缺省表示 native。 */
+    engine?: import('./agentEngine').AgentEngineKind;
     /** 指定的具体模型；缺省表示跟随档位。 */
     modelOverride?: { provider: string; model: string };
     /** 审批松紧档；缺省表示跟随通用设置。 */

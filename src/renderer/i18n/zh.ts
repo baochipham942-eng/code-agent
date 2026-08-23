@@ -42,6 +42,7 @@ import { imageNarrationZh } from './imageNarration';
 import { mermaidZh } from './mermaid';
 import { voiceAuditZh } from './voiceAudit';
 import { sessionInspectorZh } from './sessionInspector';
+import { artifactShareZh } from './artifactShare';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
@@ -86,7 +87,27 @@ export const zh = {
     copyReference: '复制路径或链接',
     download: '下载',
     archiveToLibrary: '归档到资料库',
-    exportBundle: '导出文件包',
+    exportBundle: '分享发布版',
+    exportBundleSource: '来源：发布快照 v{version}',
+    publishVersion: '发布这一版',
+    generateShareLink: '生成链接',
+    shareLinkExisting: '链接',
+    shareLink: artifactShareZh,
+    publishConfirmTitle: '发布这一版',
+    publishConfirmDescription: '把《{title}》当前内容冻结为只读快照 v{version}；之后改动自动算草稿。',
+    publishNote: '版本备注（可空）',
+    publishNotePlaceholder: '例：给客户看的终稿',
+    publish: '发布',
+    publishSuccess: '已发布 v{version} · 资料库里的版本列表已更新',
+    publishFailed: '发布失败',
+    draft: '草稿',
+    publishedVersion: '已发布 v{version}',
+    unpublishedChanges: '有未发布改动',
+    versionDraft: 'v{version} 草稿',
+    currentPublished: '当前发布',
+    unpublished: '未发布',
+    versions: '版本',
+    viewVersion: '查看',
     // 爸 2026-08-18 拍板：右栏这三句原是内部术语（已验证/未验证/失败），换成用户视角的人话。
     // 事实层面它们说的是「证据检查」的结果：有通过证据 / 无任何证据 / 有失败证据。
     statusVerified: '已就绪',

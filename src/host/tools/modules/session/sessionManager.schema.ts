@@ -6,7 +6,8 @@ export const sessionManagerSchema: ToolSchema = {
 
 Actions:
 - list: List sessions. Supports scope="active" | "archived" | "all", query, limit, and currentWorkingDirectoryOnly.
-- get: Inspect one session by ID.
+- get: Reference one session by ID. Sessions with at most 15 messages return their full text; longer sessions return a lazily generated cached digest.
+- read: Read session messages by a 1-based inclusive range or the most recent N messages. Supports keyword filtering and a hard result limit. The result reports the total message count, selected range, returned positions, and whether more matches remain.
 - create: Create a new session without making it current. Defaults to inheriting the current session's model and working directory.
 - fork: Branch from a completed assistant reply into a new child session without changing or polluting the source session. Use when the user wants to explore a new direction based on a particular reply. Defaults to the current session and its latest completed assistant reply.
 - archive: Archive another non-running session.
@@ -24,12 +25,12 @@ Safety:
     properties: {
       action: {
         type: 'string',
-        enum: ['list', 'get', 'create', 'fork', 'archive', 'unarchive', 'rename'],
+        enum: ['list', 'get', 'read', 'create', 'fork', 'archive', 'unarchive', 'rename'],
         description: 'Session management action to perform',
       },
       sessionId: {
         type: 'string',
-        description: '[get, archive, unarchive, rename] Target session ID. [fork] Source session ID; omit to use the current session.',
+        description: '[get, read, archive, unarchive, rename] Target session ID. [fork] Source session ID; omit to use the current session.',
       },
       anchorMessageId: {
         type: 'string',
@@ -66,7 +67,23 @@ Safety:
       },
       limit: {
         type: 'number',
-        description: '[list] Maximum sessions to return. Default: 20, max: 100',
+        description: '[list] Maximum sessions to return. [read] Hard maximum messages to return. Default: 20, max: 100',
+      },
+      start: {
+        type: 'number',
+        description: '[read] 1-based inclusive start position. Omit to start at the first message. Cannot be combined with recent.',
+      },
+      end: {
+        type: 'number',
+        description: '[read] 1-based inclusive end position. Omit to end at the last message. Cannot be combined with recent.',
+      },
+      recent: {
+        type: 'number',
+        description: '[read] Select the most recent N messages. Cannot be combined with start or end.',
+      },
+      keyword: {
+        type: 'string',
+        description: '[read] Case-insensitive message-content filter applied within the selected range.',
       },
       currentWorkingDirectoryOnly: {
         type: 'boolean',

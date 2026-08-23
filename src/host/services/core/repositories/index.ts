@@ -3,6 +3,7 @@
 // ============================================================================
 
 export { SessionRepository, type StoredSession, type StoredMessage } from './SessionRepository';
+export { findLatestExpertThreadSession } from './sessionRepositoryExpertThread';
 export {
   SessionForkRepository,
 } from './SessionForkRepository';

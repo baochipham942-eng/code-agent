@@ -15,8 +15,10 @@
 // 用 PageContent 的 flex 容器形态（scroll/padding 关闭），布局由被嵌组件自管。
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronDown, ChevronRight, Eye, FileText, Globe, Loader2, Package, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-react';
+import { BookOpen, ChevronDown, ChevronRight, Eye, FileText, Globe, Link, Loader2, Package, Pencil, RefreshCw, Share2, Trash2, Upload, X } from 'lucide-react';
 import { LIBRARY_ITEM_KINDS, type LibraryItem, type LibraryItemKind } from '@shared/contract/library';
+import type { DeliverablePublishInfo, PublishedDeliverableVersion } from '@shared/contract';
+import { IPC_DOMAINS } from '@shared/ipc';
 import type { Project } from '@shared/contract/project';
 import { deleteLibraryItem, importLibraryFiles, listLibraryItems, updateLibraryItem } from '../../../services/libraryClient';
 import { listProjects } from '../../../services/projectClient';
@@ -26,8 +28,8 @@ import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { isPreviewable } from '../../../utils/previewable';
-import { openExternalLink } from '../../../utils/platform';
-import { matchesLibraryItemSearch, pruneLibrarySelection } from './libraryItemModel';
+import { copyPathToClipboard, isWebMode, openExternalLink } from '../../../utils/platform';
+import { matchesLibraryItemSearch, projectLibraryItemPublishModel, pruneLibrarySelection } from './libraryItemModel';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { PageContent } from '../shared/PageContent';
 import { Button } from '../../primitives/Button';
@@ -37,6 +39,8 @@ import { Modal } from '../../primitives/Modal';
 import { Textarea } from '../../primitives/Textarea';
 import { BrandManager } from '../../design/BrandManager';
 import { DRAFT_SCOPE_KEY, useComposerStore } from '../../../stores/composerStore';
+import { DeliverablePublishBadge } from '../../DeliverablePublishBadge';
+import { ShareLinkPanel } from '../chat/MessageBubble/ShareLinkPanel';
 
 const GLOBAL_SCOPE = 'global';
 const closeEmbeddedBrandManager = () => undefined;
@@ -96,6 +100,9 @@ export const LibraryPanel: React.FC = () => {
   // 任务 16b：行勾选多选 → 底部浮条「带进新会话」
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bringing, setBringing] = useState(false);
+  const [publishInfoByPath, setPublishInfoByPath] = useState<Record<string, DeliverablePublishInfo>>({});
+  const [expandedVersionItemIds, setExpandedVersionItemIds] = useState<Set<string>>(new Set());
+  const [shareTarget, setShareTarget] = useState<LibraryItem | null>(null);
 
   const projectId = scope === GLOBAL_SCOPE ? null : scope;
   const sessionTitles = useMemo(() => new Map<string, string>(
@@ -148,6 +155,23 @@ export const LibraryPanel: React.FC = () => {
     try {
       const list = await listLibraryItems({ projectId });
       setItems(list);
+      const publishEntries = await Promise.all(list
+        .filter((item) => item.kind !== 'external_ref')
+        .map(async (item) => {
+          try {
+            const info = await ipcService.invokeDomain<DeliverablePublishInfo>(
+              IPC_DOMAINS.WORKSPACE,
+              'getPublishInfo',
+              { filePath: item.pathOrUri },
+            );
+            return [item.pathOrUri, info] as const;
+          } catch {
+            return null;
+          }
+        }));
+      setPublishInfoByPath(Object.fromEntries(
+        publishEntries.filter((entry): entry is readonly [string, DeliverablePublishInfo] => entry !== null),
+      ));
       // 刷新后剪掉已不存在的选中项，浮条计数不脱节
       setSelectedIds((current) => pruneLibrarySelection(current, list));
     } catch (error) {
@@ -250,6 +274,39 @@ export const LibraryPanel: React.FC = () => {
     app.openPreview(item.pathOrUri);
     // 资料库页是 inline 二级页，会盖住 workbench——关掉它预览才看得见
     app.setShowLibraryPanel(false);
+  };
+
+  const handlePreviewVersion = (snapshotPath: string) => {
+    const app = useAppStore.getState();
+    app.openPreview(snapshotPath);
+    app.setShowLibraryPanel(false);
+  };
+
+  const toggleVersions = (itemId: string) => {
+    setExpandedVersionItemIds((current) => {
+      const next = new Set(current);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  };
+
+  const handleSharePublished = async (item: LibraryItem, version: PublishedDeliverableVersion) => {
+    try {
+      const result = await ipcService.invokeDomain<{ filePath: string }>(
+        IPC_DOMAINS.WORKSPACE,
+        'exportBundle',
+        {
+          files: [{ path: item.pathOrUri, source: 'latest-published', name: item.title, role: 'primary' }],
+          bundleName: `${item.title}-published-v${version.version}.zip`,
+          manifest: { source: 'library', itemId: item.id, publishedVersion: version.version },
+        },
+      );
+      if (isWebMode()) await copyPathToClipboard(result.filePath);
+      else await ipcService.invokeDomain(IPC_DOMAINS.WORKSPACE, 'showItemInFolder', { filePath: result.filePath });
+    } catch (error) {
+      toast.error(`${t.deliverable.exportBundle}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   };
 
   const toggleSelect = (itemId: string) => {
@@ -450,8 +507,12 @@ export const LibraryPanel: React.FC = () => {
                           </button>
                         </th>
                       </tr>
-                      {!collapsed && group.items.map((item) => (
-                        <tr key={item.id} data-library-item={item.id} className={`group border-t border-zinc-800/80 hover:bg-zinc-800/50 ${selectedIds.has(item.id) ? 'bg-indigo-500/10' : 'bg-zinc-900/40'}`}>
+                      {!collapsed && group.items.map((item) => {
+                        const publishModel = projectLibraryItemPublishModel(publishInfoByPath[item.pathOrUri]);
+                        const expanded = expandedVersionItemIds.has(item.id);
+                        return (
+                        <React.Fragment key={item.id}>
+                        <tr data-library-item={item.id} className={`group border-t border-zinc-800/80 hover:bg-zinc-800/50 ${selectedIds.has(item.id) ? 'bg-indigo-500/10' : 'bg-zinc-900/40'}`}>
                           <td className="px-2 py-2.5 align-top">
                             <input
                               type="checkbox"
@@ -465,7 +526,19 @@ export const LibraryPanel: React.FC = () => {
                           <td className="px-3 py-2.5">
                             <div className="flex min-w-0 items-start gap-2">
                               <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-zinc-800">{KIND_ICONS[item.kind]}</span>
-                              <div className="min-w-0"><button /* ds-allow:button: 行标题即预览入口，纯文字热区，Button primitive 不适配 */ type="button" onClick={() => handlePreview(item)} title={t.library.preview} className="block max-w-full cursor-pointer truncate text-left text-sm text-zinc-200 hover:text-white hover:underline">{item.title}</button><div className="mt-0.5 truncate text-[11px] text-zinc-500">{item.summary || item.pathOrUri}</div><div className="mt-1 flex flex-wrap gap-1">{item.tags.map((tag) => <span key={tag} className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">{tag}</span>)}</div></div>
+                              <div className="min-w-0">
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                  {publishModel.publishedVersions.length > 0 && (
+                                    <button /* ds-allow:button: 条目标题旁的极小版本展开热区 */ type="button" onClick={() => toggleVersions(item.id)} className="shrink-0 rounded p-0.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200" aria-label={t.deliverable.versions} aria-expanded={expanded}>
+                                      {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                                    </button>
+                                  )}
+                                  <button /* ds-allow:button: 行标题即预览入口，纯文字热区，Button primitive 不适配 */ type="button" onClick={() => handlePreview(item)} title={t.library.preview} className="min-w-0 truncate text-left text-sm text-zinc-200 hover:text-white hover:underline">{item.title}</button>
+                                  <DeliverablePublishBadge state={publishModel.publishState} testId={`library-publish-state-${item.id}`} />
+                                </div>
+                                <div className="mt-0.5 truncate text-[11px] text-zinc-500">{item.summary || item.pathOrUri}</div>
+                                <div className="mt-1 flex flex-wrap gap-1">{item.tags.map((tag) => <span key={tag} className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">{tag}</span>)}</div>
+                              </div>
                             </div>
                           </td>
                           <td className="px-3 py-2.5 text-zinc-400">{kindLabels[item.kind]}</td>
@@ -473,7 +546,43 @@ export const LibraryPanel: React.FC = () => {
                           <td className="px-3 py-2.5 text-zinc-500">{new Date(item.updatedAt).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US')}</td>
                           <td className="px-3 py-2.5"><div className="flex items-center gap-1"><IconButton variant="ghost" size="sm" data-testid={`library-preview-${item.id}`} onClick={() => handlePreview(item)} title={t.library.preview} aria-label={t.library.preview} icon={<Eye className="h-3.5 w-3.5" />} /><IconButton variant="ghost" size="sm" data-testid={`library-edit-${item.id}`} onClick={() => openEdit(item)} title={t.library.edit} aria-label={t.library.edit} icon={<Pencil className="h-3.5 w-3.5" />} /><IconButton variant="danger" size="sm" data-testid={`library-delete-${item.id}`} onClick={() => void handleDelete(item.id)} className={confirmingDelete === item.id ? 'bg-red-500/20 text-badge-danger' : ''} title={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} aria-label={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} icon={<Trash2 className="h-3.5 w-3.5" />} /></div></td>
                         </tr>
-                      ))}
+                        {expanded && publishModel.publishedVersions.length > 0 && (
+                          <tr className="border-t border-zinc-800/80 bg-zinc-950/40" data-testid={`library-versions-${item.id}`}>
+                            <td />
+                            <td colSpan={5} className="px-3 py-2.5">
+                              <div className="overflow-hidden rounded-lg border border-teal-500/40 bg-zinc-900/70">
+                                <div className="border-b border-zinc-800 px-3 py-2 text-[11px] text-zinc-500">{t.deliverable.versions}</div>
+                                {publishModel.publishedVersions.map((version, index) => (
+                                  <div key={version.version} className="flex items-center gap-2 border-b border-zinc-800/70 px-3 py-2 text-xs last:border-b-0">
+                                    <span className="font-medium text-zinc-200">v{version.version}</span>
+                                    {index === 0 && <span className="rounded bg-teal-500/10 px-1.5 py-0.5 text-[10px] text-badge-success">{t.deliverable.currentPublished}</span>}
+                                    <span className="text-zinc-500">{new Date(version.publishedAt).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}</span>
+                                    {version.note && <span className="min-w-0 flex-1 truncate text-zinc-400">{version.note}</span>}
+                                    {!version.note && <span className="flex-1" />}
+                                    <button /* ds-allow:button: 版本行内文字动作 */ type="button" onClick={() => handlePreviewVersion(version.snapshotPath)} className="inline-flex items-center gap-1 text-badge-info hover:underline"><Eye className="h-3 w-3" />{t.deliverable.viewVersion}</button>
+                                    {index === 0 && (
+                                      <>
+                                        <button /* ds-allow:button: 版本行内文字动作 */ type="button" onClick={() => void handleSharePublished(item, version)} className="inline-flex items-center gap-1 text-badge-success hover:underline"><Share2 className="h-3 w-3" />{t.deliverable.exportBundle}</button>
+                                        <button /* ds-allow:button: 版本行内文字动作 */ type="button" onClick={() => setShareTarget(item)} className="inline-flex items-center gap-1 text-badge-info hover:underline"><Link className="h-3 w-3" />{t.deliverable.generateShareLink}</button>
+                                      </>
+                                    )}
+                                  </div>
+                                ))}
+                                {publishModel.publishState.kind === 'published-dirty' && (
+                                  <div className="flex items-center gap-2 px-3 py-2 text-xs">
+                                    <span className="font-medium text-zinc-300">{t.deliverable.draft}</span>
+                                    <span className="text-badge-warning">{t.deliverable.unpublishedChanges}</span>
+                                    <span className="flex-1" />
+                                    <button /* ds-allow:button: 草稿行内文字动作 */ type="button" onClick={() => handlePreview(item)} className="inline-flex items-center gap-1 text-badge-info hover:underline"><Eye className="h-3 w-3" />{t.deliverable.viewVersion}</button>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   );
                 })}
@@ -574,6 +683,14 @@ export const LibraryPanel: React.FC = () => {
           </label>
         </div>
       </Modal>
+      {shareTarget && (
+        <ShareLinkPanel
+          isOpen
+          filePath={shareTarget.pathOrUri}
+          title={shareTarget.title}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
     </FullScreenPage>
   );
 };

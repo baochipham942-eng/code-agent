@@ -49,6 +49,15 @@ const SAMPLE_PAYLOADS: { [K in UserVisibleSystemEventKey]: NonNullable<MessageMe
   voiceWorkFailure: { workItemId: WORK_ITEM_ID, title: '买菜' },
   voiceWorkSettled: { workItemId: WORK_ITEM_ID, title: '买菜', outcome: 'done' },
   agentRecoveryNotice: { kind: 'vision_tool_unsupported' },
+  turnCheckoutNote: {
+    operation: 'checkout',
+    state: 'success',
+    done: ['workspace', 'conversation', 'manifest', 'evidence'],
+    failed: [],
+    skippedFiles: [],
+    changedFileCount: 2,
+    externalSideEffectsWarning: 'Changes caused by external commands are not rolled back.',
+  },
 };
 
 function systemEventMessage<K extends UserVisibleSystemEventKey>(key: K): Message {
@@ -89,6 +98,30 @@ function project(messages: Message[]) {
 }
 
 describe('用户可见 system 事件登记制（P0-2）', () => {
+  it('keeps persisted input redirect receipts internal to inspector data', () => {
+    const messages: Message[] = [
+      ...plainTurn(),
+      {
+        id: 'sys-input-redirect',
+        role: 'system',
+        content: '已按你的纠正改了方向',
+        timestamp: 9_000,
+        metadata: {
+          inputRedirectReceipt: {
+            receiptId: 'sys-input-redirect',
+            originalContent: '改用更简洁的结构',
+            expectedTurnId: 'turn-1',
+            partial: { charCount: 88, trailingText: '写到这里' },
+            interruptedTools: ['Bash'],
+          },
+        },
+      },
+    ];
+
+    const nodes = project(messages).flatMap((turn) => turn.nodes);
+    expect(nodes.some((node) => node.id === 'sys-input-redirect')).toBe(false);
+  });
+
   it('生产落库形状的 isMeta voiceDispatch 成卡且不冒充用户消息', () => {
     const turns = project(dispatchThenLaterTurn());
     const dispatchNode = turns

@@ -12,9 +12,12 @@ import type {
   WorkbenchToolScope,
 } from '../../shared/contract/conversationEnvelope';
 import type { WorkspaceScope } from '../../shared/contract/project';
+import type { AgentEngineKind } from '../../shared/contract/agentEngine';
 
 export interface SubagentConfig {
   name: string;
+  /** 声明式角色的执行引擎；缺省由角色装备解析，再缺省走 native。 */
+  engine?: AgentEngineKind;
   /**
    * 角色 ID（agent 注册 id，即 agents/<id>.md 的 frontmatter name）。
    * 持久化角色资产（roles/<roleId>/）按这个 id 绑定——config.name 是显示名
@@ -76,6 +79,9 @@ export interface SubagentToolResolverPort {
 
 export interface SubagentPermissionRequest {
   sessionId?: string;
+  agentId?: string;
+  runId?: string;
+  parentToolUseId?: string;
   forceConfirm?: boolean;
   type: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command' | 'directory_access';
   tool: string;
@@ -126,6 +132,8 @@ export interface SubagentAttachment {
 export interface SubagentExecutionContext {
   /** Native run identity; never inferred from a process singleton. */
   runId?: string;
+  /** Stable user message that originated the parent native turn. */
+  sourceMessageId?: string;
   /**
    * GuardFabric 拓扑标注（2026-07-13 激活批）：构造点显式声明该子 agent 的执行拓扑，
    * subagentToolRuntime 透传给 ToolExecutor。缺省 = 'main'（无 TOPOLOGY_RULES 约束，
@@ -147,6 +155,8 @@ export interface SubagentExecutionContext {
   agentId?: string;
   agentName?: string;
   agentRole?: string;
+  /** Paths or glob ranges this agent owns while its execution is live. */
+  ownedPaths?: string[];
   messages?: Message[];
   modifiedFiles?: Set<string>;
   todos?: Array<{

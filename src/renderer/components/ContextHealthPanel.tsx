@@ -109,6 +109,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
   const colors = getWarningColors(health.warningLevel);
   const IconComponent = colors.icon;
 
+
   const handleToggle = () => {
     const newExpanded = !isExpanded;
     setIsExpanded(newExpanded);
@@ -139,18 +140,18 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
         <div className="px-3 pb-3 space-y-3">
           {/* 进度条 */}
           <div className="space-y-1.5">
-            <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
-              <div
-                className={`h-full ${colors.barColor} transition-all duration-300`}
-                style={{ width: `${Math.min(health.usagePercent, 100)}%` }}
-              />
+              <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
+                <div
+                  className={`h-full ${colors.barColor} transition-all duration-300`}
+                  style={{ width: `${Math.min(health.usagePercent, 100)}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-zinc-400 font-mono">
+                  {formatTokens(health.currentTokens)} / {formatTokens(health.maxTokens)} tokens
+                </span>
+              </div>
             </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-zinc-400 font-mono">
-                {formatTokens(health.currentTokens)} / {formatTokens(health.maxTokens)} tokens
-              </span>
-            </div>
-          </div>
 
           {/* 分解详情 - 可展开 */}
           <div>
@@ -261,6 +262,18 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                     total={health.currentTokens}
                   />
 
+                  {/* Summary — 派生值：压缩摘要消息估算，仅在压过之后渲染 */}
+                  {(health.breakdown.bySource.summary ?? 0) > 0 && (
+                    <BreakdownItem
+                      label={ch.bkSummary.replace(
+                        '{count}',
+                        String(health.compression?.compressionCount ?? 0),
+                      )}
+                      tokens={health.breakdown.bySource.summary}
+                      total={health.currentTokens}
+                    />
+                  )}
+
                   {/* Conversation — 派生值 */}
                   <BreakdownItem
                     label={ch.bkConversation}
@@ -355,12 +368,14 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
 
 /**
  * Token 分解项
+ * 0 值桶不渲染（Cursor 面板同款：只占位的空桶会让用户以为数据坏了）
  */
 const BreakdownItem: React.FC<{
   label: string;
   tokens: number;
   total: number;
 }> = ({ label, tokens, total }) => {
+  if (tokens <= 0) return null;
   const percent = total > 0 ? ((tokens / total) * 100).toFixed(1) : '0.0';
 
   return (
@@ -391,6 +406,8 @@ const NestedGroup: React.FC<{
   const ch = t.taskStatusPanels.contextHealth;
   const names = Object.keys(entries);
   const sum = Object.values(entries).reduce((a, b) => a + b, 0);
+  // 空桶不占位（与 BreakdownItem 同一口径：0 值不渲染）
+  if (sum <= 0) return null;
   const percent = total > 0 ? ((sum / total) * 100).toFixed(1) : '0.0';
   const hasEntries = names.length > 0;
 
@@ -472,4 +489,3 @@ const NestedGroup: React.FC<{
   );
 };
 
-export default ContextHealthPanel;

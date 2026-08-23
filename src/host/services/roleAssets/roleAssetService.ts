@@ -29,6 +29,7 @@ import {
   getProjectMetaPath,
   isSafeRoleId,
 } from './roleAssetPaths';
+import { buildRoleBoundaryContextSection } from './rolePersonalization';
 
 const logger = createLogger('RoleAssets');
 
@@ -221,6 +222,29 @@ export async function readScopedMemory(target: ScopedMemoryTarget, filename: str
   }
 }
 
+/** 软归档一条记忆并移出索引，保留原文件与正文。 */
+export async function archiveScopedMemory(target: ScopedMemoryTarget, filename: string): Promise<boolean> {
+  const sanitized = sanitizeMemoryFilename(filename);
+  const dirs = resolveScopeDirs(target.scope, target.roleId, target.workspacePath);
+  const filePath = path.join(dirs.memoriesDir, sanitized);
+  let source: string;
+  try {
+    source = await fs.readFile(filePath, 'utf-8');
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    await removeFromScopedIndex(dirs.indexPath, sanitized);
+    return false;
+  }
+
+  const archived = /^status:\s*\S+\s*$/m.test(source)
+    ? source.replace(/^status:\s*\S+\s*$/m, 'status: archived')
+    : source.replace(/^---\s*$/m, '---\nstatus: archived');
+  await fs.writeFile(filePath, archived, 'utf-8');
+  await removeFromScopedIndex(dirs.indexPath, sanitized);
+  logger.info('Scoped memory archived', { scope: target.scope, roleId: target.roleId, filename: sanitized });
+  return true;
+}
+
 /** 删除一条记忆 + 更新索引（幂等） */
 export async function deleteScopedMemory(target: ScopedMemoryTarget, filename: string): Promise<boolean> {
   const sanitized = sanitizeMemoryFilename(filename);
@@ -323,6 +347,11 @@ export async function buildRoleContextBlock(roleId: string, workspacePath?: stri
   if (!(await isPersistentRole(roleId))) return null;
 
   const sections: string[] = [];
+
+  const boundarySection = buildRoleBoundaryContextSection(roleId);
+  if (boundarySection) {
+    sections.push(boundarySection);
+  }
 
   const roleIndex = await loadScopedMemoryIndex({ scope: 'role', roleId });
   sections.push(`## 角色记忆索引\n${roleIndex || '（暂无角色记忆）'}`);

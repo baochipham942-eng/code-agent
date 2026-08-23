@@ -1,4 +1,5 @@
 import type { AgentFailureCode } from './agentFailure';
+import type { LastToolStep } from './backgroundTask';
 import type { EvidenceRef } from './evidence';
 
 export type AgentTreeNodeStatus =
@@ -84,6 +85,7 @@ export interface AgentTreeNode {
   progress?: string;
   lastEvent?: AgentTreeEventSummary;
   activeTool?: string;
+  lastToolStep?: LastToolStep;
   failureCode?: AgentFailureCode;
   failureReason?: string;
   worktreeState: AgentTreeWorktreeState;
@@ -93,6 +95,13 @@ export interface AgentTreeNode {
   updatedAt?: number;
   completedAt?: number;
   sources: AgentTreeNodeSource[];
+}
+
+/** 一处所有权冲突的人话三要素：谁占了、谁撞上来、撞在哪个文件。 */
+export interface AgentTreeOwnershipConflict {
+  path: string;
+  ownerAgentId: string;
+  requesterAgentId: string;
 }
 
 export interface AgentTreeSummary {
@@ -105,6 +114,8 @@ export interface AgentTreeSummary {
   withWorktree: number;
   totalCostUsd?: number;
   totalTokensUsed?: number;
+  /** 本会话文件所有权冲突（fileOwnershipRegistry.listConflicts）；无 sessionId 时为空数组。 */
+  ownershipConflicts: AgentTreeOwnershipConflict[];
 }
 
 export interface AgentTreeSnapshot {

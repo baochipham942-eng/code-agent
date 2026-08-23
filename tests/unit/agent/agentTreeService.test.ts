@@ -62,7 +62,17 @@ describe('agentTreeService', () => {
         {
           sessionId: 'session-1',
           agentId: 'child',
-          messages: [],
+          messages: [{
+            id: 'message-tool-edit',
+            role: 'assistant',
+            content: '',
+            timestamp: 55,
+            toolCalls: [{
+              id: 'tool-edit',
+              name: 'Edit',
+              arguments: { file_path: '/repo/src/main.ts' },
+            }],
+          }],
           updatedAt: 60,
           snapshot: {
             currentTokens: 1900,
@@ -96,6 +106,11 @@ describe('agentTreeService', () => {
     expect(child?.failureCode).toBe(AgentFailureCode.BudgetExhausted);
     expect(child?.failureReason).toBe('可用预算已经用完');
     expect(child?.activeTool).toBe('Edit');
+    expect(child?.lastToolStep).toEqual({
+      tool: 'Edit',
+      target: '/repo/src/main.ts',
+      at: 55,
+    });
     expect(child?.budgetSummary).toMatchObject({
       costUsd: 0.42,
       tokensUsed: 1900,
@@ -155,5 +170,24 @@ describe('agentTreeService', () => {
     expect(node?.evidenceRefs).toEqual([evidence]);
     expect(node?.sources).toContain('agentWorktree');
     expect(snapshot.summary.withWorktree).toBe(1);
+  });
+
+  it('sources.ownershipConflicts 原样带进 snapshot.summary（path/ownerAgentId/requesterAgentId）', () => {
+    const snapshot = buildAgentTreeSnapshot({
+      now: 300,
+      ownershipConflicts: [
+        { path: 'src/host/agent/foo.ts', ownerAgentId: 'coder-1', requesterAgentId: 'reviewer-1' },
+      ],
+    });
+
+    expect(snapshot.summary.ownershipConflicts).toEqual([
+      { path: 'src/host/agent/foo.ts', ownerAgentId: 'coder-1', requesterAgentId: 'reviewer-1' },
+    ]);
+  });
+
+  it('不传 ownershipConflicts 时 snapshot.summary.ownershipConflicts 为空数组', () => {
+    const snapshot = buildAgentTreeSnapshot({ now: 400 });
+
+    expect(snapshot.summary.ownershipConflicts).toEqual([]);
   });
 });

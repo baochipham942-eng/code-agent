@@ -128,7 +128,8 @@ describe('右栏默认那一屏是产物内容', () => {
     fireEvent.click(screen.getByTestId('workspace-preview-details-toggle'));
 
     expect(screen.getByText('版本区探针')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '归档到资料库: 季度报告' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '更多: 季度报告' }));
+    expect(screen.getByRole('menuitem', { name: '归档到资料库: 季度报告' })).toBeTruthy();
     // 内容不会因为点开详情而消失
     expect(screen.getByText('季度报告 的正文内容')).toBeTruthy();
   });

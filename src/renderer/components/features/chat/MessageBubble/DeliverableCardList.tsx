@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   BarChart3,
@@ -12,13 +12,21 @@ import {
   FolderOpen,
   GitBranch,
   Image as ImageIcon,
+  Link,
   MoreHorizontal,
   Music,
   Presentation,
+  Rocket,
   Table,
   Video,
 } from 'lucide-react';
-import type { DeliverableCardView, DeliverableSecondaryAction } from '@shared/contract';
+import type {
+  DeliverableCardView,
+  DeliverablePublishInfo,
+  DeliverableShareLinkInfo,
+  DeliverableSecondaryAction,
+  PublishedDeliverableVersion,
+} from '@shared/contract';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useWorkspacePreviewModel } from '../../../../hooks/useWorkspacePreviewModel';
@@ -28,11 +36,40 @@ import ipcService from '../../../../services/ipcService';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
+import { Modal } from '../../../primitives/Modal';
+import { Button } from '../../../primitives/Button';
+import { Input } from '../../../primitives/Input';
+import { DeliverablePublishBadge } from '../../../DeliverablePublishBadge';
+import { applyPublishInfoToDeliverableCard, applyShareInfoToDeliverableCard } from '../../../../utils/deliverables';
+import { ShareLinkPanel } from './ShareLinkPanel';
 
 interface Props {
   cards: DeliverableCardView[];
   className?: string;
   renderCardDetail?: (card: DeliverableCardView) => React.ReactNode;
+}
+
+interface PublishVersionResponse extends DeliverablePublishInfo {
+  publishedVersion: PublishedDeliverableVersion;
+}
+
+function isPublishInfo(value: unknown): value is DeliverablePublishInfo {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<DeliverablePublishInfo>;
+  return Boolean(candidate.publishState) && Array.isArray(candidate.publishedVersions);
+}
+
+function publishActionForCard(
+  card: DeliverableCardView,
+): Extract<DeliverableSecondaryAction, { kind: 'publish-version' }> | undefined {
+  return card.secondaryActions?.find(
+    (action): action is Extract<DeliverableSecondaryAction, { kind: 'publish-version' }> => action.kind === 'publish-version',
+  );
+}
+
+function resolveDeliverablePath(filePath: string, workingDirectory: string | null): string {
+  if (filePath.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(filePath) || !workingDirectory) return filePath;
+  return `${workingDirectory.replace(/[\\/]$/, '')}/${filePath}`;
 }
 
 export function iconForKind(kind: string): React.ReactNode {
@@ -82,6 +119,9 @@ function actionLabel(card: DeliverableCardView, labels: ReturnType<typeof useI18
 
 function secondaryActionKey(action: DeliverableSecondaryAction): string {
   switch (action.kind) {
+    case 'publish-version':
+    case 'share-link':
+      return `${action.kind}:${action.path}`;
     case 'reveal-file':
     case 'open-file':
       return `${action.kind}:${action.path}`;
@@ -91,6 +131,8 @@ function secondaryActionKey(action: DeliverableSecondaryAction): string {
       return `${action.kind}:${action.url}`;
     case 'export-bundle':
       return `${action.kind}:${action.bundleName || action.files.map((file) => file.path).join('|')}`;
+    case 'archive-to-library':
+      return `${action.kind}:${action.path}`;
     default:
       return 'secondary-action';
   }
@@ -99,6 +141,10 @@ function secondaryActionKey(action: DeliverableSecondaryAction): string {
 function secondaryIcon(action: DeliverableSecondaryAction): React.ReactNode {
   const cls = 'h-3.5 w-3.5';
   switch (action.kind) {
+    case 'publish-version':
+      return <Rocket className={cls} />;
+    case 'share-link':
+      return <Link className={cls} />;
     case 'reveal-file':
       return <FolderOpen className={cls} />;
     case 'download-url':
@@ -121,6 +167,10 @@ function secondaryActionLabel(
   labels: ReturnType<typeof useI18n>['t']['deliverable'],
 ): string {
   switch (action.kind) {
+    case 'publish-version':
+      return labels.publishVersion;
+    case 'share-link':
+      return action.label === 'share-link-active' ? labels.shareLinkExisting : labels.generateShareLink;
     case 'reveal-file':
       return labels.reveal;
     case 'open-file':
@@ -141,10 +191,11 @@ interface CardRowProps {
   labels: ReturnType<typeof useI18n>['t']['deliverable'];
   openCard: (card: DeliverableCardView) => void;
   runSecondaryAction: (action: DeliverableSecondaryAction, card: DeliverableCardView) => Promise<void>;
+  requestPublish: (action: Extract<DeliverableSecondaryAction, { kind: 'publish-version' }>, card: DeliverableCardView) => void;
   detail?: React.ReactNode;
 }
 
-const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryAction, detail }) => {
+const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryAction, requestPublish, detail }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -170,8 +221,10 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
   const cardChrome = 'rounded-md border border-border-muted bg-surface-subtle transition-colors';
 
   const allActions = card.secondaryActions?.filter((action) => !action.disabled) ?? [];
-  const archiveAction = allActions.find((action) => action.kind === 'archive-to-library');
-  const overflowActions = allActions.filter((action) => action.kind !== 'archive-to-library');
+  const publishAction = allActions.find(
+    (action): action is Extract<DeliverableSecondaryAction, { kind: 'publish-version' }> => action.kind === 'publish-version',
+  );
+  const overflowActions = allActions.filter((action) => action.kind !== 'publish-version');
 
   const handleActionClick = (action: DeliverableSecondaryAction) => {
     setMenuOpen(false);
@@ -197,27 +250,33 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
         <div className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left">
           {iconForKind(card.kind)}
           <div className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-100">{card.title}</div>
+          <DeliverablePublishBadge state={card.publishState} testId={`deliverable-publish-state-${card.id}`} />
+          {card.shareLinkInfo?.stale && card.shareLinkInfo.share && !card.shareLinkInfo.share.revokedAt && (
+            <span className="max-w-48 truncate text-[10px] text-badge-warning" data-testid={`deliverable-share-stale-${card.id}`}>
+              {labels.shareLink.stale.replace('{version}', String(card.shareLinkInfo.latestPublishedVersion ?? card.shareLinkInfo.share.pushedVersion))}
+            </span>
+          )}
         </div>
-        {(archiveAction || overflowActions.length > 0) && (
+        {(publishAction || overflowActions.length > 0) && (
           <div className="flex flex-shrink-0 items-center gap-0.5 pr-1.5">
-            {archiveAction && (
-              <button
+            {publishAction && (
+              <button /* ds-allow:button: 产物卡窄版专用主动作，通用 Button 尺寸不适配 */
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  void runSecondaryAction(archiveAction, card);
+                  requestPublish(publishAction, card);
                 }}
-                className="inline-flex h-6 items-center justify-center gap-1 rounded px-1.5 text-[11px] text-badge-info hover:bg-surface-hover hover:text-badge-info"
-                title={archiveAction.reason || labels.archiveToLibrary}
-                aria-label={`${labels.archiveToLibrary}: ${card.title}`}
+                className="inline-flex h-6 items-center justify-center gap-1 rounded border border-teal-500/50 px-1.5 text-[11px] text-badge-success hover:bg-teal-500/10"
+                title={labels.publishVersion}
+                aria-label={`${labels.publishVersion}: ${card.title}`}
               >
-                <BookOpen className="h-3.5 w-3.5" />
-                <span>{labels.archiveToLibrary}</span>
+                <Rocket className="h-3.5 w-3.5" />
+                <span>{labels.publishVersion}</span>
               </button>
             )}
             {overflowActions.length > 0 && (
               <div className="relative" ref={menuRef}>
-                <button
+                <button /* ds-allow:button: 产物卡窄版溢出菜单图标按钮 */
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -239,7 +298,7 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
                     className="absolute right-0 top-full z-30 mt-1 min-w-[160px] rounded-lg border border-border-muted bg-surface-subtle py-1 shadow-xl"
                   >
                     {overflowActions.map((action) => (
-                      <button
+                      <button /* ds-allow:button: 紧凑菜单项承载可选副文案 */
                         key={secondaryActionKey(action)}
                         type="button"
                         role="menuitem"
@@ -252,7 +311,14 @@ const CardRow: React.FC<CardRowProps> = ({ card, labels, openCard, runSecondaryA
                         aria-label={`${secondaryActionLabel(action, labels)}: ${card.title}`}
                       >
                         {secondaryIcon(action)}
-                        <span className="truncate">{secondaryActionLabel(action, labels)}</span>
+                        <span className="min-w-0">
+                          <span className="block truncate">{secondaryActionLabel(action, labels)}</span>
+                          {action.kind === 'export-bundle' && action.sourceVersion && (
+                            <span className="block truncate text-[10px] text-zinc-500">
+                              {labels.exportBundleSource.replace('{version}', String(action.sourceVersion))}
+                            </span>
+                          )}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -282,6 +348,136 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
   const currentSessionWorkingDirectory = useSessionStore(
     (state) => state.sessions.find((s) => s.id === state.currentSessionId)?.workingDirectory ?? null,
   );
+
+  const [publishInfoByPath, setPublishInfoByPath] = useState<Record<string, DeliverablePublishInfo>>({});
+  const [shareInfoByPath, setShareInfoByPath] = useState<Record<string, DeliverableShareLinkInfo>>({});
+  const [publishTarget, setPublishTarget] = useState<{
+    action: Extract<DeliverableSecondaryAction, { kind: 'publish-version' }>;
+    card: DeliverableCardView;
+  } | null>(null);
+  const [publishNote, setPublishNote] = useState('');
+  const [isPublishing, setIsPublishing] = useState(false);
+  const publishInfoRequestRef = useRef(0);
+  const shareInfoRequestRef = useRef(0);
+  const [shareTarget, setShareTarget] = useState<{
+    filePath: string;
+    title: string;
+  } | null>(null);
+
+  const publishPaths = useMemo(() => Array.from(new Set(cards.flatMap((card) => {
+    const action = publishActionForCard(card);
+    return action ? [resolveDeliverablePath(action.path, currentSessionWorkingDirectory)] : [];
+  }))), [cards, currentSessionWorkingDirectory]);
+  const publishPathsKey = publishPaths.join('\n');
+  const publishRevisionKey = cards.map((card) => [
+    card.id,
+    card.revisionContext?.sha256,
+    card.revisionContext?.version,
+    card.createdAt,
+  ].join(':')).join('\n');
+
+  useEffect(() => {
+    if (!publishPathsKey) return;
+    const paths = publishPathsKey.split('\n');
+    const requestId = ++publishInfoRequestRef.current;
+    let cancelled = false;
+    void Promise.all(paths.map(async (filePath) => {
+      try {
+        const info = await ipcService.invokeDomain<DeliverablePublishInfo>(
+          IPC_DOMAINS.WORKSPACE,
+          'getPublishInfo',
+          { filePath },
+        );
+        return isPublishInfo(info) ? [filePath, info] as const : null;
+      } catch {
+        return null;
+      }
+    })).then((entries) => {
+      if (cancelled || requestId !== publishInfoRequestRef.current) return;
+      setPublishInfoByPath((current) => ({
+        ...current,
+        ...Object.fromEntries(entries.filter((entry): entry is readonly [string, DeliverablePublishInfo] => entry !== null)),
+      }));
+    });
+    return () => { cancelled = true; };
+  }, [publishPathsKey, publishRevisionKey]);
+
+  useEffect(() => {
+    if (!publishPathsKey) return;
+    const paths = publishPathsKey.split('\n');
+    const requestId = ++shareInfoRequestRef.current;
+    let cancelled = false;
+    void Promise.all(paths.map(async (filePath) => {
+      try {
+        const info = await ipcService.invokeDomain<DeliverableShareLinkInfo>(
+          IPC_DOMAINS.WORKSPACE,
+          'getShareLink',
+          { filePath },
+        );
+        return [filePath, info] as const;
+      } catch {
+        return null;
+      }
+    })).then((entries) => {
+      if (cancelled || requestId !== shareInfoRequestRef.current) return;
+      setShareInfoByPath((current) => ({
+        ...current,
+        ...Object.fromEntries(entries.filter((entry): entry is readonly [string, DeliverableShareLinkInfo] => entry !== null)),
+      }));
+    });
+    return () => { cancelled = true; };
+  }, [publishPathsKey, publishRevisionKey]);
+
+  const displayCards = useMemo(() => cards.map((card) => {
+    const action = publishActionForCard(card);
+    if (!action) return card;
+    const filePath = resolveDeliverablePath(action.path, currentSessionWorkingDirectory);
+    const publishInfo = publishInfoByPath[filePath];
+    const shareInfo = shareInfoByPath[filePath];
+    const publishedCard = publishInfo ? applyPublishInfoToDeliverableCard(card, publishInfo) : card;
+    return shareInfo ? applyShareInfoToDeliverableCard(publishedCard, shareInfo) : publishedCard;
+  }), [cards, currentSessionWorkingDirectory, publishInfoByPath, shareInfoByPath]);
+
+  const requestPublish = (
+    action: Extract<DeliverableSecondaryAction, { kind: 'publish-version' }>,
+    card: DeliverableCardView,
+  ) => {
+    setPublishNote('');
+    setPublishTarget({ action, card });
+  };
+
+  const confirmPublish = async () => {
+    if (!publishTarget || isPublishing) return;
+    const filePath = resolveDeliverablePath(publishTarget.action.path, currentSessionWorkingDirectory);
+    setIsPublishing(true);
+    try {
+      const response = await ipcService.invokeDomain<PublishVersionResponse>(
+        IPC_DOMAINS.WORKSPACE,
+        'publishVersion',
+        { filePath, note: publishNote },
+      );
+      publishInfoRequestRef.current += 1;
+      setPublishInfoByPath((current) => ({ ...current, [filePath]: response }));
+      setShareInfoByPath((current) => {
+        const existing = current[filePath];
+        if (!existing?.share || existing.share.revokedAt) return current;
+        return {
+          ...current,
+          [filePath]: {
+            ...existing,
+            stale: true,
+            latestPublishedVersion: response.publishedVersion.version,
+          },
+        };
+      });
+      setPublishTarget(null);
+      toast.success(deliverableLabels.publishSuccess.replace('{version}', String(response.publishedVersion.version)));
+    } catch (error) {
+      toast.error(`${deliverableLabels.publishFailed}: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsPublishing(false);
+    }
+  };
 
   if (cards.length === 0) return null;
 
@@ -389,6 +585,12 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
           }
           break;
         }
+        case 'share-link':
+          setShareTarget({
+            filePath: resolveDeliverablePath(action.path, currentSessionWorkingDirectory),
+            title: action.title || card.title,
+          });
+          break;
         case 'export-bundle': {
           const response = await window.domainAPI?.invoke<{ filePath: string }>('workspace', 'exportBundle', {
             files: action.files,
@@ -420,18 +622,72 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
     }
   };
 
+  const currentVersion = publishTarget?.card.publishState.kind === 'draft'
+    ? 1
+    : (publishTarget?.card.publishState.version ?? 0) + 1;
+
   return (
-    <div className={`${className} space-y-1.5`}>
-      {cards.map((card) => (
-        <CardRow
-          key={card.id}
-          card={card}
-          labels={deliverableLabels}
-          openCard={openCard}
-          runSecondaryAction={runSecondaryAction}
-          detail={renderCardDetail?.(card)}
+    <>
+      <div className={`${className} space-y-1.5`}>
+        {displayCards.map((card) => (
+          <CardRow
+            key={card.id}
+            card={card}
+            labels={deliverableLabels}
+            openCard={openCard}
+            runSecondaryAction={runSecondaryAction}
+            requestPublish={requestPublish}
+            detail={renderCardDetail?.(card)}
+          />
+        ))}
+      </div>
+      <Modal
+        isOpen={publishTarget !== null}
+        onClose={() => { if (!isPublishing) setPublishTarget(null); }}
+        title={deliverableLabels.publishConfirmTitle}
+        size="sm"
+        portal
+        footer={(
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setPublishTarget(null)} disabled={isPublishing}>
+              {t.common.cancel}
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => void confirmPublish()} loading={isPublishing}>
+              {deliverableLabels.publish}
+            </Button>
+          </>
+        )}
+      >
+        <div className="space-y-3">
+          <p className="text-xs leading-5 text-zinc-400">
+            {deliverableLabels.publishConfirmDescription
+              .replace('{title}', publishTarget?.card.title ?? '')
+              .replace('{version}', String(currentVersion))}
+          </p>
+          <label className="block space-y-1.5 text-xs text-zinc-300">
+            <span>{deliverableLabels.publishNote}</span>
+            <Input
+              value={publishNote}
+              onChange={(event) => setPublishNote(event.target.value)}
+              placeholder={deliverableLabels.publishNotePlaceholder}
+              maxLength={160}
+              autoFocus
+            />
+          </label>
+        </div>
+      </Modal>
+      {shareTarget && (
+        <ShareLinkPanel
+          isOpen
+          filePath={shareTarget.filePath}
+          title={shareTarget.title}
+          onClose={() => setShareTarget(null)}
+          onInfoChange={(next) => setShareInfoByPath((current) => ({
+            ...current,
+            [shareTarget.filePath]: next,
+          }))}
         />
-      ))}
-    </div>
+      )}
+    </>
   );
 };

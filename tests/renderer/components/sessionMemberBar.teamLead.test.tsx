@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+// ============================================================================
+// teamLead 标记（N-L6-AGENTVIEW 后）：member-lead-badge 从成员条 pill 搬到
+// 「本会话的代理」面板的专家行上，断言对象随之迁到 SessionAgentsPanel。
+// ============================================================================
 import React from 'react';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,33 +16,32 @@ import type {
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const invokeMock = vi.fn();
-const swarmState: {
-  agents: unknown[];
-  activeSessionId: string | undefined;
-  activeRunId?: string;
-  activeTreeId?: string;
-  lastEventAt?: number;
-} = {
-  agents: [],
-  activeSessionId: undefined,
-};
+const invokeDomainMock = vi.fn();
+const appState = { setWorkbenchCollapsed: vi.fn() };
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({ t: zh }),
 }));
-vi.mock('../../../src/renderer/stores/swarmStore', () => ({
-  useSwarmStore: (selector: (state: typeof swarmState) => unknown) => selector(swarmState),
-}));
+vi.mock('../../../src/renderer/stores/appStore', () => {
+  const useAppStore = (selector: (state: typeof appState) => unknown) => selector(appState);
+  useAppStore.getState = () => appState;
+  return { useAppStore };
+});
 vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: { invoke: (...args: unknown[]) => invokeMock(...args) },
+  default: {
+    invoke: (...args: unknown[]) => invokeMock(...args),
+    invokeDomain: (...args: unknown[]) => invokeDomainMock(...args),
+  },
 }));
 
-import { SessionMemberBar } from '../../../src/renderer/components/features/expert/SessionMemberBar';
+import { SessionAgentsPanel } from '../../../src/renderer/components/TaskPanel/SessionAgentsPanel';
+import { useSwarmStore } from '../../../src/renderer/stores/swarmStore';
 import { useComposerStore } from '../../../src/renderer/stores/composerStore';
 import { useTeamRecipeStore } from '../../../src/renderer/stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../src/renderer/stores/agentRegistryStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useMemberViewStore } from '../../../src/renderer/stores/memberViewStore';
+import { useBackgroundTaskStore } from '../../../src/renderer/stores/backgroundTaskStore';
 
 const persistedAgents: SwarmRunAgentRecord[] = [
   {
@@ -107,83 +110,73 @@ function session(metadata?: Record<string, unknown>): SessionWithMeta {
   };
 }
 
+function mockPersistedLedger(): void {
+  invokeMock.mockImplementation((channel: string) => {
+    if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([run]);
+    if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) {
+      return Promise.resolve({
+        run: { ...run, totalToolCalls: 11, parallelPeak: 2, errorSummary: null, aggregation: null, tags: [] },
+        agents: persistedAgents,
+        events: [],
+      } satisfies SwarmRunDetail);
+    }
+    return Promise.resolve(null);
+  });
+}
+
 function expectOnlyLead(roleId: string): void {
-  expect(screen.getByTestId(`member-lead-badge-${roleId}`).textContent).toBe('主理人');
+  expect(screen.getByTestId(`member-lead-badge-${roleId}`).textContent).toBe('牵头专家');
   for (const other of ['researcher', 'writer', '牧之', '溯真'].filter((id) => id !== roleId)) {
     expect(screen.queryByTestId(`member-lead-badge-${other}`)).toBeNull();
   }
 }
 
-describe('SessionMemberBar team lead marker', () => {
+describe('SessionAgentsPanel team lead marker', () => {
   beforeEach(() => {
-    swarmState.agents = [];
-    swarmState.activeSessionId = undefined;
     invokeMock.mockReset();
     invokeMock.mockResolvedValue([]);
-    useComposerStore.setState({ selectedTeamRecipeId: null });
+    invokeDomainMock.mockReset();
+    invokeDomainMock.mockResolvedValue(null);
+    useSwarmStore.setState({ activeSessionId: undefined, activeRunId: undefined, activeTreeId: undefined, lastEventAt: undefined, eventLog: [] });
+    useComposerStore.setState({ selectedTeamRecipeId: null, standbyExcludedMemberKeys: [] });
     useTeamRecipeStore.setState({ recipes: [], isLoaded: true });
     useAgentRegistryStore.setState({ entries: [], isLoaded: true });
     useSessionStore.setState({ sessions: [session()], currentSessionId: 'session-1' });
     useMemberViewStore.setState({ viewingMemberId: null });
+    useBackgroundTaskStore.setState({ tasks: [] });
   });
 
   afterEach(() => cleanup());
 
-  it('运行中账本按 metadata.teamLead.roleId 标记对应 pill', async () => {
-    invokeMock.mockImplementation((channel: string) => {
-      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([run]);
-      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) {
-        return Promise.resolve({
-          run: { ...run, totalToolCalls: 11, parallelPeak: 2, errorSummary: null, aggregation: null, tags: [] },
-          agents: persistedAgents,
-          events: [],
-        } satisfies SwarmRunDetail);
-      }
-      return Promise.resolve(null);
-    });
+  it('运行中账本按 metadata.teamLead.roleId 标记对应面板行', async () => {
+    mockPersistedLedger();
     useSessionStore.setState({
       sessions: [session({
         teamLead: { roleId: 'writer', recipeId: 'recipe-1', setAt: 10 },
       })],
     });
 
-    render(<SessionMemberBar sessionId="session-1" />);
+    render(<SessionAgentsPanel />);
 
-    await waitFor(() => expect(screen.getByTestId('member-pill-writer')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('agents-panel-row-writer')).toBeTruthy());
     expectOnlyLead('writer');
   });
 
-  it('持久化账本回灌按 metadata.teamLead.roleId 标记对应 pill', async () => {
-    const detail: SwarmRunDetail = {
-      run: {
-        ...run,
-        totalToolCalls: 11,
-        parallelPeak: 2,
-        errorSummary: null,
-        aggregation: null,
-        tags: [],
-      },
-      agents: persistedAgents,
-      events: [],
-    };
-    invokeMock.mockImplementation((channel: string) => {
-      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([run]);
-      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
-      return Promise.resolve(null);
-    });
+  it('持久化账本回灌按 metadata.teamLead.roleId 标记对应面板行', async () => {
+    mockPersistedLedger();
     useSessionStore.setState({
       sessions: [session({
         teamLead: { roleId: 'researcher', recipeId: 'recipe-1', setAt: 10 },
       })],
     });
 
-    render(<SessionMemberBar sessionId="session-1" />);
+    render(<SessionAgentsPanel />);
 
-    await waitFor(() => expect(screen.getByTestId('member-pill-researcher')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('agents-panel-row-researcher')).toBeTruthy());
     expectOnlyLead('researcher');
   });
 
-  it('预选配方名单也只按 metadata.teamLead.roleId 标记对应 pill', async () => {
+  it('预选配方名单也只按 metadata.teamLead.roleId 标记对应面板行', async () => {
     useTeamRecipeStore.setState({
       recipes: [{
         id: 'recipe-1',
@@ -202,28 +195,18 @@ describe('SessionMemberBar team lead marker', () => {
       })],
     });
 
-    render(<SessionMemberBar sessionId="session-1" />);
+    render(<SessionAgentsPanel />);
 
-    await waitFor(() => expect(screen.getByTestId('member-pill-牧之')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('member-standby-remove-牧之')).toBeTruthy());
     expectOnlyLead('牧之');
   });
 
-  it('没有 teamLead metadata 时不标记任何 pill，不默认第一个成员', async () => {
-    invokeMock.mockImplementation((channel: string) => {
-      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([run]);
-      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) {
-        return Promise.resolve({
-          run: { ...run, totalToolCalls: 11, parallelPeak: 2, errorSummary: null, aggregation: null, tags: [] },
-          agents: persistedAgents,
-          events: [],
-        } satisfies SwarmRunDetail);
-      }
-      return Promise.resolve(null);
-    });
+  it('没有 teamLead metadata 时不标记任何行，不默认第一个成员', async () => {
+    mockPersistedLedger();
 
-    const { container } = render(<SessionMemberBar sessionId="session-1" />);
+    const { container } = render(<SessionAgentsPanel />);
 
-    await waitFor(() => expect(screen.getByTestId('member-pill-researcher')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('agents-panel-row-researcher')).toBeTruthy());
     expect(container.querySelectorAll('[data-testid^="member-lead-badge-"]')).toHaveLength(0);
   });
 });

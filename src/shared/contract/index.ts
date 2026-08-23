@@ -19,10 +19,13 @@ export * from './authInventory';
 
 // Domain types
 export * from './session';
+export * from './expertThread';
 export * from './sessionFork';
 export * from './sessionForkPortability';
 export * from './conversationHistory';
 export * from './sessionRewind';
+export * from './turnCheckout';
+export * from './evidenceInvalidation';
 export * from './project';
 export * from './workspace';
 export * from './workspacePreview';
@@ -139,6 +142,7 @@ export * from './persistence';
 export * from './buildInfo';
 export * from './desktopShell';
 export * from './turnCost';
+export * from './turnDiff';
 export * from './capabilityCandidate';
 
 // Conversation envelope types (chat-native workbench context)

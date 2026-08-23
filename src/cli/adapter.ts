@@ -2,7 +2,15 @@
 // CLI Adapter - 适配 AgentLoop 到 CLI
 // ============================================================================
 
-import { createAgentLoop, buildCLIConfig, initializeCLIServices, getSessionManager, getConfigService } from './bootstrap';
+import {
+  createAgentLoop,
+  buildCLIConfig,
+  initializeCLIServices,
+  getSessionManager,
+  getConfigService,
+  startCLIDurableRun,
+  terminalCLIDurableRun,
+} from './bootstrap';
 import { terminalOutput, jsonOutput } from './output';
 import { addSwarmEventListener } from '../host/ipc/swarm.ipc';
 import fs from 'fs';
@@ -15,8 +23,10 @@ import { getSessionSkillService } from '../host/services/skills/sessionSkillServ
 import { MetricsCollector } from '../host/agent/metricsCollector';
 import { retryEvents } from '../host/model/providers/retryStrategy';
 import { getAgentDispatchInfo } from './agentDispatch';
-import { createRunContext, type RunContext } from '../host/runtime/runContext';
+import { createRunContext, type RunContext, type RunHandle } from '../host/runtime/runContext';
 import { generateMessageId } from '../shared/utils/id';
+import { readPersistedExpertThread } from '../shared/contract/expertThread';
+import { resolveExplicitAgentOverride } from '../host/agent/explicitAgentOverride';
 
 export { getAgentDispatchInfo, isAgentDispatchToolName } from './agentDispatch';
 
@@ -66,6 +76,7 @@ export class CLIAgent {
   private runErrorMessage: string | null = null;
   /** Most recently started turn; a new context is created for every run(). */
   private lastRunContext: RunContext | null = null;
+  private currentDurableRun: RunHandle | null = null;
 
   private systemPrompt: string | undefined;
 
@@ -155,10 +166,31 @@ export class CLIAgent {
     if (!this.sessionId) {
       throw new Error('CLI session initialization did not produce a sessionId');
     }
-    const runContext = createRunContext({
+    const persistedSession = await getSessionManager().getSession(this.sessionId, 0).catch(() => null);
+    const persistedExpertRoleId = readPersistedExpertThread(persistedSession?.metadata)?.roleId;
+    const persistedExpertOverride = !this.config.agentOverride && persistedExpertRoleId
+      ? resolveExplicitAgentOverride(persistedExpertRoleId)
+      : null;
+    if (persistedExpertRoleId && !this.config.agentOverride && !persistedExpertOverride) {
+      logger.warn('Persisted expert thread role is unavailable; using the default agent', {
+        sessionId: this.sessionId,
+        roleId: persistedExpertRoleId,
+      });
+    }
+    const runConfig: CLIConfig = persistedExpertOverride
+      ? {
+          ...this.config,
+          agentOverride: persistedExpertOverride,
+          requestedAgentId: persistedExpertRoleId,
+        }
+      : this.config;
+    const runInput = {
       sessionId: this.sessionId,
-      workspace: this.config.workingDirectory,
-    });
+      workspace: runConfig.workingDirectory,
+    };
+    const durableRun = await startCLIDurableRun(runInput);
+    const runContext = durableRun?.context ?? createRunContext(runInput);
+    this.currentDurableRun = durableRun;
     this.lastRunContext = runContext;
 
     // Inject system prompt if provided (before user message)
@@ -209,13 +241,14 @@ export class CLIAgent {
 
     // 创建 AgentLoop（传入真实 sessionId + optional MetricsCollector）
     const agentLoop = createAgentLoop(
-      this.config,
+      runConfig,
       this.handleEvent.bind(this),
       this.messages,
       this.sessionId || undefined,
       this.metricsCollector || undefined,
       undefined,
       runContext,
+      durableRun?.traceContext,
     );
     this.currentAgentLoop = agentLoop;
     this.lastHookManager = agentLoop.getHookManager?.() ?? this.lastHookManager;
@@ -226,7 +259,7 @@ export class CLIAgent {
       // 运行 Agent
       agentLoop.run(prompt).catch((error: unknown) => {
         logger.error('Agent run error', error);
-        this.finishRun({
+        void this.finishRun({
           success: false,
           error: getErrorMessage(error),
         });
@@ -300,6 +333,10 @@ export class CLIAgent {
       } else if (event.type === 'turn_end') {
         // turn_end is a boundary marker — server uses it for context accumulation
         this.writeStreamJson('turn_end', {});
+      } else if (event.type === 'subagent_activity') {
+        this.writeStreamJson('subagent_activity', event.data);
+      } else if (event.type === 'subagent_run_end') {
+        this.writeStreamJson('subagent_run_end', event.data);
       } else if (event.type === 'error') {
         this.writeStreamJson('error', event.data?.message);
       } else if (event.type === 'message' && event.data?.role === 'assistant' && event.data?.content) {
@@ -367,7 +404,7 @@ export class CLIAgent {
 
     // Agent 完成
     if (event.type === 'agent_complete') {
-      this.finishRun({
+      void this.finishRun({
         success: !this.runErrorMessage,
         output: this.lastContent || this.getLastAssistantMessage()?.content,
         ...(this.runErrorMessage ? { error: this.runErrorMessage } : {}),
@@ -380,10 +417,15 @@ export class CLIAgent {
   /**
    * 完成运行
    */
-  private finishRun(result: CLIRunResult): void {
+  private async finishRun(result: CLIRunResult): Promise<void> {
+    const resolveRun = this.resolveRun;
+    if (!resolveRun) return;
+    this.resolveRun = null;
     this.isRunning = false;
     this.currentResult = result;
     this.currentAgentLoop = null;
+    const durableRun = this.currentDurableRun;
+    this.currentDurableRun = null;
 
     // Write metrics JSON if collector is active
     if (this.metricsCollector && this.config.metricsPath) {
@@ -409,10 +451,14 @@ export class CLIAgent {
       this.unsubscribeSwarm = null;
     }
 
-    if (this.resolveRun) {
-      this.resolveRun(result);
-      this.resolveRun = null;
+    if (durableRun) {
+      try {
+        await terminalCLIDurableRun(durableRun, result.success);
+      } catch (error) {
+        logger.warn('Failed to terminal CLI Durable Run', { error: getErrorMessage(error) });
+      }
     }
+    resolveRun(result);
   }
 
   /**

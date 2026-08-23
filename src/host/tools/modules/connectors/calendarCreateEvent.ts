@@ -93,8 +93,9 @@ async function executeCalendarCreateEvent(
         artifact: createVirtualArtifact({
           sourceTool: schema.name,
           kind: 'text',
+          role: 'receipt',
           sessionId: ctx.sessionId,
-          name: `calendar-event-${event.title}`,
+          name: `已创建日历事件：${event.title}（${startText}）`,
           mimeType: 'text/markdown',
           contentLength: output.length,
           preview: output.slice(0, 500),

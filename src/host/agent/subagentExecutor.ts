@@ -9,10 +9,7 @@ import { ModelRouter } from '../model/modelRouter';
 import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../model/adapters/aiSdkAdapter';
 import { createLogger } from '../services/infra/logger';
 import { silence } from '../utils/errorHandling';
-import {
-  getSubagentPipeline,
-  type ToolExecutionRequest,
-} from './subagentPipeline';
+import { getSubagentPipeline, type ToolExecutionRequest } from './subagentPipeline';
 import type { AgentDefinition, DynamicAgentConfig } from './agentDefinition';
 import {
   getAgentPrompt,
@@ -21,6 +18,7 @@ import {
   getAgentPermissionPreset,
   getAgentMaxBudget,
 } from './agentDefinition';
+import { routeExternalSubagentExecution } from './subagentExecutionRouter';
 import { PROVIDER_REGISTRY } from '../model/modelRouter';
 import { compactSubagentMessages } from './subagentCompaction';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
@@ -73,7 +71,7 @@ import {
   shouldUseE2ELocalSubagentExecutor,
 } from './subagentE2ELocalExecutor';
 import { buildSubagentSkillsBlock } from '../services/skills/subagentSkillInjection';
-import { buildRoleContextBlock, runRoleWriteBack, recordRoleParticipation } from '../services/roleAssets';
+import { applyRoleBoundaryToSubagentRequest, buildRoleContextBlock, runRoleWriteBack, recordRoleParticipation } from '../services/roleAssets';
 import type {
   SubagentConfig,
   SubagentContext,
@@ -86,10 +84,7 @@ import {
   type LegacySubagentContextInput,
 } from './subagentExecutorLegacyAdapter';
 import { getIncompleteTasks, adoptOrphanTasks } from '../services/planning/taskStore';
-import {
-  addSubagentUsage,
-  type SubagentUsage,
-} from './subagentUsageAccounting';
+import { addSubagentUsage, type SubagentUsage } from './subagentUsageAccounting';
 import { runSubagentExecutionWithTrace } from './subagentExecutionTracing';
 import { createSubagentToolRuntime } from './subagentToolRuntime';
 import {
@@ -97,6 +92,8 @@ import {
   resolveSubagentParentContext,
 } from './subagentProtocolContext';
 import { startSubagentLifecycle } from './subagentLifecycleHooks';
+import { SubagentDoomLoopGuard, SubagentDoomLoopStopError } from './subagentDoomLoopGuard';
+import { createSubagentTurnObservability, type SubagentRunEndStatus } from './subagentTurnTrace';
 
 export type {
   SubagentConfig,
@@ -139,7 +136,9 @@ export class SubagentExecutor {
     legacyConfig?: SubagentConfig,
     legacyContext?: LegacySubagentContextInput,
   ): Promise<SubagentResult> {
-    const request = normalizeSubagentExecutionRequest(requestOrPrompt, legacyConfig, legacyContext);
+    const request = applyRoleBoundaryToSubagentRequest(normalizeSubagentExecutionRequest(requestOrPrompt, legacyConfig, legacyContext));
+    const externalExecution = routeExternalSubagentExecution(request);
+    if (externalExecution) return externalExecution;
     const { prompt, config, context } = request;
     return runSubagentExecutionWithTrace(
       request,
@@ -185,6 +184,7 @@ export class SubagentExecutor {
     let toolCallsAttempted = 0;
     let iterations = 0;
     let finalOutput = '';
+    const doomLoopGuard = new SubagentDoomLoopGuard();
     // 跨迭代累加 outputTokens，供 dynamic-workflow 的 BudgetTracker 计费（每次推理后累加）。
     let outputTokensUsed = 0;
     let descendantUsage: SubagentUsage = { cost: 0, tokensUsed: 0 };
@@ -255,12 +255,16 @@ export class SubagentExecutor {
       permissionPreset: effectivePreset,
       maxBudget: config.maxBudget,
     };
-    const pipelineContext = pipeline.createContext(
-      dynamicConfig,
-      context.cwd,
-      undefined,
-      { parentRemainingBudget: context.parentRemainingBudget },
-    );
+    const pipelineContext = pipeline.createContext(dynamicConfig, context.cwd, undefined, {
+      parentRemainingBudget: context.parentRemainingBudget, executionTopology: context.executionTopology,
+    });
+    const executionAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
+    const executionRunId = context.runId || context.swarmRunScope?.runId || context.traceContext?.runId || agentTask.id;
+    const turnObservability = createSubagentTurnObservability({
+      sessionId, events: context.events,
+      identity: { agentId: executionAgentId, runId: executionRunId, parentToolUseId: context.parentToolUseId },
+      workingDirectory: context.worktreePath || context.cwd, warn: (message, error) => logger.warn(`[${config.name}] ${message}`, error),
+    });
     const getTotalCost = (): number => {
       const ownCost = pipeline.getBudgetStatus(pipelineContext).subagentCost ?? 0;
       return ownCost + descendantUsage.cost;
@@ -350,6 +354,7 @@ export class SubagentExecutor {
       context,
       sessionId,
       effectiveMode: subagentEffectiveMode,
+      identity: turnObservability.identity,
       allowedToolNames: allowedNames,
       checkToolExecution: (request) => pipeline.checkToolExecution(pipelineContext, request).allowed,
     });
@@ -380,7 +385,6 @@ export class SubagentExecutor {
     // Keep the pipeline's internal random id private to the pipeline registry;
     // user-facing events, tool calls, approvals and results must stay in the
     // caller's run scope.
-    const executionAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
     const telemetryCollector = getTelemetryCollector();
     let telemetryTurnNumber = 0;
 
@@ -434,10 +438,13 @@ export class SubagentExecutor {
       });
     }
 
+    let terminalStatus: SubagentRunEndStatus = 'failed'; let terminalError: string | undefined;
+
     try {
       // Initial budget check
       const budgetCheck = pipeline.checkBudget(pipelineContext);
       if (!budgetCheck.allowed) {
+        terminalError = budgetCheck.reason || 'Budget exceeded';
         pipeline.completeContext(pipelineContext.agentId, false, budgetCheck.reason);
         agentTask.fail(budgetCheck.reason || 'budget exceeded');
         // orphan 接管（roadmap 2.6）：subagent 名下未收口任务释放回主会话
@@ -550,6 +557,8 @@ export class SubagentExecutor {
             : cancellationReason === 'idle-timeout'
               ? `子代理 ${Math.round(getSubagentIdleTimeout(timeout) / 1000)}s 无 stream/progress, 已自动取消 (idle-timeout)`
               : `任务已取消 (${cancellationReason})`;
+          terminalStatus = 'cancelled';
+          terminalError = errorMsg;
           agentTask.fail(errorMsg);
           // orphan 接管（roadmap 2.6）
           adoptOrphanTasks(sessionId, pipelineContext.agentId);
@@ -603,9 +612,11 @@ export class SubagentExecutor {
           break;
         }
 
+        const telemetryTurnId = turnObservability.startTurn(iterations);
         // Auto-compaction: truncate old messages if approaching context limit
         if (iterations > SUBAGENT_COMPACTION.SKIP_FIRST_ITERATIONS) {
           if (compactSubagentMessages(messages, context.modelConfig.model, context.modelConfig.provider)) {
+            turnObservability.recordCompaction(latestContextSnapshot.currentTokens);
             for (const message of messages) {
               if (typeof message.content === 'string' && message.content.includes('[truncated]')) {
                 message.observation = buildObservation('compression_survivor', 'subagent_compaction', {
@@ -625,11 +636,11 @@ export class SubagentExecutor {
         );
         const inferenceMessages = applyInterventionsToMessages(messages, effectiveInterventions);
         const providerMessages = buildInferenceMessages(inferenceMessages);
-        const telemetryTurnId = generateMessageId();
         const telemetryTurnStartedAt = Date.now();
         const currentTelemetryTurnNumber = ++telemetryTurnNumber;
         const telemetryToolCalls: SubagentTelemetryToolCall[] = [];
 
+        try {
         const inferenceStartedAt = Date.now();
         // effectiveSignal 把父 abort + 内部 timeout 都桥接进来；
         // 不传给 inference 的话，父 abort 后这一轮 LLM call 还会跑完才被循环开头 check 拦截，
@@ -698,6 +709,8 @@ export class SubagentExecutor {
           });
         };
 
+        if (doomLoopGuard.handleEmptyOutput(response, messages, emitContextSnapshot, persistTelemetryTurn)) continue;
+
         // Handle text response - subagent is done
         if (response.type === 'text' && response.content) {
           // taskGate（roadmap 2.6）：收口前检查名下未收口任务，重入督办（上限 2）
@@ -738,6 +751,8 @@ export class SubagentExecutor {
 
         // Handle tool calls
         if (response.type === 'tool_use' && response.toolCalls) {
+          doomLoopGuard.recordStep(response.toolCalls);
+
           const toolResults: string[] = [];
           const assistantToolCalls: ToolCall[] = response.toolCalls.map((toolCall) => ({
             id: toolCall.id,
@@ -893,23 +908,18 @@ export class SubagentExecutor {
             logger.info(`[${config.name}] Executing tool: ${toolCall.name}`);
 
             // 发射 subagent 工具调用开始事件
-            if (parentToolUseId) {
-              context.events.emit('tool_call_start', {
-                id: toolCall.id,
-                name: toolCall.name,
-                arguments: toolCall.arguments,
-                parentToolUseId,
-              });
-            }
+            turnObservability.emitToolCallStart(toolCall);
 
             const toolStartTime = Date.now();
+            const workspaceMutationSnapshot = await turnObservability.beginTool(toolCall.name);
             try {
               const result = await subagentToolExecutor.execute(
                 toolCall.name,
                 toolCall.arguments,
                 {
-                  runId: context.runId,
+                  runId: executionRunId,
                   sessionId: context.sessionId,
+                  sourceMessageId: context.sourceMessageId,
                   agentId: executionAgentId,
                   spawnDepth: context.spawnDepth,
                   spawnMaxDepth: context.spawnMaxDepth,
@@ -975,16 +985,7 @@ export class SubagentExecutor {
               });
 
               // 发射 subagent 工具调用结束事件
-              if (parentToolUseId) {
-                context.events.emit('tool_call_end', {
-                  toolCallId: toolCall.id,
-                  success: result.success,
-                  output: result.output,
-                  error: result.error,
-                  duration: toolDuration,
-                  parentToolUseId,
-                });
-              }
+              await turnObservability.recordToolResult(toolCall, result, toolDuration, workspaceMutationSnapshot);
             } catch (error) {
               const toolDuration = Date.now() - toolStartTime;
               const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -1015,15 +1016,7 @@ export class SubagentExecutor {
               });
 
               // 发射 subagent 工具调用错误事件
-              if (parentToolUseId) {
-                context.events.emit('tool_call_end', {
-                  toolCallId: toolCall.id,
-                  success: false,
-                  error: errorMessage,
-                  duration: toolDuration,
-                  parentToolUseId,
-                });
-              }
+              turnObservability.recordToolError(toolCall, errorMessage, toolDuration);
             }
           }
 
@@ -1055,6 +1048,7 @@ export class SubagentExecutor {
               },
             ),
           }));
+          doomLoopGuard.injectPendingNudge(messages);
           pushObservabilityMessage({
             id: generateMessageId(),
             role: 'user',
@@ -1074,6 +1068,9 @@ export class SubagentExecutor {
 
         // No response, break
         break;
+        } finally {
+          await turnObservability.endTurn(telemetryTurnId);
+        }
       }
 
       // Get final cost
@@ -1122,6 +1119,7 @@ export class SubagentExecutor {
         recordRoleParticipation(sessionId, config.roleId);
       }
 
+      terminalStatus = 'completed';
       return {
         success: true,
         output: finalOutput || 'Subagent completed without output',
@@ -1133,6 +1131,10 @@ export class SubagentExecutor {
         contextSnapshot: latestContextSnapshot,
       };
     } catch (error) {
+      if (effectiveSignal.aborted || error instanceof SubagentDoomLoopStopError) {
+        terminalStatus = 'cancelled';
+      }
+      terminalError = error instanceof Error ? error.message : String(error);
       cleanupTimer();
       stopIdleWatchdog();
       pipeline.completeContext(
@@ -1160,6 +1162,8 @@ export class SubagentExecutor {
         ).catch(() => {});
       }
 
+      if (error instanceof SubagentDoomLoopStopError) return error.toResult(finalOutput, toolsUsed, iterations, getTotalTokens(), getTotalCost(), executionAgentId, latestContextSnapshot);
+
       // 把已消耗的 outputTokens 挂到 error 上，让 dynamic-workflow 的 BudgetTracker 在抛出路径
       // 也能记账（provider 产出部分 output 后崩的场景，Codex R2 MED#4）。不影响既有错误处理。
       if (error && typeof error === 'object') {
@@ -1169,6 +1173,8 @@ export class SubagentExecutor {
         } catch { /* frozen error, ignore */ }
       }
       throw error; // re-throw to preserve existing error handling
+    } finally {
+      turnObservability.endRun(terminalStatus, terminalError);
     }
   }
 

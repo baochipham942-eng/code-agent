@@ -83,6 +83,7 @@ Parameters:
       pages: { type: 'array', items: { type: 'number' }, description: '[extract_tables] Page numbers (0-indexed)' },
       // shared
       output_path: { type: 'string', description: 'Output file path' },
+      overwrite: { type: 'boolean', description: 'Required as true when an output target already exists and you intend to replace it' },
       // convert_to_docx params
       start_page: { type: 'number', description: '[convert_to_docx] Start page (0-indexed)' },
       end_page: { type: 'number', description: '[convert_to_docx] End page (exclusive)' },
@@ -91,6 +92,22 @@ Parameters:
   },
   category: 'network',
   permissionLevel: 'write',
+  pathAuthority: [
+    {
+      kind: 'path',
+      pathParameter: 'output_path',
+      mutation: 'overwrite',
+      whenParameter: 'action',
+      whenValues: ['generate', 'compress', 'merge', 'convert_to_docx'],
+    },
+    {
+      kind: 'path',
+      pathParameter: 'ranges',
+      mutation: 'overwrite',
+      whenParameter: 'action',
+      whenValues: ['split'],
+    },
+  ],
   readOnly: false,
   allowInPlanMode: false,
 };

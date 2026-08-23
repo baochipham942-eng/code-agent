@@ -49,6 +49,8 @@ export type ToolCategory =
 
 export type PermissionLevel = 'read' | 'write' | 'execute' | 'network' | 'dangerous';
 
+export type UntrustedContentPolicy = 'block' | 'annotate';
+
 export interface ToolDescriptionContext extends SharedToolDescriptionContext {
   readonly provider?: string;
   readonly model?: string;
@@ -66,8 +68,12 @@ export interface ToolSchema {
   readonly permissionLevel: PermissionLevel;
   /** 单次调用满足文字前台「短时 × 低副作用」边界；前台只按此声明筛选，禁止按工具名推断。 */
   readonly allowInTextForeground?: true;
-  /** 工具输出可能包含来自网页、远端文档或外部服务的不可信内容，进入模型上下文前必须扫描。 */
-  readonly readsUntrustedContent?: true;
+  /**
+   * 工具输出可能包含外部不可信内容时必须显式选择处理档位。
+   * block: 扫描命中高风险内容时阻断；annotate: 保留正文并注入带来源的安全标注。
+   * 省略表示工具不读取外部不可信内容。
+   */
+  readonly readsUntrustedContent?: UntrustedContentPolicy;
   /** 文件写目标的声明式来源；不按工具名枚举权限。 */
   readonly pathAuthority?: readonly ToolPathAuthorityDescriptor[];
   /** 成功执行后登记补偿的显式 effect；禁止按工具名推断。 */
@@ -94,6 +100,14 @@ export interface ToolSchema {
   /** 是否可在 plan mode 下使用（read-only + 不触发外部副作用） */
   readonly allowInPlanMode?: boolean;
 }
+
+/**
+ * 不可信内容工具的声明形状。该类型刻意从 ToolSchema 中移除可选字段再补成必填，
+ * 防止工具作者通过默认值或对象展开静默继承处理档位。
+ */
+export type UntrustedContentToolSchema = Omit<ToolSchema, 'readsUntrustedContent'> & {
+  readonly readsUntrustedContent: UntrustedContentPolicy;
+};
 
 // ----------------------------------------------------------------------------
 // Handler 层 — 首次调用 lazy 构造
@@ -128,6 +142,8 @@ export interface ToolContext {
   readonly runId?: string;
   /** Conversation turn that owns this tool call and its durable projections. */
   readonly turnId?: string;
+  /** Stable user message that originated this native turn. */
+  readonly sourceMessageId?: string;
   readonly sessionId: string;
   /** Immutable authorization/artifact boundary for this run. */
   readonly workspace?: string;
@@ -291,6 +307,9 @@ export interface ToolDecision {
 
 export interface CanUseToolRequestHint {
   readonly sessionId?: string;
+  readonly agentId?: string;
+  readonly runId?: string;
+  readonly parentToolUseId?: string;
   readonly forceConfirm?: boolean;
   readonly type?: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command' | 'directory_access';
   readonly tool?: string;

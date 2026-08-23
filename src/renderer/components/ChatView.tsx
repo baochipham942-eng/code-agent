@@ -45,7 +45,6 @@ import { GoalStatusBar } from './features/chat/GoalStatusBar';
 import { buildGoalNoticeMessage } from './features/chat/goalNotice';
 import type { ChatInputHandle } from './features/chat/ChatInput';
 import { useFileUpload } from './features/chat/ChatInput/useFileUpload';
-import { SwarmInlineMonitor } from './features/swarm/SwarmInlineMonitor';
 import { WorkflowInlineMonitor } from './features/workflow/WorkflowInlineMonitor';
 import { WorkflowLaunchCard } from './features/workflow/WorkflowLaunchCard';
 import { TaskStatusBar } from './features/chat/TaskStatusBar';
@@ -70,6 +69,7 @@ import { RewindPanel } from './RewindPanel';
 // PermissionCard moved to inline display in TurnBasedTraceView
 import type { AppSettings, Message, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
 import type { RewindConversationResult } from '@shared/contract/sessionRewind';
+import type { TurnCheckoutResult } from '@shared/contract/turnCheckout';
 import type { ConversationEnvelope, ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import { useI18n } from '../hooks/useI18n';
 import { localeForLanguage } from '../utils/i18nTime';
@@ -606,12 +606,14 @@ export const ChatView: React.FC = () => {
     sendMessage,
   ]);
 
-  const handleSteerEnvelope = useCallback((envelope: ConversationEnvelope) => (
-    submitSteerEnvelope(
+  const handleSteerEnvelope = useCallback(async (envelope: ConversationEnvelope) => {
+    const outcome = await submitSteerEnvelope(
       envelope,
       currentSessionId,
-    )
-  ), [currentSessionId]);
+      streamSnapshot?.turnId,
+    );
+    return outcome;
+  }, [currentSessionId, streamSnapshot?.turnId]);
 
   const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
     return handleSendEnvelope(buildEnvelope(content, attachments));
@@ -673,7 +675,7 @@ export const ChatView: React.FC = () => {
     setPendingPromptRewind({ messageId, content });
   }, [currentSessionId, effectiveIsProcessing, t]);
 
-  const handleConfirmPromptRewind = useCallback(async () => {
+  const handleConfirmConversationOnlyRewind = useCallback(async () => {
     if (!currentSessionId || !pendingPromptRewind || isPromptRewinding) return;
     setIsPromptRewinding(true);
     try {
@@ -690,6 +692,35 @@ export const ChatView: React.FC = () => {
       chatInputRef.current?.setDraft(result.draft);
       setPendingPromptRewind(null);
       setRewindRefreshToken((token) => token + 1);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsPromptRewinding(false);
+    }
+  }, [currentSessionId, isPromptRewinding, pendingPromptRewind, setMessages, t]);
+
+  const handleConfirmPromptRewind = useCallback(async () => {
+    if (!currentSessionId || !pendingPromptRewind || isPromptRewinding) return;
+    setIsPromptRewinding(true);
+    try {
+      const result = await ipcService.invokeDomain<TurnCheckoutResult>(
+        IPC_DOMAINS.SESSION,
+        'turnCheckout',
+        {
+          sessionId: currentSessionId,
+          userMessageId: pendingPromptRewind.messageId,
+          idempotencyKey: `turn-checkout:${currentSessionId}:${pendingPromptRewind.messageId}:${crypto.randomUUID()}`,
+        },
+      );
+      setMessages(result.activeMessages);
+      setPendingPromptRewind(null);
+      setRewindRefreshToken((token) => token + 1);
+      const summary = result.state === 'success'
+        ? t.chat.turnCheckoutSuccess
+        : t.chat.turnCheckoutPartial;
+      const message = `${summary} ${t.chat.turnCheckoutExternalEffects}`;
+      if (result.state === 'success') toast.success(message);
+      else toast.warning(message);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -763,12 +794,13 @@ export const ChatView: React.FC = () => {
           disabled={effectiveIsProcessing}
           onRestored={(result) => {
             setMessages(result.activeMessages);
-            toast.success(
-              t.chat.rewindRestored.replace(
-                '{count}',
-                String(result.restoredMessageCount),
-              ),
+            const restored = t.chat.rewindRestored.replace(
+              '{count}',
+              String(result.restoredMessageCount),
             );
+            const message = `${restored} ${t.chat.turnCheckoutExternalEffects}`;
+            if (result.state === 'success') toast.success(message);
+            else toast.warning(`${t.chat.turnCheckoutNoteRedoPartial} ${message}`);
           }}
         />
 
@@ -873,8 +905,8 @@ export const ChatView: React.FC = () => {
           {/* Pinned todo progress bar — visible above the input */}
           {!hasPlanApprovalEvidence && <PinnedTodoBar plan={plan} sessionId={currentSessionId} />}
 
-          {/* Background agents inline monitor (Codex 风格 sticky 浮层) */}
-          <SwarmInlineMonitor />
+          {/* 讨论流浮层已收进右侧「本会话的代理」面板的「事件」折叠区（N-L6-AGENTVIEW S2），
+              输入框上方不再另起浮层 */}
 
           {/* dynamic-workflow 启动审批卡（仅有 pending 审批时显示，跑前确认） */}
           <WorkflowLaunchCard />
@@ -914,7 +946,15 @@ export const ChatView: React.FC = () => {
       {/* Plan is now inline in TurnBasedTraceView */}
 
       {/* Rewind Panel (Esc+Esc) */}
-      <RewindPanel isOpen={showRewindPanel} onClose={() => setShowRewindPanel(false)} />
+      <RewindPanel
+        isOpen={showRewindPanel}
+        onClose={() => setShowRewindPanel(false)}
+        onCheckedOut={(result) => {
+          setMessages(result.activeMessages);
+          setRewindRefreshToken((token) => token + 1);
+          if (result.state === 'partial') toast.warning(t.taskStatusPanels.rewind.checkoutPartial);
+        }}
+      />
       <ConfirmDialog
         isOpen={Boolean(pendingPromptRewind)}
         title={t.chat.rewindConfirmTitle}
@@ -922,6 +962,14 @@ export const ChatView: React.FC = () => {
           <div className="space-y-3 text-sm text-zinc-400 leading-relaxed">
             <p>{t.chat.rewindConfirmLine1}</p>
             <p>{t.chat.rewindConfirmLine2}</p>
+            <button
+              type="button"
+              onClick={() => void handleConfirmConversationOnlyRewind()}
+              disabled={isPromptRewinding}
+              className="text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline disabled:opacity-50"
+            >
+              {t.chat.rewindConversationOnlyAction}
+            </button>
           </div>
         }
         variant="warning"

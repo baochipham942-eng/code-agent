@@ -449,8 +449,31 @@ export class SessionAutomationService {
       // directory_access（request_directory 工具）复用同一套 ToolApprovalPayload 形状与收件箱 UI。
       ...repo.listByKindAndStatus('directory_access', 'pending'),
       ...repo.listByKindAndStatus('directory_access', 'orphaned'),
+      ...repo.listByKindAndStatus('channel_pairing', 'pending'),
+      ...repo.listByKindAndStatus('channel_pairing', 'orphaned'),
     ];
     return rows.map((row) => {
+      if (row.kind === 'channel_pairing') {
+        let payload: Record<string, unknown> = {};
+        try {
+          payload = JSON.parse(row.payloadJson) as Record<string, unknown>;
+        } catch {
+          // Keep the row visible with safe fallbacks.
+        }
+        const senderId = typeof payload.senderId === 'string' ? payload.senderId : 'unknown';
+        const senderName = typeof payload.senderName === 'string' ? payload.senderName : senderId;
+        return {
+          id: row.id,
+          kind: 'channel_pairing',
+          sessionId: null,
+          tool: 'channel_pairing',
+          requestedAt: typeof payload.requestedAt === 'number' ? payload.requestedAt : row.submittedAt,
+          status: row.status === 'orphaned' ? 'orphaned' : 'pending',
+          pairingCode: typeof payload.code === 'string' ? payload.code : undefined,
+          pairingSender: senderName,
+          pairingChannel: payload.channelType === 'lark' ? 'lark' : 'feishu',
+        } satisfies ParkedApprovalInboxItem;
+      }
       let payload: Partial<ToolApprovalPayload> = {};
       try {
         payload = JSON.parse(row.payloadJson) as Partial<ToolApprovalPayload>;
@@ -459,6 +482,7 @@ export class SessionAutomationService {
       }
       return {
         id: row.id,
+        kind: row.kind === 'directory_access' ? 'directory_access' : 'tool_approval',
         sessionId: payload.sessionId ?? row.coordinatorId,
         tool: payload.tool ?? 'unknown',
         displayTool: payload.displayTool,

@@ -14,6 +14,7 @@ import {
 } from '../../shared/ipc';
 import type { PermissionResponse } from '../../shared/contract';
 import type { PermissionDeliveryOutcome } from '../../shared/contract/permission';
+import { getInboundPairingService } from '../channels/inboundPairingService';
 import type { AgentApplicationService, AppServiceRunOptions } from '../../shared/contract/appService';
 import type { ConversationEnvelope } from '../../shared/contract/conversationEnvelope';
 import type {
@@ -22,6 +23,7 @@ import type {
 } from '../../shared/contract/agentTree';
 import { getAgentTreeSnapshot } from '../agent/agentTreeService';
 import { getAgentWorktreeReview } from '../agent/agentWorktree';
+import { getSpawnGuard } from '../agent/spawnGuard';
 import {
   MODE_CONFIGS,
   getPermissionModeManager,
@@ -40,6 +42,7 @@ interface SendMessagePayload {
   content: string;
   clientMessageId?: string;
   sessionId?: string;
+  expectedTurnId?: string;
   attachments?: unknown[];
   searchEnabled?: boolean;
   thinkingEnabled?: boolean;
@@ -59,6 +62,9 @@ function normalizeEnvelope(
     content: payload.content,
     ...('clientMessageId' in payload && payload.clientMessageId ? { clientMessageId: payload.clientMessageId } : {}),
     ...(payload.sessionId ? { sessionId: payload.sessionId } : {}),
+    ...('expectedTurnId' in payload && typeof payload.expectedTurnId === 'string'
+      ? { expectedTurnId: payload.expectedTurnId }
+      : {}),
     ...(payload.attachments ? { attachments: payload.attachments as ConversationEnvelope['attachments'] } : {}),
     ...(typeof payload.searchEnabled === 'boolean' ? { searchEnabled: payload.searchEnabled } : {}),
     ...(typeof payload.thinkingEnabled === 'boolean' ? { thinkingEnabled: payload.thinkingEnabled } : {}),
@@ -90,6 +96,9 @@ async function handlePermissionResponse(
   getAppService: () => AgentApplicationService | null,
   payload: AgentPermissionResponseRequest
 ): Promise<{ outcome: PermissionDeliveryOutcome }> {
+  if (getInboundPairingService().resolve(payload.requestId, payload.response)) {
+    return { outcome: 'delivered' };
+  }
   const appService = getAppService();
   if (!appService) throw new Error('Agent not initialized');
   // outcome 回传给收件箱：'no_orchestrator'/'unknown_request' = 停车审批已失效转灰态
@@ -101,6 +110,7 @@ interface InterruptPayload {
   content: string;
   clientMessageId?: string;
   sessionId?: string;
+  expectedTurnId?: string;
   attachments?: unknown[];
   options?: AppServiceRunOptions;
   context?: ConversationEnvelope['context'];
@@ -222,6 +232,26 @@ export function registerAgentHandlers(
             success: true,
             data: getAgentTreeSnapshot(payload as AgentTreeRequest | undefined),
           };
+        case 'closeAgent': {
+          // 行级停单个普通代理（close_agent 工具的 IPC 形态）：spawnGuard.cancel 按
+          // AbortController 取消并连带后代；带 sessionId 时限域防误停别的会话。
+          const req = (payload ?? {}) as { agentId?: unknown; sessionId?: unknown };
+          const agentId = typeof req.agentId === 'string' ? req.agentId.trim() : '';
+          if (!agentId) {
+            return {
+              success: false,
+              error: { code: 'INVALID_AGENT_ID', message: 'agentId is required' },
+            };
+          }
+          const sessionId = typeof req.sessionId === 'string' && req.sessionId.trim()
+            ? req.sessionId.trim()
+            : undefined;
+          const cancelled = getSpawnGuard().cancel(
+            agentId,
+            sessionId ? { sessionId } : undefined,
+          );
+          return { success: true, data: { cancelled } };
+        }
         case 'getWorktreeReview': {
           const agentId = (payload as AgentWorktreeReviewRequest | undefined)?.agentId?.trim();
           if (!agentId) {

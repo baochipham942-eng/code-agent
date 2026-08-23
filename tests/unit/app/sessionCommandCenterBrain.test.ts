@@ -135,6 +135,7 @@ describe('withSessionCommandCenterBrain', () => {
     const options = withSessionCommandCenterBrain(undefined);
 
     expect(options.allowedToolNames).toEqual(getTextForegroundToolNames());
+    expect(options.allowedToolNames).not.toContain('wake_noop');
     expect(options.maxIterations).toBe(SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS);
     expect(options.turnSystemContext).toContain(SESSION_COMMAND_CENTER_BRAIN_CONTEXT);
   });

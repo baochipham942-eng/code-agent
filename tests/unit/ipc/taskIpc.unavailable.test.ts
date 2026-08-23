@@ -78,7 +78,7 @@ describe('task.ipc — TaskManager unavailable', () => {
     registerTaskHandlers(ipc as never, () => null);
     const handler = ipc.getHandler();
 
-    const actions = ['start', 'interrupt', 'cancel', 'getState', 'cleanup'] as const;
+    const actions = ['start', 'interrupt', 'cancel', 'cancelBackgroundTask', 'getState', 'cleanup'] as const;
     for (const action of actions) {
       const res = await handler({}, { action, payload: { sessionId: 's1' } });
       expect(res.success).toBe(false);
@@ -165,6 +165,19 @@ describe('task.ipc — TaskManager unavailable', () => {
     const all = await handler({}, { action: 'getAllStates', payload: {} });
     expect(all.data).toEqual({ s1: { sessionId: 's1', status: 'idle' } });
     expect(logState.debugLog).not.toHaveBeenCalled();
+  });
+
+  it('cancelBackgroundTask 可用时 dispatch 到 TaskManager.cancelBackgroundTask 并回传结果', async () => {
+    const fakeManager = Object.assign(new EventEmitter(), {
+      cancelBackgroundTask: vi.fn(async () => true),
+    });
+    const ipc = makeFakeIpc();
+    registerTaskHandlers(ipc as never, () => fakeManager as never);
+    const handler = ipc.getHandler();
+
+    const res = await handler({}, { action: 'cancelBackgroundTask', payload: { taskId: 'task-1' } });
+    expect(res).toMatchObject({ success: true, data: { cancelled: true } });
+    expect(fakeManager.cancelBackgroundTask).toHaveBeenCalledWith('task-1');
   });
 
   it('TaskManager 可用后把运行状态事件推送到 renderer task:event', async () => {

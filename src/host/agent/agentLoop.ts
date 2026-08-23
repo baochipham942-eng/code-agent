@@ -56,6 +56,7 @@ export type { AgentLoopConfig };
  */
 import type { RuntimeContext } from './runtime/runtimeContext';
 import { ConversationRuntime } from './runtime/conversationRuntime';
+import { resolveBudgetScope } from '../services/core/budgetService';
 import { ToolExecutionEngine } from './runtime/toolExecutionEngine';
 import { ContextAssembly } from './runtime/contextAssembly';
 import { RunFinalizer } from './runtime/runFinalizer';
@@ -74,6 +75,7 @@ import { resolvePersistentRoleId } from './persistentRoleResolution';
 import { createTurnCostEventHandler } from './runtime/turnCostPersistence';
 import { getComboRecorder } from '../services/skills/comboRecorder';
 import { recordCapabilityGapTurn } from './capabilityGapTurnRecorder';
+import { mergeTurnSystemContext } from './turnScaffold';
 
 export class AgentLoop {
   private ctx: RuntimeContext;
@@ -211,6 +213,7 @@ export class AgentLoop {
       goalEvidenceState: { bounces: 0 },
 
       // Budget
+      budgetScope: resolveBudgetScope(config.toolExecutor.getExecutionTopology?.()),
       consecutiveErrors: 0,
 
       // Thinking
@@ -261,36 +264,102 @@ export class AgentLoop {
    *   `<live_voice_permission_notice>` 整块就是这么露给用户的）。省略时按 userMessage 处理。
    */
   async run(userMessage: string, displayPrompt?: string): Promise<void> {
+    const assistantMessageIdsBeforeRun = new Set(
+      this.ctx.messages.filter((message) => message.role === 'assistant').map((message) => message.id),
+    );
+    let effectiveUserMessage = userMessage;
     // 普通 sendMessage 先把展示面原话写进共享历史，再把模型面 executionContent 作为
     // run 首参传进来。messageBuild 只读历史，因此这里为当前 user 消息登记一个纯请求投影；
     // 不改 ctx.messages，避免脚手架进入会话落库、checkpoint 或 renderer。
-    const sourceUserMessage = displayPrompt !== undefined && displayPrompt !== userMessage
-      ? [...this.ctx.messages].reverse().find((message) => message.role === 'user')
-      : undefined;
-    this.ctx.turn.setModelFacingUserMessage(sourceUserMessage
-      ? { sourceMessageId: sourceUserMessage.id, content: userMessage }
-      : undefined);
-
     try {
       // 轮级只判定一次；普通预定义 agent（如 explore）不会取得角色记忆写入身份。
       this.ctx.persistentRoleId = await resolvePersistentRoleId(this.ctx.agentId);
+      effectiveUserMessage = await this.injectPersistentRoleContext(effectiveUserMessage);
+      const storedUserPrompt = displayPrompt ?? userMessage;
+      const sourceUserMessage = storedUserPrompt !== effectiveUserMessage
+        ? [...this.ctx.messages].reverse().find((message) => message.role === 'user')
+        : undefined;
+      this.ctx.turn.setModelFacingUserMessage(sourceUserMessage
+        ? { sourceMessageId: sourceUserMessage.id, content: effectiveUserMessage }
+        : undefined);
       // 每条 user 消息开新的工具 repair 失败统计窗口（Kimi 借鉴 #1）
       this.toolEngine.resetRepairGate();
       // 一轮的边界在这里，所以录制器的开轮也在这里（displayPrompt 才是用户原话，
       // userMessage 可能已被拼上 turnSystemContext 脚手架）。
       this.beginComboTurn(displayPrompt ?? userMessage);
       if (this.ctx.runTraceContext) {
-        return await withRunTraceContext(
+        await withRunTraceContext(
           this.ctx.runTraceContext,
-          () => this.conversationRuntime.run(userMessage, displayPrompt),
+          () => this.conversationRuntime.run(effectiveUserMessage, displayPrompt),
         );
+      } else {
+        await this.conversationRuntime.run(effectiveUserMessage, displayPrompt);
       }
-      return await this.conversationRuntime.run(userMessage, displayPrompt);
+      this.schedulePersistentRoleWriteBack(
+        displayPrompt ?? userMessage,
+        assistantMessageIdsBeforeRun,
+      );
     } finally {
       this.ctx.turn.setModelFacingUserMessage(undefined);
       // 缺口探测器（N-CAP1 / F1）：纯记账，不发事件、不弹卡、不通知。
       void recordCapabilityGapTurn(this.ctx.sessionId);
     }
+  }
+
+  private async injectPersistentRoleContext(userMessage: string): Promise<string> {
+    const roleId = this.ctx.persistentRoleId;
+    if (!roleId || userMessage.includes(`<role_assets role="${roleId}">`)) return userMessage;
+    try {
+      const { buildRoleContextBlock } = await import('../services/roleAssets/roleAssetService');
+      const roleBlock = await buildRoleContextBlock(roleId, this.ctx.workingDirectory);
+      if (!roleBlock) return userMessage;
+      logger.info('[AgentLoop] foreground role assets injected', { roleId, sessionId: this.ctx.sessionId });
+      return mergeTurnSystemContext([roleBlock], userMessage);
+    } catch (error) {
+      logger.warn('[AgentLoop] foreground role assets injection failed (non-blocking)', {
+        roleId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return userMessage;
+    }
+  }
+
+  private schedulePersistentRoleWriteBack(
+    taskPrompt: string,
+    assistantMessageIdsBeforeRun: Set<string>,
+  ): void {
+    const roleId = this.ctx.persistentRoleId;
+    if (!roleId || this.ctx.control.isCancelled || this.conversationRuntime.wasInterrupted()) return;
+    const finalMessage = [...this.ctx.messages].reverse().find((message) => (
+      message.role === 'assistant'
+      && !assistantMessageIdsBeforeRun.has(message.id)
+      && !message.isMeta
+      && message.content.trim().length > 0
+    ));
+    if (!finalMessage) return;
+
+    const artifacts = (finalMessage.artifacts ?? []).map((artifact) => ({
+      label: artifact.title || artifact.id,
+      ref: artifact.id,
+    }));
+    void import('../services/roleAssets/roleWriteBack')
+      .then(({ runRoleWriteBack }) => runRoleWriteBack({
+        roleId,
+        workspacePath: this.ctx.workingDirectory,
+        taskPrompt,
+        finalOutput: finalMessage.content,
+        artifacts,
+      }))
+      .catch((error) => logger.warn('[AgentLoop] foreground role write-back failed (non-blocking)', {
+        roleId,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    void import('../services/roleAssets/roleProactivity')
+      .then(({ recordRoleParticipation }) => recordRoleParticipation(this.ctx.sessionId, roleId))
+      .catch((error) => logger.warn('[AgentLoop] foreground role participation record failed (non-blocking)', {
+        roleId,
+        error: error instanceof Error ? error.message : String(error),
+      }));
   }
 
   private beginComboTurn(userMessage: string): void {
@@ -339,8 +408,9 @@ export class AgentLoop {
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
     displayContent?: string,
+    expectedTurnId?: string,
   ): Promise<void> {
-    await this.conversationRuntime.steer(newMessage, clientMessageId, attachments, metadata, displayContent);
+    await this.conversationRuntime.steer(newMessage, clientMessageId, attachments, metadata, displayContent, expectedTurnId);
   }
 
   wasInterrupted(): boolean {

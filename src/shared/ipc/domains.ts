@@ -30,7 +30,7 @@ export const IPC_DOMAINS = {
   DEVICE: 'domain:device',
   TASK: 'domain:task', // Wave 5: 多任务并行
   BACKGROUND_TASKS: 'domain:backgroundTasks',
-  QUEUED_INPUT: 'domain:queuedInput', // W2-1: 排队消息 durable ledger（enqueue/list/retract）
+  QUEUED_INPUT: 'domain:queuedInput', // 排队消息 durable ledger（增删改、排序、立即发送）
   DIFF: 'domain:diff', // E3: 变更追踪
   ERROR: 'domain:error',
   CRON: 'domain:cron',

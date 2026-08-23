@@ -10,6 +10,7 @@ import { IPC_DOMAINS } from '@shared/ipc/domains';
 import ipcService from '../../../../services/ipcService';
 import { isWebMode } from '../../../../utils/platform';
 import { useI18n } from '../../../../hooks/useI18n';
+import { zh } from '../../../../i18n/zh';
 import { SettingsSection } from '../SettingsLayout';
 
 interface CommandResponse<T> {
@@ -25,6 +26,16 @@ type HarnessImportCommand =
 
 function isResponse<T>(value: unknown): value is CommandResponse<T> {
   return Boolean(value && typeof value === 'object' && 'success' in value);
+}
+
+const INSTRUCTIONS_DISPLAY_LIMIT = 8;
+
+type HarnessImportText = typeof zh.settings.memory.harnessImport;
+
+/** dry-run 被跳过的来源 reason：已知值配 i18n 文案，未知自由字符串原样展示。 */
+function harnessSkippedReasonLabel(reason: string, copy: HarnessImportText): string {
+  const labels: Record<string, string> = copy.skippedReasonLabels;
+  return labels[reason] ?? reason;
 }
 
 async function invoke<T>(request: HarnessImportCommand): Promise<CommandResponse<T>> {
@@ -134,7 +145,7 @@ export const MemoryHarnessImportSection: React.FC<{ onChanged?: () => void | Pro
               type="button"
               disabled={busy !== null || selectedIds.size === 0}
               onClick={apply}
-              className="inline-flex items-center gap-1.5 rounded border border-badge-success/40 bg-emerald-500/10 px-3 py-1.5 text-xs text-badge-success disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded border border-badge-success/40 bg-badge-success px-3 py-1.5 text-xs text-badge-success disabled:opacity-50"
             >
               {busy === 'apply' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
               {copy.confirmImport.replace('{count}', String(selectedIds.size))}
@@ -165,6 +176,21 @@ export const MemoryHarnessImportSection: React.FC<{ onChanged?: () => void | Pro
               ))}
             </div>
 
+            {preview.skipped.length > 0 && (
+              <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3" data-testid="harness-import-skipped">
+                <div className="text-xs font-medium text-zinc-400">
+                  {copy.skippedTitle.replace('{count}', String(preview.skipped.length))}
+                </div>
+                <div className="mt-2 space-y-1 text-[11px] text-zinc-500">
+                  {preview.skipped.map((item) => (
+                    <div key={`${item.adapterId}:${item.sourcePath}`} className="truncate font-mono">
+                      {item.adapterId} · {item.sourcePath} · {harnessSkippedReasonLabel(item.reason, copy)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="max-h-64 overflow-auto rounded border border-zinc-800">
               {ready.map((candidate) => (
                 <label key={candidate.id} className="flex gap-3 border-b border-zinc-800 px-3 py-2 last:border-b-0">
@@ -192,13 +218,13 @@ export const MemoryHarnessImportSection: React.FC<{ onChanged?: () => void | Pro
             </div>
 
             {preview.instructions.length > 0 && (
-              <div className="rounded border border-amber-500/20 bg-amber-500/5 p-3">
+              <div className="rounded border border-badge-warning/20 bg-badge-warning p-3">
                 <div className="flex items-center gap-2 text-xs font-medium text-badge-warning">
                   <ShieldAlert className="h-4 w-4" />
                   {copy.instructionsTitle.replace('{count}', String(preview.instructions.length))}
                 </div>
                 <div className="mt-2 space-y-1 text-[11px] text-zinc-500">
-                  {preview.instructions.slice(0, 8).map((item) => (
+                  {preview.instructions.slice(0, INSTRUCTIONS_DISPLAY_LIMIT).map((item) => (
                     <div key={item.id} className="flex items-center justify-between gap-2">
                       <div className="min-w-0 truncate font-mono">{item.sourcePath} · {item.reason}</div>
                       {item.reason === 'directive-confirmation-required' && (
@@ -206,13 +232,18 @@ export const MemoryHarnessImportSection: React.FC<{ onChanged?: () => void | Pro
                           type="button"
                           disabled={busy !== null}
                           onClick={() => confirmDirective(item.id)}
-                          className="shrink-0 rounded border border-amber-500/30 px-2 py-1 text-badge-warning disabled:opacity-50"
+                          className="shrink-0 rounded border border-badge-warning/30 px-2 py-1 text-badge-warning disabled:opacity-50"
                         >
                           {busy === `directive:${item.id}` ? copy.confirmingDirective : copy.confirmDirective}
                         </button>
                       )}
                     </div>
                   ))}
+                  {preview.instructions.length > INSTRUCTIONS_DISPLAY_LIMIT && (
+                    <div className="pt-1">
+                      {copy.instructionsMore.replace('{count}', String(preview.instructions.length - INSTRUCTIONS_DISPLAY_LIMIT))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

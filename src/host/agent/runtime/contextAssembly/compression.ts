@@ -7,7 +7,7 @@ import { getContextEventLedger } from '../../../context/contextEventLedger';
 import { compactMessagesWithSummary } from '../../../context/compactionService';
 import type { ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { estimateTokens } from '../../../context/tokenOptimizer';
-import { IMAGE_TOKEN_ESTIMATE } from '../../../context/tokenEstimator';
+import { estimateImageTokens } from '../../../context/tokenEstimator';
 import { assessContextPressure } from '../../../context/contextPressureController';
 import { applyToolResultBudget } from '../../../context/layers/toolResultBudget';
 import { tryInsertCheckpointRebuildBoundary } from '../../../context/checkpoint/runtimeBoundary';
@@ -22,6 +22,7 @@ import {
 } from '../../../tools/dispatch/toolDefinitions';
 import { getSessionManager } from '../../../services';
 import { getIncompleteTasks } from '../../../services/planning/taskStore';
+import { getSessionSkillService } from '../../../services/skills/sessionSkillService';
 import { getSessionTodos } from '../../../agent/todoParser';
 import type { CheckAndAutoCompressOptions, ContextAssemblyCtx } from './shared';
 import { cachedReaddirSync, logger } from './shared';
@@ -267,9 +268,13 @@ export function updateContextHealth(ctx: ContextAssemblyCtx): void {
       content: msg.content,
       toolCalls: msg.toolCalls,
       toolResults: msg.toolResults?.map(tr => ({
+        // N-CTXCURRENT: toolCallId 透传，构成算法据此把结果按工具名归桶
+        toolCallId: tr.toolCallId,
         output: tr.output,
         error: tr.error,
       })),
+      // 压缩摘要消息标记透传，contextHealthService 据此把摘要拆进 bySource.summary
+      compaction: msg.compaction,
     }));
 
     const health = contextHealthService.update(
@@ -281,6 +286,11 @@ export function updateContextHealth(ctx: ContextAssemblyCtx): void {
       estimateActiveToolDefinitionsTokens(),
       // GAP-023: 被预算丢弃的 prompt 块可见化到 context health 面板
       ctx.runtime.contextHealth.droppedPromptBlocks ? [...ctx.runtime.contextHealth.droppedPromptBlocks] : undefined,
+      // N-CTXTRUTH: 本轮 provider 实报用量（inference 记账点写入切片）作圆环总量真源；
+      // 本轮没跑推理或未回报时为 undefined，service 自动走估算并标 tokenSource='estimated'
+      ctx.runtime.contextHealth.lastTurnProviderUsage,
+      // N-CTXCURRENT: 当前挂载 skills 的 token 估算（当前态构成的带外输入）
+      { skills: getSessionSkillService().getMountedSkillTokens(ctx.runtime.sessionId) },
     );
 
     // 更新压缩统计到健康状态
@@ -360,8 +370,16 @@ export async function checkAndAutoCompress(
 
     const currentTokens = ctx.runtime.messages.reduce(
       (sum, msg) => {
-        const imageTokens = (msg.attachments || []).filter((attachment) => attachment.category === 'image').length
-          * IMAGE_TOKEN_ESTIMATE;
+        const imageTokens = (msg.attachments || [])
+          .filter((attachment) => attachment.type === 'image' || attachment.category === 'image')
+          .reduce(
+            (sum, attachment) => sum + estimateImageTokens(
+              attachment,
+              ctx.runtime.modelConfig.provider,
+              ctx.runtime.modelConfig.model,
+            ),
+            0,
+          );
         return sum + estimateTokens(msg.content || '') + imageTokens;
       },
       0

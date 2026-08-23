@@ -10,6 +10,7 @@ import type { SessionAutomationMessageMetadata } from './sessionAutomation';
 import type { ArtifactLocatorV1 } from './artifactLocator';
 import type { NormalizedToolArtifactMeta } from './artifactBlob';
 import type { VoiceCallFailureCode, VoiceCallFailurePhase, VoiceCallSummary, VoiceToolCallOrigin } from './voice';
+import type { TurnDiffEventData } from './turnDiff';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageVisibility = 'active' | 'rewound';
@@ -258,6 +259,7 @@ export type AgentErrorCategory =
   | 'concurrency'
   | 'network'
   | 'context_length'
+  | 'image_payload'
   | 'generic';
 
 /**
@@ -283,12 +285,27 @@ export interface AgentErrorMetadata {
   maxTokens?: number;
 }
 
+export interface InputRedirectReceiptMetadata {
+  /** 与 agent event 共用的稳定 id，renderer 乐观投影与历史回放按它去重。 */
+  receiptId: string;
+  /** 用户本次改道原话；只在「查看原话」展开层出现。 */
+  originalContent: string;
+  expectedTurnId?: string;
+  partial: {
+    charCount: number;
+    trailingText?: string;
+  };
+  interruptedTools: string[];
+}
+
 export interface MessageMetadata {
   /** Stable join keys for reconstructing a persisted message's runtime turn. */
   correlation?: {
     turnId: string;
     traceId?: string;
   };
+  /** Backend-authoritative filesystem diff captured when this run finishes. */
+  turnDiff?: TurnDiffEventData;
   /**
    * 方案 §8.2 的用户输入来源；缺省视为 typed。
    * 注意：Message 顶层 source 是系统生产者来源，这是另一条轴。
@@ -348,6 +365,18 @@ export interface MessageMetadata {
   agentRecoveryNotice?: {
     kind: 'vision_tool_unsupported' | 'artifact_stream_retry' | 'vision_preflight_used' | 'unresolved_tasks';
   };
+  /** User-visible audit note for atomic turn checkout / Redo, including partial outcomes. */
+  turnCheckoutNote?: {
+    operation: 'checkout' | 'redo';
+    state: 'success' | 'partial';
+    done: string[];
+    failed: Array<{ step: string; reason: string; filePath?: string }>;
+    skippedFiles: Array<{ filePath: string; reason: string; detail: string }>;
+    changedFileCount: number;
+    externalSideEffectsWarning: string;
+  };
+  /** 显式改道成功后的动作回执；原话不投成用户气泡。 */
+  inputRedirectReceipt?: InputRedirectReceiptMetadata;
   /** 后台任务统一终态投影，供后续 turn 做短名指代与状态追问。 */
   backgroundTaskResult?: {
     source: 'agent-result';

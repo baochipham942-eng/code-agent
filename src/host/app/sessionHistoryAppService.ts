@@ -35,19 +35,31 @@ import {
   type SessionExportEnvelopeV2,
   type SessionForkSyncEnvelopeRecord,
 } from '../../shared/contract/sessionForkPortability';
-import type {
-  RestoreConversationRewindRequest,
-  RestoreConversationRewindResult,
-  RewindConversationRequest,
-  RewindConversationResult,
+import {
+  SessionRewindError,
+  type RestoreConversationRewindRequest,
+  type RestoreConversationRewindResult,
+  type RewindConversationRequest,
+  type RewindConversationResult,
 } from '../../shared/contract/sessionRewind';
+import type {
+  TurnCheckoutRequest,
+  TurnCheckoutResult,
+  TurnRedoRequest,
+  TurnRedoResult,
+} from '../../shared/contract/turnCheckout';
+import type { SystemEventMessageMetadata } from '../../shared/contract/systemEventRegistry';
+import { v4 as uuidv4 } from 'uuid';
 import type { TaskManager } from '../task';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getAuthService } from '../services/auth/authService';
 import { getFileCheckpointService } from '../services/checkpoint';
+import { invalidateSessionEvidence } from '../services/checkpoint/evidenceInvalidationService';
+import { TurnCheckoutService } from '../services/checkpoint/turnCheckoutService';
 import { getDatabase } from '../services/core/databaseService';
 import { getProjectSourceGitStates } from '../services/git/gitStatusService';
 import { getSessionManager } from '../services/infra/sessionManager';
+import { createLogger } from '../services/infra/logger';
 import { getProjectService } from '../services/project/projectService';
 import { SessionForkService } from '../services/sessionFork/SessionForkService';
 import { planSessionForkImport } from '../services/sessionFork/portability';
@@ -66,6 +78,23 @@ const FILE_RESTORE_ACTIVE_RUN_STATES = new Set([
   'cancelling',
   'recovering',
 ]);
+const logger = createLogger('SessionHistoryAppService');
+const activeTurnCheckoutSessions = new Set<string>();
+
+async function withTurnCheckoutSessionLock<T>(
+  sessionId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (activeTurnCheckoutSessions.has(sessionId)) {
+    throw new SessionRewindError('SESSION_RUNNING', 'another turn checkout operation is active');
+  }
+  activeTurnCheckoutSessions.add(sessionId);
+  try {
+    return await operation();
+  } finally {
+    activeTurnCheckoutSessions.delete(sessionId);
+  }
+}
 
 /**
  * Owns the fork, rewind, immutable-history, portability, and explicit workspace
@@ -419,43 +448,7 @@ export class SessionHistoryAppService {
       );
     }
 
-    const ownerUserId = getAuthService().getCurrentUser()?.id ?? null;
-    const session = getDatabase().getSession(sessionId, { userId: ownerUserId });
-    if (!session) {
-      throw new WorkspaceFileRestoreError(
-        'SESSION_ACCESS_DENIED',
-        `session ${sessionId} was not found for the current owner`,
-      );
-    }
-
-    const runtimeStatus = this.getTaskManager().getSessionState(sessionId)?.status ?? 'idle';
-    if (
-      FILE_RESTORE_ACTIVE_RUN_STATES.has(String(runtimeStatus))
-      || FILE_RESTORE_ACTIVE_RUN_STATES.has(String(session.status ?? 'idle'))
-    ) {
-      throw new WorkspaceFileRestoreError(
-        'SESSION_RUNNING',
-        `session ${sessionId} is active`,
-      );
-    }
-    if (this.durableRunReadService) {
-      const durable = await this.durableRunReadService.readSessionReplay(sessionId, () => ({
-        status: runtimeStatus === 'queued'
-          ? 'created'
-          : runtimeStatus === 'cancelling'
-            ? 'running'
-            : runtimeStatus === 'error'
-              ? 'failed'
-              : runtimeStatus,
-        updatedAt: session.updatedAt,
-      }));
-      if (FILE_RESTORE_ACTIVE_RUN_STATES.has(String(durable.status))) {
-        throw new WorkspaceFileRestoreError(
-          'SESSION_RUNNING',
-          `session ${sessionId} has active durable run ${durable.runId ?? '<unknown>'}`,
-        );
-      }
-    }
+    await this.assertWorkspaceMutationAllowed(sessionId);
 
     const checkpointService = getFileCheckpointService();
     const checkpoints = await checkpointService.getCheckpoints(sessionId);
@@ -468,12 +461,13 @@ export class SessionHistoryAppService {
 
     const result = await checkpointService.rewindFiles(sessionId, checkpointMessageId);
     if (!result.success || result.errors.length > 0) {
+      const failedFileCount = result.errors.length + result.skippedFiles.length;
       throw new WorkspaceFileRestoreError(
         'WORKSPACE_FILE_RESTORE_FAILED',
-        `workspace file restore failed for ${result.errors.length} file(s)`,
+        `workspace file restore failed or skipped ${failedFileCount} file(s)`,
         result.restoredFiles.length,
         result.deletedFiles.length,
-        result.errors.length,
+        failedFileCount,
       );
     }
 
@@ -486,6 +480,133 @@ export class SessionHistoryAppService {
       workspaceChanged: result.restoredFiles.length + result.deletedFiles.length > 0,
       conversationChanged: false,
     };
+  }
+
+  async turnCheckout(params: TurnCheckoutRequest): Promise<TurnCheckoutResult> {
+    const sessionId = params.sessionId?.trim();
+    const userMessageId = params.userMessageId?.trim();
+    if (!sessionId || !userMessageId) {
+      throw new WorkspaceFileRestoreError(
+        'INVALID_FILE_RESTORE_REQUEST',
+        'sessionId and userMessageId are required',
+      );
+    }
+    return withTurnCheckoutSessionLock(sessionId, async () => {
+    await this.assertWorkspaceMutationAllowed(sessionId);
+    const database = getDatabase();
+    const sqlite = database.getDb();
+    if (!sqlite) {
+      throw new WorkspaceFileRestoreError(
+        'WORKSPACE_FILE_RESTORE_FAILED',
+        'database is not initialized',
+      );
+    }
+    const anchor = database.getMessages(sessionId).find((message) => (
+      message.id === userMessageId && message.role === 'user'
+    ));
+    if (!anchor) {
+      throw new WorkspaceFileRestoreError(
+        'CHECKPOINT_NOT_FOUND',
+        `active user message ${userMessageId} was not found in session ${sessionId}`,
+      );
+    }
+    const checkpointService = getFileCheckpointService();
+    const checkpoint = await checkpointService.getFirstCheckpointAtOrAfter(
+      sessionId,
+      anchor.timestamp,
+    );
+    const taskManager = this.getTaskManager();
+    const rewindService = new SessionRewindService(database, {
+      getRuntimeStatus: (id) => taskManager.getSessionState(id).status,
+      setSessionContext: (id, messages) => taskManager.setSessionContext(id, messages),
+      ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
+    });
+    const service = new TurnCheckoutService({
+      rewindFiles: (id, messageId, options) => checkpointService.rewindFiles(id, messageId, options),
+      redoFiles: (id, messageId, restoredFrom) => checkpointService.redoFiles(id, messageId, restoredFrom),
+      rewindConversation: (request, record) => rewindService.rewindConversation(request, record),
+      restoreConversation: (request) => rewindService.restoreConversation(request),
+      invalidateEvidence: async (id, paths) => invalidateSessionEvidence(sqlite, id, paths),
+      writeNote: (id, note) => this.writeTurnCheckoutNote(id, note),
+    });
+    const result = await service.checkout(
+      { ...params, sessionId, userMessageId },
+      checkpoint?.messageId ?? null,
+    );
+    this.refreshTurnCheckoutProjection(sessionId, result.activeMessages);
+    return result;
+    });
+  }
+
+  async turnRedo(params: TurnRedoRequest): Promise<TurnRedoResult> {
+    const sessionId = params.sessionId?.trim();
+    const rewindId = params.rewindId?.trim();
+    if (!sessionId || !rewindId) {
+      throw new WorkspaceFileRestoreError(
+        'INVALID_FILE_RESTORE_REQUEST',
+        'sessionId and rewindId are required',
+      );
+    }
+    return withTurnCheckoutSessionLock(sessionId, async () => {
+    await this.assertWorkspaceMutationAllowed(sessionId);
+    const database = getDatabase();
+    const sqlite = database.getDb();
+    if (!sqlite) {
+      throw new WorkspaceFileRestoreError(
+        'WORKSPACE_FILE_RESTORE_FAILED',
+        'database is not initialized',
+      );
+    }
+    const ownerUserId = getAuthService().getCurrentUser()?.id ?? null;
+    const audit = database.getPromptRewindAudit(sessionId, rewindId, ownerUserId);
+    if (audit.status === 'restored') {
+      return {
+        success: true,
+        state: 'success',
+        sessionId,
+        rewindId,
+        done: [],
+        failed: [],
+        skippedFiles: [],
+        restoredFiles: [],
+        deletedFiles: [],
+        activeMessages: database.getMessages(sessionId),
+        restoredMessageCount: 0,
+        staleEvidenceCount: 0,
+        redoAvailable: false,
+        externalSideEffectsWarning: 'Changes caused by external commands are not rolled back.',
+      };
+    }
+    if (!audit.isLatestCompleted) {
+      throw new SessionRewindError(
+        'REWIND_OPERATION_FAILED',
+        audit.status === 'completed'
+          ? 'a newer rewind must be restored first'
+          : `rewind cannot be restored from status ${audit.status}`,
+      );
+    }
+    const checkpointService = getFileCheckpointService();
+    const taskManager = this.getTaskManager();
+    const rewindService = new SessionRewindService(database, {
+      getRuntimeStatus: (id) => taskManager.getSessionState(id).status,
+      setSessionContext: (id, messages) => taskManager.setSessionContext(id, messages),
+      ownerUserId,
+    });
+    const service = new TurnCheckoutService({
+      rewindFiles: (id, messageId, options) => checkpointService.rewindFiles(id, messageId, options),
+      redoFiles: (id, messageId, restoredFrom) => checkpointService.redoFiles(id, messageId, restoredFrom),
+      rewindConversation: (request, record) => rewindService.rewindConversation(request, record),
+      restoreConversation: (request) => rewindService.restoreConversation(request),
+      invalidateEvidence: async (id, paths) => invalidateSessionEvidence(sqlite, id, paths),
+      writeNote: (id, note) => this.writeTurnCheckoutNote(id, note),
+    });
+    const result = await service.redo(
+      { sessionId, rewindId },
+      audit.redoCheckpointMessageId,
+    );
+    this.refreshTurnCheckoutProjection(sessionId, result.activeMessages);
+    return result;
+    });
   }
 
   async restoreConversationRewind(
@@ -510,6 +631,88 @@ export class SessionHistoryAppService {
       anchorUserMessageId: params.userMessageId,
       idempotencyKey: params.idempotencyKey ?? `legacy:${params.sessionId}:${params.userMessageId}`,
     });
+  }
+
+  private async writeTurnCheckoutNote(
+    sessionId: string,
+    note: NonNullable<import('../../shared/contract').MessageMetadata['turnCheckoutNote']>,
+  ): Promise<import('../../shared/contract').Message[]> {
+    const action = note.operation === 'checkout' ? 'Turn checkout' : 'Turn Redo';
+    const detail = note.failed.map((item) => (
+      `${item.step}${item.filePath ? `:${item.filePath}` : ''}: ${item.reason}`
+    )).join(' | ');
+    const content = `${action} ${note.state}; ${note.changedFileCount} workspace file(s) changed.`
+      + `${detail ? ` Failed: ${detail}.` : ''} ${note.externalSideEffectsWarning}`;
+    await getSessionManager().addMessageToSession(sessionId, {
+      id: `turn-checkout-note-${Date.now()}-${uuidv4().slice(0, 8)}`,
+      role: 'system',
+      content,
+      timestamp: Date.now(),
+      metadata: {
+        turnCheckoutNote: note,
+      } satisfies SystemEventMessageMetadata,
+    });
+    return getDatabase().getMessages(sessionId);
+  }
+
+  private refreshTurnCheckoutProjection(
+    sessionId: string,
+    activeMessages: import('../../shared/contract').Message[],
+  ): void {
+    if (activeMessages.length > 0) {
+      try {
+        this.getTaskManager().setSessionContext(sessionId, activeMessages);
+      } catch (error) {
+        logger.warn('Committed turn checkout could not refresh task projection', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    try {
+      getSessionManager().invalidateSessionCache(sessionId);
+      getContextHealthService().cleanup(sessionId);
+    } catch (error) {
+      logger.warn('Committed turn checkout could not invalidate derived caches', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async assertWorkspaceMutationAllowed(sessionId: string): Promise<void> {
+    const ownerUserId = getAuthService().getCurrentUser()?.id ?? null;
+    const session = getDatabase().getSession(sessionId, { userId: ownerUserId });
+    if (!session) {
+      throw new WorkspaceFileRestoreError(
+        'SESSION_ACCESS_DENIED',
+        `session ${sessionId} was not found for the current owner`,
+      );
+    }
+    const runtimeStatus = this.getTaskManager().getSessionState(sessionId)?.status ?? 'idle';
+    if (
+      FILE_RESTORE_ACTIVE_RUN_STATES.has(String(runtimeStatus))
+      || FILE_RESTORE_ACTIVE_RUN_STATES.has(String(session.status ?? 'idle'))
+    ) {
+      throw new WorkspaceFileRestoreError('SESSION_RUNNING', `session ${sessionId} is active`);
+    }
+    if (!this.durableRunReadService) return;
+    const durable = await this.durableRunReadService.readSessionReplay(sessionId, () => ({
+      status: runtimeStatus === 'queued'
+        ? 'created'
+        : runtimeStatus === 'cancelling'
+          ? 'running'
+          : runtimeStatus === 'error'
+            ? 'failed'
+            : runtimeStatus,
+      updatedAt: session.updatedAt,
+    }));
+    if (FILE_RESTORE_ACTIVE_RUN_STATES.has(String(durable.status))) {
+      throw new WorkspaceFileRestoreError(
+        'SESSION_RUNNING',
+        `session ${sessionId} has active durable run ${durable.runId ?? '<unknown>'}`,
+      );
+    }
   }
 
   private currentSessionForkOwnerScope(): string {

@@ -13,6 +13,17 @@ import {
 import { directionTokens } from '../../../src/design/direction-tokens';
 
 describe('workbenchTurnContext', () => {
+  it('injects resolved session digest and artifact references into the turn context', () => {
+    const blocks = buildWorkbenchTurnSystemContext({
+      resolvedSessionReferences: [{ id: 'session-old', title: '旧会话', content: 'Full conversation (2 messages)' }],
+      artifactReferences: [{ id: 'artifact-1', name: 'report.html', sessionId: 'session-old', path: '/tmp/report.html' }],
+    });
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toContain('<referenced_session id="session-old">');
+    expect(blocks[0]).toContain('Full conversation (2 messages)');
+    expect(blocks[0]).toContain('<referenced_artifact id="artifact-1" session_id="session-old">');
+    expect(blocks[0]).toContain('Path: /tmp/report.html');
+  });
   const registry = getConnectorRegistry();
   let tmpDirs: string[] = [];
 
@@ -476,6 +487,26 @@ describe('workbenchTurnContext', () => {
     const options = { mode: 'normal', reportStyle: 'default' } as const;
 
     expect(withWorkbenchTurnSystemContext(options, undefined)).toBe(options);
+  });
+
+  it('falls back to the host expertThread marker when the envelope has no preferred agent', () => {
+    const merged = withWorkbenchTurnSystemContext(
+      { mode: 'normal' },
+      undefined,
+      { expertThread: { roleId: '牧之', setAt: 42 } },
+    );
+
+    expect(merged?.agentOverrideId).toBe('牧之');
+  });
+
+  it('keeps the envelope preferred agent ahead of the host expertThread marker', () => {
+    const merged = withWorkbenchTurnSystemContext(
+      { mode: 'normal' },
+      { preferredAgentId: '溯真' },
+      { expertThread: { roleId: '牧之', setAt: 42 } },
+    );
+
+    expect(merged?.agentOverrideId).toBe('溯真');
   });
 
   // 定点反馈 loop：main 侧消费 envelope.livePreviewSelection（此前是死数据）。

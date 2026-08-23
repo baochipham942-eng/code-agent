@@ -34,8 +34,6 @@ import { getFileMutationActorId } from './fileMutationIdentity';
 import { extractFileFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readSchema as schema } from './read.schema';
-import { getContextHealthService } from '../../../context/contextHealthService';
-import { estimateTokens } from '../../../context/tokenEstimator';
 
 const BINARY_REDIRECTS: Record<string, string> = {
   '.xlsx': 'read_xlsx',
@@ -228,17 +226,8 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
         preview: result.slice(0, 500),
       });
 
-      // 上报 fileRead 维度的 token 贡献（add 模式：每次读都累加）
-      try {
-        getContextHealthService().recordSourceContribution(
-          ctx.sessionId,
-          { type: 'fileRead' },
-          estimateTokens(result),
-          'add',
-        );
-      } catch (err) {
-        ctx.logger.debug('Failed to report fileRead token contribution', { err });
-      }
+      // N-CTXCURRENT: 不再上报 fileRead token 累计账——读取结果已在消息历史里，
+      // 当前态构成（contextComposition）按 Read 类工具名扫历史重算。
 
       return {
         ok: true,

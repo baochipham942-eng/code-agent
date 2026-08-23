@@ -30,6 +30,7 @@ import {
   ensureProjectMemoryDirs,
   writeScopedMemory,
   readScopedMemory,
+  archiveScopedMemory,
   deleteScopedMemory,
   listScopedMemories,
   loadScopedMemoryIndex,
@@ -226,6 +227,21 @@ describe('roleAssetService', () => {
       expect(await deleteScopedMemory(target, 'to-delete.md')).toBe(false);
     });
 
+    it('archives memory in place and removes its index entry', async () => {
+      const target = { scope: 'role' as const, roleId: '研究员' };
+      await writeScopedMemory(target, {
+        filename: 'to-archive.md',
+        name: 'A',
+        description: 'retained',
+        content: 'original body',
+      });
+
+      expect(await archiveScopedMemory(target, 'to-archive.md')).toBe(true);
+      expect(await readScopedMemory(target, 'to-archive.md')).toContain('status: archived');
+      expect(await readScopedMemory(target, 'to-archive.md')).toContain('original body');
+      expect((await loadScopedMemoryIndex(target)) || '').not.toContain('[to-archive.md]');
+    });
+
     it('lists memories with parsed frontmatter', async () => {
       const target = { scope: 'role' as const, roleId: '研究员' };
       await writeScopedMemory(target, {
@@ -354,6 +370,32 @@ describe('roleAssetService', () => {
       expect(block).toContain('角色记忆索引');
       expect(block).toContain('[glossary.md]');
       expect(block).toContain('MemoryRead');
+    });
+
+    it('injects the standing boundary into the actual role context block', async () => {
+      await ensureRoleAssetDirs('研究员');
+      const { writeRolePersonalization } = await import('../../../../src/host/services/roleAssets/rolePersonalization');
+      writeRolePersonalization('研究员', { boundaries: { disallowExternalSending: true } });
+
+      const block = await buildRoleContextBlock('研究员');
+      expect(block).toContain('## 常驻边界\n不允许对外发送');
+    });
+
+    it('keeps the no-boundary role context byte-for-byte identical', async () => {
+      await ensureRoleAssetDirs('空白角色');
+      expect(await buildRoleContextBlock('空白角色')).toBe([
+        '<role_assets role="空白角色">',
+        '你是持久化角色"空白角色"。以下是你跨实例积累的长期资产（索引）：',
+        '',
+        '## 角色记忆索引',
+        '# 空白角色 角色记忆索引',
+        '',
+        '使用规则：',
+        '- 索引中的记忆条目，需要详细内容时用 MemoryRead 工具读取（scope 参数填 "role" 或 "project"，filename 填索引中的文件名）。',
+        '- 与当前任务相关的记忆应优先读取并运用，不要重复踩已记录过的坑。',
+        '- 工作中发现"下次还有用"的知识，可用 MemoryWrite 工具（带 scope 参数）即时写入。',
+        '</role_assets>',
+      ].join('\n'));
     });
 
     it('includes project memory index when workspace has memories', async () => {

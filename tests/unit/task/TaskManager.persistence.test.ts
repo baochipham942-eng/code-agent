@@ -577,6 +577,7 @@ describe('TaskManager message event persistence', () => {
       options,
       metadata,
       'client-msg-1',
+      undefined,
     );
 
     expect(orchestratorMocks.interruptAndContinue).toHaveBeenCalledWith(
@@ -585,6 +586,7 @@ describe('TaskManager message event persistence', () => {
       options,
       metadata,
       'client-msg-1',
+      undefined,
     );
     expect(outcome).toBe(expectedOutcome);
     expect(manager.getSessionState('session-interrupt').status).toBe('running');

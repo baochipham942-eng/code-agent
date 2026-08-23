@@ -25,6 +25,8 @@ function createSchema(db: BetterSqlite3.Database): void {
       envelope_json TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'queued',
       retry_count INTEGER NOT NULL DEFAULT 0,
+      position INTEGER NOT NULL DEFAULT 0,
+      paused_reason TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -216,6 +218,29 @@ describe('web queued input drain', () => {
     }), expect.anything());
   });
 
+  it('startup sweep 把 sending 孤儿复位为 queued 并标记 restart，且不自动重发', async () => {
+    const repository = createRepository();
+    repository.enqueue({
+      id: 'orphaned-sending',
+      sessionId: 'session-restart',
+      envelope: { content: 'wait for explicit retry' },
+      now: 100,
+    });
+    expect(repository.markSending('orphaned-sending', 200)).toBe(true);
+    const runEnvelope = vi.fn().mockResolvedValue(undefined);
+    const drain = createDrain({ repository, runEnvelope });
+
+    drain.runStartupSweep();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(repository.getById('orphaned-sending')).toMatchObject({
+      status: 'queued',
+      pausedReason: 'restart',
+    });
+    expect(repository.getNextDispatchable('session-restart')).toBeNull();
+    expect(runEnvelope).not.toHaveBeenCalled();
+  });
+
   it('requeues through the shared retry ceiling, then marks failed and broadcasts an error', async () => {
     const repository = createRepository();
     repository.enqueue({
@@ -259,7 +284,7 @@ describe('web queued input drain', () => {
     }]);
   });
 
-  it('drains multiple records strictly serially in createdAt order', async () => {
+  it('drains multiple records strictly serially in position order', async () => {
     const repository = createRepository();
     repository.enqueue({
       id: 'queued-later',
@@ -294,7 +319,7 @@ describe('web queued input drain', () => {
     await vi.waitFor(() => {
       expect(repository.listBySession('session-serial', 'consumed')).toHaveLength(2);
     });
-    expect(sentIds).toEqual(['queued-earlier', 'queued-later']);
+    expect(sentIds).toEqual(['queued-later', 'queued-earlier']);
     expect(maxConcurrentRuns).toBe(1);
   });
 

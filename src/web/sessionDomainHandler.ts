@@ -1,5 +1,4 @@
 import type { HandlerFn } from '../host/platform';
-import { resolveSessionDefaultModelConfig } from '../host/services/core/sessionDefaults';
 import type { DurableRunReadService } from '../host/app/durableRunReadService';
 import { getModelSessionState } from '../host/session/modelSessionState';
 import {
@@ -20,6 +19,9 @@ type SessionDomainPayload = {
   includeArchived?: boolean;
   title?: string;
   workingDirectory?: string;
+  expertRoleId?: string;
+  /** findExpertThread：按专家 roleId 查最近活跃的专家主 thread */
+  roleId?: string;
   userMessageId?: string;
   anchorUserMessageId?: string;
   anchorAssistantMessageId?: string;
@@ -48,13 +50,14 @@ type SessionDomainHandlerDependencies = {
 };
 
 async function createSessionApplicationService(deps: SessionDomainHandlerDependencies) {
-  const [{ AgentAppServiceImpl }, { getTaskManager }] = await Promise.all([
+  const [{ AgentAppServiceImpl }, { getTaskManager }, { getConfigService }] = await Promise.all([
     import('../host/app/agentAppService'),
     import('../host/task'),
+    import('../host/services/core/configService'),
   ]);
   return new AgentAppServiceImpl(
     () => getTaskManager(),
-    () => null,
+    () => getConfigService(),
     deps.getCurrentSessionId,
     deps.setCurrentSessionId,
     undefined,
@@ -134,16 +137,25 @@ export function installSessionDomainHandler(deps: SessionDomainHandlerDependenci
         case 'list':
           data = await sm.listSessions(payload as { includeArchived?: boolean } | undefined);
           break;
+        case 'findExpertThread': {
+          // web standalone 的 session domain handler 是独立于桌面 IPC 的一份（src/host/ipc/session.ipc.ts
+          // 只服务 Electron），同一个 action 必须在两边各注册一次；通用桥 /api/domain/:domain/:action 不变。
+          const roleId = typeof payload?.roleId === 'string' ? payload.roleId.trim() : '';
+          if (!roleId) {
+            return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'roleId is required' } };
+          }
+          const session = await sm.findLatestExpertThreadSession(roleId);
+          data = { sessionId: session?.id ?? null };
+          break;
+        }
         case 'create':
-          data = await sm.createSession({
+          data = await (await createSessionApplicationService(deps)).createSession({
             title: payload?.title || 'New Session',
-            workingDirectory:
-              typeof payload?.workingDirectory === 'string' && payload.workingDirectory.trim().length > 0
-                ? payload.workingDirectory.trim()
-                : undefined,
-            modelConfig: resolveSessionDefaultModelConfig(),
+            workingDirectory: typeof payload?.workingDirectory === 'string'
+              ? payload.workingDirectory
+              : undefined,
+            expertRoleId: payload?.expertRoleId,
           });
-          sm.setCurrentSession((data as { id: string }).id);
           break;
         case 'load': {
           const session = await sm.restoreSession(payload?.sessionId as string);
@@ -489,6 +501,29 @@ export function installSessionDomainHandler(deps: SessionDomainHandlerDependenci
               ? payload.checkpointMessageId
               : '',
           });
+          break;
+        }
+        case 'turnCheckout': {
+          const appService = await createSessionApplicationService(deps);
+          data = await appService.turnCheckout({
+            sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
+            userMessageId: typeof payload?.userMessageId === 'string' ? payload.userMessageId : '',
+            ...(typeof payload?.idempotencyKey === 'string'
+              ? { idempotencyKey: payload.idempotencyKey }
+              : {}),
+          });
+          sm.invalidateSessionCache(typeof payload?.sessionId === 'string' ? payload.sessionId : '');
+          invalidateSessionMessagesProjection(typeof payload?.sessionId === 'string' ? payload.sessionId : '');
+          break;
+        }
+        case 'turnRedo': {
+          const appService = await createSessionApplicationService(deps);
+          data = await appService.turnRedo({
+            sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
+            rewindId: typeof payload?.rewindId === 'string' ? payload.rewindId : '',
+          });
+          sm.invalidateSessionCache(typeof payload?.sessionId === 'string' ? payload.sessionId : '');
+          invalidateSessionMessagesProjection(typeof payload?.sessionId === 'string' ? payload.sessionId : '');
           break;
         }
         case 'export':

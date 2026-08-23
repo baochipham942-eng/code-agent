@@ -10,9 +10,14 @@ import { cleanup, initializeCLIServices } from '../bootstrap';
 import type { CLIGlobalOptions, APIRunRequest, APIStatusResponse } from '../types';
 import type { AgentEvent } from '../../shared/contract';
 import { createLogger } from '../../host/services/infra/logger';
+import {
+  shouldDeliverAgentEvent,
+  type AgentEventFilter,
+  type AgentEventType,
+} from '../../host/protocol/events/eventFilter';
 
 const logger = createLogger('CLI-Serve');
-type RunRequestFacade = Pick<APIRunRequest, 'prompt' | 'project' | 'generation' | 'model' | 'provider'>;
+type RunRequestFacade = Pick<APIRunRequest, 'prompt' | 'project' | 'generation' | 'model' | 'provider' | 'eventFilter'>;
 interface ServeRequestHandlerOptions {
   host: string;
   port: number;
@@ -195,7 +200,9 @@ async function handleRun(
       config,
       (event: AgentEvent) => {
         // 转发事件到 SSE
-        sendSSE(res, event.type, event.data);
+        if (shouldDeliverAgentEvent(event, request.eventFilter)) {
+          sendSSE(res, event.type, event.data);
+        }
       }
     );
 
@@ -323,7 +330,20 @@ function normalizeRunRequest(value: unknown): RunRequestFacade | null {
     generation: optionalString(value.generation),
     model: optionalString(value.model),
     provider: optionalString(value.provider),
+    eventFilter: normalizeEventFilter(value.eventFilter),
   };
+}
+
+function normalizeEventFilter(value: unknown): AgentEventFilter | undefined {
+  if (!isRecord(value)) return undefined;
+  const include = eventTypeList(value.include);
+  const exclude = eventTypeList(value.exclude);
+  return include || exclude ? { include, exclude } : undefined;
+}
+
+function eventTypeList(value: unknown): AgentEventType[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((item): item is AgentEventType => typeof item === 'string');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

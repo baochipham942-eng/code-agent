@@ -20,6 +20,10 @@ export const permissionVocabularyZh = {
   autoApprove: '替我审批',
   /** 不受限制 —— 会话档 bypassPermissions / 专家档 ci。危险档，UI 上必须有警示色 */
   fullAccess: '完全访问权限',
+  /** 批准只作用于尚未执行的当前动作，不回滚已经发生的操作 */
+  approvalEffectBoundary: '批准只作用于即将发生的这个动作，不能撤回已经完成的操作。',
+  /** 目标或影响不明确时的用户决策底线 */
+  uncertainActionWarning: '如果无法识别动作的目标或影响，请不要批准。',
 };
 
 export const permissionVocabularyEn: typeof permissionVocabularyZh = {
@@ -27,4 +31,6 @@ export const permissionVocabularyEn: typeof permissionVocabularyZh = {
   readOnly: 'Read only',
   autoApprove: 'Approve for me',
   fullAccess: 'Full access',
+  approvalEffectBoundary: 'Approval applies only to this upcoming action; it cannot undo actions already completed.',
+  uncertainActionWarning: 'Do not approve an action if you cannot identify its target or impact.',
 };

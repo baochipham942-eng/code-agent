@@ -17,6 +17,8 @@ import {
   type TokenUsage,
   BudgetAlertLevel,
   getBudgetService,
+  resolveBudgetScope,
+  type BudgetScope,
 } from '../services/core/budgetService';
 import type { AgentDefinition, DynamicAgentConfig } from './agentDefinition';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
@@ -80,6 +82,7 @@ export interface SubagentExecutionContext {
   startTime: number;
   toolsUsed: string[];
   tokenUsage: TokenUsage[];
+  budgetScope: BudgetScope;
   /** 允许使用的工具列表（继承自父 Agent 或定义）*/
   allowedTools?: string[];
   /** AbortController for graceful shutdown */
@@ -145,6 +148,8 @@ export class SubagentPipeline {
       parentRemainingBudget?: number;
       /** 父 Agent 允许的工具列表 */
       parentAllowedTools?: string[];
+      /** Existing run topology; async_agent maps to the unattended pool. */
+      executionTopology?: unknown;
     }
   ): SubagentExecutionContext {
     const agentId = `subagent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -226,6 +231,7 @@ export class SubagentPipeline {
       startTime: Date.now(),
       toolsUsed: [],
       tokenUsage: [],
+      budgetScope: resolveBudgetScope(options?.executionTopology),
       allowedTools,
     };
 
@@ -293,7 +299,7 @@ export class SubagentPipeline {
     if (!context) return;
 
     const duration = Date.now() - context.startTime;
-    const totalCost = this.calculateTotalCost(context.tokenUsage);
+    const totalCost = this.calculateTotalCost(context.tokenUsage, context.budgetScope);
 
     // Audit: complete or error
     this.addAuditEntry({
@@ -380,11 +386,13 @@ export class SubagentPipeline {
       }
 
       // For write/execute/network, check if path is in working directory
+      let pathOutsideWorkingDirectory = false;
       if (request.path) {
         const inWorkingDir = isPathWithinRoot(request.path, context.workingDirectory);
         if (inWorkingDir) {
           return { allowed: true, warnings };
         }
+        pathOutsideWorkingDirectory = true;
       }
 
       // Deny for operations outside working directory in non-autoApprove mode
@@ -403,7 +411,9 @@ export class SubagentPipeline {
 
       return {
         allowed: false,
-        reason: `Permission denied: ${request.permissionLevel} operation requires approval`,
+        reason: pathOutsideWorkingDirectory
+          ? `Permission denied: ${request.path} is outside this agent's working directory ${context.workingDirectory}`
+          : `Permission denied: ${request.permissionLevel} operation requires approval`,
         warnings,
       };
     }
@@ -436,7 +446,7 @@ export class SubagentPipeline {
    * Check budget before execution
    */
   checkBudget(context: SubagentExecutionContext): PipelineCheckResult {
-    const budgetService = getBudgetService();
+    const budgetService = getBudgetService(context.budgetScope);
     const status = budgetService.checkBudget();
     const warnings: string[] = [];
 
@@ -479,7 +489,7 @@ export class SubagentPipeline {
 
     // Check subagent-specific budget if set
     if (context.maxBudget) {
-      const subagentCost = this.calculateTotalCost(context.tokenUsage);
+      const subagentCost = this.calculateTotalCost(context.tokenUsage, context.budgetScope);
       if (subagentCost >= context.maxBudget) {
         return {
           allowed: false,
@@ -504,7 +514,7 @@ export class SubagentPipeline {
     context.tokenUsage.push(usage);
 
     // Also record to global budget service
-    const budgetService = getBudgetService();
+    const budgetService = getBudgetService(context.budgetScope);
     budgetService.recordUsage(usage);
   }
 
@@ -512,9 +522,9 @@ export class SubagentPipeline {
    * Get current budget status for a subagent
    */
   getBudgetStatus(context: SubagentExecutionContext): BudgetStatus & { subagentCost?: number } {
-    const budgetService = getBudgetService();
+    const budgetService = getBudgetService(context.budgetScope);
     const globalStatus = budgetService.checkBudget();
-    const subagentCost = this.calculateTotalCost(context.tokenUsage);
+    const subagentCost = this.calculateTotalCost(context.tokenUsage, context.budgetScope);
 
     return {
       ...globalStatus,
@@ -530,15 +540,15 @@ export class SubagentPipeline {
       return undefined;
     }
 
-    const subagentCost = this.calculateTotalCost(context.tokenUsage);
+    const subagentCost = this.calculateTotalCost(context.tokenUsage, context.budgetScope);
     return Math.max(0, context.maxBudget - subagentCost);
   }
 
   /**
    * Calculate total cost from token usage
    */
-  private calculateTotalCost(usages: TokenUsage[]): number {
-    const budgetService = getBudgetService();
+  private calculateTotalCost(usages: TokenUsage[], scope: BudgetScope): number {
+    const budgetService = getBudgetService(scope);
     return usages.reduce((sum, usage) => {
       return sum + budgetService.estimateCost(usage.inputTokens, usage.outputTokens, usage.model, usage.provider);
     }, 0);

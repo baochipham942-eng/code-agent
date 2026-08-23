@@ -31,6 +31,8 @@ import {
 } from '../context/subagentContextStore';
 import type { SubagentResult } from './subagentExecutorTypes';
 import { listAgentWorktreeArtifacts } from './agentWorktree';
+import { extractToolStepTarget } from './toolStepTarget';
+import { getFileOwnershipRegistry } from '../services/infra/fileOwnershipRegistry';
 
 export interface AgentTreeSpawnAgentSource {
   id: string;
@@ -53,6 +55,8 @@ export interface AgentTreeSnapshotSources {
   contextRecords?: SubagentContextRecord[];
   backgroundAgents?: BackgroundSubagentHandle[];
   worktrees?: AgentWorktreeArtifact[];
+  /** 文件所有权冲突（调用方从 fileOwnershipRegistry 取；缺省 = 无冲突）。 */
+  ownershipConflicts?: Array<{ path: string; ownerAgentId: string; requesterAgentId: string }>;
 }
 
 export interface GetAgentTreeSnapshotOptions {
@@ -271,6 +275,31 @@ function activeToolFromContext(record: SubagentContextRecord): string | undefine
   return tools && tools.length > 0 ? tools[tools.length - 1] : undefined;
 }
 
+function lastToolStepFromContext(record: SubagentContextRecord) {
+  const tool = activeToolFromContext(record);
+  if (!tool) return undefined;
+
+  for (let messageIndex = record.messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const message = record.messages[messageIndex];
+    const calls = message.toolCalls ?? [];
+    for (let callIndex = calls.length - 1; callIndex >= 0; callIndex -= 1) {
+      const call = calls[callIndex];
+      if (call.name !== tool) continue;
+      const target = extractToolStepTarget(call.arguments);
+      return {
+        tool,
+        ...(target ? { target } : {}),
+        at: message.timestamp || record.snapshot?.lastUpdated || record.updatedAt,
+      };
+    }
+  }
+
+  return {
+    tool,
+    at: record.snapshot?.lastUpdated || record.updatedAt,
+  };
+}
+
 function progressFromContext(record: SubagentContextRecord): string | undefined {
   const previews = record.snapshot?.previews;
   if (previews && previews.length > 0) {
@@ -384,6 +413,8 @@ function mergeContextRecord(
   node.updatedAt = Math.max(node.updatedAt ?? 0, record.updatedAt);
   const activeTool = activeToolFromContext(record);
   if (activeTool) node.activeTool = activeTool;
+  const lastToolStep = lastToolStepFromContext(record);
+  if (lastToolStep) node.lastToolStep = lastToolStep;
   node.budgetSummary = mergeBudget(node.budgetSummary, budgetFromContext(record));
 
   const progress = progressFromContext(record);
@@ -503,6 +534,7 @@ function summarize(nodes: AgentTreeNode[]): AgentTreeSnapshot['summary'] {
     withWorktree: nodes.filter((node) => node.worktreeState.status !== 'none').length,
     ...(sawCost ? { totalCostUsd } : {}),
     ...(sawTokens ? { totalTokensUsed } : {}),
+    ownershipConflicts: [],
   };
 }
 
@@ -532,12 +564,18 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
   }
 
   const { roots, flat } = attachChildren(Array.from(nodes.values()));
+  const summary = summarize(flat);
+  summary.ownershipConflicts = (sources.ownershipConflicts ?? []).map((conflict) => ({
+    path: conflict.path,
+    ownerAgentId: conflict.ownerAgentId,
+    requesterAgentId: conflict.requesterAgentId,
+  }));
   return {
     generatedAt: sources.now ?? Date.now(),
     ...(sessionId ? { sessionId } : {}),
     roots,
     nodes: flat,
-    summary: summarize(flat),
+    summary,
   };
 }
 
@@ -549,7 +587,14 @@ export function getAgentTreeSnapshot(options: GetAgentTreeSnapshotOptions = {}):
     spawnAgents: getSpawnGuard().list(),
     parallelTasks: getParallelAgentCoordinator().getTaskSnapshots(),
     contextRecords: getSubagentContextStore().list(sessionId),
-    backgroundAgents: getBackgroundSubagentRegistry().list(),
+    // 会话隔离：能归属到别的会话的后台代理不进本会话快照（无 sessionId 的保留原口径）
+    backgroundAgents: getBackgroundSubagentRegistry().list()
+      .filter((handle) => !sessionId || !handle.sessionId || handle.sessionId === sessionId),
     worktrees: options.worktrees ?? listAgentWorktreeArtifacts(),
+    // 同一根脊柱：冲突从 fileOwnershipRegistry 拉（string scope = session:<id>），
+    // 不给 renderer 新开 channel。
+    ownershipConflicts: sessionId
+      ? getFileOwnershipRegistry().listConflicts(sessionId)
+      : [],
   });
 }

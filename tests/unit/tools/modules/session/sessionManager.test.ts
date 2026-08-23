@@ -1,9 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
 import type { Session } from '../../../../../src/shared/contract/session';
+import type { Message } from '../../../../../src/shared/contract/message';
 import { SessionForkError } from '../../../../../src/shared/contract/sessionFork';
 
 const mocks = vi.hoisted(() => ({
+  digestCache: new Map<string, {
+    message_count: number;
+    content_hash: string;
+    digest: string;
+    topics: string;
+  }>(),
+  compactModelSummarize: vi.fn(),
   sessionManager: {
     listSessions: vi.fn(),
     listArchivedSessions: vi.fn(),
@@ -23,6 +31,41 @@ const mocks = vi.hoisted(() => ({
     forkSession: vi.fn(),
   },
   resolveSessionDefaultModelConfig: vi.fn(),
+}));
+
+vi.mock('../../../../../src/host/context/compactModel', () => ({
+  compactModelSummarize: (...args: unknown[]) => mocks.compactModelSummarize(...args),
+}));
+
+vi.mock('../../../../../src/host/services/core', () => ({
+  getDatabase: () => ({
+    getDb: () => ({
+      prepare: (sql: string) => {
+        if (sql.includes('SELECT message_count')) {
+          return { get: (sessionId: string) => mocks.digestCache.get(sessionId) };
+        }
+        if (sql.includes('INSERT INTO session_reference_digests')) {
+          return {
+            run: (
+              sessionId: string,
+              messageCount: number,
+              contentHash: string,
+              digest: string,
+              topics: string,
+            ) => {
+              mocks.digestCache.set(sessionId, {
+                message_count: messageCount,
+                content_hash: contentHash,
+                digest,
+                topics,
+              });
+            },
+          };
+        }
+        throw new Error(`Unexpected digest cache SQL: ${sql}`);
+      },
+    }),
+  }),
 }));
 
 vi.mock('../../../../../src/host/services/infra/sessionManager', () => ({
@@ -86,6 +129,8 @@ const denyAll: CanUseToolFn = vi.fn(async () => ({ allow: false as const, reason
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.digestCache.clear();
+  mocks.compactModelSummarize.mockResolvedValue('Topics: caching, session history\nSummary:\nA concise session digest.');
   mocks.sessionManager.listSessions.mockResolvedValue([]);
   mocks.sessionManager.listArchivedSessions.mockResolvedValue([]);
   mocks.sessionManager.getSession.mockResolvedValue(null);
@@ -141,7 +186,7 @@ describe('SessionManager schema', () => {
     expect(sessionManagerModule.schema.inputSchema.required).toEqual(['action']);
 
     const props = sessionManagerModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>;
-    expect(props.action.enum).toEqual(['list', 'get', 'create', 'fork', 'archive', 'unarchive', 'rename']);
+    expect(props.action.enum).toEqual(['list', 'get', 'read', 'create', 'fork', 'archive', 'unarchive', 'rename']);
     expect(props.action.enum).not.toContain('delete');
   });
 });
@@ -218,6 +263,257 @@ describe('SessionManager dispatch', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('NOT_FOUND');
+  });
+
+  it('get returns full text without a model call for sessions with at most 15 messages', async () => {
+    const session = makeSession({ id: 'short-session', title: 'Short history' });
+    const messages = Array.from({ length: 15 }, (_, index): Message => ({
+      id: `short-${index + 1}`,
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `original message ${index + 1}`,
+      timestamp: index + 1,
+    }));
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue(messages);
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'get', sessionId: session.id },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('Full conversation (15 messages; no digest generated)');
+      expect(result.output).toContain('[1] user');
+      expect(result.output).toContain('original message 15');
+      expect(result.meta).toMatchObject({
+        action: 'get',
+        totalMessages: 15,
+        referenceMode: 'full',
+        digestCacheHit: false,
+        digestThreshold: 15,
+      });
+    }
+    expect(mocks.compactModelSummarize).not.toHaveBeenCalled();
+  });
+
+  it('get generates one digest for a long session and reuses the persisted cache', async () => {
+    const session = makeSession({ id: 'long-session', title: 'Long history' });
+    const messages = Array.from({ length: 16 }, (_, index): Message => ({
+      id: `long-${index + 1}`,
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `long message ${index + 1}`,
+      timestamp: index + 1,
+    }));
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue(messages);
+    const handler = await sessionManagerModule.createHandler();
+
+    const first = await handler.execute(
+      { action: 'get', sessionId: session.id },
+      makeCtx(),
+      allowAll,
+    );
+    const second = await handler.execute(
+      { action: 'get', sessionId: session.id },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(mocks.compactModelSummarize).toHaveBeenCalledTimes(1);
+    if (first.ok && second.ok) {
+      expect(first.output).toContain('A concise session digest.');
+      expect(first.meta).toMatchObject({ referenceMode: 'digest', digestCacheHit: false });
+      expect(second.meta).toMatchObject({ referenceMode: 'digest', digestCacheHit: true });
+    }
+  });
+
+  it('get invalidates a cached digest when the visible conversation changes', async () => {
+    const session = makeSession({ id: 'growing-session' });
+    const messages = Array.from({ length: 16 }, (_, index): Message => ({
+      id: `growing-${index + 1}`,
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `message ${index + 1}`,
+      timestamp: index + 1,
+    }));
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue(messages);
+    const handler = await sessionManagerModule.createHandler();
+
+    await handler.execute({ action: 'get', sessionId: session.id }, makeCtx(), allowAll);
+    mocks.sessionManager.getMessages.mockResolvedValue([
+      ...messages,
+      { id: 'growing-17', role: 'assistant', content: 'new result', timestamp: 17 },
+    ] satisfies Message[]);
+    await handler.execute({ action: 'get', sessionId: session.id }, makeCtx(), allowAll);
+
+    expect(mocks.compactModelSummarize).toHaveBeenCalledTimes(2);
+  });
+
+  it('get appends an explicit SessionManager read exit to every long-session digest', async () => {
+    const session = makeSession({ id: 'detail-session' });
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue(
+      Array.from({ length: 16 }, (_, index): Message => ({
+        id: `detail-${index + 1}`,
+        role: 'user',
+        content: `detail ${index + 1}`,
+        timestamp: index + 1,
+      })),
+    );
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'get', sessionId: session.id },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const finalLine = result.output.trim().split('\n').at(-1);
+      expect(finalLine).toContain('This session has 16 messages.');
+      expect(finalLine).toContain('Topics: caching, session history.');
+      expect(finalLine).toContain('SessionManager with action="read"');
+      expect(finalLine).toContain(`sessionId="${session.id}"`);
+    }
+  });
+
+  it('read supports an inclusive range and reports total and returned coordinates', async () => {
+    const session = makeSession({ id: 'history-session', title: 'History' });
+    const messages: Message[] = [
+      { id: 'm1', role: 'user', content: 'one', timestamp: 1 },
+      { id: 'm2', role: 'assistant', content: 'two', timestamp: 2 },
+      { id: 'm3', role: 'user', content: 'three', timestamp: 3 },
+      { id: 'm4', role: 'assistant', content: 'four', timestamp: 4 },
+      { id: 'm5', role: 'user', content: 'five', timestamp: 5 },
+    ];
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue(messages);
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'read', sessionId: session.id, start: 2, end: 4 },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('Total messages: 5. Selected range: 2-4.');
+      expect(result.output).toContain('Returned positions: 2,3,4');
+      expect(result.output).toContain('[2] assistant');
+      expect(result.output).not.toContain('[1] user');
+      expect(result.meta).toMatchObject({
+        action: 'read',
+        totalMessages: 5,
+        selection: { start: 2, end: 4, positions: [2, 3, 4], hasMore: false },
+      });
+    }
+    expect(allowAll).not.toHaveBeenCalled();
+  });
+
+  it('read filters message content by keyword while preserving original positions', async () => {
+    const session = makeSession({ id: 'history-session' });
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue([
+      { id: 'm1', role: 'user', content: 'Alpha', timestamp: 1 },
+      { id: 'm2', role: 'assistant', content: 'irrelevant', timestamp: 2 },
+      { id: 'm3', role: 'user', content: 'alpha again', timestamp: 3 },
+    ] satisfies Message[]);
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'read', sessionId: session.id, keyword: 'ALPHA' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('Returned positions: 1,3');
+      expect(result.output).toContain('Keyword filter: "ALPHA".');
+      expect(result.meta?.selection).toMatchObject({ matchedCount: 2, positions: [1, 3] });
+    }
+  });
+
+  it('read selects recent messages and enforces the hard result limit', async () => {
+    const session = makeSession({ id: 'history-session' });
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue(
+      Array.from({ length: 8 }, (_, index): Message => ({
+        id: `m${index + 1}`,
+        role: index % 2 === 0 ? 'user' : 'assistant',
+        content: `message ${index + 1}`,
+        timestamp: index + 1,
+      })),
+    );
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'read', sessionId: session.id, recent: 5, limit: 2 },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('Total messages: 8. Selected range: 4-8.');
+      expect(result.output).toContain('Returned positions: 4,5 (2 of 5 matching messages, limit=2, hasMore=true).');
+      expect(result.output).not.toContain('[6] assistant');
+      expect(result.meta?.selection).toMatchObject({
+        start: 4,
+        end: 8,
+        recent: 5,
+        limit: 2,
+        returnedCount: 2,
+        hasMore: true,
+      });
+    }
+  });
+
+  it('read rejects out-of-bounds and conflicting ranges', async () => {
+    const session = makeSession({ id: 'history-session' });
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue([
+      { id: 'm1', role: 'user', content: 'one', timestamp: 1 },
+      { id: 'm2', role: 'assistant', content: 'two', timestamp: 2 },
+    ] satisfies Message[]);
+    const handler = await sessionManagerModule.createHandler();
+
+    const outside = await handler.execute(
+      { action: 'read', sessionId: session.id, start: 2, end: 3 },
+      makeCtx(),
+      allowAll,
+    );
+    expect(outside.ok).toBe(false);
+    if (!outside.ok) expect(outside.code).toBe('RANGE_OUT_OF_BOUNDS');
+
+    const conflicting = await handler.execute(
+      { action: 'read', sessionId: session.id, start: 1, recent: 1 },
+      makeCtx(),
+      allowAll,
+    );
+    expect(conflicting.ok).toBe(false);
+    if (!conflicting.ok) expect(conflicting.code).toBe('INVALID_ARGS');
+  });
+
+  it('read returns NOT_FOUND without loading messages for a missing session', async () => {
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'read', sessionId: 'missing' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('NOT_FOUND');
+    expect(mocks.sessionManager.getMessages).not.toHaveBeenCalled();
   });
 
   it('create uses SessionManager directly without switching the current session', async () => {

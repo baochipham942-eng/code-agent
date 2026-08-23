@@ -410,16 +410,21 @@ function consolidatedEntryId(action: ConsolidationAction): string {
   return `mem_entry_consolidated_${digest}`;
 }
 
-async function appendAudit(report: ConsolidationReport, extra: Record<string, unknown> = {}): Promise<ConsolidationReport> {
+async function appendAudit(
+  report: ConsolidationReport,
+  extra: Record<string, unknown> = {},
+  options: { auditId?: string; outcome?: 'pending' | 'applied' | 'failed' | 'no-op' | 'skipped' } = {},
+): Promise<ConsolidationReport> {
   if (report.dryRun) return report;
   const auditPath = path.join(getMemoryDir(), MEMORY_CONSOLIDATION.AUDIT_FILENAME);
-  const auditId = `mem_consolidation_${randomUUID()}`;
+  const auditId = options.auditId || `mem_consolidation_${randomUUID()}`;
   await fs.mkdir(path.dirname(auditPath), { recursive: true });
   await fs.appendFile(auditPath, `${JSON.stringify({
     schemaVersion: 1,
     auditId,
     at: Date.now(),
-    outcome: report.applied ? 'applied' : report.error ? 'failed' : report.triggered ? 'no-op' : 'skipped',
+    outcome: options.outcome
+      || (report.applied ? 'applied' : report.error ? 'failed' : report.triggered ? 'no-op' : 'skipped'),
     reason: report.reason,
     before: report.before,
     after: report.after,
@@ -457,9 +462,10 @@ export async function consolidateLightMemory(
   const finish = async (
     report: ConsolidationReport,
     extra: Record<string, unknown> = {},
+    auditId?: string,
   ): Promise<ConsolidationReport> => {
     try {
-      return await appendAudit(report, extra);
+      return await appendAudit(report, extra, { auditId });
     } catch (error) {
       logger.error('Consolidation audit append failed', { error });
       return {
@@ -594,6 +600,39 @@ export async function consolidateLightMemory(
     }, { instructionPaths: instructionFiles.map((file) => file.path), instructionsBefore });
   }
 
+  const auditContext = {
+    instructionPaths: instructionFiles.map((file) => file.path),
+    instructionsBefore,
+  };
+  let pendingAudit: ConsolidationReport;
+  try {
+    pendingAudit = await appendAudit({
+      triggered: true,
+      applied: false,
+      dryRun: false,
+      reason: trigger.reason,
+      before,
+      after: { fileCount: afterCount, indexLineCount: health.indexLineCount },
+      actions: plan.actions,
+      conflicts: plan.conflicts,
+      diff,
+    }, auditContext, { outcome: 'pending' });
+  } catch (error) {
+    logger.error('Consolidation pending audit append failed', { error });
+    return {
+      triggered: true,
+      applied: false,
+      dryRun: false,
+      reason: trigger.reason,
+      before,
+      after: before,
+      actions: plan.actions,
+      conflicts: plan.conflicts,
+      diff,
+      error: `pending audit append failed: ${String(error)}`,
+    };
+  }
+
   // Apply: create result cards, archive source cards, mutate INDEX pointers only,
   // then synchronize the rebuildable SQLite mirror.
   try {
@@ -688,7 +727,7 @@ export async function consolidateLightMemory(
       instructionLayerUnchanged: true,
       indexPointers,
       mirror,
-    });
+    }, pendingAudit.auditId);
   } catch (error) {
     logger.error('Consolidation apply failed', { error });
     return finish({
@@ -698,6 +737,6 @@ export async function consolidateLightMemory(
       conflicts: plan.conflicts,
       diff,
       error: String(error),
-    }, { instructionPaths: instructionFiles.map((file) => file.path), instructionsBefore });
+    }, auditContext, pendingAudit.auditId);
   }
 }

@@ -11,7 +11,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
-import { Check, CircleCheck, Inbox, MessageSquareText, ShieldAlert, ShieldCheck, X } from 'lucide-react';
+import { Check, CircleCheck, Cloud, Inbox, MessageSquareText, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -38,7 +38,7 @@ interface AutomationReviewInboxProps {
 }
 
 export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
@@ -135,6 +135,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
               <div className="space-y-1.5">
                 {parked.map((item) => {
                   const isOrphaned = item.status === 'orphaned';
+                  const isPairing = item.kind === 'channel_pairing';
                   const isExternal = item.riskClass === 'external';
                   // A4 作用域提示：external 动作离开本机（暖色边框强调）；有 target 时点名去向。
                   // 非 external 审批卡不变（不加 scopeNote、不换边框）。
@@ -151,13 +152,25 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 truncate text-sm text-zinc-200">
-                          {item.displayTool ?? item.tool}
+                          {isPairing
+                            ? cc.pairingTitle.replace('{channel}', item.pairingChannel === 'lark' ? 'Lark' : 'Feishu')
+                            : (item.displayTool ?? item.tool)}
                           {isExternal && (
                             <span className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning">
                               {cc.parkedExternalBadge}
                             </span>
                           )}
                         </div>
+                        {isPairing && item.pairingCode && (
+                          <div className="text-xs font-medium text-badge-warning" data-testid="pairing-code">
+                            {cc.pairingCode.replace('{code}', item.pairingCode)}
+                          </div>
+                        )}
+                        {isPairing && item.pairingSender && (
+                          <div className="truncate text-[11px] text-zinc-400">
+                            {cc.pairingSender.replace('{sender}', item.pairingSender)}
+                          </div>
+                        )}
                         {scopeNote && (
                           <div className="truncate text-[11px] text-badge-warning/80" data-testid="parked-scope-note">
                             {scopeNote}
@@ -214,17 +227,39 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                 {cc.inboxTitle.replace('{count}', String(items.length))}
               </div>
               <div className="space-y-1.5">
-                {items.map((record) => (
+                {items.map((record) => {
+                  const isCloud = record.config?.runsOn === 'cloud';
+                  return (
                   <div
                     key={record.id}
                     className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2"
                     data-testid="automation-review-item"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm text-zinc-200">{record.title}</div>
-                      {record.config?.pendingReview?.at != null && (
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="truncate text-sm text-zinc-200">{record.title}</div>
+                        {isCloud && (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-badge-info/30 bg-blue-500/10 px-2 py-0.5 text-[10px] text-badge-info">
+                            <Cloud className="h-3 w-3" />
+                            {cc.locationCloud}
+                          </span>
+                        )}
+                      </div>
+                      {record.config?.missedNotice ? (
+                        <div className="text-[11px] text-badge-warning" data-testid="automation-review-missed">
+                          {cc.inboxMissedAt.replace(
+                            '{time}',
+                            new Date(record.config.missedNotice.scheduledAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
+                          )}
+                        </div>
+                      ) : record.config?.pendingReview?.at != null && (
                         <div className="text-[11px] text-zinc-500">
-                          {new Date(record.config.pendingReview.at).toLocaleString()}
+                          {isCloud
+                            ? cc.inboxCloudCompleted.replace(
+                              '{time}',
+                              new Date(record.config.pendingReview.at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
+                            )
+                            : new Date(record.config.pendingReview.at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN')}
                         </div>
                       )}
                     </div>
@@ -251,7 +286,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                       {cc.inboxMarkDone}
                     </Button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           )}

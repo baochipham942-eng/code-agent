@@ -6,14 +6,87 @@
 // ============================================================================
 
 import { encode } from 'gpt-tokenizer';
-import type { Message as SharedMessage } from '@shared/contract/message';
+import type { Message as SharedMessage, MessageAttachment } from '@shared/contract/message';
 
 // LRU cache for token counts (avoids re-encoding identical content)
 const TOKEN_CACHE_MAX = 200;
 const EXACT_TOKENIZATION_MAX_CHARS = 50_000;
 const tokenCache = new Map<number, number>();
 
-export const IMAGE_TOKEN_ESTIMATE = 765;
+/** Conservative fallback for providers/models whose visual detail mode is unknown. */
+const IMAGE_TOKEN_ESTIMATE = 1600;
+
+type ImageDimensions = { width: number; height: number };
+
+function decodeImageHeader(data: string | undefined): Buffer | undefined {
+  if (!data) return undefined;
+  const base64 = data.startsWith('data:') ? data.slice(data.indexOf(',') + 1) : data;
+  try {
+    return Buffer.from(base64, 'base64');
+  } catch {
+    return undefined;
+  }
+}
+
+/** Read dimensions from the common inline formats without decoding pixels. */
+function readInlineImageDimensions(data: string | undefined): ImageDimensions | undefined {
+  const buffer = decodeImageHeader(data);
+  if (!buffer || buffer.length < 10) return undefined;
+  // PNG signature + IHDR.
+  if (buffer.length >= 24 && buffer.subarray(1, 4).toString('ascii') === 'PNG') {
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  }
+  // GIF logical screen descriptor.
+  if (buffer.subarray(0, 3).toString('ascii') === 'GIF') {
+    return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
+  }
+  // JPEG SOF markers.
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2;
+    while (offset + 8 < buffer.length) {
+      if (buffer[offset] !== 0xff) {
+        offset += 1;
+        continue;
+      }
+      const marker = buffer[offset + 1];
+      if (marker >= 0xc0 && marker <= 0xc3) {
+        return { width: buffer.readUInt16BE(offset + 7), height: buffer.readUInt16BE(offset + 5) };
+      }
+      const segmentLength = buffer.readUInt16BE(offset + 2);
+      if (segmentLength < 2) break;
+      offset += 2 + segmentLength;
+    }
+  }
+  return undefined;
+}
+
+export function estimateImageTokens(
+  attachment: Pick<MessageAttachment, 'data'>,
+  provider?: string,
+  model?: string,
+): number {
+  const dimensions = readInlineImageDimensions(attachment.data);
+  if (!dimensions) return IMAGE_TOKEN_ESTIMATE;
+  const providerId = String(provider ?? '').toLowerCase();
+  const modelId = String(model ?? '').toLowerCase();
+  if (
+    providerId === 'claude'
+    || providerId === 'anthropic'
+    || modelId.includes('anthropic/')
+    || modelId.includes('claude')
+  ) {
+    return Math.ceil(dimensions.width / 28) * Math.ceil(dimensions.height / 28);
+  }
+  if (providerId === 'gemini' || modelId.includes('google/') || modelId.includes('gemini')) {
+    // Gemini accounts large images as 258-token tiles. A 512px logical stride
+    // is the conservative request-side approximation for 768px crops.
+    const tiles = Math.ceil(dimensions.width / 512) * Math.ceil(dimensions.height / 512);
+    return Math.max(258, tiles * 258);
+  }
+  // OpenAI varies by model family and implicit detail mode; use the
+  // conservative fallback until the request carries an explicit detail value.
+  return IMAGE_TOKEN_ESTIMATE;
+}
 
 function simpleHash(str: string): number {
   let h = 0;
@@ -191,7 +264,7 @@ export function estimateTokens(text: string): number {
  * needs `role` + `content`. Defined as a Pick of the canonical type so that
  * any drift in the shared contract surfaces here at the type level.
  */
-export type Message = Pick<SharedMessage, 'role' | 'content'>;
+export type Message = Pick<SharedMessage, 'role' | 'content' | 'attachments'>;
 
 /**
  * Estimate tokens for a single message including role overhead
@@ -199,7 +272,7 @@ export type Message = Pick<SharedMessage, 'role' | 'content'>;
  * @param message - Message to estimate
  * @returns Token estimate including role overhead
  */
-export function estimateMessageTokens(message: Message): number {
+export function estimateMessageTokens(message: Message, provider?: string, model?: string): number {
   // Role token overhead (role name, formatting). All roles use 4 tokens
   // (matches the OpenAI cookbook overhead model).
   const roleOverhead: Record<SharedMessage['role'], number> = {
@@ -210,7 +283,10 @@ export function estimateMessageTokens(message: Message): number {
   };
 
   const contentTokens = estimateTokens(message.content);
-  return contentTokens + roleOverhead[message.role];
+  const imageTokens = (message.attachments ?? [])
+    .filter((attachment) => attachment.type === 'image' || attachment.category === 'image')
+    .reduce((sum, attachment) => sum + estimateImageTokens(attachment, provider, model), 0);
+  return contentTokens + imageTokens + roleOverhead[message.role];
 }
 
 /**
@@ -219,12 +295,12 @@ export function estimateMessageTokens(message: Message): number {
  * @param messages - Array of messages
  * @returns Total token estimate
  */
-export function estimateConversationTokens(messages: Message[]): number {
+export function estimateConversationTokens(messages: Message[], provider?: string, model?: string): number {
   // Base overhead for conversation structure
   const baseOverhead = 3;
 
   const messageTokens = messages.reduce(
-    (sum, msg) => sum + estimateMessageTokens(msg),
+    (sum, msg) => sum + estimateMessageTokens(msg, provider, model),
     0
   );
 

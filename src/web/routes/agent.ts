@@ -13,6 +13,7 @@ import type {
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
 import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
+import { readPersistedExpertThread } from '../../shared/contract/expertThread';
 import { broadcastSSE } from '../helpers/sse';
 import { agentRunSseLimiter, extractRequestToken } from '../helpers/sseConnectionLimit';
 import { formatError } from '../helpers/utils';
@@ -34,13 +35,8 @@ import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
 import { buildCapabilityCandidateNotice } from '../../host/agent/capabilityCandidateNotice';
 import { getLibraryService } from '../../host/services/library/libraryService';
 import {
-  ClaudeCodeAdapter,
-  CodeBuddyCliAdapter,
-  CodexCliAdapter,
-  DshCliAdapter,
-  GrokCliAdapter,
-  KimiCliAdapter,
-  MimoCliAdapter,
+  type ExternalEngineAdapter,
+  getExternalEngineAdapter,
   getRemoteAgentEngineModelCatalogService,
   isExternalAgentEngine,
   resolveExternalEngineLaunch,
@@ -143,6 +139,11 @@ interface AgentRouterDeps extends AgentDurableRouteDeps {
   getSupabaseForSession: () => Promise<SupabaseAgentBinding | null>;
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
   registerQueuedInputEnqueueHook?: (onEnqueued: (sessionId: string) => void) => void;
+  registerQueuedInputSendNowHook?: (sendNow: (input: {
+    id: string;
+    sessionId: string;
+    envelope: ConversationEnvelope;
+  }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>) => void;
 }
 
 export type ActiveAgentLoop = RunControlTarget;
@@ -298,6 +299,48 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
   });
   deps.registerQueuedInputStartupSweep?.(() => queuedInputDrain.runStartupSweep());
   deps.registerQueuedInputEnqueueHook?.((sessionId) => queuedInputDrain.handleEnqueued(sessionId));
+  deps.registerQueuedInputSendNowHook?.(async ({ id, sessionId, envelope }, route) => {
+    if (route === 'idle') {
+      await runAgentTurn(
+        buildQueuedAgentRunBody({
+          ...envelope,
+          clientMessageId: id,
+          sessionId,
+        }),
+        createOfflineAgentRunResponseSink(),
+        { connectedClient: false },
+      );
+      return 'sent';
+    }
+
+    const activeLoop = runRegistry.getBySessionId(sessionId);
+    if (!activeLoop) throw new Error(`Active queued input run disappeared: ${sessionId}`);
+    const db = getDatabase().getDb();
+    if (!db) throw new Error('Queued input database is unavailable');
+    const repository = new QueuedInputRepository(db);
+    const metadata = (() => {
+      const base = toWorkbenchMetadata(envelope.context);
+      const pinnedLibraryItems = getPinnedLibrarySnapshot(sessionId);
+      if (!pinnedLibraryItems) return base;
+      return { ...base, workbench: { ...(base?.workbench ?? {}), pinnedLibraryItems } };
+    })();
+    const outcome = await steerOrQueue(activeLoop, {
+      sessionId,
+      content: envelope.content,
+      clientMessageId: id,
+      attachments: envelope.attachments,
+      metadata,
+      context: envelope.context,
+      expectedTurnId: envelope.expectedTurnId,
+    }, {
+      enqueue: () => {
+        if (!repository.requeueRedirectedInput(id)) {
+          throw new Error(`Queued input could not return to waiting state: ${id}`);
+        }
+      },
+    });
+    return outcome.outcome === 'queued' ? 'queued' : 'steered';
+  });
 
   // ── Agent Run (SSE streaming) ──────────────────────────────────────
   async function runAgentTurn(
@@ -307,7 +350,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       | { connectedClient: true; requestToken: string }
       | { connectedClient: false },
   ): Promise<void> {
-    const { prompt, project, sessionDir, model, provider } = body;
+    const { prompt, project, sessionDir, model, provider, eventFilter } = body;
     const clientMessageId = body.clientMessageId?.trim()
       ? body.clientMessageId.trim()
       : undefined;
@@ -487,6 +530,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       logger,
       tryGetSessionManager,
       mirrorToBroadcast: !transport.connectedClient,
+      eventFilter,
     });
 
     if (transport.connectedClient) {
@@ -611,37 +655,30 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         };
         // codex/claude 走签名 catalog 的 resolveModelId；mimo/kimi 未注册签名 catalog，
         // resolveModelId 对未注册 kind 返回 undefined 会丢掉用户所选模型，故直传 launch.model。
-        let adapter:
-          | CodexCliAdapter
-          | ClaudeCodeAdapter
-          | MimoCliAdapter
-          | KimiCliAdapter
-          | CodeBuddyCliAdapter
-          | GrokCliAdapter
-          | DshCliAdapter;
+        let adapter: ExternalEngineAdapter;
         let resolvedEngineModel: string | undefined;
         if (selectedEngine.kind === 'codex_cli') {
-          adapter = new CodexCliAdapter();
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('codex_cli', launch.model, { strict: true });
         } else if (selectedEngine.kind === 'claude_code') {
-          adapter = new ClaudeCodeAdapter();
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('claude_code', launch.model, { strict: true });
         } else if (selectedEngine.kind === 'mimo_code') {
-          adapter = new MimoCliAdapter();
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = launch.model;
         } else if (selectedEngine.kind === 'kimi_code') {
-          adapter = new KimiCliAdapter();
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = launch.model;
         } else if (selectedEngine.kind === 'codebuddy_code') {
-          adapter = new CodeBuddyCliAdapter();
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = await getRemoteAgentEngineModelCatalogService()
             .resolveModelId('codebuddy_code', launch.model);
         } else if (selectedEngine.kind === 'grok_cli') {
-          adapter = new GrokCliAdapter();
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = await getRemoteAgentEngineModelCatalogService()
             .resolveModelId('grok_cli', launch.model, { strict: true });
         } else if (selectedEngine.kind === 'dsh_cli') {
-          adapter = new DshCliAdapter();
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
           // 同 mimo/kimi：无签名 catalog，直传才不会把用户选的 provider/model 丢掉。
           resolvedEngineModel = launch.model;
         } else {
@@ -747,9 +784,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // /agent 显式选择透传（P0：此前 web 独立 HTTP 路径完全丢弃 preferredAgentId，
       // /agent 切换在生产 web 路径是 no-op——与 executionIntent 当年同款漏接）。
       // trim 规整：未规整 id 会在 requestedAgentId !== agentId 比较上产生假降级警示
-      const preferredAgentId = typeof body.context?.preferredAgentId === 'string'
+      const explicitPreferredAgentId = typeof body.context?.preferredAgentId === 'string'
         ? body.context.preferredAgentId.trim() || undefined
         : undefined;
+      const preferredAgentId = explicitPreferredAgentId
+        ?? readPersistedExpertThread(getDatabase().getSession(sessionId)?.metadata)?.roleId;
       if (preferredAgentId) {
         const { resolveExplicitAgentOverride } = await import('../../host/agent/explicitAgentOverride');
         const { buildRoutingResolvedEventData } = await import('../../host/agent/routingResolvedEvent');
@@ -1210,6 +1249,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     const runId = typeof body.runId === 'string' ? body.runId : undefined;
     const sessionId = typeof body.sessionId === 'string' ? body.sessionId : undefined;
     const clientMessageId = typeof body.clientMessageId === 'string' ? body.clientMessageId : undefined;
+    const expectedTurnId = typeof body.expectedTurnId === 'string' ? body.expectedTurnId : undefined;
     const attachments = Array.isArray(body.attachments)
       ? body.attachments as MessageAttachment[]
       : undefined;
@@ -1231,6 +1271,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         content,
         sessionId,
         clientMessageId,
+        expectedTurnId,
         attachments,
         context,
       };
@@ -1275,6 +1316,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           return { ...base, workbench: { ...(base?.workbench ?? {}), pinnedLibraryItems } };
         })(),
         context,
+        expectedTurnId,
       });
       broadcastSSE('agent:event', {
         type: 'interrupt_complete',

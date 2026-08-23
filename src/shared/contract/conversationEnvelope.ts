@@ -109,6 +109,20 @@ export interface DirectRoutingDeliverySnapshot {
   missingTargetIds?: string[];
 }
 
+export interface ConversationSessionReference {
+  id: string;
+  title: string;
+}
+
+export interface ConversationArtifactReference {
+  id: string;
+  name: string;
+  sessionId: string;
+  sessionTitle?: string;
+  path?: string;
+  url?: string;
+}
+
 export interface ConversationEnvelopeContext {
   workingDirectory?: string | null;
   preferredAgentId?: string | null;
@@ -130,6 +144,10 @@ export interface ConversationEnvelopeContext {
   executionIntent?: ConversationExecutionIntent;
   runtimeInput?: RuntimeInputIntent;
   voiceInput?: ConversationVoiceInputMetadata;
+  sessionReferences?: ConversationSessionReference[];
+  artifactReferences?: ConversationArtifactReference[];
+  /** host 发送前按 sessionReferenceDigest 分档解析；renderer 不得填。 */
+  resolvedSessionReferences?: Array<ConversationSessionReference & { content: string }>;
   // Live Preview 选中的 DOM 元素（iframe 点击写入 appStore 的活动 tab），
   // 用于下游 visual_edit 等工具的 grounding。main 侧消费链路分步接入；
   // 本字段非空仅表示 composer 侧已把当前 selection 随 envelope 带出。
@@ -147,6 +165,11 @@ export interface ConversationEnvelope {
   content: string;
   clientMessageId?: string;
   sessionId?: string;
+  /**
+   * 运行中改道发起时 renderer 正在看的 turn。host 只在它仍等于当前 turn 时注入；
+   * 省略表示 legacy 调用方，不启用这道竞态保护。
+   */
+  expectedTurnId?: string;
   attachments?: MessageAttachment[];
   /** Per-turn web search switch. Omitted by legacy clients means enabled. */
   searchEnabled?: boolean;
@@ -167,6 +190,8 @@ export interface WorkbenchMessageMetadata {
   pendingCommand?: ConversationPendingCommand;
   /** 发送这一刻会话 pin 的资料快照（id+标题），host 持久化 user message 时写入；回放 chip 行用。 */
   pinnedLibraryItems?: Array<{ id: string; title: string }>;
+  sessionReferences?: ConversationSessionReference[];
+  artifactReferences?: ConversationArtifactReference[];
   routingMode?: ConversationRoutingMode;
   targetAgentIds?: string[];
   targetAgentNames?: string[];

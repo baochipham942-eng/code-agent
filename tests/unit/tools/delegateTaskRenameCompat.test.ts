@@ -31,8 +31,14 @@ describe('spawn_task → delegate_task 改名兼容', () => {
   });
 
   it('前台 allowlist 用的是新名', () => {
-    expect(getTextForegroundToolNames()).toContain('delegate_task');
-    expect(getTextForegroundToolNames()).not.toContain('spawn_task');
+    const foregroundTools = getTextForegroundToolNames();
+    expect(foregroundTools).toEqual(expect.arrayContaining([
+      'delegate_task',
+      'steer_task',
+      'cancel_task',
+      'task_status',
+    ]));
+    expect(foregroundTools).not.toContain('spawn_task');
   });
 });
 

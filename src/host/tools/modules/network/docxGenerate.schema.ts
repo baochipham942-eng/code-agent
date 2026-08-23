@@ -47,6 +47,7 @@ docx_generate { "title": "会议纪要", "content": "## 参会人员\\n- 张三\
         type: 'string',
         description: '输出文件路径（默认: 工作目录下的 document-{timestamp}.docx）',
       },
+      overwrite: { type: 'boolean', description: 'output_path 已存在且确认替换时必须设为 true' },
       author: {
         type: 'string',
         description: '文档作者（默认: Agent Neo）',
@@ -56,6 +57,7 @@ docx_generate { "title": "会议纪要", "content": "## 参会人员\\n- 张三\
   },
   category: 'network',
   permissionLevel: 'write',
+  pathAuthority: [{ kind: 'path', pathParameter: 'output_path', mutation: 'overwrite' }],
   readOnly: false,
   allowInPlanMode: false,
 };

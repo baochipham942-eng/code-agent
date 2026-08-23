@@ -56,6 +56,7 @@ export const pptGenerateSchema: ToolSchema = {
         type: 'string',
         description: '输出文件路径',
       },
+      overwrite: { type: 'boolean', description: 'output_path 已存在且确认替换时必须设为 true' },
       images: {
         type: 'array',
         description: '要嵌入的图片列表',
@@ -170,6 +171,7 @@ export const pptGenerateSchema: ToolSchema = {
   },
   category: 'network',
   permissionLevel: 'network',
+  pathAuthority: [{ kind: 'path', pathParameter: 'output_path', mutation: 'overwrite' }],
   readOnly: false,
   allowInPlanMode: false,
 };

@@ -1,10 +1,13 @@
 import { useCallback } from 'react';
 import type React from 'react';
 import type { MessageAttachment } from '@shared/contract';
+import type { QueuedInput } from '@shared/contract/queuedInput';
 import type {
   ComposerAgentSelection,
   ComposerPromptCommandSelection,
   ConversationEnvelope,
+  ConversationArtifactReference,
+  ConversationSessionReference,
   ConversationVoiceInputMetadata,
   RuntimeInputMode,
 } from '@shared/contract/conversationEnvelope';
@@ -19,7 +22,7 @@ import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { useLoopStore } from '../../../../stores/loopStore';
 import { cronClient, type CreateCronJobInput } from '../../../../services/cronClient';
 import { loopClient } from '../../../../services/loopClient';
-import { invoke } from '../../../../services/ipcService';
+import ipcService, { invoke } from '../../../../services/ipcService';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useTeamRecipeStore } from '../../../../stores/teamRecipeStore';
 import { launchTeamRecipe } from '../../../../utils/launchTeamRecipe';
@@ -28,7 +31,8 @@ import { buildGoalNoticeMessage } from '../goalNotice';
 import { buildAutomationNoticeMessage, formatCronScheduleLabel, formatLoopIntervalLabel } from '../automationNotice';
 import type { InputAreaRef } from './InputArea';
 import type { BuildEnvelope } from './useChatInputEnvelope';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import { generateMessageId } from '@shared/utils/id';
 import { parseScheduleCommand, isScheduleCommand } from './parseScheduleCommand';
 import { parseLoopCommand, isLoopCommand } from './parseLoopCommand';
 import {
@@ -66,12 +70,15 @@ export interface UseChatInputSubmitParams {
   pendingAppshot: Parameters<typeof buildAppshotAttachment>[0] | null;
   pendingPromptCommand: ComposerPromptCommandSelection | null;
   pendingAgentSelection: ComposerAgentSelection | null;
+  sessionReferences?: ConversationSessionReference[];
+  artifactReferences?: ConversationArtifactReference[];
   currentSessionId: string | null;
   isProcessing?: boolean;
   disabled?: boolean;
   isUploading: boolean;
   onSend: (envelope: ConversationEnvelope) => boolean | Promise<boolean>;
   onSteer?: (envelope: ConversationEnvelope) => Promise<SteerOrQueueOutcome | undefined>;
+  onQueuedInputChanged?: () => void;
   agentEntries: Parameters<typeof parseAgentSlashCommand>[1];
   buildEnvelope: BuildEnvelope;
   openAgentCommand: () => void;
@@ -83,6 +90,8 @@ export interface UseChatInputSubmitParams {
   setVoiceInputContext: React.Dispatch<React.SetStateAction<VoiceInputContextValue>>;
   setPendingPromptCommand: React.Dispatch<React.SetStateAction<ComposerPromptCommandSelection | null>>;
   setPendingAgentSelection: React.Dispatch<React.SetStateAction<ComposerAgentSelection | null>>;
+  setSessionReferences?: React.Dispatch<React.SetStateAction<ConversationSessionReference[]>>;
+  setArtifactReferences?: React.Dispatch<React.SetStateAction<ConversationArtifactReference[]>>;
   setScheduleComposerOpen: React.Dispatch<React.SetStateAction<boolean>>;
   /** 打开 /goal 安静确认卡（initialGoal = 用户自然语言原话，空串 = 引导态） */
   openGoalConfirm: (initialGoal: string) => void;
@@ -140,12 +149,15 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     pendingAppshot,
     pendingPromptCommand,
     pendingAgentSelection,
+    sessionReferences = [],
+    artifactReferences = [],
     currentSessionId,
     isProcessing,
     disabled,
     isUploading,
     onSend,
     onSteer,
+    onQueuedInputChanged,
     agentEntries,
     buildEnvelope,
     openAgentCommand,
@@ -157,6 +169,8 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     setVoiceInputContext,
     setPendingPromptCommand,
     setPendingAgentSelection,
+    setSessionReferences,
+    setArtifactReferences,
     setScheduleComposerOpen,
     openGoalConfirm,
     closeGoalConfirm,
@@ -478,7 +492,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       }
     }
 
-    const activeRuntimeInputMode: RuntimeInputMode | undefined = isProcessing ? 'supplement' : undefined;
+    const activeRuntimeInputMode: RuntimeInputMode | undefined = isProcessing
+      ? (opts?.steer ? 'redirect' : 'supplement')
+      : undefined;
     // Appshot：截图作为图片附件追加；窗口文本作为隐藏 XML 前置到消息内容。
     const appshotAttachment = pendingAppshot ? buildAppshotAttachment(pendingAppshot) : null;
     const effectiveAttachments = appshotAttachment ? [...attachments, appshotAttachment] : attachments;
@@ -506,12 +522,16 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         appshot: pendingAppshot,
         pendingPromptCommand,
         pendingAgentSelection,
+        sessionReferences,
+        artifactReferences,
       };
         const restoreDraft = () => {
           setValue(draftSnapshot.value);
           setAttachments(draftSnapshot.attachments);
           setPendingPromptCommand(draftSnapshot.pendingPromptCommand);
           setPendingAgentSelection(draftSnapshot.pendingAgentSelection);
+          if (typeof setSessionReferences === 'function') setSessionReferences(draftSnapshot.sessionReferences);
+          if (typeof setArtifactReferences === 'function') setArtifactReferences(draftSnapshot.artifactReferences);
           setVoiceInputContext(draftSnapshot.voiceInputContext);
           // 命令 chip 也随草稿一起还回来，跟文本输入框的回滚口径一致
           if (pendingCommand) useComposerStore.getState().setPendingCommand(pendingCommand);
@@ -529,6 +549,8 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       setAttachments([]);
       setPendingPromptCommand(null);
       setPendingAgentSelection(null);
+      if (typeof setSessionReferences === 'function') setSessionReferences([]);
+      if (typeof setArtifactReferences === 'function') setArtifactReferences([]);
       clearPendingCommand();
       clearAppshot();
 
@@ -540,15 +562,40 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         inputAreaRef.current?.focus();
       };
 
+      const submitEnvelope = async (envelope: ConversationEnvelope): Promise<boolean | typeof SEND_TIMED_OUT> => {
+        if (isProcessing && !opts?.steer) {
+          if (!currentSessionId) return false;
+          const id = envelope.clientMessageId ?? generateMessageId();
+          const queuedEnvelope: ConversationEnvelope = {
+            ...envelope,
+            clientMessageId: id,
+            sessionId: envelope.sessionId ?? currentSessionId,
+          };
+          await ipcService.invokeDomain<QueuedInput>(
+            IPC_DOMAINS.QUEUED_INPUT,
+            'enqueue',
+            { id, sessionId: currentSessionId, envelope: queuedEnvelope },
+          );
+          onQueuedInputChanged?.();
+          return true;
+        }
+        if (isProcessing && opts?.steer && onSteer) {
+          const outcome = await onSteer(envelope);
+          if (outcome?.outcome === 'queued') onQueuedInputChanged?.();
+          return outcome !== undefined;
+        }
+        return settleSendWithinTimeout(onSend(envelope));
+      };
+
       // P3-18: Shell shortcut - ! prefix sends command to agent as bash request
       if (nextEnvelope.content.startsWith('!')) {
         const shellCmd = nextEnvelope.content.slice(1).trim();
         if (shellCmd) {
           try {
-            const sent = await settleSendWithinTimeout(onSend({
+            const sent = await submitEnvelope({
               content: `Execute this shell command and show the output: \`${shellCmd}\``,
               context: nextEnvelope.context,
-            }));
+            });
             if (sent === SEND_TIMED_OUT) {
               rollback(true);
               return;
@@ -564,9 +611,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         }
       } else {
         try {
-          const sent = opts?.steer && isProcessing && onSteer
-            ? (await onSteer(nextEnvelope)) !== undefined
-            : await settleSendWithinTimeout(onSend(nextEnvelope));
+          const sent = await submitEnvelope(nextEnvelope);
           if (sent === SEND_TIMED_OUT) {
             rollback(true);
             return;

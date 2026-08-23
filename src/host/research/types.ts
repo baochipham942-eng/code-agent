@@ -166,11 +166,15 @@ export interface ResearchProgressData {
  */
 export interface AgentRunOptions {
   mode: 'normal' | 'deep-research';
+  /** Optional per-run allow/deny list for externally delivered AgentEvents. */
+  eventFilter?: import('../protocol/events/eventFilter').AgentEventFilter;
   reportStyle?: ReportStyle;
   agentOverrideId?: string | null;
   turnSystemContext?: string[];
   /** 当前 run 写入同一模型历史，但不进入用户可见聊天历史。 */
   historyVisibility?: 'visible' | 'meta';
+  /** 只隐藏触发本轮的输入消息；本轮 assistant/tool 输出仍按正常可见语义落库。 */
+  inputHistoryVisibility?: 'visible' | 'meta';
   /** 当前 run 禁用的工具名。用于后台/无人值守场景屏蔽交互工具。 */
   deniedToolNames?: string[];
   /** 当前 run 唯一可见且可调用的工具名。用于前台 brain 等严格窄工具面。 */

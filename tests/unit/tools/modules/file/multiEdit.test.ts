@@ -391,7 +391,8 @@ describe('multiEditModule evidence metadata', () => {
     try {
       await fs.mkdir(path.dirname(sandboxFile), { recursive: true });
       await fs.writeFile(sandboxFile, 'alpha\nbeta\n', 'utf-8');
-      await fileReadTracker.recordReadWithStats(sandboxFile);
+      const canonicalSandboxFile = await fs.realpath(sandboxFile);
+      await fileReadTracker.recordReadWithStats(canonicalSandboxFile);
 
       const handler = await editModule.createHandler();
       const result = await handler.execute(
@@ -406,7 +407,7 @@ describe('multiEditModule evidence metadata', () => {
       expect(result.ok).toBe(true);
       expect(await fs.readFile(sandboxFile, 'utf-8')).toBe('alpha\ngamma\n');
       await expect(fs.access(realFile)).rejects.toThrow();
-      if (result.ok) expect(result.meta?.path).toBe(sandboxFile);
+      if (result.ok) expect(result.meta?.path).toBe(canonicalSandboxFile);
     } finally {
       if (previousRealRoot === undefined) {
         delete process.env.CODE_AGENT_EVAL_REAL_ROOT;

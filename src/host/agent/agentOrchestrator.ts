@@ -12,6 +12,7 @@ import type {
   ModelConfig,
 } from '../../shared/contract';
 import type { AgentRunOptions, ResearchUserSettings } from '../research/types';
+import { shouldDeliverAgentEvent } from '../protocol/events/eventFilter';
 import { AgentLoop } from './agentLoop';
 import { buildGoalContract } from './goalModeController';
 import { SYSTEM_PROMPT } from '../prompts/builder';
@@ -38,6 +39,7 @@ import type { EffortLevel } from '../../shared/contract/agent';
 import { getTaskListManager, type TaskListManager } from './taskList';
 import { getEventBus } from '../services/eventing';
 import { getComboRecorder } from '../services/skills/comboRecorder';
+import { getSessionSkillService } from '../services/skills/sessionSkillService';
 import { resolveAgent as registryResolveAgent } from './agentRegistry';
 import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { assembleTurnDenylist } from './routingToolPolicy';
@@ -54,6 +56,7 @@ import {
   initRunDag,
 } from './orchestratorDagSync';
 import { seedGoalContractForRun } from './orchestratorGoalSeed';
+import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from '../services/roleAssets/rolePersonalization';
 
 // Sub-modules
 import { type AgentOrchestratorConfig } from './orchestrator/types';
@@ -101,6 +104,7 @@ interface PendingSteerMessage {
   clientMessageId?: string;
   attachments?: MessageAttachment[];
   messageMetadata?: MessageMetadata;
+  expectedTurnId?: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -212,7 +216,12 @@ export class AgentOrchestrator {
       attachments: attachments as MessageAttachment[] | undefined,
       metadata: messageMetadata,
     };
-    this.applyHistoryVisibility(userMessage, options);
+    this.applyHistoryVisibility(
+      userMessage,
+      options?.inputHistoryVisibility
+        ? { ...options, historyVisibility: options.inputHistoryVisibility }
+        : options,
+    );
 
     this.addMessage(userMessage);
     logger.debug('User message added, hasAttachments:', !!userMessage.attachments?.length, 'count:', userMessage.attachments?.length || 0);
@@ -251,7 +260,9 @@ export class AgentOrchestrator {
     }
     const telemetryCollector = getTelemetryCollector();
     const sessionAwareOnEvent = (event: AgentEvent) => {
-      this.onEvent({ ...event, sessionId } as AgentEvent & { sessionId?: string });
+      if (shouldDeliverAgentEvent(event, options?.eventFilter)) {
+        this.onEvent({ ...event, sessionId } as AgentEvent & { sessionId?: string });
+      }
       if (sessionId) {
         eventService?.saveEvent(sessionId, event);
         telemetryCollector.handleEvent(sessionId, event);
@@ -349,6 +360,7 @@ export class AgentOrchestrator {
     options?: AgentRunOptions,
     messageMetadata?: MessageMetadata,
     clientMessageId?: string,
+    expectedTurnId?: string,
   ): Promise<SteerOrQueueOutcome> {
     logger.info('Interrupt and continue requested');
     const sessionManager = getSessionManager();
@@ -363,6 +375,7 @@ export class AgentOrchestrator {
         clientMessageId,
         attachments: attachments as MessageAttachment[] | undefined,
         messageMetadata,
+        expectedTurnId,
       });
       return { outcome: 'steered' };
     }
@@ -378,13 +391,13 @@ export class AgentOrchestrator {
     if (this.agentLoop) {
       try {
         const outcome = await steerOrQueue(this.agentLoop, {
-          sessionId, content: effectiveMessage, displayContent: newMessage, clientMessageId, attachments: attachments as MessageAttachment[] | undefined, metadata: messageMetadata,
+          sessionId, content: effectiveMessage, displayContent: newMessage, clientMessageId, attachments: attachments as MessageAttachment[] | undefined, metadata: messageMetadata, expectedTurnId,
         });
 
         while (this.pendingSteerMessages.length > 0) {
           const queued = this.pendingSteerMessages.shift()!;
           await steerOrQueue(this.agentLoop, {
-            sessionId, content: queued.content, displayContent: queued.displayContent, clientMessageId: queued.clientMessageId, attachments: queued.attachments, metadata: queued.messageMetadata,
+            sessionId, content: queued.content, displayContent: queued.displayContent, clientMessageId: queued.clientMessageId, attachments: queued.attachments, metadata: queued.messageMetadata, expectedTurnId: queued.expectedTurnId,
           });
           logger.info('[AgentOrchestrator] Processed queued steer message');
         }
@@ -569,13 +582,22 @@ export class AgentOrchestrator {
         this.messageHistory.getMessagesForRun().map((message) => ({
           role: message.role,
           content: message.content || '',
+          toolCalls: message.toolCalls,
           toolResults: message.toolResults?.map((result) => ({
+            // N-CTXCURRENT: toolCallId 透传，构成算法据此把结果按工具名归桶
+            toolCallId: result.toolCallId,
             output: result.output,
             error: result.error,
           })),
+          compaction: message.compaction,
         })),
         SYSTEM_PROMPT,
         model,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { skills: getSessionSkillService().getMountedSkillTokens(sessionId) },
       );
     } catch (error) {
       logger.warn('Failed to update context health after user message:', error);
@@ -857,6 +879,28 @@ export class AgentOrchestrator {
       runRegistration: options?.runRegistration,
       userPresenceToolNames: getUserPresenceToolNames(),
     });
+    const routedRole = routingResolution ? registryResolveAgent(routingResolution.agent.id) : undefined;
+    const roleToolBoundary = routedRole
+      ? resolveRoleToolBoundary(routedRole.id, routedRole.tools)
+      : null;
+    // 局部变量让 TS 自己收窄，不用非空断言（eslint 棘轮把 no-non-null-assertion 记成 warning，
+    // 新增一处就顶破基线）。
+    const requestedToolNames = options?.allowedToolNames;
+    const intersectedBoundaryTools = roleToolBoundary
+      ? (requestedToolNames
+          ? roleToolBoundary.allowedTools.filter((tool) => requestedToolNames.some((allowed) => allowed.toLowerCase() === tool.toLowerCase()))
+          : roleToolBoundary.allowedTools)
+      : requestedToolNames;
+    const boundaryAllowedToolNames = roleToolBoundary
+      ? toRoleBoundaryRunAllowlist(intersectedBoundaryTools ?? [])
+      : intersectedBoundaryTools;
+    if (roleToolBoundary) {
+      logger.info('[RoleBoundary] foreground role tool allowlist applied', {
+        roleId: routedRole?.id,
+        allowedTools: boundaryAllowedToolNames,
+        blockedTools: roleToolBoundary.blockedTools,
+      });
+    }
 
     const baseSystemPrompt = routingResolution?.agent?.systemPrompt
       || applyProviderVariant(SYSTEM_PROMPT, effectiveModelConfig.provider, effectiveModelConfig.model);
@@ -952,7 +996,7 @@ export class AgentOrchestrator {
       maxIterations: options?.maxIterations,
       historyVisibility: options?.historyVisibility,
       deniedToolNames,
-      allowedToolNames: options?.allowedToolNames,
+      allowedToolNames: boundaryAllowedToolNames,
       telemetryAdapter,
       persistMessage: sessionId
         ? async (message: Message) => {

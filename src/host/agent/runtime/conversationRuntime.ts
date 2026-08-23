@@ -12,6 +12,7 @@ import type {
   Message,
   MessageAttachment,
   MessageMetadata,
+  InputRedirectReceiptMetadata,
   AgentEvent,
 } from '../../../shared/contract';
 import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
@@ -91,10 +92,13 @@ const logger = createLogger('AgentLoop');
 export type { AgentLoopConfig };
 
 export class SteerRejectedError extends Error {
-  readonly code = 'RUN_SETTLED';
+  readonly code: 'RUN_SETTLED' | 'TURN_CHANGED';
 
-  constructor() {
-    super('Run has already settled (past its last inference); steer must be queued for the next turn instead');
+  constructor(code: 'RUN_SETTLED' | 'TURN_CHANGED' = 'RUN_SETTLED') {
+    super(code === 'TURN_CHANGED'
+      ? 'The visible turn no longer matches the active turn'
+      : 'Run has already settled (past its last inference); steer must be queued for the next turn instead');
+    this.code = code;
     this.name = 'SteerRejectedError';
   }
 }
@@ -584,7 +588,7 @@ export class ConversationRuntime {
             errorType: null,
             consecutiveErrors: this.ctx.consecutiveErrors,
             // budgetRemaining: budgetService 真实剩余比例（0-1）；未配预算时 usagePercentage=0 → 1.0，不误触发停止闸
-            budgetRemaining: Math.max(0, Math.min(1, 1 - getBudgetService().checkBudget().usagePercentage)),
+            budgetRemaining: Math.max(0, Math.min(1, 1 - getBudgetService(this.ctx.budgetScope).checkBudget().usagePercentage)),
             iterationCount: iterations,
             maxIterations: this.ctx.maxIterations,
           };
@@ -1117,12 +1121,13 @@ export class ConversationRuntime {
    * 这一条：2026-08-01 真机实测，转向那条路只 abortInference 不留 partial，被打断
    * 那一轮写了一半的长回答在库里一个字都没有。
    */
-  private async preserveStreamedPartial(suffix: string): Promise<void> {
-    if (!this.ctx.turn.lastStreamedContent) return;
+  private async preserveStreamedPartial(suffix: string): Promise<InputRedirectReceiptMetadata['partial']> {
+    if (!this.ctx.turn.lastStreamedContent) return { charCount: 0 };
+    const streamedContent = this.ctx.turn.lastStreamedContent;
     const partialMessage: Message = {
       id: generateMessageId(),
       role: 'assistant',
-      content: this.ctx.turn.lastStreamedContent + suffix,
+      content: streamedContent + suffix,
       timestamp: Date.now(),
     };
     this.ctx.messages.push(partialMessage);
@@ -1132,6 +1137,11 @@ export class ConversationRuntime {
       logger.warn('[ConversationRuntime] persist partial before abort failed:', err);
     }
     this.ctx.turn.resetStreamedContent();
+    const trailingText = streamedContent.slice(-80).trim();
+    return {
+      charCount: streamedContent.length,
+      ...(trailingText ? { trailingText } : {}),
+    };
   }
 
   async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
@@ -1175,17 +1185,43 @@ export class ConversationRuntime {
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
     displayContent?: string,
+    expectedTurnId?: string,
   ): Promise<void> {
     if (this.ctx.control.isSettled) {
       throw new SteerRejectedError();
     }
+    if (expectedTurnId && expectedTurnId !== this.ctx.turn.currentTurnId) {
+      throw new SteerRejectedError('TURN_CHANGED');
+    }
+    const interruptedTools = this.toolEngine.getActiveToolNames?.() ?? [];
     // 先留住被打断那一轮已经写出来的内容，再 abort——顺序反了就等于丢字。
-    await this.preserveStreamedPartial('\n\n[已被新消息打断]');
+    const partial = await this.preserveStreamedPartial('\n\n[已被新消息打断]');
     this.ctx.control.abortInference();
     const persisted = this.messageProcessor.injectSteerMessage(newMessage, clientMessageId, attachments, metadata, displayContent);
     this.ctx.turn.requestReinference();
     logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');
     await persisted;
+    if (metadata?.workbench?.runtimeInputMode === 'redirect') {
+      const receipt: InputRedirectReceiptMetadata = {
+        receiptId: generateMessageId(),
+        originalContent: displayContent ?? newMessage,
+        expectedTurnId,
+        partial,
+        interruptedTools,
+      };
+      try {
+        await this.ctx.persistMessage?.({
+          id: receipt.receiptId,
+          role: 'system',
+          content: '已按你的纠正改了方向',
+          timestamp: Date.now(),
+          metadata: { inputRedirectReceipt: receipt },
+        });
+      } catch (err) {
+        logger.warn('[ConversationRuntime] persist input redirect receipt failed:', err);
+      }
+      this.ctx.onEvent({ type: 'input_redirected', data: receipt });
+    }
   }
 
   wasInterrupted(): boolean {

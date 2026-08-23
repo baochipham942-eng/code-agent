@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => {
   const initializeCLIServices = vi.fn().mockResolvedValue(undefined);
   const getSessionManager = vi.fn();
   const getConfigService = vi.fn();
+  const startCLIDurableRun = vi.fn().mockResolvedValue(null);
+  const terminalCLIDurableRun = vi.fn().mockResolvedValue(undefined);
   const getSessionSkillService = vi.fn();
   const addSwarmEventListener = vi.fn().mockReturnValue(() => {});
   const terminalHandleEvent = vi.fn();
@@ -20,6 +22,7 @@ const mocks = vi.hoisted(() => {
   const jsonHandleEvent = vi.fn();
   const jsonHandleSwarm = vi.fn();
   const retryOn = vi.fn();
+  const resolveExplicitAgentOverride = vi.fn();
 
   return {
     buildCLIConfig,
@@ -27,6 +30,8 @@ const mocks = vi.hoisted(() => {
     initializeCLIServices,
     getSessionManager,
     getConfigService,
+    startCLIDurableRun,
+    terminalCLIDurableRun,
     getSessionSkillService,
     addSwarmEventListener,
     terminalHandleEvent,
@@ -35,6 +40,7 @@ const mocks = vi.hoisted(() => {
     jsonHandleEvent,
     jsonHandleSwarm,
     retryOn,
+    resolveExplicitAgentOverride,
   };
 });
 
@@ -44,6 +50,8 @@ vi.mock('../../../src/cli/bootstrap', () => ({
   initializeCLIServices: mocks.initializeCLIServices,
   getSessionManager: mocks.getSessionManager,
   getConfigService: mocks.getConfigService,
+  startCLIDurableRun: mocks.startCLIDurableRun,
+  terminalCLIDurableRun: mocks.terminalCLIDurableRun,
 }));
 
 vi.mock('../../../src/host/services/skills/sessionSkillService', () => ({
@@ -87,6 +95,10 @@ vi.mock('../../../src/host/agent/metricsCollector', () => ({
   },
 }));
 
+vi.mock('../../../src/host/agent/explicitAgentOverride', () => ({
+  resolveExplicitAgentOverride: mocks.resolveExplicitAgentOverride,
+}));
+
 import { CLIAgent, createCLIAgent } from '../../../src/cli/adapter';
 
 const baseConfig: CLIConfig = {
@@ -106,6 +118,7 @@ const baseConfig: CLIConfig = {
 function makeSessionManager(overrides: Record<string, unknown> = {}) {
   return {
     getOrCreateCurrentSession: vi.fn().mockResolvedValue({ id: 'sess-1' }),
+    getSession: vi.fn().mockResolvedValue({ id: 'sess-1', metadata: undefined }),
     addMessage: vi.fn().mockResolvedValue(undefined),
     restoreSession: vi.fn(),
     updateSession: vi.fn().mockResolvedValue(undefined),
@@ -163,6 +176,7 @@ describe('CLIAgent', () => {
       getApiKey: vi.fn().mockReturnValue('resolved-key'),
     });
     mocks.addSwarmEventListener.mockReturnValue(() => {});
+    mocks.resolveExplicitAgentOverride.mockReturnValue(null);
   });
 
   afterEach(() => {
@@ -211,6 +225,71 @@ describe('CLIAgent', () => {
     expect(mocks.terminalHandleEvent).toHaveBeenCalled();
     expect(sessionManager.addMessage).toHaveBeenCalledWith(
       expect.objectContaining({ role: 'user', content: 'say hi' }),
+    );
+  });
+
+  it('uses the CLI durable parent context and terminals it after the turn', async () => {
+    const durableRun = {
+      context: {
+        runId: 'durable-run-1',
+        sessionId: 'sess-1',
+        workspace: '/tmp/project',
+        cwd: '/tmp/project',
+      },
+      traceContext: { runId: 'durable-run-1' },
+    };
+    mocks.startCLIDurableRun.mockResolvedValueOnce(durableRun);
+    installLoop(async (ctl) => {
+      ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+    });
+
+    const agent = new CLIAgent();
+    await agent.run('durable turn');
+
+    expect(mocks.createAgentLoop).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Function),
+      expect.any(Array),
+      'sess-1',
+      undefined,
+      undefined,
+      durableRun.context,
+      durableRun.traceContext,
+    );
+    expect(mocks.terminalCLIDurableRun).toHaveBeenCalledWith(durableRun, true);
+  });
+
+  it('restores the persisted expertThread role before creating the CLI AgentLoop', async () => {
+    const override = {
+      id: '牧之',
+      name: '牧之',
+      systemPrompt: '专家提示词',
+      deniedToolNames: [],
+    };
+    sessionManager.getSession.mockResolvedValue({
+      id: 'sess-1',
+      metadata: { expertThread: { roleId: '牧之', setAt: 42 } },
+    });
+    mocks.resolveExplicitAgentOverride.mockReturnValue(override);
+    installLoop(async (ctl) => {
+      ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+    });
+
+    const agent = new CLIAgent();
+    await agent.run('继续');
+
+    expect(mocks.createAgentLoop).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentOverride: override,
+        requestedAgentId: '牧之',
+      }),
+      expect.any(Function),
+      expect.any(Array),
+      'sess-1',
+      undefined,
+      undefined,
+      expect.objectContaining({ sessionId: 'sess-1' }),
+      undefined,
     );
   });
 
@@ -328,6 +407,14 @@ describe('CLIAgent', () => {
         type: 'tool_call_end',
         data: { toolCallId: 'call-read', output: 'body', success: true },
       } as AgentEvent);
+      ctl.onEvent({
+        type: 'subagent_activity',
+        data: { agentId: 'agent-coder', runId: 'run-1', kind: 'started' },
+      } as AgentEvent);
+      ctl.onEvent({
+        type: 'subagent_run_end',
+        data: { agentId: 'agent-coder', runId: 'run-1', status: 'completed' },
+      } as AgentEvent);
       ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
     });
 
@@ -345,6 +432,14 @@ describe('CLIAgent', () => {
     expect(parsed.some((p) => p.type === 'agent_result')).toBe(true);
     expect(parsed.some((p) => p.type === 'tool_start')).toBe(true);
     expect(parsed.some((p) => p.type === 'tool_result')).toBe(true);
+    expect(parsed).toContainEqual(expect.objectContaining({
+      type: 'subagent_activity',
+      content: { agentId: 'agent-coder', runId: 'run-1', kind: 'started' },
+    }));
+    expect(parsed).toContainEqual(expect.objectContaining({
+      type: 'subagent_run_end',
+      content: { agentId: 'agent-coder', runId: 'run-1', status: 'completed' },
+    }));
     expect(parsed.some((p) => p.type === 'done')).toBe(true);
     // stream-json path should NOT use terminal handler for those events
     expect(mocks.terminalHandleEvent).not.toHaveBeenCalled();

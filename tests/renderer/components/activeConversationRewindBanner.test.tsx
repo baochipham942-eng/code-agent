@@ -65,7 +65,15 @@ describe('ActiveConversationRewindBanner', () => {
           content: '继续',
           timestamp: 2,
         }],
-        workspaceChanged: false,
+        state: 'success',
+        done: ['workspace', 'conversation', 'note'],
+        failed: [],
+        skippedFiles: [],
+        restoredFiles: ['/workspace/a.ts'],
+        deletedFiles: [],
+        staleEvidenceCount: 0,
+        redoAvailable: false,
+        externalSideEffectsWarning: 'Changes caused by external commands are not rolled back.',
       })
       .mockResolvedValueOnce({
         lineage: {
@@ -93,7 +101,7 @@ describe('ActiveConversationRewindBanner', () => {
       />,
     );
 
-    expect((await screen.findByRole('status')).textContent).toContain('已回退到「最初的问题」');
+    expect((await screen.findByRole('status')).textContent).toContain('已回到「最初的问题」');
     expect(mocks.invokeDomain).toHaveBeenNthCalledWith(
       1,
       IPC_DOMAINS.SESSION,
@@ -104,13 +112,13 @@ describe('ActiveConversationRewindBanner', () => {
       },
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '恢复对话' }));
+    fireEvent.click(screen.getByRole('button', { name: '反悔' }));
 
     await waitFor(() => {
       expect(mocks.invokeDomain).toHaveBeenNthCalledWith(
         2,
         IPC_DOMAINS.SESSION,
-        'restoreConversationRewind',
+        'turnRedo',
         {
           sessionId: 'session-1',
           rewindId: 'rewind-latest',
@@ -128,7 +136,15 @@ describe('ActiveConversationRewindBanner', () => {
         content: '继续',
         timestamp: 2,
       }],
-      workspaceChanged: false,
+      state: 'success',
+      done: ['workspace', 'conversation', 'note'],
+      failed: [],
+      skippedFiles: [],
+      restoredFiles: ['/workspace/a.ts'],
+      deletedFiles: [],
+      staleEvidenceCount: 0,
+      redoAvailable: false,
+      externalSideEffectsWarning: 'Changes caused by external commands are not rolled back.',
     });
     await waitFor(() => {
       expect(mocks.invokeDomain).toHaveBeenNthCalledWith(

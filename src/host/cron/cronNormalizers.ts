@@ -22,6 +22,7 @@ export interface CronAgentActionResult {
 export interface CronExecutionRow {
   id: string;
   job_id: string;
+  runs_on?: 'local' | 'cloud';
   session_id?: string | null;
   status: CronJobStatus;
   scheduled_at: number;
@@ -301,6 +302,9 @@ export function normalizeCronJobRow(row: unknown): CronJobDefinition | null {
   const updatedAt = readNumberField(row, 'updated_at');
   const schedule = normalizeSchedule(parseJsonValue(row.schedule));
   const action = normalizeAction(parseJsonValue(row.action));
+  const runsOn = row.runs_on === 'cloud' ? 'cloud' : 'local';
+  const maxRunBudget = readNumberField(row, 'max_run_budget');
+  const resultChannel = readStringField(row, 'result_channel');
 
   if (
     !id ||
@@ -321,6 +325,9 @@ export function normalizeCronJobRow(row: unknown): CronJobDefinition | null {
     scheduleType,
     schedule,
     action,
+    runsOn,
+    maxRunBudget,
+    resultChannel,
     enabled: row.enabled === 1 || row.enabled === true,
     maxRetries: readOptionalNumberField(row, 'max_retries'),
     retryDelay: readOptionalNumberField(row, 'retry_delay'),
@@ -356,6 +363,7 @@ export function normalizeCronExecutionRow(row: unknown): CronExecutionRow | null
   return {
     id,
     job_id: jobId,
+    runs_on: row.runs_on === 'cloud' ? 'cloud' : 'local',
     session_id: readNullableStringField(row, 'session_id'),
     status,
     scheduled_at: scheduledAt,

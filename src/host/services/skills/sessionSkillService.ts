@@ -14,7 +14,6 @@ import { getSkillInvocationAliases } from './skillInvocationResolver';
 import { SKILL_KEYWORDS, DEFAULT_ENABLED_SKILLS } from './skillRepositories';
 import { getCloudConfigService } from '../cloud';
 import { createLogger } from '../infra/logger';
-import { getContextHealthService } from '../../context/contextHealthService';
 import { estimateTokens } from '../../context/tokenEstimator';
 import { loadSkillContent } from './skillLoader';
 
@@ -88,14 +87,6 @@ class SessionSkillService {
     this.sessionMounts.set(sessionId, mounts);
     logger.info('Skill mounted', { sessionId, skillName, source });
 
-    // 异步上报 token 贡献到 ContextHealthService（不阻塞 mount）
-    this.reportSkillTokens(sessionId, skill).catch((err) => {
-      logger.debug('Failed to report skill token contribution', {
-        skillName,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    });
-
     return true;
   }
 
@@ -112,34 +103,26 @@ class SessionSkillService {
     mounts.splice(index, 1);
     logger.info('Skill unmounted', { sessionId, skillName });
 
-    // 同步从 bySource 移除该 skill 占用
-    try {
-      getContextHealthService().clearSourceContribution(sessionId, {
-        type: 'skill',
-        name: skillName,
-      });
-    } catch (err) {
-      logger.debug('Failed to clear skill token contribution', { skillName, err });
-    }
-
     return true;
   }
 
   /**
-   * 上报 skill 的 token 贡献（按需懒加载 content 后估算）
-   * 使用 'set' 模式：替换该 skill 的累计占用，避免重复挂载时重复累加
+   * 当前挂载 skills 的 token 估算（只读，N-CTXCURRENT 当前态构成的带外输入）。
+   * 未懒加载的 skill 先按现有 promptContent 估算（通常为 0），并后台触发加载，
+   * 下一轮 context health update 自然带上真实值。
    */
-  private async reportSkillTokens(sessionId: string, skill: ParsedSkill): Promise<void> {
-    if (!skill.loaded) {
-      await loadSkillContent(skill);
-    }
-    const tokens = estimateTokens(skill.promptContent ?? '');
-    getContextHealthService().recordSourceContribution(
-      sessionId,
-      { type: 'skill', name: skill.name },
-      tokens,
-      'set',
-    );
+  getMountedSkillTokens(sessionId: string): Array<{ name: string; tokens: number }> {
+    return this.getMountedParsedSkills(sessionId).map((skill) => {
+      if (!skill.loaded) {
+        loadSkillContent(skill).catch((err) => {
+          logger.debug('Failed to lazy-load skill content for token estimate', {
+            skillName: skill.name,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+      return { name: skill.name, tokens: estimateTokens(skill.promptContent ?? '') };
+    });
   }
 
   /**

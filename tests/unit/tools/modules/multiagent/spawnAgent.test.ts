@@ -70,15 +70,20 @@ describe('spawn_agent / AgentSpawn schemas', () => {
     expect(spawnAgentModule.schema.description).toContain('2-3 layers');
   });
 
-  it('inputSchema 含 role/task/agents/parallel/forkContext/isolation/foregroundBlockingBudgetMs', () => {
+  it('inputSchema 含 role/task/engine/agents/parallel/forkContext/isolation/ownedPaths/foregroundBlockingBudgetMs', () => {
     const props = spawnAgentModule.schema.inputSchema.properties as Record<string, unknown>;
     expect(props).toHaveProperty('role');
+    expect(props).toHaveProperty('engine');
     expect(props).toHaveProperty('task');
     expect(props).toHaveProperty('agents');
     expect(props).toHaveProperty('parallel');
     expect(props).toHaveProperty('forkContext');
     expect(props).toHaveProperty('isolation');
+    expect(props).toHaveProperty('ownedPaths');
     expect(props).toHaveProperty('foregroundBlockingBudgetMs');
+    const agents = props.agents as { items: { properties: Record<string, unknown> } };
+    expect(agents.items.properties).toHaveProperty('ownedPaths');
+    expect(spawnAgentModule.schema.description).toContain('first-write-wins');
   });
 
   it('permissionLevel = execute', () => {

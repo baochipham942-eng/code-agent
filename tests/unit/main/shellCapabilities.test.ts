@@ -26,6 +26,9 @@ describe('shell capabilities', () => {
     ['domain:project', 'listCloudCards'],
     ['domain:project', 'resyncCloudCards'],
     ['domain:project', 'setDescription'],
+    ['domain:queuedInput', 'reorder'],
+    ['domain:queuedInput', 'sendNow'],
+    ['domain:queuedInput', 'update'],
     ['domain:settings', 'saveProviderIconAsset'],
     ['domain:settings', 'resolveProviderIconAsset'],
     ['domain:settings', 'getBudgetStatus'],
@@ -35,6 +38,8 @@ describe('shell capabilities', () => {
     ['domain:provider', 'test_realtime_voice_provider'],
     ['domain:memory', 'memoryEntryUpdate'],
     ['domain:session', 'restoreWorkspaceFilesAtCheckpoint'],
+    ['domain:session', 'turnCheckout'],
+    ['domain:session', 'turnRedo'],
     ['domain:surfaceExecution', 'control'],
     ['domain:surfaceExecution', 'deletePersistedTerminalFrames'],
     ['domain:surfaceExecution', 'getFrame'],
@@ -78,6 +83,12 @@ describe('shell capabilities', () => {
     ))).toMatchObject({
       risk: 'high',
     });
+  });
+
+  it.each(['turnCheckout', 'turnRedo'])('marks %s as a high-risk shell mutation', (action) => {
+    expect(getShellCapabilities().find((capability) => (
+      capability.id === makeShellCapabilityId('domain:session', action)
+    ))).toMatchObject({ risk: 'high' });
   });
 
   it('marks cloud card resync as a medium-risk shell mutation', () => {

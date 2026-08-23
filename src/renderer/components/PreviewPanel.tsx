@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, File, Folder, X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Save, FolderOpen, Presentation, MousePointerClick, MoreHorizontal } from 'lucide-react';
+import { Archive, Check, ChevronDown, File, Folder, X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Save, FolderOpen, Presentation, MousePointerClick, MoreHorizontal } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
@@ -15,7 +15,7 @@ import { revealNativePath } from '../services/tauriPluginFacade';
 import { DocumentBlock } from './features/chat/MessageBubble/DocumentBlock';
 import { SpreadsheetBlock } from './features/chat/MessageBubble/SpreadsheetBlock';
 import { PresentationPagePicker } from './PresentationPagePicker';
-import type { PresentationPagePreviewResult } from '@shared/contract';
+import type { DeliverablePublishInfo, PresentationPagePreviewResult, PublishedDeliverableVersion } from '@shared/contract';
 import type { HtmlLocalityAnchor } from '@shared/livePreview/localityFeedback';
 import { LocalityFeedbackBar } from './LivePreview/LocalityFeedbackBar';
 import {
@@ -24,11 +24,28 @@ import {
   type HtmlLocalitySelectionController,
 } from '../utils/htmlLocality';
 import { DeliverableStatusBadge } from './DeliverableStatusBadge';
+import { DeliverablePublishBadge } from './DeliverablePublishBadge';
 import { ArtifactFollowToolbar, ArtifactPreviewLoading } from './ArtifactFollowToolbar';
 import { ArtifactSourceEditor } from './ArtifactSourceEditor';
 import { useSessionStore } from '../stores/sessionStore';
 import { artifactFollowKey, useArtifactFollowStore } from '../stores/artifactFollowStore';
 import { artifactCompletionMeta, usePreviewFileMetadata } from '../hooks/usePreviewFileMetadata';
+import {
+  basename,
+  buildDocxPreviewSpec,
+  buildExcelPreviewSpec,
+  getExtension,
+  parseArchiveInspection,
+  parseDesignPptArtifactContent,
+  shouldFlashOnDiskLoad,
+  toPreviewErrorState,
+  type ArchiveInspection,
+  type DesignPptScreenshotArtifact,
+  type LoadedSnapshot,
+  type PresentationInspection,
+} from './previewPanelModel';
+
+export { parseDesignPptArtifactContent, shouldFlashOnDiskLoad, toPreviewErrorState } from './previewPanelModel';
 
 const CodeEditor = lazy(() => import('./CodeEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
@@ -59,176 +76,8 @@ const DOCX_EXTS = new Set(['docx']);
 const EXCEL_EXTS = new Set(['xlsx', 'xls']);
 const PRESENTATION_EXTS = new Set(['pptx']);
 
-type DocumentParagraphType = 'heading' | 'paragraph' | 'list-item';
-
-interface DocxPreviewResult {
-  html: string;
-  paragraphs: Array<{
-    index: number;
-    type: string;
-    text: string;
-    level?: number;
-    textFingerprint?: string;
-    previousTextFingerprint?: string;
-    nextTextFingerprint?: string;
-  }>;
-  text: string;
-  wordCount: number;
-}
-
-interface ExcelPreviewResult {
-  sheets: Array<{ name: string; headers: string[]; rows: unknown[][]; rowCount: number }>;
-  sheetCount: number;
-}
-
-interface PresentationInspection {
-  filePath: string;
-  format: 'pptx';
-  slideCount: number;
-  shownCount: number;
-  truncated: boolean;
-  slides: Array<{
-    index: number;
-    name: string;
-    title?: string;
-    text: string[];
-  }>;
-}
-
-// 设计模式生成的 PPT 会在同目录写一份 <baseName>.design-artifact.json，
-// 内含 LibreOffice 渲染的逐页截图路径。预览面板优先读它走可视截图预览，
-// 缺失（非设计模式产出 / LibreOffice 不在）才 fallback 到 outline 文本巡检。
-interface DesignPptScreenshotArtifact {
-  kind: 'design_ppt';
-  title?: string;
-  theme?: string;
-  outputPath?: string;
-  screenshots: string[];
-  slidesCount?: number;
-}
-
-// ============================================================================
-// 产物更新回执（闪现渐隐）判据
-//
-// 只有「同一 tab 的磁盘重载带来了不是用户刚看到的内容」才算 agent 更新：
-//   - 首次加载 / 切 tab（prev 为空或 tabId 变了）→ 不闪
-//   - savedContent 没变（普通重渲染）→ 不闪
-//   - 用户自己保存（savedContent 追上了当时显示的 content）→ 不闪
-// ============================================================================
-interface LoadedSnapshot {
-  tabId: string;
-  savedContent: string;
-  /** 快照时用户正看到的内容（含未保存编辑），用于区分"用户保存"和"外来更新"。 */
-  content: string;
-}
-
-export function shouldFlashOnDiskLoad(
-  prev: LoadedSnapshot | null,
-  next: { tabId: string; savedContent: string },
-): boolean {
-  if (prev?.tabId !== next.tabId) return false;
-  if (next.savedContent === prev.savedContent) return false;
-  if (next.savedContent === prev.content) return false;
-  return true;
-}
-
-export function parseDesignPptArtifactContent(content: string): DesignPptScreenshotArtifact | null {
-  try {
-    const parsed = JSON.parse(content) as Partial<DesignPptScreenshotArtifact>;
-    if (
-      parsed?.kind === 'design_ppt'
-      && Array.isArray(parsed.screenshots)
-      && parsed.screenshots.length > 0
-    ) {
-      return parsed as DesignPptScreenshotArtifact;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-interface ArchiveInspection {
-  filePath: string;
-  format: 'zip';
-  entryCount: number;
-  shownCount: number;
-  truncated: boolean;
-  entries: Array<{
-    name: string;
-    isDirectory: boolean;
-    depth: number;
-    extension?: string;
-  }>;
-}
-
-function getExtension(filePath: string | null | undefined): string {
-  if (!filePath) return '';
-  const idx = filePath.lastIndexOf('.');
-  return idx < 0 ? '' : filePath.slice(idx + 1).toLowerCase();
-}
-
-function basename(filePath: string): string {
-  return filePath.split('/').filter(Boolean).pop() || filePath;
-}
-
 function commandApi() {
   return window.codeAgentAPI || window.electronAPI;
-}
-
-function normalizeDocumentParagraphType(value: string): DocumentParagraphType {
-  if (value === 'heading' || value === 'list-item') return value;
-  return 'paragraph';
-}
-
-function paragraphsFromRawText(text: string): DocxPreviewResult['paragraphs'] {
-  return text
-    .split(/\n{2,}|\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 500)
-    .map((line, index) => ({
-      index,
-      type: 'paragraph',
-      text: line,
-    }));
-}
-
-function buildDocxPreviewSpec(filePath: string, result: DocxPreviewResult): string {
-  const normalized = result.paragraphs
-    .map((paragraph, index) => ({
-      index: typeof paragraph.index === 'number' ? paragraph.index : index,
-      type: normalizeDocumentParagraphType(paragraph.type),
-      text: paragraph.text.trim(),
-      level: paragraph.level,
-      textFingerprint: paragraph.textFingerprint,
-      previousTextFingerprint: paragraph.previousTextFingerprint,
-      nextTextFingerprint: paragraph.nextTextFingerprint,
-    }))
-    .filter((paragraph) => paragraph.text.length > 0);
-  const paragraphs = normalized.length > 0 ? normalized : paragraphsFromRawText(result.text);
-  if (paragraphs.length === 0) {
-    throw new Error('DOCX preview has no readable paragraphs');
-  }
-
-  return JSON.stringify({
-    title: basename(filePath).replace(/\.docx$/i, ''),
-    paragraphs,
-    text: result.text,
-    wordCount: result.wordCount,
-  });
-}
-
-function buildExcelPreviewSpec(filePath: string, result: ExcelPreviewResult): string {
-  const sheets = result.sheets.filter((sheet) => sheet.headers.length > 0 || sheet.rows.length > 0);
-  if (sheets.length === 0) {
-    throw new Error('Excel preview has no readable sheets');
-  }
-  return JSON.stringify({
-    title: basename(filePath).replace(/\.(xlsx|xls)$/i, ''),
-    sheets,
-    sheetCount: result.sheetCount || sheets.length,
-  });
 }
 
 async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T> {
@@ -237,31 +86,6 @@ async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T>
     throw new Error(response?.error?.message || `Workspace action failed: ${action}`);
   }
   return response.data as T;
-}
-
-/**
- * IPC/引擎报错 → 展示层错误状态。message 永远是调用方传入的人话 fallback
- * （loadFileFailed/saveFailed 等既有键），原始异常文本只进 detail（挂 tooltip，
- * 不裸露成可见文案）——別把这两个反过来。
- */
-export function toPreviewErrorState(
-  err: unknown,
-  fallbackMessage: string,
-): { message: string; detail: string } {
-  return {
-    message: fallbackMessage,
-    detail: err instanceof Error ? err.message : String(err),
-  };
-}
-
-function parseArchiveInspection(content: string): ArchiveInspection | null {
-  try {
-    const parsed = JSON.parse(content) as ArchiveInspection;
-    if (!parsed || !Array.isArray(parsed.entries)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
 }
 
 function ArchivePreview({ content }: { content: string }) {
@@ -641,8 +465,12 @@ export const PreviewPanel: React.FC = () => {
   const [isMaximized, setIsMaximized] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [moreActionsOpen, setMoreActionsOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [publishInfo, setPublishInfo] = useState<DeliverablePublishInfo | null>(null);
+  const [selectedPublishedVersion, setSelectedPublishedVersion] = useState<PublishedDeliverableVersion | null>(null);
   const { fileMetadata, refreshFileMetadata } = usePreviewFileMetadata(previewFilePath);
   const moreActionsRef = useRef<HTMLDivElement | null>(null);
+  const versionsRef = useRef<HTMLDivElement | null>(null);
   // 预览用 HTML：把同目录相对 css/js 内联进来（srcDoc iframe 无法解析相对引用）。
   // 与可编辑/保存的 content 分开，保存仍写原始 content。
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
@@ -672,11 +500,28 @@ export const PreviewPanel: React.FC = () => {
   const isBinary = isImage || isPdf || isAudio || isVideo;
   const isDirty = !isBinary && !isArchive && !isOffice && content !== savedContent;
   const isVirtual = activeTab?.kind === 'virtual';
+  const directPublishedVersion = previewFilePath?.match(/\.published-v(\d+)(?:\.[^./]+)?$/)?.[1];
+  const viewingPublishedVersion = selectedPublishedVersion !== null || directPublishedVersion !== undefined;
 
   useEffect(() => {
-    if (!moreActionsOpen) return;
+    setSelectedPublishedVersion(null);
+    setVersionsOpen(false);
+    if (!previewFilePath || isVirtual || directPublishedVersion) {
+      setPublishInfo(null);
+      return;
+    }
+    let cancelled = false;
+    void invokeWorkspace<DeliverablePublishInfo>('getPublishInfo', { filePath: previewFilePath })
+      .then((info) => { if (!cancelled) setPublishInfo(info); })
+      .catch(() => { if (!cancelled) setPublishInfo(null); });
+    return () => { cancelled = true; };
+  }, [previewFilePath, isVirtual, directPublishedVersion]);
+
+  useEffect(() => {
+    if (!moreActionsOpen && !versionsOpen) return;
     const closeOnOutsideClick = (event: MouseEvent) => {
       if (!moreActionsRef.current?.contains(event.target as Node)) setMoreActionsOpen(false);
+      if (!versionsRef.current?.contains(event.target as Node)) setVersionsOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setMoreActionsOpen(false);
@@ -687,7 +532,7 @@ export const PreviewPanel: React.FC = () => {
       document.removeEventListener('mousedown', closeOnOutsideClick);
       document.removeEventListener('keydown', closeOnEscape);
     };
-  }, [moreActionsOpen]);
+  }, [moreActionsOpen, versionsOpen]);
 
   // Load content when the active tab changes and hasn't been loaded yet.
   useEffect(() => {
@@ -779,7 +624,14 @@ export const PreviewPanel: React.FC = () => {
   };
 
   const handleRefresh = () => {
-    if (activeTab) void loadContent(activeTab.id, activeTab.path);
+    if (activeTab) void loadContent(activeTab.id, selectedPublishedVersion?.snapshotPath ?? activeTab.path);
+  };
+
+  const handleVersionSelect = (version: PublishedDeliverableVersion | null) => {
+    if (!activeTab) return;
+    setSelectedPublishedVersion(version);
+    setVersionsOpen(false);
+    void loadContent(activeTab.id, version?.snapshotPath ?? activeTab.path);
   };
 
   const handleFollowToggle = () => {
@@ -790,12 +642,15 @@ export const PreviewPanel: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!activeTab || !isDirty || isSaving) return;
+    if (!activeTab || !isDirty || isSaving || viewingPublishedVersion) return;
     setIsSaving(true);
     setErrorState(null);
     try {
       await invokeWorkspace('writeFile', { filePath: activeTab.path, content: activeTab.content });
       markPreviewTabSaved(activeTab.id);
+      void invokeWorkspace<DeliverablePublishInfo>('getPublishInfo', { filePath: activeTab.path })
+        .then(setPublishInfo)
+        .catch(() => undefined);
     } catch (err) {
       logger.error('Failed to save file', err);
       const { message, detail } = toPreviewErrorState(err, pv.saveFailed);
@@ -918,6 +773,45 @@ export const PreviewPanel: React.FC = () => {
           {isVirtual ? activeTab.title : previewFilePath}
         </button>
         {activeTab.deliverableStatus && <DeliverableStatusBadge status={activeTab.deliverableStatus} />}
+        {directPublishedVersion && (
+          <DeliverablePublishBadge
+            state={{ kind: 'published', version: Number(directPublishedVersion), publishedAt: 0 }}
+            testId="preview-publish-state"
+          />
+        )}
+        {!isVirtual && publishInfo && (
+          <div className="relative" ref={versionsRef}>
+            <button /* ds-allow:button: 标题旁徽记本身即版本切换热区 */
+              type="button"
+              onClick={() => setVersionsOpen((open) => !open)}
+              className="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-zinc-700/60"
+              aria-label={t.deliverable.versions}
+              aria-expanded={versionsOpen}
+            >
+              <DeliverablePublishBadge
+                state={selectedPublishedVersion
+                  ? { kind: 'published', version: selectedPublishedVersion.version, publishedAt: selectedPublishedVersion.publishedAt }
+                  : publishInfo.publishState}
+                testId="preview-publish-state"
+              />
+              <ChevronDown className="h-3 w-3 text-zinc-500" />
+            </button>
+            {versionsOpen && (
+              <div className="absolute left-0 top-full z-20 mt-1 min-w-52 rounded-lg border border-zinc-700 bg-zinc-800 p-1 shadow-xl" data-testid="preview-version-menu">
+                <button /* ds-allow:button: 版本菜单紧凑文字项 */ type="button" onClick={() => handleVersionSelect(null)} className="flex w-full items-center justify-between gap-3 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700">
+                  <span>{t.deliverable.versionDraft.replace('{version}', String((publishInfo.publishedVersions[0]?.version ?? 0) + 1))}</span>
+                  <span className="text-[10px] text-badge-warning">{t.deliverable.unpublished}</span>
+                </button>
+                {publishInfo.publishedVersions.map((version, index) => (
+                  <button /* ds-allow:button: 版本菜单紧凑文字项 */ key={version.version} type="button" onClick={() => handleVersionSelect(version)} className={`flex w-full items-center justify-between gap-3 rounded px-2.5 py-2 text-left text-xs hover:bg-zinc-700 ${selectedPublishedVersion?.version === version.version ? 'bg-teal-500/10 text-badge-success' : 'text-zinc-300'}`}>
+                    <span>v{version.version} {index === 0 ? t.deliverable.currentPublished : new Date(version.publishedAt).toLocaleDateString()}</span>
+                    {selectedPublishedVersion?.version === version.version && <Check className="h-3.5 w-3.5" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {!isVirtual && (
           <button /* ds-allow:button: compact file-header icon action */
             type="button"
@@ -943,7 +837,7 @@ export const PreviewPanel: React.FC = () => {
           {moreActionsOpen && (
             <div className="absolute right-0 top-full z-10 mt-1 w-48 rounded-lg bg-zinc-800 p-1 shadow-xl">
               {(hasSourceModes || isCode) && !isVirtual && (
-                <button type="button" onClick={() => { void handleSave(); setMoreActionsOpen(false); }} disabled={!isDirty || isSaving} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-40">
+                <button type="button" onClick={() => { void handleSave(); setMoreActionsOpen(false); }} disabled={!isDirty || isSaving || viewingPublishedVersion} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-40">
                   <Save className={`h-4 w-4 ${isSaving ? 'animate-pulse' : ''}`} />{isDirty ? pv.saveShortcut : pv.saved}
                 </button>
               )}
@@ -1060,6 +954,7 @@ export const PreviewPanel: React.FC = () => {
             onSave={handleSave}
             jumpToLine={activeTab.jumpToLine}
             jumpNonce={activeTab.jumpNonce}
+            readOnly={viewingPublishedVersion}
           />
         ) : isCode && codeLanguage ? (
           <Suspense
@@ -1074,6 +969,7 @@ export const PreviewPanel: React.FC = () => {
               onChange={(next: string) => updatePreviewTabContent(activeTab.id, next)}
               onSave={handleSave}
               language={codeLanguage}
+              readOnly={viewingPublishedVersion}
               jumpToLine={activeTab.jumpToLine}
               jumpNonce={activeTab.jumpNonce}
             />

@@ -173,6 +173,46 @@ describe('removeUncommittedAssistantDraft', () => {
   });
 });
 
+describe('applyConversationStreamEvent input redirect receipt', () => {
+  it('keeps the user bubble and does not project a receipt card', () => {
+    let messages: Message[] = [{
+      id: 'redirect-message-1',
+      role: 'user',
+      content: '改用更简洁的结构',
+      timestamp: 100,
+    }];
+    const actions = {
+      addMessage: (message: Message) => { messages = [...messages, message]; },
+      updateMessage: () => {},
+      setMessages: (next: Message[]) => { messages = next; },
+      getMessages: () => messages,
+      queueUpdate: () => {},
+      now: () => 123,
+    };
+    const event = {
+      type: 'input_redirected',
+      data: {
+        receiptId: 'redirect-receipt-1',
+        originalContent: '改用更简洁的结构',
+        expectedTurnId: 'turn-1',
+        partial: { charCount: 88, trailingText: '写到这里' },
+        interruptedTools: ['Bash'],
+      },
+    };
+    const state = { currentTurnMessageId: 'turn-1', committedAssistantMessageIds: new Set<string>() };
+
+    applyConversationStreamEvent(event, state, actions);
+    applyConversationStreamEvent(event, state, actions);
+
+    expect(messages).toEqual([expect.objectContaining({
+      id: 'redirect-message-1',
+      role: 'user',
+      content: '改用更简洁的结构',
+    })]);
+    expect(messages.some((message) => message.metadata?.inputRedirectReceipt)).toBe(false);
+  });
+});
+
 // 2026-08-01 验收截图：宿主抽干排队消息那一轮，屏幕上只有回答「丙一收到」，
 // 对应的问题一个字都没有——那条用户消息只有宿主知道，前端没有本地乐观副本。
 describe('applyConversationStreamEvent host-owned user message', () => {
@@ -675,6 +715,38 @@ describe('applyConversationStreamEvent model_fallback', () => {
 });
 
 describe('applyConversationStreamEvent meta turns', () => {
+  it('keeps foreground turn_start behavior unchanged', () => {
+    const addMessage = vi.fn();
+    const state = {
+      currentTurnMessageId: null,
+      committedAssistantMessageIds: new Set<string>(),
+    };
+
+    applyConversationStreamEvent(
+      {
+        type: 'turn_start',
+        data: {
+          turnId: 'foreground-turn',
+          iteration: 1,
+        },
+      },
+      state,
+      {
+        addMessage,
+        updateMessage: vi.fn(),
+        setMessages: vi.fn(),
+        getMessages: () => [],
+        queueUpdate: vi.fn(),
+      },
+    );
+
+    expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'foreground-turn',
+      role: 'assistant',
+    }));
+    expect(state.currentTurnMessageId).toBe('foreground-turn');
+  });
+
   it('does not render meta loop turn starts or append their stream chunks to the previous assistant', () => {
     const appendStreamingMessageDelta = vi.fn();
     const queueUpdate = vi.fn();

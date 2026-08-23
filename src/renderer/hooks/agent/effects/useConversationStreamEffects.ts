@@ -17,7 +17,9 @@ import { useTaskStore } from '../../../stores/taskStore';
 const LIVE_STATE_NEUTRAL_AGENT_EVENTS: ReadonlySet<string> = new Set([
   'agent_complete',
   'agent_cancelled',
+  'subagent_run_end',
   'error',
+  'input_redirected',
 ]);
 import { buildGoalNoticeMessage } from '../../../components/features/chat/goalNotice';
 import { buildModelFallbackNoticeMessage } from '../../../components/features/chat/fallbackNotice';
@@ -113,6 +115,10 @@ export function applyConversationStreamEvent(
   const getFreshMessages = actions.getMessages;
 
   switch (event.type) {
+    case 'input_redirected':
+      // 事件继续供账本 / Inspector / trace 消费；聊天流由用户原话气泡和助理正文承接。
+      break;
+
     case 'turn_start':
       if (
         state.currentTurnMessageId &&
@@ -587,6 +593,34 @@ export const useConversationStreamEffects = ({
           }
           flushRef.current();
           flushStreamingMessages();
+          applyConversationStreamEvent(
+            event,
+            {
+              get currentTurnMessageId() {
+                return currentTurnMessageIdRef.current;
+              },
+              set currentTurnMessageId(value) {
+                currentTurnMessageIdRef.current = value;
+              },
+              committedAssistantMessageIds: committedAssistantMessageIdsRef.current,
+            },
+            {
+              addMessage,
+              appendStreamingMessageDelta,
+              updateMessage,
+              setMessages: (messages) => useSessionStore.getState().setMessages(messages),
+              getMessages: getFreshMessages,
+              queueUpdate,
+            },
+          );
+          break;
+
+        case 'input_redirected':
+          lastEventAtRef.current = Date.now();
+          logHandledEvent();
+          if (!isCurrentSessionEvent) {
+            break;
+          }
           applyConversationStreamEvent(
             event,
             {

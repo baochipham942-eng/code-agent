@@ -71,7 +71,7 @@ export interface CLIConfig {
  * CLI 输出事件
  */
 export interface CLIOutputEvent {
-  type: 'thinking' | 'tool_call' | 'tool_result' | 'message' | 'error' | 'complete';
+  type: 'thinking' | 'tool_call' | 'tool_result' | 'turn_diff' | 'message' | 'error' | 'complete' | 'result';
   timestamp: number;
   data: unknown;
 }
@@ -105,6 +105,7 @@ export interface CLIRunResult {
  */
 export interface APIRunRequest {
   prompt: string;
+  eventFilter?: import('../host/protocol/events/eventFilter').AgentEventFilter;
   project?: string;
   generation?: string;
   model?: string;

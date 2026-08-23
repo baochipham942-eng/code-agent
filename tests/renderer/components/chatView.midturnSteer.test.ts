@@ -20,33 +20,45 @@ describe('ChatView mid-turn adjustment boundary', () => {
     window.domainAPI = undefined;
   });
 
-  it.each(['steered', 'queued'] as const)(
-    'projects an accepted %s foreground message without queue UI state',
-    async (outcomeName) => {
+  it('optimistically projects an accepted redirect as a normal user bubble', async () => {
       invoke.mockResolvedValue({
         success: true,
-        data: outcomeName === 'steered'
-          ? { outcome: 'steered' }
-          : { outcome: 'queued', queuedInputId: 'buffered-1' },
+        data: { outcome: 'steered' },
       });
 
       const outcome = await submitSteerEnvelope({
         content: '改用简洁方案',
         attachments: [],
-        context: { workingDirectory: '/repo', runtimeInput: { mode: 'supplement' } },
-      }, 'session-running');
+        context: { workingDirectory: '/repo', runtimeInput: { mode: 'redirect' } },
+      }, 'session-running', 'turn-visible');
 
-      expect(outcome?.outcome).toBe(outcomeName);
+      expect(outcome?.outcome).toBe('steered');
       expect(invoke).toHaveBeenCalledWith(
         IPC_DOMAINS.AGENT,
         'interrupt',
-        expect.objectContaining({ content: '改用简洁方案', sessionId: 'session-running' }),
+        expect.objectContaining({ content: '改用简洁方案', sessionId: 'session-running', expectedTurnId: 'turn-visible' }),
       );
-      expect(useSessionStore.getState().messages.at(-1)).toMatchObject({
-        role: 'user',
-        content: '改用简洁方案',
-        metadata: { workbench: { workingDirectory: '/repo', runtimeInputMode: 'supplement' } },
-      });
-    },
-  );
+      expect(useSessionStore.getState().messages).toEqual([
+        expect.objectContaining({ role: 'user', content: '改用简洁方案' }),
+      ]);
+      expect(useSessionStore.getState().messages[0].id).toBe(
+        (invoke.mock.calls[0][2] as { clientMessageId: string }).clientMessageId,
+      );
+  });
+
+  it('removes the optimistic bubble when the redirect races into the durable queue', async () => {
+    invoke.mockResolvedValue({
+      success: true,
+      data: { outcome: 'queued', queuedInputId: 'buffered-1', code: 'TURN_CHANGED', message: '这条先排上了，手头这轮做完就做' },
+    });
+
+    const outcome = await submitSteerEnvelope({
+      content: '改用简洁方案',
+      attachments: [],
+      context: { workingDirectory: '/repo', runtimeInput: { mode: 'redirect' } },
+    }, 'session-running', 'turn-visible');
+
+    expect(outcome?.outcome).toBe('queued');
+    expect(useSessionStore.getState().messages).toEqual([]);
+  });
 });

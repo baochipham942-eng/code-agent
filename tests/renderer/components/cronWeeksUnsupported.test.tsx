@@ -22,6 +22,7 @@ function shellJob(unit: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks'): Cro
   // 来验证兼容路径，与生产侧 `(job.schedule.unit as string) === 'weeks'` 的判法一致。
   return {
     id: `job-${unit}`,
+    runsOn: 'local',
     name: 'Interval job',
     scheduleType: 'every',
     schedule: { type: 'every', interval: 3, unit } as CronJobDefinition['schedule'],
@@ -33,16 +34,17 @@ function shellJob(unit: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks'): Cro
 }
 
 describe('cron weeks unsupported in renderer', () => {
-  it('CronJobEditor no longer offers weeks as an every-unit option', () => {
+  it('CronJobEditor offers minute-or-coarser units and omits seconds/weeks', () => {
     const html = renderToStaticMarkup(
       <CronJobEditor isOpen job={shellJob('hours')} onClose={() => {}} />,
     );
 
-    expect(html).toContain('value="seconds"');
+    expect(html).not.toContain('value="seconds"');
     expect(html).toContain('value="minutes"');
     expect(html).toContain('value="hours"');
     expect(html).toContain('value="days"');
     expect(html).not.toContain('value="weeks"');
+    expect(html).toContain('本地任务最小间隔 5 分钟');
     expect(html).not.toContain('>周</option>');
   });
 

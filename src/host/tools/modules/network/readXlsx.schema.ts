@@ -1,7 +1,7 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const readXlsxSchema: ToolSchema = {
+export const readXlsxSchema: UntrustedContentToolSchema = {
   name: 'read_xlsx',
   description: `Read Excel files (.xlsx, .xls) and return structured data with column names and rows.
 
@@ -41,7 +41,7 @@ The output always includes column names, which you should reference exactly when
   },
   category: 'network',
   permissionLevel: 'read',
-  readsUntrustedContent: true,
+  readsUntrustedContent: 'block',
   readOnly: true,
   allowInPlanMode: true,
 };

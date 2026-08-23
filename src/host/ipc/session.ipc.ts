@@ -66,6 +66,9 @@ export function registerSessionHandlers(
         case 'list':
           data = await requireAppService().listSessions(payload as import('../../shared/contract/appService').SessionListQueryOptions | undefined);
           break;
+        case 'findExpertThread':
+          data = await requireAppService().findExpertThreadSession((payload as { roleId: string }).roleId);
+          break;
         case 'create':
           data = await requireAppService().createSession(payload as import('../../shared/contract/appService').CreateSessionConfig);
           break;
@@ -231,6 +234,16 @@ export function registerSessionHandlers(
         case 'restoreWorkspaceFilesAtCheckpoint':
           data = await requireAppService().restoreWorkspaceFilesAtCheckpoint(
             payload as import('../../shared/contract/fileRestore').RestoreWorkspaceFilesAtCheckpointRequest,
+          );
+          break;
+        case 'turnCheckout':
+          data = await requireAppService().turnCheckout(
+            payload as import('../../shared/contract/turnCheckout').TurnCheckoutRequest,
+          );
+          break;
+        case 'turnRedo':
+          data = await requireAppService().turnRedo(
+            payload as import('../../shared/contract/turnCheckout').TurnRedoRequest,
           );
           break;
         case 'export':

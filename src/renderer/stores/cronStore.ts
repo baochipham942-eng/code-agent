@@ -28,6 +28,7 @@ interface CronState {
   isLoading: boolean;
   isEditorOpen: boolean;
   editingJobId: string | null;
+  copyingJobId: string | null;
   error: string | null;
 
   setFilterMode: (mode: CronJobFilterMode) => void;
@@ -35,6 +36,7 @@ interface CronState {
   selectJob: (jobId: string | null) => void;
   openCreateEditor: () => void;
   openEditEditor: (jobId: string) => void;
+  openCopyEditor: (jobId: string) => void;
   closeEditor: () => void;
   loadJobs: () => Promise<void>;
   loadStats: () => Promise<void>;
@@ -69,15 +71,17 @@ export const useCronStore = create<CronState>()((set, get) => ({
   isLoading: false,
   isEditorOpen: false,
   editingJobId: null,
+  copyingJobId: null,
   error: null,
 
   setFilterMode: (mode) => set({ filterMode: mode }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   selectJob: (jobId) => set({ selectedJobId: jobId }),
 
-  openCreateEditor: () => set({ isEditorOpen: true, editingJobId: null }),
-  openEditEditor: (jobId) => set({ isEditorOpen: true, editingJobId: jobId }),
-  closeEditor: () => set({ isEditorOpen: false, editingJobId: null }),
+  openCreateEditor: () => set({ isEditorOpen: true, editingJobId: null, copyingJobId: null }),
+  openEditEditor: (jobId) => set({ isEditorOpen: true, editingJobId: jobId, copyingJobId: null }),
+  openCopyEditor: (jobId) => set({ isEditorOpen: true, editingJobId: null, copyingJobId: jobId }),
+  closeEditor: () => set({ isEditorOpen: false, editingJobId: null, copyingJobId: null }),
 
   loadJobs: async () => {
     const { filterMode, selectedJobId } = get();
@@ -173,6 +177,7 @@ export const useCronStore = create<CronState>()((set, get) => ({
       selectedJobId: created.id,
       isEditorOpen: false,
       editingJobId: null,
+      copyingJobId: null,
     });
     return created;
   },
@@ -183,6 +188,7 @@ export const useCronStore = create<CronState>()((set, get) => ({
     set({
       isEditorOpen: false,
       editingJobId: null,
+      copyingJobId: null,
     });
     return updated;
   },

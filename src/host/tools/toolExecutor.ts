@@ -4,6 +4,7 @@
 
 import type { ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
 import * as nodePath from 'path';
+import * as nodeFs from 'node:fs/promises';
 import type { ToolDefinition } from '../../shared/contract';
 import type { PermissionBoundaryId } from '../../shared/contract/permissionBoundary';
 import { PermissionRequestReason } from '../../shared/contract/permission';
@@ -12,6 +13,7 @@ import { getSessionAutomationService } from '../services/sessionAutomation/sessi
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
+import { getFileCheckpointService } from '../services/checkpoint';
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { type ClassificationResult } from './permissionClassifier';
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
@@ -49,6 +51,7 @@ import { createToolExecutionLedger } from './toolExecutionLedger';
 import { type ExecutionTopology } from '../permissions';
 import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { evaluateGuardFabricGate } from './guardFabricGate';
+import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
 import { ensureFailedToolResultError } from './toolResultError';
 import { requestDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
@@ -57,6 +60,15 @@ import {
   assessDirectiveMemoryWrite,
   createDirectiveMemoryWriteGrant,
 } from '../memory/directiveMemoryPathAuthority';
+import { resolveToolWriteTargets } from './writeTargets';
+import {
+  createFileOwnershipActor,
+  getFileOwnershipRegistry,
+} from '../services/infra/fileOwnershipRegistry';
+import { getResourceLockManager } from '../services/infra/resourceLockManager';
+import { fileReadTracker } from './fileReadTracker';
+import { checkExternalModification } from './utils/externalModificationDetector';
+import { getFileMutationActorId } from './modules/file/fileMutationIdentity';
 import {
   createChildRunTraceContext,
   getActiveRunTraceContext,
@@ -65,6 +77,18 @@ import {
 import type { TurnTraceRecorder } from '../agent/runtime/turnTrace';
 
 const logger = createLogger('ToolExecutor');
+const FILE_MUTATION_LOCK_HOLD_TIMEOUT_MS = 60_000;
+const FILE_MUTATION_LOCK_WAIT_TIMEOUT_MS = 10_000;
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await nodeFs.access(filePath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+}
 
 import { validateToolInputSchema, formatToolSchemaValidationError, stripUndeclaredToolParams } from './toolSchemaValidator';
 
@@ -110,6 +134,8 @@ export type ToolExecutionDelegate = (toolName: string, params: Record<string, un
 export interface ExecuteOptions {
   /** Native Run identity only. Never substitute sessionId or Team runId. */
   runId?: string; turnId?: string;
+  /** Stable user message that originated this native turn. */
+  sourceMessageId?: string;
   /** 当前 agent run 的 JSONL trace；补偿登记必须与所属 turn 同账。 */
   turnTrace?: TurnTraceRecorder;
   planningService?: unknown; // PlanningService instance for persistent planning
@@ -404,20 +430,9 @@ export class ToolExecutor {
     );
 
     if (this.runContext?.workspaceScope && toolDef.permissionLevel === 'write' && !isBashToolName(policyToolName)) {
-      const rawTarget = [
-        params.file_path,
-        params.path,
-        params.output_path,
-        params.outputPath,
-        params.notebook_path,
-        params.document_path,
-        params.presentation_path,
-      ].find((value) => typeof value === 'string' && value.trim()) as string | undefined;
-      const target = rawTarget
-        ? (nodePath.isAbsolute(rawTarget)
-          ? nodePath.resolve(rawTarget)
-          : nodePath.resolve(this.executionCwd, rawTarget))
-        : this.executionCwd;
+      const target = resolveToolWriteTargets({
+        definition: toolDef, params, workingDirectory: this.executionCwd,
+      }).targets[0] ?? this.executionCwd;
       const readableMatch = resolveWorkspacePath(this.runContext.workspaceScope, target, 'read');
       if (readableMatch && readableMatch.root.access !== 'read_write') {
         return {
@@ -527,6 +542,145 @@ export class ToolExecutor {
       );
     }
 
+    const writeTargets = toolDef.permissionLevel !== 'read'
+      ? resolveToolWriteTargets({
+        definition: toolDef,
+        params,
+        workingDirectory: this.executionCwd,
+        agentRole: options.agentRole,
+      })
+      : { targets: [], uncertain: [], mutations: {} };
+    const mutationActorId = effectiveSessionId
+      ? getFileMutationActorId({ sessionId: effectiveSessionId, agentId: options.agentId })
+      : undefined;
+    const acquiredMutationTargets: string[] = [];
+    const mutationLockManager = getResourceLockManager();
+    const usesDedicatedMemorySerialization = toolDef.pathAuthority?.some(
+      (descriptor) => descriptor.kind === 'global-memory',
+    ) ?? false;
+
+    try {
+      if (toolDef.permissionLevel !== 'read') {
+      const ownershipActor = effectiveSessionId
+        ? createFileOwnershipActor({
+          sessionId: effectiveSessionId,
+          agentId: options.agentId,
+          swarmRunScope: options.swarmRunScope,
+          workingDirectory: this.executionCwd,
+        })
+        : undefined;
+      if (!ownershipActor) {
+        logger.debug('Skipping file ownership claim without parallel agent identity', {
+          toolName: executionToolName,
+          sessionId: effectiveSessionId,
+        });
+      } else {
+        const ownershipRegistry = getFileOwnershipRegistry();
+        ownershipRegistry.recordUncertain(ownershipActor, writeTargets.uncertain);
+        if (writeTargets.uncertain.length > 0) {
+          logger.debug('File ownership write targets remain uncertain', {
+            toolName: executionToolName,
+            agentId: ownershipActor.agentId,
+            uncertain: writeTargets.uncertain,
+          });
+        }
+        for (const target of writeTargets.targets) {
+          const claim = ownershipRegistry.checkAndClaim(ownershipActor, target);
+          if (!claim.ok) {
+            const { conflict } = claim;
+            return {
+              success: false,
+              error: `Sibling agent ${conflict.ownerAgentId} currently owns this file. Wait for it to finish, delegate the edit to it, or report the merge need to the parent agent; do not rename the file to bypass ownership.`,
+              metadata: {
+                code: 'WRITE_OWNERSHIP_CONFLICT',
+                path: conflict.path,
+                ownerAgentId: conflict.ownerAgentId,
+                requesterAgentId: conflict.requesterAgentId,
+              },
+            };
+          }
+        }
+      }
+
+      if (usesDedicatedMemorySerialization) {
+        logger.debug('Skipping generic mutation locks for memory-service target', {
+          toolName: executionToolName,
+          targets: writeTargets.targets,
+        });
+      } else if (!mutationActorId) {
+        logger.debug('Skipping file mutation locks without agent identity', {
+          toolName: executionToolName,
+          sessionId: effectiveSessionId,
+          targets: writeTargets.targets,
+        });
+      } else {
+        for (const target of writeTargets.targets) {
+          const lockResult = await mutationLockManager.acquire(
+            mutationActorId,
+            target,
+            'exclusive',
+            {
+              type: 'file',
+              timeout: FILE_MUTATION_LOCK_HOLD_TIMEOUT_MS,
+              wait: true,
+              waitTimeout: FILE_MUTATION_LOCK_WAIT_TIMEOUT_MS,
+            },
+          );
+          if (!lockResult.acquired) {
+            for (const acquiredTarget of acquiredMutationTargets.reverse()) {
+              mutationLockManager.release(mutationActorId, acquiredTarget);
+            }
+            acquiredMutationTargets.length = 0;
+            return {
+              success: false,
+              error: 'This file is currently in use by another operation. Retry shortly or choose a different output path.',
+              metadata: { code: 'FILE_LOCK_BUSY', path: target },
+            };
+          }
+          acquiredMutationTargets.push(target);
+        }
+      }
+
+      for (const target of writeTargets.targets) {
+        const mutation = writeTargets.mutations[target];
+        if (!mutation) continue;
+        const existed = await fileExists(target);
+        if (existed && (mutation === 'create' || (mutation === 'overwrite' && params.overwrite !== true))) {
+          return {
+            success: false,
+            error: 'Output file already exists. Pass overwrite=true to confirm overwriting it, or choose a different output name.',
+            metadata: { code: 'TARGET_EXISTS', path: target },
+          };
+        }
+        if (existed && mutation === 'overwrite' && params.overwrite === true) {
+          logger.warn('Tool target overwrite safety explicitly confirmed', {
+            action: 'tool_target_overwrite',
+            toolName: executionToolName,
+            path: target,
+            actorId: mutationActorId,
+          });
+        }
+        if (existed && mutation === 'edit' && mutationActorId) {
+          const readRecord = fileReadTracker.getReadRecord(target, mutationActorId);
+          if (readRecord) {
+            const modification = await checkExternalModification(target, mutationActorId);
+            if (modification.modified) {
+              return {
+                success: false,
+                error: `${modification.message}. Re-read the file before editing it.`,
+                metadata: {
+                  code: 'STALE_FILE',
+                  path: target,
+                  modification: modification.details,
+                  evidenceRef: readRecord.evidenceRef,
+                },
+              };
+            }
+          }
+        }
+      }
+      }
+
     const permStartTime = Date.now();
     const executionTopology = options.executionTopology ?? this.executionTopology;
     let guardFabricForcesApproval = false;
@@ -584,6 +738,7 @@ export class ToolExecutor {
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       runId: effectiveRunId, turnId: options.turnId,
+      sourceMessageId: options.sourceMessageId,
       sessionId: effectiveSessionId,
       workspace: this.runtimeWorkspace,
       workspaceScope: this.runContext?.workspaceScope,
@@ -760,11 +915,15 @@ export class ToolExecutor {
     // B1 第 4 档「只读探索」判定：语义与档位改写规则集中在 toolPermissionClassification.ts
     const sessionPermissionMode = resolveSessionPermissionMode(this.permissionModeOverride, options.sessionId);
     const readOnlyForcesConfirmation = readOnlyForcesConfirmationFor(sessionPermissionMode, toolDef);
+    const shellDesktopAutomation = isBashToolName(policyToolName)
+      ? classifyShellDesktopAutomation(params.command)
+      : null;
 
     // Check permission if required
     // Skill 系统：预授权工具跳过权限检查（但不能跳过边界违规检查）
     const isPreApproved = !boundaryViolation
       && !guardFabricForcesApproval
+      && !shellDesktopAutomation
       && !this.forcePermissionHandler
       && options.preApprovedTools !== undefined
       && options.preApprovedTools.size > 0
@@ -776,7 +935,7 @@ export class ToolExecutor {
 
     // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批
     let isSafeCommand = false;
-    if (isBashToolName(policyToolName) && params.command && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler) {
+    if (isBashToolName(policyToolName) && params.command && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler) {
       const cmd = params.command as string;
 
       // 1. 检查 exec policy 持久化规则
@@ -817,7 +976,7 @@ export class ToolExecutor {
       }
     }
 
-    if (toolDef.requiresPermission && (this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
+    if (toolDef.requiresPermission && (this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
@@ -910,6 +1069,9 @@ export class ToolExecutor {
             return {
               success: false,
               error: `Denied: ${classification.reason}`,
+              ...(classification.errorCode
+                ? { metadata: { code: classification.errorCode } }
+                : {}),
             };
           } else {
             if (classification.decision === 'approve') {
@@ -1200,7 +1362,7 @@ export class ToolExecutor {
       }
 
       // 文件检查点：写隔离锁拿到后再保存原文件，避免并行 worker 竞争同一目标。
-      await createFileCheckpointIfNeeded(executionToolName, params, () => {
+      const fileCheckpoint = await createFileCheckpointIfNeeded(executionToolName, params, () => {
         if (!effectiveSessionId) return null;
         // messageId 从 context 中获取，如果没有则使用工具调用 ID
         const messageId = options.currentToolCallId || `msg_${Date.now()}`;
@@ -1221,6 +1383,7 @@ export class ToolExecutor {
       const durableCheckpoint = await prepareNativeToolCheckpoint({
         runId: effectiveRunId,
         sessionId: effectiveSessionId,
+        sourceMessageId: options.sourceMessageId,
         toolName: executionToolName,
         toolDefinition: toolDef,
         toolCallId: options.currentToolCallId,
@@ -1232,6 +1395,12 @@ export class ToolExecutor {
         : null;
       const rawResult = delegatedResult
         ?? await resolver.execute(executionToolName, params, context);
+      if (rawResult.success && fileCheckpoint) {
+        await getFileCheckpointService().finalizeCheckpointDigest(
+          fileCheckpoint.checkpointId,
+          fileCheckpoint.filePath,
+        );
+      }
       const resultWithSurfaceProjection = ensureFailedToolResultError(
         executionToolName,
         await finalizeSurfaceAwareToolResult({
@@ -1335,6 +1504,13 @@ export class ToolExecutor {
       };
     } finally {
       releaseWriteIsolation?.();
+    }
+    } finally {
+      if (mutationActorId) {
+        for (const target of acquiredMutationTargets.reverse()) {
+          mutationLockManager.release(mutationActorId, target);
+        }
+      }
     }
   }
 

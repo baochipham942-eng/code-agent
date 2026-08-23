@@ -76,13 +76,52 @@ export interface DeliverableQualitySummary {
 
 export interface DeliverableBundleFileRef {
   path: string;
+  source?: 'working-copy' | 'latest-published';
   name?: string;
   role?: string;
   mimeType?: string;
   sha256?: string;
 }
 
+export interface PublishedDeliverableVersion {
+  version: number;
+  publishedAt: number;
+  snapshotPath: string;
+  note?: string;
+}
+
+export type DeliverablePublishState =
+  | { kind: 'draft' }
+  | { kind: 'published'; version: number; publishedAt: number }
+  | { kind: 'published-dirty'; version: number; publishedAt: number };
+
+export interface DeliverablePublishInfo {
+  publishState: DeliverablePublishState;
+  publishedVersions: PublishedDeliverableVersion[];
+}
+
+export interface DeliverableShareLink {
+  token: string;
+  url: string;
+  expiresAt: number | null;
+  createdAt: number;
+  ttlSeconds: number;
+  revokedAt?: number;
+  pushedVersion: number;
+  pushedHash: string;
+  lastError?: string;
+}
+
+export interface DeliverableShareLinkInfo {
+  share: DeliverableShareLink | null;
+  stale: boolean;
+  latestPublishedVersion?: number;
+  tokenConfigured: boolean;
+}
+
 export type DeliverableSecondaryAction =
+  | { kind: 'publish-version'; label: string; path: string; title: string; disabled?: boolean; reason?: string }
+  | { kind: 'share-link'; label: string; path: string; title: string; disabled?: boolean; reason?: string }
   | { kind: 'reveal-file'; label: string; path: string; disabled?: boolean; reason?: string }
   | { kind: 'open-file'; label: string; path: string; disabled?: boolean; reason?: string }
   | { kind: 'copy-reference'; label: string; value: string; disabled?: boolean; reason?: string }
@@ -93,6 +132,7 @@ export type DeliverableSecondaryAction =
     files: DeliverableBundleFileRef[];
     bundleName?: string;
     manifest?: Record<string, unknown>;
+    sourceVersion?: number;
     disabled?: boolean;
     reason?: string;
   }
@@ -120,6 +160,9 @@ export interface DeliverableCardView {
   evidencePack: DeliverableEvidencePack;
   revisionContext?: DeliverableRevisionContext;
   quality?: DeliverableQualitySummary;
+  publishState: DeliverablePublishState;
+  publishedVersions?: PublishedDeliverableVersion[];
+  shareLinkInfo?: DeliverableShareLinkInfo;
   secondaryActions?: DeliverableSecondaryAction[];
   tone?: DeliverableCardTone;
 }

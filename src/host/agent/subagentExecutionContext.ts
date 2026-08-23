@@ -51,6 +51,7 @@ export function createProtocolSubagentExecutionContext(
 
   return {
     runId: ctx.runId,
+    sourceMessageId: ctx.sourceMessageId,
     sessionId: ctx.sessionId,
     workspace: ctx.workspace,
     workspaceScope: ctx.workspaceScope,
@@ -65,6 +66,9 @@ export function createProtocolSubagentExecutionContext(
           permissionReason(request),
           {
             sessionId: request.sessionId,
+            agentId: request.agentId,
+            runId: request.runId,
+            parentToolUseId: request.parentToolUseId,
             forceConfirm: request.forceConfirm,
             type: request.type,
             tool: request.tool,

@@ -123,4 +123,29 @@ describe('TerminalOutput', () => {
     expect(text).toContain('2 tools');
     expect(text).toContain('ctx');
   });
+
+  it('renders the backend turn diff summary directly', () => {
+    const output = new TerminalOutput();
+    const { writes } = captureOutput();
+
+    output.handleEvent({
+      type: 'turn_diff',
+      data: {
+        turnId: 'turn-1',
+        files: [{
+          filePath: '/repo/a.ts',
+          oldText: 'old',
+          newText: 'new\nline',
+          added: 2,
+          removed: 1,
+          isNewFile: false,
+          editCount: 1,
+        }],
+      },
+    } as AgentEvent);
+
+    expect(writes.join('')).toContain('1 files changed');
+    expect(writes.join('')).toContain('+2');
+    expect(writes.join('')).toContain('-1');
+  });
 });

@@ -27,6 +27,12 @@ import type {
   RestoreWorkspaceFilesAtCheckpointResult,
 } from './fileRestore';
 import type {
+  TurnCheckoutRequest,
+  TurnCheckoutResult,
+  TurnRedoRequest,
+  TurnRedoResult,
+} from './turnCheckout';
+import type {
   ConversationBranchComparison,
   ConversationEvaluationAttribution,
   ConversationLineageAudit,
@@ -126,11 +132,13 @@ export interface AppServiceRunOptions {
  * 会话创建配置
  */
 export interface CreateSessionConfig {
-	  title?: string;
-	  workingDirectory?: string | null;
-	  engine?: Partial<AgentEngineSessionMetadata> | null;
-	  metadata?: Record<string, unknown>;
-	}
+  title?: string;
+  workingDirectory?: string | null;
+  engine?: Partial<AgentEngineSessionMetadata> | null;
+  metadata?: Record<string, unknown>;
+  /** 宿主创建后持久化为 sessions.metadata.expertThread。 */
+  expertRoleId?: string;
+}
 
 /**
  * 模型切换参数
@@ -202,7 +210,13 @@ export interface PromptRewindResult {
 
 export type SteerOrQueueOutcome =
   | { outcome: 'steered' }
-  | { outcome: 'queued'; queuedInputId: string };
+  | {
+      outcome: 'queued';
+      queuedInputId: string;
+      /** 机器判断仍看 code；message 只给缺少 i18n 的旧客户端兜底。 */
+      code: 'RUN_SETTLED' | 'TURN_CHANGED' | 'STEER_UNSUPPORTED';
+      message: string;
+    };
 
 /**
  * 会话列表查询参数（侧栏分页用）。
@@ -243,6 +257,8 @@ export interface AgentApplicationService {
   loadSession(sessionId: string): Promise<Session>;
   deleteSession(sessionId: string): Promise<void>;
   listSessions(options?: SessionListQueryOptions): Promise<Session[]>;
+  /** 「去 TA 的会话」续聊判定：该专家最近活跃的专家主 thread（无则 null） */
+  findExpertThreadSession(roleId: string): Promise<{ sessionId: string | null }>;
   updateSession(sessionId: string, updates: Partial<Session>): Promise<void>;
   archiveSession(sessionId: string): Promise<Session | null>;
   unarchiveSession(sessionId: string): Promise<Session | null>;
@@ -309,6 +325,8 @@ export interface AgentApplicationService {
   restoreWorkspaceFilesAtCheckpoint(
     params: RestoreWorkspaceFilesAtCheckpointRequest,
   ): Promise<RestoreWorkspaceFilesAtCheckpointResult>;
+  turnCheckout(params: TurnCheckoutRequest): Promise<TurnCheckoutResult>;
+  turnRedo(params: TurnRedoRequest): Promise<TurnRedoResult>;
   rewindToPrompt(params: { sessionId: string; userMessageId: string; idempotencyKey?: string }): Promise<PromptRewindResult>;
   getSerializedCompressionState(sessionId?: string): string | null;
   loadOlderMessages(sessionId: string, beforeTimestamp: number, limit: number): Promise<{ messages: Message[]; hasMore: boolean }>;

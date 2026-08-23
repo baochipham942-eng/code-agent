@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import type { BrowserService } from '../../../../src/host/services/infra/browserService';
 import { RunRegistry } from '../../../../src/host/runtime/runRegistry';
@@ -13,10 +17,34 @@ import {
   type SurfaceRuntimeIdentityV1,
 } from '../../../../src/host/services/surfaceExecution/SurfaceExecutionRuntime';
 import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../../src/shared/contract/surfaceExecution';
+import {
+  SecureBrowserResumeStateStore,
+  type BrowserResumeStateStore,
+} from '../../../../src/host/services/surfaceExecution/BrowserResumeStateStore';
+
+function createMemorySecureStorage() {
+  const values = new Map<string, string>();
+  return {
+    values,
+    getItem: vi.fn(async (key: string) => values.get(key) ?? null),
+    setItem: vi.fn(async (key: string, value: string) => { values.set(key, value); }),
+    removeItem: vi.fn(async (key: string) => { values.delete(key); }),
+  };
+}
+
+function createNoopResumeStore(): BrowserResumeStateStore {
+  return {
+    exportForConversation: vi.fn(async () => '/secure/browser-resume-state/export.json'),
+    importForConversation: vi.fn(async () => false),
+    clearConversation: vi.fn(async () => undefined),
+    activateConversation: vi.fn(),
+  };
+}
 
 function createFakeBrowser(failSnapshotAt?: number, options?: {
   sessionId?: string;
   onSessionChanged?: (listener: (reason: string) => void) => () => void;
+  cookies?: string[];
 }) {
   let running = false;
   let snapshot = 0;
@@ -28,6 +56,23 @@ function createFakeBrowser(failSnapshotAt?: number, options?: {
     running = false;
   });
   const sessionChangedListeners = new Set<(reason: string) => void>();
+  const cookies = new Set(options?.cookies || []);
+  const exportStorageState = vi.fn(async (filePath: string) => {
+    await fs.promises.writeFile(filePath, JSON.stringify({
+      cookies: [...cookies].map((name) => ({ name, value: '1', domain: 'example.test', path: '/' })),
+      origins: [],
+    }));
+    return { path: filePath, accountState: {} };
+  });
+  const importStorageState = vi.fn(async (filePath: string) => {
+    const state = JSON.parse(await fs.promises.readFile(filePath, 'utf8')) as {
+      cookies?: Array<{ name?: string }>;
+    };
+    for (const cookie of state.cookies || []) {
+      if (cookie.name) cookies.add(cookie.name);
+    }
+    return {};
+  });
   const service = {
     ensureSession,
     isRunning: () => running,
@@ -88,9 +133,20 @@ function createFakeBrowser(failSnapshotAt?: number, options?: {
         }],
       };
     }),
+    exportStorageState,
+    importStorageState,
     close,
   };
-  return { service: service as unknown as BrowserService, ensureSession, close, sessionChangedListeners, raw: service };
+  return {
+    service: service as unknown as BrowserService,
+    ensureSession,
+    close,
+    exportStorageState,
+    importStorageState,
+    hasCookie: (name: string) => cookies.has(name),
+    sessionChangedListeners,
+    raw: service,
+  };
 }
 
 function createHarness(failSnapshotAt?: number) {
@@ -105,8 +161,9 @@ function createHarness(failSnapshotAt?: number) {
   const fake = createFakeBrowser(failSnapshotAt);
   const release = vi.fn(async () => fake.close());
   const acquire = vi.fn((_serviceKey: string | null) => fake.service);
-  const adapter = new ManagedBrowserProviderAdapter(runtime, acquire, release);
-  return { registry, runtime, identity, fake, acquire, release, adapter };
+  const resumeStore = createNoopResumeStore();
+  const adapter = new ManagedBrowserProviderAdapter(runtime, acquire, release, resumeStore);
+  return { registry, runtime, identity, fake, acquire, release, resumeStore, adapter };
 }
 
 describe('ManagedBrowserProviderAdapter profile selection (P0 auth-state)', () => {
@@ -389,6 +446,281 @@ describe('ManagedBrowserProviderAdapter', () => {
       },
     });
     expect(fake.close).toHaveBeenCalled();
+  });
+
+  it('exports before close and imports the cookie into the next run in the same conversation', async () => {
+    const temporaryRoot = path.join(os.tmpdir(), `managed-browser-resume-${randomUUID()}`);
+    const secureStorage = createMemorySecureStorage();
+    const resumeStore = new SecureBrowserResumeStateStore({
+      rootDir: temporaryRoot,
+      secureStorage,
+      workspaceRoot: process.cwd(),
+    });
+    const registry = new RunRegistry();
+    registry.start({ runId: 'run-a', sessionId: 'conversation-a', workspace: process.cwd() });
+    const runtime = new SurfaceExecutionRuntime({ runRegistry: registry });
+    const first = createFakeBrowser(undefined, { sessionId: 'session-a', cookies: ['login'] });
+    const second = createFakeBrowser(undefined, { sessionId: 'session-b' });
+    let acquisition = 0;
+    const acquire = vi.fn(() => (acquisition++ === 0 ? first.service : second.service));
+    const release = vi.fn(async () => undefined);
+    const adapter = new ManagedBrowserProviderAdapter(runtime, acquire, release, resumeStore);
+    const firstIdentity: SurfaceRuntimeIdentityV1 = {
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      agentId: 'agent-a',
+    };
+
+    try {
+      const active = adapter.execute({
+        identity: firstIdentity,
+        operationId: 'first-click',
+        action: 'click',
+        params: { action: 'click', targetRef: { refId: 'target-1' } },
+        executeProvider(signal) {
+          return new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(new Error('provider aborted')), { once: true });
+          });
+        },
+      });
+      await vi.waitFor(() => expect(adapter.getBinding(firstIdentity)).not.toBeNull());
+      const firstBinding = adapter.getBinding(firstIdentity)!;
+      await runtime.control({
+        sessionId: firstBinding.surfaceSessionId,
+        runId: firstIdentity.runId,
+        agentId: firstIdentity.agentId,
+      }, 'stop');
+      await expect(active).resolves.toMatchObject({ success: false });
+
+      registry.unregister('run-a');
+      registry.start({ runId: 'run-b', sessionId: 'conversation-a', workspace: process.cwd() });
+      const secondIdentity: SurfaceRuntimeIdentityV1 = { ...firstIdentity, runId: 'run-b' };
+      const resumed = await adapter.execute({
+        identity: secondIdentity,
+        operationId: 'second-observe',
+        action: 'get_dom_snapshot',
+        params: { action: 'get_dom_snapshot' },
+        async executeProvider(_signal, browserService) {
+          return { success: true, metadata: { domSnapshot: await browserService.getDomSnapshot() } };
+        },
+      });
+
+      expect(resumed.success).toBe(true);
+      expect(first.exportStorageState).toHaveBeenCalledOnce();
+      expect(second.importStorageState).toHaveBeenCalledOnce();
+      expect(second.hasCookie('login')).toBe(true);
+    } finally {
+      await fs.promises.rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('does not close until the asynchronous resume-state export finishes', async () => {
+    const { runtime, identity, fake } = createHarness();
+    let finishExport!: () => void;
+    const exportPending = new Promise<void>((resolve) => { finishExport = resolve; });
+    const resumeStore: BrowserResumeStateStore = {
+      exportForConversation: vi.fn(async () => {
+        await exportPending;
+        return '/secure/browser-resume-state/export.json';
+      }),
+      importForConversation: vi.fn(async () => false),
+      clearConversation: vi.fn(async () => undefined),
+      activateConversation: vi.fn(),
+    };
+    const release = vi.fn(async () => undefined);
+    const adapter = new ManagedBrowserProviderAdapter(runtime, () => fake.service, release, resumeStore);
+    const active = adapter.execute({
+      identity,
+      operationId: 'ordered-click',
+      action: 'click',
+      params: { action: 'click', targetRef: { refId: 'target-1' } },
+      executeProvider(signal) {
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(new Error('provider aborted')), { once: true });
+        });
+      },
+    });
+    await vi.waitFor(() => expect(adapter.getBinding(identity)).not.toBeNull());
+    const binding = adapter.getBinding(identity)!;
+    const stopping = runtime.control({
+      sessionId: binding.surfaceSessionId,
+      runId: identity.runId,
+      agentId: identity.agentId,
+    }, 'stop');
+
+    await vi.waitFor(() => expect(resumeStore.exportForConversation).toHaveBeenCalledOnce());
+    try {
+      expect(fake.close).not.toHaveBeenCalled();
+    } finally {
+      finishExport();
+      await stopping;
+      await active;
+    }
+    expect(fake.close).toHaveBeenCalledOnce();
+  });
+
+  it('fails loud when export fails while still closing the browser and logging the failure', async () => {
+    const { runtime, identity, fake } = createHarness();
+    const resumeStore: BrowserResumeStateStore = {
+      exportForConversation: vi.fn(async () => { throw new Error('secure write failed'); }),
+      importForConversation: vi.fn(async () => false),
+      clearConversation: vi.fn(async () => undefined),
+      activateConversation: vi.fn(),
+    };
+    const resumeLogger = { error: vi.fn() };
+    const adapter = new ManagedBrowserProviderAdapter(
+      runtime,
+      () => fake.service,
+      async () => undefined,
+      resumeStore,
+      resumeLogger,
+    );
+    const active = adapter.execute({
+      identity,
+      operationId: 'failed-export-click',
+      action: 'click',
+      params: { action: 'click', targetRef: { refId: 'target-1' } },
+      executeProvider(signal) {
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(new Error('provider aborted')), { once: true });
+        });
+      },
+    });
+    await vi.waitFor(() => expect(adapter.getBinding(identity)).not.toBeNull());
+    const binding = adapter.getBinding(identity)!;
+
+    await expect(runtime.control({
+      sessionId: binding.surfaceSessionId,
+      runId: identity.runId,
+      agentId: identity.agentId,
+    }, 'stop')).rejects.toThrow('Browser login state could not be saved');
+    await expect(active).resolves.toMatchObject({ success: false });
+    expect(fake.close).toHaveBeenCalledOnce();
+    expect(resumeLogger.error).toHaveBeenCalledWith(
+      'Failed to save managed browser login state before close',
+      expect.objectContaining({ error: 'secure write failed' }),
+    );
+  });
+
+  it('does not import conversation A state into conversation B and keeps temp files out of artifacts', async () => {
+    const temporaryRoot = path.join(os.tmpdir(), `managed-browser-resume-${randomUUID()}`);
+    const screenshotDir = path.join(process.cwd(), 'artifacts', 'screenshots');
+    const secureStorage = createMemorySecureStorage();
+    const resumeStore = new SecureBrowserResumeStateStore({
+      rootDir: temporaryRoot,
+      secureStorage,
+      workspaceRoot: process.cwd(),
+    });
+    const source = createFakeBrowser(undefined, { cookies: ['conversation-a-login'] });
+    const target = createFakeBrowser();
+
+    try {
+      const exportedPath = await resumeStore.exportForConversation('conversation-a', source.service);
+      expect(path.relative(process.cwd(), exportedPath).startsWith('..')).toBe(true);
+      expect(path.relative(screenshotDir, exportedPath).startsWith('..')).toBe(true);
+      expect(fs.existsSync(exportedPath)).toBe(false);
+
+      const registry = new RunRegistry();
+      registry.start({ runId: 'run-b', sessionId: 'conversation-b', workspace: process.cwd() });
+      const runtime = new SurfaceExecutionRuntime({ runRegistry: registry });
+      const adapter = new ManagedBrowserProviderAdapter(
+        runtime,
+        () => target.service,
+        async () => undefined,
+        resumeStore,
+      );
+      const result = await adapter.execute({
+        identity: { conversationId: 'conversation-b', runId: 'run-b', agentId: 'agent-b' },
+        operationId: 'conversation-b-observe',
+        action: 'get_dom_snapshot',
+        params: { action: 'get_dom_snapshot' },
+        async executeProvider(_signal, browserService) {
+          return { success: true, metadata: { domSnapshot: await browserService.getDomSnapshot() } };
+        },
+      });
+
+      expect(result.success).toBe(true);
+      expect(target.importStorageState).not.toHaveBeenCalled();
+      expect(target.hasCookie('conversation-a-login')).toBe(false);
+
+      await resumeStore.clearConversation('conversation-a');
+      source.exportStorageState.mockClear();
+      await resumeStore.exportForConversation('conversation-a', source.service);
+      expect(source.exportStorageState).not.toHaveBeenCalled();
+      expect(secureStorage.values.size).toBe(0);
+    } finally {
+      await fs.promises.rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a corrupted stored state instead of silently starting as resumed', async () => {
+    const temporaryRoot = path.join(os.tmpdir(), `managed-browser-resume-${randomUUID()}`);
+    const secureStorage = createMemorySecureStorage();
+    const resumeStore = new SecureBrowserResumeStateStore({
+      rootDir: temporaryRoot,
+      secureStorage,
+      workspaceRoot: process.cwd(),
+    });
+    const source = createFakeBrowser(undefined, { cookies: ['login'] });
+    const target = createFakeBrowser();
+    const resumeLogger = { error: vi.fn() };
+
+    try {
+      await resumeStore.exportForConversation('conversation-a', source.service);
+      const slot = [...secureStorage.values.keys()][0];
+      secureStorage.values.set(slot, '{broken-json');
+      const registry = new RunRegistry();
+      registry.start({ runId: 'run-a', sessionId: 'conversation-a', workspace: process.cwd() });
+      const runtime = new SurfaceExecutionRuntime({ runRegistry: registry });
+      const release = vi.fn(async () => undefined);
+      const adapter = new ManagedBrowserProviderAdapter(
+        runtime,
+        () => target.service,
+        release,
+        resumeStore,
+        resumeLogger,
+      );
+      const result = await adapter.execute({
+        identity: { conversationId: 'conversation-a', runId: 'run-a', agentId: 'agent-a' },
+        operationId: 'corrupt-resume-state',
+        action: 'get_dom_snapshot',
+        params: { action: 'get_dom_snapshot' },
+        async executeProvider(_signal, browserService) {
+          return { success: true, metadata: { domSnapshot: await browserService.getDomSnapshot() } };
+        },
+      });
+
+      expect(result).toMatchObject({
+        success: false,
+        metadata: { code: 'BROWSER_RESUME_STATE_IMPORT_FAILED' },
+      });
+      expect(target.close).toHaveBeenCalled();
+      expect(release).toHaveBeenCalled();
+      expect(resumeLogger.error).toHaveBeenCalledWith(
+        'Failed to restore managed browser login state',
+        expect.objectContaining({ error: expect.any(String) }),
+      );
+    } finally {
+      await fs.promises.rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps binding setup equivalent when no resume state is stored', async () => {
+    const { identity, fake, resumeStore, adapter } = createHarness();
+    const result = await adapter.execute({
+      identity,
+      operationId: 'no-resume-state',
+      action: 'get_dom_snapshot',
+      params: { action: 'get_dom_snapshot' },
+      async executeProvider(_signal, browserService) {
+        return { success: true, metadata: { domSnapshot: await browserService.getDomSnapshot() } };
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(resumeStore.importForConversation).toHaveBeenCalledWith(identity.conversationId, fake.service);
+    expect(fake.importStorageState).not.toHaveBeenCalled();
+    expect(fake.ensureSession).toHaveBeenCalledOnce();
   });
 
   it('shares one physical browser within a conversation while preserving separate run owners', async () => {

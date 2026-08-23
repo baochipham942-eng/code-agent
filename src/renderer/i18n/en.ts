@@ -42,6 +42,7 @@ import { imageNarrationEn } from './imageNarration';
 import { mermaidEn } from './mermaid';
 import { voiceAuditEn } from './voiceAudit';
 import { sessionInspectorEn } from './sessionInspector';
+import { artifactShareEn } from './artifactShare';
 export const en: Translations = {
   ...canvasActorEn, ...activityPanelEn,
   ...imageNarrationEn, ...mermaidEn,
@@ -85,7 +86,27 @@ export const en: Translations = {
     copyReference: 'Copy path or link',
     download: 'Download',
     archiveToLibrary: 'Archive to library',
-    exportBundle: 'Export bundle',
+    exportBundle: 'Share published version',
+    exportBundleSource: 'Source: published snapshot v{version}',
+    publishVersion: 'Publish this version',
+    generateShareLink: 'Generate link',
+    shareLinkExisting: 'Link',
+    shareLink: artifactShareEn,
+    publishConfirmTitle: 'Publish this version',
+    publishConfirmDescription: 'Freeze the current content of “{title}” as read-only snapshot v{version}. Later edits become a draft.',
+    publishNote: 'Version note (optional)',
+    publishNotePlaceholder: 'Example: final copy for the client',
+    publish: 'Publish',
+    publishSuccess: 'Published v{version} · The library version list has been updated',
+    publishFailed: 'Publish failed',
+    draft: 'Draft',
+    publishedVersion: 'Published v{version}',
+    unpublishedChanges: 'Unpublished changes',
+    versionDraft: 'v{version} Draft',
+    currentPublished: 'Current published',
+    unpublished: 'Unpublished',
+    versions: 'Versions',
+    viewVersion: 'View',
     // Dad's 2026-08-18 call: plain user-facing wording instead of internal verification jargon.
     statusVerified: 'Ready',
     statusUnverified: 'Not checked',

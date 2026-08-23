@@ -16,11 +16,13 @@ import {
 import type {
   CronJobDefinition,
   CronJobExecution,
-  CronScheduleType,
   CronJobAction,
   CronServiceStats,
+  CronMissedEvent,
+  CreateCronJobDefinition,
 } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
+import { getConfigService } from '../services/core/configService';
 import type { Disposable } from '../services/serviceRegistry';
 import { getServiceRegistry } from '../services/serviceRegistry';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
@@ -38,33 +40,33 @@ import {
 import {
   isCronAgentActionResult,
   normalizeCronJobRow,
-  normalizeCronExecutionRow,
   assertSupportedEveryScheduleUnit,
-  parseJsonValue,
-  type CronExecutionRow,
   type SupportedEveryTimeUnit,
 } from './cronNormalizers';
 import { buildCronAgentRunOptions } from './cronAgentRoleContext';
+import { BACKGROUND_AGENT_EVENT_FILTER } from '../protocol/events/eventFilter';
+import type { AgentRunOptions } from '../research/types';
+import { getEventBus } from '../services/eventing/bus';
+import { persistCronMissedTrace } from './cronMissedTrace';
+import {
+  assertExecutionLocationConstraints,
+  computeCronFireJitterMs,
+  runWithCronJobBudget,
+  scheduleBoundToDate,
+} from './cronExecutionPolicy';
+import { CronCloudRuntime } from './cronCloudRuntime';
+import {
+  deleteCronJob,
+  loadCronExecutionStatus,
+  mapCronExecutionRows,
+  saveCronExecution,
+  saveCronJob,
+  upsertCronExecutionInMemory,
+} from './cronPersistence';
+import { pushCronResult } from './cronResultDelivery';
+export { computeCronFireJitterMs } from './cronExecutionPolicy';
 
 const execAsync = promisify(exec);
-
-/**
- * 循环任务触发抖动（防惊群，maka automation 护栏自查 A5-③）：
- * 同刻到点的多个 every/cron 任务错开 0..FIRE_JITTER_MAX_MS 再执行，
- * 避免同一 tick 同时拉起多个 agent 会话 / API 突发。一次性 at 任务不抖动。
- */
-export function computeCronFireJitterMs(
-  scheduleType: CronScheduleType,
-  rand: () => number = Math.random,
-): number {
-  if (scheduleType === 'at') return 0;
-  return Math.floor(rand() * CRON_GUARDRAILS.FIRE_JITTER_MAX_MS);
-}
-
-/** 契约里的 startAt/endAt（string|number）转 Date，供 croner 原生窗口选项使用。 */
-function scheduleBoundToDate(value: string | number): Date {
-  return new Date(typeof value === 'number' ? value : Date.parse(value));
-}
 
 /**
  * 只有开了变化追踪的任务才包装 prompt；没开的任务原样发送，行为完全不变。
@@ -137,6 +139,7 @@ interface ActiveJob {
   definition: CronJobDefinition;
   cronInstance?: Cron;
   nextRun?: Date;
+  cloudJobId?: string;
 }
 
 // ============================================================================
@@ -148,6 +151,33 @@ export class CronService implements Disposable {
   private executions: Map<string, CronJobExecution[]> = new Map();
   private isInitialized = false;
   private disposed = false;
+  private unsubscribeCronMissed?: () => void;
+  private cloudRuntime = new CronCloudRuntime(
+    () => {
+      const config = getConfigService().getSettings().cronCloud;
+      const baseUrl = config?.baseUrl?.trim();
+      const token = config?.token?.trim();
+      return baseUrl && token ? { baseUrl, token } : undefined;
+    },
+    {
+      getJobs: () => this.jobs.values(),
+      persistJob: (definition, cloudJobId) => this.persistJob(definition, cloudJobId),
+      persistExecution: async (execution) => {
+        upsertCronExecutionInMemory(this.executions, execution);
+        await saveCronExecution(execution);
+      },
+      loadExecutionStatus: loadCronExecutionStatus,
+      unavailableMessage: () => getConfigService().getSettings().ui?.language === 'en'
+        ? 'The cloud scheduler is unavailable, so the job was not run. Check the cloud scheduler URL and token, then try again.'
+        : '云端计划任务服务暂时不可用，任务未执行。请检查云端执行地址和令牌后重试。',
+      onCompleted: async (definition, execution, summary) => {
+        await recordCronAutomationExecution(definition, execution, this.resolveAutomationRuntime);
+        await pushCronResult(definition, summary);
+        this.notifyAgentExecution(definition, execution);
+        void this.notifyWakeOnJobCompleted(definition, execution);
+      },
+    },
+  );
 
   // --------------------------------------------------------------------------
   // Initialization
@@ -156,18 +186,31 @@ export class CronService implements Disposable {
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
+    this.unsubscribeCronMissed ??= getEventBus().subscribe<CronMissedEvent>(
+      'system:cron.missed',
+      (event) => {
+        console.error(`[CronService] cron.missed consumed for job ${event.data.jobId}`);
+      },
+    );
+
     // 中断可见性（maka 护栏自查 A5-④遗留）：上次运行中途被杀掉的执行记录会永远
     // 停在 running，让用户误以为还在跑。启动时先把这些残留行标记为 interrupted。
     await this.markInterruptedExecutions();
 
     // Load jobs from database
     await this.loadJobsFromDatabase();
+    await this.cloudRuntime.reconcile();
+
+    if (this.cloudRuntime.isConfigured()) {
+      this.cloudRuntime.start();
+    }
 
     this.isInitialized = true;
     console.error('[CronService] Initialized');
   }
 
   async shutdown(): Promise<void> {
+    this.cloudRuntime.stop();
     // Stop all cron jobs
     for (const [jobId, job] of this.jobs) {
       if (job.cronInstance) {
@@ -177,6 +220,8 @@ export class CronService implements Disposable {
     }
 
     this.jobs.clear();
+    this.unsubscribeCronMissed?.();
+    this.unsubscribeCronMissed = undefined;
     this.isInitialized = false;
     console.error('[CronService] Shutdown complete');
   }
@@ -200,7 +245,7 @@ export class CronService implements Disposable {
    * Create a new cron job
    */
   async createJob(
-    definition: Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'>
+    definition: CreateCronJobDefinition
   ): Promise<CronJobDefinition> {
     const now = Date.now();
 
@@ -220,15 +265,23 @@ export class CronService implements Disposable {
     }
     assertSupportedEveryScheduleUnit(definition.schedule);
 
+    const runsOn = definition.runsOn ?? 'local';
+    assertExecutionLocationConstraints({
+      runsOn,
+      schedule: definition.schedule,
+      maxRunBudget: definition.maxRunBudget,
+    });
+
     const job: CronJobDefinition = {
       ...definition,
+      runsOn,
       id: uuidv4(),
       createdAt: now,
       updatedAt: now,
     };
 
     // Save to database
-    await this.saveJobToDatabase(job);
+    await this.persistJob(job);
 
     // Register and start if enabled
     if (job.enabled) {
@@ -238,6 +291,10 @@ export class CronService implements Disposable {
     }
 
     await recordCronAutomationCreated(job, this.resolveAutomationRuntime);
+
+    if (job.runsOn === 'cloud') {
+      await this.cloudRuntime.addJob(job);
+    }
 
     return job;
   }
@@ -252,6 +309,10 @@ export class CronService implements Disposable {
     const existingJob = this.jobs.get(jobId);
     if (!existingJob) return null;
 
+    if (updates.runsOn !== undefined && updates.runsOn !== existingJob.definition.runsOn) {
+      throw new Error('runsOn is immutable after creation; create a new job to change execution location.');
+    }
+
     // Stop existing cron instance
     if (existingJob.cronInstance) {
       existingJob.cronInstance.stop();
@@ -263,9 +324,10 @@ export class CronService implements Disposable {
       updatedAt: Date.now(),
     };
     assertSupportedEveryScheduleUnit(updatedJob.schedule);
+    assertExecutionLocationConstraints(updatedJob);
 
     // Save to database
-    await this.saveJobToDatabase(updatedJob);
+    await this.persistJob(updatedJob);
 
     // Re-register if enabled
     if (updatedJob.enabled) {
@@ -275,6 +337,10 @@ export class CronService implements Disposable {
     }
 
     syncCronAutomationFromJob(updatedJob, this.resolveAutomationRuntime);
+
+    if (updatedJob.runsOn === 'cloud') {
+      await this.cloudRuntime.updateJob(updatedJob);
+    }
 
     return updatedJob;
   }
@@ -286,6 +352,13 @@ export class CronService implements Disposable {
     const job = this.jobs.get(jobId);
     if (!job) return false;
 
+    if (
+      job.definition.runsOn === 'cloud'
+      && !await this.cloudRuntime.removeJob(job.definition, job.cloudJobId)
+    ) {
+      return false;
+    }
+
     // Stop cron instance
     if (job.cronInstance) {
       job.cronInstance.stop();
@@ -296,7 +369,7 @@ export class CronService implements Disposable {
     this.executions.delete(jobId);
 
     // Remove from database
-    await this.deleteJobFromDatabase(jobId);
+    await deleteCronJob(jobId);
     await recordCronAutomationArchived(job.definition);
 
     return true;
@@ -498,6 +571,12 @@ export class CronService implements Disposable {
   // --------------------------------------------------------------------------
 
   private registerJob(definition: CronJobDefinition): void {
+    const cloudJobId = this.jobs.get(definition.id)?.cloudJobId;
+    if (definition.runsOn === 'cloud') {
+      this.jobs.set(definition.id, { definition, cloudJobId });
+      console.error(`[CronService] Registered cloud job without a local timer: ${definition.name} (${definition.id})`);
+      return;
+    }
     const cronInstance = this.createCronInstance(definition);
     const nextRun = cronInstance?.nextRun();
 
@@ -597,6 +676,7 @@ export class CronService implements Disposable {
     const execution: CronJobExecution = {
       id: uuidv4(),
       jobId: definition.id,
+      runsOn: definition.runsOn,
       status: 'running',
       scheduledAt: Date.now(),
       startedAt: Date.now(),
@@ -617,21 +697,29 @@ export class CronService implements Disposable {
 
     // 先落一条 running 记录（maka 护栏自查 A5-④）：不这样做的话，进程在此次
     // 执行期间被杀掉时数据库里不会留下任何痕迹，启动扫描也就无从标记 interrupted。
-    await this.saveExecutionToDatabase(execution);
+    await saveCronExecution(execution);
 
     try {
-      const result = await this.executeAction(definition, definition.action, definition.timeout, execution.id);
-      if (isCronAgentActionResult(result)) {
-        execution.sessionId = result.sessionId;
+      if (definition.runsOn === 'cloud') {
+        execution.result = await this.cloudRuntime.runJob(definition);
+        execution.status = 'completed';
+      } else {
+        const result = await this.executeAction(definition, definition.action, definition.timeout, execution.id);
+        if (isCronAgentActionResult(result)) {
+          execution.sessionId = result.sessionId;
+        }
+        execution.status = 'completed';
+        execution.result = result;
+        if (definition.action.type !== 'agent') {
+          await pushCronResult(definition, result);
+        }
       }
-      execution.status = 'completed';
-      execution.result = result;
     } catch (error) {
       execution.status = 'failed';
       execution.error = error instanceof Error ? error.message : String(error);
 
       // Handle retries
-      if (definition.maxRetries && execution.retryAttempt < definition.maxRetries) {
+      if (definition.runsOn === 'local' && definition.maxRetries && execution.retryAttempt < definition.maxRetries) {
         await this.retryExecution(definition, execution);
       }
     } finally {
@@ -644,7 +732,7 @@ export class CronService implements Disposable {
       }
 
       // Save execution to database
-      await this.saveExecutionToDatabase(execution);
+      await saveCronExecution(execution);
 
       await recordCronAutomationExecution(definition, execution, this.resolveAutomationRuntime);
 
@@ -779,7 +867,11 @@ export class CronService implements Disposable {
         if (cronSession.workingDirectory) {
           tm.setWorkingDirectory(cronSession.id, cronSession.workingDirectory);
         }
-        const agentRunOptions = await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory);
+        const agentRunOptions: AgentRunOptions = {
+          mode: 'normal',
+          ...await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory),
+          eventFilter: BACKGROUND_AGENT_EVENT_FILTER,
+        };
         const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
         const snapshotTrackingEnabled = ctx?.[CRON_AGENT_SNAPSHOT.ENABLED_KEY] === true;
         // external_event（业务事件监听）任务：无 <cron_alert> = 无新料 = 本次安静。
@@ -789,11 +881,12 @@ export class CronService implements Disposable {
 
         let result: unknown;
         try {
-          result = await orchestrator.sendMessage(
-            buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled),
-            undefined,
-            agentRunOptions,
-          );
+          const sendMessage = () => orchestrator.sendMessage(
+              buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled),
+              undefined,
+              agentRunOptions,
+            );
+          result = await runWithCronJobBudget(definition.maxRunBudget, sendMessage);
 
           const messages = orchestrator.getMessages();
           const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
@@ -850,21 +943,7 @@ export class CronService implements Disposable {
           tm.cleanup(cronSession.id);
         }
 
-        // Heartbeat 任务: channel 推送
-        if (ctx?.heartbeatTask && ctx?.channel && result) {
-          try {
-            const { getChannelManager } = await import('../channels/channelManager');
-            const channelManager = getChannelManager();
-            const accounts = channelManager.getAllAccounts();
-            const targetAccount = accounts.find(a => a.type === ctx!.channel || a.name === ctx!.channel);
-            if (targetAccount) {
-              await channelManager.sendMessage(targetAccount.id, targetAccount.id, String(result));
-              console.error(`[CronService] Heartbeat result pushed to channel: ${ctx.channel}`);
-            }
-          } catch (pushError) {
-            console.warn(`[CronService] Failed to push heartbeat result to channel: ${ctx.channel}`, pushError);
-          }
-        }
+        await pushCronResult(definition, result);
 
         // 无新料的监听运行整成 skipped 形状：复用 isSkippedResult 门，
         // 让它不进待过目收件箱、不写会话回流（快照已在上面照常写回）。
@@ -1060,6 +1139,7 @@ export class CronService implements Disposable {
       }
       const rows = db.prepare('SELECT * FROM cron_jobs').all() as unknown[];
       let loadedCount = 0;
+      const now = Date.now();
       for (const row of rows) {
         const job = normalizeCronJobRow(row);
         if (!job) {
@@ -1070,14 +1150,17 @@ export class CronService implements Disposable {
         // 过期的一次性任务停用而不是静默挂起（maka 护栏自查 A5-⑥）：
         // datetime 已过（app 关闭期间错过触发窗）时 croner 永远不会再触发，
         // 旧行为是任务留在 enabled 状态装作还会跑。停用并落库，让状态与事实一致。
-        if (job.enabled && job.schedule.type === 'at') {
+        if (job.runsOn === 'local' && job.enabled && job.schedule.type === 'at') {
           const ts = typeof job.schedule.datetime === 'number'
             ? job.schedule.datetime
             : Date.parse(String(job.schedule.datetime));
-          if (!Number.isFinite(ts) || ts <= Date.now()) {
-            const disabled = { ...job, enabled: false, updatedAt: Date.now() };
+          if (!Number.isFinite(ts) || ts <= now) {
+            const disabled = { ...job, enabled: false, updatedAt: now };
             this.jobs.set(disabled.id, { definition: disabled });
-            await this.saveJobToDatabase(disabled);
+            await this.persistJob(disabled);
+            if (Number.isFinite(ts)) {
+              await this.recordMissedJob(disabled, ts);
+            }
             console.error(`[CronService] One-time job ${job.id} missed its schedule while app was offline; disabled`);
             loadedCount += 1;
             continue;
@@ -1085,9 +1168,26 @@ export class CronService implements Disposable {
         }
 
         if (job.enabled) {
+          const cloudJobId = typeof (row as Record<string, unknown>).cloud_job_id === 'string'
+            ? (row as Record<string, unknown>).cloud_job_id as string
+            : undefined;
+          this.jobs.set(job.id, { definition: job, cloudJobId });
           this.registerJob(job);
+          const activeJob = this.jobs.get(job.id);
+          const previousScheduledAt = activeJob?.cronInstance
+            ?.previousRuns(1, new Date(now))[0]
+            ?.getTime();
+          if (previousScheduledAt != null && previousScheduledAt < now) {
+            const lastRunAt = this.loadLastRunAt(job.id) ?? job.createdAt;
+            if (lastRunAt < previousScheduledAt) {
+              await this.recordMissedJob(job, previousScheduledAt, activeJob?.cronInstance?.nextRun()?.getTime());
+            }
+          }
         } else {
-          this.jobs.set(job.id, { definition: job });
+          const cloudJobId = typeof (row as Record<string, unknown>).cloud_job_id === 'string'
+            ? (row as Record<string, unknown>).cloud_job_id as string
+            : undefined;
+          this.jobs.set(job.id, { definition: job, cloudJobId });
         }
         loadedCount += 1;
       }
@@ -1097,42 +1197,34 @@ export class CronService implements Disposable {
     }
   }
 
-  private async saveJobToDatabase(job: CronJobDefinition): Promise<void> {
+  private loadLastRunAt(jobId: string): number | undefined {
     try {
       const db = getDatabase().getDb();
-      if (!db) return;
-      db.prepare(`
-        INSERT OR REPLACE INTO cron_jobs
-        (id, name, description, schedule_type, schedule, action, enabled, max_retries, retry_delay, timeout, tags, metadata, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        job.id, job.name, job.description || null,
-        job.scheduleType, JSON.stringify(job.schedule), JSON.stringify(job.action),
-        job.enabled ? 1 : 0, job.maxRetries || 0, job.retryDelay || 5000,
-        job.timeout || 60000, job.tags ? JSON.stringify(job.tags) : null,
-        job.metadata ? JSON.stringify(job.metadata) : '{}',
-        job.createdAt, job.updatedAt
-      );
+      if (!db) return undefined;
+      const row = db.prepare(`
+        SELECT MAX(started_at) AS last_run_at
+        FROM cron_executions
+        WHERE job_id = ? AND started_at IS NOT NULL
+      `).get(jobId) as { last_run_at?: number | null } | undefined;
+      return typeof row?.last_run_at === 'number' ? row.last_run_at : undefined;
     } catch (error) {
-      console.error('[CronService] Failed to save job to database:', error);
+      console.error('[CronService] Failed to load cron last-run timestamp:', error);
+      return undefined;
     }
   }
 
-  private mapExecutionRows(rows: unknown[]): CronJobExecution[] {
-    return rows.map(normalizeCronExecutionRow).filter((row): row is CronExecutionRow => row !== null).map((row) => ({
-      id: row.id,
-      jobId: row.job_id,
-      sessionId: row.session_id || undefined,
-      status: row.status,
-      scheduledAt: row.scheduled_at,
-      startedAt: row.started_at ?? undefined,
-      completedAt: row.completed_at ?? undefined,
-      duration: row.duration ?? undefined,
-      result: parseJsonValue(row.result),
-      error: row.error || undefined,
-      retryAttempt: row.retry_attempt,
-      exitCode: row.exit_code ?? undefined,
-    }));
+  private async recordMissedJob(
+    definition: CronJobDefinition,
+    scheduledAt: number,
+    nextRunAt?: number,
+  ): Promise<void> {
+    const event: CronMissedEvent = { jobId: definition.id, scheduledAt, reason: 'app-offline' };
+    await persistCronMissedTrace(definition, event, nextRunAt);
+    getEventBus().publish('system', 'cron.missed', event, { bridgeToRenderer: false });
+  }
+
+  private persistJob(job: CronJobDefinition, cloudJobId?: string): Promise<void> {
+    return saveCronJob(job, cloudJobId ?? this.jobs.get(job.id)?.cloudJobId);
   }
 
   private loadExecutionsFromDatabase(jobId: string, limit: number): CronJobExecution[] {
@@ -1141,14 +1233,15 @@ export class CronService implements Disposable {
       if (!db) return [];
 
       const rows = db.prepare(`
-        SELECT *
+        SELECT cron_executions.*, cron_jobs.runs_on AS runs_on
         FROM cron_executions
-        WHERE job_id = ?
-        ORDER BY scheduled_at DESC
+        JOIN cron_jobs ON cron_jobs.id = cron_executions.job_id
+        WHERE cron_executions.job_id = ?
+        ORDER BY cron_executions.scheduled_at DESC
         LIMIT ?
       `).all(jobId, limit) as unknown[];
 
-      return this.mapExecutionRows(rows.reverse());
+      return mapCronExecutionRows(rows.reverse());
     } catch (error) {
       console.error('[CronService] Failed to load executions from database:', error);
       return [];
@@ -1164,53 +1257,19 @@ export class CronService implements Disposable {
       const db = getDatabase().getDb();
       if (!db) return [];
       const rows = db.prepare(`
-        SELECT *
+        SELECT cron_executions.*, cron_jobs.runs_on AS runs_on
         FROM cron_executions
-        ORDER BY scheduled_at DESC
+        JOIN cron_jobs ON cron_jobs.id = cron_executions.job_id
+        ORDER BY cron_executions.scheduled_at DESC
         LIMIT ?
       `).all(limit) as unknown[];
-      return this.mapExecutionRows(rows);
+      return mapCronExecutionRows(rows);
     } catch (error) {
       console.error('[CronService] Failed to load recent executions from database:', error);
       return [];
     }
   }
 
-  private async deleteJobFromDatabase(jobId: string): Promise<void> {
-    try {
-      const db = getDatabase().getDb();
-      if (!db) return;
-      db.prepare('DELETE FROM cron_jobs WHERE id = ?').run(jobId);
-    } catch (error) {
-      console.error('[CronService] Failed to delete job from database:', error);
-    }
-  }
-
-  /**
-   * 插入/覆写一条执行记录。用 INSERT OR REPLACE 而非纯 INSERT：executeJob 开头先落
-   * 一条 running 记录（供崩溃后的 interrupted 扫描识别），finally 里带最终状态
-   * 再写一次同 id 的行——必须是同一行被覆盖，不能变成两行或第二次写入失败。
-   */
-  private async saveExecutionToDatabase(execution: CronJobExecution): Promise<void> {
-    try {
-      const db = getDatabase().getDb();
-      if (!db) return;
-      db.prepare(`
-        INSERT OR REPLACE INTO cron_executions
-        (id, job_id, session_id, status, scheduled_at, started_at, completed_at, duration, result, error, retry_attempt, exit_code)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        execution.id, execution.jobId, execution.sessionId || null, execution.status,
-        execution.scheduledAt, execution.startedAt || null,
-        execution.completedAt || null, execution.duration || null,
-        execution.result ? JSON.stringify(execution.result) : null,
-        execution.error || null, execution.retryAttempt,
-        execution.exitCode || null
-      );
-    } catch (error) {
-      console.error('[CronService] Failed to save execution to database:', error);
-    }
-  }
 }
 
 // ============================================================================

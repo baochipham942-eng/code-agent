@@ -86,10 +86,9 @@ export const MEMORY_CONSOLIDATION = {
   CRON_EXPRESSION: '0 0 4 * * 1',
   /**
    * 内置 consolidation job 是否 dry-run。
-   * 刀6 已完成软归档、双账同步、指令层对账与审计护栏，默认真写。
-   * 手动调用仍可显式传 dryRun=true 做零写入预演。
+   * 自动整理必须由用户显式开启；默认调度只做零写入预演。
    */
-  DRY_RUN_DEFAULT: false,
+  DRY_RUN_DEFAULT: true,
   /** 触发 consolidation 的 memory 文件数阈值（低于此且 INDEX 未超预算则跳过，不烧 token） */
   FILE_COUNT_THRESHOLD: 40,
   /** LLM 压缩调用 max_tokens（要容纳合并后的多份文件正文） */
@@ -124,6 +123,8 @@ export const ROLE_ASSETS = {
   USER_EXPECTATION_FILENAME: 'USER.md',
   /** 这位专家的行为准则（专家级，留空则不注入）：roles/<roleId>/SOUL.md */
   SOUL_FILENAME: 'SOUL.md',
+  /** 这位专家的结构化硬边界：roles/<roleId>/BOUNDARIES.json */
+  BOUNDARIES_FILENAME: 'BOUNDARIES.json',
   /** 项目目录元数据文件名（记录原始 workspace 路径，P0-2 迁移用） */
   META_FILENAME: 'meta.json',
   /** 项目 key 的 hash 截断长度 */

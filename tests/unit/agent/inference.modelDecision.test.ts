@@ -469,12 +469,12 @@ describe('runAiSdkInferenceWithProviderFallback — AI SDK 普通 provider fallb
 // --------------------------------------------------------------------------
 
 describe('model_decision 事件接线契约（ADR-019 批 3）', () => {
-  const AGENT_CONTRACT_PATH = path.join(ROOT, 'src/shared/contract/agent.ts');
+  const AGENT_EVENT_SCHEMA_PATH = path.join(ROOT, 'src/shared/contract/agentEventSchemas.ts');
   const INFERENCE_PATH = path.join(ROOT, 'src/host/agent/runtime/contextAssembly/inference.ts');
 
-  it('AgentEvent union 必须包含 model_decision 事件类型', () => {
-    const source = readFileSync(AGENT_CONTRACT_PATH, 'utf8');
-    expect(source).toMatch(/type: 'model_decision'/);
+  it('AgentEventSchema 必须包含 model_decision 事件类型', () => {
+    const source = readFileSync(AGENT_EVENT_SCHEMA_PATH, 'utf8');
+    expect(source).toMatch(/event\('model_decision'/);
   });
 
   it('ModelDecision 类型必须定义在 shared/contract（renderer 可消费），main 层从 shared 导入', () => {

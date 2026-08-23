@@ -61,6 +61,7 @@ import { getConfiguredSurfaceExecutionRuntime } from '../../services/surfaceExec
 import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
 import type { CompletionSummaryRecord } from '../../../shared/contract/completionSummary';
 import { recordTurnOutcomeStamp } from './turnOutcomeStamp';
+import { captureTurnDiff } from '../../services/checkpoint/turnDiffService';
 
 const logger = createLogger('AgentLoop');
 
@@ -162,6 +163,19 @@ function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
   return !seenLastUser;
 }
 
+function hasTerminalWakeNoopAfterLastUser(messages: Message[]): boolean {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === 'user') return false;
+    if (
+      message.role === 'assistant'
+      && message.isMeta === true
+      && message.toolCalls?.some((toolCall) => toolCall.name === 'wake_noop')
+    ) return true;
+  }
+  return false;
+}
+
 // ----------------------------------------------------------------------------
 // Agent Loop
 // ----------------------------------------------------------------------------
@@ -211,6 +225,49 @@ export class RunFinalizer {
     } catch (error) {
       logger.warn('[RunFinalizer] terminal message not persisted', {
         messageId: message.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async emitTurnDiff(): Promise<void> {
+    const modifiedFiles = this.ctx.nudgeManager.getModifiedFiles();
+    if (modifiedFiles.size === 0) return;
+
+    const latestAssistant = [...this.ctx.messages]
+      .reverse()
+      .find((message) => message.role === 'assistant');
+    const turnId = this.ctx.turn.currentTurnId || latestAssistant?.id;
+    if (!turnId) return;
+
+    try {
+      const turnDiff = await captureTurnDiff(
+        this.ctx.workingDirectory,
+        turnId,
+        modifiedFiles,
+      );
+      if (!turnDiff) return;
+
+      const targetMessage = this.ctx.messages.find((message) => message.id === turnId)
+        ?? latestAssistant;
+      if (targetMessage) {
+        targetMessage.metadata = { ...targetMessage.metadata, turnDiff };
+        try {
+          await this.ctx.persistMessage?.(targetMessage);
+        } catch (error) {
+          logger.warn('[RunFinalizer] turn diff metadata not persisted', {
+            sessionId: this.ctx.sessionId,
+            turnId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      this.ctx.onEvent({ type: 'turn_diff', data: turnDiff });
+    } catch (error) {
+      logger.warn('[RunFinalizer] turn diff capture failed', {
+        sessionId: this.ctx.sessionId,
+        turnId,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -355,7 +412,10 @@ export class RunFinalizer {
 
       langfuse.endTrace(this.ctx.stats.traceId, `Max iterations (${this.ctx.maxIterations}) reached`, 'WARNING');
     } else {
-      if (!hasVisibleAssistantTextAfterLastUser(this.ctx.messages)) {
+      if (
+        !hasVisibleAssistantTextAfterLastUser(this.ctx.messages)
+        && !hasTerminalWakeNoopAfterLastUser(this.ctx.messages)
+      ) {
         const fallbackMessage: Message = {
           id: this.messageWriter.generateId(),
           role: 'assistant',
@@ -391,6 +451,8 @@ export class RunFinalizer {
     }
 
     await recordTurnOutcomeStamp(this.ctx, terminalStatus, completionSummary);
+
+    await this.emitTurnDiff();
 
     // 先落内部 completion contract，再通知前端关闭 "组织回复中" loading。
     // 后续 post-processing（hooks / learning / summary）跑在后台，不再阻塞 UI。
@@ -618,7 +680,7 @@ export class RunFinalizer {
   emitTaskProgress(
     phase: AgentTaskPhase,
     step?: string,
-    extra?: { progress?: number; tool?: string; toolIndex?: number; toolTotal?: number; parallel?: boolean }
+    extra?: { progress?: number; tool?: string; toolIndex?: number; toolTotal?: number; target?: string; parallel?: boolean }
   ): void {
     this.ctx.onEvent({
       type: 'task_progress',
@@ -669,7 +731,7 @@ export class RunFinalizer {
   // --------------------------------------------------------------------------
 
   checkAndEmitBudgetStatus(): boolean {
-    const budgetService = getBudgetService();
+    const budgetService = getBudgetService(this.ctx.budgetScope);
     const status = budgetService.checkBudget();
 
     const eventData: BudgetEventData = {

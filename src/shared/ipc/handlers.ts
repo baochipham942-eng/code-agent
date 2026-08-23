@@ -451,6 +451,7 @@ export interface IpcInvokeHandlers {
       id: string;
       timestamp: number;
       messageId: string;
+      anchorUserMessageId?: string;
       description?: string;
       fileCount: number;
     }>
@@ -749,12 +750,14 @@ export interface AgentNoticeEvent {
     | 'heartbeat_status_alert'
     | 'auto_agent_awaiting_approval'
     | 'delegate_mode_active'
-    | 'agent_routed';
+    | 'agent_routed'
+    | 'historical_images_omitted';
   params?: {
     name?: string;
     error?: string;
     consecutiveFailures?: number;
     status?: string;
     agentName?: string;
+    count?: number;
   };
 }

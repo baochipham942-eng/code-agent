@@ -35,6 +35,8 @@ import { getProjectSourceTrustFailureMarker } from '../services/project/projectS
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
 import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessionCommandCenter';
+import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifactBlob';
+import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
 
 const logger = createLogger('TaskManager');
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
@@ -353,11 +355,17 @@ export class TaskManager extends EventEmitter {
         const messages = typeof orchestrator.getMessages === 'function'
           ? orchestrator.getMessages()
           : [];
-        const conclusion = [...messages]
+        const finalMessage = [...messages]
           .reverse()
-          .find((message) => message.role === 'assistant' && message.content?.trim())
-          ?.content?.trim();
-        this.emitEvent('task_completed', sessionId, { taskId, conclusion });
+          .find((message) => message.role === 'assistant' && message.content?.trim());
+        const artifacts = messages.flatMap((message) => (
+          (message.toolResults ?? []).flatMap((result) => collectToolArtifactsFromMetadata(result.metadata))
+        )).filter((artifact) => isDeliverableArtifact(artifact) && Boolean(artifact.path || artifact.url));
+        this.emitEvent('task_completed', sessionId, {
+          taskId,
+          conclusion: finalMessage?.content?.trim(),
+          ...(artifacts.length ? { artifacts } : {}),
+        });
       }
     } catch (error) {
       const live = this.backgroundRuns.get(taskId);
@@ -434,6 +442,7 @@ export class TaskManager extends EventEmitter {
     options?: AgentRunOptions,
     messageMetadata?: MessageMetadata,
     clientMessageId?: string,
+    expectedTurnId?: string,
   ): Promise<SteerOrQueueOutcome> {
     const state = this.getSessionState(sessionId);
 
@@ -458,6 +467,7 @@ export class TaskManager extends EventEmitter {
         options,
         messageMetadata,
         clientMessageId,
+        expectedTurnId,
       );
     }
 
@@ -614,6 +624,15 @@ export class TaskManager extends EventEmitter {
    */
   getWaitingQueue(): string[] {
     return [...this.waitingQueue];
+  }
+
+  /**
+   * Primary runs include the direct web AgentLoop path, which does not update
+   * TaskManager.sessionStates. Auxiliary background/wake runs deliberately do
+   * not occupy this per-session control index.
+   */
+  hasActivePrimaryRun(sessionId: string): boolean {
+    return this.runRegistry?.hasSession(sessionId) ?? false;
   }
 
   /**

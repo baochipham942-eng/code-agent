@@ -484,6 +484,7 @@ export class DAGScheduler extends EventEmitter {
       prompt: enhancedPrompt,
       config: {
         name: task.name,
+        roleId: config.role,
         systemPrompt: config.systemPrompt || resolved.systemPrompt,
         availableTools: config.tools || resolved.tools,
         maxIterations: config.maxIterations || resolved.maxIterations,

@@ -1,5 +1,9 @@
 import type { Session } from '../../shared/contract';
 import type { CreateSessionConfig } from '../../shared/contract/appService';
+import {
+  EXPERT_THREAD_METADATA_KEY,
+  type PersistedExpertThread,
+} from '../../shared/contract/expertThread';
 import { normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import type { TaskManager } from '../task';
 import type { ConfigService } from '../services';
@@ -9,6 +13,7 @@ import { rehydrateModelOverrideFromSession } from '../session/modelOverridePersi
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { isExternalAgentEngine } from '../services/agentEngine';
 import { getUserBrowserLinkService } from '../services/surfaceExecution/UserBrowserLinkService';
+import { getManagedBrowserProviderAdapter } from '../services/surfaceExecution/ManagedBrowserProviderAdapter';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('SessionLifecycleAppService');
@@ -26,14 +31,17 @@ export class SessionLifecycleAppService {
 
   private async endPreviousUserBrowserRun(nextSessionId: string): Promise<void> {
     const previousSessionId = this.deps.getCurrentSessionId();
-    if (!previousSessionId || previousSessionId === nextSessionId) return;
-    await getUserBrowserLinkService().end(previousSessionId, 'session-switch').catch((error) => {
-      logger.warn('Failed to end user browser run while switching sessions', {
-        previousSessionId,
-        nextSessionId,
-        message: error instanceof Error ? error.message : String(error),
+    if (previousSessionId && previousSessionId !== nextSessionId) {
+      await getUserBrowserLinkService().end(previousSessionId, 'session-switch').catch((error) => {
+        logger.warn('Failed to end user browser run while switching sessions', {
+          previousSessionId,
+          nextSessionId,
+          message: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
+      await getManagedBrowserProviderAdapter().clearConversationResumeState(previousSessionId);
+    }
+    getManagedBrowserProviderAdapter().activateConversationResumeState(nextSessionId);
   }
 
   async createSession(config?: CreateSessionConfig): Promise<Session> {
@@ -60,6 +68,33 @@ export class SessionLifecycleAppService {
       engine: config?.engine ? requestedEngine : undefined,
       metadata: config?.metadata,
     });
+
+    const expertRoleId = config?.expertRoleId?.trim();
+    if (expertRoleId) {
+      const marker: PersistedExpertThread = { roleId: expertRoleId, setAt: Date.now() };
+      try {
+        const persisted = await sessionManager.patchSessionMetadata(session.id, {
+          [EXPERT_THREAD_METADATA_KEY]: { ...marker },
+        });
+        if (persisted) {
+          session.metadata = {
+            ...(session.metadata ?? {}),
+            [EXPERT_THREAD_METADATA_KEY]: { ...marker },
+          };
+        } else {
+          logger.warn('Expert thread marker was not persisted because the session does not exist', {
+            sessionId: session.id,
+            roleId: expertRoleId,
+          });
+        }
+      } catch (error) {
+        logger.warn('Failed to persist expert thread marker (non-blocking)', {
+          sessionId: session.id,
+          roleId: expertRoleId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     await this.endPreviousUserBrowserRun(session.id);
     sessionManager.setCurrentSession(session.id);

@@ -5,6 +5,7 @@
 
 import type { ExpertConnector } from '../../../shared/contract/expertConnectors';
 import type { RoleProactivityConfig, RoleVisual } from '../../../shared/contract/roleAssets';
+import type { AgentEngineKind } from '../../../shared/contract/agentEngine';
 
 /**
  * 核心角色 ID
@@ -32,6 +33,8 @@ export interface CoreAgentConfig {
   /** 声明式输出说明，仅用于模型可见提示和产物 metadata 透传，不做输出解析。 */
   outputs?: string[];
   model: ModelTier;
+  /** 子代理执行引擎装备；缺省走 Neo native。 */
+  engine?: AgentEngineKind;
   /**
    * 指定具体模型（frontmatter `model-override: <provider>/<model>`）。
    * 留空走 model 档位；填了且该 provider 用户确实配了 key 才生效，否则回落档位。

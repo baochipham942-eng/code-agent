@@ -54,6 +54,12 @@ import type {
   RewindConversationRequest,
   RewindConversationResult,
 } from '../../shared/contract/sessionRewind';
+import type {
+  TurnCheckoutRequest,
+  TurnCheckoutResult,
+  TurnRedoRequest,
+  TurnRedoResult,
+} from '../../shared/contract/turnCheckout';
 
 const logger = createLogger('AgentAppService');
 import { getModelSessionState } from '../session/modelSessionState';
@@ -83,14 +89,8 @@ import type { CancellationReason } from '../../shared/contract/cancellation';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
 import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import {
-  ClaudeCodeAdapter,
-  CodeBuddyCliAdapter,
-  CodexCliAdapter,
-  DshCliAdapter,
-  GrokCliAdapter,
-  KimiCliAdapter,
-  MimoCliAdapter,
   ExternalEngineDurableLifecycle,
+  getExternalEngineAdapter,
   getRemoteAgentEngineModelCatalogService,
   isExternalAgentEngine,
   resolveExternalEngineLaunch,
@@ -115,6 +115,33 @@ import { upgradeLegacyAnchor } from '../tools/artifacts/artifactLocatorHost';
 import { SessionHistoryAppService } from './sessionHistoryAppService';
 import { SessionLifecycleAppService } from './sessionLifecycleAppService';
 import { toCachedSession } from './sessionExportCache';
+import { resolveSessionReference } from '../tools/modules/session/sessionReferenceDigest';
+
+async function resolveReferencedSessionContext(
+  context: ConversationEnvelopeContext | undefined,
+): Promise<ConversationEnvelopeContext | undefined> {
+  const references = context?.sessionReferences ?? [];
+  if (references.length === 0) return context;
+  const sessionManager = getSessionManager();
+  const resolved = await Promise.all(references.map(async (reference) => {
+    const session = await sessionManager.getSession(reference.id, 1);
+    if (!session) throw new Error(`Referenced session not found: ${reference.id}`);
+    const digest = await resolveSessionReference(session, await sessionManager.getMessages(reference.id));
+    return { id: reference.id, title: session.title || reference.title, content: digest.output };
+  }));
+  return { ...context, resolvedSessionReferences: resolved };
+}
+
+function buildExternalReferencePrompt(content: string, context?: ConversationEnvelopeContext): string {
+  const resolved = context?.resolvedSessionReferences ?? [];
+  const artifacts = context?.artifactReferences ?? [];
+  if (resolved.length === 0 && artifacts.length === 0) return content;
+  const blocks = [
+    ...resolved.map((reference) => `<referenced_session id="${reference.id}">\n${reference.content}\n</referenced_session>`),
+    ...artifacts.map((artifact) => `<referenced_artifact id="${artifact.id}" session_id="${artifact.sessionId}">\n${artifact.name}${artifact.path ? `\nPath: ${artifact.path}` : ''}${artifact.url ? `\nURL: ${artifact.url}` : ''}\n</referenced_artifact>`),
+  ];
+  return `${blocks.join('\n\n')}\n\n${content}`;
+}
 
 function isTaskManagerOwnedRunState(status: SessionStatus): boolean {
   return status === 'running'
@@ -312,6 +339,12 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (context.voiceInput) {
       metadata.voiceInput = { ...context.voiceInput };
     }
+    if (context.sessionReferences?.length) {
+      metadata.sessionReferences = context.sessionReferences.map((reference) => ({ ...reference }));
+    }
+    if (context.artifactReferences?.length) {
+      metadata.artifactReferences = context.artifactReferences.map((reference) => ({ ...reference }));
+    }
 
     return Object.keys(metadata).length > 0 ? metadata : undefined;
   }
@@ -435,6 +468,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     // /命令协议层（roadmap 2.2）：命中注册命令时把 content 展开成模板 prompt；
     // 非命令消息零开销直通（startsWith 守卫在函数内）
     envelope = await applyPromptCommandExpansion(envelope, effectiveWorkingDirectory);
+    envelope = {
+      ...envelope,
+      context: await resolveReferencedSessionContext(envelope.context),
+    };
+    const externalPrompt = buildExternalReferencePrompt(envelope.content, envelope.context);
     // 外部引擎分支在 preferredAgentId 消费点（withWorkbenchTurnSystemContext →
     // agentOverrideId）之前 return，显式 agent 选择在引擎会话不适用——发降级
     // routing_resolved 让 renderer 清选择 + toast（与 web /api/run 引擎分支对称）。
@@ -506,9 +544,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
             logsRoot: getLogsPath(),
           })
         : undefined;
-      await this.executeExternalRun(durableLifecycle, () => new CodexCliAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
         sessionId: resolvedSessionId,
-        prompt: envelope.content,
+        prompt: externalPrompt,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
         model: resolvedModel,
@@ -567,9 +605,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
             permissionProfile: launch.permissionProfile,
           })
         : undefined;
-      await this.executeExternalRun(durableLifecycle, () => new ClaudeCodeAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
         sessionId: resolvedSessionId,
-        prompt: envelope.content,
+        prompt: externalPrompt,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
         model: resolvedModel,
@@ -592,9 +630,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       orchestrator?.setWorkingDirectory(launch.cwd);
       const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('mimo_code', launch.model);
       const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
-      await this.executeExternalRun(durableLifecycle, () => new MimoCliAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
         sessionId: resolvedSessionId,
-        prompt: envelope.content,
+        prompt: externalPrompt,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
         model: resolvedModel,
@@ -613,9 +651,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
       // Kimi CLI 不读 env API key；per-user KIMI_CODE_HOME 凭据隔离目录由后续凭据接口派生后
       // 通过 KimiCliRunRequest.kimiCodeHome 注入（当前沿用 env.KIMI_CODE_HOME / CLI 默认）。
-      await this.executeExternalRun(durableLifecycle, () => new KimiCliAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
         sessionId: resolvedSessionId,
-        prompt: envelope.content,
+        prompt: externalPrompt,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
         model: resolvedModel,
@@ -643,9 +681,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         workspace: launch.workspaceRoot,
         cwd: launch.cwd,
       });
-      await this.executeExternalRun(durableLifecycle, () => new CodeBuddyCliAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
         sessionId: resolvedSessionId,
-        prompt: envelope.content,
+        prompt: externalPrompt,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
         model: resolvedModel,
@@ -673,9 +711,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         workspace: launch.workspaceRoot,
         cwd: launch.cwd,
       });
-      await this.executeExternalRun(durableLifecycle, () => new GrokCliAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
         sessionId: resolvedSessionId,
-        prompt: envelope.content,
+        prompt: externalPrompt,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
         model: resolvedModel,
@@ -704,9 +742,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         workspace: launch.workspaceRoot,
         cwd: launch.cwd,
       });
-      await this.executeExternalRun(durableLifecycle, () => new DshCliAdapter().run({
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
         sessionId: resolvedSessionId,
-        prompt: envelope.content,
+        prompt: externalPrompt,
         cwd: launch.cwd,
         workspaceRoot: launch.workspaceRoot,
         model: resolvedModel,
@@ -735,6 +773,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const workbenchOptions = withWorkbenchTurnSystemContext(
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
+      getSessionManager().getSessionMetadata?.(resolvedSessionId),
     );
     const optionsWithTurnSettings: AppServiceRunOptions = {
       ...(workbenchOptions ?? {}),
@@ -915,6 +954,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const workbenchOptions = withWorkbenchTurnSystemContext(
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
+      getSessionManager().getSessionMetadata?.(resolvedSessionId),
     );
     const options = isSessionCommandCenterTurn({
       prompt: envelope.content,
@@ -929,6 +969,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       toAgentRunOptions(options),
       await this.getMessageMetadataWithLocator(envelope),
       envelope.clientMessageId,
+      envelope.expectedTurnId,
     );
   }
 
@@ -970,6 +1011,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       offset: options?.offset,
     });
     return Promise.all(sessions.map((session) => this.withDurableSessionReplayPayload(session)));
+  }
+
+  async findExpertThreadSession(roleId: string): Promise<{ sessionId: string | null }> {
+    const session = await getSessionManager().findLatestExpertThreadSession(roleId);
+    return { sessionId: session?.id ?? null };
   }
 
   async updateSession(sessionId: string, updates: Partial<Session>): Promise<void> {
@@ -1124,6 +1170,14 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     params: RestoreWorkspaceFilesAtCheckpointRequest,
   ): Promise<RestoreWorkspaceFilesAtCheckpointResult> {
     return this.sessionHistory.restoreWorkspaceFilesAtCheckpoint(params);
+  }
+
+  async turnCheckout(params: TurnCheckoutRequest): Promise<TurnCheckoutResult> {
+    return this.sessionHistory.turnCheckout(params);
+  }
+
+  async turnRedo(params: TurnRedoRequest): Promise<TurnRedoResult> {
+    return this.sessionHistory.turnRedo(params);
   }
 
   async restoreConversationRewind(

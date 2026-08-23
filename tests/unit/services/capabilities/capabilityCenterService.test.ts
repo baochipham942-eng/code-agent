@@ -23,7 +23,6 @@ const skillRefresh = vi.fn();
 const mcpSetEnabled = vi.fn();
 const mcpAddServer = vi.fn();
 const mcpRemoveServer = vi.fn();
-const clearMcpContext = vi.fn();
 const connectorConfigure = vi.fn();
 const channelUpdateAccount = vi.fn();
 const configUpdateSettings = vi.fn();
@@ -194,12 +193,6 @@ vi.mock('../../../../src/host/mcp/mcpClient', () => ({
   isSSEConfig: (config: { type?: string }) => config.type === 'sse',
   isHttpStreamableConfig: (config: { type?: string }) => config.type === 'http-streamable',
   isInProcessConfig: (config: { type?: string }) => config.type === 'in-process',
-}));
-
-vi.mock('../../../../src/host/context/contextHealthService', () => ({
-  getContextHealthService: () => ({
-    clearMcpServerAcrossSessions: clearMcpContext,
-  }),
 }));
 
 vi.mock('../../../../src/host/connectors', () => ({
@@ -972,7 +965,6 @@ describe('CapabilityCenterService', () => {
 
     await service.setEnabled({ id: 'mcp:github', kind: 'mcp_template', enabled: false }, toggleOptions);
     expect(mcpSetEnabled).toHaveBeenCalledWith('github', false);
-    expect(clearMcpContext).toHaveBeenCalledWith('github');
 
     await service.setEnabled({ id: 'connector:mail', kind: 'connector', enabled: true }, toggleOptions);
     expect(configUpdateSettings).toHaveBeenCalledWith({
@@ -1087,7 +1079,6 @@ describe('CapabilityCenterService', () => {
     ) as { servers: Array<Record<string, unknown>> };
     expect(rolledBack.servers).toEqual([]);
     expect(mcpRemoveServer).toHaveBeenCalledWith('parameterized_mcp');
-    expect(clearMcpContext).toHaveBeenCalledWith('parameterized_mcp');
 
     await fs.rm(workspace, { recursive: true, force: true });
   });

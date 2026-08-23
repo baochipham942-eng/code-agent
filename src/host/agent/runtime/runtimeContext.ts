@@ -38,6 +38,7 @@ import type { SessionMemoryMode } from '../../../shared/contract/session';
 import type { RunTraceContext } from '../../telemetry/runTraceContext';
 import type { GoalEvidenceGateState } from './goalEvidenceGate';
 import type { TurnQualityRunState } from './turnQuality';
+import type { BudgetScope } from '../../services/core/budgetService';
 
 /**
  * 运行时组合根：单对象，所有 runtime 模块共享同一引用（ADR-038）。
@@ -145,6 +146,7 @@ export interface RuntimeContext {
   readonly goalEvidenceState: GoalEvidenceGateState;
 
   // --- Budget ---
+  readonly budgetScope: BudgetScope;
   readonly consecutiveErrors: number;
 
   // --- Thinking ---

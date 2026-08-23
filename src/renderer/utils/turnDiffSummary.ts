@@ -8,20 +8,13 @@
 // ============================================================================
 
 import type { TraceNode, TraceTurn } from '@shared/contract/trace';
+import type { TurnDiffFileChange } from '@shared/contract/turnDiff';
 import { measureStreamingPerformanceTiming } from './streamingPerformanceMetrics';
 import { diffLines } from 'diff';
 
 export const FILE_WRITE_TOOLS = ['Edit', 'Write', 'edit_file', 'write_file'];
 
-export interface FileChange {
-  filePath: string;
-  oldText: string;
-  newText: string;
-  added: number;
-  removed: number;
-  isNewFile: boolean;
-  editCount: number;
-}
+export type FileChange = TurnDiffFileChange;
 
 function countNonEmptyLines(value: string): number {
   return value.split('\n').filter((line) => line !== '').length;
@@ -66,6 +59,10 @@ export function isFileChangeCardOwnedNode(node: TraceNode): boolean {
 // 聚合 turn.nodes 里成功的 Edit/Write，按 filePath 合并。
 export function buildTurnFileChanges(turn: TraceTurn): FileChange[] {
   return measureStreamingPerformanceTiming('stream.diff.summary_ms', () => {
+  // 新会话优先用后端在 run 收尾时从磁盘聚合的权威结果。字段存在即承重：
+  // files=[] 也表示后端确认无净改动，不能再从有损 args 反推出一张假卡。
+  if (turn.turnDiff) return turn.turnDiff.files;
+
   const byPath = new Map<string, FileChange>();
 
   for (const node of turn.nodes) {

@@ -33,7 +33,11 @@ import {
 } from './feishuMedia';
 import { BoundedDedupeSet } from '../inboundDedupe';
 import { checkOutboundTarget } from '../outboundAllowlist';
+import { checkInboundAccess, type InboundAccessDecision } from '../inboundAccess';
+import { inboundAccessText } from '../inboundAccessI18n';
+import type { InboundPairingRequest } from '../inboundPairingService';
 import { CHANNEL_INGRESS } from '../../../shared/constants';
+import { getAuditLogger } from '../../security/auditLogger';
 
 const logger = createLogger('FeishuChannel');
 type FeishuPlatform = 'feishu' | 'lark';
@@ -251,6 +255,7 @@ export class FeishuChannel extends BaseChannelPlugin {
   private privacyMode: ChannelPrivacyMode = 'local-redact';
   private client: lark.Client | null = null;
   private wsClient: lark.WSClient | null = null;
+  private botOpenId: string | null = null;
 
   // Webhook 服务器
   private webhookApp: Express | null = null;
@@ -959,6 +964,49 @@ export class FeishuChannel extends BaseChannelPlugin {
         return;
       }
 
+      const senderId = sender.sender_id.open_id;
+      const paired = this.feishuConfig?.inboundAllowlist?.includes(senderId) === true;
+      let mentionedBot = false;
+      if (msg.chat_type === 'group') {
+        const botOpenId = await this.resolveBotOpenId();
+        mentionedBot = Boolean(botOpenId && msg.mentions?.some((mention) => mention.id.open_id === botOpenId));
+      }
+      const ingress = checkInboundAccess({
+        channel: 'feishu',
+        chatType: msg.chat_type,
+        mentionedBot,
+        paired,
+        groupAccessMode: this.feishuConfig?.groupAccessMode,
+      });
+
+      if (ingress.action === 'pair') {
+        this.auditIngress(ingress, msg.chat_id, senderId);
+        this.emit('pairing_request', {
+          accountId: this._accountId,
+          channelType: this.platform,
+          senderId,
+          senderName: sender.sender_id.user_id || senderId,
+          chatId: msg.chat_id,
+          replyToMessageId: msg.message_id,
+          locale: this.feishuConfig?.inboundLocale,
+        } satisfies InboundPairingRequest);
+        return;
+      }
+      if (ingress.action === 'deny') {
+        this.auditIngress(ingress, msg.chat_id, senderId);
+        if (ingress.replyUnauthorized) {
+          await this.sendMessage({
+            chatId: msg.chat_id,
+            replyToMessageId: msg.message_id,
+            content: inboundAccessText(this.feishuConfig?.inboundLocale, 'unauthorized'),
+          });
+        }
+        return;
+      }
+      if (ingress.action === 'guest') {
+        this.auditIngress(ingress, msg.chat_id, senderId);
+      }
+
       // 解析消息内容
       let content = '';
       let attachments: ChannelAttachment[] | undefined;
@@ -1007,6 +1055,7 @@ export class FeishuChannel extends BaseChannelPlugin {
         attachments,
         timestamp: parseInt(msg.create_time),
         mentions: msg.mentions?.map(m => m.id.open_id),
+        ingressAuth: ingress.auth,
         raw: event,
       }, this.privacyMode);
 
@@ -1021,6 +1070,54 @@ export class FeishuChannel extends BaseChannelPlugin {
     } catch (error) {
       logger.error(`Error handling ${this.meta.name} message event`, { error });
       this.emit('error', error instanceof Error ? error : new Error('Unknown error'));
+    }
+  }
+
+  private async resolveBotOpenId(): Promise<string | null> {
+    if (this.botOpenId) return this.botOpenId;
+    if (!this.client) return null;
+    try {
+      const response = await this.client.request({
+        url: '/open-apis/bot/v3/info',
+        method: 'GET',
+      }) as unknown;
+      const bot = isRecord(response) ? readRecordField(response, 'bot') : undefined;
+      this.botOpenId = bot ? readStringField(bot, 'open_id') ?? null : null;
+      if (!this.botOpenId) {
+        logger.error('Feishu bot identity response did not include open_id');
+      }
+    } catch (error) {
+      logger.error('Failed to resolve Feishu bot identity for ingress mention check', { error });
+      this.botOpenId = null;
+    }
+    return this.botOpenId;
+  }
+
+  private auditIngress(
+    decision: Extract<InboundAccessDecision, { action: 'deny' | 'pair' | 'guest' }>,
+    chatId: string,
+    senderId: string,
+  ): void {
+    const outcome = decision.action === 'guest' ? 'guest' : 'denied';
+    logger.info(`[feishu-ingress] ${outcome}`, {
+      accountId: this._accountId,
+      chatId,
+      senderId,
+      reason: decision.reason,
+    });
+    try {
+      getAuditLogger().log({
+        eventType: 'authentication',
+        sessionId: `channel:${this._accountId}:${chatId}`,
+        toolName: 'feishu-ingress',
+        input: { accountId: this._accountId, chatId, senderId },
+        output: `${outcome}:${decision.reason}`,
+        duration: 0,
+        success: decision.action === 'guest',
+        riskLevel: decision.action === 'guest' ? 'low' : 'high',
+      });
+    } catch (error) {
+      logger.warn('Failed to persist Feishu ingress audit entry', { error });
     }
   }
 

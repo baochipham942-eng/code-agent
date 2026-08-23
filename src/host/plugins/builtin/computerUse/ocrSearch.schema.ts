@@ -1,7 +1,7 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const ocrSearchSchema: ToolSchema = {
+export const ocrSearchSchema: UntrustedContentToolSchema = {
   name: 'ocr_search',
   description: `图片 OCR 工具 — 用 macOS Vision Framework (VNRecognizeTextRequest) 识别图片内文字，
 零额外配置（系统自带，离线，免费），支持中英文。识别结果带边界框坐标。
@@ -96,6 +96,7 @@ export const ocrSearchSchema: ToolSchema = {
   },
   category: 'vision',
   permissionLevel: 'read',
+  readsUntrustedContent: 'block',
   readOnly: true,
   allowInPlanMode: true,
 };

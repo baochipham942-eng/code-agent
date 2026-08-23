@@ -10,7 +10,9 @@ import type { MessageAttachment } from '../../../../../shared/contract';
 import type {
   ComposerAgentSelection,
   ComposerPromptCommandSelection,
+  ConversationArtifactReference,
   ConversationEnvelope,
+  ConversationSessionReference,
   ConversationVoiceInputMetadata,
 } from '@shared/contract/conversationEnvelope';
 import type { SteerOrQueueOutcome } from '@shared/contract/appService';
@@ -41,7 +43,12 @@ import { CommandPalette } from '../../../CommandPalette';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
 import { useChatInputSessionScope } from './useChatInputSessionScope';
-import { useAtMentionPanel, type AtMentionFileRow } from './useAtMentionPanel';
+import {
+  useAtMentionPanel,
+  type AtMentionArtifactRow,
+  type AtMentionFileRow,
+  type AtMentionSessionRow,
+} from './useAtMentionPanel';
 import { AtMentionPopover } from './AtMentionPopover';
 import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
@@ -104,6 +111,8 @@ import { AgentChip } from './AgentChip';
 import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
 import { ComposerUploadStatus } from './ComposerUploadStatus';
+import { RuntimeInputChoice, type RuntimeInputChoiceValue } from './RuntimeInputChoice';
+import { QueuedInputTray } from './QueuedInputTray';
 
 // ============================================================================
 // 类型定义
@@ -223,10 +232,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     metadata: ConversationVoiceInputMetadata;
   } | null>(null);
   const [isFocused, setIsFocused] = useState(false);
+  const [runtimeInputChoice, setRuntimeInputChoice] = useState<RuntimeInputChoiceValue>('queue');
+  const [queuedInputRevision, setQueuedInputRevision] = useState(0);
+  const [editingQueuedInputId, setEditingQueuedInputId] = useState<string | null>(null);
+
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const [sessionReferences, setSessionReferences] = useState<ConversationSessionReference[]>([]);
+  const [artifactReferences, setArtifactReferences] = useState<ConversationArtifactReference[]>([]);
   // 会话作用域：currentSessionId / engine 类型 / 切换会话时清空草稿
   // （sessionless 时强制 null——项目页等无会话语境，见 ChatInputProps.sessionless）
   const { currentSessionId } = useChatInputSessionScope(setValue, setAttachments, sessionless);
+
+  useEffect(() => {
+    setRuntimeInputChoice('queue');
+    setEditingQueuedInputId(null);
+    setSessionReferences([]);
+    setArtifactReferences([]);
+  }, [currentSessionId]);
   const pendingAppshot = useAppshotsStore((s) =>
     s.pendingSessionId === currentSessionId ? s.pending : null
   );
@@ -405,8 +427,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     for (const item of pinnedLibraryItems) {
       chips.push({ key: `library:${item.id}`, kind: 'library', id: item.id, label: item.title });
     }
+    for (const reference of sessionReferences) {
+      chips.push({ key: `session:${reference.id}`, kind: 'session', id: reference.id, label: reference.title });
+    }
+    for (const reference of artifactReferences) {
+      chips.push({ key: `artifact:${reference.id}`, kind: 'artifact', id: reference.id, label: reference.name });
+    }
     return chips;
-  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, capabilityRegistry.items]);
+  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, sessionReferences, artifactReferences, capabilityRegistry.items]);
 
   // slash 面板选中后：光标前的触发词（/goal、/sk…）原位替换成 chip 挂载点。
   // 无触发词（+ 菜单等无光标来源）时 no-op——store 更新后编辑器对账会把 chip 补到末尾。
@@ -437,6 +465,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       removeLibraryPin(chip.id);
       return;
     }
+    if (chip.kind === 'session') {
+      setSessionReferences((prev) => prev.filter((reference) => reference.id !== chip.id));
+      return;
+    }
+    if (chip.kind === 'artifact') {
+      setArtifactReferences((prev) => prev.filter((reference) => reference.id !== chip.id));
+      return;
+    }
     setAttachments((prev) => prev.filter((attachment) => attachment.id !== chip.id));
   }, [removeLibraryPin]);
 
@@ -459,6 +495,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     for (const item of pinnedLibraryItemsRef.current) {
       if (!present.has(`library:${item.id}`)) removeLibraryPinRef.current(item.id);
     }
+    setSessionReferences((prev) => prev.filter((reference) => present.has(`session:${reference.id}`)));
+    setArtifactReferences((prev) => prev.filter((reference) => present.has(`artifact:${reference.id}`)));
   }, []);
 
   const buildEnvelope = useChatInputEnvelope({
@@ -470,6 +508,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     buildContext,
     pendingPromptCommand,
     pendingAgentSelection,
+    sessionReferences,
+    artifactReferences,
   });
 
   // 上报 composer 槽位给 Rust，作为 Appshot 飞入动画的落点。
@@ -636,10 +676,40 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     })();
     editor.focus();
   }, [currentSessionId]);
+  const replaceAtTriggerWithChip = useCallback((chip: InlineChipRef) => {
+    const editor = inputAreaRef.current;
+    if (!editor) return;
+    const caret = editor.getCaretOffset();
+    const triggerMatch = latestValueRef.current.slice(0, caret).match(/@([^\s@]*)$/);
+    const triggerStart = triggerMatch ? caret - triggerMatch[0].length : caret;
+    editor.replaceRangeWithChip(triggerStart, caret, chip);
+    editor.focus();
+  }, []);
+  const handleAtSessionSelect = useCallback((row: AtMentionSessionRow) => {
+    setSessionReferences((prev) => prev.some((reference) => reference.id === row.id)
+      ? prev
+      : [...prev, { id: row.id, title: row.title }]);
+    replaceAtTriggerWithChip({ key: `session:${row.id}`, kind: 'session', id: row.id });
+  }, [replaceAtTriggerWithChip]);
+  const handleAtArtifactSelect = useCallback((row: AtMentionArtifactRow) => {
+    setArtifactReferences((prev) => prev.some((reference) => reference.id === row.id)
+      ? prev
+      : [...prev, {
+          id: row.id,
+          name: row.name,
+          sessionId: row.sessionId,
+          sessionTitle: row.sessionTitle,
+          path: row.path,
+          url: row.url,
+        }]);
+    replaceAtTriggerWithChip({ key: `artifact:${row.id}`, kind: 'artifact', id: row.id });
+  }, [replaceAtTriggerWithChip]);
   const atMention = useAtMentionPanel({
     sessionId: currentSessionId ?? null,
     projectId: pinScopeProjectId,
     onFileSelect: handleAtFileSelect,
+    onSessionSelect: handleAtSessionSelect,
+    onArtifactSelect: handleAtArtifactSelect,
   });
   const { search: searchAtMention, dismiss: dismissAtMention } = atMention;
 
@@ -755,12 +825,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     pendingAppshot,
     pendingPromptCommand,
     pendingAgentSelection,
+    sessionReferences,
+    artifactReferences,
     currentSessionId,
     isProcessing,
     disabled,
     isUploading,
     onSend,
     onSteer,
+    onQueuedInputChanged: () => setQueuedInputRevision((value) => value + 1),
     agentEntries,
     buildEnvelope,
     openAgentCommand,
@@ -772,12 +845,38 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setVoiceInputContext,
     setPendingPromptCommand,
     setPendingAgentSelection,
+    setSessionReferences,
+    setArtifactReferences,
     setScheduleComposerOpen,
     openGoalConfirm: (initialGoal: string) => setGoalConfirm({ initialGoal }),
     closeGoalConfirm: () => setGoalConfirm(null),
     openSeedComposer: (kind) => setSeedComposer({ kind, initialText: '' }),
     setActiveAgentId,
   });
+
+  const submitWithRuntimeChoice = useCallback(async (event?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {
+    event?.preventDefault();
+    if (editingQueuedInputId) {
+      const content = (opts?.content ?? value).trim();
+      if (!content) return;
+      const result = await ipcService.invokeDomain<{ updated: boolean }>(
+        IPC_DOMAINS.QUEUED_INPUT,
+        'update',
+        { id: editingQueuedInputId, content },
+      );
+      if (result.updated) {
+        setEditingQueuedInputId(null);
+        setValue('');
+        setQueuedInputRevision((current) => current + 1);
+      }
+      inputAreaRef.current?.focus();
+      return;
+    }
+    return handleSubmit(undefined, {
+      ...opts,
+      steer: opts?.steer ?? Boolean(isProcessing && runtimeInputChoice === 'redirect'),
+    });
+  }, [editingQueuedInputId, handleSubmit, isProcessing, runtimeInputChoice, value]);
 
   // 附件 / 语音动作单元
   const {
@@ -800,8 +899,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // 自动提交（send-after-transcript）；停止按钮 = 转写后文本落回输入框可编辑。
   const handleVoiceTranscriptRef = useRef(handleVoiceTranscript);
   handleVoiceTranscriptRef.current = handleVoiceTranscript;
-  const handleSubmitRef = useRef(handleSubmit);
-  handleSubmitRef.current = handleSubmit;
+  const handleSubmitRef = useRef(submitWithRuntimeChoice);
+  handleSubmitRef.current = submitWithRuntimeChoice;
   // 浏览器批注（N3）：appshotsStore 已写 pending 后，把 pin 文案塞进输入框并走主提交链路
   // （appshot 附件/XML 与用户手动发送同路径）。必须挂在 handleSubmitRef 之后。
   useEffect(() => {
@@ -940,7 +1039,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     >
       {/* Command Palette triggered by / */}
       <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
-      <form ref={formRef} onSubmit={handleSubmit} className="max-w-3xl mx-auto">
+      <form
+        ref={formRef}
+        onSubmit={(event) => {
+          void submitWithRuntimeChoice(event, {
+            steer: Boolean(isProcessing && runtimeInputChoice === 'redirect'),
+          });
+        }}
+        className="max-w-3xl mx-auto"
+      >
         {/* 输入框上方那一格：全部占用者统一走 <ComposerSlot>/<SlotEntry id>。
             层级登记与让位规则在 composerNoticeStore 的 COMPOSER_SLOT_LAYER；
             裸挂任何未登记组件都会被 ComposerSlot 拒渲染（防以后又塞进来一个不声明层级的）。
@@ -1091,6 +1198,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           </div>
         )}
 
+        <QueuedInputTray
+          sessionId={currentSessionId}
+          revision={queuedInputRevision}
+          editingId={editingQueuedInputId}
+          onEdit={(input) => {
+            setEditingQueuedInputId(input.id);
+            setValue(input.envelope.content);
+            setAttachments([]);
+            setVoiceInputContext(null);
+            inputAreaRef.current?.focus();
+          }}
+        />
+
         {/* composer 浮起（2026-08-04 §3.1）：L2 底 + 投影，默认无边框、聚焦描边显现，
             与聊天内容拉开亮度层级，样式真源在 global.css .composer-elevated */}
         <div className="relative composer-elevated rounded-2xl">
@@ -1220,7 +1340,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               query={atMention.query}
               libraryRows={atMention.libraryRows}
               fileRows={atMention.fileRows}
+              sessionRows={atMention.sessionRows}
+              artifactRows={atMention.artifactRows}
+              activeTab={atMention.activeTab}
               selectedIndex={atMention.selectedIndex}
+              onTabChange={atMention.setActiveTab}
               onSelect={atMention.selectRow}
               onHover={atMention.setSelectedIndex}
             />
@@ -1230,7 +1354,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             ref={inputAreaRef}
             value={value}
             onChange={handleDictationAwareValueChange}
-            onSubmit={(opts) => { void handleSubmit(undefined, opts); }}
+            onSubmit={(opts) => { void submitWithRuntimeChoice(undefined, opts); }}
             onFileSelect={handleFileSelect}
             onImagePaste={handleImagePaste}
             disabled={disabled && !isProcessing}
@@ -1267,6 +1391,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               onFileSelect={handleFileSelect}
               onSelectCapability={selectWorkbenchCapabilityForCurrentTurn}
             />
+
+            {isProcessing && (
+              <RuntimeInputChoice value={runtimeInputChoice} onChange={setRuntimeInputChoice} />
+            )}
 
             {isDictationActive ? (
               <DictationRecordingBar

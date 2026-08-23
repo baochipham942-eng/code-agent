@@ -146,6 +146,10 @@ Parameters:
         type: 'string',
         description: '[generate] Output file path',
       },
+      overwrite: {
+        type: 'boolean',
+        description: '[generate] Required as true when output_path already exists and you intend to replace it',
+      },
       sheet_name: {
         type: 'string',
         description: '[generate] Worksheet name (default: Sheet1)',
@@ -190,4 +194,21 @@ Parameters:
   },
   category: 'excel',
   permissionLevel: 'write',
+  pathAuthority: [
+    {
+      kind: 'path',
+      pathParameter: 'output_path',
+      mutation: 'overwrite',
+      whenParameter: 'action',
+      whenValues: ['generate'],
+    },
+    {
+      kind: 'path',
+      pathParameter: 'file_path',
+      mutation: 'edit',
+      whenParameter: 'action',
+      whenValues: ['edit', 'automate'],
+    },
+  ],
+  readOnly: false,
 };

@@ -242,6 +242,15 @@ export interface AppSettings {
     /** 外部结构化搜索服务：自动按就绪优先级，或固定到一家。 */
     externalSource?: 'auto' | 'zhipu' | 'minimax';
   };
+  /** 产物托管服务。上传 token 单独存 secureStorage，不进入 settings。 */
+  shareService?: {
+    baseUrl?: string;
+  };
+  /** Single-instance cloud cron proxy; tenancy and credential ownership are intentionally undecided. */
+  cronCloud?: {
+    baseUrl?: string;
+    token?: string;
+  };
   // 生成模型默认值（ADR-027）。全部可选，未配置 = 设计画布仍用 registry 首项。
   // 模型 id 须为 visualModels.ts 的 IMAGE_MODELS / VIDEO_MODELS 中的 id。
   design?: {
@@ -263,6 +272,11 @@ export interface AppSettings {
     inputDevice?: VoiceInputDeviceSettings | null;
     /** 实时通话（Live Voice）UI 设置；运行时断句真源仍是上面的 turnDetection */
     live?: VoiceLiveSettings;
+  };
+  // 记忆维护配置（N-MEM-CONSOLSAFE）。可选，未配置 = 自动整理只演练（dry-run）。
+  memory?: {
+    /** true = 定时整理真写回记忆文件（有审计）；false/缺省 = 只出演练报告不落盘 */
+    autoConsolidate?: boolean;
   };
   // API 超时配置
   timeouts?: {
@@ -416,6 +430,24 @@ export interface AppSettings {
     blockThreshold?: number;
     /** 重置周期 (小时, 默认 24) */
     resetPeriodHours?: number;
+    /** 前台会话预算覆盖；缺省继承旧顶层字段。 */
+    foreground?: {
+      enabled?: boolean;
+      maxBudget?: number;
+      silentThreshold?: number;
+      warningThreshold?: number;
+      blockThreshold?: number;
+      resetPeriodHours?: number;
+    };
+    /** 无人值守预算覆盖；缺省继承旧顶层字段。 */
+    unattended?: {
+      enabled?: boolean;
+      maxBudget?: number;
+      silentThreshold?: number;
+      warningThreshold?: number;
+      blockThreshold?: number;
+      resetPeriodHours?: number;
+    };
   };
   // 上下文压缩配置
   contextCompression?: ContextCompressionConfig;

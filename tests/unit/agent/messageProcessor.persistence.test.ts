@@ -195,6 +195,39 @@ describe('MessageProcessor persistence', () => {
     expect(persisted.id).toBe((ctx.messages[0] as { id: string }).id);
   });
 
+  it('adds the natural redirect acknowledgement instruction only to the model-facing content', async () => {
+    const ctx = {
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [] as unknown[],
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
+    const scaffolded = '<turn_context>保留现有结构</turn_context>\n\n<user_request>改成先给结论</user_request>';
+
+    await processor.injectSteerMessage(
+      scaffolded,
+      'redirect-message-1',
+      undefined,
+      { workbench: { runtimeInputMode: 'redirect' } },
+      '改成先给结论',
+    );
+
+    const modelContent = (ctx.messages[0] as { content: string }).content;
+    expect(modelContent).toContain('先用一句自然的话承接');
+    expect(modelContent).toContain('不要用道歉式开场');
+    expect(modelContent.endsWith('</redirect_response_instruction>')).toBe(true);
+
+    const persisted = sessionManagerState.addMessageToSession.mock.calls.at(-1)![1] as {
+      content: string;
+      isMeta?: boolean;
+    };
+    expect(persisted.content).toBe('改成先给结论');
+    expect(persisted.content).not.toContain('redirect_response_instruction');
+    expect(persisted.content).not.toContain('先用一句自然的话承接');
+    expect(persisted.isMeta).toBeUndefined();
+  });
+
   // 2026-08-15（N-L7-STEERUI）：辅助运行（语音 steer_task / 指挥台 steer）的 instruction 是
   // 模型写给执行侧的指令。此前它以 role:'user' 原文进会话流，真机截图里用户看到的是
   // 「用户纠正：…不是"EDMD"…」——连 ASR 走样产物都被当成他自己说过的话。
@@ -551,6 +584,98 @@ describe('MessageProcessor persistence', () => {
         data: expect.objectContaining({ id: 'assistant-message-1' }),
       }),
     );
+  });
+
+  it('treats wake_noop as a terminal hidden action with no visible assistant text or tool row', async () => {
+    const ctx = {
+      artifact: ArtifactState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
+      allowedToolNames: ['wake_noop'],
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 4096 },
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
+      control: ControlState.forTest({
+        isCancelled: false,
+        isInterrupted: false,
+        runAbortController: { signal: { aborted: false } },
+      } as never),
+      turn: TurnState.forTest({
+        effortLevel: 'medium',
+        currentTurnId: 'turn-1',
+        currentIterationSpanId: 'iteration-1',
+        needsReinference: false,
+        toolsUsedInTurn: [],
+      } as never),
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      nudgeManager: {
+        getModifiedFiles: vi.fn(() => new Set()),
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-wake-noop')
+        .mockReturnValueOnce('tool-wake-noop'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [
+        { toolCallId: 'wake-noop-1', success: true, output: '' },
+      ]),
+    };
+    const processor = createProcessor(
+      ctx as DeepPartial<RuntimeContext>,
+      contextAssembly,
+      runFinalizer,
+      toolEngine,
+    );
+    const span = { endSpan: vi.fn() };
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '收到。',
+        toolCalls: [{ id: 'wake-noop-1', name: 'wake_noop', arguments: {} }],
+      } as ModelResponse,
+      false,
+      1,
+      span,
+    );
+
+    expect(action).toBe('break');
+    expect(ctx.messages).toEqual([
+      expect.objectContaining({
+        id: 'assistant-wake-noop',
+        role: 'assistant',
+        content: '收到。',
+        isMeta: true,
+      }),
+      expect.objectContaining({
+        id: 'tool-wake-noop',
+        role: 'tool',
+        isMeta: true,
+      }),
+    ]);
+    expect(ctx.onEvent).toHaveBeenCalledWith({
+      type: 'turn_end',
+      data: { turnId: 'turn-1' },
+    });
+    expect(ctx.telemetryAdapter.onTurnEnd).toHaveBeenCalledTimes(1);
   });
 
   it('continues when a provider reports stop on an obviously unfinished sentence', async () => {

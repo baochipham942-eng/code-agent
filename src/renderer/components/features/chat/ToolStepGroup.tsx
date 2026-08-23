@@ -26,6 +26,7 @@ import type { Translations } from '../../../i18n';
 import { getDeferredContentStyle } from '../../../utils/turnContentVisibility';
 import { getPlanApprovalRecord } from '../../../utils/planApprovalView';
 import { PlanApprovalEvidence } from '../../PlanApprovalCard';
+import { isDelegationTool } from '../../../utils/agentActivity';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
@@ -199,6 +200,27 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   }
   if (streamVisibleNodes.length === 0 || !label) {
     return null;
+  }
+  if (toolCalls.length === 1 && isDelegationTool(toolCalls[0].name)) {
+    const toolCall = toolCalls[0];
+    return (
+      <div
+        className="my-0.5"
+        data-deferred-content={!isStreamingTurn ? 'tool-card' : undefined}
+        style={!isStreamingTurn ? getDeferredContentStyle('toolCard') : undefined}
+      >
+        <ToolCallDisplay
+          toolCall={toolCall}
+          index={0}
+          total={1}
+          compact
+          mediaContext={{
+            sessionId,
+            messageId: nodes.find((node) => node.toolCall?.id === toolCall.id)?.messageId || toolCall.id,
+          }}
+        />
+      </div>
+    );
   }
 
   return (

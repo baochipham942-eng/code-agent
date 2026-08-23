@@ -20,12 +20,14 @@ export type SourceTag =
   | { type: 'mcp'; server: string }
   | { type: 'subagent'; name: string }
   | { type: 'fileRead' }
+  | { type: 'summary' }
   | { type: 'conversation' };
 
 /**
  * 按产品来源拆分的 token 占用
  * 与 TokenBreakdown 的 systemPrompt/messages/toolResults（消息结构维度）正交
  * conversation 字段用扣减法：messages 总数 - 其他 source 之和
+ * summary 字段同样是派生值：压缩摘要消息（带 compaction 标记）的 content 估算之和
  */
 export interface SourceBreakdown {
   rules: number;
@@ -33,6 +35,7 @@ export interface SourceBreakdown {
   mcp: Record<string, number>;
   subagents: Record<string, number>;
   fileReads: number;
+  summary: number;
   conversation: number;
 }
 
@@ -56,6 +59,25 @@ export interface TokenBreakdown {
 }
 
 /**
+ * 静态系统提示的缓存成本归因。
+ * 只有 cacheRead 留出 20% tokenizer 尺差富余时，才允许判定为完整缓存；
+ * 其余情况必须保留 unknown，不能按 0 或比例摊销。
+ */
+export type SystemPromptCacheCost =
+  | {
+      status: 'known_cached';
+      /** 本地 tokenizer 估算的静态系统提示 tokens（未做 provider 总量缩放） */
+      tokens: number;
+      costUsd: number;
+      /** 占本轮全部输入成本（非缓存输入 + cache read/write）的百分比 */
+      inputCostPercent: number;
+    }
+  | {
+      status: 'unknown';
+      tokens: number;
+    };
+
+/**
  * 创建空的 SourceBreakdown
  */
 export function createEmptySourceBreakdown(): SourceBreakdown {
@@ -65,6 +87,7 @@ export function createEmptySourceBreakdown(): SourceBreakdown {
     mcp: {},
     subagents: {},
     fileReads: 0,
+    summary: 0,
     conversation: 0,
   };
 }
@@ -158,6 +181,24 @@ export interface ContextHealthState {
    * 用于 context health 面板可见化——agent 能力缩水时用户能看到原因，不再静默。
    */
   droppedPromptBlocks?: string[];
+  /**
+   * N-CTXTRUTH: currentTokens/usagePercent 的总量真源。
+   * - 'provider'：本轮 provider 实报 input tokens（含 cacheRead/cacheCreation）作总量，
+   *   breakdown 各桶为本地估算等比缩放到真总量的展示值；
+   * - 'estimated'：provider 未回报（或冷启动重算路径），全程本地 gpt-tokenizer 估算。
+   * 老状态缺省此字段，消费方视同 'estimated'。
+   */
+  tokenSource?: 'provider' | 'estimated';
+  /**
+   * N-CTXTRUTH: 仅 tokenSource='provider' 时有值——同一轮消息的本地估算总量（缩放前），
+   * 弹层据此显示估/实偏差。estimated 路径下无意义，不设置。
+   */
+  estimatedTokens?: number;
+  /**
+   * N-L8-CACHEWEIGHT-K2：唯一可判定的桶级缓存成本。
+   * 其余八桶没有有序前缀边界，不在此合同中伪造成本字段。
+   */
+  systemPromptCacheCost?: SystemPromptCacheCost;
 }
 
 /**

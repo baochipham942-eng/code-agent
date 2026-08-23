@@ -46,6 +46,7 @@ import { resolveAgentDisplayNames } from '../resolveAgentDisplayNames';
 import { checkReadonlyParentRule, type ParentContext } from '../childContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getSpawnGuard } from '../spawnGuard';
+import { bindFileOwnershipReleaseHook } from '../../services/infra/fileOwnershipRegistry';
 import { routeFailureCode } from '../../../shared/contract/cancellation';
 import {
   AgentFailureCode,
@@ -54,7 +55,6 @@ import {
 } from '../../../shared/contract/agentFailure';
 import { isParentRunAlive } from '../orphanLiveness';
 import {
-  createAgentWorktree,
   cleanupAgentWorktree,
   cleanupOrphanedWorktrees,
   discardAgentWorktree,
@@ -86,6 +86,8 @@ import {
   prepareAgentTeamDurableController,
 } from '../agentTeamDurableLaunch';
 import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget } from './spawnAgentForegroundBackground';
+import { resolveSpawnAgentEngine } from './spawnAgentEngine';
+import { prepareSpawnAgentWorktree } from './spawnAgentWorktree';
 
 /**
  * spawn_agent / AgentSpawn protocol-native execution service.
@@ -95,7 +97,7 @@ export async function executeSpawnAgent(
   context: SubagentExecutionContext,
 ): Promise<MultiagentExecutionResult> {
     const parallel = params.parallel as boolean | undefined;
-    const agents = params.agents as Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }> | undefined;
+    const agents = params.agents as Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[]; ownedPaths?: string[] }> | undefined;
 
     // Check for required context
     if (!context.modelConfig) {
@@ -109,6 +111,7 @@ export async function executeSpawnAgent(
     }
 
     const guard = getSpawnGuard();
+    bindFileOwnershipReleaseHook(guard);
 
     // ========================================================================
     // spawn 嵌套深度截断（执行层防线）
@@ -153,6 +156,7 @@ export async function executeSpawnAgent(
     const customPrompt = params.customPrompt as string | undefined;
     const customTools = params.customTools as string[] | undefined;
     const maxBudget = params.maxBudget as number | undefined;
+    const ownedPaths = params.ownedPaths as string[] | undefined;
     const waitForCompletion = params.waitForCompletion !== false;
     const maxIterations = (params.maxIterations as number) || 20;
     const foregroundBlockingBudgetMs = resolveForegroundBlockingBudgetMs(params.foregroundBlockingBudgetMs);
@@ -199,6 +203,9 @@ export async function executeSpawnAgent(
       systemPrompt = customPrompt || getAgentPrompt(agentConfig);
       tools = customTools || getAgentTools(agentConfig);
     }
+
+    const engineResolution = resolveSpawnAgentEngine(params.engine, parallel, !!isDynamicMode, role);
+    if ('error' in engineResolution) return { success: false, error: engineResolution.error };
 
     // ========================================================================
     // Phase 1: Subagent suffix 注入（借鉴 Cline + Codex 行为规范）
@@ -362,24 +369,12 @@ export async function executeSpawnAgent(
         tools, cwd,
         role,
         explicit: params.isolation as string | undefined,
+        forceWorktree: engineResolution.engine !== 'native',
       });
       if (effectiveIsolation === 'worktree') {
-        try {
-          worktreeInfo = await createAgentWorktree(agentId, cwd);
-          cwd = worktreeInfo.worktreePath;
-          if (context.swarmRunScope) await getParallelAgentCoordinatorRegistry().get(context.swarmRunScope)?.recordTaskWorktree(context.agentId ?? '', worktreeInfo.worktreePath);
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : 'Unknown error';
-          slotLease?.release();
-          slotLease = undefined;
-          return {
-            success: false,
-            error: `Failed to create worktree for agent: ${errMsg}. Ensure you are in a git repository.`,
-            metadata: {
-              failureCode: AgentFailureCode.WorktreeCreateFailed,
-            },
-          };
-        }
+        const prepared = await prepareSpawnAgentWorktree(agentId, cwd, context);
+        if (!prepared.ok) { slotLease?.release(); slotLease = undefined; return prepared.failure; }
+        worktreeInfo = prepared.worktreeInfo; cwd = worktreeInfo.worktreePath;
       }
 
       const enrichedTask = `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${task}`;
@@ -420,9 +415,10 @@ export async function executeSpawnAgent(
       }
 
       const executorContext: SubagentExecutionContext = {
-        ...context,
+        ...context, cwd,
         // swarm 护栏 P1-2 #2：把递增后的深度沿 execution context 传递
         agentId,
+        ownedPaths,
         spawnDepth: childDepth,
         spawnMaxDepth: context.spawnMaxDepth,
         spawnTreeId: treeId,
@@ -446,6 +442,7 @@ export async function executeSpawnAgent(
 
       const executorConfig = {
         name: agentName,
+        engine: engineResolution.engine,
         // 持久化角色资产绑定 key（roles/<roleId>/）。declarative 模式下 role 即 agent 注册 id；
         // dynamic 模式没有 role，不参与角色资产链路。
         roleId: role || undefined,
@@ -697,10 +694,10 @@ export function getAvailableAgents(): Array<{ id: string; name: string; descript
 // dispatch to executeSpawnAgent above.
 
 // Execute multiple agents in parallel using the ParallelAgentCoordinator
-export async function launchAgentTeam(agents: Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[] }>, context: SubagentExecutionContext): Promise<MultiagentExecutionResult> { return executeParallelAgents(agents, context); }
+export async function launchAgentTeam(agents: Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[]; ownedPaths?: string[] }>, context: SubagentExecutionContext): Promise<MultiagentExecutionResult> { return executeParallelAgents(agents, context); }
 
 async function executeParallelAgents(
-  agents: Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[] }>,
+  agents: Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[]; ownedPaths?: string[] }>,
   context: SubagentExecutionContext,
 ): Promise<MultiagentExecutionResult> {
   if (!context.sessionId) {
@@ -851,6 +848,7 @@ async function executeParallelAgents(
       tools,
       maxIterations: getAgentMaxIterations(agentConfig),
       dependsOn: agent.dependsOn,
+      ownedPaths: agent.ownedPaths,
     };
   });
 

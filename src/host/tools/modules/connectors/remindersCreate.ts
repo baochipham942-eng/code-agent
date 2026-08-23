@@ -88,8 +88,9 @@ async function executeRemindersCreate(
         artifact: createVirtualArtifact({
           sourceTool: schema.name,
           kind: 'text',
+          role: 'receipt',
           sessionId: ctx.sessionId,
-          name: `reminder-${reminder.title}`,
+          name: `已创建提醒：${reminder.title}`,
           mimeType: 'text/markdown',
           contentLength: output.length,
           preview: output.slice(0, 500),

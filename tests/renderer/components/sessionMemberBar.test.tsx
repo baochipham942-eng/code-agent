@@ -8,7 +8,8 @@ import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../.
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const invokeMock = vi.fn();
-const appState = { openWorkspacePreview: vi.fn() };
+const invokeDomainMock = vi.fn();
+const appState = { openWorkspacePreview: vi.fn(), openWorkbenchTab: vi.fn() };
 const swarmState: {
   agents: SwarmAgentState[];
   activeSessionId: string | undefined;
@@ -18,16 +19,27 @@ const swarmState: {
 } = { agents: [], activeSessionId: undefined };
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
-vi.mock('../../../src/renderer/stores/appStore', () => ({ useAppStore: (selector: (state: typeof appState) => unknown) => selector(appState) }));
+vi.mock('../../../src/renderer/stores/appStore', () => {
+  // 工厂在组件 import 时求值，早于 const 初始化：必须延迟解引用
+  const useAppStore = (selector: (state: typeof appState) => unknown) => selector(appState);
+  useAppStore.getState = () => appState;
+  return { useAppStore };
+});
 vi.mock('../../../src/renderer/stores/swarmStore', () => ({ useSwarmStore: (selector: (state: typeof swarmState) => unknown) => selector(swarmState) }));
-// 工厂在组件 import 时求值，早于 const 初始化：必须延迟解引用
-vi.mock('../../../src/renderer/services/ipcService', () => ({ default: { invoke: (...args: unknown[]) => invokeMock(...args) } }));
+vi.mock('../../../src/renderer/services/ipcService', () => ({
+  default: {
+    invoke: (...args: unknown[]) => invokeMock(...args),
+    invokeDomain: (...args: unknown[]) => invokeDomainMock(...args),
+  },
+}));
 
 import { SessionMemberBar, swarmRunAgentRecordToState } from '../../../src/renderer/components/features/expert/SessionMemberBar';
 import { useComposerStore } from '../../../src/renderer/stores/composerStore';
 import { useTeamRecipeStore } from '../../../src/renderer/stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../src/renderer/stores/agentRegistryStore';
 import { useMemberViewStore } from '../../../src/renderer/stores/memberViewStore';
+import { useTaskPanelViewStore } from '../../../src/renderer/stores/taskPanelViewStore';
+import { useBackgroundTaskStore } from '../../../src/renderer/stores/backgroundTaskStore';
 
 const agents: SwarmRunAgentRecord[] = [
   { runId: 'run-1', agentId: 'researcher', name: '调研员', role: 'researcher', status: 'completed', startTime: 1, endTime: 4_001, durationMs: 4_000, tokensIn: 12, tokensOut: 34, toolCalls: 5, costUsd: 0.002, error: null, failureCategory: null, filesChanged: [], dispatchedTask: '核对数据', finalOutput: `${'完整持久化产出'.repeat(40)} 收尾证据` },
@@ -39,7 +51,21 @@ const run: SwarmRunListItem = {
   totalAgents: 2, completedCount: 2, failedCount: 0, totalCostUsd: 0.005, totalTokensIn: 68, totalTokensOut: 112, trigger: 'llm-spawn',
 };
 
-describe('SessionMemberBar', () => {
+function mockLedger(detail: SwarmRunDetail, listItem: SwarmRunListItem = run): void {
+  invokeMock.mockImplementation((channel: string) => {
+    if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([listItem]);
+    if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
+    return Promise.resolve(null);
+  });
+}
+
+const completedDetail: SwarmRunDetail = {
+  run: { ...run, totalToolCalls: 11, parallelPeak: 2, errorSummary: null, aggregation: null, tags: [] },
+  agents,
+  events: [],
+};
+
+describe('SessionMemberBar（折叠 chip）', () => {
   beforeEach(() => {
     swarmState.agents = [];
     swarmState.activeSessionId = undefined;
@@ -48,35 +74,47 @@ describe('SessionMemberBar', () => {
     swarmState.lastEventAt = undefined;
     invokeMock.mockReset();
     invokeMock.mockResolvedValue([]);
+    invokeDomainMock.mockReset();
+    invokeDomainMock.mockResolvedValue(null);
+    appState.openWorkbenchTab.mockReset();
     useComposerStore.setState({ selectedTeamRecipeId: null, standbyExcludedMemberKeys: [] });
     useTeamRecipeStore.setState({ recipes: [], isLoaded: true });
     useAgentRegistryStore.setState({ entries: [], isLoaded: true });
     useMemberViewStore.setState({ viewingMemberId: null });
+    useTaskPanelViewStore.setState({ view: 'overview' });
+    useBackgroundTaskStore.setState({ tasks: [] });
   });
   afterEach(() => cleanup());
 
   it('没有团队也没有预选时不渲染', async () => {
     render(<SessionMemberBar sessionId="session-1" />);
     await Promise.resolve();
-    expect(screen.queryByTestId('session-member-bar')).toBeNull();
+    expect(screen.queryByTestId('session-member-bar-collapsed')).toBeNull();
   });
 
-  it('空内存时回灌最近团队 run，点成员进入他的对话页', async () => {
-    const detail: SwarmRunDetail = { run: { ...run, totalToolCalls: 11, parallelPeak: 2, errorSummary: null, aggregation: null, tags: [] }, agents, events: [] };
-    invokeMock.mockImplementation((channel: string) => {
-      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([run]);
-      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
-      return Promise.resolve(null);
-    });
+  it('空内存时回灌最近团队 run：全员完成文案 + 合并态 + 头像叠', async () => {
+    mockLedger(completedDetail);
 
     render(<SessionMemberBar sessionId="session-1" />);
-    await waitFor(() => expect(screen.getByTestId('session-member-bar')).toBeTruthy());
-    expect(screen.getByTestId('member-pill-leader')).toBeTruthy();
-    expect(screen.getByTestId('member-pill-researcher')).toBeTruthy();
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    expect(chip.textContent).toContain('2 个代理已完成');
+    // 两个代理全部完成且无冲突 → 尾部「合没合」报已合并
+    expect(screen.getByTestId('member-bar-merge-state').textContent).toBe('改动已经合到一起了');
+    // chip 左侧头像叠：专家行走 RoleInitialAvatar
+    expect(screen.getByTestId('role-initial-avatar-researcher')).toBeTruthy();
+    expect(screen.getByTestId('role-initial-avatar-writer')).toBeTruthy();
+  });
 
-    fireEvent.click(screen.getByTestId('member-pill-researcher'));
-    // H4：点成员不再弹工作记录，而是把聊天区切成这位成员的对话（页面本体另有测试）
-    await waitFor(() => expect(useMemberViewStore.getState().viewingMemberId).toBe('researcher'));
+  it('点 chip 打开右侧「本会话的代理」面板（切页签 + 展开右栏）', async () => {
+    mockLedger(completedDetail);
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    fireEvent.click(await screen.findByTestId('session-member-bar-collapsed'));
+
+    expect(useTaskPanelViewStore.getState().view).toBe('agents');
+    expect(appState.openWorkbenchTab).toHaveBeenCalledWith('overview', { source: 'user' });
+    // 点 chip 不再进入某个成员的对话页（那是面板行的事）
+    expect(useMemberViewStore.getState().viewingMemberId).toBeNull();
   });
 
   it('实时事件与持久化状态冲突时只展示账本/API 状态', async () => {
@@ -85,16 +123,13 @@ describe('SessionMemberBar', () => {
     swarmState.activeTreeId = 'tree-1';
     swarmState.lastEventAt = 10;
     swarmState.agents = agents.map((agent) => ({ ...swarmRunAgentRecordToState(agent), status: 'running' }));
-    const detail: SwarmRunDetail = { run: { ...run, totalToolCalls: 11, parallelPeak: 2, errorSummary: null, aggregation: null, tags: [] }, agents, events: [] };
-    invokeMock.mockImplementation((channel: string) => {
-      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([run]);
-      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
-      return Promise.resolve(null);
-    });
+    mockLedger(completedDetail);
 
     render(<SessionMemberBar sessionId="session-1" />);
-    await waitFor(() => expect(screen.getAllByTestId('member-status-completed')).toHaveLength(2));
-    expect(screen.queryByTestId('member-status-running')).toBeNull();
+    // stream 说 running、账本说 completed：chip 文案只信账本
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    await waitFor(() => expect(chip.textContent).toContain('2 个代理已完成'));
+    expect(chip.textContent).not.toContain('工作中');
     expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL, {
       sessionId: 'session-1',
       runId: createSwarmTraceStorageId({
@@ -105,7 +140,7 @@ describe('SessionMemberBar', () => {
     });
   });
 
-  it('运行中的成员带转圈徽标，跑完的带对勾', async () => {
+  it('有 working 代理时 chip 报「N 个代理工作中 · 第一个 working 行 当前一句」', async () => {
     const durableAgents: SwarmRunAgentRecord[] = [
       { ...agents[0], status: 'running', endTime: null, durationMs: null },
       agents[1],
@@ -115,15 +150,33 @@ describe('SessionMemberBar', () => {
       agents: durableAgents,
       events: [],
     };
-    invokeMock.mockImplementation((channel: string) => {
-      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([{ ...run, status: 'running' }]);
-      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
-      return Promise.resolve(null);
-    });
+    mockLedger(detail, { ...run, status: 'running' });
 
     render(<SessionMemberBar sessionId="session-1" />);
-    await waitFor(() => expect(screen.getByTestId('member-status-running')).toBeTruthy());
-    expect(screen.getByTestId('member-status-completed')).toBeTruthy();
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    await waitFor(() => expect(chip.textContent).toContain('1 个代理工作中'));
+    // 专家行没有真实工具步时回落「正在整理任务…」
+    expect(chip.textContent).toContain('调研员 正在整理任务…');
+    // 既没全完成也没冲突/卡住 → 不渲染合并态
+    expect(screen.queryByTestId('member-bar-merge-state')).toBeNull();
+  });
+
+  it('多个 working 时当前一句取第一个 working 行', async () => {
+    const durableAgents: SwarmRunAgentRecord[] = [
+      { ...agents[0], status: 'running', endTime: null, durationMs: null },
+      { ...agents[1], status: 'running', endTime: null, durationMs: null },
+    ];
+    const detail: SwarmRunDetail = {
+      run: { ...run, status: 'running', endedAt: null, completedCount: 0, totalToolCalls: 11, parallelPeak: 2, errorSummary: null, aggregation: null, tags: [] },
+      agents: durableAgents,
+      events: [],
+    };
+    mockLedger(detail, { ...run, status: 'running' });
+
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    await waitFor(() => expect(chip.textContent).toContain('2 个代理工作中 · 调研员'));
+    expect(chip.textContent).not.toContain('撰稿员 正在整理任务…');
   });
 
   it('单个后台 Agent 也进入成员条，不要求组成两人 Team', async () => {
@@ -144,63 +197,15 @@ describe('SessionMemberBar', () => {
       agents: [singleAgent],
       events: [],
     };
-    invokeMock.mockImplementation((channel: string) => {
-      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([{ ...run, status: 'running', totalAgents: 1 }]);
-      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
-      return Promise.resolve(null);
-    });
+    mockLedger(detail, { ...run, status: 'running', totalAgents: 1 });
 
     render(<SessionMemberBar sessionId="session-1" />);
-    await waitFor(() => expect(screen.getByTestId('member-pill-researcher')).toBeTruthy());
-    expect(screen.getAllByTestId('member-status-running')).toHaveLength(1);
-  });
-
-  it('swarm 活跃时成员条右端显示 token 与停止全部，点击走 run-level cancel', async () => {
-    swarmState.activeSessionId = 'session-1';
-    swarmState.activeRunId = 'logical-run-1';
-    const durableAgents: SwarmRunAgentRecord[] = [
-      { ...agents[0], status: 'running', endTime: null, durationMs: null },
-      { ...agents[1], status: 'running', endTime: null, durationMs: null },
-    ];
-    const detail: SwarmRunDetail = {
-      run: {
-        ...run,
-        status: 'running',
-        endedAt: null,
-        completedCount: 0,
-        totalTokensIn: 1500,
-        totalTokensOut: 500,
-        totalToolCalls: 11,
-        parallelPeak: 2,
-        errorSummary: null,
-        aggregation: null,
-        tags: [],
-      },
-      agents: durableAgents,
-      events: [],
-    };
-    invokeMock.mockImplementation((channel: string) => {
-      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([{ ...run, status: 'running' }]);
-      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
-      if (channel === IPC_CHANNELS.SWARM_CANCEL_RUN) return Promise.resolve(true);
-      return Promise.resolve(null);
-    });
-
-    render(<SessionMemberBar sessionId="session-1" />);
-    await waitFor(() => expect(screen.getByTestId('member-bar-stop-all')).toBeTruthy());
-    expect(screen.getByTestId('member-bar-tokens').textContent).toContain('2.0K');
-
-    fireEvent.click(screen.getByTestId('member-bar-stop-all'));
-    await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.SWARM_CANCEL_RUN, {
-        sessionId: 'session-1',
-        runId: 'logical-run-1',
-      });
-    });
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    await waitFor(() => expect(chip.textContent).toContain('1 个代理工作中 · 调研员 正在整理任务…'));
   });
 
   // 预选是我们比 WorkBuddy 多做的一层：还没跑就先让用户看到这个团队由谁组成
-  it('预选团队配方时铺出灰态名单（主理人在前）且不带状态徽标', async () => {
+  it('预选团队配方时 chip 报「N 个代理待命中」，不带合并态', async () => {
     useAgentRegistryStore.setState({
       entries: [{ id: '牧之', name: '牧之', description: '', source: 'builtin', modelTier: 'balanced', readonly: true, tools: [], profession: '资深产品经理' }],
       isLoaded: true,
@@ -212,69 +217,59 @@ describe('SessionMemberBar', () => {
     useComposerStore.setState({ selectedTeamRecipeId: 'r1' });
 
     render(<SessionMemberBar sessionId="session-1" />);
-    await waitFor(() => expect(screen.getByTestId('session-member-bar')).toBeTruthy());
-    expect(screen.getByTestId('member-pill-牧之')).toBeTruthy();
-    expect(screen.getByTestId('member-pill-溯真')).toBeTruthy();
-    // 职业接上了 H1 铺的数据
-    expect(screen.getByTestId('session-member-bar').textContent).toContain('资深产品经理');
-    // 待命态不该假装在干活
-    expect(screen.queryByTestId('member-status-running')).toBeNull();
-    expect(screen.queryByTestId('member-status-completed')).toBeNull();
-    // 还没跑，没有「主会话」可回
-    expect(screen.queryByTestId('member-pill-leader')).toBeNull();
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    expect(chip.textContent).toContain('2 个代理待命中');
+    // 待命态不假装在干活、也没有「合没合」可报
+    expect(chip.textContent).not.toContain('工作中');
+    expect(screen.queryByTestId('member-bar-merge-state')).toBeNull();
+    // 待命名单的头像仍走角色三级回落
+    expect(screen.getByTestId('role-initial-avatar-牧之')).toBeTruthy();
+    expect(screen.getByTestId('role-initial-avatar-溯真')).toBeTruthy();
   });
 
-  it('待命成员 pill 的 × 把该成员排除出本次预选，配方预选本身保留', async () => {
+  // 刀 1（N-NAMEDMATE）：成员条头像三级回落——真人头像资产 → 角色 icon（RoleIcon）→ 首字兜底
+  it('待命名单头像：无资产有 icon 渲染 RoleIcon 不渲染首字，无 icon 才首字兜底', async () => {
+    useAgentRegistryStore.setState({
+      entries: [
+        { id: 'researcher', name: '调研员', description: '', source: 'builtin', modelTier: 'balanced', readonly: true, tools: [], profession: '研究调研', icon: 'Microscope' },
+        { id: 'writer', name: '撰稿员', description: '', source: 'builtin', modelTier: 'balanced', readonly: true, tools: [] },
+      ],
+      isLoaded: true,
+    });
     useTeamRecipeStore.setState({
-      recipes: [{ id: 'r1', name: '上线评审', description: '', category: 'automation', lead: { roleId: '牧之', briefTemplate: '汇总 {topic}' }, members: [{ roleId: '溯真', taskTemplate: '调研 {topic}' }, { roleId: '青禾', taskTemplate: '写作 {topic}' }] }],
+      recipes: [{ id: 'r1', name: '上线评审', description: '', category: 'automation', members: [{ roleId: 'researcher', taskTemplate: '调研 {topic}' }, { roleId: 'writer', taskTemplate: '写作 {topic}' }] }],
       isLoaded: true,
     });
     useComposerStore.setState({ selectedTeamRecipeId: 'r1' });
 
     render(<SessionMemberBar sessionId="session-1" />);
-    await waitFor(() => expect(screen.getByTestId('member-pill-青禾')).toBeTruthy());
+    await screen.findByTestId('session-member-bar-collapsed');
 
-    fireEvent.click(screen.getByTestId('member-standby-remove-青禾'));
+    const iconAvatar = await screen.findByTestId('role-initial-avatar-researcher');
+    expect(iconAvatar.querySelector('svg')).toBeTruthy();
+    expect(iconAvatar.textContent).toBe('');
 
-    await waitFor(() => expect(screen.queryByTestId('member-pill-青禾')).toBeNull());
-    expect(useComposerStore.getState().standbyExcludedMemberKeys).toEqual(['青禾']);
-    expect(useComposerStore.getState().selectedTeamRecipeId).toBe('r1');
-    expect(screen.getByTestId('member-pill-牧之')).toBeTruthy();
-    expect(screen.getByTestId('member-pill-溯真')).toBeTruthy();
+    const initialAvatar = screen.getByTestId('role-initial-avatar-writer');
+    expect(initialAvatar.querySelector('svg')).toBeNull();
+    expect(initialAvatar.textContent).toBe('W');
   });
 
-  it('待命成员 × 到最后一个不剩时整团取消预选', async () => {
+  it('有真人头像资产的角色仍渲染头像图（资产档优先于 icon）', async () => {
+    useAgentRegistryStore.setState({
+      entries: [{ id: '牧之', name: '牧之', description: '', source: 'builtin', modelTier: 'balanced', readonly: true, tools: [], profession: '资深产品经理', icon: 'ClipboardList' }],
+      isLoaded: true,
+    });
     useTeamRecipeStore.setState({
-      recipes: [{ id: 'r1', name: '上线评审', description: '', category: 'automation', lead: { roleId: '牧之', briefTemplate: '汇总 {topic}' }, members: [{ roleId: '溯真', taskTemplate: '调研 {topic}' }] }],
+      recipes: [{ id: 'r1', name: '上线评审', description: '', category: 'automation', members: [{ roleId: '牧之', taskTemplate: '评审 {topic}' }] }],
       isLoaded: true,
     });
     useComposerStore.setState({ selectedTeamRecipeId: 'r1' });
 
     render(<SessionMemberBar sessionId="session-1" />);
-    await waitFor(() => expect(screen.getByTestId('member-pill-溯真')).toBeTruthy());
+    await screen.findByTestId('session-member-bar-collapsed');
 
-    fireEvent.click(screen.getByTestId('member-standby-remove-牧之'));
-    fireEvent.click(screen.getByTestId('member-standby-remove-溯真'));
-
-    await waitFor(() => expect(screen.queryByTestId('session-member-bar')).toBeNull());
-    expect(useComposerStore.getState().selectedTeamRecipeId).toBeNull();
-    expect(useComposerStore.getState().standbyExcludedMemberKeys).toEqual([]);
-  });
-
-  it('待命成员 pill 聚焦后按 Delete 也能排除', async () => {
-    useTeamRecipeStore.setState({
-      recipes: [{ id: 'r1', name: '上线评审', description: '', category: 'automation', lead: { roleId: '牧之', briefTemplate: '汇总 {topic}' }, members: [{ roleId: '溯真', taskTemplate: '调研 {topic}' }, { roleId: '青禾', taskTemplate: '写作 {topic}' }] }],
-      isLoaded: true,
-    });
-    useComposerStore.setState({ selectedTeamRecipeId: 'r1' });
-
-    render(<SessionMemberBar sessionId="session-1" />);
-    await waitFor(() => expect(screen.getByTestId('member-pill-青禾')).toBeTruthy());
-
-    fireEvent.keyDown(screen.getByTestId('member-pill-青禾'), { key: 'Delete' });
-
-    await waitFor(() => expect(screen.queryByTestId('member-pill-青禾')).toBeNull());
-    expect(useComposerStore.getState().standbyExcludedMemberKeys).toEqual(['青禾']);
+    const avatar = await screen.findByTestId('role-initial-avatar-牧之');
+    expect(avatar.tagName).toBe('IMG');
   });
 
   it('把持久化成员记录映射为工作记录所需的实时状态', () => {

@@ -19,6 +19,7 @@ Module.prototype.require = function(this: NodeJS.Module, id: string): unknown {
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import { randomUUID } from 'crypto';
 // CLIConfigService 现在是 main ConfigService 的 read-only 视图（type alias）。
 // 初始化走 main initConfigService —— 4c8b5d7d 修复尾巴：消除"配置双胞胎"。
 import './config'; // 副作用：加载 .env（保持原有行为）
@@ -43,8 +44,14 @@ import { getSwarmTraceWriter, installSwarmTraceWriter } from '../host/agent/swar
 import {
   createRunContext,
   resolveCanonicalRunPath,
+  type CreateRunContextInput,
+  type RunHandle,
   type RunContext,
 } from '../host/runtime/runContext';
+import { getApplicationRunRegistry } from '../host/app/applicationRunRegistry';
+import { initializeDurableRun, type DurableRunApplicationRuntime } from '../host/app/initializeDurableRun';
+import { DurableRunRepository } from '../host/services/core/repositories/DurableRunRepository';
+import { SERVICE_TIMEOUTS } from '../shared/constants/timeouts';
 import type { ToolExecutionDelegate, ToolExecutorConfig } from '../host/tools/toolExecutor';
 import {
   createRunTraceContext,
@@ -80,6 +87,16 @@ let toolExecutor: InstanceType<typeof ToolExecutor> | null = null;
 let initialized = false;
 let currentTelemetrySessionId: string | null = null;
 let currentAgentLoopSessionId: string | null = null;
+let cliDurableRunRuntime: DurableRunApplicationRuntime | null = null;
+
+// CLI run/chat/serve do not initialize TaskManager, so its command-center tools
+// must stay out of the model-visible tool table on this surface.
+const CLI_TASK_MANAGER_TOOL_DENYLIST = [
+  'delegate_task',
+  'steer_task',
+  'cancel_task',
+  'task_status',
+] as const;
 
 type AgentLoopMessageSessionManager = Pick<CLISessionManager, 'addMessage' | 'addMessageToSession'>;
 
@@ -141,6 +158,50 @@ export function cliShouldInitMcp(env: NodeJS.ProcessEnv = process.env): boolean 
   return env.CODE_AGENT_ENABLE_CUA === '1' || env.CODE_AGENT_ENABLE_ARGUS_MCP === '1';
 }
 
+async function initializeCLIDurableRun(
+  database: CLIDatabaseService,
+  dataDir: string,
+): Promise<void> {
+  const db = database.getDb();
+  if (!db) return;
+
+  const repository = new DurableRunRepository(db);
+  repository.migrate();
+  cliDurableRunRuntime = await initializeDurableRun({
+    registry: getApplicationRunRegistry(),
+    repository,
+    dataDir,
+    ownerId: 'cli-native-host',
+    processInstanceId: `cli-${process.pid}-${randomUUID()}`,
+  });
+}
+
+export async function startCLIDurableRun(
+  input: CreateRunContextInput,
+): Promise<RunHandle | null> {
+  if (!cliDurableRunRuntime?.kernel) return null;
+  const registry = getApplicationRunRegistry();
+  if (!await registry.waitForDurableKernel(SERVICE_TIMEOUTS.BOOTSTRAP)) return null;
+  return registry.startDurable(input);
+}
+
+export async function terminalCLIDurableRun(
+  handle: RunHandle,
+  success: boolean,
+): Promise<void> {
+  const now = Date.now();
+  await getApplicationRunRegistry().terminalDurable(handle.context.runId, {
+    now,
+    status: success ? 'completed' : 'failed',
+    reason: success ? 'cli_run_completed' : 'cli_run_failed',
+    event: {
+      type: success ? 'cli_run_completed' : 'cli_run_failed',
+      payload: {},
+      recordedAt: now,
+    },
+  }, handle);
+}
+
 /**
  * 初始化 CLI 核心服务
  */
@@ -174,6 +235,16 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
     // 原生模块 ABI 不匹配时只打一行警告，不打完整堆栈
     const msg = error instanceof Error ? error.message.split('\n')[0] : String(error);
     cliLog('Database not available (CLI mode):', msg);
+  }
+
+  if (databaseService) {
+    try {
+      await initializeCLIDurableRun(databaseService, dataDir);
+      cliLog('Durable Run initialized for CLI');
+    } catch (error) {
+      const msg = error instanceof Error ? error.message.split('\n')[0] : String(error);
+      cliLog('Durable Run not available (CLI mode):', msg);
+    }
   }
 
   // 初始化会话管理器
@@ -546,9 +617,10 @@ export function createAgentLoop(
     agentId: config.agentOverride?.id ?? 'default',
     agentName: config.agentOverride?.name ?? 'default',
     requestedAgentId: config.requestedAgentId,
-    deniedToolNames: config.agentOverride && config.agentOverride.deniedToolNames.length > 0
-      ? [...config.agentOverride.deniedToolNames]
-      : undefined,
+    deniedToolNames: Array.from(new Set([
+      ...CLI_TASK_MANAGER_TOOL_DENYLIST,
+      ...(config.agentOverride?.deniedToolNames ?? []),
+    ])),
     allowedToolNames: config.allowedToolNames,
     telemetryAdapter,
     // CLI 消息持久化回调（包含 tool_results）

@@ -28,7 +28,7 @@ const repoRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const SCRIPT = join(repoRoot, 'scripts', 'worktree-bootstrap.sh');
 
 // 与 scripts/worktree-bootstrap.sh 里的清单保持一致；改脚本清单时必须同步这里。
-const LINK_ITEMS = ['node_modules', 'scripts/rtk', 'scripts/uv', 'scripts/poppler'];
+const LINK_ITEMS = ['node_modules', 'scripts/rtk', 'scripts/uv', 'scripts/poppler', 'src-tauri/target'];
 const COPY_ITEMS = [
   'dist/native',
   'dist/bundled-node',
@@ -58,6 +58,7 @@ function makeSourceTree(dir: string): void {
   writeFake(dir, 'scripts/rtk');
   writeFake(dir, 'scripts/uv');
   writeFake(dir, 'scripts/poppler/bin/pdftoppm');
+  writeFake(dir, 'src-tauri/target/.keep'); // 共享 Rust 编译缓存（#1280 起软链项）
   writeFake(dir, 'dist/native/index.node');
   writeFake(dir, 'dist/bundled-node/bin/node');
   writeFake(dir, 'scripts/system-audio-capture');

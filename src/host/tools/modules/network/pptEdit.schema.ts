@@ -62,6 +62,13 @@ export const pptEditSchema: ToolSchema = {
   },
   category: 'network',
   permissionLevel: 'write',
+  pathAuthority: [{
+    kind: 'path',
+    pathParameter: 'file_path',
+    mutation: 'edit',
+    whenParameter: 'action',
+    whenValues: ['replace_title', 'replace_content', 'replace_slide', 'delete_slide', 'insert_slide', 'reorder_slides', 'update_notes'],
+  }],
   readOnly: false,
   allowInPlanMode: false,
 };

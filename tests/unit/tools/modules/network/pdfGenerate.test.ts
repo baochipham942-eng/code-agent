@@ -9,6 +9,9 @@ import type {
   Logger,
 } from '../../../../../src/host/protocol/tools';
 import { EventEmitter } from 'events';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const { existsSyncMock, mkdirSyncMock, statSyncMock, createWriteStreamMock } = vi.hoisted(() => ({
   existsSyncMock: vi.fn().mockReturnValue(true),
@@ -192,6 +195,28 @@ describe('pdfGenerateModule (native)', () => {
     it('respects custom output_path', async () => {
       await run({ title: 'T', content: 'x', output_path: '/tmp/work/x.pdf' });
       expect(createWriteStreamMock).toHaveBeenCalledWith('/tmp/work/x.pdf');
+    });
+
+    it('resolves a relative output_path inside ctx.workingDir and writes there', async () => {
+      const workingDir = await mkdtemp(join(tmpdir(), 'pdf-generate-'));
+      const expectedPath = join(workingDir, 'report.pdf');
+      try {
+        createWriteStreamMock.mockImplementationOnce(() => {
+          void writeFile(expectedPath, Buffer.from('pdf'));
+          const ee = new EventEmitter() as EventEmitter & { write: () => void; end: () => void };
+          ee.write = () => undefined;
+          ee.end = () => undefined;
+          setImmediate(() => ee.emit('finish'));
+          return ee;
+        });
+        const result = await run({ title: 'T', content: 'x', output_path: 'report.pdf' }, makeCtx({ workingDir }));
+        expect(result.ok).toBe(true);
+        expect(createWriteStreamMock).toHaveBeenCalledWith(expectedPath);
+        expect(await readFile(expectedPath, 'utf8')).toBe('pdf');
+        if (result.ok) expect(result.output).toContain(expectedPath);
+      } finally {
+        await rm(workingDir, { recursive: true, force: true });
+      }
     });
 
     it('creates output directory if missing', async () => {

@@ -608,6 +608,8 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       runs_on TEXT NOT NULL DEFAULT 'local' CHECK (runs_on IN ('local', 'cloud')),
       max_run_budget REAL CHECK (max_run_budget IS NULL OR max_run_budget >= 0),
       min_interval_seconds INTEGER NOT NULL DEFAULT 60 CHECK (min_interval_seconds >= 60),
+      result_channel TEXT,
+      cloud_job_id TEXT,
       enabled INTEGER NOT NULL DEFAULT 1,
       max_retries INTEGER DEFAULT 0,
       retry_delay INTEGER DEFAULT 5000,
@@ -624,6 +626,8 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, "ALTER TABLE cron_jobs ADD COLUMN runs_on TEXT NOT NULL DEFAULT 'local' CHECK (runs_on IN ('local', 'cloud'))", logger);
   safeAlter(db, 'ALTER TABLE cron_jobs ADD COLUMN max_run_budget REAL CHECK (max_run_budget IS NULL OR max_run_budget >= 0)', logger);
   safeAlter(db, 'ALTER TABLE cron_jobs ADD COLUMN min_interval_seconds INTEGER NOT NULL DEFAULT 60 CHECK (min_interval_seconds >= 60)', logger);
+  safeAlter(db, 'ALTER TABLE cron_jobs ADD COLUMN result_channel TEXT', logger);
+  safeAlter(db, 'ALTER TABLE cron_jobs ADD COLUMN cloud_job_id TEXT', logger);
 
   // Cron Executions 表 (任务执行记录)
   db.exec(`

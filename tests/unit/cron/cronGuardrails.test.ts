@@ -173,9 +173,9 @@ describe('过期一次性任务加载时停用（防僵尸 enabled 任务）', (
     const job = service.getJob('job-missed-at');
     expect(job).not.toBeNull();
     expect(job!.enabled).toBe(false);
-    // 落库：新增 runsOn/budget/minInterval 后 enabled 是第 10 位，应写 0
+    // 落库：新增 resultChannel/cloudJobId 后 enabled 是第 12 位，应写 0
     const saved = dbState.savedRows.find((row) => row[0] === 'job-missed-at');
-    expect(saved?.[9]).toBe(0);
+    expect(saved?.[11]).toBe(0);
     await service.shutdown();
   });
 

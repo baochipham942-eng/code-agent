@@ -14,6 +14,10 @@ const sessionState = vi.hoisted(() => ({
 
 const configState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 
+const channelState = vi.hoisted(() => ({
+  sendMessage: vi.fn(async () => undefined),
+}));
+
 const automationState = vi.hoisted(() => ({
   recordCreated: vi.fn(async () => undefined),
   recordEvent: vi.fn(async () => undefined),
@@ -45,6 +49,13 @@ vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ ui: { language: configState.language } }) }),
 }));
 
+vi.mock('../../../src/host/channels/channelManager', () => ({
+  getChannelManager: () => ({
+    getAllAccounts: () => [{ id: 'feishu-account', type: 'feishu', name: '工作飞书' }],
+    sendMessage: channelState.sendMessage,
+  }),
+}));
+
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
     addMessageToSession: async (sessionId: string, message: import('../../../src/shared/contract').Message) => {
@@ -65,6 +76,7 @@ vi.mock('../../../src/host/services/sessionAutomation', () => ({
 }));
 
 import { CronService } from '../../../src/host/cron/cronService';
+import { pushCronResult } from '../../../src/host/cron/cronResultDelivery';
 import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
 import { getSessionManager } from '../../../src/host/services/infra/sessionManager';
 
@@ -90,6 +102,7 @@ afterEach(() => {
   sessionState.messages.clear();
   sessionState.broadcasts = [];
   configState.language = 'zh';
+  channelState.sendMessage.mockClear();
   automationState.recordCreated.mockClear();
   automationState.recordEvent.mockClear();
   automationState.getBySourceRef.mockClear();
@@ -98,7 +111,94 @@ afterEach(() => {
   shutdownEventBus();
 });
 
+function installCloudClient(
+  service: CronService,
+  overrides: Partial<{
+    addJob: (definition: import('../../../src/shared/contract/cron').CronJobDefinition) => Promise<string>;
+    updateJob: (definition: import('../../../src/shared/contract/cron').CronJobDefinition) => Promise<void>;
+    removeJob: (id: string) => Promise<void>;
+    runJob: (id: string) => Promise<unknown>;
+  }> = {},
+) {
+  type Definition = import('../../../src/shared/contract/cron').CronJobDefinition;
+  const runtime = {
+    isConfigured: () => false,
+    start: vi.fn(),
+    stop: vi.fn(),
+    reconcile: vi.fn(async () => undefined),
+    addJob: vi.fn(async (definition: Definition) => {
+      const remoteJobId = await (overrides.addJob ?? (async () => 'remote-job-1'))(definition);
+      const jobs = (service as unknown as {
+        jobs: Map<string, { cloudJobId?: string }>;
+      }).jobs;
+      const active = jobs.get(definition.id);
+      if (active) active.cloudJobId = remoteJobId;
+      return remoteJobId;
+    }),
+    updateJob: vi.fn(overrides.updateJob ?? (async () => undefined)),
+    removeJob: vi.fn(async (_definition: Definition, remoteJobId?: string) => {
+      await (overrides.removeJob ?? (async () => undefined))(remoteJobId ?? 'remote-job-1');
+      return true;
+    }),
+    runJob: vi.fn(async (_definition: Definition) => {
+      try {
+        return await (overrides.runJob ?? (async () => ({ ran: true, runId: 'remote-run-1' })))('remote-job-1');
+      } catch (error) {
+        throw new Error('云端计划任务服务暂时不可用，任务未执行。请检查云端执行地址和令牌后重试。', {
+          cause: error,
+        });
+      }
+    }),
+  };
+  (service as unknown as { cloudRuntime: typeof runtime }).cloudRuntime = runtime;
+  return runtime;
+}
+
 describe('CronService execution location invariants', () => {
+  it('does not create a local cron timer for an enabled cloud job', async () => {
+    const service = new CronService();
+    const cloudClient = installCloudClient(service);
+
+    const job = await service.createJob({
+      ...shellJob('hours'),
+      runsOn: 'cloud',
+      enabled: true,
+    });
+
+    const active = (service as unknown as {
+      jobs: Map<string, { cronInstance?: unknown; cloudJobId?: string }>;
+    }).jobs.get(job.id);
+    expect(active?.cronInstance).toBeUndefined();
+    expect(active?.cloudJobId).toBe('remote-job-1');
+    expect(job.nextRunAt).toBeUndefined();
+    expect(cloudClient.addJob).toHaveBeenCalledTimes(1);
+    await service.shutdown();
+  });
+
+  it('mirrors cloud create, update, and remove through the remote lifecycle', async () => {
+    const service = new CronService();
+    const cloudClient = installCloudClient(service);
+    const job = await service.createJob({
+      ...shellJob('hours'),
+      runsOn: 'cloud',
+      enabled: false,
+    });
+
+    await service.updateJob(job.id, { name: 'Updated cloud job', enabled: true });
+    await expect(service.deleteJob(job.id)).resolves.toBe(true);
+
+    expect(cloudClient.addJob).toHaveBeenCalledTimes(1);
+    expect(cloudClient.updateJob).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Updated cloud job',
+      enabled: true,
+    }));
+    expect(cloudClient.removeJob).toHaveBeenCalledWith(
+      expect.objectContaining({ id: job.id }),
+      'remote-job-1',
+    );
+    expect(service.getJob(job.id)).toBeNull();
+  });
+
   it('freezes runsOn at creation in the service update path', async () => {
     const service = new CronService();
     const job = await service.createJob({
@@ -145,6 +245,9 @@ describe('CronService execution location invariants', () => {
 
   it('branches cloud runs before local executeAction and leaves local runs unchanged', async () => {
     const service = new CronService();
+    const cloudClient = installCloudClient(service, {
+      runJob: async () => { throw new Error('network down'); },
+    });
     const executeAction = vi.fn(async () => ({ ok: true }));
     (service as unknown as { executeAction: typeof executeAction }).executeAction = executeAction;
     const cloudJob = await service.createJob({
@@ -168,8 +271,12 @@ describe('CronService execution location invariants', () => {
     const cloudExecution = await service.triggerJob(cloudJob.id);
     expect(cloudExecution).toMatchObject({
       status: 'failed',
-      error: 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).',
+      error: expect.stringContaining('云端计划任务服务暂时不可用'),
     });
+    expect(cloudClient.runJob).toHaveBeenCalledWith(expect.objectContaining({ id: cloudJob.id }));
+    expect(dbState.savedRows).toContainEqual(expect.arrayContaining([
+      expect.any(String), cloudJob.id, null, 'failed',
+    ]));
     expect(executeAction).not.toHaveBeenCalled();
 
     const localExecution = await service.triggerJob(localJob.id);
@@ -180,6 +287,59 @@ describe('CronService execution location invariants', () => {
       localJob.action,
       undefined,
       expect.any(String),
+    );
+  });
+});
+
+describe('CronService result channel delivery', () => {
+  function resultJob(overrides: Partial<import('../../../src/shared/contract/cron').CronJobDefinition> = {}) {
+    return {
+      id: 'result-job',
+      name: 'Result job',
+      runsOn: 'local' as const,
+      scheduleType: 'every' as const,
+      schedule: { type: 'every' as const, interval: 1, unit: 'hours' as const },
+      action: { type: 'agent' as const, agentType: 'default', prompt: 'work' },
+      enabled: false,
+      createdAt: NOW,
+      updatedAt: NOW,
+      ...overrides,
+    };
+  }
+
+  it('pushes a normal cron result when the job configures a channel', async () => {
+    const definition = resultJob({ resultChannel: 'feishu' });
+    await pushCronResult(definition, 'normal result');
+
+    expect(channelState.sendMessage).toHaveBeenCalledWith(
+      'feishu-account',
+      'feishu-account',
+      'normal result',
+    );
+  });
+
+  it('does not push a normal cron result without a configured channel', async () => {
+    const definition = resultJob();
+    await pushCronResult(definition, 'quiet result');
+
+    expect(channelState.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('keeps heartbeat context channel delivery unchanged', async () => {
+    const definition = resultJob({
+      action: {
+        type: 'agent',
+        agentType: 'heartbeat',
+        prompt: 'check',
+        context: { heartbeatTask: true, channel: 'feishu' },
+      },
+    });
+    await pushCronResult(definition, 'heartbeat result');
+
+    expect(channelState.sendMessage).toHaveBeenCalledWith(
+      'feishu-account',
+      'feishu-account',
+      'heartbeat result',
     );
   });
 });
@@ -243,7 +403,7 @@ describe('CronService missed schedule traces', () => {
       reason: 'app-offline',
     }]);
     expect(service.getJob('job-at-missed')).toMatchObject({ enabled: false });
-    expect(dbState.savedRows.some((row) => row[0] === 'job-at-missed' && row[9] === 0)).toBe(true);
+    expect(dbState.savedRows.some((row) => row[0] === 'job-at-missed' && row[11] === 0)).toBe(true);
     unsubscribe();
     await service.shutdown();
   });
@@ -422,7 +582,7 @@ describe('CronService every schedule units', () => {
         actionType: 'agent',
       }),
     }));
-    expect(JSON.parse(String(dbState.savedRows.at(-1)?.[14]))).toMatchObject({
+    expect(JSON.parse(String(dbState.savedRows.at(-1)?.[16]))).toMatchObject({
       sourceSessionId: 'source-session-1',
       createdVia: 'slash_schedule',
     });

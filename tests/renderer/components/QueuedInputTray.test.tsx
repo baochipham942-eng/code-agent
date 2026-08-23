@@ -30,7 +30,6 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
         retry: '重试',
         delete: '删除',
         editing: '编辑中',
-        drag: '拖拽排序',
       },
     },
   }),
@@ -68,7 +67,6 @@ describe('QueuedInputTray', () => {
         items = items.filter((item) => item.id !== payload.id);
         return { status: 'consumed', retryCount: 0 };
       }
-      if (action === 'reorder') return { reordered: true };
       throw new Error(`Unexpected action: ${action}`);
     });
     ipc.settledHandler = null;
@@ -94,40 +92,74 @@ describe('QueuedInputTray', () => {
     expect(await screen.findByText('排队中 · 1')).toBeTruthy();
   });
 
-  it('悬停才显示行级动作，编辑回调、撤回和现在就说都走对应入口', async () => {
+  it('不暴露拖拽排序，动作默认淡出且 hover/focus 时可见并保持可聚焦', async () => {
     items = [input('one'), input('two', { position: 1 })];
+    const { container } = render(
+      <QueuedInputTray sessionId="session-1" revision={0} editingId="one" onEdit={vi.fn()} />,
+    );
+    const firstRow = await screen.findByTestId('queued-input-row-one');
+    const actions = screen.getByTestId('queued-input-actions-one');
+
+    expect(container.querySelector('[draggable]')).toBeNull();
+    expect(firstRow.hasAttribute('draggable')).toBe(false);
+    expect(actions.className).toContain('opacity-0');
+    expect(actions.className).toContain('group-hover:opacity-100');
+    expect(actions.className).toContain('group-focus-within:opacity-100');
+    expect(actions.textContent).toBe('现在就说编辑撤回');
+    expect(screen.getByText('编辑中').className).not.toContain('bg-');
+    fireEvent.mouseEnter(firstRow);
+    expect(actions.className).toContain('group-hover:opacity-100');
+    const sendNow = screen.getAllByRole('button', { name: '现在就说' })[0];
+    sendNow.focus();
+    expect(document.activeElement).toBe(sendNow);
+  });
+
+  it('普通行的现在就说、编辑和撤回都走对应入口', async () => {
+    items = [input('one'), input('two', { position: 1 }), input('three', { position: 2 })];
     const onEdit = vi.fn();
     render(<QueuedInputTray sessionId="session-1" revision={0} editingId={null} onEdit={onEdit} />);
-    const firstRow = await screen.findByTestId('queued-input-row-one');
-    expect(screen.queryByTestId('queued-input-actions-one')).toBeNull();
+    await screen.findByTestId('queued-input-row-one');
 
-    fireEvent.mouseEnter(firstRow);
-    expect(screen.getByTestId('queued-input-actions-one')).toBeTruthy();
-    fireEvent.click(screen.getByText('编辑'));
+    fireEvent.click(screen.getAllByText('编辑')[0]);
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 'one' }));
 
-    fireEvent.click(screen.getByText('撤回'));
+    fireEvent.click(screen.getAllByText('撤回')[0]);
     await waitFor(() => expect(ipc.invokeDomain).toHaveBeenCalledWith(
       expect.anything(), 'retract', { id: 'one' },
     ));
+    await waitFor(() => expect(screen.queryByTestId('queued-input-row-one')).toBeNull());
 
-    const secondRow = await screen.findByTestId('queued-input-row-two');
-    fireEvent.mouseEnter(secondRow);
-    fireEvent.click(screen.getByText('现在就说'));
+    fireEvent.click(screen.getAllByText('现在就说')[0]);
     await waitFor(() => expect(ipc.invokeDomain).toHaveBeenCalledWith(
       expect.anything(), 'sendNow', { id: 'two' },
     ));
   });
 
-  it('paused 行显示黄标，并把动作收敛为重试和删除', async () => {
+  it('paused 行只显示警告图标且无黄底 pill，动作收敛为重试和删除', async () => {
     items = [input('paused', { pausedReason: 'restart' })];
-    render(<QueuedInputTray sessionId="session-1" revision={0} editingId={null} onEdit={vi.fn()} />);
+    const view = render(
+      <QueuedInputTray sessionId="session-1" revision={0} editingId={null} onEdit={vi.fn()} />,
+    );
     const row = await screen.findByTestId('queued-input-row-paused');
-    expect(screen.getByText('没发出去')).toBeTruthy();
-    fireEvent.mouseEnter(row);
-    expect(screen.getByText('重试')).toBeTruthy();
-    expect(screen.getByText('删除')).toBeTruthy();
+    expect(screen.getByTitle('没发出去').textContent).toBe('⚠');
+    expect(row.querySelector('[class*="bg-amber"]')).toBeNull();
     expect(screen.queryByText('编辑')).toBeNull();
+
+    fireEvent.click(screen.getByText('重试'));
+    await waitFor(() => expect(ipc.invokeDomain).toHaveBeenCalledWith(
+      expect.anything(), 'sendNow', { id: 'paused' },
+    ));
+    await waitFor(() => expect(screen.queryByTestId('queued-input-tray')).toBeNull());
+
+    items = [input('failed', { status: 'failed' })];
+    view.rerender(
+      <QueuedInputTray sessionId="session-1" revision={1} editingId={null} onEdit={vi.fn()} />,
+    );
+    await screen.findByTestId('queued-input-row-failed');
+    fireEvent.click(screen.getByText('删除'));
+    await waitFor(() => expect(ipc.invokeDomain).toHaveBeenCalledWith(
+      expect.anything(), 'retract', { id: 'failed' },
+    ));
   });
 
   it('收到 settled 事件后重新拉取列表', async () => {

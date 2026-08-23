@@ -188,6 +188,11 @@ describe('mid-turn composer submission', () => {
 
     expect(screen.getByRole('radio', { name: '排队' }).getAttribute('aria-checked')).toBe('true');
     expect(screen.getByRole('radio', { name: '改道' }).getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByRole('radio', { name: '排队' }).getAttribute('title')).toBe('稍后再做');
+    expect(screen.getByRole('radio', { name: '改道' }).getAttribute('title')).toBe('现在打断，按新话走');
+    expect(screen.getByTestId('runtime-input-choice').textContent).toBe('排队改道');
+    expect(screen.queryByText('稍后再做')).toBeNull();
+    expect(screen.queryByText('现在打断，按新话走')).toBeNull();
 
     rerender(<SubmitHarness isProcessing={false} onSend={onSend} onSteer={onSteer} />);
     expect(screen.queryByTestId('runtime-input-choice')).toBeNull();

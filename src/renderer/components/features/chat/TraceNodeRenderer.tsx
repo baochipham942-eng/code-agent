@@ -908,9 +908,6 @@ const InputRedirectReceiptNode: React.FC<{ receipt: InputRedirectReceiptMetadata
               <span className="font-medium text-zinc-200">{copy.title}</span>
               {summary}
             </div>
-            <div className="mt-0.5 text-[11px] text-zinc-500">
-              {stoppedAt}{toolDetail ? ` · ${toolDetail}` : ''}
-            </div>
           </div>
           <button
             type="button"
@@ -923,6 +920,9 @@ const InputRedirectReceiptNode: React.FC<{ receipt: InputRedirectReceiptMetadata
         </div>
         {expanded && (
           <div className="mt-2 border-t border-border-muted pt-2 text-xs text-zinc-400">
+            <div className="mb-1.5 text-[11px] text-zinc-500">
+              {stoppedAt}{toolDetail ? ` · ${toolDetail}` : ''}
+            </div>
             <ExpandableContent content={originalContent} maxLines={20} />
           </div>
         )}

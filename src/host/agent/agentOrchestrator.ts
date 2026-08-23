@@ -56,6 +56,7 @@ import {
   initRunDag,
 } from './orchestratorDagSync';
 import { seedGoalContractForRun } from './orchestratorGoalSeed';
+import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from '../services/roleAssets/rolePersonalization';
 
 // Sub-modules
 import { type AgentOrchestratorConfig } from './orchestrator/types';
@@ -878,6 +879,28 @@ export class AgentOrchestrator {
       runRegistration: options?.runRegistration,
       userPresenceToolNames: getUserPresenceToolNames(),
     });
+    const routedRole = routingResolution ? registryResolveAgent(routingResolution.agent.id) : undefined;
+    const roleToolBoundary = routedRole
+      ? resolveRoleToolBoundary(routedRole.id, routedRole.tools)
+      : null;
+    // 局部变量让 TS 自己收窄，不用非空断言（eslint 棘轮把 no-non-null-assertion 记成 warning，
+    // 新增一处就顶破基线）。
+    const requestedToolNames = options?.allowedToolNames;
+    const intersectedBoundaryTools = roleToolBoundary
+      ? (requestedToolNames
+          ? roleToolBoundary.allowedTools.filter((tool) => requestedToolNames.some((allowed) => allowed.toLowerCase() === tool.toLowerCase()))
+          : roleToolBoundary.allowedTools)
+      : requestedToolNames;
+    const boundaryAllowedToolNames = roleToolBoundary
+      ? toRoleBoundaryRunAllowlist(intersectedBoundaryTools ?? [])
+      : intersectedBoundaryTools;
+    if (roleToolBoundary) {
+      logger.info('[RoleBoundary] foreground role tool allowlist applied', {
+        roleId: routedRole?.id,
+        allowedTools: boundaryAllowedToolNames,
+        blockedTools: roleToolBoundary.blockedTools,
+      });
+    }
 
     const baseSystemPrompt = routingResolution?.agent?.systemPrompt
       || applyProviderVariant(SYSTEM_PROMPT, effectiveModelConfig.provider, effectiveModelConfig.model);
@@ -972,7 +995,7 @@ export class AgentOrchestrator {
       maxIterations: options?.maxIterations,
       historyVisibility: options?.historyVisibility,
       deniedToolNames,
-      allowedToolNames: options?.allowedToolNames,
+      allowedToolNames: boundaryAllowedToolNames,
       telemetryAdapter,
       persistMessage: sessionId
         ? async (message: Message) => {

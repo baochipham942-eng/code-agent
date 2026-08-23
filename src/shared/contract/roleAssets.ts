@@ -188,8 +188,12 @@ export interface RolePanelDetail {
   visual: RoleVisual;
   /** 内置角色也允许写入个人展示偏好，但产品更新不会再覆盖这份定义。 */
   isBuiltin: boolean;
-  /** 每专家一份的两段可编辑正文；没设置过就是空串。 */
-  personalization: { userExpectation: string; soul: string };
+  /** 每专家一份的两段可编辑正文与结构化硬边界。 */
+  personalization: {
+    userExpectation: string;
+    soul: string;
+    boundaries: { disallowExternalSending: boolean };
+  };
   /** 专家在 agent.md 里声明的推荐连接器。没声明就没有这个字段。 */
   recommendedConnectors?: RoleRecommendedConnector[];
   /** 装备层当前生效配置及由 host 解析出的本机可选项。 */

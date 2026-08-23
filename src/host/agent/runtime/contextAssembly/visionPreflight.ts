@@ -35,10 +35,12 @@ export function contentHasImageParts(content: ModelMessage['content']): content 
 
 function replaceImagesWithVisionSummary(
   messages: ModelMessage[],
+  targetMessageIndex: number,
   summary: string,
   visionModel: string,
 ): ModelMessage[] {
-  return messages.map((message) => {
+  return messages.map((message, messageIndex) => {
+    if (messageIndex !== targetMessageIndex) return message;
     if (!Array.isArray(message.content)) return message;
 
     let removedImages = 0;
@@ -107,7 +109,8 @@ export async function preflightImagesForMainModel(
   userRequestText: string,
   runInference: RunEngineInference,
 ): Promise<ModelMessage[] | null> {
-  const lastUserMessage = modelMessages.filter((message) => message.role === 'user').pop();
+  const lastUserMessageIndex = modelMessages.findLastIndex((message) => message.role === 'user');
+  const lastUserMessage = modelMessages[lastUserMessageIndex];
   if (!messageHasImageParts(lastUserMessage)) return null;
   if (!lastUserMessage) return null;
 
@@ -128,7 +131,12 @@ export async function preflightImagesForMainModel(
   const summary = (response.content || response.thinking || '').trim();
   if (!summary) return null;
 
-  return replaceImagesWithVisionSummary(modelMessages, summary, preflightConfig.model || 'vision-model');
+  return replaceImagesWithVisionSummary(
+    modelMessages,
+    lastUserMessageIndex,
+    summary,
+    preflightConfig.model || 'vision-model',
+  );
 }
 
 export interface VisionPreflightRunResult {

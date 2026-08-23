@@ -549,10 +549,13 @@ describe('ManagedBrowserProviderAdapter', () => {
     }, 'stop');
 
     await vi.waitFor(() => expect(resumeStore.exportForConversation).toHaveBeenCalledOnce());
-    expect(fake.close).not.toHaveBeenCalled();
-    finishExport();
-    await stopping;
-    await active;
+    try {
+      expect(fake.close).not.toHaveBeenCalled();
+    } finally {
+      finishExport();
+      await stopping;
+      await active;
+    }
     expect(fake.close).toHaveBeenCalledOnce();
   });
 

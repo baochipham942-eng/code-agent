@@ -13,21 +13,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { LibraryItem } from '@shared/contract/library';
+import type { ProjectArtifact } from '@shared/contract/project';
+import type { Session } from '@shared/contract/session';
 import { getSessionPin, listLibraryItems, setSessionPin } from '../../../../services/libraryClient';
+import { getProjectArtifacts, listProjects } from '../../../../services/projectClient';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { notifyLibraryPinChanged } from '../../knowledge/libraryPinEvents';
 import { useI18n } from '../../../../hooks/useI18n';
 import { toast } from '../../../../hooks/useToast';
 import { isImeKeyEvent, useImeCompositionRef } from './imeCompositionGuard';
 import {
+  buildArtifactRows,
   buildFileRows,
   buildLibraryRows,
+  buildSessionRows,
   flattenAtMentionRows,
+  groupLimitForTab,
+  shiftAtMentionTab,
   wrapIndex,
+  type AtMentionArtifactRow,
   type AtMentionFileMatch,
   type AtMentionFileRow,
   type AtMentionLibraryRow,
   type AtMentionRow,
+  type AtMentionSessionRow,
+  type AtMentionTab,
 } from './atMentionPanelModel';
 
 const AT_TRIGGER_RE = /@([^\s@]*)$/;
@@ -58,19 +68,25 @@ export interface UseAtMentionPanelParams {
   projectId: string | null;
   /** 文件行选中后的插入动作（组件持有：文件 → 内联 chip + 附件；目录 → 保留 @path 文本）。 */
   onFileSelect: (row: AtMentionFileRow) => void;
+  onSessionSelect: (row: AtMentionSessionRow) => void;
+  onArtifactSelect: (row: AtMentionArtifactRow) => void;
 }
 
 export function useAtMentionPanel(params: UseAtMentionPanelParams) {
-  const { sessionId, projectId, onFileSelect } = params;
+  const { sessionId, projectId, onFileSelect, onSessionSelect, onArtifactSelect } = params;
   const { t } = useI18n();
   const isComposingRef = useImeCompositionRef();
   const pendingPinItemIds = useComposerStore((s) => s.pendingPinItemIds);
 
   const [files, setFiles] = useState<AtMentionFileMatch[]>([]);
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
+  const [sessions, setSessions] = useState<Array<Session & { messageCount?: number }>>([]);
+  const [artifacts, setArtifacts] = useState<ProjectArtifact[]>([]);
+  const [projectNames, setProjectNames] = useState<ReadonlyMap<string, string>>(new Map());
   const [sessionPinnedIds, setSessionPinnedIds] = useState<ReadonlySet<string>>(new Set());
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<AtMentionTab>('all');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Esc 关闭后记录当前文本：文本不变就不因下一次 search 调用把面板弹回来
@@ -81,6 +97,10 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
   // onFileSelect 依赖组件的 value/query，每次按键都变；经 ref 调最新版，避免 hook 内回调链全跟着重建。
   const onFileSelectRef = useRef(onFileSelect);
   onFileSelectRef.current = onFileSelect;
+  const onSessionSelectRef = useRef(onSessionSelect);
+  onSessionSelectRef.current = onSessionSelect;
+  const onArtifactSelectRef = useRef(onArtifactSelect);
+  onArtifactSelectRef.current = onArtifactSelect;
 
   const pinnedIds = useMemo(
     () => (sessionId ? sessionPinnedIds : new Set(pendingPinItemIds)),
@@ -105,12 +125,38 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
     }
   }, []);
 
+  const refreshReferences = useCallback(async (targetProjectId: string | null) => {
+    const [sessionsResult, projectsResult, artifactsResult] = await Promise.allSettled([
+      window.domainAPI?.invoke<Array<Session & { messageCount?: number }>>(
+        IPC_DOMAINS.SESSION,
+        'list',
+        { includeArchived: true, limit: 50 },
+      ),
+      listProjects(true),
+      targetProjectId ? getProjectArtifacts(targetProjectId, 50) : Promise.resolve([]),
+    ]);
+    setSessions(
+      sessionsResult.status === 'fulfilled' && sessionsResult.value?.success
+        ? sessionsResult.value.data ?? []
+        : [],
+    );
+    setProjectNames(new Map(
+      projectsResult.status === 'fulfilled'
+        ? projectsResult.value.map((project) => [project.id, project.name])
+        : [],
+    ));
+    setArtifacts(artifactsResult.status === 'fulfilled' ? artifactsResult.value : []);
+  }, []);
+
   // 换会话后 pin 是真源在会话上的，重拉一次避免拿上个会话的选中态
   useEffect(() => {
     setLibraryItems([]);
     setSessionPinnedIds(new Set());
-    if (wasOpenRef.current) void refreshLibrary(sessionId);
-  }, [sessionId, refreshLibrary]);
+    if (wasOpenRef.current) {
+      void refreshLibrary(sessionId);
+      void refreshReferences(projectId);
+    }
+  }, [projectId, refreshLibrary, refreshReferences, sessionId]);
 
   const search = useCallback((text: string, cursorPos: number) => {
     // 先取消上一次挂起的防抖请求，否则清空输入后它仍会回调 setIsOpen(true) 把 popup 弹回来。
@@ -137,7 +183,10 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
 
     // 面板 false→true：拉/刷新资料库条目与 pin（pin 可能被 chips 行 × 掉过）
     // 草稿/空间同样拉库，pin 意图挂 composer 槽
-    if (!wasOpenRef.current) void refreshLibrary(sessionId);
+    if (!wasOpenRef.current) {
+      void refreshLibrary(sessionId);
+      void refreshReferences(projectId);
+    }
 
     debounceRef.current = setTimeout(async () => {
       try {
@@ -146,11 +195,12 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
         setIsOpen(true);
         wasOpenRef.current = true;
       } catch {
-        setIsOpen(false);
-        wasOpenRef.current = false;
+        setFiles([]);
+        setIsOpen(true);
+        wasOpenRef.current = true;
       }
     }, 200);
-  }, [refreshLibrary, sessionId]);
+  }, [projectId, refreshLibrary, refreshReferences, sessionId]);
 
   const dismiss = useCallback((untilTextChange = false) => {
     clearTimeout(debounceRef.current);
@@ -180,21 +230,50 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
     });
   }, [sessionPinnedIds, sessionId, t]);
 
+  const groupLimit = groupLimitForTab(activeTab);
   const libraryRows = useMemo(
-    () => buildLibraryRows(libraryItems, projectId, pinnedIds, query),
-    [libraryItems, projectId, pinnedIds, query],
+    () => activeTab === 'all' || activeTab === 'library'
+      ? buildLibraryRows(libraryItems, projectId, pinnedIds, query, groupLimit)
+      : [],
+    [activeTab, groupLimit, libraryItems, projectId, pinnedIds, query],
   );
-  const fileRows = useMemo(() => buildFileRows(files, query), [files, query]);
-  const flatRows = useMemo(() => flattenAtMentionRows(libraryRows, fileRows), [libraryRows, fileRows]);
+  const fileRows = useMemo(
+    () => activeTab === 'all' || activeTab === 'files' ? buildFileRows(files, query, groupLimit) : [],
+    [activeTab, files, groupLimit, query],
+  );
+  const sessionRows = useMemo(
+    () => activeTab === 'all' || activeTab === 'sessions'
+      ? buildSessionRows(sessions, projectNames, query, sessionId, groupLimit)
+      : [],
+    [activeTab, groupLimit, projectNames, query, sessionId, sessions],
+  );
+  const artifactRows = useMemo(
+    () => activeTab === 'all' || activeTab === 'artifacts' ? buildArtifactRows(artifacts, query, groupLimit) : [],
+    [activeTab, artifacts, groupLimit, query],
+  );
+  const flatRows = useMemo(
+    () => flattenAtMentionRows(libraryRows, fileRows, sessionRows, artifactRows),
+    [artifactRows, fileRows, libraryRows, sessionRows],
+  );
 
   // query / 结果集变化后高亮回第一行（与 SlashCommandPopover 的 filter 复位一致）
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query, flatRows.length]);
+  }, [activeTab, query, flatRows.length]);
 
   const selectRow = useCallback((row: AtMentionRow) => {
     if (row.kind === 'file') {
       onFileSelectRef.current(row);
+      dismiss();
+      return;
+    }
+    if (row.kind === 'session') {
+      onSessionSelectRef.current(row);
+      dismiss();
+      return;
+    }
+    if (row.kind === 'artifact') {
+      onArtifactSelectRef.current(row);
       dismiss();
       return;
     }
@@ -213,6 +292,11 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
     if (e.key === 'ArrowUp' && flatRows.length > 0) {
       e.preventDefault();
       setSelectedIndex((prev) => wrapIndex(prev, -1, flatRows.length));
+      return true;
+    }
+    if (e.ctrlKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      e.preventDefault();
+      setActiveTab((tab) => shiftAtMentionTab(tab, e.key === 'ArrowRight' ? 1 : -1));
       return true;
     }
     // IME 组合中的 Enter 是确认候选词（如中文选字），不能当成选择面板项
@@ -236,8 +320,12 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
   return {
     isOpen,
     query,
+    activeTab,
+    setActiveTab,
     libraryRows,
     fileRows,
+    sessionRows,
+    artifactRows,
     flatRows,
     selectedIndex,
     setSelectedIndex,
@@ -248,4 +336,4 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
   };
 }
 
-export type { AtMentionFileRow, AtMentionLibraryRow, AtMentionRow };
+export type { AtMentionArtifactRow, AtMentionFileRow, AtMentionLibraryRow, AtMentionRow, AtMentionSessionRow, AtMentionTab };

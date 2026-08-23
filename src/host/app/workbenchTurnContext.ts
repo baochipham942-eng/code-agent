@@ -98,6 +98,12 @@ export function buildWorkbenchTurnSystemContext(
   }
 
   const lines: string[] = [];
+  for (const reference of context.resolvedSessionReferences ?? []) {
+    lines.push(`<referenced_session id="${reference.id}">\n${reference.content}\n</referenced_session>`);
+  }
+  for (const artifact of context.artifactReferences ?? []) {
+    lines.push(`<referenced_artifact id="${artifact.id}" session_id="${artifact.sessionId}">\n${artifact.name}${artifact.path ? `\nPath: ${artifact.path}` : ''}${artifact.url ? `\nURL: ${artifact.url}` : ''}\n</referenced_artifact>`);
+  }
   const designBrief = buildDesignBriefPromptPayload(context);
   if (designBrief) {
     lines.push('<design_brief_json>');

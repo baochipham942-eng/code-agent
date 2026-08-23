@@ -512,6 +512,16 @@ describe('Retry Strategy', () => {
     });
   });
 
+  describe('image payload overflow classification', () => {
+    it.each([
+      'Claude API (413): request_too_large',
+      'Too many images in request: 101 > 100',
+    ])('does not retry and allows provider fallback for "%s"', (msg) => {
+      expect(isTransientError(msg)).toBe(false);
+      expect(isFallbackEligible(msg)).toBe(true);
+    });
+  });
+
   // --------------------------------------------------------------------------
   // abortableSleep（codex audit R2 对称应用：导出供 aiSdkAdapter/modelRouter 复用）
   // --------------------------------------------------------------------------

@@ -76,13 +76,17 @@ test('角色详情：记录 tab 的 主动性 / 记忆 / 履历 + 个性化 tab 
 
   await page.screenshot({ path: 'screenshots/roles-tab-detail.png', fullPage: false });
 
-  // 常驻边界编辑入口：硬约束开关与软说明同屏，无截断/挤压。
-  await detail.getByTestId('role-personalization-segment-soul').click();
+  // 常驻边界：硬约束块常驻在分段芯片之上，不属于任何一段正文——它由系统强制执行，
+  // 而三段正文只进提示词。断言两者同屏且各自独立可见，防止有人再把它塞回某一段里。
   await expect(detail.getByRole('heading', { name: '常驻边界' })).toBeVisible();
   await expect(detail.getByText('不允许对外发送', { exact: true })).toBeVisible();
-  await expect(detail.getByText(/自由文本会进入 TA 的提示词/)).toBeVisible();
   await expect(detail.getByTestId('role-personalization-boundary-external-sending')).toBeVisible();
+  await expect(detail.getByTestId('role-personalization-save-boundary')).toBeVisible();
+  // 「行为准则」段保持原义，没有被边界占用。
+  await detail.getByTestId('role-personalization-segment-soul').click();
+  await expect(detail.getByRole('heading', { name: '行为准则' })).toBeVisible();
   await expect(detail.getByTestId('role-personalization-soul')).toBeVisible();
+  await expect(detail.getByText(/不会让工具真的被挡下来/)).toBeVisible();
   await page.screenshot({ path: 'screenshots/roles-tab-standing-boundary.png', fullPage: false });
 
   // 返回能力中心

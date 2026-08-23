@@ -139,13 +139,17 @@ export const expertZh = {
     rolePersonalization: {
       save: '保存',
       saving: '保存中…',
+      boundarySection: {
+        title: '常驻边界',
+        description: '这位专家的硬约束，系统强制执行，与下面几段正文无关。',
+      },
       hardBoundary: {
         label: '不允许对外发送',
         description: '硬约束：勾选并保存后，对外发送工具会从这位专家的可用工具表中移除。',
       },
       softGuidance: {
-        label: '给 TA 看的边界说明',
-        description: '下方自由文本会进入 TA 的提示词，模型会读，但不会触发工具拦截。',
+        label: '写在「行为准则」里的话不构成拦截',
+        description: '那段自由文本会进入 TA 的提示词，模型会读，但不会让工具真的被挡下来。要真拦住，勾上面的硬约束。',
       },
       segments: {
         identity: {
@@ -159,9 +163,9 @@ export const expertZh = {
           placeholder: '例：我想要一个数据分析师，查数、画图、给结论一条龙，把原始数据变成管理层看得懂的东西。',
         },
         soul: {
-          title: '常驻边界',
-          description: '勾选项由系统强制执行；自由文本只用于向 TA 解释要求，不构成拦截。',
-          placeholder: '例：外发前先征求我的确认，并把内容留在草稿中。',
+          title: '行为准则',
+          description: '只对这位专家生效的做事规矩。留空就跟随全局设定。',
+          placeholder: '例：结论先行，先给判断再讲依据；不确定的地方直接说不确定，别猜。',
         },
       },
     },
@@ -404,13 +408,17 @@ export const expertEn: typeof expertZh = {
     rolePersonalization: {
       save: 'Save',
       saving: 'Saving…',
+      boundarySection: {
+        title: 'Standing boundaries',
+        description: "Hard constraints for this expert. The system enforces them, independent of the prose below.",
+      },
       hardBoundary: {
         label: 'Disallow external sending',
         description: "Hard constraint: once checked and saved, external send tools are removed from this expert's tool table.",
       },
       softGuidance: {
-        label: 'Boundary guidance for the expert',
-        description: 'The free text below is added to the expert prompt. The model reads it, but it does not trigger tool blocking.',
+        label: 'Text in "Working rules" is not a block',
+        description: 'That prose goes into the expert prompt. The model reads it, but it will not actually stop a tool. To really block one, check the hard constraint above.',
       },
       segments: {
         identity: {
@@ -424,9 +432,9 @@ export const expertEn: typeof expertZh = {
           placeholder: 'e.g. I want a data analyst who queries, charts, and concludes end to end, turning raw data into something leadership can read.',
         },
         soul: {
-          title: 'Standing boundary',
-          description: 'The checkbox is enforced by the system. Free text only explains your expectations to the expert and does not block tools.',
-          placeholder: 'e.g. Ask for my confirmation before sending, and leave the content as a draft.',
+          title: 'Working rules',
+          description: 'House rules that apply only to this expert. Leave it empty to follow the global setting.',
+          placeholder: 'e.g. Lead with the conclusion, then the reasoning. Say so plainly when you are unsure instead of guessing.',
         },
       },
     },

@@ -434,7 +434,7 @@ export const enSettingsModels = {
         updateSuccess: 'Updated',
         alreadyLatest: 'Already up to date',
         updateFailed: 'Update failed',
-        removeConfirm: 'Delete this Skill library? You will need to download it again.',
+        removeConfirm: 'Deleting removes the downloaded Skill library directory and its Skills from this device. Existing sessions and messages are kept. Download it again to reuse it.',
         removeSuccess: 'Deleted',
         removeFailed: 'Delete failed',
         invalidRepoUrl: 'Enter a valid GitHub or ModelScope repository URL',

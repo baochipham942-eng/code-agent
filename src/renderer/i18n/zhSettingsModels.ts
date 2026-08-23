@@ -436,7 +436,7 @@ export const zhSettingsModels = {
         updateSuccess: '更新成功',
         alreadyLatest: '已是最新版本',
         updateFailed: '更新失败',
-        removeConfirm: '确定要删除这个 Skill 库吗？删除后需要重新下载。',
+        removeConfirm: '删除后，本机下载的 Skill 库目录和库内 Skills 会被移除；已有会话与消息会保留。再次使用需要重新下载。',
         removeSuccess: '删除成功',
         removeFailed: '删除失败',
         invalidRepoUrl: '请输入有效的 GitHub 或魔搭（ModelScope）仓库 URL',

@@ -44,9 +44,10 @@ const CLICK_ACTIONS = new Set([
   'doubleClick',
   'rightClick',
   'smart_click',
-  'wait_for_download',
 ]);
 
+const NAVIGATE_ACTIONS = new Set(['navigate', 'open', 'new_tab', 'back', 'forward', 'reload']);
+const WAIT_ACTIONS = new Set(['wait', 'wait_for_download']);
 const TYPE_ACTIONS = new Set(['type', 'smart_type', 'fill_form', 'upload_file']);
 const MOVE_ACTIONS = new Set(['move', 'smart_hover']);
 const SCROLL_ACTIONS = new Set(['scroll']);
@@ -225,6 +226,8 @@ function fallbackPreviewPoint(surface: AgentPointerSurface, phase: AgentPointerP
 
 function resolvePointerPhase(action: string, toolName: string, success?: boolean | null): AgentPointerPhase {
   if (success === false) return 'failed';
+  if (NAVIGATE_ACTIONS.has(action)) return 'navigate';
+  if (WAIT_ACTIONS.has(action)) return 'wait';
   if (READ_ONLY_ACTIONS.has(action)) return 'read';
   if (DRAG_ACTIONS.has(action)) return 'drag';
   if (TYPE_ACTIONS.has(action)) return 'type';

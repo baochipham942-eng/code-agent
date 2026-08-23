@@ -292,6 +292,8 @@ export type AgentPointerSurface = 'browser' | 'computer';
 export type AgentPointerTone = 'idle' | 'browser' | 'computer' | 'blocked';
 export type AgentPointerPhase =
   | 'preview'
+  | 'navigate'
+  | 'wait'
   | 'click'
   | 'drag'
   | 'type'

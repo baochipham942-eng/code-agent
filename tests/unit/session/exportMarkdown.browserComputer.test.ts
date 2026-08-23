@@ -207,6 +207,60 @@ describe('exportSessionToMarkdown Browser/Computer redaction', () => {
     expect(result.markdown).not.toContain('base64,abcdef');
   });
 
+  it('keeps renderer narration phases on the shared export label path', () => {
+    const result = exportSessionToMarkdown({
+      sessionId: 'session-narration-export',
+      startedAt: 1,
+      lastActivityAt: 2,
+      totalTokens: 0,
+      messages: [{
+        id: 'msg-narration-export',
+        role: 'assistant',
+        content: 'Pointer export compatibility',
+        timestamp: 1,
+        metadata: {
+          toolExecution: {
+            tool: 'browser_action',
+            input: { action: 'navigate' },
+            metadata: {
+              agentPointerTimeline: [{
+                id: 'pointer-navigate-export',
+                surface: 'browser',
+                tone: 'browser',
+                phase: 'navigate',
+                coordSpace: 'browserViewport',
+                targetLabel: 'flights.example.com/search',
+                targetSource: 'fallback',
+                success: true,
+              }, {
+                id: 'pointer-wait-export',
+                surface: 'browser',
+                tone: 'browser',
+                phase: 'wait',
+                coordSpace: 'browserViewport',
+                targetLabel: 'search results',
+                targetSource: 'fallback',
+                success: true,
+              }],
+            },
+            output: 'ok',
+          },
+        },
+      }],
+    }, {
+      includeToolDetails: true,
+      includeMetadata: false,
+      includeTimestamps: false,
+      guardSensitiveData: false,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.markdown).toContain('Browser pointer · flights.example.com/search · browserViewport unknown');
+    expect(result.markdown).toContain('Browser pointer · search results · browserViewport unknown');
+    expect(result.markdown).not.toContain('Opening');
+    expect(result.markdown).not.toContain('正在');
+  });
+
   it('exports Browser/Computer evidence card status without raw proof refs', () => {
     const result = exportSessionToMarkdown({
       sessionId: 'session-1',

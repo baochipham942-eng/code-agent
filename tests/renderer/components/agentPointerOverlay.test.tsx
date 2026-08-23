@@ -42,7 +42,7 @@ describe('AgentPointerOverlay', () => {
       ),
     );
 
-    expect(html).toContain('aria-label="Computer click');
+    expect(html).toContain('aria-label="正在点击 Finder');
     expect(html).toContain('left:42%');
     expect(html).toContain('top:46%');
     expect(html).toContain('Finder');

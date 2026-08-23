@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
 import type { Session } from '../../../../../src/shared/contract/session';
+import type { Message } from '../../../../../src/shared/contract/message';
 import { SessionForkError } from '../../../../../src/shared/contract/sessionFork';
 
 const mocks = vi.hoisted(() => ({
@@ -141,7 +142,7 @@ describe('SessionManager schema', () => {
     expect(sessionManagerModule.schema.inputSchema.required).toEqual(['action']);
 
     const props = sessionManagerModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>;
-    expect(props.action.enum).toEqual(['list', 'get', 'create', 'fork', 'archive', 'unarchive', 'rename']);
+    expect(props.action.enum).toEqual(['list', 'get', 'read', 'create', 'fork', 'archive', 'unarchive', 'rename']);
     expect(props.action.enum).not.toContain('delete');
   });
 });
@@ -218,6 +219,139 @@ describe('SessionManager dispatch', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('NOT_FOUND');
+  });
+
+  it('read supports an inclusive range and reports total and returned coordinates', async () => {
+    const session = makeSession({ id: 'history-session', title: 'History' });
+    const messages: Message[] = [
+      { id: 'm1', role: 'user', content: 'one', timestamp: 1 },
+      { id: 'm2', role: 'assistant', content: 'two', timestamp: 2 },
+      { id: 'm3', role: 'user', content: 'three', timestamp: 3 },
+      { id: 'm4', role: 'assistant', content: 'four', timestamp: 4 },
+      { id: 'm5', role: 'user', content: 'five', timestamp: 5 },
+    ];
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue(messages);
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'read', sessionId: session.id, start: 2, end: 4 },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('Total messages: 5. Selected range: 2-4.');
+      expect(result.output).toContain('Returned positions: 2,3,4');
+      expect(result.output).toContain('[2] assistant');
+      expect(result.output).not.toContain('[1] user');
+      expect(result.meta).toMatchObject({
+        action: 'read',
+        totalMessages: 5,
+        selection: { start: 2, end: 4, positions: [2, 3, 4], hasMore: false },
+      });
+    }
+    expect(allowAll).not.toHaveBeenCalled();
+  });
+
+  it('read filters message content by keyword while preserving original positions', async () => {
+    const session = makeSession({ id: 'history-session' });
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue([
+      { id: 'm1', role: 'user', content: 'Alpha', timestamp: 1 },
+      { id: 'm2', role: 'assistant', content: 'irrelevant', timestamp: 2 },
+      { id: 'm3', role: 'user', content: 'alpha again', timestamp: 3 },
+    ] satisfies Message[]);
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'read', sessionId: session.id, keyword: 'ALPHA' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('Returned positions: 1,3');
+      expect(result.output).toContain('Keyword filter: "ALPHA".');
+      expect(result.meta?.selection).toMatchObject({ matchedCount: 2, positions: [1, 3] });
+    }
+  });
+
+  it('read selects recent messages and enforces the hard result limit', async () => {
+    const session = makeSession({ id: 'history-session' });
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue(
+      Array.from({ length: 8 }, (_, index): Message => ({
+        id: `m${index + 1}`,
+        role: index % 2 === 0 ? 'user' : 'assistant',
+        content: `message ${index + 1}`,
+        timestamp: index + 1,
+      })),
+    );
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'read', sessionId: session.id, recent: 5, limit: 2 },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('Total messages: 8. Selected range: 4-8.');
+      expect(result.output).toContain('Returned positions: 4,5 (2 of 5 matching messages, limit=2, hasMore=true).');
+      expect(result.output).not.toContain('[6] assistant');
+      expect(result.meta?.selection).toMatchObject({
+        start: 4,
+        end: 8,
+        recent: 5,
+        limit: 2,
+        returnedCount: 2,
+        hasMore: true,
+      });
+    }
+  });
+
+  it('read rejects out-of-bounds and conflicting ranges', async () => {
+    const session = makeSession({ id: 'history-session' });
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue([
+      { id: 'm1', role: 'user', content: 'one', timestamp: 1 },
+      { id: 'm2', role: 'assistant', content: 'two', timestamp: 2 },
+    ] satisfies Message[]);
+    const handler = await sessionManagerModule.createHandler();
+
+    const outside = await handler.execute(
+      { action: 'read', sessionId: session.id, start: 2, end: 3 },
+      makeCtx(),
+      allowAll,
+    );
+    expect(outside.ok).toBe(false);
+    if (!outside.ok) expect(outside.code).toBe('RANGE_OUT_OF_BOUNDS');
+
+    const conflicting = await handler.execute(
+      { action: 'read', sessionId: session.id, start: 1, recent: 1 },
+      makeCtx(),
+      allowAll,
+    );
+    expect(conflicting.ok).toBe(false);
+    if (!conflicting.ok) expect(conflicting.code).toBe('INVALID_ARGS');
+  });
+
+  it('read returns NOT_FOUND without loading messages for a missing session', async () => {
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'read', sessionId: 'missing' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('NOT_FOUND');
+    expect(mocks.sessionManager.getMessages).not.toHaveBeenCalled();
   });
 
   it('create uses SessionManager directly without switching the current session', async () => {

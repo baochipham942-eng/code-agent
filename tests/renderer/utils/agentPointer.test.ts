@@ -312,4 +312,27 @@ describe('buildAgentPointerEvent', () => {
     });
     expect(event?.point?.unit).toBe('percent');
   });
+
+  it.each([
+    ['navigate', 'navigate'],
+    ['wait', 'wait'],
+    ['wait_for_download', 'wait'],
+  ] as const)('preserves the %s action as the %s narration phase', (action, phase) => {
+    const pointer = buildAgentPointerEvent(makeToolCall({
+      id: `browser-${action}`,
+      name: 'browser_action',
+      arguments: {
+        action,
+        url: action === 'navigate' ? 'https://example.test/flights' : undefined,
+        name: action === 'navigate' ? undefined : 'search results',
+      },
+      result: {
+        toolCallId: `browser-${action}`,
+        success: true,
+        output: 'ok',
+      },
+    }));
+
+    expect(pointer?.phase).toBe(phase);
+  });
 });

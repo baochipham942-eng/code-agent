@@ -31,10 +31,12 @@ describe('input redirect receipt action', () => {
     render(<TraceNodeRenderer node={node} />);
 
     expect(screen.getByTestId('input-redirect-receipt').textContent).toContain('已按你的纠正改了方向：');
-    expect(screen.getByTestId('input-redirect-receipt').textContent).toContain('上一轮写到 126 字处停下');
+    expect(screen.getByTestId('input-redirect-receipt').textContent).not.toContain('上一轮写到 126 字处停下');
     expect(screen.queryByText(original)).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: '查看原话' }));
     expect(screen.getByText(original)).toBeTruthy();
+    expect(screen.getByTestId('input-redirect-receipt').textContent).toContain('上一轮写到 126 字处停下');
+    expect(screen.getByTestId('input-redirect-receipt').textContent).toContain('当时正在处理 Bash');
   });
 });

@@ -64,6 +64,15 @@ describe('toolRunPolicy', () => {
     expect(isToolDeniedForRun(ctx, 'delegate_task')).toBe(false);
   });
 
+  it('treats an explicit empty allowlist as deny-all', () => {
+    const ctx = { allowedToolNames: [] } as any;
+    expect(filterToolsByRunPolicy([
+      tool('Read'),
+      tool('mail_send'),
+    ], ctx)).toEqual([]);
+    expect(isToolDeniedForRun(ctx, 'Read')).toBe(true);
+  });
+
   // 2026-08-09 委派入口歧义单：收窄日志只打数量时，「24 -> 9 砍掉了谁」在日志里查不到，
   // 只能翻真库反推。这三条钉住「名字必须打出来」，别再退回纯数量。
   describe('收窄可观测性', () => {

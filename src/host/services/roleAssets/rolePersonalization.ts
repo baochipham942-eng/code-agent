@@ -14,6 +14,7 @@
 
 import * as fs from 'fs';
 import { getRoleUserExpectationPath, getRoleSoulPath, isSafeRoleId } from './roleAssetPaths';
+import { isExternalSideEffectTool } from '../../tools/externalSideEffect';
 
 /** 单份正文注入上限：够写满一页指引，又不至于让用户手滑粘贴整本文档撑爆上下文。 */
 const MAX_SECTION_CHARS = 8000;
@@ -21,6 +22,55 @@ const MAX_SECTION_CHARS = 8000;
 export interface RolePersonalization {
   userExpectation: string;
   soul: string;
+}
+
+export interface RoleToolBoundary {
+  boundaryText: string;
+  allowedTools: string[];
+  blockedTools: string[];
+}
+
+const DRAFT_ONLY_BOUNDARY_PATTERNS = [
+  /(?:只|仅).{0,8}(?:起草|草拟|拟稿).{0,12}(?:不|禁止|不要|不得|不可|不能|不许).{0,6}(?:发送|发出|发布|投递)/u,
+  /(?:不|禁止|不要|不得|不可|不能|不许).{0,6}(?:发送|发出|发布|投递)/u,
+  /\bdrafts?\s+only\b/i,
+  /\bonly\s+(?:create\s+)?drafts?\b/i,
+  /\b(?:do\s+not|don't|never|must\s+not)\s+(?:actually\s+)?send\b/i,
+];
+
+/** 当前硬翻译支持的安全语义：可以生成草稿，但不允许产生对外发送副作用。 */
+export function isDraftOnlyBoundary(text: string): boolean {
+  return DRAFT_ONLY_BOUNDARY_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/**
+ * 把用户写在 SOUL.md 的「只起草不发送」翻译为已有 equipment.tools 白名单的收窄结果。
+ * 没命中可硬表达的边界时返回 null，调用方必须保持原行为逐字不变。
+ */
+export function resolveRoleToolBoundary(roleId: string, equipmentTools: readonly string[]): RoleToolBoundary | null {
+  const boundaryText = readRolePersonalization(roleId).soul;
+  if (!boundaryText || !isDraftOnlyBoundary(boundaryText)) return null;
+  const allowedTools = equipmentTools.filter((tool) => !isExternalSideEffectTool(tool));
+  const allowed = new Set(allowedTools);
+  return {
+    boundaryText,
+    allowedTools,
+    blockedTools: equipmentTools.filter((tool) => !allowed.has(tool)),
+  };
+}
+
+/** 安全边界是运行约束，进入角色上下文块；没有设置时不增加任何字符。 */
+export function buildRoleBoundaryContextSection(roleId: string): string {
+  const boundaryText = readRolePersonalization(roleId).soul;
+  return boundaryText ? `## 常驻边界\n${boundaryText}` : '';
+}
+
+/** 语音只取短安全指令，不注入记忆索引、履历或资料架。 */
+export function buildVoiceRoleBoundaryDirective(roleId: string): string {
+  const boundaryText = readRolePersonalization(roleId).soul;
+  if (!boundaryText) return '';
+  const clamped = boundaryText.length > 1000 ? `${boundaryText.slice(0, 1000)}…` : boundaryText;
+  return `常驻边界：${clamped}`;
 }
 
 function readIfPresent(filePath: string): string {

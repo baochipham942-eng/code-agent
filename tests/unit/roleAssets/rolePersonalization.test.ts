@@ -27,8 +27,12 @@ import {
   readRolePersonalization,
   writeRolePersonalization,
   appendRolePersonalization,
+  buildVoiceRoleBoundaryDirective,
+  isDraftOnlyBoundary,
+  resolveRoleToolBoundary,
 } from '../../../src/host/services/roleAssets/rolePersonalization';
 import { ensureRoleAssetDirs } from '../../../src/host/services/roleAssets/roleAssetService';
+import { filterSubagentToolDefs } from '../../../src/host/agent/subagentExecutorToolDefs';
 
 const ROLE = '数据分析师';
 const BASE_PROMPT = '你是一位数据分析师。';
@@ -94,6 +98,48 @@ describe('专家个性化正文', () => {
     const after = appendRolePersonalization(BASE_PROMPT, ROLE);
     expect(after).toContain('第二版');
     expect(after).not.toContain('第一版');
+  });
+
+  it('把“只起草不发送”翻译到 equipment.tools 白名单，保留草稿并剔除真实发送', () => {
+    writeRolePersonalization(ROLE, { soul: '只起草不发送；所有外发内容停在草稿。' });
+    const policy = resolveRoleToolBoundary(ROLE, [
+      'Read',
+      'mail_draft',
+      'mail_send',
+      'mcp__lark__im.v1.message.create',
+      'mcp__lark__im.v1.message.list',
+    ]);
+
+    expect(policy?.allowedTools).toEqual(['Read', 'mail_draft', 'mcp__lark__im.v1.message.list']);
+    expect(policy?.blockedTools).toEqual(['mail_send', 'mcp__lark__im.v1.message.create']);
+  });
+
+  it('translated tools become the actual subagent model tool table', () => {
+    writeRolePersonalization(ROLE, { soul: '只起草不发送' });
+    const policy = resolveRoleToolBoundary(ROLE, ['mail_draft', 'mail_send']);
+    const definitions = new Map([
+      ['mail_draft', { name: 'mail_draft' }],
+      ['mail_send', { name: 'mail_send' }],
+    ]);
+    const actualToolTable = filterSubagentToolDefs(
+      policy?.allowedTools ?? [],
+      { getDefinition: (name) => definitions.get(name) as never },
+    );
+
+    expect(actualToolTable.map((tool) => tool.name)).toEqual(['mail_draft']);
+  });
+
+  it('English draft-only boundary uses the same hard translation', () => {
+    writeRolePersonalization(ROLE, { soul: 'Draft only, do not send.' });
+    expect(isDraftOnlyBoundary(readRolePersonalization(ROLE).soul)).toBe(true);
+    expect(resolveRoleToolBoundary(ROLE, ['mail_draft', 'mail_send'])?.allowedTools).toEqual(['mail_draft']);
+  });
+
+  it('没设置边界时不创建工具策略，输入工具表原样不被消费', () => {
+    const tools = ['Read', 'mail_send'];
+    expect(resolveRoleToolBoundary(ROLE, tools)).toBeNull();
+    expect(tools).toEqual(['Read', 'mail_send']);
+    expect(buildVoiceRoleBoundaryDirective(ROLE)).toBe('');
   });
 });
 

@@ -19,10 +19,11 @@ function deniedToolSet(ctx: RuntimeContext): Set<string> | null {
 }
 
 function allowedToolSet(ctx: RuntimeContext): Set<string> | null {
-  const allowed = (ctx.allowedToolNames || [])
+  if (ctx.allowedToolNames === undefined) return null;
+  const allowed = ctx.allowedToolNames
     .map(normalizeToolName)
     .filter(Boolean);
-  return allowed.length > 0 ? new Set(allowed) : null;
+  return new Set(allowed);
 }
 
 export function isToolDeniedForRun(ctx: RuntimeContext, toolName: string): boolean {

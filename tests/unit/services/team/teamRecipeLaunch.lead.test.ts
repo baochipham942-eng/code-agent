@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   listRuns: vi.fn(),
   launchAgentTeam: vi.fn(),
   spawnGuardList: vi.fn(),
+  resolveRoleToolBoundary: vi.fn(),
 }));
 
 vi.mock('../../../../src/host/agent/spawnGuard', () => ({
@@ -37,6 +38,10 @@ vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
 }));
 vi.mock('../../../../src/host/agent/agentRegistry', () => ({
   listAllAgents: () => [{ id: '牧之' }, { id: '溯真' }],
+  resolveAgent: (roleId: string) => ({ id: roleId, tools: ['Read', 'mail_draft', 'mail_send'] }),
+}));
+vi.mock('../../../../src/host/services/roleAssets/rolePersonalization', () => ({
+  resolveRoleToolBoundary: mocks.resolveRoleToolBoundary,
 }));
 vi.mock('../../../../src/host/services/team/teamRecipeService', () => ({
   getTeamRecipeService: () => ({
@@ -105,6 +110,7 @@ describe('team recipe lead orchestrator', () => {
     mocks.listRuns.mockReturnValue([{ sessionId: 'session-lead', startedAt: Date.now() + 10_000, completedCount: 1 }]);
     mocks.spawnGuardList.mockReturnValue([]);
     mocks.launchAgentTeam.mockResolvedValue({ success: true, output: '确定性聚合稿' });
+    mocks.resolveRoleToolBoundary.mockReturnValue(null);
   });
 
   afterEach(() => {
@@ -143,6 +149,25 @@ describe('team recipe lead orchestrator', () => {
     expect(mocks.launchAgentTeam).not.toHaveBeenCalled();
     // sendMessage 自己会落 user 消息；再补一条会让会话出现两条组队起点
     expect(mocks.addMessageToSession).not.toHaveBeenCalled();
+  });
+
+  it('常驻边界进入团队 lead 的实际 run tool allowlist', async () => {
+    mocks.resolveRoleToolBoundary.mockReturnValue({
+      boundaryText: '只起草不发送',
+      allowedTools: ['Read', 'mail_draft'],
+      blockedTools: ['mail_send'],
+    });
+
+    await expect(launchTeamRecipe({ sessionId: 'session-lead', recipeId: 'lead-recipe', topic: '邮件活动' }))
+      .resolves.toEqual({ ok: true, sessionId: 'session-lead' });
+
+    await eventually(() => {
+      expect(mocks.sendMessage).toHaveBeenCalledWith(expect.any(String), undefined, expect.objectContaining({
+        agentOverrideId: '牧之',
+        turnSystemContext: ['角色上下文'],
+        allowedToolNames: ['Read', 'mail_draft'],
+      }));
+    });
   });
 
   it('成员已跑但主理人无定稿：只报警不重跑团队（避免二次全额付费）', async () => {

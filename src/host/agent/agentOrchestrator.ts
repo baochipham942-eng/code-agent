@@ -56,6 +56,7 @@ import {
   initRunDag,
 } from './orchestratorDagSync';
 import { seedGoalContractForRun } from './orchestratorGoalSeed';
+import { resolveRoleToolBoundary } from '../services/roleAssets/rolePersonalization';
 
 // Sub-modules
 import { type AgentOrchestratorConfig } from './orchestrator/types';
@@ -878,6 +879,22 @@ export class AgentOrchestrator {
       runRegistration: options?.runRegistration,
       userPresenceToolNames: getUserPresenceToolNames(),
     });
+    const routedRole = routingResolution ? registryResolveAgent(routingResolution.agent.id) : undefined;
+    const roleToolBoundary = routedRole
+      ? resolveRoleToolBoundary(routedRole.id, routedRole.tools)
+      : null;
+    const boundaryAllowedToolNames = roleToolBoundary
+      ? (options?.allowedToolNames
+          ? roleToolBoundary.allowedTools.filter((tool) => options.allowedToolNames!.some((allowed) => allowed.toLowerCase() === tool.toLowerCase()))
+          : roleToolBoundary.allowedTools)
+      : options?.allowedToolNames;
+    if (roleToolBoundary) {
+      logger.info('[RoleBoundary] foreground role tool allowlist applied', {
+        roleId: routedRole?.id,
+        allowedTools: boundaryAllowedToolNames,
+        blockedTools: roleToolBoundary.blockedTools,
+      });
+    }
 
     const baseSystemPrompt = routingResolution?.agent?.systemPrompt
       || applyProviderVariant(SYSTEM_PROMPT, effectiveModelConfig.provider, effectiveModelConfig.model);
@@ -972,7 +989,7 @@ export class AgentOrchestrator {
       maxIterations: options?.maxIterations,
       historyVisibility: options?.historyVisibility,
       deniedToolNames,
-      allowedToolNames: options?.allowedToolNames,
+      allowedToolNames: boundaryAllowedToolNames,
       telemetryAdapter,
       persistMessage: sessionId
         ? async (message: Message) => {

@@ -4,7 +4,7 @@
 // 三段可编辑正文，用分段芯片切换：
 //   我是谁     ← agent 定义正文（沿用原人设编辑器，父级传进来）
 //   你的期望   ← roles/<id>/USER.md
-//   行为准则   ← roles/<id>/SOUL.md
+//   常驻边界   ← roles/<id>/SOUL.md
 // 后两段由本组件直接读写；两者都会拼进这位专家的 system prompt。
 
 import React, { useState } from 'react';

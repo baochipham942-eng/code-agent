@@ -238,12 +238,18 @@ async function launchTeamRecipeViaLead(input: ValidatedTeamRecipeLaunch): Promis
     return;
   }
 
+  const { resolveAgent } = await import('../../agent/agentRegistry');
+  const { resolveRoleToolBoundary } = await import('../roleAssets/rolePersonalization');
+  const leadRole = resolveAgent(lead.roleId);
+  const leadToolBoundary = leadRole ? resolveRoleToolBoundary(lead.roleId, leadRole.tools) : null;
+
   const startedAt = Date.now();
   try {
     await orchestrator.sendMessage(buildLeadBrief(input.recipe, input.topic), undefined, {
       mode: 'normal',
       agentOverrideId: lead.roleId,
       turnSystemContext: [contextBlock],
+      ...(leadToolBoundary ? { allowedToolNames: leadToolBoundary.allowedTools } : {}),
     });
   } catch (error) {
     console.warn('[TeamRecipe] 主理人降级：主会话轮执行失败', error);

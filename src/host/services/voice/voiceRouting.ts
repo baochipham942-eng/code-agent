@@ -12,6 +12,7 @@ import { isPanelVisibleAgent } from '../../../shared/contract/agentRegistry';
 import { readPersistedTeamLead } from '../../../shared/contract/teamRecipe';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 import { getBuiltinRoleVisual } from '../roleAssets/builtinRoles';
+import { buildVoiceRoleBoundaryDirective } from '../roleAssets/rolePersonalization';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('VoiceRouting');
@@ -207,11 +208,11 @@ export function buildSpeechPaceDirective(rate: VoiceLiveSettings['speechRate']):
 }
 
 /**
- * 短人设：只取花名 + 一句话职责 + 能力标签。
+ * 短人设：只取花名 + 一句话职责 + 能力标签 + 常驻安全边界。
  *
  * 刻意**不**注入 buildRoleContextBlock() 的全量 L0/L1（角色记忆索引、履历、资料架）——
- * 那是执行 run 的事（隐私边界 + instructions 体量，方案 §6.7.3）。通话 brain 只需要
- * 知道自己是谁、不许冒充别人。
+ * 那是执行 run 的事（隐私边界 + instructions 体量，方案 §6.7.3）。常驻边界属于安全语义，
+ * 不属于上下文富化；通话 brain 要看见它，派出的执行 run 仍由角色工具白名单硬拦。
  *
  * 两个来源：云货架/内置角色走 getBuiltinRoleVisual，自定义 agent 走 registry 的
  * name + description。都没有就返回空——不编造人设。
@@ -299,5 +300,7 @@ export function resolveVoiceRouting(
   if (persona) {
     lines.push(persona, '保持这个身份说话，不要自称团队里的其他成员。');
   }
+  const boundaryDirective = buildVoiceRoleBoundaryDirective(activeAgentId);
+  if (boundaryDirective) lines.push(boundaryDirective);
   return { activeAgentId, personaInstructions: lines.join('\n') };
 }

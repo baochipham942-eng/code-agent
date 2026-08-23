@@ -71,7 +71,7 @@ import {
   shouldUseE2ELocalSubagentExecutor,
 } from './subagentE2ELocalExecutor';
 import { buildSubagentSkillsBlock } from '../services/skills/subagentSkillInjection';
-import { buildRoleContextBlock, runRoleWriteBack, recordRoleParticipation } from '../services/roleAssets';
+import { applyRoleBoundaryToSubagentRequest, buildRoleContextBlock, runRoleWriteBack, recordRoleParticipation } from '../services/roleAssets';
 import type {
   SubagentConfig,
   SubagentContext,
@@ -136,7 +136,7 @@ export class SubagentExecutor {
     legacyConfig?: SubagentConfig,
     legacyContext?: LegacySubagentContextInput,
   ): Promise<SubagentResult> {
-    const request = normalizeSubagentExecutionRequest(requestOrPrompt, legacyConfig, legacyContext);
+    const request = applyRoleBoundaryToSubagentRequest(normalizeSubagentExecutionRequest(requestOrPrompt, legacyConfig, legacyContext));
     const externalExecution = routeExternalSubagentExecution(request);
     if (externalExecution) return externalExecution;
     const { prompt, config, context } = request;

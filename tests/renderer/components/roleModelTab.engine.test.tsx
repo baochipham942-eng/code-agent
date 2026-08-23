@@ -159,7 +159,7 @@ describe('RoleDetailPage 其他 tab 保存不冲掉 engine', () => {
       proactivity: { level: 'silent' },
       visual: { displayName: '牧之', profession: '资深产品经理', icon: 'ClipboardList', category: 'product', tags: [], quickPrompts: [] },
       isBuiltin: true,
-      personalization: { userExpectation: '', soul: '' },
+      personalization: { userExpectation: '', soul: '', boundaries: { disallowExternalSending: false } },
       equipment: makeEquipment({ engine: 'codex_cli' }),
       ...overrides,
     };

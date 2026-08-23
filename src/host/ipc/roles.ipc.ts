@@ -163,7 +163,11 @@ interface UpdateVisualPayload extends RoleIdPayload {
 }
 interface UpdateEquipmentPayload extends RoleIdPayload { equipment?: AgentMdEquipment; }
 interface UpdateDefinitionBodyPayload extends RoleIdPayload { body?: string; }
-interface UpdatePersonalizationPayload extends RoleIdPayload { userExpectation?: string; soul?: string; }
+interface UpdatePersonalizationPayload extends RoleIdPayload {
+  userExpectation?: string;
+  soul?: string;
+  boundaries?: { disallowExternalSending: boolean };
+}
 
 interface DraftIdPayload {
   draftId?: string;
@@ -533,15 +537,23 @@ export function registerRolesHandlers(ipcMain: IpcMain): void {
         }
 
         case 'updatePersonalization': {
-          const { roleId, userExpectation, soul } = (payload ?? {}) as UpdatePersonalizationPayload;
+          const { roleId, userExpectation, soul, boundaries } = (payload ?? {}) as UpdatePersonalizationPayload;
           if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
-          if (userExpectation === undefined && soul === undefined) return { success: false, error: { code: 'INVALID_ARGS', message: 'nothing to update' } };
+          if (userExpectation === undefined && soul === undefined && boundaries === undefined) return { success: false, error: { code: 'INVALID_ARGS', message: 'nothing to update' } };
           if ((userExpectation !== undefined && typeof userExpectation !== 'string') || (soul !== undefined && typeof soul !== 'string')) {
             return { success: false, error: { code: 'INVALID_ARGS', message: 'userExpectation and soul must be strings' } };
+          }
+          if (boundaries !== undefined && (
+            typeof boundaries !== 'object'
+            || boundaries === null
+            || typeof boundaries.disallowExternalSending !== 'boolean'
+          )) {
+            return { success: false, error: { code: 'INVALID_ARGS', message: 'boundaries.disallowExternalSending must be a boolean' } };
           }
           writeRolePersonalization(roleId, {
             ...(userExpectation !== undefined ? { userExpectation } : {}),
             ...(soul !== undefined ? { soul } : {}),
+            ...(boundaries !== undefined ? { boundaries } : {}),
           });
           return { success: true, data: { updated: true } };
         }

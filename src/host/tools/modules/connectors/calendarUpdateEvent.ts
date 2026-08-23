@@ -53,7 +53,8 @@ async function executeCalendarUpdateEvent(
       location?: string;
     };
     ctx.logger.debug('calendar_update_event', { uid: event.uid, calendar: event.calendar });
-    const output = `已更新日历事件：\n- [${event.calendar}] ${event.title}\n- uid: ${event.uid}\n- 开始：${event.startAtMs ? new Date(event.startAtMs).toLocaleString('zh-CN') : '未知'}\n- 结束：${event.endAtMs ? new Date(event.endAtMs).toLocaleString('zh-CN') : '未知'}${event.location ? `\n- 地点：${event.location}` : ''}`;
+    const startText = event.startAtMs ? new Date(event.startAtMs).toLocaleString('zh-CN') : '未知';
+    const output = `已更新日历事件：\n- [${event.calendar}] ${event.title}\n- uid: ${event.uid}\n- 开始：${startText}\n- 结束：${event.endAtMs ? new Date(event.endAtMs).toLocaleString('zh-CN') : '未知'}${event.location ? `\n- 地点：${event.location}` : ''}`;
 
     return {
       ok: true,
@@ -70,8 +71,9 @@ async function executeCalendarUpdateEvent(
         artifact: createVirtualArtifact({
           sourceTool: schema.name,
           kind: 'text',
+          role: 'receipt',
           sessionId: ctx.sessionId,
-          name: `calendar-event-update-${event.uid}`,
+          name: `已更新日历事件：${event.title}（${startText}）`,
           mimeType: 'text/markdown',
           contentLength: output.length,
           preview: output.slice(0, 500),

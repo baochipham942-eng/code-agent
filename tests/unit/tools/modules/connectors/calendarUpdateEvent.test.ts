@@ -118,6 +118,7 @@ describe('calendarUpdateEventModule (native)', () => {
       const result = await run(validArgs);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toContain('Calendar update failed: boom');
+      expect((result as { meta?: { artifact?: unknown } }).meta?.artifact).toBeUndefined();
     });
   });
 
@@ -147,8 +148,17 @@ describe('calendarUpdateEventModule (native)', () => {
           calendar: 'Work',
           title: 'Standup v2',
         });
-        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
-        expect(artifact.kind).toBe('text');
+        const artifact = result.meta?.artifact as {
+          kind?: string;
+          role?: string;
+          name?: string;
+          metadata?: Record<string, unknown>;
+        };
+        expect(artifact).toMatchObject({
+          kind: 'text',
+          role: 'receipt',
+          name: `已更新日历事件：Standup v2（${new Date(1700000000000).toLocaleString('zh-CN')}）`,
+        });
         expect(artifact.metadata?.action).toBe('update_event');
       }
       expect(execMock).toHaveBeenCalledWith('update_event', validArgs);

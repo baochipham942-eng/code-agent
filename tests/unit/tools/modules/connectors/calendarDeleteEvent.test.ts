@@ -118,6 +118,7 @@ describe('calendarDeleteEventModule (native)', () => {
       const result = await run(validArgs);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toContain('Calendar delete failed: boom');
+      expect((result as { meta?: { artifact?: unknown } }).meta?.artifact).toBeUndefined();
     });
   });
 
@@ -145,8 +146,17 @@ describe('calendarDeleteEventModule (native)', () => {
           title: 'Standup',
           deleted: true,
         });
-        const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
-        expect(artifact.kind).toBe('text');
+        const artifact = result.meta?.artifact as {
+          kind?: string;
+          role?: string;
+          name?: string;
+          metadata?: Record<string, unknown>;
+        };
+        expect(artifact).toMatchObject({
+          kind: 'text',
+          role: 'receipt',
+          name: '已删除日历事件：Standup',
+        });
         expect(artifact.metadata?.action).toBe('delete_event');
       }
       expect(execMock).toHaveBeenCalledWith('delete_event', validArgs);

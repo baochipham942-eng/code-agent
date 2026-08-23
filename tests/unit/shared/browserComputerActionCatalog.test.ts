@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { BrowserComputerActionCatalogEntry } from '../../../src/shared/utils/browserComputerActionCatalog';
 import {
   getBrowserComputerActionCatalogEntry,
   getBrowserComputerActionCatalogForArgs,
@@ -6,8 +7,66 @@ import {
   getStrictBrowserComputerActionCatalogEntry,
   isBrowserScopedComputerUseAction,
 } from '../../../src/shared/utils/browserComputerActionCatalog';
+import { browserActionSchema } from '../../../src/host/plugins/builtin/browserControl/browserAction.schema';
+import { computerUseSchema } from '../../../src/host/plugins/builtin/computerUse/computerUse.schema';
+import { computerSchema } from '../../../src/host/plugins/builtin/computerUse/computer.schema';
+import { guiAgentSchema } from '../../../src/host/plugins/builtin/computerUse/guiAgent.schema';
+import { cuaStatefulComputerUseSchema } from '../../../src/host/plugins/builtin/computerUse/cuaStatefulComputerUse.schema';
+
+function stringEnum(schema: typeof browserActionSchema, property: string): string[] {
+  const values = schema.inputSchema.properties?.[property]?.enum;
+  return Array.isArray(values) ? values.filter((value): value is string => typeof value === 'string') : [];
+}
 
 describe('browser/computer action catalog', () => {
+  // 编译期保证：consequence 不在 ActionCatalogDefaults 里（它是 Omit<..., 'consequence'>），
+  // 所以新增 action 无法靠 spread DEFAULTS 静默继承；漏写 consequence 的声明必须 typecheck 失败。
+  it('refuses a catalog entry declared without consequence (compile-time)', () => {
+    type RequireCompleteCatalogEntry<T extends BrowserComputerActionCatalogEntry> = T;
+    // @ts-expect-error 缺 consequence 的声明必须编译失败；若哪天它能编译过，这行的 expect-error 会失效并让 typecheck 立红。
+    type Incomplete = RequireCompleteCatalogEntry<Omit<BrowserComputerActionCatalogEntry, 'consequence'>>;
+    expectTypeOf<Incomplete>().toBeObject();
+    expectTypeOf<BrowserComputerActionCatalogEntry>().toHaveProperty('consequence');
+  });
+
+  it('covers every action exposed by browser_action, computer_use, Computer, and gui_agent', () => {
+    // 判据取 schema 暴露给模型的 action 全集：schema 有而 catalog 漏声明 ⇒ strict 查表返回 null ⇒ 立红。
+    // 不枚举 catalog 自己（那只能证明它自洽），也不按名字写死清单。
+    const browserActions = stringEnum(browserActionSchema, 'action');
+    expect(browserActions.length).toBeGreaterThan(0);
+
+    const computerActions = Array.from(new Set([
+      ...stringEnum(computerUseSchema as typeof browserActionSchema, 'action'),
+      ...stringEnum(computerSchema as typeof browserActionSchema, 'action'),
+      ...stringEnum(cuaStatefulComputerUseSchema as typeof browserActionSchema, 'operation'),
+    ]));
+    expect(computerActions.length).toBeGreaterThan(0);
+
+    const declared: Array<[string, string, Record<string, unknown>]> = [
+      ...browserActions.map((action): [string, string, Record<string, unknown>] => (
+        ['browser_action', action, { action }]
+      )),
+      ...computerActions.map((action): [string, string, Record<string, unknown>] => (
+        ['computer_use', action, { action }]
+      )),
+      ...computerActions.map((action): [string, string, Record<string, unknown>] => (
+        ['Computer', action, { action }]
+      )),
+      ['gui_agent', 'run', { action: 'run' }],
+    ];
+
+    for (const [tool, action, args] of declared) {
+      const entry = getStrictBrowserComputerActionCatalogEntry(tool, action, args);
+      expect(entry, `${tool}.${action} 未在 catalog 中声明后果等级`).not.toBeNull();
+      expect(['no_external_side_effect', 'external_side_effect', 'high_risk'])
+        .toContain(entry!.consequence);
+    }
+
+    expect(guiAgentSchema.inputSchema.required).toContain('task');
+    expect(getStrictBrowserComputerActionCatalogEntry('gui_agent', 'run', { action: 'run' }))
+      .toMatchObject({ tool: 'gui_agent', action: 'run', consequence: 'external_side_effect' });
+  });
+
   it('describes browser file actions without changing approval ownership', () => {
     expect(getBrowserComputerActionCatalogEntry('browser_action', 'upload_file', {
       action: 'upload_file',

@@ -46,6 +46,20 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN project_id TEXT`, logger);
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0`, logger);
 
+  // Historical session references are summarized lazily. The message fingerprint
+  // makes a cached digest invalid as soon as the visible conversation changes.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_reference_digests (
+      session_id TEXT PRIMARY KEY,
+      message_count INTEGER NOT NULL,
+      content_hash TEXT NOT NULL,
+      digest TEXT NOT NULL,
+      topics TEXT NOT NULL,
+      generated_at INTEGER NOT NULL,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    )
+  `);
+
   // Messages 表
   db.exec(`
     CREATE TABLE IF NOT EXISTS messages (

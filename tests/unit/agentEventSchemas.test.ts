@@ -13,6 +13,10 @@ describe('AgentEventSchema', () => {
     { type: 'turn_start', data: { turnId: 'turn-1', iteration: 1, agentId: 'agent-1', runId: 'run-1' } },
     { type: 'turn_end', data: { turnId: 'turn-1', agentId: 'agent-1', runId: 'run-1' } },
     {
+      type: 'subagent_activity',
+      data: { agentId: 'agent-1', runId: 'run-1', kind: 'started' },
+    },
+    {
       type: 'subagent_run_end',
       data: { agentId: 'agent-1', runId: 'run-1', status: 'completed' },
     },
@@ -80,9 +84,9 @@ describe('AgentEventSchema', () => {
 
   it('exports stability metadata and the stable type set from the same source', () => {
     const stabilityMetadata = AgentEventSchema.options.map((schema) => schema.meta()?.stability);
-    expect(stabilityMetadata).toHaveLength(69);
+    expect(stabilityMetadata).toHaveLength(70);
     expect(stabilityMetadata.filter((stability) => stability === 'stable')).toHaveLength(12);
-    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(57);
+    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(58);
     expect(STABLE_EVENT_TYPES).toEqual(new Set([
       'message',
       'tool_call_start',

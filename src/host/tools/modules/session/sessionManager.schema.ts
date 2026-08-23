@@ -6,7 +6,7 @@ export const sessionManagerSchema: ToolSchema = {
 
 Actions:
 - list: List sessions. Supports scope="active" | "archived" | "all", query, limit, and currentWorkingDirectoryOnly.
-- get: Inspect one session by ID.
+- get: Reference one session by ID. Sessions with at most 15 messages return their full text; longer sessions return a lazily generated cached digest.
 - read: Read session messages by a 1-based inclusive range or the most recent N messages. Supports keyword filtering and a hard result limit. The result reports the total message count, selected range, returned positions, and whether more matches remain.
 - create: Create a new session without making it current. Defaults to inheriting the current session's model and working directory.
 - fork: Branch from a completed assistant reply into a new child session without changing or polluting the source session. Use when the user wants to explore a new direction based on a particular reply. Defaults to the current session and its latest completed assistant reply.

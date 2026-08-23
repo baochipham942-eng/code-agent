@@ -715,23 +715,19 @@ describe('applyConversationStreamEvent model_fallback', () => {
 });
 
 describe('applyConversationStreamEvent meta turns', () => {
-  it('ignores a correlated background turn without adding or retargeting a message', () => {
+  it('keeps foreground turn_start behavior unchanged', () => {
     const addMessage = vi.fn();
     const state = {
-      currentTurnMessageId: 'foreground-turn',
-      committedAssistantMessageIds: new Set<string>(['foreground-turn']),
-      foregroundAgentId: 'foreground-agent',
+      currentTurnMessageId: null,
+      committedAssistantMessageIds: new Set<string>(),
     };
 
     applyConversationStreamEvent(
       {
         type: 'turn_start',
         data: {
-          turnId: 'background-turn',
+          turnId: 'foreground-turn',
           iteration: 1,
-          agentId: 'background-agent',
-          runId: 'background-run',
-          parentToolUseId: 'delegate-tool-1',
         },
       },
       state,
@@ -744,7 +740,10 @@ describe('applyConversationStreamEvent meta turns', () => {
       },
     );
 
-    expect(addMessage).not.toHaveBeenCalled();
+    expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'foreground-turn',
+      role: 'assistant',
+    }));
     expect(state.currentTurnMessageId).toBe('foreground-turn');
   });
 

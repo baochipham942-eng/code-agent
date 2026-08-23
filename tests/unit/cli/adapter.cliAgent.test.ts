@@ -407,6 +407,14 @@ describe('CLIAgent', () => {
         type: 'tool_call_end',
         data: { toolCallId: 'call-read', output: 'body', success: true },
       } as AgentEvent);
+      ctl.onEvent({
+        type: 'subagent_activity',
+        data: { agentId: 'agent-coder', runId: 'run-1', kind: 'started' },
+      } as AgentEvent);
+      ctl.onEvent({
+        type: 'subagent_run_end',
+        data: { agentId: 'agent-coder', runId: 'run-1', status: 'completed' },
+      } as AgentEvent);
       ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
     });
 
@@ -424,6 +432,14 @@ describe('CLIAgent', () => {
     expect(parsed.some((p) => p.type === 'agent_result')).toBe(true);
     expect(parsed.some((p) => p.type === 'tool_start')).toBe(true);
     expect(parsed.some((p) => p.type === 'tool_result')).toBe(true);
+    expect(parsed).toContainEqual(expect.objectContaining({
+      type: 'subagent_activity',
+      content: { agentId: 'agent-coder', runId: 'run-1', kind: 'started' },
+    }));
+    expect(parsed).toContainEqual(expect.objectContaining({
+      type: 'subagent_run_end',
+      content: { agentId: 'agent-coder', runId: 'run-1', status: 'completed' },
+    }));
     expect(parsed.some((p) => p.type === 'done')).toBe(true);
     // stream-json path should NOT use terminal handler for those events
     expect(mocks.terminalHandleEvent).not.toHaveBeenCalled();

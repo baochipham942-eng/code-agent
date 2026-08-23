@@ -740,6 +740,16 @@ export function convertToGeminiMessages(messages: ModelMessage[]): GeminiContent
   };
 
   for (const m of messages) {
+    if (
+      m.role === 'user'
+      && Array.isArray(m.content)
+      && m.content.some((part) => part.type === 'image')
+    ) {
+      throw new Error(
+        'Legacy Gemini engine does not support image content. Switch to the default model engine for vision requests.',
+      );
+    }
+
     // 动态尾巴（transient system）：单条 user + <system-reminder>，不追加假 model
     // 确认——否则 payload 以 model 收尾，Gemini 要求以 user 结束会直接 400（审计 A3）
     if (m.role === 'system' && m.transient) {

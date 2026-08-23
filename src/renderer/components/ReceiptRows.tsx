@@ -37,7 +37,7 @@ export function ReceiptRows({ items }: { items: ReceiptRowItem[] }) {
         });
         return (
           <div key={item.id} data-testid="receipt-row">
-            <button
+            <button /* ds-allow:button: 回执行本身即展开热区，须与「来源」「过程材料」的同款行保持一致，不走带 variant 内边距的 Button primitive */
               type="button"
               disabled={!canExpand}
               aria-expanded={canExpand ? expanded : undefined}
@@ -64,7 +64,7 @@ export function ReceiptRows({ items }: { items: ReceiptRowItem[] }) {
             {expanded && item.detail && (
               <pre className={`mx-1.5 mb-1 whitespace-pre-wrap break-words rounded-md border px-2.5 py-2 text-[11px] leading-relaxed ${
                 failed
-                  ? 'border-red-500/20 bg-red-500/[0.05] text-red-200/80'
+                  ? 'border-red-500/20 bg-red-500/[0.05] text-badge-danger/80'
                   : 'border-white/[0.06] bg-black/15 text-zinc-400'
               }`}>
                 {item.detail}

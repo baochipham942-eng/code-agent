@@ -838,7 +838,7 @@ const ArtifactOwnershipNode: React.FC<{
     <div className={`rounded-lg border border-badge-success/30 bg-emerald-500/[0.035] px-3 py-2 ${
       outputsCard || sourcesBlock ? 'mt-1.5' : ''
     }`}>
-      <button
+      <button /* ds-allow:button: 与同级「来源」折叠头同款，走 Button primitive 会带出不一致的内边距与变体样式 */
         type="button"
         onClick={() => setReceiptsOpen((value) => !value)}
         className="flex w-full items-center gap-2 text-[11px] text-zinc-300 transition-colors hover:text-zinc-100"

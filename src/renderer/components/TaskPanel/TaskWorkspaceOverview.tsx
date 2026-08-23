@@ -566,7 +566,7 @@ export const TaskWorkspaceOverview: React.FC = () => {
           data-testid="overview-receipts-module"
           aria-label={t.workbenchTabs.overviewReceiptsLabel}
         >
-          <button
+          <button /* ds-allow:button: 与同级「过程材料」折叠头同款，走 Button primitive 会带出不一致的内边距与变体样式 */
             type="button"
             data-testid="overview-receipts-toggle"
             onClick={() => setReceiptsOpen((value) => !value)}

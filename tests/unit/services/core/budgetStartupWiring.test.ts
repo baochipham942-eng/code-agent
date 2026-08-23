@@ -87,6 +87,9 @@ describe('Budget startup wiring — initBudgetService(getBudgetConfig())', () =>
     expect(synced.warningThreshold).toBe(0.6);
     // 未设字段沿用持久化默认
     expect(synced.blockThreshold).toBe(1.0);
+    // 只有旧顶层字段的 settings.json 同时作为两池基线，旧配置无需迁移。
+    expect(budgetModule.getBudgetService('unattended').getConfig().maxBudget).toBe(30);
+    expect(budgetModule.getBudgetService('unattended').getConfig().warningThreshold).toBe(0.6);
   });
 
   it('initBudgetService on an existing singleton updates rather than replaces config', async () => {

@@ -255,12 +255,9 @@ export class SubagentExecutor {
       permissionPreset: effectivePreset,
       maxBudget: config.maxBudget,
     };
-    const pipelineContext = pipeline.createContext(
-      dynamicConfig,
-      context.cwd,
-      undefined,
-      { parentRemainingBudget: context.parentRemainingBudget },
-    );
+    const pipelineContext = pipeline.createContext(dynamicConfig, context.cwd, undefined, {
+      parentRemainingBudget: context.parentRemainingBudget, executionTopology: context.executionTopology,
+    });
     const executionAgentId = context.executionAgentId || context.spawnGuardId || pipelineContext.agentId;
     const executionRunId = context.runId || context.swarmRunScope?.runId || context.traceContext?.runId || agentTask.id;
     const turnObservability = createSubagentTurnObservability({

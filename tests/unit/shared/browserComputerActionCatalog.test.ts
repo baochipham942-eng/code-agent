@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { BrowserComputerActionCatalogEntry } from '../../../src/shared/utils/browserComputerActionCatalog';
 import {
   getBrowserComputerActionCatalogEntry,
   getBrowserComputerActionCatalogForArgs,
@@ -18,6 +19,16 @@ function stringEnum(schema: typeof browserActionSchema, property: string): strin
 }
 
 describe('browser/computer action catalog', () => {
+  // 编译期保证：consequence 不在 ActionCatalogDefaults 里（它是 Omit<..., 'consequence'>），
+  // 所以新增 action 无法靠 spread DEFAULTS 静默继承；漏写 consequence 的声明必须 typecheck 失败。
+  it('refuses a catalog entry declared without consequence (compile-time)', () => {
+    type RequireCompleteCatalogEntry<T extends BrowserComputerActionCatalogEntry> = T;
+    // @ts-expect-error 缺 consequence 的声明必须编译失败；若哪天它能编译过，这行的 expect-error 会失效并让 typecheck 立红。
+    type Incomplete = RequireCompleteCatalogEntry<Omit<BrowserComputerActionCatalogEntry, 'consequence'>>;
+    expectTypeOf<Incomplete>().toBeObject();
+    expectTypeOf<BrowserComputerActionCatalogEntry>().toHaveProperty('consequence');
+  });
+
   it('covers every action exposed by browser_action, computer_use, Computer, and gui_agent', () => {
     // 判据取 schema 暴露给模型的 action 全集：schema 有而 catalog 漏声明 ⇒ strict 查表返回 null ⇒ 立红。
     // 不枚举 catalog 自己（那只能证明它自洽），也不按名字写死清单。

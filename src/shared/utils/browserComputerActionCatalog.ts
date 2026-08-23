@@ -70,10 +70,6 @@ type ActionCatalogDefaults = Omit<BrowserComputerActionCatalogEntry, "tool" | "a
 type ActionCatalogDeclaration = ActionCatalogDefaults & Pick<BrowserComputerActionCatalogEntry, "consequence">;
 type ActionCatalogMap = Record<string, ActionCatalogDeclaration>;
 
-type RequireCompleteCatalogEntry<T extends BrowserComputerActionCatalogEntry> = T;
-// @ts-expect-error A new action declaration without consequence must fail typechecking.
-type _MissingConsequenceMustNotCompile = RequireCompleteCatalogEntry<Omit<BrowserComputerActionCatalogEntry, "consequence">>;
-
 const READ_BROWSER_DEFAULTS: ActionCatalogDefaults = {
   risk: "read",
   scope: "managed_browser",

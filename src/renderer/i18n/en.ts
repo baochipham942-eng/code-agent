@@ -42,6 +42,7 @@ import { imageNarrationEn } from './imageNarration';
 import { mermaidEn } from './mermaid';
 import { voiceAuditEn } from './voiceAudit';
 import { sessionInspectorEn } from './sessionInspector';
+import { artifactShareEn } from './artifactShare';
 export const en: Translations = {
   ...canvasActorEn, ...activityPanelEn,
   ...imageNarrationEn, ...mermaidEn,
@@ -88,6 +89,9 @@ export const en: Translations = {
     exportBundle: 'Share published version',
     exportBundleSource: 'Source: published snapshot v{version}',
     publishVersion: 'Publish this version',
+    generateShareLink: 'Generate link',
+    shareLinkExisting: 'Link',
+    shareLink: artifactShareEn,
     publishConfirmTitle: 'Publish this version',
     publishConfirmDescription: 'Freeze the current content of “{title}” as read-only snapshot v{version}. Later edits become a draft.',
     publishNote: 'Version note (optional)',

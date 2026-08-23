@@ -11,6 +11,7 @@ import * as path from 'path';
 import { createHash } from 'crypto';
 import type {
   DeliverablePublishState,
+  DeliverableShareLink,
   PublishedDeliverableVersion,
 } from '../../../shared/contract/deliverable';
 
@@ -27,12 +28,13 @@ export interface Snapshot {
   sizeBytes: number;
 }
 
-interface SnapshotMeta {
+export interface SnapshotMeta {
   snapshots: Snapshot[];
   publishedVersions?: PublishedVersionMeta[];
+  share?: DeliverableShareLink;
 }
 
-interface PublishedVersionMeta extends PublishedDeliverableVersion {
+export interface PublishedVersionMeta extends PublishedDeliverableVersion {
   contentHash: string;
 }
 
@@ -56,7 +58,7 @@ function getMetaPath(filePath: string): string {
   return path.join(getSnapshotDir(filePath), `${fileHash}.meta.json`);
 }
 
-function loadMeta(filePath: string): SnapshotMeta {
+export function loadMeta(filePath: string): SnapshotMeta {
   const metaPath = getMetaPath(filePath);
   if (fs.existsSync(metaPath)) {
     try {
@@ -73,7 +75,7 @@ function hashFile(filePath: string): string {
   return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
-function saveMeta(filePath: string, meta: SnapshotMeta): void {
+export function saveMeta(filePath: string, meta: SnapshotMeta): void {
   const metaPath = getMetaPath(filePath);
   const dir = path.dirname(metaPath);
   if (!fs.existsSync(dir)) {

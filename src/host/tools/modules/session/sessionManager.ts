@@ -16,6 +16,7 @@ import { resolveSessionDefaultModelConfig } from '../../../services/core/session
 import { getSessionManager } from '../../../services/infra/sessionManager';
 import { getTaskManager } from '../../../task/TaskManager';
 import { sessionManagerSchema as schema } from './sessionManager.schema';
+import { resolveSessionReference } from './sessionReferenceDigest';
 
 type SessionManagerAction = 'list' | 'get' | 'read' | 'create' | 'fork' | 'archive' | 'unarchive' | 'rename';
 type ListScope = 'active' | 'archived' | 'all';
@@ -176,19 +177,33 @@ async function executeGet(args: Record<string, unknown>): Promise<ToolResult<str
     return { ok: false, error: 'sessionId is required', code: 'INVALID_ARGS' };
   }
 
-  const session = await getSessionManager().getSession(sessionId, 1);
+  const sessionManager = getSessionManager();
+  const session = await sessionManager.getSession(sessionId, 1);
   if (!session) {
     return { ok: false, error: `Session not found: ${sessionId}`, code: 'NOT_FOUND' };
   }
 
-  return {
-    ok: true,
-    output: `Session ${session.id}: ${session.title}\nStatus: ${session.status ?? 'idle'}\nWorking directory: ${session.workingDirectory ?? 'none'}`,
-    meta: {
-      action: 'get',
-      session: getSessionSummary(session),
-    },
-  };
+  try {
+    const reference = await resolveSessionReference(session, await sessionManager.getMessages(sessionId));
+    return {
+      ok: true,
+      output: reference.output,
+      meta: {
+        action: 'get',
+        session: getSessionSummary(session),
+        totalMessages: reference.totalMessages,
+        referenceMode: reference.mode,
+        digestCacheHit: reference.cacheHit,
+        digestThreshold: reference.digestThreshold,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: `Failed to prepare referenced session: ${error instanceof Error ? error.message : String(error)}`,
+      code: 'SESSION_REFERENCE_FAILED',
+    };
+  }
 }
 
 function normalizePositiveInteger(value: unknown): number | null {

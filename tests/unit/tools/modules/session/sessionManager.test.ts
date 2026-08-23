@@ -5,6 +5,13 @@ import type { Message } from '../../../../../src/shared/contract/message';
 import { SessionForkError } from '../../../../../src/shared/contract/sessionFork';
 
 const mocks = vi.hoisted(() => ({
+  digestCache: new Map<string, {
+    message_count: number;
+    content_hash: string;
+    digest: string;
+    topics: string;
+  }>(),
+  compactModelSummarize: vi.fn(),
   sessionManager: {
     listSessions: vi.fn(),
     listArchivedSessions: vi.fn(),
@@ -24,6 +31,41 @@ const mocks = vi.hoisted(() => ({
     forkSession: vi.fn(),
   },
   resolveSessionDefaultModelConfig: vi.fn(),
+}));
+
+vi.mock('../../../../../src/host/context/compactModel', () => ({
+  compactModelSummarize: (...args: unknown[]) => mocks.compactModelSummarize(...args),
+}));
+
+vi.mock('../../../../../src/host/services/core', () => ({
+  getDatabase: () => ({
+    getDb: () => ({
+      prepare: (sql: string) => {
+        if (sql.includes('SELECT message_count')) {
+          return { get: (sessionId: string) => mocks.digestCache.get(sessionId) };
+        }
+        if (sql.includes('INSERT INTO session_reference_digests')) {
+          return {
+            run: (
+              sessionId: string,
+              messageCount: number,
+              contentHash: string,
+              digest: string,
+              topics: string,
+            ) => {
+              mocks.digestCache.set(sessionId, {
+                message_count: messageCount,
+                content_hash: contentHash,
+                digest,
+                topics,
+              });
+            },
+          };
+        }
+        throw new Error(`Unexpected digest cache SQL: ${sql}`);
+      },
+    }),
+  }),
 }));
 
 vi.mock('../../../../../src/host/services/infra/sessionManager', () => ({
@@ -87,6 +129,8 @@ const denyAll: CanUseToolFn = vi.fn(async () => ({ allow: false as const, reason
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.digestCache.clear();
+  mocks.compactModelSummarize.mockResolvedValue('Topics: caching, session history\nSummary:\nA concise session digest.');
   mocks.sessionManager.listSessions.mockResolvedValue([]);
   mocks.sessionManager.listArchivedSessions.mockResolvedValue([]);
   mocks.sessionManager.getSession.mockResolvedValue(null);
@@ -219,6 +263,124 @@ describe('SessionManager dispatch', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('NOT_FOUND');
+  });
+
+  it('get returns full text without a model call for sessions with at most 15 messages', async () => {
+    const session = makeSession({ id: 'short-session', title: 'Short history' });
+    const messages = Array.from({ length: 15 }, (_, index): Message => ({
+      id: `short-${index + 1}`,
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `original message ${index + 1}`,
+      timestamp: index + 1,
+    }));
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue(messages);
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'get', sessionId: session.id },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('Full conversation (15 messages; no digest generated)');
+      expect(result.output).toContain('[1] user');
+      expect(result.output).toContain('original message 15');
+      expect(result.meta).toMatchObject({
+        action: 'get',
+        totalMessages: 15,
+        referenceMode: 'full',
+        digestCacheHit: false,
+        digestThreshold: 15,
+      });
+    }
+    expect(mocks.compactModelSummarize).not.toHaveBeenCalled();
+  });
+
+  it('get generates one digest for a long session and reuses the persisted cache', async () => {
+    const session = makeSession({ id: 'long-session', title: 'Long history' });
+    const messages = Array.from({ length: 16 }, (_, index): Message => ({
+      id: `long-${index + 1}`,
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `long message ${index + 1}`,
+      timestamp: index + 1,
+    }));
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue(messages);
+    const handler = await sessionManagerModule.createHandler();
+
+    const first = await handler.execute(
+      { action: 'get', sessionId: session.id },
+      makeCtx(),
+      allowAll,
+    );
+    const second = await handler.execute(
+      { action: 'get', sessionId: session.id },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(mocks.compactModelSummarize).toHaveBeenCalledTimes(1);
+    if (first.ok && second.ok) {
+      expect(first.output).toContain('A concise session digest.');
+      expect(first.meta).toMatchObject({ referenceMode: 'digest', digestCacheHit: false });
+      expect(second.meta).toMatchObject({ referenceMode: 'digest', digestCacheHit: true });
+    }
+  });
+
+  it('get invalidates a cached digest when the visible conversation changes', async () => {
+    const session = makeSession({ id: 'growing-session' });
+    const messages = Array.from({ length: 16 }, (_, index): Message => ({
+      id: `growing-${index + 1}`,
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `message ${index + 1}`,
+      timestamp: index + 1,
+    }));
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue(messages);
+    const handler = await sessionManagerModule.createHandler();
+
+    await handler.execute({ action: 'get', sessionId: session.id }, makeCtx(), allowAll);
+    mocks.sessionManager.getMessages.mockResolvedValue([
+      ...messages,
+      { id: 'growing-17', role: 'assistant', content: 'new result', timestamp: 17 },
+    ] satisfies Message[]);
+    await handler.execute({ action: 'get', sessionId: session.id }, makeCtx(), allowAll);
+
+    expect(mocks.compactModelSummarize).toHaveBeenCalledTimes(2);
+  });
+
+  it('get appends an explicit SessionManager read exit to every long-session digest', async () => {
+    const session = makeSession({ id: 'detail-session' });
+    mocks.sessionManager.getSession.mockResolvedValue(session);
+    mocks.sessionManager.getMessages.mockResolvedValue(
+      Array.from({ length: 16 }, (_, index): Message => ({
+        id: `detail-${index + 1}`,
+        role: 'user',
+        content: `detail ${index + 1}`,
+        timestamp: index + 1,
+      })),
+    );
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'get', sessionId: session.id },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const finalLine = result.output.trim().split('\n').at(-1);
+      expect(finalLine).toContain('This session has 16 messages.');
+      expect(finalLine).toContain('Topics: caching, session history.');
+      expect(finalLine).toContain('SessionManager with action="read"');
+      expect(finalLine).toContain(`sessionId="${session.id}"`);
+    }
   });
 
   it('read supports an inclusive range and reports total and returned coordinates', async () => {

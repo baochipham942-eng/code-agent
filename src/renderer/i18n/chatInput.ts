@@ -264,7 +264,7 @@ export const chatInputZh = {
     queueChoice: '排队',
     queueChoiceHint: '稍后再做',
     redirectChoice: '改道',
-    redirectChoiceHint: '现在就说',
+    redirectChoiceHint: '现在打断，按新话走',
     runtimeInputChoiceAria: '选择这条消息何时处理',
     queuedInputHint: '这条先排上了，手头这轮做完就做',
     scheduleParsingToast: '正在解析定时任务…',
@@ -299,7 +299,6 @@ export const chatInputZh = {
     retry: '重试',
     delete: '删除',
     editing: '编辑中',
-    drag: '拖拽排序',
   },
   voiceInputButton: {
     errorTitlePrefix: '错误: ',
@@ -612,7 +611,7 @@ export const chatInputEn: typeof chatInputZh = {
     queueChoice: 'Later',
     queueChoiceHint: 'Do this after the current reply',
     redirectChoice: 'Now',
-    redirectChoiceHint: 'Change direction now',
+    redirectChoiceHint: 'Interrupt now and follow the new direction',
     runtimeInputChoiceAria: 'Choose when to handle this message',
     queuedInputHint: 'This is lined up. I’ll do it after the current reply.',
     scheduleParsingToast: 'Parsing the scheduled task…',
@@ -647,7 +646,6 @@ export const chatInputEn: typeof chatInputZh = {
     retry: 'Retry',
     delete: 'Delete',
     editing: 'Editing',
-    drag: 'Drag to reorder',
   },
   voiceInputButton: {
     errorTitlePrefix: 'Error: ',

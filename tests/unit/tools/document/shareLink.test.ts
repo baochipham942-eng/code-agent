@@ -95,7 +95,7 @@ describe('document share links', () => {
       expect.objectContaining({ method: 'POST', body: expect.any(Uint8Array) }),
     );
     const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>;
-    expect(headers['X-Share-Name']).toContain("UTF-8''");
+    expect(headers['X-Share-Name']).toBe("UTF-8''%E5%AE%A2%E6%88%B7%E6%8A%A5%E5%91%8A.md");
   });
 
   it('does not PUT unchanged content, but pushes a later hash and advances the ledger', async () => {

@@ -128,7 +128,7 @@ export async function createShareLink(
   const bytes = readSnapshot(latest.snapshotPath);
   const result = await shareRequest(`${baseUrl}/api/share`, token, {
     method: 'POST',
-    headers: contentHeaders(latest.snapshotPath, ttlSeconds),
+    headers: contentHeaders(filePath, ttlSeconds),
     body: Uint8Array.from(bytes),
   });
   return writeShare(filePath, {
@@ -182,7 +182,7 @@ export async function pushLatestToShareLink(filePath: string): Promise<Deliverab
     const bytes = readSnapshot(latest.snapshotPath);
     const result = await shareRequest(`${baseUrl}/api/share/${share.token}`, token, {
       method: 'PUT',
-      headers: contentHeaders(latest.snapshotPath, share.ttlSeconds),
+      headers: contentHeaders(filePath, share.ttlSeconds),
       body: Uint8Array.from(bytes),
     });
     meta.share = {

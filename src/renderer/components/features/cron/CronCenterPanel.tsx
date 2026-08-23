@@ -61,6 +61,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     selectedJobId,
     isEditorOpen,
     editingJobId,
+    copyingJobId,
     isLoading,
     error,
     refresh,
@@ -101,8 +102,18 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     [jobs, editingJobId]
   );
 
+  const copyingJob = useMemo(
+    () => jobs.find((job) => job.id === copyingJobId) || null,
+    [jobs, copyingJobId]
+  );
+
   const jobNameById = useMemo(
     () => Object.fromEntries(jobs.map((job) => [job.id, job.name])),
+    [jobs]
+  );
+
+  const runsOnByJobId = useMemo(
+    () => Object.fromEntries(jobs.map((job) => [job.id, job.runsOn])),
     [jobs]
   );
 
@@ -212,9 +223,13 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
               selectedExecutionId={selectedExecutionId}
               onSelectExecution={setSelectedExecutionId}
               jobNameById={jobNameById}
+              runsOnByJobId={runsOnByJobId}
             />
             <div className="min-w-0">
-              <CronExecutionDetail execution={selectedExecution} />
+              <CronExecutionDetail
+                execution={selectedExecution}
+                runsOn={selectedExecution?.runsOn ?? (selectedExecution ? runsOnByJobId[selectedExecution.jobId] : undefined)}
+              />
             </div>
           </div>
         )}
@@ -223,6 +238,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
       <CronJobEditor
         isOpen={isEditorOpen}
         job={editingJob}
+        copySource={copyingJob}
         onClose={closeEditor}
       />
     </FullScreenPage>

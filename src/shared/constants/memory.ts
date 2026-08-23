@@ -123,6 +123,8 @@ export const ROLE_ASSETS = {
   USER_EXPECTATION_FILENAME: 'USER.md',
   /** 这位专家的行为准则（专家级，留空则不注入）：roles/<roleId>/SOUL.md */
   SOUL_FILENAME: 'SOUL.md',
+  /** 这位专家的结构化硬边界：roles/<roleId>/BOUNDARIES.json */
+  BOUNDARIES_FILENAME: 'BOUNDARIES.json',
   /** 项目目录元数据文件名（记录原始 workspace 路径，P0-2 迁移用） */
   META_FILENAME: 'meta.json',
   /** 项目 key 的 hash 截断长度 */

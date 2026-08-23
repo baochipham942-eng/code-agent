@@ -14,7 +14,6 @@ import { generateMessageId } from '../../../shared/utils/id';
 import type {
   AgentLoopConfig,
   ModelResponse,
-  ModelMessage,
 } from '../../agent/loopTypes';
 import type { RuntimeContext } from './runtimeContext';
 import type { TaskProgressPort } from './runtimePorts';
@@ -134,7 +133,7 @@ export class ContextAssembly {
     cache?: { cacheReadTokens?: number; cacheCreationTokens?: number },
     source: 'provider' | 'estimated' = 'provider',
   ): void {
-    const budgetService = getBudgetService();
+    const budgetService = getBudgetService(this.ctx.budgetScope);
     budgetService.recordUsage({
       inputTokens,
       outputTokens,

@@ -10,6 +10,7 @@ import {
   isEscalatedToolError,
 } from '../../../src/renderer/utils/toolExecutionPresentation';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 
 function makeToolCall(overrides: Partial<ToolCall> & Pick<ToolCall, 'name'>): ToolCall {
   return {
@@ -58,6 +59,20 @@ describe('toolExecutionPresentation', () => {
     expect(isAutoLoadedRetry({})).toBe(false);
     expect(isAutoLoadedRetry(null)).toBe(false);
     expect(isAutoLoadedRetry(undefined)).toBe(false);
+  });
+
+  it('localizes managed-browser resume import failures from the host error code', () => {
+    const humanized = humanizeToolError(
+      'Browser login state could not be restored.',
+      'browser_action',
+      zh,
+      { code: 'BROWSER_RESUME_STATE_IMPORT_FAILED' },
+    );
+
+    expect(humanized).toEqual({
+      summary: '浏览器登录状态恢复失败',
+      detail: '新浏览器已启动，但未带上一轮的登录状态。',
+    });
   });
 
   it('humanizes search-source quota errors with a settings hint', () => {
@@ -160,6 +175,14 @@ describe('humanizeToolError — code 优先（metadata.code 命中登记表）',
       const h = humanizeToolError('host 原文', 'Bash', zh, { code });
       expect(h?.summary).toContain(snippet);
     }
+  });
+
+  it('高风险浏览器拒绝使用 zh/en i18n 文案，不向用户透传英文 Host error', () => {
+    const metadata = { code: 'BROWSER_COMPUTER_HIGH_RISK_BLOCKED' };
+    expect(humanizeToolError('Denied: high-risk action', 'browser_action', zh, metadata))
+      .toMatchObject(zh.toolErrors.codes.BROWSER_COMPUTER_HIGH_RISK_BLOCKED);
+    expect(humanizeToolError('Denied: high-risk action', 'browser_action', en, metadata))
+      .toMatchObject(en.toolErrors.codes.BROWSER_COMPUTER_HIGH_RISK_BLOCKED);
   });
 
   it('code 命中时不依赖 error 文本：error 为空也出人话（永不空白）', () => {

@@ -28,6 +28,7 @@ const env = vi.hoisted(() => ({
     checkBudget: vi.fn(() => ({ used: 0 })),
     getConfig: vi.fn(() => ({ enabled: true })),
     getCacheSavingsSummary: vi.fn(() => ({ cacheReadTokens: 0, cacheCreationTokens: 0, netSavedUsd: 0 })),
+    getCacheCostSplitSummary: vi.fn(() => ({ cachedTokens: 0, uncachedTokens: 0, cachedCostUsd: 0, uncachedCostUsd: 0, cachedCostPercent: 0, uncachedCostPercent: 0 })),
     getTokenUsageSummary: vi.fn(() => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })),
   },
   syncBudget: vi.fn(),
@@ -436,6 +437,7 @@ describe('budget', () => {
       used: 0,
       config: { enabled: true },
       cacheSavings: { cacheReadTokens: 0, cacheCreationTokens: 0, netSavedUsd: 0 },
+      cacheCostSplit: { cachedTokens: 0, uncachedTokens: 0, cachedCostUsd: 0, uncachedCostUsd: 0, cachedCostPercent: 0, uncachedCostPercent: 0 },
       tokenUsage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
     });
   });

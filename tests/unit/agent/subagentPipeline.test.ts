@@ -21,6 +21,7 @@ vi.mock('../../../src/host/services/core/budgetService', () => ({
     WARNING: 'warning',
     BLOCKED: 'blocked',
   },
+  resolveBudgetScope: (topology: unknown) => topology === 'async_agent' ? 'unattended' : 'foreground',
   getBudgetService: () => ({
     checkBudget: vi.fn().mockReturnValue({
       alertLevel: 'normal',
@@ -79,6 +80,25 @@ describe('SubagentPipeline', () => {
   // Context Creation
   // --------------------------------------------------------------------------
   describe('Context Creation', () => {
+    it('inherits unattended scope from async_agent topology and defaults unknown topology to foreground', () => {
+      const config = {
+        name: 'Scoped Agent',
+        prompt: 'test',
+        tools: ['read_file'],
+        permissionPreset: 'development',
+      } as DynamicAgentConfig;
+
+      const unattended = pipeline.createContext(config, '/test/project', undefined, {
+        executionTopology: 'async_agent',
+      });
+      const foreground = pipeline.createContext(config, '/test/project', undefined, {
+        executionTopology: 'future_topology',
+      });
+
+      expect(unattended.budgetScope).toBe('unattended');
+      expect(foreground.budgetScope).toBe('foreground');
+    });
+
     it('should create context with AgentDefinition', () => {
       const agentDef = {
         id: 'test-agent',
@@ -465,6 +485,32 @@ describe('SubagentPipeline', () => {
         permissionLevel: 'execute',
       });
       expect(ordinaryExecute.allowed).toBe(false);
+      expect(ordinaryExecute.reason).toBe('Permission denied: execute operation requires approval');
+    });
+
+    it('explains when a requested path is outside the agent working directory', () => {
+      const agentDef = {
+        id: 'strict-path-agent',
+        name: 'Strict Path Agent',
+        description: 'Strict path boundary',
+        prompt: 'Strict path boundary',
+        tools: ['write_file'],
+        permissionPreset: 'strict',
+      } as AgentDefinition;
+
+      const workingDirectory = '/test/worktree';
+      const outsidePath = '/test/parent/report.md';
+      const context = pipeline.createContext(agentDef, workingDirectory);
+
+      const result = pipeline.checkToolExecution(context, {
+        toolName: 'write_file',
+        permissionLevel: 'write',
+        path: outsidePath,
+      });
+
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain(outsidePath);
+      expect(result.reason).toContain(workingDirectory);
     });
 
     it('should warn on dangerous commands', () => {

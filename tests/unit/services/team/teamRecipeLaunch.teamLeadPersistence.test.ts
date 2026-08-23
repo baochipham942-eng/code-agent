@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   listRuns: vi.fn(),
   startDurable: vi.fn(),
   terminalDurable: vi.fn(),
+  resolveRoleToolBoundary: vi.fn(),
 }));
 
 const recipes = vi.hoisted(() => ({
@@ -56,6 +57,11 @@ vi.mock('../../../../src/host/services/team/teamRecipeService', () => ({
 }));
 vi.mock('../../../../src/host/agent/agentRegistry', () => ({
   listAllAgents: () => [{ id: '牧之' }, { id: '溯真' }],
+  resolveAgent: (roleId: string) => ({ id: roleId, tools: ['Read'] }),
+}));
+vi.mock('../../../../src/host/services/roleAssets/rolePersonalization', () => ({
+  resolveRoleToolBoundary: mocks.resolveRoleToolBoundary,
+  toRoleBoundaryRunAllowlist: (tools: string[]) => tools,
 }));
 vi.mock('../../../../src/host/app/applicationRunRegistry', () => ({
   getConfiguredApplicationRunRegistry: () => durableRegistry,
@@ -125,6 +131,7 @@ describe('team recipe lead metadata persistence', () => {
     mocks.startDurable.mockResolvedValue({ context: { runId: 'parent-run' } });
     mocks.terminalDurable.mockResolvedValue(undefined);
     mocks.launchAgentTeam.mockResolvedValue({ success: true, output: '确定性聚合稿' });
+    mocks.resolveRoleToolBoundary.mockReturnValue(null);
   });
 
   it('有 lead 的配方发起时写入会话级 teamLead marker', async () => {

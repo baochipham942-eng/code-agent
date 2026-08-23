@@ -587,7 +587,7 @@ export class ConversationRuntime {
             errorType: null,
             consecutiveErrors: this.ctx.consecutiveErrors,
             // budgetRemaining: budgetService 真实剩余比例（0-1）；未配预算时 usagePercentage=0 → 1.0，不误触发停止闸
-            budgetRemaining: Math.max(0, Math.min(1, 1 - getBudgetService().checkBudget().usagePercentage)),
+            budgetRemaining: Math.max(0, Math.min(1, 1 - getBudgetService(this.ctx.budgetScope).checkBudget().usagePercentage)),
             iterationCount: iterations,
             maxIterations: this.ctx.maxIterations,
           };

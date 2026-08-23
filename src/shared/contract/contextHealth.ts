@@ -59,6 +59,25 @@ export interface TokenBreakdown {
 }
 
 /**
+ * 静态系统提示的缓存成本归因。
+ * 只有 cacheRead 留出 20% tokenizer 尺差富余时，才允许判定为完整缓存；
+ * 其余情况必须保留 unknown，不能按 0 或比例摊销。
+ */
+export type SystemPromptCacheCost =
+  | {
+      status: 'known_cached';
+      /** 本地 tokenizer 估算的静态系统提示 tokens（未做 provider 总量缩放） */
+      tokens: number;
+      costUsd: number;
+      /** 占本轮全部输入成本（非缓存输入 + cache read/write）的百分比 */
+      inputCostPercent: number;
+    }
+  | {
+      status: 'unknown';
+      tokens: number;
+    };
+
+/**
  * 创建空的 SourceBreakdown
  */
 export function createEmptySourceBreakdown(): SourceBreakdown {
@@ -175,6 +194,11 @@ export interface ContextHealthState {
    * 弹层据此显示估/实偏差。estimated 路径下无意义，不设置。
    */
   estimatedTokens?: number;
+  /**
+   * N-L8-CACHEWEIGHT-K2：唯一可判定的桶级缓存成本。
+   * 其余八桶没有有序前缀边界，不在此合同中伪造成本字段。
+   */
+  systemPromptCacheCost?: SystemPromptCacheCost;
 }
 
 /**

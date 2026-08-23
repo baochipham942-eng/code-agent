@@ -13,7 +13,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { CompressionState } from './compressionState';
 import { ProjectionEngine, type ProjectableMessage } from './projectionEngine';
-import { estimateTokens } from './tokenEstimator';
+import { estimateImageTokens, estimateTokens } from './tokenEstimator';
 import {
   applyActiveToolResultPrune,
   getFreshToolResultMessageIds,
@@ -59,6 +59,8 @@ export function runWithCompressionPipelineOverride<T>(
 
 export interface PipelineConfig {
   maxTokens: number;
+  provider?: string;
+  model?: string;
   currentTurnIndex: number;
   isMainThread: boolean;
   cacheHot: boolean;
@@ -94,11 +96,23 @@ const THRESHOLDS = {
 /**
  * Count total tokens across an array of ProjectableMessages.
  */
-function countProjectedTokens(messages: ProjectableMessage[]): number {
+function countProjectedTokens(
+  messages: ProjectableMessage[],
+  provider?: string,
+  model?: string,
+): number {
   let total = 3; // base envelope overhead
   for (const msg of messages) {
     total += 4; // per-message role overhead
     total += estimateTokens(msg.content);
+    const attachments = Array.isArray(msg.attachments)
+      ? msg.attachments as Array<{ type?: string; category?: string; data?: string }>
+      : [];
+    for (const attachment of attachments) {
+      if (attachment.type === 'image' || attachment.category === 'image') {
+        total += estimateImageTokens(attachment as never, provider, model);
+      }
+    }
   }
   return total;
 }
@@ -206,7 +220,7 @@ export class CompressionPipeline {
     // Project and count tokens
     // -------------------------------------------------------------------------
     let apiView = this.projectionEngine.projectMessages(transcript, state);
-    let totalTokens = countProjectedTokens(apiView);
+    let totalTokens = countProjectedTokens(apiView, config.provider, config.model);
     const usageFraction = totalTokens / config.maxTokens;
 
     // -------------------------------------------------------------------------
@@ -223,7 +237,7 @@ export class CompressionPipeline {
 
       // Re-project after snip
       apiView = this.projectionEngine.projectMessages(transcript, state);
-      totalTokens = countProjectedTokens(apiView);
+      totalTokens = countProjectedTokens(apiView, config.provider, config.model);
     }
 
     // -------------------------------------------------------------------------
@@ -240,7 +254,7 @@ export class CompressionPipeline {
       layersTriggered.push('microcompact');
 
       apiView = this.projectionEngine.projectMessages(transcript, state);
-      totalTokens = countProjectedTokens(apiView);
+      totalTokens = countProjectedTokens(apiView, config.provider, config.model);
     }
 
     // -------------------------------------------------------------------------
@@ -263,7 +277,7 @@ export class CompressionPipeline {
         layersTriggered.push('contextCollapse');
 
         apiView = this.projectionEngine.projectMessages(transcript, state);
-        totalTokens = countProjectedTokens(apiView);
+        totalTokens = countProjectedTokens(apiView, config.provider, config.model);
       } else {
         // G12: L4 阈值已达但调用方没注入 summarize fn —— 此前是静默跳过，高压下
         // AI 摘要悄无声息地没发生。现在显式 warn + 留 skip marker，让缺配置可见。

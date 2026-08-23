@@ -129,6 +129,10 @@ export interface SurfaceExecutionTranslationsV1 {
     title: string;
     description: string;
   };
+  resumeState: {
+    exportFailed: string;
+    importFailed: string;
+  };
   controls: {
     label: string;
     readonly: string;
@@ -307,6 +311,10 @@ export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
     durationHours: '{count} 小时',
   },
   recovery: { title: '执行正在恢复', description: '目标状态发生变化，Neo 会基于新证据继续。' },
+  resumeState: {
+    exportFailed: '浏览器已关闭，但登录状态没有保存成功；下一轮可能需要重新登录。',
+    importFailed: '新浏览器已启动，但上一轮的登录状态恢复失败。',
+  },
   controls: {
     label: '执行控制',
     readonly: '历史记录只读',
@@ -494,6 +502,10 @@ const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
     durationHours: '{count} h',
   },
   recovery: { title: 'Execution is recovering', description: 'The target changed. Neo will continue from fresh evidence.' },
+  resumeState: {
+    exportFailed: 'The browser closed, but its login state could not be saved. The next run may require login again.',
+    importFailed: 'The new browser started, but the previous run\'s login state could not be restored.',
+  },
   controls: {
     label: 'Execution controls',
     readonly: 'Historical record is read-only',

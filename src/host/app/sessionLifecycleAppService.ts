@@ -13,6 +13,7 @@ import { rehydrateModelOverrideFromSession } from '../session/modelOverridePersi
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { isExternalAgentEngine } from '../services/agentEngine';
 import { getUserBrowserLinkService } from '../services/surfaceExecution/UserBrowserLinkService';
+import { getManagedBrowserProviderAdapter } from '../services/surfaceExecution/ManagedBrowserProviderAdapter';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('SessionLifecycleAppService');
@@ -30,14 +31,17 @@ export class SessionLifecycleAppService {
 
   private async endPreviousUserBrowserRun(nextSessionId: string): Promise<void> {
     const previousSessionId = this.deps.getCurrentSessionId();
-    if (!previousSessionId || previousSessionId === nextSessionId) return;
-    await getUserBrowserLinkService().end(previousSessionId, 'session-switch').catch((error) => {
-      logger.warn('Failed to end user browser run while switching sessions', {
-        previousSessionId,
-        nextSessionId,
-        message: error instanceof Error ? error.message : String(error),
+    if (previousSessionId && previousSessionId !== nextSessionId) {
+      await getUserBrowserLinkService().end(previousSessionId, 'session-switch').catch((error) => {
+        logger.warn('Failed to end user browser run while switching sessions', {
+          previousSessionId,
+          nextSessionId,
+          message: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
+      await getManagedBrowserProviderAdapter().clearConversationResumeState(previousSessionId);
+    }
+    getManagedBrowserProviderAdapter().activateConversationResumeState(nextSessionId);
   }
 
   async createSession(config?: CreateSessionConfig): Promise<Session> {

@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import { estimateTokens, IMAGE_TOKEN_ESTIMATE } from './tokenEstimator';
+import { estimateImageTokens, estimateTokens } from './tokenEstimator';
 import { TOOL_RESULT_SPILL } from '../../shared/constants';
 import { ContextCompressor } from './compressor';
 
@@ -503,7 +503,16 @@ export function calculateTokenBreakdown(
  * Replaces the rough chars/4 estimation
  */
 export function estimateModelMessageTokens(
-  messages: Array<{ role: string; content: string | Array<{ type: string; text?: string }> }>
+  messages: Array<{
+    role: string;
+    content: string | Array<{
+      type: string;
+      text?: string;
+      source?: { data?: string };
+    }>;
+  }>,
+  provider?: string,
+  model?: string,
 ): number {
   let total = 0;
 
@@ -513,7 +522,7 @@ export function estimateModelMessageTokens(
     } else if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
         if (part.type === 'image') {
-          total += IMAGE_TOKEN_ESTIMATE;
+          total += estimateImageTokens({ data: part.source?.data }, provider, model);
         } else if (part.text) {
           total += estimateTokens(part.text);
         }

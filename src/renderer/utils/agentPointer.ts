@@ -1,9 +1,6 @@
 import type { ToolCall } from '@shared/contract';
 import type { AgentPointerEvent } from '@shared/contract/desktop';
-import {
-  buildAgentPointerEventFromToolCall,
-  getAgentPointerLabel,
-} from '@shared/utils/agentPointer';
+import { buildAgentPointerEventFromToolCall } from '@shared/utils/agentPointer';
 import { buildBrowserComputerActionPreview } from './browserComputerActionPreview';
 
 export function buildAgentPointerEvent(
@@ -23,5 +20,3 @@ export function buildAgentPointerEvent(
     targetLabel: preview.target,
   };
 }
-
-export { getAgentPointerLabel };

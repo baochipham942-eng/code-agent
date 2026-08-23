@@ -152,3 +152,25 @@ describe('BudgetService.getCacheSavingsSummary (WP2-2a)', () => {
     expect(svc.getCacheSavingsSummary().netSavedUsd).toBe(0);
   });
 });
+
+describe('BudgetService.getCacheCostSplitSummary (N-L8-CACHEWEIGHT-K2)', () => {
+  it('splits all input usage into cached and uncached token/cost shares', () => {
+    const svc = makeService();
+    svc.recordUsage({
+      inputTokens: 500_000,
+      outputTokens: 900_000,
+      cacheReadTokens: 1_000_000,
+      cacheCreationTokens: 100_000,
+      model: 'claude-sonnet-4-20250514',
+      provider: 'claude',
+      timestamp: 1,
+    });
+
+    const summary = svc.getCacheCostSplitSummary();
+    expect(summary.cachedTokens).toBe(1_000_000);
+    expect(summary.uncachedTokens).toBe(600_000);
+    expect(summary.cachedCostUsd).toBeCloseTo(0.3, 6);
+    expect(summary.uncachedCostUsd).toBeCloseTo(0.5 * 3 + 0.1 * 3.75, 6);
+    expect(summary.cachedCostPercent + summary.uncachedCostPercent).toBeCloseTo(100, 8);
+  });
+});

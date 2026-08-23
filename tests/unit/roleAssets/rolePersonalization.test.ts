@@ -30,6 +30,7 @@ import {
   buildVoiceRoleBoundaryDirective,
   isDraftOnlyBoundary,
   resolveRoleToolBoundary,
+  toRoleBoundaryRunAllowlist,
 } from '../../../src/host/services/roleAssets/rolePersonalization';
 import { ensureRoleAssetDirs } from '../../../src/host/services/roleAssets/roleAssetService';
 import { filterSubagentToolDefs } from '../../../src/host/agent/subagentExecutorToolDefs';
@@ -140,6 +141,10 @@ describe('专家个性化正文', () => {
     expect(resolveRoleToolBoundary(ROLE, tools)).toBeNull();
     expect(tools).toEqual(['Read', 'mail_send']);
     expect(buildVoiceRoleBoundaryDirective(ROLE)).toBe('');
+  });
+
+  it('主轮用不可解析哨兵表达真正的空白名单', () => {
+    expect(toRoleBoundaryRunAllowlist([])).toEqual(['__role_boundary_deny_all__']);
   });
 });
 

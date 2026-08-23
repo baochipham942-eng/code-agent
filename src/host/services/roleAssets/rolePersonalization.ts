@@ -30,6 +30,8 @@ export interface RoleToolBoundary {
   blockedTools: string[];
 }
 
+const ROLE_BOUNDARY_DENY_ALL_SENTINEL = '__role_boundary_deny_all__';
+
 const DRAFT_ONLY_BOUNDARY_PATTERNS = [
   /(?:只|仅).{0,8}(?:起草|草拟|拟稿).{0,12}(?:不|禁止|不要|不得|不可|不能|不许).{0,6}(?:发送|发出|发布|投递)/u,
   /(?:不|禁止|不要|不得|不可|不能|不许).{0,6}(?:发送|发出|发布|投递)/u,
@@ -57,6 +59,23 @@ export function resolveRoleToolBoundary(roleId: string, equipmentTools: readonly
     allowedTools,
     blockedTools: equipmentTools.filter((tool) => !allowed.has(tool)),
   };
+}
+
+/** 主轮旧契约把 [] 当“未设置 allowlist”；用不可解析哨兵表达真正的空白名单。 */
+export function toRoleBoundaryRunAllowlist(tools: readonly string[]): string[] {
+  return tools.length > 0 ? [...tools] : [ROLE_BOUNDARY_DENY_ALL_SENTINEL];
+}
+
+/** 在子代理分流前统一收窄 request，native / external engine 共用。 */
+export function applyRoleBoundaryToSubagentRequest<
+  T extends { config: { roleId?: string; availableTools: string[] } },
+>(request: T): T {
+  const boundary = request.config.roleId
+    ? resolveRoleToolBoundary(request.config.roleId, request.config.availableTools)
+    : null;
+  return boundary
+    ? { ...request, config: { ...request.config, availableTools: boundary.allowedTools } }
+    : request;
 }
 
 /** 安全边界是运行约束，进入角色上下文块；没有设置时不增加任何字符。 */

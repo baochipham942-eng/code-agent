@@ -42,6 +42,7 @@ vi.mock('../../../../src/host/agent/agentRegistry', () => ({
 }));
 vi.mock('../../../../src/host/services/roleAssets/rolePersonalization', () => ({
   resolveRoleToolBoundary: mocks.resolveRoleToolBoundary,
+  toRoleBoundaryRunAllowlist: (tools: string[]) => tools.length > 0 ? tools : ['__role_boundary_deny_all__'],
 }));
 vi.mock('../../../../src/host/services/team/teamRecipeService', () => ({
   getTeamRecipeService: () => ({

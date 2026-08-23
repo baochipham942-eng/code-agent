@@ -1,6 +1,6 @@
 import type { AgentRunOptions } from '../research/types';
 import { resolveAgent } from '../agent/agentRegistry';
-import { resolveRoleToolBoundary } from '../services/roleAssets/rolePersonalization';
+import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from '../services/roleAssets/rolePersonalization';
 
 type CronAgentRunOptions = Pick<AgentRunOptions, 'mode' | 'agentOverrideId' | 'turnSystemContext' | 'allowedToolNames'>;
 
@@ -29,6 +29,6 @@ export async function buildCronAgentRunOptions(
     mode: 'normal',
     agentOverrideId: roleId,
     turnSystemContext: [contextBlock],
-    ...(toolBoundary ? { allowedToolNames: toolBoundary.allowedTools } : {}),
+    ...(toolBoundary ? { allowedToolNames: toRoleBoundaryRunAllowlist(toolBoundary.allowedTools) } : {}),
   };
 }

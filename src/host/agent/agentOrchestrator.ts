@@ -56,7 +56,7 @@ import {
   initRunDag,
 } from './orchestratorDagSync';
 import { seedGoalContractForRun } from './orchestratorGoalSeed';
-import { resolveRoleToolBoundary } from '../services/roleAssets/rolePersonalization';
+import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from '../services/roleAssets/rolePersonalization';
 
 // Sub-modules
 import { type AgentOrchestratorConfig } from './orchestrator/types';
@@ -883,11 +883,14 @@ export class AgentOrchestrator {
     const roleToolBoundary = routedRole
       ? resolveRoleToolBoundary(routedRole.id, routedRole.tools)
       : null;
-    const boundaryAllowedToolNames = roleToolBoundary
+    const intersectedBoundaryTools = roleToolBoundary
       ? (options?.allowedToolNames
           ? roleToolBoundary.allowedTools.filter((tool) => options.allowedToolNames!.some((allowed) => allowed.toLowerCase() === tool.toLowerCase()))
           : roleToolBoundary.allowedTools)
       : options?.allowedToolNames;
+    const boundaryAllowedToolNames = roleToolBoundary
+      ? toRoleBoundaryRunAllowlist(intersectedBoundaryTools ?? [])
+      : intersectedBoundaryTools;
     if (roleToolBoundary) {
       logger.info('[RoleBoundary] foreground role tool allowlist applied', {
         roleId: routedRole?.id,

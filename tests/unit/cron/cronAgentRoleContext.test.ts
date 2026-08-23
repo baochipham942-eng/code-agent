@@ -12,6 +12,7 @@ vi.mock('../../../src/host/agent/agentRegistry', () => ({
 }));
 vi.mock('../../../src/host/services/roleAssets/rolePersonalization', () => ({
   resolveRoleToolBoundary,
+  toRoleBoundaryRunAllowlist: (tools: string[]) => tools.length > 0 ? tools : ['__role_boundary_deny_all__'],
 }));
 
 import { buildCronAgentRunOptions } from '../../../src/host/cron/cronAgentRoleContext';

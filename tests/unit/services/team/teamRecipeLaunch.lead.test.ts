@@ -154,7 +154,7 @@ describe('team recipe lead orchestrator', () => {
 
   it('常驻边界进入团队 lead 的实际 run tool allowlist', async () => {
     mocks.resolveRoleToolBoundary.mockReturnValue({
-      boundaryText: '只起草不发送',
+      boundaryText: '不允许对外发送',
       allowedTools: ['Read', 'mail_draft'],
       blockedTools: ['mail_send'],
     });

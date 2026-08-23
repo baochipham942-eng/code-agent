@@ -139,6 +139,14 @@ export const expertZh = {
     rolePersonalization: {
       save: '保存',
       saving: '保存中…',
+      hardBoundary: {
+        label: '不允许对外发送',
+        description: '硬约束：勾选并保存后，对外发送工具会从这位专家的可用工具表中移除。',
+      },
+      softGuidance: {
+        label: '给 TA 看的边界说明',
+        description: '下方自由文本会进入 TA 的提示词，模型会读，但不会触发工具拦截。',
+      },
       segments: {
         identity: {
           title: '我是谁',
@@ -152,8 +160,8 @@ export const expertZh = {
         },
         soul: {
           title: '常驻边界',
-          description: '只对这位专家生效的安全边界。写明「只起草不发送」时，真实发送工具会从 TA 的白名单中移除；留空不改变现有行为。',
-          placeholder: '例：只起草不发送；涉及外发内容，一律停在草稿。',
+          description: '勾选项由系统强制执行；自由文本只用于向 TA 解释要求，不构成拦截。',
+          placeholder: '例：外发前先征求我的确认，并把内容留在草稿中。',
         },
       },
     },
@@ -396,6 +404,14 @@ export const expertEn: typeof expertZh = {
     rolePersonalization: {
       save: 'Save',
       saving: 'Saving…',
+      hardBoundary: {
+        label: 'Disallow external sending',
+        description: "Hard constraint: once checked and saved, external send tools are removed from this expert's tool table.",
+      },
+      softGuidance: {
+        label: 'Boundary guidance for the expert',
+        description: 'The free text below is added to the expert prompt. The model reads it, but it does not trigger tool blocking.',
+      },
       segments: {
         identity: {
           title: 'Who they are',
@@ -409,8 +425,8 @@ export const expertEn: typeof expertZh = {
         },
         soul: {
           title: 'Standing boundary',
-          description: 'A safety boundary for this expert only. Writing “draft only, do not send” removes real send tools from their allowlist. Leaving it empty preserves current behavior.',
-          placeholder: 'e.g. Draft only, do not send. Stop all outbound content at the draft stage.',
+          description: 'The checkbox is enforced by the system. Free text only explains your expectations to the expert and does not block tools.',
+          placeholder: 'e.g. Ask for my confirmation before sending, and leave the content as a draft.',
         },
       },
     },

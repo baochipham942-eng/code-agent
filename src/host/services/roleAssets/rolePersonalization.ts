@@ -1,10 +1,11 @@
 // ============================================================================
-// Role Personalization — 每专家的「用户期望」与「行为准则」
+// Role Personalization — 每专家的「用户期望」「行为准则」与结构化硬边界
 // ============================================================================
 //
-// 两份可编辑正文，落在专家自己的资产目录里：
+// 两份可编辑正文和一份结构化硬边界，落在专家自己的资产目录里：
 //   roles/<roleId>/USER.md   ← 用户对这位专家的期望（建专家时那句原话，之后可改）
 //   roles/<roleId>/SOUL.md   ← 这位专家的行为准则（留空则不注入）
+//   roles/<roleId>/BOUNDARIES.json ← 系统强制执行的边界（关闭全部边界时文件不存在）
 //
 // 读取时机：每次 getAgentPrompt() 现读现拼，不进 agent 注册表缓存。
 // 注册表的 chokidar 只 watch agents/ 目录，这两份文件改了它收不到通知；
@@ -13,7 +14,12 @@
 // ============================================================================
 
 import * as fs from 'fs';
-import { getRoleUserExpectationPath, getRoleSoulPath, isSafeRoleId } from './roleAssetPaths';
+import {
+  getRoleBoundariesPath,
+  getRoleUserExpectationPath,
+  getRoleSoulPath,
+  isSafeRoleId,
+} from './roleAssetPaths';
 import { isExternalSideEffectTool } from '../../tools/externalSideEffect';
 
 /** 单份正文注入上限：够写满一页指引，又不至于让用户手滑粘贴整本文档撑爆上下文。 */
@@ -22,6 +28,11 @@ const MAX_SECTION_CHARS = 8000;
 export interface RolePersonalization {
   userExpectation: string;
   soul: string;
+  boundaries: RoleBoundaries;
+}
+
+export interface RoleBoundaries {
+  disallowExternalSending: boolean;
 }
 
 export interface RoleToolBoundary {
@@ -31,31 +42,20 @@ export interface RoleToolBoundary {
 }
 
 const ROLE_BOUNDARY_DENY_ALL_SENTINEL = '__role_boundary_deny_all__';
-
-const DRAFT_ONLY_BOUNDARY_PATTERNS = [
-  /(?:只|仅).{0,8}(?:起草|草拟|拟稿).{0,12}(?:不|禁止|不要|不得|不可|不能|不许).{0,6}(?:发送|发出|发布|投递)/u,
-  /(?:不|禁止|不要|不得|不可|不能|不许).{0,6}(?:发送|发出|发布|投递)/u,
-  /\bdrafts?\s+only\b/i,
-  /\bonly\s+(?:create\s+)?drafts?\b/i,
-  /\b(?:do\s+not|don't|never|must\s+not)\s+(?:actually\s+)?send\b/i,
-];
-
-/** 当前硬翻译支持的安全语义：可以生成草稿，但不允许产生对外发送副作用。 */
-export function isDraftOnlyBoundary(text: string): boolean {
-  return DRAFT_ONLY_BOUNDARY_PATTERNS.some((pattern) => pattern.test(text));
-}
+const NO_EXTERNAL_SENDING_BOUNDARY_TEXT = '不允许对外发送';
+const NO_ROLE_BOUNDARIES: RoleBoundaries = { disallowExternalSending: false };
 
 /**
- * 把用户写在 SOUL.md 的「只起草不发送」翻译为已有 equipment.tools 白名单的收窄结果。
- * 没命中可硬表达的边界时返回 null，调用方必须保持原行为逐字不变。
+ * 把结构化的「不允许对外发送」边界翻译为已有 equipment.tools 白名单的收窄结果。
+ * 没有开启硬边界时返回 null，调用方必须保持原行为逐字不变。
  */
 export function resolveRoleToolBoundary(roleId: string, equipmentTools: readonly string[]): RoleToolBoundary | null {
-  const boundaryText = readRolePersonalization(roleId).soul;
-  if (!boundaryText || !isDraftOnlyBoundary(boundaryText)) return null;
+  const { disallowExternalSending } = readRolePersonalization(roleId).boundaries;
+  if (!disallowExternalSending) return null;
   const allowedTools = equipmentTools.filter((tool) => !isExternalSideEffectTool(tool));
   const allowed = new Set(allowedTools);
   return {
-    boundaryText,
+    boundaryText: NO_EXTERNAL_SENDING_BOUNDARY_TEXT,
     allowedTools,
     blockedTools: equipmentTools.filter((tool) => !allowed.has(tool)),
   };
@@ -80,16 +80,14 @@ export function applyRoleBoundaryToSubagentRequest<
 
 /** 安全边界是运行约束，进入角色上下文块；没有设置时不增加任何字符。 */
 export function buildRoleBoundaryContextSection(roleId: string): string {
-  const boundaryText = readRolePersonalization(roleId).soul;
-  return boundaryText ? `## 常驻边界\n${boundaryText}` : '';
+  const { disallowExternalSending } = readRolePersonalization(roleId).boundaries;
+  return disallowExternalSending ? `## 常驻边界\n${NO_EXTERNAL_SENDING_BOUNDARY_TEXT}` : '';
 }
 
 /** 语音只取短安全指令，不注入记忆索引、履历或资料架。 */
 export function buildVoiceRoleBoundaryDirective(roleId: string): string {
-  const boundaryText = readRolePersonalization(roleId).soul;
-  if (!boundaryText) return '';
-  const clamped = boundaryText.length > 1000 ? `${boundaryText.slice(0, 1000)}…` : boundaryText;
-  return `常驻边界：${clamped}`;
+  const { disallowExternalSending } = readRolePersonalization(roleId).boundaries;
+  return disallowExternalSending ? `常驻边界：${NO_EXTERNAL_SENDING_BOUNDARY_TEXT}` : '';
 }
 
 function readIfPresent(filePath: string): string {
@@ -101,16 +99,35 @@ function readIfPresent(filePath: string): string {
   }
 }
 
-/** 读这位专家的两份正文；角色 id 不安全或文件缺失时返回空串，绝不抛。 */
+function readRoleBoundaries(filePath: string): RoleBoundaries {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    if (
+      typeof parsed !== 'object'
+      || parsed === null
+      || typeof (parsed as Partial<RoleBoundaries>).disallowExternalSending !== 'boolean'
+    ) {
+      return { disallowExternalSending: true };
+    }
+    return { disallowExternalSending: (parsed as RoleBoundaries).disallowExternalSending };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { ...NO_ROLE_BOUNDARIES };
+    // 文件存在却无法可靠解析时按最严格边界处理，避免安全配置损坏后静默放行。
+    return { disallowExternalSending: true };
+  }
+}
+
+/** 读这位专家的两份正文与硬边界；角色 id 不安全或文件缺失时返回默认值，绝不抛。 */
 export function readRolePersonalization(roleId: string): RolePersonalization {
-  if (!isSafeRoleId(roleId)) return { userExpectation: '', soul: '' };
+  if (!isSafeRoleId(roleId)) return { userExpectation: '', soul: '', boundaries: { ...NO_ROLE_BOUNDARIES } };
   try {
     return {
       userExpectation: readIfPresent(getRoleUserExpectationPath(roleId)),
       soul: readIfPresent(getRoleSoulPath(roleId)),
+      boundaries: readRoleBoundaries(getRoleBoundariesPath(roleId)),
     };
   } catch {
-    return { userExpectation: '', soul: '' };
+    return { userExpectation: '', soul: '', boundaries: { ...NO_ROLE_BOUNDARIES } };
   }
 }
 
@@ -134,7 +151,7 @@ export function appendRolePersonalization(prompt: string, roleId: string): strin
 /** 写回单份正文；空串表示清空（删文件，与"从没设置过"同义）。 */
 export function writeRolePersonalization(roleId: string, patch: Partial<RolePersonalization>): void {
   if (!isSafeRoleId(roleId)) throw new Error(`Invalid role id: "${roleId}"`);
-  const targets: Array<[keyof RolePersonalization, string]> = [
+  const targets: Array<['userExpectation' | 'soul', string]> = [
     ['userExpectation', getRoleUserExpectationPath(roleId)],
     ['soul', getRoleSoulPath(roleId)],
   ];
@@ -148,6 +165,18 @@ export function writeRolePersonalization(roleId: string, patch: Partial<RolePers
         fs.unlinkSync(filePath);
       } catch {
         // 本来就没有这份文件，清空即达成
+      }
+    }
+  }
+  if (patch.boundaries !== undefined) {
+    const filePath = getRoleBoundariesPath(roleId);
+    if (patch.boundaries.disallowExternalSending) {
+      fs.writeFileSync(filePath, `${JSON.stringify(patch.boundaries, null, 2)}\n`, 'utf-8');
+    } else {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        // 全部硬边界关闭时不保留文件，与“从没设置过”同义。
       }
     }
   }

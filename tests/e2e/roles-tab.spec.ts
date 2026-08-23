@@ -76,10 +76,12 @@ test('角色详情：记录 tab 的 主动性 / 记忆 / 履历 + 个性化 tab 
 
   await page.screenshot({ path: 'screenshots/roles-tab-detail.png', fullPage: false });
 
-  // 常驻边界编辑入口：标题、硬闸说明和编辑框同屏，无截断/挤压。
+  // 常驻边界编辑入口：硬约束开关与软说明同屏，无截断/挤压。
   await detail.getByTestId('role-personalization-segment-soul').click();
   await expect(detail.getByRole('heading', { name: '常驻边界' })).toBeVisible();
-  await expect(detail.getByText(/真实发送工具会从 TA 的白名单中移除/)).toBeVisible();
+  await expect(detail.getByText('不允许对外发送', { exact: true })).toBeVisible();
+  await expect(detail.getByText(/自由文本会进入 TA 的提示词/)).toBeVisible();
+  await expect(detail.getByTestId('role-personalization-boundary-external-sending')).toBeVisible();
   await expect(detail.getByTestId('role-personalization-soul')).toBeVisible();
   await page.screenshot({ path: 'screenshots/roles-tab-standing-boundary.png', fullPage: false });
 

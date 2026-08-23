@@ -47,10 +47,10 @@ describe('buildCronAgentRunOptions', () => {
   });
 
   it('passes the translated tool allowlist into the actual cron run options', async () => {
-    buildRoleContextBlock.mockResolvedValue('## 常驻边界\n只起草不发送');
+    buildRoleContextBlock.mockResolvedValue('## 常驻边界\n不允许对外发送');
     runtimeRole.value = { id: 'mailer', tools: ['mail_draft', 'mail_send'] };
     resolveRoleToolBoundary.mockReturnValue({
-      boundaryText: '只起草不发送',
+      boundaryText: '不允许对外发送',
       allowedTools: ['mail_draft'],
       blockedTools: ['mail_send'],
     });
@@ -58,7 +58,7 @@ describe('buildCronAgentRunOptions', () => {
     await expect(buildCronAgentRunOptions('mailer', '/workspace')).resolves.toEqual({
       mode: 'normal',
       agentOverrideId: 'mailer',
-      turnSystemContext: ['## 常驻边界\n只起草不发送'],
+      turnSystemContext: ['## 常驻边界\n不允许对外发送'],
       allowedToolNames: ['mail_draft'],
     });
   });

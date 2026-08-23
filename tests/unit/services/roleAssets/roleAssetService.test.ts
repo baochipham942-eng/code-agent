@@ -375,10 +375,10 @@ describe('roleAssetService', () => {
     it('injects the standing boundary into the actual role context block', async () => {
       await ensureRoleAssetDirs('研究员');
       const { writeRolePersonalization } = await import('../../../../src/host/services/roleAssets/rolePersonalization');
-      writeRolePersonalization('研究员', { soul: '只起草不发送' });
+      writeRolePersonalization('研究员', { boundaries: { disallowExternalSending: true } });
 
       const block = await buildRoleContextBlock('研究员');
-      expect(block).toContain('## 常驻边界\n只起草不发送');
+      expect(block).toContain('## 常驻边界\n不允许对外发送');
     });
 
     it('keeps the no-boundary role context byte-for-byte identical', async () => {

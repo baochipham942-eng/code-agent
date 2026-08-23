@@ -18,7 +18,11 @@ type Segment = 'identity' | 'expectation' | 'soul';
 const SEGMENTS: readonly Segment[] = ['identity', 'expectation', 'soul'];
 
 /** 只提交改动的那一段，避免另一段被同屏的旧值覆盖。 */
-async function savePersonalization(roleId: string, patch: { userExpectation?: string; soul?: string }): Promise<void> {
+async function savePersonalization(roleId: string, patch: {
+  userExpectation?: string;
+  soul?: string;
+  boundaries?: { disallowExternalSending: boolean };
+}): Promise<void> {
   await ipcService.invokeDomain(IPC_DOMAINS.ROLES, 'updatePersonalization', { roleId, ...patch });
 }
 
@@ -29,18 +33,22 @@ const ProseEditor: React.FC<{
   segment: Exclude<Segment, 'identity'>;
   roleId: string;
   initial: string;
+  initialDisallowExternalSending?: boolean;
   onSaved: () => void;
-}> = ({ segment, roleId, initial, onSaved }) => {
+}> = ({ segment, roleId, initial, initialDisallowExternalSending = false, onSaved }) => {
   const { t } = useI18n();
   const text = t.expert.rolePersonalization;
   const [value, setValue] = useState(initial);
+  const [disallowExternalSending, setDisallowExternalSending] = useState(initialDisallowExternalSending);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
-      await savePersonalization(roleId, segment === 'expectation' ? { userExpectation: value } : { soul: value });
+      await savePersonalization(roleId, segment === 'expectation'
+        ? { userExpectation: value }
+        : { soul: value, boundaries: { disallowExternalSending } });
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -51,6 +59,27 @@ const ProseEditor: React.FC<{
   return (
     <SettingsSection title={text.segments[segment].title} description={text.segments[segment].description}>
       <div className="space-y-3">
+        {segment === 'soul' ? (
+          <div className="space-y-3 rounded border border-zinc-700 bg-zinc-950/50 p-3">
+            <label className="flex items-start gap-2 text-xs text-zinc-200">
+              <input
+                data-testid="role-personalization-boundary-external-sending"
+                type="checkbox"
+                checked={disallowExternalSending}
+                onChange={(event) => setDisallowExternalSending(event.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block font-medium">{text.hardBoundary.label}</span>
+                <span className="mt-1 block leading-5 text-zinc-400">{text.hardBoundary.description}</span>
+              </span>
+            </label>
+            <div className="border-t border-zinc-800 pt-3 text-xs">
+              <div className="font-medium text-zinc-300">{text.softGuidance.label}</div>
+              <div className="mt-1 leading-5 text-zinc-500">{text.softGuidance.description}</div>
+            </div>
+          </div>
+        ) : null}
         <textarea
           data-testid={`role-personalization-${segment}`}
           value={value}
@@ -105,7 +134,14 @@ export const RolePersonalizationTab: React.FC<{
         <ProseEditor key={`${roleId}:expectation`} segment="expectation" roleId={roleId} initial={personalization.userExpectation} onSaved={onSaved} />
       ) : null}
       {segment === 'soul' ? (
-        <ProseEditor key={`${roleId}:soul`} segment="soul" roleId={roleId} initial={personalization.soul} onSaved={onSaved} />
+        <ProseEditor
+          key={`${roleId}:soul`}
+          segment="soul"
+          roleId={roleId}
+          initial={personalization.soul}
+          initialDisallowExternalSending={personalization.boundaries.disallowExternalSending}
+          onSaved={onSaved}
+        />
       ) : null}
     </section>
   );

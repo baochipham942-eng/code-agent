@@ -76,6 +76,11 @@ export function getRoleSoulPath(roleId: string): string {
   return path.join(getRoleDir(roleId), ROLE_ASSETS.SOUL_FILENAME);
 }
 
+/** 这位专家的结构化硬边界：roles/<roleId>/BOUNDARIES.json */
+export function getRoleBoundariesPath(roleId: string): string {
+  return path.join(getRoleDir(roleId), ROLE_ASSETS.BOUNDARIES_FILENAME);
+}
+
 /** 角色工作履历：roles/<roleId>/history.md */
 export function getRoleHistoryPath(roleId: string): string {
   return path.join(getRoleDir(roleId), ROLE_ASSETS.HISTORY_FILENAME);

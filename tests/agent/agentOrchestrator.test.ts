@@ -1364,7 +1364,7 @@ describe('AgentOrchestrator', () => {
         },
       ]]));
       roleBoundaryProbe.mockReturnValue({
-        boundaryText: '只起草不发送',
+        boundaryText: '不允许对外发送',
         allowedTools: ['Read', 'mail_draft'],
         blockedTools: ['mail_send'],
       });

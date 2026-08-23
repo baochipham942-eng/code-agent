@@ -28,7 +28,6 @@ import {
   writeRolePersonalization,
   appendRolePersonalization,
   buildVoiceRoleBoundaryDirective,
-  isDraftOnlyBoundary,
   resolveRoleToolBoundary,
   toRoleBoundaryRunAllowlist,
 } from '../../../src/host/services/roleAssets/rolePersonalization';
@@ -48,8 +47,12 @@ describe('专家个性化正文', () => {
     await fs.rm(mockConfigDir.dir, { recursive: true, force: true });
   });
 
-  it('没设置过时两段都是空串，且 prompt 逐字不变', () => {
-    expect(readRolePersonalization(ROLE)).toEqual({ userExpectation: '', soul: '' });
+  it('没设置过时正文和硬边界都是默认值，且 prompt 逐字不变', () => {
+    expect(readRolePersonalization(ROLE)).toEqual({
+      userExpectation: '',
+      soul: '',
+      boundaries: { disallowExternalSending: false },
+    });
     expect(appendRolePersonalization(BASE_PROMPT, ROLE)).toBe(BASE_PROMPT);
   });
 
@@ -75,7 +78,11 @@ describe('专家个性化正文', () => {
   it('清空即删文件，prompt 回到逐字原样', () => {
     writeRolePersonalization(ROLE, { userExpectation: '先写点东西', soul: '也写点' });
     writeRolePersonalization(ROLE, { userExpectation: '', soul: '   ' });
-    expect(readRolePersonalization(ROLE)).toEqual({ userExpectation: '', soul: '' });
+    expect(readRolePersonalization(ROLE)).toEqual({
+      userExpectation: '',
+      soul: '',
+      boundaries: { disallowExternalSending: false },
+    });
     expect(appendRolePersonalization(BASE_PROMPT, ROLE)).toBe(BASE_PROMPT);
   });
 
@@ -87,7 +94,11 @@ describe('专家个性化正文', () => {
   });
 
   it('非法角色 id 不抛也不读盘', () => {
-    expect(readRolePersonalization('../逃逸')).toEqual({ userExpectation: '', soul: '' });
+    expect(readRolePersonalization('../逃逸')).toEqual({
+      userExpectation: '',
+      soul: '',
+      boundaries: { disallowExternalSending: false },
+    });
     expect(appendRolePersonalization(BASE_PROMPT, '../逃逸')).toBe(BASE_PROMPT);
     expect(() => writeRolePersonalization('../逃逸', { soul: '坏' })).toThrow();
   });
@@ -101,8 +112,8 @@ describe('专家个性化正文', () => {
     expect(after).not.toContain('第一版');
   });
 
-  it('把“只起草不发送”翻译到 equipment.tools 白名单，保留草稿并剔除真实发送', () => {
-    writeRolePersonalization(ROLE, { soul: '只起草不发送；所有外发内容停在草稿。' });
+  it('勾选“不允许对外发送”后收窄 equipment.tools，保留草稿并剔除真实发送', () => {
+    writeRolePersonalization(ROLE, { boundaries: { disallowExternalSending: true } });
     const policy = resolveRoleToolBoundary(ROLE, [
       'Read',
       'mail_draft',
@@ -111,12 +122,13 @@ describe('专家个性化正文', () => {
       'mcp__lark__im.v1.message.list',
     ]);
 
+    expect(policy?.boundaryText).toBe('不允许对外发送');
     expect(policy?.allowedTools).toEqual(['Read', 'mail_draft', 'mcp__lark__im.v1.message.list']);
     expect(policy?.blockedTools).toEqual(['mail_send', 'mcp__lark__im.v1.message.create']);
   });
 
-  it('translated tools become the actual subagent model tool table', () => {
-    writeRolePersonalization(ROLE, { soul: '只起草不发送' });
+  it('勾选的硬边界进入子代理实际模型工具表', () => {
+    writeRolePersonalization(ROLE, { boundaries: { disallowExternalSending: true } });
     const policy = resolveRoleToolBoundary(ROLE, ['mail_draft', 'mail_send']);
     const definitions = new Map([
       ['mail_draft', { name: 'mail_draft' }],
@@ -130,10 +142,20 @@ describe('专家个性化正文', () => {
     expect(actualToolTable.map((tool) => tool.name)).toEqual(['mail_draft']);
   });
 
-  it('English draft-only boundary uses the same hard translation', () => {
-    writeRolePersonalization(ROLE, { soul: 'Draft only, do not send.' });
-    expect(isDraftOnlyBoundary(readRolePersonalization(ROLE).soul)).toBe(true);
+  it('自由文本写了“只起草不发送”但没有勾选时，工具表不收窄', () => {
+    writeRolePersonalization(ROLE, { soul: '只起草不发送' });
+    const tools = ['mail_draft', 'mail_send'];
+
+    expect(resolveRoleToolBoundary(ROLE, tools)).toBeNull();
+    expect(tools).toEqual(['mail_draft', 'mail_send']);
+  });
+
+  it('勾选但自由文本为空时照样收窄，并生成确定的上下文与语音指令', () => {
+    writeRolePersonalization(ROLE, { boundaries: { disallowExternalSending: true } });
+
+    expect(readRolePersonalization(ROLE).soul).toBe('');
     expect(resolveRoleToolBoundary(ROLE, ['mail_draft', 'mail_send'])?.allowedTools).toEqual(['mail_draft']);
+    expect(buildVoiceRoleBoundaryDirective(ROLE)).toBe('常驻边界：不允许对外发送');
   });
 
   it('没设置边界时不创建工具策略，输入工具表原样不被消费', () => {
@@ -145,6 +167,14 @@ describe('专家个性化正文', () => {
 
   it('主轮用不可解析哨兵表达真正的空白名单', () => {
     expect(toRoleBoundaryRunAllowlist([])).toEqual(['__role_boundary_deny_all__']);
+  });
+
+  it('关闭全部硬边界后删除结构化文件，回到没设置过的行为', async () => {
+    writeRolePersonalization(ROLE, { boundaries: { disallowExternalSending: true } });
+    writeRolePersonalization(ROLE, { boundaries: { disallowExternalSending: false } });
+
+    await expect(fs.stat(path.join(mockConfigDir.dir, 'roles', ROLE, 'BOUNDARIES.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(resolveRoleToolBoundary(ROLE, ['mail_send'])).toBeNull();
   });
 });
 

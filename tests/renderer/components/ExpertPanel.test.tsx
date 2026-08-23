@@ -123,7 +123,7 @@ function makeRoleDetail(overrides: Partial<RolePanelDetail> = {}): RolePanelDeta
     proactivity: { level: 'silent' },
     visual: { displayName: '牧之', profession: '资深产品经理', icon: 'ClipboardList', category: 'product', tags: ['需求梳理', 'PRD 撰写'], quickPrompts: ['我有个产品想法，帮我梳理成需求清单'] },
     isBuiltin: true,
-    personalization: { userExpectation: '', soul: '' },
+    personalization: { userExpectation: '', soul: '', boundaries: { disallowExternalSending: false } },
     equipment: { skills: ['research'], tools: ['Read'], model: 'balanced', maxIterations: 20, availableSkills: ['research', 'xlsx'], availableTools: ['Read', 'WebSearch'] },
     restore: { available: true },
     ...overrides,
@@ -546,9 +546,15 @@ describe('ExpertPanel', () => {
     await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updatePersonalization', { roleId: '自定义专家', userExpectation: '要能直接汇报' }));
 
     fireEvent.click(screen.getByTestId('role-personalization-segment-soul'));
+    expect(screen.getByText(/自由文本会进入 TA 的提示词/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId('role-personalization-boundary-external-sending'));
     fireEvent.change(screen.getByTestId('role-personalization-soul'), { target: { value: '别猜数' } });
     fireEvent.click(screen.getByTestId('role-personalization-save-soul'));
-    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updatePersonalization', { roleId: '自定义专家', soul: '别猜数' }));
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updatePersonalization', {
+      roleId: '自定义专家',
+      soul: '别猜数',
+      boundaries: { disallowExternalSending: true },
+    }));
   });
 
   it('云包角色在本地改过时显示不会被更新覆盖的提示', async () => {

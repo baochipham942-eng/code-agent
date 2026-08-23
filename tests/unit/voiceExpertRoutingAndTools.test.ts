@@ -184,11 +184,11 @@ describe('A3 通话身份解析', () => {
 
   it('语音 brain 吃安全边界，但仍不注入全量角色资料', () => {
     resolvedAgent.value = { id: 'muzhi', name: '牧之', description: '内容主理人' };
-    voiceRoleBoundaries.set('muzhi', '常驻边界：只起草不发送');
+    voiceRoleBoundaries.set('muzhi', '常驻边界：不允许对外发送');
 
     const routing = resolveVoiceRouting('muzhi');
 
-    expect(routing.personaInstructions).toContain('常驻边界：只起草不发送');
+    expect(routing.personaInstructions).toContain('常驻边界：不允许对外发送');
     expect(buildRoleContextBlock).not.toHaveBeenCalled();
     expect(routing.personaInstructions).not.toContain('资料架');
   });

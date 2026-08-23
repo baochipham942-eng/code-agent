@@ -1,7 +1,7 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const twitterFetchSchema: ToolSchema = {
+export const twitterFetchSchema: UntrustedContentToolSchema = {
   name: 'twitter_fetch',
   description: `获取 Twitter/X 推文内容。
 
@@ -30,7 +30,7 @@ twitter_fetch { "url": "https://x.com/OpenAI/status/1234567890" }
   },
   category: 'network',
   permissionLevel: 'network',
-  readsUntrustedContent: true,
+  readsUntrustedContent: 'block',
   readOnly: true,
   allowInPlanMode: true,
 };

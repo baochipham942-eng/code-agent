@@ -1,6 +1,6 @@
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const externalSearchSchema: ToolSchema = {
+export const externalSearchSchema: UntrustedContentToolSchema = {
   name: 'ExternalSearch',
   description: 'Searches a configured external search service and returns structured title, URL, snippet, and date results.',
   outputSchema: { type: 'string' },
@@ -11,7 +11,7 @@ export const externalSearchSchema: ToolSchema = {
   },
   category: 'network',
   permissionLevel: 'network',
-  readsUntrustedContent: true,
+  readsUntrustedContent: 'block',
   readOnly: true,
   allowInPlanMode: true,
 };

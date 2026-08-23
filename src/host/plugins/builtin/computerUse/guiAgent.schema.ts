@@ -1,8 +1,8 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
 // Pure type-only — does not pull legacy tool code at import time.
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const guiAgentSchema: ToolSchema = {
+export const guiAgentSchema: UntrustedContentToolSchema = {
   name: 'gui_agent',
   description: `Run an AI-driven GUI automation task on the desktop.
 
@@ -49,7 +49,7 @@ IMPORTANT:
   },
   category: 'vision',
   permissionLevel: 'execute',
-  readsUntrustedContent: true,
+  readsUntrustedContent: 'block',
   readOnly: false,
   allowInPlanMode: false,
 };

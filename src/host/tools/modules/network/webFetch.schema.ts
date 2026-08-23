@@ -1,8 +1,8 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
 // Pure type-only — does not pull legacy tool code at import time.
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const webFetchSchema: ToolSchema = {
+export const webFetchSchema: UntrustedContentToolSchema = {
   name: 'web_fetch',
   description: `Fetch a single URL and extract information from its content.
 
@@ -41,7 +41,7 @@ Notes:
   },
   category: 'network',
   permissionLevel: 'network',
-  readsUntrustedContent: true,
+  readsUntrustedContent: 'block',
   readOnly: true,
   allowInPlanMode: true,
 };

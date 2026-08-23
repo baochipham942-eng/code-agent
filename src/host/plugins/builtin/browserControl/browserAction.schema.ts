@@ -1,8 +1,8 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
 // Pure type-only — does not pull legacy tool code at import time.
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const browserActionSchema: ToolSchema = {
+export const browserActionSchema: UntrustedContentToolSchema = {
   name: 'browser_action',
   description: `Control a browser for web automation and testing (tabs, click/type, screenshots, DOM/a11y snapshots, forms, uploads/downloads, account state).
 
@@ -162,7 +162,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
   },
   category: 'vision',
   permissionLevel: 'execute',
-  readsUntrustedContent: true,
+  readsUntrustedContent: 'block',
   readOnly: false,
   allowInPlanMode: false,
 };

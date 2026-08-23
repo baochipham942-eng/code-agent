@@ -1,6 +1,6 @@
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const cuaStatefulComputerUseSchema: ToolSchema = {
+export const cuaStatefulComputerUseSchema: UntrustedContentToolSchema = {
   name: 'computer_use',
   description: `Stateful macOS computer use backed by cua-driver 0.14.2+.
 
@@ -111,5 +111,5 @@ Element mutations must use elementRef from the state. Pixel mutations must use a
   },
   category: 'vision',
   permissionLevel: 'execute',
-  readsUntrustedContent: true,
+  readsUntrustedContent: 'block',
 };

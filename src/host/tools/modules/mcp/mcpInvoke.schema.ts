@@ -1,8 +1,8 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
 // Pure type-only — does not pull legacy tool code at import time.
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const mcpInvokeSchema: ToolSchema = {
+export const mcpInvokeSchema: UntrustedContentToolSchema = {
   name: 'mcp',
   description: `调用 MCP (Model Context Protocol) 服务器提供的工具。
 
@@ -40,5 +40,5 @@ export const mcpInvokeSchema: ToolSchema = {
   },
   category: 'mcp',
   permissionLevel: 'network',
-  readsUntrustedContent: true,
+  readsUntrustedContent: 'block',
 };

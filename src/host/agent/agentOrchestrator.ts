@@ -883,11 +883,14 @@ export class AgentOrchestrator {
     const roleToolBoundary = routedRole
       ? resolveRoleToolBoundary(routedRole.id, routedRole.tools)
       : null;
+    // 局部变量让 TS 自己收窄，不用非空断言（eslint 棘轮把 no-non-null-assertion 记成 warning，
+    // 新增一处就顶破基线）。
+    const requestedToolNames = options?.allowedToolNames;
     const intersectedBoundaryTools = roleToolBoundary
-      ? (options?.allowedToolNames
-          ? roleToolBoundary.allowedTools.filter((tool) => options.allowedToolNames!.some((allowed) => allowed.toLowerCase() === tool.toLowerCase()))
+      ? (requestedToolNames
+          ? roleToolBoundary.allowedTools.filter((tool) => requestedToolNames.some((allowed) => allowed.toLowerCase() === tool.toLowerCase()))
           : roleToolBoundary.allowedTools)
-      : options?.allowedToolNames;
+      : requestedToolNames;
     const boundaryAllowedToolNames = roleToolBoundary
       ? toRoleBoundaryRunAllowlist(intersectedBoundaryTools ?? [])
       : intersectedBoundaryTools;

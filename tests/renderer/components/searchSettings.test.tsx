@@ -48,7 +48,7 @@ describe('SearchSettings 搜索源 API Key', () => {
     const baseUrl = await screen.findByTestId('share-service-base-url');
     const tokenInput = screen.getByTestId('share-service-token-input');
 
-    expect((baseUrl as HTMLInputElement).value).toBe('https://share.llmxy.xyz');
+    expect((baseUrl as HTMLInputElement).value).toBe('https://share-aix-7c8f2d.bja.sealos.run');
     fireEvent.change(tokenInput, { target: { value: 'lobster-upload-token' } });
     fireEvent.click(screen.getByTestId('share-service-save'));
 

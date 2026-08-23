@@ -24,6 +24,7 @@ export {
   httpsAgent,
   electronFetch,
   parseContextLengthError,
+  parseImagePayloadError,
   normalizeJsonSchema,
   convertToolsToOpenAI,
   convertToolsToClaude,

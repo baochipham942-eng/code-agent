@@ -11,6 +11,7 @@
 import React, { useEffect, useRef } from 'react';
 import { BookOpen, Check, File as FileIcon, FileOutput, Folder, History, Pin } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatRelativeTime } from '../../../../utils/i18nTime';
 import {
   AT_MENTION_TABS,
   type AtMentionArtifactRow,
@@ -172,7 +173,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
                   <span className="block truncate text-xs">{row.title}</span>
                   <span className="block truncate text-[10px] text-zinc-500">
                     {t.mentionPanel.sessionMeta
-                      .replace('{time}', new Date(row.updatedAt).toLocaleString())
+                      .replace('{time}', formatRelativeTime(t, row.updatedAt))
                       .replace('{count}', String(row.messageCount))
                       .replace('{project}', row.projectName || t.mentionPanel.unknownProject)}
                   </span>
@@ -210,7 +211,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
                   <span className="block truncate text-[10px] text-zinc-500">
                     {t.mentionPanel.artifactMeta
                       .replace('{session}', row.sessionTitle || t.mentionPanel.unknownSession)
-                      .replace('{time}', new Date(row.createdAt).toLocaleString())}
+                      .replace('{time}', formatRelativeTime(t, row.createdAt))}
                   </span>
                 </span>
               </button>

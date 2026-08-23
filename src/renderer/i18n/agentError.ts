@@ -42,6 +42,10 @@ export const agentErrorZh = {
         title: '对话长度超出模型上下文限制',
         suggestion: '当前对话长度约 {requestedK}K tokens，超出模型限制 {maxK}K tokens。建议新开一个会话继续对话。',
       },
+      image_payload: {
+        title: '图片太多或文件太大，模型无法接收',
+        suggestion: '请新开会话，只带这次需要的图片；图片较多时分批发送，单张过大时先压缩后再发。',
+      },
       generic: {
         title: '运行失败',
         suggestion: '请重试一次；若反复失败，可新开会话继续，或复制错误报告反馈。',
@@ -116,6 +120,10 @@ export const agentErrorEn: typeof agentErrorZh = {
       context_length: {
         title: 'Conversation exceeds the model context limit',
         suggestion: 'This conversation is about {requestedK}K tokens, over the model limit of {maxK}K tokens. Start a new session to continue.',
+      },
+      image_payload: {
+        title: 'There are too many images or the image files are too large',
+        suggestion: 'Start a new session with only the images needed for this request. Send large sets in smaller batches, and compress oversized images before sending them.',
       },
       generic: {
         title: 'Run failed',

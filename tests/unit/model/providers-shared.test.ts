@@ -524,6 +524,14 @@ describe('convertToolsToClaude', () => {
 // ============================================================================
 
 describe('legacy 转换器对 transient 尾巴的处理', () => {
+  it('convertToGeminiMessages：带图 user 消息 fail-loud，不把数组序列化成 text', () => {
+    const imageMessage = makeImageMessage();
+
+    expect(() => convertToGeminiMessages([imageMessage])).toThrow(
+      'Legacy Gemini engine does not support image content. Switch to the default model engine for vision requests.',
+    );
+  });
+
   it('convertToGeminiMessages：transient 尾巴转 user + <system-reminder>，不追加假 model 回复（A3）', () => {
     const messages: ModelMessage[] = [
       makeTextMessage('system', 'stable system prompt'),

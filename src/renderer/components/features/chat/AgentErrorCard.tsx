@@ -4,7 +4,7 @@
 // 数据来自 message.metadata.agentError（classifyAgentError 在 error 事件时写入）。
 // 布局对照 WorkBuddy ErrorBanner：标题行（⚠ + 发生了什么）→ 建议行 → 详情行
 // （错误码/HTTP/Trace ID，有才显示）→ 操作行。动作按 category 显隐：
-// 重试=全部；切换模型=模型类错误；新开会话=context_length/generic；复制报告=全部。
+// 重试=可恢复错误；切换模型=模型类错误；新开会话=context_length/image_payload/generic；复制报告=全部。
 // 文案不持久化（metadata 只存 category + 排障字段），这里按 category 查 i18n 表。
 // ============================================================================
 
@@ -30,14 +30,19 @@ const SWITCH_MODEL_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
 
 const NEW_SESSION_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
   'context_length',
+  'image_payload',
   'generic',
 ]);
 
 /**
- * 密钥无效 / 额度用尽这一档不给「重试」：重试一万次也是同一个 401，
- * 摆一个按不出结果的按钮只会把人往错误方向引（真机 2026-08-01 反馈）。
+ * 密钥无效、额度用尽、图片请求超限都不给「重试」：原样重发不会改变结果，
+ * 摆一个按不出结果的按钮只会把人往错误方向引。
  */
-const NO_RETRY_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set(['auth', 'insufficient_balance']);
+const NO_RETRY_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
+  'auth',
+  'insufficient_balance',
+  'image_payload',
+]);
 
 /**
  * 建议正文写着「去检查这个模型的账号配置」，卡片却没有过去的入口——用户只能自己翻设置。

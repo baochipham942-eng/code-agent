@@ -85,7 +85,7 @@ export async function runWithCronJobBudget<T>(
     return await jobCostLimit.run(operation);
   } catch (error) {
     if (isScopedCostLimitExceeded(error)) {
-      throw new Error(`Cron job run exceeded its $${maxRunBudget.toFixed(2)} budget limit.`);
+      throw new Error(`Cron job run exceeded its $${maxRunBudget.toFixed(2)} budget limit.`, { cause: error });
     }
     throw error;
   }

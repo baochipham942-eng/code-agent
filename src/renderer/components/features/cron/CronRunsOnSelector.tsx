@@ -114,4 +114,3 @@ export const CronRunsOnSelector: React.FC<CronRunsOnSelectorProps> = ({ value, o
   );
 };
 
-export default CronRunsOnSelector;

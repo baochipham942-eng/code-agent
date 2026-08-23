@@ -9,7 +9,7 @@ for (const theme of ['light', 'dark'] as const) {
   test(`share link panel ${theme}`, async ({ page }) => {
     await mkdir(evidenceDir, { recursive: true });
     await page.setViewportSize({ width: 1120, height: 760 });
-    await page.goto(`/visual-harness/share-link-panel.html?theme=${theme}`);
+    await page.goto(`/tests/visual/share-link-panel.html?theme=${theme}`);
     const panel = page.getByTestId('share-link-panel');
     await expect(panel).toBeVisible();
     await expect(page.getByText('链接内容落后于 v3')).toBeVisible();

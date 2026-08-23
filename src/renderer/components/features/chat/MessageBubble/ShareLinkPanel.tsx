@@ -356,5 +356,3 @@ const TtlSelector: React.FC<TtlSelectorProps> = ({ value, disabled, onChange, la
     </div>
   </div>
 );
-
-export default ShareLinkPanel;

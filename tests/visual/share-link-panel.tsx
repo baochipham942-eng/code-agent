@@ -1,8 +1,8 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import '../styles/global.css';
-import { ShareLinkPanel } from '../components/features/chat/MessageBubble/ShareLinkPanel';
-import { useAppStore } from '../stores/appStore';
+import '../../src/renderer/styles/global.css';
+import { ShareLinkPanel } from '../../src/renderer/components/features/chat/MessageBubble/ShareLinkPanel';
+import { useAppStore } from '../../src/renderer/stores/appStore';
 
 const theme = new URLSearchParams(window.location.search).get('theme') === 'light' ? 'light' : 'dark';
 document.documentElement.setAttribute('data-theme', theme);

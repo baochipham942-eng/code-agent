@@ -35,6 +35,7 @@ const contextHealth: ContextHealthState = {
   estimatedTurnsRemaining: 10,
   lastUpdated: Date.now(),
   compression: { status: 'none', compressionCount: 2, totalSavedTokens: 5000 },
+  systemPromptCacheCost: { status: 'unknown', tokens: 100 },
 };
 
 const pillMocks = vi.hoisted(() => ({
@@ -57,6 +58,21 @@ const pillMocks = vi.hoisted(() => ({
   invokeDomain: vi.fn(),
   refreshContextHealth: vi.fn(),
   unmountSkill: vi.fn(),
+  budgetStatus: {
+    enabled: false,
+    currentCost: 0.26,
+    maxBudget: 0,
+    usagePercentage: 0,
+    alertLevel: 'none' as const,
+    cacheCostSplit: {
+      cachedTokens: 8_000,
+      uncachedTokens: 2_000,
+      cachedCostUsd: 0.08,
+      uncachedCostUsd: 0.18,
+      cachedCostPercent: 30.8,
+      uncachedCostPercent: 69.2,
+    },
+  },
 }));
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
@@ -70,7 +86,7 @@ vi.mock('../../../src/renderer/stores/statusStore', () => ({
 }));
 
 vi.mock('../../../src/renderer/hooks/useBudgetStatus', () => ({
-  useBudgetStatus: () => null,
+  useBudgetStatus: () => pillMocks.budgetStatus,
 }));
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
@@ -147,10 +163,46 @@ describe('ContextUsagePill — hover 气泡与明细弹层', () => {
     expect(list.textContent).toContain('对话');
     expect(list.textContent).toContain('技能');
     expect(list.textContent).toContain('规则');
+    expect(list.textContent).toContain('Token 占比');
+    expect(list.textContent).toContain('成本占比');
+    // 门槛未满足的系统提示与其余八桶都必须显式未知，不能悄悄按 0。
+    expect(list.textContent).toContain('未知');
+    expect(screen.getByTestId('context-cost-ranking-status').textContent).toContain('成本第一大桶：待验证');
     // fixture 里 mcp/subagents/fileReads 为 0 → 不占位
     expect(list.textContent).not.toContain('连接器');
     expect(list.textContent).not.toContain('子代理');
     expect(list.textContent).not.toContain('文件读取');
+  });
+
+  it('系统提示跨过判定门槛时并列展示 token 占比与 cacheRead 成本占比', () => {
+    pillMocks.appState.contextHealth = {
+      ...contextHealth,
+      systemPromptCacheCost: {
+        status: 'known_cached',
+        tokens: 100,
+        costUsd: 0.0001,
+        inputCostPercent: 12.2,
+      },
+    };
+    render(<ContextUsagePill />);
+    fireEvent.click(pillButton());
+
+    const list = screen.getByTestId('context-bucket-list');
+    expect(list.textContent).toContain('100 · 5.0%');
+    expect(list.textContent).toContain('$0.0001 · 12.2%');
+  });
+
+  it('现有上下文健康弹层展示当前周期已缓存 / 未缓存的 token 与成本两分', () => {
+    render(<ContextUsagePill />);
+    fireEvent.click(pillButton());
+
+    const split = screen.getByTestId('context-cache-cost-split');
+    expect(split.textContent).toContain('已缓存');
+    expect(split.textContent).toContain('8.0k · 80.0%');
+    expect(split.textContent).toContain('$0.0800 · 30.8%');
+    expect(split.textContent).toContain('未缓存');
+    expect(split.textContent).toContain('2.0k · 20.0%');
+    expect(split.textContent).toContain('$0.1800 · 69.2%');
   });
 
   it('bySource 全 0 时来源桶不占位（结构桶仍在）', () => {

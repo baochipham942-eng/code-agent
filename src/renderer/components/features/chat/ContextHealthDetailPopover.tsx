@@ -31,6 +31,12 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
+function formatUsd(n: number): string {
+  if (n === 0) return '$0.0000';
+  if (n < 0.0001) return '<$0.0001';
+  return `$${n.toFixed(4)}`;
+}
+
 interface BucketSpec {
   key: string;
   name: string;
@@ -101,6 +107,14 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
 
   const buckets = contextHealth ? buildBuckets(contextHealth, ch) : [];
   const total = contextHealth?.currentTokens ?? 0;
+  const tokenLargestBucket = buckets.reduce<BucketSpec | undefined>(
+    (largest, bucket) => (!largest || bucket.tokens > largest.tokens ? bucket : largest),
+    undefined,
+  );
+  const cacheCostSplit = budgetStatus?.cacheCostSplit;
+  const cacheSplitTokens = cacheCostSplit
+    ? cacheCostSplit.cachedTokens + cacheCostSplit.uncachedTokens
+    : 0;
 
   // N-CTXTRUTH: 总量真源标注。缺省（老状态）视同 estimated。
   // 估/实偏差只在 provider 实报轮次有意义：本地估算总量（缩放前）相对实报的偏离。
@@ -114,7 +128,7 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
 
   return (
     <div
-      className="absolute bottom-full right-0 z-30 mb-2 w-[380px] max-w-[calc(100vw-2rem)] rounded-xl border border-border-hover bg-zinc-900/95 shadow-2xl backdrop-blur"
+      className="absolute bottom-full right-0 z-30 mb-2 w-[440px] max-w-[calc(100vw-2rem)] rounded-xl border border-border-hover bg-zinc-900/95 shadow-2xl backdrop-blur"
       data-testid="context-health-detail"
       role="dialog"
       aria-label={ch.detailModalTitle}
@@ -184,22 +198,74 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                   ))}
                 </div>
 
-                {/* 平铺桶清单：颜色点 + 类目 + token + 占比（相对窗口总量） */}
+                {/* token 与成本回答不同问题：成本列只有静态系统提示可判定，其余桶保持未知。 */}
                 <div data-testid="context-bucket-list">
+                  <div className="grid grid-cols-[minmax(0,1fr)_90px_112px] gap-2 pb-1 text-[10px] text-zinc-500">
+                    <span>{ch.bucketColumn}</span>
+                    <span className="text-right">{ch.tokenShareColumn}</span>
+                    <span className="text-right">{ch.costShareColumn}</span>
+                  </div>
                   {buckets.map((bucket) => (
-                    <div key={bucket.key} className="flex items-center gap-2 py-1 text-xs">
-                      <span
-                        className="h-2 w-2 flex-shrink-0 rounded-sm"
-                        style={{ background: bucket.color }}
-                      />
-                      <span className="text-zinc-300">{bucket.name}</span>
-                      <span className="ml-auto text-[11px] text-zinc-400 tabular-nums">
+                    <div
+                      key={bucket.key}
+                      className="grid grid-cols-[minmax(0,1fr)_90px_112px] items-center gap-2 py-1 text-xs"
+                    >
+                      <span className="flex min-w-0 items-center gap-2 text-zinc-300">
+                        <span
+                          className="h-2 w-2 flex-shrink-0 rounded-sm"
+                          style={{ background: bucket.color }}
+                        />
+                        <span className="truncate">{bucket.name}</span>
+                      </span>
+                      <span className="text-right text-[11px] text-zinc-400 tabular-nums">
                         {formatTokens(bucket.tokens)} · {((bucket.tokens / total) * 100).toFixed(1)}%
+                      </span>
+                      <span className="text-right text-[11px] text-zinc-400 tabular-nums">
+                        {bucket.key === 'systemPrompt'
+                          && contextHealth.systemPromptCacheCost?.status === 'known_cached'
+                          ? `${formatUsd(contextHealth.systemPromptCacheCost.costUsd)} · ${contextHealth.systemPromptCacheCost.inputCostPercent.toFixed(1)}%`
+                          : ch.unknownCost}
                       </span>
                     </div>
                   ))}
                 </div>
+
+                {tokenLargestBucket && (
+                  <div
+                    className="mt-2 rounded-md bg-surface-hover px-2.5 py-2 text-[11px] text-zinc-400"
+                    data-testid="context-cost-ranking-status"
+                  >
+                    {ch.bucketRanking
+                      .replace('{tokenBucket}', tokenLargestBucket.name)
+                      .replace('{costBucket}', ch.pendingValidation)}
+                  </div>
+                )}
               </>
+            )}
+
+            {cacheCostSplit && cacheSplitTokens > 0 && (
+              <div className="mt-3 border-t border-border-muted pt-3" data-testid="context-cache-cost-split">
+                <div className="mb-1 text-[11px] font-medium text-zinc-300">{ch.cacheSplitTitle}</div>
+                <div className="mb-2 text-[10px] text-zinc-500">{ch.cacheSplitHint}</div>
+                <div className="grid grid-cols-[minmax(0,1fr)_90px_112px] gap-2 py-1 text-[11px] text-zinc-400">
+                  <span>{ch.cachedInput}</span>
+                  <span className="text-right tabular-nums">
+                    {formatTokens(cacheCostSplit.cachedTokens)} · {((cacheCostSplit.cachedTokens / cacheSplitTokens) * 100).toFixed(1)}%
+                  </span>
+                  <span className="text-right tabular-nums">
+                    {formatUsd(cacheCostSplit.cachedCostUsd)} · {cacheCostSplit.cachedCostPercent.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="grid grid-cols-[minmax(0,1fr)_90px_112px] gap-2 py-1 text-[11px] text-zinc-400">
+                  <span>{ch.uncachedInput}</span>
+                  <span className="text-right tabular-nums">
+                    {formatTokens(cacheCostSplit.uncachedTokens)} · {((cacheCostSplit.uncachedTokens / cacheSplitTokens) * 100).toFixed(1)}%
+                  </span>
+                  <span className="text-right tabular-nums">
+                    {formatUsd(cacheCostSplit.uncachedCostUsd)} · {cacheCostSplit.uncachedCostPercent.toFixed(1)}%
+                  </span>
+                </div>
+              </div>
             )}
 
             {showActionRow && (

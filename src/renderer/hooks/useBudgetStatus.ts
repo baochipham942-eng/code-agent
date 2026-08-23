@@ -21,6 +21,15 @@ interface TokenUsageView {
   cacheCreationTokens: number;
 }
 
+interface CacheCostSplitView {
+  cachedTokens: number;
+  uncachedTokens: number;
+  cachedCostUsd: number;
+  uncachedCostUsd: number;
+  cachedCostPercent: number;
+  uncachedCostPercent: number;
+}
+
 export interface BudgetStatusView {
   enabled: boolean;
   currentCost: number;
@@ -30,6 +39,8 @@ export interface BudgetStatusView {
   alertLevel: BudgetAlertTone;
   /** 缓存节省汇总（cache-aware 记账，WP2-2a） */
   cacheSavings?: CacheSavingsView;
+  /** 当前预算周期全部输入的已缓存 / 未缓存成本两分 */
+  cacheCostSplit?: CacheCostSplitView;
   /** token 用量汇总（WP-2 token 状态栏活值） */
   tokenUsage?: TokenUsageView;
 }
@@ -41,6 +52,7 @@ interface RawBudgetStatus {
   alertLevel?: string;
   config?: { enabled?: boolean };
   cacheSavings?: { cacheReadTokens?: number; cacheCreationTokens?: number; netSavedUsd?: number };
+  cacheCostSplit?: Partial<CacheCostSplitView>;
   tokenUsage?: {
     inputTokens?: number;
     outputTokens?: number;
@@ -72,6 +84,18 @@ export function normalizeBudgetStatus(raw: RawBudgetStatus | null): BudgetStatus
             cacheReadTokens: finiteNonNeg(raw.cacheSavings.cacheReadTokens),
             cacheCreationTokens: finiteNonNeg(raw.cacheSavings.cacheCreationTokens),
             netSavedUsd: finiteNonNeg(raw.cacheSavings.netSavedUsd),
+          },
+        }
+      : {}),
+    ...(raw.cacheCostSplit
+      ? {
+          cacheCostSplit: {
+            cachedTokens: finiteNonNeg(raw.cacheCostSplit.cachedTokens),
+            uncachedTokens: finiteNonNeg(raw.cacheCostSplit.uncachedTokens),
+            cachedCostUsd: finiteNonNeg(raw.cacheCostSplit.cachedCostUsd),
+            uncachedCostUsd: finiteNonNeg(raw.cacheCostSplit.uncachedCostUsd),
+            cachedCostPercent: Math.min(finiteNonNeg(raw.cacheCostSplit.cachedCostPercent), 100),
+            uncachedCostPercent: Math.min(finiteNonNeg(raw.cacheCostSplit.uncachedCostPercent), 100),
           },
         }
       : {}),

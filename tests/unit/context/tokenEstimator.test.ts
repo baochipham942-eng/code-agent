@@ -22,11 +22,26 @@ import {
   truncateToTokenBudget,
   countTokensExact,
   TOKEN_RATIOS,
+  estimateImageTokens,
   type Message,
   type ContentAnalysis,
 } from '../../../src/host/context/tokenEstimator';
 
 describe('TokenEstimator', () => {
+  function pngData(width: number, height: number): string {
+    const header = Buffer.alloc(24);
+    header.set(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    header.writeUInt32BE(width, 16);
+    header.writeUInt32BE(height, 20);
+    return `data:image/png;base64,${header.toString('base64')}`;
+  }
+
+  it('uses provider image formulas when dimensions are available', () => {
+    const attachment = { data: pngData(1280, 720) };
+    expect(estimateImageTokens(attachment, 'anthropic', 'claude-sonnet')).toBe(1196);
+    expect(estimateImageTokens(attachment, 'gemini', 'gemini-2.5-flash')).toBe(1548);
+    expect(estimateImageTokens(attachment, 'openai', 'gpt-5')).toBe(1600); // 无法读出尺寸时的兜底估值(与 tokenEstimator 内部常量一致)
+  });
   // --------------------------------------------------------------------------
   // Content Analysis
   // --------------------------------------------------------------------------

@@ -552,6 +552,48 @@ describe('ContextAssembly.buildModelMessages()', () => {
     getContextInterventionState().applyIntervention(sessionId, undefined, 'excluded-message', 'exclude', false);
   });
 
+  it('caps historical multimodal payload while preserving the active-turn image', async () => {
+    const imageMessage = (index: number): Message => ({
+      ...buildMessage(`image-turn-${index}`, 'user', `image turn ${index}`),
+      attachments: [{
+        id: `image-${index}`,
+        type: 'image',
+        category: 'image',
+        name: `image-${index}.png`,
+        size: 4,
+        mimeType: 'image/png',
+        data: `data:image/png;base64,aW1hZ2Ut${index}`,
+      }],
+    });
+    const messages = Array.from({ length: 91 }, (_, index) => imageMessage(index));
+    const currentData = messages.at(-1)?.attachments?.[0]?.data?.split(',')[1];
+    const ctx = buildRuntimeContext({
+      sessionId: 'session-image-request-budget',
+      messages,
+      modelConfig: {
+        provider: 'claude',
+        model: 'claude-sonnet',
+        protocol: 'claude',
+        apiKey: 'mock-key',
+        temperature: 0,
+        maxTokens: 4096,
+      },
+    });
+
+    const modelMessages = await new ContextAssembly(ctx as never).buildModelMessages();
+    const imageParts = modelMessages.flatMap((message) => (
+      Array.isArray(message.content)
+        ? message.content.filter((part) => part.type === 'image')
+        : []
+    ));
+
+    expect(imageParts).toHaveLength(90);
+    expect(imageParts.some((part) => part.source?.data === currentData)).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify({ messages: modelMessages }), 'utf8')).toBeLessThan(28_800_000);
+    expect(JSON.stringify(modelMessages)).toMatch(/较早的历史图片|older historical image/);
+    expect(messages.every((message) => message.attachments?.length === 1)).toBe(true);
+  });
+
   const finalPayloadCases = [
     {
       category: '语音权限告知',

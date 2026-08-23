@@ -22,7 +22,7 @@ describe('estimateModelMessageTokens', () => {
     ])).toBe(8);
   });
 
-  it('counts image parts as a fixed image token estimate', () => {
+  it('uses the conservative fallback when image dimensions are unavailable', () => {
     const tokens = estimateModelMessageTokens([
       {
         role: 'user',
@@ -34,7 +34,7 @@ describe('estimateModelMessageTokens', () => {
       },
     ]);
 
-    expect(tokens).toBe(7 + 2 * 765);
+    expect(tokens).toBe(7 + 2 * 1600);
   });
 });
 

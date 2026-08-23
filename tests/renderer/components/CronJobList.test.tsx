@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 
@@ -18,6 +18,7 @@ import { useCronStore } from '../../../src/renderer/stores/cronStore';
 function makeJob(overrides: Partial<CronJobDefinition>): CronJobDefinition {
   return {
     id: 'job-1',
+    runsOn: 'local',
     name: '英语单词',
     scheduleType: 'cron',
     schedule: { type: 'cron', expression: '30 8 * * *' },
@@ -41,6 +42,7 @@ beforeEach(() => {
     isLoading: false,
     isEditorOpen: false,
     editingJobId: null,
+    copyingJobId: null,
     error: null,
   });
 });
@@ -108,5 +110,21 @@ describe('CronJobList 人话副标题 + 触发源 chip', () => {
     });
     render(<CronJobList />);
     expect(screen.getByTestId('cron-job-trigger-kind').textContent).toBe('事件');
+  });
+
+  it('任务名右侧显示图标文字位置 pill，并可按全部/本地/云端分段筛选', () => {
+    useCronStore.setState({
+      jobs: [
+        makeJob({ id: 'local-job', name: '本地任务', runsOn: 'local' }),
+        makeJob({ id: 'cloud-job', name: '云端任务', runsOn: 'cloud' }),
+      ],
+    });
+    render(<CronJobList />);
+    expect(screen.getByTestId('cron-runs-on-pill-local').textContent).toContain('本地');
+    expect(screen.getByTestId('cron-runs-on-pill-cloud').textContent).toContain('云端');
+
+    fireEvent.click(screen.getByTestId('cron-location-filter-cloud'));
+    expect(screen.queryByText('本地任务')).toBeNull();
+    expect(screen.getByText('云端任务')).toBeTruthy();
   });
 });

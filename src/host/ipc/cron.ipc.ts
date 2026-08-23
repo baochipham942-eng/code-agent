@@ -8,11 +8,11 @@ import { getCronService } from '../cron/cronService';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
-import type { CronJobDefinition } from '../../shared/contract/cron';
+import type { CreateCronJobDefinition, CronJobDefinition } from '../../shared/contract/cron';
 
 const logger = createLogger('CronIPC');
 
-type CreateCronJobPayload = Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'>;
+type CreateCronJobPayload = CreateCronJobDefinition;
 type UpdateCronJobPayload = Partial<Omit<CronJobDefinition, 'id' | 'createdAt'>>;
 type CronJobFilterPayload = { enabled?: boolean; tags?: string[] };
 

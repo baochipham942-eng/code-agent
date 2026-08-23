@@ -6,7 +6,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
-import { Activity, ChevronRight, Pencil, Play, Power, Sparkles, Trash2 } from 'lucide-react';
+import { Activity, ChevronRight, Copy, LockKeyhole, Pencil, Play, Power, Sparkles, Trash2 } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import {
@@ -17,6 +17,7 @@ import {
 } from './types';
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
+import { CronRunsOnPill } from './CronRunsOnSelector';
 
 interface CronJobDetailProps {
   job: CronJobDefinition | null;
@@ -30,6 +31,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
     latestExecutions,
     loadExecutions,
     openEditEditor,
+    openCopyEditor,
     updateJob,
     deleteJob,
     triggerJob,
@@ -169,6 +171,21 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
             <SummaryItem label={cc.cardEnabledState} value={job.enabled ? cc.enabled : cc.disabled} />
             <SummaryItem label={cc.cardAction} value={formatActionSummary(job)} />
           </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-zinc-800/70 pt-2">
+            <span className="text-xs text-zinc-500">{cc.cardExecutionLocation}</span>
+            <CronRunsOnPill runsOn={job.runsOn} localLabel={cc.locationLocal} cloudLabel={cc.locationCloud} />
+            <LockKeyhole className="h-3.5 w-3.5 text-zinc-500" />
+            <span className="text-xs text-zinc-500">{cc.locationCreatedImmutable}</span>
+            <button
+              type="button"
+              onClick={() => openCopyEditor(job.id)}
+              className="ml-auto inline-flex items-center gap-1 text-xs text-badge-info hover:text-badge-info"
+              data-testid="cron-copy-by-location"
+            >
+              <Copy className="h-3.5 w-3.5" />
+              {cc.copyByLocation}
+            </button>
+          </div>
         </div>
 
         <details className="mt-4 group" data-testid="cron-detail-advanced">
@@ -213,12 +230,13 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
             <section className="min-h-0 overflow-y-auto">
               <CronExecutionList
                 executions={executions}
+                runsOnByJobId={{ [job.id]: job.runsOn }}
                 selectedExecutionId={selectedExecutionId}
                 onSelectExecution={setSelectedExecutionId}
               />
             </section>
             <section className="min-h-0 overflow-y-auto">
-              <CronExecutionDetail execution={selectedExecution} />
+              <CronExecutionDetail execution={selectedExecution} runsOn={job.runsOn} />
             </section>
           </div>
         )}

@@ -98,6 +98,92 @@ afterEach(() => {
   shutdownEventBus();
 });
 
+describe('CronService execution location invariants', () => {
+  it('freezes runsOn at creation in the service update path', async () => {
+    const service = new CronService();
+    const job = await service.createJob({
+      ...shellJob('hours'),
+      runsOn: 'cloud',
+      enabled: false,
+    });
+
+    await expect(service.updateJob(job.id, { runsOn: 'local' })).rejects.toThrow(
+      'runsOn is immutable after creation',
+    );
+    expect(service.getJob(job.id)?.runsOn).toBe('cloud');
+  });
+
+  it('rejects cloud intervals below one hour while preserving local minute schedules', async () => {
+    const service = new CronService();
+
+    await expect(service.createJob({
+      ...shellJob('minutes'),
+      runsOn: 'cloud',
+      schedule: { type: 'every', interval: 59, unit: 'minutes' },
+    })).rejects.toThrow('at least 3600 seconds');
+
+    await expect(service.createJob({
+      ...shellJob('hours'),
+      runsOn: 'cloud',
+      scheduleType: 'cron',
+      schedule: { type: 'cron', expression: '*/30 * * * *' },
+    })).rejects.toThrow('at least 3600 seconds');
+
+    await expect(service.createJob({
+      ...shellJob('minutes'),
+      runsOn: 'local',
+      schedule: { type: 'every', interval: 1, unit: 'minutes' },
+      enabled: false,
+    })).resolves.toMatchObject({ runsOn: 'local' });
+
+    await expect(service.createJob({
+      ...shellJob('seconds'),
+      runsOn: 'local',
+      schedule: { type: 'every', interval: 59, unit: 'seconds' },
+    })).rejects.toThrow('at least 60 seconds');
+  });
+
+  it('branches cloud runs before local executeAction and leaves local runs unchanged', async () => {
+    const service = new CronService();
+    const executeAction = vi.fn(async () => ({ ok: true }));
+    (service as unknown as { executeAction: typeof executeAction }).executeAction = executeAction;
+    const cloudJob = await service.createJob({
+      name: 'Cloud agent run',
+      runsOn: 'cloud',
+      scheduleType: 'every',
+      schedule: { type: 'every', interval: 1, unit: 'hours' },
+      action: { type: 'agent', agentType: 'default', prompt: 'work' },
+      enabled: false,
+      maxRetries: 1,
+    });
+    const localJob = await service.createJob({
+      name: 'Local agent run',
+      runsOn: 'local',
+      scheduleType: 'every',
+      schedule: { type: 'every', interval: 1, unit: 'minutes' },
+      action: { type: 'agent', agentType: 'default', prompt: 'work' },
+      enabled: false,
+    });
+
+    const cloudExecution = await service.triggerJob(cloudJob.id);
+    expect(cloudExecution).toMatchObject({
+      status: 'failed',
+      error: 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).',
+    });
+    expect(executeAction).not.toHaveBeenCalled();
+
+    const localExecution = await service.triggerJob(localJob.id);
+    expect(localExecution).toMatchObject({ status: 'completed', result: { ok: true } });
+    expect(executeAction).toHaveBeenCalledTimes(1);
+    expect(executeAction).toHaveBeenCalledWith(
+      expect.objectContaining({ id: localJob.id, runsOn: 'local' }),
+      localJob.action,
+      undefined,
+      expect.any(String),
+    );
+  });
+});
+
 function persistedJob(input: {
   id: string;
   name: string;
@@ -157,7 +243,7 @@ describe('CronService missed schedule traces', () => {
       reason: 'app-offline',
     }]);
     expect(service.getJob('job-at-missed')).toMatchObject({ enabled: false });
-    expect(dbState.savedRows.some((row) => row[0] === 'job-at-missed' && row[6] === 0)).toBe(true);
+    expect(dbState.savedRows.some((row) => row[0] === 'job-at-missed' && row[9] === 0)).toBe(true);
     unsubscribe();
     await service.shutdown();
   });
@@ -299,6 +385,7 @@ describe('CronService every schedule units', () => {
     const job = await service.createJob(shellJob('days'));
 
     expect(job.schedule).toMatchObject({ type: 'every', interval: 3, unit: 'days' });
+    expect(job.runsOn).toBe('local');
     expect(service.listJobs()).toHaveLength(1);
     await service.shutdown();
   });
@@ -335,7 +422,7 @@ describe('CronService every schedule units', () => {
         actionType: 'agent',
       }),
     }));
-    expect(JSON.parse(String(dbState.savedRows.at(-1)?.[11]))).toMatchObject({
+    expect(JSON.parse(String(dbState.savedRows.at(-1)?.[14]))).toMatchObject({
       sourceSessionId: 'source-session-1',
       createdVia: 'slash_schedule',
     });

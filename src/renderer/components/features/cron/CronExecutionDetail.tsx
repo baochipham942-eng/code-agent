@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { CronJobExecution } from '@shared/contract';
+import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
 import { MessageSquareText } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
@@ -10,12 +10,14 @@ import {
   getExecutionStatusMeta,
   prettyJson,
 } from './types';
+import { CronRunsOnPill } from './CronRunsOnSelector';
 
 interface CronExecutionDetailProps {
   execution: CronJobExecution | null;
+  runsOn?: CronJobDefinition['runsOn'];
 }
 
-export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execution }) => {
+export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execution, runsOn = 'local' }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
@@ -31,6 +33,12 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
   }
 
   const statusMeta = getExecutionStatusMeta(execution.status);
+  const displayError = execution.error === 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).'
+    ? cc.cloudExecutionNotWired
+    : execution.error?.replace(
+      /Cron job run exceeded its \$(\d+(?:\.\d+)?) budget limit\./,
+      (_match, amount: string) => cc.runBudgetExceeded.replace('{amount}', amount),
+    );
   const handleOpenSession = async () => {
     if (!execution.sessionId || isOpeningSession) return;
     setIsOpeningSession(true);
@@ -69,6 +77,12 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Info label={cc.execSession} value={execution.sessionId || '—'} />
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
+          <div className="text-xs text-zinc-500">{cc.execLocation}</div>
+          <div className="mt-1">
+            <CronRunsOnPill runsOn={runsOn} localLabel={cc.locationLocal} cloudLabel={cc.locationCloud} />
+          </div>
+        </div>
         <Info label={cc.colScheduledAt} value={formatDateTime(execution.scheduledAt)} />
         <Info label={cc.colStartedAt} value={formatDateTime(execution.startedAt)} />
         <Info label={cc.execCompletedAt} value={formatDateTime(execution.completedAt)} />
@@ -77,11 +91,11 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
         <Info label={cc.colExitCode} value={execution.exitCode != null ? String(execution.exitCode) : '—'} />
       </div>
 
-      {execution.error && (
+      {displayError && (
         <section className="mt-4">
           <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-badge-danger">{cc.execError}</h5>
           <pre className="max-h-40 overflow-auto rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-badge-danger whitespace-pre-wrap">
-            {execution.error}
+            {displayError}
           </pre>
         </section>
       )}

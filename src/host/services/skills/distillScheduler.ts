@@ -34,6 +34,7 @@ export interface DistillCronService {
 export function buildDistillCronJobDefinition(options: DistillCronBuildOptions = {}): DistillCronDefinition {
   const now = options.now ?? Date.now();
   return {
+    runsOn: 'local',
     name: '[Maintenance] Distill workflow packaging',
     description: 'Review recent sessions and package repeated workflows into command/skill drafts.',
     scheduleType: 'every',

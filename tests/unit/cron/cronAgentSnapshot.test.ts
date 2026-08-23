@@ -6,6 +6,7 @@ import type {
 } from '../../../src/shared/contract/cron';
 import { CRON_AGENT_SNAPSHOT, EXTERNAL_WATCH } from '../../../src/shared/constants';
 import { shouldDeliverAgentEvent } from '../../../src/host/protocol/events/eventFilter';
+import { recordScopedCost } from '../../../src/host/services/core/scopedCostLimit';
 
 const dbState = vi.hoisted(() => ({
   savedRows: [] as unknown[][],
@@ -91,6 +92,7 @@ function makeDefinition(context?: Record<string, unknown>): CronJobDefinition {
   };
   return {
     id: 'job-agent-snapshot',
+    runsOn: 'local',
     name: '网页更新提醒',
     scheduleType: 'every',
     schedule: { type: 'every', interval: 1, unit: 'days' },
@@ -138,6 +140,22 @@ beforeEach(() => {
 });
 
 describe('CronService agent run snapshot wiring', () => {
+  it('layers the per-job run budget over the unattended pool and reports an English error', async () => {
+    const service = new CronService();
+    const definition = { ...makeDefinition(), maxRunBudget: 0.01 };
+    const harness = service as unknown as CronServiceHarness;
+    harness.jobs.set(definition.id, { definition });
+    agentState.sendMessage.mockImplementation(async () => {
+      recordScopedCost(0.02);
+      return 'unreachable';
+    });
+
+    await expect(
+      harness.executeAction(definition, definition.action, undefined, 'execution-budget'),
+    ).rejects.toThrow('Cron job run exceeded its $0.01 budget limit.');
+    expect(agentState.cleanup).toHaveBeenCalledWith('cron-session-1');
+  });
+
   it('subscribes unattended cron and heartbeat runs without streaming deltas', async () => {
     await runAgentAction({ heartbeatTask: true }, 'heartbeat done');
 

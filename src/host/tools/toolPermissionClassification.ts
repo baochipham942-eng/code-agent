@@ -69,10 +69,10 @@ export function readOnlyDenialError(toolName: string): string {
  * 单独一个常量是为了让「故障回退」与「正常判 ask」在账本里天然可区分。
  */
 export const CLASSIFIER_ERROR_TRACE_RULE = 'classifier_error';
-export const BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE = 'browser_computer_consequence';
+const BROWSER_COMPUTER_CONSEQUENCE_TRACE_RULE = 'browser_computer_consequence';
 export const BROWSER_COMPUTER_HIGH_RISK_BLOCKED_CODE = 'BROWSER_COMPUTER_HIGH_RISK_BLOCKED';
 
-export function classifyBrowserComputerConsequence(
+function classifyBrowserComputerConsequence(
   toolName: string,
   params: Record<string, unknown>,
   startedAt: number,

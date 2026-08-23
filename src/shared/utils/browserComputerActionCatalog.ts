@@ -1,6 +1,6 @@
 export type BrowserComputerCatalogTool = "browser_action" | "computer_use" | "gui_agent";
 
-export type BrowserComputerActionConsequence =
+type BrowserComputerActionConsequence =
   | "no_external_side_effect"
   | "external_side_effect"
   | "high_risk";

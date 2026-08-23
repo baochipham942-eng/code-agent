@@ -1,11 +1,12 @@
 import React from 'react';
-import type { CronJobExecution } from '@shared/contract';
+import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
 import { useI18n } from '../../../hooks/useI18n';
 import {
   formatDateTime,
   formatDuration,
   getExecutionStatusMeta,
 } from './types';
+import { CronRunsOnPill } from './CronRunsOnSelector';
 
 interface CronExecutionListProps {
   executions: CronJobExecution[];
@@ -13,6 +14,8 @@ interface CronExecutionListProps {
   onSelectExecution: (executionId: string) => void;
   /** 跨任务执行流（运行记录 tab）时传入：加一列任务名 */
   jobNameById?: Record<string, string>;
+  /** Immutable execution location keyed by job id. */
+  runsOnByJobId?: Record<string, CronJobDefinition['runsOn']>;
 }
 
 export const CronExecutionList: React.FC<CronExecutionListProps> = ({
@@ -20,6 +23,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
   selectedExecutionId,
   onSelectExecution,
   jobNameById,
+  runsOnByJobId,
 }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
@@ -38,6 +42,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
           <tr>
             {jobNameById && <th className="px-3 py-2">{cc.colJob}</th>}
             <th className="px-3 py-2">{cc.colStatus}</th>
+            {runsOnByJobId && <th className="px-3 py-2">{cc.colLocation}</th>}
             <th className="px-3 py-2">{cc.colScheduledAt}</th>
             <th className="px-3 py-2">{cc.colStartedAt}</th>
             <th className="px-3 py-2">{cc.colDuration}</th>
@@ -67,6 +72,15 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                     {cc.status[execution.status]}
                   </span>
                 </td>
+                {runsOnByJobId && (
+                  <td className="px-3 py-2">
+                    <CronRunsOnPill
+                      runsOn={execution.runsOn ?? runsOnByJobId[execution.jobId] ?? 'local'}
+                      localLabel={cc.locationLocal}
+                      cloudLabel={cc.locationCloud}
+                    />
+                  </td>
+                )}
                 <td className="px-3 py-2 text-zinc-300">{formatDateTime(execution.scheduledAt)}</td>
                 <td className="px-3 py-2 text-zinc-400">{formatDateTime(execution.startedAt)}</td>
                 <td className="px-3 py-2 text-zinc-300">{formatDuration(execution.duration)}</td>

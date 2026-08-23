@@ -54,14 +54,18 @@ describe('cron_jobs execution-location migration', () => {
       'runs_on',
       'max_run_budget',
       'min_interval_seconds',
+      'result_channel',
+      'cloud_job_id',
     ]));
     expect(db.prepare(`
-      SELECT runs_on, max_run_budget, min_interval_seconds
+      SELECT runs_on, max_run_budget, min_interval_seconds, result_channel, cloud_job_id
       FROM cron_jobs WHERE id = 'legacy-job'
     `).get()).toEqual({
       runs_on: 'local',
       max_run_budget: null,
       min_interval_seconds: 60,
+      result_channel: null,
+      cloud_job_id: null,
     });
   });
 });

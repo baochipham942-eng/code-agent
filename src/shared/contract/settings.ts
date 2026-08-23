@@ -246,6 +246,11 @@ export interface AppSettings {
   shareService?: {
     baseUrl?: string;
   };
+  /** Single-instance cloud cron proxy; tenancy and credential ownership are intentionally undecided. */
+  cronCloud?: {
+    baseUrl?: string;
+    token?: string;
+  };
   // 生成模型默认值（ADR-027）。全部可选，未配置 = 设计画布仍用 registry 首项。
   // 模型 id 须为 visualModels.ts 的 IMAGE_MODELS / VIDEO_MODELS 中的 id。
   design?: {

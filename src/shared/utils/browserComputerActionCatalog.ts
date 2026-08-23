@@ -1,4 +1,9 @@
-export type BrowserComputerCatalogTool = "browser_action" | "computer_use";
+export type BrowserComputerCatalogTool = "browser_action" | "computer_use" | "gui_agent";
+
+type BrowserComputerActionConsequence =
+  | "no_external_side_effect"
+  | "external_side_effect"
+  | "high_risk";
 
 export type BrowserComputerCatalogRisk =
   | "read"
@@ -44,6 +49,7 @@ export type BrowserComputerCatalogSafeRecovery =
 export interface BrowserComputerActionCatalogEntry {
   tool: BrowserComputerCatalogTool;
   action: string;
+  consequence: BrowserComputerActionConsequence;
   risk: BrowserComputerCatalogRisk;
   scope: BrowserComputerCatalogScope;
   requiresManagedSession: boolean;
@@ -60,8 +66,9 @@ export interface BrowserComputerSurfaceCapabilityDescriptor {
   catalog: BrowserComputerActionCatalogEntry;
 }
 
-type ActionCatalogDefaults = Omit<BrowserComputerActionCatalogEntry, "tool" | "action">;
-type ActionCatalogMap = Record<string, Partial<ActionCatalogDefaults>>;
+type ActionCatalogDefaults = Omit<BrowserComputerActionCatalogEntry, "tool" | "action" | "consequence">;
+type ActionCatalogDeclaration = ActionCatalogDefaults & Pick<BrowserComputerActionCatalogEntry, "consequence">;
+type ActionCatalogMap = Record<string, ActionCatalogDeclaration>;
 
 const READ_BROWSER_DEFAULTS: ActionCatalogDefaults = {
   risk: "read",
@@ -120,177 +127,215 @@ const BROWSER_SCOPED_COMPUTER_INPUT_DEFAULTS: ActionCatalogDefaults = {
 const BROWSER_ACTION_CATALOG: ActionCatalogMap = {
   launch: {
     ...WRITE_BROWSER_DEFAULTS,
+    consequence: "no_external_side_effect",
     requiresManagedSession: false,
     evidenceKind: "workbench_state",
     safeRecovery: "launch_managed_browser",
   },
   close: {
     ...WRITE_BROWSER_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "workbench_state",
     safeRecovery: "none",
   },
-  new_tab: WRITE_BROWSER_DEFAULTS,
-  close_tab: WRITE_BROWSER_DEFAULTS,
-  switch_tab: WRITE_BROWSER_DEFAULTS,
-  navigate: WRITE_BROWSER_DEFAULTS,
-  back: WRITE_BROWSER_DEFAULTS,
-  forward: WRITE_BROWSER_DEFAULTS,
-  reload: WRITE_BROWSER_DEFAULTS,
-  set_viewport: WRITE_BROWSER_DEFAULTS,
-  click: WRITE_BROWSER_DEFAULTS,
-  click_text: WRITE_BROWSER_DEFAULTS,
-  type: WRITE_BROWSER_DEFAULTS,
-  press_key: WRITE_BROWSER_DEFAULTS,
-  scroll: WRITE_BROWSER_DEFAULTS,
-  hover: WRITE_BROWSER_DEFAULTS,
-  drag: WRITE_BROWSER_DEFAULTS,
+  new_tab: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  close_tab: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  switch_tab: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  navigate: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  back: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  forward: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  reload: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  set_viewport: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  click: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  click_text: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  type: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  press_key: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  scroll: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  hover: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
+  drag: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
   get_dialog_state: {
     ...READ_BROWSER_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "workbench_state",
   },
-  handle_dialog: WRITE_BROWSER_DEFAULTS,
+  handle_dialog: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
   read_clipboard: {
     ...READ_BROWSER_DEFAULTS,
+    consequence: "external_side_effect",
     evidenceKind: "workbench_state",
   },
-  write_clipboard: WRITE_BROWSER_DEFAULTS,
+  write_clipboard: { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" },
   wait_for_download: {
     ...WRITE_BROWSER_DEFAULTS,
+    consequence: "external_side_effect",
     evidenceKind: "artifact",
   },
   upload_file: {
     ...WRITE_BROWSER_DEFAULTS,
+    consequence: "external_side_effect",
     evidenceKind: "artifact",
     approvalKind: "tool_executor_file",
   },
-  fill_form: WRITE_BROWSER_DEFAULTS,
+  fill_form: { ...WRITE_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
   list_tabs: {
     ...READ_BROWSER_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "workbench_state",
   },
   screenshot: {
     ...READ_BROWSER_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "screenshot",
   },
   get_content: {
     ...READ_BROWSER_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "page_content",
   },
   get_elements: {
     ...READ_BROWSER_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "dom_snapshot",
   },
   get_dom_snapshot: {
     ...READ_BROWSER_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "dom_snapshot",
   },
   get_a11y_snapshot: {
     ...READ_BROWSER_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "a11y_snapshot",
   },
   get_workbench_state: {
     ...READ_BROWSER_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "workbench_state",
     safeRecovery: "launch_managed_browser",
   },
   get_account_state: {
     ...READ_BROWSER_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "account_state",
   },
   export_storage_state: {
     ...READ_BROWSER_DEFAULTS,
+    consequence: "external_side_effect",
     evidenceKind: "storage_state",
     approvalKind: "tool_executor_file",
   },
   import_storage_state: {
     ...WRITE_BROWSER_DEFAULTS,
+    consequence: "external_side_effect",
     evidenceKind: "storage_state",
     approvalKind: "tool_executor_file",
   },
-  wait: READ_BROWSER_DEFAULTS,
+  wait: { ...READ_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
   get_logs: {
     ...READ_BROWSER_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "browser_logs",
   },
   list_profiles: {
     ...READ_BROWSER_DEFAULTS,
+    consequence: "no_external_side_effect",
     requiresManagedSession: false,
     evidenceKind: "account_state",
     safeRecovery: "none",
   },
   import_profile_cookies: {
     ...WRITE_BROWSER_DEFAULTS,
+    consequence: "external_side_effect",
     evidenceKind: "account_state",
     approvalKind: "tool_executor_file",
   },
   clear_cookies: {
     ...WRITE_BROWSER_DEFAULTS,
+    consequence: "high_risk",
     evidenceKind: "account_state",
   },
 };
 
 const COMPUTER_USE_DESKTOP_CATALOG: ActionCatalogMap = {
+  screenshot: {
+    ...DESKTOP_READ_DEFAULTS,
+    consequence: "no_external_side_effect",
+    evidenceKind: "screenshot",
+  },
   list_roots: {
     ...DESKTOP_READ_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "window_candidates",
   },
   get_state: {
     ...DESKTOP_READ_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "computer_surface_state",
   },
   observe: {
     ...DESKTOP_READ_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "desktop_observation",
   },
-  act: DESKTOP_INPUT_DEFAULTS,
+  act: { ...DESKTOP_INPUT_DEFAULTS, consequence: "external_side_effect" },
   get_ax_elements: {
     ...DESKTOP_READ_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "ax_candidates",
   },
   get_windows: {
     ...DESKTOP_READ_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "window_candidates",
   },
   diagnose_app: {
     ...DESKTOP_READ_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "app_diagnostics",
   },
-  click: DESKTOP_INPUT_DEFAULTS,
-  doubleClick: DESKTOP_INPUT_DEFAULTS,
-  rightClick: DESKTOP_INPUT_DEFAULTS,
-  move: DESKTOP_INPUT_DEFAULTS,
-  type: DESKTOP_INPUT_DEFAULTS,
-  key: DESKTOP_INPUT_DEFAULTS,
-  scroll: DESKTOP_INPUT_DEFAULTS,
-  drag: DESKTOP_INPUT_DEFAULTS,
+  click: { ...DESKTOP_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
+  doubleClick: { ...DESKTOP_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
+  rightClick: { ...DESKTOP_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
+  move: { ...DESKTOP_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
+  type: { ...DESKTOP_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
+  key: { ...DESKTOP_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
+  scroll: { ...DESKTOP_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
+  drag: { ...DESKTOP_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
   locate_role: {
     ...DESKTOP_READ_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "ax_candidates",
   },
-  mouse_down: DESKTOP_INPUT_DEFAULTS,
-  mouse_up: DESKTOP_INPUT_DEFAULTS,
-  open_application: DESKTOP_INPUT_DEFAULTS,
-  write_clipboard: DESKTOP_INPUT_DEFAULTS,
-  computer_batch: DESKTOP_INPUT_DEFAULTS,
-  hold_key: DESKTOP_INPUT_DEFAULTS,
-  triple_click: DESKTOP_INPUT_DEFAULTS,
+  mouse_down: { ...DESKTOP_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
+  mouse_up: { ...DESKTOP_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
+  open_application: { ...DESKTOP_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
+  write_clipboard: { ...DESKTOP_INPUT_DEFAULTS, consequence: "external_side_effect" },
+  computer_batch: { ...DESKTOP_INPUT_DEFAULTS, consequence: "external_side_effect" },
+  hold_key: { ...DESKTOP_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
+  triple_click: { ...DESKTOP_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
   cursor_position: {
     ...DESKTOP_READ_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "desktop_observation",
   },
 };
 
 const COMPUTER_USE_BROWSER_SCOPED_CATALOG: ActionCatalogMap = {
-  locate_element: BROWSER_SCOPED_COMPUTER_READ_DEFAULTS,
-  locate_text: BROWSER_SCOPED_COMPUTER_READ_DEFAULTS,
-  locate_role: BROWSER_SCOPED_COMPUTER_READ_DEFAULTS,
+  locate_element: { ...BROWSER_SCOPED_COMPUTER_READ_DEFAULTS, consequence: "no_external_side_effect" },
+  locate_text: { ...BROWSER_SCOPED_COMPUTER_READ_DEFAULTS, consequence: "no_external_side_effect" },
+  locate_role: { ...BROWSER_SCOPED_COMPUTER_READ_DEFAULTS, consequence: "no_external_side_effect" },
   get_elements: {
     ...BROWSER_SCOPED_COMPUTER_READ_DEFAULTS,
+    consequence: "no_external_side_effect",
     evidenceKind: "dom_snapshot",
   },
-  smart_click: BROWSER_SCOPED_COMPUTER_INPUT_DEFAULTS,
-  smart_type: BROWSER_SCOPED_COMPUTER_INPUT_DEFAULTS,
-  smart_hover: BROWSER_SCOPED_COMPUTER_INPUT_DEFAULTS,
+  smart_click: { ...BROWSER_SCOPED_COMPUTER_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
+  smart_type: { ...BROWSER_SCOPED_COMPUTER_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
+  smart_hover: { ...BROWSER_SCOPED_COMPUTER_INPUT_DEFAULTS, consequence: "no_external_side_effect" },
+};
+
+const GUI_AGENT_CATALOG: ActionCatalogMap = {
+  run: { ...DESKTOP_INPUT_DEFAULTS, consequence: "external_side_effect" },
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -305,21 +350,31 @@ function hasTargetApp(args: Record<string, unknown> | undefined): boolean {
 function buildCatalogEntry(
   tool: BrowserComputerCatalogTool,
   action: string,
-  defaults: ActionCatalogDefaults,
-  overrides?: Partial<ActionCatalogDefaults>,
+  declaration: ActionCatalogDeclaration,
 ): BrowserComputerActionCatalogEntry {
   return {
     tool,
     action,
-    ...defaults,
-    ...overrides,
+    ...declaration,
   };
+}
+
+export function normalizeBrowserComputerCatalogToolName(
+  toolName: unknown,
+): BrowserComputerCatalogTool | null {
+  if (typeof toolName !== "string") return null;
+  if (toolName === "browser_action") return "browser_action";
+  if (toolName === "computer_use" || toolName === "Computer" || toolName === "computer") {
+    return "computer_use";
+  }
+  if (toolName === "gui_agent") return "gui_agent";
+  return null;
 }
 
 export function isBrowserComputerCatalogToolName(
   toolName: unknown,
 ): toolName is BrowserComputerCatalogTool {
-  return toolName === "browser_action" || toolName === "computer_use";
+  return toolName === "browser_action" || toolName === "computer_use" || toolName === "gui_agent";
 }
 
 export function isBrowserScopedComputerUseAction(
@@ -343,33 +398,35 @@ export function getBrowserComputerActionCatalogEntry(
   action: unknown,
   args?: Record<string, unknown>,
 ): BrowserComputerActionCatalogEntry | null {
-  if (!isBrowserComputerCatalogToolName(toolName) || typeof action !== "string") {
+  const catalogTool = normalizeBrowserComputerCatalogToolName(toolName);
+  if (!catalogTool || typeof action !== "string") {
     return null;
   }
 
-  if (toolName === "browser_action") {
-    const overrides = BROWSER_ACTION_CATALOG[action];
+  if (catalogTool === "browser_action") {
+    const declaration = BROWSER_ACTION_CATALOG[action]
+      ?? { ...WRITE_BROWSER_DEFAULTS, consequence: "external_side_effect" as const };
     return buildCatalogEntry(
       "browser_action",
       action,
-      WRITE_BROWSER_DEFAULTS,
-      overrides,
+      declaration,
     );
   }
 
-  if (isBrowserScopedComputerUseAction(action, args)) {
-    const overrides = COMPUTER_USE_BROWSER_SCOPED_CATALOG[action];
-    const defaults = overrides?.risk === "read"
-      ? BROWSER_SCOPED_COMPUTER_READ_DEFAULTS
-      : BROWSER_SCOPED_COMPUTER_INPUT_DEFAULTS;
-    return buildCatalogEntry("computer_use", action, defaults, overrides);
+  if (catalogTool === "gui_agent") {
+    const declaration = GUI_AGENT_CATALOG[action]
+      ?? { ...DESKTOP_INPUT_DEFAULTS, consequence: "external_side_effect" as const };
+    return buildCatalogEntry("gui_agent", action, declaration);
   }
 
-  const overrides = COMPUTER_USE_DESKTOP_CATALOG[action];
-  const defaults = overrides?.risk === "read"
-    ? DESKTOP_READ_DEFAULTS
-    : DESKTOP_INPUT_DEFAULTS;
-  return buildCatalogEntry("computer_use", action, defaults, overrides);
+  if (isBrowserScopedComputerUseAction(action, args)) {
+    const declaration = COMPUTER_USE_BROWSER_SCOPED_CATALOG[action];
+    return buildCatalogEntry("computer_use", action, declaration);
+  }
+
+  const declaration = COMPUTER_USE_DESKTOP_CATALOG[action]
+    ?? { ...DESKTOP_INPUT_DEFAULTS, consequence: "external_side_effect" as const };
+  return buildCatalogEntry("computer_use", action, declaration);
 }
 
 function isRegisteredBrowserComputerAction(
@@ -379,6 +436,9 @@ function isRegisteredBrowserComputerAction(
 ): boolean {
   if (toolName === "browser_action") {
     return Object.prototype.hasOwnProperty.call(BROWSER_ACTION_CATALOG, action);
+  }
+  if (toolName === "gui_agent") {
+    return Object.prototype.hasOwnProperty.call(GUI_AGENT_CATALOG, action);
   }
   const catalog = isBrowserScopedComputerUseAction(action, args)
     ? COMPUTER_USE_BROWSER_SCOPED_CATALOG
@@ -391,13 +451,14 @@ export function getStrictBrowserComputerActionCatalogEntry(
   action: unknown,
   args?: Record<string, unknown>,
 ): BrowserComputerActionCatalogEntry | null {
-  if (!isBrowserComputerCatalogToolName(toolName) || typeof action !== "string") {
+  const catalogTool = normalizeBrowserComputerCatalogToolName(toolName);
+  if (!catalogTool || typeof action !== "string") {
     return null;
   }
-  if (!isRegisteredBrowserComputerAction(toolName, action, args)) {
+  if (!isRegisteredBrowserComputerAction(catalogTool, action, args)) {
     return null;
   }
-  return getBrowserComputerActionCatalogEntry(toolName, action, args);
+  return getBrowserComputerActionCatalogEntry(catalogTool, action, args);
 }
 
 function capabilitiesForCatalogEntry(
@@ -460,11 +521,31 @@ export function getBrowserComputerActionCatalogForArgs(args: {
   toolName: unknown;
   arguments?: Record<string, unknown>;
 }): BrowserComputerActionCatalogEntry | null {
-  const action = isRecord(args.arguments)
-    ? args.arguments.action ?? args.arguments.operation
-    : undefined;
+  const catalogTool = normalizeBrowserComputerCatalogToolName(args.toolName);
+  const action = catalogTool === "gui_agent"
+    ? "run"
+    : isRecord(args.arguments)
+      ? args.arguments.action ?? args.arguments.operation
+      : undefined;
   return getBrowserComputerActionCatalogEntry(
-    args.toolName,
+    catalogTool,
+    action,
+    isRecord(args.arguments) ? args.arguments : undefined,
+  );
+}
+
+export function getStrictBrowserComputerActionCatalogForArgs(args: {
+  toolName: unknown;
+  arguments?: Record<string, unknown>;
+}): BrowserComputerActionCatalogEntry | null {
+  const catalogTool = normalizeBrowserComputerCatalogToolName(args.toolName);
+  const action = catalogTool === "gui_agent"
+    ? "run"
+    : isRecord(args.arguments)
+      ? args.arguments.action ?? args.arguments.operation
+      : undefined;
+  return getStrictBrowserComputerActionCatalogEntry(
+    catalogTool,
     action,
     isRecord(args.arguments) ? args.arguments : undefined,
   );

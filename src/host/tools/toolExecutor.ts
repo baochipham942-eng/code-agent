@@ -1064,6 +1064,9 @@ export class ToolExecutor {
             return {
               success: false,
               error: `Denied: ${classification.reason}`,
+              ...(classification.errorCode
+                ? { metadata: { code: classification.errorCode } }
+                : {}),
             };
           } else {
             if (classification.decision === 'approve') {

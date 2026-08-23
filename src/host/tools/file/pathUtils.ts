@@ -4,6 +4,7 @@
 
 import path from 'path';
 import os from 'os';
+import { resolveCanonicalRunPath } from '../../runtime/runContext';
 
 /**
  * 展开波浪号路径 (~/xxx -> /Users/xxx/xxx)
@@ -56,10 +57,17 @@ export function resolvePath(inputPath: string, workingDirectory: string): string
 export function confineEvalPath(resolvedAbsPath: string, workingDirectory: string): string {
   const realRoot = process.env.CODE_AGENT_EVAL_REAL_ROOT;
   if (!realRoot || !workingDirectory) return resolvedAbsPath;
-  const root = path.resolve(realRoot);
-  const sandbox = path.resolve(workingDirectory);
+  let root = path.resolve(realRoot);
+  let sandbox = path.resolve(workingDirectory);
+  let normalized = path.resolve(resolvedAbsPath);
+  try {
+    root = resolveCanonicalRunPath(root);
+    sandbox = resolveCanonicalRunPath(sandbox);
+    normalized = resolveCanonicalRunPath(normalized);
+  } catch {
+    // Fail open to the previous lexical behavior; write tools must remain non-throwing here.
+  }
   if (root === sandbox) return resolvedAbsPath; // 没启用沙箱（原地跑）
-  const normalized = path.resolve(resolvedAbsPath);
   if (normalized === root) return sandbox;
   const rel = path.relative(root, normalized);
   // 不在真仓根下（含已在沙箱里的路径）→ 不动

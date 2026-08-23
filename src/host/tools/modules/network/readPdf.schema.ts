@@ -1,7 +1,7 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const readPdfSchema: ToolSchema = {
+export const readPdfSchema: UntrustedContentToolSchema = {
   name: 'read_pdf',
   description: `Read PDF files using vision model (Gemini 2.0).
 
@@ -33,7 +33,7 @@ Best for:
   },
   category: 'network',
   permissionLevel: 'read',
-  readsUntrustedContent: true,
+  readsUntrustedContent: 'block',
   readOnly: true,
   allowInPlanMode: true,
 };

@@ -50,7 +50,13 @@ describe('SubagentExecutor Agent Team scope propagation', () => {
     expect(shadowAdapterSource).toMatch(/sourceMessageId:\s*input\.legacyCtx\.sourceMessageId/);
     expect(subagentContextSource).toMatch(/sourceMessageId:\s*ctx\.sourceMessageId/);
     expect(toolRuntimeSource).toMatch(
-      /createRunContext\(\{[\s\S]*?runId:\s*context\.runId,[\s\S]*?sessionId:\s*input\.sessionId,[\s\S]*?workspace:\s*context\.workspace,[\s\S]*?cwd:\s*context\.cwd/,
+      /const worktreeWorkspace\s*=\s*isAgentWorktreePath\(context\.cwd\)\s*\?\s*context\.cwd\s*:\s*undefined/,
+    );
+    expect(toolRuntimeSource).toMatch(
+      /resolveBackgroundWorkspaceAuthority\(\{\s*workspace:\s*worktreeWorkspace\s*\}\)/,
+    );
+    expect(toolRuntimeSource).toMatch(
+      /createRunContext\(\{[\s\S]*?runId:\s*context\.runId,[\s\S]*?sessionId:\s*input\.sessionId,[\s\S]*?workspace:\s*runWorkspace,[\s\S]*?workspaceScope:\s*runWorkspaceScope,[\s\S]*?cwd:\s*context\.cwd/,
     );
   });
 

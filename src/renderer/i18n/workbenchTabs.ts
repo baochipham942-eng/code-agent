@@ -27,6 +27,7 @@ export const workbenchTabsZh = {
     overviewTodosLabel: 'Todo',
     overviewContextLabel: '上下文',
     overviewArtifactsLabel: '产物',
+    overviewReceiptsLabel: '已执行',
     // 过程材料（material）：来源、检索结果、读取内容——产物模块下的对称折叠区
     overviewMaterialsLabel: '过程材料',
     overviewContextEmpty: '本轮还没有使用 Skill、MCP 或 Memory',
@@ -187,6 +188,7 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     overviewTodosLabel: 'Todo',
     overviewContextLabel: 'Context',
     overviewArtifactsLabel: 'Deliverables',
+    overviewReceiptsLabel: 'Executed',
     // Process materials (material role): sources, search results, read content
     overviewMaterialsLabel: 'Materials',
     overviewContextEmpty: 'No Skill, MCP, or Memory used in this turn',

@@ -31,8 +31,9 @@ import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip'
 import { TurnQualityStrip } from './TurnQualityStrip';
 import { AgentErrorCard } from './AgentErrorCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
+import { ReceiptRows } from '../../ReceiptRows';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
-import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, RotateCcw, Wrench } from 'lucide-react';
+import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, RotateCcw, Send, Wrench } from 'lucide-react';
 import { UI } from '@shared/constants';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
@@ -774,17 +775,18 @@ const ArtifactOwnershipNode: React.FC<{
   const { t } = useI18n();
   // Sources（溯源来源）默认折叠：保留可信/溯源能力但不扰民（产品决策，林晨 2026-06-29）。
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  // 写回外部世界不可逆，「已执行」默认展开，与只读来源分开处理。
+  const [receiptsOpen, setReceiptsOpen] = useState(true);
   const items = (timeline.artifactOwnership || [])
-    .filter((item) => !isReadOnlyArtifactOwnershipItem(item))
-    // receipt（动作回执）本期不上屏，只标语义
-    .filter((item) => item.role !== 'receipt');
+    .filter((item) => !isReadOnlyArtifactOwnershipItem(item));
   if (items.length === 0) return null;
 
   // 分流判据 = 角色轴（2026-08-07）：material（来源、检索结果、读取内容）降级进安静的
   // 「来源」区，deliverable 才进产物绿卡。以前按 kind === 'link' 判，只接住了 WebFetch
   // 的链接，memoryWrite 写的记忆文件这类 material 会漏进产物卡。
   const materialItems = items.filter((i) => i.role === 'material');
-  const outputItems = items.filter((i) => i.role !== 'material');
+  const receiptItems = items.filter((i) => i.role === 'receipt');
+  const outputItems = items.filter((i) => i.role === 'deliverable');
   const fileItems = outputItems.filter((i) => i.kind === 'file');
   const nonFileOutputItems = outputItems.filter((i) => i.kind !== 'file'); // artifact / note
   const hasMaterials = materialItems.length > 0;
@@ -797,7 +799,7 @@ const ArtifactOwnershipNode: React.FC<{
     : undefined;
 
   // 纯文件、且无来源：保持原来的一行入口（无标题/无强调边框）。
-  if (outputItems.length > 0 && nonFileOutputItems.length === 0 && !hasMaterials) {
+  if (outputItems.length > 0 && nonFileOutputItems.length === 0 && !hasMaterials && receiptItems.length === 0) {
     return <FileArtifactCard items={fileItems} mediaContext={mediaContext} fileChangesByPath={fileChangesByPath} />;
   }
 
@@ -832,10 +834,41 @@ const ArtifactOwnershipNode: React.FC<{
     </div>
   ) : null;
 
+  const receiptsBlock = receiptItems.length > 0 ? (
+    <div className={`rounded-lg border border-badge-success/30 bg-emerald-500/[0.035] px-3 py-2 ${
+      outputsCard || sourcesBlock ? 'mt-1.5' : ''
+    }`}>
+      <button
+        type="button"
+        onClick={() => setReceiptsOpen((value) => !value)}
+        className="flex w-full items-center gap-2 text-[11px] text-zinc-300 transition-colors hover:text-zinc-100"
+        data-testid="turn-receipts-toggle"
+      >
+        {receiptsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        <Send className="h-3.5 w-3.5 text-badge-success" />
+        <span>{t.turnSections.executed}</span>
+        <span className="text-zinc-500">({receiptItems.length})</span>
+      </button>
+      {receiptsOpen && (
+        <div className="mt-1.5" data-testid="turn-receipts-list">
+          <ReceiptRows items={receiptItems.map((item, index) => ({
+            id: item.artifactId || `${item.sourceNodeId || timeline.id}:${item.label}:${index}`,
+            status: item.receipt?.status || 'succeeded',
+            summary: item.receipt?.summary || item.label,
+            detail: item.receipt?.detail,
+            sourceTool: item.receipt?.sourceTool || item.ownerLabel,
+            createdAt: timeline.timestamp,
+          }))} />
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
     <>
       {outputsCard}
       {sourcesBlock}
+      {receiptsBlock}
     </>
   );
 };

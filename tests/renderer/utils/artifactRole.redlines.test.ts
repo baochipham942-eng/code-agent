@@ -31,6 +31,8 @@ type ToolArtifactFixture = {
   name?: string;
   path?: string;
   url?: string;
+  preview?: string;
+  metadata?: Record<string, unknown>;
 };
 
 function turnWith(toolName: string, metadata: Record<string, unknown>): TraceTurn {
@@ -72,8 +74,9 @@ function messagesWith(toolName: string, metadata: Record<string, unknown>): Mess
 function chatSplit(toolName: string, artifact: ToolArtifactFixture) {
   const items = buildArtifactOwnershipItems(turnWith(toolName, { artifact }));
   return {
-    deliverables: items.filter((i) => i.role !== 'material'),
+    deliverables: items.filter((i) => i.role === 'deliverable'),
     materials: items.filter((i) => i.role === 'material'),
+    receipts: items.filter((i) => i.role === 'receipt'),
   };
 }
 
@@ -174,6 +177,37 @@ describe('角色轴 · 两条通路口径一致（web 不一致的老病不许�
     // 这一条就是 ADR-055 背景里那个「同一个决策漏了一处实现」的形态
     expect(chat.deliverables).toEqual([]);
     expect(overview.items).toEqual([]);
+  });
+});
+
+describe('角色轴 · receipt 独立进入「已执行」桶', () => {
+  const receiptArtifact: ToolArtifactFixture = {
+    artifactId: 'receipt-mail',
+    kind: 'text',
+    role: 'receipt',
+    sourceTool: 'mail_send',
+    name: '已发送邮件：周报',
+    preview: '已发送邮件：周报\nTo: zhang@example.com, li@example.com, wang@example.com',
+  };
+
+  it('聊天流投影保留无 path/url 的 receipt，且不混进产物或来源', () => {
+    const split = chatSplit('mail_send', receiptArtifact);
+    expect(split.deliverables).toEqual([]);
+    expect(split.materials).toEqual([]);
+    expect(split.receipts).toMatchObject([{
+      role: 'receipt',
+      receipt: { status: 'succeeded', summary: '已发送邮件：周报' },
+    }]);
+  });
+
+  it('概览只把 receipt 放进第三桶，产物与过程材料保持为空', () => {
+    const { items, materialItems, receiptItems } = overviewSplit('mail_send', receiptArtifact);
+    expect(items).toEqual([]);
+    expect(materialItems).toEqual([]);
+    expect(receiptItems).toMatchObject([{
+      status: 'ready',
+      title: '已发送邮件：周报',
+    }]);
   });
 });
 

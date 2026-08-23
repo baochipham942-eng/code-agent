@@ -1,7 +1,7 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const academicSearchSchema: ToolSchema = {
+export const academicSearchSchema: UntrustedContentToolSchema = {
   name: 'academic_search',
   description: `搜索学术论文和研究文献。
 
@@ -57,7 +57,7 @@ academic_search { "query": "大语言模型", "limit": 10, "source": "arxiv" }
   },
   category: 'network',
   permissionLevel: 'network',
-  readsUntrustedContent: true,
+  readsUntrustedContent: 'block',
   readOnly: true,
   allowInPlanMode: true,
 };

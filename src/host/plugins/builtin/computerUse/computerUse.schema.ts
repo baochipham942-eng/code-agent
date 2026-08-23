@@ -1,8 +1,8 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
 // Pure type-only — does not pull legacy tool code at import time.
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const computerUseSchema: ToolSchema = {
+export const computerUseSchema: UntrustedContentToolSchema = {
   name: 'computer_use',
   description: `Control the computer with mouse, keyboard, and smart element location. Also exposed as "Computer" (capital C) — both names map to the same capability set; either entry is fine.
 
@@ -275,7 +275,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
   },
   category: 'vision',
   permissionLevel: 'execute',
-  readsUntrustedContent: true,
+  readsUntrustedContent: 'block',
   readOnly: false,
   allowInPlanMode: false,
 };

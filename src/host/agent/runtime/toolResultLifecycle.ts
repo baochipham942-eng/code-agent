@@ -1,4 +1,5 @@
 import type { ToolCall, ToolResult } from '../../../shared/contract';
+import type { UntrustedContentPolicy } from '../../protocol/tools';
 import type { ToolExecutionResult } from '../../tools/types';
 import { canonicalToolName, isBashToolName } from '../../tools/toolNames';
 import { getProtocolToolSchemas } from '../../tools/protocolToolRegistration';
@@ -17,12 +18,15 @@ import { registerArtifactRepairBlockedToolTurn } from './artifactRepairAdmission
 
 const logger = createLogger('AgentLoop');
 
-function isExternalDataTool(toolName: string): boolean {
+function getUntrustedContentPolicy(toolName: string): UntrustedContentPolicy | undefined {
   const canonicalName = canonicalToolName(toolName);
-  return getProtocolToolSchemas().some((schema) => (
-    schema.readsUntrustedContent === true
-    && canonicalName.startsWith(canonicalToolName(schema.name))
-  ));
+  return getProtocolToolSchemas()
+    .filter((schema) => (
+      schema.readsUntrustedContent !== undefined
+      && canonicalName.startsWith(canonicalToolName(schema.name))
+    ))
+    .sort((left, right) => right.name.length - left.name.length)[0]
+    ?.readsUntrustedContent;
 }
 
 // 子代理产出回填父上下文前的注入扫描：任何 category 'multiagent' 的工具（spawn_agent/
@@ -181,14 +185,16 @@ export function handleToolResultBookkeeping({
   }
 
   const canonicalName = canonicalToolName(toolCall.name);
-  const isExternalData = isExternalDataTool(toolCall.name);
+  const untrustedContentPolicy = getUntrustedContentPolicy(toolCall.name);
+  const isExternalData = untrustedContentPolicy !== undefined;
   const isSubagentResult = !isExternalData && isSubagentResultTool(toolCall.name);
+  const effectiveUntrustedContentPolicy = isSubagentResult ? 'block' : untrustedContentPolicy;
 
   if ((isExternalData || isSubagentResult) && normalizedResult.success && toolResult.output) {
     try {
       const sanitizer = getInputSanitizer();
       const sanitized = sanitizer.sanitize(toolResult.output, canonicalName);
-      if (sanitized.blocked) {
+      if (sanitized.blocked && effectiveUntrustedContentPolicy === 'block') {
         toolResult.output = `[BLOCKED] Content from ${canonicalName} was blocked due to security concerns: ${sanitized.warnings.map(w => w.description).join('; ')}`;
         toolResult.success = false;
         logger.warn('Tool result blocked by InputSanitizer', {

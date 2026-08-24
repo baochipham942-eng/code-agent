@@ -1,8 +1,8 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
 // Pure type-only — does not pull legacy tool code at import time.
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const computerUseSchema: ToolSchema = {
+export const computerUseSchema: UntrustedContentToolSchema = {
   name: 'computer_use',
   description: `Control the computer with mouse, keyboard, and smart element location. Also exposed as "Computer" (capital C) — both names map to the same capability set; either entry is fine.
 
@@ -27,7 +27,7 @@ Desktop routing contract:
 - mouse_down / mouse_up: Press or release the mouse button at x,y without the matching counterpart. Use to build custom drag rhythms (sliders/canvas) or hold-to-select. Always pair them.
 - open_application: Launch or activate a macOS app (targetApp param, e.g. "Safari").
 - write_clipboard: Set the system pasteboard to text (text param). Faster than type for large/formatted content and immune to focus shifts.
-- computer_batch: Execute a list of actions sequentially in one call (actions param). Stops on first failure. Nested batch is rejected. Pass settleMs (~150-300) to insert a delay between sub-actions so the UI can settle (click→type / click→click); pass observeAfter:true to capture an observe snapshot after the batch into metadata.postBatchObserve.
+- computer_batch: Execute a list of actions sequentially in one call (actions param). Stops on first failure. Nested batch is rejected. Pass settleMs (~150-300) to insert a delay between sub-actions so the UI can settle (click→type / click→click). External-side-effect batches always capture an observe snapshot after execution; observeAfter:true requests the same verification for other batches.
 - hold_key: Press one or more modifier keys (cmd/alt/ctrl/shift/fn) for a duration ms then release. Pass via modifiers (or single key). Use for shift-multi-select, hold-space-to-pan, hold-cmd-to-drop-copy patterns.
 - triple_click: Triple-click at x,y to select a line/paragraph. Fallback: doubleClick + click if app does not respond.
 - cursor_position: Return current cursor coordinates without moving the mouse. Output is "x,y", metadata.x / metadata.y populated.
@@ -63,7 +63,7 @@ Desktop routing contract:
 - limit: Maximum elements for get_ax_elements (default: 40)
 - maxDepth: Maximum Accessibility tree depth for get_ax_elements (default: 4)
 - settleMs: [computer_batch] Delay in ms between sub-actions (default: 0, capped at 5000)
-- observeAfter: [computer_batch] Capture an observe snapshot after the batch (default: false)
+- observeAfter: [computer_batch] Request an observe snapshot after the batch. External-side-effect batches observe automatically; otherwise default false.
 
 ## Examples:
 - {"action": "get_state"} - check Computer Surface readiness
@@ -135,7 +135,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       observeAfter: {
         type: 'boolean',
-        description: '[computer_batch] When true, capture an observe snapshot after the batch completes into metadata.postBatchObserve so you can verify the end state. Default false.',
+        description: '[computer_batch] Request an observe snapshot after the batch. External-side-effect batches observe automatically; otherwise default false.',
       },
       y: {
         type: 'number',
@@ -275,7 +275,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
   },
   category: 'vision',
   permissionLevel: 'execute',
-  readsUntrustedContent: true,
+  readsUntrustedContent: 'block',
   readOnly: false,
   allowInPlanMode: false,
 };

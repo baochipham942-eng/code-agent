@@ -1,7 +1,7 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const githubPrSchema: ToolSchema = {
+export const githubPrSchema: UntrustedContentToolSchema = {
   name: 'github_pr',
   description: `GitHub Pull Request 管理工具。创建、查看、列出、评论、审查和合并 PR。
 
@@ -115,6 +115,7 @@ github_pr { "action": "merge", "pr": 42, "method": "squash", "delete_branch": tr
   },
   category: 'network',
   permissionLevel: 'network',
+  readsUntrustedContent: 'annotate',
   readOnly: false,
   allowInPlanMode: false,
 };

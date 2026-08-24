@@ -1,7 +1,7 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const mcpUnifiedSchema: ToolSchema = {
+export const mcpUnifiedSchema: UntrustedContentToolSchema = {
   name: 'MCPUnified',
   description: `Unified MCP (Model Context Protocol) tool for managing servers, invoking tools, and accessing resources.
 
@@ -93,4 +93,5 @@ Examples:
   },
   category: 'mcp',
   permissionLevel: 'network',
+  readsUntrustedContent: 'block',
 };

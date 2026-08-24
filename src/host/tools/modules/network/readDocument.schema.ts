@@ -1,7 +1,7 @@
 // Schema-only file (P0-7 方案 A — single source of truth)
-import type { ToolSchema } from '../../../protocol/tools';
+import type { UntrustedContentToolSchema } from '../../../protocol/tools';
 
-export const readDocumentSchema: ToolSchema = {
+export const readDocumentSchema: UntrustedContentToolSchema = {
   name: 'ReadDocument',
   description: `Read document files (PDF, Word, Excel) with automatic format detection from file extension.
 
@@ -54,7 +54,7 @@ Examples:
   },
   category: 'network',
   permissionLevel: 'read',
-  readsUntrustedContent: true,
+  readsUntrustedContent: 'block',
   readOnly: true,
   allowInPlanMode: true,
 };

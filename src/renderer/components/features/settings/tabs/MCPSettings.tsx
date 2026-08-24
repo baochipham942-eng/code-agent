@@ -30,7 +30,7 @@ import { createLogger } from '../../../../utils/logger';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { WebModeBanner } from '../WebModeBanner';
 import { LocalBridgeSection } from '../sections/localBridge';
-import { NativeConnectorsSection } from '../sections';
+import { NativeConnectorsSection, SaaSConnectorsSection } from '../sections';
 import {
   McpServerEditor,
   type McpServerConfig,
@@ -682,6 +682,7 @@ export const MCPSettings: React.FC = () => {
           <div className="space-y-4">
             <LocalBridgeSection />
             <NativeConnectorsSection />
+            <SaaSConnectorsSection />
             {mcpStatus && (
               <div className="rounded-lg bg-zinc-800 p-4">
                 <h4 className="text-sm font-medium text-zinc-200 mb-3">{mcpText.diagnostics.overview}</h4>

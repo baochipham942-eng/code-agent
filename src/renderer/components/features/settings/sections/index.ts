@@ -4,3 +4,4 @@
 
 export { NativeDesktopSection } from './NativeDesktopSection';
 export { NativeConnectorsSection } from './NativeConnectorsSection';
+export { SaaSConnectorsSection } from './SaaSConnectorsSection';

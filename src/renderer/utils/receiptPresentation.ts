@@ -13,10 +13,10 @@ function stringArray(value: unknown): string[] {
     : [];
 }
 
-function recipientSummary(
+function recipientPresentation(
   toolMetadata: Record<string, unknown> | undefined,
   artifactMetadata: Record<string, unknown> | undefined,
-): string | undefined {
+): TurnArtifactReceiptPresentation['recipient'] {
   const recipients = stringArray(toolMetadata?.to).length > 0
     ? stringArray(toolMetadata?.to)
     : stringArray(artifactMetadata?.to);
@@ -26,7 +26,20 @@ function recipientSummary(
     : recipients.length;
   const first = recipients[0];
   if (!first || count <= 0) return undefined;
-  return count > 1 ? `发给 ${first} 等 ${count} 人` : `发给 ${first}`;
+  return { first, count };
+}
+
+export function formatReceiptSummary(
+  summary: string,
+  recipient: TurnArtifactReceiptPresentation['recipient'],
+  copy: { recipientSingle: string; recipientMultiple: string },
+): string {
+  if (!recipient) return summary;
+  const template = recipient.count > 1 ? copy.recipientMultiple : copy.recipientSingle;
+  const recipientText = template
+    .replace('{first}', recipient.first)
+    .replace('{count}', String(recipient.count));
+  return `${summary} · ${recipientText}`;
 }
 
 export function buildReceiptPresentation(
@@ -36,11 +49,16 @@ export function buildReceiptPresentation(
   fallbackToolName: string,
 ): TurnArtifactReceiptPresentation {
   const artifactMetadata = record(artifact.metadata);
-  const recipients = recipientSummary(toolMetadata, artifactMetadata);
+  const connectorValue = artifactMetadata?.connector ?? toolMetadata?.connector;
+  const connector = typeof connectorValue === 'string' && connectorValue.trim()
+    ? connectorValue.trim()
+    : undefined;
   return {
     status: success === false ? 'failed' : 'succeeded',
-    summary: recipients ? `${artifact.label} · ${recipients}` : artifact.label,
+    summary: artifact.label,
     detail: artifact.preview,
     sourceTool: artifact.sourceTool || fallbackToolName,
+    connector,
+    recipient: recipientPresentation(toolMetadata, artifactMetadata),
   };
 }

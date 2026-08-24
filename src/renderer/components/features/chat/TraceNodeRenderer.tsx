@@ -36,6 +36,7 @@ import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, RotateCcw, Send, Wrench } from 'lucide-react';
 import { UI } from '@shared/constants';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
+import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
 import { useI18n } from '../../../hooks/useI18n';
 
 interface TraceNodeRendererProps {
@@ -742,30 +743,38 @@ const SkillActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeli
 
 type ArtifactItem = NonNullable<TurnTimelinePayload['artifactOwnership']>[number];
 
-const ArtifactItemPills: React.FC<{ items: ArtifactItem[]; className?: string }> = ({ items, className }) => (
-  <div className={`space-y-1.5 ${className ?? ''}`}>
-    {items.map((item, index) => (
-      <div key={`${item.kind}-${item.label}-${index}`} className="flex items-center gap-2 rounded-md bg-black/10 px-2.5 py-2">
-        {item.kind === 'link' ? (
-          // link 项在折叠的「来源」区里，Link 徽章 + 来源工具名次行对溯源场景是对的，保持现状。
-          <WorkbenchPill tone="neutral">Link</WorkbenchPill>
-        ) : (
-          // 非 link 项：按扩展名的文件类型图标替掉 Artifact/Note 徽章——产物卡里
-          // 文档/表格/演示稿必须一眼可辨，「Artifact」对非程序员用户零意义。
-          iconForKind(kindForTurnArtifact(item))
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-xs text-zinc-100">{item.label}</div>
-          {/* 非 link 项的 ownerLabel 恒为「Assistant」类零信息文案，不渲染次行；
-              link 项的次行是抓取来源（WebFetch 等），有信息量，保留。 */}
-          {item.kind === 'link' && (
-            <div className="truncate text-[11px] text-zinc-500">{item.ownerLabel}</div>
+const ArtifactItemPills: React.FC<{ items: ArtifactItem[]; className?: string }> = ({ items, className }) => {
+  const { t } = useI18n();
+  return (
+    <div className={`space-y-1.5 ${className ?? ''}`}>
+      {items.map((item, index) => (
+        <div key={`${item.kind}-${item.label}-${index}`} className="flex items-center gap-2 rounded-md bg-black/10 px-2.5 py-2">
+          {item.kind === 'link' ? (
+            // link 项在折叠的「来源」区里，Link 徽章 + 来源工具名次行对溯源场景是对的，保持现状。
+            <WorkbenchPill tone="neutral">Link</WorkbenchPill>
+          ) : (
+            // 非 link 项：按扩展名的文件类型图标替掉 Artifact/Note 徽章——产物卡里
+            // 文档/表格/演示稿必须一眼可辨，「Artifact」对非程序员用户零意义。
+            iconForKind(kindForTurnArtifact(item))
           )}
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xs text-zinc-100">{item.label}</div>
+            {/* 非 link 项的 ownerLabel 恒为「Assistant」类零信息文案，不渲染次行；
+                link 项的次行是抓取来源（WebFetch 等），有信息量，保留。 */}
+            {item.kind === 'link' && (
+              <div className="truncate text-[11px] text-zinc-500">
+                {getHumanToolLabel({
+                  toolName: item.ownerLabel,
+                  labels: t.receiptPresentation.humanToolLabels,
+                })}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-    ))}
-  </div>
-);
+      ))}
+    </div>
+  );
+};
 
 const ArtifactOwnershipNode: React.FC<{
   timeline: TurnTimelinePayload;
@@ -857,6 +866,8 @@ const ArtifactOwnershipNode: React.FC<{
             summary: item.receipt?.summary || item.label,
             detail: item.receipt?.detail,
             sourceTool: item.receipt?.sourceTool || item.ownerLabel,
+            connector: item.receipt?.connector,
+            recipient: item.receipt?.recipient,
             createdAt: timeline.timestamp,
           }))} />
         </div>

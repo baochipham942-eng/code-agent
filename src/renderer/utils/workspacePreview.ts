@@ -626,6 +626,7 @@ function collectToolOutputs(
             content: receipt.detail ? { text: receipt.detail } : undefined,
             actions: [{ kind: 'copy', label: 'Copy' }],
             priority: 80,
+            receipt,
           }, artifact.artifactId ? `receipt:${artifact.artifactId}` : `receipt:${toolCall.id}:${artifact.label}`);
           continue;
         }
@@ -808,6 +809,7 @@ function collectCurrentTurnArtifacts(
         actions: [{ kind: 'copy', label: 'Copy' }],
         priority: 90,
         currentTurn: true,
+        receipt,
       }, itemId);
       continue;
     }

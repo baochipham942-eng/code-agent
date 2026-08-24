@@ -36,6 +36,8 @@ import { SubagentRunRows, TaskDashboardSummary } from './RunWorkbenchCards';
 import { useMemberViewStore } from '../../stores/memberViewStore';
 import { useSessionMembers } from '../features/expert/SessionMemberBar';
 import { ReceiptRows } from '../ReceiptRows';
+import { getHumanToolLabel } from '../../utils/toolHumanLabel';
+import type { Translations } from '../../i18n';
 
 // 真读取失败（读取异常且确有任务在跑）在 Todo 模块位置内联一行错误 + 重试/取消
 // （拍板三后无详情二级可挂）。0 rows ≠ failure：store 侧已不置位，这里再做一层
@@ -197,6 +199,8 @@ function mcpServerName(toolId: string, label: string): string {
 export interface OverviewContextFallbacks {
   unnamedOutput: string;
   unknownCapability: string;
+  /** 连接器行的人话名表；与「已执行」「来源」两区共用同一套（爸 2026-08-24 拍板一并改）。 */
+  humanToolLabels: Translations['receiptPresentation']['humanToolLabels'];
 }
 
 export function buildOverviewContextRows(args: {
@@ -252,10 +256,15 @@ export function buildOverviewContextRows(args: {
     if (!kind || kind === 'skill' || kind === 'memory') continue;
     const invoked = tool.id.startsWith('tool:');
     if (!invoked && tool.callable) continue;
-    const label = humanContextLabel(
-      kind === 'mcp' ? mcpServerName(tool.id, tool.label) : tool.label,
-      fallbacks.unknownCapability,
-    );
+    // 连接器行显示的是内部工具名（mail_send / calendar_create_event），对非程序员是噪音；
+    // 走与「已执行」「来源」两区同一个 helper 出人话名（邮件 / 日历 / 提醒事项）。
+    // mcp 保留既有的 server 名解析，其余种类不动。
+    const rawLabel = kind === 'mcp'
+      ? mcpServerName(tool.id, tool.label)
+      : kind === 'connector'
+        ? getHumanToolLabel({ toolName: tool.label, labels: fallbacks.humanToolLabels })
+        : tool.label;
+    const label = humanContextLabel(rawLabel, fallbacks.unknownCapability);
     const key = `${kind}:${label}`;
     if (rows.has(key)) continue;
     rows.set(key, {
@@ -410,6 +419,7 @@ export const TaskWorkspaceOverview: React.FC = () => {
       fallbacks: {
         unnamedOutput: t.workbenchTabs.overviewUnnamedOutput,
         unknownCapability: t.workbenchTabs.overviewUnknownCapability,
+        humanToolLabels: t.receiptPresentation.humanToolLabels,
       },
     }),
     [
@@ -418,6 +428,7 @@ export const TaskWorkspaceOverview: React.FC = () => {
       statusRail.context.items,
       t.workbenchTabs.overviewUnnamedOutput,
       t.workbenchTabs.overviewUnknownCapability,
+      t.receiptPresentation.humanToolLabels,
     ],
   );
 
@@ -585,6 +596,8 @@ export const TaskWorkspaceOverview: React.FC = () => {
                 summary: item.title,
                 detail: item.content?.text || item.content?.summary,
                 sourceTool: item.subtitle || item.source.label || '',
+                connector: item.receipt?.connector,
+                recipient: item.receipt?.recipient,
                 createdAt: item.createdAt,
               }))} />
             </div>
@@ -626,7 +639,10 @@ export const TaskWorkspaceOverview: React.FC = () => {
                   </span>
                   {item.subtitle && (
                     <span className="ml-auto max-w-[110px] shrink-0 truncate text-[10px] text-zinc-600">
-                      {item.subtitle}
+                      {getHumanToolLabel({
+                        toolName: item.subtitle,
+                        labels: t.receiptPresentation.humanToolLabels,
+                      })}
                     </span>
                   )}
                 </button>

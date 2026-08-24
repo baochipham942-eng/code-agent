@@ -35,6 +35,7 @@ describe('receipt workspace preview third bucket', () => {
               sourceTool: 'mail_send',
               name: '已发送邮件：周报',
               preview,
+              metadata: { connector: 'mail' },
             },
           },
         },
@@ -47,9 +48,13 @@ describe('receipt workspace preview third bucket', () => {
     expect(materialItems).toEqual([]);
     expect(receiptItems).toHaveLength(1);
     expect(receiptItems[0]).toMatchObject({
-      title: '已发送邮件：周报 · 发给 zhang@example.com 等 3 人',
+      title: '已发送邮件：周报',
       status: 'ready',
       content: { text: preview },
+      receipt: {
+        connector: 'mail',
+        recipient: { first: 'zhang@example.com', count: 3 },
+      },
     });
     expect(receiptItems[0].title).not.toContain('li@example.com');
     expect(receiptItems[0].title).not.toContain('wang@example.com');
@@ -63,6 +68,7 @@ describe('receipt workspace preview third bucket', () => {
       sourceTool: 'calendar_create_event',
       name: '已创建日历事件：评审会',
       preview: '已创建日历事件：评审会',
+      metadata: { connector: 'calendar' },
     };
     const messages: Message[] = [{
       id: 'message-calendar',

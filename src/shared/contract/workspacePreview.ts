@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { DesignBrief } from './designBrief';
+import type { TurnArtifactReceiptPresentation } from './turnTimeline';
 
 export type WorkspacePreviewKind =
   | 'document'
@@ -107,4 +108,5 @@ export interface WorkspacePreviewItem {
   designBrief?: DesignBrief;
   quality?: WorkspacePreviewQuality;
   revision?: WorkspacePreviewRevision;
+  receipt?: TurnArtifactReceiptPresentation;
 }

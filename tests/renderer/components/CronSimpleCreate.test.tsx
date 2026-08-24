@@ -90,6 +90,19 @@ describe('buildSimpleDraft', () => {
 });
 
 describe('buildCronJobInput agent options', () => {
+  it('保留账号和会话组成的完整结果推送目标', () => {
+    const draft = buildSimpleDraft(
+      '整理简报',
+      '简报',
+      { scheduleType: 'cron', cronExpression: '0 9 * * *' },
+      undefined,
+      undefined,
+      'local',
+      '工作飞书:oc_group',
+    );
+    expect(buildCronJobInput(draft).resultChannel).toBe('工作飞书:oc_group');
+  });
+
   it('传递角色与归档项目', () => {
     const draft = buildSimpleDraft('整理简报', '简报', { scheduleType: 'cron', cronExpression: '0 9 * * *' }, 'muzhi', 'proj_1');
     const action = buildCronJobInput(draft).action;

@@ -96,6 +96,10 @@ export class SessionLifecycleAppService {
       }
     }
 
+    if (config?.activate === false) {
+      return session;
+    }
+
     await this.endPreviousUserBrowserRun(session.id);
     sessionManager.setCurrentSession(session.id);
     this.deps.setCurrentSessionId(session.id);

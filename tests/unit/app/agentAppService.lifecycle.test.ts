@@ -311,6 +311,29 @@ describe('AgentAppService lifecycle routing', () => {
       .resolves.toMatchObject({ id: 'created-session' });
   });
 
+  it('creates a background expert thread without activating it as the foreground session', async () => {
+    const service = createServiceWithConfig(taskManager, {
+      getSettings: () => ({ model: { provider: 'openai', model: 'gpt-5.4' } }),
+    });
+
+    await expect(service.createSession({
+      title: '牧之',
+      expertRoleId: '牧之',
+      workingDirectory: undefined,
+      activate: false,
+    })).resolves.toMatchObject({
+      id: 'created-session',
+      metadata: { expertThread: { roleId: '牧之', setAt: expect.any(Number) } },
+    });
+
+    expect(sessionManager.patchSessionMetadata).toHaveBeenCalledWith('created-session', {
+      expertThread: { roleId: '牧之', setAt: expect.any(Number) },
+    });
+    expect(sessionManager.setCurrentSession).not.toHaveBeenCalled();
+    expect(taskManager.setCurrentSessionId).not.toHaveBeenCalled();
+    expect(taskManager.getOrCreateCurrentOrchestrator).not.toHaveBeenCalled();
+  });
+
   it('annotates listed durable waiting sessions without changing the running projection', async () => {
     sessionManager.listSessions.mockResolvedValue([
       {

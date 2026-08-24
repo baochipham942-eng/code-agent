@@ -78,7 +78,8 @@ export function sanitizeModelConfigForSession(config: ModelConfig): ModelConfig 
   return rest;
 }
 
-export function normalizePromptForBackfill(content: string): string {
+// 仅本模块内部使用：对外只暴露 findMissingTelemetryPromptRows（导出它会被 knip 死导出棘轮判红）
+function normalizePromptForBackfill(content: string): string {
   return content
     .replace(/\r\n/g, '\n')
     .trim()

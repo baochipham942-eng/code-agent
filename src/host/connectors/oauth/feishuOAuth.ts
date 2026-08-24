@@ -1,4 +1,3 @@
-import { ConnectorAuth } from './connectorAuth';
 import type { ProviderDescriptor } from './providerDescriptor';
 
 export const FEISHU_OAUTH_DESCRIPTOR = {
@@ -15,14 +14,5 @@ export const FEISHU_OAUTH_DESCRIPTOR = {
   loopbackRedirectUriSupport: 'pending-verification',
 } satisfies ProviderDescriptor;
 
-export type FeishuWritebackAction = keyof typeof FEISHU_OAUTH_DESCRIPTOR.scopes;
-
-let connectorAuth: ConnectorAuth | undefined;
-
-export function getFeishuAccessToken(
-  accountId: string,
-  action: FeishuWritebackAction,
-): Promise<string> {
-  connectorAuth ??= new ConnectorAuth();
-  return connectorAuth.getAccessToken(accountId, FEISHU_OAUTH_DESCRIPTOR.scopes[action]);
-}
+// 取 token 的入口（getAccessToken 包装）随 A2b 的第一个真写回动作一起加：
+// 现在加进来就是「装好没接电」，生产可达性棘轮会直接拦下。

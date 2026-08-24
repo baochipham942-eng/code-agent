@@ -1,16 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ConnectorAuth } from '../../../../src/host/connectors/oauth/connectorAuth';
-import {
-  FEISHU_OAUTH_DESCRIPTOR,
-  getFeishuAccessToken,
-} from '../../../../src/host/connectors/oauth/feishuOAuth';
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
+import { describe, expect, it } from 'vitest';
+import { FEISHU_OAUTH_DESCRIPTOR } from '../../../../src/host/connectors/oauth/feishuOAuth';
 
 describe('Feishu OAuth adapter', () => {
   it('uses a fixed callback port and keeps loopback HTTP support pending verification', () => {
+    // 飞书后台按完整路径精确匹配且不支持动态路由，随机端口登记不上 —— 这里必须是固定端口。
     expect(FEISHU_OAUTH_DESCRIPTOR.redirect).toEqual({
       mode: 'loopback-fixed',
       port: 53_682,
@@ -22,15 +15,8 @@ describe('Feishu OAuth adapter', () => {
       .toBe('https://open.feishu.cn/open-apis/authen/v2/oauth/token');
   });
 
-  it('maps the writeback action to the provider scope at the token entry', async () => {
-    const getAccessToken = vi.spyOn(ConnectorAuth.prototype, 'getAccessToken')
-      .mockResolvedValue('feishu-access');
-
-    await expect(getFeishuAccessToken('feishu:account-1', 'message.send-as-user'))
-      .resolves.toBe('feishu-access');
-    expect(getAccessToken).toHaveBeenCalledWith(
-      'feishu:account-1',
-      'im:message im:message.send_as_user',
-    );
+  it('declares the writeback action to provider scope mapping', () => {
+    expect(FEISHU_OAUTH_DESCRIPTOR.scopes['message.send-as-user'])
+      .toBe('im:message im:message.send_as_user');
   });
 });

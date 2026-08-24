@@ -15,6 +15,11 @@ import {
   type NativeConnectorInventoryItem,
 } from '../../shared/ipc';
 import { getConnectorRegistry } from '../connectors';
+import { ConnectorAuth } from '../connectors/oauth/connectorAuth';
+import { ConnectorOAuthStore } from '../connectors/oauth/connectorOAuthStore';
+import { OAuthCoordinator } from '../connectors/oauth/oauthCoordinator';
+import { FEISHU_OAUTH_DESCRIPTOR } from '../connectors/oauth/feishuOAuth';
+import type { ProviderDescriptor } from '../connectors/oauth/providerDescriptor';
 import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../shared/constants';
 import type { ConfigService } from '../services';
 
@@ -328,6 +333,75 @@ async function handleOpenConnectorApp(connectorId: string | undefined): Promise<
   return { opened: true, app: appName };
 }
 
+// SaaS connector OAuth（N-SAAS-A2A 第一刀）。descriptor 一家一条，加一家只加一行，
+// 流程代码不变。accountId 暂等于 providerId：本刀只支持每家一个账号，多账号是后续刀的事。
+const OAUTH_PROVIDERS: Record<string, ProviderDescriptor> = {
+  [FEISHU_OAUTH_DESCRIPTOR.id]: FEISHU_OAUTH_DESCRIPTOR,
+};
+
+function requireOAuthProvider(providerId: string | undefined): ProviderDescriptor {
+  const descriptor = providerId ? OAUTH_PROVIDERS[providerId] : undefined;
+  if (!descriptor) {
+    throw new Error(`Unknown OAuth connector provider: ${providerId}`);
+  }
+  return descriptor;
+}
+
+interface ConnectorOAuthProviderStatus {
+  id: string;
+  displayName: string;
+  clientIdConfigured: boolean;
+  connected: boolean;
+  loopbackRedirectUriSupport: ProviderDescriptor['loopbackRedirectUriSupport'];
+}
+
+function listConnectorOAuthStatuses(): ConnectorOAuthProviderStatus[] {
+  return Object.values(OAUTH_PROVIDERS).map((descriptor) => ({
+    id: descriptor.id,
+    displayName: descriptor.displayName,
+    clientIdConfigured: descriptor.clientId.trim().length > 0,
+    connected: Boolean(new ConnectorOAuthStore(descriptor.id).tokens()),
+    loopbackRedirectUriSupport: descriptor.loopbackRedirectUriSupport,
+  }));
+}
+
+async function handleConnectorOAuthConnect(
+  payload: { providerId?: string; action?: string } | undefined,
+): Promise<ConnectorOAuthProviderStatus[]> {
+  const descriptor = requireOAuthProvider(payload?.providerId);
+  const action = payload?.action ?? Object.keys(descriptor.scopes)[0];
+  if (!action) {
+    throw new Error(`OAuth connector provider ${descriptor.id} declares no writeback scope`);
+  }
+
+  // ponytail: 授权页本身就是用户在厂商侧的同意面，这里只负责把它打开；
+  // 连接前的「要授哪些权限」摘要属于 UI 那一刀，不在本刀。
+  const auth = new ConnectorAuth({
+    coordinator: new OAuthCoordinator({
+      openAuthorization: async (authUrl) => {
+        const { openExternal } = await import('../platform/nativeShell');
+        await openExternal(authUrl.toString());
+      },
+    }),
+  });
+
+  await auth.beginFlow({
+    accountId: descriptor.id,
+    accountLabel: descriptor.displayName,
+    descriptor,
+    action,
+  });
+  return listConnectorOAuthStatuses();
+}
+
+function handleConnectorOAuthDisconnect(
+  payload: { providerId?: string } | undefined,
+): ConnectorOAuthProviderStatus[] {
+  const descriptor = requireOAuthProvider(payload?.providerId);
+  new ConnectorOAuthStore(descriptor.id).invalidateCredentials('all');
+  return listConnectorOAuthStatuses();
+}
+
 async function pollAndBroadcastConnectorStatuses(
   getMainWindow: () => AppWindow | null,
 ): Promise<void> {
@@ -438,6 +512,19 @@ export function registerConnectorHandlers(
             getConfigService,
             (request.payload as { connectorId?: string } | undefined)?.connectorId,
             broadcast,
+          );
+          break;
+        case 'oauthStatus':
+          data = listConnectorOAuthStatuses();
+          break;
+        case 'oauthConnect':
+          data = await handleConnectorOAuthConnect(
+            request.payload as { providerId?: string; action?: string } | undefined,
+          );
+          break;
+        case 'oauthDisconnect':
+          data = handleConnectorOAuthDisconnect(
+            request.payload as { providerId?: string } | undefined,
           );
           break;
         case 'openApp':

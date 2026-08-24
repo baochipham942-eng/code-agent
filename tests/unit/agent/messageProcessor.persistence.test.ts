@@ -452,7 +452,7 @@ describe('MessageProcessor persistence', () => {
     );
   });
 
-  it('does not persist tool results when the run is cancelled after execution returns', async () => {
+  it('persists a cancelled closure instead of the suppressed execution result', async () => {
     const ctx = {
       artifact: ArtifactState.forTest(),
       sessionId: 'runtime-session-1',
@@ -507,10 +507,21 @@ describe('MessageProcessor persistence', () => {
     );
 
     expect(action).toBe('break');
-    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(1);
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
     expect(ctx.messages).toEqual([
       expect.objectContaining({ id: 'assistant-message-1', role: 'assistant' }),
+      expect.objectContaining({
+        id: 'assistant-message-1:cancelled-tool-results',
+        role: 'tool',
+        toolResults: [{
+          toolCallId: 'tool-1',
+          success: false,
+          error: expect.stringContaining('cancelled before a result was recorded'),
+          duration: 0,
+        }],
+      }),
     ]);
+    expect(JSON.stringify(ctx.messages)).not.toContain('late result');
     expect(runFinalizer.tryParseTodosFromResponse).not.toHaveBeenCalled();
     expect(runFinalizer.autoAdvanceTodos).not.toHaveBeenCalled();
     expect(ctx.telemetryAdapter.onTurnEnd).not.toHaveBeenCalled();

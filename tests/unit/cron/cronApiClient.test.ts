@@ -4,6 +4,7 @@ import {
   buildCronApiAddParams,
   buildCronApiUpdateParams,
   CronApiClient,
+  cloudRunToExecution,
 } from '../../../src/host/cron/cronApiClient';
 
 function cloudJob(): CronJobDefinition {
@@ -109,5 +110,32 @@ describe('CronApiClient event recovery', () => {
       '/api/cron/events',
     ]);
     expect(seen).toEqual(['missed-1', 'live-1', 'missed-2', 'live-2']);
+  });
+});
+
+describe('cloud run projection', () => {
+  // 云端 run 的 session 活在服务端；本地 cron_executions.session_id 是指向 sessions(id)
+  // 的外键，把远端 sessionId 照抄进来会让整行 INSERT 撞 SQLITE_CONSTRAINT_FOREIGNKEY，
+  // 执行记录永远停在「运行中」——2026-08-24 端到端真机验收实付。
+  it('does not carry a remote session id into the local execution row', () => {
+    const execution = cloudRunToExecution(
+      {
+        jobId: 'remote-1',
+        action: 'finished',
+        ts: 1_000,
+        runId: 'run-1',
+        runAtMs: 900,
+        durationMs: 100,
+        status: 'ok',
+        summary: 'done',
+        // 服务端事件里确实带 sessionId，投影必须把它丢掉
+        sessionId: 'server-side-session',
+      } as never,
+      'local-job-1',
+    );
+
+    expect(execution.sessionId).toBeUndefined();
+    expect(execution.status).toBe('completed');
+    expect(execution.result).toEqual({ summary: 'done' });
   });
 });

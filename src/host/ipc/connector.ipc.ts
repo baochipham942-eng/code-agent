@@ -351,6 +351,10 @@ interface ConnectorOAuthProviderStatus {
   id: string;
   displayName: string;
   clientIdConfigured: boolean;
+  // 这家要不要 App Secret，以及本机填没填 —— 界面靠这两个才能说清「还差什么」，
+  // 而不是等用户点了连接再吃厂商一个 400。
+  requiresClientSecret: boolean;
+  clientSecretConfigured: boolean;
   connected: boolean;
   loopbackRedirectUriSupport: ProviderDescriptor['loopbackRedirectUriSupport'];
 }
@@ -360,6 +364,8 @@ function listConnectorOAuthStatuses(): ConnectorOAuthProviderStatus[] {
     id: descriptor.id,
     displayName: descriptor.displayName,
     clientIdConfigured: descriptor.clientId.trim().length > 0,
+    requiresClientSecret: descriptor.requiresClientSecret,
+    clientSecretConfigured: Boolean(new ConnectorOAuthStore(descriptor.id).clientSecret()),
     connected: Boolean(new ConnectorOAuthStore(descriptor.id).tokens()),
     loopbackRedirectUriSupport: descriptor.loopbackRedirectUriSupport,
   }));
@@ -391,6 +397,18 @@ async function handleConnectorOAuthConnect(
     descriptor,
     action,
   });
+  return listConnectorOAuthStatuses();
+}
+
+function handleConnectorOAuthSetSecret(
+  payload: { providerId?: string; clientSecret?: string } | undefined,
+): ConnectorOAuthProviderStatus[] {
+  const descriptor = requireOAuthProvider(payload?.providerId);
+  const clientSecret = payload?.clientSecret;
+  if (typeof clientSecret !== 'string' || !clientSecret.trim()) {
+    throw new Error(`App Secret is required for ${descriptor.id}`);
+  }
+  new ConnectorOAuthStore(descriptor.id).saveClientSecret(clientSecret);
   return listConnectorOAuthStatuses();
 }
 
@@ -520,6 +538,11 @@ export function registerConnectorHandlers(
         case 'oauthConnect':
           data = await handleConnectorOAuthConnect(
             request.payload as { providerId?: string; action?: string } | undefined,
+          );
+          break;
+        case 'oauthSetSecret':
+          data = handleConnectorOAuthSetSecret(
+            request.payload as { providerId?: string; clientSecret?: string } | undefined,
           );
           break;
         case 'oauthDisconnect':

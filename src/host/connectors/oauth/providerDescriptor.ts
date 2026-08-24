@@ -13,6 +13,10 @@ export interface ProviderDescriptor {
   extraAuthorizeParams?: Record<string, string>;
   redirect: OAuthLoopbackRedirect;
   loopbackRedirectUriSupport: LoopbackRedirectUriSupport;
+  // 这家换 token 是否非要 App Secret 不可。飞书=true（2026-08-24 真机实测：只带 client_id
+  // + PKCE 被拒，400 invalid_client / code 20140）。为 true 时缺 secret 就 fail-closed，
+  // 报一句用户能照做的话，而不是把厂商那个 400 原样甩出来。
+  requiresClientSecret: boolean;
 }
 
 export function validateProviderDescriptor(descriptor: ProviderDescriptor): void {

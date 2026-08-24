@@ -74,3 +74,29 @@ describe('ConnectorOAuthStore', () => {
     expect(store.discoveryState()).toBeUndefined();
   });
 });
+
+describe('ConnectorOAuthStore client secret', () => {
+  it('trims the pasted secret before storing it', () => {
+    const store = createStore();
+    // 从后台复制过来的密钥经常带首尾空白；原样存下去换 token 会被厂商拒掉，
+    // 而报错停在「invalid_client」这种看不出真因的地方。
+    store.saveClientSecret('  s3cret  ');
+    expect(store.clientSecret()).toBe('s3cret');
+  });
+
+  it('refuses a blank secret instead of storing an empty credential', () => {
+    const store = createStore();
+    expect(() => store.saveClientSecret('   ')).toThrow('must not be empty');
+    expect(store.clientSecret()).toBeUndefined();
+  });
+
+  it('keeps the secret in its own key space and wipes it on a full disconnect', () => {
+    const store = createStore();
+    store.saveClientSecret('s3cret');
+    expect([...values.keys()].some((key) => key.endsWith(':client-secret'))).toBe(true);
+
+    store.invalidateCredentials('all');
+    // 断开连接必须把 App Secret 一起清掉——留着它等于用户以为断了其实凭据还在本机
+    expect(store.clientSecret()).toBeUndefined();
+  });
+});

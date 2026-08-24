@@ -26,6 +26,7 @@ const descriptor: ProviderDescriptor = {
   extraAuthorizeParams: { audience: 'desktop' },
   redirect: { mode: 'loopback-random' },
   loopbackRedirectUriSupport: 'confirmed',
+  requiresClientSecret: false,
 };
 
 const flow: OAuthFlow = {
@@ -160,3 +161,78 @@ function seedExpiredStore(): ConnectorOAuthStore {
   }, 'resource:write', 0);
   return store;
 }
+
+describe('ConnectorAuth client secret', () => {
+  it('fails closed with an actionable message when a secret-requiring provider has none stored', async () => {
+    const store = memoryStore();
+    const beginFlow = vi.fn(async () => flow);
+    const handleAuthorizationRedirect = vi.fn(
+      async (_input: { accountId: string; flowId?: string; authUrl: URL }) => {},
+    );
+    const auth = new ConnectorAuth({
+      coordinator: { beginFlow, handleAuthorizationRedirect } as unknown as OAuthCoordinator,
+      storeFactory: () => store,
+    });
+
+    await expect(auth.beginFlow({
+      accountId: 'account-1',
+      accountLabel: 'Example account',
+      descriptor: { ...descriptor, requiresClientSecret: true },
+      action: 'write',
+    })).rejects.toThrow('App Secret');
+
+    // 关键：不能把用户送到授权页去走一遍、回来才在换 token 那步吃厂商一个 400。
+    expect(handleAuthorizationRedirect).not.toHaveBeenCalled();
+  });
+
+  it('prefers the stored secret over one baked into the descriptor', async () => {
+    const store = memoryStore();
+    store.saveClientSecret('from-secure-storage');
+    const captured: Array<{ body: Record<string, unknown>; authorization?: string }> = [];
+    const fetchFn = (async (_url: unknown, init: { body?: unknown; headers?: HeadersInit }) => {
+      const headers = new Headers(init?.headers);
+      captured.push({
+        body: Object.fromEntries(new URLSearchParams(String(init?.body ?? ''))),
+        ...(headers.get('authorization') ? { authorization: headers.get('authorization')! } : {}),
+      });
+      return new Response(
+        JSON.stringify({ access_token: 'a', token_type: 'Bearer', expires_in: 3600 }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }) as unknown as FetchLike;
+
+    const auth = new ConnectorAuth({
+      coordinator: {
+        beginFlow: vi.fn(async () => flow),
+        handleAuthorizationRedirect: vi.fn(async () => {}),
+        waitForCallback: vi.fn(async () => ({
+          flowId: 'flow-1',
+          accountLabel: 'Example account',
+          accountId: 'account-1',
+          state: 'state-1',
+          code: 'code-1',
+        })),
+        cancelFlow: vi.fn(),
+      } as unknown as OAuthCoordinator,
+      storeFactory: () => store,
+      fetchFn,
+      now: () => 1_000,
+    });
+
+    await auth.beginFlow({
+      accountId: 'account-1',
+      accountLabel: 'Example account',
+      descriptor: { ...descriptor, requiresClientSecret: true, clientSecret: 'baked-into-bundle' },
+      action: 'write',
+    });
+
+    // 🔴 密钥不在 body 里：SDK 的 selectClientAuthMethod 在服务器没声明支持哪些认证方式时
+    // 默认走 client_secret_basic，密钥进的是 Authorization 头（2026-08-24 真机也是这个形态：
+    // 带 secret 那次的 body 里连 client_id 都没有了）。断言得盯真正发出去的那一处。
+    const auth64 = captured.at(-1)?.authorization?.replace(/^Basic /, '') ?? '';
+    const decoded = Buffer.from(auth64, 'base64').toString('utf8');
+    // 本机存的密钥永远压过夹具/包里那个值，否则「改了密钥不生效」会极难查
+    expect(decoded).toBe('client-1:from-secure-storage');
+    expect(JSON.stringify(captured.at(-1)?.body)).not.toContain('baked-into-bundle');
+  });
+});

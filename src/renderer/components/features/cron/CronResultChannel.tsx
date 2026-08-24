@@ -142,7 +142,9 @@ export const CronResultChannelField: React.FC<CronResultChannelFieldProps> = ({ 
     { value: '', label: cc.resultPushNoneDefault },
     ...accounts.map((account) => ({
       value: account.id,
-      label: `${account.type} · ${account.name}`,
+      // 账号名是用户自己起的（「工作飞书」已经说明是哪个通道）。🚫 不要把内部类型串
+      // （feishu / lark / http-api）当界面文案拼进去——Neo 的用户默认是非程序员协作者。
+      label: account.name,
     })),
   ];
 

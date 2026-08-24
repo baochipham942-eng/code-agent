@@ -10,6 +10,7 @@ import type {
   ChannelAccountStatus,
   SendMessageOptions,
   SendMessageResult,
+  ChannelConversation,
 } from '../../shared/contract/channel';
 import { EventEmitter } from 'events';
 
@@ -60,6 +61,12 @@ export interface IChannelPlugin extends EventEmitter {
   sendMessage(options: SendMessageOptions): Promise<SendMessageResult>;
 
   // ========== 可选方法 ==========
+
+  /**
+   * 列出该账号可发送的会话 (可选)
+   * 未实现即表示该通道不支持枚举会话，调用方应允许用户手填目标。
+   */
+  listConversations?(): Promise<ChannelConversation[]>;
 
   /**
    * 编辑消息 (可选)

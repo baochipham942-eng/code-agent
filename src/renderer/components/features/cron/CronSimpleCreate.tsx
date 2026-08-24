@@ -18,6 +18,7 @@ import { listProjects } from '../../../services/projectClient';
 import { listRoles } from '../../../services/rolesClient';
 import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from './types';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
+import { CronResultChannelField } from './CronResultChannel';
 
 type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
 
@@ -60,6 +61,7 @@ export function buildSimpleDraft(
   roleId?: string,
   libraryProjectId?: string,
   runsOn: CronJobDraft['runsOn'] = 'local',
+  resultChannel = '',
 ): CronJobDraft {
   return {
     ...createDefaultCronJobDraft(),
@@ -70,6 +72,7 @@ export function buildSimpleDraft(
     agentPrompt: goal.trim(),
     agentRoleId: roleId || '',
     agentLibraryProjectId: libraryProjectId || '',
+    resultChannel,
     ...schedule,
   };
 }
@@ -92,6 +95,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
   const [roleId, setRoleId] = useState('');
   const [libraryProjectId, setLibraryProjectId] = useState('');
   const [runsOn, setRunsOn] = useState<CronJobDraft['runsOn']>('local');
+  const [resultChannel, setResultChannel] = useState('');
   const [roles, setRoles] = useState<RolePanelEntry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -117,6 +121,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         roleId,
         libraryProjectId,
         runsOn,
+        resultChannel,
       );
       await createJob(buildCronJobInput(draft));
       onDone();
@@ -181,6 +186,8 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
           />
         </FormField>
       </div>
+
+      <CronResultChannelField value={resultChannel} onChange={setResultChannel} />
 
       <CronRunsOnSelector value={runsOn} onChange={setRunsOn} />
 

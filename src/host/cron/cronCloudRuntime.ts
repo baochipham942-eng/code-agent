@@ -15,6 +15,13 @@ interface CloudJobState {
   cloudJobId?: string;
 }
 
+/**
+ * 云端任务清单的对账周期。ADR-033 决策 5 的「保底 fallback」在当前形态下的真身：
+ * 云端 job 一旦在服务端消失（Pod 重建 / 手工清理 / 幂等键被重建），本地这条会永远
+ * 停在 enabled 却再也不触发，且无人值守场景零信号。启动时对一次不够——app 一开就是几天。
+ */
+const RECONCILE_INTERVAL_MS = 60_000;
+
 interface CronCloudRuntimeDeps {
   getJobs: () => Iterable<CloudJobState>;
   persistJob: (definition: CronJobDefinition, cloudJobId: string) => Promise<void>;
@@ -28,8 +35,19 @@ interface CronCloudRuntimeDeps {
   unavailableMessage: () => string;
 }
 
+/** 已经过了触发时刻的一次性任务：云端跑完会自动清除，重新注册等于让它再跑一遍。 */
+function isSpentOneShot(definition: CronJobDefinition, now: number): boolean {
+  const schedule = definition.schedule;
+  if (schedule.type !== 'at') return false;
+  const ts = typeof schedule.datetime === 'number'
+    ? schedule.datetime
+    : Date.parse(String(schedule.datetime));
+  return !Number.isFinite(ts) || ts <= now;
+}
+
 export class CronCloudRuntime {
   private readonly client: CronApiClient;
+  private reconcileTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     getConfig: () => CronApiConfig | undefined,
@@ -45,17 +63,56 @@ export class CronCloudRuntime {
 
   start(): void {
     this.client.start((run) => this.projectRun(run));
+    this.reconcileTimer ??= setInterval(() => { void this.reconcile(); }, RECONCILE_INTERVAL_MS);
+    this.reconcileTimer.unref?.();
   }
 
   stop(): void {
     this.client.stop();
+    if (this.reconcileTimer) clearInterval(this.reconcileTimer);
+    this.reconcileTimer = undefined;
   }
 
+  /**
+   * 拿云端现存清单和本地云端任务对账：缺了就重新注册，幂等键还在但 id 变了就把本地指针对回去。
+   * 判据是「云端现在有没有这条」，与 removeJob 同一口径——不认报错文案。
+   */
   async reconcile(): Promise<void> {
-    for (const job of this.deps.getJobs()) {
-      if (job.definition.runsOn === 'cloud' && !job.cloudJobId) {
-        await this.addJob(job.definition);
+    if (!this.client.isConfigured()) return;
+    const jobs = [...this.deps.getJobs()]
+      .filter((job) => job.definition.runsOn === 'cloud' && job.definition.enabled);
+    if (jobs.length === 0) return;
+
+    let remoteJobs: Array<{ id: string; declarationKey?: string }>;
+    try {
+      remoteJobs = await this.client.listJobs();
+    } catch (error) {
+      // 拉不到清单＝网络/服务瞬时不可用，下一轮再对。
+      // 🚫 不在这里给每条任务记一次失败：断网时会刷屏，把真正的「云端丢了这条」淹掉。
+      console.warn(
+        '[CronService] Cloud cron reconcile skipped:',
+        error instanceof Error ? error.message : String(error),
+      );
+      return;
+    }
+
+    const now = Date.now();
+    for (const job of jobs) {
+      const declarationKey = cloudDeclarationKey(job.definition.id);
+      const match = remoteJobs.find(
+        (remote) => (job.cloudJobId != null && remote.id === job.cloudJobId)
+          || remote.declarationKey === declarationKey,
+      );
+      if (match) {
+        if (match.id !== job.cloudJobId) {
+          job.cloudJobId = match.id;
+          await this.deps.persistJob(job.definition, match.id);
+        }
+        continue;
       }
+      if (isSpentOneShot(job.definition, now)) continue;
+      console.warn(`[CronService] Cloud job ${job.definition.id} is gone on the server; re-registering.`);
+      await this.addJob(job.definition);
     }
   }
 

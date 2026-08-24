@@ -14,6 +14,7 @@ import { normalizeDesignBrief } from '@shared/contract/designBrief';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import { getFileExtension, isPreviewable } from './previewable';
 import { isReadOnlyArtifactTool } from './artifactOwnership';
+import { buildReceiptPresentation } from './receiptPresentation';
 
 const FILE_METADATA_KEYS = [
   'filePath',
@@ -35,10 +36,11 @@ export interface BuildWorkspacePreviewSectionsInput {
   limit?: number;
 }
 
-/** 概览两区：items = 交付物（deliverable），materialItems = 过程材料（material）。receipt 不上屏。 */
+/** 概览三桶：交付物、过程材料、已执行回执。 */
 export interface WorkspacePreviewSections {
   items: WorkspacePreviewItem[];
   materialItems: WorkspacePreviewItem[];
+  receiptItems: WorkspacePreviewItem[];
 }
 
 export type WorkspacePreviewRuntimeStatus = 'booting' | 'ready' | 'error';
@@ -562,6 +564,7 @@ function collectMessageArtifacts(
 function collectToolOutputs(
   items: WorkspacePreviewItem[],
   materialItems: WorkspacePreviewItem[],
+  receiptItems: WorkspacePreviewItem[],
   seen: Set<string>,
   messages: Message[],
   workingDirectory?: string | null,
@@ -572,9 +575,10 @@ function collectToolOutputs(
       const result = toolCall.result;
       if (!result) continue;
       if (isReadOnlyArtifactTool(toolCall.name)) continue;
-      // 产物条目生成门槛（C.12）：参数校验失败 / 执行失败的调用不建预览条目，
-      // 否则幻觉工具的失败调用会落成带内部标签的裂图卡。
-      if (result.success === false) continue;
+      const toolArtifacts = collectToolArtifactsFromMetadata(result.metadata);
+      const hasReceipt = toolArtifacts.some((artifact) => resolveArtifactRole(artifact) === 'receipt');
+      // 失败调用仍默认不建预览条目；只有明确产出 receipt 的写回动作穿透。
+      if (result.success === false && !hasReceipt) continue;
       const source = {
         kind: 'tool' as const,
         label: toolCall.name,
@@ -589,16 +593,42 @@ function collectToolOutputs(
       };
 
       const previewItem = coercePreviewItem(result.metadata?.previewItem, fallback);
-      if (previewItem) {
+      // 写回工具的 previewItem 与 receipt 是同一个动作，不能旁路混进产物桶。
+      if (previewItem && !hasReceipt) {
         addItem(items, seen, previewItem, `previewItem:${previewItem.id}`);
       }
 
-      const toolArtifacts = collectToolArtifactsFromMetadata(result.metadata);
       for (const artifact of toolArtifacts) {
-        // 角色轴单一判据：deliverable 进产物区，material 进「过程材料」区，receipt 不上屏
+        // 角色轴单一判据：deliverable、material、receipt 各进自己的桶。
         const role = resolveArtifactRole(artifact);
-        if (role === 'receipt') continue;
-        const target = role === 'deliverable' ? items : materialItems;
+        const target = role === 'deliverable'
+          ? items
+          : role === 'material'
+            ? materialItems
+            : receiptItems;
+        if (role === 'receipt') {
+          const receipt = buildReceiptPresentation(
+            artifact,
+            result.metadata,
+            result.success,
+            toolCall.name,
+          );
+          addItem(target, seen, {
+            id: artifact.artifactId
+              ? `receipt:${artifact.artifactId}`
+              : `receipt:${toolCall.id}:${artifact.label}`,
+            kind: 'trace',
+            title: receipt.summary,
+            subtitle: receipt.sourceTool,
+            status: statusFromSuccess(result.success),
+            createdAt: message.timestamp,
+            source,
+            content: receipt.detail ? { text: receipt.detail } : undefined,
+            actions: [{ kind: 'copy', label: 'Copy' }],
+            priority: 80,
+          }, artifact.artifactId ? `receipt:${artifact.artifactId}` : `receipt:${toolCall.id}:${artifact.label}`);
+          continue;
+        }
         if (artifact.path) {
           const path = resolvePath(artifact.path, workingDirectory);
           if (!path) continue;
@@ -744,15 +774,43 @@ function collectPermissionPreview(
 function collectCurrentTurnArtifacts(
   items: WorkspacePreviewItem[],
   materialItems: WorkspacePreviewItem[],
+  receiptItems: WorkspacePreviewItem[],
   seen: Set<string>,
   currentTurnArtifacts: BuildWorkspacePreviewSectionsInput['currentTurnArtifacts'],
   workingDirectory?: string | null,
 ): void {
   if (!currentTurnArtifacts) return;
   for (const artifact of currentTurnArtifacts.artifactOwnership) {
-    // 角色轴分流：receipt 不上屏；material 进「过程材料」区；缺 role 的旧数据按 deliverable 兜底
-    if (artifact.role === 'receipt') continue;
-    const target = artifact.role === 'material' ? materialItems : items;
+    // 角色轴分流：三类各自进桶；缺 role 的旧数据按 deliverable 兜底。
+    const target = artifact.role === 'material'
+      ? materialItems
+      : artifact.role === 'receipt'
+        ? receiptItems
+        : items;
+    if (artifact.role === 'receipt') {
+      const receipt = artifact.receipt;
+      const itemId = artifact.artifactId
+        ? `receipt:${artifact.artifactId}`
+        : `turn-receipt:${currentTurnArtifacts.turnNumber}:${artifact.sourceNodeId || artifact.label}`;
+      addItem(target, seen, {
+        id: itemId,
+        kind: 'trace',
+        title: receipt?.summary || artifact.label,
+        subtitle: receipt?.sourceTool || artifact.ownerLabel,
+        status: receipt?.status === 'failed' ? 'failed' : 'ready',
+        createdAt: Date.now(),
+        source: {
+          kind: artifact.ownerKind === 'tool' ? 'tool' : 'message',
+          label: receipt?.sourceTool || artifact.ownerLabel,
+          turnNumber: currentTurnArtifacts.turnNumber,
+        },
+        content: receipt?.detail ? { text: receipt.detail } : undefined,
+        actions: [{ kind: 'copy', label: 'Copy' }],
+        priority: 90,
+        currentTurn: true,
+      }, itemId);
+      continue;
+    }
     if (artifact.path) {
       const path = resolvePath(artifact.path, workingDirectory);
       const title = basename(path);
@@ -830,14 +888,15 @@ function dropContentlessDuplicates(items: WorkspacePreviewItem[]): WorkspacePrev
 export function buildWorkspacePreviewSections(input: BuildWorkspacePreviewSectionsInput): WorkspacePreviewSections {
   const items: WorkspacePreviewItem[] = [];
   const materialItems: WorkspacePreviewItem[] = [];
+  const receiptItems: WorkspacePreviewItem[] = [];
   const seen = new Set<string>();
   // Overview uses a session-wide contract: artifacts from early runs stay visible after later runs.
   // The output list is still capped below, so scanning the current session does not expand the UI.
   const messages = input.messages;
 
   collectPermissionPreview(items, seen, input.pendingPermissionRequest);
-  collectCurrentTurnArtifacts(items, materialItems, seen, input.currentTurnArtifacts, input.workingDirectory);
-  collectToolOutputs(items, materialItems, seen, messages, input.workingDirectory);
+  collectCurrentTurnArtifacts(items, materialItems, receiptItems, seen, input.currentTurnArtifacts, input.workingDirectory);
+  collectToolOutputs(items, materialItems, receiptItems, seen, messages, input.workingDirectory);
   collectMessageArtifacts(items, seen, messages);
 
   const byPriorityThenRecency = (left: WorkspacePreviewItem, right: WorkspacePreviewItem) => {
@@ -850,5 +909,6 @@ export function buildWorkspacePreviewSections(input: BuildWorkspacePreviewSectio
   return {
     items: dropContentlessDuplicates(items).sort(byPriorityThenRecency).slice(0, limit),
     materialItems: materialItems.sort(byPriorityThenRecency).slice(0, limit),
+    receiptItems: receiptItems.sort(byPriorityThenRecency).slice(0, limit),
   };
 }

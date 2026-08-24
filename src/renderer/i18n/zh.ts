@@ -43,6 +43,7 @@ import { mermaidZh } from './mermaid';
 import { voiceAuditZh } from './voiceAudit';
 import { sessionInspectorZh } from './sessionInspector';
 import { artifactShareZh } from './artifactShare';
+import { receiptPresentationZh } from './receiptPresentation';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
@@ -56,6 +57,7 @@ export const zh = {
   ...onboardingZh,
   ...generativeUIZh,
   ...workbenchTabsZh,
+  ...receiptPresentationZh,
   // Common
   common: {
     save: '保存',

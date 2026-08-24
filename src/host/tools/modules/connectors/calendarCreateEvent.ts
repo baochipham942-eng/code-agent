@@ -11,7 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
-import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarCreateEventSchema as schema } from './calendarCreateEvent.schema';
 
 async function executeCalendarCreateEvent(
@@ -111,9 +111,26 @@ async function executeCalendarCreateEvent(
       },
     };
   } catch (error) {
+    const failure = `Calendar create failed: ${error instanceof Error ? error.message : String(error)}`;
     return {
       ok: false,
-      error: `Calendar create failed: ${error instanceof Error ? error.message : String(error)}`,
+      error: failure,
+      meta: {
+        action: 'create_event',
+        connector: 'calendar',
+        calendar: args.calendar,
+        title: args.title,
+        startAtMs: args.start_ms,
+        failureReason: failure,
+        artifact: createFailedReceiptArtifact({
+          sourceTool: schema.name,
+          sessionId: ctx.sessionId,
+          action: 'create_event',
+          name: `创建日历事件失败：${String(args.title)}`,
+          error: failure,
+          metadata: { connector: 'calendar', calendar: args.calendar, title: args.title },
+        }),
+      },
     };
   }
 }

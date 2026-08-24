@@ -184,3 +184,34 @@ export function createVirtualArtifact(input: {
     metadata: input.metadata,
   };
 }
+
+export function createFailedReceiptArtifact(input: {
+  sourceTool: string;
+  sessionId?: string;
+  action: string;
+  name: string;
+  error: string;
+  metadata?: Record<string, unknown>;
+  detailLines?: string[];
+}): ToolArtifact {
+  const preview = [
+    `${input.name}：${input.error}`,
+    ...(input.detailLines ?? []),
+  ].join('\n');
+  return createVirtualArtifact({
+    sourceTool: input.sourceTool,
+    kind: 'text',
+    role: 'receipt',
+    sessionId: input.sessionId,
+    name: input.name,
+    mimeType: 'text/markdown',
+    contentLength: preview.length,
+    preview,
+    metadata: {
+      ...input.metadata,
+      action: input.action,
+      success: false,
+      failureReason: input.error,
+    },
+  });
+}

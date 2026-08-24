@@ -43,6 +43,7 @@ import { mermaidEn } from './mermaid';
 import { voiceAuditEn } from './voiceAudit';
 import { sessionInspectorEn } from './sessionInspector';
 import { artifactShareEn } from './artifactShare';
+import { receiptPresentationEn } from './receiptPresentation';
 export const en: Translations = {
   ...canvasActorEn, ...activityPanelEn,
   ...imageNarrationEn, ...mermaidEn,
@@ -55,6 +56,7 @@ export const en: Translations = {
   ...onboardingEn,
   ...generativeUIEn,
   ...workbenchTabsEn,
+  ...receiptPresentationEn,
   // Common
   common: {
     save: 'Save',

@@ -31,6 +31,7 @@ vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
   useWorkspacePreviewModelState: () => ({
     items: [planPreviewItem],
     materialItems: [],
+    receiptItems: [],
     currentTurnArtifacts: null,
   }),
 }));

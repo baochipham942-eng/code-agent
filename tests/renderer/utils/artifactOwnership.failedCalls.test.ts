@@ -93,4 +93,61 @@ describe('产物条目生成门槛：失败调用不建条目', () => {
 
     expect(items).toEqual([]);
   });
+
+  it('明确产出 receipt 的失败写回动作同时穿透聊天流与概览，其他桶仍为空', () => {
+    const artifact = {
+      artifactId: 'receipt-failed-mail',
+      kind: 'text',
+      role: 'receipt',
+      sourceTool: 'mail_send',
+      name: '发送邮件失败：周报',
+      preview: '发送邮件失败：SMTP unavailable\nTo: a@example.com, b@example.com',
+      metadata: { success: false, failureReason: 'SMTP unavailable', toCount: 2 },
+    };
+    const metadata = {
+      artifact,
+      to: ['a@example.com', 'b@example.com'],
+      toCount: 2,
+    };
+    const ownership = buildArtifactOwnershipItems(turnWithToolCall({
+      id: 'tool-mail',
+      name: 'mail_send',
+      args: {},
+      result: 'Mail send failed: SMTP unavailable',
+      success: false,
+      metadata,
+    }));
+    expect(ownership).toMatchObject([{
+      role: 'receipt',
+      receipt: {
+        status: 'failed',
+        summary: '发送邮件失败：周报 · 发给 a@example.com 等 2 人',
+      },
+    }]);
+
+    const messages: Message[] = [{
+      id: 'msg-mail',
+      role: 'assistant',
+      content: '',
+      timestamp: 200,
+      toolCalls: [{
+        id: 'tool-mail',
+        name: 'mail_send',
+        arguments: {},
+        result: {
+          toolCallId: 'tool-mail',
+          success: false,
+          error: 'Mail send failed: SMTP unavailable',
+          metadata,
+        },
+      }],
+    }];
+    const sections = buildWorkspacePreviewSections({ messages });
+    expect(sections.items).toEqual([]);
+    expect(sections.materialItems).toEqual([]);
+    expect(sections.receiptItems).toMatchObject([{
+      status: 'failed',
+      title: '发送邮件失败：周报 · 发给 a@example.com 等 2 人',
+    }]);
+  });
 });

@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   existsSync,
+  chmodSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -28,7 +29,14 @@ const repoRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const SCRIPT = join(repoRoot, 'scripts', 'worktree-bootstrap.sh');
 
 // 与 scripts/worktree-bootstrap.sh 里的清单保持一致；改脚本清单时必须同步这里。
-const LINK_ITEMS = ['node_modules', 'scripts/rtk', 'scripts/uv', 'scripts/poppler', 'src-tauri/target'];
+const LINK_ITEMS = [
+  'node_modules',
+  '.husky/_',
+  'scripts/rtk',
+  'scripts/uv',
+  'scripts/poppler',
+  'src-tauri/target',
+];
 const COPY_ITEMS = [
   'dist/native',
   'dist/bundled-node',
@@ -55,6 +63,9 @@ function makeSourceTree(dir: string): void {
   // 主树的 .git 是目录（与 linked worktree 的指针文件相对），顺手造上以防回归。
   mkdirSync(join(dir, '.git'), { recursive: true });
   writeFake(dir, 'node_modules/some-pkg/index.js');
+  writeFake(dir, '.husky/_/h');
+  writeFake(dir, '.husky/_/pre-commit');
+  chmodSync(join(dir, '.husky/_/pre-commit'), 0o755);
   writeFake(dir, 'scripts/rtk');
   writeFake(dir, 'scripts/uv');
   writeFake(dir, 'scripts/poppler/bin/pdftoppm');

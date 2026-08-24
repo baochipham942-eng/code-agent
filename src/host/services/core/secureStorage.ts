@@ -90,6 +90,8 @@ interface SecureStorageData {
   [key: `integration.${string}`]: string | undefined;
   // MCP OAuth credentials, isolated per server identity.
   [key: `mcp-oauth:${string}`]: string | undefined;
+  // SaaS connector OAuth credentials, isolated per connected account.
+  [key: `connector-oauth:${string}`]: string | undefined;
 }
 
 /**

@@ -109,7 +109,10 @@ describe('remindersUpdateModule (native)', () => {
       const result = await run(validArgs);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toContain('Reminders update failed: boom');
-      expect((result as { meta?: { artifact?: unknown } }).meta?.artifact).toBeUndefined();
+      expect((result as { meta?: { artifact?: unknown } }).meta?.artifact).toMatchObject({
+        role: 'receipt',
+        metadata: { success: false, failureReason: expect.any(String) },
+      });
     });
   });
 

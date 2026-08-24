@@ -67,6 +67,7 @@ function mergeRepositoryIssueQuality(
 export interface WorkspacePreviewModelState {
   items: WorkspacePreviewItem[];
   materialItems: WorkspacePreviewItem[];
+  receiptItems: WorkspacePreviewItem[];
   currentTurnArtifacts: CurrentTurnArtifactOwnershipView | null;
 }
 
@@ -99,6 +100,7 @@ export function useWorkspacePreviewModelState(): WorkspacePreviewModelState {
   ), [currentTurnArtifacts, messages, pendingPermissionRequest, workingDirectory]);
   const baseItems = sections.items;
   const materialItems = sections.materialItems;
+  const receiptItems = sections.receiptItems;
 
   // 必须按「id 集合的内容」稳定，不能按 baseItems 的身份稳定。
   // baseItems 的上游（currentTurnArtifacts ← 当前轮投影）每渲染都换身份，所以直接
@@ -147,8 +149,8 @@ export function useWorkspacePreviewModelState(): WorkspacePreviewModelState {
   }, [artifactIssues, baseItems, lockedBrief]);
 
   return useMemo(
-    () => ({ items, materialItems, currentTurnArtifacts }),
-    [currentTurnArtifacts, items, materialItems],
+    () => ({ items, materialItems, receiptItems, currentTurnArtifacts }),
+    [currentTurnArtifacts, items, materialItems, receiptItems],
   );
 }
 

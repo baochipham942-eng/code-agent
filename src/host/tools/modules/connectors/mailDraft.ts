@@ -13,7 +13,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
-import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mailDraftSchema as schema } from './mailDraft.schema';
 
 function normalizeAddresses(value: unknown): string[] {
@@ -140,9 +140,28 @@ async function executeMailDraft(
       },
     };
   } catch (error) {
+    const failure = `Mail draft failed: ${error instanceof Error ? error.message : String(error)}`;
+    const to = normalizeAddresses(args.to);
     return {
       ok: false,
-      error: `Mail draft failed: ${error instanceof Error ? error.message : String(error)}`,
+      error: failure,
+      meta: {
+        action: 'draft_message',
+        connector: 'mail',
+        subject: args.subject,
+        to,
+        toCount: to.length,
+        failureReason: failure,
+        artifact: createFailedReceiptArtifact({
+          sourceTool: schema.name,
+          sessionId: ctx.sessionId,
+          action: 'draft_message',
+          name: `创建邮件草稿失败：${String(args.subject)}`,
+          error: failure,
+          metadata: { connector: 'mail', subject: args.subject, toCount: to.length },
+          detailLines: [`To: ${to.join(', ')}`],
+        }),
+      },
     };
   }
 }

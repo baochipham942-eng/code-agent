@@ -11,7 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
-import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { remindersDeleteSchema as schema } from './remindersDelete.schema';
 
 async function executeRemindersDelete(
@@ -82,9 +82,25 @@ async function executeRemindersDelete(
       },
     };
   } catch (error) {
+    const failure = `Reminders delete failed: ${error instanceof Error ? error.message : String(error)}`;
     return {
       ok: false,
-      error: `Reminders delete failed: ${error instanceof Error ? error.message : String(error)}`,
+      error: failure,
+      meta: {
+        action: 'delete_reminder',
+        connector: 'reminders',
+        list: args.list,
+        id: args.reminder_id,
+        failureReason: failure,
+        artifact: createFailedReceiptArtifact({
+          sourceTool: schema.name,
+          sessionId: ctx.sessionId,
+          action: 'delete_reminder',
+          name: `删除提醒失败：${String(args.reminder_id)}`,
+          error: failure,
+          metadata: { connector: 'reminders', id: args.reminder_id, list: args.list },
+        }),
+      },
     };
   }
 }

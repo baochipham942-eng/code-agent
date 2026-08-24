@@ -10,6 +10,7 @@ import type {
   TurnRoutingEvidence,
 } from '@shared/contract/turnTimeline';
 import { buildTurnFileChanges } from './turnDiffSummary';
+import { buildReceiptPresentation } from './receiptPresentation';
 
 function basename(path: string): string {
   return path.split('/').filter(Boolean).pop() || path;
@@ -138,16 +139,17 @@ export function buildArtifactOwnershipItems(
       continue;
     }
 
-    // 产物条目生成门槛（2026-08-04 C.12）：参数校验失败 / 执行失败的调用不建条目——
-    // trace 实证幻觉工具 "Blob" 的失败调用生成了带 "Blob" 标签的裂图卡。
-    if (node.toolCall.success === false) {
-      continue;
-    }
-
     const toolOwnerLabel = primaryAgent
       ? `${primaryAgent} · ${node.toolCall.name}`
       : node.toolCall.name;
     const toolArtifacts = collectToolArtifactsFromMetadata(node.toolCall.metadata);
+    const hasReceipt = toolArtifacts.some((artifact) => resolveArtifactRole(artifact) === 'receipt');
+
+    // 失败调用仍默认不建条目，避免幻觉工具落成裂图卡；只有明确产出 receipt 的
+    // 写回动作穿透，进入「已执行」失败态。
+    if (node.toolCall.success === false && !hasReceipt) {
+      continue;
+    }
 
     // metadata 路径兜底通道：只对完全没产出 ToolArtifact 的调用生效——产了 artifact 的
     // 一律以角色轴为准，不再扫 outputPath / metadata 路径，否则 imageAnalyze 的 imagePath
@@ -188,7 +190,8 @@ export function buildArtifactOwnershipItems(
     }
 
     for (const artifact of toolArtifacts) {
-      if (!artifact.path && !artifact.url) {
+      const role = resolveArtifactRole(artifact);
+      if (!artifact.path && !artifact.url && role !== 'receipt') {
         continue;
       }
 
@@ -205,8 +208,17 @@ export function buildArtifactOwnershipItems(
         label: artifact.label,
         ownerKind: 'tool',
         ownerLabel: ownerLabelForToolArtifact(artifact, node.toolCall.name, primaryAgent),
-        // 角色轴单一判据：deliverable 进产物区，material 进「来源」区（见 artifactRoleRegistry）
-        role: resolveArtifactRole(artifact),
+        // 角色轴单一判据：deliverable 进产物区，material 进「来源」区，receipt 进「已执行」区。
+        role,
+        ...(role === 'receipt' ? {
+          receipt: buildReceiptPresentation(
+              artifact,
+              node.toolCall.metadata,
+              node.toolCall.success,
+              node.toolCall.name,
+            ),
+          artifactId: artifact.artifactId,
+        } : {}),
         path: artifact.path,
         url: artifact.url,
         fileMetadata: artifact.path && (artifact.sha256 || artifact.sizeBytes !== undefined || artifact.mimeType)

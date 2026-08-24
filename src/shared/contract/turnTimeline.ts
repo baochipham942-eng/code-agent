@@ -183,17 +183,28 @@ export interface TurnSkillActivity {
 export type TurnArtifactKind = 'file' | 'artifact' | 'link' | 'note';
 export type TurnArtifactOwnerKind = 'assistant' | 'tool' | 'agent';
 
+export interface TurnArtifactReceiptPresentation {
+  status: 'succeeded' | 'failed';
+  summary: string;
+  detail?: string;
+  sourceTool: string;
+}
+
 export interface TurnArtifactOwnershipItem {
   kind: TurnArtifactKind;
   label: string;
   ownerKind: TurnArtifactOwnerKind;
   ownerLabel: string;
   /**
-   * 角色轴：deliverable 进产物区，material 进「来源」区，receipt 本期不上屏。
+   * 角色轴：deliverable 进产物区，material 进「来源」区，receipt 进「已执行」区。
    * **必填**：可选会让「新增分支忘了填」静默漏进产物（fail-open），正是本轴要消灭的失效形态。
    * 必填后漏填 = tsc 报红。旧数据由读取侧兜底，不靠这里的可选性兼容。
    */
   role: 'deliverable' | 'material' | 'receipt';
+  /** receipt 的统一卡面投影；聊天流与概览共用同一套摘要和详情语义。 */
+  receipt?: TurnArtifactReceiptPresentation;
+  /** 用于当前轮与历史消息投影去重。 */
+  artifactId?: string;
   path?: string;
   url?: string;
   /** 文件工具账本随产物携带的落盘实证；任一字段存在即可证明工具确实产出了文件。 */

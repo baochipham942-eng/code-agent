@@ -15,7 +15,6 @@ export interface CronApiRun {
   status?: 'ok' | 'error' | 'skipped';
   error?: string;
   summary?: string;
-  sessionId?: string;
 }
 
 type CronApiEnvelope = {
@@ -137,9 +136,13 @@ function cronApiMutableFields(definition: CronJobDefinition): Record<string, unk
   };
 }
 
+export function cloudDeclarationKey(localJobId: string): string {
+  return `${CLOUD_DECLARATION_PREFIX}${localJobId}`;
+}
+
 export function buildCronApiAddParams(definition: CronJobDefinition): Record<string, unknown> {
   return {
-    declarationKey: `${CLOUD_DECLARATION_PREFIX}${definition.id}`,
+    declarationKey: cloudDeclarationKey(definition.id),
     ...cronApiMutableFields(definition),
   };
 }
@@ -184,7 +187,6 @@ function normalizeRun(value: unknown): CronApiRun | null {
       : undefined,
     error: typeof value.error === 'string' ? value.error : undefined,
     summary: typeof value.summary === 'string' ? value.summary : undefined,
-    sessionId: typeof value.sessionId === 'string' ? value.sessionId : undefined,
   };
 }
 
@@ -213,7 +215,10 @@ export function cloudRunToExecution(run: CronApiRun, localJobId: string): CronJo
     id: `cloud:${run.runId ?? `${run.jobId}:${startedAt}`}`,
     jobId: localJobId,
     runsOn: 'cloud',
-    sessionId: run.sessionId,
+    // 🚫 不带 sessionId：云端 run 的 session 活在服务端，本地 sessions 表里没有这一行，
+    // 而 cron_executions.session_id 是指向 sessions(id) 的外键——照抄进来会让整行
+    // INSERT 撞 SQLITE_CONSTRAINT_FOREIGNKEY，执行记录永远停在「运行中」（2026-08-24
+    // 端到端真机验收实付）。UI 侧的「打开会话」也只能切本地会话，对云端 run 本就是死链。
     status: toExecutionStatus(run),
     scheduledAt: startedAt,
     startedAt,
@@ -251,6 +256,18 @@ export class CronApiClient {
 
   async removeJob(remoteJobId: string): Promise<void> {
     await this.request('remove', 'POST', { id: remoteJobId });
+  }
+
+  /** 云端现存任务的 id 与 declarationKey，用来判断某条是否还在（不靠报错文案）。 */
+  async listJobs(): Promise<Array<{ id: string; declarationKey?: string }>> {
+    const result = await this.request('list', 'GET');
+    const jobs = isRecord(result) && Array.isArray(result.jobs) ? result.jobs : [];
+    return jobs.filter(isRecord).flatMap((job) => (typeof job.id === 'string'
+      ? [{
+        id: job.id,
+        declarationKey: typeof job.declarationKey === 'string' ? job.declarationKey : undefined,
+      }]
+      : []));
   }
 
   async runJob(remoteJobId: string): Promise<unknown> {
@@ -392,9 +409,13 @@ export class CronApiClient {
       throw new Error(`Cloud cron API returned invalid JSON (HTTP ${response.status}).`, { cause: error });
     }
     if (!response.ok || envelope.ok !== true) {
+      // 别把 detail 对象整个丢掉：gateway 的真实原因（code / message）都在里面，
+      // 只留一句 "gateway_error" 会让无人值守场景失去唯一的排查线索。
       const detail = typeof envelope.detail === 'string'
         ? envelope.detail
-        : envelope.error ?? 'unknown error';
+        : envelope.detail === undefined
+          ? envelope.error ?? 'unknown error'
+          : `${envelope.error ?? 'error'}: ${JSON.stringify(envelope.detail)}`;
       throw new Error(`Cloud cron API request failed (HTTP ${response.status}): ${detail}`);
     }
     return envelope.result;

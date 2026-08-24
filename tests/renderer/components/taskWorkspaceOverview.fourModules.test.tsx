@@ -72,6 +72,7 @@ const artifactOwnershipState = vi.hoisted(() => ({
 
 const previewItemsState = vi.hoisted(() => ({
   items: [] as Array<Record<string, unknown>>,
+  receiptItems: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
@@ -120,7 +121,7 @@ vi.mock('../../../src/renderer/hooks/useCurrentTurnArtifactOwnership', () => ({
 vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
   useWorkspacePreviewModel: () => previewItemsState.items,
   // 角色轴（ADR-055）：概览改用 …State 取 { items, materialItems }；替身要跟上新导出
-  useWorkspacePreviewModelState: () => ({ items: previewItemsState.items, materialItems: [], currentTurnArtifacts: null }),
+  useWorkspacePreviewModelState: () => ({ items: previewItemsState.items, materialItems: [], receiptItems: previewItemsState.receiptItems, currentTurnArtifacts: null }),
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invoke: vi.fn(), isAvailable: () => false },
@@ -165,6 +166,7 @@ beforeEach(() => {
   backgroundTaskStore.readFailure = null;
   artifactOwnershipState.current = null;
   previewItemsState.items = [];
+  previewItemsState.receiptItems = [];
   appState.openPreview.mockReset();
   appState.openContentPreview.mockReset();
   appState.openWorkspacePreview.mockReset();
@@ -214,6 +216,34 @@ describe('四模块归位', () => {
   it('无上下文时上下文模块不渲染', () => {
     render(<TaskWorkspaceOverview />);
     expect(screen.queryByTestId('overview-context-module')).toBeNull();
+  });
+});
+
+describe('已执行模块', () => {
+  it('独立于产物/过程材料默认展开，失败项标红且详情点击后才展开', () => {
+    previewItemsState.receiptItems = [{
+      id: 'receipt-mail',
+      kind: 'trace',
+      title: '发送邮件失败：周报 · 发给 zhang@example.com 等 3 人',
+      subtitle: 'mail_send',
+      status: 'failed',
+      createdAt: 1_700_000_000_000,
+      source: { kind: 'tool', label: 'mail_send' },
+      content: { text: 'To: zhang@example.com, li@example.com, wang@example.com\nSMTP unavailable' },
+    }];
+
+    render(<TaskWorkspaceOverview />);
+
+    expect(screen.getByTestId('overview-receipts-list')).toBeTruthy();
+    expect(screen.queryByTestId('overview-artifacts-module')).toBeNull();
+    expect(screen.queryByTestId('overview-materials-module')).toBeNull();
+    expect(screen.getByTestId('overview-receipts-module').textContent).toContain('已执行');
+    expect(screen.getByTestId('overview-receipts-module').textContent).not.toContain('li@example.com');
+    expect(screen.getByTestId('overview-receipts-module').querySelector('.text-badge-danger')?.textContent).toBe('失败');
+
+    const summary = screen.getByText('发送邮件失败：周报 · 发给 zhang@example.com 等 3 人');
+    fireEvent.click(summary.closest('button')!);
+    expect(screen.getByTestId('overview-receipts-module').textContent).toContain('li@example.com');
   });
 });
 

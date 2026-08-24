@@ -77,6 +77,7 @@ beforeEach(() => {
   mocks.buildWorkspacePreviewSections.mockImplementation(() => ({
     items: [{ id: 'item-1', kind: 'file', revision: { artifactId: 'artifact-1' } }],
     materialItems: [],
+    receiptItems: [],
   }));
 });
 
@@ -104,6 +105,7 @@ describe('useWorkspacePreviewModelState 不因上游换身份而自激', () => {
     mocks.buildWorkspacePreviewSections.mockImplementation(() => ({
       items: [{ id: 'item-2', kind: 'file', revision: { artifactId: 'artifact-2' } }],
       materialItems: [],
+      receiptItems: [],
     }));
     view.rerender(<Probe />);
 
@@ -115,6 +117,7 @@ describe('useWorkspacePreviewModelState 不因上游换身份而自激', () => {
     mocks.buildWorkspacePreviewSections.mockImplementation(() => ({
       items: [{ id: 'item-1', kind: 'question_form' }],
       materialItems: [],
+      receiptItems: [],
     }));
 
     const view = render(<Probe />);

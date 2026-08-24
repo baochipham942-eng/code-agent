@@ -21,6 +21,7 @@ import type {
   SendMessageResult,
   ChannelCapabilities,
   ChannelAttachment,
+  ChannelConversation,
 } from '../../../shared/contract/channel';
 import { createLogger } from '../../services/infra/logger';
 import {
@@ -423,6 +424,38 @@ export class FeishuChannel extends BaseChannelPlugin {
       logger.error(`Failed to send ${this.meta.name} message`, { error: message });
       return { success: false, error: message };
     }
+  }
+
+  async listConversations(): Promise<ChannelConversation[]> {
+    if (!this.client) {
+      throw new Error(`${this.meta.name}Channel not initialized`);
+    }
+
+    const conversations: ChannelConversation[] = [];
+    let pageToken: string | undefined;
+    do {
+      const response = await this.client.im.chat.list({
+        params: {
+          page_size: 100,
+          sort_type: 'ByActiveTimeDesc',
+          page_token: pageToken,
+        },
+      });
+      if (response.code !== 0) {
+        throw new Error(response.msg || `Failed to list ${this.meta.name} conversations`);
+      }
+
+      for (const chat of response.data?.items ?? []) {
+        if (!chat.chat_id || chat.chat_status === 'dissolved' || chat.chat_status === 'dissolved_save') continue;
+        conversations.push({
+          id: chat.chat_id,
+          name: chat.name?.trim() || chat.chat_id,
+        });
+      }
+      pageToken = response.data?.has_more ? response.data.page_token : undefined;
+    } while (pageToken);
+
+    return conversations;
   }
 
   async retryMediaAttachment(attachment: ChannelAttachment, cacheRoot?: string): Promise<ChannelAttachment> {

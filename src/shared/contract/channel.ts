@@ -342,6 +342,19 @@ export interface ChannelAccount {
   defaultAgentId?: string;
 }
 
+/** 通道账号可发送的会话。只有实现列会话能力的通道才会返回。 */
+export interface ChannelConversation {
+  id: string;
+  name: string;
+}
+
+/** 列会话 IPC 的显式能力结果；unsupported 与“支持但没有会话”严格区分。 */
+export interface ChannelConversationListResponse {
+  supported: boolean;
+  conversations: ChannelConversation[];
+  error?: string;
+}
+
 // ============================================================================
 // Channel Inbox / Outbox
 // ============================================================================

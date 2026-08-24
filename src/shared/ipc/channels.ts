@@ -211,6 +211,8 @@ export type LABChannel = (typeof LAB_CHANNELS)[keyof typeof LAB_CHANNELS];
 export const CHANNEL_CHANNELS = {
   /** 获取所有账号 */
   LIST_ACCOUNTS: 'channel:list-accounts',
+  /** 获取指定账号可发送的会话 */
+  LIST_CONVERSATIONS: 'channel:list-conversations',
   /** 添加账号 */
   ADD_ACCOUNT: 'channel:add-account',
   /** 更新账号 */

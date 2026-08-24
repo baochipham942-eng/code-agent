@@ -18,6 +18,7 @@ import {
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { CronRunsOnPill } from './CronRunsOnSelector';
+import { CronResultChannelSummary } from './CronResultChannel';
 
 interface CronJobDetailProps {
   job: CronJobDefinition | null;
@@ -170,6 +171,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
           <div className="mt-2 flex flex-wrap items-center gap-x-8 gap-y-1.5 border-t border-zinc-800/70 pt-2">
             <SummaryItem label={cc.cardEnabledState} value={job.enabled ? cc.enabled : cc.disabled} />
             <SummaryItem label={cc.cardAction} value={formatActionSummary(job)} />
+            <CronResultChannelSummary value={job.resultChannel} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-zinc-800/70 pt-2">
             <span className="text-xs text-zinc-500">{cc.cardExecutionLocation}</span>

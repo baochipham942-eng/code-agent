@@ -2,6 +2,74 @@ import { homedir } from 'node:os';
 
 import type { ModelConfig } from '../../../shared/contract';
 
+const TELEMETRY_PROMPT_CORRELATION_WINDOW_MS = 60_000;
+
+function isSameTurnByTimestamp(
+  messageTimestamp: number | string | undefined,
+  telemetryStartTime: number | string,
+): boolean {
+  const messageTime = Number(messageTimestamp);
+  const telemetryTime = Number(telemetryStartTime);
+  return Number.isFinite(messageTime)
+    && Number.isFinite(telemetryTime)
+    && messageTime <= telemetryTime
+    && telemetryTime - messageTime <= TELEMETRY_PROMPT_CORRELATION_WINDOW_MS;
+}
+
+function findClosestPromptTurnIndex(
+  existingRows: Array<{ timestamp?: number | string }>,
+  telemetryStartTime: number | string,
+): number {
+  let closestIndex = -1;
+  let closestTimestamp = Number.NEGATIVE_INFINITY;
+  for (let index = 0; index < existingRows.length; index++) {
+    const timestamp = Number(existingRows[index].timestamp);
+    if (
+      isSameTurnByTimestamp(existingRows[index].timestamp, telemetryStartTime)
+      && timestamp > closestTimestamp
+    ) {
+      closestIndex = index;
+      closestTimestamp = timestamp;
+    }
+  }
+  return closestIndex;
+}
+
+export function findMissingTelemetryPromptRows<
+  T extends { user_prompt: string; start_time: number | string },
+>(
+  telemetryRows: T[],
+  existingRows: Array<{ content: string; timestamp?: number | string }>,
+): T[] {
+  const unmatchedExistingRows = existingRows.map((row) => ({
+    ...row,
+    normalizedContent: normalizePromptForBackfill(row.content),
+  }));
+
+  return telemetryRows.filter((row) => {
+    const key = normalizePromptForBackfill(row.user_prompt);
+    const exactMatchIndex = unmatchedExistingRows.findIndex(
+      (existing) => existing.normalizedContent === key,
+    );
+    if (exactMatchIndex >= 0) {
+      unmatchedExistingRows.splice(exactMatchIndex, 1);
+      return false;
+    }
+
+    // telemetry user_prompt is guarded diagnostic data. Its path/PII masking is lossy,
+    // so correlate the already-persisted original by turn time before declaring it absent.
+    const timestampMatchIndex = findClosestPromptTurnIndex(
+      unmatchedExistingRows,
+      row.start_time,
+    );
+    if (timestampMatchIndex >= 0) {
+      unmatchedExistingRows.splice(timestampMatchIndex, 1);
+      return false;
+    }
+    return true;
+  });
+}
+
 // SessionRepository 持久化只存 provider+model（apiKey 不入库）；剥离后让
 // SessionManager 返回的内存 session 与 DB 读回（fromRow）语义一致。
 export function sanitizeModelConfigForSession(config: ModelConfig): ModelConfig {

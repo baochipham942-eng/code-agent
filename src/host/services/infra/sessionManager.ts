@@ -6,7 +6,10 @@
 import { AppWindow } from '../../platform';
 import { getDatabase, type StoredSession } from '../core';
 import { getToolCache } from './toolCache';
-import { normalizePromptForBackfill, sanitizeModelConfigForSession } from './sessionManagerNormalization';
+import {
+  findMissingTelemetryPromptRows,
+  sanitizeModelConfigForSession,
+} from './sessionManagerNormalization';
 import { getAuthService } from '../auth/authService';
 import { getSupabase, isSupabaseInitialized } from './supabaseService';
 import { IPC_CHANNELS } from '../../../shared/ipc';
@@ -94,6 +97,7 @@ interface TelemetryUserPromptRow {
 
 interface ExistingUserMessageRow {
   content: string;
+  timestamp?: number | string;
 }
 
 // ----------------------------------------------------------------------------
@@ -142,7 +146,7 @@ export class SessionManager implements Disposable {
       const existingRows = rawDb
         .prepare(
           `
-        SELECT content
+        SELECT content, timestamp
         FROM messages
         WHERE session_id = ?
           AND role = 'user'
@@ -150,22 +154,11 @@ export class SessionManager implements Disposable {
         )
         .all(sessionId) as ExistingUserMessageRow[];
 
-      const remainingExistingCounts = new Map<string, number>();
-      for (const row of existingRows) {
-        const key = normalizePromptForBackfill(row.content);
-        remainingExistingCounts.set(key, (remainingExistingCounts.get(key) ?? 0) + 1);
-      }
+      const missingTelemetryRows = findMissingTelemetryPromptRows(telemetryRows, existingRows);
 
       let inserted = 0;
-      for (const row of telemetryRows) {
+      for (const row of missingTelemetryRows) {
         const content = row.user_prompt;
-        const key = normalizePromptForBackfill(content);
-        const existingCount = remainingExistingCounts.get(key) ?? 0;
-        if (existingCount > 0) {
-          remainingExistingCounts.set(key, existingCount - 1);
-          continue;
-        }
-
         const timestamp = Number(row.start_time);
         db.addMessage(
           sessionId,

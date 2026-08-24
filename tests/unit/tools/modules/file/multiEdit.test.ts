@@ -10,6 +10,7 @@ vi.mock('../../../../../src/host/tools/lsp/diagnosticsHelper', () => ({
 }));
 
 import { editModule } from '../../../../../src/host/tools/modules/file/multiEdit';
+import { readModule } from '../../../../../src/host/tools/modules/file/read';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -41,6 +42,77 @@ describe('multiEditModule evidence metadata', () => {
   afterEach(async () => {
     fileReadTracker.clear();
     await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('allows an eval Read followed by Edit through the real tool chain', async () => {
+    const realRoot = path.join(tmpDir, 'real-root');
+    const sandbox = path.join(tmpDir, 'sandbox');
+    const relativePath = 'note.txt';
+    const realFile = path.join(realRoot, relativePath);
+    const sandboxFile = path.join(sandbox, relativePath);
+    await fs.mkdir(realRoot, { recursive: true });
+    await fs.mkdir(sandbox, { recursive: true });
+    await fs.writeFile(realFile, 'alpha\nworking tree\n', 'utf-8');
+    await fs.writeFile(sandboxFile, 'alpha\nsnapshot\n', 'utf-8');
+
+    const previousRealRoot = process.env.CODE_AGENT_EVAL_REAL_ROOT;
+    process.env.CODE_AGENT_EVAL_REAL_ROOT = realRoot;
+    try {
+      const ctx = makeCtx({ workingDir: sandbox });
+      const readHandler = await readModule.createHandler();
+      const readResult = await readHandler.execute({ file_path: realFile }, ctx, allowAll);
+      expect(readResult.ok).toBe(true);
+
+      const editHandler = await editModule.createHandler();
+      const editResult = await editHandler.execute(
+        {
+          file_path: realFile,
+          edits: [{ old_text: 'snapshot', new_text: 'edited snapshot' }],
+        },
+        ctx,
+        allowAll,
+      );
+
+      expect(editResult.ok).toBe(true);
+      if (!editResult.ok) expect(editResult.code).not.toBe('NOT_READ');
+      expect(await fs.readFile(sandboxFile, 'utf-8')).toBe('alpha\nedited snapshot\n');
+      expect(await fs.readFile(realFile, 'utf-8')).toBe('alpha\nworking tree\n');
+    } finally {
+      if (previousRealRoot === undefined) delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+      else process.env.CODE_AGENT_EVAL_REAL_ROOT = previousRealRoot;
+    }
+  });
+
+  it('reads the eval sandbox snapshot instead of the working tree', async () => {
+    const realRoot = path.join(tmpDir, 'real-root');
+    const sandbox = path.join(tmpDir, 'sandbox');
+    const relativePath = path.join('src', 'subject.txt');
+    const realFile = path.join(realRoot, relativePath);
+    const sandboxFile = path.join(sandbox, relativePath);
+    await fs.mkdir(path.dirname(realFile), { recursive: true });
+    await fs.mkdir(path.dirname(sandboxFile), { recursive: true });
+    await fs.writeFile(realFile, 'working-tree-content', 'utf-8');
+    await fs.writeFile(sandboxFile, 'sandbox-snapshot-content', 'utf-8');
+
+    const previousRealRoot = process.env.CODE_AGENT_EVAL_REAL_ROOT;
+    process.env.CODE_AGENT_EVAL_REAL_ROOT = realRoot;
+    try {
+      const handler = await readModule.createHandler();
+      const result = await handler.execute(
+        { file_path: realFile },
+        makeCtx({ workingDir: sandbox }),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('sandbox-snapshot-content');
+        expect(result.output).not.toContain('working-tree-content');
+      }
+    } finally {
+      if (previousRealRoot === undefined) delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+      else process.env.CODE_AGENT_EVAL_REAL_ROOT = previousRealRoot;
+    }
   });
 
   it('returns changedFiles and a changed file artifact after editing', async () => {

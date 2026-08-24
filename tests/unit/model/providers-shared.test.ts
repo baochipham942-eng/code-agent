@@ -2,7 +2,7 @@
 // Provider Shared Utilities — Pure Function Unit Tests
 // ============================================================================
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
   convertToOpenAIMessages,
   convertToClaudeMessages,
@@ -15,6 +15,7 @@ import {
 } from '../../../src/host/model/providers/shared';
 import type { ModelMessage } from '../../../src/host/model/types';
 import type { ToolDefinition } from '../../../src/shared/contract';
+import { logger } from '../../../src/host/model/providers/providerRuntime';
 
 // ----------------------------------------------------------------------------
 // Type helpers for test assertions
@@ -89,17 +90,25 @@ function makeTool(name: string, desc: string, schema: any): ToolDefinition {
 // ============================================================================
 
 describe('孤儿 tool_call 占位不得对模型撒谎', () => {
-  // 曾经写的是 `[context compacted]`，而压缩根本不会制造孤儿：compactionService 选边界时
-  // 会把边界挪到 tool_call 之前避免拆散配对，activeToolResultPrune 是替换 content 不删条目。
-  // 真实来源只有「轮次在工具返回前就结束了」（停止/断连/崩溃）。两者对模型含义相反：
-  // 「被压缩了」暗示工具执行过了，模型会当作已完成往下走；真相是它可能根本没跑完。
-  it('不声称是上下文压缩，并明确不许假设工具成功了', () => {
-    expect(ORPHANED_TOOL_CALL_PLACEHOLDER.toLowerCase()).not.toContain('compact');
-    expect(ORPHANED_TOOL_CALL_PLACEHOLDER.toLowerCase()).toContain('do not assume it succeeded');
+  it('说明没有结果、可能被拒绝，并明确不许假设工具成功了', () => {
+    const placeholder = ORPHANED_TOOL_CALL_PLACEHOLDER.toLowerCase();
+    expect(placeholder).toContain('no result');
+    expect(placeholder).toContain('denied');
+    expect(placeholder).toContain('do not assume it succeeded');
   });
 });
 
 describe('convertToOpenAIMessages', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
   it('converts text-only user message', () => {
     const messages: ModelMessage[] = [
       makeTextMessage('user', 'Hello world'),
@@ -183,6 +192,7 @@ describe('convertToOpenAIMessages', () => {
       tool_call_id: 'tc_1',
       content: 'Search results here',
     });
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it('converts tool result with correct tool_call_id', () => {
@@ -217,33 +227,38 @@ describe('convertToOpenAIMessages', () => {
     });
   });
 
-  it('sanitizes dangling tool results by synthesizing placeholders', () => {
-    // Simulate compaction scenario: assistant has tool_calls but responses were removed
+  it('synthesizes a warning-backed output for an orphaned tool_call', () => {
     const messages: ModelMessage[] = [
       makeAssistantWithToolCalls('', [
         { id: 'orphan_1', name: 'bash', arguments: '{"cmd":"ls"}' },
       ]),
-      // No tool result for orphan_1 — jump to next user message
       makeTextMessage('user', 'What happened?'),
     ];
     const result = convertToOpenAIMessages(messages);
 
-    // Should synthesize a placeholder tool response between assistant and user
-    const toolMessages = result.filter((m: any) => m.role === 'tool');
+    const toolMessages = result.filter((message) => message.role === 'tool');
     expect(toolMessages).toHaveLength(1);
     expect(toolMessages[0].tool_call_id).toBe('orphan_1');
     expect(toolMessages[0].content).toBe(ORPHANED_TOOL_CALL_PLACEHOLDER);
 
-    // Order: assistant → tool(placeholder) → user
-    const roles = result.map((m: any) => m.role);
+    const roles = result.map((message) => message.role);
     const assistantIdx = roles.indexOf('assistant');
     const toolIdx = roles.indexOf('tool');
     const userIdx = roles.lastIndexOf('user');
     expect(toolIdx).toBeGreaterThan(assistantIdx);
     expect(userIdx).toBeGreaterThan(toolIdx);
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[sanitizeToolCallOrder] Synthesizing placeholder output for orphaned tool_call',
+      {
+        callId: 'orphan_1',
+        messageIndex: 0,
+        toolCallIndex: 0,
+        chatMessageIndex: 1,
+      },
+    );
   });
 
-  it('demotes orphaned tool results without a matching assistant tool_call', () => {
+  it('drops a warning-backed orphaned tool output without a matching tool_call', () => {
     const messages: ModelMessage[] = [
       makeTextMessage('user', 'Continue repair'),
       makeToolResult('lost_call', 'Artifact validation failed after filtered history'),
@@ -252,13 +267,17 @@ describe('convertToOpenAIMessages', () => {
 
     const result = convertToOpenAIMessages(messages);
 
-    expect(result.some((message: any) => message.role === 'tool')).toBe(false);
-    expect(result[1].role).toBe('user');
-    expect(result[1].content).toContain('orphaned tool result omitted from structured tool channel: lost_call');
-    expect(result[1].content).toContain('Artifact validation failed');
+    expect(result).toEqual([
+      { role: 'user', content: 'Continue repair' },
+      { role: 'user', content: 'Try again' },
+    ]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[sanitizeToolCallOrder] Dropping orphaned tool output without matching tool_call',
+      { callId: 'lost_call', messageIndex: 1, chatMessageIndex: 1 },
+    );
   });
 
-  it('synthesizes missing expected tool responses before demoting mismatched tool results', () => {
+  it('repairs both orphan directions without crossing the next user turn', () => {
     const messages: ModelMessage[] = [
       makeAssistantWithToolCalls('', [
         { id: 'expected_call', name: 'Write', arguments: '{"file_path":"game.html"}' },
@@ -275,9 +294,23 @@ describe('convertToOpenAIMessages', () => {
       tool_call_id: 'expected_call',
       content: ORPHANED_TOOL_CALL_PLACEHOLDER,
     });
-    expect(result[2].role).toBe('user');
-    expect(result[2].content).toContain('filtered_out_call');
-    expect(result[3].role).toBe('user');
+    expect(result[2]).toEqual({ role: 'user', content: 'Next' });
+    expect(result).toHaveLength(3);
+    expect(warnSpy).toHaveBeenNthCalledWith(
+      1,
+      '[sanitizeToolCallOrder] Synthesizing placeholder output for orphaned tool_call',
+      {
+        callId: 'expected_call',
+        messageIndex: 0,
+        toolCallIndex: 0,
+        chatMessageIndex: 1,
+      },
+    );
+    expect(warnSpy).toHaveBeenNthCalledWith(
+      2,
+      '[sanitizeToolCallOrder] Dropping orphaned tool output without matching tool_call',
+      { callId: 'filtered_out_call', messageIndex: 1, chatMessageIndex: 2 },
+    );
   });
 });
 

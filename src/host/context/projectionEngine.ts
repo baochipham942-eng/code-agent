@@ -17,6 +17,13 @@ export interface ProjectableMessage {
   [key: string]: unknown;
 }
 
+function stripToolProtocolFields(message: ProjectableMessage): ProjectableMessage {
+  const cleanMessage = { ...message };
+  delete cleanMessage.toolCalls;
+  delete cleanMessage.toolCallId;
+  return cleanMessage;
+}
+
 export class ProjectionEngine {
   /**
    * Pure function: projects transcript through compression state.
@@ -58,7 +65,7 @@ export class ProjectionEngine {
       if (collapsedFirstIds.has(projectionId)) {
         const span = collapsedFirstIds.get(projectionId)!;
         const summaryMsg: ProjectableMessage = {
-          ...msg,
+          ...stripToolProtocolFields(msg),
           role: 'system',
           content: `[collapsed: ${span.messageIds.length} turns] ${span.summary}`,
         };

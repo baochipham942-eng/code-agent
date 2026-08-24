@@ -18,6 +18,7 @@ import { DurableRunKernel } from '../../../../src/host/runtime/durableRunKernel'
 import type { RunRehydrationPlan } from '../../../../src/host/runtime/durableRunStores';
 import { RunRegistry, RunSessionConflictError } from '../../../../src/host/runtime/runRegistry';
 import { DurableRunRepository } from '../../../../src/host/services/core/repositories/DurableRunRepository';
+import type { Message } from '../../../../src/shared/contract';
 
 function createRepository() {
   const db = new Database(':memory:');
@@ -143,6 +144,148 @@ function unavailablePorts(input: {
 }
 
 describe('durable Native recovery lifecycle', () => {
+  it('recovers a prepared model operation through the application continuation path', async () => {
+    const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'durable-native-model-')));
+    const { db, repository } = createRepository();
+    const firstRegistry = new RunRegistry();
+    firstRegistry.configureDurableKernel(kernel(repository, 'prepared-before-crash'));
+    const recoveredRegistry = new RunRegistry();
+    recoveredRegistry.configureDurableKernel(kernel(repository, 'prepared-after-crash'));
+    let messages: Message[] = [{
+      id: 'prepared-source-message',
+      role: 'user',
+      content: '恢复这次模型调用',
+      timestamp: 1_005,
+    }];
+    const startTask = vi.fn(async () => {
+      messages.push({
+        id: 'prepared-recovered-result',
+        role: 'assistant',
+        content: '续跑完成',
+        timestamp: 2_001,
+      });
+    });
+
+    try {
+      const original = await firstRegistry.startDurable({
+        runId: 'run-prepared-before-crash',
+        sessionId: 'session-prepared-before-crash',
+        workspace,
+        cwd: workspace,
+      }, 1_000);
+      await firstRegistry.checkpointNativeModelOperation({
+        runId: original.context.runId,
+        sourceMessageId: 'prepared-source-message',
+        provider: 'openai',
+        model: 'gpt-test',
+        logicalOperationId: 'prepared-turn',
+        phase: 'before_model_dispatch',
+        status: 'prepared',
+        now: 1_010,
+      });
+      firstRegistry.clear();
+
+      const [plan] = await recoveredRegistry.recoverDurable(2_000);
+      const applicationPorts = createApplicationNativeRecoveryPorts(recoveredRegistry, {
+        sessions: {
+          getMessages: vi.fn(async () => messages),
+          updateMessage: vi.fn(async (messageId: string, updates: Partial<Message>) => {
+            messages = messages.map((message) => message.id === messageId
+              ? { ...message, ...updates }
+              : message);
+          }),
+        },
+        tasks: {
+          setSessionContext: vi.fn(),
+          startTask,
+        },
+        now: () => 2_000,
+      });
+      const descriptor = plan.checkpoint?.state as NativeRecoveryDescriptor;
+      const ports: NativeRecoveryHostPorts = {
+        ...applicationPorts,
+        resolveWorkspaceScopeVersion: vi.fn(async () => descriptor.workspace.scope?.version ?? null),
+      };
+
+      await expect(new NativeRecoveryHost(recoveredRegistry, ports).createHandler().recover(plan, 2_000))
+        .resolves.toMatchObject({
+          status: 'recovered',
+          reason: 'execute_prepared_model_once',
+          detail: { resultRef: 'message-ledger:prepared-recovered-result' },
+        });
+      expect(startTask).toHaveBeenCalledOnce();
+      expect(await repository.get(original.context.runId)).toMatchObject({
+        status: 'completed',
+        terminal: { reason: 'execute_prepared_model_once' },
+      });
+      expect(await repository.read(original.context.runId, 0, 100)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: 'native_model_recovery_dispatch_fenced' }),
+        expect.objectContaining({ type: 'native_recovery_result_committed' }),
+        expect.objectContaining({ type: 'run_completed' }),
+      ]));
+    } finally {
+      firstRegistry.clear();
+      recoveredRegistry.clear();
+      db.close();
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    {
+      branch: 'dispatched model with a provider operation id',
+      plan: () => reviewPlan(),
+      reason: 'model_result_handle_not_queryable',
+      status: 'requires_review',
+      approval: 'pending' as const,
+    },
+    {
+      branch: 'dispatched model without safe retry proof',
+      plan: () => planWith({ status: 'dispatched', providerOperationId: undefined }),
+      reason: 'model_safe_retry_unproven',
+      status: 'requires_review',
+      approval: 'pending' as const,
+    },
+    {
+      branch: 'pending approval',
+      plan: () => planWith({
+        kind: 'approval',
+        status: 'waiting',
+        providerOperationId: 'approval:approval-review',
+        approvalId: 'approval-review',
+      }),
+      reason: 'restore_same_approval',
+      status: 'observing',
+      approval: 'pending' as const,
+    },
+  ])('keeps $branch waiting with the production continuation switch available', async ({
+    plan,
+    reason,
+    status,
+    approval,
+  }) => {
+    const registry = {
+      checkpointDurable: vi.fn(),
+      terminalDurable: vi.fn(),
+    } as unknown as RunRegistry;
+    const production = createApplicationNativeRecoveryPorts();
+    const ports: NativeRecoveryHostPorts = {
+      ...production,
+      resolveWorkspace: vi.fn(async () => ({
+        ok: true as const, root: '/repo', cwd: '/repo', fingerprint: 'fp',
+      })),
+      approval: { read: vi.fn(async () => approval) },
+    };
+
+    expect(ports.continuationExecutor).toBe('available');
+    await expect(new NativeRecoveryHost(registry, ports).createHandler().recover(plan(), 10))
+      .resolves.toMatchObject({ status, reason });
+    expect(registry.checkpointDurable).toHaveBeenCalledWith('run-review', expect.objectContaining({
+      status: 'waiting',
+    }));
+    expect(registry.terminalDurable).not.toHaveBeenCalled();
+  });
+
   it.each([
     {
       branch: 'unknown write side effect',
@@ -155,6 +298,9 @@ describe('durable Native recovery lifecycle', () => {
       descriptor: { phase: 'tool_dispatched' as const },
       ports: () => createApplicationNativeRecoveryPorts(),
       reason: 'unknown_write_side_effect',
+      recoveryStatus: 'requires_review',
+      persistedOperationStatus: 'unknown',
+      eventType: 'native_recovery_requires_review',
     },
     {
       branch: 'pending approval without a recovery resolution path',
@@ -172,13 +318,19 @@ describe('durable Native recovery lifecycle', () => {
         ...createApplicationNativeRecoveryPorts(),
         approval: { read: vi.fn(async () => 'pending' as const) },
       }),
-      reason: 'approval_pending_no_recovery_resolution_path',
+      reason: 'restore_same_approval',
+      recoveryStatus: 'observing',
+      persistedOperationStatus: 'waiting',
+      eventType: 'approval_recovered',
     },
-  ])('fails a production $branch run, preserves its evidence, and lets the same session start again', async ({
+  ])('parks a production $branch run with its evidence and keeps the session fenced', async ({
     operation,
     descriptor,
     ports,
     reason,
+    recoveryStatus,
+    persistedOperationStatus,
+    eventType,
   }) => {
     const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'durable-native-recovery-')));
     const { db, repository } = createRepository();
@@ -242,7 +394,6 @@ describe('durable Native recovery lifecycle', () => {
       const recoveredRegistry = new RunRegistry();
       recoveredRegistry.configureDurableKernel(kernel(repository, 'process-after-crash'));
       const [plan] = await recoveredRegistry.recoverDurable(2_000);
-      const expectedPreservedOperations = plan.pendingOperations;
       const recovery = await new NativeRecoveryHost(
         recoveredRegistry,
         ports(),
@@ -264,20 +415,19 @@ describe('durable Native recovery lifecycle', () => {
         nextRunError = error;
       }
 
-      expect.soft(recovery.status).toBe('failed');
+      expect.soft(recovery.status).toBe(recoveryStatus);
       expect.soft(recovery.reason).toBe(reason);
-      expect.soft(persisted?.status).toBe('failed');
-      expect.soft(persisted?.terminal?.reason).toBe(reason);
-      expect.soft(preservedOperations).toEqual(expectedPreservedOperations);
+      expect.soft(persisted?.status).toBe('waiting');
+      expect.soft(persisted?.terminal).toBeUndefined();
+      expect.soft(preservedOperations).toEqual([
+        expect.objectContaining({ status: persistedOperationStatus }),
+      ]);
       expect.soft(events.at(-1)).toMatchObject({
-        type: 'run_failed',
-        payload: { recoveryReason: reason },
+        type: eventType,
       });
-      expect.soft(events).not.toContainEqual(expect.objectContaining({ type: 'native_recovery_requires_review' }));
-      expect.soft(events).not.toContainEqual(expect.objectContaining({ type: 'approval_recovered' }));
-      expect.soft(recoveredRegistry.hasDurableOwner(original.context.runId)).toBe(false);
-      expect(nextRunError).toBeUndefined();
-      expect(nextRun?.context.runId).toBe('run-after-recovery');
+      expect.soft(recoveredRegistry.hasDurableOwner(original.context.runId)).toBe(true);
+      expect(nextRunError).toBeInstanceOf(RunSessionConflictError);
+      expect(nextRun).toBeUndefined();
       recoveredRegistry.clear();
     } finally {
       firstRegistry.clear();

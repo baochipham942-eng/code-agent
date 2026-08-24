@@ -39,10 +39,7 @@ import {
   TOOL_SPAM_WINDOW,
 } from './stagnationDetector';
 import { getArtifactRepairToolPolicy } from './artifactRepairGuard';
-import {
-  maybeClearCompletedArtifactRepairGuardBeforeAdmission,
-  ARTIFACT_REPAIR_STOP_PREFIXES,
-} from './artifactRepairAdmission';
+import { maybeClearCompletedArtifactRepairGuardBeforeAdmission } from './artifactRepairAdmission';
 import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrapingDetector';
 import { applyGroundTruthGate } from './groundTruthGate';
 import { applyDesktopActionClaimGate } from './desktopActionClaimGate';
@@ -67,6 +64,8 @@ import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
 import { shouldEndRunForPlanApproval } from './planApprovalRunBoundary';
+import { persistCancelledToolCallClosures } from './cancelledToolCallClosure';
+import { emitArtifactRepairStopError } from './artifactRepairStopError';
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
 
@@ -134,38 +133,6 @@ export class MessageProcessor {
     const currentMaxTokens = this.ctx.modelConfig.maxTokens || MODEL_MAX_TOKENS.DEFAULT;
     const providerRecommendedMax = getModelMaxOutputTokens(this.ctx.modelConfig.model);
     return Math.max(currentMaxTokens, providerRecommendedMax);
-  }
-
-  // Route A: surface an artifact-repair force-stop to the UI as an error event so
-  // the user sees why the turn ended. Handles both stop kinds (unavailable-tool
-  // spam and attempt-limit exhaustion).
-  private maybeEmitArtifactRepairStopError(stopReason: string): void {
-    const targetFile = this.ctx.artifact.repairGuard?.targetFile ?? '目标文件';
-    const unavailablePrefix = ARTIFACT_REPAIR_STOP_PREFIXES['unavailable-tool'];
-    const attemptsPrefix = ARTIFACT_REPAIR_STOP_PREFIXES['attempts-exhausted'];
-    if (stopReason.startsWith(unavailablePrefix)) {
-      const detail = stopReason.slice(unavailablePrefix.length).trim();
-      this.ctx.onEvent({
-        type: 'error',
-        data: {
-          message: `产物修复终止:模型反复请求不可用工具 ${detail},已停止本轮尝试`,
-          code: 'artifact_repair_admission_stop',
-          suggestion: `目标文件 ${targetFile} 仍需要应用修复变更。建议重新发起任务,或检查目标文件当前状态后再继续。`,
-          details: { targetFile, blockedTool: detail },
-        },
-      });
-    } else if (stopReason.startsWith(attemptsPrefix)) {
-      const detail = stopReason.slice(attemptsPrefix.length).trim();
-      this.ctx.onEvent({
-        type: 'error',
-        data: {
-          message: `产物修复终止:修复尝试达到上限(${detail}),已停止本轮尝试`,
-          code: 'artifact_repair_admission_stop',
-          suggestion: `目标文件 ${targetFile} 仍未通过校验。建议重新发起任务,或检查目标文件当前状态后再继续。`,
-          details: { targetFile, attempts: detail },
-        },
-      });
-    }
   }
 
   private buildAssistantMessageFromResponse(response: ModelResponse, content: string): Message {
@@ -643,7 +610,7 @@ export class MessageProcessor {
         {
           ctx: this.ctx,
           contextAssembly: this.contextAssembly,
-          emitArtifactRepairStopError: (reason) => this.maybeEmitArtifactRepairStopError(reason),
+          emitArtifactRepairStopError: (reason) => emitArtifactRepairStopError(this.ctx, reason),
         },
         response,
         toolCalls,
@@ -818,7 +785,13 @@ export class MessageProcessor {
     logger.debug(` executeToolsWithHooks completed, ${toolResults.length} results`);
 
     if (this.ctx.control.isCancelled || this.ctx.control.isInterrupted || this.ctx.control.runAbortController?.signal.aborted) {
-      logger.info('[AgentLoop] Run stop detected after tool execution; suppressing tool results');
+      logger.info('[AgentLoop] Run stop detected after tool execution; persisting cancelled tool-call closures');
+      await persistCancelledToolCallClosures({
+        messages: this.ctx.messages,
+        assistantMessage,
+        toolCalls,
+        persistMessage: (message) => this.contextAssembly.addAndPersistMessage(message),
+      });
       return 'break';
     }
 
@@ -987,7 +960,7 @@ export class MessageProcessor {
 
       // admission_stop:在 final assistant message push 后 emit error,
       // useSessionLifecycleEffects 会把 errorContent 合并到 lastMessage(此时 = finalMessage assistant)上显示。
-      this.maybeEmitArtifactRepairStopError(this.ctx.control.forceFinalResponseReason);
+      emitArtifactRepairStopError(this.ctx, this.ctx.control.forceFinalResponseReason);
 
       this.ctx.control.clearForceFinalResponse();
       this.contextAssembly.flushHookMessageBuffer();

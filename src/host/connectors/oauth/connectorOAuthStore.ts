@@ -5,14 +5,15 @@ import type {
 } from '@modelcontextprotocol/client';
 import { getSecureStorage, type SecureStorageService } from '../../services/core/secureStorage';
 
-type ConnectorOAuthStorageKind = 'tokens' | 'client-info' | 'code-verifier' | 'discovery';
+type ConnectorOAuthStorageKind = 'tokens' | 'client-info' | 'code-verifier' | 'discovery' | 'client-secret';
 type ConnectorOAuthStorageKey = `connector-oauth:${string}:${string}`;
 export type ConnectorOAuthCredentialScope =
   | 'all'
   | 'client'
   | 'tokens'
   | 'verifier'
-  | 'discovery';
+  | 'discovery'
+  | 'client-secret';
 
 export interface ConnectorOAuthDiscoveryState {
   authorizationServerUrl: string;
@@ -90,6 +91,20 @@ export class ConnectorOAuthStore {
     return state;
   }
 
+  // provider 的 App Secret。**只住在这里**——不进安装包、不落配置文件、不进 git。
+  // 飞书这条路非要它不可：2026-08-24 真机实测，只带 client_id + PKCE 换 token 会被拒
+  // （400 invalid_client / code 20140）。
+  clientSecret(): string | undefined {
+    return this.secureStorage.get(this.keyFor('client-secret')) || undefined;
+  }
+
+  saveClientSecret(clientSecret: string): void {
+    if (!clientSecret.trim()) {
+      throw new Error('Connector OAuth client secret must not be empty');
+    }
+    this.secureStorage.set(this.keyFor('client-secret'), clientSecret.trim());
+  }
+
   authorizationServerIssuer(): string | undefined {
     return this.secureStorage.get(this.issuerKey());
   }
@@ -97,7 +112,7 @@ export class ConnectorOAuthStore {
   invalidateCredentials(scope: ConnectorOAuthCredentialScope): void {
     const issuer = this.authorizationServerIssuer();
     const kinds = scope === 'all'
-      ? ['tokens', 'client-info', 'code-verifier', 'discovery'] as const
+      ? ['tokens', 'client-info', 'code-verifier', 'discovery', 'client-secret'] as const
       : [this.kindForScope(scope)];
     for (const kind of kinds) {
       if (kind === 'client-info') {
@@ -118,6 +133,8 @@ export class ConnectorOAuthStore {
         return 'client-info';
       case 'verifier':
         return 'code-verifier';
+      case 'client-secret':
+        return 'client-secret';
       case 'tokens':
       case 'discovery':
         return scope;

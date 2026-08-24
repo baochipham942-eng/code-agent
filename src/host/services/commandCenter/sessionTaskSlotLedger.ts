@@ -1,7 +1,12 @@
 import {
   SESSION_TASK_CONCURRENCY,
+  SESSION_TASK_SLOT_CLEANUP_INTERVAL_MS,
+  SESSION_TASK_SLOT_TIMEOUT_MS,
   SESSION_TASK_LANE_LIMIT,
 } from '../../../shared/constants/voice';
+import { createLogger } from '../infra/logger';
+
+const logger = createLogger('SessionTaskSlotLedger');
 
 type SessionTaskSlotStatus = 'queued' | 'running' | 'settled';
 type SessionTaskTerminalStatus = 'completed' | 'failed' | 'cancelled';
@@ -16,7 +21,27 @@ export interface SessionTaskSlotInput {
 export interface SessionTaskSlot extends SessionTaskSlotInput {
   status: SessionTaskSlotStatus;
   attempt: number;
+  startedAt?: number;
   terminalStatus?: SessionTaskTerminalStatus;
+}
+
+export interface SessionTaskSlotRecovery {
+  reason: 'terminal_event_timeout';
+  recoveredAt: number;
+  expired: Array<{
+    slot: SessionTaskSlot;
+    occupiedMs: number;
+  }>;
+  startable: SessionTaskSlot[];
+}
+
+export interface SessionTaskSlotLedgerOptions {
+  perSessionLimit?: number;
+  laneLimit?: number;
+  slotTimeoutMs?: number;
+  cleanupIntervalMs?: number;
+  now?: () => number;
+  onRecovery?: (recovery: SessionTaskSlotRecovery) => void;
 }
 
 export type SessionTaskAdmission =
@@ -56,13 +81,30 @@ export class SessionTaskSlotLedger {
   private readonly workItemIdBySubmissionKey = new Map<string, string>();
   private readonly attemptsBySubmissionKey = new Map<string, number>();
   private readonly queue: string[] = [];
+  private readonly perSessionLimit: number;
+  private readonly laneLimit: number;
+  private readonly slotTimeoutMs: number;
+  private readonly cleanupIntervalMs: number;
+  private readonly now: () => number;
+  private readonly onRecovery?: (recovery: SessionTaskSlotRecovery) => void;
+  private cleanupInterval: ReturnType<typeof setInterval> | null;
 
   constructor(
     readonly sessionId: string,
     private readonly pool: SessionTaskConcurrencyPool,
-    private readonly perSessionLimit = SESSION_TASK_CONCURRENCY.perSession,
-    private readonly laneLimit = SESSION_TASK_LANE_LIMIT,
-  ) {}
+    options: SessionTaskSlotLedgerOptions = {},
+  ) {
+    this.perSessionLimit = options.perSessionLimit ?? SESSION_TASK_CONCURRENCY.perSession;
+    this.laneLimit = options.laneLimit ?? SESSION_TASK_LANE_LIMIT;
+    this.slotTimeoutMs = options.slotTimeoutMs ?? SESSION_TASK_SLOT_TIMEOUT_MS;
+    this.cleanupIntervalMs = options.cleanupIntervalMs ?? SESSION_TASK_SLOT_CLEANUP_INTERVAL_MS;
+    this.now = options.now ?? Date.now;
+    this.onRecovery = options.onRecovery;
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupExpiredSlots();
+    }, this.cleanupIntervalMs);
+    this.cleanupInterval.unref?.();
+  }
 
   admit(input: SessionTaskSlotInput, options: { queueWhenFull?: boolean } = {}): SessionTaskAdmission {
     const reusedId = this.workItemIdBySubmissionKey.get(input.submissionKey);
@@ -132,6 +174,10 @@ export class SessionTaskSlotLedger {
   }
 
   dispose(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
     for (const slot of this.slots.values()) {
       if (slot.status === 'running') this.pool.release(slot.workItemId);
       slot.status = 'settled';
@@ -154,6 +200,7 @@ export class SessionTaskSlotLedger {
   private start(slot: SessionTaskSlot): void {
     if (!this.pool.acquire(slot.workItemId)) return;
     slot.status = 'running';
+    slot.startedAt = this.now();
   }
 
   private track(slot: SessionTaskSlot): void {
@@ -186,6 +233,46 @@ export class SessionTaskSlotLedger {
       started.push({ ...slot });
     }
     return started;
+  }
+
+  private cleanupExpiredSlots(): void {
+    const recoveredAt = this.now();
+    const expired: SessionTaskSlotRecovery['expired'] = [];
+
+    for (const slot of this.slots.values()) {
+      if (slot.status !== 'running' || slot.startedAt === undefined) continue;
+      const occupiedMs = Math.max(0, recoveredAt - slot.startedAt);
+      if (occupiedMs < this.slotTimeoutMs) continue;
+      this.pool.release(slot.workItemId);
+      slot.status = 'settled';
+      slot.terminalStatus = 'failed';
+      expired.push({ slot: { ...slot }, occupiedMs });
+      logger.warn('任务槽超时，已自动回收 lane 占位', {
+        workItemId: slot.workItemId,
+        sessionId: slot.sessionId,
+        laneKey: slot.laneKey,
+        occupiedMs,
+        timeoutMs: this.slotTimeoutMs,
+        reason: 'terminal_event_timeout',
+      });
+    }
+
+    if (!expired.length) return;
+    const startable = this.drainStartable();
+    try {
+      this.onRecovery?.({
+        reason: 'terminal_event_timeout',
+        recoveredAt,
+        expired,
+        startable,
+      });
+    } catch (error) {
+      logger.error('任务槽已回收，但消费者同步失败', {
+        sessionId: this.sessionId,
+        expiredWorkItemIds: expired.map(({ slot }) => slot.workItemId),
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }
 

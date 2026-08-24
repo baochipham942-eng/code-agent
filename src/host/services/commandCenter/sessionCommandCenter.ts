@@ -9,9 +9,13 @@ import { getTaskManager, type TaskManager, type TaskManagerEvent } from '../../t
 import {
   SessionTaskSlotLedger,
   getSessionTaskConcurrencyPool,
+  type SessionTaskSlotLedgerOptions,
+  type SessionTaskSlotRecovery,
 } from './sessionTaskSlotLedger';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { createForegroundWake } from './foregroundWake';
+import { getConfigService } from '../core/configService';
+import { formatSessionTaskSlotRecoveryDetail } from '../../../shared/i18n/sessionTaskSlot';
 
 const logger = createLogger('SessionCommandCenter');
 
@@ -78,6 +82,8 @@ type TerminalTaskStatus = Extract<SessionCommandTaskStatus, 'completed' | 'faile
 interface SessionCommandCenterDependencies {
   projectTerminalResult?: (task: SessionCommandTask, status: TerminalTaskStatus) => Promise<void>;
   wakeForegroundBrain?: (task: SessionCommandTask, status: TerminalTaskStatus) => Promise<void>;
+  slotLedgerOptions?: Omit<SessionTaskSlotLedgerOptions, 'onRecovery'>;
+  slotRecoveryLocale?: 'zh' | 'en';
 }
 
 function taskId(): string {
@@ -96,6 +102,8 @@ export class SessionCommandCenter {
   private readonly manager: TaskManager;
   private readonly projectTerminalResult: NonNullable<SessionCommandCenterDependencies['projectTerminalResult']>;
   private readonly wakeForegroundBrain: NonNullable<SessionCommandCenterDependencies['wakeForegroundBrain']>;
+  private readonly slotLedgerOptions: NonNullable<SessionCommandCenterDependencies['slotLedgerOptions']>;
+  private readonly slotRecoveryLocale?: SessionCommandCenterDependencies['slotRecoveryLocale'];
   private readonly stopAgentEventObservation?: () => void;
   private readonly onTaskEvent = (event: TaskManagerEvent): void => {
     void this.handleTaskEvent(event);
@@ -108,6 +116,8 @@ export class SessionCommandCenter {
     this.manager = manager;
     this.projectTerminalResult = dependencies.projectTerminalResult ?? projectTerminalResult;
     this.wakeForegroundBrain = dependencies.wakeForegroundBrain ?? createForegroundWake();
+    this.slotLedgerOptions = dependencies.slotLedgerOptions ?? {};
+    this.slotRecoveryLocale = dependencies.slotRecoveryLocale;
     for (const eventName of TASK_LIFECYCLE_EVENTS) {
       this.manager.on(eventName, this.onTaskEvent);
     }
@@ -269,33 +279,73 @@ export class SessionCommandCenter {
   private ledger(sessionId: string): SessionTaskSlotLedger {
     let ledger = this.ledgers.get(sessionId);
     if (!ledger) {
-      ledger = new SessionTaskSlotLedger(sessionId, getSessionTaskConcurrencyPool());
+      ledger = new SessionTaskSlotLedger(sessionId, getSessionTaskConcurrencyPool(), {
+        ...this.slotLedgerOptions,
+        onRecovery: (recovery) => this.handleSlotRecovery(sessionId, recovery),
+      });
       this.ledgers.set(sessionId, ledger);
     }
     return ledger;
+  }
+
+  private handleSlotRecovery(sessionId: string, recovery: SessionTaskSlotRecovery): void {
+    let locale = this.slotRecoveryLocale ?? 'zh';
+    if (!this.slotRecoveryLocale) {
+      try {
+        locale = getConfigService().getSettings().ui.language;
+      } catch (error) {
+        logger.warn('Failed to read UI locale for task slot recovery; using Chinese fallback', {
+          sessionId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    try {
+      for (const { slot, occupiedMs } of recovery.expired) {
+        const task = this.tasksBySession.get(sessionId)?.get(slot.workItemId);
+        if (!task || TERMINAL.has(task.status)) continue;
+        const detail = formatSessionTaskSlotRecoveryDetail({
+          taskLabel: task.shortName || task.title,
+          laneKey: slot.laneKey,
+          occupiedMs,
+          locale,
+        });
+        void this.settle(task, 'failed', detail);
+      }
+    } finally {
+      for (const slot of recovery.startable) {
+        const next = this.tasks(sessionId).get(slot.workItemId);
+        if (next) this.launch(next);
+      }
+    }
   }
 
   private launch(task: SessionCommandTask): void {
     task.status = 'running';
     task.updatedAt = Date.now();
     this.projectTask(task);
-    void this.manager.startBackgroundTask(
-      task.id,
-      task.sessionId,
-      task.prompt,
-      task.attachments,
-      {
-        ...task.options,
-        mode: task.options?.mode ?? 'normal',
-        runRegistration: 'auxiliary',
-        runId: task.id,
-        parentRunId: task.parentRunId,
-      },
-      undefined,
-      task.workspaceScope,
-    ).catch((error) => {
+    const failLaunch = (error: unknown): void => {
       void this.settle(task, 'failed', error instanceof Error ? error.message : String(error));
-    });
+    };
+    try {
+      void this.manager.startBackgroundTask(
+        task.id,
+        task.sessionId,
+        task.prompt,
+        task.attachments,
+        {
+          ...task.options,
+          mode: task.options?.mode ?? 'normal',
+          runRegistration: 'auxiliary',
+          runId: task.id,
+          parentRunId: task.parentRunId,
+        },
+        undefined,
+        task.workspaceScope,
+      ).catch(failLaunch);
+    } catch (error) {
+      failLaunch(error);
+    }
   }
 
   private async handleTaskEvent(event: TaskManagerEvent): Promise<void> {
@@ -374,7 +424,14 @@ export class SessionCommandCenter {
     task.updatedAt = Date.now();
     this.projectTask(task);
     if (status === 'completed' && artifacts?.length) {
-      this.projectOutputRefs(task, artifacts);
+      try {
+        this.projectOutputRefs(task, artifacts);
+      } catch (error) {
+        logger.warn('Failed to project text command task output references', {
+          taskId: task.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     // 账本落终态必须**先于**下面那个 await：task.status 在上面已经同步变成 failed 且投影出去了，

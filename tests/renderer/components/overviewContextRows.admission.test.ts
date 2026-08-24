@@ -10,7 +10,9 @@ import type {
 } from '../../../src/renderer/types/runWorkbench';
 import type { ContextItem } from '../../../src/renderer/utils/contextBuckets';
 
-const FALLBACKS = { unnamedOutput: '未命名输出', unknownCapability: '未知能力' };
+import { zh } from '../../../src/renderer/i18n/zh';
+const FALLBACKS = { unnamedOutput: '未命名输出', unknownCapability: '未知能力',
+  humanToolLabels: zh.receiptPresentation.humanToolLabels };
 
 function tool(overrides: Partial<ToolCapabilityView> & { id: string }): ToolCapabilityView {
   return {
@@ -41,6 +43,24 @@ function build(args: {
 }
 
 describe('buildOverviewContextRows 准入规则', () => {
+  // 爸 2026-08-24 拍板：「上下文」区的连接器行也要说人话（此前显示 mail_send / calendar_create_event，
+  // 对非程序员是噪音）。与「已执行」「来源」两区共用同一个 getHumanToolLabel，不另开映射。
+  it('连接器行显示人话名而不是内部工具名', () => {
+    const rows = build({
+      tools: [
+        { id: 'tool:mail_send', label: 'mail_send', source: 'connector', callable: true },
+        { id: 'tool:calendar_create_event', label: 'calendar_create_event', source: 'connector', callable: true },
+        { id: 'tool:reminders_create', label: 'reminders_create', source: 'connector', callable: true },
+      ] as unknown as ToolCapabilityView[],
+    });
+    expect(rows.map((row) => row.label)).toEqual(
+      expect.arrayContaining(['邮件', '日历', '提醒事项']),
+    );
+    expect(rows.map((row) => row.label)).not.toEqual(
+      expect.arrayContaining(['mail_send', 'calendar_create_event', 'reminders_create']),
+    );
+  });
+
   it('已连接但零调用的 MCP server 不进（仅在能力范围里被列出）', () => {
     const rows = build({
       tools: [tool({ id: 'mcp:filesystem', label: 'filesystem', source: 'mcp' })],

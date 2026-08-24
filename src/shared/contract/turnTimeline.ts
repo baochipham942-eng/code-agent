@@ -188,6 +188,11 @@ export interface TurnArtifactReceiptPresentation {
   summary: string;
   detail?: string;
   sourceTool: string;
+  connector?: string;
+  recipient?: {
+    first: string;
+    count: number;
+  };
 }
 
 export interface TurnArtifactOwnershipItem {

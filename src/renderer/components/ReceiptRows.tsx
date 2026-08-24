@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useI18n } from '../hooks/useI18n';
+import { formatReceiptSummary } from '../utils/receiptPresentation';
+import { getHumanToolLabel } from '../utils/toolHumanLabel';
 
 export interface ReceiptRowItem {
   id: string;
@@ -8,6 +10,11 @@ export interface ReceiptRowItem {
   summary: string;
   detail?: string;
   sourceTool: string;
+  connector?: string;
+  recipient?: {
+    first: string;
+    count: number;
+  };
   createdAt: number;
 }
 
@@ -31,6 +38,12 @@ export function ReceiptRows({ items }: { items: ReceiptRowItem[] }) {
         const failed = item.status === 'failed';
         const expanded = expandedIds.has(item.id);
         const canExpand = Boolean(item.detail);
+        const summary = formatReceiptSummary(item.summary, item.recipient, copy);
+        const sourceLabel = getHumanToolLabel({
+          connector: item.connector,
+          toolName: item.sourceTool,
+          labels: copy.humanToolLabels,
+        });
         const time = new Date(item.createdAt).toLocaleTimeString(language === 'zh' ? 'zh-CN' : 'en-US', {
           hour: '2-digit',
           minute: '2-digit',
@@ -55,10 +68,10 @@ export function ReceiptRows({ items }: { items: ReceiptRowItem[] }) {
               }`}>
                 {failed ? copy.failed : copy.succeeded}
               </span>
-              <span className={`min-w-0 flex-1 truncate text-xs ${failed ? 'text-badge-danger' : 'text-zinc-200'}`} title={item.summary}>
-                {item.summary}
+              <span className={`min-w-0 flex-1 truncate text-xs ${failed ? 'text-badge-danger' : 'text-zinc-200'}`} title={summary}>
+                {summary}
               </span>
-              <span className="max-w-[110px] shrink-0 truncate text-[10px] text-zinc-600">{item.sourceTool}</span>
+              <span className="max-w-[110px] shrink-0 truncate text-[10px] text-zinc-600">{sourceLabel}</span>
               <time className="shrink-0 text-[10px] tabular-nums text-zinc-600">{time}</time>
             </button>
             {expanded && item.detail && (

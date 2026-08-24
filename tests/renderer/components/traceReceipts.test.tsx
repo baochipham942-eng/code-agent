@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TraceNodeRenderer } from '../../../src/renderer/components/features/chat/TraceNodeRenderer';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 
 function receiptNode(): TraceNode {
@@ -26,9 +27,11 @@ function receiptNode(): TraceNode {
           artifactId: 'receipt-success',
           receipt: {
             status: 'succeeded',
-            summary: '已发送邮件：周报 · 发给 zhang@example.com 等 3 人',
+            summary: '已发送邮件：周报',
             detail: 'To: zhang@example.com, li@example.com, wang@example.com',
             sourceTool: 'mail_send',
+            connector: 'mail',
+            recipient: { first: 'zhang@example.com', count: 3 },
           },
         },
         {
@@ -43,6 +46,21 @@ function receiptNode(): TraceNode {
             summary: '创建日历事件失败：评审会',
             detail: 'Calendar create failed: service unavailable',
             sourceTool: 'calendar_create_event',
+            connector: 'calendar',
+          },
+        },
+        {
+          kind: 'artifact',
+          role: 'receipt',
+          label: '已创建提醒事项：交材料',
+          ownerKind: 'tool',
+          ownerLabel: 'reminders_create',
+          artifactId: 'receipt-reminder',
+          receipt: {
+            status: 'succeeded',
+            summary: '已创建提醒事项：交材料',
+            sourceTool: 'reminders_create',
+            connector: 'reminders',
           },
         },
       ],
@@ -51,7 +69,11 @@ function receiptNode(): TraceNode {
 }
 
 describe('聊天流「已执行」区', () => {
-  afterEach(() => cleanup());
+  beforeEach(() => useAppStore.setState({ language: 'zh' }));
+  afterEach(() => {
+    cleanup();
+    useAppStore.setState({ language: 'zh' });
+  });
 
   it('默认展开成功与失败回执，失败标红，全部收件人点开后才出现', () => {
     const { container } = render(<TraceNodeRenderer node={receiptNode()} />);
@@ -60,6 +82,12 @@ describe('聊天流「已执行」区', () => {
     expect(container.textContent).toContain('已执行');
     expect(container.textContent).toContain('发给 zhang@example.com 等 3 人');
     expect(container.textContent).toContain('创建日历事件失败：评审会');
+    expect(container.textContent).toContain('邮件');
+    expect(container.textContent).toContain('日历');
+    expect(container.textContent).toContain('提醒事项');
+    expect(container.textContent).not.toContain('mail_send');
+    expect(container.textContent).not.toContain('calendar_create_event');
+    expect(container.textContent).not.toContain('reminders_create');
     expect(container.textContent).not.toContain('li@example.com');
     expect(container.querySelector('.text-badge-danger')?.textContent).toBe('失败');
 
@@ -67,5 +95,17 @@ describe('聊天流「已执行」区', () => {
     fireEvent.click(successSummary.closest('button')!);
     expect(container.textContent).toContain('li@example.com');
     expect(container.textContent).toContain('wang@example.com');
+  });
+
+  it('英文界面同时翻译 connector 与多人收件人摘要', () => {
+    useAppStore.setState({ language: 'en' });
+
+    const { container } = render(<TraceNodeRenderer node={receiptNode()} />);
+
+    expect(container.textContent).toContain('Mail');
+    expect(container.textContent).toContain('Calendar');
+    expect(container.textContent).toContain('Reminders');
+    expect(container.textContent).toContain('Sent to zhang@example.com and others (3 recipients)');
+    expect(container.textContent).not.toContain('发给');
   });
 });

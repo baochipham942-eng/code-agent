@@ -1,3 +1,4 @@
+import { zh } from '../../../src/renderer/i18n/zh';
 import { describe, expect, it } from 'vitest';
 import {
   buildOverviewContextRows,
@@ -99,7 +100,7 @@ describe('buildOverviewContextRows', () => {
         { id: 'file-1', bucket: 'files', source: 'tool', label: 'hello.html', path: '/tmp/hello.html', detail: 'Read' },
         { id: 'file-2', bucket: 'files', source: 'tool', label: 'hello.html', path: '/tmp/hello.html', detail: 'Write' },
       ],
-      fallbacks: { unnamedOutput: '未命名输出', unknownCapability: '未知能力' },
+      fallbacks: { unnamedOutput: '未命名输出', unknownCapability: '未知能力', humanToolLabels: zh.receiptPresentation.humanToolLabels },
     });
 
     expect(rows.map((row) => row.kind)).toEqual(['file', 'skill', 'mcp', 'memory']);
@@ -123,7 +124,7 @@ describe('buildOverviewContextRows', () => {
       }],
       memoryActivities: [],
       contextItems: [],
-      fallbacks: { unnamedOutput: '未命名输出', unknownCapability: '未知能力' },
+      fallbacks: { unnamedOutput: '未命名输出', unknownCapability: '未知能力', humanToolLabels: zh.receiptPresentation.humanToolLabels },
     });
 
     expect(rows).toEqual([expect.objectContaining({

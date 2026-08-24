@@ -469,31 +469,7 @@ function sanitizeToolCallOrder(messages: OpenAIMessage[]): OpenAIMessage[] {
     }
   }
 
-  const repaired = repairOpenAIToolMessagePairing(result);
-  if (repaired.synthesizedPlaceholders > 0) {
-    logger.info(`[sanitizeToolCallOrder] Synthesized ${repaired.synthesizedPlaceholders} placeholder tool responses for orphaned tool_calls`);
-  }
-  if (repaired.demotedToolMessages > 0) {
-    logger.info(`[sanitizeToolCallOrder] Demoted ${repaired.demotedToolMessages} orphaned tool messages without matching assistant tool_calls`);
-  }
-
-  return repaired.messages;
-}
-
-function stringifyOpenAIContent(content: OpenAIMessage['content']): string {
-  if (typeof content === 'string') return content;
-  if (content === null) return '';
-  return JSON.stringify(content);
-}
-
-function demoteOrphanedToolMessage(message: OpenAIMessage): OpenAIMessage {
-  const header = message.tool_call_id
-    ? `[orphaned tool result omitted from structured tool channel: ${message.tool_call_id}]`
-    : '[orphaned tool result omitted from structured tool channel]';
-  return {
-    role: 'user',
-    content: `${header}\n${stringifyOpenAIContent(message.content)}`,
-  };
+  return repairOpenAIToolMessagePairing(result);
 }
 
 /**
@@ -502,76 +478,77 @@ function demoteOrphanedToolMessage(message: OpenAIMessage): OpenAIMessage {
  * 文案原本写的是 `[context compacted]`，这句对模型是假的：压缩根本不会制造孤儿。
  * compactionService 选压缩边界时会主动把边界挪到 tool_call 之前，避免拆散 call/result；
  * activeToolResultPrune 是**替换 content**、不删条目。两条压缩路径都保持配对。
- * 真正会留下孤儿的是「这一轮在工具返回前就结束了」——用户点停止、SSE 断连、崩溃。
- *
- * 这个区别对模型是反的：「被压缩了」暗示工具**执行过了**、只是结果没留住，模型会当作
- * 已完成继续往下走；而真相是工具**可能根本没跑完**，应该重新确认或重做。
- * dev 库实测 59 条孤儿 tool_call（其中 5 条在 interrupted 会话），一律吃这句假话。
- * 换成一句对所有真实来源都成立、且明确不许模型假设成功的话。
+ * 孤儿还可能来自工具未返回前结束本轮、审批拒绝结果在后续上下文处理中丢失等路径。
+ * 占位文本只能陈述「没有可用结果，且可能被拒绝」，不能暗示工具执行过或成功过。
  */
 export const ORPHANED_TOOL_CALL_PLACEHOLDER =
-  '[no result: the run ended before this tool call returned — do not assume it succeeded]';
+  '[no result: this tool call did not produce a result or was denied; do not assume it succeeded]';
 
-function repairOpenAIToolMessagePairing(messages: OpenAIMessage[]): {
-  messages: OpenAIMessage[];
-  synthesizedPlaceholders: number;
-  demotedToolMessages: number;
-} {
+function repairOpenAIToolMessagePairing(messages: OpenAIMessage[]): OpenAIMessage[] {
   const repaired: OpenAIMessage[] = [];
-  let pendingToolCallIds: Set<string> | null = null;
-  let synthesizedPlaceholders = 0;
-  let demotedToolMessages = 0;
+  let pendingToolCalls: Map<string, { messageIndex: number; toolCallIndex: number }> | null = null;
 
   const flushPendingPlaceholders = (): void => {
-    if (!pendingToolCallIds || pendingToolCallIds.size === 0) {
-      pendingToolCallIds = null;
+    if (!pendingToolCalls || pendingToolCalls.size === 0) {
+      pendingToolCalls = null;
       return;
     }
-    for (const toolCallId of pendingToolCallIds) {
+    for (const [toolCallId, position] of pendingToolCalls) {
+      logger.warn('[sanitizeToolCallOrder] Synthesizing placeholder output for orphaned tool_call', {
+        callId: toolCallId,
+        messageIndex: position.messageIndex,
+        toolCallIndex: position.toolCallIndex,
+        chatMessageIndex: repaired.length,
+      });
       repaired.push({
         role: 'tool',
         tool_call_id: toolCallId,
         content: ORPHANED_TOOL_CALL_PLACEHOLDER,
       });
-      synthesizedPlaceholders += 1;
     }
-    pendingToolCallIds = null;
+    pendingToolCalls = null;
   };
 
-  for (const message of messages) {
+  messages.forEach((message, messageIndex) => {
     if (message.role === 'assistant' && message.tool_calls?.length) {
       flushPendingPlaceholders();
       repaired.push(message);
-      pendingToolCallIds = new Set(message.tool_calls.map((toolCall) => toolCall.id));
-      continue;
+      pendingToolCalls = new Map(message.tool_calls.map((toolCall, toolCallIndex) => [
+        toolCall.id,
+        { messageIndex, toolCallIndex },
+      ]));
+      return;
     }
 
     if (message.role === 'tool') {
       if (
-        pendingToolCallIds &&
+        pendingToolCalls &&
         message.tool_call_id &&
-        pendingToolCallIds.has(message.tool_call_id)
+        pendingToolCalls.has(message.tool_call_id)
       ) {
         repaired.push(message);
-        pendingToolCallIds.delete(message.tool_call_id);
-        if (pendingToolCallIds.size === 0) {
-          pendingToolCallIds = null;
+        pendingToolCalls.delete(message.tool_call_id);
+        if (pendingToolCalls.size === 0) {
+          pendingToolCalls = null;
         }
-        continue;
+        return;
       }
 
       flushPendingPlaceholders();
-      repaired.push(demoteOrphanedToolMessage(message));
-      demotedToolMessages += 1;
-      continue;
+      logger.warn('[sanitizeToolCallOrder] Dropping orphaned tool output without matching tool_call', {
+        callId: message.tool_call_id,
+        messageIndex,
+        chatMessageIndex: repaired.length,
+      });
+      return;
     }
 
     flushPendingPlaceholders();
     repaired.push(message);
-  }
+  });
 
   flushPendingPlaceholders();
-  return { messages: repaired, synthesizedPlaceholders, demotedToolMessages };
+  return repaired;
 }
 
 /**

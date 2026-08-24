@@ -48,6 +48,8 @@ import { BACKGROUND_AGENT_EVENT_FILTER } from '../protocol/events/eventFilter';
 import type { AgentRunOptions } from '../research/types';
 import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
+import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadReceipt';
+import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
 import {
   assertExecutionLocationConstraints,
   computeCronFireJitterMs,
@@ -67,69 +69,6 @@ import { pushCronResult } from './cronResultDelivery';
 export { computeCronFireJitterMs } from './cronExecutionPolicy';
 
 const execAsync = promisify(exec);
-
-/**
- * 只有开了变化追踪的任务才包装 prompt；没开的任务原样发送，行为完全不变。
- *
- * 首次运行（还没有旧快照）同样要带上「输出快照标记」这句——否则模型根本不知道
- * 要吐标记，第一次必然拿不到快照，就只能退而求其次拿整段回答顶替，
- * 于是把一坨叙述性文字当成状态注回下一轮。
- */
-function buildCronAgentPrompt(
-  prompt: string,
-  snapshot: unknown,
-  enabled: boolean,
-  now: Date = new Date(),
-): string {
-  // 注入当前时间锚点：LLM 默认拿训练期日期，会把「今天/明天」算成过去时间。
-  // 真机 dogfood(2026-07-24)证明「只给 ISO 时间」不够：GLM-5 认出了今天日期，却仍把
-  // 本地当天 epoch 算成 2025 年、错时区——模型的 epoch 算术不可信。所以直接把算好的
-  // 当天/次日本地 00:00 的 Unix 秒喂给它，让它照抄不换算。
-  // ponytail: 用机器本地时区（目标用户=Asia/Shanghai）；跨时区 cron 需按 job 时区算，届时接 tz 库。
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-  const todayEpoch = Math.floor(startOfDay.getTime() / 1000);
-  const tomorrowEpoch = todayEpoch + 86400;
-  const localDate = `${startOfDay.getFullYear()}-${String(startOfDay.getMonth() + 1).padStart(2, '0')}-${String(startOfDay.getDate()).padStart(2, '0')}`;
-  const timeAnchor =
-    `【当前时间】${now.toISOString()}（UTC）。今天本地日期是 ${localDate}。`
-    + `若要按「今天/本地当天」查询时间戳，直接用这两个算好的值，不要自己换算年份：`
-    + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
-    + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';
-  if (!enabled) return [prompt, '', timeAnchor].join('\n');
-
-  const hasSnapshot = typeof snapshot === 'string' && Boolean(snapshot.trim());
-  return [
-    prompt,
-    '',
-    timeAnchor,
-    ...(hasSnapshot
-      ? [
-        '',
-        '上次运行看到的快照：',
-        '<previous_snapshot>',
-        snapshot as string,
-        '</previous_snapshot>',
-        '',
-        '请把上面的快照和本次看到的内容对比，这次只需要说明变化。',
-      ]
-      : []),
-    '',
-    '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。',
-  ].join('\n');
-}
-
-function truncateUtf8Snapshot(snapshot: string): { value: string; truncated: boolean } {
-  const bytes = Buffer.from(snapshot, 'utf8');
-  if (bytes.length <= CRON_AGENT_SNAPSHOT.MAX_BYTES) {
-    return { value: snapshot, truncated: false };
-  }
-
-  let end = CRON_AGENT_SNAPSHOT.MAX_BYTES;
-  while (end > 0 && (bytes[end] & 0b1100_0000) === 0b1000_0000) {
-    end -= 1;
-  }
-  return { value: bytes.subarray(0, end).toString('utf8'), truncated: true };
-}
 
 // ============================================================================
 // Types
@@ -842,6 +781,7 @@ export class CronService implements Disposable {
       }
 
       case 'agent': {
+        const runStartedAt = Date.now();
         // Heartbeat 任务: 检查 active_hours 窗口
         const ctx = action.context as Record<string, unknown> | undefined;
         if (ctx?.heartbeatTask && ctx?.activeHours) {
@@ -880,68 +820,108 @@ export class CronService implements Disposable {
         let hasAlert = !isExternalWatch;
 
         let result: unknown;
+        let finalAssistantText = '';
+        let runError: unknown;
+        let runFailed = false;
         try {
-          const sendMessage = () => orchestrator.sendMessage(
+          try {
+            const sendMessage = () => orchestrator.sendMessage(
               buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled),
               undefined,
               agentRunOptions,
             );
-          result = await runWithCronJobBudget(definition.maxRunBudget, sendMessage);
+            result = await runWithCronJobBudget(definition.maxRunBudget, sendMessage);
 
-          const messages = orchestrator.getMessages();
-          const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
-          const finalAssistantText = lastAssistant?.content.trim() ?? '';
-          const snapshotMatch = finalAssistantText.match(CRON_AGENT_SNAPSHOT.TAG_PATTERN);
-          // 只认标记：解析不到就保留上一次的值。拿整段回答顶替会把叙述性文字
-          // 当成状态存下来，下一轮再原样注回提示词。
-          const snapshotToPersist = snapshotTrackingEnabled ? snapshotMatch?.[1]?.trim() : undefined;
-          if (isExternalWatch) {
-            hasAlert = EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(finalAssistantText);
-          }
-          if (snapshotToPersist) {
-            const boundedSnapshot = truncateUtf8Snapshot(snapshotToPersist);
-            if (boundedSnapshot.truncated) {
-              console.warn(
-                `[CronService] Agent snapshot exceeded ${CRON_AGENT_SNAPSHOT.MAX_BYTES} UTF-8 bytes; truncated`,
-              );
+            const messages = orchestrator.getMessages();
+            const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
+            finalAssistantText = lastAssistant?.content.trim() ?? '';
+            const snapshotMatch = finalAssistantText.match(CRON_AGENT_SNAPSHOT.TAG_PATTERN);
+            // 只认标记：解析不到就保留上一次的值。拿整段回答顶替会把叙述性文字
+            // 当成状态存下来，下一轮再原样注回提示词。
+            const snapshotToPersist = snapshotTrackingEnabled ? snapshotMatch?.[1]?.trim() : undefined;
+            if (isExternalWatch) {
+              hasAlert = EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(finalAssistantText);
             }
-            const latestDefinition = this.jobs.get(definition.id)?.definition;
-            const latestAction = latestDefinition?.action.type === 'agent'
-              ? latestDefinition.action
-              : action;
-            await this.updateJob(definition.id, {
-              action: {
-                ...latestAction,
-                context: {
-                  ...latestAction.context,
-                  [CRON_AGENT_SNAPSHOT.CONTEXT_KEY]: boundedSnapshot.value,
-                },
-              },
-            });
-          }
-
-          if (action.libraryProjectId) {
-            try {
-              const { getLibraryService } = await import('../services/library/libraryService');
-              if (finalAssistantText) {
-                getLibraryService().archiveText({
-                  projectId: action.libraryProjectId,
-                  title: definition.name,
-                  text: finalAssistantText,
-                  tags: ['定稿'],
-                  sourceSessionId: cronSession.id,
-                  sourceRoleId: action.roleId,
-                });
-                console.error(`[CronService] agent 产出已归档到资料库 project=${action.libraryProjectId}`);
+            if (snapshotToPersist) {
+              const boundedSnapshot = truncateUtf8Snapshot(snapshotToPersist);
+              if (boundedSnapshot.truncated) {
+                console.warn(
+                  `[CronService] Agent snapshot exceeded ${CRON_AGENT_SNAPSHOT.MAX_BYTES} UTF-8 bytes; truncated`,
+                );
               }
-            } catch (archiveError) {
-              // 归档是增量能力，失败不拖垮任务（fail-loud 日志，不中断）
-              console.warn('[CronService] agent 产出归档失败（任务本身已完成）', archiveError);
+              const latestDefinition = this.jobs.get(definition.id)?.definition;
+              const latestAction = latestDefinition?.action.type === 'agent'
+                ? latestDefinition.action
+                : action;
+              await this.updateJob(definition.id, {
+                action: {
+                  ...latestAction,
+                  context: {
+                    ...latestAction.context,
+                    [CRON_AGENT_SNAPSHOT.CONTEXT_KEY]: boundedSnapshot.value,
+                  },
+                },
+              });
+            }
+
+            if (action.libraryProjectId) {
+              try {
+                const { getLibraryService } = await import('../services/library/libraryService');
+                if (finalAssistantText) {
+                  getLibraryService().archiveText({
+                    projectId: action.libraryProjectId,
+                    title: definition.name,
+                    text: finalAssistantText,
+                    tags: ['定稿'],
+                    sourceSessionId: cronSession.id,
+                    sourceRoleId: action.roleId,
+                  });
+                  console.error(`[CronService] agent 产出已归档到资料库 project=${action.libraryProjectId}`);
+                }
+              } catch (archiveError) {
+                // 归档是增量能力，失败不拖垮任务（fail-loud 日志，不中断）
+                console.warn('[CronService] agent 产出归档失败（任务本身已完成）', archiveError);
+              }
+            }
+          } catch (error) {
+            runFailed = true;
+            runError = error;
+            try {
+              const lastAssistant = [...orchestrator.getMessages()]
+                .reverse()
+                .find((message) => message.role === 'assistant');
+              finalAssistantText = lastAssistant?.content.trim() ?? '';
+            } catch (messageReadError) {
+              console.warn('[CronService] Failed to read partial agent conclusion after cron run failure', messageReadError);
             }
           }
         } finally {
           tm.cleanup(cronSession.id);
         }
+
+        if (action.roleId) {
+          try {
+            await appendCronAgentExpertThreadReceipt({
+              definition,
+              roleId: action.roleId,
+              cronSessionId: cronSession.id,
+              executionId,
+              startedAt: runStartedAt,
+              succeeded: !runFailed,
+              finalAssistantText,
+              error: runError,
+              automationType: getCronAutomationType(definition),
+              workingDirectory: cronSession.workingDirectory,
+            });
+          } catch (receiptError) {
+            console.warn(
+              `[CronService] Failed to append named-agent cron receipt; cron result preserved `
+              + `(job=${definition.id}, role=${action.roleId}, cronSession=${cronSession.id})`,
+              receiptError,
+            );
+          }
+        }
+        if (runFailed) throw runError;
 
         await pushCronResult(definition, result);
 

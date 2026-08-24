@@ -138,6 +138,8 @@ export interface CreateSessionConfig {
   metadata?: Record<string, unknown>;
   /** 宿主创建后持久化为 sessions.metadata.expertThread。 */
   expertRoleId?: string;
+  /** 后台宿主流程建会话时可跳过前台激活；默认仍激活，保持交互式创建语义。 */
+  activate?: boolean;
 }
 
 /**

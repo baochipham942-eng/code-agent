@@ -138,6 +138,25 @@ function classifyBrowserComputerConsequence(
 }
 
 /**
+ * Skill pre-approval may skip ordinary confirmation, but it must still enter the
+ * classifier for consequence-catalog hard denies. Keep this predicate narrower
+ * than the full consequence classification so external-side-effect `ask` actions
+ * remain eligible for pre-approval.
+ */
+export function browserComputerConsequenceForcesClassification(
+  toolName: string,
+  params: Record<string, unknown>,
+): boolean {
+  const catalogTool = normalizeBrowserComputerCatalogToolName(toolName);
+  if (!catalogTool) return false;
+  const entry = getStrictBrowserComputerActionCatalogForArgs({
+    toolName: catalogTool,
+    arguments: params,
+  });
+  return !entry || entry.consequence === 'high_risk';
+}
+
+/**
  * 拒绝文案的唯一来源。**这段文本有两个受众**：模型（会据此向用户转述）和审计日志。
  * 泛用的 "Permission denied by user" 在机器自动拒的路径上是**假话**——用户什么都没看见，
  * 模型却会告诉他「你拒绝了」。每种 denialSource 必须给出真实原因 + 可执行的出路。

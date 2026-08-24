@@ -111,7 +111,7 @@ export class CronService implements Disposable {
         : '云端计划任务服务暂时不可用，任务未执行。请检查云端执行地址和令牌后重试。',
       onCompleted: async (definition, execution, summary) => {
         await recordCronAutomationExecution(definition, execution, this.resolveAutomationRuntime);
-        await pushCronResult(definition, summary);
+        await this.deliverCronResult(definition, summary, execution.id);
         this.notifyAgentExecution(definition, execution);
         void this.notifyWakeOnJobCompleted(definition, execution);
       },
@@ -650,7 +650,7 @@ export class CronService implements Disposable {
         execution.status = 'completed';
         execution.result = result;
         if (definition.action.type !== 'agent') {
-          await pushCronResult(definition, result);
+          await this.deliverCronResult(definition, result, execution.id);
         }
       }
     } catch (error) {
@@ -923,7 +923,7 @@ export class CronService implements Disposable {
         }
         if (runFailed) throw runError;
 
-        await pushCronResult(definition, result);
+        await this.deliverCronResult(definition, result, executionId);
 
         // 无新料的监听运行整成 skipped 形状：复用 isSkippedResult 门，
         // 让它不进待过目收件箱、不写会话回流（快照已在上面照常写回）。
@@ -1093,6 +1093,27 @@ export class CronService implements Disposable {
    * 上次进程退出前没跑完的执行会永远停在 running，误导用户以为还在跑。
    * 单条 UPDATE，幂等（重复跑不会二次改动已是 interrupted 的行），不影响启动耗时。
    */
+  /**
+   * 推结果 + 失败留痕。推送失败原来只有一行 console.warn，无人值守场景等于没有信号；
+   * 这里把原因写进该次执行记录的 error 字段（执行历史已经在展示它），不新造告警面。
+   * 🚫 不改 status：任务本身确实跑成功了，改成 failed 会谎报执行结果。
+   */
+  private async deliverCronResult(
+    definition: CronJobDefinition,
+    result: unknown,
+    executionId?: string,
+  ): Promise<void> {
+    const outcome = await pushCronResult(definition, result);
+    if (outcome.delivered || !outcome.reason || !executionId) return;
+    const executions = this.executions.get(definition.id) ?? [];
+    const execution = executions.find((candidate) => candidate.id === executionId);
+    if (!execution) return;
+    const note = `结果推送失败：${outcome.reason}`;
+    execution.error = execution.error ? `${execution.error}\n${note}` : note;
+    upsertCronExecutionInMemory(this.executions, execution);
+    await saveCronExecution(execution);
+  }
+
   private async markInterruptedExecutions(): Promise<void> {
     try {
       const db = getDatabase().getDb();

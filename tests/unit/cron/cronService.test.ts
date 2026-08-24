@@ -15,7 +15,9 @@ const sessionState = vi.hoisted(() => ({
 const configState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 
 const channelState = vi.hoisted(() => ({
-  sendMessage: vi.fn(async () => undefined),
+  // 通道契约是 SendMessageResult；返回 undefined 的桩不忠实于真实通道，
+  // 而新实现要看这个返回值来判断平台有没有拒发。
+  sendMessage: vi.fn(async () => ({ success: true, messageId: 'om_stub' })),
 }));
 
 const automationState = vi.hoisted(() => ({
@@ -307,15 +309,28 @@ describe('CronService result channel delivery', () => {
     };
   }
 
-  it('pushes a normal cron result when the job configures a channel', async () => {
-    const definition = resultJob({ resultChannel: 'feishu' });
-    await pushCronResult(definition, 'normal result');
+  // 断言原为 sendMessage('feishu-account', 'feishu-account', …)，即把账号 id 当会话 id 传。
+  // 那不是产品决定，是镜像了实现缺陷：飞书实测拿账号 uuid 当 receive_id 一律回
+  // 230001 invalid receive_id（2026-08-24 真机），也就是说这条断言绿着、结果永远到不了群里。
+  // 现改为「会话 id 必须原样传给通道」。
+  it('pushes a normal cron result to the conversation named by the target', async () => {
+    const definition = resultJob({ resultChannel: 'feishu:oc_group1' });
+    await expect(pushCronResult(definition, 'normal result')).resolves.toEqual({ delivered: true });
 
     expect(channelState.sendMessage).toHaveBeenCalledWith(
       'feishu-account',
-      'feishu-account',
+      'oc_group1',
       'normal result',
     );
+  });
+
+  it('refuses to deliver when the target names no conversation', async () => {
+    const definition = resultJob({ resultChannel: 'feishu' });
+    const outcome = await pushCronResult(definition, 'normal result');
+
+    expect(outcome.delivered).toBe(false);
+    expect(outcome.reason).toContain('no conversation id');
+    expect(channelState.sendMessage).not.toHaveBeenCalled();
   });
 
   it('does not push a normal cron result without a configured channel', async () => {
@@ -325,20 +340,22 @@ describe('CronService result channel delivery', () => {
     expect(channelState.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('keeps heartbeat context channel delivery unchanged', async () => {
+  // 心跳那条老路走同一个函数，所以同样需要会话 id。原断言（账号 id 传两遍）同上：
+  // 绿着但发不出去，故「保持不变」保住的是一个坏行为。
+  it('delivers heartbeat results to the conversation named in the context channel', async () => {
     const definition = resultJob({
       action: {
         type: 'agent',
         agentType: 'heartbeat',
         prompt: 'check',
-        context: { heartbeatTask: true, channel: 'feishu' },
+        context: { heartbeatTask: true, channel: 'feishu:oc_group1' },
       },
     });
-    await pushCronResult(definition, 'heartbeat result');
+    await expect(pushCronResult(definition, 'heartbeat result')).resolves.toEqual({ delivered: true });
 
     expect(channelState.sendMessage).toHaveBeenCalledWith(
       'feishu-account',
-      'feishu-account',
+      'oc_group1',
       'heartbeat result',
     );
   });

@@ -21,60 +21,97 @@ const DEFAULT_MAX_SUMMARY_TOKENS = 200;
 const SAVINGS_RATIO_THRESHOLD = 3; // must save at least 3x summary cost
 
 /**
- * Returns true if a message is "tool-related":
- * - role is 'tool', OR
- * - role is 'assistant' and content mentions a tool_call/tool use pattern
+ * Returns true if a message participates in the tool protocol.
+ * Tool structure lives in dedicated fields; message text is not protocol evidence.
  */
-function isToolRelated(msg: { role: string; content: string }): boolean {
-  if (msg.role === 'tool') return true;
-  if (msg.role === 'assistant') {
-    // Heuristic: look for tool call indicators in assistant messages
-    return (
-      msg.content.includes('tool_call') ||
-      msg.content.includes('<tool_use>') ||
-      msg.content.includes('function_call')
-    );
-  }
-  return false;
+function isToolRelated(msg: {
+  role: string;
+  toolCalls?: unknown[];
+  toolCallId?: string;
+}): boolean {
+  return (
+    msg.role === 'tool'
+    || typeof msg.toolCallId === 'string'
+    || (Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0)
+  );
+}
+
+function startsToolRound(msg: { role: string; toolCalls?: unknown[] }): boolean {
+  return msg.role === 'assistant' && Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0;
+}
+
+function getToolRoundCallIds(msg: { toolCalls?: unknown[] }): Set<string> | undefined {
+  if (!Array.isArray(msg.toolCalls) || msg.toolCalls.length === 0) return undefined;
+  const ids = msg.toolCalls.map((call) => (
+    typeof call === 'object' && call !== null && typeof (call as { id?: unknown }).id === 'string'
+      ? (call as { id: string }).id
+      : undefined
+  ));
+  return ids.every((id): id is string => id !== undefined) ? new Set(ids) : undefined;
 }
 
 /**
- * Find contiguous spans of tool-related messages.
+ * Find atomic rounds of tool-related messages.
  * Returns array of spans, each span is a list of indices.
  */
 function findCollapsibleSpans(
-  messages: Array<{ id: string; role: string; content: string; turnIndex: number }>,
+  messages: Array<{
+    id: string;
+    role: string;
+    content: string;
+    turnIndex: number;
+    toolCalls?: unknown[];
+    toolCallId?: string;
+  }>,
   excludedIds: Set<string>,
   minSpanSize: number,
 ): number[][] {
   const spans: number[][] = [];
-  let currentSpan: number[] = [];
+  let currentRound: number[] = [];
+  let roundIsExcluded = false;
+  let roundCallIds: Set<string> | undefined;
+  let pendingCallIds: Set<string> | undefined;
+
+  const flushRound = (): void => {
+    if (!roundIsExcluded && currentRound.length >= minSpanSize) {
+      spans.push([...currentRound]);
+    }
+    currentRound = [];
+    roundIsExcluded = false;
+    roundCallIds = undefined;
+    pendingCallIds = undefined;
+  };
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
-    if (excludedIds.has(msg.id)) {
-      // Break span on excluded messages
-      if (currentSpan.length >= minSpanSize) {
-        spans.push([...currentSpan]);
-      }
-      currentSpan = [];
+    if (!isToolRelated(msg)) {
+      flushRound();
       continue;
     }
 
-    if (isToolRelated(msg)) {
-      currentSpan.push(i);
-    } else {
-      if (currentSpan.length >= minSpanSize) {
-        spans.push([...currentSpan]);
-      }
-      currentSpan = [];
+    // A tool-calling assistant starts a new atomic round. Once all of its
+    // identified results have arrived, a tool with another call ID starts a
+    // standalone round so unrelated legacy/tool-only spans remain collapsible.
+    if (startsToolRound(msg)) {
+      if (currentRound.length > 0) flushRound();
+      roundCallIds = getToolRoundCallIds(msg);
+      pendingCallIds = roundCallIds ? new Set(roundCallIds) : undefined;
+    } else if (
+      roundCallIds
+      && pendingCallIds?.size === 0
+      && (typeof msg.toolCallId !== 'string' || !roundCallIds.has(msg.toolCallId))
+    ) {
+      flushRound();
+    }
+
+    currentRound.push(i);
+    if (excludedIds.has(msg.id)) roundIsExcluded = true;
+    if (pendingCallIds && typeof msg.toolCallId === 'string') {
+      pendingCallIds.delete(msg.toolCallId);
     }
   }
 
-  // Flush trailing span
-  if (currentSpan.length >= minSpanSize) {
-    spans.push([...currentSpan]);
-  }
+  flushRound();
 
   return spans;
 }
@@ -83,7 +120,14 @@ function findCollapsibleSpans(
  * Apply context collapse: find spans, summarize, write commits.
  */
 export async function applyContextCollapse(
-  messages: Array<{ id: string; role: string; content: string; turnIndex: number }>,
+  messages: Array<{
+    id: string;
+    role: string;
+    content: string;
+    turnIndex: number;
+    toolCalls?: unknown[];
+    toolCallId?: string;
+  }>,
   state: CompressionState,
   config: ContextCollapseConfig,
 ): Promise<void> {

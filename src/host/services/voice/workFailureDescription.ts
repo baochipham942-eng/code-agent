@@ -1,4 +1,5 @@
 import type { VoiceWorkFailureMarker } from '../../../shared/contract/voice';
+import { describeSessionTaskSlotRecovery } from '../../../shared/i18n/sessionTaskSlot';
 
 export interface WorkFailureDescription {
   spoken: string;
@@ -17,6 +18,12 @@ export function describeWorkFailure(
   marker?: VoiceWorkFailureMarker,
 ): WorkFailureDescription {
   const detail = rawDetail?.trim();
+  if (marker?.code === 'TASK_SLOT_TIMEOUT') {
+    return {
+      ...describeSessionTaskSlotRecovery(marker.locale),
+      ...(detail ? { detail } : {}),
+    };
+  }
   if (marker?.code === 'MODEL_AUTH') {
     // 屏幕上点名是哪个模型（用户要照着它去设置里找），耳朵里不念——
     // provider/model 是英文 id，念出来是一串噪音，且屏幕上本来就有。

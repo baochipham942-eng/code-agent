@@ -21,7 +21,14 @@ export type VoiceTurnDetectionConfig =
  */
 export type VoiceWorkFailureMarker =
   | import('./project').ProjectSourceTrustFailureMarker
-  | import('./model').ModelAuthFailureMarker;
+  | import('./model').ModelAuthFailureMarker
+  | {
+    code: 'TASK_SLOT_TIMEOUT';
+    laneKey: string;
+    occupiedMs: number;
+    locale: 'zh' | 'en';
+    reason: 'terminal_event_timeout';
+  };
 
 /**
  * 通话里派出的一件活。

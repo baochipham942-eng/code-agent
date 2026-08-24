@@ -36,18 +36,13 @@ import { getPermissionModeManager } from '../../permissions/modes';
 import { getConfigService } from '../core/configService';
 import { buildApprovalWaitingNarration, buildBlockedNarration, buildMilestoneNarration, buildStopNarration, buildWorkNarration, resolveNarrationSpeaker, type VoiceStopAnnouncementKind } from './voiceNarration';
 import { describeWorkFailure } from './workFailureDescription';
+import type { SessionTaskSlotRecovery } from '../commandCenter/sessionTaskSlotLedger';
 import { resolveVoiceWorkOutcome } from './voiceWorkEvidence';
 import { recordVoiceWorkEvent } from './voiceTelemetry';
 import { captureVoiceScreenContext } from './voiceScreenContext';
 import { screenCaptureFailureSpeech, screenCapturedSpeech } from './voiceScreenSpeech';
-import {
-  projectVoiceTaskTerminalResult,
-  type VoiceTaskTerminalStatus,
-} from './voiceTaskResultProjector';
-import {
-  VoiceTaskSlotLedger,
-  getVoiceTaskConcurrencyPool,
-} from './voiceTaskSlotLedger';
+import { projectVoiceTaskTerminalResult, type VoiceTaskTerminalStatus } from './voiceTaskResultProjector';
+import { VoiceTaskSlotLedger, getVoiceTaskConcurrencyPool } from './voiceTaskSlotLedger';
 import {
   resolveHistoricalVoiceTask,
   resolveVoiceTaskReference,
@@ -61,6 +56,8 @@ import {
   type VoiceSpawnRequest,
 } from './voiceSpawnRequest';
 import { voiceStartRunSpeech } from './voiceStartRunSpeech';
+import { recoverVoiceTaskSlots } from './voiceTaskSlotRecovery';
+import { upsertVoiceWorkItem as upsert } from './voiceWorkItemState';
 import {
   appendVoiceTranscript,
   buildVoiceTranscriptBlock,
@@ -264,7 +261,10 @@ async function notifyVoiceWorkSettledAfterHangup(
  */
 export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
   if (ledger) detachIfSettled(true);
-  ledger = {
+  const slots = new VoiceTaskSlotLedger(binding.neoSessionId, getVoiceTaskConcurrencyPool(), {
+    onRecovery: (recovery) => recoverExpiredVoiceSlots(state, recovery),
+  });
+  const state: LedgerState = {
     neoSessionId: binding.neoSessionId,
     voiceSessionId: binding.voiceSessionId,
     activeAgentId: binding.activeAgentId,
@@ -273,7 +273,7 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     narrate: binding.onWorkNarration,
     endCall: binding.onEndCall,
     items: new Map(),
-    slots: new VoiceTaskSlotLedger(binding.neoSessionId, getVoiceTaskConcurrencyPool()),
+    slots,
     runRequests: new Map(),
     pendingStartedAtById: new Map(),
     runConclusions: new Map(), runToolResults: new Map(),
@@ -293,6 +293,7 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     announcedPermissionRequestIds: new Set(),
     unobserveAgentEvents: null,
   };
+  ledger = state;
 }
 
 /** 焦点上报进账本，供 get_current_file_summary 用真焦点作答。 */
@@ -371,7 +372,7 @@ function detachIfSettled(force: boolean): void {
   // pendingStop 在途 = 这条链还没走完（可能马上要 startRun），此刻丢账本会让新 run
   // 的生命周期事件全部落空。它和「有活没落终态」是同一类未结清。
   if (!force && (unsettled || state.emit || state.pendingStops.size > 0)) return;
-  if (force) state.slots.dispose();
+  state.slots.dispose();
   for (const stop of state.pendingStops.values()) clearTimeout(stop.timer);
   state.unobserveAgentEvents?.();
   state.unobserveAgentEvents = null;
@@ -381,9 +382,16 @@ function detachIfSettled(force: boolean): void {
   ledger = null;
 }
 
-function upsert(state: LedgerState, item: VoiceWorkItem): void {
-  state.items.set(item.id, item);
-  state.emit?.(item);
+function recoverExpiredVoiceSlots(state: LedgerState, recovery: SessionTaskSlotRecovery): void {
+  recoverVoiceTaskSlots({
+    recovery,
+    items: state.items,
+    fail: (workItemId, detail, marker) => settle(state, workItemId, 'failed', detail, marker),
+    start: (workItemId) => {
+      const request = state.runRequests.get(workItemId);
+      if (request) void launchAdmittedRun(state, workItemId, request);
+    },
+  });
 }
 
 /** 终态：还票 + 清 pending + 视情况摘 listener。还票幂等，重复调用无害。 */
@@ -403,6 +411,11 @@ function settle(
     ...(failure ? { failure } : {}),
   };
   upsert(state, settled);
+  // 先还票，再做通知/落库/权限清理；这些副作用任一抛错都不能重新占住 lane。
+  const startable = state.slots.settle(
+    id,
+    status === 'failed' ? 'failed' : status === 'cancelled' ? 'cancelled' : 'completed',
+  );
   // 失败必须被说出去，且不能挂在 emit 上——emit 挂断即 null，而「挂断之后才死」
   // 恰恰是最需要留痕的那种失败（G1）。这里不吞异常也不让它影响还票。
   if (status === 'failed') {
@@ -433,13 +446,14 @@ function settle(
     state.runConclusions.get(id)?.content,
     state.runToolResults.get(id),
   );
-  getPermissionModeManager().clearLiveVoiceSession(state.neoSessionId, runHoldId(id));
-  // 语音的终态四档要映射到账本的三档：只有真正做完（done/unverified）才算 completed，
-  // 否则 failed/cancelled 必须如实落账——账本据此决定同 submissionKey 能不能重试。
-  const startable = state.slots.settle(
-    id,
-    status === 'failed' ? 'failed' : status === 'cancelled' ? 'cancelled' : 'completed',
-  );
+  try {
+    getPermissionModeManager().clearLiveVoiceSession(state.neoSessionId, runHoldId(id));
+  } catch (error) {
+    logger.warn('failed to clear live voice permission hold after task settlement', {
+      workItemId: id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
   state.pendingStartedAtById.delete(id);
   state.runRequests.delete(id);
   state.runConclusions.delete(id); state.runToolResults.delete(id);
@@ -638,10 +652,16 @@ async function settleCompletedWithEvidence(
   workItemId: string,
   dispatchedAtMs: number,
 ): Promise<void> {
-  const outcome = await resolveVoiceWorkOutcome(state.neoSessionId, dispatchedAtMs);
-  // await 期间 ledger 可能已被换掉（新通话）——那时这件活的账本不再是当前这本，
-  // 但 settle 只动传进来的这本 state，幂等且安全。
-  settle(state, workItemId, outcome);
+  try {
+    const outcome = await resolveVoiceWorkOutcome(state.neoSessionId, dispatchedAtMs);
+    // await 期间 ledger 可能已被换掉（新通话）——那时这件活的账本不再是当前这本，
+    // 但 settle 只动传进来的这本 state，幂等且安全。
+    settle(state, workItemId, outcome);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    logger.warn('voice work evidence resolution failed', { workItemId, message: detail });
+    settle(state, workItemId, 'failed', detail);
+  }
 }
 
 /**
@@ -946,45 +966,46 @@ async function launchAdmittedRun(
   workItemId: string,
   request: VoiceSpawnRequest,
 ): Promise<void> {
-  const tm = await getVoiceTaskManager();
-  await ensureListener(state);
-  const { options, attachments } = await buildRunPayload(state);
-  const speaker = resolveNarrationSpeaker(state.activeAgentId);
-  const item = state.items.get(workItemId);
-  if (!item || TERMINAL.includes(item.status)) return;
-  upsert(state, { ...item, status: 'running' });
-  // §4.3 三元组绑定：这一件活是哪通电话、哪条 Neo 会话派出去的。从日志就能还原
-  // 「这句话属于哪个活的哪一轮」，不必再靠时间戳猜（原先记在 voiceSessionService 的
-  // UI 回流回调上，账本拿到 voiceSessionId 之后挪到真正派活的这一处）。
-  logger.info('voice work dispatched', {
-    workItemId,
-    shortName: request.shortName,
-    laneKey: request.laneKey,
-    voiceSessionId: state.voiceSessionId,
-    neoSessionId: state.neoSessionId,
-  });
-  // §4.3 的三元组此前只进日志（#903）。派活是这条链的起点，遥测在这里落一条，
-  // 后面口播/丢弃两类事件才有同一个 workItemId 可以对上。
-  recordVoiceWorkEvent({ phase: 'dispatch', workItemId });
-  state.pendingStartedAtById.set(workItemId, Date.now());
-  // 兼容旧 TaskManager 事件没有 taskId 的宿主；新后台事件始终带精确 taskId。
-  state.legacyEventFallbackId = workItemId;
-  state.legacyEventFallbackStartedAt = state.pendingStartedAtById.get(workItemId) ?? Date.now();
-  // D4：这张票的寿命跟着 run 走，不跟着通话走。终态事件或启动失败才还。
-  getPermissionModeManager().markLiveVoiceSession(state.neoSessionId, runHoldId(workItemId));
-  // prompt 是通话 brain 改写出来的，不是用户原话；metadata 让投影层按语音派活展示。
-  const metadata = {
-    // voiceCallId + origin：此前三元组与派法只进 7 天轮转的日志，审计时间线要从 DB 拉（N-L7-AUDIT）。
-    voiceCallId: state.voiceSessionId,
-    voiceDispatch: {
-      title: request.title,
+  try {
+    const tm = await getVoiceTaskManager();
+    await ensureListener(state);
+    const { options, attachments } = await buildRunPayload(state);
+    const speaker = resolveNarrationSpeaker(state.activeAgentId);
+    const item = state.items.get(workItemId);
+    if (!item || TERMINAL.includes(item.status)) return;
+    upsert(state, { ...item, status: 'running' });
+    // §4.3 三元组绑定：这一件活是哪通电话、哪条 Neo 会话派出去的。从日志就能还原
+    // 「这句话属于哪个活的哪一轮」，不必再靠时间戳猜（原先记在 voiceSessionService 的
+    // UI 回流回调上，账本拿到 voiceSessionId 之后挪到真正派活的这一处）。
+    logger.info('voice work dispatched', {
       workItemId,
-      ...(speaker ? { speaker } : {}),
-      ...(request.origin ? { origin: request.origin } : {}),
-    },
-  };
-  const runPromise = typeof tm.startBackgroundTask === 'function'
-    ? tm.startBackgroundTask(
+      shortName: request.shortName,
+      laneKey: request.laneKey,
+      voiceSessionId: state.voiceSessionId,
+      neoSessionId: state.neoSessionId,
+    });
+    // §4.3 的三元组此前只进日志（#903）。派活是这条链的起点，遥测在这里落一条，
+    // 后面口播/丢弃两类事件才有同一个 workItemId 可以对上。
+    recordVoiceWorkEvent({ phase: 'dispatch', workItemId });
+    state.pendingStartedAtById.set(workItemId, Date.now());
+    // 兼容旧 TaskManager 事件没有 taskId 的宿主；新后台事件始终带精确 taskId。
+    state.legacyEventFallbackId = workItemId;
+    state.legacyEventFallbackStartedAt = state.pendingStartedAtById.get(workItemId) ?? Date.now();
+    // D4：这张票的寿命跟着 run 走，不跟着通话走。终态事件或启动失败才还。
+    getPermissionModeManager().markLiveVoiceSession(state.neoSessionId, runHoldId(workItemId));
+    // prompt 是通话 brain 改写出来的，不是用户原话；metadata 让投影层按语音派活展示。
+    const metadata = {
+      // voiceCallId + origin：此前三元组与派法只进 7 天轮转的日志，审计时间线要从 DB 拉（N-L7-AUDIT）。
+      voiceCallId: state.voiceSessionId,
+      voiceDispatch: {
+        title: request.title,
+        workItemId,
+        ...(speaker ? { speaker } : {}),
+        ...(request.origin ? { origin: request.origin } : {}),
+      },
+    };
+    const runPromise = typeof tm.startBackgroundTask === 'function'
+      ? tm.startBackgroundTask(
         workItemId,
         state.neoSessionId,
         request.prompt,
@@ -992,14 +1013,18 @@ async function launchAdmittedRun(
         options,
         metadata,
       )
-    : tm.startTask(state.neoSessionId, request.prompt, attachments, options, metadata);
-  void runPromise
-    .catch((err: unknown) => {
+      : tm.startTask(state.neoSessionId, request.prompt, attachments, options, metadata);
+    void runPromise.catch((err: unknown) => {
       const detail = err instanceof Error ? err.message : 'unknown';
       logger.warn('voice run failed to start', { title: request.shortName, message: detail });
       // 派发失败必须回流：真机踩过「任务其实没跑起来，通话里却说已经做完了」。
       settle(state, workItemId, 'failed', detail);
     });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    logger.warn('voice run setup failed', { title: request.shortName, message: detail });
+    settle(state, workItemId, 'failed', detail);
+  }
 }
 
 async function startRun(

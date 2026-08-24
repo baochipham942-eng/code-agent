@@ -55,7 +55,11 @@ import {
 } from '../providers/retryStrategy';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
 import { getProviderLimiter } from '../concurrencyLimiter';
-import { convertToolsToOpenAI, wrapTransientSystemReminder } from '../providers/shared';
+import {
+  convertToolsToOpenAI,
+  ORPHANED_TOOL_CALL_PLACEHOLDER,
+  wrapTransientSystemReminder,
+} from '../providers/shared';
 import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
 import { summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
 import { resolveModelCapabilities } from '../modelCapabilityMatrix';
@@ -286,12 +290,11 @@ function asInput(args: unknown): Record<string, unknown> {
   return {};
 }
 
-// AI SDK 严格要求 assistant(tool-call) 后【紧跟】其 tool-result，中间不能夹任何消息，否则抛
-// MissingToolResultsError（"Tool result is missing for tool call ..."）。主 loop 除了会在工具执行期间
-// 注入 system 消息，还允许实时 steer；此时新 user/assistant 消息也可能先于旧工具结果入列。
-// 因此不能只扫描到下一条 user/assistant 为止，而要按 toolCallId 在整段历史中找到结果并归位。
-// 对齐旧 OpenAI 路径 providers/shared.ts:sanitizeToolCallOrder（同一问题旧引擎已解决，迁移到 AI SDK 时漏带）。
-function reorderToolResultsAfterAssistant(messages: ModelMessage[]): ModelMessage[] {
+// AI SDK 严格要求 assistant(tool-call) 后【紧跟】其 tool-result。主 loop 可能在两者之间
+// 注入 system/user/assistant，因此要按 toolCallId 跨历史归位。对于真正缺失结果的 call，保留调用事实并
+// 合成明确表达“无可用结果”的占位结果；对缺失 call 的 result 则丢弃。两个方向都逐 ID 留下结构化
+// warn，避免适配层自愈掩盖上游历史损坏。
+function repairToolMessagePairing(messages: ModelMessage[]): ModelMessage[] {
   const resultIndexesByCallId = new Map<string, number[]>();
   for (let index = 0; index < messages.length; index++) {
     const message = messages[index];
@@ -303,45 +306,64 @@ function reorderToolResultsAfterAssistant(messages: ModelMessage[]): ModelMessag
     resultIndexesByCallId.set(callId, indexes);
   }
 
-  const relocatedResultIndexes = new Set<number>();
+  const consumedResultIndexes = new Set<number>();
   const out: ModelMessage[] = [];
   for (let i = 0; i < messages.length; i++) {
-    if (relocatedResultIndexes.has(i)) continue;
+    if (consumedResultIndexes.has(i)) continue;
     const msg = messages[i];
-    const callIds = msg.role === 'assistant' ? (msg.toolCalls ?? []).map((tc) => tc.id) : [];
-    if (callIds.length === 0) {
+    const calls = msg.role === 'assistant' ? (msg.toolCalls ?? []) : [];
+    if (calls.length > 0) {
       out.push(msg);
+      calls.forEach((call, toolCallIndex) => {
+        const resultIndex = resultIndexesByCallId.get(call.id)?.find((index) => (
+          index > i && !consumedResultIndexes.has(index)
+        ));
+        if (resultIndex !== undefined) {
+          out.push(messages[resultIndex]);
+          consumedResultIndexes.add(resultIndex);
+          return;
+        }
+        logger.warn('[AiSdkAdapter] Synthesizing placeholder result for orphaned tool call', {
+          callId: call.id,
+          missingSide: 'tool_result',
+          messageIndex: i,
+          toolCallIndex,
+        });
+        out.push({
+          role: 'tool',
+          toolCallId: call.id,
+          content: ORPHANED_TOOL_CALL_PLACEHOLDER,
+        });
+      });
+      continue;
+    }
+
+    if (msg.role === 'tool') {
+      const callId = toolMsgCallId(msg);
+      logger.warn('[AiSdkAdapter] Dropping orphaned tool result without matching tool call', {
+        callId,
+        missingSide: 'tool_call',
+        messageIndex: i,
+      });
       continue;
     }
 
     out.push(msg);
-    for (const callId of callIds) {
-      const resultIndex = resultIndexesByCallId.get(callId)?.find((index) => !relocatedResultIndexes.has(index));
-      if (resultIndex === undefined) continue;
-      out.push(messages[resultIndex]);
-      relocatedResultIndexes.add(resultIndex);
-    }
   }
   return out;
 }
 
 // ── Neo ModelMessage[]（结构化 inferenceMessages）→ AI SDK ModelMessage[] ──
 // AI SDK 严格要求 assistant 的每个 tool-call 都配一个 tool-result，否则抛
-// "Tool result is missing"。因此先建配对集合，只输出"有结果的 tool-call"和
-// "有 tool-call 的结果"，把 orphan 双向丢弃（防 Neo 历史里 in-flight / 被压缩的残缺对）。
+// "Tool result is missing"。先修复并归位配对，再转换为 SDK 消息。
 function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
   // 先重排：把夹在 assistant tool-call 与 tool-result 之间的 system/user 移到 tool-result 之后，
   // 否则 AI SDK 的配对校验会在遇到夹层 system 时报 MissingToolResultsError。
-  const ordered = reorderToolResultsAfterAssistant(messages);
+  const ordered = repairToolMessagePairing(messages);
 
   const idToName = new Map<string, string>();
-  const resultIds = new Set<string>();
   for (const m of ordered) {
     for (const tc of m.toolCalls ?? []) idToName.set(tc.id, tc.name);
-    if (m.role === 'tool') {
-      const id = toolMsgCallId(m);
-      if (id) resultIds.add(id);
-    }
   }
 
   const out: AiModelMessage[] = [];
@@ -355,7 +377,7 @@ function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
       out.push({ role: 'system', content: textOf(m.content) });
     } else if (m.role === 'tool') {
       const id = toolMsgCallId(m);
-      if (!id || !idToName.has(id)) continue; // orphan 结果（无对应 tool-call）→ 丢
+      if (!id || !idToName.has(id)) continue;
       out.push({
         role: 'tool',
         content: [{
@@ -367,7 +389,7 @@ function toAiMessages(messages: ModelMessage[]): AiModelMessage[] {
       } as AiModelMessage);
     } else if (m.role === 'assistant') {
       const txt = textOf(m.content);
-      const calls = (m.toolCalls ?? []).filter((tc) => resultIds.has(tc.id)); // 只留有结果的
+      const calls = m.toolCalls ?? [];
       if (calls.length === 0) {
         out.push({ role: 'assistant', content: txt || '' });
       } else {

@@ -55,6 +55,7 @@ const MIGRATED: string[] = [
   'tabs/AddProviderCard.tsx',
   'sections/NativeDesktopSection.tsx',
   'sections/NativeConnectorsSection.tsx',
+  'sections/SaaSConnectorsSection.tsx',
   'sections/nativeDesktopActivityModel.ts',
   'sections/localBridge/SecurityLevelConfig.tsx',
   'sections/localBridge/WorkingDirectoryPicker.tsx',

@@ -33,7 +33,7 @@ COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/scripts/rtk /app/scripts/uv ./scripts/
-COPY --from=build --chown=node:node /app/scripts/verify-linux-native-runtime.cjs ./scripts/
+COPY --from=build --chown=node:node /app/scripts/ci/verify-linux-native-runtime.cjs ./scripts/ci/
 
 ENV NODE_ENV=production \
   CODE_AGENT_SERVICE_MODE=1 \

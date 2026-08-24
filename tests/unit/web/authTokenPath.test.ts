@@ -1,13 +1,37 @@
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   isWebServiceMode,
   resolveDevAuthTokenPath,
-  resolveServerAuthToken,
   writeDevAuthToken,
 } from '../../../src/web/middleware/auth';
+
+/**
+ * 服务态 token 是在模块加载那一刻定下来的（SERVER_AUTH_TOKEN 是模块级常量，缺 token 就在
+ * import 阶段抛）。解析函数本身不导出——只给单测 import 的导出会被生产死导出棘轮判红——
+ * 所以这里按注入的 env 重载模块，直接验「import 会不会炸」和「拿到的 token 是什么」，
+ * 这也正是生产里真实发生的形态。
+ */
+async function loadAuthWithEnv(env: Record<string, string | undefined>) {
+  const saved = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(env)) {
+    saved.set(key, process.env[key]);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  vi.resetModules();
+  try {
+    return await import('../../../src/web/middleware/auth');
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    vi.resetModules();
+  }
+}
 
 const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
 
@@ -77,26 +101,33 @@ describe('resolveDevAuthTokenPath', () => {
 });
 
 describe('service auth token', () => {
-  it('fails closed when service mode has no injected token', () => {
-    expect(() => resolveServerAuthToken({ CODE_AGENT_SERVICE_MODE: '1' }, '/tmp/service'))
-      .toThrow('CODE_AGENT_WEB_AUTH_TOKEN is required');
+  it('fails closed when service mode has no injected token', async () => {
+    await expect(loadAuthWithEnv({
+      CODE_AGENT_SERVICE_MODE: '1',
+      CODE_AGENT_WEB_AUTH_TOKEN: undefined,
+      CODE_AGENT_TAURI_BOOT_TOKEN: undefined,
+    })).rejects.toThrow('CODE_AGENT_WEB_AUTH_TOKEN is required');
   });
 
-  it('uses the injected token only in explicit service mode', () => {
-    const env = {
+  it('uses the injected token only in explicit service mode', async () => {
+    expect(isWebServiceMode({
+      CODE_AGENT_SERVICE_MODE: '1',
+      CODE_AGENT_WEB_AUTH_TOKEN: 'service-secret-token',
+    } as NodeJS.ProcessEnv)).toBe(true);
+
+    const serviceAuth = await loadAuthWithEnv({
       CODE_AGENT_SERVICE_MODE: '1',
       CODE_AGENT_WEB_AUTH_TOKEN: '  service-secret-token  ',
-    } as NodeJS.ProcessEnv;
-
-    expect(isWebServiceMode(env)).toBe(true);
-    expect(resolveServerAuthToken(env, '/tmp/service')).toBe('service-secret-token');
+      CODE_AGENT_TAURI_BOOT_TOKEN: undefined,
+    });
+    expect(serviceAuth.SERVER_AUTH_TOKEN).toBe('service-secret-token');
   });
 
-  it('rejects the Tauri parent-process contract in service mode', () => {
-    expect(() => resolveServerAuthToken({
+  it('rejects the Tauri parent-process contract in service mode', async () => {
+    await expect(loadAuthWithEnv({
       CODE_AGENT_SERVICE_MODE: '1',
       CODE_AGENT_WEB_AUTH_TOKEN: 'service-secret-token',
       CODE_AGENT_TAURI_BOOT_TOKEN: 'desktop-parent-token',
-    }, '/tmp/service')).toThrow('cannot be combined with CODE_AGENT_TAURI_BOOT_TOKEN');
+    })).rejects.toThrow('cannot be combined with CODE_AGENT_TAURI_BOOT_TOKEN');
   });
 });

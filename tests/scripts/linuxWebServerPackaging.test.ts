@@ -25,8 +25,8 @@ afterEach(() => {
 
 describe('Linux webServer packaging', () => {
   it('packages a Linux x64 service image with all three native runtimes', () => {
-    const dockerfile = readRepoFile('packaging/linux-web-server/Dockerfile');
-    const nativeSmoke = readRepoFile('scripts/verify-linux-native-runtime.cjs');
+    const dockerfile = readRepoFile('scripts/ci/Dockerfile.linux-web-server');
+    const nativeSmoke = readRepoFile('scripts/ci/verify-linux-native-runtime.cjs');
     const packageJson = JSON.parse(readRepoFile('package.json')) as { scripts: Record<string, string> };
 
     expect(packageJson.scripts['package:linux-web']).toContain('--platform linux/amd64');

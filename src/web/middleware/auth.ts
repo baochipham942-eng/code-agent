@@ -61,7 +61,8 @@ export function isWebServiceMode(env: NodeJS.ProcessEnv = process.env): boolean 
   return env[WEB_SERVER_SERVICE.MODE_ENV] === '1';
 }
 
-export function resolveServerAuthToken(
+// 🚫 不导出：唯一生产消费方是下面的 SERVER_AUTH_TOKEN。同上，测试改用模块重载注入 env。
+function resolveServerAuthToken(
   env: NodeJS.ProcessEnv = process.env,
   cwd = process.cwd(),
 ): string {

@@ -59,7 +59,9 @@ function sharpNativePlatform(platform: NodeJS.Platform, arch: string): string {
   return `unsupported-${platform}-${arch}`;
 }
 
-export function createRuntimeAssetDefinitions(
+// 🚫 不导出：唯一生产消费方是下面的 RUNTIME_ASSET_DEFINITIONS。为测试而导出会被
+// knip 生产死导出棘轮判红（「只有单测 import」不算消费方），测试改用模块重载覆盖平台。
+function createRuntimeAssetDefinitions(
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch,
 ): RuntimeAssetDefinition[] {

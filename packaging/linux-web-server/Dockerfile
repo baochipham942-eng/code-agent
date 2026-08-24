@@ -1,0 +1,52 @@
+FROM node:24-slim AS build
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl g++ git make python3 \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY scripts/rebuild-native-system.sh ./scripts/rebuild-native-system.sh
+
+RUN --mount=type=cache,target=/root/.npm npm ci
+
+COPY . .
+
+RUN bash scripts/fetch-rtk.sh \
+  && bash scripts/fetch-uv.sh \
+  && npm run build:web \
+  && npm run build:renderer \
+  && npm run verify:linux-web:native
+
+RUN npm prune --omit=dev --ignore-scripts
+
+FROM node:24-slim AS runtime
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates lsof procps tini \
+  && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p /app /data \
+  && chown node:node /app /data
+
+WORKDIR /app
+COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
+COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/dist ./dist
+COPY --from=build --chown=node:node /app/scripts/rtk /app/scripts/uv ./scripts/
+COPY --from=build --chown=node:node /app/scripts/verify-linux-native-runtime.cjs ./scripts/
+
+ENV NODE_ENV=production \
+  CODE_AGENT_SERVICE_MODE=1 \
+  CODE_AGENT_DATA_DIR=/data \
+  WEB_HOST=0.0.0.0 \
+  WEB_PORT=8180
+
+VOLUME ["/data"]
+EXPOSE 8180
+USER node
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=45s --retries=6 \
+  CMD node -e "fetch('http://127.0.0.1:8180/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["node", "dist/web/webServer.cjs"]

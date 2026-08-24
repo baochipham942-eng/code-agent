@@ -12,8 +12,12 @@ const repoRoot = path.resolve(scriptDir, '..');
 const defaultRuntimeRoot = repoRoot;
 const defaultOutputDir = path.join(repoRoot, 'src-tauri', 'target', 'release', 'runtime-assets');
 
-// 按目标架构生成 asset 组：sharp / onnxruntime 的 native 路径随 arch（darwin-arm64 / darwin-x64）。
-function buildAssetGroups(arch) {
+// 按目标平台生成 native asset 路径。Linux 服务产物只支持 glibc x64；
+// 其他平台继续沿用桌面发行版已有的目录形状。
+function buildAssetGroups(targetPlatform, arch) {
+  const os = targetPlatform.split('-')[0];
+  const onnxPlatform = os === 'win32' ? 'win32' : os;
+  const sharpPlatform = `${os}-${arch}`;
   return {
     'onnxruntime-vad': {
       id: 'onnxruntime-vad',
@@ -21,7 +25,7 @@ function buildAssetGroups(arch) {
       entries: [
         'node_modules/onnxruntime-node/package.json',
         'node_modules/onnxruntime-node/dist',
-        `node_modules/onnxruntime-node/bin/napi-v6/darwin/${arch}`,
+        `node_modules/onnxruntime-node/bin/napi-v6/${onnxPlatform}/${arch}`,
         'node_modules/onnxruntime-common/package.json',
         'node_modules/onnxruntime-common/dist/cjs',
         'node_modules/avr-vad/dist/silero_vad_v5.onnx',
@@ -49,8 +53,8 @@ function buildAssetGroups(arch) {
       entries: [
         'node_modules/sharp',
         'node_modules/@img/colour',
-        `node_modules/@img/sharp-darwin-${arch}`,
-        `node_modules/@img/sharp-libvips-darwin-${arch}`,
+        `node_modules/@img/sharp-${sharpPlatform}`,
+        `node_modules/@img/sharp-libvips-${sharpPlatform}`,
         'node_modules/detect-libc',
         // sharp 0.35 起 semver 不再嵌在 sharp/node_modules 下（被提升到顶层），
         // dist/*.cjs 运行时 require('semver')，漏了它打包后加载即炸。
@@ -59,18 +63,14 @@ function buildAssetGroups(arch) {
       nodeModules: [
         'sharp',
         '@img/colour',
-        `@img/sharp-darwin-${arch}`,
-        `@img/sharp-libvips-darwin-${arch}`,
+        `@img/sharp-${sharpPlatform}`,
+        `@img/sharp-libvips-${sharpPlatform}`,
         'detect-libc',
         'semver',
       ],
     },
   };
 }
-
-// x64（Intel）不适配的 asset：onnxruntime-vad 的 npm 包无 darwin/x64 二进制，
-// VAD 在 x64 走「缺 runtime 优雅降级」（见 docs/architecture/intel-x64-support.md）。
-const ARM64_ONLY_ASSET_IDS = new Set(['onnxruntime-vad']);
 
 const DEFAULT_RUNTIME_ASSET_IDS = [
   'onnxruntime-vad',
@@ -346,18 +346,19 @@ const dryRun = hasFlag('--dry-run');
 const skipSecurityScan = hasFlag('--skip-security-scan');
 const flatOutput = hasFlag('--flat-output');
 
-// 目标架构从 platform（darwin-arm64 / darwin-x64）推导，决定 native asset 路径与 x64 跳过。
+// 目标架构从 platform（darwin-arm64 / darwin-x64 / linux-x64）推导。
 const targetArch = /(?:-x64|-x86_64)$/.test(platform) ? 'x64' : 'arm64';
-const ASSET_GROUPS = buildAssetGroups(targetArch);
+const ASSET_GROUPS = buildAssetGroups(platform, targetArch);
 
 const selectedAssetIds = requestedAssetIds.length > 0
   ? requestedAssetIds
   : DEFAULT_RUNTIME_ASSET_IDS;
 
-// x64 跳过 arm64-only asset（onnxruntime-vad），并显式 log 出来（不静默截断）。
+// onnxruntime-node 当前 npm 包没有 darwin/x64，Intel 桌面继续显式降级；
+// linux/x64 有 napi-v6/linux/x64，必须随 Linux runtime asset 正常打入。
 const assetIds = selectedAssetIds.filter((assetId) => {
-  if (targetArch === 'x64' && ARM64_ONLY_ASSET_IDS.has(assetId)) {
-    console.log(`[build-runtime-assets] skip ${assetId} on x64 (arm64-only; VAD degrades to missing-runtime)`);
+  if (platform === 'darwin-x64' && assetId === 'onnxruntime-vad') {
+    console.log(`[build-runtime-assets] skip ${assetId} on darwin-x64 (upstream binary unavailable; VAD degrades to missing-runtime)`);
     return false;
   }
   return true;

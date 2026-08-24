@@ -49,6 +49,8 @@ import {
   type RunContext,
 } from '../host/runtime/runContext';
 import { getApplicationRunRegistry } from '../host/app/applicationRunRegistry';
+import { createApplicationAutoAgentRecoveryHost } from '../host/app/autoAgentRecoveryHost';
+import { createApplicationNativeRecoveryPorts } from '../host/app/nativeRecoveryHost';
 import { initializeDurableRun, type DurableRunApplicationRuntime } from '../host/app/initializeDurableRun';
 import { DurableRunRepository } from '../host/services/core/repositories/DurableRunRepository';
 import { SERVICE_TIMEOUTS } from '../shared/constants/timeouts';
@@ -167,12 +169,15 @@ async function initializeCLIDurableRun(
 
   const repository = new DurableRunRepository(db);
   repository.migrate();
+  const registry = getApplicationRunRegistry();
   cliDurableRunRuntime = await initializeDurableRun({
-    registry: getApplicationRunRegistry(),
+    registry,
     repository,
     dataDir,
     ownerId: 'cli-native-host',
     processInstanceId: `cli-${process.pid}-${randomUUID()}`,
+    autoAgentRecoveryHost: createApplicationAutoAgentRecoveryHost(registry),
+    nativeRecoveryPorts: createApplicationNativeRecoveryPorts(registry),
   });
 }
 
@@ -234,7 +239,7 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
     // 数据库失败不阻止 CLI 运行，只是缓存和会话持久化不可用
     // 原生模块 ABI 不匹配时只打一行警告，不打完整堆栈
     const msg = error instanceof Error ? error.message.split('\n')[0] : String(error);
-    cliLog('Database not available (CLI mode):', msg);
+    console.warn('Database not available (CLI mode):', msg);
   }
 
   if (databaseService) {
@@ -243,7 +248,7 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
       cliLog('Durable Run initialized for CLI');
     } catch (error) {
       const msg = error instanceof Error ? error.message.split('\n')[0] : String(error);
-      cliLog('Durable Run not available (CLI mode):', msg);
+      console.warn('Durable Run not available (CLI mode):', msg);
     }
   }
 

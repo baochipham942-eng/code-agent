@@ -2,7 +2,12 @@ import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { resolveDevAuthTokenPath, writeDevAuthToken } from '../../../src/web/middleware/auth';
+import {
+  isWebServiceMode,
+  resolveDevAuthTokenPath,
+  resolveServerAuthToken,
+  writeDevAuthToken,
+} from '../../../src/web/middleware/auth';
 
 const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
 
@@ -68,5 +73,30 @@ describe('resolveDevAuthTokenPath', () => {
       }
       fs.rmSync(dataDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('service auth token', () => {
+  it('fails closed when service mode has no injected token', () => {
+    expect(() => resolveServerAuthToken({ CODE_AGENT_SERVICE_MODE: '1' }, '/tmp/service'))
+      .toThrow('CODE_AGENT_WEB_AUTH_TOKEN is required');
+  });
+
+  it('uses the injected token only in explicit service mode', () => {
+    const env = {
+      CODE_AGENT_SERVICE_MODE: '1',
+      CODE_AGENT_WEB_AUTH_TOKEN: '  service-secret-token  ',
+    } as NodeJS.ProcessEnv;
+
+    expect(isWebServiceMode(env)).toBe(true);
+    expect(resolveServerAuthToken(env, '/tmp/service')).toBe('service-secret-token');
+  });
+
+  it('rejects the Tauri parent-process contract in service mode', () => {
+    expect(() => resolveServerAuthToken({
+      CODE_AGENT_SERVICE_MODE: '1',
+      CODE_AGENT_WEB_AUTH_TOKEN: 'service-secret-token',
+      CODE_AGENT_TAURI_BOOT_TOKEN: 'desktop-parent-token',
+    }, '/tmp/service')).toThrow('cannot be combined with CODE_AGENT_TAURI_BOOT_TOKEN');
   });
 });

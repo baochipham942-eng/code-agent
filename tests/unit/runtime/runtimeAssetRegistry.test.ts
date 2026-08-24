@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { RUNTIME_ASSET_DEFINITIONS } from '../../../src/host/runtime/runtimeAssetRegistry';
+import {
+  createRuntimeAssetDefinitions,
+  RUNTIME_ASSET_DEFINITIONS,
+} from '../../../src/host/runtime/runtimeAssetRegistry';
 
 describe('runtimeAssetRegistry', () => {
   it('classifies managed runtimes and bundled helpers in one registry', () => {
@@ -37,5 +40,48 @@ describe('runtimeAssetRegistry', () => {
         }),
       }),
     });
+  });
+
+  it('declares the exact Linux x64 runtime surface and native sharp packages', () => {
+    const linuxDefinitions = createRuntimeAssetDefinitions('linux', 'x64');
+    const linuxSupported = linuxDefinitions
+      .filter((asset) => asset.platforms?.includes('linux-x64'))
+      .map((asset) => asset.id);
+
+    expect(linuxSupported).toEqual([
+      'onnxruntime-vad',
+      'playwright-browser-runtime',
+      'sharp-image-runtime',
+      'uv',
+      'rtk',
+    ]);
+    expect(linuxDefinitions.find((asset) => asset.id === 'sharp-image-runtime')).toMatchObject({
+      delivery: 'bundled',
+      nodeModules: expect.arrayContaining([
+        'sharp',
+        '@img/sharp-linux-x64',
+        '@img/sharp-libvips-linux-x64',
+      ]),
+    });
+    expect(linuxDefinitions.find((asset) => asset.id === 'uv')?.pinnedHashes?.['linux-x64'])
+      .toMatchObject({ hashKind: 'pinnedBinarySha256' });
+    expect(linuxDefinitions.find((asset) => asset.id === 'rtk')?.pinnedHashes?.['linux-x64'])
+      .toMatchObject({ hashKind: 'pinnedBinarySha256' });
+  });
+
+  it('marks macOS-only Swift helpers and app bundle unsupported on Linux', () => {
+    const linuxDefinitions = createRuntimeAssetDefinitions('linux', 'x64');
+    const macOnly = [
+      'system-audio-capture',
+      'vision-ocr',
+      'vision-tagger',
+      'computer-use-app',
+    ];
+
+    for (const assetId of macOnly) {
+      const definition = linuxDefinitions.find((asset) => asset.id === assetId);
+      expect(definition?.platforms).not.toContain('linux-x64');
+      expect(definition?.platforms).toEqual(['darwin-arm64', 'darwin-x64']);
+    }
   });
 });

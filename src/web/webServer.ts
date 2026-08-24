@@ -338,7 +338,12 @@ import {
 import { cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
 
 // Middleware
-import { SERVER_AUTH_TOKEN, exitIfE2EFlagRefused, writeDevAuthToken } from './middleware/auth';
+import {
+  SERVER_AUTH_TOKEN,
+  exitIfE2EFlagRefused,
+  isWebServiceMode,
+  writeDevAuthToken,
+} from './middleware/auth';
 import { attachVoiceStreamUpgrade } from './voiceStreamUpgrade';
 import { attachDictationStreamUpgrade } from './dictationStreamUpgrade';
 import { installPermissionResponseHandler } from './webPermissionResponseHandler';
@@ -957,6 +962,7 @@ async function main(): Promise<void> {
   bootMark('main:start');
   const port = parseInt(process.env.WEB_PORT || String(WEB_SERVER_DEFAULTS.PORT), 10);
   const host = process.env.WEB_HOST || WEB_SERVER_DEFAULTS.HOST;
+  const serviceMode = isWebServiceMode();
 
   console.log('╔══════════════════════════════════════════╗');
   console.log('║   Agent Neo — Web Standalone Mode        ║');
@@ -1016,17 +1022,20 @@ async function main(): Promise<void> {
   server.listen(port, host, () => {
     bootMark('listen');
     dumpBootTiming();
-    // Write token to .dev-token for Vite dev server to read
-    writeDevAuthToken(SERVER_AUTH_TOKEN);
+    // Service secrets remain memory-only. Desktop/dev retains the existing mirror
+    // file because Tauri and Vite use it to survive backend restarts.
+    if (!serviceMode) writeDevAuthToken(SERVER_AUTH_TOKEN);
 
     console.log();
     // Machine-readable startup JSON (Tauri main.rs parses this)
-    console.log(JSON.stringify({ port, token: SERVER_AUTH_TOKEN }));
+    console.log(JSON.stringify(serviceMode ? { port, serviceMode: true } : { port, token: SERVER_AUTH_TOKEN }));
     console.log();
     console.log(`  API server:  http://${host}:${port}`);
     console.log(`  Health:      http://${host}:${port}/api/health`);
     console.log(`  SSE Events:  http://${host}:${port}/api/events`);
-    console.log(`  Auth token:  ${SERVER_AUTH_TOKEN.slice(0, 8)}...`);
+    console.log(serviceMode
+      ? '  Auth token:  configured from service environment'
+      : `  Auth token:  ${SERVER_AUTH_TOKEN.slice(0, 8)}...`);
     console.log();
     console.log(`  Registered handlers: ${handlers.size}`);
     console.log(`  Channels: ${[...handlers.keys()].slice(0, 10).join(', ')}...`);

@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => {
     recoveryResults: [],
     shutdown: vi.fn(),
   });
+  const nativeRecoveryPorts = { continuationExecutor: 'available' };
+  const autoAgentRecoveryHost = { recover: vi.fn() };
 
   return {
     rawDb,
@@ -27,6 +29,11 @@ const mocks = vi.hoisted(() => {
     migrate,
     agentLoopConfigs,
     initializeDurableRun,
+    nativeRecoveryPorts,
+    autoAgentRecoveryHost,
+    initCLIDatabase: vi.fn().mockResolvedValue(databaseService),
+    createApplicationNativeRecoveryPorts: vi.fn(() => nativeRecoveryPorts),
+    createApplicationAutoAgentRecoveryHost: vi.fn(() => autoAgentRecoveryHost),
     configInitialize: vi.fn().mockResolvedValue(undefined),
   };
 });
@@ -36,7 +43,7 @@ vi.mock('../../../src/host/services/core/configService', () => ({
 }));
 
 vi.mock('../../../src/cli/database', () => ({
-  initCLIDatabase: vi.fn().mockResolvedValue(mocks.databaseService),
+  initCLIDatabase: mocks.initCLIDatabase,
 }));
 
 vi.mock('../../../src/cli/cliLedgerSink', () => ({ createCliLedgerSink: vi.fn(() => ({})) }));
@@ -53,6 +60,12 @@ vi.mock('../../../src/host/app/applicationRunRegistry', () => ({
 }));
 vi.mock('../../../src/host/app/initializeDurableRun', () => ({
   initializeDurableRun: mocks.initializeDurableRun,
+}));
+vi.mock('../../../src/host/app/nativeRecoveryHost', () => ({
+  createApplicationNativeRecoveryPorts: mocks.createApplicationNativeRecoveryPorts,
+}));
+vi.mock('../../../src/host/app/autoAgentRecoveryHost', () => ({
+  createApplicationAutoAgentRecoveryHost: mocks.createApplicationAutoAgentRecoveryHost,
 }));
 vi.mock('../../../src/host/agent/agentLoop', () => ({
   AgentLoop: class {
@@ -91,7 +104,11 @@ describe('initializeCLIServices durable wiring', () => {
       ownerId: 'cli-native-host',
       dataDir: expect.any(String),
       processInstanceId: expect.stringMatching(/^cli-\d+-/),
+      nativeRecoveryPorts: mocks.nativeRecoveryPorts,
+      autoAgentRecoveryHost: mocks.autoAgentRecoveryHost,
     }));
+    expect(mocks.createApplicationNativeRecoveryPorts).toHaveBeenCalledWith(mocks.registry);
+    expect(mocks.createApplicationAutoAgentRecoveryHost).toHaveBeenCalledWith(mocks.registry);
   });
 
   it('removes TaskManager-backed command-center tools from the CLI model tool table', async () => {
@@ -135,5 +152,15 @@ describe('initializeCLIServices durable wiring', () => {
     expect(runtimeConfig.deniedToolNames).toEqual(expect.arrayContaining(
       commandCenterTools.map((tool) => tool.name),
     ));
+  });
+
+  it('warns visibly without failing CLI startup when the database is unavailable', async () => {
+    vi.resetModules();
+    mocks.initCLIDatabase.mockRejectedValueOnce(new Error('sqlite unavailable'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { initializeCLIServices } = await import('../../../src/cli/bootstrap');
+
+    await expect(initializeCLIServices()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith('Database not available (CLI mode):', 'sqlite unavailable');
   });
 });

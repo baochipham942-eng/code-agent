@@ -29,6 +29,7 @@ import {
   SERVER_AUTH_TOKEN,
   authMiddleware,
   corsMiddleware,
+  isWebServiceMode,
   rateLimitMiddleware,
 } from './middleware/auth';
 
@@ -238,7 +239,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   // 传 dataDir → 运行时解析 serve 目录：云端 active bundle 健康则 serve 热更前端，
   // 否则回包内基线（builtinDir 由 static.ts 按 __dirname 解析）。
   app.use(createStaticRouter({
-    serverAuthToken: SERVER_AUTH_TOKEN,
+    serverAuthToken: isWebServiceMode() ? null : SERVER_AUTH_TOKEN,
     dataDir: resolveCodeAgentDataDir(),
     currentShellVersion: getAppVersion(),
   }));

@@ -64,6 +64,26 @@ describe('createStaticRouter', () => {
     expect(body).toContain('window.__CODE_AGENT_TOKEN__="test-token";window.__CODE_AGENT_RENDERER_BUNDLE__=null');
   });
 
+  it('does not disclose the bearer secret through service-mode HTML', async () => {
+    const app = express();
+    app.use(createStaticRouter({ serverAuthToken: null, staticDir }));
+    const serviceServer = await new Promise<http.Server>((resolve) => {
+      const nextServer = app.listen(0, '127.0.0.1', () => resolve(nextServer));
+    });
+    const address = serviceServer.address();
+    if (!address || typeof address === 'string') throw new Error('Expected TCP test server address');
+
+    try {
+      const body = await (await fetch(`http://127.0.0.1:${address.port}/`)).text();
+      expect(body).toContain('window.__CODE_AGENT_TOKEN__=null');
+      expect(body).not.toContain('test-token');
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        serviceServer.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
+  });
+
   it('serves index.html with Cache-Control: no-store (token rotates per boot, stale cache causes 401+reload loop)', async () => {
     const response = await fetch(`${baseUrl}/`);
 

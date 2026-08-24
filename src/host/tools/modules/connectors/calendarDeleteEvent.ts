@@ -13,6 +13,7 @@ import type {
 import { getConnectorRegistry } from '../../../connectors';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarDeleteEventSchema as schema } from './calendarDeleteEvent.schema';
+import { captureCalendarBefore } from './undoMetadata';
 
 async function executeCalendarDeleteEvent(
   args: Record<string, unknown>,
@@ -43,6 +44,7 @@ async function executeCalendarDeleteEvent(
   }
 
   try {
+    const undoMetadata = await captureCalendarBefore(connector, args);
     const result = await connector.execute('delete_event', args);
     const event = result.data as {
       uid: string;
@@ -63,6 +65,7 @@ async function executeCalendarDeleteEvent(
         calendar: event.calendar,
         title: event.title,
         deleted: event.deleted,
+        ...undoMetadata,
         artifact: createVirtualArtifact({
           sourceTool: schema.name,
           kind: 'text',
@@ -77,6 +80,7 @@ async function executeCalendarDeleteEvent(
             action: 'delete_event',
             uid: event.uid,
             deleted: event.deleted,
+            ...undoMetadata,
           },
         }),
       },

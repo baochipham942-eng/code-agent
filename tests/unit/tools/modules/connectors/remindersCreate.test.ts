@@ -125,7 +125,7 @@ describe('remindersCreateModule (native)', () => {
   describe('happy path', () => {
     it('creates reminder and formats output', async () => {
       execMock.mockResolvedValue({
-        data: { list: 'Work', title: 'Ship PR', completed: false },
+        data: { id: 'r-created', list: 'Work', title: 'Ship PR', completed: false },
       });
       const result = await run(validArgs);
       expect(result.ok).toBe(true);
@@ -142,6 +142,8 @@ describe('remindersCreateModule (native)', () => {
         expect(result.meta).toMatchObject({
           action: 'create_reminder',
           connector: 'reminders',
+          id: 'r-created',
+          undoable: true,
           list: 'Work',
           title: 'Ship PR',
           completed: false,
@@ -158,8 +160,32 @@ describe('remindersCreateModule (native)', () => {
           name: '已创建提醒：Ship PR',
         });
         expect(artifact.metadata?.action).toBe('create_reminder');
+        expect(artifact.metadata).toMatchObject({
+          id: 'r-created',
+          undoable: true,
+        });
       }
       expect(execMock).toHaveBeenCalledWith('create_reminder', validArgs);
+    });
+
+    it('marks the receipt non-undoable when create returns no id', async () => {
+      execMock.mockResolvedValue({
+        data: { list: 'Work', title: 'Ship PR', completed: false },
+      });
+      const result = await run(validArgs);
+      expect(result).toMatchObject({
+        ok: true,
+        meta: {
+          undoable: false,
+          undoUnavailableReason: expect.stringContaining('stable id'),
+          artifact: {
+            metadata: {
+              undoable: false,
+              undoUnavailableReason: expect.stringContaining('stable id'),
+            },
+          },
+        },
+      });
     });
 
     it('emits starting progress', async () => {

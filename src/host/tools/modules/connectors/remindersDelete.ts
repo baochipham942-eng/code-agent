@@ -13,6 +13,7 @@ import type {
 import { getConnectorRegistry } from '../../../connectors';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { remindersDeleteSchema as schema } from './remindersDelete.schema';
+import { captureReminderBefore } from './undoMetadata';
 
 async function executeRemindersDelete(
   args: Record<string, unknown>,
@@ -43,6 +44,7 @@ async function executeRemindersDelete(
   }
 
   try {
+    const undoMetadata = await captureReminderBefore(connector, args);
     const result = await connector.execute('delete_reminder', args);
     const reminder = result.data as {
       id: string;
@@ -63,6 +65,7 @@ async function executeRemindersDelete(
         list: reminder.list,
         title: reminder.title,
         deleted: reminder.deleted,
+        ...undoMetadata,
         artifact: createVirtualArtifact({
           sourceTool: schema.name,
           kind: 'text',
@@ -77,6 +80,7 @@ async function executeRemindersDelete(
             action: 'delete_reminder',
             id: reminder.id,
             deleted: reminder.deleted,
+            ...undoMetadata,
           },
         }),
       },

@@ -13,6 +13,7 @@ import type {
 import { getConnectorRegistry } from '../../../connectors';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { remindersUpdateSchema as schema } from './remindersUpdate.schema';
+import { captureReminderBefore } from './undoMetadata';
 
 async function executeRemindersUpdate(
   args: Record<string, unknown>,
@@ -43,6 +44,7 @@ async function executeRemindersUpdate(
   }
 
   try {
+    const undoMetadata = await captureReminderBefore(connector, args);
     const result = await connector.execute('update_reminder', args);
     const reminder = result.data as {
       id: string;
@@ -63,6 +65,7 @@ async function executeRemindersUpdate(
         list: reminder.list,
         title: reminder.title,
         completed: reminder.completed,
+        ...undoMetadata,
         artifact: createVirtualArtifact({
           sourceTool: schema.name,
           kind: 'text',
@@ -77,6 +80,7 @@ async function executeRemindersUpdate(
             action: 'update_reminder',
             id: reminder.id,
             completed: reminder.completed,
+            ...undoMetadata,
           },
         }),
       },

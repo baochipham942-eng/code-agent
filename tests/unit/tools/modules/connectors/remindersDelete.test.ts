@@ -118,7 +118,15 @@ describe('remindersDeleteModule (native)', () => {
 
   describe('happy path', () => {
     it('deletes reminder and formats output', async () => {
-      execMock.mockResolvedValue({
+      const before = {
+        id: 'r1',
+        list: 'Work',
+        title: 'Ship PR',
+        completed: false,
+        notes: 'Original notes',
+        remindAtMs: 1700000000000,
+      };
+      execMock.mockResolvedValueOnce({ data: before }).mockResolvedValueOnce({
         data: { id: 'r1', list: 'Work', title: 'Ship PR', deleted: true },
       });
       const result = await run(validArgs);
@@ -133,6 +141,8 @@ describe('remindersDeleteModule (native)', () => {
           list: 'Work',
           title: 'Ship PR',
           deleted: true,
+          undoable: true,
+          before,
         });
         const artifact = result.meta?.artifact as {
           kind?: string;
@@ -146,8 +156,28 @@ describe('remindersDeleteModule (native)', () => {
           name: '已删除提醒：Ship PR',
         });
         expect(artifact.metadata?.action).toBe('delete_reminder');
+        expect(artifact.metadata).toMatchObject({ undoable: true, before });
       }
+      expect(execMock).toHaveBeenNthCalledWith(1, 'get_reminder', validArgs);
       expect(execMock).toHaveBeenCalledWith('delete_reminder', validArgs);
+    });
+
+    it('still deletes but marks the receipt non-undoable when the before snapshot fails', async () => {
+      execMock
+        .mockRejectedValueOnce(new Error('reminder missing'))
+        .mockResolvedValueOnce({
+          data: { id: 'r1', list: 'Work', title: 'Ship PR', deleted: true },
+        });
+      const result = await run(validArgs);
+      expect(result).toMatchObject({
+        ok: true,
+        meta: {
+          undoable: false,
+          undoUnavailableReason: expect.stringContaining('reminder missing'),
+          artifact: { metadata: { undoable: false } },
+        },
+      });
+      expect(execMock).toHaveBeenNthCalledWith(2, 'delete_reminder', validArgs);
     });
 
     it('emits starting progress', async () => {

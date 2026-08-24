@@ -47,6 +47,8 @@ export interface AgentLoopConfig {
   /** OpenTelemetry authority for this concrete run attempt. */
   runTraceContext?: RunTraceContext;
   sessionId?: string;
+  /** Stable sessions.project_id / Project.id. Never derive this from cwd. */
+  projectId?: string | null;
   agentId?: string;
   agentName?: string;
   /** 用户显式 /agent 请求的 agent id；与 agentId 不一致 = 显式选择已降级 */

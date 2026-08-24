@@ -161,6 +161,10 @@ vi.mock('../../../src/host/lightMemory/sessionMetadata', () => ({
   recordSessionStart: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../../src/host/lightMemory/recentConversations', () => ({
+  buildRecentConversationsBlock: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock('../../../src/host/prompts/builder', () => ({
   getPromptForTask: vi.fn().mockReturnValue(''),
   buildDynamicPromptV2: vi.fn().mockReturnValue({
@@ -368,6 +372,7 @@ import {
   buildSkillInvocationContext,
   resolveSkillInvocation,
 } from '../../../src/host/services/skills/skillInvocationResolver';
+import { buildRecentConversationsBlock } from '../../../src/host/lightMemory/recentConversations';
 
 // --------------------------------------------------------------------------
 // Helper — create a minimal RuntimeContext mock
@@ -492,6 +497,7 @@ describe('ConversationRuntime', () => {
     vi.mocked(buildPackedSeedMemory).mockResolvedValue(null);
     vi.mocked(buildPackedUserDirectives).mockResolvedValue(null);
     vi.mocked(buildSeedMemoryBlock).mockReturnValue(null);
+    vi.mocked(buildRecentConversationsBlock).mockResolvedValue(null);
     activityMocks.getCurrentActivityContext.mockResolvedValue({
       generatedAtMs: 1_800_000,
       maxChars: 1_000,
@@ -1031,6 +1037,52 @@ describe('ConversationRuntime', () => {
       await runtime.initializeRun('test message');
 
       expect(triggerSessionStart).not.toHaveBeenCalled();
+    });
+
+    it('injects project-scoped recent conversations only on the first user turn', async () => {
+      ctx.projectId = 'proj_a';
+      ctx.messages = [
+        { id: 'user-1', role: 'user', content: 'first', timestamp: 100 },
+      ] as any;
+      vi.mocked(buildRecentConversationsBlock).mockResolvedValueOnce(
+        '<recent_conversations>Project A recent work</recent_conversations>',
+      );
+
+      await runtime.initializeRun('first');
+
+      expect(buildRecentConversationsBlock).toHaveBeenCalledWith({ projectId: 'proj_a' });
+      expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
+        '<recent_conversations>Project A recent work</recent_conversations>',
+        'user-memory',
+        'recent-conversations',
+      );
+
+      vi.mocked(buildRecentConversationsBlock).mockClear();
+      ctx.messages = [
+        { id: 'user-1', role: 'user', content: 'first', timestamp: 100 },
+        { id: 'assistant-1', role: 'assistant', content: 'done', timestamp: 180 },
+        { id: 'user-2', role: 'user', content: 'second', timestamp: 220 },
+      ] as any;
+      await runtime.initializeRun('second');
+
+      expect(buildRecentConversationsBlock).not.toHaveBeenCalled();
+    });
+
+    it('does not mix ordinary recent conversations into a persistent role session', async () => {
+      ctx.projectId = 'proj_a';
+      ctx.persistentRoleId = 'researcher';
+      ctx.messages = [
+        { id: 'user-1', role: 'user', content: 'first', timestamp: 100 },
+      ] as any;
+
+      await runtime.initializeRun('first');
+
+      expect(buildRecentConversationsBlock).not.toHaveBeenCalled();
+      expect(modules.contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
+        expect.stringContaining('<recent_conversations>'),
+        expect.anything(),
+        expect.anything(),
+      );
     });
 
     it('injects activity context through legacy screen-memory tag for simple tasks', async () => {

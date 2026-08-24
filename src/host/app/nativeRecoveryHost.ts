@@ -2,12 +2,105 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { getDatabase } from '../services/core/databaseService';
-import type { NativeRecoveryHostPorts } from '../runtime/nativeRecoveryHost';
+import { getSessionManager } from '../services/infra/sessionManager';
+import type { Message } from '../../shared/contract';
+import { getTaskManager } from '../task/TaskManager';
+import type { RunRegistry } from '../runtime/runRegistry';
+import type {
+  NativeRecoveryDescriptor,
+  NativeRecoveryHostPorts,
+  NativeRecoveryOperationInput,
+  NativeRecoveryResultEvidence,
+} from '../runtime/nativeRecoveryHost';
 import { getProjectService } from '../services/project/projectService';
 
-export function createApplicationNativeRecoveryPorts(): NativeRecoveryHostPorts {
+interface NativeModelContinuationSessions {
+  getMessages(sessionId: string, limit?: number): Promise<Message[]>;
+  updateMessage(messageId: string, updates: Partial<Message>): Promise<void>;
+}
+
+interface NativeModelContinuationTasks {
+  setSessionContext(sessionId: string, messages: Message[]): void;
+  startTask(
+    sessionId: string,
+    message: string,
+    attachments?: unknown[],
+    options?: { modelSpec?: { provider: string; model: string }; disableAutoAgent?: boolean },
+    messageMetadata?: Message['metadata'],
+    clientMessageId?: string,
+  ): Promise<void>;
+}
+
+interface ApplicationNativeRecoveryDependencies {
+  sessions: NativeModelContinuationSessions;
+  tasks: NativeModelContinuationTasks;
+  now(): number;
+}
+
+const MODEL_RECOVERY_MESSAGE_LIMIT = 500;
+
+function preparedModelEvidence(
+  messages: Message[],
+  descriptor: NativeRecoveryDescriptor,
+): NativeRecoveryResultEvidence | null {
+  const sourceIndex = messages.findIndex((message) => message.id === descriptor.sourceMessageId);
+  if (sourceIndex < 0) return null;
+  const source = messages[sourceIndex];
+  if (source.role !== 'user' || source.metadata?.correlation?.turnId !== descriptor.logicalOperationId) {
+    return null;
+  }
+  const nextTurnOffset = messages.slice(sourceIndex + 1)
+    .findIndex((message) => message.role === 'user');
+  const turnEnd = nextTurnOffset < 0 ? messages.length : sourceIndex + 1 + nextTurnOffset;
+  const result = messages.slice(sourceIndex + 1, turnEnd).find((message) => (
+    message.role === 'assistant' && message.visibility !== 'rewound'
+  ));
+  return result ? { resultRef: `message-ledger:${result.id}` } : null;
+}
+
+async function checkpointModelDispatchFence(
+  registry: Pick<RunRegistry, 'checkpointDurable'>,
+  input: NativeRecoveryOperationInput,
+  now: number,
+): Promise<void> {
+  const pendingOperations = input.plan.pendingOperations.map((operation) => (
+    operation.operationId === input.operation.operationId
+      ? {
+          ...operation,
+          // Crossing into the live AgentLoop makes the provider outcome unknowable if
+          // this process dies. Persist unknown before dispatch so recovery reviews it
+          // instead of charging for an unprovable second request.
+          status: 'unknown' as const,
+          updatedAt: now,
+        }
+      : operation
+  ));
+  await registry.checkpointDurable(input.plan.envelope.runId, {
+    now,
+    status: 'running',
+    state: input.descriptor,
+    engineCursor: input.plan.checkpoint?.cursor.engineCursor,
+    pendingOperations,
+    childRuns: input.plan.childRuns,
+    events: [{
+      type: 'native_model_recovery_dispatch_fenced',
+      payload: { operationId: input.operation.operationId },
+      recordedAt: now,
+    }],
+  });
+}
+
+export function createApplicationNativeRecoveryPorts(
+  registry?: Pick<RunRegistry, 'checkpointDurable'>,
+  overrides: Partial<ApplicationNativeRecoveryDependencies> = {},
+): NativeRecoveryHostPorts {
+  const dependencies = (): ApplicationNativeRecoveryDependencies => ({
+    sessions: overrides.sessions ?? getSessionManager(),
+    tasks: overrides.tasks ?? getTaskManager(),
+    now: overrides.now ?? Date.now,
+  });
   return {
-    continuationExecutor: 'unavailable',
+    continuationExecutor: 'available',
     async resolveWorkspace(descriptor) {
       try {
         const [root, cwd] = await Promise.all([
@@ -28,13 +121,74 @@ export function createApplicationNativeRecoveryPorts(): NativeRecoveryHostPorts 
       }
     },
     model: {
-      async dispatchPrepared() {
-        throw new Error('native model continuation requires a registered provider recovery executor');
+      async dispatchPrepared(input) {
+        if (!registry) throw new Error('native model continuation requires the application RunRegistry');
+        const { sessions, tasks, now } = dependencies();
+        const messages = await sessions.getMessages(
+          input.plan.envelope.sessionId,
+          MODEL_RECOVERY_MESSAGE_LIMIT,
+        );
+        const existing = preparedModelEvidence(messages, input.descriptor);
+        if (existing) return existing;
+
+        const sourceIndex = messages.findIndex((message) => (
+          message.id === input.descriptor.sourceMessageId && message.role === 'user'
+        ));
+        const source = messages[sourceIndex];
+        if (!source) throw new Error('native model continuation source message is unavailable');
+
+        await sessions.updateMessage(source.id, {
+          metadata: {
+            ...source.metadata,
+            correlation: {
+              ...source.metadata?.correlation,
+              turnId: input.descriptor.logicalOperationId,
+            },
+          },
+        });
+        await checkpointModelDispatchFence(registry, input, now());
+
+        tasks.setSessionContext(input.plan.envelope.sessionId, messages.slice(0, sourceIndex));
+        await tasks.startTask(
+          input.plan.envelope.sessionId,
+          source.content,
+          source.attachments,
+          {
+            modelSpec: {
+              provider: input.descriptor.provider,
+              model: input.descriptor.model,
+            },
+            // The crashed run was already inside the native model path. Re-entering
+            // auto-agent routing would replay a larger graph instead of this operation.
+            disableAutoAgent: true,
+          },
+          {
+            ...source.metadata,
+            correlation: {
+              ...source.metadata?.correlation,
+              turnId: input.descriptor.logicalOperationId,
+            },
+          },
+          source.id,
+        );
+
+        const replayed = preparedModelEvidence(
+          await sessions.getMessages(input.plan.envelope.sessionId, MODEL_RECOVERY_MESSAGE_LIMIT),
+          input.descriptor,
+        );
+        if (!replayed) throw new Error('native model continuation completed without result evidence');
+        return replayed;
       },
       async queryResult() {
+        // Native providers currently persist no providerOperationId-correlated result.
+        // Telemetry is keyed by a local turn id and is flushed only after completion,
+        // so treating it as a provider receipt would create false exactly-once claims.
         return null;
       },
       async canRetrySafely() {
+        // A dispatched model request can already have incurred cost even when no result
+        // was persisted. No current provider contract proves idempotency or zero charge,
+        // therefore automatic retry is never safe.
         return false;
       },
       async retrySafe() {

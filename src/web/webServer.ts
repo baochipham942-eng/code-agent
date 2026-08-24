@@ -605,7 +605,7 @@ async function initializeServices(): Promise<void> {
         ownerId: 'web-native-host',
         processInstanceId: `web-${process.pid}-${randomUUID()}`,
         autoAgentRecoveryHost: createApplicationAutoAgentRecoveryHost(runRegistry),
-        nativeRecoveryPorts: createApplicationNativeRecoveryPorts(),
+        nativeRecoveryPorts: createApplicationNativeRecoveryPorts(runRegistry),
         onSweepResults: (results) => logger.debug('Durable sweeper recovery dispatched', { results }),
         onSweepError: (recoveryError) => logger.error('Durable Run sweeper recovery failed:', recoveryError),
       });

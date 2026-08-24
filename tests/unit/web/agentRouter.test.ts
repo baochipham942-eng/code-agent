@@ -2536,6 +2536,41 @@ describe('createAgentRouter', () => {
     }));
   });
 
+  it('binds recent-conversation scope from persisted session.project_id on the production route', async () => {
+    await closeServer();
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({
+          id: 'session-project-scope',
+          projectId: 'proj_stable_product_id',
+          workingDirectory: '/tmp/original-project-path',
+        })),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '接昨天',
+        sessionId: 'session-project-scope',
+        context: { workingDirectory: '/tmp/moved-project-path' },
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    const config = mockCreateAgentLoop.mock.calls.at(-1)?.[0] as { projectId?: string | null };
+    expect(config.projectId).toBe('proj_stable_product_id');
+  });
+
   it('backfills empty session working directory with the resolved run directory', async () => {
     await closeServer();
     const updateSession = vi.fn(async () => undefined);

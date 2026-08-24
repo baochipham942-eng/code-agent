@@ -66,6 +66,8 @@ export interface RuntimeContext {
   readonly runId?: string;
   readonly runTraceContext?: RunTraceContext;
   readonly sessionId: string;
+  /** Stable sessions.project_id / Project.id. Never derive this from cwd. */
+  readonly projectId?: string | null;
   readonly agentId?: string;
   /** 本轮路由到的持久化角色；仅角色资产目录存在时设置。 */
   persistentRoleId?: string;

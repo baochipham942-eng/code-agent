@@ -31,6 +31,7 @@ import { getSessionTodos, setSessionTodos } from '../../agent/todoParser';
 import { resolveContextWindow } from '../../model/modelLimits';
 import { estimateTokens } from '../../context/tokenOptimizer';
 import { createLogger } from '../../services/infra/logger';
+import { buildRecentConversationsBlock } from '../../lightMemory/recentConversations';
 
 const logger = createLogger('AgentLoop');
 
@@ -274,6 +275,26 @@ export async function injectSeedMemory(
       recordEmptyAuthorityBlock('user-memory', 'session_start_error', 'memory-packer');
       logger.warn('[AgentLoop] User memory authority injection failed, continuing without');
     }
+  }
+}
+
+export async function injectRecentConversations(
+  ctx: RuntimeContext,
+  contextAssembly: ContextAssembly,
+): Promise<void> {
+  if (ctx.memoryMode === 'off' || ctx.persistentRoleId) return;
+
+  try {
+    const block = await buildRecentConversationsBlock({ projectId: ctx.projectId });
+    if (!block) return;
+    contextAssembly.injectSystemMessage(block, 'user-memory', 'recent-conversations');
+    logger.info('[AgentLoop] Recent conversations injected at session start', {
+      projectId: ctx.projectId ?? null,
+    });
+  } catch (error) {
+    logger.warn('[AgentLoop] Recent conversations injection failed, continuing', {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 

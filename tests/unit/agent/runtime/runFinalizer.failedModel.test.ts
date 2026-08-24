@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AgentEvent } from '../../../../src/shared/contract';
 
@@ -42,8 +42,14 @@ vi.mock('../../../../src/host/services/surfaceExecution/SurfaceExecutionRuntime'
 }));
 
 import { RunFinalizer } from '../../../../src/host/agent/runtime/runFinalizer';
+import { appendConversationSummary } from '../../../../src/host/lightMemory/recentConversations';
+import { judgeConversation } from '../../../../src/host/lightMemory/conversationJudge';
 
 describe('RunFinalizer 失败事件', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('RUN_FAILED 带上这一轮真正跑的 provider/model', async () => {
     const events: AgentEvent[] = [];
     const finalizer = new RunFinalizer({
@@ -82,6 +88,45 @@ describe('RunFinalizer 失败事件', () => {
       code: 'RUN_FAILED',
       details: { provider: 'custom-100xlabs', model: 'claude-opus-4-8' },
     });
+  });
+
+  it('writes the stable session project id into the recent summary', async () => {
+    vi.mocked(judgeConversation).mockResolvedValueOnce({
+      worth: true,
+      isMeeting: false,
+      title: 'Project summary',
+      worthKnowledge: ['finished project work'],
+      durableFacts: [],
+      source: 'heuristic',
+    });
+    const finalizer = new RunFinalizer({
+      sessionId: 'sess-project',
+      projectId: 'proj_a',
+      messages: [{ id: 'user-1', role: 'user', content: 'continue project A', timestamp: 1 }],
+    } as never);
+
+    await (finalizer as unknown as { extractAndSaveConversationSummary(): Promise<void> })
+      .extractAndSaveConversationSummary();
+
+    expect(appendConversationSummary).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Project summary',
+      projectId: 'proj_a',
+    }));
+  });
+
+  it('does not write persistent role traffic into ordinary recent conversations', async () => {
+    const finalizer = new RunFinalizer({
+      sessionId: 'sess-role',
+      projectId: 'proj_a',
+      persistentRoleId: 'researcher',
+      messages: [{ id: 'user-1', role: 'user', content: 'role work', timestamp: 1 }],
+    } as never);
+
+    await (finalizer as unknown as { extractAndSaveConversationSummary(): Promise<void> })
+      .extractAndSaveConversationSummary();
+
+    expect(judgeConversation).not.toHaveBeenCalled();
+    expect(appendConversationSummary).not.toHaveBeenCalled();
   });
 
   it('does not synthesize visible fallback text after terminal wake_noop', async () => {

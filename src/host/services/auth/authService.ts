@@ -417,9 +417,10 @@ class AuthService {
       }
 
       // Create profile
+      // username 由 handle_new_user() 触发器统一生成（撞了自动加后缀），这里不写：
+      // 它带 UNIQUE 约束，客户端再按邮箱前缀填一遍会把触发器的去重结果覆盖掉。
       await supabase.from('profiles').upsert({
         id: data.user.id,
-        username: email.split('@')[0],
         quick_login_token: crypto.randomBytes(32).toString('hex'),
         signup_source: 'invite_code',
         invite_code: normalizedInviteCode,
@@ -484,9 +485,9 @@ class AuthService {
           : 'oauth';
         const nickname = readStringProperty(data.user.user_metadata, 'full_name');
         const avatarUrl = readStringProperty(data.user.user_metadata, 'avatar_url');
+        // 同上：username 归 handle_new_user() 管，这里只补触发器没覆盖到的字段
         await supabase.from('profiles').insert({
           id: data.user.id,
-          username: data.user.email?.split('@')[0] || data.user.id,
           nickname,
           avatar_url: avatarUrl,
           quick_login_token: crypto.randomBytes(32).toString('hex'),

@@ -118,4 +118,53 @@ describe('browser/computer consequence approval tier', () => {
     expect(result.error).toContain('not registered in the consequence catalog');
     expect(permissionRequests).toHaveLength(0);
   });
+
+  it.each(['managed', 'relay'] as const)(
+    'does not let skill pre-approval bypass hard denies for the %s engine',
+    async (engine) => {
+      setSurfaceTool('browser_action');
+
+      const highRiskResult = await executor.execute(
+        'browser_action',
+        { action: 'clear_cookies', engine },
+        { preApprovedTools: new Set(['browser_action']) },
+      );
+      expect(highRiskResult).toMatchObject({
+        success: false,
+        metadata: { code: 'BROWSER_COMPUTER_HIGH_RISK_BLOCKED' },
+      });
+
+      const unregisteredResult = await executor.execute(
+        'browser_action',
+        { action: 'future_action', engine },
+        { preApprovedTools: new Set(['browser_action']) },
+      );
+      expect(unregisteredResult.success).toBe(false);
+      expect(unregisteredResult.error).toContain('not registered in the consequence catalog');
+      expect(permissionRequests).toHaveLength(0);
+      expect(resolverState.execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['managed', 'relay'] as const)(
+    'keeps skill pre-approval active for ordinary ask actions on the %s engine',
+    async (engine) => {
+      setSurfaceTool('browser_action');
+
+      const result = await executor.execute(
+        'browser_action',
+        {
+          action: 'upload_file',
+          engine,
+          selector: '#attachment',
+          uploadFilePath: '/tmp/report.pdf',
+        },
+        { preApprovedTools: new Set(['browser_action']) },
+      );
+
+      expect(result.success).toBe(true);
+      expect(permissionRequests).toHaveLength(0);
+      expect(resolverState.execute).toHaveBeenCalledTimes(1);
+    },
+  );
 });

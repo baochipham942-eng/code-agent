@@ -30,6 +30,7 @@ import { recordDecision } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard } from './neoTagToolGuard';
 import type { PermissionMode } from '../permissions/modes';
 import {
+  browserComputerConsequenceForcesClassification,
   CLASSIFIER_ERROR_TRACE_RULE,
   permissionDenialError,
   readOnlyDenialError,
@@ -918,12 +919,17 @@ export class ToolExecutor {
     const shellDesktopAutomation = isBashToolName(policyToolName)
       ? classifyShellDesktopAutomation(params.command)
       : null;
+    const consequenceForcesClassification = browserComputerConsequenceForcesClassification(
+      executionToolName,
+      params,
+    );
 
     // Check permission if required
-    // Skill 系统：预授权工具跳过权限检查（但不能跳过边界违规检查）
+    // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
     const isPreApproved = !boundaryViolation
       && !guardFabricForcesApproval
       && !shellDesktopAutomation
+      && !consequenceForcesClassification
       && !this.forcePermissionHandler
       && options.preApprovedTools !== undefined
       && options.preApprovedTools.size > 0
@@ -976,7 +982,7 @@ export class ToolExecutor {
       }
     }
 
-    if (toolDef.requiresPermission && (this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || (!isPreApproved && !isSafeCommand))) {
+    if (toolDef.requiresPermission && (this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。

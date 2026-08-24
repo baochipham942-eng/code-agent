@@ -5,6 +5,7 @@ import Database from 'better-sqlite3';
 
 import { DurableRunKernel } from '../../../../src/host/runtime/durableRunKernel';
 import { DurableRunRepository } from '../../../../src/host/services/core/repositories/DurableRunRepository';
+import { DURABLE_ACTIVE_SESSION_CONFLICT_CODE } from '../../../../src/shared/contract/durableRun';
 
 function createKernel() {
   const db = new Database(':memory:');
@@ -54,8 +55,9 @@ describe('DurableRunKernel active session root invariant', () => {
     const { kernel } = fixture;
 
     await kernel.createNativeRun({ runId: 'root-1', sessionId: 's1', now: 10 });
+    // 判据认自有 code——不认驱动报错文案（换 driver 时那种匹配会静默失效）。
     await expect(kernel.createNativeRun({ runId: 'root-2', sessionId: 's1', now: 11 }))
-      .rejects.toThrow(/UNIQUE constraint failed/i);
+      .rejects.toMatchObject({ code: DURABLE_ACTIVE_SESSION_CONFLICT_CODE });
   });
 
   it('lets a completed root release its session slot for the next root', async () => {

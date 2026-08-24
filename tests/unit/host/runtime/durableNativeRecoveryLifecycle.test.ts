@@ -18,6 +18,7 @@ import { DurableRunKernel } from '../../../../src/host/runtime/durableRunKernel'
 import type { RunRehydrationPlan } from '../../../../src/host/runtime/durableRunStores';
 import { RunRegistry, RunSessionConflictError } from '../../../../src/host/runtime/runRegistry';
 import { DurableRunRepository } from '../../../../src/host/services/core/repositories/DurableRunRepository';
+import { DURABLE_ACTIVE_SESSION_CONFLICT_CODE } from '../../../../src/shared/contract/durableRun';
 import type { Message } from '../../../../src/shared/contract';
 
 function createRepository() {
@@ -680,12 +681,17 @@ describe('durable Native recovery lifecycle', () => {
           `shared-session-${engine}`,
         ).then(() => undefined, (caught: unknown) => caught);
         expect(error).toBeInstanceOf(RunSessionConflictError);
+        // 写入侧现在把驱动报错抬成自有 code（判据不再依赖驱动文案），
+        // 原始驱动错误仍完整挂在链上，只是多了一跳。
         expect(error).toMatchObject({
           code: 'RUN_SESSION_CONFLICT',
           sessionId: `shared-session-${engine}`,
           cause: {
-            code: 'SQLITE_CONSTRAINT_UNIQUE',
-            message: 'UNIQUE constraint failed: durable_runs.session_id',
+            code: DURABLE_ACTIVE_SESSION_CONFLICT_CODE,
+            cause: {
+              code: 'SQLITE_CONSTRAINT_UNIQUE',
+              message: 'UNIQUE constraint failed: durable_runs.session_id',
+            },
           },
         });
       } finally {

@@ -269,7 +269,7 @@ export const enSettingsWork = {
         webSocketLabel: 'Use long connection (recommended)',
         webSocketHint: 'Desktop apps use a long connection by default and need no public callback URL. Turn this off to use Webhook.',
         outboundTargetsLabel: 'Conversations allowed for sending',
-        outboundTargetsPlaceholder: 'Separate conversation IDs with commas, e.g. oc_...',
+        outboundTargetsPlaceholder: 'Separate conversation IDs with commas, e.g. oc_abc123def',
         outboundTargetsHint: 'This is the outbound allowlist. Leaving it blank blocks all outgoing messages; only listed conversations can receive results.',
         configTipsTitle: 'Configuration tips:',
         larkLocalWebhookPrefix: 'Local Webhook URL after connection: ',

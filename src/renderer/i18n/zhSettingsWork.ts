@@ -269,7 +269,7 @@ export const zhSettingsWork = {
         webSocketLabel: '使用长连接（推荐）',
         webSocketHint: '桌面端默认使用长连接，无需公网回调地址。关闭后改用 Webhook。',
         outboundTargetsLabel: '允许发送到的会话',
-        outboundTargetsPlaceholder: '多个会话 ID 用逗号分隔，例如 oc_...',
+        outboundTargetsPlaceholder: '多个会话 ID 用逗号分隔，例如 oc_abc123def',
         outboundTargetsHint: '这是出站白名单。不填写就不能发送任何消息；只有列表里的会话可以收到结果。',
         configTipsTitle: '配置提示：',
         larkLocalWebhookPrefix: '连接后本地 Webhook 地址：',

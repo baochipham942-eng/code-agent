@@ -84,12 +84,12 @@ export function getChannelConfigSummary(
 
   if (account.type === 'feishu') {
     const config = account.config as FeishuChannelConfig;
-    return `Webhook ${config.webhookPort || 3200}`;
+    return config.useWebSocket ? labels.webSocket : `Webhook ${config.webhookPort || 3200}`;
   }
 
   if (account.type === 'lark') {
     const config = account.config as LarkChannelConfig;
-    return `Webhook ${config.webhookPort || 3200}`;
+    return config.useWebSocket ? labels.webSocket : `Webhook ${config.webhookPort || 3200}`;
   }
 
   if (account.type === 'telegram') {
@@ -227,6 +227,8 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
   const [encryptKey, setEncryptKey] = useState(larkLikeConfig?.encryptKey || '');
   const [verificationToken, setVerificationToken] = useState(larkLikeConfig?.verificationToken || '');
   const [webhookPort, setWebhookPort] = useState(larkLikeConfig?.webhookPort?.toString() || '3200');
+  const [useWebSocket, setUseWebSocket] = useState(larkLikeConfig?.useWebSocket ?? true);
+  const [outboundTargets, setOutboundTargets] = useState(larkLikeConfig?.outboundAllowlist?.join(', ') || '');
 
   // Telegram 配置
   const [botToken, setBotToken] = useState(
@@ -262,8 +264,12 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
         appSecret,
         encryptKey: encryptKey || undefined,
         verificationToken: verificationToken || undefined,
-        useWebSocket: false, // 默认使用 Webhook 模式
+        useWebSocket,
         webhookPort: parseInt(webhookPort) || 3200,
+        outboundAllowlist: outboundTargets
+          .split(/[,\n]/)
+          .map((target) => target.trim())
+          .filter(Boolean),
         privacyMode,
       };
     } else if (type === 'telegram') {
@@ -426,50 +432,77 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   required
                 />
               </div>
-              <div>
-                <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.encryptKeyLabel}</label>
-                <input
-                  type={showSecrets ? 'text' : 'password'}
-                  value={encryptKey}
-                  onChange={(e) => setEncryptKey(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
-                />
+              <div className="rounded-lg border border-zinc-700 bg-zinc-800 p-3">
+                <label className="flex items-center gap-2 text-sm text-zinc-300">
+                  <input
+                    type="checkbox"
+                    checked={useWebSocket}
+                    onChange={(event) => setUseWebSocket(event.target.checked)}
+                    className="rounded border-zinc-600"
+                  />
+                  {channelText.modal.webSocketLabel}
+                </label>
+                <p className="mt-1 text-xs text-zinc-500">{channelText.modal.webSocketHint}</p>
               </div>
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.verificationTokenLabel}</label>
+                <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.outboundTargetsLabel}</label>
                 <input
-                  type={showSecrets ? 'text' : 'password'}
-                  value={verificationToken}
-                  onChange={(e) => setVerificationToken(e.target.value)}
+                  type="text"
+                  value={outboundTargets}
+                  onChange={(event) => setOutboundTargets(event.target.value)}
                   className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
+                  placeholder={channelText.modal.outboundTargetsPlaceholder}
                 />
+                <p className="mt-1 text-xs text-badge-warning">{channelText.modal.outboundTargetsHint}</p>
               </div>
-              <div>
-                <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.webhookPortLabel}</label>
-                <input
-                  type="number"
-                  value={webhookPort}
-                  onChange={(e) => setWebhookPort(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
-                  placeholder="3200"
-                  min={1}
-                  max={65535}
-                />
-              </div>
-              <div className="p-3 bg-zinc-800 rounded-lg border border-zinc-700">
-                <p className="text-xs text-zinc-400">
-                  <strong className="text-zinc-400">{channelText.modal.configTipsTitle}</strong>
-                </p>
-                <ol className="text-xs text-zinc-500 mt-1 space-y-1 list-decimal list-inside">
-                  <li>{channelText.modal.larkLocalWebhookPrefix}<code className="text-badge-accent">http://localhost:{webhookPort}/webhook/feishu</code></li>
-                  <li>{channelText.modal.ngrokPrefix}<code className="text-badge-accent">ngrok http {webhookPort}</code></li>
-                  <li>
-                    {channelText.modal.callbackUrlPrefix}
-                    {type === 'lark' ? channelText.modal.larkCallbackPlatform : channelText.modal.feishuCallbackPlatform}
-                    {channelText.modal.callbackUrlSuffix}
-                  </li>
-                </ol>
-              </div>
+              {!useWebSocket && (
+                <>
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.encryptKeyLabel}</label>
+                    <input
+                      type={showSecrets ? 'text' : 'password'}
+                      value={encryptKey}
+                      onChange={(e) => setEncryptKey(e.target.value)}
+                      className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.verificationTokenLabel}</label>
+                    <input
+                      type={showSecrets ? 'text' : 'password'}
+                      value={verificationToken}
+                      onChange={(e) => setVerificationToken(e.target.value)}
+                      className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.webhookPortLabel}</label>
+                    <input
+                      type="number"
+                      value={webhookPort}
+                      onChange={(e) => setWebhookPort(e.target.value)}
+                      className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
+                      placeholder="3200"
+                      min={1}
+                      max={65535}
+                    />
+                  </div>
+                  <div className="p-3 bg-zinc-800 rounded-lg border border-zinc-700">
+                    <p className="text-xs text-zinc-400">
+                      <strong className="text-zinc-400">{channelText.modal.configTipsTitle}</strong>
+                    </p>
+                    <ol className="text-xs text-zinc-500 mt-1 space-y-1 list-decimal list-inside">
+                      <li>{channelText.modal.larkLocalWebhookPrefix}<code className="text-badge-accent">http://localhost:{webhookPort}/webhook/feishu</code></li>
+                      <li>{channelText.modal.ngrokPrefix}<code className="text-badge-accent">ngrok http {webhookPort}</code></li>
+                      <li>
+                        {channelText.modal.callbackUrlPrefix}
+                        {type === 'lark' ? channelText.modal.larkCallbackPlatform : channelText.modal.feishuCallbackPlatform}
+                        {channelText.modal.callbackUrlSuffix}
+                      </li>
+                    </ol>
+                  </div>
+                </>
+              )}
             </>
           )}
 

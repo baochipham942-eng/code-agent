@@ -26,6 +26,7 @@ const channelState = vi.hoisted(() => {
     deleteAccount: vi.fn(),
     connectAccount: vi.fn(),
     disconnectAccount: vi.fn(),
+    listConversations: vi.fn(),
   };
 
   return {
@@ -104,6 +105,21 @@ describe('channel.ipc inbox handlers', () => {
     channelState.manager.getRegisteredChannelTypes.mockReturnValue([]);
     channelState.manager.getInboxItems.mockReturnValue([inboxItem]);
     channelState.manager.dismissInboxItem.mockReturnValue(true);
+    channelState.manager.listConversations.mockResolvedValue({
+      supported: true,
+      conversations: [{ id: 'oc_group', name: '林晨, 苏三' }],
+    });
+  });
+
+  it('lists sendable conversations for a selected channel account', async () => {
+    const ipc = createMockIpcMain();
+    registerChannelHandlers(ipc.ipcHost as never, () => null);
+
+    await expect(ipc.invoke(CHANNEL_CHANNELS.LIST_CONVERSATIONS, 'account-1')).resolves.toEqual({
+      supported: true,
+      conversations: [{ id: 'oc_group', name: '林晨, 苏三' }],
+    });
+    expect(channelState.manager.listConversations).toHaveBeenCalledWith('account-1');
   });
 
   it('registers list and dismiss handlers for channel inbox', async () => {

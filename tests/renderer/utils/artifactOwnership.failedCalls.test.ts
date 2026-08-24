@@ -102,7 +102,7 @@ describe('产物条目生成门槛：失败调用不建条目', () => {
       sourceTool: 'mail_send',
       name: '发送邮件失败：周报',
       preview: '发送邮件失败：SMTP unavailable\nTo: a@example.com, b@example.com',
-      metadata: { success: false, failureReason: 'SMTP unavailable', toCount: 2 },
+      metadata: { connector: 'mail', success: false, failureReason: 'SMTP unavailable', toCount: 2 },
     };
     const metadata = {
       artifact,
@@ -121,7 +121,9 @@ describe('产物条目生成门槛：失败调用不建条目', () => {
       role: 'receipt',
       receipt: {
         status: 'failed',
-        summary: '发送邮件失败：周报 · 发给 a@example.com 等 2 人',
+        summary: '发送邮件失败：周报',
+        connector: 'mail',
+        recipient: { first: 'a@example.com', count: 2 },
       },
     }]);
 
@@ -147,7 +149,7 @@ describe('产物条目生成门槛：失败调用不建条目', () => {
     expect(sections.materialItems).toEqual([]);
     expect(sections.receiptItems).toMatchObject([{
       status: 'failed',
-      title: '发送邮件失败：周报 · 发给 a@example.com 等 2 人',
+      title: '发送邮件失败：周报',
     }]);
   });
 });

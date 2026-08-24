@@ -224,12 +224,19 @@ describe('已执行模块', () => {
     previewItemsState.receiptItems = [{
       id: 'receipt-mail',
       kind: 'trace',
-      title: '发送邮件失败：周报 · 发给 zhang@example.com 等 3 人',
+      title: '发送邮件失败：周报',
       subtitle: 'mail_send',
       status: 'failed',
       createdAt: 1_700_000_000_000,
       source: { kind: 'tool', label: 'mail_send' },
       content: { text: 'To: zhang@example.com, li@example.com, wang@example.com\nSMTP unavailable' },
+      receipt: {
+        status: 'failed',
+        summary: '发送邮件失败：周报',
+        sourceTool: 'mail_send',
+        connector: 'mail',
+        recipient: { first: 'zhang@example.com', count: 3 },
+      },
     }];
 
     render(<TaskWorkspaceOverview />);

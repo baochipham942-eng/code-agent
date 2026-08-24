@@ -71,7 +71,7 @@ describe('ArtifactItemPills 产物行（非 link 项）', () => {
     expect(new Set([docxIcon, xlsxIcon, pptxIcon]).size).toBe(3);
   });
 
-  it('link 项（Sources 来源）保持现状：Link 徽章 + 来源工具名次行都在', () => {
+  it('link 项（Sources 来源）保留 Link 徽章，来源工具名改成人话', () => {
     const { container } = render(
       <TraceNodeRenderer
         node={makeNode([
@@ -94,7 +94,8 @@ describe('ArtifactItemPills 产物行（非 link 项）', () => {
     fireEvent.click(toggle!);
 
     expect(container.textContent).toContain('Link');
-    expect(container.textContent).toContain('WebFetch');
+    expect(container.textContent).toContain('网页抓取');
+    expect(container.textContent).not.toContain('WebFetch');
     expect(container.textContent).toContain('example.com');
   });
 });

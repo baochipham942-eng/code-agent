@@ -3,6 +3,7 @@ import type { CronJobDefinition, CronJobExecution } from '../../shared/contract/
 import {
   buildCronApiAddParams,
   buildCronApiUpdateParams,
+  cloudDeclarationKey,
   cloudRunToExecution,
   CronApiClient,
   type CronApiConfig,
@@ -33,8 +34,9 @@ export class CronCloudRuntime {
   constructor(
     getConfig: () => CronApiConfig | undefined,
     private readonly deps: CronCloudRuntimeDeps,
+    fetchImpl?: typeof fetch,
   ) {
-    this.client = new CronApiClient(getConfig);
+    this.client = new CronApiClient(getConfig, fetchImpl);
   }
 
   isConfigured(): boolean {
@@ -90,8 +92,13 @@ export class CronCloudRuntime {
 
   async removeJob(definition: CronJobDefinition, knownRemoteJobId?: string): Promise<boolean> {
     try {
-      const remoteJobId = knownRemoteJobId ?? await this.addJob(definition, false);
-      if (!remoteJobId) throw new Error('Cloud cron job could not be synchronized for removal.');
+      // 判据是「云端现在还有没有这条」，不是「删除请求报了什么错」——一次性任务跑完会被
+      // 云端自动清掉，此时 remove 报 not found 是正常状态而非失败。当成失败会让本地那条
+      // 永远删不掉（deleteJob 只有云端删成功才往下走），用户点删除毫无反应。
+      const declarationKey = cloudDeclarationKey(definition.id);
+      const remoteJobId = (await this.client.listJobs())
+        .find((job) => job.id === knownRemoteJobId || job.declarationKey === declarationKey)?.id;
+      if (!remoteJobId) return true;
       await this.client.removeJob(remoteJobId);
       return true;
     } catch (error) {

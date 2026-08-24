@@ -15,6 +15,15 @@ export const SESSION_TASK_CONCURRENCY = {
 export const SESSION_TASK_LANE_LIMIT = 1;
 
 /**
+ * 任务槽最长占用时间。超过这个时间仍没有终态事件，视为 run 已失联并回收占位。
+ * 留出两小时，避免正常的长任务被短暂静默误判为崩溃。
+ */
+export const SESSION_TASK_SLOT_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
+
+/** 与 resourceLockManager 一致，周期扫描超时占用，不另建调度层。 */
+export const SESSION_TASK_SLOT_CLEANUP_INTERVAL_MS = 10_000;
+
+/**
  * DashScope Qwen-Omni Realtime WebSocket 接入点。
  *
  * 2026-07-26 实测：文档写的是 `wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime`，

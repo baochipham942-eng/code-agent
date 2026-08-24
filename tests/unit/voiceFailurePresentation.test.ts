@@ -30,6 +30,30 @@ describe('语音上游错误展示', () => {
 });
 
 describe('语音派活失败文案出口', () => {
+  it('任务槽超时按当前语言给出可行动说明，内部归因留在详情', () => {
+    const marker = {
+      code: 'TASK_SLOT_TIMEOUT' as const,
+      laneKey: 'report',
+      occupiedMs: 7_200_000,
+      reason: 'terminal_event_timeout' as const,
+    };
+    const zhResult = describeWorkFailure('报告任务在 report lane 占用 2 小时后失联', {
+      ...marker,
+      locale: 'zh',
+    });
+    const enResult = describeWorkFailure('Report task lost its terminal event after 2 hours', {
+      ...marker,
+      locale: 'en',
+    });
+
+    expect(zhResult.screen).toContain('已释放它占用的任务队列');
+    expect(zhResult.spoken).toContain('请重试');
+    expect(zhResult.detail).toContain('report lane');
+    expect(enResult.screen).toContain('queue slot was released');
+    expect(enResult.spoken).toContain('Please retry');
+    expect(enResult.detail).toContain('terminal event');
+  });
+
   it('未知异常不进入屏幕主文案或口播，只保留为详情', () => {
     const raw = 'Project Source trust identity changed: /Users/foo/secret/repo';
     const result = describeWorkFailure(raw);

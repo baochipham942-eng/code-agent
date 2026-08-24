@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '../../src/shared/contract/agent';
 import type { VoiceWorkItem, VoiceWorkNarration } from '../../src/shared/contract/voice';
+import { SESSION_TASK_SLOT_TIMEOUT_MS } from '../../src/shared/constants/voice';
 
 type TaskEvent = { type: string; sessionId: string; data?: unknown };
 
@@ -58,7 +59,7 @@ vi.mock('../../src/host/services/roleAssets/roleAssetService', () => ({
   buildRoleContextBlock: vi.fn(async () => null),
 }));
 vi.mock('../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ voice: { live: {} } }) }),
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' }, voice: { live: {} } }) }),
 }));
 vi.mock('../../src/host/services/planning/taskStore', () => ({ getIncompleteTasks: () => [] }));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
@@ -121,6 +122,10 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('voice multi-slot coordinator', () => {
   it('starts two different lanes in parallel', async () => {
     pushVoiceTranscript({ role: 'user', text: '同时派两件需要澄清的活。' });
@@ -146,6 +151,41 @@ describe('voice multi-slot coordinator', () => {
     runtime.emit('task_completed', firstId);
     await vi.waitFor(() => expect(runtime.startBackgroundTask).toHaveBeenCalledTimes(2));
     expect(runtime.startBackgroundTask.mock.calls[1][0]).toBe(queued?.id);
+  });
+
+  it('fails loudly and starts the same-lane successor when a voice run stops reporting terminal events', async () => {
+    endVoiceDispatch();
+    vi.useFakeTimers();
+    beginVoiceDispatch({
+      neoSessionId: 'session-1',
+      voiceSessionId: 'voice-timeout',
+      onWorkItem: (item) => workItems.push(item),
+      onWorkFailed: () => undefined,
+      onWorkNarration: (narration) => narrations.push(narration),
+      onEndCall: () => undefined,
+    });
+    const startedAt = Date.now();
+
+    await spawn(1, 'report');
+    await spawn(2, 'report');
+    const firstId = runtime.startBackgroundTask.mock.calls[0][0] as string;
+    const queuedId = workItems.find((item) => item.shortName === '短名2')?.id;
+    expect(runtime.startBackgroundTask).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(startedAt + SESSION_TASK_SLOT_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(latest(firstId)).toMatchObject({
+      status: 'failed',
+      detail: expect.stringContaining('lane「report」占用 2 小时后仍未收到终态事件'),
+      failure: {
+        code: 'TASK_SLOT_TIMEOUT',
+        laneKey: 'report',
+        reason: 'terminal_event_timeout',
+      },
+    });
+    expect(runtime.startBackgroundTask).toHaveBeenCalledTimes(2);
+    expect(runtime.startBackgroundTask.mock.calls[1][0]).toBe(queuedId);
   });
 
   it('reuses a duplicate submission key', async () => {

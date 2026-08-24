@@ -24,6 +24,9 @@
 #      （如 shell/dynamicDescription.ts），改它同样改变下发文本，本门看不见。
 #   2) 只扫 src/host/tools/modules/。plugins/ 下的工具 schema 不在扫描面。
 #   3) 只管「改了要 bump」，不管「bump 的值对不对」（没人拦你从 v9 跳到 v3）。
+#   已修历史盲区：旧版按 diff 行首把所有 `*` / `//` / `import` 行都当成非实质内容，
+#   会误吞多行模板字符串中的 Markdown 标题、代码示例等模型可见文本。现在先按 TS 字符串/
+#   块注释状态过滤完整的 HEAD 与 staged 源码，再比较模型可见内容。
 #
 # 用法：
 #   bash scripts/check-prompt-version-bump.sh   # 检查 staged 文件（pre-commit）
@@ -58,17 +61,98 @@ done <<< "$staged"
 schema_files=$(echo "$staged" | grep -E "^${TOOL_MODULES_DIR}.*\.schema\.ts$" || true)
 schema_changed=false
 schema_hits=""
+
+# 输出 schema 中可能进入模型请求的源码行。这里只排除整行注释、import 和空行；关键是
+# 必须跟踪多行模板字符串与块注释状态，不能把模板正文里以 `*` / `//` / `import` 开头的
+# 文本误当成源码注释或 import。awk 写成 POSIX 子集，兼容 macOS 自带 awk。
+filter_schema_model_visible_source() {
+  awk '
+    BEGIN { state = "code" }
+
+    function scan_line(line, i, ch, next_ch, escaped) {
+      escaped = 0
+      for (i = 1; i <= length(line); i++) {
+        ch = substr(line, i, 1)
+        next_ch = substr(line, i + 1, 1)
+
+        if (state == "block_comment") {
+          if (ch == "*" && next_ch == "/") {
+            state = "code"
+            i++
+          }
+          continue
+        }
+
+        if (state == "template") {
+          if (escaped) {
+            escaped = 0
+          } else if (ch == "\\") {
+            escaped = 1
+          } else if (ch == "`") {
+            state = "code"
+          }
+          continue
+        }
+
+        if (state == "single_quote" || state == "double_quote") {
+          if (escaped) {
+            escaped = 0
+          } else if (ch == "\\") {
+            escaped = 1
+          } else if ((state == "single_quote" && ch == "\047") ||
+                     (state == "double_quote" && ch == "\042")) {
+            state = "code"
+          }
+          continue
+        }
+
+        if (ch == "/" && next_ch == "*") {
+          state = "block_comment"
+          i++
+        } else if (ch == "/" && next_ch == "/") {
+          break
+        } else if (ch == "`") {
+          state = "template"
+        } else if (ch == "\047") {
+          state = "single_quote"
+        } else if (ch == "\042") {
+          state = "double_quote"
+        }
+      }
+
+      # JS/TS 普通引号不能裸跨行；模板字符串和块注释可以。
+      if (state == "single_quote" || state == "double_quote") state = "code"
+    }
+
+    {
+      line = $0
+      start_state = state
+      trimmed = line
+      sub(/^[[:space:]]*/, "", trimmed)
+
+      keep = 1
+      if (trimmed == "") keep = 0
+      else if (start_state == "block_comment") keep = 0
+      else if (start_state == "code" && trimmed ~ /^\/\*/) keep = 0
+      else if (start_state == "code" && trimmed ~ /^\/\//) keep = 0
+      else if (start_state == "code" && trimmed ~ /^import[[:space:]]/) keep = 0
+
+      if (keep) print line
+      scan_line(line)
+    }
+  '
+}
+
+schema_blob() {
+  git show "$1" 2>/dev/null || true
+}
+
 if [ -n "$schema_files" ]; then
   while IFS= read -r f; do
     [ -z "$f" ] && continue
-    substantive=$(git diff --cached -- "$f" \
-      | grep -E '^[+-]' \
-      | grep -vE '^(\+\+\+|---)' \
-      | grep -vE '^[+-][[:space:]]*(//|/\*|\*)' \
-      | grep -vE "^[+-][[:space:]]*import[[:space:]]" \
-      | grep -vE '^[+-][[:space:]]*$' \
-      || true)
-    if [ -n "$substantive" ]; then
+    if ! cmp -s \
+      <(schema_blob "HEAD:${f}" | filter_schema_model_visible_source) \
+      <(schema_blob ":${f}" | filter_schema_model_visible_source); then
       schema_changed=true
       schema_hits="${schema_hits}${f}"$'\n'
     fi

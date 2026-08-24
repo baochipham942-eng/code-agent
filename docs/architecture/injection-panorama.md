@@ -1,6 +1,6 @@
 # 系统提示注入全景表
 
-更新：2026-08-14。盘点范围是 `src/host` 中实际把内容送入模型上下文的运行时注入：`injectSystemMessage(...)` 的直接调用，以及虽不经过该函数、但会在轮首拼入模型消息的 `live_voice_permission_notice`。`rg -l 'injectSystemMessage|system_reminder' src/host` 当前命中 20 个文件；其中 `contextAssembly.ts` 是门面定义，5 处是回调转发（nudge/artifact 系 4 处的实际内容已按被调方列行；swarm 引导转发的内容独有，单列一行），故表中是 **99 个实际注入点**（97 个 direct call + 1 个轮首拼接 + 1 个经转发的 swarm 引导）。
+更新：2026-08-20。盘点范围是 `src/host` 中实际把内容送入模型上下文的运行时注入：`injectSystemMessage(...)` 的直接调用，以及虽不经过该函数、但会在轮首拼入模型消息的 `live_voice_permission_notice`。`rg -l 'injectSystemMessage|system_reminder' src/host` 当前命中 20 个文件；其中 `contextAssembly.ts` 是门面定义，5 处是回调转发（nudge/artifact 系 4 处的实际内容已按被调方列行；swarm 引导转发的内容独有，单列一行），故表中是 **100 个实际注入点**（98 个 direct call + 1 个轮首拼接 + 1 个经转发的 swarm 引导）。
 
 口径：token 取静态文案字符数 ÷ 3 并四舍五入；标签和固定标点计入，文件名、错误文本、schema、hook 返回、模型回复、用户内容等动态载荷不计入，标为“+动态”。“全模型”表示本仓没有 provider/model 分支；仍受对应功能、模式、Hook 或工具事件开关约束。`injectSystemMessage` 追加的是运行时 system message，Provider 会在适配边界转成 transient `<system-reminder>`；它不是静态系统提示的重复定义。
 
@@ -17,6 +17,7 @@
 | `src/host/agent/runtime/conversationRuntimeContextBootstrap.ts:139 <desktop-activity-context>`     | 注入桌面活动上下文                               | 非简单任务、legacySeparate 且有桌面块                  | 会话启动             | ~20 + 动态（总长上限 4,500 字符） | 前提：`includeDesktopActivity` 仍只给非简单任务；降频：会话一次；模型：全模型。                                   |
 | `src/host/agent/runtime/conversationRuntimeContextBootstrap.ts:196 <user-directives>`              | 注入用户明确决定的规则及不可越权边界             | memoryMode 非 off 且 directive packer 有结果           | 会话启动             |                        ~95 + 动态 | 前提：打包器和免疫条款仍在；降频：会话一次；模型：全模型。                                                        |
 | `src/host/agent/runtime/conversationRuntimeContextBootstrap.ts:237 <user-memory>`                  | 注入个性化证据，并声明其不是授权                 | memoryMode 非 off 且有 packed/fallback memory          | 会话启动             |                        ~45 + 动态 | 前提：双来源 memory fallback 仍在；降频：会话一次；模型：全模型。                                                 |
+| `src/host/agent/runtime/conversationRuntimeContextBootstrap.ts:290 <recent_conversations>`          | 按 `session.project_id` 注入近两周最近会话                   | 会话首轮、memoryMode 非 off、非持久角色且有命中 | 会话一次             |                              动态 | 前提：使用持久化 Project.id，当前项目无命中才降级全局无键条目；降频：已一次；模型：全模型。       |
 | `src/host/agent/runtime/toolExecutionEngine.ts:168 （planning-hook payload）`                      | 传入规划服务 session-start Hook 上下文           | planningService 的 `onSessionStart` 返回 injectContext | 会话一次             |                              动态 | 前提：服务接口仍返回 injectContext；降频：已是一次；模型：全模型。                                                |
 
 ## 每轮组装、模式与流控制

@@ -74,6 +74,7 @@ import {
 import {
   bootstrapDesktopDerivedContext,
   injectActivityContext,
+  injectRecentConversations,
   injectSeedMemory,
   persistFailedRunContinuationContext,
 } from './conversationRuntimeContextBootstrap';
@@ -1064,6 +1065,10 @@ export class ConversationRuntime {
           'session-start-hook',
         );
       }
+    }
+
+    if (isFirstUserTurn) {
+      await injectRecentConversations(this.ctx, this.contextAssembly);
     }
 
     // F5: 跨会话任务恢复

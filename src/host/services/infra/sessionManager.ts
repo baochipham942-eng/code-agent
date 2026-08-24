@@ -6,7 +6,7 @@
 import { AppWindow } from '../../platform';
 import { getDatabase, type StoredSession } from '../core';
 import { getToolCache } from './toolCache';
-import { normalizePromptForBackfill, sanitizeModelConfigForSession } from './sessionManagerNormalization';
+import { formatTelemetryRecoveredPrompt, normalizePromptForBackfill, sanitizeModelConfigForSession } from './sessionManagerNormalization';
 import { getAuthService } from '../auth/authService';
 import { getSupabase, isSupabaseInitialized } from './supabaseService';
 import { IPC_CHANNELS } from '../../../shared/ipc';
@@ -172,7 +172,7 @@ export class SessionManager implements Disposable {
           {
             id: `telemetry-user-${row.id}`,
             role: 'user',
-            content,
+            content: formatTelemetryRecoveredPrompt(content),
             timestamp: Number.isFinite(timestamp) ? timestamp : Date.now()
           },
           { skipTimestampUpdate: true }

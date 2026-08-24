@@ -357,8 +357,12 @@ export const enSettingsSystem = {
       badges: {
         needsSetup: 'Needs setup',
         notConnected: 'Not connected',
+        connecting: 'Connecting',
         connected: 'Connected',
         unavailable: 'Unavailable',
+      },
+      capabilities: {
+        feishu: 'Send meeting notes, weekly updates, and progress reminders to Feishu groups as yourself without leaving Neo.',
       },
       idPrefix: 'id: ',
       metaSeparator: ' · ',
@@ -378,12 +382,34 @@ export const enSettingsSystem = {
       },
       actions: {
         none: 'None',
+        startUsing: 'Start using',
         saveAndConnect: 'Save & Connect',
         saving: 'Saving…',
         connect: 'Connect',
         connecting: 'Connecting…',
         disconnect: 'Disconnect',
         disconnecting: 'Disconnecting…',
+      },
+      toast: {
+        authorizationOpened: 'Feishu authorization opened in your system browser. You will return to Neo automatically when it is complete…',
+        connected: 'Feishu connected',
+        disconnected: 'Feishu disconnected',
+        authorizationCancelled: 'Feishu authorization cancelled',
+      },
+      tryIt: {
+        title: 'Try it',
+        feishu: [
+          'Send today’s meeting notes to the Feishu group [Product Weekly], @-mentioning the three leads at the top.',
+          'Every Friday at 5pm, summarize what you did for me this week and post it to the Feishu group [Product Weekly].',
+          'I’ve finished this draft. Post the summary to the Feishu group [Project Updates] with a note on which section to read.',
+        ],
+      },
+      advanced: {
+        title: 'Advanced',
+        readonlyTitle: 'Read-only Base and calendar data',
+        readonlyDescription: 'For unattended jobs that watch Base and calendar changes using an app identity. App ID and App Secret are configured separately.',
+        configure: 'Configure read-only access',
+        configured: 'Read-only access configured',
       },
       disconnect: {
         noticeWithSecret: 'Disconnecting also removes the App Secret saved on this device; you will need to enter it again to reconnect.',

@@ -552,6 +552,11 @@ export const zhSettingsModels = {
       focusPromptKindMcp: 'MCP',
       focusPromptKindConnector: 'Connector',
       closeFocusPrompt: '关闭提示',
+      grid: {
+        title: '所有连接器',
+        description: '想连接和已经连接的服务都在这里，状态直接显示在卡片上。点卡片查看能力、连接方式和使用示例。',
+        connectedSummarySuffix: ' 台 MCP 已连接',
+      },
       tabs: {
         connectedPrefix: '已连接 (',
         connectedSuffix: ')',
@@ -674,6 +679,17 @@ export const zhSettingsModels = {
         },
         browseTitle: '按用途浏览',
         browseDescription: '热门 MCP 连接，按要连的能力分类。点「添加」会打开预填好目录配置的确认面板，凭证类条目在面板里补齐密钥。',
+        grid: {
+          viewDetails: '查看详情',
+          notConnected: '未连接 · 点开查看连接方式',
+          connectionSetup: '连接方式',
+          secretInNextStep: '下一步会打开安全配置面板，密钥使用密码型输入并保存到本机安全存储。',
+          tryIt: '试试这样用',
+          examples: [
+            '用 {name} 帮我处理当前任务需要的外部数据，并把关键结果列出来。',
+            '先检查 {name} 能提供哪些能力，再用最合适的一项完成这件事。',
+          ],
+        },
       },
       editor: {
         title: '添加 MCP 服务器',

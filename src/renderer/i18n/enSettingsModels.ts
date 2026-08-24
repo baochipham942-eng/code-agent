@@ -550,6 +550,11 @@ export const enSettingsModels = {
       focusPromptKindMcp: 'MCP',
       focusPromptKindConnector: 'Connector',
       closeFocusPrompt: 'Dismiss',
+      grid: {
+        title: 'All connectors',
+        description: 'Services you can connect and those already connected live together here. Open a card for capabilities, connection options, and examples.',
+        connectedSummarySuffix: ' MCP servers connected',
+      },
       tabs: {
         connectedPrefix: 'Connected (',
         connectedSuffix: ')',
@@ -672,6 +677,17 @@ export const enSettingsModels = {
         },
         browseTitle: 'Browse by use case',
         browseDescription: 'Popular MCP connections grouped by capability. "Add" opens a confirmation panel prefilled with the catalog config; credential-based entries are completed there.',
+        grid: {
+          viewDetails: 'View details',
+          notConnected: 'Not connected · Open for connection options',
+          connectionSetup: 'Connection setup',
+          secretInNextStep: 'The next step opens a secure setup panel. Secrets use password fields and are saved to secure storage on this device.',
+          tryIt: 'Try it',
+          examples: [
+            'Use {name} to gather the external data this task needs and list the key results.',
+            'Check what {name} can do, then use the best capability to complete this task.',
+          ],
+        },
       },
       editor: {
         title: 'Add MCP server',

@@ -28,7 +28,7 @@ import { DAG_CHANNELS, SKILL_CHANNELS } from './channels';
 
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary, TelemetryFeedbackSubmitRequest, TelemetryFeedbackSubmitResult, TelemetryFeedbackRating } from '../contract/telemetry';
 
-import type { ChannelAccount, ChannelInboxItem, ChannelType, AddChannelAccountRequest, UpdateChannelAccountRequest, RetryChannelMediaAttachmentRequest, RetryChannelMediaAttachmentResult } from '../contract/channel';
+import type { ChannelAccount, ChannelConversationListResponse, ChannelInboxItem, ChannelType, AddChannelAccountRequest, UpdateChannelAccountRequest, RetryChannelMediaAttachmentRequest, RetryChannelMediaAttachmentResult } from '../contract/channel';
 
 import type { LabProjectType, LabProjectStatus, PythonEnvStatus, TrainingProgressEvent, DownloadProjectRequest, DownloadProjectResponse, UploadDataRequest, UploadDataResponse, StartTrainingRequest, StartTrainingResponse, InferenceRequest, InferenceResult } from '../contract/lab';
 
@@ -370,6 +370,7 @@ export interface IpcInvokeHandlers {
 
   // Channel (多通道接入)
   [IPC_CHANNELS.CHANNEL_LIST_ACCOUNTS]: () => Promise<ChannelAccount[]>;
+  [IPC_CHANNELS.CHANNEL_LIST_CONVERSATIONS]: (accountId: string) => Promise<ChannelConversationListResponse>;
   [IPC_CHANNELS.CHANNEL_GET_TYPES]: () => Promise<Array<{ type: ChannelType; name: string; description?: string }>>;
   [IPC_CHANNELS.CHANNEL_ADD_ACCOUNT]: (request: AddChannelAccountRequest) => Promise<ChannelAccount>;
   [IPC_CHANNELS.CHANNEL_UPDATE_ACCOUNT]: (request: UpdateChannelAccountRequest) => Promise<ChannelAccount | null>;

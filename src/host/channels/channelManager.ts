@@ -22,6 +22,7 @@ import type {
   SendMessageResult,
   RetryChannelMediaAttachmentRequest,
   RetryChannelMediaAttachmentResult,
+  ChannelConversationListResponse,
 } from '../../shared/contract/channel';
 import { ApiChannel, createApiChannelFactory } from './api/apiChannel';
 import { FeishuChannel, createFeishuChannelFactory, createLarkChannelFactory } from './feishu/feishuChannel';
@@ -387,6 +388,37 @@ export class ChannelManager extends EventEmitter {
    */
   getAllAccounts(): ChannelAccount[] {
     return this.getAccounts();
+  }
+
+  async listConversations(accountId: string): Promise<ChannelConversationListResponse> {
+    const account = this.accounts.get(accountId);
+    if (!account) {
+      return { supported: false, conversations: [], error: 'Channel account not found' };
+    }
+
+    const activeChannel = this.activeChannels.get(accountId);
+    if (activeChannel) {
+      if (!activeChannel.listConversations) return { supported: false, conversations: [] };
+      return { supported: true, conversations: await activeChannel.listConversations() };
+    }
+
+    const registration = this.pluginRegistry.get(account.type);
+    if (!registration) {
+      return { supported: false, conversations: [], error: `Unknown channel type: ${account.type}` };
+    }
+    const channel = registration.factory(accountId);
+    if (!channel.listConversations) return { supported: false, conversations: [] };
+
+    try {
+      await channel.initialize(account.config);
+      return { supported: true, conversations: await channel.listConversations() };
+    } finally {
+      try {
+        await channel.destroy();
+      } catch (error) {
+        logger.warn('Failed to destroy temporary channel after listing conversations', { accountId, error });
+      }
+    }
   }
 
   getInboxItems(limit = 50, includeDismissed = false): ChannelInboxItem[] {

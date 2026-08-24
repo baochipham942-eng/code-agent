@@ -15,6 +15,7 @@ import type {
   UpdateChannelAccountRequest,
   RetryChannelMediaAttachmentRequest,
   RetryChannelMediaAttachmentResult,
+  ChannelConversationListResponse,
 } from '../../shared/contract/channel';
 import { createLogger } from '../services/infra/logger';
 
@@ -68,6 +69,19 @@ export function registerChannelHandlers(
       return [];
     }
   });
+
+  ipcMain.handle(
+    CHANNEL_CHANNELS.LIST_CONVERSATIONS,
+    async (_, accountId: string): Promise<ChannelConversationListResponse> => {
+      try {
+        return await channelManager.listConversations(accountId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error('LIST_CONVERSATIONS failed', { accountId, error: message });
+        return { supported: true, conversations: [], error: message };
+      }
+    }
+  );
 
   // 获取可用通道类型
   ipcMain.handle(CHANNEL_CHANNELS.GET_CHANNEL_TYPES, async (): Promise<Array<{

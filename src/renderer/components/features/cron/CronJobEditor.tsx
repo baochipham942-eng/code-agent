@@ -25,6 +25,7 @@ import {
 import { CronSimpleCreate } from './CronSimpleCreate';
 import { useI18n } from '../../../hooks/useI18n';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
+import { CronResultChannelField } from './CronResultChannel';
 
 interface CronJobEditorProps {
   isOpen: boolean;
@@ -476,6 +477,11 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
               </FormField>
             </div>
           </div>
+
+          <CronResultChannelField
+            value={draft.resultChannel}
+            onChange={(resultChannel) => setField('resultChannel', resultChannel)}
+          />
 
           <CronRunsOnSelector
             value={draft.runsOn}

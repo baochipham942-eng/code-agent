@@ -38,6 +38,8 @@ describe('recentConversations', () => {
   let summaryPath: string;
 
   beforeEach(async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-20T12:00:00.000Z'));
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lm-conv-'));
     mockConfigDir.dir = tmpDir;
     memDir = path.join(tmpDir, 'memory');
@@ -45,6 +47,7 @@ describe('recentConversations', () => {
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -102,6 +105,26 @@ describe('recentConversations', () => {
       const entries = content.split('\n').filter((l: string) => l.startsWith('- **'));
       expect(entries.length).toBe(1);
       expect(content).toContain('first turn, second turn');
+    });
+
+    it('keeps same-date same-title summaries separate across projects', async () => {
+      await appendConversationSummary({
+        date: '2026-03-19',
+        title: 'Daily work',
+        highlights: ['project A'],
+        projectId: 'proj_a',
+      });
+      await appendConversationSummary({
+        date: '2026-03-19',
+        title: 'Daily work',
+        highlights: ['project B'],
+        projectId: 'proj_b',
+      });
+
+      const content = await fs.readFile(summaryPath, 'utf-8');
+      expect(content.match(/"Daily work"/g)).toHaveLength(2);
+      expect(content).toContain('[project:proj_a]');
+      expect(content).toContain('[project:proj_b]');
     });
 
     it('should keep only last 15 entries', async () => {
@@ -223,6 +246,106 @@ describe('recentConversations', () => {
       expect(block).toContain('Manual debugging');
       expect(block).toContain('last 1 sessions');
     });
+
+    it('shows only the current project when that project has recent entries', async () => {
+      await appendConversationSummary({
+        date: '2026-03-18',
+        title: 'Project A first',
+        highlights: ['A1'],
+        projectId: 'proj_a',
+      });
+      await appendConversationSummary({
+        date: '2026-03-19',
+        title: 'Project B first',
+        highlights: ['B1'],
+        projectId: 'proj_b',
+      });
+      await appendConversationSummary({
+        date: '2026-03-20',
+        title: 'Legacy global item',
+        highlights: ['global'],
+      });
+      await appendConversationSummary({
+        date: '2026-03-20',
+        title: 'Project A second',
+        highlights: ['A2'],
+        projectId: 'proj_a',
+      });
+
+      const block = await buildRecentConversationsBlock({ projectId: 'proj_a' });
+      expect(block).toContain('Project A first');
+      expect(block).toContain('Project A second');
+      expect(block).not.toContain('Project B first');
+      expect(block).not.toContain('Legacy global item');
+      expect(block).toContain('last 2 sessions');
+    });
+
+    it('falls back to legacy/global entries when the current project has no recent hit', async () => {
+      await fs.mkdir(memDir, { recursive: true });
+      await fs.writeFile(
+        summaryPath,
+        [
+          '# Recent Conversations',
+          '',
+          '- **2026-03-18**: "Legacy conversation" — old format still loads',
+          '- **2026-03-19** [project:proj_b]: "Project B" — must stay isolated',
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+
+      const block = await buildRecentConversationsBlock({ projectId: 'proj_a' });
+      expect(block).toContain('Legacy conversation');
+      expect(block).not.toContain('Project B');
+      expect(block).toContain('last 1 sessions');
+    });
+
+    it('keeps the global behavior when there is no project context', async () => {
+      await appendConversationSummary({
+        date: '2026-03-18',
+        title: 'Project A',
+        highlights: ['A'],
+        projectId: 'proj_a',
+      });
+      await appendConversationSummary({
+        date: '2026-03-19',
+        title: 'Project B',
+        highlights: ['B'],
+        projectId: 'proj_b',
+      });
+      await appendConversationSummary({
+        date: '2026-03-20',
+        title: 'Global',
+        highlights: ['G'],
+      });
+
+      const withoutProject = await buildRecentConversationsBlock();
+      const unsorted = await buildRecentConversationsBlock({ projectId: 'proj_unsorted' });
+      for (const block of [withoutProject, unsorted]) {
+        expect(block).toContain('Project A');
+        expect(block).toContain('Project B');
+        expect(block).toContain('Global');
+      }
+    });
+
+    it('excludes entries older than two weeks', async () => {
+      await appendConversationSummary({
+        date: '2026-02-01',
+        title: 'Old project work',
+        highlights: ['old'],
+        projectId: 'proj_a',
+      });
+      await appendConversationSummary({
+        date: '2026-03-19',
+        title: 'Recent project work',
+        highlights: ['recent'],
+        projectId: 'proj_a',
+      });
+
+      const block = await buildRecentConversationsBlock({ projectId: 'proj_a' });
+      expect(block).toContain('Recent project work');
+      expect(block).not.toContain('Old project work');
+    });
   });
 
   describe('isLoopAutomationSummaryText', () => {
@@ -254,9 +377,6 @@ describe('recentConversations', () => {
     });
 
     it('should handle empty highlights gracefully', async () => {
-      // Edge case: empty highlights array — the format produces "— " with nothing after,
-      // which the parser regex (requiring .+ after —) cannot parse back.
-      // Key: appendConversationSummary should not crash.
       await appendConversationSummary({
         date: '2026-03-19',
         title: 'Quick question',
@@ -267,10 +387,8 @@ describe('recentConversations', () => {
       const content = await fs.readFile(summaryPath, 'utf-8');
       expect(content).toContain('Quick question');
 
-      // But the parser can't round-trip it (regex requires .+ after —),
-      // so buildRecentConversationsBlock returns null (0 parsed entries)
       const block = await buildRecentConversationsBlock();
-      expect(block).toBeNull();
+      expect(block).toContain('Quick question');
     });
   });
 });

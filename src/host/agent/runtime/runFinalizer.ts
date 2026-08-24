@@ -852,6 +852,10 @@ export class RunFinalizer {
    * degrades to the previous truncation heuristic on any failure (see conversationJudge).
    */
   private async extractAndSaveConversationSummary(): Promise<void> {
+    // Persistent roles own their MEMORY.md lifecycle. Do not mirror role traffic into
+    // the ordinary global/project recent-conversations ledger.
+    if (this.ctx.persistentRoleId) return;
+
     const userMessages = this.ctx.messages
       .filter((m: { role: string; content?: string; isMeta?: boolean }) =>
         m.role === 'user'
@@ -904,6 +908,7 @@ export class RunFinalizer {
       date: today,
       title: title.replace(/"/g, "'"),
       highlights: judgment.worthKnowledge,
+      projectId: this.ctx.projectId ?? undefined,
     });
   }
 }

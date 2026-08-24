@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { homedir } from 'node:os';
+import { guardSensitiveText } from '../../../../src/host/security/sensitiveDataGuard';
 
 const telemetryRows: Array<{ id: string; user_prompt: string; start_time: number }> = [];
 const existingRows: Array<{ content: string }> = [];
@@ -99,7 +100,8 @@ describe('SessionManager telemetry user prompt backfill', () => {
       message: expect.objectContaining({
         id: 'telemetry-user-turn-url-different',
         role: 'user',
-        content: '检查 https://example.org/',
+        content:
+          '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。\n\n检查 https://example.org/',
       }),
     }]);
   });
@@ -118,5 +120,36 @@ describe('SessionManager telemetry user prompt backfill', () => {
 
     expect(dbMock.addMessage).not.toHaveBeenCalled();
     expect(insertedMessages).toHaveLength(0);
+  });
+
+  it('marks a guarded telemetry recovery as reconstructed instead of user verbatim', async () => {
+    const originalPrompt =
+      '请写到 /Users/linchen/nresppair-cancel-1787549971332.txt，并使用卡号 4242 4242 4242 4242。';
+    const guardedPrompt = guardSensitiveText(originalPrompt, {
+      surface: 'telemetry',
+      mode: 'diagnostic',
+    });
+
+    expect(guardedPrompt).toBe(
+      '请写到 ~/nresppair-cancel-[credit card hidden].txt，并使用卡号 [credit card hidden]。',
+    );
+    telemetryRows.push({
+      id: 'turn-guarded-recovery',
+      user_prompt: guardedPrompt,
+      start_time: 1_787_550_000_000,
+    });
+
+    await expect(backfill('session-guarded-recovery')).resolves.toBe(1);
+
+    expect(insertedMessages).toEqual([{
+      sessionId: 'session-guarded-recovery',
+      message: expect.objectContaining({
+        id: 'telemetry-user-turn-guarded-recovery',
+        role: 'user',
+        content: expect.stringMatching(
+          /^【历史恢复提示】.*脱敏后的 telemetry 重建，不是用户原话。.*不要将它们当作可直接执行的精确文件或命令目标。\n\n请写到 ~\/nresppair-cancel-\[credit card hidden\]\.txt，并使用卡号 \[credit card hidden\]。$/,
+        ),
+      }),
+    }]);
   });
 });

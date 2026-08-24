@@ -8,3 +8,5 @@ coverage
 test-results
 playwright-report
 *.log
+/scripts/rtk
+/scripts/uv

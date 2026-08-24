@@ -8,6 +8,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { Request, Response, NextFunction } from 'express';
 import { createLogger } from '../../host/services/infra/logger';
+import { WEB_SERVER_SERVICE } from '../../shared/constants/webServer';
 
 const logger = createLogger('AuthMiddleware');
 
@@ -45,8 +46,8 @@ export function resolveDevAuthTokenPath(cwd = process.cwd()): string {
   return path.join(isPackagedResourceCwd ? dataDir : cwd, '.dev-token');
 }
 
-function loadOrGenerateAuthToken(): string {
-  const devTokenPath = resolveDevAuthTokenPath();
+function loadOrGenerateDevAuthToken(cwd = process.cwd()): string {
+  const devTokenPath = resolveDevAuthTokenPath(cwd);
   try {
     const existing = fs.readFileSync(devTokenPath, 'utf-8').trim();
     if (UUID_RE.test(existing)) return existing;
@@ -54,6 +55,31 @@ function loadOrGenerateAuthToken(): string {
     // ENOENT or unreadable — fall through to fresh generation
   }
   return randomUUID();
+}
+
+export function isWebServiceMode(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env[WEB_SERVER_SERVICE.MODE_ENV] === '1';
+}
+
+// 🚫 不导出：唯一生产消费方是下面的 SERVER_AUTH_TOKEN。同上，测试改用模块重载注入 env。
+function resolveServerAuthToken(
+  env: NodeJS.ProcessEnv = process.env,
+  cwd = process.cwd(),
+): string {
+  if (!isWebServiceMode(env)) return loadOrGenerateDevAuthToken(cwd);
+  if (env.CODE_AGENT_TAURI_BOOT_TOKEN) {
+    throw new Error(
+      `${WEB_SERVER_SERVICE.MODE_ENV}=1 cannot be combined with CODE_AGENT_TAURI_BOOT_TOKEN`,
+    );
+  }
+
+  const token = env[WEB_SERVER_SERVICE.AUTH_TOKEN_ENV]?.trim();
+  if (!token) {
+    throw new Error(
+      `${WEB_SERVER_SERVICE.AUTH_TOKEN_ENV} is required when ${WEB_SERVER_SERVICE.MODE_ENV}=1`,
+    );
+  }
+  return token;
 }
 
 export function writeDevAuthToken(token: string, cwd = process.cwd()): void {
@@ -67,8 +93,8 @@ export function writeDevAuthToken(token: string, cwd = process.cwd()): void {
   }
 }
 
-/** Loaded from .dev-token on startup (dev) or freshly generated; printed to stdout for Tauri/frontend */
-export const SERVER_AUTH_TOKEN = loadOrGenerateAuthToken();
+/** Service mode uses the injected secret; desktop/dev keeps the existing .dev-token lifecycle. */
+export const SERVER_AUTH_TOKEN = resolveServerAuthToken();
 
 // ── CORS ──────────────────────────────────────────────────────────────────
 /** Allowed CORS origins */

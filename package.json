@@ -165,6 +165,8 @@
     "eval:trend": "npx tsx scripts/eval-ci.ts --trend",
     "eval:setup-hooks": "bash scripts/setup-eval-hooks.sh",
     "build:web": "npm_config_cache=/tmp/code-agent-npm-cache npx tsx esbuild.config.ts web",
+    "package:linux-web": "docker build --platform linux/amd64 -f scripts/ci/Dockerfile.linux-web-server -t agent-neo-web:linux-x64 .",
+    "verify:linux-web:native": "node scripts/ci/verify-linux-native-runtime.cjs",
     "dev:web:server": "npm run build:web && node dist/web/webServer.cjs",
     "dev:web": "concurrently -k \"npm run dev:web:server\" \"sleep 2 && npm run dev:renderer\"",
     "tauri:dev": "cargo tauri dev",

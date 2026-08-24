@@ -21,21 +21,25 @@ RTK_SHA256_AARCH64_DARWIN="0d140babfba54c37298b32e7b2ad1f21c72179b22bbcdf01c9cd6
 RTK_BIN_SHA256_AARCH64_DARWIN="7add15f7979c77f3523cdb4a69f46516469edd4ee731e60676e5dfa00492e39c"
 RTK_SHA256_X86_64_DARWIN="c3bb225d69c72a1a190f5d341b3958bf923c7242874627ef2d9f802d3743ff5c"
 RTK_BIN_SHA256_X86_64_DARWIN="b9ac6819d2b5af7fcc64027ea6d4635832de8dfb706121733e7ae128192b6d5a"
+# linux-x64 使用上游静态 musl 产物，可在 glibc 的 node:24-slim 运行。
+RTK_SHA256_X86_64_LINUX="06e582ba1996ef03e76a441b9896aba79dd1b746ce539d228296c681b1c5401c"
+RTK_BIN_SHA256_X86_64_LINUX="8126de3da6e19c264dcfee8fbc603de179075b20d7f69bce1ebe1eeb060403ef"
 # windows-msvc（2026-06-10 实拉计算）
 RTK_SHA256_X86_64_WINDOWS_ZIP="aad430c14d82b4470f14bdb9695e8cd97aeac97444bd087bd70be161ced09cb7"
 RTK_BIN_SHA256_X86_64_WINDOWS="731583957e8cea7cfa858fb56835c001b71f75e595710a5441ebaee12fc6c83b"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 平台感知：Darwin 走 tar.gz，Windows（CI 上经 Git Bash 调用）走 msvc zip。
+# 平台感知：Darwin/Linux 走 tar.gz，Windows（CI 上经 Git Bash 调用）走 msvc zip。
 # FETCH_PLATFORM_OVERRIDE 供本机交叉拉取验证。
 UNAME="$(uname)"
 PLATFORM="${FETCH_PLATFORM_OVERRIDE:-}"
 if [[ -z "$PLATFORM" ]]; then
   case "$UNAME" in
     Darwin) PLATFORM="darwin" ;;
+    Linux) PLATFORM="linux" ;;
     MINGW*|MSYS*|CYGWIN*) PLATFORM="windows" ;;
-    *) echo "❌ fetch-rtk 仅支持 macOS / Windows(Git Bash)" >&2; exit 1 ;;
+    *) echo "❌ fetch-rtk 仅支持 macOS / Linux x64 / Windows(Git Bash)" >&2; exit 1 ;;
   esac
 fi
 
@@ -44,6 +48,20 @@ if [[ "$PLATFORM" == "windows" ]]; then
   RTK_ARCH="x86_64"
   EXPECT_TAR_SHA="$RTK_SHA256_X86_64_WINDOWS_ZIP"
   EXPECT_BIN_SHA="$RTK_BIN_SHA256_X86_64_WINDOWS"
+elif [[ "$PLATFORM" == "linux" ]]; then
+  OUTPUT="$SCRIPT_DIR/rtk"
+  ARCH="${RTK_ARCH_OVERRIDE:-$(uname -m)}"
+  case "$ARCH" in
+    x86_64|x64)
+      RTK_ARCH="x86_64"
+      EXPECT_TAR_SHA="$RTK_SHA256_X86_64_LINUX"
+      EXPECT_BIN_SHA="$RTK_BIN_SHA256_X86_64_LINUX"
+      ;;
+    *)
+      echo "❌ Linux 服务产物只支持 x86_64，收到 arch=${ARCH}" >&2
+      exit 1
+      ;;
+  esac
 else
   OUTPUT="$SCRIPT_DIR/rtk"
   # arch 感知：arm64 → aarch64，Intel → x86_64。RTK_ARCH_OVERRIDE 供 CI 交叉拉取。
@@ -104,6 +122,8 @@ fi
 
 if [[ "$PLATFORM" == "windows" ]]; then
   ASSET="rtk-${RTK_ARCH}-pc-windows-msvc.zip"
+elif [[ "$PLATFORM" == "linux" ]]; then
+  ASSET="rtk-${RTK_ARCH}-unknown-linux-musl.tar.gz"
 else
   ASSET="rtk-${RTK_ARCH}-apple-darwin.tar.gz"
 fi

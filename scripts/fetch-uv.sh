@@ -21,21 +21,25 @@ UV_SHA256_AARCH64_DARWIN_TAR="2b25be1af546be330b340b0a76b99f989daa6d92678fdffb87
 UV_BIN_SHA256_AARCH64_DARWIN="f63ec276fa13f8f392542a334c0f58f36833b24304831e5f4c221e2edf7a16f3"
 UV_SHA256_X86_64_DARWIN_TAR="6b91ae3de155f51bd1f5b74814821c79f016a176561f252cd9ddfb976939af2e"
 UV_BIN_SHA256_X86_64_DARWIN="51aad75fa6c40c5f1f3f2b2f2ce7ad49faf4723e333d94c820510cf2acf04f49"
+# linux-x64 glibc 产物；archive hash 与上游 .sha256 文件一致。
+UV_SHA256_X86_64_LINUX_TAR="74947fe2c03315cf07e82ab3acc703eddef01aba4d5232a98e4c6825ec116131"
+UV_BIN_SHA256_X86_64_LINUX="1a8423f7d6af28f66920210b05a780665178c0f5650c940b95c4b085a4f284b9"
 # windows-msvc（2026-06-10 实拉，zip 哈希与上游官方 .sha256 文件一致）
 UV_SHA256_X86_64_WINDOWS_ZIP="dd9d6d6554bfab265bfa98aa8e8a406c5c3a7b97582f93de1f4d48d9154a0395"
 UV_BIN_SHA256_X86_64_WINDOWS="c5a583d5f1f6d055fc1c32c87d8eceee90edc69a5b9af5da70811befdfc04880"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 平台感知：Darwin 走 tar.gz，Windows（CI 上经 Git Bash 调用）走 msvc zip。
+# 平台感知：Darwin/Linux 走 tar.gz，Windows（CI 上经 Git Bash 调用）走 msvc zip。
 # FETCH_PLATFORM_OVERRIDE 供本机交叉拉取验证。
 UNAME="$(uname)"
 PLATFORM="${FETCH_PLATFORM_OVERRIDE:-}"
 if [[ -z "$PLATFORM" ]]; then
   case "$UNAME" in
     Darwin) PLATFORM="darwin" ;;
+    Linux) PLATFORM="linux" ;;
     MINGW*|MSYS*|CYGWIN*) PLATFORM="windows" ;;
-    *) echo "❌ fetch-uv 仅支持 macOS / Windows(Git Bash)" >&2; exit 1 ;;
+    *) echo "❌ fetch-uv 仅支持 macOS / Linux x64 / Windows(Git Bash)" >&2; exit 1 ;;
   esac
 fi
 
@@ -44,6 +48,20 @@ if [[ "$PLATFORM" == "windows" ]]; then
   UV_ARCH="x86_64"
   EXPECT_TAR_SHA="$UV_SHA256_X86_64_WINDOWS_ZIP"
   EXPECT_BIN_SHA="$UV_BIN_SHA256_X86_64_WINDOWS"
+elif [[ "$PLATFORM" == "linux" ]]; then
+  OUTPUT="$SCRIPT_DIR/uv"
+  ARCH="${UV_ARCH_OVERRIDE:-$(uname -m)}"
+  case "$ARCH" in
+    x86_64|x64)
+      UV_ARCH="x86_64"
+      EXPECT_TAR_SHA="$UV_SHA256_X86_64_LINUX_TAR"
+      EXPECT_BIN_SHA="$UV_BIN_SHA256_X86_64_LINUX"
+      ;;
+    *)
+      echo "❌ Linux 服务产物只支持 x86_64，收到 arch=${ARCH}" >&2
+      exit 1
+      ;;
+  esac
 else
   OUTPUT="$SCRIPT_DIR/uv"
   # arch 感知：arm64 → aarch64，Intel → x86_64。UV_ARCH_OVERRIDE 供 CI 交叉拉取。
@@ -104,6 +122,8 @@ fi
 
 if [[ "$PLATFORM" == "windows" ]]; then
   ASSET="uv-${UV_ARCH}-pc-windows-msvc.zip"
+elif [[ "$PLATFORM" == "linux" ]]; then
+  ASSET="uv-${UV_ARCH}-unknown-linux-gnu.tar.gz"
 else
   ASSET="uv-${UV_ARCH}-apple-darwin.tar.gz"
 fi
@@ -130,6 +150,9 @@ if [[ "$PLATFORM" == "windows" ]]; then
   # windows zip 结构: 根目录平铺 {uv.exe, uvw.exe, uvx.exe}（实拉确认）
   extract_zip "$TMP_DIR/$ASSET" "$TMP_DIR"
   EXTRACTED_BIN="$TMP_DIR/uv.exe"
+elif [[ "$PLATFORM" == "linux" ]]; then
+  tar -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
+  EXTRACTED_BIN="$TMP_DIR/uv-${UV_ARCH}-unknown-linux-gnu/uv"
 else
   tar -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
   # uv tarball 结构: uv-${UV_ARCH}-apple-darwin/{uv, uvx}

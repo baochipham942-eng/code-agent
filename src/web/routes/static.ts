@@ -13,7 +13,8 @@ import { createLogger } from '../../host/services/infra/logger';
 const logger = createLogger('StaticRouter');
 
 interface StaticDeps {
-  serverAuthToken: string;
+  /** null in service mode: remote HTML must never receive the server bearer secret. */
+  serverAuthToken: string | null;
   /** 固定 serve 目录（显式覆盖，测试/特殊场景用）。提供则忽略 dataDir/builtinDir 运行时解析。 */
   staticDir?: string;
   /** 数据目录（~/.code-agent），用于解析云端 active bundle。 */
@@ -97,7 +98,8 @@ export function createStaticRouter(deps: StaticDeps): Router {
         cachedIndexDir = serveDir;
         cachedIndexMtimeMs = stat.mtimeMs;
       }
-      // Inject auth token into HTML so httpTransport can attach it to API requests.
+      // Desktop/dev inject auth into the local WebView. Service mode passes null so a
+      // public GET / can never disclose the bearer secret supplied by the orchestrator.
       const loadedRendererBundle = getLoadedRendererBundleMeta(serveDir);
       const injectedHtml = cachedIndexHtml.replace(
         /<head(\s[^>]*)?>/i,

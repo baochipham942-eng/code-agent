@@ -11,3 +11,8 @@ export const WEB_SERVER_DEFAULTS = {
   WORKSPACE_FILE_PATH: '/api/workspace/file',
   DEV_AUTH_TOKEN_FILE: '.dev-token',
 } as const;
+
+export const WEB_SERVER_SERVICE = {
+  MODE_ENV: 'CODE_AGENT_SERVICE_MODE',
+  AUTH_TOKEN_ENV: 'CODE_AGENT_WEB_AUTH_TOKEN',
+} as const;

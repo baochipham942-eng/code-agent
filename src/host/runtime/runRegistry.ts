@@ -7,6 +7,7 @@ import {
 import {
   addChildRunRef,
   createChildRunRef,
+  DURABLE_ACTIVE_SESSION_CONFLICT_CODE,
   projectChildRunTerminal,
   type PendingOperation,
   type RunEnvelope,
@@ -897,8 +898,12 @@ export class RunRegistry implements AgentTeamDurableParentHost {
 function isDurableActiveSessionConstraint(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const candidate = error as { code?: unknown; message?: unknown };
-  return candidate.code === 'SQLITE_CONSTRAINT_UNIQUE'
-    && candidate.message === 'UNIQUE constraint failed: durable_runs.session_id';
+  if (candidate.code === DURABLE_ACTIVE_SESSION_CONFLICT_CODE) return true;
+  // 兜底：写入侧没抬 code 时（绕过 DurableRunRepository 的写路径）仍认驱动报错，
+  // 但只认约束名/列名的正则，不做整句全等——驱动改文案不该让这条判据静默失效。
+  return typeof candidate.code === 'string'
+    && candidate.code.startsWith('SQLITE_CONSTRAINT')
+    && /durable_runs\.session_id|idx_durable_runs_active_session/i.test(String(candidate.message ?? ''));
 }
 
 function isHeartbeatFencingError(error: unknown): boolean {

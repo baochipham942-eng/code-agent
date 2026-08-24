@@ -1,7 +1,7 @@
 // ============================================================================
-// TaskWorkspaceOverview —— 概览四模块 · 任务上下文面板（2026-08-04 拍板二/三）
+// TaskWorkspaceOverview —— 任务上下文面板（2026-08-04 拍板二/三）
 // ----------------------------------------------------------------------------
-// 四个一级模块竖向堆叠，各回答一个用户问题：
+// 核心模块竖向堆叠，各回答一个用户问题：
 //   任务（在干什么：细进度线）/ Todo（干到哪了）/ 上下文（用了什么）/
 //   产物（给了我什么：完成态收拢缩略行）。
 // 诊断 UI（AgentTree / 能力路由证据 / 详情入口）整体删除——数据照常写 DB，仅撤 UI。
@@ -9,7 +9,7 @@
 // ============================================================================
 
 import React, { useMemo, useState } from 'react';
-import { Loader2, AlertTriangle, ChevronDown, ChevronRight, Link2 } from 'lucide-react';
+import { Loader2, AlertTriangle, ChevronDown, ChevronRight, Link2, Send } from 'lucide-react';
 import { CONFIG_DIR_DEV, CONFIG_DIR_NEW } from '@shared/constants/configDir';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -35,6 +35,7 @@ import { ArtifactThumbStrip } from './OutputArtifactRows';
 import { SubagentRunRows, TaskDashboardSummary } from './RunWorkbenchCards';
 import { useMemberViewStore } from '../../stores/memberViewStore';
 import { useSessionMembers } from '../features/expert/SessionMemberBar';
+import { ReceiptRows } from '../ReceiptRows';
 
 // 真读取失败（读取异常且确有任务在跑）在 Todo 模块位置内联一行错误 + 重试/取消
 // （拍板三后无详情二级可挂）。0 rows ≠ failure：store 侧已不置位，这里再做一层
@@ -396,8 +397,10 @@ export const TaskWorkspaceOverview: React.FC = () => {
   const {
     items: workspacePreviewItems,
     materialItems: workspaceMaterialItems,
+    receiptItems: workspaceReceiptItems,
   } = useWorkspacePreviewModelState();
   const [materialsOpen, setMaterialsOpen] = useState(false);
+  const [receiptsOpen, setReceiptsOpen] = useState(true);
 
   const contextRows = useMemo(
     () => buildOverviewContextRows({
@@ -553,6 +556,39 @@ export const TaskWorkspaceOverview: React.FC = () => {
             onOpenFile={openFile}
             unnamedLabel={t.workbenchTabs.overviewUnnamedOutput}
           />
+        </section>
+      )}
+
+      {/* 写回外部世界的动作回执：独立于产物/过程材料，默认展开。 */}
+      {workspaceReceiptItems.length > 0 && (
+        <section
+          data-module="receipts"
+          data-testid="overview-receipts-module"
+          aria-label={t.workbenchTabs.overviewReceiptsLabel}
+        >
+          <button /* ds-allow:button: 与同级「过程材料」折叠头同款，走 Button primitive 会带出不一致的内边距与变体样式 */
+            type="button"
+            data-testid="overview-receipts-toggle"
+            onClick={() => setReceiptsOpen((value) => !value)}
+            className="flex w-full items-center gap-1.5 px-0.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400 transition-colors hover:text-zinc-200"
+          >
+            {receiptsOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            <Send className="h-3 w-3 text-badge-success" />
+            <span>{t.workbenchTabs.overviewReceiptsLabel}</span>
+            <span className="normal-case text-zinc-600">({workspaceReceiptItems.length})</span>
+          </button>
+          {receiptsOpen && (
+            <div className="mt-1" data-testid="overview-receipts-list">
+              <ReceiptRows items={workspaceReceiptItems.map((item) => ({
+                id: item.id,
+                status: item.status === 'failed' ? 'failed' : 'succeeded',
+                summary: item.title,
+                detail: item.content?.text || item.content?.summary,
+                sourceTool: item.subtitle || item.source.label || '',
+                createdAt: item.createdAt,
+              }))} />
+            </div>
+          )}
         </section>
       )}
 

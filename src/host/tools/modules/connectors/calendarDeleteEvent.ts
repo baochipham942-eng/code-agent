@@ -11,7 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
-import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarDeleteEventSchema as schema } from './calendarDeleteEvent.schema';
 
 async function executeCalendarDeleteEvent(
@@ -82,9 +82,25 @@ async function executeCalendarDeleteEvent(
       },
     };
   } catch (error) {
+    const failure = `Calendar delete failed: ${error instanceof Error ? error.message : String(error)}`;
     return {
       ok: false,
-      error: `Calendar delete failed: ${error instanceof Error ? error.message : String(error)}`,
+      error: failure,
+      meta: {
+        action: 'delete_event',
+        connector: 'calendar',
+        calendar: args.calendar,
+        uid: args.event_uid,
+        failureReason: failure,
+        artifact: createFailedReceiptArtifact({
+          sourceTool: schema.name,
+          sessionId: ctx.sessionId,
+          action: 'delete_event',
+          name: `删除日历事件失败：${String(args.event_uid)}`,
+          error: failure,
+          metadata: { connector: 'calendar', calendar: args.calendar, uid: args.event_uid },
+        }),
+      },
     };
   }
 }

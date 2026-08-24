@@ -11,7 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
-import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { remindersUpdateSchema as schema } from './remindersUpdate.schema';
 
 async function executeRemindersUpdate(
@@ -82,9 +82,26 @@ async function executeRemindersUpdate(
       },
     };
   } catch (error) {
+    const failure = `Reminders update failed: ${error instanceof Error ? error.message : String(error)}`;
     return {
       ok: false,
-      error: `Reminders update failed: ${error instanceof Error ? error.message : String(error)}`,
+      error: failure,
+      meta: {
+        action: 'update_reminder',
+        connector: 'reminders',
+        list: args.list,
+        id: args.reminder_id,
+        title: args.title,
+        failureReason: failure,
+        artifact: createFailedReceiptArtifact({
+          sourceTool: schema.name,
+          sessionId: ctx.sessionId,
+          action: 'update_reminder',
+          name: `更新提醒失败：${String(args.title ?? args.reminder_id)}`,
+          error: failure,
+          metadata: { connector: 'reminders', id: args.reminder_id, title: args.title },
+        }),
+      },
     };
   }
 }

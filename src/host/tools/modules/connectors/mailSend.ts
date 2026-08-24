@@ -13,7 +13,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
-import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mailSendSchema as schema } from './mailSend.schema';
 
 async function executeMailSend(
@@ -97,9 +97,28 @@ async function executeMailSend(
       },
     };
   } catch (error) {
+    const failure = `Mail send failed: ${error instanceof Error ? error.message : String(error)}`;
+    const to = (args.to as unknown[]).filter((item): item is string => typeof item === 'string');
     return {
       ok: false,
-      error: `Mail send failed: ${error instanceof Error ? error.message : String(error)}`,
+      error: failure,
+      meta: {
+        action: 'send_message',
+        connector: 'mail',
+        subject: args.subject,
+        to,
+        toCount: to.length,
+        failureReason: failure,
+        artifact: createFailedReceiptArtifact({
+          sourceTool: schema.name,
+          sessionId: ctx.sessionId,
+          action: 'send_message',
+          name: `发送邮件失败：${String(args.subject)}`,
+          error: failure,
+          metadata: { connector: 'mail', subject: args.subject, toCount: to.length },
+          detailLines: [`To: ${to.join(', ')}`],
+        }),
+      },
     };
   }
 }

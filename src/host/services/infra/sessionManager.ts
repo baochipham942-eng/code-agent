@@ -8,6 +8,7 @@ import { getDatabase, type StoredSession } from '../core';
 import { getToolCache } from './toolCache';
 import {
   findMissingTelemetryPromptRows,
+  formatTelemetryRecoveredPrompt,
   sanitizeModelConfigForSession,
 } from './sessionManagerNormalization';
 import { getAuthService } from '../auth/authService';
@@ -165,7 +166,7 @@ export class SessionManager implements Disposable {
           {
             id: `telemetry-user-${row.id}`,
             role: 'user',
-            content,
+            content: formatTelemetryRecoveredPrompt(content),
             timestamp: Number.isFinite(timestamp) ? timestamp : Date.now()
           },
           { skipTimestampUpdate: true }

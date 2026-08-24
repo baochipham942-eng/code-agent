@@ -2,6 +2,13 @@ import { homedir } from 'node:os';
 
 import type { ModelConfig } from '../../../shared/contract';
 
+const TELEMETRY_RECOVERY_NOTICE =
+  '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。';
+
+export function formatTelemetryRecoveredPrompt(content: string): string {
+  return `${TELEMETRY_RECOVERY_NOTICE}\n\n${content}`;
+}
+
 const TELEMETRY_PROMPT_CORRELATION_WINDOW_MS = 60_000;
 
 function isSameTurnByTimestamp(

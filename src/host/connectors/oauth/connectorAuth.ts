@@ -52,7 +52,7 @@ export class ConnectorAuth {
     const metadata = this.metadataForDescriptor(descriptor);
     const issuer = metadata.issuer;
     const store = this.storeFactory(input.accountId);
-    const clientInformation = this.clientInformationForDescriptor(descriptor);
+    const clientInformation = this.clientInformationForDescriptor(descriptor, store);
     const flow = await this.coordinator.beginFlow({
       accountId: input.accountId,
       accountLabel: input.accountLabel,
@@ -157,10 +157,20 @@ export class ConnectorAuth {
 
   private clientInformationForDescriptor(
     descriptor: ProviderDescriptor,
+    store: ConnectorOAuthStore,
   ): OAuthClientInformationMixed {
+    // secret 的家是 SecureStorage（store），descriptor 上那个字段只留给测试/夹具注入。
+    // 顺序刻意是 store 优先：真机凭据永远压过夹具值。
+    const clientSecret = store.clientSecret() ?? descriptor.clientSecret;
+    if (descriptor.requiresClientSecret && !clientSecret) {
+      throw new Error(
+        `${descriptor.displayName} 还没填 App Secret：请在连接设置里填好后重试`
+        + `（${descriptor.id} 的 token 交换不接受只有 client_id 的公共客户端）`,
+      );
+    }
     return {
       client_id: descriptor.clientId,
-      ...(descriptor.clientSecret !== undefined ? { client_secret: descriptor.clientSecret } : {}),
+      ...(clientSecret !== undefined ? { client_secret: clientSecret } : {}),
     };
   }
 

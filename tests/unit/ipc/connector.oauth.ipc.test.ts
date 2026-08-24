@@ -6,12 +6,16 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/sha
 
 const env = vi.hoisted(() => ({
   tokens: undefined as unknown,
+  secret: undefined as string | undefined,
   invalidate: vi.fn(),
+  savedSecret: vi.fn(),
 }));
 
 vi.mock('../../../src/host/connectors/oauth/connectorOAuthStore', () => ({
   ConnectorOAuthStore: class {
     tokens() { return env.tokens; }
+    clientSecret() { return env.secret; }
+    saveClientSecret(value: string) { env.savedSecret(value); env.secret = value; }
     invalidateCredentials(scope: string) { env.invalidate(scope); }
   },
 }));
@@ -48,7 +52,9 @@ function register(): HandlerFn {
 
 beforeEach(() => {
   env.tokens = undefined;
+  env.secret = undefined;
   env.invalidate.mockClear();
+  env.savedSecret.mockClear();
 });
 
 describe('connector.ipc SaaS OAuth actions', () => {
@@ -61,10 +67,13 @@ describe('connector.ipc SaaS OAuth actions', () => {
       {
         id: 'feishu',
         displayName: '飞书',
-        // client_id 走环境变量注入；没配时必须报 false，界面据此提示「还没配应用」
-        clientIdConfigured: Boolean(process.env.NEO_FEISHU_OAUTH_CLIENT_ID?.trim()),
+        // client_id 内置在包里（桌面应用的 client_id 是公开值），所以恒为 true —— 若这里
+        // 又依赖 env，就等于发出去的包永远报「还没配应用」。
+        clientIdConfigured: true,
+        requiresClientSecret: true,
+        clientSecretConfigured: false,
         connected: false,
-        loopbackRedirectUriSupport: 'pending-verification',
+        loopbackRedirectUriSupport: 'confirmed',
       },
     ]);
 
@@ -94,5 +103,34 @@ describe('connector.ipc SaaS OAuth actions', () => {
     expect(response.success).toBe(false);
     expect(response.error?.message).toContain('notion');
     expect(env.invalidate).not.toHaveBeenCalled();
+  });
+});
+
+describe('connector.ipc SaaS OAuth client secret', () => {
+  it('stores the App Secret and reports it as configured', async () => {
+    const handler = register();
+
+    const response = await handler(null, {
+      action: 'oauthSetSecret',
+      payload: { providerId: 'feishu', clientSecret: '  s3cret  ' },
+    } as IPCRequest);
+
+    expect(response.success).toBe(true);
+    // 存之前先 trim —— 从界面粘贴过来的密钥常带首尾空白，原样存会换不到 token
+    expect(env.savedSecret).toHaveBeenCalledWith('  s3cret  ');
+    expect((response.data as Array<{ clientSecretConfigured: boolean }>)[0]?.clientSecretConfigured)
+      .toBe(true);
+  });
+
+  it('refuses an empty secret instead of storing a blank credential', async () => {
+    const handler = register();
+
+    const response = await handler(null, {
+      action: 'oauthSetSecret',
+      payload: { providerId: 'feishu', clientSecret: '   ' },
+    } as IPCRequest);
+
+    expect(response.success).toBe(false);
+    expect(env.savedSecret).not.toHaveBeenCalled();
   });
 });

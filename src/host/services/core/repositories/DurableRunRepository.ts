@@ -1,6 +1,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import {
   assertRunEnvelope,
+  DurableActiveSessionConflictError,
   canTransitionRunStatus,
   isTerminalRunStatus,
   type ChildRunRef,
@@ -24,6 +25,17 @@ import type {
 import { applyDurableRunMigrationDraft } from '../database/migrations/durableRun';
 
 type Row = Record<string, unknown>;
+
+/** 活跃根 run 的会话唯一索引被撞——认约束名/列名，不认驱动的整句文案。 */
+const ACTIVE_SESSION_UNIQUE = /durable_runs\.session_id|idx_durable_runs_active_session/i;
+
+function isActiveSessionUniqueViolation(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  return typeof candidate.code === 'string'
+    && candidate.code.startsWith('SQLITE_CONSTRAINT')
+    && ACTIVE_SESSION_UNIQUE.test(String(candidate.message ?? ''));
+}
 
 function parseJson<T>(value: unknown): T {
   return JSON.parse(String(value)) as T;
@@ -110,21 +122,29 @@ export class DurableRunRepository implements DurableRunStores {
     if (attempt.ownerEpoch !== owner?.epoch || attempt.attempt !== envelope.attempt) {
       throw new Error('Initial durable run attempt must match its owner lease');
     }
-    this.db.transaction(() => {
-      this.db.prepare(`INSERT INTO durable_runs (
-        run_id, session_id, parent_run_id, engine_kind, engine_ref_json, status, attempt,
-        next_event_seq, checkpoint_seq, envelope_json, owner_id, process_instance_id,
-        owner_epoch, lease_expires_at, terminal_event_seq, terminal_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`)
-        .run(
-          envelope.runId, envelope.sessionId, envelope.parentRunId ?? null, envelope.engine.kind,
-          stringify(envelope.engine), envelope.status, envelope.attempt, envelope.cursor.nextEventSeq,
-          envelope.cursor.checkpointSeq, stringify(envelope), owner.ownerId,
-          owner.processInstanceId, owner.epoch, owner.leaseExpiresAt,
-          envelope.createdAt, envelope.updatedAt,
-        );
-      this.insertAttempt(attempt);
-    })();
+    try {
+      this.db.transaction(() => {
+        this.db.prepare(`INSERT INTO durable_runs (
+          run_id, session_id, parent_run_id, engine_kind, engine_ref_json, status, attempt,
+          next_event_seq, checkpoint_seq, envelope_json, owner_id, process_instance_id,
+          owner_epoch, lease_expires_at, terminal_event_seq, terminal_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`)
+          .run(
+            envelope.runId, envelope.sessionId, envelope.parentRunId ?? null, envelope.engine.kind,
+            stringify(envelope.engine), envelope.status, envelope.attempt, envelope.cursor.nextEventSeq,
+            envelope.cursor.checkpointSeq, stringify(envelope), owner.ownerId,
+            owner.processInstanceId, owner.epoch, owner.leaseExpiresAt,
+            envelope.createdAt, envelope.updatedAt,
+          );
+        this.insertAttempt(attempt);
+      })();
+    } catch (error) {
+      // 抬成自有 code：判据在 runRegistry，不该跨到存储驱动的报错文案上。
+      if (isActiveSessionUniqueViolation(error)) {
+        throw new DurableActiveSessionConflictError(envelope.sessionId, { cause: error });
+      }
+      throw error;
+    }
   }
 
   async get(runId: string): Promise<RunEnvelope | null> {

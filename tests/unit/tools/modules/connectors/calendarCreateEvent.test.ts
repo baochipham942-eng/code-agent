@@ -136,6 +136,7 @@ describe('calendarCreateEventModule (native)', () => {
     it('creates event and formats output', async () => {
       execMock.mockResolvedValue({
         data: {
+          uid: 'evt-created',
           calendar: 'Work',
           title: 'Standup',
           startAtMs: 1700000000000,
@@ -159,6 +160,8 @@ describe('calendarCreateEventModule (native)', () => {
         expect(result.meta).toMatchObject({
           action: 'create_event',
           connector: 'calendar',
+          uid: 'evt-created',
+          undoable: true,
           calendar: 'Work',
           title: 'Standup',
         });
@@ -174,8 +177,32 @@ describe('calendarCreateEventModule (native)', () => {
           name: `已创建日历事件：Standup（${new Date(1700000000000).toLocaleString('zh-CN')}）`,
         });
         expect(artifact.metadata?.action).toBe('create_event');
+        expect(artifact.metadata).toMatchObject({
+          uid: 'evt-created',
+          undoable: true,
+        });
       }
       expect(execMock).toHaveBeenCalledWith('create_event', validArgs);
+    });
+
+    it('marks the receipt non-undoable when create returns no uid', async () => {
+      execMock.mockResolvedValue({
+        data: { calendar: 'Work', title: 'Standup', startAtMs: 1, endAtMs: 2 },
+      });
+      const result = await run(validArgs);
+      expect(result).toMatchObject({
+        ok: true,
+        meta: {
+          undoable: false,
+          undoUnavailableReason: expect.stringContaining('stable uid'),
+          artifact: {
+            metadata: {
+              undoable: false,
+              undoUnavailableReason: expect.stringContaining('stable uid'),
+            },
+          },
+        },
+      });
     });
 
     it('emits starting progress', async () => {

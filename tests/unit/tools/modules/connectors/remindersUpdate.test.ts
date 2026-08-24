@@ -118,7 +118,15 @@ describe('remindersUpdateModule (native)', () => {
 
   describe('happy path', () => {
     it('updates reminder and formats output (open)', async () => {
-      execMock.mockResolvedValue({
+      const before = {
+        id: 'r1',
+        list: 'Work',
+        title: 'Old title',
+        completed: false,
+        notes: 'Original notes',
+        remindAtMs: 1699990000000,
+      };
+      execMock.mockResolvedValueOnce({ data: before }).mockResolvedValueOnce({
         data: { id: 'r1', list: 'Work', title: 'Ship PR', completed: false },
       });
       const result = await run({ ...validArgs, title: 'Ship PR' });
@@ -134,6 +142,8 @@ describe('remindersUpdateModule (native)', () => {
           list: 'Work',
           title: 'Ship PR',
           completed: false,
+          undoable: true,
+          before,
         });
         const artifact = result.meta?.artifact as {
           kind?: string;
@@ -147,8 +157,28 @@ describe('remindersUpdateModule (native)', () => {
           name: '已更新提醒：Ship PR',
         });
         expect(artifact.metadata?.action).toBe('update_reminder');
+        expect(artifact.metadata).toMatchObject({ undoable: true, before });
       }
+      expect(execMock).toHaveBeenNthCalledWith(1, 'get_reminder', expect.objectContaining({ list: 'Work', reminder_id: 'r1' }));
       expect(execMock).toHaveBeenCalledWith('update_reminder', expect.objectContaining({ list: 'Work', reminder_id: 'r1' }));
+    });
+
+    it('still updates but marks the receipt non-undoable when the before snapshot fails', async () => {
+      execMock
+        .mockRejectedValueOnce(new Error('reminder missing'))
+        .mockResolvedValueOnce({
+          data: { id: 'r1', list: 'Work', title: 'Ship PR', completed: false },
+        });
+      const result = await run({ ...validArgs, title: 'Ship PR' });
+      expect(result).toMatchObject({
+        ok: true,
+        meta: {
+          undoable: false,
+          undoUnavailableReason: expect.stringContaining('reminder missing'),
+          artifact: { metadata: { undoable: false } },
+        },
+      });
+      expect(execMock).toHaveBeenNthCalledWith(2, 'update_reminder', expect.any(Object));
     });
 
     it('updates reminder and formats output (completed)', async () => {

@@ -48,12 +48,19 @@ async function executeCalendarCreateEvent(
   try {
     const result = await connector.execute('create_event', args);
     const event = result.data as {
+      uid: string;
       calendar: string;
       title: string;
       startAtMs: number | null;
       endAtMs: number | null;
       location?: string;
     };
+    const undoMetadata = event.uid
+      ? { undoable: true as const }
+      : {
+          undoable: false as const,
+          undoUnavailableReason: 'Created calendar event did not return a stable uid.',
+        };
     ctx.logger.debug('calendar_create_event', { calendar: event.calendar, title: event.title });
     const startText = event.startAtMs ? new Date(event.startAtMs).toLocaleString('zh-CN') : '未知';
     const endText = event.endAtMs ? new Date(event.endAtMs).toLocaleString('zh-CN') : '未知';
@@ -65,6 +72,8 @@ async function executeCalendarCreateEvent(
       meta: {
         action: 'create_event',
         connector: 'calendar',
+        uid: event.uid,
+        ...undoMetadata,
         calendar: event.calendar,
         title: event.title,
         startAtMs: event.startAtMs,
@@ -102,6 +111,8 @@ async function executeCalendarCreateEvent(
           metadata: {
             connector: 'calendar',
             action: 'create_event',
+            uid: event.uid,
+            ...undoMetadata,
             calendar: event.calendar,
             title: event.title,
             startAtMs: event.startAtMs,

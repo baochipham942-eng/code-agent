@@ -215,6 +215,52 @@ async function listEvents(payload: Record<string, unknown>): Promise<CalendarEve
   return events;
 }
 
+async function getEvent(payload: Record<string, unknown>): Promise<CalendarEventItem> {
+  const calendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
+  const eventUid = typeof payload.event_uid === 'string' ? payload.event_uid.trim() : '';
+
+  if (!calendarName) {
+    throw new Error('calendar is required for get_event');
+  }
+  if (!eventUid) {
+    throw new Error('event_uid is required for get_event');
+  }
+
+  const output = await runAppleScript([
+    ...sharedAppleScriptHandlers(),
+    'tell application "Calendar"',
+    `tell calendar "${escapeAppleScriptString(calendarName)}"`,
+    `set targetEvent to first event whose uid is "${escapeAppleScriptString(eventUid)}"`,
+    'set rawLocation to ""',
+    'try',
+    'set rawLocation to location of targetEvent',
+    'end try',
+    'set rawNotes to ""',
+    'try',
+    'set rawNotes to description of targetEvent',
+    'end try',
+    'set rawUrl to ""',
+    'try',
+    'set rawUrl to url of targetEvent',
+    'end try',
+    `return (uid of targetEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of targetEvent)) & "|" & (my sanitizeText((start date of targetEvent) as text)) & "|" & (my sanitizeText((end date of targetEvent) as text)) & "|" & (my sanitizeText(rawLocation)) & "|" & (my sanitizeText(rawNotes)) & "|" & (my sanitizeText(rawUrl))`,
+    'end tell',
+    'end tell',
+  ]);
+
+  const [uid, calendar, title, startRaw, endRaw, location, notes, url] = parseLine(output);
+  return {
+    uid,
+    calendar,
+    title,
+    startAtMs: parseAppleScriptDate(startRaw),
+    endAtMs: parseAppleScriptDate(endRaw),
+    location: location || undefined,
+    notes: notes || undefined,
+    url: url || undefined,
+  };
+}
+
 async function createEvent(payload: Record<string, unknown>): Promise<CalendarEventItem> {
   const calendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
   const title = typeof payload.title === 'string' ? payload.title.trim() : '';
@@ -252,7 +298,7 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
     'tell application "Calendar"',
     `tell calendar "${escapeAppleScriptString(calendarName)}"`,
     `set newEvent to make new event at end with properties {${propertyParts.join(', ')}}`,
-    'return (uid of newEvent as text) & "|" & (my sanitizeText(name of calendar of newEvent)) & "|" & (my sanitizeText(summary of newEvent)) & "|" & (my sanitizeText((start date of newEvent) as text)) & "|" & (my sanitizeText((end date of newEvent) as text)) & "|" & (my sanitizeText(location of newEvent))',
+    `return (uid of newEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of newEvent)) & "|" & (my sanitizeText((start date of newEvent) as text)) & "|" & (my sanitizeText((end date of newEvent) as text)) & "|" & (my sanitizeText(location of newEvent))`,
     'end tell',
     'end tell',
   ]);
@@ -327,7 +373,7 @@ async function updateEvent(payload: Record<string, unknown>): Promise<CalendarEv
   }
 
   lines.push(
-    'return (uid of targetEvent as text) & "|" & (my sanitizeText(name of calendar of targetEvent)) & "|" & (my sanitizeText(summary of targetEvent)) & "|" & (my sanitizeText((start date of targetEvent) as text)) & "|" & (my sanitizeText((end date of targetEvent) as text)) & "|" & (my sanitizeText(location of targetEvent))',
+    `return (uid of targetEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of targetEvent)) & "|" & (my sanitizeText((start date of targetEvent) as text)) & "|" & (my sanitizeText((end date of targetEvent) as text)) & "|" & (my sanitizeText(location of targetEvent))`,
     'end tell',
     'end tell',
   );
@@ -432,6 +478,13 @@ export const calendarConnector: Connector = {
         return {
           data: events,
           summary: events.length > 0 ? `找到 ${events.length} 条日历事件` : '没有找到匹配的日历事件',
+        };
+      }
+      case 'get_event': {
+        const event = await getEvent(payload);
+        return {
+          data: event,
+          summary: `找到日历事件：${event.title}`,
         };
       }
       case 'create_event': {

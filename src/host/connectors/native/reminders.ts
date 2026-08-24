@@ -191,6 +191,46 @@ async function listReminders(payload: Record<string, unknown>): Promise<Reminder
     });
 }
 
+async function getReminder(payload: Record<string, unknown>): Promise<ReminderItem> {
+  const listName = typeof payload.list === 'string' ? payload.list.trim() : '';
+  const reminderId = typeof payload.reminder_id === 'string' ? payload.reminder_id.trim() : '';
+
+  if (!listName) {
+    throw new Error('list is required for get_reminder');
+  }
+  if (!reminderId) {
+    throw new Error('reminder_id is required for get_reminder');
+  }
+
+  const output = await runAppleScript([
+    ...sharedAppleScriptHandlers(),
+    'tell application "Reminders"',
+    `tell list "${escapeAppleScriptString(listName)}"`,
+    `set targetReminder to first reminder whose id is "${escapeAppleScriptString(reminderId)}"`,
+    'set rawNotes to ""',
+    'try',
+    'set rawNotes to body of targetReminder',
+    'end try',
+    'set rawRemindDate to ""',
+    'try',
+    'set rawRemindDate to remind me date of targetReminder',
+    'end try',
+    `return (id of targetReminder as text) & "|" & (my sanitizeText("${escapeAppleScriptString(listName)}")) & "|" & (my sanitizeText(name of targetReminder)) & "|" & (completed of targetReminder as text) & "|" & (my sanitizeText(rawNotes)) & "|" & (my sanitizeText(rawRemindDate))`,
+    'end tell',
+    'end tell',
+  ]);
+
+  const [id, list, title, completedRaw, notes, remindAtRaw] = parseLine(output);
+  return {
+    id,
+    list,
+    title,
+    completed: completedRaw === 'true',
+    notes: notes || undefined,
+    remindAtMs: parseAppleScriptDate(remindAtRaw),
+  };
+}
+
 async function createReminder(payload: Record<string, unknown>): Promise<ReminderItem> {
   const listName = typeof payload.list === 'string' ? payload.list.trim() : '';
   const title = typeof payload.title === 'string' ? payload.title.trim() : '';
@@ -226,7 +266,7 @@ async function createReminder(payload: Record<string, unknown>): Promise<Reminde
   }
 
   lines.push(
-    'return (id of newReminder as text) & "|" & (my sanitizeText(name of list of newReminder)) & "|" & (my sanitizeText(name of newReminder)) & "|" & (completed of newReminder as text)',
+    `return (id of newReminder as text) & "|" & (my sanitizeText("${escapeAppleScriptString(listName)}")) & "|" & (my sanitizeText(name of newReminder)) & "|" & (completed of newReminder as text)`,
     'end tell',
     'end tell'
   );
@@ -295,7 +335,7 @@ async function updateReminder(payload: Record<string, unknown>): Promise<Reminde
   }
 
   lines.push(
-    'return (id of targetReminder as text) & "|" & (my sanitizeText(name of list of targetReminder)) & "|" & (my sanitizeText(name of targetReminder)) & "|" & (completed of targetReminder as text)',
+    `return (id of targetReminder as text) & "|" & (my sanitizeText("${escapeAppleScriptString(listName)}")) & "|" & (my sanitizeText(name of targetReminder)) & "|" & (completed of targetReminder as text)`,
     'end tell',
     'end tell',
   );
@@ -398,6 +438,13 @@ export const remindersConnector: Connector = {
         return {
           data: reminders,
           summary: reminders.length > 0 ? `找到 ${reminders.length} 条提醒` : '没有找到匹配的提醒',
+        };
+      }
+      case 'get_reminder': {
+        const reminder = await getReminder(payload);
+        return {
+          data: reminder,
+          summary: `找到提醒：${reminder.title}`,
         };
       }
       case 'create_reminder': {

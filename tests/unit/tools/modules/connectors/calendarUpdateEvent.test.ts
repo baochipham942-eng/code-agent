@@ -127,11 +127,23 @@ describe('calendarUpdateEventModule (native)', () => {
 
   describe('happy path', () => {
     it('updates event and formats output', async () => {
-      execMock.mockResolvedValue({
+      const before = {
+        uid: 'evt-1',
+        calendar: 'Work',
+        title: 'Standup',
+        startAtMs: 1699990000000,
+        endAtMs: 1699991800000,
+        location: 'Room 1',
+        notes: 'Bring notes',
+        url: 'https://example.test/original',
+      };
+      execMock.mockResolvedValueOnce({ data: before }).mockResolvedValueOnce({
         data: {
           uid: 'evt-1',
           calendar: 'Work',
           title: 'Standup v2',
+          undoable: true,
+          before,
           startAtMs: 1700000000000,
           endAtMs: 1700001800000,
           location: 'Zoom',
@@ -163,8 +175,39 @@ describe('calendarUpdateEventModule (native)', () => {
           name: `已更新日历事件：Standup v2（${new Date(1700000000000).toLocaleString('zh-CN')}）`,
         });
         expect(artifact.metadata?.action).toBe('update_event');
+        expect(artifact.metadata).toMatchObject({ undoable: true, before });
       }
+      expect(execMock).toHaveBeenNthCalledWith(1, 'get_event', validArgs);
       expect(execMock).toHaveBeenCalledWith('update_event', validArgs);
+    });
+
+    it('still updates but marks the receipt non-undoable when the before snapshot fails', async () => {
+      execMock
+        .mockRejectedValueOnce(new Error('event missing'))
+        .mockResolvedValueOnce({
+          data: {
+            uid: 'evt-1',
+            calendar: 'Work',
+            title: 'Standup v2',
+            startAtMs: 1700000000000,
+            endAtMs: 1700001800000,
+          },
+        });
+      const result = await run(validArgs);
+      expect(result).toMatchObject({
+        ok: true,
+        meta: {
+          undoable: false,
+          undoUnavailableReason: expect.stringContaining('event missing'),
+          artifact: {
+            metadata: {
+              undoable: false,
+              undoUnavailableReason: expect.stringContaining('event missing'),
+            },
+          },
+        },
+      });
+      expect(execMock).toHaveBeenNthCalledWith(2, 'update_event', validArgs);
     });
 
     it('emits starting progress', async () => {

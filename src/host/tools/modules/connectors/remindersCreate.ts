@@ -45,10 +45,17 @@ async function executeRemindersCreate(
   try {
     const result = await connector.execute('create_reminder', args);
     const reminder = result.data as {
+      id: string;
       list: string;
       title: string;
       completed: boolean;
     };
+    const undoMetadata = reminder.id
+      ? { undoable: true as const }
+      : {
+          undoable: false as const,
+          undoUnavailableReason: 'Created reminder did not return a stable id.',
+        };
     ctx.logger.debug('reminders_create', { list: reminder.list, title: reminder.title });
     const notes = typeof args.notes === 'string' ? args.notes : '';
     const remindAtMs = typeof args.remind_at_ms === 'number' ? args.remind_at_ms : null;
@@ -61,6 +68,8 @@ async function executeRemindersCreate(
       meta: {
         action: 'create_reminder',
         connector: 'reminders',
+        id: reminder.id,
+        ...undoMetadata,
         list: reminder.list,
         title: reminder.title,
         completed: reminder.completed,
@@ -97,6 +106,8 @@ async function executeRemindersCreate(
           metadata: {
             connector: 'reminders',
             action: 'create_reminder',
+            id: reminder.id,
+            ...undoMetadata,
             list: reminder.list,
             title: reminder.title,
             completed: reminder.completed,

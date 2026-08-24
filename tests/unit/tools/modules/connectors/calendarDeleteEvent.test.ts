@@ -127,12 +127,24 @@ describe('calendarDeleteEventModule (native)', () => {
 
   describe('happy path', () => {
     it('deletes event and formats output', async () => {
-      execMock.mockResolvedValue({
+      const before = {
+        uid: 'evt-1',
+        calendar: 'Work',
+        title: 'Standup',
+        startAtMs: 1700000000000,
+        endAtMs: 1700001800000,
+        location: 'Room 1',
+        notes: 'Bring notes',
+        url: 'https://example.test/original',
+      };
+      execMock.mockResolvedValueOnce({ data: before }).mockResolvedValueOnce({
         data: {
           uid: 'evt-1',
           calendar: 'Work',
           title: 'Standup',
           deleted: true,
+          undoable: true,
+          before,
         },
       });
       const result = await run(validArgs);
@@ -161,8 +173,28 @@ describe('calendarDeleteEventModule (native)', () => {
           name: '已删除日历事件：Standup',
         });
         expect(artifact.metadata?.action).toBe('delete_event');
+        expect(artifact.metadata).toMatchObject({ undoable: true, before });
       }
+      expect(execMock).toHaveBeenNthCalledWith(1, 'get_event', validArgs);
       expect(execMock).toHaveBeenCalledWith('delete_event', validArgs);
+    });
+
+    it('still deletes but marks the receipt non-undoable when the before snapshot fails', async () => {
+      execMock
+        .mockRejectedValueOnce(new Error('event missing'))
+        .mockResolvedValueOnce({
+          data: { uid: 'evt-1', calendar: 'Work', title: 'Standup', deleted: true },
+        });
+      const result = await run(validArgs);
+      expect(result).toMatchObject({
+        ok: true,
+        meta: {
+          undoable: false,
+          undoUnavailableReason: expect.stringContaining('event missing'),
+          artifact: { metadata: { undoable: false } },
+        },
+      });
+      expect(execMock).toHaveBeenNthCalledWith(2, 'delete_event', validArgs);
     });
 
     it('emits starting progress', async () => {

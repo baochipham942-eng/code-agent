@@ -45,7 +45,9 @@ beforeEach(() => {
 describe('ConnectorAuth', () => {
   it('orchestrates SDK authorization and appends provider parameters before opening', async () => {
     const store = memoryStore();
-    const handleAuthorizationRedirect = vi.fn(async () => {});
+    const handleAuthorizationRedirect = vi.fn(
+      async (_input: { accountId: string; flowId?: string; authUrl: URL }) => {},
+    );
     const coordinator = {
       beginFlow: vi.fn(async () => flow),
       handleAuthorizationRedirect,

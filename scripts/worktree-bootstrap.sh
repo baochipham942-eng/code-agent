@@ -10,7 +10,7 @@
 # 会给一片假红。本脚本把这套补齐动作固化成一条命令。
 #
 # 软链 vs 拷贝是批 1 实测得出的硬约束，不是随便选的：
-#   - 软链（构建期只读）：node_modules、scripts/rtk、scripts/uv、scripts/poppler
+#   - 软链（构建期只读）：node_modules、Husky hook runner、scripts/rtk、scripts/uv、scripts/poppler
 #   - 软链（构建期可写但本就是共享缓存）：src-tauri/target —— cargo 自带 target 目录文件锁，
 #     多 worktree 共用一份增量编译产物是它的设计用法；不软链则每个 worktree 各编一份 2~3G
 #     （2026-08-22 实付：一个 worktree 落了 2.7G target，磁盘只剩 12G）。
@@ -33,7 +33,7 @@ usage() {
 用法：bash scripts/worktree-bootstrap.sh <目标worktree路径> [--source <主树路径>]
 
 把 gitignored 的构建输入从主树引导进一个**新开的** git worktree：
-  - 软链（构建期只读）：node_modules、scripts/rtk、scripts/uv、scripts/poppler
+  - 软链（构建期只读）：node_modules、.husky/_、scripts/rtk、scripts/uv、scripts/poppler
   - 软链（共享编译缓存）：src-tauri/target
   - 拷贝（构建期会被写）：dist/native、dist/bundled-node、4 个 swift helper
 幂等，重复跑不报错；绝不写主树。
@@ -120,6 +120,7 @@ fi
 remedy_for() {
   case "$1" in
     node_modules)                  echo "npm ci" ;;
+    .husky/_)                      echo "npm run prepare" ;;
     scripts/rtk)                   echo "bash scripts/fetch-rtk.sh" ;;
     scripts/uv)                    echo "bash scripts/fetch-uv.sh" ;;
     scripts/poppler)               echo "bash scripts/fetch-poppler.sh" ;;
@@ -136,6 +137,7 @@ remedy_for() {
 
 LINK_ITEMS=(
   "node_modules"
+  ".husky/_"
   "scripts/rtk"
   "scripts/uv"
   "scripts/poppler"

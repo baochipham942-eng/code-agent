@@ -61,10 +61,11 @@ describe('connector.ipc SaaS OAuth actions', () => {
       {
         id: 'feishu',
         displayName: '飞书',
-        // client_id 走环境变量注入；没配时必须报 false，界面据此提示「还没配应用」
-        clientIdConfigured: Boolean(process.env.NEO_FEISHU_OAUTH_CLIENT_ID?.trim()),
+        // client_id 内置在包里（桌面应用的 client_id 是公开值），所以恒为 true —— 若这里
+        // 又依赖 env，就等于发出去的包永远报「还没配应用」。
+        clientIdConfigured: true,
         connected: false,
-        loopbackRedirectUriSupport: 'pending-verification',
+        loopbackRedirectUriSupport: 'confirmed',
       },
     ]);
 

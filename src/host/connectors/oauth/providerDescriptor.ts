@@ -1,6 +1,6 @@
 import type { OAuthLoopbackRedirect } from './oauthCoordinator';
 
-export type LoopbackRedirectUriSupport = 'confirmed' | 'pending-verification' | 'unsupported';
+type LoopbackRedirectUriSupport = 'confirmed' | 'pending-verification' | 'unsupported';
 
 export interface ProviderDescriptor {
   id: string;

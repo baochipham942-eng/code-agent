@@ -22,6 +22,15 @@ describe('Feishu OAuth adapter', () => {
 
   it('declares the writeback action to provider scope mapping', () => {
     expect(FEISHU_OAUTH_DESCRIPTOR.scopes['message.send-as-user'])
-      .toBe('im:message im:message.send_as_user');
+      .toBe('offline_access im:message im:message.send_as_user');
+  });
+
+  it('always asks for offline_access, without which Feishu returns no refresh token', () => {
+    // 2026-08-24 真机实测：不要 offline_access 时响应里没有 refresh_token，
+    // access_token 只活 7200s，授权两小时后连接就死了。漏掉它是静默的——
+    // 授权当场是成功的，两小时后才炸，所以这条断言必须钉住。
+    for (const scope of Object.values(FEISHU_OAUTH_DESCRIPTOR.scopes)) {
+      expect(scope.split(' ')).toContain('offline_access');
+    }
   });
 });

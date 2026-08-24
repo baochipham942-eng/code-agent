@@ -337,3 +337,19 @@ export function assertRunEnvelope(envelope: RunEnvelope): void {
   }
   assertChildRunProjection(envelope.runId, envelope.childRuns ?? []);
 }
+
+/**
+ * 「这个会话已经有一个活跃的根 run」的自有 code。
+ * 写入侧（唯一索引 idx_durable_runs_active_session）把驱动报错抬成这个 code，
+ * 判据认 code 不认驱动报错文案——换 driver / 驱动改文案时不会静默失效。
+ */
+export const DURABLE_ACTIVE_SESSION_CONFLICT_CODE = 'DURABLE_ACTIVE_SESSION_CONFLICT';
+
+export class DurableActiveSessionConflictError extends Error {
+  readonly code = DURABLE_ACTIVE_SESSION_CONFLICT_CODE;
+
+  constructor(readonly sessionId: string, options?: { cause?: unknown }) {
+    super(`Session ${sessionId} already has an active durable run`, options);
+    this.name = 'DurableActiveSessionConflictError';
+  }
+}

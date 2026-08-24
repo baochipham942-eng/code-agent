@@ -14,6 +14,7 @@ function descriptor(overrides: Partial<ProviderDescriptor> = {}): ProviderDescri
     scopes: { write: 'resource:write' },
     redirect: { mode: 'loopback-random' },
     loopbackRedirectUriSupport: 'confirmed',
+    requiresClientSecret: false,
     ...overrides,
   };
 }

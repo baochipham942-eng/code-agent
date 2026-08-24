@@ -151,6 +151,30 @@ describe('ProjectionEngine', () => {
       expect(result[1].content).toBe('Response');
     });
 
+    it('should remove tool protocol fields from a collapsed summary message', () => {
+      state.applyCommit({
+        layer: 'contextCollapse',
+        operation: 'collapse',
+        targetMessageIds: ['tool1'],
+        timestamp: 1000,
+        metadata: { summary: 'Tool output summarized' },
+      });
+      const transcript: ProjectableMessage[] = [{
+        id: 'tool1',
+        role: 'tool',
+        content: 'Tool output',
+        toolCallId: 'call1',
+      }];
+
+      const result = engine.projectMessages(transcript, state);
+
+      expect(result[0]).toEqual({
+        id: 'tool1',
+        role: 'system',
+        content: '[collapsed: 1 turns] Tool output summarized',
+      });
+    });
+
     it('should handle multiple non-overlapping collapsed spans', () => {
       state.applyCommit({
         layer: 'contextCollapse',

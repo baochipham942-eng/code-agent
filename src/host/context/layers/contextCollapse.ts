@@ -21,21 +21,19 @@ const DEFAULT_MAX_SUMMARY_TOKENS = 200;
 const SAVINGS_RATIO_THRESHOLD = 3; // must save at least 3x summary cost
 
 /**
- * Returns true if a message is "tool-related":
- * - role is 'tool', OR
- * - role is 'assistant' and content mentions a tool_call/tool use pattern
+ * Returns true if a message participates in the tool protocol.
+ * Tool structure lives in dedicated fields; message text is not protocol evidence.
  */
-function isToolRelated(msg: { role: string; content: string }): boolean {
-  if (msg.role === 'tool') return true;
-  if (msg.role === 'assistant') {
-    // Heuristic: look for tool call indicators in assistant messages
-    return (
-      msg.content.includes('tool_call') ||
-      msg.content.includes('<tool_use>') ||
-      msg.content.includes('function_call')
-    );
-  }
-  return false;
+function isToolRelated(msg: {
+  role: string;
+  toolCalls?: unknown[];
+  toolCallId?: string;
+}): boolean {
+  return (
+    msg.role === 'tool'
+    || typeof msg.toolCallId === 'string'
+    || (Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0)
+  );
 }
 
 /**
@@ -43,7 +41,14 @@ function isToolRelated(msg: { role: string; content: string }): boolean {
  * Returns array of spans, each span is a list of indices.
  */
 function findCollapsibleSpans(
-  messages: Array<{ id: string; role: string; content: string; turnIndex: number }>,
+  messages: Array<{
+    id: string;
+    role: string;
+    content: string;
+    turnIndex: number;
+    toolCalls?: unknown[];
+    toolCallId?: string;
+  }>,
   excludedIds: Set<string>,
   minSpanSize: number,
 ): number[][] {
@@ -83,7 +88,14 @@ function findCollapsibleSpans(
  * Apply context collapse: find spans, summarize, write commits.
  */
 export async function applyContextCollapse(
-  messages: Array<{ id: string; role: string; content: string; turnIndex: number }>,
+  messages: Array<{
+    id: string;
+    role: string;
+    content: string;
+    turnIndex: number;
+    toolCalls?: unknown[];
+    toolCallId?: string;
+  }>,
   state: CompressionState,
   config: ContextCollapseConfig,
 ): Promise<void> {

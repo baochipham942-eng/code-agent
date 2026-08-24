@@ -36,6 +36,7 @@ import { SubagentRunRows, TaskDashboardSummary } from './RunWorkbenchCards';
 import { useMemberViewStore } from '../../stores/memberViewStore';
 import { useSessionMembers } from '../features/expert/SessionMemberBar';
 import { ReceiptRows } from '../ReceiptRows';
+import { getHumanToolLabel } from '../../utils/toolHumanLabel';
 
 // 真读取失败（读取异常且确有任务在跑）在 Todo 模块位置内联一行错误 + 重试/取消
 // （拍板三后无详情二级可挂）。0 rows ≠ failure：store 侧已不置位，这里再做一层
@@ -585,6 +586,8 @@ export const TaskWorkspaceOverview: React.FC = () => {
                 summary: item.title,
                 detail: item.content?.text || item.content?.summary,
                 sourceTool: item.subtitle || item.source.label || '',
+                connector: item.receipt?.connector,
+                recipient: item.receipt?.recipient,
                 createdAt: item.createdAt,
               }))} />
             </div>
@@ -626,7 +629,10 @@ export const TaskWorkspaceOverview: React.FC = () => {
                   </span>
                   {item.subtitle && (
                     <span className="ml-auto max-w-[110px] shrink-0 truncate text-[10px] text-zinc-600">
-                      {item.subtitle}
+                      {getHumanToolLabel({
+                        toolName: item.subtitle,
+                        labels: t.receiptPresentation.humanToolLabels,
+                      })}
                     </span>
                   )}
                 </button>

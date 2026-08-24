@@ -39,6 +39,9 @@ describe('getToolDisplayName — MCP 工具', () => {
 
   it('非 MCP 工具不受影响', () => {
     expect(getToolDisplayName('Bash')).toBe('Bash');
+    expect(getToolDisplayName('web_fetch')).toBe('Fetch');
+    expect(getToolDisplayName('WebSearch')).toBe('Search');
+    expect(getToolDisplayName('Read')).toBe('Read');
     expect(getToolDisplayName('memory_search')).toBe('Recall');
     expect(getToolDisplayName('unknown_tool')).toBe('unknown_tool');
   });

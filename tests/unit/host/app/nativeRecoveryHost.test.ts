@@ -152,7 +152,7 @@ describe('application Native model continuation ports', () => {
       { checkpointDurable } as never,
       {
         sessions: {
-          getMessages: vi.fn(async () => [
+          getMessages: vi.fn(async (): Promise<Message[]> => [
             sourceMessage({ correlation: { turnId: 'turn-original' } }),
             {
               id: 'assistant-existing',
@@ -182,7 +182,7 @@ describe('application Native model continuation ports', () => {
       { checkpointDurable: vi.fn(async () => undefined) } as never,
       {
         sessions: {
-          getMessages: vi.fn(async () => [
+          getMessages: vi.fn(async (): Promise<Message[]> => [
             sourceMessage({ correlation: { turnId: 'turn-original' } }),
             { id: 'later-user', role: 'user', content: 'later', timestamp: 2 },
             { id: 'later-result', role: 'assistant', content: 'later result', timestamp: 3 },

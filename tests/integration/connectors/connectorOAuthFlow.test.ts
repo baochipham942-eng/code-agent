@@ -88,6 +88,7 @@ describe('connector OAuth local authorization server integration', () => {
       clientId: 'fake-client',
       scopes: { write: 'resource:write' },
       extraAuthorizeParams: { audience: 'neo-desktop' },
+      requiresClientSecret: false,
       redirect: { mode: 'loopback-random' },
       loopbackRedirectUriSupport: 'confirmed',
     };

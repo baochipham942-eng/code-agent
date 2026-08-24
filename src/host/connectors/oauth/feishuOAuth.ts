@@ -28,6 +28,8 @@ export const FEISHU_OAUTH_DESCRIPTOR = {
   // 2026-08-24 已在飞书开放平台后台把 http://127.0.0.1:53682/callback 真填进重定向 URL 白名单
   // 并被接受，不是推测——所以设备码那条备选路线不启用。
   loopbackRedirectUriSupport: 'confirmed',
+  // 见上：飞书不接受只有 client_id 的公共客户端，App Secret 是硬要求。
+  requiresClientSecret: true,
 } satisfies ProviderDescriptor;
 
 // 取 token 的入口（getAccessToken 包装）随 A2b 的第一个真写回动作一起加：

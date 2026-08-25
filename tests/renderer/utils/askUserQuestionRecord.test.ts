@@ -75,6 +75,12 @@ describe('buildAskUserQuestionRecord', () => {
     expect(record!.declineReason).toBe('先去处理别的事');
   });
 
+  it('08-25 前落库的旧文案「User declined to answer.」仍识别为 declined（历史会话回归）', () => {
+    const record = buildAskUserQuestionRecord(toolCall('User declined to answer. Reason: 旧记录'));
+    expect(record!.kind).toBe('declined');
+    expect(record!.declineReason).toBe('旧记录');
+  });
+
   it('未知输出前缀 → null（如 CLI no-renderer 兜底文案，回退默认渲染）', () => {
     expect(buildAskUserQuestionRecord(toolCall('[用户未响应 - CLI 模式无法交互]\n\n...'))).toBeNull();
   });

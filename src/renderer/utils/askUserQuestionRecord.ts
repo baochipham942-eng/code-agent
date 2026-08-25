@@ -29,6 +29,8 @@ export interface AskUserQuestionRecord {
   items: AskUserQuestionRecordItem[];
 }
 
+// 08-25 之前落库的旧记录用的是这句，历史会话还要能认出来
+const LEGACY_DECLINED_PREFIX = 'User declined to answer.';
 const DECLINED_REASON_MARKER = 'Reason: ';
 const RESPONSES_PREFIX = 'User responses:';
 
@@ -69,8 +71,11 @@ export function buildAskUserQuestionRecord(toolCall: ToolCall): AskUserQuestionR
   const output = toolCall.result?.output;
   if (typeof output !== 'string' || output.length === 0) return null;
 
-  if (output.startsWith(ASK_USER_QUESTION_DECLINED_OUTPUT)) {
-    const rest = output.slice(ASK_USER_QUESTION_DECLINED_OUTPUT.length).trim();
+  const declinedPrefix = [ASK_USER_QUESTION_DECLINED_OUTPUT, LEGACY_DECLINED_PREFIX].find((prefix) =>
+    output.startsWith(prefix),
+  );
+  if (declinedPrefix) {
+    const rest = output.slice(declinedPrefix.length).trim();
     const reason = rest.startsWith(DECLINED_REASON_MARKER)
       ? rest.slice(DECLINED_REASON_MARKER.length).trim()
       : undefined;

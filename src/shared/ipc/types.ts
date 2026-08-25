@@ -40,6 +40,8 @@ export interface AgentPermissionResponseRequest {
   requestId: string;
   response: PermissionResponse;
   sessionId?: string;
+  /** N-WRITEBACK-EDIT：审批卡编辑态改过的参数；只随 response='allow' 一起送。 */
+  updatedArgs?: Record<string, unknown>;
 }
 
 // 会话分析结果（客观指标 + 历史评测 + SSE事件摘要）

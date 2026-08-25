@@ -39,6 +39,7 @@ import {
   resolveToolPermissionClassification,
 } from './toolPermissionClassification';
 import { normalizePermissionAskResult, type RequestPermissionResult } from '../../shared/contract/permission';
+import { applyEditedArgs } from '../../shared/contract/permissionEdit';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
@@ -1233,6 +1234,20 @@ export class ToolExecutor {
         toolCallId: options.currentToolCallId,
         requestPermission: this.requestPermission,
       });
+      // N-WRITEBACK-EDIT：用户在审批卡上改过的参数在这里、且只在这里替换。下游的
+      // approvedToolCall（工具体内 canUseTool 的短路匹配）、账本、派发全部拿到改后的那份，
+      // 8 个写回工具文件一行不动。表外工具/字段/必填为空 → fail-closed 当拒绝处理。
+      if (ask.approved && ask.updatedArgs) {
+        const edited = applyEditedArgs(executionToolName, params, ask.updatedArgs);
+        if (edited.ok) {
+          params = edited.params;
+          traceBuilder.addStep('plan_approval', 'user_edited_args', 'allow', `用户在审批卡上改了：${edited.changedKeys.join(', ') || '（无实际改动）'}`);
+        } else {
+          ask.approved = false;
+          ask.denialSource = 'fail-closed';
+          ask.message = `Edited arguments rejected: ${edited.reason}`;
+        }
+      }
       const approved = ask.approved;
 
       if (approved) {

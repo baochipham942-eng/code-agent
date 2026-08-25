@@ -5,6 +5,7 @@
 import type { ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
 import * as nodePath from 'path';
 import * as nodeFs from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import type { ToolDefinition } from '../../shared/contract';
 import type { PermissionBoundaryId } from '../../shared/contract/permissionBoundary';
 import { PermissionRequestReason } from '../../shared/contract/permission';
@@ -32,12 +33,14 @@ import type { PermissionMode } from '../permissions/modes';
 import {
   browserComputerConsequenceForcesClassification,
   CLASSIFIER_ERROR_TRACE_RULE,
+  commandAnalysisDenialError,
   permissionDenialError,
   readOnlyDenialError,
   readOnlyForcesConfirmationFor,
   resolveSessionPermissionMode,
   resolveToolPermissionClassification,
 } from './toolPermissionClassification';
+import { getPermissionModeManager } from '../permissions/modes';
 import { normalizePermissionAskResult, type RequestPermissionResult } from '../../shared/contract/permission';
 import { applyEditedArgs } from '../../shared/contract/permissionEdit';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
@@ -804,6 +807,7 @@ export class ToolExecutor {
 
     // Security: Pre-execution validation for bash commands
     let commandValidation: ValidationResult | undefined;
+    let commandAnalysisFailedReason: string | undefined;
     if (isBashToolName(policyToolName) && params.command) {
       commandValidation = validateCommand(params.command as string);
 
@@ -841,6 +845,42 @@ export class ToolExecutor {
           success: false,
           error: `Security: Command blocked - ${commandValidation.reason}`,
         };
+      }
+
+      if (commandValidation.parsingFailed) {
+        commandAnalysisFailedReason = commandValidation.parsingFailureReason ?? 'command tokenization failed';
+        const fingerprint = createHash('sha256')
+          .update(commandValidation.canonicalCommand)
+          .digest('hex');
+        const repeated = effectiveSessionId
+          ? getPermissionModeManager().rememberCommandAnalysisFailure(effectiveSessionId, fingerprint)
+          : false;
+        if (repeated) {
+          const error = commandAnalysisDenialError(executionToolName);
+          logger.warn('Repeated unanalyzable command denied before permission request', {
+            tool: executionToolName,
+            sessionId: effectiveSessionId,
+            fingerprint,
+          });
+          options.hookManager?.triggerPermissionDenied(
+            executionToolName, error, 'runtime', effectiveSessionId || 'unknown',
+          ).catch(() => {});
+          recordDecision(
+            executionToolName,
+            params,
+            'policy-deny',
+            'command_analysis_sticky',
+            permStartTime,
+            undefined,
+            effectiveSessionId,
+            this.ledgerOrigin,
+          );
+          return {
+            success: false,
+            error,
+            metadata: { code: 'COMMAND_ANALYSIS_STICKY_DENY' },
+          };
+        }
       }
 
       // Warn about high-risk commands but allow them
@@ -929,6 +969,7 @@ export class ToolExecutor {
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
     const isPreApproved = !boundaryViolation
       && !guardFabricForcesApproval
+      && !commandAnalysisFailedReason
       && !shellDesktopAutomation
       && !consequenceForcesClassification
       && !this.forcePermissionHandler
@@ -942,7 +983,7 @@ export class ToolExecutor {
 
     // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批
     let isSafeCommand = false;
-    if (isBashToolName(policyToolName) && params.command && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler) {
+    if (isBashToolName(policyToolName) && params.command && !commandAnalysisFailedReason && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler) {
       const cmd = params.command as string;
 
       // 1. 检查 exec policy 持久化规则
@@ -983,7 +1024,7 @@ export class ToolExecutor {
       }
     }
 
-    if (toolDef.requiresPermission && (this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || (!isPreApproved && !isSafeCommand))) {
+    if (toolDef.requiresPermission && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
@@ -1005,7 +1046,14 @@ export class ToolExecutor {
           guardFabricTraceStep.reason,
         );
       }
-      if (!guardFabricForcesApproval) {
+      if (commandAnalysisFailedReason) {
+        traceBuilder.addStep(
+          'permission_classifier',
+          'command_analysis_failed',
+          'ask',
+          `命令无法可靠拆词，审批结果不能放行：${commandAnalysisFailedReason}`,
+        );
+      } else if (!guardFabricForcesApproval) {
         try {
           // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
           const workspaceRoot = this.writeWorkspaceRoot;
@@ -1132,6 +1180,7 @@ export class ToolExecutor {
         && !policyForcesConfirmation
         && !boundaryViolation
         && !readOnlyForcesConfirmation
+        && !commandAnalysisFailedReason
         && getSessionAutomationService().matchStandingGrant(effectiveSessionId, executionToolName, standingGrantTarget)
       ) {
         needsUserApproval = false;
@@ -1234,6 +1283,11 @@ export class ToolExecutor {
         toolCallId: options.currentToolCallId,
         requestPermission: this.requestPermission,
       });
+      if (commandAnalysisFailedReason) {
+        ask.approved = false;
+        ask.denialSource = 'fail-closed';
+        ask.message = commandAnalysisDenialError(executionToolName);
+      }
       // N-WRITEBACK-EDIT：用户在审批卡上改过的参数在这里、且只在这里替换。下游的
       // approvedToolCall（工具体内 canUseTool 的短路匹配）、账本、派发全部拿到改后的那份，
       // 8 个写回工具文件一行不动。表外工具/字段/必填为空 → fail-closed 当拒绝处理。
@@ -1275,7 +1329,9 @@ export class ToolExecutor {
         // 不按调用方名字枚举。ledger 的 reason 同时带上「为什么会走到问用户这一步」——
         // 分类器抛错回退是故障，不能和用户主动拒绝混成同一条记录。
         const denialSource = ask.denialSource ?? 'user';
-        const denialReason = classifierFailedReason
+        const denialReason = commandAnalysisFailedReason
+          ? `command_analysis_failed/${denialSource}`
+          : classifierFailedReason
           ? `${CLASSIFIER_ERROR_TRACE_RULE}/${denialSource}`
           : denialSource;
         // 只读探索档（审出 MED）：无审批 UI 的运行环境（CLI run/batch 非交互模式）对

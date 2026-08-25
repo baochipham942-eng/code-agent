@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getProjectConfigDir, getUserConfigDir } from '../config/configPaths';
+import { canonicalizeCommand } from './canonicalizeCommand';
 
 const logger = createLogger('ExecPolicy');
 
@@ -220,33 +221,12 @@ export class ExecPolicyStore {
     }
   }
 
-  /**
-   * 简单分词（跳过引号内的空格）
-   */
+  /** 命令策略只在统一 canonical form 上拆词；分析失败时不命中任何放行规则。 */
   private tokenize(command: string): string[] {
-    const tokens: string[] = [];
-    let current = '';
-    let inQuote = false;
-    let quoteChar = '';
-
-    for (const ch of command.trim()) {
-      if (!inQuote && (ch === '"' || ch === "'")) {
-        inQuote = true;
-        quoteChar = ch;
-      } else if (inQuote && ch === quoteChar) {
-        inQuote = false;
-      } else if (!inQuote && (ch === ' ' || ch === '\t')) {
-        if (current) {
-          tokens.push(current);
-          current = '';
-        }
-      } else {
-        current += ch;
-      }
-    }
-    if (current) tokens.push(current);
-
-    return tokens;
+    const canonical = canonicalizeCommand(command);
+    return canonical.parsingFailed || !canonical.command
+      ? []
+      : canonical.command.split(' ');
   }
 }
 

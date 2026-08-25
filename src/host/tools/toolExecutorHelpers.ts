@@ -1,4 +1,5 @@
 import { getLogMasker, maskSensitiveData } from '../security';
+import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { isSensitiveLogKey, redactSecrets } from '../security/secretRedaction';
 import { commandMatchesScopedPrefix } from './neoTagToolGuard';
 import { isBashToolName, normalizeToolName, sameToolName } from './toolNames';
@@ -62,7 +63,9 @@ export function isDangerousCommand(command: string): boolean {
     /sudo\s+rm/,
   ];
 
-  return dangerousPatterns.some((pattern) => pattern.test(command));
+  const canonical = canonicalizeCommand(command);
+  return canonical.parsingFailed
+    || dangerousPatterns.some((pattern) => pattern.test(canonical.command));
 }
 
 export function toolMatchesPatternSet(

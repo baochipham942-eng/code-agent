@@ -119,7 +119,7 @@ describe('scanSkillContent — 绕过防护', () => {
   });
 
   it('normalizeForScan 合并反斜杠续行', () => {
-    expect(normalizeForScan('rm -rf \\\n /')).toBe('rm -rf  /');
+    expect(normalizeForScan('rm -rf \\\n /')).toBe('rm -rf /');
   });
 
   it('正常 skill 不误伤', () => {

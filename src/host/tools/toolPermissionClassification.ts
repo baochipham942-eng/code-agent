@@ -184,6 +184,12 @@ export function permissionDenialError(toolName: string, source: PermissionDenial
   }
 }
 
+/** 无法可靠解析的 shell 命令不能靠审批放行；重复指纹由会话运行时在发事件前拦住。 */
+export function commandAnalysisDenialError(toolName: string): string {
+  return `${toolName} 被自动拒绝：命令无法可靠拆词或含静态不可解析的 shell 构造，`
+    + '按安全侧默认拒绝（fail-closed）。该命令不能从当前会话审批放行，只能由用户在会话外手工运行。';
+}
+
 /**
  * 权限分类三分支解析 + 档位改写：
  * 1. policy always_confirm / skill 边界违规 → 直接 ask（跳过 classifier）；

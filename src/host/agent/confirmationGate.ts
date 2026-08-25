@@ -11,6 +11,7 @@ import type {
   ConfirmationContext,
   ToolConfirmationConfig,
 } from '../../shared/contract/confirmation';
+import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { isBashToolName } from '../tools/toolNames';
 
 // 危险工具列表
@@ -263,7 +264,11 @@ export class ConfirmationGate {
 
     if (isBashToolName(toolName)) {
       const command = (params.command as string) || '';
-      if (HIGH_RISK_PATTERNS.some(p => p.test(command))) {
+      const canonical = canonicalizeCommand(command);
+      if (
+        canonical.parsingFailed
+        || HIGH_RISK_PATTERNS.some(p => p.test(canonical.command))
+      ) {
         return 'high';
       }
       return 'medium';

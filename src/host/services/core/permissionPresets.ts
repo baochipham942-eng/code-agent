@@ -4,6 +4,7 @@
 
 import * as nodePath from 'path';
 import type { PermissionLevel, PermissionPreset } from '@shared/contract';
+import { canonicalizeCommand } from '../../security/canonicalizeCommand';
 
 // PermissionPreset 类型已移至 shared/contract/permission.ts
 // 此处通过 re-export 保持向后兼容
@@ -191,9 +192,9 @@ export function isPathTrusted(
  * @returns 是否被阻止
  */
 export function isCommandBlocked(command: string, blockedCommands: string[]): boolean {
-  const normalizedCommand = command.trim().toLowerCase();
+  const normalizedCommand = canonicalizeCommand(command).command.toLowerCase();
   return blockedCommands.some((blocked) => {
-    const normalizedBlocked = blocked.toLowerCase();
+    const normalizedBlocked = canonicalizeCommand(blocked).command.toLowerCase();
     return normalizedCommand.includes(normalizedBlocked);
   });
 }
@@ -218,7 +219,9 @@ export function isDangerousCommand(command: string): boolean {
     /\bdd\s+if=/i,
   ];
 
-  return dangerousPatterns.some((pattern) => pattern.test(command));
+  const canonical = canonicalizeCommand(command);
+  return canonical.parsingFailed
+    || dangerousPatterns.some((pattern) => pattern.test(canonical.command));
 }
 
 /**

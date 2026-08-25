@@ -121,12 +121,12 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        # npm bug #4828：lockfile 在 macOS 上生成，只记录了 darwin-arm64 的 rollup
-        # native binary。先 npm ci 用 lockfile 装其他依赖，再单独装缺失的 linux
-        # platform binary。--no-save --no-package-lock 确保 lockfile 不被改。
+        # 🔴 只许 npm ci。此前第二步 `npm install --no-save --no-package-lock @rollup/…` 是
+        # 上古遗留（锁里早已没有 rollup，vite 8 走 rolldown），它唯一的效果是把整棵树在线
+        # 重解析（changed 244 packages），锁形同虚设——2026-08-25 @xyflow/react 一发新版全 PR
+        # 红（N-CI-XYFLOW-DEPOPT）。锁里 rolldown/esbuild/lightningcss/oxide 的 linux 绑定齐全。
         run: |
           npm ci --ignore-scripts
-          npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
 
       - name: Verify better-sqlite3 Node-API binding
         # v13 随包携带 N-API 平台二进制；即使 npm ci --ignore-scripts，也必须真实加载，
@@ -234,7 +234,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-v2
 
       - name: Install Playwright browsers
         # 主链路子集里有真跑交互 smoke 的用例（gameArtifactValidator 等，走 playwright
@@ -243,9 +243,9 @@ jobs:
         # doesn't exist at ~/.cache/ms-playwright/chromium_headless_shell-<build>。
         # 即这道门当时是抽奖：跑不起浏览器时 runtimeChecks 为空，断言"有 runtime 证据"
         # 反而落空，红得跟被测代码毫无关系。与本 workflow 的 full job / main-full-gate
-        # 保持同一手法，显式装。缓存 key 绑定 lockfile 解析的 Playwright 版本，命中的是
-        # 同一浏览器 revision；未命中时仍在本步显式下载。
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        # 🔴 无条件装（浏览器已在时是空操作）。08-25 实付：此前「缓存命中就跳过」，而缓存是
+        # 无锁重解析时代按错版本 playwright-core 填的，键却写着锁里的 1.60.0 ⇒ 命中即缺
+        # chromium_headless_shell。键加 -v2 甩掉毒缓存（N-CI-XYFLOW-DEPOPT）。
         run: npx playwright install --with-deps chromium
 
       - name: Main-chain vitest subset (agent / tools / ipc / services / design / renderer)
@@ -392,10 +392,9 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        # 同 smoke job：lockfile 严格 + 单独 patch 缺失的 linux platform binary
+        # 同 smoke job：只许 npm ci（见上）
         run: |
           npm ci --ignore-scripts
-          npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
 
       - name: Verify better-sqlite3 Node-API binding
         # v13 的 linux-x64 N-API 二进制在 npm 包内；文件缺失或真实加载失败都直接终止。
@@ -424,10 +423,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-v2
 
       - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Run smoke suite

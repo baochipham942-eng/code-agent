@@ -63,6 +63,7 @@ import {
 import { useI18n } from '../../../../hooks/useI18n';
 import { useConnectorInChat } from '../../../../hooks/useConnectorInChat';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
+import { ConnectorLogo } from '../../connectors/ConnectorLogo';
 
 const logger = createLogger('MCPSettings');
 
@@ -430,6 +431,7 @@ export const MCPSettings: React.FC = () => {
           />
 
           {mcpServers.filter((server) => server.id !== 'lark').map((server) => {
+            const catalogEntry = mcpCatalog.servers.find((entry) => entry.id === server.id);
             const serverStatus = getWorkbenchCapabilityStatusPresentation(server, { locale: language });
             const installing = serverInstallStates[server.id] === 'installing';
             const connectionState = installing ? 'connecting' : server.lifecycle.connectionState;
@@ -467,7 +469,13 @@ export const MCPSettings: React.FC = () => {
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
                       {connectionState === 'connecting'
                         ? <Loader2 className="h-4 w-4 animate-spin text-badge-warning" />
-                        : <Plug className="h-4 w-4 text-zinc-400" />}
+                        : (
+                          <ConnectorLogo
+                            id={catalogEntry?.logo}
+                            displayName={catalogEntry?.name ?? server.label}
+                            fallback={<Plug className="h-4 w-4 text-zinc-400" />}
+                          />
+                        )}
                     </span>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">

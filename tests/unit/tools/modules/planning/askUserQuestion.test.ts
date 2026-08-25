@@ -370,7 +370,13 @@ describe('AskUserQuestion renderer response', () => {
 
     const result = await promise;
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.output).toBe('User declined to answer.');
+    if (result.ok) {
+      const output = result.output.toLowerCase();
+      expect(output).toContain('continue with the information you already have');
+      expect(output).toContain('make reasonable defaults');
+      expect(output).toContain('state your assumptions');
+      expect(output).toContain('do not ask the same question again');
+    }
   });
 
   it('declined 响应附 reason 时拼进 output，让模型看到取消原因', async () => {
@@ -390,7 +396,9 @@ describe('AskUserQuestion renderer response', () => {
     const result = await promise;
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.output).toBe('User declined to answer. Reason: 现在不方便回答，稍后再说');
+      expect(result.output).toContain('continue with the information you already have');
+      expect(result.output).toContain('do not ask the same question again');
+      expect(result.output).toContain('Reason: 现在不方便回答，稍后再说');
     }
   });
 

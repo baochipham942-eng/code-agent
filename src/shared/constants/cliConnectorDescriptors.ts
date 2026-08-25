@@ -96,7 +96,7 @@ export const tmeetDescriptor = {
   id: 'tmeet',
   displayName: '腾讯会议',
   logo: 'tmeet',
-  toolNames: ['tmeetMeetingList', 'tmeetMeetingCreate'],
+  toolNames: ['tmeetMeetingList', 'tmeetMeetingCreate', 'tmeetMeetingSearch'],
   loggerName: 'TencentMeetingCli',
   installDirectory: 'tmeet',
   npmPackage: '@tencentcloud/tmeet',

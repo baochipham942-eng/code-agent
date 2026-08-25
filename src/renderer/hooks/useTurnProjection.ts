@@ -571,6 +571,7 @@ export function projectTurns(
             liveOutput: tc.liveOutput,
             _streaming: tc._streaming,
             shortDescription: tc.shortDescription,
+            stepLabel: tc.stepLabel,
             targetContext: tc.targetContext,
             expectedOutcome: tc.expectedOutcome,
           },

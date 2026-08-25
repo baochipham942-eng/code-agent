@@ -11,6 +11,7 @@ export const receiptPresentationZh = {
         mail: '邮件',
         calendar: '日历',
         reminders: '提醒事项',
+        tmeet: '腾讯会议',
       },
       tools: {
         webFetch: '网页抓取',
@@ -36,6 +37,7 @@ export const receiptPresentationEn: typeof receiptPresentationZh = {
         mail: 'Mail',
         calendar: 'Calendar',
         reminders: 'Reminders',
+        tmeet: 'Tencent Meeting',
       },
       tools: {
         webFetch: 'Web fetch',

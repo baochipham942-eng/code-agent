@@ -1,4 +1,5 @@
 import type { ToolHandler, ToolLoader, ToolSchema } from '../protocol/tools';
+import type { ToolStepLabelKey } from '@shared/contract';
 
 type ProtocolToolRegistryPort = {
   register(schema: ToolSchema, loader: ToolLoader): void;
@@ -31,6 +32,21 @@ export function hasProtocolTool(name: string): boolean {
 
 export function getProtocolToolSchemas(): readonly ToolSchema[] {
   return registryPort?.getSchemas() ?? [];
+}
+
+export function resolveProtocolToolStepLabel(
+  name: string,
+  args: Record<string, unknown>,
+): ToolStepLabelKey | undefined {
+  const declaration = registryPort?.getSchemas().find((schema) => schema.name === name)?.stepLabel;
+  if (!declaration) return undefined;
+  const variantValue = declaration.variant
+    ? args[declaration.variant.argument]
+    : undefined;
+  if (typeof variantValue === 'string') {
+    return declaration.variant?.values[variantValue] ?? declaration.default;
+  }
+  return declaration.default;
 }
 
 export function resolveProtocolTool(name: string): Promise<ToolHandler> {

@@ -119,7 +119,7 @@ export function parseGeminiResponse(raw: unknown): ModelResponse {
     toolCalls.push({
       id: `gemini_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       name: fc.functionCall.name,
-      ...extractToolCallMeta(fc.functionCall.args ?? {}),
+      ...extractToolCallMeta(fc.functionCall.args ?? {}, fc.functionCall.name),
     });
   }
 

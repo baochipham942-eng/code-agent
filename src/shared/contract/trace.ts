@@ -36,6 +36,7 @@ export interface TraceNode {
     // 由 main 进程在投影 trace 时从 ToolCall 复制过来。UI 优先消费。
     // ============================================================================
     shortDescription?: string;
+    stepLabel?: import('./tool').ToolStepLabelKey;
     targetContext?: import('./tool').ToolCallTargetContext;
     expectedOutcome?: string;
   };

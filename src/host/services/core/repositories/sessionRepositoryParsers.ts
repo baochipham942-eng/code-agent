@@ -65,16 +65,17 @@ export function normalizeStoredTimestamp(
 }
 
 /**
- * 入库 choke point：保证持久化的所有 ToolCall 都有 shortDescription（产品视角
- * 语义短句）。任何上游路径——messageProcessor / TaskManager.turnState 重构造 /
- * web mode persist / subagent 透传——丢字段时这里统一兜底，避免 UI 看到 stale
- * 旧消息时 fallback 到机械拼接。
+ * 入库 choke point：保证没有 schema stepLabel 的 ToolCall 都有 shortDescription（产品
+ * 视角语义短句）。任何上游路径——messageProcessor / TaskManager.turnState 重构造 /
+ * web mode persist / subagent 透传——丢字段时这里统一兜底，避免 UI 看到 stale 旧消息时
+ * fallback 到机械拼接；有 stepLabel 的工具由 renderer i18n 负责，不生成英文机械文案。
  */
 export function ensureToolCallShortDescription(toolCalls: ToolCall[] | undefined): ToolCall[] | undefined {
   if (!toolCalls) return toolCalls;
   return toolCalls.map((tc) => ({
     ...tc,
-    shortDescription: tc.shortDescription ?? generateFallbackShortDescription(tc.name, tc.arguments ?? {})
+    shortDescription: tc.shortDescription
+      ?? (tc.stepLabel ? undefined : generateFallbackShortDescription(tc.name, tc.arguments ?? {})),
   }));
 }
 

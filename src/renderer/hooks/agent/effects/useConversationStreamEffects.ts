@@ -351,6 +351,7 @@ export function applyConversationStreamEvent(
                 return {
                   ...existing,
                   shortDescription: fresh.shortDescription ?? existing.shortDescription,
+                  stepLabel: fresh.stepLabel ?? existing.stepLabel,
                   targetContext: fresh.targetContext ?? existing.targetContext,
                   expectedOutcome: fresh.expectedOutcome ?? existing.expectedOutcome,
                   arguments: fresh.arguments ?? existing.arguments,

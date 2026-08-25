@@ -7,7 +7,8 @@
 import { isSemanticToolUIEnabled } from './featureFlags';
 import { formatDisplayPath } from './displayPath';
 import type { Translations } from '../i18n';
-import type { ToolCallTargetContext } from '@shared/contract';
+import type { ToolCallTargetContext, ToolStepLabelKey } from '@shared/contract';
+import { getHumanToolLabel } from './toolHumanLabel';
 
 const ARG_PREVIEW_MAX = 80;
 
@@ -218,8 +219,8 @@ function matchesUiScript(text: string, t: Translations): boolean {
  * 优先级最高——比机械模板更贴近"在干什么"；没有（或语种与界面不一致）时按工具
  * 类目落到对应模板。
  *
- * 未识别工具兜底把工具名带进主行（「MemoryWrite 执行了一个步骤」）——纯占位文案
- * 在失败时没有任何信息量。例外只有 isInternalStreamTool 命中的纯内部动作
+ * 未识别工具兜底先走统一的人话工具名（连接器映射优先、开发短名其次），再放进主行；
+ * 纯占位文案在失败时没有信息量。例外只有 isInternalStreamTool 命中的纯内部动作
  * （ToolSearch 这类），它们的主行仍不暴露内部名（只在展开明细次级小字）。
  *
  * failed=true（toolCall.result 已存在且 success===false）时，写/编类目不再输出过去时
@@ -232,7 +233,10 @@ export function humanizeToolStep(
   t: Translations,
   shortDescription?: string,
   failed?: boolean,
+  stepLabel?: ToolStepLabelKey,
 ): string {
+  if (stepLabel) return t.toolStepHumanize.declared[stepLabel];
+
   const schemaDescription = BASH_TOOLS.has(name)
     ? firstString(args ?? {}, ['description'])
     : '';
@@ -355,9 +359,13 @@ export function humanizeToolStep(
       // 「内部工具名绝不进主行」这条规矩只针对 isInternalStreamTool（ToolSearch 这类
       // 对用户零意义的纯内部动作）——不是一刀切到所有未识别工具。
       if (isInternalStreamTool(name)) return h.fallback;
-      // 其余未识别工具：把工具名带进主行。否则失败时用户面对一句纯占位
-      // 「执行了一个步骤」，得展开才知道是 MemoryWrite 还是别的、为什么失败。
-      return h.fallbackWithTool.replace('{tool}', name);
+      // 其余未识别工具：先走统一人话名再带进主行。连接器必须命中映射；普通工具
+      // 复用开发短名兜底，否则失败时用户面对一句纯占位，得展开才知道发生了什么。
+      const humanToolName = getHumanToolLabel({
+        toolName: name,
+        labels: t.receiptPresentation.humanToolLabels,
+      });
+      return h.fallbackWithTool.replace('{tool}', humanToolName);
     }
   }
 }

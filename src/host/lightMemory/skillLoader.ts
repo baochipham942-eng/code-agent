@@ -28,7 +28,7 @@ function isAsciiOnly(text: string): boolean {
 // Types
 // ----------------------------------------------------------------------------
 
-export interface SkillMemory {
+interface SkillMemory {
   /** Filename (e.g., skill_deploy_tauri.md) */
   filename: string;
   /** frontmatter.name */
@@ -39,6 +39,20 @@ export interface SkillMemory {
   body: string;
   /** 匹配分数（命中的用户 token 数） */
   matchScore: number;
+}
+
+interface SkillSummary {
+  name: string;
+  description: string;
+}
+
+export interface SkillInjectionPlan {
+  /** Skills whose complete procedures fit the primary injection budget. */
+  fullSkills: SkillMemory[];
+  /** Budget-limited name + description fallback for relevant skills without full bodies. */
+  omittedSkillSummaries: SkillSummary[];
+  /** Relevant skills that fit neither the full-body nor summary budgets. */
+  unlistedSkillCount: number;
 }
 
 // ----------------------------------------------------------------------------
@@ -130,14 +144,15 @@ function countOverlap(queryTokens: Set<string>, skillTokens: Set<string>): numbe
 
 /**
  * 读取所有 skill_*.md 文件，根据用户查询做关键词匹配，
- * 返回 top N 条最相关的 skill，总字符数受 MEMORY.SKILL_MAX_INJECTION_CHARS 约束。
+ * 返回相关 skill 的分层注入计划：预算内保留完整正文，超出后降级为短清单，
+ * 短清单仍装不下的只保留计数，确保模型知道自己的盲区。
  *
- * 当 userQuery 为空或 token 少于阈值时返回空数组（避免把所有 skill 都拽进来）。
+ * 当 userQuery 为空或 token 少于阈值时返回空计划（避免把所有 skill 都拽进来）。
  */
-export async function loadRelevantSkills(userQuery: string): Promise<SkillMemory[]> {
+export async function loadRelevantSkills(userQuery: string): Promise<SkillInjectionPlan> {
   const queryTokens = tokenize(userQuery || '');
   if (queryTokens.size < MEMORY.SKILL_MIN_QUERY_TOKENS) {
-    return [];
+    return emptyInjectionPlan();
   }
 
   const memDir = getMemoryDir();
@@ -146,14 +161,14 @@ export async function loadRelevantSkills(userQuery: string): Promise<SkillMemory
     entries = await fs.readdir(memDir);
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return [];
+      return emptyInjectionPlan();
     }
     logger.warn('Failed to read memory dir', { err });
-    return [];
+    return emptyInjectionPlan();
   }
 
   const skillFiles = entries.filter((f) => f.startsWith('skill_') && f.endsWith('.md'));
-  if (skillFiles.length === 0) return [];
+  if (skillFiles.length === 0) return emptyInjectionPlan();
 
   const candidates: SkillMemory[] = [];
   for (const filename of skillFiles) {
@@ -199,25 +214,57 @@ export async function loadRelevantSkills(userQuery: string): Promise<SkillMemory
     totalChars += cost;
   }
 
-  if (selected.length > 0) {
+  const omittedCandidates = candidates.slice(selected.length);
+  const omittedSkillSummaries: SkillSummary[] = [];
+  let summaryChars = 0;
+  for (const candidate of omittedCandidates) {
+    const summary = toSkillSummary(candidate);
+    const cost = estimateSummaryCharCost(summary);
+    if (summaryChars + cost > MEMORY.SKILL_MAX_OMITTED_SUMMARY_CHARS) continue;
+    omittedSkillSummaries.push(summary);
+    summaryChars += cost;
+  }
+
+  if (selected.length > 0 || omittedCandidates.length > 0) {
     logger.debug(
-      `[SkillLoader] Selected ${selected.length}/${candidates.length} skills, ~${totalChars} chars`,
+      `[SkillLoader] Selected ${selected.length}/${candidates.length} full skills, listed ${omittedSkillSummaries.length}/${omittedCandidates.length} omitted skills`,
     );
   }
 
-  return selected;
+  return {
+    fullSkills: selected,
+    omittedSkillSummaries,
+    unlistedSkillCount: omittedCandidates.length - omittedSkillSummaries.length,
+  };
 }
 
 /**
  * 构造注入 system prompt 的 XML 块。
  * 返回 null 表示没有相关 skill 可注入。
  */
-export function buildSkillInjectionBlock(skills: SkillMemory[]): string | null {
-  if (skills.length === 0) return null;
+export function buildSkillInjectionBlock(plan: SkillInjectionPlan): string | null {
+  const omittedCount = plan.omittedSkillSummaries.length + plan.unlistedSkillCount;
+  if (plan.fullSkills.length === 0 && omittedCount === 0) return null;
 
-  const sections = skills.map((s) => {
+  const sections = plan.fullSkills.map((s) => {
     return `### ${s.name}\n${s.description}\n\n${s.body}`;
   });
+
+  if (omittedCount > 0) {
+    const summaryLines = plan.omittedSkillSummaries.map(
+      (skill) => `- ${skill.name}: ${skill.description}`,
+    );
+    const noticeLines = [
+      `OmittedSkillsNotice: 省略了 ${omittedCount} 个相关技能的完整内容（注入预算已满）。`,
+    ];
+    if (summaryLines.length > 0) {
+      noticeLines.push('名称与简述：', ...summaryLines);
+    }
+    if (plan.unlistedSkillCount > 0) {
+      noticeLines.push(`另有 ${plan.unlistedSkillCount} 个技能未列出，可用 ToolSearch 查找。`);
+    }
+    sections.push(noticeLines.join('\n'));
+  }
 
   return `<relevant_skills>
 Past procedures that may apply to the current task. Consult before planning:
@@ -233,4 +280,25 @@ ${sections.join('\n\n---\n\n')}
 /** 估算一个 skill 注入到 prompt 后的字符数（含 heading 和分隔符） */
 function estimateCharCost(skill: SkillMemory): number {
   return skill.name.length + skill.description.length + skill.body.length + 20;
+}
+
+function emptyInjectionPlan(): SkillInjectionPlan {
+  return {
+    fullSkills: [],
+    omittedSkillSummaries: [],
+    unlistedSkillCount: 0,
+  };
+}
+
+function toSkillSummary(skill: SkillMemory): SkillSummary {
+  const normalizedDescription = skill.description.replace(/\s+/g, ' ').trim();
+  const maxDescriptionChars = 120;
+  const description = normalizedDescription.length > maxDescriptionChars
+    ? `${normalizedDescription.slice(0, maxDescriptionChars - 1)}…`
+    : normalizedDescription || '未提供描述';
+  return { name: skill.name, description };
+}
+
+function estimateSummaryCharCost(summary: SkillSummary): number {
+  return summary.name.length + summary.description.length + 4;
 }

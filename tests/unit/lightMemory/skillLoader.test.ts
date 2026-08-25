@@ -76,13 +76,17 @@ describe('skillLoader', () => {
 
   it('returns empty when memory dir is missing', async () => {
     const result = await loadRelevantSkills('how to deploy');
-    expect(result).toEqual([]);
+    expect(result).toEqual({
+      fullSkills: [],
+      omittedSkillSummaries: [],
+      unlistedSkillCount: 0,
+    });
   });
 
   it('returns empty when no skill_*.md files exist', async () => {
     await writeNonSkill('feedback_x.md', 'feedback content');
     const result = await loadRelevantSkills('how to deploy');
-    expect(result).toEqual([]);
+    expect(result.fullSkills).toEqual([]);
   });
 
   it('ignores non-skill memory files', async () => {
@@ -95,8 +99,8 @@ describe('skillLoader', () => {
     await writeNonSkill('feedback_deploy.md', 'deploy feedback');
 
     const result = await loadRelevantSkills('tauri deploy');
-    expect(result.length).toBe(1);
-    expect(result[0].filename).toBe('skill_deploy.md');
+    expect(result.fullSkills).toHaveLength(1);
+    expect(result.fullSkills[0].filename).toBe('skill_deploy.md');
   });
 
   it('matches by keyword overlap with description and name', async () => {
@@ -114,12 +118,12 @@ describe('skillLoader', () => {
     );
 
     const deployResults = await loadRelevantSkills('I want to deploy the tauri app');
-    expect(deployResults.length).toBe(1);
-    expect(deployResults[0].filename).toBe('skill_deploy.md');
+    expect(deployResults.fullSkills).toHaveLength(1);
+    expect(deployResults.fullSkills[0].filename).toBe('skill_deploy.md');
 
     const evalResults = await loadRelevantSkills('run evals on mental agent');
-    expect(evalResults.length).toBe(1);
-    expect(evalResults[0].filename).toBe('skill_eval.md');
+    expect(evalResults.fullSkills).toHaveLength(1);
+    expect(evalResults.fullSkills[0].filename).toBe('skill_eval.md');
   });
 
   it('ranks skills by match score', async () => {
@@ -137,12 +141,12 @@ describe('skillLoader', () => {
     );
 
     const result = await loadRelevantSkills('deploy tauri release dmg bundle');
-    expect(result.length).toBe(2);
+    expect(result.fullSkills).toHaveLength(2);
     // skill_b has more keyword overlap → ranked first
-    expect(result[0].filename).toBe('skill_b.md');
+    expect(result.fullSkills[0].filename).toBe('skill_b.md');
   });
 
-  it('caps by SKILL_MAX_INJECTION_COUNT (default 3)', async () => {
+  it('caps full injection by count and lists omitted skill names', async () => {
     for (let i = 0; i < 8; i++) {
       await writeSkill(
         `skill_test_${i}.md`,
@@ -153,13 +157,58 @@ describe('skillLoader', () => {
     }
 
     const result = await loadRelevantSkills('deploy release');
-    expect(result.length).toBe(3);
+    expect(result.fullSkills).toHaveLength(3);
+    expect(result.omittedSkillSummaries).toHaveLength(5);
+    expect(result.unlistedSkillCount).toBe(0);
+
+    const block = buildSkillInjectionBlock(result);
+    expect(block).toContain('OmittedSkillsNotice: 省略了 5 个相关技能的完整内容');
+    expect(block).toContain('- Test skill 3: deploy release dmg');
+    expect(block).toContain('- Test skill 7: deploy release dmg');
+  });
+
+  it('lists the skill name when its full body exceeds the character budget', async () => {
+    await writeSkill(
+      'skill_oversized.md',
+      'Oversized deploy skill',
+      'deploy release oversized procedure',
+      'x'.repeat(12_000),
+    );
+
+    const result = await loadRelevantSkills('deploy release');
+    const block = buildSkillInjectionBlock(result);
+
+    expect(result.fullSkills).toEqual([]);
+    expect(result.omittedSkillSummaries).toEqual([{
+      name: 'Oversized deploy skill',
+      description: 'deploy release oversized procedure',
+    }]);
+    expect(block).toContain('OmittedSkillsNotice: 省略了 1 个相关技能的完整内容');
+    expect(block).toContain('- Oversized deploy skill: deploy release oversized procedure');
+  });
+
+  it('reports skills that do not fit the omitted summary budget via ToolSearch', async () => {
+    for (let i = 0; i < 40; i++) {
+      await writeSkill(
+        `skill_budget_${i.toString().padStart(2, '0')}.md`,
+        `Budget skill ${i.toString().padStart(2, '0')}`,
+        `deploy release ${'summary '.repeat(20)}${i}`,
+        'body',
+      );
+    }
+
+    const result = await loadRelevantSkills('deploy release');
+    const block = buildSkillInjectionBlock(result);
+
+    expect(result.unlistedSkillCount).toBeGreaterThan(0);
+    expect(block).toContain(`另有 ${result.unlistedSkillCount} 个技能未列出，可用 ToolSearch 查找。`);
+    expect(block).toContain('- Budget skill 03:');
   });
 
   it('returns empty for very short / empty queries', async () => {
     await writeSkill('skill_x.md', 'X', 'deploy', 'body');
-    expect(await loadRelevantSkills('')).toEqual([]);
-    expect(await loadRelevantSkills('a')).toEqual([]);
+    expect((await loadRelevantSkills('')).fullSkills).toEqual([]);
+    expect((await loadRelevantSkills('a')).fullSkills).toEqual([]);
   });
 
   it('supports Chinese 3-char queries via CJK trigram', async () => {
@@ -177,8 +226,8 @@ describe('skillLoader', () => {
     );
 
     const result = await loadRelevantSkills('帮我调试飞书机器人的消息问题');
-    expect(result.length).toBe(1);
-    expect(result[0].filename).toBe('skill_feishu.md');
+    expect(result.fullSkills).toHaveLength(1);
+    expect(result.fullSkills[0].filename).toBe('skill_feishu.md');
   });
 
   it('ignores malformed skill files', async () => {
@@ -189,31 +238,38 @@ describe('skillLoader', () => {
     await writeSkill('skill_ok.md', 'OK', 'deploy release', 'body');
 
     const result = await loadRelevantSkills('deploy release');
-    expect(result.length).toBe(1);
-    expect(result[0].filename).toBe('skill_ok.md');
+    expect(result.fullSkills).toHaveLength(1);
+    expect(result.fullSkills[0].filename).toBe('skill_ok.md');
   });
 
   describe('buildSkillInjectionBlock', () => {
     it('returns null on empty input', () => {
-      expect(buildSkillInjectionBlock([])).toBeNull();
+      expect(buildSkillInjectionBlock({
+        fullSkills: [],
+        omittedSkillSummaries: [],
+        unlistedSkillCount: 0,
+      })).toBeNull();
     });
 
     it('wraps skills in <relevant_skills> XML block', () => {
-      const block = buildSkillInjectionBlock([
-        {
+      const block = buildSkillInjectionBlock({
+        fullSkills: [{
           filename: 'skill_x.md',
           name: 'X',
           description: 'desc',
           body: 'body content',
           matchScore: 2,
-        },
-      ]);
+        }],
+        omittedSkillSummaries: [],
+        unlistedSkillCount: 0,
+      });
       expect(block).not.toBeNull();
       expect(block!).toContain('<relevant_skills>');
       expect(block!).toContain('### X');
       expect(block!).toContain('desc');
       expect(block!).toContain('body content');
       expect(block!).toContain('</relevant_skills>');
+      expect(block!).not.toContain('OmittedSkillsNotice');
     });
   });
 });

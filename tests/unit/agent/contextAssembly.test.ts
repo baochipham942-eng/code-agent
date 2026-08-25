@@ -115,7 +115,11 @@ vi.mock('../../../src/host/lightMemory/failureJournal', () => ({
 }));
 
 vi.mock('../../../src/host/lightMemory/skillLoader', () => ({
-  loadRelevantSkills: vi.fn().mockResolvedValue([]),
+  loadRelevantSkills: vi.fn().mockResolvedValue({
+    fullSkills: [],
+    omittedSkillSummaries: [],
+    unlistedSkillCount: 0,
+  }),
   buildSkillInjectionBlock: vi.fn().mockReturnValue(null),
 }));
 
@@ -515,7 +519,11 @@ beforeEach(() => {
   vi.mocked(loadMemoryIndex).mockReset();
   vi.mocked(loadMemoryIndex).mockResolvedValue(null);
   vi.mocked(loadRelevantSkills).mockReset();
-  vi.mocked(loadRelevantSkills).mockResolvedValue([]);
+  vi.mocked(loadRelevantSkills).mockResolvedValue({
+    fullSkills: [],
+    omittedSkillSummaries: [],
+    unlistedSkillCount: 0,
+  });
   vi.mocked(buildSkillInjectionBlock).mockReset();
   vi.mocked(buildSkillInjectionBlock).mockReturnValue(null);
   vi.mocked(getRepoMap).mockReset();
@@ -1037,15 +1045,17 @@ describe('ContextAssembly.buildModelMessages()', () => {
     vi.mocked(needsGenerativeUI).mockReturnValueOnce(true);
     vi.mocked(buildSessionMetadataBlock).mockResolvedValueOnce(`<session_metadata>${'session '.repeat(300)}</session_metadata>`);
     vi.mocked(loadMemoryIndex).mockResolvedValueOnce(`<memory_index>${'memory '.repeat(300)}</memory_index>`);
-    vi.mocked(loadRelevantSkills).mockResolvedValueOnce([
-      {
+    vi.mocked(loadRelevantSkills).mockResolvedValueOnce({
+      fullSkills: [{
         filename: 'skill_big.md',
         name: 'big-skill',
         description: 'large irrelevant skill',
         body: 'skill body',
         matchScore: 1,
-      },
-    ]);
+      }],
+      omittedSkillSummaries: [],
+      unlistedSkillCount: 0,
+    });
     vi.mocked(buildSkillInjectionBlock).mockReturnValueOnce(`<relevant_skills>${'skill '.repeat(900)}</relevant_skills>`);
     vi.mocked(buildRecentConversationsBlock).mockResolvedValueOnce(`<recent_conversations>${'recent '.repeat(300)}</recent_conversations>`);
     vi.mocked(getDeferredToolsSummary).mockReturnValueOnce('deferred '.repeat(300));
@@ -1137,15 +1147,17 @@ describe('ContextAssembly.buildModelMessages()', () => {
     vi.mocked(needsArtifactTaskBrief).mockReturnValue(false);
     vi.mocked(buildSessionMetadataBlock).mockResolvedValueOnce(`<session_metadata>${'session '.repeat(220)}</session_metadata>`);
     vi.mocked(loadMemoryIndex).mockResolvedValueOnce(`<memory_index>${'memory '.repeat(220)}</memory_index>`);
-    vi.mocked(loadRelevantSkills).mockResolvedValueOnce([
-      {
+    vi.mocked(loadRelevantSkills).mockResolvedValueOnce({
+      fullSkills: [{
         filename: 'game_skill.md',
         name: 'game artifact skill',
         description: 'large artifact skill',
         body: 'skill body',
         matchScore: 1,
-      },
-    ]);
+      }],
+      omittedSkillSummaries: [],
+      unlistedSkillCount: 0,
+    });
     vi.mocked(buildSkillInjectionBlock).mockReturnValueOnce(`<relevant_skills>${'skill '.repeat(220)}</relevant_skills>`);
     vi.mocked(getRepoMap).mockResolvedValueOnce({
       text: 'repo '.repeat(220),
@@ -1639,15 +1651,17 @@ describe('ContextAssembly.buildModelMessages()', () => {
     vi.mocked(needsArtifactTaskBrief).mockReturnValue(false);
     vi.mocked(buildSessionMetadataBlock).mockResolvedValueOnce('<session_metadata>normal</session_metadata>');
     vi.mocked(loadMemoryIndex).mockResolvedValueOnce('<memory_index>normal memory</memory_index>');
-    vi.mocked(loadRelevantSkills).mockResolvedValueOnce([
-      {
+    vi.mocked(loadRelevantSkills).mockResolvedValueOnce({
+      fullSkills: [{
         filename: 'perf.md',
         name: 'perf',
         description: 'performance skill',
         body: 'measure performance',
         matchScore: 1,
-      },
-    ]);
+      }],
+      omittedSkillSummaries: [],
+      unlistedSkillCount: 0,
+    });
     vi.mocked(buildSkillInjectionBlock).mockReturnValueOnce('<relevant_skills>perf</relevant_skills>');
     vi.mocked(getRepoMap).mockResolvedValueOnce({
       text: 'repo map normal',
@@ -1712,15 +1726,17 @@ describe('ContextAssembly.buildModelMessages()', () => {
     vi.mocked(getRepoMap).mockClear();
     vi.mocked(buildRecentConversationsBlock).mockClear();
     vi.mocked(loadMemoryIndex).mockResolvedValue('memory index');
-    vi.mocked(loadRelevantSkills).mockResolvedValue([
-      {
+    vi.mocked(loadRelevantSkills).mockResolvedValue({
+      fullSkills: [{
         filename: 'skill_perf.md',
         name: 'perf',
         description: 'performance work',
         body: 'measure then cache',
         matchScore: 1,
-      },
-    ]);
+      }],
+      omittedSkillSummaries: [],
+      unlistedSkillCount: 0,
+    });
     vi.mocked(buildSkillInjectionBlock).mockReturnValue('<relevant_skills>perf</relevant_skills>');
     vi.mocked(getRepoMap).mockResolvedValue({
       text: 'repo map',

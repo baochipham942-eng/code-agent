@@ -14,6 +14,7 @@ import {
   PlugZap,
   Cloud,
   Plus,
+  Unplug,
 } from 'lucide-react';
 import { useMcpStatus } from '../../../../hooks/useMcpStatus';
 import { useStaleGuardedLoadingSet } from '../../../../hooks/useStaleGuardedLoadingSet';
@@ -60,6 +61,8 @@ import {
   isMcpAuthenticationFailure,
 } from '../../../../utils/mcpRecovery';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useConnectorInChat } from '../../../../hooks/useConnectorInChat';
+import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 
 const logger = createLogger('MCPSettings');
 
@@ -70,6 +73,7 @@ export { getMcpTrustSummary };
 export const MCPSettings: React.FC = () => {
   const { t, language } = useI18n();
   const mcpText = t.settings.mcp;
+  const useInChat = useConnectorInChat();
   const isAdmin = useAuthStore((s) => s.user?.isAdmin === true);
   const setShowComputerUsePanel = useAppStore((s) => s.setShowComputerUsePanel);
   const settingsCapabilityFocus = useAppStore((s) => s.settingsCapabilityFocus);
@@ -100,6 +104,7 @@ export const MCPSettings: React.FC = () => {
     end: endDiscoverAction,
   } = useStaleGuardedLoadingSet();
   const [activeSheetTarget, setActiveSheetTarget] = useState<WorkbenchCapabilityTarget | null>(null);
+  const [pendingDisconnectServerId, setPendingDisconnectServerId] = useState<string | null>(null);
   // 推荐目录：内置数据为初始值，云端下发到达后覆盖
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogPayload>(getBuiltinMcpCatalogPayload);
 
@@ -479,7 +484,18 @@ export const MCPSettings: React.FC = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-2" data-card-actions>
-                    {canManageMcp && !serverInstallStates[server.id] && (
+                    {connectionState === 'connected' ? (
+                      <button /* ds-allow:button: 卡片右上角紧凑断开动作位 */
+                        type="button"
+                        aria-label={`${mcpText.management.disconnect} ${server.label}`}
+                        title={`${mcpText.management.disconnect} ${server.label}`}
+                        data-testid={`mcp-card-action-${server.id}`}
+                        onClick={() => setPendingDisconnectServerId(server.id)}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-zinc-600 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800"
+                      >
+                        <Unplug className="h-3.5 w-3.5" />
+                      </button>
+                    ) : canManageMcp && !serverInstallStates[server.id] && (
                       <Toggle
                         checked={server.enabled}
                         onChange={(enabled) => handleToggleServer(server.id, enabled)}
@@ -496,6 +512,17 @@ export const MCPSettings: React.FC = () => {
                 <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-zinc-400">
                   {getWorkbenchCapabilityTitle(server, { locale: language })}
                 </p>
+                {connectionState === 'connected' && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={() => void useInChat({ kind: 'mcp', id: server.id })}
+                    data-testid={`mcp-use-in-chat-${server.id}`}
+                    className="mt-3"
+                  >
+                    {mcpText.management.useInChat}
+                  </Button>
+                )}
                 <div className="mt-3 text-[11px] text-zinc-500">
                   {connectionState === 'connecting' ? mcpText.management.installing : serverStatus.label}
                 </div>
@@ -809,6 +836,22 @@ export const MCPSettings: React.FC = () => {
         onSave={handleAddServer}
         onCancelInstall={handleCancelServerInstall}
         initialConfig={editorInitialConfig}
+      />
+
+      <ConfirmDialog
+        isOpen={Boolean(pendingDisconnectServerId)}
+        title={mcpText.management.disconnectConfirmTitle}
+        message={mcpText.management.disconnectConfirmMessage}
+        variant="danger"
+        confirmText={mcpText.management.disconnect}
+        cancelText={t.common.cancel}
+        onConfirm={() => {
+          if (!pendingDisconnectServerId) return;
+          const serverId = pendingDisconnectServerId;
+          setPendingDisconnectServerId(null);
+          void handleToggleServer(serverId, false);
+        }}
+        onCancel={() => setPendingDisconnectServerId(null)}
       />
 
       <WorkbenchCapabilitySheetLite

@@ -7,8 +7,9 @@ import { getWorkbenchCapabilityQuickActions } from '../../../src/renderer/utils/
 import { zh } from '../../../src/renderer/i18n/zh';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
-const { mockRunQuickAction } = vi.hoisted(() => ({
+const { mockRunQuickAction, mockUseInChat } = vi.hoisted(() => ({
   mockRunQuickAction: vi.fn(),
+  mockUseInChat: vi.fn(),
 }));
 
 const invalidTokenError = [
@@ -205,6 +206,10 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityQuickActionRunner', (
   }),
 }));
 
+vi.mock('../../../src/renderer/hooks/useConnectorInChat', () => ({
+  useConnectorInChat: () => mockUseInChat,
+}));
+
 vi.mock('../../../src/renderer/stores/authStore', () => ({
   useAuthStore: (selector: (state: { user: { isAdmin: boolean } }) => unknown) => selector({
     user: { isAdmin: authIsAdmin },
@@ -300,6 +305,7 @@ describe('MCPSettings status', () => {
     authIsAdmin = true;
     mockDomainInvoke.mockResolvedValue({ success: true, data: { success: true } });
     mockRunQuickAction.mockReset();
+    mockUseInChat.mockReset();
     (window as unknown as { domainAPI?: { invoke: typeof mockDomainInvoke } }).domainAPI = {
       invoke: mockDomainInvoke,
     };
@@ -435,6 +441,42 @@ describe('MCPSettings status', () => {
     expect(screen.queryByText((content) => content.startsWith(mcpText.tabs.connectedPrefix))).toBeNull();
   });
 
+  it('connected: renders use-in-chat and routes the exact MCP server id', () => {
+    mcpServers = [connectedGithubServer];
+    render(React.createElement(MCPSettings));
+
+    const useButton = screen.getByTestId('mcp-use-in-chat-github');
+    expect(useButton.textContent).toBe(mcpText.management.useInChat);
+    fireEvent.click(useButton);
+
+    expect(mockUseInChat).toHaveBeenCalledOnce();
+    expect(mockUseInChat).toHaveBeenCalledWith({ kind: 'mcp', id: 'github' });
+  });
+
+  it('not connected: does not render use-in-chat', () => {
+    mcpServers = [disconnectedSlackServer];
+    render(React.createElement(MCPSettings));
+
+    expect(screen.queryByTestId('mcp-use-in-chat-slack')).toBeNull();
+  });
+
+  it('connected: confirms the top-right disconnect icon before disabling the MCP server', async () => {
+    mcpServers = [connectedGithubServer];
+    render(React.createElement(MCPSettings));
+
+    fireEvent.click(screen.getByTestId('mcp-card-action-github'));
+    expect(screen.getByText(mcpText.management.disconnectConfirmTitle)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: mcpText.management.disconnect }));
+
+    await waitFor(() => {
+      expect(mockDomainInvoke).toHaveBeenCalledWith(
+        IPC_DOMAINS.MCP,
+        'setServerEnabled',
+        { serverName: 'github', enabled: false },
+      );
+    });
+  });
+
   it('shows OAuth authorization status only for OAuth servers; sign-out lives in the detail sheet', () => {
     mcpServers = [oauthNotionServer, connectedGithubServer];
 
@@ -528,7 +570,7 @@ describe('MCPSettings status', () => {
 
     expect(html).toContain(mcpText.management.refreshFromCloud);
     expect(html).toContain(mcpText.management.addServer);
-    expect(html).toContain(mcpText.management.disable);
+    expect(html).toContain(mcpText.management.disconnect);
     expect(html).not.toContain('LocalBridge');
     expect(screen.queryByTestId('mcp-trust-summary-note')).toBeNull();
   });

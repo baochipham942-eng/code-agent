@@ -44,6 +44,7 @@ export const ApprovalSyncCard: React.FC = () => {
     pendingPermissionSessionId,
     queuedPermissionRequests,
     setPendingPermissionRequest,
+    recordPermissionDecision,
   } = useAppStore();
   const queueCount = getVisibleQueueCount(queuedPermissionRequests, currentSessionId);
   const isVisiblePending = Boolean(
@@ -64,13 +65,21 @@ export const ApprovalSyncCard: React.FC = () => {
         response,
         request.sessionId,
       );
-      setPendingPermissionRequest(null);
+      if (recordPermissionDecision) {
+        recordPermissionDecision(
+          request,
+          response === 'allow_session' ? 'session' : response === 'deny' ? 'deny' : 'once',
+          requestSessionId,
+        );
+      } else {
+        setPendingPermissionRequest(null);
+      }
     } catch {
       releaseApprovalResponse(request.id);
       setPendingPermissionRequest(request, requestSessionId);
       toast.error(a.responseSendFailed);
     }
-  }, [pendingPermissionRequest, pendingPermissionSessionId, setPendingPermissionRequest, a]);
+  }, [pendingPermissionRequest, pendingPermissionSessionId, recordPermissionDecision, setPendingPermissionRequest, a]);
 
   if (!pendingPermissionRequest || !isVisiblePending) {
     return (

@@ -328,6 +328,12 @@ export class OrchestratorPermissionIsland {
       const timeoutId = setTimeout(() => {
         this.pendingPermissions.delete(fullRequest.id);
         logger.warn(`Timeout for ${request.type} on ${request.tool}, denying`);
+        // 同一稳定 permission_request 事件做加法回传终态；renderer 以 host 结果为准，
+        // 不复制 60s 计时器，也就不会把后台节流/切会话误判为已过期。
+        this.onEvent({
+          type: 'permission_request',
+          data: { ...fullRequest, resolved: true, decision: 'timeout' },
+        });
         // N-PERMTRACE：超时无人应答 ≠ 用户拒绝。
         resolve({ approved: false, denialSource: 'timeout' });
       }, PERMISSION_TIMEOUT);

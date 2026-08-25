@@ -4,6 +4,7 @@
 // ============================================================================
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { ToolCall } from '@shared/contract';
 import type { SessionMediaContext } from '@shared/utils/sessionMediaAssets';
 import { useAppStore } from '../../../../../stores/appStore';
@@ -447,26 +448,47 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
   );
 };
 
-// G2：AskUserQuestion 问答记录块——问题 + 所选答案常驻在工具步骤下方，
-// 是打断式选项卡回答后落在消息流里的可回看记录；跳过时明示一次，不装死。
+// G2：AskUserQuestion 问答记录块默认收成一行，展开后复用原有逐题 Q&A 结构。
 const AskUserQuestionRecordBlock: React.FC<{ record: AskUserQuestionRecord }> = ({ record }) => {
   const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
   const declinedLine = `${t.userQuestion.declinedRecord}${record.declineReason ? `：${record.declineReason}` : ''}`;
+  const summary = record.kind === 'answered'
+    ? t.userQuestion.answeredSummary(record.items.length)
+    : declinedLine;
   return (
-    <div className="ml-6 mt-1 mb-0.5 space-y-1 text-xs" data-testid="ask-user-question-record">
-      {record.items.map((item, index) => (
-        <div key={item.header} className="space-y-0.5">
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <span className="shrink-0 rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-zinc-500">
-              {item.header}
-            </span>
-            <span className="min-w-0 break-words text-zinc-400">{item.question}</span>
-          </div>
-          <div className="ml-2 break-words whitespace-pre-wrap text-zinc-300">
-            {record.kind === 'declined' ? (index === 0 ? declinedLine : null) : item.answer}
-          </div>
+    <div className="ml-6 mt-1 mb-0.5 text-xs" data-testid="ask-user-question-record">
+      <button /* ds-allow:button: 整行摘要是展开/收起开关（图标+动态摘要复合内容） */
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+        className="flex max-w-full items-center gap-1.5 rounded border border-zinc-800 bg-white/[0.03] px-2 py-1 text-left text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"
+      >
+        {expanded
+          ? <ChevronDown className="h-3 w-3 shrink-0 text-zinc-500" />
+          : <ChevronRight className="h-3 w-3 shrink-0 text-zinc-500" />}
+        <span className="truncate">
+          <span className={record.kind === 'answered' ? 'text-badge-info' : ''}>{summary}</span>
+          {' · '}{expanded ? t.userQuestion.collapseRecord : t.userQuestion.expandRecord}
+        </span>
+      </button>
+      {expanded && (
+        <div className="mt-1 space-y-1" data-testid="ask-user-question-record-details">
+          {record.items.map((item, index) => (
+            <div key={item.header} className="space-y-0.5">
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span className="shrink-0 rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-zinc-500">
+                  {item.header}
+                </span>
+                <span className="min-w-0 break-words text-zinc-400">{item.question}</span>
+              </div>
+              <div className="ml-2 break-words whitespace-pre-wrap text-zinc-300">
+                {record.kind === 'declined' ? (index === 0 ? declinedLine : null) : item.answer}
+              </div>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 };

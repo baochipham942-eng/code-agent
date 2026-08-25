@@ -396,7 +396,7 @@ export const zhSettingsSystem = {
       },
       actions: {
         none: '无',
-        startUsing: '开始用',
+        startUsing: '去使用',
         saveAndConnect: '保存并连接',
         saving: '保存中…',
         connect: '连接',

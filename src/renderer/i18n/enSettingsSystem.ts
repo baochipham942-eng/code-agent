@@ -396,7 +396,7 @@ export const enSettingsSystem = {
       },
       actions: {
         none: 'None',
-        startUsing: 'Start using',
+        startUsing: 'Use in chat',
         saveAndConnect: 'Save & Connect',
         saving: 'Saving…',
         connect: 'Connect',

@@ -17,6 +17,7 @@ import {
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useConnectorInChat } from '../../../../hooks/useConnectorInChat';
 import { Z_LAYERS } from '../../../../styles/zLayers';
 import { Button, Input, Modal } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
@@ -256,6 +257,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
   onConfigureReadonlyMcp,
 }) => {
   const { t } = useI18n();
+  const useInChat = useConnectorInChat();
   const text = t.settings.saasConnectors;
   const [statuses, setStatuses] = useState<ConnectorOAuthProviderStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -555,7 +557,24 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                   </div>
                 </div>
               </div>
-              {!isCli && !isUnavailable && (
+              {state === 'connected' ? (
+                <button /* ds-allow:button: 卡片右上角紧凑断开动作位 */
+                  type="button"
+                  aria-label={`${text.actions.disconnect} ${providerName}`}
+                  title={`${text.actions.disconnect} ${providerName}`}
+                  data-testid={`saas-card-action-${status.id}`}
+                  disabled={rowBusy}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setPendingDisconnectId(status.id);
+                  }}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-zinc-600 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800 disabled:cursor-wait"
+                >
+                  {rowBusy
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin text-badge-warning" />
+                    : <Unplug className="h-3.5 w-3.5" />}
+                </button>
+              ) : !isCli && !isUnavailable && (
                 <button /* ds-allow:button: 卡片右上角紧凑状态动作位 */
                   type="button"
                   aria-label={`${rowBusy ? text.actions.connecting : presentation.actionLabel} ${providerName}`}
@@ -569,8 +588,6 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                 >
                   {rowBusy ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-badge-warning" />
-                  ) : state === 'connected' ? (
-                    <MessageCircle className="h-3.5 w-3.5 text-badge-info" />
                   ) : (
                     <Link2 className="h-3.5 w-3.5" />
                   )}
@@ -585,6 +602,18 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
               {showConnecting && <Loader2 className="mr-1.5 inline h-3 w-3 animate-spin" />}
               {presentation.detail || getProviderCapability(status, text)}
             </p>
+
+            {state === 'connected' && (
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => void useInChat({ kind: 'connector', id: status.id })}
+                data-testid={`saas-use-in-chat-${status.id}`}
+                className="mt-3"
+              >
+                {text.actions.startUsing}
+              </Button>
+            )}
 
             {isCli && (
               <div className="mt-3 space-y-2">
@@ -620,19 +649,6 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                       data-testid={`saas-retry-${status.id}`}
                     >
                       {text.actions.retry}
-                    </Button>
-                  )}
-                  {state === 'connected' && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={rowBusy}
-                      onClick={() => setPendingDisconnectId(status.id)}
-                      leftIcon={<Unplug className="h-3 w-3" />}
-                      data-testid={`saas-disconnect-${status.id}`}
-                      className="border border-red-500/25 bg-transparent text-badge-danger hover:bg-red-500/10"
-                    >
-                      {text.actions.disconnect}
                     </Button>
                   )}
                 </div>
@@ -714,7 +730,6 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
           const rowBusy = Boolean(busyKey?.startsWith(`${activeStatus.id}:`));
           const isSaving = busyKey === `${activeStatus.id}:save`;
           const isConnecting = busyKey === `${activeStatus.id}:connect`;
-          const isDisconnecting = busyKey === `${activeStatus.id}:disconnect`;
           const isCli = isCliAuthMode(activeStatus.authMode);
           const canConnect = Boolean(CONNECT_ACTION_BY_PROVIDER[activeStatus.id]);
           const secretDraft = secretDrafts[activeStatus.id] ?? '';
@@ -849,18 +864,6 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                           : text.disconnect.noticeWithoutSecret}
                     </span>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    loading={isDisconnecting}
-                    disabled={rowBusy}
-                    onClick={() => setPendingDisconnectId(activeStatus.id)}
-                    leftIcon={<Unplug className="h-3 w-3" />}
-                    data-testid={`saas-disconnect-${activeStatus.id}`}
-                    className="border border-red-500/25 bg-transparent text-badge-danger hover:bg-red-500/10"
-                  >
-                    {isDisconnecting ? text.actions.disconnecting : text.actions.disconnect}
-                  </Button>
                 </div>
               )}
 

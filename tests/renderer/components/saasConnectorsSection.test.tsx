@@ -7,6 +7,7 @@ import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { zh } from '../../../src/renderer/i18n/zh';
 
 const invokeDomain = vi.hoisted(() => vi.fn());
+const useInChat = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invokeDomain },
@@ -14,6 +15,10 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({ t: zh, language: 'zh' }),
+}));
+
+vi.mock('../../../src/renderer/hooks/useConnectorInChat', () => ({
+  useConnectorInChat: () => useInChat,
 }));
 
 import { SaaSConnectorsSection } from '../../../src/renderer/components/features/settings/sections/SaaSConnectorsSection';
@@ -89,6 +94,7 @@ function openFeishuDetail() {
 
 beforeEach(() => {
   invokeDomain.mockReset();
+  useInChat.mockReset();
 });
 
 afterEach(cleanup);
@@ -140,7 +146,7 @@ describe('SaaSConnectorsSection Feishu lark-cli six states', () => {
 
     const card = await screen.findByTestId('saas-connector-feishu');
     expect(card.textContent).toContain('已连接 · Neo User@Neo Corp');
-    fireEvent.click(within(card).getByTestId('saas-disconnect-feishu'));
+    fireEvent.click(within(card).getByTestId('saas-card-action-feishu'));
     expect(screen.getByText(zh.settings.saasConnectors.disconnect.larkCliConfirmMessage)).toBeTruthy();
   });
 
@@ -207,9 +213,12 @@ describe('SaaSConnectorsSection Tencent Meeting CLI card', () => {
     renderTmeetCliStatus({ connected: true });
 
     const card = await screen.findByTestId('saas-connector-tmeet');
+    expect(within(card).getByTestId('saas-use-in-chat-tmeet').textContent)
+      .toBe(zh.settings.saasConnectors.actions.startUsing);
+    expect(within(card).queryByTestId('saas-disconnect-tmeet')).toBeNull();
     fireEvent.click(card);
     expect(screen.getByText(zh.settings.saasConnectors.disconnect.tmeetCliNotice)).toBeTruthy();
-    fireEvent.click(within(screen.getByTestId('saas-detail-tmeet')).getByTestId('saas-disconnect-tmeet'));
+    fireEvent.click(within(card).getByTestId('saas-card-action-tmeet'));
     expect(screen.getByText(zh.settings.saasConnectors.disconnect.tmeetCliConfirmMessage)).toBeTruthy();
   });
 });
@@ -264,15 +273,34 @@ describe('SaaSConnectorsSection five card states', () => {
     });
   });
 
-  it('connected: green card opens permanent secret-removal notice and disconnect action', async () => {
+  it('connected: renders the primary use-in-chat action and keeps disconnect in the top-right icon', async () => {
     renderStatus({ clientSecretConfigured: true, connected: true });
 
-    expect((await screen.findByTestId('saas-status-dot-feishu')).className).toContain('bg-mark-success');
+    const card = await screen.findByTestId('saas-connector-feishu');
+    expect(screen.getByTestId('saas-status-dot-feishu').className).toContain('bg-mark-success');
+    const useButton = within(card).getByTestId('saas-use-in-chat-feishu');
+    expect(useButton.textContent).toBe(zh.settings.saasConnectors.actions.startUsing);
+    fireEvent.click(useButton);
+    expect(useInChat).toHaveBeenCalledOnce();
+    expect(useInChat).toHaveBeenCalledWith({ kind: 'connector', id: 'feishu' });
+
+    fireEvent.click(within(card).getByTestId('saas-card-action-feishu'));
+    expect(screen.getByText(zh.settings.saasConnectors.disconnect.confirmTitle)).toBeTruthy();
+    fireEvent.click(within(screen.getByRole('dialog', {
+      name: zh.settings.saasConnectors.disconnect.confirmTitle,
+    })).getByRole('button', { name: zh.common.cancel }));
     openFeishuDetail();
     expect(screen.getByText(zh.settings.saasConnectors.disconnect.noticeWithSecret)).toBeTruthy();
-    expect(screen.getByTestId('saas-disconnect-feishu')).toBeTruthy();
+    expect(screen.queryByTestId('saas-disconnect-feishu')).toBeNull();
     expect(screen.queryByTestId('saas-connect-feishu')).toBeNull();
     expect(screen.queryByTestId('saas-secret-input-feishu')).toBeNull();
+  });
+
+  it('not connected: does not render use-in-chat', async () => {
+    renderStatus({ clientSecretConfigured: true, connected: false });
+
+    await screen.findByTestId('saas-connector-feishu');
+    expect(screen.queryByTestId('saas-use-in-chat-feishu')).toBeNull();
   });
 
   it('unavailable: missing client_id remains explainable but has no clickable action control', async () => {
@@ -365,8 +393,7 @@ describe('SaaSConnectorsSection actions and receipts', () => {
     render(<SaaSConnectorsSection />);
 
     await screen.findByTestId('saas-connector-feishu');
-    openFeishuDetail();
-    fireEvent.click(screen.getByTestId('saas-disconnect-feishu'));
+    fireEvent.click(screen.getByTestId('saas-card-action-feishu'));
     expect(invokeDomain.mock.calls.map(([, action]) => action)).not.toContain('oauthDisconnect');
 
     fireEvent.click(within(screen.getByRole('dialog', {

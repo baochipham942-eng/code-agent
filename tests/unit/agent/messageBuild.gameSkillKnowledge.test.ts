@@ -77,7 +77,11 @@ vi.mock('../../../src/host/lightMemory/failureJournal', () => ({
 }));
 
 vi.mock('../../../src/host/lightMemory/skillLoader', () => ({
-  loadRelevantSkills: vi.fn(async () => []),
+  loadRelevantSkills: vi.fn(async () => ({
+    fullSkills: [],
+    omittedSkillSummaries: [],
+    unlistedSkillCount: 0,
+  })),
   buildSkillInjectionBlock: vi.fn(() => null),
 }));
 

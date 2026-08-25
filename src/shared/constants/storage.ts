@@ -50,6 +50,8 @@ export const MEMORY = {
    * Long-prompt-intolerant providers like xiaomi already opt out of skill
    * injection via messageBuild's provider-aware guard. */
   SKILL_MAX_INJECTION_CHARS: 12000,
+  /** Skill injection: 完整正文超预算后，名称 + 简述清单的独立小预算。 */
+  SKILL_MAX_OMITTED_SUMMARY_CHARS: 1200,
   /** Skill injection: 用户查询的最小 token 数（少于此数直接跳过匹配，避免"a" 之类命中所有） */
   SKILL_MIN_QUERY_TOKENS: 1,
 } as const;

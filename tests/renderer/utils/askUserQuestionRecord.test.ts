@@ -3,6 +3,7 @@
 // 多行自由文本答案并入上一题；未知前缀不解析（回退默认渲染）。
 import { describe, expect, it } from 'vitest';
 import type { ToolCall } from '../../../src/shared/contract';
+import { ASK_USER_QUESTION_DECLINED_OUTPUT } from '../../../src/shared/contract/askUserQuestion';
 import { buildAskUserQuestionRecord } from '../../../src/renderer/utils/askUserQuestionRecord';
 
 function toolCall(output: string | undefined, questions?: unknown): ToolCall {
@@ -60,7 +61,7 @@ describe('buildAskUserQuestionRecord', () => {
   });
 
   it('跳过无原因 → declined，无 declineReason', () => {
-    const record = buildAskUserQuestionRecord(toolCall('User declined to answer.'));
+    const record = buildAskUserQuestionRecord(toolCall(ASK_USER_QUESTION_DECLINED_OUTPUT));
     expect(record!.kind).toBe('declined');
     expect(record!.declineReason).toBeUndefined();
     expect(record!.items.every((item) => item.answer === null)).toBe(true);
@@ -68,7 +69,7 @@ describe('buildAskUserQuestionRecord', () => {
 
   it('跳过带原因 → declined + declineReason', () => {
     const record = buildAskUserQuestionRecord(
-      toolCall('User declined to answer. Reason: 先去处理别的事'),
+      toolCall(`${ASK_USER_QUESTION_DECLINED_OUTPUT} Reason: 先去处理别的事`),
     );
     expect(record!.kind).toBe('declined');
     expect(record!.declineReason).toBe('先去处理别的事');

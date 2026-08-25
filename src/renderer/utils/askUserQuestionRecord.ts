@@ -5,7 +5,7 @@
 // AskUserQuestion 工具步骤：args.questions 带全部题目，result.output 是 host
 // 侧固定格式（askUserQuestion.ts）：
 //   回答："User responses:\n[header]: answer\n[header2]: answer2"
-//   跳过："User declined to answer." / "User declined to answer. Reason: xxx"
+//   跳过：共享的行动指令 / "<行动指令> Reason: xxx"
 // 这里把它解析成结构化记录供 ToolCallDisplay 渲染。纯函数，便于单测。
 // 答案允许跨行（"其他"自由文本）：只有以 [已知header]: 开头的行才切开新答案，
 // 其余行并入上一个答案——header 取自 args.questions，不盲信任意方括号行。
@@ -13,6 +13,7 @@
 
 import type { ToolCall } from '@shared/contract';
 import type { UserQuestion } from '@shared/contract';
+import { ASK_USER_QUESTION_DECLINED_OUTPUT } from '@shared/contract/askUserQuestion';
 
 interface AskUserQuestionRecordItem {
   header: string;
@@ -28,7 +29,6 @@ export interface AskUserQuestionRecord {
   items: AskUserQuestionRecordItem[];
 }
 
-const DECLINED_PREFIX = 'User declined to answer.';
 const DECLINED_REASON_MARKER = 'Reason: ';
 const RESPONSES_PREFIX = 'User responses:';
 
@@ -69,8 +69,8 @@ export function buildAskUserQuestionRecord(toolCall: ToolCall): AskUserQuestionR
   const output = toolCall.result?.output;
   if (typeof output !== 'string' || output.length === 0) return null;
 
-  if (output.startsWith(DECLINED_PREFIX)) {
-    const rest = output.slice(DECLINED_PREFIX.length).trim();
+  if (output.startsWith(ASK_USER_QUESTION_DECLINED_OUTPUT)) {
+    const rest = output.slice(ASK_USER_QUESTION_DECLINED_OUTPUT.length).trim();
     const reason = rest.startsWith(DECLINED_REASON_MARKER)
       ? rest.slice(DECLINED_REASON_MARKER.length).trim()
       : undefined;

@@ -4,6 +4,10 @@ import { ASK_USER_QUESTION_TOOL_NAMES } from '../../../shared/constants/tools';
 import { createLogger } from '../../services/infra/logger';
 import { trackNode } from '../../observability/posthogNode';
 import { POSTHOG_EVENTS } from '../../../shared/observability/posthog-events';
+import {
+  CONNECTOR_TOOL_NAMES,
+  extractMcpServerIdFromToolName,
+} from '../../../shared/contract/workbenchTools';
 
 const logger = createLogger('AgentLoop');
 
@@ -25,10 +29,31 @@ function allowedToolSet(ctx: RuntimeContext): Set<string> | null {
   return allowed.length > 0 ? new Set(allowed) : null;
 }
 
+function isAllowedByWorkbenchScope(ctx: RuntimeContext, toolName: string): boolean {
+  const normalized = normalizeToolName(toolName);
+  const connectorAllowed = (ctx.toolScope?.allowedConnectorIds ?? []).some((connectorId) => (
+    (CONNECTOR_TOOL_NAMES[connectorId] ?? []).some((name) => normalizeToolName(name) === normalized)
+  ));
+  if (connectorAllowed) return true;
+
+  const mcpServerId = extractMcpServerIdFromToolName(toolName);
+  return Boolean(mcpServerId && ctx.toolScope?.allowedMcpServerIds?.includes(mcpServerId));
+}
+
+function isAllowedForRun(
+  ctx: RuntimeContext,
+  toolName: string,
+  allowed: Set<string> | null,
+): boolean {
+  return !allowed
+    || allowed.has(normalizeToolName(toolName))
+    || isAllowedByWorkbenchScope(ctx, toolName);
+}
+
 export function isToolDeniedForRun(ctx: RuntimeContext, toolName: string): boolean {
   const normalized = normalizeToolName(toolName);
   const allowed = allowedToolSet(ctx);
-  return (allowed ? !allowed.has(normalized) : false)
+  return !isAllowedForRun(ctx, toolName, allowed)
     || (deniedToolSet(ctx)?.has(normalized) ?? false);
 }
 
@@ -48,7 +73,7 @@ export function filterToolsByRunPolicy(
   if (!denied && !allowed) return tools;
   return tools.filter((tool) => {
     const normalized = normalizeToolName(tool.name);
-    return allowed?.has(normalized) !== false && denied?.has(normalized) !== true;
+    return isAllowedForRun(ctx, tool.name, allowed) && denied?.has(normalized) !== true;
   });
 }
 

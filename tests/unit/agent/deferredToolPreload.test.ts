@@ -43,8 +43,8 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 function runtime(
-  overrides: Partial<Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn' | 'deniedToolNames' | 'allowedToolNames'>>,
-): Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn' | 'deniedToolNames' | 'allowedToolNames'> {
+  overrides: Partial<Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn' | 'deniedToolNames' | 'allowedToolNames' | 'toolScope'>>,
+): Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn' | 'deniedToolNames' | 'allowedToolNames' | 'toolScope'> {
   return {
     enableToolDeferredLoading: true,
     executionIntent: undefined,
@@ -265,6 +265,37 @@ describe('deferred tool preload', () => {
     expect(getDeferredToolsToPreloadForTurn(runtime({
       messages: [{ id: 'm1', role: 'user', content: '帮我改下这个函数', timestamp: 1 }],
     }))).not.toContain('spawn_agent');
+  });
+
+  it('preloads every deferred tool declared by a selected CLI connector', () => {
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      toolScope: { allowedConnectorIds: ['tmeet'] },
+    }))).toEqual(['tmeetMeetingList', 'tmeetMeetingCreate']);
+  });
+
+  it('preloads deferred MCP tools from selected servers only', () => {
+    getToolSearchService().registerMCPTools([
+      {
+        name: 'mcp__github__search_code',
+        shortDescription: 'Search code',
+        tags: ['mcp'],
+        aliases: [],
+        source: 'mcp',
+        mcpServer: 'github',
+      },
+      {
+        name: 'mcp__slack__search',
+        shortDescription: 'Search Slack',
+        tags: ['mcp'],
+        aliases: [],
+        source: 'mcp',
+        mcpServer: 'slack',
+      },
+    ]);
+
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      toolScope: { allowedMcpServerIds: ['github'] },
+    }))).toEqual(['mcp__github__search_code']);
   });
 
   // role-edit-flow 根因 #2 回归护栏：active skill 的 allowedTools 里的非 core 工具

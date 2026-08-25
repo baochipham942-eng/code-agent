@@ -168,6 +168,14 @@ describe('ToolSearchService loadable results', () => {
     expect(result.tools.map((tool) => tool.name)).toContain('History');
   });
 
+  it.each(['会议', '腾讯会议'])('finds Tencent Meeting tools from the unselected connector alias: %s', async (query) => {
+    const service = new ToolSearchService();
+
+    const result = await service.searchTools(query, { maxResults: 5, includeMCP: false });
+
+    expect(result.tools.map((tool) => tool.name)).toContain('tmeetMeetingList');
+  });
+
   it('does not load a selected builtin search result without protocol schema', () => {
     const service = new ToolSearchService();
 

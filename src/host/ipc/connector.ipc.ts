@@ -25,6 +25,7 @@ import { getCachedStatus } from '../connectors/cli/cliConnector';
 import type { ProviderDescriptor } from '../connectors/oauth/providerDescriptor';
 import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../shared/constants';
 import type { ConfigService } from '../services';
+import { replaceCliConnectorConnectionStatusCache } from '../connectors/cli/cliConnectorStatusCache';
 
 // macOS native connector → host app 映射。Mail/Calendar/Reminders 走 open -a，
 // 其他未来可接入 AppleScript 连接器可在这里扩展。
@@ -396,7 +397,7 @@ interface ConnectorOAuthProviderStatus {
 }
 
 async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatus[]> {
-  return Promise.all(Object.values(OAUTH_PROVIDERS).map(async (descriptor) => {
+  const statuses = await Promise.all(Object.values(OAUTH_PROVIDERS).map(async (descriptor) => {
     const authMode = descriptor.authMode ?? 'oauth';
     if (isCliAuthMode(authMode)) {
       const oauthStore = new ConnectorOAuthStore(descriptor.id);
@@ -458,6 +459,8 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
       authMode,
     };
   }));
+  replaceCliConnectorConnectionStatusCache(statuses);
+  return statuses;
 }
 
 async function handleConnectorOAuthConnect(

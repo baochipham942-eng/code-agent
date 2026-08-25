@@ -24,7 +24,10 @@ import {
 import { createWebSessionStore } from '../helpers/webSessionStore';
 import { syncSupabaseSessionRow } from '../helpers/supabaseSessionSync';
 import { buildGoalContract } from '../../host/agent/goalModeController';
-import { buildWorkbenchCapabilityContextLines } from '../../host/app/workbenchTurnContext';
+import {
+  buildWorkbenchCapabilityContextLines,
+  buildWorkbenchToolScope,
+} from '../../host/app/workbenchTurnContext';
 import { SESSION_COMMAND_CENTER_BRAIN_CONTEXT } from '../../host/app/sessionCommandCenterBrain';
 import {
   isSessionCommandCenterTurn,
@@ -775,6 +778,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (body.context?.executionIntent) {
         config.executionIntent = { ...body.context.executionIntent };
       }
+      config.toolScope = buildWorkbenchToolScope(body.context);
 
       // 自动模式标志透传：adaptiveRouter 简单任务路由 + vision capability fallback 的总闸门
       if (sessionAdaptive) {

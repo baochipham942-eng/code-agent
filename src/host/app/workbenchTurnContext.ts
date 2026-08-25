@@ -27,6 +27,13 @@ import { buildSelfCritiquePromptSection } from '../prompts/selfCritique';
 import { formatCanvasSnapshotForPrompt } from '../../shared/contract/canvasProposal';
 import { formatDesignCanvasSessionReminder } from '../../shared/design/canvasSessionReminder';
 import { readPersistedExpertThread } from '../../shared/contract/expertThread';
+import {
+  getCachedCliConnectorConnectionStatus,
+  isCliConnectorId,
+} from '../connectors/cli/cliConnectorStatusCache';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('WorkbenchTurnContext');
 
 function formatBrowserSnapshotTimestamp(timestamp?: number | null): string | null {
   if (!timestamp) {
@@ -412,6 +419,11 @@ function buildDesignAcceptanceBrandRefs(context?: ConversationEnvelopeContext): 
 }
 
 function isConnectorReadyForTurnScope(connectorId: string): boolean {
+  if (isCliConnectorId(connectorId)) {
+    const cachedStatus = getCachedCliConnectorConnectionStatus(connectorId);
+    return cachedStatus?.connected ?? true;
+  }
+
   const connector = getConnectorRegistry().get(connectorId);
   if (!connector) {
     return false;
@@ -433,7 +445,15 @@ function getReadySelectedConnectorIds(selectedConnectorIds?: string[]): string[]
   return (selectedConnectorIds || [])
     .map((connectorId) => connectorId.trim())
     .filter(Boolean)
-    .filter(isConnectorReadyForTurnScope);
+    .filter((connectorId) => {
+      const ready = isConnectorReadyForTurnScope(connectorId);
+      if (!ready) {
+        logger.info('[WorkbenchTurnContext] Selected connector omitted from turn scope', {
+          connectorId,
+        });
+      }
+      return ready;
+    });
 }
 
 export function buildWorkbenchToolScope(

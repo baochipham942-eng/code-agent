@@ -64,6 +64,36 @@ describe('toolRunPolicy', () => {
     expect(isToolDeniedForRun(ctx, 'delegate_task')).toBe(false);
   });
 
+  it('adds selected connector tools to the run allowlist without weakening explicit denies', () => {
+    const ctx = {
+      allowedToolNames: ['Read'],
+      deniedToolNames: ['tmeetMeetingCreate'],
+      toolScope: { allowedConnectorIds: ['tmeet'] },
+    } as any;
+
+    expect(filterToolsByRunPolicy([
+      tool('Read'),
+      tool('Bash'),
+      tool('tmeetMeetingList'),
+      tool('tmeetMeetingCreate'),
+    ], ctx).map((item) => item.name)).toEqual(['Read', 'tmeetMeetingList']);
+    expect(isToolDeniedForRun(ctx, 'tmeetMeetingList')).toBe(false);
+    expect(isToolDeniedForRun(ctx, 'tmeetMeetingCreate')).toBe(true);
+  });
+
+  it('adds tools from selected MCP servers to the run allowlist', () => {
+    const ctx = {
+      allowedToolNames: ['Read'],
+      toolScope: { allowedMcpServerIds: ['github'] },
+    } as any;
+
+    expect(filterToolsByRunPolicy([
+      tool('Read'),
+      tool('mcp__github__search_issues'),
+      tool('mcp__slack__search'),
+    ], ctx).map((item) => item.name)).toEqual(['Read', 'mcp__github__search_issues']);
+  });
+
   // 2026-08-09 委派入口歧义单：收窄日志只打数量时，「24 -> 9 砍掉了谁」在日志里查不到，
   // 只能翻真库反推。这三条钉住「名字必须打出来」，别再退回纯数量。
   describe('收窄可观测性', () => {

@@ -144,6 +144,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'disconnect',
     'listNativeInventory',
     'listStatuses',
+    'oauthCancelConnect',
     'oauthConnect',
     'oauthDisconnect',
     'oauthSetSecret',

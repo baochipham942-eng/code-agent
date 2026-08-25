@@ -259,6 +259,7 @@ export const MCPSettings: React.FC = () => {
     setEditorInitialConfig({
       name: entry.id,
       type: entry.connection.type,
+      auth: entry.connection.auth,
       command: entry.connection.command,
       args: entry.connection.args,
       env: entry.connection.env,

@@ -237,7 +237,7 @@ vi.mock('../../../src/renderer/components/features/settings/sections', () => ({
 vi.mock('../../../src/renderer/components/features/settings/McpServerEditor', () => ({
   McpServerEditor: (props: {
     isOpen: boolean;
-    initialConfig?: { name?: string };
+    initialConfig?: { name?: string; auth?: 'oauth' };
     onSave: (
       config: { name: string; type: 'stdio'; command: string },
       secrets?: { secretEnvKeys: string[]; secretHeaderKeys: string[] },
@@ -247,6 +247,7 @@ vi.mock('../../../src/renderer/components/features/settings/McpServerEditor', ()
       'div',
       null,
       React.createElement('span', null, `mock-editor-initial-${props.initialConfig?.name ?? 'none'}`),
+      React.createElement('span', null, `mock-editor-auth-${props.initialConfig?.auth ?? 'none'}`),
       React.createElement(
         'button',
         {
@@ -270,7 +271,7 @@ vi.mock('../../../src/renderer/components/features/settings/tabs/McpDiscoverTab'
       description: string;
       category: string;
       builtin: boolean;
-      connection: { type: 'stdio'; command: string };
+      connection: { type: 'http'; url: string; auth: 'oauth' };
     }) => void;
   }) => React.createElement(
     'button',
@@ -282,7 +283,7 @@ vi.mock('../../../src/renderer/components/features/settings/tabs/McpDiscoverTab'
         description: 'Quick server fixture',
         category: 'dev-tools',
         builtin: false,
-        connection: { type: 'stdio', command: 'npx' },
+        connection: { type: 'http', url: 'https://mcp.example.test/mcp', auth: 'oauth' },
       }),
     },
     'mock-add-entry',
@@ -497,6 +498,7 @@ describe('MCPSettings status', () => {
 
     // 「添加」不直接写库：先打开预填目录配置的编辑器
     expect(screen.getByText('mock-editor-initial-quick-server')).toBeTruthy();
+    expect(screen.getByText('mock-editor-auth-oauth')).toBeTruthy();
     expect(mockDomainInvoke).not.toHaveBeenCalledWith(IPC_DOMAINS.MCP, 'addServer', expect.anything());
 
     fireEvent.click(screen.getByText('mock-save-secret-server'));

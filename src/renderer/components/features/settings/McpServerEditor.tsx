@@ -16,6 +16,7 @@ import { isSensitiveMcpCredentialKey } from '@shared/security/mcpSecretKeys';
 export interface McpServerConfig {
   name: string;
   type: 'stdio' | 'sse' | 'http';
+  auth?: 'oauth';
   // stdio fields
   command?: string;
   args?: string[];
@@ -26,7 +27,7 @@ export interface McpServerConfig {
 }
 
 /** JSON 视图能读写的字段集合——与 configToJson / handleSave 的取值口径保持一致。 */
-const JSON_EDITABLE_KEYS = ['name', 'type', 'command', 'args', 'env', 'url', 'headers'] as const;
+const JSON_EDITABLE_KEYS = ['name', 'type', 'auth', 'command', 'args', 'env', 'url', 'headers'] as const;
 
 export interface McpServerSaveSecrets {
   secretEnvKeys: string[];
@@ -334,6 +335,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
       if (c.env && Object.keys(c.env).length > 0) obj.env = redactSecretReferences(c.env);
     } else {
       obj.url = c.url || '';
+      if (c.auth) obj.auth = c.auth;
       if (c.headers && Object.keys(c.headers).length > 0) obj.headers = redactSecretReferences(c.headers);
     }
     return JSON.stringify(obj, null, 2);
@@ -351,6 +353,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
         setConfig({
           name: parsed.name || '',
           type: parsed.type || 'stdio',
+          auth: parsed.auth,
           command: parsed.command || '',
           args: parsed.args || [],
           env: retainSavedSecretReferences(parsed.env, config.env) || {},
@@ -401,6 +404,7 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
         const nextConfig: McpServerConfig = {
           name: parsed.name || '',
           type: parsed.type || 'stdio',
+          auth: parsed.auth,
           command: parsed.command,
           args: parsed.args,
           env: retainSavedSecretReferences(parsed.env, config.env),

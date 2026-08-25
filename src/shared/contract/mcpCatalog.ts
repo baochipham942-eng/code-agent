@@ -41,6 +41,8 @@ export interface McpCategoryMeta {
 export interface RecommendedMcpConnectionTemplate {
   /** 传输类型 */
   type: 'stdio' | 'sse' | 'http';
+  /** http: 使用 MCP SDK OAuth provider */
+  auth?: 'oauth';
   /** stdio: 启动命令 */
   command?: string;
   /** stdio: 命令参数 */

@@ -179,12 +179,24 @@ export const usePermissionStore = create<PermissionState>()(
     {
       name: 'permission-memory',
       // 持久化 persistent 部分（权限档真源在 host PermissionModeManager，不在此 store）
+      // 会话记忆不持久化：Map 经 JSON 序列化会变成 `{}`，回灌后 `.has` 不存在，
+      // PermissionCard 一调 checkMemory 就炸（2026-08-25 真机「这个会话的消息暂时显示不出来」）。
+      // 所以 partialize 只写 persistent；merge 时无论存了什么都把 session 重建成 Map。
       partialize: (state) => ({
         memory: {
-          session: new Map(), // 会话记忆不持久化
           persistent: state.memory.persistent,
         },
       }),
+      merge: (persisted, current) => {
+        const stored = (persisted as Partial<PermissionState> | undefined)?.memory;
+        return {
+          ...current,
+          memory: {
+            session: new Map(),
+            persistent: stored?.persistent && typeof stored.persistent === 'object' ? stored.persistent : {},
+          },
+        };
+      },
     }
   )
 );

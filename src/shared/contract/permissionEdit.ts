@@ -9,7 +9,7 @@
 // 表内字段（fail-closed），不可编辑字段（attachments）从原参数原样带回。
 // ============================================================================
 
-export type EditableFieldKind = 'string' | 'string_list';
+type EditableFieldKind = 'string' | 'string_list';
 
 export interface EditableField {
   key: string;

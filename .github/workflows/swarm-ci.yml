@@ -121,12 +121,12 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        # npm bug #4828：lockfile 在 macOS 上生成，只记录了 darwin-arm64 的 rollup
-        # native binary。先 npm ci 用 lockfile 装其他依赖，再单独装缺失的 linux
-        # platform binary。--no-save --no-package-lock 确保 lockfile 不被改。
+        # 🔴 只许 npm ci。此前第二步 `npm install --no-save --no-package-lock @rollup/…` 是
+        # 上古遗留（锁里早已没有 rollup，vite 8 走 rolldown），它唯一的效果是把整棵树在线
+        # 重解析（changed 244 packages），锁形同虚设——2026-08-25 @xyflow/react 一发新版全 PR
+        # 红（N-CI-XYFLOW-DEPOPT）。锁里 rolldown/esbuild/lightningcss/oxide 的 linux 绑定齐全。
         run: |
           npm ci --ignore-scripts
-          npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
 
       - name: Verify better-sqlite3 Node-API binding
         # v13 随包携带 N-API 平台二进制；即使 npm ci --ignore-scripts，也必须真实加载，
@@ -392,10 +392,9 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        # 同 smoke job：lockfile 严格 + 单独 patch 缺失的 linux platform binary
+        # 同 smoke job：只许 npm ci（见上）
         run: |
           npm ci --ignore-scripts
-          npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
 
       - name: Verify better-sqlite3 Node-API binding
         # v13 的 linux-x64 N-API 二进制在 npm 包内；文件缺失或真实加载失败都直接终止。

@@ -9,6 +9,21 @@ const env = vi.hoisted(() => ({
   secret: undefined as string | undefined,
   invalidate: vi.fn(),
   savedSecret: vi.fn(),
+  larkStatus: { connected: false, identity: 'none' },
+  larkConnect: vi.fn(),
+  larkDisconnect: vi.fn(),
+}));
+
+vi.mock('../../../src/host/connectors/feishu/larkCli', () => ({
+  createLarkCliDriver: () => ({
+    status: vi.fn(async () => env.larkStatus),
+    connect: env.larkConnect,
+    disconnect: env.larkDisconnect,
+  }),
+}));
+
+vi.mock('../../../src/host/platform/nativeShell', () => ({
+  openExternal: vi.fn(),
 }));
 
 vi.mock('../../../src/host/connectors/oauth/connectorOAuthStore', () => ({
@@ -55,10 +70,13 @@ beforeEach(() => {
   env.secret = undefined;
   env.invalidate.mockClear();
   env.savedSecret.mockClear();
+  env.larkStatus = { connected: false, identity: 'none' };
+  env.larkConnect.mockReset();
+  env.larkDisconnect.mockReset();
 });
 
 describe('connector.ipc SaaS OAuth actions', () => {
-  it('reports feishu as disconnected until the connector-oauth store holds tokens', async () => {
+  it('reports feishu through the isolated lark-cli profile', async () => {
     const handler = register();
 
     const before = await handler(null, { action: 'oauthStatus' } as IPCRequest);
@@ -70,19 +88,20 @@ describe('connector.ipc SaaS OAuth actions', () => {
         // client_id 内置在包里（桌面应用的 client_id 是公开值），所以恒为 true —— 若这里
         // 又依赖 env，就等于发出去的包永远报「还没配应用」。
         clientIdConfigured: true,
-        requiresClientSecret: true,
+        requiresClientSecret: false,
         clientSecretConfigured: false,
         connected: false,
         loopbackRedirectUriSupport: 'confirmed',
+        authMode: 'lark-cli',
       },
     ]);
 
-    env.tokens = { tokens: { access_token: 'a' }, requestedScope: 'im:message', expiresAt: 0 };
+    env.larkStatus = { connected: true, identity: 'user' };
     const after = await handler(null, { action: 'oauthStatus' } as IPCRequest);
     expect((after.data as Array<{ connected: boolean }>)[0]?.connected).toBe(true);
   });
 
-  it('wipes every stored credential on disconnect', async () => {
+  it('removes only the Neo lark-cli profile on disconnect', async () => {
     const handler = register();
     const response = await handler(null, {
       action: 'oauthDisconnect',
@@ -90,7 +109,19 @@ describe('connector.ipc SaaS OAuth actions', () => {
     } as IPCRequest);
 
     expect(response.success).toBe(true);
-    expect(env.invalidate).toHaveBeenCalledWith('all');
+    expect(env.larkDisconnect).toHaveBeenCalledOnce();
+    expect(env.invalidate).not.toHaveBeenCalled();
+  });
+
+  it('dispatches connect to lark-cli instead of the built-in OAuth coordinator', async () => {
+    const handler = register();
+    const response = await handler(null, {
+      action: 'oauthConnect',
+      payload: { providerId: 'feishu', action: 'message.send-as-user' },
+    } as IPCRequest);
+
+    expect(response.success).toBe(true);
+    expect(env.larkConnect).toHaveBeenCalledOnce();
   });
 
   it('rejects an unknown provider instead of silently doing nothing', async () => {
@@ -107,7 +138,7 @@ describe('connector.ipc SaaS OAuth actions', () => {
 });
 
 describe('connector.ipc SaaS OAuth client secret', () => {
-  it('stores the App Secret and reports it as configured', async () => {
+  it('rejects App Secret writes for the lark-cli provider', async () => {
     const handler = register();
 
     const response = await handler(null, {
@@ -115,11 +146,9 @@ describe('connector.ipc SaaS OAuth client secret', () => {
       payload: { providerId: 'feishu', clientSecret: '  s3cret  ' },
     } as IPCRequest);
 
-    expect(response.success).toBe(true);
-    // 存之前先 trim —— 从界面粘贴过来的密钥常带首尾空白，原样存会换不到 token
-    expect(env.savedSecret).toHaveBeenCalledWith('  s3cret  ');
-    expect((response.data as Array<{ clientSecretConfigured: boolean }>)[0]?.clientSecretConfigured)
-      .toBe(true);
+    expect(response.success).toBe(false);
+    expect(response.error?.message).toContain('不需要 App Secret');
+    expect(env.savedSecret).not.toHaveBeenCalled();
   });
 
   it('refuses an empty secret instead of storing a blank credential', async () => {

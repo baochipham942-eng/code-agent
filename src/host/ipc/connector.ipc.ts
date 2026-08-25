@@ -19,6 +19,7 @@ import { ConnectorAuth } from '../connectors/oauth/connectorAuth';
 import { ConnectorOAuthStore } from '../connectors/oauth/connectorOAuthStore';
 import { OAuthCoordinator } from '../connectors/oauth/oauthCoordinator';
 import { FEISHU_OAUTH_DESCRIPTOR } from '../connectors/oauth/feishuOAuth';
+import { createLarkCliDriver } from '../connectors/feishu/larkCli';
 import type { ProviderDescriptor } from '../connectors/oauth/providerDescriptor';
 import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../shared/constants';
 import type { ConfigService } from '../services';
@@ -339,6 +340,8 @@ const OAUTH_PROVIDERS: Record<string, ProviderDescriptor> = {
   [FEISHU_OAUTH_DESCRIPTOR.id]: FEISHU_OAUTH_DESCRIPTOR,
 };
 
+const larkCli = createLarkCliDriver();
+
 function requireOAuthProvider(providerId: string | undefined): ProviderDescriptor {
   const descriptor = providerId ? OAUTH_PROVIDERS[providerId] : undefined;
   if (!descriptor) {
@@ -357,17 +360,35 @@ interface ConnectorOAuthProviderStatus {
   clientSecretConfigured: boolean;
   connected: boolean;
   loopbackRedirectUriSupport: ProviderDescriptor['loopbackRedirectUriSupport'];
+  authMode: 'oauth' | 'lark-cli';
 }
 
-function listConnectorOAuthStatuses(): ConnectorOAuthProviderStatus[] {
-  return Object.values(OAUTH_PROVIDERS).map((descriptor) => ({
-    id: descriptor.id,
-    displayName: descriptor.displayName,
-    clientIdConfigured: descriptor.clientId.trim().length > 0,
-    requiresClientSecret: descriptor.requiresClientSecret,
-    clientSecretConfigured: Boolean(new ConnectorOAuthStore(descriptor.id).clientSecret()),
-    connected: Boolean(new ConnectorOAuthStore(descriptor.id).tokens()),
-    loopbackRedirectUriSupport: descriptor.loopbackRedirectUriSupport,
+async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatus[]> {
+  return Promise.all(Object.values(OAUTH_PROVIDERS).map(async (descriptor) => {
+    const authMode = descriptor.authMode ?? 'oauth';
+    if (authMode === 'lark-cli') {
+      const cliStatus = await larkCli.status();
+      return {
+        id: descriptor.id,
+        displayName: descriptor.displayName,
+        clientIdConfigured: true,
+        requiresClientSecret: false,
+        clientSecretConfigured: false,
+        connected: cliStatus.connected,
+        loopbackRedirectUriSupport: descriptor.loopbackRedirectUriSupport,
+        authMode,
+      };
+    }
+    return {
+      id: descriptor.id,
+      displayName: descriptor.displayName,
+      clientIdConfigured: descriptor.clientId.trim().length > 0,
+      requiresClientSecret: descriptor.requiresClientSecret,
+      clientSecretConfigured: Boolean(new ConnectorOAuthStore(descriptor.id).clientSecret()),
+      connected: Boolean(new ConnectorOAuthStore(descriptor.id).tokens()),
+      loopbackRedirectUriSupport: descriptor.loopbackRedirectUriSupport,
+      authMode,
+    };
   }));
 }
 
@@ -375,6 +396,11 @@ async function handleConnectorOAuthConnect(
   payload: { providerId?: string; action?: string } | undefined,
 ): Promise<ConnectorOAuthProviderStatus[]> {
   const descriptor = requireOAuthProvider(payload?.providerId);
+  if (descriptor.authMode === 'lark-cli') {
+    const { openExternal } = await import('../platform/nativeShell');
+    await larkCli.connect(openExternal);
+    return listConnectorOAuthStatuses();
+  }
   const action = payload?.action ?? Object.keys(descriptor.scopes)[0];
   if (!action) {
     throw new Error(`OAuth connector provider ${descriptor.id} declares no writeback scope`);
@@ -400,10 +426,13 @@ async function handleConnectorOAuthConnect(
   return listConnectorOAuthStatuses();
 }
 
-function handleConnectorOAuthSetSecret(
+async function handleConnectorOAuthSetSecret(
   payload: { providerId?: string; clientSecret?: string } | undefined,
-): ConnectorOAuthProviderStatus[] {
+): Promise<ConnectorOAuthProviderStatus[]> {
   const descriptor = requireOAuthProvider(payload?.providerId);
+  if (descriptor.authMode === 'lark-cli') {
+    throw new Error('飞书官方 lark-cli 连接不需要 App Secret，不能在此保存');
+  }
   const clientSecret = payload?.clientSecret;
   if (typeof clientSecret !== 'string' || !clientSecret.trim()) {
     throw new Error(`App Secret is required for ${descriptor.id}`);
@@ -412,10 +441,14 @@ function handleConnectorOAuthSetSecret(
   return listConnectorOAuthStatuses();
 }
 
-function handleConnectorOAuthDisconnect(
+async function handleConnectorOAuthDisconnect(
   payload: { providerId?: string } | undefined,
-): ConnectorOAuthProviderStatus[] {
+): Promise<ConnectorOAuthProviderStatus[]> {
   const descriptor = requireOAuthProvider(payload?.providerId);
+  if (descriptor.authMode === 'lark-cli') {
+    await larkCli.disconnect();
+    return listConnectorOAuthStatuses();
+  }
   new ConnectorOAuthStore(descriptor.id).invalidateCredentials('all');
   return listConnectorOAuthStatuses();
 }
@@ -533,7 +566,7 @@ export function registerConnectorHandlers(
           );
           break;
         case 'oauthStatus':
-          data = listConnectorOAuthStatuses();
+          data = await listConnectorOAuthStatuses();
           break;
         case 'oauthConnect':
           data = await handleConnectorOAuthConnect(
@@ -541,12 +574,12 @@ export function registerConnectorHandlers(
           );
           break;
         case 'oauthSetSecret':
-          data = handleConnectorOAuthSetSecret(
+          data = await handleConnectorOAuthSetSecret(
             request.payload as { providerId?: string; clientSecret?: string } | undefined,
           );
           break;
         case 'oauthDisconnect':
-          data = handleConnectorOAuthDisconnect(
+          data = await handleConnectorOAuthDisconnect(
             request.payload as { providerId?: string } | undefined,
           );
           break;

@@ -17,6 +17,9 @@ export interface ProviderDescriptor {
   // + PKCE 被拒，400 invalid_client / code 20140）。为 true 时缺 secret 就 fail-closed，
   // 报一句用户能照做的话，而不是把厂商那个 400 原样甩出来。
   requiresClientSecret: boolean;
+  // Omitted descriptors keep using Neo's built-in OAuth coordinator. Providers backed by a
+  // vendor CLI opt in explicitly so existing MCP/custom-app authorization remains unchanged.
+  authMode?: 'oauth' | 'lark-cli';
 }
 
 export function validateProviderDescriptor(descriptor: ProviderDescriptor): void {

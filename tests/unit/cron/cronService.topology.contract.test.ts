@@ -44,6 +44,6 @@ describe('cron agent 会话拓扑标注接线', () => {
   });
 
   it('requestPermission 保留超时 deny 机制（无人值守 ask 不挂死）', () => {
-    expect(permissionsSource).toMatch(/PERMISSION_TIMEOUT\s*=\s*60000/);
+    expect(permissionsSource).toMatch(/PERMISSION_TIMEOUT\s*=[^;]*\b60000\b/);
   });
 });

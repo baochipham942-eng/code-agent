@@ -102,7 +102,7 @@ async function handlePermissionResponse(
   const appService = getAppService();
   if (!appService) throw new Error('Agent not initialized');
   // outcome 回传给收件箱：'no_orchestrator'/'unknown_request' = 停车审批已失效转灰态
-  const outcome = appService.handlePermissionResponse(payload.requestId, payload.response, payload.sessionId);
+  const outcome = appService.handlePermissionResponse(payload.requestId, payload.response, payload.sessionId, payload.updatedArgs);
   return { outcome };
 }
 

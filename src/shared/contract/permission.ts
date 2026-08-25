@@ -146,6 +146,12 @@ export interface PermissionAskResult {
   denialSource?: PermissionDenialSource;
   /** 给模型看的真实原因文案；缺省由 `permissionDenialError` 按 denialSource 生成。 */
   message?: string;
+  /**
+   * N-WRITEBACK-EDIT：用户在审批卡上改过的参数（仅可编辑工具、仅 'allow' 一次性放行时有）。
+   * toolExecutor 用 `applyEditedArgs` 合并校验后替换派发参数——改后的就是真正下发给工具的那份，
+   * 不经模型重写。校验失败按 fail-closed 拒绝。
+   */
+  updatedArgs?: Record<string, unknown>;
 }
 
 export type RequestPermissionResult = boolean | PermissionAskResult;

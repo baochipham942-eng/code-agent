@@ -450,8 +450,8 @@ export class AgentOrchestrator {
     return this.runSettings.getResearchUserSettings();
   }
 
-  handlePermissionResponse(requestId: string, response: PermissionResponse): PermissionDeliveryOutcome {
-    return this.permissions.handlePermissionResponse(requestId, response);
+  handlePermissionResponse(requestId: string, response: PermissionResponse, updatedArgs?: Record<string, unknown>): PermissionDeliveryOutcome {
+    return this.permissions.handlePermissionResponse(requestId, response, updatedArgs);
   }
 
   /** 当前仍由本 orchestrator 持有 resolver 的审批请求。供 renderer 重建快照使用。 */

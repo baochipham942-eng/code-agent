@@ -912,7 +912,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return promise;
   }
 
-  handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string): PermissionDeliveryOutcome {
+  handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string, updatedArgs?: Record<string, unknown>): PermissionDeliveryOutcome {
     // 停车审批的宿主可能已随进程重启消失（D0 根因，2026-07-27）：
     // 找不到宿主/内存 pending 已丢时，把 DB 行 fail-closed 拒绝收尾，
     // 返回类型化结果而不是裸抛或静默丢弃。
@@ -920,7 +920,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     try {
       const resolvedSessionId = this.resolveSessionId(sessionId);
       outcome = resolvedSessionId
-        ? this.getTaskManager().handlePermissionResponse(resolvedSessionId, requestId, response)
+        ? this.getTaskManager().handlePermissionResponse(resolvedSessionId, requestId, response, updatedArgs)
         : 'no_session';
     } catch (err) {
       if (closeDeadParkedApproval(requestId)) return 'no_orchestrator';

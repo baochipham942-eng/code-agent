@@ -70,6 +70,27 @@ describe('appStore', () => {
     expect(useAppStore.getState().goalRuns['sess-pause-2']?.status).toBe('met');
   });
 
+  it('goal_iteration 对齐 anti-spin paused reason，并在恢复事件到达时回 running', () => {
+    const s = useAppStore.getState();
+    s.startGoalRun('sess-anti-spin', { goal: '只对话的目标' });
+
+    s.updateGoalProgress('sess-anti-spin', { turn: 4 });
+    s.setGoalPaused('sess-anti-spin', true, 'anti_spin');
+    expect(useAppStore.getState().goalRuns['sess-anti-spin']).toMatchObject({
+      status: 'paused',
+      reason: 'anti_spin',
+      turn: 4,
+    });
+
+    s.updateGoalProgress('sess-anti-spin', { turn: 5 });
+    s.setGoalPaused('sess-anti-spin', false);
+    expect(useAppStore.getState().goalRuns['sess-anti-spin']).toMatchObject({
+      status: 'running',
+      reason: undefined,
+      turn: 5,
+    });
+  });
+
   it('keeps goal gate history with verification cards', () => {
     const s = useAppStore.getState();
     s.startGoalRun('sess-verification-card', { goal: '验证目标' });

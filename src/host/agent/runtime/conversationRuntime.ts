@@ -395,17 +395,17 @@ export class ConversationRuntime {
           });
         }
 
-        // Goal mode 闸3（兜底，每轮先跑）：轮次/预算/无进展任一触发即标 aborted 收尾。
+        // Goal mode 闸3（兜底，每轮先跑）：轮次/预算触发 aborted；anti-spin 触发可恢复暂停。
         // 放在 loop 顶而非收尾点——否则 handleToolResponse 返回 'continue' 的轮次会跳过闸3。
         if (this.ctx.goalMode?.isPending()) {
-          // 记录上一轮有无进展：toolsUsedInTurn 此刻尚未被 setupIteration 重置，仍是上一轮的工具。
-          // 用了写工具或 Bash 视为有进展（清零）；纯 read-only/无工具视为无进展（累加）。
-          // 连续 NO_PROGRESS_THRESHOLD 轮无进展 → evaluateFallback 触发闸3 中止。
+          // toolsUsedInTurn 此刻尚未被 setupIteration 重置，仍是上一轮的工具。
+          // 任意工具调用都算进展；写工具/Bash 继续单独提供文件变更信号。
           if (iterations > 1) {
-            const madeProgress = this.ctx.turn.toolsUsedInTurn.some(
+            const hadToolCall = this.ctx.turn.toolsUsedInTurn.length > 0;
+            const hadFileChange = this.ctx.turn.toolsUsedInTurn.some(
               (t) => WRITE_TOOLS.includes(t) || t === 'Bash' || t === 'bash',
             );
-            this.ctx.goalMode.recordTurnProgress(madeProgress);
+            this.ctx.goalMode.recordTurnProgress({ hadToolCall, hadFileChange });
           }
           // 主 agent 消耗；swarm 消耗在 evaluateFallback 内部统一加总，观测事件用加总值展示
           const tokensUsed = this.ctx.stats.totalInputTokens + this.ctx.stats.totalOutputTokens;
@@ -456,6 +456,24 @@ export class ConversationRuntime {
             // 既有 goal_met 路径（isVerificationDegraded 防重发 goal_complete）。
           }
           const fallback = this.ctx.goalMode.evaluateFallback({ turn: iterations, tokensUsed, elapsedMs });
+          if (fallback.pause) {
+            const pauseReason = fallback.reason === 'anti_spin' ? fallback.reason : 'anti_spin';
+            this.ctx.goalMode.markPaused(pauseReason);
+            this.pause();
+            this.ctx.onEvent({
+              type: 'goal_iteration',
+              data: {
+                turn: iterations,
+                maxTurns: this.ctx.goalMode.getMaxTurns(),
+                goalStatus: 'paused',
+                pauseReason,
+                tokensUsed: tokensUsedWithSwarm,
+                tokenBudget: this.ctx.goalMode.getTokenBudget(),
+                wallClockBudgetMs: this.ctx.goalMode.getWallClockBudgetMs(),
+              },
+            });
+            continue;
+          }
           if (fallback.stop) {
             const reason = fallback.reason ?? 'goal aborted';
             this.ctx.goalMode.markAborted(reason);
@@ -1165,6 +1183,7 @@ export class ConversationRuntime {
   }
 
   resume(): void {
+    this.ctx.goalMode?.resumeFromPause();
     this.flowState.isPaused = false;
     this.releasePauseWaiters();
     logger.info('[ConversationRuntime] Resumed');
@@ -1193,6 +1212,7 @@ export class ConversationRuntime {
     if (expectedTurnId && expectedTurnId !== this.ctx.turn.currentTurnId) {
       throw new SteerRejectedError('TURN_CHANGED');
     }
+    const resumePausedGoal = this.ctx.goalMode?.isPaused() ?? false;
     const interruptedTools = this.toolEngine.getActiveToolNames?.() ?? [];
     // 先留住被打断那一轮已经写出来的内容，再 abort——顺序反了就等于丢字。
     const partial = await this.preserveStreamedPartial('\n\n[已被新消息打断]');
@@ -1201,6 +1221,7 @@ export class ConversationRuntime {
     this.ctx.turn.requestReinference();
     logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');
     await persisted;
+    if (resumePausedGoal) this.resume();
     if (metadata?.workbench?.runtimeInputMode === 'redirect') {
       const receipt: InputRedirectReceiptMetadata = {
         receiptId: generateMessageId(),

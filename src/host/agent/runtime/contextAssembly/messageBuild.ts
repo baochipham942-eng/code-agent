@@ -550,7 +550,7 @@ ${deferredToolsSummary}
           appendedBlocks.set('skills', skillBlock);
         }
         logger.debug(
-          `[ContextAssembly] Injected ${skills.length} relevant skill(s) into prompt`,
+          `[ContextAssembly] Injected ${skills.fullSkills.length} full skill(s) and listed ${skills.omittedSkillSummaries.length} omitted skill(s) in prompt`,
         );
       }
     } catch (err) {

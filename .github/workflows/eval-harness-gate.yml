@@ -59,10 +59,9 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        # 同 swarm-ci：lockfile 在 macOS 生成只记 darwin rollup binary，补装 linux binary
+        # 同 swarm-ci：只许 npm ci（无锁 npm install 会重解析整棵树，N-CI-XYFLOW-DEPOPT）
         run: |
           npm ci --ignore-scripts
-          npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
 
       - name: Verify better-sqlite3 Node-API binding
         # evaluation 单测（telemetryQueryService 等）走真实 DB；文件缺失或加载失败必须直接红。

@@ -15,15 +15,21 @@ import {
   Video,
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
+import { CLI_CONNECTOR_DESCRIPTORS } from '@shared/constants/cliConnectorDescriptors';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useConnectorInChat } from '../../../../hooks/useConnectorInChat';
 import { Z_LAYERS } from '../../../../styles/zLayers';
 import { Button, Input, Modal } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
+import { ConnectorLogo } from '../../connectors/ConnectorLogo';
 
 type LoopbackRedirectUriSupport = 'confirmed' | 'pending-verification' | 'unsupported';
 type ConnectorAuthMode = 'oauth' | 'lark-cli' | 'tmeet-cli';
+
+const CLI_LOGO_BY_PROVIDER = new Map(
+  CLI_CONNECTOR_DESCRIPTORS.map((descriptor) => [descriptor.id, descriptor.logo]),
+);
 
 interface ConnectorOAuthProviderStatus {
   id: string;
@@ -565,9 +571,13 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2.5">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
-                  {status.id === 'tmeet'
-                    ? <Video className="h-4 w-4 text-badge-info" />
-                    : <CalendarDays className="h-4 w-4 text-badge-info" />}
+                  <ConnectorLogo
+                    id={CLI_LOGO_BY_PROVIDER.get(status.id)}
+                    displayName={providerName}
+                    fallback={status.id === 'tmeet'
+                      ? <Video className="h-4 w-4 text-badge-info" />
+                      : <CalendarDays className="h-4 w-4 text-badge-info" />}
+                  />
                 </span>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -780,9 +790,13 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                   </span>
                   <span className="text-zinc-600">⇋</span>
                   <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
-                    {activeStatus.id === 'tmeet'
-                      ? <Video className="h-4 w-4 text-badge-info" />
-                      : <CalendarDays className="h-4 w-4 text-badge-info" />}
+                    <ConnectorLogo
+                      id={CLI_LOGO_BY_PROVIDER.get(activeStatus.id)}
+                      displayName={providerName}
+                      fallback={activeStatus.id === 'tmeet'
+                        ? <Video className="h-4 w-4 text-badge-info" />
+                        : <CalendarDays className="h-4 w-4 text-badge-info" />}
+                    />
                   </span>
                 </div>
                 <div className="mt-3 flex items-center justify-center gap-2">

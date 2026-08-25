@@ -3,6 +3,7 @@ import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } f
 import type { AgentFailureCode } from '../../shared/contract/agentFailure';
 
 export type SubagentCompletionStatus = 'completed' | 'failed' | 'cancelled' | 'killed';
+export type SubagentCompletionKind = 'user_visible' | 'internal' | 'shell';
 
 export interface SubagentCompletionScope {
   sessionId?: string;
@@ -12,7 +13,9 @@ export interface SubagentCompletionScope {
 
 export interface SubagentCompletionRecord extends SubagentCompletionScope {
   agentId: string;
+  title: string;
   role?: string;
+  kind: SubagentCompletionKind;
   status: SubagentCompletionStatus;
   summary: string;
   durationMs?: number;
@@ -25,7 +28,9 @@ export interface SubagentCompletionRecord extends SubagentCompletionScope {
 
 export interface BuildSubagentCompletionRecordInput extends SubagentCompletionScope {
   agentId: string;
+  title?: string;
   role?: string;
+  kind?: SubagentCompletionKind;
   status: SubagentCompletionStatus;
   output?: string;
   error?: string;
@@ -43,6 +48,17 @@ function statusLabel(status: SubagentCompletionStatus): string {
 
 function scopeDedupePrefix(input: SubagentCompletionScope): string {
   return `${input.sessionId ?? 'global'}:${input.runId ?? 'session'}:${input.treeId ?? 'default'}`;
+}
+
+function buildCompletionAckInstruction(kind: SubagentCompletionKind, title: string): string {
+  const namingRule = `提到子代理时，只能使用通知中的标题「${title}」，禁止使用 [agent]、[worker]、agent 或 worker 等泛称。`;
+  if (kind === 'user_visible') {
+    return `回应要求：结果已经展示给用户，不要复述子代理的原始结果；只用一句话归纳本批通知里的全部完成项。${namingRule}`;
+  }
+  if (kind === 'shell') {
+    return `回应要求：用简短、非技术化的话向用户说明「${title}」的执行结果和下一步，不要只罗列退出码、日志或命令细节。${namingRule}`;
+  }
+  return `回应要求：结果只在内部上下文中。先完成必要的后续动作；没有后续动作时，不要回复用户。${namingRule}`;
 }
 
 function buildOutputSummary(input: BuildSubagentCompletionRecordInput): {
@@ -82,12 +98,16 @@ function buildOutputSummary(input: BuildSubagentCompletionRecordInput): {
 
 export function buildSubagentCompletionRecord(input: BuildSubagentCompletionRecordInput): SubagentCompletionRecord {
   const { summary, archiveRef } = buildOutputSummary(input);
+  const title = input.title?.trim() || input.role?.trim() || input.agentId;
+  const kind = input.kind ?? 'internal';
   const durationMs = typeof input.startedAt === 'number' && typeof input.finishedAt === 'number'
     ? Math.max(0, input.finishedAt - input.startedAt)
     : undefined;
   const payload = {
     agent_id: input.agentId,
+    title,
     role: input.role,
+    completion_kind: kind,
     status: input.status,
     summary,
     stats: {
@@ -106,10 +126,13 @@ export function buildSubagentCompletionRecord(input: BuildSubagentCompletionReco
       : undefined,
     next_action: `Use collect_agent("${input.agentId}") to inspect the final result.`,
   };
-  const content = `<subagent_notification>\n${JSON.stringify(payload, null, 2)}\n</subagent_notification>`;
+  const ackInstruction = buildCompletionAckInstruction(kind, title);
+  const content = `<subagent_notification>\n${JSON.stringify(payload, null, 2)}\n<completion_ack_instruction>\n${ackInstruction}\n</completion_ack_instruction>\n</subagent_notification>`;
   return {
     agentId: input.agentId,
+    title,
     role: input.role,
+    kind,
     status: input.status,
     summary,
     durationMs,
@@ -133,9 +156,9 @@ export function formatSystemReminderForCompletions(records: readonly SubagentCom
     .map((record) => {
       const role = record.role ? ` (${record.role})` : '';
       const duration = typeof record.durationMs === 'number' ? `, duration_ms=${record.durationMs}` : '';
-      return `- ${record.agentId}${role}: ${statusLabel(record.status)}${duration}\n${record.content}`;
+      const title = record.title || record.role || record.agentId;
+      return `- ${title}${role}: ${statusLabel(record.status)}${duration}\n${record.content}`;
     })
     .join('\n');
   return `<system-reminder>\n${title}\n${body}\n</system-reminder>`;
 }
-

@@ -13,6 +13,7 @@ import type { SubagentResult } from './subagentExecutorTypes';
 import { AgentFailureCode, inferAgentFailureCode, type AgentFailureCode as AgentFailureCodeType } from '../../shared/contract/agentFailure';
 import {
   buildSubagentCompletionRecord,
+  type SubagentCompletionKind,
   type SubagentCompletionRecord,
 } from './subagentCompletionNotification';
 
@@ -20,6 +21,8 @@ export type BackgroundSubagentStatus = 'running' | 'completed' | 'failed';
 
 export interface BackgroundSubagentHandle {
   agentId: string;
+  title?: string;
+  completionKind?: SubagentCompletionKind;
   status: BackgroundSubagentStatus;
   sessionId?: string;
   runId?: string;
@@ -46,6 +49,8 @@ export interface BackgroundSubagentScopeFilter {
 
 export interface BackgroundSubagentOptions {
   agentId?: string;
+  title?: string;
+  completionKind?: SubagentCompletionKind;
   sessionId?: string;
   runId?: string;
   treeId?: string;
@@ -87,6 +92,8 @@ export class BackgroundSubagentRegistry {
       ...(options.runId ? { runId: options.runId } : {}),
       ...(options.treeId ? { treeId: options.treeId } : {}),
       ...(options.role ? { role: options.role } : {}),
+      ...(options.title ? { title: options.title } : {}),
+      ...(options.completionKind ? { completionKind: options.completionKind } : {}),
       ...(options.declaredOutputs && options.declaredOutputs.length > 0
         ? { declaredOutputs: options.declaredOutputs }
         : {}),
@@ -115,6 +122,8 @@ export class BackgroundSubagentRegistry {
       ...(options.runId ? { runId: options.runId } : {}),
       ...(options.treeId ? { treeId: options.treeId } : {}),
       ...(options.role ? { role: options.role } : {}),
+      ...(options.title ? { title: options.title } : {}),
+      ...(options.completionKind ? { completionKind: options.completionKind } : {}),
       ...(options.declaredOutputs && options.declaredOutputs.length > 0
         ? { declaredOutputs: options.declaredOutputs }
         : {}),
@@ -163,7 +172,9 @@ export class BackgroundSubagentRegistry {
   private recordCompletion(entry: BackgroundSubagentEntry, options: BackgroundSubagentOptions): void {
     const record = buildSubagentCompletionRecord({
       agentId: entry.agentId,
+      title: entry.title,
       role: entry.role,
+      kind: entry.completionKind,
       status: entry.status === 'completed' ? 'completed' : 'failed',
       output: entry.result?.output,
       error: entry.error,

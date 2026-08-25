@@ -20,6 +20,8 @@ import {
   needsGameArtifactContract,
 } from './artifactGeneration';
 import { DYNAMIC_BOUNDARY_MARKER } from './cacheBreakDetection';
+import { formatTodayAnchor } from '../../shared/todayAnchor';
+import { getConfigService } from '../services/core/configService';
 import { applyOverlays, type OverlayConfig } from './overlayEngine';
 import { type PromptProfile, type PromptContext, getProfileOverlays } from './profiles';
 import { buildTrustedRemotePromptFragmentsBlock } from './remoteFragments';
@@ -98,6 +100,14 @@ export const WEB_SOURCE_OUTPUT_RULE = `## Web 来源展示约定
 // Prompt Builder
 // ----------------------------------------------------------------------------
 
+function readPromptLanguage(): 'zh' | 'en' {
+  try {
+    return getConfigService().getSettings().ui.language === 'en' ? 'en' : 'zh';
+  } catch {
+    return 'zh';
+  }
+}
+
 export function buildPrompt(): string {
   const basePrompt = TOOLS_PROMPT;
 
@@ -111,6 +121,7 @@ export function buildPrompt(): string {
     basePrompt,
     CITATION_CONVENTIONS,
     ...getToolDescriptions(),
+    formatTodayAnchor(new Date(), undefined, readPromptLanguage()).prompt,
   ].join('\n\n');
   // Dynamic section (rules 等；GENERATIVE_UI_PROMPT 改为按意图注入)
   const dynamicSection = [

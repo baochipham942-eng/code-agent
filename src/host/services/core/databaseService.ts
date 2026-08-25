@@ -1052,6 +1052,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   markCrashedActiveSessions(now?: number): {
     interrupted: number;
     orphaned: number;
+    sessionIds: string[];
   } {
     this.ensureDb();
     return this.sessionRepo.markCrashedActiveSessions(now);

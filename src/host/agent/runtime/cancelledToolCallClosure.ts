@@ -3,12 +3,18 @@ import type { Message, ToolCall, ToolResult } from '../../../shared/contract';
 const CANCELLED_TOOL_CALL_PLACEHOLDER =
   '[no result: this tool call was cancelled before a result was recorded; do not assume it ran or succeeded]';
 
-export async function persistCancelledToolCallClosures(input: {
+interface ToolCallClosureInput<TPersistResult extends void | Promise<void>> {
   messages: readonly Message[];
   assistantMessage: Message;
   toolCalls: readonly ToolCall[];
-  persistMessage: (message: Message) => Promise<void>;
-}): Promise<void> {
+  persistMessage: (message: Message) => TPersistResult;
+  placeholder?: string;
+  messageIdSuffix?: string;
+}
+
+export function persistCancelledToolCallClosures<TPersistResult extends void | Promise<void>>(
+  input: ToolCallClosureInput<TPersistResult>,
+): TPersistResult | void {
   const completedToolCallIds = new Set(
     input.messages
       .filter((message) => message.role === 'tool')
@@ -20,18 +26,18 @@ export async function persistCancelledToolCallClosures(input: {
   );
   if (missingToolCalls.length === 0) return;
 
-  const cancelledResults: ToolResult[] = missingToolCalls.map((toolCall) => ({
+  const closureResults: ToolResult[] = missingToolCalls.map((toolCall) => ({
     toolCallId: toolCall.id,
     success: false,
-    error: CANCELLED_TOOL_CALL_PLACEHOLDER,
+    error: input.placeholder ?? CANCELLED_TOOL_CALL_PLACEHOLDER,
     duration: 0,
   }));
-  await input.persistMessage({
-    id: `${input.assistantMessage.id}:cancelled-tool-results`,
+  return input.persistMessage({
+    id: `${input.assistantMessage.id}:${input.messageIdSuffix ?? 'cancelled-tool-results'}`,
     role: 'tool',
-    content: JSON.stringify(cancelledResults),
+    content: JSON.stringify(closureResults),
     timestamp: Date.now(),
-    toolResults: cancelledResults,
+    toolResults: closureResults,
     ...(input.assistantMessage.isMeta ? { isMeta: true } : {}),
   });
 }

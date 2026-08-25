@@ -1,7 +1,7 @@
 // ============================================================================
-// 启动期 DB 维护（从 databaseService._doInitialize 抽出，行为不变）
+// 启动期 DB 维护
 // ============================================================================
-// 顺序执行：崩溃会话标记 → 崩溃现场重建（ADR-022 第二期）→ 三个 FTS backfill。
+// 顺序执行：崩溃会话标记 → 工具执行账本恢复 → 消息层孤儿清算 → ledger health → FTS backfill。
 // 都在启动关键路径上，耗时由调用方的 step 计时器记录。
 
 import type { Database } from 'better-sqlite3';
@@ -12,8 +12,12 @@ import type { MemoryRepository } from '../repositories/MemoryRepository';
 import type { ToolExecutionEventRepository } from '../repositories/ToolExecutionEventRepository';
 import type { PermissionDecisionRepository } from '../repositories/PermissionDecisionRepository';
 import type { createLogger } from '../../infra/logger';
+import { persistCancelledToolCallClosures } from '../../../agent/runtime/cancelledToolCallClosure';
 
 type Logger = ReturnType<typeof createLogger>;
+
+const INTERRUPTED_TOOL_CALL_PLACEHOLDER =
+  'interrupted: process crashed before a result was recorded; do not assume it ran or succeeded';
 
 /**
  * 分步计时器：DB init 曾在 1.28GB 生产库上静默吃掉 ~6s（health-ready 的大头），
@@ -69,6 +73,32 @@ export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySna
     logger.warn('[DatabaseService] Crash recovery scan failed (ignored):', err);
   }
   step('crash-recovery');
+
+  for (const sessionId of crashedSessions.sessionIds) {
+    try {
+      const messages = sessionRepo.getMessages(sessionId);
+      for (const assistantMessage of messages) {
+        if (assistantMessage.role !== 'assistant' || !assistantMessage.toolCalls?.length) continue;
+        persistCancelledToolCallClosures({
+          messages,
+          assistantMessage,
+          toolCalls: assistantMessage.toolCalls,
+          placeholder: INTERRUPTED_TOOL_CALL_PLACEHOLDER,
+          messageIdSuffix: 'interrupted-tool-results',
+          persistMessage: (message) => {
+            sessionRepo.addMessage(sessionId, message, { provenanceKind: 'crash-recovery' });
+            messages.push(message);
+          },
+        });
+      }
+    } catch (err) {
+      logger.warn(
+        `[DatabaseService] Orphan tool-call closure failed for crashed session ${sessionId} (ignored):`,
+        err,
+      );
+    }
+  }
+  step('orphan-toolcall-closure');
 
   checkLedgerHealth(
     { db, toolExecutionEventRepo, permissionDecisionRepo, warn: (msg, data) => logger.warn(msg, data) },

@@ -237,7 +237,7 @@ vi.mock('../../../src/shared/constants', async (importOriginal) => ({
   GOAL_MODE: {
     DEFAULT_TOKEN_BUDGET: 100_000,
     DEFAULT_MAX_TURNS: 5,
-    NO_PROGRESS_THRESHOLD: 3,
+    ANTI_SPIN_THRESHOLD: 3,
     CHECKPOINT_INTERVAL: 3,
   },
   TOOL_PROGRESS: {},
@@ -750,6 +750,25 @@ describe('ConversationRuntime', () => {
       await runtime.steer('new direction');
 
       expect(controller.signal.aborted).toBe(true);
+      expect(ctx.turn.needsReinference).toBe(true);
+    });
+
+    it('用户消息自动复活 anti-spin paused goal 并释放 turn-boundary waiter', async () => {
+      const goalMode = new GoalModeController({
+        goal: 'finish',
+        verifyCommand: 'true',
+        tokenBudget: 100_000,
+        maxTurns: 20,
+      });
+      goalMode.markPaused('anti_spin');
+      ctx.goalMode = goalMode;
+      runtime.pause();
+
+      await runtime.steer('补充一个新方向');
+
+      expect(goalMode.getStatus()).toBe('pending');
+      expect(goalMode.getPauseReason()).toBeUndefined();
+      expect(runtime.flowStateForTest.isPaused).toBe(false);
       expect(ctx.turn.needsReinference).toBe(true);
     });
 
@@ -1598,6 +1617,62 @@ describe('ConversationRuntime', () => {
         expect.any(Number),
         expect.objectContaining({ status: 'aborted' }),
       );
+    });
+
+    it('纯对话 goal 连续 3 轮零工具后发 paused 事件，用户消息可在同一 run 复活', async () => {
+      ctx.goalMode = new GoalModeController({
+        goal: '只进行问答',
+        reviewCondition: '回答清楚即可',
+        tokenBudget: 100_000,
+        maxTurns: 20,
+      });
+      modules.contextAssembly.inference.mockResolvedValue({
+        type: 'text',
+        content: '继续对话',
+        usage: { inputTokens: 20, outputTokens: 5 },
+      });
+
+      const runPromise = runtime.run('只进行问答');
+      const deadline = Date.now() + 1_000;
+      while (
+        !vi.mocked(ctx.onEvent).mock.calls.some(([event]) => (
+          event.type === 'goal_iteration' && event.data.goalStatus === 'paused'
+        ))
+        && Date.now() < deadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+
+      expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(3);
+      expect(ctx.onEvent).toHaveBeenCalledWith({
+        type: 'goal_iteration',
+        data: expect.objectContaining({
+          turn: 4,
+          goalStatus: 'paused',
+          pauseReason: 'anti_spin',
+        }),
+      });
+      expect(ctx.onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
+        type: 'goal_complete',
+        data: expect.objectContaining({ status: 'aborted', reason: 'anti_spin' }),
+      }));
+
+      let releasePostResume!: (value: { type: 'text'; content: string }) => void;
+      modules.contextAssembly.inference.mockImplementationOnce(() => new Promise((resolve) => {
+        releasePostResume = resolve;
+      }));
+
+      await runtime.steer('用户回来补充问题');
+      const resumeDeadline = Date.now() + 1_000;
+      while (modules.contextAssembly.inference.mock.calls.length < 4 && Date.now() < resumeDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      expect(ctx.goalMode.getStatus()).toBe('pending');
+      expect(modules.contextAssembly.inference.mock.calls.length).toBeGreaterThanOrEqual(4);
+
+      await runtime.cancel('user');
+      releasePostResume({ type: 'text', content: '恢复后继续回答' });
+      await runPromise;
     });
 
     it('keeps truncation continuation advisory at loop-decision level', async () => {

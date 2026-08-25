@@ -8,7 +8,8 @@ import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('GoalModeController');
 
-export type GoalStatus = 'pending' | 'met' | 'aborted';
+export type GoalStatus = 'pending' | 'paused' | 'met' | 'aborted';
+export type GoalPauseReason = 'anti_spin';
 
 /** 用户下达 /goal 时解析出的契约 */
 export interface GoalContract {
@@ -41,7 +42,8 @@ export interface GoalContract {
 /** 闸3 判定结果 */
 export interface FallbackResult {
   stop: boolean;
-  /** stop=true 时的中止原因（用于报告人 + 标 aborted） */
+  /** pause=true 时保留 run；stop=true 时进入 aborted 终态。 */
+  pause?: boolean;
   reason?: string;
 }
 
@@ -87,8 +89,9 @@ export function buildGoalContract(input: {
 export class GoalModeController {
   private readonly contract: GoalContract;
   private status: GoalStatus = 'pending';
-  /** 连续无文件变更的轮次计数（闸3 无进展检测） */
-  private noProgressTurns = 0;
+  /** 连续既无工具调用、也无文件变更的轮次计数（anti-spin 检测） */
+  private inactiveTurns = 0;
+  private pauseReason?: GoalPauseReason;
   private abortReason?: string;
   /** 模型是否已调 attempt_completion 申请退出（待闸1/闸2 验证；不直接改 status） */
   private completionRequested = false;
@@ -118,6 +121,8 @@ export class GoalModeController {
   getReviewCondition(): string | undefined { return this.contract.reviewCondition; }
   getStatus(): GoalStatus { return this.status; }
   isPending(): boolean { return this.status === 'pending'; }
+  isPaused(): boolean { return this.status === 'paused'; }
+  getPauseReason(): GoalPauseReason | undefined { return this.pauseReason; }
   getAbortReason(): string | undefined { return this.abortReason; }
   getTokenBudget(): number { return this.contract.tokenBudget; }
   getMaxTurns(): number { return this.contract.maxTurns; }
@@ -206,8 +211,27 @@ export class GoalModeController {
   /** 闸3 兜底触发 → 标中止 */
   markAborted(reason: string): void {
     this.status = 'aborted';
+    this.pauseReason = undefined;
     this.abortReason = reason;
     logger.warn('[GoalMode] goal aborted', { reason });
+  }
+
+  /** anti-spin 只挂起当前 run，保留 goal 契约、上下文与剩余预算。 */
+  markPaused(reason: GoalPauseReason): void {
+    if (this.status !== 'pending') return;
+    this.status = 'paused';
+    this.pauseReason = reason;
+    logger.warn('[GoalMode] goal paused', { reason });
+  }
+
+  /** 用户新消息或手动继续到达时恢复 ACTIVE，并给新一轮完整的 anti-spin 观察窗口。 */
+  resumeFromPause(): boolean {
+    if (this.status !== 'paused') return false;
+    this.status = 'pending';
+    this.pauseReason = undefined;
+    this.inactiveTurns = 0;
+    logger.info('[GoalMode] goal resumed');
+    return true;
   }
 
   /** 模型调 attempt_completion → 记申请退出。不改 status——met 由闸1/闸2 全过后 markMet 决定 */
@@ -232,14 +256,13 @@ export class GoalModeController {
   }
 
   /**
-   * 每轮记录是否有文件变更，更新无进展计数。
-   * 有变更 → 清零；无变更 → 累加。
+   * 每轮记录可观测进展。任意工具调用都会清零；文件变更继续作为独立进度信号保留。
    */
-  recordTurnProgress(hadFileChange: boolean): void {
-    if (hadFileChange) {
-      this.noProgressTurns = 0;
+  recordTurnProgress(input: { hadToolCall: boolean; hadFileChange: boolean }): void {
+    if (input.hadToolCall || input.hadFileChange) {
+      this.inactiveTurns = 0;
     } else {
-      this.noProgressTurns += 1;
+      this.inactiveTurns += 1;
     }
   }
 
@@ -268,8 +291,8 @@ export class GoalModeController {
       const mins = Math.round(this.contract.wallClockBudgetMs / 60_000);
       return { stop: true, reason: `达到墙钟时间上限 ${mins} 分钟，目标未达成` };
     }
-    if (this.noProgressTurns >= GOAL_MODE.NO_PROGRESS_THRESHOLD) {
-      return { stop: true, reason: `连续 ${this.noProgressTurns} 轮无文件变更，判定无进展` };
+    if (this.inactiveTurns >= GOAL_MODE.ANTI_SPIN_THRESHOLD) {
+      return { stop: false, pause: true, reason: 'anti_spin' };
     }
     return { stop: false };
   }

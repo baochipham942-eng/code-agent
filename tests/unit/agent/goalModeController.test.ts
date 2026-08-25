@@ -52,6 +52,54 @@ describe('① 墙钟预算 — evaluateFallback', () => {
   });
 });
 
+describe('anti-spin 可恢复暂停', () => {
+  it('连续 3 轮零工具调用 → paused(reason=anti_spin)，不进入 aborted 终态', () => {
+    const c = ctrl();
+
+    for (let turn = 1; turn <= GOAL_MODE.ANTI_SPIN_THRESHOLD; turn++) {
+      c.recordTurnProgress({ hadToolCall: false, hadFileChange: false });
+    }
+
+    const fallback = c.evaluateFallback({ turn: 4, tokensUsed: 0 });
+    expect(fallback).toEqual({ stop: false, pause: true, reason: 'anti_spin' });
+
+    c.markPaused('anti_spin');
+    expect(c.getStatus()).toBe('paused');
+    expect(c.getPauseReason()).toBe('anti_spin');
+    expect(c.getAbortReason()).toBeUndefined();
+  });
+
+  it('任意工具调用或文件变更都会清零 anti-spin 计数', () => {
+    const c = ctrl();
+    for (let turn = 1; turn < GOAL_MODE.ANTI_SPIN_THRESHOLD; turn++) {
+      c.recordTurnProgress({ hadToolCall: false, hadFileChange: false });
+    }
+
+    c.recordTurnProgress({ hadToolCall: true, hadFileChange: false });
+    c.recordTurnProgress({ hadToolCall: false, hadFileChange: false });
+    expect(c.evaluateFallback({ turn: 4, tokensUsed: 0 }).pause).not.toBe(true);
+
+    c.recordTurnProgress({ hadToolCall: false, hadFileChange: true });
+    c.recordTurnProgress({ hadToolCall: false, hadFileChange: false });
+    expect(c.evaluateFallback({ turn: 6, tokensUsed: 0 }).pause).not.toBe(true);
+  });
+
+  it('paused goal 收到用户消息时恢复 ACTIVE 并清零计数', () => {
+    const c = ctrl();
+    for (let turn = 1; turn <= GOAL_MODE.ANTI_SPIN_THRESHOLD; turn++) {
+      c.recordTurnProgress({ hadToolCall: false, hadFileChange: false });
+    }
+    c.markPaused('anti_spin');
+
+    expect(c.resumeFromPause()).toBe(true);
+    expect(c.getStatus()).toBe('pending');
+    expect(c.getPauseReason()).toBeUndefined();
+
+    c.recordTurnProgress({ hadToolCall: false, hadFileChange: false });
+    expect(c.evaluateFallback({ turn: 5, tokensUsed: 0 }).pause).not.toBe(true);
+  });
+});
+
 describe('③ 闸修复预算 — 有界修复与到限放行（三分支裁决）', () => {
   it('初始修复预算未耗尽，两闸计数各为 0', () => {
     const c = ctrl();

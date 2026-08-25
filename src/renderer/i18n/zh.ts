@@ -917,6 +917,7 @@ export const zh = {
   goalStatusBar: {
     runningPrefix: '目标进行中：',
     pausedPrefix: '目标已暂停：',
+    antiSpinReason: '连续多轮未调用工具，已自动暂停以避免空转',
     verifying: '验证中…',
     reviewing: '评审中…',
     remainingPrefix: '剩 ',

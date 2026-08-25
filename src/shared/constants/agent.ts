@@ -183,8 +183,8 @@ export const GOAL_MODE = {
   DEFAULT_MAX_TURNS: 100,
   /** 默认 token 预算（用户可用 --budget 覆盖；Codex 失控案例烧掉 9 亿 token，必须有兜底） */
   DEFAULT_TOKEN_BUDGET: 2_000_000,
-  /** 连续无文件变更轮次阈值 → 判定无进展、强停标 aborted */
-  NO_PROGRESS_THRESHOLD: 5,
+  /** 连续零工具调用轮次阈值 → anti-spin 可恢复暂停 */
+  ANTI_SPIN_THRESHOLD: 3,
   /** 目标检查点重注入间隔（轮），对齐 GoalTracker 默认值 */
   CHECKPOINT_INTERVAL: 3,
   /**

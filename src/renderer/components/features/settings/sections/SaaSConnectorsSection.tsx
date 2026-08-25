@@ -2,7 +2,7 @@
 // SaaSConnectorsSection - SaaS OAuth cards in the unified connector grid
 // ============================================================================
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CalendarDays,
@@ -36,6 +36,7 @@ interface ConnectorOAuthProviderStatus {
   authMode: ConnectorAuthMode;
   step?: 1 | 2;
   blocked?: boolean;
+  stale?: boolean;
   userName?: string;
   tenantName?: string;
 }
@@ -64,6 +65,7 @@ const LOOPBACK_SUPPORT_VALUES = new Set<LoopbackRedirectUriSupport>([
   'unsupported',
 ]);
 const AUTH_MODE_VALUES = new Set<ConnectorAuthMode>(['oauth', 'lark-cli', 'tmeet-cli']);
+const STATUS_CACHE_STORAGE_KEY = 'code-agent:connector-oauth-statuses';
 
 function isCliAuthMode(authMode: ConnectorAuthMode): boolean {
   return authMode === 'lark-cli' || authMode === 'tmeet-cli';
@@ -87,6 +89,7 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     authMode,
     step,
     blocked,
+    stale,
     userName,
     tenantName,
   } = value;
@@ -106,6 +109,7 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     || !AUTH_MODE_VALUES.has(authMode as ConnectorAuthMode)
     || (step !== undefined && step !== 1 && step !== 2)
     || (blocked !== undefined && typeof blocked !== 'boolean')
+    || (stale !== undefined && typeof stale !== 'boolean')
     || (userName !== undefined && typeof userName !== 'string')
     || (tenantName !== undefined && typeof tenantName !== 'string')
   ) {
@@ -123,6 +127,7 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     authMode: authMode as ConnectorAuthMode,
     ...(step === 1 || step === 2 ? { step } : {}),
     ...(typeof blocked === 'boolean' ? { blocked } : {}),
+    ...(stale === true ? { stale: true } : {}),
     ...(typeof userName === 'string' && userName.trim() ? { userName } : {}),
     ...(typeof tenantName === 'string' && tenantName.trim() ? { tenantName } : {}),
   };
@@ -133,6 +138,24 @@ function parseProviderStatuses(value: unknown): ConnectorOAuthProviderStatus[] |
   const statuses = value.map(parseProviderStatus);
   if (statuses.some((status) => status === null)) return null;
   return statuses as ConnectorOAuthProviderStatus[];
+}
+
+function readCachedProviderStatuses(): ConnectorOAuthProviderStatus[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(STATUS_CACHE_STORAGE_KEY);
+    if (!raw) return [];
+    return parseProviderStatuses(JSON.parse(raw)) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function persistProviderStatuses(statuses: ConnectorOAuthProviderStatus[]): void {
+  try {
+    globalThis.localStorage?.setItem(STATUS_CACHE_STORAGE_KEY, JSON.stringify(statuses));
+  } catch {
+    // Storage can be unavailable in hardened browser contexts; the live refresh still works.
+  }
 }
 
 function resolveProviderState(status: ConnectorOAuthProviderStatus): ProviderPresentationState {
@@ -259,8 +282,10 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
   const { t } = useI18n();
   const useInChat = useConnectorInChat();
   const text = t.settings.saasConnectors;
-  const [statuses, setStatuses] = useState<ConnectorOAuthProviderStatus[]>([]);
-  const [loading, setLoading] = useState(true);
+  const initialStatuses = useMemo(readCachedProviderStatuses, []);
+  const [statuses, setStatuses] = useState<ConnectorOAuthProviderStatus[]>(initialStatuses);
+  const statusesRef = useRef(initialStatuses);
+  const [loading, setLoading] = useState(initialStatuses.length === 0);
   const [statusInvalid, setStatusInvalid] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -279,17 +304,17 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
       );
       const nextStatuses = parseProviderStatuses(payload);
       if (!nextStatuses) {
-        setStatuses([]);
-        setStatusInvalid(true);
+        setStatusInvalid(statusesRef.current.length === 0);
         setError(null);
         return null;
       }
+      statusesRef.current = nextStatuses;
       setStatuses(nextStatuses);
+      persistProviderStatuses(nextStatuses);
       setStatusInvalid(false);
       setError(null);
       return nextStatuses;
     } catch {
-      setStatuses([]);
       setStatusInvalid(false);
       setError(text.errors.loadFailed);
       return null;
@@ -481,10 +506,22 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
         </div>
       )}
 
-      {loading ? (
-        <div className="flex min-h-36 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900/60">
-          <Loader2 className="h-5 w-5 animate-spin text-zinc-500" aria-label={text.loading} />
-        </div>
+      {loading && statuses.length === 0 ? (
+        ['feishu', 'tmeet'].map((providerId) => (
+          <div
+            key={providerId}
+            className="min-h-36 animate-pulse rounded-xl border border-zinc-700 bg-zinc-900/60 p-4"
+            data-testid={`saas-connector-skeleton-${providerId}`}
+            aria-label={text.loading}
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="h-9 w-9 rounded-lg bg-zinc-800" />
+              <span className="h-4 w-24 rounded bg-zinc-800" />
+            </div>
+            <div className="mt-4 h-3 w-full rounded bg-zinc-800" />
+            <div className="mt-2 h-3 w-2/3 rounded bg-zinc-800" />
+          </div>
+        ))
       ) : statusInvalid || statuses.length === 0 ? (
         <div className="min-h-36 rounded-xl border border-dashed border-zinc-700 bg-zinc-900/40 p-4 text-xs text-zinc-400">
           {statusInvalid ? text.errors.statusUnavailable : text.empty}

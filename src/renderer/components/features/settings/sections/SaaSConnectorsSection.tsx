@@ -12,6 +12,7 @@ import {
   Loader2,
   MessageCircle,
   Unplug,
+  Video,
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
@@ -21,7 +22,7 @@ import { Button, Input, Modal } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 
 type LoopbackRedirectUriSupport = 'confirmed' | 'pending-verification' | 'unsupported';
-type ConnectorAuthMode = 'oauth' | 'lark-cli';
+type ConnectorAuthMode = 'oauth' | 'lark-cli' | 'tmeet-cli';
 
 interface ConnectorOAuthProviderStatus {
   id: string;
@@ -44,6 +45,7 @@ type ProviderPresentationState =
   | 'ready'
   | 'connecting_step_1'
   | 'connecting_step_2'
+  | 'connecting_single'
   | 'connected'
   | 'admin_blocked'
   | 'unavailable';
@@ -52,6 +54,7 @@ type SaaSConnectorsText = ReturnType<typeof useI18n>['t']['settings']['saasConne
 
 const CONNECT_ACTION_BY_PROVIDER: Readonly<Record<string, string>> = {
   feishu: 'message.send-as-user',
+  tmeet: 'meeting.create',
 };
 
 const LOOPBACK_SUPPORT_VALUES = new Set<LoopbackRedirectUriSupport>([
@@ -59,7 +62,11 @@ const LOOPBACK_SUPPORT_VALUES = new Set<LoopbackRedirectUriSupport>([
   'pending-verification',
   'unsupported',
 ]);
-const AUTH_MODE_VALUES = new Set<ConnectorAuthMode>(['oauth', 'lark-cli']);
+const AUTH_MODE_VALUES = new Set<ConnectorAuthMode>(['oauth', 'lark-cli', 'tmeet-cli']);
+
+function isCliAuthMode(authMode: ConnectorAuthMode): boolean {
+  return authMode === 'lark-cli' || authMode === 'tmeet-cli';
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -128,7 +135,8 @@ function parseProviderStatuses(value: unknown): ConnectorOAuthProviderStatus[] |
 }
 
 function resolveProviderState(status: ConnectorOAuthProviderStatus): ProviderPresentationState {
-  if (status.authMode === 'lark-cli') {
+  if (isCliAuthMode(status.authMode)) {
+    if (status.id === 'tmeet' && status.step === 1) return 'connecting_single';
     if (status.step === 1) return 'connecting_step_1';
     if (status.step === 2) return 'connecting_step_2';
     if (status.blocked) return 'admin_blocked';
@@ -147,7 +155,17 @@ function resolveProviderState(status: ConnectorOAuthProviderStatus): ProviderPre
 }
 
 function getProviderName(status: ConnectorOAuthProviderStatus, text: SaaSConnectorsText): string {
-  return status.id === 'feishu' ? text.providers.feishu : status.displayName;
+  if (status.id === 'feishu') return text.providers.feishu;
+  if (status.id === 'tmeet') return text.providers.tmeet;
+  return status.displayName;
+}
+
+function getProviderCapability(status: ConnectorOAuthProviderStatus, text: SaaSConnectorsText): string {
+  return status.id === 'tmeet' ? text.capabilities.tmeet : text.capabilities.feishu;
+}
+
+function getCliConnectLabel(status: ConnectorOAuthProviderStatus, text: SaaSConnectorsText): string {
+  return status.id === 'tmeet' ? text.actions.connectTmeet : text.actions.connectFeishu;
 }
 
 function getStatePresentation(
@@ -195,6 +213,13 @@ function getStatePresentation(
         detail: text.details.authorizing,
         actionLabel: text.actions.cancel,
       };
+    case 'connecting_single':
+      return {
+        badge: text.badges.connectingSingle,
+        badgeClassName: 'border border-amber-500/25 bg-amber-500/15 text-badge-warning',
+        detail: text.details.tmeetAuthorizing,
+        actionLabel: text.actions.cancel,
+      };
     case 'admin_blocked':
       return {
         badge: text.badges.adminRequired,
@@ -206,10 +231,10 @@ function getStatePresentation(
       return {
         badge: text.badges.notConnected,
         badgeClassName: 'border border-badge-info/25 bg-sky-500/15 text-badge-info',
-        detail: status.authMode === 'lark-cli'
-          ? text.details.larkCliReady
+        detail: isCliAuthMode(status.authMode)
+          ? status.id === 'tmeet' ? text.details.tmeetCliReady : text.details.larkCliReady
           : status.requiresClientSecret ? text.details.ready : text.details.noSecretRequired,
-        actionLabel: status.authMode === 'lark-cli' ? text.actions.connectFeishu : text.actions.connect,
+        actionLabel: isCliAuthMode(status.authMode) ? getCliConnectLabel(status, text) : text.actions.connect,
       };
     default:
       return {
@@ -306,8 +331,11 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
 
     setBusyKey(`${providerId}:connect`);
     setError(null);
-    setReceipt({ kind: 'info', text: text.toast.authorizationOpened });
-    if (authMode === 'lark-cli') {
+    setReceipt({
+      kind: 'info',
+      text: providerId === 'tmeet' ? text.toast.tmeetAuthorizationOpened : text.toast.authorizationOpened,
+    });
+    if (isCliAuthMode(authMode)) {
       setStatuses((current) => current.map((status) => status.id === providerId
         ? { ...status, step: 1, blocked: false }
         : status));
@@ -325,15 +353,23 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
         setError(text.errors.statusUnavailable);
         return;
       }
-      setReceipt({ kind: 'success', text: text.toast.connected });
+      setReceipt({
+        kind: 'success',
+        text: providerId === 'tmeet' ? text.toast.tmeetConnected : text.toast.connected,
+      });
     } catch (caught) {
       setReceipt(null);
-      if (authMode === 'lark-cli') await refresh();
+      if (isCliAuthMode(authMode)) await refresh();
       if (
         (isRecord(caught) && caught.code === 'CANCELLED')
         || (caught instanceof Error && /OAuth flow cancelled/i.test(caught.message))
       ) {
-        setReceipt({ kind: 'success', text: text.toast.authorizationCancelled });
+        setReceipt({
+          kind: 'success',
+          text: providerId === 'tmeet'
+            ? text.toast.tmeetAuthorizationCancelled
+            : text.toast.authorizationCancelled,
+        });
       } else if (isRecord(caught) && caught.code === 'ADMIN_REQUIRED') {
         await refresh();
       } else {
@@ -404,7 +440,10 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
         { providerId },
       );
       await refresh();
-      setReceipt({ kind: 'success', text: text.toast.disconnected });
+      setReceipt({
+        kind: 'success',
+        text: providerId === 'tmeet' ? text.toast.tmeetDisconnected : text.toast.disconnected,
+      });
       setActiveProviderId(null);
       setCustomAppOpen(false);
     } catch {
@@ -453,9 +492,12 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
         const presentation = getStatePresentation(state, status, text);
         const providerName = getProviderName(status, text);
         const isLarkCli = status.authMode === 'lark-cli';
-        const isProgress = state === 'connecting_step_1' || state === 'connecting_step_2';
+        const isCli = isCliAuthMode(status.authMode);
+        const isProgress = state === 'connecting_step_1'
+          || state === 'connecting_step_2'
+          || state === 'connecting_single';
         const rowBusy = Boolean(busyKey?.startsWith(`${status.id}:`));
-        const showConnecting = isProgress || (!isLarkCli && busyKey === `${status.id}:connect`);
+        const showConnecting = isProgress || (!isCli && busyKey === `${status.id}:connect`);
         const isUnavailable = state === 'missing_client_id' || state === 'unavailable';
         const secretDraft = secretDrafts[status.id] ?? '';
 
@@ -484,7 +526,9 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2.5">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
-                  <CalendarDays className="h-4 w-4 text-badge-info" />
+                  {status.id === 'tmeet'
+                    ? <Video className="h-4 w-4 text-badge-info" />
+                    : <CalendarDays className="h-4 w-4 text-badge-info" />}
                 </span>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -502,16 +546,16 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                     )}
                     <span className="truncate text-sm font-medium text-zinc-100">{providerName}</span>
                     <span className={`rounded px-1.5 py-0.5 text-[10px] ${
-                      showConnecting && !isLarkCli
+                      showConnecting && !isCli
                         ? 'border border-amber-500/25 bg-amber-500/15 text-badge-warning'
                         : presentation.badgeClassName
                     }`}>
-                      {showConnecting && !isLarkCli ? text.badges.connecting : presentation.badge}
+                      {showConnecting && !isCli ? text.badges.connecting : presentation.badge}
                     </span>
                   </div>
                 </div>
               </div>
-              {!isLarkCli && !isUnavailable && (
+              {!isCli && !isUnavailable && (
                 <button /* ds-allow:button: 卡片右上角紧凑状态动作位 */
                   type="button"
                   aria-label={`${rowBusy ? text.actions.connecting : presentation.actionLabel} ${providerName}`}
@@ -539,10 +583,10 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                 : showConnecting ? 'text-badge-warning' : 'text-zinc-400'
             }`}>
               {showConnecting && <Loader2 className="mr-1.5 inline h-3 w-3 animate-spin" />}
-              {presentation.detail || text.capabilities.feishu}
+              {presentation.detail || getProviderCapability(status, text)}
             </p>
 
-            {isLarkCli && (
+            {isCli && (
               <div className="mt-3 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   {state === 'ready' && (
@@ -550,11 +594,11 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                       size="sm"
                       variant="primary"
                       disabled={rowBusy}
-                      onClick={() => void connect(status.id, 'lark-cli')}
+                      onClick={() => void connect(status.id, status.authMode)}
                       leftIcon={<Link2 className="h-3 w-3" />}
                       data-testid={`saas-connect-${status.id}`}
                     >
-                      {text.actions.connectFeishu}
+                      {getCliConnectLabel(status, text)}
                     </Button>
                   )}
                   {isProgress && (
@@ -593,7 +637,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                   )}
                 </div>
 
-                {(state === 'ready' || state === 'admin_blocked') && (
+                {isLarkCli && (state === 'ready' || state === 'admin_blocked') && (
                   <div className="pt-1">
                     <button /* ds-allow:button: 飞书卡片内普通用户可见的自建应用折叠项 */
                       type="button"
@@ -645,7 +689,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
               </div>
             )}
 
-            {!isLarkCli && (
+            {!isCli && (
               <div className={`mt-3 text-[11px] ${rowBusy ? 'text-badge-warning' : 'text-zinc-500'}`}>
                 {rowBusy ? text.badges.connecting : presentation.badge}
                 {status.requiresClientSecret && status.clientSecretConfigured
@@ -671,7 +715,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
           const isSaving = busyKey === `${activeStatus.id}:save`;
           const isConnecting = busyKey === `${activeStatus.id}:connect`;
           const isDisconnecting = busyKey === `${activeStatus.id}:disconnect`;
-          const isLarkCli = activeStatus.authMode === 'lark-cli';
+          const isCli = isCliAuthMode(activeStatus.authMode);
           const canConnect = Boolean(CONNECT_ACTION_BY_PROVIDER[activeStatus.id]);
           const secretDraft = secretDrafts[activeStatus.id] ?? '';
 
@@ -684,23 +728,29 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                   </span>
                   <span className="text-zinc-600">⇋</span>
                   <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
-                    <CalendarDays className="h-4 w-4 text-badge-info" />
+                    {activeStatus.id === 'tmeet'
+                      ? <Video className="h-4 w-4 text-badge-info" />
+                      : <CalendarDays className="h-4 w-4 text-badge-info" />}
                   </span>
                 </div>
                 <div className="mt-3 flex items-center justify-center gap-2">
                   <span className="font-medium text-zinc-100">{providerName}</span>
                   <span className={`rounded px-1.5 py-0.5 text-[10px] ${presentation.badgeClassName}`}>
-                    {isConnecting && !isLarkCli ? text.badges.connecting : presentation.badge}
+                    {isConnecting && !isCli ? text.badges.connecting : presentation.badge}
                   </span>
                 </div>
-                <p className="mt-2 text-xs leading-relaxed text-zinc-400">{text.capabilities.feishu}</p>
+                <p className="mt-2 text-xs leading-relaxed text-zinc-400">
+                  {getProviderCapability(activeStatus, text)}
+                </p>
               </div>
 
               {presentation.detail && (
                 <div className={`rounded-md border px-3 py-2 text-xs ${
                   activeState === 'missing_client_id' || activeState === 'admin_blocked'
                     ? 'border-red-500/25 bg-red-500/10 text-badge-danger'
-                    : activeState === 'connecting_step_1' || activeState === 'connecting_step_2'
+                    : activeState === 'connecting_step_1'
+                        || activeState === 'connecting_step_2'
+                        || activeState === 'connecting_single'
                       ? 'border-amber-500/25 bg-amber-500/10 text-badge-warning'
                     : 'border-zinc-700 bg-zinc-950/40 text-zinc-400'
                 }`}>
@@ -756,11 +806,13 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                 >
                   {isConnecting
                     ? text.actions.connecting
-                    : isLarkCli ? text.actions.connectFeishu : text.actions.connect}
+                    : isCli ? getCliConnectLabel(activeStatus, text) : text.actions.connect}
                 </Button>
               )}
 
-              {(activeState === 'connecting_step_1' || activeState === 'connecting_step_2') && (
+              {(activeState === 'connecting_step_1'
+                || activeState === 'connecting_step_2'
+                || activeState === 'connecting_single') && (
                 <Button
                   size="sm"
                   variant="secondary"
@@ -788,8 +840,10 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                   <div className="flex items-start gap-2 rounded-md border border-badge-warning/20 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-badge-warning">
                     <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                     <span>
-                      {isLarkCli
-                        ? text.disconnect.larkCliNotice
+                      {isCli
+                        ? activeStatus.id === 'tmeet'
+                          ? text.disconnect.tmeetCliNotice
+                          : text.disconnect.larkCliNotice
                         : activeStatus.requiresClientSecret
                           ? text.disconnect.noticeWithSecret
                           : text.disconnect.noticeWithoutSecret}
@@ -813,7 +867,8 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
               <div className="border-t border-zinc-700 pt-3">
                 <div className="text-[11px] font-medium text-zinc-400">{text.tryIt.title}</div>
                 <ul className="mt-2 space-y-2 text-xs leading-relaxed text-zinc-300">
-                  {text.tryIt.feishu.map((example) => <li key={example}>{example}</li>)}
+                  {(activeStatus.id === 'tmeet' ? text.tryIt.tmeet : text.tryIt.feishu)
+                    .map((example) => <li key={example}>{example}</li>)}
                 </ul>
               </div>
 
@@ -858,8 +913,10 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
       <ConfirmDialog
         isOpen={Boolean(pendingDisconnectStatus)}
         title={text.disconnect.confirmTitle}
-        message={pendingDisconnectStatus?.authMode === 'lark-cli'
-          ? text.disconnect.larkCliConfirmMessage
+        message={pendingDisconnectStatus && isCliAuthMode(pendingDisconnectStatus.authMode)
+          ? pendingDisconnectStatus.id === 'tmeet'
+            ? text.disconnect.tmeetCliConfirmMessage
+            : text.disconnect.larkCliConfirmMessage
           : text.disconnect.confirmMessage}
         variant="danger"
         confirmText={text.actions.disconnect}

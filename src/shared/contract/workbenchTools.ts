@@ -1,4 +1,5 @@
 import type { ToolCall } from './tool';
+import { CLI_CONNECTOR_DESCRIPTORS } from '../constants/cliConnectorDescriptors';
 
 export type WorkbenchReferenceKind = 'skill' | 'connector' | 'mcp';
 
@@ -8,11 +9,19 @@ export interface WorkbenchToolReferenceMatch {
   action?: string;
 }
 
-export const CONNECTOR_TOOL_NAMES: Record<string, string[]> = {
+const NATIVE_CONNECTOR_TOOL_NAMES: Record<string, string[]> = {
   mail: ['mail', 'mail_send', 'mail_draft'],
   calendar: ['calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event'],
   reminders: ['reminders', 'reminders_create', 'reminders_update', 'reminders_delete'],
 };
+
+export const CONNECTOR_TOOL_NAMES = CLI_CONNECTOR_DESCRIPTORS.reduce<Record<string, string[]>>(
+  (toolNames, descriptor) => {
+    toolNames[descriptor.id] = descriptor.toolNames;
+    return toolNames;
+  },
+  { ...NATIVE_CONNECTOR_TOOL_NAMES },
+);
 
 export const ALL_CONNECTOR_TOOL_NAMES = new Set(
   Object.values(CONNECTOR_TOOL_NAMES).flat(),

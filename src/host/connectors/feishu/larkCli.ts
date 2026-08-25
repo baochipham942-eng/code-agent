@@ -1,5 +1,5 @@
 import { createCliConnector } from '../cli/cliConnector';
-import { feishuCliDescriptor } from './feishuCliDescriptor';
+import { feishuCliDescriptor } from '../../../shared/constants/cliConnectorDescriptors';
 
 interface LarkCliDriverOptions {
   dataDir?: string;

@@ -9,7 +9,11 @@ import type { AgentEvent, ModelConfig } from '../shared/contract';
  */
 import type { MessageAttachment } from '../shared/contract';
 import type { AppServiceRunOptions } from '../shared/contract/appService';
-import type { ConversationEnvelopeContext, ConversationExecutionIntent } from '../shared/contract/conversationEnvelope';
+import type {
+  ConversationEnvelopeContext,
+  ConversationExecutionIntent,
+  WorkbenchToolScope,
+} from '../shared/contract/conversationEnvelope';
 import type { ExplicitAgentOverride } from '../host/agent/explicitAgentOverride';
 import type { GoalContract } from '../host/agent/goalModeController';
 
@@ -53,6 +57,8 @@ export interface CLIConfig {
   maxIterations?: number;
   /** 当前 run 可见的原生工具白名单；会话指挥台前台脑据此保持窄工具面。 */
   allowedToolNames?: string[];
+  /** 当前 turn 的显式工具作用域；web HTTP 路径据此预载已选连接器/MCP 工具。 */
+  toolScope?: WorkbenchToolScope;
   /** 每轮执行意图（含 designCanvasActive 等）；web HTTP 路径据此透传到 RuntimeContext。 */
   executionIntent?: ConversationExecutionIntent;
   /** Per-turn web search switch. Omitted by legacy callers means enabled. */

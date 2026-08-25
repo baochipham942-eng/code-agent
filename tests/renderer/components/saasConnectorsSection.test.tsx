@@ -36,93 +36,123 @@ function renderStatus(overrides: Partial<typeof baseStatus> = {}) {
   return render(<SaaSConnectorsSection />);
 }
 
+function openFeishuDetail() {
+  fireEvent.click(screen.getByTestId('saas-connector-feishu'));
+  return screen.getByTestId('saas-detail-feishu');
+}
+
 beforeEach(() => {
   invokeDomain.mockReset();
 });
 
 afterEach(cleanup);
 
-describe('SaaSConnectorsSection provider states', () => {
-  it('A: missing secret expands the password field and only offers save-and-connect', async () => {
+describe('SaaSConnectorsSection five card states', () => {
+  it('needs_secret: card opens a password field and only offers save-and-connect', async () => {
     renderStatus();
 
-    expect(await screen.findByText(zh.settings.saasConnectors.badges.needsSetup)).toBeTruthy();
+    expect((await screen.findByTestId('saas-connector-feishu')).textContent)
+      .toContain(zh.settings.saasConnectors.badges.needsSetup);
+    openFeishuDetail();
     expect(screen.getByTestId('saas-secret-input-feishu').getAttribute('type')).toBe('password');
     expect(screen.getByTestId('saas-save-connect-feishu')).toBeTruthy();
     expect(screen.queryByTestId('saas-connect-feishu')).toBeNull();
     expect(screen.queryByTestId('saas-disconnect-feishu')).toBeNull();
   });
 
-  it('B: saved secret shows connect without rendering the secret field or disconnect', async () => {
+  it('ready: saved secret shows a connection entry without rendering secret or disconnect', async () => {
     renderStatus({ clientSecretConfigured: true });
 
-    expect(await screen.findByText(zh.settings.saasConnectors.badges.notConnected)).toBeTruthy();
-    expect(screen.getByTestId('saas-connector-feishu').textContent)
-      .toContain(zh.settings.saasConnectors.clientSecretSaved);
+    const card = await screen.findByTestId('saas-connector-feishu');
+    expect(card.textContent).toContain(zh.settings.saasConnectors.badges.notConnected);
+    expect(card.textContent).toContain(zh.settings.saasConnectors.clientSecretSaved);
+    openFeishuDetail();
     expect(screen.getByTestId('saas-connect-feishu')).toBeTruthy();
     expect(screen.queryByTestId('saas-secret-input-feishu')).toBeNull();
     expect(screen.queryByTestId('saas-disconnect-feishu')).toBeNull();
   });
 
-  it('C: connected shows the permanent secret-removal notice and only offers disconnect', async () => {
+  it('connecting: oauthConnect in flight overrides the card with orange local progress and toast', async () => {
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'oauthStatus') {
+        return Promise.resolve([{ ...baseStatus, clientSecretConfigured: true }]);
+      }
+      if (action === 'oauthConnect') {
+        return new Promise<void>(() => undefined);
+      }
+      return Promise.resolve([]);
+    });
+    render(<SaaSConnectorsSection />);
+
+    await screen.findByTestId('saas-connector-feishu');
+    openFeishuDetail();
+    fireEvent.click(screen.getByTestId('saas-connect-feishu'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('saas-connector-feishu').textContent)
+        .toContain(zh.settings.saasConnectors.badges.connecting);
+      expect(screen.getByTestId('saas-status-dot-feishu').className).toContain('bg-amber-400');
+      expect(screen.getByTestId('saas-connector-toast').textContent)
+        .toContain(zh.settings.saasConnectors.toast.authorizationOpened);
+    });
+  });
+
+  it('connected: green card opens permanent secret-removal notice and disconnect action', async () => {
     renderStatus({ clientSecretConfigured: true, connected: true });
 
-    expect(await screen.findByText(zh.settings.saasConnectors.badges.connected)).toBeTruthy();
+    expect((await screen.findByTestId('saas-status-dot-feishu')).className).toContain('bg-mark-success');
+    openFeishuDetail();
     expect(screen.getByText(zh.settings.saasConnectors.disconnect.noticeWithSecret)).toBeTruthy();
     expect(screen.getByTestId('saas-disconnect-feishu')).toBeTruthy();
     expect(screen.queryByTestId('saas-connect-feishu')).toBeNull();
     expect(screen.queryByTestId('saas-secret-input-feishu')).toBeNull();
   });
 
-  it('D: a provider that does not require a secret connects directly without a secret field', async () => {
-    renderStatus({ requiresClientSecret: false });
-
-    expect(await screen.findByText(zh.settings.saasConnectors.details.noSecretRequired)).toBeTruthy();
-    expect(screen.getByTestId('saas-connect-feishu')).toBeTruthy();
-    expect(screen.queryByTestId('saas-secret-input-feishu')).toBeNull();
-    expect(screen.queryByTestId('saas-save-connect-feishu')).toBeNull();
-    expect(screen.queryByTestId('saas-disconnect-feishu')).toBeNull();
-  });
-
-  it('missing client_id explains the packaging gap and renders no action button', async () => {
+  it('unavailable: missing client_id remains explainable but has no clickable action control', async () => {
     renderStatus({ clientIdConfigured: false });
 
-    expect(await screen.findByText(zh.settings.saasConnectors.details.missingClientId)).toBeTruthy();
-    expect(screen.getByTestId('saas-connector-feishu').textContent)
-      .toContain(`${zh.settings.saasConnectors.availableActionsPrefix}${zh.settings.saasConnectors.actions.none}`);
+    const card = await screen.findByTestId('saas-connector-feishu');
+    expect(card.textContent).toContain(zh.settings.saasConnectors.badges.unavailable);
+    expect(screen.queryByTestId('saas-card-action-feishu')).toBeNull();
+    openFeishuDetail();
+    expect(screen.getByText(zh.settings.saasConnectors.details.missingClientId)).toBeTruthy();
     expect(screen.queryByTestId('saas-connect-feishu')).toBeNull();
     expect(screen.queryByTestId('saas-save-connect-feishu')).toBeNull();
     expect(screen.queryByTestId('saas-disconnect-feishu')).toBeNull();
   });
 
-  it('fails closed when any status field is missing', async () => {
+  it('fails closed when any oauthStatus field is missing', async () => {
     const { connected: _connected, ...incompleteStatus } = baseStatus;
     invokeDomain.mockResolvedValue([incompleteStatus]);
     render(<SaaSConnectorsSection />);
 
     expect(await screen.findByText(zh.settings.saasConnectors.errors.statusUnavailable)).toBeTruthy();
-    expect(screen.queryByRole('button')).toBeNull();
+    expect(document.querySelector('button')).toBeNull();
   });
 });
 
-describe('SaaSConnectorsSection actions', () => {
-  it('saves the untrimmed secret, refreshes status, then starts the mapped OAuth action', async () => {
+describe('SaaSConnectorsSection actions and receipts', () => {
+  it('saves the untrimmed secret, refreshes, connects, and acknowledges success', async () => {
     let statusCall = 0;
     invokeDomain.mockImplementation((_domain: string, action: string, payload?: unknown) => {
       if (action === 'oauthStatus') {
         statusCall += 1;
-        return Promise.resolve([{ ...baseStatus, clientSecretConfigured: statusCall > 1 }]);
+        return Promise.resolve([{
+          ...baseStatus,
+          clientSecretConfigured: statusCall > 1,
+          connected: statusCall > 2,
+        }]);
       }
-      if (action === 'oauthSetSecret') return Promise.resolve([]);
-      if (action === 'oauthConnect') {
-        return Promise.resolve([{ ...baseStatus, clientSecretConfigured: true, connected: true }]);
-      }
+      if (action === 'oauthSetSecret' || action === 'oauthConnect') return Promise.resolve([]);
       throw new Error(`Unexpected action ${action}: ${String(payload)}`);
     });
     render(<SaaSConnectorsSection />);
 
-    const input = await screen.findByTestId('saas-secret-input-feishu');
-    fireEvent.change(input, { target: { value: '  app-secret-value  ' } });
+    await screen.findByTestId('saas-connector-feishu');
+    openFeishuDetail();
+    fireEvent.change(screen.getByTestId('saas-secret-input-feishu'), {
+      target: { value: '  app-secret-value  ' },
+    });
     fireEvent.click(screen.getByTestId('saas-save-connect-feishu'));
 
     await waitFor(() => {
@@ -136,31 +166,45 @@ describe('SaaSConnectorsSection actions', () => {
         'oauthConnect',
         { providerId: 'feishu', action: 'message.send-as-user' },
       );
+      expect(screen.getByTestId('saas-connector-toast').textContent)
+        .toContain(zh.settings.saasConnectors.toast.connected);
     });
 
-    const actions = invokeDomain.mock.calls.map(([, action]) => action);
-    expect(actions.slice(0, 4)).toEqual([
+    expect(invokeDomain.mock.calls.map(([, action]) => action).slice(0, 5)).toEqual([
       'oauthStatus',
       'oauthSetSecret',
       'oauthStatus',
       'oauthConnect',
+      'oauthStatus',
     ]);
   });
 
-  it('disconnects only after one confirmation and refreshes from oauthStatus', async () => {
+  it('disconnects only after confirmation, refreshes, and acknowledges the result', async () => {
+    let disconnected = false;
     invokeDomain.mockImplementation((_domain: string, action: string) => {
       if (action === 'oauthStatus') {
-        return Promise.resolve([{ ...baseStatus, clientSecretConfigured: true, connected: true }]);
+        return Promise.resolve([{
+          ...baseStatus,
+          clientSecretConfigured: !disconnected,
+          connected: !disconnected,
+        }]);
+      }
+      if (action === 'oauthDisconnect') {
+        disconnected = true;
+        return Promise.resolve([]);
       }
       return Promise.resolve([]);
     });
     render(<SaaSConnectorsSection />);
 
-    fireEvent.click(await screen.findByTestId('saas-disconnect-feishu'));
-    expect(screen.getByRole('dialog')).toBeTruthy();
+    await screen.findByTestId('saas-connector-feishu');
+    openFeishuDetail();
+    fireEvent.click(screen.getByTestId('saas-disconnect-feishu'));
     expect(invokeDomain.mock.calls.map(([, action]) => action)).not.toContain('oauthDisconnect');
 
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', {
+    fireEvent.click(within(screen.getByRole('dialog', {
+      name: zh.settings.saasConnectors.disconnect.confirmTitle,
+    })).getByRole('button', {
       name: zh.settings.saasConnectors.actions.disconnect,
     }));
     await waitFor(() => {
@@ -169,7 +213,45 @@ describe('SaaSConnectorsSection actions', () => {
         'oauthDisconnect',
         { providerId: 'feishu' },
       );
+      expect(screen.getByTestId('saas-connector-toast').textContent)
+        .toContain(zh.settings.saasConnectors.toast.disconnected);
     });
-    expect(invokeDomain.mock.calls.map(([, action]) => action).at(-1)).toBe('oauthStatus');
+  });
+
+  it('acknowledges cancellation returned by the OAuth flow', async () => {
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'oauthStatus') {
+        return Promise.resolve([{ ...baseStatus, clientSecretConfigured: true }]);
+      }
+      if (action === 'oauthConnect') return Promise.reject({ code: 'CANCELLED' });
+      return Promise.resolve([]);
+    });
+    render(<SaaSConnectorsSection />);
+
+    await screen.findByTestId('saas-connector-feishu');
+    openFeishuDetail();
+    fireEvent.click(screen.getByTestId('saas-connect-feishu'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('saas-connector-toast').textContent)
+        .toContain(zh.settings.saasConnectors.toast.authorizationCancelled);
+    });
+  });
+
+  it('keeps the read-only Feishu MCP route inside the advanced detail area', async () => {
+    const configureReadonly = vi.fn();
+    renderStatus({ clientSecretConfigured: true });
+    cleanup();
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'oauthStatus') return Promise.resolve([{ ...baseStatus, clientSecretConfigured: true }]);
+      return Promise.resolve([]);
+    });
+    render(<SaaSConnectorsSection onConfigureReadonlyMcp={configureReadonly} />);
+
+    await screen.findByTestId('saas-connector-feishu');
+    openFeishuDetail();
+    fireEvent.click(screen.getByText(zh.settings.saasConnectors.advanced.title));
+    fireEvent.click(screen.getByText(zh.settings.saasConnectors.advanced.configure));
+    expect(configureReadonly).toHaveBeenCalledTimes(1);
   });
 });

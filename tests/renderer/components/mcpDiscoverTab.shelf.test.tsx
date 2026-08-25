@@ -54,6 +54,19 @@ describe('McpDiscoverTab unified grid cards', () => {
     const exaCard = screen.getByTestId('mcp-discover-card-exa');
     expect(within(exaCard).getByRole('img', { name: 'Exa AI 搜索' })).toBeTruthy();
 
+    for (const [id, name] of [
+      ['notion', 'Notion'],
+      ['tencent-survey', '腾讯问卷'],
+      ['tencent-weiyun', '腾讯微云'],
+      ['puppeteer', 'Puppeteer'],
+      ['deepwiki', 'DeepWiki'],
+      ['tencent-map', '腾讯地图'],
+      ['amap', '高德地图'],
+    ]) {
+      const card = screen.getByTestId(`mcp-discover-card-${id}`);
+      expect(within(card).getByRole('img', { name })).toBeTruthy();
+    }
+
     const fetchCard = screen.getByTestId('mcp-discover-card-fetch');
     expect(within(fetchCard).queryByRole('img')).toBeNull();
     expect(fetchCard.querySelector('svg')).toBeTruthy();

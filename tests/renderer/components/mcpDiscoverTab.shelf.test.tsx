@@ -32,92 +32,63 @@ function renderDiscover(overrides: Partial<McpDiscoverTabProps> = {}) {
   return props;
 }
 
-describe('McpDiscoverTab 货架卡', () => {
+describe('McpDiscoverTab unified grid cards', () => {
   afterEach(cleanup);
 
-  it('按 connection/builtin 推导运行时徽标：NPX / UVX / 远程 / 内置', () => {
-    renderDiscover();
-
-    expect(screen.getByTestId('mcp-discover-runtime-playwright').textContent).toBe('NPX');
-    expect(screen.getByTestId('mcp-discover-runtime-fetch').textContent).toBe('UVX');
-    expect(screen.getByTestId('mcp-discover-runtime-notion').textContent).toBe(discoverText.runtimeRemote);
-    expect(screen.getByTestId('mcp-discover-runtime-exa').textContent).toBe(discoverText.runtimeBuiltin);
-  });
-
-  it('卡片渲染一句描述与凭证提示', () => {
+  it('keeps capability copy on the card and moves runtime details into the modal', () => {
     renderDiscover();
 
     const fetchCard = screen.getByTestId('mcp-discover-card-fetch');
     expect(fetchCard.textContent).toContain(findRecommendedMcpServer('fetch')!.description);
-    expect(fetchCard.textContent).toContain(discoverText.noConfig);
+    expect(fetchCard.textContent).not.toContain('APP_SECRET');
 
-    const exaCard = screen.getByTestId('mcp-discover-card-exa');
-    expect(exaCard.textContent).toContain('EXA_API_KEY');
+    fireEvent.click(fetchCard);
+    expect(screen.getByTestId('mcp-discover-runtime-fetch').textContent).toBe('UVX');
+    expect(screen.getByTestId('mcp-discover-tools-fetch').textContent).toContain('fetch');
+    expect(screen.getByText(discoverText.grid.tryIt)).toBeTruthy();
   });
 
-  it('展开箭头显示「N 个工具」与工具名列表；无静态清单的显示「安装后可见」占位', () => {
+  it('shows install-after-connect for entries without a curated tool list', () => {
     renderDiscover();
+    fireEvent.click(screen.getByTestId('mcp-discover-card-task_master'));
 
-    // fetch 有静态策展清单
-    fireEvent.click(screen.getByTestId('mcp-discover-expand-fetch'));
-    const fetchTools = screen.getByTestId('mcp-discover-tools-fetch');
-    const fetchEntry = findRecommendedMcpServer('fetch')!;
-    expect(fetchTools.textContent).toContain(`${fetchEntry.tools!.length}${discoverText.toolsCountSuffix}`);
-    expect(fetchTools.textContent).toContain('fetch');
-
-    // task_master 没填静态清单 → 占位
-    fireEvent.click(screen.getByTestId('mcp-discover-expand-task_master'));
-    expect(screen.getByTestId('mcp-discover-tools-task_master').textContent).toContain(
-      discoverText.toolsVisibleAfterInstall,
-    );
-
-    // 再点一次收起
-    fireEvent.click(screen.getByTestId('mcp-discover-expand-fetch'));
-    expect(screen.queryByTestId('mcp-discover-tools-fetch')).toBeNull();
+    expect(screen.getByTestId('mcp-discover-tools-task_master').textContent)
+      .toContain(discoverText.toolsVisibleAfterInstall);
   });
 
-  it('已配置过的 server 显示「已添加」态，不给重复添加按钮', () => {
+  it('removes configured servers from discovery so the grid has one card per connector', () => {
     renderDiscover({ existingServerIds: new Set(['excel']) });
 
-    expect(screen.getByTestId('mcp-discover-added-excel').textContent).toContain(discoverText.added);
-    expect(screen.queryByTestId('mcp-discover-add-excel')).toBeNull();
-    // 未配置的条目仍有添加按钮
-    expect(screen.getByTestId('mcp-discover-add-playwright')).toBeTruthy();
+    expect(screen.queryByTestId('mcp-discover-card-excel')).toBeNull();
+    expect(screen.getByTestId('mcp-discover-card-playwright')).toBeTruthy();
   });
 
-  it('「添加」走预填流程：回调携带目录条目（含 connection 预填模板），不直接写库', () => {
-    const props = renderDiscover();
+  it('merges the read-only lark entry into the SaaS Feishu detail instead of rendering a second card', () => {
+    renderDiscover();
 
-    const excelCard = screen.getByTestId('mcp-discover-card-excel');
-    fireEvent.click(within(excelCard).getByText(discoverText.add));
+    expect(screen.queryByTestId('mcp-discover-card-lark')).toBeNull();
+  });
+
+  it('opens details first, then routes add through the prefilled editor callback', () => {
+    const props = renderDiscover();
+    fireEvent.click(screen.getByTestId('mcp-discover-card-excel'));
+    fireEvent.click(screen.getByTestId('mcp-discover-add-excel'));
 
     expect(props.onAdd).toHaveBeenCalledTimes(1);
-    expect(props.onAdd).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 'excel',
-        connection: expect.objectContaining({ type: 'stdio', command: 'npx' }),
-      }),
-    );
+    expect(props.onAdd).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'excel',
+      connection: expect.objectContaining({ type: 'stdio', command: 'npx' }),
+    }));
     expect(props.onEnableBuiltin).not.toHaveBeenCalled();
   });
 
-  it('内置未启用的 server 走「启用」而非「添加」', () => {
+  it('routes a disabled built-in server to enable instead of add', () => {
     const props = renderDiscover();
-
     const exaCard = screen.getByTestId('mcp-discover-card-exa');
-    expect(within(exaCard).queryByText(discoverText.add)).toBeNull();
-    fireEvent.click(within(exaCard).getByText(discoverText.enable));
+    fireEvent.click(exaCard);
+    fireEvent.click(within(screen.getByRole('dialog')).getByText(discoverText.enable));
 
     expect(props.onEnableBuiltin).toHaveBeenCalledWith('exa');
     expect(props.onAdd).not.toHaveBeenCalled();
-  });
-
-  it('内置已启用的 server 显示「已添加」态', () => {
-    renderDiscover({
-      existingServerIds: new Set(['exa']),
-      enabledServerIds: new Set(['exa']),
-    });
-
-    expect(screen.getByTestId('mcp-discover-added-exa').textContent).toContain(discoverText.added);
   });
 });

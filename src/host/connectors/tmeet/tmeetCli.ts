@@ -6,6 +6,9 @@ interface TmeetCliDriverOptions {
   env?: NodeJS.ProcessEnv;
   npmExecutable?: string;
   timeoutMs?: number;
+  statusCacheTtlMs?: number;
+  statusTimeoutMs?: number;
+  now?: () => number;
   modelName?: string;
 }
 

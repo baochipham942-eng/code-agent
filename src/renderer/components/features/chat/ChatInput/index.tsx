@@ -1414,11 +1414,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 是这场对话「在跟谁协作」的常驻身份。 */}
             <AgentChip onOpenAgentCommand={openAgentCommand} />
 
-            {/* 当前会话挂载的连接器 / MCP 小图标（无挂载不渲染），点击即取消挂载 */}
-            <MountedConnectorIcons />
-
             {/* 运行权限模式 chip（高频，保留独立位置） */}
             <PermissionToggle disabled={disabled && !isProcessing} />
+
+            {/* 当前会话挂载的连接器 / MCP chip 放在「请求批准」右侧；无挂载不占位 */}
+            <MountedConnectorIcons />
 
             {/* B+ 移除: AbilityMenu (Routing/Browser/Live Preview) — 挪到 Settings；
                 Live Preview 后续挪到 SessionWorkspaceBar 顶栏 */}

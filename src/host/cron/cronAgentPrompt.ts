@@ -1,4 +1,5 @@
 import { CRON_AGENT_SNAPSHOT } from '../../shared/constants';
+import { formatTodayAnchor } from '../../shared/todayAnchor';
 
 /**
  * 只有开了变化追踪的任务才包装 prompt；没开的任务原样发送，行为完全不变。
@@ -18,12 +19,12 @@ export function buildCronAgentPrompt(
   // 本地当天 epoch 算成 2025 年、错时区——模型的 epoch 算术不可信。所以直接把算好的
   // 当天/次日本地 00:00 的 Unix 秒喂给它，让它照抄不换算。
   // ponytail: 用机器本地时区（目标用户=Asia/Shanghai）；跨时区 cron 需按 job 时区算，届时接 tz 库。
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const todayAnchor = formatTodayAnchor(now);
+  const startOfDay = new Date(todayAnchor.year, todayAnchor.month - 1, todayAnchor.day, 0, 0, 0, 0);
   const todayEpoch = Math.floor(startOfDay.getTime() / 1000);
   const tomorrowEpoch = todayEpoch + 86400;
-  const localDate = `${startOfDay.getFullYear()}-${String(startOfDay.getMonth() + 1).padStart(2, '0')}-${String(startOfDay.getDate()).padStart(2, '0')}`;
   const timeAnchor =
-    `【当前时间】${now.toISOString()}（UTC）。今天本地日期是 ${localDate}。`
+    `【当前时间】${now.toISOString()}（UTC）。今天本地日期是 ${todayAnchor.isoDate}。`
     + `若要按「今天/本地当天」查询时间戳，直接用这两个算好的值，不要自己换算年份：`
     + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
     + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';

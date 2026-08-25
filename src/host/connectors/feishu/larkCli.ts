@@ -6,6 +6,9 @@ interface LarkCliDriverOptions {
   env?: NodeJS.ProcessEnv;
   npmExecutable?: string;
   timeoutMs?: number;
+  statusCacheTtlMs?: number;
+  statusTimeoutMs?: number;
+  now?: () => number;
 }
 
 export function createLarkCliDriver(options: LarkCliDriverOptions = {}) {

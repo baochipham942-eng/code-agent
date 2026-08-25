@@ -453,7 +453,8 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     aliases: ['update calendar event', 'edit calendar event'],
     source: 'builtin',
   },
-  { name: 'tmeetMeetingList', shortDescription: '列出待开始或进行中的腾讯会议', tags: ['planning', 'search'], aliases: ['tmeet meetings', 'Tencent Meeting list', '腾讯会议列表', '腾讯会议', '会议', '最近会议'], source: 'builtin' },
+  { name: 'tmeetMeetingList', shortDescription: '列出待开始、进行中或近 30 天已结束的腾讯会议', tags: ['planning', 'search'], aliases: ['tmeet meetings', 'Tencent Meeting list', '腾讯会议列表', '腾讯会议', '会议', '最近会议', '历史会议', '已结束会议', '最近开过的会'], source: 'builtin' },
+  { name: 'tmeetMeetingSearch', shortDescription: '按关键词、会议号或时间窗搜索腾讯会议', tags: ['planning', 'search'], aliases: ['search Tencent Meeting', 'tmeet meeting search', '搜会议', '找会议', '会议号'], source: 'builtin' },
   { name: 'tmeetMeetingCreate', shortDescription: '创建腾讯会议', tags: ['planning'], aliases: ['create Tencent Meeting', 'new tmeet meeting', '创建腾讯会议'], source: 'builtin' },
   {
     name: 'mail',

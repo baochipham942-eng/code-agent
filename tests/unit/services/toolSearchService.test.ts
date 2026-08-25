@@ -176,6 +176,14 @@ describe('ToolSearchService loadable results', () => {
     expect(result.tools.map((tool) => tool.name)).toContain('tmeetMeetingList');
   });
 
+  it.each(['搜会议', '找会议', '会议号'])('finds Tencent Meeting search from its Chinese aliases: %s', async (query) => {
+    const service = new ToolSearchService();
+
+    const result = await service.searchTools(query, { maxResults: 5, includeMCP: false });
+
+    expect(result.tools.map((tool) => tool.name)).toContain('tmeetMeetingSearch');
+  });
+
   it('does not load a selected builtin search result without protocol schema', () => {
     const service = new ToolSearchService();
 

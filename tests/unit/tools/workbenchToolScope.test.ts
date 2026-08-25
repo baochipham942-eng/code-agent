@@ -23,7 +23,7 @@ function makeTool(name: string): ToolDefinition {
 describe('workbenchToolScope', () => {
   it('derives CLI connector tool names from the canonical descriptor', () => {
     expect(CONNECTOR_TOOL_NAMES.tmeet).toBe(tmeetDescriptor.toolNames);
-    expect(CONNECTOR_TOOL_NAMES.tmeet).toEqual(['tmeetMeetingList', 'tmeetMeetingCreate']);
+    expect(CONNECTOR_TOOL_NAMES.tmeet).toEqual(['tmeetMeetingList', 'tmeetMeetingCreate', 'tmeetMeetingSearch']);
   });
 
   it('normalizes and deduplicates selected scope ids', () => {

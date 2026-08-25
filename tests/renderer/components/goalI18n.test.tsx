@@ -47,9 +47,14 @@ describe('goal UI 文案 i18n（zh/en 对齐，不再硬编码）', () => {
     expect(running).toContain(zh.goalStatusBar.verifying);
 
     const paused = renderToStaticMarkup(
-      <GoalStatusBarView run={{ ...baseRun, status: 'paused', gates: [] } as GoalRunState} onTogglePause={() => {}} />,
+      <GoalStatusBarView
+        run={{ ...baseRun, status: 'paused', reason: 'anti_spin', gates: [] } as GoalRunState}
+        onTogglePause={() => {}}
+      />,
     );
     expect(paused).toContain(zh.goalStatusBar.pausedPrefix);
+    expect(paused).toContain(zh.goalStatusBar.antiSpinReason);
+    expect(paused).toContain('data-goal-pause-reason="anti_spin"');
   });
 
   it('goalNotice / goalStatusBar 的 zh/en 键对齐', () => {

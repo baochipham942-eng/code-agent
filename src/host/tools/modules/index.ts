@@ -69,6 +69,7 @@ import { calendarUpdateEventSchema } from './connectors/calendarUpdateEvent.sche
 import { calendarDeleteEventSchema } from './connectors/calendarDeleteEvent.schema';
 import { tmeetMeetingListSchema } from './connectors/tmeetMeetingList.schema';
 import { tmeetMeetingCreateSchema } from './connectors/tmeetMeetingCreate.schema';
+import { tmeetMeetingSearchSchema } from './connectors/tmeetMeetingSearch.schema';
 
 // document/
 import { docEditSchema } from './document/docEdit.schema';
@@ -360,6 +361,10 @@ export function registerMigratedTools(
   registry.register(
     tmeetMeetingCreateSchema,
     async () => (await import('./connectors/tmeetMeetingCreate')).tmeetMeetingCreateModule,
+  );
+  registry.register(
+    tmeetMeetingSearchSchema,
+    async () => (await import('./connectors/tmeetMeetingSearch')).tmeetMeetingSearchModule,
   );
 
   // ── batch 6: multiagent/ — 9 工具全部 native（Wave 3 完成，wrappers.ts 已删除）─

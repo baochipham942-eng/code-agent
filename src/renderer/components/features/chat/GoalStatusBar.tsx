@@ -57,6 +57,11 @@ export const GoalStatusBarView: React.FC<{ run: GoalRunState; onTogglePause: () 
       <span className="truncate text-zinc-300" title={run.goal}>
         {paused ? t.goalStatusBar.pausedPrefix : t.goalStatusBar.runningPrefix}
         <span className="text-zinc-100">{run.goal}</span>
+        {paused && run.reason === 'anti_spin' && (
+          <span data-goal-pause-reason="anti_spin" className="text-zinc-400">
+            {' · '}{t.goalStatusBar.antiSpinReason}
+          </span>
+        )}
       </span>
       <span className="ml-auto flex flex-shrink-0 items-center gap-2 text-zinc-400">
         {!paused && <Loader2 className="h-3 w-3 animate-spin text-badge-info" />}

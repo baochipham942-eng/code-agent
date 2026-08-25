@@ -2361,7 +2361,19 @@
           "type": "number"
         },
         "goalStatus": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "pending",
+            "paused",
+            "met",
+            "aborted"
+          ]
+        },
+        "pauseReason": {
+          "type": "string",
+          "enum": [
+            "anti_spin"
+          ]
         },
         "tokensUsed": {
           "type": "number"

@@ -182,8 +182,7 @@ export interface GoalRunState {
   tokenBudget: number;
   /** 墙钟时间预算（ms）；undefined = 不限时（①，StatusBar 据此显示剩余时间） */
   wallClockBudgetMs?: number;
-  /** 中止原因（status=aborted 时） */
-  abortReason?: string;
+  reason?: string;
   /** 到限放行：met 但验证未全过（修复预算耗尽，安静降级标识） */
   degraded?: boolean;
   /** 结束时间戳（met/aborted 后用于停表 + 展示总耗时） */
@@ -471,9 +470,9 @@ export interface AppState {
   startGoalRun: (sessionId: string, init: { goal: string; maxTurns?: number; tokenBudget?: number; wallClockBudgetMs?: number }) => void;
   updateGoalProgress: (sessionId: string, data: { turn?: number; maxTurns?: number; tokensUsed?: number; tokenBudget?: number; wallClockBudgetMs?: number }) => void;
   recordGoalGate: (sessionId: string, gate: { gate: number; pass: boolean; reason?: string; verificationCard?: GoalGateVerificationCard }) => void;
-  finishGoalRun: (sessionId: string, status: 'met' | 'aborted', abortReason?: string, degraded?: boolean) => void;
+  finishGoalRun: (sessionId: string, status: 'met' | 'aborted', reason?: string, degraded?: boolean) => void;
   /** ③ session 内暂停/恢复：仅切换 running↔paused，不动 met/aborted（UI 态，配合后端 isPaused 循环挂起） */
-  setGoalPaused: (sessionId: string, paused: boolean) => void;
+  setGoalPaused: (sessionId: string, paused: boolean, pauseReason?: 'anti_spin') => void;
   clearGoalRun: (sessionId: string) => void;
   setModelConfig: (config: ModelConfig) => void;
   // clearChat 简化：只清除 planning 相关状态（messages/todos 由 sessionStore 管理）
@@ -1219,19 +1218,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
       };
     }),
 
-  finishGoalRun: (sessionId, status, abortReason, degraded) =>
+  finishGoalRun: (sessionId, status, reason, degraded) =>
     set((state) => {
       const prev = state.goalRuns[sessionId];
       if (!prev) return {};
       return {
         goalRuns: {
           ...state.goalRuns,
-          [sessionId]: { ...prev, status, abortReason, finishedAt: Date.now(), ...(degraded ? { degraded } : {}) },
+          [sessionId]: { ...prev, status, reason, finishedAt: Date.now(), ...(degraded ? { degraded } : {}) },
         },
       };
     }),
 
-  setGoalPaused: (sessionId, paused) =>
+  setGoalPaused: (sessionId, paused, pauseReason) =>
     set((state) => {
       const prev = state.goalRuns[sessionId];
       // 仅运行中/已暂停的 goal 可切换；met/aborted 终态不动
@@ -1239,7 +1238,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       return {
         goalRuns: {
           ...state.goalRuns,
-          [sessionId]: { ...prev, status: paused ? 'paused' : 'running' },
+          [sessionId]: { ...prev, status: paused ? 'paused' : 'running', reason: paused ? pauseReason : undefined },
         },
       };
     }),

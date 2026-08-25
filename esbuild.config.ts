@@ -16,6 +16,7 @@
 import * as esbuild from 'esbuild';
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { chmod } from 'node:fs/promises';
 import { mkdirSync } from 'fs';
 import { homedir } from 'os';
 import path from 'path';
@@ -267,6 +268,12 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
 // ---------------------------------------------------------------------------
 const BUILD_TIMEOUT_MS = 60_000;
 
+async function ensureShebangExecutable(filePath: string): Promise<void> {
+  if (readFileSync(filePath, 'utf8').startsWith('#!')) {
+    await chmod(filePath, 0o755);
+  }
+}
+
 async function build(target: BuildTarget): Promise<void> {
   const start = Date.now();
 
@@ -296,6 +303,7 @@ async function build(target: BuildTarget): Promise<void> {
   }
 
   target.postBuild?.();
+  await ensureShebangExecutable(target.outfile);
 
   const elapsed = Date.now() - start;
   if (elapsed > BUILD_TIMEOUT_MS) {

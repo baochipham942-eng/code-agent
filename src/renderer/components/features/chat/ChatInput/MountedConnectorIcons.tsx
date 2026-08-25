@@ -9,9 +9,12 @@
 
 import React from 'react';
 import { Plug, Server, X } from 'lucide-react';
+import { CLI_CONNECTOR_DESCRIPTORS } from '@shared/constants/cliConnectorDescriptors';
+import { findRecommendedMcpServer } from '@shared/constants/mcpCatalog';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import { useI18n } from '../../../../hooks/useI18n';
 import { removeCapability } from './SelectedCapabilityChips';
+import { ConnectorLogo } from '../../connectors/ConnectorLogo';
 
 export const MountedConnectorIcons: React.FC = () => {
   const { t } = useI18n();
@@ -26,6 +29,12 @@ export const MountedConnectorIcons: React.FC = () => {
         const label = capability.kind === 'connector' && (capability.id === 'feishu' || capability.id === 'tmeet')
           ? t.settings.saasConnectors.providers[capability.id]
           : capability.label;
+        const catalogEntry = capability.kind === 'mcp'
+          ? findRecommendedMcpServer(capability.id)
+          : undefined;
+        const logo = capability.kind === 'mcp'
+          ? catalogEntry?.logo
+          : CLI_CONNECTOR_DESCRIPTORS.find((descriptor) => descriptor.id === capability.id)?.logo;
         return (
           <div
             key={capability.key}
@@ -33,7 +42,12 @@ export const MountedConnectorIcons: React.FC = () => {
             data-testid={`mounted-capability-${capability.kind}-${capability.id}`}
             className="group inline-flex h-[24px] max-w-[180px] shrink-0 items-center gap-1 rounded-full border border-zinc-700 bg-zinc-800/70 px-1.5 text-xs text-zinc-200 transition-colors hover:border-zinc-500"
           >
-            <TypeIcon className="h-3 w-3 shrink-0 text-badge-info" aria-hidden />
+            <ConnectorLogo
+              id={logo}
+              displayName={catalogEntry?.name ?? label}
+              fallback={<TypeIcon className="h-3 w-3 shrink-0 text-badge-info" aria-hidden />}
+              className="h-3 w-3"
+            />
             <span className="truncate">{label}</span>
             <button /* ds-allow:button: chip 内紧凑移除动作，Button primitive 无此尺寸 */
               type="button"

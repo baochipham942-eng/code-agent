@@ -10,6 +10,7 @@ import { Button, Modal } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
+import { ConnectorLogo } from '../../connectors/ConnectorLogo';
 
 type McpDiscoverLabels = typeof zh.settings.mcp.discover;
 
@@ -131,7 +132,11 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2.5">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
-                  <Plug className="h-4 w-4 text-zinc-400" />
+                  <ConnectorLogo
+                    id={entry.logo}
+                    displayName={entry.name}
+                    fallback={<Plug className="h-4 w-4 text-zinc-400" />}
+                  />
                 </span>
                 <span className="truncate text-sm font-medium text-zinc-100">{entry.name}</span>
               </div>
@@ -168,7 +173,12 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
             <div className="space-y-4 p-5" data-testid={`mcp-discover-detail-${activeEntry.id}`}>
               <div className="text-center">
                 <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-800">
-                  <Plug className="h-5 w-5 text-zinc-300" />
+                  <ConnectorLogo
+                    id={activeEntry.logo}
+                    displayName={activeEntry.name}
+                    fallback={<Plug className="h-5 w-5 text-zinc-300" />}
+                    className="h-5 w-5"
+                  />
                 </span>
                 <p className="mt-3 text-xs leading-relaxed text-zinc-400">{activeEntry.description}</p>
               </div>

@@ -247,7 +247,7 @@ export interface AgentApplicationService {
   sendMessage(envelope: ConversationEnvelope): Promise<void>;
   cancel(sessionId?: string): Promise<void>;
   /** 回报投递结果：'no_orchestrator'/'unknown_request' = 停车审批宿主已死，行已被标 orphaned */
-  handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string): PermissionDeliveryOutcome;
+  handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string, updatedArgs?: Record<string, unknown>): PermissionDeliveryOutcome;
   interruptAndContinue(envelope: ConversationEnvelope): Promise<SteerOrQueueOutcome>;
 
   // === Workspace ===

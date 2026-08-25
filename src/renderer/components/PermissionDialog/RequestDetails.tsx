@@ -7,6 +7,7 @@ import type { PermissionRequest } from './types';
 import { getPermissionBoundary, type DecisionTrace, type PermissionBoundary } from '@shared/contract';
 import { formatFilePath } from './utils';
 import { DiffView } from '../DiffView';
+import { WritebackFieldsView } from './WritebackFields';
 
 interface RequestDetailsProps {
   request: PermissionRequest;
@@ -17,6 +18,19 @@ export function RequestDetails({ request }: RequestDetailsProps) {
 
   // 兼容旧版 API：path -> filePath
   const filePath = details.filePath || details.path;
+
+  // N-WRITEBACK-EDIT：可编辑写回工具把参数全部摊开（含正文），不再用只拼 To/CC 的通用预览，
+  // 也不显示按 permissionLevel 推断出来的「修改当前项目文件」边界（对邮件是误导）。
+  if (request.rawArgs) {
+    return (
+      <div className="space-y-3">
+        <WritebackFieldsView tool={request.tool} args={request.rawArgs} />
+        {request.decisionTrace && request.decisionTrace.steps.length > 0 && (
+          <DecisionTraceView trace={request.decisionTrace} />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">

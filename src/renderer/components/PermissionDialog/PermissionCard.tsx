@@ -9,6 +9,7 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Mail } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { usePermissionStore, type PermissionRequestForMemory } from '../../stores/permissionStore';
@@ -16,13 +17,20 @@ import { DecisionCard, isEditableTarget, type DecisionOption } from '../Decision
 import { RequestDetails } from './RequestDetails';
 import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionResponse } from '@shared/contract';
-import { permissionReasonText } from '@shared/contract';
+import { isEditableTool, permissionReasonText } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { getPermissionConfig, isDangerousCommand, getDangerReason, formatFilePath } from './utils';
 import { useI18n, type Translations } from '../../hooks/useI18n';
 import ipcService from '../../services/ipcService';
 import { toast } from '../../hooks/useToast';
 import { claimApprovalResponse, releaseApprovalResponse } from '../../utils/approvalResponseGuard';
+import {
+  WritebackEditForm,
+  draftFromArgs,
+  draftMissingRequired,
+  draftToArgs,
+  type WritebackDraft,
+} from './WritebackFields';
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -48,6 +56,8 @@ function normalizeRequest(
       path: request.details.path,
       preview: request.details.preview,
     },
+    // 可编辑工具才带原参数（host 默认分支 details = {...params} + 透传字段）；其余不背这份
+    rawArgs: isEditableTool(request.tool) ? (request.details as Record<string, unknown>) : undefined,
     timestamp: request.timestamp,
     decisionTrace: request.decisionTrace,
   };
@@ -108,6 +118,8 @@ export function PermissionCard() {
   const processedRequestRef = useRef<string | null>(null);
   // 选中的审批级别（DecisionCard 选项行）；字母快捷键直发时不经过它
   const [selectedLevel, setSelectedLevel] = useState<ApprovalLevel | null>(null);
+  // N-WRITEBACK-EDIT 编辑态：draft 非 null = 正在改；只有点「按修改后发送」才会送出，Esc/放弃 = 什么都不发
+  const [draft, setDraft] = useState<WritebackDraft | null>(null);
 
   const request = pendingPermissionRequest && !(
     pendingPermissionSessionId &&
@@ -121,7 +133,11 @@ export function PermissionCard() {
   const requestId = request?.id ?? null;
   useEffect(() => {
     setSelectedLevel(null);
+    setDraft(null);
   }, [requestId]);
+
+  // 可编辑写回工具（首版 mail_send）：三选一（发送 / 改一改再发 / 不发），永远一次性放行
+  const editable = request?.rawArgs !== undefined && isEditableTool(request.tool);
 
   // 「这操作本身危险」与「这次必须你亲手点」是两件事，卡上必须分开表达。
   //
@@ -130,14 +146,17 @@ export function PermissionCard() {
   // （档位规定逐次确认，与内容危险度无关）。此前这里把 forceConfirm 直接当危险，
   // 于是往工作目录写个 hello 也会顶着红框和「这是一个危险命令」——
   // 红卡成了常态，真危险那次反而淹在里面。
+  // 可编辑写回工具不走「危险命令」红卡：它的风险是「发出去收不回」，用黄色不可撤回提示表达，
+  // host 侧 risk=high 判定不动（它还管停车/账本）。
   const isDangerous =
     request !== null &&
+    !editable &&
     (request.dangerLevel === 'danger' ||
       request.type === 'dangerous_command' ||
       (request.type === 'command' && isDangerousCommand(request.details.command)));
 
   // forceConfirm 该有的职责一点没松：不许走「会话/始终」这类常驻授权，必须逐次点。
-  const hideStandingGrants = isDangerous || request?.forceConfirm === true;
+  const hideStandingGrants = isDangerous || editable || request?.forceConfirm === true;
 
   const memoryRequest = request ? toMemoryRequest(request) : null;
   const isNewRequest = request !== null && processedRequestRef.current !== request.id;
@@ -160,7 +179,7 @@ export function PermissionCard() {
   };
 
   const handleApproval = useCallback(
-    async (level: ApprovalLevel) => {
+    async (level: ApprovalLevel, updatedArgs?: Record<string, unknown>) => {
       if (!request) return;
 
       const requestSnapshot = pendingPermissionRequest;
@@ -192,11 +211,13 @@ export function PermissionCard() {
 
         const response = toPermissionResponse(level);
         if (!ipcService.isAvailable()) throw new Error('IPC unavailable');
+        // 改过的参数只随 'allow' 一次性放行送出（host 侧同样只认这个组合）
         await ipcService.invoke(
           IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
           request.id,
           response,
-          request.sessionId
+          request.sessionId,
+          ...(updatedArgs && response === 'allow' ? [updatedArgs] : []),
         );
         setPendingPermissionRequest(null);
       } catch {
@@ -240,10 +261,19 @@ export function PermissionCard() {
       if (isEditableTarget(e.target)) {
         return;
       }
+      // 编辑态里字母直发一律停掉：改到一半按个 y 把原稿发出去 = 与编辑态的承诺相反
+      if (draft !== null) return;
 
       const key = e.key.toLowerCase();
 
       switch (key) {
+        case 'e':
+          if (editable && request.rawArgs) {
+            e.preventDefault();
+            e.stopPropagation();
+            setDraft(draftFromArgs(request.tool, request.rawArgs));
+          }
+          break;
         case 'y':
           e.preventDefault();
           e.stopPropagation();
@@ -277,7 +307,7 @@ export function PermissionCard() {
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [request, handleApproval, hideStandingGrants]);
+  }, [request, handleApproval, hideStandingGrants, draft, editable]);
 
   // 如果没有当前会话可见的待处理权限请求，不渲染
   if (!request) return null;
@@ -286,7 +316,12 @@ export function PermissionCard() {
   const dangerReason = isDangerous ? getDangerReason(request.details.command) : null;
 
   const p = t.decisionCard.permission;
-  const options: DecisionOption[] = [
+  const w = p.writeback;
+  const options: DecisionOption[] = editable ? [
+    { id: 'once', label: w.optionSend, description: w.optionSendDesc, shortcut: 'y' },
+    { id: 'edit', label: w.optionEdit, description: w.optionEditDesc, shortcut: 'e' },
+    { id: 'deny', label: w.optionDeny, description: w.optionDenyDesc, shortcut: 'n' },
+  ] : [
     { id: 'once', label: p.optionOnce, description: p.optionOnceDesc, shortcut: 'y' },
     ...(!hideStandingGrants
       ? [
@@ -299,28 +334,77 @@ export function PermissionCard() {
 
   const reasonText = request.reason || (request.reasonCode ? permissionReasonText(request.reasonCode) : '');
 
+  // 可编辑写回工具的专属呈现：标题 / 图标 / 问句点题（不再是「创建文件」+「允许这次操作？」）
+  const firstRecipient = editable && Array.isArray(request.rawArgs?.to) ? String(request.rawArgs.to[0] ?? '') : '';
+  const title = editable ? w.mailSendTitle : (isDangerous ? t.decisionCard.dangerTitle : config.title);
+  const icon = editable ? <Mail size={20} /> : config.icon;
+  const question = editable
+    ? (firstRecipient ? w.mailSendQuestion.replace('{target}', firstRecipient) : w.mailSendQuestionFallback)
+    : permissionQuestion(request, t);
+
+  // 编辑态：选项行让位给表单；主按钮 = 按修改后发送（必填为空时禁用），ghost = 放弃修改
+  if (editable && draft !== null && request.rawArgs) {
+    const missing = draftMissingRequired(request.tool, draft);
+    return (
+      <DecisionCard
+        testId="permission-card"
+        tone="neutral"
+        icon={icon}
+        title={title}
+        headerMeta={`${request.tool} · ${w.editingBadge}`}
+        question={w.irreversible}
+        details={
+          <WritebackEditForm
+            tool={request.tool}
+            draft={draft}
+            original={request.rawArgs}
+            onChange={setDraft}
+          />
+        }
+        options={[]}
+        selectedId={missing.length === 0 ? 'edit' : null}
+        onSelect={() => {}}
+        onConfirm={() => {
+          if (missing.length === 0) void handleApproval('once', draftToArgs(request.tool, draft));
+        }}
+        onCancel={() => setDraft(null)}
+        cancelLabel={w.discard}
+        confirmLabel={w.sendEdited}
+      />
+    );
+  }
+
   return (
     <DecisionCard
       testId="permission-card"
       tone={isDangerous ? 'danger' : 'neutral'}
-      icon={config.icon}
-      title={isDangerous ? t.decisionCard.dangerTitle : config.title}
+      icon={icon}
+      title={title}
       headerMeta={request.tool}
       dangerWarning={
         isDangerous
           ? `${t.decisionCard.dangerCopy}：${dangerReason || t.decisionCard.dangerDefaultReason}`
           : undefined
       }
-      question={permissionQuestion(request, t)}
+      question={question}
       details={
         <>
-          {reasonText && <p className="text-zinc-400 text-sm">{reasonText}</p>}
+          {editable && (
+            <p className="text-xs text-badge-warning" data-testid="writeback-irreversible">{w.irreversible}</p>
+          )}
+          {!editable && reasonText && <p className="text-zinc-400 text-sm">{reasonText}</p>}
           <RequestDetails request={request} />
         </>
       }
       options={options}
       selectedId={selectedLevel}
-      onSelect={(id) => setSelectedLevel(id as ApprovalLevel)}
+      onSelect={(id) => {
+        if (id === 'edit') {
+          if (request.rawArgs) setDraft(draftFromArgs(request.tool, request.rawArgs));
+          return;
+        }
+        setSelectedLevel(id as ApprovalLevel);
+      }}
       onConfirm={() => {
         if (selectedLevel) void handleApproval(selectedLevel);
       }}

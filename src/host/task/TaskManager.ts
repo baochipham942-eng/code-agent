@@ -772,13 +772,14 @@ export class TaskManager extends EventEmitter {
   handlePermissionResponse(
     sessionId: string,
     requestId: string,
-    response: PermissionResponse
+    response: PermissionResponse,
+    updatedArgs?: Record<string, unknown>,
   ): PermissionDeliveryOutcome {
     const backgroundTaskId = this.backgroundPermissionOwners.get(requestId);
     if (backgroundTaskId) {
       const background = this.backgroundRuns.get(backgroundTaskId);
       if (background?.sessionId !== sessionId) return 'no_orchestrator';
-      const outcome = background.orchestrator.handlePermissionResponse(requestId, response);
+      const outcome = background.orchestrator.handlePermissionResponse(requestId, response, updatedArgs);
       if (outcome !== 'unknown_request') this.backgroundPermissionOwners.delete(requestId);
       return outcome;
     }
@@ -795,7 +796,7 @@ export class TaskManager extends EventEmitter {
       });
       return 'no_orchestrator';
     }
-    return wrapper.orchestrator.handlePermissionResponse(requestId, response);
+    return wrapper.orchestrator.handlePermissionResponse(requestId, response, updatedArgs);
   }
 
   /**

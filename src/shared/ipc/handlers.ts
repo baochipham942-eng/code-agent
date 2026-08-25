@@ -64,7 +64,7 @@ export interface IpcInvokeHandlers {
   // Agent - 支持纯文本或带附件的消息
   [IPC_CHANNELS.AGENT_SEND_MESSAGE]: (message: string | AgentMessageRequest) => Promise<void>;
   [IPC_CHANNELS.AGENT_CANCEL]: (payload?: AgentCancelRequest) => Promise<void>;
-  [IPC_CHANNELS.AGENT_PERMISSION_RESPONSE]: (requestId: string, response: PermissionResponse, sessionId?: string) => Promise<void>;
+  [IPC_CHANNELS.AGENT_PERMISSION_RESPONSE]: (requestId: string, response: PermissionResponse, sessionId?: string, updatedArgs?: Record<string, unknown>) => Promise<void>;
 
   // Session
   [IPC_CHANNELS.SESSION_LIST]: (options?: { includeArchived?: boolean }) => Promise<Session[]>;

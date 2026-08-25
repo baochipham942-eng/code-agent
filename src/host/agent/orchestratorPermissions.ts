@@ -14,6 +14,7 @@ import { getSessionAutomationService } from '../services/sessionAutomation/sessi
 import { notificationService } from '../services/infra/notificationService';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
+import { EDITABLE_PERMISSION_TIMEOUT_MS, isEditableTool } from '../../shared/contract/permissionEdit';
 import { approvalParkEvents } from './approvalParkEvents';
 import { getConfirmationGate } from './confirmationGate';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
@@ -36,14 +37,23 @@ function isApproveResponse(response: PermissionResponse): boolean {
 function toAskResult(
   response: PermissionResponse,
   machineDenial?: PermissionDenialSource,
+  updatedArgs?: Record<string, unknown>,
 ): PermissionAskResult {
-  if (isApproveResponse(response)) return { approved: true };
+  if (isApproveResponse(response)) {
+    if (!updatedArgs) return { approved: true };
+    // N-WRITEBACK-EDIT：改过的参数只配一次性放行。配会话/长期授权 = 把改过的内容当成
+    // 同类操作的记忆，语义不成立，fail-closed 拒。
+    if (response !== 'allow') {
+      return { approved: false, denialSource: 'fail-closed', message: 'edited arguments require a one-time allow' };
+    }
+    return { approved: true, updatedArgs };
+  }
   return { approved: false, denialSource: machineDenial ?? 'user' };
 }
 
 export class OrchestratorPermissionIsland {
   private pendingPermissions: Map<string, {
-    resolve: (response: PermissionResponse, machineDenial?: PermissionDenialSource) => void;
+    resolve: (response: PermissionResponse, machineDenial?: PermissionDenialSource, updatedArgs?: Record<string, unknown>) => void;
     request: PermissionRequest;
     /** B2: 无人值守停车挂起的审批（有 pending_approvals 行）。resolve 走 repo-changes 裁决口。 */
     parked?: boolean;
@@ -76,7 +86,7 @@ export class OrchestratorPermissionIsland {
   private readonly getExecutionTopology: () => ExecutionTopology;
   private readonly onEvent: (event: AgentEvent) => void;
 
-  handlePermissionResponse(requestId: string, response: PermissionResponse): PermissionDeliveryOutcome {
+  handlePermissionResponse(requestId: string, response: PermissionResponse, updatedArgs?: Record<string, unknown>): PermissionDeliveryOutcome {
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) {
       // 这条分支就是「用户点了『允许』，然后什么也没发生」的现场（2026-07-26 真机踩到）：
@@ -92,14 +102,20 @@ export class OrchestratorPermissionIsland {
     }
     // B2: 停车挂起的审批走 repo-changes 裁决口（会话卡 / 收件箱两口共用）。
     if (pending.parked) {
+      if (updatedArgs) {
+        // 停车审批（飞书卡/收件箱）没有编辑口；带着改过的参数来的应答不可信，fail-closed 拒。
+        logger.warn('Edited arguments on a parked approval, denying', { requestId, tool: pending.request?.tool });
+        this.resolveParkedApproval(requestId, 'deny', 'edited arguments not accepted on parked approval', 'fail-closed');
+        return 'delivered';
+      }
       logger.info('Permission response delivered to parked approval', { requestId, response, tool: pending.request?.tool });
       this.resolveParkedApproval(requestId, response);
       return 'delivered';
     }
     // 成功路径也要留痕：没有这条就无法区分「点击没到 host」和「到了但没生效」，
     // 2026-07-26 那次排查整整卡在这个区分上。
-    logger.info('Permission response delivered', { requestId, response, tool: pending.request?.tool });
-    pending.resolve(response);
+    logger.info('Permission response delivered', { requestId, response, tool: pending.request?.tool, edited: Boolean(updatedArgs) });
+    pending.resolve(response, undefined, updatedArgs);
     this.pendingPermissions.delete(requestId);
     return 'delivered';
   }
@@ -305,7 +321,8 @@ export class OrchestratorPermissionIsland {
       }
     }
 
-    const PERMISSION_TIMEOUT = 60000;
+    // N-WRITEBACK-EDIT：可编辑工具（mail_send）留足改正文的时间，其余维持 60s 死锁兜底。
+    const PERMISSION_TIMEOUT = isEditableTool(request.tool) ? EDITABLE_PERMISSION_TIMEOUT_MS : 60000;
 
     return new Promise((resolve) => {
       const timeoutId = setTimeout(() => {
@@ -316,12 +333,12 @@ export class OrchestratorPermissionIsland {
       }, PERMISSION_TIMEOUT);
 
       this.pendingPermissions.set(fullRequest.id, {
-        resolve: (response, machineDenial) => {
+        resolve: (response, machineDenial, updatedArgs) => {
           clearTimeout(timeoutId);
           if (response === 'allow_session' && fullRequest.sessionId) {
             getConfirmationGate().recordApproval(fullRequest.sessionId, fullRequest.tool);
           }
-          resolve(toAskResult(response, machineDenial));
+          resolve(toAskResult(response, machineDenial, updatedArgs));
         },
         request: fullRequest,
       });

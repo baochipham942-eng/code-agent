@@ -60,6 +60,8 @@ export interface PermissionRequest {
   reasonCode?: PermissionRequestReason;
   boundary?: PermissionBoundaryRef;
   details: PermissionRequestDetails;
+  /** N-WRITEBACK-EDIT：host 默认分支把工具原参数整份放在 details 里；可编辑工具的查看/编辑态读这份 */
+  rawArgs?: Record<string, unknown>;
   dangerLevel?: DangerLevel;
   timestamp?: number;
   /** Decision trace: why this permission was requested */

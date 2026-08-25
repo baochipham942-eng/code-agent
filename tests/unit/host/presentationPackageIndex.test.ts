@@ -64,6 +64,9 @@ function makeLogger(): Logger {
 function makeCtx(workDir: string): ToolContext {
   return {
     sessionId: 'presentation-package-index-test',
+    // N-EDITTOOLLOCK：pptEdit 的写动作要求 agentId（单写者锁 holder = sessionId:agentId），
+    // 缺身份会被 MISSING_AGENT_IDENTITY 拒写。
+    agentId: 'presentation-package-index-agent',
     workingDir: workDir,
     abortSignal: new AbortController().signal,
     logger: makeLogger(),

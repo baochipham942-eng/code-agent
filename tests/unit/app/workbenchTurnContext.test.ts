@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import type { ConnectorStatus } from '../../../src/host/connectors';
 import { getConnectorRegistry } from '../../../src/host/connectors';
+import { replaceCliConnectorConnectionStatusCache } from '../../../src/host/connectors/cli/cliConnectorStatusCache';
 import {
   buildWorkbenchCapabilityContextLines,
   buildWorkbenchToolScope,
@@ -11,6 +12,23 @@ import {
   withWorkbenchTurnSystemContext,
 } from '../../../src/host/app/workbenchTurnContext';
 import { directionTokens } from '../../../src/design/direction-tokens';
+
+const loggerSpies = vi.hoisted(() => ({ info: vi.fn() }));
+
+vi.mock('../../../src/host/services/infra/logger', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/host/services/infra/logger')>(
+    '../../../src/host/services/infra/logger',
+  );
+  return {
+    ...actual,
+    createLogger: () => ({
+      debug: vi.fn(),
+      info: loggerSpies.info,
+      warn: vi.fn(),
+      error: vi.fn(),
+    }),
+  };
+});
 
 describe('workbenchTurnContext', () => {
   it('injects resolved session digest and artifact references into the turn context', () => {
@@ -48,6 +66,8 @@ describe('workbenchTurnContext', () => {
 
   afterEach(() => {
     ['mail', 'calendar', 'reminders'].forEach((id) => registry.unregister(id));
+    replaceCliConnectorConnectionStatusCache([]);
+    loggerSpies.info.mockClear();
     for (const dir of tmpDirs) {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -450,6 +470,28 @@ describe('workbenchTurnContext', () => {
       selectedConnectorIds: ['mail', 'calendar', 'reminders'],
     })).toEqual({
       allowedConnectorIds: ['reminders'],
+    });
+  });
+
+  it('uses the cached CLI OAuth status without probing a subprocess each turn', () => {
+    replaceCliConnectorConnectionStatusCache([{ id: 'tmeet', connected: true }]);
+    expect(buildWorkbenchToolScope({ selectedConnectorIds: ['tmeet'] })).toEqual({
+      allowedConnectorIds: ['tmeet'],
+    });
+
+    replaceCliConnectorConnectionStatusCache([{ id: 'tmeet', connected: false }]);
+    expect(buildWorkbenchToolScope({ selectedConnectorIds: ['tmeet'] })).toBeUndefined();
+    expect(loggerSpies.info).toHaveBeenCalledWith(
+      '[WorkbenchTurnContext] Selected connector omitted from turn scope',
+      { connectorId: 'tmeet' },
+    );
+  });
+
+  it('keeps a selected CLI connector in scope while its cached status is unknown', () => {
+    replaceCliConnectorConnectionStatusCache([]);
+
+    expect(buildWorkbenchToolScope({ selectedConnectorIds: ['tmeet'] })).toEqual({
+      allowedConnectorIds: ['tmeet'],
     });
   });
 

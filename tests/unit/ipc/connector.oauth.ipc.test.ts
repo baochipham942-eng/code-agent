@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
+import {
+  getCachedCliConnectorConnectionStatus,
+  replaceCliConnectorConnectionStatusCache,
+} from '../../../src/host/connectors/cli/cliConnectorStatusCache';
 
 // connector.ipc.ts 上 SaaS connector OAuth 的三个 action（oauthStatus / oauthConnect / oauthDisconnect）。
 // 走 dispatch handler 而不是导出内部函数——只给单测 import 的导出会被死导出棘轮判红。
@@ -88,6 +92,7 @@ function register(): HandlerFn {
 }
 
 beforeEach(() => {
+  replaceCliConnectorConnectionStatusCache([]);
   env.tokens = undefined;
   env.secret = undefined;
   env.invalidate.mockClear();
@@ -144,6 +149,8 @@ describe('connector.ipc SaaS OAuth actions', () => {
       userName: 'Neo User',
       tenantName: 'Neo Corp',
     });
+    expect(getCachedCliConnectorConnectionStatus('feishu')).toMatchObject({ connected: true });
+    expect(getCachedCliConnectorConnectionStatus('tmeet')).toMatchObject({ connected: false });
   });
 
   it('dispatches lark-cli logout without invalidating the custom OAuth store', async () => {

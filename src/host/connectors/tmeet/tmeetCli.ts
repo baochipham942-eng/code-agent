@@ -1,5 +1,5 @@
 import { createCliConnector } from '../cli/cliConnector';
-import { tmeetDescriptor } from './tmeetDescriptor';
+import { tmeetDescriptor } from '../../../shared/constants/cliConnectorDescriptors';
 
 interface TmeetCliDriverOptions {
   dataDir?: string;

@@ -2,13 +2,14 @@ import type { RuntimeContext } from '../runtimeContext';
 import { getToolSearchService } from '../../../services/toolSearch';
 import { isCoreToolName, resolveToolAlias } from '../../../services/toolSearch/deferredTools';
 import { createLogger } from '../../../services/infra/logger';
+import { CONNECTOR_TOOL_NAMES } from '../../../../shared/contract/workbenchTools';
 
 const logger = createLogger('ContextAssembly');
 
 type RuntimeForDeferredToolPreload = Pick<
   RuntimeContext,
   'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode' | 'turn'
-  | 'deniedToolNames' | 'allowedToolNames'
+  | 'deniedToolNames' | 'allowedToolNames' | 'toolScope'
 >;
 
 // 意图正则守则（issue #322）：\b 对 . / - 等非单词字符也成立，"notes.md" 能穿过
@@ -95,6 +96,21 @@ export function getDeferredToolsToPreloadForTurn(
 
   if (SPAWN_AGENT_INTENT_RE.test(userText)) {
     tools.add('spawn_agent');
+  }
+
+  for (const connectorId of runtime.toolScope?.allowedConnectorIds ?? []) {
+    for (const toolName of CONNECTOR_TOOL_NAMES[connectorId] ?? []) {
+      if (!isCoreToolName(toolName)) tools.add(toolName);
+    }
+  }
+
+  const allowedMcpServerIds = new Set(runtime.toolScope?.allowedMcpServerIds ?? []);
+  if (allowedMcpServerIds.size > 0) {
+    for (const meta of getToolSearchService().getMCPToolsMeta()) {
+      if (meta.mcpServer && allowedMcpServerIds.has(meta.mcpServer)) {
+        tools.add(meta.name);
+      }
+    }
   }
 
   // 显式 allowlist 一律预加载。理由：allowedToolNames 给出时，filterToolsByRunPolicy 会把

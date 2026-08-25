@@ -154,6 +154,25 @@ describe('initializeCLIServices durable wiring', () => {
     ));
   });
 
+  it('passes the web workbench tool scope through the CLI bootstrap adapter', async () => {
+    const { createAgentLoop, initializeCLIServices } = await import('../../../src/cli/bootstrap');
+
+    await initializeCLIServices();
+    createAgentLoop({
+      workingDirectory: process.cwd(),
+      modelConfig: { provider: 'openai', model: 'test-model' },
+      outputFormat: 'text',
+      enablePlanning: false,
+      enableHooks: false,
+      debug: false,
+      toolScope: { allowedConnectorIds: ['tmeet'] },
+    }, vi.fn());
+
+    expect(mocks.agentLoopConfigs.at(-1)).toEqual(expect.objectContaining({
+      toolScope: { allowedConnectorIds: ['tmeet'] },
+    }));
+  });
+
   it('warns visibly without failing CLI startup when the database is unavailable', async () => {
     vi.resetModules();
     mocks.initCLIDatabase.mockRejectedValueOnce(new Error('sqlite unavailable'));

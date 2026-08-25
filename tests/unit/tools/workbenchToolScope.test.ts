@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ToolDefinition } from '../../../src/shared/contract';
+import { tmeetDescriptor } from '../../../src/shared/constants/cliConnectorDescriptors';
+import { CONNECTOR_TOOL_NAMES } from '../../../src/shared/contract/workbenchTools';
 import {
   filterToolDefinitionsByWorkbenchScope,
   isSkillCommandAllowedByWorkbenchScope,
@@ -19,6 +21,11 @@ function makeTool(name: string): ToolDefinition {
 }
 
 describe('workbenchToolScope', () => {
+  it('derives CLI connector tool names from the canonical descriptor', () => {
+    expect(CONNECTOR_TOOL_NAMES.tmeet).toBe(tmeetDescriptor.toolNames);
+    expect(CONNECTOR_TOOL_NAMES.tmeet).toEqual(['tmeetMeetingList', 'tmeetMeetingCreate']);
+  });
+
   it('normalizes and deduplicates selected scope ids', () => {
     expect(normalizeWorkbenchToolScope({
       allowedSkillIds: [' review ', 'review', '', 'ship'],
@@ -69,6 +76,12 @@ describe('workbenchToolScope', () => {
       allowedConnectorIds: ['mail'],
     })).toBe(true);
     expect(isToolNameAllowedByWorkbenchScope('calendar_update_event', {
+      allowedConnectorIds: ['mail'],
+    })).toBe(false);
+    expect(isToolNameAllowedByWorkbenchScope('tmeetMeetingList', {
+      allowedConnectorIds: ['tmeet'],
+    })).toBe(true);
+    expect(isToolNameAllowedByWorkbenchScope('tmeetMeetingCreate', {
       allowedConnectorIds: ['mail'],
     })).toBe(false);
   });

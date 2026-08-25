@@ -467,7 +467,7 @@ export const useConversationStreamEffects = ({
         case 'goal_iteration': {
           logHandledEvent();
           if (eventSessionId) {
-            const d = event.data as { turn: number; maxTurns: number; tokensUsed: number; tokenBudget: number; wallClockBudgetMs?: number };
+            const d = event.data as { turn: number; maxTurns: number; goalStatus: 'pending' | 'paused'; pauseReason?: 'anti_spin'; tokensUsed: number; tokenBudget: number; wallClockBudgetMs?: number };
             useAppStore.getState().updateGoalProgress(eventSessionId, {
               turn: d.turn,
               maxTurns: d.maxTurns,
@@ -475,6 +475,7 @@ export const useConversationStreamEffects = ({
               tokenBudget: d.tokenBudget,
               wallClockBudgetMs: d.wallClockBudgetMs,
             });
+            useAppStore.getState().setGoalPaused(eventSessionId, d.goalStatus === 'paused', d.pauseReason);
           }
           break;
         }

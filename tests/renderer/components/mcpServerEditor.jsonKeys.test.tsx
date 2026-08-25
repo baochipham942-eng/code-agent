@@ -58,6 +58,23 @@ describe('McpServerEditor JSON 视图的未知字段提示', () => {
     expect(screen.queryByText(/以下字段不会被保存/)).toBeNull();
   });
 
+  it('OAuth 是受支持字段，并在 JSON 往返后继续保存', () => {
+    const { onSave } = renderEditor({
+      name: 'remote-oauth',
+      type: 'http',
+      url: 'https://mcp.example.test/mcp',
+      auth: 'oauth',
+    });
+    switchToJson();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    expect(JSON.parse(textarea.value)).toMatchObject({ auth: 'oauth' });
+    expect(screen.queryByText(/以下字段不会被保存/)).toBeNull();
+
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '保存' }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ auth: 'oauth' }));
+  });
+
   it('JSON 还没写完（解析失败）时不提示未知字段', () => {
     renderEditor({ name: 'probe', type: 'stdio', command: 'npx' });
     switchToJson();

@@ -150,10 +150,71 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
     connection: {
       type: 'http',
       url: 'https://mcp.notion.com/mcp',
+      auth: 'oauth',
     },
     requiredCredentials: ['OAuth 授权'],
     badge: 'Notion 官方',
     // hosted Notion MCP 工具名录未公开稳定文档，宁缺毋滥
+  },
+  {
+    id: 'tencent-docs',
+    name: '腾讯文档',
+    description: '读写腾讯文档、表格和协作内容',
+    category: 'office-collab',
+    builtin: false,
+    connection: {
+      type: 'http',
+      url: 'https://docs.qq.com/openapi/mcp',
+      auth: 'oauth',
+    },
+    requiredCredentials: ['OAuth 授权'],
+    badge: '腾讯官方',
+    chinaDirect: true,
+  },
+  {
+    id: 'tencent-docs-oa',
+    name: '腾讯文档企业版',
+    description: '读写腾讯文档企业版的文档与协作内容',
+    category: 'office-collab',
+    builtin: false,
+    connection: {
+      type: 'http',
+      url: 'https://saas.docs.qq.com/api/v6/open/agent/mcp',
+      auth: 'oauth',
+    },
+    requiredCredentials: ['OAuth 授权'],
+    badge: '腾讯官方',
+    chinaDirect: true,
+  },
+  {
+    id: 'tencent-survey',
+    name: '腾讯问卷',
+    description: '创建、读取和管理腾讯问卷与答卷',
+    category: 'office-collab',
+    builtin: false,
+    connection: {
+      type: 'http',
+      url: 'https://wj.qq.com/api/v2/mcp',
+      auth: 'oauth',
+    },
+    requiredCredentials: ['OAuth 授权'],
+    badge: '腾讯官方',
+    chinaDirect: true,
+  },
+  {
+    id: 'tencent-weiyun',
+    name: '腾讯微云',
+    description: '管理腾讯微云文件、目录和分享链接',
+    category: 'office-collab',
+    builtin: false,
+    connection: {
+      type: 'http',
+      url: 'https://www.weiyun.com/api/v3/mcpserver',
+      auth: 'oauth',
+    },
+    requiredCredentials: ['OAuth 授权'],
+    badge: '腾讯官方',
+    chinaDirect: true,
   },
   {
     id: 'lark',
@@ -343,6 +404,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
     connection: {
       type: 'http',
       url: 'https://mcp.figma.com/mcp',
+      auth: 'oauth',
     },
     requiredCredentials: ['OAuth 授权'],
     badge: 'Figma 官方',
@@ -451,6 +513,24 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
     tools: [
       { name: 'sequentialthinking', description: '动态分解并逐步推理' },
     ],
+  },
+  {
+    id: 'tencent-map',
+    name: '腾讯地图',
+    description: '地点搜索、地理编码、天气与路线规划',
+    category: 'dev-tools',
+    builtin: false,
+    connection: {
+      type: 'sse',
+      url: 'https://mcp.map.qq.com/sse?key=${TENCENT_MAP_KEY}&format=0',
+      // 远程 URL 模板从同名 header 凭据取值；host 解析后不会把该模板变量发成请求头。
+      headers: {
+        TENCENT_MAP_KEY: '',
+      },
+    },
+    requiredCredentials: ['TENCENT_MAP_KEY'],
+    badge: '腾讯官方',
+    chinaDirect: true,
   },
   {
     id: 'amap',

@@ -86,4 +86,39 @@ describe('resolveServerConfigSecrets', () => {
 
     expect(() => resolveServerConfigSecrets(config)).toThrow(/mcp_feishu\.APP_SECRET/);
   });
+
+  it('resolves remote URL credentials from secure headers without forwarding them as headers', () => {
+    getConfigServiceMock.mockReturnValue({
+      getIntegration: vi.fn(() => ({ TENCENT_MAP_KEY: 'map/key+secret' })),
+    });
+    const config: MCPServerConfig = {
+      name: 'tencent-map',
+      type: 'sse',
+      serverUrl: 'https://mcp.map.qq.com/sse?key=${TENCENT_MAP_KEY}&format=0',
+      headers: {
+        TENCENT_MAP_KEY: 'secureref:mcp_tencent-map.TENCENT_MAP_KEY',
+      },
+      enabled: true,
+    };
+
+    expect(resolveServerConfigSecrets(config)).toEqual({
+      ...config,
+      serverUrl: 'https://mcp.map.qq.com/sse?key=map%2Fkey%2Bsecret&format=0',
+      headers: undefined,
+    });
+    expect(config.serverUrl).toContain('${TENCENT_MAP_KEY}');
+    expect(config.headers?.TENCENT_MAP_KEY).toContain('secureref:');
+  });
+
+  it('fails closed when a remote URL credential is empty', () => {
+    const config: MCPServerConfig = {
+      name: 'tencent-map',
+      type: 'sse',
+      serverUrl: 'https://mcp.map.qq.com/sse?key=${TENCENT_MAP_KEY}&format=0',
+      headers: { TENCENT_MAP_KEY: '' },
+      enabled: true,
+    };
+
+    expect(() => resolveServerConfigSecrets(config)).toThrow(/TENCENT_MAP_KEY.*missing/);
+  });
 });

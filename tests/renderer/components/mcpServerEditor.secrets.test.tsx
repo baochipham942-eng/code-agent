@@ -39,6 +39,7 @@ describe('McpServerEditor credential fields', () => {
     expect(isSensitiveMcpCredentialKey('ACCESS_TOKEN')).toBe(true);
     expect(isSensitiveMcpCredentialKey('Authorization')).toBe(true);
     expect(isSensitiveMcpCredentialKey('x-bearer-token')).toBe(true);
+    expect(isSensitiveMcpCredentialKey('TENCENT_MAP_KEY')).toBe(true);
     expect(isSensitiveMcpCredentialKey('LARK_TOKEN_MODE')).toBe(false);
     expect(isSensitiveMcpCredentialKey('BASE_URL')).toBe(false);
   });

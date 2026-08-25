@@ -270,9 +270,8 @@ export function createTransport(
   options: { useProxy?: boolean; authProvider?: OAuthClientProvider } = {},
 ): { transport: Transport; connectTimeout: number } {
   if (isHttpStreamableConfig(config)) {
-    logger.info(`Using HTTP Streamable transport for ${config.name}: ${config.serverUrl}`);
-
     const url = new URL(config.serverUrl);
+    logger.info(`Using HTTP Streamable transport for ${config.name}: ${url.origin}${url.pathname}`);
     const requestInit: RequestInit = {};
     const proxyFetch = options.useProxy ? createRemoteMCPFetch(url) : undefined;
 
@@ -292,9 +291,9 @@ export function createTransport(
     });
     return { transport, connectTimeout: SSE_CONNECT_TIMEOUT };
   } else if (isSSEConfig(config)) {
-    logger.info(`Using SSE transport for ${config.name}: ${config.serverUrl}`);
-
     const url = new URL(config.serverUrl);
+    // URL query may contain an interpolated credential (for example Tencent Map key).
+    logger.info(`Using SSE transport for ${config.name}: ${url.origin}${url.pathname}`);
     const requestInit: RequestInit = {};
     const eventSourceInit: EventSourceInit = {};
     const proxyFetch = options.useProxy ? createRemoteMCPFetch(url) : undefined;

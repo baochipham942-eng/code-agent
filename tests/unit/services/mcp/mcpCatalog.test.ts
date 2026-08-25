@@ -52,14 +52,22 @@ describe('recommended MCP catalog integrity', () => {
         expect(connection.command, `stdio entry "${server.id}" missing command`).toBeTruthy();
       } else {
         expect(connection.url, `${connection.type} entry "${server.id}" missing url`).toBeTruthy();
+        const parsed = new URL(connection.url!);
+        expect(
+          ['http:', 'https:'],
+          `${connection.type} entry "${server.id}" uses unsupported URL protocol`,
+        ).toContain(parsed.protocol);
       }
     }
   });
 
-  it('stdio entries with empty env placeholders declare them as required credentials', () => {
+  it('entries with empty env or header placeholders declare them as required credentials', () => {
     for (const server of RECOMMENDED_MCP_SERVERS) {
-      const env = server.connection?.env ?? {};
-      const placeholderKeys = Object.entries(env)
+      const credentialFields = {
+        ...(server.connection?.env ?? {}),
+        ...(server.connection?.headers ?? {}),
+      };
+      const placeholderKeys = Object.entries(credentialFields)
         .filter(([, value]) => value === '')
         .map(([key]) => key);
       for (const key of placeholderKeys) {
@@ -68,6 +76,30 @@ describe('recommended MCP catalog integrity', () => {
           `entry "${server.id}" env placeholder "${key}" not declared in requiredCredentials`
         ).toContain(key);
       }
+    }
+  });
+
+  it('includes only the remote MCP entries that passed the live authorization handshake', () => {
+    const expected = {
+      'tencent-docs': ['http', 'https://docs.qq.com/openapi/mcp', 'oauth'],
+      'tencent-docs-oa': ['http', 'https://saas.docs.qq.com/api/v6/open/agent/mcp', 'oauth'],
+      'tencent-survey': ['http', 'https://wj.qq.com/api/v2/mcp', 'oauth'],
+      'tencent-weiyun': ['http', 'https://www.weiyun.com/api/v3/mcpserver', 'oauth'],
+      'tencent-map': ['sse', 'https://mcp.map.qq.com/sse?key=${TENCENT_MAP_KEY}&format=0', undefined],
+    } as const;
+
+    for (const [id, [type, url, auth]] of Object.entries(expected)) {
+      const connection = findRecommendedMcpServer(id)?.connection;
+      expect([connection?.type, connection?.url, connection?.auth]).toEqual([type, url, auth]);
+    }
+    expect(findRecommendedMcpServer('tencent-map')?.connection?.headers).toEqual({
+      TENCENT_MAP_KEY: '',
+    });
+    expect(findRecommendedMcpServer('notion')?.connection?.auth).toBe('oauth');
+    expect(findRecommendedMcpServer('figma')?.connection?.auth).toBe('oauth');
+
+    for (const excludedId of ['qq-mail', 'kdocs', 'github-remote']) {
+      expect(findRecommendedMcpServer(excludedId)).toBeUndefined();
     }
   });
 

@@ -21,6 +21,7 @@ import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
+import { connectorExternalWriteReason, isConnectorToolName } from '../../shared/contract/workbenchTools';
 
 const logger = createLogger('PermissionClassifier');
 
@@ -293,6 +294,28 @@ export class PermissionClassifier {
     const sensitiveRead = this.classifySensitiveMemoryRead(toolName, args, context, startTime);
     if (sensitiveRead) {
       return sensitiveRead;
+    }
+
+    // C1: 连接器写回会在外部系统产生真实副作用，必须确定性逐次确认。
+    // 工具归属来自连接器描述符，写权限来自工具 schema 传入的 context，避免按名字猜动作。
+    if (context.permissionLevel === 'write' && isConnectorToolName(toolName)) {
+      const reason = connectorExternalWriteReason(toolName);
+      if (reason) {
+        return {
+          decision: 'ask',
+          reason,
+          confidence: 1.0,
+          cached: false,
+          traceStep: createTraceStep(
+            'permission_classifier',
+            'C1: connector_external_write',
+            'ask',
+            reason,
+            startTime,
+          ),
+          trustBoundary: true,
+        };
+      }
     }
 
     // R1: 只读工具 → approve (no traceStep on allow)

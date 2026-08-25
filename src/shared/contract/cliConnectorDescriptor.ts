@@ -63,12 +63,29 @@ interface CliErrorMapping {
   logMessage?: string;
 }
 
+export interface CliConnectorToolAction {
+  zh: string;
+  en: string;
+}
+
+interface CliConnectorEditableField {
+  key: string;
+  kind: 'string' | 'string_list';
+  required?: boolean;
+  multiline?: boolean;
+}
+
 export interface CliConnectorDescriptor {
   id: string;
   displayName: string;
+  displayNameEn?: string;
   /** Renderer brand asset id; absent means use the existing generic icon. */
   logo?: string;
   toolNames: string[];
+  /** 外部写回动作的人话名称，由权限分类、边界和审批呈现共同复用。 */
+  writeActions?: Readonly<Record<string, CliConnectorToolAction>>;
+  /** 审批卡允许修改的字段；字段名单只在连接器描述符声明一次。 */
+  editablePermissionFields?: Readonly<Record<string, readonly CliConnectorEditableField[]>>;
   loggerName: string;
   installDirectory: string;
   npmPackage: string;

@@ -4,6 +4,7 @@ import {
   listPermissionBoundaries,
   listPrivacyBoundaryIndexEntries,
   listVoiceTranscriptionPaths,
+  getPermissionBoundary,
   PERMISSION_BOUNDARY_IDS,
   PERMISSION_BOUNDARY_REGISTRY,
 } from '../../../src/shared/contract';
@@ -32,6 +33,28 @@ describe('permission and privacy boundary contracts', () => {
       expect(boundary.redaction.length).toBeGreaterThan(8);
       expect(boundary.revoke.length).toBeGreaterThan(8);
     }
+  });
+
+  it('renders connector external-write boundaries with the target connector in zh and en', () => {
+    const zh = getPermissionBoundary('connector.external_write', {
+      language: 'zh',
+      connectorName: '腾讯会议',
+    });
+    const en = getPermissionBoundary('connector.external_write', {
+      language: 'en',
+      connectorName: 'Tencent Meeting',
+    });
+
+    expect(zh).toMatchObject({
+      title: '写入你的腾讯会议',
+      storage: expect.stringContaining('本机只保留调用回执'),
+      redaction: expect.stringContaining('脱敏'),
+    });
+    expect(en).toMatchObject({
+      title: 'Write to your Tencent Meeting',
+      storage: expect.stringContaining('only the operation receipt stays locally'),
+      redaction: expect.stringContaining('redacted'),
+    });
   });
 
   it('covers the P0/P1 privacy index, voice paths and auth inventory', () => {

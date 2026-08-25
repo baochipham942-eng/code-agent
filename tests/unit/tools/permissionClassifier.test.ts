@@ -12,7 +12,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
-import { classifyPermission, getPermissionClassifier } from '../../../src/host/tools/permissionClassifier';
+import { classifyPermission, getPermissionClassifier, PermissionClassifier } from '../../../src/host/tools/permissionClassifier';
 import { setCommandPolicyRulesForTest } from '../../../src/host/tools/modules/shell/commandPolicy';
 
 describe('PermissionClassifier', () => {
@@ -76,6 +76,46 @@ describe('PermissionClassifier', () => {
 
     expect(result.decision).toBe('approve');
     expect(result.reason).toBe('写入临时目录');
+  });
+
+  it('deterministically asks before a connector write and never enters the LLM classifier', async () => {
+    const classifier = new PermissionClassifier({ enableLlm: true });
+    const classifyByLlm = vi.spyOn(
+      classifier as unknown as { classifyByLlm: () => Promise<unknown> },
+      'classifyByLlm',
+    );
+
+    const result = await classifier.classify(
+      'tmeetMeetingCreate',
+      { subject: 'quick meeting', start: '2026-08-26T09:00:00+08:00', end: '2026-08-26T09:30:00+08:00' },
+      { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'write' },
+    );
+
+    expect(result).toMatchObject({
+      decision: 'ask',
+      reason: '要在外部系统里写入（腾讯会议：创建会议），需要你确认',
+      confidence: 1,
+      trustBoundary: true,
+      traceStep: { rule: 'C1: connector_external_write', result: 'ask' },
+    });
+    expect(classifyByLlm).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['mail_send', '邮件：发送邮件'],
+    ['calendar_create_event', '日历：创建日程'],
+    ['reminders_delete', '提醒事项：删除提醒事项'],
+  ])('uses the same deterministic ask rule for native connector write %s', async (toolName, reasonPart) => {
+    const result = await classifyPermission(
+      toolName,
+      {},
+      { workingDirectory: '/tmp/comate-zulu-demo', permissionLevel: 'write' },
+    );
+    expect(result).toMatchObject({
+      decision: 'ask',
+      reason: expect.stringContaining(reasonPart),
+      traceStep: { rule: 'C1: connector_external_write' },
+    });
   });
 
   it('classifies every write as W3 when no authoritative workspace exists', async () => {

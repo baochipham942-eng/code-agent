@@ -9,7 +9,7 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Mail, RotateCcw } from 'lucide-react';
+import { CalendarPlus, ChevronDown, ChevronRight, Mail, RotateCcw } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { usePermissionStore, type PermissionRequestForMemory } from '../../stores/permissionStore';
@@ -35,6 +35,7 @@ import {
   draftToArgs,
   type WritebackDraft,
 } from './WritebackFields';
+import { getHumanToolLabel } from '../../utils/toolHumanLabel';
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -173,7 +174,7 @@ interface PermissionCardProps {
 }
 
 export function PermissionCard({ requestOverride, sessionIdOverride }: PermissionCardProps = {}) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const {
     pendingPermissionRequest,
     pendingPermissionSessionId,
@@ -188,6 +189,7 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
   const [selectedLevel, setSelectedLevel] = useState<ApprovalLevel | null>(null);
   // N-WRITEBACK-EDIT 编辑态：draft 非 null = 正在改；只有点「按修改后发送」才会送出，Esc/放弃 = 什么都不发
   const [draft, setDraft] = useState<WritebackDraft | null>(null);
+  const [settledExpanded, setSettledExpanded] = useState(false);
 
   const sourceRequest = requestOverride ?? pendingPermissionRequest;
   const sourceSessionId = requestOverride ? sessionIdOverride : pendingPermissionSessionId;
@@ -205,10 +207,12 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
   useEffect(() => {
     setSelectedLevel(null);
     setDraft(null);
+    setSettledExpanded(false);
   }, [requestId]);
 
-  // 可编辑写回工具（首版 mail_send）：三选一（发送 / 改一改再发 / 不发），永远一次性放行
+  // 可编辑写回工具：三选一（原样写回 / 改一改再写回 / 取消），永远一次性放行
   const editable = request?.rawArgs !== undefined && isEditableTool(request.tool);
+  const isMeetingCreate = request?.tool === 'tmeetMeetingCreate';
 
   // 「这操作本身危险」与「这次必须你亲手点」是两件事，卡上必须分开表达。
   //
@@ -395,9 +399,24 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
   const p = t.decisionCard.permission;
   const w = p.writeback;
   const options: DecisionOption[] = editable ? [
-    { id: 'once', label: w.optionSend, description: w.optionSendDesc, shortcut: 'y' },
-    { id: 'edit', label: w.optionEdit, description: w.optionEditDesc, shortcut: 'e' },
-    { id: 'deny', label: w.optionDeny, description: w.optionDenyDesc, shortcut: 'n' },
+    {
+      id: 'once',
+      label: isMeetingCreate ? w.optionCreate : w.optionSend,
+      description: isMeetingCreate ? w.optionCreateDesc : w.optionSendDesc,
+      shortcut: 'y',
+    },
+    {
+      id: 'edit',
+      label: isMeetingCreate ? w.optionEditMeeting : w.optionEdit,
+      description: isMeetingCreate ? w.optionEditMeetingDesc : w.optionEditDesc,
+      shortcut: 'e',
+    },
+    {
+      id: 'deny',
+      label: isMeetingCreate ? w.optionDenyMeeting : w.optionDeny,
+      description: isMeetingCreate ? w.optionDenyMeetingDesc : w.optionDenyDesc,
+      shortcut: 'n',
+    },
   ] : [
     { id: 'once', label: p.optionOnce, description: p.optionOnceDesc, shortcut: 'y' },
     ...(!hideStandingGrants
@@ -413,14 +432,55 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
 
   // 可编辑写回工具的专属呈现：标题 / 图标 / 问句点题（不再是「创建文件」+「允许这次操作？」）
   const firstRecipient = editable && Array.isArray(request.rawArgs?.to) ? String(request.rawArgs.to[0] ?? '') : '';
-  const title = editable ? w.mailSendTitle : (isDangerous ? t.decisionCard.dangerTitle : config.title);
-  const icon = editable ? <Mail size={20} /> : config.icon;
-  const question = editable
+  const meetingSubject = isMeetingCreate && typeof request.rawArgs?.subject === 'string'
+    ? request.rawArgs.subject.trim()
+    : '';
+  const title = isMeetingCreate
+    ? w.tmeetCreateTitle
+    : editable ? w.mailSendTitle : (isDangerous ? t.decisionCard.dangerTitle : config.title);
+  const icon = isMeetingCreate ? <CalendarPlus size={20} /> : editable ? <Mail size={20} /> : config.icon;
+  const question = isMeetingCreate
+    ? (meetingSubject ? w.tmeetCreateQuestion.replace('{subject}', meetingSubject) : w.tmeetCreateQuestionFallback)
+    : editable
     ? (firstRecipient ? w.mailSendQuestion.replace('{target}', firstRecipient) : w.mailSendQuestionFallback)
     : permissionQuestion(request, t);
+  const sharedHumanLabel = getHumanToolLabel({
+    toolName: request.tool,
+    labels: t.receiptPresentation.humanToolLabels,
+  });
+  const headerMeta = sharedHumanLabel === request.tool
+    ? (language === 'en'
+      ? request.boundary?.connectorNameEn ?? request.boundary?.connectorName
+      : request.boundary?.connectorName) ?? request.tool
+    : sharedHumanLabel;
 
   if (settled && request.decision) {
     const expired = request.decision === 'timeout';
+    const denied = request.decision === 'deny' || request.decision === 'never';
+    const settledStatus = denied ? p.settledDenied : p.settledAllowed;
+    const settledSubject = meetingSubject || (editable && typeof request.rawArgs?.subject === 'string'
+      ? request.rawArgs.subject.trim()
+      : '');
+    if (!expired && !settledExpanded) {
+      return (
+        <div className="w-full px-4" data-testid="permission-card">
+          <button /* ds-allow:button: 已决审批整行是展开热区，需保持单行摘要；Button primitive 会包裹 children 并改变截断布局。 */
+            type="button"
+            data-testid="permission-settled-summary"
+            aria-expanded="false"
+            aria-label={p.expandSettled}
+            onClick={() => setSettledExpanded(true)}
+            className="flex w-full max-w-3xl mx-auto items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-left"
+          >
+            <ChevronRight className="h-4 w-4 shrink-0 text-zinc-500" />
+            <span className="min-w-0 flex-1 truncate text-sm text-zinc-300">
+              {settledStatus} · {title}{settledSubject ? ` ${settledSubject}` : ''}
+            </span>
+            <PermissionResultBadge decision={request.decision} t={t} />
+          </button>
+        </div>
+      );
+    }
     const settledOptions = expired
       ? options.map((option) => ({ ...option, disabled: true }))
       : [];
@@ -431,8 +491,23 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
         settled
         icon={icon}
         title={title}
-        headerMeta={request.tool}
-        headerEnd={<PermissionResultBadge decision={request.decision} t={t} />}
+        headerMeta={headerMeta}
+        headerEnd={(
+          <span className="flex items-center gap-2">
+            <PermissionResultBadge decision={request.decision} t={t} />
+            {!expired && (
+              <button /* ds-allow:button: 已决审批头部的紧凑折叠图标，Button primitive 最小尺寸会撑高卡头。 */
+                type="button"
+                aria-expanded="true"
+                aria-label={p.collapseSettled}
+                onClick={() => setSettledExpanded(false)}
+                className="text-zinc-500 hover:text-zinc-300"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            )}
+          </span>
+        )}
         question={question}
         details={
           <>
@@ -473,8 +548,8 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
         tone="neutral"
         icon={icon}
         title={title}
-        headerMeta={`${request.tool} · ${w.editingBadge}`}
-        question={w.irreversible}
+        headerMeta={`${headerMeta} · ${w.editingBadge}`}
+        question={isMeetingCreate ? w.tmeetWriteWarning : w.irreversible}
         details={
           <WritebackEditForm
             tool={request.tool}
@@ -491,7 +566,7 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
         }}
         onCancel={() => setDraft(null)}
         cancelLabel={w.discard}
-        confirmLabel={w.sendEdited}
+        confirmLabel={isMeetingCreate ? w.createEdited : w.sendEdited}
       />
     );
   }
@@ -502,7 +577,7 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
       tone={isDangerous ? 'danger' : 'neutral'}
       icon={icon}
       title={title}
-      headerMeta={request.tool}
+      headerMeta={headerMeta}
       dangerWarning={
         isDangerous
           ? `${t.decisionCard.dangerCopy}：${dangerReason || t.decisionCard.dangerDefaultReason}`
@@ -512,7 +587,9 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
       details={
         <>
           {editable && (
-            <p className="text-xs text-badge-warning" data-testid="writeback-irreversible">{w.irreversible}</p>
+            <p className="text-xs text-badge-warning" data-testid="writeback-irreversible">
+              {isMeetingCreate ? w.tmeetWriteWarning : w.irreversible}
+            </p>
           )}
           {!editable && reasonText && <p className="text-zinc-400 text-sm">{reasonText}</p>}
           <RequestDetails request={request} />

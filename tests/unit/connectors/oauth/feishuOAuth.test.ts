@@ -23,6 +23,8 @@ describe('Feishu OAuth adapter', () => {
   it('declares the writeback action to provider scope mapping', () => {
     expect(FEISHU_OAUTH_DESCRIPTOR.scopes['message.send-as-user'])
       .toBe('offline_access im:message im:message.send_as_user');
+    expect(FEISHU_OAUTH_DESCRIPTOR.authMode).toBe('lark-cli');
+    expect(FEISHU_OAUTH_DESCRIPTOR.requiresClientSecret).toBe(false);
   });
 
   it('always asks for offline_access, without which Feishu returns no refresh token', () => {

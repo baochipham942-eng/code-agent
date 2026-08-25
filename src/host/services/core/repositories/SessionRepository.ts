@@ -30,6 +30,10 @@ import * as sidecarState from './sessionRepositorySidecarState';
 import { getLatestUserAuthorId as readLatestUserAuthorId } from './sessionRepositoryParsers';
 import { ConversationBranchRepository } from './ConversationBranchRepository';
 import { SessionFtsRepository } from './SessionFtsRepository';
+import {
+  markCrashedActiveSessions as recoverCrashedActiveSessions,
+  type CrashedActiveSessions,
+} from './sessionRepositoryCrashRecovery';
 import type {
   SessionMessagesFtsCountOptions,
   SessionMessagesFtsHit,
@@ -77,6 +81,7 @@ interface MessageWriteOptions {
   updatedAt?: number;
   /** Internal compatibility projection write; immutable ledger was recorded by the caller. */
   skipConversationLedger?: boolean;
+  provenanceKind?: 'compatibility_projection_append' | 'crash-recovery'; // Immutable entry provenance.
 }
 
 export class SessionRepository {
@@ -504,27 +509,8 @@ export class SessionRepository {
     return row?.plan_title ?? null;
   }
 
-  markCrashedActiveSessions(now: number = Date.now()): {
-    interrupted: number;
-    orphaned: number;
-  } {
-    const interrupted = this.db
-      .prepare(
-        `UPDATE sessions
-           SET status = 'interrupted', updated_at = ?, synced_at = NULL
-         WHERE status IN ('running', 'paused', 'cancelling') AND is_deleted = 0`,
-      )
-      .run(now).changes;
-
-    const orphaned = this.db
-      .prepare(
-        `UPDATE sessions
-           SET status = 'orphaned', updated_at = ?, synced_at = NULL
-         WHERE status = 'queued' AND is_deleted = 0`,
-      )
-      .run(now).changes;
-
-    return { interrupted, orphaned };
+  markCrashedActiveSessions(now: number = Date.now()): CrashedActiveSessions {
+    return recoverCrashedActiveSessions(this.db, now);
   }
 
   clearAllSessions(): number {
@@ -620,7 +606,7 @@ export class SessionRepository {
           message: this.toConversationMessage(rowToMessage(persistedRow)),
           idempotencyKey: `message-append:${message.id}`,
           provenance: {
-            kind: 'compatibility_projection_append',
+            kind: options?.provenanceKind ?? 'compatibility_projection_append',
             syncOrigin: options?.syncOrigin ?? 'local',
           },
           createdAt: message.timestamp,

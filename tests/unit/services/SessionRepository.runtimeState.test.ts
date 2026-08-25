@@ -480,7 +480,8 @@ describe('SessionRepository runtime recovery state', () => {
 
     expect(repo.markCrashedActiveSessions(999)).toEqual({
       interrupted: 2,
-      orphaned: 1
+      orphaned: 1,
+      sessionIds: ['session-running', 'session-paused', 'session-queued']
     });
 
     expect(repo.getSession('session-running')?.status).toBe('interrupted');

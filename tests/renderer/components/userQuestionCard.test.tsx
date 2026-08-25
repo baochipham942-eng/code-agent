@@ -46,6 +46,29 @@ function pendingOf(sessionId: string) {
   return useSessionStore.getState().getPendingUserQuestions(sessionId);
 }
 
+function makeWizardRequest(): UserQuestionRequest {
+  return makeRequest({
+    questions: [
+      {
+        question: '第一题选哪个？',
+        header: '第一题',
+        options: [{ label: 'A', description: '第一个答案' }],
+      },
+      {
+        question: '第二题选哪些？',
+        header: '第二题',
+        multiSelect: true,
+        options: [{ label: 'B', description: '第二个答案' }],
+      },
+      {
+        question: '第三题选哪个？',
+        header: '第三题',
+        options: [{ label: 'C', description: '第三个答案' }],
+      },
+    ],
+  });
+}
+
 describe('UserQuestionCard（G2 打断式选项卡）', () => {
   beforeEach(() => {
     invokeMock.mockReset();
@@ -77,6 +100,79 @@ describe('UserQuestionCard（G2 打断式选项卡）', () => {
     });
     // 回答成功后卡片出队（composer 恢复）
     await waitFor(() => expect(pendingOf('s1')).toHaveLength(0));
+  });
+
+  it('三题按步展示：单选自动前进、回退保留答案、末步只显式提交一次', async () => {
+    const request = makeWizardRequest();
+    useSessionStore.getState().addPendingUserQuestion(request);
+    render(<UserQuestionCard request={request} />);
+
+    expect(screen.getByText('第一题选哪个？')).toBeTruthy();
+    expect(screen.queryByText('第二题选哪些？')).toBeNull();
+    expect(screen.getByText(zh.userQuestion.stepOf(1, 3))).toBeTruthy();
+    expect(screen.getByTestId('user-question-progress')).toBeTruthy();
+    const firstNext = screen.getByRole('button', { name: zh.userQuestion.next });
+    expect((firstNext as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: /A/ }));
+    await waitFor(() => expect(screen.getByText('第二题选哪些？')).toBeTruthy());
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: zh.userQuestion.back })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: zh.userQuestion.back }));
+    const selectedA = screen.getByRole('button', { name: /A/ });
+    expect(selectedA.className).toContain('border-badge-info');
+    fireEvent.click(screen.getByRole('button', { name: zh.userQuestion.next }));
+
+    fireEvent.click(screen.getByRole('button', { name: /B/ }));
+    fireEvent.click(screen.getByText(zh.userQuestion.other));
+    expect((screen.getByRole('button', { name: zh.userQuestion.next }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByPlaceholderText(zh.userQuestion.otherPlaceholder), {
+      target: { value: '补充答案' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: zh.userQuestion.next }));
+
+    expect(screen.getByText('第三题选哪个？')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /C/ }));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: zh.userQuestion.next })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: zh.userQuestion.submit }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledTimes(1);
+      expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.USER_QUESTION_RESPONSE, {
+        requestId: 'q-1',
+        answers: { 第一题: 'A', 第二题: ['B', '补充答案'], 第三题: 'C' },
+      });
+    });
+  });
+
+  it('Enter 执行当前主动作；首步仍保留下一步按钮', async () => {
+    const request = makeWizardRequest();
+    render(<UserQuestionCard request={request} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /A/ }));
+    fireEvent.keyDown(document, { key: 'Enter' });
+    expect(screen.getByText('第二题选哪些？')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /B/ }));
+    fireEvent.keyDown(document, { key: 'Enter' });
+    expect(screen.getByText('第三题选哪个？')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /C/ }));
+    fireEvent.keyDown(document, { key: 'Enter' });
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('单题不显示进度、步数或导航按钮，只保留提交动作', () => {
+    render(<UserQuestionCard request={makeRequest()} />);
+
+    expect(screen.queryByTestId('user-question-progress')).toBeNull();
+    expect(screen.queryByText(zh.userQuestion.stepOf(1, 1))).toBeNull();
+    expect(screen.queryByRole('button', { name: zh.userQuestion.back })).toBeNull();
+    expect(screen.queryByRole('button', { name: zh.userQuestion.next })).toBeNull();
+    expect(screen.getByRole('button', { name: zh.userQuestion.submit })).toBeTruthy();
   });
 
   it('单选「其他」自由文本 → 回传输入内容而非固定选项', async () => {

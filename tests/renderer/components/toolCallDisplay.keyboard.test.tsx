@@ -70,6 +70,40 @@ describe('ToolCallDisplay keyboard interaction', () => {
     expect(container.querySelector('.group-focus-within\\:opacity-100')).toBeTruthy();
   });
 
+  it('collapses AskUserQuestion answers to one summary line and expands the existing Q&A', () => {
+    const view = render(
+      <ToolCallDisplay
+        toolCall={makeToolCall({
+          name: 'AskUserQuestion',
+          arguments: {
+            questions: [
+              { header: 'Scope', question: 'Which scope?', options: [{ label: 'A', description: '' }] },
+              { header: 'Proof', question: 'Which proof?', options: [{ label: 'B', description: '' }] },
+            ],
+          },
+          result: {
+            toolCallId: 'tool-1',
+            success: true,
+            output: 'User responses:\n[Scope]: A\n[Proof]: B',
+          },
+        })}
+        index={0}
+        total={1}
+      />,
+    );
+
+    const summary = view.getByRole('button', {
+      name: '2 questions answered · Expand to view',
+    });
+    expect(summary.getAttribute('aria-expanded')).toBe('false');
+    expect(view.queryByText('Which scope?')).toBeNull();
+
+    fireEvent.click(summary);
+    expect(summary.getAttribute('aria-expanded')).toBe('true');
+    expect(view.getByText('Which scope?')).toBeTruthy();
+    expect(view.getByText('Which proof?')).toBeTruthy();
+  });
+
   // 原来这里还有一条「行尾 Write 文件名按钮不触发整行展开」的用例。那个按钮已经删了
   // ——写入的文件名只由文件变更卡讲一遍（它带相对路径 + 增删行数 + diff + 撤销），
   // 步骤行上再挂一个同名按钮是同一个文件名在一屏里的第三次出现。

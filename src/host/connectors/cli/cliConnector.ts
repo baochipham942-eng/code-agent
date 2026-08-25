@@ -104,16 +104,40 @@ interface CliConnectorOptions {
   env?: NodeJS.ProcessEnv;
   npmExecutable?: string;
   timeoutMs?: number;
+  statusCacheTtlMs?: number;
+  statusTimeoutMs?: number;
+  now?: () => number;
 }
 
 export interface CliConnectorStatus {
   connected: boolean;
   identity: string;
+  stale?: boolean;
   user?: {
     openId?: string;
     name?: string;
     tenantName?: string;
   };
+}
+
+interface CliStatusCache {
+  value?: CliConnectorStatus;
+  expiresAt: number;
+  generation: number;
+  inFlight?: Promise<CliConnectorStatus>;
+  now: () => number;
+}
+
+const STATUS_CACHE_TTL_MS = 30_000;
+const STATUS_TIMEOUT_MS = 4_000;
+const statusCaches = new Map<string, CliStatusCache>();
+
+export function getCachedStatus(providerId: string): CliConnectorStatus | undefined {
+  const cache = statusCaches.get(providerId);
+  if (!cache?.value) return undefined;
+  return cache.expiresAt > cache.now()
+    ? cache.value
+    : { ...cache.value, stale: true };
 }
 
 export interface CliCommandResult {
@@ -134,6 +158,13 @@ class CliConnectorCommandError extends Error {
   ) {
     super(message, options);
     this.name = 'CliConnectorCommandError';
+  }
+}
+
+class CliConnectorTimeoutError extends CliConnectorCommandError {
+  constructor(message: string, stdout: string, stderr: string) {
+    super(message, stdout, stderr);
+    this.name = 'CliConnectorTimeoutError';
   }
 }
 
@@ -235,7 +266,7 @@ function waitForChild(
     const emitOutput = () => onOutput?.(stripAnsi(`${stdout}\n${stderr}`), child);
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
-      finish(() => reject(new CliConnectorCommandError(
+      finish(() => reject(new CliConnectorTimeoutError(
         `${commandLabel} timed out after ${timeoutMs}ms`,
         stdout,
         stderr,
@@ -293,9 +324,33 @@ export function createCliConnector(
   const binaryPath = path.join(packageDir, ...descriptor.binaryPath);
   const env = cleanEnvironment(options.env ?? process.env, descriptor);
   const timeoutMs = options.timeoutMs ?? OAUTH_FLOW_TIMEOUT_MS;
+  const statusTimeoutMs = options.statusTimeoutMs ?? STATUS_TIMEOUT_MS;
+  const statusCacheTtlMs = options.statusCacheTtlMs ?? STATUS_CACHE_TTL_MS;
+  const now = options.now ?? Date.now;
   const npmExecutable = options.npmExecutable ?? 'npm';
   let activeConnectProcess: RunningProcess | undefined;
   let connectCancelled = false;
+  const useSharedStatusCache = options.dataDir === undefined
+    && options.env === undefined
+    && options.npmExecutable === undefined
+    && options.timeoutMs === undefined
+    && options.statusCacheTtlMs === undefined
+    && options.statusTimeoutMs === undefined
+    && options.now === undefined;
+  const sharedStatusCache = useSharedStatusCache ? statusCaches.get(descriptor.id) : undefined;
+  const statusCache: CliStatusCache = sharedStatusCache ?? {
+    expiresAt: 0,
+    generation: 0,
+    now,
+  };
+  statusCaches.set(descriptor.id, statusCache);
+
+  const invalidateStatusCache = (): void => {
+    statusCache.value = undefined;
+    statusCache.expiresAt = 0;
+    statusCache.generation += 1;
+    statusCache.inFlight = undefined;
+  };
 
   const commandArguments = (command: CliCommandDescriptor): string[] => [
     ...command.args,
@@ -308,13 +363,14 @@ export function createCliConnector(
     label: string,
     onOutput?: (combinedOutput: string, child: RunningChild) => void,
     trackConnect = false,
+    commandTimeoutMs = timeoutMs,
   ): Promise<CliCommandResult> => {
     const child = spawn(executable, args, {
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     if (trackConnect) activeConnectProcess = child;
-    return waitForChild(child, label, timeoutMs, onOutput).finally(() => {
+    return waitForChild(child, label, commandTimeoutMs, onOutput).finally(() => {
       if (activeConnectProcess === child) activeConnectProcess = undefined;
     });
   };
@@ -323,7 +379,8 @@ export function createCliConnector(
     command: CliCommandDescriptor,
     onOutput?: (combinedOutput: string, child: RunningChild) => void,
     trackConnect = false,
-  ) => run(binaryPath, commandArguments(command), command.label, onOutput, trackConnect);
+    commandTimeoutMs = timeoutMs,
+  ) => run(binaryPath, commandArguments(command), command.label, onOutput, trackConnect, commandTimeoutMs);
 
   const installedVersion = async (): Promise<string | undefined> => {
     try {
@@ -360,9 +417,14 @@ export function createCliConnector(
     }
   };
 
-  const status = async (): Promise<CliConnectorStatus> => {
+  const readFreshStatus = async (): Promise<CliConnectorStatus> => {
     try {
-      const result = await runDescriptorCommand(descriptor.status.command);
+      const result = await runDescriptorCommand(
+        descriptor.status.command,
+        undefined,
+        false,
+        statusTimeoutMs,
+      );
       const combined = stripAnsi(`${result.stdout}\n${result.stderr}`);
       let parsed: Record<string, unknown> | undefined;
       let connected = false;
@@ -394,9 +456,38 @@ export function createCliConnector(
           },
         } : {}),
       };
-    } catch {
+    } catch (error) {
+      if (error instanceof CliConnectorTimeoutError) {
+        return {
+          ...(statusCache.value ?? {
+            connected: false,
+            identity: descriptor.status.disconnectedIdentity,
+          }),
+          stale: true,
+        };
+      }
       return { connected: false, identity: descriptor.status.disconnectedIdentity };
     }
+  };
+
+  const status = (forceRefresh = false): Promise<CliConnectorStatus> => {
+    if (!forceRefresh && statusCache.value && statusCache.expiresAt > now()) {
+      return Promise.resolve(statusCache.value);
+    }
+    if (statusCache.inFlight) return statusCache.inFlight;
+
+    const generation = statusCache.generation;
+    const refresh = readFreshStatus().then((nextStatus) => {
+      if (statusCache.generation === generation) {
+        statusCache.value = nextStatus;
+        statusCache.expiresAt = now() + statusCacheTtlMs;
+      }
+      return nextStatus;
+    }).finally(() => {
+      if (statusCache.inFlight === refresh) statusCache.inFlight = undefined;
+    });
+    statusCache.inFlight = refresh;
+    return refresh;
   };
 
   const runPtyAuthStep = async (
@@ -485,7 +576,7 @@ export function createCliConnector(
 
   const pollForConnectedStatus = async (deadlineMs: number, intervalMs: number): Promise<boolean> => {
     while (Date.now() < deadlineMs) {
-      if ((await status()).connected) return true;
+      if ((await status(true)).connected) return true;
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, Math.min(intervalMs, Math.max(0, deadlineMs - Date.now())));
         timer.unref?.();
@@ -508,6 +599,7 @@ export function createCliConnector(
     openExternal: (url: string) => void | Promise<void>,
     onStep?: (step: 1 | 2) => void,
   ): Promise<void> => {
+    invalidateStatusCache();
     connectCancelled = false;
     const deadlineMs = Date.now() + timeoutMs;
     const assertNotCancelled = () => {
@@ -591,7 +683,7 @@ export function createCliConnector(
           if (!openedUrl) throw error;
         }
         assertNotCancelled();
-        if ((await status()).connected) continue;
+        if ((await status(true)).connected) continue;
         if (step.pollStatusAfterExit && await pollForConnectedStatus(deadlineMs, step.pollIntervalMs)) continue;
         if (ptyError) throw ptyError;
         throw new Error(`${descriptor.binaryName} authorization did not produce a connected status`);
@@ -601,6 +693,7 @@ export function createCliConnector(
       throw translateConnectionError(error);
     } finally {
       activeConnectProcess = undefined;
+      invalidateStatusCache();
     }
   };
 
@@ -610,12 +703,15 @@ export function createCliConnector(
   };
 
   const disconnect = async (): Promise<void> => {
+    invalidateStatusCache();
     cancelConnect();
     try {
       await runDescriptorCommand(descriptor.logout);
     } catch (error) {
       if (isMissingConfiguration(error, descriptor)) return;
       throw error;
+    } finally {
+      invalidateStatusCache();
     }
   };
 

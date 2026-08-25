@@ -21,6 +21,7 @@ import { OAuthCoordinator } from '../connectors/oauth/oauthCoordinator';
 import { FEISHU_OAUTH_DESCRIPTOR } from '../connectors/oauth/feishuOAuth';
 import { createLarkCliDriver } from '../connectors/feishu/larkCli';
 import { createTmeetCliDriver } from '../connectors/tmeet/tmeetCli';
+import { getCachedStatus } from '../connectors/cli/cliConnector';
 import type { ProviderDescriptor } from '../connectors/oauth/providerDescriptor';
 import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../shared/constants';
 import type { ConfigService } from '../services';
@@ -389,6 +390,7 @@ interface ConnectorOAuthProviderStatus {
   authMode: 'oauth' | CliAuthMode;
   step?: 1 | 2;
   blocked?: boolean;
+  stale?: boolean;
   userName?: string;
   tenantName?: string;
 }
@@ -426,7 +428,10 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
       }
       const runtime = CLI_PROVIDER_RUNTIMES[descriptor.id];
       if (!runtime) throw new Error(`CLI connector runtime is unavailable for ${descriptor.id}`);
-      const cliStatus = await runtime.driver.status();
+      const cachedStatus = getCachedStatus(descriptor.id);
+      const cliStatus = cachedStatus && !cachedStatus.stale
+        ? cachedStatus
+        : await runtime.driver.status();
       return {
         id: descriptor.id,
         displayName: descriptor.displayName,
@@ -437,6 +442,7 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
         loopbackRedirectUriSupport: descriptor.loopbackRedirectUriSupport,
         authMode,
         ...(cliAdminBlocked.has(descriptor.id) ? { blocked: true } : {}),
+        ...(cliStatus.stale ? { stale: true } : {}),
         ...(cliStatus.user?.name ? { userName: cliStatus.user.name } : {}),
         ...(cliStatus.user?.tenantName ? { tenantName: cliStatus.user.tenantName } : {}),
       };

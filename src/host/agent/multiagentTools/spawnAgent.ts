@@ -480,6 +480,7 @@ export async function executeSpawnAgent(
         // Register with SpawnGuard
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
+          completion: { title: agentName, kind: 'user_visible' },
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
           scope: context.swarmRunScope,
@@ -572,6 +573,7 @@ Stats:
         // Register with SpawnGuard (auto-tracks completion)
         guard.register(agentId, role || 'dynamic', task, promise, abortController, {
           treeId,
+          completion: { title: agentName, kind: 'user_visible' },
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
           scope: context.swarmRunScope,

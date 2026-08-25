@@ -119,6 +119,8 @@ describe('BackgroundSubagentRegistry', () => {
       sessionId: 'session-a',
       runId: 'run-a',
       treeId: 'tree-a',
+      title: '依赖核验',
+      completionKind: 'shell',
       role: 'coder',
     });
 
@@ -127,6 +129,8 @@ describe('BackgroundSubagentRegistry', () => {
     expect(first).toHaveLength(1);
     expect(first[0]).toMatchObject({
       agentId,
+      title: '依赖核验',
+      kind: 'shell',
       role: 'coder',
       status: 'completed',
       durationMs: 0,

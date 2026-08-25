@@ -3,8 +3,9 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TraceNodeRenderer } from '../../../src/renderer/components/features/chat/TraceNodeRenderer';
+import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
-import type { TraceNode } from '../../../src/shared/contract/trace';
+import type { TraceNode, TraceTurn } from '../../../src/shared/contract/trace';
 
 function receiptNode(): TraceNode {
   return {
@@ -68,11 +69,36 @@ function receiptNode(): TraceNode {
   };
 }
 
+function receiptTurn(status: TraceTurn['status']): TraceTurn {
+  return {
+    turnNumber: 1,
+    turnId: 'turn-receipts',
+    nodes: [receiptNode()],
+    status,
+    startTime: 1_700_000_000_000,
+    endTime: status === 'streaming' ? undefined : 1_700_000_001_000,
+  };
+}
+
 describe('聊天流「已执行」区', () => {
   beforeEach(() => useAppStore.setState({ language: 'zh' }));
   afterEach(() => {
     cleanup();
     useAppStore.setState({ language: 'zh' });
+  });
+
+  it('本轮流式中隐藏尾块，完成后才展开回执', () => {
+    const { container, rerender } = render(<TurnCard turn={receiptTurn('streaming')} />);
+
+    expect(screen.queryByTestId('turn-receipts-toggle')).toBeNull();
+    expect(screen.queryByTestId('turn-receipts-list')).toBeNull();
+    expect(container.textContent).not.toContain('已执行');
+
+    rerender(<TurnCard turn={receiptTurn('completed')} />);
+
+    expect(screen.getByTestId('turn-receipts-toggle')).toBeTruthy();
+    expect(screen.getByTestId('turn-receipts-list')).toBeTruthy();
+    expect(container.textContent).toContain('已执行');
   });
 
   it('默认展开成功与失败回执，失败标红，全部收件人点开后才出现', () => {

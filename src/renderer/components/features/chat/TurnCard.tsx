@@ -551,6 +551,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               key={artifactNode.id}
               node={artifactNode}
               sessionId={sessionId}
+              isStreaming={isStreaming}
               fileChangesByPath={deliverableFileChanges}
             />
           ) : null;

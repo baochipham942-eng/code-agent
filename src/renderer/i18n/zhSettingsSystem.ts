@@ -357,8 +357,12 @@ export const zhSettingsSystem = {
       badges: {
         needsSetup: '待配置',
         notConnected: '未连接',
+        connecting: '连接中',
         connected: '已连接',
         unavailable: '不可用',
+      },
+      capabilities: {
+        feishu: '以你的身份给飞书群发消息：会议纪要、周报和进展提醒，说完就发，不用切出 Neo。',
       },
       idPrefix: 'id: ',
       metaSeparator: ' · ',
@@ -378,12 +382,34 @@ export const zhSettingsSystem = {
       },
       actions: {
         none: '无',
+        startUsing: '开始用',
         saveAndConnect: '保存并连接',
         saving: '保存中…',
         connect: '连接',
         connecting: '连接中…',
         disconnect: '断开',
         disconnecting: '断开中…',
+      },
+      toast: {
+        authorizationOpened: '已在系统浏览器打开飞书授权页，完成授权后会自动回到 Neo…',
+        connected: '飞书已连接',
+        disconnected: '飞书已断开',
+        authorizationCancelled: '已取消飞书授权',
+      },
+      tryIt: {
+        title: '试试这样用',
+        feishu: [
+          '把今天的会议纪要发到飞书群【产品周会】，开头 @ 三位负责人。',
+          '每周五 17:00 把这周你让我做的事汇总成周报，发到飞书群【产品周会】。',
+          '我改完这版方案了，把摘要发到飞书群【项目同步】，附一句要大家看哪一节。',
+        ],
+      },
+      advanced: {
+        title: '进阶',
+        readonlyTitle: '只读数据：多维表格与日历',
+        readonlyDescription: '供无人值守任务监听表格和日历变化，使用应用身份读取数据。需要单独配置 App ID 与 App Secret。',
+        configure: '配置只读能力',
+        configured: '只读能力已配置',
       },
       disconnect: {
         noticeWithSecret: '断开连接会同时清除本机保存的 App Secret；之后若想重连，需要重新填写。',

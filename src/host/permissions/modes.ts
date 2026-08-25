@@ -243,6 +243,9 @@ export class PermissionModeManager {
    * （放手档 → bypassPermissions）；首跑 / 无人值守两处钳制仍压在它之上，只收紧不放宽。
    */
   private rolePresetSessions: Map<string, PermissionMode> = new Map();
+  // 运行时会话粘性：无法可靠解析的命令按 canonical hash 记账。只活在当前进程，
+  // 不写 SESSION_MODES_FILE；同一指纹再次出现时在 permission_request 之前硬拒。
+  private commandAnalysisFailureFingerprints: Map<string, Set<string>> = new Map();
   /**
    * 语音抬严的持有票（D4）：语音态比文本再严一档。
    * 用户在通话里说「直接改吧」时，手不在键盘上、眼睛不在 diff 上——免确认档在这种
@@ -332,6 +335,15 @@ export class PermissionModeManager {
       mode = clampLiveVoicePermissionMode(mode);
     }
     return mode;
+  }
+
+  /** 记录解析失败指纹；返回 true 表示该会话此前已经撞过同一指纹。 */
+  rememberCommandAnalysisFailure(sessionId: string, fingerprint: string): boolean {
+    const fingerprints = this.commandAnalysisFailureFingerprints.get(sessionId) ?? new Set<string>();
+    const repeated = fingerprints.has(fingerprint);
+    fingerprints.add(fingerprint);
+    this.commandAnalysisFailureFingerprints.set(sessionId, fingerprints);
+    return repeated;
   }
 
   /**

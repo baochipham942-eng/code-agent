@@ -12,6 +12,7 @@
 
 import { validateCommand } from './commandSafety';
 import { getSensitiveDetector } from './sensitiveDetector';
+import { canonicalizeCommand } from './canonicalizeCommand';
 
 export interface SkillGuardFinding {
   kind: 'dangerous_command' | 'embedded_secret';
@@ -153,17 +154,29 @@ const OBFUSCATION_PATTERNS: Array<{ re: RegExp; flag: string }> = [
  *   - 去引号/反斜杠拼接：'rm' / r''m / r\m → rm
  */
 export function normalizeForScan(content: string): string {
-  return content
-    .normalize('NFKC')
-    .replace(new RegExp('[\\u200B-\\u200D\\u2060\\uFEFF]', 'g'), '')
-    .replace(/\$\{IFS[^}]*\}|\$IFS\b/g, ' ')
-    .replace(/\\\r?\n[ \t]*/g, ' ')
-    .replace(/[\\'"]/g, '');
+  const logicalLines = content.replace(/\\\r?\n[ \t]*/g, ' ').split(/\r?\n/);
+  return logicalLines.map((line) => canonicalizeCommand(line).command).join('\n');
 }
 
 export function scanSkillContent(content: string): SkillGuardResult {
   const findings: SkillGuardFinding[] = [];
   const normalized = normalizeForScan(content);
+
+  // fenced / inline code 中无法可靠拆词的 shell 片段不可进入 skill。Markdown 的
+  // 反引号标记已由 extractCodeSegments 剥掉，不会把普通 inline code 标记误判成命令替换。
+  for (const segment of new Set(extractCodeSegments(content))) {
+    const canonical = canonicalizeCommand(segment);
+    const firstWord = segment.trim().split(/\s+/, 1)[0] ?? '';
+    const dynamicOnlyInArguments = canonical.failureReason?.startsWith('dynamic command substitution')
+      && !commandWordIsDynamic(segment)
+      && !firstWord.includes('`');
+    if (canonical.parsingFailed && !dynamicOnlyInArguments) {
+      findings.push({
+        kind: 'dangerous_command',
+        detail: `命令无法静态解析，已拒绝（${canonical.failureReason ?? 'parse failure'}）：${segment.slice(0, 80)}`,
+      });
+    }
+  }
 
   // 1) 危险命令：对【全文】逐行跑 validateCommand（不止代码块——skill 散文本身就是
   //    agent 会照着执行的指令，藏在散文里的危险命令同样要拦），命中 critical 即拦。

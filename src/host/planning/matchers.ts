@@ -5,6 +5,7 @@
 import type { HookContext } from './types';
 import type { HookMatcher, ToolCategory, MatcherFactory } from './hooks/types';
 import { TOOL_CATEGORIES } from './hooks/types';
+import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 
 // ----------------------------------------------------------------------------
@@ -119,7 +120,8 @@ export function matchDangerousBash(): HookMatcher {
     if (context.toolName?.toLowerCase() !== 'bash') return false;
     const command = context.toolParams?.command as string | undefined;
     if (!command) return false;
-    return dangerousPatterns.some((pattern) => pattern.test(command));
+    const canonical = canonicalizeCommand(command);
+    return canonical.parsingFailed
+      || dangerousPatterns.some((pattern) => pattern.test(canonical.command));
   };
 }
-

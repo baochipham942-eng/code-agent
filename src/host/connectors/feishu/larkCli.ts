@@ -23,8 +23,11 @@ interface LarkCliStatus {
   user?: {
     openId?: string;
     name?: string;
+    tenantName?: string;
   };
 }
+
+type LarkCliConnectStep = 1 | 2;
 
 interface LarkCliDriverOptions {
   dataDir?: string;
@@ -188,18 +191,24 @@ export function createLarkCliDriver(options: LarkCliDriverOptions = {}) {
   const env = cleanedEnv(options.env ?? process.env);
   const timeoutMs = options.timeoutMs ?? OAUTH_FLOW_TIMEOUT_MS;
   const npmExecutable = options.npmExecutable ?? 'npm';
+  let activeConnectChild: RunningChild | undefined;
+  let connectCancelled = false;
 
   const run = (
     executable: string,
     args: string[],
     label: string,
     onOutput?: (combinedOutput: string, child: RunningChild) => void,
+    trackConnect = false,
   ): Promise<CommandResult> => {
     const child = spawn(executable, args, {
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    return waitForProcess(child, label, timeoutMs, onOutput);
+    if (trackConnect) activeConnectChild = child;
+    return waitForProcess(child, label, timeoutMs, onOutput).finally(() => {
+      if (activeConnectChild === child) activeConnectChild = undefined;
+    });
   };
 
   const installedVersion = async (): Promise<string | undefined> => {
@@ -220,13 +229,15 @@ export function createLarkCliDriver(options: LarkCliDriverOptions = {}) {
     }
   };
 
-  const ensureInstalled = async (): Promise<void> => {
+  const ensureInstalled = async (trackConnect = false): Promise<void> => {
     if (await installedVersion() === LARK_CLI_VERSION && await hasExecutable()) return;
     await mkdir(installPrefix, { recursive: true });
     await run(
       npmExecutable,
       ['install', '--prefix', installPrefix, `@larksuite/cli@${LARK_CLI_VERSION}`],
       'install lark-cli',
+      undefined,
+      trackConnect,
     );
     const version = await installedVersion();
     if (version !== LARK_CLI_VERSION || !(await hasExecutable())) {
@@ -252,13 +263,15 @@ export function createLarkCliDriver(options: LarkCliDriverOptions = {}) {
       const identity = optionalString(parsed, 'identity') ?? 'none';
       const openId = optionalString(userIdentity, 'openId');
       const name = optionalString(userIdentity, 'userName');
+      const tenantName = optionalString(userIdentity, 'tenantName');
       return {
         connected,
         identity,
-        ...(openId || name ? {
+        ...(openId || name || tenantName ? {
           user: {
             ...(openId ? { openId } : {}),
             ...(name ? { name } : {}),
+            ...(tenantName ? { tenantName } : {}),
           },
         } : {}),
       };
@@ -267,16 +280,32 @@ export function createLarkCliDriver(options: LarkCliDriverOptions = {}) {
     }
   };
 
-  const connect = async (openExternal: (url: string) => void | Promise<void>): Promise<void> => {
-    await ensureInstalled();
+  const connect = async (
+    openExternal: (url: string) => void | Promise<void>,
+    onStep?: (step: LarkCliConnectStep) => void,
+  ): Promise<void> => {
+    connectCancelled = false;
+    const assertNotCancelled = () => {
+      if (connectCancelled) {
+        const cancelled = new Error('OAuth flow cancelled') as Error & { code: string };
+        cancelled.code = 'CANCELLED';
+        throw cancelled;
+      }
+    };
     try {
+      await ensureInstalled(true);
+      assertNotCancelled();
       try {
         await run(
           binaryPath,
           ['config', 'show', '--profile', LARK_CLI_PROFILE],
           'lark-cli config show',
+          undefined,
+          true,
         );
       } catch {
+        assertNotCancelled();
+        onStep?.(1);
         let openedUrl: string | undefined;
         let openPromise: Promise<void> | undefined;
         let openError: unknown;
@@ -298,6 +327,7 @@ export function createLarkCliDriver(options: LarkCliDriverOptions = {}) {
                   child.kill('SIGTERM');
                 });
             },
+            true,
           );
         } catch (error) {
           await openPromise;
@@ -311,6 +341,8 @@ export function createLarkCliDriver(options: LarkCliDriverOptions = {}) {
         if (openError) throw new Error('Could not open the Feishu setup URL', { cause: openError });
       }
 
+      assertNotCancelled();
+      onStep?.(2);
       const login = await run(
         binaryPath,
         [
@@ -319,6 +351,8 @@ export function createLarkCliDriver(options: LarkCliDriverOptions = {}) {
           '--profile', LARK_CLI_PROFILE,
         ],
         'lark-cli auth login',
+        undefined,
+        true,
       );
       const loginPayload = parseRecord(login.stdout, 'lark-cli auth login');
       const deviceCode = optionalString(loginPayload, 'device_code');
@@ -327,22 +361,38 @@ export function createLarkCliDriver(options: LarkCliDriverOptions = {}) {
         throw new Error('lark-cli auth login did not return a device code');
       }
       await openExternal(verificationUrl);
+      assertNotCancelled();
       await run(
         binaryPath,
         ['auth', 'login', '--device-code', deviceCode, '--profile', LARK_CLI_PROFILE],
         'lark-cli device authorization',
+        undefined,
+        true,
       );
     } catch (error) {
+      if (connectCancelled) {
+        const cancelled = new Error('OAuth flow cancelled') as Error & { code: string };
+        cancelled.code = 'CANCELLED';
+        throw cancelled;
+      }
       throw translateConnectionError(error);
+    } finally {
+      activeConnectChild = undefined;
     }
   };
 
+  const cancelConnect = (): void => {
+    connectCancelled = true;
+    activeConnectChild?.kill('SIGTERM');
+  };
+
   const disconnect = async (): Promise<void> => {
+    cancelConnect();
     try {
       await run(
         binaryPath,
-        ['config', 'remove', '--profile', LARK_CLI_PROFILE],
-        'lark-cli config remove',
+        ['auth', 'logout', '--profile', LARK_CLI_PROFILE],
+        'lark-cli auth logout',
       );
     } catch (error) {
       if (isMissingConfiguration(error)) return;
@@ -350,5 +400,5 @@ export function createLarkCliDriver(options: LarkCliDriverOptions = {}) {
     }
   };
 
-  return { ensureInstalled, status, connect, disconnect };
+  return { ensureInstalled, status, connect, cancelConnect, disconnect };
 }

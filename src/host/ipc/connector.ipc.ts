@@ -341,6 +341,8 @@ const OAUTH_PROVIDERS: Record<string, ProviderDescriptor> = {
 };
 
 const larkCli = createLarkCliDriver();
+let larkCliConnectStep: 1 | 2 | undefined;
+let larkCliAdminBlocked = false;
 
 function requireOAuthProvider(providerId: string | undefined): ProviderDescriptor {
   const descriptor = providerId ? OAUTH_PROVIDERS[providerId] : undefined;
@@ -361,22 +363,55 @@ interface ConnectorOAuthProviderStatus {
   connected: boolean;
   loopbackRedirectUriSupport: ProviderDescriptor['loopbackRedirectUriSupport'];
   authMode: 'oauth' | 'lark-cli';
+  step?: 1 | 2;
+  blocked?: boolean;
+  userName?: string;
+  tenantName?: string;
 }
 
 async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatus[]> {
   return Promise.all(Object.values(OAUTH_PROVIDERS).map(async (descriptor) => {
     const authMode = descriptor.authMode ?? 'oauth';
     if (authMode === 'lark-cli') {
+      const oauthStore = new ConnectorOAuthStore(descriptor.id);
+      if (oauthStore.tokens()) {
+        return {
+          id: descriptor.id,
+          displayName: descriptor.displayName,
+          clientIdConfigured: descriptor.clientId.trim().length > 0,
+          requiresClientSecret: true,
+          clientSecretConfigured: Boolean(oauthStore.clientSecret()),
+          connected: true,
+          loopbackRedirectUriSupport: descriptor.loopbackRedirectUriSupport,
+          authMode: 'oauth' as const,
+        };
+      }
+      if (larkCliConnectStep) {
+        return {
+          id: descriptor.id,
+          displayName: descriptor.displayName,
+          clientIdConfigured: true,
+          requiresClientSecret: false,
+          clientSecretConfigured: Boolean(oauthStore.clientSecret()),
+          connected: false,
+          loopbackRedirectUriSupport: descriptor.loopbackRedirectUriSupport,
+          authMode,
+          step: larkCliConnectStep,
+        };
+      }
       const cliStatus = await larkCli.status();
       return {
         id: descriptor.id,
         displayName: descriptor.displayName,
         clientIdConfigured: true,
         requiresClientSecret: false,
-        clientSecretConfigured: false,
+        clientSecretConfigured: Boolean(oauthStore.clientSecret()),
         connected: cliStatus.connected,
         loopbackRedirectUriSupport: descriptor.loopbackRedirectUriSupport,
         authMode,
+        ...(larkCliAdminBlocked ? { blocked: true } : {}),
+        ...(cliStatus.user?.name ? { userName: cliStatus.user.name } : {}),
+        ...(cliStatus.user?.tenantName ? { tenantName: cliStatus.user.tenantName } : {}),
       };
     }
     return {
@@ -393,12 +428,25 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
 }
 
 async function handleConnectorOAuthConnect(
-  payload: { providerId?: string; action?: string } | undefined,
+  payload: { providerId?: string; action?: string; authMode?: 'oauth' | 'lark-cli' } | undefined,
 ): Promise<ConnectorOAuthProviderStatus[]> {
   const descriptor = requireOAuthProvider(payload?.providerId);
-  if (descriptor.authMode === 'lark-cli') {
+  if (descriptor.authMode === 'lark-cli' && payload?.authMode !== 'oauth') {
     const { openExternal } = await import('../platform/nativeShell');
-    await larkCli.connect(openExternal);
+    larkCliAdminBlocked = false;
+    larkCliConnectStep = 1;
+    try {
+      await larkCli.connect(openExternal, (step) => {
+        larkCliConnectStep = step;
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === '需联系企业应用管理员安装') {
+        larkCliAdminBlocked = true;
+      }
+      throw error;
+    } finally {
+      larkCliConnectStep = undefined;
+    }
     return listConnectorOAuthStatuses();
   }
   const action = payload?.action ?? Object.keys(descriptor.scopes)[0];
@@ -427,10 +475,10 @@ async function handleConnectorOAuthConnect(
 }
 
 async function handleConnectorOAuthSetSecret(
-  payload: { providerId?: string; clientSecret?: string } | undefined,
+  payload: { providerId?: string; clientSecret?: string; authMode?: 'oauth' | 'lark-cli' } | undefined,
 ): Promise<ConnectorOAuthProviderStatus[]> {
   const descriptor = requireOAuthProvider(payload?.providerId);
-  if (descriptor.authMode === 'lark-cli') {
+  if (descriptor.authMode === 'lark-cli' && payload?.authMode !== 'oauth') {
     throw new Error('飞书官方 lark-cli 连接不需要 App Secret，不能在此保存');
   }
   const clientSecret = payload?.clientSecret;
@@ -446,10 +494,30 @@ async function handleConnectorOAuthDisconnect(
 ): Promise<ConnectorOAuthProviderStatus[]> {
   const descriptor = requireOAuthProvider(payload?.providerId);
   if (descriptor.authMode === 'lark-cli') {
-    await larkCli.disconnect();
+    larkCliAdminBlocked = false;
+    larkCliConnectStep = undefined;
+    const oauthStore = new ConnectorOAuthStore(descriptor.id);
+    if (oauthStore.tokens()) {
+      oauthStore.invalidateCredentials('all');
+    } else {
+      await larkCli.disconnect();
+    }
     return listConnectorOAuthStatuses();
   }
   new ConnectorOAuthStore(descriptor.id).invalidateCredentials('all');
+  return listConnectorOAuthStatuses();
+}
+
+async function handleConnectorOAuthCancelConnect(
+  payload: { providerId?: string } | undefined,
+): Promise<ConnectorOAuthProviderStatus[]> {
+  const descriptor = requireOAuthProvider(payload?.providerId);
+  if (descriptor.authMode !== 'lark-cli') {
+    throw new Error(`OAuth connector provider ${descriptor.id} does not support connection cancellation`);
+  }
+  larkCli.cancelConnect();
+  larkCliConnectStep = undefined;
+  larkCliAdminBlocked = false;
   return listConnectorOAuthStatuses();
 }
 
@@ -570,12 +638,25 @@ export function registerConnectorHandlers(
           break;
         case 'oauthConnect':
           data = await handleConnectorOAuthConnect(
-            request.payload as { providerId?: string; action?: string } | undefined,
+            request.payload as {
+              providerId?: string;
+              action?: string;
+              authMode?: 'oauth' | 'lark-cli';
+            } | undefined,
           );
           break;
         case 'oauthSetSecret':
           data = await handleConnectorOAuthSetSecret(
-            request.payload as { providerId?: string; clientSecret?: string } | undefined,
+            request.payload as {
+              providerId?: string;
+              clientSecret?: string;
+              authMode?: 'oauth' | 'lark-cli';
+            } | undefined,
+          );
+          break;
+        case 'oauthCancelConnect':
+          data = await handleConnectorOAuthCancelConnect(
+            request.payload as { providerId?: string } | undefined,
           );
           break;
         case 'oauthDisconnect':
@@ -594,9 +675,15 @@ export function registerConnectorHandlers(
 
       return { success: true, data };
     } catch (error) {
+      const errorCode = error && typeof error === 'object' && 'code' in error
+        && typeof error.code === 'string'
+        ? error.code
+        : error instanceof Error && error.message === '需联系企业应用管理员安装'
+          ? 'ADMIN_REQUIRED'
+          : 'INTERNAL_ERROR';
       return {
         success: false,
-        error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) },
+        error: { code: errorCode, message: error instanceof Error ? error.message : String(error) },
       };
     }
   });

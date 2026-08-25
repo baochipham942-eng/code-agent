@@ -18,7 +18,22 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
 
 import { SaaSConnectorsSection } from '../../../src/renderer/components/features/settings/sections/SaaSConnectorsSection';
 
-const baseStatus = {
+interface TestProviderStatus {
+  id: string;
+  displayName: string;
+  clientIdConfigured: boolean;
+  requiresClientSecret: boolean;
+  clientSecretConfigured: boolean;
+  connected: boolean;
+  loopbackRedirectUriSupport: string;
+  authMode: 'oauth' | 'lark-cli';
+  step?: 1 | 2;
+  blocked?: boolean;
+  userName?: string;
+  tenantName?: string;
+}
+
+const baseStatus: TestProviderStatus = {
   id: 'feishu',
   displayName: '飞书',
   clientIdConfigured: true,
@@ -26,11 +41,26 @@ const baseStatus = {
   clientSecretConfigured: false,
   connected: false,
   loopbackRedirectUriSupport: 'confirmed',
+  authMode: 'oauth',
 };
 
-function renderStatus(overrides: Partial<typeof baseStatus> = {}) {
+const larkCliStatus: TestProviderStatus = {
+  ...baseStatus,
+  requiresClientSecret: false,
+  authMode: 'lark-cli',
+};
+
+function renderStatus(overrides: Partial<TestProviderStatus> = {}) {
   invokeDomain.mockImplementation((_domain: string, action: string) => {
     if (action === 'oauthStatus') return Promise.resolve([{ ...baseStatus, ...overrides }]);
+    return Promise.resolve([]);
+  });
+  return render(<SaaSConnectorsSection />);
+}
+
+function renderLarkCliStatus(overrides: Partial<TestProviderStatus> = {}) {
+  invokeDomain.mockImplementation((_domain: string, action: string) => {
+    if (action === 'oauthStatus') return Promise.resolve([{ ...larkCliStatus, ...overrides }]);
     return Promise.resolve([]);
   });
   return render(<SaaSConnectorsSection />);
@@ -46,6 +76,92 @@ beforeEach(() => {
 });
 
 afterEach(cleanup);
+
+describe('SaaSConnectorsSection Feishu lark-cli six states', () => {
+  it('state 1: offers Connect Feishu, browser explanation, and the in-card custom-app escape hatch', async () => {
+    renderLarkCliStatus();
+
+    const card = await screen.findByTestId('saas-connector-feishu');
+    expect(card.textContent).toContain(zh.settings.saasConnectors.badges.notConnected);
+    expect(card.textContent).toContain(zh.settings.saasConnectors.details.larkCliReady);
+    const connectButton = within(card).getByTestId('saas-connect-feishu');
+    expect(connectButton.textContent).toContain(zh.settings.saasConnectors.actions.connectFeishu);
+    expect(within(card).getByTestId('saas-custom-app-toggle-feishu').textContent)
+      .toContain(zh.settings.saasConnectors.customApp.title);
+    fireEvent.click(connectButton);
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(
+      IPC_DOMAINS.CONNECTOR,
+      'oauthConnect',
+      { providerId: 'feishu', action: 'message.send-as-user', authMode: 'lark-cli' },
+    ));
+  });
+
+  it('state 2: renders step 1 of 2 with app-creation guidance and cancel', async () => {
+    renderLarkCliStatus({ step: 1 });
+
+    const card = await screen.findByTestId('saas-connector-feishu');
+    expect(card.textContent).toContain(zh.settings.saasConnectors.badges.connectingStep1);
+    expect(card.textContent).toContain(zh.settings.saasConnectors.details.creatingApp);
+    fireEvent.click(within(card).getByTestId('saas-cancel-feishu'));
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(
+      IPC_DOMAINS.CONNECTOR,
+      'oauthCancelConnect',
+      { providerId: 'feishu' },
+    ));
+  });
+
+  it('state 3: renders step 2 of 2 with authorization guidance and cancel', async () => {
+    renderLarkCliStatus({ step: 2 });
+
+    const card = await screen.findByTestId('saas-connector-feishu');
+    expect(card.textContent).toContain(zh.settings.saasConnectors.badges.connectingStep2);
+    expect(card.textContent).toContain(zh.settings.saasConnectors.details.authorizing);
+    expect(within(card).getByTestId('saas-cancel-feishu')).toBeTruthy();
+  });
+
+  it('state 4: shows connected user@tenant when both real status fields are present', async () => {
+    renderLarkCliStatus({ connected: true, userName: 'Neo User', tenantName: 'Neo Corp' });
+
+    const card = await screen.findByTestId('saas-connector-feishu');
+    expect(card.textContent).toContain('已连接 · Neo User@Neo Corp');
+    fireEvent.click(within(card).getByTestId('saas-disconnect-feishu'));
+    expect(screen.getByText(zh.settings.saasConnectors.disconnect.larkCliConfirmMessage)).toBeTruthy();
+  });
+
+  it('connected identity falls back to the connected badge when tenant data is absent', async () => {
+    renderLarkCliStatus({ connected: true, userName: 'Neo User' });
+
+    const card = await screen.findByTestId('saas-connector-feishu');
+    expect(card.textContent).toContain(zh.settings.saasConnectors.badges.connected);
+    expect(card.textContent).not.toContain('Neo User@');
+  });
+
+  it('state 5: maps the enterprise-policy block to the fixed admin copy and retry', async () => {
+    renderLarkCliStatus({ blocked: true });
+
+    const card = await screen.findByTestId('saas-connector-feishu');
+    expect(card.textContent).toContain(zh.settings.saasConnectors.badges.adminRequired);
+    expect(card.textContent).toContain('需联系企业应用管理员安装');
+    expect(within(card).getByTestId('saas-retry-feishu')).toBeTruthy();
+  });
+
+  it('state 6: expands the existing password flow inside the card for a custom Feishu app', async () => {
+    renderLarkCliStatus();
+
+    const card = await screen.findByTestId('saas-connector-feishu');
+    fireEvent.click(within(card).getByTestId('saas-custom-app-toggle-feishu'));
+    const secretInput = within(card).getByTestId('saas-custom-secret-input-feishu');
+    expect(secretInput.getAttribute('type')).toBe('password');
+    expect(card.textContent).toContain(zh.settings.saasConnectors.secret.customAppHint);
+    fireEvent.change(secretInput, { target: { value: 'fake-custom-secret' } });
+    fireEvent.click(within(card).getByTestId('saas-custom-save-connect-feishu'));
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(
+      IPC_DOMAINS.CONNECTOR,
+      'oauthSetSecret',
+      { providerId: 'feishu', clientSecret: 'fake-custom-secret', authMode: 'oauth' },
+    ));
+  });
+});
 
 describe('SaaSConnectorsSection five card states', () => {
   it('needs_secret: card opens a password field and only offers save-and-connect', async () => {
@@ -114,8 +230,8 @@ describe('SaaSConnectorsSection five card states', () => {
     const card = await screen.findByTestId('saas-connector-feishu');
     expect(card.textContent).toContain(zh.settings.saasConnectors.badges.unavailable);
     expect(screen.queryByTestId('saas-card-action-feishu')).toBeNull();
-    openFeishuDetail();
-    expect(screen.getByText(zh.settings.saasConnectors.details.missingClientId)).toBeTruthy();
+    const detail = openFeishuDetail();
+    expect(within(detail).getByText(zh.settings.saasConnectors.details.missingClientId)).toBeTruthy();
     expect(screen.queryByTestId('saas-connect-feishu')).toBeNull();
     expect(screen.queryByTestId('saas-save-connect-feishu')).toBeNull();
     expect(screen.queryByTestId('saas-disconnect-feishu')).toBeNull();
@@ -159,12 +275,12 @@ describe('SaaSConnectorsSection actions and receipts', () => {
       expect(invokeDomain).toHaveBeenCalledWith(
         IPC_DOMAINS.CONNECTOR,
         'oauthSetSecret',
-        { providerId: 'feishu', clientSecret: '  app-secret-value  ' },
+        { providerId: 'feishu', clientSecret: '  app-secret-value  ', authMode: 'oauth' },
       );
       expect(invokeDomain).toHaveBeenCalledWith(
         IPC_DOMAINS.CONNECTOR,
         'oauthConnect',
-        { providerId: 'feishu', action: 'message.send-as-user' },
+        { providerId: 'feishu', action: 'message.send-as-user', authMode: 'oauth' },
       );
       expect(screen.getByTestId('saas-connector-toast').textContent)
         .toContain(zh.settings.saasConnectors.toast.connected);

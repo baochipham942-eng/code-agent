@@ -958,7 +958,7 @@ describe('AgentOrchestrator', () => {
       const resolve = vi.fn();
       perm(orchestrator).pendingPermissions.set('req-1', { resolve });
       orchestrator.handlePermissionResponse('req-1', 'allow');
-      expect(resolve).toHaveBeenCalledWith('allow');
+      expect(resolve).toHaveBeenCalledWith('allow', undefined, undefined);
       expect(perm(orchestrator).pendingPermissions.has('req-1')).toBe(false);
     });
 

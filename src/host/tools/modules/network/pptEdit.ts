@@ -22,6 +22,11 @@ import { createSnapshot, restoreLatest } from '../../document/snapshotManager';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { resolveInputPath } from '../../utils/resolveInputPath';
 import { pptEditSchema as schema } from './pptEdit.schema';
+import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
+import { getFileMutationActorId } from '../file/fileMutationIdentity';
+
+const LOCK_HOLD_TIMEOUT_MS = 60_000;
+const LOCK_WAIT_TIMEOUT_MS = 10_000;
 
 type EditAction =
   | 'replace_title'
@@ -132,6 +137,37 @@ export async function executePptEdit(
 
   if (!fs.existsSync(resolvedFilePath)) {
     return { ok: false, error: `File not found: ${resolvedFilePath}. Check the path and retry.` };
+  }
+
+  const mutatesFile = !new Set<EditAction>(['extract_style', 'analyze']).has(action);
+  const actorId = mutatesFile ? getFileMutationActorId(ctx) : undefined;
+  if (mutatesFile && !actorId) {
+    return {
+      ok: false,
+      error: 'PptEdit requires a non-empty agentId to isolate concurrent file mutations.',
+      code: 'MISSING_AGENT_IDENTITY',
+    };
+  }
+
+  const lockManager = getResourceLockManager();
+  const holderId = actorId;
+  const lockWasAlreadyHeld = holderId
+    ? lockManager.getHolders(resolvedFilePath).includes(holderId)
+    : false;
+  if (holderId) {
+    const lockResult = await lockManager.acquire(holderId, resolvedFilePath, 'exclusive', {
+      type: 'file',
+      timeout: LOCK_HOLD_TIMEOUT_MS,
+      wait: true,
+      waitTimeout: LOCK_WAIT_TIMEOUT_MS,
+    });
+    if (!lockResult.acquired) {
+      return {
+        ok: false,
+        error: `Cannot acquire lock for ${resolvedFilePath}: ${lockResult.reason}. File may be in use by another operation.`,
+        code: 'FS_ERROR',
+      };
+    }
   }
 
   try {
@@ -440,8 +476,7 @@ export async function executePptEdit(
       }
     }
 
-    const noWriteActions = new Set(['extract_style', 'analyze']);
-    if (!noWriteActions.has(action)) {
+    if (mutatesFile) {
       const outputBuffer = await zip.generateAsync({ type: 'nodebuffer' });
       fs.writeFileSync(resolvedFilePath, outputBuffer);
     }
@@ -473,6 +508,10 @@ export async function executePptEdit(
     restoreLatest(resolvedFilePath);
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, error: `PPT 编辑失败 (已从快照恢复): ${message}` };
+  } finally {
+    if (holderId && !lockWasAlreadyHeld) {
+      lockManager.release(holderId, resolvedFilePath);
+    }
   }
 }
 

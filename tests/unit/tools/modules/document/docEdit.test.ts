@@ -38,6 +38,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   const ctrl = new AbortController();
   return {
     sessionId: 'test-session',
+    agentId: 'test-agent',
     workingDir: process.cwd(),
     abortSignal: ctrl.signal,
     logger: makeLogger(),
@@ -177,6 +178,50 @@ describe('docEditModule (native)', () => {
         expect(result.meta).toEqual({ snapshotId: 'snap-1' });
       }
     });
+
+    it('serializes sibling agents editing the same document', async () => {
+      let releaseFirst!: () => void;
+      let markFirstEntered!: () => void;
+      const firstEntered = new Promise<void>((resolve) => { markFirstEntered = resolve; });
+      const firstMayFinish = new Promise<void>((resolve) => { releaseFirst = resolve; });
+      executeExcelEditMock.mockImplementation(async (params: { operations: Array<{ cell: string }> }) => {
+        if (params.operations[0]?.cell === 'A1') {
+          markFirstEntered();
+          await firstMayFinish;
+        }
+        return { success: true, output: 'edit done' };
+      });
+
+      try {
+        const first = run(
+          { file_path: '/tmp/shared.xlsx', operations: [{ action: 'set_cell', cell: 'A1', value: 1 }] },
+          makeCtx({ agentId: 'agent-a' }),
+        );
+        await firstEntered;
+        const second = run(
+          { file_path: '/tmp/shared.xlsx', operations: [{ action: 'set_cell', cell: 'B1', value: 2 }] },
+          makeCtx({ agentId: 'agent-b' }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        expect(executeExcelEditMock).toHaveBeenCalledTimes(1);
+
+        releaseFirst();
+        expect((await first).ok).toBe(true);
+        expect((await second).ok).toBe(true);
+        expect(executeExcelEditMock).toHaveBeenCalledTimes(2);
+      } finally {
+        releaseFirst();
+      }
+    });
+
+    it('fails loudly when agent identity is unavailable', async () => {
+      const result = await run(
+        { file_path: '/tmp/a.xlsx', operations: [{ action: 'set_cell', cell: 'A1', value: 1 }] },
+        makeCtx({ agentId: undefined }),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('MISSING_AGENT_IDENTITY');
+    });
   });
 
   describe('docx dispatch', () => {
@@ -251,6 +296,10 @@ describe('docEditModule (native)', () => {
         expect(result.meta).toMatchObject({ operationCount: 2, outputPath: '/tmp/deck.pptx' });
       }
       expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute.mock.calls[0]?.[2]).toMatchObject({
+        sessionId: 'test-session',
+        agentId: 'test-agent',
+      });
     });
 
     it('returns error with completedOps when middle op fails', async () => {

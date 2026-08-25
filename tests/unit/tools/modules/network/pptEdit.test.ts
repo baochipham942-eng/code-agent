@@ -30,6 +30,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   const ctrl = new AbortController();
   return {
     sessionId: 'test-session',
+    agentId: 'test-agent',
     workingDir: '/tmp/work',
     abortSignal: ctrl.signal,
     logger: makeLogger(),
@@ -228,6 +229,62 @@ describe('pptEditModule (native)', () => {
       });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toMatch(/不存在/);
+    });
+
+    it('serializes sibling agents so edits to different slides are both preserved', async () => {
+      let releaseFirst!: () => void;
+      let markFirstEntered!: () => void;
+      const firstEntered = new Promise<void>((resolve) => { markFirstEntered = resolve; });
+      const firstMayFinish = new Promise<void>((resolve) => { releaseFirst = resolve; });
+      const prototype = (JSZip as unknown as {
+        prototype: { generateAsync(opts: { type: 'nodebuffer' }): Promise<Buffer> };
+      }).prototype;
+      const realGenerateAsync = prototype.generateAsync;
+      let generationCalls = 0;
+      const generateSpy = vi.spyOn(prototype, 'generateAsync').mockImplementation(async function (
+        this: typeof prototype,
+        opts,
+      ) {
+        const buffer = await realGenerateAsync.call(this, opts);
+        generationCalls += 1;
+        if (generationCalls === 1) {
+          markFirstEntered();
+          await firstMayFinish;
+        }
+        return buffer;
+      });
+
+      try {
+        const first = run(
+          { file_path: pptxPath, action: 'replace_title', slide_index: 0, title: 'First Agent' },
+          makeCtx({ agentId: 'agent-a' }),
+        );
+        await firstEntered;
+
+        const second = run(
+          { file_path: pptxPath, action: 'replace_title', slide_index: 1, title: 'Second Agent' },
+          makeCtx({ agentId: 'agent-b' }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        expect(generateSpy).toHaveBeenCalledTimes(1);
+
+        releaseFirst();
+        expect((await first).ok).toBe(true);
+        expect((await second).ok).toBe(true);
+        expect(generateSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        releaseFirst();
+        generateSpy.mockRestore();
+      }
+    });
+
+    it('fails loudly when agent identity is unavailable', async () => {
+      const result = await run(
+        { file_path: pptxPath, action: 'replace_title', slide_index: 0, title: 'x' },
+        makeCtx({ agentId: undefined }),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('MISSING_AGENT_IDENTITY');
     });
   });
 

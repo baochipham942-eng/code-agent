@@ -43,6 +43,8 @@ import { getConfigService } from '../../../services';
 import { atomicWriteFile } from '../../utils/atomicWrite';
 import { visualEditSchema as schema } from './visualEdit.schema';
 import { TOOL_DEPENDENCY_HINTS } from '../_helpers/dependencyHints';
+import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
+import { getFileMutationActorId } from '../file/fileMutationIdentity';
 
 interface VisualEditArgs {
   file?: string;
@@ -78,6 +80,8 @@ interface VisualEditOutput {
 const DEFAULT_RADIUS = 10;
 const MAX_RADIUS = 40;
 const VISION_TIMEOUT_MS = 60_000;
+const LOCK_HOLD_TIMEOUT_MS = 60_000;
+const LOCK_WAIT_TIMEOUT_MS = 10_000;
 
 function formatWithLineNumbers(lines: string[], startLine: number): string {
   const endLine = startLine + lines.length - 1;
@@ -285,6 +289,15 @@ class VisualEditHandler implements ToolHandler<VisualEditArgs, VisualEditOutput>
       return { ok: false, error: `文件 ${absolutePath} 位于项目外`, code: 'PATH_ESCAPE' };
     }
 
+    const actorId = getFileMutationActorId(ctx);
+    if (!actorId) {
+      return {
+        ok: false,
+        error: 'VisualEdit requires a non-empty agentId to isolate concurrent file mutations.',
+        code: 'MISSING_AGENT_IDENTITY',
+      };
+    }
+
     onProgress?.({ stage: 'starting', detail: `reading ${path.basename(absolutePath)}:${line}` });
 
     let raw: string;
@@ -377,8 +390,33 @@ class VisualEditHandler implements ToolHandler<VisualEditArgs, VisualEditOutput>
       return { ok: false, error: 'old_text 与 new_text 相同，无实际改动', code: 'NOOP_PLAN' };
     }
 
-    // 精确命中 + 唯一性校验
-    const occurrences = countOccurrences(raw, plan.old_text);
+    const lockManager = getResourceLockManager();
+    const holderId = actorId;
+    const lockResult = await lockManager.acquire(holderId, absolutePath, 'exclusive', {
+      type: 'file',
+      timeout: LOCK_HOLD_TIMEOUT_MS,
+      wait: true,
+      waitTimeout: LOCK_WAIT_TIMEOUT_MS,
+    });
+    if (!lockResult.acquired) {
+      return {
+        ok: false,
+        error: `Cannot acquire lock for ${absolutePath}: ${lockResult.reason}. File may be in use by another operation.`,
+        code: 'WRITE_FAILED',
+      };
+    }
+
+    try {
+    let latestRaw: string;
+    try {
+      latestRaw = await fs.readFile(absolutePath, 'utf-8');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `重新读取源文件失败：${msg}`, code: 'READ_FAILED' };
+    }
+
+    // 精确命中 + 唯一性校验以锁内最新内容为准。
+    const occurrences = countOccurrences(latestRaw, plan.old_text);
     if (occurrences === 0) {
       return {
         ok: false,
@@ -396,7 +434,7 @@ class VisualEditHandler implements ToolHandler<VisualEditArgs, VisualEditOutput>
 
     // 原子写入
     onProgress?.({ stage: 'completing', detail: '应用改动' });
-    const next = raw.replace(plan.old_text, plan.new_text);
+    const next = latestRaw.replace(plan.old_text, plan.new_text);
     try {
       await atomicWriteFile(absolutePath, next);
     } catch (err) {
@@ -404,7 +442,7 @@ class VisualEditHandler implements ToolHandler<VisualEditArgs, VisualEditOutput>
       return { ok: false, error: `写入文件失败：${msg}`, code: 'WRITE_FAILED' };
     }
 
-    const bytesDelta = Buffer.byteLength(next, 'utf-8') - Buffer.byteLength(raw, 'utf-8');
+    const bytesDelta = Buffer.byteLength(next, 'utf-8') - Buffer.byteLength(latestRaw, 'utf-8');
 
     ctx.logger.info('visual_edit applied', {
       absolutePath,
@@ -428,6 +466,9 @@ class VisualEditHandler implements ToolHandler<VisualEditArgs, VisualEditOutput>
         visionModel: llmModel,
       },
     };
+    } finally {
+      lockManager.release(holderId, absolutePath);
+    }
   }
 }
 

@@ -141,6 +141,9 @@ async function runSpawnAgent(
   if (args.run_in_background === true) {
     const bgController = new AbortController();
     const backgroundRole = typeof normalizedArgs.role === 'string' ? normalizedArgs.role : undefined;
+    const backgroundTitle = typeof normalizedArgs.task === 'string' && normalizedArgs.task.trim()
+      ? normalizedArgs.task.trim()
+      : (backgroundRole ?? '后台任务');
     const declaredOutputs = getDeclaredOutputsForRole(backgroundRole);
     const agentId = getBackgroundSubagentRegistry().spawn(async (): Promise<SubagentResult> => {
       const bgResult = await executeSpawnAgent(normalizedArgs, {
@@ -163,6 +166,8 @@ async function runSpawnAgent(
         ...(failureCode ? { failureCode } : {}),
       };
     }, {
+      title: backgroundTitle,
+      completionKind: backgroundRole === 'awaiter' ? 'shell' : 'internal',
       sessionId: ctx.sessionId,
       ...(ctx.runId ? { runId: ctx.runId } : {}),
       ...(ctx.swarmRunScope?.treeId ?? ctx.spawnTreeId

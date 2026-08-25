@@ -139,6 +139,8 @@ export function adoptForegroundSubagent(options: {
   const visibilityScope = resolveSingleSpawnRunScope(context, treeId, agentId);
   getBackgroundSubagentRegistry().adopt(promise, {
     agentId,
+    title: agentName,
+    completionKind: 'user_visible',
     sessionId: context.sessionId,
     ...(context.runId ? { runId: context.runId } : {}),
     ...(treeId ? { treeId } : {}),

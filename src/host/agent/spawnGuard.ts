@@ -27,7 +27,10 @@ import {
   type SwarmRunRef,
   type SwarmRunScope,
 } from '../../shared/contract/swarm';
-import { buildSubagentCompletionRecord } from './subagentCompletionNotification';
+import {
+  buildSubagentCompletionRecord,
+  type SubagentCompletionKind,
+} from './subagentCompletionNotification';
 
 const logger = createLogger('SpawnGuard');
 
@@ -74,6 +77,7 @@ export function createAgentMessage(
 
 export interface ManagedAgent {
   id: string;
+  completion?: { title?: string; kind?: SubagentCompletionKind };
   role: string;
   treeId: string;
   sessionId?: string;
@@ -134,6 +138,7 @@ interface RegisterOptions {
   parentId?: string;
   slotAcquired?: boolean;
   scope?: SwarmRunScope;
+  completion?: { title?: string; kind?: SubagentCompletionKind };
 }
 
 export interface SpawnGuardScopeFilter {
@@ -154,6 +159,7 @@ interface PersistedSpawnGuardState {
   scope?: SwarmRunScope;
   agents: Array<{
     id: string;
+    completion?: { title?: string; kind?: SubagentCompletionKind };
     role: string;
     treeId?: string;
     sessionId?: string;
@@ -581,6 +587,7 @@ class SpawnGuard {
 
     const agent: ManagedAgent = {
       id,
+      completion: options.completion,
       role,
       treeId,
       sessionId: scope?.sessionId,
@@ -846,7 +853,9 @@ class SpawnGuard {
   formatNotification(agent: ManagedAgent): string {
     return buildSubagentCompletionRecord({
       agentId: agent.id,
+      title: agent.completion?.title ?? agent.task,
       role: agent.role,
+      kind: agent.completion?.kind,
       status: agent.status === 'completed'
         ? 'completed'
         : agent.status === 'cancelled'
@@ -1063,6 +1072,7 @@ class SpawnGuard {
       scope: persistedScope,
       agents: this.list(persistedScope).map((agent) => ({
         id: agent.id,
+        completion: agent.completion,
         role: agent.role,
         treeId: agent.treeId,
         sessionId: agent.sessionId,
@@ -1156,6 +1166,7 @@ class SpawnGuard {
         const recoveryPlan = entry.recoveryPlan ?? buildManagedAgentRecoveryPlan(entry.status, wasRunning);
         const agent: ManagedAgent = {
           id: entry.id,
+          completion: entry.completion,
           role: entry.role,
           treeId: entry.treeId ?? DEFAULT_TREE_ID,
           sessionId: entryScope?.sessionId,

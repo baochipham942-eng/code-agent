@@ -299,7 +299,7 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: Detail
               size="sm"
               variant="ghost"
               className="h-6 px-2 text-[10px]"
-              leftIcon={revealed ? <EyeOff /> : <Eye />}
+              leftIcon={revealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
               aria-pressed={revealed}
               onClick={() => setRevealed((current) => !current)}
             >

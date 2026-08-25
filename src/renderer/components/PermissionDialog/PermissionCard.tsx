@@ -444,7 +444,7 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
                 <Button
                   size="sm"
                   variant="secondary"
-                  leftIcon={<RotateCcw />}
+                  leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
                   onClick={() => void sendPrompt(EXPIRED_RETRY_PROMPT)}
                 >
                   {p.tellModelContinue}

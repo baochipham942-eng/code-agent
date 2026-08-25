@@ -34,6 +34,7 @@ interface TestProviderStatus {
   authMode: 'oauth' | 'lark-cli' | 'tmeet-cli';
   step?: 1 | 2;
   blocked?: boolean;
+  stale?: boolean;
   userName?: string;
   tenantName?: string;
 }
@@ -95,11 +96,39 @@ function openFeishuDetail() {
 beforeEach(() => {
   invokeDomain.mockReset();
   useInChat.mockReset();
+  window.localStorage.clear();
 });
 
 afterEach(cleanup);
 
 describe('SaaSConnectorsSection Feishu lark-cli six states', () => {
+  it('renders persisted cards on the first frame while the background refresh is pending', () => {
+    window.localStorage.setItem('code-agent:connector-oauth-statuses', JSON.stringify([
+      { ...larkCliStatus, connected: true, userName: 'Cached User', tenantName: 'Cached Corp' },
+      tmeetCliStatus,
+    ]));
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'oauthStatus') return new Promise(() => undefined);
+      return Promise.resolve([]);
+    });
+
+    render(<SaaSConnectorsSection />);
+
+    expect(screen.getByTestId('saas-connector-feishu').textContent)
+      .toContain(zh.settings.saasConnectors.badges.connected);
+    expect(screen.getByTestId('saas-connector-tmeet')).toBeTruthy();
+    expect(screen.queryByTestId('saas-connector-skeleton-feishu')).toBeNull();
+  });
+
+  it('shows card-shaped skeletons when no persisted status exists', () => {
+    invokeDomain.mockImplementation(() => new Promise(() => undefined));
+
+    render(<SaaSConnectorsSection />);
+
+    expect(screen.getByTestId('saas-connector-skeleton-feishu')).toBeTruthy();
+    expect(screen.getByTestId('saas-connector-skeleton-tmeet')).toBeTruthy();
+  });
+
   it('state 1: offers Connect Feishu, browser explanation, and the in-card custom-app escape hatch', async () => {
     renderLarkCliStatus();
 

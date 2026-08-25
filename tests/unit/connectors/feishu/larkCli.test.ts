@@ -2,6 +2,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { getCachedStatus } from '../../../../src/host/connectors/cli/cliConnector';
 import { createLarkCliDriver } from '../../../../src/host/connectors/feishu/larkCli';
 
 const roots: string[] = [];
@@ -24,14 +25,17 @@ if (args[0] === 'config' && args[1] === 'init') {
 }
 if (args[0] === 'auth' && args[1] === 'logout') process.exit(0);
 if (args[0] === 'auth' && args[1] === 'status') {
-  if (mode === 'status-fail') process.exit(1);
-  process.stdout.write(JSON.stringify({
-    identities: { user: { available: true, openId: 'ou_fake', userName: 'Neo User', tenantName: 'Neo Corp' } },
-    identity: 'user',
-  }));
-  process.exit(0);
-}
-if (args[0] === 'auth' && args[1] === 'login' && args.includes('--no-wait')) {
+  if (process.env.FAKE_STATUS_HANG && fs.existsSync(process.env.FAKE_STATUS_HANG)) {
+    setInterval(() => {}, 1000);
+  } else {
+    if (mode === 'status-fail') process.exit(1);
+    process.stdout.write(JSON.stringify({
+      identities: { user: { available: true, openId: 'ou_fake', userName: 'Neo User', tenantName: 'Neo Corp' } },
+      identity: 'user',
+    }));
+    process.exit(0);
+  }
+} else if (args[0] === 'auth' && args[1] === 'login' && args.includes('--no-wait')) {
   if (mode === 'admin-error') {
     process.stderr.write(JSON.stringify({ error: { code: 20027, message: 'scope denied by tenant admin' } }));
     process.exit(1);
@@ -42,8 +46,7 @@ if (args[0] === 'auth' && args[1] === 'login' && args.includes('--no-wait')) {
     expires_in: 300,
   }));
   process.exit(0);
-}
-if (args[0] === 'auth' && args[1] === 'login' && args.includes('--device-code')) {
+} else if (args[0] === 'auth' && args[1] === 'login' && args.includes('--device-code')) {
   if (mode === 'timeout') setInterval(() => {}, 1000);
   else process.exit(0);
 } else {
@@ -55,12 +58,17 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function fixture(mode: string, timeoutMs = 10_000) {
+async function fixture(mode: string, timeoutMs = 10_000, statusOptions: {
+  statusCacheTtlMs?: number;
+  statusTimeoutMs?: number;
+  now?: () => number;
+} = {}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'neo-lark-cli-'));
   roots.push(dataDir);
   const packageDir = path.join(dataDir, 'lark-cli', 'node_modules', '@larksuite', 'cli');
   const binaryPath = path.join(packageDir, 'bin', 'lark-cli');
   const logPath = path.join(dataDir, 'calls.ndjson');
+  const statusHangPath = path.join(dataDir, 'status-hang');
   await mkdir(path.dirname(binaryPath), { recursive: true });
   await writeFile(path.join(packageDir, 'package.json'), JSON.stringify({ version: '1.0.89' }));
   await writeFile(binaryPath, FAKE_LARK_CLI);
@@ -68,15 +76,17 @@ async function fixture(mode: string, timeoutMs = 10_000) {
   const driver = createLarkCliDriver({
     dataDir,
     timeoutMs,
+    ...statusOptions,
     env: {
       ...process.env,
       FAKE_LOG: logPath,
       FAKE_MODE: mode,
+      FAKE_STATUS_HANG: statusHangPath,
       OPENCLAW_HOME: '/should-not-leak',
       HERMES_HOME: '/should-not-leak',
     },
   });
-  return { driver, logPath };
+  return { driver, logPath, statusHangPath };
 }
 
 async function calls(logPath: string): Promise<Array<{
@@ -148,6 +158,53 @@ describe('Feishu lark-cli driver', () => {
 
     const unconfigured = await fixture('status-fail');
     await expect(unconfigured.driver.status()).resolves.toEqual({ connected: false, identity: 'none' });
+  });
+
+  it('reuses status inside the TTL and refreshes after expiry', async () => {
+    let now = 1_000;
+    const { driver, logPath } = await fixture('existing-profile', 10_000, {
+      statusCacheTtlMs: 30_000,
+      now: () => now,
+    });
+
+    await driver.status();
+    await driver.status();
+    expect((await calls(logPath)).filter((call) => call.args[1] === 'status')).toHaveLength(1);
+
+    now += 30_001;
+    await driver.status();
+    expect((await calls(logPath)).filter((call) => call.args[1] === 'status')).toHaveLength(2);
+  });
+
+  it('returns the last known status as stale when refresh times out', async () => {
+    let now = 1_000;
+    const { driver, logPath, statusHangPath } = await fixture('existing-profile', 10_000, {
+      statusCacheTtlMs: 30_000,
+      statusTimeoutMs: 4_000,
+      now: () => now,
+    });
+    const known = await driver.status();
+    expect(known.connected).toBe(true);
+
+    now += 30_001;
+    await writeFile(statusHangPath, '1');
+    await expect(driver.status()).resolves.toEqual({ ...known, stale: true });
+    expect(getCachedStatus('feishu')).toEqual({ ...known, stale: true });
+
+    await driver.status();
+    expect((await calls(logPath)).filter((call) => call.args[1] === 'status')).toHaveLength(2);
+  });
+
+  it('invalidates status after connect and disconnect actions', async () => {
+    const { driver, logPath } = await fixture('existing-profile');
+
+    await driver.status();
+    await driver.connect(() => {});
+    await driver.status();
+    await driver.disconnect();
+    await driver.status();
+
+    expect((await calls(logPath)).filter((call) => call.args[1] === 'status')).toHaveLength(3);
   });
 
   it('logs out the Neo token without removing the lark-cli profile', async () => {

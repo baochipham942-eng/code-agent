@@ -82,6 +82,7 @@ async function fixture(modelName = 'gpt-test') {
     dataDir,
     modelName,
     timeoutMs: 10_000,
+    statusCacheTtlMs: 0,
     env: {
       ...process.env,
       FAKE_LOG: logPath,

@@ -32,6 +32,7 @@ export interface PermissionQueueEventDeps {
   now: () => number;
   setLastEventAt: (timestamp: number) => void;
   setPendingPermissionRequest: AgentEffectsProps['setPendingPermissionRequest'];
+  recordPermissionDecision: ReturnType<typeof useAppStore.getState>['recordPermissionDecision'];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -98,6 +99,14 @@ export function applyPermissionQueueEvent(
       deps.debug('Permission request received', { data: event.data });
       const permissionRequest = normalizePermissionRequest(event.data);
       if (!permissionRequest) {
+        break;
+      }
+      if (permissionRequest.resolved && permissionRequest.decision) {
+        deps.recordPermissionDecision(
+          permissionRequest,
+          permissionRequest.decision,
+          event.sessionId || permissionRequest.sessionId || null,
+        );
         break;
       }
       if (deps.hasPermissionRequest(permissionRequest.id)) {
@@ -189,6 +198,7 @@ export const usePermissionQueueEffects = ({
           lastEventAtRef.current = timestamp;
         },
         setPendingPermissionRequest,
+        recordPermissionDecision: useAppStore.getState().recordPermissionDecision,
       });
     });
 

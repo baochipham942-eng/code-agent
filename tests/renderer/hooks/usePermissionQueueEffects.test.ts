@@ -12,6 +12,7 @@ interface PermissionQueueState {
   pendingPermissionRequest: PermissionRequest | null;
   pendingPermissionSessionId: string | null;
   queuedPermissionRequests: Record<string, PermissionRequest[]>;
+  resolvedPermissionRequests: PermissionRequest[];
   unreadSessionIds: string[];
 }
 
@@ -32,6 +33,7 @@ function createHarness(overrides: Partial<PermissionQueueState> = {}) {
     pendingPermissionRequest: null,
     pendingPermissionSessionId: null,
     queuedPermissionRequests: {},
+    resolvedPermissionRequests: [],
     unreadSessionIds: [],
     ...overrides,
   };
@@ -80,6 +82,12 @@ function createHarness(overrides: Partial<PermissionQueueState> = {}) {
       state.lastEventAt = timestamp;
     },
     setPendingPermissionRequest,
+    recordPermissionDecision: (request, decision) => {
+      state.resolvedPermissionRequests.push({ ...request, resolved: true, decision });
+      if (state.pendingPermissionRequest?.id === request.id) {
+        setPendingPermissionRequest(null);
+      }
+    },
   };
 
   const reconcile = () => {
@@ -126,8 +134,30 @@ describe('applyPermissionQueueEvent', () => {
       pendingPermissionRequest: first,
       pendingPermissionSessionId: null,
       queuedPermissionRequests: { global: [second] },
+      resolvedPermissionRequests: [],
       unreadSessionIds: [],
     });
+  });
+
+  it('moves a host-confirmed timeout result into resolved history instead of enqueueing it', () => {
+    const request = permissionRequest('expired');
+    const { deps, state } = createHarness({
+      currentSessionId: 'session-current',
+      pendingPermissionRequest: request,
+      pendingPermissionSessionId: 'session-current',
+    });
+
+    applyPermissionQueueEvent({
+      type: 'permission_request',
+      sessionId: 'session-current',
+      data: { ...request, resolved: true, decision: 'timeout' },
+    }, deps);
+
+    expect(state.pendingPermissionRequest).toBeNull();
+    expect(state.resolvedPermissionRequests).toEqual([
+      { ...request, resolved: true, decision: 'timeout' },
+    ]);
+    expect(state.queuedPermissionRequests).toEqual({});
   });
 
   it('shows an available current-session request and queues occupied or foreign sessions', () => {
@@ -220,6 +250,7 @@ describe('applyPermissionQueueEvent', () => {
           'session-foreign': [foreign],
           global: [global],
         },
+        resolvedPermissionRequests: [],
         unreadSessionIds: [],
       });
     },
@@ -246,6 +277,7 @@ describe('applyPermissionQueueEvent', () => {
         pendingPermissionRequest: pending,
         pendingPermissionSessionId: 'session-current',
         queuedPermissionRequests: { 'session-current': [queued] },
+        resolvedPermissionRequests: [],
         unreadSessionIds: [],
       });
     },

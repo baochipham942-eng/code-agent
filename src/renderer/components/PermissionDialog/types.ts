@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { ReactNode } from 'react';
-import type { PermissionBoundaryRef, PermissionRequestReason } from '@shared/contract';
+import type { PermissionBoundaryRef, PermissionDecision, PermissionRequestReason } from '@shared/contract';
 
 // 权限类型
 export type PermissionType =
@@ -66,6 +66,8 @@ export interface PermissionRequest {
   timestamp?: number;
   /** Decision trace: why this permission was requested */
   decisionTrace?: import('@shared/contract').DecisionTrace;
+  resolved?: boolean;
+  decision?: PermissionDecision;
 }
 
 // 权限配置

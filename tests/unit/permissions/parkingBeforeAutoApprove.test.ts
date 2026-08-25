@@ -139,6 +139,10 @@ describe('停车判定先于自动批准', () => {
     expect(await isStillPending(result)).toBe(true);
     await vi.advanceTimersByTimeAsync(60_000);
     await expect(result).resolves.toEqual({ approved: false, denialSource: 'timeout' });
+    expect(onEvent).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: 'permission_request',
+      data: expect.objectContaining({ resolved: true, decision: 'timeout' }),
+    }));
   });
 
   it('async_agent 的 catalog 只读 MCP 工具仍免审放行，不停车', async () => {

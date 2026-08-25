@@ -8,6 +8,11 @@ import { getPermissionBoundary, type DecisionTrace, type PermissionBoundary } fr
 import { formatFilePath } from './utils';
 import { DiffView } from '../DiffView';
 import { WritebackFieldsView } from './WritebackFields';
+import { redactCredentialText } from '@shared/security/secretPatterns';
+import { Badge } from '../primitives/Badge';
+import { Button } from '../primitives/Button';
+import { Eye, EyeOff } from 'lucide-react';
+import { useI18n } from '../../hooks/useI18n';
 
 interface RequestDetailsProps {
   request: PermissionRequest;
@@ -47,6 +52,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {/* 命令 */}
       {details.command && (
         <DetailItem
+          key={`command-${request.id}`}
           label="命令"
           value={details.command}
           isCode
@@ -248,8 +254,13 @@ function ConfirmationDiffPreview({ before, after, summary, filePath }: Confirmat
 }
 
 function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: DetailItemProps) {
-  // 格式化显示值
-  const displayValue = isPath ? formatFilePath(value) : value;
+  const { t } = useI18n();
+  const [revealed, setRevealed] = useState(false);
+  // 所有 DetailItem 的值只在这一处统一脱敏；title 始终使用脱敏值，打开原文也不泄到 tooltip。
+  const redactedValue = redactCredentialText(value);
+  const hasRedaction = redactedValue !== value;
+  const visibleValue = revealed && isCode ? value : redactedValue;
+  const displayValue = isPath ? formatFilePath(visibleValue) : visibleValue;
 
   return (
     <div>
@@ -269,10 +280,41 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: Detail
           ${isUrl ? 'bg-zinc-800 text-badge-info' : ''}
           ${!isCode && !isPath && !isUrl ? 'bg-zinc-800 text-zinc-400' : ''}
         `}
-        title={value}
+        title={redactedValue}
       >
         {displayValue}
       </div>
+      {isCode && hasRedaction && (
+        <div className="mt-1.5">
+          <div className="flex items-center gap-2">
+            {!revealed && (
+              <Badge
+                data-testid="permission-redacted-badge"
+                className="border-badge-success/30 bg-emerald-500/10 text-[10px] text-badge-success"
+              >
+                {t.decisionCard.permission.redacted}
+              </Badge>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-[10px]"
+              leftIcon={revealed ? <EyeOff /> : <Eye />}
+              aria-pressed={revealed}
+              onClick={() => setRevealed((current) => !current)}
+            >
+              {revealed
+                ? t.decisionCard.permission.hideOriginalCommand
+                : t.decisionCard.permission.revealOriginalCommand}
+            </Button>
+          </div>
+          {revealed && (
+            <p className="mt-1 text-[10px] text-badge-warning" role="note">
+              {t.decisionCard.permission.originalCommandWarning}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

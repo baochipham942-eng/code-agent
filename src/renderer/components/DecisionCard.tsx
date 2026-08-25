@@ -27,6 +27,7 @@ export interface DecisionOption {
   description?: string;
   /** 直发快捷键提示（如 y / s / a / n），仅展示；按键行为由适配层实现 */
   shortcut?: string;
+  disabled?: boolean;
 }
 
 export interface DecisionCardProps {
@@ -36,6 +37,8 @@ export interface DecisionCardProps {
   title: string;
   /** 头部标题右侧的次要信息（如工具名） */
   headerMeta?: string;
+  /** 头部右侧终态徽标等；未传时其他消费方 DOM 不变。 */
+  headerEnd?: React.ReactNode;
   /** 危险警示行正文（tone=danger 时展示在头部下方） */
   dangerWarning?: string;
   /** 一行问题句（「允许写入 ~/work/report.md？」） */
@@ -53,6 +56,10 @@ export interface DecisionCardProps {
   submitting?: boolean;
   /** 底部动作行上方的附加区（如反馈输入框、错误提示） */
   footerExtra?: React.ReactNode;
+  /** 历史终态卡不再展示确认动作。 */
+  hideFooter?: boolean;
+  /** 已裁决卡退为中性灰，避免继续呈现为等待输入。 */
+  settled?: boolean;
   /** 外层容器 className 覆盖（内联在消息流里的卡去掉 px-4 定位） */
   className?: string;
   testId?: string;
@@ -86,6 +93,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
   icon,
   title,
   headerMeta,
+  headerEnd,
   dangerWarning,
   question,
   details,
@@ -98,6 +106,8 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
   cancelLabel,
   submitting = false,
   footerExtra,
+  hideFooter = false,
+  settled = false,
   className = 'w-full px-4 animate-slideUp',
   testId = 'decision-card',
 }) => {
@@ -150,20 +160,21 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
         ref={cardRef}
         tabIndex={-1}
         className={`w-full max-w-3xl mx-auto bg-zinc-900 rounded-lg shadow-2xl border-2 outline-hidden ${
-          danger ? 'border-red-500' : 'border-badge-info/60'
+          settled ? 'border-zinc-700' : danger ? 'border-red-500' : 'border-badge-info/60'
         }`}
       >
         {/* 头部：与 UserQuestionCard 同形（图标 + 标题），语义色区分常规/危险 */}
         <div
           className={`flex items-center gap-2 px-4 py-2.5 border-b border-zinc-800 rounded-t-lg ${
-            danger ? 'bg-red-500/10' : 'bg-blue-500/10'
+            settled ? 'bg-zinc-800' : danger ? 'bg-red-500/10' : 'bg-blue-500/10'
           }`}
         >
-          <span className={`shrink-0 ${danger ? 'text-badge-danger' : 'text-badge-info'}`}>{icon}</span>
-          <span className={`text-sm font-medium ${danger ? 'text-badge-danger' : 'text-badge-info'}`}>
+          <span className={`shrink-0 ${settled ? 'text-zinc-400' : danger ? 'text-badge-danger' : 'text-badge-info'}`}>{icon}</span>
+          <span className={`text-sm font-medium ${settled ? 'text-zinc-300' : danger ? 'text-badge-danger' : 'text-badge-info'}`}>
             {title}
           </span>
           {headerMeta && <span className="text-xs text-zinc-500 truncate">{headerMeta}</span>}
+          {headerEnd && <span className="ml-auto shrink-0">{headerEnd}</span>}
         </div>
 
         {/* 危险警示行：替代旧 DangerWarning 嵌卡，只占一行高度 */}
@@ -184,11 +195,12 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
                 key={option.id}
                 type="button"
                 onClick={() => onSelect(option.id)}
+                disabled={option.disabled}
                 className={`w-full p-2.5 rounded-lg border text-left transition-all ${
                   selectedId === option.id
                     ? 'border-badge-info bg-blue-500/10 ring-1 ring-blue-500/50'
                     : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
-                }`}
+                } ${option.disabled ? 'cursor-not-allowed opacity-45 hover:border-zinc-700 hover:bg-transparent' : ''}`}
               >
                 <div className="flex items-start gap-3">
                   <SelectionIndicator selected={selectedId === option.id} />
@@ -198,7 +210,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
                       <p className="text-xs text-zinc-400 mt-0.5">{option.description}</p>
                     )}
                   </div>
-                  {option.shortcut && (
+                  {option.shortcut && !option.disabled && (
                     <kbd className="mt-0.5 px-1 py-0.5 rounded bg-zinc-700 text-zinc-400 text-2xs font-mono shrink-0">
                       {option.shortcut}
                     </kbd>
@@ -210,7 +222,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
         </div>
 
         {/* 底部：ghost 取消 + primary 确认（选中后才可点），与 UserQuestionCard 一致 */}
-        <div className="px-4 pb-3">
+        {!hideFooter && <div className="px-4 pb-3">
           {footerExtra}
           <div className="mt-2.5 flex items-center justify-end gap-2">
             {onCancel && cancelLabel && (
@@ -227,7 +239,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
               {confirmLabel}
             </Button>
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

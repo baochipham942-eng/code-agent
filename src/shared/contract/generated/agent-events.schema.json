@@ -1151,6 +1151,20 @@
         "timestamp": {
           "type": "number"
         },
+        "resolved": {
+          "type": "boolean"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "once",
+            "deny",
+            "session",
+            "always",
+            "never",
+            "timeout"
+          ]
+        },
         "dangerLevel": {
           "type": "string",
           "enum": [

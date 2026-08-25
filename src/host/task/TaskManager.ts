@@ -1240,15 +1240,17 @@ export class TaskManager extends EventEmitter {
 
       // Send desktop notification on permission request (needs user input)
       if (event.type === 'permission_request' && event.data) {
-        const req = event.data as { tool?: string; command?: string };
-        if (eventKey !== sessionId && 'id' in event.data && typeof event.data.id === 'string') {
-          this.backgroundPermissionOwners.set(event.data.id, eventKey);
+        const req = event.data as { tool?: string; command?: string; resolved?: boolean };
+        if (!req.resolved) {
+          if (eventKey !== sessionId && 'id' in event.data && typeof event.data.id === 'string') {
+            this.backgroundPermissionOwners.set(event.data.id, eventKey);
+          }
+          notificationService.notifyNeedsInput({
+            sessionId,
+            title: '需要授权',
+            body: req.tool ? `${req.tool}: ${req.command || '请求执行权限'}` : '请求执行权限',
+          });
         }
-        notificationService.notifyNeedsInput({
-          sessionId,
-          title: '需要授权',
-          body: req.tool ? `${req.tool}: ${req.command || '请求执行权限'}` : '请求执行权限',
-        });
       }
 
       // Send desktop notification on task complete

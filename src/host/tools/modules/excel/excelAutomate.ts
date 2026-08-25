@@ -35,6 +35,11 @@ import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legac
 import { excelAutomateSchema as schema } from './excelAutomate.schema';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { resolveInputPath } from '../../utils/resolveInputPath';
+import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
+import { getFileMutationActorId } from '../file/fileMutationIdentity';
+
+const LOCK_HOLD_TIMEOUT_MS = 60_000;
+const LOCK_WAIT_TIMEOUT_MS = 10_000;
 
 type ExcelAction = 'read' | 'generate' | 'edit' | 'automate' | 'list_sheets' | 'get_range' | 'validate_formulas';
 
@@ -155,44 +160,71 @@ export async function executeExcelAutomate(
         };
       }
       const resolvedPath = resolveInputPath(args.file_path as string, ctx.workingDir);
-      const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
-      const legacyResult = await executeExcelEdit(
-        {
-          file_path: resolvedPath,
-          operations: args.operations as ExcelEditParams['operations'],
-          dry_run: args.dry_run as boolean | undefined,
-        },
-        legacyCtx,
-      );
-      onProgress?.({ stage: 'completing', percent: 100 });
-      ctx.logger.debug('ExcelAutomate done', { action, ok: legacyResult.success });
-      const result = adaptLegacyResult(legacyResult);
-      if (!result.ok) return result;
-      const artifact = args.dry_run
-        ? undefined
-        : await createFileArtifact(resolvedPath, schema.name, ctx, {
-          kind: 'spreadsheet',
-          metadata: {
+      const actorId = getFileMutationActorId(ctx);
+      if (!actorId) {
+        return {
+          ok: false,
+          error: 'ExcelAutomate edit requires a non-empty agentId to isolate concurrent file mutations.',
+          code: 'MISSING_AGENT_IDENTITY',
+        };
+      }
+      const lockManager = getResourceLockManager();
+      const holderId = actorId;
+      const lockResult = await lockManager.acquire(holderId, resolvedPath, 'exclusive', {
+        type: 'file',
+        timeout: LOCK_HOLD_TIMEOUT_MS,
+        wait: true,
+        waitTimeout: LOCK_WAIT_TIMEOUT_MS,
+      });
+      if (!lockResult.acquired) {
+        return {
+          ok: false,
+          error: `Cannot acquire lock for ${resolvedPath}: ${lockResult.reason}. File may be in use by another operation.`,
+          code: 'EXCEL_ERROR',
+        };
+      }
+      try {
+        const legacyCtx = buildLegacyCtxFromProtocol(ctx, canUseTool);
+        const legacyResult = await executeExcelEdit(
+          {
+            file_path: resolvedPath,
+            operations: args.operations as ExcelEditParams['operations'],
+            dry_run: args.dry_run as boolean | undefined,
+          },
+          legacyCtx,
+        );
+        onProgress?.({ stage: 'completing', percent: 100 });
+        ctx.logger.debug('ExcelAutomate done', { action, ok: legacyResult.success });
+        const result = adaptLegacyResult(legacyResult);
+        if (!result.ok) return result;
+        const artifact = args.dry_run
+          ? undefined
+          : await createFileArtifact(resolvedPath, schema.name, ctx, {
+            kind: 'spreadsheet',
+            metadata: {
+              action: 'edit',
+              operation: 'excel_edit',
+              path: resolvedPath,
+              operationCount: Array.isArray(args.operations) ? args.operations.length : undefined,
+            },
+          }).catch(() => undefined);
+        return {
+          ...result,
+          meta: {
+            ...(result.meta ?? {}),
             action: 'edit',
             operation: 'excel_edit',
             path: resolvedPath,
+            outputPath: resolvedPath,
             operationCount: Array.isArray(args.operations) ? args.operations.length : undefined,
+            dryRun: Boolean(args.dry_run),
+            changedFiles: args.dry_run ? [] : [resolvedPath],
+            ...(artifact ? { artifact } : {}),
           },
-        }).catch(() => undefined);
-      return {
-        ...result,
-        meta: {
-          ...(result.meta ?? {}),
-          action: 'edit',
-          operation: 'excel_edit',
-          path: resolvedPath,
-          outputPath: resolvedPath,
-          operationCount: Array.isArray(args.operations) ? args.operations.length : undefined,
-          dryRun: Boolean(args.dry_run),
-          changedFiles: args.dry_run ? [] : [resolvedPath],
-          ...(artifact ? { artifact } : {}),
-        },
-      };
+        };
+      } finally {
+        lockManager.release(holderId, resolvedPath);
+      }
     }
 
     case 'automate': {
@@ -204,26 +236,69 @@ export async function executeExcelAutomate(
           code: 'INVALID_ARGS',
         };
       }
-      const result = await executeXlwingsExecute(
-        {
-          operation: args.operation,
-          file_path: args.file_path,
-          sheet: args.sheet,
-          range: args.range,
-          data: args.data,
-          macro_name: args.macro_name,
-          macro_args: args.macro_args,
-          chart_type: args.chart_type,
-          chart_title: args.chart_title,
-          chart_position: args.chart_position,
-          save: args.save,
-        },
-        ctx,
-        allowAllChild,
-      );
-      onProgress?.({ stage: 'completing', percent: 100 });
-      ctx.logger.debug('ExcelAutomate done', { action, ok: result.ok });
-      return result;
+      const automateArgs = {
+        operation: args.operation,
+        file_path: args.file_path,
+        sheet: args.sheet,
+        range: args.range,
+        data: args.data,
+        macro_name: args.macro_name,
+        macro_args: args.macro_args,
+        chart_type: args.chart_type,
+        chart_title: args.chart_title,
+        chart_position: args.chart_position,
+        save: args.save,
+      };
+      const mutatesWorkbook = ['write', 'run_macro', 'create_chart'].includes(String(args.operation));
+      if (!mutatesWorkbook) {
+        const result = await executeXlwingsExecute(automateArgs, ctx, allowAllChild);
+        onProgress?.({ stage: 'completing', percent: 100 });
+        ctx.logger.debug('ExcelAutomate done', { action, ok: result.ok });
+        return result;
+      }
+      if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
+        return {
+          ok: false,
+          error: 'Mutating Excel automation requires file_path so concurrent writes can be isolated.',
+          code: 'INVALID_ARGS',
+        };
+      }
+      const resolvedPath = resolveInputPath(args.file_path, ctx.workingDir);
+      const actorId = getFileMutationActorId(ctx);
+      if (!actorId) {
+        return {
+          ok: false,
+          error: 'ExcelAutomate automate requires a non-empty agentId to isolate concurrent file mutations.',
+          code: 'MISSING_AGENT_IDENTITY',
+        };
+      }
+      const lockManager = getResourceLockManager();
+      const holderId = actorId;
+      const lockResult = await lockManager.acquire(holderId, resolvedPath, 'exclusive', {
+        type: 'file',
+        timeout: LOCK_HOLD_TIMEOUT_MS,
+        wait: true,
+        waitTimeout: LOCK_WAIT_TIMEOUT_MS,
+      });
+      if (!lockResult.acquired) {
+        return {
+          ok: false,
+          error: `Cannot acquire lock for ${resolvedPath}: ${lockResult.reason}. File may be in use by another operation.`,
+          code: 'EXCEL_ERROR',
+        };
+      }
+      try {
+        const result = await executeXlwingsExecute(
+          { ...automateArgs, file_path: resolvedPath },
+          ctx,
+          allowAllChild,
+        );
+        onProgress?.({ stage: 'completing', percent: 100 });
+        ctx.logger.debug('ExcelAutomate done', { action, ok: result.ok });
+        return result;
+      } finally {
+        lockManager.release(holderId, resolvedPath);
+      }
     }
 
     case 'list_sheets': {

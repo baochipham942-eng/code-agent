@@ -22,6 +22,11 @@ import type {
 } from '../../../protocol/tools';
 import { notebookEditSchema as schema } from './notebookEdit.schema';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
+import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
+import { getFileMutationActorId } from './fileMutationIdentity';
+
+const LOCK_HOLD_TIMEOUT_MS = 60_000;
+const LOCK_WAIT_TIMEOUT_MS = 10_000;
 
 interface NotebookCell {
   id?: string;
@@ -159,7 +164,34 @@ class NotebookEditHandler implements ToolHandler<Record<string, unknown>, string
       return { ok: false, error: `File must be a Jupyter notebook (.ipynb), got: ${path.extname(resolvedPath)}`, code: 'INVALID_EXT' };
     }
 
+    const actorId = getFileMutationActorId(ctx);
+    if (!actorId) {
+      return {
+        ok: false,
+        error: 'NotebookEdit requires a non-empty agentId to isolate concurrent file mutations.',
+        code: 'MISSING_AGENT_IDENTITY',
+      };
+    }
+
     onProgress?.({ stage: 'starting', detail: `notebook ${editMode}` });
+
+    const lockManager = getResourceLockManager();
+    const holderId = actorId;
+    const lockResult = await lockManager.acquire(holderId, resolvedPath, 'exclusive', {
+      type: 'file',
+      timeout: LOCK_HOLD_TIMEOUT_MS,
+      wait: true,
+      waitTimeout: LOCK_WAIT_TIMEOUT_MS,
+    });
+    if (!lockResult.acquired) {
+      return {
+        ok: false,
+        error: `Cannot acquire lock for ${resolvedPath}: ${lockResult.reason}. File may be in use by another operation.`,
+        code: 'FS_ERROR',
+      };
+    }
+
+    try {
 
     let raw: string;
     try {
@@ -292,6 +324,9 @@ class NotebookEditHandler implements ToolHandler<Record<string, unknown>, string
         ...(artifact ? { artifact } : {}),
       },
     };
+    } finally {
+      lockManager.release(holderId, resolvedPath);
+    }
   }
 }
 

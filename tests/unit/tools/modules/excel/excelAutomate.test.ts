@@ -53,6 +53,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   const ctrl = new AbortController();
   return {
     sessionId: 'test-session',
+    agentId: 'test-agent',
     workingDir: '/tmp',
     abortSignal: ctrl.signal,
     logger: makeLogger(),
@@ -298,6 +299,50 @@ describe('excelAutomateModule (native)', () => {
           },
         });
       }
+    });
+
+    it('serializes sibling agents editing the same workbook', async () => {
+      let releaseFirst!: () => void;
+      let markFirstEntered!: () => void;
+      const firstEntered = new Promise<void>((resolve) => { markFirstEntered = resolve; });
+      const firstMayFinish = new Promise<void>((resolve) => { releaseFirst = resolve; });
+      executeExcelEditMock.mockImplementation(async (params: { operations: Array<{ cell: string }> }) => {
+        if (params.operations[0]?.cell === 'A1') {
+          markFirstEntered();
+          await firstMayFinish;
+        }
+        return { success: true, output: 'edit done' };
+      });
+
+      try {
+        const first = run(
+          { action: 'edit', file_path: 'shared.xlsx', operations: [{ action: 'set_cell', cell: 'A1', value: 1 }] },
+          makeCtx({ agentId: 'agent-a' }),
+        );
+        await firstEntered;
+        const second = run(
+          { action: 'edit', file_path: 'shared.xlsx', operations: [{ action: 'set_cell', cell: 'B1', value: 2 }] },
+          makeCtx({ agentId: 'agent-b' }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        expect(executeExcelEditMock).toHaveBeenCalledTimes(1);
+
+        releaseFirst();
+        expect((await first).ok).toBe(true);
+        expect((await second).ok).toBe(true);
+        expect(executeExcelEditMock).toHaveBeenCalledTimes(2);
+      } finally {
+        releaseFirst();
+      }
+    });
+
+    it('fails loudly when agent identity is unavailable', async () => {
+      const result = await run(
+        { action: 'edit', file_path: 'a.xlsx', operations: [{ action: 'set_cell', cell: 'A1', value: 1 }] },
+        makeCtx({ agentId: undefined }),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('MISSING_AGENT_IDENTITY');
     });
   });
 

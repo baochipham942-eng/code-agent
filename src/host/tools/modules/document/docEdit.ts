@@ -30,6 +30,11 @@ import { executeDocxEdit, type DocxEditParams } from './docxEditCore';
 import { docEditSchema as schema } from './docEdit.schema';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { resolveInputPath } from '../../utils/resolveInputPath';
+import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
+import { getFileMutationActorId } from '../file/fileMutationIdentity';
+
+const LOCK_HOLD_TIMEOUT_MS = 60_000;
+const LOCK_WAIT_TIMEOUT_MS = 10_000;
 
 type DocFormat = 'xlsx' | 'pptx' | 'docx';
 
@@ -118,7 +123,7 @@ function buildDispatchLegacyCtx(
     planningService: ctx.planningService,
     modelCallback: ctx.modelCallback,
     currentToolCallId: ctx.currentToolCallId,
-    agentId: ctx.subagent?.agentId,
+    agentId: ctx.agentId || ctx.subagent?.agentId,
     agentName: ctx.subagent?.agentName,
     agentRole: ctx.subagent?.agentRole,
     messages: ctx.subagent?.messages as LegacyToolContext['messages'],
@@ -171,7 +176,32 @@ async function executeDocEdit(
     return { ok: false, error: 'aborted', code: 'ABORTED' };
   }
 
+  const actorId = getFileMutationActorId(ctx);
+  if (!actorId) {
+    return {
+      ok: false,
+      error: 'DocEdit requires a non-empty agentId to isolate concurrent file mutations.',
+      code: 'MISSING_AGENT_IDENTITY',
+    };
+  }
+
   onProgress?.({ stage: 'starting', detail: `${schema.name}:${format}` });
+
+  const lockManager = getResourceLockManager();
+  const holderId = actorId;
+  const lockResult = await lockManager.acquire(holderId, filePath, 'exclusive', {
+    type: 'file',
+    timeout: LOCK_HOLD_TIMEOUT_MS,
+    wait: true,
+    waitTimeout: LOCK_WAIT_TIMEOUT_MS,
+  });
+  if (!lockResult.acquired) {
+    return {
+      ok: false,
+      error: `Cannot acquire lock for ${filePath}: ${lockResult.reason}. File may be in use by another operation.`,
+      code: 'FS_ERROR',
+    };
+  }
 
   try {
     if (format === 'xlsx') {
@@ -261,6 +291,8 @@ async function executeDocEdit(
     const message = err instanceof Error ? err.message : String(err);
     ctx.logger.error('DocEdit failed', { error: message });
     return { ok: false, error: `DocEdit failed: ${message}`, code: 'FS_ERROR' };
+  } finally {
+    lockManager.release(holderId, filePath);
   }
 }
 

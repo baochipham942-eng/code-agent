@@ -20,6 +20,7 @@ import { ConnectorOAuthStore } from '../connectors/oauth/connectorOAuthStore';
 import { OAuthCoordinator } from '../connectors/oauth/oauthCoordinator';
 import { FEISHU_OAUTH_DESCRIPTOR } from '../connectors/oauth/feishuOAuth';
 import { createLarkCliDriver } from '../connectors/feishu/larkCli';
+import { createTmeetCliDriver } from '../connectors/tmeet/tmeetCli';
 import type { ProviderDescriptor } from '../connectors/oauth/providerDescriptor';
 import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../shared/constants';
 import type { ConfigService } from '../services';
@@ -338,11 +339,34 @@ async function handleOpenConnectorApp(connectorId: string | undefined): Promise<
 // 流程代码不变。accountId 暂等于 providerId：本刀只支持每家一个账号，多账号是后续刀的事。
 const OAUTH_PROVIDERS: Record<string, ProviderDescriptor> = {
   [FEISHU_OAUTH_DESCRIPTOR.id]: FEISHU_OAUTH_DESCRIPTOR,
+  tmeet: {
+    id: 'tmeet',
+    displayName: '腾讯会议',
+    authorizeUrl: 'https://meeting.tencent.com',
+    tokenUrl: 'https://meeting.tencent.com',
+    clientId: 'tmeet-cli',
+    scopes: { 'meeting.create': 'meeting' },
+    redirect: { mode: 'loopback-random' },
+    loopbackRedirectUriSupport: 'confirmed',
+    requiresClientSecret: false,
+    authMode: 'tmeet-cli',
+  },
 };
 
 const larkCli = createLarkCliDriver();
-let larkCliConnectStep: 1 | 2 | undefined;
-let larkCliAdminBlocked = false;
+const tmeetCli = createTmeetCliDriver();
+type CliAuthMode = 'lark-cli' | 'tmeet-cli';
+type CliDriver = ReturnType<typeof createLarkCliDriver>;
+const CLI_PROVIDER_RUNTIMES: Record<string, { authMode: CliAuthMode; driver: CliDriver }> = {
+  feishu: { authMode: 'lark-cli', driver: larkCli },
+  tmeet: { authMode: 'tmeet-cli', driver: tmeetCli },
+};
+const cliConnectSteps = new Map<string, 1 | 2>();
+const cliAdminBlocked = new Set<string>();
+
+function isCliAuthMode(authMode: ProviderDescriptor['authMode']): authMode is CliAuthMode {
+  return authMode === 'lark-cli' || authMode === 'tmeet-cli';
+}
 
 function requireOAuthProvider(providerId: string | undefined): ProviderDescriptor {
   const descriptor = providerId ? OAUTH_PROVIDERS[providerId] : undefined;
@@ -362,7 +386,7 @@ interface ConnectorOAuthProviderStatus {
   clientSecretConfigured: boolean;
   connected: boolean;
   loopbackRedirectUriSupport: ProviderDescriptor['loopbackRedirectUriSupport'];
-  authMode: 'oauth' | 'lark-cli';
+  authMode: 'oauth' | CliAuthMode;
   step?: 1 | 2;
   blocked?: boolean;
   userName?: string;
@@ -372,9 +396,9 @@ interface ConnectorOAuthProviderStatus {
 async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatus[]> {
   return Promise.all(Object.values(OAUTH_PROVIDERS).map(async (descriptor) => {
     const authMode = descriptor.authMode ?? 'oauth';
-    if (authMode === 'lark-cli') {
+    if (isCliAuthMode(authMode)) {
       const oauthStore = new ConnectorOAuthStore(descriptor.id);
-      if (oauthStore.tokens()) {
+      if (descriptor.id === 'feishu' && oauthStore.tokens()) {
         return {
           id: descriptor.id,
           displayName: descriptor.displayName,
@@ -386,7 +410,8 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
           authMode: 'oauth' as const,
         };
       }
-      if (larkCliConnectStep) {
+      const connectStep = cliConnectSteps.get(descriptor.id);
+      if (connectStep) {
         return {
           id: descriptor.id,
           displayName: descriptor.displayName,
@@ -396,10 +421,12 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
           connected: false,
           loopbackRedirectUriSupport: descriptor.loopbackRedirectUriSupport,
           authMode,
-          step: larkCliConnectStep,
+          step: connectStep,
         };
       }
-      const cliStatus = await larkCli.status();
+      const runtime = CLI_PROVIDER_RUNTIMES[descriptor.id];
+      if (!runtime) throw new Error(`CLI connector runtime is unavailable for ${descriptor.id}`);
+      const cliStatus = await runtime.driver.status();
       return {
         id: descriptor.id,
         displayName: descriptor.displayName,
@@ -409,7 +436,7 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
         connected: cliStatus.connected,
         loopbackRedirectUriSupport: descriptor.loopbackRedirectUriSupport,
         authMode,
-        ...(larkCliAdminBlocked ? { blocked: true } : {}),
+        ...(cliAdminBlocked.has(descriptor.id) ? { blocked: true } : {}),
         ...(cliStatus.user?.name ? { userName: cliStatus.user.name } : {}),
         ...(cliStatus.user?.tenantName ? { tenantName: cliStatus.user.tenantName } : {}),
       };
@@ -428,26 +455,31 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
 }
 
 async function handleConnectorOAuthConnect(
-  payload: { providerId?: string; action?: string; authMode?: 'oauth' | 'lark-cli' } | undefined,
+  payload: { providerId?: string; action?: string; authMode?: 'oauth' | CliAuthMode } | undefined,
 ): Promise<ConnectorOAuthProviderStatus[]> {
   const descriptor = requireOAuthProvider(payload?.providerId);
-  if (descriptor.authMode === 'lark-cli' && payload?.authMode !== 'oauth') {
+  if (isCliAuthMode(descriptor.authMode) && payload?.authMode !== 'oauth') {
+    const runtime = CLI_PROVIDER_RUNTIMES[descriptor.id];
+    if (!runtime) throw new Error(`CLI connector runtime is unavailable for ${descriptor.id}`);
     const { openExternal } = await import('../platform/nativeShell');
-    larkCliAdminBlocked = false;
-    larkCliConnectStep = 1;
+    cliAdminBlocked.delete(descriptor.id);
+    cliConnectSteps.set(descriptor.id, 1);
     try {
-      await larkCli.connect(openExternal, (step) => {
-        larkCliConnectStep = step;
+      await runtime.driver.connect(openExternal, (step) => {
+        cliConnectSteps.set(descriptor.id, step);
       });
     } catch (error) {
       if (error instanceof Error && error.message === '需联系企业应用管理员安装') {
-        larkCliAdminBlocked = true;
+        cliAdminBlocked.add(descriptor.id);
       }
       throw error;
     } finally {
-      larkCliConnectStep = undefined;
+      cliConnectSteps.delete(descriptor.id);
     }
     return listConnectorOAuthStatuses();
+  }
+  if (descriptor.id === 'tmeet') {
+    throw new Error('Tencent Meeting authorization is available only through the official tmeet CLI');
   }
   const action = payload?.action ?? Object.keys(descriptor.scopes)[0];
   if (!action) {
@@ -475,10 +507,13 @@ async function handleConnectorOAuthConnect(
 }
 
 async function handleConnectorOAuthSetSecret(
-  payload: { providerId?: string; clientSecret?: string; authMode?: 'oauth' | 'lark-cli' } | undefined,
+  payload: { providerId?: string; clientSecret?: string; authMode?: 'oauth' | CliAuthMode } | undefined,
 ): Promise<ConnectorOAuthProviderStatus[]> {
   const descriptor = requireOAuthProvider(payload?.providerId);
-  if (descriptor.authMode === 'lark-cli' && payload?.authMode !== 'oauth') {
+  if (descriptor.id === 'tmeet') {
+    throw new Error('Tencent Meeting CLI authorization does not use an App Secret');
+  }
+  if (isCliAuthMode(descriptor.authMode) && payload?.authMode !== 'oauth') {
     throw new Error('飞书官方 lark-cli 连接不需要 App Secret，不能在此保存');
   }
   const clientSecret = payload?.clientSecret;
@@ -493,14 +528,16 @@ async function handleConnectorOAuthDisconnect(
   payload: { providerId?: string } | undefined,
 ): Promise<ConnectorOAuthProviderStatus[]> {
   const descriptor = requireOAuthProvider(payload?.providerId);
-  if (descriptor.authMode === 'lark-cli') {
-    larkCliAdminBlocked = false;
-    larkCliConnectStep = undefined;
+  if (isCliAuthMode(descriptor.authMode)) {
+    const runtime = CLI_PROVIDER_RUNTIMES[descriptor.id];
+    if (!runtime) throw new Error(`CLI connector runtime is unavailable for ${descriptor.id}`);
+    cliAdminBlocked.delete(descriptor.id);
+    cliConnectSteps.delete(descriptor.id);
     const oauthStore = new ConnectorOAuthStore(descriptor.id);
-    if (oauthStore.tokens()) {
+    if (descriptor.id === 'feishu' && oauthStore.tokens()) {
       oauthStore.invalidateCredentials('all');
     } else {
-      await larkCli.disconnect();
+      await runtime.driver.disconnect();
     }
     return listConnectorOAuthStatuses();
   }
@@ -512,12 +549,14 @@ async function handleConnectorOAuthCancelConnect(
   payload: { providerId?: string } | undefined,
 ): Promise<ConnectorOAuthProviderStatus[]> {
   const descriptor = requireOAuthProvider(payload?.providerId);
-  if (descriptor.authMode !== 'lark-cli') {
+  if (!isCliAuthMode(descriptor.authMode)) {
     throw new Error(`OAuth connector provider ${descriptor.id} does not support connection cancellation`);
   }
-  larkCli.cancelConnect();
-  larkCliConnectStep = undefined;
-  larkCliAdminBlocked = false;
+  const runtime = CLI_PROVIDER_RUNTIMES[descriptor.id];
+  if (!runtime) throw new Error(`CLI connector runtime is unavailable for ${descriptor.id}`);
+  runtime.driver.cancelConnect();
+  cliConnectSteps.delete(descriptor.id);
+  cliAdminBlocked.delete(descriptor.id);
   return listConnectorOAuthStatuses();
 }
 
@@ -641,7 +680,7 @@ export function registerConnectorHandlers(
             request.payload as {
               providerId?: string;
               action?: string;
-              authMode?: 'oauth' | 'lark-cli';
+              authMode?: 'oauth' | CliAuthMode;
             } | undefined,
           );
           break;
@@ -650,7 +689,7 @@ export function registerConnectorHandlers(
             request.payload as {
               providerId?: string;
               clientSecret?: string;
-              authMode?: 'oauth' | 'lark-cli';
+              authMode?: 'oauth' | CliAuthMode;
             } | undefined,
           );
           break;

@@ -17,6 +17,13 @@ const env = vi.hoisted(() => ({
   larkConnect: vi.fn(),
   larkCancelConnect: vi.fn(),
   larkDisconnect: vi.fn(),
+  tmeetStatus: { connected: false, identity: 'none' } as {
+    connected: boolean;
+    identity: string;
+  },
+  tmeetConnect: vi.fn(),
+  tmeetCancelConnect: vi.fn(),
+  tmeetDisconnect: vi.fn(),
 }));
 
 vi.mock('../../../src/host/connectors/feishu/larkCli', () => ({
@@ -25,6 +32,15 @@ vi.mock('../../../src/host/connectors/feishu/larkCli', () => ({
     connect: env.larkConnect,
     cancelConnect: env.larkCancelConnect,
     disconnect: env.larkDisconnect,
+  }),
+}));
+
+vi.mock('../../../src/host/connectors/tmeet/tmeetCli', () => ({
+  createTmeetCliDriver: () => ({
+    status: vi.fn(async () => env.tmeetStatus),
+    connect: env.tmeetConnect,
+    cancelConnect: env.tmeetCancelConnect,
+    disconnect: env.tmeetDisconnect,
   }),
 }));
 
@@ -80,6 +96,10 @@ beforeEach(() => {
   env.larkConnect.mockReset();
   env.larkCancelConnect.mockReset();
   env.larkDisconnect.mockReset();
+  env.tmeetStatus = { connected: false, identity: 'none' };
+  env.tmeetConnect.mockReset();
+  env.tmeetCancelConnect.mockReset();
+  env.tmeetDisconnect.mockReset();
 });
 
 describe('connector.ipc SaaS OAuth actions', () => {
@@ -100,6 +120,16 @@ describe('connector.ipc SaaS OAuth actions', () => {
         connected: false,
         loopbackRedirectUriSupport: 'confirmed',
         authMode: 'lark-cli',
+      },
+      {
+        id: 'tmeet',
+        displayName: '腾讯会议',
+        clientIdConfigured: true,
+        requiresClientSecret: false,
+        clientSecretConfigured: false,
+        connected: false,
+        loopbackRedirectUriSupport: 'confirmed',
+        authMode: 'tmeet-cli',
       },
     ]);
 
@@ -199,6 +229,49 @@ describe('connector.ipc SaaS OAuth actions', () => {
     expect(env.larkConnect).toHaveBeenCalledOnce();
   });
 
+  it('publishes Tencent Meeting as a one-step tmeet CLI connection', async () => {
+    let finishConnect: (() => void) | undefined;
+    env.tmeetConnect.mockImplementation(async (
+      _openExternal: unknown,
+      onStep: (step: 1 | 2) => void,
+    ) => {
+      onStep(1);
+      await new Promise<void>((resolve) => { finishConnect = resolve; });
+    });
+    const handler = register();
+    const connectPromise = handler(null, {
+      action: 'oauthConnect',
+      payload: { providerId: 'tmeet', action: 'meeting.create', authMode: 'tmeet-cli' },
+    } as IPCRequest);
+
+    await vi.waitFor(() => expect(env.tmeetConnect).toHaveBeenCalledOnce());
+    const during = await handler(null, { action: 'oauthStatus' } as IPCRequest);
+    expect((during.data as Array<Record<string, unknown>>)[1]).toMatchObject({
+      authMode: 'tmeet-cli',
+      connected: false,
+      step: 1,
+    });
+
+    finishConnect?.();
+    await connectPromise;
+  });
+
+  it('routes Tencent Meeting cancellation and logout to the tmeet CLI driver', async () => {
+    const handler = register();
+
+    await handler(null, {
+      action: 'oauthCancelConnect',
+      payload: { providerId: 'tmeet' },
+    } as IPCRequest);
+    await handler(null, {
+      action: 'oauthDisconnect',
+      payload: { providerId: 'tmeet' },
+    } as IPCRequest);
+
+    expect(env.tmeetCancelConnect).toHaveBeenCalledOnce();
+    expect(env.tmeetDisconnect).toHaveBeenCalledOnce();
+  });
+
   it('rejects an unknown provider instead of silently doing nothing', async () => {
     const handler = register();
     const response = await handler(null, {
@@ -223,6 +296,19 @@ describe('connector.ipc SaaS OAuth client secret', () => {
 
     expect(response.success).toBe(false);
     expect(response.error?.message).toContain('不需要 App Secret');
+    expect(env.savedSecret).not.toHaveBeenCalled();
+  });
+
+  it('never exposes a custom OAuth secret route for Tencent Meeting', async () => {
+    const handler = register();
+
+    const response = await handler(null, {
+      action: 'oauthSetSecret',
+      payload: { providerId: 'tmeet', clientSecret: 'do-not-save', authMode: 'oauth' },
+    } as IPCRequest);
+
+    expect(response.success).toBe(false);
+    expect(response.error?.message).toContain('does not use an App Secret');
     expect(env.savedSecret).not.toHaveBeenCalled();
   });
 

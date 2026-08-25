@@ -26,7 +26,7 @@ interface TestProviderStatus {
   clientSecretConfigured: boolean;
   connected: boolean;
   loopbackRedirectUriSupport: string;
-  authMode: 'oauth' | 'lark-cli';
+  authMode: 'oauth' | 'lark-cli' | 'tmeet-cli';
   step?: 1 | 2;
   blocked?: boolean;
   userName?: string;
@@ -50,6 +50,14 @@ const larkCliStatus: TestProviderStatus = {
   authMode: 'lark-cli',
 };
 
+const tmeetCliStatus: TestProviderStatus = {
+  ...baseStatus,
+  id: 'tmeet',
+  displayName: '腾讯会议',
+  requiresClientSecret: false,
+  authMode: 'tmeet-cli',
+};
+
 function renderStatus(overrides: Partial<TestProviderStatus> = {}) {
   invokeDomain.mockImplementation((_domain: string, action: string) => {
     if (action === 'oauthStatus') return Promise.resolve([{ ...baseStatus, ...overrides }]);
@@ -61,6 +69,14 @@ function renderStatus(overrides: Partial<TestProviderStatus> = {}) {
 function renderLarkCliStatus(overrides: Partial<TestProviderStatus> = {}) {
   invokeDomain.mockImplementation((_domain: string, action: string) => {
     if (action === 'oauthStatus') return Promise.resolve([{ ...larkCliStatus, ...overrides }]);
+    return Promise.resolve([]);
+  });
+  return render(<SaaSConnectorsSection />);
+}
+
+function renderTmeetCliStatus(overrides: Partial<TestProviderStatus> = {}) {
+  invokeDomain.mockImplementation((_domain: string, action: string) => {
+    if (action === 'oauthStatus') return Promise.resolve([{ ...tmeetCliStatus, ...overrides }]);
     return Promise.resolve([]);
   });
   return render(<SaaSConnectorsSection />);
@@ -160,6 +176,41 @@ describe('SaaSConnectorsSection Feishu lark-cli six states', () => {
       'oauthSetSecret',
       { providerId: 'feishu', clientSecret: 'fake-custom-secret', authMode: 'oauth' },
     ));
+  });
+});
+
+describe('SaaSConnectorsSection Tencent Meeting CLI card', () => {
+  it('offers the tmeet action with one browser-authorization step', async () => {
+    renderTmeetCliStatus();
+
+    const card = await screen.findByTestId('saas-connector-tmeet');
+    expect(card.textContent).toContain(zh.settings.saasConnectors.providers.tmeet);
+    expect(card.textContent).toContain(zh.settings.saasConnectors.details.tmeetCliReady);
+    fireEvent.click(within(card).getByTestId('saas-connect-tmeet'));
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(
+      IPC_DOMAINS.CONNECTOR,
+      'oauthConnect',
+      { providerId: 'tmeet', action: 'meeting.create', authMode: 'tmeet-cli' },
+    ));
+  });
+
+  it('keeps step fixed at 1 and tells the user to finish in the browser', async () => {
+    renderTmeetCliStatus({ step: 1 });
+
+    const card = await screen.findByTestId('saas-connector-tmeet');
+    expect(card.textContent).toContain(zh.settings.saasConnectors.badges.connectingSingle);
+    expect(card.textContent).toContain(zh.settings.saasConnectors.details.tmeetAuthorizing);
+    expect(within(card).getByTestId('saas-cancel-tmeet')).toBeTruthy();
+  });
+
+  it('uses Tencent Meeting disconnect copy for a connected account', async () => {
+    renderTmeetCliStatus({ connected: true });
+
+    const card = await screen.findByTestId('saas-connector-tmeet');
+    fireEvent.click(card);
+    expect(screen.getByText(zh.settings.saasConnectors.disconnect.tmeetCliNotice)).toBeTruthy();
+    fireEvent.click(within(screen.getByTestId('saas-detail-tmeet')).getByTestId('saas-disconnect-tmeet'));
+    expect(screen.getByText(zh.settings.saasConnectors.disconnect.tmeetCliConfirmMessage)).toBeTruthy();
   });
 });
 

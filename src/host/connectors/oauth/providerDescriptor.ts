@@ -19,7 +19,7 @@ export interface ProviderDescriptor {
   requiresClientSecret: boolean;
   // Omitted descriptors keep using Neo's built-in OAuth coordinator. Providers backed by a
   // vendor CLI opt in explicitly so existing MCP/custom-app authorization remains unchanged.
-  authMode?: 'oauth' | 'lark-cli';
+  authMode?: 'oauth' | 'lark-cli' | 'tmeet-cli';
 }
 
 export function validateProviderDescriptor(descriptor: ProviderDescriptor): void {

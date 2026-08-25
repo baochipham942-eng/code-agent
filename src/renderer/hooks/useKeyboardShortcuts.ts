@@ -198,6 +198,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     pendingPermissionRequest,
     pendingPermissionSessionId,
     setPendingPermissionRequest,
+    recordPermissionDecision,
   } = useAppStore();
   const { keybindings, platform } = useKeybindingsSettings();
 
@@ -268,7 +269,11 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
                 'deny',
                 request.sessionId,
               );
-              setPendingPermissionRequest(null);
+              if (recordPermissionDecision) {
+                recordPermissionDecision(request, 'deny', requestSessionId);
+              } else {
+                setPendingPermissionRequest(null);
+              }
             } catch (error) {
               releaseApprovalResponse(request.id);
               setPendingPermissionRequest(request, requestSessionId);
@@ -535,6 +540,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
       pendingPermissionRequest,
       pendingPermissionSessionId,
       setPendingPermissionRequest,
+      recordPermissionDecision,
     ]
   );
 

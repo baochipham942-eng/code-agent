@@ -32,6 +32,9 @@ export type ApprovalLevel =
   | 'always'    // 始终允许
   | 'never';    // 永不允许
 
+/** renderer 卡片沉淀用的终态；timeout 由 host 真源回传，不能靠 UI 计时猜。 */
+export type PermissionDecision = ApprovalLevel | 'timeout';
+
 // 权限请求
 export interface PermissionRequest {
   id: string;
@@ -79,6 +82,10 @@ export interface PermissionRequest {
   dangerLevel?: 'normal' | 'warning' | 'danger';
   /** Decision trace: why this permission was requested (populated on deny/ask) */
   decisionTrace?: import('./decisionTrace').DecisionTrace;
+  /** host/renderer 已完成本次裁决；同一 permission_request 事件以加法字段回传终态。 */
+  resolved?: boolean;
+  /** 用户选择或 host 的 timeout 结果；仅 resolved=true 时有意义。 */
+  decision?: PermissionDecision;
 }
 
 // 权限响应（兼容旧版）

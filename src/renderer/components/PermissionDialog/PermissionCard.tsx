@@ -9,14 +9,14 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Mail } from 'lucide-react';
+import { Mail, RotateCcw } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { usePermissionStore, type PermissionRequestForMemory } from '../../stores/permissionStore';
 import { DecisionCard, isEditableTarget, type DecisionOption } from '../DecisionCard';
 import { RequestDetails } from './RequestDetails';
 import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
-import type { PermissionResponse } from '@shared/contract';
+import type { PermissionDecision, PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
 import { isEditableTool, permissionReasonText } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { getPermissionConfig, isDangerousCommand, getDangerReason, formatFilePath } from './utils';
@@ -24,6 +24,10 @@ import { useI18n, type Translations } from '../../hooks/useI18n';
 import ipcService from '../../services/ipcService';
 import { toast } from '../../hooks/useToast';
 import { claimApprovalResponse, releaseApprovalResponse } from '../../utils/approvalResponseGuard';
+import { Badge } from '../primitives/Badge';
+import { Button } from '../primitives/Button';
+import { useMessageActionStore } from '../../stores/messageActionStore';
+import { redactCredentialText } from '@shared/security/secretPatterns';
 import {
   WritebackEditForm,
   draftFromArgs,
@@ -60,7 +64,57 @@ function normalizeRequest(
     rawArgs: isEditableTool(request.tool) ? (request.details as Record<string, unknown>) : undefined,
     timestamp: request.timestamp,
     decisionTrace: request.decisionTrace,
+    resolved: request.resolved,
+    decision: request.decision,
   };
+}
+
+const EXPIRED_RETRY_PROMPT = '刚才的审批超时了，请重试';
+
+function PermissionResultBadge({ decision, t }: { decision: PermissionDecision; t: Translations }) {
+  const p = t.decisionCard.permission;
+  if (decision === 'timeout') {
+    return (
+      <Badge
+        data-testid="permission-result-expired"
+        dot="bg-zinc-500"
+        className="rounded-full border-zinc-700 bg-zinc-800 px-2.5 text-[11px] font-medium text-zinc-500"
+      >
+        {p.resultExpired}
+      </Badge>
+    );
+  }
+  if (decision === 'deny' || decision === 'never') {
+    return (
+      <Badge
+        data-testid="permission-result-denied"
+        dot="bg-mark-danger"
+        className="rounded-full border-badge-danger/30 bg-red-500/10 px-2.5 text-[11px] font-medium text-badge-danger"
+      >
+        {p.resultDenied}
+      </Badge>
+    );
+  }
+  if (decision === 'always' || decision === 'session') {
+    return (
+      <Badge
+        data-testid="permission-result-always"
+        dot="bg-mark-info"
+        className="rounded-full border-badge-info/30 bg-sky-500/10 px-2.5 text-[11px] font-medium text-badge-info"
+      >
+        {p.resultAlways}
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      data-testid="permission-result-once"
+      dot="bg-mark-success"
+      className="rounded-full border-badge-success/30 bg-emerald-500/10 px-2.5 text-[11px] font-medium text-badge-success"
+    >
+      {p.resultOnce}
+    </Badge>
+  );
 }
 
 // 转换为权限记忆 store 使用的格式
@@ -83,7 +137,7 @@ function toMemoryRequest(request: PermissionRequest): PermissionRequestForMemory
 function permissionQuestion(request: PermissionRequest, t: Translations): string {
   const p = t.decisionCard.permission;
   const filePath = request.details.filePath || request.details.path;
-  const target = filePath ? formatFilePath(filePath) : undefined;
+  const target = filePath ? formatFilePath(redactCredentialText(filePath)) : undefined;
   switch (request.type) {
     case 'file_read':
       return target ? p.questionFileRead.replace('{target}', target) : p.questionFallback;
@@ -99,35 +153,52 @@ function permissionQuestion(request: PermissionRequest, t: Translations): string
       return p.questionDangerousCommand;
     case 'network':
       return request.details.url
-        ? p.questionNetwork.replace('{target}', request.details.url)
+        ? p.questionNetwork.replace('{target}', redactCredentialText(request.details.url))
         : p.questionFallback;
     case 'mcp':
       return request.details.server && request.details.toolName
-        ? p.questionMcp.replace('{target}', `${request.details.server} / ${request.details.toolName}`)
+        ? p.questionMcp.replace(
+            '{target}',
+            redactCredentialText(`${request.details.server} / ${request.details.toolName}`),
+          )
         : p.questionFallback;
     default:
       return p.questionFallback;
   }
 }
 
-export function PermissionCard() {
+interface PermissionCardProps {
+  requestOverride?: ContractPermissionRequest;
+  sessionIdOverride?: string | null;
+}
+
+export function PermissionCard({ requestOverride, sessionIdOverride }: PermissionCardProps = {}) {
   const { t } = useI18n();
-  const { pendingPermissionRequest, pendingPermissionSessionId, setPendingPermissionRequest } = useAppStore();
+  const {
+    pendingPermissionRequest,
+    pendingPermissionSessionId,
+    setPendingPermissionRequest,
+    recordPermissionDecision,
+  } = useAppStore();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const { checkMemory, saveMemory } = usePermissionStore();
+  const sendPrompt = useMessageActionStore((state) => state.sendPrompt);
   const processedRequestRef = useRef<string | null>(null);
   // 选中的审批级别（DecisionCard 选项行）；字母快捷键直发时不经过它
   const [selectedLevel, setSelectedLevel] = useState<ApprovalLevel | null>(null);
   // N-WRITEBACK-EDIT 编辑态：draft 非 null = 正在改；只有点「按修改后发送」才会送出，Esc/放弃 = 什么都不发
   const [draft, setDraft] = useState<WritebackDraft | null>(null);
 
-  const request = pendingPermissionRequest && !(
-    pendingPermissionSessionId &&
+  const sourceRequest = requestOverride ?? pendingPermissionRequest;
+  const sourceSessionId = requestOverride ? sessionIdOverride : pendingPermissionSessionId;
+  const request = sourceRequest && !(
+    sourceSessionId &&
     currentSessionId &&
-    pendingPermissionSessionId !== currentSessionId
+    sourceSessionId !== currentSessionId
   )
-    ? normalizeRequest(pendingPermissionRequest)
+    ? normalizeRequest(sourceRequest)
     : null;
+  const settled = request?.resolved === true && request.decision !== undefined;
 
   // 新请求进来时清空选中态（ processedRequestRef 之外的生命周期，独立于记忆直发 ）
   const requestId = request?.id ?? null;
@@ -159,7 +230,7 @@ export function PermissionCard() {
   const hideStandingGrants = isDangerous || editable || request?.forceConfirm === true;
 
   const memoryRequest = request ? toMemoryRequest(request) : null;
-  const isNewRequest = request !== null && processedRequestRef.current !== request.id;
+  const isNewRequest = request !== null && !settled && processedRequestRef.current !== request.id;
   const memoryResult = memoryRequest && isNewRequest && request?.forceConfirm !== true
     ? checkMemory(memoryRequest)
     : null;
@@ -180,7 +251,7 @@ export function PermissionCard() {
 
   const handleApproval = useCallback(
     async (level: ApprovalLevel, updatedArgs?: Record<string, unknown>) => {
-      if (!request) return;
+      if (!request || settled) return;
 
       const requestSnapshot = pendingPermissionRequest;
       const requestSessionId = pendingPermissionSessionId;
@@ -219,7 +290,11 @@ export function PermissionCard() {
           request.sessionId,
           ...(updatedArgs && response === 'allow' ? [updatedArgs] : []),
         );
-        setPendingPermissionRequest(null);
+        if (requestSnapshot && recordPermissionDecision) {
+          recordPermissionDecision(requestSnapshot, level, requestSessionId);
+        } else {
+          setPendingPermissionRequest(null);
+        }
       } catch {
         processedRequestRef.current = null;
         releaseApprovalResponse(request.id);
@@ -237,6 +312,8 @@ export function PermissionCard() {
       request?.type,
       request?.details,
       saveMemory,
+      settled,
+      recordPermissionDecision,
       setPendingPermissionRequest,
     ]
   );
@@ -254,7 +331,7 @@ export function PermissionCard() {
   // 字母直发快捷键（点了就执行，不经确认键）— stopPropagation 防止触发 ChatView 的 Esc+Esc。
   // 数字键 1-N / Enter / Esc 由 DecisionCard 统一处理。
   useEffect(() => {
-    if (!request) return;
+    if (!request || settled) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // 含 contentEditable（neo composer）：输入时不吃字母快捷键
@@ -307,7 +384,7 @@ export function PermissionCard() {
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [request, handleApproval, hideStandingGrants, draft, editable]);
+  }, [request, settled, handleApproval, hideStandingGrants, draft, editable]);
 
   // 如果没有当前会话可见的待处理权限请求，不渲染
   if (!request) return null;
@@ -341,6 +418,51 @@ export function PermissionCard() {
   const question = editable
     ? (firstRecipient ? w.mailSendQuestion.replace('{target}', firstRecipient) : w.mailSendQuestionFallback)
     : permissionQuestion(request, t);
+
+  if (settled && request.decision) {
+    const expired = request.decision === 'timeout';
+    const settledOptions = expired
+      ? options.map((option) => ({ ...option, disabled: true }))
+      : [];
+    return (
+      <DecisionCard
+        testId="permission-card"
+        tone="neutral"
+        settled
+        icon={icon}
+        title={title}
+        headerMeta={request.tool}
+        headerEnd={<PermissionResultBadge decision={request.decision} t={t} />}
+        question={question}
+        details={
+          <>
+            {!editable && reasonText && <p className="text-zinc-400 text-sm">{reasonText}</p>}
+            <RequestDetails request={request} />
+            {expired && (
+              <div className="mt-2 flex items-center gap-3 rounded-lg border border-dashed border-zinc-600 px-3 py-2">
+                <p className="min-w-0 flex-1 text-[11px] text-zinc-500">{p.expiredHint}</p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
+                  onClick={() => void sendPrompt(EXPIRED_RETRY_PROMPT)}
+                >
+                  {p.tellModelContinue}
+                </Button>
+              </div>
+            )}
+          </>
+        }
+        options={settledOptions}
+        selectedId={null}
+        onSelect={() => {}}
+        onConfirm={() => {}}
+        confirmLabel={t.decisionCard.confirm}
+        hideFooter
+        className="w-full px-4"
+      />
+    );
+  }
 
   // 编辑态：选项行让位给表单；主按钮 = 按修改后发送（必填为空时禁用），ghost = 放弃修改
   if (editable && draft !== null && request.rawArgs) {

@@ -43,6 +43,7 @@ import {
 import { createWorkbenchActions } from './workbenchActions';
 import { SECONDARY_PAGES_CLOSED } from './secondaryPages';
 import { buildContentPreviewState } from './contentPreviewState';
+import { buildPermissionDecisionState } from './permissionDecisionState';
 
 // V2-A: 关 tab 时 fire-and-forget 调 stopDevServer。lazy import 避免
 // 在 store 模块顶层引入 ipcService（store 是大量被 import 的模块，链路尽量短）
@@ -328,8 +329,8 @@ export interface AppState {
 
   // Permission Request State
   pendingPermissionRequest: PermissionRequest | null;
-  pendingPermissionSessionId: string | null;
-  queuedPermissionRequests: Record<string, PermissionRequest[]>;
+  pendingPermissionSessionId: string | null; queuedPermissionRequests: Record<string, PermissionRequest[]>;
+  resolvedPermissionRequests: Record<string, PermissionRequest[]>;
   sessionTaskProgress: Record<string, TaskProgressData | null | undefined>;
   sessionTaskComplete: Record<string, TaskCompleteData | null | undefined>;
 
@@ -454,6 +455,7 @@ export interface AppState {
   markPreviewTabLoaded: (id: string, savedContent: string) => void;
   markPreviewTabSaved: (id: string) => void;
   setPendingPermissionRequest: (request: PermissionRequest | null, sessionId?: string | null) => void;
+  recordPermissionDecision: (request: PermissionRequest, decision: NonNullable<PermissionRequest['decision']>, sessionId?: string | null) => void;
   enqueuePermissionRequest: (
     sessionId: string,
     request: PermissionRequest,
@@ -580,7 +582,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // Initial Permission Request State
   pendingPermissionRequest: null,
   pendingPermissionSessionId: null,
-  queuedPermissionRequests: {},
+  queuedPermissionRequests: {}, resolvedPermissionRequests: {},
   sessionTaskProgress: {},
   sessionTaskComplete: {},
   goalRuns: {},
@@ -1077,11 +1079,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
         : null,
     }),
 
-  setPendingPermissionRequest: (request, sessionId = null) =>
-    set({
-      pendingPermissionRequest: request,
-      pendingPermissionSessionId: request ? sessionId : null,
-    }),
+  setPendingPermissionRequest: (request, sessionId = null) => set({
+    pendingPermissionRequest: request, pendingPermissionSessionId: request ? sessionId : null,
+  }),
+
+  recordPermissionDecision: (request, decision, sessionId = null) => set((state) =>
+    buildPermissionDecisionState(state, request, decision, sessionId, GLOBAL_PERMISSION_REQUEST_SESSION_ID)),
 
   enqueuePermissionRequest: (sessionId, request, options) =>
     set((state) => {

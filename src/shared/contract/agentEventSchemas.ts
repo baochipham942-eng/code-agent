@@ -178,6 +178,8 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
   reasonCode: z.string().optional(),
   boundary: unknownRecordSchema.optional(),
   timestamp: z.number(),
+  resolved: z.boolean().optional(),
+  decision: z.enum(['once', 'deny', 'session', 'always', 'never', 'timeout']).optional(),
   dangerLevel: z.enum(['normal', 'warning', 'danger']).optional(),
   decisionTrace: unknownRecordSchema.optional(),
 }));

@@ -66,6 +66,8 @@ interface CliErrorMapping {
 export interface CliConnectorDescriptor {
   id: string;
   displayName: string;
+  /** Renderer brand asset id; absent means use the existing generic icon. */
+  logo?: string;
   toolNames: string[];
   loggerName: string;
   installDirectory: string;

@@ -48,6 +48,17 @@ describe('McpDiscoverTab unified grid cards', () => {
     expect(screen.getByText(discoverText.grid.tryIt)).toBeTruthy();
   });
 
+  it('renders declared brand logos and keeps the Lucide fallback for entries without one', () => {
+    renderDiscover();
+
+    const exaCard = screen.getByTestId('mcp-discover-card-exa');
+    expect(within(exaCard).getByRole('img', { name: 'Exa AI 搜索' })).toBeTruthy();
+
+    const fetchCard = screen.getByTestId('mcp-discover-card-fetch');
+    expect(within(fetchCard).queryByRole('img')).toBeNull();
+    expect(fetchCard.querySelector('svg')).toBeTruthy();
+  });
+
   it('shows install-after-connect for entries without a curated tool list', () => {
     renderDiscover();
     fireEvent.click(screen.getByTestId('mcp-discover-card-task_master'));

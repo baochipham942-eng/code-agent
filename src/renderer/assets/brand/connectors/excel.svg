@@ -1,0 +1,10 @@
+<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <defs><linearGradient id="a" x1="5.822" y1="11.568" x2="20.178" y2="36.432" gradientUnits="userSpaceOnUse"><stop stop-color="#18884f"/><stop offset=".5" stop-color="#117e43"/><stop offset="1" stop-color="#0b6631"/></linearGradient></defs>
+  <path d="m29 23-17-3v22.167C12 43.18 12.82 44 13.833 44h29.334C44.18 44 45 43.18 45 42.167V34l-16-11Z" fill="#185c37"/>
+  <path d="M29 4H13.833C12.82 4 12 4.82 12 5.833V14l17 10 9 3 7-3V14L29 4Z" fill="#21a366"/>
+  <path fill="#107c41" d="M12 14h17v10H12z"/>
+  <rect x="2" y="13" width="22" height="22" rx="1.833" fill="url(#a)"/>
+  <path d="m7.677 29.958 3.856-5.975L8 18.041h2.842l1.928 3.8.391.806.4-.839 2.061-3.765h2.609l-3.623 5.907 3.715 6.008h-2.776l-2.227-4.171-.266-.557-.291.54-2.293 4.188H7.677Z" fill="#fff"/>
+  <path d="M43.167 4H29v10h16V5.833C45 4.82 44.18 4 43.167 4Z" fill="#33c481"/>
+  <path fill="#107c41" d="M29 24h16v10H29z"/>
+</svg>

@@ -95,6 +95,7 @@ export const feishuCliDescriptor = {
 export const tmeetDescriptor = {
   id: 'tmeet',
   displayName: '腾讯会议',
+  logo: 'tmeet',
   toolNames: ['tmeetMeetingList', 'tmeetMeetingCreate'],
   loggerName: 'TencentMeetingCli',
   installDirectory: 'tmeet',

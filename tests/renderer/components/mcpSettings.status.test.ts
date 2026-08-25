@@ -321,6 +321,7 @@ describe('MCPSettings status', () => {
     render(React.createElement(MCPSettings));
     const html = document.body.innerHTML;
 
+    expect(screen.getByRole('img', { name: 'GitHub' })).toBeTruthy();
     expect(html).toContain(mcpText.management.stats.overview.label);
     expect(html).toContain('github');
     expect(html).toContain(`12${mcpText.management.countToolSuffix}`);
@@ -390,6 +391,7 @@ describe('MCPSettings status', () => {
     expect(html).not.toContain(`0${mcpText.management.countResourceSuffix}`);
     expect(html).not.toContain(mcpText.management.reconnect);
     expect(html).not.toContain(mcpText.management.reauthorize);
+    expect(screen.queryByRole('img')).toBeNull();
 
     const sheetActions = getWorkbenchCapabilityQuickActions(disconnectedSlackServer, {
       includeUnselected: true,

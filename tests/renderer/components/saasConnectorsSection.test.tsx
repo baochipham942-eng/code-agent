@@ -219,6 +219,7 @@ describe('SaaSConnectorsSection Tencent Meeting CLI card', () => {
     renderTmeetCliStatus();
 
     const card = await screen.findByTestId('saas-connector-tmeet');
+    expect(within(card).getByRole('img', { name: '腾讯会议' })).toBeTruthy();
     expect(card.textContent).toContain(zh.settings.saasConnectors.providers.tmeet);
     expect(card.textContent).toContain(zh.settings.saasConnectors.details.tmeetCliReady);
     fireEvent.click(within(card).getByTestId('saas-connect-tmeet'));
@@ -227,6 +228,14 @@ describe('SaaSConnectorsSection Tencent Meeting CLI card', () => {
       'oauthConnect',
       { providerId: 'tmeet', action: 'meeting.create', authMode: 'tmeet-cli' },
     ));
+  });
+
+  it('keeps the existing Lucide fallback when the descriptor has no official vector', async () => {
+    renderLarkCliStatus();
+
+    const card = await screen.findByTestId('saas-connector-feishu');
+    expect(within(card).queryByRole('img')).toBeNull();
+    expect(card.querySelector('svg')).toBeTruthy();
   });
 
   it('keeps step fixed at 1 and tells the user to finish in the browser', async () => {

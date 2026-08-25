@@ -122,6 +122,14 @@ describe('recommended MCP catalog integrity', () => {
     expect(findRecommendedMcpServer('nonexistent')).toBeUndefined();
   });
 
+  it('declares approved brand asset ids and leaves unavailable official vectors on fallback', () => {
+    expect(findRecommendedMcpServer('github')?.logo).toBe('github');
+    expect(findRecommendedMcpServer('tencent-docs')?.logo).toBe('tencent-docs');
+    expect(findRecommendedMcpServer('tencent-docs-oa')?.logo).toBe('tencent-docs');
+    expect(findRecommendedMcpServer('notion')?.logo).toBeUndefined();
+    expect(findRecommendedMcpServer('puppeteer')?.logo).toBeUndefined();
+  });
+
   it('marks Alma registry featured MCP servers without treating them as defaults', () => {
     const featuredIds = getAlmaFeaturedMcpServers().map((server) => server.id);
 

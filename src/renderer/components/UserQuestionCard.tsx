@@ -50,6 +50,8 @@ const SelectionIndicator: React.FC<{ selected: boolean; multiSelect: boolean }> 
 export const UserQuestionCard: React.FC<Props> = ({ request }) => {
   const { t } = useI18n();
   const cardRef = useRef<HTMLDivElement>(null);
+  const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [stepIndex, setStepIndex] = useState(0);
   // Store selected answers: header -> selected option label(s)
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   // "其他" 自由文本行：是否激活 + 当前输入值（按 header 维度）
@@ -57,6 +59,13 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
   const [otherText, setOtherText] = useState<Record<string, string>>({});
   const [declineReason, setDeclineReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const clearAutoAdvance = useCallback(() => {
+    if (autoAdvanceTimerRef.current !== null) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+  }, []);
 
   // Initialize answers
   useEffect(() => {
@@ -69,14 +78,23 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
     setOtherText({});
     setDeclineReason('');
     setSubmitting(false);
-  }, [request]);
+    setStepIndex(0);
+    clearAutoAdvance();
+    return clearAutoAdvance;
+  }, [clearAutoAdvance, request]);
 
   // 卡片出现时接管焦点（同 PermissionCard 先例），键盘立即可用
   useEffect(() => {
     cardRef.current?.focus();
   }, [request.id]);
 
-  const handleSelect = (header: string, label: string, multiSelect?: boolean) => {
+  const handleSelect = (
+    questionIndex: number,
+    header: string,
+    label: string,
+    multiSelect?: boolean,
+  ) => {
+    clearAutoAdvance();
     setOtherActive((prev) => ({ ...prev, [header]: false }));
     setAnswers((prev) => {
       if (multiSelect) {
@@ -90,10 +108,17 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
         return { ...prev, [header]: label };
       }
     });
+    if (!multiSelect && questionIndex < request.questions.length - 1) {
+      autoAdvanceTimerRef.current = setTimeout(() => {
+        autoAdvanceTimerRef.current = null;
+        setStepIndex((current) => (current === questionIndex ? current + 1 : current));
+      }, 250);
+    }
   };
 
   // "其他" 行被选中/取消选中：单选=覆盖当前答案；多选=把自由文本加入/移出数组
   const handleToggleOther = (header: string, multiSelect?: boolean) => {
+    clearAutoAdvance();
     const willActivate = !otherActive[header];
     setOtherActive((prev) => ({ ...prev, [header]: willActivate }));
     const text = otherText[header] ?? '';
@@ -130,14 +155,26 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
     return answer === label;
   };
 
-  const canSubmit = (): boolean => {
-    return request.questions.every((q) => {
-      const answer = answers[q.header];
-      if (Array.isArray(answer)) {
-        return answer.length > 0;
-      }
-      return answer !== '';
-    });
+  const isQuestionAnswered = (questionIndex: number): boolean => {
+    const question = request.questions[questionIndex];
+    if (!question) return false;
+    if (otherActive[question.header] && !(otherText[question.header] ?? '').trim()) return false;
+    const answer = answers[question.header];
+    if (Array.isArray(answer)) return answer.length > 0;
+    return typeof answer === 'string' && answer.trim().length > 0;
+  };
+
+  const canSubmit = (): boolean => request.questions.every((_, index) => isQuestionAnswered(index));
+
+  const handleNext = useCallback(() => {
+    if (!isQuestionAnswered(stepIndex) || stepIndex >= request.questions.length - 1) return;
+    clearAutoAdvance();
+    setStepIndex((current) => Math.min(current + 1, request.questions.length - 1));
+  }, [answers, clearAutoAdvance, otherActive, otherText, request.questions, stepIndex]);
+
+  const handleBack = () => {
+    clearAutoAdvance();
+    setStepIndex((current) => Math.max(0, current - 1));
   };
 
   // 回答/跳过成功后才把卡片从 pending 队列清掉（composer 随之恢复）；
@@ -174,18 +211,31 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
   // Esc = 显式跳过（与权限卡 Esc=拒绝 同族）；stopPropagation 防触发 ChatView 的 Esc+Esc
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
         handleSkip();
+        return;
+      }
+      if (e.key === 'Enter' && !e.isComposing && isQuestionAnswered(stepIndex)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (stepIndex === request.questions.length - 1) {
+          handleSubmit();
+        } else {
+          handleNext();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [handleSkip]);
+  }, [answers, handleNext, handleSkip, otherActive, otherText, request.questions.length, stepIndex, submitting]);
+
+  const currentQuestion = request.questions[stepIndex];
+  if (!currentQuestion) return null;
+  const hasMultipleSteps = request.questions.length > 1;
+  const isLastStep = stepIndex === request.questions.length - 1;
+  const currentStepAnswered = isQuestionAnswered(stepIndex);
 
   return (
     <div className="w-full px-4 animate-slideUp" data-testid="user-question-card">
@@ -198,37 +248,63 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
         <div className="flex items-center gap-2 px-4 py-2.5 border-b border-zinc-800 bg-blue-500/10 rounded-t-lg">
           <HelpCircle className="w-4 h-4 text-badge-info shrink-0" />
           <span className="text-sm font-medium text-badge-info">{t.userQuestion.title}</span>
+          {hasMultipleSteps && (
+            <span className="ml-auto text-xs tabular-nums text-badge-info">
+              {t.userQuestion.stepOf(stepIndex + 1, request.questions.length)}
+            </span>
+          )}
         </div>
 
-        {/* Questions */}
-        <div className="space-y-5 max-h-[50vh] overflow-y-auto px-4 py-3">
-          {request.questions.map((q, qIndex) => (
-            <div key={qIndex} className="space-y-2">
+        {hasMultipleSteps && (
+          <div
+            role="progressbar"
+            aria-label={t.userQuestion.stepOf(stepIndex + 1, request.questions.length)}
+            aria-valuemin={1}
+            aria-valuemax={request.questions.length}
+            aria-valuenow={stepIndex + 1}
+            className="flex gap-1 px-4 pt-2"
+            data-testid="user-question-progress"
+          >
+            {request.questions.map((_, index) => (
+              <span
+                key={index}
+                data-state={index < stepIndex ? 'complete' : index === stepIndex ? 'current' : 'upcoming'}
+                className={`h-1 flex-1 rounded-full ${
+                  index <= stepIndex ? 'bg-badge-info' : 'bg-zinc-700'
+                } ${index < stepIndex ? 'opacity-65' : ''}`}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Current question */}
+        <div className="max-h-[50vh] overflow-y-auto px-4 py-3">
+            <div key={stepIndex} className="space-y-2">
               <div>
                 <span className="inline-block px-2 py-0.5 text-xs font-medium rounded bg-zinc-700 text-zinc-400 mb-1.5">
-                  {q.header}
+                  {currentQuestion.header}
                 </span>
-                <p className="text-sm text-zinc-200">{q.question}</p>
-                {q.multiSelect && (
+                <p className="text-sm text-zinc-200">{currentQuestion.question}</p>
+                {currentQuestion.multiSelect && (
                   <p className="text-xs text-zinc-500 mt-1">{t.userQuestion.multiSelectHint}</p>
                 )}
               </div>
 
               <div className="space-y-2">
-                {q.options.map((option, oIndex) => (
+                {currentQuestion.options.map((option, oIndex) => (
                   <button /* ds-allow:button: 选项行整面可点（选中指示+标题+描述复合内容），沿用旧 UserQuestionModal 选项行形态 */
                     key={oIndex}
-                    onClick={() => handleSelect(q.header, option.label, q.multiSelect)}
+                    onClick={() => handleSelect(stepIndex, currentQuestion.header, option.label, currentQuestion.multiSelect)}
                     className={`w-full p-2.5 rounded-lg border text-left transition-all ${
-                      isSelected(q.header, option.label)
+                      isSelected(currentQuestion.header, option.label)
                         ? 'border-badge-info bg-blue-500/10 ring-1 ring-blue-500/50'
                         : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                     }`}
                   >
                     <div className="flex items-start gap-3">
                       <SelectionIndicator
-                        selected={isSelected(q.header, option.label)}
-                        multiSelect={!!q.multiSelect}
+                        selected={isSelected(currentQuestion.header, option.label)}
+                        multiSelect={!!currentQuestion.multiSelect}
                       />
                       <div className="flex-1">
                         <div className="font-medium text-zinc-200 text-sm">
@@ -248,32 +324,33 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
                 <div
                   role="button"
                   tabIndex={0}
-                  onClick={() => handleToggleOther(q.header, q.multiSelect)}
+                  onClick={() => handleToggleOther(currentQuestion.header, currentQuestion.multiSelect)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      handleToggleOther(q.header, q.multiSelect);
+                      e.stopPropagation();
+                      handleToggleOther(currentQuestion.header, currentQuestion.multiSelect);
                     }
                   }}
                   className={`w-full p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
-                    otherActive[q.header]
+                    otherActive[currentQuestion.header]
                       ? 'border-badge-info bg-blue-500/10 ring-1 ring-blue-500/50'
                       : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                   }`}
                 >
                   <div className="flex items-start gap-3">
                     <SelectionIndicator
-                      selected={!!otherActive[q.header]}
-                      multiSelect={!!q.multiSelect}
+                      selected={!!otherActive[currentQuestion.header]}
+                      multiSelect={!!currentQuestion.multiSelect}
                     />
                     <div className="flex-1">
                       <div className="font-medium text-zinc-200 text-sm">{t.userQuestion.other}</div>
-                      {otherActive[q.header] && (
+                      {otherActive[currentQuestion.header] && (
                         <input
                           type="text"
                           autoFocus
-                          value={otherText[q.header] ?? ''}
-                          onChange={(e) => handleOtherTextChange(q.header, e.target.value, q.multiSelect)}
+                          value={otherText[currentQuestion.header] ?? ''}
+                          onChange={(e) => handleOtherTextChange(currentQuestion.header, e.target.value, currentQuestion.multiSelect)}
                           onClick={(e) => e.stopPropagation()}
                           placeholder={t.userQuestion.otherPlaceholder}
                           className="mt-2 w-full px-2 py-1.5 text-sm bg-zinc-800 border border-zinc-600 rounded text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-badge-info"
@@ -284,7 +361,6 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
                 </div>
               </div>
             </div>
-          ))}
         </div>
 
         {/* 底部：跳过原因（可选）+ 动作行 */}
@@ -297,22 +373,30 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
             aria-label={t.userQuestion.declineReasonLabel}
             className="w-full px-2 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-badge-info"
           />
-          <div className="mt-2.5 flex items-center justify-end gap-2">
+          <div className="mt-2.5 flex items-center gap-2">
             <Button
               size="sm"
               variant="ghost"
               onClick={handleSkip}
               disabled={submitting}
+              className="mr-auto"
             >
               {t.userQuestion.skip}
             </Button>
-            <Button
-              size="sm"
-              onClick={handleSubmit}
-              disabled={!canSubmit() || submitting}
-            >
-              {t.userQuestion.submit}
-            </Button>
+            {hasMultipleSteps && stepIndex > 0 && (
+              <Button size="sm" variant="secondary" onClick={handleBack} disabled={submitting}>
+                {t.userQuestion.back}
+              </Button>
+            )}
+            {isLastStep ? (
+              <Button size="sm" onClick={handleSubmit} disabled={!canSubmit() || submitting}>
+                {t.userQuestion.submit}
+              </Button>
+            ) : (
+              <Button size="sm" onClick={handleNext} disabled={!currentStepAnswered || submitting}>
+                {t.userQuestion.next}
+              </Button>
+            )}
           </div>
         </div>
       </div>

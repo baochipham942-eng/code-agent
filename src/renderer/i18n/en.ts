@@ -914,6 +914,7 @@ export const en: Translations = {
   goalStatusBar: {
     runningPrefix: 'Goal in progress: ',
     pausedPrefix: 'Goal paused: ',
+    antiSpinReason: 'Automatically paused after several turns without tool calls',
     verifying: 'Verifying…',
     reviewing: 'Reviewing…',
     remainingPrefix: 'remaining ',

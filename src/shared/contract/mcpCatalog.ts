@@ -88,6 +88,8 @@ export interface RecommendedMcpServerEntry {
   id: string;
   /** 显示名称 */
   name: string;
+  /** Renderer brand asset id; absent means use the existing generic icon. */
+  logo?: string;
   /** 一句话功能描述 */
   description: string;
   /** 用途分类 */

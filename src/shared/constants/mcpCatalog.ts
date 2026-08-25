@@ -45,6 +45,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'exa',
     name: 'Exa AI 搜索',
+    logo: 'exa',
     description: 'AI 驱动的语义搜索，支持代码搜索',
     category: 'search-scrape',
     builtin: true,
@@ -59,6 +60,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'tavily',
     name: 'Tavily 搜索',
+    logo: 'tavily',
     description: '实时网络搜索与新闻，支持域名过滤',
     category: 'search-scrape',
     builtin: true,
@@ -88,6 +90,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'firecrawl',
     name: 'Firecrawl 抓取',
+    logo: 'firecrawl',
     description: '默认网页数据层：免 key 试用搜索、网页抓取和公开 PDF 转 markdown',
     category: 'search-scrape',
     builtin: true,
@@ -130,6 +133,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'brave-search',
     name: 'Brave 搜索',
+    logo: 'brave',
     description: '带免费额度的网页搜索',
     category: 'search-scrape',
     builtin: true,
@@ -159,6 +163,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'tencent-docs',
     name: '腾讯文档',
+    logo: 'tencent-docs',
     description: '读写腾讯文档、表格和协作内容',
     category: 'office-collab',
     builtin: false,
@@ -174,6 +179,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'tencent-docs-oa',
     name: '腾讯文档企业版',
+    logo: 'tencent-docs',
     description: '读写腾讯文档企业版的文档与协作内容',
     category: 'office-collab',
     builtin: false,
@@ -256,6 +262,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'excel',
     name: 'Excel 表格',
+    logo: 'excel',
     description: '不装 Office 直接创建/读写 .xlsx 文件',
     category: 'data-table',
     builtin: false,
@@ -280,6 +287,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'supabase',
     name: 'Supabase',
+    logo: 'supabase',
     description: '数据库管理、SQL 查询、日志分析',
     category: 'data-table',
     builtin: false,
@@ -334,6 +342,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'playwright',
     name: 'Playwright',
+    logo: 'playwright',
     description: '浏览器自动化：打开网页、点击、截图、测试',
     category: 'browser-auto',
     builtin: false,
@@ -398,6 +407,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'figma',
     name: 'Figma',
+    logo: 'figma',
     description: '读写 Figma 设计稿，从设计生成代码',
     category: 'design-media',
     builtin: false,
@@ -415,6 +425,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'github',
     name: 'GitHub',
+    logo: 'github',
     description: '仓库、Issue、PR 管理',
     category: 'dev-tools',
     builtin: true,
@@ -457,6 +468,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'context7',
     name: 'Context7',
+    logo: 'context7',
     description: '获取最新框架文档和代码示例',
     category: 'dev-tools',
     builtin: true,

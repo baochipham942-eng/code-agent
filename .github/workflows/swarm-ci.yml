@@ -234,7 +234,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-v2
 
       - name: Install Playwright browsers
         # 主链路子集里有真跑交互 smoke 的用例（gameArtifactValidator 等，走 playwright
@@ -243,9 +243,9 @@ jobs:
         # doesn't exist at ~/.cache/ms-playwright/chromium_headless_shell-<build>。
         # 即这道门当时是抽奖：跑不起浏览器时 runtimeChecks 为空，断言"有 runtime 证据"
         # 反而落空，红得跟被测代码毫无关系。与本 workflow 的 full job / main-full-gate
-        # 保持同一手法，显式装。缓存 key 绑定 lockfile 解析的 Playwright 版本，命中的是
-        # 同一浏览器 revision；未命中时仍在本步显式下载。
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        # 🔴 无条件装（浏览器已在时是空操作）。08-25 实付：此前「缓存命中就跳过」，而缓存是
+        # 无锁重解析时代按错版本 playwright-core 填的，键却写着锁里的 1.60.0 ⇒ 命中即缺
+        # chromium_headless_shell。键加 -v2 甩掉毒缓存（N-CI-XYFLOW-DEPOPT）。
         run: npx playwright install --with-deps chromium
 
       - name: Main-chain vitest subset (agent / tools / ipc / services / design / renderer)
@@ -423,10 +423,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-v2
 
       - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Run smoke suite

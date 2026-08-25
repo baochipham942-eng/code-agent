@@ -6,6 +6,7 @@ import {
   shouldUseE2ELocalAgentModelForMessages,
 } from '../../../src/host/model/e2eLocalAgentModel';
 import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
+import { ASK_USER_QUESTION_DECLINED_OUTPUT } from '../../../src/shared/contract/askUserQuestion';
 import type { ModelMessage } from '../../../src/host/model/types';
 
 const config: ModelConfig = {
@@ -202,6 +203,35 @@ describe('e2eLocalAgentModel', () => {
       id: 'e2e-command-center-status',
       name: 'task_status',
     });
+  });
+
+  it('continues after a skipped question without asking the same question again', () => {
+    const first = buildE2ELocalAgentModelResponse(
+      [{ role: 'user', content: 'E2E_BACKGROUND_APPROVAL' }],
+      [askUserQuestionTool],
+      config,
+    );
+    expect(first.toolCalls?.[0]).toMatchObject({
+      id: 'e2e-background-approval',
+      name: 'AskUserQuestion',
+    });
+
+    const next = buildE2ELocalAgentModelResponse(
+      [
+        { role: 'user', content: 'E2E_BACKGROUND_APPROVAL' },
+        {
+          role: 'tool',
+          toolCallId: 'e2e-background-approval',
+          content: ASK_USER_QUESTION_DECLINED_OUTPUT,
+        },
+      ],
+      [askUserQuestionTool],
+      config,
+    );
+
+    expect(next.type).toBe('text');
+    expect(next.toolCalls).toBeUndefined();
+    expect(next.content).toContain('background approval completed');
   });
 
   it('drives both task-wake outcomes deterministically for the standalone web smoke', () => {

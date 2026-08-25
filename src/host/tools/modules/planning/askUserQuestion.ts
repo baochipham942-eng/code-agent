@@ -27,6 +27,7 @@ import type {
 import type {
   UserQuestion,
 } from '../../../../shared/contract';
+import { ASK_USER_QUESTION_DECLINED_OUTPUT } from '../../../../shared/contract/askUserQuestion';
 import { promptUserInChat } from '../../utils/userQuestionPrompt';
 import { askUserQuestionSchema as schema } from './askUserQuestion.schema';
 
@@ -121,7 +122,9 @@ export async function executeAskUserQuestion(
     ctx.logger.debug('AskUserQuestion declined', { requestId: result.response?.requestId, reason });
     return {
       ok: true,
-      output: reason ? `User declined to answer. Reason: ${reason}` : 'User declined to answer.',
+      output: reason
+        ? `${ASK_USER_QUESTION_DECLINED_OUTPUT} Reason: ${reason}`
+        : ASK_USER_QUESTION_DECLINED_OUTPUT,
     };
   }
 

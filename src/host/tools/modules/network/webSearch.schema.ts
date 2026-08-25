@@ -2,15 +2,16 @@
 // Pure type-only — does not pull legacy tool code at import time.
 // dynamicDescription is inlined as a pure function (no legacy deps).
 import type { UntrustedContentToolSchema } from '../../../protocol/tools';
+import { formatTodayAnchor } from '../../../../shared/todayAnchor';
 
 export const webSearchSchema: UntrustedContentToolSchema = {
   name: 'WebSearch',
   description:
     'Searches the web for information. REQUIRED parameter: `query` (non-empty string — do not call without it). Use for finding documentation, researching APIs, checking current facts, or answering questions that require up-to-date information. Returns search results with titles, URLs, and snippets. Stop once the returned results are enough; do not repeat the same search just to add more sources.',
   dynamicDescription: () => {
-    const now = new Date();
-    const currentDate = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
-    const currentYear = now.getFullYear();
+    const todayAnchor = formatTodayAnchor();
+    const currentDate = `${todayAnchor.year}年${todayAnchor.month}月${todayAnchor.day}日`;
+    const currentYear = todayAnchor.year;
     return `Search the web and return results with titles, URLs, and snippets.
 
 Provides up-to-date information beyond the model's knowledge cutoff. Use when you need current data, recent events, or documentation updates.

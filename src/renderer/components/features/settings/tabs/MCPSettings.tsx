@@ -441,7 +441,14 @@ export const MCPSettings: React.FC = () => {
                 key={server.id}
                 role="button"
                 tabIndex={0}
-                onClick={() => openCapabilitySheet(server)}
+                onClick={(event) => {
+                  // 操作区（开关/详情按钮）自己有语义，点它不该连带展开详情。
+                  // 这里由卡片判断事件源，而不是给操作区套一层 onClick 拦冒泡——
+                  // 那会让一个非交互 div 带上 onClick，a11y-scan 的 R3 会判它缺 role+tabIndex，
+                  // 而给它补 role+tabIndex 又会让键盘用户 tab 到一个什么都不做的元素上。
+                  if ((event.target as HTMLElement).closest('[data-card-actions]')) return;
+                  openCapabilitySheet(server);
+                }}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') openCapabilitySheet(server);
                 }}
@@ -470,7 +477,7 @@ export const MCPSettings: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                  <div className="flex items-center gap-2" data-card-actions>
                     {canManageMcp && !serverInstallStates[server.id] && (
                       <Toggle
                         checked={server.enabled}

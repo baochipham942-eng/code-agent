@@ -228,7 +228,7 @@ describe('TaskManager message event persistence', () => {
     });
 
     expect(manager.handlePermissionResponse('session-1', 'request-1', 'allow')).toBe('delivered');
-    expect(orchestratorMocks.handlePermissionResponse).toHaveBeenCalledWith('request-1', 'allow');
+    expect(orchestratorMocks.handlePermissionResponse).toHaveBeenCalledWith('request-1', 'allow', undefined);
     resolveRun?.();
     await run;
   });

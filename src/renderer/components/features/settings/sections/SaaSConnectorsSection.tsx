@@ -21,6 +21,7 @@ import { Button, Input, Modal } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 
 type LoopbackRedirectUriSupport = 'confirmed' | 'pending-verification' | 'unsupported';
+type ConnectorAuthMode = 'oauth' | 'lark-cli';
 
 interface ConnectorOAuthProviderStatus {
   id: string;
@@ -30,13 +31,21 @@ interface ConnectorOAuthProviderStatus {
   clientSecretConfigured: boolean;
   connected: boolean;
   loopbackRedirectUriSupport: LoopbackRedirectUriSupport;
+  authMode: ConnectorAuthMode;
+  step?: 1 | 2;
+  blocked?: boolean;
+  userName?: string;
+  tenantName?: string;
 }
 
 type ProviderPresentationState =
   | 'missing_client_id'
   | 'needs_secret'
   | 'ready'
+  | 'connecting_step_1'
+  | 'connecting_step_2'
   | 'connected'
+  | 'admin_blocked'
   | 'unavailable';
 
 type SaaSConnectorsText = ReturnType<typeof useI18n>['t']['settings']['saasConnectors'];
@@ -50,6 +59,7 @@ const LOOPBACK_SUPPORT_VALUES = new Set<LoopbackRedirectUriSupport>([
   'pending-verification',
   'unsupported',
 ]);
+const AUTH_MODE_VALUES = new Set<ConnectorAuthMode>(['oauth', 'lark-cli']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -66,6 +76,11 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     clientSecretConfigured,
     connected,
     loopbackRedirectUriSupport,
+    authMode,
+    step,
+    blocked,
+    userName,
+    tenantName,
   } = value;
 
   if (
@@ -79,6 +94,12 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     || typeof connected !== 'boolean'
     || typeof loopbackRedirectUriSupport !== 'string'
     || !LOOPBACK_SUPPORT_VALUES.has(loopbackRedirectUriSupport as LoopbackRedirectUriSupport)
+    || typeof authMode !== 'string'
+    || !AUTH_MODE_VALUES.has(authMode as ConnectorAuthMode)
+    || (step !== undefined && step !== 1 && step !== 2)
+    || (blocked !== undefined && typeof blocked !== 'boolean')
+    || (userName !== undefined && typeof userName !== 'string')
+    || (tenantName !== undefined && typeof tenantName !== 'string')
   ) {
     return null;
   }
@@ -91,6 +112,11 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     clientSecretConfigured,
     connected,
     loopbackRedirectUriSupport: loopbackRedirectUriSupport as LoopbackRedirectUriSupport,
+    authMode: authMode as ConnectorAuthMode,
+    ...(step === 1 || step === 2 ? { step } : {}),
+    ...(typeof blocked === 'boolean' ? { blocked } : {}),
+    ...(typeof userName === 'string' && userName.trim() ? { userName } : {}),
+    ...(typeof tenantName === 'string' && tenantName.trim() ? { tenantName } : {}),
   };
 }
 
@@ -102,6 +128,12 @@ function parseProviderStatuses(value: unknown): ConnectorOAuthProviderStatus[] |
 }
 
 function resolveProviderState(status: ConnectorOAuthProviderStatus): ProviderPresentationState {
+  if (status.authMode === 'lark-cli') {
+    if (status.step === 1) return 'connecting_step_1';
+    if (status.step === 2) return 'connecting_step_2';
+    if (status.blocked) return 'admin_blocked';
+    return status.connected ? 'connected' : 'ready';
+  }
   if (!status.clientIdConfigured) return 'missing_client_id';
   if (status.connected) {
     return status.requiresClientSecret && !status.clientSecretConfigured
@@ -142,15 +174,42 @@ function getStatePresentation(
       return {
         badge: text.badges.connected,
         badgeClassName: 'bg-emerald-500/10 text-badge-success',
-        detail: '',
+        detail: status.authMode === 'lark-cli' && status.userName && status.tenantName
+          ? text.details.connectedIdentity
+            .replace('{user}', status.userName)
+            .replace('{tenant}', status.tenantName)
+          : '',
         actionLabel: text.actions.startUsing,
+      };
+    case 'connecting_step_1':
+      return {
+        badge: text.badges.connectingStep1,
+        badgeClassName: 'border border-amber-500/25 bg-amber-500/15 text-badge-warning',
+        detail: text.details.creatingApp,
+        actionLabel: text.actions.cancel,
+      };
+    case 'connecting_step_2':
+      return {
+        badge: text.badges.connectingStep2,
+        badgeClassName: 'border border-amber-500/25 bg-amber-500/15 text-badge-warning',
+        detail: text.details.authorizing,
+        actionLabel: text.actions.cancel,
+      };
+    case 'admin_blocked':
+      return {
+        badge: text.badges.adminRequired,
+        badgeClassName: 'border border-red-500/25 bg-red-500/15 text-badge-danger',
+        detail: text.details.adminRequired,
+        actionLabel: text.actions.retry,
       };
     case 'ready':
       return {
         badge: text.badges.notConnected,
         badgeClassName: 'border border-badge-info/25 bg-sky-500/15 text-badge-info',
-        detail: status.requiresClientSecret ? text.details.ready : text.details.noSecretRequired,
-        actionLabel: text.actions.connect,
+        detail: status.authMode === 'lark-cli'
+          ? text.details.larkCliReady
+          : status.requiresClientSecret ? text.details.ready : text.details.noSecretRequired,
+        actionLabel: status.authMode === 'lark-cli' ? text.actions.connectFeishu : text.actions.connect,
       };
     default:
       return {
@@ -183,6 +242,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
   const [activeProviderId, setActiveProviderId] = useState<string | null>(null);
   const [pendingDisconnectId, setPendingDisconnectId] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [customAppOpen, setCustomAppOpen] = useState(false);
 
   const refresh = useCallback(async (): Promise<ConnectorOAuthProviderStatus[] | null> => {
     try {
@@ -216,6 +276,14 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
   }, [refresh]);
 
   useEffect(() => {
+    if (!busyKey?.endsWith(':connect')) return;
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [busyKey, refresh]);
+
+  useEffect(() => {
     if (receipt?.kind !== 'success') return;
     const timer = window.setTimeout(() => setReceipt(null), 3000);
     return () => window.clearTimeout(timer);
@@ -226,7 +294,10 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
     resolveProviderState(status),
   ])), [statuses]);
 
-  const connect = useCallback(async (providerId: string) => {
+  const connect = useCallback(async (
+    providerId: string,
+    authMode: ConnectorAuthMode = 'oauth',
+  ) => {
     const action = CONNECT_ACTION_BY_PROVIDER[providerId];
     if (!action) {
       setError(text.errors.statusUnavailable);
@@ -236,11 +307,16 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
     setBusyKey(`${providerId}:connect`);
     setError(null);
     setReceipt({ kind: 'info', text: text.toast.authorizationOpened });
+    if (authMode === 'lark-cli') {
+      setStatuses((current) => current.map((status) => status.id === providerId
+        ? { ...status, step: 1, blocked: false }
+        : status));
+    }
     try {
       await ipcService.invokeDomain(
         IPC_DOMAINS.CONNECTOR,
         'oauthConnect',
-        { providerId, action },
+        { providerId, action, authMode },
       );
       const nextStatuses = await refresh();
       const nextStatus = nextStatuses?.find((status) => status.id === providerId);
@@ -252,11 +328,14 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
       setReceipt({ kind: 'success', text: text.toast.connected });
     } catch (caught) {
       setReceipt(null);
+      if (authMode === 'lark-cli') await refresh();
       if (
         (isRecord(caught) && caught.code === 'CANCELLED')
         || (caught instanceof Error && /OAuth flow cancelled/i.test(caught.message))
       ) {
         setReceipt({ kind: 'success', text: text.toast.authorizationCancelled });
+      } else if (isRecord(caught) && caught.code === 'ADMIN_REQUIRED') {
+        await refresh();
       } else {
         setError(text.errors.connectFailed);
       }
@@ -265,7 +344,11 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
     }
   }, [refresh, text]);
 
-  const saveAndConnect = useCallback(async (providerId: string) => {
+  const saveAndConnect = useCallback(async (
+    providerId: string,
+    authMode: ConnectorAuthMode = 'oauth',
+    refreshBeforeConnect = true,
+  ) => {
     const clientSecret = secretDrafts[providerId] ?? '';
     if (!clientSecret.trim()) return;
 
@@ -275,22 +358,40 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
       await ipcService.invokeDomain(
         IPC_DOMAINS.CONNECTOR,
         'oauthSetSecret',
-        { providerId, clientSecret },
+        { providerId, clientSecret, authMode },
       );
       setSecretDrafts((current) => ({ ...current, [providerId]: '' }));
+      if (!refreshBeforeConnect) {
+        await connect(providerId, authMode);
+        return;
+      }
       const nextStatuses = await refresh();
       const nextStatus = nextStatuses?.find((status) => status.id === providerId);
       if (!nextStatus || resolveProviderState(nextStatus) !== 'ready') {
         setError(text.errors.statusUnavailable);
         return;
       }
-      await connect(providerId);
+      await connect(providerId, authMode);
     } catch {
       setError(text.errors.saveFailed);
     } finally {
       setBusyKey(null);
     }
   }, [connect, refresh, secretDrafts, text.errors.saveFailed, text.errors.statusUnavailable]);
+
+  const cancelConnect = useCallback(async (providerId: string) => {
+    try {
+      const payload = await ipcService.invokeDomain<unknown>(
+        IPC_DOMAINS.CONNECTOR,
+        'oauthCancelConnect',
+        { providerId },
+      );
+      const nextStatuses = parseProviderStatuses(payload);
+      if (nextStatuses) setStatuses(nextStatuses);
+    } catch {
+      setError(text.errors.disconnectFailed);
+    }
+  }, [text.errors.disconnectFailed]);
 
   const disconnect = useCallback(async (providerId: string) => {
     setPendingDisconnectId(null);
@@ -305,6 +406,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
       await refresh();
       setReceipt({ kind: 'success', text: text.toast.disconnected });
       setActiveProviderId(null);
+      setCustomAppOpen(false);
     } catch {
       setError(text.errors.disconnectFailed);
     } finally {
@@ -350,20 +452,32 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
         const state = presentationById.get(status.id) ?? 'unavailable';
         const presentation = getStatePresentation(state, status, text);
         const providerName = getProviderName(status, text);
-        const isConnecting = busyKey === `${status.id}:connect`;
+        const isLarkCli = status.authMode === 'lark-cli';
+        const isProgress = state === 'connecting_step_1' || state === 'connecting_step_2';
+        const rowBusy = Boolean(busyKey?.startsWith(`${status.id}:`));
+        const showConnecting = isProgress || (!isLarkCli && busyKey === `${status.id}:connect`);
         const isUnavailable = state === 'missing_client_id' || state === 'unavailable';
+        const secretDraft = secretDrafts[status.id] ?? '';
 
         return (
           <div
             key={status.id}
             role="button"
             tabIndex={0}
-            onClick={() => setActiveProviderId(status.id)}
+            onClick={(event) => {
+              if (event.target instanceof Element && event.target.closest('button, input')) return;
+              setActiveProviderId(status.id);
+            }}
             onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) return;
               if (event.key === 'Enter' || event.key === ' ') setActiveProviderId(status.id);
             }}
             className={`group min-h-36 cursor-pointer rounded-xl border bg-zinc-900/60 p-4 text-left transition-colors hover:border-zinc-600 ${
-              isConnecting ? 'border-amber-500/40' : isUnavailable ? 'border-dashed border-zinc-700 opacity-70' : 'border-zinc-700'
+              showConnecting
+                ? 'border-amber-500/40'
+                : state === 'admin_blocked'
+                  ? 'border-red-500/30'
+                  : isUnavailable ? 'border-dashed border-zinc-700 opacity-70' : 'border-zinc-700'
             }`}
             data-testid={`saas-connector-${status.id}`}
           >
@@ -374,42 +488,42 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                 </span>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    {(state === 'connected' || isConnecting || isUnavailable) && (
+                    {(state === 'connected' || showConnecting || state === 'admin_blocked' || isUnavailable) && (
                       <span
                         data-testid={`saas-status-dot-${status.id}`}
                         className={`h-2 w-2 rounded-full ${
-                          isConnecting
+                          showConnecting
                             ? 'animate-pulse bg-amber-400'
                             : state === 'connected'
                               ? 'bg-mark-success'
-                              : 'bg-zinc-600'
+                              : state === 'admin_blocked' ? 'bg-red-400' : 'bg-zinc-600'
                         }`}
                       />
                     )}
                     <span className="truncate text-sm font-medium text-zinc-100">{providerName}</span>
                     <span className={`rounded px-1.5 py-0.5 text-[10px] ${
-                      isConnecting
+                      showConnecting && !isLarkCli
                         ? 'border border-amber-500/25 bg-amber-500/15 text-badge-warning'
                         : presentation.badgeClassName
                     }`}>
-                      {isConnecting ? text.badges.connecting : presentation.badge}
+                      {showConnecting && !isLarkCli ? text.badges.connecting : presentation.badge}
                     </span>
                   </div>
                 </div>
               </div>
-              {!isUnavailable && (
+              {!isLarkCli && !isUnavailable && (
                 <button /* ds-allow:button: 卡片右上角紧凑状态动作位 */
                   type="button"
-                  aria-label={`${isConnecting ? text.actions.connecting : presentation.actionLabel} ${providerName}`}
+                  aria-label={`${rowBusy ? text.actions.connecting : presentation.actionLabel} ${providerName}`}
                   data-testid={`saas-card-action-${status.id}`}
-                  disabled={isConnecting}
+                  disabled={rowBusy}
                   onClick={(event) => {
                     event.stopPropagation();
                     setActiveProviderId(status.id);
                   }}
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-zinc-600 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800 disabled:cursor-wait"
                 >
-                  {isConnecting ? (
+                  {rowBusy ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-badge-warning" />
                   ) : state === 'connected' ? (
                     <MessageCircle className="h-3.5 w-3.5 text-badge-info" />
@@ -419,15 +533,126 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                 </button>
               )}
             </div>
-            <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-zinc-400">
-              {text.capabilities.feishu}
+            <p className={`mt-3 text-xs leading-relaxed ${
+              state === 'admin_blocked'
+                ? 'text-badge-danger'
+                : showConnecting ? 'text-badge-warning' : 'text-zinc-400'
+            }`}>
+              {showConnecting && <Loader2 className="mr-1.5 inline h-3 w-3 animate-spin" />}
+              {presentation.detail || text.capabilities.feishu}
             </p>
-            <div className={`mt-3 text-[11px] ${isConnecting ? 'text-badge-warning' : 'text-zinc-500'}`}>
-              {isConnecting ? text.badges.connecting : presentation.badge}
-              {status.requiresClientSecret && status.clientSecretConfigured
-                ? `${text.metaSeparator}${text.clientSecretSaved}`
-                : ''}
-            </div>
+
+            {isLarkCli && (
+              <div className="mt-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {state === 'ready' && (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={rowBusy}
+                      onClick={() => void connect(status.id, 'lark-cli')}
+                      leftIcon={<Link2 className="h-3 w-3" />}
+                      data-testid={`saas-connect-${status.id}`}
+                    >
+                      {text.actions.connectFeishu}
+                    </Button>
+                  )}
+                  {isProgress && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void cancelConnect(status.id)}
+                      data-testid={`saas-cancel-${status.id}`}
+                    >
+                      {text.actions.cancel}
+                    </Button>
+                  )}
+                  {state === 'admin_blocked' && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={rowBusy}
+                      onClick={() => void connect(status.id, 'lark-cli')}
+                      data-testid={`saas-retry-${status.id}`}
+                    >
+                      {text.actions.retry}
+                    </Button>
+                  )}
+                  {state === 'connected' && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={rowBusy}
+                      onClick={() => setPendingDisconnectId(status.id)}
+                      leftIcon={<Unplug className="h-3 w-3" />}
+                      data-testid={`saas-disconnect-${status.id}`}
+                      className="border border-red-500/25 bg-transparent text-badge-danger hover:bg-red-500/10"
+                    >
+                      {text.actions.disconnect}
+                    </Button>
+                  )}
+                </div>
+
+                {(state === 'ready' || state === 'admin_blocked') && (
+                  <div className="pt-1">
+                    <button /* ds-allow:button: 飞书卡片内普通用户可见的自建应用折叠项 */
+                      type="button"
+                      className="flex items-center gap-1 text-[11px] text-badge-info hover:opacity-80"
+                      aria-expanded={customAppOpen}
+                      onClick={() => setCustomAppOpen((current) => !current)}
+                      data-testid={`saas-custom-app-toggle-${status.id}`}
+                    >
+                      {customAppOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                      {text.customApp.title}
+                    </button>
+                    {customAppOpen && (
+                      <div className="mt-2 rounded-md border border-zinc-700/60 bg-zinc-950/40 p-3" data-testid={`saas-custom-app-${status.id}`}>
+                        <label className="mb-1 block text-[11px] font-medium text-zinc-400" htmlFor={`saas-custom-secret-${status.id}`}>
+                          {text.secret.label}
+                        </label>
+                        <Input
+                          id={`saas-custom-secret-${status.id}`}
+                          type="password"
+                          autoComplete="new-password"
+                          inputSize="sm"
+                          value={secretDraft}
+                          disabled={rowBusy}
+                          onChange={(event) => setSecretDrafts((current) => ({
+                            ...current,
+                            [status.id]: event.target.value,
+                          }))}
+                          placeholder={text.secret.placeholder}
+                          aria-label={`${providerName} ${text.secret.label}`}
+                          data-testid={`saas-custom-secret-input-${status.id}`}
+                          className="bg-zinc-950 px-2"
+                        />
+                        <div className="mt-1.5 text-[11px] leading-relaxed text-zinc-500">{text.secret.customAppHint}</div>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          loading={busyKey === `${status.id}:save`}
+                          disabled={rowBusy || !secretDraft.trim()}
+                          onClick={() => void saveAndConnect(status.id, 'oauth', false)}
+                          data-testid={`saas-custom-save-connect-${status.id}`}
+                          className="mt-3"
+                        >
+                          {text.actions.saveAndConnect}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!isLarkCli && (
+              <div className={`mt-3 text-[11px] ${rowBusy ? 'text-badge-warning' : 'text-zinc-500'}`}>
+                {rowBusy ? text.badges.connecting : presentation.badge}
+                {status.requiresClientSecret && status.clientSecretConfigured
+                  ? `${text.metaSeparator}${text.clientSecretSaved}`
+                  : ''}
+              </div>
+            )}
           </div>
         );
       })}
@@ -446,6 +671,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
           const isSaving = busyKey === `${activeStatus.id}:save`;
           const isConnecting = busyKey === `${activeStatus.id}:connect`;
           const isDisconnecting = busyKey === `${activeStatus.id}:disconnect`;
+          const isLarkCli = activeStatus.authMode === 'lark-cli';
           const canConnect = Boolean(CONNECT_ACTION_BY_PROVIDER[activeStatus.id]);
           const secretDraft = secretDrafts[activeStatus.id] ?? '';
 
@@ -464,7 +690,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                 <div className="mt-3 flex items-center justify-center gap-2">
                   <span className="font-medium text-zinc-100">{providerName}</span>
                   <span className={`rounded px-1.5 py-0.5 text-[10px] ${presentation.badgeClassName}`}>
-                    {isConnecting ? text.badges.connecting : presentation.badge}
+                    {isConnecting && !isLarkCli ? text.badges.connecting : presentation.badge}
                   </span>
                 </div>
                 <p className="mt-2 text-xs leading-relaxed text-zinc-400">{text.capabilities.feishu}</p>
@@ -472,8 +698,10 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
 
               {presentation.detail && (
                 <div className={`rounded-md border px-3 py-2 text-xs ${
-                  activeState === 'missing_client_id'
+                  activeState === 'missing_client_id' || activeState === 'admin_blocked'
                     ? 'border-red-500/25 bg-red-500/10 text-badge-danger'
+                    : activeState === 'connecting_step_1' || activeState === 'connecting_step_2'
+                      ? 'border-amber-500/25 bg-amber-500/10 text-badge-warning'
                     : 'border-zinc-700 bg-zinc-950/40 text-zinc-400'
                 }`}>
                   {presentation.detail}
@@ -522,11 +750,36 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                   variant="primary"
                   loading={isConnecting}
                   disabled={rowBusy || !canConnect}
-                  onClick={() => void connect(activeStatus.id)}
+                  onClick={() => void connect(activeStatus.id, activeStatus.authMode)}
                   leftIcon={!isConnecting ? <Link2 className="h-3 w-3" /> : undefined}
                   data-testid={`saas-connect-${activeStatus.id}`}
                 >
-                  {isConnecting ? text.actions.connecting : text.actions.connect}
+                  {isConnecting
+                    ? text.actions.connecting
+                    : isLarkCli ? text.actions.connectFeishu : text.actions.connect}
+                </Button>
+              )}
+
+              {(activeState === 'connecting_step_1' || activeState === 'connecting_step_2') && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void cancelConnect(activeStatus.id)}
+                  data-testid={`saas-cancel-${activeStatus.id}`}
+                >
+                  {text.actions.cancel}
+                </Button>
+              )}
+
+              {activeState === 'admin_blocked' && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={rowBusy}
+                  onClick={() => void connect(activeStatus.id, 'lark-cli')}
+                  data-testid={`saas-retry-${activeStatus.id}`}
+                >
+                  {text.actions.retry}
                 </Button>
               )}
 
@@ -535,9 +788,11 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                   <div className="flex items-start gap-2 rounded-md border border-badge-warning/20 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-badge-warning">
                     <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                     <span>
-                      {activeStatus.requiresClientSecret
-                        ? text.disconnect.noticeWithSecret
-                        : text.disconnect.noticeWithoutSecret}
+                      {isLarkCli
+                        ? text.disconnect.larkCliNotice
+                        : activeStatus.requiresClientSecret
+                          ? text.disconnect.noticeWithSecret
+                          : text.disconnect.noticeWithoutSecret}
                     </span>
                   </div>
                   <Button
@@ -603,7 +858,9 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
       <ConfirmDialog
         isOpen={Boolean(pendingDisconnectStatus)}
         title={text.disconnect.confirmTitle}
-        message={text.disconnect.confirmMessage}
+        message={pendingDisconnectStatus?.authMode === 'lark-cli'
+          ? text.disconnect.larkCliConfirmMessage
+          : text.disconnect.confirmMessage}
         variant="danger"
         confirmText={text.actions.disconnect}
         cancelText={t.common.cancel}

@@ -22,11 +22,11 @@ if (args[0] === 'config' && args[1] === 'init') {
   process.stdout.write('请打开 https://open.feishu.cn/cli/setup/fake-code 完成创建\\n');
   process.exit(0);
 }
-if (args[0] === 'config' && args[1] === 'remove') process.exit(0);
+if (args[0] === 'auth' && args[1] === 'logout') process.exit(0);
 if (args[0] === 'auth' && args[1] === 'status') {
   if (mode === 'status-fail') process.exit(1);
   process.stdout.write(JSON.stringify({
-    identities: { user: { available: true, openId: 'ou_fake', userName: 'Neo User' } },
+    identities: { user: { available: true, openId: 'ou_fake', userName: 'Neo User', tenantName: 'Neo Corp' } },
     identity: 'user',
   }));
   process.exit(0);
@@ -92,9 +92,11 @@ describe('Feishu lark-cli driver', () => {
   it('creates the isolated profile, opens both child-process URLs, and requests explicit scopes', async () => {
     const { driver, logPath } = await fixture('new-profile');
     const opened: string[] = [];
+    const steps: number[] = [];
 
-    await driver.connect((url) => { opened.push(url); });
+    await driver.connect((url) => { opened.push(url); }, (step) => { steps.push(step); });
 
+    expect(steps).toEqual([1, 2]);
     expect(opened).toEqual([
       'https://open.feishu.cn/cli/setup/fake-code',
       'https://open.feishu.cn/device',
@@ -135,7 +137,7 @@ describe('Feishu lark-cli driver', () => {
     await expect(ready.driver.status()).resolves.toEqual({
       connected: true,
       identity: 'user',
-      user: { openId: 'ou_fake', name: 'Neo User' },
+      user: { openId: 'ou_fake', name: 'Neo User', tenantName: 'Neo Corp' },
     });
 
     const missing = createLarkCliDriver({
@@ -148,13 +150,13 @@ describe('Feishu lark-cli driver', () => {
     await expect(unconfigured.driver.status()).resolves.toEqual({ connected: false, identity: 'none' });
   });
 
-  it('removes only the neo profile', async () => {
+  it('logs out the Neo token without removing the lark-cli profile', async () => {
     const { driver, logPath } = await fixture('existing-profile');
 
     await driver.disconnect();
 
     expect((await calls(logPath)).map((call) => call.args)).toEqual([
-      ['config', 'remove', '--profile', 'neo'],
+      ['auth', 'logout', '--profile', 'neo'],
     ]);
   });
 

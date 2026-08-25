@@ -9,8 +9,13 @@ const env = vi.hoisted(() => ({
   secret: undefined as string | undefined,
   invalidate: vi.fn(),
   savedSecret: vi.fn(),
-  larkStatus: { connected: false, identity: 'none' },
+  larkStatus: { connected: false, identity: 'none' } as {
+    connected: boolean;
+    identity: string;
+    user?: { name?: string; tenantName?: string };
+  },
   larkConnect: vi.fn(),
+  larkCancelConnect: vi.fn(),
   larkDisconnect: vi.fn(),
 }));
 
@@ -18,6 +23,7 @@ vi.mock('../../../src/host/connectors/feishu/larkCli', () => ({
   createLarkCliDriver: () => ({
     status: vi.fn(async () => env.larkStatus),
     connect: env.larkConnect,
+    cancelConnect: env.larkCancelConnect,
     disconnect: env.larkDisconnect,
   }),
 }));
@@ -72,6 +78,7 @@ beforeEach(() => {
   env.savedSecret.mockClear();
   env.larkStatus = { connected: false, identity: 'none' };
   env.larkConnect.mockReset();
+  env.larkCancelConnect.mockReset();
   env.larkDisconnect.mockReset();
 });
 
@@ -96,12 +103,20 @@ describe('connector.ipc SaaS OAuth actions', () => {
       },
     ]);
 
-    env.larkStatus = { connected: true, identity: 'user' };
+    env.larkStatus = {
+      connected: true,
+      identity: 'user',
+      user: { name: 'Neo User', tenantName: 'Neo Corp' },
+    };
     const after = await handler(null, { action: 'oauthStatus' } as IPCRequest);
-    expect((after.data as Array<{ connected: boolean }>)[0]?.connected).toBe(true);
+    expect((after.data as Array<Record<string, unknown>>)[0]).toMatchObject({
+      connected: true,
+      userName: 'Neo User',
+      tenantName: 'Neo Corp',
+    });
   });
 
-  it('removes only the Neo lark-cli profile on disconnect', async () => {
+  it('dispatches lark-cli logout without invalidating the custom OAuth store', async () => {
     const handler = register();
     const response = await handler(null, {
       action: 'oauthDisconnect',
@@ -111,6 +126,66 @@ describe('connector.ipc SaaS OAuth actions', () => {
     expect(response.success).toBe(true);
     expect(env.larkDisconnect).toHaveBeenCalledOnce();
     expect(env.invalidate).not.toHaveBeenCalled();
+  });
+
+  it('publishes the current lark-cli connection step through oauthStatus', async () => {
+    let finishConnect: (() => void) | undefined;
+    env.larkConnect.mockImplementation(async (
+      _openExternal: unknown,
+      onStep: (step: 1 | 2) => void,
+    ) => {
+      onStep(2);
+      await new Promise<void>((resolve) => { finishConnect = resolve; });
+    });
+    const handler = register();
+    const connectPromise = handler(null, {
+      action: 'oauthConnect',
+      payload: { providerId: 'feishu', action: 'message.send-as-user' },
+    } as IPCRequest);
+
+    await vi.waitFor(() => expect(env.larkConnect).toHaveBeenCalledOnce());
+    const during = await handler(null, { action: 'oauthStatus' } as IPCRequest);
+    expect((during.data as Array<Record<string, unknown>>)[0]).toMatchObject({
+      authMode: 'lark-cli',
+      connected: false,
+      step: 2,
+    });
+
+    finishConnect?.();
+    await connectPromise;
+  });
+
+  it('returns a stable ADMIN_REQUIRED code and persists the blocked status for retry UI', async () => {
+    env.larkConnect.mockRejectedValueOnce(new Error('需联系企业应用管理员安装'));
+    const handler = register();
+
+    const response = await handler(null, {
+      action: 'oauthConnect',
+      payload: { providerId: 'feishu', action: 'message.send-as-user' },
+    } as IPCRequest);
+    expect(response).toMatchObject({
+      success: false,
+      error: { code: 'ADMIN_REQUIRED', message: '需联系企业应用管理员安装' },
+    });
+    const blocked = await handler(null, { action: 'oauthStatus' } as IPCRequest);
+    expect((blocked.data as Array<Record<string, unknown>>)[0]).toMatchObject({ blocked: true });
+
+    await handler(null, {
+      action: 'oauthDisconnect',
+      payload: { providerId: 'feishu' },
+    } as IPCRequest);
+  });
+
+  it('routes connection cancellation to the active lark-cli driver', async () => {
+    const handler = register();
+
+    const response = await handler(null, {
+      action: 'oauthCancelConnect',
+      payload: { providerId: 'feishu' },
+    } as IPCRequest);
+
+    expect(response.success).toBe(true);
+    expect(env.larkCancelConnect).toHaveBeenCalledOnce();
   });
 
   it('dispatches connect to lark-cli instead of the built-in OAuth coordinator', async () => {
@@ -149,6 +224,18 @@ describe('connector.ipc SaaS OAuth client secret', () => {
     expect(response.success).toBe(false);
     expect(response.error?.message).toContain('不需要 App Secret');
     expect(env.savedSecret).not.toHaveBeenCalled();
+  });
+
+  it('keeps the existing custom-app secret route available when explicitly selected', async () => {
+    const handler = register();
+
+    const response = await handler(null, {
+      action: 'oauthSetSecret',
+      payload: { providerId: 'feishu', clientSecret: 'custom-secret', authMode: 'oauth' },
+    } as IPCRequest);
+
+    expect(response.success).toBe(true);
+    expect(env.savedSecret).toHaveBeenCalledWith('custom-secret');
   });
 
   it('refuses an empty secret instead of storing a blank credential', async () => {

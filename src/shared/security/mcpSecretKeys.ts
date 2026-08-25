@@ -4,7 +4,7 @@
 // ============================================================================
 
 const SENSITIVE_MCP_KEY_PATTERN =
-  /(api[-_]?key|authorization|bearer|token|secret|password|passwd|credential|private[-_]?key)/i;
+  /(api[-_]?key|authorization|bearer|token|secret|password|passwd|credential|private[-_]?key|(?:^|[-_])key$)/i;
 
 /**
  * MCP env/header 键名是否是应抽进 SecureStorage 的凭据。

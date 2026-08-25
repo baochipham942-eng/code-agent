@@ -69,6 +69,21 @@ describe('McpDiscoverTab unified grid cards', () => {
     expect(screen.queryByTestId('mcp-discover-card-lark')).toBeNull();
   });
 
+  it('shows every live-approved remote Tencent connector as not connected', () => {
+    renderDiscover();
+
+    for (const id of [
+      'tencent-docs',
+      'tencent-docs-oa',
+      'tencent-survey',
+      'tencent-weiyun',
+      'tencent-map',
+    ]) {
+      expect(screen.getByTestId(`mcp-discover-card-${id}`).textContent)
+        .toContain(discoverText.grid.notConnected);
+    }
+  });
+
   it('opens details first, then routes add through the prefilled editor callback', () => {
     const props = renderDiscover();
     fireEvent.click(screen.getByTestId('mcp-discover-card-excel'));

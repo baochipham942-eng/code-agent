@@ -31,6 +31,7 @@ interface SessionRecapView {
 const STORAGE_PREFIX = 'neo:recap:lastViewed:';
 // 可见期心跳粒度：工单拍板 30s——误报窗口最多 30s 内已上屏的变化，可接受
 const PRESENCE_HEARTBEAT_MS = 30_000;
+const RECAP_MIN_AWAY_MS = 10 * 60_000;
 
 function readLastViewed(sessionId: string): number {
   try {
@@ -50,7 +51,10 @@ function writeLastViewed(sessionId: string, timestamp: number): void {
   }
 }
 
-export const SessionRecapBanner: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
+export const SessionRecapBanner: React.FC<{
+  sessionId: string | null;
+  interruptionPointInViewport?: boolean;
+}> = ({ sessionId, interruptionPointInViewport = false }) => {
   const { t } = useI18n();
   const [recap, setRecap] = useState<SessionRecapView | null>(null);
 
@@ -58,25 +62,13 @@ export const SessionRecapBanner: React.FC<{ sessionId: string | null }> = ({ ses
     setRecap(null);
     if (!sessionId) return;
 
-    const since = readLastViewed(sessionId);
     const advance = () => writeLastViewed(sessionId, Date.now());
-    advance();
-    // 第一次进这个会话没有"上次"可比，不追赶
-    const shouldFetchRecap = Boolean(since);
-
-    // 在场（可见且聚焦）持续推进已看水位：可见期 30s 心跳 + 切走/回来即时刷。
-    // 切走前一刻也算"看过"——屏幕上渲染过的变化不进下次追赶摘要；
-    // 离开期间心跳停写，空窗里的变化才进追赶。
-    const isPresent = () => document.visibilityState === 'visible' && document.hasFocus();
-    const heartbeat = window.setInterval(() => {
-      if (isPresent()) advance();
-    }, PRESENCE_HEARTBEAT_MS);
-    document.addEventListener('visibilitychange', advance);
-    window.addEventListener('focus', advance);
-    window.addEventListener('blur', advance);
-
     let cancelled = false;
-    if (shouldFetchRecap) {
+    let lastRequestedSince = 0;
+    const requestIfAwayLongEnough = () => {
+      const since = readLastViewed(sessionId);
+      if (!since || Date.now() - since < RECAP_MIN_AWAY_MS || since === lastRequestedSince) return;
+      lastRequestedSince = since;
       void window.domainAPI
         ?.invoke<SessionRecapView | null>(IPC_DOMAINS.SESSION, 'getRecap', { sessionId, since })
         .then((response) => {
@@ -86,18 +78,43 @@ export const SessionRecapBanner: React.FC<{ sessionId: string | null }> = ({ ses
         .catch(() => {
           // 追赶提示是锦上添花，拿不到就不显示
         });
-    }
+    };
+
+    // 先用旧水位判断是否真离开满 10 分钟，再把当前时刻记为已经看过。
+    requestIfAwayLongEnough();
+    advance();
+
+    // 在场（可见且聚焦）持续推进已看水位：可见期 30s 心跳 + 切走/回来即时刷。
+    // 切走前一刻也算"看过"——屏幕上渲染过的变化不进下次追赶摘要；
+    // 离开期间心跳停写，空窗里的变化才进追赶。
+    const isPresent = () => document.visibilityState === 'visible' && document.hasFocus();
+    const heartbeat = window.setInterval(() => {
+      if (isPresent()) advance();
+    }, PRESENCE_HEARTBEAT_MS);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') requestIfAwayLongEnough();
+      advance();
+    };
+    const handleFocus = () => {
+      requestIfAwayLongEnough();
+      advance();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', advance);
 
     return () => {
       cancelled = true;
       window.clearInterval(heartbeat);
-      document.removeEventListener('visibilitychange', advance);
-      window.removeEventListener('focus', advance);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
       window.removeEventListener('blur', advance);
     };
   }, [sessionId]);
 
-  if (!recap) return null;
+  // 中断点仍在 Virtuoso 可见范围时，时间线灰字已经把现场说清楚；追赶条只在
+  // 离开满 10 分钟且中断点滚出视口后补一句，避免同屏复述。
+  if (!recap || interruptionPointInViewport) return null;
 
   return (
     <div

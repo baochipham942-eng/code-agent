@@ -31,7 +31,6 @@ export interface StreamingUiState {
   detail: string;
   tone: StreamingUiTone;
   shouldAnimate: boolean;
-  showResumeHint: boolean;
   showCancelCleanup: boolean;
 }
 
@@ -55,7 +54,6 @@ const idleState: StreamingUiState = {
   detail: '',
   tone: 'neutral',
   shouldAnimate: false,
-  showResumeHint: false,
   showCancelCleanup: false,
 };
 
@@ -113,7 +111,6 @@ export function buildStreamingUiState({
       detail: t.turnRun.detail.cancelling,
       tone: 'warning',
       shouldAnimate: true,
-      showResumeHint: false,
       showCancelCleanup: true,
     };
   }
@@ -125,7 +122,6 @@ export function buildStreamingUiState({
       detail: t.turnRun.detail.blocked,
       tone: 'error',
       shouldAnimate: false,
-      showResumeHint: false,
       showCancelCleanup: false,
     };
   }
@@ -139,7 +135,6 @@ export function buildStreamingUiState({
       detail: t.turnRun.detail.resumable,
       tone: 'warning',
       shouldAnimate: false,
-      showResumeHint: true,
       showCancelCleanup: false,
     };
   }
@@ -151,7 +146,6 @@ export function buildStreamingUiState({
       detail: t.turnRun.detail.cancelled,
       tone: 'warning',
       shouldAnimate: false,
-      showResumeHint: false,
       showCancelCleanup: false,
     };
   }
@@ -168,7 +162,6 @@ export function buildStreamingUiState({
       detail: isWaitingTool ? t.turnRun.detail.waitingTool : t.turnRun.detail.usingTools,
       tone: 'neutral',
       shouldAnimate: true,
-      showResumeHint: false,
       showCancelCleanup: false,
     };
   }
@@ -180,7 +173,6 @@ export function buildStreamingUiState({
       detail: t.turnRun.detail.running,
       tone: 'info',
       shouldAnimate: true,
-      showResumeHint: false,
       showCancelCleanup: false,
     };
   }
@@ -196,7 +188,6 @@ export function buildStreamingUiState({
       detail: t.turnRun.detail.stale,
       tone: 'neutral',
       shouldAnimate: false,
-      showResumeHint: false,
       showCancelCleanup: false,
     };
   }
@@ -208,7 +199,6 @@ export function buildStreamingUiState({
       detail: '',
       tone: 'success',
       shouldAnimate: false,
-      showResumeHint: false,
       showCancelCleanup: false,
     };
   }
@@ -226,6 +216,8 @@ export function shouldShowStreamingState(state: StreamingUiState): boolean {
     // 底下再来一张大黄卡写「正在清理本轮流式输出和未完成工具」，是同一件事说两遍，
     // 而取消本身只持续几秒——动静远大于信息量（真机反馈 2026-08-01）。
     && state.status !== 'cancelling'
+    // 中断动作已收进 DecisionSlot，时间线灰字承担存证；这里不再铺 resumable 橙卡。
+    && state.status !== 'resumable'
     // 取消完成同理：「已取消」的徽章 + 大黄卡两条横幅上下叠着，两条都写「已取消」
     // （2026-08-01 验收截图）。留徽章那一行，解释语（已停止这次回答…）由 run 徽章
     // 右边的阶段位承担——一行说完，不再上下两条。

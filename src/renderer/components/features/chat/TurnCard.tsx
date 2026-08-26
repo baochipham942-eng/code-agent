@@ -1086,7 +1086,7 @@ function getStreamingBannerIcon(state: StreamingUiState): React.ReactNode {
 const StreamingStateBanner: React.FC<{ state: StreamingUiState }> = ({ state }) => {
   const { t } = useI18n();
   return (
-    <div className={`flex min-h-9 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${getToneClass(state.tone)}`}>
+    <div data-testid="streaming-state-banner" className={`flex min-h-9 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${getToneClass(state.tone)}`}>
       <div className="shrink-0">{getStreamingBannerIcon(state)}</div>
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium">{state.label}</div>
@@ -1096,9 +1096,6 @@ const StreamingStateBanner: React.FC<{ state: StreamingUiState }> = ({ state }) 
       </div>
       {state.showCancelCleanup && (
         <span className="shrink-0 text-[10px] opacity-60">{t.turnRun.cleanupBadge}</span>
-      )}
-      {state.showResumeHint && (
-        <span className="shrink-0 text-[10px] opacity-60">{t.turnRun.resumeBadge}</span>
       )}
     </div>
   );
@@ -1113,7 +1110,8 @@ export function shouldHideTurnRunHeader(statusKey: string, statusTone: string): 
   return statusTone === 'success'
     || statusKey === 'running'
     || statusKey === 'using_tools'
-    || statusKey === 'waiting_tool';
+    || statusKey === 'waiting_tool'
+    || statusKey === 'resumable';
 }
 
 const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiState }> = ({ turn, streamingState }) => {
@@ -1131,7 +1129,7 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
   }
 
   return (
-    <div className="flex min-h-7 items-center gap-2 rounded-md border border-border-faint bg-surface-faint px-2 py-1 text-[11px]">
+    <div data-testid="turn-run-header" className="flex min-h-7 items-center gap-2 rounded-md border border-border-faint bg-surface-faint px-2 py-1 text-[11px]">
       <div className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 ${getToneClass(status.tone)}`}>
         {status.icon}
         <span className="font-medium">{status.label}</span>

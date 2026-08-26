@@ -59,10 +59,10 @@ describe('shouldHideTurnRunHeader — 按 key/tone 判断,与 label 文案无关
     expect(shouldHideTurnRunHeader('cancelled', 'success')).toBe(true);
   });
 
-  it('异常/终态 key（blocked/cancelled/resumable/stale_stream）保留显示', () => {
+  it('异常终态保留；resumable 让位给灰字步骤行和 DecisionSlot', () => {
     expect(shouldHideTurnRunHeader('blocked', 'error')).toBe(false);
     expect(shouldHideTurnRunHeader('cancelled', 'warning')).toBe(false);
-    expect(shouldHideTurnRunHeader('resumable', 'warning')).toBe(false);
+    expect(shouldHideTurnRunHeader('resumable', 'warning')).toBe(true);
     expect(shouldHideTurnRunHeader('stale_stream', 'neutral')).toBe(false);
   });
 });

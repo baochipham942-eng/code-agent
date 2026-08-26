@@ -1,15 +1,10 @@
 // @vitest-environment jsdom
-import React from 'react';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Message, MessageAttachment, StreamRecoverySnapshot } from '../../../src/shared/contract';
+import fs from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import type { Message, StreamRecoverySnapshot } from '../../../src/shared/contract';
 
-vi.mock('../../../src/renderer/hooks/useI18n', async () => {
-  const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ t: zh, language: 'zh' }) };
-});
-
-import { deriveRetryTurnMessage, StreamRecoveryBanner } from '../../../src/renderer/components/ChatView';
+import { deriveRetryTurnMessage } from '../../../src/renderer/components/ChatView';
 
 function makeSnapshot(overrides: Partial<StreamRecoverySnapshot> = {}): StreamRecoverySnapshot {
   return {
@@ -73,59 +68,15 @@ describe('deriveRetryTurnMessage — 锚点推导', () => {
   });
 });
 
-afterEach(cleanup);
-
-describe('StreamRecoveryBanner — 重试该轮', () => {
-  it('有 retryMessage 时渲染重试按钮，点击以原始消息内容+附件调用 onSend', async () => {
-    const attachment: MessageAttachment = {
-      id: 'att-1',
-      type: 'image',
-      category: 'image',
-      name: 'a.png',
-      size: 1024,
-      mimeType: 'image/png',
-      path: '/tmp/a.png',
-    };
-    const message = makeUserMessage({ content: '帮我写个函数', attachments: [attachment] });
-    const onSend = vi.fn().mockResolvedValue(true);
-    render(
-      <StreamRecoveryBanner snapshot={makeSnapshot()} retryMessage={message} onSend={onSend} />,
+describe('ChatView — 中断入口收进 DecisionSlot', () => {
+  it('不再挂顶部 StreamRecoveryBanner，唯一动作入口交给 DecisionSlot', () => {
+    const source = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/renderer/components/ChatView.tsx'),
+      'utf8',
     );
-
-    const button = screen.getByRole('button', { name: '重试该轮' });
-    fireEvent.click(button);
-
-    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
-    // 断言第二参数就是原消息的附件数组——附件能原样带上是这一刀的卖点之一，得钉住。
-    expect(onSend).toHaveBeenCalledWith('帮我写个函数', [attachment]);
-  });
-
-  it('retryMessage 为 null（找不到原始用户消息锚点）时不渲染重试按钮', () => {
-    const onSend = vi.fn();
-    const { container } = render(
-      <StreamRecoveryBanner snapshot={makeSnapshot()} retryMessage={null} onSend={onSend} />,
-    );
-
-    // 结构性断言：查按钮节点是否存在，不是查文本有没有出现在页面某处。
-    expect(screen.queryByRole('button', { name: '重试该轮' })).toBeNull();
-    // dismiss 按钮（唯一按钮）仍在，证明横幅本体照常渲染，只是少了重试按钮这一个节点。
-    expect(container.querySelectorAll('button').length).toBe(1);
-  });
-
-  it('重试进行中：按钮 disabled，文案切到「重试中…」', async () => {
-    let resolveSend: (value: boolean) => void = () => {};
-    const onSend = vi.fn(() => new Promise<boolean>((resolve) => { resolveSend = resolve; }));
-    const message = makeUserMessage();
-    render(
-      <StreamRecoveryBanner snapshot={makeSnapshot()} retryMessage={message} onSend={onSend} />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: '重试该轮' }));
-
-    const button = await screen.findByRole('button', { name: '重试中…' }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-
-    resolveSend(true);
-    await waitFor(() => expect(screen.getByRole('button', { name: '重试该轮' })).toBeTruthy());
+    expect(source).not.toContain('<StreamRecoveryBanner');
+    expect(source).not.toContain('export const StreamRecoveryBanner');
+    expect(source).not.toContain('data-testid="stream-recovery-banner"');
+    expect(source).toContain('<DecisionSlot streamInterruption={streamInterruptionDecision} />');
   });
 });

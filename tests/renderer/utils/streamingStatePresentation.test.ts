@@ -102,7 +102,7 @@ describe('streamingStatePresentation', () => {
     expect(state.showCancelCleanup).toBe(true);
   });
 
-  it('marks paused and incomplete snapshots as resumable', () => {
+  it('内部状态仍标 resumable，但不再单独渲染橙卡', () => {
     const paused = buildStreamingUiState({
       t: zh,
       turn: makeTurn({ status: 'completed' }),
@@ -132,7 +132,7 @@ describe('streamingStatePresentation', () => {
 
     expect(paused.status).toBe('resumable');
     expect(snapshotted.status).toBe('resumable');
-    expect(snapshotted.showResumeHint).toBe(true);
+    expect(shouldShowStreamingState(snapshotted)).toBe(false);
     expect(hasIncompleteStreamSnapshot(makeSnapshot({ turnId: 'other-turn' }), interruptedTurn)).toBe(false);
     expect(hasIncompleteStreamSnapshot(makeSnapshot(), makeTurn())).toBe(false);
   });

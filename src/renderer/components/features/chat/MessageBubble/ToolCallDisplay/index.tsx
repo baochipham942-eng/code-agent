@@ -94,7 +94,7 @@ function StatusIndicator({ status, quietError }: { status: ToolStatus; quietErro
     case 'interrupted':
       return (
         <span className={`w-4 flex-shrink-0 text-center ${statusColor.dot}`}>
-          ○
+          ⊘
         </span>
       );
   }
@@ -107,6 +107,8 @@ interface ToolCallDisplayProps {
   /** Compact mode for Cowork display - simplified view */
   compact?: boolean;
   mediaContext?: SessionMediaContext;
+  /** recovery snapshot 的工具从未执行，后续新 turn 在跑时也必须稳定保持 interrupted。 */
+  statusOverride?: ToolStatus;
 }
 
 export function ToolCallDisplay({
@@ -115,6 +117,7 @@ export function ToolCallDisplay({
   total: _total,
   compact = false,
   mediaContext,
+  statusOverride,
 }: ToolCallDisplayProps) {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const processingSessionIds = useAppStore(
@@ -146,11 +149,12 @@ export function ToolCallDisplay({
 
   // Calculate status
   const status: ToolStatus = useMemo(() => {
+    if (statusOverride) return statusOverride;
     if (delegationPresentation?.state === 'working') return 'pending';
     if (delegationPresentation?.state === 'completed') return 'success';
     if (delegationPresentation?.state === 'failed') return 'error';
     return getToolStatus(toolCall, currentSessionId, processingSessionIds);
-  }, [delegationPresentation?.state, toolCall, currentSessionId, processingSessionIds]);
+  }, [delegationPresentation?.state, toolCall, currentSessionId, processingSessionIds, statusOverride]);
 
   // 探索性失败（工具未安装、非零退出码、超时等未分类错误）是 agent 试错的正常一部分，
   // 不是需要用户关注的错误——安静展示，跟成功行视觉权重接近。真正需要用户介入的错误
@@ -206,17 +210,23 @@ export function ToolCallDisplay({
           ? `border-l-2 pl-2 ${quietError ? 'border-[var(--cc-muted)]/40' : 'border-[var(--cc-error)]'}`
           : ''
       }`}
+      data-testid={status === 'interrupted' ? 'interrupt-timeline-step' : undefined}
       style={{ animationDelay: `${index * 30}ms` }}
     >
       {/* Main row: [StatusIndicator] [ToolName bold] [params muted] [inline file badge for Write] */}
       <div
         data-testid={`tool-call-row-${toolCall.name}`}
-        role="button"
-        tabIndex={0}
-        aria-expanded={expanded}
-        className="group/row flex items-center gap-1.5 cursor-pointer hover:bg-zinc-800 rounded px-1 py-0.5 transition-colors"
-        onClick={toggleExpanded}
+        role={status === 'interrupted' ? undefined : 'button'}
+        tabIndex={status === 'interrupted' ? -1 : 0}
+        aria-expanded={status === 'interrupted' ? undefined : expanded}
+        className={`group/row flex items-center gap-1.5 rounded px-1 py-0.5 transition-colors ${
+          status === 'interrupted'
+            ? 'cursor-default text-xs text-zinc-500'
+            : 'cursor-pointer hover:bg-zinc-800'
+        }`}
+        onClick={status === 'interrupted' ? undefined : toggleExpanded}
         onKeyDown={(event) => {
+          if (status === 'interrupted') return;
           if (event.target !== event.currentTarget) return;
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
@@ -236,7 +246,7 @@ export function ToolCallDisplay({
         <BrowserComputerActionPreviewLine preview={actionPreview} />
       )}
 
-      {!compact && !delegationPresentation && (expanded || (status !== 'success' && !quietError)) && (
+      {status !== 'interrupted' && !compact && !delegationPresentation && (expanded || (status !== 'success' && !quietError)) && (
         <ToolExecutionMetaRow toolCall={toolCall} status={status} quietError={quietError} />
       )}
 

@@ -91,6 +91,12 @@ describe('AskUserQuestion schema', () => {
     expect(itemProps.options).toBeDefined();
     expect(itemProps.multiSelect).toBeDefined();
   });
+
+  it('工具描述禁止把写回审批当成表单收集前置步骤', () => {
+    expect(askUserQuestionModule.schema.description).toMatchInlineSnapshot(
+      `"Ask branching decisions only (A/B/proceed). Never collect approval-gated writeback fields. Call the write tool with values/defaults; the approval card is the edit point. “Create meeting now” means tmeetMeetingCreate directly."`,
+    );
+  });
 });
 
 // IPC 协议契约：renderer 监听这两个 channel + payload shape，**不能改**

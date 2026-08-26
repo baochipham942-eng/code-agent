@@ -7,7 +7,7 @@ import type { ToolSchema } from '../../../protocol/tools';
 
 export const askUserQuestionSchema: ToolSchema = {
   name: 'AskUserQuestion',
-  description: `Asks the user a question and waits for their response. Use when you need clarification, confirmation, or additional information to proceed. Do NOT use this for simple status updates — just output text directly.`,
+  description: `Ask branching decisions only (A/B/proceed). Never collect approval-gated writeback fields. Call the write tool with values/defaults; the approval card is the edit point. “Create meeting now” means tmeetMeetingCreate directly.`,
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',

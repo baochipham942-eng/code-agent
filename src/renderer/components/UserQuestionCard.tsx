@@ -23,6 +23,7 @@ import { Button } from './primitives/Button';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 import { useI18n } from '../hooks/useI18n';
+import { DecisionCollapsedBar, isEditableTarget } from './DecisionCard';
 
 const logger = createLogger('UserQuestionCard');
 
@@ -50,6 +51,7 @@ const SelectionIndicator: React.FC<{ selected: boolean; multiSelect: boolean }> 
 export const UserQuestionCard: React.FC<Props> = ({ request }) => {
   const { t } = useI18n();
   const cardRef = useRef<HTMLDivElement>(null);
+  const primaryButtonRef = useRef<HTMLButtonElement>(null);
   const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   // Store selected answers: header -> selected option label(s)
@@ -59,6 +61,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
   const [otherText, setOtherText] = useState<Record<string, string>>({});
   const [declineReason, setDeclineReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   const clearAutoAdvance = useCallback(() => {
     if (autoAdvanceTimerRef.current !== null) {
@@ -78,6 +81,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
     setOtherText({});
     setDeclineReason('');
     setSubmitting(false);
+    setCollapsed(false);
     setStepIndex(0);
     clearAutoAdvance();
     return clearAutoAdvance;
@@ -172,10 +176,10 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
     setStepIndex((current) => Math.min(current + 1, request.questions.length - 1));
   }, [answers, clearAutoAdvance, otherActive, otherText, request.questions, stepIndex]);
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     clearAutoAdvance();
     setStepIndex((current) => Math.max(0, current - 1));
-  };
+  }, [clearAutoAdvance]);
 
   // 回答/跳过成功后才把卡片从 pending 队列清掉（composer 随之恢复）；
   // 失败保留卡片让用户重试，不静默丢问题。
@@ -208,34 +212,69 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
     });
   }, [respond, request.id, declineReason]);
 
-  // Esc = 显式跳过（与权限卡 Esc=拒绝 同族）；stopPropagation 防触发 ChatView 的 Esc+Esc
+  const currentQuestion = request.questions[stepIndex];
+  const hasMultipleSteps = request.questions.length > 1;
+  const isLastStep = stepIndex === request.questions.length - 1;
+  const currentStepAnswered = isQuestionAnswered(stepIndex);
+
   useEffect(() => {
+    if (collapsed || !currentStepAnswered) return;
+    if (isEditableTarget(document.activeElement)) return;
+    primaryButtonRef.current?.focus();
+  }, [collapsed, currentStepAnswered, isLastStep, stepIndex]);
+
+  // Esc 收起；多题向导的 ←/→ 只负责上一题/下一题；Enter 执行当前聚焦的主按钮。
+  useEffect(() => {
+    if (collapsed) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        handleSkip();
+        setCollapsed(true);
         return;
       }
-      if (e.key === 'Enter' && !e.isComposing && isQuestionAnswered(stepIndex)) {
+      if (isEditableTarget(e.target)) return;
+      if (hasMultipleSteps && e.key === 'ArrowLeft') {
         e.preventDefault();
         e.stopPropagation();
-        if (stepIndex === request.questions.length - 1) {
-          handleSubmit();
-        } else {
-          handleNext();
-        }
+        if (stepIndex > 0 && !submitting) handleBack();
+        return;
+      }
+      if (hasMultipleSteps && e.key === 'ArrowRight') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (currentStepAnswered && !isLastStep && !submitting) handleNext();
+        return;
+      }
+      if (
+        e.key === 'Enter'
+        && !e.isComposing
+        && primaryButtonRef.current === document.activeElement
+      ) {
+        const primaryButton = primaryButtonRef.current;
+        if (!primaryButton || primaryButton.disabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        primaryButton.click();
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [answers, handleNext, handleSkip, otherActive, otherText, request.questions.length, stepIndex, submitting]);
+  }, [collapsed, currentStepAnswered, handleBack, handleNext, hasMultipleSteps, isLastStep, stepIndex, submitting]);
 
-  const currentQuestion = request.questions[stepIndex];
   if (!currentQuestion) return null;
-  const hasMultipleSteps = request.questions.length > 1;
-  const isLastStep = stepIndex === request.questions.length - 1;
-  const currentStepAnswered = isQuestionAnswered(stepIndex);
+
+  if (collapsed) {
+    return (
+      <DecisionCollapsedBar
+        label={t.decisionCard.pendingLabel}
+        expandLabel={t.decisionCard.expand}
+        count={1}
+        onExpand={() => setCollapsed(false)}
+        testId="user-question-collapsed"
+      />
+    );
+  }
 
   return (
     <div className="w-full px-4 animate-slideUp" data-testid="user-question-card">
@@ -389,11 +428,11 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
               </Button>
             )}
             {isLastStep ? (
-              <Button size="sm" onClick={handleSubmit} disabled={!canSubmit() || submitting}>
+              <Button ref={primaryButtonRef} size="sm" onClick={handleSubmit} disabled={!canSubmit() || submitting}>
                 {t.userQuestion.submit}
               </Button>
             ) : (
-              <Button size="sm" onClick={handleNext} disabled={!currentStepAnswered || submitting}>
+              <Button ref={primaryButtonRef} size="sm" onClick={handleNext} disabled={!currentStepAnswered || submitting}>
                 {t.userQuestion.next}
               </Button>
             )}

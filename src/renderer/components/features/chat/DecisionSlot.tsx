@@ -6,13 +6,14 @@
 // PermissionCard 仍按请求 id 裁决并由 appStore 从原队列中移除。
 // ============================================================================
 
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import type { PermissionRequest } from '@shared/contract';
 import { isEditableTool } from '@shared/contract';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { PermissionCard } from '../../PermissionDialog/PermissionCard';
+import { DecisionCollapsedBar } from '../../DecisionCard';
 import { isDangerousCommand } from '../../PermissionDialog/utils';
 
 const GLOBAL_PERMISSION_SESSION_ID = 'global';
@@ -91,20 +92,42 @@ export function DecisionSlot() {
     currentSessionId,
   );
   const current = candidates[0];
+  const [collapsed, setCollapsed] = useState(false);
+  const requestSignature = candidates.map((candidate) => candidate.request.id).join('|');
+  const expand = useCallback(() => setCollapsed(false), []);
+
+  // 任何新请求进入可见队列都自动展开，包括当前卡未换但队尾新增的情况。
+  useEffect(() => {
+    if (requestSignature) setCollapsed(false);
+  }, [requestSignature]);
 
   if (!current) return null;
 
   return (
     <section
-      aria-label={t.decisionCard.permission.slotLabel}
+      aria-label={t.decisionCard.pendingLabel}
       className="w-full shrink-0 chat-col-pad pb-2"
       data-testid="decision-slot"
     >
-      <PermissionCard
-        requestOverride={current.request}
-        sessionIdOverride={current.sessionId}
-        remainingCount={candidates.length - 1}
-      />
+      {collapsed ? (
+        <div className="mx-auto flex max-w-3xl justify-end">
+          <DecisionCollapsedBar
+            label={t.decisionCard.pendingLabel}
+            expandLabel={t.decisionCard.expand}
+            count={candidates.length}
+            onExpand={expand}
+            className="w-auto"
+            testId="decision-slot-collapsed"
+          />
+        </div>
+      ) : (
+        <PermissionCard
+          requestOverride={current.request}
+          sessionIdOverride={current.sessionId}
+          remainingCount={candidates.length - 1}
+          onCollapse={() => setCollapsed(true)}
+        />
+      )}
     </section>
   );
 }

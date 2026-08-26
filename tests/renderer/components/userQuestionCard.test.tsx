@@ -2,7 +2,7 @@
 //
 // UserQuestionCard（G2 打断式选项卡）行为门：
 // - 未作答时提交禁用；单选/多选/「其他」自由文本的回答回传形状与旧 Modal 一致；
-// - 跳过（按钮 / Esc）回传 declined，可附原因；
+// - 跳过只由按钮回传 declined；Esc 收起、←/→ 在多题向导切题；
 // - 回答/跳过成功后从 pending 队列清除（composer 恢复）；IPC 失败不清除（可重试）。
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -262,18 +262,39 @@ describe('UserQuestionCard（G2 打断式选项卡）', () => {
     });
   });
 
-  it('Esc = 显式跳过（与权限卡 Esc=拒绝 同族）', async () => {
+  it('Esc 收起且不发 skip，点迷你条或再按 Esc 展开', () => {
     useSessionStore.getState().addPendingUserQuestion(makeRequest());
     render(<UserQuestionCard request={makeRequest()} />);
 
     fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByTestId('user-question-collapsed')).toBeTruthy();
+    expect(invokeMock).not.toHaveBeenCalled();
 
-    await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.USER_QUESTION_RESPONSE, {
-        requestId: 'q-1',
-        declined: true,
-      });
-    });
+    fireEvent.click(screen.getByTestId('user-question-collapsed'));
+    expect(screen.getByTestId('user-question-card')).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByTestId('user-question-card')).toBeTruthy();
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it('←/→ 在多题向导切题，未作答时 → 无效，单题不绑定', () => {
+    const view = render(<UserQuestionCard request={makeWizardRequest()} />);
+
+    fireEvent.keyDown(document, { key: 'ArrowRight' });
+    expect(screen.getByText('第一题选哪个？')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /A/u }));
+    fireEvent.keyDown(document, { key: 'ArrowRight' });
+    expect(screen.getByText('第二题选哪些？')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'ArrowLeft' });
+    expect(screen.getByText('第一题选哪个？')).toBeTruthy();
+
+    view.unmount();
+    render(<UserQuestionCard request={makeRequest()} />);
+    fireEvent.keyDown(document, { key: 'ArrowRight' });
+    expect(screen.getByText('选哪个方案？')).toBeTruthy();
   });
 
   it('IPC 失败不清队列（卡片留在原地可重试）', async () => {

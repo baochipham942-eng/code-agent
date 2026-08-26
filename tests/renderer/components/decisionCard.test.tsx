@@ -2,7 +2,7 @@
 //
 // DecisionCard（决策卡统一骨架）行为门：
 // - 未选中时确认禁用，选中后可确认；底部 ghost 取消 + primary 确认；
-// - 数字键 1-N 选中、Enter 确认、Esc 取消（输入框聚焦时不拦截）；
+// - 数字键 1-N 选中、Enter 执行聚焦主按钮、Esc 收起；
 // - danger 变体渲染警示行与红边。
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +25,7 @@ function renderCard(overrides: Partial<Parameters<typeof DecisionCard>[0]> = {})
     selectedId: null,
     onSelect: vi.fn(),
     onConfirm: vi.fn(),
+    onCollapse: vi.fn(),
     onCancel: vi.fn(),
     confirmLabel: '确认',
     cancelLabel: '取消',
@@ -58,7 +59,7 @@ describe('DecisionCard 统一骨架', () => {
     expect(props.onSelect).toHaveBeenCalledWith('approve');
   });
 
-  it('数字键选中选项、Enter 确认、Esc 取消', () => {
+  it('数字键选中选项、Enter 执行聚焦主按钮、Esc 只收起', () => {
     const props = renderCard({ selectedId: 'reject' });
 
     fireEvent.keyDown(window, { key: '1' });
@@ -68,7 +69,8 @@ describe('DecisionCard 统一骨架', () => {
     expect(props.onConfirm).toHaveBeenCalledTimes(1);
 
     fireEvent.keyDown(window, { key: 'Escape' });
-    expect(props.onCancel).toHaveBeenCalledTimes(1);
+    expect(props.onCollapse).toHaveBeenCalledTimes(1);
+    expect(props.onCancel).not.toHaveBeenCalled();
   });
 
   it('未选中时 Enter 不触发确认', () => {
@@ -77,7 +79,7 @@ describe('DecisionCard 统一骨架', () => {
     expect(props.onConfirm).not.toHaveBeenCalled();
   });
 
-  it('输入框聚焦时键盘不拦截', () => {
+  it('输入框聚焦时数字键/Enter 不拦截，Esc 仍收起', () => {
     const props = renderCard({
       selectedId: 'approve',
       footerExtra: <input aria-label="反馈" />,
@@ -90,6 +92,7 @@ describe('DecisionCard 统一骨架', () => {
 
     expect(props.onSelect).not.toHaveBeenCalled();
     expect(props.onConfirm).not.toHaveBeenCalled();
+    expect(props.onCollapse).toHaveBeenCalledTimes(1);
     expect(props.onCancel).not.toHaveBeenCalled();
   });
 
@@ -117,7 +120,7 @@ describe('DecisionCard 统一骨架', () => {
     expect(props.onCancel).toHaveBeenCalledTimes(1);
   });
 
-  it('contentEditable（neo composer）聚焦时数字键/Enter/Esc 都不吃（review P1）', () => {
+  it('contentEditable（neo composer）聚焦时数字键/Enter 不吃，Esc 收起', () => {
     const props = renderCard({ selectedId: 'approve' });
 
     // jsdom 未实现 isContentEditable，手动挂属性模拟真实浏览器行为
@@ -132,12 +135,13 @@ describe('DecisionCard 统一骨架', () => {
 
     expect(props.onSelect).not.toHaveBeenCalled();
     expect(props.onConfirm).not.toHaveBeenCalled();
+    expect(props.onCollapse).toHaveBeenCalledTimes(1);
     expect(props.onCancel).not.toHaveBeenCalled();
 
     composer.remove();
   });
 
-  it('textarea 内 Esc：不取消但吞掉冒泡（防 ChatView Esc+Esc rewind）（review P1）', () => {
+  it('textarea 内 Esc：收起且吞掉冒泡（防 ChatView Esc+Esc rewind）', () => {
     const props = renderCard({
       footerExtra: <textarea aria-label="反馈" />,
     });
@@ -149,6 +153,7 @@ describe('DecisionCard 统一骨架', () => {
     const textarea = screen.getByLabelText('反馈');
     fireEvent.keyDown(textarea, { key: 'Escape' });
 
+    expect(props.onCollapse).toHaveBeenCalledTimes(1);
     expect(props.onCancel).not.toHaveBeenCalled();
     expect(bubbleSpy).not.toHaveBeenCalled();
 
@@ -161,7 +166,17 @@ describe('DecisionCard 统一骨架', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.keyDown(window, { key: 'Enter' });
 
+    expect(props.onCollapse).not.toHaveBeenCalled();
     expect(props.onCancel).not.toHaveBeenCalled();
+    expect(props.onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('enterDisabled 即使主按钮已默认聚焦也不确认', () => {
+    const props = renderCard({ selectedId: 'approve', enterDisabled: true });
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '确认' }));
+    fireEvent.keyDown(window, { key: 'Enter' });
+
     expect(props.onConfirm).not.toHaveBeenCalled();
   });
 });

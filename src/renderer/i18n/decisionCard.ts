@@ -7,11 +7,12 @@
 export const decisionCardZh = {
   decisionCard: {
     confirm: '允许',
+    pendingLabel: '待你决定',
+    expand: '展开',
     dangerTitle: '危险操作',
     dangerCopy: '这是一个危险命令',
     dangerDefaultReason: '此操作可能导致数据丢失或系统损坏，请仔细确认后再执行。',
     permission: {
-      slotLabel: '待你决定',
       remainingCount: '还有 {count} 项',
       questionFileRead: '允许读取 {target}？',
       questionFileWrite: '允许写入 {target}？',
@@ -181,11 +182,12 @@ export const decisionCardZh = {
 export const decisionCardEn: typeof decisionCardZh = {
   decisionCard: {
     confirm: 'Allow',
+    pendingLabel: 'Needs your decision',
+    expand: 'Expand',
     dangerTitle: 'Dangerous operation',
     dangerCopy: 'This is a dangerous command',
     dangerDefaultReason: 'This operation may cause data loss or system damage. Confirm carefully before proceeding.',
     permission: {
-      slotLabel: 'Needs your decision',
       remainingCount: '{count} more',
       questionFileRead: 'Allow reading {target}?',
       questionFileWrite: 'Allow writing {target}?',

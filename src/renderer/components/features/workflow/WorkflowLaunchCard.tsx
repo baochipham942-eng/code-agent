@@ -10,14 +10,14 @@
 // （选中后才可点）。数据流/IPC 不变。
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { GitBranch, Cpu, Globe, Shield, Clock, AlertTriangle } from 'lucide-react';
 import { useWorkflowStore } from '../../../stores/workflowStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import { useI18n } from '../../../hooks/useI18n';
-import { DecisionCard, type DecisionOption } from '../../DecisionCard';
+import { DecisionCard, DecisionCollapsedBar, type DecisionOption } from '../../DecisionCard';
 
 function DimensionRow({ icon, label, text, warn }: { icon: React.ReactNode; label: string; text: string; warn?: boolean }) {
   return (
@@ -39,7 +39,14 @@ export function WorkflowLaunchCard() {
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
   // DecisionCard 选项行选中态：'approve' | 'reject'
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>('approve');
+  const [collapsed, setCollapsed] = useState(false);
+  const expand = useCallback(() => setCollapsed(false), []);
+
+  useEffect(() => {
+    setSelected('approve');
+    setCollapsed(false);
+  }, [request?.id]);
 
   const w = t.decisionCard.workflow;
 
@@ -73,6 +80,19 @@ export function WorkflowLaunchCard() {
   };
 
   if (!request) return null;
+
+  if (collapsed) {
+    return (
+      <DecisionCollapsedBar
+        label={t.decisionCard.pendingLabel}
+        expandLabel={t.decisionCard.expand}
+        count={1}
+        onExpand={expand}
+        className="chat-col-pad"
+        testId="workflow-launch-collapsed"
+      />
+    );
+  }
 
   const options: DecisionOption[] = [
     { id: 'approve', label: w.optionApprove, description: w.optionApproveDesc },
@@ -132,6 +152,7 @@ export function WorkflowLaunchCard() {
         if (selected === 'approve') void handleApprove();
         else if (selected === 'reject') void handleReject();
       }}
+      onCollapse={() => setCollapsed(true)}
       onCancel={() => void handleReject()}
       confirmLabel={t.decisionCard.confirm}
       cancelLabel={w.optionReject}

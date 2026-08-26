@@ -8,7 +8,7 @@
 // approve/reject 仍走 SWARM_APPROVE_LAUNCH / SWARM_REJECT_LAUNCH IPC。
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { GitBranch } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmLaunchRequest } from '@shared/contract/swarm';
@@ -16,13 +16,20 @@ import ipcService from '../../../services/ipcService';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { DecisionCard, type DecisionOption } from '../../DecisionCard';
+import { DecisionCard, DecisionCollapsedBar, type DecisionOption } from '../../DecisionCard';
 
 export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ request }) => {
   const { t } = useI18n();
   const [submitting, setSubmitting] = useState<'approve' | 'reject' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>('approve');
+  const [collapsed, setCollapsed] = useState(false);
+  const expand = useCallback(() => setCollapsed(false), []);
+
+  useEffect(() => {
+    setSelected('approve');
+    setCollapsed(false);
+  }, [request.id]);
 
   const s = t.decisionCard.swarm;
 
@@ -143,6 +150,18 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
     { id: 'reject', label: s.optionReject, description: s.optionRejectDesc },
   ];
 
+  if (collapsed) {
+    return (
+      <DecisionCollapsedBar
+        label={t.decisionCard.pendingLabel}
+        expandLabel={t.decisionCard.expand}
+        count={1}
+        onExpand={expand}
+        testId="swarm-launch-collapsed"
+      />
+    );
+  }
+
   return (
     <DecisionCard
       testId="swarm-launch-card"
@@ -163,6 +182,7 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
         if (selected === 'approve') void handleApprove();
         else if (selected === 'reject') void handleReject();
       }}
+      onCollapse={() => setCollapsed(true)}
       onCancel={() => void handleReject()}
       confirmLabel={t.decisionCard.confirm}
       cancelLabel={s.cancel}

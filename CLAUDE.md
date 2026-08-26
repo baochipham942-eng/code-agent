@@ -153,6 +153,21 @@ git tag -a v<version> -m "Release v<version>" && git push origin v<version>   # 
 
 ### 本地 dogfood 打包（仅自测，非发版）——默认走 Dev 测试包
 
+#### 呈现验证默认无槽无头
+
+卡片、logo、排序、文案和新会话 chip 等 renderer 呈现，默认用 worktree 自己的 webServer +
+Playwright headless 验证，不打 Tauri 包、不占 `NEO_SLOT`、不弹有头浏览器：
+
+```bash
+node scripts/verify-slotless.mjs <单号>
+node scripts/verify-shot.mjs "$NEO_VERIFY_URL" /tmp/neo-shot.png --viewport 1440x900 --wait '<selector>'
+node scripts/verify-slotless.mjs --stop "$NEO_VERIFY_DATA_DIR"
+```
+
+脚本从 `~/.ship/secrets/neo-dogfood.env` 读取唯一 dogfood 测试账号并自动登录；凭据缺失或权限不是
+600 时直接退出。只有启动、renderer 热更新、TCC、launchd 空 env、连接器 CLI 登录态和托盘等
+壳级项才进入下方 Dev 槽流程。
+
 **桌面行为验证一律默认 Dev 测试包**（`Agent Neo Dev.app`，8181 + `~/.code-agent-dev`）：与生产包同一构建链同一份代码（只差 identifier/端口/数据目录），Tauri 壳/launchd 空 env/bundle resources 全部真实，且与生产 app 并存同跑、生产 DB 零接触。生产包覆盖安装只在需要验**生产 identifier 的签名/LaunchServices/更新链路**时才用。
 
 ```bash

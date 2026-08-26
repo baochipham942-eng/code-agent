@@ -502,7 +502,7 @@ export function PermissionCard({
       : '');
     if (!expired && !settledExpanded) {
       return (
-        <div className="w-full px-4" data-testid="permission-card">
+        <div className="w-full chat-col-pad" data-testid="permission-card">
           <button /* ds-allow:button: 已决审批整行是展开热区，需保持单行摘要；Button primitive 会包裹 children 并改变截断布局。 */
             type="button"
             data-testid="permission-settled-summary"
@@ -573,7 +573,7 @@ export function PermissionCard({
         onConfirm={() => {}}
         confirmLabel={t.decisionCard.confirm}
         hideFooter
-        className="w-full px-4"
+        className="w-full chat-col-pad"
       />
     );
   }

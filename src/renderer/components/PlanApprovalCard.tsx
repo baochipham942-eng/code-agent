@@ -195,7 +195,7 @@ export const PlanApprovalCard: React.FC<{ target: PendingPlanApprovalTarget }> =
       <div
         ref={cardRef}
         tabIndex={-1}
-        className="mx-auto w-full max-w-3xl rounded-lg border-2 border-badge-info/60 bg-zinc-900 shadow-2xl outline-hidden"
+        className="mx-auto w-full max-w-3xl rounded-lg border-2 border-badge-info/60 bg-zinc-900 shadow-md dark:shadow-2xl outline-hidden"
       >
         <div className="flex items-center gap-2 rounded-t-lg border-b border-zinc-800 bg-blue-500/10 px-4 py-2.5">
           <ListChecks className="h-4 w-4 shrink-0 text-badge-info" />

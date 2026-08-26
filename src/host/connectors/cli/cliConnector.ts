@@ -143,6 +143,14 @@ function commandErrorCode(error: unknown): string | undefined {
   return jsonCode ?? raw.match(/(?:code|error_code)[=:\s]+([\w-]+)/iu)?.[1];
 }
 
+function systemErrorCode(error: unknown): string | undefined {
+  if (error && typeof error === 'object' && 'code' in error) return String(error.code);
+  if (error instanceof Error && error.cause && typeof error.cause === 'object' && 'code' in error.cause) {
+    return String(error.cause.code);
+  }
+  return undefined;
+}
+
 function matchesErrorMapping(error: unknown, mapping: CliErrorMapping): boolean {
   if (!(error instanceof CliConnectorCommandError)) return false;
   const code = commandErrorCode(error);
@@ -154,12 +162,10 @@ function matchesErrorMapping(error: unknown, mapping: CliErrorMapping): boolean 
 }
 
 function isMissingConfiguration(error: unknown, descriptor: CliConnectorDescriptor): boolean {
+  if (systemErrorCode(error) === 'ENOENT') return true;
   if (!(error instanceof CliConnectorCommandError)) return false;
   const raw = `${error.message}\n${error.stdout}\n${error.stderr}`;
-  const causeCode = error.cause && typeof error.cause === 'object' && 'code' in error.cause
-    ? String(error.cause.code)
-    : '';
-  return causeCode === 'ENOENT' || Boolean(descriptor.missingConfigurationPattern?.test(raw));
+  return Boolean(descriptor.missingConfigurationPattern?.test(raw));
 }
 
 function waitForChild(
@@ -240,11 +246,12 @@ export function createCliConnector(
   const binaryPath = path.join(packageDir, ...descriptor.binaryPath);
   const env = cleanEnvironment(options.env ?? process.env, descriptor);
   const timeoutMs = options.timeoutMs ?? OAUTH_FLOW_TIMEOUT_MS;
-  const statusTimeoutMs = options.statusTimeoutMs ?? STATUS_TIMEOUT_MS;
+  const statusTimeoutMs = options.statusTimeoutMs ?? descriptor.status.timeoutMs ?? STATUS_TIMEOUT_MS;
   const statusCacheTtlMs = options.statusCacheTtlMs ?? STATUS_CACHE_TTL_MS;
   const now = options.now ?? Date.now;
   const npmExecutable = options.npmExecutable ?? 'npm';
   let activeConnectProcess: RunningProcess | undefined;
+  let activeConnectPromise: Promise<{ alreadyConnected: boolean }> | undefined;
   let connectCancelled = false;
   const useSharedStatusCache = options.dataDir === undefined
     && options.env === undefined
@@ -334,6 +341,13 @@ export function createCliConnector(
   };
 
   const readFreshStatus = async (): Promise<CliConnectorStatus> => {
+    const startedAt = Date.now();
+    logger.info('CLI connector status probe started', {
+      providerId: descriptor.id,
+      command: descriptor.status.command.label,
+      timeoutMs: statusTimeoutMs,
+      binaryPath,
+    });
     try {
       const result = await runDescriptorCommand(
         descriptor.status.command,
@@ -361,6 +375,11 @@ export function createCliConnector(
       const openId = optionalString(userRoot, descriptor.status.user?.openIdPath);
       const name = optionalString(userRoot, descriptor.status.user?.namePath);
       const tenantName = optionalString(userRoot, descriptor.status.user?.tenantNamePath);
+      logger.info('CLI connector status probe completed', {
+        providerId: descriptor.id,
+        connected,
+        durationMs: Date.now() - startedAt,
+      });
       return {
         connected,
         identity,
@@ -373,16 +392,26 @@ export function createCliConnector(
         } : {}),
       };
     } catch (error) {
-      if (error instanceof CliConnectorTimeoutError) {
-        return {
-          ...(statusCache.value ?? {
-            connected: false,
-            identity: descriptor.status.disconnectedIdentity,
-          }),
-          stale: true,
-        };
+      const causeCode = systemErrorCode(error);
+      logger.warn('CLI connector status probe failed', {
+        providerId: descriptor.id,
+        durationMs: Date.now() - startedAt,
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        ...(error instanceof CliConnectorCommandError ? { exitCode: error.exitCode } : {}),
+        ...(causeCode ? { causeCode } : {}),
+        cachedStatusAvailable: Boolean(statusCache.value),
+      });
+      if (isMissingConfiguration(error, descriptor)) {
+        return { connected: false, identity: descriptor.status.disconnectedIdentity };
       }
-      return { connected: false, identity: descriptor.status.disconnectedIdentity };
+      return {
+        ...(statusCache.value ?? {
+          connected: false,
+          identity: descriptor.status.disconnectedIdentity,
+        }),
+        stale: true,
+      };
     }
   };
 
@@ -409,6 +438,7 @@ export function createCliConnector(
   const runPtyAuthStep = async (
     step: CliPtyUrlAuthStep,
     openExternal: (url: string) => void | Promise<void>,
+    onAuthorizationOpened?: () => void,
   ): Promise<{ output: string; openedUrl?: string }> => {
     const commandArgs = commandArguments(step.command);
     const ptyExecutable = binaryPath.endsWith('.js') ? process.execPath : binaryPath;
@@ -464,6 +494,7 @@ export function createCliConnector(
         openedUrl = matched;
         openPromise = Promise.resolve()
           .then(() => openExternal(matched))
+          .then(() => onAuthorizationOpened?.())
           .catch((error: unknown) => {
             openError = error;
             child.kill('SIGTERM');
@@ -511,12 +542,14 @@ export function createCliConnector(
     return new Error(mapping.message, { cause: error });
   };
 
-  const connect = async (
+  const connectOnce = async (
     openExternal: (url: string) => void | Promise<void>,
     onStep?: (step: 1 | 2) => void,
-  ): Promise<void> => {
+    onAuthorizationOpened?: () => void,
+  ): Promise<{ alreadyConnected: boolean }> => {
     invalidateStatusCache();
     connectCancelled = false;
+    let keepConfirmedStatus = false;
     const deadlineMs = Date.now() + timeoutMs;
     const assertNotCancelled = () => {
       if (connectCancelled) throw cancelledError();
@@ -524,6 +557,13 @@ export function createCliConnector(
     try {
       await ensureInstalled(true);
       assertNotCancelled();
+      if (descriptor.checkStatusBeforeAuth) {
+        const currentStatus = await status(true);
+        if (currentStatus.connected && !currentStatus.stale) {
+          keepConfirmedStatus = true;
+          return { alreadyConnected: true };
+        }
+      }
       for (const step of descriptor.authSteps) {
         if (step.kind === 'url' && step.skipIf) {
           try {
@@ -550,6 +590,7 @@ export function createCliConnector(
                 openedUrl = matched;
                 openPromise = Promise.resolve()
                   .then(() => openExternal(matched))
+                  .then(() => onAuthorizationOpened?.())
                   .catch((error: unknown) => {
                     openError = error;
                     child.kill('SIGTERM');
@@ -564,7 +605,11 @@ export function createCliConnector(
           }
           const matched = openedUrl ?? stripAnsi(result.stdout).match(step.urlPattern)?.[0];
           if (!matched) throw new Error(step.missingUrlMessage);
-          if (!openPromise) openPromise = Promise.resolve().then(() => openExternal(matched));
+          if (!openPromise) {
+            openPromise = Promise.resolve()
+              .then(() => openExternal(matched))
+              .then(() => onAuthorizationOpened?.());
+          }
           await openPromise;
           if (openError) throw new Error(step.openUrlErrorMessage, { cause: openError });
           continue;
@@ -577,6 +622,7 @@ export function createCliConnector(
           const verificationUrl = optionalString(payload, [step.verificationUrlField]);
           if (!deviceCode || !verificationUrl) throw new Error(step.missingDeviceCodeMessage);
           await openExternal(verificationUrl);
+          onAuthorizationOpened?.();
           assertNotCancelled();
           const followUpArgs = step.followUp.args.map((arg) => arg === step.deviceCodePlaceholder
             ? deviceCode
@@ -588,13 +634,21 @@ export function createCliConnector(
         let ptyError: unknown;
         let openedUrl: string | undefined;
         try {
-          const ptyResult = await runPtyAuthStep(step, openExternal);
+          const ptyResult = await runPtyAuthStep(step, openExternal, onAuthorizationOpened);
           openedUrl = ptyResult.openedUrl;
           if (!openedUrl) throw new Error(step.missingUrlMessage);
         } catch (error) {
           ptyError = error;
           if (error instanceof CliConnectorCommandError) {
-            openedUrl = stripAnsi(error.stdout).match(step.urlPattern)?.[0];
+            const commandOutput = stripAnsi(`${error.stdout}\n${error.stderr}`);
+            if (step.alreadyConnectedPattern?.test(commandOutput)) {
+              const confirmedStatus = await status(true);
+              if (confirmedStatus.connected && !confirmedStatus.stale) {
+                keepConfirmedStatus = true;
+                return { alreadyConnected: true };
+              }
+            }
+            openedUrl = commandOutput.match(step.urlPattern)?.[0];
           }
           if (!openedUrl) throw error;
         }
@@ -604,13 +658,27 @@ export function createCliConnector(
         if (ptyError) throw ptyError;
         throw new Error(`${descriptor.binaryName} authorization did not produce a connected status`);
       }
+      return { alreadyConnected: false };
     } catch (error) {
       if (connectCancelled) throw cancelledError();
       throw translateConnectionError(error);
     } finally {
       activeConnectProcess = undefined;
-      invalidateStatusCache();
+      if (!keepConfirmedStatus) invalidateStatusCache();
     }
+  };
+
+  const connect = (
+    openExternal: (url: string) => void | Promise<void>,
+    onStep?: (step: 1 | 2) => void,
+    onAuthorizationOpened?: () => void,
+  ): Promise<{ alreadyConnected: boolean }> => {
+    if (activeConnectPromise) return activeConnectPromise;
+    const nextConnect = connectOnce(openExternal, onStep, onAuthorizationOpened).finally(() => {
+      if (activeConnectPromise === nextConnect) activeConnectPromise = undefined;
+    });
+    activeConnectPromise = nextConnect;
+    return nextConnect;
   };
 
   const cancelConnect = (): void => {

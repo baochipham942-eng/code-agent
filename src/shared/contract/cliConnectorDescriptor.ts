@@ -33,6 +33,7 @@ interface CliPtyUrlAuthStep {
   openUrlErrorMessage: string;
   pollStatusAfterExit: boolean;
   pollIntervalMs: number;
+  alreadyConnectedPattern?: RegExp;
   step: 1 | 2;
 }
 
@@ -48,6 +49,7 @@ interface CliStatusDescriptor {
   identityPath?: readonly string[];
   disconnectedIdentity: string;
   connectedIdentity: string;
+  timeoutMs?: number;
   user?: {
     rootPath: readonly string[];
     openIdPath?: readonly string[];
@@ -101,6 +103,7 @@ export interface CliConnectorDescriptor {
     add?: Readonly<Record<string, string>>;
   };
   authSteps: readonly CliAuthStep[];
+  checkStatusBeforeAuth?: boolean;
   status: CliStatusDescriptor;
   logout: CliCommandDescriptor;
   missingConfigurationPattern?: RegExp;

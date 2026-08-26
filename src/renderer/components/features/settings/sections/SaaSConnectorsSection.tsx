@@ -41,6 +41,7 @@ interface ConnectorOAuthProviderStatus {
   loopbackRedirectUriSupport: LoopbackRedirectUriSupport;
   authMode: ConnectorAuthMode;
   step?: 1 | 2;
+  authorizationOpened?: boolean;
   blocked?: boolean;
   stale?: boolean;
   userName?: string;
@@ -94,6 +95,7 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     loopbackRedirectUriSupport,
     authMode,
     step,
+    authorizationOpened,
     blocked,
     stale,
     userName,
@@ -114,6 +116,7 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     || typeof authMode !== 'string'
     || !AUTH_MODE_VALUES.has(authMode as ConnectorAuthMode)
     || (step !== undefined && step !== 1 && step !== 2)
+    || (authorizationOpened !== undefined && typeof authorizationOpened !== 'boolean')
     || (blocked !== undefined && typeof blocked !== 'boolean')
     || (stale !== undefined && typeof stale !== 'boolean')
     || (userName !== undefined && typeof userName !== 'string')
@@ -132,6 +135,7 @@ function parseProviderStatus(value: unknown): ConnectorOAuthProviderStatus | nul
     loopbackRedirectUriSupport: loopbackRedirectUriSupport as LoopbackRedirectUriSupport,
     authMode: authMode as ConnectorAuthMode,
     ...(step === 1 || step === 2 ? { step } : {}),
+    ...(authorizationOpened === true ? { authorizationOpened: true } : {}),
     ...(typeof blocked === 'boolean' ? { blocked } : {}),
     ...(stale === true ? { stale: true } : {}),
     ...(typeof userName === 'string' && userName.trim() ? { userName } : {}),
@@ -165,6 +169,7 @@ function persistProviderStatuses(statuses: ConnectorOAuthProviderStatus[]): void
 }
 
 function resolveProviderState(status: ConnectorOAuthProviderStatus): ProviderPresentationState {
+  if (status.stale) return 'unavailable';
   if (isCliAuthMode(status.authMode)) {
     if (status.id === 'tmeet' && status.step === 1) return 'connecting_single';
     if (status.step === 1) return 'connecting_step_1';
@@ -291,6 +296,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
   const initialStatuses = useMemo(readCachedProviderStatuses, []);
   const [statuses, setStatuses] = useState<ConnectorOAuthProviderStatus[]>(initialStatuses);
   const statusesRef = useRef(initialStatuses);
+  const connectingProvidersRef = useRef(new Set<string>());
   const [loading, setLoading] = useState(initialStatuses.length === 0);
   const [statusInvalid, setStatusInvalid] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -302,7 +308,9 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [customAppOpen, setCustomAppOpen] = useState(false);
 
-  const refresh = useCallback(async (): Promise<ConnectorOAuthProviderStatus[] | null> => {
+  const refresh = useCallback(async (
+    clearError = true,
+  ): Promise<ConnectorOAuthProviderStatus[] | null> => {
     try {
       const payload = await ipcService.invokeDomain<unknown>(
         IPC_DOMAINS.CONNECTOR,
@@ -318,11 +326,11 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
       setStatuses(nextStatuses);
       persistProviderStatuses(nextStatuses);
       setStatusInvalid(false);
-      setError(null);
+      if (clearError) setError(null);
       return nextStatuses;
     } catch {
       setStatusInvalid(false);
-      setError(text.errors.loadFailed);
+      if (clearError) setError(text.errors.loadFailed);
       return null;
     } finally {
       setLoading(false);
@@ -336,10 +344,15 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
   useEffect(() => {
     if (!busyKey?.endsWith(':connect')) return;
     const timer = window.setInterval(() => {
-      void refresh();
+      void refresh(false).then((nextStatuses) => {
+        const tmeetStatus = nextStatuses?.find((status) => status.id === 'tmeet');
+        if (busyKey === 'tmeet:connect' && tmeetStatus?.authorizationOpened) {
+          setReceipt({ kind: 'info', text: text.toast.tmeetAuthorizationOpened });
+        }
+      });
     }, 250);
     return () => window.clearInterval(timer);
-  }, [busyKey, refresh]);
+  }, [busyKey, refresh, text.toast.tmeetAuthorizationOpened]);
 
   useEffect(() => {
     if (receipt?.kind !== 'success') return;
@@ -361,20 +374,21 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
       setError(text.errors.statusUnavailable);
       return;
     }
+    if (connectingProvidersRef.current.has(providerId)) return;
+    connectingProvidersRef.current.add(providerId);
 
     setBusyKey(`${providerId}:connect`);
     setError(null);
-    setReceipt({
-      kind: 'info',
-      text: providerId === 'tmeet' ? text.toast.tmeetAuthorizationOpened : text.toast.authorizationOpened,
-    });
+    setReceipt(providerId === 'tmeet'
+      ? null
+      : { kind: 'info', text: text.toast.authorizationOpened });
     if (isCliAuthMode(authMode)) {
       setStatuses((current) => current.map((status) => status.id === providerId
         ? { ...status, step: 1, blocked: false }
         : status));
     }
     try {
-      await ipcService.invokeDomain(
+      const connectResult = await ipcService.invokeDomain<unknown>(
         IPC_DOMAINS.CONNECTOR,
         'oauthConnect',
         { providerId, action, authMode },
@@ -388,7 +402,11 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
       }
       setReceipt({
         kind: 'success',
-        text: providerId === 'tmeet' ? text.toast.tmeetConnected : text.toast.connected,
+        text: providerId === 'tmeet'
+          ? isRecord(connectResult) && connectResult.alreadyConnected === true
+            ? text.toast.tmeetAlreadyConnected
+            : text.toast.tmeetConnected
+          : text.toast.connected,
       });
     } catch (caught) {
       setReceipt(null);
@@ -406,9 +424,15 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
       } else if (isRecord(caught) && caught.code === 'ADMIN_REQUIRED') {
         await refresh();
       } else {
-        setError(text.errors.connectFailed);
+        const reason = caught instanceof Error && caught.message.trim()
+          ? caught.message
+          : text.errors.connectFailed;
+        setError(providerId === 'tmeet'
+          ? text.errors.tmeetAuthorizationOpenFailed.replace('{reason}', reason)
+          : text.errors.connectFailed);
       }
     } finally {
+      connectingProvidersRef.current.delete(providerId);
       setBusyKey(null);
     }
   }, [refresh, text]);
@@ -509,6 +533,16 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
         >
           {receipt.kind === 'success' ? null : <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {receipt.text}
+        </div>
+      )}
+
+      {error && (
+        <div
+          role="alert"
+          data-testid="saas-connector-error"
+          className="col-span-full rounded-md border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-badge-danger"
+        >
+          {error}
         </div>
       )}
 
@@ -960,7 +994,6 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                 </div>
               )}
 
-              {error && <div className="text-xs text-badge-danger">{error}</div>}
             </div>
           );
         })()}

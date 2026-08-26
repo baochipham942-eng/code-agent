@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, GitBranch } from 'lucide-react';
 import type { QueuedInput } from '@shared/contract/queuedInput';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -120,8 +120,15 @@ export function QueuedInputTray({
                     </>
                   ) : (
                     <>
-                      <button /* ds-allow:button: 立即发送是行内主动作，需与编辑/撤回保持同一基线 */ type="button" className="rounded px-1.5 py-1 text-[11px] text-accent-accessible hover:text-accent-accessible/80" onClick={() => { void runAction('sendNow', item.id); }}>
-                        {copy.sendNow}
+                      <button /* ds-allow:button: 改道是队列条紧凑图标动作，Button primitive 最小尺寸会挤掉正文 */
+                        type="button"
+                        className="rounded p-1 text-accent-accessible hover:text-accent-accessible/80"
+                        title={copy.redirectNow}
+                        aria-label={copy.redirectNow}
+                        data-testid={`queued-input-redirect-${item.id}`}
+                        onClick={() => { void runAction('sendNow', item.id); }}
+                      >
+                        <GitBranch className="h-3.5 w-3.5" aria-hidden />
                       </button>
                       <button /* ds-allow:button: 普通行内编辑与其他文字动作同密度排列 */ type="button" className="rounded px-1.5 py-1 text-[11px] text-zinc-400 hover:text-zinc-200" onClick={() => onEdit(item)}>
                         {copy.edit}

@@ -286,7 +286,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       // 三重检查: isComposing (标准) + compositionEnd ref (兼容搜狗/百度) + keyCode 229 (IME 标准信号)
       if (e.key === 'Enter' && !e.shiftKey && !isIme) {
         e.preventDefault();
-        if (e.altKey) {
+        if (e.metaKey || e.ctrlKey) {
           onSubmit({ steer: true });
         } else {
           onSubmit();

@@ -206,12 +206,39 @@ describe('A · 层1 工具汇总句（可展开逐条明细）', () => {
     const rows = await screen.findAllByTestId('inspector-activity-detail-row');
     expect(rows).toHaveLength(5);
     expect(rows.map((row) => row.textContent)).toEqual([
-      expect.stringContaining('Read'),
-      expect.stringContaining('Grep'),
-      expect.stringContaining('Read'),
-      expect.stringContaining('Bash'),
-      expect.stringContaining('Bash'),
+      expect.stringContaining('读取了一个文件'),
+      expect.stringContaining('搜索了内容'),
+      expect.stringContaining('读取了一个文件'),
+      expect.stringContaining('运行了一条命令'),
+      expect.stringContaining('运行了一条命令'),
     ]);
+    expect(rows.map((row) => row.textContent).join('\n')).not.toMatch(/\b(?:Read|Grep|Bash)\b/);
+  });
+
+  it('明细行对工具名和未分类错误统一说人话', async () => {
+    traceApi.read = readWith([
+      event('tool_dispatch', {
+        toolName: 'TaskManager', success: true, durationMs: 8, error: null, fromCache: false,
+      }, 1, 1100),
+      event('tool_dispatch', {
+        toolName: 'futureCamelTool',
+        success: false,
+        durationMs: 12,
+        error: '[cancelled] VendorRouterError at internal.ts:18',
+        fromCache: false,
+      }, 1, 1200),
+      outcome('n_a', 'failed', 2000),
+    ]);
+    render(<SessionInspector />);
+    fireEvent.click(await screen.findByTestId('inspector-activity-detail-toggle'));
+    const text = (await screen.findByTestId('inspector-activity-detail')).textContent ?? '';
+    expect(text).toContain('更新了任务');
+    expect(text).toContain('执行了一个步骤');
+    expect(text).toContain('执行时出了问题');
+    expect(text).not.toContain('TaskManager');
+    expect(text).not.toContain('futureCamelTool');
+    expect(text).not.toContain('[cancelled]');
+    expect(text).not.toContain('VendorRouterError');
   });
 
   it('单工具轮不聚合、无明细入口（保持原样）', async () => {

@@ -42,4 +42,26 @@ describe('TraceNodeRenderer 系统错误节点 — 两层人话化', () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain(raw);
   });
+
+  it('语音任务失败使用固定人话摘要，不把 host 英文原串当标题', () => {
+    const raw = 'Voice-dispatched task failed: quota exceeded at InternalVoiceRouter';
+    const node = {
+      ...makeErrorNode(raw),
+      metadata: {
+        source: 'voice',
+        voiceWorkFailure: {
+          workItemId: 'voice-work-1',
+          title: '建 test3.txt',
+          detail: raw,
+        },
+      },
+    } as TraceNode;
+    const html = renderToStaticMarkup(
+      React.createElement(TraceNodeRenderer, { node }),
+    );
+
+    expect(html).toContain('语音任务没有完成');
+    expect(html).toContain('改用文字继续');
+    expect(html).not.toContain(raw);
+  });
 });

@@ -914,8 +914,10 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   const humanized = failureDetail === undefined ? humanizeToolError(node.content, undefined, t) : null;
   const summary = failureDetail === undefined
     ? humanized?.summary ?? t.systemError.fallbackSummary
-    : node.content;
-  const detail = failureDetail === undefined ? humanized?.detail ?? t.systemError.fallbackDetail : undefined;
+    : t.rendererHumanPipe.systemError.voiceFailureSummary;
+  const detail = failureDetail === undefined
+    ? humanized?.detail ?? t.systemError.fallbackDetail
+    : t.rendererHumanPipe.systemError.voiceFailureDetail;
   const expandableDetail = failureDetail ?? node.content;
 
   return (

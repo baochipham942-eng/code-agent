@@ -38,14 +38,17 @@ export function buildSessionStatusFilterLabels(t: Translations): Record<SessionS
   };
 }
 
-export const TRAJECTORY_TIER_FILTER_OPTIONS: Array<{
+export function buildTrajectoryTierFilterOptions(t: Translations): Array<{
   id: AgentTrajectoryQualityTier;
   label: string;
-}> = [
-  { id: 'G2', label: 'G2 Core' },
-  { id: 'G1', label: 'G1 Diagnostic' },
-  { id: 'G0', label: 'G0 Diagnostic' },
-];
+}> {
+  const f = t.sidebarFilters;
+  return [
+    { id: 'G2', label: f.trajectoryTierCore },
+    { id: 'G1', label: f.trajectoryTierDiagnostic },
+    { id: 'G0', label: f.trajectoryTierInsufficient },
+  ];
+}
 
 export function buildTrajectoryFailureFilterOptions(t: Translations): Array<{
   id: AgentTrajectoryGateFailure;

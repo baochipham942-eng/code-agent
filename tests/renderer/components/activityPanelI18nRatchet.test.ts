@@ -35,6 +35,12 @@ function keyPaths(value: unknown, prefix = ''): string[] {
     keyPaths(child, prefix ? `${prefix}.${key}` : key));
 }
 
+function leafStrings(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.values(value as Record<string, unknown>).flatMap(leafStrings);
+}
+
 describe('Activity 面板 i18n 棘轮', () => {
   it('MIGRATED 清单内的文件都存在', () => {
     for (const rel of MIGRATED) {
@@ -60,5 +66,10 @@ describe('Activity 面板 i18n 棘轮', () => {
   it('zh/en 词条键结构成对', () => {
     expect(keyPaths(activityPanelEn.activityPanel).sort())
       .toEqual(keyPaths(activityPanelZh.activityPanel).sort());
+  });
+
+  it('用户标签不再暴露采集和注入实现术语', () => {
+    const copy = leafStrings(activityPanelZh.activityPanel).join('\n');
+    expect(copy).not.toMatch(/ActivityContext|provider|prompt|evidence ref|<screen-memory>|<desktop-activity-context>|Tauri|Native Desktop/i);
   });
 });

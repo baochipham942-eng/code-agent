@@ -57,6 +57,7 @@ import {
   buildSessionStatusFilterLabels,
   buildTrajectoryFailureFilterOptions,
   buildTrajectoryReviewFilterLabels,
+  buildTrajectoryTierFilterOptions,
 } from './features/sidebar/sidebarFilterOptions';
 import type { StructuredReplay } from '@shared/contract/evaluation';
 import type {
@@ -507,7 +508,9 @@ export const Sidebar: React.FC = () => {
   const hasSearchFilters = Boolean(searchQuery.trim()) || sessionStatusFilter !== 'all' || hasActiveTrajectoryFilter;
   const canSearchCurrentProject = currentProjectSearchSessionIds.size > 0;
   const activeTrajectoryFilterLabel = [
-    trajectoryTierFilter !== 'all' ? trajectoryTierFilter : null,
+    trajectoryTierFilter !== 'all'
+      ? (buildTrajectoryTierFilterOptions(t).find((option) => option.id === trajectoryTierFilter)?.label ?? null)
+      : null,
     trajectoryReviewFilter !== 'all' ? buildTrajectoryReviewFilterLabels(t)[trajectoryReviewFilter] : null,
     trajectoryFailureFilter !== 'all'
       ? (buildTrajectoryFailureFilterOptions(t).find((option) => option.id === trajectoryFailureFilter)?.label ??
@@ -671,6 +674,7 @@ export const Sidebar: React.FC = () => {
                 hasActiveTrajectoryFilter={hasActiveTrajectoryFilter}
                 hasActiveStatusDropdownFilter={hasActiveStatusDropdownFilter}
                 activeStatusFilterLabel={activeStatusFilterLabel}
+                showTrajectoryFilters={isVerifiedAdmin}
               />
             )}
             </>

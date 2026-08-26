@@ -1,35 +1,48 @@
 import React, { useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { parseModelFallbackNotice } from '../fallbackNotice';
-import type { ModelFallbackStrategy, ModelFallbackToolPolicy, ModelFallbackTraceStep, ModelProviderIdentity } from '@shared/contract/modelDecision';
+import type {
+  ModelFallbackStrategy,
+  ModelFallbackToolPolicy,
+  ModelFallbackTraceStep,
+  ModelProviderIdentity,
+} from '@shared/contract/modelDecision';
+import { useI18n } from '../../../../hooks/useI18n';
+import type { Translations } from '../../../../i18n';
+import { getHumanToolLabel } from '../../../../utils/toolHumanLabel';
+
+type FallbackCopy = Translations['rendererHumanPipe']['fallbackBanner'];
 
 function formatStepTarget(step: ModelFallbackTraceStep): string {
   return step.model ? `${step.provider}/${step.model}` : step.provider;
 }
 
-function stepTitle(step: ModelFallbackTraceStep): string {
+function stepTitle(step: ModelFallbackTraceStep, copy: FallbackCopy): string {
   return [
     formatStepTarget(step),
-    formatProviderIdentity(step.providerIdentity),
+    formatProviderIdentity(step.providerIdentity, copy),
     step.reason,
     step.detail,
   ].filter(Boolean).join(' · ');
 }
 
-function formatProviderIdentity(identity: ModelProviderIdentity | undefined): string | null {
+function formatProviderIdentity(
+  identity: ModelProviderIdentity | undefined,
+  copy: FallbackCopy,
+): string | null {
   if (!identity) return null;
   const parts = [
     identity.sourceLabel
-      ? `来源 ${identity.sourceLabel}`
+      ? `${copy.source} ${identity.sourceLabel}`
       : identity.displayName
-        ? `名称 ${identity.displayName}`
+        ? `${copy.name} ${identity.displayName}`
         : null,
     identity.transportLabel
-      ? `协议 ${identity.transportLabel}`
+      ? `${copy.protocol} ${identity.transportLabel}`
       : identity.protocol
-        ? `协议 ${identity.protocol}`
+        ? `${copy.protocol} ${identity.protocol}`
         : null,
-    identity.endpoint ? `endpoint ${identity.endpoint}` : null,
+    identity.endpoint ? `${copy.endpoint} ${identity.endpoint}` : null,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(' · ') : null;
 }
@@ -41,13 +54,31 @@ const stepTone: Record<ModelFallbackTraceStep['status'], string> = {
   exhausted: 'border-red-500/30 bg-red-500/10 text-badge-danger',
 };
 
-const STRATEGY_LABELS: Record<ModelFallbackStrategy, string> = {
-  'adaptive-provider-fallback': '自动策略恢复',
-  'adaptive-capability-fallback': '能力自动切换',
-  'adaptive-main-task-recovery': '回到主任务模型',
-};
+function strategyLabel(strategy: ModelFallbackStrategy, copy: FallbackCopy): string {
+  switch (strategy) {
+    case 'adaptive-provider-fallback':
+      return copy.strategies.provider;
+    case 'adaptive-capability-fallback':
+      return copy.strategies.capability;
+    case 'adaptive-main-task-recovery':
+      return copy.strategies.mainTask;
+  }
+}
 
-const renderStepGroup = (label: string, steps: ModelFallbackTraceStep[]) => {
+function humanizeFallbackReason(category: string | undefined, copy: FallbackCopy): string {
+  const normalized = (category || '').toLowerCase();
+  if (normalized.includes('capability') || normalized.includes('vision')) return copy.reasons.capability;
+  if (normalized.includes('quota') || normalized.includes('balance')) return copy.reasons.quota;
+  if (normalized.includes('auth') || normalized.includes('key')) return copy.reasons.auth;
+  if (normalized.includes('timeout')) return copy.reasons.timeout;
+  if (normalized.includes('network') || normalized.includes('connect')) return copy.reasons.network;
+  if (normalized.includes('provider') || normalized.includes('unavailable') || normalized.includes('overload')) {
+    return copy.reasons.providerUnavailable;
+  }
+  return copy.reasons.generic;
+}
+
+function renderStepGroup(label: string, steps: ModelFallbackTraceStep[], copy: FallbackCopy) {
   if (steps.length === 0) return null;
   return (
     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px]">
@@ -55,7 +86,7 @@ const renderStepGroup = (label: string, steps: ModelFallbackTraceStep[]) => {
       {steps.map((step, index) => (
         <span
           key={`${step.status}-${step.provider}-${step.model || ''}-${index}`}
-          title={stepTitle(step)}
+          title={stepTitle(step, copy)}
           className={`max-w-[220px] truncate rounded border px-1.5 py-0.5 font-mono ${stepTone[step.status]}`}
         >
           {formatStepTarget(step)}
@@ -63,26 +94,29 @@ const renderStepGroup = (label: string, steps: ModelFallbackTraceStep[]) => {
       ))}
     </div>
   );
-};
+}
 
-function renderToolPolicy(policy: ModelFallbackToolPolicy | undefined) {
+function renderToolPolicy(
+  policy: ModelFallbackToolPolicy | undefined,
+  copy: FallbackCopy,
+  t: Translations,
+) {
   if (policy?.status !== 'disabled' || policy.originalToolCount <= policy.effectiveToolCount) return null;
-  const names = policy.disabledToolNames ?? [];
+  const names = (policy.disabledToolNames ?? []).map((toolName) => getHumanToolLabel({
+    toolName,
+    labels: t.receiptPresentation.humanToolLabels,
+  }));
   const preview = names.slice(0, 4).join(', ');
   const suffix = names.length > 4 ? ` +${names.length - 4}` : '';
-  const title = [
-    policy.detail,
-    names.length > 0 ? `disabled: ${names.join(', ')}` : undefined,
-  ].filter(Boolean).join(' · ');
 
   return (
-    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px]" title={title || undefined}>
-      <span className="text-zinc-500">工具已关闭</span>
+    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px]">
+      <span className="text-zinc-500">{copy.toolsDisabled}</span>
       <span className="rounded border border-badge-warning/25 bg-orange-500/10 px-1.5 py-0.5 text-badge-warning">
         {policy.originalToolCount} → {policy.effectiveToolCount}
       </span>
       {preview && (
-        <span className="max-w-[260px] truncate font-mono text-zinc-400">
+        <span className="max-w-[260px] truncate text-zinc-400" title={copy.hiddenTools}>
           {preview}{suffix}
         </span>
       )}
@@ -90,30 +124,30 @@ function renderToolPolicy(policy: ModelFallbackToolPolicy | undefined) {
   );
 }
 
-function renderIdentityLine(fromIdentity: ModelProviderIdentity | undefined, toIdentity: ModelProviderIdentity | undefined) {
-  const from = formatProviderIdentity(fromIdentity);
-  const to = formatProviderIdentity(toIdentity);
+function renderIdentityLine(
+  fromIdentity: ModelProviderIdentity | undefined,
+  toIdentity: ModelProviderIdentity | undefined,
+  copy: FallbackCopy,
+) {
+  const from = formatProviderIdentity(fromIdentity, copy);
+  const to = formatProviderIdentity(toIdentity, copy);
   if (!from && !to) return null;
 
   return (
-    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-zinc-500">
-      {from && (
-        <span className="min-w-0 truncate" title={from}>
-          原 {from}
-        </span>
-      )}
-      {from && to && <span className="text-zinc-700">/</span>}
-      {to && (
-        <span className="min-w-0 truncate text-zinc-400" title={to}>
-          现 {to}
-        </span>
-      )}
+    <div className="mt-1 space-y-0.5 text-[10px] text-zinc-500">
+      {from && <div className="min-w-0 truncate" title={from}>{copy.fromModel} · {from}</div>}
+      {to && <div className="min-w-0 truncate" title={to}>{copy.currentModel} · {to}</div>}
     </div>
   );
 }
 
-export const FallbackBanner: React.FC<{ content: string; defaultExpanded?: boolean }> = ({ content, defaultExpanded = false }) => {
+export const FallbackBanner: React.FC<{ content: string; defaultExpanded?: boolean }> = ({
+  content,
+  defaultExpanded = false,
+}) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const { t } = useI18n();
+  const copy = t.rendererHumanPipe.fallbackBanner;
   const notice = parseModelFallbackNotice(content);
   if (!notice) return null;
   const tried = notice.tried?.filter((step) => step.status === 'tried') ?? [];
@@ -131,36 +165,41 @@ export const FallbackBanner: React.FC<{ content: string; defaultExpanded?: boole
       >
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-badge-warning" />
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium text-badge-warning">模型已降级</div>
-          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-zinc-400">
-            <span className="max-w-full truncate font-mono text-zinc-300">{notice.from}</span>
-            <span className="text-zinc-600">-&gt;</span>
-            <span className="max-w-full truncate font-mono text-zinc-300">{notice.to}</span>
-            <span className="text-zinc-600">·</span>
-            <span className="min-w-0 truncate text-badge-warning/80">{notice.reason}</span>
+          <div className="text-xs font-medium text-badge-warning">{copy.summary}</div>
+          <div className="mt-0.5 text-[11px] text-zinc-400">
+            {humanizeFallbackReason(notice.category, copy)}
           </div>
         </div>
-        {expanded ? (
-          <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-warning" />
-        ) : (
-          <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-warning" />
-        )}
+        {expanded
+          ? <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-warning" />
+          : <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-warning" />}
       </button>
       {expanded && (
-        <div className="min-w-0 px-3 pb-2">
+        <div className="min-w-0 px-3 pb-2" data-testid="fallback-diagnostics">
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">{copy.switchDetails}</div>
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] text-zinc-500">
+            <span>{copy.fromModel}</span>
+            <span className="max-w-[180px] truncate font-mono text-zinc-400">{notice.from}</span>
+            <span>→</span>
+            <span>{copy.currentModel}</span>
+            <span className="max-w-[180px] truncate font-mono text-zinc-400">{notice.to}</span>
+          </div>
+          <div className="mt-1 truncate text-[10px] text-zinc-600" title={notice.reason}>
+            {copy.rawReason} · {notice.reason}
+          </div>
           {notice.strategy && (
             <div className="mt-1">
               <span className="rounded border border-badge-warning/20 bg-amber-400/10 px-1.5 py-0.5 text-[10px] leading-none text-badge-warning">
-                {STRATEGY_LABELS[notice.strategy]}
+                {strategyLabel(notice.strategy, copy)}
               </span>
             </div>
           )}
-          {renderIdentityLine(notice.fromIdentity, notice.toIdentity)}
-          {renderStepGroup('已尝试', tried)}
-          {renderStepGroup('已跳过', skipped)}
-          {renderStepGroup('已选用', selected)}
-          {renderStepGroup('已耗尽', exhausted)}
-          {renderToolPolicy(notice.toolPolicy)}
+          {renderIdentityLine(notice.fromIdentity, notice.toIdentity, copy)}
+          {renderStepGroup(copy.tried, tried, copy)}
+          {renderStepGroup(copy.skipped, skipped, copy)}
+          {renderStepGroup(copy.selected, selected, copy)}
+          {renderStepGroup(copy.exhausted, exhausted, copy)}
+          {renderToolPolicy(notice.toolPolicy, copy, t)}
         </div>
       )}
     </div>

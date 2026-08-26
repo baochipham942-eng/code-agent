@@ -23,6 +23,14 @@ import { useI18n } from '../../../hooks/useI18n';
 import { fill } from './format';
 import type { TurnSegment } from './model';
 import { TurnDevtools } from './turnDevtools';
+import { humanizeToolStep } from '../../../utils/humanizeToolStep';
+import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
+import type { Translations } from '../../../i18n';
+
+function humanizeDispatchTool(toolName: string, t: Translations): string {
+  const label = humanizeToolStep(toolName, undefined, t);
+  return label.includes(toolName) ? t.rendererHumanPipe.sessionInspector.genericTool : label;
+}
 
 // ── 印章 chip：verified / self_claimed 可区分但不刺眼；n_a 按终态说人话 ────
 
@@ -149,8 +157,12 @@ function TurnActivitySummary({ segment }: { segment: TurnSegment }) {
             <div key={index} className="flex items-baseline gap-2" data-testid="inspector-activity-detail-row">
               <span className={`h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full ${row.success ? 'bg-badge-success' : 'bg-badge-danger'}`} />
               <span className="shrink-0 text-zinc-500">{detail.bucketLabel[row.bucket]}</span>
-              <span className="font-mono text-[10px] text-zinc-400">{row.toolName}</span>
-              {!row.success && <span className="text-badge-danger">{row.error ?? ''}</span>}
+              <span className="text-[10px] text-zinc-400">{humanizeDispatchTool(row.toolName, t)}</span>
+              {!row.success && (
+                <span className="text-badge-danger">
+                  {humanizeToolError(row.error ?? undefined, row.toolName, t)?.summary ?? t.systemError.fallbackSummary}
+                </span>
+              )}
               {row.durationMs !== null && (
                 <span className="ml-auto text-zinc-600">{Math.round(row.durationMs)} ms</span>
               )}

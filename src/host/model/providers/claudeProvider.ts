@@ -264,7 +264,7 @@ function claudeSSEStream(options: {
                   result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
                     id: tc.id,
                     name: tc.name,
-                    ...extractToolCallMeta(safeJsonParse(tc.arguments)),
+                    ...extractToolCallMeta(safeJsonParse(tc.arguments), tc.name),
                   }));
                 }
                 if (contentParts.length > 1 || (contentParts.length === 1 && toolCalls.size > 0 && content)) {
@@ -319,7 +319,7 @@ function claudeSSEStream(options: {
             result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
               id: tc.id,
               name: tc.name,
-              ...extractToolCallMeta(safeJsonParse(tc.arguments)),
+              ...extractToolCallMeta(safeJsonParse(tc.arguments), tc.name),
             }));
           }
           if (contentParts.length > 1 || (contentParts.length === 1 && toolCalls.size > 0 && content)) {

@@ -51,7 +51,7 @@ function functionCallsOf(output: unknown[]): ToolCall[] {
     calls.push({
       id: typeof record.call_id === 'string' ? record.call_id : typeof record.id === 'string' ? record.id : `call_${calls.length}`,
       name: normalizeToolName(record.name),
-      ...extractToolCallMeta(argumentsObject),
+      ...extractToolCallMeta(argumentsObject, normalizeToolName(record.name)),
     });
   }
   return calls;

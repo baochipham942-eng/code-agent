@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { buildToolCallFromAccumulator, handleGeminiStream } from '../../src/host/model/providers/shared';
 import { parseClaudeResponse } from '../../src/host/model/providers/wrappers/anthropicWrapper';
 import { parseGeminiResponse } from '../../src/host/model/providers/wrappers/geminiWrapper';
 import { parseOpenAIResponse } from '../../src/host/model/providers/wrappers/openaiWrapper';
+import { setProtocolToolRegistryPort } from '../../src/host/tools/protocolToolRegistration';
+import { tmeetMeetingCreateSchema } from '../../src/host/tools/modules/connectors/tmeetMeetingCreate.schema';
+import { tmeetMeetingListSchema } from '../../src/host/tools/modules/connectors/tmeetMeetingList.schema';
+import { tmeetMeetingSearchSchema } from '../../src/host/tools/modules/connectors/tmeetMeetingSearch.schema';
 
 const metaShapes: Array<{ name: string; value: unknown; semantic?: boolean }> = [
   {
@@ -150,6 +154,31 @@ describe.each(metaShapes)('tool-call _meta chokepoint / $name', ({ value, semant
 });
 
 describe('schema-level narration routing', () => {
+  beforeAll(() => {
+    const schemas = [
+      tmeetMeetingListSchema,
+      tmeetMeetingCreateSchema,
+      tmeetMeetingSearchSchema,
+    ];
+    setProtocolToolRegistryPort({
+      register: () => undefined,
+      unregister: () => false,
+      has: (name) => schemas.some((schema) => schema.name === name),
+      getSchemas: () => schemas,
+      resolve: async () => { throw new Error('unused in this test'); },
+    });
+  });
+
+  afterAll(() => {
+    setProtocolToolRegistryPort({
+      register: () => undefined,
+      unregister: () => false,
+      has: () => false,
+      getSchemas: () => [],
+      resolve: async () => { throw new Error('reset test registry'); },
+    });
+  });
+
   it('routes Bash args.description into the existing shortDescription UI channel', () => {
     const result = buildToolCallFromAccumulator({
       id: 'bash-1',
@@ -167,5 +196,20 @@ describe('schema-level narration routing', () => {
       arguments: JSON.stringify({ description: '统计三个配置文件行数' }),
     });
     expect(result.shortDescription).toBeUndefined();
+  });
+
+  it.each([
+    ['tmeetMeetingList', { scope: 'upcoming' }, 'tmeetMeetingListUpcoming'],
+    ['tmeetMeetingList', { scope: 'ended' }, 'tmeetMeetingListEnded'],
+    ['tmeetMeetingCreate', {}, 'tmeetMeetingCreate'],
+    ['tmeetMeetingSearch', {}, 'tmeetMeetingSearch'],
+  ] as const)('copies %s schema stepLabel into ToolCall', (name, args, stepLabel) => {
+    const result = buildToolCallFromAccumulator({
+      id: `schema-${name}`,
+      name,
+      arguments: JSON.stringify(args),
+    });
+
+    expect(result.stepLabel).toBe(stepLabel);
   });
 });

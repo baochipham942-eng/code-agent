@@ -210,6 +210,7 @@ toolGroup: {
   summaryEmpty: '{count} 空结果',
   summaryCompleted: '{count} 完成',
   completedSteps: '已完成 {count} 步',
+  executedSteps: '执行了 {count} 个步骤',
   // 这一屏原来有两套没说明的时间（轮「用时 30s」vs 每个工具裸的「2.6s」）。
   // 现在只剩轮级和组级两层，各自都带说明。
   durationTitle: '这几步用时',
@@ -218,6 +219,8 @@ toolGroup: {
 // 工具步骤人话化（humanizeToolStep.ts）——把工具名+参数合成一句中文步骤文案，
 // 消费方 ToolStepGroup 的步骤行；原工具名/参数仍在展开详情（ToolHeader/ToolDetails）里，不删信息。
 toolStepHumanize: {
+  declared: { tmeetMeetingListUpcoming: '查了待开始/进行中的会议', tmeetMeetingListEnded: '查了近 30 天已结束的会议',
+    tmeetMeetingCreate: '创建了一场会议', tmeetMeetingSearch: '搜索了会议' },
   read: '读取了 {target}',
   readFallback: '读取了一个文件',
   write: '写入了 {target}',
@@ -267,7 +270,7 @@ toolStepHumanize: {
   memorySearch: '搜索了记忆',
   // 纯内部动作（ToolSearch）：只进展开明细，不进主流聚合
   toolSearch: '查找了可用工具',
-  // 未知工具主行：带上工具名，否则失败时纯占位没有信息量；
+  // 未知工具主行：带上统一人话名，否则失败时纯占位没有信息量；
   // 纯内部动作（isInternalStreamTool）仍走 fallback 不露内部名
   fallback: '执行了一个步骤',
   fallbackWithTool: '{tool} 执行了一个步骤',
@@ -765,6 +768,7 @@ toolGroup: {
   summaryEmpty: '{count} empty',
   summaryCompleted: '{count} completed',
   completedSteps: '{count} steps completed',
+  executedSteps: 'Ran {count} steps',
   durationTitle: 'Time these steps took',
 },
 
@@ -772,6 +776,8 @@ toolGroup: {
 // summary of a tool call from its name + args; consumed by ToolStepGroup's step row.
 // The raw tool name/args still show in the expanded detail (ToolHeader/ToolDetails).
 toolStepHumanize: {
+  declared: { tmeetMeetingListUpcoming: 'Checked upcoming/in-progress meetings', tmeetMeetingListEnded: 'Checked meetings ended in the last 30 days',
+    tmeetMeetingCreate: 'Created a meeting', tmeetMeetingSearch: 'Searched meetings' },
   read: 'Read {target}',
   readFallback: 'Read a file',
   write: 'Wrote {target}',
@@ -821,7 +827,7 @@ toolStepHumanize: {
   memorySearch: 'Searched memory',
   // Internal-only (ToolSearch): expanded detail only, never main-stream aggregate
   toolSearch: 'Looked up available tools',
-  // Unknown tools: main line carries the tool name — a bare placeholder says
+  // Unknown tools: main line carries the shared human label — a bare placeholder says
   // nothing when the call fails. Pure internal actions (isInternalStreamTool)
   // still use the nameless fallback.
   fallback: 'Ran a step',

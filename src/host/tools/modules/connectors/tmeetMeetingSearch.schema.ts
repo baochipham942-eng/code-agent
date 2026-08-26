@@ -2,6 +2,7 @@ import type { ToolSchema } from '../../../protocol/tools';
 
 export const tmeetMeetingSearchSchema: ToolSchema = {
   name: 'tmeetMeetingSearch',
+  stepLabel: { default: 'tmeetMeetingSearch' },
   description: `Search Tencent Meetings through the official tmeet CLI by keyword, exact numeric meeting code, or time window.
 
 Use this tool when the user gives a meeting subject/creator/note keyword, asks to find a meeting, or provides a meeting code. A time window matches when the scheduled start, actual start, or the user's join time falls within it. For time-only requests, prefer tmeetMeetingList with the appropriate upcoming/ended scope.`,

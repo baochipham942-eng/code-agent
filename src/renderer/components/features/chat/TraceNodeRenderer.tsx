@@ -446,6 +446,7 @@ const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node,
     arguments: node.toolCall.args,
     _streaming: node.toolCall._streaming,
     shortDescription: node.toolCall.shortDescription,
+    stepLabel: node.toolCall.stepLabel,
     targetContext: node.toolCall.targetContext,
     expectedOutcome: node.toolCall.expectedOutcome,
     result: node.toolCall.result !== undefined ? {

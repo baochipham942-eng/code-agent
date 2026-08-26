@@ -125,6 +125,24 @@ export interface ToolDefinition {
   dynamicDescription?: (ctx?: ToolDescriptionContext) => string;
 }
 
+/**
+ * 工具 schema 声明的用户可见步骤文案键。文案本体留在 renderer i18n，schema 只声明
+ * 稳定语义，避免把某一种语言写进工具调用记录。
+ */
+export type ToolStepLabelKey =
+  | 'tmeetMeetingListUpcoming'
+  | 'tmeetMeetingListEnded'
+  | 'tmeetMeetingCreate'
+  | 'tmeetMeetingSearch';
+
+export interface ToolStepLabelDeclaration {
+  readonly default: ToolStepLabelKey;
+  readonly variant?: {
+    readonly argument: string;
+    readonly values: Readonly<Record<string, ToolStepLabelKey>>;
+  };
+}
+
 export interface JSONSchema {
   type: 'object' | 'string' | 'number' | 'boolean' | 'array';
   properties?: Record<string, JSONSchemaProperty>;
@@ -176,6 +194,9 @@ export interface ToolCall {
 
   /** 一行自然语言动词短语（如 "Open Baidu search Claude"），UI 标题首选 */
   shortDescription?: string;
+
+  /** 工具 schema 声明的本地化步骤文案键；优先级高于模型自由文本。 */
+  stepLabel?: ToolStepLabelKey;
 
   /** 操作目标上下文，用于 UI 渲染目标 app logo / MCP server 名等 */
   targetContext?: ToolCallTargetContext;

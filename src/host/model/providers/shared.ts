@@ -801,10 +801,10 @@ export function buildToolCallFromAccumulator(tc: {
   // toolExecutionEngine 当解析错误软失败。真正的截断是**非空**坏 JSON，仍由上游
   // getIncompleteToolCallIds 的严格 JSON.parse 拦住，安全性不丢。
   const parsed = tc.arguments.trim() === '' ? {} : safeJsonParse(tc.arguments);
-  const extracted = extractToolCallMeta(parsed);
+  const extracted = extractToolCallMeta(parsed, tc.name);
   const args = extracted.arguments;
   let { shortDescription, targetContext } = extracted;
-  const { expectedOutcome } = extracted;
+  const { expectedOutcome, stepLabel } = extracted;
 
   // cua-driver computer-use 工具：模型几乎不 emit _meta，靠本地 AX 树缓存把
   // element_index 反查成人话（「点击『7』」）并填 app 图标 targetContext（§10）。
@@ -830,7 +830,7 @@ export function buildToolCallFromAccumulator(tc: {
   // 本地化模板，留空让模板读取 description/title，避免英文机械文案盖住中英文模板。
   const usesLocalizedTaskTemplate = ['delegate_task', 'task_status', 'steer_task', 'cancel_task']
     .includes(tc.name);
-  if (!shortDescription && !usesLocalizedTaskTemplate) {
+  if (!shortDescription && !stepLabel && !usesLocalizedTaskTemplate) {
     shortDescription = generateFallbackShortDescription(tc.name, args);
   }
 
@@ -839,6 +839,7 @@ export function buildToolCallFromAccumulator(tc: {
     name: tc.name,
     arguments: args,
     ...(shortDescription !== undefined && { shortDescription }),
+    ...(stepLabel !== undefined && { stepLabel }),
     ...(targetContext !== undefined && { targetContext }),
     ...(expectedOutcome !== undefined && { expectedOutcome }),
   };
@@ -1002,7 +1003,7 @@ export async function handleGeminiStream(
           if (part.functionCall) {
             const index = toolCalls.length;
             const id = `gemini_stream_${Date.now()}_${index}`;
-            const extracted = extractToolCallMeta(part.functionCall.args ?? {});
+            const extracted = extractToolCallMeta(part.functionCall.args ?? {}, part.functionCall.name);
             toolCalls.push({
               id,
               name: part.functionCall.name,

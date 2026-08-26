@@ -9,6 +9,7 @@ import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 import { createCLIAgent } from '../../../src/cli/adapter';
 import { buildQueuedAgentRunBody, createAgentRouter } from '../../../src/web/routes/agent';
+import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import type { Message } from '../../../src/shared/contract';
 import type { PendingOperation, RunCheckpoint, RunEngineRef, RunOwnerLease } from '../../../src/shared/contract/durableRun';
 import type { DurableCheckpointInput, PrepareOperationInput, PrepareToolOperationInput } from '../../../src/host/runtime/durableRunKernel';
@@ -23,11 +24,13 @@ import {
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { SteerRejectedError } from '../../../src/host/agent/runtime/conversationRuntime';
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
+import { sseClients } from '../../../src/web/helpers/sse';
 
 const mockRun = vi.fn();
 const mockCancel = vi.fn();
 const mockSteer = vi.fn();
 const mockCreateAgentLoop = vi.fn();
+const mockCreateRunToolExecutor = vi.fn((..._args: unknown[]) => ({ execute: vi.fn() }));
 const configServiceMocks = vi.hoisted(() => ({
   getSettings: vi.fn(() => ({
     permissions: {
@@ -92,7 +95,7 @@ vi.mock('../../../src/cli/adapter', () => ({
 
 vi.mock('../../../src/cli/bootstrap', () => ({
   createAgentLoop: (...args: unknown[]) => mockCreateAgentLoop(...args),
-  createRunToolExecutor: vi.fn(() => ({ execute: vi.fn() })),
+  createRunToolExecutor: (...args: unknown[]) => mockCreateRunToolExecutor(...args),
   getToolExecutor: vi.fn(() => undefined),
 }));
 
@@ -297,6 +300,7 @@ async function startAgentApi(deps: {
   tryGetSessionManager?: () => Promise<unknown>;
   tryGetCLISessionManager?: () => Promise<unknown>;
   getSupabaseForSession?: () => Promise<unknown>;
+  registerQueuedInputSendNowHook?: Parameters<typeof createAgentRouter>[0]['registerQueuedInputSendNowHook'];
 } = {}) {
   const app = express();
   app.use(express.json());
@@ -312,6 +316,7 @@ async function startAgentApi(deps: {
       ?? deps.tryGetSessionManager
       ?? (async () => null),
     getSupabaseForSession: deps.getSupabaseForSession ?? (async () => null),
+    registerQueuedInputSendNowHook: deps.registerQueuedInputSendNowHook,
   } as Parameters<typeof createAgentRouter>[0]));
 
   server = await new Promise<http.Server>((resolve) => {
@@ -437,6 +442,7 @@ describe('createAgentRouter', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     runRegistry.clear();
+    sseClients.clear();
     runRegistry.configureDurableKernel(testRunKernel);
     inMemorySessions.clear();
     sessionMessages.clear();
@@ -498,9 +504,55 @@ describe('createAgentRouter', () => {
       process.env.CODE_AGENT_DATA_DIR = originalCodeAgentDataDir;
     }
     runRegistry.clear();
+    sseClients.clear();
     inMemorySessions.clear();
     sessionMessages.clear();
     setDbAvailable(false);
+  });
+
+  it('treats an SSE-subscribed renderer as the approval UI for a queued run', async () => {
+    await closeServer();
+    const approvalUiStates: boolean[] = [];
+    const requestPermissionSpy = vi.spyOn(OrchestratorPermissionIsland.prototype, 'requestPermission')
+      .mockImplementation(function (this: OrchestratorPermissionIsland) {
+        approvalUiStates.push((this as unknown as { hasApprovalUi: () => boolean }).hasApprovalUi());
+        return Promise.resolve({ approved: false, denialSource: 'cancelled' });
+      });
+    let sendNow: Parameters<NonNullable<Parameters<typeof createAgentRouter>[0]['registerQueuedInputSendNowHook']>>[0] | undefined;
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: vi.fn(),
+      steer: vi.fn(),
+    }));
+    await startAgentApi({
+      registerQueuedInputSendNowHook: (handler) => {
+        sendNow = handler;
+      },
+    });
+
+    expect(sendNow).toBeDefined();
+    await sendNow!(
+      {
+        id: 'queued-approval-ui',
+        sessionId: 'session-queued-approval-ui',
+        envelope: {
+          content: 'queued tool request',
+          sessionId: 'session-queued-approval-ui',
+        },
+      },
+      'idle',
+    );
+    const requestPermission = mockCreateRunToolExecutor.mock.calls.at(-1)?.[2] as
+      | ((request: { tool: string; details: Record<string, unknown> }) => Promise<unknown>)
+      | undefined;
+    expect(requestPermission).toBeDefined();
+
+    await requestPermission!({ tool: 'Write', details: { path: '/tmp/probe.md' } });
+    sseClients.add({} as Parameters<typeof sseClients.add>[0]);
+    await requestPermission!({ tool: 'Write', details: { path: '/tmp/probe.md' } });
+
+    expect(approvalUiStates).toEqual([false, true]);
+    requestPermissionSpy.mockRestore();
   });
 
   // --------------------------------------------------------------------------

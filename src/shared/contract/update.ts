@@ -164,7 +164,7 @@ export interface RuntimeAssetPreparationStatus {
   error?: string;
 }
 
-export type RendererBundleAttemptOutcome = 'applied' | 'rolled-back' | 'skipped' | 'failed';
+export type RendererBundleAttemptOutcome = 'applied' | 'staged' | 'rolled-back' | 'skipped' | 'failed';
 
 export interface RendererBundleActiveStatus {
   version: string;

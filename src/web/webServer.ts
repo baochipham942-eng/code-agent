@@ -349,6 +349,7 @@ import { attachDictationStreamUpgrade } from './dictationStreamUpgrade';
 import { installPermissionResponseHandler } from './webPermissionResponseHandler';
 
 import { applyRendererBundleUpdate } from '../host/services/renderer/rendererBundleFetcher';
+import { activateStagedRendererBundle } from '../host/services/renderer/rendererBundleCache';
 import { getAppVersion, getBuildInfo } from '../host/platform';
 import { WEB_SERVER_DEFAULTS } from '../shared/constants/webServer';
 import { createShutdownStepCap, runShutdownFinalizers } from './webShutdownFinalizers';
@@ -990,6 +991,13 @@ async function main(): Promise<void> {
   // 3. 启动 HTTP 服务
   console.log('[3/3] Starting HTTP server...');
 
+  // 只在新启动、HTTP 尚未 serve 任何 renderer 资源时激活上次下载完成的 bundle。
+  // 运行中下载只写 staged，保证 index.html 与所有懒加载 chunk 始终来自同一构建。
+  const stagedActivation = await activateStagedRendererBundle(resolveCodeAgentDataDir());
+  if (stagedActivation !== 'none' && stagedActivation !== 'disabled') {
+    logger.info(`[renderer-hot-update] startup activation: ${stagedActivation}`);
+  }
+
   const app = createApp({
     handlers,
     logger,
@@ -1108,7 +1116,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
 
   // ── 前端热更：启动后异步拉取（不阻塞 health，失败不影响启动）─────────
-  // 后台拉取+验签+切换 active/；当前页面保持旧前端，刷新或重新打开后按新 active serve。
+  // 后台拉取+验签后只写 staged/；下一次启动在 HTTP serve 前切换 active/。
   // 兜底铁律全在 applyRendererBundleUpdate 内，任何失败都保持当前前端。
   if (process.env.CODE_AGENT_RENDERER_HOT_UPDATE !== 'false') {
     void applyRendererBundleUpdate({

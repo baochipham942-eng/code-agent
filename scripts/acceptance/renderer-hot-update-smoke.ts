@@ -84,6 +84,7 @@ async function startServer(
     env: {
       ...process.env,
       CODE_AGENT_DATA_DIR: dataDir,
+      CODE_AGENT_ENABLE_RENDERER_HOT_UPDATE: '1', // 此 smoke 显式验热更新，Dev bundle id 环境也必须回开
       CODE_AGENT_RENDERER_HOT_UPDATE: 'false', // 关后台拉取，避免联网
       WEB_HOST: '127.0.0.1',
       WEB_PORT: String(port),

@@ -204,11 +204,9 @@ unregister_dev
 rm -rf "$SOURCE_APP" "$SOURCE_APP.tar.gz"
 [ -x "$LSREGISTER" ] && "$LSREGISTER" -f "/Applications/$APP_NAME.app" >/dev/null 2>&1 || true
 
-# webServer 优先 serve <数据目录>/renderer-cache/active（云端热更新的 bundle）：改了 renderer
-# 重装后不清缓存看到的还是旧版。这里只清**本槽**的 active，不碰整个 renderer-cache、更不碰
-# 数据目录里的其他东西。槽名不在 shell 里另算，从 .dev-slot.json 读。
+# Dev 槽默认按 bundle id 停用 renderer 热更新，安装时不再清 active/staged。这样专项用
+# CODE_AGENT_ENABLE_RENDERER_HOT_UPDATE=1 验链路时，缓存能跨重启完成 staged → active 激活。
+# 数据目录名仍从 .dev-slot.json 读，供最终启动提示使用。
 DEV_DATA_DIR_NAME="$(read_slot_field dataDirName)" || exit 1
-rm -rf "$HOME/$DEV_DATA_DIR_NAME/renderer-cache/active"
-echo "[install-dev] 已清本槽热更新缓存 ~/$DEV_DATA_DIR_NAME/renderer-cache/active"
 
 echo "Done. 测试包独立运行（数据目录 ~/${DEV_DATA_DIR_NAME}）：open '/Applications/${APP_NAME}.app'"

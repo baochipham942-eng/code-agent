@@ -23,10 +23,13 @@ import {
   RendererBundleEndpointError,
   resolveRendererBundleEndpoint,
 } from '../../../shared/constants/network';
+import { devSlotFromBundleId } from '../../../shared/devSlot';
 import { compareUpdateVersions } from '../cloud/updateService';
 
 export const RENDERER_HOT_UPDATE_DISABLE_ENV = 'CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE';
+const RENDERER_HOT_UPDATE_ENABLE_ENV = 'CODE_AGENT_ENABLE_RENDERER_HOT_UPDATE';
 export const RENDERER_BUNDLE_DISABLED_ENV = 'CODE_AGENT_RENDERER_BUNDLE_DISABLED';
+const RENDERER_HOT_UPDATE_DEV_SLOT_REASON = 'dev-slot';
 
 function parseBooleanEnv(value: string | undefined): boolean {
   return /^(1|true|yes|on)$/i.test(value ?? '');
@@ -37,6 +40,12 @@ export function getRendererHotUpdateDisabledReason(
 ): string | null {
   if (parseBooleanEnv(env[RENDERER_HOT_UPDATE_DISABLE_ENV])) return RENDERER_HOT_UPDATE_DISABLE_ENV;
   if (parseBooleanEnv(env[RENDERER_BUNDLE_DISABLED_ENV])) return RENDERER_BUNDLE_DISABLED_ENV;
+  if (
+    devSlotFromBundleId(env.CODE_AGENT_BUNDLE_ID) !== null &&
+    !parseBooleanEnv(env[RENDERER_HOT_UPDATE_ENABLE_ENV])
+  ) {
+    return RENDERER_HOT_UPDATE_DEV_SLOT_REASON;
+  }
   return null;
 }
 
@@ -55,6 +64,12 @@ export function activeBundleDir(dataDir: string): string {
 export function pendingBundleDir(dataDir: string): string {
   return join(rendererCacheDir(dataDir), 'pending');
 }
+
+export function stagedBundleDir(dataDir: string): string {
+  return join(rendererCacheDir(dataDir), 'staged');
+}
+
+const STAGED_ROLLBACK_MARKER = '.rollback-to-builtin';
 
 export function rendererBundleStatusPath(dataDir: string): string {
   return join(rendererCacheDir(dataDir), 'last-status.json');
@@ -88,8 +103,8 @@ export function readActiveBundleMeta(dataDir: string): ActiveBundleMeta | null {
   return result.status === 'valid' ? result.meta : null;
 }
 
-function readActiveBundleMetaWithStatus(dataDir: string): ActiveBundleMetaReadResult {
-  const metaPath = join(activeBundleDir(dataDir), '.bundle-meta.json');
+function readBundleMetaWithStatus(bundleDir: string): ActiveBundleMetaReadResult {
+  const metaPath = join(bundleDir, '.bundle-meta.json');
   if (!existsSync(metaPath)) {
     return { status: 'missing', meta: null };
   }
@@ -102,6 +117,10 @@ function readActiveBundleMetaWithStatus(dataDir: string): ActiveBundleMetaReadRe
   } catch {
     return { status: 'invalid', meta: null };
   }
+}
+
+function readActiveBundleMetaWithStatus(dataDir: string): ActiveBundleMetaReadResult {
+  return readBundleMetaWithStatus(activeBundleDir(dataDir));
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -120,6 +139,7 @@ function isValidLastAttempt(value: unknown): value is RendererBundleLastAttemptS
     typeof attempt.currentShellVersion === 'string' &&
     (
       attempt.outcome === 'applied' ||
+      attempt.outcome === 'staged' ||
       attempt.outcome === 'rolled-back' ||
       attempt.outcome === 'skipped' ||
       attempt.outcome === 'failed'
@@ -258,9 +278,67 @@ export async function writeRendererBundleLastAttempt(
   return status;
 }
 
-export async function clearRendererBundleActive(dataDir: string): Promise<void> {
+export async function stageRendererBundleRollback(dataDir: string): Promise<void> {
+  const staged = stagedBundleDir(dataDir);
+  await fs.rm(staged, { recursive: true, force: true });
+  await fs.mkdir(staged, { recursive: true });
+  await fs.writeFile(join(staged, STAGED_ROLLBACK_MARKER), '', 'utf8');
+}
+
+export type StagedRendererBundleActivation =
+  | 'none'
+  | 'disabled'
+  | 'applied'
+  | 'rolled-back'
+  | 'discarded';
+
+async function updateStagedAttemptOutcome(
+  dataDir: string,
+  outcome: 'applied' | 'rolled-back' | 'failed',
+  reason: string | null | undefined,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  const lastAttempt = readRendererBundleStatus(dataDir, env).lastAttempt;
+  if (!lastAttempt) return;
+  await writeRendererBundleLastAttempt(dataDir, {
+    ...lastAttempt,
+    outcome,
+    ...(reason === null ? { reason: undefined } : reason ? { reason } : {}),
+  }, env);
+}
+
+/**
+ * 只在一次新启动尚未开始 serve renderer 时调用：把上次运行下载完成的 staged
+ * bundle（或回退指令）切到 active。运行中下载器永远不直接改 active，避免 index.html
+ * 与懒加载 chunk 跨两个构建版本。
+ */
+export async function activateStagedRendererBundle(
+  dataDir: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<StagedRendererBundleActivation> {
+  if (getRendererHotUpdateDisabledReason(env)) return 'disabled';
+
+  const staged = stagedBundleDir(dataDir);
+  if (!existsSync(staged)) return 'none';
+
+  if (existsSync(join(staged, STAGED_ROLLBACK_MARKER))) {
+    await fs.rm(activeBundleDir(dataDir), { recursive: true, force: true });
+    await fs.rm(staged, { recursive: true, force: true });
+    await updateStagedAttemptOutcome(dataDir, 'rolled-back', undefined, env);
+    return 'rolled-back';
+  }
+
+  const stagedMeta = readBundleMetaWithStatus(staged);
+  if (stagedMeta.status !== 'valid' || !existsSync(join(staged, 'index.html'))) {
+    await fs.rm(staged, { recursive: true, force: true });
+    await updateStagedAttemptOutcome(dataDir, 'failed', 'staged-bundle-unhealthy', env);
+    return 'discarded';
+  }
+
   await fs.rm(activeBundleDir(dataDir), { recursive: true, force: true });
-  await fs.rm(pendingBundleDir(dataDir), { recursive: true, force: true });
+  await fs.rename(staged, activeBundleDir(dataDir));
+  await updateStagedAttemptOutcome(dataDir, 'applied', null, env);
+  return 'applied';
 }
 
 /** 喂给契约门 BundleApplyContext.activeContentHash */

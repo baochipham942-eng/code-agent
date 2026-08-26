@@ -216,6 +216,9 @@ export function getRendererBundleSummaryText(
   if (attempt.outcome === 'applied') {
     return `${text.appliedPrefix}${attempt.manifest?.version ?? status.activeBundle?.version ?? text.unknown}`;
   }
+  if (attempt.outcome === 'staged') {
+    return `${text.stagedPrefix}${attempt.manifest?.version ?? text.unknown}`;
+  }
   if (attempt.outcome === 'rolled-back') {
     return text.rolledBack;
   }
@@ -425,6 +428,7 @@ function getRendererBundleTone(status: RendererBundleStatus): string {
   if (status.disabled) return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
   const outcome = status.lastAttempt?.outcome;
   if (outcome === 'applied') return 'text-badge-success bg-green-500/10 border-badge-success/30';
+  if (outcome === 'staged') return 'text-badge-warning bg-amber-500/10 border-badge-warning/30';
   if (outcome === 'rolled-back') return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
   if (outcome === 'skipped') return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
   if (outcome === 'failed') return 'text-badge-warning bg-amber-500/10 border-badge-warning/30';

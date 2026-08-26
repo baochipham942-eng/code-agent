@@ -6,10 +6,10 @@
 //
 // 流程：fetch 签名 manifest envelope → 验签(kind=renderer_bundle) → 契约门 →
 //       下载 bundle.tar.gz 到 pending → sha256 完整性 → 解压 → 校验解压健康 →
-//       原子 rename(pending→active) → 写 .bundle-meta.json。
+//       原子 rename(extract→staged)；下次启动在开始 serve 前才切到 active。
 //
 // 兜底铁律：任何一步失败都返回 { applied:false }，绝不抛出、绝不破坏现有 active。
-// 只有在「下载+完整性+解压健康」全部通过后才动 active 目录，失败时当前前端原样保留。
+// 后台检查永远不动 active 目录；失败和成功下载都让当前页面继续使用同一份前端。
 
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -40,12 +40,12 @@ import { verifyBundleIntegrity } from './rendererBundleIntegrity';
 import { getRuntimeAssetsStatus } from '../../runtime/runtimeAssetStatus';
 import { resolveExistingResource } from '../../runtime/runtimeAssetResolver';
 import {
-  activeBundleDir,
   pendingBundleDir,
+  stagedBundleDir,
   rendererCacheDir,
   readActiveContentHash,
   getRendererHotUpdateDisabledReason,
-  clearRendererBundleActive,
+  stageRendererBundleRollback,
   writeRendererBundleLastAttempt,
 } from './rendererBundleCache';
 import { getShellCapabilityIds } from '../../shellCapabilities';
@@ -90,7 +90,7 @@ export interface RendererBundleFetcherOptions {
   extractArchive?: (archivePath: string, destDir: string) => Promise<void>;
   /** 日志（默认静默） */
   logger?: (message: string) => void;
-  /** 生产 kill switch；默认读 CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE / CODE_AGENT_RENDERER_BUNDLE_DISABLED。 */
+  /** 停用原因；默认读生产 kill switch，并按真实 bundle id 判定 Dev 槽默认停用。 */
   disabledReason?: string | null;
   /** metadata-only 热更状态上报；失败不能影响热更决策。 */
   recordTelemetryAttempt?: (status: RendererBundleStatus) => void | Promise<void>;
@@ -309,11 +309,12 @@ export async function applyRendererBundleUpdate(
 
   if (disabledReason) {
     logger(`[renderer-hot-update] disabled by ${disabledReason}`);
+    const skippedReason = disabledReason === 'dev-slot' ? disabledReason : 'disabled';
     await recordAttempt({
       outcome: 'skipped',
-      reason: 'disabled',
+      reason: skippedReason,
     });
-    return { applied: false, reason: 'disabled' };
+    return { applied: false, reason: skippedReason };
   }
 
   try {
@@ -381,9 +382,9 @@ export async function applyRendererBundleUpdate(
             reason: rolloutDecision.reason,
             ...(rolloutDecision.rollbackReason ? { rollbackReason: rolloutDecision.rollbackReason } : {}),
           };
-          await clearRendererBundleActive(dataDir);
+          await stageRendererBundleRollback(dataDir);
           await recordAttempt({
-            outcome: 'rolled-back',
+            outcome: 'staged',
             reason: rolloutDecision.reason,
           });
           return { applied: false, reason: rolloutDecision.reason };
@@ -459,9 +460,9 @@ export async function applyRendererBundleUpdate(
     if (!decision.apply) {
       logger(`[renderer-hot-update] skip: ${decision.reason}`);
       if (decision.reason === 'rollback-to-builtin') {
-        await clearRendererBundleActive(dataDir);
+        await stageRendererBundleRollback(dataDir);
         await recordAttempt({
-          outcome: 'rolled-back',
+          outcome: 'staged',
           reason: decision.reason,
           ...manifestStatusPatch(manifest),
         });
@@ -536,24 +537,24 @@ export async function applyRendererBundleUpdate(
       return { applied: false, reason: 'extract-unhealthy' };
     }
 
-    // 7. 写 meta 进 extractDir，再原子 rename(extract→active)。
-    //    到这一步才动 active：先删旧 active 再 rename，window 极短且 rename 同 fs 原子。
+    // 7. 写 meta 进 extractDir，再原子 rename(extract→staged)。
+    //    active 在本次进程整个生命周期保持不变；下一次启动会在 HTTP serve 前激活 staged。
     await fs.writeFile(
       join(extractDir, '.bundle-meta.json'),
       JSON.stringify({ version: manifest.version, contentHash }),
       'utf8',
     );
-    const active = activeBundleDir(dataDir);
-    await fs.rm(active, { recursive: true, force: true });
-    await fs.rename(extractDir, active);
+    const staged = stagedBundleDir(dataDir);
+    await fs.rm(staged, { recursive: true, force: true });
+    await fs.rename(extractDir, staged);
     await fs.rm(pending, { recursive: true, force: true });
 
-    logger(`[renderer-hot-update] applied bundle ${manifest.version}`);
+    logger(`[renderer-hot-update] staged bundle ${manifest.version} for next launch`);
     await recordAttempt({
-      outcome: 'applied',
+      outcome: 'staged',
       ...manifestStatusPatch(manifest),
     });
-    return { applied: true, version: manifest.version, contentHash };
+    return { applied: false, reason: 'staged-for-next-launch' };
   } catch (err) {
     // 兜底铁律：任何异常都不破坏当前前端
     if (err instanceof RendererBundleEndpointError) {

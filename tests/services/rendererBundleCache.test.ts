@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   activeBundleDir,
+  getRendererHotUpdateDisabledReason,
+  isRendererHotUpdateDisabled,
   readActiveBundleMeta,
   readActiveContentHash,
   readRendererBundleStatus,
@@ -102,6 +104,50 @@ describe('rendererBundleCache（serve 目录解析 + active 健康校验 + 兜�
       disabledReason: 'CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE',
       activeBundle: null,
     });
+  });
+
+  it('Dev 槽按真实 bundle id 默认停用，原因可诊断为 dev-slot', () => {
+    seedActive({ version: '0.16.91', contentHash: 'abc' }, true);
+    const env = {
+      CODE_AGENT_BUNDLE_ID: 'com.linchen.code-agent.dev3',
+    } as NodeJS.ProcessEnv;
+
+    expect(isRendererHotUpdateDisabled(env)).toBe(true);
+    expect(getRendererHotUpdateDisabledReason(env)).toBe('dev-slot');
+    expect(resolveRendererServeDecision(dataDir, builtinDir, env)).toMatchObject({
+      source: 'builtin',
+      reason: 'hot-update-disabled',
+      disabledReason: 'dev-slot',
+    });
+    expect(readRendererBundleStatus(dataDir, env)).toMatchObject({
+      disabled: true,
+      disabledReason: 'dev-slot',
+      activeBundle: null,
+    });
+  });
+
+  it('生产 bundle id 保持默认启用，Dev 槽可用 ENABLE 显式覆盖回开', () => {
+    seedActive({ version: '0.16.91', contentHash: 'abc' }, true);
+    const productionEnv = {
+      CODE_AGENT_BUNDLE_ID: 'com.linchen.code-agent',
+    } as NodeJS.ProcessEnv;
+    const enabledDevEnv = {
+      CODE_AGENT_BUNDLE_ID: 'com.linchen.code-agent.dev3',
+      CODE_AGENT_ENABLE_RENDERER_HOT_UPDATE: '1',
+    } as NodeJS.ProcessEnv;
+
+    expect(isRendererHotUpdateDisabled(productionEnv)).toBe(false);
+    expect(resolveRendererServeDir(dataDir, builtinDir, productionEnv)).toBe(activeBundleDir(dataDir));
+    expect(isRendererHotUpdateDisabled(enabledDevEnv)).toBe(false);
+    expect(resolveRendererServeDir(dataDir, builtinDir, enabledDevEnv)).toBe(activeBundleDir(dataDir));
+  });
+
+  it('生产 kill switch 的优先级不受 ENABLE 变量影响', () => {
+    expect(getRendererHotUpdateDisabledReason({
+      CODE_AGENT_BUNDLE_ID: 'com.linchen.code-agent',
+      CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
+      CODE_AGENT_ENABLE_RENDERER_HOT_UPDATE: '1',
+    } as NodeJS.ProcessEnv)).toBe('CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE');
   });
 
   it('readRendererBundleStatus 暴露当前热更 manifest source 配置', () => {

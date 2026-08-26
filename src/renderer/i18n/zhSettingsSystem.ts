@@ -194,6 +194,7 @@ export const zhSettingsSystem = {
           activePrefix: '前端界面已应用 v',
           builtin: '前端界面使用包内版本',
           appliedPrefix: '前端界面已热更到 v',
+          stagedPrefix: '前端热更已下载，重启后使用 v',
           rolledBack: '前端热更已回退到包内版本',
           alreadyCurrentPrefix: '前端界面已是最新热更 v',
           shellTooOldPrefix: '前端热更需要壳版本 v',

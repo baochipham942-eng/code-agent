@@ -13,7 +13,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import { app, AppWindow } from '../platform';
+import { app, AppWindow, hasInteractiveUi } from '../platform';
 import type { AgentEvent, Message, MessageMetadata, MessageSnapshotData, PermissionRequest, ToolCall } from '../../shared/contract';
 import type { PermissionDeliveryOutcome, PermissionResponse } from '../../shared/contract/permission';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
@@ -1089,7 +1089,7 @@ export class TaskManager extends EventEmitter {
       configService,
       planningService: this.planningService,
       runRegistry: this.runRegistry,
-      hasApprovalUi: () => AppWindow.getAllWindows().some((win) => !win.isDestroyed()),
+      hasApprovalUi: () => hasInteractiveUi(),
       onEvent: async (event: AgentEvent) => this.handleAgentEvent(sessionId, event, eventKey),
       getHomeDir: () => app.getPath('home'),
       broadcastDAGEvent: (event) => {

@@ -2,16 +2,33 @@
 // ConfirmAction (native ToolModule) Tests — Wave 3 planning
 // ============================================================================
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
+import {
+  hasInteractiveUi as realHasInteractiveUi,
+  setBrowserWindowInteractionProbe,
+} from '../../../../../src/host/platform/windowBridge';
 
 const ipcMainHandleMock = vi.hoisted(() => vi.fn());
 const sendMock = vi.hoisted(() => vi.fn());
 const getAllWindowsMock = vi.hoisted(() => vi.fn());
+const hasInteractiveUiMock = vi.hoisted(() => vi.fn());
+const responseHandlerRef = vi.hoisted(() => ({
+  fn: undefined as undefined | ((event: unknown, response: { requestId: string; confirmed: boolean }) => Promise<void>),
+}));
+const notifyNeedsInputMock = vi.hoisted(() => vi.fn());
+
+ipcMainHandleMock.mockImplementation((channel, handler) => {
+  if (channel === 'confirm-action:response') responseHandlerRef.fn = handler;
+});
 
 vi.mock('../../../../../src/host/platform', () => ({
   ipcHost: { handle: ipcMainHandleMock },
+  hasInteractiveUi: hasInteractiveUiMock,
   AppWindow: { getAllWindows: getAllWindowsMock },
+}));
+vi.mock('../../../../../src/host/services/infra/notificationService', () => ({
+  notificationService: { notifyNeedsInput: notifyNeedsInputMock },
 }));
 
 import { confirmActionModule } from '../../../../../src/host/tools/modules/planning/confirmAction';
@@ -39,7 +56,13 @@ const denyAll: CanUseToolFn = async () => ({ allow: false, reason: 'blocked' });
 beforeEach(() => {
   vi.clearAllMocks();
   getAllWindowsMock.mockReturnValue([]);
+  hasInteractiveUiMock.mockReturnValue(false);
   sendMock.mockReset();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  setBrowserWindowInteractionProbe(null);
 });
 
 describe('confirm_action schema', () => {
@@ -139,5 +162,40 @@ describe('confirm_action validation', () => {
     const result = await handler.execute({ title: 't', message: 'm' }, makeCtx(), allowAll);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.output).toBe('cancelled (no UI available)');
+  });
+
+  it('有交互 UI 时挂过原 60 秒仍 pending，迟到确认可以成功', async () => {
+    vi.useFakeTimers();
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    setBrowserWindowInteractionProbe(() => true);
+    hasInteractiveUiMock.mockImplementation(realHasInteractiveUi);
+    const handler = await confirmActionModule.createHandler();
+    const promise = handler.execute({ title: '继续', message: '确认继续？' }, makeCtx(), allowAll);
+
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    expect(notifyNeedsInputMock).toHaveBeenCalledTimes(1);
+    const marker = Symbol('pending');
+    await expect(Promise.race([promise, Promise.resolve(marker)])).resolves.toBe(marker);
+    const request = sendMock.mock.calls[0]?.[1];
+    await responseHandlerRef.fn?.({}, { requestId: request.id, confirmed: true });
+    await expect(promise).resolves.toMatchObject({ ok: true, output: 'confirmed' });
+  });
+
+  it('无交互 UI 时保留 60 秒规则，拒绝原因结构化进入工具结果', async () => {
+    vi.useFakeTimers();
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveUiMock.mockReturnValue(false);
+    const handler = await confirmActionModule.createHandler();
+    const promise = handler.execute({ title: '继续', message: '确认继续？' }, makeCtx(), allowAll);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await expect(promise).resolves.toMatchObject({
+      ok: true,
+      output: expect.stringContaining('无头规则'),
+      meta: {
+        permissionDecision: 'deny',
+        permissionDecisionReason: expect.stringContaining('等你决定超过 1 分钟'),
+      },
+    });
   });
 });

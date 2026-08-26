@@ -84,6 +84,7 @@ export const noticesZh = {
       delegateModeActive: 'Delegate 模式：任务将委派给子 Agent 执行',
       agentRouted: '使用 Agent：{agentName}',
       historicalImagesOmitted: '为控制模型请求大小，本轮已省略 {count} 张较早图片；聊天记录中的原图仍保留',
+      interactionResponseExpired: '{kind}已经按规则处理，这次迟到的应答未生效。',
     },
   },
 };
@@ -163,6 +164,7 @@ export const noticesEn: typeof noticesZh = {
       delegateModeActive: 'Delegate mode: the task will be handed off to a sub-agent',
       agentRouted: 'Using agent: {agentName}',
       historicalImagesOmitted: '{count} older images were omitted from this model request; the originals remain in chat history',
+      interactionResponseExpired: 'This {kind} was already resolved by policy; the late response did not take effect.',
     },
   },
 };

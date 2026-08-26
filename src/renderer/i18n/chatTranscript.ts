@@ -470,6 +470,10 @@ toolErrors: {
   // code 原文，不新造 code）——code 命中时优先于上方正则分类用这里的文案；未登记 code /
   // 没有 metadata 的错误仍走正则兜底，分不出类别的由调用方展示原始报错（永不空白）。
   codes: {
+    USER_INPUT_TIMEOUT: {
+      summary: '等待你的决定超时',
+      detail: '当前是无头运行，已按安全规则拒绝；需要继续时请在有交互界面的会话里重新发起。',
+    },
     DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED: {
       summary: '写入全局记忆需要你本人确认',
       detail: '这次没有写入；需要保存的话重新发起，并在确认窗口里点「确认」。',
@@ -1019,6 +1023,10 @@ toolErrors: {
   // priority over the regex classification above; unregistered codes / missing metadata fall
   // back to the regex path, and unclassifiable errors keep the raw text (never blank).
   codes: {
+    USER_INPUT_TIMEOUT: {
+      summary: 'Timed out waiting for your decision',
+      detail: 'This headless run applied the safe denial rule. Retry from a session with an interactive UI to continue.',
+    },
     DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED: {
       summary: 'Writing to global memory needs your confirmation',
       detail: 'Nothing was written. To save it, ask again and click "Confirm" in the confirmation window.',

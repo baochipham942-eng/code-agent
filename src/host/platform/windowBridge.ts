@@ -89,6 +89,16 @@ export function setBrowserWindowInteractionProbe(probe: (() => boolean) | null):
   rendererInteractionProbe = probe;
 }
 
+/**
+ * Host 侧唯一的「此刻是否有人能在 UI 回答」判定源。
+ *
+ * Web 模式始终有一个 AppWindow bridge，不能用 window 数量判断；webServer 注册的
+ * probe 以活跃 SSE renderer 为准。桌面模式没有额外 probe 时再回退到 live window。
+ */
+export function hasInteractiveUi(): boolean {
+  return rendererInteractionProbe ? rendererInteractionProbe() : liveWindows.size > 0;
+}
+
 export class AppWindow implements WindowLike {
   id: number;
   private _destroyed = false;
@@ -141,7 +151,7 @@ export class AppWindow implements WindowLike {
 
   static getAllWindows(): AppWindow[] { return Array.from(liveWindows); }
   static hasInteractiveRenderer(): boolean {
-    return rendererInteractionProbe ? rendererInteractionProbe() : liveWindows.size > 0;
+    return hasInteractiveUi();
   }
   static getFocusedWindow(): AppWindow | null {
     const iter = liveWindows.values().next();

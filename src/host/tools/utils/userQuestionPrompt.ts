@@ -19,7 +19,7 @@ import type {
   UserQuestionResponse,
 } from '../../../shared/contract';
 import { IPC_CHANNELS } from '../../../shared/ipc';
-import { AppWindow, ipcHost } from '../../platform';
+import { AppWindow, hasInteractiveUi, ipcHost } from '../../platform';
 import { INTERACTION_TIMEOUTS } from '../../../shared/constants';
 import {
   canOfferVoiceQuestion,
@@ -27,17 +27,21 @@ import {
   offerVoiceQuestion,
 } from '../../services/voice/voiceQuestionBridge';
 import { createLogger } from '../../services/infra/logger';
+import {
+  headlessDecisionTimeoutReason,
+  markDecisionRequestExpired,
+  notifyDecisionNeeded,
+  notifyIfLateDecisionResponse,
+} from '../../interaction/userDecision';
 
 const logger = createLogger('UserQuestionPrompt');
-
-/** 交互提问只提醒、不结算；运行取消 / 会话切换负责清理。 */
-const INTERACTIVE_USER_QUESTION_REMINDER_MS = 30 * 60_000;
 
 export type PromptUserStatus = 'answered' | 'declined' | 'no-renderer' | 'timeout' | 'aborted';
 
 export interface PromptUserResult {
   status: PromptUserStatus;
   response?: UserQuestionResponse;
+  reason?: string;
 }
 
 export interface PromptUserOptions {
@@ -58,7 +62,10 @@ let handlerRegistered = false;
 
 function settleUserQuestionResponse(response: UserQuestionResponse): void {
   const p = pending.get(response.requestId);
-  if (!p) return;
+  if (!p) {
+    notifyIfLateDecisionResponse(response.requestId);
+    return;
+  }
   clearTimeout(p.timeout);
   pending.delete(response.requestId);
   cancelVoiceQuestion(response.requestId);
@@ -96,7 +103,7 @@ export async function promptUserInChat(
   };
 
   const mainWindow = AppWindow.getAllWindows()[0];
-  const hasInteractiveRenderer = Boolean(mainWindow && AppWindow.hasInteractiveRenderer());
+  const hasInteractiveRenderer = Boolean(mainWindow && hasInteractiveUi());
   const hasVoiceQuestionRoute = canOfferVoiceQuestion(opts.sessionId);
   if (!hasInteractiveRenderer && !hasVoiceQuestionRoute) {
     return { status: 'no-renderer' };
@@ -106,14 +113,19 @@ export async function promptUserInChat(
   const responsePromise = new Promise<UserQuestionResponse>((resolve, reject) => {
     const timeout = hasInteractiveRenderer
       ? setTimeout(() => {
-        logger.warn('user question still pending after 30m', {
+        pending.delete(request.id);
+        cancelVoiceQuestion(request.id);
+        markDecisionRequestExpired(request.id, '用户问题');
+        logger.warn('Interactive user question expired after 24h backstop', {
           requestId: request.id,
           sessionId: request.sessionId,
         });
-      }, INTERACTIVE_USER_QUESTION_REMINDER_MS)
+        reject(new Error('parked-timeout'));
+      }, INTERACTION_TIMEOUTS.PARKED_APPROVAL)
       : setTimeout(() => {
         pending.delete(request.id);
         cancelVoiceQuestion(request.id);
+        markDecisionRequestExpired(request.id, '用户问题');
         reject(new Error('timeout'));
       }, timeoutMs);
     pending.set(request.id, { resolve, timeout });
@@ -164,22 +176,23 @@ export async function promptUserInChat(
 
   try {
     if (opts.notify) {
-      try {
-        const { notificationService } = await import('../../services/infra/notificationService');
-        notificationService.notifyNeedsInput({
-          sessionId: opts.sessionId || '',
-          title: opts.notify.title,
-          body: opts.notify.body,
-        });
-      } catch {
-        /* ignore */
-      }
+      notifyDecisionNeeded({
+        sessionId: opts.sessionId,
+        title: opts.notify.title,
+        body: opts.notify.body,
+      });
     }
 
     const response = await responsePromise;
     return { status: response.declined === true ? 'declined' : 'answered', response };
   } catch (err) {
     const msg = err instanceof Error ? err.message : '';
-    return { status: msg === 'aborted' ? 'aborted' : 'timeout' };
+    if (msg === 'aborted') return { status: 'aborted' };
+    return {
+      status: 'timeout',
+      reason: hasInteractiveRenderer
+        ? '等待用户回答超过 24 小时，停车请求已按安全兜底拒绝。'
+        : headlessDecisionTimeoutReason(timeoutMs),
+    };
   }
 }

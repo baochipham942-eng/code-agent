@@ -6,21 +6,29 @@
 // + token 预算。审批卡展示 4 维度（费用/网络/上下文泄露/后台占用）。
 //
 // 事件投递（deliver）默认 publish 到 EventBus 'workflow' domain（type 前缀 'launch:'），
-// workflow.ipc 的专用 bridge 按前缀路由到 'workflow:launch:event' 通道。hasRenderer/deliver
+// workflow.ipc 的专用 bridge 按前缀路由到 'workflow:launch:event' 通道。交互探针/deliver
 // 经构造注入（默认走 BrowserWindow + EventBus），方便单测无需 mock platform/bus。
 // ============================================================================
 
-import { AppWindow } from '../platform';
+import { hasInteractiveUi } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { withApprovalTrace } from '../telemetry/telemetryService';
 import { getEventBus } from '../services/eventing/bus';
-import { SCRIPT_RUNTIME } from '../../shared/constants';
+import { INTERACTION_TIMEOUTS, SCRIPT_RUNTIME } from '../../shared/constants';
 import type {
   WorkflowLaunchRequest,
   WorkflowLaunchDimensions,
   WorkflowLaunchEvent,
 } from '../../shared/contract/scriptRun';
 import type { ScriptPreview } from './scriptRuntime/scriptPreview';
+import {
+  clearExpiredDecisionRequest,
+  deniedDecisionMetadata,
+  headlessDecisionTimeoutReason,
+  markDecisionRequestExpired,
+  notifyDecisionNeeded,
+  notifyIfLateDecisionResponse,
+} from '../interaction/userDecision';
 
 const logger = createLogger('WorkflowLaunchApprovalGate');
 
@@ -69,12 +77,14 @@ export interface WorkflowLaunchApprovalResult {
   feedback?: string;
   autoApproved: boolean;
   request: WorkflowLaunchRequest;
+  permissionDecision?: 'allow' | 'deny';
+  permissionDecisionReason?: string;
 }
 
 export interface WorkflowLaunchGateOptions {
   approvalTimeoutMs?: number;
-  /** 是否有渲染进程可审批（默认看 BrowserWindow）。无 → headless auto-approve。 */
-  hasRenderer?: () => boolean;
+  /** 测试注入点；生产默认使用 platform 唯一交互探针。 */
+  hasInteractiveUi?: () => boolean;
   /** 投递审批事件到 renderer（默认 publish 到 EventBus 'workflow' domain，bridge 路由）。 */
   deliver?: (event: WorkflowLaunchEvent) => void;
   now?: () => number;
@@ -91,13 +101,13 @@ export class WorkflowLaunchApprovalGate {
   // 每个 pending 请求的超时句柄，settle 时 clearTimeout（Codex R1 MED#1：原本不清，timer 白活到超时）。
   private timeouts = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly approvalTimeoutMs: number;
-  private readonly hasRenderer: () => boolean;
+  private readonly interactiveUiAvailable: () => boolean;
   private readonly deliver: (event: WorkflowLaunchEvent) => void;
   private readonly now: () => number;
 
   constructor(options?: WorkflowLaunchGateOptions) {
     this.approvalTimeoutMs = options?.approvalTimeoutMs ?? 120_000;
-    this.hasRenderer = options?.hasRenderer ?? (() => AppWindow.getAllWindows().length > 0);
+    this.interactiveUiAvailable = options?.hasInteractiveUi ?? hasInteractiveUi;
     this.deliver = options?.deliver ?? defaultDeliver;
     this.now = options?.now ?? (() => Date.now());
   }
@@ -109,20 +119,24 @@ export class WorkflowLaunchApprovalGate {
   private async requestApprovalInternal(params: { request: WorkflowLaunchRequest }): Promise<WorkflowLaunchApprovalResult> {
     const request = params.request;
 
-    if (!this.hasRenderer()) {
-      request.status = 'approved';
-      request.feedback = 'Auto-approved (headless mode)';
-      request.resolvedAt = this.now();
-      logger.info(`No renderer, auto-approving workflow launch ${request.id}`);
-      return { approved: true, feedback: request.feedback, autoApproved: true, request };
-    }
+    const interactive = this.interactiveUiAvailable();
+    clearExpiredDecisionRequest(request.id);
 
     // 关键顺序（Codex R1 MED#1）：先 set request + 注册 resolver/timeout，【再】deliver。
     // 否则同步 deliver（测试注入 / 极快 UI）里调 approve/reject 时 resolver 还没登记 → 决议丢失。
     this.requests.set(request.id, request);
-    const promise = this.waitForDecision(request.id); // Promise executor 同步跑：登记 resolver + arm timeout
-    this.deliver({ type: 'requested', request: { ...request } });
-    logger.info(`Workflow launch requested: ${request.id} (${request.estimatedAgentCalls} agent calls)`);
+    const promise = this.waitForDecision(request.id, interactive);
+    if (interactive) {
+      this.deliver({ type: 'requested', request: { ...request } });
+      notifyDecisionNeeded({
+        sessionId: request.sessionId,
+        title: '工作流等待启动确认',
+        body: request.goal ?? `预计调用 ${request.estimatedAgentCalls} 个 Agent`,
+      });
+      logger.info(`Workflow launch requested: ${request.id} (${request.estimatedAgentCalls} agent calls)`);
+    } else {
+      logger.info(`Workflow launch waiting for headless policy timeout: ${request.id}`);
+    }
     return promise;
   }
 
@@ -148,7 +162,10 @@ export class WorkflowLaunchApprovalGate {
   /** 人工 approve/reject 公共路径（autoApproved=false）。 */
   private resolveManual(requestId: string, approved: boolean, feedback?: string, callerSessionId?: string): boolean {
     const request = this.requests.get(requestId);
-    if (request?.status !== 'pending') return false;
+    if (request?.status !== 'pending') {
+      notifyIfLateDecisionResponse(requestId);
+      return false;
+    }
     // 会话授权（Codex R2 HIGH#1）：UI 不显示别会话的卡只是 display filter；这里是真授权边界——
     // 请求归某会话时，只有该会话的调用方能决议。callerSessionId 缺省（headless/legacy）不阻断。
     if (request.sessionId && callerSessionId && request.sessionId !== callerSessionId) {
@@ -174,23 +191,39 @@ export class WorkflowLaunchApprovalGate {
     if (resolver) resolver(result);
   }
 
-  private waitForDecision(requestId: string): Promise<WorkflowLaunchApprovalResult> {
+  private waitForDecision(requestId: string, interactive: boolean): Promise<WorkflowLaunchApprovalResult> {
     return new Promise<WorkflowLaunchApprovalResult>((resolve) => {
       this.pendingResolvers.set(requestId, resolve);
-      // Fail-closed 超时分档（对齐 swarm）：含写能力 → auto-reject；全只读 → auto-approve。
+      const timeoutMs = interactive
+        ? INTERACTION_TIMEOUTS.PARKED_APPROVAL
+        : this.approvalTimeoutMs;
       const handle = setTimeout(() => {
         const pending = this.requests.get(requestId);
         if (pending?.status !== 'pending') return; // 已被人工决议
-        const approved = !pending.writeHint;
+        const approved = !interactive && !pending.writeHint;
+        const reason = interactive
+          ? '等待工作流启动确认超过 24 小时，停车请求已按安全兜底拒绝。'
+          : approved
+            ? `等你决定超过 ${Math.ceil(timeoutMs / 60_000)} 分钟，已按无头规则处理：只读工作流按现有规则自动批准。`
+            : headlessDecisionTimeoutReason(timeoutMs);
         pending.status = approved ? 'approved' : 'rejected';
-        pending.feedback = approved
-          ? `Auto-approved after timeout (${this.approvalTimeoutMs}ms, read-only)`
-          : `Auto-rejected after timeout (${this.approvalTimeoutMs}ms)；含写能力子 agent 需显式批准`;
+        pending.feedback = reason;
         pending.resolvedAt = this.now();
-        this.deliver({ type: approved ? 'approved' : 'rejected', request: { ...pending } });
+        markDecisionRequestExpired(requestId, '工作流启动确认');
+        if (interactive) {
+          this.deliver({ type: approved ? 'approved' : 'rejected', request: { ...pending } });
+        }
         logger.warn(`Workflow launch auto-${approved ? 'approved' : 'rejected'} on timeout: ${requestId}`);
-        this.settle(requestId, { approved, feedback: pending.feedback, autoApproved: true, request: { ...pending } });
-      }, this.approvalTimeoutMs);
+        this.settle(requestId, {
+          approved,
+          feedback: pending.feedback,
+          autoApproved: true,
+          request: { ...pending },
+          ...(approved
+            ? { permissionDecision: 'allow' as const, permissionDecisionReason: reason }
+            : deniedDecisionMetadata(reason)),
+        });
+      }, timeoutMs);
       this.timeouts.set(requestId, handle);
     });
   }

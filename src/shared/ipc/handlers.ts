@@ -752,7 +752,8 @@ export interface AgentNoticeEvent {
     | 'auto_agent_awaiting_approval'
     | 'delegate_mode_active'
     | 'agent_routed'
-    | 'historical_images_omitted';
+    | 'historical_images_omitted'
+    | 'interaction_response_expired';
   params?: {
     name?: string;
     error?: string;
@@ -760,5 +761,6 @@ export interface AgentNoticeEvent {
     status?: string;
     agentName?: string;
     count?: number;
+    kind?: string;
   };
 }

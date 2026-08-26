@@ -38,6 +38,8 @@ export function formatAgentNoticeToast(event: AgentNoticeEvent, t: Translations)
       return an.agentRouted.replace('{agentName}', params.agentName ?? '');
     case 'historical_images_omitted':
       return an.historicalImagesOmitted.replace('{count}', String(params.count ?? 0));
+    case 'interaction_response_expired':
+      return an.interactionResponseExpired.replace('{kind}', params.kind ?? '请求');
     default: {
       // 穷举检查：新增 reasonCode 忘记在这里加分支会在此处报编译错误
       const exhaustive: never = event.reasonCode;

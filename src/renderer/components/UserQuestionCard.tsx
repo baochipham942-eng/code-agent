@@ -242,7 +242,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
       <div
         ref={cardRef}
         tabIndex={-1}
-        className="w-full max-w-3xl mx-auto bg-zinc-900 rounded-lg shadow-2xl border-2 border-badge-info/60 outline-hidden"
+        className="w-full max-w-3xl mx-auto bg-zinc-900 rounded-lg shadow-md dark:shadow-2xl border-2 border-badge-info/60 outline-hidden"
       >
         {/* 头部：中性询问语义（蓝），与权限卡的琥珀/红安全语义拉开 */}
         <div className="flex items-center gap-2 px-4 py-2.5 border-b border-zinc-800 bg-blue-500/10 rounded-t-lg">

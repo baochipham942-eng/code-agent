@@ -67,6 +67,9 @@ describe('PlanApprovalCard', () => {
 
   it('edits inline and keeps approval disabled until the edit is saved', () => {
     renderCard();
+    const card = screen.getByTestId('plan-approval-card').firstElementChild;
+    expect(card?.className).toContain('shadow-md');
+    expect(card?.className).toContain('dark:shadow-2xl');
     fireEvent.click(screen.getAllByTitle('编辑')[1]);
     const approveButton = screen.getByTestId('plan-approve-button') as HTMLButtonElement;
     expect(approveButton.disabled).toBe(true);

@@ -85,6 +85,9 @@ describe('UserQuestionCard（G2 打断式选项卡）', () => {
     useSessionStore.getState().addPendingUserQuestion(request);
     render(<UserQuestionCard request={request} />);
 
+    const card = screen.getByTestId('user-question-card').firstElementChild;
+    expect(card?.className).toContain('shadow-md');
+    expect(card?.className).toContain('dark:shadow-2xl');
     const submit = screen.getByRole('button', { name: zh.userQuestion.submit });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
 

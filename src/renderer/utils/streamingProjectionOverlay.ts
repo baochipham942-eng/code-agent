@@ -21,15 +21,13 @@ export function applyStreamingMessageDeltasToProjection(
 
   for (const [messageId, entry] of activeEntries) {
     const nodeId = getAssistantTextNodeId(messageId);
-    const liveNodeId = getReasoningLiveNodeId(messageId);
     let foundExistingNode = false;
 
     const nextTurns = turns.map((turn) => {
       const nodeIndex = turn.nodes.findIndex((node) =>
         node.type === 'assistant_text' && node.id === nodeId
       );
-      const liveNodeIndex = turn.nodes.findIndex((node) => node.id === liveNodeId);
-      if (nodeIndex < 0 && liveNodeIndex < 0) {
+      if (nodeIndex < 0) {
         return turn;
       }
 
@@ -37,32 +35,12 @@ export function applyStreamingMessageDeltasToProjection(
       changed = true;
       const nextNodes = [...turn.nodes];
 
-      // reasoningDelta 的落点决定增长发生在视口哪里（2026-07-21 真机闪烁根因）：
-      // - 已有 live 尾节点 → 原地追加（在轮尾，增长贴底边）；
-      // - 首文本节点就是轮尾 → 保持原地追加（轮初期，行为不变）;
-      // - 首文本节点身后已有其它节点（工具卡等）→ 在轮尾新建 live 节点，禁止把
-      //   增长塞回轮首。contentDelta 同款尾置见下方。
-      let reasoningTargetIndex = -1;
+      // reasoning 增量回到它的原消息承载节点，不根据「此刻是否流式」搬到轮尾。
+      // 这样同一事件序列在 accumulator overlay 与落账后的基投影里共用同一顺序；
+      // 贴底视觉由 TurnCard 的稳定状态槽位承担。
       if (entry.reasoningDelta) {
-        if (liveNodeIndex >= 0) {
-          reasoningTargetIndex = liveNodeIndex;
-        } else if (nodeIndex >= 0 && nodeIndex === nextNodes.length - 1) {
-          reasoningTargetIndex = nodeIndex;
-        } else if (nodeIndex >= 0) {
-          const anchor = nextNodes[nodeIndex];
-          nextNodes.push({
-            id: liveNodeId,
-            messageId: anchor.messageId,
-            type: 'assistant_text',
-            content: '',
-            timestamp: anchor.timestamp,
-          });
-          reasoningTargetIndex = nextNodes.length - 1;
-        }
-      }
-      if (reasoningTargetIndex >= 0) {
-        const target = nextNodes[reasoningTargetIndex];
-        nextNodes[reasoningTargetIndex] = {
+        const target = nextNodes[nodeIndex];
+        nextNodes[nodeIndex] = {
           ...target,
           reasoning: (target.reasoning || '') + entry.reasoningDelta,
         };
@@ -96,9 +74,6 @@ export function applyStreamingMessageDeltasToProjection(
             });
             contentTargetIndex = nextNodes.length - 1;
           }
-          // 基节点被 reasoning 尾置迁移吸收、本消息只剩 reasoning-live 节点的边缘场景：
-          // 该节点 type 仍是 assistant_text 且带 messageId，上面的 byMessageId 查找已能
-          // 命中它，不需要额外分支。
         }
       }
       if (entry.contentDelta && contentTargetIndex >= 0) {
@@ -151,14 +126,6 @@ function getAssistantTextNodeId(messageId: string): string {
 }
 
 /**
- * 活动轮「思考尾置」live 节点 id（useTurnProjection 迁移已落账 reasoning、本 overlay
- * 追加未落账 reasoningDelta 共用同一节点，保证流式思考连成一块且始终在轮尾增长）。
- */
-export function getReasoningLiveNodeId(messageId: string): string {
-  return `${messageId}-reasoning-live`;
-}
-
-/**
  * contentDelta 尾置 live 节点 id（同一消息多段 contentParts 里，新一段正文的流式
  * 增量落在这里，而不是打回已被工具卡挤出轮尾的首文本节点）。
  */
@@ -181,4 +148,3 @@ function getTargetTurnIndex(projection: TraceProjection, turns: TraceTurn[]): nu
   }
   return turns.length - 1;
 }
-

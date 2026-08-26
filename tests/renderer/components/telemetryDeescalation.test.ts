@@ -30,8 +30,15 @@ describe('TurnCard 轮时间戳常驻（UX round2 20i）', () => {
 describe('TurnCard 思考行不重复', () => {
   it('流式思考阶段始终渲染 ThinkingDigestBanner，底部状态槽不再重复出思考信号', () => {
     expect(turnCard).toContain('<ThinkingDigestBanner');
-    expect(turnCard).toContain('showCaret={!lastNodeIsStreamingText && !isThinkingPhase}');
+    expect(turnCard).toContain('showCaret={!lastNodeIsStreamingText && (showLeadingStreamingIndicator || !isThinkingPhase)}');
     expect(turnCard).not.toContain('isThinking={isThinkingPhase}');
+  });
+
+  it('工具行已出现但 reasoning 未到时，等待信号占用后续思考摘要的同一顶部槽位', () => {
+    expect(turnCard).toContain('const showLeadingStreamingIndicator =');
+    expect(turnCard).toContain('thinkingSegments.length === 0');
+    expect(turnCard).toContain('{showLeadingStreamingIndicator && streamingIndicator}');
+    expect(turnCard).toContain('{!showLeadingStreamingIndicator && streamingIndicator}');
   });
 });
 

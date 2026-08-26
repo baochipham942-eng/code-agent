@@ -18,7 +18,6 @@ import { isGoalNoticeContent } from '../components/features/chat/goalNotice';
 import { isModelFallbackNoticeContent } from '../components/features/chat/fallbackNotice';
 import { measureStreamingPerformanceTiming } from '../utils/streamingPerformanceMetrics';
 import { isToolResultEcho } from '../utils/toolResultEcho';
-import { getReasoningLiveNodeId } from '../utils/streamingProjectionOverlay';
 
 type MessageModelDecision = NonNullable<Message['modelDecision']>;
 
@@ -732,14 +731,6 @@ export function projectTurns(
     }
   }
 
-  // 活动轮思考尾置：流式期间 reasoning 挂在首文本节点会让每次落账/流式增量都在
-  // 轮首（工具卡上方）撑高布局，钉底滚动下表现为上方整块逐行上跳（2026-07-21
-  // 真机视频闪烁根因）。活动轮把 reasoning 搬到轮尾 live 节点让增长贴住视口底边；
-  // 轮完成后本段不再触发，历史布局回落「思考先于工具」。
-  if (activeTurnIndex >= 0) {
-    relocateActiveTurnReasoningToTail(turns[activeTurnIndex]);
-  }
-
   markFeedbackEligibleNodes(turns);
   markRecoveredFailures(turns);
 
@@ -809,50 +800,6 @@ function lastNonVoiceSummaryNode(turn: TraceTurn): TraceNode | undefined {
     if (node.subtype !== 'voice_call_summary') return node;
   }
   return undefined;
-}
-
-/** 本轮最后一条助手消息的 id —— 流式期间正在生长的那条。 */
-function lastAssistantMessageIdInTurn(turn: TraceTurn): string | undefined {
-  for (let index = turn.nodes.length - 1; index >= 0; index -= 1) {
-    const node = turn.nodes[index];
-    if (node.type === 'assistant_text' && node.messageId) return node.messageId;
-  }
-  return undefined;
-}
-
-function relocateActiveTurnReasoningToTail(turn: TraceTurn): void {
-  const carrierIndex = turn.nodes.findIndex(
-    (node) => node.type === 'assistant_text' && Boolean(node.reasoning || node.thinking),
-  );
-  if (carrierIndex < 0) return;
-  const carrier = turn.nodes[carrierIndex];
-  if (!carrier.messageId) return;
-  // 只搬**正在生长**的那条消息的思考（2026-08-01 症状 2）。尾置的目的是让流式思考贴住
-  // 视口底边、并与已落账的那半连成一块（PR #541）；已经写完的早期响应的思考不在生长，
-  // 搬它不服务任何目的，却会让那一块随着本轮新内容不断往下滑——用户看到的「块顺序反复
-  // 跳」有一大半是它。
-  if (carrier.messageId !== lastAssistantMessageIdInTurn(turn)) return;
-  const hasTrailingDisplayNodes = turn.nodes
-    .slice(carrierIndex + 1)
-    .some((node) => node.type === 'assistant_text' || node.type === 'tool_call');
-  if (!hasTrailingDisplayNodes) return; // 本就在尾部，保持原状
-
-  turn.nodes.push({
-    id: getReasoningLiveNodeId(carrier.messageId),
-    messageId: carrier.messageId,
-    type: 'assistant_text',
-    content: '',
-    timestamp: carrier.timestamp,
-    reasoning: carrier.reasoning,
-    thinking: carrier.thinking,
-  });
-  const strippedCarrier = { ...carrier, reasoning: undefined, thinking: undefined };
-  // 纯思考承载节点（空正文）被搬空后不留空壳
-  if (strippedCarrier.content.trim().length === 0) {
-    turn.nodes.splice(carrierIndex, 1);
-  } else {
-    turn.nodes[carrierIndex] = strippedCarrier;
-  }
 }
 
 function markFeedbackEligibleNodes(turns: TraceTurn[]): void {

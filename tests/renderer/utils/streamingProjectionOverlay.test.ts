@@ -93,7 +93,7 @@ describe('applyStreamingMessageDeltasToProjection', () => {
   });
 });
 
-describe('reasoningDelta 尾置（2026-07-21 闪烁修复）', () => {
+describe('reasoningDelta 保持原消息顺序（2026-08-26）', () => {
   const baseTurnWithTrailingTool = (): TraceProjection => ({
     sessionId: 'session-1',
     activeTurnIndex: 0,
@@ -112,39 +112,37 @@ describe('reasoningDelta 尾置（2026-07-21 闪烁修复）', () => {
     ],
   });
 
-  it('首文本节点身后有工具节点：reasoningDelta 建轮尾 live 节点，不撑大首节点', () => {
+  it('首文本节点身后有工具节点：reasoningDelta 仍追加在原节点', () => {
     const next = applyStreamingMessageDeltasToProjection(
       baseTurnWithTrailingTool(),
       [],
       { 'assistant-1': { contentDelta: '', reasoningDelta: 'new thought', updatedAt: 200 } },
     );
     const nodes = next.turns[0].nodes;
-    const last = nodes[nodes.length - 1];
-    expect(last.id).toBe('assistant-1-reasoning-live');
-    expect(last.reasoning).toBe('new thought');
     const baseNode = nodes.find((n) => n.id === 'assistant-1-text');
     expect(baseNode?.content).toBe('partial');
-    expect(baseNode?.reasoning).toBeUndefined();
+    expect(baseNode?.reasoning).toBe('new thought');
+    expect(nodes.map((node) => node.id)).toEqual([
+      'user-1',
+      'assistant-1-text',
+      'assistant-1-tc-1',
+    ]);
   });
 
-  it('已有 live 节点：reasoningDelta 原地追加', () => {
-    const projection = baseTurnWithTrailingTool();
-    projection.turns[0].nodes.push({
-      id: 'assistant-1-reasoning-live',
-      messageId: 'assistant-1',
-      type: 'assistant_text',
-      content: '',
-      timestamp: 140,
-      reasoning: 'flushed ',
-    });
+  it('连续 overlay 增量不新增或搬动节点', () => {
+    const first = applyStreamingMessageDeltasToProjection(
+      baseTurnWithTrailingTool(),
+      [],
+      { 'assistant-1': { contentDelta: '', reasoningDelta: 'flushed ', updatedAt: 190 } },
+    );
     const next = applyStreamingMessageDeltasToProjection(
-      projection,
+      first,
       [],
       { 'assistant-1': { contentDelta: '', reasoningDelta: 'streamed', updatedAt: 200 } },
     );
     const nodes = next.turns[0].nodes;
-    expect(nodes[nodes.length - 1].reasoning).toBe('flushed streamed');
-    expect(nodes.filter((n) => n.id === 'assistant-1-reasoning-live')).toHaveLength(1);
+    expect(nodes.find((node) => node.id === 'assistant-1-text')?.reasoning).toBe('flushed streamed');
+    expect(nodes).toHaveLength(3);
   });
 
 });

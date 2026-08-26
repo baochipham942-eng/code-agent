@@ -180,7 +180,7 @@ describe('DecisionSlot', () => {
     storeState.pendingPermissionSessionId = 'session-current';
     render(<DecisionSlot />);
 
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: '确认' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '允许' }));
     fireEvent.keyDown(window, { key: 'Enter' });
 
     await waitFor(() => {
@@ -198,14 +198,14 @@ describe('DecisionSlot', () => {
     storeState.pendingPermissionSessionId = 'session-current';
     const view = render(<DecisionSlot />);
 
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: '确认' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '允许' }));
     fireEvent.keyDown(window, { key: 'Enter' });
     expect(invoke).not.toHaveBeenCalled();
 
     view.unmount();
     storeState.pendingPermissionRequest = writebackRequest;
     render(<DecisionSlot />);
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: '确认' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '允许' }));
     fireEvent.keyDown(window, { key: 'Enter' });
     expect(invoke).not.toHaveBeenCalled();
   });
@@ -217,6 +217,10 @@ describe('DecisionSlot', () => {
 
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.getByTestId('decision-slot-collapsed')).toBeTruthy();
+    const alignmentContainer = screen.getByTestId('decision-slot-collapsed-container').parentElement;
+    expect(alignmentContainer?.className).toContain('max-w-3xl');
+    expect(alignmentContainer?.className).toContain('mx-auto');
+    expect(alignmentContainer?.className).toContain('justify-end');
     expect(invoke).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId('decision-slot-collapsed'));

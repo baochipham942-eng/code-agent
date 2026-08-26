@@ -110,13 +110,16 @@ export function DecisionSlot() {
       data-testid="decision-slot"
     >
       {collapsed ? (
-        <DecisionCollapsedBar
-          label={t.decisionCard.pendingLabel}
-          expandLabel={t.decisionCard.expand}
-          count={candidates.length}
-          onExpand={expand}
-          testId="decision-slot-collapsed"
-        />
+        <div className="mx-auto flex max-w-3xl justify-end">
+          <DecisionCollapsedBar
+            label={t.decisionCard.pendingLabel}
+            expandLabel={t.decisionCard.expand}
+            count={candidates.length}
+            onExpand={expand}
+            className="w-auto"
+            testId="decision-slot-collapsed"
+          />
+        </div>
       ) : (
         <PermissionCard
           requestOverride={current.request}

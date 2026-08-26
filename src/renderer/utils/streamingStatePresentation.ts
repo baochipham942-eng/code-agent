@@ -20,7 +20,6 @@ export type StreamingUiStatus =
   | 'resumable'
   | 'stale'
   | 'completed'
-  | 'cancelled'
   | 'blocked';
 
 export type StreamingUiTone = 'neutral' | 'info' | 'success' | 'warning' | 'error';
@@ -115,6 +114,12 @@ export function buildStreamingUiState({
     };
   }
 
+  // 用户主动停止已经由时间线里的未执行工具行存证。运行态展示在终态保持静默，
+  // 避免再生成一条「已取消」徽章或解释实现细节的横幅。
+  if (sessionStatus === 'cancelled' || hasCancelledRunMarker(turn)) {
+    return idleState;
+  }
+
   if (turn.status === 'error' || sessionStatus === 'error') {
     return {
       status: 'blocked',
@@ -133,17 +138,6 @@ export function buildStreamingUiState({
       status: 'resumable',
       label: t.turnRun.status.resumable,
       detail: t.turnRun.detail.resumable,
-      tone: 'warning',
-      shouldAnimate: false,
-      showCancelCleanup: false,
-    };
-  }
-
-  if (sessionStatus === 'cancelled' || hasCancelledRunMarker(turn)) {
-    return {
-      status: 'cancelled',
-      label: t.turnRun.status.cancelled,
-      detail: t.turnRun.detail.cancelled,
       tone: 'warning',
       shouldAnimate: false,
       showCancelCleanup: false,
@@ -217,9 +211,5 @@ export function shouldShowStreamingState(state: StreamingUiState): boolean {
     // 而取消本身只持续几秒——动静远大于信息量（真机反馈 2026-08-01）。
     && state.status !== 'cancelling'
     // 中断动作已收进 DecisionSlot，时间线灰字承担存证；这里不再铺 resumable 橙卡。
-    && state.status !== 'resumable'
-    // 取消完成同理：「已取消」的徽章 + 大黄卡两条横幅上下叠着，两条都写「已取消」
-    // （2026-08-01 验收截图）。留徽章那一行，解释语（已停止这次回答…）由 run 徽章
-    // 右边的阶段位承担——一行说完，不再上下两条。
-    && state.status !== 'cancelled';
+    && state.status !== 'resumable';
 }

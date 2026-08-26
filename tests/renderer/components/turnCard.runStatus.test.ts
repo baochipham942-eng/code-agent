@@ -56,12 +56,11 @@ describe('shouldHideTurnRunHeader — 按 key/tone 判断,与 label 文案无关
   });
 
   it('tone 为 success 时无论 key 是什么都隐藏', () => {
-    expect(shouldHideTurnRunHeader('cancelled', 'success')).toBe(true);
+    expect(shouldHideTurnRunHeader('completed', 'success')).toBe(true);
   });
 
-  it('blocked/stale 保留；cancelled/resumable 让位给灰字步骤行和 DecisionSlot', () => {
+  it('blocked/stale 保留；resumable 让位给灰字步骤行和 DecisionSlot', () => {
     expect(shouldHideTurnRunHeader('blocked', 'error')).toBe(false);
-    expect(shouldHideTurnRunHeader('cancelled', 'warning')).toBe(true);
     expect(shouldHideTurnRunHeader('resumable', 'warning')).toBe(true);
     expect(shouldHideTurnRunHeader('stale_stream', 'neutral')).toBe(false);
   });

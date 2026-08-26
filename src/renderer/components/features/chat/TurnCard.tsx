@@ -47,7 +47,6 @@ import {
 } from '../../../utils/toolStepGrouping';
 import {
   buildStreamingUiState,
-  hasCancelledRunMarker,
   shouldShowStreamingState,
   type RuntimeSessionStatus,
   type StreamingUiState,
@@ -974,15 +973,9 @@ function getTurnRunStatus(turn: TraceTurn, t: Translations, streamingState?: Str
         return { key: 'running', label: streamingState.label, tone: 'info', icon: <CircleDot className="h-3.5 w-3.5" /> };
       case 'blocked':
         return { key: 'blocked', label: streamingState.label, tone: 'error', icon: <ShieldAlert className="h-3.5 w-3.5" /> };
-      case 'cancelled':
-        return { key: 'cancelled', label: streamingState.label, tone: 'warning', icon: <XCircle className="h-3.5 w-3.5" /> };
       default:
         break;
     }
-  }
-
-  if (hasCancelledRunMarker(turn)) {
-    return { key: 'cancelled', label: t.turnRun.status.cancelled, tone: 'warning', icon: <XCircle className="h-3.5 w-3.5" /> };
   }
 
   const timelines = turn.nodes
@@ -1104,25 +1097,20 @@ const StreamingStateBanner: React.FC<{ state: StreamingUiState }> = ({ state }) 
 // 顶部 run 横幅可见性：完成态 + 正常流式进度（running / using_tools / waiting_tool）
 // 统一隐藏。这些状态在流式期间随工具边界来回切换，会让蓝色 running 横幅 mount/unmount
 // 「跳上跳下」。正常 live 进度由底部 StreamingIndicator + 工具组内联指示承担；顶部横幅
-// 只在异常/终态（blocked/cancelled/resumable/stale）显示稳定状态。
+// 只在异常/终态（blocked/resumable/stale）显示稳定状态。
 // 吃 status key（稳定枚举），不吃 label（人话显示文案）——语言切换不能影响这条逻辑判断。
 export function shouldHideTurnRunHeader(statusKey: string, statusTone: string): boolean {
   return statusTone === 'success'
     || statusKey === 'running'
     || statusKey === 'using_tools'
     || statusKey === 'waiting_tool'
-    || statusKey === 'resumable'
-    // 主动停止后，未执行工具的灰字步骤行是唯一状态信号；再保留「已取消」横幅
-    // 会把同一次中断重新扩成两处提醒。
-    || statusKey === 'cancelled';
+    || statusKey === 'resumable';
 }
 
 const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiState }> = ({ turn, streamingState }) => {
   const { t } = useI18n();
   const status = getTurnRunStatus(turn, t, streamingState);
-  // 取消态：徽章说「已取消」，阶段位说停了什么、留了什么——底下那张同样写「已取消」
-  // 的大黄卡已经收起，一行说完，不再上下叠两条（2026-08-01 验收截图）。
-  const phase = status.key === 'cancelled' ? t.turnRun.detail.cancelled : getTurnPhase(turn);
+  const phase = getTurnPhase(turn);
   const completionSignal = getTurnCompletionSignal(turn, t);
   const failedTool = turn.nodes.find((node) => node.type === 'tool_call' && node.toolCall?.success === false)?.toolCall;
   const hasPhase = Boolean(phase?.trim());

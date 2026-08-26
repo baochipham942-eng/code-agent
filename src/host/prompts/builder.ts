@@ -12,6 +12,7 @@ export const SYSTEM_PROMPT_TOKEN_BUDGET = 6400;
 
 import { getSoul } from './soulLoader';
 import { TOOLS_PROMPT } from './base';
+import { NON_PROGRAMMER_COMMUNICATION_CONTRACT } from './communication';
 import { QUESTION_FORM_PROMPT } from './questionForm';
 import {
   ARTIFACT_TASK_BRIEF_PROMPT,
@@ -119,6 +120,7 @@ export function buildPrompt(): string {
   const stablePrefix = [
     getSoul(),
     basePrompt,
+    NON_PROGRAMMER_COMMUNICATION_CONTRACT,
     CITATION_CONVENTIONS,
     ...getToolDescriptions(),
     formatTodayAnchor(new Date(), undefined, readPromptLanguage()).prompt,

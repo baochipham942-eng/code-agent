@@ -96,8 +96,19 @@ export const feishuCliDescriptor = {
 export const tmeetDescriptor = {
   id: 'tmeet',
   displayName: '腾讯会议',
+  displayNameEn: 'Tencent Meeting',
   logo: 'tmeet',
   toolNames: ['tmeetMeetingList', 'tmeetMeetingCreate', 'tmeetMeetingSearch'],
+  writeActions: {
+    tmeetMeetingCreate: { zh: '创建会议', en: 'create a meeting' },
+  },
+  editablePermissionFields: {
+    tmeetMeetingCreate: [
+      { key: 'subject', kind: 'string', required: true },
+      { key: 'start', kind: 'string', required: true },
+      { key: 'end', kind: 'string', required: true },
+    ],
+  },
   loggerName: 'TencentMeetingCli',
   installDirectory: 'tmeet',
   npmPackage: '@tencentcloud/tmeet',

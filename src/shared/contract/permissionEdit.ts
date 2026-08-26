@@ -2,12 +2,15 @@
 // 审批面「改一改再发」（N-WRITEBACK-EDIT）—— 可编辑写回工具的字段表与合并校验
 //
 // 原则：能撤的走事后回执（N-WRITEBACK-UNDO），撤不了的必须事前拦住。首版只收
-// mail_send（AppleScript `send` 之后不返回任何句柄，物理不可逆）。calendar/reminders
-// 六个动作已有撤销地基，归 UNDO 线；mail_draft 本身就是草稿容器，不重复套编辑。
+// mail_send（AppleScript `send` 之后不返回任何句柄，物理不可逆）与连接器描述符显式声明
+// 的写回工具。calendar/reminders 六个动作已有撤销地基，归 UNDO 线；mail_draft 本身就是
+// 草稿容器，不重复套编辑。
 //
 // renderer 与 host 共用这一份表：renderer 只对表内工具出编辑口，host 只认表内工具与
 // 表内字段（fail-closed），不可编辑字段（attachments）从原参数原样带回。
 // ============================================================================
+
+import { CLI_CONNECTOR_DESCRIPTORS } from '../constants/cliConnectorDescriptors';
 
 type EditableFieldKind = 'string' | 'string_list';
 
@@ -19,8 +22,7 @@ export interface EditableField {
   multiline?: boolean;
 }
 
-/** 工具名 → 可编辑字段。以后给 mail_draft / 带 attendees 的日历事件开口，在这里加一行。 */
-export const EDITABLE_TOOL_FIELDS: Readonly<Record<string, readonly EditableField[]>> = {
+const NATIVE_EDITABLE_TOOL_FIELDS: Readonly<Record<string, readonly EditableField[]>> = {
   mail_send: [
     { key: 'to', kind: 'string_list', required: true },
     { key: 'cc', kind: 'string_list' },
@@ -29,6 +31,13 @@ export const EDITABLE_TOOL_FIELDS: Readonly<Record<string, readonly EditableFiel
     { key: 'content', kind: 'string', multiline: true },
   ],
 };
+
+/** 工具名 → 可编辑字段。CLI 连接器字段从连接器描述符派生，避免 renderer/host 各抄一份。 */
+export const EDITABLE_TOOL_FIELDS: Readonly<Record<string, readonly EditableField[]>> =
+  CLI_CONNECTOR_DESCRIPTORS.reduce<Record<string, readonly EditableField[]>>(
+    (fields, descriptor) => Object.assign(fields, descriptor.editablePermissionFields ?? {}),
+    { ...NATIVE_EDITABLE_TOOL_FIELDS },
+  );
 
 export function isEditableTool(toolName: string): boolean {
   return Object.prototype.hasOwnProperty.call(EDITABLE_TOOL_FIELDS, toolName);

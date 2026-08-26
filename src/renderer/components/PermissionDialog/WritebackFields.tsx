@@ -1,5 +1,5 @@
 // ============================================================================
-// WritebackFields —— 写回类工具（首版 mail_send）审批卡的字段区
+// WritebackFields —— 写回类工具审批卡的字段区
 //
 // 查看态：把要发出去的东西全部摊开（收件人 / 抄送 / 密送 / 主题 / 正文 / 附件），
 //         正文默认展开、超过 12 行折叠。不可逆动作的审批卡把正文藏起来 = 盲批。
@@ -52,7 +52,15 @@ export function draftMissingRequired(tool: string, draft: WritebackDraft): strin
 function useFieldLabels(): Record<string, string> {
   const { t } = useI18n();
   const w = t.decisionCard.permission.writeback;
-  return { to: w.fieldTo, cc: w.fieldCc, bcc: w.fieldBcc, subject: w.fieldSubject, content: w.fieldContent };
+  return {
+    to: w.fieldTo,
+    cc: w.fieldCc,
+    bcc: w.fieldBcc,
+    subject: w.fieldSubject,
+    content: w.fieldContent,
+    start: w.fieldStart,
+    end: w.fieldEnd,
+  };
 }
 
 // ----------------------------------------------------------------------------

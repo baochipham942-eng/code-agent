@@ -1,5 +1,6 @@
 import type { ToolCall } from './tool';
 import { CLI_CONNECTOR_DESCRIPTORS } from '../constants/cliConnectorDescriptors';
+import type { CliConnectorToolAction } from './cliConnectorDescriptor';
 
 export type WorkbenchReferenceKind = 'skill' | 'connector' | 'mcp';
 
@@ -13,6 +14,17 @@ const NATIVE_CONNECTOR_TOOL_NAMES: Record<string, string[]> = {
   mail: ['mail', 'mail_send', 'mail_draft'],
   calendar: ['calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event'],
   reminders: ['reminders', 'reminders_create', 'reminders_update', 'reminders_delete'],
+};
+
+const NATIVE_CONNECTOR_WRITE_ACTIONS: Readonly<Record<string, CliConnectorToolAction>> = {
+  mail_send: { zh: '发送邮件', en: 'send an email' },
+  mail_draft: { zh: '保存邮件草稿', en: 'save an email draft' },
+  calendar_create_event: { zh: '创建日程', en: 'create an event' },
+  calendar_update_event: { zh: '修改日程', en: 'update an event' },
+  calendar_delete_event: { zh: '删除日程', en: 'delete an event' },
+  reminders_create: { zh: '创建提醒事项', en: 'create a reminder' },
+  reminders_update: { zh: '修改提醒事项', en: 'update a reminder' },
+  reminders_delete: { zh: '删除提醒事项', en: 'delete a reminder' },
 };
 
 export const CONNECTOR_TOOL_NAMES = CLI_CONNECTOR_DESCRIPTORS.reduce<Record<string, string[]>>(
@@ -34,6 +46,52 @@ export function isConnectorToolName(toolName: string): boolean {
 export function findConnectorIdForToolName(toolName: string): string | undefined {
   return Object.entries(CONNECTOR_TOOL_NAMES)
     .find(([, names]) => names.includes(toolName))?.[0];
+}
+
+export interface ConnectorToolMetadata {
+  connectorId: string;
+  connectorName: string;
+  connectorNameEn: string;
+  action?: CliConnectorToolAction;
+}
+
+export function findConnectorToolMetadata(toolName: string): ConnectorToolMetadata | undefined {
+  const descriptor = CLI_CONNECTOR_DESCRIPTORS.find((item) => item.toolNames.includes(toolName));
+  if (descriptor) {
+    return {
+      connectorId: descriptor.id,
+      connectorName: descriptor.displayName,
+      connectorNameEn: descriptor.displayNameEn ?? descriptor.displayName,
+      action: descriptor.writeActions?.[toolName],
+    };
+  }
+
+  const connectorId = findConnectorIdForToolName(toolName);
+  if (!connectorId) return undefined;
+  const nativeNames: Record<string, string> = {
+    mail: '邮件',
+    calendar: '日历',
+    reminders: '提醒事项',
+  };
+  const nativeNamesEn: Record<string, string> = {
+    mail: 'Mail',
+    calendar: 'Calendar',
+    reminders: 'Reminders',
+  };
+  return {
+    connectorId,
+    connectorName: nativeNames[connectorId] ?? connectorId,
+    connectorNameEn: nativeNamesEn[connectorId] ?? connectorId,
+    action: NATIVE_CONNECTOR_WRITE_ACTIONS[toolName],
+  };
+}
+
+export function connectorExternalWriteReason(toolName: string, language: 'zh' | 'en' = 'zh'): string | undefined {
+  const metadata = findConnectorToolMetadata(toolName);
+  if (!metadata?.action) return undefined;
+  return language === 'en'
+    ? `Writing to an external system (${metadata.connectorNameEn}: ${metadata.action.en}) requires your confirmation`
+    : `要在外部系统里写入（${metadata.connectorName}：${metadata.action.zh}），需要你确认`;
 }
 
 export function isMcpToolName(toolName: string): boolean {

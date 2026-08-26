@@ -61,6 +61,25 @@ const request: PermissionRequest = {
   timestamp: 1,
 };
 
+const meetingRequest: PermissionRequest = {
+  id: 'permission-tmeet-1',
+  sessionId: 'request-session',
+  tool: 'tmeetMeetingCreate',
+  type: 'file_write',
+  forceConfirm: true,
+  details: {
+    subject: 'quick meeting',
+    start: '2026-08-26T09:00:00+08:00',
+    end: '2026-08-26T09:30:00+08:00',
+  } as PermissionRequest['details'],
+  reason: '要在外部系统里写入（腾讯会议：创建会议），需要你确认',
+  boundary: {
+    id: 'connector.external_write',
+    connectorName: '腾讯会议',
+  },
+  timestamp: 1,
+};
+
 function enterEdit() {
   fireEvent.click(screen.getByRole('button', { name: /改一改再发/ }));
 }
@@ -77,6 +96,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
   afterEach(() => {
     cleanup();
     releaseApprovalResponse(request.id);
+    releaseApprovalResponse(meetingRequest.id);
   });
 
   it('查看态：卡头是「发送邮件」，正文上屏，不再是危险命令红卡', () => {
@@ -142,5 +162,55 @@ describe('PermissionCard · mail_send 改一改再发', () => {
       expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, request.id, 'allow', request.sessionId);
       expect(invoke.mock.calls[0]).toHaveLength(4);
     });
+  });
+
+  it('腾讯会议查看态摊开主题和时间，并显示外部写回边界', () => {
+    state.request = meetingRequest;
+    render(<PermissionCard />);
+
+    expect(screen.getByText('创建腾讯会议')).toBeTruthy();
+    expect(screen.getByText('创建会议「quick meeting」？')).toBeTruthy();
+    expect(screen.getByText('写入你的腾讯会议')).toBeTruthy();
+    expect(screen.getByTestId('writeback-view-subject').textContent).toBe('quick meeting');
+    expect(screen.getByTestId('writeback-view-start').textContent).toContain('2026-08-26T09:00');
+    expect(screen.getByTestId('writeback-view-end').textContent).toContain('2026-08-26T09:30');
+    expect(screen.getByRole('button', { name: /改一改再创建/ })).toBeTruthy();
+  });
+
+  it('腾讯会议改主题后把 updatedArgs 直达一次性 allow 通道', async () => {
+    state.request = meetingRequest;
+    render(<PermissionCard />);
+    fireEvent.click(screen.getByRole('button', { name: /改一改再创建/ }));
+    fireEvent.change(screen.getByTestId('writeback-edit-subject'), { target: { value: 'product sync' } });
+    fireEvent.click(screen.getByRole('button', { name: '按修改后创建' }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
+        meetingRequest.id,
+        'allow',
+        meetingRequest.sessionId,
+        {
+          subject: 'product sync',
+          start: '2026-08-26T09:00:00+08:00',
+          end: '2026-08-26T09:30:00+08:00',
+        },
+      );
+    });
+  });
+
+  it('决定后默认折成一行，展开后才显示会议参数', () => {
+    state.request = { ...meetingRequest, resolved: true, decision: 'once' };
+    render(<PermissionCard />);
+
+    const summary = screen.getByTestId('permission-settled-summary');
+    expect(summary.textContent).toContain('已允许 · 创建腾讯会议 quick meeting');
+    expect(summary.textContent).toContain('允许一次');
+    expect(screen.queryByTestId('writeback-fields-view')).toBeNull();
+
+    fireEvent.click(summary);
+    expect(screen.getByTestId('writeback-fields-view')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '收起审批详情' }));
+    expect(screen.getByTestId('permission-settled-summary')).toBeTruthy();
   });
 });

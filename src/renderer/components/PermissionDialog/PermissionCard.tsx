@@ -1,6 +1,6 @@
 // ============================================================================
-// PermissionCard - 浮动在 ChatInput 上方的权限审批卡片
-// 替代全屏遮罩的 PermissionDialog，用户审批时仍能看到对话上下文
+// PermissionCard - 固定在 ChatInput 正上方 DecisionSlot 的权限审批卡片
+// 不进入可滚动时间线；用户审批时仍能看到对话上下文并保留输入区
 //
 // 2026-07-29 拍板：视觉骨架统一迁移到 DecisionCard（与 AskUserQuestion 提问卡
 // 同形）——审批级别变成选项行，底部 ghost 取消 + primary 确认（选中后才可点）。
@@ -171,9 +171,14 @@ function permissionQuestion(request: PermissionRequest, t: Translations): string
 interface PermissionCardProps {
   requestOverride?: ContractPermissionRequest;
   sessionIdOverride?: string | null;
+  remainingCount?: number;
 }
 
-export function PermissionCard({ requestOverride, sessionIdOverride }: PermissionCardProps = {}) {
+export function PermissionCard({
+  requestOverride,
+  sessionIdOverride,
+  remainingCount = 0,
+}: PermissionCardProps = {}) {
   const { t, language } = useI18n();
   const {
     pendingPermissionRequest,
@@ -261,8 +266,8 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
     async (level: ApprovalLevel, updatedArgs?: Record<string, unknown>) => {
       if (!request || settled) return;
 
-      const requestSnapshot = pendingPermissionRequest;
-      const requestSessionId = pendingPermissionSessionId;
+      const requestSnapshot = requestOverride ?? pendingPermissionRequest;
+      const requestSessionId = requestOverride ? sessionIdOverride ?? null : pendingPermissionSessionId;
       if (processedRequestRef.current === request.id) return;
       if (!claimApprovalResponse(request.id)) return;
       processedRequestRef.current = request.id;
@@ -300,19 +305,23 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
         );
         if (requestSnapshot && recordPermissionDecision) {
           recordPermissionDecision(requestSnapshot, level, requestSessionId);
-        } else {
+        } else if (!requestOverride) {
           setPendingPermissionRequest(null);
         }
       } catch {
         processedRequestRef.current = null;
         releaseApprovalResponse(request.id);
-        setPendingPermissionRequest(requestSnapshot, requestSessionId);
+        if (!requestOverride) {
+          setPendingPermissionRequest(requestSnapshot, requestSessionId);
+        }
         toast.error('审批响应发送失败，请重试');
       }
     },
     [
       pendingPermissionRequest,
       pendingPermissionSessionId,
+      requestOverride,
+      sessionIdOverride,
       request?.id,
       request?.sessionId,
       request?.forceConfirm,
@@ -402,6 +411,9 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
 
   const p = t.decisionCard.permission;
   const w = p.writeback;
+  const pendingHeaderEnd = remainingCount > 0
+    ? <span className="text-xs text-zinc-500">{p.remainingCount.replace('{count}', String(remainingCount))}</span>
+    : undefined;
   const options: DecisionOption[] = editable ? [
     {
       id: 'once',
@@ -576,6 +588,7 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
         icon={icon}
         title={title}
         headerMeta={`${headerMeta} · ${w.editingBadge}`}
+        headerEnd={pendingHeaderEnd}
         question={isMeetingCreate
           ? w.tmeetWriteWarning
           : isCalendarWrite
@@ -609,6 +622,7 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
       icon={icon}
       title={title}
       headerMeta={headerMeta}
+      headerEnd={pendingHeaderEnd}
       dangerWarning={
         isDangerous
           ? `${t.decisionCard.dangerCopy}：${dangerReason || t.decisionCard.dangerDefaultReason}`

@@ -1,0 +1,176 @@
+// @vitest-environment jsdom
+import fs from 'node:fs';
+import path from 'node:path';
+import React from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { PermissionRequest } from '../../../src/shared/contract';
+import { IPC_CHANNELS } from '../../../src/shared/ipc';
+
+const normalRequest: PermissionRequest = {
+  id: 'normal-request',
+  sessionId: 'session-current',
+  tool: 'Write',
+  type: 'file_write',
+  details: { path: '/workspace/report.md' },
+  timestamp: 1,
+};
+
+const secondNormalRequest: PermissionRequest = {
+  id: 'second-normal-request',
+  sessionId: 'session-current',
+  tool: 'Read',
+  type: 'file_read',
+  details: { path: '/workspace/source.md' },
+  timestamp: 2,
+};
+
+const dangerousRequest: PermissionRequest = {
+  id: 'dangerous-request',
+  sessionId: 'session-current',
+  tool: 'Bash',
+  type: 'dangerous_command',
+  details: { command: 'rm -rf /workspace/dist' },
+  timestamp: 3,
+};
+
+const writebackRequest = {
+  id: 'writeback-request',
+  sessionId: 'session-current',
+  tool: 'mail_send',
+  type: 'mcp',
+  details: {
+    to: ['team@example.com'],
+    subject: 'Q3 复盘',
+    content: '正文',
+  },
+  timestamp: 4,
+} as unknown as PermissionRequest;
+
+const storeState = vi.hoisted(() => ({
+  pendingPermissionRequest: null as PermissionRequest | null,
+  pendingPermissionSessionId: null as string | null,
+  queuedPermissionRequests: {} as Record<string, PermissionRequest[]>,
+  setPendingPermissionRequest: vi.fn(),
+  recordPermissionDecision: vi.fn(),
+}));
+const currentSession = vi.hoisted(() => ({ id: 'session-current' as string | null }));
+const invoke = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
+vi.mock('../../../src/renderer/stores/appStore', () => ({
+  useAppStore: (selector?: (state: typeof storeState) => unknown) => (
+    selector ? selector(storeState) : storeState
+  ),
+}));
+vi.mock('../../../src/renderer/stores/sessionStore', () => ({
+  useSessionStore: (selector: (state: { currentSessionId: string | null }) => unknown) => (
+    selector({ currentSessionId: currentSession.id })
+  ),
+}));
+vi.mock('../../../src/renderer/stores/permissionStore', () => ({
+  usePermissionStore: () => ({ checkMemory: () => null, saveMemory: vi.fn() }),
+}));
+vi.mock('../../../src/renderer/services/ipcService', () => ({
+  default: { isAvailable: () => true, invoke },
+}));
+
+import { DecisionSlot } from '../../../src/renderer/components/features/chat/DecisionSlot';
+import { releaseApprovalResponse } from '../../../src/renderer/utils/approvalResponseGuard';
+
+describe('DecisionSlot', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    currentSession.id = 'session-current';
+    storeState.pendingPermissionRequest = null;
+    storeState.pendingPermissionSessionId = null;
+    storeState.queuedPermissionRequests = {};
+  });
+
+  afterEach(() => {
+    cleanup();
+    for (const request of [normalRequest, secondNormalRequest, dangerousRequest, writebackRequest]) {
+      releaseApprovalResponse(request.id);
+    }
+  });
+
+  it('挂在 PinnedTodoBar 之下、输入区相邻位置，时间线 Footer 只留已决历史卡', () => {
+    const chatSource = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/renderer/components/ChatView.tsx'),
+      'utf8',
+    );
+    const traceSource = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/renderer/components/features/chat/TurnBasedTraceView.tsx'),
+      'utf8',
+    );
+    const pinned = chatSource.indexOf('<PinnedTodoBar');
+    const slot = chatSource.indexOf('<DecisionSlot />');
+    const workflow = chatSource.indexOf('<WorkflowLaunchCard />');
+
+    expect(pinned).toBeGreaterThan(0);
+    expect(slot).toBeGreaterThan(pinned);
+    expect(workflow).toBeGreaterThan(slot);
+    expect(traceSource).toContain('requestOverride={request}');
+    expect(traceSource).not.toMatch(/<PermissionCard\s*\/>/u);
+    expect(traceSource).toContain('<div className="h-6" aria-hidden="true" />');
+  });
+
+  it('三张请求只展示危险卡，卡头显示剩余两项，并按展示请求 id 裁决', async () => {
+    storeState.pendingPermissionRequest = normalRequest;
+    storeState.pendingPermissionSessionId = 'session-current';
+    storeState.queuedPermissionRequests = {
+      'session-current': [secondNormalRequest, dangerousRequest],
+    };
+
+    render(<DecisionSlot />);
+
+    expect(screen.getByTestId('decision-slot').getAttribute('aria-label')).toBe('待你决定');
+    expect(screen.getByText('危险操作')).toBeTruthy();
+    expect(screen.getByText('还有 2 项')).toBeTruthy();
+    expect(screen.queryByText('创建文件')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /允许一次/u }));
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
+        dangerousRequest.id,
+        'allow',
+        dangerousRequest.sessionId,
+      );
+      expect(storeState.recordPermissionDecision).toHaveBeenCalledWith(
+        dangerousRequest,
+        'once',
+        'session-current',
+      );
+    });
+  });
+
+  it('写回请求排在常规权限前，同级仍保持原队列顺序', () => {
+    storeState.pendingPermissionRequest = normalRequest;
+    storeState.pendingPermissionSessionId = 'session-current';
+    storeState.queuedPermissionRequests = {
+      'session-current': [writebackRequest, secondNormalRequest],
+    };
+
+    render(<DecisionSlot />);
+
+    expect(screen.getByText('发送邮件')).toBeTruthy();
+    expect(screen.getByText('还有 2 项')).toBeTruthy();
+    expect(screen.queryByText('创建文件')).toBeNull();
+  });
+
+  it('当前会话没有待决请求时不渲染槽位', () => {
+    storeState.queuedPermissionRequests = {
+      'session-other': [dangerousRequest],
+    };
+
+    const view = render(<DecisionSlot />);
+
+    expect(view.container.innerHTML).toBe('');
+  });
+});

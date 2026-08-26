@@ -6,6 +6,7 @@ const LARK_CLI_SCOPE = 'offline_access im:message im:message.send_as_user';
 export const feishuCliDescriptor = {
   id: 'feishu',
   displayName: '飞书',
+  logo: 'feishu',
   toolNames: [],
   loggerName: 'FeishuLarkCli',
   installDirectory: 'lark-cli',

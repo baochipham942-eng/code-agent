@@ -230,12 +230,12 @@ describe('SaaSConnectorsSection Tencent Meeting CLI card', () => {
     ));
   });
 
-  it('keeps the existing Lucide fallback when the descriptor has no official vector', async () => {
+  it('uses the official PNG when the descriptor declares one', async () => {
     renderLarkCliStatus();
 
     const card = await screen.findByTestId('saas-connector-feishu');
-    expect(within(card).queryByRole('img')).toBeNull();
-    expect(card.querySelector('svg')).toBeTruthy();
+    expect(within(card).getByRole('img', { name: '飞书' })).toBeTruthy();
+    expect(within(card).getByTestId('connector-logo-feishu')).toBeTruthy();
   });
 
   it('keeps step fixed at 1 and tells the user to finish in the browser', async () => {

@@ -9,17 +9,17 @@ import { ConnectorLogo } from '../../../src/renderer/components/features/connect
 describe('ConnectorLogo', () => {
   afterEach(cleanup);
 
-  it('renders a declared brand asset with the connector display name as alt text', () => {
+  it('renders a declared PNG brand asset with the connector display name as alt text', () => {
     render(
       <ConnectorLogo
-        id="tmeet"
-        displayName="腾讯会议"
+        id="feishu"
+        displayName="飞书"
         fallback={<Plug data-testid="fallback-icon" />}
       />,
     );
 
-    const logo = screen.getByRole('img', { name: '腾讯会议' });
-    expect(logo.getAttribute('src')).toBeTruthy();
+    const logo = screen.getByRole('img', { name: '飞书' });
+    expect(logo.getAttribute('src')).toMatch(/feishu\.png$/u);
     expect(screen.queryByTestId('fallback-icon')).toBeNull();
   });
 

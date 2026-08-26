@@ -19,6 +19,7 @@ interface RequestDetailsProps {
 }
 
 export function RequestDetails({ request }: RequestDetailsProps) {
+  const { language, t } = useI18n();
   const { type, details } = request;
 
   // 兼容旧版 API：path -> filePath
@@ -29,6 +30,18 @@ export function RequestDetails({ request }: RequestDetailsProps) {
   if (request.rawArgs) {
     return (
       <div className="space-y-3">
+        {request.boundary?.id === 'connector.external_write' && (
+          <BoundarySummary
+            boundary={getPermissionBoundary(request.boundary.id, {
+              language,
+              connectorName: language === 'en'
+                ? request.boundary.connectorNameEn ?? request.boundary.connectorName
+                : request.boundary.connectorName,
+            })}
+            reason={language === 'en' ? request.boundary.reasonEn ?? request.boundary.reason : request.boundary.reason}
+            labels={t.decisionCard.permission.boundary}
+          />
+        )}
         <WritebackFieldsView tool={request.tool} args={request.rawArgs} />
         {request.decisionTrace && request.decisionTrace.steps.length > 0 && (
           <DecisionTraceView trace={request.decisionTrace} />
@@ -41,8 +54,14 @@ export function RequestDetails({ request }: RequestDetailsProps) {
     <div className="space-y-3">
       {request.boundary && (
         <BoundarySummary
-          boundary={getPermissionBoundary(request.boundary.id)}
-          reason={request.boundary.reason}
+          boundary={getPermissionBoundary(request.boundary.id, {
+            language,
+            connectorName: language === 'en'
+              ? request.boundary.connectorNameEn ?? request.boundary.connectorName
+              : request.boundary.connectorName,
+          })}
+          reason={language === 'en' ? request.boundary.reasonEn ?? request.boundary.reason : request.boundary.reason}
+          labels={t.decisionCard.permission.boundary}
         />
       )}
 
@@ -118,8 +137,25 @@ export function RequestDetails({ request }: RequestDetailsProps) {
   );
 }
 
-function BoundarySummary({ boundary, reason }: { boundary?: PermissionBoundary; reason?: string }) {
+function BoundarySummary({
+  boundary,
+  reason,
+  labels,
+}: {
+  boundary?: PermissionBoundary;
+  reason?: string;
+  labels: {
+    external: string;
+    local: string;
+    access: string;
+    storage: string;
+    redaction: string;
+  };
+}) {
   if (!boundary) return null;
+  const leavesDevice = boundary.id === 'connector.external_write'
+    || boundary.cloud.includes('外部')
+    || boundary.cloud.includes('云端');
 
   return (
     <div className="rounded-md border border-zinc-700/80 bg-zinc-900/70 p-3">
@@ -130,27 +166,27 @@ function BoundarySummary({ boundary, reason }: { boundary?: PermissionBoundary; 
             {reason || boundary.trigger}
           </div>
         </div>
-        {boundary.cloud.includes('外部') || boundary.cloud.includes('云端') ? (
+        {leavesDevice ? (
           <span className="shrink-0 rounded border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning">
-            可能出云端
+            {labels.external}
           </span>
         ) : (
           <span className="shrink-0 rounded border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success">
-            本地边界
+            {labels.local}
           </span>
         )}
       </div>
       <div className="mt-2 grid gap-1.5 text-[10px] text-zinc-500">
         <div>
-          <span className="text-zinc-400">会访问: </span>
+          <span className="text-zinc-400">{labels.access}: </span>
           {boundary.dataAccess.slice(0, 3).join('、')}
         </div>
         <div>
-          <span className="text-zinc-400">存储: </span>
+          <span className="text-zinc-400">{labels.storage}: </span>
           {boundary.storage}
         </div>
         <div>
-          <span className="text-zinc-400">脱敏: </span>
+          <span className="text-zinc-400">{labels.redaction}: </span>
           {boundary.redaction}
         </div>
       </div>

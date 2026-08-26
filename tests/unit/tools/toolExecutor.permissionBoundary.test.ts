@@ -79,6 +79,13 @@ describe('ToolExecutor permission boundary metadata', () => {
       requiresPermission: true,
       permissionLevel: 'network',
     }],
+    ['tmeetMeetingCreate', {
+      name: 'tmeetMeetingCreate',
+      description: 'create Tencent Meeting',
+      inputSchema: { type: 'object', properties: {}, required: ['subject', 'start', 'end'] },
+      requiresPermission: true,
+      permissionLevel: 'write',
+    }],
   ]);
 
   beforeEach(() => {
@@ -195,6 +202,38 @@ describe('ToolExecutor permission boundary metadata', () => {
         server: 'github',
         tool: 'search_code',
         toolName: 'search_code',
+      }),
+    }));
+  });
+
+  it('attaches a connector external-write boundary and human reason to Tencent Meeting creation', async () => {
+    const requestPermission = vi.fn(async () => true);
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+    executor.setAuditEnabled(false);
+
+    await executor.execute('tmeetMeetingCreate', {
+      subject: 'quick meeting',
+      start: '2026-08-26T09:00:00+08:00',
+      end: '2026-08-26T09:30:00+08:00',
+    }, { sessionId: 's1' });
+
+    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'file_write',
+      tool: 'tmeetMeetingCreate',
+      reason: '要在外部系统里写入（腾讯会议：创建会议），需要你确认',
+      forceConfirm: true,
+      boundary: {
+        id: 'connector.external_write',
+        reason: '要在外部系统里写入（腾讯会议：创建会议），需要你确认',
+        reasonEn: 'Writing to an external system (Tencent Meeting: create a meeting) requires your confirmation',
+        connectorName: '腾讯会议',
+        connectorNameEn: 'Tencent Meeting',
+      },
+      details: expect.objectContaining({ subject: 'quick meeting' }),
+      decisionTrace: expect.objectContaining({
+        steps: expect.arrayContaining([
+          expect.objectContaining({ rule: 'C1: connector_external_write', result: 'ask' }),
+        ]),
       }),
     }));
   });

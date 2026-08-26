@@ -255,7 +255,7 @@ describe('appStore workbench tabs', () => {
     expect(state.activeWorkbenchTab === 'overview' || state.activeWorkbenchTab === 'files').toBe(true);
   });
 
-  it('auto-opens task workbench only while live activity is present', () => {
+  it('keeps the auto-opened overview after live activity ends', () => {
     const { syncTaskWorkbenchForActivity } = useAppStore.getState();
 
     syncTaskWorkbenchForActivity(true);
@@ -269,9 +269,9 @@ describe('appStore workbench tabs', () => {
 
     syncTaskWorkbenchForActivity(false);
     expect(useAppStore.getState()).toMatchObject({
-      workbenchTabs: [],
-      activeWorkbenchTab: null,
-      taskWorkbenchOpenSource: null,
+      workbenchTabs: ['overview'],
+      activeWorkbenchTab: 'overview',
+      taskWorkbenchOpenSource: 'auto',
       taskWorkbenchActivityActive: false,
     });
   });

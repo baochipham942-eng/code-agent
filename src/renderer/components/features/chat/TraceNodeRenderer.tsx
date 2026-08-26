@@ -118,7 +118,14 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       ) {
         return null;
       }
-      content = <TurnTimelineNodeRenderer node={node} sessionId={sessionId} fileChangesByPath={fileChangesByPath} />;
+      content = (
+        <TurnTimelineNodeRenderer
+          node={node}
+          sessionId={sessionId}
+          isStreaming={isStreaming}
+          fileChangesByPath={fileChangesByPath}
+        />
+      );
       break;
     default:
       return null;
@@ -476,8 +483,9 @@ const LaunchRequestNode: React.FC<{ node: TraceNode }> = ({ node }) => {
 const TurnTimelineNodeRenderer: React.FC<{
   node: TraceNode;
   sessionId?: string;
+  isStreaming?: boolean;
   fileChangesByPath?: ReadonlyMap<string, FileChange>;
-}> = ({ node, sessionId, fileChangesByPath }) => {
+}> = ({ node, sessionId, isStreaming, fileChangesByPath }) => {
   if (!node.turnTimeline) return null;
 
   switch (node.turnTimeline.kind) {
@@ -503,7 +511,14 @@ const TurnTimelineNodeRenderer: React.FC<{
     case 'skill_activity':
       return <SkillActivityNode timeline={node.turnTimeline} />;
     case 'artifact_ownership':
-      return <ArtifactOwnershipNode timeline={node.turnTimeline} sessionId={sessionId} fileChangesByPath={fileChangesByPath} />;
+      return (
+        <ArtifactOwnershipNode
+          timeline={node.turnTimeline}
+          sessionId={sessionId}
+          isStreaming={isStreaming}
+          fileChangesByPath={fileChangesByPath}
+        />
+      );
     default:
       return null;
   }
@@ -779,8 +794,9 @@ const ArtifactItemPills: React.FC<{ items: ArtifactItem[]; className?: string }>
 const ArtifactOwnershipNode: React.FC<{
   timeline: TurnTimelinePayload;
   sessionId?: string;
+  isStreaming?: boolean;
   fileChangesByPath?: ReadonlyMap<string, FileChange>;
-}> = ({ timeline, sessionId, fileChangesByPath }) => {
+}> = ({ timeline, sessionId, isStreaming, fileChangesByPath }) => {
   const { t } = useI18n();
   // Sources（溯源来源）默认折叠：保留可信/溯源能力但不扰民（产品决策，林晨 2026-06-29）。
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -843,7 +859,7 @@ const ArtifactOwnershipNode: React.FC<{
     </div>
   ) : null;
 
-  const receiptsBlock = receiptItems.length > 0 ? (
+  const receiptsBlock = receiptItems.length > 0 && !isStreaming ? (
     <div className={`rounded-lg border border-badge-success/30 bg-emerald-500/[0.035] px-3 py-2 ${
       outputsCard || sourcesBlock ? 'mt-1.5' : ''
     }`}>

@@ -5,7 +5,7 @@
 // tool 内部复用。覆盖：no-renderer 安全短路 / send shape+sessionId / 响应回灌 answered /
 // 超时 timeout / abort。
 // ============================================================================
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sendMock = vi.hoisted(() => vi.fn());
 const getAllWindowsMock = vi.hoisted(() => vi.fn());
@@ -69,6 +69,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   getAllWindowsMock.mockReturnValue([]);
   hasInteractiveRendererMock.mockReturnValue(false);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('promptUserInChat', () => {
@@ -153,16 +157,47 @@ describe('promptUserInChat', () => {
     expect(r.status).toBe('declined');
   });
 
-  it('超时 → status=timeout', async () => {
+  it('有 renderer 的交互提问等待 10 分钟仍 pending，回答后正常结算', async () => {
     vi.useFakeTimers();
     getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
     hasInteractiveRendererMock.mockReturnValue(true);
 
     const promise = promptUserInChat(Q, { timeoutMs: 1000 });
-    await vi.advanceTimersByTimeAsync(1001);
-    const r = await promise;
-    expect(r.status).toBe('timeout');
-    vi.useRealTimers();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+    const marker = Symbol('pending');
+    await expect(Promise.race([promise, Promise.resolve(marker)])).resolves.toBe(marker);
+    const request = sendMock.mock.calls[0]?.[1];
+    await responseHandlerRef.fn?.({}, {
+      requestId: request.id,
+      answers: { 确认: '继续' },
+    } as UserQuestionResponse);
+    await expect(promise).resolves.toMatchObject({ status: 'answered' });
+  });
+
+  it('无 renderer 的语音等待路径保留超时 fail-closed', async () => {
+    vi.useFakeTimers();
+    const speak = vi.fn();
+    const ctrl = new AbortController();
+    beginVoiceQuestionSession({
+      neoSessionId: 'headless-voice-session',
+      dismiss: vi.fn(),
+      speak,
+    });
+    try {
+      const promise = promptUserInChat(Q, {
+        sessionId: 'headless-voice-session',
+        abortSignal: ctrl.signal,
+        timeoutMs: 5 * 60_000,
+      });
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      const marker = Symbol('pending');
+      await expect(Promise.race([promise, Promise.resolve(marker)]))
+        .resolves.toEqual({ status: 'timeout' });
+    } finally {
+      ctrl.abort();
+      endVoiceQuestionSession('headless-voice-session');
+    }
   });
 
   it('同进程先成本确认后 AskUserQuestion，两个 pending 按 requestId 收到自己的回复', async () => {

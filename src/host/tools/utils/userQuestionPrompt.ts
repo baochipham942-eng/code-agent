@@ -10,7 +10,8 @@
 // - no-renderer：CLI/headless 无浏览器连接 → 调用方决定 fallback（成本确认=不花钱）
 // - answered：拿到用户选择
 // - declined：用户主动拒绝回答
-// - timeout / aborted：未得到选择
+// - timeout：无交互 renderer 的等待路径超时
+// - aborted：运行取消 / 会话切换
 // ============================================================================
 import type {
   UserQuestion,
@@ -29,6 +30,9 @@ import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('UserQuestionPrompt');
 
+/** 交互提问只提醒、不结算；运行取消 / 会话切换负责清理。 */
+const INTERACTIVE_USER_QUESTION_REMINDER_MS = 30 * 60_000;
+
 export type PromptUserStatus = 'answered' | 'declined' | 'no-renderer' | 'timeout' | 'aborted';
 
 export interface PromptUserResult {
@@ -39,7 +43,7 @@ export interface PromptUserResult {
 export interface PromptUserOptions {
   sessionId?: string;
   abortSignal?: AbortSignal;
-  /** 覆盖默认超时（INTERACTION_TIMEOUTS.USER_QUESTION）。 */
+  /** 覆盖无交互 renderer 路径的默认超时（INTERACTION_TIMEOUTS.USER_QUESTION）。 */
   timeoutMs?: number;
   /** 桌面通知（best-effort）。 */
   notify?: { title: string; body: string };
@@ -100,11 +104,18 @@ export async function promptUserInChat(
 
   const timeoutMs = opts.timeoutMs ?? INTERACTION_TIMEOUTS.USER_QUESTION;
   const responsePromise = new Promise<UserQuestionResponse>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      pending.delete(request.id);
-      cancelVoiceQuestion(request.id);
-      reject(new Error('timeout'));
-    }, timeoutMs);
+    const timeout = hasInteractiveRenderer
+      ? setTimeout(() => {
+        logger.warn('user question still pending after 30m', {
+          requestId: request.id,
+          sessionId: request.sessionId,
+        });
+      }, INTERACTIVE_USER_QUESTION_REMINDER_MS)
+      : setTimeout(() => {
+        pending.delete(request.id);
+        cancelVoiceQuestion(request.id);
+        reject(new Error('timeout'));
+      }, timeoutMs);
     pending.set(request.id, { resolve, timeout });
 
     if (opts.abortSignal) {

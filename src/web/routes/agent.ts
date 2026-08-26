@@ -14,7 +14,7 @@ import type {
 } from '../../shared/contract/conversationEnvelope';
 import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import { readPersistedExpertThread } from '../../shared/contract/expertThread';
-import { broadcastSSE } from '../helpers/sse';
+import { broadcastSSE, sseClients } from '../helpers/sse';
 import { agentRunSseLimiter, extractRequestToken } from '../helpers/sseConnectionLimit';
 import { formatError } from '../helpers/utils';
 import {
@@ -1000,6 +1000,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         getSettings: () => configService.getSettings(),
         isDevModeAutoApproveEnabled: () => configService.isDevModeAutoApproveEnabled(),
         getExecutionTopology: () => 'main',
+        hasApprovalUi: () => sseClients.size > 0,
         onEvent: (event) => runController.emitAgentEvent(event),
       });
       registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);

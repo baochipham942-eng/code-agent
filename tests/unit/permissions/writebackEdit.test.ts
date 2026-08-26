@@ -4,7 +4,7 @@
 // 锁三件事：
 //   1. 编辑后放行 → 工具真正收到的是编辑后参数（toolExecutor 唯一替换点），不可编辑字段原样带回；
 //   2. fail-closed：表外字段 / 表外工具 / 配会话授权 → 不派发；
-//   3. 可编辑工具的交互审批超时是 5 分钟，其余仍 60s。
+//   3. 无审批 UI 时，可编辑工具超时是 5 分钟，其余仍 60s。
 // 反向变异：把 toolExecutor 里 `params = edited.params` 注掉，用例 1 必红。
 // ============================================================================
 
@@ -114,7 +114,7 @@ describe('applyEditedArgs（共享合同）', () => {
   });
 });
 
-describe('审批岛：改过的参数只配一次性放行 + 可编辑工具超时 5 分钟', () => {
+describe('审批岛：改过的参数只配一次性放行 + 无 UI 时可编辑工具超时 5 分钟', () => {
   const settings = (): AppSettings => ({
     permissions: { autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [], devModeAutoApprove: false },
   } as unknown as AppSettings);
@@ -125,6 +125,7 @@ describe('审批岛：改过的参数只配一次性放行 + 可编辑工具超�
       getSettings: settings,
       isDevModeAutoApproveEnabled: () => false,
       getExecutionTopology: () => 'main',
+      hasApprovalUi: () => false,
       onEvent: (e) => events.push(e as never),
     });
     const promise = island.requestPermission({ type: 'file_write', tool, details: { ...ORIGINAL } as unknown as PermissionRequest['details'], sessionId: 's1', forceConfirm: true });

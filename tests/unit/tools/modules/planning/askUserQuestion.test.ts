@@ -12,7 +12,7 @@
 // - CLI fallback 输出文案 1:1 复刻
 // ============================================================================
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 // Hoisted mocks: ipcHost.handle / AppWindow.getAllWindows / webContents.send
@@ -42,6 +42,10 @@ vi.mock('../../../../../src/host/services/infra/notificationService', () => ({
 }));
 
 import { askUserQuestionModule } from '../../../../../src/host/tools/modules/planning/askUserQuestion';
+import {
+  beginVoiceQuestionSession,
+  endVoiceQuestionSession,
+} from '../../../../../src/host/services/voice/voiceQuestionBridge';
 import { IPC_CHANNELS } from '../../../../../src/shared/ipc';
 
 function makeLogger(): Logger {
@@ -68,6 +72,10 @@ beforeEach(() => {
   getAllWindowsMock.mockReturnValue([]);
   hasInteractiveRendererMock.mockReturnValue(false);
   sendMock.mockReset();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('AskUserQuestion schema', () => {
@@ -362,6 +370,52 @@ describe('AskUserQuestion renderer response', () => {
       ],
     },
   ];
+
+  it('交互环境挂 10 分钟不失败，仍可作答回传', async () => {
+    vi.useFakeTimers();
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+
+    const handler = await askUserQuestionModule.createHandler();
+    const promise = handler.execute({ questions }, makeCtx(), allowAll);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+    const marker = Symbol('pending');
+    await expect(Promise.race([promise, Promise.resolve(marker)])).resolves.toBe(marker);
+    const request = sendMock.mock.calls[0]?.[1];
+    await responseHandlerRef.fn?.({}, { requestId: request.id, answers: { 确认: '继续' } });
+    await expect(promise).resolves.toMatchObject({
+      ok: true,
+      output: 'User responses:\n[确认]: 继续',
+    });
+  });
+
+  it('无 renderer 的等待路径 5 分钟失败，reason 明确包含超时', async () => {
+    vi.useFakeTimers();
+    beginVoiceQuestionSession({
+      neoSessionId: 'headless-question-session',
+      dismiss: vi.fn(),
+      speak: vi.fn(),
+    });
+    try {
+      const handler = await askUserQuestionModule.createHandler();
+      const promise = handler.execute(
+        { questions },
+        makeCtx({ sessionId: 'headless-question-session' }),
+        allowAll,
+      );
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+      const result = await promise;
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('DOMAIN_ERROR');
+        expect(result.error).toContain('等你回答超时');
+      }
+    } finally {
+      endVoiceQuestionSession('headless-question-session');
+    }
+  });
 
   it('declined 响应返回明确结果，让 agent loop 立即继续', async () => {
     getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);

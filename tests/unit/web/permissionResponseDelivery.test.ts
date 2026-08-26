@@ -195,6 +195,7 @@ describe('审批响应投递链路（web 路径）', () => {
       getSettings: configServiceStub.getSettings as never,
       isDevModeAutoApproveEnabled: () => false,
       getExecutionTopology: () => 'main',
+      hasApprovalUi: () => true,
       onEvent: () => {},
     });
     registerForegroundPermissionIsland(sessionId, island);
@@ -222,6 +223,7 @@ describe('审批响应投递链路（web 路径）', () => {
       getSettings: configServiceStub.getSettings as never,
       isDevModeAutoApproveEnabled: () => false,
       getExecutionTopology: () => 'main',
+      hasApprovalUi: () => true,
       onEvent: () => {},
     });
     registerForegroundPermissionIsland(sessionId, island);

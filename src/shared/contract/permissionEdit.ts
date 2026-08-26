@@ -72,8 +72,8 @@ export function isEditableTool(toolName: string): boolean {
 }
 
 /**
- * 可编辑工具的交互审批超时。默认 60s 是防「没人看卡导致 agentLoop 死锁」的兜底；
- * 用户在卡上改正文超过一分钟是常态，改到一半被 host 收走等于白打。
+ * 无审批 UI 环境中，可编辑工具的 fail-closed 超时。普通工具是 60s；可编辑内容需要
+ * 更长的外部裁决窗口，因此保留 5 分钟。带审批 UI 的交互会话不使用该超时。
  */
 export const EDITABLE_PERMISSION_TIMEOUT_MS = 5 * 60_000;
 

@@ -16,6 +16,8 @@ import type { PendingApprovalRepository } from '../../services/core/repositories
 export interface AgentOrchestratorConfig {
   configService: ConfigService;
   onEvent: (event: AgentEvent) => void;
+  /** 当前宿主是否存在能裁决工具审批的 UI；无 UI 时审批继续按短超时 fail-closed。 */
+  hasApprovalUi: () => boolean;
   planningService?: PlanningService;
   runRegistry?: RunRegistry;
   getHomeDir?: () => string;

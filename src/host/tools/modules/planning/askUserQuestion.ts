@@ -12,7 +12,7 @@
 //   * 1-4 questions 校验 / 每题 2-4 options 校验
 //   * No window 时返回 CLI fallback（"用户未响应"模式）
 //   * Desktop notification.notifyNeedsInput 透传
-//   * INTERACTION_TIMEOUTS.USER_QUESTION 超时
+//   * 无交互 renderer 的等待路径保留 INTERACTION_TIMEOUTS.USER_QUESTION 超时
 //   * 输出 "User responses:\n[header]: answer" 格式 1:1
 // ============================================================================
 
@@ -27,7 +27,10 @@ import type {
 import type {
   UserQuestion,
 } from '../../../../shared/contract';
-import { ASK_USER_QUESTION_DECLINED_OUTPUT } from '../../../../shared/contract/askUserQuestion';
+import {
+  ASK_USER_QUESTION_DECLINED_OUTPUT,
+  ASK_USER_QUESTION_TIMEOUT_OUTPUT,
+} from '../../../../shared/contract/askUserQuestion';
 import { promptUserInChat } from '../../utils/userQuestionPrompt';
 import { askUserQuestionSchema as schema } from './askUserQuestion.schema';
 
@@ -114,7 +117,7 @@ export async function executeAskUserQuestion(
     return { ok: false, error: 'aborted', code: 'ABORTED' };
   }
   if (result.status === 'timeout') {
-    return { ok: false, error: 'Question timeout - no response from user', code: 'DOMAIN_ERROR' };
+    return { ok: false, error: ASK_USER_QUESTION_TIMEOUT_OUTPUT, code: 'DOMAIN_ERROR' };
   }
   if (result.status === 'declined' || result.response?.declined === true) {
     onProgress?.({ stage: 'completing', percent: 100 });

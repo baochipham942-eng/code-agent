@@ -52,6 +52,21 @@ describe('prompt regressions', () => {
     expect(prompt).toMatch(/should|probably|seems to/);
   });
 
+  it('写回参数只在审批卡拍一次板', () => {
+    const prompt = buildPrompt();
+    const contract = prompt.match(/<writeback_one_card>[\s\S]*?<\/writeback_one_card>/u)?.[0];
+
+    expect(contract).toMatchInlineSnapshot(`
+      "<writeback_one_card>
+      For approval-gated writebacks (connector writes, mail_send, calendar/reminders, file deletion),
+      NEVER use AskUserQuestion to collect fields. Call the write tool with provided values and reasonable
+      defaults; its approval card is the single review/edit point. AskUserQuestion is only for branching
+      decisions; this overrides ask-first for writeback fields. For “create a meeting now,” immediately call
+      tmeetMeetingCreate with a short default subject, start now, and a reasonable default duration.
+      </writeback_one_card>"
+    `);
+  });
+
   it('does not nudge the model to commit after ordinary file edits', () => {
     const prompt = buildPrompt();
     const result = buildDynamicPromptV2('Fix the failing unit test', {

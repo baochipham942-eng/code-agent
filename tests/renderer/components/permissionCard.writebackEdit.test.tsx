@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { PermissionRequest } from '../../../src/shared/contract';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
+import { decisionCardEn } from '../../../src/renderer/i18n/decisionCard';
 
 const state = vi.hoisted(() => ({ request: null as PermissionRequest | null, sessionId: null as string | null }));
 const invoke = vi.hoisted(() => vi.fn());
@@ -239,7 +240,14 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect(screen.getByTestId('writeback-view-subject').textContent).toBe('quick meeting');
     expect(screen.getByTestId('writeback-view-start').textContent).toContain('2026');
     expect(screen.getByTestId('writeback-view-end').textContent).toContain('2026');
+    expect(screen.getByTestId('writeback-irreversible').textContent)
+      .toContain('模型补全的默认主题或时间可点「修改后允许」调整');
     expect(screen.getByRole('button', { name: /会议创建 · 修改后允许/ })).toBeTruthy();
+  });
+
+  it('默认值可改提示有中英文卡面文案', () => {
+    expect(decisionCardEn.decisionCard.permission.writeback.tmeetWriteWarning)
+      .toContain('default subject or times filled by the model');
   });
 
   it('腾讯会议改主题和本地时间后把 ISO updatedArgs 直达一次性 allow 通道', async () => {

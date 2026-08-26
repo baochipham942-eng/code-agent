@@ -138,6 +138,38 @@ describe('PlanApprovalCard', () => {
     expect(mocks.invokeDomain).not.toHaveBeenCalled();
   });
 
+  it('Enter 只执行当前聚焦的主按钮，卡容器聚焦时不直批', async () => {
+    renderCard();
+    const approve = screen.getByTestId('plan-approve-button');
+    expect(document.activeElement).toBe(approve);
+
+    const cardContainer = screen.getByTestId('plan-approval-card').firstElementChild as HTMLElement;
+    cardContainer.focus();
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(mocks.invokeDomain).not.toHaveBeenCalled();
+
+    approve.focus();
+    fireEvent.keyDown(window, { key: 'Enter' });
+    await waitFor(() => expect(mocks.invokeDomain).toHaveBeenCalledOnce());
+  });
+
+  it('Esc 保留退编辑、退反馈两级，最后一级收起且不发 cancel', () => {
+    renderCard();
+    fireEvent.click(screen.getAllByTitle('编辑')[0]);
+    expect(document.activeElement).toBe(screen.getByLabelText('编辑'));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByLabelText('编辑')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '有别的想法…' }));
+    expect(document.activeElement).toBe(screen.getByPlaceholderText('例如：先做最小闭环，把迁移和兼容放到下一期'));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByTestId('plan-step-list')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByTestId('plan-approval-collapsed')).toBeTruthy();
+    expect(mocks.invokeDomain).not.toHaveBeenCalled();
+  });
+
   it('renders approved evidence as a success-green collapsed row with edited marks', () => {
     render(<PlanApprovalEvidence approval={{
       ...approval,

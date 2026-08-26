@@ -131,6 +131,27 @@ describe('scoped swarm mutations', () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
   });
 
+  it('Esc 只收起 swarm 启动卡，不发 reject IPC', () => {
+    const request: SwarmLaunchRequest = {
+      id: 'request-collapse',
+      ...scope,
+      treeId: 'tree-scope',
+      status: 'pending',
+      requestedAt: 1,
+      summary: 'scope launch',
+      agentCount: 1,
+      dependencyCount: 0,
+      writeAgentCount: 0,
+      tasks: [],
+    };
+    const view = render(<LaunchRequestCard request={request} />);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(view.getByTestId('swarm-launch-collapsed')).toBeTruthy();
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
   it('sends plan rejection with run scope and agent identity', async () => {
     const view = render(
       <ApprovalCard

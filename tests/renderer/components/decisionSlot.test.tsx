@@ -97,7 +97,7 @@ describe('DecisionSlot', () => {
     }
   });
 
-  it('挂在 PinnedTodoBar 之下、输入区相邻位置，时间线 Footer 只留已决历史卡', () => {
+  it('挂在 PinnedTodoBar 之下、输入区相邻位置，时间线 Footer 不再渲染已决权限卡', () => {
     const chatSource = fs.readFileSync(
       path.resolve(process.cwd(), 'src/renderer/components/ChatView.tsx'),
       'utf8',
@@ -113,8 +113,8 @@ describe('DecisionSlot', () => {
     expect(pinned).toBeGreaterThan(0);
     expect(slot).toBeGreaterThan(pinned);
     expect(workflow).toBeGreaterThan(slot);
-    expect(traceSource).toContain('requestOverride={request}');
-    expect(traceSource).not.toMatch(/<PermissionCard\s*\/>/u);
+    expect(traceSource).not.toContain('PermissionCard');
+    expect(traceSource).not.toContain('resolvedPermissionRequests');
     expect(traceSource).toContain('<div className="h-6" aria-hidden="true" />');
   });
 
@@ -141,11 +141,10 @@ describe('DecisionSlot', () => {
     expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain(
       'max-h-[calc(100dvh-12rem)]',
     );
-    expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('shadow-md');
-    expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('dark:shadow-2xl');
+    expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('shadow-2xl');
 
     fireEvent.click(screen.getByRole('button', { name: /允许一次/u }));
-    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+    fireEvent.click(screen.getByRole('button', { name: '允许' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(

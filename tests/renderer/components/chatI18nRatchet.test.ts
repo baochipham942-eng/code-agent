@@ -107,7 +107,6 @@ const MIGRATED: string[] = [
   'ContextHealthPanel.tsx',
   'TaskPanel/Orchestration.tsx',
   'TaskPanel/RunWorkbenchCards.tsx',
-  'TaskPanel/ApprovalSyncCard.tsx',
   'TaskPanel/orchestration/model.ts',
   'TaskPanel/orchestration/components.tsx',
   'TaskPanel/ContextInterventionPanel.tsx',

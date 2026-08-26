@@ -1,9 +1,9 @@
 // ============================================================================
 // UserQuestionCard —— AskUserQuestion 打断式选项卡（G2 拍板形态，2026-07-27）
 //
-// 模型调 AskUserQuestion 时，卡片占据 composer 位置（ChatView 里 ChatInput 被它
-// 遮盖/替换显示），语义 = 必须先回答（或显式跳过）才能继续输入。不是消息流
-// 内联卡，不是居中 Modal——全局 Modal（UserQuestionModal）形态已被本卡取代。
+// 模型调 AskUserQuestion 时，本组件负责逐题作答；当前挂载关系仍由 ChatView 控制，
+// pending 期间 ChatInput 保持挂载但隐藏。提问卡迁入 DecisionSlot 且不替换输入区
+// 属于 N-DECIDE-NOREPLACE，本组件不提前改变那条交互边界。
 //
 // 与权限卡的视觉区分必须成立：权限卡 = 安全语义琥珀/红（「我要动你的东西，
 // 批不批」，带风险等级/记忆范围）；问题卡 = 中性询问语义蓝（「我需要你选一个

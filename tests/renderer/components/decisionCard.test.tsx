@@ -104,6 +104,13 @@ describe('DecisionCard 统一骨架', () => {
     expect(card.className).toContain('border-red-500');
   });
 
+  it('amber 变体为常规权限使用琥珀头与琥珀边', () => {
+    renderCard({ tone: 'amber' });
+    const card = screen.getByTestId('decision-card').firstElementChild as HTMLElement;
+    expect(card.className).toContain('border-badge-warning/60');
+    expect(card.firstElementChild?.className).toContain('bg-amber-500/10');
+  });
+
   it('ghost 取消按钮触发 onCancel', () => {
     const props = renderCard();
     fireEvent.click(screen.getByRole('button', { name: '取消' }));

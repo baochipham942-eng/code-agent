@@ -22,6 +22,9 @@ import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('AgentOrchestrator');
 
+/** 交互审批只提醒、不裁决；运行取消/会话切换负责最终清理。 */
+const INTERACTIVE_PERMISSION_REMINDER_MS = 30 * 60_000;
+
 type OrchestratorPermissionRequest = Omit<PermissionRequest, 'id' | 'timestamp'>;
 
 /** 归一化审批响应为「放行/拒绝」。allow_standing（B4 铸权）在放行语义上等价 allow。 */
@@ -65,18 +68,21 @@ export class OrchestratorPermissionIsland {
     getSettings,
     isDevModeAutoApproveEnabled,
     getExecutionTopology,
+    hasApprovalUi,
     onEvent,
     injectedPendingApprovalRepo,
   }: {
     getSettings: () => AppSettings;
     isDevModeAutoApproveEnabled: () => boolean;
     getExecutionTopology: () => ExecutionTopology;
+    hasApprovalUi: () => boolean;
     onEvent: (event: AgentEvent) => void;
     injectedPendingApprovalRepo?: PendingApprovalRepository;
   }) {
     this.getSettings = getSettings;
     this.isDevModeAutoApproveEnabled = isDevModeAutoApproveEnabled;
     this.getExecutionTopology = getExecutionTopology;
+    this.hasApprovalUi = hasApprovalUi;
     this.onEvent = onEvent;
     this.injectedPendingApprovalRepo = injectedPendingApprovalRepo;
   }
@@ -84,6 +90,7 @@ export class OrchestratorPermissionIsland {
   private readonly getSettings: () => AppSettings;
   private readonly isDevModeAutoApproveEnabled: () => boolean;
   private readonly getExecutionTopology: () => ExecutionTopology;
+  private readonly hasApprovalUi: () => boolean;
   private readonly onEvent: (event: AgentEvent) => void;
 
   handlePermissionResponse(requestId: string, response: PermissionResponse, updatedArgs?: Record<string, unknown>): PermissionDeliveryOutcome {
@@ -202,7 +209,8 @@ export class OrchestratorPermissionIsland {
 
   /**
    * 解除所有挂起的权限请求。新消息到达 / 取消时调用：挂起的权限 Promise 若一直无人
-   * resolve，会把 await 在 requestPermission 上的 agentLoop 冻结到 60s 超时（死锁）。
+   * resolve，会让 await 在 requestPermission 上的 agentLoop 一直等待；交互审批没有 deny 超时，
+   * 所以运行取消和会话切换必须经这里解除。
    * 统一以 'deny' 解除——安全侧默认不放行；模型在被拒后会按指令重新发起调用、重新弹卡。
    *
    * B2 取消收尾：停车挂起的审批必须同步 repo resolve('rejected')，否则取消后 DB 留下
@@ -239,7 +247,7 @@ export class OrchestratorPermissionIsland {
       this.cachedPendingApprovalRepo = getDatabase().getPendingApprovalRepo();
       return this.cachedPendingApprovalRepo;
     } catch (err) {
-      logger.warn('Pending approval repo unavailable, unattended approvals fall back to timeout deny', err);
+      logger.warn('Pending approval repo unavailable, unattended approvals fall back to inline handling', err);
       return null;
     }
   }
@@ -292,8 +300,8 @@ export class OrchestratorPermissionIsland {
 
     // 无人值守会话（cron/heartbeat/channel）与语音派：审批先于任何自动批准判定，改为「停车挂起」，
     // 写 pending_approvals 等收件箱/会话卡任一入口应答（B2）。判据与权限档钳制同源
-    // （markUnattendedSession）。repo 不可用时（DB 未就绪/测试）也只能回退 60s 交互路径，
-    // 超时 deny，绝不能继续触发 devMode/autoApprove 自动放行。
+    // （markUnattendedSession）。repo 不可用时（DB 未就绪/测试）回退内联审批：有 UI 就等
+    // 真人裁决，无 UI 仍按短超时 deny；两种情况都不能继续触发 devMode/autoApprove 自动放行。
     //
     // 语音派的 run 走同一条路（2026-07-26 真机）：D4 抬严的立论就是「用户在通话里
     // 手不在键盘上、眼睛不在 diff 上，这姿态等于无人值守」——既然这么判定，审批就不能
@@ -321,22 +329,32 @@ export class OrchestratorPermissionIsland {
       }
     }
 
-    // N-WRITEBACK-EDIT：可编辑工具（mail_send）留足改正文的时间，其余维持 60s 死锁兜底。
+    // 有审批 UI 的交互会话一直等待真人裁决；无 UI 的 headless 路径仍按 60s/5min
+    // fail-closed，和 createCLIPermissionHandler 的 no-approval-ui 判据保持同一环境边界。
+    // 交互路径的 30min 计时器只留泄漏诊断，不删除请求、不发 timeout 终态。
     const PERMISSION_TIMEOUT = isEditableTool(request.tool) ? EDITABLE_PERMISSION_TIMEOUT_MS : 60000;
+    const approvalUiAvailable = this.hasApprovalUi();
 
     return new Promise((resolve) => {
-      const timeoutId = setTimeout(() => {
-        this.pendingPermissions.delete(fullRequest.id);
-        logger.warn(`Timeout for ${request.type} on ${request.tool}, denying`);
-        // 同一稳定 permission_request 事件做加法回传终态；renderer 以 host 结果为准，
-        // 不复制 60s 计时器，也就不会把后台节流/切会话误判为已过期。
-        this.onEvent({
-          type: 'permission_request',
-          data: { ...fullRequest, resolved: true, decision: 'timeout' },
-        });
-        // N-PERMTRACE：超时无人应答 ≠ 用户拒绝。
-        resolve({ approved: false, denialSource: 'timeout' });
-      }, PERMISSION_TIMEOUT);
+      const timeoutId = approvalUiAvailable
+        ? setTimeout(() => {
+          logger.warn(`Permission still pending after 30m for ${request.type} on ${request.tool}`, {
+            requestId: fullRequest.id,
+            sessionId: fullRequest.sessionId,
+          });
+        }, INTERACTIVE_PERMISSION_REMINDER_MS)
+        : setTimeout(() => {
+          this.pendingPermissions.delete(fullRequest.id);
+          logger.warn(`Timeout for ${request.type} on ${request.tool}, denying`);
+          // 同一稳定 permission_request 事件做加法回传终态；renderer 以 host 结果为准，
+          // 不复制 60s 计时器，也就不会把后台节流/切会话误判为已过期。
+          this.onEvent({
+            type: 'permission_request',
+            data: { ...fullRequest, resolved: true, decision: 'timeout' },
+          });
+          // N-PERMTRACE：超时无人应答 ≠ 用户拒绝。
+          resolve({ approved: false, denialSource: 'timeout' });
+        }, PERMISSION_TIMEOUT);
 
       this.pendingPermissions.set(fullRequest.id, {
         resolve: (response, machineDenial, updatedArgs) => {

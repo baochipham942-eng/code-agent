@@ -170,7 +170,7 @@ export function permissionDenialError(toolName: string, source: PermissionDenial
         + '需人工确认的操作一律 fail-closed 拒绝——用户并未看到审批请求。'
         + '出路：把会话权限档抬到 bypassPermissions，或改用无需确认的等价操作。';
     case 'timeout':
-      return `${toolName} 被自动拒绝：审批请求已发出但超时无人应答。出路：请用户在收件箱/会话卡上处理后重试。`;
+      return `${toolName} 被自动拒绝：审批请求超时未获批准，请重新发起需要审批的操作。`;
     case 'cancelled':
       return `${toolName} 被自动拒绝：本次运行已被取消（或有新消息到达），挂起的审批被统一解除。`;
     case 'fail-closed':

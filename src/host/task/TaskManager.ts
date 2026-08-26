@@ -1089,6 +1089,7 @@ export class TaskManager extends EventEmitter {
       configService,
       planningService: this.planningService,
       runRegistry: this.runRegistry,
+      hasApprovalUi: () => AppWindow.getAllWindows().some((win) => !win.isDestroyed()),
       onEvent: async (event: AgentEvent) => this.handleAgentEvent(sessionId, event, eventKey),
       getHomeDir: () => app.getPath('home'),
       broadcastDAGEvent: (event) => {

@@ -361,6 +361,7 @@ describe('AgentOrchestrator', () => {
 
     orchestrator = new AgentOrchestrator({
       configService: mockConfigService,
+      hasApprovalUi: () => true,
       onEvent: mockOnEvent,
     });
   });
@@ -1093,6 +1094,7 @@ describe('AgentOrchestrator', () => {
       fake = makeFakeRepo();
       parkedOrch = new AgentOrchestrator({
         configService: mockConfigService,
+        hasApprovalUi: () => true,
         onEvent: mockOnEvent,
         pendingApprovalRepo: fake.repo,
       });
@@ -1148,7 +1150,7 @@ describe('AgentOrchestrator', () => {
       getPermissionModeManager().clearLiveVoiceSession(voiceSid, 'run:voice-work-1');
     });
 
-    it('语音 run 落地后恢复 60s 交互路径（停车不是永久的）', async () => {
+    it('语音 run 落地后恢复交互审批路径（停车不是永久的）', async () => {
       const voiceSid = `voice-${Math.random().toString(36).slice(2)}`;
       getPermissionModeManager().markLiveVoiceSession(voiceSid, 'run:voice-work-1');
       getPermissionModeManager().clearLiveVoiceSession(voiceSid, 'run:voice-work-1');
@@ -1165,7 +1167,7 @@ describe('AgentOrchestrator', () => {
       expect((await promise).approved).toBe(false);
     });
 
-    it('有人值守：60s 交互路径不变，不写 pending_approvals', async () => {
+    it('有人值守：走交互审批，不写 pending_approvals', async () => {
       const attendedSid = `attended-${Math.random().toString(36).slice(2)}`;
       const promise = perm(parkedOrch).requestPermission({
         type: 'command',
@@ -1326,6 +1328,7 @@ describe('AgentOrchestrator', () => {
       });
       const noRepoOrch = new AgentOrchestrator({
         configService: mockConfigService,
+        hasApprovalUi: () => true,
         onEvent: mockOnEvent,
       });
       // 台账不可用（DB 未就绪）：getPendingApprovalRepo 返回 null 的那条路径

@@ -1000,6 +1000,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         getSettings: () => configService.getSettings(),
         isDevModeAutoApproveEnabled: () => configService.isDevModeAutoApproveEnabled(),
         getExecutionTopology: () => 'main',
+        hasApprovalUi: () => transport.connectedClient,
         onEvent: (event) => runController.emitAgentEvent(event),
       });
       registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);

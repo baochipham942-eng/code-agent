@@ -48,7 +48,10 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 import { resetDecisionHistory, getDecisionHistory } from '../../../src/host/security/decisionHistory';
 import { createCLIPermissionHandler } from '../../../src/cli/permissionPolicy';
 import { ToolExecutor, type ToolExecutorConfig } from '../../../src/host/tools/toolExecutor';
-import { CLASSIFIER_ERROR_TRACE_RULE } from '../../../src/host/tools/toolPermissionClassification';
+import {
+  CLASSIFIER_ERROR_TRACE_RULE,
+  permissionDenialError,
+} from '../../../src/host/tools/toolPermissionClassification';
 import { getToolLedgerSink, setToolLedgerSink } from '../../../src/host/tools/toolLedgerSink';
 
 describe('ToolExecutor decision trace history', () => {
@@ -203,11 +206,15 @@ describe('N-PERMTRACE 审批拒绝路径可观测性', () => {
   });
 
   it('处理器自报 timeout → reason 记 timeout（不按调用方名字枚举）', async () => {
-    const { entry } = await denyOnce(
+    const { result, entry } = await denyOnce(
       vi.fn().mockResolvedValue({ approved: false, denialSource: 'timeout' }),
     );
 
     expect(entry).toMatchObject({ outcome: 'ask-denied', reason: 'timeout' });
+    expect(result.error).toBe(permissionDenialError('Write', 'timeout'));
+    expect(result.error).toContain('请重新发起需要审批的操作');
+    expect(result.error).not.toContain('收件箱');
+    expect(result.error).not.toContain('会话卡');
   });
 
   it('trace 不再被丢弃：ask-denied 带完整决策链（含 ask_denied 那一步）', async () => {

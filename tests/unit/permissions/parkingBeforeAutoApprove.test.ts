@@ -56,6 +56,7 @@ describe('停车判定先于自动批准', () => {
       getSettings: () => settings(permissionSettings),
       isDevModeAutoApproveEnabled: () => devSlotEnabled,
       getExecutionTopology: () => topology,
+      hasApprovalUi: () => false,
       onEvent: vi.fn(),
       injectedPendingApprovalRepo: repo,
     });
@@ -124,6 +125,7 @@ describe('停车判定先于自动批准', () => {
       getSettings: () => settings({ devModeAutoApprove: true }),
       isDevModeAutoApproveEnabled: () => false,
       getExecutionTopology: () => 'main',
+      hasApprovalUi: () => false,
       onEvent,
       injectedPendingApprovalRepo: makeRepo(),
     });

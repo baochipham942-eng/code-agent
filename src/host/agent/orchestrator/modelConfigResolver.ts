@@ -16,6 +16,7 @@ import {
 } from '../../../shared/constants';
 import { PROVIDER_REGISTRY } from '../../model/providerRegistry';
 import { createLogger } from '../../services/infra/logger';
+import { resolveConfiguredDefaultProvider } from '../../../shared/modelDefaults';
 
 const logger = createLogger('ModelConfigResolver');
 
@@ -27,7 +28,7 @@ export function resolveModelConfig(
   settings: ReturnType<ConfigService['getSettings']>
 ): ModelConfig {
   // 从用户配置获取选择的 provider 和 model
-  const userProviderStr = settings.models?.defaultProvider || settings.models?.default || DEFAULT_PROVIDER;
+  const userProviderStr = resolveConfiguredDefaultProvider(settings.models, DEFAULT_PROVIDER);
   const normalizedProvider = (normalizeProviderId(userProviderStr) ?? userProviderStr ?? DEFAULT_PROVIDER) as ModelProvider;
   const providerConfig =
     settings.models?.providers?.[normalizedProvider]

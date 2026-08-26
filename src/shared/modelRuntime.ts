@@ -9,6 +9,7 @@ import {
   type ProviderInfo,
   type ProviderModelEntry,
 } from './constants';
+import { resolveConfiguredDefaultProvider } from './modelDefaults';
 
 export type RuntimeModelFeature = 'tool' | 'vision' | 'reasoning';
 
@@ -839,8 +840,7 @@ export function hasConfiguredRuntimeModels(settings?: AppSettings | null): boole
 
 export function hasConfiguredDefaultRuntimeModel(settings?: AppSettings | null): boolean {
   if (!settings?.models) return false;
-  const providerId = settings.models.defaultProvider || settings.models.default;
-  if (!providerId) return false;
+  const providerId = resolveConfiguredDefaultProvider(settings.models, settings.models.default as ModelProvider);
   const providerConfig = settings.models.providers?.[providerId];
   if (!providerConfig || providerConfig.enabled === false) return false;
   return isRuntimeProviderAvailable(providerId, providerConfig);

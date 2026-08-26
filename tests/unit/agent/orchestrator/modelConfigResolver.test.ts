@@ -80,6 +80,35 @@ describe('modelConfigResolver', () => {
       expect(cfg.model).toBe('deepseek-chat');
       expect(cfg.temperature).toBe(0.7);
     });
+
+    it('models.default wins when the legacy defaultProvider alias disagrees', () => {
+      const configService = {
+        getApiKey: vi.fn((provider: string) => `key-for-${provider}`),
+      } as unknown as ConfigService;
+      const conflictingSettings = {
+        models: {
+          default: 'custom-tokenrhythm',
+          defaultProvider: 'deepseek',
+          providers: {
+            deepseek: { model: 'deepseek-v4-pro' },
+            'custom-tokenrhythm': {
+              model: 'deepseek-v4-flash',
+              baseUrl: 'https://relay.example.test/v1',
+              protocol: 'openai',
+            },
+          },
+        },
+      } as unknown as ReturnType<ConfigService['getSettings']>;
+
+      const cfg = resolveModelConfig(configService, conflictingSettings);
+
+      expect(cfg).toMatchObject({
+        provider: 'custom-tokenrhythm',
+        model: 'deepseek-v4-flash',
+        apiKey: 'key-for-custom-tokenrhythm',
+        baseUrl: 'https://relay.example.test/v1',
+      });
+    });
   });
 
   describe('resolveRunModelConfig', () => {

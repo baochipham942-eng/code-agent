@@ -16,6 +16,13 @@ function makeRawSession(id: string) {
   };
 }
 
+function makeTokenRhythmSession(id: string) {
+  return {
+    ...makeRawSession(id),
+    modelConfig: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' },
+  };
+}
+
 type HarnessState = ReturnType<SessionCreateDeps['get']> & { sessionTasks: never[] };
 
 describe('executeCreateSession optimistic insert deduplication', () => {
@@ -78,5 +85,26 @@ describe('executeCreateSession optimistic insert deduplication', () => {
     await executeCreateSession(deps, '普通新会话');
 
     expect(state.sessions.map((item) => item.id)).toEqual(['new-2', 'existing-1']);
+  });
+
+  it('keeps the host config default on a new session and does not copy the previous override', async () => {
+    mockDomainInvoke.mockImplementation(async (_domain: string, action: string) => {
+      if (action === 'getModelOverride') {
+        return { success: true, data: { provider: 'deepseek', model: 'deepseek-v4-pro' } };
+      }
+      if (action === 'create') {
+        return { success: true, data: makeTokenRhythmSession('new-default') };
+      }
+      return { success: true, data: null };
+    });
+
+    await executeCreateSession(deps, '新会话使用配置默认');
+
+    expect(state.sessions[0].modelConfig).toEqual({
+      provider: 'custom-tokenrhythm',
+      model: 'deepseek-v4-flash',
+    });
+    expect(mockDomainInvoke.mock.calls.some(([, action]) => action === 'getModelOverride')).toBe(false);
+    expect(mockDomainInvoke.mock.calls.some(([, action]) => action === 'switchModel')).toBe(false);
   });
 });

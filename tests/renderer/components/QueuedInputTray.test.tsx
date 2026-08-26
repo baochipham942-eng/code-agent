@@ -25,7 +25,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
         expand: '展开',
         edit: '编辑',
         retract: '撤回',
-        sendNow: '现在就说',
+        redirectNow: '立即改道',
         failed: '没发出去',
         retry: '重试',
         delete: '删除',
@@ -105,16 +105,17 @@ describe('QueuedInputTray', () => {
     expect(actions.className).toContain('opacity-0');
     expect(actions.className).toContain('group-hover:opacity-100');
     expect(actions.className).toContain('group-focus-within:opacity-100');
-    expect(actions.textContent).toBe('现在就说编辑撤回');
+    expect(actions.textContent).toBe('编辑撤回');
     expect(screen.getByText('编辑中').className).not.toContain('bg-');
     fireEvent.mouseEnter(firstRow);
     expect(actions.className).toContain('group-hover:opacity-100');
-    const sendNow = screen.getAllByRole('button', { name: '现在就说' })[0];
-    sendNow.focus();
-    expect(document.activeElement).toBe(sendNow);
+    const redirect = screen.getAllByRole('button', { name: '立即改道' })[0];
+    expect(redirect.getAttribute('title')).toBe('立即改道');
+    redirect.focus();
+    expect(document.activeElement).toBe(redirect);
   });
 
-  it('普通行的现在就说、编辑和撤回都走对应入口', async () => {
+  it('普通行的编辑和撤回都走对应入口', async () => {
     items = [input('one'), input('two', { position: 1 }), input('three', { position: 2 })];
     const onEdit = vi.fn();
     render(<QueuedInputTray sessionId="session-1" revision={0} editingId={null} onEdit={onEdit} />);
@@ -129,10 +130,21 @@ describe('QueuedInputTray', () => {
     ));
     await waitFor(() => expect(screen.queryByTestId('queued-input-row-one')).toBeNull());
 
-    fireEvent.click(screen.getAllByText('现在就说')[0]);
+  });
+
+  it('改道指定条目时只取出该条，其余排队条保持不变', async () => {
+    items = [input('one'), input('two', { position: 1 }), input('three', { position: 2 })];
+    render(<QueuedInputTray sessionId="session-1" revision={0} editingId={null} onEdit={vi.fn()} />);
+    await screen.findByTestId('queued-input-row-one');
+
+    fireEvent.click(screen.getByTestId('queued-input-redirect-two'));
     await waitFor(() => expect(ipc.invokeDomain).toHaveBeenCalledWith(
       expect.anything(), 'sendNow', { id: 'two' },
     ));
+    await waitFor(() => expect(screen.queryByTestId('queued-input-row-two')).toBeNull());
+    expect(screen.getByTestId('queued-input-row-one')).toBeTruthy();
+    expect(screen.getByTestId('queued-input-row-three')).toBeTruthy();
+    expect(items.map((item) => item.id)).toEqual(['one', 'three']);
   });
 
   it('paused 行只显示警告图标且无黄底 pill，动作收敛为重试和删除', async () => {

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import React, { useRef, useState } from 'react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SteerOrQueueOutcome } from '../../../src/shared/contract/appService';
@@ -12,9 +14,6 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 });
 
 import { InputArea, type InputAreaRef } from '../../../src/renderer/components/features/chat/ChatInput/InputArea';
-import {
-} from '../../../src/renderer/components/features/chat/ChatInput';
-import { RuntimeInputChoice } from '../../../src/renderer/components/features/chat/ChatInput/RuntimeInputChoice';
 import {
   useChatInputSubmit,
   type UseChatInputSubmitParams,
@@ -82,13 +81,14 @@ function SubmitHarness({
   isProcessing,
   onSend,
   onSteer,
+  initialValue = '请改成更简洁的方案',
 }: {
   isProcessing: boolean;
   onSend: (envelope: ConversationEnvelope) => boolean | Promise<boolean>;
   onSteer: (envelope: ConversationEnvelope) => Promise<SteerOrQueueOutcome | undefined>;
+  initialValue?: string;
 }) {
-  const [value, setValue] = useState('请改成更简洁的方案');
-  const [runtimeInputChoice, setRuntimeInputChoice] = useState<'queue' | 'redirect'>('queue');
+  const [value, setValue] = useState(initialValue);
   const inputAreaRef = useRef<InputAreaRef>(null);
   const { handleSubmit } = useChatInputSubmit(makeParams({
     value,
@@ -101,25 +101,16 @@ function SubmitHarness({
   }));
 
   return (
-    <>
-      {isProcessing && (
-        <RuntimeInputChoice value={runtimeInputChoice} onChange={setRuntimeInputChoice} />
-      )}
-      <InputArea
-        ref={inputAreaRef}
-        value={value}
-        onChange={setValue}
-        onSubmit={(opts) => {
-          void handleSubmit(undefined, {
-            ...opts,
-            steer: opts?.steer ?? (isProcessing && runtimeInputChoice === 'redirect'),
-          });
-        }}
-        onFileSelect={vi.fn()}
-        isFocused={false}
-        onFocusChange={vi.fn()}
-      />
-    </>
+    <InputArea
+      ref={inputAreaRef}
+      value={value}
+      onChange={setValue}
+      onSubmit={(opts) => { void handleSubmit(undefined, opts); }}
+      onFileSelect={vi.fn()}
+      isFocused={false}
+      onFocusChange={vi.fn()}
+      placeholder={isProcessing ? '继续描述…（Enter 排队，⌘/Ctrl+Enter 改道）' : undefined}
+    />
   );
 }
 
@@ -130,12 +121,15 @@ afterEach(() => {
 });
 
 describe('mid-turn composer submission', () => {
-  it('routes Alt/Option+Enter to the running-turn adjustment path', async () => {
+  it.each([
+    ['Cmd+Enter', { metaKey: true }],
+    ['Ctrl+Enter', { ctrlKey: true }],
+  ])('routes %s to the running-turn adjustment path', async (_label, modifiers) => {
     const onSend = vi.fn().mockResolvedValue(true);
     const onSteer = vi.fn().mockResolvedValue({ outcome: 'steered' });
     render(<SubmitHarness isProcessing onSend={onSend} onSteer={onSteer} />);
 
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', altKey: true });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', ...modifiers });
 
     await waitFor(() => expect(onSteer).toHaveBeenCalledTimes(1));
     expect(onSteer).toHaveBeenCalledWith(expect.objectContaining({
@@ -168,42 +162,30 @@ describe('mid-turn composer submission', () => {
     expect(onSteer).not.toHaveBeenCalled();
   });
 
-  it('uses the selected Now choice for ordinary Enter while running', async () => {
+  it('does not render the running queue/redirect segmented choice and exposes the shortcut hint', () => {
     const onSend = vi.fn().mockResolvedValue(true);
     const onSteer = vi.fn().mockResolvedValue({ outcome: 'steered' });
-    render(<SubmitHarness isProcessing onSend={onSend} onSteer={onSteer} />);
+    render(<SubmitHarness isProcessing onSend={onSend} onSteer={onSteer} initialValue="" />);
 
-    fireEvent.click(screen.getByRole('radio', { name: '改道' }));
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
-
-    await waitFor(() => expect(onSteer).toHaveBeenCalledTimes(1));
-    expect(domainInvoke).not.toHaveBeenCalled();
-    expect(onSend).not.toHaveBeenCalled();
-  });
-
-  it('shows the two running choices with Later selected by default and hides them when idle', () => {
-    const onSend = vi.fn().mockResolvedValue(true);
-    const onSteer = vi.fn().mockResolvedValue({ outcome: 'steered' });
-    const { rerender } = render(<SubmitHarness isProcessing onSend={onSend} onSteer={onSteer} />);
-
-    expect(screen.getByRole('radio', { name: '排队' }).getAttribute('aria-checked')).toBe('true');
-    expect(screen.getByRole('radio', { name: '改道' }).getAttribute('aria-checked')).toBe('false');
-    expect(screen.getByRole('radio', { name: '排队' }).getAttribute('title')).toBe('稍后再做');
-    expect(screen.getByRole('radio', { name: '改道' }).getAttribute('title')).toBe('现在打断，按新话走');
-    expect(screen.getByTestId('runtime-input-choice').textContent).toBe('排队改道');
-    expect(screen.queryByText('稍后再做')).toBeNull();
-    expect(screen.queryByText('现在打断，按新话走')).toBeNull();
-
-    rerender(<SubmitHarness isProcessing={false} onSend={onSend} onSteer={onSteer} />);
     expect(screen.queryByTestId('runtime-input-choice')).toBeNull();
+    expect(screen.getByText('继续描述…（Enter 排队，⌘/Ctrl+Enter 改道）')).toBeTruthy();
+
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/renderer/components/features/chat/ChatInput/index.tsx'),
+      'utf8',
+    );
+    expect(source).not.toContain('RuntimeInputChoice');
   });
 
-  it('treats Alt/Option+Enter as ordinary send while idle', async () => {
+  it.each([
+    ['Cmd+Enter', { metaKey: true }],
+    ['Ctrl+Enter', { ctrlKey: true }],
+  ])('treats %s as ordinary send while idle', async (_label, modifiers) => {
     const onSend = vi.fn().mockResolvedValue(true);
     const onSteer = vi.fn().mockResolvedValue({ outcome: 'steered' });
     render(<SubmitHarness isProcessing={false} onSend={onSend} onSteer={onSteer} />);
 
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', altKey: true });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', ...modifiers });
 
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
     expect(onSteer).not.toHaveBeenCalled();

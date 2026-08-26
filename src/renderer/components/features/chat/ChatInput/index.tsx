@@ -111,7 +111,6 @@ import { AgentChip } from './AgentChip';
 import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
 import { ComposerUploadStatus } from './ComposerUploadStatus';
-import { RuntimeInputChoice, type RuntimeInputChoiceValue } from './RuntimeInputChoice';
 import { QueuedInputTray } from './QueuedInputTray';
 
 // ============================================================================
@@ -232,7 +231,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     metadata: ConversationVoiceInputMetadata;
   } | null>(null);
   const [isFocused, setIsFocused] = useState(false);
-  const [runtimeInputChoice, setRuntimeInputChoice] = useState<RuntimeInputChoiceValue>('queue');
   const [queuedInputRevision, setQueuedInputRevision] = useState(0);
   const [editingQueuedInputId, setEditingQueuedInputId] = useState<string | null>(null);
 
@@ -244,7 +242,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const { currentSessionId } = useChatInputSessionScope(setValue, setAttachments, sessionless);
 
   useEffect(() => {
-    setRuntimeInputChoice('queue');
     setEditingQueuedInputId(null);
     setSessionReferences([]);
     setArtifactReferences([]);
@@ -814,7 +811,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const resolvedPlaceholder = useMemo(() => {
     if (inputPlaceholder) return inputPlaceholder;
     if (!isProcessing) return undefined;
-    return t.chatInput.placeholderContinue;
+    return t.chatInputSubmit.runtimeInputPlaceholder;
   }, [inputPlaceholder, isProcessing, t]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
@@ -872,11 +869,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       inputAreaRef.current?.focus();
       return;
     }
-    return handleSubmit(undefined, {
-      ...opts,
-      steer: opts?.steer ?? Boolean(isProcessing && runtimeInputChoice === 'redirect'),
-    });
-  }, [editingQueuedInputId, handleSubmit, isProcessing, runtimeInputChoice, value]);
+    return handleSubmit(undefined, opts);
+  }, [editingQueuedInputId, handleSubmit, value]);
 
   // 附件 / 语音动作单元
   const {
@@ -1042,9 +1036,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       <form
         ref={formRef}
         onSubmit={(event) => {
-          void submitWithRuntimeChoice(event, {
-            steer: Boolean(isProcessing && runtimeInputChoice === 'redirect'),
-          });
+          void submitWithRuntimeChoice(event);
         }}
         className="max-w-3xl mx-auto"
       >
@@ -1391,10 +1383,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               onFileSelect={handleFileSelect}
               onSelectCapability={selectWorkbenchCapabilityForCurrentTurn}
             />
-
-            {isProcessing && (
-              <RuntimeInputChoice value={runtimeInputChoice} onChange={setRuntimeInputChoice} />
-            )}
 
             {isDictationActive ? (
               <DictationRecordingBar

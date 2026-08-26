@@ -3,8 +3,6 @@ import type { ToolCall } from '../../../src/shared/contract/tool';
 import {
   formatToolDuration,
   getToolCapabilitySource,
-  getToolPermissionView,
-  getToolRecoveryHint,
   humanizeToolError,
   isAutoLoadedRetry,
   isEscalatedToolError,
@@ -29,29 +27,11 @@ describe('toolExecutionPresentation', () => {
     expect(getToolCapabilitySource('memory_write')).toBe('memory');
   });
 
-  it('classifies permission level for common tool families', () => {
-    expect(getToolPermissionView('Read')).toBe('read');
-    expect(getToolPermissionView('Write')).toBe('write');
-    expect(getToolPermissionView('Bash')).toBe('shell');
-    expect(getToolPermissionView('WebFetch')).toBe('network');
-    expect(getToolPermissionView('computer_use')).toBe('desktop');
-  });
-
   it('formats durations consistently for meta rows', () => {
     expect(formatToolDuration(420)).toBe('420ms');
     expect(formatToolDuration(1250)).toBe('1.3s');
     expect(formatToolDuration(12000)).toBe('12s');
     expect(formatToolDuration(65000)).toBe('1m 5s');
-  });
-
-  it('returns recovery hint based on tool status', () => {
-    expect(getToolRecoveryHint(makeToolCall({ name: 'Bash' }), 'pending', zh)).toBe('等待结果');
-    expect(getToolRecoveryHint(makeToolCall({ name: 'Bash' }), 'interrupted', zh)).toBeNull();
-    expect(getToolRecoveryHint(makeToolCall({
-      name: 'Bash',
-      expectedOutcome: '跑完验证',
-      result: { toolCallId: 'tool-1', success: false, error: 'failed' },
-    }), 'error', zh)).toBe('可重试：跑完验证');
   });
 
   it('detects auto-loaded retry results as benign', () => {

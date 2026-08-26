@@ -9,8 +9,9 @@
 // 后续事件才能自然命中同一条消息无缝续接，不需要额外映射表。
 // ============================================================================
 
-import type { Message, ToolCall } from '@shared/contract';
+import type { Message, StreamInterruptionReason, ToolCall } from '@shared/contract';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
+import { deriveStreamInterruptionReason } from './streamInterruptionPresentation';
 
 /** metadata 标记：这条 assistant 消息是从 streamSnapshot 回填的（非 DB 落库消息）。 */
 const STREAM_RECOVERY_META_KEY = 'streamRecovery';
@@ -34,7 +35,10 @@ function parseSnapshotToolArguments(raw: string): Record<string, unknown> {
   return {};
 }
 
-export function buildStreamRecoveryMessage(snapshot: StreamRecoverySnapshot): Message {
+export function buildStreamRecoveryMessage(
+  snapshot: StreamRecoverySnapshot,
+  interruptionReason: StreamInterruptionReason | null = 'app-restart',
+): Message {
   const toolCalls: ToolCall[] = snapshot.toolCalls
     .filter((toolCall) => Boolean(toolCall.name))
     .map((toolCall) => ({
@@ -50,7 +54,10 @@ export function buildStreamRecoveryMessage(snapshot: StreamRecoverySnapshot): Me
     ...(snapshot.reasoning ? { reasoning: snapshot.reasoning } : {}),
     timestamp: snapshot.timestamp,
     toolCalls,
-    metadata: { [STREAM_RECOVERY_META_KEY]: { turnId: snapshot.turnId } },
+    metadata: {
+      [STREAM_RECOVERY_META_KEY]: { turnId: snapshot.turnId },
+      ...(interruptionReason ? { streamInterruptionReason: interruptionReason } : {}),
+    },
   };
 }
 
@@ -61,6 +68,7 @@ export function buildStreamRecoveryMessage(snapshot: StreamRecoverySnapshot): Me
 export function mergeStreamSnapshotIntoMessages(
   messages: Message[],
   snapshot: StreamRecoverySnapshot | null | undefined,
+  isSessionActive = false,
 ): Message[] {
   if (!snapshot || snapshot.isFinal) return messages;
   if (messages.some((message) => message.id === snapshot.turnId)) return messages;
@@ -68,5 +76,13 @@ export function mergeStreamSnapshotIntoMessages(
     Boolean(snapshot.content.trim() || snapshot.reasoning.trim()) ||
     snapshot.toolCalls.some((toolCall) => Boolean(toolCall.name));
   if (!hasPartial) return messages;
-  return [...messages, buildStreamRecoveryMessage(snapshot)];
+  return [
+    ...messages,
+    buildStreamRecoveryMessage(
+      snapshot,
+      // 切走后仍在运行的会话会靠同一条 recovery message 接收后续 delta，不能把它
+      // 提前收成“应用重启时中断”；只有宿主已无 active run 的恢复快照才是回放终态。
+      isSessionActive ? null : deriveStreamInterruptionReason(messages, snapshot.turnId),
+    ),
+  ];
 }

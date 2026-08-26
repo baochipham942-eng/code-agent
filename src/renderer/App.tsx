@@ -198,7 +198,11 @@ export const App: React.FC = () => {
     !workbenchCollapsed &&
     windowWidth < WORKBENCH_MIN_VISIBLE_WIDTH &&
     workbenchTabs.length > 0 &&
-    (isPreviewActive || activeWorkbenchTab === 'overview' || activeWorkbenchTab === 'browser');
+    (isPreviewActive
+      || activeWorkbenchTab === 'overview'
+      || activeWorkbenchTab === 'logs'
+      || activeWorkbenchTab === 'experts'
+      || activeWorkbenchTab === 'browser');
   // 专注模式（2026-08-01 工单①）只在右栏独立成列时生效：收起右栏/窄屏借住聊天列时退回侧栏态。
   const workbenchFocused = useWorkbenchFocusStore((s) => s.workbenchFocused);
   const setWorkbenchFocused = useWorkbenchFocusStore((s) => s.setWorkbenchFocused);

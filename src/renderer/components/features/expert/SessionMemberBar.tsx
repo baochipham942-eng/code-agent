@@ -6,8 +6,8 @@
 //      这个团队由谁组成（WorkBuddy 不做这一步，只在真 spawn 后才铺；我们多给一层可预期性）
 //   2) 运行时：会话真的跑起来了（持久化账本/API 回灌）—— 带状态
 // 08-22 拍板：常态只渲染一条折叠 chip「N 个代理工作中 · 当前一句」+ 尾部「合没合」
-// 总账 +「›」，不再有 pill 展开态；点 chip 打开右侧「本会话的代理」面板
-// （TaskPanel 第三页签），停止全部 / token / 成员 pill 都搬进了面板。
+// 总账 +「›」，不再有 pill 展开态；点 chip 直达右侧「专家」一级页签，
+// 停止全部 / token / 成员 pill 都留在原专家内容面板。
 // ============================================================================
 
 import React, { useEffect, useMemo } from 'react';
@@ -17,7 +17,6 @@ import { useComposerStore } from '../../../stores/composerStore';
 import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { useSessionStore } from '../../../stores/sessionStore';
-import { useTaskPanelViewStore } from '../../../stores/taskPanelViewStore';
 import { useI18n } from '../../../hooks/useI18n';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
@@ -28,11 +27,11 @@ import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetai
 import { useSessionAgentRows } from '../../../hooks/useSessionAgentRows';
 import { deriveAgentMergeState } from '../../../utils/agentMergeState';
 import type { AgentRow } from '../../../utils/agentRows';
+import { useRightPanelTabsStore } from '../../../stores/rightPanelTabsStore';
 
-/** 打开右侧「本会话的代理」面板：切 TaskPanel 页签 + 确保右栏展开。 */
+/** 打开右侧「专家」一级页签。 */
 function openSessionAgentsPanel(): void {
-  useTaskPanelViewStore.getState().setView('agents');
-  useAppStore.getState().openWorkbenchTab('overview', { source: 'user' });
+  useAppStore.getState().openWorkbenchTab('experts', { source: 'user' });
 }
 
 export function swarmRunAgentRecordToState(record: SwarmRunAgentRecord): SwarmAgentState {
@@ -178,6 +177,13 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   const text = t.expert.memberBar;
   const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
   const { rows, conflicts } = useSessionAgentRows(sessionId);
+
+  useEffect(() => {
+    if (!sessionId || rows.length === 0) return;
+    if (useRightPanelTabsStore.getState().claimExpertsAutoOpen(sessionId)) {
+      useAppStore.getState().openWorkbenchTab('experts', { source: 'auto', activate: false });
+    }
+  }, [sessionId, rows.length]);
 
   // 换会话必须退出成员视图，否则会拿上一个会话的成员去渲染这一个
   useEffect(() => { setViewingMemberId(null); }, [sessionId, setViewingMemberId]);

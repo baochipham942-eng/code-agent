@@ -128,14 +128,14 @@ describe('appStore workbench tabs', () => {
     expect(state.activeWorkbenchTab).toBe(`preview:${tab?.path}`);
   });
 
-  it('closeWorkbenchTab removes tab and clears active when nothing remains', () => {
+  it('closeWorkbenchTab keeps the permanent task tab active', () => {
     const { openWorkbenchTab, closeWorkbenchTab } = useAppStore.getState();
     openWorkbenchTab('task');
     closeWorkbenchTab('task');
 
     const state = useAppStore.getState();
-    expect(state.workbenchTabs).toEqual([]);
-    expect(state.activeWorkbenchTab).toBeNull();
+    expect(state.workbenchTabs).toEqual(['overview']);
+    expect(state.activeWorkbenchTab).toBe('overview');
   });
 
   it('closeWorkbenchTab on active falls back to another pinned tab', () => {
@@ -289,14 +289,14 @@ describe('appStore workbench tabs', () => {
     });
   });
 
-  it('does not immediately re-open task after the user closes it during the same activity window', () => {
+  it('ignores attempts to close the permanent task tab during an activity window', () => {
     const { syncTaskWorkbenchForActivity, closeWorkbenchTab } = useAppStore.getState();
 
     syncTaskWorkbenchForActivity(true);
     closeWorkbenchTab('task');
     syncTaskWorkbenchForActivity(true);
 
-    expect(useAppStore.getState().workbenchTabs).toEqual([]);
+    expect(useAppStore.getState().workbenchTabs).toEqual(['overview']);
 
     syncTaskWorkbenchForActivity(false);
     syncTaskWorkbenchForActivity(true);
@@ -330,9 +330,7 @@ describe('appStore workbench tabs', () => {
     expect(useAppStore.getState().workbenchTabs).toEqual(['preview:http://127.0.0.1:4173', 'preview:/tmp/report.pdf']);
   });
 
-  // 批P 第四波④：空间 composer 发起的新会话右栏自动展开成空 launcher——根因是
-  // syncWorkbenchForSession 清 tabs 不带 collapsed，展开态跨会话泄漏。修复钉死在
-  // chokepoint：全新会话（无快照）落地一律回默认收起，两条新会话路径同判据。
+  // 空间 composer 发起的新会话默认收起右栏，但仍保留常驻的任务页签。
   it('syncWorkbenchForSession：全新会话落地强制回默认收起（collapsed 不跨会话泄漏）', () => {
     // 现场：上一会话右栏被带成展开（collapsed=false）且有 tab
     useAppStore.setState({
@@ -349,8 +347,8 @@ describe('appStore workbench tabs', () => {
 
     const state = useAppStore.getState();
     expect(state.workbenchCollapsed).toBe(true);
-    expect(state.workbenchTabs).toEqual([]);
-    expect(state.activeWorkbenchTab).toBeNull();
+    expect(state.workbenchTabs).toEqual(['overview']);
+    expect(state.activeWorkbenchTab).toBe('overview');
     expect(state.workbenchSessionKey).toBe('sess-b-brand-new');
     // 旧会话快照照存（tabs 回访可恢复）
     expect(state.workbenchBySession['sess-a']).toEqual({ tabs: ['overview'], active: 'overview' });

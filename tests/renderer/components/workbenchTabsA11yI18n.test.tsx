@@ -24,6 +24,7 @@ vi.mock('../../../src/renderer/hooks/useKeybindingsSettings', () => ({
 import { WorkbenchTabs } from '../../../src/renderer/components/WorkbenchTabs';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useRightPanelTabsStore } from '../../../src/renderer/stores/rightPanelTabsStore';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 
@@ -39,8 +40,10 @@ beforeEach(() => {
     previewTabs: [],
     language: 'en',
     openWorkbenchTab: realOpenWorkbenchTab,
+    developerMode: false,
   });
   useSessionStore.setState({ currentSessionId: null });
+  useRightPanelTabsStore.setState({ logsPinned: false, expertsAutoOpenedBySession: {} });
 });
 
 afterEach(() => {
@@ -119,17 +122,17 @@ describe('WorkbenchTabs empty-state launcher', () => {
 
   // 这条替换了旧断言「does not render shortcut chips for views without an enabled binding」。
   // 旧断言把「只有概览有键、浏览器/文件/设计画布静默无键」钉成了正确行为，正是 UI 债第 22 条
-  // 说的不一致；产品负责人推翻了「加功能不还债」的原判定，判据改成：默认配置下四个视图
-  // 要么都有键、要么都没有。视图清单从 DOM 现取，将来加第六个视图漏配默认键同样会红。
-  it('gives every launchable view a shortcut chip in the default config', () => {
+  // 原五个视图已有默认快捷键；本单新增的日志/专家是按需内容入口，不借用无关快捷键。
+  it('keeps shortcut chips on the five views that have registered actions', () => {
     render(<WorkbenchTabs />);
 
     const rows = screen.getAllByTestId(/^open-workbench-view-/);
-    expect(rows).toHaveLength(5);
-    for (const row of rows) {
-      const viewId = (row.getAttribute('data-testid') ?? '').replace('open-workbench-view-', '');
+    expect(rows).toHaveLength(7);
+    for (const viewId of ['overview', 'files', 'browser', 'design-canvas', 'terminal']) {
       expect(screen.getByTestId(`workbench-shortcut-${viewId}`).textContent).toBeTruthy();
     }
+    expect(screen.queryByTestId('workbench-shortcut-logs')).toBeNull();
+    expect(screen.queryByTestId('workbench-shortcut-experts')).toBeNull();
   });
 
   it('reads the files row from the open-files action, not the attachment picker', () => {
@@ -180,27 +183,31 @@ describe('WorkbenchTabs tab 条形态（D6）', () => {
     expect(openWorkbenchTab).toHaveBeenCalledWith('files', { source: 'user' });
   });
 
-  it('「＋」弹出可打开视图列表：不含已开视图，点开即加并收起弹层', () => {
+  it('「＋」弹层保留任务/日志/专家找回入口，其他已开视图不重复', () => {
     useAppStore.setState({ workbenchTabs: ['overview'], activeWorkbenchTab: 'overview' });
     render(<WorkbenchTabs />);
 
     fireEvent.click(screen.getByLabelText(en.workbenchTabs.addView));
     const menu = screen.getByTestId('workbench-view-menu');
     expect(within(menu).getByTestId('workbench-view-launcher-panel')).toBeTruthy();
-    expect(within(menu).queryByTestId('open-workbench-view-overview')).toBeNull();
+    expect(within(menu).getByTestId('open-workbench-view-overview')).toBeTruthy();
+    expect(within(menu).getByTestId('open-workbench-view-logs')).toBeTruthy();
+    const expertsEntry = within(menu).getByTestId('open-workbench-view-experts');
+    expect(expertsEntry.hasAttribute('disabled')).toBe(true);
+    expect(expertsEntry.textContent).toContain(en.workbenchTabs.noExperts);
 
     fireEvent.click(within(menu).getByTestId('open-workbench-view-files'));
     expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
     expect(screen.queryByTestId('workbench-view-menu')).toBeNull();
   });
 
-  it('全部视图都打开后不再渲染「＋」', () => {
+  it('全部视图都打开后仍保留三项找回入口', () => {
     useAppStore.setState({
-      workbenchTabs: ['overview', 'files', 'browser', 'design-canvas', 'terminal'],
+      workbenchTabs: ['overview', 'logs', 'experts', 'files', 'browser', 'design-canvas', 'terminal'],
       activeWorkbenchTab: 'overview',
     });
     render(<WorkbenchTabs />);
-    expect(screen.queryByLabelText(en.workbenchTabs.addView)).toBeNull();
+    expect(screen.getByLabelText(en.workbenchTabs.addView)).toBeTruthy();
   });
 
   // 2026-07-27：收起整栏的入口已从面板头搬到顶栏（两态同槽，位置不再随开合上下跳），
@@ -219,7 +226,7 @@ describe('WorkbenchTabs tab 条形态（D6）', () => {
     expect(screen.getByLabelText(en.workbenchTabs.closeView.replace('{view}', en.workbenchTabs.filesLabel))).toBeTruthy();
   });
 
-  it('tab 上的 × 关闭单个视图（含概览/文件等常驻视图），关完回空态启动器', () => {
+  it('tab 上的 × 关闭普通视图，关完回空态启动器', () => {
     useAppStore.setState({
       workbenchTabs: ['files'],
       activeWorkbenchTab: 'files',

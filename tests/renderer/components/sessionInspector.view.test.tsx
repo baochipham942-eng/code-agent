@@ -71,6 +71,18 @@ beforeEach(() => {
 });
 
 describe('层1 人话时间线', () => {
+  it('按任务步骤指定的轮次定位并高亮目标行', async () => {
+    traceApi.read = readWith([
+      event('turn_outcome', { terminal: 'completed', verdict: 'verified', evidenceRefs: [], source: 'generic' }, 1, 2000),
+      event('turn_outcome', { terminal: 'completed', verdict: 'verified', evidenceRefs: [], source: 'generic' }, 2, 4000),
+    ]);
+    render(<SessionInspector targetTurn={2} targetNonce={1} />);
+    await screen.findAllByTestId('inspector-turn');
+    const target = document.querySelector('[data-turn-index="2"]');
+    expect(target?.getAttribute('data-targeted')).toBe('true');
+    expect(document.querySelector('[data-turn-index="1"]')?.hasAttribute('data-targeted')).toBe(false);
+  });
+
   it('印章三态轮头：verified / self_claimed / n_a(失败终态)', async () => {
     traceApi.read = readWith([
       event('inference', { inputTokens: 1200, outputTokens: 300 }, 1, 1000),

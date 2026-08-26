@@ -93,8 +93,8 @@ describe('sessionStore activeAgentId per-session sync', () => {
 
     await useSessionStore.getState().switchSession('session-b');
     expect(useAppStore.getState()).toMatchObject({
-      workbenchTabs: [],
-      activeWorkbenchTab: null,
+      workbenchTabs: ['overview'],
+      activeWorkbenchTab: 'overview',
     });
 
     await useSessionStore.getState().switchSession('session-a');

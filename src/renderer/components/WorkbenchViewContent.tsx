@@ -6,6 +6,9 @@ import { BrowserAgentWindow } from './workbench/BrowserAgentWindow';
 import { PreviewPanel } from './PreviewPanel';
 import { WorkbenchOverview } from './WorkbenchOverview';
 import { FileExplorerPanel } from './features/explorer/FileExplorerPanel';
+import { SessionInspector } from './TaskPanel/SessionInspector';
+import { SessionAgentsPanel } from './TaskPanel/SessionAgentsPanel';
+import { useRightPanelTabsStore } from '../stores/rightPanelTabsStore';
 
 const DesignCanvasTab = React.lazy(() => import('./design/DesignCanvasTab').then((module) => ({
   default: module.DesignCanvasTab,
@@ -33,14 +36,30 @@ export const WorkbenchViewContent: React.FC<WorkbenchViewContentProps> = ({
   // 触发 useSyncExternalStore 无限重渲染（React "Maximum update depth exceeded"）。
   const previewTabs = useAppStore((state) => state.previewTabs);
   const activePreviewTabId = useAppStore((state) => state.activePreviewTabId);
+  const logsTargetTurn = useRightPanelTabsStore((state) => state.logsTargetTurn);
+  const logsTargetNonce = useRightPanelTabsStore((state) => state.logsTargetNonce);
   const activeLiveDevTab = React.useMemo(() => {
     const tab = previewTabs.find((candidate) => candidate.id === activePreviewTabId);
-    if (!tab || tab.kind !== 'liveDev' || !tab.devServerUrl) return null;
+    if (tab?.kind !== 'liveDev' || !tab.devServerUrl) return null;
     return { id: tab.id, devServerUrl: tab.devServerUrl };
   }, [previewTabs, activePreviewTabId]);
 
   if (activeView === 'overview') {
     return <WorkbenchOverview />;
+  }
+  if (activeView === 'logs') {
+    return (
+      <div data-testid="workbench-logs-view" className="h-full min-h-0 overflow-y-auto p-4">
+        <SessionInspector targetTurn={logsTargetTurn} targetNonce={logsTargetNonce} />
+      </div>
+    );
+  }
+  if (activeView === 'experts') {
+    return (
+      <div data-testid="workbench-experts-view" className="h-full min-h-0 overflow-y-auto p-4">
+        <SessionAgentsPanel />
+      </div>
+    );
   }
   if (activeView === 'files') {
     return (

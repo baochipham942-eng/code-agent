@@ -16,6 +16,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { EmptyState } from '../primitives';
+import { Button } from '../primitives/Button';
 import { WorkbenchPill } from '../workbench/WorkbenchPrimitives';
 import type {
   LoopDecisionView,
@@ -37,6 +38,8 @@ import {
 import { useI18n } from '../../hooks/useI18n';
 import type { Translations } from '../../i18n';
 import { typedInvokeDomain } from '../../services/typedInvoke';
+import { useAppStore } from '../../stores/appStore';
+import { useRightPanelTabsStore } from '../../stores/rightPanelTabsStore';
 
 export function runStatusClass(status: RunUiStatus): string {
   switch (status) {
@@ -589,6 +592,8 @@ const TaskOutputRefRow = ({ outputRef: ref }: { outputRef: TaskRecordOutputRef }
 
 const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; muted?: boolean }) => {
   const { t, language } = useI18n();
+  const openWorkbenchTab = useAppStore((state) => state.openWorkbenchTab);
+  const targetLogsTurn = useRightPanelTabsStore((state) => state.targetLogsTurn);
   const blockedByTitles = step.blockedByTitles?.length
     ? joinDependencyTitles(step.blockedByTitles, language)
     : null;
@@ -662,6 +667,19 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
             {unlocksHint}
           </span>
         )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          data-testid={`view-step-process-${step.originalIndex + 1}`}
+          className="ml-auto shrink-0 !rounded !px-1 !py-0 text-[10px] !text-badge-info hover:!bg-sky-500/10"
+          onClick={() => {
+            targetLogsTurn(step.originalIndex + 1);
+            openWorkbenchTab('logs', { source: 'user' });
+          }}
+        >
+          {t.sessionInspector.viewProcess}
+        </Button>
       </div>
     </div>
   );

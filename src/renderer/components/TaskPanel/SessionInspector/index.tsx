@@ -119,13 +119,17 @@ function AssemblyPanel({ model }: { model: AssemblyModel }) {
 
 // ── 根组件：整读 + tail 跟随 ─────────────────────────────────────────────
 
-export const SessionInspector: React.FC = () => {
+export const SessionInspector: React.FC<{ targetTurn?: number | null; targetNonce?: number }> = ({
+  targetTurn = null,
+  targetNonce = 0,
+}) => {
   const { t } = useI18n();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const [read, setRead] = useState<TraceSessionRead | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const cursorRef = useRef(0);
   const inFlightRef = useRef(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   // 整读（切会话 / 初次打开 / 失败后重试）
   useEffect(() => {
@@ -169,6 +173,12 @@ export const SessionInspector: React.FC = () => {
     return () => clearInterval(timer);
   }, [currentSessionId, pollTail]);
 
+  useEffect(() => {
+    if (!read || targetTurn === null) return;
+    const target = rootRef.current?.querySelector<HTMLElement>(`[data-turn-index="${targetTurn}"]`);
+    target?.scrollIntoView?.({ block: 'center' });
+  }, [read, targetTurn, targetNonce]);
+
   if (!currentSessionId) {
     return <div className="px-0.5 text-xs text-zinc-500">{t.sessionInspector.noSession}</div>;
   }
@@ -187,7 +197,7 @@ export const SessionInspector: React.FC = () => {
   const assemblyModel = buildAssemblyModel(read.events);
 
   return (
-    <div className="space-y-3" data-testid="session-inspector">
+    <div ref={rootRef} className="space-y-3" data-testid="session-inspector">
       {read.skippedLines > 0 && (
         <div
           role="status"
@@ -208,11 +218,16 @@ export const SessionInspector: React.FC = () => {
           <div className="divide-y divide-white/[0.04]" data-testid="inspector-timeline">
             {segments.map((segment) =>
               // C：未 settle 的当前轮渲染活行；settle 后同 key 位置转为常规轮行
-              segment.inProgress ? (
-                <LiveTurnRow key={`${segment.index}-${segment.startedAt ?? 0}`} segment={segment} />
-              ) : (
-                <TurnRow key={`${segment.index}-${segment.startedAt ?? 0}`} segment={segment} />
-              ),
+              <div
+                key={`${segment.index}-${segment.startedAt ?? 0}`}
+                data-turn-index={segment.index}
+                data-targeted={segment.index === targetTurn || undefined}
+                className={segment.index === targetTurn ? 'rounded bg-sky-500/10 ring-1 ring-badge-info/20' : ''}
+              >
+                {segment.inProgress
+                  ? <LiveTurnRow segment={segment} />
+                  : <TurnRow segment={segment} />}
+              </div>,
             )}
           </div>
         )}

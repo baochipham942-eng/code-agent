@@ -25,7 +25,7 @@ import { test, expect, type Page } from '@playwright/test';
 // design-canvas tab label 走 i18n（zh.ts: '设计画布'）。E2E 默认中文 UI。
 const CANVAS_TAB_LABEL = '设计画布';
 
-test.setTimeout(60_000);
+test.setTimeout(120_000);
 
 async function waitForAppReady(page: Page): Promise<void> {
   // SSE 连接在 goto 之前挂监听, 避免错过初始请求
@@ -38,10 +38,14 @@ async function waitForAppReady(page: Page): Promise<void> {
   await ssePromise;
   // 全新环境（换目录跑、或新建 e2e 数据目录）会连弹两层遮罩，挡住底下所有交互：
   // ①「信任这个项目文件夹?」②「连接模型」onboarding。都是首启才有，出现才点。
-  for (const name of ['信任并加载', '跳过，稍后在设置里配置']) {
+  for (const { name, timeout } of [
+    { name: '信任并加载', timeout: 5_000 },
+    // 引擎探测在共享机器高负载时可能把 onboarding 推迟到 30 秒以后。
+    { name: '跳过，稍后在设置里配置', timeout: 45_000 },
+  ]) {
     const btn = page.getByRole('button', { name });
     // 第二层要等：信任弹窗点掉之后 onboarding 才开始挂载，立刻查会扑空。
-    await btn.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
+    await btn.waitFor({ state: 'visible', timeout }).catch(() => {});
     if (await btn.isVisible().catch(() => false)) {
       await btn.click();
       await expect(btn).toBeHidden({ timeout: 10_000 });
@@ -88,10 +92,9 @@ test('从聊天点设计画布入口 → design-canvas tab 激活 + konva 画布
   await waitForAppReady(page);
   await enterSessionState(page);
 
-  // 1. 右栏默认收起，先展开；展开后没打开任何面板时给空态启动器，有会话时设计画布可点。
-  //    （旧写法先用 TitleBar 开一个 tab、再找 open-design-canvas —— 那个 testid 和
-  //    「Show task panel」标签早已不存在，此 spec 不在 CI 内所以一直没被发现。）
+  // 1. 右栏默认收起，先展开；任务页常驻，设计画布从「＋」菜单按需打开。
   await expandWorkbench(page);
+  await page.getByRole('button', { name: '打开新面板' }).click();
   const entryBtn = page.locator('[data-testid="open-workbench-view-design-canvas"]');
   await expect(entryBtn).toBeVisible({ timeout: 10_000 });
   await expect(entryBtn).toBeEnabled();
@@ -140,20 +143,18 @@ test('右栏能整栏收起，再从标题栏展开回原来的面板', async ({
   await enterSessionState(page);
 
   await expandWorkbench(page);
-  const launcher = page.locator('[data-testid="workbench-empty-launcher"]');
-  await expect(launcher).toBeVisible({ timeout: 10_000 });
-
-  await page.locator('[data-testid="open-workbench-view-overview"]').click();
   const selector = page.locator('[data-testid="workbench-view-selector"]');
   await expect(selector).toBeVisible({ timeout: 10_000 });
+  const taskTab = page.locator('[data-testid="workbench-tab-overview"]');
+  await expect(taskTab).toBeVisible({ timeout: 10_000 });
 
   // 收起：整栏消失，不只是关掉一个面板。
   await page.getByRole('button', { name: '收起面板' }).first().click();
   await expect(selector).toBeHidden({ timeout: 10_000 });
-  await expect(launcher).toBeHidden();
+  await expect(taskTab).toBeHidden();
 
   // 展开：回到收起前那个面板，不是回空态。
   await page.getByRole('button', { name: '展开面板' }).click();
   await expect(selector).toBeVisible({ timeout: 10_000 });
-  await expect(page.locator('span.truncate', { hasText: '概览' }).first()).toBeVisible();
+  await expect(page.locator('span.truncate', { hasText: '任务' }).first()).toBeVisible();
 });

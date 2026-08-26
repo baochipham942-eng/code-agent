@@ -308,7 +308,7 @@ export interface AppState {
    * 右栏整栏收起。视图切换器模型下「关闭」的对象是整栏，不再是单个视图。
    * 写点三处（2026-07-30 第四波④对账）：setWorkbenchCollapsed（用户点击）、
    * openWorkbenchTab（打开视图即带出右栏；auto 源尊重 workbenchCollapsedByUser）、
-   * syncWorkbenchForSession（全新会话落地强制回默认收起，防 collapsed 跨会话泄漏成空 launcher）。
+   * syncWorkbenchForSession（全新会话落地强制回默认收起，防 collapsed 跨会话泄漏）。
    */
   workbenchCollapsed: boolean;
   /**
@@ -1052,7 +1052,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const state = get();
 
     if (hasActivity) {
-      if (!state.taskWorkbenchActivityActive && !state.workbenchTabs.includes('overview')) {
+      if (!state.taskWorkbenchActivityActive && (
+        !state.workbenchTabs.includes('overview')
+        || (state.workbenchCollapsed && !state.workbenchCollapsedByUser)
+      )) {
         state.openWorkbenchTab('task', { source: 'auto' });
         set({ taskWorkbenchActivityActive: true, taskPanelTab: 'monitor' });
         return;

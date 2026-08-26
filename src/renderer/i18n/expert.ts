@@ -52,7 +52,7 @@ export const expertZh = {
         chipWaiting: '一个代理卡住了',
       },
       panel: {
-        title: '本会话的代理',
+        title: '专家',
         closeAria: '关闭面板',
         empty: '这个会话还没有代理',
         backgroundBadge: '后台',
@@ -321,7 +321,7 @@ export const expertEn: typeof expertZh = {
         chipWaiting: 'An agent is stuck',
       },
       panel: {
-        title: 'Agents in this session',
+        title: 'Experts',
         closeAria: 'Close panel',
         empty: 'No agents in this session yet',
         backgroundBadge: 'Background',

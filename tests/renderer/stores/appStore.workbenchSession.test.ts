@@ -23,8 +23,8 @@ describe('appStore workbench per-session', () => {
 
     useAppStore.getState().syncWorkbenchForSession('session-b');
     expect(useAppStore.getState()).toMatchObject({
-      workbenchTabs: [],
-      activeWorkbenchTab: null,
+      workbenchTabs: ['overview'],
+      activeWorkbenchTab: 'overview',
       workbenchSessionKey: 'session-b',
     });
 

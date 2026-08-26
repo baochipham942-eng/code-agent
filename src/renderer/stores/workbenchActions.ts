@@ -9,6 +9,7 @@ import {
   type WorkbenchViewId,
 } from '../utils/workbenchViews';
 import type { AppState, PreviewTab } from './appStore';
+import { useRightPanelTabsStore } from './rightPanelTabsStore';
 
 type WorkbenchActionName =
   | 'syncWorkbenchForSession'
@@ -32,37 +33,50 @@ export function createWorkbenchActions({
   return {
     syncWorkbenchForSession: (sessionId) => {
       const state = get();
+      const { logsPinned } = useRightPanelTabsStore.getState();
+      const outgoingTabs = state.workbenchTabs.filter((view) => view !== 'logs' || logsPinned);
       const workbenchBySession = state.workbenchSessionKey
         ? {
             ...state.workbenchBySession,
             [state.workbenchSessionKey]: {
-              tabs: [...state.workbenchTabs],
-              active: state.activeWorkbenchTab,
+              tabs: outgoingTabs,
+              active: outgoingTabs.includes(state.activeWorkbenchTab as WorkbenchViewId)
+                ? state.activeWorkbenchTab
+                : outgoingTabs[0] ?? null,
             },
           }
         : state.workbenchBySession;
       const restored = sessionId ? workbenchBySession[sessionId] : undefined;
-      const workbenchTabs = (restored?.tabs ?? []).filter((view) => (
+      const restoredTabs = (restored?.tabs ?? []).filter((view) => (
         !isPreviewWorkbenchView(view)
         || state.previewTabs.some((tab) => view === `preview:${tab.path}`)
       ));
+      const withTask = sessionId && !restoredTabs.includes('overview')
+        ? ['overview' as const, ...restoredTabs]
+        : restoredTabs;
+      const carryPinnedLogs = logsPinned && state.workbenchTabs.includes('logs');
+      const workbenchTabs = carryPinnedLogs && !withTask.includes('logs')
+        ? [...withTask, 'logs' as const]
+        : withTask;
       const restoredActive = restored?.active ?? null;
-      const activeWorkbenchTab = restoredActive && !workbenchTabs.includes(restoredActive)
-        ? workbenchTabs[0] ?? null
-        : restoredActive;
+      const activeWorkbenchTab = carryPinnedLogs
+        ? 'logs'
+        : restoredActive && workbenchTabs.includes(restoredActive)
+          ? restoredActive
+          : workbenchTabs[0] ?? null;
 
       set({
         workbenchBySession,
         workbenchTabs,
         activeWorkbenchTab,
         workbenchSessionKey: sessionId,
-        // 全新会话（无快照）一律回产品默认收起（批P 第四波④）：本函数把 tabs 清成 []，
-        // 若放任 collapsed 跨会话泄漏（上一会话被任务/用户带成展开），新会话落地就是
-        // 空态 launcher——空间 composer 与主界面「新任务」都经此 chokepoint，同判据。
+        // 全新会话（无快照）一律回产品默认收起，同时保留常驻任务页签。
+        // 若放任 collapsed 跨会话泄漏，上一会话的展开状态会直接带进新会话。
         // 有快照的回访会话不动（用户离开时的开/合就是意图）；sessionId=null（欢迎页）不动。
         // workbenchCollapsedByUser 不动：这不是用户按的，任务活动照样能把右栏带出来（#700 语义）。
         ...(sessionId && !restored ? { workbenchCollapsed: true } : {}),
       });
+      useRightPanelTabsStore.getState().resetLogsTarget();
     },
 
     openWorkbenchTab: (id, options) => {
@@ -89,8 +103,9 @@ export function createWorkbenchActions({
         return;
       }
 
-      // 打开右栏视图 = 人在会话区，二级页让位（侧栏常驻后二级页与会话区可同屏共存）。
-      get().closeSecondaryPages();
+      const activate = options?.activate !== false;
+      // 后台自动开页只登记 tab，不夺走用户正在看的二级页或右栏视图。
+      if (activate) get().closeSecondaryPages();
       const view = target.view;
       set((state) => {
         const taskWorkbenchOpenSource = id === 'task' || id === 'overview'
@@ -116,12 +131,14 @@ export function createWorkbenchActions({
           // 唯一例外：活动信号（source: 'auto'）撞上**用户自己按过的收起**——那是 #700 的
           // 「收起后不因活动信号自己弹回」。产品默认的收起态（workbenchCollapsedByUser=false）
           // 不算用户意图，任务开跑照样把右栏带出来（2026-07-27 产品负责人拍板）。
-          workbenchCollapsed: options?.source === 'auto' && state.workbenchCollapsedByUser,
+          workbenchCollapsed: activate
+            ? options?.source === 'auto' && state.workbenchCollapsedByUser
+            : state.workbenchCollapsed,
           workbenchTabs: state.workbenchTabs.includes(view)
             ? state.workbenchTabs
             : [...state.workbenchTabs, view],
-          activeWorkbenchTab: view,
-          activePreviewTabId: targetPreview?.id ?? state.activePreviewTabId,
+          activeWorkbenchTab: activate ? view : state.activeWorkbenchTab,
+          activePreviewTabId: activate ? targetPreview?.id ?? state.activePreviewTabId : state.activePreviewTabId,
           previewTabs,
           taskWorkbenchOpenSource,
         };
@@ -141,6 +158,7 @@ export function createWorkbenchActions({
       if (target.kind !== 'workbench') return;
 
       const view = target.view;
+      if (view === 'overview' || (view === 'logs' && useRightPanelTabsStore.getState().logsPinned)) return;
       // 'browser'（Agent 浏览器现场）不再关联 preview tab，落到下方通用分支即可
       // （S2 归位）。liveDev 与文件预览统一走 `preview:${path}`，经 closePreviewTab
       // 各自独立关闭，不再互相牵连。
@@ -171,7 +189,6 @@ export function createWorkbenchActions({
           ...state,
           workbenchTabs: nextTabs,
           activeWorkbenchTab: nextActive,
-          ...(view === 'overview' ? { taskWorkbenchOpenSource: null } : {}),
         };
       });
     },

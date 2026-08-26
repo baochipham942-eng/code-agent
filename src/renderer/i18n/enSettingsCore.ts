@@ -530,8 +530,8 @@ export const enSettingsCore = {
           description: 'Show or hide the workspace panel',
         },
         'statusRail.toggle': {
-          label: 'Toggle overview',
-          description: 'Show or hide the right-side overview',
+          label: 'Toggle task',
+          description: 'Show or hide the right-side task page',
         },
         'browser.open': {
           label: 'Open Browser view',

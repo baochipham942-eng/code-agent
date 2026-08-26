@@ -9,10 +9,9 @@
 //
 // 本用例组钉三件事：
 //   A. ② 只翻状态、不动顺序（与方向无关的硬保证，任何修法都必须继续成立）；
-//   B. ① 收窄为「只搬正在生长的那条响应的思考」（本单修复）——多响应轮里，早期响应
-//      那块已经写完的思考不再随本轮新内容一路下滑，事故轮形状下流式序 = 完成序；
-//   C. 单响应轮的残留分叉留着：那一处「流式贴底 vs 历史思考先于工具」是 PR #541
-//      （2f60b8005, 2026-07-21）**刻意**的取舍并双向钉了测试，不在本单擅自取舍。
+//   B. 流式与终态都尊重消息投影的事件顺序，不再根据 isProcessing 搬动 reasoning；
+//   C. AskUserQuestion 这类先出工具步骤、后补 reasoning 的流式形状，同一事件序列
+//      在流式与结束后逐节点一致。
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
@@ -102,7 +101,7 @@ function reasoningNodeIndexes(messages: Message[], isProcessing: boolean): numbe
     .filter((index) => index >= 0);
 }
 
-describe('多响应轮：早期响应的思考块不再被搬走（本次修复）', () => {
+describe('流式与终态的节点顺序一致', () => {
   it('事故轮形状下，流式序与完成序逐块一致', () => {
     const messages = accidentTurnMessages();
 
@@ -114,32 +113,55 @@ describe('多响应轮：早期响应的思考块不再被搬走（本次修复�
     expect(reasoningNodeIndexes(messages, false)[0]).toBe(1);
   });
 
-  it('轮里只有一条响应时，尾置仍然生效（PR #541 的防闪意图原样保留）', () => {
+  it('轮里只有一条响应时，流式序与完成序仍一致', () => {
     const single = accidentTurnMessages().slice(0, 2);
-    const streamingOrder = nodeOrder(single, true);
-
-    expect(streamingOrder[streamingOrder.length - 1]).toBe('resp-1-reasoning-live');
+    expect(nodeOrder(single, true)).toEqual(nodeOrder(single, false));
+    expect(nodeOrder(single, true)).not.toContain('resp-1-reasoning-live');
+    expect(reasoningNodeIndexes(single, true)).toEqual(reasoningNodeIndexes(single, false));
   });
 });
 
-// ---------------------------------------------------------------------------
-// 残留分叉（待产品拍板，本单不擅自取舍）
-//
-// 单响应轮里，正在生长的那条消息的思考在流式期挂轮尾 live 节点、完轮回落到它自己的
-// 文本节点（在该响应的工具卡之前）。这一处「流式序 ≠ 完成序」是 PR #541
-// （2f60b8005, 2026-07-21）**刻意**的取舍并双向钉了测试：流式要贴底防闪，历史要
-// 「思考先于工具」的因果序。两者在当前锚点模型下不可兼得——要么牺牲历史因果序（把
-// 思考钉在该响应工具卡之后），要么牺牲流式贴底（改走视觉滚动锚定，需真机验证）。
-// 选定方向后，本用例应改写为断言两序相等。
-// ---------------------------------------------------------------------------
-describe('残留分叉：单响应轮的思考尾置（PR #541 刻意取舍，待拍板）', () => {
-  it('仅 isProcessing 翻转，思考块位置仍会变一次', () => {
-    const single = accidentTurnMessages().slice(0, 2);
+describe('AskUserQuestion 接 tmeetMeetingCreate 的事件序列', () => {
+  it('同一 AskUserQuestion 序列仅翻转轮状态，顺序不变', () => {
+    const messages: Message[] = [
+      { id: 'ask-user', role: 'user', content: '创建一场会议，马上开始', timestamp: 100 },
+      {
+        id: 'ask-response',
+        role: 'assistant',
+        content: '',
+        reasoning: '用户没有给会议主题，需要先确认。',
+        timestamp: 150,
+        toolCalls: [{
+          id: 'ask-tool',
+          name: 'AskUserQuestion',
+          arguments: { question: '会议主题是什么？' },
+          result: { toolCallId: 'ask-tool', success: true, output: '临时会议' },
+        }],
+        contentParts: [{ type: 'tool_call', toolCallId: 'ask-tool' }],
+      },
+    ];
 
-    const streamingReasoningAt = reasoningNodeIndexes(single, true);
-    const completedReasoningAt = reasoningNodeIndexes(single, false);
-    expect(streamingReasoningAt).not.toEqual(completedReasoningAt);
-    // 完成态回落到「思考先于工具」：文本节点在工具卡之前
-    expect(completedReasoningAt[0]).toBe(1);
+    const streamingOrder = nodeOrder(messages, true);
+    const completedOrder = nodeOrder(messages, false);
+    expect(streamingOrder).toEqual(completedOrder);
+    expect(streamingOrder).toEqual(['ask-user', 'ask-response-text', 'ask-response-tc-ask-tool']);
+  });
+
+  it('加入后续创建步骤后，工具与思考仍按消息时序不动', () => {
+    const messages: Message[] = [
+      { id: 'ask-user', role: 'user', content: '创建一场会议，马上开始', timestamp: 100 },
+      {
+        id: 'ask-response', role: 'assistant', content: '', reasoning: '先确认主题。', timestamp: 150,
+        toolCalls: [{ id: 'ask-tool', name: 'AskUserQuestion', arguments: {}, result: { toolCallId: 'ask-tool', success: true, output: '临时会议' } }],
+        contentParts: [{ type: 'tool_call', toolCallId: 'ask-tool' }],
+      },
+      {
+        id: 'create-response', role: 'assistant', content: '', reasoning: '参数齐全，等待审批。', timestamp: 200,
+        toolCalls: [{ id: 'create-tool', name: 'tmeetMeetingCreate', arguments: { subject: '临时会议' } }],
+        contentParts: [{ type: 'tool_call', toolCallId: 'create-tool' }],
+      },
+    ];
+
+    expect(nodeOrder(messages, true)).toEqual(nodeOrder(messages, false));
   });
 });

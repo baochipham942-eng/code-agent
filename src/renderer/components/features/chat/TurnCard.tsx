@@ -1,7 +1,6 @@
 // ============================================================================
 // TurnCard - A single conversation turn (user prompt + assistant responses)
 // ============================================================================
-
 import React, { useCallback, useMemo, useState } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
@@ -239,6 +238,23 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     [turn.nodes],
   );
   const thinkingSegments = useMemo(() => getTurnThinkingSegments(turn), [turn]);
+  // 没有 reasoning 增量时，等待信号与后续思考摘要共用同一个轮首槽位。
+  // 否则 AskUserQuestion 工具行会先出现在底部等待信号之上，reasoning 到达后
+  // 又被顶部思考摘要压到下方，造成「向你提了一个问题」上下翻转。
+  const showLeadingStreamingIndicator =
+    isStreaming
+    && turn.nodes.length > 0
+    && thinkingSegments.length === 0
+    && displayNodes.some((item) => item.kind === 'tool_group');
+  const streamingIndicator = isStreaming && turn.nodes.length > 0 ? (
+    <StreamingIndicator
+      startTime={turn.startTime}
+      runningToolStartTime={runningToolStartTime}
+      showCaret={!lastNodeIsStreamingText && (showLeadingStreamingIndicator || !isThinkingPhase)}
+      waitingReason={getStreamingWaitingReason(turn.nodes, streamingState.status, waitingForApproval)}
+      subagentCount={getRunningSubagentCount(turn.nodes)}
+    />
+  ) : null;
   const activeThinkingSegmentId = isThinkingPhase
     ? thinkingSegments[thinkingSegments.length - 1]?.id ?? null
     : null;
@@ -427,6 +443,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {/* Middle content (folded: hide; expanded: show all except user) */}
         {!folded && (
           <>
+            {showLeadingStreamingIndicator && streamingIndicator}
             {/* 一个回合内所有思考段继续合并成一个横幅。流式 reasoning 自己承担唯一的
                 「正在思考」信号；底部 StreamingIndicator 在此阶段让位，避免双显。 */}
             <ThinkingDigestBanner
@@ -500,19 +517,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 
             {/* Streaming indicator at bottom of active turn.
                 正文正在流式输出文字时，正文已自带内联光标 → 状态槽隐去光标避免重复。 */}
-            {isStreaming && turn.nodes.length > 0 && (
-              <StreamingIndicator
-                startTime={turn.startTime}
-                runningToolStartTime={runningToolStartTime}
-                showCaret={!lastNodeIsStreamingText && !isThinkingPhase}
-                waitingReason={getStreamingWaitingReason(
-                  turn.nodes,
-                  streamingState.status,
-                  waitingForApproval,
-                )}
-                subagentCount={getRunningSubagentCount(turn.nodes)}
-              />
-            )}
+            {!showLeadingStreamingIndicator && streamingIndicator}
           </>
         )}
 
@@ -1152,7 +1157,6 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
     </div>
   );
 };
-
 function formatFailedToolTitle(failedTool: NonNullable<TraceNode['toolCall']>): string | undefined {
   if (typeof failedTool.result !== 'string' || !failedTool.result) {
     return undefined;

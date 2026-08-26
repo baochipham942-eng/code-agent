@@ -47,6 +47,7 @@ import type { ChatInputHandle } from './features/chat/ChatInput';
 import { useFileUpload } from './features/chat/ChatInput/useFileUpload';
 import { WorkflowInlineMonitor } from './features/workflow/WorkflowInlineMonitor';
 import { WorkflowLaunchCard } from './features/workflow/WorkflowLaunchCard';
+import { DecisionSlot } from './features/chat/DecisionSlot';
 import { TaskStatusBar } from './features/chat/TaskStatusBar';
 import { LocalBridgePrompt } from './features/chat/LocalBridgePrompt';
 import { BridgeUpdatePrompt } from './features/chat/BridgeUpdatePrompt';
@@ -66,7 +67,7 @@ import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 // PlanPanel moved to inline display in TurnBasedTraceView
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
-// PermissionCard moved to inline display in TurnBasedTraceView
+// Pending PermissionCard lives in the fixed DecisionSlot above ChatInput.
 import type { AppSettings, Message, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
 import type { RewindConversationResult } from '@shared/contract/sessionRewind';
 import type { TurnCheckoutResult } from '@shared/contract/turnCheckout';
@@ -897,13 +898,14 @@ export const ChatView: React.FC = () => {
             onClose={() => setShowDirPicker(false)}
           />
 
-          {/* Permission Card moved inline into TurnBasedTraceView */}
-
           {/* Context inline strip - shows when > 50% */}
           <InlineStrip />
 
           {/* Pinned todo progress bar — visible above the input */}
           {!hasPlanApprovalEvidence && <PinnedTodoBar plan={plan} sessionId={currentSessionId} />}
+
+          {/* 当场拍板权限卡：固定在输入框上方，不随时间线滚动。 */}
+          <DecisionSlot />
 
           {/* 讨论流浮层已收进右侧「本会话的代理」面板的「事件」折叠区（N-L6-AGENTVIEW S2），
               输入框上方不再另起浮层 */}

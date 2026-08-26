@@ -60,6 +60,8 @@ export interface DecisionCardProps {
   hideFooter?: boolean;
   /** 已裁决卡退为中性灰，避免继续呈现为等待输入。 */
   settled?: boolean;
+  /** 槽位展开态：详情可滚动，选项与确认区固定在卡底。 */
+  pinActions?: boolean;
   /** 外层容器 className 覆盖（内联在消息流里的卡去掉 px-4 定位） */
   className?: string;
   testId?: string;
@@ -108,6 +110,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
   footerExtra,
   hideFooter = false,
   settled = false,
+  pinActions = false,
   className = 'w-full px-4 animate-slideUp',
   testId = 'decision-card',
 }) => {
@@ -154,6 +157,35 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [options, selectedId, submitting, onSelect, onConfirm, onCancel]);
 
+  const optionRows = options.map((option) => (
+    <button /* ds-allow:button: 选项行整面可点（选中指示+标题+描述复合内容），沿用 UserQuestionCard 选项行形态 */
+      key={option.id}
+      type="button"
+      onClick={() => onSelect(option.id)}
+      disabled={option.disabled}
+      className={`w-full p-2.5 rounded-lg border text-left transition-all ${
+        selectedId === option.id
+          ? 'border-badge-info bg-blue-500/10 ring-1 ring-blue-500/50'
+          : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
+      } ${option.disabled ? 'cursor-not-allowed opacity-45 hover:border-zinc-700 hover:bg-transparent' : ''}`}
+    >
+      <div className="flex items-start gap-3">
+        <SelectionIndicator selected={selectedId === option.id} />
+        <div className="flex-1">
+          <div className="font-medium text-zinc-200 text-sm">{option.label}</div>
+          {option.description && (
+            <p className="text-xs text-zinc-400 mt-0.5">{option.description}</p>
+          )}
+        </div>
+        {option.shortcut && !option.disabled && (
+          <kbd className="mt-0.5 px-1 py-0.5 rounded bg-zinc-700 text-zinc-400 text-2xs font-mono shrink-0">
+            {option.shortcut}
+          </kbd>
+        )}
+      </div>
+    </button>
+  ));
+
   return (
     <div className={className} data-testid={testId}>
       <div
@@ -161,7 +193,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
         tabIndex={-1}
         className={`w-full max-w-3xl mx-auto bg-zinc-900 rounded-lg shadow-2xl border-2 outline-hidden ${
           settled ? 'border-zinc-700' : danger ? 'border-red-500' : 'border-badge-info/60'
-        }`}
+        } ${pinActions ? 'flex max-h-[calc(100dvh-12rem)] flex-col overflow-hidden' : ''}`}
       >
         {/* 头部：与 UserQuestionCard 同形（图标 + 标题），语义色区分常规/危险 */}
         <div
@@ -185,44 +217,34 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
           </div>
         )}
 
-        {/* 体部：问题句 + 详情区 + 决策选项 */}
-        <div className="space-y-3 max-h-[50vh] overflow-y-auto px-4 py-3">
-          <p className="text-sm text-zinc-200">{question}</p>
-          {details}
-          <div className="space-y-2">
-            {options.map((option) => (
-              <button /* ds-allow:button: 选项行整面可点（选中指示+标题+描述复合内容），沿用 UserQuestionCard 选项行形态 */
-                key={option.id}
-                type="button"
-                onClick={() => onSelect(option.id)}
-                disabled={option.disabled}
-                className={`w-full p-2.5 rounded-lg border text-left transition-all ${
-                  selectedId === option.id
-                    ? 'border-badge-info bg-blue-500/10 ring-1 ring-blue-500/50'
-                    : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
-                } ${option.disabled ? 'cursor-not-allowed opacity-45 hover:border-zinc-700 hover:bg-transparent' : ''}`}
-              >
-                <div className="flex items-start gap-3">
-                  <SelectionIndicator selected={selectedId === option.id} />
-                  <div className="flex-1">
-                    <div className="font-medium text-zinc-200 text-sm">{option.label}</div>
-                    {option.description && (
-                      <p className="text-xs text-zinc-400 mt-0.5">{option.description}</p>
-                    )}
-                  </div>
-                  {option.shortcut && !option.disabled && (
-                    <kbd className="mt-0.5 px-1 py-0.5 rounded bg-zinc-700 text-zinc-400 text-2xs font-mono shrink-0">
-                      {option.shortcut}
-                    </kbd>
-                  )}
-                </div>
-              </button>
-            ))}
+        {/* 槽位卡只让详情区滚动；选项与确认区留在可见卡底。其他消费方保持原骨架。 */}
+        {pinActions ? (
+          <>
+            <div
+              className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3"
+              data-testid={`${testId}-details-scroll`}
+            >
+              <p className="text-sm text-zinc-200">{question}</p>
+              {details}
+            </div>
+            {options.length > 0 && (
+              <div className="shrink-0 space-y-2 px-4" data-testid={`${testId}-pinned-options`}>
+                {optionRows}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="space-y-3 max-h-[50vh] overflow-y-auto px-4 py-3">
+            <p className="text-sm text-zinc-200">{question}</p>
+            {details}
+            <div className="space-y-2">
+              {optionRows}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* 底部：ghost 取消 + primary 确认（选中后才可点），与 UserQuestionCard 一致 */}
-        {!hideFooter && <div className="px-4 pb-3">
+        {!hideFooter && <div className={`px-4 pb-3 ${pinActions ? 'shrink-0' : ''}`} data-testid={`${testId}-actions`}>
           {footerExtra}
           <div className="mt-2.5 flex items-center justify-end gap-2">
             {onCancel && cancelLabel && (

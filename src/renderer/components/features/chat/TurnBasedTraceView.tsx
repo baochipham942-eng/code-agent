@@ -1000,7 +1000,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     );
   }, [hasOlderMessages, isLoadingOlder, t]);
 
-  // Footer: permission card (plan moved to PinnedTodoBar above the input)
+  // Footer: resolved permission history only; pending cards live in DecisionSlot above the input.
   const Footer = useCallback(() => (
     <>
       {resolvedPermissionRequests.map((request) => (
@@ -1010,7 +1010,6 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
           sessionIdOverride={projection.sessionId}
         />
       ))}
-      <PermissionCard />
       <div className="h-6" aria-hidden="true" />
     </>
   ), [projection.sessionId, resolvedPermissionRequests]);

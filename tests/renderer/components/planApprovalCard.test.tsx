@@ -156,10 +156,12 @@ describe('PlanApprovalCard', () => {
   it('Esc 保留退编辑、退反馈两级，最后一级收起且不发 cancel', () => {
     renderCard();
     fireEvent.click(screen.getAllByTitle('编辑')[0]);
+    expect(document.activeElement).toBe(screen.getByLabelText('编辑'));
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByLabelText('编辑')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: '有别的想法…' }));
+    expect(document.activeElement).toBe(screen.getByPlaceholderText('例如：先做最小闭环，把迁移和兼容放到下一期'));
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.getByTestId('plan-step-list')).toBeTruthy();
 

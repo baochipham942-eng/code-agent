@@ -111,7 +111,9 @@ export const PlanApprovalCard: React.FC<{ target: PendingPlanApprovalTarget }> =
 
   useEffect(() => {
     if (collapsed) return;
-    if (mode === 'steps' && editingId === null && steps.length > 0 && !submitting) {
+    // 编辑输入框与反馈 textarea 自带 autoFocus；这里不能把焦点抢回卡容器。
+    if (mode !== 'steps' || editingId !== null) return;
+    if (steps.length > 0 && !submitting) {
       primaryButtonRef.current?.focus();
       return;
     }

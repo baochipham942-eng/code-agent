@@ -148,6 +148,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'notion',
     name: 'Notion',
+    logo: 'notion',
     description: '读写 Notion 页面和数据库',
     category: 'office-collab',
     builtin: false,
@@ -195,6 +196,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'tencent-survey',
     name: '腾讯问卷',
+    logo: 'tencent-survey',
     description: '创建、读取和管理腾讯问卷与答卷',
     category: 'office-collab',
     builtin: false,
@@ -210,6 +212,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'tencent-weiyun',
     name: '腾讯微云',
+    logo: 'tencent-weiyun',
     description: '管理腾讯微云文件、目录和分享链接',
     category: 'office-collab',
     builtin: false,
@@ -225,6 +228,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'lark',
     name: '飞书',
+    logo: 'feishu',
     description: `飞书多维表格与日历（只读）。需先在飞书开放平台建自建应用、开多维表格与日历的只读权限、启用机器人能力（日历接口的必要条件）、创建版本并发布，再把应用加进目标表格的协作者。日历要监听哪一本需自己提供日历 ID（应用身份列不出你新建的日历），取日程时每次至少取 ${FEISHU_CALENDAR_MIN_PAGE_SIZE} 条。`,
     category: 'office-collab',
     builtin: false,
@@ -389,6 +393,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'puppeteer',
     name: 'Puppeteer',
+    logo: 'puppeteer',
     description: '网页截图、PDF 生成、表单填充',
     category: 'browser-auto',
     builtin: true,
@@ -486,6 +491,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'deepwiki',
     name: 'DeepWiki',
+    logo: 'deepwiki',
     description: '解读 GitHub 项目架构和文档',
     category: 'dev-tools',
     builtin: true,
@@ -529,6 +535,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'tencent-map',
     name: '腾讯地图',
+    logo: 'tencent-map',
     description: '地点搜索、地理编码、天气与路线规划',
     category: 'dev-tools',
     builtin: false,
@@ -547,6 +554,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'amap',
     name: '高德地图',
+    logo: 'amap',
     description: '地图、位置查询、路径规划',
     category: 'dev-tools',
     builtin: false,

@@ -257,6 +257,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [slashFilter, setSlashFilter] = useState('');
   const [showSlashPopover, setShowSlashPopover] = useState(false);
   const currentSessionProjectId = useSessionStore((s) => s.sessions.find((x) => x.id === currentSessionId)?.projectId ?? null);
+  const lastTurnStatus = useSessionStore((s) => (
+    s.sessions.find((session) => session.id === currentSessionId)?.status
+  ));
   // 会话优先；草稿/空间用 scopeProjectId（空间页传入 project.id）
   const pinScopeProjectId = currentSessionId ? currentSessionProjectId : scopeProjectId;
   const currentSessionHadLiveVoice = useSessionStore((s) => (
@@ -1147,9 +1150,16 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             <SessionMemberBar sessionId={currentSessionId ?? null} />
           </SlotEntry>
 
-          {/* Suggestion Bar - show when input is empty（L4 建议层） */}
-          <SlotEntry id="suggestion-bar" active={value.trim().length === 0 && suggestions.length > 0}>
-            <SuggestionBar suggestions={suggestions} onSelect={handleSuggestionSelect} />
+          {/* Suggestion Bar - 只在本轮正常完成且输入为空时显示（L4 建议层） */}
+          <SlotEntry
+            id="suggestion-bar"
+            active={lastTurnStatus === 'completed' && value.trim().length === 0 && suggestions.length > 0}
+          >
+            <SuggestionBar
+              suggestions={suggestions}
+              onSelect={handleSuggestionSelect}
+              lastTurnStatus={lastTurnStatus}
+            />
           </SlotEntry>
 
           {/* 能力建议条（L4 建议层） */}

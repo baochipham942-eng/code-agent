@@ -3,6 +3,7 @@
 // ============================================================================
 
 import React, { useState } from 'react';
+import type { SessionStatus } from '@shared/contract';
 import { useI18n } from '../../../../hooks/useI18n';
 import { formatRelativeTime } from '../../../../utils/i18nTime';
 
@@ -18,6 +19,7 @@ interface Suggestion {
 interface SuggestionBarProps {
   suggestions: Suggestion[];
   onSelect: (text: string) => void;
+  lastTurnStatus: SessionStatus | undefined;
 }
 
 const CATEGORY_ORDER = ['plan_step', 'desktop_task', 'workspace_signal'] as const;
@@ -26,7 +28,7 @@ function hasRecoveryCategories(suggestions: Suggestion[]): boolean {
   return suggestions.some((s) => s.category);
 }
 
-const RecoveryPanel: React.FC<SuggestionBarProps> = ({ suggestions, onSelect }) => {
+const RecoveryPanel: React.FC<Omit<SuggestionBarProps, 'lastTurnStatus'>> = ({ suggestions, onSelect }) => {
   const { t } = useI18n();
   const categoryLabels: Record<string, string> = {
     plan_step: t.suggestionBar.categoryPlanStep,
@@ -114,8 +116,8 @@ const RecoveryPanel: React.FC<SuggestionBarProps> = ({ suggestions, onSelect }) 
   );
 };
 
-export const SuggestionBar: React.FC<SuggestionBarProps> = ({ suggestions, onSelect }) => {
-  if (suggestions.length === 0) return null;
+export const SuggestionBar: React.FC<SuggestionBarProps> = ({ suggestions, onSelect, lastTurnStatus }) => {
+  if (lastTurnStatus !== 'completed' || suggestions.length === 0) return null;
 
   if (hasRecoveryCategories(suggestions)) {
     return <RecoveryPanel suggestions={suggestions} onSelect={onSelect} />;

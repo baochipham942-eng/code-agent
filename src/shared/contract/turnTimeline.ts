@@ -121,6 +121,8 @@ interface TurnRoutingEvidenceStep {
 
 export interface TurnRoutingEvidence {
   mode: ConversationRoutingMode;
+  /** Auto 未命中专用 agent 后回落 default：证据保留给日志/检查器，聊天主流不告警。 */
+  autoFallbackToDefault?: boolean;
   summary: string;
   agentIds?: string[];
   agentNames?: string[];

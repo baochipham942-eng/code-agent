@@ -23,7 +23,11 @@ import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browser
 import { getBrowserComputerActionCatalogEntry } from '@shared/utils/browserComputerActionCatalog';
 import { MemoryCitationGroup } from '../../../../citations/MemoryCitationGroup';
 import type { Citation } from '@shared/contract/citation';
-import { humanizeToolError, buildToolErrorActions } from '../../../../../utils/toolExecutionPresentation';
+import {
+  humanizeToolError,
+  buildToolErrorActions,
+  isToolInterruptionPlaceholder,
+} from '../../../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useMessageActionStore } from '../../../../../stores/messageActionStore';
 import { copyPathToClipboard } from '../../../../../utils/platform';
@@ -187,7 +191,10 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
   // 通用失败工具的可点 action（复制错误 + 从此重试）。浏览器/Computer 类有自己的
   // 只读 recovery actions，这里只兜底其余工具，避免两套 action 行重复。
   const toolErrorActions = buildToolErrorActions(toolCall, mediaContext?.messageId);
-  const showGenericErrorActions = browserComputerNextSteps.length === 0 && toolErrorActions.show;
+  const interruptionPlaceholder = isToolInterruptionPlaceholder(result?.error);
+  const showGenericErrorActions = browserComputerNextSteps.length === 0
+    && toolErrorActions.show
+    && !interruptionPlaceholder;
 
   const canPreviewCreated = isPreviewable(createdFilePath);
 
@@ -347,17 +354,21 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                       去「设置 &gt; Service API Keys」换 key ›
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setShowRawError((v) => !v)}
-                    className="mt-2 block text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
-                  >
-                    {showRawError ? '收起原始报错' : '查看原始报错'}
-                  </button>
-                  {showRawError && (
-                    <pre className="mt-1.5 max-h-48 overflow-auto scrollbar-hidden whitespace-pre-wrap break-words rounded-md border border-zinc-800/50 bg-gray-900/50 p-2 text-[11px] text-zinc-500">
-                      {stripAnsiCodes(result.error || '')}
-                    </pre>
+                  {!interruptionPlaceholder && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setShowRawError((v) => !v)}
+                        className="mt-2 block text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
+                      >
+                        {showRawError ? '收起原始报错' : '查看原始报错'}
+                      </button>
+                      {showRawError && (
+                        <pre className="mt-1.5 max-h-48 overflow-auto scrollbar-hidden whitespace-pre-wrap break-words rounded-md border border-zinc-800/50 bg-gray-900/50 p-2 text-[11px] text-zinc-500">
+                          {stripAnsiCodes(result.error || '')}
+                        </pre>
+                      )}
+                    </>
                   )}
                 </div>
               ) : (!result.success && !result.error?.trim() && (result.output == null || result.output === '')) ? (

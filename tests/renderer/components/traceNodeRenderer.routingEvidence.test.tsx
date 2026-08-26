@@ -51,6 +51,22 @@ const successEvidence: TurnRoutingEvidence = {
   ],
 };
 
+const autoFallbackEvidence: TurnRoutingEvidence = {
+  mode: 'auto',
+  autoFallbackToDefault: true,
+  summary: 'Auto 未命中特定 agent，已回落默认执行',
+  agentIds: ['default'],
+  agentNames: ['default'],
+  reason: 'No specialized agent matched; continue with the default conversation loop.',
+  steps: [{
+    status: 'fallback',
+    label: '保持 default 执行',
+    detail: 'No specialized agent matched; continue with the default conversation loop.',
+    tone: 'warning',
+    timestamp: 1000,
+  }],
+};
+
 describe('路由异常卡 — 异常铺进主对话流，正常不铺', () => {
   it('tone=error：渲染路由异常卡，异常步骤一眼可辨（红文案 + 状态徽章）', () => {
     const html = renderToStaticMarkup(<TraceNodeRenderer node={makeNode('error', errorEvidence)} />);
@@ -76,6 +92,16 @@ describe('路由异常卡 — 异常铺进主对话流，正常不铺', () => {
     expect(html).toContain('路由异常');
     expect(html).toContain('Direct 已发送，部分目标未命中');
     expect(html).toContain('border-badge-warning/20');
+  });
+
+  it('Auto 未命中后回落 default：主对话流不渲染路由卡', () => {
+    const html = renderToStaticMarkup(
+      <TraceNodeRenderer node={makeNode('warning', autoFallbackEvidence)} />,
+    );
+
+    expect(html).not.toContain('路由异常');
+    expect(html).not.toContain('Auto 未命中特定 agent');
+    expect(html).not.toContain('No specialized agent matched');
   });
 
   it('tone=success：正常路由不铺进主对话流（每轮一样，是噪声）', () => {

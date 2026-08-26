@@ -4,7 +4,8 @@
 // 数据来自 message.metadata.agentError（classifyAgentError 在 error 事件时写入）。
 // 布局对照 WorkBuddy ErrorBanner：标题行（⚠ + 发生了什么）→ 建议行 → 详情行
 // （错误码/HTTP/Trace ID，有才显示）→ 操作行。动作按 category 显隐：
-// 重试=可恢复错误；切换模型=模型类错误；新开会话=context_length/image_payload/generic；复制报告=全部。
+// 重试=可恢复错误；切换模型=模型类错误；新开会话=context_length/image_payload/generic；
+// 复制报告=仅开发者模式。rate_limited 由 AgentErrorPresentation 降为时间线灰字行。
 // 文案不持久化（metadata 只存 category + 排障字段），这里按 category 查 i18n 表。
 // ============================================================================
 
@@ -67,6 +68,20 @@ function shouldShowNewSession(category: AgentErrorCategory): boolean {
   return NEW_SESSION_CATEGORIES.has(category);
 }
 
+function buildTechnicalItems(
+  error: AgentErrorMetadata,
+  t: Translations,
+  includeModel: boolean,
+): string[] {
+  const items: string[] = [];
+  if (includeModel && error.modelId) items.push(`${t.agentError.details.model} ${error.modelId}`);
+  if (error.provider) items.push(`${t.agentError.details.provider} ${error.provider}`);
+  if (error.code) items.push(`${t.agentError.details.code} ${error.code}`);
+  if (error.httpStatus) items.push(`${t.agentError.details.httpStatus} ${error.httpStatus}`);
+  if (error.traceId) items.push(`${t.agentError.details.traceId} ${error.traceId}`);
+  return items;
+}
+
 /** 按 category 查 i18n 文案；context_length 的建议带 token 数模板。 */
 export function resolveAgentErrorCopy(
   error: Pick<AgentErrorMetadata, 'category' | 'requestedTokens' | 'maxTokens'>,
@@ -115,7 +130,7 @@ export function buildAgentErrorReport(args: {
 const ACTION_BUTTON_CLASS =
   'flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-zinc-800/60 disabled:hover:text-zinc-300';
 
-export const AgentErrorCard: React.FC<{
+const AgentErrorCard: React.FC<{
   error: AgentErrorMetadata;
   /** 所在 assistant 消息 id（重试时据此回找上一条 user 消息） */
   messageId: string;
@@ -123,6 +138,7 @@ export const AgentErrorCard: React.FC<{
 }> = ({ error, messageId, sessionId }) => {
   const { t } = useI18n();
   const { title, suggestion } = resolveAgentErrorCopy(error, t);
+  const developerMode = useAppStore((state) => state.developerMode);
   // 运行中禁用重试，避免并发重发把正在跑的轮次搞乱
   const isRunning = useSessionStore((s) => (sessionId ? s.runningSessionIds.has(sessionId) : false));
 
@@ -158,11 +174,7 @@ export const AgentErrorCard: React.FC<{
   // provider id / 错误码 / HTTP 码 / Trace ID 是排障字段，看不出下一步动作，
   // 收进折叠区，别跟两个有效按钮抢注意力（拍板 2026-08-01「折中方案」）。
   const ranOnModel = error.modelId ? `${t.agentError.details.model} ${error.modelId}` : null;
-  const technicalItems: string[] = [];
-  if (error.provider) technicalItems.push(`${t.agentError.details.provider} ${error.provider}`);
-  if (error.code) technicalItems.push(`${t.agentError.details.code} ${error.code}`);
-  if (error.httpStatus) technicalItems.push(`${t.agentError.details.httpStatus} ${error.httpStatus}`);
-  if (error.traceId) technicalItems.push(`${t.agentError.details.traceId} ${error.traceId}`);
+  const technicalItems = buildTechnicalItems(error, t, false);
 
   return (
     <div
@@ -238,15 +250,96 @@ export const AgentErrorCard: React.FC<{
             {t.agentError.actions.newSession}
           </button>
         )}
-        <button /* ds-allow:button: 报错卡操作行是紧凑小按钮组，Button primitive 无此紧凑变体 */
-          type="button"
-          onClick={handleCopyReport}
-          className={ACTION_BUTTON_CLASS}
-        >
-          <Copy className="h-3 w-3" />
-          {t.agentError.actions.copyReport}
-        </button>
+        {developerMode && (
+          <button /* ds-allow:button: 报错卡操作行是紧凑小按钮组，Button primitive 无此紧凑变体 */
+            type="button"
+            onClick={handleCopyReport}
+            className={ACTION_BUTTON_CLASS}
+          >
+            <Copy className="h-3 w-3" />
+            {t.agentError.actions.copyReport}
+          </button>
+        )}
       </div>
     </div>
   );
 };
+
+const RateLimitedErrorLine: React.FC<{
+  error: AgentErrorMetadata;
+  messageId: string;
+  sessionId?: string;
+}> = ({ error, messageId, sessionId }) => {
+  const { t } = useI18n();
+  const developerMode = useAppStore((state) => state.developerMode);
+  const isRunning = useSessionStore((state) => (sessionId ? state.runningSessionIds.has(sessionId) : false));
+  const { title, suggestion } = resolveAgentErrorCopy(error, t);
+  const technicalItems = buildTechnicalItems(error, t, true);
+
+  const handleRetry = useCallback(() => {
+    useMessageActionStore.getState().regenerateMessage(messageId);
+  }, [messageId]);
+
+  const handleCopyReport = useCallback(async () => {
+    const report = buildAgentErrorReport({ error, title, suggestion, sessionId, t });
+    try {
+      await navigator.clipboard.writeText(report);
+      toast.success(t.agentError.actions.copied);
+    } catch {
+      toast.error(t.agentError.actions.copyFailed);
+    }
+  }, [error, title, suggestion, sessionId, t]);
+
+  return (
+    <div
+      role="status"
+      data-testid="rate-limited-error-line"
+      className="flex flex-wrap items-baseline gap-x-1.5 py-0.5 text-xs text-zinc-500"
+    >
+      <AlertTriangle className="h-3.5 w-3.5 shrink-0 self-center text-badge-warning" aria-hidden="true" />
+      <span>{t.agentError.rateLimitedInline}</span>
+      <span aria-hidden="true">·</span>
+      <button /* ds-allow:button: 时间线灰字行的行内文字链接，不使用按钮外壳 */
+        type="button"
+        onClick={handleRetry}
+        disabled={isRunning}
+        title={isRunning ? t.agentError.actions.retryRunning : t.agentError.actions.retry}
+        className="text-badge-info underline underline-offset-2 hover:text-badge-info/80 disabled:cursor-not-allowed disabled:text-zinc-600 disabled:no-underline"
+      >
+        {t.agentError.actions.retry}
+      </button>
+      {developerMode && (
+        <>
+          <span aria-hidden="true">·</span>
+          <details className="min-w-0 text-[10px] text-zinc-500">
+            <summary className="cursor-pointer hover:text-zinc-400">
+              {t.agentError.details.technical}
+            </summary>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[10px] text-zinc-500">
+              {technicalItems.map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+              <button /* ds-allow:button: 开发者详情内的行内复制链接 */
+                type="button"
+                onClick={() => void handleCopyReport()}
+                className="font-sans text-badge-info underline underline-offset-2 hover:text-badge-info/80"
+              >
+                {t.agentError.actions.copyReport}
+              </button>
+            </div>
+          </details>
+        </>
+      )}
+    </div>
+  );
+};
+
+export const AgentErrorPresentation: React.FC<{
+  error: AgentErrorMetadata;
+  messageId: string;
+  sessionId?: string;
+}> = (props) => (
+  props.error.category === 'rate_limited'
+    ? <RateLimitedErrorLine {...props} />
+    : <AgentErrorCard {...props} />
+);

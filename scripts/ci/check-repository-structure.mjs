@@ -40,7 +40,9 @@ const limits = {
   // 已抽到 scripts/lib/knipVersion.mjs，不占直属名额）。
   // 2026-08-14 +2: scripts/attention-budget-ratchet.mjs 及其显式基线文件（模型每轮
   // 固定注入开销棘轮，gates:local 稳定入口；基线提额必须连同理由接受评审）。
-  directScriptFiles: 154,
+  // 2026-08-26 +2: scripts/verify-slotless.mjs（无槽 webServer + dogfood 自动登录）与
+  // scripts/verify-shot.mjs（固定 headless Playwright 截图入口）是任务书默认验证入口。
+  directScriptFiles: 156,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

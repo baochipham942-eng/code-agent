@@ -226,7 +226,7 @@ describe('WorkbenchTabs tab 条形态（D6）', () => {
     expect(screen.getByLabelText(en.workbenchTabs.closeView.replace('{view}', en.workbenchTabs.filesLabel))).toBeTruthy();
   });
 
-  it('tab 上的 × 关闭普通视图，关完回空态启动器', () => {
+  it('tab 上的 × 关闭最后一个视图，并把整栏收起', () => {
     useAppStore.setState({
       workbenchTabs: ['files'],
       activeWorkbenchTab: 'files',
@@ -240,7 +240,7 @@ describe('WorkbenchTabs tab 条形态（D6）', () => {
 
     expect(useAppStore.getState().workbenchTabs).toEqual([]);
     expect(useAppStore.getState().activeWorkbenchTab).toBeNull();
-    expect(useAppStore.getState().workbenchCollapsed).toBe(false);
+    expect(useAppStore.getState().workbenchCollapsed).toBe(true);
     expect(screen.queryByTestId('workbench-view-selector')).toBeNull();
     expect(screen.getByTestId('workbench-empty-launcher')).toBeTruthy();
   });

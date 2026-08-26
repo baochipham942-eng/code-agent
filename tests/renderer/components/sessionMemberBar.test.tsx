@@ -117,6 +117,8 @@ describe('SessionMemberBar（折叠 chip）', () => {
     fireEvent.click(await screen.findByTestId('session-member-bar-collapsed'));
 
     expect(appState.openWorkbenchTab).toHaveBeenCalledWith('experts', { source: 'user' });
+    expect(appState.openWorkbenchTab).toHaveBeenCalledTimes(1);
+    expect(appState.openWorkbenchTab).not.toHaveBeenCalledWith('overview', expect.anything());
     // 点 chip 不再进入某个成员的对话页（那是面板行的事）
     expect(useMemberViewStore.getState().viewingMemberId).toBeNull();
   });

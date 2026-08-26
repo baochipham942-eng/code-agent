@@ -5,7 +5,7 @@
 // 直接对齐 FileExplorerPanel 的 TabBar 现成样式（tab × ｜ ＋ ｜ 收起）：
 // - tab = 已开视图（当前高亮 bg-zinc-800），hover tab 显 ×（脏预览先确认）；
 // - 「＋」弹出可打开视图列表（复用 WorkbenchViewLauncher popover 形态）；
-// - 任务常驻不可关；日志/专家与既有按需视图沿用 tab 关闭语义；
+// - 任务/日志/专家与既有按需视图统一沿用 tab 关闭语义；
 // - 右侧「收起面板」不动（D5 去重后的唯一收起 affordance）。
 //
 // 结构（批P 返工第二波）：tab 条收敛进共享壳 RailTabShell（样式制度唯一真源，
@@ -230,6 +230,27 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
   );
 };
 
+/** 常驻于 App：空右栏时 WorkbenchTabs 未挂载，专家出现仍要能自动开页。 */
+export const ExpertWorkbenchAutoOpen: React.FC = () => {
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const workbenchTabs = useAppStore((state) => state.workbenchTabs);
+  const openWorkbenchTab = useAppStore((state) => state.openWorkbenchTab);
+  const expertsDismissed = useRightPanelTabsStore((state) => (
+    currentSessionId ? Boolean(state.expertsDismissedBySession[currentSessionId]) : false
+  ));
+  const { rows } = useSessionAgentRows(currentSessionId);
+
+  useEffect(() => {
+    if (!currentSessionId || rows.length === 0 || expertsDismissed || workbenchTabs.includes('experts')) return;
+    openWorkbenchTab('experts', {
+      source: 'auto',
+      activate: workbenchTabs.length === 0,
+    });
+  }, [currentSessionId, rows.length, expertsDismissed, workbenchTabs, openWorkbenchTab]);
+
+  return null;
+};
+
 export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: boolean }> = ({ children, focusable = false }) => {
   const { t } = useI18n();
   const workbenchTabs = useAppStore((s) => s.workbenchTabs);
@@ -247,9 +268,6 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
   const workbenchFocused = useWorkbenchFocusStore((s) => s.workbenchFocused);
   const setWorkbenchFocused = useWorkbenchFocusStore((s) => s.setWorkbenchFocused);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
-  const expertsDismissed = useRightPanelTabsStore((s) => (
-    currentSessionId ? Boolean(s.expertsDismissedBySession[currentSessionId]) : false
-  ));
   const { rows: expertRows } = useSessionAgentRows(currentSessionId);
   const hasExperts = expertRows.length > 0;
   const artifactFollowEntries = useArtifactFollowStore((s) => s.entries);
@@ -272,11 +290,6 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
   const [menuOpen, setMenuOpen] = useState(false);
   const [pendingClose, setPendingClose] = useState<TabMeta | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!currentSessionId || !hasExperts || expertsDismissed || workbenchTabs.includes('experts')) return;
-    openWorkbenchTab('experts', { source: 'auto', activate: false });
-  }, [currentSessionId, hasExperts, expertsDismissed, workbenchTabs, openWorkbenchTab]);
-
   useEffect(() => {
     if (!developerMode && logsPinned) setLogsPinned(false);
   }, [developerMode, logsPinned, setLogsPinned]);
@@ -407,7 +420,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
   };
 
   const requestClose = (meta: TabMeta) => {
-    if (meta.id === 'overview' || (meta.id === 'logs' && logsPinned)) return;
+    if (meta.id === 'logs' && logsPinned) return;
     if (meta.isDirty) {
       setPendingClose(meta);
       return;
@@ -450,7 +463,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
           iconClassName: meta.iconClassName,
           iconSrc: meta.iconSrc,
           testId: `workbench-tab-${meta.id}`,
-          suffix: meta.id === 'overview' ? undefined : (
+          suffix: (
             <>
               {meta.isDirty && (
                 <span className="text-[10px] leading-none text-badge-warning" title={t.workbenchTabs.unsavedChanges}>●</span>

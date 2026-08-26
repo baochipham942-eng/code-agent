@@ -179,17 +179,6 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
   const { rows, conflicts } = useSessionAgentRows(sessionId);
 
-  useEffect(() => {
-    if (!sessionId || rows.length === 0) return;
-    const tabsState = useRightPanelTabsStore.getState();
-    if (
-      !tabsState.expertsDismissedBySession[sessionId]
-      && !useAppStore.getState().workbenchTabs.includes('experts')
-    ) {
-      useAppStore.getState().openWorkbenchTab('experts', { source: 'auto', activate: false });
-    }
-  }, [sessionId, rows.length]);
-
   // 换会话必须退出成员视图，否则会拿上一个会话的成员去渲染这一个
   useEffect(() => { setViewingMemberId(null); }, [sessionId, setViewingMemberId]);
 

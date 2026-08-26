@@ -268,6 +268,6 @@ describe('DecisionSlot', () => {
     expect(signalStart).toBeGreaterThan(0);
     expect(effectStart).toBeGreaterThan(signalStart);
     expect(activitySignal).not.toMatch(/PermissionRequest|queuedPermissionRequests/u);
-    expect(appSource).toContain('syncTaskWorkbenchForActivity(hasTaskWorkbenchContent)');
+    expect(appSource).toContain('syncTaskWorkbenchForActivity(currentSessionId, taskWorkbenchActivityKey)');
   });
 });

@@ -25,7 +25,7 @@ import { isDesktopShellMode, isTauriMode } from './utils/platform';
 import { ProjectCollaborationPage } from './components/features/projectCollaboration';
 import { ProjectSpacePage } from './components/features/projectSpace';
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
-import { WorkbenchTabs } from './components/WorkbenchTabs';
+import { ExpertWorkbenchAutoOpen, WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkbenchViewContent } from './components/WorkbenchViewContent';
 import { PromptManagerModal } from './components/features/prompts/PromptManagerModal';
 import { BackgroundSessionPanel } from './components/features/background';
@@ -188,10 +188,8 @@ export const App: React.FC = () => {
   // 响应式：窄屏先把横向空间让给聊天和右侧状态面板。
   const windowWidth = useWindowWidth();
   const isNarrowViewport = windowWidth < SIDEBAR_AUTO_COLLAPSE_WIDTH;
-  // 右栏「只在需要时出现」（2026-07-27 审美关拍板）= **默认收起**（appStore 初值 true），
-  // 不是「没视图就不占位」——后者会把空态启动器里的四个发现入口（概览/文件/浏览器/设计画布）
-  // 一并藏掉，对非程序员用户等于砍掉可达路径（e2e 当场抓到）。
-  // 收起态顶栏留展开入口；打开任一视图（openWorkbenchTab，非 auto 源）也会顺带清收起位。
+  // 右栏只在真实页签存在时占位；最后一页关闭后整栏收起。
+  // 顶栏保留展开入口，用户仍可从空态启动器找回任务/日志/专家等视图。
   const showWorkbench = windowWidth >= WORKBENCH_MIN_VISIBLE_WIDTH && !workbenchCollapsed;
   const isPreviewActive = typeof activeWorkbenchTab === 'string' && activeWorkbenchTab.startsWith('preview:');
   const showNarrowWorkbench =
@@ -827,10 +825,33 @@ export const App: React.FC = () => {
     || hasSwarmActivity
     || hasWorkflowActivity
   );
+  const taskWorkbenchActivityKey = hasTaskWorkbenchContent && currentSessionId
+    ? JSON.stringify({
+        sessionId: currentSessionId,
+        tasks: sessionTasks
+          .filter((task) => task.status === 'pending' || task.status === 'in_progress' || task.status === 'blocked')
+          // 状态推进不算「新任务内容」，但同一 task id 补进来的标题/说明要算。
+          // 这样用户关掉任务页后，旧内容继续跑不会反复弹；任务本身扩写时才允许重开。
+          .map((task) => `${task.id}\u0000${task.subject}\u0000${task.description}\u0000${task.activeForm}`)
+          .sort(),
+        todos: todos
+          .filter((todo) => todo.status !== 'completed')
+          .map((todo) => `${todo.content}\u0000${todo.activeForm}`)
+          .sort(),
+        background: backgroundTasks
+          .filter((task) => task.sessionId === currentSessionId && TASK_WORKBENCH_BACKGROUND_STATUSES.has(task.status))
+          .map((task) => `${task.id}\u0000${task.title}\u0000${task.summary ?? ''}`)
+          .sort(),
+        swarm: hasSwarmActivity ? swarmActiveRunId ?? 'pending' : null,
+        workflow: hasWorkflowActivity
+          ? workflowSnapshot?.runId ?? workflowPendingLaunchRequest?.id ?? 'pending'
+          : null,
+      })
+    : null;
 
   useEffect(() => {
-    syncTaskWorkbenchForActivity(hasTaskWorkbenchContent);
-  }, [hasTaskWorkbenchContent, syncTaskWorkbenchForActivity]);
+    syncTaskWorkbenchForActivity(currentSessionId, taskWorkbenchActivityKey);
+  }, [currentSessionId, taskWorkbenchActivityKey, syncTaskWorkbenchForActivity]);
 
   // dynamic-workflow 进度树事件通道（P3a）：workflow.ipc 专用 bridge 把 'workflow' domain
   // 投递到 'workflow:event'，payload 即完整 ScriptRunEvent（与 swarm 同款 raw-event 风格）。
@@ -891,6 +912,7 @@ export const App: React.FC = () => {
       <ProviderStatusNotice />
       <BudgetAlertNotice />
       <AgentNoticeToast />
+      <ExpertWorkbenchAutoOpen />
       <SessionExpiredNotice />
       <div className="h-screen flex flex-col bg-zinc-950 text-zinc-200">
         {/* 左右结构（2026-07-27 拍板「右侧标题栏和下面样式上打通」，参照 Codex）：

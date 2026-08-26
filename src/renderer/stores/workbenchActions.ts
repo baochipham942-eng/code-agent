@@ -13,6 +13,7 @@ import { useRightPanelTabsStore } from './rightPanelTabsStore';
 
 type WorkbenchActionName =
   | 'syncWorkbenchForSession'
+  | 'syncTaskWorkbenchForActivity'
   | 'openWorkbenchTab'
   | 'closeWorkbenchTab'
   | 'setActiveWorkbenchTab';
@@ -31,6 +32,34 @@ export function createWorkbenchActions({
   nextPreviewTabTick,
 }: WorkbenchActionDependencies): Pick<AppState, WorkbenchActionName> {
   return {
+    syncTaskWorkbenchForActivity: (sessionId, activityKey) => {
+      const state = get();
+
+      if (sessionId && activityKey) {
+        const isNewActivity = state.taskWorkbenchActivityKeysBySession[sessionId] !== activityKey;
+        if (isNewActivity) {
+          set({
+            taskWorkbenchActivityKeysBySession: {
+              ...state.taskWorkbenchActivityKeysBySession,
+              [sessionId]: activityKey,
+            },
+          });
+        }
+        if (isNewActivity && (
+          !state.workbenchTabs.includes('overview')
+          || (state.workbenchCollapsed && !state.workbenchCollapsedByUser)
+        )) {
+          state.openWorkbenchTab('task', { source: 'auto' });
+          set({ taskWorkbenchActivityActive: true, taskPanelTab: 'monitor' });
+          return;
+        }
+        if (!state.taskWorkbenchActivityActive) set({ taskWorkbenchActivityActive: true });
+        return;
+      }
+
+      if (state.taskWorkbenchActivityActive) set({ taskWorkbenchActivityActive: false });
+    },
+
     syncWorkbenchForSession: (sessionId) => {
       const state = get();
       const { logsPinned } = useRightPanelTabsStore.getState();
@@ -51,13 +80,10 @@ export function createWorkbenchActions({
         !isPreviewWorkbenchView(view)
         || state.previewTabs.some((tab) => view === `preview:${tab.path}`)
       ));
-      const withTask = sessionId && !restoredTabs.includes('overview')
-        ? ['overview' as const, ...restoredTabs]
-        : restoredTabs;
       const carryPinnedLogs = logsPinned && state.workbenchTabs.includes('logs');
-      const workbenchTabs = carryPinnedLogs && !withTask.includes('logs')
-        ? [...withTask, 'logs' as const]
-        : withTask;
+      const workbenchTabs = carryPinnedLogs && !restoredTabs.includes('logs')
+        ? [...restoredTabs, 'logs' as const]
+        : restoredTabs;
       const restoredActive = restored?.active ?? null;
       const activeWorkbenchTab = carryPinnedLogs
         ? 'logs'
@@ -70,11 +96,11 @@ export function createWorkbenchActions({
         workbenchTabs,
         activeWorkbenchTab,
         workbenchSessionKey: sessionId,
-        // 全新会话（无快照）一律回产品默认收起，同时保留常驻任务页签。
+        // 没有任何页签时整栏必须收起；全新会话也从空右栏开始。
         // 若放任 collapsed 跨会话泄漏，上一会话的展开状态会直接带进新会话。
-        // 有快照的回访会话不动（用户离开时的开/合就是意图）；sessionId=null（欢迎页）不动。
+        // 有页签快照的回访会话不动，保留用户离开时的开/合意图。
         // workbenchCollapsedByUser 不动：这不是用户按的，任务活动照样能把右栏带出来（#700 语义）。
-        ...(sessionId && !restored ? { workbenchCollapsed: true } : {}),
+        ...((sessionId && !restored) || workbenchTabs.length === 0 ? { workbenchCollapsed: true } : {}),
       });
       useRightPanelTabsStore.getState().resetLogsTarget();
     },
@@ -158,7 +184,7 @@ export function createWorkbenchActions({
       if (target.kind !== 'workbench') return;
 
       const view = target.view;
-      if (view === 'overview' || (view === 'logs' && useRightPanelTabsStore.getState().logsPinned)) return;
+      if (view === 'logs' && useRightPanelTabsStore.getState().logsPinned) return;
       // 'browser'（Agent 浏览器现场）不再关联 preview tab，落到下方通用分支即可
       // （S2 归位）。liveDev 与文件预览统一走 `preview:${path}`，经 closePreviewTab
       // 各自独立关闭，不再互相牵连。
@@ -189,6 +215,10 @@ export function createWorkbenchActions({
           ...state,
           workbenchTabs: nextTabs,
           activeWorkbenchTab: nextActive,
+          ...(nextTabs.length === 0 ? {
+            workbenchCollapsed: true,
+            workbenchCollapsedByUser: false,
+          } : {}),
         };
       });
     },

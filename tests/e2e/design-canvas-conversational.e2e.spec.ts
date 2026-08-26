@@ -92,10 +92,13 @@ test('从聊天点设计画布入口 → design-canvas tab 激活 + konva 画布
   await waitForAppReady(page);
   await enterSessionState(page);
 
-  // 1. 右栏默认收起，先展开；任务页常驻，设计画布从「＋」菜单按需打开。
+  // 1. 新会话无任务内容时右栏可能是空态启动器，也可能因前序用例留下的专家页已有 tab。
+  // 两种状态都从同一个「＋」菜单按需打开设计画布。
   await expandWorkbench(page);
-  await page.getByRole('button', { name: '打开新面板' }).click();
   const entryBtn = page.locator('[data-testid="open-workbench-view-design-canvas"]');
+  if (!(await entryBtn.isVisible().catch(() => false))) {
+    await page.getByRole('button', { name: '打开新面板' }).click();
+  }
   await expect(entryBtn).toBeVisible({ timeout: 10_000 });
   await expect(entryBtn).toBeEnabled();
 
@@ -143,9 +146,16 @@ test('右栏能整栏收起，再从标题栏展开回原来的面板', async ({
   await enterSessionState(page);
 
   await expandWorkbench(page);
+  const taskTab = page.locator('[data-testid="workbench-tab-overview"]');
+  if (!(await taskTab.isVisible().catch(() => false))) {
+    const openTask = page.getByTestId('open-workbench-view-overview');
+    if (!(await openTask.isVisible().catch(() => false))) {
+      await page.getByRole('button', { name: '打开新面板' }).click();
+    }
+    await openTask.click();
+  }
   const selector = page.locator('[data-testid="workbench-view-selector"]');
   await expect(selector).toBeVisible({ timeout: 10_000 });
-  const taskTab = page.locator('[data-testid="workbench-tab-overview"]');
   await expect(taskTab).toBeVisible({ timeout: 10_000 });
 
   // 收起：整栏消失，不只是关掉一个面板。

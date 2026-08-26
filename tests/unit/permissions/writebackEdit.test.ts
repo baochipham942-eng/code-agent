@@ -48,6 +48,27 @@ describe('applyEditedArgs（共享合同）', () => {
   ])('fail-closed：%s', (_label, tool, updated) => {
     expect(applyEditedArgs(tool, ORIGINAL, updated as Record<string, unknown>).ok).toBe(false);
   });
+
+  it('腾讯会议只允许改 schema 对应的主题、开始和结束时间', () => {
+    const original = {
+      subject: 'quick meeting',
+      start: '2026-08-26T09:00:00+08:00',
+      end: '2026-08-26T09:30:00+08:00',
+      waiting_room: true,
+    };
+    const result = applyEditedArgs('tmeetMeetingCreate', original, {
+      subject: 'product sync',
+      start: '2026-08-26T10:00:00+08:00',
+      end: '2026-08-26T10:45:00+08:00',
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      params: { subject: 'product sync', waiting_room: true },
+      changedKeys: ['subject', 'start', 'end'],
+    });
+    expect(applyEditedArgs('tmeetMeetingCreate', original, { waiting_room: false }).ok).toBe(false);
+    expect(applyEditedArgs('tmeetMeetingCreate', original, { subject: '' }).ok).toBe(false);
+  });
 });
 
 describe('审批岛：改过的参数只配一次性放行 + 可编辑工具超时 5 分钟', () => {

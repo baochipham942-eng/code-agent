@@ -7,6 +7,7 @@ export type PermissionBoundaryId =
   | 'file.project_write'
   | 'file.external_read'
   | 'file.external_write'
+  | 'connector.external_write'
   | 'command.shell'
   | 'network.web_request'
   | 'mcp.server_tool'
@@ -36,6 +37,10 @@ export interface PermissionBoundary {
 export interface PermissionBoundaryRef {
   id: PermissionBoundaryId;
   reason?: string;
+  reasonEn?: string;
+  /** 外部写回边界用于把通用模板解析成具体系统名称。 */
+  connectorName?: string;
+  connectorNameEn?: string;
 }
 
 export const PERMISSION_BOUNDARY_REGISTRY: Record<PermissionBoundaryId, PermissionBoundary> = {
@@ -81,6 +86,17 @@ export const PERMISSION_BOUNDARY_REGISTRY: Record<PermissionBoundaryId, Permissi
     cloud: '变更摘要可能随当前任务上下文发给模型供应商。',
     redaction: '日志和诊断包默认隐藏敏感路径、密钥和 token。',
     revoke: '拒绝本次权限；需要时只允许一次。',
+    sensitivity: 'high',
+  },
+  'connector.external_write': {
+    id: 'connector.external_write',
+    title: '写入你的{connector}',
+    trigger: '工具要在{connector}中创建或修改内容。',
+    dataAccess: ['写回目标', '要写入的内容', '操作参数'],
+    storage: '数据会离开本机并写入{connector}；本机只保留调用回执。',
+    cloud: '请求会发送到{connector}，并产生对外可见的写入结果。',
+    redaction: '本机日志和诊断导出默认脱敏凭据与个人信息；写回正文按卡片所示发送。',
+    revoke: '拒绝本次权限；已完成的外部写入需在{connector}中另行处理。',
     sensitivity: 'high',
   },
   'command.shell': {
@@ -234,10 +250,48 @@ export function isPermissionBoundaryId(value: unknown): value is PermissionBound
   return typeof value === 'string' && value in PERMISSION_BOUNDARY_REGISTRY;
 }
 
-export function getPermissionBoundary(id: PermissionBoundaryId | undefined): PermissionBoundary | undefined {
-  return id ? PERMISSION_BOUNDARY_REGISTRY[id] : undefined;
+const ENGLISH_PERMISSION_BOUNDARY_OVERRIDES: Partial<Record<PermissionBoundaryId, PermissionBoundary>> = {
+  'connector.external_write': {
+    id: 'connector.external_write',
+    title: 'Write to your {connector}',
+    trigger: 'The tool will create or change content in {connector}.',
+    dataAccess: ['write target', 'content to write', 'operation parameters'],
+    storage: 'Data leaves this device and is written to {connector}; only the operation receipt stays locally.',
+    cloud: 'The request is sent to {connector} and creates an externally visible result.',
+    redaction: 'Credentials and personal data are redacted from local logs and diagnostics; the content shown on the card is sent as written.',
+    revoke: 'Deny this request; completed writes must be handled separately in {connector}.',
+    sensitivity: 'high',
+  },
+};
+
+function fillConnectorName(boundary: PermissionBoundary, connectorName: string): PermissionBoundary {
+  const replace = (value: string) => value.replaceAll('{connector}', connectorName);
+  return {
+    ...boundary,
+    title: replace(boundary.title),
+    trigger: replace(boundary.trigger),
+    dataAccess: boundary.dataAccess.map(replace),
+    storage: replace(boundary.storage),
+    cloud: replace(boundary.cloud),
+    redaction: replace(boundary.redaction),
+    revoke: replace(boundary.revoke),
+  };
+}
+
+export function getPermissionBoundary(
+  id: PermissionBoundaryId | undefined,
+  options?: { language?: 'zh' | 'en'; connectorName?: string },
+): PermissionBoundary | undefined {
+  if (!id) return undefined;
+  const boundary = options?.language === 'en'
+    ? ENGLISH_PERMISSION_BOUNDARY_OVERRIDES[id] ?? PERMISSION_BOUNDARY_REGISTRY[id]
+    : PERMISSION_BOUNDARY_REGISTRY[id];
+  const connectorName = options?.connectorName ?? (id === 'connector.external_write'
+    ? options?.language === 'en' ? 'external system' : '外部系统'
+    : undefined);
+  return connectorName ? fillConnectorName(boundary, connectorName) : boundary;
 }
 
 export function listPermissionBoundaries(): PermissionBoundary[] {
-  return PERMISSION_BOUNDARY_IDS.map((id) => PERMISSION_BOUNDARY_REGISTRY[id]);
+  return PERMISSION_BOUNDARY_IDS.map((id) => getPermissionBoundary(id) ?? PERMISSION_BOUNDARY_REGISTRY[id]);
 }

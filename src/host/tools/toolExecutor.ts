@@ -55,6 +55,10 @@ import { recordCachedToolReplay } from './cachedToolReplay';
 import { createToolExecutionLedger } from './toolExecutionLedger';
 import { type ExecutionTopology } from '../permissions';
 import { boundaryIdForRequestType } from './permissionBoundaryMapping';
+import {
+  connectorExternalWriteReason,
+  findConnectorToolMetadata,
+} from '../../shared/contract/workbenchTools';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
@@ -1735,6 +1739,25 @@ export class ToolExecutor {
         };
 
       default: {
+        const connector = findConnectorToolMetadata(tool.name);
+        const connectorWriteReason = tool.permissionLevel === 'write'
+          ? connectorExternalWriteReason(tool.name)
+          : undefined;
+        if (connector && connectorWriteReason) {
+          return {
+            type: 'file_write',
+            tool: tool.name,
+            details: { ...params },
+            reason: connectorWriteReason,
+            boundary: {
+              id: 'connector.external_write',
+              reason: connectorWriteReason,
+              reasonEn: connectorExternalWriteReason(tool.name, 'en'),
+              connectorName: connector.connectorName,
+              connectorNameEn: connector.connectorNameEn,
+            },
+          };
+        }
         // Map permission level to permission request type
         const typeMap: Record<string, PermissionRequestData['type']> = {
           read: 'file_read',

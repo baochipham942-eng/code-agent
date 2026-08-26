@@ -824,7 +824,7 @@ export const App: React.FC = () => {
   );
   // E-3: 右栏 TaskPanel「按需展开」。只用真实内容信号（待办/任务/待确认/后台/swarm/workflow）
   // 决定自动展开，不再因为会话处于 thinking/processing 这类瞬时运行态就展开——否则未开始/
-  // 纯思考阶段会出现「没内容却占地」。无内容时自动收起（auto 源），用户手动开的仍保留。
+  // 纯思考阶段会出现「没内容却占地」。活动结束只清活动标记，已打开的概览保留本轮结果。
   const hasTaskWorkbenchContent = (
     hasOpenSessionTask
     || hasOpenTodo

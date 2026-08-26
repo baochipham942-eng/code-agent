@@ -4,6 +4,7 @@ import type { ModelProviderSettings } from '../../../src/shared/contract/setting
 const settingsState = vi.hoisted(() => ({
   settings: {
     models: {
+      default: 'xiaomi',
       defaultProvider: 'xiaomi',
       providers: {
         xiaomi: { enabled: true, model: 'mimo-v2.5-pro' } as ModelProviderSettings,
@@ -30,6 +31,7 @@ import { resolveSessionDefaultModelConfig } from '../../../src/host/services/cor
 
 describe('resolveSessionDefaultModelConfig', () => {
   beforeEach(() => {
+    settingsState.settings.models.default = 'xiaomi';
     settingsState.settings.models.defaultProvider = 'xiaomi';
     settingsState.settings.models.providers.xiaomi = { enabled: true, model: 'mimo-v2.5-pro' };
     settingsState.settings.models.providers.claude = { enabled: true };
@@ -52,6 +54,7 @@ describe('resolveSessionDefaultModelConfig', () => {
   });
 
   it('falls back to the selected provider default model when provider model is missing', () => {
+    settingsState.settings.models.default = 'claude';
     settingsState.settings.models.defaultProvider = 'claude';
     settingsState.settings.models.providers.claude = { enabled: true };
 
@@ -76,5 +79,15 @@ describe('resolveSessionDefaultModelConfig', () => {
     expect(config.model).toBe('mimo-v2.5-pro');
 
     delete (settingsState.settings as Record<string, unknown>).model;
+  });
+
+  it('uses models.default when the legacy defaultProvider alias disagrees', () => {
+    settingsState.settings.models.default = 'xiaomi';
+    settingsState.settings.models.defaultProvider = 'claude';
+
+    const config = resolveSessionDefaultModelConfig();
+
+    expect(config.provider).toBe('xiaomi');
+    expect(config.model).toBe('mimo-v2.5-pro');
   });
 });

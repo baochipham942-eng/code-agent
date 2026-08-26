@@ -282,7 +282,7 @@ describe('DecisionSlot', () => {
     render(<DecisionSlot streamInterruption={{ snapshot, retryMessage, onContinue }} />);
 
     const row = screen.getByTestId('stream-interruption-decision');
-    expect(row.textContent).toContain('上次回复中断，写入 /workspace/report.md 未执行');
+    expect(row.textContent).toContain('上次回复中断，写入 report.md 未执行');
     expect(screen.queryByTestId('permission-card')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /继续/u }));
 

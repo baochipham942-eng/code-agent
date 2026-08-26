@@ -67,6 +67,7 @@ import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type Notifica
 import { postOsNotification, registerNotificationClick } from './utils/osNotification';
 import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo, Message } from '@shared/contract';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getDefaultModelForProvider, getProviderEndpointForProtocol } from '@shared/constants';
+import { resolveConfiguredDefaultProvider } from '@shared/modelDefaults';
 import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
@@ -386,7 +387,7 @@ export const App: React.FC = () => {
       // renderer 侧遥测通道跟随隐私开关（host 侧对应 privacyGate；boot 一次 + 设置页切换时重放）
       applyRendererPrivacyFlags(resolvePrivacyFlags(settings));
       if (!settings?.models) return;
-      const defaultProvider = (settings.models.defaultProvider || settings.models.default || DEFAULT_PROVIDER) as ModelProvider;
+      const defaultProvider = resolveConfiguredDefaultProvider(settings.models, DEFAULT_PROVIDER);
       const providerConfig = settings.models.providers?.[defaultProvider];
       if (!providerConfig) return;
       const model = providerConfig.model || getDefaultModelForProvider(defaultProvider) || DEFAULT_MODEL;
@@ -479,7 +480,7 @@ export const App: React.FC = () => {
 
         // 加载模型配置
         if (settings?.models) {
-          const defaultProvider = (settings.models.defaultProvider || settings.models.default || DEFAULT_PROVIDER) as ModelProvider;
+          const defaultProvider = resolveConfiguredDefaultProvider(settings.models, DEFAULT_PROVIDER);
           const providerConfig = settings.models.providers?.[defaultProvider];
 
           if (providerConfig) {

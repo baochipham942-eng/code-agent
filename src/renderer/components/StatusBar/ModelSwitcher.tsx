@@ -408,8 +408,16 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   }, [open]);
 
   // 加载当前 override
+  useLayoutEffect(() => {
+    // 会话切换的首帧先回落到 config 默认；上一会话的 override 不能在 IPC 返回前残留。
+    setOverrideModel(null);
+    setOverrideProvider(null);
+    setOverrideAdaptive(false);
+  }, [sessionId]);
+
   useEffect(() => {
     if (!sessionId) return;
+    let cancelled = false;
     window.domainAPI
       ?.invoke<{ provider: string; model: string; adaptive?: boolean } | null>(
         IPC_DOMAINS.SESSION,
@@ -417,6 +425,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         { sessionId }
       )
       .then((res) => {
+        if (cancelled) return;
         if (res?.success) {
           setOverrideModel(res.data?.model ?? null);
           setOverrideProvider((res.data?.provider as ModelProvider | undefined) ?? null);
@@ -425,7 +434,14 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           toast.error('加载模型覆盖失败: ' + (res?.error?.message ?? '未知错误'));
         }
       })
-      .catch((err: unknown) => toast.error('加载模型覆盖失败: ' + (err instanceof Error ? err.message : '未知错误')));
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          toast.error('加载模型覆盖失败: ' + (err instanceof Error ? err.message : '未知错误'));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId]);
 
   const handleSelect = useCallback(

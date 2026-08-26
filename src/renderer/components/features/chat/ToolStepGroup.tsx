@@ -153,6 +153,13 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       })
       .filter((x): x is ToolCall => !!x);
   }, [nodes]);
+  const interruptedNode = useMemo(
+    () => nodes.find((node) => Boolean(
+      node.toolCall
+      && (node.metadata?.streamInterruptionReason || node.metadata?.streamRecovery),
+    )),
+    [nodes],
+  );
   const permissionEvidence = useMemo(() => resolvedPermissionRequests.flatMap((request) => {
     if (!request.parentToolUseId) return [];
     const node = nodes.find((candidate) => candidate.toolCall?.id === request.parentToolUseId);
@@ -264,6 +271,26 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   if (streamVisibleNodes.length === 0 || !label) {
     return null;
   }
+  if (toolCalls.length === 1 && interruptedNode) {
+    const toolCall = toolCalls[0];
+    return (
+      <div className="my-0.5">
+        <ToolCallDisplay
+          toolCall={toolCall}
+          index={0}
+          total={1}
+          compact
+          statusOverride="interrupted"
+          interruptionReason={interruptedNode.metadata?.streamInterruptionReason ?? 'app-restart'}
+          mediaContext={{
+            sessionId,
+            messageId: interruptedNode.messageId || toolCall.id,
+          }}
+        />
+      </div>
+    );
+  }
+
   if (toolCalls.length === 1 && isDelegationTool(toolCalls[0].name)) {
     const toolCall = toolCalls[0];
     return (

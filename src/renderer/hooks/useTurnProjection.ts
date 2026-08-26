@@ -19,6 +19,10 @@ import { isModelFallbackNoticeContent } from '../components/features/chat/fallba
 import { measureStreamingPerformanceTiming } from '../utils/streamingPerformanceMetrics';
 import { isToolResultEcho } from '../utils/toolResultEcho';
 import { isStreamRecoveryMessage } from '../utils/streamRecoveryMessage';
+import {
+  isPersistedStreamInterruptionMessage,
+  streamInterruptionReasonFromContent,
+} from '../utils/streamInterruptionPresentation';
 
 type MessageModelDecision = NonNullable<Message['modelDecision']>;
 
@@ -526,6 +530,11 @@ export function projectTurns(
 
       const turn = currentTurn;
       const recoveryMessage = isStreamRecoveryMessage(msg);
+      const streamInterruptionReason = msg.metadata?.streamInterruptionReason
+        ?? streamInterruptionReasonFromContent(msg.content);
+      const projectedMetadata = streamInterruptionReason
+        ? { ...msg.metadata, streamInterruptionReason }
+        : msg.metadata;
       let recoveryToolProjected = false;
 
       // 一条 assistant 消息若因 content_parts 交错（text 穿插 tool_call）拆成多个
@@ -534,6 +543,13 @@ export function projectTurns(
       let reasoningAttachedForMessage = false;
 
       const pushAssistantTextNode = (content: string, index?: number) => {
+        // 中断轮的唯一时间线信号由 recovery 工具节点承载。落库 marker 前的 partial
+        // 与 snapshot.content 是同一段流式正文，二者都继续投影会在重载后重复两遍，
+        // 也会破坏“灰字一行 + 决策槽一行”的单信号形态。
+        if (streamInterruptionReason && (
+          recoveryMessage
+          || isPersistedStreamInterruptionMessage(msg)
+        )) return;
         // 模型回显：小模型有时把工具结果 JSON 当正文复述，整段吞掉不当答案渲染。
         if (isToolResultEcho(content)) return;
         // 去重：连续相同的模型决策只在首个节点显示，避免每条消息都刷"用户选择 mimo"
@@ -559,7 +575,7 @@ export function projectTurns(
           thinking: attachReasoning ? msg.thinking : undefined,
           artifacts: msg.artifacts,
           modelDecision,
-          metadata: msg.metadata,
+          metadata: projectedMetadata,
         });
       };
 
@@ -588,7 +604,7 @@ export function projectTurns(
             targetContext: tc.targetContext,
             expectedOutcome: tc.expectedOutcome,
           },
-          metadata: msg.metadata,
+          metadata: projectedMetadata,
         });
       };
 

@@ -406,6 +406,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           const loadedMessages = mergeStreamSnapshotIntoMessages(
             hydrateToolCallResults(session.messages || []),
             streamSnapshot,
+            Boolean(session.activeRun),
           );
           useAppStore.getState().syncActiveAgentForSession(sessionId, {
             metadata: session.metadata,

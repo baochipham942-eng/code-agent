@@ -5,11 +5,14 @@ import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore'
 
 const mockDomainInvoke = vi.fn();
 
-function makeDraft(id: string): SessionWithMeta {
+function makeDraft(
+  id: string,
+  modelConfig = { provider: 'openai', model: 'gpt-5' },
+): SessionWithMeta {
   return {
     id,
     title: '新对话',
-    modelConfig: { provider: 'openai', model: 'gpt-5' },
+    modelConfig,
     createdAt: 1,
     updatedAt: 1,
     messageCount: 0,
@@ -66,12 +69,24 @@ describe('executeCreateSession — 复用的草稿就是当前会话时给出回
   });
 
   it('草稿是别的会话时走切换，不发聚焦请求', async () => {
-    reusable = makeDraft('draft-2');
-    state.sessions = [makeDraft('draft-1'), makeDraft('draft-2')];
+    reusable = makeDraft('draft-2', {
+      provider: 'custom-tokenrhythm',
+      model: 'deepseek-v4-flash',
+    });
+    state.sessions = [
+      makeDraft('draft-1', { provider: 'deepseek', model: 'deepseek-v4-pro' }),
+      reusable,
+    ];
 
     await executeCreateSession(deps, '新对话');
 
     expect(state.switchSession).toHaveBeenCalledWith('draft-2');
     expect(useAppStore.getState().composerFocusNonce).toBe(0);
+    expect(reusable.modelConfig).toEqual({
+      provider: 'custom-tokenrhythm',
+      model: 'deepseek-v4-flash',
+    });
+    expect(mockDomainInvoke.mock.calls.some(([, action]) => action === 'getModelOverride')).toBe(false);
+    expect(mockDomainInvoke.mock.calls.some(([, action]) => action === 'switchModel')).toBe(false);
   });
 });

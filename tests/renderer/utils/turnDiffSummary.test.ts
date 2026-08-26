@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
-import { buildTurnFileChanges } from '../../../src/renderer/utils/turnDiffSummary';
+import {
+  buildTurnFileChanges,
+  isFileChangeCardOwnedNode,
+} from '../../../src/renderer/utils/turnDiffSummary';
 
-function turnWithWrite(args: Record<string, unknown>, result = 'Created file: /x/index.html'): TraceTurn {
+function turnWithWrite(
+  args: Record<string, unknown>,
+  completion: { result?: string; success?: boolean } = {
+    result: 'Created file: /x/index.html',
+    success: true,
+  },
+): TraceTurn {
   return {
     turnNumber: 1,
     turnId: 'turn-1',
@@ -15,11 +24,46 @@ function turnWithWrite(args: Record<string, unknown>, result = 'Created file: /x
         type: 'tool_call',
         content: '',
         timestamp: 130,
-        toolCall: { id: 'tool-1', name: 'Write', args, result, success: true },
+        toolCall: { id: 'tool-1', name: 'Write', args, ...completion },
       },
     ],
   } satisfies TraceTurn;
 }
+
+describe('buildTurnFileChanges — only completed successful writes are owned', () => {
+  const writeArgs = {
+    file_path: '/x/pending.md',
+    content: 'line 1\nline 2',
+    content_lines: 2,
+  };
+
+  it('keeps a pending Write without a result out of the diff card and in the node stream', () => {
+    const turn = turnWithWrite(writeArgs, {});
+
+    expect(buildTurnFileChanges(turn)).toEqual([]);
+    expect(isFileChangeCardOwnedNode(turn.nodes[0])).toBe(false);
+  });
+
+  it('includes and owns a completed Write result when it was not marked failed', () => {
+    const turn = turnWithWrite(writeArgs, { result: 'Created file: /x/pending.md' });
+
+    expect(buildTurnFileChanges(turn)).toEqual([
+      expect.objectContaining({
+        filePath: '/x/pending.md',
+        added: 2,
+        isNewFile: true,
+      }),
+    ]);
+    expect(isFileChangeCardOwnedNode(turn.nodes[0])).toBe(true);
+  });
+
+  it('keeps a failed Write result out of the diff card and in the node stream', () => {
+    const turn = turnWithWrite(writeArgs, { result: 'Permission denied', success: false });
+
+    expect(buildTurnFileChanges(turn)).toEqual([]);
+    expect(isFileChangeCardOwnedNode(turn.nodes[0])).toBe(false);
+  });
+});
 
 describe('buildTurnFileChanges — Bug 1: diff line count on truncated Write content', () => {
   it('prefers the backend turn_diff over lossy tool arguments', () => {

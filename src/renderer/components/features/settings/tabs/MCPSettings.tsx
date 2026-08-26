@@ -473,7 +473,8 @@ export const MCPSettings: React.FC = () => {
                           <ConnectorLogo
                             id={catalogEntry?.logo}
                             displayName={catalogEntry?.name ?? server.label}
-                            fallback={<Plug className="h-4 w-4 text-zinc-400" />}
+                            fallback={<Plug className="h-7 w-7 text-zinc-400" />}
+                            className="h-7 w-7"
                           />
                         )}
                     </span>

@@ -219,7 +219,10 @@ describe('SaaSConnectorsSection Tencent Meeting CLI card', () => {
     renderTmeetCliStatus();
 
     const card = await screen.findByTestId('saas-connector-tmeet');
-    expect(within(card).getByRole('img', { name: '腾讯会议' })).toBeTruthy();
+    const logo = within(card).getByRole('img', { name: '腾讯会议' });
+    expect(logo.getAttribute('src')).toMatch(/tmeet\.png$/u);
+    expect(logo.parentElement?.className).toContain('h-7');
+    expect(logo.parentElement?.className).toContain('w-7');
     expect(card.textContent).toContain(zh.settings.saasConnectors.providers.tmeet);
     expect(card.textContent).toContain(zh.settings.saasConnectors.details.tmeetCliReady);
     fireEvent.click(within(card).getByTestId('saas-connect-tmeet'));
@@ -234,8 +237,15 @@ describe('SaaSConnectorsSection Tencent Meeting CLI card', () => {
     renderLarkCliStatus();
 
     const card = await screen.findByTestId('saas-connector-feishu');
-    expect(within(card).getByRole('img', { name: '飞书' })).toBeTruthy();
+    const cardLogo = within(card).getByRole('img', { name: '飞书' });
+    expect(cardLogo.parentElement?.className).toContain('h-7');
+    expect(cardLogo.parentElement?.className).toContain('w-7');
     expect(within(card).getByTestId('connector-logo-feishu')).toBeTruthy();
+
+    const detail = openFeishuDetail();
+    const detailLogo = within(detail).getByRole('img', { name: '飞书' });
+    expect(detailLogo.parentElement?.className).toContain('h-8');
+    expect(detailLogo.parentElement?.className).toContain('w-8');
   });
 
   it('keeps step fixed at 1 and tells the user to finish in the browser', async () => {

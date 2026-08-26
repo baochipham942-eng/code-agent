@@ -48,6 +48,36 @@ describe('ConnectorLogo', () => {
     expect(screen.queryByRole('img')).toBeNull();
   });
 
+  it('applies the consumer size to the shared frame for both brand assets and fallbacks', () => {
+    render(
+      <div>
+        <ConnectorLogo
+          id="feishu"
+          displayName="飞书"
+          fallback={<Plug />}
+          className="h-7 w-7"
+        />
+        <ConnectorLogo
+          displayName="未声明品牌"
+          fallback={<Plug data-testid="sized-fallback" className="h-7 w-7" />}
+          className="h-7 w-7"
+        />
+      </div>,
+    );
+
+    const logo = screen.getByRole('img', { name: '飞书' });
+    expect(logo.className).toContain('h-full');
+    expect(logo.className).toContain('w-full');
+    expect(logo.parentElement?.className).toContain('h-7');
+    expect(logo.parentElement?.className).toContain('w-7');
+
+    const fallback = screen.getByTestId('sized-fallback');
+    expect(fallback.classList.contains('h-7')).toBe(true);
+    expect(fallback.classList.contains('w-7')).toBe(true);
+    expect(fallback.parentElement?.className).toContain('h-7');
+    expect(fallback.parentElement?.className).toContain('w-7');
+  });
+
   it('adds a light plate for the black GitHub mark', () => {
     const { container } = render(
       <ConnectorLogo id="github" displayName="GitHub" fallback={<Plug />} />,

@@ -575,8 +575,9 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                     id={CLI_LOGO_BY_PROVIDER.get(status.id)}
                     displayName={providerName}
                     fallback={status.id === 'tmeet'
-                      ? <Video className="h-4 w-4 text-badge-info" />
-                      : <CalendarDays className="h-4 w-4 text-badge-info" />}
+                      ? <Video className="h-7 w-7 text-badge-info" />
+                      : <CalendarDays className="h-7 w-7 text-badge-info" />}
+                    className="h-7 w-7"
                   />
                 </span>
                 <div className="min-w-0">
@@ -794,8 +795,9 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
                       id={CLI_LOGO_BY_PROVIDER.get(activeStatus.id)}
                       displayName={providerName}
                       fallback={activeStatus.id === 'tmeet'
-                        ? <Video className="h-4 w-4 text-badge-info" />
-                        : <CalendarDays className="h-4 w-4 text-badge-info" />}
+                        ? <Video className="h-8 w-8 text-badge-info" />
+                        : <CalendarDays className="h-8 w-8 text-badge-info" />}
+                      className="h-8 w-8"
                     />
                   </span>
                 </div>

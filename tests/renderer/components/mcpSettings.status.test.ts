@@ -437,8 +437,11 @@ describe('MCPSettings status', () => {
 
     const githubDot = screen.getByTestId('mcp-server-status-dot-github');
     const slackDot = screen.getByTestId('mcp-server-status-dot-slack');
+    const githubLogo = screen.getByTestId('connector-logo-github');
     expect(githubDot.className).toContain('bg-mark-success');
     expect(slackDot.className).toContain('bg-zinc-600');
+    expect(githubLogo.parentElement?.className).toContain('h-7');
+    expect(githubLogo.parentElement?.className).toContain('w-7');
     expect(screen.queryByText(mcpText.tabs.discover)).toBeNull();
     expect(screen.queryByText((content) => content.startsWith(mcpText.tabs.connectedPrefix))).toBeNull();
   });

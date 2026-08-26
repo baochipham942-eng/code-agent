@@ -135,7 +135,8 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
                   <ConnectorLogo
                     id={entry.logo}
                     displayName={entry.name}
-                    fallback={<Plug className="h-4 w-4 text-zinc-400" />}
+                    fallback={<Plug className="h-7 w-7 text-zinc-400" />}
+                    className="h-7 w-7"
                   />
                 </span>
                 <span className="truncate text-sm font-medium text-zinc-100">{entry.name}</span>
@@ -176,8 +177,8 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
                   <ConnectorLogo
                     id={activeEntry.logo}
                     displayName={activeEntry.name}
-                    fallback={<Plug className="h-5 w-5 text-zinc-300" />}
-                    className="h-5 w-5"
+                    fallback={<Plug className="h-8 w-8 text-zinc-300" />}
+                    className="h-8 w-8"
                   />
                 </span>
                 <p className="mt-3 text-xs leading-relaxed text-zinc-400">{activeEntry.description}</p>

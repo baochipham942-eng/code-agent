@@ -46,7 +46,7 @@ describe('toolExecutionPresentation', () => {
 
   it('returns recovery hint based on tool status', () => {
     expect(getToolRecoveryHint(makeToolCall({ name: 'Bash' }), 'pending', zh)).toBe('等待结果');
-    expect(getToolRecoveryHint(makeToolCall({ name: 'Bash' }), 'interrupted', zh)).toBe('可重新运行');
+    expect(getToolRecoveryHint(makeToolCall({ name: 'Bash' }), 'interrupted', zh)).toBeNull();
     expect(getToolRecoveryHint(makeToolCall({
       name: 'Bash',
       expectedOutcome: '跑完验证',

@@ -466,6 +466,7 @@ const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node,
       toolCall={toolCall}
       index={0}
       total={1}
+      statusOverride={node.metadata?.streamRecovery ? 'interrupted' : undefined}
       mediaContext={{ sessionId, messageId: node.messageId || node.id }}
     />
   );

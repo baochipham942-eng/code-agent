@@ -243,7 +243,7 @@ describe('browser/computer action preview rendering', () => {
     expect(html).not.toContain('ml-auto');
   });
 
-  it('hides source and raw status jargon from tool meta rows', () => {
+  it('keeps an unexecuted Write to one interrupted line without tool meta jargon', () => {
     const html = renderToStaticMarkup(
       React.createElement(ToolCallDisplay, {
         toolCall: makeToolCall({
@@ -259,7 +259,9 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
-    expect(html).toContain('会改文件');
+    expect(html).toContain('已中断');
+    expect(html).toContain('未执行');
+    expect(html).not.toContain('会改文件');
     expect(html).not.toContain('builtin');
     expect(html).not.toContain('running');
     expect(html).not.toContain('等待结果');

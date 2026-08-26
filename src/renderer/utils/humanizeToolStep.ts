@@ -237,6 +237,8 @@ export function humanizeToolStep(
 ): string {
   if (stepLabel) return t.toolStepHumanize.declared[stepLabel];
 
+  const toolKind = classifyToolName(name);
+
   const schemaDescription = BASH_TOOLS.has(name)
     ? firstString(args ?? {}, ['description'])
     : '';
@@ -247,6 +249,10 @@ export function humanizeToolStep(
     isSemanticToolUIEnabled()
     && preferredDescription
     && matchesUiScript(preferredDescription, t)
+    // Write/Edit 未执行时，模型给的 shortDescription 可能是「写入了一个文件」这类
+    // 过去时。终态已经裁定为 interrupted/error 后，必须回到本地意图式模板，避免
+    // 同一行同时说「已中断」和「写入了」。
+    && !(failed && (toolKind === 'write' || toolKind === 'edit'))
   ) {
     return preferredDescription;
   }
@@ -254,7 +260,7 @@ export function humanizeToolStep(
   const a = args || {};
   const h = t.toolStepHumanize;
 
-  switch (classifyToolName(name)) {
+  switch (toolKind) {
     case 'read': {
       const target = firstPath(a, ['file_path', 'path']);
       return target ? h.read.replace('{target}', target) : h.readFallback;

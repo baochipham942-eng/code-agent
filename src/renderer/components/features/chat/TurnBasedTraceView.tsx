@@ -5,7 +5,7 @@
 
 import React, { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
+import { Virtuoso, type ListRange, type VirtuosoHandle } from 'react-virtuoso';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { SearchMatch } from './ChatSearchBar';
 import { TurnCard } from './TurnCard';
@@ -15,6 +15,8 @@ import { useTaskStore } from '../../../stores/taskStore';
 import { recordStreamingPerformanceCounter } from '../../../utils/streamingPerformanceMetrics';
 import { useI18n } from '../../../hooks/useI18n';
 import { SessionModelsContext } from './sessionModelsContext';
+import { hasIncompleteStreamSnapshot } from '../../../utils/streamingStatePresentation';
+import { isTurnVisibleInRange } from '../../../utils/turnVisibility';
 
 interface TurnBasedTraceViewProps {
   projection: TraceProjection;
@@ -26,6 +28,8 @@ interface TurnBasedTraceViewProps {
   onRewindUserPrompt?: (messageId: string, content: string) => void;
   /** 注入到第一条 turn 用户消息上方（分叉子会话的来源提示） */
   beforeFirstUserMessage?: React.ReactNode;
+  /** Virtuoso 可见范围是否覆盖流式中断所在 turn，供追赶条做视口双门。 */
+  onInterruptionPointVisibilityChange?: (visible: boolean) => void;
 }
 
 export const ACTIVE_DISPLAY_SCROLL_INTERVAL_MS = 80;
@@ -281,6 +285,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   activeMatchIndex = 0,
   onRewindUserPrompt,
   beforeFirstUserMessage,
+  onInterruptionPointVisibilityChange,
 }) => {
   const { t } = useI18n();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -327,6 +332,11 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const projectionStreamSnapshot = currentSessionId === projection.sessionId
     ? streamSnapshot
     : null;
+  const interruptionTurnIndex = useMemo(() => (
+    projectionStreamSnapshot
+      ? projection.turns.findIndex((turn) => hasIncompleteStreamSnapshot(projectionStreamSnapshot, turn))
+      : -1
+  ), [projection.turns, projectionStreamSnapshot]);
   const focusedTurnIndex = getFocusedTurnIndex(projection);
   const focusedTurnId =
     focusedTurnIndex >= 0 ? projection.turns[focusedTurnIndex]?.turnId : undefined;
@@ -379,6 +389,21 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     ? previousHistoryList.firstItemIndex - prependedTurnCount
     : 1_000_000;
   historyListRef.current = { sessionId: projection.sessionId, firstTurnId, firstItemIndex };
+  const visibleRangeRef = useRef<ListRange | null>(null);
+  const reportVisibleRange = useCallback((range: ListRange) => {
+    visibleRangeRef.current = range;
+    onInterruptionPointVisibilityChange?.(
+      isTurnVisibleInRange(range, interruptionTurnIndex, firstItemIndex),
+    );
+  }, [firstItemIndex, interruptionTurnIndex, onInterruptionPointVisibilityChange]);
+
+  useEffect(() => {
+    if (!onInterruptionPointVisibilityChange) return;
+    const range = visibleRangeRef.current;
+    onInterruptionPointVisibilityChange(
+      range ? isTurnVisibleInRange(range, interruptionTurnIndex, firstItemIndex) : false,
+    );
+  }, [firstItemIndex, interruptionTurnIndex, onInterruptionPointVisibilityChange]);
 
   if (prependedTurnCount > 0) {
     const anchor = prependViewportAnchorRef.current;
@@ -1024,6 +1049,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
           }
         }}
         atBottomThreshold={96}
+        rangeChanged={reportVisibleRange}
         // 进入/切换会话首帧即底部：定位到最后一条内容的末尾（而非 focused turn
         // 的顶部——末轮长于一屏时顶置会让用户落在中段）。behavior:'auto' 无动画。
         initialTopMostItemIndex={projection.turns.length > 0

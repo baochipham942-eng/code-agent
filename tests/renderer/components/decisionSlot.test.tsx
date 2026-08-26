@@ -4,7 +4,7 @@ import path from 'node:path';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { PermissionRequest } from '../../../src/shared/contract';
+import type { Message, PermissionRequest, StreamRecoverySnapshot } from '../../../src/shared/contract';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const normalRequest: PermissionRequest = {
@@ -88,6 +88,7 @@ describe('DecisionSlot', () => {
     storeState.pendingPermissionRequest = null;
     storeState.pendingPermissionSessionId = null;
     storeState.queuedPermissionRequests = {};
+    window.localStorage.clear();
   });
 
   afterEach(() => {
@@ -107,7 +108,7 @@ describe('DecisionSlot', () => {
       'utf8',
     );
     const pinned = chatSource.indexOf('<PinnedTodoBar');
-    const slot = chatSource.indexOf('<DecisionSlot />');
+    const slot = chatSource.indexOf('<DecisionSlot streamInterruption={streamInterruptionDecision} />');
     const workflow = chatSource.indexOf('<WorkflowLaunchCard />');
 
     expect(pinned).toBeGreaterThan(0);
@@ -254,6 +255,67 @@ describe('DecisionSlot', () => {
     const view = render(<DecisionSlot />);
 
     expect(view.container.innerHTML).toBe('');
+  });
+
+  it('流式中断收成一行槽位；继续复用原消息动作，成功后槽位消失', async () => {
+    const snapshot: StreamRecoverySnapshot = {
+      sessionId: 'session-current',
+      turnId: 'interrupted-turn-1',
+      content: '部分回复',
+      reasoning: '',
+      toolCalls: [{ id: 'write-1', name: 'Write', arguments: '{"file_path":"/workspace/report.md"}' }],
+      estimatedTokens: 10,
+      timestamp: 1,
+      isFinal: false,
+      streamStatus: 'incomplete',
+      stableForExecution: false,
+      incompleteToolCallIds: [],
+    };
+    const retryMessage: Message = {
+      id: 'user-before-interrupt',
+      role: 'user',
+      content: '写一篇长文',
+      timestamp: 0,
+    };
+    const onContinue = vi.fn().mockResolvedValue(true);
+
+    render(<DecisionSlot streamInterruption={{ snapshot, retryMessage, onContinue }} />);
+
+    const row = screen.getByTestId('stream-interruption-decision');
+    expect(row.textContent).toContain('上次回复中断，写入 /workspace/report.md 未执行');
+    expect(screen.queryByTestId('permission-card')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /继续/u }));
+
+    await waitFor(() => expect(onContinue).toHaveBeenCalledWith(retryMessage));
+    await waitFor(() => expect(screen.queryByTestId('decision-slot')).toBeNull());
+  });
+
+  it('Enter 触发同一继续 handler；放弃只清掉当前中断槽位', async () => {
+    const snapshot = {
+      sessionId: 'session-current',
+      turnId: 'interrupted-turn-2',
+      content: '',
+      reasoning: '',
+      toolCalls: [{ id: 'write-2', name: 'Write', arguments: '{}' }],
+      estimatedTokens: 0,
+      timestamp: 1,
+      isFinal: false,
+      streamStatus: 'incomplete',
+      stableForExecution: false,
+      incompleteToolCallIds: [],
+    } as StreamRecoverySnapshot;
+    const retryMessage = { id: 'u-2', role: 'user', content: '继续写', timestamp: 0 } as Message;
+    const onContinue = vi.fn().mockResolvedValue(true);
+    const first = render(<DecisionSlot streamInterruption={{ snapshot, retryMessage, onContinue }} />);
+
+    fireEvent.keyDown(window, { key: 'Enter' });
+    await waitFor(() => expect(onContinue).toHaveBeenCalledWith(retryMessage));
+    first.unmount();
+
+    const abandonedSnapshot = { ...snapshot, turnId: 'interrupted-turn-3' };
+    render(<DecisionSlot streamInterruption={{ snapshot: abandonedSnapshot, retryMessage, onContinue }} />);
+    fireEvent.click(screen.getByRole('button', { name: '放弃' }));
+    expect(screen.queryByTestId('decision-slot')).toBeNull();
   });
 
   it('仅有 pending 权限请求时不把右栏内容信号置为 true', () => {

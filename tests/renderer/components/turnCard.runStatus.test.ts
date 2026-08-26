@@ -56,13 +56,12 @@ describe('shouldHideTurnRunHeader — 按 key/tone 判断,与 label 文案无关
   });
 
   it('tone 为 success 时无论 key 是什么都隐藏', () => {
-    expect(shouldHideTurnRunHeader('cancelled', 'success')).toBe(true);
+    expect(shouldHideTurnRunHeader('completed', 'success')).toBe(true);
   });
 
-  it('异常/终态 key（blocked/cancelled/resumable/stale_stream）保留显示', () => {
+  it('blocked/stale 保留；resumable 让位给灰字步骤行和 DecisionSlot', () => {
     expect(shouldHideTurnRunHeader('blocked', 'error')).toBe(false);
-    expect(shouldHideTurnRunHeader('cancelled', 'warning')).toBe(false);
-    expect(shouldHideTurnRunHeader('resumable', 'warning')).toBe(false);
+    expect(shouldHideTurnRunHeader('resumable', 'warning')).toBe(true);
     expect(shouldHideTurnRunHeader('stale_stream', 'neutral')).toBe(false);
   });
 });
@@ -90,5 +89,21 @@ describe('TurnCard — 顶部状态条走 i18n 人话文案,不直出枚举字�
     );
 
     expect(html).not.toContain('进行中');
+  });
+
+  it('用户主动停止后不渲染已取消横幅', () => {
+    const turn = makeStreamingTurnWithTools();
+    const html = renderToStaticMarkup(
+      React.createElement(TurnCard, {
+        turn,
+        sessionStatus: 'cancelled',
+        isActiveTurn: false,
+        defaultExpanded: true,
+      }),
+    );
+
+    expect(html).not.toContain('已取消');
+    expect(html).not.toContain('已停止这次回答');
+    expect(html).not.toContain('data-testid="turn-run-header"');
   });
 });

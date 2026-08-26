@@ -419,6 +419,10 @@ export const InlineCode = memo(function InlineCode({
 
 // System tags that should be filtered from user-visible content
 const SYSTEM_TAG_PATTERNS = [
+  // host 为保住流式 partial 写入正文尾部的内部终止标记。落库格式不动，所有新旧会话
+  // 都在渲染层剥离，避免运行时协议串作为助手正文上屏。
+  /\[cancelled\]/gi,
+  /\[未完成\s*[—-]\s*切换会话中断\]/g,
   /<critical-warning>[\s\S]*?<\/critical-warning>/g,
   /<duplicate-call-warning>[\s\S]*?<\/duplicate-call-warning>/g,
   /<tool-call-format-error>[\s\S]*?<\/tool-call-format-error>/g,

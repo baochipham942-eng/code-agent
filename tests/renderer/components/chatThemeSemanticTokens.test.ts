@@ -113,21 +113,17 @@ describe('chat semantic theme tokens', () => {
   it('uses dedicated status text classes in the targeted chat components', () => {
     const chatView = readSource('src/renderer/components/ChatView.tsx');
     const turnCard = readSource('src/renderer/components/features/chat/TurnCard.tsx');
+    const decisionSlot = readSource('src/renderer/components/features/chat/DecisionSlot.tsx');
     const getToneClass = turnCard.match(/function getToneClass[\s\S]*?\n}/)?.[0] ?? '';
-    const recoveryBanner = chatView.match(/const StreamRecoveryBanner[\s\S]*?\n};/)?.[0] ?? '';
 
     expect(getToneClass).toContain('text-status-success');
     expect(getToneClass).toContain('text-status-warning');
     expect(getToneClass).toContain('text-status-error');
     expect(getToneClass).not.toMatch(/text-(success|warning|error)(?:\W|$)/);
-    expect(recoveryBanner).toContain('text-status-warning-soft');
-    expect(recoveryBanner).toContain('dark:text-status-warning-soft/80');
-    expect(recoveryBanner).toContain('dark:text-status-warning-soft/60');
-    expect(recoveryBanner).toContain('[.high-contrast-dark_&]:text-status-warning-soft/80');
-    expect(recoveryBanner).toContain('[.high-contrast-dark_&]:text-status-warning-soft/60');
-    expect(recoveryBanner).not.toContain('className="mt-1 text-status-warning-soft/80"');
-    expect(recoveryBanner).not.toContain('className="mt-1 text-xs text-status-warning-soft/60"');
-    expect(recoveryBanner).not.toMatch(/text-warning(?:\W|$)/);
+    expect(chatView).not.toContain('const StreamRecoveryBanner');
+    expect(decisionSlot).toContain('border-badge-warning/60');
+    expect(decisionSlot).toContain('text-badge-warning');
+    expect(decisionSlot).not.toMatch(/text-warning(?:\W|$)/);
   });
 
   it('removes the named dark-only literals from their targeted chat UI fragments', () => {

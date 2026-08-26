@@ -379,10 +379,12 @@ export function buildToolErrorActions(
   };
 }
 
-export function getToolRecoveryHint(toolCall: ToolCall, status: ToolStatus, t: Translations): string {
+export function getToolRecoveryHint(toolCall: ToolCall, status: ToolStatus, t: Translations): string | null {
   const hint = t.toolRecoveryHint;
   if (status === 'pending') return hint.pending;
-  if (status === 'interrupted') return hint.interrupted;
+  // 中断的未执行工具已经在主步骤行完整表达「已中断 · 意图 · 未执行」，不再追加
+  // 「可重新运行」形成第二套状态/动作。续跑入口只属于 DecisionSlot。
+  if (status === 'interrupted') return null;
   if (status === 'error') {
     if (toolCall.expectedOutcome) return hint.errorWithOutcome.replace('{outcome}', toolCall.expectedOutcome);
     return hint.errorGeneric;

@@ -47,7 +47,6 @@ import {
 } from '../../../utils/toolStepGrouping';
 import {
   buildStreamingUiState,
-  hasCancelledRunMarker,
   shouldShowStreamingState,
   type RuntimeSessionStatus,
   type StreamingUiState,
@@ -974,15 +973,9 @@ function getTurnRunStatus(turn: TraceTurn, t: Translations, streamingState?: Str
         return { key: 'running', label: streamingState.label, tone: 'info', icon: <CircleDot className="h-3.5 w-3.5" /> };
       case 'blocked':
         return { key: 'blocked', label: streamingState.label, tone: 'error', icon: <ShieldAlert className="h-3.5 w-3.5" /> };
-      case 'cancelled':
-        return { key: 'cancelled', label: streamingState.label, tone: 'warning', icon: <XCircle className="h-3.5 w-3.5" /> };
       default:
         break;
     }
-  }
-
-  if (hasCancelledRunMarker(turn)) {
-    return { key: 'cancelled', label: t.turnRun.status.cancelled, tone: 'warning', icon: <XCircle className="h-3.5 w-3.5" /> };
   }
 
   const timelines = turn.nodes
@@ -1086,7 +1079,7 @@ function getStreamingBannerIcon(state: StreamingUiState): React.ReactNode {
 const StreamingStateBanner: React.FC<{ state: StreamingUiState }> = ({ state }) => {
   const { t } = useI18n();
   return (
-    <div className={`flex min-h-9 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${getToneClass(state.tone)}`}>
+    <div data-testid="streaming-state-banner" className={`flex min-h-9 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${getToneClass(state.tone)}`}>
       <div className="shrink-0">{getStreamingBannerIcon(state)}</div>
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium">{state.label}</div>
@@ -1097,9 +1090,6 @@ const StreamingStateBanner: React.FC<{ state: StreamingUiState }> = ({ state }) 
       {state.showCancelCleanup && (
         <span className="shrink-0 text-[10px] opacity-60">{t.turnRun.cleanupBadge}</span>
       )}
-      {state.showResumeHint && (
-        <span className="shrink-0 text-[10px] opacity-60">{t.turnRun.resumeBadge}</span>
-      )}
     </div>
   );
 };
@@ -1107,21 +1097,20 @@ const StreamingStateBanner: React.FC<{ state: StreamingUiState }> = ({ state }) 
 // 顶部 run 横幅可见性：完成态 + 正常流式进度（running / using_tools / waiting_tool）
 // 统一隐藏。这些状态在流式期间随工具边界来回切换，会让蓝色 running 横幅 mount/unmount
 // 「跳上跳下」。正常 live 进度由底部 StreamingIndicator + 工具组内联指示承担；顶部横幅
-// 只在异常/终态（blocked/cancelled/resumable/stale）显示稳定状态。
+// 只在异常/终态（blocked/resumable/stale）显示稳定状态。
 // 吃 status key（稳定枚举），不吃 label（人话显示文案）——语言切换不能影响这条逻辑判断。
 export function shouldHideTurnRunHeader(statusKey: string, statusTone: string): boolean {
   return statusTone === 'success'
     || statusKey === 'running'
     || statusKey === 'using_tools'
-    || statusKey === 'waiting_tool';
+    || statusKey === 'waiting_tool'
+    || statusKey === 'resumable';
 }
 
 const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiState }> = ({ turn, streamingState }) => {
   const { t } = useI18n();
   const status = getTurnRunStatus(turn, t, streamingState);
-  // 取消态：徽章说「已取消」，阶段位说停了什么、留了什么——底下那张同样写「已取消」
-  // 的大黄卡已经收起，一行说完，不再上下叠两条（2026-08-01 验收截图）。
-  const phase = status.key === 'cancelled' ? t.turnRun.detail.cancelled : getTurnPhase(turn);
+  const phase = getTurnPhase(turn);
   const completionSignal = getTurnCompletionSignal(turn, t);
   const failedTool = turn.nodes.find((node) => node.type === 'tool_call' && node.toolCall?.success === false)?.toolCall;
   const hasPhase = Boolean(phase?.trim());
@@ -1131,7 +1120,7 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
   }
 
   return (
-    <div className="flex min-h-7 items-center gap-2 rounded-md border border-border-faint bg-surface-faint px-2 py-1 text-[11px]">
+    <div data-testid="turn-run-header" className="flex min-h-7 items-center gap-2 rounded-md border border-border-faint bg-surface-faint px-2 py-1 text-[11px]">
       <div className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 ${getToneClass(status.tone)}`}>
         {status.icon}
         <span className="font-medium">{status.label}</span>

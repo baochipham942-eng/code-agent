@@ -7,6 +7,7 @@ import type {
 } from '../../shared/contract';
 import { getMemoryDir } from '../lightMemory/indexLoader';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
+import { canonicalizeCommand } from '../security/canonicalizeCommand';
 
 export interface ResolveToolWriteTargetsInput {
   definition: ToolDefinition;
@@ -66,17 +67,6 @@ function readShellWord(command: string, start: number): { raw: string; end: numb
     if (/\s/.test(char) || char === ';' || char === '|' || char === '&') break;
   }
   return { raw: command.slice(wordStart, index), end: index };
-}
-
-function unquoteShellWord(raw: string): string {
-  if (raw.length >= 2) {
-    const first = raw[0];
-    const last = raw[raw.length - 1];
-    if ((first === "'" && last === "'") || (first === '"' && last === '"')) {
-      return raw.slice(1, -1);
-    }
-  }
-  return raw.replace(/\\([\\'"\s])/g, '$1');
 }
 
 function shellRedirectTargets(command: string): string[] {
@@ -191,9 +181,14 @@ function descriptorAssessment(
   const targets: string[] = [];
   const uncertain: string[] = [];
   const memoryAlias = path.join(path.basename(path.dirname(memoryDir)), path.basename(memoryDir));
-  if (command.includes(memoryDir) || command.includes(memoryAlias)) targets.push(memoryDir);
-  for (const rawTarget of shellRedirectTargets(command)) {
-    const target = unquoteShellWord(rawTarget);
+  const canonical = canonicalizeCommand(command);
+  const redirectTargets = shellRedirectTargets(canonical.command);
+  if (canonical.parsingFailed && redirectTargets.length > 0) {
+    uncertain.push(`uncertain-command-analysis:${canonical.failureReason ?? 'parse-failure'}`);
+  }
+  if (canonical.command.includes(memoryDir) || canonical.command.includes(memoryAlias)) targets.push(memoryDir);
+  for (const rawTarget of redirectTargets) {
+    const target = rawTarget;
     if (!target || /[$`*?{}]/.test(target)) {
       uncertain.push(`uncertain-redirection:${rawTarget || '<missing>'}`);
     } else {

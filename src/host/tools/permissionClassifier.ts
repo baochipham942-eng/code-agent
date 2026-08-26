@@ -446,9 +446,8 @@ export class PermissionClassifier {
     context: ClassificationContext,
     startTime: number
   ): ClassificationResult | null {
-    const trimmed = command.trim();
-
-    const policyDecision = checkCommandPolicy(trimmed);
+    const policyDecision = checkCommandPolicy(command);
+    const trimmed = policyDecision.canonicalCommand;
     if (!policyDecision.allowed) {
       const reason = `命令策略拒绝: ${policyDecision.reason ?? 'blocked'}`;
       return {
@@ -463,6 +462,17 @@ export class PermissionClassifier {
           reason,
           startTime,
         ),
+      };
+    }
+
+    if (policyDecision.parsingFailed) {
+      const reason = `命令无法可靠拆词: ${policyDecision.parsingFailureReason ?? 'unknown parse failure'}`;
+      return {
+        decision: 'ask',
+        reason,
+        confidence: 1,
+        cached: false,
+        traceStep: createTraceStep('permission_classifier', 'B0: command_parse_failure', 'ask', reason, startTime),
       };
     }
 

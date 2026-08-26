@@ -12,6 +12,7 @@
 // ============================================================================
 
 import { checkWindowsBlockRules } from '../../../security/shellRules/windowsRules';
+import { canonicalizeCommand } from '../../../security/canonicalizeCommand';
 
 export interface PolicyDecision {
   allowed: boolean;
@@ -19,6 +20,9 @@ export interface PolicyDecision {
   source?: 'hard-block' | 'user-rule';
   action?: 'allow' | 'deny';
   matchedRule?: CommandPolicyRule;
+  canonicalCommand: string;
+  parsingFailed: boolean;
+  parsingFailureReason?: string;
 }
 
 interface BlockRule {
@@ -131,10 +135,6 @@ const BLOCK_RULES: BlockRule[] = [
 
 let userCommandPolicyRules: CommandPolicyRule[] = [];
 
-function normalizeCommandForRule(command: string): string {
-  return command.trim().replace(/\s+/g, ' ');
-}
-
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -152,8 +152,8 @@ function globToRegExp(pattern: string): RegExp {
 }
 
 function matchesCommandRule(command: string, rule: CommandPolicyRule): boolean {
-  const normalizedCommand = normalizeCommandForRule(command);
-  const normalizedPattern = normalizeCommandForRule(rule.pattern);
+  const normalizedCommand = canonicalizeCommand(command).command;
+  const normalizedPattern = canonicalizeCommand(rule.pattern).command;
   if (!normalizedPattern) return false;
 
   switch (rule.kind) {
@@ -196,9 +196,16 @@ export function evaluateCommandPolicyRules(
   command: string,
   rules: CommandPolicyRule[] = userCommandPolicyRules,
 ): PolicyDecision {
-  const matchingDeny = rules.find((rule) => rule.action === 'deny' && matchesCommandRule(command, rule));
+  const canonical = canonicalizeCommand(command);
+  const analysis = {
+    canonicalCommand: canonical.command,
+    parsingFailed: canonical.parsingFailed,
+    ...(canonical.failureReason ? { parsingFailureReason: canonical.failureReason } : {}),
+  };
+  const matchingDeny = rules.find((rule) => rule.action === 'deny' && matchesCommandRule(canonical.command, rule));
   if (matchingDeny) {
     return {
+      ...analysis,
       allowed: false,
       action: 'deny',
       source: 'user-rule',
@@ -207,9 +214,10 @@ export function evaluateCommandPolicyRules(
     };
   }
 
-  const matchingAllow = rules.find((rule) => rule.action === 'allow' && matchesCommandRule(command, rule));
+  const matchingAllow = rules.find((rule) => rule.action === 'allow' && matchesCommandRule(canonical.command, rule));
   if (matchingAllow) {
     return {
+      ...analysis,
       allowed: true,
       action: 'allow',
       source: 'user-rule',
@@ -218,7 +226,7 @@ export function evaluateCommandPolicyRules(
     };
   }
 
-  return { allowed: true };
+  return { ...analysis, allowed: true };
 }
 
 /**
@@ -228,12 +236,19 @@ export function evaluateCommandPolicyRules(
  * @returns allowed=false 时 reason 必填
  */
 export function checkCommandPolicy(command: string): PolicyDecision {
-  const trimmed = command.trim();
-  if (!trimmed) return { allowed: true };
+  const canonical = canonicalizeCommand(command);
+  const normalized = canonical.command;
+  const analysis = {
+    canonicalCommand: normalized,
+    parsingFailed: canonical.parsingFailed,
+    ...(canonical.failureReason ? { parsingFailureReason: canonical.failureReason } : {}),
+  };
+  if (!normalized) return { ...analysis, allowed: true };
 
   for (const rule of BLOCK_RULES) {
-    if (rule.pattern.test(trimmed)) {
+    if (rule.pattern.test(normalized)) {
       return {
+        ...analysis,
         allowed: false,
         action: 'deny',
         source: 'hard-block',
@@ -245,9 +260,10 @@ export function checkCommandPolicy(command: string): PolicyDecision {
   // win32 下 bash 工具走 PowerShell（platformShell.ts）：叠加 Windows 硬毙清单。
   // POSIX 规则在上面照常跑（覆盖 Git-Bash / 显式 bash 场景），两包叠加。
   if (process.platform === 'win32') {
-    const winBlock = checkWindowsBlockRules(trimmed);
+    const winBlock = checkWindowsBlockRules(normalized);
     if (winBlock.blocked) {
       return {
+        ...analysis,
         allowed: false,
         action: 'deny',
         source: 'hard-block',
@@ -256,5 +272,6 @@ export function checkCommandPolicy(command: string): PolicyDecision {
     }
   }
 
-  return evaluateCommandPolicyRules(trimmed);
+  const userDecision = evaluateCommandPolicyRules(normalized);
+  return { ...userDecision, ...analysis };
 }

@@ -16,6 +16,7 @@ import {
   isKnownSafeWindowsCommand,
 } from './shellRules/windowsRules';
 import { RM_FLAGS, RM_FLAGS_REQUIRED, RM_HEAD } from './rmFlagPattern';
+import { canonicalizeCommand } from './canonicalizeCommand';
 
 const logger = createLogger('CommandSafety');
 
@@ -347,8 +348,10 @@ function hasOutputRedirection(command: string): boolean {
  * @returns true 如果命令已知安全，可跳过用户审批
  */
 export function isKnownSafeCommand(command: string, shell: ShellKind = defaultShellKind()): boolean {
-  // 0. 空命令不安全
-  if (!command?.trim()) {
+  const canonical = canonicalizeCommand(command);
+
+  // 0. 空命令和无法可靠拆词的命令都不走免审批捷径
+  if (!canonical.command || canonical.parsingFailed) {
     return false;
   }
 
@@ -419,6 +422,9 @@ export interface ValidationResult {
   riskLevel: RiskLevel;
   securityFlags: string[];
   suggestion?: string;
+  canonicalCommand: string;
+  parsingFailed: boolean;
+  parsingFailureReason?: string;
 }
 
 interface DangerousPattern {
@@ -503,18 +509,26 @@ const SENSITIVE_ENV_PATTERNS = [
  * @returns ValidationResult — critical 级别命令会被拦截（allowed=false）
  */
 export function validateCommand(command: string, shell: ShellKind = defaultShellKind()): ValidationResult {
-  if (!command?.trim()) {
-    return { allowed: true, riskLevel: 'safe', securityFlags: [] };
+  const canonical = canonicalizeCommand(command ?? '');
+  const normalized = canonical.command;
+  const analysis = {
+    canonicalCommand: normalized,
+    parsingFailed: canonical.parsingFailed,
+    ...(canonical.failureReason ? { parsingFailureReason: canonical.failureReason } : {}),
+  };
+  if (!normalized) {
+    return { ...analysis, allowed: true, riskLevel: 'safe', securityFlags: [] };
   }
 
   // Windows 硬毙清单（任何安全模式下都拦）
   if (shell === 'powershell') {
-    const winBlock = checkWindowsBlockRules(command);
+    const winBlock = checkWindowsBlockRules(normalized);
     if (winBlock.blocked) {
       logger.warn('Blocked command detected (windows rules)', {
         command: command.substring(0, 100), flag: winBlock.flag,
       });
       return {
+        ...analysis,
         allowed: false,
         reason: winBlock.reason,
         riskLevel: 'critical',
@@ -525,9 +539,9 @@ export function validateCommand(command: string, shell: ShellKind = defaultShell
 
   // 绝对拦截
   for (const p of BLOCKED_PATTERNS) {
-    if (p.pattern.test(command)) {
-      logger.warn('Blocked command detected', { command: command.substring(0, 100), flag: p.flag });
-      return { allowed: false, reason: p.reason, riskLevel: 'critical', securityFlags: [p.flag] };
+    if (p.pattern.test(normalized)) {
+      logger.warn('Blocked command detected', { command: normalized.substring(0, 100), flag: p.flag });
+      return { ...analysis, allowed: false, reason: p.reason, riskLevel: 'critical', securityFlags: [p.flag] };
     }
   }
 
@@ -539,7 +553,7 @@ export function validateCommand(command: string, shell: ShellKind = defaultShell
   const riskOrder: RiskLevel[] = ['safe', 'low', 'medium', 'high', 'critical'];
 
   for (const p of DANGEROUS_PATTERNS) {
-    if (p.pattern.test(command)) {
+    if (p.pattern.test(normalized)) {
       securityFlags.push(p.flag);
       if (riskOrder.indexOf(p.riskLevel) > riskOrder.indexOf(highestRisk)) {
         highestRisk = p.riskLevel;
@@ -551,7 +565,7 @@ export function validateCommand(command: string, shell: ShellKind = defaultShell
 
   // Windows 分级危险清单（与 posix 模式取最高风险合并）
   if (shell === 'powershell') {
-    for (const finding of evaluateWindowsDanger(command)) {
+    for (const finding of evaluateWindowsDanger(normalized)) {
       securityFlags.push(finding.flag);
       if (riskOrder.indexOf(finding.riskLevel) > riskOrder.indexOf(highestRisk)) {
         highestRisk = finding.riskLevel;
@@ -562,12 +576,13 @@ export function validateCommand(command: string, shell: ShellKind = defaultShell
   }
 
   // 敏感环境变量访问
-  if (SENSITIVE_ENV_PATTERNS.some(p => p.test(command))) {
+  if (SENSITIVE_ENV_PATTERNS.some(p => p.test(normalized))) {
     securityFlags.push('env_access');
     if (highestRisk === 'safe') highestRisk = 'low';
   }
 
   return {
+    ...analysis,
     allowed: highestRisk !== 'critical',
     riskLevel: highestRisk,
     securityFlags,

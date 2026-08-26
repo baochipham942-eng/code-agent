@@ -36,6 +36,7 @@ import { createLogger } from '../../../../utils/logger';
 import { toast } from '../../../../hooks/useToast';
 import { saveProviderIconAssetFromDataUrl, useProviderIconImageSource } from '../../../../utils/providerIconAssets';
 import { getModelTemperatureControl } from '@shared/modelSampling';
+import { resolveConfiguredDefaultProvider } from '@shared/modelDefaults';
 
 const logger = createLogger('ModelSettings');
 
@@ -169,7 +170,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
           setProviderConfigs(settings?.models?.providers ?? {});
           setAppSettings(settings ?? null);
           setTaskStrategy(settings?.models?.taskStrategy ?? null);
-          const defaultProvider = (settings?.models?.defaultProvider || settings?.models?.default || config.provider) as ModelProvider;
+          const defaultProvider = resolveConfiguredDefaultProvider(settings?.models, config.provider);
           const defaultProviderConfig = settings?.models?.providers?.[defaultProvider];
           setDefaultSelection({
             provider: defaultProvider,

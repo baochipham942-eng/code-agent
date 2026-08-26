@@ -12,8 +12,8 @@
 //   多出一条警示行，替代旧 PermissionDialog 的 DangerWarning 嵌卡。
 //
 // 键盘（stopPropagation，与 UserQuestionCard 的 Esc 处理同族，防触发
-// ChatView 的 Esc+Esc）：数字键 1-N 选中选项、Enter 确认（选中后才生效）、
-// Esc 取消。输入框/文本域聚焦时不拦截。各卡自有的字母直发快捷键
+// ChatView 的 Esc+Esc）：数字键 1-N 选中选项、Enter 执行当前聚焦的主按钮、
+// Esc 收起。输入框/文本域聚焦时不拦截数字键与 Enter。各卡自有的字母直发快捷键
 // （权限卡 y/n/s/a）由适配层自己监听，不经本组件。
 // ============================================================================
 
@@ -50,6 +50,11 @@ export interface DecisionCardProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onConfirm: () => void;
+  /** Esc 只收起卡片，不代表任何裁决。 */
+  onCollapse?: () => void;
+  /** 危险或不可撤回操作不允许 Enter 确认，仍可鼠标点击或字母键直发。 */
+  enterDisabled?: boolean;
+  /** 底部 ghost 动作，仅由鼠标点击，不再与 Esc 绑定。 */
   onCancel?: () => void;
   confirmLabel: string;
   cancelLabel?: string;
@@ -104,6 +109,8 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
   selectedId,
   onSelect,
   onConfirm,
+  onCollapse,
+  enterDisabled = false,
   onCancel,
   confirmLabel,
   cancelLabel,
@@ -116,35 +123,40 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
   testId = 'decision-card',
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
   const danger = tone === 'danger';
   const amber = tone === 'amber';
 
-  // 卡片出现时接管焦点（同 UserQuestionCard / 旧 PermissionCard 先例），键盘立即可用
+  // 选中主选项后默认高亮主按钮；危险/写回卡也保留焦点证据，Enter 由 enterDisabled 硬挡。
   useEffect(() => {
-    cardRef.current?.focus();
-  }, []);
+    if (selectedId !== null && !submitting) {
+      confirmButtonRef.current?.focus();
+    } else {
+      cardRef.current?.focus();
+    }
+  }, [selectedId, submitting]);
 
-  // 数字键 1-N 选中、Enter 确认、Esc 取消。
-  // 守卫三条（review P1）：
-  // - 可编辑目标（input/textarea/contentEditable）内不拦截数字键与 Enter——但 Esc
-  //   即使在输入控件内也始终吞掉（preventDefault+stopPropagation，防 ChatView 的
-  //   Esc+Esc rewind 被误触发），只是不调 onCancel；
+  // 数字键 1-N 选中、Enter 执行当前聚焦的主按钮、Esc 收起。
+  // 守卫：
+  // - 可编辑目标内不拦截数键与 Enter，Esc 仍保持全族收起语义；
   // - submitting 期间 Esc/Enter 只吞不动作，防确认在途时双发 IPC。
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const editable = isEditableTarget(e.target);
       if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!editable && !submitting) onCancel?.();
+        if (submitting || onCollapse) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        if (!submitting) onCollapse?.();
         return;
       }
       if (editable) return;
       if (e.key === 'Enter') {
-        if (selectedId !== null && !submitting) {
+        if (confirmButtonRef.current === document.activeElement && selectedId !== null) {
           e.preventDefault();
           e.stopPropagation();
-          onConfirm();
+          if (!submitting && !enterDisabled) onConfirm();
         }
         return;
       }
@@ -157,7 +169,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [options, selectedId, submitting, onSelect, onConfirm, onCancel]);
+  }, [options, selectedId, submitting, onSelect, onConfirm, onCollapse, enterDisabled]);
 
   const optionRows = options.map((option) => (
     <button /* ds-allow:button: 选项行整面可点（选中指示+标题+描述复合内容），沿用 UserQuestionCard 选项行形态 */
@@ -255,6 +267,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
               </Button>
             )}
             <Button
+              ref={confirmButtonRef}
               size="sm"
               onClick={onConfirm}
               disabled={selectedId === null || submitting}
@@ -265,6 +278,43 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
           </div>
         </div>}
       </div>
+    </div>
+  );
+};
+
+export const DecisionCollapsedBar: React.FC<{
+  label: string;
+  expandLabel: string;
+  count: number;
+  onExpand: () => void;
+  className?: string;
+  testId?: string;
+}> = ({ label, expandLabel, count, onExpand, className = 'w-full', testId = 'decision-collapsed-bar' }) => {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      onExpand();
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [onExpand]);
+
+  return (
+    <div className={`flex justify-end ${className}`} data-testid={`${testId}-container`}>
+      <button /* ds-allow:button: 收起后的决策状态整颗可点，固定 28px 胶囊不适用常规 Button 尺寸。 */
+        type="button"
+        onClick={onExpand}
+        className="inline-flex h-7 items-center gap-1.5 rounded-full border border-badge-info/40 bg-zinc-900 px-3 text-xs text-badge-info shadow-sm hover:bg-zinc-800 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+        data-testid={testId}
+        aria-label={`${label} (${count}) · ${expandLabel}`}
+      >
+        <span aria-hidden="true">●</span>
+        <span>{label} ({count})</span>
+        <span aria-hidden="true">·</span>
+        <span>{expandLabel}</span>
+      </button>
     </div>
   );
 };

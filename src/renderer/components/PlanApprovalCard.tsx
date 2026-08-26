@@ -20,6 +20,7 @@ import { useI18n } from '../hooks/useI18n';
 import ipcService from '../services/ipcService';
 import { useSessionStore } from '../stores/sessionStore';
 import { Button } from './primitives/Button';
+import { DecisionCollapsedBar } from './DecisionCard';
 import {
   movePlanStep,
   type PendingPlanApprovalTarget,
@@ -99,10 +100,23 @@ export const PlanApprovalCard: React.FC<{ target: PendingPlanApprovalTarget }> =
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const primaryButtonRef = useRef<HTMLButtonElement>(null);
   const rowRefs = useRef<Array<HTMLDivElement | null>>([]);
 
-  useEffect(() => cardRef.current?.focus(), []);
+  useEffect(() => {
+    setCollapsed(false);
+  }, [target.toolCallId]);
+
+  useEffect(() => {
+    if (collapsed) return;
+    if (mode === 'steps' && editingId === null && steps.length > 0 && !submitting) {
+      primaryButtonRef.current?.focus();
+      return;
+    }
+    cardRef.current?.focus();
+  }, [collapsed, editingId, mode, steps.length, submitting]);
 
   const applyResponse = useCallback((response: PlanApprovalResponse) => {
     const store = useSessionStore.getState();
@@ -157,6 +171,7 @@ export const PlanApprovalCard: React.FC<{ target: PendingPlanApprovalTarget }> =
   };
 
   useEffect(() => {
+    if (collapsed) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -167,7 +182,7 @@ export const PlanApprovalCard: React.FC<{ target: PendingPlanApprovalTarget }> =
         } else if (mode === 'feedback') {
           setMode('steps');
         } else if (!submitting) {
-          void submit('cancel');
+          setCollapsed(true);
         }
         return;
       }
@@ -180,15 +195,33 @@ export const PlanApprovalCard: React.FC<{ target: PendingPlanApprovalTarget }> =
         rowRefs.current[digit - 1]?.focus();
         return;
       }
-      if (event.key === 'Enter' && !editingId && mode === 'steps' && steps.length > 0 && !submitting) {
+      if (
+        event.key === 'Enter'
+        && primaryButtonRef.current === document.activeElement
+        && !submitting
+      ) {
+        const primaryButton = primaryButtonRef.current;
+        if (!primaryButton || primaryButton.disabled) return;
         event.preventDefault();
         event.stopPropagation();
-        void submit('approve', { steps });
+        primaryButton.click();
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [editingId, mode, steps, submit, submitting]);
+  }, [collapsed, editingId, mode, steps, submitting]);
+
+  if (collapsed) {
+    return (
+      <DecisionCollapsedBar
+        label={t.decisionCard.pendingLabel}
+        expandLabel={t.decisionCard.expand}
+        count={1}
+        onExpand={() => setCollapsed(false)}
+        testId="plan-approval-collapsed"
+      />
+    );
+  }
 
   return (
     <div className="w-full animate-slideUp" data-testid="plan-approval-card">
@@ -323,6 +356,7 @@ export const PlanApprovalCard: React.FC<{ target: PendingPlanApprovalTarget }> =
               <Button size="sm" variant="ghost" onClick={() => void submit('cancel')} disabled={submitting}>{t.planApproval.cancel}</Button>
               {mode === 'steps' ? (
                 <Button
+                  ref={primaryButtonRef}
                   size="sm"
                   loading={submitting}
                   onClick={() => void submit('approve', { steps })}
@@ -331,6 +365,7 @@ export const PlanApprovalCard: React.FC<{ target: PendingPlanApprovalTarget }> =
                 >{t.planApproval.approve}</Button>
               ) : (
                 <Button
+                  ref={primaryButtonRef}
                   size="sm"
                   loading={submitting}
                   onClick={() => void submit('revise', { feedback })}

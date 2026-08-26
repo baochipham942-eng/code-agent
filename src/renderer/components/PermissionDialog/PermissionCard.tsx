@@ -121,12 +121,14 @@ interface PermissionCardProps {
   requestOverride?: ContractPermissionRequest;
   sessionIdOverride?: string | null;
   remainingCount?: number;
+  onCollapse?: () => void;
 }
 
 export function PermissionCard({
   requestOverride,
   sessionIdOverride,
   remainingCount = 0,
+  onCollapse,
 }: PermissionCardProps = {}) {
   const { t, language } = useI18n();
   const {
@@ -139,7 +141,7 @@ export function PermissionCard({
   const { checkMemory, saveMemory } = usePermissionStore();
   const processedRequestRef = useRef<string | null>(null);
   // 选中的审批级别（DecisionCard 选项行）；字母快捷键直发时不经过它
-  const [selectedLevel, setSelectedLevel] = useState<ApprovalLevel | null>(null);
+  const [selectedLevel, setSelectedLevel] = useState<ApprovalLevel | null>('once');
   // N-WRITEBACK-EDIT 编辑态：draft 非 null = 正在改；只有点「按修改后发送」才会送出，Esc/放弃 = 什么都不发
   const [draft, setDraft] = useState<WritebackDraft | null>(null);
 
@@ -157,7 +159,7 @@ export function PermissionCard({
   // 新请求进来时清空选中态（ processedRequestRef 之外的生命周期，独立于记忆直发 ）
   const requestId = request?.id ?? null;
   useEffect(() => {
-    setSelectedLevel(null);
+    setSelectedLevel('once');
     setDraft(null);
   }, [requestId]);
 
@@ -480,6 +482,8 @@ export function PermissionCard({
         onConfirm={() => {
           if (missing.length === 0) void handleApproval('once', draftToArgs(request.tool, draft));
         }}
+        onCollapse={onCollapse}
+        enterDisabled
         onCancel={() => setDraft(null)}
         cancelLabel={w.discard}
         confirmLabel={isMeetingCreate || isNativeCreate ? w.createEdited : isNativeUpdate ? w.updateEdited : w.sendEdited}
@@ -530,6 +534,8 @@ export function PermissionCard({
       onConfirm={() => {
         if (selectedLevel) void handleApproval(selectedLevel);
       }}
+      onCollapse={onCollapse}
+      enterDisabled={isDangerous || editable}
       confirmLabel={t.decisionCard.confirm}
     />
   );

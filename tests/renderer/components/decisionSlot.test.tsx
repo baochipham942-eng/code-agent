@@ -175,6 +175,73 @@ describe('DecisionSlot', () => {
     expect(screen.queryByText('创建文件')).toBeNull();
   });
 
+  it('常规权限卡默认高亮主按钮，Enter = 允许一次', async () => {
+    storeState.pendingPermissionRequest = normalRequest;
+    storeState.pendingPermissionSessionId = 'session-current';
+    render(<DecisionSlot />);
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '确认' }));
+    fireEvent.keyDown(window, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
+        normalRequest.id,
+        'allow',
+        normalRequest.sessionId,
+      );
+    });
+  });
+
+  it('危险卡与写回卡的 Enter 均无效', () => {
+    storeState.pendingPermissionRequest = dangerousRequest;
+    storeState.pendingPermissionSessionId = 'session-current';
+    const view = render(<DecisionSlot />);
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '确认' }));
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(invoke).not.toHaveBeenCalled();
+
+    view.unmount();
+    storeState.pendingPermissionRequest = writebackRequest;
+    render(<DecisionSlot />);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '确认' }));
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('Esc 只收起，迷你条点击或再按 Esc 展开，全程不发裁决 IPC', () => {
+    storeState.pendingPermissionRequest = normalRequest;
+    storeState.pendingPermissionSessionId = 'session-current';
+    render(<DecisionSlot />);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByTestId('decision-slot-collapsed')).toBeTruthy();
+    expect(invoke).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('decision-slot-collapsed'));
+    expect(screen.getByTestId('permission-card')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByTestId('permission-card')).toBeTruthy();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('新请求到达时自动展开，不让新卡藏在迷你条后', () => {
+    storeState.pendingPermissionRequest = normalRequest;
+    storeState.pendingPermissionSessionId = 'session-current';
+    const view = render(<DecisionSlot />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByTestId('decision-slot-collapsed')).toBeTruthy();
+
+    storeState.queuedPermissionRequests = { 'session-current': [secondNormalRequest] };
+    view.rerender(<DecisionSlot />);
+
+    expect(screen.getByTestId('permission-card')).toBeTruthy();
+    expect(screen.queryByTestId('decision-slot-collapsed')).toBeNull();
+  });
+
   it('当前会话没有待决请求时不渲染槽位', () => {
     storeState.queuedPermissionRequests = {
       'session-other': [dangerousRequest],

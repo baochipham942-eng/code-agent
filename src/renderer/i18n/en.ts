@@ -44,6 +44,7 @@ import { voiceAuditEn } from './voiceAudit';
 import { sessionInspectorEn } from './sessionInspector';
 import { artifactShareEn } from './artifactShare';
 import { receiptPresentationEn } from './receiptPresentation';
+import { renderHumanPipeEn } from './renderHumanPipe';
 export const en: Translations = {
   ...canvasActorEn, ...activityPanelEn,
   ...imageNarrationEn, ...mermaidEn,
@@ -57,6 +58,7 @@ export const en: Translations = {
   ...generativeUIEn,
   ...workbenchTabsEn,
   ...receiptPresentationEn,
+  ...renderHumanPipeEn,
   // Common
   common: {
     save: 'Save',
@@ -113,9 +115,6 @@ export const en: Translations = {
     statusVerified: 'Ready',
     statusUnverified: 'Not checked',
     statusFailed: 'Problem found',
-    qualityValidated: 'Validated',
-    qualityNeedsReview: 'Needs review',
-    qualityFailed: 'Quality failed',
     moreActions: 'More',
   },
 
@@ -739,10 +738,6 @@ export const en: Translations = {
     sectionOutputs: 'Outputs',
     sectionReferences: 'References',
     contextEmpty: 'No context yet',
-    bucketRules: 'Rules',
-    bucketFiles: 'Files',
-    bucketWeb: 'Web',
-    bucketOther: 'Other',
     tabStatus: 'Overview',
     tabOrchestration: 'Orchestration',
     // WorkingFolder

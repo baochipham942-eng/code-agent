@@ -340,7 +340,7 @@ export async function wakeRole(
   const session = await sessionManager.createSession({
     title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX} ${titleStamp}`,
     // 注意：provider/model 不传常量兜底——传 undefined 让 resolver 落到
-    // settings.models.defaultProvider（headless webServer 没有 currentSession，
+    // settings.models.default（headless webServer 没有 currentSession，
     // 硬传 DEFAULT_PROVIDER 会绕过用户配置的默认 provider）
     modelConfig: resolveSessionDefaultModelConfig({
       provider: settings.model?.provider || currentSession?.modelConfig.provider,

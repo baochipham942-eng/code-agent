@@ -270,6 +270,7 @@ describe('authService session trust', () => {
       isAuthenticated: false,
       sessionExpired: true,
     });
+    expect(mocks.storage.clearSessionFromKeychain).not.toHaveBeenCalled();
   });
 
   it('从未登录（无缓存用户）+ session 失效 → 不标记 sessionExpired（不打扰）', async () => {
@@ -327,6 +328,7 @@ describe('authService session trust', () => {
     await cb!('SIGNED_OUT', null);
 
     await expect(authService.getStatus()).resolves.toMatchObject({ sessionExpired: true });
+    expect(mocks.storage.clearSessionFromKeychain).not.toHaveBeenCalled();
   });
 
   it('本机主动退出使用 local scope，SIGNED_OUT 回调不标记 sessionExpired', async () => {
@@ -349,6 +351,7 @@ describe('authService session trust', () => {
     await authService.signOut();
 
     expect(mocks.supabase.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(mocks.storage.clearSessionFromKeychain).toHaveBeenCalledOnce();
     await expect(authService.getStatus()).resolves.toMatchObject({ sessionExpired: false });
     expect(mocks.logger.info).toHaveBeenCalledWith(' Explicit sign-out requested');
     expect(mocks.logger.info).toHaveBeenCalledWith(' Explicit sign-out confirmed by auth state change');

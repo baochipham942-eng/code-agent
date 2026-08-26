@@ -82,24 +82,24 @@ describe('FallbackBanner', () => {
 	      />,
 	    );
 
-    expect(html).toContain('模型已降级');
-	    expect(html).toContain('能力自动切换');
+
+    expect(html).toContain('已自动换用备用模型');
+		    expect(html).toContain('自动换用支持当前任务的模型');
 	    expect(html).toContain('mock/text-only');
 	    expect(html).toContain('zhipu/glm-4.5v');
-	    expect(html).toContain('原 来源 Mock Relay');
-	    expect(html).toContain('现 名称 Zhipu Relay');
-	    expect(html).toContain('协议 OpenAI-compatible');
-	    expect(html).toContain('endpoint https://mock.example/v1');
-	    expect(html).toContain('endpoint https://relay.example.com/zhipu/v1');
+		    expect(html).toContain('原模型 · 来源 Mock Relay');
+		    expect(html).toContain('现用模型 · 名称 Zhipu Relay');
+		    expect(html).toContain('连接方式 OpenAI-compatible');
+		    expect(html).toContain('服务地址 https://mock.example/v1');
+		    expect(html).toContain('服务地址 https://relay.example.com/zhipu/v1');
 	    expect(html).toContain('vision');
     expect(html).toContain('已尝试');
     expect(html).toContain('已跳过');
     expect(html).toContain('已选用');
     expect(html).toContain('openai/gpt-5.4-mini');
-    expect(html).toContain('工具已关闭');
+    expect(html).toContain('部分工具暂不可用');
     expect(html).toContain('6 → 0');
-    expect(html).toContain('Read, Edit, Write, Append +2');
-    expect(html).toContain('disabled: Read, Edit, Write, Append, Bash, Task');
+    expect(html).toContain('读取文件, Edit, Write, Append +2');
   });
 
   it('renders exhausted fallback traces when expanded', () => {
@@ -132,8 +132,8 @@ describe('FallbackBanner', () => {
       />,
     );
 
-    expect(html).toContain('已耗尽');
-    expect(html).toContain('自动策略恢复');
+    expect(html).toContain('无可用项');
+    expect(html).toContain('自动换用备用模型');
     expect(html).toContain('moonshot/kimi-k2.5');
     expect(html).toContain('未切换');
   });
@@ -142,7 +142,7 @@ describe('FallbackBanner', () => {
     expect(renderToStaticMarkup(<FallbackBanner content="not a fallback notice" />)).toBe('');
   });
 
-  // 折叠是降级不是删除：默认态只留一行摘要（模型已降级 + from->to + reason），
+  // 默认态只留用户需要知道的自动恢复结果；模型 id、原始原因、
   // strategy pill/identity/trace 分组/工具策略这些工程细节都收进展开态。
   it('collapses to a one-line summary by default; engineering detail stays reachable via expand', () => {
     const html = renderToStaticMarkup(
@@ -178,14 +178,16 @@ describe('FallbackBanner', () => {
       />,
     );
 
-    expect(html).toContain('模型已降级');
-    expect(html).toContain('mock/text-only');
-    expect(html).toContain('zhipu/glm-4.5v');
+    expect(html).toContain('已自动换用备用模型');
+    expect(html).toContain('原模型不支持这项任务');
+    expect(html).not.toContain('mock/text-only');
+    expect(html).not.toContain('zhipu/glm-4.5v');
+    expect(html).not.toContain('vision');
     expect(html).toContain('aria-expanded="false"');
     // 展开态才有的工程细节，默认不该出现
-    expect(html).not.toContain('能力自动切换');
+    expect(html).not.toContain('自动换用支持当前任务的模型');
     expect(html).not.toContain('Mock Relay');
     expect(html).not.toContain('已尝试');
-    expect(html).not.toContain('工具已关闭');
+    expect(html).not.toContain('部分工具暂不可用');
   });
 });

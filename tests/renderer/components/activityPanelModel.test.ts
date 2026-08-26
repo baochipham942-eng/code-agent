@@ -139,8 +139,9 @@ describe('activity panel model', () => {
       '桌面活动',
       '截图分析',
     ]);
-    expect(model.injectionItems[0]?.detail).toContain('<screen-memory>');
-    expect(model.injectionItems[1]?.detail).toContain('<desktop-activity-context>');
+    expect(model.injectionItems[0]?.detail).toContain('近期屏幕摘要');
+    expect(model.injectionItems[1]?.detail).toContain('桌面活动');
+    expect(model.injectionItems.map((item) => item.detail).join('\n')).not.toMatch(/<screen-memory>|<desktop-activity-context>|prompt|token/i);
     expect(model.localEvidenceItems.map((item) => item.detail).join('\n')).toContain('截图文件只作本地证据');
     expect(model.localEvidenceItems.map((item) => item.detail).join('\n')).not.toContain('/Users/linchen');
   });
@@ -168,7 +169,7 @@ describe('activity panel model', () => {
       copy: zhCopy,
     });
 
-    expect(model.modeLabel).toBe('Web 降级');
+    expect(model.modeLabel).toBe('浏览器版');
     expect(model.recentHeadline).toBe(zhCopy.recent.emptyHeadlineWeb);
     expect(model.recentDetail).toBe(zhCopy.recent.emptyDetailWeb);
     expect(model.capabilityRows).toHaveLength(5);
@@ -199,7 +200,7 @@ describe('activity panel model', () => {
       copy: enCopy,
     });
 
-    expect(model.modeLabel).toBe('Web degraded');
+    expect(model.modeLabel).toBe('Browser app');
     expect(model.recentHeadline).toBe(enCopy.recent.emptyHeadlineWeb);
     expect(model.injectionItems[0]?.label).toBe('Nothing to inject yet');
     expect(model.localEvidenceItems[0]?.label).toBe('No local evidence yet');

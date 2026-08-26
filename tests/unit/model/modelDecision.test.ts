@@ -154,6 +154,42 @@ describe('resolveModelDecision — 主聊天 adaptive 关闭', () => {
     expect(decision.reason).toBe('user-selected');
   });
 
+  it('labels a configured custom default provider as default-model', () => {
+    const { decision } = resolveModelDecision(makeInput({
+      requestedConfig: makeConfig({
+        provider: 'custom-tokenrhythm',
+        model: 'deepseek-v4-flash',
+        adaptive: false,
+      }),
+      defaultProvider: 'custom-tokenrhythm',
+      messages: SIMPLE_MESSAGE,
+    }));
+
+    expect(decision.reason).toBe('default-model');
+  });
+
+  it('only treats a provider different from config default as user-selected', () => {
+    const sameProviderDifferentModel = resolveModelDecision(makeInput({
+      requestedConfig: makeConfig({
+        provider: 'custom-tokenrhythm',
+        model: 'another-relay-model',
+        adaptive: false,
+      }),
+      defaultProvider: 'custom-tokenrhythm',
+    }));
+    const officialProvider = resolveModelDecision(makeInput({
+      requestedConfig: makeConfig({
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+        adaptive: false,
+      }),
+      defaultProvider: 'custom-tokenrhythm',
+    }));
+
+    expect(sameProviderDifferentModel.decision.reason).toBe('default-model');
+    expect(officialProvider.decision.reason).toBe('user-selected');
+  });
+
   it('keeps default-model label for the default model on the adaptive complex-task keep path', () => {
     const { decision } = resolveModelDecision(makeInput({
       requestedConfig: makeConfig({ provider: 'longcat', model: 'LongCat-2.0', adaptive: true }),

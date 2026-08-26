@@ -35,7 +35,7 @@ describe('ModelStrategyRecommendationStrip', () => {
           title: 'Claude Code 最近运行失败',
           body: '2 分钟前失败：认证失败。请完成 Claude CLI 登录后重试。',
           primaryAction: 'switch-native-engine',
-          primaryLabel: '切回 Native',
+          primaryLabel: '切回主任务模型',
           strategyFactors: [
             { label: '引擎', value: 'Claude Code' },
             { label: '失败', value: '认证失败' },
@@ -54,7 +54,7 @@ describe('ModelStrategyRecommendationStrip', () => {
     expect(html).toContain('引擎: Claude Code');
     expect(html).toContain('失败: 认证失败');
     expect(html).toContain('恢复: 需处理');
-    expect(html).toContain('切回 Native');
+    expect(html).toContain('切回主任务模型');
     expect(html).toContain('保持当前');
   });
 
@@ -62,10 +62,10 @@ describe('ModelStrategyRecommendationStrip', () => {
     const html = renderToStaticMarkup(
       <ModelStrategyRecommendationStrip
         recommendation={{
-          key: 'provider-unavailable-warning-only',
+          key: 'model-service-unavailable-warning-only',
           tone: 'info',
-          title: '当前 provider 不可用',
-          body: '自动策略已开启，本轮可能触发 fallback。',
+          title: '当前模型服务不可用',
+          body: '自动策略已开启，本轮可能自动换用备用模型。',
         }}
         onApply={vi.fn()}
         onDismiss={vi.fn()}
@@ -73,10 +73,10 @@ describe('ModelStrategyRecommendationStrip', () => {
     );
 
     expect(html).toContain('border-badge-info/20');
-    expect(html).toContain('当前 provider 不可用');
+    expect(html).toContain('当前模型服务不可用');
     expect(html).toContain('保持当前');
     expect(html).not.toContain('采用建议');
-    expect(html).not.toContain('切回 Native');
+    expect(html).not.toContain('切回主任务模型');
   });
 
   it('renders a native-engine action for generated external attachment warnings', () => {
@@ -101,7 +101,7 @@ describe('ModelStrategyRecommendationStrip', () => {
 
     expect(html).toContain('外部引擎暂不接收附件');
     expect(html).toContain('输入: 图片附件');
-    expect(html).toContain('切回 Native');
+    expect(html).toContain('切回主任务模型');
     expect(html).toContain('保持当前');
   });
 

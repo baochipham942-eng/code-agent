@@ -436,6 +436,7 @@ const AssistantTextNode: React.FC<{
 // ---- Tool Call Node ----
 const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
   if (!node.toolCall) return null;
+  const interruptionReason = node.metadata?.streamInterruptionReason;
 
   // Reconstruct ToolCall object for ToolCallDisplay
   // 必须把语义字段（shortDescription / targetContext / expectedOutcome）一起带回来，
@@ -466,7 +467,8 @@ const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node,
       toolCall={toolCall}
       index={0}
       total={1}
-      statusOverride={node.metadata?.streamRecovery ? 'interrupted' : undefined}
+      statusOverride={node.metadata?.streamRecovery || interruptionReason ? 'interrupted' : undefined}
+      interruptionReason={interruptionReason ?? (node.metadata?.streamRecovery ? 'app-restart' : undefined)}
       mediaContext={{ sessionId, messageId: node.messageId || node.id }}
     />
   );
@@ -912,8 +914,10 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   const humanized = failureDetail === undefined ? humanizeToolError(node.content, undefined, t) : null;
   const summary = failureDetail === undefined
     ? humanized?.summary ?? t.systemError.fallbackSummary
-    : node.content;
-  const detail = failureDetail === undefined ? humanized?.detail ?? t.systemError.fallbackDetail : undefined;
+    : t.rendererHumanPipe.systemError.voiceFailureSummary;
+  const detail = failureDetail === undefined
+    ? humanized?.detail ?? t.systemError.fallbackDetail
+    : t.rendererHumanPipe.systemError.voiceFailureDetail;
   const expandableDetail = failureDetail ?? node.content;
 
   return (

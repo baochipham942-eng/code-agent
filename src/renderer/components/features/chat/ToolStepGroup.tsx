@@ -153,6 +153,13 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       })
       .filter((x): x is ToolCall => !!x);
   }, [nodes]);
+  const interruptedNode = useMemo(
+    () => nodes.find((node) => Boolean(
+      node.toolCall
+      && (node.metadata?.streamInterruptionReason || node.metadata?.streamRecovery),
+    )),
+    [nodes],
+  );
   const permissionEvidence = useMemo(() => resolvedPermissionRequests.flatMap((request) => {
     if (!request.parentToolUseId) return [];
     const node = nodes.find((candidate) => candidate.toolCall?.id === request.parentToolUseId);
@@ -264,6 +271,26 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   if (streamVisibleNodes.length === 0 || !label) {
     return null;
   }
+  if (toolCalls.length === 1 && interruptedNode) {
+    const toolCall = toolCalls[0];
+    return (
+      <div className="my-0.5">
+        <ToolCallDisplay
+          toolCall={toolCall}
+          index={0}
+          total={1}
+          compact
+          statusOverride="interrupted"
+          interruptionReason={interruptedNode.metadata?.streamInterruptionReason ?? 'app-restart'}
+          mediaContext={{
+            sessionId,
+            messageId: interruptedNode.messageId || toolCall.id,
+          }}
+        />
+      </div>
+    );
+  }
+
   if (toolCalls.length === 1 && isDelegationTool(toolCalls[0].name)) {
     const toolCall = toolCalls[0];
     return (
@@ -474,9 +501,7 @@ export function tailTruncateLiveOutput(live: ToolLiveOutput | undefined): ToolLi
 /**
  * 组头摘要（P0 #1 失败去重 + P0 接缝「单工具失败不说空话」）：
  *  · 多工具 → 计数（"N failed / M empty / K completed"），保留；
- *  · 单工具且失败 → 简短摘要：优先 humanizeToolError 的 code/兜底分类 summary，
- *    分不出类别就截取原始 error 首行（128 个工具里 101 个没有专属状态词，
- *    组头只剩「失败 + 执行了一个步骤」等于没说话，必须展开才知道发生了什么）；
+ *  · 单工具且失败 → 优先 humanizeToolError 的分类 summary，未分类错误用固定兜底；
  *  · 单工具其它（成功/空）→ summarizeTool 的结果摘要（如「找到 3 个文件」），保留。
  * 纯函数，便于单测。
  */
@@ -489,11 +514,8 @@ export function buildToolGroupHeadSummary(toolCalls: ToolCall[], t: Translations
 }
 
 /**
- * 单工具失败的组头摘要降级链：code 文案 summary → 正则兜底分类 summary → 原始 error 首行。
- * 组头只有一行、靠 CSS truncate——summarizeTool 的失败分支自带首行提取 + 80 字截断；
- * browser/computer 在 summarizeTool 内部优先走专属脱敏摘要（原始 error 可能含用户键入的
- * 敏感文本，绝不能进组头 DOM）。失败但完全没有 error 文本时返回 null（组头仍有状态词
- * +步骤文案，不空白——此时 summarizeTool 会落到按成功设计的工具摘要，对失败是误导）。
+ * 单工具失败的组头摘要降级链：code 文案 summary → 正则分类 summary → 固定人话兜底。
+ * 原始 error 可能含落库标记、内部名或用户键入的敏感文本，只能进展开明细。
  */
 function summarizeSingleFailure(toolCall: ToolCall, t: Translations): string | null {
   const result = toolCall.result;
@@ -501,8 +523,7 @@ function summarizeSingleFailure(toolCall: ToolCall, t: Translations): string | n
   const errorText = result.error || (typeof result.output === 'string' ? result.output : '');
   const humanized = humanizeToolError(errorText, toolCall.name, t, result.metadata);
   if (humanized) return humanized.summary;
-  if (!errorText.trim()) return null;
-  return summarizeTool(toolCall);
+  return errorText.trim() ? t.systemError.fallbackSummary : null;
 }
 
 function summarizeToolGroupResults(toolCalls: ToolCall[], t: Translations): string | null {

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import type { ToolCall } from '../../../src/shared/contract';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: (selector: (state: unknown) => unknown) =>
@@ -69,9 +70,9 @@ describe('ToolDetails computer recovery actions', () => {
     expect(html).toContain('browser-computer-next-step-action-open_desktop_status');
     expect(html).toContain('browser-computer-next-step-action-observe_current_window');
     expect(html).toContain('browser-computer-next-step-action-list_ax_candidates');
-    expect(html).toContain('只读取 Computer Surface 状态');
-    expect(html).toContain('只读取前台窗口和 Computer Surface 状态');
-    expect(html).toContain('只读取 Google Chrome 的 Accessibility 候选');
+    expect(html).toContain('只读取当前状态');
+    expect(html).toContain('只读取前台窗口和当前状态');
+    expect(html).toContain('只读取 Google Chrome 中可操作的项');
     expect(html).toContain('不自动重试原动作');
     expect(html).not.toContain('secret@example.com');
   });
@@ -118,7 +119,10 @@ describe('ToolDetails computer recovery actions', () => {
       return { success: false, error: { code: 'UNEXPECTED', message: action } };
     });
 
-    const actions = getBrowserComputerNextSteps(makeFailedComputerCall());
+    const actions = getBrowserComputerNextSteps(
+      makeFailedComputerCall(),
+      zh.rendererHumanPipe.toolDetails,
+    );
     await actions.find((action) => action.id === 'open_desktop_status')?.run?.();
     await actions.find((action) => action.id === 'observe_current_window')?.run?.();
     await actions.find((action) => action.id === 'list_ax_candidates')?.run?.();
@@ -170,10 +174,10 @@ describe('ToolDetails computer recovery actions', () => {
         toolCall: call,
       }),
     );
-    const actions = getBrowserComputerNextSteps(call);
+    const actions = getBrowserComputerNextSteps(call, zh.rendererHumanPipe.toolDetails);
 
     expect(html).toContain('browser-computer-next-step-action-refresh_browser_snapshot');
-    expect(html).toContain('读取 DOM / Accessibility snapshot');
+    expect(html).toContain('重新读取页面结构和可操作项');
     expect(html).not.toContain('browser-computer-next-step-action-open_desktop_status');
     expect(html).not.toContain('secret@example.com');
 
@@ -182,10 +186,10 @@ describe('ToolDetails computer recovery actions', () => {
     expect(invokeMock).toHaveBeenCalledWith(IPC_DOMAINS.DESKTOP, 'getManagedBrowserRecoverySnapshot', {
       includeAccessibility: true,
     });
-    expect(outcome?.text).toContain('DOM headings: 1');
-    expect(outcome?.text).toContain('Interactive elements: 3');
-    expect(outcome?.text).toContain('Accessibility snapshot: available');
-    expect(outcome?.text).toContain('Snapshot captured: 2026-05-01T05:00:00.000Z');
+    expect(outcome?.text).toContain('页面标题: 1');
+    expect(outcome?.text).toContain('可操作元素: 3');
+    expect(outcome?.text).toContain('辅助功能快照: 可用');
+    expect(outcome?.text).toContain('读取时间: 2026-05-01T05:00:00.000Z');
     expect(invokeMock).not.toHaveBeenCalledWith(
       IPC_DOMAINS.DESKTOP,
       expect.stringMatching(/click|type|retry|ComputerSurface/i),
@@ -212,7 +216,7 @@ describe('ToolDetails computer recovery actions', () => {
         success: false,
         error: 'managed browser not running',
       },
-    });
+    }, zh.rendererHumanPipe.toolDetails);
 
     await actions.find((action) => action.id === 'launch_managed_browser')?.run?.();
 

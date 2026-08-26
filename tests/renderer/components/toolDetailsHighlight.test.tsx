@@ -49,7 +49,7 @@ describe('ToolDetails 语法高亮（#13 收窄版：仅 JSON 走高亮）', () 
       name: 'Read',
       arguments: { file_path: '/tmp/a.ts' },
     } as ToolCall);
-    expect(markup).toContain('File: /tmp/a.ts');
+    expect(markup).toContain('文件: /tmp/a.ts');
     // 标签文本块是纯 <pre>，不应出现高亮 <code> token
     expect(markup).not.toContain('<code');
   });
@@ -76,6 +76,28 @@ describe('ToolDetails 语法高亮（#13 收窄版：仅 JSON 走高亮）', () 
     expect(markup).toContain('<code');
     expect(markup).toContain('items');
     expect(markup).toContain('data-code-preview="plain"');
+  });
+
+  it('工具详情标题走 i18n，未分类错误不在主层直出原串', () => {
+    const success = render({
+      id: 't-i18n-success',
+      name: 'Read',
+      arguments: { file_path: '/tmp/a.ts' },
+      result: { toolCallId: 't-i18n-success', success: true, output: 'ok' },
+    } as ToolCall);
+    expect(success).toContain('结果');
+    expect(success).not.toContain('>Result<');
+
+    const rawError = 'VendorWidget crashed at InternalRouter.ts:419';
+    const failed = render({
+      id: 't-i18n-failed',
+      name: 'futureVendorTool',
+      arguments: {},
+      result: { toolCallId: 't-i18n-failed', success: false, error: rawError },
+    } as ToolCall);
+    expect(failed).toContain('这一步没有完成');
+    expect(failed).toContain('查看原始报错');
+    expect(failed).not.toContain(rawError);
   });
 
   it('取消闭合占位结果只显示人话中断态', () => {

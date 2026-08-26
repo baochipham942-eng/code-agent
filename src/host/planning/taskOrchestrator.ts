@@ -5,7 +5,7 @@
 // 借鉴 KIMI K2.5 的 Critical Steps（关键路径）概念
 
 import { createLogger } from '../services/infra/logger';
-import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../shared/constants';
+import { DEFAULT_MODELS, GROQ_DEFAULT_MODEL, MODEL_API_ENDPOINTS } from '../../shared/constants';
 
 const logger = createLogger('TaskOrchestrator');
 
@@ -387,7 +387,7 @@ export class TaskOrchestrator {
     };
 
     const defaultModels: Record<string, string> = {
-      groq: 'llama-3.3-70b-versatile',
+      groq: GROQ_DEFAULT_MODEL,
       openai: 'gpt-4o-mini',
       zhipu: DEFAULT_MODELS.quick,
     };
@@ -538,7 +538,7 @@ export function getTaskOrchestrator(config?: OrchestratorConfig): TaskOrchestrat
     // 默认使用 Groq（最快）
     orchestratorInstance = new TaskOrchestrator({
       provider: 'groq',
-      model: 'llama-3.3-70b-versatile',
+      model: GROQ_DEFAULT_MODEL,
     });
   }
   return orchestratorInstance;

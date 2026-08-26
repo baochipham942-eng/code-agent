@@ -29,6 +29,7 @@ import {
   isToolInterruptionPlaceholder,
 } from '../../../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../../../hooks/useI18n';
+import type { Translations } from '../../../../../i18n';
 import { useMessageActionStore } from '../../../../../stores/messageActionStore';
 import { copyPathToClipboard } from '../../../../../utils/platform';
 import {
@@ -104,6 +105,9 @@ function JsonHighlight({ code, error }: { code: string; error?: boolean }) {
 const RESULT_BODY_LINE_CAP = 5;
 const SHELL_RESULT_BODY_LINE_CAP = 50;
 
+type ToolDetailsCopy = Translations['rendererHumanPipe']['toolDetails'];
+type RecoveryCopy = ToolDetailsCopy['recovery'];
+
 function isShellTool(name: string): boolean {
   return name === 'Bash' || name === 'bash';
 }
@@ -112,10 +116,12 @@ function CappedResultBody({
   text,
   lineCap,
   className,
+  copy,
 }: {
   text: string;
   lineCap: number;
   className: string;
+  copy: ToolDetailsCopy;
 }) {
   const [showAll, setShowAll] = useState(false);
   const allLines = text.split('\n');
@@ -131,7 +137,9 @@ function CappedResultBody({
           onClick={() => setShowAll((v) => !v)}
           className="mt-1 block text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
         >
-          {showAll ? '收起' : `展开剩余 ${overflow} 行`}
+          {showAll
+            ? copy.collapse
+            : copy.expandRemaining.replace('{count}', String(overflow))}
         </button>
       )}
     </>
@@ -151,6 +159,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
   const openPreview = useAppStore((state) => state.openPreview);
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const { t } = useI18n();
+  const copy = t.rendererHumanPipe.toolDetails;
 
   // 报错说人话：识别得了的错误（如搜索源额度耗尽）给一行摘要 + 去设置入口，原始报错折叠。
   // metadata.code 命中登记表的门（如工作台范围拦截）优先用 code 文案，正则降为兜底。
@@ -187,7 +196,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
     : undefined;
   const generatedFileResult = extractGeneratedFile(toolCall);
   const safeBrowserComputerResult = formatBrowserComputerActionResultDetails(toolCall);
-  const browserComputerNextSteps = getBrowserComputerNextSteps(toolCall);
+  const browserComputerNextSteps = getBrowserComputerNextSteps(toolCall, copy);
   // 通用失败工具的可点 action（复制错误 + 从此重试）。浏览器/Computer 类有自己的
   // 只读 recovery actions，这里只兜底其余工具，避免两套 action 行重复。
   const toolErrorActions = buildToolErrorActions(toolCall, mediaContext?.messageId);
@@ -227,7 +236,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
         <div>
           {isEmptyEdit ? (
             <div className="text-xs text-zinc-500 italic py-1">
-              无变化 — {editFileArgs!.filePath.split('/').pop()}
+              {copy.noChange} · {editFileArgs!.filePath.split('/').pop()}
             </div>
           ) : (
             <>
@@ -239,7 +248,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                     onClick={() => setShowDiff(true)}
                     className="text-badge-info hover:text-badge-info px-2 transition-colors"
                   >
-                    View Diff
+                    {copy.viewDiff}
                   </button>
                 )}
               </div>
@@ -247,11 +256,11 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                 if (isEditFile && editFileArgs) {
                   return (
                     <pre className="text-xs text-zinc-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border border-gray-800/50 whitespace-pre-wrap">
-                      {`File: ${editFileArgs.filePath}\nChanges: ${editFileArgs.oldString.length} -> ${editFileArgs.newString.length} chars`}
+                      {`${copy.fileLabel}: ${editFileArgs.filePath}\n${copy.changesLabel}: ${editFileArgs.oldString.length} → ${editFileArgs.newString.length} ${copy.characters}`}
                     </pre>
                   );
                 }
-                const formatted = formatArgs(name, args);
+                const formatted = formatArgs(name, args, copy);
                 return formatted.language === 'json' ? (
                   <JsonHighlight code={formatted.text} />
                 ) : (
@@ -277,7 +286,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
         <div className="animate-fadeIn">
           {!imageResult && !videoResult && !genericMediaAsset && !generatedFileResult && !createdFilePath && (
             <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">
-              <span>{result.success ? 'Result' : 'Error'}</span>
+              <span>{result.success ? copy.result : copy.error}</span>
               <div className="flex-1 h-px bg-gray-700/50" />
             </div>
           )}
@@ -330,28 +339,33 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
           {!imageResult && !videoResult && !genericMediaAsset && !generatedFileResult && !createdFilePath && (
             <>
               {browserComputerNextSteps.length > 0 && (
-                <BrowserComputerNextStepActions actions={browserComputerNextSteps} />
+                <BrowserComputerNextStepActions actions={browserComputerNextSteps} copy={copy} />
               )}
               {showGenericErrorActions && (
                 <GenericToolErrorActions
                   errorText={stripAnsiCodes(toolErrorActions.errorText)}
                   canRetry={toolErrorActions.canRetry}
                   messageId={mediaContext?.messageId}
+                  copy={copy}
                 />
               )}
-              {humanError && !safeBrowserComputerResult ? (
+              {!result.success && !safeBrowserComputerResult ? (
                 <div className="rounded-lg border border-badge-warning/20 bg-amber-500/[0.04] p-3 text-xs">
-                  <div className="font-medium text-badge-warning/90">{humanError.summary}</div>
-                  {humanError.detail && (
-                    <div className="mt-1 text-badge-warning/60">{humanError.detail}</div>
+                  <div className="font-medium text-badge-warning/90">
+                    {humanError?.summary ?? copy.genericErrorSummary}
+                  </div>
+                  {(humanError?.detail ?? copy.genericErrorDetail) && (
+                    <div className="mt-1 text-badge-warning/60">
+                      {humanError?.detail ?? copy.genericErrorDetail}
+                    </div>
                   )}
-                  {humanError.settingsHint && (
+                  {humanError?.settingsHint && (
                     <button
                       type="button"
                       onClick={() => openSettingsTab('model')}
                       className="mt-2 inline-flex items-center gap-1 rounded-md border border-badge-warning/25 bg-amber-400/10 px-2 py-1 text-[11px] text-badge-warning transition-colors hover:bg-amber-400/20"
                     >
-                      去「设置 &gt; Service API Keys」换 key ›
+                      {copy.settingsHint}
                     </button>
                   )}
                   {!interruptionPlaceholder && (
@@ -361,7 +375,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                         onClick={() => setShowRawError((v) => !v)}
                         className="mt-2 block text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
                       >
-                        {showRawError ? '收起原始报错' : '查看原始报错'}
+                        {showRawError ? copy.hideRawError : copy.viewRawError}
                       </button>
                       {showRawError && (
                         <pre className="mt-1.5 max-h-48 overflow-auto scrollbar-hidden whitespace-pre-wrap break-words rounded-md border border-zinc-800/50 bg-gray-900/50 p-2 text-[11px] text-zinc-500">
@@ -371,9 +385,6 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                     </>
                   )}
                 </div>
-              ) : (!result.success && !result.error?.trim() && (result.output == null || result.output === '')) ? (
-                // 上游失败但没回任何错误详情（QA 2026-07-28 A2）：别让 JSON "null" / 空白糊在用户脸上
-                <div className="text-xs text-zinc-500 italic py-1">执行失败，未返回错误详情</div>
               ) : (!safeBrowserComputerResult && !result.error && result.output !== null && typeof result.output === 'object') ? (
                 // 对象/数组型 output（非字符串日志）走 JSON 语法高亮
                 <JsonHighlight code={JSON.stringify(result.output, null, 2)} error={!result.success} />
@@ -389,6 +400,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                           : JSON.stringify(result.output, null, 2)
                   }
                   lineCap={isShellTool(name) ? SHELL_RESULT_BODY_LINE_CAP : RESULT_BODY_LINE_CAP}
+                  copy={copy}
                   className={`text-xs bg-gray-900/50 rounded-lg p-3 overflow-x-auto scrollbar-hidden border transition-colors duration-200 whitespace-pre-wrap break-words ${
                     result.success
                       ? 'text-zinc-400 border-gray-800/50'
@@ -426,7 +438,11 @@ interface BrowserComputerNextStepAction {
   run?: () => Promise<BrowserComputerRecoveryOutcome>;
 }
 
-export function getBrowserComputerNextSteps(toolCall: ToolCall): BrowserComputerNextStepAction[] {
+export function getBrowserComputerNextSteps(
+  toolCall: ToolCall,
+  copy: ToolDetailsCopy,
+): BrowserComputerNextStepAction[] {
+  const recovery = copy.recovery;
   if (!toolCall.result || toolCall.result.success) {
     return [];
   }
@@ -442,8 +458,8 @@ export function getBrowserComputerNextSteps(toolCall: ToolCall): BrowserComputer
   ) {
     return [{
       id: 'launch_managed_browser',
-      title: '启动隔离浏览器',
-      detail: '可执行；也可以从能力菜单 -> Browser -> Managed 手动切换。',
+      title: recovery.launchBrowserTitle,
+      detail: recovery.launchBrowserDetail,
       executable: true,
       sourceToolName: toolCall.name,
       sourceArgs: toolCall.arguments,
@@ -455,19 +471,19 @@ export function getBrowserComputerNextSteps(toolCall: ToolCall): BrowserComputer
         if (response?.success) {
           return {
             status: 'success',
-            text: 'success\nManaged browser 已启动\nProvider: system-chrome-cdp',
+            text: recovery.launchBrowserSuccess,
           };
         }
         return {
           status: 'failed',
-          text: formatRecoveryFailure('Managed browser 启动失败', response),
+          text: formatRecoveryFailure(recovery.launchBrowserFailed),
         };
       },
     }];
   }
 
   if (toolCall.name === 'computer_use' && catalog?.scope === 'browser_scoped_computer') {
-    return [buildBrowserSnapshotRecoveryAction(toolCall)];
+    return [buildBrowserSnapshotRecoveryAction(toolCall, recovery)];
   }
 
   if (toolCall.name === 'computer_use' && catalog?.scope === 'desktop_surface') {
@@ -476,8 +492,8 @@ export function getBrowserComputerNextSteps(toolCall: ToolCall): BrowserComputer
       : '';
     const actions: BrowserComputerNextStepAction[] = [{
       id: 'open_desktop_status',
-      title: '打开 Desktop status',
-      detail: '可执行；只读取 Computer Surface 状态，不执行点击或输入。',
+      title: recovery.openStatusTitle,
+      detail: recovery.openStatusDetail,
       executable: true,
       sourceToolName: toolCall.name,
       sourceArgs: toolCall.arguments,
@@ -489,24 +505,23 @@ export function getBrowserComputerNextSteps(toolCall: ToolCall): BrowserComputer
           return {
             status: 'success',
             text: [
-              'success',
-              'Desktop status 已打开',
-              ...summarizeComputerSurfaceState(response.data),
-              '只打开了状态面，没有执行点击、输入或自动重试。',
+              recovery.openStatusSuccess,
+              ...summarizeComputerSurfaceState(response.data, recovery),
+              recovery.openStatusSafety,
             ].join('\n'),
           };
         }
         return {
           status: 'failed',
-          text: formatRecoveryFailure('Desktop status 打开失败', response),
+          text: formatRecoveryFailure(recovery.openStatusFailed),
         };
       },
     }];
 
     actions.push({
       id: 'observe_current_window',
-      title: '观察当前窗口',
-      detail: '可执行；只读取前台窗口和 Computer Surface 状态，不执行动作。',
+      title: recovery.observeWindowTitle,
+      detail: recovery.observeWindowDetail,
       executable: true,
       sourceToolName: toolCall.name,
       sourceArgs: toolCall.arguments,
@@ -518,16 +533,15 @@ export function getBrowserComputerNextSteps(toolCall: ToolCall): BrowserComputer
           return {
             status: 'success',
             text: [
-              'success',
-              '当前窗口已观察',
-              ...summarizeComputerSurfaceObservation(response.data),
-              '只读观察完成，没有执行点击、输入或自动重试。',
+              recovery.observeWindowSuccess,
+              ...summarizeComputerSurfaceObservation(response.data, recovery),
+              recovery.observeWindowSafety,
             ].join('\n'),
           };
         }
         return {
           status: 'failed',
-          text: formatRecoveryFailure('当前窗口观察失败', response),
+          text: formatRecoveryFailure(recovery.observeWindowFailed),
         };
       },
     });
@@ -535,8 +549,8 @@ export function getBrowserComputerNextSteps(toolCall: ToolCall): BrowserComputer
     if (targetApp) {
       actions.push({
         id: 'list_ax_candidates',
-        title: '列出 AX candidates',
-        detail: `可执行；只读取 ${targetApp} 的 Accessibility 候选，不自动重试原动作。`,
+        title: recovery.listCandidatesTitle,
+        detail: recovery.listCandidatesDetail.replace('{app}', targetApp),
         executable: true,
         sourceToolName: toolCall.name,
         sourceArgs: toolCall.arguments,
@@ -549,16 +563,15 @@ export function getBrowserComputerNextSteps(toolCall: ToolCall): BrowserComputer
             return {
               status: 'success',
               text: [
-                'success',
-                'AX candidates 已准备',
-                ...summarizeComputerSurfaceElements(response.data, targetApp),
-                '只读候选已准备，没有执行点击、输入或自动重试。',
+                recovery.listCandidatesSuccess,
+                ...summarizeComputerSurfaceElements(response.data, targetApp, recovery),
+                recovery.listCandidatesSafety,
               ].join('\n'),
             };
           }
           return {
             status: 'failed',
-            text: formatRecoveryFailure('AX candidates 准备失败', response),
+            text: formatRecoveryFailure(recovery.listCandidatesFailed),
           };
         },
       });
@@ -572,17 +585,20 @@ export function getBrowserComputerNextSteps(toolCall: ToolCall): BrowserComputer
     && code === 'STALE_TARGET_REF'
     && catalog?.safeRecovery === 'refresh_managed_snapshot'
   ) {
-    return [buildBrowserSnapshotRecoveryAction(toolCall)];
+    return [buildBrowserSnapshotRecoveryAction(toolCall, recovery)];
   }
 
   return [];
 }
 
-function buildBrowserSnapshotRecoveryAction(toolCall: ToolCall): BrowserComputerNextStepAction {
+function buildBrowserSnapshotRecoveryAction(
+  toolCall: ToolCall,
+  recovery: RecoveryCopy,
+): BrowserComputerNextStepAction {
   return {
     id: 'refresh_browser_snapshot',
-    title: '刷新页面证据',
-    detail: '可执行；读取 DOM / Accessibility snapshot，方便下次用新 targetRef、选择器或 AX 证据重试。',
+    title: recovery.refreshEvidenceTitle,
+    detail: recovery.refreshEvidenceDetail,
     executable: true,
     sourceToolName: toolCall.name,
     sourceArgs: toolCall.arguments,
@@ -598,7 +614,7 @@ function buildBrowserSnapshotRecoveryAction(toolCall: ToolCall): BrowserComputer
       const recoveryEvidence = data?.recoveryEvidence as Record<string, unknown> | undefined;
       const headingCount = typeof dom?.headingCount === 'number' ? dom.headingCount : 0;
       const interactiveCount = typeof dom?.interactiveCount === 'number' ? dom.interactiveCount : 0;
-      const accessibilityStatus = accessibility?.available ? 'available' : 'unavailable';
+      const accessibilityStatus = accessibility?.available ? recovery.available : recovery.unavailable;
       const capturedAtMs = typeof recoveryEvidence?.snapshotCapturedAtMs === 'number'
         ? recoveryEvidence.snapshotCapturedAtMs
         : typeof dom?.capturedAtMs === 'number'
@@ -606,16 +622,15 @@ function buildBrowserSnapshotRecoveryAction(toolCall: ToolCall): BrowserComputer
           : null;
       const snapshotTimestamp = capturedAtMs && Number.isFinite(capturedAtMs)
         ? new Date(capturedAtMs).toISOString()
-        : 'unavailable';
+        : recovery.unavailable;
       return {
         status: 'success',
         text: [
-          'success',
-          '页面证据已刷新',
-          `DOM headings: ${headingCount}`,
-          `Interactive elements: ${interactiveCount}`,
-          `Accessibility snapshot: ${accessibilityStatus}`,
-          `Snapshot captured: ${snapshotTimestamp}`,
+          recovery.refreshEvidenceSuccess,
+          `${recovery.headings}: ${headingCount}`,
+          `${recovery.interactiveElements}: ${interactiveCount}`,
+          `${recovery.accessibilitySnapshot}: ${accessibilityStatus}`,
+          `${recovery.capturedAt}: ${snapshotTimestamp}`,
         ].join('\n'),
       };
     },
@@ -627,7 +642,13 @@ type BrowserComputerRecoveryOutcome = {
   text: string;
 };
 
-function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerNextStepAction[] }) {
+function BrowserComputerNextStepActions({
+  actions,
+  copy,
+}: {
+  actions: BrowserComputerNextStepAction[];
+  copy: ToolDetailsCopy;
+}) {
   const [runningAction, setRunningAction] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<BrowserComputerRecoveryOutcome | null>(null);
 
@@ -643,13 +664,13 @@ function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerN
             event.stopPropagation();
             if (!action.run) return;
             setRunningAction(action.id);
-            setOutcome({ status: 'preparing', text: 'preparing\n正在准备只读 recovery 证据…' });
+            setOutcome({ status: 'preparing', text: copy.recovery.preparing });
             try {
               setOutcome(await action.run());
-            } catch (error) {
+            } catch {
               setOutcome({
                 status: 'failed',
-                text: `failed\n${error instanceof Error ? error.message : String(error)}`,
+                text: copy.genericErrorSummary,
               });
             } finally {
               setRunningAction(null);
@@ -693,10 +714,12 @@ function GenericToolErrorActions({
   errorText,
   canRetry,
   messageId,
+  copy,
 }: {
   errorText: string;
   canRetry: boolean;
   messageId?: string;
+  copy: ToolDetailsCopy;
 }) {
   const [copied, setCopied] = useState(false);
   const createForkFromReply = useMessageActionStore((state) => state.createForkFromReply);
@@ -717,7 +740,7 @@ function GenericToolErrorActions({
         className="inline-flex items-center gap-1 rounded-md border border-zinc-700/60 bg-zinc-800/60 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700/60"
       >
         {copied ? <Check className="h-3 w-3 text-badge-success" /> : <Copy className="h-3 w-3" />}
-        {copied ? '已复制' : '复制错误'}
+        {copied ? copy.copied : copy.copyError}
       </button>
       {canRetry && messageId && (
         <button
@@ -730,7 +753,7 @@ function GenericToolErrorActions({
           className="inline-flex items-center gap-1 rounded-md border border-badge-info/25 bg-sky-500/10 px-2 py-1 text-[11px] text-badge-info transition-colors hover:bg-sky-500/20"
         >
           <RotateCcw className="h-3 w-3" />
-          从此重试
+          {copy.retryFromHere}
         </button>
       )}
     </div>
@@ -754,36 +777,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-function formatRecoveryFailure(title: string, response: unknown): string {
-  if (isRecord(response) && isRecord(response.error)) {
-    const message = typeof response.error.message === 'string' ? response.error.message : 'unknown error';
-    return ['failed', title, message].join('\n');
-  }
-  return ['failed', title, 'unknown error'].join('\n');
+function formatRecoveryFailure(title: string): string {
+  return title;
 }
 
-function summarizeComputerSurfaceState(data: unknown): string[] {
+function summarizeComputerSurfaceState(data: unknown, copy: RecoveryCopy): string[] {
   const state = isRecord(data) && isRecord(data.state) ? data.state : isRecord(data) ? data : null;
-  if (!state) return ['State: unavailable'];
+  if (!state) return [copy.stateUnavailable];
   return [
-    typeof state.mode === 'string' ? `Mode: ${state.mode}` : null,
-    typeof state.targetApp === 'string' && state.targetApp ? `Target app: ${state.targetApp}` : null,
-    typeof state.requiresForeground === 'boolean' ? `Requires foreground: ${state.requiresForeground ? 'yes' : 'no'}` : null,
-    typeof state.approvalScope === 'string' ? `Approval scope: ${state.approvalScope}` : null,
+    typeof state.mode === 'string' ? `${copy.mode}: ${state.mode}` : null,
+    typeof state.targetApp === 'string' && state.targetApp ? `${copy.targetApp}: ${state.targetApp}` : null,
+    typeof state.requiresForeground === 'boolean'
+      ? `${copy.needsForeground}: ${state.requiresForeground ? copy.yes : copy.no}`
+      : null,
+    typeof state.approvalScope === 'string' ? `${copy.approvalScope}: ${state.approvalScope}` : null,
   ].filter((line): line is string => Boolean(line));
 }
 
-function summarizeComputerSurfaceObservation(data: unknown): string[] {
+function summarizeComputerSurfaceObservation(data: unknown, copy: RecoveryCopy): string[] {
   const snapshot = isRecord(data) && isRecord(data.snapshot) ? data.snapshot : null;
-  const stateLines = isRecord(data) ? summarizeComputerSurfaceState(data.state) : [];
+  const stateLines = isRecord(data) ? summarizeComputerSurfaceState(data.state, copy) : [];
   return [
-    snapshot && typeof snapshot.appName === 'string' ? `Frontmost app: ${snapshot.appName}` : null,
-    snapshot && typeof snapshot.windowTitle === 'string' ? `Window title: ${snapshot.windowTitle}` : null,
+    snapshot && typeof snapshot.appName === 'string' ? `${copy.frontmostApp}: ${snapshot.appName}` : null,
+    snapshot && typeof snapshot.windowTitle === 'string' ? `${copy.windowTitle}: ${snapshot.windowTitle}` : null,
     ...stateLines,
   ].filter((line): line is string => Boolean(line));
 }
 
-function summarizeComputerSurfaceElements(data: unknown, targetApp: string): string[] {
+function summarizeComputerSurfaceElements(
+  data: unknown,
+  targetApp: string,
+  copy: RecoveryCopy,
+): string[] {
   const metadata = isRecord(data) && isRecord(data.metadata) ? data.metadata : null;
   const output = isRecord(data) && typeof data.output === 'string' ? data.output : '';
   const candidateCount = Array.isArray(metadata?.elements)
@@ -797,8 +822,8 @@ function summarizeComputerSurfaceElements(data: unknown, targetApp: string): str
     .filter(Boolean)
     .slice(0, 4);
   return [
-    `Target app: ${targetApp}`,
-    candidateCount !== null ? `Candidates: ${candidateCount}` : null,
+    `${copy.targetApp}: ${targetApp}`,
+    candidateCount !== null ? `${copy.candidateCount}: ${candidateCount}` : null,
     ...outputLines,
   ].filter((line): line is string => Boolean(line));
 }
@@ -813,7 +838,8 @@ type FormattedArgs = { text: string; language: 'json' | 'text' };
 
 function formatArgs(
   toolName: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  copy: ToolDetailsCopy,
 ): FormattedArgs {
   const browserComputerArgs = formatBrowserComputerActionArguments(toolName, args);
   if (browserComputerArgs) {
@@ -828,38 +854,41 @@ function formatArgs(
       }
       const offset = args.offset as number;
       const limit = args.limit as number;
-      let result = `File: ${filePath}`;
-      if (offset && offset > 1) result += `\nOffset: ${offset}`;
-      if (limit && limit !== 2000) result += `\nLimit: ${limit}`;
+      let result = `${copy.fileLabel}: ${filePath}`;
+      if (offset && offset > 1) result += `\n${copy.offsetLabel}: ${offset}`;
+      if (limit && limit !== 2000) result += `\n${copy.limitLabel}: ${limit}`;
       return { text: result, language: 'text' };
     }
 
     case 'Write': {
       const filePath = (args.file_path as string) || '';
       const content = (args.content as string) || '';
-      return { text: `File: ${filePath}\nContent: ${content.length} chars`, language: 'text' };
+      return {
+        text: `${copy.fileLabel}: ${filePath}\n${copy.contentLabel}: ${content.length} ${copy.characters}`,
+        language: 'text',
+      };
     }
 
     case 'Bash': {
       const command = (args.command as string) || '';
-      return { text: `Command:\n${command}`, language: 'text' };
+      return { text: `${copy.commandLabel}:\n${command}`, language: 'text' };
     }
 
     case 'Glob': {
       const pattern = (args.pattern as string) || '';
       const path = (args.path as string) || '.';
-      return { text: `Pattern: ${pattern}\nPath: ${path}`, language: 'text' };
+      return { text: `${copy.patternLabel}: ${pattern}\n${copy.pathLabel}: ${path}`, language: 'text' };
     }
 
     case 'Grep': {
       const pattern = (args.pattern as string) || '';
       const path = (args.path as string) || '.';
-      return { text: `Pattern: ${pattern}\nPath: ${path}`, language: 'text' };
+      return { text: `${copy.patternLabel}: ${pattern}\n${copy.pathLabel}: ${path}`, language: 'text' };
     }
 
     case 'list_directory': {
       const path = (args.path as string) || '.';
-      return { text: `Path: ${path}`, language: 'text' };
+      return { text: `${copy.pathLabel}: ${path}`, language: 'text' };
     }
 
     default:

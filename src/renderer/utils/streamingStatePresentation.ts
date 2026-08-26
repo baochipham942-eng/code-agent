@@ -136,8 +136,8 @@ export function buildStreamingUiState({
   if (sessionStatus === 'paused' || (!isSessionProcessing && hasIncompleteStreamSnapshot(streamSnapshot, turn))) {
     return {
       status: 'resumable',
-      label: t.turnRun.status.resumable,
-      detail: t.turnRun.detail.resumable,
+      label: '',
+      detail: '',
       tone: 'warning',
       shouldAnimate: false,
       showCancelCleanup: false,

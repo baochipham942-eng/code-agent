@@ -6,7 +6,7 @@ import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { ModelMessage } from '../types';
 import { BaseOpenAIProvider } from './baseOpenAIProvider';
 import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
-import { getModelMaxOutputTokens } from '../../../shared/constants';
+import { getModelMaxOutputTokens, GROQ_DEFAULT_MODEL } from '../../../shared/constants';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from './providerResolution';
 
 export class GroqProvider extends BaseOpenAIProvider {
@@ -30,12 +30,12 @@ export class GroqProvider extends BaseOpenAIProvider {
     const groqTools = convertToolsToOpenAI(tools);
 
     const body: Record<string, unknown> = {
-      model: config.model || 'llama-3.3-70b-versatile',
+      model: config.model || GROQ_DEFAULT_MODEL,
       messages: useToolCalling
         ? convertToOpenAIMessages(messages)
         : convertToTextOnlyMessages(messages),
       temperature: config.temperature ?? 0.7,
-      max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'llama-3.3-70b-versatile'),
+      max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || GROQ_DEFAULT_MODEL),
       stream: true,
       stream_options: { include_usage: true },
     };

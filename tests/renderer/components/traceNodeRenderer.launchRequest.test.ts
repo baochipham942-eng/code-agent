@@ -363,11 +363,11 @@ describe('TraceNodeRenderer launch request', () => {
     );
 
     // FallbackBanner 默认折叠（B2-3 工程元数据收敛）：collapsed 态只留一行摘要
-    // （模型已降级 + from->to + reason），已尝试/已跳过/已选用/工具策略这些
+    // （只说已自动换用备用模型），模型 id、原始原因、尝试过程和工具策略
     // trace 细节收进展开态——完整展开断言见 fallbackBanner.test.tsx。
-    expect(html).toContain('模型已降级');
-    expect(html).toContain('kimi-k2.5');
-    expect(html).toContain('glm-4.5v');
+    expect(html).toContain('已自动换用备用模型');
+    expect(html).not.toContain('kimi-k2.5');
+    expect(html).not.toContain('glm-4.5v');
     expect(html).toContain('aria-expanded="false"');
   });
 
@@ -406,8 +406,9 @@ describe('TraceNodeRenderer launch request', () => {
     );
 
     // 同上：exhausted 步骤是折叠态背后的 trace 细节，collapsed 态只留摘要行。
-    expect(html).toContain('模型已降级');
-    expect(html).toContain('未切换');
+    expect(html).toContain('已自动换用备用模型');
+    expect(html).toContain('模型服务暂时不可用');
+    expect(html).not.toContain('未切换');
     expect(html).toContain('aria-expanded="false"');
   });
 

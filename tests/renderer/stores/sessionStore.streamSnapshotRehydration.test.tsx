@@ -39,7 +39,7 @@ function makeSnapshot(overrides: Partial<StreamRecoverySnapshot> = {}): StreamRe
   };
 }
 
-function makeSession(snapshot: StreamRecoverySnapshot | null): Session & { messages: Message[] } {
+function makeSession(snapshot: StreamRecoverySnapshot | null): Session & { messages: Message[]; activeRun: boolean } {
   return {
     id: 'session-1',
     title: '历史会话',
@@ -47,6 +47,7 @@ function makeSession(snapshot: StreamRecoverySnapshot | null): Session & { messa
     createdAt: 1,
     updatedAt: 2,
     status: 'running',
+    activeRun: true,
     messages: [
       { id: 'u-1', role: 'user', content: '第一个问题', timestamp: 1 },
       { id: 'a-1', role: 'assistant', content: '第一个回答', timestamp: 2 },

@@ -230,7 +230,7 @@ describe('buildModelStrategyRecommendation', () => {
 
     expect(recommendation).toMatchObject({
       tone: 'warning',
-      title: '当前 provider 状态降级',
+      title: '当前模型服务不稳定',
       primaryAction: 'enable-auto',
       primaryLabel: '采用自动',
     });
@@ -277,7 +277,7 @@ describe('buildModelStrategyRecommendation', () => {
 
     expect(recommendation).toMatchObject({
       tone: 'warning',
-      title: '当前 provider 状态降级',
+      title: '当前模型服务不稳定',
       primaryAction: 'switch-model',
       targetProvider: 'openai',
       targetModel: 'gpt-5',
@@ -286,7 +286,7 @@ describe('buildModelStrategyRecommendation', () => {
     });
     expect(recommendation?.body).toContain('建议切到 OpenAI / GPT-5');
     expect(recommendation?.strategyFactors).toEqual([
-      { label: 'Provider', value: '降级' },
+      { label: '模型服务', value: '降级' },
       { label: '样本', value: 'P50 1789ms，错误率 24%' },
       { label: '需要', value: '工具' },
       { label: '候选', value: 'OpenAI / GPT-5' },
@@ -336,7 +336,7 @@ describe('buildModelStrategyRecommendation', () => {
     });
 
     expect(recommendation).toMatchObject({
-      title: '当前 provider 状态降级',
+      title: '当前模型服务不稳定',
       primaryAction: 'switch-model',
       targetProvider: 'openai',
       targetModel: 'gpt-4o',
@@ -378,7 +378,7 @@ describe('buildModelStrategyRecommendation', () => {
     });
 
     expect(recommendation).toMatchObject({
-      title: '当前 provider 状态降级',
+      title: '当前模型服务不稳定',
       primaryAction: 'switch-model',
       targetProvider: 'zhipu',
       targetModel: 'glm-4.5-flash',
@@ -455,7 +455,7 @@ describe('buildModelStrategyRecommendation', () => {
     });
 
     expect(recommendation).toMatchObject({
-      title: '当前 provider 状态降级',
+      title: '当前模型服务不稳定',
       primaryAction: 'enable-auto',
     });
   });
@@ -477,7 +477,7 @@ describe('buildModelStrategyRecommendation', () => {
 
     expect(recommendation).toMatchObject({
       tone: 'warning',
-      title: '当前 provider 不可用',
+      title: '当前模型服务不可用',
     });
     expect(recommendation?.primaryAction).toBeUndefined();
     expect(recommendation?.body).toContain('OpenAI 最近状态为不可用');
@@ -729,7 +729,7 @@ describe('buildModelStrategyRecommendation', () => {
       tone: 'warning',
       title: 'Claude Code 最近运行失败',
       primaryAction: 'switch-native-engine',
-      primaryLabel: '切回 Native',
+      primaryLabel: '切回主任务模型',
     });
     expect(recommendation?.body).toContain('2 分钟前失败');
     expect(recommendation?.body).toContain('认证失败');
@@ -803,7 +803,7 @@ describe('buildModelStrategyRecommendation', () => {
       taskKind: 'external-failure',
       primaryAction: 'switch-native-engine',
     }));
-    expect(notifySuccess).toHaveBeenCalledWith('已切回 Native 主任务模型');
+    expect(notifySuccess).toHaveBeenCalledWith('已切回主任务模型');
     expect(notifyError).not.toHaveBeenCalled();
     expect(switchModel).not.toHaveBeenCalled();
   });
@@ -958,14 +958,14 @@ describe('buildModelStrategyRecommendation', () => {
       tone: 'warning',
       title: '外部引擎暂不接收附件',
       primaryAction: 'switch-native-engine',
-      primaryLabel: '切回 Native',
+      primaryLabel: '切回主任务模型',
     });
-    expect(recommendation?.body).toContain('只接收文本 prompt');
-    expect(recommendation?.body).toContain('Native 主任务模型');
+    expect(recommendation?.body).toContain('只接收文字');
+    expect(recommendation?.body).toContain('支持图片的主任务模型');
     expect(recommendation?.strategyFactors).toEqual([
       { label: '引擎', value: 'Claude Code' },
       { label: '输入', value: '图片附件' },
-      { label: '链路', value: '文本 prompt' },
+      { label: '链路', value: '仅文字' },
     ]);
     expect(buildModelStrategyEngineSelectionRequest(recommendation)).toEqual({
       kind: 'native',
@@ -1013,11 +1013,11 @@ describe('buildModelStrategyRecommendation', () => {
 
     expect(recommendation).toMatchObject({
       tone: 'warning',
-      title: '外部引擎当前是只读链路',
+      title: '当前方式无法修改文件',
       primaryAction: 'switch-native-engine',
-      primaryLabel: '切回 Native',
+      primaryLabel: '切回主任务模型',
     });
-    expect(recommendation?.body).toContain('只读 CLI 链路');
+    expect(recommendation?.body).toContain('只能读取内容');
     expect(buildModelStrategyEngineSelectionRequest(recommendation)).toEqual({
       kind: 'native',
       permissionProfile: 'default',

@@ -61,6 +61,7 @@ import {
 import { resolveTierModelConfig, type TierResolutionSettings } from '../model/modelDecision';
 import { appendRolePersonalization } from '../services/roleAssets/rolePersonalization';
 import { getConfigService } from '../services/core/configService';
+import { resolveConfiguredDefaultProvider } from '../../shared/modelDefaults';
 
 import type { FullAgentConfig } from '../../shared/contract/agentTypes';
 import type { PermissionPreset } from '@shared/contract';
@@ -375,7 +376,7 @@ function getTierResolutionSettingsSafe(): TierResolutionSettings | undefined {
     const settings = getConfigService().getSettings();
     const models = settings.models;
     if (!models) return undefined;
-    const defaultProvider = models.defaultProvider ?? models.default;
+    const defaultProvider = resolveConfiguredDefaultProvider(models, MODEL_CONFIG.powerful.provider);
     return {
       defaultProvider,
       defaultModel: models.providers?.[defaultProvider]?.model,

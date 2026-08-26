@@ -76,6 +76,35 @@ describe('SessionRecapBanner', () => {
     await waitFor(() => expect(domainInvoke).toHaveBeenCalled());
     expect(screen.queryByRole('status')).toBeNull();
   });
+
+  it('离开不足 10 分钟不请求也不渲染', () => {
+    window.localStorage.setItem(
+      lastViewedKey('short-away'),
+      String(Date.now() - 9 * 60_000),
+    );
+    render(<SessionRecapBanner sessionId="short-away" interruptionPointInViewport={false} />);
+
+    expect(domainInvoke).not.toHaveBeenCalled();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('离开满 10 分钟但中断点在 Virtuoso 视口时隐藏；滚出视口后才显示', async () => {
+    window.localStorage.setItem(
+      lastViewedKey('visible-interrupt'),
+      String(Date.now() - 10 * 60_000),
+    );
+    const view = render(
+      <SessionRecapBanner sessionId="visible-interrupt" interruptionPointInViewport />,
+    );
+
+    await waitFor(() => expect(domainInvoke).toHaveBeenCalled());
+    expect(screen.queryByRole('status')).toBeNull();
+
+    view.rerender(
+      <SessionRecapBanner sessionId="visible-interrupt" interruptionPointInViewport={false} />,
+    );
+    expect(screen.getByRole('status')).toBeTruthy();
+  });
 });
 
 // ----------------------------------------------------------------------------
@@ -99,7 +128,7 @@ describe('SessionRecapBanner 在场水位（X5.5-B4）', () => {
     setVisibility(originalVisibilityState);
   });
 
-  it('在场全程：可见聚焦期心跳推进水位，视图重挂载不再误报', async () => {
+  it('在场全程：可见聚焦期心跳推进水位，10 分钟门内重挂载不请求追赶', async () => {
     // host 视角：since 停在 T0（水位没推进）才有"没看过的"可讲
     domainInvoke.mockImplementation((_domain: string, _method: string, args: { since: number }) =>
       Promise.resolve({ success: true, data: args.since <= T0 ? RECAP : null }),
@@ -116,13 +145,10 @@ describe('SessionRecapBanner 在场水位（X5.5-B4）', () => {
     });
     expect(window.localStorage.getItem(lastViewedKey('presence-1'))).toBe(String(T0 + 30_000));
 
-    // 视图重挂载（人没走）：基准是推进后的水位，host 没有新事可讲 → 不弹
+    // 视图重挂载（人没走）：基准是推进后的水位，离开时长为 0 → 连 host 都不请求
     first.unmount();
     render(<SessionRecapBanner sessionId="presence-1" />);
-    expect(domainInvoke).toHaveBeenCalledWith(IPC_DOMAINS.SESSION, 'getRecap', {
-      sessionId: 'presence-1',
-      since: T0 + 30_000,
-    });
+    expect(domainInvoke).not.toHaveBeenCalled();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
@@ -159,5 +185,29 @@ describe('SessionRecapBanner 在场水位（X5.5-B4）', () => {
     });
     expect(screen.getByRole('status')).toBeTruthy();
     expect(screen.getByText(/更新了 a\.txt/)).toBeTruthy();
+  });
+
+  it('组件不重挂载时，失焦满 10 分钟再回来也会按心跳空窗请求追赶', async () => {
+    domainInvoke.mockResolvedValue({ success: true, data: RECAP });
+    render(<SessionRecapBanner sessionId="focus-away" interruptionPointInViewport={false} />);
+
+    setVisibility('hidden');
+    fireEvent(document, new Event('visibilitychange'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+    });
+    expect(domainInvoke).not.toHaveBeenCalled();
+
+    setVisibility('visible');
+    fireEvent(document, new Event('visibilitychange'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(domainInvoke).toHaveBeenCalledWith(IPC_DOMAINS.SESSION, 'getRecap', {
+      sessionId: 'focus-away',
+      since: T0,
+    });
+    expect(screen.getByRole('status')).toBeTruthy();
   });
 });

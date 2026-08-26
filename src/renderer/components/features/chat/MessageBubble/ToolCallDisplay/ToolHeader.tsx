@@ -67,8 +67,9 @@ export function ToolHeader({ toolCall, status, showDetailName = false }: Props) 
     toolCall.arguments as Record<string, unknown> | undefined,
     t,
     toolCall.shortDescription,
-    // 已失败的调用不再用过去时肯定式，避免与状态词同屏矛盾（结果语义交给状态词）
-    toolCall.result?.success === false,
+    // 结果态只认父组件已经裁定的 status：error / interrupted 都用意图式，避免同一个
+    // snapshot Write 一路按 result 判「写入失败」、另一路按会话态判「写入了」。
+    status === 'error' || status === 'interrupted',
     toolCall.stepLabel,
   );
   const statusLabel = getToolStatusLabel(toolCall, status, t);
@@ -105,7 +106,9 @@ export function ToolHeader({ toolCall, status, showDetailName = false }: Props) 
       {/* 状态词只在带结果数据时出现（getToolStatusLabel 成功且无数据时返回 null）：
           否则与主文案的动词重复。成败由左侧 StatusIndicator 表达。 */}
       {statusLabel && (
-        <span className="text-zinc-500 text-xs flex-shrink-0">{statusLabel}</span>
+        <span className="text-zinc-500 text-xs flex-shrink-0">
+          {statusLabel}{status === 'interrupted' ? ' ·' : ''}
+        </span>
       )}
 
       {/* Target context icon — 让用户一眼认出"在操作哪个 app/服务" */}
@@ -119,7 +122,7 @@ export function ToolHeader({ toolCall, status, showDetailName = false }: Props) 
         <button
           type="button"
           data-testid="tool-header-open-preview"
-          className="text-zinc-200 font-semibold truncate min-w-0 text-left hover:text-white hover:underline underline-offset-2"
+          className={`${status === 'interrupted' ? 'text-zinc-500 font-normal hover:text-zinc-300' : 'text-zinc-200 font-semibold hover:text-white'} truncate min-w-0 text-left hover:underline underline-offset-2`}
           title={title}
           aria-label={t.toolStepHumanize.openPreviewAria.replace('{path}', filePath)}
           onClick={handleOpenPreview}
@@ -133,11 +136,15 @@ export function ToolHeader({ toolCall, status, showDetailName = false }: Props) 
         </button>
       ) : (
         <span
-          className="text-zinc-200 font-semibold truncate min-w-0"
+          className={`${status === 'interrupted' ? 'text-zinc-500 font-normal' : 'text-zinc-200 font-semibold'} truncate min-w-0`}
           title={title}
         >
           {displayName}
         </span>
+      )}
+
+      {status === 'interrupted' && (
+        <span className="shrink-0 text-zinc-600 text-xs font-normal">{t.toolStatus.notExecuted}</span>
       )}
 
       {showSecondaryName && (

@@ -24,3 +24,14 @@ describe('filterSystemTags — 未闭合 <think> 兜底', () => {
     expect(filterSystemTags(text)).toBe('正文');
   });
 });
+
+describe('filterSystemTags — 流式终止内部标记', () => {
+  it.each([
+    '[cancelled]',
+    '[未完成 — 切换会话中断]',
+  ])('旧会话正文含 %s 时只保留用户可见 partial', (marker) => {
+    const rendered = filterSystemTags(`已经写出的正文\n\n${marker}`);
+    expect(rendered).toBe('已经写出的正文');
+    expect(rendered).not.toContain(marker);
+  });
+});

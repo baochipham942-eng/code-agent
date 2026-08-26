@@ -73,7 +73,6 @@ import type { RewindConversationResult } from '@shared/contract/sessionRewind';
 import type { TurnCheckoutResult } from '@shared/contract/turnCheckout';
 import type { ConversationEnvelope, ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import { useI18n } from '../hooks/useI18n';
-import { localeForLanguage } from '../utils/i18nTime';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import { formatChannelSessionSource } from './features/chat/chatViewSessionSource';
@@ -86,7 +85,7 @@ import { findSearchMatchForPendingJump } from '../utils/sessionSearchJump';
 import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
 import { isDragPointInsideVisibleRect } from '../utils/dragBounds';
 import { findPendingPlanApproval, hasPlanApproval } from '../utils/planApprovalView';
-import { Image, AlertTriangle, MessageSquare, X } from 'lucide-react';
+import { Image, MessageSquare } from 'lucide-react';
 
 export const ChatView: React.FC = () => {
   const { t } = useI18n();
@@ -627,6 +626,17 @@ export const ChatView: React.FC = () => {
   // 之后新增的消息；跳过末尾合入的 recovery 消息（F4，id=snapshot.turnId）后，末位就是触发
   // 这轮的用户消息。取不到（数组为空或末位不是 user）就不重试。
   const retryTurnMessage = deriveRetryTurnMessage(streamSnapshot, messages);
+  const [interruptionPointInViewport, setInterruptionPointInViewport] = useState(true);
+  useEffect(() => {
+    // Virtuoso 首次回报可见范围前 fail closed：有中断快照时先当作中断点仍在视口，
+    // 避免追赶条抢在列表测量前闪现。
+    setInterruptionPointInViewport(Boolean(streamSnapshot));
+  }, [currentSessionId, streamSnapshot?.turnId]);
+  const streamInterruptionDecision = streamSnapshot && retryTurnMessage ? {
+    snapshot: streamSnapshot,
+    retryMessage: retryTurnMessage,
+    onContinue: async (message: Message) => handleSendMessage(message.content, message.attachments),
+  } : null;
 
   // 对话式建角色：入口（能力中心 · 专家 / AgentSwitcher）起新会话后写入种子消息，
   // 这里在新会话就绪后自动发出可见的种子消息，触发 create-role skill。
@@ -771,14 +781,6 @@ export const ChatView: React.FC = () => {
           onActiveMatchChange={handleActiveMatchChange}
         />
 
-        {streamSnapshot && (
-          <StreamRecoveryBanner
-            snapshot={streamSnapshot}
-            retryMessage={retryTurnMessage}
-            onSend={handleSendMessage}
-          />
-        )}
-
         {channelSessionSource && (
           <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/70 px-3 py-2 text-xs text-zinc-400">
             <MessageSquare className="h-3.5 w-3.5 text-zinc-500" />
@@ -787,7 +789,10 @@ export const ChatView: React.FC = () => {
         )}
 
         {/* 回会话追赶提示（A6）：离开期间产出变了什么，一句话 */}
-        <SessionRecapBanner sessionId={currentSessionId} />
+        <SessionRecapBanner
+          sessionId={currentSessionId}
+          interruptionPointInViewport={streamSnapshot ? interruptionPointInViewport : false}
+        />
 
         <ActiveConversationRewindBanner
           sessionId={currentSessionId}
@@ -848,6 +853,7 @@ export const ChatView: React.FC = () => {
                 activeMatchIndex={activeMatchIndex}
                 onRewindUserPrompt={handleRequestPromptRewind}
                 beforeFirstUserMessage={forkSourceHint}
+                onInterruptionPointVisibilityChange={setInterruptionPointInViewport}
               />
             </ErrorBoundary>
           )}
@@ -905,7 +911,7 @@ export const ChatView: React.FC = () => {
           {!hasPlanApprovalEvidence && <PinnedTodoBar plan={plan} sessionId={currentSessionId} />}
 
           {/* 当场拍板权限卡：固定在输入框上方，不随时间线滚动。 */}
-          <DecisionSlot />
+          <DecisionSlot streamInterruption={streamInterruptionDecision} />
 
           {/* 讨论流浮层已收进右侧「本会话的代理」面板的「事件」折叠区（N-L6-AGENTVIEW S2），
               输入框上方不再另起浮层 */}
@@ -1011,80 +1017,3 @@ export function deriveRetryTurnMessage(
   }
   return null;
 }
-
-export const StreamRecoveryBanner: React.FC<{
-  snapshot: StreamRecoverySnapshot;
-  /** 触发这轮中断的原始用户消息；找不到可靠锚点时为 null，不渲染重试按钮。 */
-  retryMessage: Message | null;
-  onSend: (content: string, attachments?: MessageAttachment[]) => Promise<boolean>;
-}> = ({ snapshot, retryMessage, onSend }) => {
-  const { t, language } = useI18n();
-  // 无现成 dismiss 通道（streamSnapshot 只在发新消息/切会话时被清空），本地记住已关闭
-  // 的 turnId 即可；换了新的未完成流（不同 turnId）时横幅照常重新出现。
-  const [dismissedTurnId, setDismissedTurnId] = useState<string | null>(null);
-  const [isRetrying, setIsRetrying] = useState(false);
-  const handleRetryClick = async () => {
-    if (!retryMessage || isRetrying) return;
-    setIsRetrying(true);
-    try {
-      await onSend(retryMessage.content, retryMessage.attachments);
-    } finally {
-      setIsRetrying(false);
-    }
-  };
-  const toolNames = snapshot.toolCalls
-    .map((toolCall) => toolCall.name || toolCall.id)
-    .filter(Boolean)
-    .slice(0, 3);
-  const extraCount = Math.max(0, snapshot.toolCalls.length - toolNames.length);
-  const timeLabel = new Date(snapshot.timestamp).toLocaleTimeString(localeForLanguage(language), {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-
-  if (dismissedTurnId === snapshot.turnId) {
-    return null;
-  }
-
-  return (
-    <div className="chat-col-pad pt-3">
-      {/* bar 内边距对齐 composer/摘要卡的 px-3：✕ 右缘 = −1(border)−12 = −13px，
-          与摘要卡 ∨、发送 ↑ 同一条右轨（现象 9）。 */}
-      <div className="max-w-3xl mx-auto flex items-start gap-3 rounded-lg border border-badge-warning/25 bg-amber-500/10 px-3 py-3 text-sm text-status-warning-soft">
-        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-status-warning-soft dark:text-badge-warning [.high-contrast-dark_&]:text-badge-warning" />
-        <div className="min-w-0 flex-1">
-          <div className="font-medium">{t.chat.streamInterruptedTitle}</div>
-          <div className="mt-1 text-status-warning-soft dark:text-status-warning-soft/80 [.high-contrast-dark_&]:text-status-warning-soft/80">
-            {snapshot.toolCalls.length > 0
-              ? t.chat.streamInterruptedToolCalls
-                  .replace('{count}', String(snapshot.toolCalls.length))
-                  .replace('{names}', `${toolNames.join(', ')}${extraCount ? ` +${extraCount}` : ''}`)
-              : t.chat.streamInterruptedText}
-          </div>
-          <div className="mt-1 text-xs text-status-warning-soft dark:text-status-warning-soft/60 [.high-contrast-dark_&]:text-status-warning-soft/60">
-            {timeLabel}
-          </div>
-          {retryMessage && (
-            <button
-              type="button"
-              onClick={handleRetryClick}
-              disabled={isRetrying}
-              className="mt-2 inline-flex items-center rounded-md border border-badge-warning/30 bg-amber-500/10 px-2 py-1 text-xs font-medium text-status-warning-soft transition-colors hover:bg-amber-500/20 disabled:cursor-wait disabled:opacity-70"
-            >
-              {isRetrying ? t.chat.retryTurnInProgress : t.chat.retryTurn}
-            </button>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => setDismissedTurnId(snapshot.turnId)}
-          className="shrink-0 rounded-md p-1 text-status-warning-soft/60 transition-colors hover:bg-white/[0.06] hover:text-status-warning-soft"
-          aria-label={t.common.close}
-          title={t.common.close}
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </div>
-  );
-};

@@ -102,7 +102,7 @@ describe('streamingStatePresentation', () => {
     expect(state.showCancelCleanup).toBe(true);
   });
 
-  it('marks paused and incomplete snapshots as resumable', () => {
+  it('内部状态仍标 resumable，但不再单独渲染橙卡', () => {
     const paused = buildStreamingUiState({
       t: zh,
       turn: makeTurn({ status: 'completed' }),
@@ -132,7 +132,7 @@ describe('streamingStatePresentation', () => {
 
     expect(paused.status).toBe('resumable');
     expect(snapshotted.status).toBe('resumable');
-    expect(snapshotted.showResumeHint).toBe(true);
+    expect(shouldShowStreamingState(snapshotted)).toBe(false);
     expect(hasIncompleteStreamSnapshot(makeSnapshot({ turnId: 'other-turn' }), interruptedTurn)).toBe(false);
     expect(hasIncompleteStreamSnapshot(makeSnapshot(), makeTurn())).toBe(false);
   });
@@ -173,7 +173,7 @@ describe('streamingStatePresentation', () => {
     expect(shouldShowStreamingState(state)).toBe(false);
   });
 
-  it('keeps cancelled turns visible after runtime cleanup', () => {
+  it('keeps the persisted cancellation marker internal and returns no run presentation', () => {
     const turn = makeTurn({
       status: 'completed',
       nodes: [
@@ -201,49 +201,22 @@ describe('streamingStatePresentation', () => {
     });
 
     expect(hasCancelledRunMarker(turn)).toBe(true);
-    expect(state.status).toBe('cancelled');
-    // 停止语义：停的是这次输出，不是这个任务的记忆。cancel() 会把已写出的内容连同
-    // [cancelled] 标记落库，所以文案必须说「保留」，不能再声称「未保留半截内容」。
-    // 这句话现在长在 run 徽章那一行，正文在它下面——不能再说「在上面」。
-    expect(state.detail).toContain('都留着');
-    expect(state.detail).not.toContain('在上面');
-    expect(state.detail).not.toContain('未保留');
-    // 这句解释由 run 徽章那一行的阶段位承担；大黄卡收起，停止态只留一条横幅。
+    expect(state.status).toBe('idle');
+    expect(state.label).toBe('');
+    expect(state.detail).toBe('');
     expect(shouldShowStreamingState(state)).toBe(false);
   });
 
-  // detail 长句此前跟 label 同一批硬编码中文，但只有 label 迁了键——en 用户会看到
-  // 英文 label + 中文 detail 混排。补上 en 态验证 detail 也走 turnRun.detail.* 键。
-  it('detail 跟 label 走同一套 t，不会出现 en label + zh detail 混排', () => {
-    const turn = makeTurn({
-      status: 'completed',
-      nodes: [
-        {
-          id: 'user-1',
-          type: 'user',
-          content: 'cancel this run',
-          timestamp: 1_000,
-          metadata: {
-            workbench: {
-              runCancellation: {
-                status: 'cancelled',
-                cancelledAt: 2_000,
-              },
-            },
-          },
-        },
-      ],
-    });
+  it('keeps a terminal cancelled session silent even while the turn still looks streaming', () => {
     const state = buildStreamingUiState({
       t: en,
-      turn,
-      isActiveTurn: false,
-      sessionStatus: 'idle',
+      turn: makeTurn({ status: 'streaming' }),
+      isActiveTurn: true,
+      sessionStatus: 'cancelled',
     });
 
-    expect(state.label).toBe(en.turnRun.status.cancelled);
-    expect(state.detail).toBe(en.turnRun.detail.cancelled);
-    expect(state.detail).not.toMatch(/[一-鿿]/);
+    expect(state.status).toBe('idle');
+    expect(shouldShowStreamingState(state)).toBe(false);
   });
 
   it('surfaces stale processing without replaying an old stream', () => {
@@ -267,16 +240,6 @@ describe('streamingStatePresentation', () => {
       label: '正在停止',
       tone: 'warning',
       shouldAnimate: true,
-    } as never)).toBe(false);
-  });
-
-  // 2026-08-01 验收截图：两条都写「已取消」的横幅上下叠着。
-  it('取消完成同样只留 run 徽章那一行', () => {
-    expect(shouldShowStreamingState({
-      status: 'cancelled',
-      label: '已取消',
-      tone: 'warning',
-      shouldAnimate: false,
     } as never)).toBe(false);
   });
 });

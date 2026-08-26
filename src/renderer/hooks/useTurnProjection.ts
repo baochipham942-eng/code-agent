@@ -18,6 +18,7 @@ import { isGoalNoticeContent } from '../components/features/chat/goalNotice';
 import { isModelFallbackNoticeContent } from '../components/features/chat/fallbackNotice';
 import { measureStreamingPerformanceTiming } from '../utils/streamingPerformanceMetrics';
 import { isToolResultEcho } from '../utils/toolResultEcho';
+import { isStreamRecoveryMessage } from '../utils/streamRecoveryMessage';
 
 type MessageModelDecision = NonNullable<Message['modelDecision']>;
 
@@ -227,6 +228,14 @@ export function projectTurns(
   let currentTurn: TraceTurn | null = null;
   let turnCounter = 0;
   const voiceArtifactAnchors = new Map<string, string>();
+  // recovery snapshot 是「未执行」的展示权威源。同一 tool call 可能同时残留一条
+  // success=false 的旧节点和一条 snapshot 在途节点；渲染只保留 snapshot 那条，
+  // 且整次中断收成一个时间线落点，不让同一 Write 同屏报失败又报中断。
+  const interruptedToolCallIds = new Set(
+    messages
+      .filter((message) => isStreamRecoveryMessage(message))
+      .flatMap((message) => (message.toolCalls ?? []).map((toolCall) => toolCall.id)),
+  );
   // 连续相同的模型路由决策只显示首个——agent 一个 turn 内多次 LLM 调用会各发一条
   // "用户选择 mimo"，重复刷没意义；模型变化（降级/角色档位）时 key 不同会照常显示。
   let lastModelDecisionKey: string | null = null;
@@ -516,6 +525,8 @@ export function projectTurns(
       if (!hasContent && !hasReasoning && !hasToolCalls && !hasAgentError) continue;
 
       const turn = currentTurn;
+      const recoveryMessage = isStreamRecoveryMessage(msg);
+      let recoveryToolProjected = false;
 
       // 一条 assistant 消息若因 content_parts 交错（text 穿插 tool_call）拆成多个
       // assistant_text 节点，思考只在这次模型回复里发生一次，只挂在第一个节点上，
@@ -553,6 +564,9 @@ export function projectTurns(
       };
 
       const pushToolCallNode = (tc: NonNullable<Message['toolCalls']>[number]) => {
+        if (!recoveryMessage && interruptedToolCallIds.has(tc.id)) return;
+        if (recoveryMessage && recoveryToolProjected) return;
+        if (recoveryMessage) recoveryToolProjected = true;
         turn.nodes.push({
           id: `${msg.id}-tc-${tc.id}`,
           type: 'tool_call',

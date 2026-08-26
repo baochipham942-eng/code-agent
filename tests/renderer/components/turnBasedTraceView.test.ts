@@ -27,6 +27,7 @@ import {
   getPrependAnchorScrollCorrection,
   TurnBasedTraceView,
 } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
+import { isTurnVisibleInRange } from '../../../src/renderer/utils/turnVisibility';
 
 const mocks = vi.hoisted(() => ({
   scrollToIndex: vi.fn(),
@@ -218,6 +219,20 @@ describe('TurnBasedTraceView focus helpers', () => {
 
   it('returns -1 when there are no turns', () => {
     expect(getFocusedTurnIndex(makeProjection(-1, 0))).toBe(-1);
+  });
+
+  it('用 Virtuoso 绝对可见范围判断中断 turn 是否仍在视口', () => {
+    const firstItemIndex = 1_000_000;
+    expect(isTurnVisibleInRange(
+      { startIndex: firstItemIndex + 1, endIndex: firstItemIndex + 3 },
+      2,
+      firstItemIndex,
+    )).toBe(true);
+    expect(isTurnVisibleInRange(
+      { startIndex: firstItemIndex + 1, endIndex: firstItemIndex + 3 },
+      4,
+      firstItemIndex,
+    )).toBe(false);
   });
 
   it('uses the active turn as the output follow target while streaming', () => {

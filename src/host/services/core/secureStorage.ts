@@ -45,6 +45,13 @@ function getKeychainSessionAccount(bundleId = process.env.CODE_AGENT_BUNDLE_ID):
     : KEYCHAIN_ACCOUNT_SESSION;
 }
 
+// 桌面 Web 后端此前因 CLI guard 完全不加载 keytar，因而从未读写全局 settings
+// account。启用 session Keychain 后继续保持这一边界，避免启动时触碰历史的全局
+// user-settings 条目；本单只恢复并分格登录 session。
+function canUseSettingsKeychain(): boolean {
+  return !process.env.CODE_AGENT_CLI_MODE && process.env.CODE_AGENT_WEB_MODE !== 'true';
+}
+
 // Storage keys use dot notation by design (e.g., 'supabase.session')
  
 interface SecureStorageData {
@@ -544,7 +551,7 @@ class SecureStorageService {
 
   // Save user settings to Keychain
   async saveSettingsToKeychain(settings: Record<string, unknown>): Promise<void> {
-    if (!keytar) return;
+    if (!keytar || !canUseSettingsKeychain()) return;
     try {
       await keytar.setPassword(
         KEYCHAIN_SERVICE,
@@ -558,7 +565,7 @@ class SecureStorageService {
 
   // Get user settings from Keychain
   async getSettingsFromKeychain(): Promise<Record<string, unknown> | null> {
-    if (!keytar) return null;
+    if (!keytar || !canUseSettingsKeychain()) return null;
     try {
       const settingsJson = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SETTINGS);
       if (settingsJson) {
@@ -573,7 +580,7 @@ class SecureStorageService {
 
   // Clear settings from Keychain (called when clearing cache)
   async clearSettingsFromKeychain(): Promise<void> {
-    if (!keytar) return;
+    if (!keytar || !canUseSettingsKeychain()) return;
     try {
       await keytar.deletePassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SETTINGS);
     } catch (e) {

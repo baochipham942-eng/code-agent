@@ -33,6 +33,7 @@ describe('SecureStorage Keychain session account', () => {
   const originalBundleId = process.env.CODE_AGENT_BUNDLE_ID;
   const originalCliMode = process.env.CODE_AGENT_CLI_MODE;
   const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
+  const originalWebMode = process.env.CODE_AGENT_WEB_MODE;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -41,6 +42,7 @@ describe('SecureStorage Keychain session account', () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'secure-storage-keychain-'));
     process.env.CODE_AGENT_DATA_DIR = dataDir;
     delete process.env.CODE_AGENT_CLI_MODE;
+    delete process.env.CODE_AGENT_WEB_MODE;
   });
 
   afterEach(() => {
@@ -50,6 +52,8 @@ describe('SecureStorage Keychain session account', () => {
     else process.env.CODE_AGENT_CLI_MODE = originalCliMode;
     if (originalDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
     else process.env.CODE_AGENT_DATA_DIR = originalDataDir;
+    if (originalWebMode === undefined) delete process.env.CODE_AGENT_WEB_MODE;
+    else process.env.CODE_AGENT_WEB_MODE = originalWebMode;
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
@@ -100,5 +104,27 @@ describe('SecureStorage Keychain session account', () => {
       'supabase-session',
       'production-session',
     );
+  });
+
+  it('uses Keytar for desktop web sessions without touching the global settings account', async () => {
+    process.env.CODE_AGENT_CLI_MODE = 'true';
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    process.env.CODE_AGENT_BUNDLE_ID = 'com.linchen.code-agent.dev';
+    const { getSecureStorage } = await import('../../../../src/host/services/core/secureStorage');
+    const storage = getSecureStorage();
+
+    await storage.saveSessionToKeychain('desktop-web-session');
+    await storage.saveSettingsToKeychain({ permissionMode: 'default' });
+    await expect(storage.getSettingsFromKeychain()).resolves.toBeNull();
+    await storage.clearSettingsFromKeychain();
+
+    expect(keytarMock.setPassword).toHaveBeenCalledOnce();
+    expect(keytarMock.setPassword).toHaveBeenCalledWith(
+      'code-agent',
+      'supabase-session:com.linchen.code-agent.dev',
+      'desktop-web-session',
+    );
+    expect(keytarMock.getPassword).not.toHaveBeenCalledWith('code-agent', 'user-settings');
+    expect(keytarMock.deletePassword).not.toHaveBeenCalledWith('code-agent', 'user-settings');
   });
 });

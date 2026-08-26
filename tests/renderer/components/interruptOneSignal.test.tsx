@@ -39,6 +39,7 @@ vi.mock('../../../src/renderer/utils/featureFlags', () => ({
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 import { TraceNodeRenderer } from '../../../src/renderer/components/features/chat/TraceNodeRenderer';
 import { DecisionSlot } from '../../../src/renderer/components/features/chat/DecisionSlot';
+import { ToolCallDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay';
 
 function snapshot(): StreamRecoverySnapshot {
   return {
@@ -123,5 +124,28 @@ describe('N-INTERRUPT-ONESIGNAL', () => {
     expect(document.body.textContent).not.toContain('可重新运行');
     expect(screen.queryByTestId('turn-run-header')).toBeNull();
     expect(screen.queryByTestId('streaming-state-banner')).toBeNull();
+  });
+
+  it('主动停止留下的原始 ToolCallDisplay 也只说已中断与未执行', () => {
+    render(
+      <ToolCallDisplay
+        toolCall={{
+          id: 'write-call-direct',
+          name: 'Write',
+          arguments: { file_path: '/workspace/主动停止.md', content: '...' },
+          shortDescription: '写入了一个文件',
+        }}
+        index={0}
+        total={1}
+      />,
+    );
+
+    const step = screen.getByTestId('interrupt-timeline-step');
+    expect(step.textContent).toContain('已中断');
+    expect(step.textContent).toContain('写入 /workspace/主动停止.md');
+    expect(step.textContent).toContain('未执行');
+    expect(step.textContent).not.toContain('写入了一个文件');
+    expect(step.textContent).not.toContain('会改文件');
+    expect(step.textContent).not.toContain('可重新运行');
   });
 });

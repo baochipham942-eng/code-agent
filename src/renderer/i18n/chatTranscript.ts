@@ -519,10 +519,9 @@ toolErrors: {
   },
 },
 
-// 工具恢复提示（ToolCallDisplay 的 getToolRecoveryHint，仅失败/中断/已产出场景展示）
+// 工具恢复提示（ToolCallDisplay 的 getToolRecoveryHint，仅等待/失败/已产出场景展示）
 toolRecoveryHint: {
   pending: '等待结果',
-  interrupted: '可重新运行',
   errorWithOutcome: '可重试：{outcome}',
   errorGeneric: '可以重试或换个工具',
   outputRecorded: '产物已记录',
@@ -1077,10 +1076,9 @@ toolErrors: {
 },
 
 // Tool recovery hint (ToolCallDisplay's getToolRecoveryHint, shown only for
-// failed/interrupted/output-produced states)
+// pending/failed/output-produced states)
 toolRecoveryHint: {
   pending: 'Waiting for result',
-  interrupted: 'Can be re-run',
   errorWithOutcome: 'Retry: {outcome}',
   errorGeneric: 'Retry, or try another tool',
   outputRecorded: 'Output recorded',

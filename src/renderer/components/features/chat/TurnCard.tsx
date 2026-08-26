@@ -1111,7 +1111,10 @@ export function shouldHideTurnRunHeader(statusKey: string, statusTone: string): 
     || statusKey === 'running'
     || statusKey === 'using_tools'
     || statusKey === 'waiting_tool'
-    || statusKey === 'resumable';
+    || statusKey === 'resumable'
+    // 主动停止后，未执行工具的灰字步骤行是唯一状态信号；再保留「已取消」横幅
+    // 会把同一次中断重新扩成两处提醒。
+    || statusKey === 'cancelled';
 }
 
 const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiState }> = ({ turn, streamingState }) => {

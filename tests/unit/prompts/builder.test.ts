@@ -33,6 +33,11 @@ import {
   TASK_TOOL_DESCRIPTION,
 } from '../../../src/host/prompts/tools';
 import { estimateTokens } from '../../../src/host/context/tokenEstimator';
+import {
+  detectCacheBreak,
+  splitAtDynamicBoundary,
+} from '../../../src/host/prompts/cacheBreakDetection';
+import { NON_PROGRAMMER_COMMUNICATION_CONTRACT } from '../../../src/host/prompts/communication';
 
 const promptText = (value: string): string => String(value);
 
@@ -89,6 +94,36 @@ describe('Prompt Builder', () => {
       expect(prompt).toContain("narrower scope, read-only, or that tool's approval parameter");
       expect(prompt).toContain('Never repeat the same action and parameters or escalate intrusiveness');
       expect(prompt).toContain('Report sanctioned-tool timeouts or failures; never silently bypass them');
+    });
+
+    it('should include the non-programmer communication contract in the stable prefix', () => {
+      const prompt = buildPrompt();
+      const [stablePrefix, dynamicSection] = splitAtDynamicBoundary(prompt);
+      const contract = promptText(NON_PROGRAMMER_COMMUNICATION_CONTRACT);
+
+      expect(prompt).toContain(contract);
+      expect(stablePrefix).toContain(contract);
+      expect(dynamicSection).not.toContain(contract);
+      expect(contract).toContain('说明做了什么、为什么这样做、对用户意味着什么');
+      expect(contract).toContain('最后一句必须是事实陈述，然后直接停止');
+      expect(contract).toContain('删除任何提议、条件式邀请、可点击下一步和问号');
+    });
+
+    it('keeps the communication contract cache-stable when per-turn content changes', () => {
+      const before = buildPrompt();
+      setTrustedRemotePromptFragments({
+        policyAddon: 'A per-turn policy fragment that changes the dynamic section.',
+      });
+      const after = buildPrompt();
+      const [beforeStable] = splitAtDynamicBoundary(before);
+      const [afterStable] = splitAtDynamicBoundary(after);
+
+      expect(after).not.toBe(before);
+      expect(afterStable).toBe(beforeStable);
+      expect(detectCacheBreak(before, after)).toEqual({
+        broken: false,
+        reason: 'cache stable',
+      });
     });
 
     it('should return consistent results across calls', () => {

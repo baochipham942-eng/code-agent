@@ -97,7 +97,7 @@ export function DecisionSlot() {
   return (
     <section
       aria-label={t.decisionCard.permission.slotLabel}
-      className="mx-auto max-h-[40vh] w-full max-w-3xl overflow-y-auto"
+      className="w-full shrink-0 chat-col-pad pb-2"
       data-testid="decision-slot"
     >
       <PermissionCard

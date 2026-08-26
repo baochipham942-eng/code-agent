@@ -127,10 +127,20 @@ describe('DecisionSlot', () => {
 
     render(<DecisionSlot />);
 
-    expect(screen.getByTestId('decision-slot').getAttribute('aria-label')).toBe('待你决定');
+    const slot = screen.getByTestId('decision-slot');
+    expect(slot.getAttribute('aria-label')).toBe('待你决定');
+    expect(slot.className).toContain('chat-col-pad');
+    expect(slot.className).not.toContain('overflow-y-auto');
     expect(screen.getByText('危险操作')).toBeTruthy();
     expect(screen.getByText('还有 2 项')).toBeTruthy();
     expect(screen.queryByText('创建文件')).toBeNull();
+    expect(screen.getByTestId('permission-card-details-scroll').className).toContain('overflow-y-auto');
+    expect(screen.getByTestId('permission-card-pinned-options').className).toContain('shrink-0');
+    expect(screen.getByTestId('permission-card-actions').className).toContain('shrink-0');
+    expect(screen.getByTestId('permission-card').className).not.toContain('px-4');
+    expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain(
+      'max-h-[calc(100dvh-12rem)]',
+    );
 
     fireEvent.click(screen.getByRole('button', { name: /允许一次/u }));
     fireEvent.click(screen.getByRole('button', { name: '确认' }));

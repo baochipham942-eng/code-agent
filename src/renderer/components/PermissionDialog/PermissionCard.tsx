@@ -584,6 +584,8 @@ export function PermissionCard({
     return (
       <DecisionCard
         testId="permission-card"
+        className="w-full animate-slideUp"
+        pinActions
         tone="neutral"
         icon={icon}
         title={title}
@@ -618,6 +620,8 @@ export function PermissionCard({
   return (
     <DecisionCard
       testId="permission-card"
+      className="w-full animate-slideUp"
+      pinActions
       tone={isDangerous ? 'danger' : 'neutral'}
       icon={icon}
       title={title}

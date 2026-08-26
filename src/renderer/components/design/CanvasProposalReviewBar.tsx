@@ -1,6 +1,6 @@
 // ADR-026 D2-A/三刀：画布提议审批条（DOM 浮层）。展示 agent 提议 + rationale，逐 op 勾选取舍，
 // 应用 / 拒绝（可带意见）。ghost 虚影（蓝=改/红=淘汰）由 CanvasProposalGhostLayer 画在画布上。
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Sparkles, Check, X, Trash2, Coins, AlertTriangle } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { Button } from '../primitives/Button';
@@ -124,11 +124,13 @@ export const CanvasProposalReviewBar: React.FC<{
   const s = t.design;
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   // per-op 取舍：默认全选（下标集）。
   const [selected, setSelected] = useState<Set<number>>(() => new Set(proposal.ops.map((_, i) => i)));
   // 新提议替换当前（条不卸载、props 变）时重置勾选为全选，否则沿用旧提议的选择致错配（H2）。
   useEffect(() => {
     setSelected(new Set(proposal.ops.map((_, i) => i)));
+    setCollapsed(false);
   }, [proposal.requestId, proposal.ops]);
 
   const formImageModel = useDesignStore((st) => st.imageModel);
@@ -158,16 +160,60 @@ export const CanvasProposalReviewBar: React.FC<{
   };
 
   // async-aware：等待 handler 完成再复位 busy（出错也复位，不把按钮永久锁死）。
-  const guard = (fn: () => void | Promise<void>) => async () => {
+  const applySelected = useCallback(async () => {
     if (busy) return;
     setBusy(true);
-    try { await fn(); } finally { setBusy(false); }
-  };
+    try { await onApply(selectedOps); } finally { setBusy(false); }
+  }, [busy, onApply, selectedOps]);
+  const rejectProposal = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    try { await onReject(feedback); } finally { setBusy(false); }
+  }, [busy, feedback, onReject]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || target?.isContentEditable
+      ) return;
+      if (event.key === 'Escape' && !collapsed) {
+        event.preventDefault();
+        event.stopPropagation();
+        setCollapsed(true);
+        return;
+      }
+      if (event.key === 'Enter' && !collapsed && selectedOps.length > 0 && !busy) {
+        event.preventDefault();
+        event.stopPropagation();
+        void applySelected();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [applySelected, busy, collapsed, selectedOps.length]);
+
+  if (collapsed) {
+    return (
+      <div
+        data-testid="canvas-proposal-collapsed"
+        className="pointer-events-auto absolute bottom-4 right-4 z-30 flex items-center gap-2 rounded-lg border-2 border-badge-info/60 bg-surface-primary px-3 py-2 shadow-2xl"
+      >
+        <Sparkles className="h-3.5 w-3.5 text-badge-info" />
+        <span className="text-xs text-zinc-300">{s.proposalTitle}</span>
+        <Button size="sm" variant="ghost" onClick={() => setCollapsed(false)}>
+          {s.proposalExpand}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div
       data-testid="canvas-proposal-bar"
-      className="pointer-events-auto absolute bottom-4 left-1/2 z-30 w-[min(640px,92%)] -translate-x-1/2 rounded-xl border border-badge-info/30 bg-zinc-900/95 p-3 shadow-xl backdrop-blur"
+      className="pointer-events-auto absolute bottom-4 left-1/2 z-30 w-[min(640px,92%)] -translate-x-1/2 rounded-lg border-2 border-badge-info/60 bg-surface-primary p-3 shadow-2xl"
     >
       <div className="flex items-start gap-2">
         <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-badge-info" />
@@ -240,21 +286,22 @@ export const CanvasProposalReviewBar: React.FC<{
         </div>
       ) : null}
       <div className="mt-2 flex items-center justify-end gap-2">
-        <button
+        <Button
           type="button"
           data-testid="proposal-reject"
-          onClick={guard(() => onReject(feedback))}
+          variant="ghost"
+          size="sm"
+          onClick={rejectProposal}
           disabled={busy}
-          className="inline-flex items-center gap-1 rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/[0.06] disabled:opacity-50"
+          leftIcon={<X className="h-3.5 w-3.5" />}
         >
-          <X className="h-3.5 w-3.5" />
           {feedback.trim() ? s.proposalRejectWithFeedback : s.proposalReject}
-        </button>
+        </Button>
         <Button
           type="button"
           data-testid="proposal-apply"
           size="sm"
-          onClick={guard(() => onApply(selectedOps))}
+          onClick={applySelected}
           disabled={selected.size === 0}
           loading={busy}
           leftIcon={<Check className="h-3.5 w-3.5" />}

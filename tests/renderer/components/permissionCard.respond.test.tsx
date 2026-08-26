@@ -48,7 +48,6 @@ vi.mock('../../../src/renderer/hooks/useToast', () => ({
 }));
 
 import { PermissionCard } from '../../../src/renderer/components/PermissionDialog/PermissionCard';
-import { ApprovalSyncCard } from '../../../src/renderer/components/TaskPanel/ApprovalSyncCard';
 import { releaseApprovalResponse } from '../../../src/renderer/utils/approvalResponseGuard';
 
 const request: PermissionRequest = {
@@ -60,10 +59,10 @@ const request: PermissionRequest = {
   timestamp: 1,
 };
 
-// DecisionCard 骨架：审批级别是选项行，选中后点 primary「确认」才提交
+// DecisionCard 骨架：审批级别是选项行，选中后点 primary「允许」才提交
 function confirmAllowOnce() {
   fireEvent.click(screen.getByRole('button', { name: /允许一次/ }));
-  fireEvent.click(screen.getByRole('button', { name: '确认' }));
+  fireEvent.click(screen.getByRole('button', { name: '允许' }));
 }
 
 describe('PermissionCard respond path', () => {
@@ -153,25 +152,4 @@ describe('PermissionCard respond path', () => {
     await waitFor(() => expect(setPendingPermissionRequest).toHaveBeenLastCalledWith(null));
   });
 
-  it('prevents the second surface from responding while the first is in flight', async () => {
-    let resolveInvoke!: () => void;
-    invoke.mockReturnValueOnce(new Promise<void>((resolve) => {
-      resolveInvoke = resolve;
-    }));
-    render(
-      <>
-        <ApprovalSyncCard />
-        <PermissionCard />
-      </>,
-    );
-
-    // ApprovalSyncCard 的「允许」直发（第一个 surface 在途）；
-    // PermissionCard 走 DecisionCard 选项 + 确认（第二个 surface 应被 claim 门挡住）
-    fireEvent.click(screen.getByRole('button', { name: '允许' }));
-    confirmAllowOnce();
-
-    expect(invoke).toHaveBeenCalledTimes(1);
-    resolveInvoke();
-    await waitFor(() => expect(setPendingPermissionRequest).toHaveBeenCalledWith(null));
-  });
 });

@@ -4,9 +4,9 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ChevronRight, ChevronDown } from 'lucide-react';
+import { ChevronRight, ChevronDown, RotateCcw } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
-import type { ToolCall, ToolLiveOutput } from '@shared/contract';
+import type { PermissionRequest, ToolCall, ToolLiveOutput } from '@shared/contract';
 import { findConnectorIdForToolName } from '@shared/contract/workbenchTools';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { summarizeTool } from './MessageBubble/ToolCallDisplay/summarizers';
@@ -29,6 +29,10 @@ import { getPlanApprovalRecord } from '../../../utils/planApprovalView';
 import { PlanApprovalEvidence } from '../../PlanApprovalCard';
 import { isDelegationTool } from '../../../utils/agentActivity';
 import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
+import { useAppStore } from '../../../stores/appStore';
+import { useMessageActionStore } from '../../../stores/messageActionStore';
+import { Button } from '../../primitives/Button';
+import { redactCredentialText } from '@shared/security/secretPatterns';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
@@ -39,6 +43,8 @@ interface ToolStepGroupProps {
   isStreamingTurn?: boolean;
 }
 
+const EMPTY_RESOLVED_PERMISSION_REQUESTS: PermissionRequest[] = [];
+
 export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   nodes,
   sessionId,
@@ -46,6 +52,10 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   isStreamingTurn = false,
 }) => {
   const { t } = useI18n();
+  const sendPrompt = useMessageActionStore((state) => state.sendPrompt);
+  const resolvedPermissionRequests = useAppStore((state) => (
+    sessionId ? state.resolvedPermissionRequests?.[sessionId] : undefined
+  )) ?? EMPTY_RESOLVED_PERMISSION_REQUESTS;
   // 主流可见节点：过滤 ToolSearch 等纯内部动作（仍可在混合组的展开明细里看到）
   const streamVisibleNodes = useMemo(
     () => nodes.filter((n) => {
@@ -143,6 +153,39 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       })
       .filter((x): x is ToolCall => !!x);
   }, [nodes]);
+  const permissionEvidence = useMemo(() => resolvedPermissionRequests.flatMap((request) => {
+    if (!request.parentToolUseId) return [];
+    const node = nodes.find((candidate) => candidate.toolCall?.id === request.parentToolUseId);
+    const toolCall = node?.toolCall;
+    if (!toolCall) return [];
+
+    const p = t.decisionCard.permission;
+    const requestDetails = request.details as Record<string, unknown>;
+    const denied = request.decision === 'deny' || request.decision === 'never';
+    const timedOut = request.decision === 'timeout';
+    const statusLabel = timedOut ? p.settledTimeout : denied ? p.settledDenied : p.settledAllowed;
+    const humanizedStep = humanizeToolStep(
+      request.tool,
+      requestDetails,
+      t,
+      toolCall.shortDescription,
+      denied || timedOut,
+      toolCall.stepLabel,
+    );
+    const connectorLabel = getHumanToolLabel({
+      toolName: request.tool,
+      labels: t.receiptPresentation.humanToolLabels,
+    });
+    const subject = typeof requestDetails.subject === 'string' ? requestDetails.subject.trim() : '';
+    const stepLabel = request.tool === 'tmeetMeetingCreate'
+      ? `${p.writeback.tmeetCreateTitle}${subject ? ` ${subject}` : ''}`
+      : connectorLabel !== request.tool && !humanizedStep.includes(connectorLabel)
+        ? `${connectorLabel} · ${humanizedStep}`
+        : humanizedStep;
+    const details = redactCredentialText(JSON.stringify(request.details, null, 2));
+
+    return [{ request, statusLabel, stepLabel, details, timedOut }];
+  }), [nodes, resolvedPermissionRequests, t]);
   const planApproval = useMemo(
     () => toolCalls.map(getPlanApprovalRecord).find((record) => record !== null) ?? null,
     [toolCalls],
@@ -312,6 +355,34 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           </span>
         )}
       </button>
+
+      {permissionEvidence.map(({ request, statusLabel, stepLabel, details, timedOut }) => (
+        <div
+          key={request.id}
+          className="ml-4 flex items-start gap-2 pl-3 text-[11px] leading-5 text-zinc-500"
+          data-testid="permission-decision-evidence"
+        >
+          <details className="min-w-0 flex-1" data-testid="permission-decision-details">
+            <summary className="cursor-pointer list-none truncate hover:text-zinc-300">
+              {statusLabel} · {stepLabel}
+            </summary>
+            <pre className="mt-1 max-h-40 overflow-auto rounded-md border border-border-subtle bg-surface-primary px-2 py-1.5 text-[10px] leading-4 text-zinc-500">
+              {details}
+            </pre>
+          </details>
+          {timedOut && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-5 shrink-0 px-1.5 py-0 text-[10px]"
+              leftIcon={<RotateCcw className="h-3 w-3" />}
+              onClick={() => void sendPrompt(t.decisionCard.permission.retryPrompt)}
+            >
+              {t.decisionCard.permission.retry}
+            </Button>
+          )}
+        </div>
+      ))}
 
       {tier === 'truncated' && (
         <div className="ml-4 mt-1 space-y-1 pl-3">

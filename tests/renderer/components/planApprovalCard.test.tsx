@@ -144,7 +144,7 @@ describe('PlanApprovalCard', () => {
       status: 'approved',
       steps: [{ id: 'step-1', content: 'Read host code', originalContent: 'Read code', edited: true }],
     }} />);
-    const row = screen.getByRole('button', { name: /已批准/ });
+    const row = screen.getByRole('button', { name: /已允许/ });
     expect(row.className).toContain('text-badge-success');
     expect(screen.queryByText('Read host code')).toBeNull();
     fireEvent.click(row);

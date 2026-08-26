@@ -814,7 +814,8 @@ export const App: React.FC = () => {
   // E-3: 右栏 TaskPanel「按需展开」。只用右栏能承载的真实内容信号
   //（待办/任务/后台/swarm/workflow）；权限请求已固定在 composer 上方，不再拉起空右栏。
   // 决定自动展开，不再因为会话处于 thinking/processing 这类瞬时运行态就展开——否则未开始/
-  // 纯思考阶段会出现「没内容却占地」。活动结束只清活动标记，已打开的概览保留本轮结果。
+  // 纯思考阶段会出现「没内容却占地」。权限请求固定在输入框上方，不再拉起右栏；活动结束
+  // 只清活动标记，已打开的概览保留本轮结果。
   const hasTaskWorkbenchContent = (
     hasOpenSessionTask
     || hasOpenTodo

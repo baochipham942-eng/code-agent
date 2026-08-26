@@ -38,7 +38,7 @@ export function SurfacePermissionCard({ session, copy, language }: SurfacePermis
   return (
     <section
       data-testid="surface-permission-card"
-      className="rounded-lg border border-white/[0.06] bg-black/10 p-3"
+      className="rounded-lg border-2 border-border-subtle bg-surface-primary p-3 shadow-2xl"
     >
       <div className="flex items-center justify-between gap-2">
         <h4 className="text-[11px] font-medium text-zinc-300">{copy.permission.title}</h4>
@@ -50,7 +50,7 @@ export function SurfacePermissionCard({ session, copy, language }: SurfacePermis
           {grant.capabilities.map((capability) => (
             <span
               key={capability}
-              className="rounded border border-white/[0.06] bg-white/[0.025] px-1.5 py-0.5 text-[10px] text-zinc-400"
+              className="rounded border border-border-subtle bg-surface-subtle px-1.5 py-0.5 text-[10px] text-zinc-400"
             >
               {copy.permission.capability[capability]}
             </span>
@@ -69,7 +69,7 @@ export function SurfacePermissionCard({ session, copy, language }: SurfacePermis
       </div>
 
       {isReadonly && (
-        <p className="mt-2 border-t border-white/[0.04] pt-2 text-[10px] leading-4 text-zinc-600">
+        <p className="mt-2 border-t border-border-subtle pt-2 text-[10px] leading-4 text-zinc-600">
           {copy.permission.readonly}
         </p>
       )}

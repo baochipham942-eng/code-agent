@@ -2,6 +2,7 @@ import type { ToolSchema } from '../../../protocol/tools';
 
 export const tmeetMeetingCreateSchema: ToolSchema = {
   name: 'tmeetMeetingCreate',
+  stepLabel: { default: 'tmeetMeetingCreate' },
   description: `Create a Tencent Meeting through the official tmeet CLI.
 
 Required: subject, start, end. Times must be ISO 8601 with timezone.

@@ -236,7 +236,7 @@ export function parseClaudeResponse(raw: unknown): ModelResponse {
     const toolCalls: ToolCall[] = toolUseBlocks.map((b) => ({
       id: b.id,
       name: b.name,
-      ...extractToolCallMeta(b.input ?? {}),
+      ...extractToolCallMeta(b.input ?? {}, b.name),
     }));
     const response: ModelResponse = { type: 'tool_use', toolCalls, ...(usage ? { usage } : {}) };
     // content blocks 已是真实顺序：按序合成 contentParts，保留 text/tool 交错，并带回前导文本。

@@ -117,3 +117,76 @@ describe('ToolStepGroup — 探索性失败默认折叠，需介入的失败默�
     expect(html).toContain('bg-red-400/[0.05]');
   });
 });
+
+describe('ToolStepGroup — 连接器组头与步骤行说人话', () => {
+  function tmeetNode(
+    name: 'tmeetMeetingList' | 'tmeetMeetingCreate' | 'tmeetMeetingSearch',
+    stepLabel: 'tmeetMeetingListUpcoming' | 'tmeetMeetingListEnded' | 'tmeetMeetingCreate' | 'tmeetMeetingSearch',
+    args: Record<string, unknown> = {},
+  ): TraceNode {
+    nid += 1;
+    return {
+      id: `tmeet-tool-${nid}`,
+      type: 'tool_call',
+      content: '',
+      timestamp: nid,
+      toolCall: {
+        id: `tmeet-call-${nid}`,
+        name,
+        args,
+        shortDescription: `Use ${name}`,
+        stepLabel,
+        success: true,
+        result: 'ok',
+      },
+    };
+  }
+
+  it('单步组头直接给连接器名和 scope 对应的人话句', () => {
+    const html = renderToStaticMarkup(
+      <ToolStepGroup nodes={[
+        tmeetNode('tmeetMeetingList', 'tmeetMeetingListEnded', { scope: 'ended' }),
+      ]} />,
+    );
+
+    expect(html).toContain('腾讯会议 · 查了近 30 天已结束的会议');
+    expect(html).not.toContain('tmeetMeetingList');
+  });
+
+  it('多步组头只给连接器名和步骤数', () => {
+    const html = renderToStaticMarkup(
+      <ToolStepGroup nodes={[
+        tmeetNode('tmeetMeetingList', 'tmeetMeetingListUpcoming'),
+        tmeetNode('tmeetMeetingSearch', 'tmeetMeetingSearch'),
+      ]} />,
+    );
+
+    expect(html).toContain('腾讯会议 · 执行了 2 个步骤');
+    expect(html).not.toMatch(/tmeetMeeting(List|Search)/);
+  });
+
+  it('语义 UI 门关闭时，连接器组头仍不回退到内部名', () => {
+    vi.stubGlobal('window', {
+      localStorage: { getItem: (key: string) => key === 'cca.semanticToolUI' ? 'false' : null },
+    });
+    try {
+      const html = renderToStaticMarkup(
+        <ToolStepGroup nodes={[
+          tmeetNode('tmeetMeetingCreate', 'tmeetMeetingCreate'),
+        ]} />,
+      );
+      expect(html).toContain('腾讯会议 · 创建了一场会议');
+      expect(html).not.toContain('tmeetMeetingCreate');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('非连接器继续使用现有人话模板', () => {
+    const html = renderToStaticMarkup(
+      <ToolStepGroup nodes={[toolNode('Read', true)]} />,
+    );
+    expect(html).toContain('读取了一个文件');
+    expect(html).not.toContain('Read 执行了一个步骤');
+  });
+});

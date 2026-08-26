@@ -1,9 +1,11 @@
-import type { ToolCallTargetContext } from '../../../shared/contract';
+import type { ToolCallTargetContext, ToolStepLabelKey } from '../../../shared/contract';
+import { resolveProtocolToolStepLabel } from '../../tools/protocolToolRegistration';
 import { logger } from './providerRuntime';
 
 export interface ExtractedToolCallMeta {
   arguments: Record<string, unknown>;
   shortDescription?: string;
+  stepLabel?: ToolStepLabelKey;
   targetContext?: ToolCallTargetContext;
   expectedOutcome?: string;
 }
@@ -21,9 +23,18 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * Only a plain object contributes semantic fields; malformed values are stripped and
  * reported so provider drift stays observable without turning into a tool failure.
  */
-export function extractToolCallMeta(rawArguments: unknown): ExtractedToolCallMeta {
+export function extractToolCallMeta(
+  rawArguments: unknown,
+  toolName: string,
+): ExtractedToolCallMeta {
   const args = isPlainObject(rawArguments) ? { ...rawArguments } : {};
-  if (!Object.prototype.hasOwnProperty.call(args, '_meta')) return { arguments: args };
+  const stepLabel = resolveProtocolToolStepLabel(toolName, args);
+  if (!Object.prototype.hasOwnProperty.call(args, '_meta')) {
+    return {
+      arguments: args,
+      ...(stepLabel !== undefined && { stepLabel }),
+    };
+  }
 
   const meta = args._meta;
   delete args._meta;
@@ -32,7 +43,10 @@ export function extractToolCallMeta(rawArguments: unknown): ExtractedToolCallMet
     logger.warn('[extractToolCallMeta] Ignoring invalid tool-call _meta envelope', {
       receivedType: meta === null ? 'null' : Array.isArray(meta) ? 'array' : typeof meta,
     });
-    return { arguments: args };
+    return {
+      arguments: args,
+      ...(stepLabel !== undefined && { stepLabel }),
+    };
   }
 
   const shortDescription = typeof meta.shortDescription === 'string'
@@ -48,6 +62,7 @@ export function extractToolCallMeta(rawArguments: unknown): ExtractedToolCallMet
   return {
     arguments: args,
     ...(shortDescription !== undefined && { shortDescription }),
+    ...(stepLabel !== undefined && { stepLabel }),
     ...(targetContext !== undefined && { targetContext }),
     ...(expectedOutcome !== undefined && { expectedOutcome }),
   };

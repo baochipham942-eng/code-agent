@@ -7,6 +7,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
 import type { ToolCall, ToolLiveOutput } from '@shared/contract';
+import { findConnectorIdForToolName } from '@shared/contract/workbenchTools';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { summarizeTool } from './MessageBubble/ToolCallDisplay/summarizers';
 import { computeBashPreviewLines } from './MessageBubble/ToolCallDisplay/bashOutputPreview';
@@ -27,6 +28,7 @@ import { getDeferredContentStyle } from '../../../utils/turnContentVisibility';
 import { getPlanApprovalRecord } from '../../../utils/planApprovalView';
 import { PlanApprovalEvidence } from '../../PlanApprovalCard';
 import { isDelegationTool } from '../../../utils/agentActivity';
+import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
@@ -56,18 +58,35 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     if (streamVisibleNodes.length === 0) return '';
     if (streamVisibleNodes.length === 1) {
       const tc = streamVisibleNodes[0].toolCall;
-      if (tc) return humanizeToolStep(
-        tc.name,
-        tc.args as Record<string, unknown> | undefined,
-        t,
-        tc.shortDescription,
-        // 已失败的调用不再用过去时肯定式，避免与状态词同屏矛盾（结果语义交给状态词）
-        tc.result !== undefined && tc.success === false,
-      );
+      if (tc) {
+        const step = humanizeToolStep(
+          tc.name,
+          tc.args as Record<string, unknown> | undefined,
+          t,
+          tc.shortDescription,
+          // 已失败的调用不再用过去时肯定式，避免与状态词同屏矛盾（结果语义交给状态词）
+          tc.result !== undefined && tc.success === false,
+          tc.stepLabel,
+        );
+        if (!findConnectorIdForToolName(tc.name)) return step;
+        const connector = getHumanToolLabel({
+          toolName: tc.name,
+          labels: t.receiptPresentation.humanToolLabels,
+        });
+        return `${connector} · ${step}`;
+      }
     }
     const names = streamVisibleNodes
       .map((n) => n.toolCall?.name)
       .filter((x): x is string => !!x);
+    const connectorIds = new Set(names.map(findConnectorIdForToolName).filter(Boolean));
+    if (connectorIds.size === 1 && names.every((name) => findConnectorIdForToolName(name))) {
+      const connector = getHumanToolLabel({
+        toolName: names[0],
+        labels: t.receiptPresentation.humanToolLabels,
+      });
+      return `${connector} · ${t.toolGroup.executedSteps.replace('{count}', String(names.length))}`;
+    }
     return humanizeToolGroupLabel(names, t);
   }, [streamVisibleNodes, t]);
 
@@ -102,6 +121,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           arguments: tc.args,
           _streaming: tc._streaming,
           shortDescription: tc.shortDescription,
+          stepLabel: tc.stepLabel,
           targetContext: tc.targetContext,
           expectedOutcome: tc.expectedOutcome,
           liveOutput: tc.liveOutput,

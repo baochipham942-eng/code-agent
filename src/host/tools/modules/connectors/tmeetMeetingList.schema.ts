@@ -2,6 +2,13 @@ import type { ToolSchema } from '../../../protocol/tools';
 
 export const tmeetMeetingListSchema: ToolSchema = {
   name: 'tmeetMeetingList',
+  stepLabel: {
+    default: 'tmeetMeetingListUpcoming',
+    variant: {
+      argument: 'scope',
+      values: { ended: 'tmeetMeetingListEnded' },
+    },
+  },
   description: `List Tencent Meetings through the official tmeet CLI. Choose scope by the user's meaning:
 - scope="upcoming" (default): meetings that are waiting to start or in progress. Use for upcoming/current meetings. If start/end are omitted, keep the CLI default range.
 - scope="ended": historical meetings that already ended. Always use this for “历史会议”, “已结束”, “最近开过”, or recent past meetings. If start is omitted, the tool automatically searches from exactly 30 days before now; do not invent a wider window.

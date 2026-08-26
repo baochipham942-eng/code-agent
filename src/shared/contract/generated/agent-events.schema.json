@@ -585,6 +585,15 @@
         "shortDescription": {
           "type": "string"
         },
+        "stepLabel": {
+          "type": "string",
+          "enum": [
+            "tmeetMeetingListUpcoming",
+            "tmeetMeetingListEnded",
+            "tmeetMeetingCreate",
+            "tmeetMeetingSearch"
+          ]
+        },
         "targetContext": {
           "type": "object",
           "properties": {

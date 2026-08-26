@@ -243,7 +243,7 @@ export function parseOpenAIResponse(raw: unknown): ModelResponse {
         return { type: 'text', content };
       }
 
-      const extracted = extractToolCallMeta(args);
+      const extracted = extractToolCallMeta(args, normalizedName);
       toolCalls.push({
         id: tc.id,
         name: normalizedName,
@@ -294,7 +294,7 @@ export function parseOpenAIResponse(raw: unknown): ModelResponse {
     const args = safeJsonParse(argsStr);
     if (!args.__parseError) {
       logger.info(' Parsed text-based tool call:', toolName);
-      const extracted = extractToolCallMeta(args);
+      const extracted = extractToolCallMeta(args, toolName);
       return {
         type: 'tool_use',
         toolCalls: [

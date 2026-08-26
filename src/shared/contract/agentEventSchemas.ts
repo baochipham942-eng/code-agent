@@ -85,6 +85,12 @@ const toolCallSchema: z.ZodType<ToolCall> = typed<ToolCall>(z.object({
   _streaming: z.boolean().optional(),
   _argumentsRaw: z.string().optional(),
   shortDescription: z.string().optional(),
+  stepLabel: z.enum([
+    'tmeetMeetingListUpcoming',
+    'tmeetMeetingListEnded',
+    'tmeetMeetingCreate',
+    'tmeetMeetingSearch',
+  ]).optional(),
   targetContext: z.object({
     kind: z.enum(['app', 'browser', 'mcp_server', 'file', 'memory']).optional(),
     label: z.string().optional(),

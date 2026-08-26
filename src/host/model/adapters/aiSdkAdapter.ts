@@ -726,7 +726,7 @@ async function generateViaAiSdk(params: {
     name: tc.name,
     // AI SDK 是 custom provider（含 Token Rhythm / DeepSeek）的真实入口；这里必须与
     // 手写 provider wrapper 共用同一个 envelope 解析器，避免 `_meta` 落入业务参数。
-    ...extractToolCallMeta(tc.input),
+    ...extractToolCallMeta(tc.input, tc.name),
   }));
 
   logger.debug('inferenceViaAiSdk done', {
@@ -817,7 +817,7 @@ function buildStreamResponse(acc: StreamAccumulator, config: ModelConfig): Model
       id: t.id,
       name: t.name,
       // 权威 input（已解析对象）优先；provider 未在 tool-call 给 input 时回落解析累积的 argsText。
-      ...extractToolCallMeta(t.input ?? safeParse(t.argsText)),
+      ...extractToolCallMeta(t.input ?? safeParse(t.argsText), t.name),
     }));
 
   logger.debug('inferenceViaAiSdk done', {

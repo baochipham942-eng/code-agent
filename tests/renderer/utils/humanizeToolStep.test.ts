@@ -204,6 +204,15 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
   it('shortDescription wins over the template when it matches the UI language', () => {
     expect(humanizeToolStep('some_future_tool', {}, zh, '做了一件事')).toBe('做了一件事');
   });
+
+  it.each([
+    ['tmeetMeetingList', { scope: 'upcoming' }, 'tmeetMeetingListUpcoming', '查了待开始/进行中的会议'],
+    ['tmeetMeetingList', { scope: 'ended' }, 'tmeetMeetingListEnded', '查了近 30 天已结束的会议'],
+    ['tmeetMeetingCreate', {}, 'tmeetMeetingCreate', '创建了一场会议'],
+    ['tmeetMeetingSearch', {}, 'tmeetMeetingSearch', '搜索了会议'],
+  ] as const)('schema stepLabel: %s 使用本地化人话句', (name, args, stepLabel, expected) => {
+    expect(humanizeToolStep(name, args, zh, 'Use internal tool', false, stepLabel)).toBe(expected);
+  });
 });
 
 // 模型自写的 shortDescription 语种不受控（工具 schema 的示例本身就是英文），

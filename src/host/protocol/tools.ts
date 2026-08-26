@@ -21,6 +21,7 @@ import type {
   ToolDescriptionContext as SharedToolDescriptionContext,
   ToolEmissionDescriptor,
   ToolPathAuthorityDescriptor,
+  ToolStepLabelDeclaration,
 } from '@shared/contract';
 import type {
   ConversationExecutionIntent,
@@ -61,6 +62,8 @@ export interface ToolSchema {
   readonly description: string;
   /** 动态描述，运行时计算（例如注入当前日期）。有则优先于 description */
   readonly dynamicDescription?: (ctx?: ToolDescriptionContext) => string;
+  /** 用户可见步骤行的稳定语义声明；具体中英文文案由 renderer i18n 提供。 */
+  readonly stepLabel?: ToolStepLabelDeclaration;
   readonly inputSchema: JSONSchema;
   /** 工具成功产出的 JSON Schema。 */
   readonly outputSchema: JSONSchema;

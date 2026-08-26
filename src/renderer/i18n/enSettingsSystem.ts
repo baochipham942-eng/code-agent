@@ -194,6 +194,7 @@ export const enSettingsSystem = {
           activePrefix: 'Frontend UI is using v',
           builtin: 'Frontend UI is using the bundled version',
           appliedPrefix: 'Frontend UI hot-updated to v',
+          stagedPrefix: 'Frontend hot update downloaded; restart to use v',
           rolledBack: 'Frontend hot update rolled back to the bundled version',
           alreadyCurrentPrefix: 'Frontend UI is already on hot update v',
           shellTooOldPrefix: 'Frontend hot update needs shell v',

@@ -37,6 +37,7 @@ import type { PlanningService } from '../host/planning';
 import { SYSTEM_PROMPT } from '../host/prompts/builder';
 import { applyProviderVariant } from '../host/prompts/providerVariants';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, getModelMaxOutputTokens } from '../shared/constants';
+import { resolveConfiguredDefaultProvider } from '../shared/modelDefaults';
 import { SWARM_TRACE } from '../shared/constants/storage';
 import { composeTelemetryAdapters } from '../host/agent/metricsCollector';
 import { FileSwarmTraceRepository } from '../host/services/core/repositories/FileSwarmTraceRepository';
@@ -427,7 +428,8 @@ export function buildCLIConfig(options: {
     : process.cwd();
 
   // 模型配置：优先级 options > settings.models.* > 常量
-  const provider = (options.provider || settings.models?.defaultProvider || DEFAULT_PROVIDER) as ModelConfig['provider'];
+  const provider = (options.provider as ModelConfig['provider'] | undefined)
+    ?? resolveConfiguredDefaultProvider(settings.models, DEFAULT_PROVIDER);
   const providerCfg = settings.models?.providers?.[provider];
   const model = options.model || providerCfg?.model || DEFAULT_MODELS.chat;
 

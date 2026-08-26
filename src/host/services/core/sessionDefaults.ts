@@ -3,7 +3,7 @@
 // ============================================================================
 //
 // 复用 src/cli/bootstrap.ts:212 buildCLIConfig 的优先级：
-//   args > settings.models.providers[p] > settings.models.defaultProvider > constants
+//   args > settings.models.providers[p] > settings.models.default > legacy alias > constants
 //
 // audit B5 follow-up（艾克斯 review MED1）：webServer.ts 和 routes/sessions.ts
 // 之前直写 DEFAULT_PROVIDER + DEFAULT_MODELS.chat 绕过了 user settings，
@@ -17,6 +17,7 @@ import {
   getModelMaxOutputTokens,
 } from '../../../shared/constants';
 import type { ModelConfig, ModelProvider } from '../../../shared/contract';
+import { resolveConfiguredDefaultProvider } from '../../../shared/modelDefaults';
 import { getConfigService } from './configService';
 
 export interface SessionDefaultArgs {
@@ -41,7 +42,8 @@ export function resolveSessionDefaultModelConfig(args: SessionDefaultArgs = {}):
     };
   };
 
-  const provider = (args.provider || settings.models?.defaultProvider || settings.models?.default || DEFAULT_PROVIDER) as ModelProvider;
+  const provider = (args.provider as ModelProvider | undefined)
+    ?? resolveConfiguredDefaultProvider(settings.models, DEFAULT_PROVIDER);
   const providerCfg = settings.models?.providers?.[provider];
   const model = args.model || providerCfg?.model || getDefaultModelForProvider(provider) || DEFAULT_MODELS.chat;
 

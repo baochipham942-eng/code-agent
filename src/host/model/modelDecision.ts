@@ -28,7 +28,7 @@ import type {
   ModelToolPolicy,
 } from '../../shared/contract/modelDecision';
 import type { ModelMessage } from './types';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
 import {
   formatProviderProtocolLabel,
   isDynamicCustomProviderId,
@@ -36,6 +36,8 @@ import {
 } from '../../shared/modelRuntime';
 import { getAdaptiveRouter, type TaskComplexity } from './adaptiveRouter';
 import { getProviderHealthMonitor } from './providerHealthMonitor';
+import { getConfigService } from '../services/core/configService';
+import { resolveConfiguredDefaultProvider } from '../../shared/modelDefaults';
 
 const logger = createLogger('ModelDecision');
 
@@ -57,6 +59,8 @@ export interface ModelDecisionInput {
   providerSettings?: Record<string, ModelDecisionProviderSettings>;
   /** 全局任务策略。传入后，main-chat adaptive 会按策略 profile 路由。 */
   taskStrategy?: TaskModelStrategySettings;
+  /** config `models.default`；仅用于区分默认路径与真实会话级手动选择。 */
+  defaultProvider?: ModelProvider;
 }
 
 export interface ModelDecisionResult {
@@ -506,10 +510,10 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
   }
 
   // ---- 2. 主聊天：adaptive 关闭 → 直连 ----
-  // 默认模型（用户从未手动改过）不应标成「用户选择」，否则 trace chip 会误报
-  // “用户选择 mimo”。只有真正切到非默认模型才算 user-selected。
+  // 默认 provider（用户从未手动改过）不应标成「用户选择」，否则 trace chip 会误报。
+  // 只有真正切到非默认 provider 才算 user-selected。
   if (requestedConfig.adaptive !== true) {
-    const directReason: ModelDecisionReason = isDefaultModelConfig(requestedConfig)
+    const directReason: ModelDecisionReason = isDefaultModelConfig(requestedConfig, input.defaultProvider)
       ? 'default-model'
       : 'user-selected';
     return {
@@ -565,7 +569,7 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
   }
 
   // ---- 4. 其余情况：保持请求模型（adaptive 开但未触发路由）----
-  const keepReason: ModelDecisionReason = isDefaultModelConfig(requestedConfig)
+  const keepReason: ModelDecisionReason = isDefaultModelConfig(requestedConfig, input.defaultProvider)
     ? 'default-model'
     : 'user-selected';
   return {
@@ -574,7 +578,18 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
   };
 }
 
-/** 是否为应用默认模型（用户从未手动切换过）。用于把默认路径与真实用户选择区分开。 */
-function isDefaultModelConfig(config: ModelConfig): boolean {
-  return config.provider === DEFAULT_PROVIDER && config.model === DEFAULT_MODEL;
+/** provider 与 config 默认一致时，不把默认路径误标成会话级用户选择。 */
+function isDefaultModelConfig(config: ModelConfig, defaultProvider?: ModelProvider): boolean {
+  let configuredDefault = defaultProvider;
+  if (!configuredDefault) {
+    try {
+      configuredDefault = resolveConfiguredDefaultProvider(
+        getConfigService().getSettings().models,
+        DEFAULT_PROVIDER,
+      );
+    } catch {
+      configuredDefault = DEFAULT_PROVIDER;
+    }
+  }
+  return config.provider === configuredDefault;
 }

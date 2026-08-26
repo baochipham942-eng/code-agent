@@ -305,10 +305,8 @@ export interface AppState {
   }>;
   workbenchSessionKey: string | null;
   /**
-   * 右栏整栏收起。视图切换器模型下「关闭」的对象是整栏，不再是单个视图。
-   * 写点三处（2026-07-30 第四波④对账）：setWorkbenchCollapsed（用户点击）、
-   * openWorkbenchTab（打开视图即带出右栏；auto 源尊重 workbenchCollapsedByUser）、
-   * syncWorkbenchForSession（全新会话落地强制回默认收起，防 collapsed 跨会话泄漏成空 launcher）。
+   * 右栏整栏收起。页签全部关闭时整栏自动收起；打开视图则带出右栏。
+   * auto 源仍尊重 workbenchCollapsedByUser，避免用户主动收起后被旧活动信号弹回。
    */
   workbenchCollapsed: boolean;
   /**
@@ -321,6 +319,7 @@ export interface AppState {
   workbenchCollapsedByUser: boolean;
   taskWorkbenchOpenSource: WorkbenchOpenSource | null;
   taskWorkbenchActivityActive: boolean;
+  taskWorkbenchActivityKeysBySession: Record<string, string>;
 
   // 跨 panel 跳转高亮：ContextPanel → SkillsPanel 点击 source 时设置
   // nonce 用于同一目标重复触发时强制 effect 重跑
@@ -447,7 +446,7 @@ export interface AppState {
   closeWorkbenchTab: (id: WorkbenchTabId) => void;
   setActiveWorkbenchTab: (id: WorkbenchTabId | null) => void;
   setWorkbenchCollapsed: (collapsed: boolean) => void;
-  syncTaskWorkbenchForActivity: (hasActivity: boolean) => void;
+  syncTaskWorkbenchForActivity: (sessionId: string | null, activityKey: string | null) => void;
   setWorkbenchHighlight: (highlight: Omit<WorkbenchHighlight, 'nonce'> | null) => void;
   updatePreviewTabContent: (id: string, content: string) => void;
   updatePreviewTabMode: (id: string, mode: 'preview' | 'source' | 'edit') => void;
@@ -576,6 +575,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   workbenchCollapsedByUser: false,
   taskWorkbenchOpenSource: null,
   taskWorkbenchActivityActive: false,
+  taskWorkbenchActivityKeysBySession: {},
   workbenchHighlight: null,
 
   // Initial Permission Request State
@@ -1047,26 +1047,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   }),
 
   setWorkbenchCollapsed: (collapsed) => set({ workbenchCollapsed: collapsed, workbenchCollapsedByUser: collapsed }),
-
-  syncTaskWorkbenchForActivity: (hasActivity) => {
-    const state = get();
-
-    if (hasActivity) {
-      if (!state.taskWorkbenchActivityActive && !state.workbenchTabs.includes('overview')) {
-        state.openWorkbenchTab('task', { source: 'auto' });
-        set({ taskWorkbenchActivityActive: true, taskPanelTab: 'monitor' });
-        return;
-      }
-      if (!state.taskWorkbenchActivityActive) {
-        set({ taskWorkbenchActivityActive: true });
-      }
-      return;
-    }
-
-    if (state.taskWorkbenchActivityActive) {
-      set({ taskWorkbenchActivityActive: false });
-    }
-  },
 
   setWorkbenchHighlight: (highlight) =>
     set({

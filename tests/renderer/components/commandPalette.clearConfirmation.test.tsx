@@ -106,7 +106,7 @@ describe('CommandPalette clear-chat confirmation', () => {
   });
 
   it.each([
-    ['概览', 'overview'],
+    ['任务', 'overview'],
     ['文件', 'files'],
     ['浏览器', 'browser'],
     ['设计画布', 'design-canvas'],

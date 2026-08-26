@@ -6,9 +6,10 @@
 // ============================================================================
 
 export const sessionInspectorZh = {
-  tabLabel: '检查器',
-  overviewTabLabel: '概览',
-  title: '会话检查器',
+  tabLabel: '日志',
+  overviewTabLabel: '任务',
+  title: '会话日志',
+  viewProcess: '查看过程',
   noSession: '先打开一个会话，再来看它干得怎么样。',
   stateMissing: '这个会话还没有账本记录。早期会话或纯闲聊不会留下记录。',
   stateEmpty: '账本已经建立，但还没有写入内容。',
@@ -117,9 +118,10 @@ export const sessionInspectorZh = {
 };
 
 export const sessionInspectorEn: typeof sessionInspectorZh = {
-  tabLabel: 'Inspector',
-  overviewTabLabel: 'Overview',
-  title: 'Session Inspector',
+  tabLabel: 'Logs',
+  overviewTabLabel: 'Task',
+  title: 'Session logs',
+  viewProcess: 'View process',
   noSession: 'Open a session first to see how it went.',
   stateMissing: 'This session has no ledger records yet. Older sessions or pure chats leave none.',
   stateEmpty: 'The ledger exists but nothing has been written yet.',

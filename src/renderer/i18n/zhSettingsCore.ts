@@ -530,8 +530,8 @@ export const zhSettingsCore = {
           description: '显示或隐藏工作区面板',
         },
         'statusRail.toggle': {
-          label: '切换概览',
-          description: '显示或隐藏右侧概览视图',
+          label: '切换任务',
+          description: '显示或隐藏右侧任务页',
         },
         'browser.open': {
           label: '打开浏览器视图',

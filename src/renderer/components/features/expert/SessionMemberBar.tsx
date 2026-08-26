@@ -6,8 +6,8 @@
 //      这个团队由谁组成（WorkBuddy 不做这一步，只在真 spawn 后才铺；我们多给一层可预期性）
 //   2) 运行时：会话真的跑起来了（持久化账本/API 回灌）—— 带状态
 // 08-22 拍板：常态只渲染一条折叠 chip「N 个代理工作中 · 当前一句」+ 尾部「合没合」
-// 总账 +「›」，不再有 pill 展开态；点 chip 打开右侧「本会话的代理」面板
-// （TaskPanel 第三页签），停止全部 / token / 成员 pill 都搬进了面板。
+// 总账 +「›」，不再有 pill 展开态；点 chip 直达右侧「专家」一级页签，
+// 停止全部 / token / 成员 pill 都留在原专家内容面板。
 // ============================================================================
 
 import React, { useEffect, useMemo } from 'react';
@@ -17,7 +17,6 @@ import { useComposerStore } from '../../../stores/composerStore';
 import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { useSessionStore } from '../../../stores/sessionStore';
-import { useTaskPanelViewStore } from '../../../stores/taskPanelViewStore';
 import { useI18n } from '../../../hooks/useI18n';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
@@ -28,11 +27,12 @@ import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetai
 import { useSessionAgentRows } from '../../../hooks/useSessionAgentRows';
 import { deriveAgentMergeState } from '../../../utils/agentMergeState';
 import type { AgentRow } from '../../../utils/agentRows';
+import { useRightPanelTabsStore } from '../../../stores/rightPanelTabsStore';
 
-/** 打开右侧「本会话的代理」面板：切 TaskPanel 页签 + 确保右栏展开。 */
-function openSessionAgentsPanel(): void {
-  useTaskPanelViewStore.getState().setView('agents');
-  useAppStore.getState().openWorkbenchTab('overview', { source: 'user' });
+/** 打开右侧「专家」一级页签。 */
+function openSessionAgentsPanel(sessionId: string | null): void {
+  if (sessionId) useRightPanelTabsStore.getState().setExpertsDismissed(sessionId, false);
+  useAppStore.getState().openWorkbenchTab('experts', { source: 'user' });
 }
 
 export function swarmRunAgentRecordToState(record: SwarmRunAgentRecord): SwarmAgentState {
@@ -207,7 +207,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
     <button /* ds-allow:button: 折叠 chip 是整行摘要入口（头像叠+两行信息），Button primitive 无此形态 */
       type="button"
       data-testid="session-member-bar-collapsed"
-      onClick={openSessionAgentsPanel}
+      onClick={() => openSessionAgentsPanel(sessionId)}
       className="mb-1.5 flex w-full items-center gap-1.5 px-2 text-left text-[11px] text-zinc-500 hover:text-zinc-300"
     >
       <span className="flex -space-x-1.5">

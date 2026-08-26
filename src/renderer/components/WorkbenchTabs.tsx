@@ -5,7 +5,7 @@
 // 直接对齐 FileExplorerPanel 的 TabBar 现成样式（tab × ｜ ＋ ｜ 收起）：
 // - tab = 已开视图（当前高亮 bg-zinc-800），hover tab 显 ×（脏预览先确认）；
 // - 「＋」弹出可打开视图列表（复用 WorkbenchViewLauncher popover 形态）；
-// - 概览/文件等常驻视图可关语义沿用旧下拉（每个视图都可关，不新发明）；
+// - 任务/日志/专家与既有按需视图统一沿用 tab 关闭语义；
 // - 右侧「收起面板」不动（D5 去重后的唯一收起 affordance）。
 //
 // 结构（批P 返工第二波）：tab 条收敛进共享壳 RailTabShell（样式制度唯一真源，
@@ -20,7 +20,11 @@ import {
   Globe2,
   LayoutDashboard,
   Palette,
+  Pin,
+  PinOff,
   Plus,
+  ScrollText,
+  Sparkles,
   TerminalSquare,
   X,
   type LucideIcon,
@@ -41,6 +45,8 @@ import { ConfirmDialog } from './composites/ConfirmDialog';
 import { RailTabShell } from './composites/RailTabShell';
 import { IconButton } from './primitives/IconButton';
 import { artifactFollowKey, useArtifactFollowStore } from '../stores/artifactFollowStore';
+import { useSessionAgentRows } from '../hooks/useSessionAgentRows';
+import { useRightPanelTabsStore } from '../stores/rightPanelTabsStore';
 
 const PREVIEW_PREFIX = 'preview:';
 
@@ -50,9 +56,7 @@ interface LaunchableViewDefinition {
   id: LaunchableWorkbenchViewId;
   icon: LucideIcon;
   iconClassName: string;
-  // 必填：每个视图入口都要有「打开这个视图」的 action，新增视图时漏配会在这里编译报错，
-  // 而不是静默变成「别的视图有键、它没有」。
-  keybindingActionId: KeybindingActionId;
+  keybindingActionId?: KeybindingActionId;
 }
 
 const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
@@ -61,6 +65,16 @@ const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
     icon: LayoutDashboard,
     iconClassName: 'text-badge-info/80',
     keybindingActionId: 'statusRail.toggle',
+  },
+  {
+    id: 'logs',
+    icon: ScrollText,
+    iconClassName: 'text-badge-info/80',
+  },
+  {
+    id: 'experts',
+    icon: Sparkles,
+    iconClassName: 'text-badge-accent/80',
   },
   {
     id: 'files',
@@ -109,6 +123,7 @@ interface TabMeta {
 interface WorkbenchViewLauncherProps {
   openedViews: WorkbenchViewId[];
   canOpenDesignCanvas: boolean;
+  hasExperts: boolean;
   mode: 'empty' | 'popover';
   onOpen: (id: LaunchableWorkbenchViewId) => void;
 }
@@ -116,15 +131,23 @@ interface WorkbenchViewLauncherProps {
 const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
   openedViews,
   canOpenDesignCanvas,
+  hasExperts,
   mode,
   onOpen,
 }) => {
   const { t } = useI18n();
   const { keybindings, platform } = useKeybindingsSettings();
-  const availableViews = LAUNCHABLE_VIEWS.filter((view) => !openedViews.includes(view.id));
+  const availableViews = LAUNCHABLE_VIEWS.filter((view) => (
+    view.id === 'overview'
+    || view.id === 'logs'
+    || view.id === 'experts'
+    || !openedViews.includes(view.id)
+  ));
 
   const labelFor = (id: LaunchableWorkbenchViewId): string => {
     if (id === 'overview') return t.workbenchTabs.overviewLabel;
+    if (id === 'logs') return t.workbenchTabs.logsLabel;
+    if (id === 'experts') return t.workbenchTabs.expertsLabel;
     if (id === 'files') return t.workbenchTabs.filesLabel;
     if (id === 'browser') return t.workbenchTabs.browserLabel;
     if (id === 'terminal') return t.workbenchTabs.terminal.label;
@@ -135,6 +158,10 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
   const descriptionFor = (id: LaunchableWorkbenchViewId): string => {
     const d = t.workbenchTabs.viewDescriptions;
     if (id === 'overview') return d.overview;
+    if (id === 'logs') return d.logs;
+    if (id === 'experts') {
+      return hasExperts ? d.experts : `${d.experts} · ${t.workbenchTabs.noExperts}`;
+    }
     if (id === 'files') return d.files;
     if (id === 'browser') return d.browser;
     if (id === 'terminal') return d.terminal;
@@ -158,17 +185,21 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
         <div className="space-y-1" role="list" aria-label={t.workbenchTabs.availableViews}>
           {availableViews.map((view) => {
             const Icon = view.icon;
-            const accelerator = getKeybindingAccelerator(keybindings, view.keybindingActionId, platform);
+            const accelerator = view.keybindingActionId
+              ? getKeybindingAccelerator(keybindings, view.keybindingActionId, platform)
+              : null;
             const shortcut = accelerator
               ? formatShortcutForDisplay(accelerator, platform)
               : null;
-            const isDisabled = view.id === 'design-canvas' && !canOpenDesignCanvas;
+            const isDisabled = (view.id === 'design-canvas' && !canOpenDesignCanvas)
+              || (view.id === 'experts' && !hasExperts);
             return (
               <div key={view.id} role="listitem">
                 <button /* ds-allow:button: Codex 式整行视图入口，Button primitive 的居中动作布局不适配 */
                   type="button"
                   data-testid={`open-workbench-view-${view.id}`}
                   disabled={isDisabled}
+                  title={view.id === 'experts' && !hasExperts ? t.workbenchTabs.noExperts : undefined}
                   onClick={() => onOpen(view.id)}
                   className={`flex w-full items-center gap-3 rounded-lg text-left text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 ${
                     mode === 'empty' ? 'px-4 py-3 text-sm' : 'px-3 py-2 text-xs'
@@ -199,6 +230,27 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
   );
 };
 
+/** 常驻于 App：空右栏时 WorkbenchTabs 未挂载，专家出现仍要能自动开页。 */
+export const ExpertWorkbenchAutoOpen: React.FC = () => {
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const workbenchTabs = useAppStore((state) => state.workbenchTabs);
+  const openWorkbenchTab = useAppStore((state) => state.openWorkbenchTab);
+  const expertsDismissed = useRightPanelTabsStore((state) => (
+    currentSessionId ? Boolean(state.expertsDismissedBySession[currentSessionId]) : false
+  ));
+  const { rows } = useSessionAgentRows(currentSessionId);
+
+  useEffect(() => {
+    if (!currentSessionId || rows.length === 0 || expertsDismissed || workbenchTabs.includes('experts')) return;
+    openWorkbenchTab('experts', {
+      source: 'auto',
+      activate: workbenchTabs.length === 0,
+    });
+  }, [currentSessionId, rows.length, expertsDismissed, workbenchTabs, openWorkbenchTab]);
+
+  return null;
+};
+
 export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: boolean }> = ({ children, focusable = false }) => {
   const { t } = useI18n();
   const workbenchTabs = useAppStore((s) => s.workbenchTabs);
@@ -206,12 +258,18 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
   const previewTabs = useAppStore((s) => s.previewTabs);
   const closeWorkbenchTab = useAppStore((s) => s.closeWorkbenchTab);
   const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
+  const developerMode = useAppStore((s) => s.developerMode);
+  const logsPinned = useRightPanelTabsStore((s) => s.logsPinned);
+  const setLogsPinned = useRightPanelTabsStore((s) => s.setLogsPinned);
+  const setExpertsDismissed = useRightPanelTabsStore((s) => s.setExpertsDismissed);
   // 专注模式（2026-08-01 工单①）：只在右栏独立成列时（App 传 focusable）提供开关；
   // 窄屏 workbench 借住在聊天列里，没有「收起聊天列」的对象，不给开关。
   // 状态在 workbenchFocusStore（不塞进 appStore：god-file 棘轮红线，且只是布局瞬时态）。
   const workbenchFocused = useWorkbenchFocusStore((s) => s.workbenchFocused);
   const setWorkbenchFocused = useWorkbenchFocusStore((s) => s.setWorkbenchFocused);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const { rows: expertRows } = useSessionAgentRows(currentSessionId);
+  const hasExperts = expertRows.length > 0;
   const artifactFollowEntries = useArtifactFollowStore((s) => s.entries);
   const clearArtifactFollowAttention = useArtifactFollowStore((s) => s.clearAttention);
   // 二期 N2：浏览器页签动态显示当前页标题（无页面回落「浏览器」）。
@@ -232,6 +290,9 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
   const [menuOpen, setMenuOpen] = useState(false);
   const [pendingClose, setPendingClose] = useState<TabMeta | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!developerMode && logsPinned) setLogsPinned(false);
+  }, [developerMode, logsPinned, setLogsPinned]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -257,6 +318,26 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
         title: t.workbenchTabs.overviewTitle,
         icon: LayoutDashboard,
         iconClassName: 'text-badge-info/80',
+        isDirty: false,
+      };
+    }
+    if (id === 'logs') {
+      return {
+        id,
+        label: t.workbenchTabs.logsLabel,
+        title: t.workbenchTabs.logsTitle,
+        icon: ScrollText,
+        iconClassName: 'text-badge-info/80',
+        isDirty: false,
+      };
+    }
+    if (id === 'experts') {
+      return {
+        id,
+        label: t.workbenchTabs.expertsLabel,
+        title: t.workbenchTabs.expertsTitle,
+        icon: Sparkles,
+        iconClassName: 'text-badge-accent/80',
         isDirty: false,
       };
     }
@@ -319,7 +400,9 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
   });
 
   const activeMeta = metas.find((meta) => meta.id === activeWorkbenchTab) ?? metas[0] ?? null;
-  const canAddAny = LAUNCHABLE_VIEWS.some((view) => !workbenchTabs.includes(view.id));
+  const canAddAny = LAUNCHABLE_VIEWS.some((view) => (
+    view.id === 'overview' || view.id === 'logs' || view.id === 'experts' || !workbenchTabs.includes(view.id)
+  ));
 
   // 最后一个 tab 关掉后专注态没有对象——退回侧栏态，否则空 launcher 占满整窗且没有退出开关。
   useEffect(() => {
@@ -331,15 +414,18 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
       if (!currentSessionId) return;
       claimDesignCanvasForSession(currentSessionId);
     }
+    if (id === 'experts' && currentSessionId) setExpertsDismissed(currentSessionId, false);
     openWorkbenchTab(id, { source: 'user' });
     setMenuOpen(false);
   };
 
   const requestClose = (meta: TabMeta) => {
+    if (meta.id === 'logs' && logsPinned) return;
     if (meta.isDirty) {
       setPendingClose(meta);
       return;
     }
+    if (meta.id === 'experts' && currentSessionId) setExpertsDismissed(currentSessionId, true);
     closeWorkbenchTab(meta.id);
   };
 
@@ -352,6 +438,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
       <WorkbenchViewLauncher
         openedViews={workbenchTabs}
         canOpenDesignCanvas={Boolean(currentSessionId)}
+        hasExperts={hasExperts}
         mode="empty"
         onOpen={openView}
       />
@@ -388,18 +475,38 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
                   aria-hidden
                 />
               )}
-              <button /* ds-allow:button: tab 内 10px 超小关闭钮（对齐 FileExplorerPanel TabBar 的 ×），primitive 变体不适配 */
-                type="button"
-                aria-label={t.workbenchTabs.closeView.replace('{view}', meta.label)}
-                title={t.workbenchTabs.closeView.replace('{view}', meta.label)}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  requestClose(meta);
-                }}
-                className="flex-shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-zinc-700 focus-visible:opacity-100 group-hover:opacity-100"
-              >
-                <X className="h-2.5 w-2.5" />
-              </button>
+              {meta.id === 'logs' && developerMode && (
+                <button /* ds-allow:button: tab 内 10px 钉住钮，尺寸与关闭钮同槽 */
+                  type="button"
+                  data-testid="workbench-logs-pin"
+                  aria-pressed={logsPinned}
+                  aria-label={logsPinned ? t.workbenchTabs.unpinLogs : t.workbenchTabs.pinLogs}
+                  title={logsPinned ? t.workbenchTabs.unpinLogs : t.workbenchTabs.pinLogs}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setLogsPinned(!logsPinned);
+                  }}
+                  className={`flex-shrink-0 rounded p-0.5 transition-opacity hover:bg-zinc-700 focus-visible:opacity-100 group-hover:opacity-100 ${
+                    logsPinned ? 'text-badge-warning' : 'opacity-0'
+                  }`}
+                >
+                  {logsPinned ? <Pin className="h-2.5 w-2.5" /> : <PinOff className="h-2.5 w-2.5" />}
+                </button>
+              )}
+              {!(meta.id === 'logs' && logsPinned) && (
+                <button /* ds-allow:button: tab 内 10px 超小关闭钮（对齐 FileExplorerPanel TabBar 的 ×），primitive 变体不适配 */
+                  type="button"
+                  aria-label={t.workbenchTabs.closeView.replace('{view}', meta.label)}
+                  title={t.workbenchTabs.closeView.replace('{view}', meta.label)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    requestClose(meta);
+                  }}
+                  className="flex-shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-zinc-700 focus-visible:opacity-100 group-hover:opacity-100"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              )}
             </>
           ),
         }))}
@@ -432,6 +539,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
             <WorkbenchViewLauncher
               openedViews={workbenchTabs}
               canOpenDesignCanvas={Boolean(currentSessionId)}
+              hasExperts={hasExperts}
               mode="popover"
               onOpen={openView}
             />

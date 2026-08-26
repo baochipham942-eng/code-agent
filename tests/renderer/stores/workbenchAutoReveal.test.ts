@@ -20,6 +20,7 @@ beforeEach(() => {
     activeWorkbenchTab: null,
     taskWorkbenchActivityActive: false,
     taskWorkbenchOpenSource: null,
+    taskWorkbenchActivityKeysBySession: {},
   });
 });
 
@@ -31,15 +32,15 @@ describe('右栏按需出现', () => {
   });
 
   it('B：产品默认收起态下，任务开跑把右栏带出来', () => {
-    useAppStore.getState().syncTaskWorkbenchForActivity(true);
+    useAppStore.getState().syncTaskWorkbenchForActivity('session-1', 'task-1');
     expect(useAppStore.getState().workbenchCollapsed).toBe(false);
     // 'task' 已退役，resolveWorkbenchDeepLink 把它重定向到 'overview'（workbenchViews.ts:37-39）
     expect(useAppStore.getState().workbenchTabs).toContain('overview');
   });
 
   it('审批关闭、轮结束后仍保留本轮概览', () => {
-    useAppStore.getState().syncTaskWorkbenchForActivity(true);
-    useAppStore.getState().syncTaskWorkbenchForActivity(false);
+    useAppStore.getState().syncTaskWorkbenchForActivity('session-1', 'task-1');
+    useAppStore.getState().syncTaskWorkbenchForActivity('session-1', null);
 
     expect(useAppStore.getState()).toMatchObject({
       workbenchTabs: ['overview'],
@@ -53,7 +54,7 @@ describe('右栏按需出现', () => {
     useAppStore.getState().setWorkbenchCollapsed(true);
     expect(useAppStore.getState().workbenchCollapsedByUser).toBe(true);
 
-    useAppStore.getState().syncTaskWorkbenchForActivity(true);
+    useAppStore.getState().syncTaskWorkbenchForActivity('session-1', 'task-1');
     expect(useAppStore.getState().workbenchCollapsed).toBe(true);
   });
 
@@ -63,7 +64,7 @@ describe('右栏按需出现', () => {
     expect(useAppStore.getState().workbenchCollapsedByUser).toBe(false);
 
     useAppStore.setState({ workbenchCollapsed: true, workbenchTabs: [], taskWorkbenchActivityActive: false });
-    useAppStore.getState().syncTaskWorkbenchForActivity(true);
+    useAppStore.getState().syncTaskWorkbenchForActivity('session-1', 'task-1');
     expect(useAppStore.getState().workbenchCollapsed).toBe(false);
   });
 

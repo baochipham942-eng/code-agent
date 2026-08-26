@@ -9,7 +9,11 @@ import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const invokeMock = vi.fn();
 const invokeDomainMock = vi.fn();
-const appState = { openWorkspacePreview: vi.fn(), openWorkbenchTab: vi.fn() };
+const appState = {
+  openWorkspacePreview: vi.fn(),
+  openWorkbenchTab: vi.fn(),
+  workbenchTabs: [] as string[],
+};
 const swarmState: {
   agents: SwarmAgentState[];
   activeSessionId: string | undefined;
@@ -38,8 +42,8 @@ import { useComposerStore } from '../../../src/renderer/stores/composerStore';
 import { useTeamRecipeStore } from '../../../src/renderer/stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../src/renderer/stores/agentRegistryStore';
 import { useMemberViewStore } from '../../../src/renderer/stores/memberViewStore';
-import { useTaskPanelViewStore } from '../../../src/renderer/stores/taskPanelViewStore';
 import { useBackgroundTaskStore } from '../../../src/renderer/stores/backgroundTaskStore';
+import { useRightPanelTabsStore } from '../../../src/renderer/stores/rightPanelTabsStore';
 
 const agents: SwarmRunAgentRecord[] = [
   { runId: 'run-1', agentId: 'researcher', name: '调研员', role: 'researcher', status: 'completed', startTime: 1, endTime: 4_001, durationMs: 4_000, tokensIn: 12, tokensOut: 34, toolCalls: 5, costUsd: 0.002, error: null, failureCategory: null, filesChanged: [], dispatchedTask: '核对数据', finalOutput: `${'完整持久化产出'.repeat(40)} 收尾证据` },
@@ -77,12 +81,13 @@ describe('SessionMemberBar（折叠 chip）', () => {
     invokeDomainMock.mockReset();
     invokeDomainMock.mockResolvedValue(null);
     appState.openWorkbenchTab.mockReset();
+    appState.workbenchTabs = [];
     useComposerStore.setState({ selectedTeamRecipeId: null, standbyExcludedMemberKeys: [] });
     useTeamRecipeStore.setState({ recipes: [], isLoaded: true });
     useAgentRegistryStore.setState({ entries: [], isLoaded: true });
     useMemberViewStore.setState({ viewingMemberId: null });
-    useTaskPanelViewStore.setState({ view: 'overview' });
     useBackgroundTaskStore.setState({ tasks: [] });
+    useRightPanelTabsStore.setState({ expertsDismissedBySession: {} });
   });
   afterEach(() => cleanup());
 
@@ -105,14 +110,15 @@ describe('SessionMemberBar（折叠 chip）', () => {
     expect(screen.getByTestId('role-initial-avatar-writer')).toBeTruthy();
   });
 
-  it('点 chip 打开右侧「本会话的代理」面板（切页签 + 展开右栏）', async () => {
+  it('点 chip 直达右侧「专家」一级页签', async () => {
     mockLedger(completedDetail);
 
     render(<SessionMemberBar sessionId="session-1" />);
     fireEvent.click(await screen.findByTestId('session-member-bar-collapsed'));
 
-    expect(useTaskPanelViewStore.getState().view).toBe('agents');
-    expect(appState.openWorkbenchTab).toHaveBeenCalledWith('overview', { source: 'user' });
+    expect(appState.openWorkbenchTab).toHaveBeenCalledWith('experts', { source: 'user' });
+    expect(appState.openWorkbenchTab).toHaveBeenCalledTimes(1);
+    expect(appState.openWorkbenchTab).not.toHaveBeenCalledWith('overview', expect.anything());
     // 点 chip 不再进入某个成员的对话页（那是面板行的事）
     expect(useMemberViewStore.getState().viewingMemberId).toBeNull();
   });

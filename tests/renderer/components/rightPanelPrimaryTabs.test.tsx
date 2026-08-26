@@ -42,7 +42,7 @@ beforeEach(() => {
     logsTargetTurn: null,
     logsTargetNonce: 0,
     logsPinned: false,
-    expertsAutoOpenedBySession: {},
+    expertsDismissedBySession: {},
   });
   useSessionStore.setState({ currentSessionId: 'session-1' });
 });
@@ -78,6 +78,10 @@ describe('right panel primary task/logs/experts tabs', () => {
     await waitFor(() => expect(useAppStore.getState().workbenchTabs).toEqual(['overview', 'experts']));
     expect(screen.getByTestId('workbench-tab-experts')).toBeTruthy();
 
+    // 会话快照若晚于成员数据恢复，自动页仍须补回来；真机启动会走到这个时序。
+    useAppStore.setState({ workbenchTabs: ['overview'], activeWorkbenchTab: 'overview' });
+    await waitFor(() => expect(useAppStore.getState().workbenchTabs).toEqual(['overview', 'experts']));
+
     agentRowsRuntime.rows = [];
     view.rerender(<WorkbenchTabs />);
     expect(useAppStore.getState().workbenchTabs).toEqual(['overview', 'experts']);
@@ -86,6 +90,7 @@ describe('right panel primary task/logs/experts tabs', () => {
       en.workbenchTabs.closeView.replace('{view}', en.workbenchTabs.expertsLabel),
     ));
     expect(useAppStore.getState().workbenchTabs).toEqual(['overview']);
+    expect(useRightPanelTabsStore.getState().expertsDismissedBySession['session-1']).toBe(true);
   });
 
   it('reuses the same Logs tab and moves its target when another task step opens the process', () => {

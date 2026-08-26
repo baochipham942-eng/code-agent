@@ -240,13 +240,16 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
   const developerMode = useAppStore((s) => s.developerMode);
   const logsPinned = useRightPanelTabsStore((s) => s.logsPinned);
   const setLogsPinned = useRightPanelTabsStore((s) => s.setLogsPinned);
-  const claimExpertsAutoOpen = useRightPanelTabsStore((s) => s.claimExpertsAutoOpen);
+  const setExpertsDismissed = useRightPanelTabsStore((s) => s.setExpertsDismissed);
   // 专注模式（2026-08-01 工单①）：只在右栏独立成列时（App 传 focusable）提供开关；
   // 窄屏 workbench 借住在聊天列里，没有「收起聊天列」的对象，不给开关。
   // 状态在 workbenchFocusStore（不塞进 appStore：god-file 棘轮红线，且只是布局瞬时态）。
   const workbenchFocused = useWorkbenchFocusStore((s) => s.workbenchFocused);
   const setWorkbenchFocused = useWorkbenchFocusStore((s) => s.setWorkbenchFocused);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const expertsDismissed = useRightPanelTabsStore((s) => (
+    currentSessionId ? Boolean(s.expertsDismissedBySession[currentSessionId]) : false
+  ));
   const { rows: expertRows } = useSessionAgentRows(currentSessionId);
   const hasExperts = expertRows.length > 0;
   const artifactFollowEntries = useArtifactFollowStore((s) => s.entries);
@@ -270,11 +273,9 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
   const [pendingClose, setPendingClose] = useState<TabMeta | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (!currentSessionId || !hasExperts) return;
-    if (claimExpertsAutoOpen(currentSessionId)) {
-      openWorkbenchTab('experts', { source: 'auto', activate: false });
-    }
-  }, [currentSessionId, hasExperts, claimExpertsAutoOpen, openWorkbenchTab]);
+    if (!currentSessionId || !hasExperts || expertsDismissed || workbenchTabs.includes('experts')) return;
+    openWorkbenchTab('experts', { source: 'auto', activate: false });
+  }, [currentSessionId, hasExperts, expertsDismissed, workbenchTabs, openWorkbenchTab]);
 
   useEffect(() => {
     if (!developerMode && logsPinned) setLogsPinned(false);
@@ -400,6 +401,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
       if (!currentSessionId) return;
       claimDesignCanvasForSession(currentSessionId);
     }
+    if (id === 'experts' && currentSessionId) setExpertsDismissed(currentSessionId, false);
     openWorkbenchTab(id, { source: 'user' });
     setMenuOpen(false);
   };
@@ -410,6 +412,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
       setPendingClose(meta);
       return;
     }
+    if (meta.id === 'experts' && currentSessionId) setExpertsDismissed(currentSessionId, true);
     closeWorkbenchTab(meta.id);
   };
 

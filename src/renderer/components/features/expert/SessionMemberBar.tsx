@@ -30,7 +30,8 @@ import type { AgentRow } from '../../../utils/agentRows';
 import { useRightPanelTabsStore } from '../../../stores/rightPanelTabsStore';
 
 /** 打开右侧「专家」一级页签。 */
-function openSessionAgentsPanel(): void {
+function openSessionAgentsPanel(sessionId: string | null): void {
+  if (sessionId) useRightPanelTabsStore.getState().setExpertsDismissed(sessionId, false);
   useAppStore.getState().openWorkbenchTab('experts', { source: 'user' });
 }
 
@@ -180,7 +181,11 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
 
   useEffect(() => {
     if (!sessionId || rows.length === 0) return;
-    if (useRightPanelTabsStore.getState().claimExpertsAutoOpen(sessionId)) {
+    const tabsState = useRightPanelTabsStore.getState();
+    if (
+      !tabsState.expertsDismissedBySession[sessionId]
+      && !useAppStore.getState().workbenchTabs.includes('experts')
+    ) {
       useAppStore.getState().openWorkbenchTab('experts', { source: 'auto', activate: false });
     }
   }, [sessionId, rows.length]);
@@ -213,7 +218,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
     <button /* ds-allow:button: 折叠 chip 是整行摘要入口（头像叠+两行信息），Button primitive 无此形态 */
       type="button"
       data-testid="session-member-bar-collapsed"
-      onClick={openSessionAgentsPanel}
+      onClick={() => openSessionAgentsPanel(sessionId)}
       className="mb-1.5 flex w-full items-center gap-1.5 px-2 text-left text-[11px] text-zinc-500 hover:text-zinc-300"
     >
       <span className="flex -space-x-1.5">

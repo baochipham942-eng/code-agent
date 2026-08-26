@@ -12,7 +12,7 @@ const invokeDomainMock = vi.fn();
 const appState = {
   openWorkspacePreview: vi.fn(),
   openWorkbenchTab: vi.fn(),
-  autoOpenExpertsForSession: vi.fn(),
+  workbenchTabs: [] as string[],
 };
 const swarmState: {
   agents: SwarmAgentState[];
@@ -81,13 +81,13 @@ describe('SessionMemberBar（折叠 chip）', () => {
     invokeDomainMock.mockReset();
     invokeDomainMock.mockResolvedValue(null);
     appState.openWorkbenchTab.mockReset();
-    appState.autoOpenExpertsForSession.mockReset();
+    appState.workbenchTabs = [];
     useComposerStore.setState({ selectedTeamRecipeId: null, standbyExcludedMemberKeys: [] });
     useTeamRecipeStore.setState({ recipes: [], isLoaded: true });
     useAgentRegistryStore.setState({ entries: [], isLoaded: true });
     useMemberViewStore.setState({ viewingMemberId: null });
     useBackgroundTaskStore.setState({ tasks: [] });
-    useRightPanelTabsStore.setState({ expertsAutoOpenedBySession: {} });
+    useRightPanelTabsStore.setState({ expertsDismissedBySession: {} });
   });
   afterEach(() => cleanup());
 

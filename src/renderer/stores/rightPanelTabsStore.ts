@@ -4,18 +4,18 @@ interface RightPanelTabsState {
   logsTargetTurn: number | null;
   logsTargetNonce: number;
   logsPinned: boolean;
-  expertsAutoOpenedBySession: Record<string, boolean>;
+  expertsDismissedBySession: Record<string, boolean>;
   targetLogsTurn: (turn: number) => void;
   resetLogsTarget: () => void;
   setLogsPinned: (pinned: boolean) => void;
-  claimExpertsAutoOpen: (sessionId: string) => boolean;
+  setExpertsDismissed: (sessionId: string, dismissed: boolean) => void;
 }
 
-export const useRightPanelTabsStore = create<RightPanelTabsState>()((set, get) => ({
+export const useRightPanelTabsStore = create<RightPanelTabsState>()((set) => ({
   logsTargetTurn: null,
   logsTargetNonce: 0,
   logsPinned: false,
-  expertsAutoOpenedBySession: {},
+  expertsDismissedBySession: {},
   targetLogsTurn: (turn) => set((state) => ({
     logsTargetTurn: Math.max(1, turn),
     logsTargetNonce: state.logsTargetNonce + 1,
@@ -25,14 +25,10 @@ export const useRightPanelTabsStore = create<RightPanelTabsState>()((set, get) =
     logsTargetNonce: state.logsTargetNonce + 1,
   })),
   setLogsPinned: (pinned) => set({ logsPinned: pinned }),
-  claimExpertsAutoOpen: (sessionId) => {
-    if (get().expertsAutoOpenedBySession[sessionId]) return false;
-    set((state) => ({
-      expertsAutoOpenedBySession: {
-        ...state.expertsAutoOpenedBySession,
-        [sessionId]: true,
-      },
-    }));
-    return true;
-  },
+  setExpertsDismissed: (sessionId, dismissed) => set((state) => ({
+    expertsDismissedBySession: {
+      ...state.expertsDismissedBySession,
+      [sessionId]: dismissed,
+    },
+  })),
 }));

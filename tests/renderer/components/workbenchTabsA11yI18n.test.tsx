@@ -43,7 +43,7 @@ beforeEach(() => {
     developerMode: false,
   });
   useSessionStore.setState({ currentSessionId: null });
-  useRightPanelTabsStore.setState({ logsPinned: false, expertsAutoOpenedBySession: {} });
+  useRightPanelTabsStore.setState({ logsPinned: false, expertsDismissedBySession: {} });
 });
 
 afterEach(() => {

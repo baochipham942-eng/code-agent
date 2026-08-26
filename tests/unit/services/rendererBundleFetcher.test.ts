@@ -17,9 +17,11 @@ import {
 } from '../../../src/host/services/cloud/controlPlaneTrust';
 import { applyRendererBundleUpdate } from '../../../src/host/services/renderer/rendererBundleFetcher';
 import {
+  activateStagedRendererBundle,
   activeBundleDir,
   readActiveBundleMeta,
   readRendererBundleStatus,
+  stagedBundleDir,
 } from '../../../src/host/services/renderer/rendererBundleCache';
 
 let dataDir: string;
@@ -122,6 +124,38 @@ describe('applyRendererBundleUpdate', () => {
     });
   });
 
+  it('records a Dev slot default skip as dev-slot before any network request', async () => {
+    let fetched = false;
+    const env = {
+      CODE_AGENT_BUNDLE_ID: 'com.linchen.code-agent.dev3',
+    } as NodeJS.ProcessEnv;
+
+    const result = await applyRendererBundleUpdate({
+      dataDir,
+      currentShellVersion: '0.16.90',
+      env,
+      publicKeys: {},
+      fetchJson: async () => {
+        fetched = true;
+        throw new Error('should not fetch');
+      },
+      downloadToFile: async () => {
+        throw new Error('should not download');
+      },
+    });
+
+    expect(result).toEqual({ applied: false, reason: 'dev-slot' });
+    expect(fetched).toBe(false);
+    expect(readRendererBundleStatus(dataDir, env)).toMatchObject({
+      disabled: true,
+      disabledReason: 'dev-slot',
+      lastAttempt: {
+        outcome: 'skipped',
+        reason: 'dev-slot',
+      },
+    });
+  });
+
   it('fetches a named renderer bundle channel when the channel env is set', async () => {
     const manifest = {
       version: '0.17.0-beta.1',
@@ -146,7 +180,7 @@ describe('applyRendererBundleUpdate', () => {
 
     const expectedManifestUrl =
       'https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/renderer-bundle/channels/beta/manifest.json';
-    expect(result).toEqual({ applied: true, version: '0.17.0-beta.1', contentHash: archiveSha256 });
+    expect(result).toEqual({ applied: false, reason: 'staged-for-next-launch' });
     expect(fetchedUrls).toEqual([expectedManifestUrl]);
     expect(readRendererBundleStatus(dataDir).lastAttempt?.manifestUrl).toBe(expectedManifestUrl);
   });
@@ -196,7 +230,7 @@ describe('applyRendererBundleUpdate', () => {
       downloadToFile: async (_url, dest) => { fs.copyFileSync(archivePath, dest); },
     });
 
-    expect(result).toEqual({ applied: true, version: '0.17.0-beta.1', contentHash: archiveSha256 });
+    expect(result).toEqual({ applied: false, reason: 'staged-for-next-launch' });
     expect(fetchedUrls).toEqual([policyUrl, betaManifestUrl]);
     expect(readRendererBundleStatus(dataDir, env)).toMatchObject({
       source: {
@@ -207,7 +241,7 @@ describe('applyRendererBundleUpdate', () => {
       },
       lastAttempt: {
         manifestUrl: betaManifestUrl,
-        outcome: 'applied',
+        outcome: 'staged',
         rollout: {
           policyUrl,
           policyVersion: 'policy-1',
@@ -257,7 +291,7 @@ describe('applyRendererBundleUpdate', () => {
     });
   });
 
-  it('clears active overlay when the signed rollout policy commands rollback to builtin', async () => {
+  it('stages a signed rollout rollback until the next launch', async () => {
     seedExistingActive('0.17.0', 'bad-active-hash', 'BAD-ACTIVE');
     const policyUrl = 'https://agentneo.example/api/v1/control-plane?kind=renderer_bundle_rollout';
     const { envelope, publicKeys } = buildSignedManifest(
@@ -277,11 +311,12 @@ describe('applyRendererBundleUpdate', () => {
     });
 
     expect(result).toEqual({ applied: false, reason: 'rollout-rollback-to-builtin' });
-    expect(fs.existsSync(activeBundleDir(dataDir))).toBe(false);
+    expect(fs.readFileSync(path.join(activeBundleDir(dataDir), 'index.html'), 'utf8')).toContain('BAD-ACTIVE');
+    expect(fs.existsSync(stagedBundleDir(dataDir))).toBe(true);
     expect(readRendererBundleStatus(dataDir)).toMatchObject({
-      activeBundle: null,
+      activeBundle: { version: '0.17.0', contentHash: 'bad-active-hash' },
       lastAttempt: {
-        outcome: 'rolled-back',
+        outcome: 'staged',
         reason: 'rollout-rollback-to-builtin',
         rollout: {
           policyUrl,
@@ -289,6 +324,16 @@ describe('applyRendererBundleUpdate', () => {
           decision: 'rollback-to-builtin',
           rollbackReason: 'bad overlay',
         },
+      },
+    });
+
+    expect(await activateStagedRendererBundle(dataDir)).toBe('rolled-back');
+    expect(fs.existsSync(activeBundleDir(dataDir))).toBe(false);
+    expect(readRendererBundleStatus(dataDir)).toMatchObject({
+      activeBundle: null,
+      lastAttempt: {
+        outcome: 'rolled-back',
+        reason: 'rollout-rollback-to-builtin',
       },
     });
   });
@@ -321,7 +366,8 @@ describe('applyRendererBundleUpdate', () => {
     });
   });
 
-  it('applies a healthy, signed, integrity-checked bundle and swaps it into active/', async () => {
+  it('stages a healthy bundle without changing the active directory, then activates it on next launch', async () => {
+    seedExistingActive('0.16.0', 'oldhash', 'OLD-ACTIVE');
     const manifest = {
       version: '0.17.0',
       contentHash: archiveSha256,
@@ -344,15 +390,17 @@ describe('applyRendererBundleUpdate', () => {
       }),
     });
 
-    expect(result).toEqual({ applied: true, version: '0.17.0', contentHash: archiveSha256 });
+    expect(result).toEqual({ applied: false, reason: 'staged-for-next-launch' });
     const active = activeBundleDir(dataDir);
-    expect(fs.readFileSync(path.join(active, 'index.html'), 'utf-8')).toContain('CLOUD-V2');
-    expect(fs.existsSync(path.join(active, 'assets', 'app.js'))).toBe(true);
-    expect(readActiveBundleMeta(dataDir)).toEqual({ version: '0.17.0', contentHash: archiveSha256 });
+    const staged = stagedBundleDir(dataDir);
+    expect(fs.readFileSync(path.join(active, 'index.html'), 'utf-8')).toContain('OLD-ACTIVE');
+    expect(fs.readFileSync(path.join(staged, 'index.html'), 'utf-8')).toContain('CLOUD-V2');
+    expect(fs.existsSync(path.join(staged, 'assets', 'app.js'))).toBe(true);
+    expect(readActiveBundleMeta(dataDir)).toEqual({ version: '0.16.0', contentHash: 'oldhash' });
     expect(readRendererBundleStatus(dataDir)).toMatchObject({
-      activeBundle: { version: '0.17.0', contentHash: archiveSha256 },
+      activeBundle: { version: '0.16.0', contentHash: 'oldhash' },
       lastAttempt: {
-        outcome: 'applied',
+        outcome: 'staged',
         manifest: {
           version: '0.17.0',
           contentHash: archiveSha256,
@@ -361,6 +409,15 @@ describe('applyRendererBundleUpdate', () => {
           requiredResourcesCount: 1,
         },
       },
+    });
+
+    expect(await activateStagedRendererBundle(dataDir)).toBe('applied');
+    expect(fs.existsSync(staged)).toBe(false);
+    expect(fs.readFileSync(path.join(active, 'index.html'), 'utf-8')).toContain('CLOUD-V2');
+    expect(readActiveBundleMeta(dataDir)).toEqual({ version: '0.17.0', contentHash: archiveSha256 });
+    expect(readRendererBundleStatus(dataDir)).toMatchObject({
+      activeBundle: { version: '0.17.0', contentHash: archiveSha256 },
+      lastAttempt: { outcome: 'applied' },
     });
   });
 
@@ -437,13 +494,13 @@ describe('applyRendererBundleUpdate', () => {
       },
     });
 
-    expect(result).toEqual({ applied: true, version: '0.17.0', contentHash: archiveSha256 });
+    expect(result).toEqual({ applied: false, reason: 'staged-for-next-launch' });
     expect(preparedAssets).toEqual([['playwright-browser-runtime']]);
     expect(dependencyChecks).toBe(2);
     expect(readRendererBundleStatus(dataDir)).toMatchObject({
-      activeBundle: { version: '0.17.0', contentHash: archiveSha256 },
+      activeBundle: null,
       lastAttempt: {
-        outcome: 'applied',
+        outcome: 'staged',
         runtimeAssetPreparation: {
           attempted: true,
           installed: [{ assetId: 'playwright-browser-runtime' }],
@@ -550,13 +607,13 @@ describe('applyRendererBundleUpdate', () => {
       recordTelemetryAttempt: async (status) => { telemetryStatuses.push(status); },
     });
 
-    expect(result).toEqual({ applied: true, version: '0.17.0-beta.1', contentHash: archiveSha256 });
+    expect(result).toEqual({ applied: false, reason: 'staged-for-next-launch' });
     expect(telemetryStatuses).toHaveLength(1);
     expect(telemetryStatuses[0]).toMatchObject({
       source: { channel: 'beta' },
-      activeBundle: { version: '0.17.0-beta.1', contentHash: archiveSha256 },
+      activeBundle: null,
       lastAttempt: {
-        outcome: 'applied',
+        outcome: 'staged',
         currentShellVersion: '0.16.93',
         manifest: {
           version: '0.17.0-beta.1',
@@ -586,8 +643,8 @@ describe('applyRendererBundleUpdate', () => {
       recordTelemetryAttempt: async () => { throw new Error('telemetry unavailable'); },
     });
 
-    expect(result).toEqual({ applied: true, version: '0.17.0', contentHash: archiveSha256 });
-    expect(fs.readFileSync(path.join(activeBundleDir(dataDir), 'index.html'), 'utf-8')).toContain('CLOUD-V2');
+    expect(result).toEqual({ applied: false, reason: 'staged-for-next-launch' });
+    expect(fs.readFileSync(path.join(stagedBundleDir(dataDir), 'index.html'), 'utf-8')).toContain('CLOUD-V2');
     expect(logs.some((entry) => entry.includes('telemetry record failed'))).toBe(true);
   });
 
@@ -695,7 +752,7 @@ describe('applyRendererBundleUpdate', () => {
     expect(result).toEqual({ applied: false, reason: 'already-current' });
   });
 
-  it('applies a signed rollback manifest by clearing active overlay without downloading', async () => {
+  it('stages a signed rollback manifest without changing the active overlay during this launch', async () => {
     seedExistingActive('0.17.0', 'bad-active-hash', 'BAD-ACTIVE');
     const manifest = {
       version: '0.17.1',
@@ -716,11 +773,11 @@ describe('applyRendererBundleUpdate', () => {
 
     expect(result).toEqual({ applied: false, reason: 'rollback-to-builtin' });
     expect(downloaded).toBe(false);
-    expect(fs.existsSync(activeBundleDir(dataDir))).toBe(false);
+    expect(fs.readFileSync(path.join(activeBundleDir(dataDir), 'index.html'), 'utf8')).toContain('BAD-ACTIVE');
     expect(readRendererBundleStatus(dataDir)).toMatchObject({
-      activeBundle: null,
+      activeBundle: { version: '0.17.0', contentHash: 'bad-active-hash' },
       lastAttempt: {
-        outcome: 'rolled-back',
+        outcome: 'staged',
         reason: 'rollback-to-builtin',
         manifest: {
           version: '0.17.1',
@@ -728,6 +785,16 @@ describe('applyRendererBundleUpdate', () => {
           rollbackToBuiltin: true,
           rollbackReason: 'bad renderer overlay',
         },
+      },
+    });
+
+    expect(await activateStagedRendererBundle(dataDir)).toBe('rolled-back');
+    expect(fs.existsSync(activeBundleDir(dataDir))).toBe(false);
+    expect(readRendererBundleStatus(dataDir)).toMatchObject({
+      activeBundle: null,
+      lastAttempt: {
+        outcome: 'rolled-back',
+        reason: 'rollback-to-builtin',
       },
     });
   });

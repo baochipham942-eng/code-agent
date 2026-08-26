@@ -134,13 +134,14 @@ describe('dev build-info install gate', () => {
     expect(red.stderr).toContain('dist/renderer/index.html');
   });
 
-  it('clears only this slot renderer hot-update cache after install', () => {
+  it('preserves this slot renderer hot-update cache after install', () => {
     const script = readInstallScript();
 
     // 槽名从 .dev-slot.json 读，不在 shell 里另算一遍
     expect(script).toContain('read_slot_field dataDirName');
-    // 只删 renderer-cache/active，不删整个 renderer-cache/
-    expect(script).toContain('rm -rf "$HOME/$DEV_DATA_DIR_NAME/renderer-cache/active"');
+    // enabled smoke 要跨重启完成 staged → active，安装不能清 active/staged 或整个缓存。
+    expect(script).not.toContain('rm -rf "$HOME/$DEV_DATA_DIR_NAME/renderer-cache/active"');
+    expect(script).not.toContain('rm -rf "$HOME/$DEV_DATA_DIR_NAME/renderer-cache/staged"');
     expect(script).not.toMatch(/rm -rf "\$HOME\/\$DEV_DATA_DIR_NAME\/renderer-cache"/);
     // 结尾提示语用真实槽位数据目录，不写死 ~/.code-agent-dev（槽 2 是 ~/.code-agent-dev2）
     // 花括号是必须的：裸 $VAR 紧跟全角字符时 bash 3.2 会把「）」吃进变量名，

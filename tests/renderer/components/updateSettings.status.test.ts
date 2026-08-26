@@ -327,6 +327,23 @@ describe('UpdateSettings status visibility', () => {
 
     expect(getRendererBundleSummaryText({
       schemaVersion: 1,
+      activeBundle: { version: '0.16.93', contentHash: 'abc' },
+      lastAttempt: {
+        checkedAt: '2026-06-06T00:00:00.000Z',
+        manifestUrl: 'https://oss.example/manifest.json',
+        currentShellVersion: '0.16.93',
+        outcome: 'staged',
+        manifest: {
+          version: '0.16.94',
+          contentHash: 'def',
+          minShellVersion: '0.16.93',
+          requiredShellCapabilitiesCount: 155,
+        },
+      },
+    }, updateText.rendererBundle.summary)).toBe(`${updateText.rendererBundle.summary.stagedPrefix}0.16.94`);
+
+    expect(getRendererBundleSummaryText({
+      schemaVersion: 1,
       activeBundle: null,
       lastAttempt: {
         checkedAt: '2026-06-06T00:00:00.000Z',

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RendererServeDecision, RuntimeAssetsStatus } from '../../../src/shared/contract';
+import type { RendererBundleStatus, RendererServeDecision, RuntimeAssetsStatus } from '../../../src/shared/contract';
 
 const state = vi.hoisted(() => ({
   userData: '',
@@ -13,6 +13,11 @@ const state = vi.hoisted(() => ({
     assets: [],
     summary: { installed: 1, bundledFallback: 1, missing: 0, unsupported: 0 },
   } as RuntimeAssetsStatus,
+  rendererBundleStatus: {
+    schemaVersion: 1,
+    activeBundle: null,
+    lastAttempt: null,
+  } as RendererBundleStatus,
 }));
 
 vi.mock('../../../src/host/platform', () => ({
@@ -30,11 +35,7 @@ vi.mock('../../../src/host/services/renderer/rendererBundleCache', async (import
   const actual = await importOriginal<typeof import('../../../src/host/services/renderer/rendererBundleCache')>();
   return {
     ...actual,
-    readRendererBundleStatus: () => ({
-      schemaVersion: 1,
-      activeBundle: null,
-      lastAttempt: null,
-    }),
+    readRendererBundleStatus: () => state.rendererBundleStatus,
   };
 });
 
@@ -55,6 +56,11 @@ describe('desktop shell diagnostics aggregator', () => {
     fs.mkdirSync(path.join(state.userData, 'logs'), { recursive: true });
     originalFetch = globalThis.fetch;
     process.env = { ...originalEnv };
+    state.rendererBundleStatus = {
+      schemaVersion: 1,
+      activeBundle: null,
+      lastAttempt: null,
+    };
   });
 
   afterEach(() => {
@@ -258,6 +264,19 @@ describe('desktop shell diagnostics aggregator', () => {
     fs.mkdirSync(path.join(state.userData, 'logs'), { recursive: true });
     process.env.CODE_AGENT_BUNDLE_ID = 'com.linchen.code-agent.dev';
     process.env.CODE_AGENT_WEB_PORT = '8181';
+    state.rendererBundleStatus = {
+      schemaVersion: 1,
+      disabled: true,
+      disabledReason: 'dev-slot',
+      activeBundle: null,
+      lastAttempt: {
+        checkedAt: '2026-08-26T03:15:00.000Z',
+        manifestUrl: 'https://oss.example/manifest.json',
+        currentShellVersion: '0.16.102',
+        outcome: 'skipped',
+        reason: 'dev-slot',
+      },
+    };
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
       status: 'ok',
       mode: 'web-standalone',
@@ -290,6 +309,14 @@ describe('desktop shell diagnostics aggregator', () => {
       expectedWebPort: 8181,
     });
     expect(diagnostics.channelIsolation?.checks.every((check) => check.status === 'ok')).toBe(true);
+    expect(diagnostics.rendererBundle).toMatchObject({
+      disabled: true,
+      disabledReason: 'dev-slot',
+      lastAttempt: {
+        outcome: 'skipped',
+        reason: 'dev-slot',
+      },
+    });
   });
 
   it('holds a higher dev slot to its own port and data dir', async () => {

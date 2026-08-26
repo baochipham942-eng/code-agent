@@ -1,6 +1,6 @@
 // ============================================================================
-// PermissionCard - 固定在 ChatInput 正上方 DecisionSlot 的权限审批卡片
-// 不进入可滚动时间线；用户审批时仍能看到对话上下文并保留输入区
+// PermissionCard - DecisionSlot 当前待决权限的卡片
+// 固定在 ChatInput 上方；裁决后由对应工具步骤展示一行结果，不生成时间线历史卡
 //
 // 2026-07-29 拍板：视觉骨架统一迁移到 DecisionCard（与 AskUserQuestion 提问卡
 // 同形）——审批级别变成选项行，底部 ghost 取消 + primary 确认（选中后才可点）。
@@ -9,14 +9,14 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CalendarPlus, ChevronDown, ChevronRight, ListTodo, Mail, RotateCcw } from 'lucide-react';
+import { CalendarPlus, ListTodo, Mail } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { usePermissionStore, type PermissionRequestForMemory } from '../../stores/permissionStore';
 import { DecisionCard, isEditableTarget, type DecisionOption } from '../DecisionCard';
 import { RequestDetails } from './RequestDetails';
 import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
-import type { PermissionDecision, PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
+import type { PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
 import { isEditableTool, permissionReasonText } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { getPermissionConfig, isDangerousCommand, getDangerReason, formatFilePath } from './utils';
@@ -24,9 +24,6 @@ import { useI18n, type Translations } from '../../hooks/useI18n';
 import ipcService from '../../services/ipcService';
 import { toast } from '../../hooks/useToast';
 import { claimApprovalResponse, releaseApprovalResponse } from '../../utils/approvalResponseGuard';
-import { Badge } from '../primitives/Badge';
-import { Button } from '../primitives/Button';
-import { useMessageActionStore } from '../../stores/messageActionStore';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import {
   WritebackEditForm,
@@ -68,54 +65,6 @@ function normalizeRequest(
     resolved: request.resolved,
     decision: request.decision,
   };
-}
-
-const EXPIRED_RETRY_PROMPT = '刚才的审批超时了，请重试';
-
-function PermissionResultBadge({ decision, t }: { decision: PermissionDecision; t: Translations }) {
-  const p = t.decisionCard.permission;
-  if (decision === 'timeout') {
-    return (
-      <Badge
-        data-testid="permission-result-expired"
-        dot="bg-zinc-500"
-        className="rounded-full border-zinc-700 bg-zinc-800 px-2.5 text-[11px] font-medium text-zinc-500"
-      >
-        {p.resultExpired}
-      </Badge>
-    );
-  }
-  if (decision === 'deny' || decision === 'never') {
-    return (
-      <Badge
-        data-testid="permission-result-denied"
-        dot="bg-mark-danger"
-        className="rounded-full border-badge-danger/30 bg-red-500/10 px-2.5 text-[11px] font-medium text-badge-danger"
-      >
-        {p.resultDenied}
-      </Badge>
-    );
-  }
-  if (decision === 'always' || decision === 'session') {
-    return (
-      <Badge
-        data-testid="permission-result-always"
-        dot="bg-mark-info"
-        className="rounded-full border-badge-info/30 bg-sky-500/10 px-2.5 text-[11px] font-medium text-badge-info"
-      >
-        {p.resultAlways}
-      </Badge>
-    );
-  }
-  return (
-    <Badge
-      data-testid="permission-result-once"
-      dot="bg-mark-success"
-      className="rounded-full border-badge-success/30 bg-emerald-500/10 px-2.5 text-[11px] font-medium text-badge-success"
-    >
-      {p.resultOnce}
-    </Badge>
-  );
 }
 
 // 转换为权限记忆 store 使用的格式
@@ -188,13 +137,11 @@ export function PermissionCard({
   } = useAppStore();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const { checkMemory, saveMemory } = usePermissionStore();
-  const sendPrompt = useMessageActionStore((state) => state.sendPrompt);
   const processedRequestRef = useRef<string | null>(null);
   // 选中的审批级别（DecisionCard 选项行）；字母快捷键直发时不经过它
   const [selectedLevel, setSelectedLevel] = useState<ApprovalLevel | null>(null);
   // N-WRITEBACK-EDIT 编辑态：draft 非 null = 正在改；只有点「按修改后发送」才会送出，Esc/放弃 = 什么都不发
   const [draft, setDraft] = useState<WritebackDraft | null>(null);
-  const [settledExpanded, setSettledExpanded] = useState(false);
 
   const sourceRequest = requestOverride ?? pendingPermissionRequest;
   const sourceSessionId = requestOverride ? sessionIdOverride : pendingPermissionSessionId;
@@ -212,7 +159,6 @@ export function PermissionCard({
   useEffect(() => {
     setSelectedLevel(null);
     setDraft(null);
-    setSettledExpanded(false);
   }, [requestId]);
 
   // 可编辑写回工具：三选一（原样写回 / 改一改再写回 / 取消），永远一次性放行
@@ -304,7 +250,13 @@ export function PermissionCard({
           ...(updatedArgs && response === 'allow' ? [updatedArgs] : []),
         );
         if (requestSnapshot && recordPermissionDecision) {
-          recordPermissionDecision(requestSnapshot, level, requestSessionId);
+          recordPermissionDecision(
+            updatedArgs
+              ? { ...requestSnapshot, details: { ...requestSnapshot.details, ...updatedArgs } }
+              : requestSnapshot,
+            level,
+            requestSessionId,
+          );
         } else if (!requestOverride) {
           setPendingPermissionRequest(null);
         }
@@ -493,90 +445,8 @@ export function PermissionCard({
       : request.boundary?.connectorName) ?? request.tool
     : sharedHumanLabel;
 
-  if (settled && request.decision) {
-    const expired = request.decision === 'timeout';
-    const denied = request.decision === 'deny' || request.decision === 'never';
-    const settledStatus = denied ? p.settledDenied : p.settledAllowed;
-    const settledSubject = meetingSubject || contentTitle || (editable && typeof request.rawArgs?.subject === 'string'
-      ? request.rawArgs.subject.trim()
-      : '');
-    if (!expired && !settledExpanded) {
-      return (
-        <div className="w-full chat-col-pad" data-testid="permission-card">
-          <button /* ds-allow:button: 已决审批整行是展开热区，需保持单行摘要；Button primitive 会包裹 children 并改变截断布局。 */
-            type="button"
-            data-testid="permission-settled-summary"
-            aria-expanded="false"
-            aria-label={p.expandSettled}
-            onClick={() => setSettledExpanded(true)}
-            className="flex w-full max-w-3xl mx-auto items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-left"
-          >
-            <ChevronRight className="h-4 w-4 shrink-0 text-zinc-500" />
-            <span className="min-w-0 flex-1 truncate text-sm text-zinc-300">
-              {settledStatus} · {title}{settledSubject ? ` ${settledSubject}` : ''}
-            </span>
-            <PermissionResultBadge decision={request.decision} t={t} />
-          </button>
-        </div>
-      );
-    }
-    const settledOptions = expired
-      ? options.map((option) => ({ ...option, disabled: true }))
-      : [];
-    return (
-      <DecisionCard
-        testId="permission-card"
-        tone="neutral"
-        settled
-        icon={icon}
-        title={title}
-        headerMeta={headerMeta}
-        headerEnd={(
-          <span className="flex items-center gap-2">
-            <PermissionResultBadge decision={request.decision} t={t} />
-            {!expired && (
-              <button /* ds-allow:button: 已决审批头部的紧凑折叠图标，Button primitive 最小尺寸会撑高卡头。 */
-                type="button"
-                aria-expanded="true"
-                aria-label={p.collapseSettled}
-                onClick={() => setSettledExpanded(false)}
-                className="text-zinc-500 hover:text-zinc-300"
-              >
-                <ChevronDown className="h-4 w-4" />
-              </button>
-            )}
-          </span>
-        )}
-        question={question}
-        details={
-          <>
-            {!editable && reasonText && <p className="text-zinc-400 text-sm">{reasonText}</p>}
-            <RequestDetails request={request} />
-            {expired && (
-              <div className="mt-2 flex items-center gap-3 rounded-lg border border-dashed border-zinc-600 px-3 py-2">
-                <p className="min-w-0 flex-1 text-[11px] text-zinc-500">{p.expiredHint}</p>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
-                  onClick={() => void sendPrompt(EXPIRED_RETRY_PROMPT)}
-                >
-                  {p.tellModelContinue}
-                </Button>
-              </div>
-            )}
-          </>
-        }
-        options={settledOptions}
-        selectedId={null}
-        onSelect={() => {}}
-        onConfirm={() => {}}
-        confirmLabel={t.decisionCard.confirm}
-        hideFooter
-        className="w-full chat-col-pad"
-      />
-    );
-  }
+  // 已决请求不再由 PermissionCard 渲染；结果归属到对应工具步骤旁的一行存证。
+  if (settled) return null;
 
   // 编辑态：选项行让位给表单；主按钮 = 按修改后发送（必填为空时禁用），ghost = 放弃修改
   if (editable && draft !== null && request.rawArgs) {
@@ -586,7 +456,7 @@ export function PermissionCard({
         testId="permission-card"
         className="w-full animate-slideUp"
         pinActions
-        tone="neutral"
+        tone="amber"
         icon={icon}
         title={title}
         headerMeta={`${headerMeta} · ${w.editingBadge}`}
@@ -622,7 +492,7 @@ export function PermissionCard({
       testId="permission-card"
       className="w-full animate-slideUp"
       pinActions
-      tone={isDangerous ? 'danger' : 'neutral'}
+      tone={isDangerous ? 'danger' : 'amber'}
       icon={icon}
       title={title}
       headerMeta={headerMeta}

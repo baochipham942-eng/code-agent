@@ -6,7 +6,8 @@
 // 同一条底部动作行，差别只在语义色与详情区内容。
 //
 // 语义色（与 UserQuestionCard 头部注释的约定一致）：
-// - neutral = 中性蓝：常规审批 / 启动确认（「我需要你拍板」）
+// - neutral = 中性蓝：提问 / 计划 / 启动确认（「我需要你拍板」）
+// - amber  = 权限琥珀：常规授权（「我要动你的东西」）
 // - danger  = 红变体：危险操作（「我要动你的东西，而且有破坏力」），头部下方
 //   多出一条警示行，替代旧 PermissionDialog 的 DangerWarning 嵌卡。
 //
@@ -31,8 +32,8 @@ export interface DecisionOption {
 }
 
 export interface DecisionCardProps {
-  /** 语义色：中性蓝（默认）/ 危险红 */
-  tone?: 'neutral' | 'danger';
+  /** 语义色：中性蓝（默认）/ 常规权限琥珀 / 危险红 */
+  tone?: 'neutral' | 'amber' | 'danger';
   icon: React.ReactNode;
   title: string;
   /** 头部标题右侧的次要信息（如工具名） */
@@ -116,6 +117,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
   const danger = tone === 'danger';
+  const amber = tone === 'amber';
 
   // 卡片出现时接管焦点（同 UserQuestionCard / 旧 PermissionCard 先例），键盘立即可用
   useEffect(() => {
@@ -191,18 +193,18 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
       <div
         ref={cardRef}
         tabIndex={-1}
-        className={`w-full max-w-3xl mx-auto bg-zinc-900 rounded-lg shadow-md dark:shadow-2xl border-2 outline-hidden ${
-          settled ? 'border-zinc-700' : danger ? 'border-red-500' : 'border-badge-info/60'
+        className={`w-full max-w-3xl mx-auto bg-zinc-900 rounded-lg shadow-2xl border-2 outline-hidden ${
+          settled ? 'border-zinc-700' : danger ? 'border-red-500' : amber ? 'border-badge-warning/60' : 'border-badge-info/60'
         } ${pinActions ? 'flex max-h-[calc(100dvh-12rem)] flex-col overflow-hidden' : ''}`}
       >
         {/* 头部：与 UserQuestionCard 同形（图标 + 标题），语义色区分常规/危险 */}
         <div
           className={`flex items-center gap-2 px-4 py-2.5 border-b border-zinc-800 rounded-t-lg ${
-            settled ? 'bg-zinc-800' : danger ? 'bg-red-500/10' : 'bg-blue-500/10'
+            settled ? 'bg-zinc-800' : danger ? 'bg-red-500/10' : amber ? 'bg-amber-500/10' : 'bg-blue-500/10'
           }`}
         >
-          <span className={`shrink-0 ${settled ? 'text-zinc-400' : danger ? 'text-badge-danger' : 'text-badge-info'}`}>{icon}</span>
-          <span className={`text-sm font-medium ${settled ? 'text-zinc-300' : danger ? 'text-badge-danger' : 'text-badge-info'}`}>
+          <span className={`shrink-0 ${settled ? 'text-zinc-400' : danger ? 'text-badge-danger' : amber ? 'text-badge-warning' : 'text-badge-info'}`}>{icon}</span>
+          <span className={`text-sm font-medium ${settled ? 'text-zinc-300' : danger ? 'text-badge-danger' : amber ? 'text-badge-warning' : 'text-badge-info'}`}>
             {title}
           </span>
           {headerMeta && <span className="text-xs text-zinc-500 truncate">{headerMeta}</span>}

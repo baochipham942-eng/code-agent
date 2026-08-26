@@ -1196,6 +1196,9 @@ export class ToolExecutor {
       if (needsUserApproval) {
       const permissionRequest = this.buildPermissionRequest(toolDef, params);
       permissionRequest.sessionId = effectiveSessionId;
+      // resolved 审批结果回到 renderer 后，靠现成 tool call id 锚到对应步骤旁展示。
+      // 只补关联字段，不复制参数或另建历史存储。
+      permissionRequest.parentToolUseId = options.currentToolCallId;
       // B4：把授权 target 透传给审批层，供无人值守停车审批卡出「每次都允许发 <target>」铸权入口。
       if (standingGrantTarget) {
         permissionRequest.details.standingGrantTarget = standingGrantTarget;

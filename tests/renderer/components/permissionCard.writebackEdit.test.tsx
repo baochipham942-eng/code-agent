@@ -142,10 +142,10 @@ const remindersUpdateRequest = nativeRequest('permission-reminders-update', 'rem
 }, '提醒事项');
 
 function enterEdit() {
-  fireEvent.click(screen.getByRole('button', { name: /改一改再(发|创建|更新)/ }));
+  fireEvent.click(screen.getByRole('button', { name: /修改后允许/ }));
 }
 const toInput = () => screen.getByTestId('writeback-edit-to') as HTMLInputElement;
-const sendEdited = () => screen.getByRole('button', { name: '按修改后发送' });
+const sendEdited = () => screen.getByRole('button', { name: '邮件发送 · 修改后允许' });
 
 describe('PermissionCard · mail_send 改一改再发', () => {
   beforeEach(() => {
@@ -171,7 +171,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect(screen.queryByText('危险操作')).toBeNull();
     expect(screen.getByTestId('writeback-view-content').textContent).toContain('请在周五前确认');
     expect(screen.getByText('发这封邮件给 li.wei@acme.com？')).toBeTruthy();
-    expect(screen.getByText('改一改再发')).toBeTruthy();
+    expect(screen.getByText('邮件发送 · 修改后允许')).toBeTruthy();
   });
 
   it('改收件人 → 按修改后发送 → IPC 带改后的 updatedArgs，response 是一次性 allow', async () => {
@@ -222,8 +222,8 @@ describe('PermissionCard · mail_send 改一改再发', () => {
 
   it('不改直接「发送」→ IPC 不带第 5 参（走原参数，旧调用形状不变）', async () => {
     render(<PermissionCard />);
-    fireEvent.click(screen.getByRole('button', { name: /^发送/ }));
-    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+    fireEvent.click(screen.getByRole('button', { name: /^邮件发送 · 允许/ }));
+    fireEvent.click(screen.getByRole('button', { name: '允许' }));
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, request.id, 'allow', request.sessionId);
       expect(invoke.mock.calls[0]).toHaveLength(4);
@@ -241,8 +241,8 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect(screen.getByTestId('writeback-view-start').textContent).toContain('2026');
     expect(screen.getByTestId('writeback-view-end').textContent).toContain('2026');
     expect(screen.getByTestId('writeback-irreversible').textContent)
-      .toContain('模型补全的默认主题或时间可点「改一改再创建」调整');
-    expect(screen.getByRole('button', { name: /改一改再创建/ })).toBeTruthy();
+      .toContain('模型补全的默认主题或时间可点「修改后允许」调整');
+    expect(screen.getByRole('button', { name: /会议创建 · 修改后允许/ })).toBeTruthy();
   });
 
   it('默认值可改提示有中英文卡面文案', () => {
@@ -253,13 +253,13 @@ describe('PermissionCard · mail_send 改一改再发', () => {
   it('腾讯会议改主题和本地时间后把 ISO updatedArgs 直达一次性 allow 通道', async () => {
     state.request = meetingRequest;
     render(<PermissionCard />);
-    fireEvent.click(screen.getByRole('button', { name: /改一改再创建/ }));
+    fireEvent.click(screen.getByRole('button', { name: /会议创建 · 修改后允许/ }));
     fireEvent.change(screen.getByTestId('writeback-edit-subject'), { target: { value: 'product sync' } });
     const editedStart = new Date('2026-08-26T09:15:00+08:00');
     const startInput = screen.getByTestId('writeback-edit-start') as HTMLInputElement;
     expect(startInput.type).toBe('datetime-local');
     fireEvent.change(startInput, { target: { value: localInput(editedStart) } });
-    fireEvent.click(screen.getByRole('button', { name: '按修改后创建' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -313,7 +313,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     const input = screen.getByTestId('writeback-edit-start_ms') as HTMLInputElement;
     expect(input.type).toBe('datetime-local');
     fireEvent.change(input, { target: { value: '2026-08-26T09:15' } });
-    fireEvent.click(screen.getByRole('button', { name: '按修改后创建' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -337,7 +337,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     enterEdit();
     const input = screen.getByTestId('writeback-edit-remind_at_ms') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '2026-08-26T17:45' } });
-    fireEvent.click(screen.getByRole('button', { name: '按修改后创建' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -362,7 +362,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     render(<PermissionCard />);
     enterEdit();
     fireEvent.change(screen.getByTestId(`writeback-edit-${field}`), { target: { value } });
-    fireEvent.click(screen.getByRole('button', { name: '按修改后更新' }));
+    fireEvent.click(screen.getByRole('button', { name: '更新 · 修改后允许' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -384,7 +384,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     render(<PermissionCard />);
     enterEdit();
     expect((screen.getByTestId('writeback-edit-remind_at_ms') as HTMLInputElement).value).toBe('');
-    fireEvent.click(screen.getByRole('button', { name: '按修改后创建' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -402,25 +402,11 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     render(<PermissionCard />);
     enterEdit();
     fireEvent.change(screen.getByTestId('writeback-edit-end_ms'), { target: { value: '2026-08-26T08:59' } });
-    const submit = screen.getByRole('button', { name: '按修改后创建' }) as HTMLButtonElement;
+    const submit = screen.getByRole('button', { name: '创建 · 修改后允许' }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     fireEvent.click(submit);
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(invoke).not.toHaveBeenCalled();
   });
 
-  it('决定后默认折成一行，展开后才显示会议参数', () => {
-    state.request = { ...meetingRequest, resolved: true, decision: 'once' };
-    render(<PermissionCard />);
-
-    const summary = screen.getByTestId('permission-settled-summary');
-    expect(summary.textContent).toContain('已允许 · 创建腾讯会议 quick meeting');
-    expect(summary.textContent).toContain('允许一次');
-    expect(screen.queryByTestId('writeback-fields-view')).toBeNull();
-
-    fireEvent.click(summary);
-    expect(screen.getByTestId('writeback-fields-view')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '收起审批详情' }));
-    expect(screen.getByTestId('permission-settled-summary')).toBeTruthy();
-  });
 });

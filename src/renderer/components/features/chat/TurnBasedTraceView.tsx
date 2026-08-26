@@ -6,11 +6,9 @@
 import React, { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import type { PermissionRequest } from '@shared/contract';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { SearchMatch } from './ChatSearchBar';
 import { TurnCard } from './TurnCard';
-import { PermissionCard } from '../../PermissionDialog/PermissionCard';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
@@ -38,7 +36,6 @@ export const USER_SCROLL_PROGRAMMATIC_PAUSE_MS = 280;
 // 与沉降尾巴对抢形成抖动。拉长到 800ms，沉降干净后再钉；流式期间用户上翻后
 // 回底的跟随恢复最多晚半秒，可接受。
 export const USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS = 800;
-const EMPTY_RESOLVED_PERMISSION_REQUESTS: PermissionRequest[] = [];
 
 export function getFocusedTurnIndex(projection: TraceProjection): number {
   if (projection.turns.length === 0) return -1;
@@ -322,9 +319,6 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const streamSnapshot = useSessionStore((state) => state.streamSnapshot);
   const processingSessionIds = useAppStore((state) => state.processingSessionIds);
-  const resolvedPermissionRequests = useAppStore(
-    (state) => state.resolvedPermissionRequests?.[projection.sessionId],
-  ) ?? EMPTY_RESOLVED_PERMISSION_REQUESTS;
   const sessionStatus = useTaskStore((state) => state.sessionStates[projection.sessionId]?.status ?? null);
   const isProjectionSessionProcessing = processingSessionIds.has(projection.sessionId)
     || sessionStatus === 'running'
@@ -1000,19 +994,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     );
   }, [hasOlderMessages, isLoadingOlder, t]);
 
-  // Footer: resolved permission history only; pending cards live in DecisionSlot above the input.
+  // Footer 只保留呼吸间距；待决权限在 DecisionSlot，已决结果归属到对应工具步骤旁。
   const Footer = useCallback(() => (
-    <>
-      {resolvedPermissionRequests.map((request) => (
-        <PermissionCard
-          key={request.id}
-          requestOverride={request}
-          sessionIdOverride={projection.sessionId}
-        />
-      ))}
-      <div className="h-6" aria-hidden="true" />
-    </>
-  ), [projection.sessionId, resolvedPermissionRequests]);
+    <div className="h-6" aria-hidden="true" />
+  ), []);
 
   return (
     <SessionModelsContext.Provider value={sessionModels}>

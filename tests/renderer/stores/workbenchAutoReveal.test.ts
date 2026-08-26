@@ -37,6 +37,18 @@ describe('右栏按需出现', () => {
     expect(useAppStore.getState().workbenchTabs).toContain('overview');
   });
 
+  it('审批关闭、轮结束后仍保留本轮概览', () => {
+    useAppStore.getState().syncTaskWorkbenchForActivity(true);
+    useAppStore.getState().syncTaskWorkbenchForActivity(false);
+
+    expect(useAppStore.getState()).toMatchObject({
+      workbenchTabs: ['overview'],
+      activeWorkbenchTab: 'overview',
+      taskWorkbenchOpenSource: 'auto',
+      taskWorkbenchActivityActive: false,
+    });
+  });
+
   it('C：用户自己按过收起之后，任务开跑不许把它弹回来（#700）', () => {
     useAppStore.getState().setWorkbenchCollapsed(true);
     expect(useAppStore.getState().workbenchCollapsedByUser).toBe(true);

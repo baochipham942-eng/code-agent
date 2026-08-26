@@ -1063,9 +1063,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
       return;
     }
 
-    if (state.taskWorkbenchOpenSource === 'auto' && state.workbenchTabs.includes('overview')) {
-      state.closeWorkbenchTab('task');
-    }
     if (state.taskWorkbenchActivityActive) {
       set({ taskWorkbenchActivityActive: false });
     }

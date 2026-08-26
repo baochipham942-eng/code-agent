@@ -151,6 +151,28 @@ write_build_info() {
   '
 }
 
+# 槽在跑就拒装（fail-closed）。任何槽都可能同时被爸或别的会话在用：装包会先杀掉本槽实例再
+# rm -rf 重装，被杀的人只看到「Agent Neo 启动失败 / 找不到 webServer.cjs」（08-26 爸实付）。
+# 判据只认「从本槽 .app/Contents/MacOS/ 起的进程」；确认过没人用再 NEO_INSTALL_FORCE=1 覆盖。
+refuse_if_slot_in_use() {
+  local pattern="$APP_NAME.app/Contents/MacOS/"
+  local running
+  running="$(pgrep -fl "$pattern" 2>/dev/null || true)"
+  [ -n "$running" ] || return 0
+  if [ "${NEO_INSTALL_FORCE:-0}" = "1" ]; then
+    echo "[install-dev] NEO_INSTALL_FORCE=1：槽 '$APP_NAME' 有实例在跑，仍按要求覆盖" >&2
+    return 0
+  fi
+  cat >&2 <<EOM
+[install-dev] 拒绝安装：槽 '$APP_NAME' 正有实例在跑，装包会把它杀掉并重写资源目录。
+$running
+  → 换一个槽（NEO_SLOT=<n>）或等使用者退出；确认过没人在用再加 NEO_INSTALL_FORCE=1。
+EOM
+  return 1
+}
+
+refuse_if_slot_in_use
+
 # 只关掉**本槽**的测试包实例，不碰生产、也不碰别的槽。
 # 别用 `pkill -f "$APP_NAME"`：槽 1 的名字 "Agent Neo Dev" 是槽 2 "Agent Neo Dev 2" 的前缀，
 # 装槽 1 会顺手杀掉别人正在验的槽 2。带上 .app/Contents/MacOS/ 让两者不再互相命中。

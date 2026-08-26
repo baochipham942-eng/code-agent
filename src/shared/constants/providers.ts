@@ -56,6 +56,9 @@ export const MODEL_API_ENDPOINTS = {
   ollama: 'http://localhost:11434/v1',
 } as const;
 
+/** Groq 在售的低时延默认模型；判断步与通用 Groq provider 共用。 */
+export const GROQ_DEFAULT_MODEL = 'openai/gpt-oss-20b';
+
 // ============================================================================
 // Per-provider 代理分类 — 国内直连 host（即使设了全局代理也绕过）
 // ----------------------------------------------------------------------------
@@ -198,7 +201,7 @@ export const PROVIDER_REGISTRY: Record<BuiltInModelProvider, CanonicalProviderIn
   },
   groq: {
     aliases: ['groq'],
-    defaultModel: 'llama-3.3-70b-versatile',
+    defaultModel: GROQ_DEFAULT_MODEL,
     endpoint: MODEL_API_ENDPOINTS.groq,
     displayName: 'Groq',
   },

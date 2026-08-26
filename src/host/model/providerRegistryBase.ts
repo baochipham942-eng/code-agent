@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { ProviderConfig } from '../../shared/contract';
-import { MODEL_API_ENDPOINTS } from '../../shared/constants';
+import { GROQ_DEFAULT_MODEL, MODEL_API_ENDPOINTS } from '../../shared/constants';
 
 export const BASE_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
   deepseek: {
@@ -229,12 +229,12 @@ export const BASE_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsStreaming: true,
         costType: 'quota',
       },
-      // === Llama 3.3 (稳定版) ===
+      // === Groq 默认判断模型（2026-08-26 API 实查 active） ===
       {
-        id: 'llama-3.3-70b-versatile',
-        name: 'Llama 3.3 70B (稳定)',
+        id: GROQ_DEFAULT_MODEL,
+        name: 'GPT OSS 20B',
         capabilities: ['fast', 'general', 'code'],
-        maxTokens: 8192,
+        maxTokens: 65536,
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,

@@ -14,7 +14,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { buildStreamRecoveryMessage } from '../../../utils/streamRecoveryMessage';
-import { humanizeToolStep } from '../../../utils/humanizeToolStep';
+import { humanizeInterruptedToolAction } from '../../../utils/streamInterruptionPresentation';
 import { Button } from '../../primitives';
 import { isEditableTarget } from '../../DecisionCard';
 import { PermissionCard } from '../../PermissionDialog/PermissionCard';
@@ -60,14 +60,7 @@ function writeInterruptionDecision(sessionId: string | null, turnId: string, dec
 function interruptionSummary(snapshot: StreamRecoverySnapshot, t: ReturnType<typeof useI18n>['t']): string {
   const firstToolCall = buildStreamRecoveryMessage(snapshot).toolCalls?.[0];
   if (!firstToolCall) return t.chat.streamInterruptedDecisionText;
-  const action = humanizeToolStep(
-    firstToolCall.name,
-    firstToolCall.arguments as Record<string, unknown> | undefined,
-    t,
-    firstToolCall.shortDescription,
-    true,
-    firstToolCall.stepLabel,
-  );
+  const action = humanizeInterruptedToolAction(firstToolCall, t);
   return t.chat.streamInterruptedDecision
     .replace('{action}', action)
     .replace('{extra}', snapshot.toolCalls.length > 1

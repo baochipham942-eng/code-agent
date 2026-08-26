@@ -1,17 +1,6 @@
 import type { ToolCall } from '@shared/contract';
-import type { ToolStatus } from '../components/features/chat/MessageBubble/ToolCallDisplay/styles';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
 import type { Translations } from '../i18n';
-
-export type ToolPermissionView =
-  | 'read'
-  | 'write'
-  | 'shell'
-  | 'network'
-  | 'desktop'
-  | 'memory'
-  | 'mcp'
-  | 'unknown';
 
 /**
  * 判定一条工具结果是否「自动加载重试」的良性内部状态（success:false 但不是真失败）。
@@ -23,24 +12,6 @@ export function isAutoLoadedRetry(metadata?: Record<string, unknown> | null): bo
   return metadata.autoLoaded === true || metadata.autoLoadedTools != null;
 }
 
-const WRITE_TOOLS = new Set([
-  'Edit',
-  'Write',
-  'MultiEdit',
-  'NotebookEdit',
-  'edit_file',
-  'write_file',
-  'apply_patch',
-]);
-
-const READ_TOOLS = new Set([
-  'Read',
-  'Glob',
-  'Grep',
-  'LS',
-  'list_directory',
-]);
-
 export function getToolCapabilitySource(toolName: string): ToolCapabilitySource {
   const lower = toolName.toLowerCase();
   if (lower.startsWith('mcp__') || lower.includes('mcp')) return 'mcp';
@@ -49,18 +20,6 @@ export function getToolCapabilitySource(toolName: string): ToolCapabilitySource 
   if (lower.includes('computer') || lower.includes('browser')) return 'computer';
   if (lower.includes('memory')) return 'memory';
   return 'builtin';
-}
-
-export function getToolPermissionView(toolName: string): ToolPermissionView {
-  const lower = toolName.toLowerCase();
-  if (WRITE_TOOLS.has(toolName)) return 'write';
-  if (READ_TOOLS.has(toolName)) return 'read';
-  if (lower === 'bash' || lower.includes('exec') || lower.includes('shell')) return 'shell';
-  if (lower.includes('web') || lower.includes('fetch') || lower.includes('search')) return 'network';
-  if (lower.includes('computer') || lower.includes('browser')) return 'desktop';
-  if (lower.includes('memory')) return 'memory';
-  if (lower.startsWith('mcp__') || lower.includes('mcp')) return 'mcp';
-  return 'unknown';
 }
 
 export function formatToolDuration(duration?: number): string | null {
@@ -377,18 +336,4 @@ export function buildToolErrorActions(
     errorText,
     canRetry: typeof messageId === 'string' && messageId.length > 0,
   };
-}
-
-export function getToolRecoveryHint(toolCall: ToolCall, status: ToolStatus, t: Translations): string | null {
-  const hint = t.toolRecoveryHint;
-  if (status === 'pending') return hint.pending;
-  // 中断的未执行工具已经在主步骤行完整表达「已中断 · 意图 · 未执行」，不再追加
-  // 「可重新运行」形成第二套状态/动作。续跑入口只属于 DecisionSlot。
-  if (status === 'interrupted') return null;
-  if (status === 'error') {
-    if (toolCall.expectedOutcome) return hint.errorWithOutcome.replace('{outcome}', toolCall.expectedOutcome);
-    return hint.errorGeneric;
-  }
-  if (toolCall.result?.outputPath) return hint.outputRecorded;
-  return hint.resultRecorded;
 }

@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React from 'react';
-import type { ToolCall } from '@shared/contract';
+import type { StreamInterruptionReason, ToolCall } from '@shared/contract';
 import { getToolStatusLabel } from './statusLabels';
 import type { ToolStatus } from './styles';
 import { isSemanticToolUIEnabled } from '../../../../../utils/featureFlags';
@@ -21,10 +21,15 @@ import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
 import { formatDisplayPath } from '../../../../../utils/displayPath';
 import { isToolInterruptionPlaceholder } from '../../../../../utils/toolExecutionPresentation';
+import {
+  getStreamInterruptionReasonLabel,
+  humanizeInterruptedToolAction,
+} from '../../../../../utils/streamInterruptionPresentation';
 
 interface Props {
   toolCall: ToolCall;
   status: ToolStatus;
+  interruptionReason?: StreamInterruptionReason;
   /** 展开态：内部工具名进次级小字 */
   showDetailName?: boolean;
 }
@@ -55,23 +60,23 @@ function buildToolHeaderTitle(
   return displayName;
 }
 
-export function ToolHeader({ toolCall, status, showDetailName = false }: Props) {
+export function ToolHeader({ toolCall, status, interruptionReason, showDetailName = false }: Props) {
   const { t } = useI18n();
   const openPreview = useAppStore((s) => s.openPreview);
   // 模型若提供了 shortDescription（产品视角语义标签），优先作为主标题展示；
   // 没有时 fallback 到 humanizeToolStep 合成的人话句子（读取了 xxx.md / 运行了命令 xxx），
   // 而不是裸露 "Read"/"Bash" 这类工具名——两条路径都已经是完整句子，不再需要
   // 单独的 params 副标题（避免语义重复）。
-  const displayName = humanizeToolStep(
-    toolCall.name,
-    toolCall.arguments as Record<string, unknown> | undefined,
-    t,
-    toolCall.shortDescription,
-    // 结果态只认父组件已经裁定的 status：error / interrupted 都用意图式，避免同一个
-    // snapshot Write 一路按 result 判「写入失败」、另一路按会话态判「写入了」。
-    status === 'error' || status === 'interrupted',
-    toolCall.stepLabel,
-  );
+  const displayName = status === 'interrupted'
+    ? humanizeInterruptedToolAction(toolCall, t)
+    : humanizeToolStep(
+        toolCall.name,
+        toolCall.arguments as Record<string, unknown> | undefined,
+        t,
+        toolCall.shortDescription,
+        status === 'error',
+        toolCall.stepLabel,
+      );
   const statusLabel = getToolStatusLabel(toolCall, status, t);
   const filePath = getToolFilePath(
     toolCall.name,
@@ -145,6 +150,12 @@ export function ToolHeader({ toolCall, status, showDetailName = false }: Props) 
 
       {status === 'interrupted' && (
         <span className="shrink-0 text-zinc-600 text-xs font-normal">{t.toolStatus.notExecuted}</span>
+      )}
+
+      {status === 'interrupted' && interruptionReason && (
+        <span className="shrink-0 text-zinc-600 text-xs font-normal">
+          · {getStreamInterruptionReasonLabel(interruptionReason, t)}
+        </span>
       )}
 
       {showSecondaryName && (

@@ -80,6 +80,9 @@ import { submitSteerEnvelope } from './features/chat/chatViewSteer';
 import { collectDroppedAttachments } from './features/chat/ChatInput/utils';
 import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProjectionOverlay';
 import { isStreamRecoveryMessage } from '../utils/streamRecoveryMessage';
+import {
+  isPersistedStreamInterruptionMessage,
+} from '../utils/streamInterruptionPresentation';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import { findSearchMatchForPendingJump } from '../utils/sessionSearchJump';
 import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
@@ -1013,6 +1016,7 @@ export function deriveRetryTurnMessage(
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (isStreamRecoveryMessage(message, streamSnapshot.turnId)) continue;
+    if (isPersistedStreamInterruptionMessage(message)) continue;
     return message.role === 'user' ? message : null;
   }
   return null;

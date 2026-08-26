@@ -58,6 +58,13 @@ chat: {
   streamInterruptedDecision: '上次回复中断，{action} 未执行{extra}',
   streamInterruptedDecisionExtra: '，另有 {count} 个步骤',
   streamInterruptedDecisionText: '上次回复中断',
+  streamInterruptedWrite: '写入 {file}',
+  streamInterruptedWriteFallback: '写入一个文件',
+  streamInterruptedReason: {
+    user: '你点了停止',
+    sessionSwitch: '切换会话时中断',
+    appRestart: '应用重启时中断',
+  },
   continueInterrupted: '继续',
   abandonInterrupted: '放弃',
   welcomeTitle: '这次想去哪颗星球？',
@@ -397,7 +404,6 @@ turnRouting: {
 turnRun: {
   status: {
     cancelling: '正在停止',
-    resumable: '已中断，可继续',
     stale: '连接已断开',
     waitingTool: '等待工具',
     usingTools: '正在使用工具',
@@ -408,7 +414,6 @@ turnRun: {
   detail: {
     cancelling: '正在停止这次回答',
     blocked: '本轮运行遇到错误，等待恢复或重新执行',
-    resumable: '上次流式输出未完成，可从会话操作里继续',
     waitingTool: '工具调用仍在返回结果',
     usingTools: '工具调用已开始，结果会并入当前回复',
     running: '内容正在流式写入当前回复',
@@ -513,15 +518,6 @@ toolErrors: {
   },
 },
 
-// 工具恢复提示（ToolCallDisplay 的 getToolRecoveryHint，仅等待/失败/已产出场景展示）
-toolRecoveryHint: {
-  pending: '等待结果',
-  errorWithOutcome: '可重试：{outcome}',
-  errorGeneric: '可以重试或换个工具',
-  outputRecorded: '产物已记录',
-  resultRecorded: '结果已记录',
-},
-
 // 实时预览诊断条（LivePreviewFrame）——frameError 原文 + CSP snippet 折叠在
 // systemError 的查看详情/收起键后面，这里只放固定的人话摘要+建议。
 livePreview: {
@@ -609,6 +605,13 @@ chat: {
   streamInterruptedDecision: 'The last reply was interrupted; {action} was not executed{extra}',
   streamInterruptedDecisionExtra: ', plus {count} more steps',
   streamInterruptedDecisionText: 'The last reply was interrupted',
+  streamInterruptedWrite: 'Write {file}',
+  streamInterruptedWriteFallback: 'Write a file',
+  streamInterruptedReason: {
+    user: 'You stopped it',
+    sessionSwitch: 'Interrupted when switching conversations',
+    appRestart: 'Interrupted when the app restarted',
+  },
   continueInterrupted: 'Continue',
   abandonInterrupted: 'Abandon',
   welcomeTitle: 'Which planet are we heading to?',
@@ -947,7 +950,6 @@ turnRouting: {
 turnRun: {
   status: {
     cancelling: 'Stopping…',
-    resumable: 'Interrupted — resumable',
     stale: 'Connection lost',
     waitingTool: 'Waiting for tool',
     usingTools: 'Using tools',
@@ -958,7 +960,6 @@ turnRun: {
   detail: {
     cancelling: 'Stopping this reply',
     blocked: 'This turn ran into an error. Waiting to resume or retry.',
-    resumable: 'The last stream was left unfinished. You can continue it from the session actions.',
     waitingTool: 'The tool call is still returning a result.',
     usingTools: 'A tool call has started; its result will be folded into the current reply.',
     running: 'Content is streaming into the current reply.',
@@ -1065,16 +1066,6 @@ toolErrors: {
     BROWSER_RESUME_STATE_IMPORT_FAILED: { summary: 'Browser login state could not be restored', detail: 'The new browser started without the previous run\'s login state.' },
     BROWSER_COMPUTER_HIGH_RISK_BLOCKED: { summary: 'A high-risk browser or computer action was blocked', detail: 'Payments, transfers, and similarly irreversible actions cannot be performed directly by the agent. Complete the action yourself.' },
   },
-},
-
-// Tool recovery hint (ToolCallDisplay's getToolRecoveryHint, shown only for
-// pending/failed/output-produced states)
-toolRecoveryHint: {
-  pending: 'Waiting for result',
-  errorWithOutcome: 'Retry: {outcome}',
-  errorGeneric: 'Retry, or try another tool',
-  outputRecorded: 'Output recorded',
-  resultRecorded: 'Result recorded',
 },
 
 // Live preview diagnostic strip (LivePreviewFrame) — frameError text + CSP

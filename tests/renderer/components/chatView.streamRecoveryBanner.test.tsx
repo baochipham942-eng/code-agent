@@ -45,8 +45,8 @@ function makeAssistantMessage(overrides: Partial<Message> = {}): Message {
 
 // D-1：streamSnapshot 没有任何字段指回触发它的用户消息（turnId 是每轮现铸的 UUID，
 // 与消息 id 无关联）。锚点靠结构性推导——只要 snapshot 还在，addMessage 必然还没被
-// 调用过（它无条件清空 snapshot），中断的助手回复也从没落进 messages，所以末位消息
-// 就是触发这轮的用户消息。deriveRetryTurnMessage 是这条推导本身，抽成纯函数单独钉，
+// 调用过（它无条件清空 snapshot）。正常 recovery 消息和 host 为取消落下的终止 partial
+// 都要跳过，剩下的末位才是触发这轮的用户消息。deriveRetryTurnMessage 是这条推导本身，
 // 不许再让它裸奔在 ChatView 函数体里靠喂 Banner props 间接测。
 describe('deriveRetryTurnMessage — 锚点推导', () => {
   it('末位是 user 消息：返回该消息', () => {
@@ -57,6 +57,17 @@ describe('deriveRetryTurnMessage — 锚点推导', () => {
   it('末位不是 user 消息（是 assistant）：返回 null，不许瞎重发助手消息', () => {
     const messages = [makeUserMessage(), makeAssistantMessage()];
     expect(deriveRetryTurnMessage(makeSnapshot(), messages)).toBeNull();
+  });
+
+  it.each([
+    '[cancelled]',
+    '[未完成 — 切换会话中断]',
+  ])('跳过 host 落库终止标记 %s，仍返回触发轮的 user 消息', (marker) => {
+    const user = makeUserMessage();
+    const interruptedPartial = makeAssistantMessage({
+      content: `部分回复\n\n${marker}`,
+    });
+    expect(deriveRetryTurnMessage(makeSnapshot(), [user, interruptedPartial])).toBe(user);
   });
 
   it('messages 为空：返回 null', () => {

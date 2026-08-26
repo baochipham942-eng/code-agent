@@ -414,7 +414,14 @@ export interface MessageMetadata {
    * 用于重试锚点推导等需要识别"未落库草稿"的场景。
    */
   streamRecovery?: { turnId: string };
+  /**
+   * Renderer 从 host 落库的终止标记或 recovery snapshot 派生的中断原因。
+   * 原始标记继续只存在正文协议里；展示层只消费这个稳定枚举，不把协议串上屏。
+   */
+  streamInterruptionReason?: StreamInterruptionReason;
 }
+
+export type StreamInterruptionReason = 'user' | 'session-switch' | 'app-restart';
 
 export interface Message {
   id: string;

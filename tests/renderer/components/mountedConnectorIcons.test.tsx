@@ -64,7 +64,9 @@ describe('MountedConnectorIcons（底栏挂载连接器 chip）', () => {
     expect(chip.textContent).toContain('腾讯会议');
     expect(chip.textContent).not.toContain('tmeet');
     expect(chip.title).toBe('腾讯会议');
-    expect(screen.getByRole('img', { name: '腾讯会议' })).toBeTruthy();
+    const logo = screen.getByRole('img', { name: '腾讯会议' });
+    expect(logo.parentElement?.className).toContain('h-3');
+    expect(logo.parentElement?.className).toContain('w-3');
     expect(screen.getByRole('button', { name: '取消挂载 腾讯会议' })).toBeTruthy();
     expect(screen.getByTestId('mounted-connector-icons')).toBeTruthy();
   });

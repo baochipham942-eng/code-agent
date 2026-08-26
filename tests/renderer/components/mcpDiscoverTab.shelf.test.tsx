@@ -52,7 +52,14 @@ describe('McpDiscoverTab unified grid cards', () => {
     renderDiscover();
 
     const exaCard = screen.getByTestId('mcp-discover-card-exa');
-    expect(within(exaCard).getByRole('img', { name: 'Exa AI 搜索' })).toBeTruthy();
+    const exaLogo = within(exaCard).getByRole('img', { name: 'Exa AI 搜索' });
+    expect(exaLogo.parentElement?.className).toContain('h-7');
+    expect(exaLogo.parentElement?.className).toContain('w-7');
+    fireEvent.click(exaCard);
+    const exaDetailLogo = within(screen.getByTestId('mcp-discover-detail-exa'))
+      .getByRole('img', { name: 'Exa AI 搜索' });
+    expect(exaDetailLogo.parentElement?.className).toContain('h-8');
+    expect(exaDetailLogo.parentElement?.className).toContain('w-8');
 
     for (const [id, name] of [
       ['notion', 'Notion'],
@@ -69,7 +76,9 @@ describe('McpDiscoverTab unified grid cards', () => {
 
     const fetchCard = screen.getByTestId('mcp-discover-card-fetch');
     expect(within(fetchCard).queryByRole('img')).toBeNull();
-    expect(fetchCard.querySelector('svg')).toBeTruthy();
+    const fallback = fetchCard.querySelector('svg');
+    expect(fallback?.classList.contains('h-7')).toBe(true);
+    expect(fallback?.classList.contains('w-7')).toBe(true);
   });
 
   it('shows install-after-connect for entries without a curated tool list', () => {

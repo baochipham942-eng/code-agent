@@ -18,7 +18,7 @@ import tencentDocsLogo from '../../../assets/brand/connectors/tencent-docs.svg';
 import tencentMapLogo from '../../../assets/brand/connectors/tencent-map.png';
 import tencentSurveyLogo from '../../../assets/brand/connectors/tencent-survey.png';
 import tencentWeiyunLogo from '../../../assets/brand/connectors/tencent-weiyun.png';
-import tmeetLogo from '../../../assets/brand/connectors/tmeet.svg';
+import tmeetLogo from '../../../assets/brand/connectors/tmeet.png';
 
 const CONNECTOR_LOGO_ASSETS: Readonly<Record<string, string>> = {
   amap: amapLogo,
@@ -59,20 +59,23 @@ export const ConnectorLogo: React.FC<ConnectorLogoProps> = ({
   className = 'h-4 w-4',
 }) => {
   const source = id ? CONNECTOR_LOGO_ASSETS[id] : undefined;
-  if (!source) return <>{fallback}</>;
 
   return (
     <span
       className={`inline-flex shrink-0 items-center justify-center ${className} ${
-        id && LIGHT_PLATE_LOGOS.has(id) ? 'rounded-sm bg-white p-0.5' : ''
+        source && id && LIGHT_PLATE_LOGOS.has(id) ? 'rounded-sm bg-white p-0.5' : ''
       }`}
     >
-      <img
-        src={source}
-        alt={displayName}
-        data-testid={`connector-logo-${id}`}
-        className="h-full w-full object-contain"
-      />
+      {source
+        ? (
+          <img
+            src={source}
+            alt={displayName}
+            data-testid={`connector-logo-${id}`}
+            className="h-full w-full object-contain"
+          />
+        )
+        : fallback}
     </span>
   );
 };

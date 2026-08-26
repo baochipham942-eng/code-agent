@@ -70,8 +70,9 @@ export interface CliConnectorToolAction {
 
 interface CliConnectorEditableField {
   key: string;
-  kind: 'string' | 'string_list';
+  kind: 'string' | 'string_list' | 'datetime';
   required?: boolean;
+  readonly?: boolean;
   multiline?: boolean;
 }
 

@@ -14,18 +14,76 @@ import { Input } from '../primitives/Input';
 import { Textarea } from '../primitives/Textarea';
 import { useI18n } from '../../hooks/useI18n';
 
-/** 编辑态草稿：列表字段以逗号串保存（用户逐字输入时不能过早切数组）。 */
+/** 编辑态草稿：列表保留用户输入串，datetime 保留 datetime-local 的本机时间串。 */
 export type WritebackDraft = Record<string, string>;
 
 const BODY_COLLAPSE_LINES = 12;
+const LOCAL_DATETIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/u;
+
+function pad(value: number, length = 2): string {
+  return String(value).padStart(length, '0');
+}
+
+function datetimeToLocalInput(raw: unknown): string {
+  const date = typeof raw === 'number' || typeof raw === 'string' ? new Date(raw) : null;
+  if (!date || Number.isNaN(date.getTime())) return '';
+  const base = `${pad(date.getFullYear(), 4)}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+    + `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return date.getMilliseconds() === 0 ? base : `${base}.${pad(date.getMilliseconds(), 3)}`;
+}
+
+function localDatetimeMillis(value: string): number | null {
+  const match = LOCAL_DATETIME.exec(value);
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second = '0', millisecond = '0'] = match;
+  const date = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+    Number(millisecond.padEnd(3, '0')),
+  );
+  if (
+    date.getFullYear() !== Number(year)
+    || date.getMonth() !== Number(month) - 1
+    || date.getDate() !== Number(day)
+    || date.getHours() !== Number(hour)
+    || date.getMinutes() !== Number(minute)
+    || date.getSeconds() !== Number(second)
+    || date.getMilliseconds() !== Number(millisecond.padEnd(3, '0'))
+  ) return null;
+  return date.getTime();
+}
+
+function localDatetimeToIso(value: string, millis: number): string {
+  const date = new Date(millis);
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? '+' : '-';
+  const absoluteOffset = Math.abs(offsetMinutes);
+  const withSeconds = value.length === 16 ? `${value}:00` : value;
+  return `${withSeconds}${sign}${pad(Math.floor(absoluteOffset / 60))}:${pad(absoluteOffset % 60)}`;
+}
+
+function formattedDatetime(raw: unknown, language: string): string {
+  const date = typeof raw === 'number' || typeof raw === 'string' ? new Date(raw) : null;
+  if (!date || Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(language === 'en' ? 'en-US' : 'zh-CN');
+}
 
 export function draftFromArgs(tool: string, args: Record<string, unknown>): WritebackDraft {
   const draft: WritebackDraft = {};
   for (const field of EDITABLE_TOOL_FIELDS[tool] ?? []) {
+    if (field.readonly) continue;
     const raw = args[field.key];
-    draft[field.key] = field.kind === 'string_list'
-      ? (Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string').join(', ') : '')
-      : (typeof raw === 'string' ? raw : '');
+    if (field.kind === 'string_list') {
+      draft[field.key] = Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string').join(', ') : '';
+    } else if (field.kind === 'datetime') {
+      draft[field.key] = datetimeToLocalInput(raw);
+    } else {
+      draft[field.key] = typeof raw === 'string' ? raw : '';
+    }
   }
   return draft;
 }
@@ -34,19 +92,43 @@ export function draftFromArgs(tool: string, args: Record<string, unknown>): Writ
 export function draftToArgs(tool: string, draft: WritebackDraft): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const field of EDITABLE_TOOL_FIELDS[tool] ?? []) {
+    if (field.readonly) continue;
     const value = draft[field.key] ?? '';
-    out[field.key] = field.kind === 'string_list'
-      ? value.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean)
-      : value;
+    if (field.kind === 'string_list') {
+      out[field.key] = value.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+    } else if (field.kind === 'datetime') {
+      if (!value) continue;
+      const millis = localDatetimeMillis(value);
+      if (millis === null) {
+        out[field.key] = value;
+        continue;
+      }
+      out[field.key] = field.key.endsWith('_ms') ? millis : localDatetimeToIso(value, millis);
+    } else {
+      out[field.key] = value;
+    }
   }
   return out;
 }
 
 /** 必填字段是否都有值（空 = 主按钮禁用）。 */
 export function draftMissingRequired(tool: string, draft: WritebackDraft): string[] {
-  return (EDITABLE_TOOL_FIELDS[tool] ?? [])
-    .filter((f) => f.required && (draftToArgs(tool, draft)[f.key] as string | string[]).length === 0)
+  const fields = (EDITABLE_TOOL_FIELDS[tool] ?? []).filter((field) => !field.readonly);
+  const invalid = fields
+    .filter((field) => {
+      const value = draft[field.key] ?? '';
+      if (field.required && value.trim() === '') return true;
+      return field.kind === 'datetime' && value !== '' && localDatetimeMillis(value) === null;
+    })
     .map((f) => f.key);
+  const start = fields.find((field) => field.key === 'start' || field.key === 'start_ms');
+  const end = fields.find((field) => field.key === 'end' || field.key === 'end_ms');
+  if (start && end) {
+    const startMillis = localDatetimeMillis(draft[start.key] ?? '');
+    const endMillis = localDatetimeMillis(draft[end.key] ?? '');
+    if (startMillis !== null && endMillis !== null && endMillis < startMillis) invalid.push(end.key);
+  }
+  return [...new Set(invalid)];
 }
 
 function useFieldLabels(): Record<string, string> {
@@ -58,8 +140,18 @@ function useFieldLabels(): Record<string, string> {
     bcc: w.fieldBcc,
     subject: w.fieldSubject,
     content: w.fieldContent,
+    calendar: w.fieldCalendar,
+    event_uid: w.fieldEventUid,
+    list: w.fieldList,
+    reminder_id: w.fieldReminderId,
+    title: w.fieldTitle,
+    notes: w.fieldNotes,
+    location: w.fieldLocation,
     start: w.fieldStart,
     end: w.fieldEnd,
+    start_ms: w.fieldStart,
+    end_ms: w.fieldEnd,
+    remind_at_ms: w.fieldRemindAt,
   };
 }
 
@@ -68,7 +160,7 @@ function useFieldLabels(): Record<string, string> {
 // ----------------------------------------------------------------------------
 
 export function WritebackFieldsView({ tool, args }: { tool: string; args: Record<string, unknown> }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const w = t.decisionCard.permission.writeback;
   const labels = useFieldLabels();
   const fields = EDITABLE_TOOL_FIELDS[tool] ?? [];
@@ -91,7 +183,9 @@ export function WritebackFieldsView({ tool, args }: { tool: string; args: Record
         const raw = args[field.key];
         const text = field.kind === 'string_list'
           ? (Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string').join(', ') : '')
-          : (typeof raw === 'string' ? raw : '');
+          : field.kind === 'datetime'
+            ? formattedDatetime(raw, language)
+            : (typeof raw === 'string' ? raw : '');
         // 可选列表字段为空就不占一行（密送常年为空）
         if (!text && !field.required && field.kind === 'string_list') return null;
         if (field.multiline) {
@@ -159,7 +253,7 @@ export function WritebackEditForm({
   const { t } = useI18n();
   const w = t.decisionCard.permission.writeback;
   const labels = useFieldLabels();
-  const fields = EDITABLE_TOOL_FIELDS[tool] ?? [];
+  const fields = (EDITABLE_TOOL_FIELDS[tool] ?? []).filter((field) => !field.readonly);
   const pristine = draftFromArgs(tool, original);
   const missing = new Set(draftMissingRequired(tool, draft));
   const attachments = Array.isArray(original.attachments)
@@ -197,6 +291,8 @@ export function WritebackEditForm({
         ) : (
           <Input
             {...common}
+            type={field.kind === 'datetime' ? 'datetime-local' : 'text'}
+            step={field.kind === 'datetime' ? '0.001' : undefined}
             inputSize="sm"
             placeholder={field.kind === 'string_list' ? w.listPlaceholder : undefined}
             onChange={(e) => onChange({ ...draft, [field.key]: e.target.value })}
@@ -208,7 +304,13 @@ export function WritebackEditForm({
 
   return (
     <div className="space-y-2.5" data-testid="writeback-edit-form">
-      <p className="text-xs text-zinc-400">{w.editingHint}</p>
+      <p className="text-xs text-zinc-400">
+        {tool === 'mail_send'
+          ? w.editingHint
+          : tool === 'calendar_create_event' || tool === 'reminders_create' || tool === 'tmeetMeetingCreate'
+          ? w.editingCreateHint
+          : w.editingUpdateHint}
+      </p>
       {fields.map(renderField)}
       {attachments.length > 0 && (
         <div className="pl-2.5">

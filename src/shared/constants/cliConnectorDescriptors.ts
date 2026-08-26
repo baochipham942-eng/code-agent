@@ -105,8 +105,8 @@ export const tmeetDescriptor = {
   editablePermissionFields: {
     tmeetMeetingCreate: [
       { key: 'subject', kind: 'string', required: true },
-      { key: 'start', kind: 'string', required: true },
-      { key: 'end', kind: 'string', required: true },
+      { key: 'start', kind: 'datetime', required: true },
+      { key: 'end', kind: 'datetime', required: true },
     ],
   },
   loggerName: 'TencentMeetingCli',

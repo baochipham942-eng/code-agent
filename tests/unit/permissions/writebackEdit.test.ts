@@ -69,6 +69,49 @@ describe('applyEditedArgs（共享合同）', () => {
     expect(applyEditedArgs('tmeetMeetingCreate', original, { waiting_room: false }).ok).toBe(false);
     expect(applyEditedArgs('tmeetMeetingCreate', original, { subject: '' }).ok).toBe(false);
   });
+
+  it('日历时间按 Unix ms 往返，标识字段保持原值且不可编辑', () => {
+    const original = {
+      calendar: '工作',
+      title: '评审会',
+      start_ms: 1_777_346_400_000,
+      end_ms: 1_777_348_200_000,
+      event_uid: 'event-1',
+    };
+    const result = applyEditedArgs('calendar_update_event', original, {
+      title: '季度评审会',
+      start_ms: 1_777_350_000_000,
+      end_ms: 1_777_351_800_000,
+    });
+    expect(result).toEqual({
+      ok: true,
+      params: {
+        ...original,
+        title: '季度评审会',
+        start_ms: 1_777_350_000_000,
+        end_ms: 1_777_351_800_000,
+      },
+      changedKeys: ['title', 'start_ms', 'end_ms'],
+    });
+    expect(applyEditedArgs('calendar_update_event', original, { event_uid: 'event-2' }).ok).toBe(false);
+  });
+
+  it.each([
+    ['原生日历 end 早于 start', 'calendar_create_event', {
+      calendar: '工作', title: '评审会', start_ms: 1_777_346_400_000, end_ms: 1_777_348_200_000,
+    }, { start_ms: 1_777_350_000_000, end_ms: 1_777_349_000_000 }],
+    ['腾讯会议 end 早于 start', 'tmeetMeetingCreate', {
+      subject: '评审会', start: '2026-08-26T09:00:00+08:00', end: '2026-08-26T09:30:00+08:00',
+    }, { start: '2026-08-26T10:00:00+08:00', end: '2026-08-26T09:59:00+08:00' }],
+    ['必填 datetime 为空', 'calendar_create_event', {
+      calendar: '工作', title: '评审会', start_ms: 1_777_346_400_000,
+    }, { start_ms: '' }],
+    ['非法 datetime', 'tmeetMeetingCreate', {
+      subject: '评审会', start: '2026-08-26T09:00:00+08:00', end: '2026-08-26T09:30:00+08:00',
+    }, { start: '明天上午九点' }],
+  ])('fail-closed：%s', (_label, tool, original, updated) => {
+    expect(applyEditedArgs(tool, original, updated).ok).toBe(false);
+  });
 });
 
 describe('审批岛：改过的参数只配一次性放行 + 可编辑工具超时 5 分钟', () => {

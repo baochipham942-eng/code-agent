@@ -9,7 +9,7 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CalendarPlus, ChevronDown, ChevronRight, Mail, RotateCcw } from 'lucide-react';
+import { CalendarPlus, ChevronDown, ChevronRight, ListTodo, Mail, RotateCcw } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { usePermissionStore, type PermissionRequestForMemory } from '../../stores/permissionStore';
@@ -213,6 +213,10 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
   // 可编辑写回工具：三选一（原样写回 / 改一改再写回 / 取消），永远一次性放行
   const editable = request?.rawArgs !== undefined && isEditableTool(request.tool);
   const isMeetingCreate = request?.tool === 'tmeetMeetingCreate';
+  const isCalendarWrite = request?.tool === 'calendar_create_event' || request?.tool === 'calendar_update_event';
+  const isRemindersWrite = request?.tool === 'reminders_create' || request?.tool === 'reminders_update';
+  const isNativeCreate = request?.tool === 'calendar_create_event' || request?.tool === 'reminders_create';
+  const isNativeUpdate = request?.tool === 'calendar_update_event' || request?.tool === 'reminders_update';
 
   // 「这操作本身危险」与「这次必须你亲手点」是两件事，卡上必须分开表达。
   //
@@ -401,20 +405,20 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
   const options: DecisionOption[] = editable ? [
     {
       id: 'once',
-      label: isMeetingCreate ? w.optionCreate : w.optionSend,
-      description: isMeetingCreate ? w.optionCreateDesc : w.optionSendDesc,
+      label: isMeetingCreate ? w.optionCreate : isNativeCreate ? w.optionCreateItem : isNativeUpdate ? w.optionUpdate : w.optionSend,
+      description: isMeetingCreate ? w.optionCreateDesc : isNativeCreate ? w.optionCreateItemDesc : isNativeUpdate ? w.optionUpdateDesc : w.optionSendDesc,
       shortcut: 'y',
     },
     {
       id: 'edit',
-      label: isMeetingCreate ? w.optionEditMeeting : w.optionEdit,
-      description: isMeetingCreate ? w.optionEditMeetingDesc : w.optionEditDesc,
+      label: isMeetingCreate ? w.optionEditMeeting : isNativeCreate ? w.optionEditCreate : isNativeUpdate ? w.optionEditUpdate : w.optionEdit,
+      description: isMeetingCreate ? w.optionEditMeetingDesc : isNativeCreate ? w.optionEditCreateDesc : isNativeUpdate ? w.optionEditUpdateDesc : w.optionEditDesc,
       shortcut: 'e',
     },
     {
       id: 'deny',
-      label: isMeetingCreate ? w.optionDenyMeeting : w.optionDeny,
-      description: isMeetingCreate ? w.optionDenyMeetingDesc : w.optionDenyDesc,
+      label: isMeetingCreate ? w.optionDenyMeeting : isNativeCreate ? w.optionDenyCreate : isNativeUpdate ? w.optionDenyUpdate : w.optionDeny,
+      description: isMeetingCreate ? w.optionDenyMeetingDesc : isNativeCreate ? w.optionDenyCreateDesc : isNativeUpdate ? w.optionDenyUpdateDesc : w.optionDenyDesc,
       shortcut: 'n',
     },
   ] : [
@@ -435,12 +439,35 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
   const meetingSubject = isMeetingCreate && typeof request.rawArgs?.subject === 'string'
     ? request.rawArgs.subject.trim()
     : '';
+  const contentTitle = editable && typeof request.rawArgs?.title === 'string'
+    ? request.rawArgs.title.trim()
+    : '';
   const title = isMeetingCreate
     ? w.tmeetCreateTitle
-    : editable ? w.mailSendTitle : (isDangerous ? t.decisionCard.dangerTitle : config.title);
-  const icon = isMeetingCreate ? <CalendarPlus size={20} /> : editable ? <Mail size={20} /> : config.icon;
+    : request.tool === 'calendar_create_event'
+      ? w.calendarCreateTitle
+      : request.tool === 'calendar_update_event'
+        ? w.calendarUpdateTitle
+        : request.tool === 'reminders_create'
+          ? w.remindersCreateTitle
+          : request.tool === 'reminders_update'
+            ? w.remindersUpdateTitle
+            : editable ? w.mailSendTitle : (isDangerous ? t.decisionCard.dangerTitle : config.title);
+  const icon = isMeetingCreate || isCalendarWrite
+    ? <CalendarPlus size={20} />
+    : isRemindersWrite
+      ? <ListTodo size={20} />
+      : editable ? <Mail size={20} /> : config.icon;
   const question = isMeetingCreate
     ? (meetingSubject ? w.tmeetCreateQuestion.replace('{subject}', meetingSubject) : w.tmeetCreateQuestionFallback)
+    : request.tool === 'calendar_create_event'
+      ? (contentTitle ? w.calendarCreateQuestion.replace('{title}', contentTitle) : w.calendarCreateQuestionFallback)
+      : request.tool === 'calendar_update_event'
+        ? (contentTitle ? w.calendarUpdateQuestion.replace('{title}', contentTitle) : w.calendarUpdateQuestionFallback)
+        : request.tool === 'reminders_create'
+          ? (contentTitle ? w.remindersCreateQuestion.replace('{title}', contentTitle) : w.remindersCreateQuestionFallback)
+          : request.tool === 'reminders_update'
+            ? (contentTitle ? w.remindersUpdateQuestion.replace('{title}', contentTitle) : w.remindersUpdateQuestionFallback)
     : editable
     ? (firstRecipient ? w.mailSendQuestion.replace('{target}', firstRecipient) : w.mailSendQuestionFallback)
     : permissionQuestion(request, t);
@@ -458,7 +485,7 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
     const expired = request.decision === 'timeout';
     const denied = request.decision === 'deny' || request.decision === 'never';
     const settledStatus = denied ? p.settledDenied : p.settledAllowed;
-    const settledSubject = meetingSubject || (editable && typeof request.rawArgs?.subject === 'string'
+    const settledSubject = meetingSubject || contentTitle || (editable && typeof request.rawArgs?.subject === 'string'
       ? request.rawArgs.subject.trim()
       : '');
     if (!expired && !settledExpanded) {
@@ -549,7 +576,11 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
         icon={icon}
         title={title}
         headerMeta={`${headerMeta} · ${w.editingBadge}`}
-        question={isMeetingCreate ? w.tmeetWriteWarning : w.irreversible}
+        question={isMeetingCreate
+          ? w.tmeetWriteWarning
+          : isCalendarWrite
+            ? w.calendarWriteWarning
+            : isRemindersWrite ? w.remindersWriteWarning : w.irreversible}
         details={
           <WritebackEditForm
             tool={request.tool}
@@ -566,7 +597,7 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
         }}
         onCancel={() => setDraft(null)}
         cancelLabel={w.discard}
-        confirmLabel={isMeetingCreate ? w.createEdited : w.sendEdited}
+        confirmLabel={isMeetingCreate || isNativeCreate ? w.createEdited : isNativeUpdate ? w.updateEdited : w.sendEdited}
       />
     );
   }
@@ -588,7 +619,11 @@ export function PermissionCard({ requestOverride, sessionIdOverride }: Permissio
         <>
           {editable && (
             <p className="text-xs text-badge-warning" data-testid="writeback-irreversible">
-              {isMeetingCreate ? w.tmeetWriteWarning : w.irreversible}
+              {isMeetingCreate
+                ? w.tmeetWriteWarning
+                : isCalendarWrite
+                  ? w.calendarWriteWarning
+                  : isRemindersWrite ? w.remindersWriteWarning : w.irreversible}
             </p>
           )}
           {!editable && reasonText && <p className="text-zinc-400 text-sm">{reasonText}</p>}

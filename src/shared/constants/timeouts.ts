@@ -52,7 +52,7 @@ export const SERVICE_TIMEOUTS = {
 
 /** 用户交互超时 */
 export const INTERACTION_TIMEOUTS = {
-  /** 用户问题等待超时 */
+  /** 无交互 renderer 时的用户问题等待超时 */
   USER_QUESTION: 300_000,
   /** 确认操作超时 */
   CONFIRM_ACTION: 60_000,

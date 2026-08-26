@@ -210,7 +210,7 @@ describe('OverviewRunHeader 细进度线', () => {
     setRun(run({ status: 'cancelled', startedAt: START, endedAt: START + 2_000 }));
     render(<OverviewRunHeader />);
     const phase = screen.getByTestId('overview-run-header-phase');
-    expect(phase.textContent).toBe('已中断');
+    expect(phase.textContent).toBe('已取消 · 你停止了这次执行');
     expect(screen.getByTestId('overview-run-header').textContent).not.toMatch(/cancelled|blocked|error/i);
   });
 });

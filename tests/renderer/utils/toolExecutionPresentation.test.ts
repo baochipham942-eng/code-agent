@@ -48,8 +48,14 @@ describe('toolExecutionPresentation', () => {
 
     expect(isToolInterruptionPlaceholder(cancelled)).toBe(true);
     expect(isToolInterruptionPlaceholder(crashed)).toBe(true);
-    expect(humanizeToolError(cancelled, 'Read', zh)).toEqual({ summary: '已中断' });
-    expect(humanizeToolError(crashed, 'Read', en)).toEqual({ summary: 'Interrupted' });
+    expect(humanizeToolError(cancelled, 'Read', zh)).toEqual({
+      summary: zh.outcomeWords['cancelled-restart'].badge.label,
+      detail: zh.outcomeWords['cancelled-restart'].badge.reason,
+    });
+    expect(humanizeToolError(crashed, 'Read', en)).toEqual({
+      summary: en.outcomeWords['cancelled-restart'].badge.label,
+      detail: en.outcomeWords['cancelled-restart'].badge.reason,
+    });
   });
 
   it('localizes managed-browser resume import failures from the host error code', () => {

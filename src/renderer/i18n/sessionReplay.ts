@@ -1,4 +1,6 @@
 // ============================================================================
+
+import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 // Session Replay 弹层词典（zh/en）— 从 zh.ts/en.ts 分域抽出，过 god-file 债务门
 // ============================================================================
 
@@ -39,10 +41,10 @@ export const sessionReplayZh = {
     unitSecond: '秒',
     unitMinute: '分',
     running: '执行中',
-    completed: '已完成',
-    failed: '失败',
+    completed: outcomeWordsZh.outcomeWords.completed.timeline.label,
+    failed: outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label,
     failedPrefix: '失败：{message}',
-    cancelled: '已取消',
+    cancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].timeline.label,
     pending: '待开始',
     workflowRunningPhase: '执行中：{phase}',
     metaStarted: '开始 {time}',
@@ -100,7 +102,7 @@ export const sessionReplayZh = {
   sessionActionsMenu: {
     menuAria: '会话动作',
     resumeLabel: '恢复执行',
-    resumeFailed: '恢复执行失败：{message}',
+    resumeFailed: `恢复${outcomeWordsZh.outcomeWords['failed-tool'].timeline.label}：{message}`,
     moveToBackgroundLabel: '移到后台',
     livePreviewLabel: '实时预览…',
     replayLabel: '打开 Replay',
@@ -159,10 +161,10 @@ export const sessionReplayEn: typeof sessionReplayZh = {
     unitSecond: 'sec',
     unitMinute: 'min',
     running: 'Running',
-    completed: 'Completed',
-    failed: 'Failed',
+    completed: outcomeWordsEn.outcomeWords.completed.timeline.label,
+    failed: outcomeWordsEn.outcomeWords['failed-unknown'].timeline.label,
     failedPrefix: 'Failed: {message}',
-    cancelled: 'Cancelled',
+    cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].timeline.label,
     pending: 'Pending',
     workflowRunningPhase: 'Running: {phase}',
     metaStarted: 'started {time}',

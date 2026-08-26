@@ -85,7 +85,7 @@ describe('ToolCallDisplay status labels', () => {
       'error',
       zh,    );
 
-    expect(label).toBe('写入失败');
+    expect(label).toBe(zh.outcomeWords['failed-tool'].timeline.label);
   });
 
   // host 验收门（toolArtifactRepairPolicy.isFileMutationTool）覆盖的不只 Write：
@@ -122,7 +122,7 @@ describe('ToolCallDisplay status labels', () => {
       zh,
     );
 
-    expect(label).toBe('编辑失败');
+    expect(label).toBe(zh.outcomeWords['failed-tool'].timeline.label);
   });
 
   // 步骤行主文案本身就是一句过去时人话（「写入了 notes.md」），成功态再前置一个

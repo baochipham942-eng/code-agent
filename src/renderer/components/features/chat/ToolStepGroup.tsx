@@ -356,7 +356,16 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
             度量不同，同一行里基线实测差 1px（真实组件 web 量：现状 −1px，统一字体后 0px）。
             这不是 align-items 的问题——改 items-baseline 对它无效，必须统一字体栈。 */}
         {status !== 'ok' && (
-          <span className={`flex-shrink-0 font-mono ${getToolGroupStatusClass(status, hasEscalatedError)}`}>{getToolGroupStatusLabel(status, t)}</span>
+          <span className={`flex-shrink-0 font-mono ${getToolGroupStatusClass(status, hasEscalatedError)}`}>
+            {getToolGroupStatusLabel(status, t)}
+            {(status === 'partial' || status === 'error') && (
+              <span className="ml-1 text-zinc-600">
+                · {status === 'partial'
+                  ? t.outcomeWords['completed-with-warnings'].badge.reason
+                  : t.outcomeWords['failed-tool'].badge.reason}
+              </span>
+            )}
+          </span>
         )}
         <span className="min-w-0 flex-1 truncate font-mono">{label}</span>
         {recoveredCount > 0 && (
@@ -565,9 +574,9 @@ function isEmptySearchResult(toolCall: ToolCall): boolean {
 
 function getToolGroupStatusLabel(status: 'streaming' | 'partial' | 'error' | 'ok', t: Translations): string {
   if (status === 'streaming') return t.toolGroup.statusRunning;
-  if (status === 'partial') return t.toolGroup.statusPartial;
-  if (status === 'error') return t.toolGroup.statusFailed;
-  return t.toolGroup.statusCompleted;
+  if (status === 'partial') return t.outcomeWords['completed-with-warnings'].badge.label;
+  if (status === 'error') return t.outcomeWords['failed-tool'].badge.label;
+  return t.outcomeWords.completed.badge.label;
 }
 
 // hasEscalatedError=false（探索性失败，非用户需介入）一律用中性色，不顶红/顶黄——

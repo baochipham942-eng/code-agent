@@ -66,11 +66,11 @@ export function getRunUiStatusLabel(status: RunUiStatus, t: Translations): strin
   const rw = t.taskStatusPanels.runWorkbench;
   switch (status) {
     case 'completed':
-      return rw.statusCompleted;
+      return t.outcomeWords.completed.badge.label;
     case 'blocked':
       return rw.statusBlocked;
     case 'cancelled':
-      return rw.statusCancelled;
+      return t.outcomeWords['cancelled-by-user'].badge.label;
     case 'waiting_approval':
       return rw.statusWaitingApproval;
     case 'using_tools':
@@ -116,6 +116,9 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
   const isCompleted = run.status === 'completed';
   const runBlockedHint = run.blockedReason
     || (run.blockedReasonCategory ? t.taskPanel.taskBlockedReason[run.blockedReasonCategory] : null);
+  const terminalReason = run.status === 'cancelled'
+    ? t.outcomeWords['cancelled-by-user'].badge.reason
+    : null;
 
   return (
     <div className="space-y-1.5">
@@ -144,6 +147,11 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
           {/* 与任务轨同口径（ADR-050）：agent 的人话优先，判成 raw 日志时退回类别文案 */}
           {runBlockedHint && (
             <div className="mt-1 text-[11px] text-badge-warning">{runBlockedHint}</div>
+          )}
+          {terminalReason && (
+            <div data-testid="run-overview-outcome-reason" className="mt-1 text-[11px] text-zinc-500">
+              {terminalReason}
+            </div>
           )}
         </div>
       </div>
@@ -183,11 +191,11 @@ function getTaskStatusLabel(status: TaskRecord['status'], t: Translations): stri
     case 'in_progress':
       return rw.statusRunning;
     case 'completed':
-      return rw.statusCompleted;
+      return t.outcomeWords.completed.badge.label;
     case 'blocked':
       return rw.statusBlocked;
     case 'cancelled':
-      return rw.statusCancelled;
+      return t.outcomeWords['cancelled-by-user'].badge.label;
     default:
       return rw.statusPending;
   }

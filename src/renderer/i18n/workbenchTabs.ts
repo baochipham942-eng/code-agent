@@ -1,3 +1,5 @@
+import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
+
 export const workbenchTabsZh = {
   workbenchTabs: {
     emptyTitle: '选一个要在这里看的东西',
@@ -58,8 +60,8 @@ export const workbenchTabsZh = {
     overviewRunStepProgress: '第 {current} 步 / 共 {total} 步',
     overviewRunStepsDone: '已完成 · 共 {total} 步',
     overviewRunWaitingApproval: '等你确认',
-    overviewRunOutcomeCancelled: '已中断',
-    overviewRunOutcomeError: '出错了',
+    overviewRunOutcomeCancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].timeline.label,
+    overviewRunOutcomeError: outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label,
     overviewRunDotLabel: '任务状态：{status}',
     // T1 诊断下沉：AgentTree / 能力路由证据等 power-user 内容收进二级折叠，内容不删
     overviewDiagnosticsLabel: '诊断详情',
@@ -224,8 +226,8 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     overviewRunStepProgress: 'Step {current} of {total}',
     overviewRunStepsDone: 'Done · {total} steps',
     overviewRunWaitingApproval: 'Waiting for your confirmation',
-    overviewRunOutcomeCancelled: 'Interrupted',
-    overviewRunOutcomeError: 'Something went wrong',
+    overviewRunOutcomeCancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].timeline.label,
+    overviewRunOutcomeError: outcomeWordsEn.outcomeWords['failed-unknown'].timeline.label,
     overviewRunDotLabel: 'Task status: {status}',
     overviewDiagnosticsLabel: 'Diagnostics',
     overviewBackLabel: 'Back to task',

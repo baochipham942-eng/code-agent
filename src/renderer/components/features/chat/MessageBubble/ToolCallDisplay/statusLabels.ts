@@ -49,9 +49,9 @@ export function getToolStatusLabel(
       if (isArtifactValidationFailureAfterMutation(toolCall)) {
         return artifactValidationFailedLabel(toolCall.name, t);
       }
-      return labels.error;
+      return t.outcomeWords['failed-tool'].timeline.label;
     case 'interrupted':
-      return t.toolStatus.interrupted;
+      return t.outcomeWords['cancelled-restart'].timeline.label;
   }
 }
 

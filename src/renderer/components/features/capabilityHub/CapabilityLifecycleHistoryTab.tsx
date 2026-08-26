@@ -53,11 +53,15 @@ function capabilityDisplayName(capabilityKey: string, text: HistoryText): string
   return split ? `${text[split.namespaceKey]} · ${split.name}` : capabilityKey;
 }
 
-function actionLabel(action: CapabilityLifecycleAction, text: HistoryText): string {
+function actionLabel(
+  action: CapabilityLifecycleAction,
+  text: HistoryText,
+  failedOutcome: ReturnType<typeof useI18n>['t']['outcomeWords']['failed-unavailable']['badge'],
+): string {
   if (action === 'loaded') return text.actionLoaded;
   if (action === 'unloaded') return text.actionUnloaded;
   if (action === 'rolled_back') return text.actionRolledBack;
-  return text.actionFailed;
+  return failedOutcome.label;
 }
 
 interface BatchRowProps {
@@ -65,11 +69,12 @@ interface BatchRowProps {
   text: HistoryText;
   relativeTime: (ts: number) => string;
   absoluteTime: (ts: number) => string;
+  failedOutcome: ReturnType<typeof useI18n>['t']['outcomeWords']['failed-unavailable']['badge'];
 }
 
-const BatchRow: React.FC<BatchRowProps> = ({ batch, text, relativeTime, absoluteTime }) => {
+const BatchRow: React.FC<BatchRowProps> = ({ batch, text, relativeTime, absoluteTime, failedOutcome }) => {
   const [expanded, setExpanded] = useState(false);
-  const label = actionLabel(batch.action, text);
+  const label = actionLabel(batch.action, text, failedOutcome);
   const single = batch.capabilityKeys.length === 1;
   // 整批同属一个命名空间时，名单里的名字不再各带一遍「技能 ·」（50 遍等于噪音）；
   // 混合批里命名空间是真区分信息，逐个保留。单能力批走行内形态，始终带。
@@ -95,6 +100,11 @@ const BatchRow: React.FC<BatchRowProps> = ({ batch, text, relativeTime, absolute
               {relativeTime(batch.ts)}
             </span>
           </div>
+          {batch.action === 'failed' ? (
+            <p data-testid="capability-history-failure-reason" className="mt-0.5 text-xs text-zinc-500">
+              {failedOutcome.reason}
+            </p>
+          ) : null}
           {/* failed 的 detail 是 host 的 error.message：原文展示，不翻译不加工 */}
           {single && batch.details[batch.capabilityKeys[0]] ? (
             <p className="mt-0.5 break-words text-xs text-zinc-500">
@@ -212,6 +222,7 @@ export const CapabilityLifecycleHistoryTab: React.FC = () => {
               text={text}
               relativeTime={relativeTime}
               absoluteTime={absoluteTime}
+              failedOutcome={t.outcomeWords['failed-unavailable'].badge}
             />
           ))}
         </div>

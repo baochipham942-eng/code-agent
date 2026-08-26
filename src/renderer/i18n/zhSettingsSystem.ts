@@ -1,4 +1,6 @@
 // ============================================================================
+
+import { outcomeWordsZh } from './outcomeWords';
 // Settings namespace translations (zh/System) — 纯平移拆分（债务门）
 // ============================================================================
 
@@ -413,12 +415,12 @@ export const zhSettingsSystem = {
         authorizationOpened: '已在系统浏览器打开飞书授权页，完成授权后会自动回到 Neo…',
         connected: '飞书已连接',
         disconnected: '飞书已断开',
-        authorizationCancelled: '已取消飞书授权',
+        authorizationCancelled: `${outcomeWordsZh.outcomeWords['cancelled-by-user'].badge.label}飞书授权`,
         tmeetAuthorizationOpened: '已在系统浏览器打开腾讯会议授权页，请完成授权…',
         tmeetAlreadyConnected: '腾讯会议 CLI 已登录，已直接接通',
         tmeetConnected: '腾讯会议已连接',
         tmeetDisconnected: '腾讯会议已断开',
-        tmeetAuthorizationCancelled: '已取消腾讯会议授权',
+        tmeetAuthorizationCancelled: `${outcomeWordsZh.outcomeWords['cancelled-by-user'].badge.label}腾讯会议授权`,
       },
       tryIt: {
         title: '试试这样用',

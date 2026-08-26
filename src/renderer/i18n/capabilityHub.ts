@@ -1,3 +1,5 @@
+import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
+
 export const capabilityHubZh = {
   capabilityHub: {
     title: '能力中心',
@@ -58,7 +60,7 @@ export const capabilityHubZh = {
     actionLoaded: '装上了',
     actionUnloaded: '卸下了',
     actionRolledBack: '回滚了',
-    actionFailed: '失败了',
+    actionFailed: outcomeWordsZh.outcomeWords['failed-unavailable'].badge.label,
     batchCount: '{count} 个能力',
     showMembers: '展开名单',
     hideMembers: '收起',
@@ -120,7 +122,7 @@ export const capabilityHubEn = {
     actionLoaded: 'Loaded',
     actionUnloaded: 'Unloaded',
     actionRolledBack: 'Rolled back',
-    actionFailed: 'Failed',
+    actionFailed: outcomeWordsEn.outcomeWords['failed-unavailable'].badge.label,
     batchCount: '{count} capabilities',
     showMembers: 'Show names',
     hideMembers: 'Show less',

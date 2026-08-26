@@ -241,7 +241,10 @@ export function humanizeToolError(
   metadata?: Record<string, unknown> | null,
 ): HumanizedToolError | null {
   if (isToolInterruptionPlaceholder(error)) {
-    return { summary: t.toolStatus.interrupted };
+    return {
+      summary: t.outcomeWords['cancelled-restart'].badge.label,
+      detail: t.outcomeWords['cancelled-restart'].badge.reason,
+    };
   }
   // 1. code 优先：host 已登记的错误码直接用 code 文案，不经正则（正则降为兜底）
   const code = resolveRegisteredCode(metadata);

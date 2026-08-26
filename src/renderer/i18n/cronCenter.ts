@@ -1,4 +1,6 @@
 // ============================================================================
+
+import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
 // 注：types.ts 里的 formatActionSummary/formatDateTime 等格式化函数文案暂未迁移
@@ -199,11 +201,11 @@ export const cronCenterZh = {
     status: {
       pending: '待执行',
       running: '运行中',
-      completed: '成功',
-      failed: '失败',
-      cancelled: '已取消',
+      completed: outcomeWordsZh.outcomeWords.completed.badge.label,
+      failed: outcomeWordsZh.outcomeWords['failed-unknown'].badge.label,
+      cancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].badge.label,
       paused: '已暂停',
-      interrupted: '已中断',
+      interrupted: outcomeWordsZh.outcomeWords['cancelled-restart'].badge.label,
       none: '未执行',
     },
   },
@@ -393,11 +395,11 @@ export const cronCenterEn: typeof cronCenterZh = {
     status: {
       pending: 'Pending',
       running: 'Running',
-      completed: 'Succeeded',
-      failed: 'Failed',
-      cancelled: 'Cancelled',
+      completed: outcomeWordsEn.outcomeWords.completed.badge.label,
+      failed: outcomeWordsEn.outcomeWords['failed-unknown'].badge.label,
+      cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].badge.label,
       paused: 'Paused',
-      interrupted: 'Interrupted',
+      interrupted: outcomeWordsEn.outcomeWords['cancelled-restart'].badge.label,
       none: 'Not run yet',
     },
   },

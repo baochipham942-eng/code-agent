@@ -259,7 +259,7 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
-    expect(html).toContain('已中断');
+    expect(html).toContain('已取消');
     expect(html).toContain('未执行');
     expect(html).not.toContain('会改文件');
     expect(html).not.toContain('builtin');
@@ -521,7 +521,8 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
-    expect(html).toContain('aria-label="部分失败"');
+    expect(html).toContain('aria-label="有提醒"');
+    expect(html).toContain('任务完成，但仍有未解决的问题');
     expect(html).not.toContain('aria-label="失败"');
   });
 

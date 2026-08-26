@@ -81,31 +81,36 @@ function StampChip({ segment }: { segment: TurnSegment }) {
     );
   }
   // n_a：按终态说人话（失败/取消自带原因，不判真伪）
-  const label = terminal === 'cancelled'
-    ? stamp.cancelled
+  const outcome = terminal === 'cancelled'
+    ? t.outcomeWords['cancelled-by-user'].badge
     : terminal === 'interrupted'
-      ? stamp.interrupted
+      ? t.outcomeWords['cancelled-restart'].badge
       : terminal === 'failed'
-        ? stamp.failed
+        ? t.outcomeWords['failed-unknown'].badge
         : terminal === 'aborted'
-          ? stamp.aborted
+          ? t.outcomeWords.aborted.badge
           : terminal === 'goal_met'
-            ? stamp.goalMet
-            : stamp.ended;
+            ? t.outcomeWords['goal-met'].badge
+            : null;
   const tone = terminal === 'failed' || terminal === 'aborted'
     ? 'border-badge-danger/30 bg-red-500/10 text-badge-danger'
     : 'border-white/[0.08] bg-surface-faint text-zinc-400';
-  return (
-    <span
-      data-testid="inspector-stamp"
-      data-verdict="n_a"
-      data-terminal={terminal ?? 'unknown'}
-      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] ${tone}`}
-    >
-      {(terminal === 'failed' || terminal === 'aborted') && <XCircle className="h-3 w-3" />}
-      {label}
+  return outcome ? (
+    <span className="inline-flex min-w-0 items-center gap-1.5">
+      <span
+        data-testid="inspector-stamp"
+        data-verdict="n_a"
+        data-terminal={terminal ?? 'unknown'}
+        className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] ${tone}`}
+      >
+        {(terminal === 'failed' || terminal === 'aborted') && <XCircle className="h-3 w-3" />}
+        {outcome.label}
+      </span>
+      <span data-testid="inspector-stamp-reason" className="truncate text-[10px] text-zinc-500">
+        {outcome.reason}
+      </span>
     </span>
-  );
+  ) : <span className="text-[10px] text-zinc-500">{stamp.ended}</span>;
 }
 
 // ── 层1：一轮的人话摘要行（A 汇总句可展开明细 + B 异常黄条；不出 token 数字）─
@@ -154,12 +159,12 @@ function TurnActivitySummary({ segment }: { segment: TurnSegment }) {
       {hasDetail && showDetail && (
         <div className="mt-0.5 space-y-0.5 pl-3" data-testid="inspector-activity-detail">
           {segment.toolDispatches.map((row, index) => (
-            <div key={index} className="flex items-baseline gap-2" data-testid="inspector-activity-detail-row">
+            <div key={index} className="flex items-baseline gap-2 whitespace-nowrap" data-testid="inspector-activity-detail-row">
               <span className={`h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full ${row.success ? 'bg-badge-success' : 'bg-badge-danger'}`} />
               <span className="shrink-0 text-zinc-500">{detail.bucketLabel[row.bucket]}</span>
-              <span className="text-[10px] text-zinc-400">{humanizeDispatchTool(row.toolName, t)}</span>
+              <span className="shrink-0 text-[10px] text-zinc-400">{humanizeDispatchTool(row.toolName, t)}</span>
               {!row.success && (
-                <span className="text-badge-danger">
+                <span className="shrink-0 text-badge-danger">
                   {humanizeToolError(row.error ?? undefined, row.toolName, t)?.summary ?? t.systemError.fallbackSummary}
                 </span>
               )}

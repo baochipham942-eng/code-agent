@@ -1,4 +1,6 @@
 // ============================================================================
+
+import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 // Session Inspector 词典（zh/en）— 会话检查器（N-LEDGER-P1）
 // ----------------------------------------------------------------------------
 // 层1 时间线面向非程序员协作者：文案必须说人话，tool_use / manifest / verdict
@@ -22,11 +24,11 @@ export const sessionInspectorZh = {
   stamp: {
     verified: '完成有据',
     selfClaimed: '自称完成',
-    cancelled: '已取消',
-    interrupted: '被打断',
-    failed: '失败了',
-    aborted: '已中止',
-    goalMet: '目标达成',
+    cancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].badge.label,
+    interrupted: outcomeWordsZh.outcomeWords['cancelled-restart'].badge.label,
+    failed: outcomeWordsZh.outcomeWords['failed-unknown'].badge.label,
+    aborted: outcomeWordsZh.outcomeWords.aborted.badge.label,
+    goalMet: outcomeWordsZh.outcomeWords['goal-met'].badge.label,
     ended: '已结束',
   },
   evidenceCount: '{count} 条依据',
@@ -81,7 +83,7 @@ export const sessionInspectorZh = {
     },
     stepsTitle: '逐步工具调用与裁决',
     noSteps: '这一轮没有工具调用记录。',
-    toolFailed: '失败',
+    toolFailed: outcomeWordsZh.outcomeWords['failed-tool'].badge.label,
     toolFromCache: '缓存结果',
     decision: '决策：{action} · {reason}',
     inferenceTitle: '推理调用（按次）',
@@ -134,11 +136,11 @@ export const sessionInspectorEn: typeof sessionInspectorZh = {
   stamp: {
     verified: 'Verified',
     selfClaimed: 'Self-claimed',
-    cancelled: 'Cancelled',
-    interrupted: 'Interrupted',
-    failed: 'Failed',
-    aborted: 'Aborted',
-    goalMet: 'Goal met',
+    cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].badge.label,
+    interrupted: outcomeWordsEn.outcomeWords['cancelled-restart'].badge.label,
+    failed: outcomeWordsEn.outcomeWords['failed-unknown'].badge.label,
+    aborted: outcomeWordsEn.outcomeWords.aborted.badge.label,
+    goalMet: outcomeWordsEn.outcomeWords['goal-met'].badge.label,
     ended: 'Ended',
   },
   evidenceCount: '{count} piece(s) of evidence',
@@ -193,7 +195,7 @@ export const sessionInspectorEn: typeof sessionInspectorZh = {
     },
     stepsTitle: 'Tool calls & decisions, step by step',
     noSteps: 'No tool calls recorded in this turn.',
-    toolFailed: 'failed',
+    toolFailed: outcomeWordsEn.outcomeWords['failed-tool'].badge.label,
     toolFromCache: 'cached result',
     decision: 'Decision: {action} · {reason}',
     inferenceTitle: 'Inference calls (per call)',

@@ -142,7 +142,7 @@ describe('Feishu lark-cli driver', () => {
       .rejects.toThrow('Could not open the Feishu setup URL');
   });
 
-  it('parses user status and treats a missing configuration or command as disconnected', async () => {
+  it('parses user status, preserves missing-install setup, and marks other failures unknown', async () => {
     const ready = await fixture('existing-profile');
     await expect(ready.driver.status()).resolves.toEqual({
       connected: true,
@@ -151,13 +151,17 @@ describe('Feishu lark-cli driver', () => {
     });
 
     const missing = createLarkCliDriver({
-      dataDir: path.join(ready.logPath, 'missing'),
+      dataDir: path.join(path.dirname(ready.logPath), 'missing'),
       timeoutMs: 100,
     });
     await expect(missing.status()).resolves.toEqual({ connected: false, identity: 'none' });
 
     const unconfigured = await fixture('status-fail');
-    await expect(unconfigured.driver.status()).resolves.toEqual({ connected: false, identity: 'none' });
+    await expect(unconfigured.driver.status()).resolves.toEqual({
+      connected: false,
+      identity: 'none',
+      stale: true,
+    });
   });
 
   it('reuses status inside the TTL and refreshes after expiry', async () => {

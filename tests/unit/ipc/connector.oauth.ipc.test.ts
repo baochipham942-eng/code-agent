@@ -16,6 +16,7 @@ const env = vi.hoisted(() => ({
   larkStatus: { connected: false, identity: 'none' } as {
     connected: boolean;
     identity: string;
+    stale?: boolean;
     user?: { name?: string; tenantName?: string };
   },
   larkConnect: vi.fn(),
@@ -24,6 +25,7 @@ const env = vi.hoisted(() => ({
   tmeetStatus: { connected: false, identity: 'none' } as {
     connected: boolean;
     identity: string;
+    stale?: boolean;
   },
   tmeetConnect: vi.fn(),
   tmeetCancelConnect: vi.fn(),
@@ -98,11 +100,11 @@ beforeEach(() => {
   env.invalidate.mockClear();
   env.savedSecret.mockClear();
   env.larkStatus = { connected: false, identity: 'none' };
-  env.larkConnect.mockReset();
+  env.larkConnect.mockReset().mockResolvedValue({ alreadyConnected: false });
   env.larkCancelConnect.mockReset();
   env.larkDisconnect.mockReset();
   env.tmeetStatus = { connected: false, identity: 'none' };
-  env.tmeetConnect.mockReset();
+  env.tmeetConnect.mockReset().mockResolvedValue({ alreadyConnected: false });
   env.tmeetCancelConnect.mockReset();
   env.tmeetDisconnect.mockReset();
 });
@@ -165,6 +167,18 @@ describe('connector.ipc SaaS OAuth actions', () => {
     expect(env.invalidate).not.toHaveBeenCalled();
   });
 
+  it('preserves an unknown CLI probe as stale instead of reporting confirmed logout', async () => {
+    env.tmeetStatus = { connected: false, identity: 'none', stale: true };
+    const handler = register();
+
+    const response = await handler(null, { action: 'oauthStatus' } as IPCRequest);
+
+    expect((response.data as Array<Record<string, unknown>>)[1]).toMatchObject({
+      connected: false,
+      stale: true,
+    });
+  });
+
   it('publishes the current lark-cli connection step through oauthStatus', async () => {
     let finishConnect: (() => void) | undefined;
     env.larkConnect.mockImplementation(async (
@@ -173,6 +187,7 @@ describe('connector.ipc SaaS OAuth actions', () => {
     ) => {
       onStep(2);
       await new Promise<void>((resolve) => { finishConnect = resolve; });
+      return { alreadyConnected: false };
     });
     const handler = register();
     const connectPromise = handler(null, {
@@ -241,9 +256,12 @@ describe('connector.ipc SaaS OAuth actions', () => {
     env.tmeetConnect.mockImplementation(async (
       _openExternal: unknown,
       onStep: (step: 1 | 2) => void,
+      onAuthorizationOpened: () => void,
     ) => {
       onStep(1);
+      onAuthorizationOpened();
       await new Promise<void>((resolve) => { finishConnect = resolve; });
+      return { alreadyConnected: false };
     });
     const handler = register();
     const connectPromise = handler(null, {
@@ -257,6 +275,7 @@ describe('connector.ipc SaaS OAuth actions', () => {
       authMode: 'tmeet-cli',
       connected: false,
       step: 1,
+      authorizationOpened: true,
     });
 
     finishConnect?.();
@@ -277,6 +296,22 @@ describe('connector.ipc SaaS OAuth actions', () => {
 
     expect(env.tmeetCancelConnect).toHaveBeenCalledOnce();
     expect(env.tmeetDisconnect).toHaveBeenCalledOnce();
+  });
+
+  it('returns the direct-connect fact when Tencent Meeting was already logged in', async () => {
+    env.tmeetStatus = { connected: true, identity: 'user' };
+    env.tmeetConnect.mockResolvedValue({ alreadyConnected: true });
+    const handler = register();
+
+    const response = await handler(null, {
+      action: 'oauthConnect',
+      payload: { providerId: 'tmeet', action: 'meeting.create', authMode: 'tmeet-cli' },
+    } as IPCRequest);
+
+    expect(response.data).toMatchObject({
+      alreadyConnected: true,
+      statuses: expect.any(Array),
+    });
   });
 
   it('rejects an unknown provider instead of silently doing nothing', async () => {

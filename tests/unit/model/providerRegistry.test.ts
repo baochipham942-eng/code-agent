@@ -8,6 +8,7 @@ import {
   DEFAULT_PROVIDER,
   DEFAULT_MODEL,
   DEFAULT_MODELS,
+  GROQ_DEFAULT_MODEL,
   MODEL_API_ENDPOINTS,
   PROVIDER_FALLBACK_CHAIN,
 } from '../../../src/shared/constants';
@@ -64,6 +65,11 @@ describe('ProviderRegistry', () => {
       expect(PROVIDER_REGISTRY.gemini.baseUrl).toBe(MODEL_API_ENDPOINTS.gemini);
       expect(PROVIDER_REGISTRY.openrouter.baseUrl).toBe(MODEL_API_ENDPOINTS.openrouter);
       expect(PROVIDER_REGISTRY.longcat.baseUrl).toBe(MODEL_API_ENDPOINTS.longcat);
+    });
+
+    it('registers the shared active Groq default model', () => {
+      expect(PROVIDER_REGISTRY.groq.models.some((model) => model.id === GROQ_DEFAULT_MODEL)).toBe(true);
+      expect(PROVIDER_REGISTRY.groq.models.some((model) => model.id === 'llama-3.3-70b-versatile')).toBe(false);
     });
   });
 

@@ -10,19 +10,11 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { getUserConfigDir } from '../../config/configPaths';
-// 延迟加载 keytar，处理 native 模块版本不匹配的情况
-// CLI 模式下 keytar 为 Electron headers 编译，系统 Node.js 加载会 segfault（不是 JS 异常，try-catch 无法捕获）
-// 必须在 require 之前用环境变量判断，CLI 模式直接跳过
-// 降级后 Keychain 功能不可用，但 electron-store 备份仍可用
-let keytar: typeof import('keytar') | null = null;
-if (!process.env.CODE_AGENT_CLI_MODE) {
-  try {
-    const loadedKeytar: unknown = require('keytar');
-    keytar = loadedKeytar as typeof import('keytar');
-  } catch (error) {
-    console.warn('[SecureStorage] keytar not available:', (error as Error).message?.split('\n')[0]);
-  }
-}
+import { devSlotFromBundleId } from '../../../shared/devSlot';
+import { loadKeytar } from './keytarAdapter';
+
+// 降级后 Keychain 功能不可用，但本槽的加密 secure store 仍可用。
+const keytar = loadKeytar();
 
 import { createLogger } from '../infra/logger';
 
@@ -45,6 +37,13 @@ function parseJsonRecord(value: string): Record<string, unknown> | null {
 const KEYCHAIN_SERVICE = 'code-agent';
 const KEYCHAIN_ACCOUNT_SESSION = 'supabase-session';
 const KEYCHAIN_ACCOUNT_SETTINGS = 'user-settings';
+
+function getKeychainSessionAccount(bundleId = process.env.CODE_AGENT_BUNDLE_ID): string {
+  const normalizedBundleId = bundleId?.trim();
+  return devSlotFromBundleId(normalizedBundleId) !== null
+    ? `${KEYCHAIN_ACCOUNT_SESSION}:${normalizedBundleId}`
+    : KEYCHAIN_ACCOUNT_SESSION;
+}
 
 // Storage keys use dot notation by design (e.g., 'supabase.session')
  
@@ -514,7 +513,7 @@ class SecureStorageService {
   async saveSessionToKeychain(session: string): Promise<void> {
     if (!keytar) return;
     try {
-      await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SESSION, session);
+      await keytar.setPassword(KEYCHAIN_SERVICE, getKeychainSessionAccount(), session);
     } catch (e) {
       logger.error('Failed to save session to Keychain:', e);
     }
@@ -524,7 +523,7 @@ class SecureStorageService {
   async getSessionFromKeychain(): Promise<string | null> {
     if (!keytar) return null;
     try {
-      return await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SESSION);
+      return await keytar.getPassword(KEYCHAIN_SERVICE, getKeychainSessionAccount());
     } catch (e) {
       logger.error('Failed to get session from Keychain:', e);
       return null;
@@ -535,7 +534,7 @@ class SecureStorageService {
   async clearSessionFromKeychain(): Promise<void> {
     if (!keytar) return;
     try {
-      await keytar.deletePassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SESSION);
+      await keytar.deletePassword(KEYCHAIN_SERVICE, getKeychainSessionAccount());
     } catch (e) {
       logger.error('Failed to clear session from Keychain:', e);
     }

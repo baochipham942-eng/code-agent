@@ -141,6 +141,8 @@ describe('DecisionSlot', () => {
     expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain(
       'max-h-[calc(100dvh-12rem)]',
     );
+    expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('shadow-md');
+    expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('dark:shadow-2xl');
 
     fireEvent.click(screen.getByRole('button', { name: /允许一次/u }));
     fireEvent.click(screen.getByRole('button', { name: '确认' }));
@@ -182,5 +184,20 @@ describe('DecisionSlot', () => {
     const view = render(<DecisionSlot />);
 
     expect(view.container.innerHTML).toBe('');
+  });
+
+  it('仅有 pending 权限请求时不把右栏内容信号置为 true', () => {
+    const appSource = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/renderer/App.tsx'),
+      'utf8',
+    );
+    const signalStart = appSource.indexOf('const hasTaskWorkbenchContent = (');
+    const effectStart = appSource.indexOf('useEffect(() => {', signalStart);
+    const activitySignal = appSource.slice(signalStart, effectStart);
+
+    expect(signalStart).toBeGreaterThan(0);
+    expect(effectStart).toBeGreaterThan(signalStart);
+    expect(activitySignal).not.toMatch(/PermissionRequest|queuedPermissionRequests/u);
+    expect(appSource).toContain('syncTaskWorkbenchForActivity(hasTaskWorkbenchContent)');
   });
 });

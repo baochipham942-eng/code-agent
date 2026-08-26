@@ -60,6 +60,9 @@ describe('PermissionCard resolved states', () => {
     state.request = resolvedRequest('timeout');
     render(<PermissionCard />);
 
+    expect(screen.getByTestId('permission-card').className).toContain('chat-col-pad');
+    expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('shadow-md');
+    expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('dark:shadow-2xl');
     expect(screen.getByTestId('permission-result-expired').textContent).toContain('已过期');
     for (const name of ['允许一次', '本会话允许', '始终允许', '拒绝']) {
       expect((screen.getByRole('button', { name: new RegExp(name) }) as HTMLButtonElement).disabled).toBe(true);
@@ -74,6 +77,7 @@ describe('PermissionCard resolved states', () => {
   it('renders badges for allow-once, always-allow, and denied decisions', () => {
     state.request = resolvedRequest('once');
     const { rerender } = render(<PermissionCard />);
+    expect(screen.getByTestId('permission-card').className).toContain('chat-col-pad');
     expect(screen.getByTestId('permission-result-once').textContent).toContain('允许一次');
 
     state.request = resolvedRequest('always');

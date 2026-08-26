@@ -363,7 +363,12 @@ const CLI_PROVIDER_RUNTIMES: Record<string, { authMode: CliAuthMode; driver: Cli
   feishu: { authMode: 'lark-cli', driver: larkCli },
   tmeet: { authMode: 'tmeet-cli', driver: tmeetCli },
 };
-const cliConnectSteps = new Map<string, 1 | 2>();
+interface CliConnectProgress {
+  step: 1 | 2;
+  authorizationOpened: boolean;
+}
+
+const cliConnectProgress = new Map<string, CliConnectProgress>();
 const cliAdminBlocked = new Set<string>();
 
 function isCliAuthMode(authMode: ProviderDescriptor['authMode']): authMode is CliAuthMode {
@@ -390,6 +395,7 @@ interface ConnectorOAuthProviderStatus {
   loopbackRedirectUriSupport: ProviderDescriptor['loopbackRedirectUriSupport'];
   authMode: 'oauth' | CliAuthMode;
   step?: 1 | 2;
+  authorizationOpened?: boolean;
   blocked?: boolean;
   stale?: boolean;
   userName?: string;
@@ -413,8 +419,8 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
           authMode: 'oauth' as const,
         };
       }
-      const connectStep = cliConnectSteps.get(descriptor.id);
-      if (connectStep) {
+      const connectProgress = cliConnectProgress.get(descriptor.id);
+      if (connectProgress) {
         return {
           id: descriptor.id,
           displayName: descriptor.displayName,
@@ -424,7 +430,8 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
           connected: false,
           loopbackRedirectUriSupport: descriptor.loopbackRedirectUriSupport,
           authMode,
-          step: connectStep,
+          step: connectProgress.step,
+          ...(connectProgress.authorizationOpened ? { authorizationOpened: true } : {}),
         };
       }
       const runtime = CLI_PROVIDER_RUNTIMES[descriptor.id];
@@ -465,27 +472,51 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
 
 async function handleConnectorOAuthConnect(
   payload: { providerId?: string; action?: string; authMode?: 'oauth' | CliAuthMode } | undefined,
-): Promise<ConnectorOAuthProviderStatus[]> {
+): Promise<ConnectorOAuthProviderStatus[] | {
+  statuses: ConnectorOAuthProviderStatus[];
+  alreadyConnected: boolean;
+}> {
   const descriptor = requireOAuthProvider(payload?.providerId);
   if (isCliAuthMode(descriptor.authMode) && payload?.authMode !== 'oauth') {
     const runtime = CLI_PROVIDER_RUNTIMES[descriptor.id];
     if (!runtime) throw new Error(`CLI connector runtime is unavailable for ${descriptor.id}`);
     const { openExternal } = await import('../platform/nativeShell');
     cliAdminBlocked.delete(descriptor.id);
-    cliConnectSteps.set(descriptor.id, 1);
+    cliConnectProgress.set(descriptor.id, { step: 1, authorizationOpened: false });
+    let alreadyConnected: boolean;
     try {
-      await runtime.driver.connect(openExternal, (step) => {
-        cliConnectSteps.set(descriptor.id, step);
-      });
+      const result = await runtime.driver.connect(
+        openExternal,
+        (step) => {
+          const current = cliConnectProgress.get(descriptor.id);
+          cliConnectProgress.set(descriptor.id, {
+            step,
+            authorizationOpened: current?.authorizationOpened ?? false,
+          });
+        },
+        descriptor.id === 'tmeet'
+          ? () => {
+            const current = cliConnectProgress.get(descriptor.id);
+            cliConnectProgress.set(descriptor.id, {
+              step: current?.step ?? 1,
+              authorizationOpened: true,
+            });
+          }
+          : undefined,
+      );
+      alreadyConnected = result.alreadyConnected;
     } catch (error) {
       if (error instanceof Error && error.message === '需联系企业应用管理员安装') {
         cliAdminBlocked.add(descriptor.id);
       }
       throw error;
     } finally {
-      cliConnectSteps.delete(descriptor.id);
+      cliConnectProgress.delete(descriptor.id);
     }
-    return listConnectorOAuthStatuses();
+    const statuses = await listConnectorOAuthStatuses();
+    return descriptor.id === 'tmeet'
+      ? { statuses, alreadyConnected }
+      : statuses;
   }
   if (descriptor.id === 'tmeet') {
     throw new Error('Tencent Meeting authorization is available only through the official tmeet CLI');
@@ -541,7 +572,7 @@ async function handleConnectorOAuthDisconnect(
     const runtime = CLI_PROVIDER_RUNTIMES[descriptor.id];
     if (!runtime) throw new Error(`CLI connector runtime is unavailable for ${descriptor.id}`);
     cliAdminBlocked.delete(descriptor.id);
-    cliConnectSteps.delete(descriptor.id);
+    cliConnectProgress.delete(descriptor.id);
     const oauthStore = new ConnectorOAuthStore(descriptor.id);
     if (descriptor.id === 'feishu' && oauthStore.tokens()) {
       oauthStore.invalidateCredentials('all');
@@ -564,7 +595,7 @@ async function handleConnectorOAuthCancelConnect(
   const runtime = CLI_PROVIDER_RUNTIMES[descriptor.id];
   if (!runtime) throw new Error(`CLI connector runtime is unavailable for ${descriptor.id}`);
   runtime.driver.cancelConnect();
-  cliConnectSteps.delete(descriptor.id);
+  cliConnectProgress.delete(descriptor.id);
   cliAdminBlocked.delete(descriptor.id);
   return listConnectorOAuthStatuses();
 }

@@ -136,7 +136,9 @@ export const tmeetDescriptor = {
     openUrlErrorMessage: 'Could not open the Tencent Meeting authorization URL',
     pollStatusAfterExit: true,
     pollIntervalMs: 1_000,
+    alreadyConnectedPattern: /user has been login/iu,
   }],
+  checkStatusBeforeAuth: true,
   status: {
     command: {
       args: ['auth', 'status'],
@@ -148,6 +150,7 @@ export const tmeetDescriptor = {
     },
     disconnectedIdentity: 'none',
     connectedIdentity: 'user',
+    timeoutMs: 10_000,
   },
   logout: {
     args: ['auth', 'logout'],

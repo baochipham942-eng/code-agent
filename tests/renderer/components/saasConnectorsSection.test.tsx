@@ -33,6 +33,7 @@ interface TestProviderStatus {
   loopbackRedirectUriSupport: string;
   authMode: 'oauth' | 'lark-cli' | 'tmeet-cli';
   step?: 1 | 2;
+  authorizationOpened?: boolean;
   blocked?: boolean;
   stale?: boolean;
   userName?: string;
@@ -268,6 +269,77 @@ describe('SaaSConnectorsSection Tencent Meeting CLI card', () => {
     expect(screen.getByText(zh.settings.saasConnectors.disconnect.tmeetCliNotice)).toBeTruthy();
     fireEvent.click(within(card).getByTestId('saas-card-action-tmeet'));
     expect(screen.getByText(zh.settings.saasConnectors.disconnect.tmeetCliConfirmMessage)).toBeTruthy();
+  });
+
+  it('shows an unknown stale probe without offering a false reconnect action', async () => {
+    renderTmeetCliStatus({ stale: true });
+
+    const card = await screen.findByTestId('saas-connector-tmeet');
+    expect(card.textContent).toContain(zh.settings.saasConnectors.badges.unavailable);
+    expect(within(card).queryByTestId('saas-connect-tmeet')).toBeNull();
+  });
+
+  it('waits for confirmed browser opening before showing the Tencent authorization toast', async () => {
+    let authorizationOpened = false;
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'oauthStatus') {
+        return Promise.resolve([{
+          ...tmeetCliStatus,
+          ...(authorizationOpened ? { step: 1, authorizationOpened: true } : {}),
+        }]);
+      }
+      if (action === 'oauthConnect') return new Promise<void>(() => undefined);
+      return Promise.resolve([]);
+    });
+    render(<SaaSConnectorsSection />);
+    const readyCard = await screen.findByTestId('saas-connector-tmeet');
+    fireEvent.click(within(readyCard).getByTestId('saas-connect-tmeet'));
+
+    expect(screen.queryByTestId('saas-connector-toast')).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(screen.queryByTestId('saas-connector-toast')).toBeNull();
+
+    authorizationOpened = true;
+    await waitFor(() => expect(screen.getByTestId('saas-connector-toast').textContent)
+      .toContain(zh.settings.saasConnectors.toast.tmeetAuthorizationOpened));
+  });
+
+  it('reports an already logged-in Tencent CLI as directly connected', async () => {
+    let connected = false;
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'oauthStatus') return Promise.resolve([{ ...tmeetCliStatus, connected }]);
+      if (action === 'oauthConnect') {
+        connected = true;
+        return Promise.resolve({ statuses: [], alreadyConnected: true });
+      }
+      return Promise.resolve([]);
+    });
+    render(<SaaSConnectorsSection />);
+
+    const card = await screen.findByTestId('saas-connector-tmeet');
+    fireEvent.click(within(card).getByTestId('saas-connect-tmeet'));
+
+    await waitFor(() => expect(screen.getByTestId('saas-connector-toast').textContent)
+      .toContain(zh.settings.saasConnectors.toast.tmeetAlreadyConnected));
+  });
+
+  it('keeps the concrete Tencent browser failure visible after status polling', async () => {
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'oauthStatus') return Promise.resolve([tmeetCliStatus]);
+      if (action === 'oauthConnect') return Promise.reject(new Error('browser unavailable'));
+      return Promise.resolve([]);
+    });
+    render(<SaaSConnectorsSection />);
+
+    const card = await screen.findByTestId('saas-connector-tmeet');
+    fireEvent.click(within(card).getByTestId('saas-connect-tmeet'));
+
+    const message = zh.settings.saasConnectors.errors.tmeetAuthorizationOpenFailed
+      .replace('{reason}', 'browser unavailable');
+    await screen.findByText(message);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(screen.getByText(message)).toBeTruthy();
+    expect(screen.queryByTestId('saas-connector-toast')).toBeNull();
   });
 });
 

@@ -177,6 +177,51 @@ describe('runWorkbenchProjection', () => {
     ]);
   });
 
+  it('keeps auto fallback evidence in the right-panel/log projection', () => {
+    const fallbackProjection: TraceProjection = {
+      sessionId: 'session-routing',
+      activeTurnIndex: -1,
+      turns: [{
+        turnNumber: 1,
+        turnId: 'turn-routing',
+        status: 'completed',
+        startTime: 100,
+        nodes: [{
+          id: 'routing-evidence',
+          type: 'turn_timeline',
+          content: '',
+          timestamp: 120,
+          turnTimeline: {
+            id: 'routing-evidence',
+            kind: 'routing_evidence',
+            timestamp: 120,
+            tone: 'warning',
+            routingEvidence: {
+              mode: 'auto',
+              autoFallbackToDefault: true,
+              summary: 'Auto 未命中特定 agent，已回落默认执行',
+              reason: 'No specialized agent matched; continue with the default conversation loop.',
+              steps: [{
+                status: 'fallback',
+                label: '保持 default 执行',
+                detail: 'No specialized agent matched; continue with the default conversation loop.',
+                tone: 'warning',
+                timestamp: 120,
+              }],
+            },
+          },
+        }],
+      }],
+    };
+
+    expect(buildLoopDecisionViews(fallbackProjection)).toMatchObject([{
+      action: '路由',
+      reason: 'Auto 未命中特定 agent，已回落默认执行',
+      expectedNextAction: '保持 default 执行',
+      blockedReason: 'No specialized agent matched; continue with the default conversation loop.',
+    }]);
+  });
+
   it('aggregates context capability and memory evidence across all session runs', () => {
     const multiRun: TraceProjection = {
       ...projection,

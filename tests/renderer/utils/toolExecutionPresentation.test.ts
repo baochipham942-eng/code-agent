@@ -8,6 +8,7 @@ import {
   humanizeToolError,
   isAutoLoadedRetry,
   isEscalatedToolError,
+  isToolInterruptionPlaceholder,
 } from '../../../src/renderer/utils/toolExecutionPresentation';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
@@ -59,6 +60,16 @@ describe('toolExecutionPresentation', () => {
     expect(isAutoLoadedRetry({})).toBe(false);
     expect(isAutoLoadedRetry(null)).toBe(false);
     expect(isAutoLoadedRetry(undefined)).toBe(false);
+  });
+
+  it('humanizes cancellation and crash closure placeholders without exposing their stored text', () => {
+    const cancelled = '[no result: this tool call was cancelled before a result was recorded; do not assume it ran or succeeded]';
+    const crashed = 'interrupted: process crashed before a result was recorded; do not assume it ran or succeeded';
+
+    expect(isToolInterruptionPlaceholder(cancelled)).toBe(true);
+    expect(isToolInterruptionPlaceholder(crashed)).toBe(true);
+    expect(humanizeToolError(cancelled, 'Read', zh)).toEqual({ summary: '已中断' });
+    expect(humanizeToolError(crashed, 'Read', en)).toEqual({ summary: 'Interrupted' });
   });
 
   it('localizes managed-browser resume import failures from the host error code', () => {

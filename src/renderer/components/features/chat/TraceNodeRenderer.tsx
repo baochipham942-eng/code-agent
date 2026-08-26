@@ -29,7 +29,7 @@ import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
 import { FallbackBanner } from './MessageBubble/FallbackBanner';
 import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip';
 import { TurnQualityStrip } from './TurnQualityStrip';
-import { AgentErrorCard } from './AgentErrorCard';
+import { AgentErrorPresentation } from './AgentErrorCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { ReceiptRows } from '../../ReceiptRows';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
@@ -422,7 +422,7 @@ const AssistantTextNode: React.FC<{
 
       {/* 运行失败的结构化错误卡片（替代旧版 merge 进正文的 ⚠ 文本） */}
       {node.metadata?.agentError && (
-        <AgentErrorCard
+        <AgentErrorPresentation
           error={node.metadata.agentError}
           messageId={messageId}
           sessionId={sessionId}
@@ -500,10 +500,9 @@ const TurnTimelineNodeRenderer: React.FC<{
     case 'blocked_capabilities':
       return <BlockedCapabilitiesNode timeline={node.turnTimeline} />;
     case 'routing_evidence':
-      // 路由正常时每轮内容一样，铺进主对话流是噪声——只有异常（warning/error）才值得
-      // 占版面，此时渲染 RoutingEvidenceNode 把异常步骤摆到主对话流里（原「路由异常」卡
-      // 随 TaskMonitor 一并删除后，异常曾长期对用户隐形）。节点本身必须保留：产物归属
-      // 和工作台投影都从它取数。
+      // Auto 未命中专用 agent 后回落 default 是系统正常路径，不在聊天主流告警。
+      // 节点本身仍保留：产物归属、runWorkbench/日志投影继续从它取原始证据。
+      if (node.turnTimeline.routingEvidence?.autoFallbackToDefault) return null;
       return node.turnTimeline.tone === 'warning' || node.turnTimeline.tone === 'error'
         ? <RoutingEvidenceNode timeline={node.turnTimeline} />
         : null;

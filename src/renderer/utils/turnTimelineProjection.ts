@@ -408,6 +408,7 @@ function buildAutoRoutingEvidence(
 
   return {
     mode: 'auto',
+    autoFallbackToDefault: fallbackToDefault && !event.requestedAgentId,
     summary,
     agentIds: [event.agentId],
     agentNames: [event.agentName],

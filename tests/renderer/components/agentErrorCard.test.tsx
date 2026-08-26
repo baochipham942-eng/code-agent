@@ -23,7 +23,12 @@ vi.mock('../../../src/renderer/hooks/useToast', () => ({
   },
 }));
 
-import { AgentErrorCard, buildAgentErrorReport, resolveAgentErrorCopy } from '../../../src/renderer/components/features/chat/AgentErrorCard';
+import {
+  AgentErrorPresentation,
+  buildAgentErrorReport,
+  resolveAgentErrorCopy,
+} from '../../../src/renderer/components/features/chat/AgentErrorCard';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { zh } from '../../../src/renderer/i18n/zh';
@@ -43,7 +48,7 @@ function makeError(overrides: Partial<AgentErrorMetadata> = {}): AgentErrorMetad
 }
 
 function renderCard(error: AgentErrorMetadata, messageId = 'assistant-1', sessionId = 'session-1') {
-  return render(<AgentErrorCard error={error} messageId={messageId} sessionId={sessionId} />);
+  return render(<AgentErrorPresentation error={error} messageId={messageId} sessionId={sessionId} />);
 }
 
 describe('AgentErrorCard', () => {
@@ -54,6 +59,7 @@ describe('AgentErrorCard', () => {
     mocks.dispatchEvent.mockClear();
     Object.assign(navigator, { clipboard: { writeText: mocks.writeText } });
     useSessionStore.setState({ runningSessionIds: new Set() });
+    useAppStore.setState({ developerMode: false });
   });
 
   afterEach(() => {
@@ -80,7 +86,7 @@ describe('AgentErrorCard', () => {
     expect(screen.queryByRole('button', { name: /切换模型/ })).toBeNull();
   });
 
-  it.each(['model_not_found', 'forbidden', 'rate_limited', 'concurrency', 'network'] as const)(
+  it.each(['model_not_found', 'forbidden', 'concurrency', 'network'] as const)(
     'shows 切换模型 but not 新开会话 for model-ish category %s',
     (category) => {
       renderCard(makeError({ category, httpStatus: undefined }));
@@ -88,7 +94,7 @@ describe('AgentErrorCard', () => {
       expect(screen.getByRole('button', { name: /切换模型/ })).toBeTruthy();
       expect(screen.queryByRole('button', { name: /新开会话/ })).toBeNull();
       expect(screen.getByRole('button', { name: /重试/ })).toBeTruthy();
-      expect(screen.getByRole('button', { name: /复制错误报告/ })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /复制错误报告/ })).toBeNull();
     },
   );
 
@@ -193,6 +199,7 @@ describe('AgentErrorCard', () => {
   });
 
   it('copies a structured error report and toasts on success', async () => {
+    useAppStore.setState({ developerMode: true });
     renderCard(makeError({ traceId: 'trace-123' }));
     fireEvent.click(screen.getByRole('button', { name: /复制错误报告/ }));
 
@@ -211,11 +218,73 @@ describe('AgentErrorCard', () => {
   });
 
   it('toasts an error when clipboard write fails', async () => {
+    useAppStore.setState({ developerMode: true });
     mocks.writeText.mockRejectedValue(new Error('denied'));
     renderCard(makeError());
     fireEvent.click(screen.getByRole('button', { name: /复制错误报告/ }));
 
     await waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
+  });
+
+  it('rate_limited renders as one quiet retry line and reuses regenerateMessage', () => {
+    const send = vi.fn();
+    useMessageActionStore.getState().register(send, () => [
+      { id: 'user-1', role: 'user', content: '再试一次', timestamp: 1 },
+      { id: 'assistant-1', role: 'assistant', content: '', timestamp: 2 },
+    ]);
+
+    render(
+      <AgentErrorPresentation
+        error={makeError({ category: 'rate_limited', code: 'RATE_LIMITED', httpStatus: 429 })}
+        messageId="assistant-1"
+        sessionId="session-1"
+      />,
+    );
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByTestId('rate-limited-error-line').className).toContain('text-xs');
+    expect(screen.getByText('模型服务商限流，稍后重试')).toBeTruthy();
+    expect(screen.queryByText(/实际使用/)).toBeNull();
+    expect(screen.queryByText(/查看技术详情/)).toBeNull();
+    expect(screen.queryByText(/切换模型/)).toBeNull();
+    expect(screen.queryByText(/复制错误报告/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(send).toHaveBeenCalledWith('再试一次');
+  });
+
+  it('rate_limited exposes diagnostics and report only in developer mode', () => {
+    useAppStore.setState({ developerMode: true });
+    render(
+      <AgentErrorPresentation
+        error={makeError({
+          category: 'rate_limited',
+          provider: 'deepseek',
+          code: 'RATE_LIMITED',
+          httpStatus: 429,
+          traceId: 'trace-rate-limit',
+        })}
+        messageId="assistant-1"
+        sessionId="session-1"
+      />,
+    );
+
+    expect(screen.getByText('查看技术详情')).toBeTruthy();
+    expect(screen.getByText('错误码 RATE_LIMITED')).toBeTruthy();
+    expect(screen.getByText('HTTP 429')).toBeTruthy();
+    expect(screen.getByText('Trace ID trace-rate-limit')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '复制错误报告' })).toBeTruthy();
+  });
+
+  it('auth keeps the card but hides copy report outside developer mode', () => {
+    renderCard(makeError({ category: 'auth', httpStatus: 401 }));
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '复制错误报告' })).toBeNull();
+
+    cleanup();
+    useAppStore.setState({ developerMode: true });
+    renderCard(makeError({ category: 'auth', httpStatus: 401 }));
+    expect(screen.getByRole('button', { name: '复制错误报告' })).toBeTruthy();
   });
 });
 

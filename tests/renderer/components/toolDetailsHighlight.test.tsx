@@ -77,4 +77,23 @@ describe('ToolDetails 语法高亮（#13 收窄版：仅 JSON 走高亮）', () 
     expect(markup).toContain('items');
     expect(markup).toContain('data-code-preview="plain"');
   });
+
+  it('取消闭合占位结果只显示人话中断态', () => {
+    const markup = render({
+      id: 't-cancelled',
+      name: 'Read',
+      arguments: { file_path: '/tmp/要点笔记.md' },
+      result: {
+        toolCallId: 't-cancelled',
+        success: false,
+        error: '[no result: this tool call was cancelled before a result was recorded; do not assume it ran or succeeded]',
+      },
+    } as ToolCall);
+
+    expect(markup).toContain('已中断');
+    expect(markup).not.toContain('[no result');
+    expect(markup).not.toContain('cancelled before');
+    expect(markup).not.toContain('复制错误');
+    expect(markup).not.toContain('查看原始报错');
+  });
 });

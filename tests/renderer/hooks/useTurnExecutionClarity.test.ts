@@ -511,6 +511,54 @@ describe('buildTurnExecutionClarityProjection', () => {
     expect(routingNode?.turnTimeline?.routingEvidence?.reason).toBe('该 agent 更适合做风险判断');
   });
 
+  it('marks an automatic default fallback for main-stream suppression while retaining evidence', () => {
+    const enriched = buildTurnExecutionClarityProjection({
+      projection: {
+        sessionId: 'session-auto-fallback',
+        activeTurnIndex: -1,
+        turns: [{
+          turnNumber: 1,
+          turnId: 'turn-1',
+          status: 'completed',
+          startTime: 300,
+          endTime: 360,
+          nodes: [
+            {
+              id: 'user-auto-fallback',
+              type: 'user',
+              content: '继续聊',
+              timestamp: 300,
+              metadata: { workbench: { routingMode: 'auto' } },
+            },
+            { id: 'assistant-auto-fallback', type: 'assistant_text', content: '好。', timestamp: 340 },
+          ],
+        }],
+      },
+      capabilities: { skills: [], connectors: [], mcpServers: [] },
+      launchRequests: [],
+      swarmEvents: [],
+      routingEvents: [{
+        kind: 'auto',
+        mode: 'auto',
+        timestamp: 320,
+        agentId: 'default',
+        agentName: 'default',
+        reason: 'No specialized agent matched; continue with the default conversation loop.',
+        score: 0,
+        fallbackToDefault: true,
+      }],
+    });
+
+    const routingEvidence = enriched.turns[0]?.nodes.find(
+      (node) => node.turnTimeline?.kind === 'routing_evidence',
+    )?.turnTimeline?.routingEvidence;
+    expect(routingEvidence).toMatchObject({
+      autoFallbackToDefault: true,
+      summary: 'Auto 未命中特定 agent，已回落默认执行',
+      reason: 'No specialized agent matched; continue with the default conversation loop.',
+    });
+  });
+
   it('projects explicit routing evidence（显式选择命中 → mode explicit）', () => {
     const enriched = buildTurnExecutionClarityProjection({
       projection: {

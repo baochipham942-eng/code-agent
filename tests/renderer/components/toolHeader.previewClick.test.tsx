@@ -65,4 +65,20 @@ describe('ToolHeader — Read path opens preview', () => {
     expect(screen.getByText('更新了任务')).toBeTruthy();
     expect(screen.queryByText(/TaskManager/i)).toBeNull();
   });
+
+  it('interrupted placeholder tooltip only contains a human status and display path', () => {
+    const path = '/Users/me/project/docs/要点笔记.md';
+    const toolCall = readCall(path);
+    toolCall.result = {
+      toolCallId: toolCall.id,
+      success: false,
+      error: '[no result: this tool call was cancelled before a result was recorded; do not assume it ran or succeeded]',
+    };
+
+    render(<ToolHeader toolCall={toolCall} status="error" />);
+    const title = screen.getByTestId('tool-header-open-preview').getAttribute('title');
+    expect(title).toBe('已中断 · …/docs/要点笔记.md');
+    expect(title).not.toContain('[no result');
+    expect(title).not.toContain('cancelled before');
+  });
 });

@@ -101,6 +101,23 @@ export interface HumanizedToolError {
   escalate?: boolean;
 }
 
+/**
+ * host 为了闭合取消/崩溃时的孤儿 tool call 会落一条英文占位结果。
+ * 它是给后续模型的上下文补丁，renderer 只展示「已中断」。
+ */
+export function isToolInterruptionPlaceholder(error: string | undefined): boolean {
+  if (!error) return false;
+  const normalized = error.toLowerCase();
+  return (
+    normalized.includes('result was recorded')
+    && (
+      normalized.includes('tool call was cancelled')
+      || normalized.includes('process crashed')
+      || normalized.includes('no result')
+    )
+  );
+}
+
 /** 分类结果（无文案，纯逻辑）——humanizeToolError 在此基础上补 t 驱动的文案。 */
 interface ToolErrorClassification {
   kind: ToolErrorKind;
@@ -264,6 +281,9 @@ export function humanizeToolError(
   t: Translations,
   metadata?: Record<string, unknown> | null,
 ): HumanizedToolError | null {
+  if (isToolInterruptionPlaceholder(error)) {
+    return { summary: t.toolStatus.interrupted };
+  }
   // 1. code 优先：host 已登记的错误码直接用 code 文案，不经正则（正则降为兜底）
   const code = resolveRegisteredCode(metadata);
   if (code) {

@@ -19,6 +19,8 @@ import {
 import { TargetContextIcon } from './TargetContextIcon';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
+import { formatDisplayPath } from '../../../../../utils/displayPath';
+import { isToolInterruptionPlaceholder } from '../../../../../utils/toolExecutionPresentation';
 
 interface Props {
   toolCall: ToolCall;
@@ -31,9 +33,19 @@ interface Props {
  * 构造 ToolHeader 的 hover tooltip：当模型 shortDescription 用 "..." 缩写了路径，
  * tooltip 兜底贴出完整的 file_path / path / command，让用户 hover 能看全。
  */
-function buildToolHeaderTitle(toolCall: ToolCall, displayName: string): string {
+function buildToolHeaderTitle(
+  toolCall: ToolCall,
+  displayName: string,
+  interruptionLabel: string,
+): string {
   const args = (toolCall.arguments ?? {}) as Record<string, unknown>;
   const filePath = args.file_path ?? args.path;
+  if (isToolInterruptionPlaceholder(toolCall.result?.error)) {
+    const target = typeof filePath === 'string' && filePath
+      ? formatDisplayPath(filePath)
+      : displayName;
+    return `${interruptionLabel} · ${target}`;
+  }
   if (typeof filePath === 'string' && filePath && !displayName.includes(filePath)) {
     return `${displayName}\n${filePath}`;
   }
@@ -83,7 +95,7 @@ export function ToolHeader({ toolCall, status, showDetailName = false }: Props) 
     openPreview(filePath);
   };
 
-  const title = buildToolHeaderTitle(toolCall, displayName);
+  const title = buildToolHeaderTitle(toolCall, displayName, t.toolStatus.interrupted);
 
   return (
     // 状态词 text-xs(12px) 与主文案 text-sm(14px) 同行混排：items-center 对齐的是

@@ -7,6 +7,7 @@
 export const agentErrorZh = {
   agentError: {
     ariaLabel: '运行失败',
+    rateLimitedInline: '模型服务商限流，稍后重试',
     categories: {
       auth: {
         // 401 只能证明「没通过授权」，区分不出是密钥不对还是额度耗尽（Codex 验证 2026-08-01）。
@@ -88,6 +89,7 @@ export const agentErrorZh = {
 export const agentErrorEn: typeof agentErrorZh = {
   agentError: {
     ariaLabel: 'Run failed',
+    rateLimitedInline: 'Model provider rate limit reached. Retry in a moment',
     categories: {
       auth: {
         title: 'This model is unavailable: the account was not authorized',

@@ -8,7 +8,7 @@ import type {
   AgentTrajectoryQualityTier,
 } from '@shared/contract/agentTrajectory';
 import {
-  TRAJECTORY_TIER_FILTER_OPTIONS,
+  buildTrajectoryTierFilterOptions,
   buildTrajectoryFailureFilterOptions,
   buildTrajectoryReviewFilterOptions,
 } from './sidebarFilterOptions';
@@ -30,6 +30,7 @@ interface SidebarStatusFilterDropdownProps {
   hasActiveTrajectoryFilter: boolean;
   hasActiveStatusDropdownFilter: boolean;
   activeStatusFilterLabel: string;
+  showTrajectoryFilters: boolean;
 }
 
 export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownProps> = ({
@@ -48,6 +49,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
   hasActiveTrajectoryFilter,
   hasActiveStatusDropdownFilter,
   activeStatusFilterLabel,
+  showTrajectoryFilters,
 }) => {
   const { t } = useI18n();
   const f = t.sidebarFilters;
@@ -96,11 +98,13 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
               </button>
             );
           })}
-          <div className="my-1 border-t border-zinc-700/70" />
-          <div className="px-3 pb-1 pt-1 text-[10px] uppercase tracking-wider text-zinc-500">
-            Review Queue Trajectory
-          </div>
-          <div className="px-2 py-1">
+          {showTrajectoryFilters && (
+            <>
+              <div className="my-1 border-t border-zinc-700/70" />
+              <div className="px-3 pb-1 pt-1 text-[10px] uppercase tracking-wider text-zinc-500">
+                {f.trajectorySection}
+              </div>
+              <div className="px-2 py-1">
             <div className="mb-1 flex flex-wrap gap-1">
               {buildTrajectoryReviewFilterOptions(t).map((option) => {
                 const active = trajectoryReviewFilter === option.id;
@@ -118,7 +122,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
                   </button>
                 );
               })}
-              {TRAJECTORY_TIER_FILTER_OPTIONS.map((option) => {
+              {buildTrajectoryTierFilterOptions(t).map((option) => {
                 const active = trajectoryTierFilter === option.id;
                 return (
                   <button
@@ -167,7 +171,9 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
                 {f.clearTrajectoryFilter}
               </button>
             )}
-          </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

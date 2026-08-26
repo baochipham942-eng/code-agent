@@ -362,15 +362,14 @@ export function humanizeToolStep(
       // 仅用于展开明细；主流聚合行会过滤 isInternalStreamTool
       return h.toolSearch;
     default: {
-      // 「内部工具名绝不进主行」这条规矩只针对 isInternalStreamTool（ToolSearch 这类
-      // 对用户零意义的纯内部动作）——不是一刀切到所有未识别工具。
       if (isInternalStreamTool(name)) return h.fallback;
-      // 其余未识别工具：先走统一人话名再带进主行。连接器必须命中映射；普通工具
-      // 复用开发短名兜底，否则失败时用户面对一句纯占位，得展开才知道发生了什么。
+      // 主行只接受连接器映射或已有开发短名。映射仍返回原始 id 时，说明它没有
+      // 用户语义，只能留在展开明细的次级小字，不能作为主标题上屏。
       const humanToolName = getHumanToolLabel({
         toolName: name,
         labels: t.receiptPresentation.humanToolLabels,
       });
+      if (humanToolName.trim().toLowerCase() === name.trim().toLowerCase()) return h.fallback;
       return h.fallbackWithTool.replace('{tool}', humanToolName);
     }
   }

@@ -44,6 +44,7 @@ import { voiceAuditZh } from './voiceAudit';
 import { sessionInspectorZh } from './sessionInspector';
 import { artifactShareZh } from './artifactShare';
 import { receiptPresentationZh } from './receiptPresentation';
+import { renderHumanPipeZh } from './renderHumanPipe';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
@@ -58,6 +59,7 @@ export const zh = {
   ...generativeUIZh,
   ...workbenchTabsZh,
   ...receiptPresentationZh,
+  ...renderHumanPipeZh,
   // Common
   common: {
     save: '保存',
@@ -115,9 +117,6 @@ export const zh = {
     statusVerified: '已就绪',
     statusUnverified: '未检查',
     statusFailed: '有问题',
-    qualityValidated: '质量通过',
-    qualityNeedsReview: '待复核',
-    qualityFailed: '质量失败',
     moreActions: '更多',
   },
 
@@ -742,10 +741,6 @@ export const zh = {
     sectionOutputs: '产物',
     sectionReferences: '引用',
     contextEmpty: '暂无上下文',
-    bucketRules: 'Rules',
-    bucketFiles: 'Files',
-    bucketWeb: 'Web',
-    bucketOther: 'Other',
     tabStatus: '概览',
     tabOrchestration: '编排',
     // WorkingFolder

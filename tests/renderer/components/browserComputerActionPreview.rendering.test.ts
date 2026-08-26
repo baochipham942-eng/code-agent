@@ -213,7 +213,7 @@ describe('browser/computer action preview rendering', () => {
     // 工具行默认折叠：错误回合不再自动展开详情。脱敏仍成立——折叠态只显示已脱敏的
     // 动作摘要（"输入 18 chars"）+ 红边框 + hover 摘要，原始输入文本绝不出现。
     expect(html).toContain('输入 18 chars');
-    expect(html).toContain('failed');
+    expect(html).toContain('执行时出了问题');
     expect(html).not.toContain('trace-browser-type-error');
     expect(html).not.toContain('secret@example.com');
   });
@@ -303,10 +303,49 @@ describe('browser/computer action preview rendering', () => {
     );
 
     expect(html).not.toContain('派出 1 个子智能体');
-    expect(html).toContain('reviewer');
-    expect(html).toContain('readonly');
-    expect(html).toContain('Grep, Glob, Read');
+    expect(html).toContain('第 1 步');
+    expect(html).toContain('只读');
+    expect(html).toContain('搜索了内容');
+    expect(html).toContain('读取了一个文件');
+    expect(html).not.toContain('reviewer');
+    expect(html).not.toContain('readonly');
+    expect(html).not.toContain('Grep, Glob, Read');
     expect(html).toContain('27.5s');
+  });
+
+  it('humanizes workflow stage errors and keeps the raw upstream string folded', () => {
+    const raw = 'StageRouterError: workerPool unavailable at workflowExecutor.ts:88';
+    const html = renderToStaticMarkup(
+      React.createElement(ToolCallDisplay, {
+        toolCall: makeToolCall({
+          name: 'workflow_orchestrate',
+          result: {
+            toolCallId: 'tool-1',
+            success: false,
+            error: raw,
+            metadata: {
+              completedStages: 0,
+              failedStages: 1,
+              stages: [{
+                name: 'internalReviewStage',
+                role: 'reviewer',
+                success: false,
+                toolsUsed: ['futureCamelTool'],
+                error: raw,
+              }],
+            },
+          },
+        }),
+        index: 0,
+        total: 1,
+      }),
+    );
+
+    expect(html).toContain('这个子任务没有完成');
+    expect(html).toContain('查看原始报错');
+    expect(html).not.toContain('internalReviewStage');
+    expect(html).not.toContain('futureCamelTool');
+    expect(html).not.toContain(raw);
   });
 
   it('preserves metadata when grouped trace nodes are rebuilt into ToolCallDisplay props', () => {

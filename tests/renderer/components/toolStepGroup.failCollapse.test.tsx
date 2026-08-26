@@ -79,7 +79,7 @@ describe('ToolStepGroup — 探索性失败默认折叠，需介入的失败默�
     expect(html).not.toContain('text-badge-danger');
   });
 
-  it('折叠不等于信息丢失：探索性失败对应的工具详情（点开工具行后看到的内容）完整保留原始报错', () => {
+  it('探索性失败的原始报错仅在用户主动展开后显示', () => {
     // 组折叠只影响"要不要强制摊开"，不影响每个工具自己被点开后展示的内容——
     // ToolDetails 是点开单个工具行后挂载的详情视图，验证它没有被本批改动阉割信息。
     const html = renderToStaticMarkup(
@@ -92,7 +92,8 @@ describe('ToolStepGroup — 探索性失败默认折叠，需介入的失败默�
         },
       }),
     );
-    expect(html).toContain('command failed with exit code 1');
+    expect(html).toContain('查看原始报错');
+    expect(html).not.toContain('command failed with exit code 1');
   });
 
   it('真正需要用户介入的失败（鉴权失效）默认展开并顶红', () => {

@@ -41,7 +41,6 @@
     "src/renderer/components/citations/CitationList.tsx",
     "src/renderer/components/design/designSlidesStore.ts",
     "src/renderer/components/features/admin/AdminUserScopeSelect.tsx",
-    "src/renderer/components/features/chat/AgentStatsBar.tsx",
     "src/renderer/components/features/chat/ChatInput/EffortSelector.tsx",
     "src/renderer/components/features/chat/ChatInput/ModeSwitch.tsx",
     "src/renderer/components/features/chat/ChatInput/ReportStyleSelector.tsx",

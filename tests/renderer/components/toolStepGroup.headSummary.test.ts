@@ -1,6 +1,6 @@
 // P0 接缝（工单 C）：单工具失败时组头摘要不再返回 null——
 // 128 个工具里 101 个没有专属状态词，组头只剩「失败 + 执行了一个步骤」等于没说话。
-// 降级链：code 文案 summary → 兜底分类 summary → 原始 error 首行（截断）。
+// 降级链：code 文案 summary → 兜底分类 summary → 固定人话。
 import { describe, expect, it } from 'vitest';
 import { buildToolGroupHeadSummary } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import type { ToolCall } from '../../../src/shared/contract/tool';
@@ -16,23 +16,23 @@ function failedCall(error: string | undefined, metadata?: Record<string, unknown
 }
 
 describe('buildToolGroupHeadSummary — 单工具失败不再返回 null', () => {
-  it('未分类错误：截取原始 error 的首行', () => {
+  it('未分类错误：用固定人话，不直出原始 error', () => {
     const summary = buildToolGroupHeadSummary([failedCall('command failed with exit code 1')], zh);
-    expect(summary).toBe('command failed with exit code 1');
+    expect(summary).toBe(zh.systemError.fallbackSummary);
   });
 
-  it('多行 error 只取第一行人话（跳过协议标签行）', () => {
+  it('多行 error 不进组头', () => {
     const summary = buildToolGroupHeadSummary(
       [failedCall('<tool-args-validation-error>\n参数 path 缺失\n第二行细节')],
       zh,
     );
-    expect(summary).toBe('参数 path 缺失');
+    expect(summary).toBe(zh.systemError.fallbackSummary);
   });
 
-  it('error 首行超 80 字时截断（组头只有一行，必须能 truncate）', () => {
+  it('超长 error 同样不进组头', () => {
     const long = 'x'.repeat(120);
     const summary = buildToolGroupHeadSummary([failedCall(long)], zh);
-    expect(summary).toBe('x'.repeat(77) + '...');
+    expect(summary).toBe(zh.systemError.fallbackSummary);
   });
 
   it('正则兜底分类命中时用分类文案的 summary', () => {

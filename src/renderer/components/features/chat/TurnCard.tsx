@@ -19,7 +19,6 @@ import {
   FileText,
   GitFork,
   LoaderCircle,
-  RotateCcw,
   ShieldAlert,
   Sparkles,
   Wrench,
@@ -147,6 +146,13 @@ export const TurnCard: React.FC<TurnCardProps> = ({
       .filter((change) => deliverableDiffPaths.has(change.filePath))
       .map((change) => [change.filePath, change]),
   ), [deliverableDiffPaths, turn]);
+  const hasStreamInterruption = useMemo(
+    () => turn.nodes.some((node) => (
+      Boolean(node.metadata?.streamInterruptionReason)
+      || Boolean(node.metadata?.streamRecovery)
+    )),
+    [turn.nodes],
+  );
 
   // 语音派活任务卡（W6-5）：一通电话里派出去的活，整轮折叠成一张任务卡——
   // 卡头说清「这件活是什么 + 谁做的 + 什么结果」，过程（工具调用、中间文本）默认折叠，
@@ -485,7 +491,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               }
               // 文件改动只由下方的文件变更卡讲一遍：卡片带相对路径 + 增删行数 + diff + 撤销，
               // 节点流里那行工具步骤是纯重复（同一个文件名在一屏里出现三次）。
-              if (isFileChangeCardOwnedNode(node)) {
+              if (isFileChangeCardOwnedNode(node) && !node.metadata?.streamInterruptionReason) {
                 return null;
               }
               // Final text rendered below; skip here to avoid duplicate
@@ -562,7 +568,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         })()}
 
         {/* 非交付物继续走轮级 diff；deliverable 的 diff 收在产物卡内。 */}
-        <TurnDiffSummary turn={turn} excludedFilePaths={deliverableDiffPaths} />
+        {!hasStreamInterruption && (
+          <TurnDiffSummary turn={turn} excludedFilePaths={deliverableDiffPaths} />
+        )}
 
         {/* 评价对象是这一轮的回答，所以位置在整轮最后——挂在正文节点里会插在答案和
             它产出的文件卡之间，看起来像在给上面那一句话打分。
@@ -961,8 +969,6 @@ function getTurnRunStatus(turn: TraceTurn, t: Translations, streamingState?: Str
     switch (streamingState.status) {
       case 'cancelling':
         return { key: 'cancelling', label: streamingState.label, tone: 'warning', icon: <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> };
-      case 'resumable':
-        return { key: 'resumable', label: streamingState.label, tone: 'warning', icon: <RotateCcw className="h-3.5 w-3.5" /> };
       case 'stale':
         return { key: 'stale_stream', label: streamingState.label, tone: 'neutral', icon: <CircleDot className="h-3.5 w-3.5" /> };
       case 'waiting_tool':
@@ -1060,8 +1066,6 @@ function getStreamingBannerIcon(state: StreamingUiState): React.ReactNode {
   switch (state.status) {
     case 'cancelling':
       return <LoaderCircle className="h-3.5 w-3.5 animate-spin" />;
-    case 'resumable':
-      return <RotateCcw className="h-3.5 w-3.5" />;
     case 'blocked':
       return <ShieldAlert className="h-3.5 w-3.5" />;
     case 'waiting_tool':
@@ -1097,7 +1101,7 @@ const StreamingStateBanner: React.FC<{ state: StreamingUiState }> = ({ state }) 
 // 顶部 run 横幅可见性：完成态 + 正常流式进度（running / using_tools / waiting_tool）
 // 统一隐藏。这些状态在流式期间随工具边界来回切换，会让蓝色 running 横幅 mount/unmount
 // 「跳上跳下」。正常 live 进度由底部 StreamingIndicator + 工具组内联指示承担；顶部横幅
-// 只在异常/终态（blocked/resumable/stale）显示稳定状态。
+// 只在异常/终态（blocked/stale）显示稳定状态；resumable 已收进灰字步骤和 DecisionSlot。
 // 吃 status key（稳定枚举），不吃 label（人话显示文案）——语言切换不能影响这条逻辑判断。
 export function shouldHideTurnRunHeader(statusKey: string, statusTone: string): boolean {
   return statusTone === 'success'

@@ -5,7 +5,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import type { ToolCall } from '@shared/contract';
+import type { StreamInterruptionReason, ToolCall } from '@shared/contract';
 import type { SessionMediaContext } from '@shared/utils/sessionMediaAssets';
 import { useAppStore } from '../../../../../stores/appStore';
 import { useSessionStore } from '../../../../../stores/sessionStore';
@@ -18,10 +18,7 @@ import {
   type BrowserComputerActionPreview,
 } from '../../../../../utils/browserComputerActionPreview';
 import {
-  getToolPermissionView,
-  getToolRecoveryHint,
   isEscalatedToolError,
-  type ToolPermissionView,
 } from '../../../../../utils/toolExecutionPresentation';
 import { computeBashPreviewLines } from './bashOutputPreview';
 import {
@@ -29,7 +26,6 @@ import {
   type AskUserQuestionRecord,
 } from '../../../../../utils/askUserQuestionRecord';
 import { useI18n } from '../../../../../hooks/useI18n';
-import type { Translations } from '../../../../../i18n';
 import { useBackgroundTaskStore } from '../../../../../stores/backgroundTaskStore';
 import { useAgentTreeSnapshot } from '../../../../../hooks/useAgentTreeSnapshot';
 import { isDelegationTool } from '../../../../../utils/agentActivity';
@@ -109,6 +105,7 @@ interface ToolCallDisplayProps {
   mediaContext?: SessionMediaContext;
   /** recovery snapshot 的工具从未执行，后续新 turn 在跑时也必须稳定保持 interrupted。 */
   statusOverride?: ToolStatus;
+  interruptionReason?: StreamInterruptionReason;
 }
 
 export function ToolCallDisplay({
@@ -118,6 +115,7 @@ export function ToolCallDisplay({
   compact = false,
   mediaContext,
   statusOverride,
+  interruptionReason,
 }: ToolCallDisplayProps) {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const processingSessionIds = useAppStore(
@@ -237,17 +235,18 @@ export function ToolCallDisplay({
         <StatusIndicator status={status} quietError={quietError} />
         {delegationPresentation
           ? <DelegationHeader presentation={delegationPresentation} />
-          : <ToolHeader toolCall={toolCall} status={status} showDetailName={expanded} />}
+          : <ToolHeader
+              toolCall={toolCall}
+              status={status}
+              interruptionReason={interruptionReason}
+              showDetailName={expanded}
+            />}
       </div>
 
       {delegationPresentation && <DelegationReceipt presentation={delegationPresentation} />}
 
       {!delegationPresentation && actionPreview && (
         <BrowserComputerActionPreviewLine preview={actionPreview} />
-      )}
-
-      {status !== 'interrupted' && !compact && !delegationPresentation && (expanded || (status !== 'success' && !quietError)) && (
-        <ToolExecutionMetaRow toolCall={toolCall} status={status} quietError={quietError} />
       )}
 
       {workflowStagePreview && (
@@ -498,68 +497,6 @@ const AskUserQuestionRecordBlock: React.FC<{ record: AskUserQuestionRecord }> = 
             </div>
           ))}
         </div>
-      )}
-    </div>
-  );
-};
-
-function getPermissionToneClass(permission: ToolPermissionView): string {  switch (permission) {
-    case 'read':
-      return 'text-badge-success';
-    case 'write':
-    case 'shell':
-    case 'desktop':
-      return 'text-badge-warning';
-    case 'network':
-    case 'mcp':
-      return 'text-badge-info';
-    case 'memory':
-      return 'text-badge-accent';
-    default:
-      return 'text-zinc-500';
-  }
-}
-
-function getPermissionRiskLabel(permission: ToolPermissionView): string | null {
-  switch (permission) {
-    case 'write':
-      return '会改文件';
-    case 'shell':
-      return '会执行命令';
-    case 'network':
-      return '会访问网络';
-    case 'desktop':
-      return '会操作桌面';
-    case 'memory':
-      return '会读写记忆';
-    default:
-      return null;
-  }
-}
-
-function getVisibleRecoveryHint(toolCall: ToolCall, status: ToolStatus, t: Translations): string | null {
-  if (status === 'pending') return null;
-  if (status === 'success' && !toolCall.result?.outputPath) return null;
-  return getToolRecoveryHint(toolCall, status, t);
-}
-
-const ToolExecutionMetaRow: React.FC<{ toolCall: ToolCall; status: ToolStatus; quietError?: boolean }> = ({ toolCall, status, quietError }) => {
-  const { t } = useI18n();
-  const permission = getToolPermissionView(toolCall.name);
-  const permissionLabel = getPermissionRiskLabel(permission);
-  const recoveryHint = getVisibleRecoveryHint(toolCall, status, t);
-
-  if (!permissionLabel && !recoveryHint) {
-    return null;
-  }
-
-  return (
-    <div className="ml-6 mt-0.5 mb-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-500">
-      {permissionLabel && (
-        <span className={getPermissionToneClass(permission)}>{permissionLabel}</span>
-      )}
-      {recoveryHint && (
-        <span className={status === 'error' && !quietError ? 'text-badge-danger' : 'text-zinc-600'}>{recoveryHint}</span>
       )}
     </div>
   );

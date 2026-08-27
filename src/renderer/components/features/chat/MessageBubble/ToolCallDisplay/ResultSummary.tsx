@@ -17,8 +17,11 @@ interface Props {
 export function ResultSummary({ toolCall, inline = false }: Props) {
   const { t } = useI18n();
   const isError = toolCall.result && !toolCall.result.success;
+  const humanizedError = isError
+    ? humanizeToolError(toolCall.result?.error, toolCall.name, t, toolCall.result?.metadata)
+    : null;
   const summary = isError
-    ? humanizeToolError(toolCall.result?.error, toolCall.name, t)?.summary ?? t.systemError.fallbackSummary
+    ? humanizedError?.detail ?? humanizedError?.summary ?? t.systemError.fallbackSummary
     : summarizeTool(toolCall);
 
   if (!summary) return null;

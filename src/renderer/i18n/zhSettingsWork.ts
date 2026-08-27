@@ -1,4 +1,6 @@
 // ============================================================================
+
+import { outcomeWordsZh } from './outcomeWords';
 // Settings namespace translations (zh/Work) — 纯平移拆分（债务门）
 // ============================================================================
 
@@ -162,12 +164,12 @@ export const zhSettingsWork = {
       executionStatus: {
         notRun: '尚未运行',
         completed: '成功',
-        failed: '失败',
+        failed: outcomeWordsZh.outcomeWords['failed-unknown'].badge.label,
         running: '运行中',
         pending: '等待',
         cancelled: '取消',
         paused: '暂停',
-        interrupted: '已中断',
+        interrupted: outcomeWordsZh.outcomeWords['cancelled-restart'].badge.label,
       },
       overview: {
         title: '任务总览',
@@ -805,7 +807,7 @@ export const zhSettingsWork = {
         idle: '未启用',
         running: '安装中…',
         completed: '已完成',
-        error: '失败',
+        error: outcomeWordsZh.outcomeWords['failed-unknown'].badge.label,
       },
       boundary: {
         title: '权限与数据边界',

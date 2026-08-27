@@ -95,7 +95,8 @@ describe('层1 人话时间线', () => {
     expect(stamps.map((stamp) => stamp.dataset.verdict)).toEqual(['verified', 'self_claimed', 'n_a']);
     expect(stamps[0].textContent).toContain('完成有据');
     expect(stamps[1].textContent).toContain('自称完成');
-    expect(stamps[2].textContent).toContain('失败了');
+    expect(stamps[2].textContent).toContain('失败');
+    expect(screen.getByTestId('inspector-stamp-reason').textContent).toBe('执行过程中发生错误');
     // 轮行按序三条
     expect(screen.getAllByTestId('inspector-turn')).toHaveLength(3);
   });

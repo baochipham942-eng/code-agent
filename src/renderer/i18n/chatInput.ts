@@ -1,4 +1,6 @@
 // ============================================================================
+
+import { outcomeWordsZh } from './outcomeWords';
 // Chat 输入区词条（ChatInput index / InputArea / AttachmentBar / SendButton /
 // useFileUpload / ScheduleComposerCard / 长尾组件与 hook）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatTranscript.ts 先例）。
@@ -61,7 +63,7 @@ export const chatInputZh = {
     verbCreate: '创建',
     updatedToastPrefix: '角色「',
     updatedToastSuffix: '」已',
-    actionFailedSuffix: '失败',
+    actionFailedSuffix: outcomeWordsZh.outcomeWords['failed-unknown'].badge.label,
     actionFailedPrefix: '角色',
     discardedToast: '已放弃角色草稿',
     processFailedToast: '草稿处理失败',
@@ -280,7 +282,7 @@ export const chatInputZh = {
     configProvider: '  提供商: {provider}\n',
     configSessionId: '  会话 ID: {sid}',
     configNoSession: '未创建',
-    registryCommandFailedPrefix: ' 执行失败：',
+    registryCommandFailedPrefix: ` ${outcomeWordsZh.outcomeWords['failed-tool'].timeline.label}：`,
   },
   chatInputSubmit: {
     runtimeInputPlaceholder: '继续描述…（Enter 排队，⌘/Ctrl+Enter 改道）',

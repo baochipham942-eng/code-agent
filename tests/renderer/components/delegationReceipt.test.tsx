@@ -127,7 +127,7 @@ describe('delegation receipt', () => {
     })];
     const view = renderCall();
 
-    expect(view.getByText('未完成')).toBeTruthy();
+    expect(view.getByText('执行失败')).toBeTruthy();
     expect(view.getByTestId('delegation-failure').textContent).toBe('远端服务超时');
   });
 

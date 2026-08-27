@@ -3,6 +3,7 @@ import type {
   SurfaceExecutionControlV1,
   SurfaceSessionStateV1,
 } from '@shared/contract/surfaceExecution';
+import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 
 type SurfacePhaseV1 = 'prepare' | 'observe' | 'act' | 'verify' | 'human' | 'recover' | 'artifact' | 'cleanup';
 type SurfaceEventStatusV1 = 'queued' | 'running' | 'waiting' | 'succeeded' | 'failed' | 'ambiguous' | 'cancelled';
@@ -166,8 +167,8 @@ export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
     waiting_human: '等待你操作',
     paused: '已暂停',
     stopping: '正在停止',
-    completed: '已完成',
-    failed: '执行失败',
+    completed: outcomeWordsZh.outcomeWords.completed.timeline.label,
+    failed: outcomeWordsZh.outcomeWords['failed-tool'].timeline.label,
   },
   target: { browser: '当前页面', computer: '当前窗口', unavailable: '目标尚未就绪' },
   controller: { label: '当前控制者', agent: 'Neo', human: '你', archive: '只读记录' },
@@ -224,10 +225,10 @@ export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
       queued: '排队中',
       running: '进行中',
       waiting: '等待中',
-      succeeded: '已完成',
-      failed: '失败',
+      succeeded: outcomeWordsZh.outcomeWords.completed.timeline.label,
+      failed: outcomeWordsZh.outcomeWords['failed-tool'].timeline.label,
       ambiguous: '结果待确认',
-      cancelled: '已取消',
+      cancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].timeline.label,
     },
     verdict: {
       pass: '通过',
@@ -278,7 +279,7 @@ export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
     checklist: '检查项',
     checklistState: {
       passed: '通过',
-      failed: '失败',
+      failed: outcomeWordsZh.outcomeWords['failed-tool'].badge.label,
       inconclusive: '待确认',
       not_checked: '未检查',
     },
@@ -357,8 +358,8 @@ const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
     waiting_human: 'Waiting for you',
     paused: 'Paused',
     stopping: 'Stopping',
-    completed: 'Completed',
-    failed: 'Failed',
+    completed: outcomeWordsEn.outcomeWords.completed.timeline.label,
+    failed: outcomeWordsEn.outcomeWords['failed-tool'].timeline.label,
   },
   target: { browser: 'Current page', computer: 'Current window', unavailable: 'Target is not ready' },
   controller: { label: 'Controller', agent: 'Neo', human: 'You', archive: 'Read-only record' },
@@ -415,15 +416,15 @@ const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
       queued: 'Queued',
       running: 'Running',
       waiting: 'Waiting',
-      succeeded: 'Completed',
-      failed: 'Failed',
+      succeeded: outcomeWordsEn.outcomeWords.completed.timeline.label,
+      failed: outcomeWordsEn.outcomeWords['failed-tool'].timeline.label,
       ambiguous: 'Needs confirmation',
-      cancelled: 'Cancelled',
+      cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].timeline.label,
     },
     verdict: {
       pass: 'Passed',
       partial: 'Partially passed',
-      fail: 'Failed',
+      fail: outcomeWordsEn.outcomeWords['failed-tool'].badge.label,
       inconclusive: 'Inconclusive',
       not_requested: 'Not verified',
     },
@@ -469,7 +470,7 @@ const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
     checklist: 'Checklist',
     checklistState: {
       passed: 'Passed',
-      failed: 'Failed',
+      failed: outcomeWordsEn.outcomeWords['failed-tool'].badge.label,
       inconclusive: 'Inconclusive',
       not_checked: 'Not checked',
     },

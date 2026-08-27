@@ -112,7 +112,8 @@ describe('ToolDetails 语法高亮（#13 收窄版：仅 JSON 走高亮）', () 
       },
     } as ToolCall);
 
-    expect(markup).toContain('已中断');
+    expect(markup).toContain('已取消');
+    expect(markup).toContain('应用重启时中断');
     expect(markup).not.toContain('[no result');
     expect(markup).not.toContain('cancelled before');
     expect(markup).not.toContain('复制错误');

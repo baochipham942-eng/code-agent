@@ -45,6 +45,7 @@ import { sessionInspectorZh } from './sessionInspector';
 import { artifactShareZh } from './artifactShare';
 import { receiptPresentationZh } from './receiptPresentation';
 import { renderHumanPipeZh } from './renderHumanPipe';
+import { outcomeWordsZh } from './outcomeWords';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
@@ -60,6 +61,7 @@ export const zh = {
   ...workbenchTabsZh,
   ...receiptPresentationZh,
   ...renderHumanPipeZh,
+  ...outcomeWordsZh,
   // Common
   common: {
     save: '保存',

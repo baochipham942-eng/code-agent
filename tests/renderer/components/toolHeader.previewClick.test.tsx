@@ -77,7 +77,7 @@ describe('ToolHeader — Read path opens preview', () => {
 
     render(<ToolHeader toolCall={toolCall} status="error" />);
     const title = screen.getByTestId('tool-header-open-preview').getAttribute('title');
-    expect(title).toBe('已中断 · …/docs/要点笔记.md');
+    expect(title).toBe('已取消 · …/docs/要点笔记.md');
     expect(title).not.toContain('[no result');
     expect(title).not.toContain('cancelled before');
   });

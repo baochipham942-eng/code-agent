@@ -6,6 +6,7 @@
 
 import { turnDiffEn, turnDiffZh } from './turnDiff';
 import { turnCheckoutChatEn, turnCheckoutChatZh } from './turnCheckout';
+import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 
 export const chatTranscriptZh = {
 chat: {
@@ -20,8 +21,8 @@ chat: {
   activityIdle: '正在整理任务…',
   delegationReceipt: {
     working: '代理工作中',
-    completed: '已完成',
-    failed: '未完成',
+    completed: outcomeWordsZh.outcomeWords.completed.timeline.label,
+    failed: outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label,
     dispatched: '已派出',
     steps: '做了 {count} 步',
     output: '产出',
@@ -207,9 +208,9 @@ traceView: {
 // 工具步骤组（ToolStepGroup）
 toolGroup: {
   statusRunning: '运行中',
-  statusPartial: '部分失败',
-  statusFailed: '失败',
-  statusCompleted: '已完成',
+  statusPartial: outcomeWordsZh.outcomeWords['completed-with-warnings'].badge.label,
+  statusFailed: outcomeWordsZh.outcomeWords['failed-tool'].badge.label,
+  statusCompleted: outcomeWordsZh.outcomeWords.completed.badge.label,
   recovered: '已恢复',
   recoveredTitle: '这次失败后已自动恢复',
   outputCount: '{count} 个产物',
@@ -297,9 +298,9 @@ toolStepHumanize: {
 
 // 单工具状态词表（statusLabels.ts 整表）
 toolStatus: {
-  default: { preparing: '准备中…', running: '执行中…', completed: '已完成', error: '执行失败' },
+  default: { preparing: '准备中…', running: '执行中…', completed: outcomeWordsZh.outcomeWords.completed.timeline.label, error: outcomeWordsZh.outcomeWords['failed-tool'].timeline.label },
   mcp: { preparing: '准备调用…', running: '调用工具…', completed: '调用完成', error: '调用失败' },
-  interrupted: '已中断',
+  interrupted: outcomeWordsZh.outcomeWords['cancelled-restart'].timeline.label,
   notExecuted: '未执行',
   writeValidationFailed: '已写入，验收失败',
   editValidationFailed: '已编辑，验收失败',
@@ -310,7 +311,7 @@ toolStatus: {
   globFiles: '找到 {count} 个文件',
   readLines: '已读取 {count} 行',
   tools: {
-    Bash: { preparing: '生成命令…', running: '执行中…', completed: '已执行', error: '执行失败' },
+    Bash: { preparing: '生成命令…', running: '执行中…', completed: '已执行', error: outcomeWordsZh.outcomeWords['failed-tool'].timeline.label },
     Read: { preparing: '定位文件…', running: '读取中…', completed: '已读取', error: '读取失败' },
     Write: { preparing: '准备内容…', running: '写入中…', completed: '已创建', error: '写入失败' },
     Edit: { preparing: '准备修改…', running: '编辑中…', completed: '已编辑', error: '编辑失败' },
@@ -755,8 +756,8 @@ traceView: {
 toolGroup: {
   statusRunning: 'running',
   statusPartial: 'partial',
-  statusFailed: 'failed',
-  statusCompleted: 'completed',
+  statusFailed: outcomeWordsEn.outcomeWords['failed-tool'].badge.label,
+  statusCompleted: outcomeWordsEn.outcomeWords.completed.badge.label,
   recovered: 'Recovered',
   recoveredTitle: 'This failure was automatically recovered',
   outputCount: '{count} outputs',
@@ -844,9 +845,9 @@ toolStepHumanize: {
 
 // Per-tool status labels (statusLabels.ts)
 toolStatus: {
-  default: { preparing: 'Preparing…', running: 'Running…', completed: 'Completed', error: 'Failed' },
+  default: { preparing: 'Preparing…', running: 'Running…', completed: outcomeWordsEn.outcomeWords.completed.timeline.label, error: outcomeWordsEn.outcomeWords['failed-tool'].timeline.label },
   mcp: { preparing: 'Preparing call…', running: 'Calling tool…', completed: 'Call completed', error: 'Call failed' },
-  interrupted: 'Interrupted',
+  interrupted: outcomeWordsEn.outcomeWords['cancelled-restart'].timeline.label,
   notExecuted: 'not executed',
   writeValidationFailed: 'Written, validation failed',
   editValidationFailed: 'Edited, validation failed',
@@ -857,7 +858,7 @@ toolStatus: {
   globFiles: 'Found {count} files',
   readLines: 'Read {count} lines',
   tools: {
-    Bash: { preparing: 'Composing command…', running: 'Running…', completed: 'Executed', error: 'Execution failed' },
+    Bash: { preparing: 'Composing command…', running: 'Running…', completed: 'Executed', error: outcomeWordsEn.outcomeWords['failed-tool'].timeline.label },
     Read: { preparing: 'Locating file…', running: 'Reading…', completed: 'Read', error: 'Read failed' },
     Write: { preparing: 'Preparing content…', running: 'Writing…', completed: 'Created', error: 'Write failed' },
     Edit: { preparing: 'Preparing edit…', running: 'Editing…', completed: 'Edited', error: 'Edit failed' },

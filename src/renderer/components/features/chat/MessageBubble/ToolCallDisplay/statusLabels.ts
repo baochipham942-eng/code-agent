@@ -5,7 +5,7 @@
 // ============================================================================
 
 import type { ToolStatus } from './styles';
-import type { ToolCall } from '@shared/contract';
+import { AgentFailureCode, inferAgentFailureCode, type ToolCall } from '@shared/contract';
 import type { Translations } from '../../../../../i18n';
 
 type StatusLabels = Translations['toolStatus']['default'];
@@ -46,12 +46,20 @@ export function getToolStatusLabel(
       }
       return enrichCompletedLabel(toolCall, t);
     case 'error':
+      if (inferAgentFailureCode({
+        failureCode: toolCall.result?.metadata?.failureCode,
+        toolResultCode: toolCall.result?.metadata?.code,
+        defaultCode: AgentFailureCode.Unknown,
+      }) === AgentFailureCode.PermissionDenied) {
+        const outcome = t.outcomeWords['failed-approval-denied'].timeline;
+        return `${outcome.label} · ${outcome.reason}`;
+      }
       if (isArtifactValidationFailureAfterMutation(toolCall)) {
         return artifactValidationFailedLabel(toolCall.name, t);
       }
-      return labels.error;
+      return t.outcomeWords['failed-tool'].timeline.label;
     case 'interrupted':
-      return t.toolStatus.interrupted;
+      return t.outcomeWords['cancelled-restart'].timeline.label;
   }
 }
 

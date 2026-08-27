@@ -53,11 +53,11 @@ export function getStreamInterruptionReasonLabel(
 ): string {
   switch (reason) {
     case 'user':
-      return t.chat.streamInterruptedReason.user;
+      return t.outcomeWords['cancelled-by-user'].timeline.reason;
     case 'session-switch':
-      return t.chat.streamInterruptedReason.sessionSwitch;
+      return t.outcomeWords['cancelled-session-switch'].timeline.reason;
     case 'app-restart':
-      return t.chat.streamInterruptedReason.appRestart;
+      return t.outcomeWords['cancelled-restart'].timeline.reason;
   }
 }
 

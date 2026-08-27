@@ -13,6 +13,7 @@ import { Badge } from '../primitives/Badge';
 import { Button } from '../primitives/Button';
 import { Eye, EyeOff } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
+import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 
 interface RequestDetailsProps {
   request: PermissionRequest;
@@ -208,6 +209,7 @@ const LAYER_LABELS: Record<string, string> = {
 
 function DecisionTraceView({ trace }: { trace: DecisionTrace }) {
   const [expanded, setExpanded] = useState(false);
+  const { t } = useI18n();
 
   return (
     <div className="mt-3">
@@ -221,7 +223,9 @@ function DecisionTraceView({ trace }: { trace: DecisionTrace }) {
       </button>
       {expanded && (
         <div className="mt-1.5 space-y-1">
-          {trace.steps.map((step, i) => (
+          {trace.steps.map((step, i) => {
+            const reason = resolveHostReasonCopy(step.reason, t);
+            return (
             <div
               key={i}
               className="flex items-start gap-2 text-[10px] text-zinc-500 pl-2 border-l border-zinc-700"
@@ -232,9 +236,12 @@ function DecisionTraceView({ trace }: { trace: DecisionTrace }) {
               <span className="shrink-0">
                 {step.result === 'deny' ? '\u2715' : step.result === 'ask' ? '?' : '\u2713'}
               </span>
-              <span className="text-zinc-400 break-all">{step.reason}</span>
+              <span className="text-zinc-400 break-all">
+                {reason?.summary ?? t.agentError.categories.generic.title}
+              </span>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

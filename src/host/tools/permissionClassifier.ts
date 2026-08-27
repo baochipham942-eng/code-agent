@@ -14,6 +14,11 @@ import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
+import {
+  createHostReason,
+  HostReasonCode,
+  type HostReasonPayload,
+} from '../../shared/contract/permission';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { isKnownSafeCommand } from '../security/commandSafety';
 import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
@@ -33,6 +38,8 @@ export type PermissionDecision = 'approve' | 'deny' | 'ask';
 
 export interface ClassificationResult {
   decision: PermissionDecision;
+  /** Host→renderer 的稳定原因载荷；reason 仅供 host 内部日志兼容。 */
+  hostReason?: HostReasonPayload;
   reason: string;
   confidence: number; // 0-1
   cached: boolean;
@@ -53,6 +60,22 @@ export interface ClassificationResult {
    * devModeAutoApprove 自动放行，文件真写进 $HOME）。
    */
   trustBoundary?: boolean;
+}
+
+function classificationHostReason(
+  result: ClassificationResult,
+  toolName: string,
+): ClassificationResult {
+  if (result.hostReason) return result;
+  const code = result.decision === 'approve'
+    ? HostReasonCode.PermissionClassifierAllowed
+    : result.decision === 'deny'
+      ? HostReasonCode.PermissionClassifierDenied
+      : HostReasonCode.PermissionClassifierConfirmationRequired;
+  return {
+    ...result,
+    hostReason: createHostReason(code, result.reason, { toolName }),
+  };
 }
 
 export interface ClassifierConfig {
@@ -243,22 +266,24 @@ export class PermissionClassifier {
     const cacheKey = this.buildCacheKey(toolName, args, context);
     const cached = this.getFromCache(cacheKey);
     if (cached) {
-      return { ...cached, cached: true };
+      return { ...classificationHostReason(cached, toolName), cached: true };
     }
 
     // 2. Rule-based fast path
     const ruleResult = this.classifyByRules(toolName, args, context, startTime);
     if (ruleResult) {
-      this.setCache(cacheKey, ruleResult);
-      return ruleResult;
+      const structured = classificationHostReason(ruleResult, toolName);
+      this.setCache(cacheKey, structured);
+      return structured;
     }
 
     // 3. LLM classifier（规则无法判断时）
     if (this.config.enableLlm) {
       const llmResult = await this.classifyByLlm(toolName, args, context);
       if (llmResult && llmResult.confidence >= this.config.confidenceThreshold) {
-        this.setCache(cacheKey, llmResult);
-        return llmResult;
+        const structured = classificationHostReason(llmResult, toolName);
+        this.setCache(cacheKey, structured);
+        return structured;
       }
       // LLM 信心不足，fall through to ask
       if (llmResult) {
@@ -278,7 +303,7 @@ export class PermissionClassifier {
       cached: false,
       traceStep: createTraceStep('permission_classifier', 'fallback', 'ask', reason, startTime),
     };
-    return fallback;
+    return classificationHostReason(fallback, toolName);
   }
 
   // --------------------------------------------------------------------------
@@ -370,7 +395,7 @@ export class PermissionClassifier {
 
     // R6: 文件写入工具 — 按路径判断
     if (WRITE_TOOLS.has(toolName)) {
-      return this.classifyFileWrite(args, context, startTime);
+      return this.classifyFileWrite(toolName, args, context, startTime);
     }
 
     // R7: MCP 工具 → ask（未知副作用）
@@ -566,6 +591,7 @@ export class PermissionClassifier {
    * 文件写入分类 — 按目标路径判断
    */
   private classifyFileWrite(
+    toolName: string,
     args: Record<string, unknown>,
     context: ClassificationContext,
     startTime: number
@@ -589,6 +615,11 @@ export class PermissionClassifier {
       return {
         decision: 'ask',
         reason,
+        hostReason: createHostReason(
+          HostReasonCode.PermissionFileOutsideWorkspaceConfirmationRequired,
+          reason,
+          { toolName, path: resolved },
+        ),
         confidence: 0.9,
         cached: false,
         traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
@@ -619,6 +650,11 @@ export class PermissionClassifier {
       return {
         decision: 'ask',
         reason,
+        hostReason: createHostReason(
+          HostReasonCode.PermissionFileOutsideWorkspaceConfirmationRequired,
+          reason,
+          { toolName, path: resolved },
+        ),
         confidence: 0.9,
         cached: false,
         traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),
@@ -645,6 +681,11 @@ export class PermissionClassifier {
     return {
       decision: 'ask',
       reason,
+      hostReason: createHostReason(
+        HostReasonCode.PermissionFileOutsideWorkspaceConfirmationRequired,
+        reason,
+        { toolName, path: resolved },
+      ),
       confidence: 0.9,
       cached: false,
       traceStep: createTraceStep('permission_classifier', 'W3: outside_project', 'ask', reason, startTime),

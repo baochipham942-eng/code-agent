@@ -14,9 +14,12 @@
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Clock3 } from 'lucide-react';
+import { Clock3, WalletCards } from 'lucide-react';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
+import ipcService from '../../../services/ipcService';
+import { openBudgetSettings } from '../../../utils/budgetSettingsNavigation';
 import { CronJobList } from './CronJobList';
 import { AutomationReviewInbox } from './AutomationReviewInbox';
 import { CronFeaturedTemplates } from './CronFeaturedTemplates';
@@ -26,12 +29,27 @@ import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { WebModeBanner } from '../settings/WebModeBanner';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
+import { Button } from '../../primitives';
 
 interface CronCenterPanelProps {
   onClose: () => void;
 }
 
 type CronCenterTab = 'jobs' | 'runs';
+
+interface UnattendedBudgetStatus {
+  currentCost: number;
+  maxBudget: number;
+  usagePercentage: number;
+}
+
+interface ScopedBudgetStatusResponse {
+  scopes?: { unattended?: UnattendedBudgetStatus };
+}
+
+function formatUsd(value: number): string {
+  return `$${value.toFixed(2)}`;
+}
 
 const StatusTile: React.FC<{ label: string; value: string; attention?: boolean; testId: string }> = ({
   label,
@@ -74,10 +92,26 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   // 待过目数由收件箱回传（同一条 listPendingReview 通道，语义与服务侧 countPendingReview 一致），
   // 收件箱里「已过目」后状态条同步归零，不用再发一次 IPC。
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
+  const [unattendedBudgetStatus, setUnattendedBudgetStatus] = useState<UnattendedBudgetStatus | null>(null);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    let active = true;
+    void ipcService
+      .invokeDomain<ScopedBudgetStatusResponse>(IPC_DOMAINS.SETTINGS, 'getBudgetStatus')
+      .then((status) => {
+        if (active) setUnattendedBudgetStatus(status?.scopes?.unattended ?? null);
+      })
+      .catch(() => {
+        if (active) setUnattendedBudgetStatus(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // 运行记录 tab 首次进入/切回时拉最新执行流
   useEffect(() => {
@@ -128,6 +162,14 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     { key: 'jobs', label: cc.tabJobs },
     { key: 'runs', label: cc.tabRuns },
   ];
+  const unattendedBudgetSummary = unattendedBudgetStatus
+    ? unattendedBudgetStatus.maxBudget > 0
+      ? cc.budgetSummaryLimited
+        .replace('{cost}', formatUsd(unattendedBudgetStatus.currentCost))
+        .replace('{max}', formatUsd(unattendedBudgetStatus.maxBudget))
+        .replace('{percent}', String(Math.round(unattendedBudgetStatus.usagePercentage * 100)))
+      : cc.budgetSummaryUnlimited.replace('{cost}', formatUsd(unattendedBudgetStatus.currentCost))
+    : cc.budgetSummaryUnavailable;
 
   return (
     <FullScreenPage testId="cron-center-panel" variant="inline">
@@ -185,6 +227,33 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
         </div>
 
         <WebModeBanner />
+
+        <div
+          className="mx-6 mt-4 flex shrink-0 items-center justify-between gap-4 rounded-lg border border-zinc-800 bg-zinc-900/70 px-4 py-3"
+          data-testid="automation-budget-summary"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="rounded-md border border-zinc-700 bg-zinc-800 p-2 text-zinc-400">
+              <WalletCards className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <div className="text-xs font-medium text-zinc-300">{cc.budgetSummaryLabel}</div>
+              <div className="mt-0.5 truncate text-xs tabular-nums text-zinc-500" data-testid="automation-budget-usage">
+                {unattendedBudgetSummary}
+              </div>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="shrink-0"
+            onClick={openBudgetSettings}
+            data-testid="automation-budget-settings-link"
+          >
+            {cc.budgetSettingsAction}
+          </Button>
+        </div>
 
         {error && (
           <div className="border-b border-red-500/20 bg-red-500/10 px-6 py-2 text-sm text-badge-danger">

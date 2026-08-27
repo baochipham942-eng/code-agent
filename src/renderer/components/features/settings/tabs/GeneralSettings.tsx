@@ -31,6 +31,7 @@ import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
+import { Button, Input } from '../../../primitives';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -90,6 +91,26 @@ export interface PermissionRuleSummary {
 
 const PERMISSION_MODES: PermissionMode[] = ['default', 'readOnly', 'acceptEdits', 'bypassPermissions'];
 const INHERITANCE_MODES: InheritanceMode[] = ['strict-inherit', 'child-narrow', 'independent'];
+const DEFAULT_FOREGROUND_BUDGET = 10;
+const DEFAULT_UNATTENDED_BUDGET = 3;
+const DAILY_RESET_HOURS = 24;
+
+interface BudgetStatusResponse {
+  scopes?: {
+    foreground?: { currentCost?: number };
+    unattended?: { currentCost?: number };
+  };
+}
+
+function budgetValueToInput(value: number): string {
+  return value > 0 ? value.toFixed(2) : '';
+}
+
+function parseBudgetInput(value: string): number | null {
+  if (value.trim() === '') return 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
 
 const PERMISSION_MODE_TEXT_KEYS: Record<PermissionMode, keyof GeneralSettingsText['permissionModes']> = {
   default: 'default',
@@ -235,6 +256,7 @@ function getRuleRows(ruleSummary: PermissionRuleSummary, text: GeneralSettingsTe
 export const GeneralSettings: React.FC = () => {
   const { t } = useI18n();
   const generalText = t.settings.general.permissions;
+  const budgetText = t.settings.general.budget;
   const isAdmin = useAuthStore((state) => state.user?.isAdmin === true);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
   const [inheritance, setInheritance] = useState<InheritanceMode>('strict-inherit');
@@ -244,6 +266,10 @@ export const GeneralSettings: React.FC = () => {
   const [showMigrationBanner, setShowMigrationBanner] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(true);
   const [pendingPermissionMode, setPendingPermissionMode] = useState<PermissionMode | null>(null);
+  const [foregroundBudget, setForegroundBudget] = useState('10.00');
+  const [unattendedBudget, setUnattendedBudget] = useState('3.00');
+  const [unattendedCurrentCost, setUnattendedCurrentCost] = useState(0);
+  const [isBudgetSaving, setIsBudgetSaving] = useState(false);
 
   const permissionModeRows = useMemo(
     () => buildPermissionModeRows(permissionMode, generalText),
@@ -263,12 +289,17 @@ export const GeneralSettings: React.FC = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        const currentMode = await ipcService.invoke(IPC_CHANNELS.PERMISSION_GET_MODE);
+        const [currentMode, settings, budgetStatus] = await Promise.all([
+          ipcService.invoke(IPC_CHANNELS.PERMISSION_GET_MODE),
+          ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get'),
+          ipcService
+            .invokeDomain<BudgetStatusResponse | undefined>(IPC_DOMAINS.SETTINGS, 'getBudgetStatus')
+            .catch(() => undefined),
+        ]);
         if (isPermissionMode(currentMode)) {
           setPermissionMode(currentMode);
         }
 
-        const settings = await ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get');
         const perms = settings?.permissions;
         if (perms?.inheritance && isInheritanceMode(perms.inheritance)) {
           setInheritance(perms.inheritance);
@@ -280,6 +311,15 @@ export const GeneralSettings: React.FC = () => {
         if (perms?._legacyPermissions && !perms?.inheritanceMigrationAcked) {
           setShowMigrationBanner(true);
         }
+
+        const budget = settings?.budget;
+        setForegroundBudget(budgetValueToInput(
+          budget ? (budget.foreground?.maxBudget ?? budget.maxBudget) : DEFAULT_FOREGROUND_BUDGET,
+        ));
+        setUnattendedBudget(budgetValueToInput(
+          budget ? (budget.unattended?.maxBudget ?? budget.maxBudget) : DEFAULT_UNATTENDED_BUDGET,
+        ));
+        setUnattendedCurrentCost(budgetStatus?.scopes?.unattended?.currentCost ?? 0);
       } catch (error) {
         toast.error(generalText.loadFailedPrefix + getErrorMessage(error, generalText.unknownError));
       } finally {
@@ -352,12 +392,133 @@ export const GeneralSettings: React.FC = () => {
     await persistPermissions({ inheritanceMigrationAcked: true });
   };
 
+  const parsedForegroundBudget = parseBudgetInput(foregroundBudget);
+  const parsedUnattendedBudget = parseBudgetInput(unattendedBudget);
+  const budgetInputInvalid = parsedForegroundBudget === null || parsedUnattendedBudget === null;
+  const unattendedWouldBlock = parsedUnattendedBudget !== null
+    && parsedUnattendedBudget > 0
+    && unattendedCurrentCost >= parsedUnattendedBudget;
+
+  const handleBudgetSave = async () => {
+    if (parsedForegroundBudget === null || parsedUnattendedBudget === null) return;
+    setIsBudgetSaving(true);
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'setBudgetConfig', {
+        budget: {
+          foreground: {
+            enabled: true,
+            maxBudget: parsedForegroundBudget,
+            resetPeriodHours: DAILY_RESET_HOURS,
+          },
+          unattended: {
+            enabled: true,
+            maxBudget: parsedUnattendedBudget,
+            resetPeriodHours: DAILY_RESET_HOURS,
+          },
+        },
+      });
+      toast.success(budgetText.saved);
+    } catch (error) {
+      toast.error(budgetText.saveFailedPrefix + getErrorMessage(error, generalText.unknownError));
+    } finally {
+      setIsBudgetSaving(false);
+    }
+  };
+
+  const handleBudgetRestoreDefaults = () => {
+    setForegroundBudget(DEFAULT_FOREGROUND_BUDGET.toFixed(2));
+    setUnattendedBudget(DEFAULT_UNATTENDED_BUDGET.toFixed(2));
+  };
+
   return (
     <SettingsPage
       title={generalText.pageTitle}
       description={generalText.pageDescription}
     >
       <WebModeBanner />
+
+      <div id="budget-settings-section" tabIndex={-1} data-testid="budget-settings-section">
+        <SettingsSection title={budgetText.title} description={budgetText.description}>
+          <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60 px-4">
+            <div className="grid grid-cols-[minmax(0,1fr)_160px] items-center gap-4 border-b border-zinc-800 py-4">
+              <label htmlFor="foreground-budget-limit" className="min-w-0">
+                <span className="block text-sm font-medium text-zinc-200">{budgetText.foregroundLabel}</span>
+                <span className="mt-1 block text-xs text-zinc-500">{budgetText.foregroundDescription}</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="foreground-budget-limit"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  inputSize="sm"
+                  value={foregroundBudget}
+                  onChange={(event) => setForegroundBudget(event.target.value)}
+                  error={parsedForegroundBudget === null}
+                  disabled={isLoading || isWebMode()}
+                  className="text-right tabular-nums"
+                  data-testid="foreground-budget-input"
+                />
+                <span className="w-10 shrink-0 text-xs text-zinc-500">{budgetText.currency}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-[minmax(0,1fr)_160px] items-center gap-4 py-4">
+              <label htmlFor="unattended-budget-limit" className="min-w-0">
+                <span className="block text-sm font-medium text-zinc-200">{budgetText.unattendedLabel}</span>
+                <span className="mt-1 block text-xs text-zinc-500">{budgetText.unattendedDescription}</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="unattended-budget-limit"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  inputSize="sm"
+                  value={unattendedBudget}
+                  onChange={(event) => setUnattendedBudget(event.target.value)}
+                  error={parsedUnattendedBudget === null}
+                  disabled={isLoading || isWebMode()}
+                  className="text-right tabular-nums"
+                  data-testid="unattended-budget-input"
+                />
+                <span className="w-10 shrink-0 text-xs text-zinc-500">{budgetText.currency}</span>
+              </div>
+            </div>
+          </div>
+
+          {budgetInputInvalid ? (
+            <p className="text-xs text-badge-danger" role="alert">{budgetText.invalidValue}</p>
+          ) : unattendedWouldBlock ? (
+            <p className="flex items-center gap-1.5 text-xs text-badge-warning" role="status">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              {budgetText.immediateBlockWarning}
+            </p>
+          ) : null}
+
+          <div className="flex items-center gap-2" data-testid="budget-settings-actions">
+            <Button
+              type="button"
+              size="sm"
+              loading={isBudgetSaving}
+              disabled={isLoading || budgetInputInvalid || isWebMode()}
+              onClick={() => void handleBudgetSave()}
+            >
+              {budgetText.save}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={isLoading || isBudgetSaving || isWebMode()}
+              onClick={handleBudgetRestoreDefaults}
+            >
+              {budgetText.restoreDefaults}
+            </Button>
+          </div>
+        </SettingsSection>
+      </div>
 
       {showMigrationBanner && (
         <div className="rounded-lg border border-badge-info/30 bg-blue-500/10 p-3">

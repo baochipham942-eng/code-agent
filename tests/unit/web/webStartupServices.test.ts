@@ -90,6 +90,7 @@ describe('web startup service chain', () => {
       currentCost: number;
       maxBudget: number;
       usagePercentage: number;
+      resetTime?: Date;
       message?: string;
     }) => void;
     const listenerRef: { current: BudgetAlertListener | null } = { current: null };
@@ -121,6 +122,7 @@ describe('web startup service chain', () => {
       currentCost: 42,
       maxBudget: 42,
       usagePercentage: 1,
+      resetTime: new Date('2026-08-28T00:00:00.000Z'),
       message: 'blocked',
     });
     expect(push).toHaveBeenCalledWith(IPC_CHANNELS.BUDGET_ALERT, {
@@ -129,6 +131,7 @@ describe('web startup service chain', () => {
       currentCost: 42,
       maxBudget: 42,
       usagePercentage: 1,
+      resetTime: new Date('2026-08-28T00:00:00.000Z').getTime(),
       message: 'blocked',
     });
     unattendedListenerRef.current?.({

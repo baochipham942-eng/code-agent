@@ -51,8 +51,14 @@ export const noticesZh = {
       dontCloseForce: '请勿关闭应用，下载完成后可安装更新',
     },
     budget: {
-      blocked: '预算已超限（{pct}%，{spent}）。建议收窄任务范围或调高上限。',
-      warning: '预算逼近上限（{pct}%，{spent}）。',
+      blocked: '{scope}预算已用尽，{impact}（{spent}，{pct}%）。下个周期（{resetAt}）自动恢复。',
+      warning: '{scope}预算逼近上限（{spent}，{pct}%）。',
+      foregroundScope: '前台对话',
+      unattendedScope: '无人值守',
+      foregroundImpact: '新的前台模型调用已停止',
+      unattendedImpact: '后台任务已停止',
+      resetUnknown: '重置时间待同步',
+      settingsAction: '去调整上限 →',
     },
     providerFallback: {
       categoryTimeout: '响应超时',
@@ -133,8 +139,14 @@ export const noticesEn: typeof noticesZh = {
       dontCloseForce: 'Please don’t close the app; you can install the update once the download finishes',
     },
     budget: {
-      blocked: 'Budget exceeded ({pct}%, {spent}). Consider narrowing the task scope or raising the limit.',
-      warning: 'Budget nearing the limit ({pct}%, {spent}).',
+      blocked: '{scope} budget is exhausted. {impact} ({spent}, {pct}%). It resets automatically next period ({resetAt}).',
+      warning: '{scope} budget is near the limit ({spent}, {pct}%).',
+      foregroundScope: 'Foreground chat',
+      unattendedScope: 'Unattended',
+      foregroundImpact: 'New foreground model calls have stopped',
+      unattendedImpact: 'Background jobs have stopped',
+      resetUnknown: 'reset time pending',
+      settingsAction: 'Adjust limit →',
     },
     providerFallback: {
       categoryTimeout: 'response timeout',

@@ -28,7 +28,7 @@ describe('slotless verification scripts', () => {
 
   it('copies only TokenRhythm deepseek-v4-flash and routes every role to it', () => {
     const config = buildSlotlessConfig({
-      connectors: { enabledNative: ['calendar', 'tmeet'] },
+      connectors: { enabledNative: [] },
       mcp: {
         servers: [{ name: 'local-test', command: 'node', enabled: true }],
       },
@@ -65,7 +65,7 @@ describe('slotless verification scripts', () => {
       code: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' },
       vision: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' },
     });
-    expect(config.connectors).toEqual({ enabledNative: ['calendar', 'tmeet'] });
+    expect(config.connectors).toEqual({ enabledNative: ['calendar', 'reminders'] });
     expect(config.mcp).toEqual({
       servers: [{ name: 'local-test', command: 'node', enabled: true }],
     });

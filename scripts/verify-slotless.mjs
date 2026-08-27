@@ -15,6 +15,7 @@ const STATE_FILE = '.neo-verify-state.json';
 const DEFAULT_SECRET_FILE = path.join(os.homedir(), '.ship', 'secrets', 'neo-dogfood.env');
 const DEFAULT_SOURCE_DATA_DIR = path.join(os.homedir(), '.code-agent-dev');
 const DEFAULT_SOURCE_CONFIG = path.join(DEFAULT_SOURCE_DATA_DIR, 'config.json');
+const VERIFY_NATIVE_CONNECTOR_IDS = ['calendar', 'reminders'];
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
@@ -26,6 +27,7 @@ function usage() {
     '  node scripts/verify-slotless.mjs --stop <NEO_VERIFY_DATA_DIR>',
     '',
     'Starts the worktree webServer on an isolated port and signs in with the dogfood account.',
+    'Native Calendar/Reminders verification requires a real macOS host with osascript access.',
   ].join('\n');
 }
 
@@ -99,11 +101,19 @@ export function buildSlotlessConfig(source, tokenRhythmKey) {
     cloud: { enabled: false, warmupOnInit: false },
   };
 
-  // 连接器启用状态与 MCP server 清单属于能力中心的运行配置；保留这两段，其他
-  // 用户设置仍不进入一次性验证目录。CLI 登录凭据不在 config.json，由各 CLI
-  // 自己从全局位置读取。
-  for (const key of ['connectors', 'mcp']) {
-    if (source?.[key] !== undefined) config[key] = source[key];
+  // 无槽真机验收默认覆盖原生日历与提醒。两者通过 osascript 访问系统 App，只能
+  // 在已授予相应自动化权限的真实 macOS 主机上工作。连接器段的其他字段照常保留。
+  config.connectors = {
+    ...(source?.connectors && typeof source.connectors === 'object' && !Array.isArray(source.connectors)
+      ? source.connectors
+      : {}),
+    enabledNative: [...VERIFY_NATIVE_CONNECTOR_IDS],
+  };
+
+  // MCP server 清单属于能力中心的运行配置；其他用户设置仍不进入一次性验证目录。
+  // CLI 登录凭据不在 config.json，由各 CLI 自己从全局位置读取。
+  if (source?.mcp !== undefined) {
+    config.mcp = source.mcp;
   }
 
   return config;
@@ -342,6 +352,31 @@ async function assertConfiguredModel(url, token) {
   }
 }
 
+async function assertConfiguredNativeConnectors(url, token) {
+  if (process.platform !== 'darwin') {
+    fail('native Calendar/Reminders verification requires a real macOS host');
+  }
+
+  for (const connectorId of VERIFY_NATIVE_CONNECTOR_IDS) {
+    const response = await fetch(`${url}/api/domain/connector/probe`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ payload: { connectorId } }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const body = await response.json().catch(() => null);
+    const status = body?.success && Array.isArray(body.data)
+      ? body.data.find((item) => item?.id === connectorId)
+      : null;
+    if (!response.ok || !status?.connected || status.readiness !== 'ready') {
+      fail(`native connector self-check failed: ${connectorId}`);
+    }
+  }
+}
+
 function signalRun(state, signal) {
   try {
     process.kill(-state.pid, signal);
@@ -449,6 +484,7 @@ async function startRun(ticketArg, reuseDist) {
     const token = await readServerToken(dataDir);
     await signInDogfood(url, token, credentials);
     await assertConfiguredModel(url, token);
+    await assertConfiguredNativeConnectors(url, token);
     writePrivateJson(path.join(dataDir, STATE_FILE), {
       version: 1,
       ticket,
@@ -462,6 +498,7 @@ async function startRun(ticketArg, reuseDist) {
     child.unref();
     console.log(`NEO_VERIFY_KEY=${maskTokenRhythmKey(credentials.tokenRhythmKey)}`);
     console.log(`NEO_VERIFY_MODEL=${PROVIDER_ID}/${MODEL_ID}`);
+    console.log(`NEO_VERIFY_NATIVE=${VERIFY_NATIVE_CONNECTOR_IDS.join(',')}`);
     console.log(`NEO_VERIFY_URL=${url}`);
     console.log(`NEO_VERIFY_DATA_DIR=${dataDir}`);
   } catch (error) {

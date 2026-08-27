@@ -692,7 +692,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             getSettings: () => acpConfigService.getSettings(),
             isDevModeAutoApproveEnabled: () => acpConfigService.isDevModeAutoApproveEnabled(),
             getExecutionTopology: () => 'main',
-            hasApprovalUi: () => sseClients.size > 0,
+            hasApprovalUi: () => hasInteractiveUi(),
             onEvent: (event) => runController.emitAgentEvent(event),
           });
           registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);

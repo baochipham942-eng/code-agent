@@ -3,13 +3,17 @@
 // 默认折叠，点击展开显示原 ToolCallDisplay 列表
 // ============================================================================
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { ChevronRight, ChevronDown, RotateCcw } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
+import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import type { PermissionRequest, ToolCall, ToolLiveOutput } from '@shared/contract';
 import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
 import { findConnectorIdForToolName } from '@shared/contract/workbenchTools';
-import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
+import {
+  ToolCallDisplay,
+  type ToolReceiptPresentation,
+} from './MessageBubble/ToolCallDisplay/index';
 import { summarizeTool } from './MessageBubble/ToolCallDisplay/summarizers';
 import { computeBashPreviewLines } from './MessageBubble/ToolCallDisplay/bashOutputPreview';
 import {
@@ -42,6 +46,9 @@ interface ToolStepGroupProps {
   defaultExpanded?: boolean;
   /** ADR-043：turn 仍在流式输出中——驱动中间档（Truncated）的自动展示 */
   isStreamingTurn?: boolean;
+  /** 由 TurnCard 按 sourceNodeId 归并到本组的外部执行回执。 */
+  receipts?: TurnArtifactOwnershipItem[];
+  receiptTimestamp?: number;
 }
 
 const EMPTY_RESOLVED_PERMISSION_REQUESTS: PermissionRequest[] = [];
@@ -51,6 +58,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   sessionId,
   defaultExpanded = false,
   isStreamingTurn = false,
+  receipts = [],
+  receiptTimestamp,
 }) => {
   const { t } = useI18n();
   const sendPrompt = useMessageActionStore((state) => state.sendPrompt);
@@ -154,6 +163,28 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       })
       .filter((x): x is ToolCall => !!x);
   }, [nodes]);
+  const receiptCacheRef = useRef(new Map<string, ToolReceiptPresentation>());
+  const receiptByToolCallId = (() => {
+    const liveToolCallIds = new Set(toolCalls.map((toolCall) => toolCall.id));
+    for (const cachedToolCallId of receiptCacheRef.current.keys()) {
+      if (!liveToolCallIds.has(cachedToolCallId)) receiptCacheRef.current.delete(cachedToolCallId);
+    }
+    for (const item of receipts) {
+      const receipt = item.receipt;
+      if (!receipt || !item.sourceNodeId) continue;
+      const node = nodes.find((candidate) => candidate.id === item.sourceNodeId);
+      const toolCallId = node?.toolCall?.id;
+      if (!toolCallId) continue;
+      receiptCacheRef.current.set(toolCallId, {
+        status: receipt.status,
+        detail: receipt.detail,
+        sourceTool: receipt.sourceTool,
+        connector: receipt.connector,
+        createdAt: receiptTimestamp ?? node.timestamp,
+      });
+    }
+    return new Map(receiptCacheRef.current);
+  })();
   const interruptedNode = useMemo(
     () => nodes.find((node) => Boolean(
       node.toolCall
@@ -479,6 +510,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
                   sessionId,
                   messageId: nodes.find((node) => node.toolCall?.id === tc.id)?.messageId || tc.id,
                 }}
+                receipt={receiptByToolCallId.get(tc.id)}
               />
             </div>
           ))}

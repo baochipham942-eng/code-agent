@@ -11,9 +11,10 @@ import { humanizeToolError } from '../../../../../utils/toolExecutionPresentatio
 
 interface Props {
   toolCall: ToolCall;
+  inline?: boolean;
 }
 
-export function ResultSummary({ toolCall }: Props) {
+export function ResultSummary({ toolCall, inline = false }: Props) {
   const { t } = useI18n();
   const isError = toolCall.result && !toolCall.result.success;
   const humanizedError = isError
@@ -25,11 +26,11 @@ export function ResultSummary({ toolCall }: Props) {
 
   if (!summary) return null;
 
-  return (
-    <div className="ml-6 text-xs">
-      <span className={isError ? 'text-[var(--cc-error)]' : 'text-zinc-500'}>
-        {summary}
-      </span>
-    </div>
+  const content = (
+    <span className={isError ? 'text-[var(--cc-error)]' : 'text-zinc-500'}>
+      {summary}
+    </span>
   );
+
+  return inline ? content : <div className="ml-6 text-xs">{content}</div>;
 }

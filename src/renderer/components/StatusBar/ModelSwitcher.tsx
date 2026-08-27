@@ -1064,16 +1064,16 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         // 思考档 / effort 收进点开后的面板：reasoning effort 对非程序员是纯噪音，
         // 「低」在外面既看不懂也改不出所以然（hover title 里仍带着，需要时能查）。
         className={`
-          cursor-pointer truncate max-w-[200px] text-xs
-          hover:text-white transition-colors
+          group cursor-pointer truncate max-w-[200px] text-xs
+          hover:text-zinc-100 transition-colors
           ${isOverridden ? 'text-badge-warning' : 'text-zinc-400'}
         `}
         title={triggerTitle}
       >
         {engine.kind !== 'native' && (
           <>
-            <span className="text-zinc-500">{ENGINE_SHORT_LABEL[engine.kind]}</span>
-            <span className="text-zinc-600 mx-1">·</span>
+            <span className="text-zinc-500 group-hover:text-zinc-100">{ENGINE_SHORT_LABEL[engine.kind]}</span>
+            <span className="text-zinc-600 mx-1 group-hover:text-zinc-100">·</span>
           </>
         )}
         {displayLabel}

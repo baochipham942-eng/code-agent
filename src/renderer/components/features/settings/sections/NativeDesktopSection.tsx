@@ -86,7 +86,7 @@ const ScreenshotImage: React.FC<{ path: string; className?: string; onClick?: ()
 
 const ScreenshotLightbox: React.FC<{ path: string; onClose: () => void }> = ({ path, onClose }) => (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={onClose}>
-    <button /* ds-allow:button: 灯箱关闭按钮，绝对定位圆形图标按钮，无文字，primitive 变体会强加 bg/padding 改变外观 */ className="absolute top-4 right-4 p-2 rounded-full bg-zinc-800/80 text-zinc-300 hover:text-white" onClick={onClose}>
+    <button /* ds-allow:button: 灯箱关闭按钮，绝对定位圆形图标按钮，无文字，primitive 变体会强加 bg/padding 改变外观；ds-allow:color: 固定 bg-black/80 灯箱遮罩上的反白关闭图标 */ className="absolute top-4 right-4 p-2 rounded-full bg-zinc-800/80 text-zinc-300 hover:text-white" onClick={onClose}>
       <X className="w-5 h-5" />
     </button>
     <img

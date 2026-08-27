@@ -52,6 +52,7 @@ import {
   CLASSIFIER_ERROR_TRACE_RULE,
   permissionDenialError,
 } from '../../../src/host/tools/toolPermissionClassification';
+import { HostReasonCode } from '../../../src/shared/contract/permission';
 import { getToolLedgerSink, setToolLedgerSink } from '../../../src/host/tools/toolLedgerSink';
 
 describe('ToolExecutor decision trace history', () => {
@@ -211,7 +212,8 @@ describe('N-PERMTRACE 审批拒绝路径可观测性', () => {
     );
 
     expect(entry).toMatchObject({ outcome: 'ask-denied', reason: 'timeout' });
-    expect(result.error).toBe(permissionDenialError('Write', 'timeout'));
+    expect(result.error).toBe(permissionDenialError('Write', 'timeout').modelText);
+    expect(result.metadata?.hostReason).toMatchObject({ code: HostReasonCode.PermissionDeniedTimeout });
     expect(result.error).toContain('请重新发起需要审批的操作');
     expect(result.error).not.toContain('收件箱');
     expect(result.error).not.toContain('会话卡');
@@ -239,7 +241,10 @@ describe('N-PERMTRACE 审批拒绝路径可观测性', () => {
       expect.objectContaining({
         layer: 'permission_classifier',
         rule: CLASSIFIER_ERROR_TRACE_RULE,
-        reason: expect.stringContaining('classifier boom'),
+        reason: expect.objectContaining({
+          code: HostReasonCode.PermissionClassifierFailed,
+          modelText: expect.stringContaining('classifier boom'),
+        }),
       }),
     );
     // 负例：借这次改动 fail-open 是绝对不允许的——拒还是要拒，工具一次都不许跑。

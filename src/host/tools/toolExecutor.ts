@@ -6,9 +6,14 @@ import type { ToolContext, ToolExecutionResult, PermissionRequestData } from './
 import * as nodePath from 'path';
 import * as nodeFs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import type { ToolDefinition } from '../../shared/contract';
+import { AgentFailureCode, type ToolDefinition } from '../../shared/contract';
 import type { PermissionBoundaryId } from '../../shared/contract/permissionBoundary';
-import { PermissionRequestReason } from '../../shared/contract/permission';
+import {
+  createHostReason,
+  hostReasonModelText,
+  HostReasonCode,
+  PermissionRequestReason,
+} from '../../shared/contract/permission';
 import { getToolCache } from '../services/infra/toolCache';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { createLogger } from '../services/infra/logger';
@@ -860,7 +865,8 @@ export class ToolExecutor {
           ? getPermissionModeManager().rememberCommandAnalysisFailure(effectiveSessionId, fingerprint)
           : false;
         if (repeated) {
-          const error = commandAnalysisDenialError(executionToolName);
+          const hostReason = commandAnalysisDenialError(executionToolName);
+          const error = hostReason.modelText;
           logger.warn('Repeated unanalyzable command denied before permission request', {
             tool: executionToolName,
             sessionId: effectiveSessionId,
@@ -882,7 +888,11 @@ export class ToolExecutor {
           return {
             success: false,
             error,
-            metadata: { code: 'COMMAND_ANALYSIS_STICKY_DENY' },
+            metadata: {
+              code: 'COMMAND_ANALYSIS_STICKY_DENY',
+              failureCode: AgentFailureCode.PermissionDenied,
+              hostReason,
+            },
           };
         }
       }
@@ -1106,6 +1116,11 @@ export class ToolExecutor {
             }
             recordDecision(executionToolName, params, 'auto-approve', classification.reason || 'classifier', permStartTime, trace, effectiveSessionId, this.ledgerOrigin);
           } else if (classification.decision === 'deny') {
+            const hostReason = classification.hostReason ?? createHostReason(
+              HostReasonCode.PermissionClassifierDenied,
+              classification.reason,
+              { toolName: executionToolName },
+            );
             // Collect trace step from classifier
             if (classification.traceStep) {
               traceBuilder.addStep(
@@ -1128,9 +1143,14 @@ export class ToolExecutor {
             return {
               success: false,
               error: `Denied: ${classification.reason}`,
-              ...(classification.errorCode
-                ? { metadata: { code: classification.errorCode } }
-                : {}),
+              metadata: {
+                ...(classification.errorCode ? { code: classification.errorCode } : {}),
+                failureCode: AgentFailureCode.PermissionDenied,
+                hostReason: {
+                  ...hostReason,
+                  modelText: `Denied: ${hostReason.modelText}`,
+                },
+              },
             };
           } else {
             if (classification.decision === 'approve') {
@@ -1163,7 +1183,11 @@ export class ToolExecutor {
             'permission_classifier',
             CLASSIFIER_ERROR_TRACE_RULE,
             'ask',
-            `分类器抛错，回退人工审批：${classifierFailedReason}`,
+            createHostReason(
+              HostReasonCode.PermissionClassifierFailed,
+              `分类器抛错，回退人工审批：${classifierFailedReason}`,
+              { toolName: executionToolName },
+            ),
           );
           logger.warn('Permission classifier error, falling back to user approval', {
             tool: executionToolName,
@@ -1293,7 +1317,7 @@ export class ToolExecutor {
       if (commandAnalysisFailedReason) {
         ask.approved = false;
         ask.denialSource = 'fail-closed';
-        ask.message = commandAnalysisDenialError(executionToolName);
+        ask.message = commandAnalysisDenialError(executionToolName).modelText;
       }
       // N-WRITEBACK-EDIT：用户在审批卡上改过的参数在这里、且只在这里替换。下游的
       // approvedToolCall（工具体内 canUseTool 的短路匹配）、账本、派发全部拿到改后的那份，
@@ -1345,9 +1369,13 @@ export class ToolExecutor {
         // forceConfirm 请求自动拒绝（fail-closed）。泛用的 "Permission denied by user"
         // 在该路径是误导——给模型可转述的真实原因与出路。
         // 通话态曾有一条专用文案分支，2026-07-29 通话不再钳档后它已死（见 readOnlyDenialError）。
-        const denialError = readOnlyForcesConfirmation
+        const defaultDenialReason = readOnlyForcesConfirmation
           ? readOnlyDenialError(executionToolName)
-          : (ask.message ?? permissionDenialError(executionToolName, denialSource));
+          : permissionDenialError(executionToolName, denialSource);
+        const hostReason = ask.message
+          ? { ...defaultDenialReason, modelText: ask.message }
+          : defaultDenialReason;
+        const denialError = hostReasonModelText(hostReason);
 
         // Log permission denial
         if (this.auditEnabled) {
@@ -1368,12 +1396,16 @@ export class ToolExecutor {
           executionToolName, denialError, denialSource === 'user' ? 'user' : 'runtime',
           effectiveSessionId || 'unknown',
         ).catch(() => {});
-        traceBuilder.addStep('plan_approval', 'ask_denied', 'deny', `审批被拒（来源：${denialSource}）`);
+        traceBuilder.addStep('plan_approval', 'ask_denied', 'deny', hostReason);
         recordDecision(executionToolName, params, 'ask-denied', denialReason, permStartTime, traceBuilder.build('deny'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
 
         return {
           success: false,
           error: denialError,
+          metadata: {
+            failureCode: AgentFailureCode.PermissionDenied,
+            hostReason,
+          },
         };
       }
       } // end needsUserApproval

@@ -35,6 +35,72 @@ export type ApprovalLevel =
 /** renderer 卡片沉淀用的终态；timeout 由 host 真源回传，不能靠 UI 计时猜。 */
 export type PermissionDecision = ApprovalLevel | 'timeout';
 
+/**
+ * Host 侧原因只传稳定 code + 窄 metadata；自由文本只放在 modelText，供模型上下文、
+ * transcript 与审计日志保真。renderer 不得直接展示 modelText，新旧版本兼容时仅对
+ * 完全没有 code 的旧载荷退回旧字符串路径。
+ */
+export enum HostReasonCode {
+  PermissionClassifierAllowed = 'PERMISSION_CLASSIFIER_ALLOWED',
+  PermissionClassifierConfirmationRequired = 'PERMISSION_CLASSIFIER_CONFIRMATION_REQUIRED',
+  PermissionClassifierDenied = 'PERMISSION_CLASSIFIER_DENIED',
+  PermissionHighRiskActionBlocked = 'PERMISSION_HIGH_RISK_ACTION_BLOCKED',
+  PermissionUnregisteredActionBlocked = 'PERMISSION_UNREGISTERED_ACTION_BLOCKED',
+  PermissionPolicyConfirmationRequired = 'PERMISSION_POLICY_CONFIRMATION_REQUIRED',
+  PermissionSkillBoundaryConfirmationRequired = 'PERMISSION_SKILL_BOUNDARY_CONFIRMATION_REQUIRED',
+  PermissionFileOutsideWorkspaceConfirmationRequired = 'PERMISSION_FILE_OUTSIDE_WORKSPACE_CONFIRMATION_REQUIRED',
+  PermissionReadOnlyConfirmationRequired = 'PERMISSION_READ_ONLY_CONFIRMATION_REQUIRED',
+  PermissionCommandAnalysisFailed = 'PERMISSION_COMMAND_ANALYSIS_FAILED',
+  PermissionClassifierFailed = 'PERMISSION_CLASSIFIER_FAILED',
+  PermissionDeniedByUser = 'PERMISSION_DENIED_BY_USER',
+  PermissionDeniedNoApprovalUi = 'PERMISSION_DENIED_NO_APPROVAL_UI',
+  PermissionDeniedTimeout = 'PERMISSION_DENIED_TIMEOUT',
+  PermissionDeniedCancelled = 'PERMISSION_DENIED_CANCELLED',
+  PermissionDeniedFailClosed = 'PERMISSION_DENIED_FAIL_CLOSED',
+  PermissionDeniedScripted = 'PERMISSION_DENIED_SCRIPTED',
+  DecisionPolicy = 'DECISION_POLICY',
+  DecisionGuard = 'DECISION_GUARD',
+  DecisionClassifier = 'DECISION_CLASSIFIER',
+  DecisionApproval = 'DECISION_APPROVAL',
+  DecisionHook = 'DECISION_HOOK',
+  RoutingMatched = 'ROUTING_MATCHED',
+  RoutingNoMatchFallback = 'ROUTING_NO_MATCH_FALLBACK',
+  RoutingRequestedUnavailable = 'ROUTING_REQUESTED_UNAVAILABLE',
+  RoutingExternalEngineUnsupported = 'ROUTING_EXTERNAL_ENGINE_UNSUPPORTED',
+}
+
+export interface HostReasonPayload {
+  code: HostReasonCode;
+  metadata?: Record<string, string | number | boolean | null | undefined>;
+  modelText: string;
+}
+
+export type HostReasonValue = HostReasonPayload | string;
+
+export function createHostReason(
+  code: HostReasonCode,
+  modelText: string,
+  metadata?: HostReasonPayload['metadata'],
+): HostReasonPayload {
+  return {
+    code,
+    ...(metadata && Object.keys(metadata).length > 0 ? { metadata } : {}),
+    modelText,
+  };
+}
+
+export function isHostReasonPayload(value: unknown): value is HostReasonPayload {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Partial<HostReasonPayload>;
+  return typeof candidate.code === 'string'
+    && (Object.values(HostReasonCode) as string[]).includes(candidate.code)
+    && typeof candidate.modelText === 'string';
+}
+
+export function hostReasonModelText(reason: HostReasonValue): string {
+  return typeof reason === 'string' ? reason : reason.modelText;
+}
+
 // 权限请求
 export interface PermissionRequest {
   id: string;

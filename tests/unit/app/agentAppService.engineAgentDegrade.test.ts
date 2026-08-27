@@ -10,6 +10,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentAppServiceImpl } from '../../../src/host/app/agentAppService';
 import { getSessionManager } from '../../../src/host/services';
+import { HostReasonCode } from '../../../src/shared/contract/permission';
 
 vi.mock('../../../src/host/services', () => ({
   getSessionManager: vi.fn(),
@@ -117,7 +118,11 @@ describe('AgentAppService 外部引擎会话的显式 agent 选择降级', () =>
           agentName: 'Codex CLI',
           requestedAgentId: 'explore',
           fallbackToDefault: true,
-          reason: expect.stringContaining('Codex CLI'),
+          reason: expect.objectContaining({
+            code: HostReasonCode.RoutingExternalEngineUnsupported,
+            metadata: expect.objectContaining({ engineName: 'Codex CLI' }),
+            modelText: expect.stringContaining('Codex CLI'),
+          }),
         }),
       }),
     );

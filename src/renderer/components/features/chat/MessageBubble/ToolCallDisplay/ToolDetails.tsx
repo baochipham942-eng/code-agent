@@ -4,7 +4,7 @@
 
 import React, { useState, lazy, Suspense } from 'react';
 import { Play, Copy, Check, RotateCcw } from 'lucide-react';
-import type { ToolCall } from '@shared/contract';
+import { isHostReasonPayload, type ToolCall } from '@shared/contract';
 import {
   buildToolResultMediaAssets,
   type SessionMediaContext,
@@ -28,6 +28,7 @@ import {
   buildToolErrorActions,
   isToolInterruptionPlaceholder,
 } from '../../../../../utils/toolExecutionPresentation';
+import { readHostReasonFromMetadata } from '../../../../../utils/hostReasonPresentation';
 import { useI18n } from '../../../../../hooks/useI18n';
 import type { Translations } from '../../../../../i18n';
 import { useMessageActionStore } from '../../../../../stores/messageActionStore';
@@ -166,6 +167,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
   const humanError = result && !result.success
     ? humanizeToolError(result.error, name, t, result.metadata)
     : null;
+  const structuredHostReason = isHostReasonPayload(readHostReasonFromMetadata(result?.metadata));
 
   // Check if this is Edit tool
   const isEditFile = name === 'Edit';
@@ -343,7 +345,9 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
               )}
               {showGenericErrorActions && (
                 <GenericToolErrorActions
-                  errorText={stripAnsiCodes(toolErrorActions.errorText)}
+                  errorText={structuredHostReason
+                    ? [humanError?.summary, humanError?.detail].filter(Boolean).join('\n')
+                    : stripAnsiCodes(toolErrorActions.errorText)}
                   canRetry={toolErrorActions.canRetry}
                   messageId={mediaContext?.messageId}
                   copy={copy}
@@ -368,7 +372,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                       {copy.settingsHint}
                     </button>
                   )}
-                  {!interruptionPlaceholder && (
+                  {!interruptionPlaceholder && !structuredHostReason && (
                     <>
                       <button
                         type="button"

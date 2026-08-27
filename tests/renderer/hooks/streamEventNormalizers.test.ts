@@ -217,6 +217,20 @@ describe('normalizeAssistantMessagePayload', () => {
 });
 
 describe('normalizeRoutingResolvedPayload', () => {
+  it('结构化 host reason 保留 code+metadata+modelText，交给 renderer 登记表处理', () => {
+    const reason = {
+      code: 'ROUTING_NO_MATCH_FALLBACK',
+      metadata: { agentName: 'default' },
+      modelText: 'No specialized agent matched; continue with the default conversation loop.',
+    };
+    expect(normalizeRoutingResolvedPayload({
+      mode: 'auto',
+      agentId: 'default',
+      agentName: 'default',
+      reason,
+      score: 0,
+    })?.reason).toEqual(reason);
+  });
   it('mode 非 auto 返回 null', () => {
     expect(normalizeRoutingResolvedPayload({ mode: 'manual' })).toBeNull();
   });

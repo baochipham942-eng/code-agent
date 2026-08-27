@@ -137,23 +137,25 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
       role="status"
       data-testid="active-conversation-rewind"
       data-rewind-id={activeRewindId}
-      className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-badge-warning/60 bg-amber-950/30 px-3 py-2 text-xs text-zinc-300"
+      className="chat-col-pad mt-2"
     >
-      <History className="h-3.5 w-3.5 shrink-0 text-badge-warning" />
-      <span className="min-w-0 flex-1 truncate">
-        {anchorExcerpt
-          ? t.chat.rewindSuccessWithPrompt.replace('{prompt}', anchorExcerpt)
-          : t.chat.rewindSuccess}
-      </span>
-      <button /* ds-allow:button: 横幅右端的紧凑内联恢复动作，Button primitive 的标准尺寸/形状不适配横幅布局 */
-        type="button"
-        onClick={() => void handleRestore()}
-        disabled={disabled || isRestoring}
-        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-badge-warning/70 px-2 py-1 text-badge-warning hover:border-badge-warning hover:text-badge-warning disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {isRestoring && <Loader2 className="h-3 w-3 animate-spin" />}
-        {t.chat.turnRedoAction}
-      </button>
+      <div className="mx-auto flex w-full max-w-3xl items-center gap-2 rounded-lg border border-badge-warning/60 bg-amber-950/30 px-3 py-2 text-xs text-zinc-300">
+        <History className="h-3.5 w-3.5 shrink-0 text-badge-warning" />
+        <span className="min-w-0 flex-1 truncate">
+          {anchorExcerpt
+            ? t.chat.rewindSuccessWithPrompt.replace('{prompt}', anchorExcerpt)
+            : t.chat.rewindSuccess}
+        </span>
+        <button /* ds-allow:button: 横幅右端的紧凑内联恢复动作，Button primitive 的标准尺寸/形状不适配横幅布局 */
+          type="button"
+          onClick={() => void handleRestore()}
+          disabled={disabled || isRestoring}
+          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-badge-warning/70 px-2 py-1 text-badge-warning hover:border-badge-warning hover:text-badge-warning disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isRestoring && <Loader2 className="h-3 w-3 animate-spin" />}
+          {t.chat.turnRedoAction}
+        </button>
+      </div>
     </div>
   );
 };

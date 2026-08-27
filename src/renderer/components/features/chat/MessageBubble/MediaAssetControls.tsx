@@ -505,14 +505,14 @@ export function MediaAssetLightbox({
         </div>
         <div className="flex min-h-0 flex-1 items-center justify-center">
           {!src ? (
-            <div className="rounded-lg border border-border-muted bg-zinc-950/90 px-4 py-3 text-sm text-zinc-400 shadow-2xl">
+            <div className="rounded-lg border border-border-muted bg-zinc-950/90 px-4 py-3 text-sm text-zinc-400 shadow-md dark:shadow-2xl">
               内联媒体过大，已跳过预览
             </div>
           ) : asset.kind === 'video' ? (
             <video
               src={src}
               controls
-              className="max-h-[calc(100vh-7rem)] max-w-full rounded-lg bg-black shadow-2xl"
+              className="max-h-[calc(100vh-7rem)] max-w-full rounded-lg bg-black shadow-md dark:shadow-2xl"
             />
           ) : asset.kind === 'audio' ? (
             <div className="w-full max-w-xl rounded-lg border border-border-muted bg-zinc-950/90 p-4">
@@ -522,7 +522,7 @@ export function MediaAssetLightbox({
             <img
               src={src}
               alt={fileName}
-              className="max-h-[calc(100vh-7rem)] max-w-full rounded-lg object-contain shadow-2xl"
+              className="max-h-[calc(100vh-7rem)] max-w-full rounded-lg object-contain shadow-md dark:shadow-2xl"
             />
           )}
         </div>

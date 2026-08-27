@@ -152,14 +152,16 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
       <div className="w-px h-4 bg-zinc-700" />
 
       {/* 活跃任务列表 */}
-      <div className="flex items-center gap-2 overflow-x-auto scrollbar-hidden">
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto scrollbar-hidden">
         {activeTasks.map((task) => (
           <button
+            type="button"
             key={task.sessionId}
             onClick={() => handleTaskClick(task.sessionId)}
             className={`
-              flex items-center gap-1.5 px-2 py-0.5 rounded
+              group flex items-center gap-1.5 px-2 py-0.5 rounded
               transition-all duration-200 shrink-0
+              focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400
               ${
                 task.sessionId === currentSessionId
                   ? 'bg-zinc-800/70 text-zinc-100 border border-zinc-500'
@@ -178,19 +180,23 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
             {/* 会话名称 */}
             <span className="text-xs">{truncateTitle(task.title)}</span>
 
-            {/* 运行时长或队列位置 */}
-            {task.status === 'running' && task.startTime && (
-              <span className="text-2xs text-zinc-500 ml-0.5">
-                {formatDuration(task.startTime)}
-              </span>
-            )}
-            {task.status === 'queued' && task.queuePosition !== undefined && (
-              <span className="text-2xs text-badge-warning ml-0.5">#{task.queuePosition}</span>
-            )}
+            {/* 固定尾栏宽度，计时变化和 hover 都不改变任务项几何。 */}
+            <span
+              className={`ml-0.5 inline-block w-16 shrink-0 text-right text-2xs tabular-nums ${
+                task.status === 'queued' ? 'text-badge-warning' : 'text-zinc-500'
+              }`}
+              data-testid="task-status-tail"
+            >
+              {task.status === 'running' && task.startTime
+                ? formatDuration(task.startTime)
+                : task.status === 'queued' && task.queuePosition !== undefined
+                  ? `#${task.queuePosition}`
+                  : null}
+            </span>
 
             {/* 切换指示 */}
             {task.sessionId !== currentSessionId && (
-              <ChevronRight className="w-3 h-3 text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <ChevronRight className="w-3 h-3 text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
             )}
           </button>
         ))}

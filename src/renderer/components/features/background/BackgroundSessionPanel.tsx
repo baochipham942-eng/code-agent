@@ -78,7 +78,7 @@ export const BackgroundSessionPanel: React.FC = () => {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 w-80 bg-zinc-900 backdrop-blur-sm border border-zinc-700 rounded-xl shadow-2xl z-50">
+    <div className="fixed bottom-4 right-4 w-80 bg-zinc-900 backdrop-blur-sm border border-zinc-700 rounded-xl shadow-md dark:shadow-2xl z-50">
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
         <h3 className="text-sm font-medium text-zinc-200">后台任务</h3>
         <button

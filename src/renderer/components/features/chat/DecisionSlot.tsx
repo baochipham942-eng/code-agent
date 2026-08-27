@@ -106,7 +106,7 @@ const StreamInterruptionDecisionRow: React.FC<{
 
   return (
     <div
-      className="mx-auto flex h-10 w-full max-w-3xl items-center gap-2 rounded-lg border-2 border-badge-warning/60 bg-surface-primary px-3 text-xs shadow-2xl"
+      className="mx-auto flex h-10 w-full max-w-3xl items-center gap-2 rounded-lg border-2 border-badge-warning/60 bg-surface-primary px-3 text-xs shadow-md dark:shadow-2xl"
       data-testid="stream-interruption-decision"
     >
       <AlertTriangle className="h-4 w-4 shrink-0 text-badge-warning" />

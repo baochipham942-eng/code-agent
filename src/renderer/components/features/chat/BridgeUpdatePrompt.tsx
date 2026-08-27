@@ -20,7 +20,7 @@ export const BridgeUpdatePrompt: React.FC<BridgeUpdatePromptProps> = ({
   onDismiss,
 }) => {
   return (
-    <div className="w-full shrink-0 px-4">
+    <div className="w-full shrink-0 chat-col-pad">
       <div className="mx-auto my-2 max-w-3xl rounded-xl border border-badge-info/30 bg-blue-500/10 p-4 animate-fade-in">
         <div className="flex items-start gap-3">
           <div className="flex-shrink-0 mt-0.5">

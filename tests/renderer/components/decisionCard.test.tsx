@@ -38,6 +38,13 @@ function renderCard(overrides: Partial<Parameters<typeof DecisionCard>[0]> = {})
 describe('DecisionCard 统一骨架', () => {
   afterEach(() => cleanup());
 
+  it('浅色使用中等阴影，深色保留强阴影', () => {
+    renderCard();
+    const card = screen.getByTestId('decision-card').firstElementChild as HTMLElement;
+    expect(card.className).toContain('shadow-md');
+    expect(card.className).toContain('dark:shadow-2xl');
+  });
+
   it('未选中选项时确认禁用，选中后可点', () => {
     const props = renderCard();
 

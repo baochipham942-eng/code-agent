@@ -9,6 +9,18 @@ import { Modal } from '../../../src/renderer/components/primitives/Modal';
 afterEach(cleanup);
 
 describe('Modal backdrop', () => {
+  it('浅色使用中等阴影，深色保留强阴影', () => {
+    render(
+      <Modal isOpen title="Shadow test">
+        content
+      </Modal>,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.className).toContain('shadow-md');
+    expect(dialog.className).toContain('dark:shadow-2xl');
+  });
+
   it('点 backdrop 调 onClose（默认 closeOnBackdropClick=true）；点弹层容器自身不调', () => {
     const onClose = vi.fn();
     render(

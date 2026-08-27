@@ -49,7 +49,7 @@ export const DesignCanvasSidePanel: React.FC<{
     // 合并后面板比原图层面板（w-80）更宽——w-96，遮挡回归按「面板展开态」专项覆盖。
     <div
       data-testid="design-canvas-sidepanel"
-      className="absolute z-10 flex max-h-[70%] w-96 max-w-[calc(100%_-_5rem)] flex-col overflow-hidden rounded-lg border border-white/[0.10] bg-zinc-950/85 text-xs text-zinc-200 shadow-2xl backdrop-blur"
+      className="absolute z-10 flex max-h-[70%] w-96 max-w-[calc(100%_-_5rem)] flex-col overflow-hidden rounded-lg border border-white/[0.10] bg-zinc-950/85 text-xs text-zinc-200 shadow-md dark:shadow-2xl backdrop-blur"
       style={{ top: topOffset ?? 56, right: rightOffset ?? 16 }}
     >
       <div role="tablist" className="flex items-center gap-1 border-b border-white/[0.08] px-2 py-1.5">

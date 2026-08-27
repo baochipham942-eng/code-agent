@@ -144,7 +144,7 @@ export const ContextUsagePill: React.FC = () => {
       </button>
 
       {open && (
-        <div className="absolute bottom-full right-0 z-30 mb-2 min-w-[200px] rounded-xl border border-border-hover bg-zinc-900/95 px-4 py-3 text-center shadow-2xl backdrop-blur">
+        <div className="absolute bottom-full right-0 z-30 mb-2 min-w-[200px] rounded-xl border border-border-hover bg-zinc-900/95 px-4 py-3 text-center shadow-md dark:shadow-2xl backdrop-blur">
           <div className="text-sm font-semibold leading-tight tracking-normal text-zinc-50 tabular-nums">
             {hasData
               ? ch.usageSummary.replace('{percent}', displayPct).replace('{remaining}', displayRemainingPct)

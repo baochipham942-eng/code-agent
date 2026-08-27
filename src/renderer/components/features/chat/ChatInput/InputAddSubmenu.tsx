@@ -82,7 +82,7 @@ export const InputAddSubmenu: React.FC<InputAddSubmenuProps> = ({ scope, items, 
   };
 
   return (
-    <div className="w-[300px] overflow-hidden rounded-lg border border-zinc-700 bg-zinc-800 shadow-2xl">
+    <div className="w-[300px] overflow-hidden rounded-lg border border-zinc-700 bg-zinc-800 shadow-md dark:shadow-2xl">
       <label className="flex items-center gap-2 border-b border-zinc-700/60 px-3 py-2 text-zinc-500">
         <Search className="h-3.5 w-3.5 shrink-0" />
         <input

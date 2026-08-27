@@ -11,6 +11,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import type { AgentEngineSessionMetadata } from '../../../src/shared/contract/agentEngine';
 
 const footerMocks = vi.hoisted(() => ({
   appState: {
@@ -23,7 +24,7 @@ const footerMocks = vi.hoisted(() => ({
   },
   sessionState: {
     currentSessionId: 'session-1',
-    sessions: [{ id: 'session-1', engine: undefined }],
+    sessions: [{ id: 'session-1', engine: undefined as AgentEngineSessionMetadata | undefined }],
   },
   modeState: {
     effortLevel: 'low',
@@ -139,5 +140,21 @@ describe('底栏视觉分层', () => {
 
     expect(visibleTextOf(model)).not.toContain('Neo');
     expect(visibleTextOf(model)).toContain('GLM-5');
+  });
+
+  it('外部引擎 hover 时前缀、分隔符与模型名统一走主题前景色', () => {
+    footerMocks.sessionState.sessions[0].engine = { kind: 'kimi_code_acp', model: 'kimi-code/k3' };
+    try {
+      const model = modelHtml();
+
+      expect(model).toContain('group cursor-pointer');
+      expect(model).toContain('hover:text-zinc-100');
+      expect(model).toContain('text-zinc-500 group-hover:text-zinc-100');
+      expect(model).toContain('text-zinc-600 mx-1 group-hover:text-zinc-100');
+      expect(visibleTextOf(model)).toContain('Kimi·ACP');
+      expect(visibleTextOf(model)).toContain('kimi-code/k3');
+    } finally {
+      footerMocks.sessionState.sessions[0].engine = undefined;
+    }
   });
 });

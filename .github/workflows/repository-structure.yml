@@ -1,32 +1,13 @@
 name: Repository Structure Gate
 
+# Intentionally no paths filter: this gate measures repository-wide and directory-level
+# growth, so every change must be eligible to trigger it. The gate is fast enough to run
+# on every pull request and main push.
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'README.md'
-      - 'docs/ARCHITECTURE.md'
-      - 'docs/architecture/**'
-      - 'src/host/README.md'
-      - 'tests/README.md'
-      - 'scripts/README.md'
-      - 'scripts/*'
-      - 'scripts/ci/check-repository-structure.mjs'
-      - 'package.json'
-      - '.github/**'
   push:
     branches: [main]
-    paths:
-      - 'README.md'
-      - 'docs/ARCHITECTURE.md'
-      - 'docs/architecture/**'
-      - 'src/host/README.md'
-      - 'tests/README.md'
-      - 'scripts/README.md'
-      - 'scripts/*'
-      - 'scripts/ci/check-repository-structure.mjs'
-      - 'package.json'
-      - '.github/**'
   workflow_dispatch:
 
 permissions:

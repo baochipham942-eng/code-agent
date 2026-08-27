@@ -178,6 +178,31 @@ describe('UserQuestionCard（G2 打断式选项卡）', () => {
     expect(screen.getByRole('button', { name: zh.userQuestion.submit })).toBeTruthy();
   });
 
+  it.each([
+    { label: '方案 A (推荐)' },
+    { label: '方案 A', recommended: true },
+  ])('推荐项 $label 解析为徽标并默认聚焦，但初始不选中', (recommendedOption) => {
+    const request = makeRequest({
+      questions: [{
+        question: '选哪个方案？',
+        header: '方案',
+        options: [
+          { ...recommendedOption, description: '推荐方案' },
+          { label: '方案 B', description: '普通方案' },
+        ],
+      }],
+    });
+
+    render(<UserQuestionCard request={request} />);
+
+    const recommended = screen.getByRole('button', { name: /方案 A.*推荐.*推荐方案/u });
+    expect(screen.getByText(zh.userQuestion.recommended)).toBeTruthy();
+    expect(screen.queryByText(/\(推荐\)/u)).toBeNull();
+    expect(document.activeElement).toBe(recommended);
+    expect(recommended.className).not.toContain('ring-1');
+    expect((screen.getByRole('button', { name: zh.userQuestion.submit }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('单选「其他」自由文本 → 回传输入内容而非固定选项', async () => {
     useSessionStore.getState().addPendingUserQuestion(makeRequest());
     render(<UserQuestionCard request={makeRequest()} />);
@@ -230,8 +255,9 @@ describe('UserQuestionCard（G2 打断式选项卡）', () => {
 
   it('跳过按钮：无原因 → declined 不携带 reason，卡片出队', async () => {
     const request = makeRequest();
+    const onSkipped = vi.fn();
     useSessionStore.getState().addPendingUserQuestion(request);
-    render(<UserQuestionCard request={request} />);
+    render(<UserQuestionCard request={request} onSkipped={onSkipped} />);
 
     fireEvent.click(screen.getByRole('button', { name: zh.userQuestion.skip }));
 
@@ -241,6 +267,7 @@ describe('UserQuestionCard（G2 打断式选项卡）', () => {
         declined: true,
       });
     });
+    expect(onSkipped).toHaveBeenCalledOnce();
     await waitFor(() => expect(pendingOf('s1')).toHaveLength(0));
   });
 

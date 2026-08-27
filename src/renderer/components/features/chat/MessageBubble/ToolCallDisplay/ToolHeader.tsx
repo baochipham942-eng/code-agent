@@ -135,7 +135,7 @@ export function ToolHeader({
         <button
           type="button"
           data-testid="tool-header-open-preview"
-          className={`${status === 'interrupted' ? 'text-zinc-500 font-normal hover:text-zinc-300' : 'text-zinc-200 font-semibold hover:text-white'} truncate min-w-0 text-left hover:underline underline-offset-2`}
+          className={`${status === 'interrupted' ? 'text-zinc-500 font-normal hover:text-zinc-300' : 'text-zinc-200 font-semibold hover:text-zinc-100'} truncate min-w-0 text-left hover:underline underline-offset-2`}
           title={title}
           aria-label={t.toolStepHumanize.openPreviewAria.replace('{path}', filePath)}
           onClick={handleOpenPreview}

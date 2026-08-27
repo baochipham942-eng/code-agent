@@ -5,8 +5,8 @@ import { humanizeToolStep } from './humanizeToolStep';
 export function describeLastToolStep(
   step: LastToolStep | undefined,
   t: Translations,
-): string {
-  if (!step) return t.chat.activityIdle;
+): string | undefined {
+  if (!step) return undefined;
   const targetArgs = step.target
     ? {
       file_path: step.target,

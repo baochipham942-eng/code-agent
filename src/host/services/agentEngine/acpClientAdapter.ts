@@ -60,7 +60,6 @@ import type { ExternalEngineDurableLifecycle } from './externalEngineDurableLife
 import { emitExternalAgentEvent } from './agentEngineEventSink';
 import { bindExternalEngineAbort } from './agentEngineAbort';
 import { getAgentEngineSessionSink } from './agentEngineSessionSink';
-export { applyModelSelection };
 import { AcpClientHostBridge } from './acpClientHostBridge';
 import { AcpToolCallTracker, mapAcpSessionUpdate } from './acpEventMapping';
 

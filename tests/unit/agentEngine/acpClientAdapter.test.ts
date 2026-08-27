@@ -46,7 +46,7 @@ vi.mock('../../../src/host/services/agentEngine/agentEngineRegistry', () => ({
   getAgentEngineRegistry: () => ({ get: mocks.registryGet }),
 }));
 
-import { applyModelSelection, KimiAcpAdapter } from '../../../src/host/services/agentEngine/acpClientAdapter';
+import { KimiAcpAdapter } from '../../../src/host/services/agentEngine/acpClientAdapter';
 
 /**
  * 迷你 ACP agent：按协议真讲 JSON-RPC，不是把 adapter 的内部函数抠出来单测。
@@ -54,6 +54,10 @@ import { applyModelSelection, KimiAcpAdapter } from '../../../src/host/services/
  * 收 session/update、反向调 client 侧方法、拿 stopReason 收尾。
  */
 interface FakeAgentOptions {
+  /** session/new 返回的 configOptions（模型目录等）。 */
+  configOptions?: Array<Record<string, unknown>>;
+  /** 收集 agent 收到的 session/set_config_option 调用。 */
+  configSets?: Array<Record<string, unknown>>;
   /** 该 turn 里 agent 要推给 client 的 session/update 序列。 */
   updates: Array<Record<string, unknown>>;
   /** agent 在 turn 中反向请求的 client 方法（模拟副作用委托）。 */
@@ -113,7 +117,14 @@ function installFakeAgent(options: FakeAgentOptions) {
           } });
           break;
         case 'session/new':
-          send({ jsonrpc: '2.0', id: msg.id, result: { sessionId: 'sess-fake-1' } });
+          send({ jsonrpc: '2.0', id: msg.id, result: {
+            sessionId: 'sess-fake-1',
+            ...(options.configOptions ? { configOptions: options.configOptions } : {}),
+          } });
+          break;
+        case 'session/set_config_option':
+          options.configSets?.push(msg.params ?? {});
+          send({ jsonrpc: '2.0', id: msg.id, result: { configOptions: options.configOptions ?? [] } });
           break;
         case 'session/load':
           options.loadSessionCalls?.push(String(msg.params?.sessionId));
@@ -341,7 +352,7 @@ describe('AcpClientAdapter — 副作用反向委托过审批链', () => {
   });
 });
 
-describe('applyModelSelection — Neo 的模型选择必须真落到 ACP 会话上', () => {
+describe('AcpClientAdapter — Neo 的模型选择必须真落到 ACP 会话上', () => {
   const MODEL_OPTION = {
     id: 'model',
     category: 'model',
@@ -349,53 +360,72 @@ describe('applyModelSelection — Neo 的模型选择必须真落到 ACP 会话�
     options: [{ value: 'kimi-code/k3' }, { value: 'kimi-code/kimi-for-coding' }],
   };
 
-  function fakeCtx() {
-    const calls: Array<{ method: string; params: unknown }> = [];
-    return {
-      calls,
-      ctx: { request: async (method: string, params: unknown) => { calls.push({ method, params }); return {}; } },
-    };
-  }
+  it('选了 agent 提供的其他模型时，会话上真发出 session/set_config_option', async () => {
+    const configSets: Array<Record<string, unknown>> = [];
+    installFakeAgent({
+      configOptions: [MODEL_OPTION],
+      configSets,
+      updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } }],
+    });
 
-  it('选了 agent 提供的其他模型时发 session/set_config_option', async () => {
-    const { ctx, calls } = fakeCtx();
-    const result = await applyModelSelection(ctx, 'sess', [MODEL_OPTION], 'kimi-code/kimi-for-coding');
-    expect(result.applied).toBe(true);
-    expect(calls).toEqual([{
-      method: 'session/set_config_option',
-      params: { sessionId: 'sess', configId: 'model', value: 'kimi-code/kimi-for-coding' },
-    }]);
+    await new KimiAcpAdapter().run(baseRequest({ model: 'kimi-code/kimi-for-coding' }) as never);
+
+    expect(configSets).toEqual([
+      { sessionId: 'sess-fake-1', configId: 'model', value: 'kimi-code/kimi-for-coding' },
+    ]);
   });
 
   it('已经是当前值就不多发一次请求', async () => {
-    const { ctx, calls } = fakeCtx();
-    expect((await applyModelSelection(ctx, 'sess', [MODEL_OPTION], 'kimi-code/k3')).applied).toBe(true);
-    expect(calls).toEqual([]);
+    const configSets: Array<Record<string, unknown>> = [];
+    installFakeAgent({
+      configOptions: [MODEL_OPTION],
+      configSets,
+      updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } }],
+    });
+    await new KimiAcpAdapter().run(baseRequest({ model: 'kimi-code/k3' }) as never);
+    expect(configSets).toEqual([]);
   });
 
   /**
-   * 🔴 这条挡的是「装好没接电」的另一半：agent 不提供这个模型时，
-   * 绝不能静默跑 agent 默认模型当成功——必须回一个可落台账的原因。
+   * 🔴 这条挡的是「装好没接电」的另一半：agent 不提供该模型时，绝不能静默跑
+   * agent 默认模型当成功——必须留一条可查的台账，否则用户在 UI 上选的模型是装饰品。
    */
-  it('agent 不提供该模型时如实降级并给出原因，不发请求', async () => {
-    const { ctx, calls } = fakeCtx();
-    const result = await applyModelSelection(ctx, 'sess', [MODEL_OPTION], 'gpt-9');
-    expect(result.applied).toBe(false);
-    expect(result.reason).toContain('does not offer gpt-9');
-    expect(calls).toEqual([]);
+  it('agent 不提供该模型时不发请求，并把降级原因落进台账', async () => {
+    const configSets: Array<Record<string, unknown>> = [];
+    installFakeAgent({
+      configOptions: [MODEL_OPTION],
+      configSets,
+      updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } }],
+    });
+
+    await new KimiAcpAdapter().run(baseRequest({ model: 'gpt-9' }) as never);
+
+    expect(configSets).toEqual([]);
+    const messages = mocks.appendEvent.mock.calls.map((call) => String((call[0] as { message?: string }).message ?? ''));
+    expect(messages.some((m) => m.includes('model not applied') && m.includes('does not offer gpt-9'))).toBe(true);
   });
 
   it('按 category 定位而不是按 id 猜（各家 id 自取，category 才是协议位）', async () => {
-    const { ctx, calls } = fakeCtx();
-    const renamed = { ...MODEL_OPTION, id: 'vendor_specific_id' };
-    expect((await applyModelSelection(ctx, 'sess', [renamed], 'kimi-code/kimi-for-coding')).applied).toBe(true);
-    expect((calls[0]!.params as { configId: string }).configId).toBe('vendor_specific_id');
+    const configSets: Array<Record<string, unknown>> = [];
+    installFakeAgent({
+      configOptions: [{ ...MODEL_OPTION, id: 'vendor_specific_id' }],
+      configSets,
+      updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } }],
+    });
+    await new KimiAcpAdapter().run(baseRequest({ model: 'kimi-code/kimi-for-coding' }) as never);
+    expect(configSets[0]?.configId).toBe('vendor_specific_id');
   });
 
-  it('agent 完全没有 model 配置项时给出原因', async () => {
-    const { ctx } = fakeCtx();
-    const result = await applyModelSelection(ctx, 'sess', [{ id: 'thinking', category: 'thought_level' }], 'x');
-    expect(result.applied).toBe(false);
-    expect(result.reason).toContain('no model config option');
+  it('agent 完全没有 model 配置项时也留痕', async () => {
+    const configSets: Array<Record<string, unknown>> = [];
+    installFakeAgent({
+      configOptions: [{ id: 'thinking', category: 'thought_level' }],
+      configSets,
+      updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ok' } }],
+    });
+    await new KimiAcpAdapter().run(baseRequest({ model: 'kimi-code/k3' }) as never);
+    expect(configSets).toEqual([]);
+    const messages = mocks.appendEvent.mock.calls.map((call) => String((call[0] as { message?: string }).message ?? ''));
+    expect(messages.some((m) => m.includes('no model config option'))).toBe(true);
   });
 });

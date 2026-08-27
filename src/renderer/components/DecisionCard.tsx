@@ -18,7 +18,7 @@
 // ============================================================================
 
 import React, { useEffect, useRef } from 'react';
-import { AlertTriangle, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { Button } from './primitives/Button';
 
 export interface DecisionOption {
@@ -31,6 +31,8 @@ export interface DecisionOption {
   disabled?: boolean;
 }
 
+export type DecisionCardViewMode = 'compact' | 'expanded';
+
 export interface DecisionCardProps {
   /** 语义色：中性蓝（默认）/ 常规权限琥珀 / 危险红 */
   tone?: 'neutral' | 'amber' | 'danger';
@@ -40,8 +42,6 @@ export interface DecisionCardProps {
   headerMeta?: string;
   /** 头部右侧终态徽标等；未传时其他消费方 DOM 不变。 */
   headerEnd?: React.ReactNode;
-  /** 危险警示行正文（tone=danger 时展示在头部下方） */
-  dangerWarning?: string;
   /** 一行问题句（「允许写入 ~/work/report.md？」） */
   question: string;
   /** 结构化详情区（mono 路径/命令块、边界徽章、任务列表等），由各适配层提供 */
@@ -68,6 +68,18 @@ export interface DecisionCardProps {
   settled?: boolean;
   /** 槽位展开态：详情可滚动，选项与确认区固定在卡底。 */
   pinActions?: boolean;
+  /** 业务卡决定默认态与切换结果；骨架不推断请求风险。 */
+  viewMode?: DecisionCardViewMode;
+  onViewModeChange?: (mode: DecisionCardViewMode) => void;
+  expandLabel?: string;
+  collapseLabel?: string;
+  /** 选项改为点即裁决按钮，不再先选单选项再二次确认。 */
+  directActions?: boolean;
+  onDirectAction?: (id: string) => void;
+  /** 直裁决模式下的蓝色主按钮；危险卡传 deny。 */
+  primaryActionId?: string;
+  /** 直裁决模式下的红色描边按钮；危险卡传 once。 */
+  dangerActionId?: string;
   /** 外层容器 className 覆盖（内联在消息流里的卡去掉 px-4 定位） */
   className?: string;
   testId?: string;
@@ -102,7 +114,6 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
   title,
   headerMeta,
   headerEnd,
-  dangerWarning,
   question,
   details,
   options,
@@ -119,22 +130,34 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
   hideFooter = false,
   settled = false,
   pinActions = false,
+  viewMode = 'expanded',
+  onViewModeChange,
+  expandLabel = 'Details',
+  collapseLabel = 'Collapse',
+  directActions = false,
+  onDirectAction,
+  primaryActionId,
+  dangerActionId,
   className = 'w-full px-4 animate-slideUp',
   testId = 'decision-card',
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
+  const directPrimaryRef = useRef<HTMLButtonElement>(null);
   const danger = tone === 'danger';
   const amber = tone === 'amber';
+  const compact = viewMode === 'compact';
 
   // 选中主选项后默认高亮主按钮；危险/写回卡也保留焦点证据，Enter 由 enterDisabled 硬挡。
   useEffect(() => {
-    if (selectedId !== null && !submitting) {
+    if (directActions && !submitting) {
+      directPrimaryRef.current?.focus();
+    } else if (selectedId !== null && !submitting) {
       confirmButtonRef.current?.focus();
     } else {
       cardRef.current?.focus();
     }
-  }, [selectedId, submitting]);
+  }, [directActions, primaryActionId, selectedId, submitting, viewMode]);
 
   // 数字键 1-N 选中、Enter 执行当前聚焦的主按钮、Esc 收起。
   // 守卫：
@@ -153,6 +176,12 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
       }
       if (editable) return;
       if (e.key === 'Enter') {
+        if (directActions && directPrimaryRef.current === document.activeElement) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!submitting && !enterDisabled && primaryActionId) onDirectAction?.(primaryActionId);
+          return;
+        }
         if (confirmButtonRef.current === document.activeElement && selectedId !== null) {
           e.preventDefault();
           e.stopPropagation();
@@ -169,7 +198,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [options, selectedId, submitting, onSelect, onConfirm, onCollapse, enterDisabled]);
+  }, [options, selectedId, submitting, onSelect, onConfirm, onCollapse, enterDisabled, directActions, onDirectAction, primaryActionId]);
 
   const optionRows = options.map((option) => (
     <button /* ds-allow:button: 选项行整面可点（选中指示+标题+描述复合内容），沿用 UserQuestionCard 选项行形态 */
@@ -200,6 +229,34 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
     </button>
   ));
 
+  const actionButtons = options.map((option) => {
+    const primary = option.id === primaryActionId;
+    const dangerAction = option.id === dangerActionId;
+    return (
+      <Button
+        ref={primary ? directPrimaryRef : undefined}
+        key={option.id}
+        size="sm"
+        variant={primary ? 'primary' : 'ghost'}
+        className={`h-7 shrink-0 rounded-md py-1 ${
+          dangerAction ? 'border border-red-500/50 text-badge-danger hover:bg-red-500/10 hover:text-badge-danger' : ''
+        } ${primary && dangerActionId ? 'ml-auto' : ''}`}
+        disabled={option.disabled || submitting}
+        loading={submitting && primary}
+        onClick={() => onDirectAction?.(option.id)}
+      >
+        <span className="inline-flex items-center gap-1.5">
+          {option.label}
+          {option.shortcut && (
+            <kbd className="rounded bg-zinc-700 px-1 py-px font-mono text-[9px] text-zinc-400">
+              {option.shortcut}
+            </kbd>
+          )}
+        </span>
+      </Button>
+    );
+  });
+
   return (
     <div className={className} data-testid={testId}>
       <div
@@ -207,29 +264,52 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
         tabIndex={-1}
         className={`w-full max-w-3xl mx-auto bg-zinc-900 rounded-lg shadow-2xl border-2 outline-hidden ${
           settled ? 'border-zinc-700' : danger ? 'border-red-500' : amber ? 'border-badge-warning/60' : 'border-badge-info/60'
-        } ${pinActions ? 'flex max-h-[calc(100dvh-12rem)] flex-col overflow-hidden' : ''}`}
+        } ${compact ? 'overflow-hidden' : pinActions ? 'flex max-h-[40vh] flex-col overflow-hidden' : ''}`}
+        data-view-mode={viewMode}
       >
+        {compact ? (
+          <div className="flex h-10 items-center gap-2 px-3" data-testid={`${testId}-compact-row`}>
+            <span className={`shrink-0 ${danger ? 'text-badge-danger' : amber ? 'text-badge-warning' : 'text-badge-info'}`}>
+              {icon}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{question}</span>
+            {directActions && actionButtons}
+            {onViewModeChange && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 shrink-0 rounded-md py-1"
+                onClick={() => onViewModeChange('expanded')}
+              >
+                {expandLabel}
+              </Button>
+            )}
+          </div>
+        ) : (
+          <>
         {/* 头部：与 UserQuestionCard 同形（图标 + 标题），语义色区分常规/危险 */}
         <div
-          className={`flex items-center gap-2 px-4 py-2.5 border-b border-zinc-800 rounded-t-lg ${
+          className={`flex items-center gap-2 px-3.5 py-2 border-b border-zinc-800 rounded-t-lg ${
             settled ? 'bg-zinc-800' : danger ? 'bg-red-500/10' : amber ? 'bg-amber-500/10' : 'bg-blue-500/10'
           }`}
         >
           <span className={`shrink-0 ${settled ? 'text-zinc-400' : danger ? 'text-badge-danger' : amber ? 'text-badge-warning' : 'text-badge-info'}`}>{icon}</span>
-          <span className={`text-sm font-medium ${settled ? 'text-zinc-300' : danger ? 'text-badge-danger' : amber ? 'text-badge-warning' : 'text-badge-info'}`}>
+          <span className={`text-xs font-semibold ${settled ? 'text-zinc-300' : danger ? 'text-badge-danger' : amber ? 'text-badge-warning' : 'text-badge-info'}`}>
             {title}
           </span>
           {headerMeta && <span className="text-xs text-zinc-500 truncate">{headerMeta}</span>}
           {headerEnd && <span className="ml-auto shrink-0">{headerEnd}</span>}
+          {onViewModeChange && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className={`${headerEnd ? '' : 'ml-auto'} h-6 shrink-0 rounded-md px-2 py-0.5 text-[11px]`}
+              onClick={() => onViewModeChange('compact')}
+            >
+              {collapseLabel}
+            </Button>
+          )}
         </div>
-
-        {/* 危险警示行：替代旧 DangerWarning 嵌卡，只占一行高度 */}
-        {danger && dangerWarning && (
-          <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-800 bg-red-500/5">
-            <AlertTriangle className="w-4 h-4 text-badge-danger shrink-0" />
-            <span className="text-xs text-badge-danger">{dangerWarning}</span>
-          </div>
-        )}
 
         {/* 槽位卡只让详情区滚动；选项与确认区留在可见卡底。其他消费方保持原骨架。 */}
         {pinActions ? (
@@ -238,27 +318,31 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
               className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3"
               data-testid={`${testId}-details-scroll`}
             >
-              <p className="text-sm text-zinc-200">{question}</p>
+              <p className="text-[13px] font-semibold leading-[1.5] text-zinc-100">{question}</p>
               {details}
             </div>
             {options.length > 0 && (
               <div className="shrink-0 space-y-2 px-4" data-testid={`${testId}-pinned-options`}>
-                {optionRows}
+                {directActions ? (
+                  <div className={`flex flex-wrap items-center gap-2 border-t border-zinc-800 py-2 ${dangerActionId ? '' : 'justify-end'}`}>
+                    {actionButtons}
+                  </div>
+                ) : optionRows}
               </div>
             )}
           </>
         ) : (
           <div className="space-y-3 max-h-[50vh] overflow-y-auto px-4 py-3">
-            <p className="text-sm text-zinc-200">{question}</p>
+            <p className="text-[13px] font-semibold leading-[1.5] text-zinc-100">{question}</p>
             {details}
             <div className="space-y-2">
-              {optionRows}
+              {directActions ? actionButtons : optionRows}
             </div>
           </div>
         )}
 
         {/* 底部：ghost 取消 + primary 确认（选中后才可点），与 UserQuestionCard 一致 */}
-        {!hideFooter && <div className={`px-4 pb-3 ${pinActions ? 'shrink-0' : ''}`} data-testid={`${testId}-actions`}>
+        {!hideFooter && !directActions && <div className={`px-4 pb-3 ${pinActions ? 'shrink-0' : ''}`} data-testid={`${testId}-actions`}>
           {footerExtra}
           <div className="mt-2.5 flex items-center justify-end gap-2">
             {onCancel && cancelLabel && (
@@ -277,6 +361,8 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
             </Button>
           </div>
         </div>}
+          </>
+        )}
       </div>
     </div>
   );

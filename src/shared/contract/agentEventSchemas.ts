@@ -170,6 +170,10 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
     newContent: z.string().optional(),
     server: z.string().optional(),
     toolName: z.string().optional(),
+    commandRiskLevel: z.enum(['safe', 'low', 'medium', 'high', 'critical']).optional(),
+    commandSecurityFlags: z.array(z.string()).optional(),
+    affectedPath: z.string().optional(),
+    affectedFileCount: z.number().int().nonnegative().optional(),
     standingGrantTarget: z.string().optional(),
     requestedAccess: z.enum(['read_only', 'read_write']).optional(),
     preview: z.object({

@@ -67,7 +67,7 @@ function buildFixtureMessages(labels: string[]): ModelMessage[] {
 
 describe('Provider × Runtime capability matrix', () => {
   it('covers every declared capability with an allowed four-state value', () => {
-    expect(PROVIDER_RUNTIME_CAPABILITY_MATRIX).toHaveLength(13);
+    expect(PROVIDER_RUNTIME_CAPABILITY_MATRIX).toHaveLength(14);
     for (const entry of PROVIDER_RUNTIME_CAPABILITY_MATRIX) {
       expect(Object.keys(entry.capabilities).sort()).toEqual([...PROVIDER_RUNTIME_CAPABILITIES].sort());
       for (const capability of PROVIDER_RUNTIME_CAPABILITIES) {

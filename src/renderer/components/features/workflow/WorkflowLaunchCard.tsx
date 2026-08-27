@@ -104,6 +104,7 @@ export function WorkflowLaunchCard() {
       testId="workflow-launch-card"
       className="w-full shrink-0 chat-col-pad animate-slideUp"
       tone="neutral"
+      viewMode="expanded"
       icon={<GitBranch className="w-4 h-4" />}
       title={w.title}
       question={

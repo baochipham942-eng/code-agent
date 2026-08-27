@@ -4,7 +4,7 @@
 
 import React, { useState } from 'react';
 import type { PermissionRequest } from './types';
-import { getPermissionBoundary, type DecisionTrace, type PermissionBoundary } from '@shared/contract';
+import { getPermissionBoundary, permissionReasonText, type DecisionTrace, type PermissionBoundary } from '@shared/contract';
 import { formatFilePath } from './utils';
 import { DiffView } from '../DiffView';
 import { WritebackFieldsView } from './WritebackFields';
@@ -13,7 +13,9 @@ import { Badge } from '../primitives/Badge';
 import { Button } from '../primitives/Button';
 import { Eye, EyeOff } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
+import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
+import { permissionConsequence } from './permissionPresentation';
 
 interface RequestDetailsProps {
   request: PermissionRequest;
@@ -21,7 +23,9 @@ interface RequestDetailsProps {
 
 export function RequestDetails({ request }: RequestDetailsProps) {
   const { language, t } = useI18n();
+  const developerMode = useAppStore().developerMode === true;
   const { type, details } = request;
+  const labels = t.decisionCard.permission;
 
   // 兼容旧版 API：path -> filePath
   const filePath = details.filePath || details.path;
@@ -31,8 +35,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
   if (request.rawArgs) {
     return (
       <div className="space-y-3">
+        <WritebackFieldsView tool={request.tool} args={request.rawArgs} />
         {request.boundary?.id === 'connector.external_write' && (
-          <BoundarySummary
+          <BoundaryDisclosure
             boundary={getPermissionBoundary(request.boundary.id, {
               language,
               connectorName: language === 'en'
@@ -40,11 +45,10 @@ export function RequestDetails({ request }: RequestDetailsProps) {
                 : request.boundary.connectorName,
             })}
             reason={language === 'en' ? request.boundary.reasonEn ?? request.boundary.reason : request.boundary.reason}
-            labels={t.decisionCard.permission.boundary}
+            label={labels.privacyDetails}
           />
         )}
-        <WritebackFieldsView tool={request.tool} args={request.rawArgs} />
-        {request.decisionTrace && request.decisionTrace.steps.length > 0 && (
+        {developerMode && request.decisionTrace && request.decisionTrace.steps.length > 0 && (
           <DecisionTraceView trace={request.decisionTrace} />
         )}
       </div>
@@ -53,27 +57,20 @@ export function RequestDetails({ request }: RequestDetailsProps) {
 
   return (
     <div className="space-y-3">
-      {request.boundary && (
-        <BoundarySummary
-          boundary={getPermissionBoundary(request.boundary.id, {
-            language,
-            connectorName: language === 'en'
-              ? request.boundary.connectorNameEn ?? request.boundary.connectorName
-              : request.boundary.connectorName,
-          })}
-          reason={language === 'en' ? request.boundary.reasonEn ?? request.boundary.reason : request.boundary.reason}
-          labels={t.decisionCard.permission.boundary}
-        />
+      {permissionConsequence(request, t) && (
+        <p className={`text-xs leading-5 ${type === 'dangerous_command' || request.dangerLevel === 'danger' ? 'text-badge-danger' : 'text-zinc-400'}`} data-testid="permission-consequence">
+          {permissionConsequence(request, t)}
+        </p>
       )}
 
       {/* 文件路径 */}
-      {filePath && <DetailItem label="文件" value={filePath} isPath />}
+      {filePath && <DetailItem label={labels.detailFile} value={filePath} isPath />}
 
       {/* 命令 */}
       {details.command && (
         <DetailItem
           key={`command-${request.id}`}
-          label="命令"
+          label={labels.detailCommand}
           value={details.command}
           isCode
           isDangerous={type === 'dangerous_command'}
@@ -85,7 +82,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
 
       {/* MCP 工具 */}
       {details.server && details.toolName && (
-        <DetailItem label="MCP 工具" value={`${details.server} / ${details.toolName}`} />
+        <DetailItem label={labels.detailMcpTool} value={`${details.server} / ${details.toolName}`} />
       )}
 
       {/* 确认门控 Diff 预览（E2） */}
@@ -113,7 +110,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {/* 编辑预览（简化版，显示变更内容） - 仅在无 diff 预览时显示 */}
       {type === 'file_edit' && details.changes && !details.preview && (
         <div className="mt-4">
-          <div className="text-xs text-zinc-500 mb-2">变更内容</div>
+          <div className="text-xs text-zinc-500 mb-2">{labels.detailChanges}</div>
           <pre
             className="
               text-xs p-2 rounded
@@ -131,67 +128,34 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       )}
 
       {/* Decision Trace: 为什么需要审批 */}
-      {request.decisionTrace && request.decisionTrace.steps.length > 0 && (
+      {developerMode && request.decisionTrace && request.decisionTrace.steps.length > 0 && (
         <DecisionTraceView trace={request.decisionTrace} />
+      )}
+      {developerMode && request.reasonCode && !request.decisionTrace && (
+        <p className="text-[10px] text-zinc-500" data-testid="developer-permission-reason">
+          {permissionReasonText(request.reasonCode)}
+        </p>
       )}
     </div>
   );
 }
 
-function BoundarySummary({
+function BoundaryDisclosure({
   boundary,
   reason,
-  labels,
+  label,
 }: {
   boundary?: PermissionBoundary;
   reason?: string;
-  labels: {
-    external: string;
-    local: string;
-    access: string;
-    storage: string;
-    redaction: string;
-  };
+  label: string;
 }) {
   if (!boundary) return null;
-  const leavesDevice = boundary.id === 'connector.external_write'
-    || boundary.cloud.includes('外部')
-    || boundary.cloud.includes('云端');
 
   return (
-    <div className="rounded-md border border-zinc-700/80 bg-zinc-900/70 p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs font-medium text-zinc-200">{boundary.title}</div>
-          <div className="mt-1 text-[11px] leading-relaxed text-zinc-400">
-            {reason || boundary.trigger}
-          </div>
-        </div>
-        {leavesDevice ? (
-          <span className="shrink-0 rounded border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning">
-            {labels.external}
-          </span>
-        ) : (
-          <span className="shrink-0 rounded border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success">
-            {labels.local}
-          </span>
-        )}
-      </div>
-      <div className="mt-2 grid gap-1.5 text-[10px] text-zinc-500">
-        <div>
-          <span className="text-zinc-400">{labels.access}: </span>
-          {boundary.dataAccess.slice(0, 3).join('、')}
-        </div>
-        <div>
-          <span className="text-zinc-400">{labels.storage}: </span>
-          {boundary.storage}
-        </div>
-        <div>
-          <span className="text-zinc-400">{labels.redaction}: </span>
-          {boundary.redaction}
-        </div>
-      </div>
-    </div>
+    <details className="rounded-md border border-zinc-700/80 bg-zinc-900/70 px-2.5 py-2 text-[11px] text-zinc-400">
+      <summary className="cursor-pointer text-zinc-500">{label}</summary>
+      <p className="mt-2 leading-relaxed">{reason || boundary.trigger} {boundary.storage} {boundary.redaction}</p>
+    </details>
   );
 }
 
@@ -218,8 +182,8 @@ function DecisionTraceView({ trace }: { trace: DecisionTrace }) {
         className="text-[10px] text-zinc-500 hover:text-zinc-400 flex items-center gap-1"
       >
         <span>{expanded ? '\u25BC' : '\u25B6'}</span>
-        <span>为什么需要审批</span>
-        <span className="text-zinc-600">({trace.steps.length} 步)</span>
+        <span>{t.decisionCard.permission.traceToggle}</span>
+        <span className="text-zinc-600">({t.decisionCard.permission.traceSteps.replace('{count}', String(trace.steps.length))})</span>
       </button>
       {expanded && (
         <div className="mt-1.5 space-y-1">
@@ -310,7 +274,7 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: Detail
       <div className="text-xs text-zinc-500 mb-1">{label}</div>
       <div
         className={`
-          p-2 rounded font-mono text-sm
+          p-2 rounded font-mono text-xs
           break-all
           ${
             isCode

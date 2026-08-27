@@ -24,6 +24,7 @@ import { useRequireAuth } from '../hooks/useRequireAuth';
 import { useTurnProjection } from '../hooks/useTurnProjection';
 import { useTurnExecutionClarity } from '../hooks/useTurnExecutionClarity';
 import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
+import { StreamingIndicator } from './features/chat/StreamingIndicator';
 import { NewSessionWelcome } from './features/chat/NewSessionWelcome';
 import { EmptySessionArea } from './features/chat/SessionSwitchSkeleton';
 import { MemberConversationView } from './features/expert/MemberConversationView';
@@ -89,6 +90,7 @@ import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
 import { isDragPointInsideVisibleRect } from '../utils/dragBounds';
 import { findPendingPlanApproval, hasPlanApproval } from '../utils/planApprovalView';
 import { Image, MessageSquare } from 'lucide-react';
+import { sendWithImmediateAssistantFeedback } from '../utils/sendWithImmediateAssistantFeedback';
 
 export const ChatView: React.FC = () => {
   const { t } = useI18n();
@@ -226,6 +228,7 @@ export const ChatView: React.FC = () => {
   } | null>(null);
   const [isPromptRewinding, setIsPromptRewinding] = useState(false);
   const [rewindRefreshToken, setRewindRefreshToken] = useState(0);
+  const [pendingAssistantFeedbackStartedAt, setPendingAssistantFeedbackStartedAt] = useState<number | null>(null);
 
   const handleSearchMatchesChange = useCallback((matches: SearchMatch[], activeIdx: number) => {
     setSearchMatches(matches);
@@ -595,19 +598,35 @@ export const ChatView: React.FC = () => {
   // @neo 提交分支已移除（2026-07-29 拍板）：输入框不再有工作卡/续接交互，
   // @neo 字样按普通文本消息发送；工作卡从 Neo 协同页发起。
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
-    const didSend = await requireAuthAsync(async () => {
-      const modelReady = await ensureModelConfigured();
-      if (!modelReady) return false;
-      await sendMessage(envelope);
-      return true;
+    return sendWithImmediateAssistantFeedback({
+      showFeedback: () => setPendingAssistantFeedbackStartedAt(Date.now()),
+      clearFeedback: () => setPendingAssistantFeedbackStartedAt(null),
+      send: async () => {
+        const didSend = await requireAuthAsync(async () => {
+          const modelReady = await ensureModelConfigured();
+          if (!modelReady) return false;
+          await sendMessage(envelope);
+          return true;
+        });
+        return didSend === true;
+      },
     });
-    return didSend === true;
   }, [
     currentSessionId,
     ensureModelConfigured,
     requireAuthAsync,
     sendMessage,
   ]);
+
+  useEffect(() => {
+    if (projection.activeTurnIndex >= 0) {
+      setPendingAssistantFeedbackStartedAt(null);
+    }
+  }, [projection.activeTurnIndex]);
+
+  useEffect(() => {
+    setPendingAssistantFeedbackStartedAt(null);
+  }, [currentSessionId]);
 
   const handleSteerEnvelope = useCallback(async (envelope: ConversationEnvelope) => {
     const outcome = await submitSteerEnvelope(
@@ -820,7 +839,7 @@ export const ChatView: React.FC = () => {
             内容盒回到与 composer/横幅相同的内轨；配合 global.css 对该 scroller 的
             overflow-y:scroll 恒定占位，右轨与「列表是否溢出」无关（现象 9）。
             负 margin 只能加在这层——它自己有 overflow-hidden，加到子级会被裁掉。 */}
-        <div className="flex-1 min-h-0 overflow-hidden mr-[calc(var(--scrollbar-size)*-1)]">
+        <div className="relative flex-1 min-h-0 overflow-hidden mr-[calc(var(--scrollbar-size)*-1)]">
           {viewingMemberId ? (
             <MemberConversationView sessionId={currentSessionId} />
           ) : projection.turns.length === 0 ? (
@@ -859,6 +878,19 @@ export const ChatView: React.FC = () => {
                 onInterruptionPointVisibilityChange={setInterruptionPointInViewport}
               />
             </ErrorBoundary>
+          )}
+          {pendingAssistantFeedbackStartedAt !== null && projection.activeTurnIndex < 0 && (
+            <div
+              className="pointer-events-none absolute inset-x-0 bottom-4 chat-col-pad"
+              data-testid="assistant-send-placeholder"
+            >
+              <div className="mx-auto max-w-3xl px-4">
+                <StreamingIndicator
+                  startTime={pendingAssistantFeedbackStartedAt}
+                  preparationPhase="submitting"
+                />
+              </div>
+            </div>
           )}
         </div>
 

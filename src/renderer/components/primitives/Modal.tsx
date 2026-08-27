@@ -199,7 +199,7 @@ export const Modal: React.FC<ModalProps> = ({
         aria-modal="true"
         aria-label={title}
         aria-labelledby={!title && header ? headerId : undefined}
-        className={`relative w-full ${sizeClasses[size]} ${size === 'viewport' ? 'max-h-none rounded-none' : 'max-h-[90vh] rounded-xl'} flex flex-col bg-zinc-900 border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn outline-hidden ${className}`}
+        className={`relative w-full ${sizeClasses[size]} ${size === 'viewport' ? 'max-h-none rounded-none' : 'max-h-[90vh] rounded-xl'} flex flex-col bg-zinc-900 border border-zinc-700 shadow-md dark:shadow-2xl overflow-hidden animate-fadeIn outline-hidden ${className}`}
         onClick={handleModalClick}
         onKeyDown={handleModalKeyDown}
       >

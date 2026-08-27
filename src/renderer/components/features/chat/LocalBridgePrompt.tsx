@@ -18,7 +18,7 @@ export const LocalBridgePrompt: React.FC<LocalBridgePromptProps> = ({
   onDismiss,
 }) => {
   return (
-    <div className="w-full shrink-0 px-4">
+    <div className="w-full shrink-0 chat-col-pad">
       <div className="mx-auto my-2 max-w-3xl rounded-xl border border-badge-warning/30 bg-amber-500/10 p-4 animate-fade-in">
         <div className="flex items-start gap-3">
           <div className="flex-shrink-0 mt-0.5">

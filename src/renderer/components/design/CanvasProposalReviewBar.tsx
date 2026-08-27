@@ -199,7 +199,7 @@ export const CanvasProposalReviewBar: React.FC<{
     return (
       <div
         data-testid="canvas-proposal-collapsed"
-        className="pointer-events-auto absolute bottom-4 right-4 z-30 flex items-center gap-2 rounded-lg border-2 border-badge-info/60 bg-surface-primary px-3 py-2 shadow-2xl"
+        className="pointer-events-auto absolute bottom-4 right-4 z-30 flex items-center gap-2 rounded-lg border-2 border-badge-info/60 bg-surface-primary px-3 py-2 shadow-md dark:shadow-2xl"
       >
         <Sparkles className="h-3.5 w-3.5 text-badge-info" />
         <span className="text-xs text-zinc-300">{s.proposalTitle}</span>
@@ -213,7 +213,7 @@ export const CanvasProposalReviewBar: React.FC<{
   return (
     <div
       data-testid="canvas-proposal-bar"
-      className="pointer-events-auto absolute bottom-4 left-1/2 z-30 w-[min(640px,92%)] -translate-x-1/2 rounded-lg border-2 border-badge-info/60 bg-surface-primary p-3 shadow-2xl"
+      className="pointer-events-auto absolute bottom-4 left-1/2 z-30 w-[min(640px,92%)] -translate-x-1/2 rounded-lg border-2 border-badge-info/60 bg-surface-primary p-3 shadow-md dark:shadow-2xl"
     >
       <div className="flex items-start gap-2">
         <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-badge-info" />

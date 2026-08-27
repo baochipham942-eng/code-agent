@@ -154,6 +154,29 @@ describe('ToolStepGroup — 连接器组头与步骤行说人话', () => {
     expect(html).not.toContain('tmeetMeetingList');
   });
 
+  it.each([
+    ['list_calendars', '日历 · 查询了可用列表'],
+    ['list_events', '日历 · 查询了日程'],
+  ] as const)('原生日历 %s：前缀已渲染时名字只出现一次且动作可区分', (action, expected) => {
+    const node = toolNode('calendar', true);
+    if (node.toolCall) node.toolCall.args = { action };
+    const html = renderToStaticMarkup(<ToolStepGroup nodes={[node]} />);
+
+    expect(html).toContain(expected);
+    expect(html.match(/日历/gu)).toHaveLength(1);
+    expect(html).not.toContain('执行了操作');
+  });
+
+  it.each([
+    ['calendar_create_event', '日历 · 创建了日程'],
+    ['calendar_update_event', '日历 · 修改了日程'],
+    ['calendar_delete_event', '日历 · 删除了日程'],
+  ] as const)('原生日历写动作 %s：复用既有动作派生', (name, expected) => {
+    const html = renderToStaticMarkup(<ToolStepGroup nodes={[toolNode(name, true)]} />);
+    expect(html).toContain(expected);
+    expect(html.match(/日历/gu)).toHaveLength(1);
+  });
+
   it('多步组头只给连接器名和步骤数', () => {
     const html = renderToStaticMarkup(
       <ToolStepGroup nodes={[

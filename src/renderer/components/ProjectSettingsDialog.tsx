@@ -173,7 +173,7 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
       aria-modal="true"
       aria-label={copy.title}
     >
-      <div className="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-zinc-700 bg-zinc-950 shadow-2xl">
+      <div className="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-zinc-700 bg-zinc-950 shadow-md dark:shadow-2xl">
         <header className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
           <Settings2 className="h-4 w-4 text-badge-accent" />
           <h2 className="flex-1 text-sm font-semibold text-zinc-100">{copy.title}</h2>

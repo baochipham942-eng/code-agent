@@ -524,7 +524,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
         <div
           role="status"
           data-testid="saas-connector-toast"
-          className={`fixed right-6 top-6 flex max-w-sm items-center gap-2 rounded-lg border bg-zinc-900 px-3 py-2 text-xs shadow-2xl ${
+          className={`fixed right-6 top-6 flex max-w-sm items-center gap-2 rounded-lg border bg-zinc-900 px-3 py-2 text-xs shadow-md dark:shadow-2xl ${
             receipt.kind === 'success'
               ? 'border-emerald-500/30 text-badge-success'
               : 'border-amber-500/30 text-badge-warning'

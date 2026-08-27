@@ -17,6 +17,7 @@ import {
   type SubagentRunEndStatus,
 } from './subagentLifecycleEvents';
 import type { SubagentEventPort } from './subagentExecutorTypes';
+import { extractWorkbenchReferenceFromToolCall } from '../../shared/contract/workbenchTools';
 
 export type { SubagentRunEndStatus } from './subagentLifecycleEvents';
 
@@ -140,6 +141,7 @@ export function createSubagentTurnObservability(input: {
     ): Promise<void> {
       recorder.record('tool_dispatch', {
         toolName: toolCall.name,
+        toolAction: extractWorkbenchReferenceFromToolCall(toolCall)?.action ?? null,
         success: result.success,
         durationMs,
         error: result.error ?? null,
@@ -154,9 +156,18 @@ export function createSubagentTurnObservability(input: {
       });
       eventScope.emitToolCallEnd(toolCall.id, result, durationMs);
     },
-    recordToolError(toolCall: { id: string; name: string }, error: string, durationMs: number): void {
+    recordToolError(
+      toolCall: { id: string; name: string; arguments: Record<string, unknown> },
+      error: string,
+      durationMs: number,
+    ): void {
       recorder.record('tool_dispatch', {
-        toolName: toolCall.name, success: false, durationMs, error, fromCache: false,
+        toolName: toolCall.name,
+        toolAction: extractWorkbenchReferenceFromToolCall(toolCall)?.action ?? null,
+        success: false,
+        durationMs,
+        error,
+        fromCache: false,
       });
       eventScope.emitToolCallError(toolCall.id, error, durationMs);
     },

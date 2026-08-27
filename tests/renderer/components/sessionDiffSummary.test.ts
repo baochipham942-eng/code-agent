@@ -62,6 +62,8 @@ describe('SessionDiffSummary', () => {
     );
     expect(html).toContain('2 files changed');
     expect(html).toContain('Review changes');
+    expect(html).toContain('chat-col-pad');
+    expect(html).toContain('max-w-3xl');
     // a.ts: 3 added, 0 removed (new file)
     // b.ts e1: +2 -1, e2: +0 -1 → +2 -2
     // total: +5 -2

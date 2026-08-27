@@ -155,7 +155,7 @@ export function AssetDrawerPanel({
     <aside
       role="dialog"
       aria-label={title}
-      className="absolute inset-y-0 right-0 z-30 flex w-[min(360px,calc(100%-44px))] flex-col border-l border-white/[0.08] bg-zinc-900 shadow-2xl"
+      className="absolute inset-y-0 right-0 z-30 flex w-[min(360px,calc(100%-44px))] flex-col border-l border-white/[0.08] bg-zinc-900 shadow-md dark:shadow-2xl"
     >
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.06] px-3 py-2">
         <div className="min-w-0">

@@ -128,7 +128,7 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
 
   return (
     <div
-      className="absolute bottom-full right-0 z-30 mb-2 w-[440px] max-w-[calc(100vw-2rem)] rounded-xl border border-border-hover bg-zinc-900/95 shadow-2xl backdrop-blur"
+      className="absolute bottom-full right-0 z-30 mb-2 w-[440px] max-w-[calc(100vw-2rem)] rounded-xl border border-border-hover bg-zinc-900/95 shadow-md dark:shadow-2xl backdrop-blur"
       data-testid="context-health-detail"
       role="dialog"
       aria-label={ch.detailModalTitle}

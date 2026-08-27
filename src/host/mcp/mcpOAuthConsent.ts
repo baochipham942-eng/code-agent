@@ -9,7 +9,7 @@ import {
   markDecisionRequestExpired,
   notifyDecisionNeeded,
   notifyIfLateDecisionResponse,
-} from '../interaction/userDecision';
+} from '../permissions/userDecision';
 import { beginPendingMcpInteraction } from './mcpPendingInteraction';
 
 export const MCP_OAUTH_CONSENT_TIMEOUT_MS = 2 * 60 * 1000;

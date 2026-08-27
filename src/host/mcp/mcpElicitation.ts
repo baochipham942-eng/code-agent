@@ -25,7 +25,7 @@ import {
   markDecisionRequestExpired,
   notifyDecisionNeeded,
   notifyIfLateDecisionResponse,
-} from '../interaction/userDecision';
+} from '../permissions/userDecision';
 import { beginPendingMcpInteraction } from './mcpPendingInteraction';
 
 const logger = createLogger('MCPElicitation', { lane: 'mcp' });

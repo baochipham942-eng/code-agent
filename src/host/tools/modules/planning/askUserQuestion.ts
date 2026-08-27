@@ -33,7 +33,7 @@ import { askUserQuestionSchema as schema } from './askUserQuestion.schema';
 import {
   deniedDecisionMetadata,
   USER_INPUT_TIMEOUT_CODE,
-} from '../../../interaction/userDecision';
+} from '../../../permissions/userDecision';
 
 function formatNoInteractiveUserOutput(questions: UserQuestion[]): string {
   const formatted = questions

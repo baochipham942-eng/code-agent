@@ -114,7 +114,7 @@ export const MemoFloater: React.FC = () => {
       />
 
       {/* Floater */}
-      <div className="relative w-full max-w-lg mx-4 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl animate-fadeIn">
+      <div className="relative w-full max-w-lg mx-4 bg-zinc-900 border border-zinc-700 rounded-xl shadow-md dark:shadow-2xl animate-fadeIn">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800">
           <span className="text-xs text-zinc-500">Memo · {quickAskShortcut}</span>

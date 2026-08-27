@@ -881,7 +881,9 @@ export const ChatView: React.FC = () => {
           主栏统一缩到内轨，trace 滚动容器再用负 margin 把窄带要回（见下）。 */}
       <div className="flex-1 min-h-0 flex flex-col min-w-0 pr-[var(--scrollbar-size)]">
         {/* Task Status Bar - 显示多任务状态 */}
-        <TaskStatusBar className="shrink-0 mx-4 mt-2" />
+        <div className="shrink-0 chat-col-pad pt-2">
+          <TaskStatusBar className="mx-auto w-full max-w-3xl" />
+        </div>
         {/* Todo Progress Panel 已移至右侧 TaskInfo 面板 */}
 
         {/* In-session search bar (Cmd+F) */}
@@ -894,9 +896,11 @@ export const ChatView: React.FC = () => {
         />
 
         {channelSessionSource && (
-          <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/70 px-3 py-2 text-xs text-zinc-400">
-            <MessageSquare className="h-3.5 w-3.5 text-zinc-500" />
-            <span className="truncate">{channelSessionSource}</span>
+          <div className="chat-col-pad mt-2">
+            <div className="mx-auto flex w-full max-w-3xl items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/70 px-3 py-2 text-xs text-zinc-400">
+              <MessageSquare className="h-3.5 w-3.5 text-zinc-500" />
+              <span className="truncate">{channelSessionSource}</span>
+            </div>
           </div>
         )}
 

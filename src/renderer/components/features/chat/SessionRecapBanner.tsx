@@ -119,21 +119,23 @@ export const SessionRecapBanner: React.FC<{
   return (
     <div
       role="status"
-      className="mx-4 mt-2 flex items-start gap-2 rounded-lg border border-badge-info/60 bg-sky-950/30 px-3 py-2 text-xs text-zinc-300"
+      className="chat-col-pad mt-2"
     >
-      <Sparkles className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-badge-info" />
-      <span className="min-w-0 flex-1">
-        <span className="text-zinc-500">{t.sessionRecap.prefix}</span>
-        {recap.text}
-      </span>
-      <button
-        type="button"
-        onClick={() => setRecap(null)}
-        aria-label={t.sessionRecap.dismissLabel}
-        className="flex-shrink-0 rounded p-0.5 text-zinc-500 hover:text-zinc-300"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
+      <div className="mx-auto flex w-full max-w-3xl items-start gap-2 rounded-lg border border-badge-info/60 bg-sky-950/30 px-3 py-2 text-xs text-zinc-300">
+        <Sparkles className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-badge-info" />
+        <span className="min-w-0 flex-1">
+          <span className="text-zinc-500">{t.sessionRecap.prefix}</span>
+          {recap.text}
+        </span>
+        <button
+          type="button"
+          onClick={() => setRecap(null)}
+          aria-label={t.sessionRecap.dismissLabel}
+          className="flex-shrink-0 rounded p-0.5 text-zinc-500 hover:text-zinc-300"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 };

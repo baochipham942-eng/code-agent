@@ -38,7 +38,7 @@ export function SurfacePermissionCard({ session, copy, language }: SurfacePermis
   return (
     <section
       data-testid="surface-permission-card"
-      className="rounded-lg border-2 border-border-subtle bg-surface-primary p-3 shadow-2xl"
+      className="rounded-lg border-2 border-border-subtle bg-surface-primary p-3 shadow-md dark:shadow-2xl"
     >
       <div className="flex items-center justify-between gap-2">
         <h4 className="text-[11px] font-medium text-zinc-300">{copy.permission.title}</h4>

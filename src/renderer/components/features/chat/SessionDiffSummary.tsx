@@ -104,7 +104,7 @@ export const SessionDiffSummary: React.FC<SessionDiffSummaryProps> = ({ messages
   const totalRemoved = fileChanges.reduce((s, f) => s + f.removed, 0);
 
   return (
-    <div className="px-4 shrink-0">
+    <div className="chat-col-pad shrink-0">
       <div className="mb-2 max-w-3xl mx-auto">
         <div className="rounded-xl border border-border-muted bg-surface-subtle backdrop-blur-sm overflow-hidden">
           <button

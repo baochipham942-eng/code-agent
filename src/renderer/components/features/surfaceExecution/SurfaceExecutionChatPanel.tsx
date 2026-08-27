@@ -11,12 +11,14 @@ export function SurfaceExecutionChatPanel({ conversationId }: SurfaceExecutionCh
   if (!conversationId || !surfaceExecution.projection) return null;
 
   return (
-    <div className="mx-4 mt-2 max-h-[42vh] shrink-0 overflow-y-auto">
-      <SurfaceExecutionConversationPanel
-        conversationId={conversationId}
-        projection={surfaceExecution.projection}
-        onControl={surfaceExecution.onControl}
-      />
+    <div className="chat-col-pad mt-2 shrink-0">
+      <div className="mx-auto max-h-[42vh] w-full max-w-3xl overflow-y-auto">
+        <SurfaceExecutionConversationPanel
+          conversationId={conversationId}
+          projection={surfaceExecution.projection}
+          onControl={surfaceExecution.onControl}
+        />
+      </div>
     </div>
   );
 }

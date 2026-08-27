@@ -215,7 +215,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
         className="absolute inset-0 cursor-default"
         onClick={onClose}
       />
-      <aside className="relative flex h-full w-full max-w-[460px] flex-col border-l border-zinc-800 bg-zinc-950 shadow-2xl">
+      <aside className="relative flex h-full w-full max-w-[460px] flex-col border-l border-zinc-800 bg-zinc-950 shadow-md dark:shadow-2xl">
         <div className="border-b border-zinc-800 px-4 py-3">
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900/80">

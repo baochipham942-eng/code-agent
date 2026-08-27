@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   versionProbeFails: new Set<string>(),
   /** 二进制在、版本正常，但登录探测跑不通——「登录状态没问出来」，不等于没登录。 */
   authProbeFails: new Set<string>(),
+  execFileCalls: 0,
+  onVersionProbe: null as (() => void) | null,
 }));
 
 vi.mock('node:fs/promises', () => ({
@@ -27,6 +29,7 @@ vi.mock('child_process', () => ({
     _options: unknown,
     callback: (err: Error | null, result?: { stdout: string; stderr: string }) => void,
   ) => {
+    mocks.execFileCalls += 1;
     // resolveBinary: `which <command>` / `where <command>`
     if (file === 'which' || file === 'where') {
       const command = args[0];
@@ -40,6 +43,7 @@ vi.mock('child_process', () => ({
     // probeCommand: `<binaryPath> --version`
     const command = file.split('/').pop() ?? file;
     const isVersionArgs = args.join(' ') === '--version';
+    if (isVersionArgs) mocks.onVersionProbe?.();
     if (mocks.versionProbeFails.has(command) && isVersionArgs) {
       callback(new Error(`${command} --version timed out`));
       return;
@@ -102,6 +106,7 @@ vi.mock('../../../src/host/services/infra/shellEnvironment', () => ({
 }));
 
 import { AgentEngineRegistry } from '../../../src/host/services/agentEngine/agentEngineRegistry';
+import { listExternalEngineManifests } from '../../../src/shared/externalEngineManifest';
 
 describe('AgentEngineRegistry mimo/kimi detection', () => {
   beforeEach(() => {
@@ -110,6 +115,8 @@ describe('AgentEngineRegistry mimo/kimi detection', () => {
     mocks.existingPaths.clear();
     mocks.versionProbeFails.clear();
     mocks.authProbeFails.clear();
+    mocks.execFileCalls = 0;
+    mocks.onVersionProbe = null;
   });
 
   afterEach(() => {
@@ -129,6 +136,101 @@ describe('AgentEngineRegistry mimo/kimi detection', () => {
       'grok_cli',
       'dsh_cli',
     ]);
+  });
+
+  it('starts cache freshness after probing finishes and invalidates only on expiry or request', async () => {
+    mocks.installed.add('mimo');
+    let nowMs = 0;
+    mocks.onVersionProbe = () => { nowMs += 5801; };
+    const registry = new AgentEngineRegistry({ cacheTtlMs: 5000, now: () => nowMs });
+
+    await registry.list();
+    const firstProbeCalls = mocks.execFileCalls;
+
+    await registry.list();
+    expect(mocks.execFileCalls).toBe(firstProbeCalls);
+
+    nowMs += 5000;
+    await registry.list();
+    expect(mocks.execFileCalls).toBeGreaterThan(firstProbeCalls);
+
+    const callsBeforeInvalidation = mocks.execFileCalls;
+    registry.invalidate();
+    await registry.list();
+    expect(mocks.execFileCalls).toBeGreaterThan(callsBeforeInvalidation);
+  });
+
+  it('coalesces concurrent cache readers into one manifest probe round', async () => {
+    const singleReaderRegistry = new AgentEngineRegistry();
+    await singleReaderRegistry.list();
+    const callsInOneRound = mocks.execFileCalls;
+
+    mocks.execFileCalls = 0;
+    const concurrentRegistry = new AgentEngineRegistry();
+    await Promise.all([
+      concurrentRegistry.list(),
+      concurrentRegistry.listSources(),
+      concurrentRegistry.get('native'),
+    ]);
+
+    expect(mocks.execFileCalls).toBe(callsInOneRound);
+  });
+
+  it('waits for the new refresh when invalidation supersedes an in-flight probe', async () => {
+    const manifests = listExternalEngineManifests().filter((manifest) => manifest.kind === 'native');
+    const registry = new AgentEngineRegistry({ manifests });
+    const releases: Array<() => void> = [];
+    type RegistryProbeHarness = {
+      probeManifest(): Promise<null>;
+    };
+    (registry as unknown as RegistryProbeHarness).probeManifest = async () => {
+      await new Promise<void>((resolve) => releases.push(resolve));
+      return null;
+    };
+
+    let firstSettled = false;
+    const first = registry.list().finally(() => { firstSettled = true; });
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+
+    registry.invalidate();
+    const second = registry.list();
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+
+    releases[0]();
+    await vi.waitFor(() => expect(firstSettled).toBe(false));
+    releases[1]();
+
+    await expect(first).resolves.toHaveLength(1);
+    await expect(second).resolves.toHaveLength(1);
+  });
+
+  it('serves the last result immediately while an expired cache revalidates in background', async () => {
+    const manifests = listExternalEngineManifests().filter((manifest) => manifest.kind === 'native');
+    let nowMs = 0;
+    const registry = new AgentEngineRegistry({ cacheTtlMs: 5, manifests, now: () => nowMs });
+    const releases: Array<() => void> = [];
+    type RegistryProbeHarness = {
+      probeManifest(): Promise<null>;
+    };
+    (registry as unknown as RegistryProbeHarness).probeManifest = async () => {
+      await new Promise<void>((resolve) => releases.push(resolve));
+      return null;
+    };
+
+    const coldList = registry.list();
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+    releases[0]();
+    await expect(coldList).resolves.toHaveLength(1);
+
+    nowMs = 6;
+    await expect(registry.list()).resolves.toHaveLength(1);
+    expect(releases).toHaveLength(2);
+
+    releases[1]();
+    await vi.waitFor(async () => {
+      const refreshed = await registry.list();
+      expect(refreshed[0]?.detectedAt).toBe(6);
+    });
   });
 
   it('marks MiMo-Code installed when the binary is on PATH and --version succeeds', async () => {

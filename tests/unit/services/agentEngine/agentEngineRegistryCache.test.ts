@@ -51,7 +51,10 @@ describe('AgentEngineRegistry 探测缓存', () => {
 
     clock += 6000; // 越过 TTL
     await registry.list();
-    expect(engineProbeCallCount()).toBe(afterFirst * 2); // 重新探测
+    // 过期值先立即返回，后台完成重新探测；等到刷新结束也避免污染下一条用例。
+    await vi.waitFor(() => {
+      expect(engineProbeCallCount()).toBe(afterFirst * 2);
+    });
   });
 
   it('invalidate() 强制下次 list() 重新探测', async () => {

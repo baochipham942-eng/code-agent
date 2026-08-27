@@ -19,6 +19,8 @@
 //                             （A1 展示类 primitive 收敛，基线 0）；`ds-allow:primitive` 豁免
 //   8. theme-blind-bright-foreground: 禁新增未带 dark: 主题分支的亮档彩色前景类；
 //                             现存债务以棘轮锁住；`ds-allow:color` 豁免
+//   9. theme-blind-white-hover-foreground: 禁无主题分支的 hover:text-white；固定深色背景
+//                             必须用 `ds-allow:color` 写明理由
 //
 // 对比度断言（默认门已 enforce，--contrast 看明细）：四套主题按各自真实用法场景
 // 核对 WCAG ≥4.5:1。2026-07-02 产品负责人拍板方案 A：dark/light brand 加深至
@@ -68,6 +70,8 @@ const IMPORTANT_RE = /!important/;
 // 默认匹配任意色板名，新增色板自动进入门；再向左还原完整 Tailwind token，覆盖 dark:/hover:/任意变体组合。
 export const THEME_BLIND_BRIGHT_FOREGROUND_RE =
   /(?<![\w-])text-[a-z][a-z0-9]*(?:-[a-z0-9]+)*-(?:100|200|300|400)(?![\w-])/g;
+export const THEME_BLIND_WHITE_FOREGROUND_RE =
+  /(?<![\w-])text-white(?:\/(?:\d+|\[[^\]]+\]))?(?![\w-])/g;
 
 const THEME_BLIND_BRIGHT_FOREGROUND_PALETTE_EXEMPTIONS = new Set([
   // zinc 映射到 rgb(var(--zinc-*))，四套主题都提供反转后的值，亮档前景随主题安全变化。
@@ -122,6 +126,29 @@ export function findThemeBlindBrightForegroundViolations(line, loc = '') {
     .map(({ className }) => (loc ? `${loc} ${className}` : className));
 }
 
+export function findThemeBlindWhiteHoverForegroundMatches(line) {
+  return [...line.matchAll(THEME_BLIND_WHITE_FOREGROUND_RE)].map((match) => {
+    const coreClass = match[0];
+    const start = classTokenStart(line, match.index ?? 0);
+    return {
+      className: line.slice(start, (match.index ?? 0) + coreClass.length),
+      coreClass,
+    };
+  });
+}
+
+function hasHoverVariant(className) {
+  const variants = className.split(':').slice(0, -1);
+  return variants.includes('hover') || variants.includes('group-hover');
+}
+
+export function findThemeBlindWhiteHoverForegroundViolations(line, loc = '') {
+  if (isAllowed(line, ['color'])) return [];
+  return findThemeBlindWhiteHoverForegroundMatches(line)
+    .filter(({ className }) => hasHoverVariant(className) && !hasDarkVariant(className))
+    .map(({ className }) => (loc ? `${loc} ${className}` : className));
+}
+
 function* walk(dir, extRe = /\.tsx?$/) {
   for (const name of readdirSync(dir)) {
     const full = join(dir, name);
@@ -155,6 +182,7 @@ export function scan(scanRoot = SCAN_ROOT) {
     'important-unjustified': [],
     'local-display-primitive': [],
     'theme-blind-bright-foreground': [],
+    'theme-blind-white-hover-foreground': [],
     'stale-zindex-allowlist': [],
   };
   let brightForegroundTargetCount = 0;
@@ -218,6 +246,10 @@ export function scan(scanRoot = SCAN_ROOT) {
             violations['theme-blind-bright-foreground'].push(`${loc} ${className}`);
           });
       }
+      findThemeBlindWhiteHoverForegroundViolations(line, loc)
+        .forEach((violation) => {
+          violations['theme-blind-white-hover-foreground'].push(violation);
+        });
     });
   }
 

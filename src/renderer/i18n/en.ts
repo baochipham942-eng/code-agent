@@ -46,6 +46,7 @@ import { artifactShareEn } from './artifactShare';
 import { receiptPresentationEn } from './receiptPresentation';
 import { renderHumanPipeEn } from './renderHumanPipe';
 import { outcomeWordsEn } from './outcomeWords';
+import { engineModelPanelEn } from './engineModelPanel';
 export const en: Translations = {
   ...canvasActorEn, ...activityPanelEn,
   ...imageNarrationEn, ...mermaidEn,
@@ -60,7 +61,7 @@ export const en: Translations = {
   ...workbenchTabsEn,
   ...receiptPresentationEn,
   ...renderHumanPipeEn,
-  ...outcomeWordsEn,
+  ...outcomeWordsEn, ...engineModelPanelEn,
   // Common
   common: {
     save: 'Save',

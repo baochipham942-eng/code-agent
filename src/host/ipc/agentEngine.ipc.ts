@@ -45,12 +45,18 @@ export function registerAgentEngineHandlers(ipcMain: IpcMain): void {
     try {
       let data: unknown;
       switch (request.action) {
-        case 'detect':
-          // 「检测引擎」按钮：强制重探（绕过 5s 探测缓存），覆盖"刚装好引擎"的场景。
+        case 'detect': {
+          // 「检测引擎」按钮：两套缓存都失效并等待新事实。普通目录读取可以 SWR，
+          // 但用户显式发起的检测不能拿刚失效的旧目录冒充检测结果。
           registry.invalidate();
-          getRemoteAgentEngineModelCatalogService().invalidate();
-          data = await registry.list();
+          const catalogService = getRemoteAgentEngineModelCatalogService();
+          catalogService.invalidate();
+          [data] = await Promise.all([
+            registry.list(),
+            catalogService.readCatalog(),
+          ]);
           break;
+        }
         case 'list':
           data = await registry.list();
           break;

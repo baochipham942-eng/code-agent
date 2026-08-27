@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  discoverLocalAgentEngineModels,
   mergeAgentEngineModelCatalogWithDiscovery,
   parseClaudeHelpModelCatalog,
   parseAgentEngineModelCatalogPayload,
@@ -11,6 +12,7 @@ import {
   RemoteAgentEngineModelCatalogService,
   resolveAgentEngineCatalogModel,
 } from '../../../src/host/services/agentEngine/agentEngineModelCatalog';
+import type { AgentEngineModelDiscoveryResult } from '../../../src/host/services/agentEngine/agentEngineModelCatalog';
 import { createControlPlaneEnvelope } from '../../../vercel-api/lib/controlPlaneEnvelope';
 import { BUILTIN_AGENT_ENGINE_MODEL_CATALOG } from '../../../src/shared/agentEngineModelCatalog';
 
@@ -39,6 +41,24 @@ function makeCatalog(overrides: Record<string, unknown> = {}) {
       }],
     }],
     ...overrides,
+  };
+}
+
+function makeDiscovery(modelId: string): AgentEngineModelDiscoveryResult {
+  return {
+    engines: [{
+      kind: 'codex_cli',
+      defaultModel: modelId,
+      updatedAt: '2026-08-27T00:00:00.000Z',
+      models: [{
+        id: modelId,
+        label: modelId,
+        capabilities: ['code'],
+        recommended: true,
+        updatedAt: '2026-08-27T00:00:00.000Z',
+      }],
+    }],
+    diagnostics: [],
   };
 }
 
@@ -115,6 +135,28 @@ describe('Agent Engine model catalog parser', () => {
 });
 
 describe('local Agent Engine model discovery parsing', () => {
+  it('starts every independent local model probe before waiting for the slowest one', async () => {
+    const started: number[] = [];
+    const releases: Array<() => void> = [];
+    const probes = [0, 1, 2].map((index) => async () => {
+      started.push(index);
+      await new Promise<void>((resolve) => releases.push(resolve));
+      return makeDiscovery(`model-${index}`);
+    });
+
+    const discovery = discoverLocalAgentEngineModels(0, { probes });
+    await vi.waitFor(() => expect(started).toEqual([0, 1, 2]));
+    releases.forEach((release) => release());
+
+    await expect(discovery).resolves.toMatchObject({
+      engines: [
+        { defaultModel: 'model-0' },
+        { defaultModel: 'model-1' },
+        { defaultModel: 'model-2' },
+      ],
+    });
+  });
+
   it('parses Codex CLI debug model JSON into a catalog engine', () => {
     const engine = parseCodexDebugModelsCatalog(JSON.stringify({
       models: [
@@ -297,6 +339,123 @@ describe('bundled Agent Engine model catalog', () => {
 });
 
 describe('RemoteAgentEngineModelCatalogService', () => {
+  it('coalesces concurrent cold readers into one local discovery round', async () => {
+    let releaseDiscovery: (() => void) | undefined;
+    let markDiscoveryStarted!: () => void;
+    const discoveryStarted = new Promise<void>((resolve) => {
+      markDiscoveryStarted = resolve;
+    });
+    const localDiscoveryProvider = vi.fn(async () => {
+      markDiscoveryStarted();
+      await new Promise<void>((resolve) => { releaseDiscovery = resolve; });
+      return makeDiscovery('coalesced-model');
+    });
+    const service = new RemoteAgentEngineModelCatalogService({ localDiscoveryProvider });
+
+    const reads = [service.readCatalog(), service.readCatalog(), service.readCatalog()];
+    await discoveryStarted;
+    expect(localDiscoveryProvider).toHaveBeenCalledTimes(1);
+    releaseDiscovery?.();
+    const results = await Promise.all(reads);
+
+    expect(results.map((result) => result.catalog.engines
+      .find((engine) => engine.kind === 'codex_cli')?.defaultModel))
+      .toEqual(['coalesced-model', 'coalesced-model', 'coalesced-model']);
+  });
+
+  it('starts cache freshness after slow discovery completes', async () => {
+    let nowMs = 0;
+    const localDiscoveryProvider = vi.fn(async () => {
+      nowMs += 8_000;
+      return makeDiscovery('slow-model');
+    });
+    const service = new RemoteAgentEngineModelCatalogService({
+      localDiscoveryCacheTtlMs: 5_000,
+      localDiscoveryProvider,
+      nowProvider: () => nowMs,
+    });
+
+    await service.readCatalog();
+    await service.readCatalog();
+
+    expect(localDiscoveryProvider).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the default local discovery cache warm for five minutes', async () => {
+    let nowMs = 0;
+    const localDiscoveryProvider = vi.fn(async () => makeDiscovery('warm-model'));
+    const service = new RemoteAgentEngineModelCatalogService({
+      localDiscoveryProvider,
+      nowProvider: () => nowMs,
+    });
+
+    await service.readCatalog();
+    nowMs = 60_001;
+    await service.readCatalog();
+
+    expect(localDiscoveryProvider).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves stale catalog immediately while an expired entry revalidates in background', async () => {
+    let nowMs = 0;
+    let discoveryRound = 0;
+    let releaseRefresh: (() => void) | undefined;
+    const localDiscoveryProvider = vi.fn(async () => {
+      discoveryRound += 1;
+      if (discoveryRound === 2) {
+        await new Promise<void>((resolve) => { releaseRefresh = resolve; });
+      }
+      return makeDiscovery(`model-${discoveryRound}`);
+    });
+    const service = new RemoteAgentEngineModelCatalogService({
+      localDiscoveryCacheTtlMs: 5,
+      localDiscoveryProvider,
+      nowProvider: () => nowMs,
+    });
+
+    const first = await service.readCatalog();
+    nowMs = 6;
+    const stale = await service.readCatalog();
+
+    expect(stale).toBe(first);
+    await vi.waitFor(() => expect(localDiscoveryProvider).toHaveBeenCalledTimes(2));
+    releaseRefresh?.();
+    await vi.waitFor(async () => {
+      const refreshed = await service.readCatalog();
+      expect(refreshed.catalog.engines.find((engine) => engine.kind === 'codex_cli')?.defaultModel)
+        .toBe('model-2');
+    });
+  });
+
+  it('waits for fresh catalog after explicit invalidation', async () => {
+    let discoveryRound = 0;
+    let releaseRefresh: (() => void) | undefined;
+    const localDiscoveryProvider = vi.fn(async () => {
+      discoveryRound += 1;
+      if (discoveryRound === 2) {
+        await new Promise<void>((resolve) => { releaseRefresh = resolve; });
+      }
+      return makeDiscovery(`manual-model-${discoveryRound}`);
+    });
+    const service = new RemoteAgentEngineModelCatalogService({ localDiscoveryProvider });
+    await service.readCatalog();
+
+    service.invalidate();
+    let settled = false;
+    const refreshed = service.readCatalog().finally(() => { settled = true; });
+    await vi.waitFor(() => expect(localDiscoveryProvider).toHaveBeenCalledTimes(2));
+    expect(settled).toBe(false);
+    releaseRefresh?.();
+
+    await expect(refreshed).resolves.toMatchObject({
+      catalog: {
+        engines: expect.arrayContaining([
+          expect.objectContaining({ kind: 'codex_cli', defaultModel: 'manual-model-2' }),
+        ]),
+      },
+    });
+  });
+
   it('accepts a signed, non-expired remote catalog', async () => {
     const keys = createKeyPair();
     const payload = makeCatalog();

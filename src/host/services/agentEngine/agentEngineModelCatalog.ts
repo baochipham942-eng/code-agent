@@ -31,6 +31,7 @@ import {
 } from '../cloud/controlPlaneTrust';
 import { createLogger } from '../infra/logger';
 import { getShellPath } from '../infra/shellEnvironment';
+import { StaleCatalogCache } from './staleCatalogCache';
 
 const logger = createLogger('AgentEngineModelCatalog');
 const execFileAsync = promisify(execFile);
@@ -58,7 +59,10 @@ const MODEL_CAPABILITIES = new Set<ModelCapability>([
   'unlimited',
 ]);
 const LOCAL_DISCOVERY_TIMEOUT_MS = 8000;
-const LOCAL_DISCOVERY_CACHE_TTL_MS = 60_000;
+// Local CLI installs, logins, and configured defaults change much less often than the model
+// picker is opened. Manual engine detection invalidates this cache and still waits for fresh
+// facts; ordinary reads can serve the last catalog while this TTL is revalidated.
+const LOCAL_DISCOVERY_CACHE_TTL_MS = 5 * 60 * 1000;
 const CLAUDE_ALIAS_ORDER = ['sonnet', 'fable', 'opus', 'haiku'];
 const CODEX_DEBUG_MODELS_MAX_BUFFER = 64 * 1024 * 1024;
 
@@ -67,6 +71,7 @@ export interface RemoteAgentEngineModelCatalogServiceOptions {
   endpoint?: string;
   fetchImpl?: typeof fetch;
   now?: number;
+  nowProvider?: () => number;
   localDiscoveryProvider?: AgentEngineModelDiscoveryProvider;
   disableLocalDiscovery?: boolean;
   localDiscoveryCacheTtlMs?: number;
@@ -509,15 +514,11 @@ export function mergeAgentEngineModelCatalogWithDiscovery(
   };
 }
 
-export async function discoverLocalAgentEngineModels(now?: number): Promise<AgentEngineModelDiscoveryResult> {
-  const updatedAt = getNowIso(now);
+async function discoverCodexModels(updatedAt: string): Promise<AgentEngineModelDiscoveryResult> {
   const diagnostics: AgentEngineModelCatalogDiagnostic[] = [];
   const engines: AgentEngineModelCatalogEngine[] = [];
 
-  const [codexBinary, claudeBinary] = await Promise.all([
-    resolveBinary('codex'),
-    resolveBinary('claude'),
-  ]);
+  const codexBinary = await resolveBinary('codex');
 
   if (codexBinary) {
     try {
@@ -540,6 +541,14 @@ export async function discoverLocalAgentEngineModels(now?: number): Promise<Agen
     }
   }
 
+  return { engines, diagnostics };
+}
+
+async function discoverClaudeModels(updatedAt: string): Promise<AgentEngineModelDiscoveryResult> {
+  const diagnostics: AgentEngineModelCatalogDiagnostic[] = [];
+  const engines: AgentEngineModelCatalogEngine[] = [];
+  const claudeBinary = await resolveBinary('claude');
+
   if (claudeBinary) {
     try {
       const result = await execFileAsync(claudeBinary, ['--help'], {
@@ -561,6 +570,96 @@ export async function discoverLocalAgentEngineModels(now?: number): Promise<Agen
     }
   }
 
+  return { engines, diagnostics };
+}
+
+async function discoverConfiguredManifestModels(
+  manifest: ExternalEngineManifest & { kind: ExternalAgentEngineKind },
+  updatedAt: string,
+): Promise<AgentEngineModelDiscoveryResult> {
+  const diagnostics: AgentEngineModelCatalogDiagnostic[] = [];
+  const engines: AgentEngineModelCatalogEngine[] = [];
+  const discovery = manifest.probe?.modelDiscovery;
+  if (!discovery) return { engines, diagnostics };
+
+  const binary = await resolveManifestBinary(manifest);
+  if (!binary) return { engines, diagnostics };
+
+  try {
+    const modelProbe = execFileAsync(binary, discovery.args, {
+      env: getProbeEnv(),
+      timeout: LOCAL_DISCOVERY_TIMEOUT_MS,
+      maxBuffer: 1024 * 1024,
+    }) as Promise<ExecProbeResult>;
+    const defaultModelProbe = discovery.defaultModelProbe
+      ? (execFileAsync(binary, discovery.defaultModelProbe.args, {
+          env: getProbeEnv(),
+          timeout: LOCAL_DISCOVERY_TIMEOUT_MS,
+          maxBuffer: 1024 * 1024,
+        }) as Promise<ExecProbeResult>).catch(() => {
+          diagnostics.push(diagnostic(
+            `local_${manifest.kind}_default_model_discovery_failed`,
+            `The installed ${manifest.label} client did not return its configured default model.`,
+            { severity: 'warning', path: binary },
+          ));
+          return undefined;
+        })
+      : Promise.resolve(undefined);
+
+    const [result, defaultResult] = await Promise.all([modelProbe, defaultModelProbe]);
+    const output = `${result.stdout}\n${result.stderr}`;
+    let preferredDefault = discovery.preferredDefault;
+    if (defaultResult && discovery.defaultModelProbe) {
+      const match = `${defaultResult.stdout}\n${defaultResult.stderr}`
+        .match(new RegExp(discovery.defaultModelProbe.pattern, 'i'));
+      preferredDefault = match?.[1]?.trim() || preferredDefault;
+    }
+    const engine = discovery.parser === 'supported_models_parenthesized'
+      ? parseParenthesizedSupportedModelsCatalog(
+          manifest.kind,
+          output,
+          discovery.marker ?? '',
+          updatedAt,
+          preferredDefault,
+        )
+      : discovery.parser === 'model_map_json'
+        ? parseJsonModelMapCatalog(
+            manifest.kind,
+            output,
+            discovery.modelMapKey,
+            discovery.labelField,
+            updatedAt,
+            preferredDefault,
+          )
+        : parseGrokModelsCatalog(output, updatedAt, preferredDefault);
+    if (engine) {
+      engines.push(engine);
+    } else {
+      diagnostics.push(diagnostic(
+        `local_${manifest.kind}_model_discovery_empty`,
+        `The installed ${manifest.label} client did not return a parseable model catalog.`,
+        { severity: 'warning', path: binary },
+      ));
+    }
+  } catch (error) {
+    diagnostics.push(diagnostic(
+      `local_${manifest.kind}_model_discovery_failed`,
+      `Skipped local ${manifest.label} model discovery because its configured probe failed.`,
+      { severity: 'warning', path: binary },
+    ));
+    logger.warn(`Failed to discover ${manifest.label} models`, { error: String(error) });
+  }
+
+  return { engines, diagnostics };
+}
+
+export async function discoverLocalAgentEngineModels(
+  now?: number,
+  /** Deterministic probe seam for timing tests and the repeatable perf harness. */
+  options: { probes?: readonly AgentEngineModelDiscoveryProvider[] } = {},
+): Promise<AgentEngineModelDiscoveryResult> {
+  const updatedAt = getNowIso(now);
+
   const configuredDiscoveries = listExternalEngineManifests()
     .filter((manifest): manifest is ExternalEngineManifest & { kind: ExternalAgentEngineKind } =>
       Boolean(
@@ -568,75 +667,19 @@ export async function discoverLocalAgentEngineModels(now?: number): Promise<Agen
         && manifest.kind !== 'native'
         && manifest.probe?.modelDiscovery,
       ));
-  for (const manifest of configuredDiscoveries) {
-    const discovery = manifest.probe?.modelDiscovery;
-    if (!discovery) continue;
-    const binary = await resolveManifestBinary(manifest);
-    if (!binary) continue;
-    try {
-      const result = await execFileAsync(binary, discovery.args, {
-        env: getProbeEnv(),
-        timeout: LOCAL_DISCOVERY_TIMEOUT_MS,
-        maxBuffer: 1024 * 1024,
-      }) as ExecProbeResult;
-      const output = `${result.stdout}\n${result.stderr}`;
-      let preferredDefault = discovery.preferredDefault;
-      if (discovery.defaultModelProbe) {
-        try {
-          const defaultResult = await execFileAsync(binary, discovery.defaultModelProbe.args, {
-            env: getProbeEnv(),
-            timeout: LOCAL_DISCOVERY_TIMEOUT_MS,
-            maxBuffer: 1024 * 1024,
-          }) as ExecProbeResult;
-          const match = `${defaultResult.stdout}\n${defaultResult.stderr}`
-            .match(new RegExp(discovery.defaultModelProbe.pattern, 'i'));
-          preferredDefault = match?.[1]?.trim() || preferredDefault;
-        } catch {
-          diagnostics.push(diagnostic(
-            `local_${manifest.kind}_default_model_discovery_failed`,
-            `The installed ${manifest.label} client did not return its configured default model.`,
-            { severity: 'warning', path: binary },
-          ));
-        }
-      }
-      const engine = discovery.parser === 'supported_models_parenthesized'
-        ? parseParenthesizedSupportedModelsCatalog(
-            manifest.kind,
-            output,
-            discovery.marker ?? '',
-            updatedAt,
-            preferredDefault,
-          )
-        : discovery.parser === 'model_map_json'
-          ? parseJsonModelMapCatalog(
-              manifest.kind,
-              output,
-              discovery.modelMapKey,
-              discovery.labelField,
-              updatedAt,
-              preferredDefault,
-            )
-          : parseGrokModelsCatalog(output, updatedAt, preferredDefault);
-      if (engine) {
-        engines.push(engine);
-      } else {
-        diagnostics.push(diagnostic(
-          `local_${manifest.kind}_model_discovery_empty`,
-          `The installed ${manifest.label} client did not return a parseable model catalog.`,
-          { severity: 'warning', path: binary },
-        ));
-      }
-    } catch (error) {
-      diagnostics.push(diagnostic(
-        `local_${manifest.kind}_model_discovery_failed`,
-        `Skipped local ${manifest.label} model discovery because its configured probe failed.`,
-        { severity: 'warning', path: binary },
-      ));
-      logger.warn(`Failed to discover ${manifest.label} models`, { error: String(error) });
-    }
-  }
+  const probes = options.probes ?? [
+    () => discoverCodexModels(updatedAt),
+    () => discoverClaudeModels(updatedAt),
+    ...configuredDiscoveries.map((manifest) => (
+      () => discoverConfiguredManifestModels(manifest, updatedAt)
+    )),
+  ];
+  const results = await Promise.all(probes.map((probe) => probe()));
 
-  return { engines, diagnostics };
+  return {
+    engines: results.flatMap((result) => result.engines),
+    diagnostics: results.flatMap((result) => result.diagnostics),
+  };
 }
 
 function parseModel(
@@ -873,7 +916,7 @@ export function resolveAgentEngineCatalogModel(
 
 export class RemoteAgentEngineModelCatalogService {
   private options: RemoteAgentEngineModelCatalogServiceOptions;
-  private cache: { result: AgentEngineModelCatalogResult; expiresAtMs: number } | null = null;
+  private readonly cache = new StaleCatalogCache<AgentEngineModelCatalogResult>();
 
   constructor(options: RemoteAgentEngineModelCatalogServiceOptions = {}) {
     this.options = options;
@@ -884,26 +927,33 @@ export class RemoteAgentEngineModelCatalogService {
       ...this.options,
       ...options,
     };
-    this.cache = null;
+    this.cache.invalidate();
   }
 
-  invalidate(): void {
-    this.cache = null;
-  }
+  invalidate(): void { this.cache.invalidate(); }
 
   async readCatalog(): Promise<AgentEngineModelCatalogResult> {
-    if (this.cache && this.cache.expiresAtMs > (this.options.now ?? Date.now())) {
-      return this.cache.result;
-    }
-
-    const base = await this.readTrustedOrBundledCatalog();
-    const result = await this.applyLocalDiscovery(base);
-    this.cache = {
-      result,
-      expiresAtMs: this.resolveCacheExpiresAtMs(result),
-    };
-    return result;
+    return this.cache.read({
+      now: () => this.currentTimeMs(),
+      load: async () => {
+        const base = await this.readTrustedOrBundledCatalog();
+        return this.applyLocalDiscovery(base);
+      },
+      expiresAt: (result, loadedAt) => this.resolveCacheExpiresAtMs(result, loadedAt),
+      canServeStale: (result, now) => {
+        if (!result.expiresAt) return true;
+        const trustExpiresAt = Date.parse(result.expiresAt);
+        return !Number.isFinite(trustExpiresAt) || trustExpiresAt > now;
+      },
+      onBackgroundError: (error) => {
+        logger.warn('Background Agent Engine model catalog refresh failed; keeping last known result', {
+          detail: error instanceof Error ? error.message : String(error),
+        });
+      },
+    });
   }
+
+  private currentTimeMs(): number { return this.options.nowProvider?.() ?? this.options.now ?? Date.now(); }
 
   private async readTrustedOrBundledCatalog(): Promise<AgentEngineModelCatalogResult> {
     const publicKeys = this.options.controlPlanePublicKeys || getControlPlanePublicKeysFromEnv();
@@ -929,7 +979,7 @@ export class RemoteAgentEngineModelCatalogService {
     }
 
     const discover = this.options.localDiscoveryProvider
-      ?? (() => discoverLocalAgentEngineModels(this.options.now));
+      ?? (() => discoverLocalAgentEngineModels(this.currentTimeMs()));
     const discovery = await discover();
     if (discovery.engines.length === 0) {
       return {
@@ -939,7 +989,7 @@ export class RemoteAgentEngineModelCatalogService {
     }
 
     return {
-      catalog: mergeAgentEngineModelCatalogWithDiscovery(base.catalog, discovery, getNowIso(this.options.now)),
+      catalog: mergeAgentEngineModelCatalogWithDiscovery(base.catalog, discovery, getNowIso(this.currentTimeMs())),
       source: 'local_discovery',
       diagnostics: [
         ...discovery.diagnostics,
@@ -960,8 +1010,7 @@ export class RemoteAgentEngineModelCatalogService {
     return resolveAgentEngineCatalogModel(result.catalog, kind, requestedModel, options)?.id;
   }
 
-  private resolveCacheExpiresAtMs(result: AgentEngineModelCatalogResult): number {
-    const now = this.options.now ?? Date.now();
+  private resolveCacheExpiresAtMs(result: AgentEngineModelCatalogResult, now: number): number {
     const localTtl = this.options.localDiscoveryCacheTtlMs ?? LOCAL_DISCOVERY_CACHE_TTL_MS;
     const localExpiresAtMs = now + localTtl;
     if (result.source !== 'remote' || !result.expiresAt) {
@@ -1009,7 +1058,7 @@ export class RemoteAgentEngineModelCatalogService {
         kind: 'agent_engine_model_catalog',
         publicKeys,
         requireSignature: true,
-        now: this.options.now,
+        now: this.currentTimeMs(),
       });
       if (!trust.trusted || !trust.payload) {
         return this.bundledResult(trust.diagnostics.map((entry) => diagnostic(

@@ -10,6 +10,14 @@ import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const invokeDomain = vi.hoisted(() => vi.fn());
+const openBudgetSettings = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../src/renderer/services/ipcService', () => ({
+  default: { invokeDomain },
+}));
+vi.mock('../../../src/renderer/utils/budgetSettingsNavigation', () => ({ openBudgetSettings }));
+
 vi.mock('../../../src/renderer/services/cronClient', () => ({
   cronClient: {
     listJobs: vi.fn().mockResolvedValue([]),
@@ -45,6 +53,13 @@ import { CronCenterPanel } from '../../../src/renderer/components/features/cron/
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 
 beforeEach(() => {
+  invokeDomain.mockReset();
+  invokeDomain.mockResolvedValue({
+    scopes: {
+      unattended: { currentCost: 2.5, maxBudget: 3, usagePercentage: 2.5 / 3 },
+    },
+  });
+  openBudgetSettings.mockReset();
   useCronStore.setState({
     jobs: [],
     stats: null,
@@ -86,6 +101,18 @@ describe('CronCenterPanel 页级滚动契约（D0）', () => {
 });
 
 describe('CronCenterPanel 双 tab（批C4 WorkBuddy 式改造）', () => {
+  it('只读展示无人值守预算，并只提供去主家设置的跳转', async () => {
+    render(<CronCenterPanel onClose={() => undefined} />);
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('automation-budget-usage').textContent).toContain('$2.50 / $3.00');
+    });
+    screen.getByTestId('automation-budget-settings-link').click();
+    expect(openBudgetSettings).toHaveBeenCalledOnce();
+    expect(invokeDomain).toHaveBeenCalledWith('domain:settings', 'getBudgetStatus');
+    expect(invokeDomain).not.toHaveBeenCalledWith('domain:settings', 'setBudgetConfig', expect.anything());
+  });
+
   it('默认落「定时任务」：模板区与任务工作台可见，收件箱隐藏（保活挂载）', () => {
     render(<CronCenterPanel onClose={() => undefined} />);
     expect(screen.getByTestId('cron-center-tab-jobs').getAttribute('aria-selected')).toBe('true');

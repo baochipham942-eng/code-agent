@@ -138,6 +138,7 @@ export function wireBudgetService(
         currentCost: status.currentCost,
         maxBudget: status.maxBudget,
         usagePercentage: status.usagePercentage,
+        ...(status.resetTime ? { resetTime: status.resetTime.getTime() } : {}),
         message: status.message,
       });
     });

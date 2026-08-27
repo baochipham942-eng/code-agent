@@ -737,10 +737,13 @@ export interface ProviderFallbackEvent {
 }
 
 export interface BudgetAlertEvent {
+  scope: 'foreground' | 'unattended';
   level: 'warning' | 'blocked';
   currentCost: number;
   maxBudget: number;
   usagePercentage: number;
+  /** Epoch milliseconds for the next automatic budget-period reset. */
+  resetTime?: number;
   message?: string;
 }
 

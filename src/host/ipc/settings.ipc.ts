@@ -435,11 +435,18 @@ async function handleSetIntegration(
 
 async function handleGetBudgetStatus(): Promise<unknown> {
   const { getBudgetService } = await import('../services/core/budgetService');
-  const service = getBudgetService();
+  const service = getBudgetService('foreground');
+  const unattendedService = getBudgetService('unattended');
+  const foregroundStatus = service.checkBudget();
+  const unattendedStatus = unattendedService.checkBudget();
   // 状态（含用量百分比/告警级别）+ 配置（enabled/上限）+ 缓存节省 + token 用量汇总一并回给 UI
   return {
-    ...service.checkBudget(),
+    ...foregroundStatus,
     config: service.getConfig(),
+    scopes: {
+      foreground: { ...foregroundStatus, config: service.getConfig() },
+      unattended: { ...unattendedStatus, config: unattendedService.getConfig() },
+    },
     cacheSavings: service.getCacheSavingsSummary(),
     cacheCostSplit: service.getCacheCostSplitSummary(),
     tokenUsage: service.getTokenUsageSummary(),

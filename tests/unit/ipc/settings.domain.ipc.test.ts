@@ -31,6 +31,10 @@ const env = vi.hoisted(() => ({
     getCacheCostSplitSummary: vi.fn(() => ({ cachedTokens: 0, uncachedTokens: 0, cachedCostUsd: 0, uncachedCostUsd: 0, cachedCostPercent: 0, uncachedCostPercent: 0 })),
     getTokenUsageSummary: vi.fn(() => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })),
   },
+  unattendedBudget: {
+    checkBudget: vi.fn(() => ({ used: 2 })),
+    getConfig: vi.fn(() => ({ enabled: true, maxBudget: 3 })),
+  },
   syncBudget: vi.fn(),
   saveIcon: vi.fn(async (..._a: unknown[]) => ({ icon: 'saved' })),
   resolveIcon: vi.fn(async (..._a: unknown[]) => 'resolved'),
@@ -60,7 +64,7 @@ vi.mock('../../../src/host/services/core/secureStorage', () => ({
   getSecureStorage: () => env.secureStorage,
 }));
 vi.mock('../../../src/host/services/core/budgetService', () => ({
-  getBudgetService: () => env.budget,
+  getBudgetService: (scope?: string) => scope === 'unattended' ? env.unattendedBudget : env.budget,
   syncBudgetServiceFromConfig: (...a: unknown[]) => env.syncBudget(...a),
 }));
 vi.mock('../../../src/host/platform', () => ({
@@ -436,6 +440,10 @@ describe('budget', () => {
     expect((await callSettings('getBudgetStatus')).data).toEqual({
       used: 0,
       config: { enabled: true },
+      scopes: {
+        foreground: { used: 0, config: { enabled: true } },
+        unattended: { used: 2, config: { enabled: true, maxBudget: 3 } },
+      },
       cacheSavings: { cacheReadTokens: 0, cacheCreationTokens: 0, netSavedUsd: 0 },
       cacheCostSplit: { cachedTokens: 0, uncachedTokens: 0, cachedCostUsd: 0, uncachedCostUsd: 0, cachedCostPercent: 0, uncachedCostPercent: 0 },
       tokenUsage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
@@ -443,8 +451,12 @@ describe('budget', () => {
   });
 
   it('setBudgetConfig 从 {budget:{...}} 提取并同步运行时', async () => {
-    await callSettings('setBudgetConfig', { budget: { enabled: true, limit: 100 } });
-    expect(env.config.setBudgetConfig).toHaveBeenCalledWith({ enabled: true, limit: 100 });
+    const scoped = {
+      foreground: { enabled: true, maxBudget: 12.5, resetPeriodHours: 24 },
+      unattended: { enabled: true, maxBudget: 4.25, resetPeriodHours: 24 },
+    };
+    await callSettings('setBudgetConfig', { budget: scoped });
+    expect(env.config.setBudgetConfig).toHaveBeenCalledWith(scoped);
     expect(env.syncBudget).toHaveBeenCalled();
   });
 

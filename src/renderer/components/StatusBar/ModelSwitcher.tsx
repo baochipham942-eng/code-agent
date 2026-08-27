@@ -64,6 +64,7 @@ import {
   EngineScopedModelPanel,
   type EngineMenuView,
 } from './EngineScopedModelPanel';
+import { loadEnginePanelData } from './enginePanelLoader';
 import { SearchToggleSection } from './SearchToggleSection';
 
 export { buildModelSwitcherEngineSelection } from './modelSwitcherHelpers';
@@ -196,6 +197,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [engineSources, setEngineSources] = useState<AgentEngineSourceDescriptor[]>(() => engineSourcesCache);
   const [engineSourcesLoading, setEngineSourcesLoading] = useState(engineSourcesCache.length === 0);
   const [engineCatalog, setEngineCatalog] = useState<AgentEngineModelCatalog | null>(null);
+  // 首次打开外部引擎面板时，effect 尚未起请求的首帧也必须是加载态，不能闪失败态。
+  const [engineCatalogLoading, setEngineCatalogLoading] = useState(true);
+  const [engineCatalogFailed, setEngineCatalogFailed] = useState(false);
+  const [enginePanelReloadKey, setEnginePanelReloadKey] = useState(0);
   const [busyEngineId, setBusyEngineId] = useState<string | null>(null);
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const session = useSessionStore((s) =>
@@ -314,39 +319,37 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       .finally(() => setSettingsLoaded(true));
   }, [open]);
 
-  // 引擎来源与模型能力均由 host 探测/目录返回；renderer 不硬编码营销状态或模型。
+  // 引擎来源与模型目录独立返回：来源通常只要几毫秒，不陪冷目录一起等待。
   useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    Promise.all([
-      window.domainAPI?.invoke<AgentEngineSourceDescriptor[]>(
+    const domainAPI = window.domainAPI;
+    if (!open || !domainAPI) return;
+    setEngineCatalogFailed(false);
+    return loadEnginePanelData({
+      listSources: () => domainAPI.invoke<AgentEngineSourceDescriptor[]>(
         IPC_DOMAINS.AGENT_ENGINE,
         'listSources',
         {},
       ),
-      window.domainAPI?.invoke<AgentEngineModelCatalogResult>(
+      listModels: () => domainAPI.invoke<AgentEngineModelCatalogResult>(
         IPC_DOMAINS.AGENT_ENGINE,
         'listModels',
         {},
       ),
-    ]).then(([sourceResult, catalogResult]) => {
-      if (cancelled) return;
-      if (sourceResult?.success && Array.isArray(sourceResult.data)) {
-        engineSourcesCache = sourceResult.data;
-        setEngineSources(sourceResult.data);
-      }
-      if (catalogResult?.success && catalogResult.data?.catalog) {
-        setEngineCatalog(catalogResult.data.catalog);
-      }
-      setEngineSourcesLoading(false);
-    }).catch(() => {
-      // 探测失败时保留当前会话触发器；不伪造来源或模型。
-      if (!cancelled) setEngineSourcesLoading(false);
+      onSourcesLoadingChange: (loading) => {
+        setEngineSourcesLoading(loading && engineSourcesCache.length === 0);
+      },
+      onCatalogLoadingChange: setEngineCatalogLoading,
+      onSourcesLoaded: (sources) => {
+        engineSourcesCache = sources;
+        setEngineSources(sources);
+      },
+      onCatalogLoaded: (result) => {
+        setEngineCatalog(result.catalog);
+        setEngineCatalogFailed(false);
+      },
+      onCatalogFailed: () => setEngineCatalogFailed(true),
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
+  }, [enginePanelReloadKey, open]);
 
   useEffect(() => {
     setEngineMenuView('models');
@@ -799,7 +802,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         <EngineScopedModelPanel
           view="engines"
           sources={engineSources}
-          sourcesLoading={engineSourcesLoading}
+          engineSourcesLoading={engineSourcesLoading}
+          modelCatalogLoading={engineCatalogLoading}
+          modelCatalogFailed={engineCatalogFailed}
           catalog={engineCatalog}
           currentEngine={engine.kind}
           currentModel={engine.model}
@@ -810,13 +815,16 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           onSelectEngine={(source) => void handleSelectEngine(source)}
           onSelectExternalModel={(kind, model) => void handleSelectExternalModel(kind, model)}
           onOpenSettings={openSettingsTab}
+          onRetryCatalog={() => setEnginePanelReloadKey((key) => key + 1)}
         />
       ) : (
         <>
           <EngineScopedModelPanel
             view="models"
             sources={engineSources}
-            sourcesLoading={engineSourcesLoading}
+            engineSourcesLoading={engineSourcesLoading}
+            modelCatalogLoading={engineCatalogLoading}
+            modelCatalogFailed={engineCatalogFailed}
             catalog={engineCatalog}
             currentEngine={engine.kind}
             currentModel={engine.model}
@@ -827,6 +835,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             onSelectEngine={(source) => void handleSelectEngine(source)}
             onSelectExternalModel={(kind, model) => void handleSelectExternalModel(kind, model)}
             onOpenSettings={openSettingsTab}
+            onRetryCatalog={() => setEnginePanelReloadKey((key) => key + 1)}
           />
           {engine.kind === 'native' && (
             <div className="border-b border-zinc-700/50">

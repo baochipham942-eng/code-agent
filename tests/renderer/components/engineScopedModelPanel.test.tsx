@@ -4,14 +4,17 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
+  AgentEngineKind,
   AgentEngineModelCatalog,
   AgentEngineSourceDescriptor,
 } from '../../../src/shared/contract/agentEngine';
+import { AGENT_ENGINE_LABELS } from '../../../src/shared/contract/agentEngine';
 import {
   EngineScopedModelPanel,
   filterEngineSources,
 } from '../../../src/renderer/components/StatusBar/EngineScopedModelPanel';
 import { shouldDismissModelSwitcher } from '../../../src/renderer/components/StatusBar/ModelSwitcher';
+import { loadEnginePanelData } from '../../../src/renderer/components/StatusBar/enginePanelLoader';
 
 const sources: AgentEngineSourceDescriptor[] = [
   ['native', 'native', 'Neo', true],
@@ -88,6 +91,88 @@ const noop = () => {};
 afterEach(cleanup);
 
 describe('engine-scoped model panel', () => {
+  it('renders a truthful skeleton while the model catalog is loading', () => {
+    render(
+      <EngineScopedModelPanel
+        view="models"
+        sources={sources}
+        modelCatalogLoading
+        catalog={null}
+        currentEngine="kimi_code_acp"
+        query=""
+        onQueryChange={noop}
+        onViewChange={noop}
+        onSelectEngine={noop}
+        onSelectExternalModel={noop}
+        onOpenSettings={noop}
+        onRetryCatalog={noop}
+      />,
+    );
+
+    expect(document.querySelector('[data-current-external-model]')?.textContent)
+      .toBe('正在读取模型列表…');
+    expect(document.querySelectorAll('[data-model-catalog-skeleton="search"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-model-catalog-skeleton="row"]')).toHaveLength(3);
+    expect(document.body.textContent).not.toContain('不可用');
+    expect(document.body.textContent).not.toContain('验证');
+    expect(document.body.textContent).not.toContain('kimi_code_acp');
+  });
+
+  it('renders a real retry and settings exit after catalog loading fails', () => {
+    const onRetryCatalog = vi.fn();
+    const onOpenSettings = vi.fn();
+    render(
+      <EngineScopedModelPanel
+        view="models"
+        sources={sources}
+        modelCatalogFailed
+        catalog={null}
+        currentEngine="kimi_code_acp"
+        query=""
+        onQueryChange={noop}
+        onViewChange={noop}
+        onSelectEngine={noop}
+        onSelectExternalModel={noop}
+        onOpenSettings={onOpenSettings}
+        onRetryCatalog={onRetryCatalog}
+      />,
+    );
+
+    expect(screen.getByText(
+      '暂时连不上 Kimi Code (ACP)，模型列表加载失败。请检查网络后点「重试」；若多次失败，可到「设置 → 引擎」重新连接。',
+    )).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(onRetryCatalog).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: '设置 → 引擎' }));
+    expect(onOpenSettings).toHaveBeenCalledWith('agentEngine');
+  });
+
+  it.each(Object.entries(AGENT_ENGINE_LABELS).filter(([kind]) => kind !== 'native'))(
+    'never exposes internal engine kind %s when source discovery has not returned',
+    (kind, label) => {
+      render(
+        <EngineScopedModelPanel
+          view="models"
+          sources={[]}
+          engineSourcesLoading
+          modelCatalogLoading
+          catalog={null}
+          currentEngine={kind as AgentEngineKind}
+          query=""
+          onQueryChange={noop}
+          onViewChange={noop}
+          onSelectEngine={noop}
+          onSelectExternalModel={noop}
+          onOpenSettings={noop}
+          onRetryCatalog={noop}
+        />,
+      );
+
+      expect(screen.getByText(label)).toBeTruthy();
+      expect(document.body.textContent).not.toContain(kind);
+    },
+  );
+
   it('supports a searchable, scrollable list with ten engine sources', () => {
     const onQueryChange = vi.fn();
     const { rerender } = render(
@@ -102,6 +187,7 @@ describe('engine-scoped model panel', () => {
         onSelectEngine={noop}
         onSelectExternalModel={noop}
         onOpenSettings={noop}
+        onRetryCatalog={noop}
       />,
     );
 
@@ -122,6 +208,7 @@ describe('engine-scoped model panel', () => {
         onSelectEngine={noop}
         onSelectExternalModel={noop}
         onOpenSettings={noop}
+        onRetryCatalog={noop}
       />,
     );
     expect(document.querySelectorAll('[data-engine-source]')).toHaveLength(1);
@@ -143,10 +230,13 @@ describe('engine-scoped model panel', () => {
         onSelectEngine={noop}
         onSelectExternalModel={onSelectExternalModel}
         onOpenSettings={noop}
+        onRetryCatalog={noop}
       />,
     );
 
     expect(document.querySelectorAll('[data-external-model]')).toHaveLength(2);
+    expect(document.querySelector('[data-model-catalog-loading]')).toBeNull();
+    expect(document.querySelector('[data-model-catalog-unavailable]')).toBeNull();
     fireEvent.click(screen.getByText('GPT-5.4 Mini'));
     expect(onSelectExternalModel).toHaveBeenCalledWith('codex_cli', 'gpt-5.4-mini');
   });
@@ -166,6 +256,7 @@ describe('engine-scoped model panel', () => {
         onSelectEngine={noop}
         onSelectExternalModel={onSelectExternalModel}
         onOpenSettings={noop}
+        onRetryCatalog={noop}
       />,
     );
 
@@ -187,6 +278,7 @@ describe('engine-scoped model panel', () => {
         onSelectEngine={noop}
         onSelectExternalModel={noop}
         onOpenSettings={noop}
+        onRetryCatalog={noop}
       />,
     );
 
@@ -214,6 +306,7 @@ describe('engine-scoped model panel', () => {
         onSelectEngine={noop}
         onSelectExternalModel={onSelectExternalModel}
         onOpenSettings={noop}
+        onRetryCatalog={noop}
       />,
     );
 
@@ -241,6 +334,7 @@ describe('engine-scoped model panel', () => {
         onSelectEngine={noop}
         onSelectExternalModel={onSelectExternalModel}
         onOpenSettings={noop}
+        onRetryCatalog={noop}
       />,
     );
 
@@ -249,6 +343,42 @@ describe('engine-scoped model panel', () => {
     expect(document.querySelectorAll('[data-external-model]')).toHaveLength(1);
     fireEvent.click(screen.getByText('Grok 4.5'));
     expect(onSelectExternalModel).toHaveBeenCalledWith('grok_cli', 'grok-4.5');
+  });
+});
+
+describe('engine panel request independence', () => {
+  it('settles fast engine sources before the cold model catalog returns', async () => {
+    let resolveSources: ((value: unknown) => void) | undefined;
+    let resolveCatalog: ((value: unknown) => void) | undefined;
+    const listSources = vi.fn(() => new Promise((resolve) => { resolveSources = resolve; }));
+    const listModels = vi.fn(() => new Promise((resolve) => { resolveCatalog = resolve; }));
+    const onSourcesLoadingChange = vi.fn();
+    const onCatalogLoadingChange = vi.fn();
+    const onSourcesLoaded = vi.fn();
+    const onCatalogLoaded = vi.fn();
+
+    const cancel = loadEnginePanelData({
+      listSources: listSources as never,
+      listModels: listModels as never,
+      onSourcesLoadingChange,
+      onCatalogLoadingChange,
+      onSourcesLoaded,
+      onCatalogLoaded,
+      onCatalogFailed: vi.fn(),
+    });
+
+    expect(listSources).toHaveBeenCalledTimes(1);
+    expect(listModels).toHaveBeenCalledTimes(1);
+    resolveSources?.({ success: true, data: sources });
+    await vi.waitFor(() => expect(onSourcesLoaded).toHaveBeenCalledWith(sources));
+    expect(onSourcesLoadingChange).toHaveBeenLastCalledWith(false);
+    expect(onCatalogLoadingChange).not.toHaveBeenCalledWith(false);
+    expect(onCatalogLoaded).not.toHaveBeenCalled();
+
+    resolveCatalog?.({ success: true, data: { catalog, source: 'local_discovery', diagnostics: [] } });
+    await vi.waitFor(() => expect(onCatalogLoaded).toHaveBeenCalledTimes(1));
+    expect(onCatalogLoadingChange).toHaveBeenLastCalledWith(false);
+    cancel();
   });
 });
 

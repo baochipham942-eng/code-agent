@@ -1,11 +1,14 @@
 import React, { useMemo } from 'react';
-import { ArrowLeft, Check, ChevronRight, Search, Settings, Terminal } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, RefreshCw, Search, Settings, Terminal } from 'lucide-react';
 import type {
   AgentEngineKind,
   AgentEngineModelCatalog,
   AgentEngineSourceDescriptor,
   ExternalAgentEngineKind,
 } from '@shared/contract/agentEngine';
+import { AGENT_ENGINE_LABELS } from '@shared/contract/agentEngine';
+import { useI18n } from '../../hooks/useI18n';
+import { Button } from '../primitives/Button';
 
 export type EngineMenuView = 'models' | 'engines';
 
@@ -13,7 +16,11 @@ export interface EngineScopedModelPanelProps {
   view: EngineMenuView;
   sources: readonly AgentEngineSourceDescriptor[];
   /** 首次探测尚未返回（本机 CLI 探测要数秒）：列表区显示检测中而不是空白 */
-  sourcesLoading?: boolean;
+  engineSourcesLoading?: boolean;
+  /** 当前引擎的真实模型目录仍在读取。 */
+  modelCatalogLoading?: boolean;
+  /** 模型目录请求已经结束且失败；与加载中严格分开。 */
+  modelCatalogFailed?: boolean;
   catalog: AgentEngineModelCatalog | null;
   currentEngine: AgentEngineKind;
   currentModel?: string;
@@ -24,6 +31,7 @@ export interface EngineScopedModelPanelProps {
   onSelectEngine: (source: AgentEngineSourceDescriptor) => void;
   onSelectExternalModel: (kind: ExternalAgentEngineKind, model: string) => void;
   onOpenSettings: (tab: 'model' | 'agentEngine') => void;
+  onRetryCatalog: () => void;
 }
 
 // 无官方 logo 资产的引擎用「首字母 + 品牌色瓦片」区分彼此：满屏同一个终端图标
@@ -41,7 +49,7 @@ const ENGINE_TILE_PALETTE = [
 function engineTileClass(manifestId: string): string {
   let hash = 0;
   for (let i = 0; i < manifestId.length; i += 1) hash = (hash * 31 + manifestId.charCodeAt(i)) | 0;
-  return ENGINE_TILE_PALETTE[Math.abs(hash) % ENGINE_TILE_PALETTE.length]!;
+  return ENGINE_TILE_PALETTE[Math.abs(hash) % ENGINE_TILE_PALETTE.length] ?? ENGINE_TILE_PALETTE[0];
 }
 
 function EngineIcon({ source }: { source: AgentEngineSourceDescriptor }) {
@@ -87,7 +95,9 @@ export function filterEngineSources(
 export function EngineScopedModelPanel({
   view,
   sources,
-  sourcesLoading = false,
+  engineSourcesLoading = false,
+  modelCatalogLoading = false,
+  modelCatalogFailed = false,
   catalog,
   currentEngine,
   currentModel,
@@ -98,8 +108,12 @@ export function EngineScopedModelPanel({
   onSelectEngine,
   onSelectExternalModel,
   onOpenSettings,
+  onRetryCatalog,
 }: EngineScopedModelPanelProps) {
+  const { t } = useI18n();
+  const copy = t.engineModelPanel;
   const currentSource = sourceForKind(sources, currentEngine);
+  const currentEngineLabel = AGENT_ENGINE_LABELS[currentEngine];
   const filteredSources = useMemo(() => filterEngineSources(sources, query), [query, sources]);
   const externalCatalog = currentEngine === 'native'
     ? undefined
@@ -159,7 +173,7 @@ export function EngineScopedModelPanel({
           </label>
         </div>
         <div className="max-h-72 overflow-y-auto px-1 pb-1" data-engine-scroll-list>
-          {sourcesLoading && filteredSources.length === 0 ? (
+          {engineSourcesLoading && filteredSources.length === 0 ? (
             <div className="px-3 py-4 text-center text-xs text-zinc-500" data-engine-sources-loading>
               正在检测本机可用的执行引擎…
             </div>
@@ -242,23 +256,34 @@ export function EngineScopedModelPanel({
     );
   }
 
-  const modelSelection = currentSource?.modelSelection ?? 'unavailable';
+  const modelSelection = currentSource?.modelSelection
+    ?? (externalCatalog ? 'runtime_catalog' : 'unavailable');
+  const catalogIsLoading = modelCatalogLoading || (engineSourcesLoading && !currentSource);
+  const catalogIsUnavailable = modelSelection === 'runtime_catalog'
+    ? modelCatalogFailed || !externalCatalog
+    : modelSelection === 'unavailable';
+  let modelSubtitle = copy.clientManagedModel;
+  if (catalogIsLoading) {
+    modelSubtitle = copy.loadingSubtitle;
+  } else if (catalogIsUnavailable) {
+    modelSubtitle = copy.loadFailedSubtitle;
+  } else if (modelSelection === 'runtime_catalog') {
+    modelSubtitle = selectedExternalModel
+      ? `${selectedExternalModel.label} · ${selectedExternalModel.id}`
+      : copy.noDetectedModel;
+  }
   return (
     <div data-external-engine-model-panel>
       <div className="flex items-center gap-2 border-b border-zinc-700/50 px-3 py-2">
         {currentSource ? <EngineIcon source={currentSource} /> : null}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-xs font-medium text-zinc-100">{currentSource?.label ?? currentEngine}</div>
+          <div className="truncate text-xs font-medium text-zinc-100">{currentEngineLabel}</div>
           <div
             className="truncate text-[10px] text-zinc-500"
             data-current-external-model
             title={selectedExternalModel?.id}
           >
-            {modelSelection === 'runtime_catalog'
-              ? selectedExternalModel
-                ? `${selectedExternalModel.label} · ${selectedExternalModel.id}`
-                : '尚未探测到模型'
-              : '官方客户端管理模型'}
+            {modelSubtitle}
           </div>
         </div>
         <button
@@ -270,7 +295,29 @@ export function EngineScopedModelPanel({
         </button>
       </div>
 
-      {modelSelection === 'runtime_catalog' && externalCatalog ? (
+      {catalogIsLoading ? (
+        <div className="px-3 py-3" data-model-catalog-loading role="status">
+          <span className="sr-only">{copy.loadingSubtitle}</span>
+          <div
+            aria-hidden="true"
+            className="relative mb-3 h-8 overflow-hidden rounded-md bg-zinc-600/25"
+            data-model-catalog-skeleton="search"
+          >
+            <div className="animate-shimmer absolute inset-0" />
+          </div>
+          {[62, 46, 54].map((width) => (
+            <div
+              key={width}
+              aria-hidden="true"
+              className="relative my-3 h-5 overflow-hidden rounded-md bg-zinc-600/25"
+              style={{ width: `${width}%` }}
+              data-model-catalog-skeleton="row"
+            >
+              <div className="animate-shimmer absolute inset-0" />
+            </div>
+          ))}
+        </div>
+      ) : modelSelection === 'runtime_catalog' && externalCatalog ? (
         <>
           <div className="px-2 py-2">
             <label className="relative block">
@@ -279,7 +326,7 @@ export function EngineScopedModelPanel({
                 autoFocus
                 value={query}
                 onChange={(event) => onQueryChange(event.target.value)}
-                placeholder={`搜索 ${currentSource?.label ?? '当前引擎'} 模型…`}
+                placeholder={copy.searchPlaceholder.replace('{engine}', currentEngineLabel)}
                 data-external-model-search-input
                 className="w-full rounded border border-zinc-700 bg-zinc-900 py-1 pl-7 pr-2 text-xs text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-zinc-600"
               />
@@ -297,7 +344,7 @@ export function EngineScopedModelPanel({
               >
                 <span className="flex items-center gap-2">
                   <span className="font-medium">{model.label}</span>
-                  {model.recommended ? <span className="text-[10px] text-badge-accent">推荐</span> : null}
+                  {model.recommended ? <span className="text-[10px] text-badge-accent">{copy.recommended}</span> : null}
                   {currentModel === model.id ? <Check className="ml-auto h-3.5 w-3.5 text-badge-accent" /> : null}
                 </span>
                 <span className="mt-0.5 block text-[10px] text-zinc-500">
@@ -306,29 +353,41 @@ export function EngineScopedModelPanel({
               </button>
             ))}
             {filteredModels.length === 0 ? (
-              <div className="px-3 py-4 text-center text-xs text-zinc-500">没有探测到匹配模型</div>
+              <div className="px-3 py-4 text-center text-xs text-zinc-500">{copy.noMatchingModel}</div>
             ) : null}
           </div>
         </>
       ) : modelSelection === 'client_default' ? (
         <div className="px-3 py-5 text-center" data-client-default-model>
-          <div className="text-xs font-medium text-zinc-200">由官方客户端选择默认模型</div>
+          <div className="text-xs font-medium text-zinc-200">{copy.clientDefaultTitle}</div>
           <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">
-            当前客户端没有返回可信模型目录，Neo 不会虚构可选模型。
+            {copy.clientDefaultDescription}
           </div>
         </div>
       ) : (
-        <div className="px-3 py-5 text-center">
+        <div className="px-3 py-5 text-center" data-model-catalog-unavailable>
           <Settings className="mx-auto h-5 w-5 text-zinc-500" />
-          <div className="mt-2 text-xs font-medium text-zinc-200">模型能力暂不可用</div>
-          <div className="mt-1 text-[11px] text-zinc-500">请先完成客户端与 Adapter 验证。</div>
-          <button
-            type="button"
-            onClick={() => onOpenSettings('agentEngine')}
-            className="mt-3 rounded bg-zinc-700 px-3 py-1.5 text-xs text-zinc-100 hover:bg-zinc-600"
-          >
-            去执行引擎设置
-          </button>
+          <div className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+            {copy.loadFailedDescription.replace('{engine}', currentEngineLabel)}
+          </div>
+          <div className="mt-3 flex items-center justify-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={onRetryCatalog}
+              leftIcon={<RefreshCw className="h-3 w-3" />}
+              data-model-catalog-retry
+            >
+              {copy.retry}
+            </Button>
+            <button
+              type="button"
+              onClick={() => onOpenSettings('agentEngine')}
+              className="rounded px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100"
+            >
+              {copy.openEngineSettings}
+            </button>
+          </div>
         </div>
       )}
     </div>

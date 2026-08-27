@@ -68,6 +68,7 @@ export function readTurnOutcome(event: TraceLedgerEvent): TurnOutcomeStamp | nul
 
 interface ToolDispatchRow {
   toolName: string;
+  toolAction?: string | null;
   success: boolean;
   durationMs: number | null;
   error: string | null;
@@ -181,6 +182,7 @@ function readToolDispatch(event: TraceLedgerEvent): ToolDispatchRow | null {
   const toolName = str(data.toolName) ?? '?';
   return {
     toolName,
+    toolAction: str(data.toolAction),
     success: data.success === true,
     durationMs: num(data.durationMs),
     error: str(data.error),

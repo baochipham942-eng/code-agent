@@ -53,7 +53,7 @@ function copyModelDescriptor(value) {
   return Object.fromEntries(allowed.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]));
 }
 
-export function buildSlotlessConfig(source) {
+export function buildSlotlessConfig(source, tokenRhythmKey) {
   const sourceModels = source?.models;
   const sourceProvider = sourceModels?.providers?.[PROVIDER_ID];
   const sourceModel = sourceProvider?.models?.[MODEL_ID];
@@ -69,6 +69,7 @@ export function buildSlotlessConfig(source) {
     if (sourceProvider[key] !== undefined) provider[key] = sourceProvider[key];
   }
   provider.enabled = true;
+  provider.apiKey = tokenRhythmKey;
   provider.model = MODEL_ID;
   provider.models = { [MODEL_ID]: copyModelDescriptor(sourceModel) };
 
@@ -192,12 +193,24 @@ export function readDogfoodCredentials(secretFile = DEFAULT_SECRET_FILE) {
     fail(`dogfood credential file must have mode 600: ${secretFile}`);
   }
   const values = parseDogfoodEnv(readFileSync(secretFile, 'utf8'));
+  const tokenRhythmKey = values.NEO_DOGFOOD_TR_KEY?.trim();
+  if (!tokenRhythmKey) fail('缺 NEO_DOGFOOD_TR_KEY');
+  if (!tokenRhythmKey.startsWith('sk_tr_')) {
+    fail('NEO_DOGFOOD_TR_KEY must start with sk_tr_');
+  }
   const email = values.NEO_DOGFOOD_EMAIL?.trim();
   const password = values.NEO_DOGFOOD_PASSWORD;
   if (!email || !password) {
     fail('dogfood credential file must define NEO_DOGFOOD_EMAIL and NEO_DOGFOOD_PASSWORD');
   }
-  return { email, password };
+  return { email, password, tokenRhythmKey };
+}
+
+export function maskTokenRhythmKey(value) {
+  if (typeof value !== 'string' || !value.startsWith('sk_tr_') || value.length < 10) {
+    fail('cannot mask invalid NEO_DOGFOOD_TR_KEY');
+  }
+  return `sk_tr_…${value.slice(-4)}`;
 }
 
 function writePrivateJson(filePath, value) {
@@ -292,11 +305,40 @@ async function invokeAuth(url, token, action, payload) {
 }
 
 async function signInDogfood(url, token, credentials) {
-  const result = await invokeAuth(url, token, 'signInEmail', credentials);
+  const result = await invokeAuth(url, token, 'signInEmail', {
+    email: credentials.email,
+    password: credentials.password,
+  });
   if (!result?.success) fail('dogfood account sign-in was rejected');
   const status = await invokeAuth(url, token, 'getStatus');
   if (!status?.isAuthenticated || status?.user?.email !== credentials.email) {
     fail('dogfood account did not reach authenticated state');
+  }
+}
+
+async function assertConfiguredModel(url, token) {
+  const response = await fetch(`${url}/api/domain/settings/get`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ payload: null }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const body = await response.json().catch(() => null);
+  const settings = body?.success ? body.data : null;
+  const provider = settings?.models?.providers?.[PROVIDER_ID];
+  const model = provider?.models?.[MODEL_ID];
+  if (
+    !response.ok
+    || !provider
+    || provider.enabled === false
+    || provider.apiKeyConfigured !== true
+    || !model
+    || model.enabled === false
+  ) {
+    fail(`model self-check failed: ${PROVIDER_ID}/${MODEL_ID} is not configured`);
   }
 }
 
@@ -341,7 +383,7 @@ function assertDisposableDataDir(dataDir) {
   return resolved;
 }
 
-async function stopRun(dataDirArg) {
+export async function stopRun(dataDirArg) {
   const dataDir = path.resolve(dataDirArg || process.env.NEO_VERIFY_DATA_DIR || '');
   if (!dataDirArg && !process.env.NEO_VERIFY_DATA_DIR) fail('--stop requires NEO_VERIFY_DATA_DIR');
   if (!existsSync(dataDir)) fail(`slotless data directory does not exist: ${dataDir}`);
@@ -370,7 +412,7 @@ async function startRun(ticketArg, reuseDist) {
   const ticket = sanitizeTicket(ticketArg);
   const credentials = readDogfoodCredentials();
   const sourceConfig = JSON.parse(readFileSync(DEFAULT_SOURCE_CONFIG, 'utf8'));
-  const config = buildSlotlessConfig(sourceConfig);
+  const config = buildSlotlessConfig(sourceConfig, credentials.tokenRhythmKey);
   const webServer = ensureDist(reuseDist);
   const dataDir = mkdtempSync(path.join(os.tmpdir(), `neo-verify-${ticket}-`));
   chmodSync(dataDir, 0o700);
@@ -406,6 +448,7 @@ async function startRun(ticketArg, reuseDist) {
     await waitForHealth(child, url);
     const token = await readServerToken(dataDir);
     await signInDogfood(url, token, credentials);
+    await assertConfiguredModel(url, token);
     writePrivateJson(path.join(dataDir, STATE_FILE), {
       version: 1,
       ticket,
@@ -417,6 +460,8 @@ async function startRun(ticketArg, reuseDist) {
       startedAt: new Date().toISOString(),
     });
     child.unref();
+    console.log(`NEO_VERIFY_KEY=${maskTokenRhythmKey(credentials.tokenRhythmKey)}`);
+    console.log(`NEO_VERIFY_MODEL=${PROVIDER_ID}/${MODEL_ID}`);
     console.log(`NEO_VERIFY_URL=${url}`);
     console.log(`NEO_VERIFY_DATA_DIR=${dataDir}`);
   } catch (error) {

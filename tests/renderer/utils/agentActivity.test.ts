@@ -11,8 +11,8 @@ describe('describeLastToolStep', () => {
     }, zh)).toBe('读取了 /repo/spec.md');
   });
 
-  it('uses the neutral i18n waiting sentence when no step exists', () => {
-    expect(describeLastToolStep(undefined, zh)).toBe('正在整理任务…');
+  it('does not invent activity when no tool step exists', () => {
+    expect(describeLastToolStep(undefined, zh)).toBeUndefined();
   });
 
   it('humanizes agent conversation through the same vocabulary', () => {

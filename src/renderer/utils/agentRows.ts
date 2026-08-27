@@ -13,7 +13,7 @@ import type { AgentTreeNode, AgentTreeNodeStatus } from '@shared/contract/agentT
 import type { LastToolStep, Task, TaskStatus } from '@shared/contract/backgroundTask';
 
 /** 用户可见四态 + 待命（预选名单）。 */
-export type AgentRowStatus = 'working' | 'done' | 'failed' | 'waiting' | 'standby';
+export type AgentRowStatus = 'working' | 'done' | 'failed' | 'cancelled' | 'waiting' | 'standby';
 
 type AgentRowKind = 'expert' | 'agent' | 'task';
 
@@ -24,7 +24,7 @@ export interface MemberRowSource {
   name: string;
   profession?: string;
   icon?: string;
-  status: 'standby' | 'running' | 'completed' | 'failed';
+  status: 'standby' | 'running' | 'completed' | 'failed' | 'cancelled';
   isLead: boolean;
   standbyKey?: string;
 }
@@ -38,7 +38,7 @@ export interface AgentRow {
   icon?: string;
   isLead: boolean;
   status: AgentRowStatus;
-  /** 当前一句（最近工具步人话）；调用方负责空档回落「正在整理…」。 */
+  /** 当前一句（最近工具步人话）；没有真实工具步时缺省。 */
   activity?: string;
   failureReason?: string;
   stoppable: boolean;
@@ -54,7 +54,8 @@ export interface AgentRow {
  * 改这张表就是改用户看到的口径，别在组件里另写映射。
  *   working：还在干活（含排队/暂停/状态不明——宁可说在干，别说死）
  *   waiting：卡住了在等人（waiting_input/stalled/blocked）
- *   done：正常完成，或被人停掉（cancelled 不是失败）
+ *   done：正常完成
+ *   cancelled：被用户或父任务停掉
  *   failed：失败/被强杀/只剩日志/过期/孤儿
  */
 const AGENT_ROW_STATUS_TABLE: Record<string, AgentRowStatus> = {
@@ -67,7 +68,7 @@ const AGENT_ROW_STATUS_TABLE: Record<string, AgentRowStatus> = {
   stalled: 'waiting',
   blocked: 'waiting',
   completed: 'done',
-  cancelled: 'done',
+  cancelled: 'cancelled',
   failed: 'failed',
   killed: 'failed',
   'dead-log-only': 'failed',
@@ -97,7 +98,7 @@ export function buildAgentRows(input: {
   members: MemberRowSource[];
   nodes: AgentTreeNode[];
   tasks: Task[];
-  describeStep: (step: LastToolStep | undefined) => string;
+  describeStep: (step: LastToolStep | undefined) => string | undefined;
 }): AgentRow[] {
   const { members, nodes, tasks, describeStep } = input;
   const rows: AgentRow[] = [];
@@ -113,9 +114,9 @@ export function buildAgentRows(input: {
       icon: member.icon,
       isLead: member.isLead,
       status: memberRowStatus(member.status),
-      // 空档回落「正在整理…」（describeStep(undefined) 的兜底句）；若 agentTree 里有
-      // 同名节点，下面会把它真实的最近工具步覆盖上来
-      activity: member.status === 'standby' ? undefined : describeStep(undefined),
+      // 没有真实工具步就不声称正在做事；若 agentTree 里有同名节点，下面会把
+      // 它真实的最近工具步补上来。
+      activity: undefined,
       stoppable: member.status === 'running',
       member,
     });

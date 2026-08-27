@@ -5,6 +5,7 @@ import {
   isInternalStreamTool,
   getToolFilePath,
 } from '../../../src/renderer/utils/humanizeToolStep';
+import { humanizeInterruptedToolAction } from '../../../src/renderer/utils/streamInterruptionPresentation';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 
@@ -182,12 +183,12 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
 
   it('unknown tool failed: 失败行主文案不暴露工具名', () => {
     const line = humanizeToolStep('MemoryWrite', { action: 'write', filename: 'x.md' }, zh, undefined, true);
-    expect(line).toBe('执行了一个步骤');
+    expect(line).toBe('执行一个步骤');
     expect(line).not.toContain('MemoryWrite');
   });
 
   it('unknown tool failed (en): 失败行主文案不暴露工具名', () => {
-    expect(humanizeToolStep('MemoryWrite', {}, en, undefined, true)).toBe('Ran a step');
+    expect(humanizeToolStep('MemoryWrite', {}, en, undefined, true)).toBe('Run a step');
   });
 
   // 钉住原规矩：isInternalStreamTool 命中的纯内部动作（ToolSearch）仍不带内部名进主行。
@@ -210,6 +211,71 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     ['tmeetMeetingSearch', {}, 'tmeetMeetingSearch', '搜索了会议'],
   ] as const)('schema stepLabel: %s 使用本地化人话句', (name, args, stepLabel, expected) => {
     expect(humanizeToolStep(name, args, zh, 'Use internal tool', false, stepLabel)).toBe(expected);
+  });
+
+  it.each([
+    ['tmeetMeetingCreate', {}, 'tmeetMeetingCreate', '创建会议'],
+    ['tmeetMeetingSearch', {}, 'tmeetMeetingSearch', '搜索会议'],
+    ['mcp__github__create_issue', {}, undefined, '调用 github 的 create_issue'],
+    ['mcp__lark__im_v1_message_create', {}, undefined, '在飞书发一条消息'],
+    ['Read', { file_path: 'report.md' }, undefined, '读取 report.md'],
+    ['Bash', { command: 'npm test' }, undefined, '运行命令 npm test'],
+    ['todo_write', {}, undefined, '更新待办清单'],
+  ] as const)('failed %s 使用意图式，不声称动作已经完成', (name, args, stepLabel, expected) => {
+    expect(humanizeToolStep(name, args, zh, '执行了这个动作', true, stepLabel)).toBe(expected);
+  });
+
+  it('failed 类目忽略模型写成过去时的 shortDescription', () => {
+    expect(humanizeToolStep('WebFetch', { url: 'https://example.com' }, zh, '打开了网页', true))
+      .toBe('打开 https://example.com');
+  });
+
+  it('failed 类目在英文界面也使用 intent phrasing', () => {
+    expect(humanizeToolStep('mcp__lark__im_v1_message_create', {}, en, 'Sent the message', true))
+      .toBe('Send a message in Lark');
+    expect(humanizeToolStep('Bash', { command: 'npm test' }, en, undefined, true))
+      .toBe('Run command npm test');
+  });
+
+  it.each([
+    ['Write', { file_path: 'notes.md' }, '写入 notes.md'],
+    ['Edit', { file_path: 'src/index.ts' }, '编辑 src/index.ts'],
+    ['Grep', { pattern: 'TODO' }, '搜索 TODO'],
+    ['list_directory', { path: 'src' }, '查看 src 目录'],
+    ['WebSearch', { query: 'Neo' }, '搜索网页 Neo'],
+    ['spawn_agent', { description: '核对清单' }, '启动代理 — 核对清单'],
+    ['wait_agent', {}, '给代理发条消息'],
+    ['teammate', { name: '劳拉' }, '正在跟 劳拉 说话'],
+    ['delegate_task', { description: '核对清单' }, '派出后台任务：核对清单'],
+    ['task_status', {}, '查看后台任务进度'],
+    ['steer_task', {}, '调整后台任务'],
+    ['cancel_task', {}, '取消后台任务'],
+    ['plan_update', {}, '更新计划'],
+    ['plan_read', {}, '查看计划'],
+    ['TaskManager', {}, '更新任务'],
+    ['Skill', { command: 'lark-doc' }, '使用技能 lark-doc'],
+    ['screenshot', {}, '截一张图'],
+    ['computer_use', { action: 'click', selector: '#save' }, '电脑操作 click #save'],
+    ['browser_action', { action: 'click', selector: '#save' }, '浏览器 click #save'],
+    ['AskUserQuestion', {}, '向你提一个问题'],
+    ['memory_store', {}, '记住一条信息'],
+    ['memory_search', {}, '搜索记忆'],
+    ['ToolSearch', {}, '查找可用工具'],
+    ['some_future_tool', {}, '执行一个步骤'],
+  ] as const)('failed category matrix: %s', (name, args, expected) => {
+    expect(humanizeToolStep(name, args, zh, undefined, true)).toBe(expected);
+  });
+
+  it('interrupted 连接器和 MCP 复用同一套意图式', () => {
+    expect(humanizeInterruptedToolAction({
+      name: 'tmeetMeetingCreate',
+      arguments: {},
+      stepLabel: 'tmeetMeetingCreate',
+    }, zh)).toBe('创建会议');
+    expect(humanizeInterruptedToolAction({
+      name: 'mcp__github__create_issue',
+      arguments: {},
+    }, zh)).toBe('调用 github 的 create_issue');
   });
 });
 

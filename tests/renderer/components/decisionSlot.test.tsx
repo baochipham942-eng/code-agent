@@ -179,7 +179,8 @@ describe('DecisionSlot', () => {
     expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain(
       'max-h-[40vh]',
     );
-    expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('shadow-2xl');
+    expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('shadow-md');
+    expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('dark:shadow-2xl');
 
     fireEvent.click(screen.getByRole('button', { name: /仍然执行/u }));
 

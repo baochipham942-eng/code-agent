@@ -97,7 +97,7 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
     return (
       <div
         data-testid="swarm-launch-history"
-        className="rounded-lg border-2 border-border-subtle bg-surface-primary p-3 shadow-2xl"
+        className="rounded-lg border-2 border-border-subtle bg-surface-primary p-3 shadow-md dark:shadow-2xl"
       >
         <div className="flex items-center gap-2">
           <GitBranch className="w-4 h-4 text-badge-accent" />

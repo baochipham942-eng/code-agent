@@ -92,7 +92,7 @@ const ScreenshotLightbox: React.FC<{ path: string; onClose: () => void }> = ({ p
     <img
       src={resolveScreenshotUrl(path)}
       alt="Screenshot"
-      className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+      className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-md dark:shadow-2xl"
       onClick={(e) => e.stopPropagation()}
     />
   </div>

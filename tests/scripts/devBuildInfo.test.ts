@@ -5,7 +5,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
@@ -37,39 +37,23 @@ function functionBody(script: string, name: string): string {
 describe('dev build-info install gate', () => {
   it('refuses to install while the target slot app is running (fail-closed)', () => {
     const script = readInstallScript();
+    const guardLibrary = readFileSync(
+      resolve(repoRoot, 'scripts/lib/tauri-slot-process-guard.sh'),
+      'utf8',
+    );
     const lines = script.split('\n');
-    const guardLine = lines.findIndex((line) => line === 'refuse_if_slot_in_use');
+    const guardLine = lines.findIndex((line) => line.startsWith('refuse_if_tauri_slot_in_use '));
     const killLine = lines.findIndex((line) => line.startsWith('pkill -f "$APP_NAME.app/Contents/MacOS/"'));
     // 护栏必须排在杀实例/重装之前：任何槽都可能被爸或别的会话在用，先杀再装等于把人踢下线。
-    expect(guardLine, 'refuse_if_slot_in_use 调用行').toBeGreaterThan(0);
+    expect(guardLine, 'refuse_if_tauri_slot_in_use 调用行').toBeGreaterThan(0);
     expect(killLine, 'pkill 行').toBeGreaterThan(0);
     expect(killLine, `pkill(${killLine}) 必须在护栏(${guardLine})之后`).toBeGreaterThan(guardLine);
-
-    const fn = functionBody(script, 'refuse_if_slot_in_use');
-    const slot = `Agent Neo Dev Test ${process.pid}`;
-    const fake = spawn(
-      'bash',
-      ['-c', `exec -a "/Applications/${slot}.app/Contents/MacOS/code-agent-tauri" sleep 30`],
-      { stdio: 'ignore' },
-    );
-    const run = (env: Record<string, string>) =>
-      spawnSync('bash', ['-c', `${fn}\nrefuse_if_slot_in_use`], {
-        env: { ...process.env, APP_NAME: slot, ...env },
-        encoding: 'utf8',
-      });
-    try {
-      // pgrep 要能看到 exec -a 改过的 argv[0]，给它一点时间起来。
-      spawnSync('sleep', ['0.5']);
-      const busy = run({});
-      expect(busy.status).toBe(1);
-      expect(busy.stderr).toContain('拒绝安装');
-      expect(busy.stderr).toContain(slot);
-      expect(run({ NEO_INSTALL_FORCE: '1' }).status).toBe(0);
-    } finally {
-      fake.kill('SIGKILL');
-    }
-    spawnSync('sleep', ['0.5']);
-    expect(run({}).status).toBe(0);
+    expect(script).toContain('source "$SCRIPT_DIR/lib/tauri-slot-process-guard.sh"');
+    expect(lines[guardLine]).toContain('"/Applications/$APP_NAME.app" "$DEV_APP_WEB_PORT"');
+    expect(guardLibrary).toContain('pgrep -x "$process_name"');
+    expect(guardLibrary).toContain('lsof -t -nP -iTCP:"$port" -sTCP:LISTEN');
+    expect(guardLibrary).toContain('local current="$$"');
+    expect(guardLibrary).not.toContain('pgrep -f');
   });
 
   it('finalizes the dev bundle from the shared Tauri resource declarations', () => {

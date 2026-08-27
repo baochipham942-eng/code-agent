@@ -13,6 +13,10 @@
 // ============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  hasInteractiveUi as realHasInteractiveUi,
+  setBrowserWindowInteractionProbe,
+} from '../../../../../src/host/platform/windowBridge';
 import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 
 // Hoisted mocks: ipcHost.handle / AppWindow.getAllWindows / webContents.send
@@ -33,6 +37,7 @@ ipcMainHandleMock.mockImplementation(
 
 vi.mock('../../../../../src/host/platform', () => ({
   ipcHost: { handle: ipcMainHandleMock },
+  hasInteractiveUi: hasInteractiveRendererMock,
   AppWindow: { getAllWindows: getAllWindowsMock, hasInteractiveRenderer: hasInteractiveRendererMock },
 }));
 vi.mock('../../../../../src/host/services/infra/notificationService', () => ({
@@ -76,6 +81,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  setBrowserWindowInteractionProbe(null);
 });
 
 describe('AskUserQuestion schema', () => {
@@ -325,6 +331,10 @@ describe('AskUserQuestion CLI fallback', () => {
       expect(result.output).toContain('2. B - bbb');
       expect(result.output).toContain('⚠️ 用户无法回答问题');
       expect(result.output).toContain('不要创建、修改或删除任何文件');
+      expect(result.meta).toMatchObject({
+        permissionDecision: 'deny',
+        permissionDecisionReason: expect.stringContaining('无头规则'),
+      });
     }
   });
 
@@ -355,6 +365,10 @@ describe('AskUserQuestion CLI fallback', () => {
     if (result.ok) {
       expect(result.output).toContain('[用户未响应 - CLI 模式无法交互]');
       expect(result.output).toContain('[确认] 要继续吗');
+      expect(result.meta).toMatchObject({
+        permissionDecision: 'deny',
+        permissionDecisionReason: expect.stringContaining('无头规则'),
+      });
     }
   });
 });
@@ -374,11 +388,13 @@ describe('AskUserQuestion renderer response', () => {
   it('交互环境挂 10 分钟不失败，仍可作答回传', async () => {
     vi.useFakeTimers();
     getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
-    hasInteractiveRendererMock.mockReturnValue(true);
+    setBrowserWindowInteractionProbe(() => true);
+    hasInteractiveRendererMock.mockImplementation(realHasInteractiveUi);
 
     const handler = await askUserQuestionModule.createHandler();
     const promise = handler.execute({ questions }, makeCtx(), allowAll);
     await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(notifyNeedsInputMock).toHaveBeenCalledTimes(1);
 
     const marker = Symbol('pending');
     await expect(Promise.race([promise, Promise.resolve(marker)])).resolves.toBe(marker);
@@ -409,8 +425,12 @@ describe('AskUserQuestion renderer response', () => {
       const result = await promise;
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.code).toBe('DOMAIN_ERROR');
-        expect(result.error).toContain('等你回答超时');
+        expect(result.code).toBe('USER_INPUT_TIMEOUT');
+        expect(result.error).toContain('等你决定超过 5 分钟');
+        expect(result.meta).toMatchObject({
+          permissionDecision: 'deny',
+          permissionDecisionReason: expect.stringContaining('无头规则'),
+        });
       }
     } finally {
       endVoiceQuestionSession('headless-question-session');

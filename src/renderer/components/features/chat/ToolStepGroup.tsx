@@ -3,12 +3,17 @@
 // 默认折叠，点击展开显示原 ToolCallDisplay 列表
 // ============================================================================
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { ChevronRight, ChevronDown, RotateCcw } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
+import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
 import type { PermissionRequest, ToolCall, ToolLiveOutput } from '@shared/contract';
+import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
 import { findConnectorIdForToolName } from '@shared/contract/workbenchTools';
-import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
+import {
+  ToolCallDisplay,
+  type ToolReceiptPresentation,
+} from './MessageBubble/ToolCallDisplay/index';
 import { summarizeTool } from './MessageBubble/ToolCallDisplay/summarizers';
 import { computeBashPreviewLines } from './MessageBubble/ToolCallDisplay/bashOutputPreview';
 import {
@@ -41,6 +46,9 @@ interface ToolStepGroupProps {
   defaultExpanded?: boolean;
   /** ADR-043：turn 仍在流式输出中——驱动中间档（Truncated）的自动展示 */
   isStreamingTurn?: boolean;
+  /** 由 TurnCard 按 sourceNodeId 归并到本组的外部执行回执。 */
+  receipts?: TurnArtifactOwnershipItem[];
+  receiptTimestamp?: number;
 }
 
 const EMPTY_RESOLVED_PERMISSION_REQUESTS: PermissionRequest[] = [];
@@ -50,6 +58,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   sessionId,
   defaultExpanded = false,
   isStreamingTurn = false,
+  receipts = [],
+  receiptTimestamp,
 }) => {
   const { t } = useI18n();
   const sendPrompt = useMessageActionStore((state) => state.sendPrompt);
@@ -153,6 +163,28 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       })
       .filter((x): x is ToolCall => !!x);
   }, [nodes]);
+  const receiptCacheRef = useRef(new Map<string, ToolReceiptPresentation>());
+  const receiptByToolCallId = (() => {
+    const liveToolCallIds = new Set(toolCalls.map((toolCall) => toolCall.id));
+    for (const cachedToolCallId of receiptCacheRef.current.keys()) {
+      if (!liveToolCallIds.has(cachedToolCallId)) receiptCacheRef.current.delete(cachedToolCallId);
+    }
+    for (const item of receipts) {
+      const receipt = item.receipt;
+      if (!receipt || !item.sourceNodeId) continue;
+      const node = nodes.find((candidate) => candidate.id === item.sourceNodeId);
+      const toolCallId = node?.toolCall?.id;
+      if (!toolCallId) continue;
+      receiptCacheRef.current.set(toolCallId, {
+        status: receipt.status,
+        detail: receipt.detail,
+        sourceTool: receipt.sourceTool,
+        connector: receipt.connector,
+        createdAt: receiptTimestamp ?? node.timestamp,
+      });
+    }
+    return new Map(receiptCacheRef.current);
+  })();
   const interruptedNode = useMemo(
     () => nodes.find((node) => Boolean(
       node.toolCall
@@ -191,8 +223,22 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         : humanizedStep;
     const details = redactCredentialText(JSON.stringify(request.details, null, 2));
 
-    return [{ request, statusLabel, stepLabel, details, timedOut }];
+    return [{ request, statusLabel, stepLabel, details, timedOut, denied }];
   }), [nodes, resolvedPermissionRequests, t]);
+  const toolFailureCode = toolCalls.reduce<AgentFailureCode | null>((resolved, toolCall) => {
+    if (resolved || toolCall.result?.success !== false) return resolved;
+    return inferAgentFailureCode({
+      failureCode: toolCall.result.metadata?.failureCode,
+      toolResultCode: toolCall.result.metadata?.code,
+      defaultCode: AgentFailureCode.Unknown,
+    });
+  }, null);
+  const permissionOutcome = permissionEvidence.some(({ denied }) => denied)
+    || toolFailureCode === AgentFailureCode.PermissionDenied
+    ? t.outcomeWords['failed-approval-denied'].timeline
+    : permissionEvidence.some(({ timedOut }) => timedOut) || toolFailureCode === AgentFailureCode.Timeout
+      ? t.outcomeWords['failed-timeout'].timeline
+      : null;
   const planApproval = useMemo(
     () => toolCalls.map(getPlanApprovalRecord).find((record) => record !== null) ?? null,
     [toolCalls],
@@ -356,7 +402,16 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
             度量不同，同一行里基线实测差 1px（真实组件 web 量：现状 −1px，统一字体后 0px）。
             这不是 align-items 的问题——改 items-baseline 对它无效，必须统一字体栈。 */}
         {status !== 'ok' && (
-          <span className={`flex-shrink-0 font-mono ${getToolGroupStatusClass(status, hasEscalatedError)}`}>{getToolGroupStatusLabel(status, t)}</span>
+          <span className={`flex-shrink-0 font-mono ${getToolGroupStatusClass(status, hasEscalatedError)}`}>
+            {permissionOutcome?.label ?? getToolGroupStatusLabel(status, t)}
+            {(status === 'partial' || status === 'error') && (
+              <span className="ml-1 text-zinc-600">
+                · {permissionOutcome?.reason ?? (status === 'partial'
+                  ? t.outcomeWords['completed-with-warnings'].badge.reason
+                  : t.outcomeWords['failed-tool'].badge.reason)}
+              </span>
+            )}
+          </span>
         )}
         <span className="min-w-0 flex-1 truncate font-mono">{label}</span>
         {recoveredCount > 0 && (
@@ -367,7 +422,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
             {t.toolGroup.recovered}
           </span>
         )}
-        {status !== 'ok' && resultSummary && (
+        {status !== 'ok' && resultSummary && !permissionOutcome && (
           <span className="hidden max-w-[220px] truncate text-zinc-600 sm:inline">{resultSummary}</span>
         )}
         {status !== 'ok' && outputCount > 0 && (
@@ -375,7 +430,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
         {totalDuration && (
           <span
-            className="flex-shrink-0 text-[10px] text-zinc-600 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+            className="min-w-[4ch] flex-shrink-0 text-right text-[10px] text-zinc-600"
             title={t.toolGroup.durationTitle}
           >
             {totalDuration}
@@ -383,7 +438,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
       </button>
 
-      {permissionEvidence.map(({ request, statusLabel, stepLabel, details, timedOut }) => (
+      {permissionEvidence.map(({ request, statusLabel, stepLabel, details, timedOut, denied }) => (
         <div
           key={request.id}
           className="ml-4 flex items-start gap-2 pl-3 text-[11px] leading-5 text-zinc-500"
@@ -391,7 +446,11 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         >
           <details className="min-w-0 flex-1" data-testid="permission-decision-details">
             <summary className="cursor-pointer list-none truncate hover:text-zinc-300">
-              {statusLabel} · {stepLabel}
+              {denied
+                ? `${t.outcomeWords['failed-approval-denied'].timeline.label} · ${t.outcomeWords['failed-approval-denied'].timeline.reason} · ${stepLabel}`
+                : timedOut
+                  ? `${t.outcomeWords['failed-timeout'].timeline.label} · ${t.outcomeWords['failed-timeout'].timeline.reason} · ${stepLabel}`
+                  : `${statusLabel} · ${stepLabel}`}
             </summary>
             <pre className="mt-1 max-h-40 overflow-auto rounded-md border border-border-subtle bg-surface-primary px-2 py-1.5 text-[10px] leading-4 text-zinc-500">
               {details}
@@ -451,6 +510,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
                   sessionId,
                   messageId: nodes.find((node) => node.toolCall?.id === tc.id)?.messageId || tc.id,
                 }}
+                receipt={receiptByToolCallId.get(tc.id)}
               />
             </div>
           ))}
@@ -565,9 +625,9 @@ function isEmptySearchResult(toolCall: ToolCall): boolean {
 
 function getToolGroupStatusLabel(status: 'streaming' | 'partial' | 'error' | 'ok', t: Translations): string {
   if (status === 'streaming') return t.toolGroup.statusRunning;
-  if (status === 'partial') return t.toolGroup.statusPartial;
-  if (status === 'error') return t.toolGroup.statusFailed;
-  return t.toolGroup.statusCompleted;
+  if (status === 'partial') return t.outcomeWords['completed-with-warnings'].badge.label;
+  if (status === 'error') return t.outcomeWords['failed-tool'].badge.label;
+  return t.outcomeWords.completed.badge.label;
 }
 
 // hasEscalatedError=false（探索性失败，非用户需介入）一律用中性色，不顶红/顶黄——

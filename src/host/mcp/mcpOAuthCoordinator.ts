@@ -41,10 +41,14 @@ export interface McpOAuthCoordinatorOptions {
   openAuthorization?: (authUrl: URL, flow: McpOAuthFlow) => void | Promise<void>;
 }
 
-export class McpOAuthAuthorizationDeclinedError extends Error {
+class McpOAuthAuthorizationDeclinedError extends Error {
+  readonly permissionDecision = 'deny' as const;
+  readonly permissionDecisionReason: string;
+
   constructor(message = 'MCP OAuth authorization declined') {
     super(message);
     this.name = 'McpOAuthAuthorizationDeclinedError';
+    this.permissionDecisionReason = message;
   }
 }
 
@@ -150,7 +154,7 @@ async function openAuthorizationWithConsent(authUrl: URL, flow: McpOAuthFlow): P
     import('../platform/nativeShell'),
   ]);
   const redirectHost = new URL(flow.redirectUrl).host;
-  const consentGranted = await requestMcpOAuthConsent({
+  const consent = await requestMcpOAuthConsent({
     serverName: flow.serverName,
     serverUrl: flow.serverUrl ?? '',
     configSource: flow.configSource,
@@ -159,7 +163,9 @@ async function openAuthorizationWithConsent(authUrl: URL, flow: McpOAuthFlow): P
     redirectHost,
   });
 
-  if (!consentGranted) throw new McpOAuthAuthorizationDeclinedError();
+  if (!consent.granted) {
+    throw new McpOAuthAuthorizationDeclinedError(consent.permissionDecisionReason);
+  }
   await openExternal(authUrl.toString());
 }
 

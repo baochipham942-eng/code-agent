@@ -20,6 +20,7 @@ ipcMainHandleMock.mockImplementation((channel: string, fn: (e: unknown, r: unkno
 
 vi.mock('../../../../src/host/platform', () => ({
   ipcHost: { handle: ipcMainHandleMock },
+  hasInteractiveUi: hasInteractiveRendererMock,
   AppWindow: { getAllWindows: getAllWindowsMock, hasInteractiveRenderer: hasInteractiveRendererMock },
 }));
 vi.mock('../../../../src/host/services/infra/notificationService', () => ({
@@ -193,7 +194,10 @@ describe('promptUserInChat', () => {
       await vi.advanceTimersByTimeAsync(5 * 60_000);
       const marker = Symbol('pending');
       await expect(Promise.race([promise, Promise.resolve(marker)]))
-        .resolves.toEqual({ status: 'timeout' });
+        .resolves.toMatchObject({
+          status: 'timeout',
+          reason: expect.stringContaining('无头规则'),
+        });
     } finally {
       ctrl.abort();
       endVoiceQuestionSession('headless-voice-session');

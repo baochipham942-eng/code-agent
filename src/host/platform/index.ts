@@ -21,7 +21,13 @@ export { type Electron } from './ipcTypes';
 export { ipcHost, handlers, eventListeners } from './ipcRegistry';
 
 // Window bridge
-export { AppWindow, broadcastToRenderer, onRendererPush, setBrowserWindowInteractionProbe } from './windowBridge';
+export {
+  AppWindow,
+  broadcastToRenderer,
+  hasInteractiveUi,
+  onRendererPush,
+  setBrowserWindowInteractionProbe,
+} from './windowBridge';
 export type { WindowLike, WebContentsSender } from './windowBridge';
 
 // Shell

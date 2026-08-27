@@ -1,4 +1,6 @@
 // ============================================================================
+
+import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 // Task-status 面板域词条（PlanningPanel / RewindPanel / TaskPanel 各卡 / SkillsPanel /
 // ContextHealthPanel）—— zh/en 同文件相邻维护。独立文件避免 zh.ts/en.ts 撞
 // max-lines(1000) 门；与既有 t.taskPanel 命名空间并存（组件里两个命名空间并用）。
@@ -50,9 +52,9 @@ export const taskStatusPanelsZh = {
     },
     runWorkbench: {
       statusRunning: '进行中',
-      statusCompleted: '完成',
+      statusCompleted: outcomeWordsZh.outcomeWords.completed.badge.label,
       statusBlocked: '阻塞',
-      statusCancelled: '已取消',
+      statusCancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].badge.label,
       statusPending: '待开始',
       statusWaitingApproval: '等你确认',
       statusUsingTools: '使用工具中',
@@ -175,9 +177,9 @@ export const taskStatusPanelsZh = {
       phasePlanning: '编排中',
       phaseWaitingApproval: '等审批',
       phaseExecuting: '执行中',
-      phaseCompleted: '已完成',
-      phaseFailed: '失败',
-      phaseCancelled: '已取消',
+      phaseCompleted: outcomeWordsZh.outcomeWords.completed.badge.label,
+      phaseFailed: outcomeWordsZh.outcomeWords['failed-unknown'].badge.label,
+      phaseCancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].badge.label,
       opTruncate: '截断',
       opSnip: '裁剪',
       opCompact: '压缩',
@@ -387,9 +389,9 @@ export const taskStatusPanelsEn: typeof taskStatusPanelsZh = {
     },
     runWorkbench: {
       statusRunning: 'Running',
-      statusCompleted: 'Completed',
+      statusCompleted: outcomeWordsEn.outcomeWords.completed.badge.label,
       statusBlocked: 'Blocked',
-      statusCancelled: 'Cancelled',
+      statusCancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].badge.label,
       statusPending: 'Pending',
       statusWaitingApproval: 'Waiting for you to confirm',
       statusUsingTools: 'Using tools',
@@ -512,9 +514,9 @@ export const taskStatusPanelsEn: typeof taskStatusPanelsZh = {
       phasePlanning: 'Planning',
       phaseWaitingApproval: 'Awaiting approval',
       phaseExecuting: 'Executing',
-      phaseCompleted: 'Completed',
-      phaseFailed: 'Failed',
-      phaseCancelled: 'Cancelled',
+      phaseCompleted: outcomeWordsEn.outcomeWords.completed.badge.label,
+      phaseFailed: outcomeWordsEn.outcomeWords['failed-unknown'].badge.label,
+      phaseCancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].badge.label,
       opTruncate: 'Truncate',
       opSnip: 'Snip',
       opCompact: 'Compact',

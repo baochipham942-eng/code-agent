@@ -10,7 +10,7 @@ import type { Client } from '@modelcontextprotocol/client';
 // 2. Translates the MCP form schema into a UI prompt sent via IPC
 // 3. Waits for the user response and returns it as an ElicitResult
 // ============================================================================
-import { AppWindow, ipcHost } from '../platform';
+import { AppWindow, hasInteractiveUi, ipcHost } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
@@ -19,6 +19,14 @@ import type {
   MCPElicitationResponse,
   ElicitationFieldSchema,
 } from '../../shared/contract';
+import {
+  deniedDecisionMetadata,
+  headlessDecisionTimeoutReason,
+  markDecisionRequestExpired,
+  notifyDecisionNeeded,
+  notifyIfLateDecisionResponse,
+} from '../interaction/userDecision';
+import { beginPendingMcpInteraction } from './mcpPendingInteraction';
 
 const logger = createLogger('MCPElicitation', { lane: 'mcp' });
 
@@ -49,6 +57,7 @@ function registerElicitationResponseHandler(): void {
           action: response.action,
         });
       } else {
+        notifyIfLateDecisionResponse(response.requestId);
         logger.warn('Received elicitation response for unknown request', {
           requestId: response.requestId,
         });
@@ -111,28 +120,29 @@ export function registerElicitationHandler(
     if (!mainWindow) {
       // CLI mode: no UI available, decline the request
       logger.warn('No window available for elicitation, declining', { serverName });
-      return { action: 'decline' as const };
+      const reason = '当前运行环境没有可投递的交互界面，MCP 输入请求已按无头规则安全拒绝。';
+      return { action: 'decline' as const, content: deniedDecisionMetadata(reason) };
     }
 
     mainWindow.webContents.send(IPC_CHANNELS.MCP_ELICITATION_REQUEST, elicitationRequest);
 
-    // Desktop notification when app is not focused
-    try {
-      const { notificationService } = await import('../services/infra/notificationService');
-      notificationService.notifyNeedsInput({
-        sessionId: '',
-        title: 'MCP 服务器需要输入',
-        body: formParams.message,
-      });
-    } catch { /* ignore */ }
+    notifyDecisionNeeded({
+      title: 'MCP 服务器需要输入',
+      body: formParams.message,
+    });
 
     // Wait for user response with timeout
-    const timeoutMs = INTERACTION_TIMEOUTS.MCP_ELICITATION;
+    const interactive = hasInteractiveUi();
+    const timeoutMs = interactive
+      ? INTERACTION_TIMEOUTS.PARKED_APPROVAL
+      : INTERACTION_TIMEOUTS.MCP_ELICITATION;
+    const endPendingInteraction = beginPendingMcpInteraction(serverName);
 
     try {
       const response = await new Promise<MCPElicitationResponse>((resolve, reject) => {
         const timeout = setTimeout(() => {
           pendingElicitations.delete(requestId);
+          markDecisionRequestExpired(requestId, 'MCP 输入请求');
           logger.warn('Elicitation timed out', { serverName, requestId, timeoutMs });
           reject(new Error('Elicitation timeout - no response from user'));
         }, timeoutMs);
@@ -147,7 +157,12 @@ export function registerElicitationHandler(
       };
     } catch {
       // Timeout or error — return cancel to MCP server
-      return { action: 'cancel' as const };
+      const reason = interactive
+        ? '等待 MCP 输入超过 24 小时，停车请求已按安全兜底取消。'
+        : headlessDecisionTimeoutReason(timeoutMs);
+      return { action: 'cancel' as const, content: deniedDecisionMetadata(reason) };
+    } finally {
+      endPendingInteraction();
     }
   });
 

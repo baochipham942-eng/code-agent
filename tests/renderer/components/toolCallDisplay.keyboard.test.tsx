@@ -62,12 +62,14 @@ describe('ToolCallDisplay keyboard interaction', () => {
     expect(row.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('reveals the collapsed result summary when focus is within the tool group', () => {
+  it('keeps the collapsed result summary on the action row without hover-gated blank space', () => {
     const { container } = render(
       <ToolCallDisplay toolCall={makeToolCall()} index={0} total={1} />,
     );
 
-    expect(container.querySelector('.group-focus-within\\:opacity-100')).toBeTruthy();
+    expect(container.textContent).toContain('Read 1 lines');
+    expect(container.querySelector('.group-focus-within\\:opacity-100')).toBeNull();
+    expect(container.querySelector('.opacity-0')).toBeNull();
   });
 
   it('collapses AskUserQuestion answers to one summary line and expands the existing Q&A', () => {

@@ -69,43 +69,154 @@ function receiptNode(): TraceNode {
   };
 }
 
-function receiptTurn(status: TraceTurn['status']): TraceTurn {
+function tmeetToolNode(
+  id: string,
+  stepLabel: 'tmeetMeetingListUpcoming' | 'tmeetMeetingListEnded',
+  result: 'running' | 'succeeded' | 'failed',
+): TraceNode {
   return {
-    turnNumber: 1,
-    turnId: 'turn-receipts',
-    nodes: [receiptNode()],
-    status,
-    startTime: 1_700_000_000_000,
-    endTime: status === 'streaming' ? undefined : 1_700_000_001_000,
+    id,
+    type: 'tool_call',
+    content: '',
+    timestamp: 1_777_244_700_000,
+    toolCall: {
+      id: `call-${id}`,
+      name: 'tmeetMeetingList',
+      args: { scope: stepLabel === 'tmeetMeetingListEnded' ? 'ended' : 'upcoming' },
+      stepLabel,
+      ...(result === 'running' ? {} : {
+        result: result === 'succeeded' ? '{"meetings":[]}' : 'service unavailable',
+        success: result === 'succeeded',
+      }),
+    },
   };
 }
 
-describe('聊天流「已执行」区', () => {
+function tmeetReceiptNode(): TraceNode {
+  const node = receiptNode();
+  return {
+    ...node,
+    id: 'turn-tmeet-artifacts',
+    timestamp: 1_777_244_700_000,
+    turnTimeline: {
+      ...node.turnTimeline!,
+      id: 'turn-tmeet-artifacts',
+      timestamp: 1_777_244_700_000,
+      artifactOwnership: [
+        {
+          kind: 'artifact',
+          role: 'receipt',
+          label: '待开始/进行中的腾讯会议',
+          ownerKind: 'tool',
+          ownerLabel: 'tmeetMeetingList',
+          artifactId: 'receipt-upcoming',
+          sourceNodeId: 'tool-upcoming',
+          receipt: {
+            status: 'succeeded',
+            summary: '待开始/进行中的腾讯会议',
+            detail: '{"scope":"upcoming","meetings":[]}',
+            sourceTool: 'tmeetMeetingList',
+            connector: 'tmeet',
+          },
+        },
+        {
+          kind: 'artifact',
+          role: 'receipt',
+          label: '已结束的腾讯会议',
+          ownerKind: 'tool',
+          ownerLabel: 'tmeetMeetingList',
+          artifactId: 'receipt-ended',
+          sourceNodeId: 'tool-ended',
+          receipt: {
+            status: 'failed',
+            summary: '已结束的腾讯会议',
+            detail: 'service unavailable',
+            sourceTool: 'tmeetMeetingList',
+            connector: 'tmeet',
+          },
+        },
+      ],
+    },
+  };
+}
+
+function tmeetTurn(
+  phase: 'running' | 'completed' | 'persistence-gap' | 'persisted',
+): TraceTurn {
+  const terminal = phase === 'completed' || phase === 'persisted';
+  const includeReceipts = phase !== 'running' && phase !== 'persistence-gap';
+  return {
+    turnNumber: 1,
+    turnId: 'turn-tmeet',
+    nodes: [
+      tmeetToolNode('tool-upcoming', 'tmeetMeetingListUpcoming', terminal ? 'succeeded' : 'running'),
+      tmeetToolNode('tool-ended', 'tmeetMeetingListEnded', terminal ? 'failed' : 'running'),
+      ...(includeReceipts ? [tmeetReceiptNode()] : []),
+    ],
+    status: phase === 'running' || phase === 'persistence-gap' ? 'streaming' : 'completed',
+    startTime: 1_777_244_640_000,
+    endTime: phase === 'running' ? undefined : 1_777_244_700_000,
+  };
+}
+
+describe('聊天流回执并入步骤组', () => {
   beforeEach(() => useAppStore.setState({ language: 'zh' }));
   afterEach(() => {
     cleanup();
     useAppStore.setState({ language: 'zh' });
   });
 
-  it('本轮流式中隐藏尾块，完成后才展开回执', () => {
-    const { container, rerender } = render(<TurnCard turn={receiptTurn('streaming')} />);
+  it('有步骤组时不建独立回执块，展开行同行显示状态、连接器、时间和原始回执', () => {
+    const { container } = render(<TurnCard turn={tmeetTurn('completed')} />);
 
     expect(screen.queryByTestId('turn-receipts-toggle')).toBeNull();
     expect(screen.queryByTestId('turn-receipts-list')).toBeNull();
-    expect(container.textContent).not.toContain('已执行');
+    fireEvent.click(screen.getAllByRole('button')[0]!);
 
-    rerender(<TurnCard turn={receiptTurn('completed')} />);
+    expect(container.textContent).toContain('查了待开始/进行中的会议');
+    expect(container.textContent).toContain('查近 30 天已结束的会议');
+    expect(container.textContent).not.toContain('查了近 30 天已结束的会议');
+    // 时间按本机时区格式化（CI 是 UTC），只断言形状不断言具体时分。
+    expect(screen.getAllByTestId('tool-step-receipt-meta').map((node) => node.textContent)).toEqual([
+      expect.stringMatching(/^成功 · 腾讯会议 · \d{2}:\d{2}$/),
+      expect.stringMatching(/^失败 · 腾讯会议 · \d{2}:\d{2}$/),
+    ]);
+    expect(container.querySelector('[data-testid="tool-step-receipt-meta"]')?.className).toContain('truncate');
+    expect(container.querySelector('.opacity-0')).toBeNull();
 
-    expect(screen.getByTestId('turn-receipts-toggle')).toBeTruthy();
-    expect(screen.getByTestId('turn-receipts-list')).toBeTruthy();
-    expect(container.textContent).toContain('已执行');
+    fireEvent.click(screen.getAllByTestId('tool-call-row-tmeetMeetingList')[0]!);
+    expect(screen.getByTestId('tool-step-receipt-detail').textContent).toContain('"scope":"upcoming"');
   });
 
-  it('默认展开成功与失败回执，失败标红，全部收件人点开后才出现', () => {
+  it('事件回放只让步骤行从进行中前进到终态，收口与持久化回填全程不建独立回执块', () => {
+    const { container, rerender } = render(<TurnCard turn={tmeetTurn('running')} />);
+    expect(screen.queryByTestId('turn-receipts-toggle')).toBeNull();
+    fireEvent.click(screen.getAllByRole('button')[0]!);
+    expect(screen.queryAllByTestId('tool-step-receipt-meta')).toHaveLength(0);
+
+    rerender(<TurnCard turn={tmeetTurn('completed')} />);
+    expect(screen.queryByTestId('turn-receipts-toggle')).toBeNull();
+    expect(screen.getAllByTestId('tool-step-receipt-meta')).toHaveLength(2);
+    expect(container.querySelectorAll('.text-\\[var\\(--cc-success\\)\\]')).toHaveLength(1);
+
+    // 持久化列表接管前的短窗口：turn 再标 streaming、result/receipt 暂缺。
+    // 同一 call 已到过终态，步骤行仍保留终态和回执元信息，不能闪回进行中。
+    rerender(<TurnCard turn={tmeetTurn('persistence-gap')} />);
+    expect(screen.queryByTestId('turn-receipts-toggle')).toBeNull();
+    expect(screen.getAllByTestId('tool-step-receipt-meta')).toHaveLength(2);
+    expect(container.querySelectorAll('.text-\\[var\\(--cc-success\\)\\]')).toHaveLength(1);
+
+    rerender(<TurnCard turn={tmeetTurn('persisted')} />);
+    expect(screen.queryByTestId('turn-receipts-toggle')).toBeNull();
+    expect(screen.getAllByTestId('tool-step-receipt-meta')).toHaveLength(2);
+  });
+
+  it('没有对应步骤组的回执仍保留为操作记录，失败标红，详情按需展开', () => {
     const { container } = render(<TraceNodeRenderer node={receiptNode()} />);
 
     expect(screen.getByTestId('turn-receipts-list')).toBeTruthy();
-    expect(container.textContent).toContain('已执行');
+    expect(container.textContent).toContain('操作记录');
+    expect(container.textContent).not.toContain('已执行');
     expect(container.textContent).toContain('发给 zhang@example.com 等 3 人');
     expect(container.textContent).toContain('创建日历事件失败：评审会');
     expect(container.textContent).toContain('邮件');
@@ -123,11 +234,13 @@ describe('聊天流「已执行」区', () => {
     expect(container.textContent).toContain('wang@example.com');
   });
 
-  it('英文界面同时翻译 connector 与多人收件人摘要', () => {
+  it('英文界面的无匹配回执使用 Activity，并翻译 connector 与多人收件人摘要', () => {
     useAppStore.setState({ language: 'en' });
 
     const { container } = render(<TraceNodeRenderer node={receiptNode()} />);
 
+    expect(container.textContent).toContain('Activity');
+    expect(container.textContent).not.toContain('Executed');
     expect(container.textContent).toContain('Mail');
     expect(container.textContent).toContain('Calendar');
     expect(container.textContent).toContain('Reminders');

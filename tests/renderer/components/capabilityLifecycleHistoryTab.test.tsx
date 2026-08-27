@@ -66,7 +66,9 @@ describe('CapabilityLifecycleHistoryTab', () => {
     expect(screen.getByText('装上了 · 技能 · alpha')).toBeTruthy();
     expect(screen.getByText('卸下了 · 技能 · beta')).toBeTruthy();
     expect(screen.getByText('回滚了 · 技能 · gamma')).toBeTruthy();
-    expect(screen.getByText('失败了 · 技能 · delta')).toBeTruthy();
+    expect(screen.getByText('不可用 · 技能 · delta')).toBeTruthy();
+    expect(screen.getByTestId('capability-history-failure-reason').textContent)
+      .toBe('所需工具或运行环境不可用');
     expect(screen.getByText('ENOENT: broken skill dir')).toBeTruthy();
     // 实现词不许进 UI（「批次」是内部说法，同样不许上屏）
     expect(screen.queryByText(/lifecycle|turnTrace|rollback|账本|批次|batch/i)).toBeNull();
@@ -141,7 +143,7 @@ describe('CapabilityLifecycleHistoryTab', () => {
     ]);
     render(<CapabilityLifecycleHistoryTab />);
 
-    await waitFor(() => expect(screen.getByText('失败了 2 个能力')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('不可用 2 个能力')).toBeTruthy());
     fireEvent.click(screen.getByTestId('capability-history-fold-toggle'));
     const members = screen.getAllByTestId('capability-history-batch-member');
     expect(members).toHaveLength(2);

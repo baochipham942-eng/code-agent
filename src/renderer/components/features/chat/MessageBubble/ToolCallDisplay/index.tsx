@@ -37,6 +37,7 @@ import {
   resolveAgentActivityTarget,
 } from './delegationPresentation';
 import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
+import { getHumanToolLabel } from '../../../../../utils/toolHumanLabel';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -109,6 +110,15 @@ interface ToolCallDisplayProps {
   /** recovery snapshot 的工具从未执行，后续新 turn 在跑时也必须稳定保持 interrupted。 */
   statusOverride?: ToolStatus;
   interruptionReason?: StreamInterruptionReason;
+  receipt?: ToolReceiptPresentation;
+}
+
+export interface ToolReceiptPresentation {
+  status: 'succeeded' | 'failed';
+  detail?: string;
+  sourceTool: string;
+  connector?: string;
+  createdAt: number;
 }
 
 export function ToolCallDisplay({
@@ -119,6 +129,7 @@ export function ToolCallDisplay({
   mediaContext,
   statusOverride,
   interruptionReason,
+  receipt,
 }: ToolCallDisplayProps) {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const processingSessionIds = useAppStore(
@@ -149,13 +160,27 @@ export function ToolCallDisplay({
   }, [agentTree?.nodes, backgroundTasks, delegationTool, toolCall]);
 
   // Calculate status
-  const status: ToolStatus = useMemo(() => {
+  const derivedStatus: ToolStatus = useMemo(() => {
     if (statusOverride) return statusOverride;
+    if (receipt) return receipt.status === 'failed' ? 'error' : 'success';
     if (delegationPresentation?.state === 'working') return 'pending';
     if (delegationPresentation?.state === 'completed') return 'success';
     if (delegationPresentation?.state === 'failed') return 'error';
     return getToolStatus(toolCall, currentSessionId, processingSessionIds);
-  }, [delegationPresentation?.state, toolCall, currentSessionId, processingSessionIds, statusOverride]);
+  }, [delegationPresentation?.state, toolCall, currentSessionId, processingSessionIds, receipt, statusOverride]);
+  // 收口时内存消息会先终态，随后持久化列表回填；回填窗口里同一 call 可能短暂缺 result。
+  // 一旦同一 toolCall 到达成功/失败，renderer 不再把它降回 pending/interrupted。
+  const terminalStatusRef = useRef<{ toolCallId: string; status: ToolStatus | null }>({
+    toolCallId: toolCall.id,
+    status: null,
+  });
+  if (terminalStatusRef.current.toolCallId !== toolCall.id) {
+    terminalStatusRef.current = { toolCallId: toolCall.id, status: null };
+  }
+  if (receipt && terminalStatusRef.current.status === null && (derivedStatus === 'success' || derivedStatus === 'error')) {
+    terminalStatusRef.current.status = derivedStatus;
+  }
+  const status = terminalStatusRef.current.status ?? derivedStatus;
 
   // 探索性失败（工具未安装、非零退出码、超时等未分类错误）是 agent 试错的正常一部分，
   // 不是需要用户关注的错误——安静展示，跟成功行视觉权重接近。真正需要用户介入的错误
@@ -243,7 +268,16 @@ export function ToolCallDisplay({
               status={status}
               interruptionReason={interruptionReason}
               showDetailName={expanded}
+              hideStatusLabel={Boolean(receipt)}
             />}
+        {receipt && (
+          <ToolReceiptMeta receipt={receipt} />
+        )}
+        {!receipt && toolCall.result && !delegationPresentation && !expanded && !isBashTool(toolCall) && (
+          <span className="min-w-0 max-w-[220px] shrink truncate text-xs text-zinc-500">
+            <ResultSummary toolCall={toolCall} inline />
+          </span>
+        )}
       </div>
 
       {delegationPresentation && <DelegationReceipt presentation={delegationPresentation} />}
@@ -265,15 +299,11 @@ export function ToolCallDisplay({
         <BashOutputPreview toolCall={toolCall} status={status} quietError={quietError} />
       )}
 
-      {/* Result summary line - hidden by default, show on hover or when expanded */}
-      {toolCall.result && !delegationPresentation && !expanded && !isBashTool(toolCall) && (
-        <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-          <ResultSummary toolCall={toolCall} />
-        </div>
-      )}
-
       {/* Expanded details - indented under tool name */}
-      {expanded && (
+      {expanded && receipt && (
+        <ReceiptDetail receipt={receipt} toolCall={toolCall} />
+      )}
+      {expanded && !receipt && (
         <div className="ml-6 animate-fadeIn">
           <ToolDetails
             toolCall={toolCall}
@@ -286,6 +316,45 @@ export function ToolCallDisplay({
         </div>
       )}
     </div>
+  );
+}
+
+function ToolReceiptMeta({ receipt }: { receipt: ToolReceiptPresentation }) {
+  const { language, t } = useI18n();
+  const sourceLabel = getHumanToolLabel({
+    connector: receipt.connector,
+    toolName: receipt.sourceTool,
+    labels: t.receiptPresentation.humanToolLabels,
+  });
+  const time = new Date(receipt.createdAt).toLocaleTimeString(language === 'zh' ? 'zh-CN' : 'en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return (
+    <span
+      className="min-w-0 max-w-[220px] shrink truncate text-right text-[10px] text-zinc-500"
+      data-testid="tool-step-receipt-meta"
+      title={`${receipt.status === 'failed' ? t.receiptPresentation.failed : t.receiptPresentation.succeeded} · ${sourceLabel} · ${time}`}
+    >
+      {receipt.status === 'failed' ? t.receiptPresentation.failed : t.receiptPresentation.succeeded} · {sourceLabel} · {time}
+    </span>
+  );
+}
+
+function ReceiptDetail({ receipt, toolCall }: { receipt: ToolReceiptPresentation; toolCall: ToolCall }) {
+  const raw = receipt.detail || toolCall.result?.output || toolCall.result?.error;
+  if (!raw) return null;
+  return (
+    <pre
+      className={`ml-6 mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border px-2.5 py-2 text-[11px] leading-relaxed animate-fadeIn ${
+        receipt.status === 'failed'
+          ? 'border-red-500/20 bg-red-500/[0.05] text-badge-danger/80'
+          : 'border-white/[0.06] bg-black/15 text-zinc-400'
+      }`}
+      data-testid="tool-step-receipt-detail"
+    >
+      {raw}
+    </pre>
   );
 }
 

@@ -14,7 +14,7 @@ import type {
 } from '../../shared/contract/conversationEnvelope';
 import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import { readPersistedExpertThread } from '../../shared/contract/expertThread';
-import { broadcastSSE, sseClients } from '../helpers/sse';
+import { broadcastSSE } from '../helpers/sse';
 import { agentRunSseLimiter, extractRequestToken } from '../helpers/sseConnectionLimit';
 import { formatError } from '../helpers/utils';
 import {
@@ -86,6 +86,7 @@ import { steerOrQueue } from '../../host/runtime/steerQueueFence';
 import { QueuedInputRepository } from '../../host/services/core/repositories/QueuedInputRepository';
 import { getDatabase } from '../../host/services/core/databaseService';
 import { getLogsPath } from '../../host/platform/appPaths';
+import { hasInteractiveUi } from '../../host/platform';
 import { getProjectService } from '../../host/services/project/projectService';
 import { getAuthService } from '../../host/services/auth/authService';
 import {
@@ -1027,7 +1028,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         getSettings: () => configService.getSettings(),
         isDevModeAutoApproveEnabled: () => configService.isDevModeAutoApproveEnabled(),
         getExecutionTopology: () => 'main',
-        hasApprovalUi: () => sseClients.size > 0,
+        hasApprovalUi: () => hasInteractiveUi(),
         onEvent: (event) => runController.emitAgentEvent(event),
       });
       registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);

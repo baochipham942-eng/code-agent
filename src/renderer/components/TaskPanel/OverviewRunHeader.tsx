@@ -78,12 +78,14 @@ export const OverviewRunHeader: React.FC = () => {
   if (!model) return null;
 
   const wt = t.workbenchTabs;
+  const cancelledOutcome = t.outcomeWords['cancelled-by-user'].timeline;
+  const failedOutcome = t.outcomeWords['failed-unknown'].timeline;
   const toneLabel = model.tone === 'waiting'
     ? wt.overviewRunWaitingApproval
     : model.outcome === 'cancelled'
-      ? wt.overviewRunOutcomeCancelled
+      ? cancelledOutcome.label
       : model.outcome === 'error'
-        ? wt.overviewRunOutcomeError
+        ? failedOutcome.label
         : model.live
           ? wt.overviewProgressLabel
           : wt.overviewRunStepsDone.replace('{total}', String(model.steps?.total ?? 0));
@@ -92,7 +94,9 @@ export const OverviewRunHeader: React.FC = () => {
   const phaseLine = model.tone === 'waiting'
     ? wt.overviewRunWaitingApproval
     : model.outcome
-      ? (model.outcome === 'cancelled' ? wt.overviewRunOutcomeCancelled : wt.overviewRunOutcomeError)
+      ? (model.outcome === 'cancelled'
+        ? `${cancelledOutcome.label} · ${cancelledOutcome.reason}`
+        : `${failedOutcome.label} · ${failedOutcome.reason}`)
       : model.phase;
 
   return (

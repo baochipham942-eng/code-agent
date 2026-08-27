@@ -32,6 +32,8 @@ interface Props {
   interruptionReason?: StreamInterruptionReason;
   /** 展开态：内部工具名进次级小字 */
   showDetailName?: boolean;
+  /** 回执行把成败统一放到右侧元信息，主动作前不重复状态词。 */
+  hideStatusLabel?: boolean;
 }
 
 /**
@@ -60,7 +62,13 @@ function buildToolHeaderTitle(
   return displayName;
 }
 
-export function ToolHeader({ toolCall, status, interruptionReason, showDetailName = false }: Props) {
+export function ToolHeader({
+  toolCall,
+  status,
+  interruptionReason,
+  showDetailName = false,
+  hideStatusLabel = false,
+}: Props) {
   const { t } = useI18n();
   const openPreview = useAppStore((s) => s.openPreview);
   // 模型若提供了 shortDescription（产品视角语义标签），优先作为主标题展示；
@@ -110,7 +118,7 @@ export function ToolHeader({ toolCall, status, interruptionReason, showDetailNam
     <div className="flex items-baseline gap-2 flex-1 min-w-0">
       {/* 状态词只在带结果数据时出现（getToolStatusLabel 成功且无数据时返回 null）：
           否则与主文案的动词重复。成败由左侧 StatusIndicator 表达。 */}
-      {statusLabel && (
+      {statusLabel && !hideStatusLabel && (
         <span className="text-zinc-500 text-xs flex-shrink-0">
           {statusLabel}{status === 'interrupted' ? ' ·' : ''}
         </span>

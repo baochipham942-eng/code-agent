@@ -25,7 +25,7 @@ describe('ErrorBoundary', () => {
 
     const html = renderToStaticMarkup(boundary.render());
 
-    expect(html).toContain('出错了');
+    expect(html).toContain('任务执行失败');
     expect(html).toContain('查看错误详情');
     expect(html).not.toContain('Runtime Error');
   });

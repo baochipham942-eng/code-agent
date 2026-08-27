@@ -4,6 +4,7 @@
 // ============================================================================
 
 import type { VoiceMessageCode } from '@shared/contract/voice';
+import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 
 type WidenVoiceCopy<T> = T extends string
   ? string
@@ -91,10 +92,10 @@ export const voiceZh: VoiceTranslations = {
       VOICE_TOOLS_DROPPED: '当前实时语音模型不支持在通话中派活，这通电话只能聊天',
       VOICE_MODEL_UNRESPONSIVE: '模型没有回应，可以再说一遍，或挂断重拨',
       VOICE_SERVICE_UNSTABLE: '当前语音服务不稳定，我会继续尝试恢复',
-      VOICE_WORK_FAILED: '刚才派出去的活失败了，没有做完：{reason}',
+      VOICE_WORK_FAILED: `刚才派出去的活${outcomeWordsZh.outcomeWords['failed-unknown'].notification.label}：{reason}`,
       VOICE_UPSTREAM_UNAVAILABLE: '连不上语音服务，稍后再试',
       UPSTREAM_SOCKET: '通话连接断开了',
-      UPSTREAM_ERROR: '语音服务出错了，稍后再试',
+      UPSTREAM_ERROR: `语音${outcomeWordsZh.outcomeWords['failed-upstream'].notification.label}，稍后再试`,
       HANDSHAKE_FAILED: '语音服务握手失败，稍后再试',
       RECONNECT_FAILED: '通话已断开，重连失败，请重新拨号',
       MICROPHONE_PERMISSION_DENIED: '麦克风权限被拒绝，请在系统设置中允许后重试',
@@ -109,9 +110,9 @@ export const voiceZh: VoiceTranslations = {
       assignee: '由 {name} 执行',
       queued: '已排队',
       running: '进行中',
-      done: '已完成',
-      cancelled: '已取消',
-      failed: '失败',
+      done: outcomeWordsZh.outcomeWords.completed.badge.label,
+      cancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].badge.label,
+      failed: outcomeWordsZh.outcomeWords['failed-unknown'].badge.label,
       remaining: '还有 {n} 件',
     },
     call: {
@@ -319,7 +320,7 @@ export const voiceZh: VoiceTranslations = {
     taskCard: {
       expandProcess: '展开过程',
       collapseProcess: '收起过程',
-      statusFailed: '失败',
+      statusFailed: outcomeWordsZh.outcomeWords['failed-unknown'].badge.label,
       statusRunning: '进行中',
       statusCompleted: '已完成',
       /** run 跑完了但没留下产物证据。「已完成」只留给查得到产物的那一档（X5.5-A2-a）。 */
@@ -429,9 +430,9 @@ export const voiceEn = {
       assignee: 'Assigned to {name}',
       queued: 'Queued',
       running: 'Running',
-      done: 'Done',
-      cancelled: 'Cancelled',
-      failed: 'Failed',
+      done: outcomeWordsEn.outcomeWords.completed.badge.label,
+      cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].badge.label,
+      failed: outcomeWordsEn.outcomeWords['failed-unknown'].badge.label,
       remaining: '{n} more',
     },
     call: {
@@ -635,7 +636,7 @@ export const voiceEn = {
     taskCard: {
       expandProcess: 'Show process',
       collapseProcess: 'Hide process',
-      statusFailed: 'Failed',
+      statusFailed: outcomeWordsEn.outcomeWords['failed-unknown'].badge.label,
       statusRunning: 'In progress',
       statusCompleted: 'Completed',
       statusUnverified: 'Finished · pending verification',

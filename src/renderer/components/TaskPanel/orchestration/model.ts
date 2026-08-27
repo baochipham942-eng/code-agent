@@ -31,8 +31,8 @@ export function getPhaseMeta(
     waiting_approval: o.phaseWaitingApproval,
     executing: o.phaseExecuting,
     completed: o.phaseCompleted,
-    failed: o.phaseFailed,
-    cancelled: o.phaseCancelled,
+    failed: t.outcomeWords['failed-unknown'].badge.label,
+    cancelled: t.outcomeWords['cancelled-by-user'].badge.label,
   };
   return { label: labels[phase], className: phaseClassName[phase] };
 }

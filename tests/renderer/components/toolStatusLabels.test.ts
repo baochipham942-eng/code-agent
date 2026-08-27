@@ -53,7 +53,7 @@ describe('ToolCallDisplay status labels', () => {
     expect(getToolStatusLabel(background, 'success', zh)).toBe('已派出');
   });
 
-  it('distinguishes artifact validation failure after a successful file write', () => {
+  it('写后验收失败也只使用共享终态，不再拼局部终态词', () => {
     const label = getToolStatusLabel(
       makeWriteCall({
         result: {
@@ -70,7 +70,8 @@ describe('ToolCallDisplay status labels', () => {
       'error',
       zh,    );
 
-    expect(label).toBe('已写入，验收失败');
+    const outcome = zh.outcomeWords['failed-tool'].timeline;
+    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
   });
 
   it('keeps the normal Write failure label for actual write failures', () => {
@@ -85,28 +86,81 @@ describe('ToolCallDisplay status labels', () => {
       'error',
       zh,    );
 
-    expect(label).toBe('写入失败');
+    const outcome = zh.outcomeWords['failed-tool'].timeline;
+    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
+  });
+
+  it('maps an explicit approval denial to the shared terminal word and reason', () => {
+    const label = getToolStatusLabel(
+      makeWriteCall({
+        result: {
+          toolCallId: 'write-1',
+          success: false,
+          error: 'Permission denied',
+          metadata: { code: 'PERMISSION_DENIED' },
+        },
+      }),
+      'error',
+      zh,
+    );
+    const outcome = zh.outcomeWords['failed-approval-denied'].timeline;
+
+    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
+  });
+
+  it('maps metadata timeout to the shared timeout terminal word and concrete reason', () => {
+    const label = getToolStatusLabel(
+      makeWriteCall({
+        result: {
+          toolCallId: 'write-1',
+          success: false,
+          error: 'Timed out',
+          metadata: { failureCode: 'timeout' },
+        },
+      }),
+      'error',
+      zh,
+    );
+    const outcome = zh.outcomeWords['failed-timeout'].timeline;
+
+    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
+  });
+
+  it('maps a raw timeout error to the same shared timeout outcome', () => {
+    const label = getToolStatusLabel(
+      makeWriteCall({
+        result: { toolCallId: 'write-1', success: false, error: 'Request timed out after 30s' },
+      }),
+      'error',
+      zh,
+    );
+    const outcome = zh.outcomeWords['failed-timeout'].timeline;
+
+    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
   });
 
   // host 验收门（toolArtifactRepairPolicy.isFileMutationTool）覆盖的不只 Write：
   // Edit/edit_file/append_file/Append 写后验收失败同样被翻转成 success=false +
   // metadata.artifactValidation.failed，状态词不能错报成「编辑失败」。
-  it('distinguishes artifact validation failure after a successful Edit', () => {
+  it('Edit 写后验收失败使用共享终态', () => {
     const label = getToolStatusLabel(makeMutationCall('Edit'), 'error', zh);
 
-    expect(label).toBe('已编辑，验收失败');
+    const outcome = zh.outcomeWords['failed-tool'].timeline;
+    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
   });
 
-  it('distinguishes artifact validation failure after a successful edit_file', () => {
+  it('edit_file 写后验收失败使用共享终态', () => {
     const label = getToolStatusLabel(makeMutationCall('edit_file'), 'error', zh);
 
-    expect(label).toBe('已编辑，验收失败');
+    const outcome = zh.outcomeWords['failed-tool'].timeline;
+    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
   });
 
-  it('distinguishes artifact validation failure after a successful append_file', () => {
+  it('append_file 写后验收失败使用共享终态', () => {
     const label = getToolStatusLabel(makeMutationCall('append_file'), 'error', zh);
 
-    expect(label).toBe('已追加，验收失败');
+    const outcome = zh.outcomeWords['failed-tool'].timeline;
+    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
   });
 
   it('keeps the normal Edit failure label for actual edit failures', () => {
@@ -122,7 +176,8 @@ describe('ToolCallDisplay status labels', () => {
       zh,
     );
 
-    expect(label).toBe('编辑失败');
+    const outcome = zh.outcomeWords['failed-tool'].timeline;
+    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
   });
 
   // 步骤行主文案本身就是一句过去时人话（「写入了 notes.md」），成功态再前置一个

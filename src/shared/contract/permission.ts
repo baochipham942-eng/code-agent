@@ -122,6 +122,12 @@ export interface PermissionRequest {
     newContent?: string;
     server?: string;
     toolName?: string;
+    /** commandSafety.validateCommand 的确定性结果，供审批卡生成人话后果。 */
+    commandRiskLevel?: 'safe' | 'low' | 'medium' | 'high' | 'critical';
+    commandSecurityFlags?: string[];
+    /** 删除类命令在 host 侧解析并盘点出的目标证据。 */
+    affectedPath?: string;
+    affectedFileCount?: number;
     /**
      * B4：external 工具的授权 target 精确串（收件人/频道 id 等）。由 toolExecutor 在需人工审批时
      * 透传，供停车审批卡出「每次都允许发 <target>」铸权入口；模型侧无入口（no-self-grant）。

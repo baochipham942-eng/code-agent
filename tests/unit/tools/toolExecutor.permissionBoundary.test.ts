@@ -171,7 +171,11 @@ describe('ToolExecutor permission boundary metadata', () => {
         id: 'command.shell',
         reason: '本次命令会在当前工作区的 shell 环境执行。',
       },
-      details: { command: 'npm install left-pad' },
+      details: expect.objectContaining({
+        command: 'npm install left-pad',
+        commandRiskLevel: 'safe',
+        commandSecurityFlags: [],
+      }),
     }));
   });
 

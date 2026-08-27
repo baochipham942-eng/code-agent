@@ -12,6 +12,7 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useToastStore } from '../../../src/renderer/hooks/useToast';
 import { applyRoutingDegradationSignal } from '../../../src/renderer/utils/routingDegradation';
+import { HostReasonCode } from '../../../src/shared/contract/permission';
 
 describe('applyRoutingDegradationSignal', () => {
   beforeEach(() => {
@@ -41,6 +42,32 @@ describe('applyRoutingDegradationSignal', () => {
     expect(toasts.length).toBe(1);
     expect(toasts[0].type).toBe('warning');
     expect(toasts[0].message).toContain('ghost-agent');
+  });
+
+  it('结构化路由原因只显示登记表文案，不显示 modelText', () => {
+    useAppStore.getState().syncActiveAgentForSession('session-a');
+    useAppStore.getState().setActiveAgentId('ghost-agent');
+
+    applyRoutingDegradationSignal('session-a', {
+      mode: 'explicit',
+      agentId: 'default',
+      agentName: '默认 agent',
+      reason: {
+        code: HostReasonCode.RoutingRequestedUnavailable,
+        metadata: {
+          requestedAgentName: '幽灵 agent',
+          agentName: '默认 agent',
+        },
+        modelText: 'Requested agent ghost-agent is unavailable; using default.',
+      },
+      score: 0,
+      fallbackToDefault: true,
+      requestedAgentId: 'ghost-agent',
+    });
+
+    const message = useToastStore.getState().toasts[0]?.message ?? '';
+    expect(message).toBe('指定的 幽灵 agent 不可用，已由 默认 agent 继续执行');
+    expect(message).not.toContain('Requested agent');
   });
 
   it('非当前会话的降级 → 不弹 toast，但不误清当前会话选择', () => {

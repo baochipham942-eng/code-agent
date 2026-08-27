@@ -1,9 +1,21 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
-import { buildSlotlessConfig, parseDogfoodEnv, readDogfoodCredentials } from '../../scripts/verify-slotless.mjs';
+import { buildSlotlessConfig, linkCliConnectorInstallDirectories, parseDogfoodEnv, readDogfoodCredentials } from '../../scripts/verify-slotless.mjs';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
 import { parseViewport } from '../../scripts/verify-shot.mjs';
 
@@ -16,6 +28,11 @@ describe('slotless verification scripts', () => {
 
   it('copies only TokenRhythm deepseek-v4-flash and routes every role to it', () => {
     const config = buildSlotlessConfig({
+      connectors: { enabledNative: ['calendar', 'tmeet'] },
+      mcp: {
+        servers: [{ name: 'local-test', command: 'node', enabled: true }],
+      },
+      ui: { theme: 'dark' },
       models: {
         providers: {
           other: { apiKey: 'must-not-copy', model: 'other-model' },
@@ -48,6 +65,68 @@ describe('slotless verification scripts', () => {
       code: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' },
       vision: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' },
     });
+    expect(config.connectors).toEqual({ enabledNative: ['calendar', 'tmeet'] });
+    expect(config.mcp).toEqual({
+      servers: [{ name: 'local-test', command: 'node', enabled: true }],
+    });
+    expect(config).not.toHaveProperty('ui');
+  });
+
+  it('links installed CLI connector directories into the slotless data directory', () => {
+    const sourceDataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-source-test-'));
+    const targetDataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-target-test-'));
+    tempDirs.push(sourceDataDir, targetDataDir);
+    const sourceInstall = path.join(sourceDataDir, 'tmeet');
+    mkdirSync(sourceInstall);
+    writeFileSync(path.join(sourceInstall, 'installation-marker'), 'keep');
+    const logs: string[] = [];
+
+    const results = linkCliConnectorInstallDirectories(sourceDataDir, targetDataDir, (line: string) => logs.push(line));
+
+    const targetInstall = path.join(targetDataDir, 'tmeet');
+    expect(lstatSync(targetInstall).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(targetInstall)).toBe(sourceInstall);
+    expect(readFileSync(path.join(targetInstall, 'installation-marker'), 'utf8')).toBe('keep');
+    expect(results).toContainEqual(expect.objectContaining({ id: 'tmeet', status: 'linked' }));
+    expect(logs).toContainEqual(expect.stringMatching(/^CLI_CONNECTOR_LINKED=tmeet:/));
+    expect(logs).toContainEqual(expect.stringMatching(/^CLI_CONNECTOR_SKIPPED=feishu:/));
+  });
+
+  it('skips missing CLI connector installations without failing', () => {
+    const sourceDataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-source-test-'));
+    const targetDataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-target-test-'));
+    tempDirs.push(sourceDataDir, targetDataDir);
+    const logs: string[] = [];
+
+    expect(() => linkCliConnectorInstallDirectories(sourceDataDir, targetDataDir, (line: string) => logs.push(line))).not.toThrow();
+    expect(existsSync(path.join(targetDataDir, 'tmeet'))).toBe(false);
+    expect(existsSync(path.join(targetDataDir, 'lark-cli'))).toBe(false);
+    expect(logs.filter((line) => line.startsWith('CLI_CONNECTOR_SKIPPED='))).toHaveLength(2);
+  });
+
+  it('--stop removes connector links without touching the source installation', () => {
+    const sourceDataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-source-test-'));
+    const dataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-stop-test-'));
+    tempDirs.push(sourceDataDir, dataDir);
+    const sourceInstall = path.join(sourceDataDir, 'tmeet');
+    mkdirSync(sourceInstall);
+    writeFileSync(path.join(sourceInstall, 'installation-marker'), 'keep');
+    linkCliConnectorInstallDirectories(sourceDataDir, dataDir, () => undefined);
+    writeFileSync(path.join(dataDir, '.neo-verify-state.json'), JSON.stringify({
+      version: 1,
+      pid: 999999,
+      marker: path.basename(dataDir),
+    }));
+
+    const result = spawnSync(process.execPath, [path.resolve('scripts/verify-slotless.mjs'), '--stop', dataDir], {
+      cwd: path.resolve('.'),
+      encoding: 'utf8',
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(existsSync(dataDir)).toBe(false);
+    expect(statSync(sourceInstall).isDirectory()).toBe(true);
+    expect(readFileSync(path.join(sourceInstall, 'installation-marker'), 'utf8')).toBe('keep');
   });
 
   it('parses exported and quoted credentials without changing their values', () => {

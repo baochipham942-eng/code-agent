@@ -90,22 +90,7 @@ import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
 import { isDragPointInsideVisibleRect } from '../utils/dragBounds';
 import { findPendingPlanApproval, hasPlanApproval } from '../utils/planApprovalView';
 import { Image, MessageSquare } from 'lucide-react';
-
-export async function sendWithImmediateAssistantFeedback(options: {
-  showFeedback: () => void;
-  clearFeedback: () => void;
-  send: () => Promise<boolean>;
-}): Promise<boolean> {
-  options.showFeedback();
-  try {
-    const sent = await options.send();
-    if (!sent) options.clearFeedback();
-    return sent;
-  } catch (error) {
-    options.clearFeedback();
-    throw error;
-  }
-}
+import { sendWithImmediateAssistantFeedback } from '../utils/sendWithImmediateAssistantFeedback';
 
 export const ChatView: React.FC = () => {
   const { t } = useI18n();

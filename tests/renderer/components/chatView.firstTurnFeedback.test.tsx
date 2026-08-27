@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { sendWithImmediateAssistantFeedback } from '../../../src/renderer/components/ChatView';
+import { sendWithImmediateAssistantFeedback } from '../../../src/renderer/utils/sendWithImmediateAssistantFeedback';
 import { StreamingIndicator } from '../../../src/renderer/components/features/chat/StreamingIndicator';
 
 function PendingSendHarness({ send }: { send: () => Promise<boolean> }) {

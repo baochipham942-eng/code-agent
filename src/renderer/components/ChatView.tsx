@@ -68,6 +68,7 @@ import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndic
 import { RewindPanel } from './RewindPanel';
 // Pending PermissionCard lives in the fixed DecisionSlot above ChatInput.
 import type {
+  AgentEventEnvelope,
   AppSettings,
   Message,
   MessageAttachment,
@@ -75,6 +76,8 @@ import type {
   TaskPlan,
   UserQuestionRequest,
 } from '../../shared/contract';
+import type { QueuedInputActivatedEvent } from '@shared/contract/queuedInput';
+import { generateMessageId } from '@shared/utils/id';
 import type { RewindConversationResult } from '@shared/contract/sessionRewind';
 import type { TurnCheckoutResult } from '@shared/contract/turnCheckout';
 import type { ConversationEnvelope, ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
@@ -95,7 +98,11 @@ import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
 import { isDragPointInsideVisibleRect } from '../utils/dragBounds';
 import { findPendingPlanApproval, hasPlanApproval } from '../utils/planApprovalView';
 import { Image, MessageSquare } from 'lucide-react';
-import { sendWithImmediateAssistantFeedback } from '../utils/sendWithImmediateAssistantFeedback';
+import {
+  sendWithImmediateAssistantFeedback,
+  transitionAssistantFeedback,
+  type AssistantFeedbackState,
+} from '../utils/sendWithImmediateAssistantFeedback';
 
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
 // useSyncExternalStore treat every snapshot as changed and can loop before ChatView mounts.
@@ -206,7 +213,7 @@ export const ChatView: React.FC = () => {
         const envelope = buildEnvelope(content);
         // ADR-040：定点反馈的结构化锚点并进 composer context，host 侧补 revision 后
         // 落 user message metadata，供写前 guard 对账。不带锚点时 envelope 一字不变。
-        return sendMessage(
+        void sendMessage(
           context?.localityAnchor
             ? { ...envelope, context: { ...envelope.context, localityAnchor: context.localityAnchor } }
             : envelope,
@@ -238,7 +245,7 @@ export const ChatView: React.FC = () => {
   } | null>(null);
   const [isPromptRewinding, setIsPromptRewinding] = useState(false);
   const [rewindRefreshToken, setRewindRefreshToken] = useState(0);
-  const [pendingAssistantFeedbackStartedAt, setPendingAssistantFeedbackStartedAt] = useState<number | null>(null);
+  const [pendingAssistantFeedback, setPendingAssistantFeedback] = useState<AssistantFeedbackState | null>(null);
 
   const handleSearchMatchesChange = useCallback((matches: SearchMatch[], activeIdx: number) => {
     setSearchMatches(matches);
@@ -608,14 +615,36 @@ export const ChatView: React.FC = () => {
   // @neo 提交分支已移除（2026-07-29 拍板）：输入框不再有工作卡/续接交互，
   // @neo 字样按普通文本消息发送；工作卡从 Neo 协同页发起。
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
+    const clientMessageId = envelope.clientMessageId ?? generateMessageId();
+    const feedbackSessionId = envelope.sessionId ?? currentSessionId;
+    const outboundEnvelope = { ...envelope, clientMessageId };
     const sent = await sendWithImmediateAssistantFeedback({
-      showFeedback: () => setPendingAssistantFeedbackStartedAt(Date.now()),
-      clearFeedback: () => setPendingAssistantFeedbackStartedAt(null),
+      showFeedback: () => {
+        if (!feedbackSessionId) return;
+        setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
+          type: 'send_started',
+          startedAt: Date.now(),
+          clientMessageId,
+          sessionId: feedbackSessionId,
+        }));
+      },
+      clearFeedback: () => setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
+        type: 'send_failed',
+        clientMessageId,
+        sessionId: feedbackSessionId ?? undefined,
+      })),
       send: async () => {
         const didSend = await requireAuthAsync(async () => {
           const modelReady = await ensureModelConfigured();
           if (!modelReady) return false;
-          await sendMessage(envelope);
+          const delivery = await sendMessage(outboundEnvelope);
+          if (delivery?.outcome === 'queued' && feedbackSessionId) {
+            setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
+              type: 'enqueue_succeeded',
+              clientMessageId: delivery.queuedInputId,
+              sessionId: feedbackSessionId,
+            }));
+          }
           return true;
         });
         return didSend === true;
@@ -635,13 +664,58 @@ export const ChatView: React.FC = () => {
   ]);
 
   useEffect(() => {
-    if (projection.activeTurnIndex >= 0) {
-      setPendingAssistantFeedbackStartedAt(null);
-    }
-  }, [projection.activeTurnIndex]);
+    const unsubscribeActivated = ipcService.on(
+      IPC_CHANNELS.QUEUED_INPUT_ACTIVATED,
+      (activation: QueuedInputActivatedEvent) => {
+        setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
+          type: 'durable_activated',
+          clientMessageId: activation.id,
+          sessionId: activation.sessionId,
+        }));
+      },
+    );
+    const unsubscribeAgentEvent = ipcService.on('agent:event', (event: AgentEventEnvelope) => {
+      const eventType: string = event.type;
+      const eventSessionId = event.sessionId
+        ?? (event.data && typeof event.data === 'object' && 'sessionId' in event.data
+          ? String(event.data.sessionId)
+          : undefined);
+      if (!eventSessionId) return;
+      if (eventType === 'task_start') {
+        const clientMessageId = event.data && typeof event.data === 'object'
+          && 'clientMessageId' in event.data && typeof event.data.clientMessageId === 'string'
+          ? event.data.clientMessageId
+          : undefined;
+        if (!clientMessageId) return;
+        setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
+          type: 'durable_activated',
+          clientMessageId,
+          sessionId: eventSessionId,
+        }));
+        return;
+      }
+      if (eventType === 'message_delta') {
+        setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
+          type: 'model_delta',
+          sessionId: eventSessionId,
+        }));
+        return;
+      }
+      if (eventType === 'error' || eventType === 'agent_cancelled' || eventType === 'stream_end') {
+        setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
+          type: 'send_failed',
+          sessionId: eventSessionId,
+        }));
+      }
+    });
+    return () => {
+      unsubscribeActivated?.();
+      unsubscribeAgentEvent?.();
+    };
+  }, []);
 
   useEffect(() => {
-    setPendingAssistantFeedbackStartedAt(null);
+    setPendingAssistantFeedback(null);
   }, [currentSessionId]);
 
   const handleSteerEnvelope = useCallback(async (envelope: ConversationEnvelope) => {
@@ -892,18 +966,22 @@ export const ChatView: React.FC = () => {
                 onRewindUserPrompt={handleRequestPromptRewind}
                 beforeFirstUserMessage={forkSourceHint}
                 onInterruptionPointVisibilityChange={setInterruptionPointInViewport}
+                suppressActiveBusySignal={pendingAssistantFeedback !== null}
               />
             </ErrorBoundary>
           )}
-          {pendingAssistantFeedbackStartedAt !== null && projection.activeTurnIndex < 0 && (
+          {pendingAssistantFeedback !== null && (
             <div
               className="pointer-events-none absolute inset-x-0 bottom-4 chat-col-pad"
               data-testid="assistant-send-placeholder"
             >
               <div className="mx-auto max-w-3xl px-4">
                 <StreamingIndicator
-                  startTime={pendingAssistantFeedbackStartedAt}
-                  preparationPhase="submitting"
+                  startTime={pendingAssistantFeedback.startedAt}
+                  preparationPhase={pendingAssistantFeedback.phase === 'submitting'
+                    ? 'submitting'
+                    : pendingAssistantFeedback.phase === 'queued' ? 'queued' : undefined}
+                  waitingReason={pendingAssistantFeedback.phase === 'waiting_model' ? 'model' : undefined}
                 />
               </div>
             </div>

@@ -97,6 +97,7 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['post', '/dev/emit-sse'],
   ['post', '/dev/seed-messages'],
   ['post', '/dev/emit-agent-events'],
+  ['post', '/dev/emit-queued-input-activated'],
   ['post', '/dev/emit-workflow-events'],
   ['post', '/dev/emit-workflow-launch'],
   ['post', '/dev/telemetry/seed-turn'],

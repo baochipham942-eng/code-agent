@@ -15,6 +15,7 @@ import { isWorkspaceFileAllowed, getContentType } from '../helpers/upload';
 import { getEventBus } from '../../host/services/eventing/bus';
 import type { SwarmEvent } from '../../shared/contract/swarm';
 import type { ScriptRunEvent } from '../../shared/contract/scriptRun';
+import type { QueuedInputActivatedEvent } from '../../shared/contract/queuedInput';
 import type { WebRouteLogger } from './routeTypes';
 import { createDevCancellableToolSmokeRouter } from './devCancellableToolSmoke';
 import { createDevAgentLoopStubSmokeRouter } from './devAgentLoopStubSmoke';
@@ -725,6 +726,27 @@ export function createDevRouter(deps: DevRouterDeps): Router {
       broadcastSSE(IPC_CHANNELS.AGENT_EVENT_BATCH, events);
     }
     res.json({ ok: true, count: events.length });
+  });
+
+  // 排队首轮反馈的 E2E 入口：保持和生产 drain 完全相同的 IPC 通道与载荷，
+  // 不借 task_start 猜测 queued input 与 durable run 的对应关系。
+  router.post('/dev/emit-queued-input-activated', (req: Request, res: Response) => {
+    if (!ensureDevApiEnabled(res)) return;
+    const activation = req.body as Partial<QueuedInputActivatedEvent>;
+    if (
+      typeof activation.sessionId !== 'string'
+      || typeof activation.id !== 'string'
+      || typeof activation.runId !== 'string'
+      || typeof activation.activatedAt !== 'number'
+    ) {
+      res.status(400).json({ error: 'Invalid queued input activation payload.' });
+      return;
+    }
+    broadcastSSE(
+      IPC_CHANNELS.QUEUED_INPUT_ACTIVATED,
+      activation as QueuedInputActivatedEvent,
+    );
+    res.json({ ok: true });
   });
 
   // ── POST /api/dev/emit-workflow-events (E2E test hook，P3a) ──────────

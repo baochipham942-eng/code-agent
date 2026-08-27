@@ -290,14 +290,20 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       return new QueuedInputRepository(db);
     },
     hasActiveRun: (sessionId) => Boolean(runRegistry.getBySessionId(sessionId)),
-    runEnvelope: async (envelope, response) => {
-      await runAgentTurn(buildQueuedAgentRunBody(envelope), response, { connectedClient: false });
+    runEnvelope: async (envelope, response, onActivated) => {
+      await runAgentTurn(buildQueuedAgentRunBody(envelope), response, {
+        connectedClient: false,
+        onDurableActivated: onActivated,
+      });
     },
     emitAgentEvent: (sessionId, event) => {
       broadcastSSE('agent:event', { ...event, sessionId });
     },
     notifyQueuedInputSettled: (settled) => {
       broadcastSSE(IPC_CHANNELS.QUEUED_INPUT_SETTLED, settled);
+    },
+    notifyQueuedInputActivated: (activated) => {
+      broadcastSSE(IPC_CHANNELS.QUEUED_INPUT_ACTIVATED, activated);
     },
     logger,
   });
@@ -352,7 +358,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     res: Response,
     transport:
       | { connectedClient: true; requestToken: string }
-      | { connectedClient: false },
+      | {
+          connectedClient: false;
+          onDurableActivated?: (activation: { runId: string; activatedAt: number }) => void;
+        },
   ): Promise<void> {
     const { prompt, project, sessionDir, model, provider, eventFilter } = body;
     const clientMessageId = body.clientMessageId?.trim()
@@ -483,6 +492,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       externalDurableLifecycle = started.externalLifecycle;
       runContext = runHandle.context;
       runCorrelationId = runContext.runId;
+      if (!transport.connectedClient) {
+        transport.onDurableActivated?.({
+          runId: runCorrelationId,
+          activatedAt: Date.now(),
+        });
+      }
     } catch (error) {
       releaseSseSlot();
       if (error instanceof RunSessionConflictError) {
@@ -548,6 +563,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       taskId,
       prompt,
       sessionId,
+      ...(clientMessageId ? { clientMessageId } : {}),
       ...(runHandle ? { runId: runHandle.context.runId } : {}),
     });
     await runController.updateSessionStatus('running');

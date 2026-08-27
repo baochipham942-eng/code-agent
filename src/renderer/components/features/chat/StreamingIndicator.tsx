@@ -22,7 +22,7 @@ interface StreamingIndicatorProps {
   /** 等待期具名：模型、子任务或用户审批。缺省时维持呼吸光标。 */
   waitingReason?: StreamingWaitingReason;
   /** 正文尚未开始时的轻量文字态；只有真正出字后才回落为文本尾光标。 */
-  preparationPhase?: 'submitting' | 'preparing' | 'organizing';
+  preparationPhase?: 'submitting' | 'queued' | 'preparing' | 'organizing';
   /** 真实并发子任务数（当前回合 trace 里仍在运行的子 agent 阻塞类工具调用数，
       由 TurnCard 用 getRunningSubagentCount 算好传入）。≥2 才亮数字——
       「编队/并行」对单个子任务不成立；缺省时用无数字版，不造数。 */
@@ -173,9 +173,11 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
   if (preparationPhase) {
     const label = preparationPhase === 'submitting'
       ? t.chat.sendingMessage
-      : preparationPhase === 'preparing'
-        ? t.chat.preparingReply
-        : t.chat.organizingStreamingReply;
+      : preparationPhase === 'queued'
+        ? t.chat.queuedStarting
+        : preparationPhase === 'preparing'
+          ? t.chat.preparingReply
+          : t.chat.organizingStreamingReply;
     return (
       <div
         className="py-0.5 text-sm text-zinc-500"

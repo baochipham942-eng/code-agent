@@ -157,7 +157,7 @@ describe('useAgentIPC sendMessage silentFailure', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ durableRunReady: true }) });
     const hook = renderSendHook();
 
-    let send: Promise<void> | undefined;
+    let send: ReturnType<typeof hook.result.current.sendMessage> | undefined;
     await act(async () => {
       send = hook.result.current.sendMessage(envelope);
       await Promise.resolve();
@@ -183,7 +183,7 @@ describe('useAgentIPC sendMessage silentFailure', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ durableRunReady: false }) });
     const hook = renderSendHook();
 
-    let send: Promise<void> | undefined;
+    let send: ReturnType<typeof hook.result.current.sendMessage> | undefined;
     await act(async () => {
       send = hook.result.current.sendMessage(envelope);
       await Promise.resolve();

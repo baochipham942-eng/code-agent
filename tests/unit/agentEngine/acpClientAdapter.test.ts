@@ -1,4 +1,5 @@
 import { PassThrough } from 'stream';
+import { EventEmitter } from 'events';
 import * as os from 'os';
 import * as path from 'path';
 import * as fsp from 'fs/promises';
@@ -45,7 +46,7 @@ vi.mock('../../../src/host/services/agentEngine/agentEngineRegistry', () => ({
   getAgentEngineRegistry: () => ({ get: mocks.registryGet }),
 }));
 
-import { KimiAcpAdapter } from '../../../src/host/services/agentEngine/acpClientAdapter';
+import { applyModelSelection, KimiAcpAdapter } from '../../../src/host/services/agentEngine/acpClientAdapter';
 
 /**
  * 迷你 ACP agent：按协议真讲 JSON-RPC，不是把 adapter 的内部函数抠出来单测。
@@ -65,11 +66,21 @@ function installFakeAgent(options: FakeAgentOptions) {
   const stdin = new PassThrough();
   const stdout = new PassThrough();
   const stderr = new PassThrough();
+  // 让假子进程像真子进程：kill 之后 exitCode 落定并发 'close'，
+  // 否则测不出适配器「等进程真关掉再收日志流」那一步。
+  const emitter = new EventEmitter();
   const child: Record<string, unknown> = {
     stdin, stdout, stderr,
     exitCode: null,
-    kill: vi.fn(),
-    on: vi.fn(),
+    kill: vi.fn(() => {
+      if (child.exitCode === null) {
+        child.exitCode = 0;
+        setTimeout(() => emitter.emit('close', 0, null), 5);
+      }
+      return true;
+    }),
+    on: (event: string, handler: (...args: unknown[]) => void) => emitter.on(event, handler),
+    once: (event: string, handler: (...args: unknown[]) => void) => emitter.once(event, handler),
   };
   mocks.spawn.mockReturnValue(child);
 
@@ -202,6 +213,49 @@ describe('AcpClientAdapter — 完整 turn', () => {
   });
 });
 
+describe('AcpClientAdapter — 收尾不许打死宿主进程', () => {
+  /**
+   * 🔴 2026-08-27 真机实付：turn 结束后适配器 kill 子进程并立刻 end 日志流，
+   * 但子进程 stdout 里的缓冲数据还会继续到达 → 往已 end 的 WriteStream 写 →
+   * 流发 'error' → **没有监听者的 'error' 在 Node 里会升级成 uncaught exception**，
+   * 直接打死整个 webServer 进程（app 失联，日志里只留半句话）。
+   * 这条测试模拟「收尾之后子进程还在吐数据」，跑完必须活着。
+   */
+  it('收尾后摘掉 stdout/stderr 监听器，late data 再也写不进已关闭的日志流', async () => {
+    const child = installFakeAgent({
+      updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '收尾测试' } }],
+    });
+    const stdout = (child as unknown as { stdout: PassThrough }).stdout;
+    const stderr = (child as unknown as { stderr: PassThrough }).stderr;
+
+    const result = await new KimiAcpAdapter().run(baseRequest() as never);
+    expect(result.status).toBe('completed');
+
+    // 这就是修复建立的不变量：日志流关闭前，喂它数据的那两个监听器必须已经摘掉。
+    // 留着监听器 = 子进程缓冲数据会在流 end 之后继续写进来 = ERR_STREAM_WRITE_AFTER_END。
+    expect(stdout.listenerCount('data')).toBe(0);
+    expect(stderr.listenerCount('data')).toBe(0);
+
+    // 于是 late data 变成无人接收的字节，写多少都不会碰到已关闭的流。
+    for (let i = 0; i < 20; i += 1) {
+      stdout.write(`late-${i}\n`);
+      stderr.write(`late-err-${i}\n`);
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  });
+
+  it('先等子进程 close 再收日志流，不是 kill 完就收', async () => {
+    const child = installFakeAgent({
+      updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'x' } }],
+    });
+    await new KimiAcpAdapter().run(baseRequest() as never);
+    // 假子进程的 kill 会把 exitCode 落定；跑完必须是已退出状态，
+    // 说明适配器确实等到了进程收干净，而不是发完信号就走。
+    expect((child as unknown as { exitCode: number | null }).exitCode).toBe(0);
+    expect((child as unknown as { kill: { mock: { calls: unknown[] } } }).kill.mock.calls.length).toBeGreaterThan(0);
+  });
+});
+
 describe('AcpClientAdapter — resume 走 session/load', () => {
   it('带上已持久化的 sessionId 时调 session/load，且回放的用户原话不会被当成助手输出', async () => {
     const loadSessionCalls: string[] = [];
@@ -284,5 +338,64 @@ describe('AcpClientAdapter — 副作用反向委托过审批链', () => {
     await new KimiAcpAdapter().run(baseRequest() as never);
 
     await expect(fsp.readFile(target, 'utf8')).rejects.toThrow();
+  });
+});
+
+describe('applyModelSelection — Neo 的模型选择必须真落到 ACP 会话上', () => {
+  const MODEL_OPTION = {
+    id: 'model',
+    category: 'model',
+    currentValue: 'kimi-code/k3',
+    options: [{ value: 'kimi-code/k3' }, { value: 'kimi-code/kimi-for-coding' }],
+  };
+
+  function fakeCtx() {
+    const calls: Array<{ method: string; params: unknown }> = [];
+    return {
+      calls,
+      ctx: { request: async (method: string, params: unknown) => { calls.push({ method, params }); return {}; } },
+    };
+  }
+
+  it('选了 agent 提供的其他模型时发 session/set_config_option', async () => {
+    const { ctx, calls } = fakeCtx();
+    const result = await applyModelSelection(ctx, 'sess', [MODEL_OPTION], 'kimi-code/kimi-for-coding');
+    expect(result.applied).toBe(true);
+    expect(calls).toEqual([{
+      method: 'session/set_config_option',
+      params: { sessionId: 'sess', configId: 'model', value: 'kimi-code/kimi-for-coding' },
+    }]);
+  });
+
+  it('已经是当前值就不多发一次请求', async () => {
+    const { ctx, calls } = fakeCtx();
+    expect((await applyModelSelection(ctx, 'sess', [MODEL_OPTION], 'kimi-code/k3')).applied).toBe(true);
+    expect(calls).toEqual([]);
+  });
+
+  /**
+   * 🔴 这条挡的是「装好没接电」的另一半：agent 不提供这个模型时，
+   * 绝不能静默跑 agent 默认模型当成功——必须回一个可落台账的原因。
+   */
+  it('agent 不提供该模型时如实降级并给出原因，不发请求', async () => {
+    const { ctx, calls } = fakeCtx();
+    const result = await applyModelSelection(ctx, 'sess', [MODEL_OPTION], 'gpt-9');
+    expect(result.applied).toBe(false);
+    expect(result.reason).toContain('does not offer gpt-9');
+    expect(calls).toEqual([]);
+  });
+
+  it('按 category 定位而不是按 id 猜（各家 id 自取，category 才是协议位）', async () => {
+    const { ctx, calls } = fakeCtx();
+    const renamed = { ...MODEL_OPTION, id: 'vendor_specific_id' };
+    expect((await applyModelSelection(ctx, 'sess', [renamed], 'kimi-code/kimi-for-coding')).applied).toBe(true);
+    expect((calls[0]!.params as { configId: string }).configId).toBe('vendor_specific_id');
+  });
+
+  it('agent 完全没有 model 配置项时给出原因', async () => {
+    const { ctx } = fakeCtx();
+    const result = await applyModelSelection(ctx, 'sess', [{ id: 'thinking', category: 'thought_level' }], 'x');
+    expect(result.applied).toBe(false);
+    expect(result.reason).toContain('no model config option');
   });
 });

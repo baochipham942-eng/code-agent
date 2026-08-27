@@ -60,6 +60,7 @@ import type { ExternalEngineDurableLifecycle } from './externalEngineDurableLife
 import { emitExternalAgentEvent } from './agentEngineEventSink';
 import { bindExternalEngineAbort } from './agentEngineAbort';
 import { getAgentEngineSessionSink } from './agentEngineSessionSink';
+export { applyModelSelection };
 import { AcpClientHostBridge } from './acpClientHostBridge';
 import { AcpToolCallTracker, mapAcpSessionUpdate } from './acpEventMapping';
 
@@ -130,6 +131,10 @@ export class AcpClientAdapter {
     const logPath = path.join(logDir, `${runId}.log`);
     const lastMessagePath = path.join(logDir, `${runId}.last.md`);
     const logStream = createWriteStream(logPath, { flags: 'a' });
+    // 🔴 WriteStream 的 'error' 必须有人接。Node 对没有监听者的 'error' 事件的处理是
+    // 升级成 uncaught exception —— 在 webServer 里那等于**整个服务端进程被打死**，
+    // 一次外部引擎运行就能让 app 失联（2026-08-27 真机实付，见证据档）。
+    logStream.on('error', (error) => logger.warn('[ACP] 引擎日志写入失败', { runId, error }));
 
     const commandSummary = [
       path.basename(descriptor.binaryPath),
@@ -219,19 +224,46 @@ export class AcpClientAdapter {
 
     // stdout 一路进 SDK 解析、一路进日志；不要让 SDK 独占，否则日志里什么都没有。
     const stdoutTap = new PassThrough();
+    stdoutTap.on('error', (error) => logger.warn('[ACP] stdout tap 出错', { runId, error }));
+    // 🔴 收尾开始后一律不再写这两个流：kill 之后子进程 stdout 里的缓冲数据还会继续到达，
+    // 写进已 end 的流就是 ERR_STREAM_WRITE_AFTER_END。
+    let tornDown = false;
     child.stdout.on('data', (chunk: Buffer) => {
+      if (tornDown) return;
       request.durableLifecycle?.observeStdout(chunk.byteLength);
       logStream.write(chunk);
       stdoutTap.write(chunk);
     });
-    child.stdout.on('end', () => stdoutTap.end());
+    child.stdout.on('end', () => { if (!tornDown) stdoutTap.end(); });
     let stderrText = '';
     child.stderr.on('data', (chunk: Buffer) => {
+      if (tornDown) return;
       request.durableLifecycle?.observeStderr(chunk.byteLength);
       const text = chunk.toString('utf8');
       stderrText += text;
       logStream.write(text);
     });
+
+    /**
+     * 关子进程再收日志流，**顺序不能反**。
+     * 先摘监听器堵住新数据，再等进程真的 close（CLI 系 adapter 天然是这个顺序，
+     * 因为它们 await 'close' 之后才收尾；本适配器是主动 kill，必须自己等）。
+     */
+    const shutdownChild = async (): Promise<void> => {
+      tornDown = true;
+      child.stdout.removeAllListeners('data');
+      child.stderr.removeAllListeners('data');
+      if (child.exitCode === null) {
+        child.kill('SIGTERM');
+        await Promise.race([
+          new Promise<void>((resolve) => { child.once('close', () => resolve()); }),
+          new Promise<void>((resolve) => { setTimeout(resolve, 2_000).unref?.(); }),
+        ]);
+        if (child.exitCode === null) child.kill('SIGKILL');
+      }
+      if (!stdoutTap.writableEnded) stdoutTap.end();
+      await new Promise<void>((resolve) => logStream.end(resolve));
+    };
     let spawnErrorMessage: string | undefined;
     child.on('error', (error) => { spawnErrorMessage = error.message; });
 
@@ -379,9 +411,23 @@ export class AcpClientAdapter {
               data: { externalSessionId },
             });
           } else {
-            const created = await ctx.request('session/new', { cwd, mcpServers: [] }) as { sessionId: string };
+            const created = await ctx.request('session/new', { cwd, mcpServers: [] }) as {
+              sessionId: string;
+              configOptions?: AcpConfigOption[];
+            };
             externalSessionId = created.sessionId;
             request.durableLifecycle?.persistExternalSessionId(created.sessionId);
+            const modelSelection = await applyModelSelection(ctx, created.sessionId, created.configOptions, model);
+            if (!modelSelection.applied && modelSelection.reason) {
+              // 如实降级：不假装设置成功，也不静默——用户在 UI 上选了模型，
+              // 结果跑的是 agent 默认模型，这件事必须能在台账里查到。
+              ledger.appendEvent({
+                taskId,
+                type: 'agent_engine.status',
+                status: 'running',
+                message: `model not applied, using agent default (${modelSelection.reason})`,
+              });
+            }
           }
 
           const response = await ctx.request('session/prompt', {
@@ -398,8 +444,7 @@ export class AcpClientAdapter {
       clearTimeout(stallTimer);
       unbindAbort();
       bridge.disposeAll();
-      child.kill('SIGTERM');
-      await new Promise<void>((resolve) => logStream.end(resolve));
+      await shutdownChild();
     }
 
     const finalText = streamedText.trim();
@@ -551,6 +596,41 @@ export class KimiAcpAdapter extends AcpClientAdapter {
       runPrefix: 'kimi_acp',
     });
   }
+}
+
+interface AcpConfigOption {
+  id?: string;
+  category?: string;
+  currentValue?: string;
+  options?: Array<{ value?: string }>;
+}
+
+/**
+ * 把 Neo 选定的模型经 ACP 规范的 `session/set_config_option` 落到会话上。
+ *
+ * 🔴 不接这一步就是「装好没接电」：Neo 的模型选择器照常显示、用户照常选，
+ * agent 却一直跑自己的默认模型。2026-08-27 真机撞到时两边碰巧都是 kimi-code/k3，
+ * 症状被掩盖成一个 401——正因为看不出来，才必须显式接上并在没接上时留痕。
+ *
+ * 选不到就**如实降级**：返回原因交给调用方落台账，不假装设置成功。
+ */
+async function applyModelSelection(
+  ctx: { request: (method: string, params: unknown) => Promise<unknown> },
+  sessionId: string,
+  configOptions: AcpConfigOption[] | undefined,
+  model: string | undefined,
+): Promise<{ applied: boolean; reason?: string }> {
+  if (!model) return { applied: false };
+  // 按 category 找，不按 id 猜：category 是协议规定的语义位，id 由各家自取。
+  const modelOption = configOptions?.find((option) => option.category === 'model');
+  if (!modelOption?.id) return { applied: false, reason: 'agent exposes no model config option' };
+  if (modelOption.currentValue === model) return { applied: true };
+  const offered = (modelOption.options ?? []).map((option) => option.value).filter(Boolean);
+  if (!offered.includes(model)) {
+    return { applied: false, reason: `agent does not offer ${model}; offers ${offered.join(', ')}` };
+  }
+  await ctx.request('session/set_config_option', { sessionId, configId: modelOption.id, value: model });
+  return { applied: true };
 }
 
 function buildSafeEnv(): NodeJS.ProcessEnv {

@@ -451,6 +451,7 @@ const DANGEROUS_PATTERNS: DangerousPattern[] = [
   // validateCommand 取最高风险，灾难性子集会被下面 critical 模式拽回硬毙。
   // flag 前缀用共享 RM_FLAGS（短簇/长选项/=值/任意序），命令头用 RM_HEAD（词边界），
   // 杜绝 `rm --recursive /` / `rm --interactive=never /` 旁路与 `confirm /` 误判
+  { pattern: /(?<![\w-])rm\s+(?=[^;&|\n]*(?:-[A-Za-z]*[rR]|--recursive))(?=[^;&|\n]*(?:-[A-Za-z]*f|--force))(?:-[^\s]+|--[^\s]+)(?:\s+(?:-[^\s]+|--[^\s]+))*\s+[^\s;&|]+/, riskLevel: 'high', flag: 'recursive_delete_targeted', reason: 'Recursive/forced deletion of a specific path', suggestion: 'Confirm the exact target; consider trash instead of rm' },
   { pattern: new RegExp(`${RM_HEAD}${RM_FLAGS}[/~]`), riskLevel: 'high', flag: 'recursive_delete_targeted', reason: 'Recursive/forced deletion of a specific path', suggestion: 'Confirm the exact target; consider trash instead of rm' },
   { pattern: new RegExp(`${RM_HEAD}${RM_FLAGS}/(\\s|$|\\*)`), riskLevel: 'critical', flag: 'root_delete', reason: 'Recursive deletion of the root directory' },
   { pattern: new RegExp(`${RM_HEAD}${RM_FLAGS}(~|\\$HOME)/?(\\s|$|\\*)`), riskLevel: 'critical', flag: 'home_delete', reason: 'Recursive deletion of the entire home directory' },

@@ -8,6 +8,9 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
   return { useI18n: () => ({ t: zh, language: 'zh' }) };
 });
+vi.mock('../../../src/renderer/stores/appStore', () => ({
+  useAppStore: () => ({ developerMode: true }),
+}));
 
 import { RequestDetails } from '../../../src/renderer/components/PermissionDialog/RequestDetails';
 import type { PermissionRequest } from '../../../src/renderer/components/PermissionDialog/types';
@@ -45,7 +48,7 @@ describe('DecisionTrace host reason rendering', () => {
       modelText,
     })} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /为什么需要审批/ }));
+    fireEvent.click(screen.getByRole('button', { name: /审批决策链/ }));
     expect(screen.getByText(/未通过安全检查/)).toBeTruthy();
     expect(screen.queryByText(modelText)).toBeNull();
     expect(document.body.textContent).not.toContain('internal classifier jargon');
@@ -53,7 +56,7 @@ describe('DecisionTrace host reason rendering', () => {
 
   it('旧 trace reason 没有 code 时继续显示原字符串', () => {
     render(<RequestDetails request={requestWithReason('legacy decision reason')} />);
-    fireEvent.click(screen.getByRole('button', { name: /为什么需要审批/ }));
+    fireEvent.click(screen.getByRole('button', { name: /审批决策链/ }));
     expect(screen.getByText('legacy decision reason')).toBeTruthy();
   });
 });

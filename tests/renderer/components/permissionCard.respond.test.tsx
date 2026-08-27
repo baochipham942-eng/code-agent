@@ -59,10 +59,9 @@ const request: PermissionRequest = {
   timestamp: 1,
 };
 
-// DecisionCard 骨架：审批级别是选项行，选中后点 primary「允许」才提交
+// 紧凑权限卡按钮点即裁决，不再二次确认。
 function confirmAllowOnce() {
   fireEvent.click(screen.getByRole('button', { name: /允许一次/ }));
-  fireEvent.click(screen.getByRole('button', { name: '允许' }));
 }
 
 describe('PermissionCard respond path', () => {

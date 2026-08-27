@@ -226,7 +226,7 @@ export const PlanApprovalCard: React.FC<{ target: PendingPlanApprovalTarget }> =
   }
 
   return (
-    <div className="w-full animate-slideUp" data-testid="plan-approval-card">
+    <div className="w-full animate-slideUp" data-testid="plan-approval-card" data-view-mode="expanded">
       <div
         ref={cardRef}
         tabIndex={-1}

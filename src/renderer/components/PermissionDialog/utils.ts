@@ -130,29 +130,6 @@ export function isDangerousCommand(command?: string): boolean {
   return DANGEROUS_PATTERNS.some((pattern) => pattern.test(command));
 }
 
-// 获取危险命令的原因描述
-export function getDangerReason(command?: string): string | null {
-  if (!command) return null;
-
-  if (/rm\s+-rf|rm\s+-r/.test(command)) {
-    return '递归删除文件，可能导致数据丢失';
-  }
-  if (/mkfs|dd\s+if=/.test(command)) {
-    return '磁盘格式化/写入，可能破坏数据';
-  }
-  if (/chmod\s+777/.test(command)) {
-    return '设置宽松权限，可能造成安全风险';
-  }
-  if (/curl.*\|.*sh|wget.*\|.*sh/.test(command)) {
-    return '从网络下载并执行脚本，可能包含恶意代码';
-  }
-  if (/DROP\s+DATABASE|DROP\s+TABLE/i.test(command)) {
-    return '删除数据库/表，数据将永久丢失';
-  }
-
-  return '此命令可能对系统造成不可逆的影响';
-}
-
 // 格式化文件路径（缩短显示）
 export function formatFilePath(path: string, maxLength = 60): string {
   if (path.length <= maxLength) return path;

@@ -15,6 +15,7 @@ const STATE_FILE = '.neo-verify-state.json';
 const DEFAULT_SECRET_FILE = path.join(os.homedir(), '.ship', 'secrets', 'neo-dogfood.env');
 const DEFAULT_SOURCE_DATA_DIR = path.join(os.homedir(), '.code-agent-dev');
 const DEFAULT_SOURCE_CONFIG = path.join(DEFAULT_SOURCE_DATA_DIR, 'config.json');
+const VERIFY_NATIVE_CONNECTOR_IDS = ['calendar', 'reminders'];
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
@@ -26,6 +27,7 @@ function usage() {
     '  node scripts/verify-slotless.mjs --stop <NEO_VERIFY_DATA_DIR>',
     '',
     'Starts the worktree webServer on an isolated port and signs in with the dogfood account.',
+    'Native Calendar/Reminders verification requires a real macOS host with osascript access.',
   ].join('\n');
 }
 
@@ -53,7 +55,7 @@ function copyModelDescriptor(value) {
   return Object.fromEntries(allowed.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]));
 }
 
-export function buildSlotlessConfig(source) {
+export function buildSlotlessConfig(source, tokenRhythmKey) {
   const sourceModels = source?.models;
   const sourceProvider = sourceModels?.providers?.[PROVIDER_ID];
   const sourceModel = sourceProvider?.models?.[MODEL_ID];
@@ -69,6 +71,7 @@ export function buildSlotlessConfig(source) {
     if (sourceProvider[key] !== undefined) provider[key] = sourceProvider[key];
   }
   provider.enabled = true;
+  provider.apiKey = tokenRhythmKey;
   provider.model = MODEL_ID;
   provider.models = { [MODEL_ID]: copyModelDescriptor(sourceModel) };
 
@@ -98,11 +101,19 @@ export function buildSlotlessConfig(source) {
     cloud: { enabled: false, warmupOnInit: false },
   };
 
-  // 连接器启用状态与 MCP server 清单属于能力中心的运行配置；保留这两段，其他
-  // 用户设置仍不进入一次性验证目录。CLI 登录凭据不在 config.json，由各 CLI
-  // 自己从全局位置读取。
-  for (const key of ['connectors', 'mcp']) {
-    if (source?.[key] !== undefined) config[key] = source[key];
+  // 无槽真机验收默认覆盖原生日历与提醒。两者通过 osascript 访问系统 App，只能
+  // 在已授予相应自动化权限的真实 macOS 主机上工作。连接器段的其他字段照常保留。
+  config.connectors = {
+    ...(source?.connectors && typeof source.connectors === 'object' && !Array.isArray(source.connectors)
+      ? source.connectors
+      : {}),
+    enabledNative: [...VERIFY_NATIVE_CONNECTOR_IDS],
+  };
+
+  // MCP server 清单属于能力中心的运行配置；其他用户设置仍不进入一次性验证目录。
+  // CLI 登录凭据不在 config.json，由各 CLI 自己从全局位置读取。
+  if (source?.mcp !== undefined) {
+    config.mcp = source.mcp;
   }
 
   return config;
@@ -192,12 +203,24 @@ export function readDogfoodCredentials(secretFile = DEFAULT_SECRET_FILE) {
     fail(`dogfood credential file must have mode 600: ${secretFile}`);
   }
   const values = parseDogfoodEnv(readFileSync(secretFile, 'utf8'));
+  const tokenRhythmKey = values.NEO_DOGFOOD_TR_KEY?.trim();
+  if (!tokenRhythmKey) fail('缺 NEO_DOGFOOD_TR_KEY');
+  if (!tokenRhythmKey.startsWith('sk_tr_')) {
+    fail('NEO_DOGFOOD_TR_KEY must start with sk_tr_');
+  }
   const email = values.NEO_DOGFOOD_EMAIL?.trim();
   const password = values.NEO_DOGFOOD_PASSWORD;
   if (!email || !password) {
     fail('dogfood credential file must define NEO_DOGFOOD_EMAIL and NEO_DOGFOOD_PASSWORD');
   }
-  return { email, password };
+  return { email, password, tokenRhythmKey };
+}
+
+export function maskTokenRhythmKey(value) {
+  if (typeof value !== 'string' || !value.startsWith('sk_tr_') || value.length < 10) {
+    fail('cannot mask invalid NEO_DOGFOOD_TR_KEY');
+  }
+  return `sk_tr_…${value.slice(-4)}`;
 }
 
 function writePrivateJson(filePath, value) {
@@ -292,11 +315,65 @@ async function invokeAuth(url, token, action, payload) {
 }
 
 async function signInDogfood(url, token, credentials) {
-  const result = await invokeAuth(url, token, 'signInEmail', credentials);
+  const result = await invokeAuth(url, token, 'signInEmail', {
+    email: credentials.email,
+    password: credentials.password,
+  });
   if (!result?.success) fail('dogfood account sign-in was rejected');
   const status = await invokeAuth(url, token, 'getStatus');
   if (!status?.isAuthenticated || status?.user?.email !== credentials.email) {
     fail('dogfood account did not reach authenticated state');
+  }
+}
+
+async function assertConfiguredModel(url, token) {
+  const response = await fetch(`${url}/api/domain/settings/get`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ payload: null }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const body = await response.json().catch(() => null);
+  const settings = body?.success ? body.data : null;
+  const provider = settings?.models?.providers?.[PROVIDER_ID];
+  const model = provider?.models?.[MODEL_ID];
+  if (
+    !response.ok
+    || !provider
+    || provider.enabled === false
+    || provider.apiKeyConfigured !== true
+    || !model
+    || model.enabled === false
+  ) {
+    fail(`model self-check failed: ${PROVIDER_ID}/${MODEL_ID} is not configured`);
+  }
+}
+
+async function assertConfiguredNativeConnectors(url, token) {
+  if (process.platform !== 'darwin') {
+    fail('native Calendar/Reminders verification requires a real macOS host');
+  }
+
+  for (const connectorId of VERIFY_NATIVE_CONNECTOR_IDS) {
+    const response = await fetch(`${url}/api/domain/connector/probe`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ payload: { connectorId } }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const body = await response.json().catch(() => null);
+    const status = body?.success && Array.isArray(body.data)
+      ? body.data.find((item) => item?.id === connectorId)
+      : null;
+    if (!response.ok || !status?.connected || status.readiness !== 'ready') {
+      fail(`native connector self-check failed: ${connectorId}`);
+    }
   }
 }
 
@@ -341,7 +418,7 @@ function assertDisposableDataDir(dataDir) {
   return resolved;
 }
 
-async function stopRun(dataDirArg) {
+export async function stopRun(dataDirArg) {
   const dataDir = path.resolve(dataDirArg || process.env.NEO_VERIFY_DATA_DIR || '');
   if (!dataDirArg && !process.env.NEO_VERIFY_DATA_DIR) fail('--stop requires NEO_VERIFY_DATA_DIR');
   if (!existsSync(dataDir)) fail(`slotless data directory does not exist: ${dataDir}`);
@@ -370,7 +447,7 @@ async function startRun(ticketArg, reuseDist) {
   const ticket = sanitizeTicket(ticketArg);
   const credentials = readDogfoodCredentials();
   const sourceConfig = JSON.parse(readFileSync(DEFAULT_SOURCE_CONFIG, 'utf8'));
-  const config = buildSlotlessConfig(sourceConfig);
+  const config = buildSlotlessConfig(sourceConfig, credentials.tokenRhythmKey);
   const webServer = ensureDist(reuseDist);
   const dataDir = mkdtempSync(path.join(os.tmpdir(), `neo-verify-${ticket}-`));
   chmodSync(dataDir, 0o700);
@@ -406,6 +483,8 @@ async function startRun(ticketArg, reuseDist) {
     await waitForHealth(child, url);
     const token = await readServerToken(dataDir);
     await signInDogfood(url, token, credentials);
+    await assertConfiguredModel(url, token);
+    await assertConfiguredNativeConnectors(url, token);
     writePrivateJson(path.join(dataDir, STATE_FILE), {
       version: 1,
       ticket,
@@ -417,6 +496,9 @@ async function startRun(ticketArg, reuseDist) {
       startedAt: new Date().toISOString(),
     });
     child.unref();
+    console.log(`NEO_VERIFY_KEY=${maskTokenRhythmKey(credentials.tokenRhythmKey)}`);
+    console.log(`NEO_VERIFY_MODEL=${PROVIDER_ID}/${MODEL_ID}`);
+    console.log(`NEO_VERIFY_NATIVE=${VERIFY_NATIVE_CONNECTOR_IDS.join(',')}`);
     console.log(`NEO_VERIFY_URL=${url}`);
     console.log(`NEO_VERIFY_DATA_DIR=${dataDir}`);
   } catch (error) {

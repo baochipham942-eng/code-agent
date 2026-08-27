@@ -138,6 +138,22 @@ describe('SessionAgentsPanel', () => {
     expect(useMemberViewStore.getState().viewingMemberId).toBe('researcher');
   });
 
+  it('已取消成员使用 outcomeWords 徽标词且不可再停', async () => {
+    mockLedger([record({ status: 'cancelled', error: 'cancelled' })], {
+      status: 'cancelled',
+      endedAt: 5_001,
+      completedCount: 0,
+    });
+
+    render(<SessionAgentsPanel />);
+    await screen.findByTestId('agents-panel-row-researcher');
+    expect(screen.getByTestId('agents-panel-status-researcher').textContent).toBe(
+      zh.outcomeWords['cancelled-by-user'].badge.label,
+    );
+    expect(screen.queryByTestId('agents-panel-stop-researcher')).toBeNull();
+    expect(screen.queryByTestId('agents-panel-stop-all')).toBeNull();
+  });
+
   it('行状态文案：工作中 / 失败（带原因）/ 卡住了在等你', async () => {
     mockLedger([record({ status: 'running', endTime: null, durationMs: null })]);
     mockTree(snapshotOf([

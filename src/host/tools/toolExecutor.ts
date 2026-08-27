@@ -104,6 +104,37 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+const DELETE_FLAG_PREFIXES = ['recursive_delete', 'root_delete', 'home_delete', 'system_dir_delete', 'container_dir_delete', 'wildcard_delete', 'current_dir_delete', 'sudo_rm'];
+const COMMAND_FILE_COUNT_LIMIT = 10_000;
+
+function extractDeleteTarget(command: string, securityFlags: string[]): string | undefined {
+  if (!securityFlags.some((flag) => DELETE_FLAG_PREFIXES.some((prefix) => flag.startsWith(prefix)))) return undefined;
+  const match = command.match(/(?:^|[;&|]\s*)rm\s+(?:(?:-[^\s]+|--[^\s]+)\s+)*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/u);
+  return match?.[1] ?? match?.[2] ?? match?.[3];
+}
+
+async function countAffectedFiles(targetPath: string): Promise<number | undefined> {
+  try {
+    const root = await nodeFs.lstat(targetPath);
+    if (!root.isDirectory()) return 1;
+    let count = 0;
+    const pending = [targetPath];
+    while (pending.length > 0 && count < COMMAND_FILE_COUNT_LIMIT) {
+      const directory = pending.pop();
+      if (!directory) break;
+      const entries = await nodeFs.readdir(directory, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && !entry.isSymbolicLink()) pending.push(nodePath.join(directory, entry.name));
+        else count += 1;
+        if (count >= COMMAND_FILE_COUNT_LIMIT) break;
+      }
+    }
+    return count;
+  } catch {
+    return undefined;
+  }
+}
+
 import { validateToolInputSchema, formatToolSchemaValidationError, stripUndeclaredToolParams } from './toolSchemaValidator';
 
 // ----------------------------------------------------------------------------
@@ -1218,7 +1249,20 @@ export class ToolExecutor {
       }
 
       if (needsUserApproval) {
-      const permissionRequest = this.buildPermissionRequest(toolDef, params);
+      const permissionRequest = this.buildPermissionRequest(toolDef, params, commandValidation);
+      const deleteTarget = commandValidation && typeof params.command === 'string'
+        ? extractDeleteTarget(params.command, commandValidation.securityFlags)
+        : undefined;
+      if (deleteTarget) {
+        const commandCwd = typeof params.working_directory === 'string'
+          ? nodePath.resolve(this.executionCwd, params.working_directory)
+          : this.executionCwd;
+        const affectedPath = nodePath.isAbsolute(deleteTarget)
+          ? nodePath.resolve(deleteTarget)
+          : nodePath.resolve(commandCwd, deleteTarget);
+        permissionRequest.details.affectedPath = affectedPath;
+        permissionRequest.details.affectedFileCount = await countAffectedFiles(affectedPath);
+      }
       permissionRequest.sessionId = effectiveSessionId;
       // resolved 审批结果回到 renderer 后，靠现成 tool call id 锚到对应步骤旁展示。
       // 只补关联字段，不复制参数或另建历史存储。
@@ -1632,7 +1676,8 @@ export class ToolExecutor {
 
   private buildPermissionRequest(
     tool: ToolDefinition,
-    params: Record<string, unknown>
+    params: Record<string, unknown>,
+    commandValidation?: ValidationResult,
   ): PermissionRequestData {
     const sourceAttribution = (rawPath?: unknown): Record<string, unknown> => {
       const workspaceScope = this.runContext?.workspaceScope;
@@ -1663,6 +1708,8 @@ export class ToolExecutor {
           tool: tool.name,
           details: {
             command: params.command,
+            commandRiskLevel: commandValidation?.riskLevel,
+            commandSecurityFlags: commandValidation?.securityFlags,
             ...sourceAttribution(params.working_directory),
           },
           reason: 'Execute shell command',

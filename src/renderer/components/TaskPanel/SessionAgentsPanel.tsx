@@ -254,11 +254,9 @@ export const SessionAgentsPanel: React.FC = () => {
                       </span>
                     )}
                   </span>
-                  <span className="truncate text-[11px] text-zinc-400">
-                    {row.status === 'standby'
-                      ? statusLabel(row)
-                      : row.activity ?? statusLabel(row)}
-                  </span>
+                  {row.activity && (
+                    <span className="truncate text-[11px] text-zinc-400">{row.activity}</span>
+                  )}
                   <span
                     data-testid={`agents-panel-status-${row.key}`}
                     className={`text-[10px] ${

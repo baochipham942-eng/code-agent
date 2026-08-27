@@ -37,6 +37,8 @@ export const EXTERNAL_ENGINE_RESUME_CAPABILITIES: Readonly<Record<ExternalAgentE
   codebuddy_code: 'non_resumable',
   grok_cli: 'non_resumable',
   dsh_cli: 'resumable',
+  // ACP session/load 实测通过（08-27 Kimi 0.38.0：回放完整历史后可续发 prompt）。
+  kimi_code_acp: 'resumable',
 });
 
 interface ExternalCheckpointState {

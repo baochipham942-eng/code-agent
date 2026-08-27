@@ -273,6 +273,67 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
     ],
   },
   {
+    // Kimi 的 ACP 形态，与上面的 CLI 形态**并存**：同一个官方 CLI、同一份凭据，
+    // 两条 transport 各自成一个引擎条目，用户可选。CLI 形态只读；ACP 形态能写能跑命令，
+    // 因为副作用反向委托回 Neo，由 acpClientHostBridge 逐次过审批链（差表见
+    // code-agent-private-archive/docs/evidence/2026-08-27-N-ACP-CLIENT-事件流映射表.md）。
+    id: 'kimi_code_acp',
+    macAppNames: ['Kimi.app'],
+    kind: 'kimi_code_acp',
+    label: 'Kimi Code (ACP)',
+    summary: '以 Agent Client Protocol 驱动本机 Kimi Code：结构化事件流 + 可续接会话，工具副作用回 Neo 审批。',
+    commandSummary: 'kimi acp',
+    probe: {
+      commands: ['kimi'],
+      versionArgs: ['--version'],
+      authProbe: {
+        args: ['provider', 'list', '--json'],
+        successPattern: '"managed:kimi-code"',
+      },
+      modelDiscovery: {
+        args: ['provider', 'list', '--json'],
+        parser: 'model_map_json',
+        modelMapKey: 'models',
+        labelField: 'displayName',
+        defaultModelProbe: {
+          args: ['provider', 'list'],
+          pattern: 'Default model:\\s*([^\\s]+)',
+        },
+        merge: 'replace',
+      },
+    },
+    adapter: {
+      adapterId: 'kimi_code_acp',
+      transport: 'acp',
+      promptTransport: 'internal',
+      eventFormat: 'internal',
+      credentialOwner: 'official_client',
+      // 🔴 必须是 'production'：registry 用 evidence==='production' 推导 executable/selectable，
+      // 填 'local_spike' 会让引擎在设置里可见却 capabilities=[]、永远跑不起来（装好没接电）。
+      // 'local_spike' 是留给没有 adapter 的推荐项的（qoder_work / comate_zulu）。
+      evidence: 'production',
+    },
+    modelSelection: 'runtime_catalog',
+    // resume 有据：agentCapabilities.loadSession=true，且 session/load 实测回放完整历史后可续发 prompt。
+    // workspace_write 有据：写盘由 Neo 自己执行（fs/write_text_file）并逐次过审批链，
+    // 不是把写权限交给对方进程——这也是本条目能比 CLI 形态放开的唯一理由。
+    capabilities: ['execute', 'stream_events', 'resume', 'workspace_write'],
+    defaultPermissionProfile: 'workspace_write',
+    riskTier: 'medium',
+    reliability: {
+      streamingMode: 'stream_json',
+      toolSupport: 'workspace_tools',
+      transcriptMode: 'clean_stream_json',
+      partialMessages: true,
+      mcpBridge: true,
+    },
+    auditNotes: [
+      'Credentials remain under KIMI_CODE_HOME and are managed by kimi login.',
+      'ACP agents delegate every side effect back to Neo (fs/* and terminal/*); each one goes through the existing approval chain and is denied when no approval channel exists.',
+      'Verified against Kimi Code CLI 0.38.0 on 2026-08-27: initialize, session/new, session/prompt, session/load and the client-side fs/terminal methods.',
+    ],
+  },
+  {
     id: 'codebuddy_code',
     macAppNames: ['WorkBuddy.app', 'CodeBuddy.app'],
     kind: 'codebuddy_code',

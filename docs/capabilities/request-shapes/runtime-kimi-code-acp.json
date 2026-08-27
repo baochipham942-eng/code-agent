@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "runtime": "kimi_code_acp",
+  "protocolFamily": "opaque_cli",
+  "adapterBoundary": "kimi acp (Agent Client Protocol over stdio, JSON-RPC 2.0)",
+  "syntheticRequest": {
+    "args": ["acp"],
+    "handshakeMethod": "initialize",
+    "handshakeParams": {
+      "protocolVersion": 1,
+      "clientCapabilities": { "fs": { "readTextFile": true, "writeTextFile": true }, "terminal": true },
+      "clientInfo": { "name": "neo" }
+    },
+    "turnMethod": "session/prompt",
+    "turnParamShape": "{ sessionId, promptBlocks: [{ type: 'text', text: <redacted-user-content> }] }",
+    "resumeMethod": "session/load",
+    "credentials": "KIMI_CODE_HOME-owned; values-not-recorded"
+  }
+}

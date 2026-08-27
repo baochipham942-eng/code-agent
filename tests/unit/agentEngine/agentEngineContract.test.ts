@@ -24,12 +24,20 @@ import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 describe('Agent Engine contract', () => {
   it('fails with typed engine and capability details before unsupported work starts', () => {
     expect(() => assertAgentEngineRunnable({
+      manifestId: 'dsh_cli',
       kind: 'dsh_cli',
       label: 'DSH',
+      summary: '',
       installState: 'installed',
+      runtimeState: 'ready',
       binaryPath: '/bin/dsh',
       executable: true,
       capabilities: ['execute'],
+      defaultPermissionProfile: 'read_only',
+      cwdPolicy: 'workspace_only',
+      riskTier: 'medium',
+      detectedAt: 1,
+      modelSelection: 'runtime_catalog',
     }, 'resume')).toThrowError(
       expect.objectContaining({
         name: 'AgentEngineCapabilityError',
@@ -39,12 +47,20 @@ describe('Agent Engine contract', () => {
       }),
     );
     expect(() => assertAgentEngineRunnable({
+      manifestId: 'codex_cli',
       kind: 'codex_cli',
       label: 'Codex CLI',
+      summary: '',
       installState: 'installed',
+      runtimeState: 'ready',
       binaryPath: '/bin/codex',
       executable: true,
       capabilities: ['execute', 'resume'],
+      defaultPermissionProfile: 'read_only',
+      cwdPolicy: 'workspace_only',
+      riskTier: 'medium',
+      detectedAt: 1,
+      modelSelection: 'runtime_catalog',
     }, 'resume')).not.toThrow();
     expect(new AgentEngineCapabilityError('dsh_cli', 'resume').message).toContain('dsh_cli');
   });

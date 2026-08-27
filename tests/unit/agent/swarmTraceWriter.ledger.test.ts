@@ -135,6 +135,31 @@ describe('SwarmTraceWriter · 3b 并行追加协同事件账本', () => {
     expect(detail.agents.every((agent) => agent.endTime !== null)).toBe(true);
   });
 
+  it('主轮结束会在 run_closed 前把遗留的 pending/running 成员落成 completed', async () => {
+    const scope = makeScope();
+    emitter.started(scope, 2);
+    emitter.agentAdded(scope, { id: 'queued', name: 'Queued', role: 'reviewer' });
+    emitter.agentAdded(scope, { id: 'running', name: 'Running', role: 'coder' });
+    emitter.agentUpdated(scope, 'running', { status: 'running', startTime: 100 });
+
+    emitter.completed(scope, {
+      total: 2,
+      completed: 2,
+      failed: 0,
+      parallelPeak: 1,
+      totalTime: 500,
+    });
+    await writer.drain();
+
+    const detail = rebuildRunDetail(ledger.getByRun(createSwarmTraceStorageId(scope)))!;
+    expect(detail.run.status).toBe('completed');
+    expect(detail.agents.map((agent) => [agent.agentId, agent.status])).toEqual([
+      ['queued', 'completed'],
+      ['running', 'completed'],
+    ]);
+    expect(detail.agents.every((agent) => agent.endTime !== null)).toBe(true);
+  });
+
   it('将下发任务原文与超过 200 字的完整成员产出写进 agent_snapshot', async () => {
     const scope = makeScope();
     const finalOutput = `完整产出：${'结论'.repeat(150)}`;

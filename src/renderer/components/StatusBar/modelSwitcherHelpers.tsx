@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, Wrench, Brain, Cpu, Terminal, Code2, Gauge } from 'lucide-react';
+import { Eye, Wrench, Brain, Cpu, Terminal, Code2, Gauge, Plug } from 'lucide-react';
 import type { BillingMode, ModelProvider, ModelProviderProtocol, ModelSearchCapabilityOverview } from '@shared/contract';
 import type {
   AgentEngineModelCatalogModel,
@@ -66,6 +66,7 @@ export const ENGINE_SHORT_LABEL: Record<AgentEngineKind, string> = {
   codebuddy_code: 'WorkBuddy',
   grok_cli: 'Grok',
   dsh_cli: 'dsh',
+  kimi_code_acp: 'Kimi·ACP',
 };
 
 export const ENGINE_ICON: Record<AgentEngineKind, React.ReactNode> = {
@@ -77,6 +78,7 @@ export const ENGINE_ICON: Record<AgentEngineKind, React.ReactNode> = {
   codebuddy_code: <Terminal className="w-3 h-3" />,
   grok_cli: <Terminal className="w-3 h-3" />,
   dsh_cli: <Terminal className="w-3 h-3" />,
+  kimi_code_acp: <Plug className="w-3 h-3" />,
 };
 
 export const ENGINE_INSTALL_LABEL: Record<AgentEngineDescriptor['installState'], string> = {

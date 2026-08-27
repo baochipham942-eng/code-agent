@@ -5,6 +5,7 @@
 import type { ModelCapability } from './model';
 import type { WorkspaceScope } from './project';
 import type { ExternalEngineModelSelection } from '../externalEngineManifest';
+import type { PermissionAskResult, PermissionRequest } from './permission';
 
 export type AgentEngineKind =
   | 'native'
@@ -14,7 +15,9 @@ export type AgentEngineKind =
   | 'kimi_code'
   | 'codebuddy_code'
   | 'grok_cli'
-  | 'dsh_cli';
+  | 'dsh_cli'
+  /** Kimi Code 的 ACP transport 形态；与 CLI 形态的 'kimi_code' 并存，不取代它。 */
+  | 'kimi_code_acp';
 
 export type ExternalAgentEngineKind = Exclude<AgentEngineKind, 'native'>;
 
@@ -200,6 +203,18 @@ export interface AgentEngineRunRequest {
   abortSignal?: AbortSignal;
 }
 
+/**
+ * 外部引擎向 Neo 现有审批链发起一次确认。
+ *
+ * ACP 引擎必需：agent 把所有副作用（写文件、跑命令）**反向委托**给 client，
+ * 于是 client 侧方法就是唯一的闸口（2026-08-27 Kimi 0.38.0 抓包实证：
+ * 四轮 prompt 里 agent 自己一次都没执行过副作用，也一次没发过 session/request_permission）。
+ * 不传此回调时适配器必须 fail-closed 一律拒——缺审批口不等于免审批。
+ */
+export type ExternalEnginePermissionAsk = (
+  request: Omit<PermissionRequest, 'id' | 'timestamp'>,
+) => Promise<PermissionAskResult>;
+
 export interface AgentEngineRunResult {
   runId: string;
   sessionId: string;
@@ -261,6 +276,7 @@ export const AGENT_ENGINE_KINDS: AgentEngineKind[] = [
   'codebuddy_code',
   'grok_cli',
   'dsh_cli',
+  'kimi_code_acp',
 ];
 
 /** 引擎展示名单一真源（registry descriptor 与 UI 文案共用，别把 kind 裸串透给用户） */
@@ -273,6 +289,7 @@ export const AGENT_ENGINE_LABELS: Record<AgentEngineKind, string> = {
   codebuddy_code: 'WorkBuddy',
   grok_cli: 'Grok Build',
   dsh_cli: 'DeepSeek Harness',
+  kimi_code_acp: 'Kimi Code (ACP)',
 };
 
 export const DEFAULT_AGENT_ENGINE_SESSION: AgentEngineSessionMetadata = {

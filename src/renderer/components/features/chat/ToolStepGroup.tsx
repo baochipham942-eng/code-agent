@@ -79,6 +79,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     if (streamVisibleNodes.length === 1) {
       const tc = streamVisibleNodes[0].toolCall;
       if (tc) {
+        const connectorId = findConnectorIdForToolName(tc.name);
         const step = humanizeToolStep(
           tc.name,
           tc.args as Record<string, unknown> | undefined,
@@ -87,8 +88,9 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           // 已失败的调用不再用过去时肯定式，避免与状态词同屏矛盾（结果语义交给状态词）
           tc.result !== undefined && tc.success === false,
           tc.stepLabel,
+          { connectorPrefixRendered: Boolean(connectorId) },
         );
-        if (!findConnectorIdForToolName(tc.name)) return step;
+        if (!connectorId) return step;
         const connector = getHumanToolLabel({
           toolName: tc.name,
           labels: t.receiptPresentation.humanToolLabels,

@@ -9,6 +9,10 @@ import { formatDisplayPath } from './displayPath';
 import type { Translations } from '../i18n';
 import type { ToolCallTargetContext, ToolStepLabelKey } from '@shared/contract';
 import { getHumanToolLabel } from './toolHumanLabel';
+import {
+  extractWorkbenchReferenceFromToolCall,
+  findConnectorToolMetadata,
+} from '@shared/contract/workbenchTools';
 
 const ARG_PREVIEW_MAX = 80;
 
@@ -270,6 +274,58 @@ function toIntentPhrase(sentence: string, t: Translations): string {
   return replaceCompletedPrefix(sentence, EN_COMPLETED_PREFIX_TO_INTENT);
 }
 
+function toCompletedConnectorAction(action: string, t: Translations): string {
+  if (CJK_PATTERN.test(t.toolStepHumanize.writeFallback)) {
+    const verb = Array.from(action).slice(0, 2).join('');
+    return verb ? `${verb}了${action.slice(verb.length)}` : action;
+  }
+  const capitalized = action.charAt(0).toUpperCase() + action.slice(1);
+  for (const [completed, intent] of EN_COMPLETED_PREFIX_TO_INTENT) {
+    if (capitalized.startsWith(intent)) {
+      return completed + capitalized.slice(intent.length);
+    }
+  }
+  return capitalized;
+}
+
+function connectorFallbackAction(
+  name: string,
+  args: Record<string, unknown> | undefined,
+  t: Translations,
+  failed: boolean,
+): string | null {
+  const reference = extractWorkbenchReferenceFromToolCall({ name, arguments: args ?? {} });
+  if (reference?.kind !== 'connector') return null;
+
+  const metadata = findConnectorToolMetadata(name);
+  if (metadata?.action) {
+    const action = CJK_PATTERN.test(t.toolStepHumanize.writeFallback)
+      ? metadata.action.zh
+      : metadata.action.en;
+    return failed ? action : toCompletedConnectorAction(action, t);
+  }
+
+  const action = reference.action?.trim().toLowerCase();
+  if (!action) return null;
+  const h = t.toolStepHumanize.connectorFallbackAction;
+  const completed = action === 'get_status'
+    ? h.queryStatus
+    : action === 'list_calendars'
+      ? h.queryCollections
+      : action === 'list_events'
+        ? h.queryItems
+        : /^(?:list|get|read|search|query)(?:_|$)/u.test(action)
+          ? h.query
+          : /^(?:create|add)(?:_|$)/u.test(action)
+            ? h.create
+            : /^(?:update|edit)(?:_|$)/u.test(action)
+              ? h.update
+              : /^(?:delete|remove)(?:_|$)/u.test(action)
+                ? h.delete
+                : null;
+  return completed ? (failed ? toIntentPhrase(completed, t) : completed) : null;
+}
+
 /**
  * shortDescription 是模型自写的自由文本，语种不受控（工具 schema 里给的示例本身
  * 就是英文），实测会在中文界面上原样上屏、还被 CSS 截成半句英文。
@@ -303,6 +359,7 @@ export function humanizeToolStep(
   shortDescription?: string,
   failed?: boolean,
   stepLabel?: ToolStepLabelKey,
+  renderContext: { connectorPrefixRendered?: boolean } = {},
 ): string {
   if (stepLabel) {
     const declared = t.toolStepHumanize.intent[stepLabel]
@@ -432,15 +489,23 @@ export function humanizeToolStep(
       // 仅用于展开明细；主流聚合行会过滤 isInternalStreamTool
       return phrase(h.toolSearch);
     default: {
-      if (isInternalStreamTool(name)) return phrase(h.fallback);
+      const action = connectorFallbackAction(name, args, t, Boolean(failed))
+        ?? phrase(h.fallbackNeutral);
+      const fallback = h.fallback.replace('{action}', action);
+      if (isInternalStreamTool(name)) return fallback;
       // 主行只接受连接器映射或已有开发短名。映射仍返回原始 id 时，说明它没有
       // 用户语义，只能留在展开明细的次级小字，不能作为主标题上屏。
       const humanToolName = getHumanToolLabel({
         toolName: name,
         labels: t.receiptPresentation.humanToolLabels,
       });
-      if (humanToolName.trim().toLowerCase() === name.trim().toLowerCase()) return phrase(h.fallback);
-      return phrase(h.fallbackWithTool.replace('{tool}', humanToolName));
+      if (
+        renderContext.connectorPrefixRendered
+        || humanToolName.trim().toLowerCase() === name.trim().toLowerCase()
+      ) return fallback;
+      return h.fallbackWithTool
+        .replace('{tool}', humanToolName)
+        .replace('{action}', action);
     }
   }
 }

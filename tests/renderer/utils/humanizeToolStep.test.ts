@@ -175,20 +175,20 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
   });
 
   // 未识别工具没有用户语义，原始 id 只留在展开明细的次级小字。
-  it('unknown tool: 主行使用固定人话兜底', () => {
+  it('unknown tool: 确实推不出动作时使用中性兜底', () => {
     const line = humanizeToolStep('some_future_tool', {}, zh);
-    expect(line).toBe('执行了一个步骤');
+    expect(line).toBe('执行了操作');
     expect(line).not.toContain('some_future_tool');
   });
 
   it('unknown tool failed: 失败行主文案不暴露工具名', () => {
     const line = humanizeToolStep('MemoryWrite', { action: 'write', filename: 'x.md' }, zh, undefined, true);
-    expect(line).toBe('执行一个步骤');
+    expect(line).toBe('执行操作');
     expect(line).not.toContain('MemoryWrite');
   });
 
   it('unknown tool failed (en): 失败行主文案不暴露工具名', () => {
-    expect(humanizeToolStep('MemoryWrite', {}, en, undefined, true)).toBe('Run a step');
+    expect(humanizeToolStep('MemoryWrite', {}, en, undefined, true)).toBe('Run an operation');
   });
 
   // 钉住原规矩：isInternalStreamTool 命中的纯内部动作（ToolSearch）仍不带内部名进主行。
@@ -261,7 +261,7 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     ['memory_store', {}, '记住一条信息'],
     ['memory_search', {}, '搜索记忆'],
     ['ToolSearch', {}, '查找可用工具'],
-    ['some_future_tool', {}, '执行一个步骤'],
+    ['some_future_tool', {}, '执行操作'],
   ] as const)('failed category matrix: %s', (name, args, expected) => {
     expect(humanizeToolStep(name, args, zh, undefined, true)).toBe(expected);
   });
@@ -289,7 +289,7 @@ describe('humanizeToolStep — shortDescription 语种不符时退回模板', ()
 
   it('中文界面下未识别的工具退回中文兜底', () => {
     expect(humanizeToolStep('some_future_tool', {}, zh, 'Did something'))
-      .toBe('执行了一个步骤');
+      .toBe('执行了操作');
   });
 
   it('英文界面拒绝中文 shortDescription，走模板', () => {
@@ -307,7 +307,7 @@ describe('humanizeToolStep — en locale parity', () => {
   it('renders the same categories in English', () => {
     expect(humanizeToolStep('Read', { file_path: 'report.md' }, en)).toBe('Read report.md');
     expect(humanizeToolStep('Bash', { command: 'ls src/' }, en)).toBe('Ran command ls src/');
-    expect(humanizeToolStep('unknown_tool', {}, en)).toBe('Ran a step');
+    expect(humanizeToolStep('unknown_tool', {}, en)).toBe('Ran an operation');
     expect(humanizeToolStep('TaskManager', {}, en)).toBe('Updated tasks');
     expect(humanizeToolStep('mcp__lark__im_v1_message_create', {}, en)).toBe('Sent a message in Lark');
   });

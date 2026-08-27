@@ -143,11 +143,15 @@ export function extractWorkbenchReferenceFromToolCall(
 
   const connectorId = findConnectorIdForToolName(toolCall.name);
   if (connectorId) {
+    const args = toolCall.arguments as Record<string, unknown> | undefined;
+    const declaredAction = typeof args?.action === 'string' && args.action.trim()
+      ? args.action.trim()
+      : undefined;
     return {
       kind: 'connector',
       id: connectorId,
       action: toolCall.name === connectorId
-        ? connectorId
+        ? declaredAction
         : toolCall.name.replace(`${connectorId}_`, ''),
     };
   }

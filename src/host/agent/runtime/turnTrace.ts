@@ -83,6 +83,8 @@ export interface TraceEventDataMap {
   };
   tool_dispatch: {
     toolName: string;
+    /** Safe connector operation id (for example list_events); never stores full tool args. */
+    toolAction?: string | null;
     success: boolean;
     durationMs: number;
     error: string | null;

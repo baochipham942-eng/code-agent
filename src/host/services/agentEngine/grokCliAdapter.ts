@@ -12,7 +12,6 @@ const GROK_CONFIG: ClaudeProtocolCliConfig = {
   label: 'Grok Build',
   runPrefix: 'grok',
   logSlug: 'grok-build',
-  errorCode: 'GROK_CLI_FAILED',
   promptTransport: 'argv',
   buildArgs: buildGrokArgs,
   buildEnv: buildGrokEnv,

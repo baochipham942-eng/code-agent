@@ -544,7 +544,7 @@ describe('CodexCliAdapter.run', () => {
     );
     expect(mocks.upsertTask).toHaveBeenLastCalledWith(expect.objectContaining({
       failure: expect.objectContaining({
-        message: 'API Error: 429 quota exhausted',
+        message: expect.stringContaining('额度或账单状态不可用'),
         reason: 'quota_exhausted',
       }),
     }));
@@ -562,17 +562,12 @@ describe('CodexCliAdapter.run', () => {
       .find((message) => message?.role === 'assistant');
     expect(assistantMessage).toMatchObject({
       role: 'assistant',
-      content: expect.stringContaining('额度或账单状态不可用'),
-      modelDecision: expect.objectContaining({
-        externalEngine: expect.objectContaining({
-          kind: 'codex_cli',
-          failure: expect.objectContaining({
-            category: 'quota',
-            reason: 'quota_exhausted',
-          }),
-        }),
+      content: '',
+      metadata: expect.objectContaining({
+        agentError: expect.objectContaining({ category: 'insufficient_balance' }),
       }),
     });
+    expect(mocks.queueNotification).not.toHaveBeenCalled();
     expect(mocks.webContentsSend).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({

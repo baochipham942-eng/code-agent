@@ -47,14 +47,14 @@ import { createLogger } from '../infra/logger';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
 import {
-  assertAgentEngineCapability,
+  assertAgentEngineRunnable,
   assertExternalEngineProfile,
   assertExternalSubagentProfile,
   assertWorkspaceCwd,
 } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
-import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
+import { buildAgentEngineFailureMetadata, classifyAgentEngineFailure } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import type { ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 import { emitExternalAgentEvent } from './agentEngineEventSink';
@@ -91,7 +91,6 @@ interface AcpEngineConfig {
   label: string;
   /** 进入 ACP 模式的子命令，例如 kimi 的 `acp`。 */
   acpArgs: string[];
-  errorCode: string;
   logSlug: string;
   runPrefix: string;
 }
@@ -106,12 +105,8 @@ class AcpClientAdapter {
     const cwd = assertWorkspaceCwd(request.cwd, request.workspaceRoot);
     const registry = getAgentEngineRegistry();
     const descriptor = await registry.get(config.kind);
-    if (descriptor.installState !== 'installed' || !descriptor.binaryPath) {
-      throw new Error(descriptor.lastError || `${config.label} is not installed or not ready.`);
-    }
-    assertAgentEngineCapability(
-      config.kind,
-      descriptor.capabilities,
+    const binaryPath = assertAgentEngineRunnable(
+      descriptor,
       request.externalSessionId ? 'resume' : 'execute',
     );
 
@@ -136,7 +131,7 @@ class AcpClientAdapter {
     logStream.on('error', (error) => logger.warn('[ACP] 引擎日志写入失败', { runId, error }));
 
     const commandSummary = [
-      path.basename(descriptor.binaryPath),
+      path.basename(binaryPath),
       ...config.acpArgs,
       '<acp:session/prompt>',
     ].join(' ');
@@ -202,7 +197,7 @@ class AcpClientAdapter {
     const emit = (event: AgentEventEnvelope) => emitExternalAgentEvent(request.sessionId, event, request.emitEvent);
     emit({ type: 'turn_start', data: { turnId, iteration: 1 } });
 
-    const child = spawn(descriptor.binaryPath, config.acpArgs, {
+    const child = spawn(binaryPath, config.acpArgs, {
       cwd,
       env,
       detached: process.platform !== 'win32',
@@ -217,7 +212,7 @@ class AcpClientAdapter {
       else child.kill('SIGTERM');
     });
     await request.durableLifecycle?.attachProcess(child, {
-      binary: descriptor.binaryPath,
+      binary: binaryPath,
       version: descriptor.version,
       commandSummary,
       logPath,
@@ -545,7 +540,7 @@ class AcpClientAdapter {
       const message = humanizeAcpFailure(rawMessage, descriptor.label);
       const failureDiagnostics = classifyAgentEngineFailure({
         engine: config.kind,
-        message,
+        message: rawMessage,
         occurredAt: completedAt,
         timeout: Boolean(timeoutMessage),
         spawnError: Boolean(spawnErrorMessage),
@@ -558,26 +553,18 @@ class AcpClientAdapter {
         failure: { message, category: 'agent_engine', reason: failureDiagnostics.reason },
       });
       ledger.appendEvent({ taskId, type: 'agent_engine.failed', status: 'failed', message, data: { logPath, failure: failureDiagnostics } });
-      ledger.queueNotification({
-        taskId,
-        sessionId: request.sessionId,
-        type: 'task_failed',
-        title: `${config.label} failed`,
-        message,
-        payload: { runId, logPath, failure: failureDiagnostics },
-      });
-      emit({
-        type: 'error',
-        // rawError：给排查用的原文（协议内部话术）。人话在 message 里，两者分开放。
-        data: { message, code: config.errorCode, suggestion: failureDiagnostics.suggestion, details: { runId, logPath, rawError: rawMessage, failure: failureDiagnostics } },
-      });
       const assistantMessage: Message = {
         id: turnId,
         role: 'assistant',
-        content: formatAgentEngineFailureContent(descriptor.label, failureDiagnostics, logPath),
+        content: '',
         timestamp: completedAt,
-        modelDecision: buildAgentEngineModelDecision(descriptor, model, completedAt, failureDiagnostics),
-        metadata: { workbench: { workingDirectory: cwd } },
+        metadata: {
+          workbench: { workingDirectory: cwd },
+          agentError: {
+            ...buildAgentEngineFailureMetadata(failureDiagnostics),
+            rawMessage: message,
+          },
+        },
       };
       await sessionManager.addMessageToSession(request.sessionId, assistantMessage);
       emit({ type: 'message', data: assistantMessage });
@@ -657,7 +644,6 @@ export class KimiAcpAdapter extends AcpClientAdapter {
       kind: 'kimi_code_acp',
       label: 'Kimi Code (ACP)',
       acpArgs: ['acp'],
-      errorCode: 'KIMI_CODE_ACP_FAILED',
       logSlug: 'kimi-code-acp',
       runPrefix: 'kimi_acp',
     });

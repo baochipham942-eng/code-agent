@@ -31,11 +31,11 @@ import { generateMessageId } from '../../../shared/utils/id';
 import { getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
-import { assertAgentEngineCapability } from './agentEngineGuards';
+import { assertAgentEngineRunnable } from './agentEngineGuards';
 import { assertExternalSubagentProfile, assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
-import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
+import { buildAgentEngineFailureMetadata, classifyAgentEngineFailure } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 import { emitExternalAgentEvent } from './agentEngineEventSink';
@@ -77,13 +77,7 @@ export class KimiCliAdapter {
     const cwd = assertWorkspaceCwd(request.cwd, request.workspaceRoot);
     const registry = getAgentEngineRegistry();
     const descriptor = await registry.get('kimi_code');
-    if (descriptor.installState !== 'installed') {
-      throw new Error(descriptor.lastError || 'Kimi Code CLI is not installed or not ready.');
-    }
-    assertAgentEngineCapability('kimi_code', descriptor.capabilities, 'execute');
-    if (!descriptor.executable) {
-      throw new Error(descriptor.lastError || 'Kimi Code CLI is not executable.');
-    }
+    const binaryPath = assertAgentEngineRunnable(descriptor, 'execute');
 
     const permissionProfile = request.executionOrigin === 'subagent'
       ? assertExternalSubagentProfile(request.permissionProfile, { origin: 'subagent', cwd })
@@ -176,7 +170,7 @@ export class KimiCliAdapter {
 
     const args = buildKimiArgs(request.prompt, model);
     // stdin: 'ignore' —— Kimi 不走 stdin 管道，prompt 已作为命令行参数。
-    const child = spawn(descriptor.binaryPath || 'kimi', args, {
+    const child = spawn(binaryPath, args, {
       cwd,
       env,
       detached: process.platform !== 'win32',
@@ -187,7 +181,7 @@ export class KimiCliAdapter {
       else child.kill('SIGTERM');
     });
     await request.durableLifecycle?.attachProcess(child, {
-      binary: descriptor.binaryPath || 'kimi',
+      binary: binaryPath,
       version: descriptor.version,
       commandSummary,
       logPath,
@@ -413,7 +407,7 @@ export class KimiCliAdapter {
         completedAt,
         durationMs: completedAt - startedAt,
         failure: {
-          message,
+          message: failureDiagnostics.suggestion,
           exitCode: exitCode ?? undefined,
           category: 'agent_engine',
           reason: failureDiagnostics.reason,
@@ -423,31 +417,19 @@ export class KimiCliAdapter {
         taskId,
         type: 'agent_engine.failed',
         status: 'failed',
-        message,
+        message: failureDiagnostics.suggestion,
         data: { exitCode, logPath, failure: failureDiagnostics },
-      });
-      ledger.queueNotification({
-        taskId,
-        sessionId: request.sessionId,
-        type: 'task_failed',
-        title: 'Kimi Code failed',
-        message,
-        payload: { runId, logPath, failure: failureDiagnostics },
-      });
-      emit({
-        type: 'error',
-        data: { message, code: 'KIMI_CODE_FAILED', suggestion: failureDiagnostics.suggestion, details: { runId, logPath, exitCode, failure: failureDiagnostics } },
       });
       const assistantMessage: Message = {
         id: turnId,
         role: 'assistant',
-        content: formatAgentEngineFailureContent(descriptor.label, failureDiagnostics, logPath),
+        content: '',
         timestamp: completedAt,
-        modelDecision: buildAgentEngineModelDecision(descriptor, model, completedAt, failureDiagnostics),
         metadata: {
           workbench: {
             workingDirectory: cwd,
           },
+          agentError: buildAgentEngineFailureMetadata(failureDiagnostics),
         },
       };
       await sessionManager.addMessageToSession(request.sessionId, assistantMessage);

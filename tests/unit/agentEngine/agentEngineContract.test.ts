@@ -7,7 +7,7 @@ import {
   normalizeAgentEngineSession,
 } from '../../../src/shared/contract/agentEngine';
 import {
-  assertAgentEngineCapability,
+  assertAgentEngineRunnable,
   assertWorkspaceCwd,
   buildManualAgentEngineSelection,
   resolveExternalEngineLaunch,
@@ -23,7 +23,22 @@ import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 
 describe('Agent Engine contract', () => {
   it('fails with typed engine and capability details before unsupported work starts', () => {
-    expect(() => assertAgentEngineCapability('dsh_cli', ['execute'], 'resume')).toThrowError(
+    expect(() => assertAgentEngineRunnable({
+      manifestId: 'dsh_cli',
+      kind: 'dsh_cli',
+      label: 'DSH',
+      summary: '',
+      installState: 'installed',
+      runtimeState: 'ready',
+      binaryPath: '/bin/dsh',
+      executable: true,
+      capabilities: ['execute'],
+      defaultPermissionProfile: 'read_only',
+      cwdPolicy: 'workspace_only',
+      riskTier: 'medium',
+      detectedAt: 1,
+      modelSelection: 'runtime_catalog',
+    }, 'resume')).toThrowError(
       expect.objectContaining({
         name: 'AgentEngineCapabilityError',
         code: 'AGENT_ENGINE_CAPABILITY_UNSUPPORTED',
@@ -31,7 +46,22 @@ describe('Agent Engine contract', () => {
         capability: 'resume',
       }),
     );
-    expect(() => assertAgentEngineCapability('codex_cli', ['execute', 'resume'], 'resume')).not.toThrow();
+    expect(() => assertAgentEngineRunnable({
+      manifestId: 'codex_cli',
+      kind: 'codex_cli',
+      label: 'Codex CLI',
+      summary: '',
+      installState: 'installed',
+      runtimeState: 'ready',
+      binaryPath: '/bin/codex',
+      executable: true,
+      capabilities: ['execute', 'resume'],
+      defaultPermissionProfile: 'read_only',
+      cwdPolicy: 'workspace_only',
+      riskTier: 'medium',
+      detectedAt: 1,
+      modelSelection: 'runtime_catalog',
+    }, 'resume')).not.toThrow();
     expect(new AgentEngineCapabilityError('dsh_cli', 'resume').message).toContain('dsh_cli');
   });
 
@@ -221,6 +251,7 @@ describe('Agent Engine launch policy', () => {
       installState: 'installed',
       runtimeState: 'ready',
       executable: true,
+      binaryPath: '/usr/local/bin/codex',
       capabilities: ['execute'],
       defaultPermissionProfile: 'read_only',
       cwdPolicy: 'workspace_only',
@@ -246,6 +277,7 @@ describe('Agent Engine launch policy', () => {
       installState: 'installed',
       runtimeState: 'ready',
       executable: true,
+      binaryPath: '/usr/local/bin/claude',
       capabilities: ['execute'],
       defaultPermissionProfile: 'read_only',
       cwdPolicy: 'workspace_only',
@@ -285,6 +317,7 @@ describe('Agent Engine launch policy', () => {
       installState: 'installed',
       runtimeState: 'ready',
       executable: true,
+      binaryPath: '/usr/local/bin/codex',
       capabilities: ['execute'],
       defaultPermissionProfile: 'workspace_write',
       cwdPolicy: 'workspace_only',

@@ -106,6 +106,7 @@ vi.mock('../../../src/host/services/infra/shellEnvironment', () => ({
 }));
 
 import { AgentEngineRegistry } from '../../../src/host/services/agentEngine/agentEngineRegistry';
+import { assertAgentEngineRunnable } from '../../../src/host/services/agentEngine/agentEngineGuards';
 import { listExternalEngineManifests } from '../../../src/shared/externalEngineManifest';
 
 describe('AgentEngineRegistry mimo/kimi detection', () => {
@@ -469,6 +470,23 @@ describe('AgentEngineRegistry 探测失败不得说成既成事实', () => {
     expect(kimi?.probeError).toBeTruthy();
     // 权限一格没松：探测没跑通的东西依然不可选。
     expect(kimi?.selectable).toBe(false);
+  });
+
+  it('强制版本探活超时：descriptor 仍可穿过运行闸，技术路径不进入用户错误', async () => {
+    mocks.installed.add('kimi');
+    mocks.versionProbeFails.add('kimi');
+
+    const descriptor = await new AgentEngineRegistry({ cacheTtlMs: 0 }).get('kimi_code_acp');
+
+    expect(descriptor).toMatchObject({
+      installState: 'installed',
+      runtimeState: 'ready',
+      executable: true,
+      binaryPath: '/usr/local/bin/kimi',
+      capabilities: expect.arrayContaining(['execute', 'resume']),
+    });
+    expect(descriptor.lastError).toContain('kimi --version timed out');
+    expect(assertAgentEngineRunnable(descriptor, 'execute')).toBe('/usr/local/bin/kimi');
   });
 
   it('登录探测超时：落 unknown，绝不落 needs_login', async () => {

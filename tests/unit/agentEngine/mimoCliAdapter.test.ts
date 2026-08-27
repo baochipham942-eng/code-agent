@@ -359,7 +359,7 @@ describe('MimoCliAdapter.run', () => {
       prompt: 'inspect only',
       cwd: workspaceRoot,
       workspaceRoot,
-    })).rejects.toThrow(/PATH discovery pending/);
+    })).rejects.toThrow(/客户端未安装/);
     expect(mocks.spawn).not.toHaveBeenCalled();
   });
 

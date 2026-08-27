@@ -14,7 +14,6 @@ const CODEBUDDY_CONFIG: ClaudeProtocolCliConfig = {
   label: 'WorkBuddy',
   runPrefix: 'workbuddy',
   logSlug: 'workbuddy',
-  errorCode: 'WORKBUDDY_FAILED',
   promptTransport: 'argv',
   buildArgs: buildCodeBuddyArgs,
   buildEnv: buildCodeBuddyEnv,

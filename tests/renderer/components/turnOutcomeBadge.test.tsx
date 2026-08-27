@@ -11,9 +11,14 @@ const stampState = vi.hoisted(() => ({
   stamps: [] as TurnOutcomeStamp[],
 }));
 
+const copyState = vi.hoisted(() => ({
+  language: 'zh' as 'zh' | 'en',
+}));
+
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ language: 'zh', t: zh }) };
+  const { en } = await import('../../../src/renderer/i18n/en');
+  return { useI18n: () => ({ language: copyState.language, t: copyState.language === 'zh' ? zh : en }) };
 });
 
 vi.mock('../../../src/renderer/hooks/useTurnOutcomeStamps', async () => {
@@ -27,6 +32,8 @@ vi.mock('../../../src/renderer/hooks/useTurnOutcomeStamps', async () => {
 });
 
 import { TurnOutcomeBadge } from '../../../src/renderer/components/features/chat/TurnOutcomeBadge';
+import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 function turn(overrides: Partial<TraceTurn> = {}): TraceTurn {
   return {
@@ -46,6 +53,45 @@ function stamp(verdict: TurnOutcomeStamp['verdict'], ts = 2500): TurnOutcomeStam
 
 beforeEach(() => {
   stampState.stamps = [];
+  copyState.language = 'zh';
+  useAppStore.setState({ developerMode: false });
+});
+
+describe('TurnCard outcome stamp visibility', () => {
+  it.each([
+    ['zh', '完成有据', '自称完成'],
+    ['en', 'Verified', 'Self-claimed'],
+  ] as const)('regular %s timeline omits ledger stamps', (language, verifiedCopy, selfClaimedCopy) => {
+    copyState.language = language;
+
+    stampState.stamps = [stamp('verified')];
+    const verified = render(<TurnCard turn={turn()} sessionId="s1" />);
+    expect(verified.container.textContent).not.toContain(verifiedCopy);
+    expect(verified.container.querySelector('[data-testid="turn-outcome-badge"]')).toBeNull();
+    verified.unmount();
+
+    stampState.stamps = [stamp('self_claimed')];
+    const selfClaimed = render(<TurnCard turn={turn()} sessionId="s1" />);
+    expect(selfClaimed.container.textContent).not.toContain(selfClaimedCopy);
+    expect(selfClaimed.container.querySelector('[data-testid="turn-outcome-badge"]')).toBeNull();
+  });
+
+  it.each([
+    ['zh', '完成有据', '自称完成'],
+    ['en', 'Verified', 'Self-claimed'],
+  ] as const)('developer %s timeline keeps ledger stamps', (language, verifiedCopy, selfClaimedCopy) => {
+    copyState.language = language;
+    useAppStore.setState({ developerMode: true });
+
+    stampState.stamps = [stamp('verified')];
+    const verified = render(<TurnCard turn={turn()} sessionId="s1" />);
+    expect(verified.container.textContent).toContain(verifiedCopy);
+    verified.unmount();
+
+    stampState.stamps = [stamp('self_claimed')];
+    const selfClaimed = render(<TurnCard turn={turn()} sessionId="s1" />);
+    expect(selfClaimed.container.textContent).toContain(selfClaimedCopy);
+  });
 });
 
 describe('TurnOutcomeBadge', () => {

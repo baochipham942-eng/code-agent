@@ -33,55 +33,10 @@ function humanizeDispatchTool(toolName: string, t: Translations): string {
   return label.includes(toolName) ? t.rendererHumanPipe.sessionInspector.genericTool : label;
 }
 
-// ── 印章 chip：verified / self_claimed 可区分但不刺眼；n_a 按终态说人话 ────
+// ── 印章 chip：终态由 outcomeWords 统一承担，印章只补证据维度 ─────────────
 
-function StampChip({ segment }: { segment: TurnSegment }) {
-  const { t } = useI18n();
-  const stamp = t.sessionInspector.stamp;
-  if (segment.inProgress) {
-    return (
-      <span
-        data-testid="inspector-stamp"
-        data-verdict="in_progress"
-        className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-surface-faint px-1.5 py-0.5 text-[10px] text-zinc-400"
-      >
-        <CircleDot className="h-3 w-3" />
-        {t.sessionInspector.turnInProgress}
-      </span>
-    );
-  }
-  if (!segment.stamp) return null;
-  const { verdict, terminal } = segment.stamp;
-  if (verdict === 'verified') {
-    return (
-      <span
-        data-testid="inspector-stamp"
-        data-verdict="verified"
-        className="inline-flex items-center gap-1 rounded-md border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success"
-      >
-        <CheckCircle2 className="h-3 w-3" />
-        {stamp.verified}
-        {segment.stamp.evidenceCount > 0 && (
-          <span className="opacity-70">
-            · {fill(t.sessionInspector.evidenceCount, { count: String(segment.stamp.evidenceCount) })}
-          </span>
-        )}
-      </span>
-    );
-  }
-  if (verdict === 'self_claimed') {
-    return (
-      <span
-        data-testid="inspector-stamp"
-        data-verdict="self_claimed"
-        className="inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
-      >
-        <AlertTriangle className="h-3 w-3" />
-        {stamp.selfClaimed}
-      </span>
-    );
-  }
-  // n_a：按终态说人话（失败/取消自带原因，不判真伪）
+function resolveTerminalOutcome(segment: TurnSegment, t: Translations) {
+  const terminal = segment.stamp?.terminal;
   const failedCode = terminal === 'failed'
     ? segment.toolDispatches.reduce<AgentFailureCode | null>((resolved, dispatch) => {
         if (resolved || dispatch.success) return resolved;
@@ -103,21 +58,81 @@ function StampChip({ segment }: { segment: TurnSegment }) {
               : segment.failedToolCount > 0
                 ? t.outcomeWords['failed-tool'].badge
                 : t.outcomeWords['failed-unknown'].badge;
-  const outcome = terminal === 'cancelled'
-    ? t.outcomeWords['cancelled-by-user'].badge
-    : terminal === 'interrupted'
-      ? t.outcomeWords['cancelled-restart'].badge
-      : terminal === 'failed'
-        ? failedOutcome
-        : terminal === 'aborted'
-          ? t.outcomeWords.aborted.badge
-          : terminal === 'goal_met'
-            ? t.outcomeWords['goal-met'].badge
-            : null;
+  return terminal === 'completed'
+    ? t.outcomeWords.completed.badge
+    : terminal === 'cancelled'
+      ? t.outcomeWords['cancelled-by-user'].badge
+      : terminal === 'interrupted'
+        ? t.outcomeWords['cancelled-restart'].badge
+        : terminal === 'failed'
+          ? failedOutcome
+          : terminal === 'aborted'
+            ? t.outcomeWords.aborted.badge
+            : terminal === 'goal_met'
+              ? t.outcomeWords['goal-met'].badge
+              : null;
+}
+
+function StampChip({ segment }: { segment: TurnSegment }) {
+  const { t } = useI18n();
+  const stamp = t.sessionInspector.stamp;
+  if (segment.inProgress) {
+    return (
+      <span
+        data-testid="inspector-stamp"
+        data-verdict="in_progress"
+        className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-surface-faint px-1.5 py-0.5 text-[10px] text-zinc-400"
+      >
+        <CircleDot className="h-3 w-3" />
+        {t.sessionInspector.turnInProgress}
+      </span>
+    );
+  }
+  if (!segment.stamp) return null;
+  const { verdict, terminal } = segment.stamp;
+  const terminalOutcome = resolveTerminalOutcome(segment, t);
+  if (verdict === 'verified') {
+    return (
+      <span
+        data-testid="inspector-stamp"
+        data-verdict="verified"
+        className="inline-flex items-center gap-1 rounded-md border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success"
+      >
+        <CheckCircle2 className="h-3 w-3" />
+        {terminalOutcome && (
+          <span data-testid="inspector-terminal-outcome">{terminalOutcome.label}</span>
+        )}
+        {terminalOutcome && <span aria-hidden="true">·</span>}
+        <span data-testid="inspector-stamp-qualifier">{stamp.evidencedQualifier}</span>
+        {segment.stamp.evidenceCount > 0 && (
+          <span className="opacity-70">
+            · {fill(t.sessionInspector.evidenceCount, { count: String(segment.stamp.evidenceCount) })}
+          </span>
+        )}
+      </span>
+    );
+  }
+  if (verdict === 'self_claimed') {
+    return (
+      <span
+        data-testid="inspector-stamp"
+        data-verdict="self_claimed"
+        className="inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
+      >
+        <AlertTriangle className="h-3 w-3" />
+        {terminalOutcome && (
+          <span data-testid="inspector-terminal-outcome">{terminalOutcome.label}</span>
+        )}
+        {terminalOutcome && <span aria-hidden="true">·</span>}
+        <span data-testid="inspector-stamp-qualifier">{stamp.selfClaimedQualifier}</span>
+      </span>
+    );
+  }
+  // n_a：按终态说人话（失败/取消自带原因，不判真伪）
   const tone = terminal === 'failed' || terminal === 'aborted'
     ? 'border-badge-danger/30 bg-red-500/10 text-badge-danger'
     : 'border-white/[0.08] bg-surface-faint text-zinc-400';
-  return outcome ? (
+  return terminalOutcome ? (
     <span className="inline-flex min-w-0 items-center gap-1.5">
       <span
         data-testid="inspector-stamp"
@@ -126,10 +141,10 @@ function StampChip({ segment }: { segment: TurnSegment }) {
         className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] ${tone}`}
       >
         {(terminal === 'failed' || terminal === 'aborted') && <XCircle className="h-3 w-3" />}
-        {outcome.label}
+        {terminalOutcome.label}
       </span>
       <span data-testid="inspector-stamp-reason" className="truncate text-[10px] text-zinc-500">
-        {outcome.reason}
+        {terminalOutcome.reason}
       </span>
     </span>
   ) : <span className="text-[10px] text-zinc-500">{stamp.ended}</span>;

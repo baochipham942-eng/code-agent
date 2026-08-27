@@ -145,6 +145,66 @@ function classifyToolError(error: string): ToolErrorClassification | null {
   return null;
 }
 
+export type ToolTerminalOutcomeKey = keyof Translations['outcomeWords'];
+
+/**
+ * 单工具行唯一的终态裁决入口。渲染点只消费 outcomeWords，不再各自拼「调用失败」
+ * 等局部状态词；原始错误只参与 timeout/approval 的窄分类，不直接上屏。
+ */
+export function resolveToolTerminalOutcomeKey(
+  toolCall: Pick<ToolCall, 'result'>,
+): ToolTerminalOutcomeKey {
+  const result = toolCall.result;
+  if (isToolInterruptionPlaceholder(result?.error)) return 'cancelled-restart';
+
+  const failureCode = inferAgentFailureCode({
+    failureCode: result?.metadata?.failureCode,
+    toolResultCode: result?.metadata?.code,
+    defaultCode: AgentFailureCode.Unknown,
+  });
+  switch (failureCode) {
+    case AgentFailureCode.PermissionDenied:
+      return 'failed-approval-denied';
+    case AgentFailureCode.Timeout:
+      return 'failed-timeout';
+    case AgentFailureCode.BudgetExhausted:
+      return 'failed-budget';
+    case AgentFailureCode.DependencyFailed:
+    case AgentFailureCode.DependencyMissing:
+    case AgentFailureCode.ParentGone:
+    case AgentFailureCode.BlockedByParentRole:
+      return 'failed-dependency';
+    case AgentFailureCode.ToolUnavailable:
+    case AgentFailureCode.WorktreeCreateFailed:
+      return 'failed-unavailable';
+    case AgentFailureCode.ModelError:
+      return 'failed-model';
+    case AgentFailureCode.CancelledByUser:
+      return 'cancelled-by-user';
+    case AgentFailureCode.CancelledByParent:
+      return 'cancelled-by-parent';
+    case AgentFailureCode.WorkflowStageFailed:
+    case AgentFailureCode.Unknown:
+      break;
+  }
+
+  const error = result?.error?.trim() ?? '';
+  if (/approval (?:was )?denied|approval failed|审批(?:失败|被拒绝)|未获批准/iu.test(error)) {
+    return 'failed-approval-denied';
+  }
+  if (error && classifyToolError(error)?.kind === 'timeout') return 'failed-timeout';
+  return 'failed-tool';
+}
+
+function isArtifactValidationFailure(metadata?: Record<string, unknown> | null): boolean {
+  const artifactValidation = metadata?.artifactValidation;
+  return Boolean(
+    artifactValidation
+    && typeof artifactValidation === 'object'
+    && (artifactValidation as { failed?: unknown }).failed === true,
+  );
+}
+
 /**
  * host 侧已下发 metadata.code 的门（toolExecutor.ts / toolResolver.ts），与 i18n
  * `toolErrors.codes` 的键一一对应——本单只登记、不新造 code。登记的都是运行内
@@ -256,6 +316,24 @@ export function humanizeToolError(
     return {
       summary: t.outcomeWords['failed-approval-denied'].timeline.label,
       detail: t.outcomeWords['failed-approval-denied'].timeline.reason,
+    };
+  }
+  if (failureCode === AgentFailureCode.Timeout) {
+    return {
+      summary: t.outcomeWords['failed-timeout'].timeline.label,
+      detail: t.outcomeWords['failed-timeout'].timeline.reason,
+    };
+  }
+  if (error && /approval (?:was )?denied|approval failed|审批(?:失败|被拒绝)|未获批准/iu.test(error)) {
+    return {
+      summary: t.outcomeWords['failed-approval-denied'].timeline.label,
+      detail: t.outcomeWords['failed-approval-denied'].timeline.reason,
+    };
+  }
+  if (isArtifactValidationFailure(metadata)) {
+    return {
+      summary: t.outcomeWords['failed-tool'].timeline.label,
+      detail: t.toolErrors.artifactValidation.detail,
     };
   }
   // 1. code 优先：host 已登记的错误码直接用 code 文案，不经正则（正则降为兜底）

@@ -1,7 +1,7 @@
 // ============================================================================
 // 工程遥测降级锚点测试（2026-07-28 品质感视觉层打磨 ③）
-// 拍板：直接上屏的工程师数据（已恢复 pill、组级时长）默认不上屏，
-// hover（或键盘 focus-visible）才浮出；流式思考阶段由 ThinkingDigestBanner
+// 「已恢复」仍在 hover（或键盘 focus-visible）时浮出；组级时长常显并占固定最小宽度，
+// 避免工具行右缘在悬停前后错位。流式思考阶段由 ThinkingDigestBanner
 // 独占扫光「正在思考…」，StreamingIndicator 让位。
 // 例外（UX round2 20i，2026-07-29）：轮时间戳改为常驻可见（低透明度常态、hover 提亮）——
 // hover 门控在滚动时随卡片边界高速翻转，是「时间戳随页面滑动偶尔消失」的闪烁根因。
@@ -43,7 +43,7 @@ describe('TurnCard 思考行不重复', () => {
   });
 });
 
-describe('ToolStepGroup 遥测 hover 浮出', () => {
+describe('ToolStepGroup 遥测呈现', () => {
   it('组头按钮声明 group', () => {
     expect(toolStepGroup).toMatch(/transition-colors group \$\{/);
   });
@@ -52,7 +52,8 @@ describe('ToolStepGroup 遥测 hover 浮出', () => {
     expect(toolStepGroup).toMatch(/t\.toolGroup\.recoveredTitle[\s\S]{0,200}group-hover:opacity-100 group-focus-visible:opacity-100|group-hover:opacity-100 group-focus-visible:opacity-100[\s\S]{0,200}t\.toolGroup\.recoveredTitle/);
   });
 
-  it('组级时长默认隐去，hover/focus-visible 浮出', () => {
-    expect(toolStepGroup).toMatch(/group-hover:opacity-100 group-focus-visible:opacity-100"\s*\n\s*title=\{t\.toolGroup\.durationTitle\}/);
+  it('组级时长常显、右对齐并保留固定最小宽度', () => {
+    expect(toolStepGroup).toMatch(/min-w-\[4ch\][^"\n]*text-right[^"\n]*"\s*\n\s*title=\{t\.toolGroup\.durationTitle\}/);
+    expect(toolStepGroup).not.toMatch(/opacity-0[^"\n]*group-hover:opacity-100[^\n]*t\.toolGroup\.durationTitle/);
   });
 });

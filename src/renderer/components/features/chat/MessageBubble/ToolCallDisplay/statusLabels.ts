@@ -5,10 +5,11 @@
 // ============================================================================
 
 import type { ToolStatus } from './styles';
-import { AgentFailureCode, inferAgentFailureCode, type ToolCall } from '@shared/contract';
+import type { ToolCall } from '@shared/contract';
 import type { Translations } from '../../../../../i18n';
+import { resolveToolTerminalOutcomeKey } from '../../../../../utils/toolExecutionPresentation';
 
-type StatusLabels = Translations['toolStatus']['default'];
+type StatusLabels = Pick<Translations['toolStatus']['default'], 'preparing' | 'running'>;
 
 /**
  * Get the dynamic status label for a tool call.
@@ -45,50 +46,13 @@ export function getToolStatusLabel(
           : t.chat.delegationReceipt.completed;
       }
       return enrichCompletedLabel(toolCall, t);
-    case 'error':
-      if (inferAgentFailureCode({
-        failureCode: toolCall.result?.metadata?.failureCode,
-        toolResultCode: toolCall.result?.metadata?.code,
-        defaultCode: AgentFailureCode.Unknown,
-      }) === AgentFailureCode.PermissionDenied) {
-        const outcome = t.outcomeWords['failed-approval-denied'].timeline;
-        return `${outcome.label} · ${outcome.reason}`;
-      }
-      if (isArtifactValidationFailureAfterMutation(toolCall)) {
-        return artifactValidationFailedLabel(toolCall.name, t);
-      }
-      return t.outcomeWords['failed-tool'].timeline.label;
+    case 'error': {
+      const outcome = t.outcomeWords[resolveToolTerminalOutcomeKey(toolCall)].timeline;
+      return `${outcome.label} · ${outcome.reason}`;
+    }
     case 'interrupted':
       return t.outcomeWords['cancelled-restart'].timeline.label;
   }
-}
-
-// host 侧「写后验收」门（toolArtifactRepairPolicy.isFileMutationTool）覆盖的全部文件
-// 变更工具：验收失败会被原地翻转成 result.success=false 并写
-// metadata.artifactValidation.failed=true。renderer 不跨层 import host，名单手工对齐——
-// host 门加工具时这里要同步加。
-const ARTIFACT_VALIDATED_MUTATION_TOOLS = new Set([
-  'Write',
-  'write_file',
-  'Edit',
-  'edit_file',
-  'Append',
-  'append_file',
-]);
-
-function isArtifactValidationFailureAfterMutation(toolCall: ToolCall): boolean {
-  if (!ARTIFACT_VALIDATED_MUTATION_TOOLS.has(toolCall.name)) return false;
-  const metadata = toolCall.result?.metadata;
-  if (!metadata || typeof metadata !== 'object') return false;
-  const artifactValidation = (metadata as { artifactValidation?: unknown }).artifactValidation;
-  if (!artifactValidation || typeof artifactValidation !== 'object') return false;
-  return (artifactValidation as { failed?: unknown }).failed === true;
-}
-
-function artifactValidationFailedLabel(toolName: string, t: Translations): string {
-  if (toolName === 'Edit' || toolName === 'edit_file') return t.toolStatus.editValidationFailed;
-  if (toolName === 'Append' || toolName === 'append_file') return t.toolStatus.appendValidationFailed;
-  return t.toolStatus.writeValidationFailed;
 }
 
 /**

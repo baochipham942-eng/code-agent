@@ -110,4 +110,17 @@ describe('outcomeWords contract', () => {
       expect(outcomeWordsEn.outcomeWords[outcome].badge.reason.trim(), `en ${outcome}`).not.toBe('');
     }
   });
+
+  it('toolStatus only keeps live-phase copy; terminal labels come from outcomeWords', () => {
+    const source = fs.readFileSync(path.join(I18N_DIR, 'chatTranscript.ts'), 'utf8');
+    const statusBlocks = source.match(/toolStatus:\s*\{[\s\S]*?\n\},/gu) ?? [];
+
+    expect(statusBlocks).toHaveLength(2);
+    for (const block of statusBlocks) {
+      expect(block).not.toMatch(/\bcompleted:/u);
+      expect(block).not.toMatch(/\berror:/u);
+      expect(block).not.toMatch(/ValidationFailed/u);
+      expect(block).not.toMatch(/调用失败|Call failed/u);
+    }
+  });
 });

@@ -88,10 +88,10 @@ export const outcomeWordsZh: OutcomeWordsBundle = {
       notification: { label: '审批未通过', reason: '审批被拒绝' },
     },
     'failed-timeout': {
-      timeline: { label: '执行超时', reason: '执行超过等待时限' },
-      badge: { label: '已超时', reason: '执行超过等待时限' },
-      detail: { label: '任务执行超时', reason: '执行超过等待时限' },
-      notification: { label: '任务执行超时', reason: '执行超过等待时限' },
+      timeline: { label: '执行超时', reason: '等待回答或权限确认超时' },
+      badge: { label: '已超时', reason: '等待回答或权限确认超时' },
+      detail: { label: '任务执行超时', reason: '等待回答或权限确认超时' },
+      notification: { label: '任务执行超时', reason: '等待回答或权限确认超时' },
     },
     'failed-budget': {
       timeline: { label: '预算用尽', reason: '执行达到预算上限' },
@@ -195,10 +195,10 @@ export const outcomeWordsEn: OutcomeWordsBundle = {
       notification: { label: 'Approval denied', reason: 'The approval was denied' },
     },
     'failed-timeout': {
-      timeline: { label: 'Timed out', reason: 'The run exceeded its time limit' },
-      badge: { label: 'Timed out', reason: 'The run exceeded its time limit' },
-      detail: { label: 'Task timed out', reason: 'The run exceeded its time limit' },
-      notification: { label: 'Task timed out', reason: 'The run exceeded its time limit' },
+      timeline: { label: 'Timed out', reason: 'Waiting for an answer or permission timed out' },
+      badge: { label: 'Timed out', reason: 'Waiting for an answer or permission timed out' },
+      detail: { label: 'Task timed out', reason: 'Waiting for an answer or permission timed out' },
+      notification: { label: 'Task timed out', reason: 'Waiting for an answer or permission timed out' },
     },
     'failed-budget': {
       timeline: { label: 'Budget exhausted', reason: 'The run reached its budget limit' },

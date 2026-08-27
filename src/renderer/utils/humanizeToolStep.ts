@@ -201,6 +201,75 @@ function buildActionSentence(verb: string, args: Record<string, unknown>): strin
 
 const CJK_PATTERN = /[㐀-䶿一-鿿豈-﫿]/;
 
+// 失败/中断行统一改成「准备做什么」的意图式。中文不能裸删任意一个「了」：
+// 参数或目标名里也可能带这个字，只允许改写词表里审过的句首动词；英文同理只改
+// 已登记的过去式首词。新增模板若不命中，保持原文，测试会要求为反例补 intent 键。
+const ZH_COMPLETED_PREFIX_TO_INTENT = new Map<string, string>([
+  ['查了', '查'],
+  ['创建了', '创建'],
+  ['读取了', '读取'],
+  ['写入了', '写入'],
+  ['编辑了', '编辑'],
+  ['运行了', '运行'],
+  ['搜索了', '搜索'],
+  ['查看了', '查看'],
+  ['打开了', '打开'],
+  ['调用了', '调用'],
+  ['启动了', '启动'],
+  ['给代理发了', '给代理发'],
+  ['更新了', '更新'],
+  ['使用了', '使用'],
+  ['截了', '截'],
+  ['向你提了', '向你提'],
+  ['记住了', '记住'],
+  ['查找了', '查找'],
+  ['执行了', '执行'],
+]);
+
+const EN_COMPLETED_PREFIX_TO_INTENT = new Map<string, string>([
+  ['Checked', 'Check'],
+  ['Created', 'Create'],
+  ['Wrote', 'Write'],
+  ['Edited', 'Edit'],
+  ['Ran', 'Run'],
+  ['Searched', 'Search'],
+  ['Viewed', 'View'],
+  ['Opened', 'Open'],
+  ['Called', 'Call'],
+  ['Sent', 'Send'],
+  ['Started', 'Start'],
+  ['Adjusted', 'Adjust'],
+  ['Cancelled', 'Cancel'],
+  ['Updated', 'Update'],
+  ['Used', 'Use'],
+  ['Took', 'Take'],
+  ['Asked', 'Ask'],
+  ['Saved', 'Save'],
+  ['Looked', 'Look'],
+]);
+
+function replaceCompletedPrefix(
+  sentence: string,
+  replacements: ReadonlyMap<string, string>,
+): string {
+  for (const [completed, intent] of replacements) {
+    if (sentence.startsWith(completed)) {
+      return intent + sentence.slice(completed.length);
+    }
+  }
+  return sentence;
+}
+
+function toIntentPhrase(sentence: string, t: Translations): string {
+  if (CJK_PATTERN.test(t.toolStepHumanize.writeFallback)) {
+    // 「在飞书发了一条消息」的动作词不在句首，单列这一种已审模板。
+    const channelMessage = sentence.match(/^(在.+?)发了(.+)$/u);
+    if (channelMessage) return `${channelMessage[1]}发${channelMessage[2]}`;
+    return replaceCompletedPrefix(sentence, ZH_COMPLETED_PREFIX_TO_INTENT);
+  }
+  return replaceCompletedPrefix(sentence, EN_COMPLETED_PREFIX_TO_INTENT);
+}
+
 /**
  * shortDescription 是模型自写的自由文本，语种不受控（工具 schema 里给的示例本身
  * 就是英文），实测会在中文界面上原样上屏、还被 CSS 截成半句英文。
@@ -223,9 +292,9 @@ function matchesUiScript(text: string, t: Translations): boolean {
  * 纯占位文案在失败时没有信息量。例外只有 isInternalStreamTool 命中的纯内部动作
  * （ToolSearch 这类），它们的主行仍不暴露内部名（只在展开明细次级小字）。
  *
- * failed=true（toolCall.result 已存在且 success===false）时，写/编类目不再输出过去时
- * 肯定式（「写入了/编辑了」）——它会与状态词「写入失败/编辑失败」同屏自相矛盾；
- * 改用意图式中性表述（「写入 X」），结果语义交给状态词表达。进行中/成功场景文案不变。
+ * failed=true（toolCall.result 已存在且 success===false）时，全部类目都不再输出过去时
+ * 肯定式；改用意图式中性表述（「创建会议 / 写入 X / 调用工具」），结果语义交给
+ * outcomeWords。进行中/成功场景文案不变。
  */
 export function humanizeToolStep(
   name: string,
@@ -235,7 +304,11 @@ export function humanizeToolStep(
   failed?: boolean,
   stepLabel?: ToolStepLabelKey,
 ): string {
-  if (stepLabel) return t.toolStepHumanize.declared[stepLabel];
+  if (stepLabel) {
+    const declared = t.toolStepHumanize.intent[stepLabel]
+      ?? t.toolStepHumanize.declared[stepLabel];
+    return failed ? declared : t.toolStepHumanize.declared[stepLabel];
+  }
 
   const toolKind = classifyToolName(name);
 
@@ -249,128 +322,125 @@ export function humanizeToolStep(
     isSemanticToolUIEnabled()
     && preferredDescription
     && matchesUiScript(preferredDescription, t)
-    // Write/Edit 未执行时，模型给的 shortDescription 可能是「写入了一个文件」这类
-    // 过去时。终态已经裁定为 interrupted/error 后，必须回到本地意图式模板，避免
-    // 同一行同时说「已中断」和「写入了」。
-    && !(failed && (toolKind === 'write' || toolKind === 'edit'))
+    // 失败/中断时自由文本可能用肯定式过去时；所有类目都回退到已审本地模板。
+    && !failed
   ) {
     return preferredDescription;
   }
 
   const a = args || {};
   const h = t.toolStepHumanize;
+  const phrase = (sentence: string) => failed ? toIntentPhrase(sentence, t) : sentence;
 
   switch (toolKind) {
     case 'read': {
       const target = firstPath(a, ['file_path', 'path']);
-      return target ? h.read.replace('{target}', target) : h.readFallback;
+      return phrase(target ? h.read.replace('{target}', target) : h.readFallback);
     }
     case 'write': {
       const target = firstPath(a, ['file_path', 'path']);
-      if (failed) return target ? h.writeIntent.replace('{target}', target) : h.writeIntentFallback;
-      return target ? h.write.replace('{target}', target) : h.writeFallback;
+      return phrase(target ? h.write.replace('{target}', target) : h.writeFallback);
     }
     case 'edit': {
       const target = firstPath(a, ['file_path', 'path']);
-      if (failed) return target ? h.editIntent.replace('{target}', target) : h.editIntentFallback;
-      return target ? h.edit.replace('{target}', target) : h.editFallback;
+      return phrase(target ? h.edit.replace('{target}', target) : h.editFallback);
     }
     case 'bash': {
       // terminal_write 把命令放在 input 里，不是 command
       const command = takePreview(a.command ?? a.input);
-      return command ? h.bash.replace('{command}', command) : h.bashFallback;
+      return phrase(command ? h.bash.replace('{command}', command) : h.bashFallback);
     }
     case 'search': {
       const query = firstString(a, ['pattern', 'query']);
-      return query ? h.search.replace('{query}', query) : h.searchFallback;
+      return phrase(query ? h.search.replace('{query}', query) : h.searchFallback);
     }
     case 'listDir': {
       const target = firstPath(a, ['path']);
-      return target ? h.listDir.replace('{target}', target) : h.listDirFallback;
+      return phrase(target ? h.listDir.replace('{target}', target) : h.listDirFallback);
     }
     case 'webSearch': {
       const query = takePreview(a.query);
-      return query ? h.webSearch.replace('{query}', query) : h.webSearchFallback;
+      return phrase(query ? h.webSearch.replace('{query}', query) : h.webSearchFallback);
     }
     case 'webFetch': {
       const target = takePreview(a.url);
-      return target ? h.webFetch.replace('{target}', target) : h.webFetchFallback;
+      return phrase(target ? h.webFetch.replace('{target}', target) : h.webFetchFallback);
     }
     case 'mcpChannel': {
       const mcp = parseMcpName(name);
-      if (!mcp) return h.fallback;
+      if (!mcp) return phrase(h.fallback);
       const channel = h.channelNames[mcp.server] || mcp.server;
-      return h.channelMessage.replace('{channel}', channel);
+      return phrase(h.channelMessage.replace('{channel}', channel));
     }
     case 'mcp': {
       const mcp = parseMcpName(name);
-      if (!mcp) return h.fallback;
-      return h.mcpTool.replace('{server}', mcp.server).replace('{tool}', mcp.tool);
+      if (!mcp) return phrase(h.fallback);
+      return phrase(h.mcpTool.replace('{server}', mcp.server).replace('{tool}', mcp.tool));
     }
     case 'subagentSpawn': {
       const description = firstString(a, ['description', 'prompt', 'task', 'goal', 'role']);
-      return description
+      return phrase(description
         ? h.subagentSpawn.replace('{description}', description)
-        : h.subagentSpawnFallback;
+        : h.subagentSpawnFallback);
     }
     case 'subagentMessage':
-      return h.subagentMessage;
+      return phrase(h.subagentMessage);
     case 'agentConversation': {
       const name = firstString(a, ['name', 'role', 'agentName', 'agent_name', 'agentId', 'target']);
-      return name
+      return phrase(name
         ? h.agentConversation.replace('{name}', name)
-        : h.agentConversationFallback;
+        : h.agentConversationFallback);
     }
     case 'delegateTask': {
       const description = firstString(a, ['description', 'title']);
-      return description
+      return phrase(description
         ? h.delegateTask.replace('{description}', description)
-        : h.delegateTaskFallback;
+        : h.delegateTaskFallback);
     }
     case 'taskStatus':
-      return h.taskStatus;
+      return phrase(h.taskStatus);
     case 'steerTask':
-      return h.steerTask;
+      return phrase(h.steerTask);
     case 'cancelTask':
-      return h.cancelTask;
+      return phrase(h.cancelTask);
     case 'todo':
-      return h.todo;
+      return phrase(h.todo);
     case 'planUpdate':
-      return h.planUpdate;
+      return phrase(h.planUpdate);
     case 'planRead':
-      return h.planRead;
+      return phrase(h.planRead);
     case 'taskManager':
-      return h.taskManager;
+      return phrase(h.taskManager);
     case 'skill': {
       // Skill schema 用 command 传技能名；历史/别名可能用 skill / name
       const skillName = firstString(a, ['command', 'skill', 'name']);
-      return skillName ? h.skill.replace('{skill}', skillName) : h.skillFallback;
+      return phrase(skillName ? h.skill.replace('{skill}', skillName) : h.skillFallback);
     }
     case 'screenshot':
-      return h.screenshot;
+      return phrase(h.screenshot);
     case 'computerUse':
-      return buildActionSentence(h.computerUse, a);
+      return phrase(buildActionSentence(h.computerUse, a));
     case 'browserAction':
-      return buildActionSentence(h.browserAction, a);
+      return phrase(buildActionSentence(h.browserAction, a));
     case 'askUser':
-      return h.askUser;
+      return phrase(h.askUser);
     case 'memoryStore':
-      return h.memoryStore;
+      return phrase(h.memoryStore);
     case 'memorySearch':
-      return h.memorySearch;
+      return phrase(h.memorySearch);
     case 'toolSearch':
       // 仅用于展开明细；主流聚合行会过滤 isInternalStreamTool
-      return h.toolSearch;
+      return phrase(h.toolSearch);
     default: {
-      if (isInternalStreamTool(name)) return h.fallback;
+      if (isInternalStreamTool(name)) return phrase(h.fallback);
       // 主行只接受连接器映射或已有开发短名。映射仍返回原始 id 时，说明它没有
       // 用户语义，只能留在展开明细的次级小字，不能作为主标题上屏。
       const humanToolName = getHumanToolLabel({
         toolName: name,
         labels: t.receiptPresentation.humanToolLabels,
       });
-      if (humanToolName.trim().toLowerCase() === name.trim().toLowerCase()) return h.fallback;
-      return h.fallbackWithTool.replace('{tool}', humanToolName);
+      if (humanToolName.trim().toLowerCase() === name.trim().toLowerCase()) return phrase(h.fallback);
+      return phrase(h.fallbackWithTool.replace('{tool}', humanToolName));
     }
   }
 }

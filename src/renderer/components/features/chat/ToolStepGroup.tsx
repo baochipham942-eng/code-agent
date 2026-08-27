@@ -235,9 +235,9 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   }, null);
   const permissionOutcome = permissionEvidence.some(({ denied }) => denied)
     || toolFailureCode === AgentFailureCode.PermissionDenied
-    ? t.outcomeWords['failed-approval-denied'].badge
+    ? t.outcomeWords['failed-approval-denied'].timeline
     : permissionEvidence.some(({ timedOut }) => timedOut) || toolFailureCode === AgentFailureCode.Timeout
-      ? t.outcomeWords['failed-timeout'].badge
+      ? t.outcomeWords['failed-timeout'].timeline
       : null;
   const planApproval = useMemo(
     () => toolCalls.map(getPlanApprovalRecord).find((record) => record !== null) ?? null,
@@ -430,7 +430,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
         {totalDuration && (
           <span
-            className="flex-shrink-0 text-[10px] text-zinc-600 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+            className="min-w-[4ch] flex-shrink-0 text-right text-[10px] text-zinc-600"
             title={t.toolGroup.durationTitle}
           >
             {totalDuration}

@@ -154,7 +154,7 @@ describe('useAgentIPC direct swarm scope', () => {
     let resolveDelivery!: (value: { delivered: boolean; persisted: boolean }) => void;
     invokeMock.mockReturnValue(new Promise((resolve) => { resolveDelivery = resolve; }));
     const hook = renderDirectHook();
-    let pending!: Promise<void>;
+    let pending!: ReturnType<typeof hook.result.current.sendMessage>;
 
     await act(async () => {
       pending = hook.result.current.sendMessage(envelope);

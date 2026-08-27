@@ -1,8 +1,8 @@
 import path from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Route } from '@playwright/test';
 import { dismissFirstRunDialogs } from './firstRunDialogs';
 
-test('发送后 200ms 内出现助手侧本地反馈，不等待 SSE', async ({ page, request }) => {
+test('排队发送只按真实事件推进发送、启动、等待模型和首 token', async ({ page, request }) => {
   const sseReady = page.waitForResponse(
     (response) => response.url().includes('/api/events'),
     { timeout: 20_000 },
@@ -19,18 +19,52 @@ test('发送后 200ms 内出现助手侧本地反馈，不等待 SSE', async ({ 
   }
 
   await page.getByRole('button', { name: '新建快速对话' }).click();
+  await settingsDialog.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
+  if (await settingsDialog.isVisible().catch(() => false)) {
+    await settingsDialog.getByRole('button', { name: '关闭' }).click();
+    await expect(settingsDialog).toBeHidden();
+  }
   const composer = page.locator('[data-testid="chat-composer-textarea"]');
   await expect(composer).toBeVisible({ timeout: 10_000 });
-  await page.evaluate(() => {
-    const api = window.codeAgentDomainAPI;
-    if (!api) throw new Error('domain API unavailable');
-    const originalInvoke = api.invoke.bind(api);
-    api.invoke = ((domain: string, action: string, payload?: unknown) => {
-      if (domain === 'domain:settings' && action === 'get') {
-        return new Promise(() => {});
-      }
-      return originalInvoke(domain, action, payload);
-    }) as typeof api.invoke;
+  let heldRunRoute: Route | null = null;
+  let clientMessageId = '';
+  await page.route('**/api/domain/settings/get', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          models: {
+            default: 'openai',
+            providers: {
+              openai: { enabled: true, apiKey: 'e2e-placeholder', model: 'gpt-4o' },
+            },
+          },
+        },
+      }),
+    });
+  });
+  await page.route('**/api/run', async (route) => {
+    const payload = route.request().postDataJSON() as { clientMessageId?: string };
+    clientMessageId = payload.clientMessageId ?? '';
+    heldRunRoute = route;
+  });
+  await page.route('**/api/interrupt', async (route) => {
+    const payload = route.request().postDataJSON() as { clientMessageId?: string };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          outcome: 'queued',
+          queuedInputId: payload.clientMessageId,
+          code: 'RUN_SETTLED',
+          message: 'queued by e2e route',
+        },
+      }),
+    });
   });
   await composer.fill('验证发送后的第一帧反馈');
 
@@ -44,10 +78,25 @@ test('发送后 200ms 内出现助手侧本地反馈，不等待 SSE', async ({ 
   expect(elapsed).toBeLessThanOrEqual(200);
   await expect(page.locator('[data-testid="assistant-send-placeholder"]')).toHaveCount(1);
 
-  const screenshotDir = process.env.NFF_SCREENSHOT_DIR;
+  const screenshotDir = process.env.NQL_SCREENSHOT_DIR;
   if (screenshotDir) {
     await page.screenshot({
-      path: path.join(screenshotDir, 'N-FIRSTTURN-FEEDBACK-send-200ms.png'),
+      path: path.join(screenshotDir, 'N-QUEUEDRAIN-LATENCY-send-200ms.png'),
+      fullPage: true,
+    });
+  }
+
+  expect(heldRunRoute).not.toBeNull();
+  await heldRunRoute!.fulfill({
+    status: 409,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: { code: 'SESSION_BUSY', message: 'session is settling' } }),
+  });
+  await expect(placeholder).toHaveText('已排队，正在启动…');
+  await expect(page.locator('[data-testid="assistant-send-placeholder"]')).toHaveCount(1);
+  if (screenshotDir) {
+    await page.screenshot({
+      path: path.join(screenshotDir, 'N-QUEUEDRAIN-LATENCY-queued.png'),
       fullPage: true,
     });
   }
@@ -58,6 +107,26 @@ test('发送后 200ms 内出现助手侧本地反馈，不等待 SSE', async ({ 
   const sessionId = await page.locator('[data-session-id][aria-current="true"]').first().getAttribute('data-session-id');
   expect(token).toBeTruthy();
   expect(sessionId).toBeTruthy();
+  expect(clientMessageId).toBeTruthy();
+  const activationResponse = await request.post('/api/dev/emit-queued-input-activated', {
+    headers: { Authorization: `Bearer ${token}` },
+    data: {
+      sessionId,
+      id: clientMessageId,
+      runId: `nql-run-${Date.now()}`,
+      activatedAt: Date.now(),
+    },
+  });
+  expect(activationResponse.ok()).toBe(true);
+  await expect(placeholder).toHaveText('信号传输中，正在等待模型回响…');
+  await expect(page.locator('[data-testid="assistant-send-placeholder"]')).toHaveCount(1);
+  if (screenshotDir) {
+    await page.screenshot({
+      path: path.join(screenshotDir, 'N-QUEUEDRAIN-LATENCY-waiting-model.png'),
+      fullPage: true,
+    });
+  }
+
   const turnId = `nff-first-token-${Date.now()}`;
   const firstToken = `首 token ${Date.now()}`;
   const response = await request.post('/api/dev/emit-agent-events', {
@@ -85,7 +154,7 @@ test('发送后 200ms 内出现助手侧本地反馈，不等待 SSE', async ({ 
   await expect(placeholder).toHaveCount(0);
   if (screenshotDir) {
     await page.screenshot({
-      path: path.join(screenshotDir, 'N-FIRSTTURN-FEEDBACK-first-token.png'),
+      path: path.join(screenshotDir, 'N-QUEUEDRAIN-LATENCY-first-token.png'),
       fullPage: true,
     });
   }

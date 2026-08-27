@@ -892,7 +892,9 @@ export function useAgentIPC({
         throw new Error('Session is already cancelling');
       }
 
-      const deliverToForegroundBrain = async (clientMessageId?: string): Promise<void> => {
+      const deliverToForegroundBrain = async (
+        clientMessageId?: string,
+      ): Promise<SteerOrQueueOutcome | undefined> => {
         const runtimeInputMode = getRuntimeInputMode(contextWithDesignContext);
         const messageId = clientMessageId ?? generateMessageId();
         const runtimeContext: ConversationEnvelopeContext | undefined = contextWithDesignContext
@@ -926,6 +928,7 @@ export function useAgentIPC({
             });
           }
           logger.info('sendMessage - foreground input delivery accepted', { outcome: outcome.outcome });
+          return outcome;
         } catch (error) {
           logger.error('Foreground input delivery failed', error);
           addMessage({
@@ -934,6 +937,7 @@ export function useAgentIPC({
             content: getAgentSendFailureMessage(error),
             timestamp: Date.now(),
           });
+          return undefined;
         }
       };
 
@@ -981,8 +985,7 @@ export function useAgentIPC({
             isCurrentSessionProcessing,
           });
         }
-        await deliverToForegroundBrain(voiceFallbackMessageId);
-        return;
+        return deliverToForegroundBrain(voiceFallbackMessageId);
       }
 
       // Add user message with UUID
@@ -1051,8 +1054,7 @@ export function useAgentIPC({
               previousTaskState ?? { status: 'idle' },
             );
           }
-          await deliverToForegroundBrain(userMessage.id);
-          return;
+          return deliverToForegroundBrain(userMessage.id);
         }
         // 冷启动窗口：durable 就绪前 host 一律回 503，等就绪后原样重发一次。
         // 重发失败要按「重发的那个错」收口，所以另起一个变量——不能改写 catch 参数

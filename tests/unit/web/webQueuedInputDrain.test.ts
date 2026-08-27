@@ -6,7 +6,10 @@ import type BetterSqlite3 from 'better-sqlite3';
 import type { Response } from 'express';
 
 import type { AgentEvent } from '../../../src/shared/contract';
-import type { QueuedInputSettledEvent } from '../../../src/shared/contract/queuedInput';
+import type {
+  QueuedInputActivatedEvent,
+  QueuedInputSettledEvent,
+} from '../../../src/shared/contract/queuedInput';
 import type { ConversationEnvelope } from '../../../src/shared/contract/conversationEnvelope';
 import { QUEUED_INPUT_RETRY } from '../../../src/shared/constants/queuedInput';
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
@@ -52,8 +55,13 @@ describe('web queued input drain', () => {
 
   function createDrain(input: {
     repository: QueuedInputRepository;
-    runEnvelope: (envelope: ConversationEnvelope, response: Response) => Promise<void>;
+    runEnvelope: (
+      envelope: ConversationEnvelope,
+      response: Response,
+      onActivated: (activation: Omit<QueuedInputActivatedEvent, 'id' | 'sessionId'>) => void,
+    ) => Promise<void>;
     agentEvents?: Array<{ sessionId: string; event: AgentEvent }>;
+    activated?: QueuedInputActivatedEvent[];
     settled?: QueuedInputSettledEvent[];
     hasActiveRun?: (sessionId: string) => boolean;
   }): WebQueuedInputDrain {
@@ -62,6 +70,7 @@ describe('web queued input drain', () => {
       hasActiveRun: input.hasActiveRun ?? (() => false),
       runEnvelope: input.runEnvelope,
       emitAgentEvent: (sessionId, event) => input.agentEvents?.push({ sessionId, event }),
+      notifyQueuedInputActivated: (event) => input.activated?.push(event),
       notifyQueuedInputSettled: (event) => input.settled?.push(event),
       logger,
     });
@@ -120,6 +129,34 @@ describe('web queued input drain', () => {
 
     expect(ran).toEqual(['入队时已空闲']);
     expect(repository.getById('queued-idle')?.status).toBe('consumed');
+  });
+
+  it('只在 durable attempt 创建成功后播报排队消息的精确激活身份', async () => {
+    const repository = createRepository();
+    const activated: QueuedInputActivatedEvent[] = [];
+    repository.enqueue({
+      id: 'queued-activation',
+      sessionId: 'session-activation',
+      envelope: { content: '等待 durable 激活' },
+      now: 1,
+    });
+    const drain = createDrain({
+      repository,
+      activated,
+      runEnvelope: async (_envelope, _response, onActivated) => {
+        expect(activated).toEqual([]);
+        onActivated({ runId: 'run-activation', activatedAt: 7 });
+      },
+    });
+
+    drain.handleEnqueued('session-activation');
+
+    await vi.waitFor(() => expect(activated).toEqual([{
+      id: 'queued-activation',
+      sessionId: 'session-activation',
+      runId: 'run-activation',
+      activatedAt: 7,
+    }]));
   });
 
   it('入队时还有 run 在跑就不抽——那才是「排到下一轮」的正常语义', async () => {
@@ -215,7 +252,7 @@ describe('web queued input drain', () => {
     expect(runEnvelope).toHaveBeenCalledWith(expect.objectContaining({
       clientMessageId: 'queued-idle',
       sessionId: 'session-idle',
-    }), expect.anything());
+    }), expect.anything(), expect.any(Function));
   });
 
   it('startup sweep 把 sending 孤儿复位为 queued 并标记 restart，且不自动重发', async () => {

@@ -80,9 +80,8 @@ interface TurnCardProps {
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
   onRewindUserPrompt?: (messageId: string, content: string) => void;
   /** 渲染在该 turn 用户消息上方（目前用于分叉子会话首段的来源提示） */
-  beforeUserMessage?: React.ReactNode;
+  beforeUserMessage?: React.ReactNode; suppressBusySignal?: boolean;
 }
-
 // 超过该节点数的已完成 turn 默认折叠成 "Worked for Xm Ys"
 const FOLD_THRESHOLD = 5;
 
@@ -100,7 +99,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   showSeparator = true,
   onStreamingDisplayUpdate,
   onRewindUserPrompt,
-  beforeUserMessage,
+  beforeUserMessage, suppressBusySignal,
 }) => {
   const { t } = useI18n();
   const createForkFromReply = useMessageActionStore((state) => state.createForkFromReply);
@@ -134,7 +133,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     () => groupAdjacentToolCalls(turn.nodes),
     [turn.nodes]
   );
-
   const artifactNode = useMemo(
     () => turn.nodes.find((node) => node.turnTimeline?.kind === 'artifact_ownership'),
     [turn.nodes],
@@ -248,16 +246,16 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     || Boolean((node.thinking || node.reasoning)?.trim())
   ));
   const preparationPhase = busySignal === 'text-caret' && !lastNodeIsStreamingText
-    ? hasTimelineActivity ? 'organizing' : 'preparing'
+    ? hasTimelineActivity ? 'organizing' : undefined
     : undefined;
-  const streamingIndicator = isStreaming ? (
+  const streamingIndicator = isStreaming && !suppressBusySignal ? (
     <StreamingIndicator
       startTime={turn.startTime}
       runningToolStartTime={busySignal === 'text-caret' ? runningToolStartTime : undefined}
       showCaret={busySignal === 'text-caret'}
       preparationPhase={preparationPhase}
       waitingReason={busySignal === 'text-caret'
-        ? undefined
+        ? !lastNodeIsStreamingText && !hasTimelineActivity ? 'model' : undefined
         : getStreamingWaitingReason(turn.nodes, streamingState.status, waitingForApproval)}
       subagentCount={getRunningSubagentCount(turn.nodes)}
     />

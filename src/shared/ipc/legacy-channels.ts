@@ -148,6 +148,7 @@ export const IPC_CHANNELS = {
   SYNC_RESOLVE_CONFLICT: 'sync:resolve-conflict',
   SYNC_EVENT: 'sync:event',
   QUEUED_INPUT_SETTLED: 'queued-input:settled',
+  QUEUED_INPUT_ACTIVATED: 'queued-input:activated',
 
   // Device channels
   DEVICE_REGISTER: 'device:register',

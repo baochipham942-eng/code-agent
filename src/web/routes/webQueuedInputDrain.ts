@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import type { AgentEvent } from '../../shared/contract';
+import type { QueuedInputActivatedEvent } from '../../shared/contract/queuedInput';
 import type { ConversationEnvelope } from '../../shared/contract/conversationEnvelope';
 import { QUEUED_INPUT_RETRY } from '../../shared/constants/queuedInput';
 import type { QueuedInputRepository } from '../../host/services/core/repositories/QueuedInputRepository';
@@ -19,7 +20,11 @@ type WebQueuedInputDrainRepository = Pick<
 interface WebQueuedInputDrainDependencies {
   getRepository: () => WebQueuedInputDrainRepository;
   hasActiveRun: (sessionId: string) => boolean;
-  runEnvelope: (envelope: ConversationEnvelope, response: Response) => Promise<void>;
+  runEnvelope: (
+    envelope: ConversationEnvelope,
+    response: Response,
+    onActivated: (activation: Omit<QueuedInputActivatedEvent, 'id' | 'sessionId'>) => void,
+  ) => Promise<void>;
   emitAgentEvent: (sessionId: string, event: AgentEvent) => void;
   /**
    * 一条排队消息在宿主侧走完（消费/失败）后通知前端。
@@ -30,6 +35,7 @@ interface WebQueuedInputDrainDependencies {
   notifyQueuedInputSettled: (
     settled: { sessionId: string; id: string; status: 'consumed' | 'failed' },
   ) => void;
+  notifyQueuedInputActivated: (activated: QueuedInputActivatedEvent) => void;
   logger: WebRouteLogger;
 }
 
@@ -85,6 +91,7 @@ export function createWebQueuedInputDrain({
   runEnvelope,
   emitAgentEvent,
   notifyQueuedInputSettled,
+  notifyQueuedInputActivated,
   logger,
 }: WebQueuedInputDrainDependencies): WebQueuedInputDrain {
   const activeSessions = new Set<string>();
@@ -156,7 +163,15 @@ export function createWebQueuedInputDrain({
       }
 
       try {
-        await runEnvelope(envelope, createOfflineAgentRunResponseSink());
+        await runEnvelope(
+          envelope,
+          createOfflineAgentRunResponseSink(),
+          (activation) => notifyQueuedInputActivated({
+            id: record.id,
+            sessionId,
+            ...activation,
+          }),
+        );
       } catch (error) {
         settleRunFailure(repository, sessionId, record.id, error);
         return;

@@ -30,6 +30,17 @@ export interface QueuedInputSettledEvent {
   status: 'consumed' | 'failed';
 }
 
+/**
+ * 排队消息已经拿到自己的 durable run 身份。这个事件只允许在首个
+ * durable_run_attempts 记录创建成功后发送，renderer 据此结束“排队启动中”。
+ */
+export interface QueuedInputActivatedEvent {
+  sessionId: string;
+  id: string;
+  runId: string;
+  activatedAt: number;
+}
+
 export interface RetractQueuedInputResult {
   retracted: boolean;
 }

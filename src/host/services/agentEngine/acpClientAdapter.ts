@@ -295,6 +295,15 @@ class AcpClientAdapter {
     let timeoutMessage: string | undefined;
     let stopReason: string | undefined;
     const tracker = new AcpToolCallTracker();
+    /**
+     * 🔴 `session/load` 会把**整段历史**当成 session/update 重放一遍——不只是用户说过的话，
+     * 还包括上一轮的 `agent_message_chunk`。把它们当本轮正文累加，结果就是
+     * 每次续接都复读一遍上一轮的回答（2026-08-27 真机实付：第二轮助手消息是
+     * 「OKACP9770OKACP9770」= 旧答案 + 新答案）。
+     * 回放窗口内一律不进正文、不进 UI；窗口在 session/load 返回时关闭，
+     * 那时 prompt 还没发出去，不可能有真内容被误伤。
+     */
+    let replayingHistory = false;
 
     const timeoutTimer = setTimeout(() => {
       timeoutMessage = `${config.label} timed out after ${Math.round(timing.timeoutMs / 1000)}s`;
@@ -324,6 +333,11 @@ class AcpClientAdapter {
         const mapped = mapAcpSessionUpdate((ctx.params as { update?: unknown } | undefined)?.update);
         if (!mapped) {
           logger.warn('[ACP] 收到无法识别的 session/update', { runId });
+          return;
+        }
+        if (replayingHistory) {
+          // 续接时 agent 重放的历史。原始报文已进日志，这里不进正文/不进 UI/不进台账。
+          logger.debug?.('[ACP] 忽略 session/load 回放的历史', { runId, kind: mapped.kind });
           return;
         }
         switch (mapped.kind) {
@@ -401,7 +415,12 @@ class AcpClientAdapter {
           if (externalSessionId) {
             // 续接：session/load 会把历史以 session/update 回放一遍（含 user_message_chunk，
             // 已在 mapAcpSessionUpdate 里按 ignored 拦掉，不会渲染成助手输出）。
-            await ctx.request('session/load', { sessionId: externalSessionId, cwd, mcpServers: [] });
+            replayingHistory = true;
+            try {
+              await ctx.request('session/load', { sessionId: externalSessionId, cwd, mcpServers: [] });
+            } finally {
+              replayingHistory = false;
+            }
             ledger.appendEvent({
               taskId,
               type: 'agent_engine.resumed',

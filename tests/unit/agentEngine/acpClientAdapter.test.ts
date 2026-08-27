@@ -128,11 +128,15 @@ function installFakeAgent(options: FakeAgentOptions) {
           break;
         case 'session/load':
           options.loadSessionCalls?.push(String(msg.params?.sessionId));
-          // 真实 agent 会在 load 时把历史当成 session/update 回放（含用户自己的话）
-          send({ jsonrpc: '2.0', method: 'session/update', params: {
-            sessionId: msg.params?.sessionId,
-            update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: '这是我上一轮说的话' } },
-          } });
+          // 真实 agent 在 load 时把**整段历史**当成 session/update 回放：
+          // 用户说过的话 + **上一轮的助手正文** + 思考流（2026-08-27 真机抓包形态）。
+          for (const replay of [
+            { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: '这是我上一轮说的话' } },
+            { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '上一轮的旧答案' } },
+            { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '上一轮的旧思考' } },
+          ]) {
+            send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: msg.params?.sessionId, update: replay } });
+          }
           send({ jsonrpc: '2.0', id: msg.id, result: { modes: { currentModeId: 'default' } } });
           break;
         case 'session/prompt': {
@@ -282,15 +286,17 @@ describe('AcpClientAdapter — resume 走 session/load', () => {
     expect(result.status).toBe('completed');
     expect(loadSessionCalls).toEqual(['sess-persisted-42']);
 
-    // 🔴 回放里那条 user_message_chunk 绝不能变成 assistant 的 content
-    const contentText = events
+    // 🔴 回放的历史一条都不能进本轮正文——用户说过的话不能变成助手输出，
+    // **上一轮的助手正文更不能被当成本轮内容再吐一遍**（真机实付：续接后回答变成
+    // 「旧答案+新答案」，用户看到的是每轮复读）。
+    const deltas = events
       .filter((e) => e.type === 'message_delta')
-      .map((e) => e.data as { path: string; text: string })
-      .filter((d) => d.path === 'content')
-      .map((d) => d.text)
-      .join('');
+      .map((e) => e.data as { path: string; text: string });
+    const contentText = deltas.filter((d) => d.path === 'content').map((d) => d.text).join('');
+    const reasoningText = deltas.filter((d) => d.path === 'reasoning').map((d) => d.text).join('');
     expect(contentText).toBe('续上了');
     expect(contentText).not.toContain('上一轮');
+    expect(reasoningText).not.toContain('上一轮');
     expect(result.outputText).toBe('续上了');
   });
 });

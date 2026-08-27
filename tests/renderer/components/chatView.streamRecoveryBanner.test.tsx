@@ -88,6 +88,7 @@ describe('ChatView — 中断入口收进 DecisionSlot', () => {
     expect(source).not.toContain('<StreamRecoveryBanner');
     expect(source).not.toContain('export const StreamRecoveryBanner');
     expect(source).not.toContain('data-testid="stream-recovery-banner"');
-    expect(source).toContain('<DecisionSlot streamInterruption={streamInterruptionDecision} />');
+    expect(source).toContain('<DecisionSlot');
+    expect(source).toContain('streamInterruption={streamInterruptionDecision}');
   });
 });

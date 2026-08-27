@@ -24,6 +24,7 @@ import { useRequireAuth } from '../hooks/useRequireAuth';
 import { useTurnProjection } from '../hooks/useTurnProjection';
 import { useTurnExecutionClarity } from '../hooks/useTurnExecutionClarity';
 import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
+import { StreamingIndicator } from './features/chat/StreamingIndicator';
 import { NewSessionWelcome } from './features/chat/NewSessionWelcome';
 import { EmptySessionArea } from './features/chat/SessionSwitchSkeleton';
 import { MemberConversationView } from './features/expert/MemberConversationView';
@@ -37,8 +38,6 @@ import { ChatTraceFallback } from './features/chat/ChatTraceFallback';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
 import { ChatInput } from './features/chat/ChatInput';
-import { UserQuestionCard } from './UserQuestionCard';
-import { PlanApprovalCard } from './PlanApprovalCard';
 import { applyVoicePartialsToProjection } from '../utils/voicePartialOverlay';
 import { useVoiceCallStore } from '../stores/voiceCallStore';
 import { GoalStatusBar } from './features/chat/GoalStatusBar';
@@ -68,7 +67,14 @@ import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 // Pending PermissionCard lives in the fixed DecisionSlot above ChatInput.
-import type { AppSettings, Message, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
+import type {
+  AppSettings,
+  Message,
+  MessageAttachment,
+  StreamRecoverySnapshot,
+  TaskPlan,
+  UserQuestionRequest,
+} from '../../shared/contract';
 import type { RewindConversationResult } from '@shared/contract/sessionRewind';
 import type { TurnCheckoutResult } from '@shared/contract/turnCheckout';
 import type { ConversationEnvelope, ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
@@ -89,6 +95,11 @@ import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
 import { isDragPointInsideVisibleRect } from '../utils/dragBounds';
 import { findPendingPlanApproval, hasPlanApproval } from '../utils/planApprovalView';
 import { Image, MessageSquare } from 'lucide-react';
+import { sendWithImmediateAssistantFeedback } from '../utils/sendWithImmediateAssistantFeedback';
+
+// Zustand selectors must return a referentially stable fallback. A fresh [] here makes
+// useSyncExternalStore treat every snapshot as changed and can loop before ChatView mounts.
+const EMPTY_PENDING_USER_QUESTIONS: UserQuestionRequest[] = [];
 
 export const ChatView: React.FC = () => {
   const { t } = useI18n();
@@ -133,13 +144,13 @@ export const ChatView: React.FC = () => {
   } = useAgent();
   const buildComposerContext = useComposerStore((state) => state.buildContext);
   const hydrateComposer = useComposerStore((state) => state.hydrateFromSession);
-  // G2 打断式选项卡：当前会话有待答的 AskUserQuestion 时，卡片遮盖 composer，
-  // 语义 = 必须先回答（或显式跳过）才能继续输入。队首先答，答完露出下一题。
-  const pendingUserQuestion = useSessionStore((state) =>
+  // 待答问题进入 DecisionSlot；composer 始终保留，普通消息不会被当成答案。
+  const pendingUserQuestions = useSessionStore((state) =>
     currentSessionId
-      ? (state.pendingUserQuestionsBySessionId?.get(currentSessionId)?.[0] ?? null)
-      : null,
+      ? (state.pendingUserQuestionsBySessionId?.get(currentSessionId) ?? EMPTY_PENDING_USER_QUESTIONS)
+      : EMPTY_PENDING_USER_QUESTIONS,
   );
+  const pendingUserQuestion = pendingUserQuestions[0] ?? null;
   const pendingPlanApproval = findPendingPlanApproval(messages, currentSessionId);
   const hasPlanApprovalEvidence = hasPlanApproval(messages);
   const currentSessionWorkingDirectory = currentSession
@@ -212,6 +223,7 @@ export const ChatView: React.FC = () => {
 
   // Rewind Panel 状态 (Esc+Esc)
   const [showRewindPanel, setShowRewindPanel] = useState(false);
+  const [skippedQuestionSessionId, setSkippedQuestionSessionId] = useState<string | null>(null);
   const lastEscRef = useRef<number>(0);
 
   // Search 状态
@@ -226,6 +238,7 @@ export const ChatView: React.FC = () => {
   } | null>(null);
   const [isPromptRewinding, setIsPromptRewinding] = useState(false);
   const [rewindRefreshToken, setRewindRefreshToken] = useState(0);
+  const [pendingAssistantFeedbackStartedAt, setPendingAssistantFeedbackStartedAt] = useState<number | null>(null);
 
   const handleSearchMatchesChange = useCallback((matches: SearchMatch[], activeIdx: number) => {
     setSearchMatches(matches);
@@ -595,19 +608,41 @@ export const ChatView: React.FC = () => {
   // @neo 提交分支已移除（2026-07-29 拍板）：输入框不再有工作卡/续接交互，
   // @neo 字样按普通文本消息发送；工作卡从 Neo 协同页发起。
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
-    const didSend = await requireAuthAsync(async () => {
-      const modelReady = await ensureModelConfigured();
-      if (!modelReady) return false;
-      await sendMessage(envelope);
-      return true;
+    const sent = await sendWithImmediateAssistantFeedback({
+      showFeedback: () => setPendingAssistantFeedbackStartedAt(Date.now()),
+      clearFeedback: () => setPendingAssistantFeedbackStartedAt(null),
+      send: async () => {
+        const didSend = await requireAuthAsync(async () => {
+          const modelReady = await ensureModelConfigured();
+          if (!modelReady) return false;
+          await sendMessage(envelope);
+          return true;
+        });
+        return didSend === true;
+      },
     });
-    return didSend === true;
+    // 跳过提问后的 placeholder 出口（R5 帧 8）：下一条普通消息真的发出去了才恢复常规文案。
+    if (sent && currentSessionId === skippedQuestionSessionId) {
+      setSkippedQuestionSessionId(null);
+    }
+    return sent;
   }, [
     currentSessionId,
     ensureModelConfigured,
     requireAuthAsync,
     sendMessage,
+    skippedQuestionSessionId,
   ]);
+
+  useEffect(() => {
+    if (projection.activeTurnIndex >= 0) {
+      setPendingAssistantFeedbackStartedAt(null);
+    }
+  }, [projection.activeTurnIndex]);
+
+  useEffect(() => {
+    setPendingAssistantFeedbackStartedAt(null);
+  }, [currentSessionId]);
 
   const handleSteerEnvelope = useCallback(async (envelope: ConversationEnvelope) => {
     const outcome = await submitSteerEnvelope(
@@ -820,7 +855,7 @@ export const ChatView: React.FC = () => {
             内容盒回到与 composer/横幅相同的内轨；配合 global.css 对该 scroller 的
             overflow-y:scroll 恒定占位，右轨与「列表是否溢出」无关（现象 9）。
             负 margin 只能加在这层——它自己有 overflow-hidden，加到子级会被裁掉。 */}
-        <div className="flex-1 min-h-0 overflow-hidden mr-[calc(var(--scrollbar-size)*-1)]">
+        <div className="relative flex-1 min-h-0 overflow-hidden mr-[calc(var(--scrollbar-size)*-1)]">
           {viewingMemberId ? (
             <MemberConversationView sessionId={currentSessionId} />
           ) : projection.turns.length === 0 ? (
@@ -859,6 +894,19 @@ export const ChatView: React.FC = () => {
                 onInterruptionPointVisibilityChange={setInterruptionPointInViewport}
               />
             </ErrorBoundary>
+          )}
+          {pendingAssistantFeedbackStartedAt !== null && projection.activeTurnIndex < 0 && (
+            <div
+              className="pointer-events-none absolute inset-x-0 bottom-4 chat-col-pad"
+              data-testid="assistant-send-placeholder"
+            >
+              <div className="mx-auto max-w-3xl px-4">
+                <StreamingIndicator
+                  startTime={pendingAssistantFeedbackStartedAt}
+                  preparationPhase="submitting"
+                />
+              </div>
+            </div>
           )}
         </div>
 
@@ -913,8 +961,14 @@ export const ChatView: React.FC = () => {
           {/* Pinned todo progress bar — visible above the input */}
           {!hasPlanApprovalEvidence && <PinnedTodoBar plan={plan} sessionId={currentSessionId} />}
 
-          {/* 当场拍板权限卡：固定在输入框上方，不随时间线滚动。 */}
-          <DecisionSlot streamInterruption={streamInterruptionDecision} />
+          {/* 待决卡共用一个固定槽位；一次只展示一张，输入区始终保留。 */}
+          <DecisionSlot
+            streamInterruption={streamInterruptionDecision}
+            userQuestion={pendingUserQuestion}
+            userQuestionCount={pendingUserQuestions.length}
+            planApproval={pendingPlanApproval}
+            onUserQuestionSkipped={() => setSkippedQuestionSessionId(currentSessionId)}
+          />
 
           {/* 讨论流浮层已收进右侧「本会话的代理」面板的「事件」折叠区（N-L6-AGENTVIEW S2），
               输入框上方不再另起浮层 */}
@@ -928,29 +982,18 @@ export const ChatView: React.FC = () => {
           {/* /goal 运行进度条（独立一行，仅 goal 运行中显示） */}
           <GoalStatusBar />
 
-          {/* G2 打断式选项卡：有待答问题时遮盖/替换输入区（拍板形态，非 Modal 非内联卡） */}
-          {pendingUserQuestion && (
-            <UserQuestionCard request={pendingUserQuestion} />
-          )}
-
-          {pendingPlanApproval && !pendingUserQuestion && (
-            <PlanApprovalCard target={pendingPlanApproval} />
-          )}
-
-          {/* Input —— 待答问题/计划审批期间保持挂载但隐藏（草稿不丢），卡片答复后自动恢复 */}
-          <div className={pendingUserQuestion || pendingPlanApproval ? 'hidden' : undefined}>
-            <ChatInput
-              ref={chatInputRef}
-              onSend={handleSendEnvelope}
-              onSteer={handleSteerEnvelope}
-              disabled={effectiveIsProcessing || isCreatingSession}
-              isProcessing={effectiveIsProcessing}
-              hasStoppableBackgroundWork={hasStoppableSwarmWork}
-              isInterrupting={isInterrupting}
-              onStop={cancel}
-              hasPlan={false}
-            />
-          </div>
+          <ChatInput
+            ref={chatInputRef}
+            onSend={handleSendEnvelope}
+            onSteer={handleSteerEnvelope}
+            disabled={effectiveIsProcessing || isCreatingSession}
+            isProcessing={effectiveIsProcessing}
+            hasStoppableBackgroundWork={hasStoppableSwarmWork}
+            isInterrupting={isInterrupting}
+            onStop={cancel}
+            hasPlan={false}
+            placeholder={currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined}
+          />
         </div>
       </div>
 

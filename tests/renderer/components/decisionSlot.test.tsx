@@ -4,7 +4,13 @@ import path from 'node:path';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { Message, PermissionRequest, StreamRecoverySnapshot } from '../../../src/shared/contract';
+import type {
+  Message,
+  PermissionRequest,
+  PlanApprovalRecord,
+  StreamRecoverySnapshot,
+  UserQuestionRequest,
+} from '../../../src/shared/contract';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const normalRequest: PermissionRequest = {
@@ -46,6 +52,36 @@ const writebackRequest = {
   },
   timestamp: 4,
 } as unknown as PermissionRequest;
+
+const userQuestion: UserQuestionRequest = {
+  id: 'question-1',
+  sessionId: 'session-current',
+  questions: [{
+    question: '选哪个方案？',
+    header: '方案',
+    options: [
+      { label: '方案 A (推荐)', description: '更快交付' },
+      { label: '方案 B', description: '覆盖更全' },
+    ],
+  }],
+  timestamp: 5,
+};
+
+const planApproval: PlanApprovalRecord = {
+  status: 'pending',
+  originalPlan: '1. 改槽位\n2. 跑测试',
+  steps: [
+    { id: 'step-1', content: '改槽位', originalContent: '改槽位' },
+    { id: 'step-2', content: '跑测试', originalContent: '跑测试' },
+  ],
+};
+
+const planTarget = {
+  sessionId: 'session-current',
+  messageId: 'plan-message',
+  toolCallId: 'plan-tool',
+  approval: planApproval,
+};
 
 const storeState = vi.hoisted(() => ({
   pendingPermissionRequest: null as PermissionRequest | null,
@@ -108,7 +144,7 @@ describe('DecisionSlot', () => {
       'utf8',
     );
     const pinned = chatSource.indexOf('<PinnedTodoBar');
-    const slot = chatSource.indexOf('<DecisionSlot streamInterruption={streamInterruptionDecision} />');
+    const slot = chatSource.indexOf('<DecisionSlot');
     const workflow = chatSource.indexOf('<WorkflowLaunchCard />');
 
     expect(pinned).toBeGreaterThan(0);
@@ -132,20 +168,20 @@ describe('DecisionSlot', () => {
     expect(slot.getAttribute('aria-label')).toBe('待你决定');
     expect(slot.className).toContain('chat-col-pad');
     expect(slot.className).not.toContain('overflow-y-auto');
-    expect(screen.getByText('危险操作')).toBeTruthy();
+    expect(screen.getByText('执行命令')).toBeTruthy();
+    expect(screen.getAllByText('危险')).toHaveLength(1);
     expect(screen.getByText('还有 2 项')).toBeTruthy();
     expect(screen.queryByText('创建文件')).toBeNull();
     expect(screen.getByTestId('permission-card-details-scroll').className).toContain('overflow-y-auto');
     expect(screen.getByTestId('permission-card-pinned-options').className).toContain('shrink-0');
-    expect(screen.getByTestId('permission-card-actions').className).toContain('shrink-0');
+    expect(screen.queryByTestId('permission-card-actions')).toBeNull();
     expect(screen.getByTestId('permission-card').className).not.toContain('px-4');
     expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain(
-      'max-h-[calc(100dvh-12rem)]',
+      'max-h-[40vh]',
     );
     expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('shadow-2xl');
 
-    fireEvent.click(screen.getByRole('button', { name: /允许一次/u }));
-    fireEvent.click(screen.getByRole('button', { name: '允许' }));
+    fireEvent.click(screen.getByRole('button', { name: /仍然执行/u }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -181,7 +217,7 @@ describe('DecisionSlot', () => {
     storeState.pendingPermissionSessionId = 'session-current';
     render(<DecisionSlot />);
 
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: '允许' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /允许一次/ }));
     fireEvent.keyDown(window, { key: 'Enter' });
 
     await waitFor(() => {
@@ -199,14 +235,14 @@ describe('DecisionSlot', () => {
     storeState.pendingPermissionSessionId = 'session-current';
     const view = render(<DecisionSlot />);
 
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: '允许' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /拒绝/ }));
     fireEvent.keyDown(window, { key: 'Enter' });
     expect(invoke).not.toHaveBeenCalled();
 
     view.unmount();
     storeState.pendingPermissionRequest = writebackRequest;
     render(<DecisionSlot />);
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: '允许' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^发送/ }));
     fireEvent.keyDown(window, { key: 'Enter' });
     expect(invoke).not.toHaveBeenCalled();
   });
@@ -331,5 +367,39 @@ describe('DecisionSlot', () => {
     expect(effectStart).toBeGreaterThan(signalStart);
     expect(activitySignal).not.toMatch(/PermissionRequest|queuedPermissionRequests/u);
     expect(appSource).toContain('syncTaskWorkbenchForActivity(currentSessionId, taskWorkbenchActivityKey)');
+  });
+
+  it('提问卡和计划卡进入同一槽位：提问优先，Esc 迷你条汇总数量且保留已选状态', () => {
+    render(
+      <DecisionSlot
+        userQuestion={userQuestion}
+        userQuestionCount={2}
+        planApproval={planTarget}
+      />,
+    );
+
+    expect(screen.getByTestId('user-question-card')).toBeTruthy();
+    expect(screen.queryByTestId('plan-approval-card')).toBeNull();
+    const option = screen.getByRole('button', { name: /方案 A.*推荐.*更快交付/u });
+    fireEvent.click(option);
+    expect(option.className).toContain('ring-1');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByTestId('decision-slot-collapsed')).toBeTruthy();
+    expect(screen.getByLabelText('待你决定 (3) · 展开')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByTestId('user-question-card')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /方案 A.*推荐.*更快交付/u }).className).toContain('ring-1');
+  });
+
+  it('计划卡没有更高优先级请求时默认展开，主次按钮固定在卡底', () => {
+    render(<DecisionSlot planApproval={planTarget} />);
+
+    const card = screen.getByTestId('plan-approval-card');
+    expect(card.getAttribute('data-view-mode')).toBe('expanded');
+    expect(screen.getByTestId('plan-step-list')).toBeTruthy();
+    expect(screen.getByTestId('plan-approve-button')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '计划 · 拒绝' })).toBeTruthy();
   });
 });

@@ -1,6 +1,12 @@
+// @vitest-environment jsdom
+
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+
+const sendMessageMock = vi.hoisted(() => vi.fn(async () => {}));
+const ipcInvokeMock = vi.hoisted(() => vi.fn(async () => undefined));
 
 const sessionState = {
   currentSessionId: 'session-1',
@@ -28,6 +34,7 @@ const sessionState = {
     ['session-1', { sessionId: 'session-1', status: 'paused', activeAgentCount: 0, contextHealth: null, lastActivityAt: Date.now() - 3_000 }],
   ]),
   backgroundSessions: [],
+  pendingUserQuestionsBySessionId: new Map<string, unknown[]>(),
   moveToBackground: vi.fn(async () => true),
 };
 
@@ -35,6 +42,7 @@ const appState = {
   showPreviewPanel: false,
   workingDirectory: '/repo/other',
   goalRuns: {},
+  setTaskPlan: vi.fn(),
   setShowSettings: vi.fn(),
   openSettingsTab: vi.fn(),
 };
@@ -66,7 +74,31 @@ vi.mock('../../../src/renderer/stores/sessionStore', async (importOriginal) => (
   // 纯谓词（isBlankNewSession 等）走真实实现：NewSessionWelcome 用它判「这是不是真新会话」，
   // 打桩会让空态首屏的消歧在这里测成空气。
   ...(await importOriginal<typeof import('../../../src/renderer/stores/sessionStore')>()),
-  useSessionStore: (selector?: (state: typeof sessionState) => unknown) => selector ? selector(sessionState) : sessionState,
+  useSessionStore: Object.assign(
+    (selector?: (state: typeof sessionState) => unknown) => selector ? selector(sessionState) : sessionState,
+    {
+      getState: () => ({
+        ...sessionState,
+        clearPendingUserQuestion: (request: { id: string; sessionId?: string }) => {
+          const sessionId = request.sessionId ?? sessionState.currentSessionId;
+          if (!sessionId) return;
+          const next = new Map(sessionState.pendingUserQuestionsBySessionId);
+          next.set(sessionId, (next.get(sessionId) ?? []).filter((item) => (
+            (item as { id?: string }).id !== request.id
+          )));
+          sessionState.pendingUserQuestionsBySessionId = next;
+        },
+      }),
+    },
+  ),
+}));
+
+vi.mock('../../../src/renderer/services/ipcService', () => ({
+  default: {
+    invoke: ipcInvokeMock,
+    invokeDomain: vi.fn(async () => { throw new Error('test boundary'); }),
+    on: vi.fn(() => () => {}),
+  },
 }));
 
 vi.mock('../../../src/renderer/stores/taskStore', () => ({
@@ -104,6 +136,16 @@ vi.mock('../../../src/renderer/stores/swarmStore', () => ({
     )),
 }));
 
+vi.mock('../../../src/renderer/stores/neoWorkCardStore', () => ({
+  ensureNeoWorkCardLiveUpdates: vi.fn(),
+  isNeoWorkCardAwaitingRuntimeTerminal: () => false,
+  NEO_WORK_CARD_LIVE_REFRESH_MS: 1_000,
+  selectNeoWorkCardDetailsForConversation: () => [],
+  useNeoWorkCardStore: (selector: (state: { loadForConversation: () => Promise<void> }) => unknown) => (
+    selector({ loadForConversation: vi.fn(async () => {}) })
+  ),
+}));
+
 vi.mock('../../../src/renderer/stores/localBridgeStore', () => ({
   useLocalBridgeStore: () => ({
     status: 'connected',
@@ -122,7 +164,7 @@ vi.mock('../../../src/renderer/hooks/useAgent', () => ({
   useAgent: () => ({
     messages: [],
     isProcessing: false,
-    sendMessage: vi.fn(async () => {}),
+    sendMessage: sendMessageMock,
     cancel: vi.fn(async () => {}),
     researchDetected: null,
     dismissResearchDetected: vi.fn(),
@@ -148,8 +190,43 @@ vi.mock('../../../src/renderer/components/features/chat/TurnBasedTraceView', () 
   TurnBasedTraceView: () => React.createElement('div', null, 'trace-view'),
 }));
 
+vi.mock('../../../src/renderer/components/brand/PlanetSphere', () => ({
+  PlanetSphere: () => null,
+}));
+
+vi.mock('../../../src/renderer/components/features/chat/ActiveConversationRewindBanner', () => ({
+  ActiveConversationRewindBanner: () => null,
+}));
+
+vi.mock('../../../src/renderer/components/features/surfaceExecution/SurfaceExecutionChatPanel', () => ({
+  SurfaceExecutionChatPanel: () => null,
+}));
+
 vi.mock('../../../src/renderer/components/features/chat/ChatInput', () => ({
-  ChatInput: React.forwardRef(() => React.createElement('div', null, 'chat-input')),
+  ChatInput: React.forwardRef<unknown, {
+    onSend: (envelope: { content: string; context: object }) => Promise<boolean>;
+    placeholder?: string;
+  }>(({ onSend, placeholder }, _ref) => {
+    const [value, setValue] = React.useState('');
+    return React.createElement(
+      'form',
+      {
+        'data-testid': 'chat-input',
+        onSubmit: (event: React.FormEvent) => {
+          event.preventDefault();
+          void onSend({ content: value, context: {} });
+        },
+      },
+      React.createElement('input', {
+        'aria-label': 'chat-input-field',
+        value,
+        placeholder,
+        onChange: (event: React.ChangeEvent<HTMLInputElement>) => setValue(event.target.value),
+      }),
+      React.createElement('button', { type: 'submit' }, '发送'),
+      React.createElement('span', null, 'chat-input'),
+    );
+  }),
 }));
 
 vi.mock('../../../src/renderer/components/features/chat/ChatInput/useFileUpload', () => ({
@@ -279,5 +356,92 @@ describe('ChatView session shell', () => {
     expect(defaultSuggestions[1].prompt).toContain('图表 JSON');
     expect(defaultSuggestions[2].prompt).toContain('过去一周 AI 行业');
     expect(defaultSuggestions[3].prompt).toContain('先列出，不要直接执行删除');
+  });
+
+  it('pending 提问时输入区仍可见可输入，发送继续走普通 ChatView 消息链路', async () => {
+    sendMessageMock.mockClear();
+    sessionState.pendingUserQuestionsBySessionId = new Map([[
+      'session-1',
+      [{
+        id: 'question-pending',
+        sessionId: 'session-1',
+        timestamp: 1,
+        questions: [{
+          header: '方案',
+          question: '选哪个？',
+          options: [
+            { label: 'A', description: 'a' },
+            { label: 'B', description: 'b' },
+          ],
+        }],
+      }],
+    ]]);
+
+    try {
+      window.domainAPI = {
+        invoke: vi.fn(async () => ({ success: true, data: null })),
+      } as typeof window.domainAPI;
+      render(React.createElement(ChatView));
+
+      expect(screen.getByTestId('decision-slot')).toBeTruthy();
+      expect(screen.getByTestId('user-question-card')).toBeTruthy();
+      const input = screen.getByLabelText('chat-input-field');
+      expect(input.closest('.hidden')).toBeNull();
+      fireEvent.change(input, { target: { value: '先补一句上下文' } });
+      expect((input as HTMLInputElement).value).toBe('先补一句上下文');
+      fireEvent.submit(screen.getByTestId('chat-input'));
+
+      await waitFor(() => {
+        expect(sendMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+          content: '先补一句上下文',
+        }));
+      });
+    } finally {
+      cleanup();
+      window.domainAPI = undefined;
+      sessionState.pendingUserQuestionsBySessionId = new Map();
+    }
+  });
+
+  it('跳过提问后只改输入区 placeholder，下一条普通消息发出后恢复', async () => {
+    sendMessageMock.mockClear();
+    ipcInvokeMock.mockClear();
+    sessionState.pendingUserQuestionsBySessionId = new Map([[
+      'session-1',
+      [{
+        id: 'question-skipped',
+        sessionId: 'session-1',
+        timestamp: 1,
+        questions: [{
+          header: '方案',
+          question: '选哪个？',
+          options: [
+            { label: 'A', description: 'a' },
+            { label: 'B', description: 'b' },
+          ],
+        }],
+      }],
+    ]]);
+
+    try {
+      window.domainAPI = {
+        invoke: vi.fn(async () => ({ success: true, data: null })),
+      } as typeof window.domainAPI;
+      render(React.createElement(ChatView));
+      fireEvent.click(screen.getByRole('button', { name: zh.userQuestion.skip }));
+
+      const input = screen.getByLabelText('chat-input-field') as HTMLInputElement;
+      await waitFor(() => expect(input.placeholder).toBe(zh.userQuestion.skippedPlaceholder));
+      expect(screen.queryByTestId('user-question-card')).toBeNull();
+
+      fireEvent.change(input, { target: { value: '按我刚补充的要求继续' } });
+      fireEvent.submit(screen.getByTestId('chat-input'));
+      await waitFor(() => expect(sendMessageMock).toHaveBeenCalledOnce());
+      await waitFor(() => expect(input.placeholder).toBe(''));
+    } finally {
+      cleanup();
+      window.domainAPI = undefined;
+      sessionState.pendingUserQuestionsBySessionId = new Map();
+    }
   });
 });

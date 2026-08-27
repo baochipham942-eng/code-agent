@@ -96,13 +96,10 @@ describe('DecisionCard 统一骨架', () => {
     expect(props.onCancel).not.toHaveBeenCalled();
   });
 
-  it('danger 变体渲染警示行与红边', () => {
-    renderCard({
-      tone: 'danger',
-      dangerWarning: '这是一个危险命令：递归删除文件，可能导致数据丢失',
-    });
+  it('danger 变体只提供红色骨架，后果由业务卡传进详情', () => {
+    renderCard({ tone: 'danger', details: <p>将永久删除 dist，不进回收站。</p> });
 
-    expect(screen.getByText(/这是一个危险命令/)).toBeTruthy();
+    expect(screen.getByText(/永久删除 dist/)).toBeTruthy();
     const card = screen.getByTestId('decision-card').firstElementChild as HTMLElement;
     expect(card.className).toContain('border-red-500');
   });

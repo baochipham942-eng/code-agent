@@ -13,18 +13,17 @@ import { CalendarPlus, ListTodo, Mail } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { usePermissionStore, type PermissionRequestForMemory } from '../../stores/permissionStore';
-import { DecisionCard, isEditableTarget, type DecisionOption } from '../DecisionCard';
+import { DecisionCard, isEditableTarget, type DecisionCardViewMode, type DecisionOption } from '../DecisionCard';
 import { RequestDetails } from './RequestDetails';
 import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
-import { isEditableTool, permissionReasonText } from '@shared/contract';
+import { isEditableTool } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { getPermissionConfig, isDangerousCommand, getDangerReason, formatFilePath } from './utils';
-import { useI18n, type Translations } from '../../hooks/useI18n';
+import { getPermissionConfig, isDangerousCommand } from './utils';
+import { useI18n } from '../../hooks/useI18n';
 import ipcService from '../../services/ipcService';
 import { toast } from '../../hooks/useToast';
 import { claimApprovalResponse, releaseApprovalResponse } from '../../utils/approvalResponseGuard';
-import { redactCredentialText } from '@shared/security/secretPatterns';
 import {
   WritebackEditForm,
   draftFromArgs,
@@ -32,7 +31,7 @@ import {
   draftToArgs,
   type WritebackDraft,
 } from './WritebackFields';
-import { getHumanToolLabel } from '../../utils/toolHumanLabel';
+import { defaultPermissionViewMode, permissionSummary } from './permissionPresentation';
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -55,6 +54,10 @@ function normalizeRequest(
       changes: request.details.changes,
       server: request.details.server,
       toolName: request.details.toolName,
+      commandRiskLevel: request.details.commandRiskLevel,
+      commandSecurityFlags: request.details.commandSecurityFlags,
+      affectedPath: request.details.affectedPath,
+      affectedFileCount: request.details.affectedFileCount,
       path: request.details.path,
       preview: request.details.preview,
     },
@@ -83,40 +86,6 @@ function toMemoryRequest(request: PermissionRequest): PermissionRequestForMemory
   };
 }
 
-// 一行问题句（「允许写入 ~/work/report.md？」）；目标缺失时回退到通用问法
-function permissionQuestion(request: PermissionRequest, t: Translations): string {
-  const p = t.decisionCard.permission;
-  const filePath = request.details.filePath || request.details.path;
-  const target = filePath ? formatFilePath(redactCredentialText(filePath)) : undefined;
-  switch (request.type) {
-    case 'file_read':
-      return target ? p.questionFileRead.replace('{target}', target) : p.questionFallback;
-    case 'file_write':
-      return target ? p.questionFileWrite.replace('{target}', target) : p.questionFallback;
-    case 'file_edit':
-      return target ? p.questionFileEdit.replace('{target}', target) : p.questionFallback;
-    case 'file_delete':
-      return target ? p.questionFileDelete.replace('{target}', target) : p.questionFallback;
-    case 'command':
-      return p.questionCommand;
-    case 'dangerous_command':
-      return p.questionDangerousCommand;
-    case 'network':
-      return request.details.url
-        ? p.questionNetwork.replace('{target}', redactCredentialText(request.details.url))
-        : p.questionFallback;
-    case 'mcp':
-      return request.details.server && request.details.toolName
-        ? p.questionMcp.replace(
-            '{target}',
-            redactCredentialText(`${request.details.server} / ${request.details.toolName}`),
-          )
-        : p.questionFallback;
-    default:
-      return p.questionFallback;
-  }
-}
-
 interface PermissionCardProps {
   requestOverride?: ContractPermissionRequest;
   sessionIdOverride?: string | null;
@@ -130,7 +99,7 @@ export function PermissionCard({
   remainingCount = 0,
   onCollapse,
 }: PermissionCardProps = {}) {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   const {
     pendingPermissionRequest,
     pendingPermissionSessionId,
@@ -144,6 +113,7 @@ export function PermissionCard({
   const [selectedLevel, setSelectedLevel] = useState<ApprovalLevel | null>('once');
   // N-WRITEBACK-EDIT 编辑态：draft 非 null = 正在改；只有点「按修改后发送」才会送出，Esc/放弃 = 什么都不发
   const [draft, setDraft] = useState<WritebackDraft | null>(null);
+  const [viewState, setViewState] = useState<{ requestId: string; mode: DecisionCardViewMode } | null>(null);
 
   const sourceRequest = requestOverride ?? pendingPermissionRequest;
   const sourceSessionId = requestOverride ? sessionIdOverride : pendingPermissionSessionId;
@@ -361,7 +331,6 @@ export function PermissionCard({
   if (!request) return null;
 
   const config = getPermissionConfig(request.type);
-  const dangerReason = isDangerous ? getDangerReason(request.details.command) : null;
 
   const p = t.decisionCard.permission;
   const w = p.writeback;
@@ -398,8 +367,6 @@ export function PermissionCard({
     { id: 'deny', label: p.optionDeny, description: p.optionDenyDesc, shortcut: 'n' },
   ];
 
-  const reasonText = request.reason || (request.reasonCode ? permissionReasonText(request.reasonCode) : '');
-
   // 可编辑写回工具的专属呈现：标题 / 图标 / 问句点题（不再是「创建文件」+「允许这次操作？」）
   const firstRecipient = editable && Array.isArray(request.rawArgs?.to) ? String(request.rawArgs.to[0] ?? '') : '';
   const meetingSubject = isMeetingCreate && typeof request.rawArgs?.subject === 'string'
@@ -418,7 +385,7 @@ export function PermissionCard({
           ? w.remindersCreateTitle
           : request.tool === 'reminders_update'
             ? w.remindersUpdateTitle
-            : editable ? w.mailSendTitle : (isDangerous ? t.decisionCard.dangerTitle : config.title);
+            : editable ? w.mailSendTitle : (isDangerous ? getPermissionConfig('command').title : config.title);
   const icon = isMeetingCreate || isCalendarWrite
     ? <CalendarPlus size={20} />
     : isRemindersWrite
@@ -436,16 +403,26 @@ export function PermissionCard({
             ? (contentTitle ? w.remindersUpdateQuestion.replace('{title}', contentTitle) : w.remindersUpdateQuestionFallback)
     : editable
     ? (firstRecipient ? w.mailSendQuestion.replace('{target}', firstRecipient) : w.mailSendQuestionFallback)
-    : permissionQuestion(request, t);
-  const sharedHumanLabel = getHumanToolLabel({
-    toolName: request.tool,
-    labels: t.receiptPresentation.humanToolLabels,
-  });
-  const headerMeta = sharedHumanLabel === request.tool
-    ? (language === 'en'
-      ? request.boundary?.connectorNameEn ?? request.boundary?.connectorName
-      : request.boundary?.connectorName) ?? request.tool
-    : sharedHumanLabel;
+    : permissionSummary(request, t);
+  const viewMode = viewState?.requestId === request.id
+    ? viewState.mode
+    : defaultPermissionViewMode(request);
+  const headerEnd = isDangerous || pendingHeaderEnd ? (
+    <span className="flex items-center gap-2">
+      {isDangerous && (
+        <span className="rounded-full border border-red-500/35 bg-red-500/10 px-2 py-0.5 text-[10px] text-badge-danger">
+          {t.decisionCard.dangerBadge}
+        </span>
+      )}
+      {pendingHeaderEnd}
+    </span>
+  ) : undefined;
+  const visibleOptions: DecisionOption[] = isDangerous
+    ? [
+        { id: 'once', label: t.decisionCard.stillExecute, shortcut: 'y' },
+        { id: 'deny', label: p.optionDeny, shortcut: 'n' },
+      ]
+    : options;
 
   // 已决请求不再由 PermissionCard 渲染；结果归属到对应工具步骤旁的一行存证。
   if (settled) return null;
@@ -458,10 +435,11 @@ export function PermissionCard({
         testId="permission-card"
         className="w-full animate-slideUp"
         pinActions
+        viewMode="expanded"
         tone="amber"
         icon={icon}
         title={title}
-        headerMeta={`${headerMeta} · ${w.editingBadge}`}
+        headerMeta={w.editingBadge}
         headerEnd={pendingHeaderEnd}
         question={isMeetingCreate
           ? w.tmeetWriteWarning
@@ -499,30 +477,14 @@ export function PermissionCard({
       tone={isDangerous ? 'danger' : 'amber'}
       icon={icon}
       title={title}
-      headerMeta={headerMeta}
-      headerEnd={pendingHeaderEnd}
-      dangerWarning={
-        isDangerous
-          ? `${t.decisionCard.dangerCopy}：${dangerReason || t.decisionCard.dangerDefaultReason}`
-          : undefined
-      }
+      headerEnd={headerEnd}
       question={question}
       details={
         <>
-          {editable && (
-            <p className="text-xs text-badge-warning" data-testid="writeback-irreversible">
-              {isMeetingCreate
-                ? w.tmeetWriteWarning
-                : isCalendarWrite
-                  ? w.calendarWriteWarning
-                  : isRemindersWrite ? w.remindersWriteWarning : w.irreversible}
-            </p>
-          )}
-          {!editable && reasonText && <p className="text-zinc-400 text-sm">{reasonText}</p>}
           <RequestDetails request={request} />
         </>
       }
-      options={options}
+      options={visibleOptions}
       selectedId={selectedLevel}
       onSelect={(id) => {
         if (id === 'edit') {
@@ -536,6 +498,20 @@ export function PermissionCard({
       }}
       onCollapse={onCollapse}
       enterDisabled={isDangerous || editable}
+      viewMode={viewMode}
+      onViewModeChange={(mode) => setViewState({ requestId: request.id, mode })}
+      expandLabel={t.decisionCard.details}
+      collapseLabel={t.decisionCard.collapse}
+      directActions
+      primaryActionId={isDangerous ? 'deny' : 'once'}
+      dangerActionId={isDangerous ? 'once' : undefined}
+      onDirectAction={(id) => {
+        if (id === 'edit') {
+          if (request.rawArgs) setDraft(draftFromArgs(request.tool, request.rawArgs));
+          return;
+        }
+        void handleApproval(id as ApprovalLevel);
+      }}
       confirmLabel={t.decisionCard.confirm}
     />
   );

@@ -60,7 +60,7 @@ describe('PermissionCard hook ordering', () => {
     state.request = request;
     expect(() => rerender(<PermissionCard />)).not.toThrow();
 
-    expect(screen.getByText('/tmp/hook-order.txt')).toBeTruthy();
+    expect(screen.getByText('允许写入 hook-order.txt？')).toBeTruthy();
     expect(
       consoleError.mock.calls.some((args) =>
         args.some(

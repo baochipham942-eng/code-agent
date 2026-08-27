@@ -167,6 +167,7 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
       testId="swarm-launch-card"
       className="w-full animate-slideUp"
       tone="neutral"
+      viewMode="expanded"
       icon={<GitBranch className="w-4 h-4" />}
       title={s.title}
       question={s.question.replace('{count}', String(request.agentCount))}

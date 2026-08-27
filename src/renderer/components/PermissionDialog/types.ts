@@ -37,6 +37,10 @@ export interface PermissionRequestDetails {
   changes?: string;
   server?: string;
   toolName?: string;
+  commandRiskLevel?: 'safe' | 'low' | 'medium' | 'high' | 'critical';
+  commandSecurityFlags?: string[];
+  affectedPath?: string;
+  affectedFileCount?: number;
   path?: string; // 兼容旧版 API
   // E2: 确认门控预览
   preview?: {

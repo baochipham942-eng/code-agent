@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const resolverState = vi.hoisted(() => ({
   getDefinition: vi.fn(),
@@ -74,6 +77,13 @@ describe('ToolExecutor EXTERNAL 风险类打标进 decisionTrace', () => {
       requiresPermission: true,
       permissionLevel: 'write',
     }],
+    ['Bash', {
+      name: 'Bash',
+      description: 'bash test tool',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      requiresPermission: true,
+      permissionLevel: 'execute',
+    }],
   ]);
 
   beforeEach(() => {
@@ -107,5 +117,32 @@ describe('ToolExecutor EXTERNAL 风险类打标进 decisionTrace', () => {
     const request = requestPermission.mock.calls[0][0] as { decisionTrace?: { steps: TraceStepLike[] } };
     const rules = (request.decisionTrace?.steps ?? []).map((s) => s.rule);
     expect(rules).not.toContain('external_side_effect');
+  });
+
+  it('危险删除审批携带 commandSafety 风险、目标路径和 host 盘点文件数', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-command-impact-'));
+    const target = path.join(workspace, 'dist');
+    fs.mkdirSync(path.join(target, 'nested'), { recursive: true });
+    fs.writeFileSync(path.join(target, 'a.js'), 'a');
+    fs.writeFileSync(path.join(target, 'nested', 'b.js'), 'b');
+    const requestPermission = vi.fn(async (_req: unknown) => false);
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: workspace, forcePermissionHandler: true });
+    executor.setAuditEnabled(false);
+
+    try {
+      await executor.execute('Bash', { command: 'rm -rf ./dist' }, { sessionId: 's1' });
+
+      expect(requestPermission).toHaveBeenCalledTimes(1);
+      expect(requestPermission.mock.calls[0][0]).toMatchObject({
+        details: {
+          commandRiskLevel: 'high',
+          commandSecurityFlags: expect.arrayContaining(['recursive_delete_targeted']),
+          affectedPath: target,
+          affectedFileCount: 2,
+        },
+      });
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true });
+    }
   });
 });

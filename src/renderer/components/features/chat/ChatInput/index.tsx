@@ -137,6 +137,8 @@ export interface ChatInputProps {
   hasPlan?: boolean;
   /** 点击 Plan 入口 */
   onPlanClick?: () => void;
+  /** 决策拒绝/跳过后的出口文案；只改空输入态提示，不改变发送协议。 */
+  placeholder?: string;
   /**
    * 无会话语境（如协作空间页 composer）：按主界面新会话草稿同款语义处理——
    * 会话作用域视为 null，会话绑定部件（/loop、记忆开关、资料库 pin、实时通话）
@@ -218,6 +220,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   onStop,
   hasPlan,
   onPlanClick,
+  placeholder,
   sessionless = false,
   scopeProjectId = null,
 }, ref) => {
@@ -812,10 +815,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   ), [atMention.handleKeyDown, handleAutocompleteKeyDown]);
 
   const resolvedPlaceholder = useMemo(() => {
+    if (placeholder) return placeholder;
     if (inputPlaceholder) return inputPlaceholder;
     if (!isProcessing) return undefined;
     return t.chatInputSubmit.runtimeInputPlaceholder;
-  }, [inputPlaceholder, isProcessing, t]);
+  }, [inputPlaceholder, isProcessing, placeholder, t]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
   const { handleSubmit, runScheduleCreation, startGoalRun, submitSeedComposer } = useChatInputSubmit({

@@ -62,7 +62,7 @@ export interface MemberPill {
   profession?: string;
   /** 角色 lucide 图标名（与 profession 同取自 agentRegistry entries）：头像 asset → icon → 首字 三级回落的中间档 */
   icon?: string;
-  status: 'standby' | 'running' | 'completed' | 'failed';
+  status: 'standby' | 'running' | 'completed' | 'failed' | 'cancelled';
   isLead: boolean;
   /** standby 成员的排除键（member 的 id ?? roleId；lead 用 roleId），× 掉时写进 composerStore */
   standbyKey?: string;
@@ -73,6 +73,7 @@ export interface MemberPill {
 function pillStatusOf(status: SwarmAgentState['status']): MemberPill['status'] {
   if (status === 'completed') return 'completed';
   if (status === 'failed') return 'failed';
+  if (status === 'cancelled') return 'cancelled';
   return 'running';
 }
 
@@ -184,17 +185,27 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
 
   const standby = rows.length > 0 && rows.every((row) => row.status === 'standby');
   const working = rows.filter((row) => row.status === 'working');
+  const waiting = rows.filter((row) => row.status === 'waiting');
+  const failed = rows.filter((row) => row.status === 'failed');
+  const cancelled = rows.filter((row) => row.status === 'cancelled');
   const mergeState = standby ? null : deriveAgentMergeState(rows, conflicts);
 
   if (rows.length === 0) return null;
 
-  // 「N 个代理工作中 · 当前一句」：当前一句 = 第一个 running 代理的最近工具步人话
+  // 「N 个代理工作中 · 名字 当前一句」：名字总在（谁在干活是事实），当前一句只有
+  // 拿到真实工具步才带——没有工具步就不编「正在整理任务…」这类假活动。
   const firstWorking = working[0];
   const summary = standby
     ? text.collapsedStandby.replace('{count}', String(rows.length))
     : firstWorking
-      ? `${text.collapsedWorking.replace('{count}', String(working.length))} · ${firstWorking.name} ${firstWorking.activity ?? ''}`
-      : text.collapsedDone.replace('{count}', String(rows.length));
+      ? `${text.collapsedWorking.replace('{count}', String(working.length))} · ${firstWorking.name}${firstWorking.activity ? ` ${firstWorking.activity}` : ''}`
+      : waiting.length > 0
+        ? text.collapsedWaiting.replace('{count}', String(waiting.length))
+        : failed.length > 0
+          ? text.collapsedFailed.replace('{count}', String(failed.length))
+          : cancelled.length > 0
+            ? text.collapsedCancelled.replace('{count}', String(cancelled.length))
+            : text.collapsedDone.replace('{count}', String(rows.length));
   const mergeLabel = mergeState === 'merged'
     ? text.mergeState.chipMerged
     : mergeState === 'conflict'

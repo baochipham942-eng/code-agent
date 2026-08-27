@@ -330,14 +330,21 @@ export class SwarmTraceWriter {
     if (!run) return;
     const stats = event.data.statistics;
     const aggregation: SwarmAggregation | null = event.data.result?.aggregation ?? null;
+    const runFailed = event.data.result?.success === false || (stats?.failed ?? 0) > 0;
+    this.settleOpenAgents(
+      run,
+      runFailed ? 'failed' : 'completed',
+      event.timestamp,
+      runFailed ? 'Swarm run failed before the agent reported a terminal state' : undefined,
+    );
     const totals = this.aggregateAgentTotals(run);
 
     const closed = {
       id: run.storageRunId,
-      status: (stats && stats.failed > 0 ? 'failed' : 'completed') as 'failed' | 'completed',
+      status: (runFailed ? 'failed' : 'completed') as 'failed' | 'completed',
       endedAt: event.timestamp,
-      completedCount: stats?.completed ?? 0,
-      failedCount: stats?.failed ?? 0,
+      completedCount: stats?.completed ?? totals.completedCount,
+      failedCount: stats?.failed ?? totals.failedCount,
       parallelPeak: Math.max(run.parallelPeak, stats?.parallelPeak ?? 0),
       totalTokensIn: totals.tokensIn,
       totalTokensOut: totals.tokensOut,
@@ -371,63 +378,7 @@ export class SwarmTraceWriter {
     if (!run) return;
     // Stop 接受后立即把所有非终态子任务收敛到 cancelled，再写 run_closed。
     // 这样 renderer 只读 ledger/API 也不会看到永久 pending/running。
-    for (const [agentId, agent] of run.agents) {
-      if (agent.status === 'completed' || agent.status === 'failed' || agent.status === 'cancelled') continue;
-      const cancelledAt = event.timestamp;
-      const cancelled: AgentRollup = {
-        ...agent,
-        status: 'cancelled',
-        endTime: cancelledAt,
-        error: agent.error ?? 'cancelled',
-      };
-      run.agents.set(agentId, cancelled);
-      const durationMs = cancelled.startTime == null ? null : Math.max(0, cancelledAt - cancelled.startTime);
-      this.schedulePersist(() => this.repo.upsertAgent({
-        runId: run.storageRunId,
-        agentId,
-        name: cancelled.name,
-        role: cancelled.role,
-        status: cancelled.status,
-        startTime: cancelled.startTime,
-        endTime: cancelled.endTime,
-        durationMs,
-        tokensIn: cancelled.tokensIn,
-        tokensOut: cancelled.tokensOut,
-        toolCalls: cancelled.toolCalls,
-        costUsd: cancelled.costUsd,
-        error: cancelled.error,
-        failureCategory: 'cancelled',
-        filesChanged: cancelled.filesChanged,
-        dispatchedTask: cancelled.dispatchedTask,
-        dispatchedTaskTruncated: cancelled.dispatchedTaskTruncated,
-        dispatchedTaskArchiveItemId: cancelled.dispatchedTaskArchiveItemId,
-        finalOutput: cancelled.finalOutput,
-        finalOutputTruncated: cancelled.finalOutputTruncated,
-        finalOutputArchiveItemId: cancelled.finalOutputArchiveItemId,
-      }));
-      this.appendLedgerEvent(run, 'agent_snapshot', agentId, {
-        agentId,
-        name: cancelled.name,
-        role: cancelled.role,
-        status: cancelled.status,
-        startTime: cancelled.startTime,
-        endTime: cancelled.endTime,
-        durationMs,
-        tokensIn: cancelled.tokensIn,
-        tokensOut: cancelled.tokensOut,
-        toolCalls: cancelled.toolCalls,
-        costUsd: cancelled.costUsd,
-        error: cancelled.error,
-        failureCategory: 'cancelled',
-        filesChanged: cancelled.filesChanged,
-        dispatchedTask: cancelled.dispatchedTask,
-        dispatchedTaskTruncated: cancelled.dispatchedTaskTruncated,
-        dispatchedTaskArchiveItemId: cancelled.dispatchedTaskArchiveItemId,
-        finalOutput: cancelled.finalOutput,
-        finalOutputTruncated: cancelled.finalOutputTruncated,
-        finalOutputArchiveItemId: cancelled.finalOutputArchiveItemId,
-      }, cancelledAt);
-    }
+    this.settleOpenAgents(run, 'cancelled', event.timestamp, 'cancelled');
     const totals = this.aggregateAgentTotals(run);
     const closed = {
       id: run.storageRunId,
@@ -459,6 +410,75 @@ export class SwarmTraceWriter {
       tags: [],
     }, event.timestamp);
     this.runs.delete(run.key);
+  }
+
+  private settleOpenAgents(
+    run: RunState,
+    status: 'completed' | 'failed' | 'cancelled',
+    endedAt: number,
+    fallbackError?: string,
+  ): void {
+    for (const [agentId, agent] of run.agents) {
+      if (agent.status === 'completed' || agent.status === 'failed' || agent.status === 'cancelled') continue;
+      const settled: AgentRollup = {
+        ...agent,
+        status,
+        endTime: endedAt,
+        error: agent.error ?? fallbackError ?? null,
+      };
+      run.agents.set(agentId, settled);
+      const durationMs = settled.startTime == null ? null : Math.max(0, endedAt - settled.startTime);
+      const failureCategory = status === 'cancelled'
+        ? 'cancelled'
+        : settled.error
+          ? this.classifyFailure(settled.error)
+          : null;
+      this.schedulePersist(() => this.repo.upsertAgent({
+        runId: run.storageRunId,
+        agentId,
+        name: settled.name,
+        role: settled.role,
+        status: settled.status,
+        startTime: settled.startTime,
+        endTime: settled.endTime,
+        durationMs,
+        tokensIn: settled.tokensIn,
+        tokensOut: settled.tokensOut,
+        toolCalls: settled.toolCalls,
+        costUsd: settled.costUsd,
+        error: settled.error,
+        failureCategory,
+        filesChanged: settled.filesChanged,
+        dispatchedTask: settled.dispatchedTask,
+        dispatchedTaskTruncated: settled.dispatchedTaskTruncated,
+        dispatchedTaskArchiveItemId: settled.dispatchedTaskArchiveItemId,
+        finalOutput: settled.finalOutput,
+        finalOutputTruncated: settled.finalOutputTruncated,
+        finalOutputArchiveItemId: settled.finalOutputArchiveItemId,
+      }));
+      this.appendLedgerEvent(run, 'agent_snapshot', agentId, {
+        agentId,
+        name: settled.name,
+        role: settled.role,
+        status: settled.status,
+        startTime: settled.startTime,
+        endTime: settled.endTime,
+        durationMs,
+        tokensIn: settled.tokensIn,
+        tokensOut: settled.tokensOut,
+        toolCalls: settled.toolCalls,
+        costUsd: settled.costUsd,
+        error: settled.error,
+        failureCategory,
+        filesChanged: settled.filesChanged,
+        dispatchedTask: settled.dispatchedTask,
+        dispatchedTaskTruncated: settled.dispatchedTaskTruncated,
+        dispatchedTaskArchiveItemId: settled.dispatchedTaskArchiveItemId,
+        finalOutput: settled.finalOutput,
+        finalOutputTruncated: settled.finalOutputTruncated,
+        finalOutputArchiveItemId: settled.finalOutputArchiveItemId,
+      }, endedAt);
+    }
   }
 
   // --------------------------------------------------------------------------

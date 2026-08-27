@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { permissionVocabularyEn, permissionVocabularyZh } from './permissionVocabulary';
+import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 
 export const expertZh = {
   expert: {
@@ -41,7 +42,10 @@ export const expertZh = {
       processMessages: '过程消息',
       returnToMain: '返回主会话继续对话',
       collapsedWorking: '{count} 个代理工作中',
-      collapsedDone: '{count} 个代理已完成',
+      collapsedDone: `{count} 个代理 · ${outcomeWordsZh.outcomeWords.completed.badge.label}`,
+      collapsedFailed: `{count} 个代理 · ${outcomeWordsZh.outcomeWords['failed-unknown'].badge.label}`,
+      collapsedCancelled: `{count} 个代理 · ${outcomeWordsZh.outcomeWords['cancelled-by-user'].badge.label}`,
+      collapsedWaiting: '{count} 个代理等待中',
       collapsedStandby: '{count} 个代理待命中',
       mergeState: {
         merged: '{count} 个代理的改动已经合到一起了',
@@ -61,8 +65,9 @@ export const expertZh = {
         eventsToggle: '讨论流 · {count} 条',
         status: {
           working: '工作中',
-          done: '完成',
-          failed: '失败',
+          done: outcomeWordsZh.outcomeWords.completed.badge.label,
+          failed: outcomeWordsZh.outcomeWords['failed-unknown'].badge.label,
+          cancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].badge.label,
           waiting: '卡住了在等你',
           standby: '待命',
         },
@@ -310,7 +315,10 @@ export const expertEn: typeof expertZh = {
       processMessages: 'Working messages',
       returnToMain: 'Back to the main conversation',
       collapsedWorking: '{count} agents working',
-      collapsedDone: '{count} agents done',
+      collapsedDone: `{count} agents · ${outcomeWordsEn.outcomeWords.completed.badge.label}`,
+      collapsedFailed: `{count} agents · ${outcomeWordsEn.outcomeWords['failed-unknown'].badge.label}`,
+      collapsedCancelled: `{count} agents · ${outcomeWordsEn.outcomeWords['cancelled-by-user'].badge.label}`,
+      collapsedWaiting: '{count} agents waiting',
       collapsedStandby: '{count} agents on standby',
       mergeState: {
         merged: 'Changes from {count} agents are merged',
@@ -330,8 +338,9 @@ export const expertEn: typeof expertZh = {
         eventsToggle: 'Discussion · {count}',
         status: {
           working: 'Working',
-          done: 'Done',
-          failed: 'Failed',
+          done: outcomeWordsEn.outcomeWords.completed.badge.label,
+          failed: outcomeWordsEn.outcomeWords['failed-unknown'].badge.label,
+          cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].badge.label,
           waiting: 'Waiting for you',
           standby: 'Standby',
         },

@@ -142,7 +142,7 @@ const remindersUpdateRequest = nativeRequest('permission-reminders-update', 'rem
 }, '提醒事项');
 
 function enterEdit() {
-  fireEvent.click(screen.getByRole('button', { name: /修改后允许/ }));
+  fireEvent.click(screen.getByRole('button', { name: /改一改再/ }));
 }
 const toInput = () => screen.getByTestId('writeback-edit-to') as HTMLInputElement;
 const sendEdited = () => screen.getByRole('button', { name: '邮件发送 · 修改后允许' });
@@ -171,7 +171,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect(screen.queryByText('危险操作')).toBeNull();
     expect(screen.getByTestId('writeback-view-content').textContent).toContain('请在周五前确认');
     expect(screen.getByText('发这封邮件给 li.wei@acme.com？')).toBeTruthy();
-    expect(screen.getByText('邮件发送 · 修改后允许')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /改一改再发/ })).toBeTruthy();
   });
 
   it('改收件人 → 按修改后发送 → IPC 带改后的 updatedArgs，response 是一次性 allow', async () => {
@@ -222,8 +222,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
 
   it('不改直接「发送」→ IPC 不带第 5 参（走原参数，旧调用形状不变）', async () => {
     render(<PermissionCard />);
-    fireEvent.click(screen.getByRole('button', { name: /^邮件发送 · 允许/ }));
-    fireEvent.click(screen.getByRole('button', { name: '允许' }));
+    fireEvent.click(screen.getByRole('button', { name: /^发送/ }));
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, request.id, 'allow', request.sessionId);
       expect(invoke.mock.calls[0]).toHaveLength(4);
@@ -236,13 +235,12 @@ describe('PermissionCard · mail_send 改一改再发', () => {
 
     expect(screen.getByText('创建腾讯会议')).toBeTruthy();
     expect(screen.getByText('创建会议「quick meeting」？')).toBeTruthy();
-    expect(screen.getByText('写入你的腾讯会议')).toBeTruthy();
+    expect(screen.getByText('数据与隐私详情')).toBeTruthy();
     expect(screen.getByTestId('writeback-view-subject').textContent).toBe('quick meeting');
     expect(screen.getByTestId('writeback-view-start').textContent).toContain('2026');
     expect(screen.getByTestId('writeback-view-end').textContent).toContain('2026');
-    expect(screen.getByTestId('writeback-irreversible').textContent)
-      .toContain('模型补全的默认主题或时间可点「修改后允许」调整');
-    expect(screen.getByRole('button', { name: /会议创建 · 修改后允许/ })).toBeTruthy();
+    expect(screen.getByText('数据与隐私详情')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /改一改再创建/ })).toBeTruthy();
   });
 
   it('默认值可改提示有中英文卡面文案', () => {
@@ -253,7 +251,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
   it('腾讯会议改主题和本地时间后把 ISO updatedArgs 直达一次性 allow 通道', async () => {
     state.request = meetingRequest;
     render(<PermissionCard />);
-    fireEvent.click(screen.getByRole('button', { name: /会议创建 · 修改后允许/ }));
+    fireEvent.click(screen.getByRole('button', { name: /改一改再创建/ }));
     fireEvent.change(screen.getByTestId('writeback-edit-subject'), { target: { value: 'product sync' } });
     const editedStart = new Date('2026-08-26T09:15:00+08:00');
     const startInput = screen.getByTestId('writeback-edit-start') as HTMLInputElement;

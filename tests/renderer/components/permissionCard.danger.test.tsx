@@ -38,8 +38,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 
 const { PermissionCard } = await import('../../../src/renderer/components/PermissionDialog/PermissionCard');
 
-const DANGER_COPY = '这是一个危险命令';
-const DANGER_TITLE = '危险操作';
+const DANGER_COPY = '危险';
 const STANDING_GRANT = '始终';
 
 function render(request: ContractPermissionRequest): string {
@@ -60,14 +59,13 @@ describe('PermissionCard 危险度与强制确认分离', () => {
     });
 
     expect(html).not.toContain(DANGER_COPY);
-    expect(html).not.toContain(DANGER_TITLE);
     expect(html).not.toContain('border-red-500');
-    // 原本的类型配色要留住——写文件就是写文件
-    expect(html).toContain('创建文件');
+    // 紧凑态用动作句表达写文件，不再重复卡头标题。
+    expect(html).toContain('允许写入 memo.txt？');
     // 但 forceConfirm 的职责不能松：不许「会话 / 始终」这类常驻授权
     expect(html).not.toContain(STANDING_GRANT);
-    // 原因还是要如实说出来
-    expect(html).toContain('只读探索模式：写入操作需要用户确认');
+    // 审批原因只留在开发者决策链，不占普通卡面。
+    expect(html).not.toContain('只读探索模式：写入操作需要用户确认');
   });
 
   it('host 判定为高风险（dangerLevel=danger）时照样是红卡', () => {
@@ -82,7 +80,7 @@ describe('PermissionCard 危险度与强制确认分离', () => {
     });
 
     expect(html).toContain(DANGER_COPY);
-    expect(html).toContain(DANGER_TITLE);
+    expect(html.match(/危险/gu)).toHaveLength(1);
     expect(html).toContain('border-red-500');
     expect(html).not.toContain(STANDING_GRANT);
   });
@@ -97,7 +95,7 @@ describe('PermissionCard 危险度与强制确认分离', () => {
     });
 
     expect(html).toContain(DANGER_COPY);
-    expect(html).toContain(DANGER_TITLE);
+    expect(html.match(/危险/gu)).toHaveLength(1);
   });
 
   it('普通写文件（既不危险也不强制）保留常驻授权入口', () => {

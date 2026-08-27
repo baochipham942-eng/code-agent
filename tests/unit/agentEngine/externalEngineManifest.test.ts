@@ -41,6 +41,32 @@ describe('external engine manifest contract', () => {
     expect(recommendationOnly.every((manifest) => !manifest.adapter.adapterId)).toBe(true);
   });
 
+  /**
+   * 🔴 registry 把 `evidence === 'production'` 当成 executable/selectable 的必要条件
+   * （agentEngineRegistry.buildEngineDescriptor / buildSourceDescriptor）。
+   * 于是「有 adapter 但 evidence 填了 local_spike」的条目会在设置里可见、
+   * capabilities 却是空数组，选中就抛 capability 错——典型的装好没接电。
+   * 2026-08-27 加 kimi_code_acp 时真踩到过一次，这里把它钉住。
+   */
+  it('keeps every adapter-backed manifest executable (evidence must be production)', () => {
+    // 上面那条同族断言是**按引擎名字写死的清单**，dsh_cli 本来就漏在外面，
+    // 新引擎也一律逃逸（2026-08-27 kimi_code_acp 就是这样溜过去的）。
+    // 这条改成从数据推导，覆盖当前与未来所有带 adapter 的条目。
+    const adapterBacked = listExternalEngineManifests()
+      .filter((manifest) => manifest.adapter.adapterId && manifest.kind !== 'native');
+
+    expect(adapterBacked.length).toBeGreaterThan(0);
+    for (const manifest of adapterBacked) {
+      expect(
+        manifest.adapter.evidence,
+        `${manifest.id} has an adapterId but non-production evidence, so the registry would mark it non-executable`,
+      ).toBe('production');
+      expect(manifest.adapter.adapterId, `${manifest.id} adapterId must equal its kind`).toBe(manifest.kind);
+      expect(manifest.capabilities, `${manifest.id} must declare execute`).toContain('execute');
+      expect(manifest.probe?.commands.length ?? 0, `${manifest.id} needs a probe command`).toBeGreaterThan(0);
+    }
+  });
+
   it('never stores official credentials or entitlement marketing claims in manifests', () => {
     const serialized = JSON.stringify(listExternalEngineManifests()).toLowerCase();
     expect(serialized).not.toMatch(/api[_-]?key\s*[:=]\s*['"][^'"]+/);

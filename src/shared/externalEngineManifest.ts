@@ -308,7 +308,10 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
       promptTransport: 'internal',
       eventFormat: 'internal',
       credentialOwner: 'official_client',
-      evidence: 'local_spike',
+      // 🔴 必须是 'production'：registry 用 evidence==='production' 推导 executable/selectable，
+      // 填 'local_spike' 会让引擎在设置里可见却 capabilities=[]、永远跑不起来（装好没接电）。
+      // 'local_spike' 是留给没有 adapter 的推荐项的（qoder_work / comate_zulu）。
+      evidence: 'production',
     },
     modelSelection: 'runtime_catalog',
     // resume 有据：agentCapabilities.loadSession=true，且 session/load 实测回放完整历史后可续发 prompt。

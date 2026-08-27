@@ -146,12 +146,14 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
         </header>
 
         <div className="mx-auto max-w-3xl space-y-4 py-4 text-sm">
-          {/* 当前动作置顶高亮（S3） */}
-          <section data-testid="member-current-action">
-            <div className="rounded-lg border border-badge-accent/40 bg-violet-500/10 px-3 py-2 text-xs text-zinc-200">
-              {currentAction}
-            </div>
-          </section>
+          {/* 当前动作置顶高亮（S3）；没有真实工具步时不编造活动。 */}
+          {currentAction && (
+            <section data-testid="member-current-action">
+              <div className="rounded-lg border border-badge-accent/40 bg-violet-500/10 px-3 py-2 text-xs text-zinc-200">
+                {currentAction}
+              </div>
+            </section>
+          )}
 
           <section data-testid="member-dispatched-task">
             <h3 className="mb-1 text-xs font-medium text-zinc-400">{text.receivedTask}</h3>

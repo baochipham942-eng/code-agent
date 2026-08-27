@@ -240,6 +240,34 @@ function calculateStatistics(
   };
 }
 
+function isTerminalAgentStatus(status: SwarmAgentState['status']): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
+}
+
+function settleAgentsForRunTerminal(
+  agents: SwarmAgentState[],
+  event: SwarmEvent,
+): SwarmAgentState[] {
+  const runFailed = event.type === 'swarm:completed'
+    && (event.data.result?.success === false || (event.data.statistics?.failed ?? 0) > 0);
+  const status: SwarmAgentState['status'] = event.type === 'swarm:cancelled'
+    ? 'cancelled'
+    : runFailed
+      ? 'failed'
+      : 'completed';
+
+  return agents.map((agent) => isTerminalAgentStatus(agent.status)
+    ? agent
+    : {
+      ...agent,
+      status,
+      endTime: event.timestamp,
+      ...(status === 'failed' && !agent.error
+        ? { error: 'Swarm run ended before the agent reported a terminal state' }
+        : {}),
+    });
+}
+
 function deriveExecutionPhase(state: Pick<SwarmStore, 'isRunning' | 'agents' | 'statistics' | 'planReviews' | 'launchRequests'>): SwarmExecutionPhase {
   if (state.launchRequests.some((request) => request.status === 'pending')) {
     return 'waiting_approval';
@@ -511,19 +539,22 @@ function reduceRunSnapshot(
       break;
 
     case 'swarm:completed':
-    case 'swarm:cancelled':
+    case 'swarm:cancelled': {
+      const agents = settleAgentsForRunTerminal(snapshot.agents, event);
       snapshot = {
         ...snapshot,
+        agents,
         isRunning: false,
         verification: event.data.result?.verification || snapshot.verification,
         aggregation: event.data.result?.aggregation || snapshot.aggregation,
         statistics: calculateStatistics(
-          snapshot.agents,
+          agents,
           snapshot.statistics,
           event.data.statistics || undefined,
         ),
       };
       break;
+    }
 
     default:
       break;

@@ -722,6 +722,60 @@ describe('swarmStore', () => {
   });
 
   describe('completion events', () => {
+    it('主轮结束会把仍在 running/pending 的成员收成 completed', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 100));
+      store.handleEvent(evt('swarm:agent:added', {
+        agentState: agent('running', { status: 'running', startTime: 110 }),
+      }, 110));
+      store.handleEvent(evt('swarm:agent:added', {
+        agentState: agent('pending', { status: 'pending' }),
+      }, 120));
+
+      store.handleEvent(evt('swarm:completed', {
+        result: { success: true, totalTime: 900 },
+      }, 1_000));
+
+      expect(useSwarmStore.getState().agents).toEqual([
+        expect.objectContaining({ id: 'running', status: 'completed', endTime: 1_000 }),
+        expect.objectContaining({ id: 'pending', status: 'completed', endTime: 1_000 }),
+      ]);
+    });
+
+    it('用户取消会把仍在 running/pending 的成员收成 cancelled', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 100));
+      store.handleEvent(evt('swarm:agent:added', {
+        agentState: agent('running', { status: 'running', startTime: 110 }),
+      }, 110));
+      store.handleEvent(evt('swarm:agent:added', {
+        agentState: agent('pending', { status: 'pending' }),
+      }, 120));
+
+      store.handleEvent(evt('swarm:cancelled', {}, 1_000));
+
+      expect(useSwarmStore.getState().agents).toEqual([
+        expect.objectContaining({ id: 'running', status: 'cancelled', endTime: 1_000 }),
+        expect.objectContaining({ id: 'pending', status: 'cancelled', endTime: 1_000 }),
+      ]);
+    });
+
+    it('停止全部收到 run 级 cancelled 后会同步成员终态和可停止状态', () => {
+      const store = useSwarmStore.getState();
+      store.handleEvent(evt('swarm:started', {}, 100));
+      store.handleEvent(evt('swarm:agent:added', {
+        agentState: agent('a1', { status: 'running', startTime: 110 }),
+      }, 110));
+      expect(useSwarmStore.getState().agents[0]?.status).toBe('running');
+
+      store.handleEvent(evt('swarm:cancelled', {}, 1_000));
+
+      const state = useSwarmStore.getState();
+      expect(state.isRunning).toBe(false);
+      expect(state.agents[0]).toMatchObject({ status: 'cancelled', endTime: 1_000 });
+      expect(state.executionPhase).toBe('cancelled');
+    });
+
     it('swarm:completed 置 isRunning=false 并写 aggregation', () => {
       const store = useSwarmStore.getState();
       store.handleEvent(evt('swarm:started', {}));

@@ -50,7 +50,7 @@ describe('agentRowStatus 九态→四态全表（经 buildAgentRows）', () => {
     ['stalled', 'waiting'],
     ['blocked', 'waiting'],
     ['completed', 'done'],
-    ['cancelled', 'done'],
+    ['cancelled', 'cancelled'],
     ['failed', 'failed'],
     ['killed', 'failed'],
     ['dead-log-only', 'failed'],
@@ -82,8 +82,8 @@ describe('buildAgentRows 三源合并去重', () => {
     expect(rows[1]).toMatchObject({ key: 'extra-1', kind: 'expert', status: 'standby', stoppable: false });
     // standby 行不带「当前一句」
     expect(rows[1].activity).toBeUndefined();
-    // 非 standby 专家行没有真实工具步时回落空档句
-    expect(rows[0].activity).toBe('正在整理任务…');
+    // 没有真实工具步就不编造当前动作
+    expect(rows[0].activity).toBeUndefined();
   });
 
   it('agentTree 节点与 member 同 key：不重复成行，lastToolStep/tokens 并回专家行', () => {

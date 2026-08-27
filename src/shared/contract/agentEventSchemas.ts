@@ -543,7 +543,7 @@ const TurnDiffEventSchema = event('turn_diff', typed<TurnDiffEventData>(z.object
 const NotificationEventSchema = event('notification', z.object({ message: z.string(), parentToolUseId: z.string().optional() }));
 const hostReasonPayloadSchema = z.object({
   code: z.string(),
-  metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null(), z.undefined()])).optional(),
+  metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   modelText: z.string(),
 });
 const RoutingResolvedEventSchema = event('routing_resolved', typed<RoutingResolvedEventData>(z.object({ mode: z.enum(['auto', 'explicit']), agentId: z.string(), agentName: z.string(), reason: z.union([z.string(), hostReasonPayloadSchema]), score: z.number(), fallbackToDefault: z.boolean().optional(), requestedAgentId: z.string().optional(), timestamp: z.number().optional() })));

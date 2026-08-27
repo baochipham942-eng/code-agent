@@ -2,6 +2,7 @@ import type { ToolCall } from '@shared/contract';
 import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
 import type { Translations } from '../i18n';
+import { readHostReasonFromMetadata, resolveHostReasonCopy } from './hostReasonPresentation';
 
 /**
  * 判定一条工具结果是否「自动加载重试」的良性内部状态（success:false 但不是真失败）。
@@ -305,6 +306,24 @@ export function humanizeToolError(
     return {
       summary: t.outcomeWords['cancelled-restart'].badge.label,
       detail: t.outcomeWords['cancelled-restart'].badge.reason,
+    };
+  }
+  const hostReason = readHostReasonFromMetadata(metadata);
+  const hostReasonCopy = resolveHostReasonCopy(hostReason, t);
+  if (hostReasonCopy) {
+    const structuredFailureCode = inferAgentFailureCode({
+      failureCode: metadata?.failureCode,
+      toolResultCode: metadata?.code,
+      defaultCode: AgentFailureCode.Unknown,
+    });
+    const outcome = structuredFailureCode === AgentFailureCode.Timeout
+      ? t.outcomeWords['failed-timeout'].timeline
+      : structuredFailureCode === AgentFailureCode.PermissionDenied
+        ? t.outcomeWords['failed-approval-denied'].timeline
+        : null;
+    return {
+      summary: hostReasonCopy.summary,
+      detail: outcome?.reason ?? hostReasonCopy.detail,
     };
   }
   const failureCode = inferAgentFailureCode({

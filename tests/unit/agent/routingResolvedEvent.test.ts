@@ -8,6 +8,7 @@
 // ============================================================================
 import { describe, expect, it } from 'vitest';
 import { buildRoutingResolvedEventData } from '../../../src/host/agent/routingResolvedEvent';
+import { HostReasonCode, hostReasonModelText } from '../../../src/shared/contract/permission';
 
 const autoResolution = {
   agent: { id: 'coder', name: 'Coder' },
@@ -18,11 +19,14 @@ const autoResolution = {
 describe('buildRoutingResolvedEventData', () => {
   it('自动路由命中 → mode auto，无 requestedAgentId', () => {
     const data = buildRoutingResolvedEventData(autoResolution, { timestamp: 1000 });
-    expect(data).toEqual({
+    expect(data).toMatchObject({
       mode: 'auto',
       agentId: 'coder',
       agentName: 'Coder',
-      reason: 'Matched coding keywords',
+      reason: {
+        code: HostReasonCode.RoutingMatched,
+        modelText: 'Matched coding keywords',
+      },
       score: 42,
       fallbackToDefault: false,
       timestamp: 1000,
@@ -61,7 +65,8 @@ describe('buildRoutingResolvedEventData', () => {
     expect(data.agentName).toBe('default');
     expect(data.requestedAgentId).toBe('__ghost__');
     expect(data.fallbackToDefault).toBe(true);
-    expect(data.reason).toContain('__ghost__');
+    expect(hostReasonModelText(data.reason)).toContain('__ghost__');
+    expect(data.reason).toMatchObject({ code: HostReasonCode.RoutingRequestedUnavailable });
   });
 
   it('外部引擎兜底：fallbackAgentName/fallbackReason 可覆写（agent 选择在引擎会话不适用）', () => {
@@ -74,18 +79,22 @@ describe('buildRoutingResolvedEventData', () => {
     expect(data.mode).toBe('explicit');
     expect(data.agentId).toBe('default');
     expect(data.agentName).toBe('codex_cli');
-    expect(data.reason).toContain('codex_cli');
+    expect(hostReasonModelText(data.reason)).toContain('codex_cli');
+    expect(data.reason).toMatchObject({ code: HostReasonCode.RoutingExternalEngineUnsupported });
     expect(data.fallbackToDefault).toBe(true);
     expect(data.requestedAgentId).toBe('explore');
   });
 
   it('无显式请求 + 未命中 → mode auto + default 兜底（与 orchestrator 既有默认事件对齐）', () => {
     const data = buildRoutingResolvedEventData(null, { timestamp: 5000 });
-    expect(data).toEqual({
+    expect(data).toMatchObject({
       mode: 'auto',
       agentId: 'default',
       agentName: 'default',
-      reason: 'No specialized agent matched; continue with the default conversation loop.',
+      reason: {
+        code: HostReasonCode.RoutingNoMatchFallback,
+        modelText: 'No specialized agent matched; continue with the default conversation loop.',
+      },
       score: 0,
       fallbackToDefault: true,
       timestamp: 5000,

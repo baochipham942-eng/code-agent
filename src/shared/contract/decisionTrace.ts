@@ -1,3 +1,5 @@
+import type { HostReasonValue } from './permission';
+
 // ============================================================================
 // Decision Trace Types - Security decision chain transparency
 // ============================================================================
@@ -15,7 +17,8 @@ export interface DecisionStep {
   layer: DecisionLayer;
   rule: string;
   result: DecisionOutcome;
-  reason: string;
+  /** 新载荷为 HostReasonPayload；string 仅保留一版旧事件/旧落库兼容。 */
+  reason: HostReasonValue;
   durationMs: number;
   timestamp: number;
 }

@@ -5,6 +5,32 @@
 // Only creates trace objects on deny/ask paths. Allow hot path = zero overhead.
 
 import type { DecisionStep, DecisionTrace, DecisionLayer, DecisionOutcome } from '../../shared/contract/decisionTrace';
+import {
+  createHostReason,
+  HostReasonCode,
+  isHostReasonPayload,
+  type HostReasonPayload,
+  type HostReasonValue,
+} from '../../shared/contract/permission';
+
+function decisionReasonCode(layer: DecisionLayer): HostReasonCode {
+  switch (layer) {
+    case 'policy_enforcer': return HostReasonCode.DecisionPolicy;
+    case 'guard_fabric': return HostReasonCode.DecisionGuard;
+    case 'permission_classifier': return HostReasonCode.DecisionClassifier;
+    case 'plan_approval': return HostReasonCode.DecisionApproval;
+    case 'plugin_hook': return HostReasonCode.DecisionHook;
+  }
+}
+
+function normalizeDecisionReason(
+  layer: DecisionLayer,
+  reason: HostReasonValue,
+): HostReasonPayload {
+  return isHostReasonPayload(reason)
+    ? reason
+    : createHostReason(decisionReasonCode(layer), reason);
+}
 
 export class DecisionTraceBuilder {
   private toolName: string;
@@ -16,12 +42,12 @@ export class DecisionTraceBuilder {
     this.startTime = Date.now();
   }
 
-  addStep(layer: DecisionLayer, rule: string, result: DecisionOutcome, reason: string): this {
+  addStep(layer: DecisionLayer, rule: string, result: DecisionOutcome, reason: HostReasonValue): this {
     this.steps.push({
       layer,
       rule,
       result,
-      reason,
+      reason: normalizeDecisionReason(layer, reason),
       durationMs: Date.now() - this.startTime,
       timestamp: Date.now(),
     });
@@ -53,14 +79,14 @@ export function createTraceStep(
   layer: DecisionLayer,
   rule: string,
   result: DecisionOutcome,
-  reason: string,
+  reason: HostReasonValue,
   startTime: number
 ): DecisionStep {
   return {
     layer,
     rule,
     result,
-    reason,
+    reason: normalizeDecisionReason(layer, reason),
     durationMs: Date.now() - startTime,
     timestamp: Date.now(),
   };

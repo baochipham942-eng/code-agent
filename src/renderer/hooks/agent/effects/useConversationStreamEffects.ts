@@ -9,6 +9,8 @@ import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
 import { applyRoutingDegradationSignal } from '../../../utils/routingDegradation';
 import { useAppStore } from '../../../stores/appStore';
 import { useTaskStore } from '../../../stores/taskStore';
+import { languages } from '../../../i18n';
+import { resolveHostReasonCopy } from '../../../utils/hostReasonPresentation';
 
 /**
  * 这些 agent 事件不构成「宿主还在跑」的证据：终态由各自分支负责把运行态放下，
@@ -668,13 +670,17 @@ export const useConversationStreamEffects = ({
             if (!eventSessionId || !routingData) {
               break;
             }
+            const routingReason = resolveHostReasonCopy(
+              routingData.reason,
+              languages[useAppStore.getState().language],
+            );
             useTurnExecutionStore.getState().recordRoutingEvidence(eventSessionId, {
               kind: 'auto',
               mode: routingData.mode,
               timestamp: routingData.timestamp || Date.now(),
               agentId: routingData.agentId,
               agentName: routingData.agentName,
-              reason: routingData.reason,
+              reason: routingReason?.summary ?? languages[useAppStore.getState().language].agentError.categories.generic.title,
               score: routingData.score,
               fallbackToDefault: routingData.fallbackToDefault,
               requestedAgentId: routingData.requestedAgentId,

@@ -28,6 +28,7 @@ import type {
   ToolTokenSavingsStatus,
   ToolCall,
 } from '@shared/contract';
+import { isHostReasonPayload } from '@shared/contract';
 import type {
   AssistantMessagePayload,
   MessageDeltaPayload,
@@ -739,7 +740,12 @@ export function normalizeRoutingResolvedPayload(data: unknown): RoutingResolvedP
   if (!isRecord(data) || (data.mode !== 'auto' && data.mode !== 'explicit')) return null;
   const agentId = getStringField(data, 'agentId');
   const agentName = getStringField(data, 'agentName');
-  const reason = getStringField(data, 'reason');
+  const rawReason = data.reason;
+  const reason = typeof rawReason === 'string'
+    ? rawReason
+    : isHostReasonPayload(rawReason)
+      ? rawReason
+      : undefined;
   const score = getNumberField(data, 'score');
   if (!agentId || !agentName || !reason || score === undefined) return null;
 

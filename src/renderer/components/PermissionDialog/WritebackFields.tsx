@@ -17,6 +17,17 @@ import { useI18n } from '../../hooks/useI18n';
 /** 编辑态草稿：列表保留用户输入串，datetime 保留 datetime-local 的本机时间串。 */
 export type WritebackDraft = Record<string, string>;
 
+enum WritebackValidationReason {
+  Required = 'required',
+  InvalidDatetime = 'invalid_datetime',
+  EndBeforeStart = 'end_before_start',
+}
+
+interface WritebackValidationIssue {
+  fieldKey: string;
+  reason: WritebackValidationReason;
+}
+
 const BODY_COLLAPSE_LINES = 12;
 const LOCAL_DATETIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/u;
 
@@ -111,24 +122,28 @@ export function draftToArgs(tool: string, draft: WritebackDraft): Record<string,
   return out;
 }
 
-/** 必填字段是否都有值（空 = 主按钮禁用）。 */
-export function draftMissingRequired(tool: string, draft: WritebackDraft): string[] {
+/** 草稿校验结果：每个无效字段都保留具体原因，供禁用提交与字段提示共用。 */
+export function validateWritebackDraft(tool: string, draft: WritebackDraft): WritebackValidationIssue[] {
   const fields = (EDITABLE_TOOL_FIELDS[tool] ?? []).filter((field) => !field.readonly);
-  const invalid = fields
-    .filter((field) => {
-      const value = draft[field.key] ?? '';
-      if (field.required && value.trim() === '') return true;
-      return field.kind === 'datetime' && value !== '' && localDatetimeMillis(value) === null;
-    })
-    .map((f) => f.key);
+  const invalid: WritebackValidationIssue[] = [];
+  for (const field of fields) {
+    const value = draft[field.key] ?? '';
+    if (field.required && value.trim() === '') {
+      invalid.push({ fieldKey: field.key, reason: WritebackValidationReason.Required });
+    } else if (field.kind === 'datetime' && value !== '' && localDatetimeMillis(value) === null) {
+      invalid.push({ fieldKey: field.key, reason: WritebackValidationReason.InvalidDatetime });
+    }
+  }
   const start = fields.find((field) => field.key === 'start' || field.key === 'start_ms');
   const end = fields.find((field) => field.key === 'end' || field.key === 'end_ms');
   if (start && end) {
     const startMillis = localDatetimeMillis(draft[start.key] ?? '');
     const endMillis = localDatetimeMillis(draft[end.key] ?? '');
-    if (startMillis !== null && endMillis !== null && endMillis < startMillis) invalid.push(end.key);
+    if (startMillis !== null && endMillis !== null && endMillis < startMillis) {
+      invalid.push({ fieldKey: end.key, reason: WritebackValidationReason.EndBeforeStart });
+    }
   }
-  return [...new Set(invalid)];
+  return invalid;
 }
 
 function useFieldLabels(): Record<string, string> {
@@ -255,7 +270,7 @@ export function WritebackEditForm({
   const labels = useFieldLabels();
   const fields = (EDITABLE_TOOL_FIELDS[tool] ?? []).filter((field) => !field.readonly);
   const pristine = draftFromArgs(tool, original);
-  const missing = new Set(draftMissingRequired(tool, draft));
+  const invalid = new Map(validateWritebackDraft(tool, draft).map((issue) => [issue.fieldKey, issue.reason]));
   const attachments = Array.isArray(original.attachments)
     ? original.attachments.filter((v): v is string => typeof v === 'string')
     : [];
@@ -263,6 +278,14 @@ export function WritebackEditForm({
   const renderField = (field: EditableField) => {
     const value = draft[field.key] ?? '';
     const changed = value !== (pristine[field.key] ?? '');
+    const invalidReason = invalid.get(field.key);
+    const errorMessage = invalidReason === WritebackValidationReason.Required
+      ? w.required
+      : invalidReason === WritebackValidationReason.InvalidDatetime
+        ? w.invalidDatetime
+        : invalidReason === WritebackValidationReason.EndBeforeStart
+          ? w.endBeforeStart
+          : undefined;
     const label = (
       <div className="text-xs text-zinc-500 mb-1 flex items-center gap-1">
         <span>{labels[field.key] ?? field.key}</span>
@@ -272,8 +295,8 @@ export function WritebackEditForm({
     const common = {
       value,
       fullWidth: true,
-      error: missing.has(field.key),
-      errorMessage: missing.has(field.key) ? w.required : undefined,
+      error: invalidReason !== undefined,
+      errorMessage,
       'data-testid': `writeback-edit-${field.key}`,
       'aria-label': labels[field.key] ?? field.key,
     };

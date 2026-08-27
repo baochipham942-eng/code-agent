@@ -27,8 +27,8 @@ import { claimApprovalResponse, releaseApprovalResponse } from '../../utils/appr
 import {
   WritebackEditForm,
   draftFromArgs,
-  draftMissingRequired,
   draftToArgs,
+  validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
 import { defaultPermissionViewMode, permissionSummary } from './permissionPresentation';
@@ -429,7 +429,7 @@ export function PermissionCard({
 
   // 编辑态：选项行让位给表单；主按钮 = 按修改后发送（必填为空时禁用），ghost = 放弃修改
   if (editable && draft !== null && request.rawArgs) {
-    const missing = draftMissingRequired(request.tool, draft);
+    const invalid = validateWritebackDraft(request.tool, draft);
     return (
       <DecisionCard
         testId="permission-card"
@@ -455,10 +455,10 @@ export function PermissionCard({
           />
         }
         options={[]}
-        selectedId={missing.length === 0 ? 'edit' : null}
+        selectedId={invalid.length === 0 ? 'edit' : null}
         onSelect={() => {}}
         onConfirm={() => {
-          if (missing.length === 0) void handleApproval('once', draftToArgs(request.tool, draft));
+          if (invalid.length === 0) void handleApproval('once', draftToArgs(request.tool, draft));
         }}
         onCollapse={onCollapse}
         enterDisabled

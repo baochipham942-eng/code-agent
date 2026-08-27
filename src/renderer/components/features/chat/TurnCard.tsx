@@ -240,18 +240,21 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     [turn.nodes],
   );
   const thinkingSegments = useMemo(() => getTurnThinkingSegments(turn), [turn]);
-  // 这里只决定通用光标所在的现有槽位，不参与忙信号判定。工具行出现后，
-  // 后续模型等待仍留在轮首，避免 AskUserQuestion 行与状态槽上下翻转。
-  const placeStreamingIndicatorBeforeDigest =
-    isStreaming
-    && turn.nodes.length > 0
-    && !lastNodeIsStreamingText
-    && displayNodes.some((item) => item.kind === 'tool_group');
-  const streamingIndicator = isStreaming && turn.nodes.length > 0 ? (
+  // `resolveBusySignal` 仍只负责三选一；真正出字才画光标，两个空档改用具名文字态。
+  const hasTimelineActivity = turn.nodes.some((node) => node.type !== 'user' && (
+    node.type !== 'assistant_text'
+    || Boolean(node.content?.trim())
+    || Boolean((node.thinking || node.reasoning)?.trim())
+  ));
+  const preparationPhase = busySignal === 'text-caret' && !lastNodeIsStreamingText
+    ? hasTimelineActivity ? 'organizing' : 'preparing'
+    : undefined;
+  const streamingIndicator = isStreaming ? (
     <StreamingIndicator
       startTime={turn.startTime}
       runningToolStartTime={busySignal === 'text-caret' ? runningToolStartTime : undefined}
       showCaret={busySignal === 'text-caret'}
+      preparationPhase={preparationPhase}
       waitingReason={busySignal === 'text-caret'
         ? undefined
         : getStreamingWaitingReason(turn.nodes, streamingState.status, waitingForApproval)}
@@ -446,7 +449,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {/* Middle content (folded: hide; expanded: show all except user) */}
         {!folded && (
           <>
-            {placeStreamingIndicatorBeforeDigest && streamingIndicator}
             {/* 一个回合内所有思考段继续合并成一个横幅。流式 reasoning 自己承担唯一的
                 「正在思考」信号；底部 StreamingIndicator 在此阶段让位，避免双显。 */}
             <ThinkingDigestBanner
@@ -501,8 +503,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               if (canFold && node.id === foldedView?.finalTextNode?.id) {
                 return null;
               }
-              const isNodeStreaming =
-                isStreaming && i === lastIndex && node.type === 'assistant_text';
+              const isNodeStreaming = isStreaming
+                && i === lastIndex
+                && node.type === 'assistant_text'
+                && lastNodeIsStreamingText;
               // 不再要求外部传了 onStreamingDisplayUpdate 才上报——动作行的追平判定
               // (handleAnchorStreamingDisplayUpdate) 自己也要听这个信号，与外部回调解耦。
               const shouldReportDisplayUpdate =
@@ -523,19 +527,20 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               );
             })}
 
-            {/* Streaming indicator at bottom of active turn.
-                正文流式时，唯一的通用光标落在节点流底部，紧跟文本尾。 */}
-            {!placeStreamingIndicatorBeforeDigest && streamingIndicator}
+            {/* 忙信号永远跟在最后一个已渲染时间线节点后；空时间线时它自然成为首节点。
+                正文流式时这里只留下唯一的文本尾光标。 */}
+            {streamingIndicator}
           </>
         )}
 
         {/* 语音任务卡折叠态仍在流式时：过程收在卡身里，live 信号不能全灭——
             底部保留呼吸态指示。 */}
-        {isVoiceTurn && folded && isStreaming && turn.nodes.length > 0 && busySignal === 'text-caret' && (
+        {isVoiceTurn && folded && isStreaming && busySignal === 'text-caret' && (
           <StreamingIndicator
             startTime={turn.startTime}
             runningToolStartTime={runningToolStartTime}
             showCaret
+            preparationPhase={preparationPhase}
             subagentCount={getRunningSubagentCount(turn.nodes)}
           />
         )}

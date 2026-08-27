@@ -2,6 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { TraceNode } from '../../../src/shared/contract/trace';
+import { en } from '../../../src/renderer/i18n/en';
 import {
   StreamingIndicator,
   getRunningSubagentCount,
@@ -92,6 +93,27 @@ describe('StreamingIndicator rendering', () => {
       React.createElement(StreamingIndicator, { startTime: 100, showCaret: false }),
     );
     expect(html).toBe('');
+  });
+
+  it('uses thinking-header styling and localized copy before the first token', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(StreamingIndicator, { startTime: 100, preparationPhase: 'preparing' }),
+    );
+    expect(html).toContain('data-preparation-phase="preparing"');
+    expect(html).toContain('正在准备');
+    expect(html).toContain('streaming-thinking-shimmer');
+    expect(html).not.toContain('streaming-caret');
+    expect(en.chat.preparingReply).toBe('Preparing…');
+  });
+
+  it('names the post-tool gap without rendering a bare caret', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(StreamingIndicator, { startTime: 100, preparationPhase: 'organizing' }),
+    );
+    expect(html).toContain('data-preparation-phase="organizing"');
+    expect(html).toContain('正在整理回复');
+    expect(html).not.toContain('streaming-caret');
+    expect(en.chat.organizingStreamingReply).toBe('Organizing the reply…');
   });
 });
 

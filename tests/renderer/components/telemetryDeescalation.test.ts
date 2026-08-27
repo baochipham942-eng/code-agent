@@ -36,10 +36,10 @@ describe('TurnCard 思考行不重复', () => {
     expect(turnCard).not.toContain('isThinking={isThinkingPhase}');
   });
 
-  it('工具行已出现但 reasoning 未到时，等待信号占用后续思考摘要的同一顶部槽位', () => {
-    expect(turnCard).toContain('const placeStreamingIndicatorBeforeDigest =');
-    expect(turnCard).toContain('{placeStreamingIndicatorBeforeDigest && streamingIndicator}');
-    expect(turnCard).toContain('{!placeStreamingIndicatorBeforeDigest && streamingIndicator}');
+  it('工具行已出现但正文未到时，等待信号只落在时间线底部', () => {
+    expect(turnCard).not.toContain('placeStreamingIndicatorBeforeDigest');
+    expect(turnCard).toContain('{streamingIndicator}');
+    expect(turnCard).toContain("preparationPhase={preparationPhase}");
   });
 });
 

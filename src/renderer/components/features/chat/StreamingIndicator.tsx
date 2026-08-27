@@ -8,7 +8,7 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { StopCircle } from 'lucide-react';
+import { Brain, StopCircle } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
 import { useI18n } from '../../../hooks/useI18n';
 
@@ -21,6 +21,8 @@ interface StreamingIndicatorProps {
   showCaret?: boolean;
   /** 等待期具名：模型、子任务或用户审批。缺省时维持呼吸光标。 */
   waitingReason?: StreamingWaitingReason;
+  /** 正文尚未开始时的轻量文字态；只有真正出字后才回落为文本尾光标。 */
+  preparationPhase?: 'preparing' | 'organizing';
   /** 真实并发子任务数（当前回合 trace 里仍在运行的子 agent 阻塞类工具调用数，
       由 TurnCard 用 getRunningSubagentCount 算好传入）。≥2 才亮数字——
       「编队/并行」对单个子任务不成立；缺省时用无数字版，不造数。 */
@@ -109,6 +111,7 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
   onForceStop,
   showCaret = true,
   waitingReason,
+  preparationPhase,
   subagentCount,
 }) => {
   const { t } = useI18n();
@@ -164,6 +167,29 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
 
   // active：仅一个呼吸光标 = 「还活着」，别无他物。正文正在流式时由正文自带光标，此处隐去。
   if (!showCaret) return null;
+
+  // 首 token 前与工具收尾后的空档不能只摆一根无语义的竖线。沿用思考头的
+  // 图标、字号与扫光层级，分别说清是在准备，还是在整理已经完成的步骤。
+  if (preparationPhase) {
+    const label = preparationPhase === 'preparing'
+      ? t.chat.preparingReply
+      : t.chat.organizingStreamingReply;
+    return (
+      <div
+        className="py-0.5 text-sm text-zinc-500"
+        data-testid="streaming-preparation-indicator"
+        data-preparation-phase={preparationPhase}
+        aria-label={label}
+      >
+        <div className="flex min-w-0 items-center gap-2 py-0.5 text-left text-zinc-500">
+          <Brain className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 truncate font-medium streaming-thinking-shimmer">
+            {label}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   // 具名等待（回响/编队信号）：点名在等谁，中性静态文字——比裸光标多一句交代，
   // 但依旧不放计时器：等待长短不该被演成焦虑。

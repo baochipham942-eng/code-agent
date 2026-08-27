@@ -9,24 +9,7 @@ vi.mock('../../../src/renderer/components/features/chat/TraceNodeRenderer', () =
     node,
   }: {
     node: { type: string; content?: string };
-  }) => React.createElement('div', null, node.content),
-}));
-
-vi.mock('../../../src/renderer/components/features/chat/StreamingIndicator', () => ({
-  StreamingIndicator: ({
-    showCaret,
-    waitingReason,
-  }: {
-    showCaret?: boolean;
-    waitingReason?: string;
-  }) => (
-    showCaret && !waitingReason
-      ? React.createElement('span', { 'data-testid': 'streaming-caret' }, '▎')
-      : null
-  ),
-  getRunningToolStartTime: () => undefined,
-  getRunningSubagentCount: () => 0,
-  getStreamingWaitingReason: () => undefined,
+  }) => React.createElement('div', { 'data-testid': `node-${node.type}` }, node.content),
 }));
 
 vi.mock('../../../src/renderer/components/features/chat/MessageBubble/TurnDiffSummary', () => ({
@@ -69,6 +52,10 @@ function completedTool(): TraceTurn['nodes'][number] {
   };
 }
 
+function getStreamingCarets(): NodeListOf<Element> {
+  return document.querySelectorAll('.streaming-caret');
+}
+
 describe('TurnCard busy signal', () => {
   it('思考阶段只渲染正在思考头，不渲染流式光标', () => {
     vi.setSystemTime(baseTime + 2_300);
@@ -84,7 +71,7 @@ describe('TurnCard busy signal', () => {
     ])} />);
 
     expect(screen.getByText(/正在思考… · 3s/)).toBeTruthy();
-    expect(screen.queryByTestId('streaming-caret')).toBeNull();
+    expect(getStreamingCarets()).toHaveLength(0);
   });
 
   it('文本流式阶段只渲染文本尾光标，思考头不带正在态', () => {
@@ -97,8 +84,41 @@ describe('TurnCard busy signal', () => {
       timestamp: baseTime,
     }])} />);
 
-    expect(screen.getAllByTestId('streaming-caret')).toHaveLength(1);
+    const carets = getStreamingCarets();
+    const answer = screen.getByTestId('node-assistant_text');
+    expect(carets).toHaveLength(1);
+    expect(answer.compareDocumentPosition(carets[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
     expect(screen.queryByText(/正在思考/)).toBeNull();
+  });
+
+  it('工具完成后等待出字时，文字指示跟在步骤组之后且轮头无裸光标', () => {
+    render(<TurnCard turn={makeTurn([
+      completedTool(),
+      {
+        id: 'synthetic-tail',
+        type: 'assistant_text',
+        content: '',
+        timestamp: baseTime + 100,
+      },
+    ])} />);
+
+    const toolGroup = screen.getByTestId('tool-running');
+    const indicator = screen.getByTestId('streaming-preparation-indicator');
+    expect(indicator.getAttribute('data-preparation-phase')).toBe('organizing');
+    expect(indicator.textContent).toContain('正在整理回复');
+    expect(toolGroup.compareDocumentPosition(indicator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(getStreamingCarets()).toHaveLength(0);
+  });
+
+  it('提示刚发出且尚无时间线节点时，轮头只显示准备文字而非裸光标', () => {
+    render(<TurnCard turn={makeTurn([])} />);
+
+    const indicator = screen.getByTestId('streaming-preparation-indicator');
+    expect(indicator.getAttribute('data-preparation-phase')).toBe('preparing');
+    expect(indicator.textContent).toContain('正在准备');
+    expect(screen.queryByTestId('tool-running')).toBeNull();
+    expect(getStreamingCarets()).toHaveLength(0);
   });
 
   it('工具执行阶段由步骤行独占进行中态，思考头和光标都不渲染', () => {
@@ -120,6 +140,6 @@ describe('TurnCard busy signal', () => {
 
     expect(screen.getByTestId('tool-running')).toBeTruthy();
     expect(screen.queryByText(/正在思考/)).toBeNull();
-    expect(screen.queryByTestId('streaming-caret')).toBeNull();
+    expect(getStreamingCarets()).toHaveLength(0);
   });
 });

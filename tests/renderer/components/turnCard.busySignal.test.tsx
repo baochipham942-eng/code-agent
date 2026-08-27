@@ -111,13 +111,20 @@ describe('TurnCard busy signal', () => {
     expect(getStreamingCarets()).toHaveLength(0);
   });
 
-  it('提示刚发出且尚无时间线节点时，轮头只显示准备文字而非裸光标', () => {
+  it('durable 回合已启动且尚无首 token 时，轮头如实显示等待模型', () => {
     render(<TurnCard turn={makeTurn([])} />);
 
-    const indicator = screen.getByTestId('streaming-preparation-indicator');
-    expect(indicator.getAttribute('data-preparation-phase')).toBe('preparing');
-    expect(indicator.textContent).toContain('正在准备');
+    expect(screen.getByText('信号传输中，正在等待模型回响…')).toBeTruthy();
+    expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
     expect(screen.queryByTestId('tool-running')).toBeNull();
+    expect(getStreamingCarets()).toHaveLength(0);
+  });
+
+  it('外层首轮占位可见时，活动 turn 不再渲染第二条忙信号', () => {
+    render(<TurnCard turn={makeTurn([])} suppressBusySignal />);
+
+    expect(screen.queryByText('信号传输中，正在等待模型回响…')).toBeNull();
+    expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
     expect(getStreamingCarets()).toHaveLength(0);
   });
 

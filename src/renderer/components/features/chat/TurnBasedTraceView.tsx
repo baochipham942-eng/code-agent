@@ -30,6 +30,8 @@ interface TurnBasedTraceViewProps {
   beforeFirstUserMessage?: React.ReactNode;
   /** Virtuoso 可见范围是否覆盖流式中断所在 turn，供追赶条做视口双门。 */
   onInterruptionPointVisibilityChange?: (visible: boolean) => void;
+  /** ChatView 的发送阶段占位可见时，活动 turn 不再另画一条忙信号。 */
+  suppressActiveBusySignal?: boolean;
 }
 
 export const ACTIVE_DISPLAY_SCROLL_INTERVAL_MS = 80;
@@ -286,6 +288,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   onRewindUserPrompt,
   beforeFirstUserMessage,
   onInterruptionPointVisibilityChange,
+  suppressActiveBusySignal,
 }) => {
   const { t } = useI18n();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -1001,12 +1004,13 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               }
               onRewindUserPrompt={onRewindUserPrompt}
               beforeUserMessage={index === 0 ? beforeFirstUserMessage : undefined}
+              suppressBusySignal={isStreaming && suppressActiveBusySignal}
             />
           </div>
         </div>
       );
     },
-    [activeMatchIndex, beforeFirstUserMessage, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus],
+    [activeMatchIndex, beforeFirstUserMessage, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal],
   );
 
   // Header: load-older indicator

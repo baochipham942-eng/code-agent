@@ -110,6 +110,7 @@ const ENGINE_KIND_LABELS: Record<ModelExternalEngineSnapshot['kind'], string> = 
   codebuddy_code: 'WorkBuddy',
   grok_cli: 'Grok Build',
   dsh_cli: 'DeepSeek Harness',
+  kimi_code_acp: 'Kimi Code (ACP)',
 };
 
 const ENGINE_INSTALL_LABELS: Record<ModelExternalEngineSnapshot['installState'], string> = {

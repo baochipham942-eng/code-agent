@@ -550,6 +550,7 @@ export const zh = {
         codebuddy_code: '安装 WorkBuddy 后，Neo 会自动检测应用内置 CLI。',
         grok_cli: '安装 Grok Build CLI 后将 grok 加入 PATH，再点「检测引擎」。',
         dsh_cli: '安装 @deepseek-ai/dsh 后将 dsh 加入 PATH，再点「检测引擎」。',
+        kimi_code_acp: '与 Kimi Code 同一个 CLI：装好 kimi 并加入 PATH，再点「检测引擎」。',
       },
       // 登录提示（外部引擎吃订阅，需各自登录）
       loginHintTitle: '登录提示',
@@ -561,6 +562,7 @@ export const zh = {
         codebuddy_code: '首次使用前需在 WorkBuddy 官方客户端完成账号登录。',
         grok_cli: '首次使用前需运行 grok login 完成官方账号授权。',
         dsh_cli: '首次使用前需在 ~/.dsh/.credentials.yaml 配好 DeepSeek 凭据。',
+        kimi_code_acp: '与 Kimi Code 共用登录态：运行一次 kimi login 即可。',
       },
       // listSources 探测来源状态（contract 字段派生，不按产品名分支）
       sourceStatus: {

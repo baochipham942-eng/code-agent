@@ -31,7 +31,8 @@ describe('external engine manifest contract', () => {
     const manifests = listExternalEngineManifests();
     const recommendationOnly = manifests.filter((manifest) => !manifest.kind);
 
-    expect(manifests).toHaveLength(11);
+    // 12 = 8 个可执行 kind + 3 个仅推荐 + native。
+    expect(manifests).toHaveLength(12);
     expect(recommendationOnly.map((manifest) => manifest.id)).toEqual([
       'qoder_work',
       'comate_zulu',
@@ -63,6 +64,8 @@ describe('external engine manifest contract', () => {
       codebuddy_code: ['execute', 'stream_events'],
       grok_cli: ['execute', 'stream_events'],
       dsh_cli: ['execute', 'stream_events', 'resume'],
+      // ACP 形态：resume 走 session/load（实测），workspace_write 因写盘在 Neo 侧且逐次过审批链。
+      kimi_code_acp: ['execute', 'stream_events', 'resume', 'workspace_write'],
     });
   });
 

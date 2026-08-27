@@ -544,6 +544,7 @@ export const en: Translations = {
         codebuddy_code: 'Install WorkBuddy; Neo detects the CLI bundled with the app automatically.',
         grok_cli: 'Install Grok Build CLI, add grok to PATH, then click "Detect engines".',
         dsh_cli: 'Install @deepseek-ai/dsh, add dsh to PATH, then click "Detect engines".',
+        kimi_code_acp: 'Same CLI as Kimi Code: install kimi, add it to PATH, then click "Detect engines".',
       },
       loginHintTitle: 'Login hint',
       loginHint: {
@@ -554,6 +555,7 @@ export const en: Translations = {
         codebuddy_code: 'Sign in with the official WorkBuddy app before first use.',
         grok_cli: 'Run grok login to authorize your official account before first use.',
         dsh_cli: 'Configure DeepSeek credentials in ~/.dsh/.credentials.yaml before first use.',
+        kimi_code_acp: 'Shares the Kimi Code login: run kimi login once before first use.',
       },
       sourceStatus: { available: 'Available', detected: 'Detected', needsLogin: 'Needs login', adapterPending: 'Adapter not open', notInstalled: 'Not installed', recommended: 'Recommended install', authUnverified: 'Login unverified', unavailable: 'Unavailable' },
       sourceStatusDetail: { available: 'Ready to run · official login confirmed', detectedNeedsLogin: 'Detected · sign in with the official client first', detectedAdapterPending: 'Detected · execution is not enabled in this version', detectedAuthUnverified: 'Detected · login state cannot be confirmed safely', notInstalled: 'Integration supported · client not detected on this machine', adapterPending: 'Execution is not enabled in this version', recommended: 'Recommended for install and verification; never shown as installed', unavailable: 'Not selectable right now' },

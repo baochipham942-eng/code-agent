@@ -60,6 +60,37 @@ export function assertReadOnlyExternalProfile(
   return 'read_only';
 }
 
+/**
+ * 该引擎是否走 ACP transport。
+ *
+ * 判据取 manifest 的 `adapter.transport`，**不是引擎名字清单**——按名字枚举的清单
+ * 每加一家新引擎就漏一次（N-INJGUARD-BROWSER 那次实付）。新引擎只要在 manifest 里
+ * 声明 transport:'acp'，这里自动认得。
+ */
+export function isAcpTransportEngine(kind: AgentEngineSessionMetadata['kind']): boolean {
+  return getExternalEngineManifestForKind(kind)?.adapter.transport === 'acp';
+}
+
+/**
+ * 外部引擎的权限画像闸，按 transport 分两套：
+ *
+ * - CLI 系（7 家）：维持 read_only。它们把工具执行留在自己进程里，Neo 看不见也拦不住，
+ *   唯一安全的姿势就是不给写权限。
+ * - ACP 系：放开到 workspace_write。**这不是把闸门拆了，是把闸门挪到了能拦住的地方**——
+ *   ACP agent 不自己执行副作用，写文件/跑命令全反向委托回 Neo 的 client 侧方法
+ *   （2026-08-27 Kimi 0.38.0 抓包实证），每一次都由 acpClientHostBridge 过 Neo 现有审批链。
+ *   read_only 在这条路上换不来安全，只换来「装好没接电」。
+ */
+export function assertExternalEngineProfile(
+  kind: AgentEngineSessionMetadata['kind'],
+  profile: AgentEnginePermissionProfile | undefined,
+): AgentEnginePermissionProfile {
+  if (isAcpTransportEngine(kind)) {
+    return profile ?? 'workspace_write';
+  }
+  return assertReadOnlyExternalProfile(profile);
+}
+
 export function assertExternalSubagentProfile(
   profile: AgentEnginePermissionProfile | undefined,
   input: { origin: 'subagent'; cwd: string },
@@ -118,7 +149,7 @@ export function buildManualAgentEngineSelection(
     throw new Error(descriptor.lastError || `${descriptor.label} is not executable.`);
   }
 
-  const permissionProfile = assertReadOnlyExternalProfile(profile ?? descriptor.defaultPermissionProfile);
+  const permissionProfile = assertExternalEngineProfile(descriptor.kind, profile ?? descriptor.defaultPermissionProfile);
   const workspaceRoot = session.workingDirectory?.trim();
   if (!workspaceRoot) {
     throw new Error(`${descriptor.label} requires a session workspace before it can run.`);
@@ -140,7 +171,7 @@ export function resolveExternalEngineLaunch(
   engine: AgentEngineSessionMetadata,
   requestedCwd?: string | null,
   workspaceScope?: WorkspaceScope,
-): { cwd: string; workspaceRoot: string; permissionProfile: 'read_only'; model?: string } {
+): { cwd: string; workspaceRoot: string; permissionProfile: AgentEnginePermissionProfile; model?: string } {
   assertExternalEngineSessionAllowed(session);
 
   if (!isExternalAgentEngine(engine.kind)) {
@@ -150,7 +181,7 @@ export function resolveExternalEngineLaunch(
     throw new Error('External Agent Engine execution requires manual engine selection.');
   }
 
-  const permissionProfile = assertReadOnlyExternalProfile(engine.permissionProfile);
+  const permissionProfile = assertExternalEngineProfile(engine.kind, engine.permissionProfile);
   if (workspaceScope && workspaceScope.roots.length > 1) {
     throw new Error(
       `${engine.kind} cannot safely express this Project's multiple Source roots. `

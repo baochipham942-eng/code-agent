@@ -680,6 +680,21 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = await getRemoteAgentEngineModelCatalogService()
             .resolveModelId('grok_cli', launch.model, { strict: true });
+        } else if (selectedEngine.kind === 'kimi_code_acp') {
+          adapter = getExternalEngineAdapter(selectedEngine.kind);
+          resolvedEngineModel = launch.model;
+          // ACP 的副作用（写文件/跑命令）反向委托回 Neo，必须在这条路上也有审批口，
+          // 否则 acpClientHostBridge 会 fail-closed 把所有写操作拒掉——放开写权限就白放了。
+          // 构造方式与下方 native run 那处**必须一致**，用的是同一个 ConfigService 单例。
+          const acpConfigService = getHostConfigService();
+          foregroundPermissionIsland = new OrchestratorPermissionIsland({
+            getSettings: () => acpConfigService.getSettings(),
+            isDevModeAutoApproveEnabled: () => acpConfigService.isDevModeAutoApproveEnabled(),
+            getExecutionTopology: () => 'main',
+            hasApprovalUi: () => sseClients.size > 0,
+            onEvent: (event) => runController.emitAgentEvent(event),
+          });
+          registerForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
         } else if (selectedEngine.kind === 'dsh_cli') {
           adapter = getExternalEngineAdapter(selectedEngine.kind);
           // 同 mimo/kimi：无签名 catalog，直传才不会把用户选的 provider/model 丢掉。
@@ -739,6 +754,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           emitEvent: (event) => runController.emitAgentEvent(event),
           durableLifecycle: externalDurableLifecycle,
           resumeLaunch,
+          // ACP 专属：续接靠 session/load（每次 run 都是新起的 agent 进程），
+          // 审批靠上面这一轮构造的 island；两者对 CLI 系 adapter 是多余字段，会被忽略。
+          ...(selectedEngine.kind === 'kimi_code_acp'
+            ? {
+              ...(selectedEngine.externalSessionId?.trim()
+                ? { externalSessionId: selectedEngine.externalSessionId.trim() }
+                : {}),
+              ...(foregroundPermissionIsland
+                ? { requestPermission: foregroundPermissionIsland.requestPermission.bind(foregroundPermissionIsland) }
+                : {}),
+            }
+            : {}),
           ...(forkContext ? {
             forkContextHandoff: forkContext.handoff,
             onForkContextDispatchStart: forkContext.onDispatchStart,

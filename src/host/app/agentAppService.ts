@@ -665,6 +665,38 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       }));
       return;
     }
+    if (engine.kind === 'kimi_code_acp') {
+      const launch = resolveExternalEngineLaunch(session, engine, externalRequestedCwd, sessionWorkspaceScope);
+      orchestrator?.setWorkingDirectory(launch.cwd);
+      const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('kimi_code_acp', launch.model);
+      const durableLifecycle = await this.startExternalLifecycle({
+        engine: engine.kind,
+        sessionId: resolvedSessionId,
+        workspace: launch.workspaceRoot,
+        cwd: launch.cwd,
+        externalSessionId: engine.externalSessionId?.trim() || undefined,
+      });
+      await this.executeExternalRun(durableLifecycle, () => getExternalEngineAdapter(engine.kind as ExternalAgentEngineKind).run({
+        sessionId: resolvedSessionId,
+        prompt: externalPrompt,
+        cwd: launch.cwd,
+        workspaceRoot: launch.workspaceRoot,
+        model: resolvedModel,
+        permissionProfile: launch.permissionProfile,
+        clientMessageId: envelope.clientMessageId,
+        attachmentsCount: envelope.attachments?.length ?? 0,
+        messageMetadata: this.getMessageMetadata(envelope),
+        durableLifecycle,
+        // 有已持久化的 ACP sessionId 就 session/load 续接：每次 run 都是新起的 agent 进程，
+        // 不 load 就丢掉全部历史（CLI 系不受影响，它们靠 Neo 每轮重塞上下文）。
+        ...(engine.externalSessionId?.trim() ? { externalSessionId: engine.externalSessionId.trim() } : {}),
+        // 🔴 审批闸：ACP 的副作用全在 client 侧，没有这个回调适配器会 fail-closed 全拒。
+        ...(orchestrator
+          ? { requestPermission: orchestrator.requestExternalEnginePermission.bind(orchestrator) }
+          : {}),
+      }));
+      return;
+    }
     if (engine.kind === 'codebuddy_code') {
       const launch = resolveExternalEngineLaunch(
         session,

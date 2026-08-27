@@ -67,6 +67,8 @@ function buildFixtureMessages(labels: string[]): ModelMessage[] {
 
 describe('Provider × Runtime capability matrix', () => {
   it('covers every declared capability with an allowed four-state value', () => {
+    // 14 = 13 + kimi_code_acp（2026-08-27 #1419 新增 ACP transport 运行时）。
+    // 这条断言是「新增 runtime 必须是自觉动作」的绊线，改它=声明意图，不是调数字。
     expect(PROVIDER_RUNTIME_CAPABILITY_MATRIX).toHaveLength(14);
     for (const entry of PROVIDER_RUNTIME_CAPABILITY_MATRIX) {
       expect(Object.keys(entry.capabilities).sort()).toEqual([...PROVIDER_RUNTIME_CAPABILITIES].sort());

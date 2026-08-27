@@ -18,6 +18,7 @@ import type {
   UserQuestionRequest,
   UserQuestionResponse,
 } from '../../../shared/contract';
+import { normalizeUserQuestionOption } from '../../../shared/contract/askUserQuestion';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { AppWindow, hasInteractiveUi, ipcHost } from '../../platform';
 import { INTERACTION_TIMEOUTS } from '../../../shared/constants';
@@ -95,10 +96,14 @@ export async function promptUserInChat(
 
   ensureResponseHandler();
 
+  const normalizedQuestions = questions.map((question) => ({
+    ...question,
+    options: question.options.map(normalizeUserQuestionOption),
+  }));
   const request: UserQuestionRequest = {
     id: `q-${Date.now()}-${crypto.randomUUID().split('-')[0]}`,
     sessionId: opts.sessionId,
-    questions,
+    questions: normalizedQuestions,
     timestamp: Date.now(),
   };
 

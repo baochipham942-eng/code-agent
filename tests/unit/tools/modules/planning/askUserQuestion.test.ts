@@ -137,7 +137,7 @@ describe('AskUserQuestion IPC protocol invariants', () => {
             question: 'q1?',
             header: 'h1',
             options: [
-              { label: 'A', description: 'a' },
+              { label: 'A (推荐)', description: 'a' },
               { label: 'B', description: 'b' },
             ],
           },
@@ -166,6 +166,10 @@ describe('AskUserQuestion IPC protocol invariants', () => {
     expect(typeof payload.id).toBe('string');
     expect(payload.id).toMatch(/^q-\d+/);
     expect(typeof payload.timestamp).toBe('number');
+    expect(payload.questions[0].options).toEqual([
+      { label: 'A', description: 'a', recommended: true },
+      { label: 'B', description: 'b' },
+    ]);
 
     // ── ipcHost.handle 注册 response channel ──
     // 注：handlerRegistered 是 module 级 once-guard。第一次执行时注册，

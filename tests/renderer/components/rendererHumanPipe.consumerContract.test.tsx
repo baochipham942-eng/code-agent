@@ -132,4 +132,26 @@ describe('renderer human-pipe consumer contract', () => {
     expect(sidebar.container.textContent).not.toContain('需要诊断');
     expect(sidebar.container.textContent).not.toContain('有步骤没有返回结果');
   });
+
+  it('任务面板窄列复用连接器动作，同轮两次日历查询能区分', () => {
+    const segment = taskPanelSegment();
+    segment.toolDispatches = [
+      {
+        toolName: 'calendar', toolAction: 'list_calendars', success: true,
+        durationMs: 8, error: null, fromCache: false, bucket: 'other',
+      },
+      {
+        toolName: 'calendar', toolAction: 'list_events', success: true,
+        durationMs: 12, error: null, fromCache: false, bucket: 'other',
+      },
+    ];
+    const view = render(<TurnRow segment={segment} />);
+    fireEvent.click(screen.getByTestId('inspector-activity-detail-toggle'));
+    const rows = screen.getAllByTestId('inspector-activity-detail-row');
+
+    expect(rows[0].textContent).toContain('日历 · 查询了可用列表');
+    expect(rows[1].textContent).toContain('日历 · 查询了日程');
+    expect(rows.map((row) => row.textContent).join('\n')).not.toContain('执行了操作');
+    view.unmount();
+  });
 });

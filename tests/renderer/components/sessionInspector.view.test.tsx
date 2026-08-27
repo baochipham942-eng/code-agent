@@ -238,7 +238,7 @@ describe('A · 层1 工具汇总句（可展开逐条明细）', () => {
     fireEvent.click(await screen.findByTestId('inspector-activity-detail-toggle'));
     const text = (await screen.findByTestId('inspector-activity-detail')).textContent ?? '';
     expect(text).toContain('更新了任务');
-    expect(text).toContain('执行了一个步骤');
+    expect(text).toContain('执行了操作');
     expect(text).toContain('执行时出了问题');
     expect(text).not.toContain('TaskManager');
     expect(text).not.toContain('futureCamelTool');

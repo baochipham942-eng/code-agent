@@ -28,8 +28,8 @@ import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import type { Translations } from '../../../i18n';
 import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
 
-function humanizeDispatchTool(toolName: string, t: Translations): string {
-  const label = humanizeToolStep(toolName, undefined, t);
+function humanizeDispatchTool(toolName: string, toolAction: string | null | undefined, t: Translations): string {
+  const label = humanizeToolStep(toolName, toolAction ? { action: toolAction } : undefined, t);
   return label.includes(toolName) ? t.rendererHumanPipe.sessionInspector.genericTool : label;
 }
 
@@ -207,7 +207,7 @@ function TurnActivitySummary({ segment }: { segment: TurnSegment }) {
               <div key={index} className="flex items-baseline gap-2 whitespace-nowrap" data-testid="inspector-activity-detail-row">
                 <span className={`h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full ${row.success ? 'bg-badge-success' : 'bg-badge-danger'}`} />
                 <span className="shrink-0 text-zinc-500">{detail.bucketLabel[row.bucket]}</span>
-                <span className="shrink-0 text-[10px] text-zinc-400">{humanizeDispatchTool(row.toolName, t)}</span>
+                <span className="shrink-0 text-[10px] text-zinc-400">{humanizeDispatchTool(row.toolName, row.toolAction, t)}</span>
                 {!row.success && (
                   <span className="shrink-0 text-badge-danger">
                     {approvalOutcome

@@ -92,7 +92,7 @@ export function ToolHeader({
   );
   const showSecondaryName =
     showDetailName
-    && (isInternalStreamTool(toolCall.name) || displayName === t.toolStepHumanize.fallback);
+    && (isInternalStreamTool(toolCall.name) || displayName === t.toolStepHumanize.fallbackNeutral);
 
   // targetContext 不再由模型填（2026-08-07 从 _meta schema 与提示词里拿掉）。
   // 优先用 ToolCall 上已有的——那是宿主侧 cuaNarration 推的 app kind（真 app logo，

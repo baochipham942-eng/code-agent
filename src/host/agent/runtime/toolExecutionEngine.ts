@@ -13,6 +13,7 @@ import type {
   ToolResult,
   AgentEvent,
 } from '../../../shared/contract';
+import { extractWorkbenchReferenceFromToolCall } from '../../../shared/contract/workbenchTools';
 import { getLangfuseService } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { EXIT_ROLE_FLOW_TOOL_NAME } from '../../tools/modules/roleAuthoring/exitRoleFlow.schema';
@@ -834,6 +835,7 @@ export class ToolExecutionEngine {
       // 用于回放"这个 turn 派了哪些工具、结果如何"（也是验证 G7 是否死代码的数据来源）。
       this.ctx.turnTrace.record('tool_dispatch', {
         toolName: toolCall.name,
+        toolAction: extractWorkbenchReferenceFromToolCall(toolCall)?.action ?? null,
         success: result.success,
         durationMs: Date.now() - startTime,
         error: result.error ?? null,

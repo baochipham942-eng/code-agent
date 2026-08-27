@@ -275,10 +275,9 @@ toolStepHumanize: {
   memorySearch: '搜索了记忆',
   // 纯内部动作（ToolSearch）：只进展开明细，不进主流聚合
   toolSearch: '查找了可用工具',
-  // 未知工具主行：带上统一人话名，否则失败时纯占位没有信息量；
-  // 纯内部动作（isInternalStreamTool）仍走 fallback 不露内部名
-  fallback: '执行了一个步骤',
-  fallbackWithTool: '{tool} 执行了一个步骤',
+  // 连接器 action 优先；无 action 才用中性词。前缀由渲染上下文决定，避免别名/翻译下重复。
+  fallback: '{action}', fallbackWithTool: '{tool} · {action}', fallbackNeutral: '执行了操作',
+  connectorFallbackAction: { queryStatus: '查询了连接状态', queryCollections: '查询了可用列表', queryItems: '查询了日程', query: '查询了信息', create: '创建了内容', update: '更新了内容', delete: '删除了内容' },
   openPreview: '预览',
   openPreviewAria: '在右栏预览 {path}',
   group: {
@@ -822,11 +821,9 @@ toolStepHumanize: {
   memorySearch: 'Searched memory',
   // Internal-only (ToolSearch): expanded detail only, never main-stream aggregate
   toolSearch: 'Looked up available tools',
-  // Unknown tools: main line carries the shared human label — a bare placeholder says
-  // nothing when the call fails. Pure internal actions (isInternalStreamTool)
-  // still use the nameless fallback.
-  fallback: 'Ran a step',
-  fallbackWithTool: '{tool} ran a step',
+  // Prefer a derived connector action; reserve the neutral phrase for missing operations.
+  fallback: '{action}', fallbackWithTool: '{tool} · {action}', fallbackNeutral: 'Ran an operation',
+  connectorFallbackAction: { queryStatus: 'Checked connection status', queryCollections: 'Listed available calendars', queryItems: 'Queried events', query: 'Queried information', create: 'Created content', update: 'Updated content', delete: 'Deleted content' },
   openPreview: 'Preview',
   openPreviewAria: 'Open preview for {path}',
   group: {
@@ -840,7 +837,6 @@ toolStepHumanize: {
     used: 'Ran {count} steps',
   },
 },
-
 // Per-tool status labels (statusLabels.ts)
 toolStatus: {
   default: { preparing: 'Preparing…', running: 'Running…' },

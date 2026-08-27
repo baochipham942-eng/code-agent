@@ -28,7 +28,7 @@ describe('slotless verification scripts', () => {
 
   it('copies only TokenRhythm deepseek-v4-flash and routes every role to it', () => {
     const config = buildSlotlessConfig({
-      connectors: { enabledNative: [] },
+      connectors: { enabledNative: ['mail'] },
       mcp: {
         servers: [{ name: 'local-test', command: 'node', enabled: true }],
       },
@@ -65,11 +65,28 @@ describe('slotless verification scripts', () => {
       code: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' },
       vision: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash' },
     });
-    expect(config.connectors).toEqual({ enabledNative: ['calendar', 'reminders'] });
+    expect(config.connectors).toEqual({ enabledNative: ['mail'] });
     expect(config.mcp).toEqual({
       servers: [{ name: 'local-test', command: 'node', enabled: true }],
     });
     expect(config).not.toHaveProperty('ui');
+  });
+
+  it('overrides only enabledNative when native connector verification is requested', () => {
+    const source = {
+      connectors: { enabledNative: ['mail'], keep: 'connector-setting' },
+      models: {
+        providers: {
+          'custom-tokenrhythm': {
+            models: { 'deepseek-v4-flash': { enabled: true } },
+          },
+        },
+      },
+    };
+
+    const config = buildSlotlessConfig(source, 'sk_tr_test-only-abcd', ['calendar']);
+
+    expect(config.connectors).toEqual({ enabledNative: ['calendar'], keep: 'connector-setting' });
   });
 
   it('links installed CLI connector directories into the slotless data directory', () => {
@@ -175,6 +192,41 @@ describe('slotless verification scripts', () => {
 
     await stopRun(dir);
 
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it('--stop derives late app launches from state and quits only this run\'s new pid', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-stop-test-'));
+    const binDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-bin-test-'));
+    tempDirs.push(dir, binDir);
+    const osascriptLog = path.join(binDir, 'osascript.log');
+    const fakeOsascript = path.join(binDir, 'osascript');
+    const fakePgrep = path.join(binDir, 'pgrep');
+    writeFileSync(fakeOsascript, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$NEO_VERIFY_OSASCRIPT_LOG"\n');
+    writeFileSync(fakePgrep, '#!/bin/sh\nif [ "$2" = "Calendar" ]; then printf "4242\\n"; else printf "4343\\n"; fi\n');
+    chmodSync(fakeOsascript, 0o755);
+    chmodSync(fakePgrep, 0o755);
+    writeFileSync(path.join(dir, '.neo-verify-state.json'), JSON.stringify({
+      pid: 2_147_483_647,
+      marker: path.basename(dir),
+      nativeConnectorIds: ['calendar', 'reminders'],
+      nativeAppPidsBeforeStart: { calendar: [], reminders: [4343] },
+      launchedNativeApps: [],
+    }));
+    const previousPath = process.env.PATH;
+    const previousLog = process.env.NEO_VERIFY_OSASCRIPT_LOG;
+    process.env.PATH = `${binDir}:${previousPath ?? ''}`;
+    process.env.NEO_VERIFY_OSASCRIPT_LOG = osascriptLog;
+
+    try {
+      await stopRun(dir);
+    } finally {
+      process.env.PATH = previousPath;
+      if (previousLog === undefined) delete process.env.NEO_VERIFY_OSASCRIPT_LOG;
+      else process.env.NEO_VERIFY_OSASCRIPT_LOG = previousLog;
+    }
+
+    expect(readFileSync(osascriptLog, 'utf8')).toBe('-e quit app "Calendar"\n');
     expect(existsSync(dir)).toBe(false);
   });
 

@@ -21,6 +21,12 @@ describe('App/ChatView user question wiring（G2 打断式选项卡）', () => {
     expect(chatViewSource).not.toContain("pendingUserQuestion || pendingPlanApproval ? 'hidden' : undefined");
   });
 
+  it('pending 队列空值使用稳定引用，避免 Zustand snapshot 无限重渲染', () => {
+    expect(chatViewSource).toContain('const EMPTY_PENDING_USER_QUESTIONS: UserQuestionRequest[] = [];');
+    expect(chatViewSource).toContain('?? EMPTY_PENDING_USER_QUESTIONS');
+    expect(chatViewSource).not.toContain('pendingUserQuestionsBySessionId?.get(currentSessionId) ?? []');
+  });
+
   it('卡片回答/跳过成功后自己出队', () => {
     const cardSource = readFileSync(
       resolve(process.cwd(), 'src/renderer/components/UserQuestionCard.tsx'),

@@ -67,7 +67,14 @@ import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 // Pending PermissionCard lives in the fixed DecisionSlot above ChatInput.
-import type { AppSettings, Message, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
+import type {
+  AppSettings,
+  Message,
+  MessageAttachment,
+  StreamRecoverySnapshot,
+  TaskPlan,
+  UserQuestionRequest,
+} from '../../shared/contract';
 import type { RewindConversationResult } from '@shared/contract/sessionRewind';
 import type { TurnCheckoutResult } from '@shared/contract/turnCheckout';
 import type { ConversationEnvelope, ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
@@ -89,6 +96,10 @@ import { isDragPointInsideVisibleRect } from '../utils/dragBounds';
 import { findPendingPlanApproval, hasPlanApproval } from '../utils/planApprovalView';
 import { Image, MessageSquare } from 'lucide-react';
 import { sendWithImmediateAssistantFeedback } from '../utils/sendWithImmediateAssistantFeedback';
+
+// Zustand selectors must return a referentially stable fallback. A fresh [] here makes
+// useSyncExternalStore treat every snapshot as changed and can loop before ChatView mounts.
+const EMPTY_PENDING_USER_QUESTIONS: UserQuestionRequest[] = [];
 
 export const ChatView: React.FC = () => {
   const { t } = useI18n();
@@ -136,8 +147,8 @@ export const ChatView: React.FC = () => {
   // 待答问题进入 DecisionSlot；composer 始终保留，普通消息不会被当成答案。
   const pendingUserQuestions = useSessionStore((state) =>
     currentSessionId
-      ? (state.pendingUserQuestionsBySessionId?.get(currentSessionId) ?? [])
-      : [],
+      ? (state.pendingUserQuestionsBySessionId?.get(currentSessionId) ?? EMPTY_PENDING_USER_QUESTIONS)
+      : EMPTY_PENDING_USER_QUESTIONS,
   );
   const pendingUserQuestion = pendingUserQuestions[0] ?? null;
   const pendingPlanApproval = findPendingPlanApproval(messages, currentSessionId);

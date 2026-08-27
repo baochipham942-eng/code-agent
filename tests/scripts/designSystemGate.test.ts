@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // @ts-expect-error —— 纯 JS 静态门脚本，无类型声明
-import { findThemeBlindBrightForegroundMatches, findThemeBlindBrightForegroundViolations, scan } from '../../scripts/check-design-system.mjs';
+import { findThemeBlindBrightForegroundMatches, findThemeBlindBrightForegroundViolations, findThemeBlindWhiteHoverForegroundMatches, findThemeBlindWhiteHoverForegroundViolations, scan } from '../../scripts/check-design-system.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const baseline = JSON.parse(
@@ -89,5 +89,39 @@ describe('theme-blind bright foreground gate', () => {
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe('theme-blind white hover foreground gate', () => {
+  it('拦无主题分支的 hover 白色，覆盖普通、group 与透明度写法', () => {
+    expect(
+      findThemeBlindWhiteHoverForegroundMatches(
+        'text-white hover:text-white group-hover:text-white/80 dark:hover:text-white focus:text-white',
+      ),
+    ).toEqual([
+      { className: 'text-white', coreClass: 'text-white' },
+      { className: 'hover:text-white', coreClass: 'text-white' },
+      { className: 'group-hover:text-white/80', coreClass: 'text-white/80' },
+      { className: 'dark:hover:text-white', coreClass: 'text-white' },
+      { className: 'focus:text-white', coreClass: 'text-white' },
+    ]);
+    expect(
+      findThemeBlindWhiteHoverForegroundViolations(
+        'text-white hover:text-white group-hover:text-white/80 dark:hover:text-white focus:text-white',
+        'Fixture.tsx:11',
+      ),
+    ).toEqual([
+      'Fixture.tsx:11 hover:text-white',
+      'Fixture.tsx:11 group-hover:text-white/80',
+    ]);
+  });
+
+  it('固定深色背景可用 ds-allow:color 写明理由后放行', () => {
+    expect(
+      findThemeBlindWhiteHoverForegroundViolations(
+        'bg-black/80 hover:text-white /* ds-allow:color: 固定深色遮罩 */',
+        'Fixture.tsx:12',
+      ),
+    ).toEqual([]);
   });
 });

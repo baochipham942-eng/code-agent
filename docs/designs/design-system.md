@@ -288,7 +288,7 @@ React 侧**当前唯一真源是 NeoBrandMark 内联 SVG**,不接资产文件的
 ## §5 守卫机制(machine-checkable 的一半)
 
 `scripts/check-design-system.mjs` 是静态门,本文档是它注释里指的"契约"。
-**八条规则**(扫描 `src/renderer`,测试文件除外):
+**九条规则**(扫描 `src/renderer`,测试文件除外):
 
 1. `hardcoded-hex` — 禁硬编码 `#rrggbb`,走 token。
 2. `bare-button` — 禁裸 `<button>`,走 `primitives/` 的 Button/IconButton。
@@ -301,6 +301,9 @@ React 侧**当前唯一真源是 NeoBrandMark 内联 SVG**,不接资产文件的
    (`text-*-100..400`)。#931 建门(存量棘轮)、#941 翻转为默认拦下(354 处迁移归零);
    zinc 色板是显式豁免(四主题都提供反转值,亮档前景随主题安全变化),
    其余色板一律要 `dark:` 分支或 `ds-allow:color` 豁免。
+9. `theme-blind-white-hover-foreground` — 禁 `hover:text-white` / `group-hover:text-white`
+   在没有 `dark:` 主题分支时进入 renderer。白色 hover 只适用于固定深色背景,这类例外必须
+   用 `ds-allow:color` 写明背景理由;主题自适应表面应改用会随主题翻转的 zinc 前景 token。
 
 另有若干**硬断言**(非棘轮,任何回退直接红):
 

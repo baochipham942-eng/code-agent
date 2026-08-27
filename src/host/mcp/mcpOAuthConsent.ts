@@ -1,7 +1,16 @@
-import { AppWindow, ipcHost } from '../platform';
+import { AppWindow, hasInteractiveUi, ipcHost } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { INTERACTION_TIMEOUTS } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import type { MCPOAuthConsentRequest, MCPOAuthConsentResponse } from '../../shared/contract';
+import {
+  deniedDecisionMetadata,
+  headlessDecisionTimeoutReason,
+  markDecisionRequestExpired,
+  notifyDecisionNeeded,
+  notifyIfLateDecisionResponse,
+} from '../interaction/userDecision';
+import { beginPendingMcpInteraction } from './mcpPendingInteraction';
 
 export const MCP_OAUTH_CONSENT_TIMEOUT_MS = 2 * 60 * 1000;
 
@@ -10,7 +19,7 @@ const logger = createLogger('MCPOAuthConsent', { lane: 'mcp' });
 type ConsentDecision = 'authorize' | 'decline';
 
 const pendingConsents = new Map<string, {
-  resolve: (decision: ConsentDecision) => void;
+  resolve: (result: { decision: ConsentDecision; timedOut: boolean }) => void;
   timeout: NodeJS.Timeout;
 }>();
 
@@ -25,6 +34,7 @@ function registerMcpOAuthConsentResponseHandler(): void {
     async (_event, response: MCPOAuthConsentResponse) => {
       const pending = pendingConsents.get(response.requestId);
       if (!pending) {
+        notifyIfLateDecisionResponse(response.requestId);
         logger.warn('Received MCP OAuth consent response for unknown request', {
           requestId: response.requestId,
         });
@@ -33,7 +43,7 @@ function registerMcpOAuthConsentResponseHandler(): void {
 
       clearTimeout(pending.timeout);
       pendingConsents.delete(response.requestId);
-      pending.resolve(response.action);
+      pending.resolve({ decision: response.action, timedOut: false });
       logger.info('Received MCP OAuth consent response', {
         requestId: response.requestId,
         action: response.action,
@@ -42,10 +52,16 @@ function registerMcpOAuthConsentResponseHandler(): void {
   );
 }
 
+interface McpOAuthConsentResult {
+  granted: boolean;
+  permissionDecision: 'allow' | 'deny';
+  permissionDecisionReason: string;
+}
+
 export async function requestMcpOAuthConsent(
   request: Omit<MCPOAuthConsentRequest, 'requestId'>,
   options: { timeoutMs?: number } = {},
-): Promise<boolean> {
+): Promise<McpOAuthConsentResult> {
   registerMcpOAuthConsentResponseHandler();
 
   const requestId = `mcp-oauth-consent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -60,26 +76,53 @@ export async function requestMcpOAuthConsent(
       requestId,
       serverName: request.serverName,
     });
-    return false;
+    const reason = '当前运行环境没有可投递的交互界面，MCP OAuth 授权已按无头规则安全拒绝。';
+    return { granted: false, ...deniedDecisionMetadata(reason) };
   }
 
   mainWindow.webContents.send(IPC_CHANNELS.MCP_OAUTH_CONSENT_REQUEST, consentRequest);
-
-  const timeoutMs = options.timeoutMs ?? MCP_OAUTH_CONSENT_TIMEOUT_MS;
-  const decision = await new Promise<ConsentDecision>((resolve) => {
-    const timeout = setTimeout(() => {
-      pendingConsents.delete(requestId);
-      logger.warn('MCP OAuth consent timed out', {
-        requestId,
-        serverName: request.serverName,
-        timeoutMs,
-      });
-      resolve('decline');
-    }, timeoutMs);
-    timeout.unref?.();
-
-    pendingConsents.set(requestId, { resolve, timeout });
+  notifyDecisionNeeded({
+    title: 'MCP 服务器请求授权',
+    body: `${request.serverName} 请求打开授权页面`,
   });
 
-  return decision === 'authorize';
+  const interactive = hasInteractiveUi();
+  const headlessTimeoutMs = options.timeoutMs ?? MCP_OAUTH_CONSENT_TIMEOUT_MS;
+  const timeoutMs = interactive ? INTERACTION_TIMEOUTS.PARKED_APPROVAL : headlessTimeoutMs;
+  const endPendingInteraction = beginPendingMcpInteraction(request.serverName);
+  let consentResult: { decision: ConsentDecision; timedOut: boolean };
+  try {
+    consentResult = await new Promise<{ decision: ConsentDecision; timedOut: boolean }>((resolve) => {
+      const timeout = setTimeout(() => {
+        pendingConsents.delete(requestId);
+        markDecisionRequestExpired(requestId, 'MCP OAuth 授权请求');
+        logger.warn('MCP OAuth consent timed out', {
+          requestId,
+          serverName: request.serverName,
+          timeoutMs,
+        });
+        resolve({ decision: 'decline', timedOut: true });
+      }, timeoutMs);
+      timeout.unref?.();
+
+      pendingConsents.set(requestId, { resolve, timeout });
+    });
+  } finally {
+    endPendingInteraction();
+  }
+
+  if (consentResult.decision === 'authorize') {
+    return {
+      granted: true,
+      permissionDecision: 'allow',
+      permissionDecisionReason: '用户已授权 MCP OAuth。',
+    };
+  }
+
+  const reason = consentResult.timedOut
+    ? interactive
+      ? '等待 MCP OAuth 授权超过 24 小时，停车请求已按安全兜底拒绝。'
+      : headlessDecisionTimeoutReason(timeoutMs)
+    : '用户拒绝了 MCP OAuth 授权。';
+  return { granted: false, ...deniedDecisionMetadata(reason) };
 }

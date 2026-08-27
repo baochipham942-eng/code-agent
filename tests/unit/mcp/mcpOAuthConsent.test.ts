@@ -1,16 +1,26 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import type { MCPOAuthConsentResponse } from '../../../src/shared/contract';
+import {
+  hasInteractiveUi as realHasInteractiveUi,
+  setBrowserWindowInteractionProbe,
+} from '../../../src/host/platform/windowBridge';
 
 const platformMocks = vi.hoisted(() => ({
   handle: vi.fn(),
   send: vi.fn(),
   getAllWindows: vi.fn(),
+  hasInteractiveUi: vi.fn(),
 }));
+const notifyNeedsInputMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/host/platform', () => ({
   ipcHost: { handle: platformMocks.handle },
+  hasInteractiveUi: platformMocks.hasInteractiveUi,
   AppWindow: { getAllWindows: platformMocks.getAllWindows },
+}));
+vi.mock('../../../src/host/services/infra/notificationService', () => ({
+  notificationService: { notifyNeedsInput: notifyNeedsInputMock },
 }));
 
 async function loadSubject() {
@@ -40,6 +50,12 @@ beforeEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
   platformMocks.getAllWindows.mockReturnValue([{ webContents: { send: platformMocks.send } }]);
+  platformMocks.hasInteractiveUi.mockReturnValue(false);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  setBrowserWindowInteractionProbe(null);
 });
 
 describe('MCP OAuth consent bridge', () => {
@@ -73,7 +89,10 @@ describe('MCP OAuth consent bridge', () => {
       action: 'authorize',
     });
 
-    await expect(result).resolves.toBe(true);
+    await expect(result).resolves.toMatchObject({
+      granted: true,
+      permissionDecision: 'allow',
+    });
   });
 
   it('resolves false for an explicit decline response', async () => {
@@ -86,7 +105,11 @@ describe('MCP OAuth consent bridge', () => {
       action: 'decline',
     });
 
-    await expect(result).resolves.toBe(false);
+    await expect(result).resolves.toMatchObject({
+      granted: false,
+      permissionDecision: 'deny',
+      permissionDecisionReason: expect.stringContaining('用户拒绝'),
+    });
   });
 
   it('treats timeout as decline', async () => {
@@ -96,6 +119,27 @@ describe('MCP OAuth consent bridge', () => {
     const result = requestMcpOAuthConsent(consentPayload(), { timeoutMs: 25 });
     await vi.advanceTimersByTimeAsync(25);
 
-    await expect(result).resolves.toBe(false);
+    await expect(result).resolves.toMatchObject({
+      granted: false,
+      permissionDecision: 'deny',
+      permissionDecisionReason: expect.stringContaining('无头规则'),
+    });
+  });
+
+  it('有交互 UI 时忽略原 OAuth 短超时，挂起后仍可授权', async () => {
+    vi.useFakeTimers();
+    setBrowserWindowInteractionProbe(() => true);
+    platformMocks.hasInteractiveUi.mockImplementation(realHasInteractiveUi);
+    const { requestMcpOAuthConsent, getResponseHandler } = await loadSubject();
+
+    const result = requestMcpOAuthConsent(consentPayload(), { timeoutMs: 25 });
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    expect(notifyNeedsInputMock).toHaveBeenCalledTimes(1);
+    const marker = Symbol('pending');
+    await expect(Promise.race([result, Promise.resolve(marker)])).resolves.toBe(marker);
+    const request = platformMocks.send.mock.calls[0][1];
+    await getResponseHandler()!({}, { requestId: request.requestId, action: 'authorize' });
+
+    await expect(result).resolves.toMatchObject({ granted: true, permissionDecision: 'allow' });
   });
 });

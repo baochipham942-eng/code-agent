@@ -13,10 +13,7 @@ vi.mock('../../../src/host/platform/nativeShell', () => ({
   openExternal: consentMocks.openExternal,
 }));
 
-import {
-  McpOAuthAuthorizationDeclinedError,
-  McpOAuthCoordinator,
-} from '../../../src/host/mcp/mcpOAuthCoordinator';
+import { McpOAuthCoordinator } from '../../../src/host/mcp/mcpOAuthCoordinator';
 
 let coordinators: McpOAuthCoordinator[] = [];
 
@@ -41,7 +38,11 @@ function createCoordinator(): McpOAuthCoordinator {
 describe('McpOAuthCoordinator consent opener', () => {
   it('builds the consent payload and opens the system browser when authorized', async () => {
     const coordinator = createCoordinator();
-    consentMocks.requestMcpOAuthConsent.mockResolvedValue(true);
+    consentMocks.requestMcpOAuthConsent.mockResolvedValue({
+      granted: true,
+      permissionDecision: 'allow',
+      permissionDecisionReason: '用户已授权 MCP OAuth。',
+    });
     const flow = await coordinator.beginFlow({
       serverName: 'Notion MCP',
       serverIdentity: 'notion:identity',
@@ -70,7 +71,11 @@ describe('McpOAuthCoordinator consent opener', () => {
 
   it('cancels the flow and does not open the browser when declined', async () => {
     const coordinator = createCoordinator();
-    consentMocks.requestMcpOAuthConsent.mockResolvedValue(false);
+    consentMocks.requestMcpOAuthConsent.mockResolvedValue({
+      granted: false,
+      permissionDecision: 'deny',
+      permissionDecisionReason: '等你决定超时，已按无头规则安全拒绝。',
+    });
     const flow = await coordinator.beginFlow({
       serverName: 'Notion MCP',
       serverIdentity: 'notion:identity',
@@ -84,7 +89,11 @@ describe('McpOAuthCoordinator consent opener', () => {
       serverIdentity: 'notion:identity',
       flowId: flow.flowId,
       authUrl: new URL('https://auth.example.com/oauth/authorize'),
-    })).rejects.toBeInstanceOf(McpOAuthAuthorizationDeclinedError);
+    })).rejects.toMatchObject({
+      name: 'McpOAuthAuthorizationDeclinedError',
+      permissionDecision: 'deny',
+      permissionDecisionReason: expect.stringContaining('无头规则'),
+    });
 
     expect(consentMocks.openExternal).not.toHaveBeenCalled();
     await expect(callback).rejects.toThrow('MCP OAuth flow cancelled');

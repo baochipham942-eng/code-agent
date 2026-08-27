@@ -1,9 +1,24 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
   WorkflowLaunchApprovalGate,
   buildWorkflowLaunchRequest,
 } from '../../../src/host/agent/workflowLaunchApproval';
 import type { ScriptPreview } from '../../../src/host/agent/scriptRuntime/scriptPreview';
+import {
+  hasInteractiveUi as realHasInteractiveUi,
+  setBrowserWindowInteractionProbe,
+} from '../../../src/host/platform/windowBridge';
+
+const notifyNeedsInputMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/host/services/infra/notificationService', () => ({
+  notificationService: { notifyNeedsInput: notifyNeedsInputMock },
+}));
+
+beforeEach(() => notifyNeedsInputMock.mockClear());
+afterEach(() => {
+  vi.useRealTimers();
+  setBrowserWindowInteractionProbe(null);
+});
 
 const PREVIEW: ScriptPreview = {
   phases: ['decompose', 'investigate'],
@@ -57,7 +72,7 @@ function makeGate(over: Partial<ConstructorParameters<typeof WorkflowLaunchAppro
   const deliver = vi.fn();
   const gate = new WorkflowLaunchApprovalGate({
     approvalTimeoutMs: 50,
-    hasRenderer: () => true,
+    hasInteractiveUi: () => true,
     deliver,
     ...over,
   });
@@ -68,7 +83,7 @@ const REQ = () => buildWorkflowLaunchRequest({ id: 'wf-1', preview: PREVIEW, now
 
 describe('WorkflowLaunchApprovalGate', () => {
   it('无 renderer 时直接 auto-approve（headless）', async () => {
-    const { gate, deliver } = makeGate({ hasRenderer: () => false });
+    const { gate, deliver } = makeGate({ hasInteractiveUi: () => false });
     const result = await gate.requestApproval({ request: REQ() });
     expect(result.approved).toBe(true);
     expect(result.autoApproved).toBe(true);
@@ -104,7 +119,7 @@ describe('WorkflowLaunchApprovalGate', () => {
   });
 
   it('超时：writeHint 自动拒绝', async () => {
-    const { gate } = makeGate();
+    const { gate } = makeGate({ hasInteractiveUi: () => false });
     const req = buildWorkflowLaunchRequest({ id: 'wf-w', preview: { ...PREVIEW, writeHint: true }, now: 1 });
     const result = await gate.requestApproval({ request: req });
     expect(result.approved).toBe(false);
@@ -112,10 +127,38 @@ describe('WorkflowLaunchApprovalGate', () => {
   });
 
   it('超时：只读自动批准', async () => {
-    const { gate } = makeGate();
+    const { gate } = makeGate({ hasInteractiveUi: () => false });
     const result = await gate.requestApproval({ request: REQ() });
     expect(result.approved).toBe(true);
     expect(result.autoApproved).toBe(true);
+  });
+
+  it('有交互 UI 时挂过原超时仍 pending，人工批准继续生效', async () => {
+    vi.useFakeTimers();
+    setBrowserWindowInteractionProbe(() => true);
+    const { gate } = makeGate({ approvalTimeoutMs: 50, hasInteractiveUi: realHasInteractiveUi });
+    const promise = gate.requestApproval({ request: REQ() });
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(notifyNeedsInputMock).toHaveBeenCalledTimes(1);
+    const marker = Symbol('pending');
+    await expect(Promise.race([promise, Promise.resolve(marker)])).resolves.toBe(marker);
+    expect(gate.approve('wf-1', '人工批准')).toBe(true);
+    await expect(promise).resolves.toMatchObject({ approved: true, autoApproved: false });
+  });
+
+  it('无交互 UI 时写工作流按原超时拒绝并返回结构化原因', async () => {
+    const { gate } = makeGate({ approvalTimeoutMs: 10, hasInteractiveUi: () => false });
+    const request = buildWorkflowLaunchRequest({
+      id: 'wf-headless-write',
+      preview: { ...PREVIEW, writeHint: true },
+      now: 1,
+    });
+    await expect(gate.requestApproval({ request })).resolves.toMatchObject({
+      approved: false,
+      permissionDecision: 'deny',
+      permissionDecisionReason: expect.stringContaining('无头规则'),
+    });
   });
 
   it('approve 未知 id 返回 false', () => {
@@ -126,11 +169,10 @@ describe('WorkflowLaunchApprovalGate', () => {
   // ── Codex Round1 MED#1：resolver/timer 生命周期 ──
   it('resolver 在 deliver 之前注册：同步 deliver 里 reject 能被即时兑现（非超时）', async () => {
     const deliver = vi.fn();
-    let gate: WorkflowLaunchApprovalGate;
     deliver.mockImplementation((e) => {
       if (e.type === 'requested') gate.reject('wf-1', 'sync no');
     });
-    gate = new WorkflowLaunchApprovalGate({ approvalTimeoutMs: 5000, hasRenderer: () => true, deliver });
+    const gate = new WorkflowLaunchApprovalGate({ approvalTimeoutMs: 5000, hasInteractiveUi: () => true, deliver });
     const result = await gate.requestApproval({ request: REQ() });
     expect(result.approved).toBe(false);
     expect(result.feedback).toBe('sync no');

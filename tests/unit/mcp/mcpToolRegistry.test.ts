@@ -435,11 +435,14 @@ describe('MCPToolRegistry permission metadata', () => {
     expect(JSON.stringify(firstLogMeta)).not.toContain('fixture');
   });
 
-  it('passes timeout and abort signal to external MCP SDK calls', async () => {
+  it('keeps the caller abort signal linked while adding interaction settlement grace', async () => {
     const registry = new MCPToolRegistry();
     const controller = new AbortController();
     const client = {
-      callTool: vi.fn(async () => ({
+      callTool: vi.fn(async (
+        _request: { name: string; arguments?: Record<string, unknown>; _meta?: unknown },
+        _options?: { timeout?: number; signal?: AbortSignal },
+      ) => ({
         content: [{ type: 'text', text: 'ok' }],
         isError: false,
       })),
@@ -454,10 +457,16 @@ describe('MCPToolRegistry permission metadata', () => {
       { timeoutMs: 1234, abortSignal: controller.signal },
     );
 
-    expect(client.callTool).toHaveBeenCalledWith(
-      { name: 'search_code', arguments: { query: 'repo:example test' }, _meta: undefined },
-      { timeout: 1234, signal: controller.signal },
-    );
+    const [request, options] = client.callTool.mock.calls[0] ?? [];
+    expect(request).toEqual({
+      name: 'search_code',
+      arguments: { query: 'repo:example test' },
+      _meta: undefined,
+    });
+    expect(options?.timeout).toBe(2234);
+    expect(options?.signal).not.toBe(controller.signal);
+    controller.abort();
+    expect(options?.signal?.aborted).toBe(true);
   });
 
   it('propagates W3C trace context without prompt, token, or raw arguments in metadata', async () => {

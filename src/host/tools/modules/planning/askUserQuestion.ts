@@ -27,12 +27,13 @@ import type {
 import type {
   UserQuestion,
 } from '../../../../shared/contract';
-import {
-  ASK_USER_QUESTION_DECLINED_OUTPUT,
-  ASK_USER_QUESTION_TIMEOUT_OUTPUT,
-} from '../../../../shared/contract/askUserQuestion';
+import { ASK_USER_QUESTION_DECLINED_OUTPUT } from '../../../../shared/contract/askUserQuestion';
 import { promptUserInChat } from '../../utils/userQuestionPrompt';
 import { askUserQuestionSchema as schema } from './askUserQuestion.schema';
+import {
+  deniedDecisionMetadata,
+  USER_INPUT_TIMEOUT_CODE,
+} from '../../../interaction/userDecision';
 
 function formatNoInteractiveUserOutput(questions: UserQuestion[]): string {
   const formatted = questions
@@ -107,17 +108,25 @@ export async function executeAskUserQuestion(
   });
 
   if (result.status === 'no-renderer') {
+    const reason = '当前运行环境没有可投递的交互界面，用户问题已按无头规则安全拒绝。';
     onProgress?.({ stage: 'completing', percent: 100 });
     return {
       ok: true,
       output: formatNoInteractiveUserOutput(questions),
+      meta: deniedDecisionMetadata(reason),
     };
   }
   if (result.status === 'aborted') {
     return { ok: false, error: 'aborted', code: 'ABORTED' };
   }
   if (result.status === 'timeout') {
-    return { ok: false, error: ASK_USER_QUESTION_TIMEOUT_OUTPUT, code: 'DOMAIN_ERROR' };
+    const reason = result.reason ?? '等待用户决定超时，已按无头规则安全拒绝。';
+    return {
+      ok: false,
+      error: reason,
+      code: USER_INPUT_TIMEOUT_CODE,
+      meta: deniedDecisionMetadata(reason),
+    };
   }
   if (result.status === 'declined' || result.response?.declined === true) {
     onProgress?.({ stage: 'completing', percent: 100 });

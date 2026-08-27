@@ -1,4 +1,11 @@
-import type { Client, Tool, Resource, Prompt } from '@modelcontextprotocol/client';
+import {
+  SdkError,
+  SdkErrorCode,
+  type Client,
+  type Tool,
+  type Resource,
+  type Prompt,
+} from '@modelcontextprotocol/client';
 
 // ============================================================================
 // MCP Tool Registry - 工具/资源/提示的发现、注册和调用
@@ -6,7 +13,8 @@ import type { Client, Tool, Resource, Prompt } from '@modelcontextprotocol/clien
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { maskSensitiveData } from '../security';
-import { MCP_TIMEOUTS } from '../../shared/constants';
+import { INTERACTION_TIMEOUTS, MCP_TIMEOUTS } from '../../shared/constants';
+import { hasInteractiveUi } from '../platform/windowBridge';
 import { spillToolResultArchive, buildSpillNotice } from '../utils/toolResultSpill';
 import { getToolSearchService } from '../services/toolSearch';
 import type {
@@ -29,6 +37,10 @@ import {
 import { isMcpToolReadOnly } from './mcpToolSafety';
 import { MCP_TASKS_EXTENSION_ID } from './mcpTransport';
 import { assertSupportedJsonSchema } from '../tools/outputSchema';
+import {
+  hasPendingMcpInteraction,
+  onPendingMcpInteractionChange,
+} from './mcpPendingInteraction';
 
 const logger = createLogger('MCPToolRegistry', { lane: 'mcp' });
 
@@ -37,6 +49,71 @@ interface MCPToolRegistryCallOptions {
   abortSignal?: AbortSignal;
   /** 会话 ID（GAP-009: 超阈值输出落盘到 session 临时目录） */
   sessionId?: string;
+}
+
+interface InteractionAwareRequestOptions {
+  timeout: number;
+  signal?: AbortSignal;
+  dispose(): void;
+}
+
+// The nested decision timeout is registered after tools/call. Give its
+// structured denial one event-loop turn to cross the transport before the
+// outer request is cancelled. This does not extend the 60s decision budget.
+const MCP_INTERACTION_SETTLEMENT_GRACE_MS = 1_000;
+
+function createInteractionAwareRequestOptions(
+  serverName: string,
+  timeoutMs: number,
+  callerSignal?: AbortSignal,
+): InteractionAwareRequestOptions {
+  const interactive = hasInteractiveUi();
+  const watchdog = new AbortController();
+  let timeout: NodeJS.Timeout | undefined;
+  const abortForTimeout = () => {
+    watchdog.abort(new SdkError(
+      SdkErrorCode.RequestTimeout,
+      'Request timed out',
+      { timeout: timeoutMs },
+    ));
+  };
+  const armInteractiveWatchdog = () => {
+    if (timeout) clearTimeout(timeout);
+    timeout = undefined;
+    if (hasPendingMcpInteraction(serverName)) return;
+
+    timeout = setTimeout(abortForTimeout, timeoutMs);
+    timeout.unref?.();
+  };
+
+  let unsubscribe = () => {};
+  if (interactive) {
+    unsubscribe = onPendingMcpInteractionChange(serverName, armInteractiveWatchdog);
+    armInteractiveWatchdog();
+  } else {
+    timeout = setTimeout(() => {
+      if (hasPendingMcpInteraction(serverName)) {
+        timeout = setTimeout(abortForTimeout, MCP_INTERACTION_SETTLEMENT_GRACE_MS);
+        timeout.unref?.();
+        return;
+      }
+      abortForTimeout();
+    }, timeoutMs);
+    timeout.unref?.();
+  }
+
+  return {
+    timeout: interactive
+      ? INTERACTION_TIMEOUTS.PARKED_APPROVAL
+      : timeoutMs + MCP_INTERACTION_SETTLEMENT_GRACE_MS,
+    signal: callerSignal
+      ? AbortSignal.any([callerSignal, watchdog.signal])
+      : watchdog.signal,
+    dispose: () => {
+      if (timeout) clearTimeout(timeout);
+      unsubscribe();
+    },
+  };
 }
 
 function buildCancelledToolResult(toolCallId: string, startTime: number): ToolResult {
@@ -559,15 +636,20 @@ export class MCPToolRegistry {
     if (abortSignal?.aborted) {
       return buildCancelledToolResult(toolCallId, startTime);
     }
+    const requestOptions = createInteractionAwareRequestOptions(serverName, timeoutMs, abortSignal);
 
-    logger.info(`Calling MCP tool: ${serverName}/${toolName}`, { args: redactLogArgs(args), timeoutMs });
+    logger.info(`Calling MCP tool: ${serverName}/${toolName}`, {
+      args: redactLogArgs(args),
+      timeoutMs,
+      sdkTimeoutMs: requestOptions.timeout,
+    });
 
     try {
       const result = await client.callTool({
         name: toolName,
         arguments: args,
         _meta: activeMcpRequestMeta(),
-      }, { timeout: timeoutMs, signal: abortSignal });
+      }, { timeout: requestOptions.timeout, signal: requestOptions.signal });
 
       logger.info(`MCP tool completed: ${serverName}/${toolName}`, { duration: Date.now() - startTime });
 
@@ -598,6 +680,8 @@ export class MCPToolRegistry {
       const errorMessage = error instanceof Error ? error.message : 'MCP tool call failed';
       logger.error(`MCP tool failed: ${serverName}/${toolName}`, { error: errorMessage, duration: Date.now() - startTime });
       throw error;
+    } finally {
+      requestOptions.dispose();
     }
   }
 
@@ -616,11 +700,16 @@ export class MCPToolRegistry {
     if (abortSignal?.aborted) {
       return buildCancelledToolResult(toolCallId, startTime);
     }
+    const requestOptions = createInteractionAwareRequestOptions(
+      serverName,
+      MCP_TIMEOUTS.TOOL_RETRY,
+      abortSignal,
+    );
 
     try {
       const retryResult = await client.callTool(
         { name: toolName, arguments: args, _meta: activeMcpRequestMeta() },
-        { timeout: MCP_TIMEOUTS.TOOL_RETRY, signal: abortSignal },
+        { timeout: requestOptions.timeout, signal: requestOptions.signal },
       );
 
       logger.info(`MCP tool retry succeeded: ${serverName}/${toolName}`);
@@ -643,6 +732,8 @@ export class MCPToolRegistry {
     } catch (retryError) {
       logger.error(`MCP tool retry also failed: ${serverName}/${toolName}`, retryError);
       return null;
+    } finally {
+      requestOptions.dispose();
     }
   }
 

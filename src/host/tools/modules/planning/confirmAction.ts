@@ -23,11 +23,18 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { AppWindow, ipcHost } from '../../../platform';
+import { AppWindow, hasInteractiveUi, ipcHost } from '../../../platform';
 import { IPC_CHANNELS } from '../../../../shared/ipc';
 import { createLogger } from '../../../services/infra/logger';
 import { INTERACTION_TIMEOUTS } from '../../../../shared/constants';
 import { confirmActionSchema as schema } from './confirmAction.schema';
+import {
+  deniedDecisionMetadata,
+  headlessDecisionTimeoutReason,
+  markDecisionRequestExpired,
+  notifyDecisionNeeded,
+  notifyIfLateDecisionResponse,
+} from '../../../interaction/userDecision';
 
 const logger = createLogger('ConfirmAction');
 
@@ -52,6 +59,11 @@ function registerResponseHandler(): void {
         clearTimeout(pending.timeout);
         pendingConfirms.delete(response.requestId);
         pending.resolve(response.confirmed);
+      } else {
+        notifyIfLateDecisionResponse(response.requestId);
+        logger.warn('Received confirm_action response for unknown request', {
+          requestId: response.requestId,
+        });
       }
     },
   );
@@ -106,30 +118,59 @@ export async function executeConfirmAction(
     return {
       ok: true,
       output: 'cancelled (no UI available)',
+      meta: deniedDecisionMetadata(
+        '当前运行环境没有可投递的交互界面，确认操作已按无头规则安全拒绝。',
+      ),
     };
   }
 
   logger.info('Sending confirmation request to UI', { requestId: request.id, title });
   mainWindow.webContents.send(IPC_CHANNELS.CONFIRM_ACTION_ASK, request);
+  notifyDecisionNeeded({
+    sessionId: ctx.sessionId,
+    title: title,
+    body: message,
+  });
 
-  const TIMEOUT_MS = INTERACTION_TIMEOUTS.CONFIRM_ACTION;
+  const interactive = hasInteractiveUi();
+  const timeoutMs = interactive
+    ? INTERACTION_TIMEOUTS.PARKED_APPROVAL
+    : INTERACTION_TIMEOUTS.CONFIRM_ACTION;
 
   try {
-    const confirmed = await new Promise<boolean>((resolve, reject) => {
+    const decision = await new Promise<{ confirmed: boolean; timedOut: boolean }>((resolve, reject) => {
       const timeout = setTimeout(() => {
         pendingConfirms.delete(request.id);
-        resolve(false); // Timeout = cancel (与 legacy 一致)
-      }, TIMEOUT_MS);
+        markDecisionRequestExpired(request.id, '确认操作');
+        resolve({ confirmed: false, timedOut: true });
+      }, timeoutMs);
 
-      pendingConfirms.set(request.id, { resolve, reject, timeout });
+      pendingConfirms.set(request.id, {
+        resolve: (confirmed) => resolve({ confirmed, timedOut: false }),
+        reject,
+        timeout,
+      });
     });
 
     onProgress?.({ stage: 'completing', percent: 100 });
-    ctx.logger.debug('confirm_action done', { confirmed });
+    ctx.logger.debug('confirm_action done', { confirmed: decision.confirmed });
+
+    if (!decision.confirmed) {
+      const reason = decision.timedOut
+        ? interactive
+          ? '等待确认操作超过 24 小时，停车请求已按安全兜底取消。'
+          : headlessDecisionTimeoutReason(timeoutMs)
+        : '用户取消了确认操作。';
+      return {
+        ok: true,
+        output: decision.timedOut ? reason : 'cancelled',
+        meta: deniedDecisionMetadata(reason),
+      };
+    }
 
     return {
       ok: true,
-      output: confirmed ? 'confirmed' : 'cancelled',
+      output: 'confirmed',
     };
   } catch (error) {
     return {

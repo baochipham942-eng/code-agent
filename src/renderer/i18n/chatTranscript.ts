@@ -532,7 +532,7 @@ livePreview: {
 },
 // 回合时间线区块标题（TraceNodeRenderer 的 ArtifactOwnershipNode / SkillActivityNode）。
 // 产物卡面向非程序员协作者，不用 Outputs/Sources/Skills 这类英文技术词。
-turnSections: { outputs: '产物', sources: '来源', executed: '已执行', skills: '技能' },
+turnSections: { outputs: '产物', sources: '来源', executed: '操作记录', skills: '技能' },
 // 分叉子会话首段用户输入上方的轻量来源提示（取代原顶部分支导航栏）。
 forkSourceHint: {
   source: '由此分支 · {parentTitle} · 锚点 {anchorId}',
@@ -1082,7 +1082,7 @@ livePreview: {
   loadingPage: 'Loading…',
 },
 // Turn timeline section titles (TraceNodeRenderer's ArtifactOwnershipNode / SkillActivityNode).
-turnSections: { outputs: 'Outputs', sources: 'Sources', executed: 'Executed', skills: 'Skills' },
+turnSections: { outputs: 'Outputs', sources: 'Sources', executed: 'Activity', skills: 'Skills' },
 forkSourceHint: {
   source: 'Branched from · {parentTitle} · anchor {anchorId}',
 },

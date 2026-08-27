@@ -35,6 +35,7 @@ import { TurnFeedback } from './TurnFeedback';
 import { TurnCompactionMarker } from './TurnCompactionMarker';
 import { TurnOutcomeBadge } from './TurnOutcomeBadge';
 import { ToolStepGroup } from './ToolStepGroup';
+import { integrateToolReceipts } from './receiptStepIntegration';
 import {
   ThinkingDigestBanner,
   getHasNonThinkingContentAfterThinking,
@@ -136,6 +137,8 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     () => turn.nodes.find((node) => node.turnTimeline?.kind === 'artifact_ownership'),
     [turn.nodes],
   );
+  const receiptIntegration = useMemo(() => integrateToolReceipts(artifactNode, displayNodes), [artifactNode, displayNodes]);
+  const { matchedReceiptItems, residualArtifactNode } = receiptIntegration;
   const deliverableDiffPaths = useMemo(() => new Set(
     (artifactNode?.turnTimeline?.artifactOwnership || [])
       .filter((item) => item.role === 'deliverable' && item.kind === 'file')
@@ -466,6 +469,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                     sessionId={sessionId}
                     defaultExpanded={false}
                     isStreamingTurn={isStreaming}
+                    receipts={matchedReceiptItems.filter((item) => (
+                      Boolean(item.sourceNodeId)
+                      && d.tools.some((node) => node.id === item.sourceNodeId)
+                    ))}
+                    receiptTimestamp={artifactNode?.turnTimeline?.timestamp}
                   />
                 );
               }
@@ -556,10 +564,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {/* 产物/来源固定锚点：始终渲染在最终答案之后，位置稳定（与正文内 Sources 一致），
             不再随工具调用在流中的位置而在答案上方/下方漂移。 */}
         {(() => {
-          return artifactNode ? (
+          return residualArtifactNode ? (
             <TraceNodeRenderer
-              key={artifactNode.id}
-              node={artifactNode}
+              key={residualArtifactNode.id}
+              node={residualArtifactNode}
               sessionId={sessionId}
               isStreaming={isStreaming}
               fileChangesByPath={deliverableFileChanges}

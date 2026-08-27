@@ -42,7 +42,7 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
             <button
               key={output.id}
               type="button"
-              className="max-w-[240px] truncate rounded bg-white/[0.04] px-1.5 py-0.5 text-zinc-300 hover:bg-white/[0.08] hover:text-white"
+              className="max-w-[240px] truncate rounded bg-white/[0.04] px-1.5 py-0.5 text-zinc-300 hover:bg-white/[0.08] hover:text-zinc-100"
               title={output.target}
               onClick={() => {
                 if (output.kind === 'file') openPreview(output.target);

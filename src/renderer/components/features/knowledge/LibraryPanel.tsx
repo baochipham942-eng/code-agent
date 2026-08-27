@@ -500,7 +500,7 @@ export const LibraryPanel: React.FC = () => {
                     <tbody key={group.id} data-testid={`library-group-${group.id}`}>
                       <tr className="border-y border-zinc-800 bg-zinc-900/70">
                         <th colSpan={6} className="px-3 py-2 text-left font-medium text-zinc-300">
-                          <button type="button" onClick={() => toggleGroup(group.id)} className="inline-flex items-center gap-1.5 hover:text-white" aria-expanded={!collapsed}>
+                          <button type="button" onClick={() => toggleGroup(group.id)} className="inline-flex items-center gap-1.5 hover:text-zinc-100" aria-expanded={!collapsed}>
                             {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                             <span>{group.name}</span>
                             <span className="text-[11px] font-normal text-zinc-500">{t.library.groupCount.replace('{count}', String(group.items.length))}</span>
@@ -533,7 +533,7 @@ export const LibraryPanel: React.FC = () => {
                                       {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                                     </button>
                                   )}
-                                  <button /* ds-allow:button: 行标题即预览入口，纯文字热区，Button primitive 不适配 */ type="button" onClick={() => handlePreview(item)} title={t.library.preview} className="min-w-0 truncate text-left text-sm text-zinc-200 hover:text-white hover:underline">{item.title}</button>
+                                  <button /* ds-allow:button: 行标题即预览入口，纯文字热区，Button primitive 不适配 */ type="button" onClick={() => handlePreview(item)} title={t.library.preview} className="min-w-0 truncate text-left text-sm text-zinc-200 hover:text-zinc-100 hover:underline">{item.title}</button>
                                   <DeliverablePublishBadge state={publishModel.publishState} testId={`library-publish-state-${item.id}`} />
                                 </div>
                                 <div className="mt-0.5 truncate text-[11px] text-zinc-500">{item.summary || item.pathOrUri}</div>

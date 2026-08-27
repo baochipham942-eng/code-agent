@@ -12,6 +12,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { toast } from '../hooks/useToast';
 import { languages } from '../i18n';
 import type { RoutingResolvedPayload } from '../hooks/agent/effects/streamEventTypes';
+import { resolveHostReasonCopy } from './hostReasonPresentation';
 
 /** 返回 true = 本次事件是降级信号且已处理 */
 export function applyRoutingDegradationSignal(
@@ -32,8 +33,11 @@ export function applyRoutingDegradationSignal(
 
   if (useSessionStore.getState().currentSessionId === sessionId) {
     const t = languages[app.language];
+    const registeredReason = resolveHostReasonCopy(payload.reason, t);
     toast.warning(
-      `${t.agentCommand.degradedToastPrefix}${requested}${t.agentCommand.degradedToastMiddle}${payload.agentName}${t.agentCommand.degradedToastSuffix}`,
+      registeredReason?.structured
+        ? registeredReason.summary
+        : `${t.agentCommand.degradedToastPrefix}${requested}${t.agentCommand.degradedToastMiddle}${payload.agentName}${t.agentCommand.degradedToastSuffix}`,
     );
   }
   return true;

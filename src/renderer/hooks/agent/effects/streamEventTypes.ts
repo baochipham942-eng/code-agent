@@ -61,7 +61,7 @@ export interface RoutingResolvedPayload {
   timestamp?: number;
   agentId: string;
   agentName: string;
-  reason: string;
+  reason: import('@shared/contract').HostReasonValue;
   score: number;
   fallbackToDefault?: boolean;
   /** 用户显式请求的 agent id；与 agentId 不一致 = 显式选择已降级 */

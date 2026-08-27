@@ -6,7 +6,12 @@ import { classifyPermission, type ClassificationResult } from './permissionClass
 import { isExternalSideEffectTool } from './externalSideEffect';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
-import type { PermissionDenialSource } from '../../shared/contract/permission';
+import {
+  createHostReason,
+  HostReasonCode,
+  type HostReasonPayload,
+  type PermissionDenialSource,
+} from '../../shared/contract/permission';
 import {
   getStrictBrowserComputerActionCatalogForArgs,
   normalizeBrowserComputerCatalogToolName,
@@ -62,8 +67,9 @@ export function readOnlyForcesConfirmationFor(
  * 通话中还处在 readOnly 只有一种可能：用户自己选的。那时「切换会话权限档」恰恰是真话，
  * 也是他唯一该听的建议。留着一条永远走不到、且内容已经变假的分支，比没有更糟。
  */
-export function readOnlyDenialError(toolName: string): string {
-  return `只读探索模式：${toolName} 未获用户确认而被拦截（无审批界面的运行环境会自动拒绝）。如需执行该操作，请切换会话权限档后重试。`;
+export function readOnlyDenialError(toolName: string): HostReasonPayload {
+  const modelText = `只读探索模式：${toolName} 未获用户确认而被拦截（无审批界面的运行环境会自动拒绝）。如需执行该操作，请切换会话权限档后重试。`;
+  return createHostReason(HostReasonCode.PermissionReadOnlyConfirmationRequired, modelText, { toolName });
 }
 
 /**
@@ -90,6 +96,11 @@ function classifyBrowserComputerConsequence(
     return {
       decision: 'deny',
       reason,
+      hostReason: createHostReason(
+        HostReasonCode.PermissionUnregisteredActionBlocked,
+        reason,
+        { toolName: catalogTool },
+      ),
       confidence: 1,
       cached: false,
       traceStep: createTraceStep(
@@ -106,6 +117,11 @@ function classifyBrowserComputerConsequence(
     return {
       decision: 'deny',
       reason,
+      hostReason: createHostReason(
+        HostReasonCode.PermissionHighRiskActionBlocked,
+        reason,
+        { toolName: entry.tool },
+      ),
       confidence: 1,
       cached: false,
       errorCode: BROWSER_COMPUTER_HIGH_RISK_BLOCKED_CODE,
@@ -125,6 +141,13 @@ function classifyBrowserComputerConsequence(
   return {
     decision,
     reason,
+    hostReason: createHostReason(
+      decision === 'approve'
+        ? HostReasonCode.PermissionClassifierAllowed
+        : HostReasonCode.PermissionClassifierConfirmationRequired,
+      reason,
+      { toolName: entry.tool },
+    ),
     confidence: 1,
     cached: false,
     traceStep: createTraceStep(
@@ -161,22 +184,27 @@ export function browserComputerConsequenceForcesClassification(
  * 泛用的 "Permission denied by user" 在机器自动拒的路径上是**假话**——用户什么都没看见，
  * 模型却会告诉他「你拒绝了」。每种 denialSource 必须给出真实原因 + 可执行的出路。
  */
-export function permissionDenialError(toolName: string, source: PermissionDenialSource): string {
+export function permissionDenialError(toolName: string, source: PermissionDenialSource): HostReasonPayload {
+  const metadata = { toolName };
   switch (source) {
     case 'user':
-      return 'Permission denied by user';
+      return createHostReason(HostReasonCode.PermissionDeniedByUser, 'Permission denied by user', metadata);
     case 'no-approval-ui':
-      return `${toolName} 被自动拒绝：当前运行环境没有审批界面（非交互 CLI / web headless），`
-        + '需人工确认的操作一律 fail-closed 拒绝——用户并未看到审批请求。'
-        + '出路：把会话权限档抬到 bypassPermissions，或改用无需确认的等价操作。';
+      return createHostReason(
+        HostReasonCode.PermissionDeniedNoApprovalUi,
+        `${toolName} 被自动拒绝：当前运行环境没有审批界面（非交互 CLI / web headless），`
+          + '需人工确认的操作一律 fail-closed 拒绝——用户并未看到审批请求。'
+          + '出路：把会话权限档抬到 bypassPermissions，或改用无需确认的等价操作。',
+        metadata,
+      );
     case 'timeout':
-      return `${toolName} 被自动拒绝：审批请求超时未获批准，请重新发起需要审批的操作。`;
+      return createHostReason(HostReasonCode.PermissionDeniedTimeout, `${toolName} 被自动拒绝：审批请求超时未获批准，请重新发起需要审批的操作。`, metadata);
     case 'cancelled':
-      return `${toolName} 被自动拒绝：本次运行已被取消（或有新消息到达），挂起的审批被统一解除。`;
+      return createHostReason(HostReasonCode.PermissionDeniedCancelled, `${toolName} 被自动拒绝：本次运行已被取消（或有新消息到达），挂起的审批被统一解除。`, metadata);
     case 'fail-closed':
-      return `${toolName} 被自动拒绝：审批链路依赖不可用，按安全侧默认拒绝（fail-closed），并非用户拒绝。`;
+      return createHostReason(HostReasonCode.PermissionDeniedFailClosed, `${toolName} 被自动拒绝：审批链路依赖不可用，按安全侧默认拒绝（fail-closed），并非用户拒绝。`, metadata);
     case 'scripted':
-      return `${toolName} 被评测脚本自动拒绝：当前为 scripted approval eval 模式，并非用户拒绝。`;
+      return createHostReason(HostReasonCode.PermissionDeniedScripted, `${toolName} 被评测脚本自动拒绝：当前为 scripted approval eval 模式，并非用户拒绝。`, metadata);
     default: {
       const _exhaustive: never = source;
       return _exhaustive;
@@ -185,9 +213,10 @@ export function permissionDenialError(toolName: string, source: PermissionDenial
 }
 
 /** 无法可靠解析的 shell 命令不能靠审批放行；重复指纹由会话运行时在发事件前拦住。 */
-export function commandAnalysisDenialError(toolName: string): string {
-  return `${toolName} 被自动拒绝：命令无法可靠拆词或含静态不可解析的 shell 构造，`
+export function commandAnalysisDenialError(toolName: string): HostReasonPayload {
+  const modelText = `${toolName} 被自动拒绝：命令无法可靠拆词或含静态不可解析的 shell 构造，`
     + '按安全侧默认拒绝（fail-closed）。该命令不能从当前会话审批放行，只能由用户在会话外手工运行。';
+  return createHostReason(HostReasonCode.PermissionCommandAnalysisFailed, modelText, { toolName });
 }
 
 /**
@@ -219,6 +248,11 @@ export async function resolveToolPermissionClassification(input: {
     return {
       decision: 'ask',
       reason: `Tool "${input.executionToolName}" requires confirmation by policy (tools.always_confirm)`,
+      hostReason: createHostReason(
+        HostReasonCode.PermissionPolicyConfirmationRequired,
+        `Tool "${input.executionToolName}" requires confirmation by policy (tools.always_confirm)`,
+        { toolName: input.executionToolName },
+      ),
       confidence: 1,
       cached: false,
       external,
@@ -235,6 +269,11 @@ export async function resolveToolPermissionClassification(input: {
     return {
       decision: 'ask',
       reason: `Tool "${input.executionToolName}" is outside skill "${input.boundaryViolation.skillName}" allowed-tools boundary (${input.boundaryViolation.allowedTools.join(', ')})`,
+      hostReason: createHostReason(
+        HostReasonCode.PermissionSkillBoundaryConfirmationRequired,
+        `Tool "${input.executionToolName}" is outside skill "${input.boundaryViolation.skillName}" allowed-tools boundary (${input.boundaryViolation.allowedTools.join(', ')})`,
+        { toolName: input.executionToolName },
+      ),
       confidence: 1,
       cached: false,
       external,
@@ -256,6 +295,11 @@ export async function resolveToolPermissionClassification(input: {
     classification = {
       decision: 'ask',
       reason,
+      hostReason: createHostReason(
+        HostReasonCode.PermissionClassifierConfirmationRequired,
+        reason,
+        { toolName: input.executionToolName },
+      ),
       confidence: 1,
       cached: false,
       traceStep: createTraceStep(
@@ -285,6 +329,11 @@ export async function resolveToolPermissionClassification(input: {
     classification = {
       decision: 'ask',
       reason,
+      hostReason: createHostReason(
+        HostReasonCode.PermissionReadOnlyConfirmationRequired,
+        reason,
+        { toolName: input.executionToolName },
+      ),
       confidence: 1,
       cached: false,
       traceStep: createTraceStep('permission_classifier', 'readonly_explore_mode', 'ask', reason, input.permStartTime),
@@ -296,6 +345,11 @@ export async function resolveToolPermissionClassification(input: {
     classification = {
       decision: 'approve',
       reason,
+      hostReason: createHostReason(
+        HostReasonCode.PermissionClassifierAllowed,
+        reason,
+        { toolName: input.executionToolName },
+      ),
       confidence: 1,
       cached: false,
       traceStep: createTraceStep('permission_classifier', 'permission_mode_auto_approve', 'allow', reason, input.permStartTime),

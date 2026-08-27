@@ -2,7 +2,7 @@
 
 import { HostReasonCode } from '@shared/contract';
 
-export const hostReasonZh = {
+const hostReasonZh = {
   [HostReasonCode.PermissionClassifierAllowed]: { summary: '安全检查已通过' },
   [HostReasonCode.PermissionClassifierConfirmationRequired]: { summary: '{toolName}需要你的确认' },
   [HostReasonCode.PermissionClassifierDenied]: { summary: '{toolName}未通过安全检查' },
@@ -31,7 +31,7 @@ export const hostReasonZh = {
   [HostReasonCode.RoutingExternalEngineUnsupported]: { summary: '{engineName} 会话不支持 agent 选择，已直接执行' },
 } satisfies Record<HostReasonCode, { summary: string; detail?: string }>;
 
-export const hostReasonEn: typeof hostReasonZh = {
+const hostReasonEn: typeof hostReasonZh = {
   [HostReasonCode.PermissionClassifierAllowed]: { summary: 'Safety check passed' },
   [HostReasonCode.PermissionClassifierConfirmationRequired]: { summary: '{toolName} needs your confirmation' },
   [HostReasonCode.PermissionClassifierDenied]: { summary: '{toolName} did not pass the safety check' },

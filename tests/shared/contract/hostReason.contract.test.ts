@@ -3,7 +3,6 @@ import {
   createHostReason,
   HostReasonCode,
 } from '../../../src/shared/contract/permission';
-import { hostReasonEn, hostReasonZh } from '../../../src/renderer/i18n/agentError';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { resolveHostReasonCopy } from '../../../src/renderer/utils/hostReasonPresentation';
@@ -11,6 +10,8 @@ import { resolveHostReasonCopy } from '../../../src/renderer/utils/hostReasonPre
 describe('HostReason contract', () => {
   it('每个 HostReasonCode 都在同一张 agentError zh/en 登记表有非空文案', () => {
     const codes = Object.values(HostReasonCode).sort();
+    const hostReasonZh = zh.agentError.hostReasons;
+    const hostReasonEn = en.agentError.hostReasons;
     expect(Object.keys(hostReasonZh).sort()).toEqual(codes);
     expect(Object.keys(hostReasonEn).sort()).toEqual(codes);
     for (const code of codes) {

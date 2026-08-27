@@ -42,6 +42,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: { error: vi.fn() } }));
 
 import { PermissionCard } from '../../../src/renderer/components/PermissionDialog/PermissionCard';
+import { validateWritebackDraft } from '../../../src/renderer/components/PermissionDialog/WritebackFields';
 import { releaseApprovalResponse } from '../../../src/renderer/utils/approvalResponseGuard';
 
 // host 默认分支：details = {...params} + 透传字段；mail_send 是 write 级 ⇒ type file_write、risk high ⇒ danger
@@ -203,6 +204,8 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect(invoke).not.toHaveBeenCalled();
     fireEvent.change(toInput(), { target: { value: '' } });
     expect((sendEdited() as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('必填')).toBeTruthy();
+    expect(screen.queryByText('结束时间不能早于开始时间')).toBeNull();
     fireEvent.click(sendEdited());
     await new Promise((r) => setTimeout(r, 20));
     expect(invoke).not.toHaveBeenCalled();
@@ -402,9 +405,20 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     fireEvent.change(screen.getByTestId('writeback-edit-end_ms'), { target: { value: '2026-08-26T08:59' } });
     const submit = screen.getByRole('button', { name: '创建 · 修改后允许' }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
+    expect(screen.getByText('结束时间不能早于开始时间')).toBeTruthy();
+    expect(screen.queryByText('必填')).toBeNull();
     fireEvent.click(submit);
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('日期时间格式无效时保留独立原因码', () => {
+    expect(validateWritebackDraft('calendar_create_event', {
+      title: '季度评审会',
+      start_ms: '2026-02-30T10:00',
+      end_ms: '',
+      location: '',
+    })).toEqual([{ fieldKey: 'start_ms', reason: 'invalid_datetime' }]);
   });
 
 });

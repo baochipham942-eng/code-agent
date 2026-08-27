@@ -58,6 +58,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useVoiceCallStore } from '../../../stores/voiceCallStore';
 import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '../../../utils/sessionNeedsInput';
+import { resolveBusySignal } from '../../../utils/turnBusySignal';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -204,21 +205,14 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const lastIndex = displayNodes.length - 1;
   const lastDisplay = displayNodes[lastIndex];
   const lastDisplayNode = lastDisplay && lastDisplay.kind !== 'tool_group' ? lastDisplay.node : null;
-  // 末个展示节点是否「正在流式输出可见正文」——若是，正文自带内联光标，状态槽不再重复渲染光标。
-  // 必须看 content 是否非空：思考中的合成节点也是 assistant_text 类型但 content 为空，
-  // 不能算「正文正在流式」，否则状态槽会误判着落而整个隐去，思考阶段变得完全没有信号。
+  const busySignal = resolveBusySignal(turn);
+  // 末个展示节点是否正在流式输出可见正文。正文出字时，
+  // 通用光标留在节点流底部，作为文本尾唯一的进行中信号。
   const lastNodeIsStreamingText =
-    isStreaming &&
+    busySignal === 'text-caret' &&
     !!lastDisplayNode &&
     lastDisplayNode.type === 'assistant_text' &&
     Boolean(lastDisplayNode.content?.trim());
-  // 末个展示节点正在接收思考增量：assistant_text 类型、正文还是空、但已经有思考内容在流入。
-  const isThinkingPhase =
-    isStreaming &&
-    !!lastDisplayNode &&
-    lastDisplayNode.type === 'assistant_text' &&
-    !lastDisplayNode.content?.trim() &&
-    Boolean((lastDisplayNode.thinking || lastDisplayNode.reasoning)?.trim());
   const runningToolStartTime = useMemo(
     () => getRunningToolStartTime(turn.nodes),
     [turn.nodes],
@@ -243,24 +237,25 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     [turn.nodes],
   );
   const thinkingSegments = useMemo(() => getTurnThinkingSegments(turn), [turn]);
-  // 没有 reasoning 增量时，等待信号与后续思考摘要共用同一个轮首槽位。
-  // 否则 AskUserQuestion 工具行会先出现在底部等待信号之上，reasoning 到达后
-  // 又被顶部思考摘要压到下方，造成「向你提了一个问题」上下翻转。
-  const showLeadingStreamingIndicator =
+  // 这里只决定通用光标所在的现有槽位，不参与忙信号判定。工具行出现后，
+  // 后续模型等待仍留在轮首，避免 AskUserQuestion 行与状态槽上下翻转。
+  const placeStreamingIndicatorBeforeDigest =
     isStreaming
     && turn.nodes.length > 0
-    && thinkingSegments.length === 0
+    && !lastNodeIsStreamingText
     && displayNodes.some((item) => item.kind === 'tool_group');
   const streamingIndicator = isStreaming && turn.nodes.length > 0 ? (
     <StreamingIndicator
       startTime={turn.startTime}
-      runningToolStartTime={runningToolStartTime}
-      showCaret={!lastNodeIsStreamingText && (showLeadingStreamingIndicator || !isThinkingPhase)}
-      waitingReason={getStreamingWaitingReason(turn.nodes, streamingState.status, waitingForApproval)}
+      runningToolStartTime={busySignal === 'text-caret' ? runningToolStartTime : undefined}
+      showCaret={busySignal === 'text-caret'}
+      waitingReason={busySignal === 'text-caret'
+        ? undefined
+        : getStreamingWaitingReason(turn.nodes, streamingState.status, waitingForApproval)}
       subagentCount={getRunningSubagentCount(turn.nodes)}
     />
   ) : null;
-  const activeThinkingSegmentId = isThinkingPhase
+  const activeThinkingSegmentId = busySignal === 'thinking'
     ? thinkingSegments[thinkingSegments.length - 1]?.id ?? null
     : null;
   const hasNonThinkingContentAfterThinking = useMemo(
@@ -448,7 +443,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {/* Middle content (folded: hide; expanded: show all except user) */}
         {!folded && (
           <>
-            {showLeadingStreamingIndicator && streamingIndicator}
+            {placeStreamingIndicatorBeforeDigest && streamingIndicator}
             {/* 一个回合内所有思考段继续合并成一个横幅。流式 reasoning 自己承担唯一的
                 「正在思考」信号；底部 StreamingIndicator 在此阶段让位，避免双显。 */}
             <ThinkingDigestBanner
@@ -521,23 +516,18 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             })}
 
             {/* Streaming indicator at bottom of active turn.
-                正文正在流式输出文字时，正文已自带内联光标 → 状态槽隐去光标避免重复。 */}
-            {!showLeadingStreamingIndicator && streamingIndicator}
+                正文流式时，唯一的通用光标落在节点流底部，紧跟文本尾。 */}
+            {!placeStreamingIndicatorBeforeDigest && streamingIndicator}
           </>
         )}
 
         {/* 语音任务卡折叠态仍在流式时：过程收在卡身里，live 信号不能全灭——
             底部保留呼吸态指示。 */}
-        {isVoiceTurn && folded && isStreaming && turn.nodes.length > 0 && (
+        {isVoiceTurn && folded && isStreaming && turn.nodes.length > 0 && busySignal === 'text-caret' && (
           <StreamingIndicator
             startTime={turn.startTime}
             runningToolStartTime={runningToolStartTime}
-            showCaret={!lastNodeIsStreamingText}
-            waitingReason={getStreamingWaitingReason(
-              turn.nodes,
-              streamingState.status,
-              waitingForApproval,
-            )}
+            showCaret
             subagentCount={getRunningSubagentCount(turn.nodes)}
           />
         )}

@@ -106,7 +106,7 @@ const PRODUCTION_READERS: Record<string, ProductionReaderEvidence> = {
   'local-claude-settings': {
     reader: 'ClaudeCodeAdapter.run → Claude Code workspace config discovery',
     source: 'src/host/services/agentEngine/claudeCodeAdapter.ts',
-    anchors: [/class ClaudeCodeAdapter/, /spawn\(descriptor\.binaryPath, args/, /cwd,/],
+    anchors: [/class ClaudeCodeAdapter/, /spawn\(binaryPath, args/, /cwd,/],
     forbidden: [/['"]--setting-sources['"]/],
   },
   'runtime-app-settings': {

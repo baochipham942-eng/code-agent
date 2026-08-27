@@ -12,7 +12,10 @@ const limits = {
   // 20: config/ stores the reviewed, release-critical Poppler sidecar lock. It is
   // public source configuration, not user/runtime state.
   rootDirectories: 20,
-  hostDomains: 45,
+  // 2026-08-27 +1 → 46：#1415（N-WAITCARD-TIMEOUT）新增 src/host/interaction/，合入时未同步抬棘轮，
+  // 结构门在 main 上恰好没跟着那次 push 跑，于是 main 静默超限、下一个 PR 才撞上（本单 #1419 撞到）。
+  // 这里补齐口径，不是放宽标准。
+  hostDomains: 46,
   testTopLevelDirectories: 24,
   // 142: the five Poppler promotion/fetch/gate/lock scripts, the bundle signature audit,
   // and the eslint/knip/tsc-tests ratchets are stable package/workflow entrypoints. Their

@@ -52,6 +52,8 @@ export const ENGINE_BILLING_MODE: Record<AgentEngineKind, EngineBillingMode> = {
   codebuddy_code: 'subscription',
   grok_cli: 'subscription',
   dsh_cli: 'api_key_payg',
+  // 同一个 Kimi 订阅，只是换了 transport。
+  kimi_code_acp: 'subscription',
 };
 
 export function getEngineBillingMode(kind: AgentEngineKind): EngineBillingMode {

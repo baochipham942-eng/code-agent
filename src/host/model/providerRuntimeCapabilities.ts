@@ -23,6 +23,7 @@ export const PROVIDER_RUNTIME_IDS = [
   'codebuddy_code',
   'grok_cli',
   'dsh_cli',
+  'kimi_code_acp',
 ] as const;
 
 export type ProviderRuntimeId = typeof PROVIDER_RUNTIME_IDS[number];
@@ -246,6 +247,15 @@ export const PROVIDER_RUNTIME_CAPABILITY_MATRIX: readonly ProviderRuntimeCapabil
     providerScope: ['cli-owned'],
     adapterBoundary: 'kimi -p --output-format stream-json',
     capabilities: opaqueCliCapabilities('runtime-kimi-code.json', 'kimi-code-pending'),
+  },
+  {
+    // ACP 与 opaque_cli 同族：模型调用仍在对方进程里，Neo 看不到 provider 请求。
+    // 与 CLI 形态的差别在事件层与副作用层，不在模型协议层，所以不新开 protocolFamily。
+    runtime: 'kimi_code_acp',
+    protocolFamily: 'opaque_cli',
+    providerScope: ['cli-owned'],
+    adapterBoundary: 'kimi acp (Agent Client Protocol over stdio)',
+    capabilities: opaqueCliCapabilities('runtime-kimi-code-acp.json', 'kimi-code-acp-pending'),
   },
   {
     runtime: 'codebuddy_code',

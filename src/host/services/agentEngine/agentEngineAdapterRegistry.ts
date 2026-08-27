@@ -1,6 +1,7 @@
 import type { ExternalAgentEngineKind } from '../../../shared/contract/agentEngine';
 import { AgentEngineCapabilityError } from '../../../shared/contract/agentEngine';
 import { getExternalEngineManifestForKind } from '../../../shared/externalEngineManifest';
+import { KimiAcpAdapter } from './acpClientAdapter';
 import { ClaudeCodeAdapter } from './claudeCodeAdapter';
 import { CodeBuddyCliAdapter } from './codeBuddyCliAdapter';
 import { CodexCliAdapter } from './codexCliAdapter';
@@ -10,6 +11,7 @@ import { KimiCliAdapter } from './kimiCliAdapter';
 import { MimoCliAdapter } from './mimoCliAdapter';
 
 export type ExternalEngineAdapter =
+  | KimiAcpAdapter
   | ClaudeCodeAdapter
   | CodeBuddyCliAdapter
   | CodexCliAdapter
@@ -29,6 +31,7 @@ const ADAPTER_FACTORIES: ReadonlyMap<string, ExternalEngineAdapterFactory> = new
   ['dsh_cli', () => new DshCliAdapter()],
   ['grok_cli', () => new GrokCliAdapter()],
   ['kimi_code', () => new KimiCliAdapter()],
+  ['kimi_code_acp', () => new KimiAcpAdapter()],
   ['mimo_code', () => new MimoCliAdapter()],
 ]);
 

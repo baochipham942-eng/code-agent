@@ -14,7 +14,8 @@ describe('external engine adapter registry', () => {
       ))
       .map((manifest) => manifest.kind);
 
-    expect(executableKinds).toHaveLength(7);
+    // 8 = 7 家 CLI + kimi_code_acp（ACP transport，与 CLI 形态的 kimi_code 并存）。
+    expect(executableKinds).toHaveLength(8);
     for (const kind of executableKinds) {
       expect(getExternalEngineAdapter(kind)).toHaveProperty('run');
     }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-08-10",
+  "updatedAt": "2026-08-27",
   "policy": {
     "verificationStatus": [
       "verified",
@@ -131,6 +131,22 @@
       "verificationStatus": "unverified",
       "result": "not_run",
       "reason": "CLI is not installed, so no live smoke can run."
+    },
+    {
+      "id": "kimi-code-acp-pending",
+      "date": "2026-08-27",
+      "runtime": "kimi_code_acp",
+      "protocolFamily": "opaque_cli",
+      "provider": "cli-owned",
+      "model": "kimi-code/k3 (agent default)",
+      "verificationStatus": "verified",
+      "result": "passed",
+      "scope": "initialize + session/new + session/prompt + session/update event stream + session/load resume + client-side fs/* and terminal/* delegation, against Kimi Code CLI 0.38.0",
+      "evidence": [
+        "tests/unit/agentEngine/acpEventMapping.test.ts",
+        "tests/unit/agentEngine/acpClientHostBridge.test.ts"
+      ],
+      "reason": "Four minimal live prompts on 2026-08-27 captured the full bidirectional NDJSON stream; the agent delegated every side effect back to the client (fs/write_text_file, terminal/create) and never sent session/request_permission. Raw capture and the update-to-AgentEvent mapping table are held in the private evidence archive (2026-08-27-N-ACP-CLIENT-*), not in this repo."
     },
     {
       "id": "codebuddy-code-local-spike",

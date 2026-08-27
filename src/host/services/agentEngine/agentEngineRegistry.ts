@@ -45,7 +45,10 @@ interface ExecProbeResult {
 }
 
 const VERSION_TIMEOUT_MS = 3000;
-const DETECT_CACHE_TTL_MS = 5000;
+// CLI installation and login state change far less often than the engine picker is opened.
+// A manual "detect engines" action invalidates immediately; this TTL bounds staleness when
+// those external facts change without Neo being told.
+const DETECT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export interface AgentEngineRegistryOptions {
   cacheTtlMs?: number;
@@ -61,6 +64,11 @@ export class AgentEngineRegistry {
     descriptors: AgentEngineDescriptor[];
     sources: AgentEngineSourceDescriptor[];
     expiresAt: number;
+  } | null = null;
+  private cacheGeneration = 0;
+  private cacheRefresh: {
+    generation: number;
+    promise: Promise<void>;
   } | null = null;
 
   constructor(options: AgentEngineRegistryOptions = {}) {
@@ -85,6 +93,7 @@ export class AgentEngineRegistry {
 
   invalidate(): void {
     this.cache = null;
+    this.cacheGeneration += 1;
   }
 
   async get(kind: AgentEngineKind): Promise<AgentEngineDescriptor> {
@@ -97,9 +106,40 @@ export class AgentEngineRegistry {
   }
 
   private async ensureCache(): Promise<void> {
-    const now = this.now();
-    if (this.cache && this.cache.expiresAt > now) return;
+    if (this.cache && this.cache.expiresAt > this.now()) return;
 
+    const generation = this.cacheGeneration;
+    const canServeStale = this.cache !== null;
+    const refreshPromise = this.startCacheRefresh(generation);
+    if (canServeStale) {
+      // TTL expiry means "revalidate", not "make the engine picker wait again".
+      // Explicit invalidate() clears cache first, so detect still waits for fresh facts.
+      void refreshPromise.catch((error: unknown) => {
+        logger.warn('background agent engine cache refresh failed; keeping last known result', {
+          detail: error instanceof Error ? error.message : String(error),
+        });
+      });
+      return;
+    }
+
+    await refreshPromise;
+    if (!this.cache && generation !== this.cacheGeneration) await this.ensureCache();
+  }
+
+  private startCacheRefresh(generation: number): Promise<void> {
+    if (this.cacheRefresh?.generation === generation) return this.cacheRefresh.promise;
+    const refresh = {
+      generation,
+      promise: Promise.resolve(),
+    };
+    refresh.promise = this.refreshCache(generation).finally(() => {
+      if (this.cacheRefresh === refresh) this.cacheRefresh = null;
+    });
+    this.cacheRefresh = refresh;
+    return refresh.promise;
+  }
+
+  private async refreshCache(generation: number): Promise<void> {
     const probes = await Promise.all(this.manifests.map((manifest) => this.probeManifest(manifest)));
     // 无内置 iconAsset 的引擎从本机已装 .app 提取真图标（darwin；结果有进程级缓存）
     const localIcons = await Promise.all(this.manifests.map((manifest) => (
@@ -111,17 +151,23 @@ export class AgentEngineRegistry {
       const localIcon = iconByManifestId.get(manifest.id);
       return localIcon && !source.iconAsset ? { ...source, iconAsset: localIcon } : source;
     });
+    // Freshness begins when the slow probes have finished. Starting the TTL before the
+    // work made a 5.8s probe expire a 5s cache before it could serve even one reader.
+    const detectedAt = this.now();
     const descriptors = this.manifests.flatMap((manifest, index) => {
       if (!manifest.kind) return [];
-      const descriptor = this.buildEngineDescriptor(manifest, manifest.kind, probes[index], now);
+      const descriptor = this.buildEngineDescriptor(manifest, manifest.kind, probes[index], detectedAt);
       const localIcon = iconByManifestId.get(manifest.id);
       return [localIcon && !descriptor.iconAsset ? { ...descriptor, iconAsset: localIcon } : descriptor];
     });
 
+    // An explicit invalidation that happens during a refresh owns the newer generation;
+    // the stale in-flight result must not silently repopulate the cache.
+    if (generation !== this.cacheGeneration) return;
     this.cache = {
       descriptors,
       sources,
-      expiresAt: now + this.cacheTtlMs,
+      expiresAt: detectedAt + this.cacheTtlMs,
     };
   }
 

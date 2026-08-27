@@ -10,7 +10,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { createCLIAgent } from '../../../src/cli/adapter';
 import { buildQueuedAgentRunBody, createAgentRouter } from '../../../src/web/routes/agent';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
-import type { Message } from '../../../src/shared/contract';
+import { HostReasonCode, type Message } from '../../../src/shared/contract';
 import type { PendingOperation, RunCheckpoint, RunEngineRef, RunOwnerLease } from '../../../src/shared/contract/durableRun';
 import type { DurableCheckpointInput, PrepareOperationInput, PrepareToolOperationInput } from '../../../src/host/runtime/durableRunKernel';
 import {
@@ -3330,9 +3330,14 @@ describe('createAgentRouter', () => {
       requestedAgentId: 'explore',
       fallbackToDefault: true,
     });
-    // reason 也走展示名，裸 kind 不得泄进任何 UI 可见文案
-    expect(String(payload!.reason)).toContain('Codex CLI');
-    expect(String(payload!.reason)).not.toContain('codex_cli');
+    // renderer 只拿 code+metadata 查表；modelText 仍保留展示名供模型/transcript/审计。
+    expect(payload.reason).toMatchObject({
+      code: HostReasonCode.RoutingExternalEngineUnsupported,
+      metadata: { engineName: 'Codex CLI' },
+    });
+    const modelText = String((payload.reason as { modelText?: unknown }).modelText);
+    expect(modelText).toContain('Codex CLI');
+    expect(modelText).not.toContain('codex_cli');
   });
 
   it('routes MiMo engine sessions through the MiMo adapter, passing the selected model directly', async () => {

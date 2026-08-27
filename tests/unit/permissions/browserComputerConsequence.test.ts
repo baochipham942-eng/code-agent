@@ -21,6 +21,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import { AgentFailureCode, HostReasonCode } from '../../../src/shared/contract';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 
 function setSurfaceTool(name: string): void {
@@ -75,7 +76,11 @@ describe('browser/computer consequence approval tier', () => {
     const result = await executor.execute('browser_action', { action: 'clear_cookies' }, {});
     expect(result).toMatchObject({
       success: false,
-      metadata: { code: 'BROWSER_COMPUTER_HIGH_RISK_BLOCKED' },
+      metadata: {
+        code: 'BROWSER_COMPUTER_HIGH_RISK_BLOCKED',
+        failureCode: AgentFailureCode.PermissionDenied,
+        hostReason: { code: HostReasonCode.PermissionHighRiskActionBlocked },
+      },
     });
     expect(result.error).toBe(
       'Denied: High-risk browser/computer action is blocked by policy: browser_action.clear_cookies',

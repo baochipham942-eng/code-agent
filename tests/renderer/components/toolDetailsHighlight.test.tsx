@@ -1,7 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import type { ToolCall } from '../../../src/shared/contract';
+import { AgentFailureCode, HostReasonCode, type ToolCall } from '../../../src/shared/contract';
 import { renderToStaticMarkupAsync } from './renderToStaticMarkupAsync';
 
 // ToolDetails 依赖 appStore 的两个 selector，mock 掉即可。
@@ -31,6 +31,30 @@ function renderHighlighted(toolCall: ToolCall): Promise<string> {
 }
 
 describe('ToolDetails 语法高亮（#13 收窄版：仅 JSON 走高亮）', () => {
+  it('结构化 host reason 只渲染登记表文案，modelText 不进入默认或折叠输出', () => {
+    const modelText = 'MODEL_TEXT_LEAK_SENTINEL: approval backend exploded';
+    const markup = render({
+      id: 'host-reason-deny',
+      name: 'Bash',
+      arguments: { command: 'echo ok' },
+      result: {
+        success: false,
+        error: modelText,
+        metadata: {
+          failureCode: AgentFailureCode.PermissionDenied,
+          hostReason: {
+            code: HostReasonCode.PermissionDeniedNoApprovalUi,
+            metadata: { toolName: 'Bash' },
+            modelText,
+          },
+        },
+      },
+    } as unknown as ToolCall);
+
+    expect(markup).toContain('当前运行环境无法显示审批');
+    expect(markup).not.toContain(modelText);
+    expect(markup).not.toContain('MODEL_TEXT_LEAK_SENTINEL');
+  });
   it('default 分支工具的参数（JSON 转储）走语法高亮', async () => {
     // 非结构化工具名 → formatArgs 走 default JSON.stringify 分支
     const markup = await renderHighlighted({

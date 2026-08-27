@@ -2212,7 +2212,49 @@
           "type": "string"
         },
         "reason": {
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "metadata": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "modelText": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "modelText"
+              ],
+              "additionalProperties": false
+            }
+          ]
         },
         "score": {
           "type": "number"

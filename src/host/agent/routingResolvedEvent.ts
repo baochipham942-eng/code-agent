@@ -8,6 +8,7 @@
 // ============================================================================
 
 import type { RoutingResolvedEventData } from '../../shared/contract/agent';
+import { createHostReason, HostReasonCode } from '../../shared/contract/permission';
 
 export interface RoutingResolvedInput {
   agent: { id: string; name: string };
@@ -30,11 +31,19 @@ export function buildRoutingResolvedEventData(
 
   if (resolution) {
     const explicitHit = Boolean(requested && resolution.agent.id === requested);
+    const degradedFromExplicit = Boolean(requested && resolution.agent.id !== requested);
     return {
       mode: explicitHit ? 'explicit' : 'auto',
       agentId: resolution.agent.id,
       agentName: resolution.agent.name,
-      reason: resolution.reason,
+      reason: createHostReason(
+        degradedFromExplicit ? HostReasonCode.RoutingRequestedUnavailable : HostReasonCode.RoutingMatched,
+        resolution.reason,
+        {
+          agentName: resolution.agent.name,
+          ...(requested ? { requestedAgentName: requested } : {}),
+        },
+      ),
       score: resolution.score,
       fallbackToDefault: false,
       ...(requested ? { requestedAgentId: requested } : {}),
@@ -42,13 +51,28 @@ export function buildRoutingResolvedEventData(
     };
   }
 
+  const fallbackAgentName = opts.fallbackAgentName ?? 'default';
+  const modelText = opts.fallbackReason ?? (requested
+    ? `Requested agent "${requested}" is unavailable; continuing with the default conversation loop.`
+    : 'No specialized agent matched; continue with the default conversation loop.');
+  const externalEngineFallback = Boolean(opts.fallbackReason && opts.fallbackAgentName && opts.fallbackAgentName !== 'default');
   return {
     mode: requested ? 'explicit' : 'auto',
     agentId: 'default',
-    agentName: opts.fallbackAgentName ?? 'default',
-    reason: opts.fallbackReason ?? (requested
-      ? `Requested agent "${requested}" is unavailable; continuing with the default conversation loop.`
-      : 'No specialized agent matched; continue with the default conversation loop.'),
+    agentName: fallbackAgentName,
+    reason: createHostReason(
+      externalEngineFallback
+        ? HostReasonCode.RoutingExternalEngineUnsupported
+        : requested
+          ? HostReasonCode.RoutingRequestedUnavailable
+          : HostReasonCode.RoutingNoMatchFallback,
+      modelText,
+      {
+        agentName: fallbackAgentName,
+        ...(requested ? { requestedAgentName: requested } : {}),
+        ...(externalEngineFallback ? { engineName: fallbackAgentName } : {}),
+      },
+    ),
     score: 0,
     fallbackToDefault: true,
     ...(requested ? { requestedAgentId: requested } : {}),

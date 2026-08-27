@@ -365,7 +365,8 @@ export interface RoutingResolvedEventData {
   mode: 'auto' | 'explicit';
   agentId: string;
   agentName: string;
-  reason: string;
+  /** 新事件为 HostReasonPayload；string 仅保留一版旧事件兼容。 */
+  reason: import('./permission').HostReasonValue;
   score: number;
   fallbackToDefault?: boolean;
   requestedAgentId?: string;

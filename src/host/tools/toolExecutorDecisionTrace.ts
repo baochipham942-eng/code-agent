@@ -11,6 +11,7 @@ import type {
   DecisionOutcome as TraceDecisionOutcome,
   DecisionTrace,
 } from '../../shared/contract/decisionTrace';
+import { createTraceStep } from '../security/decisionTraceBuilder';
 
 /** Record a permission decision to the history buffer (+ append-only ledger, ADR-022 第一期) */
 export function recordDecision(
@@ -72,14 +73,7 @@ function buildHistoryDecisionTrace(
   return {
     toolName,
     finalOutcome: result,
-    steps: [{
-      layer: historyOutcomeToLayer(outcome),
-      rule: outcome,
-      result,
-      reason,
-      durationMs: Date.now() - startTime,
-      timestamp: Date.now(),
-    }],
+    steps: [createTraceStep(historyOutcomeToLayer(outcome), outcome, result, reason, startTime)],
     totalDurationMs: Date.now() - startTime,
   };
 }

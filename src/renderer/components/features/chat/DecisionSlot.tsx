@@ -1,13 +1,12 @@
 // ============================================================================
-// DecisionSlot - 输入框正上方的固定权限决策槽位
+// DecisionSlot - 输入框正上方的固定决策槽位
 // ============================================================================
-// 一次只展示一张当前会话可裁决的权限卡；危险与不可撤回写回优先，同级保持
-// 现有 pending → 当前会话队列 → global 队列的先来顺序。排序只决定展示对象，
-// PermissionCard 仍按请求 id 裁决并由 appStore 从原队列中移除。
+// 权限、提问、计划审批与中断恢复共享一个队列，一次只展示一张。权限卡内部仍按
+// 危险与不可撤回写回优先，同级保持 pending → 当前会话 → global 的先来顺序。
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
-import type { Message, PermissionRequest, StreamRecoverySnapshot } from '@shared/contract';
+import type { Message, PermissionRequest, StreamRecoverySnapshot, UserQuestionRequest } from '@shared/contract';
 import { isEditableTool } from '@shared/contract';
 import { AlertTriangle } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
@@ -20,6 +19,9 @@ import { isEditableTarget } from '../../DecisionCard';
 import { PermissionCard } from '../../PermissionDialog/PermissionCard';
 import { DecisionCollapsedBar } from '../../DecisionCard';
 import { isDangerousCommand } from '../../PermissionDialog/utils';
+import { UserQuestionCard } from '../../UserQuestionCard';
+import { PlanApprovalCard } from '../../PlanApprovalCard';
+import type { PendingPlanApprovalTarget } from '../../../utils/planApprovalView';
 
 const GLOBAL_PERMISSION_SESSION_ID = 'global';
 
@@ -189,7 +191,21 @@ function visibleCandidates(
   ));
 }
 
-export function DecisionSlot({ streamInterruption }: { streamInterruption?: StreamInterruptionDecision | null }) {
+interface DecisionSlotProps {
+  streamInterruption?: StreamInterruptionDecision | null;
+  userQuestion?: UserQuestionRequest | null;
+  userQuestionCount?: number;
+  planApproval?: PendingPlanApprovalTarget | null;
+  onUserQuestionSkipped?: () => void;
+}
+
+export function DecisionSlot({
+  streamInterruption,
+  userQuestion,
+  userQuestionCount = userQuestion ? 1 : 0,
+  planApproval,
+  onUserQuestionSkipped,
+}: DecisionSlotProps) {
   const { t } = useI18n();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const [resolvedTurnId, setResolvedTurnId] = useState<string | null>(null);
@@ -206,7 +222,21 @@ export function DecisionSlot({ streamInterruption }: { streamInterruption?: Stre
   );
   const current = candidates[0];
   const [collapsed, setCollapsed] = useState(false);
-  const requestSignature = candidates.map((candidate) => candidate.request.id).join('|');
+  const interruptionVisible = streamInterruption
+    && resolvedTurnId !== streamInterruption.snapshot.turnId
+    && !readInterruptionDecision(currentSessionId, streamInterruption.snapshot.turnId);
+  const visibleUserQuestionCount = userQuestion ? Math.max(1, userQuestionCount) : 0;
+  const decisionCount = candidates.length
+    + visibleUserQuestionCount
+    + (planApproval ? 1 : 0)
+    + (interruptionVisible ? 1 : 0);
+  const requestSignature = [
+    ...candidates.map((candidate) => candidate.request.id),
+    userQuestion?.id,
+    userQuestion ? String(visibleUserQuestionCount) : undefined,
+    planApproval?.toolCallId,
+    interruptionVisible ? streamInterruption?.snapshot.turnId : undefined,
+  ].filter(Boolean).join('|');
   const expand = useCallback(() => setCollapsed(false), []);
 
   // 任何新请求进入可见队列都自动展开，包括当前卡未换但队尾新增的情况。
@@ -214,11 +244,7 @@ export function DecisionSlot({ streamInterruption }: { streamInterruption?: Stre
     if (requestSignature) setCollapsed(false);
   }, [requestSignature]);
 
-  const interruptionVisible = streamInterruption
-    && resolvedTurnId !== streamInterruption.snapshot.turnId
-    && !readInterruptionDecision(currentSessionId, streamInterruption.snapshot.turnId);
-
-  if (!current && !interruptionVisible) return null;
+  if (decisionCount === 0) return null;
 
   return (
     <section
@@ -226,25 +252,39 @@ export function DecisionSlot({ streamInterruption }: { streamInterruption?: Stre
       className="w-full shrink-0 chat-col-pad pb-2"
       data-testid="decision-slot"
     >
-      {current && collapsed ? (
+      {collapsed && (
         <div className="mx-auto flex max-w-3xl justify-end">
           <DecisionCollapsedBar
             label={t.decisionCard.pendingLabel}
             expandLabel={t.decisionCard.expand}
-            count={candidates.length}
+            count={decisionCount}
             onExpand={expand}
             className="w-auto"
             testId="decision-slot-collapsed"
           />
         </div>
-      ) : current ? (
+      )}
+      {current && !collapsed ? (
         <PermissionCard
           requestOverride={current.request}
           sessionIdOverride={current.sessionId}
-          remainingCount={candidates.length - 1}
+          remainingCount={decisionCount - 1}
           onCollapse={() => setCollapsed(true)}
         />
-      ) : streamInterruption ? (
+      ) : !current && userQuestion ? (
+        <UserQuestionCard
+          request={userQuestion}
+          collapsed={collapsed}
+          onCollapse={() => setCollapsed(true)}
+          onSkipped={onUserQuestionSkipped}
+        />
+      ) : !current && planApproval ? (
+        <PlanApprovalCard
+          target={planApproval}
+          collapsed={collapsed}
+          onCollapse={() => setCollapsed(true)}
+        />
+      ) : !current && !userQuestion && !planApproval && streamInterruption && interruptionVisible && !collapsed ? (
         <StreamInterruptionDecisionRow
           decision={streamInterruption}
           sessionId={currentSessionId}

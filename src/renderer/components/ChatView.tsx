@@ -38,8 +38,6 @@ import { ChatTraceFallback } from './features/chat/ChatTraceFallback';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
 import { ChatInput } from './features/chat/ChatInput';
-import { UserQuestionCard } from './UserQuestionCard';
-import { PlanApprovalCard } from './PlanApprovalCard';
 import { applyVoicePartialsToProjection } from '../utils/voicePartialOverlay';
 import { useVoiceCallStore } from '../stores/voiceCallStore';
 import { GoalStatusBar } from './features/chat/GoalStatusBar';
@@ -135,13 +133,13 @@ export const ChatView: React.FC = () => {
   } = useAgent();
   const buildComposerContext = useComposerStore((state) => state.buildContext);
   const hydrateComposer = useComposerStore((state) => state.hydrateFromSession);
-  // G2 打断式选项卡：当前会话有待答的 AskUserQuestion 时，卡片遮盖 composer，
-  // 语义 = 必须先回答（或显式跳过）才能继续输入。队首先答，答完露出下一题。
-  const pendingUserQuestion = useSessionStore((state) =>
+  // 待答问题进入 DecisionSlot；composer 始终保留，普通消息不会被当成答案。
+  const pendingUserQuestions = useSessionStore((state) =>
     currentSessionId
-      ? (state.pendingUserQuestionsBySessionId?.get(currentSessionId)?.[0] ?? null)
-      : null,
+      ? (state.pendingUserQuestionsBySessionId?.get(currentSessionId) ?? [])
+      : [],
   );
+  const pendingUserQuestion = pendingUserQuestions[0] ?? null;
   const pendingPlanApproval = findPendingPlanApproval(messages, currentSessionId);
   const hasPlanApprovalEvidence = hasPlanApproval(messages);
   const currentSessionWorkingDirectory = currentSession
@@ -214,6 +212,7 @@ export const ChatView: React.FC = () => {
 
   // Rewind Panel 状态 (Esc+Esc)
   const [showRewindPanel, setShowRewindPanel] = useState(false);
+  const [skippedQuestionSessionId, setSkippedQuestionSessionId] = useState<string | null>(null);
   const lastEscRef = useRef<number>(0);
 
   // Search 状态
@@ -598,7 +597,7 @@ export const ChatView: React.FC = () => {
   // @neo 提交分支已移除（2026-07-29 拍板）：输入框不再有工作卡/续接交互，
   // @neo 字样按普通文本消息发送；工作卡从 Neo 协同页发起。
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
-    return sendWithImmediateAssistantFeedback({
+    const sent = await sendWithImmediateAssistantFeedback({
       showFeedback: () => setPendingAssistantFeedbackStartedAt(Date.now()),
       clearFeedback: () => setPendingAssistantFeedbackStartedAt(null),
       send: async () => {
@@ -611,11 +610,17 @@ export const ChatView: React.FC = () => {
         return didSend === true;
       },
     });
+    // 跳过提问后的 placeholder 出口（R5 帧 8）：下一条普通消息真的发出去了才恢复常规文案。
+    if (sent && currentSessionId === skippedQuestionSessionId) {
+      setSkippedQuestionSessionId(null);
+    }
+    return sent;
   }, [
     currentSessionId,
     ensureModelConfigured,
     requireAuthAsync,
     sendMessage,
+    skippedQuestionSessionId,
   ]);
 
   useEffect(() => {
@@ -945,8 +950,14 @@ export const ChatView: React.FC = () => {
           {/* Pinned todo progress bar — visible above the input */}
           {!hasPlanApprovalEvidence && <PinnedTodoBar plan={plan} sessionId={currentSessionId} />}
 
-          {/* 当场拍板权限卡：固定在输入框上方，不随时间线滚动。 */}
-          <DecisionSlot streamInterruption={streamInterruptionDecision} />
+          {/* 待决卡共用一个固定槽位；一次只展示一张，输入区始终保留。 */}
+          <DecisionSlot
+            streamInterruption={streamInterruptionDecision}
+            userQuestion={pendingUserQuestion}
+            userQuestionCount={pendingUserQuestions.length}
+            planApproval={pendingPlanApproval}
+            onUserQuestionSkipped={() => setSkippedQuestionSessionId(currentSessionId)}
+          />
 
           {/* 讨论流浮层已收进右侧「本会话的代理」面板的「事件」折叠区（N-L6-AGENTVIEW S2），
               输入框上方不再另起浮层 */}
@@ -960,29 +971,18 @@ export const ChatView: React.FC = () => {
           {/* /goal 运行进度条（独立一行，仅 goal 运行中显示） */}
           <GoalStatusBar />
 
-          {/* G2 打断式选项卡：有待答问题时遮盖/替换输入区（拍板形态，非 Modal 非内联卡） */}
-          {pendingUserQuestion && (
-            <UserQuestionCard request={pendingUserQuestion} />
-          )}
-
-          {pendingPlanApproval && !pendingUserQuestion && (
-            <PlanApprovalCard target={pendingPlanApproval} />
-          )}
-
-          {/* Input —— 待答问题/计划审批期间保持挂载但隐藏（草稿不丢），卡片答复后自动恢复 */}
-          <div className={pendingUserQuestion || pendingPlanApproval ? 'hidden' : undefined}>
-            <ChatInput
-              ref={chatInputRef}
-              onSend={handleSendEnvelope}
-              onSteer={handleSteerEnvelope}
-              disabled={effectiveIsProcessing || isCreatingSession}
-              isProcessing={effectiveIsProcessing}
-              hasStoppableBackgroundWork={hasStoppableSwarmWork}
-              isInterrupting={isInterrupting}
-              onStop={cancel}
-              hasPlan={false}
-            />
-          </div>
+          <ChatInput
+            ref={chatInputRef}
+            onSend={handleSendEnvelope}
+            onSteer={handleSteerEnvelope}
+            disabled={effectiveIsProcessing || isCreatingSession}
+            isProcessing={effectiveIsProcessing}
+            hasStoppableBackgroundWork={hasStoppableSwarmWork}
+            isInterrupting={isInterrupting}
+            onStop={cancel}
+            hasPlan={false}
+            placeholder={currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined}
+          />
         </div>
       </div>
 

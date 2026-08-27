@@ -90,7 +90,11 @@ export const PlanApprovalEvidence: React.FC<{ approval: PlanApprovalRecord }> = 
   );
 };
 
-export const PlanApprovalCard: React.FC<{ target: PendingPlanApprovalTarget }> = ({ target }) => {
+export const PlanApprovalCard: React.FC<{
+  target: PendingPlanApprovalTarget;
+  collapsed?: boolean;
+  onCollapse?: () => void;
+}> = ({ target, collapsed: controlledCollapsed, onCollapse }) => {
   const { t } = useI18n();
   const [steps, setSteps] = useState<PlanApprovalStep[]>(() => target.approval.steps.map((step) => ({ ...step })));
   const [mode, setMode] = useState<EditorMode>('steps');
@@ -100,13 +104,15 @@ export const PlanApprovalCard: React.FC<{ target: PendingPlanApprovalTarget }> =
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
+  const collapsed = controlledCollapsed ?? internalCollapsed;
+  const isCollapseControlled = controlledCollapsed !== undefined;
   const cardRef = useRef<HTMLDivElement>(null);
   const primaryButtonRef = useRef<HTMLButtonElement>(null);
   const rowRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   useEffect(() => {
-    setCollapsed(false);
+    setInternalCollapsed(false);
   }, [target.toolCallId]);
 
   useEffect(() => {
@@ -184,7 +190,8 @@ export const PlanApprovalCard: React.FC<{ target: PendingPlanApprovalTarget }> =
         } else if (mode === 'feedback') {
           setMode('steps');
         } else if (!submitting) {
-          setCollapsed(true);
+          if (onCollapse) onCollapse();
+          else setInternalCollapsed(true);
         }
         return;
       }
@@ -211,15 +218,16 @@ export const PlanApprovalCard: React.FC<{ target: PendingPlanApprovalTarget }> =
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [collapsed, editingId, mode, steps, submitting]);
+  }, [collapsed, editingId, mode, onCollapse, steps, submitting]);
 
   if (collapsed) {
+    if (isCollapseControlled) return null;
     return (
       <DecisionCollapsedBar
         label={t.decisionCard.pendingLabel}
         expandLabel={t.decisionCard.expand}
         count={1}
-        onExpand={() => setCollapsed(false)}
+        onExpand={() => setInternalCollapsed(false)}
         testId="plan-approval-collapsed"
       />
     );

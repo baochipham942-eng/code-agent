@@ -2,10 +2,9 @@
 // User Question Types (for Gen 3+ ask_user_question)
 // ============================================================================
 
-export interface UserQuestionOption {
-  label: string;
-  description: string;
-}
+import type { UserQuestionOption } from './askUserQuestion';
+
+export type { UserQuestionOption } from './askUserQuestion';
 
 export interface UserQuestion {
   question: string;

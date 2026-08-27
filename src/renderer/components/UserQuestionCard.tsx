@@ -1,9 +1,8 @@
 // ============================================================================
 // UserQuestionCard —— AskUserQuestion 打断式选项卡（G2 拍板形态，2026-07-27）
 //
-// 模型调 AskUserQuestion 时，本组件负责逐题作答；当前挂载关系仍由 ChatView 控制，
-// pending 期间 ChatInput 保持挂载但隐藏。提问卡迁入 DecisionSlot 且不替换输入区
-// 属于 N-DECIDE-NOREPLACE，本组件不提前改变那条交互边界。
+// 模型调 AskUserQuestion 时，本组件负责逐题作答；ChatView 把它挂进 DecisionSlot，
+// ChatInput 始终在槽位下方常显，普通消息不会混入 USER_QUESTION_RESPONSE。
 //
 // 与权限卡的视觉区分必须成立：权限卡 = 安全语义琥珀/红（「我要动你的东西，
 // 批不批」，带风险等级/记忆范围）；问题卡 = 中性询问语义蓝（「我需要你选一个
@@ -17,6 +16,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Check, HelpCircle } from 'lucide-react';
 import type { UserQuestionRequest, UserQuestionResponse } from '@shared/contract';
+import { normalizeUserQuestionOption } from '@shared/contract/askUserQuestion';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useSessionStore } from '../stores/sessionStore';
 import { Button } from './primitives/Button';
@@ -29,6 +29,10 @@ const logger = createLogger('UserQuestionCard');
 
 interface Props {
   request: UserQuestionRequest;
+  /** DecisionSlot 控制全族共用的 Esc 迷你条；独立渲染时仍使用组件内状态。 */
+  collapsed?: boolean;
+  onCollapse?: () => void;
+  onSkipped?: () => void;
 }
 
 // 单选/多选项的选中指示圆点（不是按钮，故不走 primitives/Button）。
@@ -48,7 +52,7 @@ const SelectionIndicator: React.FC<{ selected: boolean; multiSelect: boolean }> 
   </div>
 );
 
-export const UserQuestionCard: React.FC<Props> = ({ request }) => {
+export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controlledCollapsed, onCollapse, onSkipped }) => {
   const { t } = useI18n();
   const cardRef = useRef<HTMLDivElement>(null);
   const primaryButtonRef = useRef<HTMLButtonElement>(null);
@@ -61,7 +65,10 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
   const [otherText, setOtherText] = useState<Record<string, string>>({});
   const [declineReason, setDeclineReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
+  const collapsed = controlledCollapsed ?? internalCollapsed;
+  const isCollapseControlled = controlledCollapsed !== undefined;
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const clearAutoAdvance = useCallback(() => {
     if (autoAdvanceTimerRef.current !== null) {
@@ -81,7 +88,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
     setOtherText({});
     setDeclineReason('');
     setSubmitting(false);
-    setCollapsed(false);
+    setInternalCollapsed(false);
     setStepIndex(0);
     clearAutoAdvance();
     return clearAutoAdvance;
@@ -189,13 +196,14 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
       setSubmitting(true);
       try {
         await ipcService.invoke(IPC_CHANNELS.USER_QUESTION_RESPONSE, response);
+        if (response.declined === true) onSkipped?.();
         useSessionStore.getState().clearPendingUserQuestion(request);
       } catch (error) {
         logger.error('Failed to send user question response', error);
         setSubmitting(false);
       }
     },
-    [request, submitting],
+    [onSkipped, request, submitting],
   );
 
   const handleSubmit = () => {
@@ -213,6 +221,8 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
   }, [respond, request.id, declineReason]);
 
   const currentQuestion = request.questions[stepIndex];
+  const currentOptions = currentQuestion?.options.map(normalizeUserQuestionOption) ?? [];
+  const recommendedOptionIndex = currentOptions.findIndex((option) => option.recommended === true);
   const hasMultipleSteps = request.questions.length > 1;
   const isLastStep = stepIndex === request.questions.length - 1;
   const currentStepAnswered = isQuestionAnswered(stepIndex);
@@ -223,6 +233,12 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
     primaryButtonRef.current?.focus();
   }, [collapsed, currentStepAnswered, isLastStep, stepIndex]);
 
+  // 推荐项只拿初始焦点和焦点描边，不写入 answers；用户仍需显式点击或按 Enter。
+  useEffect(() => {
+    if (collapsed || currentStepAnswered || recommendedOptionIndex < 0) return;
+    optionRefs.current[recommendedOptionIndex]?.focus();
+  }, [collapsed, currentStepAnswered, recommendedOptionIndex, request.id, stepIndex]);
+
   // Esc 收起；多题向导的 ←/→ 只负责上一题/下一题；Enter 执行当前聚焦的主按钮。
   useEffect(() => {
     if (collapsed) return;
@@ -230,7 +246,8 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        setCollapsed(true);
+        if (onCollapse) onCollapse();
+        else setInternalCollapsed(true);
         return;
       }
       if (isEditableTarget(e.target)) return;
@@ -260,24 +277,25 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [collapsed, currentStepAnswered, handleBack, handleNext, hasMultipleSteps, isLastStep, stepIndex, submitting]);
+  }, [collapsed, currentStepAnswered, handleBack, handleNext, hasMultipleSteps, isLastStep, onCollapse, stepIndex, submitting]);
 
   if (!currentQuestion) return null;
 
   if (collapsed) {
+    if (isCollapseControlled) return null;
     return (
       <DecisionCollapsedBar
         label={t.decisionCard.pendingLabel}
         expandLabel={t.decisionCard.expand}
         count={1}
-        onExpand={() => setCollapsed(false)}
+        onExpand={() => setInternalCollapsed(false)}
         testId="user-question-collapsed"
       />
     );
   }
 
   return (
-    <div className="w-full px-4 animate-slideUp" data-testid="user-question-card">
+    <div className="w-full animate-slideUp" data-testid="user-question-card">
       <div
         ref={cardRef}
         tabIndex={-1}
@@ -330,11 +348,12 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
               </div>
 
               <div className="space-y-2">
-                {currentQuestion.options.map((option, oIndex) => (
+                {currentOptions.map((option, oIndex) => (
                   <button /* ds-allow:button: 选项行整面可点（选中指示+标题+描述复合内容），沿用旧 UserQuestionModal 选项行形态 */
                     key={oIndex}
+                    ref={(element) => { optionRefs.current[oIndex] = element; }}
                     onClick={() => handleSelect(stepIndex, currentQuestion.header, option.label, currentQuestion.multiSelect)}
-                    className={`w-full p-2.5 rounded-lg border text-left transition-all ${
+                    className={`w-full p-2.5 rounded-lg border text-left transition-all focus:outline-hidden focus:border-badge-info focus:bg-blue-500/5 ${
                       isSelected(currentQuestion.header, option.label)
                         ? 'border-badge-info bg-blue-500/10 ring-1 ring-blue-500/50'
                         : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
@@ -346,8 +365,13 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
                         multiSelect={!!currentQuestion.multiSelect}
                       />
                       <div className="flex-1">
-                        <div className="font-medium text-zinc-200 text-sm">
-                          {option.label}
+                        <div className="flex items-center gap-2 font-medium text-zinc-200 text-sm">
+                          <span>{option.label}</span>
+                          {option.recommended && (
+                            <span className="rounded-full border border-badge-info/30 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-badge-info">
+                              {t.userQuestion.recommended}
+                            </span>
+                          )}
                         </div>
                         {option.description && (
                           <p className="text-xs text-zinc-400 mt-0.5">

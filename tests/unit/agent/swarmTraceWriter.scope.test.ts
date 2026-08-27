@@ -123,7 +123,11 @@ describe('SwarmTraceWriter strict run scope', () => {
 
     await writer.drain();
     expect(startRun).toHaveBeenCalledTimes(2);
-    expect(upsertAgent.mock.calls.map(([input]) => input.agentId)).toEqual(['agent-a', 'agent-b']);
+    expect(upsertAgent.mock.calls.map(([input]) => [input.agentId, input.status])).toEqual([
+      ['agent-a', 'running'],
+      ['agent-a', 'completed'],
+      ['agent-b', 'running'],
+    ]);
     expect(closeRun).toHaveBeenCalledTimes(1);
     expect(appendEvent.mock.calls.some(([input]) => input.agentId === 'foreign')).toBe(false);
     expect(appendEvent.mock.calls.some(([input]) => input.agentId === 'spoofed')).toBe(false);

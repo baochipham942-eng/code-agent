@@ -21,11 +21,11 @@ import { generateMessageId } from '../../../shared/utils/id';
 import { getShellEnvironmentValue, getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
-import { assertAgentEngineCapability } from './agentEngineGuards';
+import { assertAgentEngineRunnable } from './agentEngineGuards';
 import { assertExternalSubagentProfile, assertReadOnlyExternalProfile, assertWorkspaceCwd } from './agentEngineGuards';
 import { normalizeCodexCliRunTiming } from './agentEngineTiming';
 import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
-import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
+import { buildAgentEngineFailureMetadata, classifyAgentEngineFailure } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 import { emitExternalAgentEvent } from './agentEngineEventSink';
@@ -45,7 +45,6 @@ export interface ClaudeProtocolCliConfig {
   label: string;
   runPrefix: string;
   logSlug: string;
-  errorCode: string;
   promptTransport: 'stdin' | 'argv';
   buildArgs(profile: AgentEnginePermissionProfile, model?: string | null, prompt?: string): string[];
   buildEnv(): NodeJS.ProcessEnv;
@@ -58,7 +57,6 @@ const CLAUDE_CODE_CONFIG: ClaudeProtocolCliConfig = {
   label: 'Claude Code',
   runPrefix: 'claude',
   logSlug: 'claude-code',
-  errorCode: 'CLAUDE_CODE_FAILED',
   promptTransport: 'stdin',
   buildArgs: buildClaudeCodeArgs,
   buildEnv: buildSafeEnv,
@@ -142,10 +140,10 @@ export class ClaudeCodeAdapter {
     const cwd = assertWorkspaceCwd(request.cwd, request.workspaceRoot);
     const registry = getAgentEngineRegistry();
     const descriptor = await registry.get(config.kind);
-    if (descriptor.installState !== 'installed' || !descriptor.binaryPath) {
-      throw new Error(descriptor.lastError || `${config.label} is not installed or not ready.`);
-    }
-    assertAgentEngineCapability(config.kind, descriptor.capabilities, request.resumeLaunch ? 'resume' : 'execute');
+    const binaryPath = assertAgentEngineRunnable(
+      descriptor,
+      request.resumeLaunch ? 'resume' : 'execute',
+    );
 
     const permissionProfile = request.executionOrigin === 'subagent'
       ? assertExternalSubagentProfile(request.permissionProfile, { origin: 'subagent', cwd })
@@ -240,7 +238,7 @@ export class ClaudeCodeAdapter {
 
     const args = request.resumeLaunch?.args
       ?? config.buildArgs(permissionProfile, model, config.promptTransport === 'argv' ? launchPrompt : undefined);
-    const child = spawn(descriptor.binaryPath, args, {
+    const child = spawn(binaryPath, args, {
       cwd,
       env,
       detached: process.platform !== 'win32',
@@ -256,7 +254,7 @@ export class ClaudeCodeAdapter {
       else child.kill('SIGTERM');
     });
     await request.durableLifecycle?.attachProcess(child, {
-      binary: descriptor.binaryPath,
+      binary: binaryPath,
       version: descriptor.version,
       commandSummary,
       logPath,
@@ -555,7 +553,7 @@ export class ClaudeCodeAdapter {
         completedAt,
         durationMs: completedAt - startedAt,
         failure: {
-          message,
+          message: failureDiagnostics.suggestion,
           exitCode: exitCode ?? undefined,
           category: 'agent_engine',
           reason: failureDiagnostics.reason,
@@ -565,31 +563,19 @@ export class ClaudeCodeAdapter {
         taskId,
         type: 'agent_engine.failed',
         status: 'failed',
-        message,
+        message: failureDiagnostics.suggestion,
         data: { exitCode, logPath, failure: failureDiagnostics },
-      });
-      ledger.queueNotification({
-        taskId,
-        sessionId: request.sessionId,
-        type: 'task_failed',
-        title: `${config.label} failed`,
-        message,
-        payload: { runId, logPath, failure: failureDiagnostics },
-      });
-      emit({
-        type: 'error',
-        data: { message, code: config.errorCode, suggestion: failureDiagnostics.suggestion, details: { runId, logPath, exitCode, failure: failureDiagnostics } },
       });
       const assistantMessage: Message = {
         id: turnId,
         role: 'assistant',
-        content: formatAgentEngineFailureContent(descriptor.label, failureDiagnostics, logPath),
+        content: '',
         timestamp: completedAt,
-        modelDecision: buildAgentEngineModelDecision(descriptor, model, completedAt, failureDiagnostics),
         metadata: {
           workbench: {
             workingDirectory: cwd,
           },
+          agentError: buildAgentEngineFailureMetadata(failureDiagnostics),
         },
       };
       await sessionManager.addMessageToSession(request.sessionId, assistantMessage);

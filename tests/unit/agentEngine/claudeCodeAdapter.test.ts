@@ -181,9 +181,10 @@ describe('ClaudeCodeAdapter.run', () => {
     mocks.getLogsPath.mockReturnValue(path.join(tempDir, 'logs'));
     mocks.registryGet.mockResolvedValue({
       kind: 'claude_code',
+      label: 'Claude Code',
       installState: 'installed',
       runtimeState: 'ready',
-      executable: false,
+      executable: true,
       binaryPath: '/Users/linchen/.local/bin/claude',
     });
     mocks.addMessageToSession.mockResolvedValue(undefined);
@@ -802,7 +803,7 @@ describe('ClaudeCodeAdapter.run', () => {
     );
     expect(mocks.upsertTask).toHaveBeenLastCalledWith(expect.objectContaining({
       failure: expect.objectContaining({
-        message: 'authentication_failed',
+        message: expect.stringContaining('认证失败'),
         reason: 'auth_failed',
       }),
     }));
@@ -820,17 +821,13 @@ describe('ClaudeCodeAdapter.run', () => {
       .find((message) => message?.role === 'assistant');
     expect(assistantMessage).toMatchObject({
       role: 'assistant',
-      content: expect.stringContaining('Claude Code 认证失败'),
-      modelDecision: expect.objectContaining({
-        externalEngine: expect.objectContaining({
-          kind: 'claude_code',
-          failure: expect.objectContaining({
-            category: 'auth',
-            reason: 'auth_failed',
-          }),
-        }),
+      content: '',
+      metadata: expect.objectContaining({
+        agentError: expect.objectContaining({ category: 'auth' }),
       }),
     });
+    expect(mocks.queueNotification).not.toHaveBeenCalled();
+    expect(mocks.webContentsSend.mock.calls.some((call) => call[1]?.type === 'error')).toBe(false);
     expect(mocks.webContentsSend).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
@@ -945,9 +942,10 @@ describe('ClaudeCodeAdapter.run', () => {
     // 真机一轮把 698 条 reasoning 全当正文渲染了出来。
     mocks.registryGet.mockResolvedValue({
       kind: 'dsh_cli',
+      label: 'DeepSeek Harness',
       installState: 'installed',
       runtimeState: 'ready',
-      executable: false,
+      executable: true,
       binaryPath: '/Users/linchen/.npm-global/bin/dsh',
     });
     mocks.spawn.mockImplementation(() => createMockChild([
@@ -997,8 +995,8 @@ describe('ClaudeCodeAdapter.run', () => {
     // 崩溃形态：session 行已出、进程随后非正常退出。锚点必须已在 durable 存储里，
     // 否则 decideExternalRecovery 永远只能 resume_evidence_incomplete。
     mocks.registryGet.mockResolvedValue({
-      kind: 'dsh_cli', installState: 'installed', runtimeState: 'ready',
-      executable: false, binaryPath: '/Users/linchen/.npm-global/bin/dsh',
+      kind: 'dsh_cli', label: 'DeepSeek Harness', installState: 'installed', runtimeState: 'ready',
+      executable: true, binaryPath: '/Users/linchen/.npm-global/bin/dsh',
     });
     mocks.spawn.mockImplementation(() => createMockChild([
       JSON.stringify({ type: 'session', sessionId: 'session-dsh-crash' }),
@@ -1022,8 +1020,8 @@ describe('ClaudeCodeAdapter.run', () => {
 
   it('resumes dsh through the runner-swap patch and confirms the persisted session id', async () => {
     mocks.registryGet.mockResolvedValue({
-      kind: 'dsh_cli', installState: 'installed', runtimeState: 'ready',
-      executable: false, binaryPath: '/Users/linchen/.npm-global/bin/dsh',
+      kind: 'dsh_cli', label: 'DeepSeek Harness', installState: 'installed', runtimeState: 'ready',
+      executable: true, binaryPath: '/Users/linchen/.npm-global/bin/dsh',
     });
     mocks.spawn.mockImplementation(() => createMockChild([
       JSON.stringify({ type: 'session', sessionId: 'session-dsh-target' }),
@@ -1055,8 +1053,8 @@ describe('ClaudeCodeAdapter.run', () => {
 
   it('fails closed when dsh resume announces a different session id', async () => {
     mocks.registryGet.mockResolvedValue({
-      kind: 'dsh_cli', installState: 'installed', runtimeState: 'ready',
-      executable: false, binaryPath: '/Users/linchen/.npm-global/bin/dsh',
+      kind: 'dsh_cli', label: 'DeepSeek Harness', installState: 'installed', runtimeState: 'ready',
+      executable: true, binaryPath: '/Users/linchen/.npm-global/bin/dsh',
     });
     mocks.spawn.mockImplementation(() => createMockChild([
       JSON.stringify({ type: 'session', sessionId: 'session-dsh-other' }),

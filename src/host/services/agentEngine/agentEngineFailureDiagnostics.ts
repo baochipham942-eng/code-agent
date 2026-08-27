@@ -2,6 +2,7 @@ import type {
   AgentEngineFailureDiagnostics,
   AgentEngineKind,
 } from '../../../shared/contract/agentEngine';
+import type { AgentErrorCategory, AgentErrorMetadata } from '../../../shared/contract/message';
 import { classifyModelErrorMessage } from '../../../shared/modelErrorDiagnostics';
 
 function firstStatusCode(message: string): number | undefined {
@@ -166,20 +167,41 @@ export function classifyAgentEngineFailure(args: {
   };
 }
 
-export function formatAgentEngineFailureContent(
-  engineLabel: string,
+function toAgentErrorCategory(failure: AgentEngineFailureDiagnostics): AgentErrorCategory {
+  switch (failure.category) {
+    case 'auth':
+      return 'auth';
+    case 'quota':
+      return failure.reliability?.quotaState === 'exhausted'
+        ? 'insufficient_balance'
+        : 'rate_limited';
+    case 'timeout':
+    case 'network':
+      return 'network';
+    case 'permission':
+      return 'forbidden';
+    case 'model_config':
+      return failure.statusCode === 404 || failure.reason.includes('not_found')
+        ? 'model_not_found'
+        : 'generic';
+    case 'missing_cli':
+    case 'runtime':
+    case 'unknown':
+      return 'generic';
+  }
+}
+
+/**
+ * User-facing failure card metadata. Raw commands, absolute paths and provider output stay
+ * in the durable engine log; the conversation receives only a stable category and action.
+ */
+export function buildAgentEngineFailureMetadata(
   failure: AgentEngineFailureDiagnostics,
-  logPath?: string,
-): string {
-  const failureMessage = failure.message.length > 700
-    ? `${failure.message.slice(0, 700)}...`
-    : failure.message;
-  return [
-    `**${engineLabel} 运行失败**`,
-    '',
-    failureMessage,
-    '',
-    `建议：${failure.suggestion}`,
-    logPath ? `日志：${logPath}` : null,
-  ].filter((line): line is string => line !== null).join('\n');
+): AgentErrorMetadata {
+  return {
+    category: toAgentErrorCategory(failure),
+    rawMessage: failure.suggestion,
+    ...(failure.statusCode !== undefined ? { httpStatus: failure.statusCode } : {}),
+    timestamp: failure.occurredAt ?? Date.now(),
+  };
 }

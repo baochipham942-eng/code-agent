@@ -35,6 +35,27 @@ export function assertAgentEngineManifestCapability(
   assertAgentEngineCapability(engine, capabilities, capability);
 }
 
+/**
+ * Single launch gate for every external adapter.
+ *
+ * Version probing is deliberately absent here: resolving the binary proves installation,
+ * while a failed metadata probe is logged by the registry and must not block this turn.
+ * Capability and adapter readiness remain fail-closed.
+ */
+export function assertAgentEngineRunnable(
+  descriptor: AgentEngineDescriptor,
+  capability: AgentEngineCapability,
+): string {
+  if (descriptor.installState !== 'installed' || !descriptor.binaryPath) {
+    throw new Error(`${descriptor.label} 客户端未安装，或 Neo 当前找不到它。请安装后重试。`);
+  }
+  assertAgentEngineCapability(descriptor.kind, descriptor.capabilities, capability);
+  if (!descriptor.executable) {
+    throw new Error(`${descriptor.label} 当前未开放执行能力。请切换其他引擎。`);
+  }
+  return descriptor.binaryPath;
+}
+
 export function assertWorkspaceCwd(cwd: string, workspaceRoot: string): string {
   const resolvedCwd = realpathOrThrow(cwd, 'cwd');
   const resolvedRoot = realpathOrThrow(workspaceRoot, 'workspace root');
@@ -141,13 +162,7 @@ export function buildManualAgentEngineSelection(
 
   assertExternalEngineSessionAllowed(session);
 
-  if (descriptor.installState !== 'installed') {
-    throw new Error(descriptor.lastError || `${descriptor.label} is not installed or executable.`);
-  }
-  assertAgentEngineCapability(descriptor.kind, descriptor.capabilities, 'execute');
-  if (!descriptor.executable) {
-    throw new Error(descriptor.lastError || `${descriptor.label} is not executable.`);
-  }
+  assertAgentEngineRunnable(descriptor, 'execute');
 
   const permissionProfile = assertExternalEngineProfile(descriptor.kind, profile ?? descriptor.defaultPermissionProfile);
   const workspaceRoot = session.workingDirectory?.trim();

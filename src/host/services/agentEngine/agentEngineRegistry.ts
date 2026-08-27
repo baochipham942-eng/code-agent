@@ -224,7 +224,10 @@ export class AgentEngineRegistry {
     detectedAt: number,
   ): AgentEngineDescriptor {
     const builtin = kind === 'native';
-    const installed = builtin || Boolean(probe?.binaryPath && !probe.error);
+    // Installation is a filesystem fact. A slow or failed `--version` call only means
+    // the optional metadata probe is inconclusive; it must not revoke a binary that was
+    // already resolved and turn a foreground run into a false "missing" failure.
+    const installed = builtin || Boolean(probe?.binaryPath);
     const executable = builtin || (
       installed
       && manifest.adapter.evidence === 'production'

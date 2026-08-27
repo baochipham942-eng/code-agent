@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildAgentEngineFailureMetadata,
   classifyAgentEngineFailure,
-  formatAgentEngineFailureContent,
 } from '../../../src/host/services/agentEngine/agentEngineFailureDiagnostics';
 
 describe('agent engine failure diagnostics', () => {
@@ -21,11 +21,11 @@ describe('agent engine failure diagnostics', () => {
       exitCode: 1,
     });
 
-    const content = formatAgentEngineFailureContent('Claude Code', failure, '/tmp/claude.log');
-    expect(content).toContain('模型参数不兼容');
-    expect(content).toContain('默认温度 1');
-    expect(content).toContain('日志：/tmp/claude.log');
-    expect(content).not.toContain('litellm.BadRequestError');
+    const metadata = buildAgentEngineFailureMetadata(failure);
+    expect(metadata).toMatchObject({ category: 'generic', timestamp: 123 });
+    expect(metadata.rawMessage).toContain('默认温度 1');
+    expect(metadata.rawMessage).not.toContain('/tmp/claude.log');
+    expect(metadata.rawMessage).not.toContain('litellm.BadRequestError');
   });
 
   it('classifies missing fallback configuration separately', () => {
@@ -39,5 +39,19 @@ describe('agent engine failure diagnostics', () => {
       reason: 'fallback_not_configured',
       retryable: false,
     });
+  });
+
+  it('keeps absolute binary paths out of the user-facing failure card metadata', () => {
+    const failure = classifyAgentEngineFailure({
+      engine: 'kimi_code_acp',
+      message: 'Command failed: /Users/example/.npm-global/bin/kimi --version',
+      occurredAt: 456,
+    });
+
+    const metadata = buildAgentEngineFailureMetadata(failure);
+
+    expect(metadata.rawMessage).not.toContain('/Users/example');
+    expect(metadata.rawMessage).not.toContain('--version');
+    expect(metadata).toMatchObject({ category: 'generic', timestamp: 456 });
   });
 });

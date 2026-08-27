@@ -229,6 +229,46 @@ describe('AcpClientAdapter — 完整 turn', () => {
     expect(deltas.filter((d) => d.path === 'content').map((d) => d.text)).toEqual(['O', 'K']);
     expect(deltas.filter((d) => d.path === 'reasoning').map((d) => d.text)).toEqual(['想一下']);
   });
+
+  it('descriptor 带版本探活超时痕迹时仍执行本轮，且不向用户回显绝对路径', async () => {
+    mocks.registryGet.mockResolvedValue({
+      kind: 'kimi_code_acp',
+      label: 'Kimi Code (ACP)',
+      installState: 'installed',
+      binaryPath: '/fake/bin/kimi',
+      executable: true,
+      capabilities: ['execute', 'stream_events', 'resume', 'workspace_write'],
+      lastError: 'Command failed: /fake/bin/kimi --version',
+    });
+    installFakeAgent({
+      updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'OK' } }],
+    });
+
+    const result = await new KimiAcpAdapter().run(baseRequest() as never);
+
+    expect(result).toMatchObject({ status: 'completed', outputText: 'OK' });
+    expect(JSON.stringify(mocks.addMessageToSession.mock.calls)).not.toContain('/fake/bin/kimi');
+  });
+
+  it('真实运行失败只落一张结构化会话卡，不再额外发 toast/error 事件', async () => {
+    installFakeAgent({ updates: [] });
+
+    const result = await new KimiAcpAdapter().run(baseRequest() as never);
+
+    expect(result.status).toBe('failed');
+    expect(mocks.queueNotification).not.toHaveBeenCalled();
+    expect(events.some((event) => event.type === 'error')).toBe(false);
+    const assistantMessage = mocks.addMessageToSession.mock.calls
+      .map((call) => call[1])
+      .find((message) => message?.role === 'assistant');
+    expect(assistantMessage).toMatchObject({
+      content: '',
+      metadata: expect.objectContaining({
+        agentError: expect.objectContaining({ category: 'generic' }),
+      }),
+    });
+    expect(JSON.stringify(assistantMessage)).not.toContain('/fake/bin/kimi');
+  });
 });
 
 describe('AcpClientAdapter — 收尾不许打死宿主进程', () => {
@@ -445,7 +485,7 @@ describe('AcpClientAdapter — 用户看到的失败卡', () => {
    * 🔴 2026-08-27 爸真机截图：聊天区红卡写着「Kimi Code (ACP) 运行失败 / ACP connection closed」。
    * 那句是 SDK 在连接带着在飞请求关闭时抛的内部字符串，对使用者零信息量。
    */
-  it('把 SDK 内部话术翻成人话，原文只留在 details 里', async () => {
+  it('把 SDK 内部话术翻成人话，原文只留在结构化诊断里', async () => {
     const child = installFakeAgent({ updates: [], hangPrompt: true });
     // session/prompt 永不作答，再掐断连接 —— 复现 SDK 抛 "ACP connection closed"
     const stdout = (child as unknown as { stdout: PassThrough }).stdout;
@@ -454,14 +494,14 @@ describe('AcpClientAdapter — 用户看到的失败卡', () => {
     const result = await new KimiAcpAdapter().run(baseRequest() as never);
 
     expect(result.status).toBe('failed');
-    const errorEvent = events.find((e) => e.type === 'error')?.data as
-      | { message: string; details?: { rawError?: string } }
-      | undefined;
-    expect(errorEvent).toBeDefined();
-    expect(errorEvent!.message).not.toMatch(/ACP connection closed/i);
-    expect(errorEvent!.message).toContain('连接');
-    // 原文不丢：排查要用
-    expect(errorEvent!.details?.rawError ?? '').toMatch(/closed/i);
+    expect(events.some((event) => event.type === 'error')).toBe(false);
+    const assistantMessage = mocks.addMessageToSession.mock.calls
+      .map((call) => call[1])
+      .find((message) => message?.role === 'assistant');
+    expect(assistantMessage?.metadata?.agentError?.rawMessage).toContain('连接');
+    expect(assistantMessage?.metadata?.agentError?.rawMessage).not.toMatch(/ACP connection closed/i);
+    // 原文不丢：结构化诊断和日志页仍可用于排查。
+    expect(result.failure?.message ?? '').toMatch(/closed/i);
   });
 
   it('用户中断这一轮时报 cancelled，不画成红色失败卡', async () => {

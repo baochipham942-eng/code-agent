@@ -43,7 +43,6 @@ const DSH_CONFIG: ClaudeProtocolCliConfig = {
   label: 'DeepSeek Harness',
   runPrefix: 'dsh',
   logSlug: 'dsh',
-  errorCode: 'DSH_CLI_FAILED',
   promptTransport: 'argv',
   buildArgs: buildDshArgs,
   buildEnv: buildDshEnv,

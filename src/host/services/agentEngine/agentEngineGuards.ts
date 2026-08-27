@@ -67,7 +67,7 @@ export function assertReadOnlyExternalProfile(
  * 每加一家新引擎就漏一次（N-INJGUARD-BROWSER 那次实付）。新引擎只要在 manifest 里
  * 声明 transport:'acp'，这里自动认得。
  */
-export function isAcpTransportEngine(kind: AgentEngineSessionMetadata['kind']): boolean {
+function isAcpTransportEngine(kind: AgentEngineSessionMetadata['kind']): boolean {
   return getExternalEngineManifestForKind(kind)?.adapter.transport === 'acp';
 }
 

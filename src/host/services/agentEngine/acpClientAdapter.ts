@@ -69,7 +69,7 @@ const logger = createLogger('AcpClientAdapter');
 const ACP_PROTOCOL_VERSION = 1;
 const EMPTY_RESPONSE_MESSAGE = 'The ACP engine returned an empty response.';
 
-export interface AcpClientRunRequest extends AgentEngineRunRequest {
+interface AcpClientRunRequest extends AgentEngineRunRequest {
   workspaceRoot: string;
   attachmentsCount?: number;
   messageMetadata?: MessageMetadata;
@@ -97,7 +97,7 @@ interface AcpEngineConfig {
   runPrefix: string;
 }
 
-export class AcpClientAdapter {
+class AcpClientAdapter {
   constructor(private readonly config: AcpEngineConfig) {}
 
   async run(request: AcpClientRunRequest): Promise<AgentEngineRunResult> {

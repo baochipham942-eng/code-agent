@@ -16,6 +16,8 @@ import { formatProviderFallbackToast } from '../../src/renderer/components/Provi
 import type { ProviderFallbackEvent } from '../../src/shared/ipc';
 import { zh } from '../../src/renderer/i18n/zh';
 
+const fallbackCopy = zh.rendererHumanPipe.fallbackBanner;
+
 export interface ModelStrategyFallbackVisibilityResult {
   ok: boolean;
   status: 'passed' | 'failed';
@@ -89,7 +91,7 @@ export function buildModelStrategyFallbackVisibilityResult(): ModelStrategyFallb
   // FallbackBanner 默认折叠（B2-3 人话化：只露一行 from->to 摘要，详情要点开）。
   // 这份契约要证明的是「策略/身份/trace/工具策略文案存在且正确」，不是「默认就展开」，
   // 所以这里显式 defaultExpanded: true 渲染展开态去核对详情；折叠态的可达性由
-  // bannerCollapsedShowsFromTo 另外单独锁（同一份 content，只是不传 defaultExpanded）。
+  // bannerCollapsedShowsSummaryOnly 另外单独锁（同一份 content，只是不传 defaultExpanded）。
   const capabilityHtml = renderToStaticMarkup(React.createElement(FallbackBanner, {
     defaultExpanded: true,
     content: capabilityNoticeContent,
@@ -143,13 +145,15 @@ export function buildModelStrategyFallbackVisibilityResult(): ModelStrategyFallb
   } satisfies ProviderFallbackEvent, zh);
 
   const checks: Record<string, boolean> = {
-    bannerShowsCapabilityStrategy: capabilityHtml.includes('能力自动切换'),
+    // 2026-08-27：#1409 把 FallbackBanner 文案整体进 i18n 人话词表，这里改为引用词表而不是钉技术串——
+    // 锁的是「策略/身份/trace/工具策略/耗尽链/折叠摘要」六个语义位存在且正确，不是某个具体措辞。
+    bannerShowsCapabilityStrategy: capabilityHtml.includes(fallbackCopy.strategies.capability),
     bannerShowsFromToProviderIdentity: includesAll(capabilityHtml, [
-      '原 来源 Mock Relay',
-      '现 名称 Zhipu Relay',
-      '协议 OpenAI-compatible',
-      'endpoint https://mock.example/v1',
-      'endpoint https://relay.example.com/zhipu/v1',
+      `${fallbackCopy.source} Mock Relay`,
+      `${fallbackCopy.name} Zhipu Relay`,
+      `${fallbackCopy.protocol} OpenAI-compatible`,
+      `${fallbackCopy.endpoint} https://mock.example/v1`,
+      `${fallbackCopy.endpoint} https://relay.example.com/zhipu/v1`,
     ]),
     bannerShowsTraceGroups: includesAll(capabilityHtml, [
       '已尝试',
@@ -160,23 +164,25 @@ export function buildModelStrategyFallbackVisibilityResult(): ModelStrategyFallb
       'zhipu/glm-4.5v',
     ]),
     bannerShowsToolPolicyDisabled: includesAll(capabilityHtml, [
-      '工具已关闭',
+      fallbackCopy.toolsDisabled,
       '6 → 0',
-      'Read, Edit, Write, Append +2',
-      'disabled: Read, Edit, Write, Append, Bash, Task',
+      fallbackCopy.hiddenTools,
     ]),
     bannerShowsExhaustedProviderFallback: includesAll(exhaustedHtml, [
-      '自动策略恢复',
-      '已耗尽',
+      fallbackCopy.strategies.provider,
+      fallbackCopy.exhausted,
       'deepseek/deepseek-v4-flash',
       '未切换',
     ]),
     // B2-3 折叠设计的另一半锁：默认折叠时一行摘要（from -> to + reason）必须可达，
     // 且详情（策略标签/工具策略等）必须真的不在——不然折叠态跟展开态没区别，等于白折叠。
-    bannerCollapsedShowsFromTo: includesAll(capabilityCollapsedHtml, [
-      'mock/text-only',
-      'zhipu/glm-4.5v',
-    ]) && !capabilityCollapsedHtml.includes('工具已关闭'),
+    // 2026-08-27（#1409 人话化后）：折叠态只露「已自动换用备用模型 + 人话原因」，模型 id 与
+    // 工具策略只在展开态；现用模型在输入框 chip 上另有出处。锁「折叠真的折叠」这一半。
+    bannerCollapsedShowsSummaryOnly: includesAll(capabilityCollapsedHtml, [
+      fallbackCopy.summary,
+      fallbackCopy.reasons.capability,
+    ]) && !capabilityCollapsedHtml.includes(fallbackCopy.toolsDisabled)
+      && !capabilityCollapsedHtml.includes('zhipu/glm-4.5v'),
     providerToastUsesStrategyMode: providerToast === '自动策略恢复：moonshot/kimi-k2.5 服务不可用，已切换到 deepseek/deepseek-v4-flash 继续任务',
     providerToastShowsMainTaskRecovery: mainTaskToast === '回到主任务模型：zhipu/glm-4.7-flash 触发限流，已回到 moonshot/kimi-k2.5 继续任务',
   };

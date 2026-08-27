@@ -102,7 +102,7 @@ describe('SessionMemberBar（折叠 chip）', () => {
 
     render(<SessionMemberBar sessionId="session-1" />);
     const chip = await screen.findByTestId('session-member-bar-collapsed');
-    expect(chip.textContent).toContain('2 个代理已完成');
+    expect(chip.textContent).toContain('2 个代理 · 完成');
     // 两个代理全部完成且无冲突 → 尾部「合没合」报已合并
     expect(screen.getByTestId('member-bar-merge-state').textContent).toBe('改动已经合到一起了');
     // chip 左侧头像叠：专家行走 RoleInitialAvatar
@@ -134,7 +134,7 @@ describe('SessionMemberBar（折叠 chip）', () => {
     render(<SessionMemberBar sessionId="session-1" />);
     // stream 说 running、账本说 completed：chip 文案只信账本
     const chip = await screen.findByTestId('session-member-bar-collapsed');
-    await waitFor(() => expect(chip.textContent).toContain('2 个代理已完成'));
+    await waitFor(() => expect(chip.textContent).toContain('2 个代理 · 完成'));
     expect(chip.textContent).not.toContain('工作中');
     expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL, {
       sessionId: 'session-1',
@@ -161,8 +161,8 @@ describe('SessionMemberBar（折叠 chip）', () => {
     render(<SessionMemberBar sessionId="session-1" />);
     const chip = await screen.findByTestId('session-member-bar-collapsed');
     await waitFor(() => expect(chip.textContent).toContain('1 个代理工作中'));
-    // 专家行没有真实工具步时回落「正在整理任务…」
-    expect(chip.textContent).toContain('调研员 正在整理任务…');
+    // 专家行没有真实工具步时只报真实 running 数，不编造当前动作
+    expect(chip.textContent).not.toContain('正在整理任务…');
     // 既没全完成也没冲突/卡住 → 不渲染合并态
     expect(screen.queryByTestId('member-bar-merge-state')).toBeNull();
   });
@@ -181,8 +181,8 @@ describe('SessionMemberBar（折叠 chip）', () => {
 
     render(<SessionMemberBar sessionId="session-1" />);
     const chip = await screen.findByTestId('session-member-bar-collapsed');
-    await waitFor(() => expect(chip.textContent).toContain('2 个代理工作中 · 调研员'));
-    expect(chip.textContent).not.toContain('撰稿员 正在整理任务…');
+    await waitFor(() => expect(chip.textContent).toContain('2 个代理工作中'));
+    expect(chip.textContent).not.toContain('正在整理任务…');
   });
 
   it('单个后台 Agent 也进入成员条，不要求组成两人 Team', async () => {
@@ -207,7 +207,8 @@ describe('SessionMemberBar（折叠 chip）', () => {
 
     render(<SessionMemberBar sessionId="session-1" />);
     const chip = await screen.findByTestId('session-member-bar-collapsed');
-    await waitFor(() => expect(chip.textContent).toContain('1 个代理工作中 · 调研员 正在整理任务…'));
+    await waitFor(() => expect(chip.textContent).toContain('1 个代理工作中'));
+    expect(chip.textContent).not.toContain('正在整理任务…');
   });
 
   // 预选是我们比 WorkBuddy 多做的一层：还没跑就先让用户看到这个团队由谁组成

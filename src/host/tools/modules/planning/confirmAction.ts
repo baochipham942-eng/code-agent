@@ -34,7 +34,7 @@ import {
   markDecisionRequestExpired,
   notifyDecisionNeeded,
   notifyIfLateDecisionResponse,
-} from '../../../interaction/userDecision';
+} from '../../../permissions/userDecision';
 
 const logger = createLogger('ConfirmAction');
 

@@ -262,7 +262,7 @@ describe('成员对话页', () => {
     expect(screen.getByTestId('member-final-output').textContent).toContain('清单已核对');
     expect(screen.getByTestId('member-output-ref').textContent).toContain('发布清单.md');
     expect(screen.getByTestId('member-usage').textContent).toContain('5s');
-    // 没有工具步时回落「正在整理任务…」
-    expect(screen.getByTestId('member-current-action').textContent).toContain(zh.chat.activityIdle);
+    // 没有工具步时不渲染虚构的当前动作
+    expect(screen.queryByTestId('member-current-action')).toBeNull();
   });
 });

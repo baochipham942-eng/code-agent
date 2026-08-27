@@ -1,18 +1,20 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { closeSync, chmodSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, chmodSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { CLI_CONNECTOR_DESCRIPTORS } from '../src/shared/constants/cliConnectorDescriptors.ts';
 
 const PROVIDER_ID = 'custom-tokenrhythm';
 const MODEL_ID = 'deepseek-v4-flash';
 const STATE_FILE = '.neo-verify-state.json';
 const DEFAULT_SECRET_FILE = path.join(os.homedir(), '.ship', 'secrets', 'neo-dogfood.env');
-const DEFAULT_SOURCE_CONFIG = path.join(os.homedir(), '.code-agent-dev', 'config.json');
+const DEFAULT_SOURCE_DATA_DIR = path.join(os.homedir(), '.code-agent-dev');
+const DEFAULT_SOURCE_CONFIG = path.join(DEFAULT_SOURCE_DATA_DIR, 'config.json');
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
@@ -87,7 +89,7 @@ export function buildSlotlessConfig(source, tokenRhythmKey) {
       .map((route) => [route, { provider: PROVIDER_ID, model: MODEL_ID }]),
   );
 
-  return {
+  const config = {
     models: {
       default: PROVIDER_ID,
       defaultProvider: PROVIDER_ID,
@@ -96,6 +98,53 @@ export function buildSlotlessConfig(source, tokenRhythmKey) {
     },
     cloud: { enabled: false, warmupOnInit: false },
   };
+
+  // 连接器启用状态与 MCP server 清单属于能力中心的运行配置；保留这两段，其他
+  // 用户设置仍不进入一次性验证目录。CLI 登录凭据不在 config.json，由各 CLI
+  // 自己从全局位置读取。
+  for (const key of ['connectors', 'mcp']) {
+    if (source?.[key] !== undefined) config[key] = source[key];
+  }
+
+  return config;
+}
+
+export function linkCliConnectorInstallDirectories(
+  sourceDataDir,
+  targetDataDir,
+  log = (message) => console.log(message),
+) {
+  const results = [];
+  for (const descriptor of CLI_CONNECTOR_DESCRIPTORS) {
+    const installDirectory = descriptor.installDirectory;
+    if (
+      !installDirectory
+      || path.isAbsolute(installDirectory)
+      || installDirectory !== path.basename(installDirectory)
+      || installDirectory === '.'
+      || installDirectory === '..'
+    ) {
+      fail(`invalid CLI connector installDirectory for ${descriptor.id}: ${installDirectory}`);
+    }
+
+    const source = path.join(sourceDataDir, installDirectory);
+    const target = path.join(targetDataDir, installDirectory);
+    if (!existsSync(source)) {
+      log(`CLI_CONNECTOR_SKIPPED=${descriptor.id}: source install directory not found (${source})`);
+      results.push({ id: descriptor.id, installDirectory, status: 'skipped', reason: 'not-found' });
+      continue;
+    }
+    if (!statSync(source).isDirectory()) {
+      log(`CLI_CONNECTOR_SKIPPED=${descriptor.id}: source install path is not a directory (${source})`);
+      results.push({ id: descriptor.id, installDirectory, status: 'skipped', reason: 'not-directory' });
+      continue;
+    }
+
+    symlinkSync(source, target, 'dir');
+    log(`CLI_CONNECTOR_LINKED=${descriptor.id}: ${target} -> ${source}`);
+    results.push({ id: descriptor.id, installDirectory, status: 'linked', source, target });
+  }
+  return results;
 }
 
 function stripInlineComment(value) {
@@ -368,6 +417,7 @@ async function startRun(ticketArg, reuseDist) {
   const dataDir = mkdtempSync(path.join(os.tmpdir(), `neo-verify-${ticket}-`));
   chmodSync(dataDir, 0o700);
   writePrivateJson(path.join(dataDir, 'config.json'), config);
+  linkCliConnectorInstallDirectories(DEFAULT_SOURCE_DATA_DIR, dataDir);
 
   const port = await reservePort();
   const url = `http://127.0.0.1:${port}`;

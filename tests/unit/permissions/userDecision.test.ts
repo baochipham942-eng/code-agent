@@ -9,7 +9,7 @@ vi.mock('../../../src/host/platform/windowBridge', () => ({
 import {
   markDecisionRequestExpired,
   notifyIfLateDecisionResponse,
-} from '../../../src/host/interaction/userDecision';
+} from '../../../src/host/permissions/userDecision';
 
 beforeEach(() => vi.clearAllMocks());
 

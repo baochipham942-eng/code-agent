@@ -26,6 +26,7 @@ import {
   notifyDecisionNeeded,
   notifyIfLateDecisionResponse,
 } from '../interaction/userDecision';
+import { beginPendingMcpInteraction } from './mcpPendingInteraction';
 
 const logger = createLogger('MCPElicitation', { lane: 'mcp' });
 
@@ -135,6 +136,7 @@ export function registerElicitationHandler(
     const timeoutMs = interactive
       ? INTERACTION_TIMEOUTS.PARKED_APPROVAL
       : INTERACTION_TIMEOUTS.MCP_ELICITATION;
+    const endPendingInteraction = beginPendingMcpInteraction(serverName);
 
     try {
       const response = await new Promise<MCPElicitationResponse>((resolve, reject) => {
@@ -159,6 +161,8 @@ export function registerElicitationHandler(
         ? '等待 MCP 输入超过 24 小时，停车请求已按安全兜底取消。'
         : headlessDecisionTimeoutReason(timeoutMs);
       return { action: 'cancel' as const, content: deniedDecisionMetadata(reason) };
+    } finally {
+      endPendingInteraction();
     }
   });
 

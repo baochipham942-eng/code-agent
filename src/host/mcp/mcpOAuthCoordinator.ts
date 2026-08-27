@@ -41,7 +41,7 @@ export interface McpOAuthCoordinatorOptions {
   openAuthorization?: (authUrl: URL, flow: McpOAuthFlow) => void | Promise<void>;
 }
 
-export class McpOAuthAuthorizationDeclinedError extends Error {
+class McpOAuthAuthorizationDeclinedError extends Error {
   readonly permissionDecision = 'deny' as const;
   readonly permissionDecisionReason: string;
 

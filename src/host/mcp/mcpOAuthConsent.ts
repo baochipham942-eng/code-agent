@@ -10,6 +10,7 @@ import {
   notifyDecisionNeeded,
   notifyIfLateDecisionResponse,
 } from '../interaction/userDecision';
+import { beginPendingMcpInteraction } from './mcpPendingInteraction';
 
 export const MCP_OAUTH_CONSENT_TIMEOUT_MS = 2 * 60 * 1000;
 
@@ -88,21 +89,27 @@ export async function requestMcpOAuthConsent(
   const interactive = hasInteractiveUi();
   const headlessTimeoutMs = options.timeoutMs ?? MCP_OAUTH_CONSENT_TIMEOUT_MS;
   const timeoutMs = interactive ? INTERACTION_TIMEOUTS.PARKED_APPROVAL : headlessTimeoutMs;
-  const consentResult = await new Promise<{ decision: ConsentDecision; timedOut: boolean }>((resolve) => {
-    const timeout = setTimeout(() => {
-      pendingConsents.delete(requestId);
-      markDecisionRequestExpired(requestId, 'MCP OAuth 授权请求');
-      logger.warn('MCP OAuth consent timed out', {
-        requestId,
-        serverName: request.serverName,
-        timeoutMs,
-      });
-      resolve({ decision: 'decline', timedOut: true });
-    }, timeoutMs);
-    timeout.unref?.();
+  const endPendingInteraction = beginPendingMcpInteraction(request.serverName);
+  let consentResult: { decision: ConsentDecision; timedOut: boolean };
+  try {
+    consentResult = await new Promise<{ decision: ConsentDecision; timedOut: boolean }>((resolve) => {
+      const timeout = setTimeout(() => {
+        pendingConsents.delete(requestId);
+        markDecisionRequestExpired(requestId, 'MCP OAuth 授权请求');
+        logger.warn('MCP OAuth consent timed out', {
+          requestId,
+          serverName: request.serverName,
+          timeoutMs,
+        });
+        resolve({ decision: 'decline', timedOut: true });
+      }, timeoutMs);
+      timeout.unref?.();
 
-    pendingConsents.set(requestId, { resolve, timeout });
-  });
+      pendingConsents.set(requestId, { resolve, timeout });
+    });
+  } finally {
+    endPendingInteraction();
+  }
 
   if (consentResult.decision === 'authorize') {
     return {

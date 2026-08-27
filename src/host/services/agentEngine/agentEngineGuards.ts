@@ -11,7 +11,7 @@ import { isAgentWorktreePath } from '../../agent/agentWorktreePath';
 
 const logger = createLogger('AgentEngineGuards');
 
-export function assertAgentEngineCapability(
+function assertAgentEngineCapability(
   engine: AgentEngineSessionMetadata['kind'],
   capabilities: readonly AgentEngineCapability[] | undefined,
   capability: AgentEngineCapability,

@@ -1,4 +1,5 @@
 import type { ToolCall } from '@shared/contract';
+import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
 import type { Translations } from '../i18n';
 
@@ -244,6 +245,17 @@ export function humanizeToolError(
     return {
       summary: t.outcomeWords['cancelled-restart'].badge.label,
       detail: t.outcomeWords['cancelled-restart'].badge.reason,
+    };
+  }
+  const failureCode = inferAgentFailureCode({
+    failureCode: metadata?.failureCode,
+    toolResultCode: metadata?.code,
+    defaultCode: AgentFailureCode.Unknown,
+  });
+  if (failureCode === AgentFailureCode.PermissionDenied) {
+    return {
+      summary: t.outcomeWords['failed-approval-denied'].timeline.label,
+      detail: t.outcomeWords['failed-approval-denied'].timeline.reason,
     };
   }
   // 1. code 优先：host 已登记的错误码直接用 code 文案，不经正则（正则降为兜底）

@@ -26,6 +26,7 @@ import { TurnDevtools } from './turnDevtools';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import type { Translations } from '../../../i18n';
+import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
 
 function humanizeDispatchTool(toolName: string, t: Translations): string {
   const label = humanizeToolStep(toolName, undefined, t);
@@ -81,12 +82,33 @@ function StampChip({ segment }: { segment: TurnSegment }) {
     );
   }
   // n_a：按终态说人话（失败/取消自带原因，不判真伪）
+  const failedCode = terminal === 'failed'
+    ? segment.toolDispatches.reduce<AgentFailureCode | null>((resolved, dispatch) => {
+        if (resolved || dispatch.success) return resolved;
+        return inferAgentFailureCode({ error: dispatch.error, defaultCode: AgentFailureCode.Unknown });
+      }, null)
+    : null;
+  const failedOutcome = failedCode === AgentFailureCode.PermissionDenied
+    ? t.outcomeWords['failed-approval-denied'].badge
+    : failedCode === AgentFailureCode.Timeout
+      ? t.outcomeWords['failed-timeout'].badge
+      : failedCode === AgentFailureCode.BudgetExhausted
+        ? t.outcomeWords['failed-budget'].badge
+        : failedCode === AgentFailureCode.DependencyFailed || failedCode === AgentFailureCode.DependencyMissing
+          ? t.outcomeWords['failed-dependency'].badge
+          : failedCode === AgentFailureCode.ModelError
+            ? t.outcomeWords['failed-model'].badge
+            : failedCode === AgentFailureCode.ToolUnavailable
+              ? t.outcomeWords['failed-unavailable'].badge
+              : segment.failedToolCount > 0
+                ? t.outcomeWords['failed-tool'].badge
+                : t.outcomeWords['failed-unknown'].badge;
   const outcome = terminal === 'cancelled'
     ? t.outcomeWords['cancelled-by-user'].badge
     : terminal === 'interrupted'
       ? t.outcomeWords['cancelled-restart'].badge
       : terminal === 'failed'
-        ? t.outcomeWords['failed-unknown'].badge
+        ? failedOutcome
         : terminal === 'aborted'
           ? t.outcomeWords.aborted.badge
           : terminal === 'goal_met'
@@ -158,21 +180,32 @@ function TurnActivitySummary({ segment }: { segment: TurnSegment }) {
       </div>
       {hasDetail && showDetail && (
         <div className="mt-0.5 space-y-0.5 pl-3" data-testid="inspector-activity-detail">
-          {segment.toolDispatches.map((row, index) => (
-            <div key={index} className="flex items-baseline gap-2 whitespace-nowrap" data-testid="inspector-activity-detail-row">
-              <span className={`h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full ${row.success ? 'bg-badge-success' : 'bg-badge-danger'}`} />
-              <span className="shrink-0 text-zinc-500">{detail.bucketLabel[row.bucket]}</span>
-              <span className="shrink-0 text-[10px] text-zinc-400">{humanizeDispatchTool(row.toolName, t)}</span>
-              {!row.success && (
-                <span className="shrink-0 text-badge-danger">
-                  {humanizeToolError(row.error ?? undefined, row.toolName, t)?.summary ?? t.systemError.fallbackSummary}
-                </span>
-              )}
-              {row.durationMs !== null && (
-                <span className="ml-auto text-zinc-600">{Math.round(row.durationMs)} ms</span>
-              )}
-            </div>
-          ))}
+          {segment.toolDispatches.map((row, index) => {
+            const failureCode = row.success ? null : inferAgentFailureCode({
+              error: row.error,
+              defaultCode: AgentFailureCode.Unknown,
+            });
+            const approvalOutcome = failureCode === AgentFailureCode.PermissionDenied
+              ? t.outcomeWords['failed-approval-denied'].timeline
+              : null;
+            return (
+              <div key={index} className="flex items-baseline gap-2 whitespace-nowrap" data-testid="inspector-activity-detail-row">
+                <span className={`h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full ${row.success ? 'bg-badge-success' : 'bg-badge-danger'}`} />
+                <span className="shrink-0 text-zinc-500">{detail.bucketLabel[row.bucket]}</span>
+                <span className="shrink-0 text-[10px] text-zinc-400">{humanizeDispatchTool(row.toolName, t)}</span>
+                {!row.success && (
+                  <span className="shrink-0 text-badge-danger">
+                    {approvalOutcome
+                      ? `${approvalOutcome.label} · ${approvalOutcome.reason}`
+                      : humanizeToolError(row.error ?? undefined, row.toolName, t)?.summary ?? t.systemError.fallbackSummary}
+                  </span>
+                )}
+                {row.success && row.durationMs !== null && (
+                  <span className="ml-auto text-zinc-600">{Math.round(row.durationMs)} ms</span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

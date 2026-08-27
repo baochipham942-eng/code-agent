@@ -79,9 +79,28 @@ describe('ToolStepGroup resolved permission evidence', () => {
     state.resolved = [resolved('timeout')];
     render(<ToolStepGroup nodes={[toolNode]} sessionId="session-1" />);
 
-    expect(screen.getByTestId('permission-decision-evidence').textContent).toContain('已超时');
+    expect(screen.getByTestId('permission-decision-evidence').textContent).toContain('执行超时 · 执行超过等待时限');
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
     expect(state.sendPrompt).toHaveBeenCalledWith('刚才的审批超时了，请重试');
+  });
+
+  it('拒绝结果用审批终态词，并在组头和原因行说明为什么', () => {
+    state.resolved = [resolved('deny')];
+    const deniedNode: TraceNode = {
+      ...toolNode,
+      toolCall: {
+        ...toolNode.toolCall!,
+        result: 'Permission denied',
+        success: false,
+      },
+    };
+    render(<ToolStepGroup nodes={[deniedNode]} sessionId="session-1" />);
+
+    const header = screen.getByRole('button', { expanded: false }).textContent ?? '';
+    expect(header).toContain('未批准');
+    expect(header).toContain('审批被拒绝');
+    expect(header).not.toContain('执行时出了问题');
+    expect(screen.getByTestId('permission-decision-evidence').textContent).toContain('未获批准 · 审批被拒绝');
   });
 
   it('没有工具调用关联的旧请求不猜测归属', () => {

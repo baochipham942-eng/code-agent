@@ -88,6 +88,24 @@ describe('ToolCallDisplay status labels', () => {
     expect(label).toBe(zh.outcomeWords['failed-tool'].timeline.label);
   });
 
+  it('maps an explicit approval denial to the shared terminal word and reason', () => {
+    const label = getToolStatusLabel(
+      makeWriteCall({
+        result: {
+          toolCallId: 'write-1',
+          success: false,
+          error: 'Permission denied',
+          metadata: { code: 'PERMISSION_DENIED' },
+        },
+      }),
+      'error',
+      zh,
+    );
+    const outcome = zh.outcomeWords['failed-approval-denied'].timeline;
+
+    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
+  });
+
   // host 验收门（toolArtifactRepairPolicy.isFileMutationTool）覆盖的不只 Write：
   // Edit/edit_file/append_file/Append 写后验收失败同样被翻转成 success=false +
   // metadata.artifactValidation.failed，状态词不能错报成「编辑失败」。

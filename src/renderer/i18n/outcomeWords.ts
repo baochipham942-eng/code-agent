@@ -5,34 +5,25 @@
  * timeline sentence and a compact badge, while the same outcome/audience pair
  * must always resolve to one label and one reason phrase.
  */
-const OUTCOME_KEYS = [
-  'cancelled-by-user',
-  'cancelled-session-switch',
-  'cancelled-restart',
-  'cancelled-by-parent',
-  'failed-tool',
-  'failed-model',
-  'failed-unknown',
-  'failed-approval-denied',
-  'failed-timeout',
-  'failed-budget',
-  'failed-dependency',
-  'failed-unavailable',
-  'completed',
-  'completed-with-warnings',
-  'aborted',
-  'goal-met',
-] as const;
+type OutcomeKey =
+  | 'cancelled-by-user'
+  | 'cancelled-session-switch'
+  | 'cancelled-restart'
+  | 'cancelled-by-parent'
+  | 'failed-tool'
+  | 'failed-model'
+  | 'failed-unknown'
+  | 'failed-approval-denied'
+  | 'failed-timeout'
+  | 'failed-budget'
+  | 'failed-dependency'
+  | 'failed-unavailable'
+  | 'completed'
+  | 'completed-with-warnings'
+  | 'aborted'
+  | 'goal-met';
 
-const OUTCOME_AUDIENCES = [
-  'timeline',
-  'badge',
-  'detail',
-  'notification',
-] as const;
-
-type OutcomeKey = (typeof OUTCOME_KEYS)[number];
-type OutcomeAudience = (typeof OUTCOME_AUDIENCES)[number];
+type OutcomeAudience = 'timeline' | 'badge' | 'detail' | 'notification';
 
 interface OutcomeCopy {
   label: string;

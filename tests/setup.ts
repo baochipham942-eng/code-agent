@@ -23,7 +23,16 @@ process.env.CODE_AGENT_BROWSER_PROVIDER ||= 'playwright-bundled';
 // electron: vitest 跑在纯 Node.js 环境，没有 Electron runtime
 // ToolRegistry 导入链中 5 个工具文件直接 import electron (app/AppWindow/ipcHost 等)
 // 必须在 setup 阶段提供完整 mock，否则 worker 进程直接崩
+// 说明：vitest.config.ts 把 `electron` 别名到 src/host/platform/index.ts，
+// 所以这份 mock 同时充当 platform 桶的 mock —— platform 新增导出时必须同步补进来，
+// 否则消费它的生产代码在测试里会以 "No X export is defined on the electron mock" 崩掉。
+// 2026-08-27 补 hasInteractiveUi / setBrowserWindowInteractionProbe：#1415 把
+// agent.ts 的审批 UI 判定源从 sseClients 换成 hasInteractiveUi()，但没给这份 mock 补导出。
+let mockInteractionProbe: (() => boolean) | null = null;
 vi.mock('electron', () => ({
+  // 与 windowBridge.hasInteractiveUi 同语义：有 probe 用 probe，没有则按「无窗口」false。
+  hasInteractiveUi: () => (mockInteractionProbe ? mockInteractionProbe() : false),
+  setBrowserWindowInteractionProbe: (probe: (() => boolean) | null) => { mockInteractionProbe = probe; },
   app: {
     getPath: (name: string) => `/tmp/mock-electron-${name}`,
     getAppPath: () => process.cwd(),

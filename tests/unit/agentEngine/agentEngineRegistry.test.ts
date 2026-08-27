@@ -124,6 +124,7 @@ describe('AgentEngineRegistry mimo/kimi detection', () => {
       'claude_code',
       'mimo_code',
       'kimi_code',
+      'kimi_code_acp',
       'codebuddy_code',
       'grok_cli',
       'dsh_cli',
@@ -230,7 +231,8 @@ describe('AgentEngineRegistry mimo/kimi detection', () => {
     const sources = await new AgentEngineRegistry().listSources();
     const cursor = sources.find((source) => source.manifestId === 'cursor_cli');
 
-    expect(sources).toHaveLength(11);
+    // 12 = 8 个可执行 kind + 3 个仅推荐 + native。
+    expect(sources).toHaveLength(12);
     expect(cursor).toMatchObject({
       detected: false,
       selectable: false,

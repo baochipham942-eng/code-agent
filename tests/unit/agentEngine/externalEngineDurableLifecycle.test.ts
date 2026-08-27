@@ -304,6 +304,8 @@ describe('external engine recovery handler', () => {
       codebuddy_code: 'non_resumable',
       grok_cli: 'non_resumable',
       dsh_cli: 'resumable',
+      // ACP session/load 实测通过（08-27 Kimi 0.38.0），不是靠自报能力位。
+      kimi_code_acp: 'resumable',
     });
     expect(redactCommandSummary('cmd --token abcdefgh private prompt=secret')).not.toContain('abcdefgh');
     expect(extractExternalModelUsage('{"usage":{"input_tokens":12,"output_tokens":7}}')).toEqual({ inputTokens: 12, outputTokens: 7 });

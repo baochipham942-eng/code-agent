@@ -3,6 +3,8 @@ export * from './agentEngineAdapterRegistry';
 export * from './agentEngineGuards';
 export * from './agentEngineModelCatalog';
 export * from './agentEngineTiming';
+export * from './acpClientAdapter';
+export * from './acpEventMapping';
 export * from './codexCliAdapter';
 export * from './claudeCodeAdapter';
 export * from './mimoCliAdapter';

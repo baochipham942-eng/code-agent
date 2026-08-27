@@ -25,6 +25,7 @@ import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { SteerRejectedError } from '../../../src/host/agent/runtime/conversationRuntime';
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
 import { sseClients } from '../../../src/web/helpers/sse';
+import { setBrowserWindowInteractionProbe } from '../../../src/host/platform';
 
 const mockRun = vi.fn();
 const mockCancel = vi.fn();
@@ -512,6 +513,11 @@ describe('createAgentRouter', () => {
 
   it('treats an SSE-subscribed renderer as the approval UI for a queued run', async () => {
     await closeServer();
+    // #1415 把判定源从「路由自己数 sseClients」换成了 platform 的 hasInteractiveUi()，
+    // 而那个 probe 由 webServer.ts:739 在模块顶层注册；本用例只加载 router，
+    // 于是 probe 从未注册、判定恒 false。这里照 webServer 的原样注册一次，
+    // 用例的本意（有 SSE renderer 就算有审批 UI）在新机制下才测得到。
+    setBrowserWindowInteractionProbe(() => sseClients.size > 0);
     const approvalUiStates: boolean[] = [];
     const requestPermissionSpy = vi.spyOn(OrchestratorPermissionIsland.prototype, 'requestPermission')
       .mockImplementation(function (this: OrchestratorPermissionIsland) {

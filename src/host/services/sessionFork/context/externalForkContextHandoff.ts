@@ -93,6 +93,13 @@ export const EXTERNAL_FORK_CONTEXT_CAPABILITIES: Readonly<
     providerNativeFork: false,
     reason: 'DeepSeek Harness headless starts a fresh session per run and exposes no session identity.',
   }),
+  // 本刀（N-ACP-CLIENT 刀1）不做 fork：session/fork 在 Kimi 的 sessionCapabilities 里有声明，
+  // 但一次都没实跑过——「声明支持」不是「验过」，按未验证一律 unsupported，别默认放行。
+  kimi_code_acp: Object.freeze({
+    deliveryMode: 'unsupported',
+    providerNativeFork: false,
+    reason: 'ACP session/fork is advertised by the agent but has not been verified end to end in Neo yet.',
+  }),
 });
 
 interface ExternalForkContextTokenPolicy {

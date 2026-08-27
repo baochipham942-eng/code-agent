@@ -15,7 +15,10 @@ const STATE_FILE = '.neo-verify-state.json';
 const DEFAULT_SECRET_FILE = path.join(os.homedir(), '.ship', 'secrets', 'neo-dogfood.env');
 const DEFAULT_SOURCE_DATA_DIR = path.join(os.homedir(), '.code-agent-dev');
 const DEFAULT_SOURCE_CONFIG = path.join(DEFAULT_SOURCE_DATA_DIR, 'config.json');
-const VERIFY_NATIVE_CONNECTOR_IDS = ['calendar', 'reminders'];
+const NATIVE_CONNECTOR_APPS = new Map([
+  ['calendar', 'Calendar'],
+  ['reminders', 'Reminders'],
+]);
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
@@ -23,11 +26,12 @@ const repoRoot = path.resolve(scriptDir, '..');
 function usage() {
   return [
     'Usage:',
-    '  node scripts/verify-slotless.mjs <ticket> [--reuse-dist]',
+    '  node scripts/verify-slotless.mjs <ticket> [--reuse-dist] [--native <ids>]',
     '  node scripts/verify-slotless.mjs --stop <NEO_VERIFY_DATA_DIR>',
     '',
     'Starts the worktree webServer on an isolated port and signs in with the dogfood account.',
-    'Native Calendar/Reminders verification requires a real macOS host with osascript access.',
+    'By default, native connectors keep the source config and no system apps are probed.',
+    'Use --native calendar,reminders to opt in to native connector verification on macOS.',
   ].join('\n');
 }
 
@@ -55,7 +59,7 @@ function copyModelDescriptor(value) {
   return Object.fromEntries(allowed.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]));
 }
 
-export function buildSlotlessConfig(source, tokenRhythmKey) {
+export function buildSlotlessConfig(source, tokenRhythmKey, nativeConnectorIds) {
   const sourceModels = source?.models;
   const sourceProvider = sourceModels?.providers?.[PROVIDER_ID];
   const sourceModel = sourceProvider?.models?.[MODEL_ID];
@@ -101,14 +105,16 @@ export function buildSlotlessConfig(source, tokenRhythmKey) {
     cloud: { enabled: false, warmupOnInit: false },
   };
 
-  // 无槽真机验收默认覆盖原生日历与提醒。两者通过 osascript 访问系统 App，只能
-  // 在已授予相应自动化权限的真实 macOS 主机上工作。连接器段的其他字段照常保留。
+  // 连接器段的其他字段照常保留。只有调用方显式传入 --native 时才覆盖
+  // enabledNative；默认沿用源配置，避免常规无槽验收触碰系统 App。
   config.connectors = {
     ...(source?.connectors && typeof source.connectors === 'object' && !Array.isArray(source.connectors)
       ? source.connectors
       : {}),
-    enabledNative: [...VERIFY_NATIVE_CONNECTOR_IDS],
   };
+  if (nativeConnectorIds !== undefined) {
+    config.connectors.enabledNative = [...nativeConnectorIds];
+  }
 
   // MCP server 清单属于能力中心的运行配置；其他用户设置仍不进入一次性验证目录。
   // CLI 登录凭据不在 config.json，由各 CLI 自己从全局位置读取。
@@ -352,12 +358,12 @@ async function assertConfiguredModel(url, token) {
   }
 }
 
-async function assertConfiguredNativeConnectors(url, token) {
+async function assertConfiguredNativeConnectors(url, token, nativeConnectorIds) {
   if (process.platform !== 'darwin') {
     fail('native Calendar/Reminders verification requires a real macOS host');
   }
 
-  for (const connectorId of VERIFY_NATIVE_CONNECTOR_IDS) {
+  for (const connectorId of nativeConnectorIds) {
     const response = await fetch(`${url}/api/domain/connector/probe`, {
       method: 'POST',
       headers: {
@@ -374,6 +380,110 @@ async function assertConfiguredNativeConnectors(url, token) {
     if (!response.ok || !status?.connected || status.readiness !== 'ready') {
       fail(`native connector self-check failed: ${connectorId}`);
     }
+  }
+}
+
+function getNativeAppPids(appName) {
+  const result = spawnSync('pgrep', ['-x', appName], { encoding: 'utf8' });
+  if (result.error) fail(`failed to inspect native app ${appName}: ${result.error.message}`);
+  if (result.status === 0) {
+    const pids = result.stdout.trim().split(/\s+/).map(Number);
+    if (pids.length === 0 || pids.some((pid) => !Number.isInteger(pid) || pid <= 0)) {
+      fail(`failed to inspect native app ${appName}: pgrep returned invalid pids`);
+    }
+    return pids;
+  }
+  if (result.status === 1) return [];
+  fail(`failed to inspect native app ${appName}: pgrep exited ${result.status ?? 'unknown'}`);
+}
+
+function snapshotNativeApps(nativeConnectorIds) {
+  return Object.fromEntries(nativeConnectorIds.map((connectorId) => {
+    const appName = NATIVE_CONNECTOR_APPS.get(connectorId);
+    return [connectorId, getNativeAppPids(appName)];
+  }));
+}
+
+function detectLaunchedNativeApps(nativeConnectorIds, nativeAppsBeforeStart) {
+  return nativeConnectorIds.flatMap((connectorId) => {
+    const appName = NATIVE_CONNECTOR_APPS.get(connectorId);
+    const pidsBeforeStart = new Set(nativeAppsBeforeStart[connectorId] ?? []);
+    const launchedPids = getNativeAppPids(appName).filter((pid) => !pidsBeforeStart.has(pid));
+    return launchedPids.length > 0 ? [{ connectorId, appName, pids: launchedPids }] : [];
+  });
+}
+
+function readLaunchedNativeApps(state) {
+  if (state.launchedNativeApps === undefined) return [];
+  if (!Array.isArray(state.launchedNativeApps)) fail('slotless state file has invalid launchedNativeApps');
+  const seen = new Set();
+  return state.launchedNativeApps.map((entry) => {
+    const expectedAppName = entry && NATIVE_CONNECTOR_APPS.get(entry.connectorId);
+    if (
+      !expectedAppName
+      || entry.appName !== expectedAppName
+      || !Array.isArray(entry.pids)
+      || entry.pids.length === 0
+      || entry.pids.some((pid) => !Number.isInteger(pid) || pid <= 0)
+      || new Set(entry.pids).size !== entry.pids.length
+      || seen.has(entry.connectorId)
+    ) {
+      fail('slotless state file has invalid launchedNativeApps');
+    }
+    seen.add(entry.connectorId);
+    return { connectorId: entry.connectorId, appName: entry.appName, pids: entry.pids };
+  });
+}
+
+function readNativeRunBaseline(state) {
+  if (state.nativeConnectorIds === undefined && state.nativeAppPidsBeforeStart === undefined) {
+    return { nativeConnectorIds: [], nativeAppPidsBeforeStart: {} };
+  }
+  if (
+    !Array.isArray(state.nativeConnectorIds)
+    || new Set(state.nativeConnectorIds).size !== state.nativeConnectorIds.length
+    || state.nativeConnectorIds.some((connectorId) => !NATIVE_CONNECTOR_APPS.has(connectorId))
+    || !state.nativeAppPidsBeforeStart
+    || typeof state.nativeAppPidsBeforeStart !== 'object'
+    || Array.isArray(state.nativeAppPidsBeforeStart)
+  ) {
+    fail('slotless state file has invalid native app baseline');
+  }
+  const requested = new Set(state.nativeConnectorIds);
+  const baselineEntries = Object.entries(state.nativeAppPidsBeforeStart);
+  if (baselineEntries.length !== requested.size || baselineEntries.some(([connectorId]) => !requested.has(connectorId))) {
+    fail('slotless state file has invalid native app baseline');
+  }
+  for (const [, pids] of baselineEntries) {
+    if (
+      !Array.isArray(pids)
+      || pids.some((pid) => !Number.isInteger(pid) || pid <= 0)
+      || new Set(pids).size !== pids.length
+    ) {
+      fail('slotless state file has invalid native app baseline');
+    }
+  }
+  return {
+    nativeConnectorIds: state.nativeConnectorIds,
+    nativeAppPidsBeforeStart: state.nativeAppPidsBeforeStart,
+  };
+}
+
+function mergeLaunchedNativeApps(...lists) {
+  const merged = new Map();
+  for (const entry of lists.flat()) {
+    const current = merged.get(entry.connectorId) ?? { ...entry, pids: [] };
+    current.pids = [...new Set([...current.pids, ...entry.pids])];
+    merged.set(entry.connectorId, current);
+  }
+  return [...merged.values()];
+}
+
+function quitNativeApps(launchedNativeApps) {
+  for (const { appName, pids } of launchedNativeApps) {
+    const runningPids = new Set(getNativeAppPids(appName));
+    if (!pids.some((pid) => runningPids.has(pid))) continue;
+    execFileSync('osascript', ['-e', `quit app ${JSON.stringify(appName)}`], { stdio: 'inherit' });
   }
 }
 
@@ -427,12 +537,19 @@ export async function stopRun(dataDirArg) {
   if (!existsSync(statePath)) fail(`slotless state file is missing: ${statePath}`);
   const state = JSON.parse(readFileSync(statePath, 'utf8'));
   if (!Number.isInteger(state.pid) || typeof state.marker !== 'string') fail('slotless state file is invalid');
+  const { nativeConnectorIds, nativeAppPidsBeforeStart } = readNativeRunBaseline(state);
+  const launchedNativeApps = mergeLaunchedNativeApps(
+    readLaunchedNativeApps(state),
+    detectLaunchedNativeApps(nativeConnectorIds, nativeAppPidsBeforeStart),
+  );
+  writePrivateJson(statePath, { ...state, launchedNativeApps });
   await stopProcessGroup(state);
+  quitNativeApps(launchedNativeApps);
   rmSync(disposableDir, { recursive: true, force: false });
   console.log(`NEO_VERIFY_STOPPED=${disposableDir}`);
 }
 
-async function cleanupFailedStart(child, dataDir, marker) {
+async function cleanupFailedStart(child, dataDir, marker, nativeConnectorIds, nativeAppsBeforeStart) {
   if (child && child.pid) {
     try {
       await stopProcessGroup({ pid: child.pid, marker });
@@ -440,14 +557,16 @@ async function cleanupFailedStart(child, dataDir, marker) {
       try { process.kill(-child.pid, 'SIGKILL'); } catch { /* process may already be gone */ }
     }
   }
+  quitNativeApps(detectLaunchedNativeApps(nativeConnectorIds, nativeAppsBeforeStart));
   if (dataDir && existsSync(dataDir)) rmSync(dataDir, { recursive: true, force: true });
 }
 
-async function startRun(ticketArg, reuseDist) {
+async function startRun(ticketArg, reuseDist, nativeConnectorIds) {
   const ticket = sanitizeTicket(ticketArg);
   const credentials = readDogfoodCredentials();
   const sourceConfig = JSON.parse(readFileSync(DEFAULT_SOURCE_CONFIG, 'utf8'));
-  const config = buildSlotlessConfig(sourceConfig, credentials.tokenRhythmKey);
+  const config = buildSlotlessConfig(sourceConfig, credentials.tokenRhythmKey, nativeConnectorIds);
+  const requestedNativeConnectorIds = nativeConnectorIds ?? [];
   const webServer = ensureDist(reuseDist);
   const dataDir = mkdtempSync(path.join(os.tmpdir(), `neo-verify-${ticket}-`));
   chmodSync(dataDir, 0o700);
@@ -459,6 +578,7 @@ async function startRun(ticketArg, reuseDist) {
   const marker = path.basename(dataDir);
   const logPath = path.join(dataDir, 'webserver.log');
   const logFd = openSync(logPath, 'a', 0o600);
+  const nativeAppsBeforeStart = snapshotNativeApps(requestedNativeConnectorIds);
   let child;
   try {
     child = spawn(process.execPath, [webServer, `--neo-verify-run=${marker}`], {
@@ -484,7 +604,10 @@ async function startRun(ticketArg, reuseDist) {
     const token = await readServerToken(dataDir);
     await signInDogfood(url, token, credentials);
     await assertConfiguredModel(url, token);
-    await assertConfiguredNativeConnectors(url, token);
+    if (nativeConnectorIds !== undefined) {
+      await assertConfiguredNativeConnectors(url, token, nativeConnectorIds);
+    }
+    const launchedNativeApps = detectLaunchedNativeApps(requestedNativeConnectorIds, nativeAppsBeforeStart);
     writePrivateJson(path.join(dataDir, STATE_FILE), {
       version: 1,
       ticket,
@@ -493,16 +616,21 @@ async function startRun(ticketArg, reuseDist) {
       port,
       dataDir,
       repoRoot,
+      nativeConnectorIds: requestedNativeConnectorIds,
+      nativeAppPidsBeforeStart: nativeAppsBeforeStart,
+      launchedNativeApps,
       startedAt: new Date().toISOString(),
     });
     child.unref();
     console.log(`NEO_VERIFY_KEY=${maskTokenRhythmKey(credentials.tokenRhythmKey)}`);
     console.log(`NEO_VERIFY_MODEL=${PROVIDER_ID}/${MODEL_ID}`);
-    console.log(`NEO_VERIFY_NATIVE=${VERIFY_NATIVE_CONNECTOR_IDS.join(',')}`);
+    if (nativeConnectorIds !== undefined) {
+      console.log(`NEO_VERIFY_NATIVE=${nativeConnectorIds.join(',')}`);
+    }
     console.log(`NEO_VERIFY_URL=${url}`);
     console.log(`NEO_VERIFY_DATA_DIR=${dataDir}`);
   } catch (error) {
-    await cleanupFailedStart(child, dataDir, marker);
+    await cleanupFailedStart(child, dataDir, marker, requestedNativeConnectorIds, nativeAppsBeforeStart);
     throw error;
   }
 }
@@ -516,11 +644,32 @@ async function main(args = process.argv.slice(2)) {
     await stopRun(args[1]);
     return;
   }
-  const ticket = args.find((arg) => !arg.startsWith('--'));
+  let ticket;
+  let reuseDist = false;
+  let nativeConnectorIds;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--reuse-dist') {
+      reuseDist = true;
+      continue;
+    }
+    if (arg === '--native') {
+      if (nativeConnectorIds !== undefined) fail('--native may only be specified once');
+      const value = args[index + 1];
+      if (!value || value.startsWith('--')) fail('--native requires a comma-separated connector list');
+      nativeConnectorIds = [...new Set(value.split(',').map((id) => id.trim()).filter(Boolean))];
+      if (nativeConnectorIds.length === 0) fail('--native requires a comma-separated connector list');
+      const unsupported = nativeConnectorIds.find((id) => !NATIVE_CONNECTOR_APPS.has(id));
+      if (unsupported) fail(`unsupported native connector: ${unsupported}`);
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--')) fail(`unknown option: ${arg}\n${usage()}`);
+    if (ticket) fail(`unexpected argument: ${arg}\n${usage()}`);
+    ticket = arg;
+  }
   if (!ticket) fail(usage());
-  const unknown = args.filter((arg) => arg !== ticket && arg !== '--reuse-dist');
-  if (unknown.length > 0) fail(`unknown option: ${unknown[0]}\n${usage()}`);
-  await startRun(ticket, args.includes('--reuse-dist'));
+  await startRun(ticket, reuseDist, nativeConnectorIds);
 }
 
 const isEntrypoint = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;

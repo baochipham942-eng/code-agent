@@ -95,7 +95,7 @@ export const voiceZh: VoiceTranslations = {
       VOICE_WORK_FAILED: `刚才派出去的活${outcomeWordsZh.outcomeWords['failed-unknown'].notification.label}：{reason}`,
       VOICE_UPSTREAM_UNAVAILABLE: '连不上语音服务，稍后再试',
       UPSTREAM_SOCKET: '通话连接断开了',
-      UPSTREAM_ERROR: `语音服务${outcomeWordsZh.outcomeWords['failed-model'].notification.label}，稍后再试`,
+      UPSTREAM_ERROR: `语音${outcomeWordsZh.outcomeWords['failed-upstream'].notification.label}，稍后再试`,
       HANDSHAKE_FAILED: '语音服务握手失败，稍后再试',
       RECONNECT_FAILED: '通话已断开，重连失败，请重新拨号',
       MICROPHONE_PERMISSION_DENIED: '麦克风权限被拒绝，请在系统设置中允许后重试',

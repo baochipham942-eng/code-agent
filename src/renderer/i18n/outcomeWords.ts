@@ -18,6 +18,7 @@ type OutcomeKey =
   | 'failed-budget'
   | 'failed-dependency'
   | 'failed-unavailable'
+  | 'failed-upstream'
   | 'completed'
   | 'completed-with-warnings'
   | 'aborted'
@@ -109,6 +110,12 @@ export const outcomeWordsZh: OutcomeWordsBundle = {
       badge: { label: '不可用', reason: '所需工具或运行环境不可用' },
       detail: { label: '任务未完成', reason: '所需工具或运行环境不可用' },
       notification: { label: '任务未完成', reason: '所需工具或运行环境不可用' },
+    },
+    'failed-upstream': {
+      timeline: { label: '服务出错', reason: '上游服务返回错误' },
+      badge: { label: '失败', reason: '上游服务返回错误' },
+      detail: { label: '服务出错了', reason: '上游服务返回错误' },
+      notification: { label: '服务出错了', reason: '上游服务返回错误' },
     },
     completed: {
       timeline: { label: '已完成', reason: '步骤已全部执行' },
@@ -210,6 +217,12 @@ export const outcomeWordsEn: OutcomeWordsBundle = {
       badge: { label: 'Unavailable', reason: 'A required tool or runtime was unavailable' },
       detail: { label: 'Task incomplete', reason: 'A required tool or runtime was unavailable' },
       notification: { label: 'Task incomplete', reason: 'A required tool or runtime was unavailable' },
+    },
+    'failed-upstream': {
+      timeline: { label: 'Service error', reason: 'The upstream service returned an error' },
+      badge: { label: 'Failed', reason: 'The upstream service returned an error' },
+      detail: { label: 'Service error', reason: 'The upstream service returned an error' },
+      notification: { label: 'Service error', reason: 'The upstream service returned an error' },
     },
     completed: {
       timeline: { label: 'Completed', reason: 'All steps finished' },

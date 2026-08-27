@@ -113,6 +113,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         || hasQueuedPermissionForSession(sessionId, state)
       : false
   ));
+  const developerMode = useAppStore((state) => state.developerMode);
   const voiceCallInFlight = useVoiceCallStore((state) => (
     state.phase === 'live' || state.phase === 'connecting'
   ));
@@ -415,7 +416,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         )}
 
         <TurnRunHeader turn={turn} streamingState={streamingState} />
-        <TurnOutcomeBadge turn={turn} sessionId={sessionId} />
+        {developerMode && <TurnOutcomeBadge turn={turn} sessionId={sessionId} />}
         {shouldShowStreamingState(streamingState) && (
           <StreamingStateBanner state={streamingState} />
         )}

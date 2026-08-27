@@ -93,8 +93,12 @@ describe('层1 人话时间线', () => {
     render(<SessionInspector />);
     const stamps = await screen.findAllByTestId('inspector-stamp');
     expect(stamps.map((stamp) => stamp.dataset.verdict)).toEqual(['verified', 'self_claimed', 'n_a']);
-    expect(stamps[0].textContent).toContain('完成有据');
-    expect(stamps[1].textContent).toContain('自称完成');
+    const terminalOutcomes = screen.getAllByTestId('inspector-terminal-outcome');
+    const qualifiers = screen.getAllByTestId('inspector-stamp-qualifier');
+    expect(terminalOutcomes.map((outcome) => outcome.textContent)).toEqual(['完成', '完成']);
+    expect(qualifiers.map((qualifier) => qualifier.textContent)).toEqual(['有据', '自称']);
+    expect(stamps[0].textContent?.match(/完成/gu)).toHaveLength(1);
+    expect(stamps[1].textContent?.match(/完成/gu)).toHaveLength(1);
     expect(stamps[2].textContent).toContain('失败');
     expect(screen.getByTestId('inspector-stamp-reason').textContent).toBe('执行过程中发生错误');
     // 轮行按序三条

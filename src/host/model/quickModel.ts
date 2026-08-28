@@ -40,6 +40,7 @@ export type QuickModelFailureReason =
   | 'server_error'
   | 'http_error'
   | 'auth_failed'
+  | 'invalid_response'
   | 'empty_response'
   | 'transport_error';
 
@@ -47,6 +48,14 @@ export interface QuickModelAuthFailure {
   provider: string;
   model: string;
   status: number;
+  at: number;
+}
+
+export interface QuickModelFailure {
+  provider?: string;
+  model?: string;
+  failureReason: QuickModelFailureReason;
+  status?: number;
   at: number;
 }
 
@@ -71,6 +80,7 @@ interface QuickModelConfig {
 }
 
 let quickModelAuthFailure: QuickModelAuthFailure | null = null;
+let quickModelFailure: QuickModelFailure | null = null;
 
 // 鉴权失败拉黑表：key = provider:model:key指纹（指纹=长度+末4位，不存整 key）。
 // 「有一个失效的 key」不能比「没有 key」更糟：401/403 后该候选在窗口内不再入选，
@@ -99,6 +109,10 @@ export function getQuickModelAuthFailure(): QuickModelAuthFailure | null {
   return quickModelAuthFailure ? { ...quickModelAuthFailure } : null;
 }
 
+export function getQuickModelFailure(): QuickModelFailure | null {
+  return quickModelFailure ? { ...quickModelFailure } : null;
+}
+
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -119,6 +133,94 @@ function parseChatCompletionContent(payload: unknown): string | null {
 
   const content = firstChoice.message.content;
   return typeof content === 'string' && content.length > 0 ? content : null;
+}
+
+function parseChatCompletionDeltaContent(payload: unknown): string | null {
+  if (!isUnknownRecord(payload) || !isUnknownArray(payload.choices)) {
+    return null;
+  }
+
+  const firstChoice = payload.choices[0];
+  if (!isUnknownRecord(firstChoice) || !isUnknownRecord(firstChoice.delta)) {
+    return null;
+  }
+
+  const content = firstChoice.delta.content;
+  return typeof content === 'string' && content.length > 0 ? content : null;
+}
+
+type QuickModelResponseParseResult =
+  | { kind: 'content'; content: string }
+  | { kind: 'empty' }
+  | { kind: 'invalid'; error: string };
+
+function parseSseChatCompletion(rawBody: string): QuickModelResponseParseResult {
+  const events = rawBody.replace(/\r\n/g, '\n').split(/\n\n+/);
+  const deltaParts: string[] = [];
+  const completeMessages: string[] = [];
+  let jsonEventCount = 0;
+  let malformedEventCount = 0;
+
+  for (const event of events) {
+    const data = event
+      .split('\n')
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart())
+      .join('\n')
+      .trim();
+    if (!data || data === '[DONE]') continue;
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(data);
+      jsonEventCount++;
+    } catch {
+      malformedEventCount++;
+      continue;
+    }
+
+    const delta = parseChatCompletionDeltaContent(payload);
+    if (delta) {
+      deltaParts.push(delta);
+      continue;
+    }
+    const completeMessage = parseChatCompletionContent(payload);
+    if (completeMessage) completeMessages.push(completeMessage);
+  }
+
+  if (deltaParts.length > 0) {
+    return { kind: 'content', content: deltaParts.join('') };
+  }
+  const completeMessage = completeMessages.at(-1);
+  if (completeMessage) {
+    return { kind: 'content', content: completeMessage };
+  }
+  if (jsonEventCount > 0) return { kind: 'empty' };
+  return {
+    kind: 'invalid',
+    error: malformedEventCount > 0
+      ? 'Quick model returned malformed SSE data'
+      : 'Quick model returned an invalid SSE response',
+  };
+}
+
+async function parseQuickModelResponse(response: Response): Promise<QuickModelResponseParseResult> {
+  const rawBody = await response.text();
+  const trimmedBody = rawBody.trimStart();
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  if (contentType.includes('text/event-stream') || trimmedBody.startsWith('data:')) {
+    return parseSseChatCompletion(rawBody);
+  }
+  if (!trimmedBody) return { kind: 'empty' };
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(trimmedBody);
+  } catch {
+    return { kind: 'invalid', error: 'Quick model returned invalid JSON' };
+  }
+  const content = parseChatCompletionContent(payload);
+  return content ? { kind: 'content', content } : { kind: 'empty' };
 }
 
 function isThinkingModel(model: string): boolean {
@@ -263,6 +365,23 @@ function quickFailure(
   };
 }
 
+function trackQuickModelResult(result: QuickModelResult): QuickModelResult {
+  if (result.success) {
+    quickModelFailure = null;
+    return result;
+  }
+  if (result.failureReason) {
+    quickModelFailure = {
+      provider: result.provider,
+      model: result.model,
+      failureReason: result.failureReason,
+      status: result.status,
+      at: Date.now(),
+    };
+  }
+  return result;
+}
+
 function isRateLimitFailure(status: number, body: string): boolean {
   return status === 429
     || /(?:code\D*)?(?:1302|1305)|速率限制|访问量过大/u.test(body);
@@ -357,10 +476,23 @@ async function executeQuickAttempt(
 
     quickModelAuthFailure = null;
     limiter?.onSuccess();
-    const data: unknown = await response.json();
-    const content = parseChatCompletionContent(data);
-    if (content) {
-      return { success: true, content, provider: config.provider, model: config.model };
+    const parsed = await parseQuickModelResponse(response);
+    if (parsed.kind === 'content') {
+      return { success: true, content: parsed.content, provider: config.provider, model: config.model };
+    }
+    if (parsed.kind === 'invalid') {
+      logger.error('Quick model returned an invalid response shape', {
+        provider: config.provider,
+        model: config.model,
+        status: response.status,
+        contentType: response.headers.get('content-type'),
+      });
+      return quickFailure(
+        config,
+        'invalid_response',
+        parsed.error,
+        { status: response.status },
+      );
     }
     return quickFailure(config, 'empty_response', 'Empty response from quick model');
   } catch (error) {
@@ -389,12 +521,12 @@ export async function quickTask(
   const candidates = initializeQuickModelCandidates();
   const [primary] = candidates;
   if (!primary) {
-    return {
+    return trackQuickModelResult({
       success: false,
       error: 'Quick model not configured',
       failureReason: 'not_configured',
       attempts: 0,
-    };
+    });
   }
 
   const effectiveMaxTokens = maxTokens ?? 512;
@@ -403,12 +535,12 @@ export async function quickTask(
   for (const [index, config] of attempts.entries()) {
     const result = await executeQuickAttempt(config, prompt, effectiveMaxTokens, signal);
     const withAttempts = { ...result, attempts: index + 1 };
-    if (withAttempts.success) return withAttempts;
+    if (withAttempts.success) return trackQuickModelResult(withAttempts);
     if (withAttempts.failureReason !== 'rate_limited' && withAttempts.failureReason !== 'server_error') {
-      return withAttempts;
+      return trackQuickModelResult(withAttempts);
     }
     const next = attempts[index + 1];
-    if (!next) return withAttempts;
+    if (!next) return trackQuickModelResult(withAttempts);
     logger.info('Quick task retrying after transient failure', {
       failureReason: withAttempts.failureReason,
       fromProvider: config.provider,
@@ -417,7 +549,7 @@ export async function quickTask(
       toModel: next.model,
     });
   }
-  return quickFailure(primary, 'transport_error', 'Quick task ended without an attempt');
+  return trackQuickModelResult(quickFailure(primary, 'transport_error', 'Quick task ended without an attempt'));
 }
 
 /**
@@ -435,12 +567,12 @@ export async function memoryTask(
   const candidates = initializeQuickModelCandidates('memory');
   const [primary] = candidates;
   if (!primary) {
-    return {
+    return trackQuickModelResult({
       success: false,
       error: 'Memory model not configured',
       failureReason: 'not_configured',
       attempts: 0,
-    };
+    });
   }
 
   const effectiveMaxTokens = maxTokens ?? 512;
@@ -448,12 +580,12 @@ export async function memoryTask(
   for (const [index, config] of attempts.entries()) {
     const result = await executeQuickAttempt(config, prompt, effectiveMaxTokens, signal);
     const withAttempts = { ...result, attempts: index + 1 };
-    if (withAttempts.success) return withAttempts;
+    if (withAttempts.success) return trackQuickModelResult(withAttempts);
     if (withAttempts.failureReason !== 'rate_limited' && withAttempts.failureReason !== 'server_error') {
-      return withAttempts;
+      return trackQuickModelResult(withAttempts);
     }
     const next = attempts[index + 1];
-    if (!next) return withAttempts;
+    if (!next) return trackQuickModelResult(withAttempts);
     logger.info('Memory task retrying after transient failure', {
       failureReason: withAttempts.failureReason,
       fromProvider: config.provider,
@@ -462,7 +594,7 @@ export async function memoryTask(
       toModel: next.model,
     });
   }
-  return quickFailure(primary, 'transport_error', 'Memory task ended without an attempt');
+  return trackQuickModelResult(quickFailure(primary, 'transport_error', 'Memory task ended without an attempt'));
 }
 
 /**
@@ -552,6 +684,7 @@ Provide only the extracted/transformed result, nothing else.`;
 export function resetQuickModel(): void {
   quickAuthBlacklist.clear();
   quickModelAuthFailure = null;
+  quickModelFailure = null;
   delete lastResolvedLogKeys.quick;
   delete lastResolvedLogKeys.memory;
   logger.debug('Quick model configuration reset');

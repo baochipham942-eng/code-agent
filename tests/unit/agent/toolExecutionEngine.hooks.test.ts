@@ -253,6 +253,8 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     workingDirectory: '/tmp/code-agent-test',
     isDefaultWorkingDirectory: false,
     sessionId: 'session-1',
+    persistLongTermMemory: true,
+    includeRecentConversations: true,
     circuitBreaker: {
       recordFailure: vi.fn().mockReturnValue(false),
       recordSuccess: vi.fn(),

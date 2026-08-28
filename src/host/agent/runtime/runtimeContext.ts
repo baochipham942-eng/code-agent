@@ -39,6 +39,7 @@ import type { RunTraceContext } from '../../telemetry/runTraceContext';
 import type { GoalEvidenceGateState } from './goalEvidenceGate';
 import type { TurnQualityRunState } from './turnQuality';
 import type { BudgetScope } from '../../services/core/budgetService';
+import type { SkillDiscoveryService } from '../../services/skills/skillDiscoveryService';
 
 /**
  * 运行时组合根：单对象，所有 runtime 模块共享同一引用（ADR-038）。
@@ -77,6 +78,10 @@ export interface RuntimeContext {
   readonly userId?: string;
   readonly memoryMode?: SessionMemoryMode;
   readonly suppressedMemoryEntryIds?: string[];
+  readonly persistLongTermMemory: boolean;
+  readonly includeRecentConversations: boolean;
+  readonly maxSystemPromptTokens?: number;
+  readonly skillDiscoveryService?: SkillDiscoveryService;
   readonly persistMessage?: (message: Message) => Promise<void>;
   readonly onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: ToolResult }) => void;
   readonly toolScope?: WorkbenchToolScope;

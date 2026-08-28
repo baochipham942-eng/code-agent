@@ -51,19 +51,6 @@ interface ResolvedSummaryModel {
 let modelRouter: ModelRouter | null = null;
 let compactModelResolution: ResolvedSummaryModel | null = null;
 
-function shouldUseE2ELocalCompactModel(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_E2E === '1' && env.CODE_AGENT_E2E_LOCAL_COMPACT_MODEL === '1';
-}
-
-function buildE2ELocalCompactSummary(prompt: string): string {
-  const promptDigest = Buffer.from(prompt).toString('base64').slice(0, 24);
-  return [
-    'E2E local compact summary.',
-    `Prompt digest: ${promptDigest}`,
-    'Earlier conversation turns were compacted by the compact model boundary during app-host smoke.',
-  ].join('\n');
-}
-
 function getProviderBaseUrl(settings: AppSettings, provider: ModelProvider): string | undefined {
   return settings.models?.providers?.[provider]?.baseUrl;
 }
@@ -297,15 +284,18 @@ export async function compactModelSummarizeWithMetadata(
     ? prompt.replace(/^.*?(?=\n\n对话历史：)/s, options.instructions)
     : prompt;
 
-  if (shouldUseE2ELocalCompactModel()) {
-    return {
-      summary: buildE2ELocalCompactSummary(finalPrompt),
-      metadata: {
-        provider: 'acceptance',
-        model: 'e2e-local-compact-model',
-        useMainModel: false,
-      },
-    };
+  if (process.env.CODE_AGENT_E2E === '1' && process.env.CODE_AGENT_E2E_LOCAL_COMPACT_MODEL === '1') {
+    const e2e = await import('../testing/e2e/e2eLocalCompactModel');
+    if (e2e.shouldUseE2ELocalCompactModel()) {
+      return {
+        summary: e2e.buildE2ELocalCompactSummary(finalPrompt),
+        metadata: {
+          provider: 'acceptance',
+          model: 'e2e-local-compact-model',
+          useMainModel: false,
+        },
+      };
+    }
   }
 
   const resolution = options?.useMainModel

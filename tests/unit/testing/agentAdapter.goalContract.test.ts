@@ -10,9 +10,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StandaloneAgentAdapter } from '../../../src/host/testing/agentAdapter';
 import type { AgentEvent } from '../../../src/shared/contract';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 interface CapturedLoopConfig {
   goalContract?: { goal: string; verifyCommand?: string; allowSwarm?: boolean; maxTurns: number };
+  persistLongTermMemory?: boolean;
+  includeRecentConversations?: boolean;
+  maxSystemPromptTokens?: number;
+  skillDiscoveryService?: {
+    ensureInitialized(workingDirectory: string): Promise<void>;
+    getAllSkills(): Array<{ name: string }>;
+  };
   onEvent: (event: AgentEvent) => void;
 }
 
@@ -78,6 +88,41 @@ describe('StandaloneAgentAdapter goal contract injection', () => {
     expect(capturedConfigs).toHaveLength(1);
     expect(capturedConfigs[0].goalContract).toBeUndefined();
     expect(adapter.getGoalRunRecord()).toBeUndefined();
+  });
+
+  it('constructs an isolated evaluation runtime by default', async () => {
+    const adapter = makeAdapter();
+    await adapter.sendMessage('hello');
+
+    expect(capturedConfigs[0]).toMatchObject({
+      persistLongTermMemory: false,
+      includeRecentConversations: false,
+      maxSystemPromptTokens: 12_000,
+    });
+    expect(capturedConfigs[0].skillDiscoveryService).toBeDefined();
+    await capturedConfigs[0].skillDiscoveryService?.ensureInitialized('/tmp');
+    expect(capturedConfigs[0].skillDiscoveryService?.getAllSkills()).toEqual([]);
+  });
+
+  it('injects exactly the explicitly selected skills', async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), 'adapter-skill-set-'));
+    vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
+    try {
+      const adapter = new StandaloneAgentAdapter({
+        workingDirectory: '/tmp',
+        modelConfig: { provider: 'mock', model: 'mock-model' },
+        skills: ['commit'],
+        includeClaudeLegacySkills: false,
+      });
+      await adapter.sendMessage('hello');
+      await capturedConfigs[0].skillDiscoveryService?.ensureInitialized('/tmp');
+
+      expect(capturedConfigs[0].skillDiscoveryService?.getAllSkills().map((skill) => skill.name))
+        .toEqual(['commit']);
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(dataDir, { recursive: true, force: true });
+    }
   });
 
   it('passes a built GoalContract with prompt fallback and allowSwarm=false', async () => {

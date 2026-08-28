@@ -56,6 +56,16 @@ describe('recentConversations', () => {
   // --------------------------------------------------------------------------
 
   describe('appendConversationSummary', () => {
+    it('does not write when the caller disables recent conversation persistence', async () => {
+      await appendConversationSummary({
+        date: '2026-03-19',
+        title: 'Evaluation-only session',
+        highlights: ['must stay isolated'],
+      }, { enabled: false });
+
+      await expect(fs.stat(summaryPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
     it('should create recent-conversations.md on first append', async () => {
       const summary: ConversationSummary = {
         date: '2026-03-19',
@@ -183,6 +193,16 @@ describe('recentConversations', () => {
   // --------------------------------------------------------------------------
 
   describe('buildRecentConversationsBlock', () => {
+    it('does not read summaries when the caller disables recent conversations', async () => {
+      await appendConversationSummary({
+        date: '2026-03-19',
+        title: 'Production session',
+        highlights: ['must not enter evaluation'],
+      });
+
+      await expect(buildRecentConversationsBlock({ enabled: false })).resolves.toBeNull();
+    });
+
     it('should return null when no summaries exist', async () => {
       const block = await buildRecentConversationsBlock();
       expect(block).toBeNull();

@@ -3,7 +3,8 @@
 // 在所有测试模块加载前注册全局 mock，避免非 Electron 环境模块崩溃
 // ============================================================================
 
-import { vi } from 'vitest';
+import { beforeEach, vi } from 'vitest';
+import { configureFolderTrustService } from '../src/host/security/folderTrustServiceConfig';
 
 // 标记为 CLI 模式，跳过 secureStorage.ts 中的 require('keytar')
 // keytar 为 Electron headers 编译，在系统 Node.js 中 SIGSEGV (exit 139)
@@ -11,8 +12,10 @@ process.env.CODE_AGENT_CLI_MODE = '1';
 
 // Most existing unit tests predate the folder trust gate and exercise loaders in a
 // "project config is readable" test context. Security gate tests explicitly clear
-// this override to cover untrusted/trusted behavior against the real service.
-process.env.CODE_AGENT_TEST_DEFAULT_FOLDER_TRUST ||= 'trusted';
+// this injected default to cover untrusted/trusted behavior against the real service.
+beforeEach(() => {
+  configureFolderTrustService({ defaultProjectConfigTrust: true });
+});
 
 // 浏览器冒烟（game-runtime / visual smoke）测试态强制走 Playwright bundled headless shell。
 // 'auto' 在装有 Chrome 的机器上解析为 system-chrome-cdp，而系统 Chrome 即使 --headless=new
@@ -130,3 +133,6 @@ vi.mock('better-sqlite3', () => {
   };
   return { default: () => mockDb };
 });
+// Retry timing is an explicit test input; production code keeps production defaults.
+process.env.ARTIFACT_SELECTED_PROVIDER_RETRY_DELAY_1_MS = '0';
+process.env.ARTIFACT_SELECTED_PROVIDER_RETRY_DELAY_2_MS = '0';

@@ -2,9 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildE2ELocalAgentModelResponse,
-  shouldUseE2ELocalAgentModel,
   shouldUseE2ELocalAgentModelForMessages,
-} from '../../../src/host/model/e2eLocalAgentModel';
+} from '../../../src/host/testing/e2e/e2eLocalAgentModel';
 import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
 import { ASK_USER_QUESTION_DECLINED_OUTPUT } from '../../../src/shared/contract/askUserQuestion';
 import type { ModelMessage } from '../../../src/host/model/types';
@@ -93,9 +92,9 @@ const wakeNoopTool: ToolDefinition = {
 
 describe('e2eLocalAgentModel', () => {
   it('requires both E2E env guards', () => {
-    expect(shouldUseE2ELocalAgentModel({ CODE_AGENT_E2E: '1' })).toBe(false);
-    expect(shouldUseE2ELocalAgentModel({ CODE_AGENT_E2E_LOCAL_AGENT_MODEL: '1' })).toBe(false);
-    expect(shouldUseE2ELocalAgentModel({
+    expect(shouldUseE2ELocalAgentModelForMessages([], { CODE_AGENT_E2E: '1' })).toBe(false);
+    expect(shouldUseE2ELocalAgentModelForMessages([], { CODE_AGENT_E2E_LOCAL_AGENT_MODEL: '1' })).toBe(false);
+    expect(shouldUseE2ELocalAgentModelForMessages([], {
       CODE_AGENT_E2E: '1',
       CODE_AGENT_E2E_LOCAL_AGENT_MODEL: '1',
     })).toBe(true);

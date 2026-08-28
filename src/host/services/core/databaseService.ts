@@ -219,7 +219,7 @@ export interface PublishPreparedImportedWorkspaceGraphInput {
 
 export class DatabaseService extends DurableRunDatabaseSupport {
   private db: BetterSqlite3.Database | null = null;
-  private dbPath = path.join(app?.getPath?.('userData') || process.cwd(), 'code-agent.db');
+  private dbPath = path.join(app.getPath('userData'), 'code-agent.db');
   private _initPromise: Promise<void> | null = null;
   private _initFailed = false;
   private _retryCount = 0;

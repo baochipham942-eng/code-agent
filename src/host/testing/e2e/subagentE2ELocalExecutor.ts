@@ -1,12 +1,8 @@
 import { setTimeout as delay } from 'node:timers/promises';
-import { normalizeCancellationReason } from '../../shared/contract/cancellation';
-import { AgentFailureCode, agentFailureCodeFromCancellationReason } from '../../shared/contract/agentFailure';
-import type { AgentMessage } from './spawnGuard';
-import type { SubagentConfig, SubagentContext, SubagentResult } from './subagentExecutorTypes';
-
-export function shouldUseE2ELocalSubagentExecutor(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_E2E === '1' && env.CODE_AGENT_E2E_LOCAL_SUBAGENT_EXECUTOR === '1';
-}
+import { normalizeCancellationReason } from '../../../shared/contract/cancellation';
+import { AgentFailureCode, agentFailureCodeFromCancellationReason } from '../../../shared/contract/agentFailure';
+import type { AgentMessage } from '../../agent/spawnGuard';
+import type { SubagentConfig, SubagentContext, SubagentResult } from '../../agent/subagentExecutorTypes';
 
 function getE2ELocalSubagentDelayMs(env: NodeJS.ProcessEnv = process.env): number {
   const parsed = Number(env.CODE_AGENT_E2E_LOCAL_SUBAGENT_DELAY_MS);

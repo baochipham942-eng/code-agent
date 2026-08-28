@@ -1,5 +1,5 @@
 // ============================================================================
-// Change Detector — Detects which file changes should trigger eval re-runs
+// Change Detector — shared changed-file detection for verification and eval re-runs
 // ============================================================================
 
 import { execFileSync } from 'child_process';

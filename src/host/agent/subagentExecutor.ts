@@ -66,10 +66,6 @@ import {
   getChildSubagentExecutionTimeout,
   getSubagentIdleTimeout,
 } from './subagentExecutorCancellation';
-import {
-  executeE2ELocalSubagent,
-  shouldUseE2ELocalSubagentExecutor,
-} from './subagentE2ELocalExecutor';
 import { buildSubagentSkillsBlock } from '../services/skills/subagentSkillInjection';
 import { applyRoleBoundaryToSubagentRequest, buildRoleContextBlock, runRoleWriteBack, recordRoleParticipation } from '../services/roleAssets';
 import type {
@@ -156,7 +152,11 @@ export class SubagentExecutor {
     // 这里，入口归一化一次覆盖全部，下游 context.modelConfig 引用自动安全。
     context = normalizeSubagentModelContext(context, config.name);
 
-    if (shouldUseE2ELocalSubagentExecutor()) {
+    if (
+      process.env.CODE_AGENT_E2E === '1'
+      && process.env.CODE_AGENT_E2E_LOCAL_SUBAGENT_EXECUTOR === '1'
+    ) {
+      const { executeE2ELocalSubagent } = await import('../testing/e2e/subagentE2ELocalExecutor');
       return executeE2ELocalSubagent(prompt, config, context);
     }
 

@@ -476,7 +476,7 @@ export class RunFinalizer {
     // Session end learning
     // GAP-005: 学习管线只读本会话 telemetry（本地 DB，开销极低），
     // 不再用 genNum>=5 门槛——短会话里重复 3 次的失败模式同样值得沉淀。
-    if (this.ctx.messages.length > 0) {
+    if (this.ctx.persistLongTermMemory !== false && this.ctx.messages.length > 0) {
       this.learningPipeline.runSessionEndLearning().catch((err) => {
         logger.error('[AgentLoop] Session end learning error:', err);
       });
@@ -492,19 +492,21 @@ export class RunFinalizer {
     }
 
     // Light Memory: Record session stats + conversation summary
-    const messageCount = this.ctx.messages.length;
-    recordSessionEnd(
-      messageCount,
-      this.ctx.modelConfig.model,
-      this.ctx.sessionId,
-      this.ctx.modelConfig.provider,
-    )
-      .catch(() => { /* non-critical */ });
+    if (this.ctx.persistLongTermMemory !== false) {
+      const messageCount = this.ctx.messages.length;
+      recordSessionEnd(
+        messageCount,
+        this.ctx.modelConfig.model,
+        this.ctx.sessionId,
+        this.ctx.modelConfig.provider,
+      )
+        .catch(() => { /* non-critical */ });
 
-    // Extract conversation summary from user messages
-    this.extractAndSaveConversationSummary().catch((err) => {
-      logger.error('[RunFinalizer] Conversation summary extraction failed:', err);
-    });
+      // Extract conversation summary from user messages
+      this.extractAndSaveConversationSummary().catch((err) => {
+        logger.error('[RunFinalizer] Conversation summary extraction failed:', err);
+      });
+    }
 
     // 角色主动性：长任务跑完 → 参与过的持久化角色 event 醒来总结 + 提 next steps
     // （fire-and-forget；门槛/防递归/预算护栏都在 triggerEventWakes 内部，内部文档 §2.2）
@@ -861,6 +863,7 @@ export class RunFinalizer {
    * degrades to the previous truncation heuristic on any failure (see conversationJudge).
    */
   private async extractAndSaveConversationSummary(): Promise<void> {
+    if (this.ctx.persistLongTermMemory === false) return;
     // Persistent roles own their MEMORY.md lifecycle. Do not mirror role traffic into
     // the ordinary global/project recent-conversations ledger.
     if (this.ctx.persistentRoleId) return;
@@ -913,11 +916,14 @@ export class RunFinalizer {
     const title = judgment.isMeeting ? `[会议] ${judgment.title}` : judgment.title;
     const today = new Date().toISOString().split('T')[0];
 
-    await appendConversationSummary({
-      date: today,
-      title: title.replace(/"/g, "'"),
-      highlights: judgment.worthKnowledge,
-      projectId: this.ctx.projectId ?? undefined,
-    });
+    await appendConversationSummary(
+      {
+        date: today,
+        title: title.replace(/"/g, "'"),
+        highlights: judgment.worthKnowledge,
+        projectId: this.ctx.projectId ?? undefined,
+      },
+      { enabled: true },
+    );
   }
 }

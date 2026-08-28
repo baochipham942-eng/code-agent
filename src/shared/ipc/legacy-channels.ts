@@ -8,7 +8,6 @@ import {
   LSP_CHANNELS,
   BACKGROUND_CHANNELS,
   TELEMETRY_CHANNELS,
-  SUBSET_CHANNELS,
   EVALUATION_CHANNELS,
 } from './channels';
 
@@ -289,12 +288,6 @@ export const IPC_CHANNELS = {
   // Handoff proposal channels
   HANDOFF_LIST: 'handoff:list',
   HANDOFF_UPDATE_STATUS: 'handoff:update-status',
-
-  // Test Subset channels (数据集子集管理)
-  SUBSET_SAVE: SUBSET_CHANNELS.SAVE,
-  SUBSET_LIST: SUBSET_CHANNELS.LIST,
-  SUBSET_LOAD: SUBSET_CHANNELS.LOAD,
-  SUBSET_DELETE: SUBSET_CHANNELS.DELETE,
 
   // Evaluation channels (评测实验只读查询，评测中心「基准」tab)
   EVALUATION_LIST_EXPERIMENTS: EVALUATION_CHANNELS.LIST_EXPERIMENTS,

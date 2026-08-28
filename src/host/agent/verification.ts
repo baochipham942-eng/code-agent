@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { GoalGateVerificationCard } from '../../shared/contract/agent';
 import { makeEvidenceRef, type EvidenceKind, type EvidenceRef } from '../../shared/contract/evidence';
-import { ChangeDetector } from '../testing/ci/changeDetector';
+import { ChangeDetector } from './changeDetector';
 import { runVerifyGate } from './goalVerifyGate';
 import { captureWorkspaceSnapshot, diffWorkspaceSnapshots } from './workspaceSnapshot';
 

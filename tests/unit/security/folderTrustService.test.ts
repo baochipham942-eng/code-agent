@@ -9,7 +9,9 @@ import Database from 'better-sqlite3';
 import {
   FolderTrustService,
   resetFolderTrustServiceForTest,
+  closeFolderTrustService,
 } from '../../../src/host/security/folderTrustService';
+import { configureFolderTrustService } from '../../../src/host/security/folderTrustServiceConfig';
 import { getUserConfigDir } from '../../../src/host/config/configPaths';
 
 async function writeFile(filePath: string, content = '{}'): Promise<void> {
@@ -27,9 +29,9 @@ describe('FolderTrustService', () => {
     dataDir = path.join(tmpRoot, 'data');
     projectDir = path.join(tmpRoot, 'project');
     await fs.mkdir(projectDir, { recursive: true });
-    vi.stubEnv('CODE_AGENT_TEST_DEFAULT_FOLDER_TRUST', '');
     vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
-    resetFolderTrustServiceForTest();
+    closeFolderTrustService();
+    configureFolderTrustService({});
   });
 
   afterEach(async () => {

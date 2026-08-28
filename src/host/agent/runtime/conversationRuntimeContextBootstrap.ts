@@ -285,7 +285,10 @@ export async function injectRecentConversations(
   if (ctx.memoryMode === 'off' || ctx.persistentRoleId) return;
 
   try {
-    const block = await buildRecentConversationsBlock({ projectId: ctx.projectId });
+    const block = await buildRecentConversationsBlock({
+      projectId: ctx.projectId,
+      enabled: ctx.includeRecentConversations,
+    });
     if (!block) return;
     contextAssembly.injectSystemMessage(block, 'user-memory', 'recent-conversations');
     logger.info('[AgentLoop] Recent conversations injected at session start', {

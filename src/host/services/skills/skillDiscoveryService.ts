@@ -30,6 +30,8 @@ const SKILL_METADATA_CACHE_FILE = 'skill-metadata-index-v3.json';
 
 export interface SkillDiscoveryServiceOptions {
   includeClaudeLegacySkills?: boolean;
+  /** Explicit run-level visibility. Omitted means normal product discovery. */
+  skillNames?: readonly string[];
   applicability?: SkillApplicabilityOptions;
 }
 
@@ -94,6 +96,7 @@ class SkillDiscoveryService {
   private initialized = false;
   private workingDirectory = '';
   private readonly includeClaudeLegacySkills: boolean;
+  private readonly allowedSkillNames?: ReadonlySet<string>;
   private readonly applicabilityOptions: SkillApplicabilityOptions;
   private lastApplicabilityFilterReport: SkillApplicabilityFilterReport = {
     evaluatedAt: 0,
@@ -115,6 +118,9 @@ class SkillDiscoveryService {
 
   constructor(options: SkillDiscoveryServiceOptions = {}) {
     this.includeClaudeLegacySkills = shouldIncludeClaudeLegacySkills(options);
+    this.allowedSkillNames = options.skillNames === undefined
+      ? undefined
+      : new Set(options.skillNames);
     this.applicabilityOptions = {
       availableToolNames: () => {
         const toolSearch = getToolSearchService();
@@ -159,6 +165,12 @@ class SkillDiscoveryService {
   private async doInitialize(normalizedDir: string): Promise<void> {
     this.workingDirectory = normalizedDir;
     this.skills.clear();
+    if (this.allowedSkillNames?.size === 0) {
+      this.initialized = true;
+      await this.registerSkillsToToolSearch();
+      logger.info('Skill discovery completed', { total: 0, skills: [] });
+      return;
+    }
     await this.loadMetadataCache();
 
     // 1. 加载内置 Skills（最低优先级）
@@ -236,6 +248,7 @@ class SkillDiscoveryService {
    * 任一层异常时 fail-open，不阻断 skill 可用性。
    */
   isSkillEnabled(skillName: string): boolean {
+    if (this.allowedSkillNames && !this.allowedSkillNames.has(skillName)) return false;
     try {
       if (
         this.workingDirectory &&
@@ -261,7 +274,7 @@ class SkillDiscoveryService {
     try {
       const toolSearchService = getToolSearchService();
       const skillsToRegister = this.filterApplicableSkills(
-        Array.from(this.skills.values()).filter((skill) => this.isSkillEnabled(skill.name)),
+        this.getAllSkills().filter((skill) => this.isSkillEnabled(skill.name)),
         'tool_search',
       );
 
@@ -463,6 +476,7 @@ class SkillDiscoveryService {
    * 获取指定名称的 Skill
    */
   getSkill(name: string): ParsedSkill | undefined {
+    if (this.allowedSkillNames && !this.allowedSkillNames.has(name)) return undefined;
     return this.skills.get(name);
   }
 
@@ -470,7 +484,10 @@ class SkillDiscoveryService {
    * 获取所有已加载的 Skills
    */
   getAllSkills(): ParsedSkill[] {
-    return Array.from(this.skills.values());
+    const skills = Array.from(this.skills.values());
+    return this.allowedSkillNames
+      ? skills.filter((skill) => this.allowedSkillNames?.has(skill.name))
+      : skills;
   }
 
   /**

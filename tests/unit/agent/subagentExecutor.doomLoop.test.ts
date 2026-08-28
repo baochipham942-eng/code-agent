@@ -83,7 +83,7 @@ vi.mock('../../../src/host/agent/subagentExecutionRouter', () => ({
   routeExternalSubagentExecution: () => null,
 }));
 
-vi.mock('../../../src/host/agent/subagentE2ELocalExecutor', () => ({
+vi.mock('../../../src/host/testing/e2e/subagentE2ELocalExecutor', () => ({
   shouldUseE2ELocalSubagentExecutor: () => false,
   executeE2ELocalSubagent: vi.fn(),
 }));

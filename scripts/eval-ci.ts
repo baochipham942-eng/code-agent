@@ -1,4 +1,5 @@
 #!/usr/bin/env npx tsx
+import './lib/eval-data-dir-bootstrap';
 // ============================================================================
 // eval-ci.ts — CLI entry point for Eval-Driven Development
 // ============================================================================
@@ -21,7 +22,7 @@ import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { ChangeDetector } from '../src/host/testing/ci/changeDetector';
+import { ChangeDetector } from '../src/host/agent/changeDetector';
 import { BaselineManager } from '../src/host/testing/ci/baselineManager';
 import {
   EVAL_SPLITS_RELATIVE_PATH,
@@ -310,6 +311,7 @@ function parseArgs(argv: string[]) {
   let riskTasks: string[] | undefined;
   let caseDir: string | undefined;
   let split: SplitBucket | undefined;
+  let dataDir: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -357,6 +359,8 @@ function parseArgs(argv: string[]) {
       compare = args[++i];
     } else if (arg === '--case-dir' && i + 1 < args.length) {
       caseDir = args[++i];
+    } else if (arg === '--data-dir' && i + 1 < args.length) {
+      dataDir = args[++i];
     } else if (arg === '--predicted-fixes' && i + 1 < args.length) {
       predictedFixes = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
     } else if (arg === '--risk-tasks' && i + 1 < args.length) {
@@ -391,7 +395,12 @@ function parseArgs(argv: string[]) {
     process.exit(1);
   }
 
-  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split };
+  if (dataDir !== undefined && dataDir.trim().length === 0) {
+    console.error(chalk.red('Invalid --data-dir value: path must not be empty.'));
+    process.exit(1);
+  }
+
+  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir };
 }
 
 function printUsage() {
@@ -417,6 +426,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --predicted-fixes <a,b>  Register case ids this change should fix (delta report reconciles)
   npx tsx scripts/eval-ci.ts --risk-tasks <a,b>       Register case ids this change might break
   npx tsx scripts/eval-ci.ts --case-dir <dir>   External test-case dir (e.g. GAIA)；跳过 baseline 对账与 trend
+  npx tsx scripts/eval-ci.ts --data-dir <path>  Isolate all product data reads/writes under this directory
   npx tsx scripts/eval-ci.ts --promote          Promote current results to baseline
   npx tsx scripts/eval-ci.ts --promote-mock-harness  Refresh the separate deterministic mock-harness baseline
   npx tsx scripts/eval-ci.ts --baseline-info    Show current baseline
@@ -681,6 +691,11 @@ function createAgent(opts: {
   return new StandaloneAgentAdapter({
     workingDirectory: opts.workingDir,
     requestPermission: getScriptedRunPermissionHandler(),
+    persistLongTermMemory: false,
+    includeRecentConversations: false,
+    maxSystemPromptTokens: 12_000,
+    skills: [],
+    includeClaudeLegacySkills: false,
     modelConfig: {
       provider: resolvedProvider,
       model: resolvedModel,
@@ -693,7 +708,7 @@ function createAgent(opts: {
 /**
  * 评测运行时 = 与用户本机状态隔离的确定性环境。
  *
- * 下面三行是显式隔离：不吃用户级 skill、不吃最近会话、钉死系统提示预算。
+ * 评测的 skill 集、近期会话和提示预算由 StandaloneAgentAdapter 构造参数显式注入。
  * 还有**一条隐式隔离**，2026-08-14 (N-PROV1) 明确为既定策略并记在这里，免得再有人当 bug 修：
  *
  *   **eval 不调用 `configService.initialize()`**，所以 `getSettings()` 返回的是编译进代码的
@@ -707,10 +722,6 @@ function createAgent(opts: {
  * 显式注入（createAgent 里有 fail-loud 守着，不会让人对着「无法解析 baseURL」猜半天）。
  */
 async function prepareRealEvalRuntime(): Promise<void> {
-  process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS ||= '12000';
-  process.env.CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS ||= 'false';
-  process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS = 'true';
-
   const { getProtocolRegistry } = await import('../src/host/tools/protocolRegistry');
   getProtocolRegistry();
 
@@ -964,6 +975,11 @@ async function runCompareCommand(
       }
       return new StandaloneAgentAdapter({
         workingDirectory: agentWorkingDir,
+        persistLongTermMemory: false,
+        includeRecentConversations: false,
+        maxSystemPromptTokens: 12_000,
+        skills: [],
+        includeClaudeLegacySkills: false,
         requestPermission: getScriptedRunPermissionHandler(),
         modelConfig: { provider, model, apiKey },
         ...(config.systemPrompt ? { systemPromptOverride: config.systemPrompt } : {}),
@@ -1063,8 +1079,11 @@ async function mainImpl(
   cwd: string,
   eventStream?: EvalRunEventStream,
 ): Promise<void> {
-  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split } = parseArgs(argv);
+  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir } = parseArgs(argv);
   const workingDir = cwd;
+  if (dataDir) {
+    process.env.CODE_AGENT_DATA_DIR = path.resolve(cwd, dataDir);
+  }
   const effectiveReal = real || !!model;
   const manager = new BaselineManager(
     workingDir,

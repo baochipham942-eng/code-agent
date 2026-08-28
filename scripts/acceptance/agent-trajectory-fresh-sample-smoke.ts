@@ -139,7 +139,6 @@ async function main(): Promise<void> {
     process.env.CODE_AGENT_E2E_LOCAL_AGENT_MODEL = '1';
     process.env.CODE_AGENT_E2E_AGENT_MODEL_READ_FILE = fixturePath;
     process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
-    process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS = 'true';
 
     const { getProtocolRegistry } = await import('../../src/host/tools/protocolRegistry');
     getProtocolRegistry();
@@ -166,6 +165,8 @@ async function main(): Promise<void> {
 
     const agent = new testing.StandaloneAgentAdapter({
       workingDirectory: workspaceDir,
+      persistLongTermMemory: false,
+      includeRecentConversations: false,
       modelConfig: {
         provider: 'openai',
         model: 'e2e-local-agent-model',

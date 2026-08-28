@@ -392,25 +392,6 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS]: (payload?: { limit?: number }) => Promise<EvalExperimentListItem[]>;
   [IPC_CHANNELS.EVALUATION_LOAD_EXPERIMENT]: (experimentId: string) => Promise<EvalExperimentDetail | null>;
 
-  // Test Subset (数据集子集管理)
-  [IPC_CHANNELS.SUBSET_SAVE]: (subset: { name: string; description?: string; caseIds: string[] }) => Promise<{ success: boolean; path: string }>;
-  [IPC_CHANNELS.SUBSET_LIST]: () => Promise<
-    Array<{
-      name: string;
-      description?: string;
-      caseIds: string[];
-      createdAt: number;
-      fileName: string;
-    }>
-  >;
-  [IPC_CHANNELS.SUBSET_LOAD]: (fileName: string) => Promise<{
-    name: string;
-    description?: string;
-    caseIds: string[];
-    createdAt: number;
-  } | null>;
-  [IPC_CHANNELS.SUBSET_DELETE]: (fileName: string) => Promise<boolean>;
-
   // Background (后台任务)
   [IPC_CHANNELS.BACKGROUND_MOVE_TO_BACKGROUND]: (sessionId: string) => Promise<boolean>;
   [IPC_CHANNELS.BACKGROUND_MOVE_TO_FOREGROUND]: (sessionId: string) => Promise<BackgroundSessionInfo | null>;

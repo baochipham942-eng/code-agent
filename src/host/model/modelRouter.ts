@@ -115,7 +115,6 @@ import { GeminiProvider } from './providers/geminiProvider';
 import { VolcengineProvider } from './providers/volcengineProvider';
 import { LongCatProvider } from './providers/longcatProvider';
 import { XiaomiProvider } from './providers/xiaomiProvider';
-import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModelForMessages } from './e2eLocalAgentModel';
 
 // Re-export PROVIDER_REGISTRY for external use
 export { PROVIDER_REGISTRY };
@@ -529,8 +528,11 @@ export class ModelRouter {
       throw new Error('Request was cancelled before starting');
     }
 
-    if (shouldUseE2ELocalAgentModelForMessages(messages)) {
-      return buildE2ELocalAgentModelResponse(messages, tools, config, onStream);
+    if (process.env.CODE_AGENT_E2E === '1') {
+      const e2e = await import('../testing/e2e/e2eLocalAgentModel');
+      if (e2e.shouldUseE2ELocalAgentModelForMessages(messages)) {
+        return e2e.buildE2ELocalAgentModelResponse(messages, tools, config, onStream);
+      }
     }
 
     // Inference cache (non-streaming only)

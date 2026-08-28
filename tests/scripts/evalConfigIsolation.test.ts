@@ -25,6 +25,7 @@ let dataDirSeq = 0;
 
 function runEvalCi(env: Record<string, string>) {
   dataDirSeq += 1;
+  const dataDir = path.join('/tmp', `code-agent-evalcfg-test-${dataDirSeq}`);
   return execFileAsync(
     process.execPath,
     [
@@ -42,6 +43,8 @@ function runEvalCi(env: Record<string, string>) {
       '--force',
       '--scope',
       'full',
+      '--data-dir',
+      dataDir,
     ],
     {
       cwd: repoRoot,
@@ -49,7 +52,7 @@ function runEvalCi(env: Record<string, string>) {
       env: {
         ...process.env,
         AUTO_TEST_API_KEY: 'dummy-key-not-used',
-        CODE_AGENT_DATA_DIR: path.join('/tmp', `code-agent-evalcfg-test-${dataDirSeq}`),
+        CODE_AGENT_DATA_DIR: '',
         ...env,
       },
     },

@@ -869,7 +869,7 @@ Neo 作为 MCP server 对外暴露能力时，**控屏/写入类能力永不通�
 | **WS5a 止血** | 给 `computer`/`execute_command`/`clear_logs` 加 opt-in 闸 + env flag（默认关），新增 `eval-query`/`appshots-query` 只读工具 | `src/host/mcp/mcpServer.ts`（commit `e281196c`） |
 | **WS5b 定调** | 评估后**否决**门控方案——stdio MCP 无法可信认证 caller（无 mTLS/OAuth），5 层授权门复杂度失衡 → **彻底移除**三个控屏工具及全部 gate 代码 | `mcpServer.ts` 从 ~229 行收敛为只读不变量（commit `8c85ac22`） |
 
-当前 MCP server 仅暴露 5 个只读工具：`get_logs` / `get_status` / `screenshot`（读屏不控屏）/ `eval-query` / `appshots-query`。强制方式 = 直接不定义 control 工具，调未定义工具返回 `Unknown tool`。正确的控屏路径是 **Neo 作为 orchestrator 编排外部 agent**，不是外部反向控制 Neo。详见 [MCP_SERVER.md 安全边界](./MCP_SERVER.md) + ws5b 决策。
+当前 MCP server 仅暴露 4 个只读工具：`get_logs` / `get_status` / `screenshot`（读屏不控屏）/ `appshots-query`。强制方式 = 直接不定义 control 工具，调未定义工具返回 `Unknown tool`。正确的控屏路径是 **Neo 作为 orchestrator 编排外部 agent**，不是外部反向控制 Neo。详见 [MCP_SERVER.md 安全边界](./MCP_SERVER.md) + ws5b 决策。
 
 ### W4: Alma 式聊天渲染 + neo:// 深链 + Computer-use PiP（前端）
 

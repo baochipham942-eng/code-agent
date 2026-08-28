@@ -115,11 +115,8 @@ export class CodeAgentMCPServer {
   private server: Server;
   private stdioHandle?: StdioServerHandle;
   private isRunning: boolean = false;
-  /** 解析 eval 结果时的工作目录（其下的 .code-agent/ 存放 eval-baseline.json / eval-trend.json）。 */
-  private readonly workingDirectory: string;
 
-  constructor(options?: { transport?: string; port?: number; host?: string; enableWriteTools?: boolean; workingDirectory?: string }) {
-    this.workingDirectory = options?.workingDirectory ?? process.cwd();
+  constructor() {
     this.server = new Server(
       {
         name: 'code-agent',
@@ -327,33 +324,6 @@ export class CodeAgentMCPServer {
             },
           },
           {
-            name: 'eval-query',
-            description: 'Query Agent Neo evaluation results (read-only). Reads the eval baseline (global pass rate / average score / per-case pass-fail-score) and recent run trend from the working directory\'s .code-agent/eval-baseline.json and eval-trend.json. Useful for an external agent to inspect Neo\'s own benchmark health.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                view: {
-                  type: 'string',
-                  enum: ['summary', 'cases', 'trend', 'all'],
-                  description: 'summary = global metrics; cases = per-case results; trend = recent run history; all = everything. Default summary.',
-                },
-                status: {
-                  type: 'string',
-                  enum: ['passed', 'failed', 'all'],
-                  description: '[cases] Filter case results by status. Default all.',
-                },
-                trendCount: {
-                  type: 'number',
-                  description: '[trend] Number of most-recent trend points to return. Default 10.',
-                },
-                workingDirectory: {
-                  type: 'string',
-                  description: 'Override the working directory whose .code-agent/ holds eval results. Defaults to the server working directory.',
-                },
-              },
-            },
-          },
-          {
             name: 'appshots-query',
             description: 'List and read Agent Neo\'s persisted window captures (appshots) — read-only history of user-triggered hotkey window snapshots stored under <CODE_AGENT_DATA_DIR or ~/.code-agent>/appshots/. This does NOT trigger a live capture (that needs the running app); it reads past captures from disk. Set includeDataUrl=true (or pass an explicit path inside the appshots dir) to embed a capture\'s PNG as image content.',
             inputSchema: {
@@ -469,64 +439,6 @@ export class CodeAgentMCPServer {
                 type: 'text',
                 text: `Tool execution failed: ${error instanceof Error ? error.message : String(error)}`,
               },
-            ],
-            isError: true,
-          };
-        }
-      }
-
-      if (name === 'eval-query') {
-        try {
-          const view = (args?.view as string) || 'summary';
-          const statusFilter = (args?.status as string) || 'all';
-          const trendCount = typeof args?.trendCount === 'number' ? (args.trendCount as number) : 10;
-          const workDir = (args?.workingDirectory as string) || this.workingDirectory;
-
-          const { BaselineManager } = await import('../testing/ci/baselineManager.js');
-          const { TrendTracker } = await import('../testing/ci/trendTracker.js');
-          const baseline = await new BaselineManager(workDir).load();
-
-          if (!baseline && (view === 'summary' || view === 'cases')) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: `No eval baseline found under ${pathJoin(workDir, CONFIG_DIR_NEW)}. Run an evaluation first, or pass workingDirectory pointing at a project whose .code-agent/ holds eval-baseline.json.`,
-                },
-              ],
-              isError: true,
-            };
-          }
-
-          const out: Record<string, unknown> = { workingDirectory: workDir };
-          if (baseline && (view === 'summary' || view === 'all')) {
-            out.summary = {
-              ...baseline.globalMetrics,
-              updatedAt: baseline.updatedAt,
-              updatedBy: baseline.updatedBy,
-            };
-          }
-          if (baseline && (view === 'cases' || view === 'all')) {
-            const cases = Object.entries(baseline.caseResults)
-              .filter(([, r]) => statusFilter === 'all' || r.status === statusFilter)
-              .map(([testId, r]) => ({
-                testId,
-                status: r.status,
-                score: r.score,
-                lastPassedAt: r.lastPassedAt ?? null,
-              }));
-            out.caseCount = cases.length;
-            out.cases = cases;
-          }
-          if (view === 'trend' || view === 'all') {
-            out.trend = await new TrendTracker(workDir).getRecent(trendCount);
-          }
-
-          return { content: [{ type: 'text', text: JSON.stringify(out, null, 2) }] };
-        } catch (error) {
-          return {
-            content: [
-              { type: 'text', text: `eval-query failed: ${error instanceof Error ? error.message : String(error)}` },
             ],
             isError: true,
           };

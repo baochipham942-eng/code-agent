@@ -25,7 +25,10 @@ import type {
   SkillContextModifier,
 } from '../../../../shared/contract/agentSkill';
 import type { ModelConfig } from '../../../../shared/contract';
-import { getSkillDiscoveryService } from '../../../services/skills';
+import {
+  getSkillDiscoveryService,
+  type SkillDiscoveryService,
+} from '../../../services/skills';
 import { renderSkillContent } from '../../../services/skills/skillRenderer';
 import { getSubagentExecutor } from '../../../agent/subagentExecutor';
 import type { ToolResolver } from '../../dispatch/toolResolver';
@@ -311,7 +314,8 @@ export async function executeSkill(
 
   onProgress?.({ stage: 'starting', detail: `skill ${command}` });
 
-  const discoveryService = getSkillDiscoveryService();
+  const discoveryService = (ctx.skillDiscoveryService as SkillDiscoveryService | undefined)
+    ?? getSkillDiscoveryService();
   if (!discoveryService) {
     return { ok: false, error: 'Skill discovery service is not available.', code: 'NOT_INITIALIZED' };
   }

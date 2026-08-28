@@ -93,7 +93,7 @@ describe('subagentExecutor adaptive leak defense (ADR-019)', () => {
     // 归一化必须发生在 execute() 函数体内、E2E 早退分支之前
     const executeBody = source.slice(source.indexOf('async execute('));
     const normalizeIdx = executeBody.indexOf('normalizeSubagentModelContext');
-    const e2eIdx = executeBody.indexOf('shouldUseE2ELocalSubagentExecutor');
+    const e2eIdx = executeBody.indexOf('CODE_AGENT_E2E_LOCAL_SUBAGENT_EXECUTOR');
     expect(normalizeIdx).toBeGreaterThan(-1);
     expect(e2eIdx).toBeGreaterThan(-1);
     expect(normalizeIdx).toBeLessThan(e2eIdx);

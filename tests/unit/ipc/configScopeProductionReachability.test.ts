@@ -117,7 +117,7 @@ const PRODUCTION_READERS: Record<string, ProductionReaderEvidence> = {
   'runtime-db': {
     reader: 'DatabaseService',
     source: 'src/host/services/core/databaseService.ts',
-    anchors: [/app\?\.getPath\?\.\('userData'\)/, /'code-agent\.db'/, /new Database\(this\.dbPath/],
+    anchors: [/app\.getPath\('userData'\)/, /'code-agent\.db'/, /new Database\(this\.dbPath/],
   },
   'runtime-browser-profile': {
     reader: 'resolveManagedBrowserProfile',

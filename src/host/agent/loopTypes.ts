@@ -25,6 +25,7 @@ import type { PlanningService } from '../planning';
 import type { HookManager } from '../hooks';
 import type { InferenceOptions } from '../model/types';
 import type { RunTraceContext } from '../telemetry/runTraceContext';
+import type { SkillDiscoveryService } from '../services/skills/skillDiscoveryService';
 
 // ----------------------------------------------------------------------------
 // Configuration Types
@@ -56,6 +57,14 @@ export interface AgentLoopConfig {
   userId?: string;
   memoryMode?: import('../../shared/contract/session').SessionMemoryMode;
   suppressedMemoryEntryIds?: string[];
+  /** Whether this run may write durable facts, learning, session metadata, and summaries. */
+  persistLongTermMemory?: boolean;
+  /** Whether recent conversation summaries may be read into this run. */
+  includeRecentConversations?: boolean;
+  /** Per-run system prompt budget override. */
+  maxSystemPromptTokens?: number;
+  /** Per-run skill discovery source. Omitted by production callers to use the app singleton. */
+  skillDiscoveryService?: SkillDiscoveryService;
   workingDirectory: string;
   /** Primary Source owns executable Project configuration. */
   projectConfigDirectory?: string;

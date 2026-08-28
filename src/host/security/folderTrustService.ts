@@ -5,6 +5,10 @@ import { promisify } from 'util';
 import Database from 'better-sqlite3';
 import { getUserConfigDir, CONFIG_DIR_LEGACY, CONFIG_DIR_NEW } from '../config/configPaths';
 import { createLogger } from '../services/infra/logger';
+import {
+  configureFolderTrustService as configureFolderTrustServiceOptions,
+  getFolderTrustServiceOptions,
+} from './folderTrustServiceConfig';
 
 const logger = createLogger('FolderTrustService');
 const realpathNative = promisify(fs.realpath.native);
@@ -225,6 +229,11 @@ function pushItem(
 
 export class FolderTrustService {
   private db: SqliteDatabase | null = null;
+  readonly defaultProjectConfigTrust: boolean | undefined;
+
+  constructor(options: { defaultProjectConfigTrust?: boolean } = {}) {
+    this.defaultProjectConfigTrust = options.defaultProjectConfigTrust;
+  }
 
   async evaluate(workingDirectory: string): Promise<FolderTrustEvaluation> {
     const canonicalRealpath = await realpathNative(workingDirectory);
@@ -523,16 +532,12 @@ export class FolderTrustService {
 let singleton: FolderTrustService | null = null;
 
 function getFolderTrustService(): FolderTrustService {
-  if (!singleton) singleton = new FolderTrustService();
+  const options = getFolderTrustServiceOptions();
+  if (singleton?.defaultProjectConfigTrust !== options.defaultProjectConfigTrust) {
+    closeFolderTrustService();
+  }
+  if (!singleton) singleton = new FolderTrustService(options);
   return singleton;
-}
-
-function getTestDefaultProjectConfigTrust(): boolean | undefined {
-  if (process.env.VITEST !== 'true' && process.env.NODE_ENV !== 'test') return undefined;
-  const value = process.env.CODE_AGENT_TEST_DEFAULT_FOLDER_TRUST;
-  if (value === 'trusted') return true;
-  if (value === 'blocked' || value === 'untrusted') return false;
-  return undefined;
 }
 
 /**
@@ -547,6 +552,7 @@ export function closeFolderTrustService(): void {
 
 export function resetFolderTrustServiceForTest(): void {
   closeFolderTrustService();
+  configureFolderTrustServiceOptions({});
 }
 
 export async function evaluateFolderTrust(workingDirectory: string): Promise<FolderTrustEvaluation> {
@@ -570,8 +576,8 @@ export async function revokeFolderTrust(workingDirectory: string): Promise<Folde
 }
 
 export async function isProjectConfigTrusted(workingDirectory: string, kind?: DangerousConfigKind): Promise<boolean> {
-  const testDefault = getTestDefaultProjectConfigTrust();
-  if (testDefault !== undefined) return testDefault;
+  const defaultTrust = getFolderTrustService().defaultProjectConfigTrust;
+  if (defaultTrust !== undefined) return defaultTrust;
 
   try {
     const evaluation = await evaluateFolderTrust(workingDirectory);
@@ -591,8 +597,8 @@ export async function isProjectConfigTrusted(workingDirectory: string, kind?: Da
 }
 
 export function isProjectConfigTrustedSync(workingDirectory: string, kind?: DangerousConfigKind): boolean {
-  const testDefault = getTestDefaultProjectConfigTrust();
-  if (testDefault !== undefined) return testDefault;
+  const defaultTrust = getFolderTrustService().defaultProjectConfigTrust;
+  if (defaultTrust !== undefined) return defaultTrust;
 
   try {
     const evaluation = evaluateFolderTrustSync(workingDirectory);

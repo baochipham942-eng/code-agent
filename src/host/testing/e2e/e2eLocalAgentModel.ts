@@ -1,7 +1,7 @@
 import path from 'path';
 
-import type { ModelConfig, ToolDefinition } from '../../shared/contract';
-import type { ModelMessage, ModelResponse, StreamCallback } from './types';
+import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
+import type { ModelMessage, ModelResponse, StreamCallback } from '../../model/types';
 
 const E2E_READ_TOOL_CALL_ID = 'e2e-real-agent-read-fixture';
 const E2E_FIXTURE_MARKER = 'E2E_REAL_AGENT_REPLAY_EVAL_FIXTURE';
@@ -28,7 +28,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function shouldUseE2ELocalAgentModel(env: NodeJS.ProcessEnv = process.env): boolean {
+function shouldUseE2ELocalAgentModel(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.CODE_AGENT_E2E === '1' && env.CODE_AGENT_E2E_LOCAL_AGENT_MODEL === '1';
 }
 

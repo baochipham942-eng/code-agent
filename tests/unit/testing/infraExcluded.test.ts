@@ -75,7 +75,9 @@ describe('testRunner infra 分流', () => {
     expect(summary.infraExcluded).toBe(1);
   });
 
-  it('case 总时限超限 → failed + timeout', async () => {
+  // 2026-08-28 爸拍板 v2.1 §18.13③：harness 总时限从「环境故障（infra_excluded）」反转为「能力失败」。
+  // 后续若再反转，必须在验收证据中留名，不能静默改回旧断言。
+  it('2026-08-28 爸拍板 v2.1 §18.13③ 反转：case 总时限超限 → failed + timeout（不再归 infra）', async () => {
     const summary = await runWith(agentWith(async () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
       return { responses: ['ok'], toolExecutions: [], turnCount: 1, errors: [] };

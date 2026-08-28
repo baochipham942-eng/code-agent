@@ -21,6 +21,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 
 import {
   getQuickModelAuthFailure,
+  getQuickModelFailure,
   getQuickModelInfo,
   memoryTask,
   quickTask,
@@ -56,8 +57,9 @@ function mockConfig(opts: {
 function mockFetchOnce(content: string) {
   const fetchMock = vi.fn().mockResolvedValue({
     ok: true,
-    json: async () => ({ choices: [{ message: { content } }] }),
-    text: async () => '',
+    status: 200,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    text: async () => JSON.stringify({ choices: [{ message: { content } }] }),
   });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
@@ -153,7 +155,8 @@ describe('memory model 专档与回落', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ choices: [{ message: { content: 'same' } }] }),
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: async () => JSON.stringify({ choices: [{ message: { content: 'same' } }] }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -326,6 +329,92 @@ describe('thinking 模型回落时自动关闭思考', () => {
   });
 });
 
+describe('JSON / SSE 响应兼容', () => {
+  it('JSON 响应保持原有 content 解析行为', async () => {
+    mockConfig({ keys: { zhipu: 'zk' } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'json-result' } }],
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })));
+
+    await expect(quickTask('分类')).resolves.toMatchObject({
+      success: true,
+      content: 'json-result',
+      attempts: 1,
+    });
+  });
+
+  it('SSE 响应拼接 delta content，不再把 data: 事件流交给 JSON.parse', async () => {
+    mockConfig({ keys: { zhipu: 'zk' } });
+    const sse = [
+      'data: {"choices":[{"delta":{"content":"SSE_"}}]}',
+      '',
+      'data: {"choices":[{"delta":{"content":"RESULT"}}]}',
+      '',
+      'data: {"choices":[{"message":{"content":"SSE_RESULT"}}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(sse, {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })));
+
+    await expect(memoryTask('整理')).resolves.toMatchObject({
+      success: true,
+      content: 'SSE_RESULT',
+      attempts: 1,
+    });
+  });
+
+  it('响应头误报 JSON 但 body 为 SSE 时仍按 SSE 解析', async () => {
+    mockConfig({ keys: { zhipu: 'zk' } });
+    const sse = 'data: {"choices":[{"message":{"content":"body-sniffed"}}]}\n\ndata: [DONE]\n\n';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(sse, {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })));
+
+    await expect(quickTask('分类')).resolves.toMatchObject({
+      success: true,
+      content: 'body-sniffed',
+    });
+  });
+
+  it('无法解析的 200 响应留下结构化失败供 Doctor 读取，后续成功会清除', async () => {
+    mockConfig({ keys: { zhipu: 'zk' } });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('not json or sse', {
+        status: 200,
+        headers: { 'content-type': 'text/plain' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        choices: [{ message: { content: 'recovered' } }],
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(quickTask('分类')).resolves.toMatchObject({
+      success: false,
+      failureReason: 'invalid_response',
+      status: 200,
+    });
+    expect(getQuickModelFailure()).toMatchObject({
+      provider: 'zhipu',
+      failureReason: 'invalid_response',
+      status: 200,
+    });
+
+    await expect(quickTask('分类')).resolves.toMatchObject({ success: true, content: 'recovered' });
+    expect(getQuickModelFailure()).toBeNull();
+  });
+});
+
 describe('瞬态故障分型与候选恢复', () => {
   it('429/code1305 触发 limiter 后沿 routing.fast → routing.code 恢复', async () => {
     mockConfig({ keys: { zhipu: 'zk', xiaomi: 'xk' } });
@@ -338,7 +427,8 @@ describe('瞬态故障分型与候选恢复', () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ choices: [{ message: { content: 'SAY_GAP' } }] }),
+        headers: new Headers({ 'content-type': 'application/json' }),
+        text: async () => JSON.stringify({ choices: [{ message: { content: 'SAY_GAP' } }] }),
       });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -370,7 +460,8 @@ describe('瞬态故障分型与候选恢复', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ choices: [{ message: { content: '' } }] }),
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: async () => JSON.stringify({ choices: [{ message: { content: '' } }] }),
     }));
 
     await expect(quickTask('分类')).resolves.toMatchObject({
@@ -394,7 +485,8 @@ describe('快模型鉴权失败诊断 + 401 拉黑降级', () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ choices: [{ message: { content: 'general' } }] }),
+        headers: new Headers({ 'content-type': 'application/json' }),
+        text: async () => JSON.stringify({ choices: [{ message: { content: 'general' } }] }),
       });
     vi.stubGlobal('fetch', fetchMock);
 

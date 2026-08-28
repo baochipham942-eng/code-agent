@@ -173,8 +173,8 @@ const AgentErrorCard: React.FC<{
   // 主视图只留「这一轮真跑的是哪个模型」——切过模型之后这是用户最先要确认的事。
   // provider id / 错误码 / HTTP 码 / Trace ID 是排障字段，看不出下一步动作，
   // 收进折叠区，别跟两个有效按钮抢注意力（拍板 2026-08-01「折中方案」）。
-  const ranOnModel = error.modelId ? `${t.agentError.details.model} ${error.modelId}` : null;
-  const technicalItems = buildTechnicalItems(error, t, false);
+  const ranOnModel = !error.goalAbort && error.modelId ? `${t.agentError.details.model} ${error.modelId}` : null;
+  const technicalItems = error.goalAbort ? [] : buildTechnicalItems(error, t, false);
 
   return (
     <div
@@ -250,7 +250,7 @@ const AgentErrorCard: React.FC<{
             {t.agentError.actions.newSession}
           </button>
         )}
-        {developerMode && (
+        {developerMode && !error.goalAbort && (
           <button /* ds-allow:button: 报错卡操作行是紧凑小按钮组，Button primitive 无此紧凑变体 */
             type="button"
             onClick={handleCopyReport}
@@ -275,6 +275,7 @@ const RateLimitedErrorLine: React.FC<{
   const isRunning = useSessionStore((state) => (sessionId ? state.runningSessionIds.has(sessionId) : false));
   const { title, suggestion } = resolveAgentErrorCopy(error, t);
   const technicalItems = buildTechnicalItems(error, t, true);
+  const showDeveloperDetails = developerMode && !error.goalAbort;
 
   const handleRetry = useCallback(() => {
     useMessageActionStore.getState().regenerateMessage(messageId);
@@ -308,7 +309,7 @@ const RateLimitedErrorLine: React.FC<{
       >
         {t.agentError.actions.retry}
       </button>
-      {developerMode && (
+      {showDeveloperDetails && (
         <>
           <span aria-hidden="true">·</span>
           <details className="min-w-0 text-[10px] text-zinc-500">

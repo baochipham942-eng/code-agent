@@ -5,14 +5,21 @@
 // content 由 goalNotice.ts 编码，这里解析后按 kind 出不同样式（参考 SkillStatusMessage）。
 // ============================================================================
 
-import React from 'react';
-import { Target, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
+import React, { useCallback } from 'react';
+import { Target, CheckCircle2, AlertTriangle, MessageSquarePlus, RotateCcw, ShieldCheck } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { parseGoalNotice, type GoalNoticePayload } from '../goalNotice';
+import { useMessageActionStore } from '../../../../stores/messageActionStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
 
 export interface GoalNoticeMessageProps {
   content: string;
+  messageId?: string;
+  sessionId?: string;
 }
+
+const ACTION_BUTTON_CLASS =
+  'flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50';
 
 /** 把 ms 格式化成 "Xm Ys" / "Ys" */
 function formatDuration(ms?: number): string | null {
@@ -24,7 +31,7 @@ function formatDuration(ms?: number): string | null {
   return `${m}m ${s}s`;
 }
 
-/** 完成/中止时的元信息行（耗时 · 轮次 · token） */
+/** 完成时的元信息行（耗时 · 轮次 · token）；中止卡不渲染技术计数。 */
 function MetaLine({ notice }: { notice: GoalNoticePayload }) {
   const { t } = useI18n();
   const parts: string[] = [];
@@ -83,9 +90,18 @@ function DegradedBadge({ notice }: { notice: GoalNoticePayload }) {
   );
 }
 
-export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content }) => {
+export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content, messageId, sessionId }) => {
   const { t } = useI18n();
   const notice = parseGoalNotice(content);
+  const isRunning = useSessionStore((state) => (
+    sessionId ? state.runningSessionIds.has(sessionId) : false
+  ));
+  const handleRetry = useCallback(() => {
+    if (messageId) useMessageActionStore.getState().regenerateMessage(messageId);
+  }, [messageId]);
+  const handleNewSession = useCallback(() => {
+    void useSessionStore.getState().createSession();
+  }, []);
   if (!notice) return null;
 
   if (notice.kind === 'start') {
@@ -122,15 +138,34 @@ export const GoalNoticeMessage: React.FC<GoalNoticeMessageProps> = ({ content })
     <div className="goal-notice my-1 flex flex-col gap-0.5 rounded-md border border-badge-warning/30 bg-amber-500/5 px-3 py-2 text-sm">
       <div className="flex items-center gap-2">
         <AlertTriangle className="h-4 w-4 flex-shrink-0 text-badge-warning" />
-        <span className="text-zinc-300">
-          {t.goalNotice.abortedPrefix}<span className="font-medium text-zinc-100">{notice.goal}</span>
+        <span className="font-medium text-zinc-100">
+          {t.goalNotice.abortedPrefix}{notice.reason}
         </span>
       </div>
-      {notice.reason && <div className="pl-6 text-[11px] text-badge-warning/80">{notice.reason}</div>}
-      <div className="pl-6">
-        <MetaLine notice={notice} />
+      {notice.suggestion && (
+        <div className="pl-6 text-[11px] leading-relaxed text-badge-warning/80">
+          {notice.suggestion}
+        </div>
+      )}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-6">
+        <button /* ds-allow:button: goal 中止卡的紧凑操作行沿用 AgentErrorCard 小按钮 */
+          type="button"
+          onClick={handleRetry}
+          disabled={!messageId || isRunning}
+          className={ACTION_BUTTON_CLASS}
+        >
+          <RotateCcw className="h-3 w-3" />
+          {t.agentError.actions.retry}
+        </button>
+        <button /* ds-allow:button: goal 中止卡的紧凑操作行沿用 AgentErrorCard 小按钮 */
+          type="button"
+          onClick={handleNewSession}
+          className={ACTION_BUTTON_CLASS}
+        >
+          <MessageSquarePlus className="h-3 w-3" />
+          {t.agentError.actions.newSession}
+        </button>
       </div>
-      <VerificationCardLine notice={notice} />
     </div>
   );
 };

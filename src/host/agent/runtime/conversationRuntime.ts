@@ -8,12 +8,13 @@
 // Enhanced with Manus-style persistent planning hooks
 // ============================================================================
 
-import type {
-  Message,
-  MessageAttachment,
-  MessageMetadata,
-  InputRedirectReceiptMetadata,
-  AgentEvent,
+import {
+  HostReasonCode,
+  type Message,
+  type MessageAttachment,
+  type MessageMetadata,
+  type InputRedirectReceiptMetadata,
+  type AgentEvent,
 } from '../../../shared/contract';
 import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
 import { generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
@@ -84,6 +85,7 @@ import { extractUserRequest } from '../turnScaffold';
 import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
 import { classifyIntent } from '../../telemetry/intentClassifier';
 import { markDistilledSkillTurnSignal } from '../../services/skills/distillSignalStore';
+import { emitGoalAbort } from './goalAbort';
 
 
 const logger = createLogger('AgentLoop');
@@ -476,12 +478,8 @@ export class ConversationRuntime {
           }
           if (fallback.stop) {
             const reason = fallback.reason ?? 'goal aborted';
-            this.ctx.goalMode.markAborted(reason);
-            // 终态事件：闸3 兜底中止（UI 展示"目标已中止"+停表）
-            this.ctx.onEvent({
-              type: 'goal_complete',
-              data: { status: 'aborted', reason, turns: iterations, tokensUsed: tokensUsedWithSwarm },
-            });
+            const code = fallback.reasonCode ?? HostReasonCode.GoalAbortRepeatedAction;
+            emitGoalAbort(this.ctx, { code, modelText: reason, turns: iterations, tokensUsed: tokensUsedWithSwarm });
             terminal = { status: 'aborted' };
             break;
           }
@@ -675,6 +673,10 @@ export class ConversationRuntime {
           if (doomCheck.level === 'doom-loop-abort') {
             logger.warn('[DoomLoopGuard] Identical tool call repeated after warning; aborting run');
             logCollector.agent('WARN', 'Doom loop abort: identical tool call repeated after warning');
+            emitGoalAbort(this.ctx, {
+              code: HostReasonCode.GoalAbortRepeatedAction, modelText: '相同工具调用在警告后仍反复出现，目标未达成',
+              turns: iterations, tokensUsed: goalTokensUsedWithSwarm(this.ctx),
+            });
             terminal = { status: 'aborted' };
             break;
           }

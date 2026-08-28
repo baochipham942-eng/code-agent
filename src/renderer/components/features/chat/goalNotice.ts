@@ -18,6 +18,8 @@ export interface GoalNoticePayload {
   goal: string;
   /** 中止原因（kind=aborted） */
   reason?: string;
+  /** 中止后的用户动作建议（kind=aborted） */
+  suggestion?: string;
   /** 总轮次（met/aborted） */
   turns?: number;
   /** 已用 token（met/aborted） */

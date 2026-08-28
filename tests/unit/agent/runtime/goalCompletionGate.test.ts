@@ -16,6 +16,7 @@ import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeC
 import type { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssembly';
 import { ControlState } from '../../../../src/host/agent/runtime/controlState';
 import { RunStatsState } from '../../../../src/host/agent/runtime/runStatsState';
+import { HostReasonCode } from '../../../../src/shared/contract';
 
 function makeCtx(goalModeOverrides: Record<string, unknown> = {}) {
   const goalMode = {
@@ -83,7 +84,10 @@ describe('handleGoalCompletionGate — IMPOSSIBLE 主动止损 (roadmap 1.4)', (
     expect(ctx.onEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'goal_complete',
-        data: expect.objectContaining({ status: 'aborted' }),
+        data: expect.objectContaining({
+          status: 'aborted',
+          reason: expect.objectContaining({ code: HostReasonCode.GoalAbortUnreachable }),
+        }),
       }),
     );
   });

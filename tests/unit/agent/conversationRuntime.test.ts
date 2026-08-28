@@ -11,6 +11,7 @@ import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
+import { HostReasonCode } from '../../../src/shared/contract';
 
 const activityMocks = vi.hoisted(() => ({
   getCurrentActivityContext: vi.fn(),
@@ -1606,7 +1607,10 @@ describe('ConversationRuntime', () => {
         type: 'goal_complete',
         data: expect.objectContaining({
           status: 'aborted',
-          reason: expect.stringContaining('达到轮次上限 2'),
+          reason: expect.objectContaining({
+            code: HostReasonCode.GoalAbortTurnLimit,
+            modelText: expect.stringContaining('达到轮次上限 2'),
+          }),
           turns: 2,
         }),
       });

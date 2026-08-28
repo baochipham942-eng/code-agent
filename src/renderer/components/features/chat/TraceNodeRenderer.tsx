@@ -101,7 +101,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
       content = <ToolCallNode node={node} sessionId={sessionId} />;
       break;
     case 'system':
-      content = <SystemNode node={node} />;
+      content = <SystemNode node={node} sessionId={sessionId} />;
       break;
     case 'neo_work_card':
       // 轻量化重设计：@neo = 正常 agent 聊天,会话里不再渲染独立工作卡(2026-07-02 产品负责人拍板)。
@@ -946,7 +946,7 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
 };
 
 // ---- System Node ----
-const SystemNode: React.FC<{ node: TraceNode }> = ({ node }) => {
+const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
   const [expanded, setExpanded] = useState(false);
   const { t } = useI18n();
 
@@ -1016,7 +1016,13 @@ const SystemNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   }
 
   if (node.subtype === 'goal_notice') {
-    return <GoalNoticeMessage content={node.content} />;
+    return (
+      <GoalNoticeMessage
+        content={node.content}
+        messageId={node.messageId ?? node.id}
+        sessionId={sessionId}
+      />
+    );
   }
 
   if (node.subtype === 'model_fallback') {

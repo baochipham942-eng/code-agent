@@ -42,8 +42,10 @@ vi.mock('../../../../src/host/services/surfaceExecution/SurfaceExecutionRuntime'
 }));
 
 import { RunFinalizer } from '../../../../src/host/agent/runtime/runFinalizer';
+import { buildGoalContract, GoalModeController } from '../../../../src/host/agent/goalModeController';
 import { appendConversationSummary } from '../../../../src/host/lightMemory/recentConversations';
 import { judgeConversation } from '../../../../src/host/lightMemory/conversationJudge';
+import { HostReasonCode } from '../../../../src/shared/contract';
 
 describe('RunFinalizer 失败事件', () => {
   beforeEach(() => {
@@ -88,6 +90,90 @@ describe('RunFinalizer 失败事件', () => {
       code: 'RUN_FAILED',
       details: { provider: 'custom-100xlabs', model: 'claude-opus-4-8' },
     });
+  });
+
+  it('goal runtime failure emits a structured abort and marks the single error presentation', async () => {
+    const events: AgentEvent[] = [];
+    const goalMode = new GoalModeController(buildGoalContract({
+      goal: '完成任务',
+      verifyCommand: 'true',
+      tokenBudget: 100,
+      maxTurns: 5,
+    }));
+    const finalizer = new RunFinalizer({
+      sessionId: 'sess-goal-failed',
+      onEvent: (event: AgentEvent) => events.push(event),
+      goalMode,
+      modelConfig: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      messages: [],
+      maxIterations: 5,
+      stats: { traceId: 'trace-goal', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      turn: { currentTurnId: null },
+    } as never);
+    finalizer.setModules(
+      { generateId: () => 'msg-goal', addAndPersistMessage: vi.fn() } as never,
+      { runPostRun: vi.fn(), runSessionEndLearning: vi.fn() } as never,
+    );
+
+    await finalizer.finalizeRun(
+      1,
+      '完成任务',
+      { endTrace: vi.fn() } as never,
+      1,
+      { status: 'failed', error: new Error('Too Many Requests') },
+    ).catch(() => undefined);
+
+    expect(events.filter((event) => event.type === 'goal_complete')).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'aborted',
+          reason: expect.objectContaining({
+            code: HostReasonCode.GoalAbortRuntimeFailure,
+            modelText: '运行失败：Too Many Requests',
+          }),
+        }),
+      }),
+    ]);
+    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({
+      message: 'Too Many Requests',
+      goalAbort: true,
+    });
+  });
+
+  it('an already-aborted goal at the iteration ceiling does not emit a second error', async () => {
+    const events: AgentEvent[] = [];
+    const goalMode = new GoalModeController(buildGoalContract({
+      goal: '完成任务', verifyCommand: 'true', tokenBudget: 100, maxTurns: 5,
+    }));
+    goalMode.markAborted('达到轮次上限 5，目标未达成');
+    const finalizer = new RunFinalizer({
+      sessionId: 'sess-goal-limit',
+      onEvent: (event: AgentEvent) => events.push(event),
+      goalMode,
+      modelConfig: { provider: 'deepseek', model: 'deepseek-v4-flash' },
+      messages: [],
+      maxIterations: 5,
+      stats: { traceId: 'trace-limit', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      turn: { currentTurnId: null },
+    } as never);
+    finalizer.setModules(
+      { generateId: () => 'msg-limit', addAndPersistMessage: vi.fn() } as never,
+      { runPostRun: vi.fn(), runSessionEndLearning: vi.fn() } as never,
+    );
+
+    await finalizer.finalizeRun(
+      5,
+      '完成任务',
+      { endTrace: vi.fn() } as never,
+      1,
+      { status: 'aborted' },
+    ).catch(() => undefined);
+
+    expect(events.filter((event) => event.type === 'error')).toHaveLength(0);
   });
 
   it('writes the stable session project id into the recent summary', async () => {

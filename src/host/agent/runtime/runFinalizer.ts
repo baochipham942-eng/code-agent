@@ -13,6 +13,7 @@ import type {
   AgentEvent,
   AgentTaskPhase,
 } from '../../../shared/contract';
+import { HostReasonCode } from '../../../shared/contract';
 import { recordSessionEnd } from '../../lightMemory/sessionMetadata';
 import { appendConversationSummary, isLoopAutomationSummaryText } from '../../lightMemory/recentConversations';
 import { judgeConversation } from '../../lightMemory/conversationJudge';
@@ -62,6 +63,7 @@ import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
 import type { CompletionSummaryRecord } from '../../../shared/contract/completionSummary';
 import { recordTurnOutcomeStamp } from './turnOutcomeStamp';
 import { captureTurnDiff } from '../../services/checkpoint/turnDiffService';
+import { emitGoalAbort } from './goalAbort';
 
 const logger = createLogger('AgentLoop');
 
@@ -329,15 +331,11 @@ export class RunFinalizer {
       const errorMessage = formatTerminalError(terminalError);
       if (this.ctx.goalMode?.isPending()) {
         const reason = `运行失败：${errorMessage}`;
-        this.ctx.goalMode.markAborted(reason);
-        this.ctx.onEvent({
-          type: 'goal_complete',
-          data: {
-            status: 'aborted',
-            reason,
-            turns: iterations,
-            tokensUsed: this.ctx.stats.totalInputTokens + this.ctx.stats.totalOutputTokens,
-          },
+        emitGoalAbort(this.ctx, {
+          code: HostReasonCode.GoalAbortRuntimeFailure,
+          modelText: reason,
+          turns: iterations,
+          tokensUsed: this.ctx.stats.totalInputTokens + this.ctx.stats.totalOutputTokens,
         });
       }
       logger.error('[AgentLoop] Loop exited due to runtime error', terminalError);
@@ -355,6 +353,7 @@ export class RunFinalizer {
             provider: this.ctx.modelConfig.provider,
             model: this.ctx.modelConfig.model,
           },
+          goalAbort: this.ctx.goalMode?.getStatus() === 'aborted',
         },
       });
 
@@ -373,6 +372,16 @@ export class RunFinalizer {
       logger.info('[AgentLoop] Loop exited due to interrupt');
       logCollector.agent('INFO', `Agent run interrupted after ${iterations} iterations`);
       langfuse.endTrace(this.ctx.stats.traceId, `Interrupted after ${iterations} iterations`, 'WARNING');
+    } else if (terminalStatus === 'aborted' && this.ctx.goalMode) {
+      emitGoalAbort(this.ctx, {
+        code: HostReasonCode.GoalAbortRepeatedAction,
+        modelText: '运行已中止，目标未达成',
+        turns: iterations,
+        tokensUsed: this.ctx.stats.totalInputTokens + this.ctx.stats.totalOutputTokens,
+      });
+      logger.info('[AgentLoop] Loop exited after goal abort');
+      logCollector.agent('WARN', `Agent run aborted after ${iterations} iterations`);
+      langfuse.endTrace(this.ctx.stats.traceId, `Aborted after ${iterations} iterations`, 'WARNING');
     } else if (this.ctx.circuitBreaker.isTripped()) {
       logger.info('[AgentLoop] Loop exited due to circuit breaker');
       logCollector.agent('WARN', `Circuit breaker stopped agent after ${iterations} iterations`);

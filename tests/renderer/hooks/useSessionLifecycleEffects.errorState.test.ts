@@ -175,6 +175,14 @@ describe('classifyAgentError', () => {
     });
   });
 
+  it('carries the host goal-abort marker into structured error metadata', () => {
+    expect(classifyAgentError({
+      code: 'RUN_FAILED',
+      message: 'Too Many Requests',
+      goalAbort: true,
+    })).toMatchObject({ category: 'rate_limited', goalAbort: true });
+  });
+
   it('classifies network-style failures as network', () => {
     expect(classifyAgentError({ code: 'RUN_FAILED', message: 'fetch failed' })?.category).toBe('network');
     expect(classifyAgentError({ code: 'RUN_FAILED', message: 'connect ECONNREFUSED 127.0.0.1:443' })?.category).toBe('network');
@@ -241,6 +249,26 @@ describe('attachAgentErrorToLatestAssistant 多出口覆盖', () => {
     const error = useSessionStore.getState().messages[0]?.metadata?.agentError;
     expect(error?.provider).toBe('openai');
     expect(error?.modelId).toBe('gpt-5-probe');
+  });
+
+  it('后到的普通 error 不得洗掉 goal-abort 的展示边界', () => {
+    useSessionStore.setState({
+      messages: [{ id: 'a1', role: 'assistant', content: '', timestamp: 1 }],
+    } as never);
+
+    attachAgentErrorToLatestAssistant({
+      category: 'rate_limited',
+      rawMessage: 'Too Many Requests',
+      timestamp: 2,
+      goalAbort: true,
+    });
+    attachAgentErrorToLatestAssistant({
+      category: 'rate_limited',
+      rawMessage: 'Too Many Requests',
+      timestamp: 3,
+    });
+
+    expect(useSessionStore.getState().messages[0]?.metadata?.agentError?.goalAbort).toBe(true);
   });
 });
 

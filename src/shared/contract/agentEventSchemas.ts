@@ -46,7 +46,7 @@ import type {
   ModelProviderIdentity,
   ModelToolStrategyDiagnostics,
 } from './modelDecision';
-import type { PermissionRequest } from './permission';
+import type { HostReasonPayload, PermissionRequest } from './permission';
 import type { SessionTask, TodoItem } from './planning';
 import type { SurfaceExecutionEventV1 } from './surfaceExecution';
 import type { ToolCall, ToolResult } from './tool';
@@ -520,7 +520,7 @@ const HookTriggerEventSchema = event('hook_trigger', typed<HookTriggerEventData>
 const HookStartedEventSchema = event('hook_started', typed<HookStartedEventData>(z.object({
   timestamp: z.number(), event: z.string(), names: stringArraySchema.optional(), sessionId: z.string().optional(), turnId: z.string().optional(), toolName: z.string().optional(), matcher: z.string().optional(),
 })));
-const ErrorEventSchema = event('error', z.object({ message: z.string(), code: z.string().optional(), suggestion: z.string().optional(), details: unknownRecordSchema.optional(), parentToolUseId: z.string().optional() }));
+const ErrorEventSchema = event('error', z.object({ message: z.string(), code: z.string().optional(), suggestion: z.string().optional(), details: unknownRecordSchema.optional(), goalAbort: z.boolean().optional(), parentToolUseId: z.string().optional() }));
 const MessageDeltaEventSchema = event('message_delta', messageDeltaSchema);
 const MessageSnapshotEventSchema = event('message_snapshot', messageSnapshotSchema);
 const StreamChunkEventSchema = event('stream_chunk', typed<{ content: string | undefined; turnId?: string; parentToolUseId?: string }>(z.object({ content: z.string().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() })));
@@ -545,11 +545,11 @@ const TurnDiffEventSchema = event('turn_diff', typed<TurnDiffEventData>(z.object
   parentToolUseId: z.string().optional(),
 })));
 const NotificationEventSchema = event('notification', z.object({ message: z.string(), parentToolUseId: z.string().optional() }));
-const hostReasonPayloadSchema = z.object({
+const hostReasonPayloadSchema = typed<HostReasonPayload>(z.object({
   code: z.string(),
   metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   modelText: z.string(),
-});
+}));
 const RoutingResolvedEventSchema = event('routing_resolved', typed<RoutingResolvedEventData>(z.object({ mode: z.enum(['auto', 'explicit']), agentId: z.string(), agentName: z.string(), reason: z.union([z.string(), hostReasonPayloadSchema]), score: z.number(), fallbackToDefault: z.boolean().optional(), requestedAgentId: z.string().optional(), timestamp: z.number().optional() })));
 const ArtifactLocatorEventSchema = event('artifact_locator', typed<ArtifactLocatorTelemetryEventData>(z.object({ state: z.enum(['resolved', 'stale', 'blocked']), kind: z.enum(['spreadsheet', 'presentation', 'document']), reason: z.string() })));
 const AgentCompleteEventSchema = event('agent_complete', z.null());
@@ -561,7 +561,7 @@ const GoalGateEventSchema = event('goal_gate', z.object({
   failureType: z.enum(['test', 'lint', 'typecheck', 'build', 'env_missing', 'dependency_missing', 'timeout', 'unverifiable']).optional(), evidenceRefs: z.array(evidenceRefSchema).optional(),
   skippedChecks: z.array(goalSkippedCheckSchema).optional(), plannedOptionalCommands: z.array(goalPlannedCommandSchema).optional(), verificationCard: goalVerificationCardSchema.optional(),
 }));
-const GoalCompleteEventSchema = event('goal_complete', z.object({ status: z.enum(['met', 'aborted']), reason: z.string().optional(), turns: z.number(), tokensUsed: z.number(), degraded: z.boolean().optional(), degradedReason: z.string().optional(), parentToolUseId: z.string().optional() }));
+const GoalCompleteEventSchema = event('goal_complete', z.object({ status: z.enum(['met', 'aborted']), reason: z.union([z.string(), hostReasonPayloadSchema]).optional(), turns: z.number(), tokensUsed: z.number(), degraded: z.boolean().optional(), degradedReason: z.string().optional(), parentToolUseId: z.string().optional() }));
 const AgentThinkingEventSchema = event('agent_thinking', z.object({ message: z.string(), agentId: z.string().optional(), progress: z.number().optional(), parentToolUseId: z.string().optional() }));
 const TurnStartEventSchema = event('turn_start', z.object({ turnId: z.string(), iteration: z.number().optional(), parentToolUseId: z.string().optional(), agentId: z.string().optional(), runId: z.string().optional() }));
 const TurnEndEventSchema = event('turn_end', z.object({ turnId: z.string(), parentToolUseId: z.string().optional(), agentId: z.string().optional(), runId: z.string().optional() }));

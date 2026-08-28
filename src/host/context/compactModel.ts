@@ -13,10 +13,6 @@ import type { ModelConfig, ModelProvider } from '../../shared/contract';
 import type { AppSettings } from '../../shared/contract/settings';
 import { createLogger } from '../services/infra/logger';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
-import {
-  buildE2ELocalCompactSummary,
-  shouldUseE2ELocalCompactModel,
-} from '../testing/e2e/e2eLocalCompactModel';
 
 const logger = createLogger('CompactModel');
 
@@ -288,15 +284,18 @@ export async function compactModelSummarizeWithMetadata(
     ? prompt.replace(/^.*?(?=\n\n对话历史：)/s, options.instructions)
     : prompt;
 
-  if (shouldUseE2ELocalCompactModel()) {
-    return {
-      summary: buildE2ELocalCompactSummary(finalPrompt),
-      metadata: {
-        provider: 'acceptance',
-        model: 'e2e-local-compact-model',
-        useMainModel: false,
-      },
-    };
+  if (process.env.CODE_AGENT_E2E === '1' && process.env.CODE_AGENT_E2E_LOCAL_COMPACT_MODEL === '1') {
+    const e2e = await import('../testing/e2e/e2eLocalCompactModel');
+    if (e2e.shouldUseE2ELocalCompactModel()) {
+      return {
+        summary: e2e.buildE2ELocalCompactSummary(finalPrompt),
+        metadata: {
+          provider: 'acceptance',
+          model: 'e2e-local-compact-model',
+          useMainModel: false,
+        },
+      };
+    }
   }
 
   const resolution = options?.useMainModel

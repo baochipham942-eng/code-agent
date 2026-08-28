@@ -1,8 +1,12 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/host/services/core/database/nativeLoader', () => ({
   loadBetterSqlite3: () => class MockDatabase {},
 }));
+vi.unmock('electron');
 
 import {
   DatabaseService,
@@ -20,6 +24,19 @@ afterEach(() => {
 });
 
 describe('DatabaseService retry recovery', () => {
+  it('resolves the database path below CODE_AGENT_DATA_DIR', async () => {
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'database-data-dir-'));
+    vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
+
+    try {
+      const db = new DatabaseService();
+      expect((db as unknown as { dbPath: string }).dbPath).toBe(path.join(dataDir, 'code-agent.db'));
+    } finally {
+      vi.unstubAllEnvs();
+      await fs.rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it('re-marks persistence durable after a retry initializes the database', async () => {
     vi.useFakeTimers();
     setDbAvailable(false, new Error('initial failure'));

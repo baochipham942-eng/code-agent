@@ -35,7 +35,6 @@ import type { ModelDecisionEventData, ModelFallbackInfo } from '../../../../shar
 import type { TaskModelStrategySettings } from '../../../../shared/contract/settings';
 import { getAdaptiveRouter } from '../../../model/adaptiveRouter';
 import { resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from '../../../model/modelDecision';
-import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModelForMessages } from '../../../testing/e2e/e2eLocalAgentModel';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
 import {
@@ -98,7 +97,7 @@ const ARTIFACT_REPAIR_COMPACT_WRITE_RETRY_MAX_TOKENS = 8_192;
 // 工具，流式逐字 + reasoning + tool_call + usage 全保留，对照 legacy 零回归后才翻默认）。
 // gemini 等适配器不兼容的 provider 即便默认 aisdk 也自动留旧路径（aiSdkSupportsProvider），
 // 不引入回归。
-function runEngineInference(
+async function runEngineInference(
   ctx: ContextAssemblyCtx,
   messages: ModelMessage[],
   tools: ToolDefinition[],
@@ -107,13 +106,14 @@ function runEngineInference(
   signal?: AbortSignal,
   options?: InferenceOptions,
 ): Promise<RouterModelResponse> {
-  const adaptedConfig = resolveMainChatModelDecision(ctx, messages, config, {
-    suppressDecisionEvent: options?.suppressModelDecisionEvent === true,
-  });
+  const adaptedConfig = resolveMainChatModelDecision(ctx, messages, config, { suppressDecisionEvent: options?.suppressModelDecisionEvent === true });
   const effectiveConfig = adaptedConfig ?? config;
 
-  if (shouldUseE2ELocalAgentModelForMessages(messages)) {
-    return Promise.resolve(buildE2ELocalAgentModelResponse(messages, tools, effectiveConfig, onStream));
+  if (process.env.CODE_AGENT_E2E === '1') {
+    const e2e = await import('../../../testing/e2e/e2eLocalAgentModel');
+    if (e2e.shouldUseE2ELocalAgentModelForMessages(messages)) {
+      return e2e.buildE2ELocalAgentModelResponse(messages, tools, effectiveConfig, onStream);
+    }
   }
 
   const useAiSdk = process.env.CODE_AGENT_MODEL_ENGINE !== 'legacy'

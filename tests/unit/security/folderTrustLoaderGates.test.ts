@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 
 import {
+  configureFolderTrustService,
   FolderTrustService,
   resetFolderTrustServiceForTest,
 } from '../../../src/host/security/folderTrustService';
@@ -88,11 +89,10 @@ describe('folder trust loader gates', () => {
     dataDir = path.join(tmpRoot, 'data');
     projectDir = path.join(tmpRoot, 'project');
     await fs.mkdir(projectDir, { recursive: true });
-    vi.stubEnv('CODE_AGENT_TEST_DEFAULT_FOLDER_TRUST', '');
     vi.stubEnv('HOME', homeDir);
     vi.stubEnv('CODE_AGENT_HOME', homeDir);
     vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
-    resetFolderTrustServiceForTest();
+    configureFolderTrustService({});
     trustService = new FolderTrustService();
   });
 

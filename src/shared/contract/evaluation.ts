@@ -10,6 +10,131 @@ import type {
   TurnQualityScoreSummary,
 } from './turnQuality';
 
+type EvalRunEventStatus =
+  | 'pending'
+  | 'running'
+  | 'passed'
+  | 'failed'
+  | 'skipped'
+  | 'partial'
+  | 'infra_excluded'
+  | 'cost_exceeded'
+  | 'not_run';
+
+type EvalRunEventSummary = {
+  runId: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  mockExcluded?: number;
+  partial: number;
+  infraExcluded?: number;
+  costExceeded?: number;
+  averageScore: number;
+  gitCommit?: string;
+  persistenceWarning?: string;
+  aborted?: boolean;
+  abortReason?: string;
+  unstableCaseCount?: number;
+  averageStdDev?: number;
+  dataset?: string;
+};
+
+/**
+ * Stable NDJSON protocol produced by `scripts/eval-ci.ts --json-events` and
+ * consumed by the host run bridge and evaluation UI. Every stdout line is one
+ * event. Consumers must tolerate additive fields; changing an existing field's
+ * meaning requires incrementing `schemaVersion` (the first protocol version is 1).
+ */
+export type EvalRunEvent =
+  | {
+      schemaVersion: 1;
+      type: 'run_start';
+      ts: number;
+      runId: string;
+      plannedCaseIds: string[];
+      config: {
+        mode: 'real' | 'mock';
+        model: string;
+        provider: string;
+        scope: 'smoke' | 'full';
+        split?: 'held-in' | 'held-out' | 'control' | 'safety';
+        tags?: string[];
+        ids?: string[];
+        maxCases: number;
+        concurrency: number;
+        compare?: boolean;
+        gitCommit: string;
+        testCaseDir: string;
+      };
+    }
+  | {
+      schemaVersion: 1;
+      type: 'case_start';
+      ts: number;
+      runId: string;
+      testId: string;
+      description: string;
+    }
+  | {
+      schemaVersion: 1;
+      type: 'case_end';
+      ts: number;
+      runId: string;
+      testId: string;
+      status: EvalRunEventStatus;
+      score: number;
+      durationMs: number;
+      failureReason?: string;
+      failureStage?: string;
+      usageStatus?: 'available' | 'usage_unavailable';
+      costUsd?: number;
+      mockExcluded?: boolean;
+      killedByTimeout?: boolean;
+      trials?: number;
+    }
+  | {
+      schemaVersion: 1;
+      type: 'tool_call';
+      ts: number;
+      runId: string;
+      testId: string;
+      tool: string;
+      input: unknown;
+    }
+  | {
+      schemaVersion: 1;
+      type: 'tool_result';
+      ts: number;
+      runId: string;
+      testId: string;
+      tool: string;
+      success: boolean;
+    }
+  | {
+      schemaVersion: 1;
+      type: 'error';
+      ts: number;
+      runId: string;
+      testId?: string;
+      error: string;
+    }
+  | {
+      schemaVersion: 1;
+      type: 'run_end';
+      ts: number;
+      runId: string;
+      summary: EvalRunEventSummary;
+      reportFiles: string[];
+      exitCode: number;
+      aborted: boolean;
+      abortReason?: string;
+    };
+
 /**
  * 评测维度 (v3: 7 计分 + 3 信息)
  */

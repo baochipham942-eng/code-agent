@@ -8,11 +8,14 @@ const saveReportMock = vi.hoisted(() => vi.fn());
 const compareMock = vi.hoisted(() => vi.fn());
 const promoteMock = vi.hoisted(() => vi.fn());
 const runAllMock = vi.hoisted(() => vi.fn());
+const eventListenerState = vi.hoisted(() => ({ listener: undefined as ((event: unknown) => void) | undefined }));
 
 vi.mock('../../../src/host/testing/index', () => ({
   TestRunner: vi.fn(function TestRunner() {
     return {
-      addEventListener: vi.fn(),
+      addEventListener: vi.fn((listener: (event: unknown) => void) => {
+        eventListenerState.listener = listener;
+      }),
       runAll: runAllMock,
     };
   }),
@@ -71,7 +74,7 @@ vi.mock('../../../src/shared/constants', async (importOriginal) => ({
   DEFAULT_MODEL: 'mock-model',
 }));
 
-function makeSummary(): TestRunSummary {
+function makeSummary(overrides: Partial<TestRunSummary> = {}): TestRunSummary {
   return {
     runId: 'run-promote',
     startTime: 0,
@@ -87,6 +90,7 @@ function makeSummary(): TestRunSummary {
     results: [],
     environment: { model: 'mock-model', provider: 'mock-provider', workingDirectory: '/tmp/work' },
     performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
+    ...overrides,
   };
 }
 
@@ -114,10 +118,22 @@ beforeEach(async () => {
   compareMock.mockReset();
   promoteMock.mockReset();
   runAllMock.mockReset();
-  runAllMock.mockResolvedValue(makeSummary());
+  eventListenerState.listener = undefined;
+  runAllMock.mockImplementation(async () => {
+    const summary = makeSummary();
+    eventListenerState.listener?.({
+      type: 'suite_start',
+      suite: 'all',
+      totalCases: 1,
+      plannedCaseIds: ['case-a'],
+    });
+    eventListenerState.listener?.({ type: 'suite_end', summary });
+    return summary;
+  });
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   process.env = { ...savedEnv };
   await rm(root, { recursive: true, force: true });
 });
@@ -139,5 +155,48 @@ describe('eval-ci promote reports', () => {
       expect.any(String),
       'real',
     );
+  });
+
+  it('emits a final run_end with exit 2 when an eval summary is aborted', async () => {
+    const summary = makeSummary({ aborted: true, abortReason: 'simulated abort' });
+    runAllMock.mockImplementationOnce(async () => {
+      eventListenerState.listener?.({
+        type: 'suite_start',
+        suite: 'all',
+        totalCases: 1,
+        plannedCaseIds: ['case-a'],
+      });
+      eventListenerState.listener?.({ type: 'suite_end', summary });
+      return summary;
+    });
+
+    const stdout: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      stdout.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write);
+    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`__process_exit_${code}__`);
+    }) as never);
+
+    const { main } = await import('../../../scripts/eval-ci');
+    await expect(
+      main(['node', 'eval-ci.ts', '--promote', '--real', '--max-cases', '1', '--json-events'], root),
+    ).rejects.toThrow('__process_exit_2__');
+
+    const events = stdout.join('').trim().split('\n').map((line) => JSON.parse(line)) as Array<{
+      type: string;
+      exitCode?: number;
+      aborted?: boolean;
+      abortReason?: string;
+    }>;
+    expect(events[0]?.type).toBe('run_start');
+    expect(events.at(-1)).toMatchObject({
+      type: 'run_end',
+      exitCode: 2,
+      aborted: true,
+      abortReason: 'simulated abort',
+    });
+    expect(saveReportMock).toHaveBeenCalledTimes(1);
   });
 });

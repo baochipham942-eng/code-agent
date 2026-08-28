@@ -312,6 +312,7 @@ export class TestRunner {
       type: 'suite_start',
       suite: 'all',
       totalCases: sortedCases.length,
+      plannedCaseIds: sortedCases.map((testCase) => testCase.id),
     });
 
     const trialsPerCase = this.config.trialsPerCase ?? 1;

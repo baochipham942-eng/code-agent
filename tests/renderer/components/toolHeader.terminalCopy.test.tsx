@@ -25,10 +25,18 @@ vi.mock('../../../src/renderer/stores/sessionStore', () => ({
 }));
 
 import { ToolCallDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay';
+import { ToolHeader } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ToolHeader';
 
 afterEach(cleanup);
 
 describe('ToolHeader terminal copy', () => {
+  it('pending approval renders request phrasing instead of the completed write claim', () => {
+    const toolCall: ToolCall = { id: 'write-pending', name: 'Write', arguments: { file_path: 'notes.md' } };
+    const view = render(<ToolHeader toolCall={toolCall} status="pending" awaitingApproval />);
+    expect(view.container.textContent).toContain('请求写入 notes.md');
+    expect(view.container.textContent).not.toContain('写入了 notes.md');
+  });
+
   it('被拒绝的腾讯会议创建行只显示一次终态与原因，并把动作写成意图式', () => {
     const toolCall: ToolCall = {
       id: 'tmeet-denied-1',

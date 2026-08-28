@@ -3,6 +3,7 @@ import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
 import type { Translations } from '../i18n';
 import { readHostReasonFromMetadata, resolveHostReasonCopy } from './hostReasonPresentation';
+import { redactCredentialText } from '@shared/security/secretPatterns';
 
 /**
  * 判定一条工具结果是否「自动加载重试」的良性内部状态（success:false 但不是真失败）。
@@ -396,6 +397,36 @@ export function humanizeToolError(
     case 'auto_loaded':
       return { summary: t.toolErrors.autoLoaded.summary, kind };
   }
+}
+
+/**
+ * Folded-row failure reason. Structured code/reason wins; absent structured evidence is stated
+ * explicitly instead of filling the row with a generic claim that the tool failed.
+ */
+export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'result'>, t: Translations): string {
+  const result = toolCall.result;
+  const metadata = result?.metadata;
+  const error = result?.error || (typeof result?.output === 'string' ? result.output : undefined);
+  const reason = sanitizeCodeParamValue(metadata?.reason);
+  if (reason) return redactCredentialText(reason);
+
+  const classifiedCode = humanizeToolError(undefined, toolCall.name, t, metadata);
+  if (classifiedCode) return classifiedCode.detail ?? classifiedCode.summary;
+
+  const code = sanitizeCodeParamValue(metadata?.code);
+  if (code) return t.toolStepHumanize.failureCode.replace('{code}', code);
+
+  const exitCodeMetadata = sanitizeCodeParamValue(metadata?.exitCode);
+  if (exitCodeMetadata) return t.toolStepHumanize.failureCode.replace('{code}', exitCodeMetadata);
+
+  const classified = humanizeToolError(error, toolCall.name, t, metadata);
+  if (classified) return classified.detail ?? classified.summary;
+
+  const exitCode = error?.match(/(?:exit(?:ed)?(?: with)? code|退出码)\s*[:=]?\s*(-?\d+)/iu)?.[1];
+  if (exitCode) return t.toolStepHumanize.failureCode.replace('{code}', exitCode);
+  const httpCode = error?.match(/\bHTTP\s+(\d{3})\b/iu)?.[1];
+  if (httpCode) return t.toolStepHumanize.failureCode.replace('{code}', `HTTP ${httpCode}`);
+  return t.toolStepHumanize.failureReasonMissing;
 }
 
 /**

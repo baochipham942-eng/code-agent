@@ -7,6 +7,7 @@ import type { TraceNode } from '../../../src/shared/contract/trace';
 
 const state = vi.hoisted(() => ({
   resolved: [] as PermissionRequest[],
+  pending: null as PermissionRequest | null,
   sendPrompt: vi.fn(async () => undefined),
 }));
 
@@ -17,6 +18,9 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: (selector: (value: Record<string, unknown>) => unknown) => selector({
     resolvedPermissionRequests: { 'session-1': state.resolved },
+    pendingPermissionRequest: state.pending,
+    pendingPermissionSessionId: state.pending ? 'session-1' : null,
+    queuedPermissionRequests: {},
     openPreview: vi.fn(),
     openSettingsTab: vi.fn(),
   }),
@@ -61,10 +65,25 @@ function resolved(decision: PermissionRequest['decision'], linked = true): Permi
 afterEach(() => {
   cleanup();
   state.resolved = [];
+  state.pending = null;
   state.sendPrompt.mockClear();
 });
 
 describe('ToolStepGroup resolved permission evidence', () => {
+  it('待审批工具主行使用请求式，不抢跑完成时', () => {
+    state.pending = {
+      id: 'permission-pending', sessionId: 'session-1', parentToolUseId: 'call-tmeet',
+      tool: 'tmeetMeetingCreate', type: 'file_write',
+      details: { subject: '临时会议' } as PermissionRequest['details'], timestamp: 1,
+    };
+    const pendingNode: TraceNode = { ...toolNode, toolCall: { ...toolNode.toolCall!, result: undefined, success: undefined } };
+    render(<ToolStepGroup nodes={[pendingNode]} sessionId="session-1" isStreamingTurn />);
+
+    const header = screen.getAllByRole('button', { expanded: false })[0]?.textContent ?? '';
+    expect(header).toContain('请求创建会议');
+    expect(header).not.toContain('创建了一场会议');
+  });
+
   it('把允许结果放到对应工具步骤旁，并在折叠区保留完整参数', () => {
     state.resolved = [resolved('once')];
     render(<ToolStepGroup nodes={[toolNode]} sessionId="session-1" />);

@@ -10,7 +10,6 @@ import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSessionUIStore } from '../stores/sessionUIStore';
 import { useStreamingMessageAccumulatorStore } from '../stores/streamingMessageAccumulatorStore';
-import { useTaskStore } from '../stores/taskStore';
 import { selectHasStoppableSwarmWork, useSwarmStore } from '../stores/swarmStore';
 import {
   ensureNeoWorkCardLiveUpdates,
@@ -22,6 +21,7 @@ import {
 import { useAgent } from '../hooks/useAgent';
 import { useRequireAuth } from '../hooks/useRequireAuth';
 import { useTurnProjection } from '../hooks/useTurnProjection';
+import { useSessionTurnActive } from '../hooks/useSessionTurnActive';
 import { useTurnExecutionClarity } from '../hooks/useTurnExecutionClarity';
 import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
 import { StreamingIndicator } from './features/chat/StreamingIndicator';
@@ -327,17 +327,11 @@ export const ChatView: React.FC = () => {
   }, [currentSessionId, setTaskPlan]);
 
   // Wave 5: 使用 taskStore 判断当前会话是否在处理中（支持多任务并行）
-  const { sessionStates } = useTaskStore();
-  const currentSessionState = currentSessionId ? sessionStates[currentSessionId] : null;
-  const isCurrentSessionProcessing = currentSessionState?.status === 'running' || currentSessionState?.status === 'queued';
-  const isCurrentSessionLocallyProcessing = useAppStore((state) =>
-    currentSessionId ? state.processingSessionIds?.has(currentSessionId) ?? false : false
-  );
+  const effectiveIsProcessing = useSessionTurnActive(currentSessionId);
   // 当前 session 没有 taskStore 记录 = 这个 session 没在跑（新建/未发消息），不能继承全局 isProcessing
   // 否则别的 session 在 in-flight 时切到新 session，新 session 的 ChatInput 会错误显示运行中引导态
   // 历史选择：原 fallback 用全局 isProcessing 是为了向后兼容 Wave 5 之前的单任务模型，
   // 但多任务并行后这个 fallback 反而成了 state 跨 session 泄漏的源头
-  const effectiveIsProcessing = isCurrentSessionProcessing || isCurrentSessionLocallyProcessing;
 
   // D1 停止全部：spawn_agent 超前台预算会把成员转后台，主 loop 本轮正常收尾 →
   // 主会话回落 idle → 发送键变回发送形态，「停止全部」的入口就此消失，

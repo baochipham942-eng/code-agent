@@ -29,6 +29,7 @@ import {
 interface Props {
   toolCall: ToolCall;
   status: ToolStatus;
+  awaitingApproval?: boolean;
   interruptionReason?: StreamInterruptionReason;
   /** 展开态：内部工具名进次级小字 */
   showDetailName?: boolean;
@@ -65,6 +66,7 @@ function buildToolHeaderTitle(
 export function ToolHeader({
   toolCall,
   status,
+  awaitingApproval = false,
   interruptionReason,
   showDetailName = false,
   hideStatusLabel = false,
@@ -82,10 +84,16 @@ export function ToolHeader({
         toolCall.arguments as Record<string, unknown> | undefined,
         t,
         toolCall.shortDescription,
-        status === 'error',
+        awaitingApproval
+          ? 'pending-approval'
+          : status === 'pending'
+            ? 'running'
+            : status === 'error'
+              ? 'failed'
+              : 'completed',
         toolCall.stepLabel,
       );
-  const statusLabel = getToolStatusLabel(toolCall, status, t);
+  const statusLabel = getToolStatusLabel(toolCall, status, t, awaitingApproval);
   const filePath = getToolFilePath(
     toolCall.name,
     toolCall.arguments as Record<string, unknown> | undefined,

@@ -10,8 +10,11 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { SidebarSessionItem } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useTaskStore } from '../../../src/renderer/stores/taskStore';
 
-function renderRow(overrides: { pinned?: boolean; unread?: boolean; hadLiveVoice?: boolean; forkedFrom?: string } = {}) {
+function renderRow(overrides: { pinned?: boolean; unread?: boolean; hadLiveVoice?: boolean; forkedFrom?: string; runtimeRunning?: boolean } = {}) {
   const session = {
     id: 'session-align',
     title: '对齐用例会话',
@@ -43,7 +46,7 @@ function renderRow(overrides: { pinned?: boolean; unread?: boolean; hadLiveVoice
       selectedSessionIds={new Set()}
       pinnedSessionIds={overrides.pinned ? new Set(['session-align']) : new Set()}
       renamingId={null}
-      sessionRuntimes={new Map()}
+      sessionRuntimes={overrides.runtimeRunning ? new Map([['session-align', { status: 'running', lastActivityAt: 2 } as any]]) : new Map()}
       backgroundSessionMap={new Map()}
       sessionStates={{}}
       hasNeedsInputForSession={() => false}
@@ -71,6 +74,13 @@ function renderRow(overrides: { pinned?: boolean; unread?: boolean; hadLiveVoice
 }
 
 describe('侧栏会话行对齐规范', () => {
+  it('轮终态会压掉滞后的 runtime running 转圈', () => {
+    useAppStore.setState({ processingSessionIds: new Set() });
+    useSessionStore.setState({ runningSessionIds: new Set() });
+    useTaskStore.setState({ sessionStates: {} });
+    expect(renderRow({ runtimeRunning: true })).not.toContain('animate-spin');
+  });
+
   it('不再渲染相对时间文案', () => {
     const html = renderRow();
     expect(html).not.toMatch(/天前|小时前|分钟前|刚刚|ago/);

@@ -8,6 +8,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { StreamInterruptionReason, ToolCall } from '@shared/contract';
 import type { SessionMediaContext } from '@shared/utils/sessionMediaAssets';
 import { useAppStore } from '../../../../../stores/appStore';
+import { isToolCallAwaitingApproval } from '../../../../../utils/sessionNeedsInput';
 import { useSessionStore } from '../../../../../stores/sessionStore';
 import { ToolHeader } from './ToolHeader';
 import { ResultSummary } from './ResultSummary';
@@ -132,11 +133,18 @@ export function ToolCallDisplay({
   receipt,
 }: ToolCallDisplayProps) {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
-  const processingSessionIds = useAppStore(
-    (state) => state.processingSessionIds
-  );
+  const processingSessionIds = useAppStore((state) => state.processingSessionIds);
+  const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
+  const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
+  const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
   const sessionId = mediaContext?.sessionId || currentSessionId;
+  const awaitingApproval = toolCall.result === undefined
+    && isToolCallAwaitingApproval(toolCall.id, sessionId, {
+      pendingPermissionRequest,
+      pendingPermissionSessionId,
+      queuedPermissionRequests,
+    });
   const delegationTool = isDelegationTool(toolCall.name);
   const { snapshot: agentTree } = useAgentTreeSnapshot(
     sessionId ?? null,
@@ -162,12 +170,13 @@ export function ToolCallDisplay({
   // Calculate status
   const derivedStatus: ToolStatus = useMemo(() => {
     if (statusOverride) return statusOverride;
+    if (awaitingApproval) return 'pending';
     if (receipt) return receipt.status === 'failed' ? 'error' : 'success';
     if (delegationPresentation?.state === 'working') return 'pending';
     if (delegationPresentation?.state === 'completed') return 'success';
     if (delegationPresentation?.state === 'failed') return 'error';
     return getToolStatus(toolCall, currentSessionId, processingSessionIds);
-  }, [delegationPresentation?.state, toolCall, currentSessionId, processingSessionIds, receipt, statusOverride]);
+  }, [awaitingApproval, delegationPresentation?.state, toolCall, currentSessionId, processingSessionIds, receipt, statusOverride]);
   // 收口时内存消息会先终态，随后持久化列表回填；回填窗口里同一 call 可能短暂缺 result。
   // 一旦同一 toolCall 到达成功/失败，renderer 不再把它降回 pending/interrupted。
   const terminalStatusRef = useRef<{ toolCallId: string; status: ToolStatus | null }>({
@@ -266,6 +275,7 @@ export function ToolCallDisplay({
           : <ToolHeader
               toolCall={toolCall}
               status={status}
+              awaitingApproval={awaitingApproval}
               interruptionReason={interruptionReason}
               showDetailName={expanded}
               hideStatusLabel={Boolean(receipt)}

@@ -7,7 +7,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { ChevronRight, ChevronDown, RotateCcw } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
-import type { PermissionRequest, ToolCall, ToolLiveOutput } from '@shared/contract';
+import type { PermissionRequest, ToolCall, ToolLiveOutput, ToolStepStatus } from '@shared/contract';
 import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
 import { findConnectorIdForToolName } from '@shared/contract/workbenchTools';
 import {
@@ -24,6 +24,7 @@ import {
 import {
   formatToolDuration,
   humanizeToolError,
+  humanizeToolFailureReason,
   isAutoLoadedRetry,
   isEscalatedToolError,
 } from '../../../utils/toolExecutionPresentation';
@@ -38,6 +39,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { Button } from '../../primitives/Button';
 import { redactCredentialText } from '@shared/security/secretPatterns';
+import { isToolCallAwaitingApproval } from '../../../utils/sessionNeedsInput';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
@@ -53,6 +55,15 @@ interface ToolStepGroupProps {
 
 const EMPTY_RESOLVED_PERMISSION_REQUESTS: PermissionRequest[] = [];
 
+function resolveTraceToolStepStatus(
+  toolCall: NonNullable<TraceNode['toolCall']>,
+  awaitingApproval: boolean,
+): ToolStepStatus {
+  if (awaitingApproval) return 'pending-approval';
+  if (toolCall.result === undefined) return 'running';
+  return toolCall.success === false ? 'failed' : 'completed';
+}
+
 export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   nodes,
   sessionId,
@@ -66,6 +77,14 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const resolvedPermissionRequests = useAppStore((state) => (
     sessionId ? state.resolvedPermissionRequests?.[sessionId] : undefined
   )) ?? EMPTY_RESOLVED_PERMISSION_REQUESTS;
+  const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
+  const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
+  const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
+  const permissionState = useMemo(() => ({
+    pendingPermissionRequest,
+    pendingPermissionSessionId,
+    queuedPermissionRequests,
+  }), [pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests]);
   // 主流可见节点：过滤 ToolSearch 等纯内部动作（仍可在混合组的展开明细里看到）
   const streamVisibleNodes = useMemo(
     () => nodes.filter((n) => {
@@ -80,13 +99,16 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       const tc = streamVisibleNodes[0].toolCall;
       if (tc) {
         const connectorId = findConnectorIdForToolName(tc.name);
+        const stepStatus = resolveTraceToolStepStatus(
+          tc,
+          isToolCallAwaitingApproval(tc.id, sessionId, permissionState),
+        );
         const step = humanizeToolStep(
           tc.name,
           tc.args as Record<string, unknown> | undefined,
           t,
           tc.shortDescription,
-          // 已失败的调用不再用过去时肯定式，避免与状态词同屏矛盾（结果语义交给状态词）
-          tc.result !== undefined && tc.success === false,
+          stepStatus,
           tc.stepLabel,
           { connectorPrefixRendered: Boolean(connectorId) },
         );
@@ -109,27 +131,46 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       });
       return `${connector} · ${t.toolGroup.executedSteps.replace('{count}', String(names.length))}`;
     }
-    return humanizeToolGroupLabel(names, t);
-  }, [streamVisibleNodes, t]);
+    const groupStatus: ToolStepStatus = streamVisibleNodes.some((node) => (
+      node.toolCall
+      && node.toolCall.result === undefined
+      && isToolCallAwaitingApproval(node.toolCall.id, sessionId, permissionState)
+    ))
+      ? 'pending-approval'
+      : streamVisibleNodes.some((node) => node.toolCall?.result === undefined)
+        ? 'running'
+        : streamVisibleNodes.every((node) => node.toolCall?.success === false)
+          ? 'failed'
+          : 'completed';
+    return humanizeToolGroupLabel(names, t, groupStatus);
+  }, [permissionState, sessionId, streamVisibleNodes, t]);
 
-  const status = useMemo<'streaming' | 'partial' | 'error' | 'ok'>(() => {
+  const status = useMemo<'pending-approval' | 'streaming' | 'partial' | 'error' | 'ok'>(() => {
     let hasError = false;
     let hasSuccess = false;
+    let hasRunning = false;
     for (const n of nodes) {
       const tc = n.toolCall;
       if (!tc) continue;
       // 自动加载重试 + 已恢复的失败都是良性/已收尾状态，不参与组状态判定
       // （否则组会卡 error/partial、顶红、一直展开，把成功的一轮演成翻车）。
       if (isAutoLoadedRetry(tc.metadata) || tc.recovered) continue;
-      if (tc._streaming) return 'streaming';
+      if (tc.result === undefined && isToolCallAwaitingApproval(tc.id, sessionId, permissionState)) {
+        return 'pending-approval';
+      }
+      if (tc.result === undefined) {
+        hasRunning = true;
+        continue;
+      }
       if (tc.success === false) hasError = true;
       if (tc.success === true || (tc.result !== undefined && tc.success !== false)) {
         hasSuccess = true;
       }
     }
-    if (hasError && hasSuccess) return 'partial';
-    return hasError ? 'error' : 'ok';
-  }, [nodes]);
+    if (hasError && (hasSuccess || hasRunning)) return 'partial';
+    if (hasError) return 'error';
+    return hasRunning ? 'streaming' : 'ok';
+  }, [nodes, permissionState, sessionId]);
 
   // 构造 ToolCallDisplay 需要的 ToolCall 对象
   const toolCalls = useMemo<ToolCall[]>(() => {
@@ -210,7 +251,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       requestDetails,
       t,
       toolCall.shortDescription,
-      denied || timedOut,
+      denied || timedOut ? 'failed' : 'completed',
       toolCall.stepLabel,
     );
     const connectorLabel = getHumanToolLabel({
@@ -298,6 +339,12 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   }, [tier, runningToolCall]);
 
   const resultSummary = useMemo(() => buildToolGroupHeadSummary(toolCalls, t), [toolCalls, t]);
+  const failureReason = useMemo(() => {
+    const failedCalls = toolCalls.filter((toolCall) => toolCall.result?.success === false);
+    if (failedCalls.length === 0) return null;
+    if (failedCalls.length === 1) return humanizeToolFailureReason(failedCalls[0], t);
+    return t.toolGroup.summaryFailed.replace('{count}', String(failedCalls.length));
+  }, [t, toolCalls]);
   const outputCount = useMemo(() => {
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
   }, [toolCalls]);
@@ -408,9 +455,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
             {permissionOutcome?.label ?? getToolGroupStatusLabel(status, t)}
             {(status === 'partial' || status === 'error') && (
               <span className="ml-1 text-zinc-600">
-                · {permissionOutcome?.reason ?? (status === 'partial'
-                  ? t.outcomeWords['completed-with-warnings'].badge.reason
-                  : t.outcomeWords['failed-tool'].badge.reason)}
+                · {permissionOutcome?.reason ?? failureReason ?? t.toolStepHumanize.failureReasonMissing}
               </span>
             )}
           </span>
@@ -585,7 +630,7 @@ function summarizeSingleFailure(toolCall: ToolCall, t: Translations): string | n
   const errorText = result.error || (typeof result.output === 'string' ? result.output : '');
   const humanized = humanizeToolError(errorText, toolCall.name, t, result.metadata);
   if (humanized) return humanized.summary;
-  return errorText.trim() ? t.systemError.fallbackSummary : null;
+  return humanizeToolFailureReason(toolCall, t);
 }
 
 function summarizeToolGroupResults(toolCalls: ToolCall[], t: Translations): string | null {
@@ -625,7 +670,8 @@ function isEmptySearchResult(toolCall: ToolCall): boolean {
   return /(?:No matches found|No files matched the pattern|No matches|0 matches)/i.test(output.trim());
 }
 
-function getToolGroupStatusLabel(status: 'streaming' | 'partial' | 'error' | 'ok', t: Translations): string {
+function getToolGroupStatusLabel(status: 'pending-approval' | 'streaming' | 'partial' | 'error' | 'ok', t: Translations): string {
+  if (status === 'pending-approval') return t.toolStepHumanize.pendingApprovalStatus;
   if (status === 'streaming') return t.toolGroup.statusRunning;
   if (status === 'partial') return t.outcomeWords['completed-with-warnings'].badge.label;
   if (status === 'error') return t.outcomeWords['failed-tool'].badge.label;
@@ -634,8 +680,8 @@ function getToolGroupStatusLabel(status: 'streaming' | 'partial' | 'error' | 'ok
 
 // hasEscalatedError=false（探索性失败，非用户需介入）一律用中性色，不顶红/顶黄——
 // 跟成功行视觉权重接近，agent 试错不该喊给用户看。
-function getToolGroupStatusClass(status: 'streaming' | 'partial' | 'error' | 'ok', hasEscalatedError: boolean): string {
-  if (status === 'streaming') return 'text-badge-info';
+function getToolGroupStatusClass(status: 'pending-approval' | 'streaming' | 'partial' | 'error' | 'ok', hasEscalatedError: boolean): string {
+  if (status === 'pending-approval' || status === 'streaming') return 'text-badge-info';
   if (!hasEscalatedError && (status === 'partial' || status === 'error')) return 'text-zinc-500';
   if (status === 'partial') return 'text-badge-warning';
   if (status === 'error') return 'text-badge-danger';

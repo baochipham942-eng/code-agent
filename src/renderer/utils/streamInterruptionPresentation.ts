@@ -83,7 +83,7 @@ export function humanizeInterruptedToolAction(
     args,
     t,
     toolCall.shortDescription,
-    true,
+    'failed',
     toolCall.stepLabel,
   );
 }

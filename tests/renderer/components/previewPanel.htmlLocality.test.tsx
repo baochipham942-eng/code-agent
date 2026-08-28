@@ -3,6 +3,9 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore, type PreviewTab } from '../../../src/renderer/stores/appStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useArtifactFollowStore } from '../../../src/renderer/stores/artifactFollowStore';
+import { useTaskStore } from '../../../src/renderer/stores/taskStore';
 
 const sendPrompt = vi.fn().mockResolvedValue(undefined);
 
@@ -54,7 +57,11 @@ beforeEach(() => {
     previewTabs: [],
     activePreviewTabId: null,
     language: 'zh',
+    processingSessionIds: new Set(),
   });
+  useSessionStore.setState({ currentSessionId: null, runningSessionIds: new Set() });
+  useTaskStore.setState({ sessionStates: {} });
+  useArtifactFollowStore.getState().reset();
 });
 
 afterEach(() => {
@@ -227,6 +234,19 @@ describe('PreviewPanel 非 HTML 分支', () => {
 });
 
 describe('PreviewPanel 三态工具栏', () => {
+  it('轮终态到达后立即收掉生成中，哪怕 artifact follow 事件仍滞留 generating', () => {
+    const tab = loadedTab({ path: '/tmp/report.html', content: '<main>report</main>' });
+    useAppStore.setState({ previewTabs: [tab], activePreviewTabId: tab.id });
+    useSessionStore.setState({ currentSessionId: 'session-terminal', runningSessionIds: new Set(['session-terminal']) });
+    useArtifactFollowStore.getState().start({ sessionId: 'session-terminal', path: tab.path, attention: false });
+    const view = render(<PreviewPanel />);
+    expect(screen.getByTestId('artifact-follow-generating')).toBeTruthy();
+
+    act(() => useSessionStore.setState({ runningSessionIds: new Set() }));
+    expect(screen.queryByTestId('artifact-follow-generating')).toBeNull();
+    expect(view.container.textContent).not.toContain('生成中 · 内容跟随刷新');
+  });
+
   it('HTML 可在预览、只读源码、编辑三态间切换', async () => {
     const tab = loadedTab({
       path: '/tmp/report.html',

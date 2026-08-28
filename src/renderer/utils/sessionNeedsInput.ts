@@ -32,6 +32,24 @@ export function hasQueuedPermissionForSession(
   return (state.queuedPermissionRequests?.[sessionId]?.length ?? 0) > 0;
 }
 
+/** Exact approval correlation: renderer status changes only when the approval names this tool call. */
+export function isToolCallAwaitingApproval(
+  toolCallId: string,
+  sessionId: string | null | undefined,
+  state: SessionPermissionNeedsInputState = {},
+): boolean {
+  const matches = (request: PermissionRequest | null | undefined) => (
+    request?.resolved !== true && request?.parentToolUseId === toolCallId
+  );
+  if (matches(state.pendingPermissionRequest)) {
+    return !sessionId
+      || !state.pendingPermissionSessionId
+      || state.pendingPermissionSessionId === sessionId;
+  }
+  if (!sessionId) return false;
+  return (state.queuedPermissionRequests?.[sessionId] ?? []).some(matches);
+}
+
 export function hasWaitingInputBackgroundTaskForSession(
   sessionId: string,
   tasks: readonly Task[] = [],

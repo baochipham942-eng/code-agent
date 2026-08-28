@@ -59,7 +59,7 @@ export const WorkbenchOverview: React.FC = () => {
                 {recentSnapshotSummary && (
                   <div
                     data-testid="workbench-overview-recent"
-                    className="mt-8 w-full max-w-sm text-left"
+                    className="mt-8 flex max-w-xs flex-col items-center text-center"
                   >
                     <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
                       {t.workbenchTabs.overviewEmptyRecentLabel}

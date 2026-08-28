@@ -298,6 +298,28 @@ describe('设基准硬门与旧规则', () => {
     });
   });
 
+  // 2026-08-29 监工补：Grok 变异席抓到「版本存在但≠4 只 warn 不拒绝」36/36 全绿——上一条只钉了缺字段。
+  it('版本号不等的旧基线（denominatorVersion: 3）同样拒绝比较，不许只 warn', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'eval-v3-baseline-'));
+    roots.push(root);
+    const manager = new BaselineManager(root);
+    await manager.save({
+      version: 1,
+      denominatorVersion: 3,
+      plannedCaseIds: ['case-1'],
+      updatedAt: 1,
+      updatedBy: 'old',
+      globalMetrics: { passRate: 1, averageScore: 1, totalCases: 1 },
+      caseResults: { 'case-1': { status: 'passed', score: 1 } },
+      thresholds: { minPassRate: 0.7, maxScoreDrop: 0.15, maxNewFailures: 2 },
+    });
+
+    await expect(manager.compare(summary([result('case-1')]))).resolves.toEqual({
+      comparable: false,
+      reason: '基线口径较老，请重新设为对比基准',
+    });
+  });
+
   it('完整跑完的子集也不能与全集基准比较', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'eval-subset-compare-'));
     roots.push(root);

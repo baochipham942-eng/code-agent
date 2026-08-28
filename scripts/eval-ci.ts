@@ -15,6 +15,8 @@
 
 import chalk from 'chalk';
 import { execSync } from 'child_process';
+import { Console } from 'node:console';
+import { randomUUID } from 'node:crypto';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
@@ -41,7 +43,14 @@ import {
   saveReport,
 } from '../src/host/testing/index';
 import type { AgentInterface } from '../src/host/testing/testRunner';
-import type { CompareConfiguration, TestRunSummary, TrendDataPoint } from '../src/host/testing/types';
+import type {
+  BaselineDelta,
+  CompareConfiguration,
+  TestEvent,
+  TestRunSummary,
+  TrendDataPoint,
+} from '../src/host/testing/types';
+import type { EvalRunEvent } from '../src/shared/contract/evaluation';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
 import { isDynamicCustomProviderId } from '../src/shared/modelRuntime';
 import { isProviderVariantDisabled } from '../src/host/prompts/providerVariants';
@@ -54,8 +63,6 @@ import { getScriptedRunPermissionHandler } from '../src/host/permissions/scripte
 function providerVariantArm(): 'variant-on' | 'variant-off' {
   return isProviderVariantDisabled() ? 'variant-off' : 'variant-on';
 }
-
-type EvalReportFormat = 'markdown' | 'json' | 'console';
 
 const PROVIDER_KEY_CANDIDATES: Record<string, string[]> = {
   moonshot: ['KIMI_K25_API_KEY', 'MOONSHOT_API_KEY'],
@@ -75,6 +82,193 @@ const PROVIDER_KEY_CANDIDATES: Record<string, string[]> = {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_MAX_CASES = 50;
+
+type EvalRunStartConfig = Extract<EvalRunEvent, { type: 'run_start' }>['config'];
+
+class EvalRunEventStream {
+  readonly runId = randomUUID();
+  private readonly startedAt = Date.now();
+  private started = false;
+  private ended = false;
+  private summary?: TestRunSummary;
+  private reportFiles: string[] = [];
+  private expectedExitCode = 0;
+  private readonly pendingToolResults = new Map<
+    string,
+    Array<Extract<TestEvent, { type: 'tool_result' }>>
+  >();
+  private readonly onProcessExit = (exitCode: number) => {
+    this.finish(exitCode);
+  };
+
+  constructor() {
+    process.once('exit', this.onProcessExit);
+  }
+
+  start(plannedCaseIds: string[], config: EvalRunStartConfig): void {
+    if (this.started) return;
+    this.started = true;
+    this.write({
+      schemaVersion: 1,
+      type: 'run_start',
+      ts: Date.now(),
+      runId: this.runId,
+      plannedCaseIds,
+      config,
+    });
+  }
+
+  forward(event: TestEvent, config: EvalRunStartConfig): void {
+    switch (event.type) {
+      case 'suite_start':
+        this.start(event.plannedCaseIds, config);
+        break;
+      case 'case_start':
+        this.write({
+          schemaVersion: 1,
+          type: 'case_start',
+          ts: Date.now(),
+          runId: this.runId,
+          testId: event.testId,
+          description: event.description,
+        });
+        break;
+      case 'case_end':
+        for (const toolExecution of event.result.toolExecutions) {
+          this.forward({
+            type: 'tool_call',
+            testId: event.result.testId,
+            tool: toolExecution.tool,
+            input: toolExecution.input,
+          }, config);
+          const pendingResults = this.pendingToolResults.get(event.result.testId);
+          const toolResult = pendingResults?.shift();
+          if (toolResult) {
+            this.write({ schemaVersion: 1, ts: Date.now(), runId: this.runId, ...toolResult });
+          }
+        }
+        this.pendingToolResults.delete(event.result.testId);
+        this.write({
+          schemaVersion: 1,
+          type: 'case_end',
+          ts: Date.now(),
+          runId: this.runId,
+          testId: event.result.testId,
+          status: event.result.status,
+          score: event.result.score,
+          durationMs: event.result.duration,
+          ...(event.result.failureReason ? { failureReason: event.result.failureReason } : {}),
+          ...(event.result.failureStage ? { failureStage: event.result.failureStage } : {}),
+          ...(event.result.usageStatus ? { usageStatus: event.result.usageStatus } : {}),
+          ...(event.result.costUsd !== undefined ? { costUsd: event.result.costUsd } : {}),
+          ...(event.result.mockExcluded ? { mockExcluded: true } : {}),
+          ...(event.result.killedByTimeout ? { killedByTimeout: true } : {}),
+          ...(event.result.trials ? { trials: event.result.trials.length } : {}),
+        });
+        break;
+      case 'tool_call':
+        this.write({ schemaVersion: 1, ts: Date.now(), runId: this.runId, ...event });
+        break;
+      case 'tool_result':
+        this.pendingToolResults.set(event.testId, [
+          ...(this.pendingToolResults.get(event.testId) ?? []),
+          event,
+        ]);
+        break;
+      case 'error':
+        this.write({ schemaVersion: 1, ts: Date.now(), runId: this.runId, ...event });
+        break;
+      case 'suite_end':
+        this.recordSummary(event.summary);
+        break;
+    }
+  }
+
+  recordSummary(summary: TestRunSummary): void {
+    this.summary = summary;
+  }
+
+  recordReportFiles(reportFiles: string[]): void {
+    this.reportFiles = [...reportFiles];
+  }
+
+  setExpectedExitCode(exitCode: number): void {
+    this.expectedExitCode = exitCode;
+  }
+
+  error(error: unknown): void {
+    if (this.ended) return;
+    const message = error instanceof Error ? error.message : String(error);
+    this.write({
+      schemaVersion: 1,
+      type: 'error',
+      ts: Date.now(),
+      runId: this.runId,
+      error: message,
+    });
+  }
+
+  finish(exitCode = this.expectedExitCode): void {
+    if (this.ended) return;
+    this.ended = true;
+    process.off('exit', this.onProcessExit);
+
+    const now = Date.now();
+    const summary = this.summary;
+    const aborted = summary?.aborted === true || exitCode === 2;
+    const abortReason = summary?.abortReason;
+    this.write({
+      schemaVersion: 1,
+      type: 'run_end',
+      ts: now,
+      runId: this.runId,
+      summary: summary
+        ? {
+            runId: summary.runId,
+            startTime: summary.startTime,
+            endTime: summary.endTime,
+            duration: summary.duration,
+            total: summary.total,
+            passed: summary.passed,
+            failed: summary.failed,
+            skipped: summary.skipped,
+            ...(summary.mockExcluded !== undefined ? { mockExcluded: summary.mockExcluded } : {}),
+            partial: summary.partial,
+            ...(summary.infraExcluded !== undefined ? { infraExcluded: summary.infraExcluded } : {}),
+            ...(summary.costExceeded !== undefined ? { costExceeded: summary.costExceeded } : {}),
+            averageScore: summary.averageScore,
+            ...(summary.gitCommit ? { gitCommit: summary.gitCommit } : {}),
+            ...(summary.persistenceWarning ? { persistenceWarning: summary.persistenceWarning } : {}),
+            ...(summary.aborted !== undefined ? { aborted: summary.aborted } : {}),
+            ...(summary.abortReason ? { abortReason: summary.abortReason } : {}),
+            ...(summary.unstableCaseCount !== undefined ? { unstableCaseCount: summary.unstableCaseCount } : {}),
+            ...(summary.averageStdDev !== undefined ? { averageStdDev: summary.averageStdDev } : {}),
+            ...(summary.dataset ? { dataset: summary.dataset } : {}),
+          }
+        : {
+            runId: this.runId,
+            startTime: this.startedAt,
+            endTime: now,
+            duration: now - this.startedAt,
+            total: 0,
+            passed: 0,
+            failed: 0,
+            skipped: 0,
+            partial: 0,
+            averageScore: 0,
+            ...(aborted ? { aborted: true } : {}),
+          },
+      reportFiles: this.reportFiles,
+      exitCode,
+      aborted,
+      ...(abortReason ? { abortReason } : {}),
+    });
+  }
+
+  private write(event: EvalRunEvent): void {
+    fs.writeSync(process.stdout.fd, `${JSON.stringify(event)}\n`);
+  }
+}
 
 /** Rough cost per case by model prefix (USD). Fallback: $0.01 */
 function estimateCostPerCase(modelName: string): number {
@@ -176,6 +370,8 @@ function parseArgs(argv: string[]) {
       }
     } else if (arg === '--force') {
       force = true;
+    } else if (arg === '--json-events') {
+      // Parsed at main() entry so console can be redirected before any work.
     } else if (arg === '--help' || arg === '-h') {
       printUsage();
       process.exit(0);
@@ -209,6 +405,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --model <name>     Model name (implies --real)
   npx tsx scripts/eval-ci.ts --provider <name>  Model provider (default: from constants)
   npx tsx scripts/eval-ci.ts --concurrency <n>  Parallel test execution count
+  npx tsx scripts/eval-ci.ts --json-events      Emit NDJSON events on stdout; human output goes to stderr
   npx tsx scripts/eval-ci.ts --max-cases <n>    Max cases in --real mode (default: 50)
   npx tsx scripts/eval-ci.ts --tags <a,b>       Filter test cases by tags
   npx tsx scripts/eval-ci.ts --ids <a,b>        Filter test cases by IDs
@@ -540,7 +737,8 @@ async function runEvals(
     ids?: string[];
     prediction?: { predictedFixes: string[]; riskTasks: string[] };
     caseDir?: string;
-    reportFormats?: EvalReportFormat[];
+    eventStream?: EvalRunEventStream;
+    eventConfig?: EvalRunStartConfig;
   }
 ): Promise<TestRunSummary> {
   // \u9694\u79BB\u6C99\u7BB1\uFF1Aagent \u7684 working directory \u8D70\u4E34\u65F6\u5FEB\u7167\uFF1Btest-cases / results \u4ECD\u8BFB\u5199\u771F\u5B9E\u4ED3\u5E93\u3002
@@ -553,6 +751,7 @@ async function runEvals(
     }
 
     const config = createDefaultConfig(workingDir, {
+      ...(opts.eventStream ? { runId: opts.eventStream.runId } : {}),
       verbose: false,
       workingDirectory: agentWorkingDir,
       testCaseDir: opts.caseDir ?? resolveCoreTestCaseDir(workingDir),
@@ -603,6 +802,9 @@ async function runEvals(
     );
 
     runner.addEventListener((event) => {
+      if (opts.eventStream && opts.eventConfig) {
+        opts.eventStream.forward(event, opts.eventConfig);
+      }
       switch (event.type) {
         case 'case_end': {
           const icon =
@@ -629,12 +831,7 @@ async function runEvals(
     });
 
     const summary = await runner.runAll();
-
-    const reportFormats = opts.reportFormats ?? ['markdown', 'json'];
-    const savedFiles = await saveReport(summary, config.resultsDir, reportFormats);
-    if (savedFiles.length > 0) {
-      console.log(chalk.dim(`  Reports saved to: ${savedFiles[0]}`));
-    }
+    opts.eventStream?.recordSummary(summary);
 
     if (sandbox) {
       assertRepoUnchanged(workingDir, repoStatusBefore);
@@ -644,6 +841,39 @@ async function runEvals(
   } finally {
     sandbox?.cleanup();
   }
+}
+
+async function persistRunReport(
+  summary: TestRunSummary,
+  workingDir: string,
+  baselineDelta?: BaselineDelta,
+): Promise<string[]> {
+  return saveReport(
+    summary,
+    createDefaultConfig(workingDir).resultsDir,
+    ['markdown', 'json'],
+    ...(baselineDelta === undefined ? [] : [baselineDelta]),
+  );
+}
+
+function reportSavedFiles(reportFiles: string[], eventStream?: EvalRunEventStream): void {
+  eventStream?.recordReportFiles(reportFiles);
+  if (reportFiles.length > 0) {
+    console.log(chalk.dim(`  Reports saved to: ${reportFiles[0]}`));
+  }
+}
+
+async function exitIfAborted(
+  summary: TestRunSummary,
+  workingDir: string,
+  eventStream?: EvalRunEventStream,
+): Promise<void> {
+  if (!summary.aborted) return;
+  const reportFiles = await persistRunReport(summary, workingDir);
+  reportSavedFiles(reportFiles, eventStream);
+  eventStream?.setExpectedExitCode(2);
+  eventStream?.finish(2);
+  process.exit(2);
 }
 
 /**
@@ -788,7 +1018,45 @@ async function runCompareCommand(
 // Main
 // ---------------------------------------------------------------------------
 
-export async function main(argv = process.argv, cwd = process.cwd()) {
+function createRunStartConfig(opts: {
+  real: boolean;
+  model?: string;
+  provider?: string;
+  scope: 'smoke' | 'full';
+  split?: SplitBucket;
+  tags?: string[];
+  ids?: string[];
+  maxCases: number;
+  concurrency?: number;
+  compare?: boolean;
+  workingDir: string;
+  caseDir?: string;
+}): EvalRunStartConfig {
+  return {
+    mode: opts.real ? 'real' : 'mock',
+    model: opts.real
+      ? opts.model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL
+      : 'mock-model',
+    provider: opts.real
+      ? opts.provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER
+      : 'mock',
+    scope: opts.scope,
+    ...(!opts.caseDir && opts.split ? { split: opts.split } : {}),
+    ...(opts.tags?.length ? { tags: opts.tags } : {}),
+    ...(opts.ids?.length ? { ids: opts.ids } : {}),
+    maxCases: opts.maxCases,
+    concurrency: opts.concurrency ?? 1,
+    ...(opts.compare ? { compare: true } : {}),
+    gitCommit: getCommitSha(),
+    testCaseDir: opts.caseDir ?? resolveCoreTestCaseDir(opts.workingDir),
+  };
+}
+
+async function mainImpl(
+  argv: string[],
+  cwd: string,
+  eventStream?: EvalRunEventStream,
+): Promise<void> {
   const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split } = parseArgs(argv);
   const workingDir = cwd;
   const effectiveReal = real || !!model;
@@ -904,8 +1172,21 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
       concurrency,
       tags,
       ids,
-      reportFormats: ['markdown', 'json'],
+      eventStream,
+      eventConfig: createRunStartConfig({
+        real: false,
+        scope: 'full',
+        split: split ?? 'held-in',
+        tags,
+        ids,
+        maxCases,
+        concurrency,
+        workingDir,
+      }),
     });
+    await exitIfAborted(summary, workingDir, eventStream);
+    const reportFiles = await persistRunReport(summary, workingDir);
+    reportSavedFiles(reportFiles, eventStream);
     const commitSha = getCommitSha();
     await manager.promoteMockHarness(summary, commitSha);
     console.log(chalk.green(`  Mock harness baseline refreshed (commit: ${commitSha.slice(0, 7)})`));
@@ -961,8 +1242,23 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
       concurrency,
       tags,
       ids,
-      reportFormats: ['markdown', 'json'],
+      eventStream,
+      eventConfig: createRunStartConfig({
+        real: effectiveReal,
+        model,
+        provider,
+        scope: 'full',
+        split: split ?? 'held-in',
+        tags,
+        ids,
+        maxCases,
+        concurrency,
+        workingDir,
+      }),
     });
+    await exitIfAborted(summary, workingDir, eventStream);
+    const reportFiles = await persistRunReport(summary, workingDir);
+    reportSavedFiles(reportFiles, eventStream);
     const commitSha = getCommitSha();
     await manager.promote(summary, commitSha, 'real');
     console.log(chalk.green(`  Baseline promoted (commit: ${commitSha.slice(0, 7)})`));
@@ -1050,10 +1346,22 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
     ids,
     prediction,
     caseDir,
-    // Markdown/JSON 是 judge 的权威交付物；Inspect 负责单次 .eval 回放，不替代成本、
-    // baseline 等 Neo 专用汇总。核心集和外部 case-dir 都必须落这两份报告。
-    reportFormats: ['markdown', 'json'],
+    eventStream,
+    eventConfig: createRunStartConfig({
+      real: effectiveReal,
+      model,
+      provider,
+      scope: effectiveScope,
+      split: caseDir ? undefined : split ?? 'held-in',
+      tags,
+      ids,
+      maxCases,
+      concurrency,
+      workingDir,
+      caseDir,
+    }),
   });
+  await exitIfAborted(summary, workingDir, eventStream);
 
   // Real 模式：打印本进程实际 token 消耗与成本（budgetService 进程内累计，
   // 含 Max Mode 的 overhead 记账）—— roadmap 3.3 开关对照需要"成本比"数据
@@ -1071,6 +1379,8 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
   // 外部基准（--case-dir）不与自建集 baseline 对账、不进 trend——
   // 语义不同（外部锚点 vs 内部回归），混进来会把 45 子集基线搅成噪声。
   if (caseDir) {
+    const reportFiles = await persistRunReport(summary, workingDir);
+    reportSavedFiles(reportFiles, eventStream);
     const capabilityTotal =
       summary.total
       - (summary.infraExcluded ?? 0)
@@ -1091,13 +1401,8 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
   // Compare to baseline
   const delta = await manager.compare(summary);
   console.log(generateDeltaConsole(summary, delta));
-  const reportFiles = await saveReport(
-    summary,
-    createDefaultConfig(workingDir).resultsDir,
-    ['markdown', 'json'],
-    delta,
-  );
-  console.log(chalk.dim(`  Reports saved to: ${reportFiles[0]}`));
+  const reportFiles = await persistRunReport(summary, workingDir, delta);
+  reportSavedFiles(reportFiles, eventStream);
 
   // Track trend
   const commitSha = getCommitSha();
@@ -1130,7 +1435,32 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
   // Exit with non-zero if regression detected
   if (delta.isRegression) {
     console.log(chalk.red.bold('  Exiting with code 1 due to regression.'));
+    eventStream?.setExpectedExitCode(1);
+    eventStream?.finish(1);
     process.exit(1);
+  }
+}
+
+export async function main(argv = process.argv, cwd = process.cwd()): Promise<void> {
+  const jsonEvents = argv.slice(2).includes('--json-events');
+  const originalConsole = globalThis.console;
+  if (jsonEvents) {
+    globalThis.console = new Console({ stdout: process.stderr, stderr: process.stderr });
+  }
+
+  const eventStream = jsonEvents ? new EvalRunEventStream() : undefined;
+  let thrownError: unknown;
+  try {
+    await mainImpl(argv, cwd, eventStream);
+  } catch (error) {
+    thrownError = error;
+    eventStream?.error(error);
+    throw error;
+  } finally {
+    eventStream?.finish(thrownError === undefined ? undefined : 2);
+    if (jsonEvents) {
+      globalThis.console = originalConsole;
+    }
   }
 }
 
@@ -1141,7 +1471,13 @@ function isDirectRun(): boolean {
 
 if (isDirectRun()) {
   main().catch((err) => {
-    console.error(chalk.red('eval-ci failed:'), err);
-    process.exit(1);
+    const jsonEvents = process.argv.slice(2).includes('--json-events');
+    if (jsonEvents) {
+      const detail = err instanceof Error ? err.stack ?? err.message : String(err);
+      process.stderr.write(`${chalk.red('eval-ci failed:')} ${detail}\n`);
+    } else {
+      console.error(chalk.red('eval-ci failed:'), err);
+    }
+    process.exit(jsonEvents ? 2 : 1);
   });
 }

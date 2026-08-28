@@ -729,6 +729,7 @@ async function runCompareCommand(
       }
       return new StandaloneAgentAdapter({
         workingDirectory: agentWorkingDir,
+        requestPermission: getScriptedRunPermissionHandler(),
         modelConfig: { provider, model, apiKey },
         ...(config.systemPrompt ? { systemPromptOverride: config.systemPrompt } : {}),
         ...(harness ? { harness: { name: config.name, ...harness } } : {}),

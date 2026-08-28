@@ -7,9 +7,11 @@
 // ============================================================================
 
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
 import { runCompare } from '../../../src/host/testing/comparator/runCompare';
 import type { AgentInterface } from '../../../src/host/testing/testRunner';
 import type { CompareConfiguration, TestCase } from '../../../src/host/testing/types';
@@ -20,6 +22,8 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
     insertExperimentCases: vi.fn(),
   }),
 }));
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
 const BASELINE: CompareConfiguration = { name: 'baseline', model: 'model-a', provider: 'mock' };
 const CANDIDATE: CompareConfiguration = { name: 'candidate', model: 'model-a', provider: 'mock', systemPrompt: 'be better' };
@@ -71,6 +75,20 @@ async function makeWorkDir(): Promise<string> {
 }
 
 describe('runCompare 接线', () => {
+  it('eval-ci compare 的 makeAgent 注入 scripted handler，使 adapter 强制使用显式审批处理器', () => {
+    const evalCiSrc = readFileSync(path.join(repoRoot, 'scripts/eval-ci.ts'), 'utf8');
+    const compareCommand = evalCiSrc.slice(
+      evalCiSrc.indexOf('async function runCompareCommand'),
+      evalCiSrc.indexOf('// --compare: A/B paired blind test'),
+    );
+    const makeAgent = compareCommand.slice(
+      compareCommand.indexOf('const makeAgent ='),
+      compareCommand.indexOf('// LLM 评审可选'),
+    );
+
+    expect(makeAgent).toMatch(/requestPermission:\s*getScriptedRunPermissionHandler\(\)/);
+  });
+
   it('每个 case 在两个配置下各真跑一次（paired），结果含全部非 skip case', async () => {
     const log: Array<{ config: string; prompt: string }> = [];
     const root = await makeWorkDir();

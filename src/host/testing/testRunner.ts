@@ -43,7 +43,7 @@ import { getSandboxManager } from '../sandbox';
 import { isRedlineCase } from './testCaseClassification';
 import { createScopedCostLimit, isScopedCostLimitExceeded } from '../services/core/scopedCostLimit';
 import { getMockCasePolicy } from './mockEvalPolicy';
-import { completePlannedResults, createNotRunResult, markInvalidResultWithoutModel } from './testRunCompletion';
+import { completePlannedResults, createNotRunResult, isRealAgentRunCase, markInvalidResultWithoutModel } from './testRunCompletion';
 
 const execAsync = promisify(exec);
 const logger = createLogger('TestRunner');
@@ -193,10 +193,6 @@ export class TestRunner {
     this.aborted = true;
   }
 
-  private isRealAgentRunCase(testCase: TestCase): boolean {
-    return testCase.tags?.includes('real-agent-run') ?? false;
-  }
-
   private validateRealAgentRunReplay(replay: StructuredReplay | null): string[] {
     const gate = evaluateAgentTrajectoryReplay(replay);
     return gate.exportReady ? [] : gate.failures;
@@ -207,7 +203,7 @@ export class TestRunner {
     result: TestResult,
     agent: AgentInterface,
   ): Promise<void> {
-    const requiresRealAgentRun = this.isRealAgentRunCase(testCase);
+    const requiresRealAgentRun = isRealAgentRunCase(testCase);
     if (result.sessionId) {
       result.replayKey = buildSessionTraceIdentity(result.sessionId).replayKey;
     }
@@ -375,7 +371,7 @@ export class TestRunner {
             break;
           }
 
-          if (this.isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false) {
+          if (isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false) {
             telemetryGateFailureResult ??= result;
           }
 
@@ -661,7 +657,7 @@ export class TestRunner {
         break;
       }
 
-      if (this.isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false) {
+      if (isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false) {
         telemetryGateFailureResult ??= result;
       }
       if (!bestResult || result.invalid || (!bestResult.invalid && result.score > bestResult.score)) {

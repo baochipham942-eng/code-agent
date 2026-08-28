@@ -6,6 +6,10 @@ export interface CompletedPlannedResults {
   notRun: number;
 }
 
+export function isRealAgentRunCase(testCase: TestCase): boolean {
+  return testCase.tags?.includes('real-agent-run') ?? false;
+}
+
 export function createNotRunResult(testCase: TestCase, reason?: string): TestResult {
   const now = Date.now();
   return {

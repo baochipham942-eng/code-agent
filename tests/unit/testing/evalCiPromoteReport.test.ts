@@ -205,7 +205,7 @@ describe('eval-ci promote reports', () => {
 
     const { main } = await import('../../../scripts/eval-ci');
     await expect(
-      main(['node', 'eval-ci.ts', '--promote', '--real', '--max-cases', '1', '--json-events'], root),
+      main(['node', 'eval-ci.ts', '--promote', '--real', '--max-cases', '1', '--json-events', '--force'], root),
     ).rejects.toThrow('__process_exit_2__');
 
     const runEndWrite = writeSyncSpy.mock.calls.findIndex(([, chunk]) => String(chunk).includes('"type":"run_end"'));

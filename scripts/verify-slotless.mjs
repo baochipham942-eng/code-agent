@@ -139,6 +139,15 @@ function fingerprintJson(value) {
   return createHash('sha256').update(JSON.stringify(canonicalizeJson(value))).digest('hex');
 }
 
+/**
+ * Resolves which config file becomes the template for this run. The default must stay
+ * DEFAULT_SOURCE_CONFIG: 34 task books call this script without --source-config, and a
+ * silently different default would change every slotless premise at once.
+ */
+export function resolveSourceConfigPath(sourceConfigArg) {
+  return path.resolve(sourceConfigArg ?? DEFAULT_SOURCE_CONFIG);
+}
+
 export function buildSlotlessTemplateProvenance(config, sourceConfigPath) {
   const configuredProvider = config.models.providers[PROVIDER_ID];
   const provider = Object.fromEntries(
@@ -605,7 +614,7 @@ async function cleanupFailedStart(child, dataDir, marker, nativeConnectorIds, na
 async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg) {
   const ticket = sanitizeTicket(ticketArg);
   const credentials = readDogfoodCredentials();
-  const requestedSourceConfig = path.resolve(sourceConfigArg ?? DEFAULT_SOURCE_CONFIG);
+  const requestedSourceConfig = resolveSourceConfigPath(sourceConfigArg);
   if (!existsSync(requestedSourceConfig)) fail(`source config is required: ${requestedSourceConfig}`);
   if (!statSync(requestedSourceConfig).isFile()) fail(`source config path is not a file: ${requestedSourceConfig}`);
   const sourceConfigPath = realpathSync(requestedSourceConfig);

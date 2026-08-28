@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
-import { buildSlotlessConfig, buildSlotlessTemplateProvenance, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, stopRun } from '../../scripts/verify-slotless.mjs';
+import { buildSlotlessConfig, buildSlotlessTemplateProvenance, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, resolveSourceConfigPath, stopRun } from '../../scripts/verify-slotless.mjs';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
 import { parseViewport } from '../../scripts/verify-shot.mjs';
 
@@ -294,4 +294,12 @@ describe('slotless verification scripts', () => {
     expect(parseViewport('1440x900')).toEqual({ width: 1440, height: 900 });
     expect(() => parseViewport('100x100')).toThrow(/outside/);
   });
+  it('不带 --source-config 时默认回落到 Dev 槽 1 的 config.json', () => {
+    // 34 处任务书用的是不带参数的调用姿势。默认一旦被悄悄换掉，
+    // 所有 slotless 验收的前提会同时改变且无人可发现——所以这条要有测试咬住。
+    const defaultPath = path.join(os.homedir(), '.code-agent-dev', 'config.json');
+    expect(resolveSourceConfigPath(undefined)).toBe(defaultPath);
+    expect(resolveSourceConfigPath('/tmp/explicit-template.json')).toBe('/tmp/explicit-template.json');
+  });
+
 });

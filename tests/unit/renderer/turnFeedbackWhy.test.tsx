@@ -136,4 +136,43 @@ describe('TurnFeedback 点踩追问', () => {
     expect(feedbackCalls()[0][1]).toMatchObject({ rating: 1, messageId: 'message-1' });
     expect(screen.queryByTestId('turn-feedback-why')).toBeNull();
   });
+  // 2026-08-29 监工补刀：Grok 变异席抓到「跳过」路径零断言——把跳过改成再发一次无 comment 的
+  // submit 时 8/8 仍绿。不变量：点踩之后除「发送」外不许再发第二次 TELEMETRY_SUBMIT_FEEDBACK，
+  // 否则 host 的 (session,message) upsert 会把已落库的 comment/full_content 洗成 NULL。
+  it('T6: 「跳过」只收起输入，不发第二次提交', async () => {
+    await renderFeedback();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '有问题' }));
+    });
+    await waitFor(() => expect(feedbackCalls()).toHaveLength(1));
+    fireEvent.change(screen.getByPlaceholderText('哪里不对？一句话就行'), { target: { value: '草稿' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '跳过' }));
+    });
+
+    expect(screen.queryByTestId('turn-feedback-why')).toBeNull();
+    expect(feedbackCalls()).toHaveLength(1);
+  });
+
+  it('T7: 已点踩后再点「有问题」只重新展开输入，不重复提交评分', async () => {
+    await renderFeedback();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '有问题' }));
+    });
+    await waitFor(() => expect(feedbackCalls()).toHaveLength(1));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '跳过' }));
+    });
+    expect(screen.queryByTestId('turn-feedback-why')).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '有问题' }));
+    });
+
+    expect(screen.getByTestId('turn-feedback-why')).toBeTruthy();
+    expect(feedbackCalls()).toHaveLength(1);
+  });
 });

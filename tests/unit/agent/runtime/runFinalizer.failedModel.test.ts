@@ -271,6 +271,25 @@ describe('RunFinalizer 失败事件', () => {
     expect(appendConversationSummary).not.toHaveBeenCalled();
   });
 
+  it('summary entry itself refuses writes when persistLongTermMemory is false (inner fail-closed, not only finalizeRun outer gate)', async () => {
+    const finalizer = new RunFinalizer({
+      sessionId: 'sess-role',
+      projectId: 'proj_a',
+      persistLongTermMemory: false,
+      messages: [{ id: 'user-1', role: 'user', content: 'role work', timestamp: 1 }],
+    } as never);
+
+    await (finalizer as unknown as { extractAndSaveConversationSummary(): Promise<void> })
+      .extractAndSaveConversationSummary();
+
+    expect(judgeConversation).not.toHaveBeenCalled();
+    // 2026-08-29 监工补：Grok 变异席抓到 :866 内层门零承重——外层 :495 挡住了所有测试路径，
+    // 直接调用入口时 judge / durable facts / summary 三处写入必须仍为零次。
+    expect(judgeConversation).not.toHaveBeenCalled();
+    expect(writeDurableFacts).not.toHaveBeenCalled();
+    expect(appendConversationSummary).not.toHaveBeenCalled();
+  });
+
   it('does not synthesize visible fallback text after terminal wake_noop', async () => {
     const events: AgentEvent[] = [];
     const addAndPersistMessage = vi.fn();

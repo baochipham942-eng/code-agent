@@ -93,6 +93,10 @@ class EvalRunEventStream {
   private summary?: TestRunSummary;
   private reportFiles: string[] = [];
   private expectedExitCode = 0;
+  private readonly pendingToolResults = new Map<
+    string,
+    Array<Extract<TestEvent, { type: 'tool_result' }>>
+  >();
   private readonly onProcessExit = (exitCode: number) => {
     this.finish(exitCode);
   };
@@ -130,6 +134,20 @@ class EvalRunEventStream {
         });
         break;
       case 'case_end':
+        for (const toolExecution of event.result.toolExecutions) {
+          this.forward({
+            type: 'tool_call',
+            testId: event.result.testId,
+            tool: toolExecution.tool,
+            input: toolExecution.input,
+          }, config);
+          const pendingResults = this.pendingToolResults.get(event.result.testId);
+          const toolResult = pendingResults?.shift();
+          if (toolResult) {
+            this.write({ schemaVersion: 1, ts: Date.now(), runId: this.runId, ...toolResult });
+          }
+        }
+        this.pendingToolResults.delete(event.result.testId);
         this.write({
           schemaVersion: 1,
           type: 'case_end',
@@ -152,7 +170,10 @@ class EvalRunEventStream {
         this.write({ schemaVersion: 1, ts: Date.now(), runId: this.runId, ...event });
         break;
       case 'tool_result':
-        this.write({ schemaVersion: 1, ts: Date.now(), runId: this.runId, ...event });
+        this.pendingToolResults.set(event.testId, [
+          ...(this.pendingToolResults.get(event.testId) ?? []),
+          event,
+        ]);
         break;
       case 'error':
         this.write({ schemaVersion: 1, ts: Date.now(), runId: this.runId, ...event });
@@ -176,6 +197,7 @@ class EvalRunEventStream {
   }
 
   error(error: unknown): void {
+    if (this.ended) return;
     const message = error instanceof Error ? error.message : String(error);
     this.write({
       schemaVersion: 1,
@@ -244,7 +266,7 @@ class EvalRunEventStream {
   }
 
   private write(event: EvalRunEvent): void {
-    process.stdout.write(`${JSON.stringify(event)}\n`);
+    fs.writeSync(process.stdout.fd, `${JSON.stringify(event)}\n`);
   }
 }
 
@@ -850,6 +872,7 @@ async function exitIfAborted(
   const reportFiles = await persistRunReport(summary, workingDir);
   reportSavedFiles(reportFiles, eventStream);
   eventStream?.setExpectedExitCode(2);
+  eventStream?.finish(2);
   process.exit(2);
 }
 
@@ -1413,6 +1436,7 @@ async function mainImpl(
   if (delta.isRegression) {
     console.log(chalk.red.bold('  Exiting with code 1 due to regression.'));
     eventStream?.setExpectedExitCode(1);
+    eventStream?.finish(1);
     process.exit(1);
   }
 }
@@ -1447,7 +1471,13 @@ function isDirectRun(): boolean {
 
 if (isDirectRun()) {
   main().catch((err) => {
-    console.error(chalk.red('eval-ci failed:'), err);
-    process.exit(process.argv.slice(2).includes('--json-events') ? 2 : 1);
+    const jsonEvents = process.argv.slice(2).includes('--json-events');
+    if (jsonEvents) {
+      const detail = err instanceof Error ? err.stack ?? err.message : String(err);
+      process.stderr.write(`${chalk.red('eval-ci failed:')} ${detail}\n`);
+    } else {
+      console.error(chalk.red('eval-ci failed:'), err);
+    }
+    process.exit(jsonEvents ? 2 : 1);
   });
 }

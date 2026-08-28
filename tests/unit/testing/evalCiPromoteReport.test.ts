@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -171,11 +172,11 @@ describe('eval-ci promote reports', () => {
     });
 
     const stdout: string[] = [];
-    vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+    const writeSyncSpy = vi.spyOn(fs, 'writeSync').mockImplementation(((_fd: number, chunk: string | Uint8Array) => {
       stdout.push(String(chunk));
-      return true;
-    }) as typeof process.stdout.write);
-    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      return typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.byteLength;
+    }) as typeof fs.writeSync);
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`__process_exit_${code}__`);
     }) as never);
 
@@ -184,6 +185,9 @@ describe('eval-ci promote reports', () => {
       main(['node', 'eval-ci.ts', '--promote', '--real', '--max-cases', '1', '--json-events'], root),
     ).rejects.toThrow('__process_exit_2__');
 
+    const runEndWrite = writeSyncSpy.mock.calls.findIndex(([, chunk]) => String(chunk).includes('"type":"run_end"'));
+    expect(runEndWrite).toBeGreaterThanOrEqual(0);
+    expect(writeSyncSpy.mock.invocationCallOrder[runEndWrite]).toBeLessThan(exitSpy.mock.invocationCallOrder[0]);
     const events = stdout.join('').trim().split('\n').map((line) => JSON.parse(line)) as Array<{
       type: string;
       exitCode?: number;

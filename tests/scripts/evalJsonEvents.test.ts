@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { EvalRunEvent } from '../../src/shared/contract/evaluation';
 
@@ -21,6 +22,69 @@ async function runJsonEval(): Promise<{ stdout: string; stderr: string; exitCode
       {
         cwd: repoRoot,
         env: { ...process.env, CODE_AGENT_DATA_DIR: dataDir },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr.on('data', (chunk: string) => { stderr += chunk; });
+    child.once('error', reject);
+    child.once('close', (code) => resolve({ stdout, stderr, exitCode: code ?? -1 }));
+  });
+}
+
+async function runJsonEvalFailure(): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'code-agent-json-events-error-'));
+  tempDirs.push(dataDir);
+  const failureRunner = path.join(dataDir, 'failure-runner.mjs');
+  await writeFile(
+    failureRunner,
+    `import { Console } from 'node:console';\n`
+      + `import fs from 'node:fs';\n`
+      + `import { Writable } from 'node:stream';\n`
+      + `let runEnded = false;\n`
+      + `const originalWriteSync = fs.writeSync.bind(fs);\n`
+      + `fs.writeSync = (...args) => {\n`
+      + `  if (args[0] === process.stdout.fd && String(args[1]).includes('"type":"run_end"')) runEnded = true;\n`
+      + `  return originalWriteSync(...args);\n`
+      + `};\n`
+      + `const errorSink = new Writable({ write(chunk, encoding, callback) {\n`
+      + `  (runEnded ? process.stdout : process.stderr).write(chunk, encoding, callback);\n`
+      + `} });\n`
+      + `globalThis.console = new Console({ stdout: process.stderr, stderr: errorSink });\n`
+      + `process.argv[1] = ${JSON.stringify(evalScript)};\n`
+      + `await import(${JSON.stringify(pathToFileURL(evalScript).href)});\n`,
+  );
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        tsxCli,
+        failureRunner,
+        '--scope',
+        'smoke',
+        '--json-events',
+        '--real',
+        '--model',
+        'mock-model',
+        '--provider',
+        'custom-json-events-error',
+        '--max-cases',
+        '1',
+        '--force',
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          AUTO_TEST_API_KEY: 'test-key',
+          AUTO_TEST_BASE_URL: '',
+          CODE_AGENT_DATA_DIR: dataDir,
+        },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     );
@@ -56,9 +120,24 @@ describe('eval-ci --json-events', () => {
     const caseEnds = events.filter(
       (event): event is Extract<EvalRunEvent, { type: 'case_end' }> => event.type === 'case_end',
     );
+    const toolCalls = events.filter(
+      (event): event is Extract<EvalRunEvent, { type: 'tool_call' }> => event.type === 'tool_call',
+    );
+    const toolResults = events.filter(
+      (event): event is Extract<EvalRunEvent, { type: 'tool_result' }> => event.type === 'tool_result',
+    );
+    const plannedCaseIds = new Set(runStart.plannedCaseIds);
     expect(runStart.plannedCaseIds.length).toBeGreaterThan(0);
     expect(caseEnds).toHaveLength(runStart.plannedCaseIds.length);
     expect(caseEnds.every((event) => !('responses' in event) && !('toolExecutions' in event))).toBe(true);
+    expect(toolCalls.length).toBeGreaterThanOrEqual(1);
+    expect(toolResults.length).toBeGreaterThanOrEqual(1);
+    expect(toolCalls.every((event) => plannedCaseIds.has(event.testId) && event.tool.length > 0)).toBe(true);
+    expect(toolResults.every(
+      (event) => plannedCaseIds.has(event.testId)
+        && event.tool.length > 0
+        && typeof event.success === 'boolean',
+    )).toBe(true);
     expect(result.stderr.length).toBeGreaterThan(0);
     expect(runEnd.exitCode, result.stderr.slice(-3000)).toBe(result.exitCode);
     // 退出码语义：0 跑满无回归 / 1 回归 / 2 未跑满或 abort。mock smoke 是否对
@@ -78,5 +157,19 @@ describe('eval-ci --json-events', () => {
     // Mutation guard: all paths share the one persistence choke point.
     const evalSource = await readFile(evalScript, 'utf8');
     expect(evalSource.match(/\bsaveReport\(/g)).toHaveLength(1);
+  }, 120_000);
+
+  it('keeps a thrown run failure as NDJSON ending in run_end and reports details on stderr', async () => {
+    const result = await runJsonEvalFailure();
+    const lines = result.stdout.trim().split('\n');
+    const events = lines.map((line) => JSON.parse(line) as EvalRunEvent);
+    const errorIndex = events.findIndex((event) => event.type === 'error');
+    const runEndIndex = events.findIndex((event) => event.type === 'run_end');
+
+    expect(result.exitCode).not.toBe(0);
+    expect(events.at(-1)).toMatchObject({ type: 'run_end', exitCode: result.exitCode });
+    expect(errorIndex).toBeGreaterThanOrEqual(0);
+    expect(errorIndex).toBeLessThan(runEndIndex);
+    expect(result.stderr).toContain('eval-ci failed:');
   }, 120_000);
 });

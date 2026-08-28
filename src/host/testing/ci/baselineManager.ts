@@ -6,10 +6,16 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { CONFIG_DIR_NEW } from '../../config/configPaths';
 import { loadNoiseBand } from './noiseBand';
-import type { EvalBaseline, BaselineDelta, TestRunSummary, EvalRunMode } from '../types';
+import type {
+  EvalBaseline,
+  BaselineDelta,
+  ComparableBaselineDelta,
+  TestRunSummary,
+  EvalRunMode,
+} from '../types';
 
-/** 分母口径版本：3 = 能力分母排除 skipped / infra_excluded / cost_exceeded */
-export const BASELINE_DENOMINATOR_VERSION = 3;
+/** 通过率规则版本：4 = 计划题集一等字段，not_run 保留在通过率内。 */
+export const BASELINE_DENOMINATOR_VERSION = 4;
 
 const DEFAULT_THRESHOLDS: EvalBaseline['thresholds'] = {
   minPassRate: 0.7,
@@ -54,10 +60,32 @@ export class BaselineManager {
   }
 
   async compare(current: TestRunSummary): Promise<BaselineDelta> {
+    const currentNotRun = Math.max(
+      current.notRun,
+      current.results.filter((result) => result.status === 'not_run').length,
+    );
+    const currentInvalidCases = Math.max(
+      current.invalidCases,
+      current.results.filter((result) => result.invalid !== undefined).length,
+    );
+    if (!current.completed || currentNotRun > 0 || current.aborted) {
+      return {
+        comparable: false,
+        reason: `本轮未跑满（${currentNotRun} 题未跑），不与基准比较`,
+      };
+    }
+    if (currentInvalidCases > 0) {
+      return {
+        comparable: false,
+        reason: `本轮有 ${currentInvalidCases} 道无效题（没调真模型），不与基准比较`,
+      };
+    }
+
     const baseline = await this.load();
 
     if (!baseline) {
       return {
+        comparable: true,
         isFirstRun: true,
         passRateDelta: 0,
         scoreDelta: 0,
@@ -68,16 +96,23 @@ export class BaselineManager {
       };
     }
 
-    // 旧版基线（分母含 skipped 口径）只告警不硬拦：下一次 real promote 自然迁移。
-    if (baseline.denominatorVersion !== BASELINE_DENOMINATOR_VERSION) {
-      console.warn(
-        `[baseline] 基线口径较老（denominatorVersion=${baseline.denominatorVersion ?? 1}，当前=${BASELINE_DENOMINATOR_VERSION}）：`
-        + '其 passRate 分母未排除 skipped，本次对比在含 skipped 的 run 上可能有偏差；建议尽快重新 promote。',
-      );
+    const baselinePlanned = new Set(baseline.plannedCaseIds ?? []);
+    const currentPlanned = new Set(current.plannedCaseIds);
+    const planMismatch = baselinePlanned.size !== currentPlanned.size
+      || current.plannedCaseIds.some((id) => !baselinePlanned.has(id));
+    if (planMismatch) {
+      return { comparable: false, reason: '本轮计划题集与基准不一致，不与基准比较' };
     }
 
-    // 能力分母 = total − skipped − infra_excluded，与 markdown/HTML 报告口径一致（WP1-2 完整形态）。
-    // infra（429/超时/5xx/网络）是环境噪声，skipped 是未执行——都不是能力信号。
+    if (baseline.denominatorVersion !== BASELINE_DENOMINATOR_VERSION) {
+      return {
+        comparable: false,
+        reason: '基线口径较老，请重新设为对比基准',
+      };
+    }
+
+    // 通过率 = passed / (planned − skipped − infra_excluded − cost_exceeded)。
+    // not_run 留在计划题数内；429/5xx/网络是环境噪声。
     // 与 promote/报告同一 coalesce：显式 infraExcluded 优先（total 允许与 results 数组不一致）
     const currentInfraExcluded = current.infraExcluded
       ?? current.results.filter((r) => r.status === 'infra_excluded').length;
@@ -90,8 +125,8 @@ export class BaselineManager {
     const scoreDelta = current.averageScore - baseline.globalMetrics.averageScore;
 
     // Find new failures and new passes
-    const newFailures: BaselineDelta['newFailures'] = [];
-    const newPasses: BaselineDelta['newPasses'] = [];
+    const newFailures: ComparableBaselineDelta['newFailures'] = [];
+    const newPasses: ComparableBaselineDelta['newPasses'] = [];
 
     for (const result of current.results) {
       // v1 基线的 caseResults 可能残留 skipped 条目——视同不存在，
@@ -151,6 +186,7 @@ export class BaselineManager {
     }
 
     return {
+      comparable: true,
       isFirstRun: false,
       passRateDelta,
       scoreDelta,
@@ -161,7 +197,15 @@ export class BaselineManager {
     };
   }
 
-  async promote(summary: TestRunSummary, commitSha: string, mode: EvalRunMode = 'real'): Promise<void> {
+  async promote(
+    summary: TestRunSummary,
+    commitSha: string,
+    mode: EvalRunMode,
+    expectedCaseIds: string[],
+  ): Promise<void> {
+    if (!expectedCaseIds || expectedCaseIds.length === 0) {
+      throw new Error('拒绝设为对比基准：缺少本轮加载到的评测集全集');
+    }
     // 来源护栏：mock 跑出来的通过率是 adapter 桩的产物，不代表 agent 真实能力，
     // 绝不允许晋升为回归基线。历史上线上 baseline 正是被一次 mock 跑污染过。
     if (mode !== 'real') {
@@ -169,6 +213,48 @@ export class BaselineManager {
         `拒绝将 ${mode} 运行晋升为 baseline：基线必须来自 --real 真实模型执行。` +
         `mock 通过率是确定性桩的产物，不是 agent 能力。`,
       );
+    }
+
+    const rejectionReasons: string[] = [];
+    const addCaseReasons = (
+      label: string,
+      declaredCount: number,
+      predicate: (result: TestRunSummary['results'][number]) => boolean,
+      reason: (result: TestRunSummary['results'][number]) => string,
+    ) => {
+      const cases = summary.results.filter(predicate);
+      if (cases.length > 0) {
+        rejectionReasons.push(`${label}: ${cases.map((result) => `${result.testId}（${reason(result)}）`).join(', ')}`);
+      } else if (declaredCount > 0) {
+        rejectionReasons.push(`${label}: 汇总记录 ${declaredCount} 题，但缺少题级原因`);
+      }
+    };
+
+    if (!summary.completed) rejectionReasons.push('本轮未跑满（completed=false）');
+    addCaseReasons('未跑', summary.notRun, (result) => result.status === 'not_run', (result) => result.failureReason ?? '轮次中断');
+    addCaseReasons('跳过', summary.skipped, (result) => result.status === 'skipped', (result) => result.failureReason ?? '未说明');
+    addCaseReasons('环境故障', summary.infraExcluded ?? 0, (result) => result.status === 'infra_excluded', (result) => result.failureReason ?? '未说明');
+    addCaseReasons('成本超限', summary.costExceeded ?? 0, (result) => result.status === 'cost_exceeded', (result) => result.failureReason ?? '未说明');
+    addCaseReasons('无效题（没调真模型）', summary.invalidCases, (result) => result.invalid !== undefined, (result) => result.invalid?.reason ?? '未说明');
+
+    const planned = new Set(summary.plannedCaseIds);
+    const expected = new Set(expectedCaseIds);
+    const resultIds = new Set(summary.results.map((result) => result.testId));
+    const missing = expectedCaseIds.filter((id) => !planned.has(id));
+    const unexpected = summary.plannedCaseIds.filter((id) => !expected.has(id));
+    if (missing.length > 0 || unexpected.length > 0) {
+      rejectionReasons.push(
+        `计划题集不是本轮评测集全集`
+        + `${missing.length > 0 ? `；缺少: ${missing.join(', ')}` : ''}`
+        + `${unexpected.length > 0 ? `；多出: ${unexpected.join(', ')}` : ''}`,
+      );
+    }
+    const missingResults = summary.plannedCaseIds.filter((id) => !resultIds.has(id));
+    if (missingResults.length > 0) {
+      rejectionReasons.push(`计划题集缺少结果: ${missingResults.join(', ')}`);
+    }
+    if (rejectionReasons.length > 0) {
+      throw new Error(`拒绝设为对比基准：${rejectionReasons.join('；')}`);
     }
 
     // WP1-2 完整形态：infra_excluded 是「无数据」、skipped 是「未执行」，
@@ -179,7 +265,9 @@ export class BaselineManager {
       (result) =>
         result.status !== 'infra_excluded'
         && result.status !== 'skipped'
-        && result.status !== 'cost_exceeded',
+        && result.status !== 'cost_exceeded'
+        && result.status !== 'not_run'
+        && result.invalid === undefined,
     );
     const infraExcluded = summary.infraExcluded
       ?? summary.results.filter((r) => r.status === 'infra_excluded').length;
@@ -206,6 +294,7 @@ export class BaselineManager {
     const baseline: EvalBaseline = {
       version: 1,
       denominatorVersion: BASELINE_DENOMINATOR_VERSION,
+      plannedCaseIds: [...summary.plannedCaseIds],
       updatedAt: Date.now(),
       updatedBy: commitSha,
       mode,
@@ -225,12 +314,26 @@ export class BaselineManager {
    * mock 干跑是 harness 协议门，不是 agent 能力基线。
    * 它只能写入独立的版本化文件，且 fixture 必须全绿、所有跳过都带显式理由。
    */
-  async promoteMockHarness(summary: TestRunSummary, commitSha: string): Promise<void> {
+  async promoteMockHarness(
+    summary: TestRunSummary,
+    commitSha: string,
+    expectedCaseIds: string[],
+  ): Promise<void> {
     if (this.kind !== 'mock-harness') {
       throw new Error('mock harness baseline 必须使用 kind=mock-harness 的独立文件');
     }
     if (summary.environment?.provider !== 'mock') {
       throw new Error('mock harness baseline 只接受 provider=mock 的运行');
+    }
+    const planned = new Set(summary.plannedCaseIds);
+    const expected = new Set(expectedCaseIds);
+    if (
+      !summary.completed
+      || summary.notRun > 0
+      || planned.size !== expected.size
+      || summary.plannedCaseIds.some((id) => !expected.has(id))
+    ) {
+      throw new Error('mock harness 本轮未跑满或计划题集不是评测集全集，拒绝生成 baseline');
     }
 
     const invalid = summary.results.filter(
@@ -263,6 +366,7 @@ export class BaselineManager {
     await this.save({
       version: 1,
       denominatorVersion: BASELINE_DENOMINATOR_VERSION,
+      plannedCaseIds: [...summary.plannedCaseIds],
       updatedAt: Date.now(),
       updatedBy: commitSha,
       mode: 'mock',

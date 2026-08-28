@@ -23,6 +23,7 @@ function summary(results: TestResult[]): TestRunSummary {
   return {
     runId: 'cost-report', startTime: 0, endTime: 1, duration: 1,
     total: results.length, passed: results.length, failed: 0, partial: 0, skipped: 0,
+    plannedCaseIds: results.map((item) => item.testId), completed: true, notRun: 0, invalidCases: 0,
     averageScore: 1, results,
     environment: { provider: 'openai', model: 'gpt-4o', workingDirectory: '/tmp' },
     performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 2 },

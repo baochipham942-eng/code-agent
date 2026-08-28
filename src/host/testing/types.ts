@@ -23,7 +23,7 @@ export type TestCaseType =
  * Test case status
  */
 /**
- * infra_excluded（WP1-2）：429/超时/5xx/网络等基础设施故障，非 agent 能力信号，
+ * infra_excluded（WP1-2）：429/5xx/网络等基础设施故障，非 agent 能力信号，
  * 不进能力通过率分母、不进 baseline 对账，报告单列。
  */
 export type TestStatus =
@@ -34,7 +34,8 @@ export type TestStatus =
   | 'skipped'
   | 'partial'
   | 'infra_excluded'
-  | 'cost_exceeded';
+  | 'cost_exceeded'
+  | 'not_run';
 
 /**
  * Expected tool call
@@ -349,6 +350,8 @@ export interface TestResult {
   status: TestStatus;
   /** mock 模式显式排除：case 需要真实 agent，reason 必须进入报告。 */
   mockExcluded?: { reason: string };
+  /** 真跑中没有调用真实模型的题；不得计为通过，也不得用于设基准。 */
+  invalid?: { reason: 'usage_unavailable' | 'mock_excluded' };
   /** Duration in ms */
   duration: number;
   /** Start time */
@@ -408,6 +411,9 @@ export interface TestResult {
     failureStage?: string;
     failureReason?: string;
     errors?: string[];
+    usageStatus?: 'available' | 'usage_unavailable';
+    mockExcluded?: { reason: string };
+    invalid?: { reason: 'usage_unavailable' | 'mock_excluded' };
   }>;
   /** Statistical variance of trial scores (when trialsPerCase > 1) */
   variance?: number;
@@ -441,6 +447,10 @@ export interface TestRunSummary {
   duration: number;
   /** Total test count */
   total: number;
+  /** 本轮在执行前确定的计划题集，顺序与依赖排序后的执行顺序一致。 */
+  plannedCaseIds: string[];
+  /** 计划题集是否全部执行到终态；中断或存在 not_run 时为 false。 */
+  completed: boolean;
   /** Passed count */
   passed: number;
   /** Failed count */
@@ -451,10 +461,14 @@ export interface TestRunSummary {
   mockExcluded?: number;
   /** Partial pass count */
   partial: number;
-  /** 基础设施故障排除数（429/超时/5xx/网络），不进能力分母 */
+  /** 环境故障数（429/5xx/网络），不计入通过率 */
   infraExcluded?: number;
-  /** 单 case 成本超限数，fail-loud 但不进能力分母 */
+  /** 单 case 成本超限数，fail-loud 但不计入通过率 */
   costExceeded?: number;
+  /** 计划内未执行的题数；这些题仍计入通过率。 */
+  notRun: number;
+  /** 真跑中没有调用真实模型的题数；这些题不得计为通过。 */
+  invalidCases: number;
   /** Average score across non-skipped tests (0.0 - 1.0) */
   averageScore: number;
   /** Individual results */
@@ -973,8 +987,10 @@ export type EvalRunMode = 'mock' | 'real';
 
 export interface EvalBaseline {
   version: number;
-  /** 分母口径版本：3=能力分母排除 skipped+infra+cost_exceeded；缺省=旧口径 */
+  /** 通过率计算版本：4=计划题集一等字段，未跑题保留在通过率内；缺省=旧规则 */
   denominatorVersion?: number;
+  /** 设为基准时完整执行的计划题集。 */
+  plannedCaseIds: string[];
   updatedAt: number;
   updatedBy: string;
   /** 晋升此 baseline 的运行来源。缺省视为历史遗留（来源不明，可能是 mock） */
@@ -1000,7 +1016,8 @@ export interface EvalBaseline {
   };
 }
 
-export interface BaselineDelta {
+export interface ComparableBaselineDelta {
+  comparable: true;
   isFirstRun: boolean;
   passRateDelta: number;
   scoreDelta: number;
@@ -1009,6 +1026,14 @@ export interface BaselineDelta {
   isRegression: boolean;
   regressionDetails: string[];
 }
+
+interface IncomparableBaselineDelta {
+  comparable: false;
+  reason: string;
+}
+
+/** 调用方必须先判断 comparable，未跑满或规则过旧时不存在变化值。 */
+export type BaselineDelta = ComparableBaselineDelta | IncomparableBaselineDelta;
 
 export interface TrendDataPoint {
   timestamp: number;

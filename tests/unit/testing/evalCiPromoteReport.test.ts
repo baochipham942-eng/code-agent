@@ -10,6 +10,7 @@ const compareMock = vi.hoisted(() => vi.fn());
 const promoteMock = vi.hoisted(() => vi.fn());
 const runAllMock = vi.hoisted(() => vi.fn());
 const eventListenerState = vi.hoisted(() => ({ listener: undefined as ((event: unknown) => void) | undefined }));
+const trendAppendMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/host/testing/index', () => ({
   TestRunner: vi.fn(function TestRunner() {
@@ -32,7 +33,10 @@ vi.mock('../../../src/host/testing/index', () => ({
   StandaloneAgentAdapter: vi.fn(function StandaloneAgentAdapter() {}),
   loadAllTestSuites: vi.fn(async () => [{
     name: 'suite',
-    cases: [{ id: 'case-a', type: 'task', prompt: 'prompt', expect: {} }],
+    cases: [
+      { id: 'case-a', type: 'task', prompt: 'prompt', expect: {} },
+      { id: 'case-b', type: 'task', prompt: 'prompt', expect: {} },
+    ],
   }]),
   filterTestCases: vi.fn((suites: Array<{ cases: unknown[] }>) => suites.flatMap((suite) => suite.cases)),
   generateConsoleReport: vi.fn(() => 'console report'),
@@ -51,9 +55,22 @@ vi.mock('../../../src/host/testing/ci/baselineManager', () => ({
 vi.mock('../../../src/host/testing/ci/trendTracker', () => ({
   TrendTracker: vi.fn(function TrendTracker() {
     return {
-      append: vi.fn(),
+      append: trendAppendMock,
       getRecent: vi.fn(),
       generateAsciiChart: vi.fn(),
+    };
+  }),
+}));
+
+vi.mock('../../../src/host/testing/ci/changeDetector', () => ({
+  ChangeDetector: vi.fn(function ChangeDetector() {
+    return {
+      detectTriggeringChanges: vi.fn(async () => ({
+        scope: 'full',
+        shouldRunEval: true,
+        triggerReason: 'test',
+        changedFiles: [],
+      })),
     };
   }),
 }));
@@ -82,11 +99,15 @@ function makeSummary(overrides: Partial<TestRunSummary> = {}): TestRunSummary {
     endTime: 1000,
     duration: 1000,
     total: 1,
+    plannedCaseIds: ['case-a'],
+    completed: true,
     passed: 1,
     failed: 0,
     skipped: 0,
     partial: 0,
     infraExcluded: 0,
+    notRun: 0,
+    invalidCases: 0,
     averageScore: 1,
     results: [],
     environment: { model: 'mock-model', provider: 'mock-provider', workingDirectory: '/tmp/work' },
@@ -107,7 +128,7 @@ beforeEach(async () => {
       version: 1,
       seed: 'test-seed',
       createdAt: '2026-07-26T00:00:00.000Z',
-      heldIn: ['case-a'],
+      heldIn: ['case-a', 'case-b'],
       heldOut: [],
       control: ['case-a'],
       safety: [],
@@ -118,6 +139,7 @@ beforeEach(async () => {
   saveReportMock.mockResolvedValue([path.join(root, '.code-agent', 'test-results', 'report.md')]);
   compareMock.mockReset();
   promoteMock.mockReset();
+  trendAppendMock.mockReset();
   runAllMock.mockReset();
   eventListenerState.listener = undefined;
   runAllMock.mockImplementation(async () => {
@@ -142,7 +164,7 @@ afterEach(async () => {
 describe('eval-ci promote reports', () => {
   it('saves Markdown and JSON in promote mode without baseline delta or baseline compare', async () => {
     const { main } = await import('../../../scripts/eval-ci');
-    await main(['node', 'eval-ci.ts', '--promote', '--real', '--max-cases', '1'], root);
+    await main(['node', 'eval-ci.ts', '--promote', '--real', '--ids', 'case-a', '--max-cases', '1', '--force'], root);
 
     expect(saveReportMock).toHaveBeenCalledWith(
       expect.objectContaining({ runId: 'run-promote' }),
@@ -155,6 +177,7 @@ describe('eval-ci promote reports', () => {
       expect.objectContaining({ runId: 'run-promote' }),
       expect.any(String),
       'real',
+      ['case-a', 'case-b'],
     );
   });
 
@@ -202,5 +225,38 @@ describe('eval-ci promote reports', () => {
       abortReason: 'simulated abort',
     });
     expect(saveReportMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('未跑满轮 exit 2 且不追加 trend', async () => {
+    const incomplete = makeSummary();
+    incomplete.completed = false;
+    incomplete.notRun = 1;
+    incomplete.results = [{
+      testId: 'case-a',
+      description: 'case-a',
+      status: 'not_run',
+      duration: 0,
+      startTime: 0,
+      endTime: 0,
+      toolExecutions: [],
+      responses: [],
+      errors: [],
+      turnCount: 0,
+      score: 0,
+      failureReason: '轮次中断：测试',
+    }];
+    runAllMock.mockResolvedValue(incomplete);
+    compareMock.mockResolvedValue({
+      comparable: false,
+      reason: '本轮未跑满（1 题未跑），不与基准比较',
+    });
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as typeof process.exit);
+
+    const { main } = await import('../../../scripts/eval-ci');
+    await expect(main(['node', 'eval-ci.ts', '--scope', 'full'], root)).rejects.toThrow('exit:2');
+    expect(exit).toHaveBeenCalledWith(2);
+    expect(trendAppendMock).not.toHaveBeenCalled();
   });
 });

@@ -19,6 +19,9 @@ import { signTestPValue } from './signTest';
  * heuristic 评成 2.0:2.0 平局）。能力性失败（有产出但做错）不算。
  */
 function invalidRunReason(result: TestResult): string | null {
+  if (result.invalid) {
+    return `无效题（没调真模型：${result.invalid.reason}）`;
+  }
   if (result.status === 'infra_excluded') {
     return `infra_excluded（${result.failureReason ?? 'infra error'}）`;
   }

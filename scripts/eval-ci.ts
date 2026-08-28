@@ -32,6 +32,7 @@ import {
 } from '../src/host/testing/ci/sampleSplits';
 import { TrendTracker } from '../src/host/testing/ci/trendTracker';
 import { generateDeltaConsole } from '../src/host/testing/ci/deltaReporter';
+import { getEvalProcessExitCode } from '../src/host/testing/ci/evalRunOutcome';
 import {
   TestRunner,
   createDefaultConfig,
@@ -808,7 +809,9 @@ async function runEvals(
       switch (event.type) {
         case 'case_end': {
           const icon =
-            event.result.mockExcluded
+            event.result.invalid
+              ? '⚠️'
+              : event.result.mockExcluded
               ? '🧪'
               : event.result.status === 'passed'
               ? '\u2705'
@@ -818,6 +821,8 @@ async function runEvals(
               ? '\u{1F50C}'
               : event.result.status === 'cost_exceeded'
               ? '\u{1F4B8}'
+              : event.result.status === 'not_run'
+              ? '⏸️'
               : '\u23ED\uFE0F';
           console.log(
             `  ${icon} ${event.result.testId.padEnd(30)} ${event.result.duration}ms`
@@ -1066,6 +1071,7 @@ async function mainImpl(
   );
   const tracker = new TrendTracker(workingDir);
   let mockEvalPolicy = false;
+  let fullSelectedCaseIds: string[] | undefined;
 
   // --baseline-info
   if (baselineInfo) {
@@ -1081,6 +1087,9 @@ async function mainImpl(
       console.error(chalk.red('  Error: --case-dir 外部基准不能与内部 --split 混用。'));
       process.exit(1);
     }
+    const externalCaseDir = path.isAbsolute(caseDir) ? caseDir : path.resolve(cwd, caseDir);
+    const suites = await loadAllTestSuites(externalCaseDir);
+    fullSelectedCaseIds = filterTestCases(suites, {}).map((testCase) => testCase.id);
   } else {
     const effectiveSplit: SplitBucket = split ?? 'held-in';
     const splitFile = await loadEvalSplits(cwd);
@@ -1099,6 +1108,7 @@ async function mainImpl(
       console.error(chalk.red(`  Error: ${error instanceof Error ? error.message : String(error)}`));
       process.exit(1);
     }
+    fullSelectedCaseIds = applySplitFilter(undefined, splitFile, effectiveSplit);
     ids = applySplitFilter(rawIds, splitFile, effectiveSplit);
     if (ids.length === 0) {
       console.error(chalk.red(`  Error: --split ${effectiveSplit} 过滤后没有可跑的 case（检查 --ids 是否与桶相交）。`));
@@ -1188,7 +1198,8 @@ async function mainImpl(
     const reportFiles = await persistRunReport(summary, workingDir);
     reportSavedFiles(reportFiles, eventStream);
     const commitSha = getCommitSha();
-    await manager.promoteMockHarness(summary, commitSha);
+    if (!fullSelectedCaseIds) throw new Error('缺少本轮加载到的评测集全集，拒绝设为 mock harness 基准');
+    await manager.promoteMockHarness(summary, commitSha, fullSelectedCaseIds);
     console.log(chalk.green(`  Mock harness baseline refreshed (commit: ${commitSha.slice(0, 7)})`));
     console.log(`  Fixture pass: ${summary.passed}; mock excluded: ${summary.mockExcluded ?? 0}`);
     console.log('');
@@ -1260,7 +1271,16 @@ async function mainImpl(
     const reportFiles = await persistRunReport(summary, workingDir);
     reportSavedFiles(reportFiles, eventStream);
     const commitSha = getCommitSha();
-    await manager.promote(summary, commitSha, 'real');
+    if (!fullSelectedCaseIds) {
+      throw new Error('缺少本轮加载到的评测集全集，拒绝设为对比基准');
+    }
+    try {
+      await manager.promote(summary, commitSha, 'real', fullSelectedCaseIds);
+    } catch (error) {
+      console.error(chalk.red(`  ${error instanceof Error ? error.message : String(error)}`));
+      if (getEvalProcessExitCode(summary) === 2) process.exit(2);
+      throw error;
+    }
     console.log(chalk.green(`  Baseline promoted (commit: ${commitSha.slice(0, 7)})`));
     console.log(`  Pass rate: ${(summary.total > 0 ? (summary.passed / summary.total) * 100 : 0).toFixed(1)}%`);
     console.log(`  Avg score: ${(summary.averageScore * 100).toFixed(1)}%`);
@@ -1390,11 +1410,19 @@ async function mainImpl(
     console.log(chalk.bold(`  External benchmark run (${caseDir})`));
     console.log(
       `  Accuracy: ${chalk.cyan((passRate * 100).toFixed(1) + '%')} (${summary.passed}/${capabilityTotal}`
-      + `${summary.infraExcluded ? `, 🔌 ${summary.infraExcluded} infra-excluded` : ''}`
-      + `${summary.costExceeded ? `, 💸 ${summary.costExceeded} cost-exceeded` : ''})`,
+      + `${summary.infraExcluded ? `, 🔌 ${summary.infraExcluded} 不计入通过率（环境故障）` : ''}`
+      + `${summary.costExceeded ? `, 💸 ${summary.costExceeded} 不计入通过率（成本超限）` : ''})`,
     );
     console.log(chalk.dim('  跳过 baseline 对账与 trend（外部锚点不进内部回归基线）'));
     console.log('');
+    if (getEvalProcessExitCode(summary) === 2) {
+      console.error(chalk.red(
+        summary.completed
+          ? `  本轮有 ${summary.invalidCases} 道无效题（没调真模型）。`
+          : `  本轮未跑满（${summary.notRun} 题未跑）。`,
+      ));
+      process.exit(2);
+    }
     return;
   }
 
@@ -1404,9 +1432,19 @@ async function mainImpl(
   const reportFiles = await persistRunReport(summary, workingDir, delta);
   reportSavedFiles(reportFiles, eventStream);
 
+  const exitCode = getEvalProcessExitCode(summary, delta);
+  if (exitCode === 2) {
+    console.error(chalk.red(
+      summary.completed
+        ? `  本轮有 ${summary.invalidCases} 道无效题（没调真模型），不记录趋势。`
+        : `  本轮未跑满（${summary.notRun} 题未跑），不记录趋势。`,
+    ));
+    process.exit(2);
+  }
+
   // Track trend
   const commitSha = getCommitSha();
-  // WP1-2：能力通过率分母排除 infra_excluded（429/超时/5xx/网络）
+  // 仅跳过、环境故障、成本超限不计入通过率；not_run 留在计划题数内。
   const capabilityTotal =
     summary.total
     - (summary.infraExcluded ?? 0)
@@ -1421,8 +1459,8 @@ async function mainImpl(
     averageScore: summary.averageScore,
     totalCases: summary.total,
     duration: summary.duration,
-    newFailures: delta.newFailures.length,
-    newPasses: delta.newPasses.length,
+    newFailures: delta.comparable ? delta.newFailures.length : 0,
+    newPasses: delta.comparable ? delta.newPasses.length : 0,
     mode: effectiveReal ? 'real' : 'mock',
     providerVariantArm: providerVariantArm(),
     ...(summary.infraExcluded ? { infraExcluded: summary.infraExcluded } : {}),
@@ -1433,7 +1471,7 @@ async function mainImpl(
   console.log('');
 
   // Exit with non-zero if regression detected
-  if (delta.isRegression) {
+  if (exitCode === 1) {
     console.log(chalk.red.bold('  Exiting with code 1 due to regression.'));
     eventStream?.setExpectedExitCode(1);
     eventStream?.finish(1);

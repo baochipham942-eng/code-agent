@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
-import { buildSlotlessConfig, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, stopRun } from '../../scripts/verify-slotless.mjs';
+import { buildSlotlessConfig, buildSlotlessTemplateProvenance, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, stopRun } from '../../scripts/verify-slotless.mjs';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
 import { parseViewport } from '../../scripts/verify-shot.mjs';
 
@@ -87,6 +87,66 @@ describe('slotless verification scripts', () => {
     const config = buildSlotlessConfig(source, 'sk_tr_test-only-abcd', ['calendar']);
 
     expect(config.connectors).toEqual({ enabledNative: ['calendar'], keep: 'connector-setting' });
+  });
+
+  it('fingerprints only the effective template fields and changes when temperature changes', () => {
+    const source = {
+      connectors: { enabledNative: ['mail'], account: { token: 'must-not-record' } },
+      mcp: { servers: [{ name: 'local-test', command: 'node', secret: 'must-not-record' }] },
+      models: {
+        providers: {
+          'custom-tokenrhythm': {
+            enabled: true,
+            displayName: 'TokenRhythm',
+            baseUrl: 'https://example.test/v1',
+            protocol: 'openai',
+            temperature: 0.7,
+            maxTokens: 131072,
+            apiKey: 'must-not-record',
+            models: {
+              'deepseek-v4-flash': {
+                label: 'Flash',
+                enabled: true,
+                capabilities: ['text'],
+                maxTokens: 131072,
+              },
+            },
+          },
+        },
+      },
+    };
+    const sourceConfigPath = '/tmp/slotless-template/config.json';
+    const first = buildSlotlessTemplateProvenance(
+      buildSlotlessConfig(source, 'sk_tr_test-only-abcd'),
+      sourceConfigPath,
+    );
+    const repeat = buildSlotlessTemplateProvenance(
+      buildSlotlessConfig(structuredClone(source), 'sk_tr_different-key-wxyz'),
+      sourceConfigPath,
+    );
+    const mutatedSource = structuredClone(source);
+    mutatedSource.models.providers['custom-tokenrhythm'].temperature = 0.2;
+    const mutated = buildSlotlessTemplateProvenance(
+      buildSlotlessConfig(mutatedSource, 'sk_tr_test-only-abcd'),
+      sourceConfigPath,
+    );
+
+    expect(repeat).toEqual(first);
+    expect(first.provider).toEqual({
+      enabled: true,
+      displayName: 'TokenRhythm',
+      baseUrl: 'https://example.test/v1',
+      protocol: 'openai',
+      temperature: 0.7,
+      maxTokens: 131072,
+    });
+    expect(first.modelDescriptorSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(first.connectorsSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(first.mcp).toEqual({ present: true, sha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect(mutated.provider.temperature).toBe(0.2);
+    expect(mutated.fingerprintSha256).not.toBe(first.fingerprintSha256);
+    expect(JSON.stringify(first)).not.toContain('must-not-record');
+    expect(JSON.stringify(first)).not.toContain('sk_tr_');
   });
 
   it('links installed CLI connector directories into the slotless data directory', () => {

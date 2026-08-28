@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { closeSync, chmodSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -26,12 +27,13 @@ const repoRoot = path.resolve(scriptDir, '..');
 function usage() {
   return [
     'Usage:',
-    '  node scripts/verify-slotless.mjs <ticket> [--reuse-dist] [--native <ids>]',
+    '  node scripts/verify-slotless.mjs <ticket> [--reuse-dist] [--native <ids>] [--source-config <path>]',
     '  node scripts/verify-slotless.mjs --stop <NEO_VERIFY_DATA_DIR>',
     '',
     'Starts the worktree webServer on an isolated port and signs in with the dogfood account.',
     'By default, native connectors keep the source config and no system apps are probed.',
     'Use --native calendar,reminders to opt in to native connector verification on macOS.',
+    `The source template defaults to ${DEFAULT_SOURCE_CONFIG}; use --source-config to select it explicitly.`,
   ].join('\n');
 }
 
@@ -123,6 +125,45 @@ export function buildSlotlessConfig(source, tokenRhythmKey, nativeConnectorIds) 
   }
 
   return config;
+}
+
+function canonicalizeJson(value) {
+  if (Array.isArray(value)) return value.map(canonicalizeJson);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.keys(value).sort().map((key) => [key, canonicalizeJson(value[key])]),
+  );
+}
+
+function fingerprintJson(value) {
+  return createHash('sha256').update(JSON.stringify(canonicalizeJson(value))).digest('hex');
+}
+
+export function buildSlotlessTemplateProvenance(config, sourceConfigPath) {
+  const configuredProvider = config.models.providers[PROVIDER_ID];
+  const provider = Object.fromEntries(
+    ['enabled', 'displayName', 'baseUrl', 'protocol', 'temperature', 'maxTokens']
+      .filter((key) => configuredProvider[key] !== undefined)
+      .map((key) => [key, configuredProvider[key]]),
+  );
+  const modelDescriptorSha256 = fingerprintJson(configuredProvider.models[MODEL_ID]);
+  const connectorsSha256 = fingerprintJson(config.connectors);
+  const mcp = config.mcp === undefined
+    ? { present: false, sha256: null }
+    : { present: true, sha256: fingerprintJson(config.mcp) };
+  const comparableTemplate = {
+    provider,
+    modelDescriptorSha256,
+    connectorsSha256,
+    mcp,
+  };
+
+  return {
+    schemaVersion: 1,
+    sourceConfigPath,
+    ...comparableTemplate,
+    fingerprintSha256: fingerprintJson(comparableTemplate),
+  };
 }
 
 export function linkCliConnectorInstallDirectories(
@@ -561,11 +602,16 @@ async function cleanupFailedStart(child, dataDir, marker, nativeConnectorIds, na
   if (dataDir && existsSync(dataDir)) rmSync(dataDir, { recursive: true, force: true });
 }
 
-async function startRun(ticketArg, reuseDist, nativeConnectorIds) {
+async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg) {
   const ticket = sanitizeTicket(ticketArg);
   const credentials = readDogfoodCredentials();
-  const sourceConfig = JSON.parse(readFileSync(DEFAULT_SOURCE_CONFIG, 'utf8'));
+  const requestedSourceConfig = path.resolve(sourceConfigArg ?? DEFAULT_SOURCE_CONFIG);
+  if (!existsSync(requestedSourceConfig)) fail(`source config is required: ${requestedSourceConfig}`);
+  if (!statSync(requestedSourceConfig).isFile()) fail(`source config path is not a file: ${requestedSourceConfig}`);
+  const sourceConfigPath = realpathSync(requestedSourceConfig);
+  const sourceConfig = JSON.parse(readFileSync(sourceConfigPath, 'utf8'));
   const config = buildSlotlessConfig(sourceConfig, credentials.tokenRhythmKey, nativeConnectorIds);
+  const template = buildSlotlessTemplateProvenance(config, sourceConfigPath);
   const requestedNativeConnectorIds = nativeConnectorIds ?? [];
   const webServer = ensureDist(reuseDist);
   const dataDir = mkdtempSync(path.join(os.tmpdir(), `neo-verify-${ticket}-`));
@@ -609,13 +655,14 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds) {
     }
     const launchedNativeApps = detectLaunchedNativeApps(requestedNativeConnectorIds, nativeAppsBeforeStart);
     writePrivateJson(path.join(dataDir, STATE_FILE), {
-      version: 1,
+      version: 2,
       ticket,
       marker,
       pid: child.pid,
       port,
       dataDir,
       repoRoot,
+      template,
       nativeConnectorIds: requestedNativeConnectorIds,
       nativeAppPidsBeforeStart: nativeAppsBeforeStart,
       launchedNativeApps,
@@ -624,6 +671,11 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds) {
     child.unref();
     console.log(`NEO_VERIFY_KEY=${maskTokenRhythmKey(credentials.tokenRhythmKey)}`);
     console.log(`NEO_VERIFY_MODEL=${PROVIDER_ID}/${MODEL_ID}`);
+    console.log(
+      `NEO_VERIFY_TEMPLATE=${template.fingerprintSha256.slice(0, 16)}`
+      + ` temperature=${template.provider.temperature ?? 'absent'}`
+      + ` maxTokens=${template.provider.maxTokens ?? 'absent'}`,
+    );
     if (nativeConnectorIds !== undefined) {
       console.log(`NEO_VERIFY_NATIVE=${nativeConnectorIds.join(',')}`);
     }
@@ -647,6 +699,7 @@ async function main(args = process.argv.slice(2)) {
   let ticket;
   let reuseDist = false;
   let nativeConnectorIds;
+  let sourceConfigArg;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--reuse-dist') {
@@ -664,12 +717,20 @@ async function main(args = process.argv.slice(2)) {
       index += 1;
       continue;
     }
+    if (arg === '--source-config') {
+      if (sourceConfigArg !== undefined) fail('--source-config may only be specified once');
+      const value = args[index + 1];
+      if (!value || value.startsWith('--')) fail('--source-config requires a path');
+      sourceConfigArg = value;
+      index += 1;
+      continue;
+    }
     if (arg.startsWith('--')) fail(`unknown option: ${arg}\n${usage()}`);
     if (ticket) fail(`unexpected argument: ${arg}\n${usage()}`);
     ticket = arg;
   }
   if (!ticket) fail(usage());
-  await startRun(ticket, reuseDist, nativeConnectorIds);
+  await startRun(ticket, reuseDist, nativeConnectorIds, sourceConfigArg);
 }
 
 const isEntrypoint = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;

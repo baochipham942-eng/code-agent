@@ -100,11 +100,16 @@ export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
       message={message}
       variant="warning"
       icon={<ShieldAlert className="h-6 w-6" />}
-      confirmText={isBusy ? copy.saving : copy.trust}
-      cancelText={copy.block}
+      confirmText={copy.block}
+      cancelText={isBusy ? copy.saving : copy.trust}
       confirmDisabled={isBusy}
-      onConfirm={onTrust}
-      onCancel={onBlock}
+      cancelDisabled={isBusy}
+      confirmAutoFocus={!isBusy}
+      onConfirm={onBlock}
+      onCancel={onTrust}
+      onDismiss={() => {
+        if (!isBusy) onBlock();
+      }}
     />
   );
 };

@@ -127,6 +127,7 @@ describe('N-INTERRUPT-ONESIGNAL', () => {
     expect(document.body.textContent).not.toContain('可重新运行');
     expect(screen.queryByTestId('turn-run-header')).toBeNull();
     expect(screen.queryByTestId('streaming-state-banner')).toBeNull();
+    expect(document.body.textContent).not.toContain('信号传输中，正在等待模型回响');
   });
 
   it('主动停止留下的原始 ToolCallDisplay 使用 basename 并带停止原因', () => {
@@ -170,6 +171,7 @@ describe('N-INTERRUPT-ONESIGNAL', () => {
     expect(screen.getByTestId('interrupt-timeline-step').textContent).toContain('你停止了这次执行');
     expect(document.body.textContent).not.toContain('已编辑 1 个文件');
     expect(document.body.textContent).not.toContain('准备写入');
+    expect(document.body.textContent).not.toContain('信号传输中，正在等待模型回响');
   });
 
   it('Write 缺路径时退为“写入一个文件”且仍带原因', () => {

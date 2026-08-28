@@ -1015,6 +1015,9 @@ async function streamViaAiSdk(params: {
       return buildStreamResponse(acc, config);
     } catch (err) {
       stopWatchdog();
+      // 周期快照默认 3 秒一次。工具名/参数已经流进 accumulator、用户随即停止时，
+      // 若不在 abort/error 出口再刷一次，磁盘只剩首帧空快照，reload 便拿不到 action/file。
+      if (emittedOutput) emitSnapshot(false);
       const code = (err as NodeJS.ErrnoException).code;
       // 看门狗超时（且非外部 abort）→ 改成 retryStrategy 认得的瞬态文案；外部 signal abort 保持原始错误。
       const watchdogTimedOut = timedOutKind !== null && !signal?.aborted;

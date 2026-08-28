@@ -10,7 +10,11 @@ import { useStatusStore } from './statusStore';
 import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '@shared/contract/sessionState';
 import { createLogger } from '../utils/logger';
 import { hydrateToolCallResults } from '../utils/messageHydration';
-import { mergeStreamSnapshotIntoMessages } from '../utils/streamRecoveryMessage';
+import {
+  isSessionActiveForStreamRecovery,
+  isTerminalRecoverySessionStatus,
+  mergeStreamSnapshotIntoMessages,
+} from '../utils/streamRecoveryMessage';
 import ipcService from '../services/ipcService';
 import { useSessionUIStore } from './sessionUIStore';
 import { useAppStore } from './appStore';
@@ -50,14 +54,6 @@ let _switchCounter = 0;
 let _pendingSessionCreate: Promise<Session | null> | null = null;
 
 /** run 已经收口的会话状态——收到这些就把前端的运行态放下。'archived' 不算 run 收尾，不在内。 */
-const TERMINAL_SESSION_STATUSES: ReadonlySet<string> = new Set([
-  'completed',
-  'error',
-  'interrupted',
-  'orphaned',
-  'idle',
-]);
-
 function invalidatePendingSessionSwitches(): void {
   _switchCounter += 1;
 }
@@ -400,13 +396,14 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             turnCount: session.turnCount || session.messages?.filter((message) => isVisibleHistoryMessage(message) && message.role === 'user').length || 0,
           });
           const streamSnapshot = session.streamSnapshot || null;
+          const activeForRecovery = isSessionActiveForStreamRecovery(session);
           // F4：非 final 的 streamSnapshot 回填成一条 id=snapshot.turnId 的 streaming
           // assistant 消息——切走期间的 partial 立即上屏，本轮剩余流式事件按 turnId
           // 寻址也能命中同一条消息无缝续接。不走 addMessage（它会无条件清掉 snapshot）。
           const loadedMessages = mergeStreamSnapshotIntoMessages(
             hydrateToolCallResults(session.messages || []),
             streamSnapshot,
-            Boolean(session.activeRun),
+            activeForRecovery,
           );
           useAppStore.getState().syncActiveAgentForSession(sessionId, {
             metadata: session.metadata,
@@ -432,9 +429,14 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           // 不从宿主接回来就会显示空闲——而后台还在跑，停止按钮消失、排队卡还邀请你「立即发送」，
           // 一点就跟正在跑的那轮撞车（2026-08-01 C3 真机）。终态由 run 收尾时广播的
           // session:updated 负责清（见下面 SESSION_UPDATED 监听）。
-          if (session.activeRun) {
+          if (activeForRecovery) {
             useAppStore.getState().setSessionProcessing(sessionId, true);
             useTaskStore.getState().updateSessionState(sessionId, { status: 'running' });
+          } else if (isTerminalRecoverySessionStatus(session.status)) {
+            // session.load 可能发生在终态落库与 registry release 之间。终态是本轮展示真相，
+            // 清掉旧页面或早到事件留下的运行态，时间线与侧栏共用这一处裁决。
+            useAppStore.getState().setSessionProcessing(sessionId, false);
+            useTaskStore.getState().updateSessionState(sessionId, { status: 'idle' });
           }
           await refreshContextHealthForSession(sessionId, switchVersion);
         } else {
@@ -1113,7 +1115,7 @@ export async function initializeSessionStore(): Promise<void> {
     // 而且是全局广播、不挑连接——这是「刷新后接回来的运行态」唯一的出口。没有它，
     // switchSession 里按 activeRun 点亮的运行态会永远亮着（那一轮的 SSE 已经跟着旧页面断了，
     // agent_complete 到不了这个新页面）。
-    if (updates?.status && TERMINAL_SESSION_STATUSES.has(updates.status)) {
+    if (isTerminalRecoverySessionStatus(updates?.status)) {
       useAppStore.getState().setSessionProcessing(sessionId, false);
       useTaskStore.getState().updateSessionState(sessionId, { status: 'idle' });
     }

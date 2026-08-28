@@ -9,6 +9,8 @@ import type { Message, Session, StreamRecoverySnapshot } from '../../../src/shar
 import type { TraceTurn } from '../../../src/shared/contract/trace';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useTaskStore } from '../../../src/renderer/stores/taskStore';
 import { useStreamingMessageAccumulatorStore } from '../../../src/renderer/stores/streamingMessageAccumulatorStore';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 import { applyStreamingMessageDeltasToProjection } from '../../../src/renderer/utils/streamingProjectionOverlay';
@@ -39,7 +41,10 @@ function makeSnapshot(overrides: Partial<StreamRecoverySnapshot> = {}): StreamRe
   };
 }
 
-function makeSession(snapshot: StreamRecoverySnapshot | null): Session & { messages: Message[]; activeRun: boolean } {
+function makeSession(
+  snapshot: StreamRecoverySnapshot | null,
+  overrides: Partial<Session & { messages: Message[]; activeRun: boolean }> = {},
+): Session & { messages: Message[]; activeRun: boolean } {
   return {
     id: 'session-1',
     title: '历史会话',
@@ -54,6 +59,7 @@ function makeSession(snapshot: StreamRecoverySnapshot | null): Session & { messa
       { id: 'u-2', role: 'user', content: '帮我写个函数', timestamp: 2_500 },
     ],
     ...(snapshot ? { streamSnapshot: snapshot } : {}),
+    ...overrides,
   };
 }
 
@@ -113,6 +119,8 @@ describe('F4 切回重水化：streamSnapshot partial 合入与流式续接', ()
       isLoadingOlder: false,
     });
     useStreamingMessageAccumulatorStore.setState({ entries: {}, visibleEntries: {} });
+    useAppStore.setState({ isProcessing: false, processingSessionIds: new Set<string>() });
+    useTaskStore.setState({ sessionStates: {} });
 
     mockDomainInvoke.mockImplementation(async (domain: string, action: string) => {
       if (domain === IPC_DOMAINS.SESSION && action === 'load') {
@@ -233,6 +241,48 @@ describe('F4 切回重水化：streamSnapshot partial 合入与流式续接', ()
       .find((node) => node.type === 'tool_call');
     expect(toolNode?.toolCall?.id).toBe('tc-1');
     expect(toolNode?.toolCall?.name).toBe('Bash');
+  });
+
+  it('reload 尾窗里 interrupted 终态否决 activeRun 残影，时间线与侧栏都不复活运行态', async () => {
+    const interruptedSnapshot = makeSnapshot({
+      content: '',
+      reasoning: '',
+      toolCalls: [{
+        id: 'write-reload',
+        name: 'Write',
+        arguments: '{"file_path":"/workspace/reload-proof.md","content":"not executed"}',
+      }],
+    });
+    mockDomainInvoke.mockImplementation(async (domain: string, action: string) => {
+      if (domain === IPC_DOMAINS.SESSION && action === 'load') {
+        return {
+          success: true,
+          data: makeSession(interruptedSnapshot, {
+            status: 'interrupted',
+            activeRun: true,
+            messages: [
+              { id: 'u-reload', role: 'user', content: '写入 reload-proof.md', timestamp: 1 },
+              { id: 'a-cancelled', role: 'assistant', content: '[cancelled]', timestamp: 2 },
+            ],
+          }),
+        };
+      }
+      if (domain === IPC_DOMAINS.SESSION && action === 'getSessionTasks') {
+        return { success: true, data: [] };
+      }
+      return { success: false, error: { message: `unexpected domain call: ${action}` } };
+    });
+
+    await useSessionStore.getState().switchSession('session-1');
+
+    expect(useAppStore.getState().processingSessionIds.has('session-1')).toBe(false);
+    expect(useTaskStore.getState().sessionStates['session-1']?.status).toBe('idle');
+    const projection = projectTurns(useSessionStore.getState().messages, 'session-1', false);
+    expect(projection.activeTurnIndex).toBe(-1);
+    expect(projection.turns.at(-1)?.status).toBe('completed');
+    const recoveryTool = projection.turns.at(-1)?.nodes.find((node) => node.type === 'tool_call');
+    expect(recoveryTool?.metadata?.streamInterruptionReason).toBe('user');
+    expect(recoveryTool?.toolCall?.args).toMatchObject({ file_path: '/workspace/reload-proof.md' });
   });
 
   it('重试锚点不回归：合入 recovery 消息后 deriveRetryTurnMessage 仍锁定触发的用户消息', async () => {

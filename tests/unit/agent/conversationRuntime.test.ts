@@ -661,6 +661,19 @@ describe('ConversationRuntime', () => {
       expect(ctx.turn.lastStreamedContent).toBe('');
     });
 
+    it('persists a cancellation reason marker when a tool-only stream has no text partial', async () => {
+      const persistMessage = vi.fn();
+      ctx.persistMessage = persistMessage;
+
+      await runtime.cancel('user');
+
+      expect(ctx.messages.at(-1)).toMatchObject({
+        role: 'assistant',
+        content: '[cancelled]',
+      });
+      expect(persistMessage).toHaveBeenCalledWith(ctx.messages.at(-1));
+    });
+
     it('is a no-op when cancel lands after final persistence but before run unregister', async () => {
       const completedMessage = {
         id: 'assistant-completed-1',

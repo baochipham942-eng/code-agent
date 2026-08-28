@@ -81,6 +81,52 @@ describe('openAISSEStream snapshot and incomplete tool calls', () => {
     ))).toBe(true);
   });
 
+  it('flushes the latest partial tool arguments when the caller aborts', async () => {
+    const baseUrl = await startServer((_req, res) => {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        Connection: 'close',
+      });
+      res.write(`data: ${JSON.stringify({
+        choices: [{
+          delta: {
+            tool_calls: [{
+              index: 0,
+              id: 'call_abort',
+              function: {
+                name: 'Write',
+                arguments: '{"file_path":"/tmp/reload-proof.md","content":"partial',
+              },
+            }],
+          },
+        }],
+      })}\n\n`);
+    });
+    const controller = new AbortController();
+    const snapshots: StreamSnapshot[] = [];
+
+    await expect(openAISSEStream({
+      providerName: 'TestProvider',
+      baseUrl,
+      apiKey: 'test-key',
+      requestBody: { model: 'test', messages: [], stream: true },
+      signal: controller.signal,
+      snapshotIntervalMs: 60_000,
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+      onStream: (event) => {
+        if (typeof event !== 'string' && event.type === 'tool_call_delta') {
+          controller.abort();
+        }
+      },
+    })).rejects.toThrow(/cancelled/iu);
+
+    expect(snapshots.at(-1)?.toolCalls).toEqual([expect.objectContaining({
+      id: 'call_abort',
+      name: 'Write',
+      arguments: '{"file_path":"/tmp/reload-proof.md","content":"partial',
+    })]);
+  });
+
   it('still returns tool calls when the stream reaches DONE with complete arguments', async () => {
     const baseUrl = await startServer((_req, res) => {
       res.writeHead(200, {

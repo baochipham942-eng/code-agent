@@ -86,6 +86,7 @@ import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair'
 import { classifyIntent } from '../../telemetry/intentClassifier';
 import { markDistilledSkillTurnSignal } from '../../services/skills/distillSignalStore';
 import { emitGoalAbort } from './goalAbort';
+import { markStreamSnapshotInterruptionReason } from '../../session/streamSnapshot';
 
 
 const logger = createLogger('AgentLoop');
@@ -1141,13 +1142,13 @@ export class ConversationRuntime {
    * 这一条：2026-08-01 真机实测，转向那条路只 abortInference 不留 partial，被打断
    * 那一轮写了一半的长回答在库里一个字都没有。
    */
-  private async preserveStreamedPartial(suffix: string): Promise<InputRedirectReceiptMetadata['partial']> {
-    if (!this.ctx.turn.lastStreamedContent) return { charCount: 0 };
+  private async preserveStreamedPartial(suffix: string, options: { persistMarkerWithoutText?: boolean } = {}): Promise<InputRedirectReceiptMetadata['partial']> {
     const streamedContent = this.ctx.turn.lastStreamedContent;
+    if (!streamedContent && !options.persistMarkerWithoutText) return { charCount: 0 };
     const partialMessage: Message = {
       id: generateMessageId(),
       role: 'assistant',
-      content: streamedContent + suffix,
+      content: streamedContent ? streamedContent + suffix : suffix.trim(),
       timestamp: Date.now(),
     };
     this.ctx.messages.push(partialMessage);
@@ -1169,10 +1170,13 @@ export class ConversationRuntime {
     // 这时再标 cancelled / preserve partial 会把同一条完整回复追加标记后写成第二行。
     if (this.ctx.control.isSettled) return;
 
+    markStreamSnapshotInterruptionReason({ workingDir: this.ctx.workingDirectory, sessionId: this.ctx.sessionId }, reason === 'session-switch' ? 'session-switch' : 'user');
     this.ctx.control.markCancelled();
 
     await this.preserveStreamedPartial(
       reason === 'session-switch' ? '\n\n[未完成 — 切换会话中断]' : '\n\n[cancelled]',
+      // tool-only 流也落 marker；中断投影会过滤它，不形成第三行。
+      { persistMarkerWithoutText: true },
     );
     this.ctx.control.abortInference();
     this.ctx.control.abortRun();

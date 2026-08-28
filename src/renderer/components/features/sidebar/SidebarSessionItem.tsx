@@ -16,6 +16,7 @@ import {
   SurfaceExecutionRunStatus,
   useSurfaceExecutionRunSession,
 } from '../surfaceExecution/SurfaceExecutionRunStatus';
+import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
 
 /**
  * 需要关注但非运行中的状态，行尾显一个安静的小圆点（不是带文字的彩色 chip），
@@ -126,6 +127,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const sessionRuntime = sessionRuntimes.get(session.id);
   const backgroundSession = backgroundSessionMap.get(session.id);
   const surfaceExecutionSession = useSurfaceExecutionRunSession(session.id);
+  const sessionTurnActive = useSessionTurnActive(session.id);
   const status = getSessionStatusPresentation({
     backgroundSession,
     runtime: sessionRuntime,
@@ -137,7 +139,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   });
   const localizedStatusLabel =
     status.kind === 'error' ? t.common.error : status.kind === 'incomplete' ? t.common.incomplete : status.label;
-  const isRunning = status.kind === 'live' || status.kind === 'background';
+  const isRunning = sessionTurnActive && (status.kind === 'live' || status.kind === 'background');
   const attentionDotClass = getAttentionDotClassName(status.kind);
   const latestActivityAt = Math.max(
     session.updatedAt || 0,

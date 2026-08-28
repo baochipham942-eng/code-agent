@@ -7,7 +7,7 @@
 import type { ToolStatus } from './styles';
 import type { ToolCall } from '@shared/contract';
 import type { Translations } from '../../../../../i18n';
-import { resolveToolTerminalOutcomeKey } from '../../../../../utils/toolExecutionPresentation';
+import { humanizeToolFailureReason, resolveToolTerminalOutcomeKey } from '../../../../../utils/toolExecutionPresentation';
 
 type StatusLabels = Pick<Translations['toolStatus']['default'], 'preparing' | 'running'>;
 
@@ -24,7 +24,9 @@ export function getToolStatusLabel(
   toolCall: ToolCall,
   status: ToolStatus,
   t: Translations,
+  awaitingApproval = false,
 ): string | null {
+  if (awaitingApproval) return t.toolStepHumanize.pendingApprovalStatus;
   const toolName = toolCall.name;
 
   const tools = t.toolStatus.tools as Record<string, StatusLabels | undefined>;
@@ -48,7 +50,7 @@ export function getToolStatusLabel(
       return enrichCompletedLabel(toolCall, t);
     case 'error': {
       const outcome = t.outcomeWords[resolveToolTerminalOutcomeKey(toolCall)].timeline;
-      return `${outcome.label} · ${outcome.reason}`;
+      return `${outcome.label} · ${humanizeToolFailureReason(toolCall, t)}`;
     }
     case 'interrupted':
       return t.outcomeWords['cancelled-restart'].timeline.label;

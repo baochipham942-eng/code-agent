@@ -174,7 +174,7 @@ describe('聊天流回执并入步骤组', () => {
     fireEvent.click(screen.getAllByRole('button')[0]!);
 
     expect(container.textContent).toContain('查了待开始/进行中的会议');
-    expect(container.textContent).toContain('查近 30 天已结束的会议');
+    expect(container.textContent).toContain('查询近 30 天已结束的会议未成功');
     expect(container.textContent).not.toContain('查了近 30 天已结束的会议');
     // 时间按本机时区格式化（CI 是 UTC），只断言形状不断言具体时分。
     expect(screen.getAllByTestId('tool-step-receipt-meta').map((node) => node.textContent)).toEqual([

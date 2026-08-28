@@ -7,6 +7,7 @@
 import { turnDiffEn, turnDiffZh } from './turnDiff';
 import { turnCheckoutChatEn, turnCheckoutChatZh } from './turnCheckout';
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
+import { toolStepVerbsEn, toolStepVerbsZh } from './toolStepVerbs';
 
 export const chatTranscriptZh = {
 chat: {
@@ -228,12 +229,12 @@ toolGroup: {
 // 工具步骤人话化（humanizeToolStep.ts）——把工具名+参数合成一句中文步骤文案，
 // 消费方 ToolStepGroup 的步骤行；原工具名/参数仍在展开详情（ToolHeader/ToolDetails）里，不删信息。
 toolStepHumanize: {
+  ...toolStepVerbsZh,
   declared: { tmeetMeetingListUpcoming: '查了待开始/进行中的会议', tmeetMeetingListEnded: '查了近 30 天已结束的会议',
     tmeetMeetingCreate: '创建了一场会议', tmeetMeetingSearch: '搜索了会议' },
   intent: { tmeetMeetingListUpcoming: '查待开始/进行中的会议', tmeetMeetingListEnded: '查近 30 天已结束的会议',
     tmeetMeetingCreate: '创建会议', tmeetMeetingSearch: '搜索会议' },
-  read: '读取了 {target}',
-  readFallback: '读取了一个文件',
+  read: '读取了 {target}', readFallback: '读取了一个文件',
   write: '写入了 {target}',
   writeFallback: '写入了一个文件',
   edit: '编辑了 {target}',
@@ -774,6 +775,7 @@ toolGroup: {
 // summary of a tool call from its name + args; consumed by ToolStepGroup's step row.
 // The raw tool name/args still show in the expanded detail (ToolHeader/ToolDetails).
 toolStepHumanize: {
+  ...toolStepVerbsEn,
   declared: { tmeetMeetingListUpcoming: 'Checked upcoming/in-progress meetings', tmeetMeetingListEnded: 'Checked meetings ended in the last 30 days',
     tmeetMeetingCreate: 'Created a meeting', tmeetMeetingSearch: 'Searched meetings' },
   intent: { tmeetMeetingListUpcoming: 'Check upcoming/in-progress meetings', tmeetMeetingListEnded: 'Check meetings ended in the last 30 days',

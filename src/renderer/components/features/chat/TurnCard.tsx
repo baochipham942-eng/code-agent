@@ -56,9 +56,9 @@ import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useAppStore } from '../../../stores/appStore';
-import { useSessionStore } from '../../../stores/sessionStore';
 import { useVoiceCallStore } from '../../../stores/voiceCallStore';
 import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '../../../utils/sessionNeedsInput';
+import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
 import { resolveBusySignal } from '../../../utils/turnBusySignal';
 
 interface TurnCardProps {
@@ -103,9 +103,8 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 }) => {
   const { t } = useI18n();
   const createForkFromReply = useMessageActionStore((state) => state.createForkFromReply);
-  const sessionIsRunning = useSessionStore((state) => (
-    sessionId ? Boolean(state.runningSessionIds?.has(sessionId)) : false
-  ));
+  const sessionTurnActive = useSessionTurnActive(sessionId);
+  const turnActive = Boolean(isSessionProcessing) || sessionTurnActive;
   const waitingForApproval = useAppStore((state) => (
     sessionId
       ? hasPendingPermissionForSession(sessionId, state)
@@ -330,7 +329,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     (isVoiceTurn && voiceCallInFlight && !turn.voiceWorkOutcome && !hasVoiceFailureEvidence)
     // 这一轮还在写就不摆动作条：答案没定稿时给出「复制/点赞/分叉」，等于请人给半句话
     // 打分，而且正文每长一行动作条就往下跳一次（真机反馈 2026-08-01）。
-    || (isLastTurn && (Boolean(isSessionProcessing) || sessionIsRunning));
+    || (isLastTurn && turnActive);
 
   // 压缩摘要不再以整条横幅插在消息流里（2026-08-21 爸拍板：太扎眼），降级为操作行
   // 最右侧的一枚象征性标记（Archive 图标），点开仍可读摘要原文。标记锚在压缩点
@@ -344,7 +343,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     Boolean(forkAnchor || feedbackAnchor) && !suppressReplyActions && anchorTypewriterCaughtUp;
 
   const handleFork = async () => {
-    if (!forkAnchor || isForking || isSessionProcessing || sessionIsRunning) return;
+    if (!forkAnchor || isForking || turnActive) return;
     setIsForking(true);
     try {
       // 单击即分叉：默认「历史对话 + 当前文件」；隔离锚点工作区保留在服务层，前台不给选项
@@ -600,7 +599,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 data-testid="turn-fork-action"
                 aria-label={t.turnCard.createForkFromReply}
                 title={t.turnCard.createForkFromReply}
-                disabled={Boolean(isSessionProcessing) || sessionIsRunning || isForking}
+                disabled={turnActive || isForking}
                 onClick={() => void handleFork()}
                 className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-zinc-500 transition-colors hover:border-badge-accent/40 hover:bg-violet-500/10 hover:text-badge-accent focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)] disabled:opacity-50"
               >

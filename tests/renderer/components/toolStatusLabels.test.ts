@@ -71,7 +71,7 @@ describe('ToolCallDisplay status labels', () => {
       zh,    );
 
     const outcome = zh.outcomeWords['failed-tool'].timeline;
-    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
+    expect(label).toBe(`${outcome.label} · ${zh.toolErrors.artifactValidation.detail}`);
   });
 
   it('keeps the normal Write failure label for actual write failures', () => {
@@ -87,7 +87,7 @@ describe('ToolCallDisplay status labels', () => {
       zh,    );
 
     const outcome = zh.outcomeWords['failed-tool'].timeline;
-    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
+    expect(label).toBe(`${outcome.label} · ${zh.toolStepHumanize.failureReasonMissing}`);
   });
 
   it('maps an explicit approval denial to the shared terminal word and reason', () => {
@@ -136,7 +136,7 @@ describe('ToolCallDisplay status labels', () => {
     );
     const outcome = zh.outcomeWords['failed-timeout'].timeline;
 
-    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
+    expect(label).toBe(`${outcome.label} · ${zh.toolErrors.timeout.detail}`);
   });
 
   // host 验收门（toolArtifactRepairPolicy.isFileMutationTool）覆盖的不只 Write：
@@ -146,21 +146,21 @@ describe('ToolCallDisplay status labels', () => {
     const label = getToolStatusLabel(makeMutationCall('Edit'), 'error', zh);
 
     const outcome = zh.outcomeWords['failed-tool'].timeline;
-    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
+    expect(label).toBe(`${outcome.label} · ${zh.toolErrors.artifactValidation.detail}`);
   });
 
   it('edit_file 写后验收失败使用共享终态', () => {
     const label = getToolStatusLabel(makeMutationCall('edit_file'), 'error', zh);
 
     const outcome = zh.outcomeWords['failed-tool'].timeline;
-    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
+    expect(label).toBe(`${outcome.label} · ${zh.toolErrors.artifactValidation.detail}`);
   });
 
   it('append_file 写后验收失败使用共享终态', () => {
     const label = getToolStatusLabel(makeMutationCall('append_file'), 'error', zh);
 
     const outcome = zh.outcomeWords['failed-tool'].timeline;
-    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
+    expect(label).toBe(`${outcome.label} · ${zh.toolErrors.artifactValidation.detail}`);
   });
 
   it('keeps the normal Edit failure label for actual edit failures', () => {
@@ -177,7 +177,7 @@ describe('ToolCallDisplay status labels', () => {
     );
 
     const outcome = zh.outcomeWords['failed-tool'].timeline;
-    expect(label).toBe(`${outcome.label} · ${outcome.reason}`);
+    expect(label).toBe(`${outcome.label} · ${zh.toolStepHumanize.failureReasonMissing}`);
   });
 
   // 步骤行主文案本身就是一句过去时人话（「写入了 notes.md」），成功态再前置一个

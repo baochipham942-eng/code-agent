@@ -135,6 +135,9 @@ export type ToolStepLabelKey =
   | 'tmeetMeetingCreate'
   | 'tmeetMeetingSearch';
 
+/** Renderer-facing verb phase. No existing runtime status includes the approval wait as a distinct state. */
+export type ToolStepStatus = 'pending-approval' | 'running' | 'completed' | 'failed';
+
 export interface ToolStepLabelDeclaration {
   readonly default: ToolStepLabelKey;
   readonly variant?: {

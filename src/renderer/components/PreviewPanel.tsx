@@ -30,6 +30,7 @@ import { ArtifactSourceEditor } from './ArtifactSourceEditor';
 import { useSessionStore } from '../stores/sessionStore';
 import { artifactFollowKey, useArtifactFollowStore } from '../stores/artifactFollowStore';
 import { artifactCompletionMeta, usePreviewFileMetadata } from '../hooks/usePreviewFileMetadata';
+import { useSessionTurnActive } from '../hooks/useSessionTurnActive';
 import {
   basename,
   buildDocxPreviewSpec,
@@ -442,6 +443,7 @@ export const PreviewPanel: React.FC = () => {
     [previewTabs, activePreviewTabId],
   );
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const sessionTurnActive = useSessionTurnActive(currentSessionId);
   const previewFilePath = activeTab?.path ?? null;
   const followEntry = useArtifactFollowStore((state) => currentSessionId && previewFilePath ? state.entries[artifactFollowKey(currentSessionId, previewFilePath)] : undefined);
   const followPaused = useArtifactFollowStore((state) => currentSessionId ? state.pausedSessionIds.has(currentSessionId) : false);
@@ -754,6 +756,9 @@ export const PreviewPanel: React.FC = () => {
   if (activeTab.kind === 'liveDev') return null;
 
   const completedMeta = artifactCompletionMeta({ entry: followEntry, metadata: fileMetadata, filePath: activeTab.path, language, label: pv.generationComplete });
+  const visibleFollowPhase = followEntry?.phase === 'generating' && sessionTurnActive
+    ? 'generating'
+    : followEntry?.phase ? 'complete' : undefined;
 
   return (
     <div
@@ -863,7 +868,7 @@ export const PreviewPanel: React.FC = () => {
       </div>
 
       <ArtifactFollowToolbar
-        phase={followEntry?.phase}
+        phase={visibleFollowPhase}
         paused={followPaused}
         hasSourceModes={hasSourceModes}
         mode={mode}
@@ -881,8 +886,8 @@ export const PreviewPanel: React.FC = () => {
           }
         }}
       >
-        {isLoading || (followEntry?.phase === 'generating' && !activeTab.isLoaded) ? (
-          <ArtifactPreviewLoading label={followEntry?.phase === 'generating' ? pv.waitingForFile : pv.loading} />
+        {isLoading || (visibleFollowPhase === 'generating' && !activeTab.isLoaded) ? (
+          <ArtifactPreviewLoading label={visibleFollowPhase === 'generating' ? pv.waitingForFile : pv.loading} />
         ) : error ? (
           <PreviewErrorState message={error} detail={errorDetail} onRetry={handleRefresh} />
         ) : isImage ? (

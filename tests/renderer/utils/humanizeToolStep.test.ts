@@ -71,11 +71,11 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
 
   it('mcp: generic server/tool', () => {
     expect(humanizeToolStep('mcp__github__create_issue', {}, zh))
-      .toBe('调用了 github 的 create_issue');
+      .toBe('通过 github 创建了内容');
   });
 
   it('mcp: legacy single-underscore naming', () => {
-    expect(humanizeToolStep('mcp_exa_search', {}, zh)).toBe('调用了 exa 的 search');
+    expect(humanizeToolStep('mcp_exa_search', {}, zh)).toBe('通过 exa 查询了信息');
   });
 
   it('mcp channel: lark message send', () => {
@@ -85,7 +85,7 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
 
   it('mcp channel: non-messaging lark tool stays generic', () => {
     expect(humanizeToolStep('mcp__lark__calendar_v4_event_list', {}, zh))
-      .toBe('调用了 lark 的 calendar_v4_event_list');
+      .toBe('通过 lark 查询了信息');
   });
 
   it('subagent spawn: with description', () => {
@@ -177,18 +177,18 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
   // 未识别工具没有用户语义，原始 id 只留在展开明细的次级小字。
   it('unknown tool: 确实推不出动作时使用中性兜底', () => {
     const line = humanizeToolStep('some_future_tool', {}, zh);
-    expect(line).toBe('执行了操作');
+    expect(line).toBe('执行了工具操作');
     expect(line).not.toContain('some_future_tool');
   });
 
   it('unknown tool failed: 失败行主文案不暴露工具名', () => {
-    const line = humanizeToolStep('MemoryWrite', { action: 'write', filename: 'x.md' }, zh, undefined, true);
-    expect(line).toBe('执行操作');
+    const line = humanizeToolStep('MemoryWrite', { action: 'write', filename: 'x.md' }, zh, undefined, 'failed');
+    expect(line).toBe('创建内容未成功');
     expect(line).not.toContain('MemoryWrite');
   });
 
   it('unknown tool failed (en): 失败行主文案不暴露工具名', () => {
-    expect(humanizeToolStep('MemoryWrite', {}, en, undefined, true)).toBe('Run an operation');
+    expect(humanizeToolStep('MemoryWrite', {}, en, undefined, 'failed')).toBe('Could not run the tool operation');
   });
 
   // 钉住原规矩：isInternalStreamTool 命中的纯内部动作（ToolSearch）仍不带内部名进主行。
@@ -210,60 +210,60 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     ['tmeetMeetingCreate', {}, 'tmeetMeetingCreate', '创建了一场会议'],
     ['tmeetMeetingSearch', {}, 'tmeetMeetingSearch', '搜索了会议'],
   ] as const)('schema stepLabel: %s 使用本地化人话句', (name, args, stepLabel, expected) => {
-    expect(humanizeToolStep(name, args, zh, 'Use internal tool', false, stepLabel)).toBe(expected);
+    expect(humanizeToolStep(name, args, zh, 'Use internal tool', 'completed', stepLabel)).toBe(expected);
   });
 
   it.each([
-    ['tmeetMeetingCreate', {}, 'tmeetMeetingCreate', '创建会议'],
-    ['tmeetMeetingSearch', {}, 'tmeetMeetingSearch', '搜索会议'],
-    ['mcp__github__create_issue', {}, undefined, '调用 github 的 create_issue'],
-    ['mcp__lark__im_v1_message_create', {}, undefined, '在飞书发一条消息'],
-    ['Read', { file_path: 'report.md' }, undefined, '读取 report.md'],
-    ['Bash', { command: 'npm test' }, undefined, '运行命令 npm test'],
-    ['todo_write', {}, undefined, '更新待办清单'],
-  ] as const)('failed %s 使用意图式，不声称动作已经完成', (name, args, stepLabel, expected) => {
-    expect(humanizeToolStep(name, args, zh, '执行了这个动作', true, stepLabel)).toBe(expected);
+    ['tmeetMeetingCreate', {}, 'tmeetMeetingCreate', '创建会议未成功'],
+    ['tmeetMeetingSearch', {}, 'tmeetMeetingSearch', '搜索会议未成功'],
+    ['mcp__github__create_issue', {}, undefined, '通过 github 创建内容未成功'],
+    ['mcp__lark__im_v1_message_create', {}, undefined, '在飞书发消息未成功'],
+    ['Read', { file_path: 'report.md' }, undefined, '读取 report.md 未成功'],
+    ['Bash', { command: 'npm test' }, undefined, '运行命令 npm test 未成功'],
+    ['todo_write', {}, undefined, '更新待办清单未成功'],
+  ] as const)('failed %s 使用未遂式，不声称动作已经完成', (name, args, stepLabel, expected) => {
+    expect(humanizeToolStep(name, args, zh, '执行了这个动作', 'failed', stepLabel)).toBe(expected);
   });
 
   it('failed 类目忽略模型写成过去时的 shortDescription', () => {
-    expect(humanizeToolStep('WebFetch', { url: 'https://example.com' }, zh, '打开了网页', true))
-      .toBe('打开 https://example.com');
+    expect(humanizeToolStep('WebFetch', { url: 'https://example.com' }, zh, '打开了网页', 'failed'))
+      .toBe('打开 https://example.com 未成功');
   });
 
   it('failed 类目在英文界面也使用 intent phrasing', () => {
-    expect(humanizeToolStep('mcp__lark__im_v1_message_create', {}, en, 'Sent the message', true))
-      .toBe('Send a message in Lark');
-    expect(humanizeToolStep('Bash', { command: 'npm test' }, en, undefined, true))
-      .toBe('Run command npm test');
+    expect(humanizeToolStep('mcp__lark__im_v1_message_create', {}, en, 'Sent the message', 'failed'))
+      .toBe('Could not send a message in Lark');
+    expect(humanizeToolStep('Bash', { command: 'npm test' }, en, undefined, 'failed'))
+      .toBe('Could not run command npm test');
   });
 
   it.each([
-    ['Write', { file_path: 'notes.md' }, '写入 notes.md'],
-    ['Edit', { file_path: 'src/index.ts' }, '编辑 src/index.ts'],
-    ['Grep', { pattern: 'TODO' }, '搜索 TODO'],
-    ['list_directory', { path: 'src' }, '查看 src 目录'],
-    ['WebSearch', { query: 'Neo' }, '搜索网页 Neo'],
-    ['spawn_agent', { description: '核对清单' }, '启动代理 — 核对清单'],
-    ['wait_agent', {}, '给代理发条消息'],
-    ['teammate', { name: '劳拉' }, '正在跟 劳拉 说话'],
-    ['delegate_task', { description: '核对清单' }, '派出后台任务：核对清单'],
-    ['task_status', {}, '查看后台任务进度'],
-    ['steer_task', {}, '调整后台任务'],
-    ['cancel_task', {}, '取消后台任务'],
-    ['plan_update', {}, '更新计划'],
-    ['plan_read', {}, '查看计划'],
-    ['TaskManager', {}, '更新任务'],
-    ['Skill', { command: 'lark-doc' }, '使用技能 lark-doc'],
-    ['screenshot', {}, '截一张图'],
-    ['computer_use', { action: 'click', selector: '#save' }, '电脑操作 click #save'],
-    ['browser_action', { action: 'click', selector: '#save' }, '浏览器 click #save'],
-    ['AskUserQuestion', {}, '向你提一个问题'],
-    ['memory_store', {}, '记住一条信息'],
-    ['memory_search', {}, '搜索记忆'],
-    ['ToolSearch', {}, '查找可用工具'],
-    ['some_future_tool', {}, '执行操作'],
+    ['Write', { file_path: 'notes.md' }, '写入 notes.md 未成功'],
+    ['Edit', { file_path: 'src/index.ts' }, '编辑 src/index.ts 未成功'],
+    ['Grep', { pattern: 'TODO' }, '搜索 TODO 未成功'],
+    ['list_directory', { path: 'src' }, '查看 src 目录未成功'],
+    ['WebSearch', { query: 'Neo' }, '联网搜索 Neo 未成功'],
+    ['spawn_agent', { description: '核对清单' }, '启动代理未成功 — 核对清单'],
+    ['wait_agent', {}, '给代理发消息未成功'],
+    ['teammate', { name: '劳拉' }, '联系 劳拉 未成功'],
+    ['delegate_task', { description: '核对清单' }, '派出后台任务未成功：核对清单'],
+    ['task_status', {}, '查看后台任务进度未成功'],
+    ['steer_task', {}, '调整后台任务未成功'],
+    ['cancel_task', {}, '取消后台任务未成功'],
+    ['plan_update', {}, '更新计划未成功'],
+    ['plan_read', {}, '查看计划未成功'],
+    ['TaskManager', {}, '更新任务未成功'],
+    ['Skill', { command: 'lark-doc' }, '使用技能 lark-doc 未成功'],
+    ['screenshot', {}, '截图未成功'],
+    ['computer_use', { action: 'click', selector: '#save' }, '操作电脑未成功 · #save'],
+    ['browser_action', { action: 'click', selector: '#save' }, '操作浏览器未成功 · #save'],
+    ['AskUserQuestion', {}, '向你提问未成功'],
+    ['memory_store', {}, '保存记忆未成功'],
+    ['memory_search', {}, '搜索记忆未成功'],
+    ['ToolSearch', {}, '查找可用工具未成功'],
+    ['some_future_tool', {}, '执行工具操作未成功'],
   ] as const)('failed category matrix: %s', (name, args, expected) => {
-    expect(humanizeToolStep(name, args, zh, undefined, true)).toBe(expected);
+    expect(humanizeToolStep(name, args, zh, undefined, 'failed')).toBe(expected);
   });
 
   it('interrupted 连接器和 MCP 复用同一套意图式', () => {
@@ -271,11 +271,11 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
       name: 'tmeetMeetingCreate',
       arguments: {},
       stepLabel: 'tmeetMeetingCreate',
-    }, zh)).toBe('创建会议');
+    }, zh)).toBe('创建会议未成功');
     expect(humanizeInterruptedToolAction({
       name: 'mcp__github__create_issue',
       arguments: {},
-    }, zh)).toBe('调用 github 的 create_issue');
+    }, zh)).toBe('通过 github 创建内容未成功');
   });
 });
 
@@ -289,7 +289,7 @@ describe('humanizeToolStep — shortDescription 语种不符时退回模板', ()
 
   it('中文界面下未识别的工具退回中文兜底', () => {
     expect(humanizeToolStep('some_future_tool', {}, zh, 'Did something'))
-      .toBe('执行了操作');
+      .toBe('执行了工具操作');
   });
 
   it('英文界面拒绝中文 shortDescription，走模板', () => {
@@ -307,7 +307,7 @@ describe('humanizeToolStep — en locale parity', () => {
   it('renders the same categories in English', () => {
     expect(humanizeToolStep('Read', { file_path: 'report.md' }, en)).toBe('Read report.md');
     expect(humanizeToolStep('Bash', { command: 'ls src/' }, en)).toBe('Ran command ls src/');
-    expect(humanizeToolStep('unknown_tool', {}, en)).toBe('Ran an operation');
+    expect(humanizeToolStep('unknown_tool', {}, en)).toBe('Ran a tool operation');
     expect(humanizeToolStep('TaskManager', {}, en)).toBe('Updated tasks');
     expect(humanizeToolStep('mcp__lark__im_v1_message_create', {}, en)).toBe('Sent a message in Lark');
   });
@@ -318,38 +318,20 @@ describe('humanizeToolStep — en locale parity', () => {
   });
 });
 
-describe('humanizeToolStep — 失败结果不再输出过去时肯定式', () => {
-  // 「写入失败 + 写入了 …」这类同行矛盾：正文改意图式中性表述，结果语义交给状态词。
-  it('failed write: intent phrasing instead of past-tense claim', () => {
-    expect(humanizeToolStep('Write', { file_path: 'notes.md' }, zh, undefined, true))
-      .toBe('写入 notes.md');
+describe('humanizeToolStep — 写入动作四态', () => {
+  it.each([
+    ['pending-approval', '请求写入 notes.md'],
+    ['running', '正在写入 notes.md'],
+    ['completed', '写入了 notes.md'],
+    ['failed', '写入 notes.md 未成功'],
+  ] as const)('%s 使用对应动词形态', (status, expected) => {
+    expect(humanizeToolStep('Write', { file_path: 'notes.md' }, zh, undefined, status)).toBe(expected);
   });
 
-  it('failed edit: intent phrasing instead of past-tense claim', () => {
-    expect(humanizeToolStep('Edit', { file_path: 'src/index.ts' }, zh, undefined, true))
-      .toBe('编辑 src/index.ts');
-  });
-
-  it('failed write without path: intent fallback', () => {
-    expect(humanizeToolStep('Write', {}, zh, undefined, true)).toBe('写入一个文件');
-  });
-
-  it('failed edit without path: intent fallback', () => {
-    expect(humanizeToolStep('Edit', {}, zh, undefined, true)).toBe('编辑一个文件');
-  });
-
-  it('en parity: failed write/edit use intent phrasing', () => {
-    expect(humanizeToolStep('Write', { file_path: 'notes.md' }, en, undefined, true))
-      .toBe('Write notes.md');
-    expect(humanizeToolStep('Edit', { file_path: 'src/index.ts' }, en, undefined, true))
-      .toBe('Edit src/index.ts');
-  });
-
-  it('failed=false keeps the past-tense templates (success/in-progress 不回归)', () => {
-    expect(humanizeToolStep('Write', { file_path: 'notes.md' }, zh, undefined, false))
-      .toBe('写入了 notes.md');
-    expect(humanizeToolStep('Edit', { file_path: 'src/index.ts' }, zh, undefined, false))
-      .toBe('编辑了 src/index.ts');
+  it('英文四态与中文状态对齐', () => {
+    expect(humanizeToolStep('Write', { file_path: 'notes.md' }, en, undefined, 'pending-approval')).toBe('Request to write notes.md');
+    expect(humanizeToolStep('Write', { file_path: 'notes.md' }, en, undefined, 'running')).toBe('Writing notes.md');
+    expect(humanizeToolStep('Write', { file_path: 'notes.md' }, en, undefined, 'failed')).toBe('Could not write notes.md');
   });
 });
 

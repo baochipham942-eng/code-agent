@@ -381,7 +381,7 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
-    expect(html).toContain('浏览器 click');
+    expect(html).toContain('操作了浏览器');
     expect(html).toContain('点击页面元素');
     expect(html).toContain('#phase3-workflow-button');
     expect(html).toContain('trace-grouped-click');
@@ -424,9 +424,9 @@ describe('browser/computer action preview rendering', () => {
     const expandedHtml = renderToStaticMarkup(
       React.createElement(ToolStepGroup, { nodes, defaultExpanded: true }),
     );
-    // #654 起工具步骤显示人话（'电脑操作'）而非英文工具名（'Computer'）——
+    // 工具步骤显示人话而非英文工具名（'Computer'）。
     // 断言跟着改的是「展开后这一步仍认得出是谁干的」，不是放宽脱敏要求。
-    expect(expandedHtml).toContain('电脑操作');
+    expect(expandedHtml).toContain('操作电脑未成功');
     expect(expandedHtml).toContain('trace-computer-failure');
     expect(expandedHtml).toContain('智能输入 27 chars');
     expect(expandedHtml).not.toContain('app-host-secret@example.com');
@@ -522,7 +522,8 @@ describe('browser/computer action preview rendering', () => {
     );
 
     expect(html).toContain('aria-label="有提醒"');
-    expect(html).toContain('任务完成，但仍有未解决的问题');
+    expect(html).toContain('错误码 HTTP 404');
+    expect(html).toContain('联网查了 2 次');
     expect(html).not.toContain('aria-label="失败"');
   });
 

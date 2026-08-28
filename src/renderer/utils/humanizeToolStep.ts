@@ -7,7 +7,7 @@
 import { isSemanticToolUIEnabled } from './featureFlags';
 import { formatDisplayPath } from './displayPath';
 import type { Translations } from '../i18n';
-import type { ToolCallTargetContext, ToolStepLabelKey } from '@shared/contract';
+import type { ToolCallTargetContext, ToolStepLabelKey, ToolStepStatus } from '@shared/contract';
 import { getHumanToolLabel } from './toolHumanLabel';
 import {
   extractWorkbenchReferenceFromToolCall,
@@ -190,9 +190,37 @@ export function toolNameForDetail(name: string): string {
  * cua-driver / browser_action 类"动作型"工具的人话：{verb} {action} {target}。
  * 沿用既有格式（tests/renderer/utils/toolStepGrouping.browserComputer.test.ts 钉死的输出）。
  */
-function buildActionSentence(verb: string, args: Record<string, unknown>): string {
-  const action = takePreview(args.action);
-  if (!action) return verb;
+type GenericActionKind = 'query' | 'create' | 'update' | 'delete' | 'operate';
+type GenericActionDomain = 'browser' | 'computer' | 'mcp' | 'tool';
+
+function classifyGenericAction(value: string): GenericActionKind {
+  const normalized = value.trim().toLowerCase();
+  if (/(?:^|_)(?:list|get|read|search|query|check|inspect|observe|find)(?:_|$)/u.test(normalized)) return 'query';
+  if (/(?:^|_)(?:create|add|new|insert|send|post|write)(?:_|$)/u.test(normalized)) return 'create';
+  if (/(?:^|_)(?:update|edit|set|change|rename|move)(?:_|$)/u.test(normalized)) return 'update';
+  if (/(?:^|_)(?:clear|delete|remove|close|kill|drop)(?:_|$)/u.test(normalized)) return 'delete';
+  return 'operate';
+}
+
+function inferGenericActionDomain(name: string): GenericActionDomain {
+  const normalized = name.toLowerCase();
+  if (/browser|web|cookie|tab|page/u.test(normalized)) return 'browser';
+  if (/computer|desktop|window|screen|cursor|keyboard/u.test(normalized)) return 'computer';
+  return 'tool';
+}
+
+function buildDomainActionSentence(
+  domain: GenericActionDomain,
+  actionValue: string,
+  status: ToolStepStatus,
+  args: Record<string, unknown>,
+  t: Translations,
+  domainLabel?: string,
+): string {
+  const kind = classifyGenericAction(actionValue);
+  const template = t.toolStepHumanize.domainActions[status][domain][kind];
+  const sentence = template.replace('{domain}', domainLabel || t.receiptPresentation.humanToolLabels.unknownTool);
+  if (domain !== 'browser' && domain !== 'computer') return sentence;
   const rawAction = typeof args.action === 'string' ? args.action : '';
   const isTypingAction = rawAction === 'type' || rawAction === 'smart_type';
   const target = takePreview(
@@ -200,7 +228,7 @@ function buildActionSentence(verb: string, args: Record<string, unknown>): strin
       ? args.selector ?? args.targetApp ?? args.role ?? args.name
       : args.selector ?? args.url ?? args.text ?? args.key ?? args.role ?? args.targetApp,
   );
-  return target ? `${verb} ${action} ${target}` : `${verb} ${action}`;
+  return target ? `${sentence} · ${target}` : sentence;
 }
 
 const CJK_PATTERN = /[㐀-䶿一-鿿豈-﫿]/;
@@ -208,28 +236,6 @@ const CJK_PATTERN = /[㐀-䶿一-鿿豈-﫿]/;
 // 失败/中断行统一改成「准备做什么」的意图式。中文不能裸删任意一个「了」：
 // 参数或目标名里也可能带这个字，只允许改写词表里审过的句首动词；英文同理只改
 // 已登记的过去式首词。新增模板若不命中，保持原文，测试会要求为反例补 intent 键。
-const ZH_COMPLETED_PREFIX_TO_INTENT = new Map<string, string>([
-  ['查了', '查'],
-  ['创建了', '创建'],
-  ['读取了', '读取'],
-  ['写入了', '写入'],
-  ['编辑了', '编辑'],
-  ['运行了', '运行'],
-  ['搜索了', '搜索'],
-  ['查看了', '查看'],
-  ['打开了', '打开'],
-  ['调用了', '调用'],
-  ['启动了', '启动'],
-  ['给代理发了', '给代理发'],
-  ['更新了', '更新'],
-  ['使用了', '使用'],
-  ['截了', '截'],
-  ['向你提了', '向你提'],
-  ['记住了', '记住'],
-  ['查找了', '查找'],
-  ['执行了', '执行'],
-]);
-
 const EN_COMPLETED_PREFIX_TO_INTENT = new Map<string, string>([
   ['Checked', 'Check'],
   ['Created', 'Create'],
@@ -252,28 +258,6 @@ const EN_COMPLETED_PREFIX_TO_INTENT = new Map<string, string>([
   ['Looked', 'Look'],
 ]);
 
-function replaceCompletedPrefix(
-  sentence: string,
-  replacements: ReadonlyMap<string, string>,
-): string {
-  for (const [completed, intent] of replacements) {
-    if (sentence.startsWith(completed)) {
-      return intent + sentence.slice(completed.length);
-    }
-  }
-  return sentence;
-}
-
-function toIntentPhrase(sentence: string, t: Translations): string {
-  if (CJK_PATTERN.test(t.toolStepHumanize.writeFallback)) {
-    // 「在飞书发了一条消息」的动作词不在句首，单列这一种已审模板。
-    const channelMessage = sentence.match(/^(在.+?)发了(.+)$/u);
-    if (channelMessage) return `${channelMessage[1]}发${channelMessage[2]}`;
-    return replaceCompletedPrefix(sentence, ZH_COMPLETED_PREFIX_TO_INTENT);
-  }
-  return replaceCompletedPrefix(sentence, EN_COMPLETED_PREFIX_TO_INTENT);
-}
-
 function toCompletedConnectorAction(action: string, t: Translations): string {
   if (CJK_PATTERN.test(t.toolStepHumanize.writeFallback)) {
     const verb = Array.from(action).slice(0, 2).join('');
@@ -288,11 +272,18 @@ function toCompletedConnectorAction(action: string, t: Translations): string {
   return capitalized;
 }
 
+function wrapIntentAction(action: string, status: Exclude<ToolStepStatus, 'completed'>, t: Translations): string {
+  const normalizedAction = CJK_PATTERN.test(action)
+    ? action
+    : action.charAt(0).toLowerCase() + action.slice(1);
+  return t.toolStepHumanize.intentWrap[status].replace('{action}', normalizedAction);
+}
+
 function connectorFallbackAction(
   name: string,
   args: Record<string, unknown> | undefined,
   t: Translations,
-  failed: boolean,
+  status: ToolStepStatus,
 ): string | null {
   const reference = extractWorkbenchReferenceFromToolCall({ name, arguments: args ?? {} });
   if (reference?.kind !== 'connector') return null;
@@ -302,13 +293,17 @@ function connectorFallbackAction(
     const action = CJK_PATTERN.test(t.toolStepHumanize.writeFallback)
       ? metadata.action.zh
       : metadata.action.en;
-    return failed ? action : toCompletedConnectorAction(action, t);
+    return status === 'completed'
+      ? toCompletedConnectorAction(action, t)
+      : wrapIntentAction(action, status, t);
   }
 
   const action = reference.action?.trim().toLowerCase();
   if (!action) return null;
-  const h = t.toolStepHumanize.connectorFallbackAction;
-  const completed = action === 'get_status'
+  const h = status === 'completed'
+    ? t.toolStepHumanize.connectorFallbackAction
+    : t.toolStepHumanize.statusForms[status].connectorFallbackAction;
+  return action === 'get_status'
     ? h.queryStatus
     : action === 'list_calendars'
       ? h.queryCollections
@@ -322,8 +317,7 @@ function connectorFallbackAction(
               ? h.update
               : /^(?:delete|remove)(?:_|$)/u.test(action)
                 ? h.delete
-                : null;
-  return completed ? (failed ? toIntentPhrase(completed, t) : completed) : null;
+              : null;
 }
 
 /**
@@ -348,23 +342,22 @@ function matchesUiScript(text: string, t: Translations): boolean {
  * 纯占位文案在失败时没有信息量。例外只有 isInternalStreamTool 命中的纯内部动作
  * （ToolSearch 这类），它们的主行仍不暴露内部名（只在展开明细次级小字）。
  *
- * failed=true（toolCall.result 已存在且 success===false）时，全部类目都不再输出过去时
- * 肯定式；改用意图式中性表述（「创建会议 / 写入 X / 调用工具」），结果语义交给
- * outcomeWords。进行中/成功场景文案不变。
+ * status 缺失时回落 completed，与旧调用方同形；待审批、进行中、失败均只读对应词表，
+ * 不允许自由描述或完成时模板穿透到未完成态。
  */
 export function humanizeToolStep(
   name: string,
   args: Record<string, unknown> | undefined,
   t: Translations,
   shortDescription?: string,
-  failed?: boolean,
+  status: ToolStepStatus = 'completed',
   stepLabel?: ToolStepLabelKey,
   renderContext: { connectorPrefixRendered?: boolean } = {},
 ): string {
   if (stepLabel) {
-    const declared = t.toolStepHumanize.intent[stepLabel]
-      ?? t.toolStepHumanize.declared[stepLabel];
-    return failed ? declared : t.toolStepHumanize.declared[stepLabel];
+    return status === 'completed'
+      ? t.toolStepHumanize.declared[stepLabel]
+      : t.toolStepHumanize.statusForms[status].declared[stepLabel];
   }
 
   const toolKind = classifyToolName(name);
@@ -377,135 +370,134 @@ export function humanizeToolStep(
     : schemaDescription;
   if (
     isSemanticToolUIEnabled()
+    && status === 'completed'
     && preferredDescription
     && matchesUiScript(preferredDescription, t)
-    // 失败/中断时自由文本可能用肯定式过去时；所有类目都回退到已审本地模板。
-    && !failed
   ) {
     return preferredDescription;
   }
 
   const a = args || {};
-  const h = t.toolStepHumanize;
-  const phrase = (sentence: string) => failed ? toIntentPhrase(sentence, t) : sentence;
+  const h = status === 'completed'
+    ? t.toolStepHumanize
+    : t.toolStepHumanize.statusForms[status];
 
   switch (toolKind) {
     case 'read': {
       const target = firstPath(a, ['file_path', 'path']);
-      return phrase(target ? h.read.replace('{target}', target) : h.readFallback);
+      return target ? h.read.replace('{target}', target) : h.readFallback;
     }
     case 'write': {
       const target = firstPath(a, ['file_path', 'path']);
-      return phrase(target ? h.write.replace('{target}', target) : h.writeFallback);
+      return target ? h.write.replace('{target}', target) : h.writeFallback;
     }
     case 'edit': {
       const target = firstPath(a, ['file_path', 'path']);
-      return phrase(target ? h.edit.replace('{target}', target) : h.editFallback);
+      return target ? h.edit.replace('{target}', target) : h.editFallback;
     }
     case 'bash': {
       // terminal_write 把命令放在 input 里，不是 command
       const command = takePreview(a.command ?? a.input);
-      return phrase(command ? h.bash.replace('{command}', command) : h.bashFallback);
+      return command ? h.bash.replace('{command}', command) : h.bashFallback;
     }
     case 'search': {
       const query = firstString(a, ['pattern', 'query']);
-      return phrase(query ? h.search.replace('{query}', query) : h.searchFallback);
+      return query ? h.search.replace('{query}', query) : h.searchFallback;
     }
     case 'listDir': {
       const target = firstPath(a, ['path']);
-      return phrase(target ? h.listDir.replace('{target}', target) : h.listDirFallback);
+      return target ? h.listDir.replace('{target}', target) : h.listDirFallback;
     }
     case 'webSearch': {
       const query = takePreview(a.query);
-      return phrase(query ? h.webSearch.replace('{query}', query) : h.webSearchFallback);
+      return query ? h.webSearch.replace('{query}', query) : h.webSearchFallback;
     }
     case 'webFetch': {
       const target = takePreview(a.url);
-      return phrase(target ? h.webFetch.replace('{target}', target) : h.webFetchFallback);
+      return target ? h.webFetch.replace('{target}', target) : h.webFetchFallback;
     }
     case 'mcpChannel': {
       const mcp = parseMcpName(name);
-      if (!mcp) return phrase(h.fallback);
-      const channel = h.channelNames[mcp.server] || mcp.server;
-      return phrase(h.channelMessage.replace('{channel}', channel));
+      if (!mcp) return h.fallbackNeutral;
+      const channel = t.toolStepHumanize.channelNames[mcp.server] || mcp.server;
+      return h.channelMessage.replace('{channel}', channel);
     }
     case 'mcp': {
       const mcp = parseMcpName(name);
-      if (!mcp) return phrase(h.fallback);
-      return phrase(h.mcpTool.replace('{server}', mcp.server).replace('{tool}', mcp.tool));
+      if (!mcp) return h.fallbackNeutral;
+      return buildDomainActionSentence('mcp', mcp.tool, status, a, t, mcp.server);
     }
     case 'subagentSpawn': {
       const description = firstString(a, ['description', 'prompt', 'task', 'goal', 'role']);
-      return phrase(description
+      return description
         ? h.subagentSpawn.replace('{description}', description)
-        : h.subagentSpawnFallback);
+        : h.subagentSpawnFallback;
     }
     case 'subagentMessage':
-      return phrase(h.subagentMessage);
+      return h.subagentMessage;
     case 'agentConversation': {
       const name = firstString(a, ['name', 'role', 'agentName', 'agent_name', 'agentId', 'target']);
-      return phrase(name
+      return name
         ? h.agentConversation.replace('{name}', name)
-        : h.agentConversationFallback);
+        : h.agentConversationFallback;
     }
     case 'delegateTask': {
       const description = firstString(a, ['description', 'title']);
-      return phrase(description
+      return description
         ? h.delegateTask.replace('{description}', description)
-        : h.delegateTaskFallback);
+        : h.delegateTaskFallback;
     }
     case 'taskStatus':
-      return phrase(h.taskStatus);
+      return h.taskStatus;
     case 'steerTask':
-      return phrase(h.steerTask);
+      return h.steerTask;
     case 'cancelTask':
-      return phrase(h.cancelTask);
+      return h.cancelTask;
     case 'todo':
-      return phrase(h.todo);
+      return h.todo;
     case 'planUpdate':
-      return phrase(h.planUpdate);
+      return h.planUpdate;
     case 'planRead':
-      return phrase(h.planRead);
+      return h.planRead;
     case 'taskManager':
-      return phrase(h.taskManager);
+      return h.taskManager;
     case 'skill': {
       // Skill schema 用 command 传技能名；历史/别名可能用 skill / name
       const skillName = firstString(a, ['command', 'skill', 'name']);
-      return phrase(skillName ? h.skill.replace('{skill}', skillName) : h.skillFallback);
+      return skillName ? h.skill.replace('{skill}', skillName) : h.skillFallback;
     }
     case 'screenshot':
-      return phrase(h.screenshot);
+      return h.screenshot;
     case 'computerUse':
-      return phrase(buildActionSentence(h.computerUse, a));
+      return buildDomainActionSentence('computer', firstString(a, ['action']), status, a, t);
     case 'browserAction':
-      return phrase(buildActionSentence(h.browserAction, a));
+      return buildDomainActionSentence('browser', firstString(a, ['action']), status, a, t);
     case 'askUser':
-      return phrase(h.askUser);
+      return h.askUser;
     case 'memoryStore':
-      return phrase(h.memoryStore);
+      return h.memoryStore;
     case 'memorySearch':
-      return phrase(h.memorySearch);
+      return h.memorySearch;
     case 'toolSearch':
       // 仅用于展开明细；主流聚合行会过滤 isInternalStreamTool
-      return phrase(h.toolSearch);
+      return h.toolSearch;
     default: {
-      const action = connectorFallbackAction(name, args, t, Boolean(failed))
-        ?? phrase(h.fallbackNeutral);
-      const fallback = h.fallback.replace('{action}', action);
-      if (isInternalStreamTool(name)) return fallback;
-      // 主行只接受连接器映射或已有开发短名。映射仍返回原始 id 时，说明它没有
-      // 用户语义，只能留在展开明细的次级小字，不能作为主标题上屏。
-      const humanToolName = getHumanToolLabel({
-        toolName: name,
-        labels: t.receiptPresentation.humanToolLabels,
-      });
-      if (
-        renderContext.connectorPrefixRendered
-        || humanToolName.trim().toLowerCase() === name.trim().toLowerCase()
-      ) return fallback;
-      return h.fallbackWithTool
-        .replace('{tool}', humanToolName)
-        .replace('{action}', action);
+      const connectorAction = connectorFallbackAction(name, args, t, status);
+      if (connectorAction) {
+        if (renderContext.connectorPrefixRendered) return connectorAction;
+        const humanToolName = getHumanToolLabel({
+          toolName: name,
+          labels: t.receiptPresentation.humanToolLabels,
+        });
+        return humanToolName.trim().toLowerCase() === name.trim().toLowerCase()
+          ? connectorAction
+          : t.toolStepHumanize.fallbackWithTool
+              .replace('{tool}', humanToolName)
+              .replace('{action}', connectorAction);
+      }
+      const domain = inferGenericActionDomain(name);
+      const actionValue = firstString(a, ['action']) || name;
+      return buildDomainActionSentence(domain, actionValue, status, a, t);
     }
   }
 }
@@ -562,7 +554,11 @@ function groupBucketFor(category: ToolCategory): GroupBucket | null {
  * ToolSearch 等纯内部动作被过滤，不进主流聚合语。
  * 若过滤后无可见工具，返回空串（调用方应不渲染主流行 / 整组）。
  */
-export function humanizeToolGroupLabel(toolNames: string[], t: Translations): string {
+export function humanizeToolGroupLabel(
+  toolNames: string[],
+  t: Translations,
+  status: ToolStepStatus = 'completed',
+): string {
   const counts = new Map<GroupBucket, number>();
   const order: GroupBucket[] = [];
   for (const name of toolNames) {
@@ -574,7 +570,9 @@ export function humanizeToolGroupLabel(toolNames: string[], t: Translations): st
 
   if (order.length === 0) return '';
 
-  const g = t.toolStepHumanize.group;
+  const g = status === 'completed'
+    ? t.toolStepHumanize.group
+    : t.toolStepHumanize.statusForms[status].group;
   return order
     .map((bucket) => g[bucket].replace('{count}', String(counts.get(bucket))))
     .join('、');

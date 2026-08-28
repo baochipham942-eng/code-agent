@@ -89,6 +89,8 @@ describe('WorkbenchOverview', () => {
 
     const recent = screen.getByTestId('workbench-overview-recent');
     expect(recent.textContent).toContain('工作区 · 3 个文件');
+    expect(recent.className).toContain('items-center');
+    expect(recent.className).toContain('text-center');
   });
 
   it('does not treat a plain-chat snapshot as a deliverable scene', () => {

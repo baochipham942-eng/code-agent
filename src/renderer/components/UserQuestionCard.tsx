@@ -327,7 +327,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
                 key={index}
                 data-state={index < stepIndex ? 'complete' : index === stepIndex ? 'current' : 'upcoming'}
                 className={`h-1 flex-1 rounded-full ${
-                  index <= stepIndex ? 'bg-badge-info' : 'bg-zinc-700'
+                  index <= stepIndex ? 'bg-mark-info' : 'bg-zinc-700'
                 } ${index < stepIndex ? 'opacity-65' : ''}`}
               />
             ))}

@@ -1,13 +1,37 @@
+// @vitest-environment jsdom
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FolderTrustDialog, needsFolderTrustDecision } from '../../../src/renderer/components/FolderTrustDialog';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 
 const noop = () => {};
 
+const dangerousEvaluation = {
+  state: 'untrusted' as const,
+  canonicalRealpath: '/real/project',
+  displayPath: '/tmp/link-project',
+  identityChanged: false,
+  dangerousItems: [
+    {
+      kind: 'project-hooks',
+      displayPath: '.code-agent/hooks/hooks.json',
+      label: 'Project hooks',
+      risk: 'execution',
+      gated: true,
+    },
+  ],
+  blockedItems: [],
+};
+
 describe('FolderTrustDialog', () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
   it('renders undecided project configuration with path and risk labels', () => {
     const html = renderToStaticMarkup(
       <FolderTrustDialog
@@ -137,5 +161,69 @@ describe('FolderTrustDialog', () => {
   it('keeps zh/en folder trust keys aligned', () => {
     expect(Object.keys(en.folderTrust).sort()).toEqual(Object.keys(zh.folderTrust).sort());
     expect(Object.keys(en.folderTrust.risks).sort()).toEqual(Object.keys(zh.folderTrust.risks).sort());
+  });
+
+  it('阻止是聚焦的主按钮，信任是弱按钮，关闭与 Esc 也落到阻止侧', () => {
+    const onTrust = vi.fn();
+    const onBlock = vi.fn();
+    render(
+      <FolderTrustDialog
+        evaluation={dangerousEvaluation}
+        onTrust={onTrust}
+        onBlock={onBlock}
+        onOpenSettings={noop}
+      />,
+    );
+
+    const block = screen.getByRole('button', { name: zh.folderTrust.block });
+    const trust = screen.getByRole('button', { name: zh.folderTrust.trust });
+    expect(document.activeElement).toBe(block);
+    expect(block.className).toContain('bg-amber-600');
+    expect(trust.className).not.toContain('bg-amber-600');
+
+    fireEvent.click(block);
+    expect(onBlock).toHaveBeenCalledTimes(1);
+    expect(onTrust).not.toHaveBeenCalled();
+
+    onBlock.mockClear();
+    fireEvent.click(trust);
+    expect(onTrust).toHaveBeenCalledTimes(1);
+    expect(onBlock).not.toHaveBeenCalled();
+
+    onTrust.mockClear();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onBlock).toHaveBeenCalledTimes(1);
+    expect(onTrust).not.toHaveBeenCalled();
+  });
+
+  it('危险项清单固定高度；溢出时显示渐隐提示，滚到底后提示消失', async () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(400);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(224);
+    const { container } = render(
+      <FolderTrustDialog
+        evaluation={{
+          ...dangerousEvaluation,
+          dangerousItems: Array.from({ length: 5 }, (_, index) => ({
+            ...dangerousEvaluation.dangerousItems[0],
+            kind: `project-config-${index}`,
+            displayPath: `.project/config-${index}.json`,
+          })),
+        }}
+        onTrust={noop}
+        onBlock={noop}
+        onOpenSettings={noop}
+      />,
+    );
+
+    expect(container.innerHTML).toContain('max-h-56');
+    expect(container.innerHTML).toContain('overflow-y-scroll');
+    expect(container.innerHTML).toContain('scrollbar-band');
+    expect(container.innerHTML).toContain('.project/config-4.json');
+    await waitFor(() => expect(screen.getByTestId('folder-trust-more-hint')).toBeTruthy());
+
+    const scroll = screen.getByTestId('folder-trust-danger-scroll');
+    Object.defineProperty(scroll, 'scrollTop', { configurable: true, value: 176 });
+    fireEvent.scroll(scroll);
+    await waitFor(() => expect(screen.queryByTestId('folder-trust-more-hint')).toBeNull());
   });
 });

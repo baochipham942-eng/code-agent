@@ -134,7 +134,8 @@ export const Modal: React.FC<ModalProps> = ({
     if (isOpen && modalRef.current) {
       const previouslyFocused =
         document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      modalRef.current.focus();
+      const initialFocus = modalRef.current.querySelector<HTMLElement>('[data-modal-autofocus="true"]');
+      (initialFocus ?? modalRef.current).focus();
 
       return () => {
         if (previouslyFocused?.isConnected) {
@@ -324,6 +325,10 @@ export interface ModalFooterProps {
   confirmColorClass?: string;
   /** Whether confirm button is disabled */
   confirmDisabled?: boolean;
+  /** Whether cancel button is disabled */
+  cancelDisabled?: boolean;
+  /** Whether confirm is the initial keyboard focus */
+  confirmAutoFocus?: boolean;
   /** Whether to hide cancel button */
   hideCancel?: boolean;
   /** Custom content (replaces default buttons) */
@@ -337,6 +342,8 @@ export const ModalFooter: React.FC<ModalFooterProps> = ({
   onConfirm,
   confirmColorClass = BUTTON_PRIMARY_CLASS,
   confirmDisabled = false,
+  cancelDisabled = false,
+  confirmAutoFocus = false,
   hideCancel = false,
   children,
 }) => {
@@ -352,7 +359,12 @@ export const ModalFooter: React.FC<ModalFooterProps> = ({
       {!hideCancel && onCancel && (
         <button
           onClick={onCancel}
-          className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded-lg transition-colors"
+          disabled={cancelDisabled}
+          className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+            cancelDisabled
+              ? 'cursor-not-allowed text-zinc-600'
+              : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+          }`}
         >
           {cancelLabel}
         </button>
@@ -361,6 +373,7 @@ export const ModalFooter: React.FC<ModalFooterProps> = ({
         <button
           onClick={onConfirm}
           disabled={confirmDisabled}
+          data-modal-autofocus={confirmAutoFocus || undefined}
           className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors ${
             confirmDisabled
               ? 'bg-zinc-600 text-zinc-500 cursor-not-allowed'

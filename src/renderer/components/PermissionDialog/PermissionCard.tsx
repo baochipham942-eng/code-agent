@@ -31,7 +31,7 @@ import {
   validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
-import { defaultPermissionViewMode, permissionSummary } from './permissionPresentation';
+import { defaultPermissionViewMode, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -125,6 +125,7 @@ export function PermissionCard({
     ? normalizeRequest(sourceRequest)
     : null;
   const settled = request?.resolved === true && request.decision !== undefined;
+  const safeDefaultDeny = request !== null && isSafeDefaultDeny(request);
 
   // 新请求进来时清空选中态（ processedRequestRef 之外的生命周期，独立于记忆直发 ）
   const requestId = request?.id ?? null;
@@ -503,8 +504,8 @@ export function PermissionCard({
       expandLabel={t.decisionCard.details}
       collapseLabel={t.decisionCard.collapse}
       directActions
-      primaryActionId={isDangerous ? 'deny' : 'once'}
-      dangerActionId={isDangerous ? 'once' : undefined}
+      primaryActionId={safeDefaultDeny ? 'deny' : 'once'}
+      dangerActionId={safeDefaultDeny ? 'once' : undefined}
       onDirectAction={(id) => {
         if (id === 'edit') {
           if (request.rawArgs) setDraft(draftFromArgs(request.tool, request.rawArgs));

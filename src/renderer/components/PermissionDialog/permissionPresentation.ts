@@ -17,9 +17,29 @@ function isOutsideWorkspace(request: PermissionRequest): boolean {
   return request.boundary?.id === 'file.external_read' || request.boundary?.id === 'file.external_write';
 }
 
+function isDeletionRequest(request: PermissionRequest): boolean {
+  const flags = request.details.commandSecurityFlags ?? [];
+  return request.type === 'file_delete'
+    || flags.some((flag) => /delete|sudo_rm/u.test(flag))
+    || /\brm\s+-(?:[^\s]*r[^\s]*f|[^\s]*f[^\s]*r)\b/u.test(request.details.command ?? '');
+}
+
+/**
+ * 安全默认的唯一判据：删除/不可逆、工作区外写入、显式警告，以及高风险命令
+ * 都默认突出拒绝动作。展示层只消费结论，不再各自拼一套风险条件。
+ */
+export function isSafeDefaultDeny(request: PermissionRequest): boolean {
+  const commandRisk = request.details.commandRiskLevel;
+  return isDeletionRequest(request)
+    || request.boundary?.id === 'file.external_write'
+    || request.dangerLevel === 'warning'
+    || request.dangerLevel === 'danger'
+    || commandRisk === 'high'
+    || commandRisk === 'critical';
+}
+
 export function defaultPermissionViewMode(request: PermissionRequest): DecisionCardViewMode {
-  if (request.rawArgs || isOutsideWorkspace(request)) return 'expanded';
-  if (request.dangerLevel === 'warning' || request.dangerLevel === 'danger') return 'expanded';
+  if (request.rawArgs || isOutsideWorkspace(request) || isSafeDefaultDeny(request)) return 'expanded';
   return request.type === 'file_read' || request.type === 'file_write' || request.type === 'file_edit'
     ? 'compact'
     : 'expanded';
@@ -71,10 +91,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     || commandDeleteTarget?.[3];
   const safeTarget = target ? formatFilePath(redactCredentialText(target)) : undefined;
   const count = request.details.affectedFileCount ?? (safeTarget ? 1 : undefined);
-  const flags = request.details.commandSecurityFlags ?? [];
-  const deletion = request.type === 'file_delete'
-    || flags.some((flag) => /delete|sudo_rm/u.test(flag))
-    || /\brm\s+-(?:[^\s]*r[^\s]*f|[^\s]*f[^\s]*r)\b/u.test(request.details.command ?? '');
+  const deletion = isDeletionRequest(request);
 
   if (deletion) {
     return p.consequenceDelete

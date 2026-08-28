@@ -12,16 +12,20 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ThumbsUp, ThumbsDown } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { TELEMETRY_TRUNCATION } from '@shared/constants';
 import type { TelemetryFeedbackRating } from '@shared/contract/telemetry';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { Button } from '../../primitives';
 
 interface Props {
   messageId: string;
-  /** 差评时随附的完整回答，供离线复盘定位问题 */
+  /** 用户显式勾选后随差评附上的完整回答，供离线复盘定位问题 */
   content: string;
 }
+
+type WhyState = 'hidden' | 'editing' | 'received';
 
 // 评分早已持久化在 telemetry_feedback 表里，丢的是 UI 高亮（组件本地 state 重挂载即清零）。
 // 这里按会话读回一次并在模块级缓存：同会话多个 TurnFeedback 共享一个请求，
@@ -48,6 +52,10 @@ export const TurnFeedback: React.FC<Props> = ({ messageId, content }) => {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const [rating, setRating] = useState<1 | -1 | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [whyState, setWhyState] = useState<WhyState>('hidden');
+  const [comment, setComment] = useState('');
+  const [includeAnswer, setIncludeAnswer] = useState(false);
+  const [whySubmitting, setWhySubmitting] = useState(false);
 
   useEffect(() => {
     if (!currentSessionId || !messageId) return;
@@ -58,7 +66,7 @@ export const TurnFeedback: React.FC<Props> = ({ messageId, content }) => {
     return () => { alive = false; };
   }, [currentSessionId, messageId]);
 
-  const submit = useCallback(async (next: 1 | -1) => {
+  const submitRating = useCallback(async (next: 1 | -1) => {
     if (!currentSessionId || !messageId || submitting) return;
     setSubmitting(true);
     setRating(next);
@@ -68,54 +76,159 @@ export const TurnFeedback: React.FC<Props> = ({ messageId, content }) => {
         turnId: messageId,
         messageId,
         rating: next,
-        fullContent: next === -1
-          ? { messageId, assistantResponse: content }
-          : undefined,
       });
       // 同步进会话缓存：重挂载/切回会话时高亮不回退
       const cached = sessionRatingsCache.get(currentSessionId);
       if (cached) void cached.then((map) => map.set(messageId, next));
+      setWhyState(next === -1 ? 'editing' : 'hidden');
+      if (next === 1) {
+        setComment('');
+        setIncludeAnswer(false);
+      }
     } catch {
       setRating(null);
     } finally {
       setSubmitting(false);
     }
-  }, [content, currentSessionId, messageId, submitting]);
+  }, [currentSessionId, messageId, submitting]);
+
+  const handleRatingClick = useCallback((next: 1 | -1) => {
+    // 已有点踩只负责重新展开输入，避免一次无 comment 的重复 upsert 清掉旧理由。
+    if (next === -1 && rating === -1) {
+      setWhyState('editing');
+      return;
+    }
+    void submitRating(next);
+  }, [rating, submitRating]);
+
+  const submitWhy = useCallback(async () => {
+    const nextComment = comment.trim();
+    if (!currentSessionId || !messageId || !nextComment || whySubmitting) return;
+    setWhySubmitting(true);
+    try {
+      await ipcService.invoke(IPC_CHANNELS.TELEMETRY_SUBMIT_FEEDBACK, {
+        sessionId: currentSessionId,
+        turnId: messageId,
+        messageId,
+        rating: -1,
+        comment: nextComment,
+        ...(includeAnswer
+          ? { fullContent: { messageId, assistantResponse: content } }
+          : {}),
+      });
+      setComment('');
+      setIncludeAnswer(false);
+      setWhyState('received');
+    } catch {
+      // 保留文字和勾选态，用户可以直接重试。
+    } finally {
+      setWhySubmitting(false);
+    }
+  }, [comment, content, currentSessionId, includeAnswer, messageId, whySubmitting]);
+
+  const skipWhy = useCallback(() => {
+    setComment('');
+    setIncludeAnswer(false);
+    setWhyState('hidden');
+  }, []);
 
   if (!currentSessionId || !messageId) return null;
 
   return (
-    <div className="flex items-center justify-start gap-1" data-testid="turn-feedback">
-      <button
-        type="button"
-        onClick={() => submit(1)}
-        disabled={submitting}
-        className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors disabled:opacity-50 ${
-          rating === 1
-            ? 'border-badge-success/30 bg-emerald-400/10 text-badge-success'
-            : 'border-transparent text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-zinc-300'
-        }`}
-        title={t.turnFeedback.helpful}
-        aria-label={t.turnFeedback.helpful}
-        aria-pressed={rating === 1}
-      >
-        <ThumbsUp className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        onClick={() => submit(-1)}
-        disabled={submitting}
-        className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors disabled:opacity-50 ${
-          rating === -1
-            ? 'border-badge-danger/30 bg-rose-400/10 text-badge-danger'
-            : 'border-transparent text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-zinc-300'
-        }`}
-        title={t.turnFeedback.problem}
-        aria-label={t.turnFeedback.problem}
-        aria-pressed={rating === -1}
-      >
-        <ThumbsDown className="h-3.5 w-3.5" />
-      </button>
+    <div className="flex flex-col items-start gap-2" data-testid="turn-feedback">
+      <div className="flex items-center justify-start gap-1">
+        <button
+          type="button"
+          onClick={() => handleRatingClick(1)}
+          disabled={submitting}
+          className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors disabled:opacity-50 ${
+            rating === 1
+              ? 'border-badge-success/30 bg-emerald-400/10 text-badge-success'
+              : 'border-transparent text-neutral-500 hover:border-neutral-300 hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/70 dark:hover:text-zinc-300'
+          }`}
+          title={t.turnFeedback.helpful}
+          aria-label={t.turnFeedback.helpful}
+          aria-pressed={rating === 1}
+        >
+          <ThumbsUp className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => handleRatingClick(-1)}
+          disabled={submitting}
+          className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors disabled:opacity-50 ${
+            rating === -1
+              ? 'border-badge-danger/30 bg-rose-400/10 text-badge-danger'
+              : 'border-transparent text-neutral-500 hover:border-neutral-300 hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/70 dark:hover:text-zinc-300'
+          }`}
+          title={t.turnFeedback.problem}
+          aria-label={t.turnFeedback.problem}
+          aria-pressed={rating === -1}
+        >
+          <ThumbsDown className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {whyState === 'editing' && (
+        <div
+          className="w-full max-w-xl rounded-lg border border-neutral-200 bg-white/70 p-2.5 dark:border-zinc-700/70 dark:bg-zinc-900/35"
+          data-testid="turn-feedback-why"
+        >
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={comment}
+              maxLength={TELEMETRY_TRUNCATION.EVENT_SUMMARY}
+              disabled={whySubmitting}
+              onChange={(event) => setComment(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  void submitWhy();
+                }
+              }}
+              placeholder={t.turnFeedbackWhy.placeholder}
+              aria-label={t.turnFeedbackWhy.placeholder}
+              className="min-w-0 flex-1 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 text-sm text-neutral-800 outline-none placeholder:text-neutral-500 focus:border-neutral-500 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950/60 dark:text-zinc-200 dark:placeholder:text-zinc-600 dark:focus:border-zinc-500"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => void submitWhy()}
+              disabled={whySubmitting || !comment.trim()}
+            >
+              {t.turnFeedbackWhy.send}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={skipWhy}
+              disabled={whySubmitting}
+            >
+              {t.turnFeedbackWhy.skip}
+            </Button>
+          </div>
+          <label className="mt-2 flex w-fit cursor-pointer items-center gap-2 text-xs text-neutral-600 dark:text-zinc-400">
+            <input
+              type="checkbox"
+              checked={includeAnswer}
+              disabled={whySubmitting}
+              onChange={(event) => setIncludeAnswer(event.target.checked)}
+              className="h-3.5 w-3.5 rounded border-neutral-400 bg-white accent-neutral-800 dark:border-zinc-600 dark:bg-zinc-900 dark:accent-zinc-200"
+            />
+            <span>{t.turnFeedbackWhy.includeAnswer}</span>
+          </label>
+          <p className="mt-1.5 text-[11px] leading-4 text-neutral-500 dark:text-zinc-500">{t.turnFeedbackWhy.uploadNotice}</p>
+        </div>
+      )}
+
+      {whyState === 'received' && (
+        <p className="text-xs text-neutral-500 dark:text-zinc-500" data-testid="turn-feedback-received">
+          {t.turnFeedbackWhy.received}
+        </p>
+      )}
     </div>
   );
 };

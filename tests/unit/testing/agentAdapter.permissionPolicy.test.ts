@@ -80,8 +80,7 @@ describe('StandaloneAgentAdapter permission policy injection', () => {
     await expect(capturedPermissionHandlers[0](permissionRequest('Write'))).resolves.toBe(true);
   });
 
-  it('uses an injected scripted policy before AUTO_TEST and user simulation', async () => {
-    vi.stubEnv('AUTO_TEST', 'true');
+  it('uses an injected scripted policy before user simulation without an environment backdoor', async () => {
     const scripted = vi.fn(async () => ({
       approved: false,
       denialSource: 'scripted' as const,

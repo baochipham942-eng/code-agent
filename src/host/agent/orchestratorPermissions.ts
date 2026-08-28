@@ -261,11 +261,6 @@ export class OrchestratorPermissionIsland {
       timestamp: Date.now(),
     };
 
-    if (process.env.AUTO_TEST === 'true') {
-      logger.info(`[AUTO_TEST] Auto-approving permission: ${request.type} for ${request.tool}`);
-      return { approved: true };
-    }
-
     // 目录访问是信任边界扩权（新增一整个 Project Source），不受 devMode/autoApprove-by-level
     // 影响（那些开关是为读/写/执行类日常操作设的，不该顺带放行扩权决定）；也不论 attended/
     // unattended 一律走 B2 停车挂起——60s 内联对话框对"要不要新增一个目录的访问权"这种

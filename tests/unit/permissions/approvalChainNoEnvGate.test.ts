@@ -139,7 +139,7 @@ describe('审批链零环境变量门控不变量', () => {
 
   it('生产审批链不存在“读 env 后 200 字符内直接 approved: true”形态', () => {
     const files = [orchestratorPermissionsPath, ...listTypeScriptFiles(permissionsRoot)];
-    const envAutoApprovePattern = /process\.env\.[A-Z_]+\s*===?\s*['"][^'"]+['"][\s\S]{0,200}?approved:\s*true/g;
+    const envAutoApprovePattern = /process\.env\.[A-Z0-9_]+\s*===?\s*['"][^'"]+['"][\s\S]{0,200}?approved:\s*true/g;
     const matches = files.flatMap((file) => {
       const source = readFileSync(file, 'utf8');
       return [...source.matchAll(envAutoApprovePattern)].map((match) => {

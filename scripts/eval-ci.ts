@@ -975,6 +975,7 @@ async function runCompareCommand(
         maxSystemPromptTokens: 12_000,
         skills: [],
         includeClaudeLegacySkills: false,
+        requestPermission: getScriptedRunPermissionHandler(),
         modelConfig: { provider, model, apiKey },
         ...(config.systemPrompt ? { systemPromptOverride: config.systemPrompt } : {}),
         ...(harness ? { harness: { name: config.name, ...harness } } : {}),

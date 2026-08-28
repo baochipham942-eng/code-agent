@@ -13,8 +13,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
-import { CONFIG_DIR_NEW } from '../config/configPaths';
+import { getUserConfigDir } from '../config/configPaths';
 
 export interface PromptDescriptor {
   id: string;
@@ -37,7 +36,7 @@ let cachedOverrideDir: string | null = null;
 
 function getOverrideDir(): string {
   if (!cachedOverrideDir) {
-    cachedOverrideDir = path.join(os.homedir(), CONFIG_DIR_NEW, 'prompts-overrides');
+    cachedOverrideDir = path.join(getUserConfigDir(), 'prompts-overrides');
   }
   return cachedOverrideDir;
 }

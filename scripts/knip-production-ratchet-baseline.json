@@ -32,7 +32,6 @@
     "src/host/tools/modules/_helpers/invokeNativeFromLegacy.ts",
     "src/host/tools/web/WebFetchUnifiedTool.ts",
     "src/renderer/components/PlanningPanel.tsx",
-    "src/renderer/components/TaskPanel/Agents.tsx",
     "src/renderer/components/TaskPanel/Context.tsx",
     "src/renderer/components/TaskPanel/ContextInterventionPanel.tsx",
     "src/renderer/components/TaskPanel/ContextProvenancePanel.tsx",

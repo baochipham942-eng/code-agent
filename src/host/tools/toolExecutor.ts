@@ -89,6 +89,7 @@ import {
   withRunTraceContext,
 } from '../telemetry/runTraceContext';
 import type { TurnTraceRecorder } from '../agent/runtime/turnTrace';
+import type { SkillDiscoveryService } from '../services/skills/skillDiscoveryService';
 
 const logger = createLogger('ToolExecutor');
 const FILE_MUTATION_LOCK_HOLD_TIMEOUT_MS = 60_000;
@@ -242,6 +243,7 @@ export interface ExecuteOptions {
   abortSignal?: AbortSignal;
   // Run-level tool denylist. Dynamic discovery must inherit the same boundary.
   deniedToolNames?: readonly string[];
+  skillDiscoveryService?: SkillDiscoveryService;
   // 内部标记：本次调用由 ctx.executeTool 发起（PTC 脚本里的一次 tools.X()）。
   // 唯一作用是不给嵌套出来的 context 再签发 executeTool —— 一层封顶，防递归。
   nestedToolCall?: boolean;
@@ -791,6 +793,7 @@ export class ToolExecutor {
       requestPermission: this.requestPermissionForTools,
       abortSignal: options.abortSignal,
       deniedToolNames: options.deniedToolNames,
+      skillDiscoveryService: options.skillDiscoveryService,
       planningService: options.planningService,
       modelConfig: options.modelConfig,
       // Plan Mode support (borrowed from Claude Code v2.0)

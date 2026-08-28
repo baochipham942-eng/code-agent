@@ -35,7 +35,7 @@ import type { ModelDecisionEventData, ModelFallbackInfo } from '../../../../shar
 import type { TaskModelStrategySettings } from '../../../../shared/contract/settings';
 import { getAdaptiveRouter } from '../../../model/adaptiveRouter';
 import { resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from '../../../model/modelDecision';
-import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModelForMessages } from '../../../model/e2eLocalAgentModel';
+import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModelForMessages } from '../../../testing/e2e/e2eLocalAgentModel';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
 import {

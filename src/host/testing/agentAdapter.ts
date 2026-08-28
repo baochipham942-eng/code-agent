@@ -19,6 +19,7 @@ import { runWithScaffoldProfileOverrides } from '../agent/runtime/scaffoldProfil
 import { getMockCasePolicy } from './mockEvalPolicy';
 import type { PermissionRequestData } from '../tools/types';
 import type { RequestPermissionResult } from '../../shared/contract/permission';
+import type { SkillDiscoveryService } from '../services/skills/skillDiscoveryService';
 
 const logger = createLogger('AgentAdapter');
 
@@ -330,6 +331,12 @@ export class StandaloneAgentAdapter implements AgentInterface {
   private harness?: HarnessVariantConfig;
   /** WP1-3: A/B 对比的 candidate prompt（缺省用产线 SYSTEM_PROMPT） */
   private systemPromptOverride?: string;
+  private persistLongTermMemory: boolean;
+  private includeRecentConversations: boolean;
+  private maxSystemPromptTokens: number;
+  private skillDiscoveryService?: SkillDiscoveryService;
+  private readonly skills: readonly string[];
+  private readonly includeClaudeLegacySkills: boolean;
 
   // Persisted across sendMessage() calls so multi-turn follow-ups share conversation history.
   // Cleared by reset() between cases (testRunner calls reset before each case's first prompt).
@@ -364,6 +371,16 @@ export class StandaloneAgentAdapter implements AgentInterface {
     systemPromptOverride?: string;
     /** Run-scoped eval approval policy. Takes precedence over AUTO_TEST/user simulation. */
     requestPermission?: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
+    /** Whether this adapter may persist durable memory, learning, metadata, and summaries. */
+    persistLongTermMemory?: boolean;
+    /** Whether recent conversation summaries are visible to this adapter. */
+    includeRecentConversations?: boolean;
+    /** Explicit system prompt budget for this adapter. */
+    maxSystemPromptTokens?: number;
+    /** Exact skill names visible to this adapter. Evaluation defaults to an empty set. */
+    skills?: readonly string[];
+    /** Whether the explicit skill set may resolve names from Claude legacy directories. */
+    includeClaudeLegacySkills?: boolean;
   }) {
     this.workingDirectory = config.workingDirectory;
     this.modelConfig = config.modelConfig;
@@ -372,10 +389,13 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.harness = config.harness;
     this.systemPromptOverride = config.systemPromptOverride;
     this.requestPermission = config.requestPermission;
+    this.persistLongTermMemory = config.persistLongTermMemory ?? false;
+    this.includeRecentConversations = config.includeRecentConversations ?? false;
+    this.maxSystemPromptTokens = config.maxSystemPromptTokens ?? 12_000;
+    this.skills = config.skills ?? [];
+    this.includeClaudeLegacySkills = config.includeClaudeLegacySkills ?? false;
     // harness.toolMode 优先于顶层 toolMode（对照实验显式控制工具集维度）
     this.toolMode = config.harness?.toolMode ?? config.toolMode ?? 'deferred';
-    // Eval-mode signal: prevents cross-case prompt contamination via recent_conversations.
-    process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS = 'true';
   }
 
   private async ensureStandaloneSessionRecord(prompt: string): Promise<void> {
@@ -440,6 +460,11 @@ export class StandaloneAgentAdapter implements AgentInterface {
       const { SYSTEM_PROMPT } = await import('../prompts/builder');
       const { ToolExecutor } = await import('../tools/toolExecutor');
       const { getTelemetryCollector } = await import('../telemetry');
+      const { SkillDiscoveryService } = await import('../services/skills/skillDiscoveryService');
+      const skillDiscoveryService = this.skillDiscoveryService ??= new SkillDiscoveryService({
+        skillNames: this.skills,
+        includeClaudeLegacySkills: this.includeClaudeLegacySkills,
+      });
 
       // 1. System prompt
 
@@ -517,6 +542,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
           telemetryAdapter,
           executionIntent,
           goalContract: loopGoalContract,
+          persistLongTermMemory: this.persistLongTermMemory,
+          includeRecentConversations: this.includeRecentConversations,
+          maxSystemPromptTokens: this.maxSystemPromptTokens,
+          skillDiscoveryService,
           onEvent: (event) => {
             if (this.currentSessionId) {
               telemetryCollector.handleEvent(this.currentSessionId, event);

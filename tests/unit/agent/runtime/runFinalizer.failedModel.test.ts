@@ -45,6 +45,8 @@ import { RunFinalizer } from '../../../../src/host/agent/runtime/runFinalizer';
 import { buildGoalContract, GoalModeController } from '../../../../src/host/agent/goalModeController';
 import { appendConversationSummary } from '../../../../src/host/lightMemory/recentConversations';
 import { judgeConversation } from '../../../../src/host/lightMemory/conversationJudge';
+import { recordSessionEnd } from '../../../../src/host/lightMemory/sessionMetadata';
+import { writeDurableFacts } from '../../../../src/host/lightMemory/durableFactWriter';
 import { HostReasonCode } from '../../../../src/shared/contract';
 
 describe('RunFinalizer 失败事件', () => {
@@ -194,10 +196,64 @@ describe('RunFinalizer 失败事件', () => {
     await (finalizer as unknown as { extractAndSaveConversationSummary(): Promise<void> })
       .extractAndSaveConversationSummary();
 
-    expect(appendConversationSummary).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'Project summary',
-      projectId: 'proj_a',
-    }));
+    expect(appendConversationSummary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Project summary',
+        projectId: 'proj_a',
+      }),
+      { enabled: true },
+    );
+  });
+
+  it('evaluation finalization performs no long-term memory or learning writes', async () => {
+    vi.mocked(judgeConversation).mockResolvedValueOnce({
+      worth: true,
+      isMeeting: false,
+      title: 'Must not persist',
+      worthKnowledge: ['private evaluation content'],
+      durableFacts: [{
+        filename: 'eval-fact.md',
+        name: 'Eval fact',
+        description: 'must not persist',
+        type: 'user',
+        content: 'evaluation-only',
+      }],
+      source: 'llm',
+    });
+    const runSessionEndLearning = vi.fn();
+    const finalizer = new RunFinalizer({
+      sessionId: 'sess-eval-isolated',
+      persistLongTermMemory: false,
+      onEvent: vi.fn(),
+      modelConfig: { provider: 'mock', model: 'mock-model' },
+      messages: [
+        { id: 'u1', role: 'user', content: 'evaluation prompt', timestamp: 1 },
+        { id: 'a1', role: 'assistant', content: 'evaluation answer', timestamp: 2 },
+      ],
+      maxIterations: 10,
+      stats: { traceId: 'trace-eval', totalInputTokens: 0, totalOutputTokens: 0, queueDiagnostic: vi.fn() },
+      control: { isCancelled: false, isInterrupted: false },
+      circuitBreaker: { isTripped: () => false, reset: vi.fn() },
+      turn: { currentTurnId: null },
+    } as never);
+    finalizer.setModules(
+      { generateId: () => 'msg-eval', addAndPersistMessage: vi.fn() } as never,
+      { runPostRun: vi.fn(), runSessionEndLearning } as never,
+    );
+
+    await finalizer.finalizeRun(
+      1,
+      'evaluation prompt',
+      { endTrace: vi.fn() } as never,
+      1,
+      { status: 'completed' },
+    ).catch(() => undefined);
+
+    expect(runSessionEndLearning).not.toHaveBeenCalled();
+    expect(recordSessionEnd).not.toHaveBeenCalled();
+    expect(judgeConversation).not.toHaveBeenCalled();
+    expect(writeDurableFacts).not.toHaveBeenCalled();
+    expect(appendConversationSummary).not.toHaveBeenCalled();
   });
 
   it('does not write persistent role traffic into ordinary recent conversations', async () => {

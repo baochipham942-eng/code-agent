@@ -20,6 +20,7 @@ import {
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../src/shared/constants';
 
 function loadEnvIntoProcess(realHome: string): void {
   try {
@@ -75,9 +76,8 @@ async function main(): Promise<void> {
   process.env.CODE_AGENT_HOME = root;
   process.env.CODE_AGENT_DATA_DIR = dataDir;
   process.env.CODE_AGENT_E2E = '1';
-  process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS = 'true';
-  const provider = process.env.SPACE_ACCEPTANCE_PROVIDER || 'deepseek';
-  const model = process.env.SPACE_ACCEPTANCE_MODEL || 'deepseek-chat';
+  const provider = process.env.SPACE_ACCEPTANCE_PROVIDER || DEFAULT_PROVIDER;
+  const model = process.env.SPACE_ACCEPTANCE_MODEL || DEFAULT_MODEL;
 
   const axios = (await import('axios')).default;
   const capturedBodies: unknown[] = [];
@@ -217,6 +217,8 @@ async function main(): Promise<void> {
       enableToolDeferredLoading: false,
       deniedToolNames,
       autoApprovePlan: true,
+      persistLongTermMemory: false,
+      includeRecentConversations: false,
       toolExecutor,
       messages,
       onEvent: (event) => {

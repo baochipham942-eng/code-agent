@@ -361,38 +361,12 @@ export const TELEMETRY_CHANNELS = {
  */
 export type TelemetryChannel = (typeof TELEMETRY_CHANNELS)[keyof typeof TELEMETRY_CHANNELS];
 
-// ============================================================================
-// Test Subset 数据集子集管理 IPC 通道
-// ============================================================================
-
-/**
- * Test Subset IPC 通道
- * 用于前端与主进程之间的测试子集管理
- */
-export const SUBSET_CHANNELS = {
-  /** 保存测试子集 */
-  SAVE: 'evaluation:save-test-subset',
-  /** 获取所有已保存的子集列表 */
-  LIST: 'evaluation:list-test-subsets',
-  /** 加载指定子集 */
-  LOAD: 'evaluation:load-test-subset',
-  /** 删除指定子集 */
-  DELETE: 'evaluation:delete-test-subset',
-} as const;
-
 /**
  * 评测实验 IPC 通道（GAP-017: Harness 对照实验）
  */
 export const EVALUATION_CHANNELS = {
-  /** 启动 harness 对照实验（固定模型，变 harness 配置；fire-and-forget，返回预生成 runId） */
-  RUN_HARNESS_COMPARISON: 'evaluation:run-harness-comparison',
   /** 列出已落 DB 的实验（含 config_json harness 维度，用于对比/轮询完成状态） */
   LIST_EXPERIMENTS: 'evaluation:list-experiments',
   /** 只读加载单个实验 + 用例行（评测中心「基准」tab 回归对比用；裁剪 data_json 大字段） */
   LOAD_EXPERIMENT: 'evaluation:load-experiment',
 } as const;
-
-/**
- * Subset 通道名称类型
- */
-export type SubsetChannel = (typeof SUBSET_CHANNELS)[keyof typeof SUBSET_CHANNELS];

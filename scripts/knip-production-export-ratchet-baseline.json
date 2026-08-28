@@ -1898,11 +1898,6 @@
     },
     {
       "file": "src/host/agent/verification.ts",
-      "name": "VerificationSkippedCheck",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/verification.ts",
       "name": "VerificationStatus",
       "kind": "type"
     },
@@ -1949,11 +1944,6 @@
     {
       "file": "src/host/app/window.ts",
       "name": "setMainWindow",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/app/workbenchTurnContext.ts",
-      "name": "buildWorkbenchToolScope",
       "kind": "export"
     },
     {
@@ -2080,11 +2070,6 @@
       "file": "src/host/config/configPaths.ts",
       "name": "ConfigPathOptions",
       "kind": "type"
-    },
-    {
-      "file": "src/host/config/configPaths.ts",
-      "name": "getDynamicToolsDir",
-      "kind": "export"
     },
     {
       "file": "src/host/config/configPaths.ts",
@@ -2607,16 +2592,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/cron/cronAutomationBridge.ts",
-      "name": "buildCronAutomationConfig",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/cron/cronAutomationBridge.ts",
-      "name": "formatCronScheduleLabel",
-      "kind": "export"
-    },
-    {
       "file": "src/host/cron/cronNormalizers.ts",
       "name": "isCronJobStatus",
       "kind": "export"
@@ -3004,11 +2979,6 @@
     {
       "file": "src/host/evaluation/types.ts",
       "name": "ToolCallStats",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/types.ts",
-      "name": "TranscriptMetrics",
       "kind": "type"
     },
     {
@@ -3767,11 +3737,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/lightMemory/recentConversations.ts",
-      "name": "buildRecentConversationsBlock",
-      "kind": "export"
-    },
-    {
       "file": "src/host/loop/index.ts",
       "name": "buildTurnPrompt",
       "kind": "export"
@@ -4032,11 +3997,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/mcp/mcpOAuthCoordinator.ts",
-      "name": "McpOAuthAuthorizationDeclinedError",
-      "kind": "export"
-    },
-    {
       "file": "src/host/mcp/mcpServer.ts",
       "name": "getMCPServer",
       "kind": "export"
@@ -4212,11 +4172,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/model/e2eLocalAgentModel.ts",
-      "name": "shouldUseE2ELocalAgentModel",
-      "kind": "export"
-    },
-    {
       "file": "src/host/model/errorClassifier.ts",
       "name": "classifyError",
       "kind": "export"
@@ -4364,11 +4319,6 @@
     {
       "file": "src/host/model/providers/shared.ts",
       "name": "httpsAgent",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/model/providers/shared.ts",
-      "name": "ORPHANED_TOOL_CALL_PLACEHOLDER",
       "kind": "export"
     },
     {
@@ -5347,11 +5297,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/platform/windowBridge.ts",
-      "name": "WebContentsSender",
-      "kind": "type"
-    },
-    {
       "file": "src/host/plugins/builtin/audioProcessing/index.ts",
       "name": "activate",
       "kind": "export"
@@ -5464,56 +5409,6 @@
     {
       "file": "src/host/prompts/agentModes.ts",
       "name": "MODE_CONFIGS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "getOrchestratorPrompt",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "getOrchestratorPromptCompact",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "ORCHESTRATOR_AGENT_DISPATCH",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "ORCHESTRATOR_COMMUNICATION",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "ORCHESTRATOR_IDENTITY",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "ORCHESTRATOR_TEAMMATE_USAGE",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "ORCHESTRATOR_TOOL_OWNERSHIP",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/orchestrator.ts",
-      "name": "ORCHESTRATOR_WORKFLOW",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/tools.ts",
-      "name": "getOrchestratorPrompt",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/base/tools.ts",
-      "name": "getOrchestratorPromptCompact",
       "kind": "export"
     },
     {
@@ -5652,36 +5547,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/prompts/constitution/ethics.ts",
-      "name": "ETHICS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/constitution/hardConstraints.ts",
-      "name": "HARD_CONSTRAINTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/constitution/judgment.ts",
-      "name": "JUDGMENT",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/constitution/safety.ts",
-      "name": "SAFETY",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/constitution/soul.ts",
-      "name": "SOUL",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/constitution/values.ts",
-      "name": "VALUES",
-      "kind": "export"
-    },
-    {
       "file": "src/host/prompts/contextAwareReminders.ts",
       "name": "CONTEXT_RULES",
       "kind": "export"
@@ -5739,16 +5604,6 @@
     {
       "file": "src/host/prompts/providerVariants.ts",
       "name": "PROVIDER_VARIANT_MARKER",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/providerVariants.ts",
-      "name": "ProviderFamily",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/prompts/providerVariants.ts",
-      "name": "resolveProviderFamily",
       "kind": "export"
     },
     {
@@ -5875,16 +5730,6 @@
       "file": "src/host/prompts/remoteFragments.ts",
       "name": "TrustedRemotePromptFragmentId",
       "kind": "type"
-    },
-    {
-      "file": "src/host/prompts/rules/htmlGeneration.ts",
-      "name": "HTML_GENERATION_RULES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/rules/outputFormat.ts",
-      "name": "OUTPUT_FORMAT_RULES",
-      "kind": "export"
     },
     {
       "file": "src/host/prompts/selfCritique.ts",
@@ -6412,16 +6257,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/runtime/nativeRecoveryHost.ts",
-      "name": "NativeRecoveryOperationInput",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/runtime/nativeRecoveryHost.ts",
-      "name": "NativeRecoveryResultEvidence",
-      "kind": "type"
-    },
-    {
       "file": "src/host/runtime/runContext.ts",
       "name": "RunCancelReason",
       "kind": "type"
@@ -6943,22 +6778,7 @@
     },
     {
       "file": "src/host/services/agentEngine/agentEngineModelCatalog.ts",
-      "name": "AgentEngineModelDiscoveryProvider",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/services/agentEngine/agentEngineModelCatalog.ts",
-      "name": "AgentEngineModelDiscoveryResult",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/services/agentEngine/agentEngineModelCatalog.ts",
       "name": "AgentEngineModelIncompatibleError",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/agentEngine/agentEngineModelCatalog.ts",
-      "name": "discoverLocalAgentEngineModels",
       "kind": "export"
     },
     {
@@ -8432,16 +8252,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/services/infra/notificationService.ts",
-      "name": "RecordedNotification",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/services/infra/notificationService.ts",
-      "name": "TaskNotificationData",
-      "kind": "type"
-    },
-    {
       "file": "src/host/services/infra/playwrightLaunchSemaphore.ts",
       "name": "getLaunchSemaphoreStats",
       "kind": "export"
@@ -8922,21 +8732,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/services/roleAssets/roleWriteBack.ts",
-      "name": "applyWriteGate",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/roleAssets/roleWriteBack.ts",
-      "name": "MemoryLayer",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/services/roleAssets/roleWriteBack.ts",
-      "name": "WriteBackCandidate",
-      "kind": "type"
-    },
-    {
       "file": "src/host/services/serviceRegistry.ts",
       "name": "resetAllServices",
       "kind": "export"
@@ -9252,21 +9047,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/services/surfaceExecution/ManagedBrowserProviderAdapter.ts",
-      "name": "isUserBrowserSurfaceIdentity",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/surfaceExecution/ManagedBrowserProviderAdapter.ts",
-      "name": "MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/surfaceExecution/ManagedBrowserProviderAdapter.ts",
-      "name": "managedBrowserProfileModeForIdentity",
-      "kind": "export"
-    },
-    {
       "file": "src/host/services/surfaceExecution/SurfaceCapabilityRegistry.ts",
       "name": "SurfaceCapabilityUnsupportedError",
       "kind": "export"
@@ -9368,16 +9148,6 @@
     },
     {
       "file": "src/host/services/toolSearch/index.ts",
-      "name": "CORE_TOOLS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/toolSearch/index.ts",
-      "name": "DEFERRED_TOOLS_META",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/toolSearch/index.ts",
       "name": "isCoreToolName",
       "kind": "export"
     },
@@ -9389,11 +9159,6 @@
     {
       "file": "src/host/services/toolSearch/index.ts",
       "name": "setProtocolToolNameChecker",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/toolSearch/index.ts",
-      "name": "ToolSearchService",
       "kind": "export"
     },
     {
@@ -9534,11 +9299,6 @@
     {
       "file": "src/host/session/backgroundTaskManager.ts",
       "name": "resetBackgroundTaskManager",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/session/browserComputerProofStore.ts",
-      "name": "getBrowserComputerProofLedgerPath",
       "kind": "export"
     },
     {
@@ -9864,11 +9624,6 @@
     {
       "file": "src/host/task/TaskManager.ts",
       "name": "resetTaskManager",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/diagnosticVersions.ts",
-      "name": "getAgentVersion",
       "kind": "export"
     },
     {
@@ -10229,16 +9984,6 @@
     {
       "file": "src/host/testing/evalCritic/index.ts",
       "name": "EvalHistoryTracker",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/testing/harnessComparison.ts",
-      "name": "HarnessVariantRunResult",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/testing/reportGenerator.ts",
-      "name": "generateHtmlReport",
       "kind": "export"
     },
     {
@@ -11482,11 +11227,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/components/ChatView.tsx",
-      "name": "StreamRecoveryBanner",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/components/CommandPalette.tsx",
       "name": "Command",
       "kind": "type"
@@ -11977,11 +11717,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/components/DiffView.tsx",
-      "name": "DiffPreview",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/components/ErrorBoundary.tsx",
       "name": "default",
       "kind": "export"
@@ -12447,11 +12182,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/components/features/chat/MessageBubble/prismTheme.ts",
-      "name": "getPrismStyleForTheme",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/bashOutputPreview.ts",
       "name": "BASH_PREVIEW_LINES_COMPLETED",
       "kind": "export"
@@ -12495,11 +12225,6 @@
       "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
       "name": "ToolCallDisplayCompact",
       "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
-      "name": "ToolStatus",
-      "kind": "type"
     },
     {
       "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/styles.ts",
@@ -12549,11 +12274,6 @@
     {
       "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/utils.ts",
       "name": "formatParams",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/utils.ts",
-      "name": "getToolDisplayName",
       "kind": "export"
     },
     {
@@ -13957,11 +13677,6 @@
       "kind": "type"
     },
     {
-      "file": "src/renderer/components/TaskPanel/index.tsx",
-      "name": "default",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/components/TaskPanel/RunWorkbenchCards.tsx",
       "name": "getRunUiStatusLabel",
       "kind": "export"
@@ -14350,31 +14065,6 @@
       "file": "src/renderer/hooks/useRunWorkbenchModel.ts",
       "name": "buildWorkflowTaskRecord",
       "kind": "export"
-    },
-    {
-      "file": "src/renderer/hooks/useSmoothStreamingText.ts",
-      "name": "computeSmoothStreamingNextContent",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/hooks/useSmoothStreamingText.ts",
-      "name": "findSmoothStreamingSegmentEnd",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/hooks/useSmoothStreamingText.ts",
-      "name": "shouldSyncSmoothStreamingText",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/hooks/useSmoothStreamingText.ts",
-      "name": "SMOOTH_STREAMING_TEXT_DEFAULTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/hooks/useSmoothStreamingText.ts",
-      "name": "SmoothStreamingStepInput",
-      "kind": "type"
     },
     {
       "file": "src/renderer/hooks/useStatusRailModel.ts",
@@ -15062,11 +14752,6 @@
       "kind": "type"
     },
     {
-      "file": "src/renderer/utils/fastDiff.ts",
-      "name": "hasCommonNonEmptyLine",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/utils/htmlLocality.ts",
       "name": "buildUniqueCssSelector",
       "kind": "export"
@@ -15163,28 +14848,13 @@
     },
     {
       "file": "src/renderer/utils/sessionNeedsInput.ts",
-      "name": "hasPendingPermissionForSession",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/sessionNeedsInput.ts",
       "name": "hasPendingUserQuestionForSession",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/sessionNeedsInput.ts",
-      "name": "hasQueuedPermissionForSession",
       "kind": "export"
     },
     {
       "file": "src/renderer/utils/sessionNeedsInput.ts",
       "name": "hasWaitingInputBackgroundTaskForSession",
       "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/sessionNeedsInput.ts",
-      "name": "SessionPermissionNeedsInputState",
-      "kind": "type"
     },
     {
       "file": "src/renderer/utils/sessionRecoveryHints.ts",
@@ -15298,11 +14968,6 @@
     },
     {
       "file": "src/renderer/utils/streamingStatePresentation.ts",
-      "name": "hasIncompleteStreamSnapshot",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/streamingStatePresentation.ts",
       "name": "StreamingUiStatus",
       "kind": "type"
     },
@@ -15310,11 +14975,6 @@
       "file": "src/renderer/utils/streamingStatePresentation.ts",
       "name": "StreamingUiTone",
       "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/streamRecoveryMessage.ts",
-      "name": "buildStreamRecoveryMessage",
-      "kind": "export"
     },
     {
       "file": "src/renderer/utils/surfaceExecutionProjection.ts",
@@ -16037,11 +15697,6 @@
       "kind": "export"
     },
     {
-      "file": "src/shared/constants/sessionCommandCenter.ts",
-      "name": "SESSION_COMMAND_CENTER_READ_TOOL_NAMES",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/constants/skillCatalog.ts",
       "name": "ALMA_BUNDLED_SKILL_MAPPINGS",
       "kind": "export"
@@ -16188,21 +15843,6 @@
     },
     {
       "file": "src/shared/contract/agent.ts",
-      "name": "ContextCompressedData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "GoalGatePlannedCommand",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "GoalGateSkippedCheck",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
       "name": "GoalGateVerificationCommand",
       "kind": "type"
     },
@@ -16218,62 +15858,12 @@
     },
     {
       "file": "src/shared/contract/agent.ts",
-      "name": "InterruptEventData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "LocalToolCallData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "LocalToolCancelData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "MessageDeltaData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
       "name": "ReportStyle",
       "kind": "type"
     },
     {
       "file": "src/shared/contract/agent.ts",
-      "name": "ResearchCompleteData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "ResearchErrorData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "ResearchModeStartedData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
       "name": "ResearchPhase",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "ResearchProgressData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "RoleDraftPendingData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "SkillDraftPendingData",
       "kind": "type"
     },
     {
@@ -16284,21 +15874,6 @@
     {
       "file": "src/shared/contract/agent.ts",
       "name": "SubagentType",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "TaskStatsData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "TaskUpdateEventData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "TeamRecipeDraftPendingData",
       "kind": "type"
     },
     {
@@ -16359,11 +15934,6 @@
     {
       "file": "src/shared/contract/agentEngine.ts",
       "name": "DEFAULT_AGENT_ENGINE_SESSION",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/agentEngine.ts",
-      "name": "isAgentEngineKind",
       "kind": "export"
     },
     {
@@ -16554,11 +16124,6 @@
     {
       "file": "src/shared/contract/artifactRoleRegistry.ts",
       "name": "ARTIFACT_KIND_ROLE_REGISTRY",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/artifactRoleRegistry.ts",
-      "name": "isDeliverableArtifact",
       "kind": "export"
     },
     {
@@ -16968,11 +16533,6 @@
     },
     {
       "file": "src/shared/contract/deliverable.ts",
-      "name": "DeliverableEvidenceStatus",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/deliverable.ts",
       "name": "DeliverableQualityStatus",
       "kind": "type"
     },
@@ -17203,37 +16763,12 @@
     },
     {
       "file": "src/shared/contract/evaluation.ts",
-      "name": "DIMENSION_ICONS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "DIMENSION_NAMES",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "DIMENSION_WEIGHTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
       "name": "EvalExperimentSummary",
       "kind": "type"
     },
     {
       "file": "src/shared/contract/evaluation.ts",
       "name": "EvalHarnessSource",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "EvaluationDimension",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "EvaluationMetric",
       "kind": "type"
     },
     {
@@ -17260,26 +16795,6 @@
       "file": "src/shared/contract/evaluation.ts",
       "name": "ReplayTimelineEvent",
       "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "SubMetric",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "TranscriptMetrics",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "V3_INFO_DIMENSIONS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "V3_SCORING_DIMENSIONS",
-      "kind": "export"
     },
     {
       "file": "src/shared/contract/evidence.ts",
@@ -17369,11 +16884,6 @@
     {
       "file": "src/shared/contract/memory.ts",
       "name": "MemoryCategoryInfo",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/memory.ts",
-      "name": "MemoryEntrySourceKind",
       "kind": "type"
     },
     {
@@ -17863,16 +17373,6 @@
     },
     {
       "file": "src/shared/contract/sessionAnalytics.ts",
-      "name": "DIMENSION_ICONS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/sessionAnalytics.ts",
-      "name": "DIMENSION_NAMES",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/sessionAnalytics.ts",
       "name": "ReviewerAssessment",
       "kind": "type"
     },
@@ -18278,11 +17778,6 @@
     },
     {
       "file": "src/shared/contract/workbenchTools.ts",
-      "name": "findConnectorIdForToolName",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/workbenchTools.ts",
       "name": "isMcpToolName",
       "kind": "export"
     },
@@ -18444,11 +17939,6 @@
     {
       "file": "src/shared/ipc/channels.ts",
       "name": "LSPChannel",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/ipc/channels.ts",
-      "name": "SubsetChannel",
       "kind": "type"
     },
     {
@@ -19564,11 +19054,6 @@
     "src/host/planning/executionMonitor.ts",
     "src/host/planning/feasibilityChecker.ts",
     "src/host/planning/planPersistence.ts",
-    "src/host/prompts/rules/injection/core.ts",
-    "src/host/prompts/rules/injection/index.ts",
-    "src/host/prompts/rules/injection/meta.ts",
-    "src/host/prompts/rules/injection/verification.ts",
-    "src/host/prompts/rules/injectionDefense.ts",
     "src/host/scheduler/index.ts",
     "src/host/services/checkpoint/workflowRunDeletionService.ts",
     "src/host/services/learning/errorLearning.ts",
@@ -19621,8 +19106,6 @@
     "src/renderer/components/PlanningPanel.tsx",
     "src/renderer/components/QuestionFormPreview.tsx",
     "src/renderer/components/SkillsPanel.tsx",
-    "src/renderer/components/TaskPanel/Agents.tsx",
-    "src/renderer/components/TaskPanel/ApprovalSyncCard.tsx",
     "src/renderer/components/TaskPanel/Context.tsx",
     "src/renderer/components/TaskPanel/ContextInterventionPanel.tsx",
     "src/renderer/components/TaskPanel/ContextProvenancePanel.tsx",

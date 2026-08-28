@@ -13,6 +13,10 @@ import type { ModelConfig, ModelProvider } from '../../shared/contract';
 import type { AppSettings } from '../../shared/contract/settings';
 import { createLogger } from '../services/infra/logger';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
+import {
+  buildE2ELocalCompactSummary,
+  shouldUseE2ELocalCompactModel,
+} from '../testing/e2e/e2eLocalCompactModel';
 
 const logger = createLogger('CompactModel');
 
@@ -50,19 +54,6 @@ interface ResolvedSummaryModel {
 
 let modelRouter: ModelRouter | null = null;
 let compactModelResolution: ResolvedSummaryModel | null = null;
-
-function shouldUseE2ELocalCompactModel(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_E2E === '1' && env.CODE_AGENT_E2E_LOCAL_COMPACT_MODEL === '1';
-}
-
-function buildE2ELocalCompactSummary(prompt: string): string {
-  const promptDigest = Buffer.from(prompt).toString('base64').slice(0, 24);
-  return [
-    'E2E local compact summary.',
-    `Prompt digest: ${promptDigest}`,
-    'Earlier conversation turns were compacted by the compact model boundary during app-host smoke.',
-  ].join('\n');
-}
 
 function getProviderBaseUrl(settings: AppSettings, provider: ModelProvider): string | undefined {
   return settings.models?.providers?.[provider]?.baseUrl;

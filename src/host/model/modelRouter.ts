@@ -115,7 +115,7 @@ import { GeminiProvider } from './providers/geminiProvider';
 import { VolcengineProvider } from './providers/volcengineProvider';
 import { LongCatProvider } from './providers/longcatProvider';
 import { XiaomiProvider } from './providers/xiaomiProvider';
-import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModelForMessages } from './e2eLocalAgentModel';
+import { buildE2ELocalAgentModelResponse, shouldUseE2ELocalAgentModelForMessages } from '../testing/e2e/e2eLocalAgentModel';
 
 // Re-export PROVIDER_REGISTRY for external use
 export { PROVIDER_REGISTRY };

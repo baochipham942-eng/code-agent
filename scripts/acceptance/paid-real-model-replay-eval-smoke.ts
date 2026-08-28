@@ -293,7 +293,6 @@ async function main(): Promise<void> {
     process.env.CODE_AGENT_MODEL_ENGINE = process.env.CODE_AGENT_PAID_SMOKE_ENGINE
       || process.env.CODE_AGENT_MODEL_ENGINE
       || 'legacy';
-    process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS = 'true';
 
     const { getProtocolRegistry } = await import('../../src/host/tools/protocolRegistry');
     getProtocolRegistry();
@@ -319,6 +318,8 @@ async function main(): Promise<void> {
 
     const agent = new testing.StandaloneAgentAdapter({
       workingDirectory: workspaceDir,
+      persistLongTermMemory: false,
+      includeRecentConversations: false,
       modelConfig: {
         provider,
         model: guardrails.model,

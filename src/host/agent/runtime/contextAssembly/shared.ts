@@ -75,7 +75,14 @@ export const MAX_SYSTEM_PROMPT_TOKENS = parseInt(process.env.CODE_AGENT_MAX_SYST
  * - 否则按模型上下文窗口的 WINDOW_RATIO 计算，下限 MIN_TOKENS（小窗口模型不低于历史默认值）
  * 修复重记忆环境下 base prompt 吃满固定 6000 后能力发现块全被静默丢弃的问题。
  */
-export function getSystemPromptBudget(model?: string, provider?: string): number {
+export function getSystemPromptBudget(
+  model?: string,
+  provider?: string,
+  explicitBudget?: number,
+): number {
+  if (explicitBudget !== undefined) {
+    return explicitBudget;
+  }
   if (process.env.CODE_AGENT_MAX_SYSTEM_PROMPT_TOKENS) {
     return MAX_SYSTEM_PROMPT_TOKENS;
   }

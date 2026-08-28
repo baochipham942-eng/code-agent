@@ -155,6 +155,8 @@ export interface ToolContext {
   readonly abortSignal: AbortSignal;
   /** 当前 run 的工具拒绝集，ToolSearch 不得借延迟加载把它们重新带回。 */
   readonly deniedToolNames?: readonly string[];
+  /** Opaque run-scoped SkillDiscoveryService handle. */
+  readonly skillDiscoveryService?: unknown;
 
   /** 轻量 logger 接口，不耦合 services/infra/logger 实现 */
   readonly logger: Logger;

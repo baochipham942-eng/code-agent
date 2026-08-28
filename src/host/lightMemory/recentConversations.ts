@@ -129,8 +129,11 @@ function isWithinRecentWindow(summary: ConversationSummary, now: Date): boolean 
 /**
  * Append a new conversation summary. Keeps last MAX_ENTRIES entries.
  */
-export async function appendConversationSummary(summary: ConversationSummary): Promise<void> {
-  if (process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS === 'true') return;
+export async function appendConversationSummary(
+  summary: ConversationSummary,
+  options: { enabled?: boolean } = {},
+): Promise<void> {
+  if (options.enabled === false) return;
   if (isLoopAutomationSummary(summary)) {
     logger.debug(`Skipping loop automation summary: "${summary.title}"`);
     return;
@@ -179,8 +182,9 @@ export async function appendConversationSummary(summary: ConversationSummary): P
 export async function buildRecentConversationsBlock(options: {
   projectId?: string | null;
   now?: Date;
+  enabled?: boolean;
 } = {}): Promise<string | null> {
-  if (process.env.CODE_AGENT_DISABLE_RECENT_CONVERSATIONS === 'true') return null;
+  if (options.enabled === false) return null;
   try {
     const recentSummaries = (await loadSummaries())
       .filter((item) => !isLoopAutomationSummary(item))

@@ -130,3 +130,6 @@ vi.mock('better-sqlite3', () => {
   };
   return { default: () => mockDb };
 });
+// Retry timing is an explicit test input; production code keeps production defaults.
+process.env.ARTIFACT_SELECTED_PROVIDER_RETRY_DELAY_1_MS = '0';
+process.env.ARTIFACT_SELECTED_PROVIDER_RETRY_DELAY_2_MS = '0';

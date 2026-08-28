@@ -801,6 +801,7 @@ export class ToolExecutionEngine {
           agentRole: this.ctx.persistentRoleId,
           // 仅轮级确认的持久化角色可写入角色记忆，避免普通预定义 agent 误建角色目录。
           preApprovedTools: this.ctx.control.preApprovedTools,
+          skillDiscoveryService: this.ctx.skillDiscoveryService,
           // GAP-001: skill allowed-tools 限权边界透传
           skillToolBoundary: this.ctx.turn.skillToolBoundary,
           currentAttachments,

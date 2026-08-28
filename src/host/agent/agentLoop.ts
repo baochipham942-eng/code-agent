@@ -133,6 +133,10 @@ export class AgentLoop {
       userId: config.userId,
       memoryMode: config.memoryMode ?? 'auto',
       suppressedMemoryEntryIds: config.suppressedMemoryEntryIds,
+      persistLongTermMemory: config.persistLongTermMemory ?? true,
+      includeRecentConversations: config.includeRecentConversations ?? true,
+      maxSystemPromptTokens: config.maxSystemPromptTokens,
+      skillDiscoveryService: config.skillDiscoveryService,
       persistMessage: config.persistMessage,
       // 工具步骤录制接在这里，而不是接在 AgentOrchestrator 上：真机 renderer 的
       // 每一次发送都走 webServer 的 /api/run → cli/bootstrap.createAgentLoop →

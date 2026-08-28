@@ -139,6 +139,31 @@ describe('SkillDiscoveryService discovery', () => {
     expect(skillNames).toEqual(['project-code-agent', 'user-code-agent']);
   });
 
+  it('exposes exactly the run-level skill set', async () => {
+    await writeSkill(path.join(homeDir, '.code-agent', 'skills'), 'visible-skill');
+    await writeSkill(path.join(homeDir, '.code-agent', 'skills'), 'hidden-skill');
+
+    const service = new SkillDiscoveryService({
+      includeClaudeLegacySkills: false,
+      skillNames: ['visible-skill'],
+    });
+    await service.initialize(projectDir);
+
+    expect(service.getAllSkills().map((skill) => skill.name)).toEqual(['visible-skill']);
+    expect(service.getSkill('visible-skill')?.name).toBe('visible-skill');
+    expect(service.getSkill('hidden-skill')).toBeUndefined();
+  });
+
+  it('does not scan machine skills when the run-level set is empty', async () => {
+    await writeSkill(path.join(homeDir, '.code-agent', 'skills'), 'machine-only-skill');
+
+    const service = new SkillDiscoveryService({ skillNames: [] });
+    await service.initialize(projectDir);
+
+    expect(service.getAllSkills()).toEqual([]);
+    expect(service.getSkill('machine-only-skill')).toBeUndefined();
+  });
+
   it('keeps CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS=true compatible', async () => {
     vi.stubEnv('CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS', 'true');
     await writeSkill(path.join(homeDir, '.claude', 'skills'), 'user-claude');

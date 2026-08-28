@@ -6,7 +6,7 @@ vi.mock('child_process', () => ({
   execFileSync: (...args: unknown[]) => execFileSyncMock(...args),
 }));
 
-import { ChangeDetector } from '../../../src/host/testing/ci/changeDetector';
+import { ChangeDetector } from '../../../src/host/agent/changeDetector';
 
 describe('ChangeDetector verification changed files', () => {
   beforeEach(() => {
@@ -32,12 +32,12 @@ describe('ChangeDetector verification changed files', () => {
       .mockImplementationOnce(() => {
         throw new Error('bad ref');
       })
-      .mockReturnValueOnce('src/host/testing/ci/changeDetector.ts\n');
+      .mockReturnValueOnce('src/host/agent/changeDetector.ts\n');
 
     const detector = new ChangeDetector('/repo/worktree');
     const files = detector.getChangedFilesForVerification('main');
 
-    expect(files).toEqual(['src/host/testing/ci/changeDetector.ts']);
+    expect(files).toEqual(['src/host/agent/changeDetector.ts']);
     expect(execFileSyncMock).toHaveBeenNthCalledWith(
       2,
       'git',

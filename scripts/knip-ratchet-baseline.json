@@ -807,11 +807,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/agent/runtime/contextAssembly/visionPreflight.ts",
-      "name": "preflightImagesForMainModel",
-      "kind": "export"
-    },
-    {
       "file": "src/host/agent/runtime/conversationRuntime.ts",
       "name": "AgentLoopConfig",
       "kind": "type"
@@ -1493,11 +1488,6 @@
     },
     {
       "file": "src/host/config/configPaths.ts",
-      "name": "getDynamicToolsDir",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/config/configPaths.ts",
       "name": "getHooksConfigDir",
       "kind": "export"
     },
@@ -2149,11 +2139,6 @@
     {
       "file": "src/host/evaluation/types.ts",
       "name": "ToolCallStats",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/types.ts",
-      "name": "TranscriptMetrics",
       "kind": "type"
     },
     {
@@ -3717,11 +3702,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/platform/windowBridge.ts",
-      "name": "WebContentsSender",
-      "kind": "type"
-    },
-    {
       "file": "src/host/plugins/builtin/audioProcessing/index.ts",
       "name": "activate",
       "kind": "export"
@@ -4497,16 +4477,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/runtime/nativeRecoveryHost.ts",
-      "name": "NativeRecoveryOperationInput",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/runtime/nativeRecoveryHost.ts",
-      "name": "NativeRecoveryResultEvidence",
-      "kind": "type"
-    },
-    {
       "file": "src/host/runtime/runContext.ts",
       "name": "RunCancelReason",
       "kind": "type"
@@ -4844,16 +4814,6 @@
     {
       "file": "src/host/services/agentEngine/agentEngineGuards.ts",
       "name": "assertExternalEngineSessionAllowed",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/agentEngine/agentEngineModelCatalog.ts",
-      "name": "AgentEngineModelDiscoveryProvider",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/services/agentEngine/agentEngineModelCatalog.ts",
-      "name": "discoverLocalAgentEngineModels",
       "kind": "export"
     },
     {
@@ -5867,16 +5827,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/services/infra/notificationService.ts",
-      "name": "RecordedNotification",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/services/infra/notificationService.ts",
-      "name": "TaskNotificationData",
-      "kind": "type"
-    },
-    {
       "file": "src/host/services/infra/playwrightLaunchSemaphore.ts",
       "name": "getLaunchSemaphoreStats",
       "kind": "export"
@@ -5889,11 +5839,6 @@
     {
       "file": "src/host/services/infra/supabaseService.ts",
       "name": "getSupabaseConfig",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/infra/supabaseService.ts",
-      "name": "initSupabase",
       "kind": "export"
     },
     {
@@ -6043,11 +5988,6 @@
     },
     {
       "file": "src/host/services/renderer/rendererBundleCache.ts",
-      "name": "isRendererHotUpdateDisabled",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/renderer/rendererBundleCache.ts",
       "name": "RENDERER_BUNDLE_DISABLED_ENV",
       "kind": "export"
     },
@@ -6089,11 +6029,6 @@
     {
       "file": "src/host/services/roleAssets/roleDraftQueue.ts",
       "name": "RoleDraftOrigin",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/services/roleAssets/roleWriteBack.ts",
-      "name": "MemoryLayer",
       "kind": "type"
     },
     {
@@ -6877,11 +6812,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/testing/harnessComparison.ts",
-      "name": "HarnessVariantRunResult",
-      "kind": "type"
-    },
-    {
       "file": "src/host/testing/testRunner.ts",
       "name": "isInfraExclusionError",
       "kind": "export"
@@ -7009,11 +6939,6 @@
     {
       "file": "src/host/tools/document/snapshotManager.ts",
       "name": "clearSnapshots",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/document/snapshotManager.ts",
-      "name": "listSnapshots",
       "kind": "export"
     },
     {
@@ -7712,11 +7637,6 @@
       "kind": "type"
     },
     {
-      "file": "src/renderer/components/ContextHealthPanel.tsx",
-      "name": "default",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/components/DecisionCard.tsx",
       "name": "default",
       "kind": "export"
@@ -8175,11 +8095,6 @@
       "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
       "name": "ToolCallDisplayCompact",
       "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
-      "name": "ToolStatus",
-      "kind": "type"
     },
     {
       "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/styles.ts",
@@ -9002,11 +8917,6 @@
       "kind": "type"
     },
     {
-      "file": "src/renderer/components/TaskPanel/index.tsx",
-      "name": "default",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/components/TaskPanel/orchestration/components.tsx",
       "name": "AgentContextCard",
       "kind": "export"
@@ -9762,11 +9672,6 @@
       "kind": "type"
     },
     {
-      "file": "src/renderer/utils/streamRecoveryMessage.ts",
-      "name": "buildStreamRecoveryMessage",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/utils/taskRailPresentation.ts",
       "name": "TaskRailMode",
       "kind": "type"
@@ -10358,21 +10263,6 @@
     },
     {
       "file": "src/shared/contract/agent.ts",
-      "name": "ContextCompressedData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "GoalGatePlannedCommand",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "GoalGateSkippedCheck",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
       "name": "GoalGateVerificationCommand",
       "kind": "type"
     },
@@ -10388,62 +10278,12 @@
     },
     {
       "file": "src/shared/contract/agent.ts",
-      "name": "InterruptEventData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "LocalToolCallData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "LocalToolCancelData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "MessageDeltaData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
       "name": "ReportStyle",
       "kind": "type"
     },
     {
       "file": "src/shared/contract/agent.ts",
-      "name": "ResearchCompleteData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "ResearchErrorData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "ResearchModeStartedData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
       "name": "ResearchPhase",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "ResearchProgressData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "RoleDraftPendingData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "SkillDraftPendingData",
       "kind": "type"
     },
     {
@@ -10454,21 +10294,6 @@
     {
       "file": "src/shared/contract/agent.ts",
       "name": "SubagentType",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "TaskStatsData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "TaskUpdateEventData",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/agent.ts",
-      "name": "TeamRecipeDraftPendingData",
       "kind": "type"
     },
     {
@@ -10524,11 +10349,6 @@
     {
       "file": "src/shared/contract/agentEngine.ts",
       "name": "DEFAULT_AGENT_ENGINE_SESSION",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/agentEngine.ts",
-      "name": "isAgentEngineKind",
       "kind": "export"
     },
     {
@@ -11233,37 +11053,12 @@
     },
     {
       "file": "src/shared/contract/evaluation.ts",
-      "name": "DIMENSION_ICONS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "DIMENSION_NAMES",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "DIMENSION_WEIGHTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
       "name": "EvalExperimentSummary",
       "kind": "type"
     },
     {
       "file": "src/shared/contract/evaluation.ts",
       "name": "EvalHarnessSource",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "EvaluationDimension",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "EvaluationMetric",
       "kind": "type"
     },
     {
@@ -11290,26 +11085,6 @@
       "file": "src/shared/contract/evaluation.ts",
       "name": "ReplayTimelineEvent",
       "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "SubMetric",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "TranscriptMetrics",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "V3_INFO_DIMENSIONS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/evaluation.ts",
-      "name": "V3_SCORING_DIMENSIONS",
-      "kind": "export"
     },
     {
       "file": "src/shared/contract/evidence.ts",
@@ -11379,11 +11154,6 @@
     {
       "file": "src/shared/contract/memory.ts",
       "name": "MemoryCategoryInfo",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/memory.ts",
-      "name": "MemoryEntrySourceKind",
       "kind": "type"
     },
     {
@@ -11803,16 +11573,6 @@
     },
     {
       "file": "src/shared/contract/sessionAnalytics.ts",
-      "name": "DIMENSION_ICONS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/sessionAnalytics.ts",
-      "name": "DIMENSION_NAMES",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/sessionAnalytics.ts",
       "name": "ReviewerAssessment",
       "kind": "type"
     },
@@ -12173,11 +11933,6 @@
     },
     {
       "file": "src/shared/contract/workbenchTools.ts",
-      "name": "findConnectorIdForToolName",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/workbenchTools.ts",
       "name": "isMcpToolName",
       "kind": "export"
     },
@@ -12318,11 +12073,6 @@
     },
     {
       "file": "src/shared/ipc/channels.ts",
-      "name": "SubsetChannel",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/ipc/channels.ts",
       "name": "TelemetryChannel",
       "kind": "type"
     },
@@ -12429,11 +12179,6 @@
     {
       "file": "src/shared/ipc/schemas/backgroundTask.ts",
       "name": "TaskOutputRefSchema",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/ipc/schemas/backgroundTask.ts",
-      "name": "TaskProgressSchema",
       "kind": "export"
     },
     {

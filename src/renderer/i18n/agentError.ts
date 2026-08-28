@@ -29,6 +29,12 @@ const hostReasonZh = {
   [HostReasonCode.RoutingNoMatchFallback]: { summary: '没有匹配到专用 agent，已继续默认执行' },
   [HostReasonCode.RoutingRequestedUnavailable]: { summary: '指定的 {requestedAgentName} 不可用，已由 {agentName} 继续执行' },
   [HostReasonCode.RoutingExternalEngineUnsupported]: { summary: '{engineName} 会话不支持 agent 选择，已直接执行' },
+  [HostReasonCode.GoalAbortRuntimeFailure]: { summary: '运行失败', detail: '请重试一次；若反复失败，可新开会话继续。' },
+  [HostReasonCode.GoalAbortTurnLimit]: { summary: '目标还没完成，已停止继续执行', detail: '本次运行已达到上限。你可以重试，或新开会话继续。' },
+  [HostReasonCode.GoalAbortTokenBudget]: { summary: '目标还没完成，已停止继续执行', detail: '本次运行的可用额度已经用完。你可以重试，或新开会话继续。' },
+  [HostReasonCode.GoalAbortTimeBudget]: { summary: '目标还没完成，已停止继续执行', detail: '本次运行已达到时间上限。你可以重试，或新开会话继续。' },
+  [HostReasonCode.GoalAbortUnreachable]: { summary: '当前条件下无法完成这个目标', detail: '请补充所需条件后重试，或新开会话调整目标。' },
+  [HostReasonCode.GoalAbortRepeatedAction]: { summary: '执行陷入重复，已停止继续尝试', detail: '请调整目标后重试，或新开会话继续。' },
 } satisfies Record<HostReasonCode, { summary: string; detail?: string }>;
 
 const hostReasonEn: typeof hostReasonZh = {
@@ -58,6 +64,12 @@ const hostReasonEn: typeof hostReasonZh = {
   [HostReasonCode.RoutingNoMatchFallback]: { summary: 'No specialized agent matched; continuing with the default agent' },
   [HostReasonCode.RoutingRequestedUnavailable]: { summary: '{requestedAgentName} is unavailable; {agentName} is continuing instead' },
   [HostReasonCode.RoutingExternalEngineUnsupported]: { summary: '{engineName} sessions do not support agent selection; continuing directly' },
+  [HostReasonCode.GoalAbortRuntimeFailure]: { summary: 'The run failed', detail: 'Retry once. If it keeps failing, start a new session to continue.' },
+  [HostReasonCode.GoalAbortTurnLimit]: { summary: 'The goal is unfinished, so execution stopped', detail: 'This run reached its limit. Retry, or start a new session to continue.' },
+  [HostReasonCode.GoalAbortTokenBudget]: { summary: 'The goal is unfinished, so execution stopped', detail: 'This run used its available budget. Retry, or start a new session to continue.' },
+  [HostReasonCode.GoalAbortTimeBudget]: { summary: 'The goal is unfinished, so execution stopped', detail: 'This run reached its time limit. Retry, or start a new session to continue.' },
+  [HostReasonCode.GoalAbortUnreachable]: { summary: 'This goal cannot be completed under the current conditions', detail: 'Provide the missing requirements and retry, or adjust the goal in a new session.' },
+  [HostReasonCode.GoalAbortRepeatedAction]: { summary: 'Execution became repetitive and was stopped', detail: 'Adjust the goal and retry, or start a new session to continue.' },
 };
 // agentError 域词条（AgentErrorCard 会话区错误卡片）—— zh/en 同文件相邻维护。
 // 卡片文案按 category 表驱动：title 一句话说发生了什么，suggestion 给建议动作，

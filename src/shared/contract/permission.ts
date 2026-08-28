@@ -67,6 +67,12 @@ export enum HostReasonCode {
   RoutingNoMatchFallback = 'ROUTING_NO_MATCH_FALLBACK',
   RoutingRequestedUnavailable = 'ROUTING_REQUESTED_UNAVAILABLE',
   RoutingExternalEngineUnsupported = 'ROUTING_EXTERNAL_ENGINE_UNSUPPORTED',
+  GoalAbortRuntimeFailure = 'GOAL_ABORT_RUNTIME_FAILURE',
+  GoalAbortTurnLimit = 'GOAL_ABORT_TURN_LIMIT',
+  GoalAbortTokenBudget = 'GOAL_ABORT_TOKEN_BUDGET',
+  GoalAbortTimeBudget = 'GOAL_ABORT_TIME_BUDGET',
+  GoalAbortUnreachable = 'GOAL_ABORT_UNREACHABLE',
+  GoalAbortRepeatedAction = 'GOAL_ABORT_REPEATED_ACTION',
 }
 
 export interface HostReasonPayload {

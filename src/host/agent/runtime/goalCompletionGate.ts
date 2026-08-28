@@ -6,7 +6,7 @@
 // 真实失败输出注回让模型继续修。
 // ============================================================================
 
-import type { ToolCall } from '../../../shared/contract';
+import { HostReasonCode, type ToolCall } from '../../../shared/contract';
 import type { GoalGateVerdict } from '../../../shared/contract/agent';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
@@ -15,6 +15,7 @@ import { getDatabase } from '../../services/core/databaseService';
 import { runReviewGate } from '../goalReviewGate';
 import { runGoalEvidenceGate } from './goalEvidenceGate';
 import { goalTokensUsedWithSwarm } from './swarmGoalIntegration';
+import { emitGoalAbort } from './goalAbort';
 import {
   buildVerificationCard,
   buildNotRunVerificationEvidence,
@@ -383,10 +384,11 @@ export async function handleGoalCompletionGate(
     // 看似 completed 却没有任何解释的 run（codex audit R1 修订）。
     if (review.impossible) {
       const reason = `评审判定目标不可达成：${review.reason}`;
-      ctx.goalMode.markAborted(reason);
-      ctx.onEvent({
-        type: 'goal_complete',
-        data: { status: 'aborted', reason, turns: iterations, tokensUsed: goalTokensUsedWithSwarm(ctx) },
+      emitGoalAbort(ctx, {
+        code: HostReasonCode.GoalAbortUnreachable,
+        modelText: reason,
+        turns: iterations,
+        tokensUsed: goalTokensUsedWithSwarm(ctx),
       });
       if (!ctx.control.forceFinalResponseReason) {
         ctx.control.forceFinalResponse('goal-impossible', [

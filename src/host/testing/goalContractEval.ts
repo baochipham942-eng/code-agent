@@ -9,7 +9,7 @@
 //    GoalRunRecord 行为落账（断言只 pin 枚举/极性，不 pin 文案）
 // ============================================================================
 
-import type { AgentEvent } from '../../shared/contract';
+import { hostReasonModelText, type AgentEvent } from '../../shared/contract';
 import { buildGoalContract, type GoalContract } from '../agent/goalModeController';
 import type { EvalGoalContract, GoalRunRecord, TestCase } from './types';
 
@@ -196,6 +196,8 @@ export function applyGoalEvent(record: GoalRunRecord, event: AgentEvent): void {
     record.status = event.data.status;
     record.degraded = event.data.degraded ?? false;
     record.degradedReason = event.data.degradedReason;
-    record.abortReason = event.data.reason;
+    record.abortReason = event.data.reason
+      ? hostReasonModelText(event.data.reason)
+      : undefined;
   }
 }

@@ -276,6 +276,25 @@ describe('AgentErrorCard', () => {
     expect(screen.getByRole('button', { name: '复制错误报告' })).toBeTruthy();
   });
 
+  it('goal-abort provider failure keeps diagnostics off the user card even in developer mode', () => {
+    useAppStore.setState({ developerMode: true });
+    renderCard(makeError({
+      category: 'generic',
+      provider: 'deepseek',
+      modelId: 'deepseek-v4-flash',
+      rawMessage: 'Too Many Requests',
+      goalAbort: true,
+    }));
+
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.queryByText(/deepseek-v4-flash/)).toBeNull();
+    expect(screen.queryByText(/Too Many Requests/)).toBeNull();
+    expect(screen.queryByText(/查看技术详情/)).toBeNull();
+    expect(screen.queryByRole('button', { name: '复制错误报告' })).toBeNull();
+    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '新开会话' })).toBeTruthy();
+  });
+
   it('auth keeps the card but hides copy report outside developer mode', () => {
     renderCard(makeError({ category: 'auth', httpStatus: 401 }));
     expect(screen.getByRole('alert')).toBeTruthy();

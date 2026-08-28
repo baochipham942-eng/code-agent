@@ -34,4 +34,24 @@ describe('GoalNoticeMessage', () => {
     expect(html).toContain('test: npm test exited 1.');
     expect(html).toContain('refs evidence_a, evidence_b, evidence_c +1');
   });
+
+  it('renders an actionable abort card without round/token diagnostics', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(GoalNoticeMessage, {
+        content: encodeGoalNotice({
+          kind: 'aborted',
+          goal: '',
+          reason: '目标还没完成，已停止继续执行',
+          suggestion: '你可以重试，或新开会话继续。',
+        }),
+        messageId: 'goal-abort-1',
+      }),
+    );
+
+    expect(html).toContain('目标还没完成，已停止继续执行');
+    expect(html).toContain('重试');
+    expect(html).toContain('新开会话');
+    expect(html).not.toContain('token');
+    expect(html).not.toContain(' 轮');
+  });
 });

@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { GOAL_MODE, SWARM_GOAL } from '../../shared/constants';
+import { HostReasonCode } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('GoalModeController');
@@ -45,6 +46,7 @@ export interface FallbackResult {
   /** pause=true 时保留 run；stop=true 时进入 aborted 终态。 */
   pause?: boolean;
   reason?: string;
+  reasonCode?: HostReasonCode;
 }
 
 /**
@@ -275,12 +277,20 @@ export class GoalModeController {
    */
   evaluateFallback(input: { turn: number; tokensUsed: number; elapsedMs?: number }): FallbackResult {
     if (input.turn >= this.contract.maxTurns) {
-      return { stop: true, reason: `达到轮次上限 ${this.contract.maxTurns}，目标未达成` };
+      return {
+        stop: true,
+        reason: `达到轮次上限 ${this.contract.maxTurns}，目标未达成`,
+        reasonCode: HostReasonCode.GoalAbortTurnLimit,
+      };
     }
     const totalTokensUsed = input.tokensUsed + this.swarmTokensUsed;
     if (totalTokensUsed >= this.contract.tokenBudget) {
       const swarmNote = this.swarmTokensUsed > 0 ? `（含 swarm 子 agent 消耗 ${this.swarmTokensUsed}）` : '';
-      return { stop: true, reason: `达到 token 预算上限 ${this.contract.tokenBudget}${swarmNote}，目标未达成` };
+      return {
+        stop: true,
+        reason: `达到 token 预算上限 ${this.contract.tokenBudget}${swarmNote}，目标未达成`,
+        reasonCode: HostReasonCode.GoalAbortTokenBudget,
+      };
     }
     // 墙钟时间兜底（①）：仅当契约设了上限且调用方传了已用时间才生效——缺省即跳过，旧行为不变。
     if (
@@ -289,7 +299,11 @@ export class GoalModeController {
       input.elapsedMs >= this.contract.wallClockBudgetMs
     ) {
       const mins = Math.round(this.contract.wallClockBudgetMs / 60_000);
-      return { stop: true, reason: `达到墙钟时间上限 ${mins} 分钟，目标未达成` };
+      return {
+        stop: true,
+        reason: `达到墙钟时间上限 ${mins} 分钟，目标未达成`,
+        reasonCode: HostReasonCode.GoalAbortTimeBudget,
+      };
     }
     if (this.inactiveTurns >= GOAL_MODE.ANTI_SPIN_THRESHOLD) {
       return { stop: false, pause: true, reason: 'anti_spin' };

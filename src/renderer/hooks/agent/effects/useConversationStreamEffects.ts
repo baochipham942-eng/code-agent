@@ -11,6 +11,10 @@ import { useAppStore } from '../../../stores/appStore';
 import { useTaskStore } from '../../../stores/taskStore';
 import { languages } from '../../../i18n';
 import { resolveHostReasonCopy } from '../../../utils/hostReasonPresentation';
+import {
+  projectGoalCompletePresentation,
+  type GoalCompletePresentationData,
+} from '../../../utils/goalCompletePresentation';
 
 /**
  * 这些 agent 事件不构成「宿主还在跑」的证据：终态由各自分支负责把运行态放下，
@@ -505,22 +509,17 @@ export const useConversationStreamEffects = ({
         case 'goal_complete': {
           logHandledEvent();
           if (eventSessionId) {
-            const d = event.data as { status: 'met' | 'aborted'; reason?: string; turns: number; tokensUsed: number; degraded?: boolean; degradedReason?: string };
+            const d = event.data as GoalCompletePresentationData;
             const appStore = useAppStore.getState();
             const run = appStore.goalRuns[eventSessionId];
-            appStore.finishGoalRun(eventSessionId, d.status, d.reason, d.degraded);
-            if (isCurrentSessionEvent) {
-              addMessage(buildGoalNoticeMessage({
-                kind: d.status === 'met' ? 'met' : 'aborted',
-                goal: run?.goal ?? '',
-                reason: d.reason,
-                turns: d.turns,
-                tokensUsed: d.tokensUsed,
-                durationMs: run ? Date.now() - run.startedAt : undefined,
-                degraded: d.degraded,
-                degradedReason: d.degradedReason,
-                verificationCard: [...(run?.gates ?? [])].reverse().find((gate) => gate.verificationCard)?.verificationCard,
-              }));
+            const presentation = projectGoalCompletePresentation(
+              d,
+              run,
+              languages[appStore.language],
+            );
+            appStore.finishGoalRun(eventSessionId, d.status, presentation.stateReason, d.degraded);
+            if (isCurrentSessionEvent && presentation.notice) {
+              addMessage(buildGoalNoticeMessage(presentation.notice));
             }
           }
           break;

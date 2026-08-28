@@ -279,6 +279,8 @@ export interface AgentErrorMetadata {
   modelId?: string;
   /** 同上，真正跑的 provider */
   provider?: string;
+  /** goal 运行的终态失败；用户卡隐藏模型/原串等诊断，只保留可执行出口。 */
+  goalAbort?: boolean;
   timestamp: number;
   /** context_length 专用：实际/上限 tokens，供卡片模板填空 */
   requestedTokens?: number;

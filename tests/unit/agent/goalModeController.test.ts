@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildGoalContract, GoalModeController } from '../../../src/host/agent/goalModeController';
 import { GOAL_MODE } from '../../../src/shared/constants';
+import { HostReasonCode } from '../../../src/shared/contract';
 
 function ctrl(opts?: {
   wallClockBudgetMs?: number;
@@ -44,6 +45,7 @@ describe('① 墙钟预算 — evaluateFallback', () => {
     const r = ctrl({ wallClockBudgetMs: 600_000 }).evaluateFallback({ turn: 1, tokensUsed: 0, elapsedMs: 600_000 });
     expect(r.stop).toBe(true);
     expect(r.reason).toMatch(/时间|墙钟|分钟/);
+    expect(r.reasonCode).toBe(HostReasonCode.GoalAbortTimeBudget);
   });
 
   it('缺省 elapsedMs（旧调用方未传）→ 墙钟分支跳过，行为不变', () => {

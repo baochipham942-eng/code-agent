@@ -82,6 +82,7 @@ export function classifyAgentError(
     // 模型，刚切过模型时会指认一个根本没跑过的模型，只能当兜底。
     modelId: getStringPayloadField(payload.details, 'model') ?? context?.modelId,
     provider: getStringPayloadField(payload.details, 'provider'),
+    goalAbort: payload.goalAbort === true,
     timestamp: Date.now(),
   };
   const explicitStatus = getNumberPayloadField(payload, 'httpStatus')
@@ -178,9 +179,12 @@ export function attachAgentErrorToLatestAssistant(agentError: AgentErrorMetadata
     // 一次失败会从多个出口各发一条 error，后到的会覆盖先到的。谁带了这一轮真跑的
     // 模型谁更有信息量——别让一条「只有 message」的把带了 provider/model 的盖掉。
     const existing = lastMessage.metadata?.agentError;
-    const merged: AgentErrorMetadata = existing?.provider && !agentError.provider
-      ? { ...agentError, provider: existing.provider, modelId: existing.modelId ?? agentError.modelId }
-      : agentError;
+    const merged: AgentErrorMetadata = {
+      ...(existing?.provider && !agentError.provider
+        ? { ...agentError, provider: existing.provider, modelId: existing.modelId ?? agentError.modelId }
+        : agentError),
+      ...(existing?.goalAbort || agentError.goalAbort ? { goalAbort: true } : {}),
+    };
     store.updateMessage(lastMessage.id, {
       metadata: { ...lastMessage.metadata, agentError: merged },
     });

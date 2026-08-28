@@ -263,6 +263,7 @@ export class TelemetryStorage {
         turnId,
         messageId,
         input.rating,
+        // 自由文本是不可信数据；将来任何消费方都不得把它拼成 agent / model 指令。
         guardTelemetryText(input.comment, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
         fullContent,
         createdAt,

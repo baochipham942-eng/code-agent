@@ -134,6 +134,32 @@ describe('TelemetryStorage feedback', () => {
     expect(getSessionFeedbackRatings('session-none')).toEqual([]);
   });
 
+  it('upserts a later comment into the same row and clears unselected full content', () => {
+    const storage = new TelemetryStorage();
+    storage.insertSession(createTelemetrySession('session-1', 'user-1', 100));
+
+    const first = storage.recordFeedback({
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      messageId: 'message-1',
+      rating: -1,
+      fullContent: { assistantResponse: 'old answer' },
+    });
+    const second = storage.recordFeedback({
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      messageId: 'message-1',
+      rating: -1,
+      comment: '工具选错了',
+    });
+
+    const row = dbState.sqlite?.prepare(
+      'SELECT id, comment, full_content FROM telemetry_feedback WHERE session_id = ? AND message_id = ?',
+    ).get('session-1', 'message-1') as { id: string; comment: string; full_content: string | null };
+    expect(second?.id).toBe(first?.id);
+    expect(row).toEqual({ id: first?.id, comment: '工具选错了', full_content: null });
+  });
+
   it('scopes unsynced feedback to the active user owner', () => {
     const storage = new TelemetryStorage();
     storage.insertSession(createTelemetrySession('session-owned', 'user-1', 100));

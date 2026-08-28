@@ -133,7 +133,7 @@ describe('assertCompareArmsActivated（跑后：必须有有效配对数据才�
     const makeAgent = (): AgentInterface => ({
       sendMessage: async () => ({ responses: ['done'], toolExecutions: [], turnCount: 1, errors: [] }),
       reset: vi.fn(async () => undefined),
-      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'p' }),
+      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'mock' }),
     });
 
     const result = await runCompare({
@@ -154,7 +154,7 @@ describe('assertCompareArmsActivated（跑后：必须有有效配对数据才�
         return { responses: ['done, all good'], toolExecutions: [], turnCount: 1, errors: [] };
       },
       reset: vi.fn(async () => undefined),
-      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'p' }),
+      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'mock' }),
     });
 
     const result = await runCompare({
@@ -180,7 +180,7 @@ describe('assertCompareArmsActivated（跑后：必须有有效配对数据才�
         return { responses: ['done'], toolExecutions: [], turnCount: 1, errors: [] };
       },
       reset: vi.fn(async () => undefined),
-      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'p' }),
+      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'mock' }),
     });
 
     const result = await runCompare({

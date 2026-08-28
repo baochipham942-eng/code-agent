@@ -45,11 +45,15 @@ function makeSummary(results: TestResult[]): TestRunSummary {
     endTime: 1000,
     duration: 1000,
     total: results.length,
+    plannedCaseIds: results.map((result) => result.testId),
+    completed: true,
     passed: results.filter((r) => r.status === 'passed').length,
     failed: results.filter((r) => r.status === 'failed').length,
     skipped: results.filter((r) => r.status === 'skipped').length,
     partial: results.filter((r) => r.status === 'partial').length,
     infraExcluded: results.filter((r) => r.status === 'infra_excluded').length,
+    notRun: 0,
+    invalidCases: 0,
     averageScore: results.length ? results.reduce((sum, r) => sum + r.score, 0) / results.length : 0,
     results,
     environment: { model: 'mock-model', provider: 'mock', workingDirectory: '/tmp/work' },
@@ -162,7 +166,7 @@ describe('eval-ci report baseline flow', () => {
     const manager = new BaselineManager(root);
     await manager.promote(makeSummary([
       makeResult({ testId: 'case-a', status: 'failed', score: 0, failureReason: 'previous failure' }),
-    ]), 'baseline-sha', 'real');
+    ]), 'baseline-sha', 'real', ['case-a']);
 
     await runEvalCi(root, ['--scope', 'smoke']);
 

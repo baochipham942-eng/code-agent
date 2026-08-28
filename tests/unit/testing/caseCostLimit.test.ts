@@ -122,10 +122,8 @@ describe('单 case 成本硬上限', () => {
       expect(summary.results[0].trials).toHaveLength(1);
 
       const baselineManager = new BaselineManager(root);
-      await baselineManager.promote(summary, 'cost-test-sha', 'real');
-      const baseline = await baselineManager.load();
-      expect(baseline?.globalMetrics.totalCases).toBe(0);
-      expect(baseline?.caseResults['cost-cap']).toBeUndefined();
+      await expect(baselineManager.promote(summary, 'cost-test-sha', 'real', ['cost-cap']))
+        .rejects.toThrow(/成本超限.*cost-cap/);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

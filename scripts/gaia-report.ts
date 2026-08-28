@@ -19,6 +19,7 @@ interface CaseResult {
   score: number;
   duration: number;
   failureReason?: string;
+  invalid?: { reason: 'usage_unavailable' | 'mock_excluded' };
 }
 
 interface ReportJson {
@@ -86,26 +87,26 @@ function main() {
   lines.push(`- 模型：${model}（Agent Neo eval harness，quasi-exact match 判分）`);
   lines.push(`- 生成时间：${new Date().toISOString()}`);
   lines.push('');
-  lines.push('| Level | 题数 | 通过 | infra 排除 | 准确率 | Manus 1.5 | 差距 |');
-  lines.push('|-------|------|------|------------|--------|-----------|------|');
+  lines.push('| Level | 题数 | 通过 | 不计入通过率 | 准确率 | Manus 1.5 | 差距 |');
+  lines.push('|-------|------|------|--------------|--------|-----------|------|');
 
   let totalPassed = 0;
   let totalCap = 0;
   const failures: Array<{ id: string; reason: string }> = [];
   for (const level of levels) {
     const inLevel = [...latest.values()].filter((v) => v.result.testId.startsWith(`gaia-l${level}-`));
-    const infra = inLevel.filter((v) => v.result.status === 'infra_excluded').length;
-    const capability = inLevel.length - infra;
-    const passed = inLevel.filter((v) => v.result.status === 'passed').length;
+    const excluded = inLevel.filter((v) => ['skipped', 'infra_excluded', 'cost_exceeded'].includes(v.result.status)).length;
+    const capability = inLevel.length - excluded;
+    const passed = inLevel.filter((v) => v.result.status === 'passed' && !v.result.invalid).length;
     const acc = capability > 0 ? (passed / capability) * 100 : 0;
     totalPassed += passed;
     totalCap += capability;
     lines.push(
-      `| L${level} | ${inLevel.length} | ${passed} | ${infra} | **${acc.toFixed(1)}%** | ${manus[level].toFixed(1)}% | ${(acc - manus[level]).toFixed(1)}pp |`,
+      `| L${level} | ${inLevel.length} | ${passed} | ${excluded} | **${acc.toFixed(1)}%** | ${manus[level].toFixed(1)}% | ${(acc - manus[level]).toFixed(1)}pp |`,
     );
     for (const v of inLevel) {
-      if (v.result.status !== 'passed' && v.result.status !== 'infra_excluded') {
-        failures.push({ id: v.result.testId, reason: (v.result.failureReason ?? '').slice(0, 160) });
+      if ((v.result.status !== 'passed' || v.result.invalid) && !['skipped', 'infra_excluded', 'cost_exceeded'].includes(v.result.status)) {
+        failures.push({ id: v.result.testId, reason: (v.result.invalid?.reason ?? v.result.failureReason ?? '').slice(0, 160) });
       }
     }
   }
@@ -113,14 +114,14 @@ function main() {
   const manusOverall = (86.5 * 53 + 70.1 * 86 + 57.7 * 26) / 165;
   lines.push(`| **合计** | ${latest.size} | ${totalPassed} | ${latest.size - totalCap} | **${overallAcc.toFixed(1)}%** | ${manusOverall.toFixed(1)}% | ${(overallAcc - manusOverall).toFixed(1)}pp |`);
   lines.push('');
-  // 严格口径：外部榜单不会给"超时/网络"豁免——infra_excluded 全按答错算的保守数字
+  // 严格口径：外部榜单不会给 provider/网络故障豁免，所有计划题都计入通过率。
   const strictAcc = latest.size > 0 ? (totalPassed / latest.size) * 100 : 0;
-  lines.push(`> **严格口径**（infra 排除全按答错计，与外部榜单可比的保守数）：合计 **${strictAcc.toFixed(1)}%**（${totalPassed}/${latest.size}）。`);
+  lines.push(`> **严格口径**（不计入通过率的题全按答错计，与外部榜单可比的保守数）：合计 **${strictAcc.toFixed(1)}%**（${totalPassed}/${latest.size}）。`);
   lines.push('');
   lines.push('## 口径差异（对比 Manus 1.5 时必读）');
   lines.push('');
   lines.push('- 两边都是 GAIA validation 165 题、官方 quasi-exact match 语义；但 Manus 数字来自其官方博客自报，跑法/重试策略/工具面不可见，不是同 harness 复现。');
-  lines.push('- 我们 infra_excluded（429/超时/网络）不进分母（上表单列）；Manus 口径未知。');
+  lines.push('- 我们将环境故障（429/provider 超时/网络）、成本超限与跳过题单列且不计入通过率；Manus 口径未知。');
   lines.push('- 附件题（38/165）我们注入本地附件文件；音频/图片附件对纯文本模型天然不利（无多模态工具时按失败计，不粉饰）。');
   lines.push('- 单跑一次不做 best-of-N；Manus 未公布采样次数。');
   lines.push('');

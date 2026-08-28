@@ -14,7 +14,7 @@ import path from 'path';
 import { TestRunner, type AgentInterface } from '../../../src/host/testing/testRunner';
 import { generateDeltaConsole, generateDeltaMarkdown } from '../../../src/host/testing/ci/deltaReporter';
 import { ExperimentAdapter } from '../../../src/host/evaluation/experimentAdapter';
-import type { BaselineDelta, TestRunSummary } from '../../../src/host/testing/types';
+import type { BaselineDelta, ComparableBaselineDelta, TestRunSummary } from '../../../src/host/testing/types';
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({
@@ -30,10 +30,14 @@ function makeSummary(overrides: Partial<TestRunSummary> = {}): TestRunSummary {
     endTime: 1000,
     duration: 1000,
     total: 0,
+    plannedCaseIds: [],
+    completed: true,
     passed: 0,
     failed: 0,
     skipped: 0,
     partial: 0,
+    notRun: 0,
+    invalidCases: 0,
     averageScore: 0,
     results: [],
     environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },
@@ -42,8 +46,9 @@ function makeSummary(overrides: Partial<TestRunSummary> = {}): TestRunSummary {
   };
 }
 
-function makeDelta(overrides: Partial<BaselineDelta> = {}): BaselineDelta {
+function makeDelta(overrides: Partial<ComparableBaselineDelta> = {}): BaselineDelta {
   return {
+    comparable: true,
     isFirstRun: false,
     passRateDelta: 0,
     scoreDelta: 0,

@@ -43,6 +43,7 @@ import { getSandboxManager } from '../sandbox';
 import { isRedlineCase } from './testCaseClassification';
 import { createScopedCostLimit, isScopedCostLimitExceeded } from '../services/core/scopedCostLimit';
 import { getMockCasePolicy } from './mockEvalPolicy';
+import { completePlannedResults, createNotRunResult, isRealAgentRunCase, markInvalidResultWithoutModel } from './testRunCompletion';
 
 const execAsync = promisify(exec);
 const logger = createLogger('TestRunner');
@@ -59,16 +60,16 @@ function isOsJailActive(): boolean {
 }
 
 /**
- * WP1-2：判定错误是否属基础设施故障（429/超时/5xx/网络）。
+ * WP1-2：判定错误是否属基础设施故障（429/5xx/网络）。
  * 这类失败是环境噪声不是 agent 能力信号，分流进 infra_excluded 桶，
  * 不进能力通过率分母。复用 retryStrategy 的瞬态错误词表（已排除
- * 余额/认证等致命错误——那些走 circuit breaker abort），另补 test
- * harness 自身的超时消息（withTimeout 的 "timeout after Nms"）。
+ * 余额/认证等致命错误——那些走 circuit breaker abort）。harness 自己报出的
+ * "timeout after Nms" 是题目未在总时限内完成，属于能力失败。
  */
 export function isInfraExclusionError(msg: string): boolean {
   // 'fetch failed'：Node fetch/undici 网络不可达的通用报错，不在 retryStrategy
   // 词表里（2026-07-03 断网实测：115 个 case 因此被误记 failed 混进能力分母）
-  return isTransientError(msg) || /timeout after \d+ms/i.test(msg) || /fetch failed/i.test(msg);
+  return isTransientError(msg) || /fetch failed|request timeout after \d+ms/i.test(msg);
 }
 
 /**
@@ -192,10 +193,6 @@ export class TestRunner {
     this.aborted = true;
   }
 
-  private isRealAgentRunCase(testCase: TestCase): boolean {
-    return testCase.tags?.includes('real-agent-run') ?? false;
-  }
-
   private validateRealAgentRunReplay(replay: StructuredReplay | null): string[] {
     const gate = evaluateAgentTrajectoryReplay(replay);
     return gate.exportReady ? [] : gate.failures;
@@ -206,7 +203,7 @@ export class TestRunner {
     result: TestResult,
     agent: AgentInterface,
   ): Promise<void> {
-    const requiresRealAgentRun = this.isRealAgentRunCase(testCase);
+    const requiresRealAgentRun = isRealAgentRunCase(testCase);
     if (result.sessionId) {
       result.replayKey = buildSessionTraceIdentity(result.sessionId).replayKey;
     }
@@ -274,6 +271,9 @@ export class TestRunner {
       failureStage: result.failureStage,
       failureReason: result.failureReason,
       errors: result.errors.length > 0 ? [...result.errors] : undefined,
+      usageStatus: result.usageStatus,
+      mockExcluded: result.mockExcluded,
+      invalid: result.invalid,
     };
   }
 
@@ -301,6 +301,7 @@ export class TestRunner {
       filterIds: this.config.filterIds,
     });
     const sortedCases = sortByDependencies(testCases);
+    const plannedCaseIds = sortedCases.map((testCase) => testCase.id);
 
     logger.info('Starting test run', {
       runId,
@@ -349,7 +350,7 @@ export class TestRunner {
         const result = await this.runSingleTest(testCase);
         results.push(result);
 
-        if (result.status === 'passed' || result.status === 'partial') {
+        if ((result.status === 'passed' || result.status === 'partial') && !result.invalid) {
           passedTests.add(testCase.id);
         }
       } else {
@@ -370,17 +371,17 @@ export class TestRunner {
             break;
           }
 
-          if (this.isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false) {
+          if (isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false) {
             telemetryGateFailureResult ??= result;
           }
 
-          if (!bestResult || result.score > bestResult.score) {
+          if (!bestResult || result.invalid || (!bestResult.invalid && result.score > bestResult.score)) {
             bestResult = result;
           }
         }
 
         if (bestResult) {
-          if (telemetryGateFailureResult) {
+          if (telemetryGateFailureResult && !bestResult.invalid) {
             bestResult = telemetryGateFailureResult;
           }
 
@@ -398,7 +399,7 @@ export class TestRunner {
 
           results.push(bestResult);
 
-          if (bestResult.status === 'passed' || bestResult.status === 'partial') {
+          if ((bestResult.status === 'passed' || bestResult.status === 'partial') && !bestResult.invalid) {
             passedTests.add(testCase.id);
           }
         }
@@ -412,6 +413,9 @@ export class TestRunner {
         }
       }
     }
+
+    const completion = completePlannedResults(sortedCases, results, this.aborted, this.abortReason);
+    results.splice(0, results.length, ...completion.results);
 
     // Build summary
     const endTime = Date.now();
@@ -431,7 +435,7 @@ export class TestRunner {
         && result.status !== 'cost_exceeded',
     );
     const avgScore = nonSkipped.length > 0
-      ? nonSkipped.reduce((sum, r) => sum + r.score, 0) / nonSkipped.length
+      ? nonSkipped.reduce((sum, r) => sum + (r.invalid ? 0 : r.score), 0) / nonSkipped.length
       : 0;
 
     // Compute stability metrics for cases with trials
@@ -447,13 +451,17 @@ export class TestRunner {
       endTime,
       duration: endTime - startTime,
       total: results.length,
-      passed: results.filter((r) => r.status === 'passed').length,
+      plannedCaseIds,
+      completed: completion.completed,
+      passed: results.filter((r) => r.status === 'passed' && !r.invalid).length,
       failed: results.filter((r) => r.status === 'failed').length,
       skipped: results.filter((r) => r.status === 'skipped').length,
       mockExcluded: results.filter((r) => r.mockExcluded !== undefined).length,
       partial: results.filter((r) => r.status === 'partial').length,
       infraExcluded: results.filter((r) => r.status === 'infra_excluded').length,
       costExceeded: results.filter((r) => r.status === 'cost_exceeded').length,
+      notRun: completion.notRun,
+      invalidCases: results.filter((r) => r.invalid !== undefined).length,
       averageScore: avgScore,
       results,
       environment: {
@@ -600,8 +608,9 @@ export class TestRunner {
           const completedCase = sortedCases[completedTask.index];
           completed.add(completedCase.id);
           if (
-            completedTask.result.status === 'passed'
-            || completedTask.result.status === 'partial'
+            (completedTask.result.status === 'passed'
+            || completedTask.result.status === 'partial')
+            && !completedTask.result.invalid
           ) {
             passed.add(completedCase.id);
           }
@@ -648,18 +657,18 @@ export class TestRunner {
         break;
       }
 
-      if (this.isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false) {
+      if (isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false) {
         telemetryGateFailureResult ??= result;
       }
-      if (!bestResult || result.score > bestResult.score) {
+      if (!bestResult || result.invalid || (!bestResult.invalid && result.score > bestResult.score)) {
         bestResult = result;
       }
     }
 
     if (!bestResult) {
-      return this.createSkippedResult(testCase, 'Test run aborted before trial execution');
+      return createNotRunResult(testCase, this.abortReason);
     }
-    if (telemetryGateFailureResult) {
+    if (telemetryGateFailureResult && !bestResult.invalid) {
       bestResult = telemetryGateFailureResult;
     }
 
@@ -701,6 +710,9 @@ export class TestRunner {
       turnCount: 0,
       score: 0,
     };
+    const usesMockEvalPolicy = agent.usesMockEvalPolicy?.() === true;
+    const isMockRun = usesMockEvalPolicy
+      || agent.getAgentInfo().provider === 'mock';
     // 每个 case 都建独立 usage 账，未声明 hard cap 时用有限的最大安全数，仅做归集不触发闸。
     const costTracker = createScopedCostLimit(testCase.max_cost_usd ?? Number.MAX_VALUE);
     if (testCase.max_cost_usd !== undefined) {
@@ -716,9 +728,8 @@ export class TestRunner {
     const injectedFiles: string[] = [];
 
     try {
-      const isMockRun = agent.usesMockEvalPolicy?.() === true;
-      const mockPolicy = isMockRun ? getMockCasePolicy(testCase.id) : undefined;
-      if (isMockRun && !mockPolicy) {
+      const mockPolicy = usesMockEvalPolicy ? getMockCasePolicy(testCase.id) : undefined;
+      if (usesMockEvalPolicy && !mockPolicy) {
         result.status = 'failed';
         result.failureReason = `mock policy 未分类 case: ${testCase.id}`;
         result.failureStage = 'configuration';
@@ -1023,12 +1034,16 @@ export class TestRunner {
       completedExecution = true;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      // WP1-2：429/超时/5xx/网络 → infra 桶，不算 agent 能力失败
-      const killedByTimeout = /timeout after \d+ms/i.test(message);
+      // harness 总时限超限是能力失败；provider/network timeout 仍由瞬态词表归环境故障。
+      const killedByTimeout = !/request timeout after \d+ms/i.test(message)
+        && /timeout after \d+ms/i.test(message);
       if (isScopedCostLimitExceeded(error)) {
         result.status = 'cost_exceeded';
         result.failureStage = 'cost_limit';
         result.score = 0;
+      } else if (killedByTimeout) {
+        result.status = 'failed';
+        result.failureStage = 'timeout';
       } else if (isInfraExclusionError(message)) {
         result.status = 'infra_excluded';
         result.failureStage = 'infra';
@@ -1102,6 +1117,7 @@ export class TestRunner {
       } else {
         result.usageStatus = 'usage_unavailable';
       }
+      markInvalidResultWithoutModel(result, isMockRun);
 
       logger.info('Test completed', {
         testId: testCase.id,
@@ -1201,7 +1217,8 @@ export class TestRunner {
         (result) =>
           result.status !== 'skipped'
           && result.status !== 'infra_excluded'
-          && result.status !== 'cost_exceeded',
+          && result.status !== 'cost_exceeded'
+          && result.status !== 'not_run',
       )
       .map((r) => r.duration);
 

@@ -128,7 +128,8 @@ export class ExperimentAdapter {
     return sanitized;
   }
 
-  private normalizeTestStatus(status: TestResult['status']): EvalCaseStatus {
+  private normalizeTestStatus(status: TestResult['status'], invalid = false): EvalCaseStatus {
+    if (invalid) return 'error';
     if (status === 'passed' || status === 'failed' || status === 'partial' || status === 'skipped') {
       return status;
     }
@@ -434,8 +435,8 @@ export class ExperimentAdapter {
         sessionId: r.sessionId,
         replayKey: r.replayKey || trace?.replayKey,
         telemetryCompleteness,
-        status: this.normalizeTestStatus(r.status),
-        score: this.normalizeScore(r.score ?? (r.status === 'passed' ? 1 : 0), 'zero_one'),
+        status: this.normalizeTestStatus(r.status, r.invalid !== undefined),
+        score: this.normalizeScore(r.invalid ? 0 : (r.score ?? (r.status === 'passed' ? 1 : 0)), 'zero_one'),
         scoreAuthority: r.scoreAuthority,
         durationMs: r.duration || 0,
         failureReason: r.failureReason,
@@ -457,6 +458,8 @@ export class ExperimentAdapter {
           realAgentRun,
           ...(r.killedByTimeout ? { killedByTimeout: true } : {}),
           ...(r.status === 'infra_excluded' ? { infraExcluded: true } : {}),
+          ...(r.status === 'not_run' ? { notRun: true } : {}),
+          ...(r.invalid ? { invalid: r.invalid } : {}),
           ...(r.status === 'cost_exceeded'
             ? {
                 costExceeded: true,
@@ -498,6 +501,11 @@ export class ExperimentAdapter {
       },
       metadata: {
         performance: summary.performance,
+        plannedCaseIds: summary.plannedCaseIds,
+        completed: summary.completed,
+        notRun: summary.notRun,
+        invalidCases: summary.invalidCases,
+        ...(summary.aborted ? { aborted: true, abortReason: summary.abortReason } : {}),
         realAgentRun: {
           passed: cases.filter(c => c.metadata?.realAgentRun && (c.metadata.realAgentRun as { passed?: boolean }).passed).length,
           total: cases.length,

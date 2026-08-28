@@ -121,7 +121,8 @@ export async function runAutoTests(
           console.log(`  ▶️ Running: ${event.testId}`);
           break;
         case 'case_end': {
-          const icon = event.result.status === 'passed' ? '✅' :
+          const icon = event.result.invalid ? '⚠️' :
+                       event.result.status === 'passed' ? '✅' :
                        event.result.status === 'failed' ? '❌' : '⏭️';
           console.log(`  ${icon} ${event.result.testId} (${event.result.duration}ms)`);
           if (event.result.failureReason) {
@@ -164,8 +165,8 @@ export async function runAutoTests(
 
 /**
  * 完成消息的通过率与报告口径一致：
- * 能力分母 = total - skipped - infraExcluded - costExceeded。
- * 分母为 0（全 skipped / 全 infra）时给 0.0%，不产生 NaN/Infinity。
+ * 通过率 = passed / (planned - skipped - infraExcluded - costExceeded)。
+ * 可计题数为 0（全 skipped / 全 infra）时给 0.0%，不产生 NaN/Infinity。
  */
 export function formatAutoTestCompletionMessage(summary: TestRunSummary): string {
   const capabilityTotal =
@@ -176,7 +177,7 @@ export function formatAutoTestCompletionMessage(summary: TestRunSummary): string
   const passRate = capabilityTotal > 0
     ? ((summary.passed / capabilityTotal) * 100).toFixed(1)
     : '0.0';
-  return `Auto-test completed: ${summary.passed}/${summary.total} passed (${passRate}%)`;
+  return `Auto-test completed: ${summary.passed}/${capabilityTotal} passed (${passRate}%); planned ${summary.total}`;
 }
 
 /**

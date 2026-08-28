@@ -1,7 +1,7 @@
 // ============================================================================
 // WP1-2 infra_excluded 失败分桶 — 基础设施故障不进能力分母
 // ============================================================================
-// 429/超时/5xx/网络错是环境噪声不是 agent 能力信号。此前它们被计成 failed，
+// 429/5xx/网络错是环境噪声；harness 总时限超限是能力失败。
 // 逼出「45 子集 + concurrency 1」的流程性回避。分流进 infra 桶后：
 // 能力通过率分母排除、baseline 对账跳过、报告单列 —— 解锁更大 eval 子集。
 // ============================================================================
@@ -75,14 +75,20 @@ describe('testRunner infra 分流', () => {
     expect(summary.infraExcluded).toBe(1);
   });
 
-  it('case 超时 → infra_excluded', async () => {
+  // 2026-08-28 爸拍板 v2.1 §18.13③：harness 总时限从「环境故障（infra_excluded）」反转为「能力失败」。
+  // 后续若再反转，必须在验收证据中留名，不能静默改回旧断言。
+  it('2026-08-28 爸拍板 v2.1 §18.13③ 反转：case 总时限超限 → failed + timeout（不再归 infra）', async () => {
     const summary = await runWith(agentWith(async () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
       return { responses: ['ok'], toolExecutions: [], turnCount: 1, errors: [] };
     }), { timeout: 50 });
 
-    expect(summary.results[0].status).toBe('infra_excluded');
-    expect(summary.infraExcluded).toBe(1);
+    expect(summary.results[0]).toMatchObject({
+      status: 'failed',
+      failureStage: 'timeout',
+      killedByTimeout: true,
+    });
+    expect(summary.infraExcluded).toBe(0);
   });
 
   it('errors 数组带网络错且零产出 → infra_excluded（adapter 不 throw 路径）', async () => {
@@ -177,11 +183,15 @@ function makeSummary(results: TestResult[]): TestRunSummary {
     endTime: 1000,
     duration: 1000,
     total: results.length,
+    plannedCaseIds: results.map((result) => result.testId),
+    completed: true,
     passed: results.filter((r) => r.status === 'passed').length,
     failed: results.filter((r) => r.status === 'failed').length,
     skipped: results.filter((r) => r.status === 'skipped').length,
     partial: results.filter((r) => r.status === 'partial').length,
     infraExcluded: results.filter((r) => r.status === 'infra_excluded').length,
+    notRun: 0,
+    invalidCases: 0,
     averageScore: 1,
     results,
     environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },
@@ -197,12 +207,14 @@ describe('baselineManager 与 infra 桶', () => {
     await manager.promote(makeSummary([
       makeResult({ testId: 'a', status: 'passed' }),
       makeResult({ testId: 'b', status: 'passed' }),
-    ]), 'commit-1', 'real');
+    ]), 'commit-1', 'real', ['a', 'b']);
 
     const delta = await manager.compare(makeSummary([
       makeResult({ testId: 'a', status: 'passed' }),
       makeResult({ testId: 'b', status: 'infra_excluded', score: 0, failureReason: '429' }),
     ]));
+    expect(delta.comparable).toBe(true);
+    if (!delta.comparable) throw new Error(delta.reason);
 
     expect(delta.newFailures).toHaveLength(0);
     // 能力分母 = 1（b 被排除），passRate 1/1 = 100%，无回归
@@ -210,19 +222,14 @@ describe('baselineManager 与 infra 桶', () => {
     expect(delta.isRegression).toBe(false);
   });
 
-  it('promote：infra case 不落 baseline caseResults，totalCases 排除', async () => {
+  it('promote：存在环境故障时拒绝设为基准', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'code-agent-infra-promote-'));
     const manager = new BaselineManager(root);
 
-    await manager.promote(makeSummary([
+    await expect(manager.promote(makeSummary([
       makeResult({ testId: 'a', status: 'passed' }),
       makeResult({ testId: 'b', status: 'infra_excluded', score: 0 }),
-    ]), 'commit-1', 'real');
-
-    const baseline = await manager.load();
-    expect(baseline?.caseResults['b']).toBeUndefined();
-    expect(baseline?.globalMetrics.totalCases).toBe(1);
-    expect(baseline?.globalMetrics.passRate).toBe(1);
+    ]), 'commit-1', 'real', ['a', 'b'])).rejects.toThrow(/环境故障.*b/);
   });
 });
 
@@ -233,7 +240,7 @@ describe('报告与 canonical 映射', () => {
       makeResult({ testId: 'b', status: 'infra_excluded', score: 0, failureReason: '429 rate limit' }),
     ]));
 
-    expect(md).toContain('基础设施排除');
+    expect(md).toContain('不计入通过率（环境故障）');
     expect(md).toContain('429 rate limit');
     // 通过率 1/1 = 100%（b 不进分母）
     expect(md).toContain('| 通过率 | 100.0% |');

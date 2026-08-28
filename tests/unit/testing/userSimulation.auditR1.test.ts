@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe('audit R1-H2: sim turn with exhausted time budget fails loud as timeout', () => {
-  it('marks the case infra_excluded instead of silently passing when no time remains to deliver the reply', async () => {
+  it('marks the case failed at timeout instead of silently passing when no time remains to deliver the reply', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     const root = await mkdtemp(path.join(os.tmpdir(), 'code-agent-sim-h2-'));
     const casesDir = path.join(root, 'cases');
@@ -92,8 +92,10 @@ describe('audit R1-H2: sim turn with exhausted time budget fails loud as timeout
 
     const summary = await runner.runAll();
     const result = summary.results[0];
-    // 绝不允许 passed（拒绝从未送达 = 没有能力数据）；按存量 timeout 语义走 infra 桶
-    expect(result.status).toBe('infra_excluded');
+    // 2026-08-28 爸拍板 v2.1 §18.13③：harness 总时限从环境故障反转为能力失败。
+    // 后续若再反转，必须在验收证据中明确留名，不能静默改回旧断言。
+    expect(result.status).toBe('failed');
+    expect(result.failureStage).toBe('timeout');
     expect(result.failureReason).toMatch(/timeout after \d+ms/i);
   });
 });

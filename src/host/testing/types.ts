@@ -584,7 +584,7 @@ export interface TestRunnerConfig {
  * Test event for real-time updates
  */
 export type TestEvent =
-  | { type: 'suite_start'; suite: string; totalCases: number }
+  | { type: 'suite_start'; suite: string; totalCases: number; plannedCaseIds: string[] }
   | { type: 'case_start'; testId: string; description: string }
   | { type: 'case_end'; result: TestResult }
   | { type: 'suite_end'; summary: TestRunSummary }

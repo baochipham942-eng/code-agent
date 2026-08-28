@@ -3,7 +3,7 @@
 // ============================================================================
 
 import chalk from 'chalk';
-import type { TestRunSummary, BaselineDelta } from '../types';
+import type { TestRunSummary, BaselineDelta, ComparableBaselineDelta } from '../types';
 
 // ---------------------------------------------------------------------------
 // WP1-4：预测对账 — prompt 改动登记的 predictedFixes/riskTasks vs 实际翻转
@@ -24,7 +24,7 @@ interface PredictionReconciliation {
 
 function reconcilePrediction(
   summary: TestRunSummary,
-  delta: BaselineDelta,
+  delta: ComparableBaselineDelta,
 ): PredictionReconciliation | null {
   const prediction = summary.prediction;
   if (!prediction) return null;
@@ -57,6 +57,12 @@ export function generateDeltaMarkdown(
 
   lines.push('## Eval Delta Report');
   lines.push('');
+
+  if (!delta.comparable) {
+    lines.push(`> ${delta.reason}`);
+    lines.push('');
+    return lines.join('\n');
+  }
 
   if (delta.isFirstRun) {
     lines.push('> **First run** — no baseline to compare against.');
@@ -161,6 +167,12 @@ export function generateDeltaConsole(
   lines.push('');
   lines.push(chalk.bold('  Eval Delta Report'));
   lines.push(chalk.dim('  ' + '─'.repeat(50)));
+
+  if (!delta.comparable) {
+    lines.push(chalk.yellow(`  ${delta.reason}`));
+    lines.push('');
+    return lines.join('\n');
+  }
 
   if (delta.isFirstRun) {
     lines.push(chalk.yellow('  First run — no baseline to compare'));

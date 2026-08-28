@@ -14,11 +14,15 @@ function makeSummary(overrides: Partial<TestRunSummary>): TestRunSummary {
     endTime: 1,
     duration: 1,
     total: 0,
+    plannedCaseIds: [],
+    completed: true,
     passed: 0,
     failed: 0,
     skipped: 0,
     partial: 0,
     infraExcluded: 0,
+    notRun: 0,
+    invalidCases: 0,
     averageScore: 0,
     results: [],
     environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },
@@ -31,7 +35,8 @@ describe('formatAutoTestCompletionMessage', () => {
   it('infra_excluded 不进能力分母（与 WP1-2 口径一致）', () => {
     const msg = formatAutoTestCompletionMessage(makeSummary({ total: 2, passed: 1, infraExcluded: 1 }));
     expect(msg).toContain('(100.0%)');
-    expect(msg).toContain('1/2 passed');
+    expect(msg).toContain('1/1 passed');
+    expect(msg).toContain('planned 2');
   });
 
   it('skipped 不进能力分母', () => {

@@ -81,11 +81,15 @@ function makeSummary(results: TestResult[], averageScore: number): TestRunSummar
     endTime: 1000,
     duration: 1000,
     total: results.length,
+    plannedCaseIds: results.map((result) => result.testId),
+    completed: true,
     passed: results.filter((r) => r.status === 'passed').length,
     failed: results.filter((r) => r.status === 'failed').length,
     skipped: 0,
     partial: 0,
     infraExcluded: 0,
+    notRun: 0,
+    invalidCases: 0,
     averageScore,
     results,
     environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },
@@ -115,7 +119,7 @@ describe('baselineManager 用实测噪声带替换固定 maxScoreDrop', () => {
   it('有噪声带文件 → compare 用实测 maxScoreDrop（0.10 掉分在 0.15 固定门下漏报，实测 0.04 门下报回归）', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'noise-baseline-'));
     const manager = new BaselineManager(root);
-    await manager.promote(makeSummary([makeResult({ testId: 'a' })], 1.0), 'commit-1', 'real');
+    await manager.promote(makeSummary([makeResult({ testId: 'a' })], 1.0), 'commit-1', 'real', ['a']);
 
     await saveNoiseBand(path.join(root, '.code-agent'), {
       version: 1,
@@ -127,6 +131,8 @@ describe('baselineManager 用实测噪声带替换固定 maxScoreDrop', () => {
     });
 
     const delta = await manager.compare(makeSummary([makeResult({ testId: 'a', score: 0.9 })], 0.9));
+    expect(delta.comparable).toBe(true);
+    if (!delta.comparable) throw new Error(delta.reason);
     expect(delta.isRegression).toBe(true);
     expect(delta.regressionDetails.join(' ')).toContain('4.0%');
   });
@@ -134,9 +140,11 @@ describe('baselineManager 用实测噪声带替换固定 maxScoreDrop', () => {
   it('无噪声带文件 → 维持默认 0.15 行为（0.10 掉分不算回归）', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'noise-baseline-default-'));
     const manager = new BaselineManager(root);
-    await manager.promote(makeSummary([makeResult({ testId: 'a' })], 1.0), 'commit-1', 'real');
+    await manager.promote(makeSummary([makeResult({ testId: 'a' })], 1.0), 'commit-1', 'real', ['a']);
 
     const delta = await manager.compare(makeSummary([makeResult({ testId: 'a', score: 0.9 })], 0.9));
+    expect(delta.comparable).toBe(true);
+    if (!delta.comparable) throw new Error(delta.reason);
     expect(delta.isRegression).toBe(false);
   });
 });

@@ -92,7 +92,7 @@ describe('接入 summary 与报告', () => {
           }
         : { responses: ['done'], toolExecutions: [], turnCount: 1, errors: [] },
       reset: vi.fn(async () => undefined),
-      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'p' }),
+      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'mock' }),
     });
 
     const result = await runCompare({

@@ -60,7 +60,7 @@ describe('compare 无效对排除', () => {
         return okOutput();
       },
       reset: vi.fn(async () => undefined),
-      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'p' }),
+      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'mock' }),
     });
 
     const result = await runCompare({
@@ -85,7 +85,7 @@ describe('compare 无效对排除', () => {
         return okOutput();
       },
       reset: vi.fn(async () => undefined),
-      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'p' }),
+      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'mock' }),
     });
 
     const result = await runCompare({
@@ -108,7 +108,7 @@ describe('compare 无效对排除', () => {
         return okOutput();
       },
       reset: vi.fn(async () => undefined),
-      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'p' }),
+      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'mock' }),
     });
 
     const result = await runCompare({
@@ -128,7 +128,7 @@ describe('compare 无效对排除', () => {
         return okOutput();
       },
       reset: vi.fn(async () => undefined),
-      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'p' }),
+      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'mock' }),
     });
 
     const result = await runCompare({
@@ -141,5 +141,22 @@ describe('compare 无效对排除', () => {
     expect(md).toContain('503');
     const console_ = generateComparisonConsole(result);
     expect(console_).toContain('排除');
+  });
+
+  it('real 侧 usage 缺失即使有输出也排除 pair', async () => {
+    const makeAgent = (): AgentInterface => ({
+      sendMessage: async () => okOutput(),
+      reset: vi.fn(async () => undefined),
+      getAgentInfo: () => ({ name: 'real-fixture', model: 'm', provider: 'openai' }),
+    });
+
+    const result = await runCompare({
+      testCases: [CASES[0]], baseline: BASELINE, candidate: CANDIDATE,
+      makeAgent, runnerConfig: await runnerConfig(),
+    });
+
+    expect(result.summary.excludedPairs).toBe(1);
+    expect(result.summary.totalCases).toBe(0);
+    expect(result.cases[0].excludedReason).toContain('没调真模型');
   });
 });

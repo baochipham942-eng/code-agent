@@ -25,18 +25,30 @@ function makeSummary(overrides: Partial<TestRunSummary> = {}): TestRunSummary {
     startTime: 0,
     endTime: 1000,
     duration: 1000,
-    total: 10,
-    passed: 9,
+    total: 2,
+    plannedCaseIds: ['a', 'b'],
+    completed: true,
+    passed: 1,
     failed: 1,
     skipped: 0,
     partial: 0,
-    averageScore: 0.9,
+    notRun: 0,
+    invalidCases: 0,
+    averageScore: 0.5,
     results: [
-      { testId: 'a', status: 'passed', score: 1, endTime: 1000 } as any,
-      { testId: 'b', status: 'failed', score: 0 } as any,
+      {
+        testId: 'a', description: 'a', status: 'passed', score: 1,
+        duration: 1, startTime: 0, endTime: 1, toolExecutions: [], responses: [], errors: [], turnCount: 1,
+      },
+      {
+        testId: 'b', description: 'b', status: 'failed', score: 0,
+        duration: 1, startTime: 0, endTime: 1, toolExecutions: [], responses: [], errors: [], turnCount: 1,
+      },
     ],
+    environment: { model: 'model', provider: 'provider', workingDirectory: '/tmp' },
+    performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 2 },
     ...overrides,
-  } as TestRunSummary;
+  };
 }
 
 function makeTrendPoint(overrides: Partial<TrendDataPoint> = {}): TrendDataPoint {
@@ -67,23 +79,23 @@ afterEach(async () => {
 describe('BaselineManager 来源护栏', () => {
   it('拒绝把 mock 运行晋升为 baseline', async () => {
     const manager = new BaselineManager(workingDir);
-    await expect(manager.promote(makeSummary(), 'sha-mock', 'mock')).rejects.toThrow(/mock/i);
+    await expect(manager.promote(makeSummary(), 'sha-mock', 'mock', ['a', 'b'])).rejects.toThrow(/mock/i);
     // 未写盘
     expect(await manager.load()).toBeNull();
   });
 
   it('real 晋升时 baseline 记录 mode=real', async () => {
     const manager = new BaselineManager(workingDir);
-    await manager.promote(makeSummary(), 'sha-real', 'real');
+    await manager.promote(makeSummary(), 'sha-real', 'real', ['a', 'b']);
     const baseline = await manager.load();
     expect(baseline).not.toBeNull();
     expect(baseline!.mode).toBe('real');
-    expect(baseline!.globalMetrics.passRate).toBeCloseTo(0.9);
+    expect(baseline!.globalMetrics.passRate).toBeCloseTo(0.5);
   });
 
-  it('mode 默认按 real 处理（向后兼容旧调用）', async () => {
+  it('显式 real 模式可晋升', async () => {
     const manager = new BaselineManager(workingDir);
-    await manager.promote(makeSummary(), 'sha-default');
+    await manager.promote(makeSummary(), 'sha-default', 'real', ['a', 'b']);
     const baseline = await manager.load();
     expect(baseline!.mode).toBe('real');
   });

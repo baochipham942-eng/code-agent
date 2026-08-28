@@ -37,6 +37,8 @@ function summary(results: TestResult[]): TestRunSummary {
     endTime: 1,
     duration: 1,
     total: results.length,
+    plannedCaseIds: results.map((item) => item.testId),
+    completed: true,
     passed: results.filter((item) => item.status === 'passed').length,
     failed: results.filter((item) => item.status === 'failed').length,
     partial: results.filter((item) => item.status === 'partial').length,
@@ -44,6 +46,8 @@ function summary(results: TestResult[]): TestRunSummary {
     mockExcluded: results.filter((item) => item.mockExcluded).length,
     infraExcluded: 0,
     costExceeded: 0,
+    notRun: 0,
+    invalidCases: 0,
     averageScore: 1,
     results,
     environment: { provider: 'mock', model: 'mock-model', workingDirectory: '/tmp' },
@@ -58,6 +62,7 @@ describe('mock harness baseline', () => {
       result('real-only-b', 'skipped', { reason: 'requires real model' }),
     ]);
     const firstRunDelta = {
+      comparable: true as const,
       isFirstRun: true,
       passRateDelta: 0,
       scoreDelta: 0,
@@ -74,19 +79,20 @@ describe('mock harness baseline', () => {
     expect(markdown).toContain('requires real model');
   });
 
-  it('与 real baseline 分文件，使用 denominatorVersion=3 并保留排除名单', async () => {
+  it('与 real baseline 分文件，使用 denominatorVersion=4 并保留排除名单', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'mock-harness-baseline-'));
     roots.push(root);
     const manager = new BaselineManager(root, { kind: 'mock-harness' });
     await manager.promoteMockHarness(summary([
       result('fixture-a', 'passed'),
       result('real-only-b', 'skipped', { reason: 'requires real model' }),
-    ]), 'sha-mock');
+    ]), 'sha-mock', ['fixture-a', 'real-only-b']);
 
     const baseline = await manager.load();
     expect(baseline).toMatchObject({
       mode: 'mock',
-      denominatorVersion: 3,
+      denominatorVersion: 4,
+      plannedCaseIds: ['fixture-a', 'real-only-b'],
       globalMetrics: { passRate: 1, averageScore: 1, totalCases: 1 },
       excludedCases: { 'real-only-b': 'requires real model' },
     });
@@ -104,6 +110,6 @@ describe('mock harness baseline', () => {
 
     await expect(manager.promoteMockHarness(summary([
       result('fixture-a', 'partial'),
-    ]), 'sha-mock')).rejects.toThrow(/全绿|passed|partial/i);
+    ]), 'sha-mock', ['fixture-a'])).rejects.toThrow(/全绿|passed|partial/i);
   });
 });

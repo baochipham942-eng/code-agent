@@ -8,16 +8,25 @@ const quickModelState = vi.hoisted(() => ({
     status: number;
     at: number;
   } | null,
+  modelFailure: null as {
+    provider?: string;
+    model?: string;
+    failureReason: 'invalid_response' | 'not_configured';
+    status?: number;
+    at: number;
+  } | null,
 }));
 
 vi.mock('../../../src/host/model/quickModel', () => ({
   getQuickModelAuthFailure: () => quickModelState.failure,
+  getQuickModelFailure: () => quickModelState.modelFailure,
 }));
 
 import { checkQuickModelAuth } from '../../../src/host/diagnostics/checks/quickModelAuth';
 
 beforeEach(() => {
   quickModelState.failure = null;
+  quickModelState.modelFailure = null;
 });
 
 describe('checkQuickModelAuth', () => {
@@ -25,7 +34,26 @@ describe('checkQuickModelAuth', () => {
     expect(checkQuickModelAuth()).toEqual([
       expect.objectContaining({
         status: 'skip',
-        message: '尚未发生快模型鉴权失败',
+        message: '最近未检测到快模型失败',
+      }),
+    ]);
+  });
+
+  it('SSE/JSON 响应格式失败通过现有 Doctor provider_health 通道暴露', () => {
+    quickModelState.modelFailure = {
+      provider: 'custom-tokenrhythm',
+      model: 'deepseek-v4-flash',
+      failureReason: 'invalid_response',
+      status: 200,
+      at: Date.now(),
+    };
+
+    expect(checkQuickModelAuth()).toEqual([
+      expect.objectContaining({
+        status: 'fail',
+        name: '快模型健康',
+        message: '快模型（custom-tokenrhythm / deepseek-v4-flash）响应格式异常，HTTP 200，记忆判定或写回可能已降级',
+        fix: { code: DOCTOR_FIX_CODES.OPEN_PROVIDER_SETTINGS },
       }),
     ]);
   });

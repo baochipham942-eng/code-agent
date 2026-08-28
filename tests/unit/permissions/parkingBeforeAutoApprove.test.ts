@@ -92,18 +92,32 @@ describe('停车判定先于自动批准', () => {
     await expect(island.requestPermission({ type: 'file_write', tool: 'write_file', details: { path: '/tmp/x' }, sessionId: 'attended' })).resolves.toEqual({ approved: true, approvalSource: 'dev-auto-approve' });
   });
 
-  it('没有显式审批处理器时保留 AUTO_TEST=true 兜底放行', async () => {
+  it('2026-08-28 爸拍板 v2 §1.4/§12 删除 AUTO_TEST 后门：directory_access 仍走停车台账', async () => {
     vi.stubEnv('AUTO_TEST', 'true');
     const repo = makeRepo();
     const island = makeIsland({}, repo);
 
+    const result = island.requestPermission({
+      type: 'directory_access',
+      tool: 'request_directory',
+      details: { path: '/tmp/auto-test-must-park' },
+      sessionId: 'auto-test-must-park',
+    });
+
+    expect(await isStillPending(result)).toBe(true);
+    expect(repo.insert).toHaveBeenCalledOnce();
+  });
+
+  it('2026-08-28 爸拍板 v2 §1.4/§12 删除 AUTO_TEST 后门：停车台账不可用仍 fail-closed', async () => {
+    vi.stubEnv('AUTO_TEST', 'true');
+    const island = makeIsland({}, undefined);
+
     await expect(island.requestPermission({
       type: 'directory_access',
       tool: 'request_directory',
-      details: { path: '/tmp/legacy-auto-test' },
-      sessionId: 'legacy-auto-test',
-    })).resolves.toEqual({ approved: true });
-    expect(repo.insert).not.toHaveBeenCalled();
+      details: { path: '/tmp/auto-test-no-repo' },
+      sessionId: 'auto-test-no-repo',
+    })).resolves.toEqual({ approved: false, denialSource: 'fail-closed' });
   });
 
   it('AUTO_TEST=false 不放行目录扩权请求', async () => {
@@ -145,6 +159,35 @@ describe('停车判定先于自动批准', () => {
       type: 'permission_request',
       data: expect.objectContaining({ resolved: true, decision: 'timeout' }),
     }));
+  });
+
+  it('AUTO_TEST=true 的普通 file_write 仍走正常审批路径', async () => {
+    vi.useFakeTimers();
+    vi.stubEnv('AUTO_TEST', 'true');
+    const onEvent = vi.fn();
+    const island = new OrchestratorPermissionIsland({
+      getSettings: () => settings({}),
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'main',
+      hasApprovalUi: () => false,
+      onEvent,
+      injectedPendingApprovalRepo: makeRepo(),
+    });
+
+    const result = island.requestPermission({
+      type: 'file_write',
+      tool: 'write_file',
+      details: { path: '/tmp/auto-test-normal-approval.txt' },
+      sessionId: 'auto-test-normal-approval',
+    });
+
+    expect(await isStillPending(result)).toBe(true);
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'permission_request',
+      data: expect.objectContaining({ type: 'file_write' }),
+    }));
+    await vi.advanceTimersByTimeAsync(60_000);
+    await expect(result).resolves.toEqual({ approved: false, denialSource: 'timeout' });
   });
 
   it('async_agent 的 catalog 只读 MCP 工具仍免审放行，不停车', async () => {

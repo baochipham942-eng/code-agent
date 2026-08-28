@@ -113,7 +113,11 @@ describe('UserQuestionCard（G2 打断式选项卡）', () => {
     expect(screen.getByText('第一题选哪个？')).toBeTruthy();
     expect(screen.queryByText('第二题选哪些？')).toBeNull();
     expect(screen.getByText(zh.userQuestion.stepOf(1, 3))).toBeTruthy();
-    expect(screen.getByTestId('user-question-progress')).toBeTruthy();
+    const progress = screen.getByTestId('user-question-progress');
+    const progressSegments = progress.querySelectorAll('[data-state]');
+    expect(progressSegments).toHaveLength(3);
+    expect(progressSegments[0].className).toContain('bg-mark-info');
+    expect(progressSegments[1].className).toContain('bg-zinc-700');
     const firstNext = screen.getByRole('button', { name: zh.userQuestion.next });
     expect((firstNext as HTMLButtonElement).disabled).toBe(true);
 

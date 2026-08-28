@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { PermissionRequest } from '../../../src/shared/contract';
 
 const invoke = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -126,7 +126,7 @@ describe('PermissionCard 紧凑/展开判据', () => {
     expect(document.body.textContent).not.toContain('docs.search');
   });
 
-  it('工作区外 Write 默认展开，摘要带关键定语并压成一句后果', () => {
+  it('工作区外 Write 默认展开，拒绝是主按钮且 Enter 执行安全侧', async () => {
     renderRequest(externalWrite);
 
     const card = screen.getByTestId('permission-card').firstElementChild as HTMLElement;
@@ -136,6 +136,23 @@ describe('PermissionCard 紧凑/展开判据', () => {
     expect(screen.getByTestId('permission-consequence').textContent).toContain('/Users/me/Documents/report.md');
     expect(document.body.textContent).not.toContain('Write');
     expect(document.body.textContent).not.toContain('会访问');
+
+    const reject = screen.getByRole('button', { name: /拒绝/ });
+    const allow = screen.getByRole('button', { name: /允许一次/ });
+    expect(reject.className).toContain('from-primary-800');
+    expect(reject.className).toContain('ml-auto');
+    expect(allow.className).toContain('border-red-500/50');
+    expect(document.activeElement).toBe(reject);
+
+    fireEvent.keyDown(window, { key: 'Enter' });
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        'agent:permission-response',
+        externalWrite.id,
+        'deny',
+        externalWrite.sessionId,
+      );
+    });
   });
 
   it('danger 默认展开：规则后果含路径和文件数，Enter 无效，拒绝是右侧蓝色主按钮', () => {

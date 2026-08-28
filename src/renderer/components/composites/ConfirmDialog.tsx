@@ -55,12 +55,18 @@ export interface ConfirmDialogProps {
   onConfirm: () => void;
   /** Cancel/close callback */
   onCancel: () => void;
+  /** Optional close/Esc/backdrop callback when dismissal differs from the secondary action. */
+  onDismiss?: () => void;
   /** If true, only show confirm button (no cancel) */
   singleAction?: boolean;
   /** Custom icon override */
   icon?: React.ReactNode;
   /** Whether confirm button is disabled */
   confirmDisabled?: boolean;
+  /** Whether cancel button is disabled */
+  cancelDisabled?: boolean;
+  /** Give the primary confirm action initial keyboard focus. */
+  confirmAutoFocus?: boolean;
 }
 
 export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
@@ -72,9 +78,12 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   cancelText,
   onConfirm,
   onCancel,
+  onDismiss,
   singleAction = false,
   icon,
   confirmDisabled = false,
+  cancelDisabled = false,
+  confirmAutoFocus = false,
 }) => {
   const config = variantConfig[variant];
   const displayIcon = icon || config.icon;
@@ -82,7 +91,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   return (
     <Modal
       isOpen={isOpen}
-      onClose={singleAction ? undefined : onCancel}
+      onClose={singleAction ? undefined : (onDismiss ?? onCancel)}
       title={title}
       size="md"
       closeOnBackdropClick={!singleAction}
@@ -101,6 +110,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           onConfirm={onConfirm}
           confirmColorClass={config.confirmColorClass}
           confirmDisabled={confirmDisabled}
+          cancelDisabled={cancelDisabled}
+          confirmAutoFocus={confirmAutoFocus}
           hideCancel={singleAction}
         />
       }

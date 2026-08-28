@@ -16,8 +16,7 @@ import {
   type InputRedirectReceiptMetadata,
   type AgentEvent,
 } from '../../../shared/contract';
-import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
-import { generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
+import { type StructuredOutputConfig, type StructuredOutputResult, generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
 import type { PlanningService } from '../../planning';
 import { recordSessionStart } from '../../lightMemory/sessionMetadata';
 import { getLangfuseService, getBudgetService } from '../../services';
@@ -42,7 +41,7 @@ import { DoomLoopGuard } from './doomLoopGuard';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
 // Import refactored modules
-import type { AgentLoopConfig } from '../../agent/loopTypes';
+import { type AgentLoopConfig, WRITE_TOOLS } from '../../agent/loopTypes';
 import { buildDynamicPromptV2 } from '../../prompts/builder';
 import { detectTaskFeatures } from '../../prompts/systemReminders';
 import { getSessionRecoveryService } from '../../agent/sessionRecovery';
@@ -51,7 +50,6 @@ import {
   setSessionTodos,
   syncTodosToSessionTasks,
 } from '../../agent/todoParser';
-import { WRITE_TOOLS } from '../../agent/loopTypes';
 import { decideNextAction, type LoopState } from '../loopDecision';
 import type { RuntimeContext } from './runtimeContext';
 import type { ToolExecutionEngine } from './toolExecutionEngine';
@@ -1212,9 +1210,7 @@ export class ConversationRuntime {
     displayContent?: string,
     expectedTurnId?: string,
   ): Promise<void> {
-    if (this.ctx.control.isSettled) {
-      throw new SteerRejectedError();
-    }
+    if (this.ctx.control.isSettled) throw new SteerRejectedError();
     if (expectedTurnId && expectedTurnId !== this.ctx.turn.currentTurnId) {
       throw new SteerRejectedError('TURN_CHANGED');
     }

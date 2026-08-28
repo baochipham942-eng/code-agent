@@ -540,13 +540,6 @@ function getFolderTrustService(): FolderTrustService {
   return singleton;
 }
 
-export function configureFolderTrustService(
-  options: { defaultProjectConfigTrust?: boolean },
-): void {
-  closeFolderTrustService();
-  configureFolderTrustServiceOptions(options);
-}
-
 /**
  * 关闭本服务持有的主库连接。退出路径必须调用 —— 本服务对
  * `<userConfigDir>/code-agent.db` 开了一条独立连接，不关的话

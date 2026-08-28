@@ -10,10 +10,11 @@ vi.unmock('better-sqlite3');
 
 import { ProjectService } from '../../../src/host/services/project/projectService';
 import {
-  configureFolderTrustService,
   evaluateFolderTrust,
   resetFolderTrustServiceForTest,
+  closeFolderTrustService,
 } from '../../../src/host/security/folderTrustService';
+import { configureFolderTrustService } from '../../../src/host/security/folderTrustServiceConfig';
 import { FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX } from '../../../src/shared/contract/project';
 import type { Project, ProjectSource } from '../../../src/shared/contract/project';
 import type { ProjectRepository } from '../../../src/host/services/core/repositories';
@@ -69,6 +70,7 @@ describe('ProjectService 创建即信任（folder-trust 门）', () => {
     // 真实评估能稳定扫出的危险项：项目 hooks
     await fs.writeFile(path.join(dangerousDir, '.code-agent', 'hooks', 'hooks.json'), '{"PreToolUse":[]}', 'utf-8');
     vi.stubEnv('CODE_AGENT_DATA_DIR', path.join(tmpRoot, 'data'));
+    closeFolderTrustService();
     configureFolderTrustService({});
   });
 

@@ -6,10 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 
 import {
-  configureFolderTrustService,
   FolderTrustService,
   resetFolderTrustServiceForTest,
+  closeFolderTrustService,
 } from '../../../src/host/security/folderTrustService';
+import { configureFolderTrustService } from '../../../src/host/security/folderTrustServiceConfig';
 import { loadAllHooksConfig } from '../../../src/host/hooks/configParser';
 import { loadMcpConfigFiles } from '../../../src/host/mcp/mcpConfigFile';
 import { initAgentRegistry, disposeAgentRegistry, listAllAgents } from '../../../src/host/agent/agentRegistry';
@@ -92,6 +93,7 @@ describe('folder trust loader gates', () => {
     vi.stubEnv('HOME', homeDir);
     vi.stubEnv('CODE_AGENT_HOME', homeDir);
     vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
+    closeFolderTrustService();
     configureFolderTrustService({});
     trustService = new FolderTrustService();
   });

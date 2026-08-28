@@ -7,10 +7,11 @@ vi.unmock('better-sqlite3');
 
 import Database from 'better-sqlite3';
 import {
-  configureFolderTrustService,
   FolderTrustService,
   resetFolderTrustServiceForTest,
+  closeFolderTrustService,
 } from '../../../src/host/security/folderTrustService';
+import { configureFolderTrustService } from '../../../src/host/security/folderTrustServiceConfig';
 import { getUserConfigDir } from '../../../src/host/config/configPaths';
 
 async function writeFile(filePath: string, content = '{}'): Promise<void> {
@@ -29,6 +30,7 @@ describe('FolderTrustService', () => {
     projectDir = path.join(tmpRoot, 'project');
     await fs.mkdir(projectDir, { recursive: true });
     vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
+    closeFolderTrustService();
     configureFolderTrustService({});
   });
 

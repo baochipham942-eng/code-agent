@@ -7,6 +7,7 @@ import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter
 import { getProviderHealthMonitor } from '../../../src/host/model/providerHealthMonitor';
 import { checkProviderHealth } from '../../../src/host/diagnostics/checks/providerHealth';
 import type { StreamChunk, StreamCallback } from '../../../src/host/model/types';
+import type { StreamSnapshot } from '../../../src/host/model/providers/sseStream';
 import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
@@ -212,6 +213,34 @@ describe('inferenceViaAiSdk —— 流式映射', () => {
       name: 'Write',
       arguments: { file_path: '/tmp/demo.html', content: '<h1>ok</h1>' },
     }]);
+  });
+
+  it('工具参数流式中被停止时，abort 出口把周期内最新 action 与文件名刷进恢复快照', async () => {
+    vi.mocked(streamText).mockReturnValue(fakeStream([
+      { type: 'tool-input-start', id: 'call_write', toolName: 'Write' },
+      { type: 'tool-input-delta', id: 'call_write', delta: '{"file_path":"/workspace/reload-proof.md",' },
+      { type: 'tool-input-delta', id: 'call_write', delta: '"content":"not executed"}' },
+      { type: 'abort' },
+    ]));
+    const snapshots: StreamSnapshot[] = [];
+
+    await expect(inferenceViaAiSdk(
+      [{ role: 'user', content: 'write' }],
+      [],
+      CONFIG,
+      makeCollector().onStream,
+      undefined,
+      { onSnapshot: (snapshot) => snapshots.push(snapshot) },
+    )).rejects.toThrow('Request was cancelled');
+
+    expect(snapshots.at(-1)).toMatchObject({
+      isFinal: false,
+      toolCalls: [{
+        id: 'call_write',
+        name: 'Write',
+        arguments: '{"file_path":"/workspace/reload-proof.md","content":"not executed"}',
+      }],
+    });
   });
 
   it('reasoning + text：thinking 累积、reasoning 实时回调', async () => {

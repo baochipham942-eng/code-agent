@@ -298,6 +298,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
 
     // Stream snapshot state
     let lastSnapshotTime = 0;
+    let terminalSnapshotEmitted = false;
     const snapshotInterval = snapshotIntervalMs ?? 3000;
 
     // Chunk-gap inactivity watchdog state（提到 Promise 顶层以便 signal abort 路径访问）
@@ -324,6 +325,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
 
     function emitSnapshot(isFinal: boolean) {
       if (!onSnapshot) return;
+      if (isFinal) terminalSnapshotEmitted = true;
       onSnapshot({
         content,
         reasoning,
@@ -766,6 +768,9 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
       signal.addEventListener('abort', () => {
         clearHeadersTimer();
         clearInactivityTimer();
+        // 与 AI SDK 流式适配器同一恢复契约：周期窗口内已收到的工具参数也必须在
+        // abort 前落盘，否则 reload 只能退回没有文件名的空恢复快照。
+        if (!terminalSnapshotEmitted && (content || reasoning || toolCalls.size > 0)) emitSnapshot(false);
         req.destroy();
         reject(new Error('Request was cancelled'));
       }, { once: true });

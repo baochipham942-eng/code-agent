@@ -5,6 +5,7 @@
 import type { ModelConfig } from './model';
 import type { AgentEngineSessionMetadata } from './agentEngine';
 import type { SessionWorkbenchProvenance, SessionWorkbenchSnapshot } from './sessionWorkspace';
+import type { StreamInterruptionReason } from './message';
 
 /**
  * 会话运行状态
@@ -63,6 +64,8 @@ export interface StreamRecoverySnapshot {
   streamStatus: 'incomplete' | 'complete';
   stableForExecution: boolean;
   incompleteToolCallIds: string[];
+  /** Host-recorded cause that survives an immediate reload before the marker message is re-read. */
+  interruptionReason?: StreamInterruptionReason;
   /** Recovery snapshots are display-only and never repopulate a tool queue. */
   executionToolCalls?: [];
 }

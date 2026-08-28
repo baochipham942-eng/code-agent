@@ -9,12 +9,37 @@
 // 后续事件才能自然命中同一条消息无缝续接，不需要额外映射表。
 // ============================================================================
 
-import type { Message, StreamInterruptionReason, ToolCall } from '@shared/contract';
+import type { Message, SessionStatus, StreamInterruptionReason, ToolCall } from '@shared/contract';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
 import { deriveStreamInterruptionReason } from './streamInterruptionPresentation';
 
 /** metadata 标记：这条 assistant 消息是从 streamSnapshot 回填的（非 DB 落库消息）。 */
 const STREAM_RECOVERY_META_KEY = 'streamRecovery';
+
+const TERMINAL_RECOVERY_SESSION_STATUSES: ReadonlySet<SessionStatus> = new Set([
+  'completed',
+  'error',
+  'interrupted',
+  'orphaned',
+  'idle',
+]);
+
+/**
+ * session.load 可能撞在「终态已落库、run registry 尚未释放」的尾窗。此时 activeRun
+ * 只是清理中的内存残影，不能重新点亮 renderer 的 active turn 与侧栏 spinner。
+ */
+export function isTerminalRecoverySessionStatus(
+  status: SessionStatus | null | undefined,
+): boolean {
+  return Boolean(status && TERMINAL_RECOVERY_SESSION_STATUSES.has(status));
+}
+
+export function isSessionActiveForStreamRecovery(session: {
+  activeRun?: boolean;
+  status?: SessionStatus;
+}): boolean {
+  return Boolean(session.activeRun) && !isTerminalRecoverySessionStatus(session.status);
+}
 
 export function isStreamRecoveryMessage(message: Message, turnId?: string): boolean {
   const marker = message.metadata?.[STREAM_RECOVERY_META_KEY];
@@ -30,7 +55,19 @@ function parseSnapshotToolArguments(raw: string): Record<string, unknown> {
       return parsed as Record<string, unknown>;
     }
   } catch {
-    // 半截参数：工具节点照常渲染（无 result → 呈现为在途），参数留空。
+    // 流式中断常留下半截 JSON。完整的前置字符串字段仍是可信快照证据，尤其是
+    // Write/Edit 的 file_path；若整段 parse 失败就全部丢弃，reload 后只能退成无文件名文案。
+    const recovered: Record<string, unknown> = {};
+    const completeStringProperty = /"((?:\\.|[^"\\])*)"\s*:\s*"((?:\\.|[^"\\])*)"/gu;
+    for (const match of raw.matchAll(completeStringProperty)) {
+      try {
+        const key = JSON.parse(`"${match[1]}"`) as string;
+        recovered[key] = JSON.parse(`"${match[2]}"`) as string;
+      } catch {
+        // 单个字段转义损坏时跳过；其他已经完整的字段仍可用于恢复呈现。
+      }
+    }
+    return recovered;
   }
   return {};
 }
@@ -82,7 +119,9 @@ export function mergeStreamSnapshotIntoMessages(
       snapshot,
       // 切走后仍在运行的会话会靠同一条 recovery message 接收后续 delta，不能把它
       // 提前收成“应用重启时中断”；只有宿主已无 active run 的恢复快照才是回放终态。
-      isSessionActive ? null : deriveStreamInterruptionReason(messages, snapshot.turnId),
+      isSessionActive
+        ? null
+        : snapshot.interruptionReason ?? deriveStreamInterruptionReason(messages, snapshot.turnId),
     ),
   ];
 }

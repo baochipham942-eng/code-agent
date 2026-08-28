@@ -16,8 +16,7 @@ import {
   type InputRedirectReceiptMetadata,
   type AgentEvent,
 } from '../../../shared/contract';
-import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
-import { generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
+import { type StructuredOutputConfig, type StructuredOutputResult, generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
 import type { PlanningService } from '../../planning';
 import { recordSessionStart } from '../../lightMemory/sessionMetadata';
 import { getLangfuseService, getBudgetService } from '../../services';
@@ -42,7 +41,7 @@ import { DoomLoopGuard } from './doomLoopGuard';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
 // Import refactored modules
-import type { AgentLoopConfig } from '../../agent/loopTypes';
+import { type AgentLoopConfig, WRITE_TOOLS } from '../../agent/loopTypes';
 import { buildDynamicPromptV2 } from '../../prompts/builder';
 import { detectTaskFeatures } from '../../prompts/systemReminders';
 import { getSessionRecoveryService } from '../../agent/sessionRecovery';
@@ -51,7 +50,6 @@ import {
   setSessionTodos,
   syncTodosToSessionTasks,
 } from '../../agent/todoParser';
-import { WRITE_TOOLS } from '../../agent/loopTypes';
 import { decideNextAction, type LoopState } from '../loopDecision';
 import type { RuntimeContext } from './runtimeContext';
 import type { ToolExecutionEngine } from './toolExecutionEngine';
@@ -86,6 +84,7 @@ import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair'
 import { classifyIntent } from '../../telemetry/intentClassifier';
 import { markDistilledSkillTurnSignal } from '../../services/skills/distillSignalStore';
 import { emitGoalAbort } from './goalAbort';
+import { markStreamSnapshotInterruptionReason } from '../../session/streamSnapshot';
 
 
 const logger = createLogger('AgentLoop');
@@ -1141,13 +1140,13 @@ export class ConversationRuntime {
    * 这一条：2026-08-01 真机实测，转向那条路只 abortInference 不留 partial，被打断
    * 那一轮写了一半的长回答在库里一个字都没有。
    */
-  private async preserveStreamedPartial(suffix: string): Promise<InputRedirectReceiptMetadata['partial']> {
-    if (!this.ctx.turn.lastStreamedContent) return { charCount: 0 };
+  private async preserveStreamedPartial(suffix: string, options: { persistMarkerWithoutText?: boolean } = {}): Promise<InputRedirectReceiptMetadata['partial']> {
     const streamedContent = this.ctx.turn.lastStreamedContent;
+    if (!streamedContent && !options.persistMarkerWithoutText) return { charCount: 0 };
     const partialMessage: Message = {
       id: generateMessageId(),
       role: 'assistant',
-      content: streamedContent + suffix,
+      content: streamedContent ? streamedContent + suffix : suffix.trim(),
       timestamp: Date.now(),
     };
     this.ctx.messages.push(partialMessage);
@@ -1169,10 +1168,13 @@ export class ConversationRuntime {
     // 这时再标 cancelled / preserve partial 会把同一条完整回复追加标记后写成第二行。
     if (this.ctx.control.isSettled) return;
 
+    markStreamSnapshotInterruptionReason({ workingDir: this.ctx.workingDirectory, sessionId: this.ctx.sessionId }, reason === 'session-switch' ? 'session-switch' : 'user');
     this.ctx.control.markCancelled();
 
     await this.preserveStreamedPartial(
       reason === 'session-switch' ? '\n\n[未完成 — 切换会话中断]' : '\n\n[cancelled]',
+      // tool-only 流也落 marker；中断投影会过滤它，不形成第三行。
+      { persistMarkerWithoutText: true },
     );
     this.ctx.control.abortInference();
     this.ctx.control.abortRun();
@@ -1208,9 +1210,7 @@ export class ConversationRuntime {
     displayContent?: string,
     expectedTurnId?: string,
   ): Promise<void> {
-    if (this.ctx.control.isSettled) {
-      throw new SteerRejectedError();
-    }
+    if (this.ctx.control.isSettled) throw new SteerRejectedError();
     if (expectedTurnId && expectedTurnId !== this.ctx.turn.currentTurnId) {
       throw new SteerRejectedError('TURN_CHANGED');
     }

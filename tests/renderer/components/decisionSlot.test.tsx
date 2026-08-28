@@ -327,6 +327,66 @@ describe('DecisionSlot', () => {
     await waitFor(() => expect(screen.queryByTestId('decision-slot')).toBeNull());
   });
 
+  it('空周期快照也走完整版，并用原请求补 action，不消费光秃版文案', () => {
+    const snapshot: StreamRecoverySnapshot = {
+      sessionId: 'session-current',
+      turnId: 'interrupted-empty-snapshot',
+      content: '',
+      reasoning: '',
+      toolCalls: [],
+      estimatedTokens: 0,
+      timestamp: 1,
+      isFinal: false,
+      streamStatus: 'incomplete',
+      stableForExecution: false,
+      incompleteToolCallIds: [],
+    };
+    const retryMessage: Message = {
+      id: 'user-empty-snapshot',
+      role: 'user',
+      content: '写入 reload-proof.md',
+      timestamp: 0,
+    };
+
+    render(<DecisionSlot streamInterruption={{
+      snapshot,
+      retryMessage,
+      onContinue: vi.fn().mockResolvedValue(true),
+    }} />);
+
+    expect(screen.getByTestId('stream-interruption-decision').textContent)
+      .toContain('上次回复中断，写入 reload-proof.md 未执行');
+  });
+
+  it('半截 Write 参数仍从快照恢复文件名并走完整版', () => {
+    const snapshot: StreamRecoverySnapshot = {
+      sessionId: 'session-current',
+      turnId: 'interrupted-partial-write',
+      content: '',
+      reasoning: '',
+      toolCalls: [{
+        id: 'write-partial',
+        name: 'Write',
+        arguments: '{"file_path":"/workspace/reload-proof.md","content":"未完成',
+      }],
+      estimatedTokens: 2,
+      timestamp: 1,
+      isFinal: false,
+      streamStatus: 'incomplete',
+      stableForExecution: false,
+      incompleteToolCallIds: ['write-partial'],
+    };
+
+    render(<DecisionSlot streamInterruption={{
+      snapshot,
+      retryMessage: { id: 'u-partial', role: 'user', content: '写文件', timestamp: 0 },
+      onContinue: vi.fn().mockResolvedValue(true),
+    }} />);
+
+    expect(screen.getByTestId('stream-interruption-decision').textContent)
+      .toContain('上次回复中断，写入 reload-proof.md 未执行');
+  });
+
   it('Enter 触发同一继续 handler；放弃只清掉当前中断槽位', async () => {
     const snapshot = {
       sessionId: 'session-current',

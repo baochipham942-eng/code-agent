@@ -59,12 +59,19 @@ function writeInterruptionDecision(sessionId: string | null, turnId: string, dec
   }
 }
 
-function interruptionSummary(snapshot: StreamRecoverySnapshot, t: ReturnType<typeof useI18n>['t']): string {
+function interruptionSummary(
+  snapshot: StreamRecoverySnapshot,
+  retryMessage: Message,
+  t: ReturnType<typeof useI18n>['t'],
+): string {
   const firstToolCall = buildStreamRecoveryMessage(snapshot).toolCalls?.[0];
-  if (!firstToolCall) return t.chat.streamInterruptedDecisionText;
-  const action = humanizeInterruptedToolAction(firstToolCall, t);
+  // 工具流在第一个周期快照前就被打断时，仍按完整版呈现；原请求是此时唯一可复核的
+  // action 证据。正常 Write/Edit 路径由 snapshot 工具参数给出文件名，不会走这里。
+  const action = firstToolCall
+    ? humanizeInterruptedToolAction(firstToolCall, t)
+    : retryMessage.content.trim();
   return t.chat.streamInterruptedDecision
-    .replace('{action}', action)
+    .replace('{action}', action || t.chat.unknownTool)
     .replace('{extra}', snapshot.toolCalls.length > 1
       ? t.chat.streamInterruptedDecisionExtra.replace('{count}', String(snapshot.toolCalls.length - 1))
       : '');
@@ -77,7 +84,7 @@ const StreamInterruptionDecisionRow: React.FC<{
 }> = ({ decision, sessionId, onResolved }) => {
   const { t } = useI18n();
   const [isContinuing, setIsContinuing] = useState(false);
-  const summary = interruptionSummary(decision.snapshot, t);
+  const summary = interruptionSummary(decision.snapshot, decision.retryMessage, t);
   const resolve = useCallback((result: 'continued' | 'abandoned') => {
     writeInterruptionDecision(sessionId, decision.snapshot.turnId, result);
     onResolved(decision.snapshot.turnId);

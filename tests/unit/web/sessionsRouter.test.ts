@@ -352,13 +352,17 @@ describe('createSessionsRouter', () => {
   it('attaches the on-disk stream snapshot to restored sessions (desktop loadSession parity)', async () => {
     // F4：web 路由此前不随 load 返回 streamSnapshot，renderer 切会话重水化
     // 拿不到 partial 内容。这里用真实 saveStreamSnapshot 落盘 + 真实路由读取验证接线。
-    const { saveStreamSnapshot } = await import('../../../src/host/session/streamSnapshot');
+    const {
+      markStreamSnapshotInterruptionReason,
+      saveStreamSnapshot,
+    } = await import('../../../src/host/session/streamSnapshot');
     const workingDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ctf-sessions-router-')));
     const sessionId = 'session-snapshot';
     saveStreamSnapshot(
       { content: '已生成的部分', reasoning: '', toolCalls: [], estimatedTokens: 4, timestamp: Date.now(), isFinal: false },
       { workingDir, sessionId, runId: 'run-snapshot-1', turnId: 'turn-snapshot-1' },
     );
+    markStreamSnapshotInterruptionReason({ workingDir, sessionId }, 'user');
     const restoreSession = vi.fn(async () => ({
       id: sessionId,
       title: 'DB session',
@@ -382,6 +386,7 @@ describe('createSessionsRouter', () => {
       turnId: 'turn-snapshot-1',
       content: '已生成的部分',
       streamStatus: 'incomplete',
+      interruptionReason: 'user',
     }));
   });
 

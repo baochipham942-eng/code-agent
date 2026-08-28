@@ -13,6 +13,7 @@ import { createLogger } from '../services/infra/logger';
 import { CONFIG_DIR_NEW } from '../config/configPaths';
 import { redactSecrets, sanitizeLogValue } from '../security/secretRedaction';
 import type { StreamSnapshot } from '../model/providers/sseStream';
+import type { StreamInterruptionReason } from '../../shared/contract';
 
 const logger = createLogger('StreamSnapshot');
 
@@ -52,8 +53,40 @@ export interface PersistedSnapshot extends StreamSnapshot {
   streamStatus: 'incomplete' | 'complete';
   stableForExecution: false;
   incompleteToolCallIds: string[];
+  interruptionReason?: StreamInterruptionReason;
   /** Recovery is evidence-only. Tool execution must always start from a fresh model turn. */
   executionToolCalls: [];
+}
+
+/** Persist the stop cause before cancellation publishes a terminal session state. */
+export function markStreamSnapshotInterruptionReason(
+  selector: StreamSnapshotSelector,
+  reason: StreamInterruptionReason,
+): void {
+  try {
+    const owner = readOwner(selector);
+    if (!owner) return;
+    const filePath = getStreamSnapshotPath({
+      ...selector,
+      runId: owner.runId,
+      turnId: '__mark_interruption__',
+    });
+    const snapshot = readJsonFile<PersistedSnapshot>(filePath);
+    if (
+      snapshot?.schemaVersion !== SNAPSHOT_SCHEMA_VERSION
+      || snapshot.sessionId !== owner.sessionId
+      || snapshot.runId !== owner.runId
+      || snapshot.isFinal
+    ) return;
+    atomicWriteJson(filePath, {
+      ...snapshot,
+      interruptionReason: reason,
+      updatedAt: Date.now(),
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.debug(`Failed to mark stream snapshot interruption reason: ${message}`);
+  }
 }
 
 function requireIdentityPart(value: string, name: string): string {
@@ -224,6 +257,11 @@ function writeOwnedSnapshot(snapshot: StreamSnapshot, identity: StreamSnapshotId
 
   const sanitized = sanitizeSnapshot(snapshot);
   const incompleteToolCallIds = getIncompleteToolCallIds(sanitized);
+  const filePath = getStreamSnapshotPath(identity);
+  const previous = readJsonFile<PersistedSnapshot>(filePath);
+  const interruptionReason = previous?.runId === owner.runId
+    ? previous.interruptionReason
+    : undefined;
   const data: PersistedSnapshot = {
     ...sanitized,
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
@@ -235,9 +273,10 @@ function writeOwnedSnapshot(snapshot: StreamSnapshot, identity: StreamSnapshotId
     streamStatus: sanitized.isFinal ? 'complete' : 'incomplete',
     stableForExecution: false,
     incompleteToolCallIds,
+    ...(interruptionReason ? { interruptionReason } : {}),
     executionToolCalls: [],
   };
-  atomicWriteJson(getStreamSnapshotPath(identity), data);
+  atomicWriteJson(filePath, data);
   return true;
 }
 

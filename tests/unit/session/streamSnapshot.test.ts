@@ -8,6 +8,7 @@ import {
   getIncompleteToolCallIds,
   getStreamSnapshotPath,
   loadStreamSnapshot,
+  markStreamSnapshotInterruptionReason,
   saveStreamSnapshot,
   type StreamSnapshotIdentity,
 } from '../../../src/host/session/streamSnapshot';
@@ -125,6 +126,32 @@ describe('stream snapshot run isolation', () => {
       executionToolCalls: [],
     });
     expect(snapshot?.toolCalls).toHaveLength(1);
+  });
+
+  it('records the interruption reason on the owned incomplete snapshot', () => {
+    saveStreamSnapshot(partialSnapshot('partial'), identity());
+
+    markStreamSnapshotInterruptionReason(
+      { workingDir: tempDir, sessionId: 'session-1' },
+      'user',
+    );
+
+    expect(loadStreamSnapshot({ workingDir: tempDir, sessionId: 'session-1' }))
+      .toMatchObject({ interruptionReason: 'user' });
+  });
+
+  it('keeps the interruption reason when the abort flush writes the last partial', () => {
+    const handler = createSnapshotHandler(identity());
+    handler(partialSnapshot('before stop'));
+    markStreamSnapshotInterruptionReason(
+      { workingDir: tempDir, sessionId: 'session-1' },
+      'user',
+    );
+
+    handler(partialSnapshot('abort flush'));
+
+    expect(loadStreamSnapshot({ workingDir: tempDir, sessionId: 'session-1' }))
+      .toMatchObject({ content: 'abort flush', interruptionReason: 'user' });
   });
 
   it('explicitly discards an unscoped legacy snapshot instead of attaching it to a session', () => {

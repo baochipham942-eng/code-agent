@@ -1,5 +1,6 @@
 import type { Message, StreamInterruptionReason, ToolCall } from '@shared/contract';
 import type { Translations } from '../i18n';
+import { resolveStreamInterruptionOutcomeKey } from '../i18n/outcomeWords';
 import {
   getToolFilePath,
   humanizeToolStep,
@@ -51,14 +52,7 @@ export function getStreamInterruptionReasonLabel(
   reason: StreamInterruptionReason,
   t: Translations,
 ): string {
-  switch (reason) {
-    case 'user':
-      return t.outcomeWords['cancelled-by-user'].timeline.reason;
-    case 'session-switch':
-      return t.outcomeWords['cancelled-session-switch'].timeline.reason;
-    case 'app-restart':
-      return t.outcomeWords['cancelled-restart'].timeline.reason;
-  }
+  return t.outcomeWords[resolveStreamInterruptionOutcomeKey(reason)].timeline.reason;
 }
 
 function basename(filePath: string): string {

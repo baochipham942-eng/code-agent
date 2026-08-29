@@ -8,6 +8,23 @@ const caseBank = vi.hoisted(() => ({
   enumerate: vi.fn(async () => [{ id: 'case-1' }]),
   save: vi.fn(async () => ({ action: 'archive', id: 'case-1', file: '01.yaml' })),
 }));
+const panelProbe = vi.hoisted(() => ({
+  inspect: vi.fn(() => ({
+    model: 'deepseek-chat',
+    provider: 'deepseek',
+    priceTableVersion: 1,
+    estimatedCostPerCaseUsd: 0.0021,
+    splitCounts: { 'held-in': 76, 'held-out': 52, safety: 12 },
+    quickCheck: { tags: ['core-path'], maxCases: 12 },
+    environment: {
+      available: true,
+      message: '评测环境已就绪',
+      packaged: false,
+      platform: 'darwin',
+      osJail: { enabled: false, available: true, active: false },
+    },
+  })),
+}));
 
 vi.mock('../../../src/host/ipc/adminGuard', () => ({
   getAdminAccessIpcError: () => guard.denied
@@ -26,6 +43,10 @@ vi.mock('../../../src/host/evaluation/evalEnvironment', () => ({
 vi.mock('../../../src/host/testing/caseBank', () => ({
   enumerateCaseBank: caseBank.enumerate,
   saveCaseBank: caseBank.save,
+}));
+
+vi.mock('../../../src/host/evaluation/evalRunPanelProbe', () => ({
+  inspectEvalRunPanel: panelProbe.inspect,
 }));
 
 import { registerEvaluationHandlers } from '../../../src/host/ipc/evaluation.ipc';
@@ -54,6 +75,7 @@ describe('evaluation run IPC admin gate', () => {
     guard.denied = true;
     caseBank.enumerate.mockClear();
     caseBank.save.mockClear();
+    panelProbe.inspect.mockClear();
   });
 
   it('rejects all three mutating/stream channels before reaching the bridge', async () => {
@@ -103,5 +125,16 @@ describe('evaluation run IPC admin gate', () => {
     expect(bridge.startRun).toHaveBeenCalledTimes(1);
     expect(bridge.subscribe).toHaveBeenCalledTimes(1);
     expect(bridge.abortRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the read-only run-panel probe on the event channel without a run id', async () => {
+    guard.denied = false;
+    const { handlers, bridge } = setup();
+
+    await expect(handlers.get(EVALUATION_CHANNELS.RUN_EVENTS)!(null))
+      .resolves.toMatchObject({ model: 'deepseek-chat', priceTableVersion: 1 });
+
+    expect(panelProbe.inspect).toHaveBeenCalledTimes(1);
+    expect(bridge.subscribe).not.toHaveBeenCalled();
   });
 });

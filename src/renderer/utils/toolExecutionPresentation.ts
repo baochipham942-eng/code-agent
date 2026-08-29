@@ -65,7 +65,7 @@ export interface HumanizedToolError {
 
 /**
  * host 为了闭合取消/崩溃时的孤儿 tool call 会落一条英文占位结果。
- * 它是给后续模型的上下文补丁，renderer 只展示「已中断」。
+ * 它是给后续模型的上下文补丁，renderer 按主动取消/被动中断展示统一状态词。
  */
 export function isToolInterruptionPlaceholder(error: string | undefined): boolean {
   if (!error) return false;
@@ -78,6 +78,14 @@ export function isToolInterruptionPlaceholder(error: string | undefined): boolea
       || normalized.includes('no result')
     )
   );
+}
+
+function resolveToolInterruptionPlaceholderOutcomeKey(
+  error: string | undefined,
+): ToolTerminalOutcomeKey {
+  return error?.toLowerCase().includes('process crashed')
+    ? 'interrupted-restart'
+    : 'interrupted-unknown';
 }
 
 /** 分类结果（无文案，纯逻辑）——humanizeToolError 在此基础上补 t 驱动的文案。 */
@@ -157,7 +165,23 @@ export function resolveToolTerminalOutcomeKey(
   toolCall: Pick<ToolCall, 'result'>,
 ): ToolTerminalOutcomeKey {
   const result = toolCall.result;
-  if (isToolInterruptionPlaceholder(result?.error)) return 'cancelled-restart';
+  if (isToolInterruptionPlaceholder(result?.error)) {
+    return resolveToolInterruptionPlaceholderOutcomeKey(result?.error);
+  }
+
+  const cancellationReason = result?.metadata?.cancellationReason;
+  if (typeof cancellationReason === 'string') {
+    if (cancellationReason === 'user-cancel' || cancellationReason === 'user_cancelled') {
+      return 'cancelled-by-user';
+    }
+    if (cancellationReason === 'timeout' || cancellationReason === 'idle-timeout') {
+      return 'failed-timeout';
+    }
+    if (cancellationReason === 'parent-cancel' || cancellationReason === 'parent_cancel') {
+      return 'interrupted-by-parent';
+    }
+    return 'interrupted-unknown';
+  }
 
   const failureCode = inferAgentFailureCode({
     failureCode: result?.metadata?.failureCode,
@@ -182,9 +206,11 @@ export function resolveToolTerminalOutcomeKey(
     case AgentFailureCode.ModelError:
       return 'failed-model';
     case AgentFailureCode.CancelledByUser:
-      return 'cancelled-by-user';
+      return result?.metadata?.failureCode === AgentFailureCode.CancelledByUser
+        ? 'cancelled-by-user'
+        : 'interrupted-unknown';
     case AgentFailureCode.CancelledByParent:
-      return 'cancelled-by-parent';
+      return 'interrupted-by-parent';
     case AgentFailureCode.WorkflowStageFailed:
     case AgentFailureCode.Unknown:
       break;
@@ -304,9 +330,10 @@ export function humanizeToolError(
   metadata?: Record<string, unknown> | null,
 ): HumanizedToolError | null {
   if (isToolInterruptionPlaceholder(error)) {
+    const outcome = t.outcomeWords[resolveToolInterruptionPlaceholderOutcomeKey(error)].badge;
     return {
-      summary: t.outcomeWords['cancelled-restart'].badge.label,
-      detail: t.outcomeWords['cancelled-restart'].badge.reason,
+      summary: outcome.label,
+      detail: outcome.reason,
     };
   }
   const hostReason = readHostReasonFromMetadata(metadata);

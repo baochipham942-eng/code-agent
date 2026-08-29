@@ -5,6 +5,7 @@ import type { EvalRunStamp } from '../../../shared/contract/evaluation';
 import { formatDuration } from '../../../shared/utils/format';
 import { getRunStampReportRows } from '../runStampReport';
 import { describeSignTest, SIGN_TEST_ALPHA } from './signTest';
+import { failureCodeLabel, loadProjectFailureCodebook } from '../failureCodes';
 
 type ComparisonRunStampContext = {
   gitCommit: string;
@@ -85,6 +86,11 @@ export function generateComparisonMarkdown(
   }
   lines.push('');
   lines.push(`> ${summary.verdict}`);
+  lines.push('');
+
+  lines.push('## 失败原因分布');
+  lines.push('');
+  lines.push(...generateArmFailureDistribution(result));
   lines.push('');
 
   // 排除的 pair（WP1-3b）：没跑成 ≠ 势均力敌，单列不进胜负
@@ -202,4 +208,74 @@ function getWinnerIcon(c: CaseComparison): string {
   if (c.realWinner === 'baseline') return chalk.cyan('◆');
   if (c.realWinner === 'candidate') return chalk.magenta('◆');
   return chalk.yellow('◇');
+}
+
+function comparisonFailureLabel(code: string): string {
+  try {
+    const codebook = loadProjectFailureCodebook();
+    return failureCodeLabel(codebook, code);
+  } catch {
+    return code === 'unknown' ? '未归类' : code;
+  }
+}
+
+function comparisonDispositionLabel(disposition: string): string {
+  if (disposition === 'retryable') return '可以重试';
+  if (disposition === 'not_in_denominator') return '不计入通过率';
+  if (disposition === 'needs_human') return '需要人工确认';
+  if (disposition.startsWith('known_issue:')) return `已知问题 ${disposition.slice('known_issue:'.length)}`;
+  return disposition;
+}
+
+function failureForRole(c: CaseComparison, role: 'baseline' | 'candidate') {
+  return c.assignment.A === role ? c.failureA : c.failureB;
+}
+
+function countArmFailures(
+  cases: CaseComparison[],
+  role: 'baseline' | 'candidate',
+): { codes: Record<string, number>; dispositions: Record<string, number> } {
+  const codes: Record<string, number> = { unknown: 0 };
+  const dispositions: Record<string, number> = {};
+  for (const c of cases) {
+    const failure = failureForRole(c, role);
+    if (!failure) continue;
+    codes[failure.code] = (codes[failure.code] ?? 0) + 1;
+    for (const disposition of failure.dispositions) {
+      dispositions[disposition] = (dispositions[disposition] ?? 0) + 1;
+    }
+  }
+  return { codes, dispositions };
+}
+
+function generateArmFailureDistribution(result: ComparisonResult): string[] {
+  const baseline = countArmFailures(result.cases, 'baseline');
+  const candidate = countArmFailures(result.cases, 'candidate');
+  const codes = [...new Set([...Object.keys(baseline.codes), ...Object.keys(candidate.codes)])]
+    .sort((left, right) => (
+      (baseline.codes[right] ?? 0) + (candidate.codes[right] ?? 0)
+      - (baseline.codes[left] ?? 0) - (candidate.codes[left] ?? 0)
+      || left.localeCompare(right)
+    ));
+  const dispositions = [...new Set([
+    ...Object.keys(baseline.dispositions),
+    ...Object.keys(candidate.dispositions),
+  ])].sort();
+  return [
+    '| 失败原因 | 对照组 | 实验组 |',
+    '|----------|--------|--------|',
+    ...codes.map((code) => (
+      `| ${comparisonFailureLabel(code)} <span style="color:#888"><code>${code}</code></span> | ${baseline.codes[code] ?? 0} | ${candidate.codes[code] ?? 0} |`
+    )),
+    '',
+    '### 处置标签',
+    '',
+    '| 处置 | 对照组 | 实验组 |',
+    '|------|--------|--------|',
+    ...(dispositions.length > 0
+      ? dispositions.map((disposition) => (
+          `| ${comparisonDispositionLabel(disposition)} | ${baseline.dispositions[disposition] ?? 0} | ${candidate.dispositions[disposition] ?? 0} |`
+        ))
+      : ['| 暂无 | 0 | 0 |']),
+  ];
 }

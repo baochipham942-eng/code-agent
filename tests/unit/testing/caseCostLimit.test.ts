@@ -58,6 +58,10 @@ describe('单 case 成本硬上限', () => {
     expect(result.status).toBe('cost_exceeded');
     expect(result.failureStage).toBe('cost_limit');
     expect(result.failureReason).toContain('成本超限');
+    expect(result.failure).toMatchObject({
+      code: 'unknown',
+      dispositions: expect.arrayContaining(['not_in_denominator']),
+    });
     expect(result.costUsd).toBeGreaterThan(result.costLimitUsd!);
     expect(result.usageStatus).toBe('available');
     expect(result.usage).toMatchObject({
@@ -120,6 +124,7 @@ describe('单 case 成本硬上限', () => {
       expect(summary.failed).toBe(0);
       expect(summary.averageScore).toBe(0);
       expect(summary.results[0].trials).toHaveLength(1);
+      expect(summary.failureDistribution).toEqual({ unknown: 1 });
 
       const baselineManager = new BaselineManager(root);
       await expect(baselineManager.promote(summary, 'cost-test-sha', 'real', ['cost-cap']))

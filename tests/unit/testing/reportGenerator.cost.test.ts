@@ -25,6 +25,7 @@ function summary(results: TestResult[]): TestRunSummary {
     runId: 'cost-report', startTime: 0, endTime: 1, duration: 1,
     total: results.length, passed: results.length, failed: 0, partial: 0, skipped: 0,
     plannedCaseIds: results.map((item) => item.testId), completed: true, notRun: 0, invalidCases: 0,
+    failureDistribution: { unknown: 0 },
     averageScore: 1, results,
     aggregationRule: 'pass_rate_k1', aggregationRuleVersion: 4,
     stamp: { ...UNKNOWN_EVAL_RUN_STAMP, aggregationRuleVersion: 4 },

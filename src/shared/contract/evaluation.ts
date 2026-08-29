@@ -13,6 +13,12 @@ import type {
 export const EVAL_RUN_EVENT_SCHEMA_VERSION = 2 as const;
 export const EVAL_REPEAT_MAX = 10;
 
+export interface EvalFailureClassification {
+  code: string;
+  dispositions: string[];
+  symptoms: string[];
+}
+
 export interface EvalRunStamp {
   caseBankSha: string;
   evalSet: {
@@ -105,6 +111,36 @@ interface EvalRunStartConfig extends EvalRunStamp {
   testCaseDir: string;
 }
 
+export interface EvalEnvironmentProbe {
+  available: boolean;
+  message: string;
+  packaged: boolean;
+  platform: NodeJS.Platform;
+  osJail: {
+    enabled: boolean;
+    available: boolean;
+    active: boolean;
+  };
+}
+
+export interface EvalRunPanelProbe {
+  environment: EvalEnvironmentProbe;
+  model: string;
+  provider: string;
+  priceTableVersion: number;
+  estimatedCostPerCaseUsd: number;
+  splitCounts: Record<'held-in' | 'held-out' | 'safety', number>;
+  quickCheck: {
+    tags: string[];
+    maxCases: number;
+  };
+}
+
+export interface EvalRunSubscriptionResult {
+  runId: string;
+  running: boolean;
+}
+
 type EvalRunEventStatus =
   | 'pending'
   | 'running'
@@ -134,6 +170,8 @@ export type EvalRunEventSummary = {
   completed: boolean;
   notRun: number;
   invalidCases: number;
+  failureDistribution?: Record<string, number>;
+  failureCodebookSource?: 'project' | 'bundled';
   gitCommit?: string;
   persistenceWarning?: string;
   aborted?: boolean;
@@ -179,6 +217,7 @@ export type EvalRunEvent =
       durationMs: number;
       failureReason?: string;
       failureStage?: string;
+      failure?: EvalFailureClassification;
       usageStatus?: 'available' | 'usage_unavailable';
       costUsd?: number;
       mockExcluded?: boolean;
@@ -331,6 +370,7 @@ export interface CanonicalEvalCase {
   durationMs: number;
   failureReason?: string;
   failureStage?: string;
+  failure?: EvalFailureClassification;
   trials?: CanonicalEvalTrial[];
   metadata?: Record<string, unknown>;
 }
@@ -388,6 +428,9 @@ export interface EvalExperimentSummary {
   /** 0-1 均分（legacy Eval Center UI 口径）。 */
   avgScore?: number;
   duration?: number;
+  completed?: boolean;
+  notRun?: number;
+  aborted?: boolean;
 }
 
 export interface EvalExperimentListItem {
@@ -400,6 +443,8 @@ export interface EvalExperimentListItem {
   /** 落盘来源：test-runner / eval-harness / regression。 */
   source: string;
   gitCommit: string | null;
+  /** RUNSTAMP 尚未落齐时允许字段缺失，消费方必须回落 unknown。 */
+  config?: Record<string, unknown> | null;
   summary: EvalExperimentSummary | null;
 }
 

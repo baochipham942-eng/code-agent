@@ -81,9 +81,16 @@ describe('testRunner infra 分流', () => {
       throw new Error('Request failed with status code 429: rate limit exceeded');
     }));
 
-    expect(summary.results[0].status).toBe('infra_excluded');
+    expect(summary.results[0]).toMatchObject({
+      status: 'infra_excluded',
+      failure: {
+        code: 'unknown',
+        dispositions: expect.arrayContaining(['retryable', 'not_in_denominator']),
+      },
+    });
     expect(summary.failed).toBe(0);
     expect(summary.infraExcluded).toBe(1);
+    expect(summary.failureDistribution).toEqual({ unknown: 1 });
   });
 
   // 2026-08-28 爸拍板 v2.1 §18.13③：harness 总时限从「环境故障（infra_excluded）」反转为「能力失败」。
@@ -98,8 +105,10 @@ describe('testRunner infra 分流', () => {
       status: 'failed',
       failureStage: 'timeout',
       killedByTimeout: true,
+      failure: { code: 'timeout', dispositions: expect.not.arrayContaining(['not_in_denominator']) },
     });
     expect(summary.infraExcluded).toBe(0);
+    expect(summary.failureDistribution).toEqual({ unknown: 0, timeout: 1 });
   });
 
   it('errors 数组带网络错且零产出 → infra_excluded（adapter 不 throw 路径）', async () => {
@@ -110,7 +119,10 @@ describe('testRunner infra 分流', () => {
       errors: ['inference error: socket hang up'],
     })));
 
-    expect(summary.results[0].status).toBe('infra_excluded');
+    expect(summary.results[0]).toMatchObject({
+      status: 'infra_excluded',
+      failure: { dispositions: expect.arrayContaining(['retryable', 'not_in_denominator']) },
+    });
   });
 
   it('真实断言失败仍是 failed，不混进 infra 桶', async () => {
@@ -121,7 +133,10 @@ describe('testRunner infra 分流', () => {
       errors: [],
     })));
 
-    expect(summary.results[0].status).toBe('failed');
+    expect(summary.results[0]).toMatchObject({
+      status: 'failed',
+      failure: { code: 'wrong_output' },
+    });
     expect(summary.infraExcluded ?? 0).toBe(0);
   });
 

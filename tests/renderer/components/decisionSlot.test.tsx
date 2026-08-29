@@ -319,7 +319,7 @@ describe('DecisionSlot', () => {
     render(<DecisionSlot streamInterruption={{ snapshot, retryMessage, onContinue }} />);
 
     const row = screen.getByTestId('stream-interruption-decision');
-    expect(row.textContent).toContain('上次回复中断，写入 report.md 未执行');
+    expect(row.textContent).toContain('上次回复已中断，写入 report.md 未执行');
     expect(screen.queryByTestId('permission-card')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /继续/u }));
 
@@ -355,7 +355,7 @@ describe('DecisionSlot', () => {
     }} />);
 
     expect(screen.getByTestId('stream-interruption-decision').textContent)
-      .toContain('上次回复中断，写入 reload-proof.md 未执行');
+      .toContain('上次回复已中断，写入 reload-proof.md 未执行');
   });
 
   it('半截 Write 参数仍从快照恢复文件名并走完整版', () => {
@@ -384,7 +384,7 @@ describe('DecisionSlot', () => {
     }} />);
 
     expect(screen.getByTestId('stream-interruption-decision').textContent)
-      .toContain('上次回复中断，写入 reload-proof.md 未执行');
+      .toContain('上次回复已中断，写入 reload-proof.md 未执行');
   });
 
   it('Enter 触发同一继续 handler；放弃只清掉当前中断槽位', async () => {

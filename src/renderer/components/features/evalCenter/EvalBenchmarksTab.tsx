@@ -1,85 +1,81 @@
 // ============================================================================
-// EvalBenchmarksTab - 评测中心「基准」tab（eval-harness 跑分结果只读视图）
+// EvalBenchmarksTab - 评测中心「跑分」tab（2026-08-29 爸拍板 R4）
 //
-// 契约：
-// - 只读不编排：数据源是 host 侧 experiments / experiment_cases 表（ExperimentAdapter
-//   落盘，source ∈ test-runner / eval-harness / regression），走两条只读 IPC：
-//   EVALUATION_LIST_EXPERIMENTS（列表）+ EVALUATION_LOAD_EXPERIMENT（用例行，回归对比）。
-// - 布局三层：① aily 五关卡分层条（静态分组框架，i18n 文案，不接自动判定——
-//   关卡与跑分结果的挂载关系留给后续手工/规则层）；② 按「source + 归一数据集名」
-//   分组的跑分列表（name 的日期/时间戳后缀归一为数据集名，见 evalDatasetName.ts，
-//   同一数据集的多次跑分归到一组）；③ 组内「最近两次对比」（同一归一名下按时间
-//   取最近两次：通过率 delta + 用例状态变迁），点展开才懒加载用例行。
-// - 状态变迁口径：passed → 通过侧，failed/error → 失败侧，partial/skipped 不参与
-//   对比（与 ADR-036 F2「skipped 不进能力分母」一致）。
+// 这里只装配开跑、事件订阅和历史刷新；向导、进行中和历史分组各自在
+// 独立文件内，避免 type-aware ESLint 在单个超大 JSX AST 上耗尽 CI heap。
+// renderer 只传 scope/split/tags/maxCases，模型、密钥、目录和价格均由 host 决定。
 // ============================================================================
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshCw, ChevronDown, ChevronRight, TrendingDown, TrendingUp, Minus } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type {
-  EvalExperimentCaseItem,
-  EvalExperimentDetail,
   EvalExperimentListItem,
+  EvalRunEvent,
+  EvalRunPanelProbe,
+  EvalRunRequest,
+  EvalRunSubscriptionResult,
 } from '@shared/contract/evaluation';
+import {
+  evalRunPanelEn,
+  evalRunPanelZh,
+  type EvalRunPanelLabels,
+} from '../../../i18n/evalRunPanel';
+import { invokeEvaluation, onEvaluation } from '../../../services/evaluationRunIpc';
 import ipcService from '../../../services/ipcService';
-import { useI18n } from '../../../hooks/useI18n';
-import { groupExperimentsByDataset, type EvalDatasetGroup } from './evalDatasetName';
+import { useAppStore } from '../../../stores/appStore';
+import { Button } from '../../primitives/Button';
+import {
+  EvalRunHistory,
+  getEvalRunConfig,
+  getLatestEvalRun,
+} from './EvalRunHistory';
+import {
+  EvalRunProgress,
+  reduceEvalActiveRun,
+  type EvalActiveRun,
+} from './EvalRunProgress';
+import {
+  EvalRunWizard,
+  type EvalRunSplit,
+} from './EvalRunWizard';
+
+const RUN_CONFIRM_WINDOW_MS = 5_000;
 
 type LoadState = 'loading' | 'ready' | 'error';
 
-interface CaseTransition {
-  caseId: string;
-  kind: 'regressed' | 'fixed';
-  from: string;
-  to: string;
+function replace(template: string, values: Record<string, string | number>): string {
+  return Object.entries(values).reduce(
+    (text, [key, value]) => text.replaceAll(`{${key}}`, String(value)),
+    template,
+  );
 }
 
-interface GroupComparison {
-  current: EvalExperimentDetail;
-  previous: EvalExperimentDetail;
-  transitions: CaseTransition[];
-}
-
-/** 对比口径：passed=通过侧，failed/error=失败侧，其余（partial/skipped）不参与。 */
-function caseSide(status: string): 'pass' | 'fail' | null {
-  if (status === 'passed') return 'pass';
-  if (status === 'failed' || status === 'error') return 'fail';
-  return null;
-}
-
-function computeTransitions(currentCases: EvalExperimentCaseItem[], previousCases: EvalExperimentCaseItem[]): CaseTransition[] {
-  const previousByCaseId = new Map(previousCases.map((c) => [c.caseId, c]));
-  const transitions: CaseTransition[] = [];
-  for (const current of currentCases) {
-    const previous = previousByCaseId.get(current.caseId);
-    if (!previous) continue;
-    const from = caseSide(previous.status);
-    const to = caseSide(current.status);
-    if (!from || !to || from === to) continue;
-    transitions.push({
-      caseId: current.caseId,
-      kind: to === 'fail' ? 'regressed' : 'fixed',
-      from: previous.status,
-      to: current.status,
-    });
-  }
-  return transitions;
-}
-
-function formatPercent(rate: number | undefined): string {
-  if (rate === undefined || Number.isNaN(rate)) return '--';
-  return `${(rate * 100).toFixed(1)}%`;
+function splitLabel(
+  split: string,
+  labels: EvalRunPanelLabels,
+): string {
+  if (split === 'held-in') return labels.dailySet;
+  if (split === 'held-out') return labels.heldOutSet;
+  if (split === 'safety') return labels.safetySet;
+  return split === 'all' ? labels.allSet : split;
 }
 
 export const EvalBenchmarksTab: React.FC = () => {
-  const { t } = useI18n();
-  const b = t.evalCenter.benchmarks;
-
+  const language = useAppStore((state) => state.language);
+  const labels = language === 'zh' ? evalRunPanelZh.runPanel : evalRunPanelEn.runPanel;
   const [experiments, setExperiments] = useState<EvalExperimentListItem[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
-  const [comparisons, setComparisons] = useState<Record<string, GroupComparison | 'loading' | 'needTwo'>>({});
+  const [probe, setProbe] = useState<EvalRunPanelProbe | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [split, setSplit] = useState<EvalRunSplit>('held-in');
+  const [tags, setTags] = useState<string[]>([]);
+  const [maxCases, setMaxCases] = useState(1);
+  const [confirmArmed, setConfirmArmed] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [activeRun, setActiveRun] = useState<EvalActiveRun | null>(null);
+  const [quietNotice, setQuietNotice] = useState<string | null>(null);
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
 
   const loadExperiments = useCallback(async () => {
     setLoadState('loading');
@@ -88,220 +84,226 @@ export const EvalBenchmarksTab: React.FC = () => {
       const list = await ipcService.invoke(IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS, { limit: 100 });
       setExperiments(list ?? []);
       setLoadState('ready');
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error));
       setLoadState('error');
     }
   }, []);
 
   useEffect(() => {
     void loadExperiments();
+    void invokeEvaluation(IPC_CHANNELS.EVALUATION_RUN_EVENTS).then((result) => {
+      if (result && 'environment' in result) {
+        setProbe(result);
+        setMaxCases(result.splitCounts['held-in']);
+      }
+    });
+    return () => {
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+      unsubscribeRef.current?.();
+    };
   }, [loadExperiments]);
 
-  const LEVELS = [
-    { name: b.level1Name, desc: b.level1Desc },
-    { name: b.level2Name, desc: b.level2Desc },
-    { name: b.level3Name, desc: b.level3Desc },
-    { name: b.level4Name, desc: b.level4Desc },
-    { name: b.level5Name, desc: b.level5Desc },
-  ];
+  const lastRun = useMemo(() => getLatestEvalRun(experiments), [experiments]);
+  const estimatedCost = probe ? probe.estimatedCostPerCaseUsd * maxCases : undefined;
 
-  const sourceLabel = useCallback((source: string): string => {
-    switch (source) {
-      case 'eval-harness': return b.sourceEvalHarness;
-      case 'test-runner': return b.sourceTestRunner;
-      case 'regression': return b.sourceRegression;
-      default: return source;
-    }
-  }, [b]);
+  const openWizard = useCallback((quick = false) => {
+    setQuietNotice(null);
+    setWizardOpen(true);
+    setConfirmArmed(false);
+    setSplit('held-in');
+    setTags(quick ? (probe?.quickCheck.tags ?? ['core-path']) : []);
+    setMaxCases(quick
+      ? (probe?.quickCheck.maxCases ?? 12)
+      : (probe?.splitCounts['held-in'] ?? 1));
+  }, [probe]);
 
-  // 按「source + 归一数据集名」分组（组内按时间倒序）。
-  const groups = useMemo(() => groupExperimentsByDataset(experiments), [experiments]);
+  const closeWizard = useCallback(() => {
+    if (starting) return;
+    setWizardOpen(false);
+    setConfirmArmed(false);
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+  }, [starting]);
 
-  // 展开分组时懒加载该数据集最近两次运行的用例行并计算状态变迁。
-  const toggleGroup = useCallback(async (group: EvalDatasetGroup) => {
-    if (expandedGroup === group.key) {
-      setExpandedGroup(null);
+  const updateActiveRunFromEvent = useCallback((event: EvalRunEvent) => {
+    if (event.schemaVersion !== 2) {
+      setQuietNotice(labels.quietDegraded);
+      setActiveRun(null);
+      void loadExperiments();
       return;
     }
-    setExpandedGroup(group.key);
-    if (comparisons[group.key]) return;
-    if (group.runs.length < 2) {
-      setComparisons((prev) => ({ ...prev, [group.key]: 'needTwo' }));
+    if (event.type === 'error') {
+      setQuietNotice(labels.quietDegraded);
+      setActiveRun(null);
+      unsubscribeRef.current?.();
+      void loadExperiments();
       return;
     }
-    setComparisons((prev) => ({ ...prev, [group.key]: 'loading' }));
+    if (event.type === 'run_end') {
+      setQuietNotice(event.aborted ? labels.incomplete : null);
+      setActiveRun(null);
+      unsubscribeRef.current?.();
+      void loadExperiments();
+      return;
+    }
+
+    setActiveRun((current) => {
+      if (current?.runId !== event.runId) return current;
+      return reduceEvalActiveRun(current, event, labels);
+    });
+  }, [labels, loadExperiments]);
+
+  const startRun = useCallback(async () => {
+    setStarting(true);
+    setQuietNotice(null);
     try {
-      const [current, previous] = await Promise.all([
-        ipcService.invoke(IPC_CHANNELS.EVALUATION_LOAD_EXPERIMENT, group.runs[0].id),
-        ipcService.invoke(IPC_CHANNELS.EVALUATION_LOAD_EXPERIMENT, group.runs[1].id),
-      ]);
-      if (!current || !previous) {
-        setComparisons((prev) => ({ ...prev, [group.key]: 'needTwo' }));
+      const request: EvalRunRequest = {
+        scope: 'full',
+        split,
+        maxCases,
+        ...(tags.length > 0 ? { tags } : {}),
+      };
+      const runResult = await invokeEvaluation(IPC_CHANNELS.EVALUATION_RUN_SUITE, request);
+      if (!runResult || typeof runResult.runId !== 'string' || runResult.runId.length === 0) {
+        throw new Error('Evaluation run did not return a runId');
+      }
+      const { runId } = runResult;
+      const now = Date.now();
+      setActiveRun({
+        runId,
+        split,
+        model: probe?.model ?? 'unknown',
+        provider: probe?.provider ?? 'unknown',
+        plannedCaseIds: [],
+        cases: {},
+        startTs: now,
+        lastTs: now,
+        logs: [],
+        toolCounts: {},
+        stopping: false,
+      });
+      setWizardOpen(false);
+      setConfirmArmed(false);
+
+      let receivedRunEnd = false;
+      // 先挂监听再 subscribe，避免 host 同步推送的 run_start 丢失。
+      unsubscribeRef.current?.();
+      const unsubscribe = onEvaluation(IPC_CHANNELS.EVALUATION_RUN_EVENTS, (event) => {
+        if (event.runId !== runId) return;
+        if (event.type === 'run_end') receivedRunEnd = true;
+        updateActiveRunFromEvent(event);
+      });
+      unsubscribeRef.current = unsubscribe;
+      if (!unsubscribe) {
+        setQuietNotice(labels.quietDegraded);
+        setActiveRun(null);
         return;
       }
-      setComparisons((prev) => ({
-        ...prev,
-        [group.key]: {
-          current,
-          previous,
-          transitions: computeTransitions(current.cases, previous.cases),
-        },
-      }));
+      const subscription = await invokeEvaluation(
+        IPC_CHANNELS.EVALUATION_RUN_EVENTS,
+        { runId },
+      ) as EvalRunSubscriptionResult;
+      if (!subscription.running && !receivedRunEnd) {
+        setQuietNotice(labels.endedBeforeSubscribe);
+        setActiveRun(null);
+        unsubscribe();
+        void loadExperiments();
+      }
     } catch {
-      setComparisons((prev) => ({ ...prev, [group.key]: 'needTwo' }));
+      setQuietNotice(labels.runFailed);
+    } finally {
+      setStarting(false);
     }
-  }, [expandedGroup, comparisons]);
+  }, [labels, loadExperiments, maxCases, probe, split, tags, updateActiveRunFromEvent]);
 
-  const renderComparison = (group: EvalDatasetGroup) => {
-    const comparison = comparisons[group.key];
-    if (!comparison || comparison === 'loading') {
-      return <div className="px-3 py-2 text-xs text-zinc-500">{b.compareLoading}</div>;
+  const handleRunClick = useCallback(() => {
+    if (confirmArmed) {
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+      void startRun();
+      return;
     }
-    if (comparison === 'needTwo') {
-      return <div className="px-3 py-2 text-xs text-zinc-500">{b.compareNeedTwo}</div>;
-    }
-    const currentRate = comparison.current.experiment.summary?.passRate;
-    const previousRate = comparison.previous.experiment.summary?.passRate;
-    const delta = currentRate !== undefined && previousRate !== undefined ? currentRate - previousRate : undefined;
-    const regressed = comparison.transitions.filter((tr) => tr.kind === 'regressed');
-    const fixed = comparison.transitions.filter((tr) => tr.kind === 'fixed');
-    const unchanged = comparison.current.cases.length - comparison.transitions.length;
+    setConfirmArmed(true);
+    confirmTimerRef.current = setTimeout(() => setConfirmArmed(false), RUN_CONFIRM_WINDOW_MS);
+  }, [confirmArmed, startRun]);
 
-    return (
-      <div className="border-t border-zinc-800 px-3 py-2" data-testid={`benchmark-compare-${group.source}-${group.dataset}`}>
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-          <span className="font-medium text-zinc-300">{b.compareTitle}</span>
-          {delta !== undefined && (
-            <span className={`flex items-center gap-1 rounded border px-1.5 py-0.5 ${
-              delta < 0
-                ? 'border-badge-danger/30 bg-rose-500/10 text-badge-danger'
-                : delta > 0
-                  ? 'border-badge-success/30 bg-emerald-500/10 text-badge-success'
-                  : 'border-zinc-700 bg-zinc-800 text-zinc-400'
-            }`}>
-              {delta < 0 ? <TrendingDown className="h-3 w-3" /> : delta > 0 ? <TrendingUp className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
-              {formatPercent(previousRate)} → {formatPercent(currentRate)}
-            </span>
-          )}
-          <span className="rounded border border-badge-danger/30 bg-rose-500/10 px-1.5 py-0.5 text-badge-danger">
-            {b.regressedCount.replace('{n}', String(regressed.length))}
-          </span>
-          <span className="rounded border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-badge-success">
-            {b.fixedCount.replace('{n}', String(fixed.length))}
-          </span>
-          <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-zinc-400">
-            {b.unchangedCount.replace('{n}', String(unchanged))}
-          </span>
-        </div>
-        {comparison.transitions.length === 0 ? (
-          <div className="text-xs text-zinc-500">{b.noCaseChanges}</div>
-        ) : (
-          <ul className="space-y-1 text-xs">
-            {comparison.transitions.map((tr) => (
-              <li key={tr.caseId} className="flex items-center gap-2">
-                <span className={`rounded px-1.5 py-0.5 text-[10px] ${
-                  tr.kind === 'regressed' ? 'bg-rose-500/20 text-badge-danger' : 'bg-emerald-500/20 text-badge-success'
-                }`}>
-                  {tr.kind === 'regressed' ? b.caseStatusRegressed : b.caseStatusFixed}
-                </span>
-                <span className="font-mono text-zinc-400">{tr.caseId}</span>
-                <span className="text-zinc-600">{tr.from} → {tr.to}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    );
-  };
+  const stopRun = useCallback(async () => {
+    if (!activeRun || activeRun.stopping) return;
+    setActiveRun((current) => current ? { ...current, stopping: true } : current);
+    try {
+      await invokeEvaluation(IPC_CHANNELS.EVALUATION_ABORT_RUN, { runId: activeRun.runId });
+    } catch {
+      setQuietNotice(labels.quietDegraded);
+      setActiveRun(null);
+      void loadExperiments();
+    }
+  }, [activeRun, labels.quietDegraded, loadExperiments]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-testid="eval-benchmarks-tab">
-      {/* 五关卡分层条：静态分组框架（不接自动判定） */}
-      <div className="shrink-0 border-b border-zinc-800 px-3 py-2">
-        <div className="mb-1 flex items-baseline gap-2">
-          <span className="text-xs font-medium text-zinc-300">{b.levelsTitle}</span>
-          <span className="text-[10px] text-zinc-600">{b.levelsNote}</span>
-        </div>
-        <div className="grid grid-cols-2 gap-2 xl:grid-cols-5">
-          {LEVELS.map((level, index) => (
-            <div key={level.name} className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-2" data-testid={`benchmark-level-${index + 1}`}>
-              <div className="text-xs font-medium text-zinc-200">Lv.{index + 1} {level.name}</div>
-              <div className="mt-0.5 text-[10px] leading-4 text-zinc-500">{level.desc}</div>
-            </div>
-          ))}
-        </div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-zinc-950" data-testid="eval-benchmarks-tab">
+      <div className="m-3 flex shrink-0 items-center rounded-lg bg-zinc-900 px-3 py-2 shadow-sm">
+        <Button size="sm" onClick={() => openWizard(false)}>{labels.launch}</Button>
+        {lastRun && (
+          <span className="ml-auto text-xs text-zinc-500">
+            {replace(labels.lastRun, {
+              set: splitLabel(getEvalRunConfig(lastRun).split, labels),
+              model: lastRun.model ?? 'unknown',
+              k: getEvalRunConfig(lastRun).k,
+            })}
+          </span>
+        )}
       </div>
 
-      {/* 跑分结果列表（按 source + 归一数据集名分组） */}
-      <div className="flex shrink-0 items-center justify-between px-3 pt-2">
-        <span className="text-xs font-medium text-zinc-300">{b.runsTitle}</span>
-        <button /* ds-allow:button: 基准 tab 刷新按钮，12px 微尺寸行内样式，Button primitive 无对应变体 */
-          type="button"
-          onClick={() => {
-            setComparisons({});
-            void loadExperiments();
-          }}
-          className="flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
-        >
-          <RefreshCw className="h-3 w-3" /> {b.refresh}
-        </button>
-      </div>
-
-      {loadState === 'loading' && (
-        <div className="px-3 py-8 text-center text-sm text-zinc-500">{t.settings.modal.loading}</div>
+      {activeRun && (
+        <EvalRunProgress run={activeRun} labels={labels} onStop={() => void stopRun()} />
       )}
-      {loadState === 'error' && (
-        <div className="px-3 py-8 text-center text-sm text-badge-danger">
-          {b.loadFailed.replace('{message}', loadError ?? '')}
+
+      {quietNotice && (
+        <div className="mx-3 mb-3 rounded-lg bg-zinc-900 px-3 py-2 text-xs text-zinc-400" role="status">
+          {quietNotice}
         </div>
       )}
-      {loadState === 'ready' && experiments.length === 0 && (
-        <div className="px-3 py-8 text-center text-sm text-zinc-500">{b.empty}</div>
-      )}
 
-      {loadState === 'ready' && groups.map((group) => {
-        const latest = group.runs[0];
-        const expanded = expandedGroup === group.key;
-        return (
-          <div key={group.key} className="mx-3 mt-2 rounded-lg border border-zinc-800 bg-zinc-900/70" data-testid={`benchmark-group-${group.source}-${group.dataset}`}>
-            <button /* ds-allow:button: 基准分组头（整块可点展开行），Button primitive 无行卡片变体 */
-              type="button"
-              onClick={() => void toggleGroup(group)}
-              aria-expanded={expanded}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left"
-            >
-              {expanded ? <ChevronDown className="h-3.5 w-3.5 text-zinc-500" /> : <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />}
-              <span className="text-xs font-medium text-zinc-200">{group.dataset}</span>
-              <span className="text-[10px] text-zinc-600">{sourceLabel(group.source)}</span>
-              <span className="text-[10px] text-zinc-500">{b.runs.replace('{n}', String(group.runs.length))}</span>
-              <span className="ml-auto text-xs text-zinc-400">
-                {b.passRate} {formatPercent(latest?.summary?.passRate)}
-              </span>
-            </button>
+      <EvalRunHistory
+        experiments={experiments}
+        loadState={loadState}
+        loadError={loadError}
+        hasActiveRun={Boolean(activeRun)}
+        probe={probe}
+        labels={labels}
+        language={language}
+        loadingText={labels.loading}
+        onRefresh={() => void loadExperiments()}
+        onOpenWizard={openWizard}
+      />
 
-            {expanded && (
-              <>
-                <div className="border-t border-zinc-800">
-                  {group.runs.map((run) => (
-                    <div key={run.id} className="flex items-center gap-3 border-b border-zinc-800/60 px-3 py-1.5 text-xs last:border-b-0">
-                      <span className="min-w-0 flex-1 truncate text-zinc-300">{run.name}</span>
-                      <span className="text-[10px] text-zinc-500">{new Date(run.timestamp).toLocaleString()}</span>
-                      <span className="w-28 truncate text-[10px] text-zinc-500">{run.model ?? '--'}</span>
-                      <span className="w-16 text-right text-[10px] text-zinc-400">
-                        {run.summary?.passed ?? '--'}/{run.summary?.total ?? '--'}
-                      </span>
-                      <span className="w-14 text-right text-zinc-300">{formatPercent(run.summary?.passRate)}</span>
-                    </div>
-                  ))}
-                </div>
-                {renderComparison(group)}
-              </>
-            )}
-          </div>
-        );
-      })}
-      <div className="h-3 shrink-0" />
+      <EvalRunWizard
+        open={wizardOpen}
+        probe={probe}
+        split={split}
+        tags={tags}
+        maxCases={maxCases}
+        confirmArmed={confirmArmed}
+        starting={starting}
+        estimatedCost={estimatedCost}
+        labels={labels}
+        onClose={closeWizard}
+        onSplit={(next) => {
+          setSplit(next);
+          setMaxCases(probe?.splitCounts[next] ?? 1);
+          setConfirmArmed(false);
+        }}
+        onToggleTag={(tag) => {
+          setTags((current) => current.includes(tag)
+            ? current.filter((item) => item !== tag)
+            : [...current, tag]);
+          setConfirmArmed(false);
+        }}
+        onMaxCases={(next) => {
+          setMaxCases(next);
+          setConfirmArmed(false);
+        }}
+        onRun={handleRunClick}
+      />
     </div>
   );
 };

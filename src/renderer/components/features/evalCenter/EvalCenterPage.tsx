@@ -2,7 +2,7 @@
 // EvalCenterPage - 评测中心（admin-only）
 //
 // 契约：
-// - 整窗页统一外壳（FullScreenPage），五个 tab：回放 / 题库 / 验证 / 遥测 / 基准，
+// - 整窗页统一外壳（FullScreenPage），五个 tab：遥测 / 回放 / 题库 / 跑分 / 验证，
 //   分段 tab 模式照 CapabilityHubPage；tab 状态存 appStore.evalCenterTab，页内
 //   切换走 setEvalCenterTab（不动互斥表、不重置回放深链）。
 // - 入口：用户菜单（admin-only，canAccessFeature('eval.center')）、会话行 hover 眼睛
@@ -35,12 +35,12 @@ const EvalCaseListTab = React.lazy(() => import('./EvalCaseListTab').then((m) =>
 const EvalBenchmarksTab = React.lazy(() => import('./EvalBenchmarksTab').then((m) => ({ default: m.EvalBenchmarksTab })));
 
 const EVAL_TABS: Array<{ key: EvalCenterTab; label: (t: ReturnType<typeof useI18n>['t']) => string }> = [
-  { key: 'replay', label: (t) => t.evalCenter.tabReplay },
-  // 2026-08-29 爸拍板 R4：题库位于回放之后、跑分之前；并行 RUNPANEL 负责其余顺序。
-  { key: 'cases', label: (t) => t.evalCenter.tabCases },
-  { key: 'validation', label: (t) => t.evalCenter.tabValidation },
   { key: 'telemetry', label: (t) => t.evalCenter.tabTelemetry },
+  { key: 'replay', label: (t) => t.evalCenter.tabReplay },
+  // 2026-08-29 爸拍板 R4：题库位于回放之后、跑分之前。
+  { key: 'cases', label: (t) => t.evalCenter.tabCases },
   { key: 'benchmarks', label: (t) => t.evalCenter.tabBenchmarks },
+  { key: 'validation', label: (t) => t.evalCenter.tabValidation },
 ];
 
 const EVAL_TAB_CONTENT: Record<EvalCenterTab, React.ReactNode> = {
@@ -62,6 +62,16 @@ export const EvalCenterPage: React.FC = () => {
   // bridge 不抢占语义的可视化：验证请求 pending 而用户停在别的 tab 时，给角标。
   const showValidationBadge = hasPendingValidationRequest && evalCenterTab !== 'validation';
 
+  if (!canAccess) {
+    return (
+      <FullScreenPage testId="eval-center-page" variant="inline">
+        <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
+          {t.evalCenter.adminOnly}
+        </div>
+      </FullScreenPage>
+    );
+  }
+
   return (
     // 2026-07-27 拍板改 inline（侧栏常驻）：与其他二级页一致，返回语义交给侧栏
     <FullScreenPage testId="eval-center-page" variant="inline">
@@ -69,7 +79,7 @@ export const EvalCenterPage: React.FC = () => {
         icon={<Gauge className="h-4 w-4 text-badge-warning" />}
         title={t.evalCenter.title}
         description={t.evalCenter.description}
-        actions={canAccess ? (
+        actions={(
           <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
             {EVAL_TABS.map(({ key, label }) => (
               <button /* ds-allow:button: 评测中心 tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */
@@ -79,7 +89,7 @@ export const EvalCenterPage: React.FC = () => {
                 aria-selected={evalCenterTab === key}
                 data-testid={`eval-center-tab-${key}`}
                 onClick={() => setEvalCenterTab(key)}
-                className={`relative rounded px-2.5 py-1 text-xs transition-colors ${evalCenterTab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                className={`relative rounded border-b-2 px-2.5 py-1 text-xs transition-colors ${evalCenterTab === key ? 'border-brand text-zinc-100' : 'border-transparent text-zinc-400 hover:text-zinc-200'}`}
               >
                 {label(t)}
                 {key === 'validation' && showValidationBadge && (
@@ -93,19 +103,13 @@ export const EvalCenterPage: React.FC = () => {
               </button>
             ))}
           </div>
-        ) : undefined}
+        )}
       />
-      {canAccess ? (
-        <PageContent scroll={false} padding={false}>
-          <React.Suspense fallback={<div className="p-4 text-sm text-zinc-500">{t.settings.modal.loading}</div>}>
-            {EVAL_TAB_CONTENT[evalCenterTab]}
-          </React.Suspense>
-        </PageContent>
-      ) : (
-        <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
-          {t.evalCenter.adminOnly}
-        </div>
-      )}
+      <PageContent scroll={false} padding={false}>
+        <React.Suspense fallback={<div className="p-4 text-sm text-zinc-500">{t.settings.modal.loading}</div>}>
+          {EVAL_TAB_CONTENT[evalCenterTab]}
+        </React.Suspense>
+      </PageContent>
     </FullScreenPage>
   );
 };

@@ -36,7 +36,7 @@ afterEach(() => {
 });
 
 describe('EvalCenterPage', () => {
-  it('2026-08-29 爸拍板 R4：渲染题库并排在回放后，默认回放', async () => {
+  it('按遥测 → 回放 → 题库 → 跑分 → 验证渲染，默认回放（2026-08-29 爸拍板 R4）', async () => {
     useAuthStore.setState({ user: user(true) });
     render(<EvalCenterPage />);
 
@@ -47,12 +47,13 @@ describe('EvalCenterPage', () => {
     expect(screen.getByTestId('eval-center-tab-benchmarks')).toBeTruthy();
     const tabs = screen.getAllByRole('tab');
     expect(tabs.map((tab) => tab.getAttribute('data-testid'))).toEqual([
+      'eval-center-tab-telemetry',
       'eval-center-tab-replay',
       'eval-center-tab-cases',
-      'eval-center-tab-validation',
-      'eval-center-tab-telemetry',
       'eval-center-tab-benchmarks',
+      'eval-center-tab-validation',
     ]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['遥测', '回放', '题库', '跑分', '验证']);
     expect(await screen.findByTestId('eval-replay-explorer-mock')).toBeTruthy();
   });
 
@@ -62,6 +63,7 @@ describe('EvalCenterPage', () => {
 
     expect(screen.queryByTestId('eval-center-tab-replay')).toBeNull();
     expect(screen.getByText('评测中心需要管理员权限')).toBeTruthy();
+    expect(screen.queryByText('评测中心', { selector: 'h1,h2' })).toBeNull();
   });
 
   it('切到验证 tab 渲染验证工作台', async () => {

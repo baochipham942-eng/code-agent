@@ -1,4 +1,4 @@
-import { IPC_CHANNELS, type IpcInvokeHandlers, type IpcEventHandlers } from '@shared/ipc';
+import { IPC_CHANNELS, type IpcEventHandlers, type IpcInvokeHandlers } from '@shared/ipc';
 import type { SpeechTranscribeOptions, SpeechTranscribeResult } from '@shared/contract';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import { createInflightDedupe } from '../utils/inflightDedupe';

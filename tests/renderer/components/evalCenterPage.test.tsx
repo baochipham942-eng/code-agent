@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe('EvalCenterPage', () => {
-  it('渲染回放 / 验证 / 遥测 / 基准四个 tab，默认回放', async () => {
+  it('按遥测 → 回放 → 跑分 → 验证渲染四个 tab，默认回放（2026-08-29 爸拍板 R4）', async () => {
     useAuthStore.setState({ user: user(true) });
     render(<EvalCenterPage />);
 
@@ -41,6 +41,7 @@ describe('EvalCenterPage', () => {
     expect(screen.getByTestId('eval-center-tab-validation')).toBeTruthy();
     expect(screen.getByTestId('eval-center-tab-telemetry')).toBeTruthy();
     expect(screen.getByTestId('eval-center-tab-benchmarks')).toBeTruthy();
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['遥测', '回放', '跑分', '验证']);
     expect(await screen.findByTestId('eval-replay-explorer-mock')).toBeTruthy();
   });
 
@@ -49,7 +50,8 @@ describe('EvalCenterPage', () => {
     render(<EvalCenterPage />);
 
     expect(screen.queryByTestId('eval-center-tab-replay')).toBeNull();
-    expect(screen.getByText('评测中心仅管理员可用。')).toBeTruthy();
+    expect(screen.getByText('评测中心需要管理员权限')).toBeTruthy();
+    expect(screen.queryByText('评测中心', { selector: 'h1,h2' })).toBeNull();
   });
 
   it('切到验证 tab 渲染验证工作台', async () => {

@@ -39,6 +39,7 @@ function environment() {
     tsxPath: path.join(repositoryRoot, 'node_modules', '.bin', 'tsx'),
     packaged: false,
     platform: process.platform,
+    osJail: { enabled: true, available: true, active: true },
     git: { available: true, repository: true },
     proxy: {},
     failures: [],

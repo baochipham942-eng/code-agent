@@ -5,15 +5,18 @@
 //   评测中心「遥测」tab 内嵌挂载；词典放本文件是为了不碰 zh.ts/en.ts 主文件
 //   （两词典经 spread 合入顶层，并行改动窗口期避免撞文件）。
 // ============================================================================
+import { evalRunPanelEn, evalRunPanelZh } from './evalRunPanel';
+
 export const evalCenterZh = {
   evalCenter: {
+    ...evalRunPanelZh,
     title: '评测中心',
-    description: '会话回放 · 应用内验证 · 遥测 · 基准',
+    description: '遥测 · 会话回放 · 跑分 · 应用内验证',
     tabReplay: '回放',
     tabValidation: '验证',
     tabTelemetry: '遥测',
-    tabBenchmarks: '基准',
-    adminOnly: '评测中心仅管理员可用。',
+    tabBenchmarks: '跑分',
+    adminOnly: '评测中心需要管理员权限',
     newRequestBadge: '新请求',
     validation: {
       loadDemo: '载入 Demo',
@@ -153,13 +156,14 @@ export const evalCenterZh = {
 
 export const evalCenterEn = {
   evalCenter: {
+    ...evalRunPanelEn,
     title: 'Eval Center',
-    description: 'Session replay · In-app validation · Telemetry · Benchmarks',
+    description: 'Telemetry · Session replay · Benchmark runs · In-app validation',
     tabReplay: 'Replay',
     tabValidation: 'Validation',
     tabTelemetry: 'Telemetry',
-    tabBenchmarks: 'Benchmarks',
-    adminOnly: 'The eval center is admin-only.',
+    tabBenchmarks: 'Run',
+    adminOnly: 'The eval center requires administrator access',
     newRequestBadge: 'New request',
     validation: {
       loadDemo: 'Load demo',

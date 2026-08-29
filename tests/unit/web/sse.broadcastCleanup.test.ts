@@ -7,6 +7,7 @@ import type { Response } from 'express';
 import {
   __resetSSEReplayBufferForTests,
   broadcastSSE,
+  registerSSEClient,
   replayFromLastEventId,
   sendSSE,
   sseClients,
@@ -36,6 +37,19 @@ afterEach(() => {
 });
 
 describe('broadcastSSE client cleanup', () => {
+  it('delivers evaluation run events to admin SSE clients only', () => {
+    const user = fakeClient();
+    const admin = fakeClient();
+    registerSSEClient(user as unknown as Response, false);
+    registerSSEClient(admin as unknown as Response, true);
+
+    broadcastSSE('evaluation:run-events', { schemaVersion: 2, type: 'run_start', runId: 'run-1' });
+
+    expect(user.chunks).toHaveLength(0);
+    expect(admin.chunks).toHaveLength(1);
+    expect(admin.chunks[0]).toContain('"channel":"evaluation:run-events"');
+  });
+
   it('removes clients whose write throws (dead connection)', () => {
     const alive = fakeClient();
     const dead = fakeClient({ failWrite: true });

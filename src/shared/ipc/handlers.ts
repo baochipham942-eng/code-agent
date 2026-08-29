@@ -53,7 +53,15 @@ import { IPC_CHANNELS } from './legacy-channels';
 
 import type { AgentMessageRequest, AgentCancelRequest, SessionExport, SearchResult, MemoryContextResult, MemoryStats, MCPStatus, MCPTool, MCPResource, ConnectorStatusSummary, CacheStats, DataStats, TaskItemIpc, TaskListStateIpc, TaskListEventIpc, CrossSessionSearchOptions, CrossSessionSearchResults, SessionReviewItemsRequest, AgentTrajectoryQualitySummariesRequest, AgentTrajectoryCollectionUpdateRequest } from './types';
 import type { AdminReviewQueueItem } from '../contract/productClosure';
-import type { EvalExperimentDetail, EvalExperimentListItem } from '../contract/evaluation';
+import type {
+  EvalExperimentDetail,
+  EvalExperimentListItem,
+  EvalRunEvent,
+  EvalRunPanelProbe,
+  EvalRunRequest,
+  EvalRunStartResult,
+  EvalRunSubscriptionResult,
+} from '../contract/evaluation';
 import type { AgentTrajectorySessionQualitySummary } from '../contract/agentTrajectory';
 
 // ----------------------------------------------------------------------------
@@ -388,7 +396,10 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.HANDOFF_LIST]: (payload?: ListHandoffProposalsInput) => Promise<HandoffProposal[]>;
   [IPC_CHANNELS.HANDOFF_UPDATE_STATUS]: (payload: UpdateHandoffProposalStatusInput) => Promise<HandoffProposal | null>;
 
-  // Evaluation experiments（评测实验只读查询，评测中心「基准」tab）
+  // Evaluation runs + experiments（2026-08-29 爸拍板 R4）
+  [IPC_CHANNELS.EVALUATION_RUN_SUITE]: (payload: EvalRunRequest) => Promise<EvalRunStartResult>;
+  [IPC_CHANNELS.EVALUATION_RUN_EVENTS]: (payload?: { runId?: string }) => Promise<EvalRunSubscriptionResult | EvalRunPanelProbe>;
+  [IPC_CHANNELS.EVALUATION_ABORT_RUN]: (payload: { runId: string }) => Promise<{ runId: string; pid: number; terminated: boolean }>;
   [IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS]: (payload?: { limit?: number }) => Promise<EvalExperimentListItem[]>;
   [IPC_CHANNELS.EVALUATION_LOAD_EXPERIMENT]: (experimentId: string) => Promise<EvalExperimentDetail | null>;
 
@@ -627,6 +638,7 @@ export type TaskRuntimeEvent = { type: 'state_change'; sessionId: string; data: 
 export interface IpcEventHandlers {
   [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEventEnvelope) => void;
   [IPC_CHANNELS.AGENT_EVENT_BATCH]: (events: AgentEventEnvelope[]) => void;
+  [IPC_CHANNELS.EVALUATION_RUN_EVENTS]: (event: EvalRunEvent) => void;
   [IPC_CHANNELS.MEMORY_LEARNED]: (event: MemoryLearnedEvent) => void;
   [IPC_CHANNELS.MEMORY_CONFIRM_REQUEST]: (request: MemoryConfirmRequest) => void;
   [IPC_CHANNELS.PLANNING_EVENT]: (event: PlanningEvent) => void;

@@ -20,11 +20,17 @@ describe('evaluation environment probe', () => {
       repositoryRoot: repoRoot,
       packaged: false,
       git: { available: true, repository: true },
+      osJail: {
+        enabled: expect.any(Boolean),
+        available: expect.any(Boolean),
+        active: expect.any(Boolean),
+      },
       proxy: {
         HTTP_PROXY: 'http://proxy.example',
         NO_PROXY: 'localhost,127.0.0.1',
       },
     });
+    expect(result.osJail.active).toBe(result.osJail.enabled && result.osJail.available);
   });
 
   it('rejects a packaged build with the product-facing message even when source files are visible', () => {

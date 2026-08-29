@@ -2,12 +2,13 @@ import { constants as fsConstants, existsSync, accessSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { app, getBuildInfo } from '../platform';
+import { OS_SANDBOX } from '../../shared/constants/sandbox';
+import type { EvalEnvironmentProbe } from '../../shared/contract/evaluation';
+import { getSandboxManager } from '../sandbox';
 
 const ENGINE_UNAVAILABLE_MESSAGE = '这个安装包不含评测引擎，请在开发构建里跑';
 
-export interface EvalEnvironmentResult {
-  available: boolean;
-  message: string;
+export interface EvalEnvironmentResult extends EvalEnvironmentProbe {
   repositoryRoot?: string;
   entryPath?: string;
   nodePath: string;
@@ -98,6 +99,8 @@ export function inspectEvalEnvironment(input: {
     if (env[key] !== undefined) proxy[key] = env[key];
   }
 
+  const osJailAvailable = getSandboxManager().isAvailable();
+
   return {
     available: failures.length === 0,
     message: failures.length === 0 ? '评测环境已就绪' : ENGINE_UNAVAILABLE_MESSAGE,
@@ -107,6 +110,11 @@ export function inspectEvalEnvironment(input: {
     tsxPath,
     packaged,
     platform,
+    osJail: {
+      enabled: OS_SANDBOX.ENABLED,
+      available: osJailAvailable,
+      active: OS_SANDBOX.ENABLED && osJailAvailable,
+    },
     git: { available: gitAvailable, repository: gitRepository },
     proxy,
     failures,

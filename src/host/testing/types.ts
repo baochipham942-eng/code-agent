@@ -4,6 +4,7 @@
 
 import type {
   EvalRunStamp,
+  EvalFailureClassification,
   TelemetryCompleteness,
   ScoreAuthority,
 } from '../../shared/contract/evaluation';
@@ -399,6 +400,8 @@ export interface TestResult {
   scoreAuthority?: ScoreAuthority;
   /** Pipeline failure stage (from failure funnel analysis) */
   failureStage?: string;
+  /** 两轴失败分类：唯一表现码 + 多个处置标签 + 全部命中表现 */
+  failure?: EvalFailureClassification;
   /** Reference solution if provided */
   reference_solution?: string;
   /** Expectation-based assertion results (P1) */
@@ -475,6 +478,10 @@ export interface TestRunSummary {
   notRun: number;
   /** 真跑中没有调用真实模型的题数；这些题不得计为通过。 */
   invalidCases: number;
+  /** 题级最终失败结果按唯一表现码计数；unknown 始终保留以衡量码本覆盖率。 */
+  failureDistribution?: Record<string, number>;
+  /** 本轮失败原因码本来自项目配置，还是项目缺失时使用的内置副本。 */
+  failureCodebookSource?: 'project' | 'bundled';
   /** Average score across non-skipped tests (0.0 - 1.0) */
   averageScore: number;
   /** Individual results */
@@ -604,6 +611,8 @@ export interface TestRunnerConfig {
   harness?: HarnessVariantConfig;
   /** WP1-4: prompt 改动预测登记（随 summary 落盘/DB，deltaReporter 对账） */
   prediction?: EvalPrediction;
+  /** 覆盖默认的 .claude/eval-failcodes.yaml 所在目录，主要供隔离验证使用。 */
+  failureCodebookDir?: string;
 }
 
 /**
@@ -790,6 +799,8 @@ export interface CaseComparison {
   /** 每臂断言判定终态（非劣判定主指标=成功率；rubric 分只作参考） */
   statusA?: TestStatus;
   statusB?: TestStatus;
+  failureA?: EvalFailureClassification;
+  failureB?: EvalFailureClassification;
   durationA: number;
   durationB: number;
   /** WP1-3b：任一侧没跑成（infra_excluded / 零产出带错误）→ 本 pair 不进胜负统计 */

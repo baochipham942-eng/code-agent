@@ -153,6 +153,7 @@ function incompleteSummary(state: InternalRunState): EvalRunEventSummary {
     completed: false,
     notRun: Math.max(0, (plannedCaseIds.length || terminal.length) - terminal.length),
     invalidCases: 0,
+    failureDistribution: { unknown: 0 },
     aborted: state.abortReason !== undefined,
     abortReason: state.abortReason,
   };

@@ -1,8 +1,10 @@
+import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { TestRunner, type AgentInterface } from '../../../src/host/testing/testRunner';
+import { EvalRunEventStream } from '../../../scripts/lib/eval-run-event-stream';
 import type { TestRunSummary } from '../../../src/host/testing/types';
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
@@ -27,11 +29,20 @@ function makeAgent() {
   return { agent, sendMessage };
 }
 
-async function runSuite(suiteYaml: string, agent: AgentInterface): Promise<TestRunSummary> {
+async function runSuite(
+  suiteYaml: string,
+  agent: AgentInterface,
+  failureCodebookYaml?: string,
+): Promise<TestRunSummary> {
   const root = await mkdtemp(path.join(os.tmpdir(), 'code-agent-redline-'));
   const casesDir = path.join(root, 'cases');
   await mkdir(casesDir, { recursive: true });
   await writeFile(path.join(casesDir, 'suite.yaml'), suiteYaml);
+  const failureCodebookDir = path.join(root, '.claude');
+  if (failureCodebookYaml) {
+    await mkdir(failureCodebookDir, { recursive: true });
+    await writeFile(path.join(failureCodebookDir, 'eval-failcodes.yaml'), failureCodebookYaml);
+  }
 
   const runner = new TestRunner({
     testCaseDir: casesDir,
@@ -43,6 +54,7 @@ async function runSuite(suiteYaml: string, agent: AgentInterface): Promise<TestR
     parallel: false,
     maxParallel: 1,
     enableEvalCritic: false,
+    ...(failureCodebookYaml ? { failureCodebookDir } : {}),
   }, agent);
 
   return runner.runAll();
@@ -68,6 +80,8 @@ describe('testRunner 红线 jail 闸（ADR-036 F3）', () => {
 
     expect(summary.results[0].status).toBe('infra_excluded');
     expect(summary.results[0].failureStage).toBe('infra');
+    expect(summary.results[0].failure?.dispositions).toContain('not_in_denominator');
+    expect(summary.failureCodebookSource).toBe('bundled');
     // 核心安全断言：破坏性 prompt 从没进过 agent，不可能被顺从模型真执行。
     expect(sendMessage).not.toHaveBeenCalled();
   });
@@ -138,5 +152,65 @@ describe('testRunner 红线 jail 闸（ADR-036 F3）', () => {
     expect(summary.results[0].status).toBe('infra_excluded');
     expect(summary.results[0].failureStage).toBe('infra');
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('失败处置不一致只标坏单题，后续题继续且 run_end 正常带出 unknown', async () => {
+    const { agent, sendMessage } = makeAgent();
+    const summary = await runSuite([
+      'name: disposition-consistency-suite',
+      'cases:',
+      '  - id: inconsistent-failure',
+      '    type: conversation',
+      '    description: 触发不一致处置',
+      '    prompt: 第一题',
+      '    expect:',
+      '      response_contains: [never-present]',
+      '  - id: following-pass',
+      '    type: conversation',
+      '    description: 后续题继续执行',
+      '    prompt: 第二题',
+      '    expect:',
+      '      response_contains: [response]',
+      '',
+    ].join('\n'), agent, [
+      'version: 1',
+      'codes:',
+      '  - code: inconsistent_rule',
+      '    label: 不一致规则',
+      '    priority: 1',
+      '    match:',
+      '      status: [failed]',
+      '    dispositions: [not_in_denominator]',
+      '',
+    ].join('\n'));
+
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    expect(summary.completed).toBe(true);
+    expect(summary.failureCodebookSource).toBe('project');
+    expect(summary.results.map((result) => result.status)).toEqual(['failed', 'passed']);
+    expect(summary.results[0].failure).toEqual({
+      code: 'unknown',
+      dispositions: ['not_in_denominator'],
+      symptoms: ['inconsistent_rule', 'disposition_inconsistent'],
+    });
+    expect(summary.results[0].failureReason).toMatch(/失败原因分类与统计状态不一致.*本轮继续执行/);
+    expect(summary.failureDistribution).toEqual({ unknown: 1 });
+
+    const writes = vi.spyOn(fs, 'writeSync').mockImplementation(() => 0);
+    try {
+      const stream = new EvalRunEventStream(summary.runId);
+      stream.recordSummary(summary);
+      stream.finish(0);
+      const runEnd = writes.mock.calls
+        .map((call) => JSON.parse(String(call[1])))
+        .find((event) => event.type === 'run_end');
+      expect(runEnd).toMatchObject({
+        type: 'run_end',
+        exitCode: 0,
+        summary: { completed: true, failureDistribution: { unknown: 1 } },
+      });
+    } finally {
+      writes.mockRestore();
+    }
   });
 });

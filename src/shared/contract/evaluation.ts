@@ -12,6 +12,12 @@ import type {
 
 export const EVAL_RUN_EVENT_SCHEMA_VERSION = 2 as const;
 
+export interface EvalFailureClassification {
+  code: string;
+  dispositions: string[];
+  symptoms: string[];
+}
+
 export interface EvalRunStamp {
   caseBankSha: string;
   evalSet: {
@@ -163,6 +169,8 @@ export type EvalRunEventSummary = {
   completed: boolean;
   notRun: number;
   invalidCases: number;
+  failureDistribution?: Record<string, number>;
+  failureCodebookSource?: 'project' | 'bundled';
   gitCommit?: string;
   persistenceWarning?: string;
   aborted?: boolean;
@@ -206,6 +214,7 @@ export type EvalRunEvent =
       durationMs: number;
       failureReason?: string;
       failureStage?: string;
+      failure?: EvalFailureClassification;
       usageStatus?: 'available' | 'usage_unavailable';
       costUsd?: number;
       mockExcluded?: boolean;
@@ -348,6 +357,7 @@ export interface CanonicalEvalCase {
   durationMs: number;
   failureReason?: string;
   failureStage?: string;
+  failure?: EvalFailureClassification;
   trials?: CanonicalEvalTrial[];
   metadata?: Record<string, unknown>;
 }

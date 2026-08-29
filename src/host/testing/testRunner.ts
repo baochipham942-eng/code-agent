@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import os from 'os';
 import path from 'path';
 import fs from 'fs/promises';
+import { existsSync } from 'node:fs';
 import { v4 as uuidv4 } from 'uuid';
 
 import type {
@@ -44,6 +45,12 @@ import { createScopedCostLimit, isScopedCostLimitExceeded } from '../services/co
 import { getMockCasePolicy } from './mockEvalPolicy';
 import { completePlannedResults, createNotRunResult, isRealAgentRunCase, markInvalidResultWithoutModel } from './testRunCompletion';
 import { appendTimeoutTelemetryFailureReason, attachTelemetryReplay } from './testRunnerTelemetryReplay';
+import {
+  loadFailureCodebook,
+  loadProjectFailureCodebookWithSource,
+  type FailureCodebook,
+} from './failureCodes';
+import { classifyTestResultFailure } from './testResultFailure';
 
 const execAsync = promisify(exec);
 const logger = createLogger('TestRunner');
@@ -155,6 +162,8 @@ export class TestRunner {
   private listeners: TestEventListener[] = [];
   private aborted = false;
   private abortReason?: string;
+  private readonly failureCodebook: FailureCodebook;
+  private readonly failureCodebookSource: 'project' | 'bundled';
 
   constructor(
     config: TestRunnerConfig,
@@ -168,6 +177,14 @@ export class TestRunner {
     this.agentFactory = agentFactory;
     this.workerDirectoryFactory = workerDirectoryFactory;
     this.isolatedExecutionFactory = isolatedExecutionFactory;
+    if (config.failureCodebookDir) {
+      this.failureCodebook = loadFailureCodebook(config.failureCodebookDir);
+      this.failureCodebookSource = 'project';
+    } else {
+      const loaded = loadProjectFailureCodebookWithSource(config.workingDirectory);
+      this.failureCodebook = loaded.codebook;
+      this.failureCodebookSource = loaded.source;
+    }
   }
 
   async runIsolatedSingleTest(
@@ -423,6 +440,11 @@ export class TestRunner {
       costExceeded: results.filter((r) => r.status === 'cost_exceeded').length,
       notRun: completion.notRun,
       invalidCases: results.filter((r) => r.invalid !== undefined).length,
+      failureDistribution: results.reduce<Record<string, number>>((distribution, result) => {
+        if (result.failure) distribution[result.failure.code] = (distribution[result.failure.code] ?? 0) + 1;
+        return distribution;
+      }, { unknown: 0 }),
+      failureCodebookSource: this.failureCodebookSource,
       averageScore: avgScore,
       results,
       environment: {
@@ -1082,6 +1104,8 @@ export class TestRunner {
       }
       markInvalidResultWithoutModel(result, isMockRun);
 
+      result.failure = classifyTestResultFailure(result, this.failureCodebook);
+
       logger.info('Test completed', {
         testId: testCase.id,
         status: result.status,
@@ -1239,10 +1263,14 @@ export function createDefaultConfig(
   overrides: Partial<TestRunnerConfig> = {}
 ): TestRunnerConfig {
   const testDirs = getTestDirs(workingDirectory);
+  const projectCodebookDir = path.join(workingDirectory, '.claude');
   return {
     testCaseDir: testDirs.testCases.new, // Default to new path
     resultsDir: testDirs.results.new,
     workingDirectory,
+    ...(existsSync(path.join(projectCodebookDir, 'eval-failcodes.yaml'))
+      ? { failureCodebookDir: projectCodebookDir }
+      : {}),
     defaultTimeout: parseInt(process.env.CODE_AGENT_TEST_TIMEOUT || String(TEST_TIMEOUTS.DEFAULT), 10),
     stopOnFailure: false,
     verbose: false,

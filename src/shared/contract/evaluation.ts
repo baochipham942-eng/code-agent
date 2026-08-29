@@ -110,6 +110,36 @@ interface EvalRunStartConfig extends EvalRunStamp {
   testCaseDir: string;
 }
 
+export interface EvalEnvironmentProbe {
+  available: boolean;
+  message: string;
+  packaged: boolean;
+  platform: NodeJS.Platform;
+  osJail: {
+    enabled: boolean;
+    available: boolean;
+    active: boolean;
+  };
+}
+
+export interface EvalRunPanelProbe {
+  environment: EvalEnvironmentProbe;
+  model: string;
+  provider: string;
+  priceTableVersion: number;
+  estimatedCostPerCaseUsd: number;
+  splitCounts: Record<'held-in' | 'held-out' | 'safety', number>;
+  quickCheck: {
+    tags: string[];
+    maxCases: number;
+  };
+}
+
+export interface EvalRunSubscriptionResult {
+  runId: string;
+  running: boolean;
+}
+
 type EvalRunEventStatus =
   | 'pending'
   | 'running'
@@ -384,6 +414,9 @@ export interface EvalExperimentSummary {
   /** 0-1 均分（legacy Eval Center UI 口径）。 */
   avgScore?: number;
   duration?: number;
+  completed?: boolean;
+  notRun?: number;
+  aborted?: boolean;
 }
 
 export interface EvalExperimentListItem {
@@ -396,6 +429,8 @@ export interface EvalExperimentListItem {
   /** 落盘来源：test-runner / eval-harness / regression。 */
   source: string;
   gitCommit: string | null;
+  /** RUNSTAMP 尚未落齐时允许字段缺失，消费方必须回落 unknown。 */
+  config?: Record<string, unknown> | null;
   summary: EvalExperimentSummary | null;
 }
 

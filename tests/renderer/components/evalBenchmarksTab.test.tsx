@@ -1,159 +1,292 @@
 // @vitest-environment jsdom
 import React from 'react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-
-// 显式标注签名：vi.fn(async () => undefined) 会把类型推成零参，
-// 后面 mockImplementation((channel) => ...) 就装不进去（tests tsconfig 棘轮会红）。
-const invokeMock = vi.hoisted(() => vi.fn<(channel: string, arg?: unknown) => Promise<unknown>>(async () => undefined));
-vi.mock('../../../src/renderer/services/ipcService', () => ({
-  ipcService: { invoke: invokeMock, on: vi.fn() },
-  default: { invoke: invokeMock, on: vi.fn() },
-}));
-
-import { EvalBenchmarksTab } from '../../../src/renderer/components/features/evalCenter/EvalBenchmarksTab';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 import type {
   EvalExperimentDetail,
   EvalExperimentListItem,
+  EvalRunEvent,
+  EvalRunPanelProbe,
 } from '../../../src/shared/contract/evaluation';
+
+const mocks = vi.hoisted(() => ({
+  invoke: vi.fn<(channel: string, arg?: unknown) => Promise<unknown>>(),
+  on: vi.fn(),
+  eventHandler: undefined as ((event: EvalRunEvent) => void) | undefined,
+  order: [] as string[],
+}));
+
+vi.mock('../../../src/renderer/services/evaluationRunIpc', () => ({
+  invokeEvaluation: mocks.invoke,
+  onEvaluation: mocks.on,
+}));
+
+vi.mock('../../../src/renderer/services/ipcService', () => ({
+  default: {
+    invoke: mocks.invoke,
+    on: mocks.on,
+  },
+}));
+
+vi.mock('react-virtuoso', () => ({
+  Virtuoso: React.forwardRef(function MockVirtuoso(props: {
+    data?: Array<{ id: string; text: string }>;
+    itemContent?: (index: number, item: { id: string; text: string }) => React.ReactNode;
+  }, _ref) {
+    return <div data-testid="virtuoso-log">{props.data?.map((item, index) => <div key={item.id}>{props.itemContent?.(index, item)}</div>)}</div>;
+  }),
+}));
+
+import { EvalBenchmarksTab } from '../../../src/renderer/components/features/evalCenter/EvalBenchmarksTab';
+
+const probe: EvalRunPanelProbe = {
+  environment: {
+    available: true,
+    message: '评测环境已就绪',
+    packaged: false,
+    platform: 'darwin',
+    osJail: { enabled: false, available: true, active: false },
+  },
+  model: 'deepseek-chat',
+  provider: 'deepseek',
+  priceTableVersion: 1,
+  estimatedCostPerCaseUsd: 0.0021,
+  splitCounts: { 'held-in': 76, 'held-out': 52, safety: 12 },
+  quickCheck: { tags: ['core-path'], maxCases: 12 },
+};
 
 const experiment = (
   id: string,
   timestamp: number,
-  passRate: number,
-  passed: number,
-  total: number,
-  source = 'eval-harness',
-  name = `${source}-${id}`,
+  config: Record<string, unknown>,
+  summary: EvalExperimentListItem['summary'] = { passRate: 0.5, passed: 1, total: 2, completed: true, notRun: 0 },
 ): EvalExperimentListItem => ({
   id,
-  name,
+  name: `eval-${id}`,
   timestamp,
-  model: 'test-model',
-  provider: 'test-provider',
+  model: 'deepseek-chat',
+  provider: 'deepseek',
   scope: 'full',
-  source,
+  source: 'eval',
   gitCommit: null,
-  summary: { passRate, passed, total },
+  config,
+  summary,
 });
 
-const detail = (id: string, passRate: number, cases: EvalExperimentDetail['cases']): EvalExperimentDetail => ({
-  experiment: { ...experiment(id, 0, 0, 0, 0), summary: { passRate } },
+const detail = (run: EvalExperimentListItem, cases: EvalExperimentDetail['cases']): EvalExperimentDetail => ({
+  experiment: run,
   cases,
 });
 
-describe('EvalBenchmarksTab', () => {
-  beforeEach(() => {
-    invokeMock.mockReset();
+function configureIpc(
+  list: () => EvalExperimentListItem[] = () => [],
+  eventsOnSubscribe: EvalRunEvent[] = [],
+  startResult: unknown = { runId: 'run-live' },
+) {
+  mocks.on.mockImplementation((_channel: string, callback: (event: EvalRunEvent) => void) => {
+    mocks.order.push('listen');
+    mocks.eventHandler = callback;
+    return vi.fn();
   });
-
-  afterEach(() => {
-    cleanup();
-  });
-
-  it('渲染五关卡分层条与空态', async () => {
-    invokeMock.mockImplementation(async (channel: string) => {
-      if (channel === IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS) return [];
-      return null;
-    });
-    render(<EvalBenchmarksTab />);
-
-    for (let level = 1; level <= 5; level += 1) {
-      expect(screen.getByTestId(`benchmark-level-${level}`)).toBeTruthy();
+  mocks.invoke.mockImplementation(async (channel: string, arg?: unknown) => {
+    if (channel === IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS) return list();
+    if (channel === IPC_CHANNELS.EVALUATION_RUN_EVENTS && !arg) return probe;
+    if (channel === IPC_CHANNELS.EVALUATION_RUN_SUITE) return startResult;
+    if (channel === IPC_CHANNELS.EVALUATION_RUN_EVENTS) {
+      mocks.order.push('subscribe');
+      eventsOnSubscribe.forEach((event) => mocks.eventHandler?.(event));
+      return { runId: 'run-live', running: true };
     }
-    expect(await screen.findByText('还没有落盘的跑分结果（experiments 表为空）。')).toBeTruthy();
+    if (channel === IPC_CHANNELS.EVALUATION_ABORT_RUN) return { runId: 'run-live', pid: 1, terminated: true };
+    return null;
+  });
+}
+
+async function openWizardAndArm(): Promise<void> {
+  fireEvent.click(await screen.findByRole('button', { name: '开跑' }));
+  fireEvent.click(screen.getByTestId('eval-run-confirm'));
+  await screen.findByText(/再点一次确认/);
+}
+
+async function startRun(): Promise<void> {
+  await openWizardAndArm();
+  fireEvent.click(screen.getByTestId('eval-run-confirm'));
+  await waitFor(() => expect(mocks.on).toHaveBeenCalledTimes(1));
+}
+
+beforeEach(() => {
+  mocks.invoke.mockReset();
+  mocks.on.mockReset();
+  mocks.eventHandler = undefined;
+  mocks.order.length = 0;
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+describe('EvalBenchmarksTab 跑分闭环', () => {
+  it('T1：第一次点击不发车，5 秒收回；第二次点击才发且 payload 不含 host 配置', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    configureIpc();
+    render(<EvalBenchmarksTab />);
+
+    await openWizardAndArm();
+    expect(mocks.invoke.mock.calls.some(([channel]) => channel === IPC_CHANNELS.EVALUATION_RUN_SUITE)).toBe(false);
+
+    act(() => vi.advanceTimersByTime(5_000));
+    expect(screen.getByTestId('eval-run-confirm').textContent).toContain('真跑并计费');
+    expect(mocks.invoke.mock.calls.some(([channel]) => channel === IPC_CHANNELS.EVALUATION_RUN_SUITE)).toBe(false);
+
+    fireEvent.click(screen.getByTestId('eval-run-confirm'));
+    fireEvent.click(screen.getByTestId('eval-run-confirm'));
+    await waitFor(() => expect(mocks.invoke.mock.calls.some(([channel]) => channel === IPC_CHANNELS.EVALUATION_RUN_SUITE)).toBe(true));
+
+    const call = mocks.invoke.mock.calls.find(([channel]) => channel === IPC_CHANNELS.EVALUATION_RUN_SUITE);
+    expect(call?.[1]).toMatchObject({ scope: 'full', split: 'held-in', maxCases: 76 });
+    expect(call?.[1]).not.toHaveProperty('apiKey');
+    expect(call?.[1]).not.toHaveProperty('model');
+    expect(call?.[1]).not.toHaveProperty('provider');
+    expect(call?.[1]).not.toHaveProperty('workingDirectory');
   });
 
-  it('按归一数据集名分组列出跑分，展开后显示最近两次对比（用例状态变迁）', async () => {
-    const runs = [
-      experiment('run-new', 2000, 1, 2, 2, 'eval-harness', 'gsm8k-2026-07-21'),
-      experiment('run-old', 1000, 0.5, 1, 2, 'eval-harness', 'gsm8k-2026-07-20'),
+  it('T1b：host 拒跑信封不创建幽灵运行，也不订阅事件', async () => {
+    configureIpc(
+      () => [],
+      [],
+      { success: false, error: { code: 'EVAL_RUN_REJECTED', message: 'environment unavailable' } },
+    );
+    render(<EvalBenchmarksTab />);
+
+    await openWizardAndArm();
+    fireEvent.click(screen.getByTestId('eval-run-confirm'));
+
+    expect(await screen.findByText('这轮没有成功发车，请检查评测环境后重试。')).toBeTruthy();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.queryByTestId('eval-run-active')).toBeNull();
+    expect(mocks.on).not.toHaveBeenCalled();
+    expect(mocks.invoke.mock.calls.some(([channel, arg]) => (
+      channel === IPC_CHANNELS.EVALUATION_RUN_EVENTS && Boolean(arg)
+    ))).toBe(false);
+  });
+
+  it('T2：先监听再 subscribe，事件流驱动三行步骤并把工具调用折成一行', async () => {
+    const base = { schemaVersion: 2 as const, runId: 'run-live' };
+    const synchronousEvents: EvalRunEvent[] = [
+      {
+        ...base,
+        type: 'run_start',
+        ts: 1_000,
+        plannedCaseIds: ['case-a', 'case-b', 'case-c'],
+        config: {
+          ...UNKNOWN_EVAL_RUN_STAMP,
+          evalSet: { ...UNKNOWN_EVAL_RUN_STAMP.evalSet, split: 'held-in' },
+          mode: 'real', model: 'deepseek-chat', provider: 'deepseek', scope: 'full', split: 'held-in',
+          maxCases: 3, concurrency: 1, gitCommit: 'abc', testCaseDir: '.claude/test-cases',
+        },
+      },
+      { ...base, type: 'case_start', ts: 1_100, testId: 'case-a', description: 'A' },
+      { ...base, type: 'tool_call', ts: 1_200, testId: 'case-a', tool: 'read_file', input: {} },
+      { ...base, type: 'tool_call', ts: 1_300, testId: 'case-a', tool: 'bash', input: {} },
+      { ...base, type: 'case_end', ts: 1_400, testId: 'case-a', status: 'passed', score: 1, durationMs: 300 },
+      { ...base, type: 'case_end', ts: 1_500, testId: 'case-b', status: 'infra_excluded', score: 0, durationMs: 100 },
     ];
-    invokeMock.mockImplementation(async (channel: string, arg?: unknown) => {
-      if (channel === IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS) return runs;
-      if (channel === IPC_CHANNELS.EVALUATION_LOAD_EXPERIMENT) {
-        if (arg === 'run-new') {
-          return detail('run-new', 1, [
-            { caseId: 'case-a', status: 'passed', score: 100, durationMs: 10 },
-            { caseId: 'case-b', status: 'passed', score: 90, durationMs: 20 },
-          ]);
-        }
-        return detail('run-old', 0.5, [
-          { caseId: 'case-a', status: 'passed', score: 100, durationMs: 10 },
-          { caseId: 'case-b', status: 'failed', score: 0, durationMs: 20 },
-        ]);
-      }
-      return null;
-    });
+    configureIpc(() => [], synchronousEvents);
     render(<EvalBenchmarksTab />);
+    await startRun();
+    expect(mocks.order).toEqual(['listen', 'subscribe']);
 
-    // 组标题显示归一后的数据集名（原始 name 的日期后缀被剥掉）
-    const group = await screen.findByTestId('benchmark-group-eval-harness-gsm8k');
-    expect(group.textContent).toContain('gsm8k');
-    expect(group.textContent).toContain('Eval Harness 跑分');
-    expect(group.textContent).toContain('2 次运行');
-
-    // 展开分组 → 懒加载两次运行的用例行并计算变迁
-    fireEvent.click(group.querySelector('button') as HTMLButtonElement);
-
-    const compare = await screen.findByTestId('benchmark-compare-eval-harness-gsm8k');
-    expect(compare.textContent).toContain('50.0% → 100.0%');
-    expect(compare.textContent).toContain('新增失败 0');
-    expect(compare.textContent).toContain('转通过 1');
-    expect(compare.textContent).toContain('case-b');
-
-    // 两次运行的行显示原始 name（保留日期后缀可追溯）
-    expect(group.textContent).toContain('gsm8k-2026-07-21');
-    expect(group.textContent).toContain('gsm8k-2026-07-20');
+    expect(await screen.findByText('case-a')).toBeTruthy();
+    expect(screen.getByText('case-b')).toBeTruthy();
+    expect(screen.getByText('case-c')).toBeTruthy();
+    expect(screen.getByText('不计入通过率（环境故障）')).toBeTruthy();
+    expect(screen.getByTestId('virtuoso-log').textContent).toContain('case-a 调用了 2 个工具');
+    expect(screen.getByTestId('virtuoso-log').textContent?.match(/调用了/g)).toHaveLength(1);
   });
 
-  it('跨数据集混跑时最近两次对比不跨数据集', async () => {
-    const runs = [
-      experiment('gsm8k-new', 3000, 1, 2, 2, 'eval-harness', 'gsm8k-2026-07-21'),
-      experiment('math-only', 2000, 0.5, 1, 2, 'eval-harness', 'math-2026-07-20'),
-      experiment('gsm8k-old', 1000, 0.5, 1, 2, 'eval-harness', 'gsm8k-2026-07-19'),
-    ];
-    const loadedIds: string[] = [];
-    invokeMock.mockImplementation(async (channel: string, arg?: unknown) => {
-      if (channel === IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS) return runs;
-      if (channel === IPC_CHANNELS.EVALUATION_LOAD_EXPERIMENT) {
-        loadedIds.push(String(arg));
-        return detail(String(arg), 1, [
-          { caseId: 'case-a', status: 'passed', score: 100, durationMs: 10 },
-        ]);
-      }
-      return null;
-    });
+  it('T3/T4：停止进入等待态；run_end 标未跑满，error 平静退化且不抛错', async () => {
+    let history: EvalExperimentListItem[] = [];
+    configureIpc(() => history);
     render(<EvalBenchmarksTab />);
+    await startRun();
 
-    // 归一后分成 gsm8k / math 两组，各自独立对比
-    const gsm8kGroup = await screen.findByTestId('benchmark-group-eval-harness-gsm8k');
-    const mathGroup = await screen.findByTestId('benchmark-group-eval-harness-math');
-    expect(gsm8kGroup.textContent).toContain('2 次运行');
-    expect(mathGroup.textContent).toContain('1 次运行');
+    act(() => {
+      mocks.eventHandler?.({
+        schemaVersion: 2,
+        type: 'run_start',
+        ts: 1_000,
+        runId: 'run-live',
+        plannedCaseIds: ['case-a', 'case-b'],
+        config: {
+          ...UNKNOWN_EVAL_RUN_STAMP,
+          evalSet: { ...UNKNOWN_EVAL_RUN_STAMP.evalSet, split: 'held-in' },
+          mode: 'real', model: 'deepseek-chat', provider: 'deepseek', scope: 'full',
+          maxCases: 2, concurrency: 1, gitCommit: 'abc', testCaseDir: 'cases',
+        },
+      });
+    });
+    fireEvent.click(screen.getByRole('button', { name: '停止' }));
+    expect(screen.getByText('正在停止…')).toBeTruthy();
 
-    fireEvent.click(gsm8kGroup.querySelector('button') as HTMLButtonElement);
-    await screen.findByTestId('benchmark-compare-eval-harness-gsm8k');
-    // 对比取的是 gsm8k 名下按时间最近的两次，不掺 math 的运行
-    expect(loadedIds.sort()).toEqual(['gsm8k-new', 'gsm8k-old']);
+    history = [experiment('run-live', 2_000, { split: 'held-in', k: 1, caseBankSha: 'abcdef0123', mode: 'real' }, {
+      passRate: 0.5, passed: 1, total: 2, completed: false, notRun: 1, aborted: true,
+    })];
+    act(() => {
+      mocks.eventHandler?.({
+        schemaVersion: 2,
+        type: 'run_end',
+        ts: 2_000,
+        runId: 'run-live',
+        summary: {
+          runId: 'run-live', startTime: 1_000, endTime: 2_000, duration: 1_000, total: 2,
+          passed: 1, failed: 0, skipped: 0, partial: 0, averageScore: 1,
+          plannedCaseIds: ['case-a', 'case-b'], completed: false, notRun: 1, invalidCases: 0, aborted: true,
+        },
+        reportFiles: [], exitCode: 0, aborted: true,
+      });
+    });
+    const row = await screen.findByTestId('benchmark-run-run-live');
+    expect(row.textContent).toContain('未跑满');
+    expect(row.querySelector('button')?.disabled).toBe(true);
 
-    fireEvent.click(mathGroup.querySelector('button') as HTMLButtonElement);
-    expect(await screen.findByText('该组至少两次运行才能对比。')).toBeTruthy();
+    cleanup();
+    history = [];
+    configureIpc(() => history);
+    render(<EvalBenchmarksTab />);
+    await startRun();
+    act(() => {
+      mocks.eventHandler?.({ schemaVersion: 2, type: 'error', ts: 3_000, runId: 'run-live', error: 'boom' });
+    });
+    expect(await screen.findByText('这轮没有正常结束，已按已跑完的题记录')).toBeTruthy();
   });
 
-  it('单次运行的组给出「至少两次运行才能对比」提示', async () => {
-    invokeMock.mockImplementation(async (channel: string) => {
-      if (channel === IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS) {
-        return [experiment('only-run', 1000, 1, 1, 1, 'regression', 'regression-2026-07-21')];
+  it('T5：按评测集 × k × 题库版本分组，缺版本回落 unknown，mock 不显示', async () => {
+    const runA = experiment('a', 3_000, { split: 'held-in', k: 1, caseBankSha: 'abcdef0123', mode: 'real' });
+    const runB = experiment('b', 2_000, { evalSet: { split: 'held-in' }, k: 1, caseBankSha: 'abcdef0123', mode: 'real' });
+    const runUnknown = experiment('unknown', 1_000, { split: 'held-in', k: 1, mode: 'real' });
+    const runMock = experiment('mock', 4_000, { split: 'held-in', k: 1, caseBankSha: 'abcdef0123', mode: 'mock' });
+    configureIpc(() => [runA, runB, runUnknown, runMock]);
+    mocks.invoke.mockImplementation(async (channel: string, arg?: unknown) => {
+      if (channel === IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS) return [runA, runB, runUnknown, runMock];
+      if (channel === IPC_CHANNELS.EVALUATION_RUN_EVENTS && !arg) return probe;
+      if (channel === IPC_CHANNELS.EVALUATION_LOAD_EXPERIMENT) {
+        const run = arg === 'a' ? runA : runB;
+        return detail(run, [{ caseId: 'case-1', status: arg === 'a' ? 'passed' : 'failed', score: 1, durationMs: 10 }]);
       }
       return null;
     });
     render(<EvalBenchmarksTab />);
 
-    const group = await screen.findByTestId('benchmark-group-regression-regression');
-    fireEvent.click(group.querySelector('button') as HTMLButtonElement);
+    expect(await screen.findByText('日常集 · 每题 1 次 · 题库 abcdef0')).toBeTruthy();
+    expect(screen.getByText('日常集 · 每题 1 次 · 题库 未知版本')).toBeTruthy();
+    expect(screen.queryByTestId('benchmark-run-mock')).toBeNull();
 
-    expect(await screen.findByText('该组至少两次运行才能对比。')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('benchmark-run-a').querySelector('button') as HTMLButtonElement);
+    fireEvent.click(screen.getByTestId('benchmark-run-b').querySelector('button') as HTMLButtonElement);
+    expect(await screen.findByText('50.0% → 50.0%')).toBeTruthy();
+    expect(screen.getByText('case-1')).toBeTruthy();
   });
 });

@@ -59,12 +59,23 @@ import type {
   EvalExperimentListItem,
   SaveEvalCaseRequest,
   SaveEvalCaseResult,
+  EvalRunEvent,
+  EvalRunPanelProbe,
+  EvalRunRequest,
+  EvalRunStartResult,
+  EvalRunSubscriptionResult,
 } from '../contract/evaluation';
 import type { AgentTrajectorySessionQualitySummary } from '../contract/agentTrajectory';
 
 // ----------------------------------------------------------------------------
 // Renderer -> Main: Invoke handlers (request/response)
 // ----------------------------------------------------------------------------
+
+export interface EvaluationRunIpcInvokeHandlers {
+  [IPC_CHANNELS.EVALUATION_RUN_SUITE]: (payload: EvalRunRequest) => Promise<EvalRunStartResult>;
+  [IPC_CHANNELS.EVALUATION_RUN_EVENTS]: (payload?: { runId?: string }) => Promise<EvalRunSubscriptionResult | EvalRunPanelProbe>;
+  [IPC_CHANNELS.EVALUATION_ABORT_RUN]: (payload: { runId: string }) => Promise<{ runId: string; pid: number; terminated: boolean }>;
+}
 
 export interface IpcInvokeHandlers {
   // In-App validation — renderer → main 回传结果
@@ -394,7 +405,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.HANDOFF_LIST]: (payload?: ListHandoffProposalsInput) => Promise<HandoffProposal[]>;
   [IPC_CHANNELS.HANDOFF_UPDATE_STATUS]: (payload: UpdateHandoffProposalStatusInput) => Promise<HandoffProposal | null>;
 
-  // Evaluation experiments（评测实验只读查询，评测中心「基准」tab）
+  // Evaluation runs + experiments（2026-08-29 爸拍板 R4）
   [IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS]: (payload?: { limit?: number }) => Promise<EvalExperimentListItem[]>;
   [IPC_CHANNELS.EVALUATION_LOAD_EXPERIMENT]: (experimentId: string) => Promise<EvalExperimentDetail | null>;
   [IPC_CHANNELS.EVALUATION_LIST_CASES]: () => Promise<EvalCaseListItem[]>;
@@ -631,6 +642,10 @@ export interface TaskRuntimeStats {
 }
 
 export type TaskRuntimeEvent = { type: 'state_change'; sessionId: string; data: TaskRuntimeSessionState } | { type: 'stats_updated'; data: TaskRuntimeStats } | { type: 'queue_update'; sessionId: string; queue: string[] };
+
+export interface EvaluationRunIpcEventHandlers {
+  [IPC_CHANNELS.EVALUATION_RUN_EVENTS]: (event: EvalRunEvent) => void;
+}
 
 export interface IpcEventHandlers {
   [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEventEnvelope) => void;

@@ -50,6 +50,8 @@ function summary(results: TestResult[]): TestRunSummary {
     notRun: 0,
     invalidCases: 0,
     averageScore: 1,
+    aggregationRule: 'pass_rate_k1',
+    aggregationRuleVersion: 4,
     results,
     stamp: UNKNOWN_EVAL_RUN_STAMP,
     environment: { provider: 'mock', model: 'mock-model', workingDirectory: '/tmp' },
@@ -94,6 +96,8 @@ describe('mock harness baseline', () => {
     expect(baseline).toMatchObject({
       mode: 'mock',
       denominatorVersion: 4,
+      aggregationRule: 'pass_rate_k1',
+      aggregationRuleVersion: 4,
       plannedCaseIds: ['fixture-a', 'real-only-b'],
       globalMetrics: { passRate: 1, averageScore: 1, totalCases: 1 },
       excludedCases: { 'real-only-b': 'requires real model' },

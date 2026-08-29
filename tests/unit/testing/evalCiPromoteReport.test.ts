@@ -46,6 +46,10 @@ vi.mock('../../../src/host/testing/index', () => ({
 
 vi.mock('../../../src/host/testing/ci/baselineManager', () => ({
   BASELINE_DENOMINATOR_VERSION: 4,
+  AGGREGATION_RULES: {
+    pass_rate_k1: { version: 4 },
+    pass_caret_k: { version: 4 },
+  },
   BaselineManager: vi.fn(function BaselineManager() {
     return {
       compare: compareMock,
@@ -116,6 +120,8 @@ function makeSummary(overrides: Partial<TestRunSummary> = {}): TestRunSummary {
     notRun: 0,
     invalidCases: 0,
     averageScore: 1,
+    aggregationRule: 'pass_rate_k1',
+    aggregationRuleVersion: 4,
     results: [],
     stamp: UNKNOWN_EVAL_RUN_STAMP,
     environment: { model: 'mock-model', provider: 'mock-provider', workingDirectory: '/tmp/work' },

@@ -12,6 +12,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { CONFIG_DIR_NEW } from '../../config/configPaths';
+import { correctedSampleStats } from '../trialAggregation';
 
 export const NOISE_BAND_LIMITS = {
   /** 带宽下限：零/极低方差时保留最小容差 */
@@ -47,9 +48,7 @@ export function computeNoiseBand(
   if (avgScores.length < NOISE_BAND_LIMITS.minRuns) {
     throw new Error(`噪声带至少需要 ${NOISE_BAND_LIMITS.minRuns} 个 runs 样本，收到 ${avgScores.length}`);
   }
-  const mean = avgScores.reduce((s, v) => s + v, 0) / avgScores.length;
-  const variance = avgScores.reduce((s, v) => s + (v - mean) ** 2, 0) / (avgScores.length - 1);
-  const stdDev = Math.sqrt(variance);
+  const stdDev = correctedSampleStats(avgScores)?.stdDev ?? 0;
   const raw = NOISE_BAND_LIMITS.sigmaMultiplier * stdDev;
   const maxScoreDrop = Math.min(NOISE_BAND_LIMITS.cap, Math.max(NOISE_BAND_LIMITS.floor, raw));
 

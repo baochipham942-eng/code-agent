@@ -155,7 +155,7 @@ export const evalRunPanelZh: EvalRunPanelDictionary = {
     incomplete: '未跑满',
     complete: '完成',
     groupHeader: '{set} · 每题 {k} 次 · 题库 {sha}',
-    unknownCaseBank: '题库版本未知',
+    unknownCaseBank: '未知版本',
     runs: '{count} 轮',
     passRate: '通过率',
     compareTitle: '所选两轮对比',

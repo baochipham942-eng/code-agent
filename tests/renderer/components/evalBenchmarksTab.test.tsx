@@ -3,6 +3,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 import type {
   EvalExperimentDetail,
   EvalExperimentListItem,
@@ -176,6 +177,8 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
         ts: 1_000,
         plannedCaseIds: ['case-a', 'case-b', 'case-c'],
         config: {
+          ...UNKNOWN_EVAL_RUN_STAMP,
+          evalSet: { ...UNKNOWN_EVAL_RUN_STAMP.evalSet, split: 'held-in' },
           mode: 'real', model: 'deepseek-chat', provider: 'deepseek', scope: 'full', split: 'held-in',
           maxCases: 3, concurrency: 1, gitCommit: 'abc', testCaseDir: '.claude/test-cases',
         },
@@ -212,7 +215,12 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
         ts: 1_000,
         runId: 'run-live',
         plannedCaseIds: ['case-a', 'case-b'],
-        config: { mode: 'real', model: 'deepseek-chat', provider: 'deepseek', scope: 'full', maxCases: 2, concurrency: 1, gitCommit: 'abc', testCaseDir: 'cases' },
+        config: {
+          ...UNKNOWN_EVAL_RUN_STAMP,
+          evalSet: { ...UNKNOWN_EVAL_RUN_STAMP.evalSet, split: 'held-in' },
+          mode: 'real', model: 'deepseek-chat', provider: 'deepseek', scope: 'full',
+          maxCases: 2, concurrency: 1, gitCommit: 'abc', testCaseDir: 'cases',
+        },
       });
     });
     fireEvent.click(screen.getByRole('button', { name: '停止' }));

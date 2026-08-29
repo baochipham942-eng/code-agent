@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import type { ElectronAPI } from '@shared/ipc';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { UNKNOWN_EVAL_RUN_STAMP } from '@shared/contract/evaluation';
 import type {
   EvalExperimentListItem,
   EvalRunEvent,
@@ -88,6 +89,8 @@ function emitActiveRun(): void {
     ts: 1_000,
     plannedCaseIds: ['case-auth-01', 'case-replay-04', 'case-safety-02', 'case-sheet-07'],
     config: {
+      ...UNKNOWN_EVAL_RUN_STAMP,
+      evalSet: { ...UNKNOWN_EVAL_RUN_STAMP.evalSet, split: 'held-in' },
       mode: 'real', model: 'deepseek-chat', provider: 'deepseek', scope: 'full', split: 'held-in',
       maxCases: 4, concurrency: 1, gitCommit: 'abcdef0', testCaseDir: '.claude/test-cases',
     },

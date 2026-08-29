@@ -16,6 +16,10 @@ describe('webServer local auth status', () => {
     expect(shouldUseLocalWebAuthStatus({ NODE_ENV: 'development' } as NodeJS.ProcessEnv)).toBe(false);
     expect(shouldUseLocalWebAuthStatus({ CODE_AGENT_E2E: '1' } as NodeJS.ProcessEnv)).toBe(true);
     expect(shouldUseLocalWebAuthStatus({ CODE_AGENT_ENABLE_DEV_API: 'true' } as NodeJS.ProcessEnv)).toBe(true);
+    expect(shouldUseLocalWebAuthStatus({
+      CODE_AGENT_ENABLE_DEV_API: 'true',
+      CODE_AGENT_TAURI_BOOT_TOKEN: 'boot-token',
+    } as NodeJS.ProcessEnv)).toBe(false);
   });
 
   it('returns a local authenticated user for auth getStatus when installed', async () => {

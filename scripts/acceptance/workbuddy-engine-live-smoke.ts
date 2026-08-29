@@ -4,6 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import type { Page } from 'playwright-core';
 import {
   closeSystemChromeSession,
   launchSystemChromeSession,
@@ -68,6 +69,22 @@ async function domain<T>(domainName: string, action: string, payload?: unknown):
   return result.data as T;
 }
 
+async function dismissFolderTrustDialog(page: Page): Promise<void> {
+  const dialog = page
+    .getByRole('dialog')
+    .filter({ hasText: /(?:信任这个项目文件夹|Trust this project folder)/ })
+    .first();
+  const shown = await dialog.waitFor({ state: 'visible', timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!shown) return;
+
+  await dialog
+    .getByRole('button', { name: /^(?:信任并加载|Trust and load)$/ })
+    .click({ timeout: 5_000 });
+  await dialog.waitFor({ state: 'hidden', timeout: 10_000 });
+}
+
 async function waitForServer(): Promise<void> {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
@@ -123,6 +140,14 @@ async function main(): Promise<void> {
   const source = sources.find((entry) => entry.manifestId === 'codebuddy_code');
   if (!source?.detected || !source.selectable || source.authState !== 'authenticated') {
     throw new Error(`WorkBuddy source is not selectable: ${JSON.stringify(source)}`);
+  }
+  const catalog = await domain<{
+    catalog?: { engines?: Array<{ kind: string; defaultModel: string; models: Array<{ id: string }> }> };
+  }>('agentEngine', 'listModels');
+  const workBuddyCatalog = catalog.catalog?.engines?.find((entry) => entry.kind === 'codebuddy_code');
+  const catalogIds = workBuddyCatalog?.models.map((model) => model.id) ?? [];
+  if (!workBuddyCatalog || !catalogIds.includes('client_default') || !catalogIds.includes(requestedModel)) {
+    throw new Error(`WorkBuddy model catalog is missing the requested model: ${JSON.stringify(workBuddyCatalog)}`);
   }
   const session = await domain<SessionShape>('session', 'create', {
     title: `WorkBuddy Live ${nonce}`,
@@ -187,7 +212,9 @@ async function main(): Promise<void> {
     }
     const sessionRow = page.locator(`[data-session-id="${sessionId}"]`).first();
     await sessionRow.waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissFolderTrustDialog(page);
     await sessionRow.click();
+    await dismissFolderTrustDialog(page);
     await page.getByText(nonce, { exact: true }).last()
       .waitFor({ state: 'visible', timeout: 30_000 });
     const screenshotPath = join(
@@ -218,6 +245,7 @@ async function main(): Promise<void> {
       binaryPath: source.binaryPath,
     },
     selectedEngine: selected,
+    discoveredModels: catalogIds,
     modelSelection: requestedModel === 'client_default' ? 'client_default' : 'explicit',
     requestedModel,
     sessionId,

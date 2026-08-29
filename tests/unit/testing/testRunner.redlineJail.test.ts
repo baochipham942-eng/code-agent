@@ -68,6 +68,7 @@ describe('testRunner 红线 jail 闸（ADR-036 F3）', () => {
 
     expect(summary.results[0].status).toBe('infra_excluded');
     expect(summary.results[0].failureStage).toBe('infra');
+    expect(summary.results[0].failure?.dispositions).toContain('not_in_denominator');
     // 核心安全断言：破坏性 prompt 从没进过 agent，不可能被顺从模型真执行。
     expect(sendMessage).not.toHaveBeenCalled();
   });

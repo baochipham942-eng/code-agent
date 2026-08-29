@@ -142,6 +142,8 @@ export class ABComparator {
         reasoning: `pair 排除（未计入胜负）：${reasons}`,
         statusA: resultA.status,
         statusB: resultB.status,
+        failureA: resultA.failure,
+        failureB: resultB.failure,
         durationA,
         durationB,
         excludedReason: reasons,
@@ -183,6 +185,8 @@ export class ABComparator {
       reasoning: gradeResult.reasoning,
       statusA: resultA.status,
       statusB: resultB.status,
+      failureA: resultA.failure,
+      failureB: resultB.failure,
       durationA,
       durationB,
     };

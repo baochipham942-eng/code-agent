@@ -1,0 +1,100 @@
+version: 1
+
+# 表现轴按 priority 取唯一最高码；dispositions 是处置轴，可从所有命中码合并。
+# 已知问题可在条目上补 issue: https://...，分类结果会生成 known_issue:<url>。
+codes:
+  - code: crash
+    label: 运行崩溃
+    priority: 700
+    match:
+      failureReason:
+        - '\b(?:crash(?:ed)?|segmentation fault|uncaught|fatal error|panic)\b'
+        - '\b(?:SIGABRT|SIGBUS|SIGILL|SIGSEGV)\b'
+      stderr:
+        - '\b(?:crash(?:ed)?|segmentation fault|uncaught|fatal error|panic)\b'
+        - '\b(?:SIGABRT|SIGBUS|SIGILL|SIGSEGV)\b'
+    dispositions:
+      - needs_human
+
+  - code: timeout
+    label: 运行超时
+    priority: 600
+    match:
+      failureReason:
+        - '\b(?:timed out|timeout after|ETIMEDOUT)\b'
+        - '超时'
+      failureStage:
+        - timeout
+      stderr:
+        - '\b(?:timed out|timeout after|ETIMEDOUT)\b'
+        - '超时'
+    dispositions: []
+
+  - code: max_steps
+    label: 步数耗尽
+    priority: 500
+    match:
+      failureReason:
+        - '\b(?:max(?:imum)?|exceeded)\s+(?:steps?|turns?|iterations?)\b'
+        - '\b(?:step|turn|iteration)\s+limit\b'
+        - '达到最大(?:步数|轮数|迭代次数)'
+      stderr:
+        - '\b(?:max(?:imum)?|exceeded)\s+(?:steps?|turns?|iterations?)\b'
+        - '\b(?:step|turn|iteration)\s+limit\b'
+    dispositions:
+      - needs_human
+
+  - code: loop_suspect
+    label: 疑似重复循环
+    priority: 400
+    match:
+      failureReason:
+        - '\b(?:loop(?:ing)?|stagnat(?:ed|ion)|repeatedly)\b'
+        - '(?:疑似死循环|重复循环|反复调用)'
+      stderr:
+        - '\b(?:loop(?:ing)?|stagnat(?:ed|ion)|repeatedly)\b'
+        - '(?:疑似死循环|重复循环|反复调用)'
+    dispositions:
+      - needs_human
+
+  - code: tool_error_storm
+    label: 工具连续报错
+    priority: 300
+    match:
+      failureReason:
+        - '\btool(?: call)?s?\b.{0,40}\b(?:errors?|fail(?:ed|ures?)?)\b'
+        - '(?:工具调用|工具).{0,20}(?:连续|反复|多次).{0,20}(?:报错|失败)'
+      stderr:
+        - '\btool(?: call)?s?\b.{0,40}\b(?:errors?|fail(?:ed|ures?)?)\b'
+    dispositions:
+      - needs_human
+
+  - code: missing_artifact
+    label: 缺少预期产物
+    priority: 200
+    match:
+      failureReason:
+        - '\bmissing\b.{0,40}\b(?:artifact|file|output)\b'
+        - '\b(?:artifact|file)\b.{0,40}\b(?:not found|does not exist|was not created)\b'
+        - '\bExpected file\b.{0,80}\b(?:to be created|to exist)\b'
+        - '\bCannot check content\b.{0,80}\bfile\b.{0,40}\bnot found\b'
+        - '(?:缺少|未生成|不存在).{0,20}(?:产物|文件|输出)'
+      stderr:
+        - '\bENOENT\b'
+        - '\b(?:artifact|file)\b.{0,40}\b(?:not found|does not exist)\b'
+    dispositions:
+      - needs_human
+
+  - code: wrong_output
+    label: 输出内容不符合预期
+    priority: 100
+    match:
+      failureReason:
+        - '\bexpected\b.{0,120}\b(?:actual|received|got)\b'
+        - '\bExpected (?:response|output|answer|content|error message|argument)\b'
+        - '\b(?:output|answer|content)\b.{0,40}\b(?:incorrect|wrong|mismatch)\b'
+        - '(?:内容不对|输出不符|断言失败|与预期不符)'
+      stderr:
+        - '\b(?:assertion|snapshot)\b.{0,40}\b(?:failed|mismatch)\b'
+    dispositions:
+      - needs_human

@@ -144,6 +144,7 @@ export class ExperimentAdapter {
       data_json: JSON.stringify({
         failureReason: event.failureReason,
         failureStage: event.failureStage,
+        failure: event.failure,
         usageStatus: event.usageStatus,
         costUsd: event.costUsd,
         mockExcluded: event.mockExcluded,
@@ -174,6 +175,7 @@ export class ExperimentAdapter {
       plannedCaseIds: summary.plannedCaseIds,
       notRun: summary.notRun,
       invalidCases: summary.invalidCases,
+      failureDistribution: summary.failureDistribution ?? { unknown: 0 },
       aborted: summary.aborted ?? false,
       abortReason: summary.abortReason,
       ...(error ? { error } : {}),
@@ -283,6 +285,7 @@ export class ExperimentAdapter {
       qualityReport,
       failureReason: c.failureReason,
       failureStage: c.failureStage,
+      failure: c.failure,
       aggregation: run.aggregation,
       source: run.source,
       score100: c.score,
@@ -524,6 +527,7 @@ export class ExperimentAdapter {
         durationMs: r.duration || 0,
         failureReason: r.failureReason,
         failureStage: r.failureStage,
+        failure: r.failure,
         trials: r.trials?.map((trial, index): CanonicalEvalTrial => ({
           trialIndex: index,
           status: this.normalizeTestStatus(trial.status),
@@ -589,6 +593,7 @@ export class ExperimentAdapter {
         completed: summary.completed,
         notRun: summary.notRun,
         invalidCases: summary.invalidCases,
+        failureDistribution: summary.failureDistribution ?? { unknown: 0 },
         ...(summary.aborted ? { aborted: true, abortReason: summary.abortReason } : {}),
         realAgentRun: {
           passed: cases.filter(c => c.metadata?.realAgentRun && (c.metadata.realAgentRun as { passed?: boolean }).passed).length,

@@ -7,6 +7,7 @@ import path from 'path';
 import type { BaselineDelta, TestRunSummary, TestResult } from './types';
 import { formatDuration } from '../../shared/utils/format';
 import { getRunStampReportRows } from './runStampReport';
+import { failureCodeLabel, loadProjectFailureCodebook } from './failureCodes';
 import {
   CALIBRATION_TRUST_THRESHOLDS,
   isTrustedCalibration,
@@ -124,10 +125,22 @@ export function generateMarkdownReport(
   lines.push(`| 工作目录 | \`${summary.environment.workingDirectory}\` |`);
   lines.push('');
 
+  lines.push('## 失败原因分布');
+  lines.push('');
+  lines.push(...generateFailureDistributionRows(summary));
+  lines.push('');
+
   // Failed tests (if any)
   const failedTests = summary.results.filter((r) => r.status === 'failed');
   if (failedTests.length > 0) {
     lines.push('## 失败用例详情');
+    lines.push('');
+    lines.push('| 用例 ID | 失败原因（码） | 失败详情 |');
+    lines.push('|---------|----------------|----------|');
+    for (const result of failedTests) {
+      const reason = (result.failureReason || '未知').replace(/\|/g, '\\|').substring(0, 120);
+      lines.push(`| ${result.testId} | ${formatFailureCode(result.failure?.code ?? 'unknown')} | ${reason} |`);
+    }
     lines.push('');
 
     for (const result of failedTests) {
@@ -136,6 +149,8 @@ export function generateMarkdownReport(
       lines.push(`**描述**: ${result.description}`);
       lines.push('');
       lines.push(`**失败原因**: ${result.failureReason || '未知'}`);
+      lines.push('');
+      lines.push(`**失败原因（码）**: ${formatFailureCode(result.failure?.code ?? 'unknown')}`);
       lines.push('');
 
       if (result.failureDetails) {
@@ -181,14 +196,14 @@ export function generateMarkdownReport(
   if (partialTests.length > 0) {
     lines.push('## 部分通过用例');
     lines.push('');
-    lines.push('| 用例 ID | 描述 | 分数 | 失败原因 |');
-    lines.push('|---------|------|------|----------|');
+    lines.push('| 用例 ID | 描述 | 分数 | 失败原因（码） | 失败详情 |');
+    lines.push('|---------|------|------|----------------|----------|');
 
     for (const result of partialTests) {
       const scoreStr = `${(result.score * 100).toFixed(0)}%`;
       const reason = result.failureReason?.substring(0, 80) || '—';
       lines.push(
-        `| 🟡 ${result.testId} | ${result.description} | ${scoreStr} | ${reason} |`
+        `| 🟡 ${result.testId} | ${result.description} | ${scoreStr} | ${formatFailureCode(result.failure?.code ?? 'unknown')} | ${reason} |`
       );
     }
     lines.push('');
@@ -462,6 +477,57 @@ export function generateMarkdownReport(
  */
 export function generateJsonReport(summary: TestRunSummary): string {
   return JSON.stringify(summary, null, 2);
+}
+
+function reportFailureCodebook() {
+  try {
+    return loadProjectFailureCodebook();
+  } catch {
+    return undefined;
+  }
+}
+
+function formatFailureCode(code: string): string {
+  const codebook = reportFailureCodebook();
+  const label = codebook ? failureCodeLabel(codebook, code) : code === 'unknown' ? '未归类' : code;
+  return `${label} <span style="color:#888"><code>${code}</code></span>`;
+}
+
+function formatDisposition(disposition: string): string {
+  if (disposition === 'retryable') return '可以重试';
+  if (disposition === 'not_in_denominator') return '不计入通过率';
+  if (disposition === 'needs_human') return '需要人工确认';
+  if (disposition.startsWith('known_issue:')) return `已知问题 ${disposition.slice('known_issue:'.length)}`;
+  return disposition;
+}
+
+function generateFailureDistributionRows(summary: TestRunSummary): string[] {
+  const distribution = { unknown: 0, ...summary.failureDistribution };
+  const codeRows = Object.entries(distribution)
+    .sort(([leftCode, leftCount], [rightCode, rightCount]) => (
+      rightCount - leftCount || leftCode.localeCompare(rightCode)
+    ));
+  const dispositions = summary.results.reduce<Record<string, number>>((counts, result) => {
+    for (const disposition of result.failure?.dispositions ?? []) {
+      counts[disposition] = (counts[disposition] ?? 0) + 1;
+    }
+    return counts;
+  }, {});
+  const lines = [
+    '| 失败原因 | 数量 |',
+    '|----------|------|',
+    ...codeRows.map(([code, count]) => `| ${formatFailureCode(code)} | ${count} |`),
+    '',
+    '### 处置标签',
+    '',
+    '| 处置 | 数量 |',
+    '|------|------|',
+  ];
+  const dispositionRows = Object.entries(dispositions)
+    .sort(([left, leftCount], [right, rightCount]) => rightCount - leftCount || left.localeCompare(right))
+    .map(([disposition, count]) => `| ${formatDisposition(disposition)} | ${count} |`);
+  lines.push(...(dispositionRows.length > 0 ? dispositionRows : ['| 暂无 | 0 |']));
+  return lines;
 }
 
 /**

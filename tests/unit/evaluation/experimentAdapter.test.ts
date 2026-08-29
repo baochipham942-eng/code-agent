@@ -14,6 +14,51 @@ function createDbWriter() {
 }
 
 describe('ExperimentAdapter canonical harness persistence', () => {
+  it('persists failure axes for event-backed and TestRunner-backed cases', async () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    const failure = {
+      code: 'timeout',
+      dispositions: ['retryable'],
+      symptoms: ['timeout', 'loop_suspect'],
+    };
+    adapter.persistEventCase({
+      schemaVersion: 2,
+      type: 'case_end',
+      ts: 1,
+      runId: 'event-run',
+      testId: 'event-case',
+      status: 'failed',
+      score: 0,
+      durationMs: 5,
+      failure,
+    });
+    expect(JSON.parse(db.insertExperimentCases.mock.calls[0]?.[1][0].data_json).failure)
+      .toEqual(failure);
+
+    const summary: TestRunSummary = {
+      runId: 'failure-run', startTime: 1, endTime: 2, duration: 1,
+      total: 1, plannedCaseIds: ['failed-case'], completed: true,
+      passed: 0, failed: 1, skipped: 0, partial: 0, notRun: 0, invalidCases: 0,
+      failureDistribution: { unknown: 0, timeout: 1 },
+      averageScore: 0,
+      results: [{
+        testId: 'failed-case', description: 'failed', status: 'failed',
+        duration: 1, startTime: 1, endTime: 2, toolExecutions: [], responses: [], errors: [],
+        turnCount: 1, score: 0, failure,
+      }],
+      stamp: UNKNOWN_EVAL_RUN_STAMP,
+      environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },
+      performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
+    };
+    await adapter.persistTestRun(summary);
+    const persistedExperiment = db.insertExperiment.mock.calls[0]?.[0];
+    expect(JSON.parse(persistedExperiment.summary_json).failureDistribution)
+      .toEqual({ unknown: 0, timeout: 1 });
+    const persistedCase = db.insertExperimentCases.mock.calls[1]?.[1][0];
+    expect(JSON.parse(persistedCase.data_json).failure).toEqual(failure);
+  });
+
   it('persists TestRunner summaries through the canonical eval run contract', async () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);

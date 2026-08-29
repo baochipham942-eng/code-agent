@@ -37,6 +37,14 @@ function validateSummary(value: unknown): void {
   ]) requireNumber(value, key);
   if (!isStringArray(value.plannedCaseIds)) throw new Error('评测汇总缺少 plannedCaseIds。');
   if (typeof value.completed !== 'boolean') throw new Error('评测汇总缺少 completed。');
+  if (value.failureDistribution !== undefined) {
+    if (!isRecord(value.failureDistribution)) throw new Error('评测汇总 failureDistribution 必须是对象。');
+    for (const count of Object.values(value.failureDistribution)) {
+      if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) {
+        throw new Error('评测汇总 failureDistribution 含无效计数。');
+      }
+    }
+  }
 }
 
 export function parseEvalRunEvent(value: unknown): EvalRunEvent {
@@ -83,6 +91,13 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
       if (!statuses.has(String(value.status))) throw new Error('评测用例状态不受支持。');
       requireNumber(value, 'score');
       requireNumber(value, 'durationMs');
+      if (value.failure !== undefined) {
+        if (!isRecord(value.failure)) throw new Error('评测用例 failure 必须是对象。');
+        requireString(value.failure, 'code');
+        if (!isStringArray(value.failure.dispositions) || !isStringArray(value.failure.symptoms)) {
+          throw new Error('评测用例 failure 缺少 dispositions 或 symptoms。');
+        }
+      }
       break;
     }
     case 'tool_call':

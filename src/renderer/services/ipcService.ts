@@ -1,4 +1,4 @@
-import { IPC_CHANNELS, type IpcInvokeHandlers, type IpcEventHandlers } from '@shared/ipc';
+import { IPC_CHANNELS, type IpcEventHandlers, type IpcInvokeHandlers } from '@shared/ipc';
 import type { SpeechTranscribeOptions, SpeechTranscribeResult } from '@shared/contract';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import { createInflightDedupe } from '../utils/inflightDedupe';
@@ -79,14 +79,6 @@ function createSequencedAgentEventDispatcher(
   };
 }
 
-export function on(
-  channel: typeof IPC_CHANNELS.EVALUATION_RUN_EVENTS,
-  callback: IpcEventHandlers[typeof IPC_CHANNELS.EVALUATION_RUN_EVENTS],
-): (() => void) | undefined;
-export function on<K extends keyof IpcEventHandlers>(
-  channel: K,
-  callback: IpcEventHandlers[K],
-): (() => void) | undefined;
 export function on<K extends keyof IpcEventHandlers>(
   channel: K,
   callback: IpcEventHandlers[K]

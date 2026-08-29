@@ -19,6 +19,7 @@ import {
   evalRunPanelZh,
   type EvalRunPanelLabels,
 } from '../../../i18n/evalRunPanel';
+import { invokeEvaluation, onEvaluation } from '../../../services/evaluationRunIpc';
 import ipcService from '../../../services/ipcService';
 import { useAppStore } from '../../../stores/appStore';
 import { Button } from '../../primitives/Button';
@@ -91,7 +92,7 @@ export const EvalBenchmarksTab: React.FC = () => {
 
   useEffect(() => {
     void loadExperiments();
-    void ipcService.invoke(IPC_CHANNELS.EVALUATION_RUN_EVENTS).then((result) => {
+    void invokeEvaluation(IPC_CHANNELS.EVALUATION_RUN_EVENTS).then((result) => {
       if (result && 'environment' in result) {
         setProbe(result);
         setMaxCases(result.splitCounts['held-in']);
@@ -162,7 +163,7 @@ export const EvalBenchmarksTab: React.FC = () => {
         maxCases,
         ...(tags.length > 0 ? { tags } : {}),
       };
-      const runResult = await ipcService.invoke(IPC_CHANNELS.EVALUATION_RUN_SUITE, request);
+      const runResult = await invokeEvaluation(IPC_CHANNELS.EVALUATION_RUN_SUITE, request);
       if (!runResult || typeof runResult.runId !== 'string' || runResult.runId.length === 0) {
         throw new Error('Evaluation run did not return a runId');
       }
@@ -187,7 +188,7 @@ export const EvalBenchmarksTab: React.FC = () => {
       let receivedRunEnd = false;
       // 先挂监听再 subscribe，避免 host 同步推送的 run_start 丢失。
       unsubscribeRef.current?.();
-      const unsubscribe = ipcService.on(IPC_CHANNELS.EVALUATION_RUN_EVENTS, (event) => {
+      const unsubscribe = onEvaluation(IPC_CHANNELS.EVALUATION_RUN_EVENTS, (event) => {
         if (event.runId !== runId) return;
         if (event.type === 'run_end') receivedRunEnd = true;
         updateActiveRunFromEvent(event);
@@ -198,7 +199,7 @@ export const EvalBenchmarksTab: React.FC = () => {
         setActiveRun(null);
         return;
       }
-      const subscription = await ipcService.invoke(
+      const subscription = await invokeEvaluation(
         IPC_CHANNELS.EVALUATION_RUN_EVENTS,
         { runId },
       ) as EvalRunSubscriptionResult;
@@ -229,7 +230,7 @@ export const EvalBenchmarksTab: React.FC = () => {
     if (!activeRun || activeRun.stopping) return;
     setActiveRun((current) => current ? { ...current, stopping: true } : current);
     try {
-      await ipcService.invoke(IPC_CHANNELS.EVALUATION_ABORT_RUN, { runId: activeRun.runId });
+      await invokeEvaluation(IPC_CHANNELS.EVALUATION_ABORT_RUN, { runId: activeRun.runId });
     } catch {
       setQuietNotice(labels.quietDegraded);
       setActiveRun(null);

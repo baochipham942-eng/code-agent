@@ -18,6 +18,11 @@ const mocks = vi.hoisted(() => ({
   order: [] as string[],
 }));
 
+vi.mock('../../../src/renderer/services/evaluationRunIpc', () => ({
+  invokeEvaluation: mocks.invoke,
+  onEvaluation: mocks.on,
+}));
+
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     invoke: mocks.invoke,

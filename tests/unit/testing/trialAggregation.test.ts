@@ -73,6 +73,34 @@ describe('aggregateTrials', () => {
       passCaretK: 0,
     });
   });
+  // 2026-08-30 监工代笔（Grok 变异席抓出的盲区）：isPassingTrial 的第三条件此前没有任何夹具，
+  // 删掉 telemetryGate 判断 4 文件 41/41 仍绿。真实路径里 attachTelemetryReplay 会先把门失败
+  // 试次改成 failed，这里钉的是纯函数自身的不变量：status='passed' 但门失败的试次不进 c。
+  it('does not count a passing trial whose telemetry gate failed in c', () => {
+    const gateFailed = { name: 'real-agent-run' as const, passed: false, failures: ['missing_turns'] };
+    expect(aggregateTrials([
+      trial('passed'),
+      { ...trial('passed'), telemetryGate: gateFailed },
+    ], 2)).toMatchObject({
+      status: 'failed',
+      trialCount: 2,
+      passCount: 1,
+      passCaretK: 0,
+    });
+  });
+
+  it('reports c=0 when every passing trial failed its telemetry gate', () => {
+    const gateFailed = { name: 'real-agent-run' as const, passed: false, failures: ['missing_turns'] };
+    expect(aggregateTrials([
+      { ...trial('passed'), telemetryGate: gateFailed },
+      { ...trial('passed'), telemetryGate: gateFailed },
+    ], 2)).toMatchObject({
+      status: 'failed',
+      trialCount: 2,
+      passCount: 0,
+      passCaretK: 0,
+    });
+  });
 });
 
 describe('correctedSampleStats', () => {

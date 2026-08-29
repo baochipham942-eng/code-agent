@@ -7,6 +7,7 @@ import fs from 'fs';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { AgentEvent, Message, PermissionRequest, PermissionResponse } from '../../shared/contract';
+import { shouldRefusePackagedDevMode } from '../../shared/security/packagedDevModeGuard';
 import { generatePermissionRequestId } from '../../shared/utils/id';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { sseClients, broadcastSSE } from '../helpers/sse';
@@ -149,7 +150,8 @@ let devRealApprovalToolExecutor: import('../../host/tools/toolExecutor').ToolExe
 // ── Helper functions ──────────────────────────────────────────────────────
 
 export function isDevApiEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_ENABLE_DEV_API === 'true' || env.CODE_AGENT_E2E === '1';
+  return !shouldRefusePackagedDevMode(env)
+    && (env.CODE_AGENT_ENABLE_DEV_API === 'true' || env.CODE_AGENT_E2E === '1');
 }
 
 export function isDevExecToolAllowed(tool: string): boolean {

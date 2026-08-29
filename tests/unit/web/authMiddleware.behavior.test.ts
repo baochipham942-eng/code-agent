@@ -4,14 +4,15 @@
 // ============================================================================
 import express from 'express';
 import http from 'http';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   SERVER_AUTH_TOKEN,
   authMiddleware,
   corsMiddleware,
+  exitIfPackagedDevModeRefused,
   rateLimitMiddleware,
-  shouldRefuseE2EFlag,
 } from '../../../src/web/middleware/auth';
+import { shouldRefusePackagedDevMode } from '../../../src/shared/security/packagedDevModeGuard';
 
 let server: http.Server | undefined;
 let baseUrl = '';
@@ -113,28 +114,59 @@ describe('authMiddleware', () => {
   });
 });
 
-describe('shouldRefuseE2EFlag', () => {
+describe('shouldRefusePackagedDevMode', () => {
   it('refuses E2E flag under the real Tauri shell (boot token present)', () => {
-    expect(shouldRefuseE2EFlag({
+    expect(shouldRefusePackagedDevMode({
       CODE_AGENT_E2E: '1',
       CODE_AGENT_TAURI_BOOT_TOKEN: 'boot-token',
     })).toBe(true);
   });
 
+  it('refuses dev API under the real Tauri shell (boot token present)', () => {
+    expect(shouldRefusePackagedDevMode({
+      CODE_AGENT_ENABLE_DEV_API: 'true',
+      CODE_AGENT_TAURI_BOOT_TOKEN: 'boot-token',
+    })).toBe(true);
+  });
+
+  it('fails fast before startup when packaged dev API is requested', () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('process.exit:1');
+    }) as never);
+
+    try {
+      expect(() => exitIfPackagedDevModeRefused({
+        CODE_AGENT_ENABLE_DEV_API: 'true',
+        CODE_AGENT_TAURI_BOOT_TOKEN: 'boot-token',
+      })).toThrow('process.exit:1');
+      expect(exit).toHaveBeenCalledWith(1);
+    } finally {
+      exit.mockRestore();
+    }
+  });
+
   it('allows E2E flag without the Tauri shell (Playwright/probe spawn node directly)', () => {
-    expect(shouldRefuseE2EFlag({ CODE_AGENT_E2E: '1' })).toBe(false);
+    expect(shouldRefusePackagedDevMode({ CODE_AGENT_E2E: '1' })).toBe(false);
   });
 
   it('exempts the compile warmup path spawned by the shell itself', () => {
-    expect(shouldRefuseE2EFlag({
+    expect(shouldRefusePackagedDevMode({
       CODE_AGENT_E2E: '1',
       CODE_AGENT_TAURI_BOOT_TOKEN: 'boot-token',
       CODE_AGENT_COMPILE_WARMUP: '1',
     })).toBe(false);
   });
 
+  it('does not exempt dev API during compile warmup', () => {
+    expect(shouldRefusePackagedDevMode({
+      CODE_AGENT_ENABLE_DEV_API: 'true',
+      CODE_AGENT_TAURI_BOOT_TOKEN: 'boot-token',
+      CODE_AGENT_COMPILE_WARMUP: '1',
+    })).toBe(true);
+  });
+
   it('ignores shell boot token when the E2E flag is off', () => {
-    expect(shouldRefuseE2EFlag({ CODE_AGENT_TAURI_BOOT_TOKEN: 'boot-token' })).toBe(false);
+    expect(shouldRefusePackagedDevMode({ CODE_AGENT_TAURI_BOOT_TOKEN: 'boot-token' })).toBe(false);
   });
 });
 

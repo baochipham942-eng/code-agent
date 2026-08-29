@@ -144,18 +144,24 @@ describe('AgentErrorCard', () => {
     expect(container.querySelector('.font-mono')).toBeNull();
   });
 
-  // 切过模型之后「这轮到底跑的谁」是最先要确认的事，所以它排在详情行第一位。
-  // 拍板 2026-08-01「折中方案」：主视图只留「这一轮真跑的是哪个模型」（产品负责人的
-  // 原始诉求），provider id / 错误码 / HTTP / Trace ID 这些排障字段收进折叠区，
-  // 别跟两个有效按钮抢注意力。
-  it('主视图只留模型名，服务商 id 收进技术详情折叠区', () => {
-    renderCard(makeError({ provider: 'custom-100xlabs', modelId: 'claude-opus-4-8' }));
+  it.each([
+    { developerMode: false, modelVisible: false },
+    { developerMode: true, modelVisible: true },
+  ])(
+    '模型行按开发者模式显隐、技术详情仍对全用户可展开：$developerMode',
+    ({ developerMode, modelVisible }) => {
+      useAppStore.setState({ developerMode });
+      renderCard(makeError({ provider: 'custom-100xlabs', modelId: 'claude-opus-4-8' }));
 
-    expect(screen.getByText('实际使用 claude-opus-4-8')).toBeTruthy();
-    // provider 仍然拿得到，但在折叠区里
-    const details = screen.getByText('查看技术详情').closest('details');
-    expect(details?.textContent).toContain('custom-100xlabs');
-  });
+      const modelLine = screen.queryByText('实际使用 claude-opus-4-8');
+      expect(Boolean(modelLine)).toBe(modelVisible);
+
+      // provider 仍然拿得到，并且不受开发者模式影响
+      const details = screen.getByText('查看技术详情').closest('details');
+      expect(details).toBeTruthy();
+      expect(details?.textContent).toContain('custom-100xlabs');
+    },
+  );
 
   it('retry re-sends the preceding user message through the registered sender', () => {
     const send = vi.fn();
@@ -276,24 +282,27 @@ describe('AgentErrorCard', () => {
     expect(screen.getByRole('button', { name: '复制错误报告' })).toBeTruthy();
   });
 
-  it('goal-abort provider failure keeps diagnostics off the user card even in developer mode', () => {
-    useAppStore.setState({ developerMode: true });
-    renderCard(makeError({
-      category: 'generic',
-      provider: 'deepseek',
-      modelId: 'deepseek-v4-flash',
-      rawMessage: 'Too Many Requests',
-      goalAbort: true,
-    }));
+  it.each([false, true])(
+    'goal-abort provider failure keeps diagnostics off the user card in developerMode=%s',
+    (developerMode) => {
+      useAppStore.setState({ developerMode });
+      renderCard(makeError({
+        category: 'generic',
+        provider: 'deepseek',
+        modelId: 'deepseek-v4-flash',
+        rawMessage: 'Too Many Requests',
+        goalAbort: true,
+      }));
 
-    expect(screen.getByRole('alert')).toBeTruthy();
-    expect(screen.queryByText(/deepseek-v4-flash/)).toBeNull();
-    expect(screen.queryByText(/Too Many Requests/)).toBeNull();
-    expect(screen.queryByText(/查看技术详情/)).toBeNull();
-    expect(screen.queryByRole('button', { name: '复制错误报告' })).toBeNull();
-    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '新开会话' })).toBeTruthy();
-  });
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(screen.queryByText(/deepseek-v4-flash/)).toBeNull();
+      expect(screen.queryByText(/Too Many Requests/)).toBeNull();
+      expect(screen.queryByText(/查看技术详情/)).toBeNull();
+      expect(screen.queryByRole('button', { name: '复制错误报告' })).toBeNull();
+      expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '新开会话' })).toBeTruthy();
+    },
+  );
 
   it('auth keeps the card but hides copy report outside developer mode', () => {
     renderCard(makeError({ category: 'auth', httpStatus: 401 }));

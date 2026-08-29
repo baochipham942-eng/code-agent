@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateConsoleReport, generateJsonReport, generateMarkdownReport } from '../../../src/host/testing/reportGenerator';
 import type { TestResult, TestRunSummary } from '../../../src/host/testing/types';
+import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 
 function result(testId: string, overrides: Partial<TestResult> = {}): TestResult {
   return {
@@ -25,12 +26,25 @@ function summary(results: TestResult[]): TestRunSummary {
     total: results.length, passed: results.length, failed: 0, partial: 0, skipped: 0,
     plannedCaseIds: results.map((item) => item.testId), completed: true, notRun: 0, invalidCases: 0,
     averageScore: 1, results,
+    stamp: UNKNOWN_EVAL_RUN_STAMP,
     environment: { provider: 'openai', model: 'gpt-4o', workingDirectory: '/tmp' },
     performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 2 },
   };
 }
 
 describe('成本与用量报告', () => {
+  it('环境信息完整展示本轮配置的人话行名', () => {
+    const markdown = generateMarkdownReport(summary([]));
+    expect(markdown).toContain('## 环境信息');
+    for (const label of [
+      '代码版本', '题库版本', '评测集', '打分器', '每题跑几次',
+      '通过率口径版本', '提示词版本', '本轮形态', '与生产默认的差异',
+      '密钥来源', '价格表版本', '预估费用',
+    ]) {
+      expect(markdown).toContain(`| ${label} |`);
+    }
+  });
+
   it('逐 case 输出 provider token、USD，汇总严格等于逐 case 之和', () => {
     const run = summary([
       result('one', {

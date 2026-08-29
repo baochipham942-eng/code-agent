@@ -13,6 +13,7 @@ import type { PlanningService } from '../planning';
 import { generateMessageId } from '../../shared/utils/id';
 import { getMaxIterations } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';
+import { AGENT_RUNTIME_DEFAULTS } from './agentRuntimeDefaults';
 import { HookManager } from '../hooks';
 import { MAX_MODE } from '../../shared/constants';
 
@@ -133,8 +134,8 @@ export class AgentLoop {
       userId: config.userId,
       memoryMode: config.memoryMode ?? 'auto',
       suppressedMemoryEntryIds: config.suppressedMemoryEntryIds,
-      persistLongTermMemory: config.persistLongTermMemory ?? true,
-      includeRecentConversations: config.includeRecentConversations ?? true,
+      persistLongTermMemory: config.persistLongTermMemory ?? AGENT_RUNTIME_DEFAULTS.persistLongTermMemory,
+      includeRecentConversations: config.includeRecentConversations ?? AGENT_RUNTIME_DEFAULTS.includeRecentConversations,
       maxSystemPromptTokens: config.maxSystemPromptTokens,
       skillDiscoveryService: config.skillDiscoveryService,
       persistMessage: config.persistMessage,
@@ -195,7 +196,7 @@ export class AgentLoop {
       autoApprovePlan: config.autoApprovePlan ?? false,
 
       // Hooks
-      enableHooks: config.enableHooks ?? true,
+      enableHooks: config.enableHooks ?? AGENT_RUNTIME_DEFAULTS.enableHooks,
       maxStopHookRetries: 3,
       enableDeliveryCritic: config.enableDeliveryCritic ?? process.env.CODE_AGENT_DELIVERY_CRITIC === '1',
       // Max Mode（best-of-N）显式开关，默认关——eval 对照前提 + 出问题的回滚通道
@@ -204,7 +205,8 @@ export class AgentLoop {
 
       // Tool execution
       maxToolCallRetries: 2,
-      enableToolDeferredLoading: config.enableToolDeferredLoading ?? true,
+      enableToolDeferredLoading: config.enableToolDeferredLoading
+        ?? (AGENT_RUNTIME_DEFAULTS.toolMode === 'deferred'),
 
       // Structured output
       maxStructuredOutputRetries: 2,

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ExperimentAdapter, type EvalHarnessExperimentResultLike } from '../../../src/host/evaluation/experimentAdapter';
 import type { TestRunSummary } from '../../../src/host/testing/types';
+import {
+  EVAL_RUN_STAMP_KEYS,
+  UNKNOWN_EVAL_RUN_STAMP,
+} from '../../../src/shared/contract/evaluation';
 
 function createDbWriter() {
   return {
@@ -51,6 +55,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
           sessionId: 'session-a',
         },
       ],
+      stamp: { ...UNKNOWN_EVAL_RUN_STAMP, promptVersion: 'sys-test' },
       environment: {
         model: 'gpt-test',
         provider: 'mock',
@@ -78,6 +83,9 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       model: 'gpt-test',
       provider: 'mock',
     });
+    const persistedConfig = JSON.parse(experiment.config_json) as Record<string, unknown>;
+    for (const key of EVAL_RUN_STAMP_KEYS) expect(persistedConfig).toHaveProperty(key);
+    expect(persistedConfig.promptVersion).toBe('sys-test');
 
     expect(JSON.parse(experiment.summary_json)).toMatchObject({
       total: 1,
@@ -172,6 +180,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
           score: 0.9,
         },
       ],
+      stamp: UNKNOWN_EVAL_RUN_STAMP,
       environment: {
         model: 'glm-5',
         provider: 'zhipu',
@@ -494,6 +503,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
         { ...base, testId: 'pass-a', description: 'a', status: 'passed', score: 1 },
         { ...base, testId: 'skip-b', description: 'b', status: 'skipped', score: 0 },
       ],
+      stamp: UNKNOWN_EVAL_RUN_STAMP,
       environment: { model: 'm', provider: 'mock', workingDirectory: '/tmp' },
       performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
       gitCommit: 'f2',
@@ -610,6 +620,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
           score: 1,
         },
       ],
+      stamp: UNKNOWN_EVAL_RUN_STAMP,
       environment: { model: 'm', provider: 'mock', workingDirectory: '/tmp' },
       performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
       gitCommit: 'abc123',
@@ -654,6 +665,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
           score: 1,
         },
       ],
+      stamp: UNKNOWN_EVAL_RUN_STAMP,
       environment: { model: 'm', provider: 'mock', workingDirectory: '/tmp' },
       performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
       gitCommit: 'abc123',

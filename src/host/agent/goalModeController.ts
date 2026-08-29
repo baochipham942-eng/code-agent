@@ -9,6 +9,8 @@ import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('GoalModeController');
 
+export const DEFAULT_GOAL_ALLOW_SWARM = true;
+
 export type GoalStatus = 'pending' | 'paused' | 'met' | 'aborted';
 export type GoalPauseReason = 'anti_spin';
 
@@ -75,7 +77,7 @@ export function buildGoalContract(input: {
     // 缺省 undefined = 不限时（纯加法，不改没设墙钟的旧 goal 行为）
     wallClockBudgetMs: input.wallClockBudgetMs,
     // 缺省 = 允许扇出（交互式 /goal）；主动性 advance 路径显式传 false
-    allowSwarm: input.allowSwarm ?? true,
+    allowSwarm: input.allowSwarm ?? DEFAULT_GOAL_ALLOW_SWARM,
   };
 }
 

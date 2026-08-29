@@ -64,6 +64,7 @@ import {
   MODEL_API_ENDPOINTS,
   // pricing
   MODEL_PRICING_PER_1M,
+  PRICING_TABLE_VERSION,
   // timeouts
   MCP_TIMEOUTS,
   DAG_SCHEDULER,
@@ -134,6 +135,7 @@ const CONSTANTS_BUCKETS: Readonly<Record<PluginConstantsNamespace, Readonly<Reco
   providers: PROVIDERS_PUBLIC_ENDPOINTS,
   pricing: Object.freeze({
     MODEL_PRICING_PER_1M,
+    PRICING_TABLE_VERSION,
   }),
   timeouts: Object.freeze({
     MCP_TIMEOUTS,

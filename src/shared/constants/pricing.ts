@@ -1,5 +1,8 @@
 import { normalizeProviderId } from './providers';
 
+/** 改动 MODEL_PRICING_PER_1M 中任一价格时必须同步递增。 */
+export const PRICING_TABLE_VERSION = 1;
+
 /** 模型定价条目（每 1M tokens，美元）。cacheRead/cacheWrite 缺省时按比例回退（见下方 ratio 常量）。 */
 export interface ModelPricingEntry {
   input: number;

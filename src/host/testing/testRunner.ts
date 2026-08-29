@@ -31,6 +31,7 @@ import { createLogger } from '../services/infra/logger';
 import { isNonRetryableError, isTransientError } from '../model/providers/retryStrategy';
 import { getTestDirs } from '../config';
 import type { StructuredReplay } from '../../shared/contract/evaluation';
+import { UNKNOWN_EVAL_RUN_STAMP } from '../../shared/contract/evaluation';
 // TrajectoryBuilder loaded dynamically — excluded from production bundle
 import { EvalCritic } from './evalCritic';
 import { loadAllTestSuites as loadSuitesForCritic } from './testCaseLoader';
@@ -431,6 +432,7 @@ export class TestRunner {
         // roadmap 2.4 A/B 归因（audit D-R3）：记录 variant 臂，两臂结果可对比
         providerVariantArm: isProviderVariantDisabled() ? 'variant-off' : 'variant-on',
       },
+      stamp: this.config.stamp ?? UNKNOWN_EVAL_RUN_STAMP,
       performance: this.calculatePerformanceStats(results),
       gitCommit: (() => { try { return execSync('git rev-parse HEAD', { encoding: 'utf8', timeout: 5000 }).trim(); } catch { return 'unknown'; } })(),
       ...(casesWithTrials.length > 0 ? { unstableCaseCount, averageStdDev } : {}),

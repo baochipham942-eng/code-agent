@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
+import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 
 import { ExperimentAdapter } from '../../../src/host/evaluation/experimentAdapter';
 import { applySchema } from '../../../src/host/services/core/database/schema';
@@ -109,6 +110,7 @@ function summary(score = 0.82): TestRunSummary {
       score,
       sessionId: 'session-1',
     }],
+    stamp: UNKNOWN_EVAL_RUN_STAMP,
     environment: {
       model: 'claude-test',
       provider: 'anthropic',

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-08-27",
+  "updatedAt": "2026-08-29",
   "policy": {
     "verificationStatus": [
       "verified",
@@ -150,27 +150,27 @@
     },
     {
       "id": "codebuddy-code-local-spike",
-      "date": "2026-07-30",
+      "date": "2026-08-29",
       "runtime": "codebuddy_code",
       "protocolFamily": "opaque_cli",
       "provider": "cli-owned",
-      "model": "client-default (reported glm-5.2)",
-      "verificationStatus": "verified",
-      "result": "passed",
+      "model": "client-default",
+      "verificationStatus": "failed",
+      "result": "failed",
       "scope": "Neo webServer session selection, print-mode stream-json, SSE, persisted assistant message, tools disabled",
       "evidence": [
         "scripts/acceptance/workbuddy-engine-live-smoke.ts",
         "docs/acceptance/external-cli-engine-onboarding/07-session-workbuddy-real-client-selected.png"
       ],
-      "reason": "Authenticated WorkBuddy 5.3.5 / embedded CodeBuddy CLI 2.115.0 returned the exact per-run nonce through Neo."
+      "reason": "2026-08-29 rerun via scripts/acceptance/workbuddy-engine-live-smoke.ts (WorkBuddy 5.3.14 / CodeBuddy CLI 2.115.0): Neo webServer session selection and message dispatch reached the CLI, but the reply was HTTP 429 \"已达到企业为您设置的额度上限\" (enterprise quota cap) instead of the per-run nonce. Quota exhaustion on the operator account, not a runtime defect; last verified passed run was 2026-07-30 (see git history of this record). Re-run once quota resets. The free hy4-preview tier cannot be selected through Neo today: the WorkBuddy engine manifest is modelSelection=client_default with no model discovery, so the smoke can only exercise the client default model."
     },
     {
       "id": "grok-cli-local-spike",
-      "date": "2026-07-30",
+      "date": "2026-08-29",
       "runtime": "grok_cli",
       "protocolFamily": "opaque_cli",
       "provider": "cli-owned",
-      "model": "grok-4.5",
+      "model": "grok-4.6",
       "verificationStatus": "verified",
       "result": "passed",
       "scope": "Official login, model discovery, single-turn streaming-json text and terminal session identity",
@@ -181,7 +181,7 @@
         "docs/acceptance/external-cli-engine-onboarding/09-session-grok-live-conversation.png",
         "docs/acceptance/external-cli-engine-onboarding/10-session-grok-model-popup.png"
       ],
-      "reason": "Authenticated Grok Build 0.2.114 returned an exact per-run nonce through Neo webServer selection, streaming SSE, and persisted conversation with model grok-4.5."
+      "reason": "2026-08-29 rerun via scripts/acceptance/grok-engine-live-smoke.ts: authenticated Grok Build 1.0.5 (5115b46bc909) returned the exact per-run nonce through Neo webServer selection, streaming SSE, and persisted conversation with model grok-4.6 (Neo runtime catalog discovered grok-4.6; the CLI itself also lists grok-4.5); model popup screenshot refreshed. Smoke now follows the live catalog default and dismisses the folder-trust dialog."
     },
     {
       "id": "p0-local-stop-verified",

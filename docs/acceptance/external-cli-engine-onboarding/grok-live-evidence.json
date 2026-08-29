@@ -8,7 +8,7 @@
     "summary": "复用本机 Grok 官方登录态，以禁用工具和联网搜索的流式会话执行。",
     "command": "grok -p --output-format streaming-json --permission-mode plan --tools \"\"",
     "binaryPath": "/Users/linchen/.local/bin/grok",
-    "version": "grok 0.2.114 (0c785038798)",
+    "version": "grok 1.0.5 (5115b46bc909)",
     "detected": true,
     "selectable": true,
     "authState": "authenticated",
@@ -25,18 +25,18 @@
     "kind": "grok_cli",
     "permissionProfile": "read_only",
     "origin": "manual",
-    "model": "grok-4.5",
-    "cwd": "/Users/linchen/.codex/worktrees/f4dd/code-agent",
-    "updatedAt": 1785423723050
+    "model": "grok-4.6",
+    "cwd": "/Users/linchen/Downloads/ai/code-agent",
+    "updatedAt": 1787969057323
   },
   "discoveredModels": [
-    "grok-4.5"
+    "grok-4.6"
   ],
-  "sessionId": "session_1785423720375_b32863af",
-  "nonce": "NEO_GROK_1785423687293",
-  "assistantReply": "NEO_GROK_1785423687293",
+  "sessionId": "session_1787969057267_89a6a2f6",
+  "nonce": "NEO_GROK_1787969047378",
+  "assistantReply": "NEO_GROK_1787969047378",
   "sseContainedNonce": true,
-  "screenshot": "/Users/linchen/.codex/worktrees/f4dd/code-agent/docs/acceptance/external-cli-engine-onboarding/09-session-grok-live-conversation.png",
-  "modelPopupScreenshot": "/Users/linchen/.codex/worktrees/f4dd/code-agent/docs/acceptance/external-cli-engine-onboarding/10-session-grok-model-popup.png",
-  "dataDir": "/var/folders/cc/j1hyp1hx4n1fqtd8w3j0n33r0000gn/T/neo-grok-live-ED4RMF"
+  "screenshot": "/Users/linchen/Downloads/ai/code-agent/docs/acceptance/external-cli-engine-onboarding/09-session-grok-live-conversation.png",
+  "modelPopupScreenshot": "/Users/linchen/Downloads/ai/code-agent/docs/acceptance/external-cli-engine-onboarding/10-session-grok-model-popup.png",
+  "dataDir": "/var/folders/cc/j1hyp1hx4n1fqtd8w3j0n33r0000gn/T/neo-grok-live-jlBBu9"
 }

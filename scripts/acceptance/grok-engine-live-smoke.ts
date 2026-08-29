@@ -13,7 +13,8 @@ import { describeChildExit, isChildGone } from './childProcessState';
 const port = Number(process.env.WEB_PORT || 8197);
 const baseUrl = `http://127.0.0.1:${port}`;
 const nonce = process.env.GROK_E2E_NONCE || `NEO_GROK_${Date.now()}`;
-const requestedModel = 'grok-4.5';
+// 2026-08-29：目标模型跟随 CLI 真实目录的默认值（GROK_E2E_MODEL 可覆盖）；写死 grok-4.5 在 CLI 升到 4.6 后会把真目录判成假。
+const requestedModelOverride = process.env.GROK_E2E_MODEL;
 const workspace = process.cwd();
 const evidenceDir = join(workspace, 'docs', 'acceptance', 'external-cli-engine-onboarding');
 
@@ -66,6 +67,16 @@ async function domain<T>(domainName: string, action: string, payload?: unknown):
     throw new Error(result.error?.message || `${domainName}:${action} failed (${response.status})`);
   }
   return result.data as T;
+}
+
+// 2026-08-29：首次在临时 data dir 打开本仓库会弹「信任这个项目文件夹？」全屏遮罩（folder trust），
+// 出现时机不固定（页面加载时或点进会话后），会挡住会话行与模型按钮；信任本仓库即可，一次性。
+async function dismissFolderTrustDialog(page: { getByRole: (role: 'button', options: { name: string }) => { isVisible: () => Promise<boolean>; click: () => Promise<void>; waitFor: (options: { state: 'hidden'; timeout: number }) => Promise<void> } }): Promise<void> {
+  const trustButton = page.getByRole('button', { name: '信任并加载' });
+  if (await trustButton.isVisible().catch(() => false)) {
+    await trustButton.click();
+    await trustButton.waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => undefined);
+  }
 }
 
 async function waitForServer(): Promise<void> {
@@ -125,9 +136,14 @@ async function main(): Promise<void> {
     catalog?: { engines?: Array<{ kind: string; defaultModel: string; models: Array<{ id: string }> }> };
   }>('agentEngine', 'listModels');
   const grokCatalog = catalog.catalog?.engines?.find((entry) => entry.kind === 'grok_cli');
+  const catalogIds = grokCatalog?.models.map((model) => model.id) ?? [];
+  const requestedModel = requestedModelOverride || grokCatalog?.defaultModel || '';
+  // 真目录判据：非空、默认模型在目录里、目标模型在目录里（不再钉死某个版本号）。
   if (
-    grokCatalog?.defaultModel !== requestedModel
-    || grokCatalog.models.map((model) => model.id).join(',') !== requestedModel
+    !grokCatalog
+    || catalogIds.length === 0
+    || !catalogIds.includes(grokCatalog.defaultModel)
+    || !catalogIds.includes(requestedModel)
   ) {
     throw new Error(`Grok model catalog is not the real local catalog: ${JSON.stringify(grokCatalog)}`);
   }
@@ -190,10 +206,13 @@ async function main(): Promise<void> {
     }
     const sessionRow = page.locator(`[data-session-id="${sessionId}"]`).first();
     await sessionRow.waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissFolderTrustDialog(page);
     await sessionRow.click();
+    await dismissFolderTrustDialog(page);
     await page.getByText(nonce, { exact: true }).last()
       .waitFor({ state: 'visible', timeout: 30_000 });
     await page.screenshot({ path: screenshotPath, fullPage: true });
+    await dismissFolderTrustDialog(page);
     await page.getByRole('button', { name: '切换模型' }).click();
     await page.locator('[data-external-engine-model-panel]')
       .waitFor({ state: 'visible', timeout: 10_000 });

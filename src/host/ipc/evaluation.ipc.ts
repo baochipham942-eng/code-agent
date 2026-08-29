@@ -14,6 +14,7 @@ import { getEvalRunBridge, type EvalRunBridge } from '../evaluation/evalRunBridg
 import { inspectEvalEnvironment } from '../evaluation/evalEnvironment';
 import { enumerateCaseBank, saveCaseBank } from '../testing/caseBank';
 import type { SaveEvalCaseRequest } from '../../shared/contract/evaluation';
+import { inspectEvalRunPanel } from '../evaluation/evalRunPanelProbe';
 
 const logger = createLogger('EvaluationIPC');
 
@@ -43,7 +44,7 @@ export function registerEvaluationHandlers(
   ipcMain.handle(EVALUATION_CHANNELS.RUN_EVENTS, async (_event, payload?: { runId?: string }) => {
     const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.RUN_EVENTS, 'Evaluation events');
     if (denied) return denied;
-    if (!payload?.runId) throw new Error('runId is required');
+    if (!payload?.runId) return inspectEvalRunPanel();
     return runBridge.subscribe(payload.runId);
   });
 
@@ -78,7 +79,7 @@ export function registerEvaluationHandlers(
         // 契约字段（EvalExperimentListItem）：camelCase + 解析后的 summary
         gitCommit: experiment.git_commit,
         // 解析 config_json 方便调用方直接读 harness 维度
-        config: safeParseJson(experiment.config_json),
+        config: safeParseJsonRecord(experiment.config_json),
         summary: safeParseJson(experiment.summary_json),
       }));
     },
@@ -137,4 +138,11 @@ function safeParseJson(raw: string | null): unknown {
   } catch {
     return null;
   }
+}
+
+function safeParseJsonRecord(raw: string | null): Record<string, unknown> | null {
+  const value = safeParseJson(raw);
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }

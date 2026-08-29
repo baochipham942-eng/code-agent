@@ -243,6 +243,8 @@ export interface TestCase {
   max_cost_usd?: number;
   /** Tags for filtering */
   tags?: string[];
+  /** Suite-level tags inherited for case-bank display and safety classification. */
+  inheritedTags?: string[];
   /** Skip this test */
   skip?: boolean;
   /** Only run this test */

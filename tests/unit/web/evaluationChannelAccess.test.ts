@@ -47,15 +47,17 @@ beforeEach(() => {
 });
 
 describe('evaluation channel access policy on HTTP transport', () => {
-  it('returns HTTP 403 for a non-admin on all three bridge channels before invoking a handler', async () => {
+  it('returns HTTP 403 for a non-admin on all evaluation admin channels before invoking a handler', async () => {
     const handler = vi.fn(async () => ({ runId: 'run-1' }));
     await startApi(new Map([
       ['evaluation:run-suite', handler],
       ['evaluation:run-events', handler],
       ['evaluation:abort-run', handler],
+      ['evaluation:list-cases', handler],
+      ['evaluation:save-case', handler],
     ]));
 
-    for (const action of ['run-suite', 'run-events', 'abort-run']) {
+    for (const action of ['run-suite', 'run-events', 'abort-run', 'list-cases', 'save-case']) {
       const response = await fetch(`${baseUrl}/api/evaluation/${action}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -92,9 +94,11 @@ describe('evaluation channel access policy on HTTP transport', () => {
       ['evaluation:run-suite', handler],
       ['evaluation:run-events', handler],
       ['evaluation:abort-run', handler],
+      ['evaluation:list-cases', handler],
+      ['evaluation:save-case', handler],
     ]));
 
-    for (const action of ['run-suite', 'run-events', 'abort-run']) {
+    for (const action of ['run-suite', 'run-events', 'abort-run', 'list-cases', 'save-case']) {
       const response = await fetch(`${baseUrl}/api/domain/evaluation/${action}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

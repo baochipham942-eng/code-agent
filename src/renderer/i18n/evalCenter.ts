@@ -1,19 +1,22 @@
 // ============================================================================
 // evalCenter 词典（zh/en 成对）
-// - evalCenter.*：评测中心页（四 tab：回放/验证/遥测/基准）+ 验证工作台 + 基准 tab。
+// - evalCenter.*：评测中心页（回放/题库/验证/遥测/基准）+ 验证工作台 + 基准 tab。
 // - telemetry.*（顶层命名空间）：features/telemetry 会话遥测查看器，v2 起作为
 //   评测中心「遥测」tab 内嵌挂载；词典放本文件是为了不碰 zh.ts/en.ts 主文件
 //   （两词典经 spread 合入顶层，并行改动窗口期避免撞文件）。
 // ============================================================================
+import { evalCaseListEn, evalCaseListZh } from './evalCaseList';
+
 export const evalCenterZh = {
   evalCenter: {
+    ...evalCaseListZh,
     title: '评测中心',
-    description: '会话回放 · 应用内验证 · 遥测 · 基准',
+    description: '会话回放 · 题库 · 应用内验证 · 遥测 · 基准',
     tabReplay: '回放',
     tabValidation: '验证',
     tabTelemetry: '遥测',
     tabBenchmarks: '基准',
-    adminOnly: '评测中心仅管理员可用。',
+    adminOnly: '评测中心需要管理员权限',
     newRequestBadge: '新请求',
     validation: {
       loadDemo: '载入 Demo',
@@ -153,8 +156,9 @@ export const evalCenterZh = {
 
 export const evalCenterEn = {
   evalCenter: {
+    ...evalCaseListEn,
     title: 'Eval Center',
-    description: 'Session replay · In-app validation · Telemetry · Benchmarks',
+    description: 'Session replay · Case bank · In-app validation · Telemetry · Benchmarks',
     tabReplay: 'Replay',
     tabValidation: 'Validation',
     tabTelemetry: 'Telemetry',

@@ -403,6 +403,44 @@ export interface EvalExperimentDetail {
   cases: EvalExperimentCaseItem[];
 }
 
+export type EvalCaseSplitBucket = 'held-in' | 'held-out' | 'control' | 'safety';
+
+export interface EvalCaseListEntry {
+  id: string;
+  file: string;
+  relativeDir: string;
+  layer: string;
+  tags: string[];
+  inheritedTags: string[];
+  splits: EvalCaseSplitBucket[];
+  turns: number | 'simulator';
+  hasExpect: boolean;
+  reviewStatus?: 'pending' | 'reviewed';
+  source: 'manual' | 'session';
+  retired: boolean;
+  isDraft: boolean;
+}
+
+interface EvalCaseListParseError {
+  id: string;
+  file: string;
+  relativeDir: string;
+  parseError: string;
+  isDraft: boolean;
+}
+
+export type EvalCaseListItem = EvalCaseListEntry | EvalCaseListParseError;
+
+export type SaveEvalCaseRequest =
+  | { action: 'create-draft'; id: string; prompt: string; tags: string[] }
+  | { action: 'archive'; id: string };
+
+export interface SaveEvalCaseResult {
+  action: SaveEvalCaseRequest['action'];
+  id: string;
+  file: string;
+}
+
 // ============================================================================
 // Structured Replay - shared contract for telemetry/replay consumers
 // ============================================================================

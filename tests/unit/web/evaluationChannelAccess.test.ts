@@ -83,4 +83,43 @@ describe('evaluation channel access policy on HTTP transport', () => {
     await expect(response.json()).resolves.toEqual({ runId: 'run-1', payload });
     expect(handler).toHaveBeenCalledWith(null, payload);
   });
+  // 2026-08-29 监工补：dsh v4-pro 变异席抓到 domain.ts 三个查表点（domain / direct / fallback）测试只打了 fallback——
+  // 删掉 direct 路由（POST /domain/:domain/:action → `${domain}:${action}`）那处 assertChannelAccess 后整套仍绿，
+  // 非 admin 经 /api/domain/evaluation/run-suite 直达 handler。三条 HTTP 进路必须同表同判。
+  it('returns HTTP 403 for a non-admin on the direct /domain/:domain/:action route too', async () => {
+    const handler = vi.fn(async () => ({ runId: 'run-1' }));
+    await startApi(new Map([
+      ['evaluation:run-suite', handler],
+      ['evaluation:run-events', handler],
+      ['evaluation:abort-run', handler],
+    ]));
+
+    for (const action of ['run-suite', 'run-events', 'abort-run']) {
+      const response = await fetch(`${baseUrl}/api/domain/evaluation/${action}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ scope: 'smoke', maxCases: 1, runId: 'run-1' }),
+      });
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toMatchObject({ error: { code: 'FORBIDDEN' } });
+    }
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('dispatches the direct route for an admin', async () => {
+    auth.admin = true;
+    const handler = vi.fn(async (_event, payload) => ({ runId: 'run-1', payload }));
+    await startApi(new Map([['evaluation:run-suite', handler]]));
+
+    const payload = { scope: 'smoke', maxCases: 1 };
+    const response = await fetch(`${baseUrl}/api/domain/evaluation/run-suite`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ runId: 'run-1' });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
 });

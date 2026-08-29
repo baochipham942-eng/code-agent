@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "allow-bash-in-eval-workspace",
+      "effect": "allow",
+      "tool": "Bash",
+      "match": { "requestType": "command" }
+    },
+    {
+      "id": "allow-lowercase-bash-in-eval-workspace",
+      "effect": "allow",
+      "tool": "bash",
+      "match": { "requestType": "command" }
+    },
+    {
+      "id": "allow-read-in-eval-workspace",
+      "effect": "allow",
+      "tool": "Read",
+      "match": { "requestType": "file_read" }
+    },
+    {
+      "id": "allow-lowercase-read-in-eval-workspace",
+      "effect": "allow",
+      "tool": "read_file",
+      "match": { "requestType": "file_read" }
+    },
+    {
+      "id": "allow-write-in-eval-workspace",
+      "effect": "allow",
+      "tool": "Write",
+      "match": { "requestType": "file_write" }
+    },
+    {
+      "id": "allow-edit-in-eval-workspace",
+      "effect": "allow",
+      "tool": "Edit",
+      "match": { "requestType": "file_edit" }
+    },
+    {
+      "id": "allow-lowercase-write-in-eval-workspace",
+      "effect": "allow",
+      "tool": "write_file",
+      "match": { "requestType": "file_write" }
+    },
+    {
+      "id": "allow-lowercase-edit-in-eval-workspace",
+      "effect": "allow",
+      "tool": "edit_file",
+      "match": { "requestType": "file_edit" }
+    },
+    {
+      "id": "allow-append-in-eval-workspace",
+      "effect": "allow",
+      "tool": "Append",
+      "match": { "requestType": "file_write" }
+    },
+    {
+      "id": "allow-lowercase-append-in-eval-workspace",
+      "effect": "allow",
+      "tool": "append_file",
+      "match": { "requestType": "file_write" }
+    }
+  ]
+}

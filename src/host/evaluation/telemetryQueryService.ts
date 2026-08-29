@@ -10,15 +10,8 @@ import { attachStoredSurfaceExecutionReplayBlocks, buildMemoryAuditBlock, buildT
 import { attachSessionQualityScoring } from './sessionQualityScoring';
 import { attachTelemetryReplayEvidence, buildAgentPointerReplayProjection } from './telemetryReplayEvidence';
 import { estimateTokens } from '../context/tokenEstimator';
-import type {
-  ReplayBlock,
-  ReplayMetricAvailability,
-  ReplayPermissionTrace,
-  ReplayToolSchema,
-  ReplayTurn,
-  StructuredReplay,
-  TelemetryCompleteness,
-} from '../../shared/contract/evaluation';
+import type { ReplayBlock, ReplayMetricAvailability, ReplayPermissionTrace, ReplayToolSchema,
+  ReplayTurn, StructuredReplay, TelemetryCompleteness } from '../../shared/contract/evaluation';
 import { projectSurfaceExecutionResultMetadataForExport } from '../../shared/utils/surfaceExecutionExportProjection';
 import type { SessionSnapshot, TurnSnapshot, QualitySignals as EvaluationQualitySignals } from './types';
 
@@ -34,9 +27,11 @@ type ModelDecisionSnapshot = {
   data: Record<string, unknown>;
 };
 
-class TelemetryQueryService {
+export class TelemetryQueryService {
+  constructor(private readonly database: Pick<ReturnType<typeof getDatabase>, 'isReady' | 'getDb'> = getDatabase()) {}
+
   private getDb() {
-    const db = getDatabase();
+    const db = this.database;
     if (!db.isReady) {
       throw new Error('Database not initialized');
     }

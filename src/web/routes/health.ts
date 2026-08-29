@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { HandlerFn } from '../electronMock';
-import { sseClients, replayFromLastEventId, sendSSEPayload } from '../helpers/sse';
+import { sseClients, registerSSEClient, replayFromLastEventId, sendSSEPayload } from '../helpers/sse';
+import { isCurrentUserAdmin } from '../../host/ipc/adminGuard';
 import type {
   BuildInfo,
   PermissionRequest,
@@ -64,6 +65,7 @@ export function createHealthRouter(deps: HealthDeps): Router {
       'Connection': 'keep-alive',
     });
     res.write('data: {"channel":"connected","args":{}}\n\n');
+    registerSSEClient(res, isCurrentUserAdmin());
 
     // ADR-010 #6: 客户端重连时通过 Last-Event-ID header 或 lastEventId query 带上
     // 已见过的最大事件 id，服务端用 replay buffer 补发断线窗口内错过的事件。
@@ -79,8 +81,6 @@ export function createHealthRouter(deps: HealthDeps): Router {
         needsHostSnapshot = true;
       }
     }
-
-    sseClients.add(res);
 
     // 新 renderer 没有旧游标；replay buffer 覆盖时同样无法补齐。两种情况都从
     // host 当前仍持有 resolver 的请求恢复审批卡，不重发工具，也不新建审批。

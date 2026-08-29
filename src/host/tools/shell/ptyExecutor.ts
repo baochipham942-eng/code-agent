@@ -155,6 +155,8 @@ export function createPtySession(options: {
   cols?: number;
   rows?: number;
   env?: Record<string, string>;
+  /** Use env as the complete child environment instead of merging process.env. */
+  inheritProcessEnv?: boolean;
   maxRuntime?: number;
   sessionId?: string;
   toolCallId?: string;
@@ -180,6 +182,7 @@ export function createPtySession(options: {
     cols = 80,
     rows = 24,
     env = {},
+    inheritProcessEnv = true,
     maxRuntime = PTY_DEFAULT_TIMEOUT,
   } = options;
 
@@ -200,7 +203,7 @@ export function createPtySession(options: {
       rows,
       cwd,
       env: {
-        ...process.env,
+        ...(inheritProcessEnv ? process.env : {}),
         ...env,
         TERM: 'xterm-256color',
       } as Record<string, string>,

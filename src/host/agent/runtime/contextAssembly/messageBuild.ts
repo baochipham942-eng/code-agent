@@ -811,7 +811,8 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   try {
     const hash = createHash('sha256').update(systemPrompt).digest('hex');
     ctx.runtime.contextHealth.setSystemPromptHash(hash);
-    getSystemPromptCache().store(hash, systemPrompt, estimateTokens(systemPrompt));
+    (ctx.runtime.systemPromptStore ?? getSystemPromptCache())
+      .store(hash, systemPrompt, estimateTokens(systemPrompt));
   } catch {
     // Non-critical: don't break agent loop if cache fails
   }

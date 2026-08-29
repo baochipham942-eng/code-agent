@@ -267,6 +267,7 @@ export async function injectSeedMemory(
           });
         }
         logger.info('[AgentLoop] User memory injected at session start');
+        ctx.onEvent({ type: 'memory_injected', data: { id: 'user-memory' } });
       } else {
         recordEmptyAuthorityBlock('user-memory', 'session_start', memorySource);
       }

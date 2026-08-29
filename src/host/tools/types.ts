@@ -15,6 +15,7 @@ import type {
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import type { SkillDiscoveryService } from '../services/skills/skillDiscoveryService';
+import type { TelemetryCollector } from '../telemetry/telemetryCollector';
 
 export interface Tool extends ToolDefinition {
   execute: (
@@ -41,6 +42,8 @@ export interface ToolContext {
   deniedToolNames?: readonly string[];
   /** Run-scoped discovery source; production callers omit it and use the app singleton. */
   skillDiscoveryService?: SkillDiscoveryService;
+  /** Run-scoped telemetry owner propagated to spawned agents. */
+  telemetryCollector?: TelemetryCollector;
   /**
    * 嵌套工具再入口（PTC / Code Mode）：签发本 context 的那个 ToolExecutor 的完整
    * execute()，审批/guards/收缩档全在。详见 protocol ToolContext.executeTool。

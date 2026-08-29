@@ -18,7 +18,7 @@ export type SessionStatus = 'idle' | 'running' | 'queued' | 'paused' | 'cancelli
  * chat 是用户主动对话；schedule / heartbeat / subagent 是由系统或子运行生成的
  * 可回看工作单元。background / review 仍然是状态或分析队列，不进这里。
  */
-export type SessionType = 'chat' | 'schedule' | 'heartbeat' | 'subagent';
+export type SessionType = 'chat' | 'schedule' | 'heartbeat' | 'subagent' | 'eval';
 
 export type SessionMemoryMode = 'auto' | 'off';
 

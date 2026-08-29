@@ -219,7 +219,7 @@ export interface PublishPreparedImportedWorkspaceGraphInput {
 
 export class DatabaseService extends DurableRunDatabaseSupport {
   private db: BetterSqlite3.Database | null = null;
-  private dbPath = path.join(app.getPath('userData'), 'code-agent.db');
+  private dbPath: string;
   private _initPromise: Promise<void> | null = null;
   private _initFailed = false;
   private _retryCount = 0;
@@ -249,6 +249,11 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   private turnCostRepo!: TurnCostRepository;
   /** 启动时从总账重建的崩溃现场快照（ADR-022 第二期），供诊断出口/恢复消费 */
   private lastRecoverySnapshot: RecoverySnapshot | null = null;
+
+  constructor(dataDir: string = app.getPath('userData')) {
+    super();
+    this.dbPath = path.join(dataDir, 'code-agent.db');
+  }
 
   // --------------------------------------------------------------------------
   // Initialization

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
     getTurnCalls: vi.fn(),
     getTurnDetail: vi.fn(),
     getUnsyncedFeedback: vi.fn(),
+    getSession: vi.fn(),
     markFeedbackSynced: vi.fn(),
     getUnsyncedRendererBundleAttempts: vi.fn(),
     markRendererBundleAttemptsSynced: vi.fn(),
@@ -134,7 +135,41 @@ describe('TelemetryUploaderService', () => {
       turnId === 'turn-1' ? { turn, modelCalls: [], toolCalls: [], events: [] } : null
     ));
     mocks.storage.getUnsyncedFeedback.mockReturnValue([]);
+    mocks.storage.getSession.mockImplementation((sessionId: string) => (
+      sessionId === session.id ? session : null
+    ));
     mocks.storage.getUnsyncedRendererBundleAttempts.mockReturnValue([]);
+  });
+
+  it('marks eval sessions and feedback locally synced without sending sessions, turns, or feedback', async () => {
+    const evalSession: TelemetrySession = { ...session, id: 'eval-session', sessionType: 'eval' };
+    const evalFeedback = {
+      id: '00000000-0000-4000-8000-000000000009',
+      sessionId: evalSession.id,
+      turnId: 'eval-turn',
+      messageId: 'eval-turn',
+      rating: -1 as const,
+      createdAt: 123,
+    };
+    mocks.storage.getUnsyncedSessions.mockReturnValue([evalSession]);
+    mocks.storage.getUnsyncedFeedback.mockReturnValue([evalFeedback]);
+    mocks.storage.getSession.mockImplementation((sessionId: string) => (
+      sessionId === evalSession.id ? evalSession : null
+    ));
+    mocks.from.mockImplementation((table: string) => ({
+      upsert: vi.fn(async () => ({ error: null, table })),
+    }));
+
+    const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+    const service = new TelemetryUploaderService();
+
+    await expect(service.upload()).resolves.toBe(0);
+    expect(mocks.storage.getTurnsBySession).not.toHaveBeenCalledWith(evalSession.id);
+    expect(mocks.storage.markSessionsSynced).toHaveBeenCalledWith([evalSession.id]);
+    expect(mocks.storage.markFeedbackSynced).toHaveBeenCalledWith([evalFeedback.id]);
+    expect(mocks.from).not.toHaveBeenCalledWith('telemetry_sessions');
+    expect(mocks.from).not.toHaveBeenCalledWith('telemetry_turns');
+    expect(mocks.from).not.toHaveBeenCalledWith('telemetry_feedback');
   });
 
   it('hydrates turn payload with model/tool call details so cloud traces can be drilled into', async () => {

@@ -17,7 +17,6 @@ import './lib/eval-data-dir-bootstrap';
 import chalk from 'chalk';
 import { execSync } from 'child_process';
 import { Console } from 'node:console';
-import { randomUUID } from 'node:crypto';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
@@ -52,14 +51,20 @@ import type {
   TestRunSummary,
   TrendDataPoint,
 } from '../src/host/testing/types';
-import type { EvalRunEvent } from '../src/shared/contract/evaluation';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
 import { isDynamicCustomProviderId } from '../src/shared/modelRuntime';
 import { isProviderVariantDisabled } from '../src/host/prompts/providerVariants';
 import { isRedlineCase } from '../src/host/testing/testCaseClassification';
 import { getTestDirs } from '../src/host/config/configPaths';
 import { assertMockPolicyCoverage } from '../src/host/testing/mockEvalPolicy';
-import { getScriptedRunPermissionHandler } from '../src/host/permissions/scriptedRunPermissionPolicy';
+import {
+  requireScriptedRunPermissionHandler,
+} from '../src/host/permissions/scriptedRunPermissionPolicy';
+import { cloneEvalSandbox, createStrictEvalSandbox, type EvalSandbox } from './lib/eval-sandbox';
+import type { DatabaseService } from '../src/host/services/core/databaseService';
+import type { TelemetryCollector } from '../src/host/telemetry/telemetryCollector';
+import { EvalRunEventStream, type EvalRunStartConfig } from './lib/eval-run-event-stream';
+import { createIsolatedEvalState } from './lib/eval-isolated-state';
 
 /** roadmap 2.4 A/B 归因（audit D-R3）：当前 run 的 provider 变体臂 */
 function providerVariantArm(): 'variant-on' | 'variant-off' {
@@ -84,193 +89,6 @@ const PROVIDER_KEY_CANDIDATES: Record<string, string[]> = {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_MAX_CASES = 50;
-
-type EvalRunStartConfig = Extract<EvalRunEvent, { type: 'run_start' }>['config'];
-
-class EvalRunEventStream {
-  readonly runId = randomUUID();
-  private readonly startedAt = Date.now();
-  private started = false;
-  private ended = false;
-  private summary?: TestRunSummary;
-  private reportFiles: string[] = [];
-  private expectedExitCode = 0;
-  private readonly pendingToolResults = new Map<
-    string,
-    Array<Extract<TestEvent, { type: 'tool_result' }>>
-  >();
-  private readonly onProcessExit = (exitCode: number) => {
-    this.finish(exitCode);
-  };
-
-  constructor() {
-    process.once('exit', this.onProcessExit);
-  }
-
-  start(plannedCaseIds: string[], config: EvalRunStartConfig): void {
-    if (this.started) return;
-    this.started = true;
-    this.write({
-      schemaVersion: 1,
-      type: 'run_start',
-      ts: Date.now(),
-      runId: this.runId,
-      plannedCaseIds,
-      config,
-    });
-  }
-
-  forward(event: TestEvent, config: EvalRunStartConfig): void {
-    switch (event.type) {
-      case 'suite_start':
-        this.start(event.plannedCaseIds, config);
-        break;
-      case 'case_start':
-        this.write({
-          schemaVersion: 1,
-          type: 'case_start',
-          ts: Date.now(),
-          runId: this.runId,
-          testId: event.testId,
-          description: event.description,
-        });
-        break;
-      case 'case_end':
-        for (const toolExecution of event.result.toolExecutions) {
-          this.forward({
-            type: 'tool_call',
-            testId: event.result.testId,
-            tool: toolExecution.tool,
-            input: toolExecution.input,
-          }, config);
-          const pendingResults = this.pendingToolResults.get(event.result.testId);
-          const toolResult = pendingResults?.shift();
-          if (toolResult) {
-            this.write({ schemaVersion: 1, ts: Date.now(), runId: this.runId, ...toolResult });
-          }
-        }
-        this.pendingToolResults.delete(event.result.testId);
-        this.write({
-          schemaVersion: 1,
-          type: 'case_end',
-          ts: Date.now(),
-          runId: this.runId,
-          testId: event.result.testId,
-          status: event.result.status,
-          score: event.result.score,
-          durationMs: event.result.duration,
-          ...(event.result.failureReason ? { failureReason: event.result.failureReason } : {}),
-          ...(event.result.failureStage ? { failureStage: event.result.failureStage } : {}),
-          ...(event.result.usageStatus ? { usageStatus: event.result.usageStatus } : {}),
-          ...(event.result.costUsd !== undefined ? { costUsd: event.result.costUsd } : {}),
-          ...(event.result.mockExcluded ? { mockExcluded: true } : {}),
-          ...(event.result.killedByTimeout ? { killedByTimeout: true } : {}),
-          ...(event.result.trials ? { trials: event.result.trials.length } : {}),
-        });
-        break;
-      case 'tool_call':
-        this.write({ schemaVersion: 1, ts: Date.now(), runId: this.runId, ...event });
-        break;
-      case 'tool_result':
-        this.pendingToolResults.set(event.testId, [
-          ...(this.pendingToolResults.get(event.testId) ?? []),
-          event,
-        ]);
-        break;
-      case 'error':
-        this.write({ schemaVersion: 1, ts: Date.now(), runId: this.runId, ...event });
-        break;
-      case 'suite_end':
-        this.recordSummary(event.summary);
-        break;
-    }
-  }
-
-  recordSummary(summary: TestRunSummary): void {
-    this.summary = summary;
-  }
-
-  recordReportFiles(reportFiles: string[]): void {
-    this.reportFiles = [...reportFiles];
-  }
-
-  setExpectedExitCode(exitCode: number): void {
-    this.expectedExitCode = exitCode;
-  }
-
-  error(error: unknown): void {
-    if (this.ended) return;
-    const message = error instanceof Error ? error.message : String(error);
-    this.write({
-      schemaVersion: 1,
-      type: 'error',
-      ts: Date.now(),
-      runId: this.runId,
-      error: message,
-    });
-  }
-
-  finish(exitCode = this.expectedExitCode): void {
-    if (this.ended) return;
-    this.ended = true;
-    process.off('exit', this.onProcessExit);
-
-    const now = Date.now();
-    const summary = this.summary;
-    const aborted = summary?.aborted === true || exitCode === 2;
-    const abortReason = summary?.abortReason;
-    this.write({
-      schemaVersion: 1,
-      type: 'run_end',
-      ts: now,
-      runId: this.runId,
-      summary: summary
-        ? {
-            runId: summary.runId,
-            startTime: summary.startTime,
-            endTime: summary.endTime,
-            duration: summary.duration,
-            total: summary.total,
-            passed: summary.passed,
-            failed: summary.failed,
-            skipped: summary.skipped,
-            ...(summary.mockExcluded !== undefined ? { mockExcluded: summary.mockExcluded } : {}),
-            partial: summary.partial,
-            ...(summary.infraExcluded !== undefined ? { infraExcluded: summary.infraExcluded } : {}),
-            ...(summary.costExceeded !== undefined ? { costExceeded: summary.costExceeded } : {}),
-            averageScore: summary.averageScore,
-            ...(summary.gitCommit ? { gitCommit: summary.gitCommit } : {}),
-            ...(summary.persistenceWarning ? { persistenceWarning: summary.persistenceWarning } : {}),
-            ...(summary.aborted !== undefined ? { aborted: summary.aborted } : {}),
-            ...(summary.abortReason ? { abortReason: summary.abortReason } : {}),
-            ...(summary.unstableCaseCount !== undefined ? { unstableCaseCount: summary.unstableCaseCount } : {}),
-            ...(summary.averageStdDev !== undefined ? { averageStdDev: summary.averageStdDev } : {}),
-            ...(summary.dataset ? { dataset: summary.dataset } : {}),
-          }
-        : {
-            runId: this.runId,
-            startTime: this.startedAt,
-            endTime: now,
-            duration: now - this.startedAt,
-            total: 0,
-            passed: 0,
-            failed: 0,
-            skipped: 0,
-            partial: 0,
-            averageScore: 0,
-            ...(aborted ? { aborted: true } : {}),
-          },
-      reportFiles: this.reportFiles,
-      exitCode,
-      aborted,
-      ...(abortReason ? { abortReason } : {}),
-    });
-  }
-
-  private write(event: EvalRunEvent): void {
-    fs.writeSync(process.stdout.fd, `${JSON.stringify(event)}\n`);
-  }
-}
 
 /** Rough cost per case by model prefix (USD). Fallback: $0.01 */
 function estimateCostPerCase(modelName: string): number {
@@ -312,6 +130,7 @@ function parseArgs(argv: string[]) {
   let caseDir: string | undefined;
   let split: SplitBucket | undefined;
   let dataDir: string | undefined;
+  let runId: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -361,6 +180,8 @@ function parseArgs(argv: string[]) {
       caseDir = args[++i];
     } else if (arg === '--data-dir' && i + 1 < args.length) {
       dataDir = args[++i];
+    } else if (arg === '--run-id' && i + 1 < args.length) {
+      runId = args[++i].trim();
     } else if (arg === '--predicted-fixes' && i + 1 < args.length) {
       predictedFixes = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
     } else if (arg === '--risk-tasks' && i + 1 < args.length) {
@@ -399,8 +220,12 @@ function parseArgs(argv: string[]) {
     console.error(chalk.red('Invalid --data-dir value: path must not be empty.'));
     process.exit(1);
   }
+  if (runId !== undefined && runId.length === 0) {
+    console.error(chalk.red('Invalid --run-id value: id must not be empty.'));
+    process.exit(1);
+  }
 
-  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir };
+  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, runId };
 }
 
 function printUsage() {
@@ -570,56 +395,19 @@ function loadApiKey(provider: string, workingDir: string): string | undefined {
   return undefined;
 }
 
-/**
- * 隔离沙箱：把仓库 tracked 文件（git archive HEAD，不含 .git/node_modules/未跟踪产物）
- * 快照到临时目录，作为 agent 执行的 working directory。
- *
- * Why: eval 跑在真实工作树上会弄脏 repo —— git 类 case 的 agent 命令可能在仓库根
- * `git checkout -b` 切走主仓 HEAD，ppt/codegen/excel case 留 test-*.pptx / build_final.py
- * 等产物，killed run 还来不及 cleanup 就残留。沙箱里没有 .git（archive 排除），根目录
- * 的 git 操作只会无害报错而非污染主仓；产物全落临时目录，跑完整体删除。
- *
- * 注意：仅 agent 的 working directory 走沙箱；test-cases / results / baseline / trend
- * 仍读写真实仓库（这些是 eval 基础设施，不能随沙箱删除而丢失）。
- *
- * 关闭沙箱：CODE_AGENT_EVAL_NO_SANDBOX=true（调试时原地跑）。
- */
-function createEvalSandbox(repoDir: string): { dir: string; cleanup: () => void } | null {
-  if (process.env.CODE_AGENT_EVAL_NO_SANDBOX === 'true') {
-    console.log(chalk.dim('  Eval sandbox 关闭 (CODE_AGENT_EVAL_NO_SANDBOX=true)，在真实工作树跑'));
-    return null;
+function createEvalSandbox(repoDir: string, real: boolean): EvalSandbox {
+  if (!real && process.env.CODE_AGENT_EVAL_NO_SANDBOX === 'true') {
+    return { dir: repoDir, cleanup: () => undefined };
   }
+  let sandbox: EvalSandbox;
   try {
-    execSync('git rev-parse --is-inside-work-tree', { cwd: repoDir, stdio: 'ignore' });
-  } catch {
-    console.log(chalk.yellow('  非 git 仓库，跳过 eval sandbox（在工作树原地跑）'));
-    return null;
+    sandbox = createStrictEvalSandbox(repoDir);
+  } catch (error) {
+    if (real) throw error;
+    return { dir: repoDir, cleanup: () => undefined };
   }
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'code-agent-eval-'));
-  try {
-    // git archive 输出 tar 到 stdout，解到沙箱目录；shell 管道由 execSync 默认 /bin/sh 执行
-    execSync(`git archive HEAD | tar -x -C "${dir}"`, { cwd: repoDir, stdio: 'ignore' });
-  } catch (err) {
-    fs.rmSync(dir, { recursive: true, force: true });
-    console.log(chalk.yellow(`  git archive 快照失败，跳过 eval sandbox（在工作树原地跑）: ${err}`));
-    return null;
-  }
-  // 真仓根 → 沙箱的路径重映射（pathUtils.confineEvalPath 消费）：
-  // eval 全自动批准 permission 时，agent 的 deny-writes-outside-cwd 防线失效，
-  // mimo 可能用真仓绝对路径写文件绕过沙箱。设此 env 让真仓绝对路径落回沙箱。
-  process.env.CODE_AGENT_EVAL_REAL_ROOT ??= path.resolve(repoDir);
-  console.log(chalk.cyan(`  Eval sandbox: ${dir}（git archive HEAD 快照，跑完自动清理）`));
-  return {
-    dir,
-    cleanup: () => {
-      delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
-      try {
-        fs.rmSync(dir, { recursive: true, force: true });
-      } catch {
-        /* 清理失败不影响 eval 结果 */
-      }
-    },
-  };
+  console.log(chalk.cyan(`  Eval workspace: ${sandbox.dir}（run 结束后自动清理）`));
+  return sandbox;
 }
 
 /**
@@ -632,6 +420,10 @@ function createAgent(opts: {
   provider?: string;
   workingDir: string;
   repoDir: string;
+  onEvaluationSignal?: (event: Extract<TestEvent,
+    { type: 'skill_activated' | 'memory_injected' | 'subagent_spawned' }>) => void;
+  database?: DatabaseService;
+  telemetryCollector?: TelemetryCollector;
 }): AgentInterface {
   if (!opts.real) {
     const mockAgent = new MockAgentAdapter();
@@ -690,12 +482,16 @@ function createAgent(opts: {
 
   return new StandaloneAgentAdapter({
     workingDirectory: opts.workingDir,
-    requestPermission: getScriptedRunPermissionHandler(),
+    requestPermission: requireScriptedRunPermissionHandler(),
     persistLongTermMemory: false,
     includeRecentConversations: false,
     maxSystemPromptTokens: 12_000,
     skills: [],
     includeClaudeLegacySkills: false,
+    sessionType: 'eval',
+    onEvaluationSignal: opts.onEvaluationSignal,
+    database: opts.database,
+    telemetryCollector: opts.telemetryCollector,
     modelConfig: {
       provider: resolvedProvider,
       model: resolvedModel,
@@ -721,10 +517,11 @@ function createAgent(opts: {
  * 代价是自建的动态 custom provider 在这里不可见，须经 `AUTO_TEST_BASE_URL` / `AUTO_TEST_API_KEY`
  * 显式注入（createAgent 里有 fail-loud 守着，不会让人对着「无法解析 baseURL」猜半天）。
  */
-async function prepareRealEvalRuntime(): Promise<void> {
+async function prepareRealEvalRuntime(initializeDatabase = true): Promise<void> {
   const { getProtocolRegistry } = await import('../src/host/tools/protocolRegistry');
   getProtocolRegistry();
 
+  if (!initializeDatabase) return;
   try {
     const { getDatabase } = await import('../src/host/services/core/databaseService');
     const db = getDatabase();
@@ -753,17 +550,28 @@ async function runEvals(
     eventConfig?: EvalRunStartConfig;
   }
 ): Promise<TestRunSummary> {
-  // \u9694\u79BB\u6C99\u7BB1\uFF1Aagent \u7684 working directory \u8D70\u4E34\u65F6\u5FEB\u7167\uFF1Btest-cases / results \u4ECD\u8BFB\u5199\u771F\u5B9E\u4ED3\u5E93\u3002
+  if (opts.eventStream && (opts.concurrency ?? 1) > 1) {
+    throw new Error('事件桥评测要求每个用例独立运行，concurrency 必须为 1。');
+  }
   const repoStatusBefore = getRepoStatusSnapshot(workingDir);
-  const sandbox = createEvalSandbox(workingDir);
-  const agentWorkingDir = sandbox?.dir ?? workingDir;
+  const generatedDataDir = opts.eventStream && !process.env.CODE_AGENT_DATA_DIR
+    ? fs.mkdtempSync(path.join(os.tmpdir(), 'code-agent-eval-data-'))
+    : undefined;
+  if (generatedDataDir) process.env.CODE_AGENT_DATA_DIR = generatedDataDir;
+  const sandbox = createEvalSandbox(workingDir, opts.real);
+  const agentWorkingDir = sandbox.dir;
+  const forwardSignal = (event: Extract<TestEvent,
+    { type: 'skill_activated' | 'memory_injected' | 'subagent_spawned' }>) => {
+    if (opts.eventStream && opts.eventConfig) opts.eventStream.forward(event, opts.eventConfig);
+  };
   try {
     if (opts.real) {
-      await prepareRealEvalRuntime();
+      await prepareRealEvalRuntime(!opts.eventStream);
     }
 
     const config = createDefaultConfig(workingDir, {
       ...(opts.eventStream ? { runId: opts.eventStream.runId } : {}),
+      persistExperiment: opts.eventStream === undefined,
       verbose: false,
       workingDirectory: agentWorkingDir,
       testCaseDir: opts.caseDir ?? resolveCoreTestCaseDir(workingDir),
@@ -781,6 +589,7 @@ async function runEvals(
       provider: opts.provider,
       workingDir: agentWorkingDir,
       repoDir: workingDir,
+      onEvaluationSignal: forwardSignal,
     });
 
     const useParallelWorkers = (opts.concurrency ?? 1) > 1;
@@ -795,19 +604,53 @@ async function runEvals(
             provider: opts.provider,
             workingDir: workingDirectory,
             repoDir: workingDir,
+            onEvaluationSignal: forwardSignal,
           })
         : undefined,
       useParallelWorkers
         ? () => {
-            const workerSandbox = createEvalSandbox(workingDir);
-            if (!workerSandbox) {
-              throw new Error(
-                'parallel eval requires an isolated git sandbox; remove CODE_AGENT_EVAL_NO_SANDBOX',
-              );
-            }
+            const workerSandbox = createEvalSandbox(workingDir, opts.real);
             return {
               workingDirectory: workerSandbox.dir,
               cleanup: workerSandbox.cleanup,
+            };
+          }
+        : undefined,
+      opts.eventStream && opts.real
+        ? async () => {
+            const executionSandbox = cloneEvalSandbox(sandbox.dir);
+            const baseDataDir = process.env.CODE_AGENT_DATA_DIR;
+            if (!baseDataDir) {
+              executionSandbox.cleanup();
+              throw new Error('事件桥评测缺少独立数据目录。');
+            }
+            fs.mkdirSync(baseDataDir, { recursive: true });
+            const caseDataDir = fs.mkdtempSync(path.join(baseDataDir, 'case-'));
+            const previousDataDir = process.env.CODE_AGENT_DATA_DIR;
+            process.env.CODE_AGENT_DATA_DIR = caseDataDir;
+            const isolatedState = await createIsolatedEvalState(caseDataDir);
+            const isolatedAgent = createAgent({
+              real: opts.real,
+              mockEvalPolicy: opts.mockEvalPolicy,
+              model: opts.model,
+              provider: opts.provider,
+              workingDir: executionSandbox.dir,
+              repoDir: workingDir,
+              onEvaluationSignal: forwardSignal,
+              database: isolatedState.database,
+              telemetryCollector: isolatedState.telemetryCollector,
+            });
+            return {
+              agent: isolatedAgent,
+              workingDirectory: executionSandbox.dir,
+              cleanup: async () => {
+                await isolatedAgent.finalizeSession?.();
+                await isolatedState.telemetryCollector.dispose();
+                isolatedState.database.close();
+                process.env.CODE_AGENT_DATA_DIR = previousDataDir;
+                fs.rmSync(caseDataDir, { recursive: true, force: true });
+                executionSandbox.cleanup();
+              },
             };
           }
         : undefined,
@@ -849,13 +692,15 @@ async function runEvals(
     const summary = await runner.runAll();
     opts.eventStream?.recordSummary(summary);
 
-    if (sandbox) {
-      assertRepoUnchanged(workingDir, repoStatusBefore);
-    }
+    assertRepoUnchanged(workingDir, repoStatusBefore);
 
     return summary;
   } finally {
-    sandbox?.cleanup();
+    sandbox.cleanup();
+    if (generatedDataDir) {
+      delete process.env.CODE_AGENT_DATA_DIR;
+      fs.rmSync(generatedDataDir, { recursive: true, force: true });
+    }
   }
 }
 
@@ -954,7 +799,7 @@ async function runCompareCommand(
   }
 
   const repoStatusBefore = getRepoStatusSnapshot(workingDir);
-  const sandbox = createEvalSandbox(workingDir);
+  const sandbox = createEvalSandbox(workingDir, true);
   const agentWorkingDir = sandbox?.dir ?? workingDir;
   try {
     await prepareRealEvalRuntime();
@@ -964,7 +809,11 @@ async function runCompareCommand(
       workingDirectory: agentWorkingDir,
     });
 
-    const makeAgent = (config: CompareConfiguration) => {
+    const makeAgent = (
+      config: CompareConfiguration,
+      armWorkingDir = agentWorkingDir,
+      isolatedState?: Awaited<ReturnType<typeof createIsolatedEvalState>>,
+    ) => {
       const provider = config.provider || resolvedProvider;
       const model = config.model || resolvedModel;
       const harness = config.harness ?? baseline.harness;
@@ -974,13 +823,16 @@ async function runCompareCommand(
         throw new Error(`No API key found for ${provider}. Set AUTO_TEST_API_KEY or ${candidates.join(' / ')}.`);
       }
       return new StandaloneAgentAdapter({
-        workingDirectory: agentWorkingDir,
+        workingDirectory: armWorkingDir,
         persistLongTermMemory: false,
         includeRecentConversations: false,
         maxSystemPromptTokens: 12_000,
         skills: [],
         includeClaudeLegacySkills: false,
-        requestPermission: getScriptedRunPermissionHandler(),
+        requestPermission: requireScriptedRunPermissionHandler(),
+        sessionType: 'eval',
+        database: isolatedState?.database,
+        telemetryCollector: isolatedState?.telemetryCollector,
         modelConfig: { provider, model, apiKey },
         ...(config.systemPrompt ? { systemPromptOverride: config.systemPrompt } : {}),
         ...(harness ? { harness: { name: config.name, ...harness } } : {}),
@@ -1011,6 +863,29 @@ async function runCompareCommand(
       baseline,
       candidate,
       makeAgent,
+      makeIsolatedExecution: (config) => async () => {
+        const armSandbox = cloneEvalSandbox(sandbox.dir);
+        const dataParent = process.env.CODE_AGENT_DATA_DIR || os.tmpdir();
+        fs.mkdirSync(dataParent, { recursive: true });
+        const armDataDir = fs.mkdtempSync(path.join(dataParent, 'eval-arm-'));
+        const previousDataDir = process.env.CODE_AGENT_DATA_DIR;
+        process.env.CODE_AGENT_DATA_DIR = armDataDir;
+        const isolatedState = await createIsolatedEvalState(armDataDir);
+        const armAgent = makeAgent(config, armSandbox.dir, isolatedState);
+        return {
+          agent: armAgent,
+          workingDirectory: armSandbox.dir,
+          cleanup: async () => {
+            await armAgent.finalizeSession?.();
+            await isolatedState.telemetryCollector.dispose();
+            isolatedState.database.close();
+            if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+            else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
+            fs.rmSync(armDataDir, { recursive: true, force: true });
+            armSandbox.cleanup();
+          },
+        };
+      },
       runnerConfig,
       llmCall,
     });
@@ -1506,7 +1381,9 @@ export async function main(argv = process.argv, cwd = process.cwd()): Promise<vo
     globalThis.console = new Console({ stdout: process.stderr, stderr: process.stderr });
   }
 
-  const eventStream = jsonEvents ? new EvalRunEventStream() : undefined;
+  const runIdIndex = argv.indexOf('--run-id');
+  const requestedRunId = runIdIndex >= 0 ? argv[runIdIndex + 1]?.trim() : undefined;
+  const eventStream = jsonEvents ? new EvalRunEventStream(requestedRunId || undefined) : undefined;
   let thrownError: unknown;
   try {
     await mainImpl(argv, cwd, eventStream);
@@ -1536,6 +1413,7 @@ if (isDirectRun()) {
     } else {
       console.error(chalk.red('eval-ci failed:'), err);
     }
-    process.exit(jsonEvents ? 2 : 1);
+    const policyRejected = err instanceof Error && err.name === 'ScriptedRunPermissionPolicyError';
+    process.exit(jsonEvents || policyRejected ? 2 : 1);
   });
 }

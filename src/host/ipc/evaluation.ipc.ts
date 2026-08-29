@@ -9,13 +9,48 @@
 import type { IpcMain } from '../platform';
 import { EVALUATION_CHANNELS } from '../../shared/ipc/channels';
 import { createLogger } from '../services/infra/logger';
+import { getChannelAccessIpcError } from './channelAccessPolicy';
+import { getEvalRunBridge, type EvalRunBridge } from '../evaluation/evalRunBridge';
 
 const logger = createLogger('EvaluationIPC');
 
 /**
  * 注册评测实验相关 IPC handlers
  */
-export function registerEvaluationHandlers(ipcMain: IpcMain): void {
+export function registerEvaluationHandlers(
+  ipcMain: IpcMain,
+  runBridge: EvalRunBridge = getEvalRunBridge(),
+): void {
+  ipcMain.handle(EVALUATION_CHANNELS.RUN_SUITE, async (_event, payload: unknown) => {
+    const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.RUN_SUITE, 'Evaluation run');
+    if (denied) return denied;
+    try {
+      return await runBridge.startRun(payload);
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          code: 'EVAL_RUN_REJECTED',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+  });
+
+  ipcMain.handle(EVALUATION_CHANNELS.RUN_EVENTS, async (_event, payload?: { runId?: string }) => {
+    const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.RUN_EVENTS, 'Evaluation events');
+    if (denied) return denied;
+    if (!payload?.runId) throw new Error('runId is required');
+    return runBridge.subscribe(payload.runId);
+  });
+
+  ipcMain.handle(EVALUATION_CHANNELS.ABORT_RUN, async (_event, payload?: { runId?: string }) => {
+    const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.ABORT_RUN, 'Evaluation abort');
+    if (denied) return denied;
+    if (!payload?.runId) throw new Error('runId is required');
+    return runBridge.abortRun(payload.runId);
+  });
+
   // 列出已落 DB 的实验（含 harness 维度），供对比与轮询
   ipcMain.handle(
     EVALUATION_CHANNELS.LIST_EXPERIMENTS,

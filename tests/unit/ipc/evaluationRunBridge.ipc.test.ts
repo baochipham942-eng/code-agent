@@ -1,0 +1,75 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { IpcMain } from '../../../src/host/platform';
+import type { EvalRunBridge } from '../../../src/host/evaluation/evalRunBridge';
+import { EVALUATION_CHANNELS } from '../../../src/shared/ipc/channels';
+
+const guard = vi.hoisted(() => ({ denied: true }));
+
+vi.mock('../../../src/host/ipc/adminGuard', () => ({
+  getAdminAccessIpcError: () => guard.denied
+    ? { success: false, error: { code: 'FORBIDDEN', message: 'admin required' } }
+    : null,
+}));
+
+vi.mock('../../../src/host/services/infra/logger', () => ({
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}));
+
+import { registerEvaluationHandlers } from '../../../src/host/ipc/evaluation.ipc';
+
+type Handler = (...args: unknown[]) => unknown;
+
+function setup() {
+  const handlers = new Map<string, Handler>();
+  const ipcMain = {
+    handle: vi.fn((channel: string, handler: Handler) => handlers.set(channel, handler)),
+  };
+  const bridge = {
+    startRun: vi.fn(async () => ({ runId: 'run-1' })),
+    subscribe: vi.fn(() => ({ runId: 'run-1', running: true })),
+    abortRun: vi.fn(async () => ({ runId: 'run-1', pid: 123, terminated: true })),
+  };
+  registerEvaluationHandlers(
+    ipcMain as unknown as IpcMain,
+    bridge as unknown as EvalRunBridge,
+  );
+  return { handlers, bridge };
+}
+
+describe('evaluation run IPC admin gate', () => {
+  beforeEach(() => {
+    guard.denied = true;
+  });
+
+  it('rejects all three mutating/stream channels before reaching the bridge', async () => {
+    const { handlers, bridge } = setup();
+
+    for (const channel of [
+      EVALUATION_CHANNELS.RUN_SUITE,
+      EVALUATION_CHANNELS.RUN_EVENTS,
+      EVALUATION_CHANNELS.ABORT_RUN,
+    ]) {
+      await expect(handlers.get(channel)!(null, { runId: 'run-1', scope: 'smoke', maxCases: 1 }))
+        .resolves.toMatchObject({ success: false, error: { code: 'FORBIDDEN' } });
+    }
+    expect(bridge.startRun).not.toHaveBeenCalled();
+    expect(bridge.subscribe).not.toHaveBeenCalled();
+    expect(bridge.abortRun).not.toHaveBeenCalled();
+  });
+
+  it('lets an admin start, subscribe, and abort through the registered IPC handlers', async () => {
+    guard.denied = false;
+    const { handlers, bridge } = setup();
+
+    await expect(handlers.get(EVALUATION_CHANNELS.RUN_SUITE)!(null, { scope: 'smoke', maxCases: 1 }))
+      .resolves.toEqual({ runId: 'run-1' });
+    await expect(handlers.get(EVALUATION_CHANNELS.RUN_EVENTS)!(null, { runId: 'run-1' }))
+      .resolves.toEqual({ runId: 'run-1', running: true });
+    await expect(handlers.get(EVALUATION_CHANNELS.ABORT_RUN)!(null, { runId: 'run-1' }))
+      .resolves.toEqual({ runId: 'run-1', pid: 123, terminated: true });
+
+    expect(bridge.startRun).toHaveBeenCalledTimes(1);
+    expect(bridge.subscribe).toHaveBeenCalledTimes(1);
+    expect(bridge.abortRun).toHaveBeenCalledTimes(1);
+  });
+});

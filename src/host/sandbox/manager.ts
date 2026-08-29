@@ -8,6 +8,7 @@ import { createLogger } from '../services/infra/logger';
 import { Bubblewrap, getBubblewrap, type BubblewrapConfig, type BubblewrapStatus } from './bubblewrap';
 import { getSeatbelt, type SeatbeltConfig, type SeatbeltStatus } from './seatbelt';
 import { SANDBOX_TIMEOUTS } from '../../shared/constants';
+import { getSensitiveSandboxPaths } from './sensitivePaths';
 
 const logger = createLogger('SandboxManager', { lane: 'sandbox' });
 
@@ -101,6 +102,8 @@ export interface SandboxWrapOptions {
   readOnlyRoots?: string[];
   /** Project roots allowed for writes. */
   readWriteRoots?: string[];
+  /** Host roots that must not be readable from this command. */
+  deniedReadRoots?: string[];
   /** 是否放行网络（bypass 档默认 true） */
   allowNetwork?: boolean;
 }
@@ -288,6 +291,10 @@ export class SandboxManager {
     const resolved = path.resolve(opts.workingDirectory);
     const readOnlyRoots = (opts.readOnlyRoots ?? []).map((root) => path.resolve(root));
     const readWriteRoots = (opts.readWriteRoots ?? [resolved]).map((root) => path.resolve(root));
+    const sensitivePaths = [
+      ...getSensitiveSandboxPaths(),
+      ...(opts.deniedReadRoots ?? []).map((root) => ({ kind: 'directory' as const, path: root })),
+    ];
     const allowNetwork = opts.allowNetwork ?? false;
 
     switch (this.platform) {
@@ -299,6 +306,7 @@ export class SandboxManager {
           writePaths: readWriteRoots,
           workingDirectory: resolved,
           allowWorkingDirectoryWrite: false,
+          sensitivePaths,
         });
         return { ...wrapped, platform: 'darwin' };
       }
@@ -311,6 +319,7 @@ export class SandboxManager {
           readOnlyPaths: [...(dev.readOnlyPaths ?? []), ...readOnlyRoots],
           readWritePaths: readWriteRoots,
           workingDirectory: resolved,
+          sensitivePaths,
         });
         return { ...wrapped, platform: 'linux' };
       }

@@ -385,7 +385,7 @@ export class SubagentExecutor {
     // Keep the pipeline's internal random id private to the pipeline registry;
     // user-facing events, tool calls, approvals and results must stay in the
     // caller's run scope.
-    const telemetryCollector = getTelemetryCollector();
+    const telemetryCollector = context.telemetryCollector ?? getTelemetryCollector();
     let telemetryTurnNumber = 0;
 
     const messages = buildInitialSubagentMessages({

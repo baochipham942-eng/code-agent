@@ -40,6 +40,7 @@ import type { GoalEvidenceGateState } from './goalEvidenceGate';
 import type { TurnQualityRunState } from './turnQuality';
 import type { BudgetScope } from '../../services/core/budgetService';
 import type { SkillDiscoveryService } from '../../services/skills/skillDiscoveryService';
+import type { SystemPromptCache } from '../../telemetry/systemPromptCache';
 
 /**
  * 运行时组合根：单对象，所有 runtime 模块共享同一引用（ADR-038）。
@@ -102,6 +103,7 @@ export interface RuntimeContext {
   readonly autoCompressor: AutoContextCompressor;
   readonly compressionPipeline: CompressionPipeline;
   readonly telemetryAdapter?: TelemetryAdapter;
+  readonly systemPromptStore?: Pick<SystemPromptCache, 'store' | 'get'>;
   readonly inferenceOptions?: InferenceOptions;
   readonly historyVisibility?: 'visible' | 'meta';
   readonly deniedToolNames?: string[];

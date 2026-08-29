@@ -13,6 +13,7 @@ import type {
 } from '../../shared/contract/conversationEnvelope';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import type { AgentEngineKind } from '../../shared/contract/agentEngine';
+import type { TelemetryCollector } from '../telemetry/telemetryCollector';
 
 export interface SubagentConfig {
   name: string;
@@ -175,6 +176,8 @@ export interface SubagentExecutionContext {
   spawnParentAgentId?: string;
   toolScope?: WorkbenchToolScope;
   executionIntent?: ConversationExecutionIntent;
+  /** Run-scoped telemetry owner; evals use a case-local database. */
+  telemetryCollector?: TelemetryCollector;
   /** Attachments (images, files) to include in the first message */
   attachments?: SubagentAttachment[];
   /** 父工具调用 ID，用于标识消息来自哪个 subagent */

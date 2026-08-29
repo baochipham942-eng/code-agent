@@ -30,9 +30,7 @@ import { execSync } from 'child_process';
 import { createLogger } from '../services/infra/logger';
 import { isNonRetryableError, isTransientError } from '../model/providers/retryStrategy';
 import { getTestDirs } from '../config';
-import { buildSessionTraceIdentity } from '../../shared/contract/reviewQueue';
 import type { StructuredReplay } from '../../shared/contract/evaluation';
-import { evaluateAgentTrajectoryReplay } from '../evaluation/trajectory/trajectoryGate';
 // TrajectoryBuilder loaded dynamically — excluded from production bundle
 import { EvalCritic } from './evalCritic';
 import { loadAllTestSuites as loadSuitesForCritic } from './testCaseLoader';
@@ -44,6 +42,7 @@ import { isRedlineCase } from './testCaseClassification';
 import { createScopedCostLimit, isScopedCostLimitExceeded } from '../services/core/scopedCostLimit';
 import { getMockCasePolicy } from './mockEvalPolicy';
 import { completePlannedResults, createNotRunResult, isRealAgentRunCase, markInvalidResultWithoutModel } from './testRunCompletion';
+import { appendTimeoutTelemetryFailureReason, attachTelemetryReplay } from './testRunnerTelemetryReplay';
 
 const execAsync = promisify(exec);
 const logger = createLogger('TestRunner');
@@ -110,6 +109,9 @@ export interface AgentInterface {
   usesMockEvalPolicy?(): boolean;
   /** B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据） */
   getGoalRunRecord?(): GoalRunRecord | undefined;
+  /** Bind runtime capability signals to the case that is currently executing. */
+  configureEvaluationCase?(testId: string | undefined): void;
+  getStructuredReplay?(sessionId: string): Promise<StructuredReplay | null>;
 }
 
 export type AgentFactory = (context: {
@@ -128,6 +130,14 @@ interface TestExecutionContext {
   workingDirectory: string;
 }
 
+interface IsolatedTestExecutionContext extends TestExecutionContext {
+  cleanup(): void | Promise<void>;
+}
+
+export type IsolatedTestExecutionFactory = () =>
+  | IsolatedTestExecutionContext
+  | Promise<IsolatedTestExecutionContext>;
+
 interface ParallelWorker extends TestExecutionContext {
   cleanup(): void | Promise<void>;
 }
@@ -140,6 +150,7 @@ export class TestRunner {
   private agent: AgentInterface;
   private agentFactory?: AgentFactory;
   private workerDirectoryFactory?: WorkerDirectoryFactory;
+  private isolatedExecutionFactory?: IsolatedTestExecutionFactory;
   private listeners: TestEventListener[] = [];
   private aborted = false;
   private abortReason?: string;
@@ -149,11 +160,26 @@ export class TestRunner {
     agent: AgentInterface,
     agentFactory?: AgentFactory,
     workerDirectoryFactory?: WorkerDirectoryFactory,
+    isolatedExecutionFactory?: IsolatedTestExecutionFactory,
   ) {
     this.config = config;
     this.agent = agent;
     this.agentFactory = agentFactory;
     this.workerDirectoryFactory = workerDirectoryFactory;
+    this.isolatedExecutionFactory = isolatedExecutionFactory;
+  }
+
+  async runIsolatedSingleTest(
+    testCase: TestCase,
+    fallback?: TestExecutionContext,
+  ): Promise<TestResult> {
+    if (!this.isolatedExecutionFactory) return this.runSingleTest(testCase, fallback);
+    const context = await this.isolatedExecutionFactory();
+    try {
+      return await this.runSingleTest(testCase, context);
+    } finally {
+      await context.cleanup();
+    }
   }
 
   /**
@@ -191,72 +217,6 @@ export class TestRunner {
    */
   abort(): void {
     this.aborted = true;
-  }
-
-  private validateRealAgentRunReplay(replay: StructuredReplay | null): string[] {
-    const gate = evaluateAgentTrajectoryReplay(replay);
-    return gate.exportReady ? [] : gate.failures;
-  }
-
-  private async attachTelemetryReplay(
-    testCase: TestCase,
-    result: TestResult,
-    agent: AgentInterface,
-  ): Promise<void> {
-    const requiresRealAgentRun = isRealAgentRunCase(testCase);
-    if (result.sessionId) {
-      result.replayKey = buildSessionTraceIdentity(result.sessionId).replayKey;
-    }
-
-    await agent.finalizeSession?.();
-
-    let replay: StructuredReplay | null = null;
-    if (result.sessionId) {
-      try {
-        const { getTelemetryQueryService } = await import('../evaluation/telemetryQueryService');
-        replay = await getTelemetryQueryService().getStructuredReplay(result.sessionId);
-        if (replay) {
-          result.replayKey = replay.traceIdentity.replayKey;
-          result.telemetryCompleteness = replay.summary.telemetryCompleteness;
-        }
-      } catch (error) {
-        logger.warn('Failed to attach structured replay telemetry', {
-          testId: testCase.id,
-          sessionId: result.sessionId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
-    if (!requiresRealAgentRun) return;
-
-    const failures = this.validateRealAgentRunReplay(replay);
-    result.telemetryGate = {
-      name: 'real-agent-run',
-      passed: failures.length === 0,
-      failures,
-    };
-
-    if (failures.length === 0) return;
-
-    const gateReason = `real-agent-run gate failed: ${failures.join(', ')}`;
-    result.status = 'failed';
-    result.score = 0;
-    result.failureStage = 'telemetry_replay_gate';
-    result.failureReason = result.failureReason
-      ? `${result.failureReason}; ${gateReason}`
-      : gateReason;
-    result.errors.push(gateReason);
-  }
-
-  private appendTimeoutTelemetryFailureReason(result: TestResult): void {
-    const telemetry = result.telemetryCompleteness;
-    if (!telemetry) return;
-
-    const progress = `执行至第 ${telemetry.turnCount} 轮，已记录 ${telemetry.toolCallCount} 次工具调用、${telemetry.modelCallCount} 次模型调用`;
-    result.failureReason = result.failureReason
-      ? `${result.failureReason}; ${progress}`
-      : progress;
   }
 
   private toTrialSummary(result: TestResult): NonNullable<TestResult['trials']>[number] {
@@ -347,7 +307,7 @@ export class TestRunner {
 
       if (trialsPerCase <= 1) {
         // Single trial (default behavior)
-        const result = await this.runSingleTest(testCase);
+        const result = await this.runIsolatedSingleTest(testCase);
         results.push(result);
 
         if ((result.status === 'passed' || result.status === 'partial') && !result.invalid) {
@@ -362,7 +322,7 @@ export class TestRunner {
         for (let trial = 0; trial < trialsPerCase; trial++) {
           if (this.aborted) break;
           logger.info(`Running trial ${trial + 1}/${trialsPerCase} for case ${testCase.id}`);
-          const result = await this.runSingleTest(testCase);
+          const result = await this.runIsolatedSingleTest(testCase);
           trialResults.push(this.toTrialSummary(result));
 
           // 同一 case 已经越过美元上限时不得继续后续 trial 烧量。
@@ -639,7 +599,7 @@ export class TestRunner {
     context: TestExecutionContext,
   ): Promise<TestResult> {
     if (trialsPerCase <= 1) {
-      return this.runSingleTest(testCase, context);
+      return this.runIsolatedSingleTest(testCase, context);
     }
 
     const trialResults: NonNullable<TestResult['trials']> = [];
@@ -649,7 +609,7 @@ export class TestRunner {
     for (let trial = 0; trial < trialsPerCase; trial++) {
       if (this.aborted) break;
       logger.info(`Running trial ${trial + 1}/${trialsPerCase} for case ${testCase.id}`);
-      const result = await this.runSingleTest(testCase, context);
+      const result = await this.runIsolatedSingleTest(testCase, context);
       trialResults.push(this.toTrialSummary(result));
 
       if (result.status === 'cost_exceeded') {
@@ -794,6 +754,7 @@ export class TestRunner {
       }
 
       // Reset agent state
+      agent.configureEvaluationCase?.(testCase.id);
       await agent.reset();
 
       if (mockPolicy?.kind === 'fixture') {
@@ -1072,9 +1033,9 @@ export class TestRunner {
       // 所有退出路径都在这里收敛 telemetry。此前超时从 catch 直接落到 finally，
       // 绕过 try 内的 attachTelemetryReplay，导致 DB 只能写入全 0 fallback。
       result.sessionId ??= agent.getSessionId?.();
-      await this.attachTelemetryReplay(testCase, result, agent);
+      await attachTelemetryReplay(testCase, result, agent);
       if (result.killedByTimeout) {
-        this.appendTimeoutTelemetryFailureReason(result);
+        appendTimeoutTelemetryFailureReason(result);
       }
 
       // 保持原有时序：轨迹分析只发生在断言已完成的正常执行路径，且读取已收敛的 telemetry。
@@ -1247,6 +1208,8 @@ export class TestRunner {
     await fs.writeFile(jsonPath, JSON.stringify(summary, null, 2));
 
     logger.info('Results saved', { path: jsonPath });
+
+    if (this.config.persistExperiment === false) return;
 
     // Persist to unified experiment DB (best-effort)
     try {

@@ -4,6 +4,7 @@ import type {
 } from '../protocol/tools';
 import type { ModelConfig } from '../../shared/contract';
 import type { RunTraceContext } from '../telemetry/runTraceContext';
+import type { TelemetryCollector } from '../telemetry/telemetryCollector';
 import type {
   SubagentExecutionContext,
   SubagentEventPort,
@@ -110,5 +111,6 @@ export function createProtocolSubagentExecutionContext(
       ?? ctx.suppressBackgroundSubagentIdleWake,
     toolScope: ctx.toolScope,
     executionIntent: ctx.executionIntent,
+    telemetryCollector: ctx.telemetryCollector as TelemetryCollector | undefined,
   };
 }

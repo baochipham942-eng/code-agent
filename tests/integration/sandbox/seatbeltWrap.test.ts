@@ -143,6 +143,24 @@ suite('seatbelt wrapCommand 真实隔离', () => {
     }
   });
 
+  it('显式不可读根会遮住真实评测仓库', async () => {
+    const sourceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'eval-real-root-'));
+    const answerPath = path.join(sourceRoot, 'answers.json');
+    fs.writeFileSync(answerPath, '{"answer":"hidden"}');
+    try {
+      const denied = wrapCommandForSandbox(`cat ${JSON.stringify(answerPath)}`, {
+        workingDirectory: projectDir,
+        deniedReadRoots: [sourceRoot],
+      });
+      const result = await run(denied.command, projectDir);
+      denied.cleanup();
+      expect(result.code).not.toBe(0);
+      expect(result.stdout).not.toContain('hidden');
+    } finally {
+      fs.rmSync(sourceRoot, { recursive: true, force: true });
+    }
+  });
+
   it('越界写入（HOME 根目录）被沙箱拒绝 —— 核心隔离实证', async () => {
     const escapeTarget = path.join(os.homedir(), `__sandbox_escape_${Date.now()}.txt`);
     const { command, cleanup } = wrapCommandForSandbox(

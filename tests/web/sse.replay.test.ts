@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   broadcastSSE,
   replayFromLastEventId,
+  registerSSEClient,
   sseClients,
   __resetSSEReplayBufferForTests,
 } from '../../src/web/helpers/sse';
@@ -129,5 +130,34 @@ describe('sse replay buffer', () => {
     );
     const events = parseChunks(reconnecting._chunks);
     expect(events.map((e) => e.id)).toEqual([1, 2]);
+  });
+
+  it('admin-only evaluation events are filtered from live delivery and replay', () => {
+    const user = fakeResponse();
+    const admin = fakeResponse();
+    registerSSEClient(user as unknown as Parameters<typeof registerSSEClient>[0], false);
+    registerSSEClient(admin as unknown as Parameters<typeof registerSSEClient>[0], true);
+
+    broadcastSSE('evaluation:run-events', { type: 'run_start' });
+    broadcastSSE('swarm:event', { type: 'visible' });
+
+    expect(parseChunks(user._chunks).map((event) => event.channel)).toEqual(['swarm:event']);
+    expect(parseChunks(admin._chunks).map((event) => event.channel)).toEqual([
+      'evaluation:run-events',
+      'swarm:event',
+    ]);
+
+    const userReplay = fakeResponse();
+    const adminReplay = fakeResponse();
+    registerSSEClient(userReplay as unknown as Parameters<typeof registerSSEClient>[0], false);
+    registerSSEClient(adminReplay as unknown as Parameters<typeof registerSSEClient>[0], true);
+    expect(replayFromLastEventId(
+      userReplay as unknown as Parameters<typeof replayFromLastEventId>[0],
+      0,
+    )).toBe(1);
+    expect(replayFromLastEventId(
+      adminReplay as unknown as Parameters<typeof replayFromLastEventId>[0],
+      0,
+    )).toBe(2);
   });
 });

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SecureStorageService } from '../../../../src/host/services/core/secureStorage';
 import { ConnectorOAuthStore } from '../../../../src/host/connectors/oauth/connectorOAuthStore';
+import type { ProviderDescriptor } from '../../../../src/host/connectors/oauth/providerDescriptor';
 
 const values = new Map<string, string>();
 const storage = {
@@ -98,5 +99,31 @@ describe('ConnectorOAuthStore client secret', () => {
     store.invalidateCredentials('all');
     // 断开连接必须把 App Secret 一起清掉——留着它等于用户以为断了其实凭据还在本机
     expect(store.clientSecret()).toBeUndefined();
+  });
+});
+
+describe('ConnectorOAuthStore descriptor', () => {
+  it('persists a validated descriptor without ever persisting its client secret', () => {
+    const store = new ConnectorOAuthStore('custom-oauth', storage);
+    const descriptor: ProviderDescriptor = {
+      id: 'custom-oauth',
+      displayName: 'api.example.com',
+      authorizeUrl: 'https://accounts.example.com/authorize',
+      tokenUrl: 'https://api.example.com/token',
+      clientId: 'client-1',
+      clientSecret: 'must-not-persist',
+      scopes: { 'http.request': '' },
+      apiHosts: ['api.example.com'],
+      httpRequestScope: '',
+      redirect: { mode: 'loopback-random' },
+      loopbackRedirectUriSupport: 'confirmed',
+      requiresClientSecret: true,
+    };
+
+    store.saveDescriptor(descriptor);
+
+    const { clientSecret: _clientSecret, ...persistedDescriptor } = descriptor;
+    expect(store.descriptor()).toEqual(persistedDescriptor);
+    expect(values.get('connector-oauth:custom-oauth:descriptor')).not.toContain('must-not-persist');
   });
 });

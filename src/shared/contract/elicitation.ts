@@ -47,6 +47,7 @@ export interface MCPElicitationResponse {
  */
 export interface MCPOAuthConsentRequest {
   requestId: string;
+  kind?: 'mcp' | 'connector';
   serverName: string;
   serverUrl: string;
   configSource: string | undefined;

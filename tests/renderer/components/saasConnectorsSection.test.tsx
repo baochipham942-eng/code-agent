@@ -102,6 +102,75 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+describe('SaaSConnectorsSection custom OAuth entry', () => {
+  it('creates a runtime connector from the five required descriptor fields', async () => {
+    let saved = false;
+    const customStatus: TestProviderStatus = {
+      id: 'custom-oauth',
+      displayName: 'accounts.example.com',
+      clientIdConfigured: true,
+      requiresClientSecret: true,
+      clientSecretConfigured: false,
+      connected: false,
+      loopbackRedirectUriSupport: 'confirmed',
+      authMode: 'oauth',
+    };
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'oauthStatus') return Promise.resolve(saved ? [baseStatus, customStatus] : [baseStatus]);
+      if (action === 'oauthSaveDescriptor') {
+        saved = true;
+        return Promise.resolve([baseStatus, customStatus]);
+      }
+      return Promise.resolve([]);
+    });
+    render(<SaaSConnectorsSection />);
+
+    fireEvent.click(screen.getByTestId('saas-custom-oauth-toggle'));
+    fireEvent.change(screen.getByTestId('saas-custom-authorize-url'), {
+      target: { value: 'https://accounts.example.com/oauth/authorize' },
+    });
+    fireEvent.change(screen.getByTestId('saas-custom-token-url'), {
+      target: { value: 'https://api.example.com/oauth/token' },
+    });
+    fireEvent.change(screen.getByTestId('saas-custom-client-id'), {
+      target: { value: 'client-123' },
+    });
+    fireEvent.click(screen.getByTestId('saas-custom-requires-secret'));
+    fireEvent.change(screen.getByTestId('saas-custom-loopback-support'), {
+      target: { value: 'confirmed' },
+    });
+    fireEvent.click(screen.getByTestId('saas-custom-save'));
+
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(
+      IPC_DOMAINS.CONNECTOR,
+      'oauthSaveDescriptor',
+      {
+        authorizeUrl: 'https://accounts.example.com/oauth/authorize',
+        tokenUrl: 'https://api.example.com/oauth/token',
+        clientId: 'client-123',
+        requiresClientSecret: true,
+        loopbackRedirectUriSupport: 'confirmed',
+      },
+    ));
+    expect(await screen.findByTestId('saas-connector-custom-oauth')).toBeTruthy();
+    expect(screen.getByTestId('saas-detail-custom-oauth').textContent)
+      .toContain(zh.settings.saasConnectors.secret.label);
+  });
+
+  it('does not expose a generic OAuth connection as a chat connector tool', async () => {
+    renderStatus({
+      id: 'custom-oauth',
+      displayName: 'api.example.com',
+      requiresClientSecret: false,
+      clientSecretConfigured: false,
+      connected: true,
+    });
+
+    await screen.findByTestId('saas-connector-custom-oauth');
+    expect(screen.queryByTestId('saas-use-in-chat-custom-oauth')).toBeNull();
+  });
+});
+
 describe('SaaSConnectorsSection Feishu lark-cli six states', () => {
   it('renders persisted cards on the first frame while the background refresh is pending', () => {
     window.localStorage.setItem('code-agent:connector-oauth-statuses', JSON.stringify([
@@ -400,7 +469,7 @@ describe('SaaSConnectorsSection five card states', () => {
     expect(screen.queryByTestId('saas-disconnect-feishu')).toBeNull();
   });
 
-  it('connecting: oauthConnect in flight overrides the card with orange local progress and toast', async () => {
+  it('connecting: shows local progress without claiming the browser opened before consent', async () => {
     invokeDomain.mockImplementation((_domain: string, action: string) => {
       if (action === 'oauthStatus') {
         return Promise.resolve([{ ...baseStatus, clientSecretConfigured: true }]);
@@ -420,8 +489,7 @@ describe('SaaSConnectorsSection five card states', () => {
       expect(screen.getByTestId('saas-connector-feishu').textContent)
         .toContain(zh.settings.saasConnectors.badges.connecting);
       expect(screen.getByTestId('saas-status-dot-feishu').className).toContain('bg-amber-400');
-      expect(screen.getByTestId('saas-connector-toast').textContent)
-        .toContain(zh.settings.saasConnectors.toast.authorizationOpened);
+      expect(screen.queryByTestId('saas-connector-toast')).toBeNull();
     });
   });
 

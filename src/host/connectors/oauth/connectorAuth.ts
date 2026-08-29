@@ -66,7 +66,7 @@ export class ConnectorAuth {
         metadata,
         clientInformation,
         redirectUrl: flow.redirectUrl,
-        scope: requestedScope,
+        ...(requestedScope ? { scope: requestedScope } : {}),
         state: flow.state,
       });
       for (const [key, value] of Object.entries(descriptor.extraAuthorizeParams ?? {})) {
@@ -106,11 +106,10 @@ export class ConnectorAuth {
   }
 
   async getAccessToken(accountId: string, scope: string): Promise<string> {
-    if (!scope.trim()) throw new Error('Connector OAuth scope is required');
     const store = this.storeFactory(accountId);
     const stored = store.tokens();
     if (!stored) throw new Error(`Connector OAuth tokens are not available for ${accountId}`);
-    if (!this.scopeIncludes(stored.tokens.scope ?? stored.requestedScope, scope)) {
+    if (scope.trim() && !this.scopeIncludes(stored.tokens.scope ?? stored.requestedScope, scope)) {
       throw new Error(`Connector OAuth tokens for ${accountId} do not cover scope "${scope}"`);
     }
     if (!this.isExpired(stored.expiresAt)) return stored.tokens.access_token;
@@ -139,8 +138,11 @@ export class ConnectorAuth {
   }
 
   private scopeForAction(descriptor: ProviderDescriptor, action: string): string {
-    const scope = descriptor.scopes[action]?.trim();
-    if (!scope) throw new Error(`Connector OAuth action "${action}" is not configured for ${descriptor.id}`);
+    const configuredScope = descriptor.scopes[action];
+    if (configuredScope === undefined) {
+      throw new Error(`Connector OAuth action "${action}" is not configured for ${descriptor.id}`);
+    }
+    const scope = configuredScope.trim();
     return scope;
   }
 

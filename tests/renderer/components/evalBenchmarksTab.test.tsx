@@ -281,7 +281,7 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     render(<EvalBenchmarksTab />);
 
     expect(await screen.findByText('日常集 · 每题 1 次 · 题库 abcdef0')).toBeTruthy();
-    expect(screen.getByText('日常集 · 每题 1 次 · 题库 unknown')).toBeTruthy();
+    expect(screen.getByText('日常集 · 每题 1 次 · 题库 题库版本未知')).toBeTruthy();
     expect(screen.queryByTestId('benchmark-run-mock')).toBeNull();
 
     fireEvent.click(screen.getByTestId('benchmark-run-a').querySelector('button') as HTMLButtonElement);

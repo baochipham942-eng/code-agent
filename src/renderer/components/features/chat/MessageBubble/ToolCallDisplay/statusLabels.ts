@@ -8,6 +8,8 @@ import type { ToolStatus } from './styles';
 import type { ToolCall } from '@shared/contract';
 import type { Translations } from '../../../../../i18n';
 import { humanizeToolFailureReason, resolveToolTerminalOutcomeKey } from '../../../../../utils/toolExecutionPresentation';
+import { resolveStreamInterruptionOutcomeKey } from '../../../../../i18n/outcomeWords';
+import type { StreamInterruptionReason } from '@shared/contract';
 
 type StatusLabels = Pick<Translations['toolStatus']['default'], 'preparing' | 'running'>;
 
@@ -25,6 +27,7 @@ export function getToolStatusLabel(
   status: ToolStatus,
   t: Translations,
   awaitingApproval = false,
+  interruptionReason?: StreamInterruptionReason,
 ): string | null {
   if (awaitingApproval) return t.toolStepHumanize.pendingApprovalStatus;
   const toolName = toolCall.name;
@@ -53,7 +56,7 @@ export function getToolStatusLabel(
       return `${outcome.label} · ${humanizeToolFailureReason(toolCall, t)}`;
     }
     case 'interrupted':
-      return t.outcomeWords['cancelled-restart'].timeline.label;
+      return t.outcomeWords[resolveStreamInterruptionOutcomeKey(interruptionReason)].timeline.label;
   }
 }
 

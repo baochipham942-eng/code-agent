@@ -25,6 +25,7 @@ import {
   getStreamInterruptionReasonLabel,
   humanizeInterruptedToolAction,
 } from '../../../../../utils/streamInterruptionPresentation';
+import { resolveStreamInterruptionOutcomeKey } from '../../../../../i18n/outcomeWords';
 
 interface Props {
   toolCall: ToolCall;
@@ -93,7 +94,7 @@ export function ToolHeader({
               : 'completed',
         toolCall.stepLabel,
       );
-  const statusLabel = getToolStatusLabel(toolCall, status, t, awaitingApproval);
+  const statusLabel = getToolStatusLabel(toolCall, status, t, awaitingApproval, interruptionReason);
   const filePath = getToolFilePath(
     toolCall.name,
     toolCall.arguments as Record<string, unknown> | undefined,
@@ -117,7 +118,10 @@ export function ToolHeader({
     openPreview(filePath);
   };
 
-  const title = buildToolHeaderTitle(toolCall, displayName, t.toolStatus.interrupted);
+  const interruptionOutcome = t.outcomeWords[
+    resolveStreamInterruptionOutcomeKey(interruptionReason)
+  ].timeline;
+  const title = buildToolHeaderTitle(toolCall, displayName, interruptionOutcome.label);
 
   return (
     // 状态词 text-xs(12px) 与主文案 text-sm(14px) 同行混排：items-center 对齐的是

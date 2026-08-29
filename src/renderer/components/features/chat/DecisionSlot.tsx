@@ -22,6 +22,7 @@ import { isDangerousCommand } from '../../PermissionDialog/utils';
 import { UserQuestionCard } from '../../UserQuestionCard';
 import { PlanApprovalCard } from '../../PlanApprovalCard';
 import type { PendingPlanApprovalTarget } from '../../../utils/planApprovalView';
+import { resolveStreamInterruptionOutcomeKey } from '../../../i18n/outcomeWords';
 
 const GLOBAL_PERMISSION_SESSION_ID = 'global';
 
@@ -70,7 +71,11 @@ function interruptionSummary(
   const action = firstToolCall
     ? humanizeInterruptedToolAction(firstToolCall, t)
     : retryMessage.content.trim();
+  const outcome = t.outcomeWords[
+    resolveStreamInterruptionOutcomeKey(snapshot.interruptionReason)
+  ].timeline;
   return t.chat.streamInterruptedDecision
+    .replace('{outcome}', outcome.label)
     .replace('{action}', action || t.chat.unknownTool)
     .replace('{extra}', snapshot.toolCalls.length > 1
       ? t.chat.streamInterruptedDecisionExtra.replace('{count}', String(snapshot.toolCalls.length - 1))

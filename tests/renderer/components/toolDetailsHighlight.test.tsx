@@ -124,7 +124,7 @@ describe('ToolDetails 语法高亮（#13 收窄版：仅 JSON 走高亮）', () 
     expect(failed).not.toContain(rawError);
   });
 
-  it('取消闭合占位结果只显示人话中断态', () => {
+  it('无法判明主动取消的闭合占位结果默认显示被动中断态', () => {
     const markup = render({
       id: 't-cancelled',
       name: 'Read',
@@ -136,8 +136,9 @@ describe('ToolDetails 语法高亮（#13 收窄版：仅 JSON 走高亮）', () 
       },
     } as ToolCall);
 
-    expect(markup).toContain('已取消');
-    expect(markup).toContain('应用重启时中断');
+    expect(markup).toContain('已中断');
+    expect(markup).not.toContain('已取消');
+    expect(markup).toContain('执行在完成前中断');
     expect(markup).not.toContain('[no result');
     expect(markup).not.toContain('cancelled before');
     expect(markup).not.toContain('复制错误');

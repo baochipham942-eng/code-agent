@@ -74,7 +74,7 @@ function resolveTerminalOutcome(segment: TurnSegment, t: Translations) {
     : terminal === 'cancelled'
       ? t.outcomeWords['cancelled-by-user'].badge
       : terminal === 'interrupted'
-        ? t.outcomeWords['cancelled-restart'].badge
+        ? t.outcomeWords['interrupted-restart'].badge
         : terminal === 'failed'
           ? failedOutcome
           : terminal === 'aborted'

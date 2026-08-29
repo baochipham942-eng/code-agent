@@ -98,7 +98,7 @@ describe('ToolStepGroup resolved permission evidence', () => {
     state.resolved = [resolved('timeout')];
     render(<ToolStepGroup nodes={[toolNode]} sessionId="session-1" />);
 
-    expect(screen.getByTestId('permission-decision-evidence').textContent).toContain('执行超时 · 等待回答或权限确认超时');
+    expect(screen.getByTestId('permission-decision-evidence').textContent).toContain('已中断 · 等待回答或权限确认超时');
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
     expect(state.sendPrompt).toHaveBeenCalledWith('刚才的审批超时了，请重试');
   });

@@ -7,6 +7,7 @@ import type {
   EvalExperimentListItem,
   EvalRunPanelProbe,
 } from '@shared/contract/evaluation';
+import type { EvalRunPanelLabels } from '../../../i18n/evalRunPanel';
 import ipcService from '../../../services/ipcService';
 import { Button } from '../../primitives/Button';
 import { EmptyState } from '../../primitives/EmptyState';
@@ -15,7 +16,6 @@ import {
   normalizeDatasetName,
   type EvalDatasetGroup,
 } from './evalDatasetName';
-import type { EvalRunPanelLabels } from './EvalRunWizard';
 
 const EVALUATION_GUIDE_URL = 'https://github.com/baochipham942-eng/code-agent/blob/main/docs/architecture/decisions/ADR-036-eval-scoring-credibility-and-redline-jail.md';
 

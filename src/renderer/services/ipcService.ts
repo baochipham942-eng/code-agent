@@ -79,6 +79,14 @@ function createSequencedAgentEventDispatcher(
   };
 }
 
+export function on(
+  channel: typeof IPC_CHANNELS.EVALUATION_RUN_EVENTS,
+  callback: IpcEventHandlers[typeof IPC_CHANNELS.EVALUATION_RUN_EVENTS],
+): (() => void) | undefined;
+export function on<K extends keyof IpcEventHandlers>(
+  channel: K,
+  callback: IpcEventHandlers[K],
+): (() => void) | undefined;
 export function on<K extends keyof IpcEventHandlers>(
   channel: K,
   callback: IpcEventHandlers[K]

@@ -14,8 +14,13 @@ import type {
   EvalRunRequest,
   EvalRunSubscriptionResult,
 } from '@shared/contract/evaluation';
+import {
+  evalRunPanelEn,
+  evalRunPanelZh,
+  type EvalRunPanelLabels,
+} from '../../../i18n/evalRunPanel';
 import ipcService from '../../../services/ipcService';
-import { useI18n } from '../../../hooks/useI18n';
+import { useAppStore } from '../../../stores/appStore';
 import { Button } from '../../primitives/Button';
 import {
   EvalRunHistory,
@@ -29,7 +34,6 @@ import {
 } from './EvalRunProgress';
 import {
   EvalRunWizard,
-  type EvalRunPanelLabels,
   type EvalRunSplit,
 } from './EvalRunWizard';
 
@@ -55,8 +59,8 @@ function splitLabel(
 }
 
 export const EvalBenchmarksTab: React.FC = () => {
-  const { t, language } = useI18n();
-  const labels = t.evalCenter.runPanel;
+  const language = useAppStore((state) => state.language);
+  const labels = language === 'zh' ? evalRunPanelZh.runPanel : evalRunPanelEn.runPanel;
   const [experiments, setExperiments] = useState<EvalExperimentListItem[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -266,7 +270,7 @@ export const EvalBenchmarksTab: React.FC = () => {
         probe={probe}
         labels={labels}
         language={language}
-        loadingText={t.settings.modal.loading}
+        loadingText={labels.loading}
         onRefresh={() => void loadExperiments()}
         onOpenWizard={openWizard}
       />

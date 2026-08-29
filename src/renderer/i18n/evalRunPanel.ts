@@ -1,8 +1,98 @@
-export const evalRunPanelZh = {
+export interface EvalRunPanelLabels {
+  launch: string;
+  lastRun: string;
+  history: string;
+  loading: string;
+  emptyTitle: string;
+  quickCheck: string;
+  scoringDocs: string;
+  wizardTitle: string;
+  datasetSection: string;
+  dailySet: string;
+  heldOutSet: string;
+  safetySet: string;
+  allSet: string;
+  tags: string;
+  tagCorePath: string;
+  tagRecovery: string;
+  tagConversation: string;
+  tagMultiTurn: string;
+  tagSpreadsheet: string;
+  tagWeb: string;
+  maxCases: string;
+  expensiveHint: string;
+  safetyUnavailable: string;
+  shapeSection: string;
+  productionShape: string;
+  scorerSection: string;
+  deterministicScorer: string;
+  locked: string;
+  aiJudge: string;
+  nextVersion: string;
+  estimatedCost: string;
+  runAndBill: string;
+  confirmRun: string;
+  confirmSafety: string;
+  cancel: string;
+  starting: string;
+  runFailed: string;
+  runningSet: string;
+  stop: string;
+  stopping: string;
+  waiting: string;
+  running: string;
+  passed: string;
+  failed: string;
+  excluded: string;
+  skipped: string;
+  costExceeded: string;
+  noResult: string;
+  logTitle: string;
+  autoScroll: string;
+  jumpToBottom: string;
+  runStarted: string;
+  caseStarted: string;
+  casePassed: string;
+  caseFailed: string;
+  caseExcluded: string;
+  toolsCalled: string;
+  skillActivated: string;
+  memoryInjected: string;
+  subagentSpawned: string;
+  runEnded: string;
+  quietDegraded: string;
+  endedBeforeSubscribe: string;
+  incomplete: string;
+  complete: string;
+  groupHeader: string;
+  unknownCaseBank: string;
+  runs: string;
+  passRate: string;
+  compareTitle: string;
+  compareNeedTwo: string;
+  compareLoading: string;
+  regressedCount: string;
+  fixedCount: string;
+  unchangedCount: string;
+  noCaseChanges: string;
+  caseStatusRegressed: string;
+  caseStatusFixed: string;
+  selectForCompare: string;
+  incompleteCannotCompare: string;
+  refresh: string;
+  loadFailed: string;
+}
+
+interface EvalRunPanelDictionary {
+  runPanel: EvalRunPanelLabels;
+}
+
+export const evalRunPanelZh: EvalRunPanelDictionary = {
   runPanel: {
     launch: '开跑',
     lastRun: '上次：{set} · {model} · 每题 {k} 次',
     history: '历史',
+    loading: '加载中…',
     emptyTitle: '还没有任何一轮跑分记录',
     quickCheck: '跑一轮快速检查试试（约 {count} 题 · 预估 {cost}）',
     scoringDocs: '跑分怎么打分？ →',
@@ -84,11 +174,12 @@ export const evalRunPanelZh = {
   },
 };
 
-export const evalRunPanelEn: typeof evalRunPanelZh = {
+export const evalRunPanelEn: EvalRunPanelDictionary = {
   runPanel: {
     launch: 'Run',
     lastRun: 'Last: {set} · {model} · {k} time(s) per case',
     history: 'History',
+    loading: 'Loading…',
     emptyTitle: 'No benchmark run has been recorded yet',
     quickCheck: 'Try a quick check (about {count} cases · estimated {cost})',
     scoringDocs: 'How are runs scored? →',

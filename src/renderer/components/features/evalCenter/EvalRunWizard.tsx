@@ -1,12 +1,11 @@
 import React from 'react';
 import { Check, Circle, Square } from 'lucide-react';
 import type { EvalRunPanelProbe, EvalRunRequest } from '@shared/contract/evaluation';
-import { useI18n } from '../../../hooks/useI18n';
+import type { EvalRunPanelLabels } from '../../../i18n/evalRunPanel';
 import { Button } from '../../primitives/Button';
 import { Modal } from '../../primitives/Modal';
 
 export type EvalRunSplit = Extract<NonNullable<EvalRunRequest['split']>, 'held-in' | 'held-out' | 'safety'>;
-export type EvalRunPanelLabels = ReturnType<typeof useI18n>['t']['evalCenter']['runPanel'];
 
 const TAG_OPTIONS = [
   { id: 'core-path', labelKey: 'tagCorePath' },

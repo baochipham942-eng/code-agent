@@ -2,8 +2,9 @@ import React, { useRef, useState } from 'react';
 import { ArrowDown, Check, Circle, Minus, X } from 'lucide-react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import type { EvalRunEvent } from '@shared/contract/evaluation';
+import type { EvalRunPanelLabels } from '../../../i18n/evalRunPanel';
 import { Button } from '../../primitives/Button';
-import type { EvalRunPanelLabels, EvalRunSplit } from './EvalRunWizard';
+import type { EvalRunSplit } from './EvalRunWizard';
 
 type CasePresentationStatus = 'waiting' | 'running' | 'passed' | 'failed' | 'excluded';
 

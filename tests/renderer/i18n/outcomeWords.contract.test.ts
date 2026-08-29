@@ -4,15 +4,17 @@ import { describe, expect, it } from 'vitest';
 import {
   outcomeWordsEn,
   outcomeWordsZh,
+  resolveStreamInterruptionOutcomeKey,
 } from '../../../src/renderer/i18n/outcomeWords';
 
 const I18N_DIR = path.resolve(process.cwd(), 'src/renderer/i18n');
 
 const OUTCOME_KEYS = [
   'cancelled-by-user',
-  'cancelled-session-switch',
-  'cancelled-restart',
-  'cancelled-by-parent',
+  'interrupted-session-switch',
+  'interrupted-restart',
+  'interrupted-by-parent',
+  'interrupted-unknown',
   'failed-tool',
   'failed-model',
   'failed-unknown',
@@ -108,6 +110,27 @@ describe('outcomeWords contract', () => {
     for (const outcome of OUTCOME_KEYS) {
       expect(outcomeWordsZh.outcomeWords[outcome].badge.reason.trim(), `zh ${outcome}`).not.toBe('');
       expect(outcomeWordsEn.outcomeWords[outcome].badge.reason.trim(), `en ${outcome}`).not.toBe('');
+    }
+  });
+
+  it('keeps active cancellation separate from every passive interruption outcome', () => {
+    expect(resolveStreamInterruptionOutcomeKey('user')).toBe('cancelled-by-user');
+    expect(resolveStreamInterruptionOutcomeKey('session-switch')).toBe('interrupted-session-switch');
+    expect(resolveStreamInterruptionOutcomeKey('app-restart')).toBe('interrupted-restart');
+    expect(resolveStreamInterruptionOutcomeKey(undefined)).toBe('interrupted-restart');
+
+    expect(outcomeWordsZh.outcomeWords['cancelled-by-user'].timeline.label).toBe('已取消');
+    expect(outcomeWordsEn.outcomeWords['cancelled-by-user'].timeline.label).toBe('Cancelled');
+
+    for (const outcome of [
+      'interrupted-session-switch',
+      'interrupted-restart',
+      'interrupted-by-parent',
+      'interrupted-unknown',
+      'failed-timeout',
+    ] as const) {
+      expect(outcomeWordsZh.outcomeWords[outcome].timeline.label, `zh ${outcome}`).toBe('已中断');
+      expect(outcomeWordsEn.outcomeWords[outcome].timeline.label, `en ${outcome}`).toBe('Interrupted');
     }
   });
 

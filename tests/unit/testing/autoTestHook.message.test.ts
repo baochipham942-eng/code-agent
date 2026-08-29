@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatAutoTestCompletionMessage } from '../../../src/host/testing/autoTestHook';
 import type { TestRunSummary } from '../../../src/host/testing/types';
+import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 
 function makeSummary(overrides: Partial<TestRunSummary>): TestRunSummary {
   return {
@@ -25,6 +26,7 @@ function makeSummary(overrides: Partial<TestRunSummary>): TestRunSummary {
     invalidCases: 0,
     averageScore: 0,
     results: [],
+    stamp: UNKNOWN_EVAL_RUN_STAMP,
     environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },
     performance: { avgResponseTime: 0, maxResponseTime: 0, totalToolCalls: 0, totalTurns: 0 },
     ...overrides,

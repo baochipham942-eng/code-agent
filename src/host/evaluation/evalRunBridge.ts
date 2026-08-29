@@ -9,7 +9,10 @@ import type {
   EvalRunRequest,
   EvalRunStartResult,
 } from '../../shared/contract/evaluation';
-import { EVAL_RUN_EVENT_SCHEMA_VERSION } from '../../shared/contract/evaluation';
+import {
+  EVAL_RUN_EVENT_SCHEMA_VERSION,
+  UNKNOWN_EVAL_RUN_STAMP,
+} from '../../shared/contract/evaluation';
 import { broadcastToRenderer } from '../platform';
 import { EVALUATION_CHANNELS } from '../../shared/ipc/channels';
 import { getDatabase, type DatabaseService } from '../services/core/databaseService';
@@ -19,6 +22,7 @@ import { ExperimentAdapter } from './experimentAdapter';
 import { inspectEvalEnvironment, type EvalEnvironmentResult } from './evalEnvironment';
 import { parseEvalRunEvent } from './evalRunEventValidation';
 import { terminateEvalProcessTree } from './evalProcessTree';
+import { resolveProductionShape } from './productionShape';
 
 const logger = createLogger('EvalRunBridge');
 const TERMINATE_GRACE_MS = 3_000;
@@ -185,6 +189,10 @@ export class EvalRunBridge {
     if (!model.apiKey) throw new Error('当前默认模型没有可用密钥，无法开始评测。');
 
     const runId = randomUUID();
+    logger.info('Resolved production shape for eval comparison', {
+      runId,
+      productionShape: resolveProductionShape(model.model),
+    });
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), TEMP_PREFIX));
     const dataDir = path.join(tempRoot, 'data');
     const sandboxRoot = path.join(tempRoot, 'sandboxes');
@@ -408,6 +416,7 @@ export class EvalRunBridge {
           runId: state.runId,
           plannedCaseIds: state.request.ids ?? [],
           config: {
+            ...UNKNOWN_EVAL_RUN_STAMP,
             mode: 'real',
             model: 'unknown',
             provider: 'unknown',

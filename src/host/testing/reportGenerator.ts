@@ -6,6 +6,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { BaselineDelta, TestRunSummary, TestResult } from './types';
 import { formatDuration } from '../../shared/utils/format';
+import { getRunStampReportRows } from './runStampReport';
 import {
   CALIBRATION_TRUST_THRESHOLDS,
   isTrustedCalibration,
@@ -116,6 +117,10 @@ export function generateMarkdownReport(
   lines.push('|------|-----|');
   lines.push(`| 模型 | ${summary.environment.model} |`);
   lines.push(`| 提供商 | ${summary.environment.provider} |`);
+  lines.push(`| 代码版本 | ${summary.gitCommit ?? 'unknown'} |`);
+  for (const [label, value] of getRunStampReportRows(summary.stamp)) {
+    lines.push(`| ${label} | ${value} |`);
+  }
   lines.push(`| 工作目录 | \`${summary.environment.workingDirectory}\` |`);
   lines.push('');
 

@@ -4,7 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DatabaseService } from '../../../src/host/services/core/databaseService';
-import type { EvalRunEvent } from '../../../src/shared/contract/evaluation';
+import {
+  EVAL_RUN_STAMP_KEYS,
+  type EvalRunEvent,
+} from '../../../src/shared/contract/evaluation';
 import { EvalRunBridge } from '../../../src/host/evaluation/evalRunBridge';
 import { inspectEvalEnvironment } from '../../../src/host/evaluation/evalEnvironment';
 
@@ -72,6 +75,8 @@ describe('EvalRunBridge child-process integration', () => {
     expect(events.some((event) => event.type === 'error')).toBe(true);
     expect(events.some((event) => event.type === 'run_end' && event.exitCode === 2)).toBe(true);
     expect(database.insertExperiment).toHaveBeenCalledTimes(1);
+    const persistedConfig = JSON.parse(database.insertExperiment.mock.calls[0]![0].config_json);
+    for (const key of EVAL_RUN_STAMP_KEYS) expect(persistedConfig).toHaveProperty(key);
     expect(JSON.parse(database.updateExperimentSummary.mock.calls.at(-1)![1])).toMatchObject({
       completed: false,
       source: 'eval',

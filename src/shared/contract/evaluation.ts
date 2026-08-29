@@ -12,6 +12,98 @@ import type {
 
 export const EVAL_RUN_EVENT_SCHEMA_VERSION = 2 as const;
 
+export interface EvalRunStamp {
+  caseBankSha: string;
+  evalSet: {
+    split: 'held-in' | 'held-out' | 'control' | 'safety' | 'all';
+    splitsFileSha: string;
+    tags: string[];
+    ids: string[];
+  };
+  scorers: {
+    deterministic: true;
+    judge: 'rules' | 'llm';
+    judgeModel: string;
+    judgeCalibrationId: string;
+  };
+  k: number;
+  aggregationRuleVersion: number;
+  promptVersion: string;
+  shape: {
+    skills: string[];
+    memory: boolean;
+    swarm: boolean;
+    harness: {
+      name: string;
+      contextCompression?: boolean;
+      compressionPipeline?: boolean;
+      scaffoldProfile?: boolean;
+      thinkingInjection?: boolean;
+      hooksEnabled?: boolean;
+      toolMode?: 'all' | 'deferred';
+    } | null;
+  };
+  divergesFromProduction: string[];
+  keySource: `env:${string}` | `file:${string}` | 'none';
+  priceTableVersion: number;
+  estimatedCostUsd: number;
+}
+
+export const EVAL_RUN_STAMP_KEYS = [
+  'caseBankSha',
+  'evalSet',
+  'scorers',
+  'k',
+  'aggregationRuleVersion',
+  'promptVersion',
+  'shape',
+  'divergesFromProduction',
+  'keySource',
+  'priceTableVersion',
+  'estimatedCostUsd',
+] as const satisfies readonly (keyof EvalRunStamp)[];
+
+// 穷尽性守卫（2026-08-29 Grok 变异席抓出：`satisfies` 只保证元素合法，不保证接口每个 key 都在表里，
+// 删掉 'k' 整套仍绿）。接口新增字段而没进 KEYS ⇒ 这里编译红。
+type MissingEvalRunStampKey = Exclude<keyof EvalRunStamp, (typeof EVAL_RUN_STAMP_KEYS)[number]>;
+const _evalRunStampKeysExhaustive: MissingEvalRunStampKey extends never ? true : never = true;
+void _evalRunStampKeysExhaustive;
+
+/** Explicit fallback for a run that died before it could announce its configuration. */
+export const UNKNOWN_EVAL_RUN_STAMP: EvalRunStamp = {
+  caseBankSha: 'unknown',
+  evalSet: { split: 'all', splitsFileSha: 'missing', tags: [], ids: [] },
+  scorers: {
+    deterministic: true,
+    judge: 'rules',
+    judgeModel: 'none',
+    judgeCalibrationId: 'uncalibrated',
+  },
+  k: 1,
+  aggregationRuleVersion: 0,
+  promptVersion: 'unknown',
+  shape: { skills: [], memory: false, swarm: false, harness: null },
+  divergesFromProduction: ['unknown'],
+  keySource: 'none',
+  priceTableVersion: 0,
+  estimatedCostUsd: 0,
+};
+
+interface EvalRunStartConfig extends EvalRunStamp {
+  mode: 'real' | 'mock';
+  model: string;
+  provider: string;
+  scope: 'smoke' | 'full';
+  split?: 'held-in' | 'held-out' | 'control' | 'safety';
+  tags?: string[];
+  ids?: string[];
+  maxCases: number;
+  concurrency: number;
+  compare?: boolean;
+  gitCommit: string;
+  testCaseDir: string;
+}
+
 type EvalRunEventStatus =
   | 'pending'
   | 'running'
@@ -63,20 +155,7 @@ export type EvalRunEvent =
       ts: number;
       runId: string;
       plannedCaseIds: string[];
-      config: {
-        mode: 'real' | 'mock';
-        model: string;
-        provider: string;
-        scope: 'smoke' | 'full';
-        split?: 'held-in' | 'held-out' | 'control' | 'safety';
-        tags?: string[];
-        ids?: string[];
-        maxCases: number;
-        concurrency: number;
-        compare?: boolean;
-        gitCommit: string;
-        testCaseDir: string;
-      };
+      config: EvalRunStartConfig;
     }
   | {
       schemaVersion: 2;

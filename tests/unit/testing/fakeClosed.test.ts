@@ -6,6 +6,7 @@ import { BaselineManager } from '../../../src/host/testing/ci/baselineManager';
 import { generateMarkdownReport } from '../../../src/host/testing/reportGenerator';
 import { TestRunner, isInfraExclusionError, type AgentInterface } from '../../../src/host/testing/testRunner';
 import type { TestResult, TestRunSummary } from '../../../src/host/testing/types';
+import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 import { initBudgetService } from '../../../src/host/services/core/budgetService';
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
@@ -272,6 +273,7 @@ function summary(results: TestResult[]): TestRunSummary {
     invalidCases: results.filter((item) => item.invalid).length,
     averageScore: 1,
     results,
+    stamp: UNKNOWN_EVAL_RUN_STAMP,
     environment: { provider: 'openai', model: 'model', workingDirectory: '/tmp' },
     performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
   };

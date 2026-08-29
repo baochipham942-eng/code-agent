@@ -193,26 +193,26 @@ describe('local Agent Engine model discovery parsing', () => {
     expect(engine?.models.find((model) => model.id === 'fable')?.label).toBe('Claude Fable (latest alias)');
   });
 
-  it('parses a manifest-configured WorkBuddy model list without inventing HY models', () => {
+  it('parses the WorkBuddy CLI model list and keeps the client-default option', () => {
     const engine = parseParenthesizedSupportedModelsCatalog(
       'codebuddy_code',
-      '--model <model> Model ID. Currently supported: (auto, glm-5.1, kimi-k2.5, minimax-m2.7, deepseek-v3-2-volc)',
+      '--model <model> Model ID. Currently supported: (auto, hy4-preview, glm-5.1, kimi-k2.5)',
       'Currently supported:',
-      '2026-07-30T00:00:00.000Z',
-      'auto',
+      '2026-08-29T00:00:00.000Z',
+      'client_default',
     );
 
     expect(engine?.kind).toBe('codebuddy_code');
-    expect(engine?.defaultModel).toBe('auto');
+    expect(engine?.defaultModel).toBe('client_default');
     expect(engine?.models.map((model) => model.id)).toEqual([
+      'client_default',
       'auto',
+      'hy4-preview',
       'glm-5.1',
       'kimi-k2.5',
-      'minimax-m2.7',
-      'deepseek-v3-2-volc',
     ]);
-    expect(engine?.models.map((model) => model.id)).not.toContain('hy3');
-    expect(engine?.models[0].label).toBe('Auto（客户端自适应）');
+    expect(engine?.models[0].label).toBe('客户端默认模型');
+    expect(engine?.models[1].label).toBe('Auto（客户端自适应）');
   });
 
   it('parses the official Kimi provider model map and preserves the configured default', () => {

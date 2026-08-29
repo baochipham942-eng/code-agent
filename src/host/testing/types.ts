@@ -2,7 +2,11 @@
 // Agent Auto-Testing Framework - Type Definitions
 // ============================================================================
 
-import type { TelemetryCompleteness, ScoreAuthority } from '../../shared/contract/evaluation';
+import type {
+  EvalRunStamp,
+  TelemetryCompleteness,
+  ScoreAuthority,
+} from '../../shared/contract/evaluation';
 import type { AgentPointerEvent } from '../../shared/contract/desktop';
 import type { GoalGateVerdict } from '../../shared/contract/agent';
 import type { JudgeCalibrationRecord } from './calibration/calibrationRegistry';
@@ -484,6 +488,8 @@ export interface TestRunSummary {
      *  由 CODE_AGENT_DISABLE_PROVIDER_VARIANT 决定 */
     providerVariantArm?: 'variant-on' | 'variant-off';
   };
+  /** Complete pre-run configuration identity used for comparisons and reports. */
+  stamp: EvalRunStamp;
   /** Performance stats */
   performance: {
     avgResponseTime: number;
@@ -562,6 +568,8 @@ export interface TestRunnerConfig {
   runId?: string;
   /** Child bridge runs emit events only; the app process is the sole experiment DB writer. */
   persistExperiment?: boolean;
+  /** Built once by the eval entry point and passed through unchanged. */
+  stamp?: EvalRunStamp;
   /** Directory containing test cases */
   testCaseDir: string;
   /** Directory for test results */

@@ -17,7 +17,7 @@ export {
   SKILL_ROLE_BUNDLES,
   findRecommendedRepository,
   groupRecommendedSkillsByCategory,
-} from '@shared/constants/skillCatalog';
+} from '../../../shared/constants/skillCatalog';
 
 // ============================================================================
 // Default Settings

@@ -17,6 +17,7 @@ import {
   isExternalAgentEngine,
 } from '../services/agentEngine/agentEngineGuards';
 import {
+  AgentEngineModelIncompatibleError,
   getAgentEngineCatalogEngine,
   getRemoteAgentEngineModelCatalogService,
   resolveAgentEngineCatalogModel,
@@ -90,7 +91,8 @@ export function registerAgentEngineHandlers(ipcMain: IpcMain): void {
           const session = await sessionManager.getSession(payload.sessionId, 1);
           const descriptor = await registry.get(payload.kind);
           const selectedModel = isExternalEngineKind(payload.kind)
-            ? await getRemoteAgentEngineModelCatalogService().resolveModelId(payload.kind, payload.model)
+            ? await getRemoteAgentEngineModelCatalogService()
+              .resolveModelId(payload.kind, payload.model, { strict: true })
             : undefined;
           let effectiveWorkingDirectory = payload.workingDirectory?.trim() || session?.workingDirectory?.trim() || '';
           if (!effectiveWorkingDirectory && isExternalEngineKind(payload.kind)) {
@@ -241,6 +243,16 @@ export function registerAgentEngineHandlers(ipcMain: IpcMain): void {
             code: error.code,
             message: error.message,
             details: { engine: error.engine, capability: error.capability },
+          },
+        };
+      }
+      if (error instanceof AgentEngineModelIncompatibleError) {
+        return {
+          success: false,
+          error: {
+            code: 'MODEL_NOT_FOUND',
+            message: error.message,
+            details: { engine: error.kind, model: error.requestedModel },
           },
         };
       }

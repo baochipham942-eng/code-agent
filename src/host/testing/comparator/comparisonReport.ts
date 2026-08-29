@@ -1,13 +1,24 @@
 // Comparison Report - Generate markdown and console reports from ComparisonResult
 import chalk from 'chalk';
 import type { ComparisonResult, CaseComparison } from '../types';
+import type { EvalRunStamp } from '../../../shared/contract/evaluation';
 import { formatDuration } from '../../../shared/utils/format';
+import { getRunStampReportRows } from '../runStampReport';
 import { describeSignTest, SIGN_TEST_ALPHA } from './signTest';
+
+type ComparisonRunStampContext = {
+  gitCommit: string;
+  baseline: EvalRunStamp;
+  candidate: EvalRunStamp;
+};
 
 /**
  * Generate a Markdown report from a ComparisonResult.
  */
-export function generateComparisonMarkdown(result: ComparisonResult): string {
+export function generateComparisonMarkdown(
+  result: ComparisonResult,
+  runStamps?: ComparisonRunStampContext,
+): string {
   const { baseline, candidate, summary, cases } = result;
   const lines: string[] = [];
 
@@ -27,6 +38,14 @@ export function generateComparisonMarkdown(result: ComparisonResult): string {
   lines.push(`| **Model** | ${baseline.model ?? '-'} | ${candidate.model ?? '-'} |`);
   lines.push(`| **Provider** | ${baseline.provider ?? '-'} | ${candidate.provider ?? '-'} |`);
   lines.push(`| **Temperature** | ${baseline.temperature ?? '-'} | ${candidate.temperature ?? '-'} |`);
+  if (runStamps) {
+    lines.push(`| 代码版本 | ${runStamps.gitCommit} | ${runStamps.gitCommit} |`);
+    const baselineRows = getRunStampReportRows(runStamps.baseline);
+    const candidateRows = new Map(getRunStampReportRows(runStamps.candidate));
+    for (const [label, value] of baselineRows) {
+      lines.push(`| ${label} | ${value} | ${candidateRows.get(label) ?? '未知'} |`);
+    }
+  }
   lines.push('');
 
   // Summary

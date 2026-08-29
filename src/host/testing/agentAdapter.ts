@@ -20,8 +20,17 @@ import { getMockCasePolicy } from './mockEvalPolicy';
 import type { PermissionRequestData } from '../tools/types';
 import type { RequestPermissionResult } from '../../shared/contract/permission';
 import type { SkillDiscoveryService } from '../services/skills/skillDiscoveryService';
+import type { SessionType } from '../../shared/contract/session';
+import type { DatabaseService } from '../services/core/databaseService';
+import type { TelemetryCollector } from '../telemetry/telemetryCollector';
+import path from 'node:path';
 
 const logger = createLogger('AgentAdapter');
+
+type EvaluationSignal =
+  | { type: 'skill_activated'; testId: string; name: string }
+  | { type: 'memory_injected'; testId: string; id: string }
+  | { type: 'subagent_spawned'; testId: string; id: string };
 
 type AgentLoopStateView = {
   messages?: unknown;
@@ -337,6 +346,11 @@ export class StandaloneAgentAdapter implements AgentInterface {
   private skillDiscoveryService?: SkillDiscoveryService;
   private readonly skills: readonly string[];
   private readonly includeClaudeLegacySkills: boolean;
+  private readonly sessionType: SessionType;
+  private readonly onEvaluationSignal?: (signal: EvaluationSignal) => void;
+  private readonly database?: DatabaseService;
+  private readonly telemetryCollector?: TelemetryCollector;
+  private evaluationTestId?: string;
 
   // Persisted across sendMessage() calls so multi-turn follow-ups share conversation history.
   // Cleared by reset() between cases (testRunner calls reset before each case's first prompt).
@@ -381,6 +395,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
     skills?: readonly string[];
     /** Whether the explicit skill set may resolve names from Claude legacy directories. */
     includeClaudeLegacySkills?: boolean;
+    sessionType?: SessionType;
+    onEvaluationSignal?: (signal: EvaluationSignal) => void;
+    database?: DatabaseService;
+    telemetryCollector?: TelemetryCollector;
   }) {
     this.workingDirectory = config.workingDirectory;
     this.modelConfig = config.modelConfig;
@@ -394,6 +412,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.maxSystemPromptTokens = config.maxSystemPromptTokens ?? 12_000;
     this.skills = config.skills ?? [];
     this.includeClaudeLegacySkills = config.includeClaudeLegacySkills ?? false;
+    this.sessionType = config.sessionType ?? 'chat';
+    this.onEvaluationSignal = config.onEvaluationSignal;
+    this.database = config.database;
+    this.telemetryCollector = config.telemetryCollector;
     // harness.toolMode 优先于顶层 toolMode（对照实验显式控制工具集维度）
     this.toolMode = config.harness?.toolMode ?? config.toolMode ?? 'deferred';
   }
@@ -402,8 +424,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
     if (!this.currentSessionId || this.sessionRecordEnsured) return;
 
     try {
-      const { getDatabase } = await import('../services/core/databaseService');
-      const db = getDatabase();
+      const db = this.database ?? (await import('../services/core/databaseService')).getDatabase();
       if (!db.isReady) return;
 
       if (!db.getSession(this.currentSessionId)) {
@@ -417,7 +438,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
               model: this.modelConfig.model,
             },
             workingDirectory: this.workingDirectory,
-            type: 'chat',
+            type: this.sessionType,
             origin: {
               kind: 'manual',
               name: 'evaluation-runner',
@@ -435,6 +456,17 @@ export class StandaloneAgentAdapter implements AgentInterface {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  configureEvaluationCase(testId: string | undefined): void {
+    this.evaluationTestId = testId;
+  }
+
+  async getStructuredReplay(sessionId: string) {
+    const { TelemetryQueryService, getTelemetryQueryService } = await import('../evaluation/telemetryQueryService');
+    return this.database
+      ? new TelemetryQueryService(this.database).getStructuredReplay(sessionId)
+      : getTelemetryQueryService().getStructuredReplay(sessionId);
   }
 
   async sendMessage(prompt: string): Promise<{
@@ -471,6 +503,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       // 2. ToolExecutor —— 显式 scripted 策略优先；否则 case permission_policy，
       // 最后才保留存量 eval auto-approve 行为。
       const permissionDecider = this.simConfig ? buildPermissionDecider(this.simConfig) : null;
+      const telemetryCollector = this.telemetryCollector ?? getTelemetryCollector();
       const toolExecutor = new ToolExecutor({
         requestPermission: this.requestPermission
           ?? (permissionDecider
@@ -479,6 +512,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
         forcePermissionHandler: this.requestPermission !== undefined,
         workingDirectory: this.workingDirectory,
         ledgerOrigin: 'eval',
+        telemetryCollector,
       });
 
       // 3. Shared messages array — persisted on the adapter instance so follow-up
@@ -490,13 +524,13 @@ export class StandaloneAgentAdapter implements AgentInterface {
       // Reuse session id across follow-ups so AgentLoop's session-scoped state stays consistent.
       if (!this.currentSessionId) this.currentSessionId = `test-${Date.now()}`;
       await this.ensureStandaloneSessionRecord(prompt);
-      const telemetryCollector = getTelemetryCollector();
       if (!this.telemetrySessionActive) {
         telemetryCollector.startSession(this.currentSessionId, {
           title: prompt.substring(0, 80),
           modelProvider: this.modelConfig.provider,
           modelName: this.modelConfig.model,
           workingDirectory: this.workingDirectory,
+          sessionType: this.sessionType,
         });
         this.telemetrySessionActive = true;
       }
@@ -540,6 +574,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
           enableToolDeferredLoading: this.toolMode === 'deferred',
           autoApprovePlan: true,
           telemetryAdapter,
+          systemPromptStore: telemetryCollector.systemPromptCache,
+          traceDirectory: this.database
+            ? path.join(path.dirname(this.database.getDbPath()), 'traces')
+            : undefined,
           executionIntent,
           goalContract: loopGoalContract,
           persistLongTermMemory: this.persistLongTermMemory,
@@ -552,6 +590,15 @@ export class StandaloneAgentAdapter implements AgentInterface {
             }
             if (goalRunForThisRun) {
               applyGoalEvent(goalRunForThisRun, event);
+            }
+            if (this.evaluationTestId && this.onEvaluationSignal) {
+              if (event.type === 'skill_activated') {
+                this.onEvaluationSignal({ type: 'skill_activated', testId: this.evaluationTestId, name: event.data.name });
+              } else if (event.type === 'memory_injected') {
+                this.onEvaluationSignal({ type: 'memory_injected', testId: this.evaluationTestId, id: event.data.id });
+              } else if (event.type === 'subagent_activity' && event.data.kind === 'started') {
+                this.onEvaluationSignal({ type: 'subagent_spawned', testId: this.evaluationTestId, id: event.data.agentId });
+              }
             }
             switch (event.type) {
               case 'message':
@@ -663,8 +710,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
   async finalizeSession(): Promise<void> {
     if (!this.currentSessionId || !this.telemetrySessionActive) return;
     try {
-      const { getTelemetryCollector } = await import('../telemetry');
-      getTelemetryCollector().endSession(this.currentSessionId);
+      const collector = this.telemetryCollector
+        ?? (await import('../telemetry')).getTelemetryCollector();
+      collector.endSession(this.currentSessionId);
     } finally {
       this.telemetrySessionActive = false;
     }

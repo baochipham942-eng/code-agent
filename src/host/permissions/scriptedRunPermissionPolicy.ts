@@ -8,6 +8,13 @@ import type { PermissionRequestData } from '../tools/types';
 
 const logger = createLogger('ScriptedRunPermissionPolicy');
 
+class ScriptedRunPermissionPolicyError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'ScriptedRunPermissionPolicyError';
+  }
+}
+
 type ScriptedEffect = 'allow' | 'deny';
 
 interface ScriptedRule {
@@ -15,7 +22,7 @@ interface ScriptedRule {
   effect: ScriptedEffect;
   tool: string;
   match: {
-    kind: 'path' | 'pathPrefix' | 'command' | 'commandPrefix';
+    kind: 'path' | 'pathPrefix' | 'command' | 'commandPrefix' | 'requestType';
     value: string;
   };
 }
@@ -50,10 +57,10 @@ function parseRule(value: unknown, index: number): ScriptedRule {
   if (!isRecord(value.match)) throw new Error(`rules[${index}].match must be an object`);
   const match = value.match;
 
-  const matchKeys = ['path', 'pathPrefix', 'command', 'commandPrefix'] as const;
+  const matchKeys = ['path', 'pathPrefix', 'command', 'commandPrefix', 'requestType'] as const;
   const configured = matchKeys.filter((key) => match[key] !== undefined);
   if (configured.length !== 1) {
-    throw new Error(`rules[${index}].match must declare exactly one path/command matcher`);
+    throw new Error(`rules[${index}].match must declare exactly one path/command/requestType matcher`);
   }
   const kind = configured[0];
   const matchValue = match[kind];
@@ -85,6 +92,7 @@ function requestTarget(
   if (kind === 'command' || kind === 'commandPrefix') {
     return typeof request.details.command === 'string' ? request.details.command : undefined;
   }
+  if (kind === 'requestType') return request.type;
   const candidate = request.details.path ?? request.details.filePath ?? request.details.file_path;
   return typeof candidate === 'string' ? candidate : undefined;
 }
@@ -93,7 +101,7 @@ function ruleMatches(rule: ScriptedRule, request: PermissionRequestData): boolea
   if (rule.tool !== request.tool) return false;
   const target = requestTarget(request, rule.match.kind);
   if (target === undefined) return false;
-  return rule.match.kind === 'path' || rule.match.kind === 'command'
+  return rule.match.kind === 'path' || rule.match.kind === 'command' || rule.match.kind === 'requestType'
     ? target === rule.match.value
     : target.startsWith(rule.match.value);
 }
@@ -119,7 +127,10 @@ export function getScriptedRunPermissionHandler():
   if (!policyPath) return undefined;
 
   const dataDir = getUserConfigDir();
-  if (devSlotFromDataDirName(path.basename(dataDir)) === null) {
+  if (
+    process.env.CODE_AGENT_EVAL_BRIDGE !== '1'
+    && devSlotFromDataDirName(path.basename(dataDir)) === null
+  ) {
     logger.warn('Ignoring NEO_SCRIPTED_APPROVAL_POLICY outside a dev data slot', {
       dataDir,
       policyPath,
@@ -136,5 +147,23 @@ export function getScriptedRunPermissionHandler():
       error: error instanceof Error ? error.message : String(error),
     });
     return denyScripted;
+  }
+}
+
+/** Real eval entrypoint: a missing or invalid policy is a configuration error, never auto-approval. */
+export function requireScriptedRunPermissionHandler(): (
+  request: PermissionRequestData,
+) => Promise<PermissionAskResult> {
+  const policyPath = process.env.NEO_SCRIPTED_APPROVAL_POLICY?.trim();
+  if (!policyPath) {
+    throw new ScriptedRunPermissionPolicyError('真实评测缺少审批策略，已拒绝运行。');
+  }
+  try {
+    return createHandler(parsePolicy(fs.readFileSync(policyPath, 'utf8')));
+  } catch (error) {
+    throw new ScriptedRunPermissionPolicyError(
+      `真实评测的审批策略无法读取，已拒绝运行：${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
   }
 }

@@ -2,10 +2,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getScriptedRunPermissionHandler } from '../../../../src/host/permissions/scriptedRunPermissionPolicy';
+import {
+  getScriptedRunPermissionHandler,
+  requireScriptedRunPermissionHandler,
+} from '../../../../src/host/permissions/scriptedRunPermissionPolicy';
 
 const previousPolicy = process.env.NEO_SCRIPTED_APPROVAL_POLICY;
 const previousDataDir = process.env.CODE_AGENT_DATA_DIR;
+const previousBridge = process.env.CODE_AGENT_EVAL_BRIDGE;
 let tempDir: string | undefined;
 
 function installPolicy(policy: unknown): void {
@@ -21,6 +25,8 @@ function restoreEnv(): void {
   else process.env.NEO_SCRIPTED_APPROVAL_POLICY = previousPolicy;
   if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
   else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
+  if (previousBridge === undefined) delete process.env.CODE_AGENT_EVAL_BRIDGE;
+  else process.env.CODE_AGENT_EVAL_BRIDGE = previousBridge;
 }
 
 describe('scripted run permission policy', () => {
@@ -34,12 +40,44 @@ describe('scripted run permission policy', () => {
   it('returns undefined when no eval policy path is configured', () => {
     delete process.env.NEO_SCRIPTED_APPROVAL_POLICY;
     expect(getScriptedRunPermissionHandler()).toBeUndefined();
+    expect(() => requireScriptedRunPermissionHandler()).toThrow(/审批策略/);
   });
 
   it('ignores a configured policy outside a dev data slot', () => {
     process.env.NEO_SCRIPTED_APPROVAL_POLICY = '/tmp/policy.json';
     process.env.CODE_AGENT_DATA_DIR = path.join('/tmp', '.code-agent');
     expect(getScriptedRunPermissionHandler()).toBeUndefined();
+  });
+
+  it('accepts an explicit real-eval policy outside a named dev slot', () => {
+    installPolicy({ version: 1, rules: [] });
+    process.env.CODE_AGENT_DATA_DIR = path.join(tempDir!, 'isolated-data');
+    delete process.env.CODE_AGENT_EVAL_BRIDGE;
+
+    expect(requireScriptedRunPermissionHandler()).toBeTypeOf('function');
+  });
+
+  it('lets the repository policy use local file and safe shell tools while denying side-effect surfaces', async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scripted-approval-policy-'));
+    process.env.NEO_SCRIPTED_APPROVAL_POLICY = path.resolve('.claude/eval-approval-policy.json');
+    process.env.CODE_AGENT_DATA_DIR = path.join(tempDir, 'isolated-data');
+    process.env.CODE_AGENT_EVAL_BRIDGE = '1';
+    const handler = requireScriptedRunPermissionHandler();
+
+    await expect(handler({ type: 'file_read', tool: 'Read', details: { path: '/tmp/eval/input.txt' } }))
+      .resolves.toMatchObject({ approved: true });
+    await expect(handler({ type: 'file_write', tool: 'write_file', details: { path: '/tmp/eval/output.txt' } }))
+      .resolves.toMatchObject({ approved: true });
+    await expect(handler({ type: 'command', tool: 'Bash', details: { command: 'npm test' } }))
+      .resolves.toMatchObject({ approved: true });
+    await expect(handler({ type: 'dangerous_command', tool: 'Bash', details: { command: 'sudo reboot' } }))
+      .resolves.toMatchObject({ approved: false });
+    await expect(handler({ type: 'network', tool: 'WebSearch', details: { query: 'secret' } }))
+      .resolves.toMatchObject({ approved: false });
+    await expect(handler({ type: 'file_write', tool: 'mail_send', details: {} }))
+      .resolves.toMatchObject({ approved: false });
+    await expect(handler({ type: 'directory_access', tool: 'request_directory', details: { path: '/Users' } }))
+      .resolves.toMatchObject({ approved: false });
   });
 
   it('allows a matching tool and path with scripted attribution', async () => {
@@ -109,6 +147,7 @@ describe('scripted run permission policy', () => {
       tool: 'Write',
       details: { path: '/tmp/probe.txt' },
     })).resolves.toEqual({ approved: false, denialSource: 'scripted' });
+    expect(() => requireScriptedRunPermissionHandler()).toThrow(/无法读取/);
   });
 
   it('installs a deny-all handler when the policy file is missing', async () => {
@@ -123,6 +162,7 @@ describe('scripted run permission policy', () => {
       tool: 'Bash',
       details: { command: 'echo unsafe' },
     })).resolves.toEqual({ approved: false, denialSource: 'scripted' });
+    expect(() => requireScriptedRunPermissionHandler()).toThrow(/读取/);
   });
 
   it('rejects wildcard allow rules by failing closed', async () => {

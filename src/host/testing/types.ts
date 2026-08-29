@@ -558,6 +558,8 @@ export interface TestRunnerConfig {
    *  TestRunner 不再自生 uuid，保证 DB 主键和 handler experimentId 一致，
    *  避免 handler 初始 insert + TestRunner 内部 persist 双写成两条记录。 */
   runId?: string;
+  /** Child bridge runs emit events only; the app process is the sole experiment DB writer. */
+  persistExperiment?: boolean;
   /** Directory containing test cases */
   testCaseDir: string;
   /** Directory for test results */
@@ -604,6 +606,9 @@ export type TestEvent =
   | { type: 'suite_end'; summary: TestRunSummary }
   | { type: 'tool_call'; testId: string; tool: string; input: unknown }
   | { type: 'tool_result'; testId: string; tool: string; success: boolean }
+  | { type: 'skill_activated'; testId: string; name: string }
+  | { type: 'memory_injected'; testId: string; id: string }
+  | { type: 'subagent_spawned'; testId: string; id: string }
   | { type: 'error'; testId?: string; error: string };
 
 /**

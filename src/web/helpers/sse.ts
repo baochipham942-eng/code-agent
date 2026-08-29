@@ -4,9 +4,20 @@
 
 import http from 'http';
 import type { Response } from 'express';
+import { isAdminChannel } from '../../host/ipc/channelAccessPolicy';
 
 /** Registry of active SSE clients */
 export const sseClients = new Set<Response>();
+let sseAdminClients = new WeakSet<Response>();
+
+export function registerSSEClient(client: Response, isAdmin: boolean): void {
+  sseClients.add(client);
+  if (isAdmin) sseAdminClients.add(client);
+}
+
+function mayReceiveChannel(client: Response, channel: string): boolean {
+  return !isAdminChannel(channel) || sseAdminClients.has(client);
+}
 
 /**
  * 重放缓冲区大小。覆盖典型断线窗口内 swarm + agent 事件的峰值吞吐。
@@ -88,6 +99,7 @@ export function broadcastSSE(channel: string, args: unknown): void {
   pushReplayBuffer(entry);
   const payload = serializeEvent(entry);
   for (const client of sseClients) {
+    if (!mayReceiveChannel(client, channel)) continue;
     try {
       if (!client.write(payload)) {
         recordSSEBackpressure(client);
@@ -130,7 +142,7 @@ export function replayFromLastEventId(res: Response, lastEventId: number): numbe
   }
   let replayed = 0;
   for (const entry of sseReplayBuffer) {
-    if (entry.id > lastEventId) {
+    if (entry.id > lastEventId && mayReceiveChannel(res, entry.channel)) {
       try {
         res.write(serializeEvent(entry));
         replayed += 1;
@@ -148,4 +160,5 @@ export function __resetSSEReplayBufferForTests(): void {
   nextSSEEventId = 0;
   sseReplayBuffer.length = 0;
   sseBackpressureStates = new WeakMap<Response, SSEBackpressureState>();
+  sseAdminClients = new WeakSet<Response>();
 }

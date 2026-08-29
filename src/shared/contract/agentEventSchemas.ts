@@ -455,6 +455,8 @@ const stabilityByType = {
   turn_end: 'stable',
   subagent_activity: 'experimental',
   subagent_run_end: 'experimental',
+  skill_activated: 'experimental',
+  memory_injected: 'experimental',
   tool_schema_snapshot: 'experimental',
   model_response: 'experimental',
   model_fallback: 'experimental',
@@ -578,6 +580,8 @@ const SubagentRunEndEventSchema = event('subagent_run_end', z.object({
   status: z.enum(['completed', 'cancelled', 'failed']),
   error: z.string().optional(),
 }));
+const SkillActivatedEventSchema = event('skill_activated', z.object({ name: z.string() }));
+const MemoryInjectedEventSchema = event('memory_injected', z.object({ id: z.string() }));
 const ToolSchemaSnapshotEventSchema = event('tool_schema_snapshot', z.object({
   turnId: z.string().optional(), toolCount: z.number(), tools: z.array(z.object({ name: z.string(), inputSchema: unknownRecordSchema.optional(), requiresPermission: z.boolean().optional(), permissionLevel: z.string().optional() })), parentToolUseId: z.string().optional(),
 }));
@@ -647,7 +651,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   TaskUpdateEventSchema, TurnDiffEventSchema, NotificationEventSchema, RoutingResolvedEventSchema, ArtifactLocatorEventSchema,
   AgentCompleteEventSchema, AgentCancelledEventSchema, GoalIterationEventSchema, GoalGateEventSchema,
   GoalCompleteEventSchema, AgentThinkingEventSchema, TurnStartEventSchema, TurnEndEventSchema,
-  SubagentActivityEventSchema, SubagentRunEndEventSchema,
+  SubagentActivityEventSchema, SubagentRunEndEventSchema, SkillActivatedEventSchema, MemoryInjectedEventSchema,
   ToolSchemaSnapshotEventSchema, ModelResponseEventSchema, ModelFallbackEventSchema, ApiKeyRequiredEventSchema,
   TaskProgressEventSchema, TaskCompleteEventSchema, BackgroundTaskLedgerChangedEventSchema, MemoryLearnedEventSchema,
   SkillDraftPendingEventSchema, RoleDraftPendingEventSchema, TeamRecipeDraftPendingEventSchema,

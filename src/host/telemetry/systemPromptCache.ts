@@ -5,7 +5,7 @@
 // 用于评测中心查看历史会话的系统提示词
 // ============================================================================
 
-import { getDatabase } from '../services/core/databaseService';
+import { getDatabase, type DatabaseService } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 import { guardSensitiveText } from '../security/sensitiveDataGuard';
 
@@ -21,10 +21,11 @@ export class SystemPromptCache {
     return this.instance;
   }
 
+  constructor(private readonly database: Pick<DatabaseService, 'isReady' | 'getDb'> = getDatabase()) {}
+
   private getDb() {
-    const dbService = getDatabase();
-    if (!dbService.isReady) return null;
-    return dbService.getDb();
+    if (!this.database.isReady) return null;
+    return this.database.getDb();
   }
 
   /**

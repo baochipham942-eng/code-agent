@@ -84,9 +84,9 @@ describe('AgentEventSchema', () => {
 
   it('exports stability metadata and the stable type set from the same source', () => {
     const stabilityMetadata = AgentEventSchema.options.map((schema) => schema.meta()?.stability);
-    expect(stabilityMetadata).toHaveLength(70);
+    expect(stabilityMetadata).toHaveLength(72);
     expect(stabilityMetadata.filter((stability) => stability === 'stable')).toHaveLength(12);
-    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(58);
+    expect(stabilityMetadata.filter((stability) => stability === 'experimental')).toHaveLength(60);
     expect(STABLE_EVENT_TYPES).toEqual(new Set([
       'message',
       'tool_call_start',

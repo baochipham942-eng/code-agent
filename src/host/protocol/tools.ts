@@ -157,6 +157,8 @@ export interface ToolContext {
   readonly deniedToolNames?: readonly string[];
   /** Opaque run-scoped SkillDiscoveryService handle. */
   readonly skillDiscoveryService?: unknown;
+  /** Opaque run-scoped telemetry owner for spawned agents. */
+  readonly telemetryCollector?: unknown;
 
   /** 轻量 logger 接口，不耦合 services/infra/logger 实现 */
   readonly logger: Logger;

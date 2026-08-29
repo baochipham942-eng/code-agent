@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { RendererBundleAttemptOutcome } from './update';
+import type { SessionType } from './session';
 
 // ----------------------------------------------------------------------------
 // Intent Classification
@@ -241,7 +242,7 @@ export interface TelemetrySession {
   totalToolCalls: number;
   toolSuccessRate: number;
   totalErrors: number;
-  sessionType?: UserIntentCategory; // dominant intent
+  sessionType?: SessionType;
   status: 'recording' | 'completed' | 'error';
 
   // 版本指纹（诊断归因用）：知道这条会话跑的是哪版构建/提示词/工具集

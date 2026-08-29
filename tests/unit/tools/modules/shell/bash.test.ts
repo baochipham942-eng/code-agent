@@ -886,6 +886,10 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
   });
   afterEach(() => {
     modeMgr.setMode('default', true);
+    delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+    delete process.env.AUTO_TEST_API_KEY;
+    delete process.env.AUTO_TEST_BASE_URL;
+    delete process.env.NEO_SCRIPTED_APPROVAL_POLICY;
   });
 
   it('default 档：不包装，直接执行原命令', async () => {
@@ -894,6 +898,53 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
     expect(wrapMock).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.output).toContain('plain-output');
+  });
+
+  it('real eval denies the source repository and removes its path from every shell child env', async () => {
+    process.env.CODE_AGENT_EVAL_REAL_ROOT = '/private/source-repository';
+    process.env.AUTO_TEST_API_KEY = 'provider-secret';
+    process.env.AUTO_TEST_BASE_URL = 'https://provider.invalid';
+    process.env.NEO_SCRIPTED_APPROVAL_POLICY = '/private/eval-policy.json';
+    wrapMock.mockReturnValue({
+      command: 'printf "${CODE_AGENT_EVAL_REAL_ROOT-unset}|${AUTO_TEST_API_KEY-unset}|${AUTO_TEST_BASE_URL-unset}|${NEO_SCRIPTED_APPROVAL_POLICY-unset}"',
+      cleanup: cleanupMock,
+    });
+    const handler = await bashModule.createHandler();
+
+    const foreground = await handler.execute({ command: 'echo probe' }, makeCtx(), allowAll);
+    expect(wrapMock).toHaveBeenCalledWith(
+      'echo probe',
+      expect.objectContaining({ deniedReadRoots: ['/private/source-repository'] }),
+    );
+    expect(foreground.ok).toBe(true);
+    if (foreground.ok) expect(foreground.output).toContain('unset|unset|unset|unset');
+
+    startBackgroundTaskMock.mockReturnValue({ success: true, taskId: 'eval-bg' });
+    await handler.execute(
+      { command: 'echo probe', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+    expect(startBackgroundTaskMock.mock.calls.at(-1)?.[3].env)
+      .not.toHaveProperty('CODE_AGENT_EVAL_REAL_ROOT');
+    expect(startBackgroundTaskMock.mock.calls.at(-1)?.[3].env)
+      .not.toHaveProperty('AUTO_TEST_API_KEY');
+    expect(startBackgroundTaskMock.mock.calls.at(-1)?.[3].env)
+      .not.toHaveProperty('AUTO_TEST_BASE_URL');
+    expect(startBackgroundTaskMock.mock.calls.at(-1)?.[3].env)
+      .not.toHaveProperty('NEO_SCRIPTED_APPROVAL_POLICY');
+
+    createPtySessionMock.mockReturnValue({ success: true, sessionId: 'eval-pty' });
+    await handler.execute({ command: 'echo probe', pty: true }, makeCtx(), allowAll);
+    expect(createPtySessionMock.mock.calls.at(-1)?.[0].env)
+      .not.toHaveProperty('CODE_AGENT_EVAL_REAL_ROOT');
+    expect(createPtySessionMock.mock.calls.at(-1)?.[0].env)
+      .not.toHaveProperty('AUTO_TEST_API_KEY');
+    expect(createPtySessionMock.mock.calls.at(-1)?.[0].env)
+      .not.toHaveProperty('AUTO_TEST_BASE_URL');
+    expect(createPtySessionMock.mock.calls.at(-1)?.[0].env)
+      .not.toHaveProperty('NEO_SCRIPTED_APPROVAL_POLICY');
+    expect(createPtySessionMock.mock.calls.at(-1)?.[0].inheritProcessEnv).toBe(false);
   });
 
   it('bypassPermissions 档：包装命令并执行包装结果，结束后清理 profile', async () => {

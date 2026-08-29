@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { formatError } from '../helpers/utils';
 import type { WebRouteHandler, WebRouteLogger } from './routeTypes';
+import { assertChannelAccess } from '../../host/ipc/channelAccessPolicy';
 
 interface DomainDeps {
   handlers: Map<string, WebRouteHandler>;
@@ -21,7 +22,7 @@ function isAdminAccessError(error: unknown): boolean {
 
 function sendIpcHandlerError(res: Response, error: unknown): void {
   if (isAdminAccessError(error)) {
-    res.json({
+    res.status(403).json({
       success: false,
       error: {
         code: 'FORBIDDEN',
@@ -80,6 +81,7 @@ export function createDomainRouter(deps: DomainDeps): Router {
 
     if (handler) {
       try {
+        assertChannelAccess(domain.startsWith('domain:') ? domain : `domain:${domain}`);
         const result = await handler(null, { action, payload, requestId });
         sendJsonResult(res, result);
       } catch (error) {
@@ -95,6 +97,7 @@ export function createDomainRouter(deps: DomainDeps): Router {
 
     if (directHandler) {
       try {
+        assertChannelAccess(directChannel);
         const result = await directHandler(null, payload);
         sendJsonResult(res, result);
       } catch (error) {
@@ -126,6 +129,7 @@ export function createDomainRouter(deps: DomainDeps): Router {
     const handler = handlers.get(channel);
     if (handler) {
       try {
+        assertChannelAccess(channel);
         const body: unknown = req.method === 'GET' ? req.query : req.body;
         // Spread array bodies as positional args to match Electron IPC convention:
         // ipcMain.handle(ch, (event, arg1, arg2, ...)) expects separate arguments
@@ -134,7 +138,7 @@ export function createDomainRouter(deps: DomainDeps): Router {
         sendJsonResult(res, result);
       } catch (error) {
         if (isAdminAccessError(error)) {
-          res.json({
+          res.status(403).json({
             success: false,
             error: {
               code: 'FORBIDDEN',

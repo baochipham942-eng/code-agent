@@ -89,4 +89,14 @@ describe('protocol-native SubagentExecutionContext', () => {
 
     expect(context.traceContext).toBe(traceContext);
   });
+
+  it('preserves the run-scoped telemetry owner for spawned agents', () => {
+    const telemetryCollector = { marker: 'case-local' };
+    const context = createProtocolSubagentExecutionContext(
+      makeProtocolContext({ telemetryCollector }),
+      vi.fn(async () => ({ allow: true as const })),
+    );
+
+    expect(context.telemetryCollector).toBe(telemetryCollector);
+  });
 });

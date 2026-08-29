@@ -83,6 +83,11 @@ vi.mock('../../../src/host/prompts/providerVariants', () => ({
   isProviderVariantDisabled: vi.fn(() => false),
 }));
 
+vi.mock('../../../scripts/lib/eval-sandbox', () => ({
+  createStrictEvalSandbox: (repoDir: string) => ({ dir: repoDir, cleanup: vi.fn() }),
+  cloneEvalSandbox: (repoDir: string) => ({ dir: repoDir, cleanup: vi.fn() }),
+}));
+
 // 按名字枚举的 mock 会在 constants 每次新增导出时炸（本次实测：新增
 // EXPLORE_AGENT_DESCRIPTION 直接让 spawnAgent.schema 的模板求值失败）。
 // spread 真实模块后只覆盖要改的两个，新增导出不再牵连本测试。
@@ -135,6 +140,8 @@ beforeEach(async () => {
     }),
   );
   process.env.AUTO_TEST_API_KEY = 'test-key';
+  process.env.NEO_SCRIPTED_APPROVAL_POLICY = path.resolve('.claude/eval-approval-policy.json');
+  process.env.CODE_AGENT_EVAL_BRIDGE = '1';
   saveReportMock.mockReset();
   saveReportMock.mockResolvedValue([path.join(root, '.code-agent', 'test-results', 'report.md')]);
   compareMock.mockReset();

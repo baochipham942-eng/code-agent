@@ -10,6 +10,8 @@ import type {
   TurnQualityScoreSummary,
 } from './turnQuality';
 
+export const EVAL_RUN_EVENT_SCHEMA_VERSION = 2 as const;
+
 type EvalRunEventStatus =
   | 'pending'
   | 'running'
@@ -21,7 +23,7 @@ type EvalRunEventStatus =
   | 'cost_exceeded'
   | 'not_run';
 
-type EvalRunEventSummary = {
+export type EvalRunEventSummary = {
   runId: string;
   startTime: number;
   endTime: number;
@@ -35,6 +37,10 @@ type EvalRunEventSummary = {
   infraExcluded?: number;
   costExceeded?: number;
   averageScore: number;
+  plannedCaseIds: string[];
+  completed: boolean;
+  notRun: number;
+  invalidCases: number;
   gitCommit?: string;
   persistenceWarning?: string;
   aborted?: boolean;
@@ -48,11 +54,11 @@ type EvalRunEventSummary = {
  * Stable NDJSON protocol produced by `scripts/eval-ci.ts --json-events` and
  * consumed by the host run bridge and evaluation UI. Every stdout line is one
  * event. Consumers must tolerate additive fields; changing an existing field's
- * meaning requires incrementing `schemaVersion` (the first protocol version is 1).
+ * meaning requires incrementing `schemaVersion`.
  */
 export type EvalRunEvent =
   | {
-      schemaVersion: 1;
+      schemaVersion: 2;
       type: 'run_start';
       ts: number;
       runId: string;
@@ -73,7 +79,7 @@ export type EvalRunEvent =
       };
     }
   | {
-      schemaVersion: 1;
+      schemaVersion: 2;
       type: 'case_start';
       ts: number;
       runId: string;
@@ -81,7 +87,7 @@ export type EvalRunEvent =
       description: string;
     }
   | {
-      schemaVersion: 1;
+      schemaVersion: 2;
       type: 'case_end';
       ts: number;
       runId: string;
@@ -96,9 +102,11 @@ export type EvalRunEvent =
       mockExcluded?: boolean;
       killedByTimeout?: boolean;
       trials?: number;
+      sessionId?: string;
+      scoreAuthority?: 'deterministic_assertion' | 'llm_judge' | 'self_check';
     }
   | {
-      schemaVersion: 1;
+      schemaVersion: 2;
       type: 'tool_call';
       ts: number;
       runId: string;
@@ -107,7 +115,7 @@ export type EvalRunEvent =
       input: unknown;
     }
   | {
-      schemaVersion: 1;
+      schemaVersion: 2;
       type: 'tool_result';
       ts: number;
       runId: string;
@@ -116,7 +124,7 @@ export type EvalRunEvent =
       success: boolean;
     }
   | {
-      schemaVersion: 1;
+      schemaVersion: 2;
       type: 'error';
       ts: number;
       runId: string;
@@ -124,7 +132,7 @@ export type EvalRunEvent =
       error: string;
     }
   | {
-      schemaVersion: 1;
+      schemaVersion: 2;
       type: 'run_end';
       ts: number;
       runId: string;
@@ -133,7 +141,44 @@ export type EvalRunEvent =
       exitCode: number;
       aborted: boolean;
       abortReason?: string;
+    }
+  | {
+      schemaVersion: 2;
+      type: 'skill_activated';
+      ts: number;
+      runId: string;
+      testId: string;
+      name: string;
+    }
+  | {
+      schemaVersion: 2;
+      type: 'memory_injected';
+      ts: number;
+      runId: string;
+      testId: string;
+      id: string;
+    }
+  | {
+      schemaVersion: 2;
+      type: 'subagent_spawned';
+      ts: number;
+      runId: string;
+      testId: string;
+      id: string;
     };
+
+export interface EvalRunRequest {
+  scope: 'smoke' | 'full';
+  maxCases: number;
+  ids?: string[];
+  tags?: string[];
+  split?: 'held-in' | 'held-out' | 'control' | 'safety';
+  timeoutMs?: number;
+}
+
+export interface EvalRunStartResult {
+  runId: string;
+}
 
 /**
  * 评测维度 (v3: 7 计分 + 3 信息)

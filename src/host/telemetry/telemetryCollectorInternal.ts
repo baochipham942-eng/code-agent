@@ -6,6 +6,7 @@
 
 import type { TelemetryModelCall, TelemetryToolCall, ErrorCategory } from '../../shared/contract/telemetry';
 import type { AgentEvent } from '../../shared/contract';
+import type { SessionType } from '../../shared/contract/session';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 import { sanitizeBrowserComputerToolArguments } from '../../shared/utils/browserComputerRedaction';
 import { projectSurfaceExecutionMetadataForExport } from '../../shared/utils/surfaceExecutionExportProjection';
@@ -95,6 +96,7 @@ export interface SessionConfig {
   modelProvider: string;
   modelName: string;
   workingDirectory: string;
+  sessionType?: SessionType;
   agentVersion?: string;
   promptVersion?: string;
   toolSchemaVersion?: string;

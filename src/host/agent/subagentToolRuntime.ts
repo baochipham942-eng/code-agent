@@ -39,6 +39,7 @@ export function createSubagentToolRuntime(input: {
     // 未标注的子 agent 路径不受 TOPOLOGY_RULES 约束（Option A 保守默认）。
     executionTopology: context.executionTopology ?? 'main',
     ledgerOrigin: 'subagent',
+    telemetryCollector: context.telemetryCollector,
     requestPermission: async (request) => {
       const forceConfirm = request.forceConfirm === true;
       if (

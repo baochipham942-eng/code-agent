@@ -73,6 +73,7 @@ export function buildLegacyCtxFromProtocol(
     workingDirectory: ctx.workingDir,
     requestPermission: (request) => forwardLegacyPermissionRequest(request, canUseTool),
     abortSignal: ctx.abortSignal,
+    telemetryCollector: ctx.telemetryCollector as LegacyToolContext['telemetryCollector'],
     sessionId: ctx.sessionId,
     emit: wrapEmit,
     emitEvent: wrapEmit,

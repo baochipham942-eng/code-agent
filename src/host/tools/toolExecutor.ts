@@ -90,6 +90,7 @@ import {
 } from '../telemetry/runTraceContext';
 import type { TurnTraceRecorder } from '../agent/runtime/turnTrace';
 import type { SkillDiscoveryService } from '../services/skills/skillDiscoveryService';
+import type { TelemetryCollector } from '../telemetry/telemetryCollector';
 
 const logger = createLogger('ToolExecutor');
 const FILE_MUTATION_LOCK_HOLD_TIMEOUT_MS = 60_000;
@@ -169,6 +170,8 @@ export interface ToolExecutorConfig {
   dispatchTool?: ToolExecutionDelegate;
   /** 账本来源由所有构造入口显式声明。 */
   ledgerOrigin?: ToolLedgerOrigin;
+  /** Run-scoped telemetry owner propagated through subagent tools. */
+  telemetryCollector?: TelemetryCollector;
 }
 
 export type ToolExecutionDelegate = (toolName: string, params: Record<string, unknown>, context: ToolContext, options: ExecuteOptions) => Promise<ToolExecutionResult | null>;
@@ -299,6 +302,7 @@ export class ToolExecutor {
   private permissionModeOverride?: PermissionMode;
   private readonly forcePermissionHandler: boolean;
   private readonly ledgerOrigin: ToolLedgerOrigin;
+  private readonly telemetryCollector?: TelemetryCollector;
 
   constructor(config: ToolExecutorConfig) {
     this.requestPermission = config.requestPermission;
@@ -312,6 +316,7 @@ export class ToolExecutor {
     this.dispatchTool = config.dispatchTool;
     this.executionTopology = config.executionTopology ?? 'main';
     this.ledgerOrigin = config.ledgerOrigin ?? 'desktop';
+    this.telemetryCollector = config.telemetryCollector;
     if (this.runContext && this.workingDirectory !== this.runContext.cwd) {
       throw new Error(
         `Run-scoped ToolExecutor cwd mismatch for ${this.runContext.runId}: ${this.workingDirectory}`,
@@ -794,6 +799,7 @@ export class ToolExecutor {
       abortSignal: options.abortSignal,
       deniedToolNames: options.deniedToolNames,
       skillDiscoveryService: options.skillDiscoveryService,
+      telemetryCollector: this.telemetryCollector,
       planningService: options.planningService,
       modelConfig: options.modelConfig,
       // Plan Mode support (borrowed from Claude Code v2.0)

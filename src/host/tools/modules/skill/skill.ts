@@ -152,6 +152,7 @@ async function handleForkExecution(
     });
 
     if (result.success) {
+      ctx.emit({ type: 'skill_activated', data: { name: skill.name } });
       const output =
         `Skill "${skill.name}" completed\n` +
         `Iterations: ${result.iterations}\n` +
@@ -452,6 +453,7 @@ export async function executeSkill(
       kind: 'adopted',
     });
   }
+  ctx.emit({ type: 'skill_activated', data: { name: skill.name } });
   const output = `Skill "${skill.name}" activated. Follow the skill instructions.`;
   return {
     ok: true,

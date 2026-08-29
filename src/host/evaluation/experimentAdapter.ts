@@ -15,6 +15,8 @@ import type {
   EvalCaseStatus,
   EvalRunAggregation,
   TelemetryCompleteness,
+  EvalRunEvent,
+  EvalRunEventSummary,
 } from '../../shared/contract/evaluation';
 import { buildSessionTraceIdentity } from '../../shared/contract/reviewQueue';
 import {
@@ -32,6 +34,7 @@ type ConversationAttributionWriter = Pick<
 
 type ExperimentDbWriter =
   Pick<DatabaseService, 'insertExperiment' | 'insertExperimentCases'>
+  & Partial<Pick<DatabaseService, 'updateExperimentSummary'>>
   & Partial<ConversationAttributionWriter>;
 
 function supportsConversationAttribution(
@@ -97,6 +100,86 @@ export interface RegressionReportLike {
 
 export class ExperimentAdapter {
   constructor(private db: ExperimentDbWriter) {}
+
+  beginEventRun(event: Extract<EvalRunEvent, { type: 'run_start' }>): void {
+    this.db.insertExperiment({
+      id: event.runId,
+      name: `eval-${new Date(event.ts).toISOString().slice(0, 10)}`,
+      timestamp: event.ts,
+      model: event.config.model,
+      provider: event.config.provider,
+      scope: event.config.scope,
+      config_json: JSON.stringify({
+        ...event.config,
+        plannedCaseIds: event.plannedCaseIds,
+        sessionType: 'eval',
+      }),
+      summary_json: JSON.stringify({
+        total: event.plannedCaseIds.length,
+        passed: 0,
+        failed: 0,
+        partial: 0,
+        skipped: 0,
+        errored: 0,
+        passRate: 0,
+        avgScore: 0,
+        duration: 0,
+        completed: false,
+        plannedCaseIds: event.plannedCaseIds,
+        notRun: event.plannedCaseIds.length,
+      }),
+      source: 'eval',
+      git_commit: event.config.gitCommit,
+    });
+  }
+
+  persistEventCase(event: Extract<EvalRunEvent, { type: 'case_end' }>): void {
+    this.db.insertExperimentCases(event.runId, [{
+      id: `${event.runId}:${event.testId}`,
+      case_id: event.testId,
+      session_id: event.sessionId,
+      status: event.status,
+      score: Math.round(Math.max(0, Math.min(1, event.score)) * 100),
+      duration_ms: event.durationMs,
+      data_json: JSON.stringify({
+        failureReason: event.failureReason,
+        failureStage: event.failureStage,
+        usageStatus: event.usageStatus,
+        costUsd: event.costUsd,
+        mockExcluded: event.mockExcluded,
+        killedByTimeout: event.killedByTimeout,
+        trials: event.trials,
+        scoreAuthority: event.scoreAuthority,
+        source: 'eval',
+      }),
+    }]);
+  }
+
+  finishEventRun(runId: string, summary: EvalRunEventSummary, error?: string): void {
+    if (!this.db.updateExperimentSummary) {
+      throw new Error('event-backed experiment writer cannot update run summary');
+    }
+    const capabilityTotal = summary.total - summary.skipped - (summary.infraExcluded ?? 0) - (summary.costExceeded ?? 0);
+    this.db.updateExperimentSummary(runId, JSON.stringify({
+      total: summary.total,
+      passed: summary.passed,
+      failed: summary.failed,
+      partial: summary.partial,
+      skipped: summary.skipped,
+      errored: summary.invalidCases,
+      passRate: capabilityTotal > 0 ? summary.passed / capabilityTotal : 0,
+      avgScore: summary.averageScore,
+      duration: summary.duration,
+      completed: summary.completed && !error,
+      plannedCaseIds: summary.plannedCaseIds,
+      notRun: summary.notRun,
+      invalidCases: summary.invalidCases,
+      aborted: summary.aborted ?? false,
+      abortReason: summary.abortReason,
+      ...(error ? { error } : {}),
+      source: 'eval',
+    }));
+  }
 
   private getGitCommit(): string {
     try {

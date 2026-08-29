@@ -26,6 +26,7 @@ import type { HookManager } from '../hooks';
 import type { InferenceOptions } from '../model/types';
 import type { RunTraceContext } from '../telemetry/runTraceContext';
 import type { SkillDiscoveryService } from '../services/skills/skillDiscoveryService';
+import type { SystemPromptCache } from '../telemetry/systemPromptCache';
 
 // ----------------------------------------------------------------------------
 // Configuration Types
@@ -79,6 +80,10 @@ export interface AgentLoopConfig {
   enableToolDeferredLoading?: boolean;
   /** 遥测适配器（可选，用于记录原始数据） */
   telemetryAdapter?: TelemetryAdapter;
+  /** Per-run prompt cache; controlled evals inject the case-local database. */
+  systemPromptStore?: Pick<SystemPromptCache, 'store' | 'get'>;
+  /** Per-run trace directory; controlled evals keep it in the case data directory. */
+  traceDirectory?: string;
   /** Per-run provider guardrails for acceptance and controlled runtime harnesses. */
   inferenceOptions?: InferenceOptions;
   /** Per-run iteration cap for acceptance and controlled runtime harnesses. */

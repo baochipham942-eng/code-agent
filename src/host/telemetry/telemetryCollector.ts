@@ -5,11 +5,11 @@
 import { createLogger } from '../services/infra/logger';
 import { getServiceRegistry } from '../services/serviceRegistry';
 import { generateMessageId } from '../../shared/utils/id';
-import { getTelemetryStorage } from './telemetryStorage';
+import { getTelemetryStorage, type TelemetryStorage } from './telemetryStorage';
 import { getAuthService } from '../services/auth/authService';
 import { trackNode } from '../observability/posthogNode';
 import { POSTHOG_EVENTS } from '../../shared/observability/posthog-events';
-import { getSystemPromptCache } from './systemPromptCache';
+import { getSystemPromptCache, type SystemPromptCache } from './systemPromptCache';
 import { getDiagnosticVersions } from './diagnosticVersions';
 import { buildDiagnosticBundle, sanitizeDiagnosticBundle } from './diagnosticBundleService';
 import { classifyIntent, evaluateOutcome } from './intentClassifier';
@@ -86,6 +86,11 @@ export class TelemetryCollector {
   // Event listener for real-time push
   private eventListeners: Array<(event: TelemetryPushEvent) => void> = [];
 
+  constructor(
+    private readonly storage: TelemetryStorage = getTelemetryStorage(),
+    readonly systemPromptCache: SystemPromptCache = getSystemPromptCache(),
+  ) {}
+
   static getInstance(): TelemetryCollector {
     if (!this.instance) {
       this.instance = new TelemetryCollector();
@@ -132,6 +137,7 @@ export class TelemetryCollector {
       modelProvider: config.modelProvider,
       modelName: config.modelName,
       workingDirectory: config.workingDirectory,
+      sessionType: config.sessionType,
       startTime: Date.now(),
       turnCount: 0,
       totalInputTokens: 0,
@@ -148,18 +154,20 @@ export class TelemetryCollector {
     };
 
     this.activeSession = session;
-    getTelemetryStorage().insertSession(session);
+    this.storage.insertSession(session);
 
     // PostHog: session 开始事件（metadata-only，不含 workingDirectory 等可能含 PII 的字段）
-    trackNode(POSTHOG_EVENTS.SESSION_STARTED, {
-      sessionId,
-      provider: config.modelProvider,
-      model: config.modelName,
-    });
+    if (config.sessionType !== 'eval') {
+      trackNode(POSTHOG_EVENTS.SESSION_STARTED, {
+        sessionId,
+        provider: config.modelProvider,
+        model: config.modelName,
+      });
+    }
 
     // Ensure system prompt cache table exists
     try {
-      getSystemPromptCache().ensureTable();
+      this.systemPromptCache.ensureTable();
     } catch {
       /* non-critical */
     }
@@ -181,7 +189,7 @@ export class TelemetryCollector {
     this.activeSession.durationMs = now - this.activeSession.startTime;
     this.activeSession.status = 'completed';
 
-    getTelemetryStorage().updateSession(sessionId, {
+    this.storage.updateSession(sessionId, {
       endTime: this.activeSession.endTime,
       durationMs: this.activeSession.durationMs,
       status: 'completed',
@@ -204,7 +212,7 @@ export class TelemetryCollector {
 
     // 会话结束顺手做一次 raw 旁表滚动淘汰(便宜,每会话一次)
     try {
-      getTelemetryStorage().pruneRawPayloads();
+      this.storage.pruneRawPayloads();
     } catch {
       /* non-critical */
     }
@@ -228,7 +236,7 @@ export class TelemetryCollector {
       if (!bundle) return;
       const sanitized = sanitizeDiagnosticBundle(bundle);
       const now = Date.now();
-      getTelemetryStorage().insertDiagnosticBundle({
+      this.storage.insertDiagnosticBundle({
         id: generateMessageId(),
         sessionId,
         agentVersion: sanitized.versions.agentVersion ?? null,
@@ -261,7 +269,7 @@ export class TelemetryCollector {
     if (this.activeSession?.id === sessionId) {
       this.activeSession.title = title;
     }
-    getTelemetryStorage().updateSession(sessionId, { title });
+    this.storage.updateSession(sessionId, { title });
   }
 
   // --------------------------------------------------------------------------
@@ -628,10 +636,10 @@ export class TelemetryCollector {
     };
 
     // Persist turn
-    getTelemetryStorage().insertTurn(turn);
+    this.storage.insertTurn(turn);
 
     // Batch insert sub-records
-    getTelemetryStorage().batchInsert({
+    this.storage.batchInsert({
       modelCalls: this.turnModelCalls,
       toolCalls: this.turnToolCalls,
       events: this.turnEvents
@@ -661,7 +669,7 @@ export class TelemetryCollector {
       this.activeSession.toolSuccessRate = allToolCalls > 0 ? (prevSuccessful + successCount) / allToolCalls : 0;
 
       // Update session in DB periodically
-      getTelemetryStorage().updateSession(this.activeSession.id, {
+      this.storage.updateSession(this.activeSession.id, {
         turnCount: this.activeSession.turnCount,
         totalInputTokens: this.activeSession.totalInputTokens,
         totalOutputTokens: this.activeSession.totalOutputTokens,
@@ -789,8 +797,8 @@ export class TelemetryCollector {
       parentTurnId: input.parentTurnId
     };
 
-    getTelemetryStorage().insertTurn(turn);
-    getTelemetryStorage().batchInsert({ modelCalls, toolCalls, events });
+    this.storage.insertTurn(turn);
+    this.storage.batchInsert({ modelCalls, toolCalls, events });
     void import('../services/skills/skillEvidenceLifecycle')
       .then(({ finalizeDistilledSkillEvidenceTurn }) => finalizeDistilledSkillEvidenceTurn({
         turnId: input.turnId,
@@ -811,7 +819,7 @@ export class TelemetryCollector {
       const allToolCalls = this.activeSession.totalToolCalls;
       const previousSuccessful = this.activeSession.toolSuccessRate * (allToolCalls - totalToolCalls);
       this.activeSession.toolSuccessRate = allToolCalls > 0 ? (previousSuccessful + successCount) / allToolCalls : 0;
-      getTelemetryStorage().updateSession(this.activeSession.id, {
+      this.storage.updateSession(this.activeSession.id, {
         turnCount: this.activeSession.turnCount,
         totalInputTokens: this.activeSession.totalInputTokens,
         totalOutputTokens: this.activeSession.totalOutputTokens,
@@ -1066,7 +1074,7 @@ export class TelemetryCollector {
     successRate: number;
   }> {
     try {
-      const storage = getTelemetryStorage();
+      const storage = this.storage;
       const stats = storage.getToolUsageStats(sessionId);
       return stats.map((s: { name: string; callCount: number; successCount: number; avgDurationMs: number; successRate: number }) => ({
         name: s.name,
@@ -1095,7 +1103,7 @@ export class TelemetryCollector {
     };
 
     try {
-      const storage = getTelemetryStorage();
+      const storage = this.storage;
       const toolCalls = storage.getToolCallsBySession(sessionId);
 
       const failedCalls = toolCalls.filter((tc: { success: boolean }) => !tc.success);

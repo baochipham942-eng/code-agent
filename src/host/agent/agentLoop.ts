@@ -176,6 +176,7 @@ export class AgentLoop {
       telemetryAdapter: config.telemetryAdapter
         ? composeTelemetryAdapters(config.telemetryAdapter, createTelemetryAdapter())
         : createTelemetryAdapter(),
+      systemPromptStore: config.systemPromptStore,
 
       // Turn 级状态切片（ADR-038 批3a）
       turn: new TurnState({
@@ -212,7 +213,7 @@ export class AgentLoop {
       stepByStepMode: config.stepByStepMode ?? false,
 
       // Tracing
-      turnTrace: new TurnTraceRecorder(resolvedSessionId),
+      turnTrace: new TurnTraceRecorder(resolvedSessionId, config.traceDirectory),
       turnQualityState: {},
       goalEvidenceState: { bounces: 0 },
 

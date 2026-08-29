@@ -20,6 +20,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 import { registerQueuedInputHandlers } from '../../../src/host/ipc/queuedInput.ipc';

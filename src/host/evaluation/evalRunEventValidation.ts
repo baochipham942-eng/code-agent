@@ -1,0 +1,108 @@
+import {
+  EVAL_RUN_EVENT_SCHEMA_VERSION,
+  type EvalRunEvent,
+} from '../../shared/contract/evaluation';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function requireString(record: Record<string, unknown>, key: string): void {
+  if (typeof record[key] !== 'string' || String(record[key]).length === 0) {
+    throw new Error(`评测事件缺少字符串字段 ${key}。`);
+  }
+}
+
+function requireNumber(record: Record<string, unknown>, key: string): void {
+  if (typeof record[key] !== 'number' || !Number.isFinite(record[key])) {
+    throw new Error(`评测事件缺少数字字段 ${key}。`);
+  }
+}
+
+function requireTestIdentity(record: Record<string, unknown>): void {
+  requireString(record, 'testId');
+}
+
+function validateSummary(value: unknown): void {
+  if (!isRecord(value)) throw new Error('评测结束事件缺少汇总。');
+  requireString(value, 'runId');
+  for (const key of [
+    'startTime', 'endTime', 'duration', 'total', 'passed', 'failed', 'skipped',
+    'partial', 'averageScore', 'notRun', 'invalidCases',
+  ]) requireNumber(value, key);
+  if (!isStringArray(value.plannedCaseIds)) throw new Error('评测汇总缺少 plannedCaseIds。');
+  if (typeof value.completed !== 'boolean') throw new Error('评测汇总缺少 completed。');
+}
+
+export function parseEvalRunEvent(value: unknown): EvalRunEvent {
+  if (!isRecord(value)) throw new Error('评测事件不是对象。');
+  if (value.schemaVersion !== EVAL_RUN_EVENT_SCHEMA_VERSION) {
+    throw new Error(`评测事件版本不匹配，需要版本 ${EVAL_RUN_EVENT_SCHEMA_VERSION}。`);
+  }
+  requireString(value, 'type');
+  requireString(value, 'runId');
+  requireNumber(value, 'ts');
+
+  switch (value.type) {
+    case 'run_start': {
+      if (!isStringArray(value.plannedCaseIds)) throw new Error('评测开始事件缺少 plannedCaseIds。');
+      if (!isRecord(value.config)) throw new Error('评测开始事件缺少 config。');
+      const config = value.config;
+      if (config.mode !== 'real' && config.mode !== 'mock') throw new Error('评测模式不受支持。');
+      if (config.scope !== 'smoke' && config.scope !== 'full') throw new Error('评测范围不受支持。');
+      for (const key of ['model', 'provider', 'gitCommit', 'testCaseDir']) requireString(config, key);
+      for (const key of ['maxCases', 'concurrency']) requireNumber(config, key);
+      break;
+    }
+    case 'case_start':
+      requireTestIdentity(value);
+      requireString(value, 'description');
+      break;
+    case 'case_end': {
+      requireTestIdentity(value);
+      const statuses = new Set([
+        'pending', 'running', 'passed', 'failed', 'skipped', 'partial',
+        'infra_excluded', 'cost_exceeded', 'not_run',
+      ]);
+      if (!statuses.has(String(value.status))) throw new Error('评测用例状态不受支持。');
+      requireNumber(value, 'score');
+      requireNumber(value, 'durationMs');
+      break;
+    }
+    case 'tool_call':
+      requireTestIdentity(value);
+      requireString(value, 'tool');
+      if (!Object.prototype.hasOwnProperty.call(value, 'input')) throw new Error('工具调用事件缺少 input。');
+      break;
+    case 'tool_result':
+      requireTestIdentity(value);
+      requireString(value, 'tool');
+      if (typeof value.success !== 'boolean') throw new Error('工具结果事件缺少 success。');
+      break;
+    case 'error':
+      requireString(value, 'error');
+      break;
+    case 'run_end':
+      validateSummary(value.summary);
+      if (!isStringArray(value.reportFiles)) throw new Error('评测结束事件缺少 reportFiles。');
+      requireNumber(value, 'exitCode');
+      if (typeof value.aborted !== 'boolean') throw new Error('评测结束事件缺少 aborted。');
+      break;
+    case 'skill_activated':
+      requireTestIdentity(value);
+      requireString(value, 'name');
+      break;
+    case 'memory_injected':
+    case 'subagent_spawned':
+      requireTestIdentity(value);
+      requireString(value, 'id');
+      break;
+    default:
+      throw new Error(`评测事件类型不受支持：${String(value.type)}`);
+  }
+  return value as unknown as EvalRunEvent;
+}

@@ -9,6 +9,7 @@ const toolExecutorState = vi.hoisted(() => ({
       tool: string;
       details: Record<string, unknown>;
     }) => Promise<boolean>;
+    telemetryCollector?: unknown;
   },
 }));
 
@@ -101,5 +102,27 @@ describe('createSubagentToolRuntime permission forwarding', () => {
 
     expect(approved).toBe(true);
     expect(permissionRequest).not.toHaveBeenCalled();
+  });
+
+  it('passes the case-local telemetry owner into nested subagent tool execution', () => {
+    const telemetryCollector = { marker: 'case-local' };
+    createSubagentToolRuntime({
+      context: {
+        sessionId: 'session-1',
+        cwd: '/tmp/workbench',
+        resolver: { getDefinition: vi.fn() },
+        permission: { request: vi.fn(async () => true) },
+        events: { emit: vi.fn() },
+        abortSignal: new AbortController().signal,
+        telemetryCollector,
+      } as any,
+      sessionId: 'session-1',
+      effectiveMode: 'default',
+      identity: { agentId: 'agent-1', runId: 'run-1' },
+      allowedToolNames: new Set(['Task']),
+      checkToolExecution: vi.fn(() => true),
+    });
+
+    expect(toolExecutorState.config?.telemetryCollector).toBe(telemetryCollector);
   });
 });

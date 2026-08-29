@@ -69,6 +69,7 @@ export interface TaskOutput {
 export interface StartBackgroundTaskOptions {
   sessionId?: string;
   toolCallId?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 export type BackgroundTaskLifecycleEventType = 'started' | 'completed' | 'failed';
@@ -201,10 +202,10 @@ export function startBackgroundTask(
 
   // win32 无 bash，走 PowerShell；POSIX 保持 bash -c 原语义
   const proc = process.platform === 'win32'
-    ? spawnWindowsShell(command, { cwd, env: { ...process.env } })
+    ? spawnWindowsShell(command, { cwd, env: options.env ?? { ...process.env } })
     : spawn('bash', ['-c', command], {
         cwd,
-        env: { ...process.env },
+        env: options.env ?? { ...process.env },
         stdio: ['ignore', 'pipe', 'pipe'],
         // detached: 让 bash 自成进程组，终止时才能整组收树。detached:false 时
         // killProcessTree 只能杀掉 bash 本身——后台任务里跑 e2e 脚本 spawn 出的

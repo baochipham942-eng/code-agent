@@ -103,6 +103,7 @@ describe('protocolAdapter — buildProtocolContext', () => {
     const fakeModelConfig = { provider: 'claude' };
     const fakeRegistry = { get: () => null };
     const fakeModelCallback = async (p: string) => `echo: ${p}`;
+    const fakeTelemetryCollector = { marker: 'case-local' };
     const modifiedFiles = new Set(['/tmp/a.ts']);
 
     const legacy = {
@@ -112,6 +113,7 @@ describe('protocolAdapter — buildProtocolContext', () => {
       planningService: fakePlanningService,
       modelConfig: fakeModelConfig,
       modelCallback: fakeModelCallback,
+      telemetryCollector: fakeTelemetryCollector,
       toolRegistry: fakeRegistry,
       currentToolCallId: 'call_123',
       agentId: 'agent_a',
@@ -141,6 +143,8 @@ describe('protocolAdapter — buildProtocolContext', () => {
     void fakeRegistry;
 
     expect(ctx.modelCallback).toBe(fakeModelCallback);
+    expect(ctx.telemetryCollector).toBe(fakeTelemetryCollector);
+    expect(buildLegacyCtxFromProtocol(ctx).telemetryCollector).toBe(fakeTelemetryCollector);
     expect(ctx.currentToolCallId).toBe('call_123');
     expect(ctx.agentId).toBe('agent_a');
     expect(ctx.toolScope).toEqual({

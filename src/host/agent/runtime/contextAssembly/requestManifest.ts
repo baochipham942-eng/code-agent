@@ -43,6 +43,7 @@ export function recordRequestManifest(
       requestConfig: input.requestConfig,
       appVersion,
       engine,
+      systemPromptStore: ctx.runtime.systemPromptStore,
     });
   } catch (error) {
     logger.warn('[Replay] request manifest assembly degraded; inference will continue', error);

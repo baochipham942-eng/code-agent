@@ -164,7 +164,7 @@ describe('settings and domain web routers', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ payload: { id: 'x' } }),
     });
-    expect(denied.status).toBe(200);
+    expect(denied.status).toBe(403);
     expect(await readJson(denied)).toEqual({
       success: false,
       error: {

@@ -231,9 +231,14 @@ export class TelemetryUploaderService implements Disposable {
     try {
       let uploadFailed = false;
       const storage = getTelemetryStorage();
-      const sessions = storage
+      const pendingSessions = storage
         .getUnsyncedSessions(BATCH_SIZE)
         .filter((s) => !s.userId || s.userId === user.id);
+      const excludedEvalSessions = pendingSessions.filter((s) => s.sessionType === 'eval');
+      const sessions = pendingSessions.filter((s) => s.sessionType !== 'eval');
+      if (excludedEvalSessions.length > 0) {
+        storage.markSessionsSynced(excludedEvalSessions.map((s) => s.id));
+      }
 
       // 新表不在生成的 Database 类型里，用未类型化 client 写入
       const supabase = getSupabase() as unknown as SupabaseClient;
@@ -277,7 +282,16 @@ export class TelemetryUploaderService implements Disposable {
       if (turnUploadFailed) return 0;
 
       // 3) 用户显式反馈。它依赖云端已有 session/turn，因此放在 session/turn 后面。
-      const feedback = storage.getUnsyncedFeedback(BATCH_SIZE, user.id);
+      const pendingFeedback = storage.getUnsyncedFeedback(BATCH_SIZE, user.id);
+      const excludedEvalFeedback = pendingFeedback.filter(
+        (item) => storage.getSession(item.sessionId)?.sessionType === 'eval',
+      );
+      const feedback = pendingFeedback.filter(
+        (item) => storage.getSession(item.sessionId)?.sessionType !== 'eval',
+      );
+      if (excludedEvalFeedback.length > 0) {
+        storage.markFeedbackSynced(excludedEvalFeedback.map((item) => item.id));
+      }
       if (feedback.length > 0) {
         // UI 的 messageId 只负责本地定位，不保证等于 telemetry_turns.id。
         // 不存在的 turn_id 会被 owns_telemetry_turn RLS 正确拒绝（42501），

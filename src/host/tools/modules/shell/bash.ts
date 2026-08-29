@@ -51,6 +51,16 @@ const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
 const BACKGROUND_TRAILING_OPERATOR = /(?:^|[;\n])\s*([^;&|\n][\s\S]*?)\s*&\s*$/;
 const MAX_LIVE_OUTPUT_DELTA_LENGTH = 2_000;
 
+function createEvalSafeShellEnv(extra?: Record<string, string | undefined>): Record<string, string> {
+  const env = createSanitizedEnv(extra);
+  if (process.env.CODE_AGENT_EVAL_REAL_ROOT === undefined) return env;
+  delete env.CODE_AGENT_EVAL_REAL_ROOT;
+  delete env.AUTO_TEST_API_KEY;
+  delete env.AUTO_TEST_BASE_URL;
+  delete env.NEO_SCRIPTED_APPROVAL_POLICY;
+  return env;
+}
+
 /**
  * 解包 self-referential 工具调用：
  *  - bash({"command": "actual_cmd"})  → "actual_cmd"
@@ -579,7 +589,8 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     // -------------------------------------------------------------------------
     const permissionModeManager = getPermissionModeManager();
     const shouldSandbox = OS_SANDBOX.ENABLED
-      && (permissionModeManager.getModeForSession(ctx.sessionId) === 'bypassPermissions'
+      && (process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined
+        || permissionModeManager.getModeForSession(ctx.sessionId) === 'bypassPermissions'
         || permissionModeManager.isUnattendedSession(ctx.sessionId)
         || (ctx.workspaceScope?.roots.length ?? 0) > 1);
     let sandboxCleanup: (() => void) | undefined;
@@ -595,6 +606,9 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           readWriteRoots: ctx.workspaceScope?.roots
             .filter((root) => root.access === 'read_write')
             .map((root) => root.path),
+          deniedReadRoots: process.env.CODE_AGENT_EVAL_REAL_ROOT
+            ? [process.env.CODE_AGENT_EVAL_REAL_ROOT]
+            : undefined,
           allowNetwork: resolveSandboxNetworkPolicy({
             command: cmd,
             redline: ctx.executionIntent?.redline === true,
@@ -628,6 +642,8 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         maxRuntime: timeout,
         sessionId: ctx.sessionId,
         toolCallId: ctx.currentToolCallId,
+        env: createEvalSafeShellEnv(),
+        inheritProcessEnv: process.env.CODE_AGENT_EVAL_REAL_ROOT === undefined,
       });
 
       if (!result.success) {
@@ -721,6 +737,7 @@ Use process_kill to terminate the session.`;
       const result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
         sessionId: ctx.sessionId,
         toolCallId: ctx.currentToolCallId,
+        env: createEvalSafeShellEnv(),
       });
       if (!result.success) {
         const message = result.error || 'Failed to start background task';
@@ -831,7 +848,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         abortSignal: ctx.abortSignal,
         ctx,
         startedAt,
-        env: createSanitizedEnv({
+        env: createEvalSafeShellEnv({
           PATH: shellPathDiagnostics.path,
         }),
       });

@@ -86,7 +86,7 @@ describe('runCompare 接线', () => {
       compareCommand.indexOf('// LLM 评审可选'),
     );
 
-    expect(makeAgent).toMatch(/requestPermission:\s*getScriptedRunPermissionHandler\(\)/);
+    expect(makeAgent).toMatch(/requestPermission:\s*requireScriptedRunPermissionHandler\(\)/);
   });
 
   it('每个 case 在两个配置下各真跑一次（paired），结果含全部非 skip case', async () => {

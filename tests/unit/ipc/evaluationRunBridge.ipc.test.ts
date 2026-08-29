@@ -4,6 +4,10 @@ import type { EvalRunBridge } from '../../../src/host/evaluation/evalRunBridge';
 import { EVALUATION_CHANNELS } from '../../../src/shared/ipc/channels';
 
 const guard = vi.hoisted(() => ({ denied: true }));
+const caseBank = vi.hoisted(() => ({
+  enumerate: vi.fn(async () => [{ id: 'case-1' }]),
+  save: vi.fn(async () => ({ action: 'archive', id: 'case-1', file: '01.yaml' })),
+}));
 
 vi.mock('../../../src/host/ipc/adminGuard', () => ({
   getAdminAccessIpcError: () => guard.denied
@@ -13,6 +17,15 @@ vi.mock('../../../src/host/ipc/adminGuard', () => ({
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}));
+
+vi.mock('../../../src/host/evaluation/evalEnvironment', () => ({
+  inspectEvalEnvironment: () => ({ repositoryRoot: '/repo' }),
+}));
+
+vi.mock('../../../src/host/testing/caseBank', () => ({
+  enumerateCaseBank: caseBank.enumerate,
+  saveCaseBank: caseBank.save,
 }));
 
 import { registerEvaluationHandlers } from '../../../src/host/ipc/evaluation.ipc';
@@ -39,6 +52,8 @@ function setup() {
 describe('evaluation run IPC admin gate', () => {
   beforeEach(() => {
     guard.denied = true;
+    caseBank.enumerate.mockClear();
+    caseBank.save.mockClear();
   });
 
   it('rejects all three mutating/stream channels before reaching the bridge', async () => {
@@ -55,6 +70,23 @@ describe('evaluation run IPC admin gate', () => {
     expect(bridge.startRun).not.toHaveBeenCalled();
     expect(bridge.subscribe).not.toHaveBeenCalled();
     expect(bridge.abortRun).not.toHaveBeenCalled();
+  });
+
+  it('题库读写通道同样先过 admin 门，renderer 不传仓库目录', async () => {
+    const { handlers } = setup();
+
+    await expect(handlers.get(EVALUATION_CHANNELS.LIST_CASES)!(null))
+      .resolves.toMatchObject({ success: false, error: { code: 'FORBIDDEN' } });
+    await expect(handlers.get(EVALUATION_CHANNELS.SAVE_CASE)!(null, { action: 'archive', id: 'case-1' }))
+      .resolves.toMatchObject({ success: false, error: { code: 'FORBIDDEN' } });
+    expect(caseBank.enumerate).not.toHaveBeenCalled();
+    expect(caseBank.save).not.toHaveBeenCalled();
+
+    guard.denied = false;
+    await expect(handlers.get(EVALUATION_CHANNELS.LIST_CASES)!(null)).resolves.toEqual([{ id: 'case-1' }]);
+    await handlers.get(EVALUATION_CHANNELS.SAVE_CASE)!(null, { action: 'archive', id: 'case-1' });
+    expect(caseBank.enumerate).toHaveBeenCalledWith('/repo');
+    expect(caseBank.save).toHaveBeenCalledWith('/repo', { action: 'archive', id: 'case-1' });
   });
 
   it('lets an admin start, subscribe, and abort through the registered IPC handlers', async () => {

@@ -11,6 +11,9 @@ import { EVALUATION_CHANNELS } from '../../shared/ipc/channels';
 import { createLogger } from '../services/infra/logger';
 import { getChannelAccessIpcError } from './channelAccessPolicy';
 import { getEvalRunBridge, type EvalRunBridge } from '../evaluation/evalRunBridge';
+import { inspectEvalEnvironment } from '../evaluation/evalEnvironment';
+import { enumerateCaseBank, saveCaseBank } from '../testing/caseBank';
+import type { SaveEvalCaseRequest } from '../../shared/contract/evaluation';
 
 const logger = createLogger('EvaluationIPC');
 
@@ -49,6 +52,18 @@ export function registerEvaluationHandlers(
     if (denied) return denied;
     if (!payload?.runId) throw new Error('runId is required');
     return runBridge.abortRun(payload.runId);
+  });
+
+  ipcMain.handle(EVALUATION_CHANNELS.LIST_CASES, async () => {
+    const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.LIST_CASES, 'Evaluation case bank');
+    if (denied) return denied;
+    return enumerateCaseBank(requireRepositoryRoot());
+  });
+
+  ipcMain.handle(EVALUATION_CHANNELS.SAVE_CASE, async (_event, payload: SaveEvalCaseRequest) => {
+    const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.SAVE_CASE, 'Evaluation case bank write');
+    if (denied) return denied;
+    return saveCaseBank(requireRepositoryRoot(), payload);
   });
 
   // 列出已落 DB 的实验（含 harness 维度），供对比与轮询
@@ -107,6 +122,12 @@ export function registerEvaluationHandlers(
   logger.info('Evaluation handlers registered', {
     channels: Object.values(EVALUATION_CHANNELS),
   });
+}
+
+function requireRepositoryRoot(): string {
+  const repositoryRoot = inspectEvalEnvironment().repositoryRoot;
+  if (!repositoryRoot) throw new Error('找不到评测题库所在的仓库');
+  return repositoryRoot;
 }
 
 function safeParseJson(raw: string | null): unknown {

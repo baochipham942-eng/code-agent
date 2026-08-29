@@ -15,6 +15,9 @@ vi.mock('../../../src/renderer/components/features/evalCenter/EvalTelemetryTab',
 vi.mock('../../../src/renderer/components/features/evalCenter/EvalBenchmarksTab', () => ({
   EvalBenchmarksTab: () => <div data-testid="eval-benchmarks-tab-mock" />,
 }));
+vi.mock('../../../src/renderer/components/features/evalCenter/EvalCaseListTab', () => ({
+  EvalCaseListTab: () => <div data-testid="eval-case-list-tab-mock" />,
+}));
 
 import { EvalCenterPage } from '../../../src/renderer/components/features/evalCenter/EvalCenterPage';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -33,14 +36,23 @@ afterEach(() => {
 });
 
 describe('EvalCenterPage', () => {
-  it('渲染回放 / 验证 / 遥测 / 基准四个 tab，默认回放', async () => {
+  it('2026-08-29 爸拍板 R4：渲染题库并排在回放后，默认回放', async () => {
     useAuthStore.setState({ user: user(true) });
     render(<EvalCenterPage />);
 
     expect(screen.getByTestId('eval-center-tab-replay')).toBeTruthy();
+    expect(screen.getByTestId('eval-center-tab-cases')).toBeTruthy();
     expect(screen.getByTestId('eval-center-tab-validation')).toBeTruthy();
     expect(screen.getByTestId('eval-center-tab-telemetry')).toBeTruthy();
     expect(screen.getByTestId('eval-center-tab-benchmarks')).toBeTruthy();
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map((tab) => tab.getAttribute('data-testid'))).toEqual([
+      'eval-center-tab-replay',
+      'eval-center-tab-cases',
+      'eval-center-tab-validation',
+      'eval-center-tab-telemetry',
+      'eval-center-tab-benchmarks',
+    ]);
     expect(await screen.findByTestId('eval-replay-explorer-mock')).toBeTruthy();
   });
 
@@ -49,7 +61,7 @@ describe('EvalCenterPage', () => {
     render(<EvalCenterPage />);
 
     expect(screen.queryByTestId('eval-center-tab-replay')).toBeNull();
-    expect(screen.getByText('评测中心仅管理员可用。')).toBeTruthy();
+    expect(screen.getByText('评测中心需要管理员权限')).toBeTruthy();
   });
 
   it('切到验证 tab 渲染验证工作台', async () => {
@@ -73,6 +85,15 @@ describe('EvalCenterPage', () => {
     fireEvent.click(screen.getByTestId('eval-center-tab-benchmarks'));
     expect(useAppStore.getState().evalCenterTab).toBe('benchmarks');
     expect(await screen.findByTestId('eval-benchmarks-tab-mock')).toBeTruthy();
+  });
+
+  it('切到题库 tab 渲染题库列表', async () => {
+    useAuthStore.setState({ user: user(true) });
+    render(<EvalCenterPage />);
+
+    fireEvent.click(screen.getByTestId('eval-center-tab-cases'));
+    expect(useAppStore.getState().evalCenterTab).toBe('cases');
+    expect(await screen.findByTestId('eval-case-list-tab-mock')).toBeTruthy();
   });
 
   it('有 pending 验证请求且用户停在别的 tab 时显示角标，切入后消失', async () => {

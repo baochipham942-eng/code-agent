@@ -19,6 +19,7 @@ import { ConnectorAuth } from '../connectors/oauth/connectorAuth';
 import { ConnectorOAuthStore } from '../connectors/oauth/connectorOAuthStore';
 import { OAuthCoordinator } from '../connectors/oauth/oauthCoordinator';
 import { FEISHU_OAUTH_DESCRIPTOR } from '../connectors/oauth/feishuOAuth';
+import { GOOGLE_CALENDAR_OAUTH_DESCRIPTOR } from '../connectors/oauth/googleCalendarOAuth';
 import { createLarkCliDriver } from '../connectors/feishu/larkCli';
 import { createTmeetCliDriver } from '../connectors/tmeet/tmeetCli';
 import { getCachedStatus } from '../connectors/cli/cliConnector';
@@ -341,6 +342,7 @@ async function handleOpenConnectorApp(connectorId: string | undefined): Promise<
 // 流程代码不变。accountId 暂等于 providerId：本刀只支持每家一个账号，多账号是后续刀的事。
 const OAUTH_PROVIDERS: Record<string, ProviderDescriptor> = {
   [FEISHU_OAUTH_DESCRIPTOR.id]: FEISHU_OAUTH_DESCRIPTOR,
+  [GOOGLE_CALENDAR_OAUTH_DESCRIPTOR.id]: GOOGLE_CALENDAR_OAUTH_DESCRIPTOR,
   tmeet: {
     id: 'tmeet',
     displayName: '腾讯会议',

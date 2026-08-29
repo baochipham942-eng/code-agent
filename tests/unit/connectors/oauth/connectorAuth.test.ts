@@ -5,6 +5,7 @@ import { ConnectorAuth } from '../../../../src/host/connectors/oauth/connectorAu
 import { ConnectorOAuthStore } from '../../../../src/host/connectors/oauth/connectorOAuthStore';
 import type { OAuthCoordinator, OAuthFlow } from '../../../../src/host/connectors/oauth/oauthCoordinator';
 import type { ProviderDescriptor } from '../../../../src/host/connectors/oauth/providerDescriptor';
+import { GOOGLE_CALENDAR_OAUTH_DESCRIPTOR } from '../../../../src/host/connectors/oauth/googleCalendarOAuth';
 
 function memoryStore(accountId = 'account-1'): ConnectorOAuthStore {
   const values = new Map<string, string>();
@@ -44,6 +45,58 @@ beforeEach(() => {
 });
 
 describe('ConnectorAuth', () => {
+  it('starts Google Calendar authorization with PKCE, offline access, and Calendar-only scope', async () => {
+    const store = memoryStore('google-calendar');
+    const handleAuthorizationRedirect = vi.fn(
+      async (_input: { accountId: string; flowId?: string; authUrl: URL }) => {},
+    );
+    const googleFlow: OAuthFlow = {
+      ...flow,
+      accountId: 'google-calendar',
+      accountLabel: 'Google Calendar',
+      authorizationServerIssuer: 'https://accounts.google.com',
+    };
+    const coordinator = {
+      beginFlow: vi.fn(async () => googleFlow),
+      handleAuthorizationRedirect,
+      waitForCallback: vi.fn(() => new Promise(() => undefined)),
+      cancelFlow: vi.fn(() => false),
+    } as unknown as OAuthCoordinator;
+    const auth = new ConnectorAuth({ coordinator, storeFactory: () => store });
+
+    void auth.beginFlow({
+      accountId: 'google-calendar',
+      accountLabel: 'Google Calendar',
+      descriptor: { ...GOOGLE_CALENDAR_OAUTH_DESCRIPTOR, clientId: 'google-client-id' },
+      action: 'calendar.events',
+    });
+
+    await vi.waitFor(() => expect(handleAuthorizationRedirect).toHaveBeenCalledOnce());
+    const authorizationUrl = handleAuthorizationRedirect.mock.calls[0]?.[0]?.authUrl as URL;
+    expect(authorizationUrl.origin + authorizationUrl.pathname)
+      .toBe('https://accounts.google.com/o/oauth2/v2/auth');
+    expect(authorizationUrl.searchParams.get('scope'))
+      .toBe('https://www.googleapis.com/auth/calendar.events');
+    expect(authorizationUrl.searchParams.get('access_type')).toBe('offline');
+    expect(authorizationUrl.searchParams.get('prompt')).toBe('consent');
+    expect(authorizationUrl.searchParams.get('code_challenge_method')).toBe('S256');
+  });
+
+  it('fails before opening Google authorization when the injected client ID is missing', async () => {
+    const handleAuthorizationRedirect = vi.fn();
+    const auth = new ConnectorAuth({
+      coordinator: { handleAuthorizationRedirect } as unknown as OAuthCoordinator,
+    });
+
+    await expect(auth.beginFlow({
+      accountId: 'google-calendar',
+      accountLabel: 'Google Calendar',
+      descriptor: { ...GOOGLE_CALENDAR_OAUTH_DESCRIPTOR, clientId: '' },
+      action: 'calendar.events',
+    })).rejects.toThrow('clientId is not configured for google-calendar');
+    expect(handleAuthorizationRedirect).not.toHaveBeenCalled();
+  });
+
   it('orchestrates SDK authorization and appends provider parameters before opening', async () => {
     const store = memoryStore();
     const handleAuthorizationRedirect = vi.fn(

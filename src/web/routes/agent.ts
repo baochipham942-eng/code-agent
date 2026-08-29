@@ -692,7 +692,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         } else if (selectedEngine.kind === 'codebuddy_code') {
           adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = await getRemoteAgentEngineModelCatalogService()
-            .resolveModelId('codebuddy_code', launch.model);
+            .resolveModelId('codebuddy_code', launch.model, { strict: true });
         } else if (selectedEngine.kind === 'grok_cli') {
           adapter = getExternalEngineAdapter(selectedEngine.kind);
           resolvedEngineModel = await getRemoteAgentEngineModelCatalogService()

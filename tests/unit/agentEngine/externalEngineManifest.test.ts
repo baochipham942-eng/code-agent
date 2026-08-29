@@ -95,14 +95,22 @@ describe('external engine manifest contract', () => {
     });
   });
 
-  it('keeps WorkBuddy on the client default when its current CLI cannot enumerate models', () => {
+  it('discovers WorkBuddy models from the installed CLI help output', () => {
     const manifest = getExternalEngineManifestForKind('codebuddy_code');
 
     expect(manifest).toMatchObject({
       label: 'WorkBuddy',
-      modelSelection: 'client_default',
+      modelSelection: 'runtime_catalog',
+      probe: {
+        modelDiscovery: {
+          args: ['--help'],
+          parser: 'supported_models_parenthesized',
+          marker: 'Currently supported:',
+          preferredDefault: 'client_default',
+          merge: 'replace',
+        },
+      },
     });
-    expect(manifest?.probe?.modelDiscovery).toBeUndefined();
   });
 
   it('uses the official Kimi CLI for auth and runtime model discovery', () => {

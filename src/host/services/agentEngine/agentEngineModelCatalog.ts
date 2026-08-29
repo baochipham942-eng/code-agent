@@ -399,11 +399,13 @@ export function parseParenthesizedSupportedModelsCatalog(
   const list = afterMarker.match(/\(([^)]+)\)/)?.[1];
   if (!list) return null;
 
-  const models = list
+  const discoveredModels = list
     .split(',')
     .map((id) => id.trim())
     .filter((id) => /^[a-z0-9][a-z0-9._-]*$/i.test(id))
     .map((id) => ({ id }));
+
+  const models = kind === 'codebuddy_code' ? [{ id: 'client_default', label: '客户端默认模型' }, ...discoveredModels] : discoveredModels;
 
   return normalizeDiscoveredModels(kind, models, updatedAt, preferredDefault);
 }

@@ -5,7 +5,11 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DatabaseService } from '../../../src/host/services/core/databaseService';
 import type { EvalRunEvent } from '../../../src/shared/contract/evaluation';
-import { EVAL_RUN_EVENT_SCHEMA_VERSION } from '../../../src/shared/contract/evaluation';
+import {
+  EVAL_RUN_STAMP_KEYS,
+  EVAL_RUN_EVENT_SCHEMA_VERSION,
+  UNKNOWN_EVAL_RUN_STAMP,
+} from '../../../src/shared/contract/evaluation';
 import { EvalRunBridge } from '../../../src/host/evaluation/evalRunBridge';
 
 interface FakeDatabase {
@@ -117,6 +121,7 @@ describe('EvalRunBridge', () => {
               runId,
               plannedCaseIds: ['case-1'],
               config: {
+                ...UNKNOWN_EVAL_RUN_STAMP,
                 mode: 'real', model: 'test-model', provider: 'openai', scope: 'smoke',
                 maxCases: 1, concurrency: 1, gitCommit: 'abc', testCaseDir: '/private/cases',
               },
@@ -168,6 +173,8 @@ describe('EvalRunBridge', () => {
       completed: true,
       source: 'eval',
     });
+    const persistedConfig = JSON.parse(db.insertExperiment.mock.calls[0][0].config_json);
+    for (const key of EVAL_RUN_STAMP_KEYS) expect(persistedConfig).toHaveProperty(key);
     expect(spawnedEnv).toMatchObject({
       CODE_AGENT_EVAL_BRIDGE: '1',
       OS_SANDBOX_ENABLED: 'true',
@@ -229,6 +236,7 @@ describe('EvalRunBridge', () => {
           runId,
           plannedCaseIds: ['case-1'],
           config: {
+            ...UNKNOWN_EVAL_RUN_STAMP,
             mode: 'real', model: 'test-model', provider: 'openai', scope: 'smoke',
             maxCases: 1, concurrency: 1, gitCommit: 'abc', testCaseDir: '/private/cases',
           },
@@ -242,6 +250,44 @@ describe('EvalRunBridge', () => {
     await waitFor(() => !bridge.subscribe(runId).running);
 
     expect(published.at(-1)).toMatchObject({ type: 'error', runId });
+    expect(JSON.parse(db.updateExperimentSummary.mock.calls.at(-1)![1])).toMatchObject({
+      completed: false,
+      notRun: 1,
+    });
+  });
+
+  it('fails loudly and marks the run incomplete when a required run config is missing', async () => {
+    const db = fakeDatabase();
+    const published: EvalRunEvent[] = [];
+    const bridge = new EvalRunBridge({
+      inspectEnvironment: environment,
+      database: () => db as unknown as DatabaseService,
+      resolveModel: model,
+      publish: (_channel, event) => published.push(event as EvalRunEvent),
+      spawnProcess: (_command, args, options) => {
+        const runId = args[args.indexOf('--run-id') + 1];
+        const { promptVersion: _omitted, ...incompleteStamp } = UNKNOWN_EVAL_RUN_STAMP;
+        const line = JSON.stringify({
+          schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
+          type: 'run_start',
+          ts: Date.now(),
+          runId,
+          plannedCaseIds: ['case-1'],
+          config: {
+            ...incompleteStamp,
+            mode: 'real', model: 'test-model', provider: 'openai', scope: 'smoke',
+            maxCases: 1, concurrency: 1, gitCommit: 'abc', testCaseDir: '/private/cases',
+          },
+        });
+        return spawn(process.execPath, ['-e', `console.log(${JSON.stringify(line)})`], options) as ChildProcess;
+      },
+    });
+    bridges.push(bridge);
+
+    const { runId } = await bridge.startRun({ scope: 'smoke', maxCases: 1, ids: ['case-1'] });
+    await waitFor(() => !bridge.subscribe(runId).running);
+
+    expect(published.some((event) => event.type === 'error' && event.error.includes('promptVersion'))).toBe(true);
     expect(JSON.parse(db.updateExperimentSummary.mock.calls.at(-1)![1])).toMatchObject({
       completed: false,
       notRun: 1,

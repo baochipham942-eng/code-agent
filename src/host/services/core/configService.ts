@@ -140,7 +140,8 @@ function loadEnvFile(): void {
   for (const envPath of possiblePaths) {
     logger.debug('  -', envPath);
     try {
-      const result = dotenv.config({ path: envPath });
+      // eval-ci 的 --json-events stdout 是严格 NDJSON；dotenv 17 的默认宣传行会破坏协议首行。
+      const result = dotenv.config({ path: envPath, quiet: true });
       if (!result.error) {
         logger.info('Loaded .env from:', envPath);
         return;

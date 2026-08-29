@@ -15,7 +15,10 @@ import { withMemoryBackgroundGuidance } from '../../../memory/memoryContextGuida
 import { buildFailureJournalBlock } from '../../../lightMemory/failureJournal';
 import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../lightMemory/skillLoader';
 import { getRepoMap } from '../../../context/repoMap';
-import { getCompressionPipelineOverride } from '../../../context/compressionPipeline';
+import {
+  DEFAULT_COMPRESSION_PIPELINE_ENABLED,
+  getCompressionPipelineOverride,
+} from '../../../context/compressionPipeline';
 import { buildSessionMetadataBlock } from '../../../lightMemory/sessionMetadata';
 import { appendPinnedLibraryPromptBlock, getSessionPinFingerprint } from './libraryPins';
 import { injectRuntimeModelIdentity } from './runtimeModelIdentity';
@@ -878,7 +881,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
         0,
       );
 
-      const armEnabled = getCompressionPipelineOverride() ?? true;
+      const armEnabled = getCompressionPipelineOverride() ?? DEFAULT_COMPRESSION_PIPELINE_ENABLED;
       const pipelineResult = await ctx.runtime.compressionPipeline.evaluate(
         interventionAdjustedEntries.map((entry) => ({ ...entry })),
         nextCompressionState,

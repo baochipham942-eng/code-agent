@@ -7,6 +7,7 @@
 // ============================================================================
 
 import { describe, expect, it, vi } from 'vitest';
+import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 import { mkdtemp } from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -92,6 +93,7 @@ function makeSummary(results: TestResult[], averageScore: number): TestRunSummar
     invalidCases: 0,
     averageScore,
     results,
+    stamp: UNKNOWN_EVAL_RUN_STAMP,
     environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },
     performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
   };

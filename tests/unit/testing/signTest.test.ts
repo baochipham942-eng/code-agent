@@ -15,6 +15,7 @@ import os from 'os';
 import path from 'path';
 import type { AgentInterface } from '../../../src/host/testing/testRunner';
 import type { CompareConfiguration, TestCase, TestRunnerConfig } from '../../../src/host/testing/types';
+import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({
@@ -103,9 +104,14 @@ describe('接入 summary 与报告', () => {
     expect(result.summary.candidateWins).toBe(3);
     expect(result.summary.pValue).toBeCloseTo(0.25, 6);
 
-    const md = generateComparisonMarkdown(result);
+    const md = generateComparisonMarkdown(result, {
+      gitCommit: 'abc123',
+      baseline: UNKNOWN_EVAL_RUN_STAMP,
+      candidate: { ...UNKNOWN_EVAL_RUN_STAMP, promptVersion: 'candidate-v2' },
+    });
     expect(md).toMatch(/p ?[=值]/);
     expect(md).toContain('样本不足');
+    expect(md).toContain('| 提示词版本 | unknown | candidate-v2 |');
     const console_ = generateComparisonConsole(result);
     expect(console_).toContain('0.25');
   });

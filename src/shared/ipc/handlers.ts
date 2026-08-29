@@ -53,7 +53,13 @@ import { IPC_CHANNELS } from './legacy-channels';
 
 import type { AgentMessageRequest, AgentCancelRequest, SessionExport, SearchResult, MemoryContextResult, MemoryStats, MCPStatus, MCPTool, MCPResource, ConnectorStatusSummary, CacheStats, DataStats, TaskItemIpc, TaskListStateIpc, TaskListEventIpc, CrossSessionSearchOptions, CrossSessionSearchResults, SessionReviewItemsRequest, AgentTrajectoryQualitySummariesRequest, AgentTrajectoryCollectionUpdateRequest } from './types';
 import type { AdminReviewQueueItem } from '../contract/productClosure';
-import type { EvalExperimentDetail, EvalExperimentListItem } from '../contract/evaluation';
+import type {
+  EvalCaseListItem,
+  EvalExperimentDetail,
+  EvalExperimentListItem,
+  SaveEvalCaseRequest,
+  SaveEvalCaseResult,
+} from '../contract/evaluation';
 import type { AgentTrajectorySessionQualitySummary } from '../contract/agentTrajectory';
 
 // ----------------------------------------------------------------------------
@@ -391,6 +397,8 @@ export interface IpcInvokeHandlers {
   // Evaluation experiments（评测实验只读查询，评测中心「基准」tab）
   [IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS]: (payload?: { limit?: number }) => Promise<EvalExperimentListItem[]>;
   [IPC_CHANNELS.EVALUATION_LOAD_EXPERIMENT]: (experimentId: string) => Promise<EvalExperimentDetail | null>;
+  [IPC_CHANNELS.EVALUATION_LIST_CASES]: () => Promise<EvalCaseListItem[]>;
+  [IPC_CHANNELS.EVALUATION_SAVE_CASE]: (request: SaveEvalCaseRequest) => Promise<SaveEvalCaseResult>;
 
   // Background (后台任务)
   [IPC_CHANNELS.BACKGROUND_MOVE_TO_BACKGROUND]: (sessionId: string) => Promise<boolean>;

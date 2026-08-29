@@ -375,4 +375,8 @@ export const EVALUATION_CHANNELS = {
   LIST_EXPERIMENTS: 'evaluation:list-experiments',
   /** 只读加载单个实验 + 用例行（评测中心「基准」tab 回归对比用；裁剪 data_json 大字段） */
   LOAD_EXPERIMENT: 'evaluation:load-experiment',
+  /** 递归枚举题库展示面；仓库根目录由 host 决定。 */
+  LIST_CASES: 'evaluation:list-cases',
+  /** 新增本地草稿或原地归档题目。 */
+  SAVE_CASE: 'evaluation:save-case',
 } as const;

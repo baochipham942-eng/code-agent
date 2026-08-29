@@ -82,7 +82,7 @@ function validateRequest(value: unknown): EvalRunRequest {
   if (foundForbidden.length > 0) {
     throw new Error(`评测请求不接受这些字段：${foundForbidden.join(', ')}`);
   }
-  const allowed = new Set(['scope', 'maxCases', 'ids', 'tags', 'split', 'timeoutMs']);
+  const allowed = new Set(['scope', 'maxCases', 'ids', 'tags', 'split', 'timeoutMs', 'repeat']);
   const unknown = Object.keys(value).filter((key) => !allowed.has(key));
   if (unknown.length > 0) throw new Error(`评测请求包含未知字段：${unknown.join(', ')}`);
   if (value.scope !== 'smoke' && value.scope !== 'full') throw new Error('scope 必须是 smoke 或 full。');
@@ -105,6 +105,10 @@ function validateRequest(value: unknown): EvalRunRequest {
   if (timeoutMs !== undefined && (!Number.isInteger(timeoutMs) || (timeoutMs as number) <= 0)) {
     throw new Error('timeoutMs 必须是正整数。');
   }
+  const repeat = value.repeat;
+  if (repeat !== undefined && (!Number.isInteger(repeat) || (repeat as number) < 1 || (repeat as number) > 10)) {
+    throw new Error('repeat 必须是 1 到 10 的整数。');
+  }
   return {
     scope: value.scope,
     maxCases: value.maxCases as number,
@@ -112,6 +116,7 @@ function validateRequest(value: unknown): EvalRunRequest {
     tags: readStrings('tags'),
     split: split as EvalRunRequest['split'],
     timeoutMs: timeoutMs as number | undefined,
+    repeat: repeat as number | undefined,
   };
 }
 
@@ -208,6 +213,7 @@ export class EvalRunBridge {
       '--run-id', runId,
       '--scope', request.scope,
       '--max-cases', String(request.maxCases),
+      ...(request.repeat !== undefined ? ['--repeat', String(request.repeat)] : []),
       ...(request.ids?.length ? ['--ids', request.ids.join(',')] : []),
       ...(request.tags?.length ? ['--tags', request.tags.join(',')] : []),
       ...(request.split ? ['--split', request.split] : []),

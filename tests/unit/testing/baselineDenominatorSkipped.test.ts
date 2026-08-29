@@ -49,6 +49,8 @@ function makeSummary(results: TestResult[]): TestRunSummary {
     notRun: 0,
     invalidCases: 0,
     averageScore: 1,
+    aggregationRule: 'pass_rate_k1',
+    aggregationRuleVersion: 4,
     results,
     stamp: UNKNOWN_EVAL_RUN_STAMP,
     environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },
@@ -67,6 +69,8 @@ describe('baseline 分母排除 skipped（A 方案）', () => {
     await manager.save({
       version: 1,
       denominatorVersion: 4,
+      aggregationRule: 'pass_rate_k1',
+      aggregationRuleVersion: 4,
       plannedCaseIds: ['a', 'b'],
       updatedAt: 1,
       updatedBy: 'sha1',
@@ -149,6 +153,8 @@ describe('Gemini 审计 R1 修复', () => {
     await manager.save({
       version: 1,
       denominatorVersion: 4,
+      aggregationRule: 'pass_rate_k1',
+      aggregationRuleVersion: 4,
       plannedCaseIds: ['a', 'b'],
       updatedAt: 1,
       updatedBy: 'legacy',

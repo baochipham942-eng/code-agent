@@ -90,6 +90,7 @@ export class EvalRunEventStream {
           ...(event.result.trials ? { trials: event.result.trials.length } : {}),
           ...(event.result.sessionId ? { sessionId: event.result.sessionId } : {}),
           ...(event.result.scoreAuthority ? { scoreAuthority: event.result.scoreAuthority } : {}),
+          ...(event.result.trialAggregate ? { trialAggregate: event.result.trialAggregate } : {}),
         });
         break;
       case 'tool_call':
@@ -175,6 +176,10 @@ export class EvalRunEventStream {
             ...(summary.abortReason ? { abortReason: summary.abortReason } : {}),
             ...(summary.unstableCaseCount !== undefined ? { unstableCaseCount: summary.unstableCaseCount } : {}),
             ...(summary.averageStdDev !== undefined ? { averageStdDev: summary.averageStdDev } : {}),
+            ...(summary.aggregationRule ? { aggregationRule: summary.aggregationRule } : {}),
+            ...(summary.aggregationRuleVersion !== undefined
+              ? { aggregationRuleVersion: summary.aggregationRuleVersion }
+              : {}),
             ...(summary.dataset ? { dataset: summary.dataset } : {}),
           }
         : {

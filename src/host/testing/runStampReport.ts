@@ -66,7 +66,7 @@ export function getRunStampReportRows(stamp: EvalRunStamp): Array<[string, strin
     ['评测集', formatEvalSet(stamp)],
     ['打分器', formatScorers(stamp)],
     ['每题跑几次', String(stamp.k)],
-    ['通过率口径版本', String(stamp.aggregationRuleVersion)],
+    ['计分规则版本', String(stamp.aggregationRuleVersion)],
     ['提示词版本', stamp.promptVersion],
     ['本轮形态', formatShape(stamp)],
     ['与生产默认的差异', stamp.divergesFromProduction.length

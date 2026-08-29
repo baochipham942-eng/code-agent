@@ -104,6 +104,7 @@ describe('EvalRunBridge', () => {
     const db = fakeDatabase();
     const published: EvalRunEvent[] = [];
     let spawnedEnv: NodeJS.ProcessEnv | undefined;
+    let spawnedArgs: readonly string[] = [];
     const bridge = new EvalRunBridge({
       inspectEnvironment: environment,
       database: () => db as unknown as DatabaseService,
@@ -111,6 +112,7 @@ describe('EvalRunBridge', () => {
       publish: (_channel, event) => published.push(event as EvalRunEvent),
       spawnProcess: (_command, args, options) => {
         spawnedEnv = options.env;
+        spawnedArgs = args;
         const script = eventScript(args, (runId) => {
           const started = Date.now();
           return [
@@ -135,6 +137,10 @@ describe('EvalRunBridge', () => {
               status: 'passed',
               score: 1,
               durationMs: 5,
+              trials: 3,
+              trialAggregate: {
+                n: 3, c: 3, passAtK: 1, passCaretK: 1, rule: 'pass_caret_k',
+              },
               responses: ['ok'],
               toolExecutions: [],
               errors: [],
@@ -162,7 +168,7 @@ describe('EvalRunBridge', () => {
     });
     bridges.push(bridge);
 
-    const { runId } = await bridge.startRun({ scope: 'smoke', maxCases: 1, ids: ['case-1'] });
+    const { runId } = await bridge.startRun({ scope: 'smoke', maxCases: 1, ids: ['case-1'], repeat: 3 });
     await waitFor(() => !bridge.subscribe(runId).running);
 
     expect(published.map((event) => event.type)).toEqual(['run_start', 'case_end', 'run_end']);
@@ -178,6 +184,10 @@ describe('EvalRunBridge', () => {
     expect(spawnedEnv).toMatchObject({
       CODE_AGENT_EVAL_BRIDGE: '1',
       OS_SANDBOX_ENABLED: 'true',
+    });
+    expect(spawnedArgs).toEqual(expect.arrayContaining(['--repeat', '3']));
+    expect(JSON.parse(db.insertExperimentCases.mock.calls[0][1][0].data_json)).toMatchObject({
+      trialAggregate: { n: 3, c: 3, passAtK: 1, passCaretK: 1, rule: 'pass_caret_k' },
     });
   });
 
@@ -309,6 +319,9 @@ describe('EvalRunBridge', () => {
     await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, provider: 'openai' })).rejects.toThrow(/provider/);
     await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, apiKey: 'secret' })).rejects.toThrow(/apiKey/);
     await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, workingDirectory: '/tmp' })).rejects.toThrow(/workingDirectory/);
+    await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, repeat: 0 })).rejects.toThrow(/repeat/);
+    await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, repeat: 11 })).rejects.toThrow(/repeat/);
+    await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, repeat: 1.5 })).rejects.toThrow(/repeat/);
     expect(spawnProcess).not.toHaveBeenCalled();
   });
 

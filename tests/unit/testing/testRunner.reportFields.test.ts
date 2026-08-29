@@ -124,6 +124,36 @@ describe('testRunner report fields', () => {
     expect(summary.results[0].followUpPrompts).toEqual(['blocked follow up']);
   });
 
+  it('keeps mock-excluded repeated cases skipped instead of counting them as failures', async () => {
+    const { runner, agent } = await createRunner([
+      'name: repeated-mock-excluded',
+      'cases:',
+      '  - id: task-analyze-structure',
+      '    type: task',
+      '    description: real-only mock case',
+      '    prompt: inspect a real repository',
+      '    expect:',
+      '      response_contains: [response]',
+      '',
+    ].join('\n'), { trialsPerCase: 2 });
+    agent.usesMockEvalPolicy = () => true;
+
+    const summary = await runner.runAll();
+
+    expect(summary).toMatchObject({
+      passed: 0,
+      failed: 0,
+      skipped: 1,
+      mockExcluded: 1,
+      aggregationRule: 'pass_caret_k',
+    });
+    expect(summary.results[0]).toMatchObject({
+      status: 'skipped',
+      mockExcluded: { reason: expect.any(String) },
+      trials: [{ status: 'skipped' }, { status: 'skipped' }],
+    });
+  });
+
   it('rejects parallel maxParallel greater than 1 without an agentFactory', async () => {
     const { runner, agent, events } = await createRunner([
       'name: serial-only',

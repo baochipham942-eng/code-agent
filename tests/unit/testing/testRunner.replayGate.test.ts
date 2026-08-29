@@ -460,10 +460,21 @@ describe('TestRunner real-agent-run replay gate', () => {
 
       expect(summary.passed).toBe(0);
       expect(summary.failed).toBe(1);
+      expect(summary).toMatchObject({
+        aggregationRule: 'pass_caret_k',
+        aggregationRuleVersion: 4,
+      });
       expect(result.status).toBe('failed');
       expect(result.score).toBe(0);
       expect(result.failureReason).toContain('real-agent-run gate failed');
       expect(result.trials).toHaveLength(3);
+      expect(result.trialAggregate).toEqual({
+        n: 3,
+        c: 2,
+        passAtK: 1,
+        passCaretK: 0,
+        rule: 'pass_caret_k',
+      });
       expect(result.trials?.[0]).toMatchObject({
         status: 'failed',
         sessionId: 'session-gate-fail',

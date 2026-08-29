@@ -272,6 +272,8 @@ function summary(results: TestResult[]): TestRunSummary {
     notRun: results.filter((item) => item.status === 'not_run').length,
     invalidCases: results.filter((item) => item.invalid).length,
     averageScore: 1,
+    aggregationRule: 'pass_rate_k1',
+    aggregationRuleVersion: 4,
     results,
     stamp: UNKNOWN_EVAL_RUN_STAMP,
     environment: { provider: 'openai', model: 'model', workingDirectory: '/tmp' },
@@ -329,6 +331,8 @@ describe('设基准硬门与旧规则', () => {
     await manager.save({
       version: 1,
       denominatorVersion: 4,
+      aggregationRule: 'pass_rate_k1',
+      aggregationRuleVersion: 4,
       plannedCaseIds: ['case-1', 'case-2'],
       updatedAt: 1,
       updatedBy: 'baseline',

@@ -13,7 +13,8 @@ import { describeChildExit, isChildGone } from './childProcessState';
 const port = Number(process.env.WEB_PORT || 8196);
 const baseUrl = `http://127.0.0.1:${port}`;
 const nonce = process.env.WORKBUDDY_E2E_NONCE || `NEO_WORKBUDDY_${Date.now()}`;
-const requestedModel = 'client_default';
+// 2026-08-29：默认仍用 CLI 客户端默认模型；WORKBUDDY_E2E_MODEL 可指定（如 hy4-preview——免费档，避免撞企业付费额度 429）。
+const requestedModel = process.env.WORKBUDDY_E2E_MODEL || 'client_default';
 const workspace = process.cwd();
 
 interface DomainResponse<T> {
@@ -131,14 +132,19 @@ async function main(): Promise<void> {
   const selected = await domain<{ kind?: string; model?: string }>('agentEngine', 'select', {
     sessionId,
     kind: 'codebuddy_code',
+    ...(requestedModel !== 'client_default' ? { model: requestedModel } : {}),
     permissionProfile: 'read_only',
     workingDirectory: workspace,
   });
   if (selected.kind !== 'codebuddy_code') {
     throw new Error(`Engine selection did not persist WorkBuddy: ${JSON.stringify(selected)}`);
   }
-  if (selected.model && selected.model !== requestedModel) {
-    throw new Error(`WorkBuddy unexpectedly persisted an unverified model: ${JSON.stringify(selected)}`);
+  if (requestedModel === 'client_default') {
+    if (selected.model && selected.model !== requestedModel) {
+      throw new Error(`WorkBuddy unexpectedly persisted an unverified model: ${JSON.stringify(selected)}`);
+    }
+  } else if (selected.model !== requestedModel) {
+    throw new Error(`WorkBuddy did not persist the requested model: ${JSON.stringify(selected)}`);
   }
 
   const response = await fetch(`${baseUrl}/api/run`, {
@@ -212,7 +218,7 @@ async function main(): Promise<void> {
       binaryPath: source.binaryPath,
     },
     selectedEngine: selected,
-    modelSelection: 'client_default',
+    modelSelection: requestedModel === 'client_default' ? 'client_default' : 'explicit',
     requestedModel,
     sessionId,
     nonce,

@@ -30,6 +30,7 @@ const env = vi.hoisted(() => ({
   tmeetConnect: vi.fn(),
   tmeetCancelConnect: vi.fn(),
   tmeetDisconnect: vi.fn(),
+  openExternal: vi.fn(),
 }));
 
 vi.mock('../../../src/host/connectors/feishu/larkCli', () => ({
@@ -51,7 +52,7 @@ vi.mock('../../../src/host/connectors/tmeet/tmeetCli', () => ({
 }));
 
 vi.mock('../../../src/host/platform/nativeShell', () => ({
-  openExternal: vi.fn(),
+  openExternal: env.openExternal,
 }));
 
 vi.mock('../../../src/host/connectors/oauth/connectorOAuthStore', () => ({
@@ -107,6 +108,7 @@ beforeEach(() => {
   env.tmeetConnect.mockReset().mockResolvedValue({ alreadyConnected: false });
   env.tmeetCancelConnect.mockReset();
   env.tmeetDisconnect.mockReset();
+  env.openExternal.mockReset();
 });
 
 describe('connector.ipc SaaS OAuth actions', () => {
@@ -127,6 +129,16 @@ describe('connector.ipc SaaS OAuth actions', () => {
         connected: false,
         loopbackRedirectUriSupport: 'confirmed',
         authMode: 'lark-cli',
+      },
+      {
+        id: 'google-calendar',
+        displayName: 'Google Calendar',
+        clientIdConfigured: false,
+        requiresClientSecret: false,
+        clientSecretConfigured: false,
+        connected: false,
+        loopbackRedirectUriSupport: 'confirmed',
+        authMode: 'oauth',
       },
       {
         id: 'tmeet',
@@ -173,7 +185,7 @@ describe('connector.ipc SaaS OAuth actions', () => {
 
     const response = await handler(null, { action: 'oauthStatus' } as IPCRequest);
 
-    expect((response.data as Array<Record<string, unknown>>)[1]).toMatchObject({
+    expect((response.data as Array<Record<string, unknown>>)[2]).toMatchObject({
       connected: false,
       stale: true,
     });
@@ -271,7 +283,7 @@ describe('connector.ipc SaaS OAuth actions', () => {
 
     await vi.waitFor(() => expect(env.tmeetConnect).toHaveBeenCalledOnce());
     const during = await handler(null, { action: 'oauthStatus' } as IPCRequest);
-    expect((during.data as Array<Record<string, unknown>>)[1]).toMatchObject({
+    expect((during.data as Array<Record<string, unknown>>)[2]).toMatchObject({
       authMode: 'tmeet-cli',
       connected: false,
       step: 1,
@@ -324,6 +336,23 @@ describe('connector.ipc SaaS OAuth actions', () => {
     expect(response.success).toBe(false);
     expect(response.error?.message).toContain('notion');
     expect(env.invalidate).not.toHaveBeenCalled();
+  });
+
+  it('reports the missing Google client credential before opening a browser', async () => {
+    const handler = register();
+    const response = await handler(null, {
+      action: 'oauthConnect',
+      payload: { providerId: 'google-calendar', action: 'calendar.events', authMode: 'oauth' },
+    } as IPCRequest);
+
+    expect(response).toMatchObject({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Connector OAuth clientId is not configured for google-calendar',
+      },
+    });
+    expect(env.openExternal).not.toHaveBeenCalled();
   });
 });
 

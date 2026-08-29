@@ -348,12 +348,13 @@ export const enSettingsSystem = {
     },
     saasConnectors: {
       title: 'SaaS connectors',
-      description: 'Connect SaaS accounts such as Feishu and manage authorization plus app credentials saved on this device.',
+      description: 'Connect SaaS accounts such as Feishu and Google Calendar, and manage authorization plus app credentials saved on this device.',
       kind: 'SaaS',
       loading: 'Loading…',
       empty: 'This build has no available SaaS connectors.',
       providers: {
         feishu: 'Feishu',
+        googleCalendar: 'Google Calendar',
         tmeet: 'Tencent Meeting',
       },
       badges: {
@@ -369,6 +370,7 @@ export const enSettingsSystem = {
       },
       capabilities: {
         feishu: 'Send meeting notes, weekly updates, and progress reminders to Feishu groups as yourself without leaving Neo.',
+        googleCalendar: 'Authorize Neo for Google Calendar events. This slice establishes the connection only; chat tools and Gmail are excluded.',
         tmeet: 'List upcoming and in-progress Tencent Meetings or create a new meeting from Neo.',
       },
       idPrefix: 'id: ',
@@ -414,6 +416,9 @@ export const enSettingsSystem = {
         connected: 'Feishu connected',
         disconnected: 'Feishu disconnected',
         authorizationCancelled: 'Feishu authorization cancelled',
+        googleCalendarAuthorizationOpened: 'Google Calendar authorization opened in your system browser. You will return to Neo automatically when it is complete…',
+        googleCalendarConnected: 'Google Calendar connected',
+        googleCalendarDisconnected: 'Google Calendar disconnected',
         tmeetAuthorizationOpened: 'Tencent Meeting authorization opened in your system browser. Complete authorization there…',
         tmeetAlreadyConnected: 'Tencent Meeting CLI is already signed in and connected directly',
         tmeetConnected: 'Tencent Meeting connected',
@@ -426,6 +431,10 @@ export const enSettingsSystem = {
           'Send today’s meeting notes to the Feishu group [Product Weekly], @-mentioning the three leads at the top.',
           'Every Friday at 5pm, summarize what you did for me this week and post it to the Feishu group [Product Weekly].',
           'I’ve finished this draft. Post the summary to the Feishu group [Project Updates] with a note on which section to read.',
+        ],
+        googleCalendar: [
+          'Confirm on Google’s consent screen that Neo requests Calendar event access only.',
+          'After authorization, review the connection status here or disconnect it.',
         ],
         tmeet: [
           'List my upcoming and in-progress Tencent Meetings for today.',

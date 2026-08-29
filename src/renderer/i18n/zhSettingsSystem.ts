@@ -350,12 +350,13 @@ export const zhSettingsSystem = {
     },
     saasConnectors: {
       title: 'SaaS 连接器',
-      description: '连接飞书等 SaaS 账号，管理授权状态和本机保存的应用凭证。',
+      description: '连接飞书、Google Calendar 等 SaaS 账号，管理授权状态和本机保存的应用凭证。',
       kind: 'SaaS',
       loading: '加载中…',
       empty: '当前包没有可用的 SaaS 连接器。',
       providers: {
         feishu: '飞书',
+        googleCalendar: 'Google Calendar',
         tmeet: '腾讯会议',
       },
       badges: {
@@ -371,6 +372,7 @@ export const zhSettingsSystem = {
       },
       capabilities: {
         feishu: '以你的身份给飞书群发消息：会议纪要、周报和进展提醒，说完就发，不用切出 Neo。',
+        googleCalendar: '授权 Neo 访问 Google Calendar 日历事件；当前切片只建立连接，不包含会话工具或 Gmail。',
         tmeet: '查看待开始和进行中的腾讯会议，或在 Neo 中创建一场新会议。',
       },
       idPrefix: 'id: ',
@@ -416,6 +418,9 @@ export const zhSettingsSystem = {
         connected: '飞书已连接',
         disconnected: '飞书已断开',
         authorizationCancelled: `${outcomeWordsZh.outcomeWords['cancelled-by-user'].badge.label}飞书授权`,
+        googleCalendarAuthorizationOpened: '已在系统浏览器打开 Google Calendar 授权页，完成授权后会自动回到 Neo…',
+        googleCalendarConnected: 'Google Calendar 已连接',
+        googleCalendarDisconnected: 'Google Calendar 已断开',
         tmeetAuthorizationOpened: '已在系统浏览器打开腾讯会议授权页，请完成授权…',
         tmeetAlreadyConnected: '腾讯会议 CLI 已登录，已直接接通',
         tmeetConnected: '腾讯会议已连接',
@@ -428,6 +433,10 @@ export const zhSettingsSystem = {
           '把今天的会议纪要发到飞书群【产品周会】，开头 @ 三位负责人。',
           '每周五 17:00 把这周你让我做的事汇总成周报，发到飞书群【产品周会】。',
           '我改完这版方案了，把摘要发到飞书群【项目同步】，附一句要大家看哪一节。',
+        ],
+        googleCalendar: [
+          '在 Google 同意屏确认 Neo 只请求日历事件权限。',
+          '完成授权后可在此查看连接状态或断开授权。',
         ],
         tmeet: [
           '列出我今天待开始和进行中的腾讯会议。',

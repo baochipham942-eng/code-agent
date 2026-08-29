@@ -63,6 +63,7 @@ type SaaSConnectorsText = ReturnType<typeof useI18n>['t']['settings']['saasConne
 
 const CONNECT_ACTION_BY_PROVIDER: Readonly<Record<string, string>> = {
   feishu: 'message.send-as-user',
+  'google-calendar': 'calendar.events',
   tmeet: 'meeting.create',
 };
 
@@ -191,12 +192,34 @@ function resolveProviderState(status: ConnectorOAuthProviderStatus): ProviderPre
 
 function getProviderName(status: ConnectorOAuthProviderStatus, text: SaaSConnectorsText): string {
   if (status.id === 'feishu') return text.providers.feishu;
+  if (status.id === 'google-calendar') return text.providers.googleCalendar;
   if (status.id === 'tmeet') return text.providers.tmeet;
   return status.displayName;
 }
 
 function getProviderCapability(status: ConnectorOAuthProviderStatus, text: SaaSConnectorsText): string {
+  if (status.id === 'google-calendar') return text.capabilities.googleCalendar;
   return status.id === 'tmeet' ? text.capabilities.tmeet : text.capabilities.feishu;
+}
+
+function getAuthorizationOpenedText(providerId: string, text: SaaSConnectorsText): string {
+  return providerId === 'google-calendar'
+    ? text.toast.googleCalendarAuthorizationOpened
+    : text.toast.authorizationOpened;
+}
+
+function getConnectedText(providerId: string, text: SaaSConnectorsText): string {
+  return providerId === 'google-calendar' ? text.toast.googleCalendarConnected : text.toast.connected;
+}
+
+function getDisconnectedText(providerId: string, text: SaaSConnectorsText): string {
+  if (providerId === 'google-calendar') return text.toast.googleCalendarDisconnected;
+  return providerId === 'tmeet' ? text.toast.tmeetDisconnected : text.toast.disconnected;
+}
+
+function getTryItExamples(status: ConnectorOAuthProviderStatus, text: SaaSConnectorsText): string[] {
+  if (status.id === 'google-calendar') return text.tryIt.googleCalendar;
+  return status.id === 'tmeet' ? text.tryIt.tmeet : text.tryIt.feishu;
 }
 
 function getCliConnectLabel(status: ConnectorOAuthProviderStatus, text: SaaSConnectorsText): string {
@@ -381,7 +404,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
     setError(null);
     setReceipt(providerId === 'tmeet'
       ? null
-      : { kind: 'info', text: text.toast.authorizationOpened });
+      : { kind: 'info', text: getAuthorizationOpenedText(providerId, text) });
     if (isCliAuthMode(authMode)) {
       setStatuses((current) => current.map((status) => status.id === providerId
         ? { ...status, step: 1, blocked: false }
@@ -406,7 +429,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
           ? isRecord(connectResult) && connectResult.alreadyConnected === true
             ? text.toast.tmeetAlreadyConnected
             : text.toast.tmeetConnected
-          : text.toast.connected,
+          : getConnectedText(providerId, text),
       });
     } catch (caught) {
       setReceipt(null);
@@ -499,7 +522,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
       await refresh();
       setReceipt({
         kind: 'success',
-        text: providerId === 'tmeet' ? text.toast.tmeetDisconnected : text.toast.disconnected,
+        text: getDisconnectedText(providerId, text),
       });
       setActiveProviderId(null);
       setCustomAppOpen(false);
@@ -547,7 +570,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
       )}
 
       {loading && statuses.length === 0 ? (
-        ['feishu', 'tmeet'].map((providerId) => (
+        ['feishu', 'google-calendar', 'tmeet'].map((providerId) => (
           <div
             key={providerId}
             className="min-h-36 animate-pulse rounded-xl border border-zinc-700 bg-zinc-900/60 p-4"
@@ -685,7 +708,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
               {presentation.detail || getProviderCapability(status, text)}
             </p>
 
-            {state === 'connected' && (
+            {state === 'connected' && status.id !== 'google-calendar' && (
               <Button
                 size="sm"
                 variant="primary"
@@ -957,7 +980,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
               <div className="border-t border-zinc-700 pt-3">
                 <div className="text-[11px] font-medium text-zinc-400">{text.tryIt.title}</div>
                 <ul className="mt-2 space-y-2 text-xs leading-relaxed text-zinc-300">
-                  {(activeStatus.id === 'tmeet' ? text.tryIt.tmeet : text.tryIt.feishu)
+                  {getTryItExamples(activeStatus, text)
                     .map((example) => <li key={example}>{example}</li>)}
                 </ul>
               </div>

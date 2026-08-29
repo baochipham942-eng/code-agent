@@ -1016,6 +1016,7 @@ export class FeishuChannel extends BaseChannelPlugin {
         this.auditIngress(ingress, msg.chat_id, senderId);
         this.emit('pairing_request', {
           accountId: this._accountId,
+          accountScopeId: `${this.platform}:${this.feishuConfig?.appId ?? this._accountId}`,
           channelType: this.platform,
           senderId,
           senderName: sender.sender_id.user_id || senderId,

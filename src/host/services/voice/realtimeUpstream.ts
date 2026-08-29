@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createLogger } from '../infra/logger';
+import { shouldRefusePackagedDevMode } from '../../../shared/security/packagedDevModeGuard';
 
 const logger = createLogger('RealtimeVoice');
 
@@ -25,9 +26,12 @@ export interface UpstreamEvent {
  * 拦截代理转发。双门控——只在 dev API 开启时认 override，生产/普通用户永远走真实上游；
  * 原 URL 的 query（model 等）由代理侧合并，这里只换 origin+path。
  */
-export function resolveUpstreamUrlOverride(realUrl: string): string {
-  if (process.env.CODE_AGENT_ENABLE_DEV_API !== 'true') return realUrl;
-  const override = process.env.CODE_AGENT_VOICE_UPSTREAM_URL_OVERRIDE;
+export function resolveUpstreamUrlOverride(
+  realUrl: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  if (shouldRefusePackagedDevMode(env) || env.CODE_AGENT_ENABLE_DEV_API !== 'true') return realUrl;
+  const override = env.CODE_AGENT_VOICE_UPSTREAM_URL_OVERRIDE;
   if (!override) return realUrl;
   const query = realUrl.includes('?') ? realUrl.slice(realUrl.indexOf('?')) : '';
   logger.warn('voice upstream URL override active (dev only)', { override });

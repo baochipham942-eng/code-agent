@@ -11,6 +11,7 @@ import type {
 } from './turnQuality';
 
 export const EVAL_RUN_EVENT_SCHEMA_VERSION = 2 as const;
+export const EVAL_REPEAT_MAX = 10;
 
 export interface EvalRunStamp {
   caseBankSha: string;

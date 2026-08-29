@@ -49,6 +49,30 @@ describe('aggregateTrials', () => {
       trial('infra_excluded'),
     ], 2)).toMatchObject({ status: 'infra_excluded', trialCount: 0, passCount: 0 });
   });
+
+  it('does not count an invalid passing trial in c', () => {
+    expect(aggregateTrials([
+      trial('passed'),
+      { ...trial('passed'), invalid: { reason: 'usage_unavailable' as const } },
+    ], 2)).toMatchObject({
+      status: 'failed',
+      trialCount: 2,
+      passCount: 1,
+      passCaretK: 0,
+    });
+  });
+
+  it('reports c=0 when every passing trial is invalid', () => {
+    expect(aggregateTrials([
+      { ...trial('passed'), invalid: { reason: 'usage_unavailable' as const } },
+      { ...trial('passed'), invalid: { reason: 'usage_unavailable' as const } },
+    ], 2)).toMatchObject({
+      status: 'failed',
+      trialCount: 2,
+      passCount: 0,
+      passCaretK: 0,
+    });
+  });
 });
 
 describe('correctedSampleStats', () => {

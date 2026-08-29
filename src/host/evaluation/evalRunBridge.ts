@@ -10,6 +10,7 @@ import type {
   EvalRunStartResult,
 } from '../../shared/contract/evaluation';
 import {
+  EVAL_REPEAT_MAX,
   EVAL_RUN_EVENT_SCHEMA_VERSION,
   UNKNOWN_EVAL_RUN_STAMP,
 } from '../../shared/contract/evaluation';
@@ -106,8 +107,8 @@ function validateRequest(value: unknown): EvalRunRequest {
     throw new Error('timeoutMs 必须是正整数。');
   }
   const repeat = value.repeat;
-  if (repeat !== undefined && (!Number.isInteger(repeat) || (repeat as number) < 1 || (repeat as number) > 10)) {
-    throw new Error('repeat 必须是 1 到 10 的整数。');
+  if (repeat !== undefined && (!Number.isInteger(repeat) || (repeat as number) < 1 || (repeat as number) > EVAL_REPEAT_MAX)) {
+    throw new Error(`repeat 必须是 1 到 ${EVAL_REPEAT_MAX} 的整数。`);
   }
   return {
     scope: value.scope,

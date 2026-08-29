@@ -41,11 +41,14 @@ function isPassingTrial(trial: TrialLike): boolean {
 export function aggregateTrials(trials: TrialLike[], k: number): AggregatedTrials {
   validateK(k);
   const observed = trials.filter((trial) => trial.status !== 'infra_excluded');
-  if (observed.length === 0) {
+  // All requested attempts completed, so an n < k gap here can only come from infra exclusions.
+  // The case carries no comparable capability result; an actually short run still throws below.
+  if (observed.length < k && trials.length >= k) {
+    const passCount = observed.filter(isPassingTrial).length;
     return {
       status: 'infra_excluded',
-      passCount: 0,
-      trialCount: 0,
+      passCount,
+      trialCount: observed.length,
       passAtK: 0,
       passCaretK: 0,
       unstable: false,

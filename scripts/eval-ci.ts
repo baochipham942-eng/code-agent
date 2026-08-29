@@ -77,6 +77,7 @@ import {
 } from './lib/eval-cost-estimate';
 import { EVAL_AGENT_DEFAULTS } from '../src/host/testing/agentAdapter';
 import { EVAL_GOAL_ALLOW_SWARM } from '../src/host/testing/goalContractEval';
+import { EVAL_REPEAT_MAX } from '../src/shared/contract/evaluation';
 
 /** roadmap 2.4 A/B 归因（audit D-R3）：当前 run 的 provider 变体臂 */
 function providerVariantArm(): 'variant-on' | 'variant-off' {
@@ -209,8 +210,8 @@ function parseArgs(argv: string[]) {
     console.error(chalk.red('Invalid --run-id value: id must not be empty.'));
     process.exit(1);
   }
-  if (!Number.isInteger(repeat) || repeat < 1) {
-    console.error(chalk.red('Invalid --repeat value: must be a positive integer.'));
+  if (!Number.isInteger(repeat) || repeat < 1 || repeat > EVAL_REPEAT_MAX) {
+    console.error(chalk.red(`Invalid --repeat value: must be an integer from 1 to ${EVAL_REPEAT_MAX}.`));
     process.exit(1);
   }
 

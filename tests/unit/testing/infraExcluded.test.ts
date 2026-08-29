@@ -8,6 +8,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
+import fs from 'node:fs';
 import { mkdir, mkdtemp, writeFile, readFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -15,7 +16,8 @@ import { TestRunner, type AgentInterface } from '../../../src/host/testing/testR
 import { generateMarkdownReport } from '../../../src/host/testing/reportGenerator';
 import { BaselineManager } from '../../../src/host/testing/ci/baselineManager';
 import { ExperimentAdapter } from '../../../src/host/evaluation/experimentAdapter';
-import type { TestResult, TestRunSummary } from '../../../src/host/testing/types';
+import type { TestEvent, TestResult, TestRunSummary } from '../../../src/host/testing/types';
+import { EvalRunEventStream, type EvalRunStartConfig } from '../../../scripts/lib/eval-run-event-stream';
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({
@@ -36,7 +38,10 @@ const SUITE_YAML = [
   '',
 ].join('\n');
 
-async function runWith(agent: AgentInterface, opts: { timeout?: number } = {}): Promise<TestRunSummary> {
+async function runWith(
+  agent: AgentInterface,
+  opts: { timeout?: number; trialsPerCase?: number; events?: TestEvent[] } = {},
+): Promise<TestRunSummary> {
   const root = await mkdtemp(path.join(os.tmpdir(), 'code-agent-infra-excluded-'));
   const casesDir = path.join(root, 'cases');
   await mkdir(casesDir, { recursive: true });
@@ -52,7 +57,12 @@ async function runWith(agent: AgentInterface, opts: { timeout?: number } = {}): 
     parallel: false,
     maxParallel: 1,
     enableEvalCritic: false,
+    trialsPerCase: opts.trialsPerCase,
   }, agent);
+
+  if (opts.events) {
+    runner.addEventListener((event) => opts.events?.push(event));
+  }
 
   return runner.runAll();
 }
@@ -113,6 +123,72 @@ describe('testRunner infra 分流', () => {
 
     expect(summary.results[0].status).toBe('failed');
     expect(summary.infraExcluded ?? 0).toBe(0);
+  });
+
+  it('k=3 混入一次环境故障时题级排除且轮次正常结束', async () => {
+    let call = 0;
+    const events: TestEvent[] = [];
+    const summary = await runWith(agentWith(async () => {
+      call += 1;
+      if (call === 1) throw new Error('503 Service Unavailable');
+      return { responses: ['ok'], toolExecutions: [], turnCount: 1, errors: [] };
+    }), { trialsPerCase: 3, events });
+
+    expect(summary).toMatchObject({
+      completed: true,
+      passed: 0,
+      failed: 0,
+      infraExcluded: 1,
+    });
+    expect(summary.results[0]).toMatchObject({
+      status: 'infra_excluded',
+      trialAggregate: {
+        n: 2,
+        c: 2,
+        passAtK: 0,
+        passCaretK: 0,
+        rule: 'pass_caret_k',
+      },
+    });
+    expect(events.at(-1)).toMatchObject({ type: 'suite_end' });
+    expect(generateMarkdownReport(summary)).toContain('不计入主指标（环境故障）');
+
+    let ndjson = '';
+    const writeSpy = vi.spyOn(fs, 'writeSync').mockImplementation(((fd: number, data: string) => {
+      if (fd === process.stdout.fd) ndjson += data;
+      return Buffer.byteLength(data);
+    }) as typeof fs.writeSync);
+    const stream = new EvalRunEventStream('infra-repeat-run');
+    const eventConfig: EvalRunStartConfig = {
+      ...UNKNOWN_EVAL_RUN_STAMP,
+      k: 3,
+      aggregationRuleVersion: 4,
+      mode: 'mock',
+      model: 'mock-model',
+      provider: 'mock',
+      scope: 'smoke',
+      maxCases: 1,
+      concurrency: 1,
+      gitCommit: 'test-sha',
+      testCaseDir: '/tmp/test-cases',
+    };
+    try {
+      events.forEach((event) => stream.forward(event, eventConfig));
+      stream.recordSummary(summary);
+      stream.finish(0);
+    } finally {
+      writeSpy.mockRestore();
+    }
+    const protocolEvents = ndjson.trim().split('\n').map((line) => JSON.parse(line));
+    expect(protocolEvents.at(-1)).toMatchObject({
+      type: 'run_end',
+      exitCode: 0,
+      summary: {
+        completed: true,
+        infraExcluded: 1,
+        aggregationRule: 'pass_caret_k',
+      },
+    });
   });
 
   it('avgScore 分母排除 infra 桶', async () => {

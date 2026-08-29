@@ -63,6 +63,12 @@ export const EVAL_RUN_STAMP_KEYS = [
   'estimatedCostUsd',
 ] as const satisfies readonly (keyof EvalRunStamp)[];
 
+// 穷尽性守卫（2026-08-29 Grok 变异席抓出：`satisfies` 只保证元素合法，不保证接口每个 key 都在表里，
+// 删掉 'k' 整套仍绿）。接口新增字段而没进 KEYS ⇒ 这里编译红。
+type MissingEvalRunStampKey = Exclude<keyof EvalRunStamp, (typeof EVAL_RUN_STAMP_KEYS)[number]>;
+const _evalRunStampKeysExhaustive: MissingEvalRunStampKey extends never ? true : never = true;
+void _evalRunStampKeysExhaustive;
+
 /** Explicit fallback for a run that died before it could announce its configuration. */
 export const UNKNOWN_EVAL_RUN_STAMP: EvalRunStamp = {
   caseBankSha: 'unknown',

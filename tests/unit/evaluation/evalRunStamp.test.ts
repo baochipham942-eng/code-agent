@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   EVAL_RUN_STAMP_KEYS,
+  UNKNOWN_EVAL_RUN_STAMP,
   type EvalRunStamp,
 } from '../../../src/shared/contract/evaluation';
 import { MODEL_PRICING_PER_1M } from '../../../src/shared/constants/pricing';
@@ -65,6 +66,10 @@ function stampOptions(
 }
 
 describe('eval run stamp', () => {
+
+  it('EVAL_RUN_STAMP_KEYS is exhaustive over EvalRunStamp (2026-08-29 Grok 变异席盲区：删 k 仍绿)', () => {
+    expect([...EVAL_RUN_STAMP_KEYS].sort()).toEqual(Object.keys(UNKNOWN_EVAL_RUN_STAMP).sort());
+  });
   it('records every required key and tracks case-bank dirtiness and external directories', async () => {
     const { root, caseDir } = await createGitRepo();
     const clean = buildRunStamp(stampOptions(root, caseDir));

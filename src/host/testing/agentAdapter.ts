@@ -27,6 +27,12 @@ import path from 'node:path';
 
 const logger = createLogger('AgentAdapter');
 
+export const EVAL_AGENT_DEFAULTS = {
+  persistLongTermMemory: false,
+  includeRecentConversations: false,
+  skills: [] as readonly string[],
+} as const;
+
 type EvaluationSignal =
   | { type: 'skill_activated'; testId: string; name: string }
   | { type: 'memory_injected'; testId: string; id: string }
@@ -407,10 +413,12 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.harness = config.harness;
     this.systemPromptOverride = config.systemPromptOverride;
     this.requestPermission = config.requestPermission;
-    this.persistLongTermMemory = config.persistLongTermMemory ?? false;
-    this.includeRecentConversations = config.includeRecentConversations ?? false;
+    this.persistLongTermMemory = config.persistLongTermMemory
+      ?? EVAL_AGENT_DEFAULTS.persistLongTermMemory;
+    this.includeRecentConversations = config.includeRecentConversations
+      ?? EVAL_AGENT_DEFAULTS.includeRecentConversations;
     this.maxSystemPromptTokens = config.maxSystemPromptTokens ?? 12_000;
-    this.skills = config.skills ?? [];
+    this.skills = config.skills ?? EVAL_AGENT_DEFAULTS.skills;
     this.includeClaudeLegacySkills = config.includeClaudeLegacySkills ?? false;
     this.sessionType = config.sessionType ?? 'chat';
     this.onEvaluationSignal = config.onEvaluationSignal;

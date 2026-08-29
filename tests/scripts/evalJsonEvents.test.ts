@@ -5,6 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
+  EVAL_RUN_STAMP_KEYS,
   EVAL_RUN_EVENT_SCHEMA_VERSION,
   type EvalRunEvent,
 } from '../../src/shared/contract/evaluation';
@@ -159,6 +160,18 @@ describe('eval-ci --json-events', () => {
 
     const runStart = events[0] as Extract<EvalRunEvent, { type: 'run_start' }>;
     const runEnd = events.at(-1) as Extract<EvalRunEvent, { type: 'run_end' }>;
+    for (const key of EVAL_RUN_STAMP_KEYS) {
+      expect(Object.prototype.hasOwnProperty.call(runStart.config, key), key).toBe(true);
+      expect(runStart.config[key], key).not.toBeUndefined();
+      expect(runStart.config[key], key).not.toBeNull();
+    }
+    expect(runStart.config).toMatchObject({
+      mode: 'mock',
+      model: 'mock-model',
+      keySource: 'none',
+    });
+    expect(runStart.config.caseBankSha).toMatch(/^[0-9a-f]{40}(?:-dirty)?$/);
+    expect(JSON.stringify(runStart.config)).not.toContain('undefined');
     const caseEnds = events.filter(
       (event): event is Extract<EvalRunEvent, { type: 'case_end' }> => event.type === 'case_end',
     );

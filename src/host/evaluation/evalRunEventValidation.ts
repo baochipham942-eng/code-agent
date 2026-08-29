@@ -1,4 +1,5 @@
 import {
+  EVAL_RUN_STAMP_KEYS,
   EVAL_RUN_EVENT_SCHEMA_VERSION,
   type EvalRunEvent,
 } from '../../shared/contract/evaluation';
@@ -56,6 +57,17 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
       if (config.scope !== 'smoke' && config.scope !== 'full') throw new Error('评测范围不受支持。');
       for (const key of ['model', 'provider', 'gitCommit', 'testCaseDir']) requireString(config, key);
       for (const key of ['maxCases', 'concurrency']) requireNumber(config, key);
+      for (const key of EVAL_RUN_STAMP_KEYS) {
+        if (!Object.prototype.hasOwnProperty.call(config, key) || config[key] === undefined || config[key] === null) {
+          throw new Error(`评测开始事件缺少本轮配置 ${key}。`);
+        }
+        if (typeof config[key] === 'string' && config[key].length === 0) {
+          throw new Error(`评测开始事件的本轮配置 ${key} 为空。`);
+        }
+        if (isRecord(config[key]) && Object.keys(config[key]).length === 0) {
+          throw new Error(`评测开始事件的本轮配置 ${key} 为空。`);
+        }
+      }
       break;
     }
     case 'case_start':

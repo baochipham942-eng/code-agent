@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { BaselineManager } from '../../../src/host/testing/ci/baselineManager';
 import { CONFIG_DIR_NEW } from '../../../src/host/config/configPaths';
 import type { TestResult, TestRunSummary } from '../../../src/host/testing/types';
+import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -56,6 +57,7 @@ function makeSummary(results: TestResult[]): TestRunSummary {
     invalidCases: 0,
     averageScore: results.length ? results.reduce((sum, r) => sum + r.score, 0) / results.length : 0,
     results,
+    stamp: UNKNOWN_EVAL_RUN_STAMP,
     environment: { model: 'mock-model', provider: 'mock', workingDirectory: '/tmp/work' },
     performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
   };

@@ -164,7 +164,9 @@ describe('L4 contextCollapse 臂激活契约', () => {
       resolve(repoRoot, 'src/host/agent/runtime/contextAssembly/messageBuild.ts'), 'utf8');
     // producer：未设置实验 override 时默认开着 L4，且注入了 summarize fn（没有
     // summarize 的 enableContextCollapse=true 是半空跑臂，只会走 skipped-no-summarizer）
-    expect(producerSrc).toMatch(/const armEnabled\s*=\s*getCompressionPipelineOverride\(\)\s*\?\?\s*true/);
+    expect(producerSrc).toMatch(
+      /const armEnabled\s*=\s*getCompressionPipelineOverride\(\)\s*\?\?\s*DEFAULT_COMPRESSION_PIPELINE_ENABLED/,
+    );
     expect(producerSrc).toMatch(/enableContextCollapse:\s*armEnabled/);
     expect(producerSrc).toMatch(/summarize:\s*\(messages\)\s*=>/);
     const consumerSrc = readFileSync(resolve(repoRoot, 'src/host/context/compressionPipeline.ts'), 'utf8');

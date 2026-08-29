@@ -8,6 +8,7 @@
 // ============================================================================
 
 import { describe, expect, it, vi } from 'vitest';
+import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 import { mkdir, mkdtemp, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -146,6 +147,7 @@ describe('scoreAuthority 分桶展示（reportGenerator）', () => {
       invalidCases: 0,
       averageScore: 0.5,
       results,
+      stamp: UNKNOWN_EVAL_RUN_STAMP,
       environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },
       performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
     };
@@ -208,6 +210,7 @@ describe('scoreAuthority 透传（experimentAdapter）', () => {
         score: 1,
         scoreAuthority: 'deterministic_assertion',
       }],
+      stamp: UNKNOWN_EVAL_RUN_STAMP,
       environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },
       performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
     };

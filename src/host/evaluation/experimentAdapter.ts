@@ -578,6 +578,7 @@ export class ExperimentAdapter {
       cases,
       gitCommit: summary.gitCommit,
       config: {
+        ...summary.stamp,
         workingDirectory: summary.environment?.workingDirectory,
         // GAP-017: harness 配置维度落 config_json（固定模型变 harness 的 ablation 对比依据）
         ...(summary.harness ? { harness: summary.harness } : {}),

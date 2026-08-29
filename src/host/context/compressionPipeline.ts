@@ -36,6 +36,8 @@ type CompressionPipelineOverrideScope = {
 
 const compressionPipelineOverrideScope = new AsyncLocalStorage<CompressionPipelineOverrideScope>();
 
+export const DEFAULT_COMPRESSION_PIPELINE_ENABLED = true;
+
 export function setCompressionPipelineOverride(value: boolean | undefined): void {
   compressionPipelineOverrideScope.enterWith({ value });
   if (value !== undefined) {

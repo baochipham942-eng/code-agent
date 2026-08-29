@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import type { TestRunSummary } from '../../../src/host/testing/types';
+import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 
 const saveReportMock = vi.hoisted(() => vi.fn());
 const runAllMock = vi.hoisted(() => vi.fn());
@@ -83,6 +84,7 @@ function makeSummary(): TestRunSummary {
     invalidCases: 0,
     averageScore: 1,
     results: [],
+    stamp: UNKNOWN_EVAL_RUN_STAMP,
     environment: { model: 'mock-model', provider: 'mock-provider', workingDirectory: '/tmp/work' },
     performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
   };

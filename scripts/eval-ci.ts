@@ -65,47 +65,29 @@ import type { DatabaseService } from '../src/host/services/core/databaseService'
 import type { TelemetryCollector } from '../src/host/telemetry/telemetryCollector';
 import { EvalRunEventStream, type EvalRunStartConfig } from './lib/eval-run-event-stream';
 import { createIsolatedEvalState } from './lib/eval-isolated-state';
+import {
+  buildRunStamp,
+  getProviderKeyCandidates,
+  resolveEvalApiKey,
+  selectRunStamp,
+} from './lib/eval-run-stamp';
+import {
+  estimateRunCost,
+  PRICING_TABLE_VERSION,
+} from './lib/eval-cost-estimate';
+import { EVAL_AGENT_DEFAULTS } from '../src/host/testing/agentAdapter';
+import { EVAL_GOAL_ALLOW_SWARM } from '../src/host/testing/goalContractEval';
 
 /** roadmap 2.4 A/B 归因（audit D-R3）：当前 run 的 provider 变体臂 */
 function providerVariantArm(): 'variant-on' | 'variant-off' {
   return isProviderVariantDisabled() ? 'variant-off' : 'variant-on';
 }
 
-const PROVIDER_KEY_CANDIDATES: Record<string, string[]> = {
-  moonshot: ['KIMI_K25_API_KEY', 'MOONSHOT_API_KEY'],
-  deepseek: ['DEEPSEEK_API_KEY'],
-  zhipu: ['ZHIPU_API_KEY'],
-  openai: ['OPENAI_API_KEY'],
-  claude: ['ANTHROPIC_API_KEY'],
-  groq: ['GROQ_API_KEY'],
-  qwen: ['QWEN_API_KEY', 'DASHSCOPE_API_KEY'],
-  minimax: ['MINIMAX_API_KEY'],
-  openrouter: ['OPENROUTER_API_KEY'],
-  xiaomi: ['XIAOMI_API_KEY'],
-};
-
 // ---------------------------------------------------------------------------
 // Arg parsing
 // ---------------------------------------------------------------------------
 
 const DEFAULT_MAX_CASES = 50;
-
-/** Rough cost per case by model prefix (USD). Fallback: $0.01 */
-function estimateCostPerCase(modelName: string): number {
-  const m = modelName.toLowerCase();
-  if (m.includes('gpt-4o-mini') || m.includes('gpt-4o mini')) return 0.002;
-  if (m.includes('gpt-4o')) return 0.008;
-  if (m.includes('gpt-4-turbo') || m.includes('gpt-4 turbo')) return 0.015;
-  if (m.includes('gpt-4')) return 0.04;
-  if (m.includes('gpt-3.5')) return 0.001;
-  if (m.includes('claude-3-opus') || m.includes('claude-opus')) return 0.04;
-  if (m.includes('claude-3-sonnet') || m.includes('claude-sonnet')) return 0.008;
-  if (m.includes('claude-3-haiku') || m.includes('claude-haiku')) return 0.002;
-  if (m.includes('deepseek')) return 0.002;
-  if (m.includes('gemini-pro')) return 0.005;
-  if (m.includes('gemini')) return 0.003;
-  return 0.01; // conservative default
-}
 
 function parseArgs(argv: string[]) {
   const args = argv.slice(2);
@@ -367,34 +349,6 @@ function assertRepoUnchanged(repoDir: string, before: string[] | null): void {
   );
 }
 
-function readEnvValue(filePath: string, name: string): string | undefined {
-  try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    const match = content.match(new RegExp(`^${name}=["']?([^"'\\s\\n]+)["']?`, 'm'));
-    return match?.[1]?.trim();
-  } catch {
-    return undefined;
-  }
-}
-
-function loadApiKey(provider: string, workingDir: string): string | undefined {
-  const candidates = PROVIDER_KEY_CANDIDATES[provider] || [`${provider.toUpperCase()}_API_KEY`];
-  const envFiles = [
-    path.join(workingDir, '.env'),
-    path.join(os.homedir(), '.code-agent', '.env'),
-  ];
-
-  for (const name of candidates) {
-    if (process.env[name]) return process.env[name];
-    for (const envFile of envFiles) {
-      const value = readEnvValue(envFile, name);
-      if (value) return value;
-    }
-  }
-
-  return undefined;
-}
-
 function createEvalSandbox(repoDir: string, real: boolean): EvalSandbox {
   if (!real && process.env.CODE_AGENT_EVAL_NO_SANDBOX === 'true') {
     return { dir: repoDir, cleanup: () => undefined };
@@ -458,9 +412,9 @@ function createAgent(opts: {
   console.log(chalk.cyan(`  Model:    ${resolvedModel}`));
   console.log('');
 
-  const apiKey = process.env.AUTO_TEST_API_KEY || loadApiKey(resolvedProvider, opts.repoDir);
-  if (!apiKey) {
-    const candidates = PROVIDER_KEY_CANDIDATES[resolvedProvider] || [`${resolvedProvider.toUpperCase()}_API_KEY`];
+  const loadedApiKey = resolveEvalApiKey(resolvedProvider, opts.repoDir);
+  if (!loadedApiKey) {
+    const candidates = getProviderKeyCandidates(resolvedProvider);
     throw new Error(`No API key found for ${resolvedProvider}. Set AUTO_TEST_API_KEY or ${candidates.join(' / ')}.`);
   }
 
@@ -483,10 +437,10 @@ function createAgent(opts: {
   return new StandaloneAgentAdapter({
     workingDirectory: opts.workingDir,
     requestPermission: requireScriptedRunPermissionHandler(),
-    persistLongTermMemory: false,
-    includeRecentConversations: false,
+    persistLongTermMemory: EVAL_AGENT_DEFAULTS.persistLongTermMemory,
+    includeRecentConversations: EVAL_AGENT_DEFAULTS.includeRecentConversations,
     maxSystemPromptTokens: 12_000,
-    skills: [],
+    skills: EVAL_AGENT_DEFAULTS.skills,
     includeClaudeLegacySkills: false,
     sessionType: 'eval',
     onEvaluationSignal: opts.onEvaluationSignal,
@@ -495,7 +449,7 @@ function createAgent(opts: {
     modelConfig: {
       provider: resolvedProvider,
       model: resolvedModel,
-      apiKey,
+      apiKey: loadedApiKey.value,
       ...(baseUrl ? { baseUrl } : {}),
     },
   });
@@ -547,7 +501,7 @@ async function runEvals(
     prediction?: { predictedFixes: string[]; riskTasks: string[] };
     caseDir?: string;
     eventStream?: EvalRunEventStream;
-    eventConfig?: EvalRunStartConfig;
+    eventConfig: EvalRunStartConfig;
   }
 ): Promise<TestRunSummary> {
   if (opts.eventStream && (opts.concurrency ?? 1) > 1) {
@@ -572,6 +526,7 @@ async function runEvals(
     const config = createDefaultConfig(workingDir, {
       ...(opts.eventStream ? { runId: opts.eventStream.runId } : {}),
       persistExperiment: opts.eventStream === undefined,
+      stamp: selectRunStamp(opts.eventConfig),
       verbose: false,
       workingDirectory: agentWorkingDir,
       testCaseDir: opts.caseDir ?? resolveCoreTestCaseDir(workingDir),
@@ -755,6 +710,7 @@ async function runCompareCommand(
     force: boolean;
     judge: 'rules' | 'llm';
     caseDir?: string;
+    split?: SplitBucket;
   },
 ): Promise<void> {
   const {
@@ -782,12 +738,16 @@ async function runCompareCommand(
   const totalCases = testCases.length;
 
   // Cost guard：每 case 跑两次（baseline + candidate）
-  const costPerCase = estimateCostPerCase(resolvedModel);
   const casesToRun = Math.min(totalCases, opts.maxCases);
-  const estimatedCost = (casesToRun * costPerCase * 2).toFixed(2);
+  const candidateModel = candidate.model || resolvedModel;
+  const estimatedCost = (
+    estimateRunCost(resolvedModel, casesToRun)
+    + estimateRunCost(candidateModel, casesToRun)
+  ).toFixed(2);
   console.log(chalk.yellow(
     `  ⚠️  Compare mode: up to ${casesToRun} cases × 2 configs with ${resolvedModel} via ${resolvedProvider}. ` +
-    `Estimated cost: ~$${estimatedCost}. Use --max-cases to limit.`
+    `Estimated cost: ~$${estimatedCost} (price table v${PRICING_TABLE_VERSION}, avg 5K tokens/case). ` +
+    `Use --max-cases to limit.`
   ));
   console.log('');
   if (totalCases > opts.maxCases && !opts.force) {
@@ -797,6 +757,31 @@ async function runCompareCommand(
     ));
     process.exit(1);
   }
+
+  const testCaseDir = opts.caseDir ?? resolveCoreTestCaseDir(workingDir);
+  const buildArmStamp = (config: CompareConfiguration) => {
+    const harness = config.harness ?? baseline.harness;
+    return buildRunStamp({
+      workingDir,
+      testCaseDir,
+      mode: 'real',
+      provider: config.provider || resolvedProvider,
+      model: config.model || resolvedModel,
+      split: opts.caseDir ? 'all' : opts.split ?? 'held-in',
+      tags: opts.tags,
+      ids: opts.ids,
+      judge: opts.judge,
+      shape: {
+        skills: [...EVAL_AGENT_DEFAULTS.skills],
+        memory: EVAL_AGENT_DEFAULTS.persistLongTermMemory,
+        swarm: EVAL_GOAL_ALLOW_SWARM,
+        harness: harness ? { name: config.name, ...harness } : null,
+      },
+      estimatedCases: casesToRun,
+    });
+  };
+  const baselineStamp = buildArmStamp(baseline);
+  const candidateStamp = buildArmStamp(candidate);
 
   const repoStatusBefore = getRepoStatusSnapshot(workingDir);
   const sandbox = createEvalSandbox(workingDir, true);
@@ -817,23 +802,23 @@ async function runCompareCommand(
       const provider = config.provider || resolvedProvider;
       const model = config.model || resolvedModel;
       const harness = config.harness ?? baseline.harness;
-      const apiKey = process.env.AUTO_TEST_API_KEY || loadApiKey(provider, workingDir);
-      if (!apiKey) {
-        const candidates = PROVIDER_KEY_CANDIDATES[provider] || [`${provider.toUpperCase()}_API_KEY`];
+      const loadedApiKey = resolveEvalApiKey(provider, workingDir);
+      if (!loadedApiKey) {
+        const candidates = getProviderKeyCandidates(provider);
         throw new Error(`No API key found for ${provider}. Set AUTO_TEST_API_KEY or ${candidates.join(' / ')}.`);
       }
       return new StandaloneAgentAdapter({
         workingDirectory: armWorkingDir,
-        persistLongTermMemory: false,
-        includeRecentConversations: false,
+        persistLongTermMemory: EVAL_AGENT_DEFAULTS.persistLongTermMemory,
+        includeRecentConversations: EVAL_AGENT_DEFAULTS.includeRecentConversations,
         maxSystemPromptTokens: 12_000,
-        skills: [],
+        skills: EVAL_AGENT_DEFAULTS.skills,
         includeClaudeLegacySkills: false,
         requestPermission: requireScriptedRunPermissionHandler(),
         sessionType: 'eval',
         database: isolatedState?.database,
         telemetryCollector: isolatedState?.telemetryCollector,
-        modelConfig: { provider, model, apiKey },
+        modelConfig: { provider, model, apiKey: loadedApiKey.value },
         ...(config.systemPrompt ? { systemPromptOverride: config.systemPrompt } : {}),
         ...(harness ? { harness: { name: config.name, ...harness } } : {}),
       });
@@ -886,7 +871,10 @@ async function runCompareCommand(
           },
         };
       },
-      runnerConfig,
+      runnerConfig: (config) => ({
+        ...runnerConfig,
+        stamp: config === baseline ? baselineStamp : candidateStamp,
+      }),
       llmCall,
     });
 
@@ -899,7 +887,11 @@ async function runCompareCommand(
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
     const reportPath = path.join(defaultConfig.resultsDir, `compare-${timestamp}.md`);
     await fs.promises.mkdir(defaultConfig.resultsDir, { recursive: true });
-    await fs.promises.writeFile(reportPath, generateComparisonMarkdown(result));
+    await fs.promises.writeFile(reportPath, generateComparisonMarkdown(result, {
+      gitCommit: getCommitSha(),
+      baseline: baselineStamp,
+      candidate: candidateStamp,
+    }));
     console.log(chalk.dim(`  Comparison report saved to: ${reportPath}`));
     console.log('');
 
@@ -926,17 +918,40 @@ function createRunStartConfig(opts: {
   maxCases: number;
   concurrency?: number;
   compare?: boolean;
+  judge: 'rules' | 'llm';
   workingDir: string;
   caseDir?: string;
 }): EvalRunStartConfig {
-  return {
+  const model = opts.real
+    ? opts.model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL
+    : 'mock-model';
+  const provider = opts.real
+    ? opts.provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER
+    : 'mock';
+  const testCaseDir = opts.caseDir ?? resolveCoreTestCaseDir(opts.workingDir);
+  const stamp = buildRunStamp({
+    workingDir: opts.workingDir,
+    testCaseDir,
     mode: opts.real ? 'real' : 'mock',
-    model: opts.real
-      ? opts.model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL
-      : 'mock-model',
-    provider: opts.real
-      ? opts.provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER
-      : 'mock',
+    provider,
+    model,
+    split: opts.caseDir ? 'all' : opts.split ?? 'all',
+    tags: opts.tags,
+    ids: opts.ids,
+    judge: opts.judge,
+    shape: {
+      skills: [...EVAL_AGENT_DEFAULTS.skills],
+      memory: EVAL_AGENT_DEFAULTS.persistLongTermMemory,
+      swarm: EVAL_GOAL_ALLOW_SWARM,
+      harness: null,
+    },
+    estimatedCases: opts.maxCases,
+  });
+  return {
+    ...stamp,
+    mode: opts.real ? 'real' : 'mock',
+    model,
+    provider,
     scope: opts.scope,
     ...(!opts.caseDir && opts.split ? { split: opts.split } : {}),
     ...(opts.tags?.length ? { tags: opts.tags } : {}),
@@ -945,7 +960,7 @@ function createRunStartConfig(opts: {
     concurrency: opts.concurrency ?? 1,
     ...(opts.compare ? { compare: true } : {}),
     gitCommit: getCommitSha(),
-    testCaseDir: opts.caseDir ?? resolveCoreTestCaseDir(opts.workingDir),
+    testCaseDir,
   };
 }
 
@@ -1044,7 +1059,17 @@ async function mainImpl(
       process.exit(1);
     }
     try {
-      await runCompareCommand(workingDir, compare, { model, provider, tags, ids, maxCases, force, judge, caseDir });
+      await runCompareCommand(workingDir, compare, {
+        model,
+        provider,
+        tags,
+        ids,
+        maxCases,
+        force,
+        judge,
+        caseDir,
+        split: caseDir ? undefined : split ?? 'held-in',
+      });
     } catch (error) {
       // A3 臂激活断言等准入失败：干净的红色报错 + 非零退出，不产出对比报告
       console.error(chalk.red(`  Error: ${error instanceof Error ? error.message : String(error)}`));
@@ -1086,6 +1111,7 @@ async function mainImpl(
         ids,
         maxCases,
         concurrency,
+        judge,
         workingDir,
       }),
     });
@@ -1120,13 +1146,13 @@ async function mainImpl(
       const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids }).length;
       const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
       const resolvedProvider = provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
-      const costPerCase = estimateCostPerCase(resolvedModel);
       const casesToRun = Math.min(totalCases, maxCases);
-      const estimatedCost = (casesToRun * costPerCase).toFixed(2);
+      const estimatedCost = estimateRunCost(resolvedModel, casesToRun).toFixed(2);
 
       console.log(chalk.yellow(
         `  ⚠️  Real mode: will execute up to ${casesToRun} cases with ${resolvedModel} via ${resolvedProvider}. ` +
-        `Estimated cost: ~$${estimatedCost} (based on avg 5K tokens/case). Use --max-cases to limit.`
+        `Estimated cost: ~$${estimatedCost} (price table v${PRICING_TABLE_VERSION}, avg 5K tokens/case). ` +
+        `Use --max-cases to limit.`
       ));
       console.log('');
 
@@ -1159,6 +1185,7 @@ async function mainImpl(
         ids,
         maxCases,
         concurrency,
+        judge,
         workingDir,
       }),
     });
@@ -1229,13 +1256,13 @@ async function mainImpl(
     const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids }).length;
     const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
     const resolvedProvider = provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
-    const costPerCase = estimateCostPerCase(resolvedModel);
     const casesToRun = Math.min(totalCases, maxCases);
-    const estimatedCost = (casesToRun * costPerCase).toFixed(2);
+    const estimatedCost = estimateRunCost(resolvedModel, casesToRun).toFixed(2);
 
     console.log(chalk.yellow(
       `  ⚠️  Real mode: will execute up to ${casesToRun} cases with ${resolvedModel} via ${resolvedProvider}. ` +
-      `Estimated cost: ~$${estimatedCost} (based on avg 5K tokens/case). Use --max-cases to limit.`
+      `Estimated cost: ~$${estimatedCost} (price table v${PRICING_TABLE_VERSION}, avg 5K tokens/case). ` +
+      `Use --max-cases to limit.`
     ));
     console.log('');
 
@@ -1272,6 +1299,7 @@ async function mainImpl(
       ids,
       maxCases,
       concurrency,
+      judge,
       workingDir,
       caseDir,
     }),

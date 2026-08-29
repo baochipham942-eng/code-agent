@@ -13,6 +13,8 @@ import { hostReasonModelText, type AgentEvent } from '../../shared/contract';
 import { buildGoalContract, type GoalContract } from '../agent/goalModeController';
 import type { EvalGoalContract, GoalRunRecord, TestCase } from './types';
 
+export const EVAL_GOAL_ALLOW_SWARM = false;
+
 function isPositiveNumber(value: unknown): boolean {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
@@ -60,7 +62,7 @@ export function buildLoopGoalContract(contract: EvalGoalContract, fallbackGoal: 
     maxTurns: contract.max_turns,
     wallClockBudgetMs: contract.wall_clock_budget_ms,
     // eval 无人值守：不扇出 swarm 子 agent（确定性 + 成本护栏）
-    allowSwarm: false,
+    allowSwarm: EVAL_GOAL_ALLOW_SWARM,
   });
 }
 

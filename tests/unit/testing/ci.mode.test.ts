@@ -18,6 +18,7 @@ import { BaselineManager } from '../../../src/host/testing/ci/baselineManager';
 import { TrendTracker } from '../../../src/host/testing/ci/trendTracker';
 import { CONFIG_DIR_NEW } from '../../../src/host/config/configPaths';
 import type { TestRunSummary, TrendDataPoint } from '../../../src/host/testing/types';
+import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 
 function makeSummary(overrides: Partial<TestRunSummary> = {}): TestRunSummary {
   return {
@@ -45,6 +46,7 @@ function makeSummary(overrides: Partial<TestRunSummary> = {}): TestRunSummary {
         duration: 1, startTime: 0, endTime: 1, toolExecutions: [], responses: [], errors: [], turnCount: 1,
       },
     ],
+    stamp: UNKNOWN_EVAL_RUN_STAMP,
     environment: { model: 'model', provider: 'provider', workingDirectory: '/tmp' },
     performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 2 },
     ...overrides,

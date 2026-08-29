@@ -17,7 +17,7 @@ export interface RunCompareOptions {
   /** 按配置建 agent（eval-ci 传 StandaloneAgentAdapter 工厂；测试传 mock） */
   makeAgent: (config: CompareConfiguration) => AgentInterface;
   makeIsolatedExecution?: (config: CompareConfiguration) => IsolatedTestExecutionFactory;
-  runnerConfig: TestRunnerConfig;
+  runnerConfig: TestRunnerConfig | ((config: CompareConfiguration) => TestRunnerConfig);
   /** 可选 LLM 评审回调；缺省走 ABGrader 的 heuristic 规则（无额外 API 成本） */
   llmCall?: (prompt: string) => Promise<string>;
 }
@@ -112,16 +112,19 @@ export function assertCompareArmsActivated(result: ComparisonResult): void {
 }
 
 export async function runCompare(opts: RunCompareOptions): Promise<ComparisonResult> {
+  const configFor = (config: CompareConfiguration): TestRunnerConfig => (
+    typeof opts.runnerConfig === 'function' ? opts.runnerConfig(config) : opts.runnerConfig
+  );
   const runners = new Map<CompareConfiguration, TestRunner>([
     [opts.baseline, new TestRunner(
-      opts.runnerConfig,
+      configFor(opts.baseline),
       opts.makeAgent(opts.baseline),
       undefined,
       undefined,
       opts.makeIsolatedExecution?.(opts.baseline),
     )],
     [opts.candidate, new TestRunner(
-      opts.runnerConfig,
+      configFor(opts.candidate),
       opts.makeAgent(opts.candidate),
       undefined,
       undefined,

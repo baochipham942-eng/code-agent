@@ -171,6 +171,7 @@ export class EvalRunEventStream {
             notRun: summary.notRun,
             invalidCases: summary.invalidCases,
             failureDistribution: summary.failureDistribution,
+            failureCodebookSource: summary.failureCodebookSource,
             ...(summary.gitCommit ? { gitCommit: summary.gitCommit } : {}),
             ...(summary.persistenceWarning ? { persistenceWarning: summary.persistenceWarning } : {}),
             ...(summary.aborted !== undefined ? { aborted: summary.aborted } : {}),

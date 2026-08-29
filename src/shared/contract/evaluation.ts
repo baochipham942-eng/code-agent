@@ -170,6 +170,7 @@ export type EvalRunEventSummary = {
   notRun: number;
   invalidCases: number;
   failureDistribution?: Record<string, number>;
+  failureCodebookSource?: 'project' | 'bundled';
   gitCommit?: string;
   persistenceWarning?: string;
   aborted?: boolean;

@@ -480,6 +480,8 @@ export interface TestRunSummary {
   invalidCases: number;
   /** 题级最终失败结果按唯一表现码计数；unknown 始终保留以衡量码本覆盖率。 */
   failureDistribution?: Record<string, number>;
+  /** 本轮失败原因码本来自项目配置，还是项目缺失时使用的内置副本。 */
+  failureCodebookSource?: 'project' | 'bundled';
   /** Average score across non-skipped tests (0.0 - 1.0) */
   averageScore: number;
   /** Individual results */

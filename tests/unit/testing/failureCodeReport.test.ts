@@ -31,12 +31,14 @@ describe('失败原因报告', () => {
       total: 2, passed: 0, failed: 2, partial: 0, skipped: 0,
       plannedCaseIds: results.map((result) => result.testId), completed: true, notRun: 0,
       invalidCases: 0, failureDistribution: { timeout: 1, unknown: 1 },
+      failureCodebookSource: 'bundled',
       averageScore: 0, results,
       stamp: UNKNOWN_EVAL_RUN_STAMP,
       environment: { provider: 'mock', model: 'mock', workingDirectory: '/tmp' },
       performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 2 },
     };
     const markdown = generateMarkdownReport(summary);
+    expect(markdown).toContain('失败原因码本：内置');
     expect(markdown).toContain('## 失败原因分布');
     expect(markdown).toContain('运行超时 <span style="color:#888"><code>timeout</code></span> | 1');
     expect(markdown).toContain('未归类 <span style="color:#888"><code>unknown</code></span> | 1');

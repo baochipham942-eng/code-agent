@@ -176,6 +176,7 @@ export class ExperimentAdapter {
       notRun: summary.notRun,
       invalidCases: summary.invalidCases,
       failureDistribution: summary.failureDistribution ?? { unknown: 0 },
+      failureCodebookSource: summary.failureCodebookSource,
       aborted: summary.aborted ?? false,
       abortReason: summary.abortReason,
       ...(error ? { error } : {}),
@@ -594,6 +595,7 @@ export class ExperimentAdapter {
         notRun: summary.notRun,
         invalidCases: summary.invalidCases,
         failureDistribution: summary.failureDistribution ?? { unknown: 0 },
+        failureCodebookSource: summary.failureCodebookSource,
         ...(summary.aborted ? { aborted: true, abortReason: summary.abortReason } : {}),
         realAgentRun: {
           passed: cases.filter(c => c.metadata?.realAgentRun && (c.metadata.realAgentRun as { passed?: boolean }).passed).length,

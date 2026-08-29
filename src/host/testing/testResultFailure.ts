@@ -26,6 +26,18 @@ export function classifyTestResultFailure(
     dispositions: classified.dispositions,
     symptoms: classified.matched,
   };
-  assertFailureDispositionConsistency(result.status, failure.dispositions);
+  try {
+    assertFailureDispositionConsistency(result.status, failure.dispositions);
+  } catch {
+    const message = '失败原因分类与统计状态不一致，已将本题归入未归类，本轮继续执行。';
+    result.failureReason = result.failureReason
+      ? `${result.failureReason}; ${message}`
+      : message;
+    return {
+      ...failure,
+      code: 'unknown',
+      symptoms: [...new Set([...failure.symptoms, 'disposition_inconsistent'])],
+    };
+  }
   return failure;
 }

@@ -41,6 +41,10 @@ export function generateMarkdownReport(
   lines.push('');
   lines.push(`**生成时间**: ${formatDate(summary.endTime)}`);
   lines.push(`**运行 ID**: \`${summary.runId}\``);
+  const failureCodebookLabel = summary.failureCodebookSource === 'project'
+    ? '项目'
+    : summary.failureCodebookSource === 'bundled' ? '内置' : '未记录';
+  lines.push(`**失败原因码本：${failureCodebookLabel}**`);
   lines.push('');
 
   // Overview

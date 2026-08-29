@@ -34,6 +34,11 @@ export interface FailureCodebook {
   codes: FailureCodeDefinition[];
 }
 
+interface LoadedProjectFailureCodebook {
+  codebook: FailureCodebook;
+  source: 'project' | 'bundled';
+}
+
 interface FailureClassificationInput {
   failureReason?: string;
   failureStage?: string;
@@ -202,13 +207,20 @@ export function loadFailureCodebook(dir: string): FailureCodebook {
   return { version: 1, codes };
 }
 
-export function loadProjectFailureCodebook(projectDir = process.cwd()): FailureCodebook {
+export function loadProjectFailureCodebookWithSource(
+  projectDir = process.cwd(),
+): LoadedProjectFailureCodebook {
   const projectCodebookDir = path.join(projectDir, '.claude');
-  return loadFailureCodebook(
-    existsSync(path.join(projectCodebookDir, FAILURE_CODEBOOK_FILE))
-      ? projectCodebookDir
-      : PACKAGED_FAILURE_CODEBOOK_DIR,
-  );
+  const projectCodebookPath = path.join(projectCodebookDir, FAILURE_CODEBOOK_FILE);
+  if (existsSync(projectCodebookPath)) {
+    return { codebook: loadFailureCodebook(projectCodebookDir), source: 'project' };
+  }
+  console.warn(`未找到项目失败原因码本 ${projectCodebookPath}，本轮使用内置码本。`);
+  return { codebook: loadFailureCodebook(PACKAGED_FAILURE_CODEBOOK_DIR), source: 'bundled' };
+}
+
+export function loadProjectFailureCodebook(projectDir = process.cwd()): FailureCodebook {
+  return loadProjectFailureCodebookWithSource(projectDir).codebook;
 }
 
 function regexMatches(patterns: string[] | undefined, values: string[]): boolean {

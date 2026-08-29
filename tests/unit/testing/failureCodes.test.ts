@@ -1,12 +1,13 @@
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   assertFailureDispositionConsistency,
   classifyFailure,
   loadFailureCodebook,
+  loadProjectFailureCodebookWithSource,
   type FailureCodebook,
 } from '../../../src/host/testing/failureCodes';
 
@@ -58,6 +59,30 @@ describe('失败原因两轴分类', () => {
       .toMatchObject({ primaryFailureCode: 'unknown', matched: [] });
   });
 
+  it('只靠 stderr 尾部也能命中崩溃码', () => {
+    expect(classifyFailure({
+      failureReason: 'worker stopped unexpectedly',
+      failureStage: 'evaluation',
+      status: 'failed',
+      stderr: ['diagnostic without known symptoms', 'fatal signal: SIGSEGV'],
+    }, codebook)).toMatchObject({
+      primaryFailureCode: 'crash',
+      matched: ['crash'],
+    });
+  });
+
+  it('stderr 只读取最后 20 行', () => {
+    const neutralTail = Array.from({ length: 24 }, (_, index) => `diagnostic line ${index + 1}`);
+    expect(classifyFailure({
+      status: 'failed',
+      stderr: [...neutralTail, 'fatal signal: SIGSEGV'],
+    }, codebook).primaryFailureCode).toBe('crash');
+    expect(classifyFailure({
+      status: 'failed',
+      stderr: ['fatal signal: SIGSEGV', ...neutralTail],
+    }, codebook)).toMatchObject({ primaryFailureCode: 'unknown', matched: [] });
+  });
+
   it('临时码本新增代码后无需改分类器即可命中，并展开已知问题链接', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'eval-failcodes-'));
     await writeFile(path.join(dir, 'eval-failcodes.yaml'), `
@@ -98,6 +123,19 @@ codes:
       const dir = await mkdtemp(path.join(os.tmpdir(), 'eval-failcodes-invalid-'));
       await writeFile(path.join(dir, 'eval-failcodes.yaml'), fixture.yaml);
       expect(() => loadFailureCodebook(dir)).toThrow(fixture.message);
+    }
+  });
+
+  it('项目码本缺失时明确警告并标记为内置来源', async () => {
+    const projectDir = await mkdtemp(path.join(os.tmpdir(), 'eval-failcodes-missing-'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const loaded = loadProjectFailureCodebookWithSource(projectDir);
+      expect(loaded.source).toBe('bundled');
+      expect(loaded.codebook.codes).toHaveLength(7);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/未找到项目失败原因码本.*使用内置码本/));
+    } finally {
+      warn.mockRestore();
     }
   });
 

@@ -47,7 +47,7 @@ import { completePlannedResults, createNotRunResult, isRealAgentRunCase, markInv
 import { appendTimeoutTelemetryFailureReason, attachTelemetryReplay } from './testRunnerTelemetryReplay';
 import {
   loadFailureCodebook,
-  loadProjectFailureCodebook,
+  loadProjectFailureCodebookWithSource,
   type FailureCodebook,
 } from './failureCodes';
 import { classifyTestResultFailure } from './testResultFailure';
@@ -163,6 +163,7 @@ export class TestRunner {
   private aborted = false;
   private abortReason?: string;
   private readonly failureCodebook: FailureCodebook;
+  private readonly failureCodebookSource: 'project' | 'bundled';
 
   constructor(
     config: TestRunnerConfig,
@@ -176,9 +177,14 @@ export class TestRunner {
     this.agentFactory = agentFactory;
     this.workerDirectoryFactory = workerDirectoryFactory;
     this.isolatedExecutionFactory = isolatedExecutionFactory;
-    this.failureCodebook = config.failureCodebookDir
-      ? loadFailureCodebook(config.failureCodebookDir)
-      : loadProjectFailureCodebook();
+    if (config.failureCodebookDir) {
+      this.failureCodebook = loadFailureCodebook(config.failureCodebookDir);
+      this.failureCodebookSource = 'project';
+    } else {
+      const loaded = loadProjectFailureCodebookWithSource(config.workingDirectory);
+      this.failureCodebook = loaded.codebook;
+      this.failureCodebookSource = loaded.source;
+    }
   }
 
   async runIsolatedSingleTest(
@@ -438,6 +444,7 @@ export class TestRunner {
         if (result.failure) distribution[result.failure.code] = (distribution[result.failure.code] ?? 0) + 1;
         return distribution;
       }, { unknown: 0 }),
+      failureCodebookSource: this.failureCodebookSource,
       averageScore: avgScore,
       results,
       environment: {

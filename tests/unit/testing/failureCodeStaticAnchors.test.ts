@@ -32,4 +32,12 @@ describe('失败原因分类静态接线锚点', () => {
     expect(source('scripts/lib/eval-run-event-stream.ts'))
       .toContain('failureDistribution: summary.failureDistribution');
   });
+
+  it('码本回退来源进入 summary、run_end 与报告头', () => {
+    expect(source('src/host/testing/testRunner.ts'))
+      .toContain('failureCodebookSource: this.failureCodebookSource');
+    expect(source('scripts/lib/eval-run-event-stream.ts'))
+      .toContain('failureCodebookSource: summary.failureCodebookSource');
+    expect(source('src/host/testing/reportGenerator.ts')).toContain('失败原因码本：');
+  });
 });

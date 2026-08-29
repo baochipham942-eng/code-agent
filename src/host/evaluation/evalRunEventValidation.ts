@@ -45,6 +45,13 @@ function validateSummary(value: unknown): void {
       }
     }
   }
+  if (
+    value.failureCodebookSource !== undefined
+    && value.failureCodebookSource !== 'project'
+    && value.failureCodebookSource !== 'bundled'
+  ) {
+    throw new Error('评测汇总 failureCodebookSource 只能是 project 或 bundled。');
+  }
 }
 
 export function parseEvalRunEvent(value: unknown): EvalRunEvent {

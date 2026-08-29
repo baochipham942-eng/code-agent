@@ -10,9 +10,15 @@ const logger = createLogger('InboundPairingService');
 
 const INBOUND_PAIRING_CODE_DIGITS = 6;
 const INBOUND_PAIRING_TTL_MS = 10 * 60 * 1000;
+// A Feishu/Lark app should expose only a small desktop review queue, even when senders rotate.
+const MAX_PENDING_PAIRINGS_PER_ACCOUNT = 5;
+// Ten replies covers five requests plus five desktop decisions without allowing an unbounded reply flood.
+const MAX_PAIRING_REPLIES_PER_ACCOUNT_PER_MINUTE = 10;
+const PAIRING_REPLY_RATE_WINDOW_MS = 60 * 1000;
 
 export interface InboundPairingRequest {
   accountId: string;
+  accountScopeId: string;
   channelType: 'feishu' | 'lark';
   senderId: string;
   senderName: string;
@@ -39,6 +45,11 @@ interface PendingPairing extends InboundPairingRequest {
   timer: ReturnType<typeof setTimeout>;
 }
 
+interface ReplyRateWindow {
+  startedAt: number;
+  count: number;
+}
+
 interface InboundPairingServiceDeps {
   now?: () => number;
   generateCode?: () => string;
@@ -49,6 +60,7 @@ interface InboundPairingServiceDeps {
 export class InboundPairingService {
   private readonly pendingById = new Map<string, PendingPairing>();
   private readonly pendingIdBySender = new Map<string, string>();
+  private readonly replyRateByAccount = new Map<string, ReplyRateWindow>();
   private adapter: InboundPairingAdapter | null = null;
   private readonly now: () => number;
   private readonly generateCode: () => string;
@@ -66,8 +78,8 @@ export class InboundPairingService {
     this.adapter = adapter;
   }
 
-  async request(input: InboundPairingRequest): Promise<string> {
-    const senderKey = `${input.accountId}:${input.senderId}`;
+  async request(input: InboundPairingRequest): Promise<string | null> {
+    const senderKey = this.senderKey(input);
     const previousId = this.pendingIdBySender.get(senderKey);
     const previous = previousId ? this.pendingById.get(previousId) : undefined;
     if (previous && previous.expiresAt > this.now()) {
@@ -75,6 +87,18 @@ export class InboundPairingService {
       return previous.code;
     }
     if (previous) this.expire(previous.id);
+
+    const pendingCount = this.activePendingCount(input.accountScopeId);
+    if (pendingCount >= MAX_PENDING_PAIRINGS_PER_ACCOUNT) {
+      logger.warn('Rejected inbound pairing request: pending account limit reached', {
+        accountId: input.accountId,
+        accountScopeId: input.accountScopeId,
+        senderId: input.senderId,
+        pendingCount,
+        limit: MAX_PENDING_PAIRINGS_PER_ACCOUNT,
+      });
+      return null;
+    }
 
     const requestedAt = this.now();
     const id = `channel-pairing:${randomUUID()}`;
@@ -99,6 +123,7 @@ export class InboundPairingService {
       coordinatorId: null,
       payload: {
         accountId: input.accountId,
+        accountScopeId: input.accountScopeId,
         channelType: input.channelType,
         senderId: input.senderId,
         senderName: input.senderName,
@@ -153,10 +178,11 @@ export class InboundPairingService {
   private removePending(pending: PendingPairing): void {
     clearTimeout(pending.timer);
     this.pendingById.delete(pending.id);
-    this.pendingIdBySender.delete(`${pending.accountId}:${pending.senderId}`);
+    this.pendingIdBySender.delete(this.senderKey(pending));
   }
 
   private async reply(pending: InboundPairingRequest, content: string): Promise<void> {
+    if (!this.takeReplySlot(pending)) return;
     if (!this.adapter) {
       logger.error('Inbound pairing adapter is not configured');
       return;
@@ -171,6 +197,44 @@ export class InboundPairingService {
     } catch (error) {
       logger.error('Failed to send inbound pairing control reply', { error });
     }
+  }
+
+  private activePendingCount(accountScopeId: string): number {
+    let count = 0;
+    for (const pending of this.pendingById.values()) {
+      if (pending.accountScopeId !== accountScopeId) continue;
+      if (pending.expiresAt <= this.now()) {
+        this.expire(pending.id);
+      } else {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  private takeReplySlot(pending: InboundPairingRequest): boolean {
+    const now = this.now();
+    const current = this.replyRateByAccount.get(pending.accountScopeId);
+    const window = !current || now - current.startedAt >= PAIRING_REPLY_RATE_WINDOW_MS
+      ? { startedAt: now, count: 0 }
+      : current;
+    this.replyRateByAccount.set(pending.accountScopeId, window);
+    if (window.count >= MAX_PAIRING_REPLIES_PER_ACCOUNT_PER_MINUTE) {
+      logger.warn('Dropped inbound pairing reply: account rate limit reached', {
+        accountId: pending.accountId,
+        accountScopeId: pending.accountScopeId,
+        senderId: pending.senderId,
+        limit: MAX_PAIRING_REPLIES_PER_ACCOUNT_PER_MINUTE,
+        windowMs: PAIRING_REPLY_RATE_WINDOW_MS,
+      });
+      return false;
+    }
+    window.count += 1;
+    return true;
+  }
+
+  private senderKey(input: InboundPairingRequest): string {
+    return `${input.accountScopeId}:${input.senderId}`;
   }
 }
 

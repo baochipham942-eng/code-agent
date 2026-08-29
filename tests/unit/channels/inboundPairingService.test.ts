@@ -2,6 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 import { InboundPairingService } from '../../../src/host/channels/inboundPairingService';
 
+const mocks = vi.hoisted(() => ({
+  logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
+vi.mock('../../../src/host/services/infra/logger', () => ({
+  createLogger: () => mocks.logger,
+}));
+
 const TEN_MINUTES_MS = 10 * 60 * 1000;
 
 function createHarness() {
@@ -22,6 +30,7 @@ function createHarness() {
 
 const request = {
   accountId: 'feishu-account',
+  accountScopeId: 'feishu:cli_test_app',
   channelType: 'feishu' as const,
   senderId: 'ou_sender',
   senderName: 'Sender',
@@ -63,5 +72,51 @@ describe('InboundPairingService', () => {
     expect(h.service.resolve(requestId, 'allow')).toBe(false);
     expect(h.addPairedSender).not.toHaveBeenCalled();
     expect(h.resolve).toHaveBeenCalledWith(expect.objectContaining({ status: 'rejected' }));
+  });
+
+  it('rejects sender rotation after five pending requests for the same app account', async () => {
+    const h = createHarness();
+    for (let index = 0; index < 5; index += 1) {
+      await h.service.request({
+        ...request,
+        accountId: `local-account-${index}`,
+        senderId: `ou_sender_${index}`,
+      });
+    }
+
+    expect(await h.service.request({ ...request, senderId: 'ou_sender_5' })).toBeNull();
+    expect(h.insert).toHaveBeenCalledTimes(5);
+    expect(h.sendControlReply).toHaveBeenCalledTimes(5);
+    expect(mocks.logger.warn).toHaveBeenCalledWith(
+      'Rejected inbound pairing request: pending account limit reached',
+      expect.objectContaining({
+        accountScopeId: 'feishu:cli_test_app',
+        senderId: 'ou_sender_5',
+        pendingCount: 5,
+        limit: 5,
+      }),
+    );
+  });
+
+  it('drops pairing replies beyond the per-account minute limit across rotating senders', async () => {
+    const h = createHarness();
+    for (let index = 0; index < 5; index += 1) {
+      await h.service.request({ ...request, senderId: `ou_sender_${index}` });
+      const requestId = h.insert.mock.calls[index][0].id as string;
+      expect(h.service.resolve(requestId, 'allow')).toBe(true);
+    }
+    expect(h.sendControlReply).toHaveBeenCalledTimes(10);
+
+    expect(await h.service.request({ ...request, senderId: 'ou_sender_5' })).toBe('042731');
+    expect(h.sendControlReply).toHaveBeenCalledTimes(10);
+    expect(mocks.logger.warn).toHaveBeenCalledWith(
+      'Dropped inbound pairing reply: account rate limit reached',
+      expect.objectContaining({
+        accountScopeId: 'feishu:cli_test_app',
+        senderId: 'ou_sender_5',
+        limit: 10,
+        windowMs: 60_000,
+      }),
+    );
   });
 });

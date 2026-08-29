@@ -5,11 +5,14 @@
  * timeline sentence and a compact badge, while the same outcome/audience pair
  * must always resolve to one label and one reason phrase.
  */
+import type { StreamInterruptionReason } from '@shared/contract';
+
 type OutcomeKey =
   | 'cancelled-by-user'
-  | 'cancelled-session-switch'
-  | 'cancelled-restart'
-  | 'cancelled-by-parent'
+  | 'interrupted-session-switch'
+  | 'interrupted-restart'
+  | 'interrupted-by-parent'
+  | 'interrupted-unknown'
   | 'failed-tool'
   | 'failed-model'
   | 'failed-unknown'
@@ -37,6 +40,19 @@ interface OutcomeWordsBundle {
   outcomeWords: OutcomeWords;
 }
 
+const STREAM_INTERRUPTION_OUTCOME_KEYS = {
+  user: 'cancelled-by-user',
+  'session-switch': 'interrupted-session-switch',
+  'app-restart': 'interrupted-restart',
+} as const satisfies Record<StreamInterruptionReason, OutcomeKey>;
+
+/** One active/passive verdict shared by every stream-interruption surface. */
+export function resolveStreamInterruptionOutcomeKey(
+  reason: StreamInterruptionReason | null | undefined,
+): (typeof STREAM_INTERRUPTION_OUTCOME_KEYS)[StreamInterruptionReason] {
+  return STREAM_INTERRUPTION_OUTCOME_KEYS[reason ?? 'app-restart'];
+}
+
 export const outcomeWordsZh: OutcomeWordsBundle = {
   outcomeWords: {
     'cancelled-by-user': {
@@ -45,23 +61,29 @@ export const outcomeWordsZh: OutcomeWordsBundle = {
       detail: { label: '任务已取消', reason: '你停止了这次执行' },
       notification: { label: '任务已取消', reason: '你停止了这次执行' },
     },
-    'cancelled-session-switch': {
-      timeline: { label: '已取消', reason: '切换会话时中断' },
-      badge: { label: '已取消', reason: '切换会话时中断' },
-      detail: { label: '任务已取消', reason: '切换会话时中断' },
-      notification: { label: '任务已取消', reason: '切换会话时中断' },
+    'interrupted-session-switch': {
+      timeline: { label: '已中断', reason: '切换会话时中断' },
+      badge: { label: '已中断', reason: '切换会话时中断' },
+      detail: { label: '任务已中断', reason: '切换会话时中断' },
+      notification: { label: '任务已中断', reason: '切换会话时中断' },
     },
-    'cancelled-restart': {
-      timeline: { label: '已取消', reason: '应用重启时中断' },
-      badge: { label: '已取消', reason: '应用重启时中断' },
-      detail: { label: '任务已取消', reason: '应用重启时中断' },
-      notification: { label: '任务已取消', reason: '应用重启时中断' },
+    'interrupted-restart': {
+      timeline: { label: '已中断', reason: '应用重启时中断' },
+      badge: { label: '已中断', reason: '应用重启时中断' },
+      detail: { label: '任务已中断', reason: '应用重启时中断' },
+      notification: { label: '任务已中断', reason: '应用重启时中断' },
     },
-    'cancelled-by-parent': {
-      timeline: { label: '已取消', reason: '上级任务停止了这次执行' },
-      badge: { label: '已取消', reason: '上级任务停止了这次执行' },
-      detail: { label: '任务已取消', reason: '上级任务停止了这次执行' },
-      notification: { label: '任务已取消', reason: '上级任务停止了这次执行' },
+    'interrupted-by-parent': {
+      timeline: { label: '已中断', reason: '上级任务停止了这次执行' },
+      badge: { label: '已中断', reason: '上级任务停止了这次执行' },
+      detail: { label: '任务已中断', reason: '上级任务停止了这次执行' },
+      notification: { label: '任务已中断', reason: '上级任务停止了这次执行' },
+    },
+    'interrupted-unknown': {
+      timeline: { label: '已中断', reason: '执行在完成前中断' },
+      badge: { label: '已中断', reason: '执行在完成前中断' },
+      detail: { label: '任务已中断', reason: '执行在完成前中断' },
+      notification: { label: '任务已中断', reason: '执行在完成前中断' },
     },
     'failed-tool': {
       timeline: { label: '执行失败', reason: '工具没有完成这一步' },
@@ -88,10 +110,10 @@ export const outcomeWordsZh: OutcomeWordsBundle = {
       notification: { label: '审批未通过', reason: '审批被拒绝' },
     },
     'failed-timeout': {
-      timeline: { label: '执行超时', reason: '等待回答或权限确认超时' },
-      badge: { label: '已超时', reason: '等待回答或权限确认超时' },
-      detail: { label: '任务执行超时', reason: '等待回答或权限确认超时' },
-      notification: { label: '任务执行超时', reason: '等待回答或权限确认超时' },
+      timeline: { label: '已中断', reason: '等待回答或权限确认超时' },
+      badge: { label: '已中断', reason: '等待回答或权限确认超时' },
+      detail: { label: '任务已中断', reason: '等待回答或权限确认超时' },
+      notification: { label: '任务已中断', reason: '等待回答或权限确认超时' },
     },
     'failed-budget': {
       timeline: { label: '预算用尽', reason: '执行达到预算上限' },
@@ -152,23 +174,29 @@ export const outcomeWordsEn: OutcomeWordsBundle = {
       detail: { label: 'Task cancelled', reason: 'You stopped this run' },
       notification: { label: 'Task cancelled', reason: 'You stopped this run' },
     },
-    'cancelled-session-switch': {
-      timeline: { label: 'Cancelled', reason: 'Interrupted when you switched conversations' },
-      badge: { label: 'Cancelled', reason: 'Interrupted when you switched conversations' },
-      detail: { label: 'Task cancelled', reason: 'Interrupted when you switched conversations' },
-      notification: { label: 'Task cancelled', reason: 'Interrupted when you switched conversations' },
+    'interrupted-session-switch': {
+      timeline: { label: 'Interrupted', reason: 'Interrupted when you switched conversations' },
+      badge: { label: 'Interrupted', reason: 'Interrupted when you switched conversations' },
+      detail: { label: 'Task interrupted', reason: 'Interrupted when you switched conversations' },
+      notification: { label: 'Task interrupted', reason: 'Interrupted when you switched conversations' },
     },
-    'cancelled-restart': {
-      timeline: { label: 'Cancelled', reason: 'Interrupted when the app restarted' },
-      badge: { label: 'Cancelled', reason: 'Interrupted when the app restarted' },
-      detail: { label: 'Task cancelled', reason: 'Interrupted when the app restarted' },
-      notification: { label: 'Task cancelled', reason: 'Interrupted when the app restarted' },
+    'interrupted-restart': {
+      timeline: { label: 'Interrupted', reason: 'Interrupted when the app restarted' },
+      badge: { label: 'Interrupted', reason: 'Interrupted when the app restarted' },
+      detail: { label: 'Task interrupted', reason: 'Interrupted when the app restarted' },
+      notification: { label: 'Task interrupted', reason: 'Interrupted when the app restarted' },
     },
-    'cancelled-by-parent': {
-      timeline: { label: 'Cancelled', reason: 'The parent task stopped this run' },
-      badge: { label: 'Cancelled', reason: 'The parent task stopped this run' },
-      detail: { label: 'Task cancelled', reason: 'The parent task stopped this run' },
-      notification: { label: 'Task cancelled', reason: 'The parent task stopped this run' },
+    'interrupted-by-parent': {
+      timeline: { label: 'Interrupted', reason: 'The parent task stopped this run' },
+      badge: { label: 'Interrupted', reason: 'The parent task stopped this run' },
+      detail: { label: 'Task interrupted', reason: 'The parent task stopped this run' },
+      notification: { label: 'Task interrupted', reason: 'The parent task stopped this run' },
+    },
+    'interrupted-unknown': {
+      timeline: { label: 'Interrupted', reason: 'The run ended before completion' },
+      badge: { label: 'Interrupted', reason: 'The run ended before completion' },
+      detail: { label: 'Task interrupted', reason: 'The run ended before completion' },
+      notification: { label: 'Task interrupted', reason: 'The run ended before completion' },
     },
     'failed-tool': {
       timeline: { label: 'Execution failed', reason: 'The tool did not finish this step' },
@@ -195,10 +223,10 @@ export const outcomeWordsEn: OutcomeWordsBundle = {
       notification: { label: 'Approval denied', reason: 'The approval was denied' },
     },
     'failed-timeout': {
-      timeline: { label: 'Timed out', reason: 'Waiting for an answer or permission timed out' },
-      badge: { label: 'Timed out', reason: 'Waiting for an answer or permission timed out' },
-      detail: { label: 'Task timed out', reason: 'Waiting for an answer or permission timed out' },
-      notification: { label: 'Task timed out', reason: 'Waiting for an answer or permission timed out' },
+      timeline: { label: 'Interrupted', reason: 'Waiting for an answer or permission timed out' },
+      badge: { label: 'Interrupted', reason: 'Waiting for an answer or permission timed out' },
+      detail: { label: 'Task interrupted', reason: 'Waiting for an answer or permission timed out' },
+      notification: { label: 'Task interrupted', reason: 'Waiting for an answer or permission timed out' },
     },
     'failed-budget': {
       timeline: { label: 'Budget exhausted', reason: 'The run reached its budget limit' },

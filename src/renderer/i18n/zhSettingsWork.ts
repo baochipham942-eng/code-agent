@@ -169,7 +169,7 @@ export const zhSettingsWork = {
         pending: '等待',
         cancelled: '取消',
         paused: '暂停',
-        interrupted: outcomeWordsZh.outcomeWords['cancelled-restart'].badge.label,
+        interrupted: outcomeWordsZh.outcomeWords['interrupted-restart'].badge.label,
       },
       overview: {
         title: '任务总览',

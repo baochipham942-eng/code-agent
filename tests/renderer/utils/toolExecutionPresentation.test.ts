@@ -7,6 +7,7 @@ import {
   isAutoLoadedRetry,
   isEscalatedToolError,
   isToolInterruptionPlaceholder,
+  resolveToolTerminalOutcomeKey,
 } from '../../../src/renderer/utils/toolExecutionPresentation';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
@@ -49,13 +50,41 @@ describe('toolExecutionPresentation', () => {
     expect(isToolInterruptionPlaceholder(cancelled)).toBe(true);
     expect(isToolInterruptionPlaceholder(crashed)).toBe(true);
     expect(humanizeToolError(cancelled, 'Read', zh)).toEqual({
-      summary: zh.outcomeWords['cancelled-restart'].badge.label,
-      detail: zh.outcomeWords['cancelled-restart'].badge.reason,
+      summary: zh.outcomeWords['interrupted-unknown'].badge.label,
+      detail: zh.outcomeWords['interrupted-unknown'].badge.reason,
     });
     expect(humanizeToolError(crashed, 'Read', en)).toEqual({
-      summary: en.outcomeWords['cancelled-restart'].badge.label,
-      detail: en.outcomeWords['cancelled-restart'].badge.reason,
+      summary: en.outcomeWords['interrupted-restart'].badge.label,
+      detail: en.outcomeWords['interrupted-restart'].badge.reason,
     });
+  });
+
+  it('requires explicit user provenance before a tool outcome can say cancelled', () => {
+    expect(resolveToolTerminalOutcomeKey({
+      result: {
+        toolCallId: 'active-stop',
+        success: false,
+        metadata: { failureCode: 'cancelled-by-user' },
+      },
+    })).toBe('cancelled-by-user');
+
+    for (const metadata of [
+      { cancellationReason: 'session-switch', failureCode: 'cancelled-by-user' },
+      { code: 'ABORTED' },
+      { cancellationReason: 'run_cancelled' },
+    ]) {
+      expect(resolveToolTerminalOutcomeKey({
+        result: { toolCallId: 'passive-stop', success: false, metadata },
+      })).toBe('interrupted-unknown');
+    }
+
+    expect(resolveToolTerminalOutcomeKey({
+      result: {
+        toolCallId: 'timeout',
+        success: false,
+        metadata: { cancellationReason: 'idle-timeout' },
+      },
+    })).toBe('failed-timeout');
   });
 
   it('localizes managed-browser resume import failures from the host error code', () => {

@@ -90,6 +90,7 @@ import { collectDroppedAttachments } from './features/chat/ChatInput/utils';
 import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProjectionOverlay';
 import { isStreamRecoveryMessage } from '../utils/streamRecoveryMessage';
 import {
+  deriveStreamInterruptionReason,
   isPersistedStreamInterruptionMessage,
 } from '../utils/streamInterruptionPresentation';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
@@ -732,14 +733,21 @@ export const ChatView: React.FC = () => {
   // 之后新增的消息；跳过末尾合入的 recovery 消息（F4，id=snapshot.turnId）后，末位就是触发
   // 这轮的用户消息。取不到（数组为空或末位不是 user）就不重试。
   const retryTurnMessage = deriveRetryTurnMessage(streamSnapshot, messages);
+  const interruptionDecisionSnapshot = streamSnapshot
+    ? {
+        ...streamSnapshot,
+        interruptionReason: streamSnapshot.interruptionReason
+          ?? deriveStreamInterruptionReason(messages, streamSnapshot.turnId),
+      }
+    : null;
   const [interruptionPointInViewport, setInterruptionPointInViewport] = useState(true);
   useEffect(() => {
     // Virtuoso 首次回报可见范围前 fail closed：有中断快照时先当作中断点仍在视口，
     // 避免追赶条抢在列表测量前闪现。
     setInterruptionPointInViewport(Boolean(streamSnapshot));
   }, [currentSessionId, streamSnapshot?.turnId]);
-  const streamInterruptionDecision = streamSnapshot && retryTurnMessage ? {
-    snapshot: streamSnapshot,
+  const streamInterruptionDecision = interruptionDecisionSnapshot && retryTurnMessage ? {
+    snapshot: interruptionDecisionSnapshot,
     retryMessage: retryTurnMessage,
     onContinue: async (message: Message) => handleSendMessage(message.content, message.attachments),
   } : null;

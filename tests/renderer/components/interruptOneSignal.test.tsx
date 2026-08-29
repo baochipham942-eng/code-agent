@@ -70,11 +70,12 @@ afterEach(cleanup);
 
 describe('N-INTERRUPT-ONESIGNAL', () => {
   it.each([
-    ['[cancelled]', '你停止了这次执行'],
-    ['[未完成 — 切换会话中断]', '切换会话时中断'],
-    [null, '应用重启时中断'],
-  ] as const)('持久化 resumable 轮按 %s 派生原因，只留一条灰字和一个槽位', (marker, expectedReason) => {
+    ['[cancelled]', 'user', '已取消', '你停止了这次执行'],
+    ['[未完成 — 切换会话中断]', 'session-switch', '已中断', '切换会话时中断'],
+    [null, 'app-restart', '已中断', '应用重启时中断'],
+  ] as const)('持久化 resumable 轮按 %s 派生原因，只留一条灰字和一个槽位', (marker, reason, expectedOutcome, expectedReason) => {
     const recovery = snapshot();
+    recovery.interruptionReason = reason;
     const persistedMessages: Message[] = [
       { id: 'u-1', role: 'user', content: '写长文', timestamp: 1 },
       ...(marker ? [{
@@ -110,15 +111,15 @@ describe('N-INTERRUPT-ONESIGNAL', () => {
 
     expect(screen.getAllByTestId('interrupt-timeline-step')).toHaveLength(1);
     const timelineText = screen.getByTestId('interrupt-timeline-step').textContent ?? '';
-    expect(timelineText).toContain('已取消');
+    expect(timelineText).toContain(expectedOutcome);
     expect(timelineText).toContain('写入 产品设计长文.md');
     expect(timelineText).toContain('未执行');
     expect(timelineText).toContain(expectedReason);
     expect(timelineText).not.toContain('/workspace/');
-    expect(timelineText.match(/已取消/gu)).toHaveLength(1);
+    expect(timelineText.match(new RegExp(expectedOutcome, 'gu'))).toHaveLength(1);
     expect(screen.getAllByTestId('decision-slot')).toHaveLength(1);
     expect(screen.getByTestId('stream-interruption-decision').textContent)
-      .toContain('上次回复中断，写入 产品设计长文.md 未执行');
+      .toContain(`上次回复${expectedOutcome}，写入 产品设计长文.md 未执行`);
     expect(document.body.textContent).not.toContain('写入失败');
     expect(document.body.textContent).not.toContain('已中断，可继续');
     expect(document.body.textContent).not.toContain('[cancelled]');
@@ -186,6 +187,8 @@ describe('N-INTERRUPT-ONESIGNAL', () => {
     );
 
     const step = screen.getByTestId('interrupt-timeline-step');
+    expect(step.textContent).toContain('已中断');
+    expect(step.textContent).not.toContain('已取消');
     expect(step.textContent).toContain('写入一个文件');
     expect(step.textContent).toContain('应用重启时中断');
   });

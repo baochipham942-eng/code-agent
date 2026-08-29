@@ -259,7 +259,7 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
-    expect(html).toContain('已取消');
+    expect(html).toContain('已中断');
     expect(html).toContain('未执行');
     expect(html).not.toContain('会改文件');
     expect(html).not.toContain('builtin');

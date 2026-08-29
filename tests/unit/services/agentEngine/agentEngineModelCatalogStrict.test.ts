@@ -54,4 +54,23 @@ describe('resolveAgentEngineCatalogModel — fail-closed (strict)', () => {
       resolveAgentEngineCatalogModel(CATALOG, 'claude_code', 'whatever', { strict: true }),
     ).toThrow(AgentEngineModelIncompatibleError);
   });
+
+  it('WorkBuddy 目录移除 hy4-preview 后，显式选择会 fail-loud', () => {
+    const workBuddyCatalog: AgentEngineModelCatalog = {
+      version: 'mutation',
+      updatedAt: '2026-08-29T00:00:00.000Z',
+      engines: [{
+        kind: 'codebuddy_code',
+        defaultModel: 'client_default',
+        models: [{ id: 'client_default', label: '客户端默认模型', capabilities: [] }],
+      }],
+    };
+
+    expect(() => resolveAgentEngineCatalogModel(
+      workBuddyCatalog,
+      'codebuddy_code',
+      'hy4-preview',
+      { strict: true },
+    )).toThrow('Model "hy4-preview" is not available for the codebuddy_code agent engine.');
+  });
 });

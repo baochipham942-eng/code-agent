@@ -348,6 +348,13 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
       ],
       versionArgs: ['--version'],
       authStateMarker: '~/.workbuddy/user-state.json',
+      modelDiscovery: {
+        args: ['--help'],
+        parser: 'supported_models_parenthesized',
+        marker: 'Currently supported:',
+        preferredDefault: 'client_default',
+        merge: 'replace',
+      },
     },
     adapter: {
       adapterId: 'codebuddy_code',
@@ -357,7 +364,7 @@ const EXTERNAL_ENGINE_MANIFESTS: readonly ExternalEngineManifest[] = [
       credentialOwner: 'official_client',
       evidence: 'production',
     },
-    modelSelection: 'client_default',
+    modelSelection: 'runtime_catalog',
     capabilities: ['execute', 'stream_events'],
     defaultPermissionProfile: 'read_only',
     riskTier: 'medium',

@@ -154,15 +154,17 @@
       "runtime": "codebuddy_code",
       "protocolFamily": "opaque_cli",
       "provider": "cli-owned",
-      "model": "client-default",
-      "verificationStatus": "failed",
-      "result": "failed",
-      "scope": "Neo webServer session selection, print-mode stream-json, SSE, persisted assistant message, tools disabled",
+      "model": "hy4-preview",
+      "verificationStatus": "verified",
+      "result": "passed",
+      "scope": "CLI model discovery, Neo webServer model selection persistence, print-mode stream-json, SSE, persisted assistant message, tools disabled",
       "evidence": [
         "scripts/acceptance/workbuddy-engine-live-smoke.ts",
-        "docs/acceptance/external-cli-engine-onboarding/07-session-workbuddy-real-client-selected.png"
+        "docs/acceptance/external-cli-engine-onboarding/08-session-workbuddy-live-conversation.png",
+        "tests/unit/agentEngine/agentEngineModelCatalog.test.ts",
+        "tests/unit/services/agentEngine/agentEngineModelCatalogStrict.test.ts"
       ],
-      "reason": "2026-08-29 rerun via scripts/acceptance/workbuddy-engine-live-smoke.ts (WorkBuddy 5.3.14 / CodeBuddy CLI 2.115.0): Neo webServer session selection and message dispatch reached the CLI, but the reply was HTTP 429 \"已达到企业为您设置的额度上限\" (enterprise quota cap) instead of the per-run nonce. Quota exhaustion on the operator account, not a runtime defect; last verified passed run was 2026-07-30 (see git history of this record). Re-run once quota resets. The free hy4-preview tier cannot be selected through Neo today: the WorkBuddy engine manifest is modelSelection=client_default with no model discovery, so the smoke can only exercise the client default model."
+      "reason": "2026-08-29 rerun via WORKBUDDY_E2E_MODEL=hy4-preview npx tsx scripts/acceptance/workbuddy-engine-live-smoke.ts (WorkBuddy 5.3.14 / CodeBuddy CLI 2.115.0): the installed CLI help catalog exposed hy4-preview, Neo persisted codebuddy_code / hy4-preview on the session, and the exact per-run nonce NEO_WORKBUDDY_HY4_20260829_1648 returned through streaming SSE and the persisted assistant message. The smoke also verified that both client_default and hy4-preview are present in the runtime catalog."
     },
     {
       "id": "grok-cli-local-spike",

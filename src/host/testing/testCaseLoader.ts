@@ -148,7 +148,10 @@ export function filterTestCases(
 
       // Filter by tags
       if (filterTags && filterTags.length > 0) {
-        if (!filterTags.some((tag) => (testCase.tags || []).includes(tag))) continue;
+        // Keep case and suite tags separate for case-bank display, while preserving
+        // the pre-CASELIST selection semantics where suite tags were filterable.
+        const filterableTags = [...(testCase.tags ?? []), ...(testCase.inheritedTags ?? [])];
+        if (!filterTags.some((tag) => filterableTags.includes(tag))) continue;
       }
 
       // Check "only" flag

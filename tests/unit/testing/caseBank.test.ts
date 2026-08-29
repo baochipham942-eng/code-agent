@@ -63,7 +63,7 @@ describe('case bank enumeration and YAML writes', () => {
     expect(items.find((item) => 'parseError' in item)).toMatchObject({ id: 'broken.yaml' });
   });
 
-  it('suite 标签只进入 inheritedTags，case 标签筛选不匹配继承标签', async () => {
+  it('suite 标签单独进入 inheritedTags，同时保留基线的标签筛选命中语义', async () => {
     const { bank } = await makeRepo();
     const file = path.join(bank, '01-tags.yaml');
     await fs.writeFile(file, suite('tagged', { suiteTags: ['suite-tag'], caseTags: ['case-tag'] }));
@@ -71,7 +71,8 @@ describe('case bank enumeration and YAML writes', () => {
     const loaded = await loadTestSuite(file);
     expect(loaded.cases[0].tags).toEqual(['case-tag']);
     expect(loaded.cases[0].inheritedTags).toEqual(['suite-tag']);
-    expect(filterTestCases(loaded ? [loaded] : [], { filterTags: ['suite-tag'] })).toEqual([]);
+    const baselineExpectedIds = ['tagged'];
+    expect(filterTestCases([loaded], { filterTags: ['suite-tag'] }).map((item) => item.id)).toEqual(baselineExpectedIds);
     expect(filterTestCases([loaded], { filterTags: ['case-tag'] }).map((item) => item.id)).toEqual(['tagged']);
   });
 
@@ -102,6 +103,11 @@ describe('case bank enumeration and YAML writes', () => {
     await expect(enumerateCaseBank(root, '2026-08-29')).resolves.toEqual([
       expect.objectContaining({ id: 'archive-me', retired: true }),
     ]);
+
+    await saveCaseBank(root, { action: 'archive', id: 'archive-me' }, '2026-08-30');
+    const rearchived = await fs.readFile(file, 'utf8');
+    expect(rearchived).toContain('    rotation:\n      retire_after: 2026-08-30');
+    expect(rearchived).not.toContain('retire_after: 2026-08-29');
   });
 
   it('草稿只写 drafts，拒绝路径穿越和全题库 id 冲突，默认 loader 不加载', async () => {

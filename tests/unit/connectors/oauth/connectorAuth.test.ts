@@ -152,6 +152,39 @@ describe('ConnectorAuth', () => {
     expect(() => store.codeVerifier()).toThrow('Connector OAuth code verifier is not available');
   });
 
+  it('uses the provider default grant when the five-field custom descriptor has no scope field', async () => {
+    const store = memoryStore('custom-oauth');
+    const handleAuthorizationRedirect = vi.fn(async (
+      _input: { accountId: string; flowId?: string; authUrl: URL },
+    ) => {});
+    const auth = new ConnectorAuth({
+      coordinator: {
+        beginFlow: vi.fn(async () => ({ ...flow, accountId: 'custom-oauth' })),
+        handleAuthorizationRedirect,
+        waitForCallback: vi.fn(() => new Promise(() => undefined)),
+        cancelFlow: vi.fn(() => false),
+      } as unknown as OAuthCoordinator,
+      storeFactory: () => store,
+    });
+
+    void auth.beginFlow({
+      accountId: 'custom-oauth',
+      accountLabel: 'accounts.example.com',
+      descriptor: {
+        ...descriptor,
+        id: 'custom-oauth',
+        displayName: 'accounts.example.com',
+        scopes: { 'http.request': '' },
+      },
+      action: 'http.request',
+    });
+
+    await vi.waitFor(() => expect(handleAuthorizationRedirect).toHaveBeenCalledOnce());
+    const authorizationUrl = handleAuthorizationRedirect.mock.calls[0]?.[0]?.authUrl as URL;
+    expect(authorizationUrl.searchParams.has('scope')).toBe(false);
+    expect(authorizationUrl.searchParams.get('code_challenge_method')).toBe('S256');
+  });
+
   it('refreshes an expired access token and overwrites storage', async () => {
     const store = seedExpiredStore();
     const fetchFn: FetchLike = vi.fn(async (_input, init) => {

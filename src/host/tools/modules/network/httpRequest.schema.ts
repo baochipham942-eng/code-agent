@@ -14,6 +14,7 @@ Security restrictions:
 - Maximum timeout: 5 minutes
 
 Parameters:
+- action (optional): "guide" reads and records the matched connector's API guide; "request" performs the HTTP call (default)
 - url (required): Target URL (must be http:// or https://)
 - method (optional): HTTP method, default GET
 - headers (optional): Request headers as object
@@ -28,6 +29,11 @@ Examples:
   inputSchema: {
     type: 'object',
     properties: {
+      action: {
+        type: 'string',
+        enum: ['guide', 'request'],
+        description: 'Read the matched connector guide or perform the request (default: request)',
+      },
       url: {
         type: 'string',
         description: 'Target URL (http:// or https://)',

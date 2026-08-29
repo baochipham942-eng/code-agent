@@ -33,6 +33,7 @@ describe('shell capabilities', () => {
     ['domain:settings', 'resolveProviderIconAsset'],
     ['domain:settings', 'getBudgetStatus'],
     ['domain:settings', 'setBudgetConfig'],
+    ['domain:connector', 'oauthSaveDescriptor'],
     ['domain:provider', 'list_realtime_voice_providers'],
     ['domain:provider', 'save_realtime_voice_provider'],
     ['domain:provider', 'test_realtime_voice_provider'],
@@ -83,6 +84,12 @@ describe('shell capabilities', () => {
     ))).toMatchObject({
       risk: 'high',
     });
+  });
+
+  it('marks custom OAuth descriptor changes as a high-risk shell mutation', () => {
+    expect(getShellCapabilities().find((capability) => (
+      capability.id === makeShellCapabilityId('domain:connector', 'oauthSaveDescriptor')
+    ))).toMatchObject({ risk: 'high' });
   });
 
   it.each(['turnCheckout', 'turnRedo'])('marks %s as a high-risk shell mutation', (action) => {

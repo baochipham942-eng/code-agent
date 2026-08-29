@@ -1,6 +1,6 @@
 import type { OAuthLoopbackRedirect } from './oauthCoordinator';
 
-type LoopbackRedirectUriSupport = 'confirmed' | 'pending-verification' | 'unsupported';
+export type LoopbackRedirectUriSupport = 'confirmed' | 'pending-verification' | 'unsupported';
 
 export interface ProviderDescriptor {
   id: string;
@@ -10,6 +10,12 @@ export interface ProviderDescriptor {
   clientId: string;
   clientSecret?: string;
   scopes: Record<string, string>;
+  // Exact API hosts that may receive this connector's bearer token. Authorization/token hosts
+  // are deliberately not treated as API hosts unless the descriptor opts in explicitly.
+  apiHosts?: readonly string[];
+  // Scope checked before http_request injects the token. Empty means the provider's app-default
+  // grant, which is required by the five-field generic OAuth entry (there is no hidden scope field).
+  httpRequestScope?: string;
   // Optional exact allowlist for providers whose product boundary must stay narrower than the
   // OAuth server's full scope catalog. Every whitespace/comma-delimited scope token must match.
   allowedScopes?: readonly string[];
@@ -32,6 +38,11 @@ export function validateProviderDescriptor(descriptor: ProviderDescriptor): void
   }
   new URL(descriptor.authorizeUrl);
   new URL(descriptor.tokenUrl);
+  for (const host of descriptor.apiHosts ?? []) {
+    if (!host.trim() || host.includes('/') || host.includes(':')) {
+      throw new Error(`Connector OAuth API host "${host}" is invalid for ${descriptor.id}`);
+    }
+  }
   if (descriptor.allowedScopes) {
     const allowedScopes = new Set(descriptor.allowedScopes);
     for (const configuredScopes of Object.values(descriptor.scopes)) {

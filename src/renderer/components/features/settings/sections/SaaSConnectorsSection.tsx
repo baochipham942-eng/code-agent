@@ -19,17 +19,16 @@ import { CLI_CONNECTOR_DESCRIPTORS } from '@shared/constants/cliConnectorDescrip
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useConnectorInChat } from '../../../../hooks/useConnectorInChat';
-import { Z_LAYERS } from '../../../../styles/zLayers';
 import { Button, Input, Modal } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { ConnectorLogo } from '../../connectors/ConnectorLogo';
+import { CustomOAuthConnectorForm, type CustomOAuthDescriptorDraft } from './CustomOAuthConnectorForm';
+import { SaaSConnectorFeedback } from './SaaSConnectorFeedback';
 
 type LoopbackRedirectUriSupport = 'confirmed' | 'pending-verification' | 'unsupported';
 type ConnectorAuthMode = 'oauth' | 'lark-cli' | 'tmeet-cli';
 
-const CLI_LOGO_BY_PROVIDER = new Map(
-  CLI_CONNECTOR_DESCRIPTORS.map((descriptor) => [descriptor.id, descriptor.logo]),
-);
+const CLI_LOGO_BY_PROVIDER = new Map(CLI_CONNECTOR_DESCRIPTORS.map((descriptor) => [descriptor.id, descriptor.logo]));
 
 interface ConnectorOAuthProviderStatus {
   id: string;
@@ -65,6 +64,7 @@ const CONNECT_ACTION_BY_PROVIDER: Readonly<Record<string, string>> = {
   feishu: 'message.send-as-user',
   'google-calendar': 'calendar.events',
   tmeet: 'meeting.create',
+  'custom-oauth': 'http.request',
 };
 
 const LOOPBACK_SUPPORT_VALUES = new Set<LoopbackRedirectUriSupport>([
@@ -199,27 +199,25 @@ function getProviderName(status: ConnectorOAuthProviderStatus, text: SaaSConnect
 
 function getProviderCapability(status: ConnectorOAuthProviderStatus, text: SaaSConnectorsText): string {
   if (status.id === 'google-calendar') return text.capabilities.googleCalendar;
-  return status.id === 'tmeet' ? text.capabilities.tmeet : text.capabilities.feishu;
-}
-
-function getAuthorizationOpenedText(providerId: string, text: SaaSConnectorsText): string {
-  return providerId === 'google-calendar'
-    ? text.toast.googleCalendarAuthorizationOpened
-    : text.toast.authorizationOpened;
+  if (status.id === 'tmeet') return text.capabilities.tmeet;
+  return status.id === 'custom-oauth' ? text.capabilities.customOAuth : text.capabilities.feishu;
 }
 
 function getConnectedText(providerId: string, text: SaaSConnectorsText): string {
+  if (providerId === 'custom-oauth') return text.toast.customConnected;
   return providerId === 'google-calendar' ? text.toast.googleCalendarConnected : text.toast.connected;
 }
 
 function getDisconnectedText(providerId: string, text: SaaSConnectorsText): string {
+  if (providerId === 'custom-oauth') return text.toast.customDisconnected;
   if (providerId === 'google-calendar') return text.toast.googleCalendarDisconnected;
   return providerId === 'tmeet' ? text.toast.tmeetDisconnected : text.toast.disconnected;
 }
 
 function getTryItExamples(status: ConnectorOAuthProviderStatus, text: SaaSConnectorsText): string[] {
   if (status.id === 'google-calendar') return text.tryIt.googleCalendar;
-  return status.id === 'tmeet' ? text.tryIt.tmeet : text.tryIt.feishu;
+  if (status.id === 'tmeet') return text.tryIt.tmeet;
+  return status.id === 'custom-oauth' ? text.tryIt.customOAuth : text.tryIt.feishu;
 }
 
 function getCliConnectLabel(status: ConnectorOAuthProviderStatus, text: SaaSConnectorsText): string {
@@ -330,6 +328,14 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
   const [pendingDisconnectId, setPendingDisconnectId] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [customAppOpen, setCustomAppOpen] = useState(false);
+  const [customFormOpen, setCustomFormOpen] = useState(false);
+  const [customDescriptorDraft, setCustomDescriptorDraft] = useState<CustomOAuthDescriptorDraft>({
+    authorizeUrl: '',
+    tokenUrl: '',
+    clientId: '',
+    requiresClientSecret: false,
+    loopbackRedirectUriSupport: 'confirmed',
+  });
 
   const refresh = useCallback(async (
     clearError = true,
@@ -402,9 +408,9 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
 
     setBusyKey(`${providerId}:connect`);
     setError(null);
-    setReceipt(providerId === 'tmeet'
-      ? null
-      : { kind: 'info', text: getAuthorizationOpenedText(providerId, text) });
+    // The shared consent modal is now the pre-browser receipt. Do not claim the browser opened
+    // while that decision is still pending; tmeet publishes a real authorizationOpened status.
+    setReceipt(null);
     if (isCliAuthMode(authMode)) {
       setStatuses((current) => current.map((status) => status.id === providerId
         ? { ...status, step: 1, blocked: false }
@@ -533,6 +539,33 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
     }
   }, [refresh, text.errors.disconnectFailed, text.toast.disconnected]);
 
+  const saveCustomDescriptor = useCallback(async () => {
+    setBusyKey('custom-oauth:descriptor');
+    setError(null);
+    try {
+      await ipcService.invokeDomain(
+        IPC_DOMAINS.CONNECTOR,
+        'oauthSaveDescriptor',
+        customDescriptorDraft,
+      );
+      const nextStatuses = await refresh();
+      if (!nextStatuses?.some((status) => status.id === 'custom-oauth')) {
+        setError(text.errors.statusUnavailable);
+        return;
+      }
+      setCustomFormOpen(false);
+      setActiveProviderId('custom-oauth');
+      setReceipt({ kind: 'success', text: text.customOAuth.saved });
+    } catch (caught) {
+      const reason = caught instanceof Error && caught.message.trim()
+        ? caught.message
+        : text.errors.customDescriptorSaveFailed;
+      setError(reason);
+    } finally {
+      setBusyKey(null);
+    }
+  }, [customDescriptorDraft, refresh, text.customOAuth.saved, text.errors.customDescriptorSaveFailed, text.errors.statusUnavailable]);
+
   const activeStatus = activeProviderId
     ? statuses.find((status) => status.id === activeProviderId)
     : undefined;
@@ -543,30 +576,17 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
 
   return (
     <div className="contents" data-testid="saas-connectors-section">
-      {receipt && (
-        <div
-          role="status"
-          data-testid="saas-connector-toast"
-          className={`fixed right-6 top-6 flex max-w-sm items-center gap-2 rounded-lg border bg-zinc-900 px-3 py-2 text-xs shadow-md dark:shadow-2xl ${
-            receipt.kind === 'success'
-              ? 'border-emerald-500/30 text-badge-success'
-              : 'border-amber-500/30 text-badge-warning'
-          }`}
-          style={{ zIndex: Z_LAYERS.toast }}
-        >
-          {receipt.kind === 'success' ? null : <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {receipt.text}
-        </div>
-      )}
+      <SaaSConnectorFeedback receipt={receipt} error={error} />
 
-      {error && (
-        <div
-          role="alert"
-          data-testid="saas-connector-error"
-          className="col-span-full rounded-md border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-badge-danger"
-        >
-          {error}
-        </div>
+      {!statusInvalid && (
+        <CustomOAuthConnectorForm
+          open={customFormOpen}
+          busy={busyKey === 'custom-oauth:descriptor'}
+          draft={customDescriptorDraft}
+          onToggle={() => setCustomFormOpen((current) => !current)}
+          onChange={setCustomDescriptorDraft}
+          onSave={() => void saveCustomDescriptor()}
+        />
       )}
 
       {loading && statuses.length === 0 ? (
@@ -708,7 +728,10 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
               {presentation.detail || getProviderCapability(status, text)}
             </p>
 
-            {state === 'connected' && status.id !== 'google-calendar' && (
+            {state === 'connected'
+              && status.id !== 'google-calendar'
+              && status.id !== 'custom-oauth'
+              && (
               <Button
                 size="sm"
                 variant="primary"

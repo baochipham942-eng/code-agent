@@ -14,6 +14,8 @@ function createGoogleCalendarOAuthDescriptor(
     scopes: {
       'calendar.events': GOOGLE_CALENDAR_EVENTS_SCOPE,
     },
+    apiHosts: ['calendar.googleapis.com'],
+    httpRequestScope: GOOGLE_CALENDAR_EVENTS_SCOPE,
     // Calendar-only is a product boundary. A future Gmail descriptor must be reviewed and shipped
     // separately instead of widening this connector by editing the requested scope string.
     allowedScopes: [GOOGLE_CALENDAR_EVENTS_SCOPE],

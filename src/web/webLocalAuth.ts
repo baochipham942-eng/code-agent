@@ -1,6 +1,7 @@
 import type { HandlerFn } from '../host/platform';
 import type { AuthStatus, AuthUser } from '../shared/contract';
 import { IPC_DOMAINS } from '../shared/ipc';
+import { shouldRefusePackagedDevMode } from '../shared/security/packagedDevModeGuard';
 
 const LOCAL_WEB_AUTH_TEST_USER: AuthUser = {
   id: 'local-web-test-user',
@@ -19,7 +20,8 @@ type DomainIpcRequest = {
 type DomainAuthHandler = (event: unknown, request?: DomainIpcRequest) => unknown | Promise<unknown>;
 
 export function shouldUseLocalWebAuthStatus(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_E2E === '1' || env.CODE_AGENT_ENABLE_DEV_API === 'true';
+  return !shouldRefusePackagedDevMode(env)
+    && (env.CODE_AGENT_E2E === '1' || env.CODE_AGENT_ENABLE_DEV_API === 'true');
 }
 
 export function getLocalWebAuthStatus(): AuthStatus {

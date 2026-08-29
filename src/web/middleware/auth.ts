@@ -9,6 +9,7 @@ import * as path from 'path';
 import type { Request, Response, NextFunction } from 'express';
 import { createLogger } from '../../host/services/infra/logger';
 import { WEB_SERVER_SERVICE } from '../../shared/constants/webServer';
+import { shouldRefusePackagedDevMode } from '../../shared/security/packagedDevModeGuard';
 
 const logger = createLogger('AuthMiddleware');
 
@@ -208,25 +209,17 @@ import('../../host/services/infra/gracefulShutdown')
   })
   .catch(() => { /* gracefulShutdown 不可用就纯靠 .unref() 兜底 */ });
 
-// ── E2E flag refusal under the real Tauri shell ───────────────────────────
+// ── Unsafe dev mode refusal under the real Tauri shell ────────────────────
 /**
- * CODE_AGENT_E2E=1 旁路 AuthService、telemetry uploader 和 dev API 路由
- * （webServer.ts / webLocalAuth.ts / routes/dev.ts）。真实 Tauri 壳拉起时
- * （CODE_AGENT_TAURI_BOOT_TOKEN 存在）必须硬拒，防止打包态被环境变量降级；
- * compile warmup（COMPILE_WARMUP=1）是壳自己带着 E2E 拉起的合法路径（不
- * listen、跑完即退），豁免。Playwright/probe 直接 node 起 server，无 boot
- * token，不受影响。
+ * CODE_AGENT_E2E=1 与 CODE_AGENT_ENABLE_DEV_API=true 会旁路真实鉴权、开放
+ * dev API，后者还允许改写 realtime voice 上游。真实 Tauri 壳拉起时必须硬拒；
+ * compile warmup 是壳自己带着 E2E 拉起的合法路径（不 listen、跑完即退），
+ * 只豁免 E2E。Playwright/probe 直接 node 起 server，无 boot token，不受影响。
  */
-export function shouldRefuseE2EFlag(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_E2E === '1'
-    && Boolean(env.CODE_AGENT_TAURI_BOOT_TOKEN)
-    && env.CODE_AGENT_COMPILE_WARMUP !== '1';
-}
-
 /** webServer 启动入口调用：命中即打日志并退出进程（fail-fast，不 listen）。 */
-export function exitIfE2EFlagRefused(env: NodeJS.ProcessEnv = process.env): void {
-  if (!shouldRefuseE2EFlag(env)) return;
-  logger.error('CODE_AGENT_E2E=1 is refused under the Tauri shell: it bypasses AuthService, telemetry gating and enables dev API routes. Unset it and restart.');
+export function exitIfPackagedDevModeRefused(env: NodeJS.ProcessEnv = process.env): void {
+  if (!shouldRefusePackagedDevMode(env)) return;
+  logger.error('Unsafe dev mode is refused under the Tauri shell: CODE_AGENT_E2E=1 and CODE_AGENT_ENABLE_DEV_API=true bypass production security boundaries. Unset them and restart.');
   process.exit(1);
 }
 

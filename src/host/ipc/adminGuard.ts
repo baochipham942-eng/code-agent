@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { IPCResponse } from '../../shared/ipc';
+import { shouldRefusePackagedDevMode } from '../../shared/security/packagedDevModeGuard';
 import { getAuthService } from '../services/auth';
 
 export class AdminAccessError extends Error {
@@ -15,12 +16,13 @@ export class AdminAccessError extends Error {
 }
 
 function isLocalWebAdminTestMode(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_WEB_MODE === 'true'
+  return !shouldRefusePackagedDevMode(env)
+    && env.CODE_AGENT_WEB_MODE === 'true'
     && (env.CODE_AGENT_E2E === '1' || env.CODE_AGENT_ENABLE_DEV_API === 'true');
 }
 
-export function isCurrentUserAdmin(): boolean {
-  if (isLocalWebAdminTestMode()) return true;
+export function isCurrentUserAdmin(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (isLocalWebAdminTestMode(env)) return true;
 
   const authService = getAuthService();
   return authService.getCurrentUser()?.isAdmin === true

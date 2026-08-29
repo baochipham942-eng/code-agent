@@ -18,12 +18,17 @@ import { getConnectorRegistry } from '../connectors';
 import { ConnectorAuth } from '../connectors/oauth/connectorAuth';
 import { ConnectorOAuthStore } from '../connectors/oauth/connectorOAuthStore';
 import { OAuthCoordinator } from '../connectors/oauth/oauthCoordinator';
-import { FEISHU_OAUTH_DESCRIPTOR } from '../connectors/oauth/feishuOAuth';
-import { GOOGLE_CALENDAR_OAUTH_DESCRIPTOR } from '../connectors/oauth/googleCalendarOAuth';
+import {
+  getOAuthProviderDescriptor,
+  listOAuthProviderDescriptors,
+  saveCustomOAuthProviderDescriptor,
+  type CustomOAuthDescriptorInput,
+} from '../connectors/oauth/providerRegistry';
+import { requestMcpOAuthConsent } from '../mcp/mcpOAuthConsent';
 import { createLarkCliDriver } from '../connectors/feishu/larkCli';
 import { createTmeetCliDriver } from '../connectors/tmeet/tmeetCli';
 import { getCachedStatus } from '../connectors/cli/cliConnector';
-import type { ProviderDescriptor } from '../connectors/oauth/providerDescriptor';
+import { validateProviderDescriptor, type ProviderDescriptor } from '../connectors/oauth/providerDescriptor';
 import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../shared/constants';
 import type { ConfigService } from '../services';
 import { replaceCliConnectorConnectionStatusCache } from '../connectors/cli/cliConnectorStatusCache';
@@ -338,25 +343,6 @@ async function handleOpenConnectorApp(connectorId: string | undefined): Promise<
   return { opened: true, app: appName };
 }
 
-// SaaS connector OAuth（N-SAAS-A2A 第一刀）。descriptor 一家一条，加一家只加一行，
-// 流程代码不变。accountId 暂等于 providerId：本刀只支持每家一个账号，多账号是后续刀的事。
-const OAUTH_PROVIDERS: Record<string, ProviderDescriptor> = {
-  [FEISHU_OAUTH_DESCRIPTOR.id]: FEISHU_OAUTH_DESCRIPTOR,
-  [GOOGLE_CALENDAR_OAUTH_DESCRIPTOR.id]: GOOGLE_CALENDAR_OAUTH_DESCRIPTOR,
-  tmeet: {
-    id: 'tmeet',
-    displayName: '腾讯会议',
-    authorizeUrl: 'https://meeting.tencent.com',
-    tokenUrl: 'https://meeting.tencent.com',
-    clientId: 'tmeet-cli',
-    scopes: { 'meeting.create': 'meeting' },
-    redirect: { mode: 'loopback-random' },
-    loopbackRedirectUriSupport: 'confirmed',
-    requiresClientSecret: false,
-    authMode: 'tmeet-cli',
-  },
-};
-
 const larkCli = createLarkCliDriver();
 const tmeetCli = createTmeetCliDriver();
 type CliAuthMode = 'lark-cli' | 'tmeet-cli';
@@ -378,7 +364,7 @@ function isCliAuthMode(authMode: ProviderDescriptor['authMode']): authMode is Cl
 }
 
 function requireOAuthProvider(providerId: string | undefined): ProviderDescriptor {
-  const descriptor = providerId ? OAUTH_PROVIDERS[providerId] : undefined;
+  const descriptor = getOAuthProviderDescriptor(providerId);
   if (!descriptor) {
     throw new Error(`Unknown OAuth connector provider: ${providerId}`);
   }
@@ -405,7 +391,7 @@ interface ConnectorOAuthProviderStatus {
 }
 
 async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatus[]> {
-  const statuses = await Promise.all(Object.values(OAUTH_PROVIDERS).map(async (descriptor) => {
+  const statuses = await Promise.all(listOAuthProviderDescriptors().map(async (descriptor) => {
     const authMode = descriptor.authMode ?? 'oauth';
     if (isCliAuthMode(authMode)) {
       const oauthStore = new ConnectorOAuthStore(descriptor.id);
@@ -479,6 +465,24 @@ async function handleConnectorOAuthConnect(
   alreadyConnected: boolean;
 }> {
   const descriptor = requireOAuthProvider(payload?.providerId);
+  validateProviderDescriptor(descriptor);
+  const action = payload?.action ?? Object.keys(descriptor.scopes)[0];
+  if (!action) {
+    throw new Error(`OAuth connector provider ${descriptor.id} declares no authorization scope`);
+  }
+  const scope = descriptor.scopes[action] ?? '';
+  const consent = await requestMcpOAuthConsent({
+    kind: 'connector',
+    serverName: descriptor.displayName,
+    serverUrl: descriptor.authorizeUrl,
+    configSource: action,
+    scope,
+    authorizationServer: new URL(descriptor.authorizeUrl).origin,
+    redirectHost: '127.0.0.1',
+  });
+  if (!consent.granted) {
+    throw Object.assign(new Error(consent.permissionDecisionReason), { code: 'CANCELLED' });
+  }
   if (isCliAuthMode(descriptor.authMode) && payload?.authMode !== 'oauth') {
     const runtime = CLI_PROVIDER_RUNTIMES[descriptor.id];
     if (!runtime) throw new Error(`CLI connector runtime is unavailable for ${descriptor.id}`);
@@ -523,13 +527,6 @@ async function handleConnectorOAuthConnect(
   if (descriptor.id === 'tmeet') {
     throw new Error('Tencent Meeting authorization is available only through the official tmeet CLI');
   }
-  const action = payload?.action ?? Object.keys(descriptor.scopes)[0];
-  if (!action) {
-    throw new Error(`OAuth connector provider ${descriptor.id} declares no writeback scope`);
-  }
-
-  // ponytail: 授权页本身就是用户在厂商侧的同意面，这里只负责把它打开；
-  // 连接前的「要授哪些权限」摘要属于 UI 那一刀，不在本刀。
   const auth = new ConnectorAuth({
     coordinator: new OAuthCoordinator({
       openAuthorization: async (authUrl) => {
@@ -545,6 +542,14 @@ async function handleConnectorOAuthConnect(
     descriptor,
     action,
   });
+  return listConnectorOAuthStatuses();
+}
+
+async function handleConnectorOAuthSaveDescriptor(
+  payload: CustomOAuthDescriptorInput | undefined,
+): Promise<ConnectorOAuthProviderStatus[]> {
+  if (!payload) throw new Error('Custom OAuth descriptor is required');
+  saveCustomOAuthProviderDescriptor(payload);
   return listConnectorOAuthStatuses();
 }
 
@@ -716,6 +721,11 @@ export function registerConnectorHandlers(
           break;
         case 'oauthStatus':
           data = await listConnectorOAuthStatuses();
+          break;
+        case 'oauthSaveDescriptor':
+          data = await handleConnectorOAuthSaveDescriptor(
+            request.payload as CustomOAuthDescriptorInput | undefined,
+          );
           break;
         case 'oauthConnect':
           data = await handleConnectorOAuthConnect(

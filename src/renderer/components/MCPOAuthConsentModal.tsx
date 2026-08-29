@@ -22,7 +22,9 @@ type ConsentAction = MCPOAuthConsentResponse['action'];
 
 export const MCPOAuthConsentModal: React.FC<Props> = ({ request, onClose }) => {
   const { t } = useI18n();
-  const text = t.settings.mcp.oauthConsent;
+  const text = request.kind === 'connector'
+    ? t.settings.saasConnectors.oauthConsent
+    : t.settings.mcp.oauthConsent;
   const [submitting, setSubmitting] = useState(false);
 
   const rows = useMemo(() => [

@@ -4,8 +4,15 @@ import type {
   OAuthTokens,
 } from '@modelcontextprotocol/client';
 import { getSecureStorage, type SecureStorageService } from '../../services/core/secureStorage';
+import { validateProviderDescriptor, type ProviderDescriptor } from './providerDescriptor';
 
-type ConnectorOAuthStorageKind = 'tokens' | 'client-info' | 'code-verifier' | 'discovery' | 'client-secret';
+type ConnectorOAuthStorageKind =
+  | 'tokens'
+  | 'client-info'
+  | 'code-verifier'
+  | 'discovery'
+  | 'client-secret'
+  | 'descriptor';
 type ConnectorOAuthStorageKey = `connector-oauth:${string}:${string}`;
 export type ConnectorOAuthCredentialScope =
   | 'all'
@@ -103,6 +110,26 @@ export class ConnectorOAuthStore {
       throw new Error('Connector OAuth client secret must not be empty');
     }
     this.secureStorage.set(this.keyFor('client-secret'), clientSecret.trim());
+  }
+
+  descriptor(): ProviderDescriptor | undefined {
+    const descriptor = this.readJson<ProviderDescriptor>('descriptor');
+    if (!descriptor) return undefined;
+    try {
+      validateProviderDescriptor(descriptor);
+      return descriptor;
+    } catch {
+      return undefined;
+    }
+  }
+
+  saveDescriptor(descriptor: ProviderDescriptor): void {
+    validateProviderDescriptor(descriptor);
+    if (descriptor.id !== this.accountId) {
+      throw new Error(`Connector OAuth descriptor id must match accountId ${this.accountId}`);
+    }
+    const { clientSecret: _clientSecret, ...persistable } = descriptor;
+    this.writeJson('descriptor', persistable);
   }
 
   authorizationServerIssuer(): string | undefined {

@@ -147,6 +147,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'oauthCancelConnect',
     'oauthConnect',
     'oauthDisconnect',
+    'oauthSaveDescriptor',
     'oauthSetSecret',
     'oauthStatus',
     'openApp',
@@ -561,9 +562,10 @@ const CAPABILITY_DOMAIN_ACTIONS = {
 
 const HIGH_RISK_CAPABILITIES = new Set([
   makeShellCapabilityId(IPC_DOMAINS.AGENT, 'send'),
-  // oauthSetSecret 落用户机密、oauthConnect 发起对外授权；inferRisk 按动作名前缀猜会把
-  // 这两个 oauth* 判成 low，与 desktop/importBrowserProfileCookies 同档的风险显示不出来。
+  // oauthSetSecret 落用户机密、oauthSaveDescriptor 改授权与注入边界、oauthConnect 发起
+  // 对外授权；inferRisk 按动作名前缀猜会把 oauth* 判成 low，风险显示不出来。
   makeShellCapabilityId(IPC_DOMAINS.CONNECTOR, 'oauthConnect'),
+  makeShellCapabilityId(IPC_DOMAINS.CONNECTOR, 'oauthSaveDescriptor'),
   makeShellCapabilityId(IPC_DOMAINS.CONNECTOR, 'oauthSetSecret'),
   makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'ensureManagedBrowserSession'),
   makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'importBrowserProfileCookies'),

@@ -73,6 +73,21 @@ describe('MCPOAuthConsentModal', () => {
     expect(screen.getAllByText('-')).toHaveLength(2);
   });
 
+  it('reuses the same consent modal shape for a SaaS connector before browser authorization', () => {
+    render(<MCPOAuthConsentModal request={makeRequest({
+      kind: 'connector',
+      serverName: 'accounts.example.com',
+      serverUrl: 'https://accounts.example.com/oauth/authorize',
+      configSource: 'http.request',
+      scope: '',
+    })} onClose={vi.fn()} />);
+
+    expect(screen.getByText('Confirm SaaS authorization')).toBeTruthy();
+    expect(screen.getByText('Service')).toBeTruthy();
+    expect(screen.getByText('Provider default scope')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Confirm and open browser' })).toBeTruthy();
+  });
+
   it('invokes authorize consent payload and closes', async () => {
     const onClose = vi.fn();
     render(<MCPOAuthConsentModal request={makeRequest()} onClose={onClose} />);

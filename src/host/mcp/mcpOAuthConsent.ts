@@ -71,18 +71,21 @@ export async function requestMcpOAuthConsent(
   };
 
   const mainWindow = AppWindow.getAllWindows()[0];
+  const isConnector = request.kind === 'connector';
   if (!mainWindow) {
     logger.warn('No window available for MCP OAuth consent, declining', {
       requestId,
       serverName: request.serverName,
     });
-    const reason = '当前运行环境没有可投递的交互界面，MCP OAuth 授权已按无头规则安全拒绝。';
+    const reason = isConnector
+      ? '当前运行环境没有可投递的交互界面，SaaS 连接器 OAuth 授权已按无头规则安全拒绝。'
+      : '当前运行环境没有可投递的交互界面，MCP OAuth 授权已按无头规则安全拒绝。';
     return { granted: false, ...deniedDecisionMetadata(reason) };
   }
 
   mainWindow.webContents.send(IPC_CHANNELS.MCP_OAUTH_CONSENT_REQUEST, consentRequest);
   notifyDecisionNeeded({
-    title: 'MCP 服务器请求授权',
+    title: isConnector ? 'SaaS 连接器请求授权' : 'MCP 服务器请求授权',
     body: `${request.serverName} 请求打开授权页面`,
   });
 
@@ -115,7 +118,7 @@ export async function requestMcpOAuthConsent(
     return {
       granted: true,
       permissionDecision: 'allow',
-      permissionDecisionReason: '用户已授权 MCP OAuth。',
+      permissionDecisionReason: isConnector ? '用户已授权 SaaS 连接器 OAuth。' : '用户已授权 MCP OAuth。',
     };
   }
 
@@ -123,6 +126,6 @@ export async function requestMcpOAuthConsent(
     ? interactive
       ? '等待 MCP OAuth 授权超过 24 小时，停车请求已按安全兜底拒绝。'
       : headlessDecisionTimeoutReason(timeoutMs)
-    : '用户拒绝了 MCP OAuth 授权。';
+    : isConnector ? '用户拒绝了 SaaS 连接器 OAuth 授权。' : '用户拒绝了 MCP OAuth 授权。';
   return { granted: false, ...deniedDecisionMetadata(reason) };
 }

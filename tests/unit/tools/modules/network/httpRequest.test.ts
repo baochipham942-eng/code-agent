@@ -9,6 +9,19 @@ import type {
   Logger,
 } from '../../../../../src/host/protocol/tools';
 
+const connectorEnv = vi.hoisted(() => ({
+  provider: undefined as undefined | {
+    id: string;
+    displayName: string;
+  },
+  authorizationHeader: vi.fn(),
+}));
+
+vi.mock('../../../../../src/host/connectors/oauth/providerRegistry', () => ({
+  findConnectedOAuthProviderForHost: vi.fn(() => connectorEnv.provider),
+  getOAuthAuthorizationHeader: connectorEnv.authorizationHeader,
+}));
+
 import { httpRequestModule } from '../../../../../src/host/tools/modules/network/httpRequest';
 
 function makeLogger(): Logger {
@@ -45,6 +58,8 @@ const fetchMock = vi.fn();
 beforeEach(() => {
   fetchMock.mockReset();
   vi.stubGlobal('fetch', fetchMock);
+  connectorEnv.provider = undefined;
+  connectorEnv.authorizationHeader.mockReset().mockResolvedValue('Bearer injected-token');
 });
 
 afterEach(() => {
@@ -79,6 +94,7 @@ describe('httpRequestModule (native)', () => {
       expect(httpRequestModule.schema.permissionLevel).toBe('network');
       expect(httpRequestModule.schema.readOnly).toBe(false);
       expect(httpRequestModule.schema.allowInPlanMode).toBe(false);
+      expect(httpRequestModule.schema.readsUntrustedContent).toBe('block');
       expect(httpRequestModule.schema.inputSchema.required).toEqual(['url']);
     });
   });
@@ -274,6 +290,58 @@ describe('httpRequestModule (native)', () => {
       if (result.ok) {
         expect(result.output).toContain('Warning: Response too large');
       }
+    });
+  });
+
+  describe('connector authorization and guide prerequisite', () => {
+    const provider = { id: 'custom-oauth', displayName: 'Example SaaS' };
+
+    it('blocks the first connector request before reading the guide or touching credentials', async () => {
+      connectorEnv.provider = provider;
+      const result = await run(
+        { url: 'https://api.example.com/items', method: 'POST', body: '{}' },
+        makeCtx({ sessionId: 'guide-block-session' }),
+      );
+
+      expect(result).toMatchObject({ ok: false, code: 'CONNECTOR_GUIDE_REQUIRED' });
+      expect(connectorEnv.authorizationHeader).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('records a guide read, injects Authorization, and keeps the full HTTP request shape', async () => {
+      connectorEnv.provider = provider;
+      const ctx = makeCtx({ sessionId: 'guide-then-request-session' });
+
+      const guide = await run({ action: 'guide', url: 'https://api.example.com' }, ctx);
+      expect(guide).toMatchObject({ ok: true, meta: { action: 'guide', connectorId: 'custom-oauth' } });
+      expect(guide.ok && guide.output).toContain('Authorized host: api.example.com');
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      fetchMock.mockResolvedValue(makeResponse({ body: 'created' }));
+      const result = await run({
+        action: 'request',
+        url: 'https://api.example.com/items?limit=10',
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer model-supplied' },
+        body: '{"name":"test"}',
+      }, ctx);
+
+      expect(result.ok).toBe(true);
+      expect(connectorEnv.authorizationHeader).toHaveBeenCalledWith(provider);
+      const [requestedUrl, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(requestedUrl).toBe('https://api.example.com/items?limit=10');
+      expect(options.method).toBe('POST');
+      expect(options.body).toBe('{"name":"test"}');
+      expect(new Headers(options.headers).get('authorization')).toBe('Bearer injected-token');
+      expect(options.redirect).toBe('manual');
+    });
+
+    it('does not inject credentials into an unmatched public host', async () => {
+      fetchMock.mockResolvedValue(makeResponse({ body: 'ok' }));
+      await run({ url: 'https://public.example.net/data' }, makeCtx({ sessionId: 'public-session' }));
+
+      expect(connectorEnv.authorizationHeader).not.toHaveBeenCalled();
+      expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).has('authorization')).toBe(false);
     });
   });
 

@@ -31,6 +31,9 @@ const env = vi.hoisted(() => ({
   tmeetCancelConnect: vi.fn(),
   tmeetDisconnect: vi.fn(),
   openExternal: vi.fn(),
+  descriptor: undefined as Record<string, unknown> | undefined,
+  savedDescriptor: vi.fn(),
+  consent: { granted: true, permissionDecision: 'allow', permissionDecisionReason: 'allowed' },
 }));
 
 vi.mock('../../../src/host/connectors/feishu/larkCli', () => ({
@@ -57,11 +60,22 @@ vi.mock('../../../src/host/platform/nativeShell', () => ({
 
 vi.mock('../../../src/host/connectors/oauth/connectorOAuthStore', () => ({
   ConnectorOAuthStore: class {
+    readonly accountId: string;
+    constructor(accountId: string) { this.accountId = accountId; }
     tokens() { return env.tokens; }
     clientSecret() { return env.secret; }
     saveClientSecret(value: string) { env.savedSecret(value); env.secret = value; }
     invalidateCredentials(scope: string) { env.invalidate(scope); }
+    descriptor() { return this.accountId === 'custom-oauth' ? env.descriptor : undefined; }
+    saveDescriptor(value: Record<string, unknown>) {
+      env.descriptor = value;
+      env.savedDescriptor(value);
+    }
   },
+}));
+
+vi.mock('../../../src/host/mcp/mcpOAuthConsent', () => ({
+  requestMcpOAuthConsent: vi.fn(async () => env.consent),
 }));
 
 vi.mock('../../../src/host/platform', () => ({
@@ -109,6 +123,9 @@ beforeEach(() => {
   env.tmeetCancelConnect.mockReset();
   env.tmeetDisconnect.mockReset();
   env.openExternal.mockReset();
+  env.descriptor = undefined;
+  env.savedDescriptor.mockClear();
+  env.consent = { granted: true, permissionDecision: 'allow', permissionDecisionReason: 'allowed' };
 });
 
 describe('connector.ipc SaaS OAuth actions', () => {
@@ -354,6 +371,52 @@ describe('connector.ipc SaaS OAuth actions', () => {
     });
     expect(env.openExternal).not.toHaveBeenCalled();
   });
+
+  it('saves the five-field custom descriptor into ConnectorOAuthStore', async () => {
+    const handler = register();
+    const response = await handler(null, {
+      action: 'oauthSaveDescriptor',
+      payload: {
+        authorizeUrl: 'https://accounts.example.com/oauth/authorize',
+        tokenUrl: 'https://api.example.com/oauth/token',
+        clientId: 'client-123',
+        requiresClientSecret: true,
+        loopbackRedirectUriSupport: 'confirmed',
+      },
+    } as IPCRequest);
+
+    expect(response.success).toBe(true);
+    expect(env.savedDescriptor).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'custom-oauth',
+      displayName: 'accounts.example.com',
+      clientId: 'client-123',
+      requiresClientSecret: true,
+      loopbackRedirectUriSupport: 'confirmed',
+      apiHosts: ['api.example.com'],
+      scopes: { 'http.request': '' },
+    }));
+    expect((response.data as Array<Record<string, unknown>>).at(-1)).toMatchObject({
+      id: 'custom-oauth',
+      requiresClientSecret: true,
+      connected: false,
+    });
+  });
+
+  it('requires informed consent before opening a connector authorization flow', async () => {
+    env.consent = { granted: false, permissionDecision: 'deny', permissionDecisionReason: 'declined' };
+    const handler = register();
+    const response = await handler(null, {
+      action: 'oauthConnect',
+      payload: { providerId: 'feishu', action: 'message.send-as-user' },
+    } as IPCRequest);
+
+    expect(response).toMatchObject({
+      success: false,
+      error: { code: 'CANCELLED', message: 'declined' },
+    });
+    expect(env.larkConnect).not.toHaveBeenCalled();
+    expect(env.openExternal).not.toHaveBeenCalled();
+  });
 });
 
 describe('connector.ipc SaaS OAuth client secret', () => {
@@ -405,5 +468,27 @@ describe('connector.ipc SaaS OAuth client secret', () => {
 
     expect(response.success).toBe(false);
     expect(env.savedSecret).not.toHaveBeenCalled();
+  });
+
+  it('stores the runtime connector secret only after its descriptor requires one', async () => {
+    const handler = register();
+    await handler(null, {
+      action: 'oauthSaveDescriptor',
+      payload: {
+        authorizeUrl: 'https://accounts.example.com/authorize',
+        tokenUrl: 'https://api.example.com/token',
+        clientId: 'client-1',
+        requiresClientSecret: true,
+        loopbackRedirectUriSupport: 'confirmed',
+      },
+    } as IPCRequest);
+
+    const response = await handler(null, {
+      action: 'oauthSetSecret',
+      payload: { providerId: 'custom-oauth', clientSecret: 'runtime-secret', authMode: 'oauth' },
+    } as IPCRequest);
+
+    expect(response.success).toBe(true);
+    expect(env.savedSecret).toHaveBeenCalledWith('runtime-secret');
   });
 });

@@ -10,6 +10,9 @@ export interface ProviderDescriptor {
   clientId: string;
   clientSecret?: string;
   scopes: Record<string, string>;
+  // Optional exact allowlist for providers whose product boundary must stay narrower than the
+  // OAuth server's full scope catalog. Every whitespace/comma-delimited scope token must match.
+  allowedScopes?: readonly string[];
   extraAuthorizeParams?: Record<string, string>;
   redirect: OAuthLoopbackRedirect;
   loopbackRedirectUriSupport: LoopbackRedirectUriSupport;
@@ -29,6 +32,16 @@ export function validateProviderDescriptor(descriptor: ProviderDescriptor): void
   }
   new URL(descriptor.authorizeUrl);
   new URL(descriptor.tokenUrl);
+  if (descriptor.allowedScopes) {
+    const allowedScopes = new Set(descriptor.allowedScopes);
+    for (const configuredScopes of Object.values(descriptor.scopes)) {
+      for (const scope of configuredScopes.split(/[\s,]+/u).filter(Boolean)) {
+        if (!allowedScopes.has(scope)) {
+          throw new Error(`Connector OAuth scope "${scope}" is not allowed for ${descriptor.id}`);
+        }
+      }
+    }
+  }
   if (descriptor.loopbackRedirectUriSupport === 'unsupported') {
     throw new Error(`Connector OAuth loopback redirect is unsupported for ${descriptor.id}`);
   }

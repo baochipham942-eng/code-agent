@@ -127,6 +127,7 @@ describe('SaaSConnectorsSection Feishu lark-cli six states', () => {
     render(<SaaSConnectorsSection />);
 
     expect(screen.getByTestId('saas-connector-skeleton-feishu')).toBeTruthy();
+    expect(screen.getByTestId('saas-connector-skeleton-google-calendar')).toBeTruthy();
     expect(screen.getByTestId('saas-connector-skeleton-tmeet')).toBeTruthy();
   });
 
@@ -344,6 +345,37 @@ describe('SaaSConnectorsSection Tencent Meeting CLI card', () => {
 });
 
 describe('SaaSConnectorsSection five card states', () => {
+  it('lists Google Calendar and explains the missing injected client credential', async () => {
+    renderStatus({
+      id: 'google-calendar',
+      displayName: 'Google Calendar',
+      clientIdConfigured: false,
+      requiresClientSecret: false,
+    });
+
+    const card = await screen.findByTestId('saas-connector-google-calendar');
+    expect(card.textContent).toContain(zh.settings.saasConnectors.providers.googleCalendar);
+    expect(card.textContent).toContain(zh.settings.saasConnectors.details.missingClientId);
+    expect(within(card).queryByTestId('saas-card-action-google-calendar')).toBeNull();
+    fireEvent.click(card);
+    expect(within(screen.getByTestId('saas-detail-google-calendar'))
+      .getByText(zh.settings.saasConnectors.details.missingClientId)).toBeTruthy();
+  });
+
+  it('keeps a connected static Google descriptor out of chat until Calendar tools exist', async () => {
+    renderStatus({
+      id: 'google-calendar',
+      displayName: 'Google Calendar',
+      clientIdConfigured: true,
+      requiresClientSecret: false,
+      connected: true,
+    });
+
+    const card = await screen.findByTestId('saas-connector-google-calendar');
+    expect(card.textContent).toContain(zh.settings.saasConnectors.badges.connected);
+    expect(within(card).queryByTestId('saas-use-in-chat-google-calendar')).toBeNull();
+  });
+
   it('needs_secret: card opens a password field and only offers save-and-connect', async () => {
     renderStatus();
 

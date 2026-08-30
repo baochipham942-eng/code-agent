@@ -446,6 +446,7 @@ export function buildCLIConfig(options: {
   systemPrompt?: string;
   preloadTools?: string;
   metrics?: string;
+  statusFile?: string;
   tools?: string;
   disallowedTools?: string;
 }): CLIConfig {
@@ -489,6 +490,7 @@ export function buildCLIConfig(options: {
     autoApprovePlan: true, // CLI 模式默认自动批准 plan mode
     systemPrompt: options.systemPrompt,
     metricsPath: options.metrics,
+    statusFilePath: options.statusFile,
     // --tools / --disallowed-tools：run 级工具面裁剪（精确白名单，无核心工具兜底）
     allowedToolNames: parseToolNameListFlag(options.tools),
     deniedToolNames: parseToolNameListFlag(options.disallowedTools),

@@ -93,6 +93,8 @@ vi.mock('../../../src/host/agent/metricsCollector', () => ({
     recordCompaction = vi.fn();
     recordError = vi.fn();
     toJSON = vi.fn().mockReturnValue('{"ok":true}');
+    finalize = vi.fn().mockReturnValue({ sessionId: 'sess-1', turnCount: 1, inputTokens: 100, outputTokens: 50, totalTokens: 150 });
+    getMetrics = vi.fn().mockReturnValue({ inputTokens: 100, outputTokens: 50 });
   },
 }));
 
@@ -620,6 +622,107 @@ describe('CLIAgent', () => {
     expect(agent.getLastRunContext()).toEqual(
       expect.objectContaining({ sessionId: 'sess-1' }),
     );
+  });
+});
+
+describe('CLIAgent --status-file heartbeat', () => {
+  let statusDir: string;
+  let statusFile: string;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mocks.buildCLIConfig.mockReturnValue({ ...baseConfig });
+    mocks.getSessionManager.mockReturnValue(makeSessionManager());
+    mocks.getSessionSkillService.mockReturnValue({ autoMountDefaultSkills: vi.fn() });
+    mocks.addSwarmEventListener.mockReturnValue(() => {});
+    mocks.resolveExplicitAgentOverride.mockReturnValue(null);
+    const fs = await import('fs');
+    const os = await import('os');
+    const path = await import('path');
+    statusDir = fs.mkdtempSync(path.join(os.tmpdir(), 'adapter-statusfile-'));
+    statusFile = path.join(statusDir, 'status.json');
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    const fs = await import('fs');
+    fs.rmSync(statusDir, { recursive: true, force: true });
+  });
+
+  const readStatus = async (): Promise<Record<string, unknown>> => {
+    const fs = await import('fs');
+    return JSON.parse(fs.readFileSync(statusFile, 'utf-8')) as Record<string, unknown>;
+  };
+
+  it('终态成功快照：反映 turn 进度 / lastTool / token / 指标汇总', async () => {
+    mocks.buildCLIConfig.mockReturnValue({ ...baseConfig, statusFilePath: statusFile });
+
+    let midRun: Record<string, unknown> | undefined;
+    installLoop(async (ctl) => {
+      ctl.onEvent({ type: 'turn_start', data: {} } as AgentEvent);
+      ctl.onEvent({
+        type: 'tool_call_start',
+        data: { id: 't1', name: 'Read', arguments: { path: 'a' } },
+      } as AgentEvent);
+      ctl.onEvent({
+        type: 'stream_usage',
+        data: { inputTokens: 11, outputTokens: 7 },
+      } as AgentEvent);
+      // run 进行中：初始快照已存在（starting 或 ticker 未到时仍为 starting）
+      midRun = await readStatus();
+      ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+    });
+
+    const agent = new CLIAgent();
+    const result = await agent.run('status happy');
+    expect(result.success).toBe(true);
+
+    // 初始快照在 run 开始时就已写入
+    expect(midRun).toBeDefined();
+    expect(midRun?.version).toBe(1);
+    expect(midRun?.sessionId).toBe('sess-1');
+    expect(midRun?.pid).toBe(process.pid);
+
+    // 终态
+    const final = await readStatus();
+    expect(final.phase).toBe('finished');
+    expect(final.status).toBe('success');
+    expect(final.turn).toBe(1);
+    // token 取 MetricsCollector 口径（mock 返回 100/50），与终态 metrics 汇总同源
+    expect(final.tokens).toEqual({ input: 100, output: 50 });
+    expect(final.lastTool).toMatchObject({ name: 'Read' });
+    expect(final.metrics).toEqual({ sessionId: 'sess-1', turnCount: 1, inputTokens: 100, outputTokens: 50, totalTokens: 150 });
+    // tmp 文件不残留
+    const fs = await import('fs');
+    expect(fs.existsSync(`${statusFile}.${process.pid}.tmp`)).toBe(false);
+  });
+
+  it('agentLoop.run 抛错：终态 error 带 message 与 error class', async () => {
+    mocks.buildCLIConfig.mockReturnValue({ ...baseConfig, statusFilePath: statusFile });
+    mocks.createAgentLoop.mockImplementation(() => ({
+      cancel: vi.fn(),
+      interrupt: vi.fn(),
+      getHookManager: vi.fn(),
+      run: vi.fn().mockRejectedValue(new Error('loop boom')),
+    }));
+
+    const agent = new CLIAgent();
+    const result = await agent.run('status fail');
+    expect(result.success).toBe(false);
+
+    const final = await readStatus();
+    expect(final.phase).toBe('finished');
+    expect(final.status).toBe('error');
+    expect(final.error).toEqual({ message: 'loop boom', class: 'Error' });
+  });
+
+  it('未配置 statusFilePath：行为不变（不创建 MetricsCollector）', async () => {
+    installLoop(async (ctl) => {
+      ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+    });
+    const agent = new CLIAgent();
+    await agent.run('no status file');
+    expect(mocks.createAgentLoop.mock.calls[0][4]).toBeUndefined();
   });
 });
 

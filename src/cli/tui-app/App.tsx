@@ -380,9 +380,11 @@ export function App({ agent, options, onExit }: {
     return () => setInteractiveApprovalProvider(null);
   }, [setApproval, notify]);
 
-  // 终端焦点上报（DECSET 1004）：挂载开、卸载关；stdin 扫焦点事件序列
+  // 终端焦点上报（DECSET 1004）：挂载开、卸载关；stdin 扫焦点事件序列。
+  // 开启必须推迟到 Ink raw mode 就绪之后——否则启动窗口里 tty 还在规范模式，
+  // 焦点序列会被 ECHOCTL 回显成 '^[[I' 糊在屏幕上（首屏无周期重渲会一直挂着）。
   useEffect(() => {
-    stdout?.write(FOCUS_REPORTING_ENABLE);
+    const timer = setTimeout(() => stdout?.write(FOCUS_REPORTING_ENABLE), 0);
     const onData = (chunk: Buffer | string) => {
       const event = parseFocusEvent(chunk.toString());
       if (event === 'in') focusedRef.current = true;
@@ -390,6 +392,7 @@ export function App({ agent, options, onExit }: {
     };
     process.stdin.on('data', onData);
     return () => {
+      clearTimeout(timer);
       process.stdin.off('data', onData);
       stdout?.write(FOCUS_REPORTING_DISABLE);
     };
@@ -982,7 +985,7 @@ export function App({ agent, options, onExit }: {
         <Box flexDirection="column" flexGrow={1} justifyContent="flex-end" overflowY="hidden">
           {showWelcome
             ? (
-              <Box flexGrow={1} justifyContent="center" alignItems="center">
+              <Box flexGrow={1} justifyContent="flex-start" alignItems="flex-start" paddingX={2} paddingTop={1}>
                 <WelcomeCard
                   version={options.version ?? ''}
                   provider={options.provider ?? ''}

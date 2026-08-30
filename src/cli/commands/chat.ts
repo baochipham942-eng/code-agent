@@ -294,6 +294,14 @@ export const chatCommand = new Command('chat')
           const { runDirectShellCommand } = await import('./shellPassthrough');
           return runDirectShellCommand(command);
         };
+        // /model 交互选择器数据源（provider 注册表 + key 配置状态 + 当前 provider）
+        const { buildModelPickerItems } = await import('../tui-app/modelItems');
+        const modelItems = buildModelPickerItems(
+          PROVIDER_REGISTRY,
+          PROVIDER_ENV_KEYS,
+          process.env,
+          agent.getConfig().modelConfig.provider,
+        );
         await runInkChat(agent, {
           cwd: globalOpts?.project || process.cwd(),
           model: globalOpts?.model || DEFAULT_MODELS.chat,
@@ -301,6 +309,7 @@ export const chatCommand = new Command('chat')
           onCommand,
           onShellCommand,
           slashItems,
+          modelItems,
         });
         await cleanup();
         process.exit(0);

@@ -1,8 +1,10 @@
 import type { TraceEventDataMap } from '../../agent/runtime/turnTrace';
 
-const CAPABILITY_KEY_PATTERN = /^(skill|tool|plugin|connector|extension):[a-z0-9][a-z0-9._/-]*$/;
+// Plugin IDs predate capability keys and builtin IDs contain camelCase segments.
+// Other namespaces keep the original lowercase contract; plugin keys preserve the exact manifest ID.
+const CAPABILITY_KEY_PATTERN = /^(?:(?:skill|tool|connector|extension):[a-z0-9][a-z0-9._/-]*|plugin:[A-Za-z0-9][A-Za-z0-9._/-]*)$/;
 
-type CapabilityUnitType = 'skill';
+type CapabilityUnitType = 'skill' | 'plugin';
 export type CapabilityKey = `${'skill' | 'tool' | 'plugin' | 'connector' | 'extension'}:${string}`;
 export type CapabilityLifecycleData = TraceEventDataMap['capability_lifecycle'];
 export type CapabilityLifecycleSink = (data: CapabilityLifecycleData) => void;
@@ -50,9 +52,9 @@ function assertNamespacedKey(key: string, field: string, unit: CapabilityUnit): 
 }
 
 function validateCapabilityUnit(unit: CapabilityUnit): void {
-  if (unit.type !== 'skill') {
+  if (unit.type !== 'skill' && unit.type !== 'plugin') {
     throw new CapabilityUnitError(
-      `${unitLabel(unit)} is not an exchangeable surface; P2 only permits unit type "skill"`,
+      `${unitLabel(unit)} is not an exchangeable surface; only unit types "skill" and "plugin" are permitted`,
     );
   }
   if (!Array.isArray(unit.depends)) {

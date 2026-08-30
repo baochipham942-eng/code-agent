@@ -100,8 +100,10 @@ describe('CapabilityUnitRuntime', () => {
     }
   });
 
-  it('fails loud on missing declarations, bare keys, and non-skill intervention surfaces', async () => {
+  it('accepts plugin units and fails loud on missing declarations, bare keys, and unsupported surfaces', async () => {
     const runtime = new CapabilityUnitRuntime();
+    await expect(runtime.load({ ...unit({ id: 'plugin-unit' }), type: 'plugin' }))
+      .resolves.toBeUndefined();
     const missing = { ...unit({ id: 'missing' }), depends: undefined } as unknown as CapabilityUnit;
     await expect(runtime.load(missing)).rejects.toThrow('missing required declaration "depends"');
 
@@ -112,6 +114,6 @@ describe('CapabilityUnitRuntime', () => {
     await expect(runtime.load(bare)).rejects.toThrow('invalid depends key "bare-key"');
 
     const hook = { ...unit({ id: 'hook' }), type: 'hook' } as unknown as CapabilityUnit;
-    await expect(runtime.load(hook)).rejects.toThrow('P2 only permits unit type "skill"');
+    await expect(runtime.load(hook)).rejects.toThrow('only unit types "skill" and "plugin" are permitted');
   });
 });

@@ -18,6 +18,7 @@ import {
   formatValidationResult,
 } from './pluginValidator';
 import { verifyPluginApprovalReceipt } from './pluginApprovalReceipt';
+import { normalizePluginCapabilityDeclaration } from './pluginCapabilitySurface';
 
 // ----------------------------------------------------------------------------
 // Constants
@@ -61,7 +62,7 @@ function normalizeManifest(value: unknown): PluginManifest | null {
     return null;
   }
 
-  return {
+  return normalizePluginCapabilityDeclaration({
     ...(value as Partial<PluginManifest>),
     id,
     name: readStringField(value, 'name') ?? id,
@@ -69,7 +70,19 @@ function normalizeManifest(value: unknown): PluginManifest | null {
     main: readStringField(value, 'main') ?? 'index.js',
     capabilities: normalizeStringArray(value.capabilities),
     nativeDeps: normalizeStringArray(value.nativeDeps),
-  };
+  });
+}
+
+async function readPluginManifestValue(pluginDir: string): Promise<unknown | null> {
+  for (const filename of PLUGIN_MANIFEST_FILES) {
+    const manifestPath = path.join(pluginDir, filename);
+    try {
+      return parseJsonValue(await fs.readFile(manifestPath, 'utf-8')) ?? null;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return null;
+    }
+  }
+  return null;
 }
 
 function normalizePluginEntry(value: unknown): PluginEntry | null {
@@ -122,24 +135,11 @@ export async function ensurePluginsDir(): Promise<void> {
  * Read and parse plugin manifest
  */
 export async function readPluginManifest(pluginDir: string): Promise<PluginManifest | null> {
-  for (const filename of PLUGIN_MANIFEST_FILES) {
-    const manifestPath = path.join(pluginDir, filename);
-    try {
-      const content = await fs.readFile(manifestPath, 'utf-8');
-      const manifest = normalizeManifest(parseJsonValue(content));
-      if (!manifest) {
-        console.warn(`Invalid manifest in ${pluginDir}: missing id or version`);
-        return null;
-      }
-
-      return manifest;
-    } catch {
-      // Try next manifest file
-      continue;
-    }
+  const manifest = normalizeManifest(await readPluginManifestValue(pluginDir));
+  if (!manifest) {
+    console.warn(`Invalid manifest in ${pluginDir}: missing id or version`);
   }
-
-  return null;
+  return manifest;
 }
 
 /**
@@ -148,7 +148,14 @@ export async function readPluginManifest(pluginDir: string): Promise<PluginManif
 export async function loadPlugin(pluginDir: string): Promise<PluginLoadResult> {
   try {
     // Read manifest
-    const manifest = await readPluginManifest(pluginDir);
+    const rawManifest = await readPluginManifestValue(pluginDir);
+    if (!rawManifest) {
+      return {
+        success: false,
+        error: `No valid manifest found in ${pluginDir}`,
+      };
+    }
+    const manifest = normalizeManifest(rawManifest);
     if (!manifest) {
       return {
         success: false,
@@ -158,7 +165,7 @@ export async function loadPlugin(pluginDir: string): Promise<PluginLoadResult> {
 
     // Structured validation
     try {
-      const validation = await validatePlugin(pluginDir, manifest);
+      const validation = await validatePlugin(pluginDir, rawManifest);
       if (!validation.valid) {
         const details = formatValidationResult(validation);
         return {
@@ -234,7 +241,9 @@ export async function loadPlugin(pluginDir: string): Promise<PluginLoadResult> {
 /**
  * Discover and load all plugins from plugins directory
  */
-export async function discoverPlugins(): Promise<LoadedPlugin[]> {
+export async function discoverPlugins(
+  onFailure: (pluginDir: string, error: string) => void = () => undefined,
+): Promise<LoadedPlugin[]> {
   await ensurePluginsDir();
   const pluginsDir = getPluginsDir();
   const plugins: LoadedPlugin[] = [];
@@ -255,7 +264,9 @@ export async function discoverPlugins(): Promise<LoadedPlugin[]> {
         plugins.push(result.plugin);
         console.log(`Loaded plugin: ${result.plugin.manifest.id}`);
       } else {
-        console.warn(`Failed to load plugin from ${pluginDir}: ${result.error}`);
+        const error = result.error ?? 'load failed';
+        onFailure(pluginDir, error);
+        console.warn(`Failed to load plugin from ${pluginDir}: ${error}`);
       }
     }
   } catch (err: unknown) {

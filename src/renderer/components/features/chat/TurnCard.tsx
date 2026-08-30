@@ -56,7 +56,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useAppStore } from '../../../stores/appStore';
-import { useVoiceCallStore } from '../../../stores/voiceCallStore';
+import { useVoiceLiveRuntime } from '../../../hooks/useVoiceLiveRuntime';
 import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '../../../utils/sessionNeedsInput';
 import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
 import { resolveBusySignal } from '../../../utils/turnBusySignal';
@@ -112,9 +112,8 @@ export const TurnCard: React.FC<TurnCardProps> = ({
       : false
   ));
   const developerMode = useAppStore((state) => state.developerMode);
-  const voiceCallInFlight = useVoiceCallStore((state) => (
-    state.phase === 'live' || state.phase === 'connecting'
-  ));
+  const voiceRuntime = useVoiceLiveRuntime();
+  const voiceCallInFlight = voiceRuntime.phase === 'live' || voiceRuntime.phase === 'connecting';
   const [isForking, setIsForking] = useState(false);
   const stats = useMemo(() => {
     const duration = turn.endTime ? turn.endTime - turn.startTime : null;

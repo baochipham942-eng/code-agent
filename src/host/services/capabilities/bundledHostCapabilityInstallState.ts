@@ -113,7 +113,7 @@ export function projectBundledHostCapabilityState(
 ): BundledHostCapabilityState {
   return {
     id,
-    installed: snapshot.record?.state === 'installed' || (snapshot.record === null && id === 'builtin.voice-live'),
+    installed: snapshot.record?.state === 'installed',
     version: snapshot.record?.version ?? version,
     revision: snapshot.record?.revision ?? 0,
   };

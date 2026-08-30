@@ -29,9 +29,4 @@ export function kickoffStartupRetention(): void {
   void import('../host/services/infra/dbRetention')
     .then(({ runDbRetention }) => runDbRetention())
     .catch((error) => logger.warn('DB retention failed (non-blocking):', (error as Error).message));
-  // 通话录音三重上限（N-L7-REC）。另一处触发在每通挂断后（voiceSessionService.teardown）——
-  // 只在启动时清的话，一次会话里连打十通会一路突破上限直到下次重启。
-  void import('../host/services/voice/voiceRecordingRetention')
-    .then(({ runVoiceRecordingRetention }) => runVoiceRecordingRetention())
-    .catch((error) => logger.warn('Voice recording retention failed (non-blocking):', (error as Error).message));
 }

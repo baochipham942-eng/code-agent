@@ -12,6 +12,7 @@ import type { AppSettings } from '@shared/contract';
 import { VOICE_LIVE_SETTINGS_UPDATED_EVENT, type VoiceStatusResponse } from '@shared/contract/voice';
 import { resolveVoiceLiveEnabled } from '@shared/contract/settings';
 import ipcService from '../../../services/ipcService';
+import { useBundledCapabilityStore } from '../../../stores/bundledCapabilityStore';
 
 async function fetchVoiceStatus(): Promise<VoiceStatusResponse | null> {
   try {
@@ -42,11 +43,18 @@ export function useVoiceLiveAvailability(): {
   configured: boolean;
   usage: VoiceStatusResponse['usage'];
 } {
+  const installed = useBundledCapabilityStore((state) => state.installed['builtin.voice-live']);
   const [enabled, setEnabled] = useState(lastKnown.enabled);
   const [configured, setConfigured] = useState(lastKnown.configured);
   const [usage, setUsage] = useState<VoiceStatusResponse['usage']>(lastKnown.usage);
 
   const refresh = useCallback(() => {
+    if (!installed) {
+      setEnabled(false);
+      setConfigured(false);
+      setUsage(NO_USAGE);
+      return () => undefined;
+    }
     let cancelled = false;
     void ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get')
       .then((settings) => {
@@ -68,7 +76,7 @@ export function useVoiceLiveAvailability(): {
       })
       .catch(() => { if (!cancelled) { setConfigured(false); setUsage(NO_USAGE); } });
     return () => { cancelled = true; };
-  }, []);
+  }, [installed]);
 
   useEffect(() => refresh(), [refresh]);
 

@@ -7,8 +7,8 @@
 //   不渲染动作条；挂断（phase 回 idle）后恢复常驻。
 // ============================================================================
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
 import type { Message } from '../../../src/shared/contract/message';
 
@@ -31,6 +31,13 @@ vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
 import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 import { useVoiceCallStore } from '../../../src/renderer/stores/voiceCallStore';
+import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
+
+beforeEach(() => {
+  useBundledCapabilityStore.setState({
+    installed: { 'builtin.voice-live': true, 'builtin.voice-input': false },
+  });
+});
 
 afterEach(() => {
   cleanup();
@@ -131,10 +138,10 @@ describe('TurnCard 语音任务轮动作条瞬态窗（X5.5-D2 顺手收）', ()
     } as TraceTurn;
   }
 
-  it('通话进行中（live）且无结局印章 → 不渲染动作条（瞬态窗不闪）', () => {
+  it('通话进行中（live）且无结局印章 → 不渲染动作条（瞬态窗不闪）', async () => {
     useVoiceCallStore.setState({ phase: 'live' });
     render(<TurnCard turn={voiceTaskTurn()} sessionId="session-1" />);
-    expect(screen.queryByTestId('turn-reply-actions')).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId('turn-reply-actions')).toBeNull());
   });
 
   it('通话进行中但结局印章已落 → 动作条照常', () => {

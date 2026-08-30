@@ -57,8 +57,8 @@ vi.mock('../../../src/host/services/providerIconAssets', () => ({
 vi.mock('../../../src/shared/modelRuntime', () => ({
   isRuntimeProviderConfigured: (...a: unknown[]) => env.runtimeConfigured(...a),
 }));
-vi.mock('../../../src/host/services/voice/voiceSessionService', () => ({
-  refreshVoiceInstructions: () => env.refreshVoiceInstructions(),
+vi.mock('../../../src/host/services/capabilities/hostCapabilityPorts', () => ({
+  refreshRegisteredVoiceInstructions: () => env.refreshVoiceInstructions(),
 }));
 vi.mock('../../../src/host/services/core/secureStorage', () => ({
   getSecureStorage: () => env.secureStorage,

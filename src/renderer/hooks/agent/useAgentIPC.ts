@@ -35,7 +35,7 @@ import { isReferenceNode, isVideoNode, type CanvasNode } from '../../components/
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useTaskStore, type SessionStatus as TaskSessionStatus } from '../../stores/taskStore';
-import { useVoiceCallStore } from '../../stores/voiceCallStore';
+import { readInstalledVoiceCall } from '../useVoiceLiveRuntime';
 import { useTurnExecutionStore } from '../../stores/turnExecutionStore';
 import ipcService from '../../services/ipcService';
 import { typedInvokeDomain } from '../../services/typedInvoke';
@@ -942,7 +942,7 @@ export function useAgentIPC({
       };
 
       if (isCurrentSessionProcessing) {
-        const voiceCall = useVoiceCallStore.getState();
+        const voiceCall = await readInstalledVoiceCall();
         // 收成一个「可注入的会话 id」而不是布尔量：后面 payload 直接用它，
         // 类型自然收窄，不必在调用点写非空断言。
         const voiceInjectSessionId = !attachments?.length

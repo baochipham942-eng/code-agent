@@ -57,6 +57,7 @@ describe('VoiceCallSummaryCard 展开文字记录（G1）', () => {
     });
 
     render(<VoiceCallSummaryCard summary={summary} />);
+    expect(screen.getAllByRole('button')).toHaveLength(1);
     const toggle = screen.getByRole('button');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByText('帮我看下构建')).toBeNull();

@@ -13,8 +13,13 @@ import {
 } from '../../../../src/host/services/capabilities/hostCapabilityPorts';
 import { voiceLiveCapabilityDescriptor } from '../../../../src/host/services/voice/voiceLiveCapability';
 import { voiceInputCapabilityDescriptor } from '../../../../src/host/services/speech/voiceInputCapability';
-import { attachHostWebSocketUpgradeDispatcher } from '../../../../src/host/services/capabilities/hostCapabilityContributions';
-import { DICTATION_STREAM_WS_PATH } from '../../../../src/shared/constants/voice';
+import {
+  attachHostWebSocketUpgradeDispatcher,
+  dispatchHostProviderAction,
+  dispatchHostWebRoute,
+  registerHostWebRoute,
+} from '../../../../src/host/services/capabilities/hostCapabilityContributions';
+import { DICTATION_STREAM_WS_PATH, VOICE_STREAM_WS_PATH } from '../../../../src/shared/constants/voice';
 
 let dataDir: string;
 
@@ -35,19 +40,20 @@ function cleanupHost(): HostCapabilityContext {
     registerProviderAction: vi.fn(() => cleanup),
     registerTurnOutcomeResolver: vi.fn(() => cleanup),
     registerUserQuestionRoute: vi.fn(() => cleanup),
+    registerVoiceInstructionsRefresher: vi.fn(() => cleanup),
     publishRendererCapabilityState: vi.fn(),
   };
 }
 
 describe('BundledHostCapabilityRegistry', () => {
-  it('ships voice-input removed by default without activating its contribution surface', async () => {
+  it('ships both voice packages removed by default without activating their contribution surfaces', async () => {
     dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-bundled-host-defaults-'));
     const lifecycle = vi.fn();
     const ipcMain = { handle: vi.fn(), removeHandler: vi.fn() };
     const server = attachHostWebSocketUpgradeDispatcher(new EventEmitter() as never) as unknown as EventEmitter;
-    const emitUpgrade = () => {
+    const emitUpgrade = (url = DICTATION_STREAM_WS_PATH) => {
       const socket = { write: vi.fn(), destroy: vi.fn() };
-      server.emit('upgrade', { url: DICTATION_STREAM_WS_PATH }, socket, Buffer.alloc(0));
+      server.emit('upgrade', { url }, socket, Buffer.alloc(0));
       return socket;
     };
     const registry = new BundledHostCapabilityRegistry({ dataDir, lifecycle, ipcMain: ipcMain as never });
@@ -55,26 +61,52 @@ describe('BundledHostCapabilityRegistry', () => {
     await registry.initialize();
 
     expect(await registry.listStates()).toEqual([
-      { id: 'builtin.voice-live', installed: true, version: '1.0.0', revision: 2 },
+      { id: 'builtin.voice-live', installed: false, version: '1.0.0', revision: 1 },
       { id: 'builtin.voice-input', installed: false, version: '1.0.0', revision: 1 },
     ]);
     const liveState = JSON.parse(await fs.readFile(path.join(dataDir, 'capabilities', 'voice-live.json'), 'utf8'));
     const inputState = JSON.parse(await fs.readFile(path.join(dataDir, 'capabilities', 'voice-input.json'), 'utf8'));
-    expect(liveState).toMatchObject({ schemaVersion: 1, state: 'installed', revision: 2, source: 'default' });
+    expect(liveState).toMatchObject({ schemaVersion: 1, state: 'removed', revision: 1, source: 'default' });
     expect(inputState).toMatchObject({ schemaVersion: 1, state: 'removed', revision: 1, source: 'default' });
-    expect(lifecycle.mock.calls.map(([id, action]) => [id, action])).toEqual([
-      ['builtin.voice-live', 'loaded'],
-    ]);
+    expect(lifecycle).not.toHaveBeenCalled();
     expect(ipcMain.handle).not.toHaveBeenCalled();
     expect(emitUpgrade().destroy).not.toHaveBeenCalled();
+    const inputStatusResponse = { json: vi.fn() };
+    const inputStatusNext = vi.fn();
+    dispatchHostWebRoute(
+      { path: '/speech/status' } as never,
+      inputStatusResponse as never,
+      inputStatusNext,
+    );
+    expect(inputStatusNext).toHaveBeenCalledOnce();
     await registry.install('builtin.voice-input', { source: 'user' });
     expect(ipcMain.handle).toHaveBeenCalledTimes(4);
     expect(emitUpgrade().destroy).toHaveBeenCalledOnce();
+    dispatchHostWebRoute(
+      { path: '/speech/status' } as never,
+      inputStatusResponse as never,
+      inputStatusNext,
+    );
+    expect(inputStatusResponse.json).toHaveBeenCalledWith({ configured: expect.any(Boolean) });
     await registry.uninstall('builtin.voice-input');
     expect(ipcMain.removeHandler).toHaveBeenCalledTimes(4);
     expect(emitUpgrade().destroy).not.toHaveBeenCalled();
+    dispatchHostWebRoute(
+      { path: '/speech/status' } as never,
+      inputStatusResponse as never,
+      inputStatusNext,
+    );
+    expect(inputStatusNext).toHaveBeenCalledTimes(2);
 
+    await registry.install('builtin.voice-live', { source: 'user' });
+    expect(ipcMain.handle).toHaveBeenCalledTimes(5);
+    expect(emitUpgrade(VOICE_STREAM_WS_PATH).destroy).toHaveBeenCalledOnce();
+    await expect(dispatchHostProviderAction('list_realtime_voice_providers', undefined))
+      .resolves.toMatchObject({ success: true });
     await registry.uninstall('builtin.voice-live');
+    expect(ipcMain.removeHandler).toHaveBeenCalledTimes(5);
+    await expect(dispatchHostProviderAction('list_realtime_voice_providers', undefined)).resolves.toBeNull();
+
   });
 
   it('rolls back registered contributions in reverse order and restores the previous state', async () => {
@@ -106,7 +138,7 @@ describe('BundledHostCapabilityRegistry', () => {
     expect(lifecycle.mock.calls.map(([, action]) => action)).toEqual(['failed', 'rolled_back']);
   });
 
-  it('keeps unused contribution surfaces fail-loud', async () => {
+  it('accepts provider action contributions as a first-class lifecycle surface', async () => {
     dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-bundled-host-placeholder-'));
     const descriptor: BundledHostCapabilityDescriptor = {
       id: 'builtin.voice-input',
@@ -114,7 +146,7 @@ describe('BundledHostCapabilityRegistry', () => {
       dependencies: [],
       permissions: [],
       async activate(host) {
-        host.registerProviderAction({ action: 'unsupported' });
+        host.registerProviderAction({ actions: ['custom'], handle: async () => ({ success: true }) });
         return () => undefined;
       },
     };
@@ -124,9 +156,27 @@ describe('BundledHostCapabilityRegistry', () => {
       lifecycle: vi.fn(),
     });
 
-    await expect(registry.install('builtin.voice-input')).rejects.toThrow(
-      'provider action contributions are reserved',
-    );
+    await expect(registry.install('builtin.voice-input')).resolves.toBeUndefined();
+    await expect(dispatchHostProviderAction('custom', {})).resolves.toEqual({ success: true });
+    await expect(registry.uninstall('builtin.voice-input')).resolves.toBeUndefined();
+    await expect(dispatchHostProviderAction('custom', {})).resolves.toBeNull();
+  });
+
+  it('dispatches and removes dynamic web route contributions', async () => {
+    const handler = vi.fn();
+    const next = vi.fn();
+    const cleanup = registerHostWebRoute({ path: '/voice', handler });
+    const request = { path: '/voice/status' } as never;
+    const response = {} as never;
+
+    dispatchHostWebRoute(request, response, next);
+    expect(handler).toHaveBeenCalledOnce();
+    expect(next).not.toHaveBeenCalled();
+
+    await cleanup();
+    dispatchHostWebRoute(request, response, next);
+    expect(handler).toHaveBeenCalledOnce();
+    expect(next).toHaveBeenCalledOnce();
   });
 
   it('runs descriptor cleanup before revoking its registered ports', async () => {
@@ -163,20 +213,22 @@ describe('BundledHostCapabilityRegistry', () => {
     expect(await resolveRegisteredTurnOutcome('session-1', 1)).toBe('unverified');
   });
 
-  it('voice-live descriptor wires only the two P0 ports and state projection', async () => {
+  it('voice-live descriptor owns every host contribution surface and state projection', async () => {
     const host = cleanupHost();
 
     const cleanup = await voiceLiveCapabilityDescriptor.activate(host);
 
+    expect(voiceLiveCapabilityDescriptor.permissions).toEqual(['microphone', 'network', 'filesystem']);
     expect(host.registerTurnOutcomeResolver).toHaveBeenCalledOnce();
     expect(host.registerUserQuestionRoute).toHaveBeenCalledOnce();
+    expect(host.registerVoiceInstructionsRefresher).toHaveBeenCalledOnce();
     expect(host.publishRendererCapabilityState).toHaveBeenCalledOnce();
-    expect(host.registerIpcHandler).not.toHaveBeenCalled();
-    expect(host.registerWebRoute).not.toHaveBeenCalled();
-    expect(host.registerWebSocketUpgrade).not.toHaveBeenCalled();
+    expect(host.registerIpcHandler).toHaveBeenCalledOnce();
+    expect(host.registerWebRoute).toHaveBeenCalledOnce();
+    expect(host.registerWebSocketUpgrade).toHaveBeenCalledOnce();
     expect(host.registerShortcut).not.toHaveBeenCalled();
-    expect(host.registerStartupTask).not.toHaveBeenCalled();
-    expect(host.registerProviderAction).not.toHaveBeenCalled();
+    expect(host.registerStartupTask).toHaveBeenCalledOnce();
+    expect(host.registerProviderAction).toHaveBeenCalledOnce();
     await cleanup();
   });
 
@@ -193,6 +245,7 @@ describe('BundledHostCapabilityRegistry', () => {
       'shell',
     ]);
     expect(host.registerIpcHandler).toHaveBeenCalledTimes(2);
+    expect(host.registerWebRoute).toHaveBeenCalledOnce();
     expect(host.registerWebSocketUpgrade).toHaveBeenCalledOnce();
     expect(host.registerShortcut).toHaveBeenCalledOnce();
     expect(host.publishRendererCapabilityState).toHaveBeenCalledOnce();
@@ -227,6 +280,67 @@ describe('BundledHostCapabilityRegistry', () => {
     await expect(registry.listStates()).resolves.toEqual([
       { id: 'builtin.voice-input', installed: true, version: '1.0.0', revision: 2 },
     ]);
+  });
+
+  it('rolls back a failed uninstall to installed state and accounts both lifecycle entries', async () => {
+    dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-bundled-host-uninstall-rollback-'));
+    const lifecycle = vi.fn();
+    let activation = 0;
+    const descriptor: BundledHostCapabilityDescriptor = {
+      id: 'builtin.voice-live',
+      version: '1.0.0',
+      dependencies: [],
+      permissions: [],
+      async activate(host) {
+        activation += 1;
+        host.publishRendererCapabilityState();
+        return activation === 1
+          ? () => { throw new Error('cleanup failed'); }
+          : () => undefined;
+      },
+    };
+    const registry = new BundledHostCapabilityRegistry({ dataDir, descriptors: [descriptor], lifecycle });
+    await registry.install('builtin.voice-live');
+
+    await expect(registry.uninstall('builtin.voice-live')).rejects.toThrow('cleanup failed');
+
+    await expect(registry.listStates()).resolves.toEqual([
+      { id: 'builtin.voice-live', installed: true, version: '1.0.0', revision: 2 },
+    ]);
+    expect(activation).toBe(2);
+    expect(lifecycle.mock.calls.slice(-2).map(([, action]) => action)).toEqual(['failed', 'rolled_back']);
+  });
+
+  it('rolls back when a registered contribution cleanup fails', async () => {
+    dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-bundled-host-contribution-uninstall-'));
+    const lifecycle = vi.fn();
+    let activation = 0;
+    const descriptor: BundledHostCapabilityDescriptor = {
+      id: 'builtin.voice-live',
+      version: '1.0.0',
+      dependencies: [],
+      permissions: [],
+      async activate(host) {
+        activation += 1;
+        host.registerStartupTask(() => (
+          activation === 1
+            ? () => { throw new Error('startup contribution cleanup failed'); }
+            : () => undefined
+        ));
+        host.publishRendererCapabilityState();
+        return () => undefined;
+      },
+    };
+    const registry = new BundledHostCapabilityRegistry({ dataDir, descriptors: [descriptor], lifecycle });
+    await registry.install('builtin.voice-live');
+
+    await expect(registry.uninstall('builtin.voice-live')).rejects.toThrow('contribution cleanup failed');
+
+    await expect(registry.listStates()).resolves.toEqual([
+      { id: 'builtin.voice-live', installed: true, version: '1.0.0', revision: 2 },
+    ]);
+    expect(activation).toBe(2);
+    expect(lifecycle.mock.calls.slice(-2).map(([, action]) => action)).toEqual(['failed', 'rolled_back']);
   });
 
   it('accounts legacy migration installs as loaded with migration detail', async () => {

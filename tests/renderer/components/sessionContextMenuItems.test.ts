@@ -31,6 +31,7 @@ function makeDeps(overrides: Partial<SessionContextMenuDeps> = {}): SessionConte
     canOpenSessionReplay: false,
     handleOpenSessionReplay: vi.fn(),
     handleOpenVoiceAudit: vi.fn(),
+    voiceLiveInstalled: true,
     unarchiveSession: vi.fn(),
     archiveSession: vi.fn(),
     softDelete: vi.fn(),
@@ -67,6 +68,11 @@ describe('buildSessionContextMenuItems', () => {
     const items = buildSessionContextMenuItems(session, makeDeps({ handleOpenVoiceAudit }));
     items.find((item) => item.label === '语音审计')?.onClick();
     expect(handleOpenVoiceAudit).toHaveBeenCalledWith(session);
+  });
+
+  it('未安装 voice-live 时不提供语音审计入口', () => {
+    const items = buildSessionContextMenuItems(makeSession(), makeDeps({ voiceLiveInstalled: false }));
+    expect(items.some((item) => item.label === '语音审计')).toBe(false);
   });
 
   it('非管理员时 Replay 项禁用且文案降级', () => {

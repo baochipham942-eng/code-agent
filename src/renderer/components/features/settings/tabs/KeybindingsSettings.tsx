@@ -81,6 +81,9 @@ export const KeybindingsSettings: React.FC = () => {
   const voiceInputInstalled = useBundledCapabilityStore(
     (state) => state.installed['builtin.voice-input'],
   );
+  const voiceLiveInstalled = useBundledCapabilityStore(
+    (state) => state.installed['builtin.voice-live'],
+  );
   const platform = useMemo(() => getCurrentKeybindingPlatform(), []);
   const [keybindings, setKeybindings] = useState<KeybindingsSettingsContract>(() =>
     createDefaultKeybindingsSettings(platform)
@@ -211,9 +214,10 @@ export const KeybindingsSettings: React.FC = () => {
 
   const normalizedQuery = query.trim().toLowerCase();
   const filteredDefinitions = useMemo(() => {
-    const runtimeDefinitions = voiceInputInstalled
-      ? KEYBINDING_DEFINITIONS
-      : KEYBINDING_DEFINITIONS.filter((definition) => definition.id !== 'voice.toggle');
+    const runtimeDefinitions = KEYBINDING_DEFINITIONS.filter((definition) => (
+      (definition.id !== 'voice.toggle' || voiceInputInstalled)
+      && (definition.id !== 'voice.callToggle' || voiceLiveInstalled)
+    ));
     const availableDefinitions = hasComputerUse
       ? runtimeDefinitions
       : runtimeDefinitions.filter((definition) => definition.id !== 'computerUse.open');
@@ -229,7 +233,7 @@ export const KeybindingsSettings: React.FC = () => {
       ].join(' ').toLowerCase();
       return haystack.includes(normalizedQuery);
     });
-  }, [hasComputerUse, keybindingsText, normalizedQuery, voiceInputInstalled]);
+  }, [hasComputerUse, keybindingsText, normalizedQuery, voiceInputInstalled, voiceLiveInstalled]);
 
   const groupedDefinitions = useMemo(() => {
     const groups = new Map<KeybindingCategory, KeybindingDefinition[]>();

@@ -344,7 +344,6 @@ import {
   isWebServiceMode,
   writeDevAuthToken,
 } from './middleware/auth';
-import { attachVoiceStreamUpgrade } from './voiceStreamUpgrade';
 import { attachHostWebSocketUpgradeDispatcher } from '../host/services/capabilities/hostCapabilityContributions';
 import { installPermissionResponseHandler } from './webPermissionResponseHandler';
 
@@ -1027,7 +1026,7 @@ async function main(): Promise<void> {
   });
   queuedInputStartupSweep.maybeRun();
 
-  const server = attachHostWebSocketUpgradeDispatcher(attachVoiceStreamUpgrade(http.createServer(app)));
+  const server = attachHostWebSocketUpgradeDispatcher(http.createServer(app));
 
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {

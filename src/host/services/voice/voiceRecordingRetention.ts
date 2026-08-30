@@ -29,7 +29,7 @@ const logger = createLogger('VoiceRecordingRetention');
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** 触发清理的上限维度。三条互相独立。 */
-export type VoiceRecordingCleanupRule = 'age' | 'count' | 'bytes';
+type VoiceRecordingCleanupRule = 'age' | 'count' | 'bytes';
 
 export interface VoiceRecordingCleanupEntry {
   at: number;
@@ -39,7 +39,7 @@ export interface VoiceRecordingCleanupEntry {
   byRule: Record<VoiceRecordingCleanupRule, number>;
 }
 
-export interface VoiceRecordingItem {
+interface VoiceRecordingItem {
   /** 目录名（不含路径），也是 UI 上的录音标识。 */
   name: string;
   dir: string;
@@ -68,7 +68,7 @@ async function dirBytes(dir: string): Promise<number> {
 }
 
 /** 列出全部录音（一通一条），按时间升序（最旧在前）。 */
-export async function listVoiceRecordings(root?: string): Promise<VoiceRecordingItem[]> {
+async function listVoiceRecordings(root?: string): Promise<VoiceRecordingItem[]> {
   const recordingRoot = getVoiceRecordingRoot(root);
   let entries: fs.Dirent[];
   try {
@@ -90,7 +90,7 @@ export async function listVoiceRecordings(root?: string): Promise<VoiceRecording
   return items.sort((a, b) => a.modifiedAt - b.modifiedAt);
 }
 
-export async function readVoiceRecordingCleanupLedger(root?: string): Promise<VoiceRecordingCleanupEntry[]> {
+async function readVoiceRecordingCleanupLedger(root?: string): Promise<VoiceRecordingCleanupEntry[]> {
   const file = path.join(getVoiceRecordingRoot(root), VOICE_RECORDING_CLEANUP_LEDGER_FILE);
   try {
     const parsed: unknown = JSON.parse(await fs.promises.readFile(file, 'utf8'));

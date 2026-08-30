@@ -22,6 +22,7 @@ import { recordBundledHostCapabilityLifecycle } from './capabilityPackageLifecyc
 import {
   registerTurnOutcomeResolver,
   registerUserQuestionRoute,
+  registerVoiceInstructionsRefresher,
   type HostCapabilityCleanup,
   type TurnOutcomeResolver,
   type UserQuestionRoute,
@@ -34,24 +35,27 @@ import {
 } from './bundledHostCapabilityInstallState';
 import {
   registerHostWebSocketUpgrade,
+  registerHostWebRoute,
+  registerHostProviderAction,
   registerImmediateHostContribution,
   type HostWebSocketUpgradeContribution,
   type HostIpcContribution,
   type ImmediateHostContribution,
+  type HostWebRouteContribution,
+  type HostProviderActionContribution,
 } from './hostCapabilityContributions';
 import { runVoiceCapabilityMigrationV1 } from './voiceCapabilityMigrationV1';
 
-type PlaceholderContribution = Readonly<Record<string, unknown>>;
-
 interface HostCapabilityContext {
   registerIpcHandler: (contribution: HostIpcContribution) => HostCapabilityCleanup;
-  registerWebRoute: (contribution: PlaceholderContribution) => HostCapabilityCleanup;
+  registerWebRoute: (contribution: HostWebRouteContribution) => HostCapabilityCleanup;
   registerWebSocketUpgrade: (contribution: HostWebSocketUpgradeContribution) => HostCapabilityCleanup;
   registerShortcut: (contribution: ImmediateHostContribution) => HostCapabilityCleanup;
-  registerStartupTask: (contribution: PlaceholderContribution) => HostCapabilityCleanup;
-  registerProviderAction: (contribution: PlaceholderContribution) => HostCapabilityCleanup;
+  registerStartupTask: (contribution: ImmediateHostContribution) => HostCapabilityCleanup;
+  registerProviderAction: (contribution: HostProviderActionContribution) => HostCapabilityCleanup;
   registerTurnOutcomeResolver: (resolver: TurnOutcomeResolver) => HostCapabilityCleanup;
   registerUserQuestionRoute: (route: UserQuestionRoute) => HostCapabilityCleanup;
+  registerVoiceInstructionsRefresher: (refresher: () => void) => HostCapabilityCleanup;
   publishRendererCapabilityState: () => void;
 }
 
@@ -119,13 +123,22 @@ function projectVoiceInputReadiness(
   };
 }
 
-async function cleanupAll(cleanups: readonly HostCapabilityCleanup[]): Promise<void> {
+async function cleanupAll(
+  cleanups: readonly HostCapabilityCleanup[],
+  suppressErrors: boolean,
+): Promise<void> {
+  const errors: unknown[] = [];
   for (let index = cleanups.length - 1; index >= 0; index -= 1) {
     try {
       await cleanups[index]();
-    } catch {
-      // Cleanup is best-effort here; the original activation error stays authoritative.
+    } catch (error) {
+      errors.push(error);
     }
+  }
+  if (!suppressErrors && errors.length > 0) {
+    throw new AggregateError(errors, 'bundled host capability contribution cleanup failed', {
+      cause: errors[0],
+    });
   }
 }
 
@@ -160,10 +173,16 @@ export class BundledHostCapabilityRegistry {
   async initialize(): Promise<void> {
     if (this.initialized) return;
     if (this.migration) {
+      const inputVersion = this.requireDescriptor('builtin.voice-input').version;
       await this.migration({
         dataDir: this.dataDir,
-        version: this.requireDescriptor('builtin.voice-input').version,
+        version: inputVersion,
+        liveVersion: this.descriptors.get('builtin.voice-live')?.version ?? inputVersion,
         installVoiceInput: () => this.install('builtin.voice-input', {
+          detail: 'migration:legacy-usage',
+          source: 'migration',
+        }),
+        installVoiceLive: () => this.install('builtin.voice-live', {
           detail: 'migration:legacy-usage',
           source: 'migration',
         }),
@@ -175,7 +194,7 @@ export class BundledHostCapabilityRegistry {
       if (snapshot.record?.state === 'removed') continue;
       if (snapshot.record?.state === 'installed') {
         if (!this.active.has(descriptor.id)) await this.activateInstalled(descriptor);
-      } else if (descriptor.id === 'builtin.voice-input') {
+      } else {
         await writeBundledHostCapabilityInstallState(
           this.dataDir,
           descriptor.id,
@@ -184,8 +203,6 @@ export class BundledHostCapabilityRegistry {
           1,
           'default',
         );
-      } else {
-        await this.install(descriptor.id, { source: 'default' });
       }
     }
     this.initialized = true;
@@ -249,19 +266,38 @@ export class BundledHostCapabilityRegistry {
       }
     }
     const active = this.active.get(id);
-    if (active) await active.cleanup();
-    this.active.delete(id);
     const previous = await readBundledHostCapabilityInstallSnapshot(this.dataDir, id);
-    await writeBundledHostCapabilityInstallState(
-      this.dataDir,
-      id,
-      'removed',
-      descriptor.version,
-      (previous.record?.revision ?? 0) + 1,
-      'user',
-    );
-    this.lifecycle(id, 'unloaded', `version=${descriptor.version}`);
-    this.publishStateChange(id, (previous.record?.revision ?? 0) + 1);
+    try {
+      if (active) await active.cleanup();
+      this.active.delete(id);
+      await writeBundledHostCapabilityInstallState(
+        this.dataDir,
+        id,
+        'removed',
+        descriptor.version,
+        (previous.record?.revision ?? 0) + 1,
+        'user',
+      );
+      this.lifecycle(id, 'unloaded', `version=${descriptor.version}`);
+      this.publishStateChange(id, (previous.record?.revision ?? 0) + 1);
+    } catch (error) {
+      this.active.delete(id);
+      this.lifecycle(id, 'failed', `uninstall: ${asErrorDetail(error)}`);
+      try {
+        await restoreBundledHostCapabilityInstallSnapshot(this.dataDir, id, previous);
+        if (previous.record?.state === 'installed') await this.activateDescriptor(descriptor);
+        this.lifecycle(id, 'rolled_back', 'uninstall restored previous state and contributions');
+        this.publishStateChange(id, previous.record?.revision ?? 0);
+      } catch (rollbackError) {
+        this.lifecycle(id, 'rolled_back', `uninstall rollback failed: ${asErrorDetail(rollbackError)}`);
+        throw new AggregateError(
+          [error, rollbackError],
+          `Failed to uninstall ${id}; rollback also failed: ${asErrorDetail(rollbackError)}`,
+          { cause: rollbackError },
+        );
+      }
+      throw error;
+    }
   }
 
   async getReadiness(id: BundledHostCapabilityId): Promise<BundledHostCapabilityReadiness> {
@@ -316,18 +352,16 @@ export class BundledHostCapabilityRegistry {
       contributionCleanups.push(once);
       return once;
     };
-    const unsupported = (surface: string): never => {
-      throw new Error(`${surface} contributions are reserved for voice split P1`);
-    };
     const host: HostCapabilityContext = {
       registerIpcHandler: (contribution) => track(contribution(this.ipcMain)),
-      registerWebRoute: () => unsupported('web route'),
+      registerWebRoute: (contribution) => track(registerHostWebRoute(contribution)),
       registerWebSocketUpgrade: (contribution) => track(registerHostWebSocketUpgrade(contribution)),
       registerShortcut: (contribution) => track(registerImmediateHostContribution(contribution)),
-      registerStartupTask: () => unsupported('startup task'),
-      registerProviderAction: () => unsupported('provider action'),
+      registerStartupTask: (contribution) => track(registerImmediateHostContribution(contribution)),
+      registerProviderAction: (contribution) => track(registerHostProviderAction(contribution)),
       registerTurnOutcomeResolver: (resolver) => track(registerTurnOutcomeResolver(resolver)),
       registerUserQuestionRoute: (route) => track(registerUserQuestionRoute(route)),
+      registerVoiceInstructionsRefresher: (refresher) => track(registerVoiceInstructionsRefresher(refresher)),
       publishRendererCapabilityState: () => {
         this.published.add(descriptor.id);
         track(() => { this.published.delete(descriptor.id); });
@@ -340,12 +374,14 @@ export class BundledHostCapabilityRegistry {
           try {
             await descriptorCleanup();
           } finally {
-            await cleanupAll(contributionCleanups);
+            await cleanupAll(contributionCleanups, false);
           }
         },
       });
     } catch (error) {
-      await cleanupAll(contributionCleanups);
+      // Activation already has an authoritative error; cleanup still runs in reverse
+      // order, but a secondary cleanup failure must not hide the activation cause.
+      await cleanupAll(contributionCleanups, true);
       throw error;
     }
   }

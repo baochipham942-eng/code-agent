@@ -23,7 +23,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useComposerStore } from '../../stores/composerStore';
 import { useMemberViewStore } from '../../stores/memberViewStore';
-import { useVoiceCallStore } from '../../stores/voiceCallStore';
+import { useVoiceLiveRuntime } from '../../hooks/useVoiceLiveRuntime';
 import { deriveAgentMergeState } from '../../utils/agentMergeState';
 import type { AgentRow } from '../../utils/agentRows';
 import { RoleInitialAvatar } from '../features/expert/RoleInitialAvatar';
@@ -55,8 +55,9 @@ export const SessionAgentsPanel: React.FC = () => {
   const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
   const setWorkbenchCollapsed = useAppStore((state) => state.setWorkbenchCollapsed);
   // 通话中高亮通话身份（与旧成员条 pill 同口径，S1 后落在面板行上）
-  const voiceCallLive = useVoiceCallStore((state) => state.phase === 'live' || state.phase === 'connecting');
-  const voiceActiveAgentId = useVoiceCallStore((state) => state.activeAgentId);
+  const voiceRuntime = useVoiceLiveRuntime();
+  const voiceCallLive = voiceRuntime.phase === 'live' || voiceRuntime.phase === 'connecting';
+  const voiceActiveAgentId = voiceRuntime.activeAgentId;
   const [stoppingKey, setStoppingKey] = useState<string | null>(null);
   const [stoppingAll, setStoppingAll] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);

@@ -18,14 +18,25 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { ComposerSlot, SlotEntry } from '../../../src/renderer/components/features/chat/ChatInput/ComposerSlot';
+import { ChatInput } from '../../../src/renderer/components/features/chat/ChatInput';
 import {
   COMPOSER_SLOT_LAYER,
   useComposerNoticeStore,
 } from '../../../src/renderer/stores/composerNoticeStore';
+import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 import type { ComposerSlotOccupantId } from '../../../src/renderer/stores/composerNoticeStore';
 
 function resetSlotStore(): void {
   useComposerNoticeStore.setState({ notices: {}, inProgress: {}, slotActive: {} });
+}
+
+function resetCapabilityStore(): void {
+  useBundledCapabilityStore.setState({
+    installed: { 'builtin.voice-live': false, 'builtin.voice-input': false },
+    states: [],
+    loaded: false,
+    error: null,
+  });
 }
 
 /** 挂载点声明活跃态的占位 occupant（走 SlotEntry 的显隐判定） */
@@ -47,10 +58,14 @@ function selfGated(id: ComposerSlotOccupantId) {
 }
 
 describe('ComposerSlot 容器', () => {
-  beforeEach(resetSlotStore);
+  beforeEach(() => {
+    resetSlotStore();
+    resetCapabilityStore();
+  });
   afterEach(() => {
     cleanup();
     resetSlotStore();
+    resetCapabilityStore();
   });
 
   // ── 判据 1：未声明层级的组件渲染不出来 ──
@@ -77,6 +92,18 @@ describe('ComposerSlot 容器', () => {
   it('L2 进行中层不许由挂载点声明 active（互斥表读的是 inProgress，那样会静默永不显示）', () => {
     expect(() => render(<ComposerSlot>{mountGated('upload', true)}</ComposerSlot>))
       .toThrow(/必须走 useRegisterComposerInProgress/);
+  });
+
+  it('voice-live 默认未安装时 ChatInput 不抛错，也不把 voice 写入进行中互斥表', () => {
+    useBundledCapabilityStore.setState({
+      installed: { 'builtin.voice-live': false, 'builtin.voice-input': false },
+      states: [],
+      loaded: true,
+      error: null,
+    });
+
+    expect(() => render(<ChatInput onSend={() => true} sessionless />)).not.toThrow();
+    expect(useComposerNoticeStore.getState().inProgress.voice).toBeUndefined();
   });
 
   it('挂载点声明活跃的 occupant：没活跃不渲染，活跃了才渲染', () => {

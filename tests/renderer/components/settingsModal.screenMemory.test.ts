@@ -156,7 +156,7 @@ describe('SettingsModal screen memory tab visibility', () => {
   });
 
   it('uses requiresAnyCapability to hide and restore the voice-input tab', () => {
-    const buildIds = (installedCapabilities: ReadonlySet<'builtin.voice-input'>) => (
+    const buildIds = (installedCapabilities: ReadonlySet<'builtin.voice-input' | 'builtin.voice-live'>) => (
       buildSettingsTabGroups({
         t,
         showScreenMemoryTab: false,
@@ -167,7 +167,14 @@ describe('SettingsModal screen memory tab visibility', () => {
     );
 
     expect(buildIds(new Set())).not.toContain('voiceInput');
+    expect(buildIds(new Set())).not.toContain('voiceLive');
+    expect(buildIds(new Set())).not.toContain('voiceModel');
     expect(buildIds(new Set(['builtin.voice-input']))).toContain('voiceInput');
+    expect(buildIds(new Set(['builtin.voice-input']))).toContain('voiceModel');
+    expect(buildIds(new Set(['builtin.voice-input']))).not.toContain('voiceLive');
+    expect(buildIds(new Set(['builtin.voice-live']))).toContain('voiceLive');
+    expect(buildIds(new Set(['builtin.voice-live']))).toContain('voiceModel');
+    expect(buildIds(new Set(['builtin.voice-live']))).not.toContain('voiceInput');
   });
 });
 

@@ -37,13 +37,18 @@ import {
   SESSION_DIAGNOSTICS_EXPORT_TIMEOUT_MS,
 } from './features/sidebar/sessionContextMenuItems';
 import { useI18n } from '../hooks/useI18n';
-import { VoiceAuditDialog } from './features/voice/VoiceAuditDialog';
+import { useBundledCapabilityStore } from '../stores/bundledCapabilityStore';
+
+const VoiceAuditDialog = React.lazy(() => import('./features/voice/VoiceAuditDialog').then((module) => ({
+  default: module.VoiceAuditDialog,
+})));
 
 export const SessionActionsMenu: React.FC = () => {
   const { t } = useI18n();
   const sam = t.sessionReplay.sessionActionsMenu;
   const [open, setOpen] = useState(false);
   const [voiceAuditOpen, setVoiceAuditOpen] = useState(false);
+  const voiceLiveInstalled = useBundledCapabilityStore((state) => state.installed['builtin.voice-live']);
   const [replayDialog, setReplayDialog] = useState<{
     sessionId: string;
     sessionTitle: string;
@@ -338,12 +343,14 @@ export const SessionActionsMenu: React.FC = () => {
     icon: <ClipboardList className="h-3.5 w-3.5" />,
     onClick: () => { close(); openWorkbenchTab('audit'); },
   });
-  items.push({
-    key: 'voice-audit',
-    label: t.voiceAudit.menuLabel,
-    icon: <Mic2 className="h-3.5 w-3.5" />,
-    onClick: () => { close(); setVoiceAuditOpen(true); },
-  });
+  if (voiceLiveInstalled) {
+    items.push({
+      key: 'voice-audit',
+      label: t.voiceAudit.menuLabel,
+      icon: <Mic2 className="h-3.5 w-3.5" />,
+      onClick: () => { close(); setVoiceAuditOpen(true); },
+    });
+  }
   items.push({
     key: 'export',
     label: sam.exportMarkdownLabel,
@@ -410,12 +417,14 @@ export const SessionActionsMenu: React.FC = () => {
           onClose={() => setReplayDialog(null)}
         />
       )}
-      {voiceAuditOpen && currentSessionId && (
-        <VoiceAuditDialog
-          sessionId={currentSessionId}
-          sessionTitle={currentSession.title || sam.untitledSession}
-          onClose={() => setVoiceAuditOpen(false)}
-        />
+      {voiceLiveInstalled && voiceAuditOpen && currentSessionId && (
+        <React.Suspense fallback={null}>
+          <VoiceAuditDialog
+            sessionId={currentSessionId}
+            sessionTitle={currentSession.title || sam.untitledSession}
+            onClose={() => setVoiceAuditOpen(false)}
+          />
+        </React.Suspense>
       )}
     </div>
   );

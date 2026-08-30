@@ -12,6 +12,7 @@ vi.mock('../../../src/host/diagnostics/doctorRunner', () => ({
 }));
 
 import { registerProviderHandlers } from '../../../src/host/ipc/provider.ipc';
+import { registerHostProviderAction } from '../../../src/host/services/capabilities/hostCapabilityContributions';
 import { createDomainRouter } from '../../../src/web/routes/domain';
 
 const REPORT_WITH_FAILED_ITEM: DoctorReport = {
@@ -112,5 +113,34 @@ describe('Provider Doctor dual-transport contract', () => {
       },
     });
     expect(runDoctorMock).not.toHaveBeenCalled();
+  });
+
+  it('routes capability-owned provider actions only while their contribution is installed', async () => {
+    const handler = handlers.get(IPC_DOMAINS.PROVIDER);
+    if (!handler) throw new Error('Provider handler was not registered');
+    const request: IPCRequest = { action: 'voice-live-test-action', payload: { id: 'candidate' } };
+
+    await expect(handler(null, request)).resolves.toMatchObject({
+      success: false,
+      error: { code: 'INVALID_ACTION' },
+    });
+
+    const cleanup = registerHostProviderAction({
+      actions: ['voice-live-test-action'],
+      handle: async (action, payload) => ({ success: true, data: { action, payload } }),
+    });
+    try {
+      await expect(handler(null, request)).resolves.toEqual({
+        success: true,
+        data: { action: request.action, payload: request.payload },
+      });
+    } finally {
+      await cleanup();
+    }
+
+    await expect(handler(null, request)).resolves.toMatchObject({
+      success: false,
+      error: { code: 'INVALID_ACTION' },
+    });
   });
 });

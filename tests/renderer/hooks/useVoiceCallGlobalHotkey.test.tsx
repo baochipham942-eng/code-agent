@@ -4,6 +4,7 @@ import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KeybindingActionId } from '../../../src/shared/keybindings';
 import { GLOBAL_HOTKEY_REGISTRATION_CHANGED_EVENT } from '../../../src/renderer/services/globalHotkeyRegistration';
+import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 
 const dial = vi.hoisted(() => vi.fn());
 const hangUp = vi.hoisted(() => vi.fn());
@@ -102,6 +103,12 @@ describe('voice.callToggle global hotkey', () => {
     vi.clearAllMocks();
     listenerState.callback = null;
     voiceState.phase = 'idle';
+    useBundledCapabilityStore.setState({
+      installed: {
+        'builtin.voice-live': true,
+        'builtin.voice-input': false,
+      },
+    });
     invokeNativeCommandAction.mockResolvedValue([]);
   });
 
@@ -147,5 +154,25 @@ describe('voice.callToggle global hotkey', () => {
       error: 'native command unavailable',
     }]);
     window.removeEventListener(GLOBAL_HOTKEY_REGISTRATION_CHANGED_EVENT, registrationChange);
+  });
+
+  it('does not register or execute the call shortcut while voice-live is removed', async () => {
+    useBundledCapabilityStore.setState({
+      installed: {
+        'builtin.voice-live': false,
+        'builtin.voice-input': false,
+      },
+    });
+    renderHook(() => useKeyboardShortcuts());
+
+    await waitFor(() => expect(invokeNativeCommandAction).toHaveBeenCalledWith(
+      'setGlobalHotkeys',
+      { bindings: [] },
+    ));
+    await triggerVoiceHotkey();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(dial).not.toHaveBeenCalled();
+    expect(hangUp).not.toHaveBeenCalled();
   });
 });

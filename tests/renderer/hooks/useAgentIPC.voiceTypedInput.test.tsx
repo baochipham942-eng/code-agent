@@ -22,6 +22,7 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useTaskStore } from '../../../src/renderer/stores/taskStore';
 import { useVoiceCallStore } from '../../../src/renderer/stores/voiceCallStore';
+import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 
 const SESSION_ID = 'session-voice-typed';
 const envelope: ConversationEnvelope = { content: '别等了，改做 Y', sessionId: SESSION_ID };
@@ -55,6 +56,9 @@ describe('useAgentIPC busy typed input during a voice call', () => {
     useAppStore.setState({ isProcessing: false, processingSessionIds: new Set<string>() });
     useTaskStore.setState({ sessionStates: { [SESSION_ID]: { status: 'idle' } } });
     useVoiceCallStore.getState().reset();
+    useBundledCapabilityStore.setState({
+      installed: { 'builtin.voice-live': true, 'builtin.voice-input': false },
+    });
   });
 
   it('injects text into a live voice call without starting text delivery', async () => {

@@ -40,17 +40,7 @@ import {
   type TestConnectionPayload,
   type TestConnectionResult,
 } from '../model/providerConnectionTest';
-import { REALTIME_VOICE_PROVIDER_PROFILES } from '../../shared/constants/realtimeVoiceProviders';
-import { getDashscopeApiKey } from '../services/media/imageGenerationService';
-import {
-  deleteCustomRealtimeVoiceProvider,
-  getRealtimeVoiceProviderApiKey,
-  hasCustomRealtimeVoiceProviderApiKey,
-  listCustomRealtimeVoiceProviders,
-  saveCustomRealtimeVoiceProvider,
-  testCustomRealtimeVoiceProvider,
-  type CustomRealtimeVoiceProviderInput,
-} from '../services/voice/customRealtimeVoiceProviders';
+import { dispatchHostProviderAction } from '../services/capabilities/hostCapabilityContributions';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -611,49 +601,14 @@ export function registerProviderHandlers(ipcMain: IpcMain): void {
           }
           return { success: true, data };
         }
-        case 'list_realtime_voice_providers': {
-          const builtins = Object.values(REALTIME_VOICE_PROVIDER_PROFILES).map((profile) => ({
-            id: profile.id,
-            displayName: profile.displayName,
-            builtIn: true,
-            configured: profile.id === 'dashscope-qwen-omni'
-              ? Boolean(getDashscopeApiKey())
-              : Boolean(getRealtimeVoiceProviderApiKey(profile)),
-            models: profile.models,
-            defaultModel: profile.defaultModel,
-            defaultVoice: profile.defaultVoice,
-            inputSampleRate: profile.inputSampleRate,
-          }));
-          const custom = listCustomRealtimeVoiceProviders().map((provider) => ({
-            ...provider,
-            builtIn: false,
-            configured: hasCustomRealtimeVoiceProviderApiKey(provider.id),
-          }));
-          return { success: true, data: [...builtins, ...custom] };
-        }
-        case 'test_realtime_voice_provider': {
-          const candidate = payload as { provider: CustomRealtimeVoiceProviderInput; apiKey: string };
-          const data = await testCustomRealtimeVoiceProvider(candidate.provider, candidate.apiKey);
-          return { success: true, data };
-        }
-        case 'save_realtime_voice_provider': {
-          const candidate = payload as { provider: CustomRealtimeVoiceProviderInput; apiKey: string };
-          const data = await saveCustomRealtimeVoiceProvider(candidate.provider, candidate.apiKey);
-          return { success: true, data };
-        }
-        case 'delete_realtime_voice_provider': {
-          const id = (payload as { id?: unknown } | undefined)?.id;
-          if (typeof id !== 'string') {
-            return { success: false, error: { code: 'INVALID_ARGUMENT', message: 'Provider ID is required.' } };
-          }
-          await deleteCustomRealtimeVoiceProvider(id);
-          return { success: true, data: { ok: true } };
-        }
-        default:
+        default: {
+          const contributed = await dispatchHostProviderAction(action, payload);
+          if (contributed) return contributed;
           return {
             success: false,
             error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` },
           };
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

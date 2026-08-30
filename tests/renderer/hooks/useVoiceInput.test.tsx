@@ -250,6 +250,7 @@ describe('录音 → 转写主链路', () => {
     await act(async () => {
       await view.result.current.start();
     });
+    expect(fetch).toHaveBeenCalledWith('/api/speech/status');
     await act(async () => {
       sockets[0].open();
     });

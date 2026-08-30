@@ -37,8 +37,8 @@ import {
 import type { UseVoiceInputReturn } from '../../../../hooks/useVoiceInput';
 import { VoiceInputController } from './VoiceInputController';
 import { useVoiceLiveAvailability } from '../../voice/useVoiceLiveAvailability';
-import { useVoiceCallStore, type VoiceCallPhase } from '../../../../stores/voiceCallStore';
-import { VoiceChrome } from '../../voice/VoiceChrome';
+import type { VoiceCallPhase } from '../../../../stores/voiceCallStore';
+import { useVoiceLiveRuntime } from '../../../../hooks/useVoiceLiveRuntime';
 import { PermissionToggle } from './PermissionToggle';
 import { ContextUsagePill } from '../ContextUsagePill';
 import { CommandPalette } from '../../../CommandPalette';
@@ -259,6 +259,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     metadata: ConversationVoiceInputMetadata;
   } | null>(null);
   const voiceInputInstalled = useBundledCapabilityStore((state) => state.installed['builtin.voice-input']);
+  const voiceLiveInstalled = useBundledCapabilityStore((state) => state.installed['builtin.voice-live']);
   const [voice, setVoice] = useState<UseVoiceInputReturn>(UNAVAILABLE_VOICE_INPUT);
   const [isFocused, setIsFocused] = useState(false);
   const [queuedInputRevision, setQueuedInputRevision] = useState(0);
@@ -1046,12 +1047,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // 这段窗口按钮照常在位，只是 disabled 置灰（两个按钮都真的会灰，见各自实现）。
   //
   const liveVoiceAvailability = useVoiceLiveAvailability();
-  const liveVoiceCallPhase = useVoiceCallStore((state) => state.phase);
+  const liveVoiceCallPhase = useVoiceLiveRuntime().phase;
   const composerCoreActions = resolveComposerCoreActions({
     hasContent,
     isProcessing: Boolean(isProcessing),
     sessionId: currentSessionId ?? null,
-    enabled: liveVoiceAvailability.enabled,
+    enabled: voiceLiveInstalled && liveVoiceAvailability.enabled,
     configured: liveVoiceAvailability.configured,
     phase: liveVoiceCallPhase,
     hasMessages,
@@ -1225,7 +1226,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           {/* 实时通话 chrome：live 时底栏扩展（打字/附件入口保留在下方原处，§7.2）
               （L2 进行中层，组件自闸 + 自己走互斥表） */}
           <SlotEntry id="voice">
-            <VoiceChrome sessionId={currentSessionId ?? null} />
+            {voiceLiveInstalled && (
+              <React.Suspense fallback={null}>
+                <VoiceChrome sessionId={currentSessionId ?? null} />
+              </React.Suspense>
+            )}
           </SlotEntry>
         </ComposerSlot>
 
@@ -1504,3 +1509,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 ChatInput.displayName = 'ChatInput';
 
 export default ChatInput;
+const VoiceChrome = React.lazy(() => import('../../voice/VoiceChrome').then((module) => ({
+  default: module.VoiceChrome,
+})));

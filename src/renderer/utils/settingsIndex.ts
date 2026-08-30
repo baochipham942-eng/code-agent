@@ -18,6 +18,7 @@ export interface SettingsEntry {
   tab: SettingsTab;
   labelKey: string;
   keywords: string[];
+  requiresAnyCapability?: readonly BundledHostCapabilityId[];
 }
 
 export interface SearchSettingsOptions extends AccessSubject {
@@ -36,13 +37,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'conversation', labelKey: 'modelRoutingStrategy', keywords: ['routing', 'route', 'model routing', 'auto', 'direct', 'parallel'] },
 
   // Voice Live（实时语音）
-  { tab: 'voiceLive', labelKey: 'voiceLive', keywords: ['voice', 'live voice', 'call', 'realtime', 'real-time', 'voice call', 'voice chat'] },
-  { tab: 'voiceLive', labelKey: 'voiceLiveInterrupt', keywords: ['interrupt', 'barge-in', 'vad', 'sensitivity', 'turn detection'] },
+  { tab: 'voiceLive', labelKey: 'voiceLive', keywords: ['voice', 'live voice', 'call', 'realtime', 'real-time', 'voice call', 'voice chat'], requiresAnyCapability: ['builtin.voice-live'] },
+  { tab: 'voiceLive', labelKey: 'voiceLiveInterrupt', keywords: ['interrupt', 'barge-in', 'vad', 'sensitivity', 'turn detection'], requiresAnyCapability: ['builtin.voice-live'] },
 
   // Voice Model（语音模型：T1 收拢通话模型/音色/转写模型）
-  { tab: 'voiceModel', labelKey: 'voiceConversationModel', keywords: ['voice', 'call model', 'conversation model', 'realtime model', 'qwen omni', 'voice model'] },
-  { tab: 'voiceModel', labelKey: 'voiceLiveVoice', keywords: ['timbre', 'voice id', 'speaker', 'voice'] },
-  { tab: 'voiceModel', labelKey: 'whisperModel', keywords: ['whisper', 'model', 'asr', 'speech to text', 'local model', 'transcription model'] },
+  { tab: 'voiceModel', labelKey: 'voiceConversationModel', keywords: ['voice', 'call model', 'conversation model', 'realtime model', 'qwen omni', 'voice model'], requiresAnyCapability: ['builtin.voice-live'] },
+  { tab: 'voiceModel', labelKey: 'voiceLiveVoice', keywords: ['timbre', 'voice id', 'speaker', 'voice'], requiresAnyCapability: ['builtin.voice-live'] },
+  { tab: 'voiceModel', labelKey: 'whisperModel', keywords: ['whisper', 'model', 'asr', 'speech to text', 'local model', 'transcription model'], requiresAnyCapability: ['builtin.voice-input'] },
 
   // Voice Input（语音转文字）
   { tab: 'voiceInput', labelKey: 'voiceInput', keywords: ['voice', 'speech', 'mic', 'microphone', 'recording', 'transcription', 'asr', 'dictation', 'speech to text'] },
@@ -190,6 +191,11 @@ export function searchSettings(query: string, options?: SearchSettingsOptions): 
   return SETTINGS_INDEX.filter((entry, index) => {
     if (!canAccessSettingsTab(entry.tab, options)) return false;
     if (!isSettingsTabCapabilityAvailable(entry.tab, options?.installedCapabilities)) return false;
+    if (
+      entry.requiresAnyCapability
+      && options?.installedCapabilities
+      && !entry.requiresAnyCapability.some((id) => options.installedCapabilities?.has(id))
+    ) return false;
     return SETTINGS_SEARCH_TEXT[index].includes(q);
   });
 }

@@ -50,7 +50,7 @@ import type { SupabaseSessionBinding } from './routes/sessions';
 import { createDevRouter } from './routes/dev';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import { createBackgroundRouter } from './routes/background';
-import { createVoiceRouter } from './routes/voice';
+import { dispatchHostWebRoute } from '../host/services/capabilities/hostCapabilityContributions';
 import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
 import { wireGenerativeUiEditProjectionInvalidation } from './helpers/generativeUiEditWiring';
 
@@ -211,7 +211,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   }));
 
   app.use('/api', createBackgroundRouter({ logger }));
-  app.use('/api', createVoiceRouter());
+  app.use('/api', dispatchHostWebRoute);
   app.use('/api', createAdminReviewQueueRouter({ logger }));
 
   // ── Session routes (extracted to routes/sessions.ts) ────────────────

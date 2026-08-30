@@ -9,6 +9,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const warn = vi.hoisted(() => vi.fn());
+const prepareRuntimeAssetOnDemand = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock('../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() }),
 }));
@@ -20,8 +21,16 @@ vi.mock('../../src/host/services/desktop/audioVadRuntime', () => ({
 vi.mock('../../src/host/runtime/runtimeAssetResolver', () => ({
   resolveExistingResource: () => null,
 }));
+vi.mock('../../src/host/services/cloud/updateService', () => ({
+  isUpdateServiceInitialized: () => true,
+  prepareRuntimeAssetOnDemand,
+}));
 
-import { createSpeakerEmbedder, getVoiceprintRuntimeStatus } from '../../src/host/services/voice/speakerEmbedding';
+import {
+  createSpeakerEmbedder,
+  getVoiceprintRuntimeStatus,
+  prepareVoiceprintPrerequisites,
+} from '../../src/host/services/voice/speakerEmbedding';
 import { VOICEPRINT_MODEL_DIR, VOICEPRINT_MODEL_FILE } from '../../src/shared/constants/voice';
 
 describe('speakerEmbedding 前置缺失的可观测性', () => {
@@ -82,5 +91,16 @@ describe('speakerEmbedding 前置缺失的可观测性', () => {
     expect(getVoiceprintRuntimeStatus()).toEqual({ modelReady: false, runtimeReady: false });
     installModel();
     expect(getVoiceprintRuntimeStatus()).toEqual({ modelReady: true, runtimeReady: false });
+  });
+
+  it('只在显式准备声纹时按需请求 onnxruntime-vad，缺失不阻断基础通话链', async () => {
+    installModel();
+    expect(prepareRuntimeAssetOnDemand).not.toHaveBeenCalled();
+
+    await expect(prepareVoiceprintPrerequisites()).resolves.toEqual({
+      modelReady: true,
+      runtimeReady: false,
+    });
+    expect(prepareRuntimeAssetOnDemand).toHaveBeenCalledWith('onnxruntime-vad');
   });
 });

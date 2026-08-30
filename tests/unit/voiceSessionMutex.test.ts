@@ -118,6 +118,7 @@ vi.mock('../../src/host/services/voice/voiceAgentCoordinator', async (importOrig
 });
 
 const { attachVoiceClient, getActiveVoiceSessionId, endActiveVoiceSession, injectVoiceUserText } = await import('../../src/host/services/voice/voiceSessionService');
+const { voiceLiveCapabilityDescriptor } = await import('../../src/host/services/voice/voiceLiveCapability');
 
 /** 最小 ws 替身：只要 readyState / OPEN / send / close / 事件。 */
 class FakeClient extends EventEmitter {
@@ -193,6 +194,14 @@ describe('voiceSessionService 互斥与挂断', () => {
 
     first.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
     await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull(), { timeout: 4000 });
+  });
+
+  it('活跃通话期间 voice-live 明确拒绝卸载', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-active-uninstall');
+
+    expect(() => voiceLiveCapabilityDescriptor.beforeUninstall?.()).toThrow('请先结束通话再卸载');
+    expect(getActiveVoiceSessionId()).not.toBeNull();
   });
 
   it('并发拨号只建一条上游连接（闸门必须早于 await）', async () => {

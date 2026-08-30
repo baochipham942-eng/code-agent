@@ -35,7 +35,7 @@ import type { SidebarSessionItemSharedProps } from './features/sidebar/SidebarSe
 import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
-import { VoiceAuditDialog } from './features/voice/VoiceAuditDialog';
+import { useBundledCapabilityStore } from '../stores/bundledCapabilityStore';
 import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
@@ -68,6 +68,9 @@ import type {
 export { resolveRuntimeLogsDir };
 
 const logger = createLogger('Sidebar');
+const VoiceAuditDialog = React.lazy(() => import('./features/voice/VoiceAuditDialog').then((module) => ({
+  default: module.VoiceAuditDialog,
+})));
 
 export function isAccountMenuEventOutside(
   accountMenuElement: { contains: (node: Node) => boolean } | null,
@@ -291,6 +294,7 @@ export const Sidebar: React.FC = () => {
     sessionId: string;
     sessionTitle: string;
   } | null>(null);
+  const voiceLiveInstalled = useBundledCapabilityStore((state) => state.installed['builtin.voice-live']);
 
   // 内联重命名状态
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -471,6 +475,7 @@ export const Sidebar: React.FC = () => {
         canOpenSessionReplay,
         handleOpenSessionReplay,
         handleOpenVoiceAudit,
+        voiceLiveInstalled,
         unarchiveSession,
         archiveSession,
         softDelete,
@@ -493,6 +498,7 @@ export const Sidebar: React.FC = () => {
       canOpenSessionReplay,
       handleOpenSessionReplay,
       handleOpenVoiceAudit,
+      voiceLiveInstalled,
       openRuntimeLogsFolder,
       showToast,
       softDelete,
@@ -887,12 +893,14 @@ export const Sidebar: React.FC = () => {
         />
       )}
 
-      {voiceAuditDialog && (
-        <VoiceAuditDialog
-          sessionId={voiceAuditDialog.sessionId}
-          sessionTitle={voiceAuditDialog.sessionTitle}
-          onClose={() => setVoiceAuditDialog(null)}
-        />
+      {voiceLiveInstalled && voiceAuditDialog && (
+        <React.Suspense fallback={null}>
+          <VoiceAuditDialog
+            sessionId={voiceAuditDialog.sessionId}
+            sessionTitle={voiceAuditDialog.sessionTitle}
+            onClose={() => setVoiceAuditDialog(null)}
+          />
+        </React.Suspense>
       )}
 
       {/* 右键菜单 */}

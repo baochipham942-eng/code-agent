@@ -46,8 +46,10 @@ export function messageLineCost(message: ChatMessage, width: number): number {
 /**
  * live 区预算分配：返回 messageId → 允许的最大行数。
  * 从最新往最旧分配；最旧一条只给剩余预算（渲染层截尾）。
+ * 模块内私有（生产只经 planDynamicLayout 消费），语义由 layout.test.ts 经
+ * planDynamicLayout 钉顶分支覆盖。
  */
-export function allocateLiveBudget(
+function allocateLiveBudget(
   messages: ChatMessage[],
   width: number,
   budget: number,
@@ -76,4 +78,35 @@ export function editorVisualRows(state: EditorState, innerWidth: number, maxRows
     rows += visualRowCount(state.lines[i], innerWidth);
   }
   return Math.max(1, rows);
+}
+
+// ---------------------------------------------------------------------------
+// 紧凑流式布局（2026-08-30 用户实测决策：消灭空会话整屏留白）
+// 动态块不再恒等于终端行高：内容自然高 ≤ 可用预算时按实际高度（紧凑），
+// 超出时回退钉顶满高 + 预算截尾（保留 Ink v7 裁剪缺陷的护栏）。
+// ---------------------------------------------------------------------------
+
+export interface DynamicLayoutPlan {
+  /** 动态块高度（行）：紧凑 = 内容自然高，钉顶 = rows */
+  height: number;
+  /** true = 紧凑流式（无截断）；false = 钉顶满高（尾部预算分配） */
+  compact: boolean;
+  /** messageId → 行预算（紧凑时每条都是全量成本） */
+  allocation: Map<string, number>;
+}
+
+export function planDynamicLayout(
+  messages: ChatMessage[],
+  width: number,
+  rows: number,
+  chromeRows: number,
+): DynamicLayoutPlan {
+  const full = allocateLiveBudget(messages, width, Number.MAX_SAFE_INTEGER);
+  let natural = 0;
+  for (const cost of full.values()) natural += cost;
+  const liveBudget = Math.max(0, rows - chromeRows);
+  if (natural <= liveBudget) {
+    return { height: natural + chromeRows, compact: true, allocation: full };
+  }
+  return { height: rows, compact: false, allocation: allocateLiveBudget(messages, width, liveBudget) };
 }

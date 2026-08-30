@@ -1,12 +1,15 @@
 // ============================================================================
-// Ink TUI 主界面（P2）：<Static> 消息滚动区（已封口消息滚入终端历史）→
-// StatusBar（动态区顶行）→ 未封口消息 → Turn status 行 → Slash 补全弹窗 →
-// 多行编辑器（❯ + rail ┃）。
+// Ink TUI 主界面：<Static> 消息滚动区（已封口消息滚入终端历史）→ 动态区
+// （未封口消息 → Turn status 行 → Slash 补全弹窗 → 多行编辑器 ❯ + rail ┃
+// → StatusBar（输入框下）→ ShortcutsBar）。
+// 布局为紧凑流式：动态块 = 内容自然高（封顶终端行高），空会话无整屏留白；
+// 内容超高回退 P3 钉顶满高 + 预算截尾（Ink v7 裁剪护栏）。
 // P2 能力：多行编辑（Shift+Enter/Ctrl+J/`\` 续行）、粘贴 chip、slash 补全、
 // 真 slash 命令（onCommand 注入）、运行中排队 follow-up、100 条输入历史。
 // P1 高频体感：/ps /stop 后台任务（StatusBar 计数）、OSC 9 终端通知（失焦才发）、
 // 审批卡扩充（allow-all-edits/never/附反馈/inline diff）、Ctrl+Q 双击退出、
 // Ctrl+R prompt 历史搜索。
+// P2b：/model 交互选择器（blocking picker，↑↓+Enter 切换）。
 // ============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -59,11 +62,13 @@ import {
   type EditorState,
 } from './editorState';
 import { filterSlashCommands, type SlashItem } from './slashCommands';
-import { allocateLiveBudget, editorVisualRows } from './layout';
+import { editorVisualRows, planDynamicLayout } from './layout';
 import { displayWidth } from './editorState';
 import { Editor } from './Editor';
 import { SlashMenu } from './SlashMenu';
 import { MessageView } from './MessageView';
+import { ModelPicker } from './ModelPicker';
+import type { ModelPickerItem } from './modelItems';
 
 interface InkCommandResult {
   /** 命令产生的文本输出（渲染为系统消息） */
@@ -83,6 +88,8 @@ export interface InkChatOptions {
   onShellCommand: (command: string) => Promise<{ success: boolean; output?: string; error?: string }>;
   /** slash 补全数据源（注册表 cli 命令 + 本地命令） */
   slashItems: SlashItem[];
+  /** /model 交互选择器数据源（chat.ts 由 PROVIDER_REGISTRY 构建） */
+  modelItems: ModelPickerItem[];
 }
 
 /** braille spinner，刻意 ~7.5fps（规格：30fps 每帧停 4 tick ≈ 133ms/帧） */
@@ -307,6 +314,10 @@ export function App({ agent, options, onExit }: {
   }, []);
   /** 会话级 always/never 授权状态 */
   const allowListRef = useRef(new SessionAllowList());
+  /** /model 交互选择器（非 null = 打开中，键盘被它接管） */
+  const [modelPicker, setModelPicker] = useState<{ index: number } | null>(null);
+  const modelPickerRef = useRef(modelPicker);
+  modelPickerRef.current = modelPicker;
   /** 工具归组展开开关（Ctrl+X 切换；只影响动态区，Static 已封口消息不回溯） */
   const [expandTools, setExpandTools] = useState(false);
   /** 终端焦点（焦点上报 1004；默认聚焦 → 不打扰） */
@@ -488,6 +499,12 @@ export function App({ agent, options, onExit }: {
     if (!text) return;
     historyRef.current.push(text);
     setEditor(createEditorState());
+    if (text === '/model' || text === '/m') {
+      // 无参 /model：打开交互选择器（↑↓+Enter），不走 onCommand 的静态列表
+      const currentIndex = Math.max(0, options.modelItems.findIndex((item) => item.current));
+      setModelPicker({ index: currentIndex });
+      return;
+    }
     if (text.startsWith('/')) {
       void handleSlash(text);
       return;
@@ -506,7 +523,7 @@ export function App({ agent, options, onExit }: {
       return;
     }
     void runPrompt(text);
-  }, [handleSlash, runPrompt, runShellCommand, setEditor]);
+  }, [handleSlash, runPrompt, runShellCommand, setEditor, options]);
 
   /** Enter：`\` 结尾续行，否则提交（chip 在提交时展开） */
   const onEnter = useCallback(() => {
@@ -617,6 +634,31 @@ export function App({ agent, options, onExit }: {
         return;
       }
       return; // 其余按键吞掉（blocking card）
+    }
+
+    // /model 选择器接管键盘：↑↓ 导航、Enter 切换（走 /model <id> 原链路）、Esc 关闭
+    const picker = modelPickerRef.current;
+    if (picker) {
+      const items = options.modelItems;
+      if (key.escape || (key.ctrl && input === 'c')) {
+        setModelPicker(null);
+        return;
+      }
+      if (key.upArrow) {
+        setModelPicker({ index: Math.max(0, picker.index - 1) });
+        return;
+      }
+      if (key.downArrow) {
+        setModelPicker({ index: Math.min(items.length - 1, picker.index + 1) });
+        return;
+      }
+      if (key.return || input.includes('\r')) {
+        const item = items[Math.min(picker.index, items.length - 1)];
+        setModelPicker(null);
+        if (item) void handleSlash(`/model ${item.id}`);
+        return;
+      }
+      return; // 其余按键吞掉（blocking picker）
     }
 
     // Ctrl+R 历史搜索接管键盘（Editor 区域换成搜索行）。
@@ -874,12 +916,10 @@ export function App({ agent, options, onExit }: {
     ? (searchMatches[Math.min(historySearch.index, searchMatches.length - 1)] ?? null)
     : null;
 
-  // ── P3 钉顶行布局：动态块 = 终端行高，StatusBar 钉在物理 row 0 ──
-  // 动态块高度恒等于 rows，新 <Static> 内容只会把滚动区往上顶，
-  // 块底始终贴终端底 → 块顶 = 物理顶行。live 消息区按行预算分配
-  // （layout.ts），杜绝 Ink v7 overflowY:hidden 的负偏移裁剪缺陷。
-  // 预算取全量消息的尾部（不只是未封口消息）：封口消息进 <Static> 后
-  // 立即滚出全屏块，若只渲染未封口的，turn 一结束近期消息就全消失。
+  // ── 紧凑流式布局（2026-08-30 用户实测决策）──
+  // 动态块 = 内容自然高（封顶 rows）：空会话不再整屏留白（Claude Code/Codex
+  // 同款流式）；内容超高时回退 P3 钉顶满高 + 预算截尾（Ink v7 裁剪护栏保留）。
+  // StatusBar 从钉顶移到输入框下（status line 下置，与两家一致）。
   const rows = stdout?.rows ?? 24;
   const editorMaxRows = Math.min(10, Math.max(3, rows - 6));
   const approvalRows = approval
@@ -890,14 +930,18 @@ export function App({ agent, options, onExit }: {
       Math.max(6, rows - 6),
     )
     : 0;
+  const pickerRows = modelPicker ? Math.min(options.modelItems.length, 12) + 2 : 0;
   const promptRows = approval
     ? approvalRows
-    : historySearch
-      ? 2
-      : editorVisualRows(editor, Math.max(columns - 4, 8), editorMaxRows);
-  const reservedRows = 1 /* StatusBar */ + 1 /* TurnStatus/呼吸◆ */ + Math.min(menuItems.length, 8)
+    : modelPicker
+      ? pickerRows
+      : historySearch
+        ? 2
+        : editorVisualRows(editor, Math.max(columns - 4, 8), editorMaxRows);
+  const chromeRows = 1 /* StatusBar（输入框下） */ + 1 /* TurnStatus/呼吸◆ */ + Math.min(menuItems.length, 8)
     + promptRows + (toast ? 1 : 0) + 1 /* ShortcutsBar */;
-  const liveAllocation = allocateLiveBudget(state.messages, messageWidth, Math.max(0, rows - reservedRows));
+  const layoutPlan = planDynamicLayout(state.messages, messageWidth, rows, chromeRows);
+  const liveAllocation = layoutPlan.allocation;
   const visibleLive = state.messages.filter((message) => liveAllocation.has(message.id));
 
   return (
@@ -909,8 +953,7 @@ export function App({ agent, options, onExit }: {
           </Box>
         )}
       </Static>
-      <Box flexDirection="column" height={rows} flexShrink={0}>
-        <StatusBar state={state} cwd={options.cwd} gitBranch={options.gitBranch} fallbackModel={options.model} columns={columns} bgTasks={bgTaskCount} />
+      <Box flexDirection="column" height={layoutPlan.height} flexShrink={0}>
         <Box flexDirection="column" flexGrow={1} justifyContent="flex-end" overflowY="hidden">
           {visibleLive.map((message) => (
             <Box key={message.id} paddingX={2}>
@@ -935,10 +978,13 @@ export function App({ agent, options, onExit }: {
               diffExpanded={approvalDiffExpanded}
             />
           )
-          : historySearch
-            ? <HistorySearchBar query={historySearch.query} match={searchMatch} />
-            : <Editor state={editor} width={columns} maxRows={editorMaxRows} />}
+          : modelPicker
+            ? <ModelPicker items={options.modelItems} selected={modelPicker.index} />
+            : historySearch
+              ? <HistorySearchBar query={historySearch.query} match={searchMatch} />
+              : <Editor state={editor} width={columns} maxRows={editorMaxRows} />}
         {toast ? <Toast text={toast} /> : null}
+        <StatusBar state={state} cwd={options.cwd} gitBranch={options.gitBranch} fallbackModel={options.model} columns={columns} bgTasks={bgTaskCount} />
         <ShortcutsBar
           running={state.running}
           menuOpen={menuItems.length > 0}

@@ -64,6 +64,16 @@ export interface PluginManifest extends PluginMetadata {
   nativeDeps?: string[];
 }
 
+/** Manual capability-package approval receipt written only after sandbox validation + user confirmation. */
+export interface PluginApprovalReceipt {
+  schemaVersion: 1;
+  pluginId: string;
+  packageHash: string;
+  permissions: PluginPermission[];
+  sandboxValidatedAt: number;
+  approvedAt: number;
+}
+
 /**
  * Supported platforms for plugin `platforms` field.
  */

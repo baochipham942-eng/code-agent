@@ -83,7 +83,7 @@ describe('assertCompareArmsDistinct（跑前：对照臂必须有区分特征）
   it('candidate 仅 harness 不同 → 作为真实执行差异放行', () => {
     const candidate: CompareConfiguration = {
       name: 'candidate',
-      harness: { compressionPipeline: false },
+      harness: { name: 'candidate', compressionPipeline: false },
     };
     expect(() => assertCompareArmsDistinct(BASELINE, candidate)).not.toThrow();
   });
@@ -91,11 +91,11 @@ describe('assertCompareArmsDistinct（跑前：对照臂必须有区分特征）
   it('两侧 harness 相同且其他字段回落后一致 → 仍拒绝', () => {
     const baseline: CompareConfiguration = {
       ...BASELINE,
-      harness: { scaffoldProfile: true },
+      harness: { name: 'baseline', scaffoldProfile: true },
     };
     const candidate: CompareConfiguration = {
       name: 'candidate',
-      harness: { scaffoldProfile: true },
+      harness: { name: 'candidate', scaffoldProfile: true },
     };
     expect(() => assertCompareArmsDistinct(baseline, candidate)).toThrow(/compare-arm-activation/);
   });

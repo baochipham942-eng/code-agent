@@ -486,10 +486,20 @@ describe('SaaSConnectorsSection five card states', () => {
     fireEvent.click(screen.getByTestId('saas-connect-feishu'));
 
     await waitFor(() => {
+      expect(screen.queryByTestId('saas-detail-feishu')).toBeNull();
       expect(screen.getByTestId('saas-connector-feishu').textContent)
         .toContain(zh.settings.saasConnectors.badges.connecting);
       expect(screen.getByTestId('saas-status-dot-feishu').className).toContain('bg-amber-400');
       expect(screen.queryByTestId('saas-connector-toast')).toBeNull();
+    });
+    expect(screen.getByTestId('saas-cancel-feishu')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('saas-cancel-feishu'));
+    await waitFor(() => {
+      expect(invokeDomain).toHaveBeenCalledWith(
+        IPC_DOMAINS.CONNECTOR,
+        'oauthCancelConnect',
+        { providerId: 'feishu' },
+      );
     });
   });
 
@@ -649,6 +659,26 @@ describe('SaaSConnectorsSection actions and receipts', () => {
     await waitFor(() => {
       expect(screen.getByTestId('saas-connector-toast').textContent)
         .toContain(zh.settings.saasConnectors.toast.authorizationCancelled);
+    });
+  });
+
+  it('shows a human-readable error when authorization confirmation times out', async () => {
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'oauthStatus') {
+        return Promise.resolve([{ ...baseStatus, clientSecretConfigured: true }]);
+      }
+      if (action === 'oauthConnect') return Promise.reject({ code: 'TIMEOUT' });
+      return Promise.resolve([]);
+    });
+    render(<SaaSConnectorsSection />);
+
+    await screen.findByTestId('saas-connector-feishu');
+    openFeishuDetail();
+    fireEvent.click(screen.getByTestId('saas-connect-feishu'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('saas-connector-error').textContent)
+        .toContain(zh.settings.saasConnectors.errors.authorizationTimedOut);
     });
   });
 

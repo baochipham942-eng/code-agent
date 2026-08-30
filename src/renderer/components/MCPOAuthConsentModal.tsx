@@ -2,9 +2,10 @@
 // MCPOAuthConsentModal - Confirm MCP OAuth browser authorization
 // ============================================================================
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import type { MCPOAuthConsentRequest, MCPOAuthConsentResponse } from '@shared/contract';
+import { INTERACTION_TIMEOUTS } from '@shared/constants';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Modal, ModalFooter } from './primitives/Modal';
 import { useI18n } from '../hooks/useI18n';
@@ -36,7 +37,7 @@ export const MCPOAuthConsentModal: React.FC<Props> = ({ request, onClose }) => {
     [text.fields.redirectHost, request.redirectHost],
   ] as const, [request, text]);
 
-  const sendResponse = async (action: ConsentAction) => {
+  const sendResponse = useCallback(async (action: ConsentAction) => {
     if (submitting) return;
     setSubmitting(true);
 
@@ -52,7 +53,15 @@ export const MCPOAuthConsentModal: React.FC<Props> = ({ request, onClose }) => {
       setSubmitting(false);
       logger.error('Failed to submit MCP OAuth consent response', error);
     }
-  };
+  }, [onClose, request.requestId, submitting]);
+
+  useEffect(() => {
+    if (request.kind !== 'connector' || submitting) return undefined;
+    const timer = window.setTimeout(() => {
+      void sendResponse('timeout');
+    }, INTERACTION_TIMEOUTS.CONNECTOR_OAUTH_CONSENT);
+    return () => window.clearTimeout(timer);
+  }, [request.kind, sendResponse, submitting]);
 
   return (
     <Modal

@@ -339,6 +339,11 @@ export class ToolExecutor {
     return this.executionTopology;
   }
 
+  /** 旁路账本沿用工具执行入口已声明的来源，避免再从用户文本猜测试会话。 */
+  getLedgerOrigin(): ToolLedgerOrigin {
+    return this.ledgerOrigin;
+  }
+
   /** Create an executor whose workspace/cwd cannot be changed after construction. */
   forRun(
     runContext: RunContext,

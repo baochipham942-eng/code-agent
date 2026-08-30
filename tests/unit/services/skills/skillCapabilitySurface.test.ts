@@ -9,8 +9,10 @@ import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const recordCapabilityLifecycleMock = vi.hoisted(() => vi.fn());
+
 vi.mock('../../../../src/host/services/capability/capabilityLifecycleTrace', () => ({
-  recordCapabilityLifecycle: vi.fn(),
+  recordCapabilityLifecycle: recordCapabilityLifecycleMock,
 }));
 
 import type { ParsedSkill } from '../../../../src/shared/contract/agentSkill';
@@ -24,6 +26,7 @@ describe('skill capability surface legacy declarations', () => {
   let tmpDir: string;
 
   beforeEach(async () => {
+    vi.clearAllMocks();
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'skill-capability-surface-'));
   });
 
@@ -50,6 +53,9 @@ describe('skill capability surface legacy declarations', () => {
       const result = await toolSearch.searchTools(name, { maxResults: 10, includeMCP: false });
       expect(result.tools.map((tool) => tool.name)).toContain(`skill:${name}`);
     }
+    expect(recordCapabilityLifecycleMock.mock.calls.map(([, data]) => data)).toEqual(
+      LEGACY_SKILL_NAMES.map((name) => ({ capabilityKey: `skill:${name}`, action: 'loaded' })),
+    );
   });
 });
 

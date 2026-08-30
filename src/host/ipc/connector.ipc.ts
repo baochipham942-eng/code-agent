@@ -24,7 +24,10 @@ import {
   saveCustomOAuthProviderDescriptor,
   type CustomOAuthDescriptorInput,
 } from '../connectors/oauth/providerRegistry';
-import { requestMcpOAuthConsent } from '../mcp/mcpOAuthConsent';
+import {
+  cancelPendingMcpOAuthConsent,
+  requestMcpOAuthConsent,
+} from '../mcp/mcpOAuthConsent';
 import { createLarkCliDriver } from '../connectors/feishu/larkCli';
 import { createTmeetCliDriver } from '../connectors/tmeet/tmeetCli';
 import { getCachedStatus } from '../connectors/cli/cliConnector';
@@ -51,6 +54,7 @@ const NATIVE_CONNECTOR_LABELS: Record<NativeConnectorId, string> = {
 const CONNECTOR_STATUS_POLL_MS = 15_000;
 let connectorStatusWatchTimer: NodeJS.Timeout | null = null;
 let lastConnectorStatusSnapshot = '';
+const activeOAuthConnections = new Map<string, { cancel: () => void }>();
 
 function isNativeConnectorId(id: string | undefined): id is NativeConnectorId {
   return Boolean(id && (NATIVE_CONNECTOR_IDS as readonly string[]).includes(id));
@@ -481,7 +485,9 @@ async function handleConnectorOAuthConnect(
     redirectHost: '127.0.0.1',
   });
   if (!consent.granted) {
-    throw Object.assign(new Error(consent.permissionDecisionReason), { code: 'CANCELLED' });
+    throw Object.assign(new Error(consent.permissionDecisionReason), {
+      code: consent.timedOut ? 'TIMEOUT' : 'CANCELLED',
+    });
   }
   if (isCliAuthMode(descriptor.authMode) && payload?.authMode !== 'oauth') {
     const runtime = CLI_PROVIDER_RUNTIMES[descriptor.id];
@@ -527,21 +533,45 @@ async function handleConnectorOAuthConnect(
   if (descriptor.id === 'tmeet') {
     throw new Error('Tencent Meeting authorization is available only through the official tmeet CLI');
   }
-  const auth = new ConnectorAuth({
-    coordinator: new OAuthCoordinator({
-      openAuthorization: async (authUrl) => {
-        const { openExternal } = await import('../platform/nativeShell');
-        await openExternal(authUrl.toString());
-      },
-    }),
+  let cancelRequested = false;
+  const coordinator = new OAuthCoordinator({
+    openAuthorization: async (authUrl) => {
+      if (cancelRequested) {
+        coordinator.cancelFlowForAccountId(descriptor.id);
+        throw new Error('OAuth flow cancelled');
+      }
+      const { openExternal } = await import('../platform/nativeShell');
+      await openExternal(authUrl.toString());
+    },
   });
+  const activeConnection = {
+    cancel: () => {
+      cancelRequested = true;
+      coordinator.cancelFlowForAccountId(descriptor.id);
+    },
+  };
+  const auth = new ConnectorAuth({ coordinator });
+  activeOAuthConnections.set(descriptor.id, activeConnection);
 
-  await auth.beginFlow({
-    accountId: descriptor.id,
-    accountLabel: descriptor.displayName,
-    descriptor,
-    action,
-  });
+  try {
+    await auth.beginFlow({
+      accountId: descriptor.id,
+      accountLabel: descriptor.displayName,
+      descriptor,
+      action,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'OAuth flow timed out') {
+      Object.assign(error, { code: 'TIMEOUT' });
+    } else if (error instanceof Error && error.message === 'OAuth flow cancelled') {
+      Object.assign(error, { code: 'CANCELLED' });
+    }
+    throw error;
+  } finally {
+    if (activeOAuthConnections.get(descriptor.id) === activeConnection) {
+      activeOAuthConnections.delete(descriptor.id);
+    }
+  }
   return listConnectorOAuthStatuses();
 }
 
@@ -596,8 +626,13 @@ async function handleConnectorOAuthCancelConnect(
   payload: { providerId?: string } | undefined,
 ): Promise<ConnectorOAuthProviderStatus[]> {
   const descriptor = requireOAuthProvider(payload?.providerId);
+  if (cancelPendingMcpOAuthConsent(descriptor.displayName)) {
+    return listConnectorOAuthStatuses();
+  }
   if (!isCliAuthMode(descriptor.authMode)) {
-    throw new Error(`OAuth connector provider ${descriptor.id} does not support connection cancellation`);
+    const activeConnection = activeOAuthConnections.get(descriptor.id);
+    activeConnection?.cancel();
+    return listConnectorOAuthStatuses();
   }
   const runtime = CLI_PROVIDER_RUNTIMES[descriptor.id];
   if (!runtime) throw new Error(`CLI connector runtime is unavailable for ${descriptor.id}`);

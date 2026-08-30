@@ -16,6 +16,7 @@ import { MODEL_MAX_TOKENS } from '../../shared/constants';
 import { app } from '../platform';
 import { runWithCompressionPipelineOverride } from '../context/compressionPipeline';
 import { runWithScaffoldProfileOverrides } from '../agent/runtime/scaffoldProfile';
+import { runWithMemoryModelOverride } from '../model/memoryModelOverrideScope';
 import { getMockCasePolicy } from './mockEvalPolicy';
 import type { PermissionRequestData } from '../tools/types';
 import type { RequestPermissionResult } from '../../shared/contract/permission';
@@ -347,6 +348,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
   /** WP1-3: A/B 对比的 candidate prompt（缺省用产线 SYSTEM_PROMPT） */
   private systemPromptOverride?: string;
   private persistLongTermMemory: boolean;
+  private memoryRoutingModel?: string;
   private includeRecentConversations: boolean;
   private maxSystemPromptTokens: number;
   private skillDiscoveryService?: SkillDiscoveryService;
@@ -393,6 +395,8 @@ export class StandaloneAgentAdapter implements AgentInterface {
     requestPermission?: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
     /** Whether this adapter may persist durable memory, learning, metadata, and summaries. */
     persistLongTermMemory?: boolean;
+    /** Run-scoped model used by memory organization calls; provider/key follow this arm. */
+    memoryRoutingModel?: string;
     /** Whether recent conversation summaries are visible to this adapter. */
     includeRecentConversations?: boolean;
     /** Explicit system prompt budget for this adapter. */
@@ -415,6 +419,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.requestPermission = config.requestPermission;
     this.persistLongTermMemory = config.persistLongTermMemory
       ?? EVAL_AGENT_DEFAULTS.persistLongTermMemory;
+    this.memoryRoutingModel = config.memoryRoutingModel;
     this.includeRecentConversations = config.includeRecentConversations
       ?? EVAL_AGENT_DEFAULTS.includeRecentConversations;
     this.maxSystemPromptTokens = config.maxSystemPromptTokens ?? 12_000;
@@ -557,7 +562,16 @@ export class StandaloneAgentAdapter implements AgentInterface {
         this.goalRun = goalRunForThisRun;
       }
 
-      await runWithHarnessOverrideScope(this.harness, async () => {
+      await runWithMemoryModelOverride(
+        this.memoryRoutingModel
+          ? {
+              provider: this.modelConfig.provider,
+              model: this.memoryRoutingModel,
+              apiKey: this.modelConfig.apiKey,
+              baseUrl: this.modelConfig.baseUrl,
+            }
+          : undefined,
+        () => runWithHarnessOverrideScope(this.harness, async () => {
         const executionIntent: ConversationExecutionIntent | undefined = this.sandboxPolicy?.redline
           ? { redline: true }
           : undefined;
@@ -669,7 +683,8 @@ export class StandaloneAgentAdapter implements AgentInterface {
         } else {
           await loop.run(prompt);
         }
-      });
+        }),
+      );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       errors.push(message || String(error));

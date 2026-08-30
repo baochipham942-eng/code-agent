@@ -61,5 +61,5 @@ export interface MCPOAuthConsentRequest {
  */
 export interface MCPOAuthConsentResponse {
   requestId: string;
-  action: 'authorize' | 'decline';
+  action: 'authorize' | 'decline' | 'timeout';
 }

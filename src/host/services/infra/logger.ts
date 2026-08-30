@@ -179,6 +179,15 @@ function writeToFile(
 // Logger Class
 // ----------------------------------------------------------------------------
 
+// Ink TUI 拥有屏幕期间为 true：ERROR 紧凑单行不再写 stderr（那行会被 Ink
+// patchConsole 收进 static 输出，触发整屏重绘、刷屏污染交互界面）。
+// 只影响控制台输出，文件持久化不受影响；由 Ink 入口在 render 前开启、退出时恢复。
+let stderrSinkMuted = false;
+
+export function setStderrSinkMuted(muted: boolean): void {
+  stderrSinkMuted = muted;
+}
+
 class Logger {
   private level: LogLevel;
   private context?: string;
@@ -251,7 +260,7 @@ class Logger {
       if (level !== 'DEBUG') {
         writeToFile(level, this.context, this.lane, sanitizedMessage, sanitizedArgs.length > 0 ? sanitizedArgs : undefined);
       }
-      if (level === 'ERROR') {
+      if (level === 'ERROR' && !stderrSinkMuted) {
         const ts = new Date().toISOString();
         const ctx = this.context ? `[${this.context}]` : '';
         console.error(`${ts} ERROR ${ctx} ${sanitizedMessage}${extractErrorHint(sanitizedArgs)}`);
@@ -262,12 +271,14 @@ class Logger {
     const timestamp = new Date().toISOString();
     const ctx = this.context ? `[${this.context}]` : '';
 
-    const logFn = console.error; // All log levels → stderr
+    if (!stderrSinkMuted) {
+      const logFn = console.error; // All log levels → stderr
 
-    if (sanitizedArgs.length > 0) {
-      logFn(`${timestamp} ${level} ${ctx} ${sanitizedMessage}`, ...sanitizedArgs);
-    } else {
-      logFn(`${timestamp} ${level} ${ctx} ${sanitizedMessage}`);
+      if (sanitizedArgs.length > 0) {
+        logFn(`${timestamp} ${level} ${ctx} ${sanitizedMessage}`, ...sanitizedArgs);
+      } else {
+        logFn(`${timestamp} ${level} ${ctx} ${sanitizedMessage}`);
+      }
     }
 
     // Write to file for INFO and above (skip DEBUG in file)

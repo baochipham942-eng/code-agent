@@ -518,6 +518,7 @@ export const enSettingsSystem = {
         loadFailed: 'Failed to load SaaS connector status.',
         saveFailed: 'Failed to save the App Secret. Try again.',
         connectFailed: 'Connection failed. Try again.',
+        connectFailedWithReason: 'Connection failed: {reason}',
         authorizationTimedOut: 'Authorization confirmation timed out and the connection was stopped. Click Connect to try again.',
         tmeetAuthorizationOpenFailed: 'Could not open the authorization page: {reason}',
         disconnectFailed: 'Disconnect failed. Try again.',

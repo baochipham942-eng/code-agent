@@ -8,10 +8,13 @@ import {
   type OAuthTokens,
 } from '@modelcontextprotocol/client';
 import { ConnectorOAuthStore } from './connectorOAuthStore';
+import { createLogger } from '../../services/infra/logger';
+import { createConnectorOAuthFetch } from './oauthFetch';
 import { OAuthCoordinator } from './oauthCoordinator';
 import { validateProviderDescriptor, type ProviderDescriptor } from './providerDescriptor';
 
 const TOKEN_EXPIRY_SKEW_MS = 30_000;
+const logger = createLogger('ConnectorOAuth', { lane: 'mcp' });
 
 export interface BeginConnectorOAuthFlowInput {
   accountId: string;
@@ -19,6 +22,7 @@ export interface BeginConnectorOAuthFlowInput {
   descriptor: ProviderDescriptor;
   action: string;
   configSource?: string;
+  signal?: AbortSignal;
 }
 
 export interface ConnectorAuthOptions {
@@ -41,7 +45,7 @@ export class ConnectorAuth {
       },
     });
     this.storeFactory = options.storeFactory ?? ((accountId) => new ConnectorOAuthStore(accountId));
-    this.fetchFn = options.fetchFn;
+    this.fetchFn = options.fetchFn ?? createConnectorOAuthFetch();
     this.now = options.now ?? Date.now;
   }
 
@@ -87,16 +91,61 @@ export class ConnectorAuth {
         authUrl: authorizationUrl,
       });
       const callback = await callbackPromise;
-      const tokens = await exchangeAuthorization(issuer, {
-        metadata,
-        clientInformation,
-        authorizationCode: callback.code,
-        ...(callback.responseIssuer !== undefined ? { iss: callback.responseIssuer } : {}),
-        codeVerifier: store.codeVerifier(),
-        redirectUri: flow.redirectUrl,
-        ...(this.fetchFn !== undefined ? { fetchFn: this.fetchFn } : {}),
+      logger.info('OAuth callback received; exchanging authorization code', {
+        providerId: descriptor.id,
+        accountId: input.accountId,
+        tokenHost: new URL(descriptor.tokenUrl).hostname,
       });
-      store.saveTokens(tokens, requestedScope, this.now());
+      const exchangeStartedAt = this.now();
+      let tokens: OAuthTokens;
+      try {
+        tokens = await exchangeAuthorization(issuer, {
+          metadata,
+          clientInformation,
+          authorizationCode: callback.code,
+          ...(callback.responseIssuer !== undefined ? { iss: callback.responseIssuer } : {}),
+          codeVerifier: store.codeVerifier(),
+          redirectUri: flow.redirectUrl,
+          ...(this.fetchFn !== undefined ? { fetchFn: this.fetchWithSignal(input.signal) } : {}),
+        });
+      } catch (error) {
+        if (input.signal?.aborted) {
+          throw new Error('OAuth flow cancelled', { cause: error });
+        }
+        logger.error('OAuth token exchange failed', {
+          providerId: descriptor.id,
+          accountId: input.accountId,
+          durationMs: this.now() - exchangeStartedAt,
+          error: this.errorMessage(error),
+        });
+        throw new Error(
+          `${descriptor.displayName} 换取授权凭据失败：${this.errorMessage(error)}`,
+          { cause: error },
+        );
+      }
+      logger.info('OAuth token exchange completed', {
+        providerId: descriptor.id,
+        accountId: input.accountId,
+        durationMs: this.now() - exchangeStartedAt,
+        refreshTokenReceived: Boolean(tokens.refresh_token),
+      });
+      try {
+        store.saveTokens(tokens, requestedScope, this.now());
+      } catch (error) {
+        logger.error('Failed to persist OAuth credentials', {
+          providerId: descriptor.id,
+          accountId: input.accountId,
+          error: this.errorMessage(error),
+        });
+        throw new Error(
+          `${descriptor.displayName} 授权已完成，但凭据保存失败：${this.errorMessage(error)}`,
+          { cause: error },
+        );
+      }
+      logger.info('OAuth credentials persisted', {
+        providerId: descriptor.id,
+        accountId: input.accountId,
+      });
       store.invalidateCredentials('verifier');
       return tokens;
     } catch (error) {
@@ -144,6 +193,19 @@ export class ConnectorAuth {
     }
     const scope = configuredScope.trim();
     return scope;
+  }
+
+  private fetchWithSignal(signal: AbortSignal | undefined): FetchLike {
+    const fetchFn = this.fetchFn;
+    if (!fetchFn || !signal) return fetchFn ?? fetch;
+    return (input, init) => fetchFn(input, {
+      ...init,
+      signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal,
+    });
+  }
+
+  private errorMessage(error: unknown): string {
+    return error instanceof Error && error.message.trim() ? error.message : String(error);
   }
 
   private metadataForDescriptor(descriptor: ProviderDescriptor): AuthorizationServerMetadata {

@@ -17,6 +17,7 @@ import {
 import { getConnectorRegistry } from '../connectors';
 import { ConnectorAuth } from '../connectors/oauth/connectorAuth';
 import { ConnectorOAuthStore } from '../connectors/oauth/connectorOAuthStore';
+import { getGoogleCalendarOAuthClientSecret } from '../connectors/oauth/googleCalendarOAuth';
 import { OAuthCoordinator } from '../connectors/oauth/oauthCoordinator';
 import {
   getOAuthProviderDescriptor,
@@ -447,13 +448,16 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
         ...(cliStatus.user?.tenantName ? { tenantName: cliStatus.user.tenantName } : {}),
       };
     }
+    const oauthStore = new ConnectorOAuthStore(descriptor.id);
+    const injectedSecretAvailable = descriptor.id === 'google-calendar'
+      && Boolean(getGoogleCalendarOAuthClientSecret());
     return {
       id: descriptor.id,
       displayName: descriptor.displayName,
       clientIdConfigured: descriptor.clientId.trim().length > 0,
       requiresClientSecret: descriptor.requiresClientSecret,
-      clientSecretConfigured: Boolean(new ConnectorOAuthStore(descriptor.id).clientSecret()),
-      connected: Boolean(new ConnectorOAuthStore(descriptor.id).tokens()),
+      clientSecretConfigured: Boolean(oauthStore.clientSecret()) || injectedSecretAvailable,
+      connected: Boolean(oauthStore.tokens()),
       loopbackRedirectUriSupport: descriptor.loopbackRedirectUriSupport,
       authMode,
     };
@@ -473,6 +477,13 @@ async function handleConnectorOAuthConnect(
   const action = payload?.action ?? Object.keys(descriptor.scopes)[0];
   if (!action) {
     throw new Error(`OAuth connector provider ${descriptor.id} declares no authorization scope`);
+  }
+  if (descriptor.id === 'google-calendar') {
+    const clientSecret = getGoogleCalendarOAuthClientSecret();
+    if (!clientSecret) {
+      throw new Error('缺少 NEO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET，无法连接 Google Calendar');
+    }
+    new ConnectorOAuthStore(descriptor.id).saveClientSecret(clientSecret);
   }
   const scope = descriptor.scopes[action] ?? '';
   const consent = await requestMcpOAuthConsent({
@@ -534,6 +545,7 @@ async function handleConnectorOAuthConnect(
     throw new Error('Tencent Meeting authorization is available only through the official tmeet CLI');
   }
   let cancelRequested = false;
+  const abortController = new AbortController();
   const coordinator = new OAuthCoordinator({
     openAuthorization: async (authUrl) => {
       if (cancelRequested) {
@@ -547,6 +559,7 @@ async function handleConnectorOAuthConnect(
   const activeConnection = {
     cancel: () => {
       cancelRequested = true;
+      abortController.abort();
       coordinator.cancelFlowForAccountId(descriptor.id);
     },
   };
@@ -559,6 +572,7 @@ async function handleConnectorOAuthConnect(
       accountLabel: descriptor.displayName,
       descriptor,
       action,
+      signal: abortController.signal,
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'OAuth flow timed out') {

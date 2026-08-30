@@ -25,9 +25,15 @@ function createGoogleCalendarOAuthDescriptor(
     },
     redirect: { mode: 'loopback-random' },
     loopbackRedirectUriSupport: 'confirmed',
-    requiresClientSecret: false,
+    requiresClientSecret: true,
     authMode: 'oauth',
   };
+}
+
+export function getGoogleCalendarOAuthClientSecret(
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  return env.NEO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET?.trim() || undefined;
 }
 
 export const GOOGLE_CALENDAR_OAUTH_DESCRIPTOR = createGoogleCalendarOAuthDescriptor();

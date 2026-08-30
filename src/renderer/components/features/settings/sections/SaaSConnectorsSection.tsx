@@ -462,7 +462,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
           : text.errors.connectFailed;
         setError(providerId === 'tmeet'
           ? text.errors.tmeetAuthorizationOpenFailed.replace('{reason}', reason)
-          : text.errors.connectFailed);
+          : text.errors.connectFailedWithReason.replace('{reason}', reason));
       }
     } finally {
       connectingProvidersRef.current.delete(providerId);

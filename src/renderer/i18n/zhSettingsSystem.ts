@@ -520,6 +520,7 @@ export const zhSettingsSystem = {
         loadFailed: 'SaaS 连接器状态加载失败。',
         saveFailed: 'App Secret 保存失败，请重试。',
         connectFailed: '连接失败，请重试。',
+        connectFailedWithReason: '连接失败：{reason}',
         authorizationTimedOut: '等待授权确认超时，已停止连接。请重新点击“连接”后再试。',
         tmeetAuthorizationOpenFailed: '打不开授权页：{reason}',
         disconnectFailed: '断开失败，请重试。',

@@ -21,7 +21,7 @@ export interface ScopedTokenUsage {
   cacheCreationTokens: number;
 }
 
-export interface ScopedUsageRecord {
+interface ScopedUsageRecord {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens?: number;

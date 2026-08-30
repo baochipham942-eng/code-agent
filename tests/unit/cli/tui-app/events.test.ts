@@ -5,7 +5,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentEvent } from '../../../../src/shared/contract';
 import {
-  appendSystemMessage,
   appendUserMessage,
   createChatState,
   formatDuration,

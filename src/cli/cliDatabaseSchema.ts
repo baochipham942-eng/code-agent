@@ -5,7 +5,11 @@
 
 import { applyTranscriptFtsSchema, runTranscriptFtsBackfill } from '../shared/transcriptFts.sql';
 import { applyMemoriesFtsSchema, runMemoriesFtsBackfill } from '../shared/memoriesFts.sql';
+import { applyTelemetrySchema } from '../host/services/core/database/schemaTelemetry';
+import { createLogger } from '../host/services/infra/logger';
 import { loopInternalMessageWhere } from './cliDatabaseSql';
+
+const schemaLogger = createLogger('CLIDatabase');
 
 type CliDb = import('better-sqlite3').Database | null;
 
@@ -399,6 +403,16 @@ export function createCliTables(db: CliDb): void {
     )
   `);
   addColumnIfMissing(db, `ALTER TABLE tool_execution_events ADD COLUMN origin TEXT`);
+
+  // Telemetry 表（telemetry_sessions/turns/model_calls/tool_calls/events 等）——
+  // 与桌面 DatabaseService 共用同一份 DDL（schemaTelemetry）与同一个数据库文件，
+  // CLI 先启动时也必须能独立建出完整结构。CLI 的 TelemetryCollector 通过
+  // dbOverride 绑定到本连接写入这些表（此前 CLI 遥测因主 DatabaseService 未初始化
+  // 全部静默丢弃，`neo session timeline` 的 Telemetry turns 恒为 0）。
+  applyTelemetrySchema(db, schemaLogger);
+  // 与桌面 migrations.ts 同款补列：telemetry_turns.agent_id（schemaTelemetry 的
+  // CREATE 尚未内嵌该列，先建后补两侧幂等）。
+  addColumnIfMissing(db, `ALTER TABLE telemetry_turns ADD COLUMN agent_id TEXT DEFAULT 'main'`);
 }
 
 export function createCliIndexes(db: CliDb): void {

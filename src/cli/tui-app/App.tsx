@@ -10,6 +10,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Static, Text, useInput, useStdout } from 'ink';
 import type { CLIAgent } from '../adapter';
 import type { AgentEvent } from '../../shared/contract';
+import type { PermissionAskResult } from '../../shared/contract/permission';
+import type { PermissionRequestData } from '../../host/tools/types';
+import { setInteractiveApprovalProvider } from '../permissionPolicy';
+import { approvalOptions, SessionAllowList, type ApprovalChoice } from './approval';
+import { ApprovalCard } from './ApprovalCard';
 import {
   appendSystemMessage,
   appendUserMessage,
@@ -41,6 +46,8 @@ import {
   type EditorState,
 } from './editorState';
 import { filterSlashCommands, type SlashItem } from './slashCommands';
+import { allocateLiveBudget, editorVisualRows } from './layout';
+import { displayWidth } from './editorState';
 import { Editor } from './Editor';
 import { SlashMenu } from './SlashMenu';
 import { MessageView } from './MessageView';
@@ -97,34 +104,40 @@ function ctxBar(percent: number): string {
   return '▓'.repeat(filled) + '░'.repeat(5 - filled);
 }
 
-function StatusBar({ state, cwd, gitBranch, fallbackModel }: {
+function StatusBar({ state, cwd, gitBranch, fallbackModel, columns }: {
   state: ChatState;
   cwd: string;
   gitBranch: string;
   fallbackModel: string;
+  columns: number;
 }) {
   const model = state.model ?? fallbackModel;
   const cost = estimateCostUsd(model, state.inputTokens, state.outputTokens);
+  const leftText = `⏺ ${model}${state.provider ? ` (${state.provider})` : ''}`;
+  const rightText = [
+    state.inputTokens + state.outputTokens > 0 ? `⇡${state.inputTokens} ⇣${state.outputTokens}` : '',
+    state.contextPercent != null ? `ctx ${ctxBar(state.contextPercent)} ${state.contextPercent.toFixed(0)}%` : '',
+    cost > 0 ? `$${cost.toFixed(4)}` : '',
+    state.turns > 0 ? `⟳${state.turns}` : '',
+    state.toolNames.length > 0 ? `${state.toolNames.length} tools` : '',
+    state.lastTurnMs != null ? formatDuration(state.lastTurnMs) : '',
+    state.running ? 'running' : 'idle',
+  ].filter(Boolean).join('  ');
+  // 单行合成：中段 cwd(branch) 按剩余宽度截断，保证永不折行（布局预算按 1 行算）
+  const middleFull = `${cwd}${gitBranch ? ` (${gitBranch})` : ''}`;
+  const middleBudget = columns - 2 - displayWidth(leftText) - displayWidth(rightText) - 4;
+  const middle = middleBudget >= 8 && displayWidth(middleFull) > middleBudget
+    ? middleFull.slice(0, Math.max(1, middleBudget - 1)) + '…'
+    : middleFull;
+  const gap1 = middle ? '  ' : '';
+  const gap2 = middle ? '  ' : '  ';
   return (
-    <Box paddingX={1} justifyContent="space-between">
-      <Text>
+    <Box paddingX={1}>
+      <Text wrap="truncate-end">
         <Text color="green">⏺ </Text>
         <Text bold>{model}</Text>
         {state.provider ? <Text dimColor> ({state.provider})</Text> : null}
-      </Text>
-      <Text dimColor>
-        {cwd}{gitBranch ? ` (${gitBranch})` : ''}
-      </Text>
-      <Text dimColor>
-        {state.inputTokens + state.outputTokens > 0
-          ? `⇡${state.inputTokens} ⇣${state.outputTokens}  `
-          : ''}
-        {state.contextPercent != null ? `ctx ${ctxBar(state.contextPercent)} ${state.contextPercent.toFixed(0)}%  ` : ''}
-        {cost > 0 ? `$${cost.toFixed(4)}  ` : ''}
-        {state.turns > 0 ? `⟳${state.turns}  ` : ''}
-        {state.toolNames.length > 0 ? `${state.toolNames.length} tools  ` : ''}
-        {state.lastTurnMs != null ? `${formatDuration(state.lastTurnMs)}  ` : ''}
-        {state.running ? 'running' : 'idle'}
+        <Text dimColor>{gap1}{middle}{gap2}{rightText}</Text>
       </Text>
     </Box>
   );
@@ -134,18 +147,21 @@ function StatusBar({ state, cwd, gitBranch, fallbackModel }: {
 // 底部 shortcuts bar：随上下文切换提示内容
 // ---------------------------------------------------------------------------
 
-function ShortcutsBar({ running, menuOpen, hasDraft }: {
+function ShortcutsBar({ running, menuOpen, hasDraft, approvalOpen }: {
   running: boolean;
   menuOpen: boolean;
   hasDraft: boolean;
+  approvalOpen: boolean;
 }) {
-  const text = menuOpen
-    ? '↑↓ 选择 · Tab 采纳 · Enter 采纳/执行 · Esc 关闭'
-    : running
-      ? 'Esc 取消 · 带文本 Enter 排队 · Shift+Enter 换行'
-      : hasDraft
-        ? 'Enter 提交 · Ctrl+C 清草稿 · Shift+Enter 换行'
-        : '/ 命令 · ↑ 历史 · Shift+Enter 换行 · Ctrl+C 退出';
+  const text = approvalOpen
+    ? '1-3 直选 · ↑↓ 选择 · Enter 确认 · Esc 拒绝'
+    : menuOpen
+      ? '↑↓ 选择 · Tab 采纳 · Enter 采纳/执行 · Esc 关闭'
+      : running
+        ? 'Esc 取消 · 带文本 Enter 排队 · Shift+Enter 换行'
+        : hasDraft
+          ? 'Enter 提交 · Ctrl+C 清草稿 · Shift+Enter 换行'
+          : '/ 命令 · ↑ 历史 · Shift+Enter 换行 · Ctrl+C 退出';
   return (
     <Box paddingX={1}>
       <Text dimColor>{text}</Text>
@@ -229,6 +245,20 @@ export function App({ agent, options, onExit }: {
   }, []);
   /** Esc 取消后的手势冷静期起点 */
   const lastCancelAtRef = useRef(0);
+  /** P4 权限审批卡：等待中的请求 + Promise 应答器（键盘被卡片接管） */
+  const [approval, setApprovalState] = useState<{
+    request: PermissionRequestData;
+    resolve: (result: PermissionAskResult) => void;
+  } | null>(null);
+  const approvalRef = useRef(approval);
+  approvalRef.current = approval;
+  const [approvalIndex, setApprovalIndex] = useState(0);
+  const setApproval = useCallback((next: typeof approval) => {
+    setApprovalIndex(0);
+    setApprovalState(next);
+  }, []);
+  /** 会话级 always 放行集合 */
+  const allowListRef = useRef(new SessionAllowList());
 
   // Agent 事件 → 消息模型
   useEffect(() => {
@@ -236,6 +266,19 @@ export function App({ agent, options, onExit }: {
       setState((prev) => reduceAgentEvent(prev, event));
     });
   }, [agent]);
+
+  // P4：注册交互审批通道（Ink 存续期间）；headless 永远注册不到
+  useEffect(() => {
+    setInteractiveApprovalProvider((request) => {
+      if (allowListRef.current.has(request)) {
+        return Promise.resolve({ approved: true });
+      }
+      return new Promise<PermissionAskResult>((resolve) => {
+        setApproval({ request, resolve });
+      });
+    });
+    return () => setInteractiveApprovalProvider(null);
+  }, [setApproval]);
 
   // spinner + 呼吸 ◆ 共用 tick：运行时 braille ~7.5fps，空闲时 sin² 脉动
   useEffect(() => {
@@ -339,6 +382,44 @@ export function App({ agent, options, onExit }: {
   }, [setEditor]);
 
   useInput((input, key) => {
+    // P4 审批卡接管键盘：1-3 直选、↑↓+Enter、Esc/Ctrl+C = reject（agent 继续）
+    const pendingApproval = approvalRef.current;
+    if (pendingApproval) {
+      const options = approvalOptions(pendingApproval.request);
+      const answer = (choice: ApprovalChoice) => {
+        const { request, resolve } = pendingApproval;
+        if (choice === 'always') {
+          allowListRef.current.add(request);
+          showToast(`本会话不再询问：${options[2].label.replace('Always allow: ', '')}`);
+        }
+        setApproval(null);
+        resolve(choice === 'reject'
+          ? { approved: false, denialSource: 'user' }
+          : { approved: true });
+      };
+      if (key.escape || (key.ctrl && input === 'c')) {
+        answer('reject');
+        return;
+      }
+      if (key.upArrow) {
+        setApprovalIndex((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setApprovalIndex((prev) => Math.min(options.length - 1, prev + 1));
+        return;
+      }
+      if (key.return) {
+        answer(options[Math.min(approvalIndex, options.length - 1)].choice);
+        return;
+      }
+      if (input === '1' || input === '2' || input === '3') {
+        answer(options[Number(input) - 1].choice);
+        return;
+      }
+      return; // 其余按键吞掉（blocking card）
+    }
+
     const menuItems = computeMenuItems();
     const menuActive = menuItems.length > 0;
 
@@ -521,7 +602,6 @@ export function App({ agent, options, onExit }: {
   // 未封口的（流式 assistant/thinking/运行中工具组）留在动态区原地更新。
   const firstLiveIndex = state.messages.findIndex((message) => !isSettled(message));
   const settled = firstLiveIndex === -1 ? state.messages : state.messages.slice(0, firstLiveIndex);
-  const live = firstLiveIndex === -1 ? [] : state.messages.slice(firstLiveIndex);
 
   const menuItems = computeMenuItems();
   const menuIndex = Math.min(slashIndex, Math.max(menuItems.length - 1, 0));
@@ -529,6 +609,20 @@ export function App({ agent, options, onExit }: {
   // 空闲呼吸 ◆：sin² 脉动（~1.3s 周期），turn 运行时位置被 TurnStatus 占用
   const pulseAlpha = Math.sin((now / PULSE_PERIOD_MS) * Math.PI) ** 2;
   const pulseColor = PULSE_COLORS[Math.min(PULSE_COLORS.length - 1, Math.floor(pulseAlpha * PULSE_COLORS.length))];
+
+  // ── P3 钉顶行布局：动态块 = 终端行高，StatusBar 钉在物理 row 0 ──
+  // 动态块高度恒等于 rows，新 <Static> 内容只会把滚动区往上顶，
+  // 块底始终贴终端底 → 块顶 = 物理顶行。live 消息区按行预算分配
+  // （layout.ts），杜绝 Ink v7 overflowY:hidden 的负偏移裁剪缺陷。
+  // 预算取全量消息的尾部（不只是未封口消息）：封口消息进 <Static> 后
+  // 立即滚出全屏块，若只渲染未封口的，turn 一结束近期消息就全消失。
+  const rows = stdout?.rows ?? 24;
+  const editorMaxRows = Math.min(10, Math.max(3, rows - 6));
+  const promptRows = approval ? 6 : editorVisualRows(editor, Math.max(columns - 4, 8), editorMaxRows);
+  const reservedRows = 1 /* StatusBar */ + 1 /* TurnStatus/呼吸◆ */ + Math.min(menuItems.length, 8)
+    + promptRows + (toast ? 1 : 0) + 1 /* ShortcutsBar */;
+  const liveAllocation = allocateLiveBudget(state.messages, messageWidth, Math.max(0, rows - reservedRows));
+  const visibleLive = state.messages.filter((message) => liveAllocation.has(message.id));
 
   return (
     <Box flexDirection="column">
@@ -539,13 +633,15 @@ export function App({ agent, options, onExit }: {
           </Box>
         )}
       </Static>
-      <Box flexDirection="column">
-        <StatusBar state={state} cwd={options.cwd} gitBranch={options.gitBranch} fallbackModel={options.model} />
-        {live.map((message) => (
-          <Box key={message.id} paddingX={2}>
-            <MessageView message={message} width={messageWidth} />
-          </Box>
-        ))}
+      <Box flexDirection="column" height={rows} flexShrink={0}>
+        <StatusBar state={state} cwd={options.cwd} gitBranch={options.gitBranch} fallbackModel={options.model} columns={columns} />
+        <Box flexDirection="column" flexGrow={1} justifyContent="flex-end" overflowY="hidden">
+          {visibleLive.map((message) => (
+            <Box key={message.id} paddingX={2}>
+              <MessageView message={message} width={messageWidth} maxLines={liveAllocation.get(message.id)} />
+            </Box>
+          ))}
+        </Box>
         {state.running
           ? <TurnStatus state={state} frame={frame} now={now} queuedCount={queuedCount} />
           : (
@@ -554,9 +650,16 @@ export function App({ agent, options, onExit }: {
             </Box>
           )}
         {menuItems.length > 0 ? <SlashMenu items={menuItems} selected={menuIndex} /> : null}
-        <Editor state={editor} width={columns} />
+        {approval
+          ? <ApprovalCard request={approval.request} selected={approvalIndex} />
+          : <Editor state={editor} width={columns} maxRows={editorMaxRows} />}
         {toast ? <Toast text={toast} /> : null}
-        <ShortcutsBar running={state.running} menuOpen={menuItems.length > 0} hasDraft={!isEmpty(editor)} />
+        <ShortcutsBar
+          running={state.running}
+          menuOpen={menuItems.length > 0}
+          hasDraft={!isEmpty(editor)}
+          approvalOpen={approval !== null}
+        />
       </Box>
     </Box>
   );

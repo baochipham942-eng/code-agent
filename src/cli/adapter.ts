@@ -24,6 +24,7 @@ import { MetricsCollector } from '../host/agent/metricsCollector';
 import { retryEvents } from '../host/model/providers/retryStrategy';
 import { getAgentDispatchInfo } from './agentDispatch';
 import { createRunContext, type RunContext, type RunHandle } from '../host/runtime/runContext';
+import { createRunTraceContext, withRunTraceContext } from '../host/telemetry/runTraceContext';
 import { generateMessageId } from '../shared/utils/id';
 import { readPersistedExpertThread } from '../shared/contract/expertThread';
 import { resolveExplicitAgentOverride } from '../host/agent/explicitAgentOverride';
@@ -192,6 +193,19 @@ export class CLIAgent {
     const runContext = durableRun?.context ?? createRunContext(runInput);
     this.currentDurableRun = durableRun;
     this.lastRunContext = runContext;
+    // 日志关联（缺口修复）：run 级 correlation context 在 adapter 边界就建好，
+    // 整个 run 生命周期（含 agentLoop 内外的 adapter 日志、fire-and-forget 回调）
+    // 写文件日志时自动带 sessionId/traceId，可用 `grep sessionId` 收敛一次会话。
+    // AsyncLocalStorage 按异步链隔离，并发 run/子代理各带各的上下文，不串味。
+    const runTraceContext = durableRun?.traceContext ?? createRunTraceContext({
+      runId: runContext.runId,
+      sessionId: runContext.sessionId,
+      attempt: 1,
+      ownerEpoch: 0,
+      engine: 'native',
+      workspace: runContext.workspace,
+      processInstanceId: `cli-${process.pid}`,
+    });
 
     // Inject system prompt if provided (before user message)
     if (this.systemPrompt && this.messages.length === 0) {
@@ -248,7 +262,7 @@ export class CLIAgent {
       this.metricsCollector || undefined,
       undefined,
       runContext,
-      durableRun?.traceContext,
+      runTraceContext,
     );
     this.currentAgentLoop = agentLoop;
     this.lastHookManager = agentLoop.getHookManager?.() ?? this.lastHookManager;
@@ -256,17 +270,19 @@ export class CLIAgent {
     return new Promise<CLIRunResult>((resolve) => {
       this.resolveRun = resolve;
 
-      // 运行 Agent
-      agentLoop.run(prompt).catch((error: unknown) => {
-        logger.error('Agent run error', error);
-        // 失败收口不能抹掉本轮已产生的成果：模型中途瞬断（如网关 5xx 重试耗尽）时，
-        // 前面成功的工具结果/已生成内容仍属于这次 run 的记录，原样带出去。
-        void this.finishRun({
-          success: false,
-          error: getErrorMessage(error),
-          output: this.lastContent || this.getLastAssistantMessage()?.content,
-          toolsUsed: [...new Set(this.toolsUsed)],
-          duration: Date.now() - this.startTime,
+      // 运行 Agent（整个生命周期都在 run correlation context 内，文件日志自动带 sessionId）
+      withRunTraceContext(runTraceContext, () => {
+        agentLoop.run(prompt).catch((error: unknown) => {
+          logger.error('Agent run error', error);
+          // 失败收口不能抹掉本轮已产生的成果：模型中途瞬断（如网关 5xx 重试耗尽）时，
+          // 前面成功的工具结果/已生成内容仍属于这次 run 的记录，原样带出去。
+          void this.finishRun({
+            success: false,
+            error: getErrorMessage(error),
+            output: this.lastContent || this.getLastAssistantMessage()?.content,
+            toolsUsed: [...new Set(this.toolsUsed)],
+            duration: Date.now() - this.startTime,
+          });
         });
       });
     });

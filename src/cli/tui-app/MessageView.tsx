@@ -6,24 +6,20 @@
 
 import { memo, useMemo } from 'react';
 import { Box, Text } from 'ink';
-import { Marked } from 'marked';
-import { markedTerminal } from 'marked-terminal';
 import type { ChatMessage, ToolGroupMessage } from './events';
 import { formatDuration } from './events';
+import { renderMarkdown } from './markdown';
 
-/** markdown → ANSI 字符串（每个 Marked 实例绑定当前宽度，交给 reflow 换行） */
-function renderMarkdown(markdown: string, width: number): string {
-  const marked = new Marked(markedTerminal({
-    width: Math.max(width, 20),
-    reflowText: true,
-    showSectionPrefix: false,
-  }));
-  const rendered = marked.parse(markdown, { async: false });
-  return rendered.trimEnd();
-}
-
-function AssistantBody({ text, width }: { text: string; width: number }) {
-  const ansi = useMemo(() => renderMarkdown(text, width), [text, width]);
+function AssistantBody({ text, width, maxLines }: { text: string; width: number; maxLines?: number }) {
+  const ansi = useMemo(() => {
+    const rendered = renderMarkdown(text, width);
+    // P3 钉顶行布局：live 区超预算时只保留尾部 maxLines 行
+    if (maxLines !== undefined) {
+      const lines = rendered.split('\n');
+      if (lines.length > maxLines) return lines.slice(-maxLines).join('\n');
+    }
+    return rendered;
+  }, [text, width, maxLines]);
   return <Text wrap="wrap">{ansi}</Text>;
 }
 
@@ -84,7 +80,7 @@ function ToolGroupView({ group }: { group: ToolGroupMessage }) {
   );
 }
 
-function MessageBody({ message, width }: { message: ChatMessage; width: number }) {
+function MessageBody({ message, width, maxLines }: { message: ChatMessage; width: number; maxLines?: number }) {
   switch (message.kind) {
     case 'user':
       return (
@@ -96,7 +92,7 @@ function MessageBody({ message, width }: { message: ChatMessage; width: number }
     case 'assistant':
       return (
         <Box marginTop={1}>
-          <AssistantBody text={message.text} width={width} />
+          <AssistantBody text={message.text} width={width} maxLines={maxLines !== undefined ? Math.max(1, maxLines - 1) : undefined} />
         </Box>
       );
     case 'thinking':

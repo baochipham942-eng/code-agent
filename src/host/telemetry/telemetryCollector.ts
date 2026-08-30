@@ -99,6 +99,23 @@ export class TelemetryCollector {
     return this.instance;
   }
 
+  /**
+   * 用显式 storage 初始化单例（CLI 路径专用）。
+   *
+   * 背景：TelemetryStorage 默认走主 DatabaseService，而 CLI 进程刻意不初始化它
+   * （原生模块 ABI 风险，见 cli/bootstrap），导致 CLI 遥测全部静默落在内存、
+   * `neo session timeline` 的 Telemetry turns 恒为 0。CLI 用自己的数据库连接
+   * （与桌面同一 SQLite 文件）构造 storage 注入。已存在实例时不覆盖——桌面
+   * （主 DatabaseService 路径）与 CLI 互不在同一进程，先到先赢即可。
+   */
+  static initInstanceWithStorage(storage: TelemetryStorage): TelemetryCollector {
+    if (!this.instance) {
+      this.instance = new TelemetryCollector(storage);
+      getServiceRegistry().register('TelemetryCollector', this.instance);
+    }
+    return this.instance;
+  }
+
   // --------------------------------------------------------------------------
   // Event Subscription (for IPC push)
   // --------------------------------------------------------------------------

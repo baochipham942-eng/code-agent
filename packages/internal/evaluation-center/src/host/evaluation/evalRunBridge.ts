@@ -25,6 +25,13 @@ import { parseEvalRunEvent } from './evalRunEventValidation';
 import { terminateEvalProcessTree } from './evalProcessTree';
 import { resolveProductionShape } from './productionShape';
 import { isAiReviewDimension } from '@host/testing/judge/dimensions';
+import {
+  assertEvalCompareDistinct,
+  buildProductionCompareArm,
+  describeEvalCompareDiff,
+  serializeEvalCompareArm,
+  validateEvalCompareArm,
+} from './evalCompareRequest';
 
 const logger = createLogger('EvalRunBridge');
 const TERMINATE_GRACE_MS = 3_000;
@@ -66,6 +73,7 @@ interface RunState {
   finishing?: boolean;
   closed: Promise<void>;
   resolveClosed(): void;
+  compareConfig?: Extract<EvalRunEvent, { type: 'run_start' }>['config']['compare'];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -84,12 +92,15 @@ function validateRequest(value: unknown): EvalRunRequest {
   if (foundForbidden.length > 0) {
     throw new Error(`评测请求不接受这些字段：${foundForbidden.join(', ')}`);
   }
-  const allowed = new Set(['scope', 'maxCases', 'ids', 'tags', 'split', 'timeoutMs', 'repeat', 'skills', 'aiReview']);
+  const allowed = new Set(['scope', 'maxCases', 'mode', 'ids', 'tags', 'split', 'timeoutMs', 'repeat', 'skills', 'aiReview', 'compare']);
   const unknown = Object.keys(value).filter((key) => !allowed.has(key));
   if (unknown.length > 0) throw new Error(`评测请求包含未知字段：${unknown.join(', ')}`);
   if (value.scope !== 'smoke' && value.scope !== 'full') throw new Error('scope 必须是 smoke 或 full。');
   if (!Number.isInteger(value.maxCases) || (value.maxCases as number) <= 0) {
     throw new Error('maxCases 必须是正整数。');
+  }
+  if (value.mode !== undefined && value.mode !== 'real' && value.mode !== 'mock') {
+    throw new Error('mode 必须是 real 或 mock。');
   }
   const readStrings = (key: 'ids' | 'tags' | 'skills'): string[] | undefined => {
     const candidate = value[key];
@@ -116,9 +127,23 @@ function validateRequest(value: unknown): EvalRunRequest {
     !isNonEmptyStringArray(aiReview)
     || aiReview.some((dimension) => !isAiReviewDimension(dimension))
   )) throw new Error('aiReview 含未知评审维度。');
+  let compare: EvalRunRequest['compare'];
+  if (value.compare !== undefined) {
+    if (!isRecord(value.compare)) throw new Error('compare 必须是对象。');
+    const compareUnknown = Object.keys(value.compare).filter((key) => !['candidate', 'baselineName'].includes(key));
+    if (compareUnknown.length > 0) throw new Error(`compare 包含未知字段：${compareUnknown.join(', ')}`);
+    if (value.compare.baselineName !== undefined && (
+      typeof value.compare.baselineName !== 'string' || value.compare.baselineName.trim() === ''
+    )) throw new Error('compare.baselineName 必须是非空字符串。');
+    compare = {
+      candidate: validateEvalCompareArm(value.compare.candidate),
+      baselineName: value.compare.baselineName as string | undefined,
+    };
+  }
   return {
     scope: value.scope,
     maxCases: value.maxCases as number,
+    mode: value.mode as EvalRunRequest['mode'],
     ids: readStrings('ids'),
     tags: readStrings('tags'),
     split: split as EvalRunRequest['split'],
@@ -126,6 +151,7 @@ function validateRequest(value: unknown): EvalRunRequest {
     repeat: repeat as number | undefined,
     skills: readStrings('skills'),
     aiReview: aiReview as EvalRunRequest['aiReview'],
+    compare,
   };
 }
 
@@ -201,7 +227,8 @@ export class EvalRunBridge {
     const db = this.deps.database();
     if (!db.isReady) await db.initialize();
     const model = this.deps.resolveModel();
-    if (!model.apiKey) throw new Error('当前默认模型没有可用密钥，无法开始评测。');
+    const mode = request.mode ?? 'real';
+    if (mode === 'real' && !model.apiKey) throw new Error('当前默认模型没有可用密钥，无法开始评测。');
 
     const runId = randomUUID();
     logger.info('Resolved production shape for eval comparison', {
@@ -213,11 +240,26 @@ export class EvalRunBridge {
     const sandboxRoot = path.join(tempRoot, 'sandboxes');
     fs.mkdirSync(dataDir, { recursive: true });
     fs.mkdirSync(sandboxRoot, { recursive: true });
+    let comparePath: string | undefined;
+    let compareDiff: string[] | undefined;
+    let compareConfig: InternalRunState['compareConfig'];
+    if (request.compare) {
+      const baseline = buildProductionCompareArm({
+        model: model.model,
+        provider: model.provider,
+        baselineName: request.compare.baselineName,
+      });
+      assertEvalCompareDistinct(baseline, request.compare.candidate);
+      compareDiff = describeEvalCompareDiff(baseline, request.compare.candidate);
+      compareConfig = { baseline, candidate: request.compare.candidate, diff: compareDiff };
+      comparePath = path.join(dataDir, `compare-${runId}.yaml`);
+      fs.writeFileSync(comparePath, serializeEvalCompareArm(request.compare.candidate), { encoding: 'utf8', mode: 0o600 });
+    }
     const policyPath = path.join(environment.repositoryRoot, '.claude', 'eval-approval-policy.json');
     const args = [
       environment.tsxPath,
       environment.entryPath,
-      '--real',
+      ...(mode === 'real' ? ['--real'] : []),
       '--json-events',
       '--data-dir', dataDir,
       '--run-id', runId,
@@ -229,6 +271,8 @@ export class EvalRunBridge {
       ...(request.tags?.length ? ['--tags', request.tags.join(',')] : []),
       ...(request.aiReview?.length ? ['--ai-review', request.aiReview.join(',')] : []),
       ...(request.split ? ['--split', request.split] : []),
+      ...(request.compare ? ['--force'] : []),
+      ...(comparePath ? ['--compare', comparePath] : []),
     ];
     let child: ChildProcess;
     try {
@@ -240,7 +284,7 @@ export class EvalRunBridge {
           ...process.env,
           AUTO_TEST_PROVIDER: model.provider,
           AUTO_TEST_MODEL: model.model,
-          AUTO_TEST_API_KEY: model.apiKey,
+          ...(model.apiKey ? { AUTO_TEST_API_KEY: model.apiKey } : {}),
           ...(model.baseUrl ? { AUTO_TEST_BASE_URL: model.baseUrl } : {}),
           NEO_SCRIPTED_APPROVAL_POLICY: policyPath,
           CODE_AGENT_EVAL_BRIDGE: '1',
@@ -278,6 +322,7 @@ export class EvalRunBridge {
       closed,
       resolveClosed,
       nowStarted: this.deps.now(),
+      compareConfig,
     };
     this.runs.set(runId, state);
     child.stdout.setEncoding('utf8');
@@ -360,7 +405,7 @@ export class EvalRunBridge {
     state.lastEvent = event;
     try {
       if (event.type === 'run_start') {
-        if (event.config.mode !== 'real') throw new Error('评测桥只允许真实运行。');
+        if (event.config.mode !== (state.request.mode ?? 'real')) throw new Error('评测事件模式与请求不一致。');
         state.startEvent = event;
         state.adapter.beginEventRun(event);
       } else if (event.type === 'memory_injected') {
@@ -370,9 +415,11 @@ export class EvalRunBridge {
       } else if (event.type === 'case_end') {
         state.caseEvents.push(event);
         state.adapter.persistEventCase(event);
+      } else if (event.type === 'pair_end') {
+        state.adapter.persistPairEnd(event);
       } else if (event.type === 'run_end') {
         state.endEvent = event;
-        state.adapter.finishEventRun(state.runId, event.summary);
+        state.adapter.finishEventRun(state.runId, event.summary, event.error);
       }
       this.deps.publish(EVALUATION_CHANNELS.RUN_EVENTS, event);
     } catch (error) {
@@ -439,7 +486,7 @@ export class EvalRunBridge {
           plannedCaseIds: state.request.ids ?? [],
           config: {
             ...UNKNOWN_EVAL_RUN_STAMP,
-            mode: 'real',
+            mode: state.request.mode ?? 'real',
             model: 'unknown',
             provider: 'unknown',
             scope: state.request.scope,
@@ -447,6 +494,7 @@ export class EvalRunBridge {
             concurrency: 1,
             gitCommit: 'unknown',
             testCaseDir: 'unknown',
+            ...(state.compareConfig ? { compare: state.compareConfig } : {}),
           },
         };
         state.adapter.beginEventRun(syntheticStart);

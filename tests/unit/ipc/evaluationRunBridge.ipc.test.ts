@@ -27,6 +27,16 @@ const panelProbe = vi.hoisted(() => ({
     },
   })),
 }));
+const database = vi.hoisted(() => ({
+  listExperiments: vi.fn(() => [
+    { id: 'eval-1', name: 'eval', timestamp: 1, model: 'm', provider: 'p', scope: 'full', source: 'eval', git_commit: 'a', config_json: '{}', summary_json: '{}' },
+    { id: 'compare-1', name: 'compare', timestamp: 2, model: 'm', provider: 'p', scope: 'full', source: 'compare', git_commit: 'b', config_json: '{"compare":{}}', summary_json: '{"compare":{}}' },
+  ]),
+  loadExperiment: vi.fn(() => ({
+    experiment: { id: 'compare-1', name: 'compare', timestamp: 2, model: 'm', provider: 'p', scope: 'full', source: 'compare', git_commit: 'b', config_json: '{"compare":{}}', summary_json: '{}' },
+    cases: [{ case_id: 'case-1', status: 'failed', score: 0, duration_ms: 1, data_json: '{"winner":"baseline","excludedReason":"skill_not_activated","qualityReport":{"large":true}}' }],
+  })),
+}));
 
 vi.mock('../../../src/host/ipc/adminGuard', () => ({
   getAdminAccessIpcError: () => guard.denied
@@ -49,6 +59,9 @@ vi.mock('@internal-evaluation/host/testing/caseBank', () => ({
 
 vi.mock('@internal-evaluation/host/evaluation/evalRunPanelProbe', () => ({
   inspectEvalRunPanel: panelProbe.inspect,
+}));
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => database,
 }));
 
 import { registerEvaluationHandlers } from '@internal-evaluation/host/ipc/evaluation.ipc';
@@ -151,5 +164,19 @@ describe('evaluation run IPC admin gate', () => {
         aiReview: [{ dim: 'task_completed' }],
         judge: { model: 'glm-4.7' },
       });
+  });
+
+  it('T3：列表默认返回两种 source，显式 eval/compare 各自隔离；详情保留 winner 但裁掉大字段', async () => {
+    guard.denied = false;
+    const { handlers } = setup();
+    await expect(handlers.get(EVALUATION_CHANNELS.LIST_EXPERIMENTS)!(null, {}))
+      .resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: 'eval-1' }), expect.objectContaining({ id: 'compare-1' })]));
+    await expect(handlers.get(EVALUATION_CHANNELS.LIST_EXPERIMENTS)!(null, { source: 'eval' }))
+      .resolves.toEqual([expect.objectContaining({ id: 'eval-1' })]);
+    await expect(handlers.get(EVALUATION_CHANNELS.LIST_EXPERIMENTS)!(null, { source: 'compare' }))
+      .resolves.toEqual([expect.objectContaining({ id: 'compare-1' })]);
+    const loaded = await handlers.get(EVALUATION_CHANNELS.LOAD_EXPERIMENT)!(null, 'compare-1') as any;
+    expect(loaded.cases[0].data).toEqual({ winner: 'baseline', excludedReason: 'skill_not_activated' });
+    expect(JSON.stringify(loaded)).not.toContain('qualityReport');
   });
 });

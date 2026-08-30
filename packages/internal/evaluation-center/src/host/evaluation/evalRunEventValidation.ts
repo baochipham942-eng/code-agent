@@ -53,6 +53,47 @@ function validateSummary(value: unknown): void {
   ) {
     throw new Error('评测汇总 failureCodebookSource 只能是 project 或 bundled。');
   }
+  if (value.compare !== undefined) validateCompareSummary(value.compare);
+}
+
+function validateCompareArm(value: unknown): void {
+  if (!isRecord(value)) throw new Error('实验配置必须是对象。');
+  requireString(value, 'name');
+  for (const key of ['model', 'provider', 'systemPrompt', 'reasoningEffort']) {
+    if (value[key] !== undefined && typeof value[key] !== 'string') {
+      throw new Error(`实验配置字段 ${key} 格式不正确。`);
+    }
+  }
+  if (value.skills !== undefined && !isStringArray(value.skills)) {
+    throw new Error('实验配置 skills 必须是字符串数组。');
+  }
+}
+
+function validateShipGate(value: unknown): void {
+  if (!isRecord(value)) throw new Error('实验结论缺少 shipGate。');
+  if (!['candidate_better', 'non_inferior', 'candidate_worse', 'insufficient'].includes(String(value.state))) {
+    throw new Error('实验结论状态不受支持。');
+  }
+  for (const key of ['delta', 'nMin', 'decisivePairs', 'pValue', 'passRateDiff', 'ciLowerBound']) {
+    requireNumber(value, key);
+  }
+  if (!isRecord(value.hardGate) || typeof value.hardGate.passed !== 'boolean' || !Array.isArray(value.hardGate.items)) {
+    throw new Error('实验结论 hardGate 格式不正确。');
+  }
+  if (!isRecord(value.calibre)) throw new Error('实验结论 calibre 格式不正确。');
+  requireNumber(value.calibre, 'k');
+  requireNumber(value.calibre, 'aggregationRuleVersion');
+  requireString(value.calibre, 'promptVersion');
+  if (!isStringArray(value.reasons)) throw new Error('实验结论 reasons 格式不正确。');
+}
+
+function validateCompareSummary(value: unknown): void {
+  if (!isRecord(value)) throw new Error('实验汇总格式不正确。');
+  for (const key of [
+    'totalCases', 'baselineWins', 'candidateWins', 'ties', 'excludedPairs',
+    'skillNotActivatedPairs', 'pValue',
+  ]) requireNumber(value, key);
+  validateShipGate(value.shipGate);
 }
 
 function validateTrialAggregate(value: unknown): void {
@@ -106,6 +147,12 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
           throw new Error(`评测开始事件的本轮配置 ${key} 为空。`);
         }
       }
+      if (config.compare !== undefined) {
+        if (!isRecord(config.compare)) throw new Error('评测开始事件 compare 格式不正确。');
+        validateCompareArm(config.compare.baseline);
+        validateCompareArm(config.compare.candidate);
+        if (!isStringArray(config.compare.diff)) throw new Error('评测开始事件 compare.diff 格式不正确。');
+      }
       break;
     }
     case 'case_start':
@@ -142,6 +189,26 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
       }
       break;
     }
+    case 'pair_end': {
+      requireTestIdentity(value);
+      if (!isRecord(value.assignment)) throw new Error('成对结果缺少盲分配。');
+      if (!['baseline', 'candidate'].includes(String(value.assignment.A))
+        || !['baseline', 'candidate'].includes(String(value.assignment.B))
+        || value.assignment.A === value.assignment.B) {
+        throw new Error('成对结果盲分配格式不正确。');
+      }
+      if (!['baseline', 'candidate', 'tie'].includes(String(value.assertionWinner))) {
+        throw new Error('成对结果 assertionWinner 不受支持。');
+      }
+      if (!['A', 'B', 'tie'].includes(String(value.referenceWinner))) {
+        throw new Error('成对结果 referenceWinner 不受支持。');
+      }
+      for (const key of ['assertionPassA', 'assertionPassB', 'assertionCount']) requireNumber(value, key);
+      if (!isRecord(value.skillActivations)) throw new Error('成对结果缺少 skillActivations。');
+      requireNumber(value.skillActivations, 'baseline');
+      requireNumber(value.skillActivations, 'candidate');
+      break;
+    }
     case 'tool_call':
       requireTestIdentity(value);
       requireString(value, 'tool');
@@ -160,6 +227,7 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
       if (!isStringArray(value.reportFiles)) throw new Error('评测结束事件缺少 reportFiles。');
       requireNumber(value, 'exitCode');
       if (typeof value.aborted !== 'boolean') throw new Error('评测结束事件缺少 aborted。');
+      if (value.error !== undefined && typeof value.error !== 'string') throw new Error('评测结束事件 error 格式不正确。');
       break;
     case 'skill_activated':
       requireTestIdentity(value);

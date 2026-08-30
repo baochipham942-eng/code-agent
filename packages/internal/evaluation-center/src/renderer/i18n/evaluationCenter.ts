@@ -8,17 +8,20 @@
 import { evalCaseListEn, evalCaseListZh } from './evalCaseList';
 import { evalRunPanelEn, evalRunPanelZh } from './evalRunPanel';
 import { evalScorersEn, evalScorersZh } from './evalScorers';
+import { evalExperimentsEn, evalExperimentsZh } from './evalExperiments';
 
 export const evalCenterZh = {
   evalCenter: {
     ...evalCaseListZh,
     ...evalRunPanelZh,
     ...evalScorersZh,
+    ...evalExperimentsZh,
     tabReplay: '回放',
     tabValidation: '验证',
     tabTelemetry: '遥测',
     tabBenchmarks: '跑分',
     tabScorers: '打分器',
+    tabExperiments: '实验',
     newRequestBadge: '新请求',
     validation: {
       loadDemo: '载入 Demo',
@@ -161,11 +164,13 @@ export const evalCenterEn = {
     ...evalCaseListEn,
     ...evalRunPanelEn,
     ...evalScorersEn,
+    ...evalExperimentsEn,
     tabReplay: 'Replay',
     tabValidation: 'Validation',
     tabTelemetry: 'Telemetry',
     tabBenchmarks: 'Run',
     tabScorers: 'Scorers',
+    tabExperiments: 'Experiments',
     newRequestBadge: 'New request',
     validation: {
       loadDemo: 'Load demo',

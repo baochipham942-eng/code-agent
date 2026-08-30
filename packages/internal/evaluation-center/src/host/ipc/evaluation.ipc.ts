@@ -79,10 +79,12 @@ export function registerEvaluationHandlers(
   // 列出已落 DB 的实验（含 harness 维度），供对比与轮询
   ipcMain.handle(
     EVALUATION_CHANNELS.LIST_EXPERIMENTS,
-    async (_event, payload?: { limit?: number }) => {
+    async (_event, payload?: { limit?: number; source?: 'compare' | 'eval' }) => {
       const { getDatabase } = await import('@host/services/core/databaseService');
       const db = getDatabase();
-      const experiments = db.listExperiments(payload?.limit ?? 50);
+      const experiments = db.listExperiments(payload?.limit ?? 50)
+        .filter((experiment) => payload?.source === undefined
+          || (payload.source === 'compare' ? experiment.source === 'compare' : experiment.source !== 'compare'));
       return experiments.map((experiment) => ({
         ...experiment,
         // 契约字段（EvalExperimentListItem）：camelCase + 解析后的 summary
@@ -117,6 +119,7 @@ export function registerEvaluationHandlers(
           scope: experiment.scope,
           source: experiment.source,
           gitCommit: experiment.git_commit,
+          config: safeParseJsonRecord(experiment.config_json),
           summary: safeParseJson(experiment.summary_json),
         },
         cases: cases.map((c) => ({
@@ -124,6 +127,7 @@ export function registerEvaluationHandlers(
           status: c.status,
           score: c.score,
           durationMs: c.duration_ms,
+          data: pickExperimentCaseData(safeParseJsonRecord(c.data_json)),
         })),
       };
     },
@@ -132,6 +136,15 @@ export function registerEvaluationHandlers(
   logger.info('Evaluation handlers registered', {
     channels: Object.values(EVALUATION_CHANNELS),
   });
+}
+
+function pickExperimentCaseData(value: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!value) return null;
+  const keys = [
+    'assignment', 'statusA', 'statusB', 'winner', 'referenceWinner', 'excludedReason',
+    'assertionPassA', 'assertionPassB', 'assertionCount', 'skillActivations',
+  ];
+  return Object.fromEntries(keys.filter((key) => key in value).map((key) => [key, value[key]]));
 }
 
 function requireRepositoryRoot(): string {

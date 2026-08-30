@@ -91,6 +91,8 @@ export interface EvalRunPanelLabels {
   incompleteCannotCompare: string;
   refresh: string;
   loadFailed: string;
+  baselineGroup: string;
+  candidateGroup: string;
 }
 
 interface EvalRunPanelDictionary {
@@ -195,6 +197,8 @@ export const evalRunPanelZh: EvalRunPanelDictionary = {
     incompleteCannotCompare: '未跑满的轮次不能用于对比',
     refresh: '刷新',
     loadFailed: '加载失败：{message}',
+    baselineGroup: '对照组',
+    candidateGroup: '实验组',
   },
 };
 
@@ -296,5 +300,7 @@ export const evalRunPanelEn: EvalRunPanelDictionary = {
     incompleteCannotCompare: 'Incomplete runs cannot be compared',
     refresh: 'Refresh',
     loadFailed: 'Load failed: {message}',
+    baselineGroup: 'Control',
+    candidateGroup: 'Candidate',
   },
 };

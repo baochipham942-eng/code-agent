@@ -21,7 +21,8 @@ import type { Message, AgentEvent, PRLink, ModelConfig } from '../shared/contrac
 import { getModelMaxOutputTokens } from '../shared/constants';
 import { createLogger } from '../host/services/infra/logger';
 import { getSessionSkillService } from '../host/services/skills/sessionSkillService';
-import { MetricsCollector } from '../host/agent/metricsCollector';
+import { MetricsCollector, type SessionMetrics } from '../host/agent/metricsCollector';
+import { StatusFileWriter } from './utils/statusFile';
 import { retryEvents } from '../host/model/providers/retryStrategy';
 import { getAgentDispatchInfo } from './agentDispatch';
 import { createRunContext, type RunContext, type RunHandle } from '../host/runtime/runContext';
@@ -65,8 +66,10 @@ export class CLIAgent {
   private toolCallNames: Map<string, string> = new Map();
   /** Track turn timing for model_call events */
   private turnStartTime: number = 0;
-  /** Per-run metrics collector (active when --metrics is set) */
+  /** Per-run metrics collector (active when --metrics or --status-file is set) */
   private metricsCollector: MetricsCollector | null = null;
+  /** Per-run status file heartbeat writer (active when --status-file is set) */
+  private statusFileWriter: StatusFileWriter | null = null;
   /** Current AgentLoop instance (for cancel/interrupt/hooks) */
   private currentAgentLoop: { cancel(): void; interrupt(msg: string): void; getHookManager?(): unknown } | null = null;
   /** Last completed AgentLoop hook manager, kept so /hooks works between turns. */
@@ -76,6 +79,8 @@ export class CLIAgent {
   private realOutputTokens: number = 0;
   /** Last run-level error event, used to keep agent_complete from masking failures. */
   private runErrorMessage: string | null = null;
+  /** Error class of a rejected agentLoop.run(), reported in the status file terminal state. */
+  private runErrorClass: string | null = null;
   /** Most recently started turn; a new context is created for every run(). */
   private lastRunContext: RunContext | null = null;
   private currentDurableRun: RunHandle | null = null;
@@ -160,6 +165,7 @@ export class CLIAgent {
     this.toolCallNames.clear();
     this.turnStartTime = 0;
     this.runErrorMessage = null;
+    this.runErrorClass = null;
 
     // 确保有会话
     if (!this.sessionId) {
@@ -247,11 +253,33 @@ export class CLIAgent {
       });
     }
 
-    // Create MetricsCollector if --metrics is configured
-    if (this.config.metricsPath) {
+    // Create MetricsCollector if --metrics or --status-file is configured
+    // （--status-file 的终态指标汇总复用同一份采集数据）
+    if (this.config.metricsPath || this.config.statusFilePath) {
       this.metricsCollector = new MetricsCollector(this.sessionId || `cli-${Date.now()}`);
     } else {
       this.metricsCollector = null;
+    }
+
+    // Create status file heartbeat writer if --status-file is configured
+    if (this.config.statusFilePath) {
+      // token 用量每次写快照时从本 run 的 MetricsCollector 实时拉取（与终态 metrics 汇总同源）；
+      // 部分 provider 同时发 stream_usage 与 model_response，直接用 realInputTokens 会双计。
+      const liveCollector = this.metricsCollector;
+      this.statusFileWriter = new StatusFileWriter(this.config.statusFilePath, this.sessionId, {
+        startedAt: this.startTime,
+        ...(liveCollector
+          ? {
+              tokensProvider: () => {
+                const m = liveCollector.getMetrics();
+                return { input: m.inputTokens, output: m.outputTokens };
+              },
+            }
+          : {}),
+      });
+      this.statusFileWriter.start();
+    } else {
+      this.statusFileWriter = null;
     }
 
     // Reset real token counters
@@ -279,6 +307,7 @@ export class CLIAgent {
       withRunTraceContext(runTraceContext, () => {
         agentLoop.run(prompt).catch((error: unknown) => {
           logger.error('Agent run error', error);
+          this.runErrorClass = error instanceof Error ? error.name : null;
           // 失败收口不能抹掉本轮已产生的成果：模型中途瞬断（如网关 5xx 重试耗尽）时，
           // 前面成功的工具结果/已生成内容仍属于这次 run 的记录，原样带出去。
           void this.finishRun({
@@ -307,6 +336,15 @@ export class CLIAgent {
   private handleEvent(event: AgentEvent): void {
     // Notify external observer (TUI status bar)
     this.eventObserver?.(event);
+    // Status file heartbeat: hook the same event stream (ticker-based writes, not per-event)
+    if (this.statusFileWriter) {
+      this.statusFileWriter.markRunning();
+      if (event.type === 'turn_start') {
+        this.statusFileWriter.onTurnStart();
+      } else if (event.type === 'tool_call_start' && event.data?.name) {
+        this.statusFileWriter.onToolStart(event.data.name);
+      }
+    }
     // stream-json: write JSONL lines for each event (JSONL protocol)
     if (this.config.outputFormat === 'stream-json') {
       if (event.type === 'stream_chunk' && event.data?.content) {
@@ -454,21 +492,44 @@ export class CLIAgent {
     this.currentDurableRun = null;
 
     // Write metrics JSON if collector is active
-    if (this.metricsCollector && this.config.metricsPath) {
+    const metricsCollector = this.metricsCollector;
+    let metricsSummary: SessionMetrics | undefined;
+    if (metricsCollector && this.config.metricsPath) {
       try {
         const metricsPath = path.resolve(this.config.metricsPath);
         const dir = path.dirname(metricsPath);
         if (!fs.existsSync(dir)) {
           fs.mkdirSync(dir, { recursive: true });
         }
-        const metricsJson = this.metricsCollector.toJSON();
+        const metricsJson = metricsCollector.toJSON();
         fs.writeFileSync(metricsPath, metricsJson, 'utf-8');
         result.metricsPath = metricsPath;
         logger.info(`Metrics written to ${metricsPath}`);
       } catch (error) {
         logger.warn('Failed to write metrics file', { error: getErrorMessage(error) });
       }
+    }
+    if (metricsCollector) {
+      metricsSummary = metricsCollector.finalize();
       this.metricsCollector = null;
+    }
+
+    // Write terminal status snapshot if status file writer is active
+    if (this.statusFileWriter) {
+      this.statusFileWriter.finish({
+        success: result.success,
+        ...(result.success
+          ? {}
+          : {
+              error: {
+                message: result.error || 'unknown error',
+                ...(this.runErrorClass ? { class: this.runErrorClass } : {}),
+              },
+            }),
+        ...(metricsSummary ? { metrics: metricsSummary } : {}),
+      });
+      this.statusFileWriter = null;
+      this.runErrorClass = null;
     }
 
     // 取消 Swarm 事件监听

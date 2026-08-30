@@ -169,7 +169,11 @@ export const chatCommand = new Command('chat')
     '--permission-mode <mode>',
     '颗粒度权限档（目前仅支持 auto）：分类器判安全的操作自动批准并入账，其余 fail-closed 拒绝。仅 headless（非 TTY/json）生效，TTY 下人工审批卡优先',
   )
-  .action(async (options: { session?: string; resume?: boolean; fromPr?: string; tui?: boolean; tools?: string; disallowedTools?: string; permissionMode?: string }, command: Command) => {
+  .option(
+    '--status-file <path>',
+    '运行期间原子写入状态心跳 JSON（~2s 节流；含 phase/turn/token/lastTool/elapsed；结束时写终态+指标汇总）',
+  )
+  .action(async (options: { session?: string; resume?: boolean; fromPr?: string; tui?: boolean; tools?: string; disallowedTools?: string; permissionMode?: string; statusFile?: string }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
     const isJsonMode = globalOpts?.json || globalOpts?.outputFormat === 'json' || globalOpts?.outputFormat === 'stream-json';
 
@@ -213,6 +217,7 @@ export const chatCommand = new Command('chat')
         metrics: globalOpts?.metrics,
         tools: options.tools,
         disallowedTools: options.disallowedTools,
+        statusFile: options.statusFile,
       });
 
       // 恢复会话

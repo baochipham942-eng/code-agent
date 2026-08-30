@@ -88,6 +88,10 @@ export const runCommand = new Command('run')
     '--disallowed-tools <list>',
     '禁用指定工具（逗号分隔；支持 skill:<name> 前缀）。被禁工具从 schema 面移除且执行层硬拒',
   )
+  .option(
+    '--status-file <path>',
+    '运行期间原子写入状态心跳 JSON（~2s 节流；含 phase/turn/token/lastTool/elapsed；结束时写终态+指标汇总）',
+  )
   .action(async (prompt: string, options: {
     session?: string;
     outputSchema?: string;
@@ -97,6 +101,7 @@ export const runCommand = new Command('run')
     permissionMode?: string;
     tools?: string;
     disallowedTools?: string;
+    statusFile?: string;
   }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
     const isStreamJson = globalOpts?.outputFormat === 'stream-json';
@@ -190,6 +195,7 @@ export const runCommand = new Command('run')
         metrics: globalOpts?.metrics,
         tools: options.tools,
         disallowedTools: options.disallowedTools,
+        statusFile: options.statusFile,
       });
 
       // 恢复会话（如果指定）

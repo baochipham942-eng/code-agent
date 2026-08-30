@@ -26,6 +26,7 @@ import {
   buildTerminalNotification,
   FOCUS_REPORTING_DISABLE,
   FOCUS_REPORTING_ENABLE,
+  isFocusEventInput,
   parseFocusEvent,
   shouldTerminalNotify,
 } from './terminalNotification';
@@ -543,6 +544,9 @@ export function App({ agent, options, onExit }: {
   }, [setEditor]);
 
   useInput((input, key) => {
+    // 焦点事件残片（DECSET 1004 的 \x1b[I/\x1b[O 被 Ink 剥 ESC 后成 '[I'/'[O'）：
+    // 丢弃，不进草稿、不触发任何快捷键
+    if (isFocusEventInput(input)) return;
     // 审批卡接管键盘：数字直选、↑↓+Enter、Tab 展开 diff、Esc/Ctrl+C = reject（agent 继续）
     const pendingApproval = approvalRef.current;
     if (pendingApproval) {

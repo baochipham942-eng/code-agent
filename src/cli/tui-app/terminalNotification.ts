@@ -51,3 +51,14 @@ export function parseFocusEvent(chunk: string): 'in' | 'out' | null {
   if (chunk.includes('\x1b[O')) return 'out';
   return null;
 }
+
+/**
+ * Ink use-input 对未识别的 CSI 序列会剥掉 ESC 前缀再上抛（ink use-input.js：
+ * "Strip escape prefix from broken/incomplete sequences"）——焦点事件 \x1b[I/\x1b[O
+ * 到达 useInput 时已变成 '[I'/'[O'，不过滤会被当文本插进草稿（截图/切窗时输入框
+ * 出现 [O[I 乱码就是这么来的）。精确匹配整段输入：用户手敲 [ 和 I 是两次独立
+ * 按键事件，不会整段等于 '[I'；代价是恰好 2 字符 '[I'/'[O' 的粘贴会被吃掉，可接受。
+ */
+export function isFocusEventInput(input: string): boolean {
+  return input === '[I' || input === '[O';
+}

@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildTerminalNotification,
+  isFocusEventInput,
   parseFocusEvent,
   shouldTerminalNotify,
 } from '../../../../src/cli/tui-app/terminalNotification';
@@ -48,5 +49,20 @@ describe('parseFocusEvent', () => {
     expect(parseFocusEvent('\x1b[O')).toBe('out');
     expect(parseFocusEvent('prefix\x1b[I')).toBe('in');
     expect(parseFocusEvent('a')).toBeNull();
+  });
+});
+
+describe('isFocusEventInput（Ink 剥 ESC 后的焦点事件残片过滤）', () => {
+  it("整段 '[I'/'[O' 判定为焦点事件残片", () => {
+    expect(isFocusEventInput('[I')).toBe(true);
+    expect(isFocusEventInput('[O')).toBe(true);
+  });
+
+  it('普通输入不误伤：单字符、含残片前缀的正常文本、带 ESC 原文', () => {
+    expect(isFocusEventInput('[')).toBe(false);
+    expect(isFocusEventInput('I')).toBe(false);
+    expect(isFocusEventInput('[Info] 日志')).toBe(false);
+    expect(isFocusEventInput('\x1b[I')).toBe(false); // 带 ESC 原文不在这里拦（stdin 监听侧处理）
+    expect(isFocusEventInput('')).toBe(false);
   });
 });

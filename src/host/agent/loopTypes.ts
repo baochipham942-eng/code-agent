@@ -27,6 +27,7 @@ import type { InferenceOptions } from '../model/types';
 import type { RunTraceContext } from '../telemetry/runTraceContext';
 import type { SkillDiscoveryService } from '../services/skills/skillDiscoveryService';
 import type { SystemPromptCache } from '../telemetry/systemPromptCache';
+import type { TurnSnapshotSink } from './runtime/turnSnapshotWriter';
 
 // ----------------------------------------------------------------------------
 // Configuration Types
@@ -98,6 +99,8 @@ export interface AgentLoopConfig {
   onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: import('../../shared/contract').ToolResult }) => void;
   /** CLI 模式下的消息持久化回调 */
   persistMessage?: (message: Message) => Promise<void>;
+  /** Per-run turn snapshot sink for isolated runtimes. */
+  turnSnapshotSink?: TurnSnapshotSink;
   /** 当前 turn 的显式工具作用域 */
   toolScope?: WorkbenchToolScope;
   /** 当前 turn 的结构化执行意图 */

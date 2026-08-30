@@ -18,6 +18,10 @@ const activityMocks = vi.hoisted(() => ({
   formatActivityPromptContext: vi.fn(),
 }));
 
+const turnSnapshotMocks = vi.hoisted(() => ({
+  writeTurnSnapshot: vi.fn(),
+}));
+
 // --------------------------------------------------------------------------
 // Mocks — must be declared before imports
 // --------------------------------------------------------------------------
@@ -36,6 +40,10 @@ vi.mock('../../../src/host/mcp/logCollector', () => ({
     agent: vi.fn(),
     addLog: vi.fn(),
   },
+}));
+
+vi.mock('../../../src/host/agent/runtime/turnSnapshotWriter', () => ({
+  writeTurnSnapshot: turnSnapshotMocks.writeTurnSnapshot,
 }));
 
 vi.mock('../../../src/host/services', () => ({
@@ -528,6 +536,20 @@ describe('ConversationRuntime', () => {
       expect(runtime.runFinalizer).toBe(modules.runFinalizer);
       expect(runtime.learningPipeline).toBe(modules.learningPipeline);
     });
+  });
+
+  it('forwards the per-run snapshot sink after inference', async () => {
+    const turnSnapshotSink = { insertTurnSnapshot: vi.fn() };
+    ctx.turnSnapshotSink = turnSnapshotSink;
+
+    await runtime.run('snapshot test');
+
+    expect(turnSnapshotMocks.writeTurnSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'test-session-1',
+        sink: turnSnapshotSink,
+      }),
+    );
   });
 
   // ==========================================================================

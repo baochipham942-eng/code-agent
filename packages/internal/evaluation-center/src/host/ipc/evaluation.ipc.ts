@@ -6,18 +6,31 @@
 // 裁剪 data_json），与 LIST_EXPERIMENTS 一起支撑「基准」tab 的回归对比。
 // ============================================================================
 
+import { randomUUID } from 'crypto';
 import type { IpcMain } from '@host/platform';
 import { EVALUATION_CHANNELS } from '../../shared/evaluationChannels';
 import { createLogger } from '@host/services/infra/logger';
 import { getChannelAccessIpcError, registerAdminChannels } from '@host/ipc/channelAccessPolicy';
 import { enumerateCaseBank, saveCaseBank } from '../testing/caseBank';
-import type { EvalCaseListEntry, EvalExperimentCaseDetail, SaveEvalCaseRequest } from '@shared/contract/evaluation';
+import type {
+  AiReviewDimension,
+  EvalAnnotation,
+  EvalCaseListEntry,
+  EvalExperimentCaseDetail,
+  ListEvalAnnotationsResult,
+  SaveEvalAnnotationRequest,
+  SaveEvalAnnotationResult,
+  SaveEvalCaseRequest,
+} from '@shared/contract/evaluation';
 import { getEvalRunBridge, type EvalRunBridge } from '../evaluation/evalRunBridge';
 import { inspectEvalEnvironment } from '../evaluation/evalEnvironment';
 import { inspectEvalRunPanel } from '../evaluation/evalRunPanelProbe';
 import { EXPECTATION_TYPE_CATALOG } from '@host/testing/expectationCatalog';
 import { failureCodeLabel, loadProjectFailureCodebook } from '@host/testing/failureCodes';
 import { buildEvalExperimentCaseDetail } from '../evaluation/evalCaseDetail';
+import { getAuthService } from '@host/services/auth/authService';
+import { assertAiReviewDimensionsComplete, isAiReviewDimension } from '@host/testing/judge/dimensions';
+import type { AnnotationRow } from '@host/services/core/databaseService';
 
 const logger = createLogger('EvaluationIPC');
 
@@ -101,6 +114,63 @@ export function registerEvaluationHandlers(
     return saveCaseBank(requireRepositoryRoot(), payload);
   });
 
+  ipcMain.handle(EVALUATION_CHANNELS.SAVE_ANNOTATION, async (_event, payload: SaveEvalAnnotationRequest) => {
+    const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.SAVE_ANNOTATION, 'Evaluation annotation write');
+    if (denied) return denied;
+    const request = validateAnnotationRequest(payload);
+    const { getDatabase } = await import('@host/services/core/databaseService');
+    const db = getDatabase();
+    if (!db.loadExperimentCase(request.experimentId, request.caseId)) {
+      throw new Error('Evaluation case does not exist');
+    }
+    const reviewerId = currentReviewerId();
+    const existing = db.listAnnotationsForCase(request.experimentId, request.caseId);
+    if (request.supersedesId) {
+      const superseded = existing.find((row) => row.id === request.supersedesId);
+      if (!superseded || superseded.reviewer_id !== reviewerId) {
+        throw new Error('supersedesId must belong to this case and reviewer');
+      }
+    }
+    const row: AnnotationRow = {
+      id: randomUUID(),
+      experiment_id: request.experimentId,
+      case_id: request.caseId,
+      reviewer_id: reviewerId,
+      overall: request.overall ?? null,
+      note: request.note ?? null,
+      dims_json: JSON.stringify(request.dims),
+      consent_scope: 'metadata',
+      calibration_split: null,
+      supersedes_id: request.supersedesId ?? null,
+      created_at: Date.now(),
+    };
+    db.insertAnnotation(row);
+    return { annotation: annotationFromRow(row, reviewerId) } satisfies SaveEvalAnnotationResult;
+  });
+
+  ipcMain.handle(
+    EVALUATION_CHANNELS.LIST_ANNOTATIONS,
+    async (_event, payload?: { experimentId?: string; caseId?: string }) => {
+      const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.LIST_ANNOTATIONS, 'Evaluation annotations');
+      if (denied) return denied;
+      const experimentId = requireNonEmptyString(payload?.experimentId, 'experimentId');
+      const caseId = requireNonEmptyString(payload?.caseId, 'caseId');
+      const { getDatabase } = await import('@host/services/core/databaseService');
+      const db = getDatabase();
+      if (!db.loadExperimentCase(experimentId, caseId)) throw new Error('Evaluation case does not exist');
+      const reviewerId = currentReviewerId();
+      const annotations = db.listAnnotationsForCase(experimentId, caseId)
+        .map((row) => annotationFromRow(row, reviewerId));
+      const seen = new Set<string>();
+      const latestByReviewer = annotations.filter((annotation) => {
+        if (seen.has(annotation.reviewerId)) return false;
+        seen.add(annotation.reviewerId);
+        return true;
+      });
+      return { annotations, latestByReviewer } satisfies ListEvalAnnotationsResult;
+    },
+  );
+
   // 列出已落 DB 的实验（含 harness 维度），供对比与轮询
   ipcMain.handle(
     EVALUATION_CHANNELS.LIST_EXPERIMENTS,
@@ -157,6 +227,73 @@ export function registerEvaluationHandlers(
   logger.info('Evaluation handlers registered', {
     channels: Object.values(EVALUATION_CHANNELS),
   });
+}
+
+function validateAnnotationRequest(payload: unknown): SaveEvalAnnotationRequest {
+  assertAiReviewDimensionsComplete();
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Annotation request is required');
+  }
+  const value = payload as Record<string, unknown>;
+  const experimentId = requireNonEmptyString(value.experimentId, 'experimentId');
+  const caseId = requireNonEmptyString(value.caseId, 'caseId');
+  if (value.overall !== undefined && value.overall !== 'up' && value.overall !== 'down') {
+    throw new Error('overall must be up or down');
+  }
+  if (value.note !== undefined && (typeof value.note !== 'string' || value.note.length > 2000)) {
+    throw new Error('note must be a string no longer than 2000 characters');
+  }
+  if (!value.dims || typeof value.dims !== 'object' || Array.isArray(value.dims)) {
+    throw new Error('dims must be an object');
+  }
+  const dims: Partial<Record<AiReviewDimension, 'yes' | 'no'>> = {};
+  for (const [dimension, verdict] of Object.entries(value.dims)) {
+    if (!isAiReviewDimension(dimension) || (verdict !== 'yes' && verdict !== 'no')) {
+      throw new Error('dims contains an unknown dimension or verdict');
+    }
+    dims[dimension] = verdict;
+  }
+  const supersedesId = value.supersedesId === undefined
+    ? undefined
+    : requireNonEmptyString(value.supersedesId, 'supersedesId');
+  return {
+    experimentId,
+    caseId,
+    dims,
+    ...(value.overall === 'up' || value.overall === 'down' ? { overall: value.overall } : {}),
+    ...(typeof value.note === 'string' ? { note: value.note } : {}),
+    ...(supersedesId ? { supersedesId } : {}),
+  };
+}
+
+function requireNonEmptyString(value: unknown, name: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) throw new Error(`${name} is required`);
+  return value;
+}
+
+function currentReviewerId(): string {
+  try {
+    return getAuthService().getCurrentUser()?.id ?? 'local';
+  } catch {
+    return 'local';
+  }
+}
+
+function annotationFromRow(row: AnnotationRow, reviewerId: string): EvalAnnotation {
+  const dims = safeParseJsonRecord(row.dims_json) ?? {};
+  return {
+    id: row.id,
+    experimentId: row.experiment_id,
+    caseId: row.case_id,
+    reviewerId: row.reviewer_id,
+    ...(row.overall ? { overall: row.overall } : {}),
+    ...(row.note !== null ? { note: row.note } : {}),
+    dims: dims as Partial<Record<AiReviewDimension, 'yes' | 'no'>>,
+    consentScope: row.consent_scope,
+    ...(row.supersedes_id ? { supersedesId: row.supersedes_id } : {}),
+    createdAt: row.created_at,
+    mine: row.reviewer_id === reviewerId,
+  };
 }
 
 async function loadOptionalCaseContext(

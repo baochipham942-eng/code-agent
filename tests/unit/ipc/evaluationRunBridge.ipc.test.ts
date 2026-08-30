@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IpcMain } from '../../../src/host/platform';
 import type { EvalRunBridge } from '@internal-evaluation/host/evaluation/evalRunBridge';
 import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
+import { AI_REVIEW_DIMENSIONS } from '../../../src/host/testing/judge/dimensions';
 
 const guard = vi.hoisted(() => ({ denied: true }));
 const caseBank = vi.hoisted(() => ({
@@ -27,7 +28,12 @@ const panelProbe = vi.hoisted(() => ({
     },
   })),
 }));
-const database = vi.hoisted(() => ({ loadExperimentCase: vi.fn() }));
+const database = vi.hoisted(() => ({
+  loadExperimentCase: vi.fn(),
+  listAnnotationsForCase: vi.fn(),
+  insertAnnotation: vi.fn(),
+}));
+const auth = vi.hoisted(() => ({ reviewerId: 'host-reviewer' }));
 
 vi.mock('../../../src/host/ipc/adminGuard', () => ({
   getAdminAccessIpcError: () => guard.denied
@@ -54,6 +60,10 @@ vi.mock('@internal-evaluation/host/evaluation/evalRunPanelProbe', () => ({
 
 vi.mock('@host/services/core/databaseService', () => ({
   getDatabase: () => database,
+}));
+
+vi.mock('../../../src/host/services/auth/authService', () => ({
+  getAuthService: () => ({ getCurrentUser: () => ({ id: auth.reviewerId }) }),
 }));
 
 import { registerEvaluationHandlers } from '@internal-evaluation/host/ipc/evaluation.ipc';
@@ -84,6 +94,9 @@ describe('evaluation run IPC admin gate', () => {
     caseBank.save.mockClear();
     panelProbe.inspect.mockClear();
     database.loadExperimentCase.mockReset();
+    database.listAnnotationsForCase.mockReset();
+    database.insertAnnotation.mockReset();
+    auth.reviewerId = 'host-reviewer';
   });
 
   it('rejects all three mutating/stream channels before reaching the bridge', async () => {
@@ -196,5 +209,98 @@ describe('evaluation run IPC admin gate', () => {
     expect(current.status).toBe('invalid');
     expect(current.evidence.checks).toEqual(evidence.checks);
     expect(current.evidence.trialDetails).toEqual(evidence.trialDetails);
+  });
+
+  it('T2/T4：标注只接受存在的题，reviewer 始终取 host 身份', async () => {
+    guard.denied = false;
+    const { handlers } = setup();
+    const save = handlers.get(EVALUATION_CHANNELS.SAVE_ANNOTATION)!;
+    database.loadExperimentCase.mockReturnValue(undefined);
+    await expect(save(null, {
+      experimentId: 'run-1', caseId: 'missing', dims: {}, reviewerId: 'someone',
+    })).rejects.toThrow(/does not exist/);
+    expect(database.insertAnnotation).not.toHaveBeenCalled();
+
+    database.loadExperimentCase.mockReturnValue({ case_id: 'case-1' });
+    database.listAnnotationsForCase.mockReturnValue([]);
+    const result = await save(null, {
+      experimentId: 'run-1', caseId: 'case-1', dims: {}, reviewerId: 'someone',
+    }) as { annotation: { reviewerId: string; mine: boolean } };
+    expect(result.annotation).toMatchObject({ reviewerId: 'host-reviewer', mine: true });
+    expect(database.insertAnnotation).toHaveBeenCalledWith(expect.objectContaining({
+      reviewer_id: 'host-reviewer',
+      consent_scope: 'metadata',
+      calibration_split: null,
+    }));
+  });
+
+  it('T3：五维唯一来源全部可写，未知维、未知值与超长笔记整条拒绝', async () => {
+    guard.denied = false;
+    const { handlers } = setup();
+    const save = handlers.get(EVALUATION_CHANNELS.SAVE_ANNOTATION)!;
+    database.loadExperimentCase.mockReturnValue({ case_id: 'case-1' });
+    database.listAnnotationsForCase.mockReturnValue([]);
+    const dims = Object.fromEntries(AI_REVIEW_DIMENSIONS.map((dimension) => [dimension, 'yes']));
+    await expect(save(null, { experimentId: 'run-1', caseId: 'case-1', dims })).resolves.toBeTruthy();
+    expect(Object.keys(dims).sort()).toEqual([...AI_REVIEW_DIMENSIONS].sort());
+
+    await expect(save(null, {
+      experimentId: 'run-1', caseId: 'case-1', dims: { made_up: 'yes' },
+    })).rejects.toThrow(/unknown dimension/);
+    await expect(save(null, {
+      experimentId: 'run-1', caseId: 'case-1', dims: { task_completed: 'maybe' },
+    })).rejects.toThrow(/unknown dimension/);
+    await expect(save(null, {
+      experimentId: 'run-1', caseId: 'case-1', dims: {}, note: 'a'.repeat(2001),
+    })).rejects.toThrow(/2000/);
+  });
+
+  it('supersedesId must point to this reviewer latest case history', async () => {
+    guard.denied = false;
+    const { handlers } = setup();
+    const save = handlers.get(EVALUATION_CHANNELS.SAVE_ANNOTATION)!;
+    database.loadExperimentCase.mockReturnValue({ case_id: 'case-1' });
+    database.listAnnotationsForCase.mockReturnValue([
+      { id: 'other-1', reviewer_id: 'other-reviewer' },
+      { id: 'mine-1', reviewer_id: 'host-reviewer' },
+    ]);
+    await expect(save(null, {
+      experimentId: 'run-1', caseId: 'case-1', dims: {}, supersedesId: 'other-1',
+    })).rejects.toThrow(/reviewer/);
+    await expect(save(null, {
+      experimentId: 'run-1', caseId: 'case-1', dims: {}, supersedesId: 'mine-1',
+    })).resolves.toBeTruthy();
+  });
+
+  it('list returns newest rows and one latest annotation per reviewer with mine marked', async () => {
+    guard.denied = false;
+    const { handlers } = setup();
+    database.loadExperimentCase.mockReturnValue({ case_id: 'case-1' });
+    database.listAnnotationsForCase.mockReturnValue([
+      {
+        id: 'mine-2', experiment_id: 'run-1', case_id: 'case-1', reviewer_id: 'host-reviewer',
+        overall: 'up', note: null, dims_json: '{}', consent_scope: 'metadata',
+        calibration_split: null, supersedes_id: 'mine-1', created_at: 3,
+      },
+      {
+        id: 'other-1', experiment_id: 'run-1', case_id: 'case-1', reviewer_id: 'other-reviewer',
+        overall: 'down', note: 'note', dims_json: '{"task_completed":"no"}', consent_scope: 'metadata',
+        calibration_split: null, supersedes_id: null, created_at: 2,
+      },
+      {
+        id: 'mine-1', experiment_id: 'run-1', case_id: 'case-1', reviewer_id: 'host-reviewer',
+        overall: 'down', note: null, dims_json: '{}', consent_scope: 'metadata',
+        calibration_split: null, supersedes_id: null, created_at: 1,
+      },
+    ]);
+
+    const result = await handlers.get(EVALUATION_CHANNELS.LIST_ANNOTATIONS)!(null, {
+      experimentId: 'run-1', caseId: 'case-1',
+    }) as { annotations: Array<{ id: string }>; latestByReviewer: Array<{ id: string; mine: boolean }> };
+    expect(result.annotations.map((annotation) => annotation.id)).toEqual(['mine-2', 'other-1', 'mine-1']);
+    expect(result.latestByReviewer).toEqual([
+      expect.objectContaining({ id: 'mine-2', mine: true }),
+      expect.objectContaining({ id: 'other-1', mine: false }),
+    ]);
   });
 });

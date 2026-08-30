@@ -20,6 +20,40 @@ export type AiReviewDimension =
   | 'no_extra_changes'
   | 'self_tested';
 
+type EvalConsentScope = 'metadata' | 'turn_excerpt' | 'full_session';
+
+export interface EvalAnnotation {
+  id: string;
+  experimentId: string;
+  caseId: string;
+  reviewerId: string;
+  overall?: 'up' | 'down';
+  note?: string;
+  dims: Partial<Record<AiReviewDimension, 'yes' | 'no'>>;
+  consentScope: EvalConsentScope;
+  supersedesId?: string;
+  createdAt: number;
+  mine?: boolean;
+}
+
+export interface SaveEvalAnnotationRequest {
+  experimentId: string;
+  caseId: string;
+  overall?: 'up' | 'down';
+  note?: string;
+  dims: Partial<Record<AiReviewDimension, 'yes' | 'no'>>;
+  supersedesId?: string;
+}
+
+export interface SaveEvalAnnotationResult {
+  annotation: EvalAnnotation;
+}
+
+export interface ListEvalAnnotationsResult {
+  annotations: EvalAnnotation[];
+  latestByReviewer: EvalAnnotation[];
+}
+
 export interface AiReviewVerdict {
   verdict: 'yes' | 'no' | 'unavailable';
   reasoning: string;

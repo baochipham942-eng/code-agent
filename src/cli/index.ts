@@ -74,9 +74,15 @@ async function main(): Promise<void> {
       ['export', '导出会话记录'], ['list-tools', '列出工具'], ['list-agents', '列出 Agent'],
       ['exec-tool', '直接执行工具'], ['init-soul', '初始化 Soul'],
       ['openchronicle', '管理屏幕记忆'], ['debug', '调试快照与回放'],
+      ['policy', 'exec-policy 离线校验与规则解释'],
     ]) {
       program.command(name).description(description);
     }
+  } else if (requestedCommand === 'policy') {
+    // 离线只读校验走轻量路由：只加载 policy 命令模块（纯函数 + fs 读），
+    // 不引入 chat/run/serve 等会在 import 时初始化可写运行目录的模块。
+    const { policyCommand } = await import('./commands/policy');
+    program.addCommand(policyCommand);
   } else if (requestedCommand !== 'session') {
     const [
       { chatCommand }, { runCommand }, { serveCommand }, { exportCommand },

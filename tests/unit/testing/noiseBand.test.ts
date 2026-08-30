@@ -92,6 +92,8 @@ function makeSummary(results: TestResult[], averageScore: number): TestRunSummar
     notRun: 0,
     invalidCases: 0,
     averageScore,
+    aggregationRule: 'pass_rate_k1',
+    aggregationRuleVersion: 4,
     results,
     stamp: UNKNOWN_EVAL_RUN_STAMP,
     environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },

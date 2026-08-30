@@ -54,6 +54,12 @@ function validateSummary(value: unknown): void {
   }
 }
 
+function validateTrialAggregate(value: unknown): void {
+  if (!isRecord(value)) throw new Error('评测用例 trialAggregate 格式不正确。');
+  for (const key of ['n', 'c', 'passAtK', 'passCaretK']) requireNumber(value, key);
+  if (value.rule !== 'pass_caret_k') throw new Error('评测用例 trialAggregate 计分规则不受支持。');
+}
+
 export function parseEvalRunEvent(value: unknown): EvalRunEvent {
   if (!isRecord(value)) throw new Error('评测事件不是对象。');
   if (value.schemaVersion !== EVAL_RUN_EVENT_SCHEMA_VERSION) {
@@ -98,6 +104,7 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
       if (!statuses.has(String(value.status))) throw new Error('评测用例状态不受支持。');
       requireNumber(value, 'score');
       requireNumber(value, 'durationMs');
+      if (value.trialAggregate !== undefined) validateTrialAggregate(value.trialAggregate);
       if (value.failure !== undefined) {
         if (!isRecord(value.failure)) throw new Error('评测用例 failure 必须是对象。');
         requireString(value.failure, 'code');

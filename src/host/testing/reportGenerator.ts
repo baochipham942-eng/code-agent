@@ -35,6 +35,10 @@ export function generateMarkdownReport(
   baselineDelta?: BaselineDelta,
 ): string {
   const lines: string[] = [];
+  const repeated = summary.aggregationRule === 'pass_caret_k';
+  const mainMetricLabel = repeated
+    ? `k 次全过率（k=${summary.stamp.k}）`
+    : '通过率';
 
   // Header
   lines.push('# Agent Neo 自动化测试报告');
@@ -63,7 +67,7 @@ export function generateMarkdownReport(
     lines.push(`| Mock 不适用 | ${summary.mockExcluded} 🧪 |`);
   }
   if ((summary.infraExcluded ?? 0) > 0) {
-    lines.push(`| 不计入通过率（环境故障） | ${summary.infraExcluded} 🔌 |`);
+    lines.push(`| 不计入${repeated ? '主指标' : '通过率'}（环境故障） | ${summary.infraExcluded} 🔌 |`);
   }
   if ((summary.costExceeded ?? 0) > 0) {
     lines.push(`| 成本超限 | ${summary.costExceeded} 💸 |`);
@@ -74,9 +78,25 @@ export function generateMarkdownReport(
   if (summary.invalidCases > 0) {
     lines.push(`| 无效题（没调真模型） | ${summary.invalidCases} ⚠️ |`);
   }
-  lines.push(`| 通过率 | ${getPassRate(summary)}% |`);
+  lines.push(`| ${mainMetricLabel} | ${getPassRate(summary)}% |`);
   lines.push(`| 平均分数 | ${(summary.averageScore * 100).toFixed(1)}% |`);
   lines.push(`| 总耗时 | ${formatDuration(summary.duration)} |`);
+  lines.push('');
+
+  lines.push('## 稳定性');
+  lines.push('');
+  lines.push('| 用例 ID | 试次数 n | 通过次数 c | 至少一次通过 passAtK | 全部通过 passCaretK | σ（修正后） |');
+  lines.push('|---------|-----------:|-------------:|----------------------:|------------------------:|-------------:|');
+  for (const result of summary.results) {
+    const aggregate = result.trialAggregate;
+    const n = aggregate?.n ?? (result.status === 'infra_excluded' ? 0 : 1);
+    const c = aggregate?.c ?? (result.status === 'passed' && !result.invalid ? 1 : 0);
+    const passAtK = aggregate?.passAtK ?? c;
+    const passCaretK = aggregate?.passCaretK ?? c;
+    lines.push(
+      `| ${result.testId} | ${n} | ${c} | ${passAtK.toFixed(4)} | ${passCaretK.toFixed(4)} | ${result.stdDev === undefined ? 'n/a' : result.stdDev.toFixed(4)} |`,
+    );
+  }
   lines.push('');
 
   lines.push('## 成本与用量');
@@ -264,7 +284,7 @@ export function generateMarkdownReport(
   if (notRunTests.length > 0) {
     lines.push('## 未跑题目');
     lines.push('');
-    lines.push('> 本轮未跑满；未跑题仍计入通过率，且本轮不能与基准比较。');
+    lines.push(`> 本轮未跑满；未跑题仍计入${repeated ? '主指标' : '通过率'}，且本轮不能与基准比较。`);
     lines.push('');
     for (const result of notRunTests) {
       lines.push(`- ⏸️ **${result.testId}**: ${result.failureReason ?? '轮次中断'}`);
@@ -276,9 +296,9 @@ export function generateMarkdownReport(
   // 数量高说明该修限流/超时配置而不是 agent。
   const infraTests = summary.results.filter((r) => r.status === 'infra_excluded');
   if (infraTests.length > 0) {
-    lines.push('## 不计入通过率（环境故障）');
+    lines.push(`## 不计入${repeated ? '主指标' : '通过率'}（环境故障）`);
     lines.push('');
-    lines.push('> 429、5xx 或网络故障不计入通过率。题目总时限超限仍按能力失败处理。');
+    lines.push(`> 429、5xx 或网络故障不计入${repeated ? '主指标' : '通过率'}。题目总时限超限仍按能力失败处理。`);
     lines.push('');
     for (const result of infraTests) {
       lines.push(`- 🔌 **${result.testId}**: ${result.failureReason || result.description}`);
@@ -290,7 +310,7 @@ export function generateMarkdownReport(
   if (costExceededTests.length > 0) {
     lines.push('## 成本超限用例');
     lines.push('');
-    lines.push('> 单题实际模型成本超过声明上限，执行已停止；该结果不计入通过率（成本超限）。');
+    lines.push(`> 单题实际模型成本超过声明上限，执行已停止；该结果不计入${repeated ? '主指标' : '通过率'}（成本超限）。`);
     lines.push('');
     for (const result of costExceededTests) {
       lines.push(
@@ -305,7 +325,7 @@ export function generateMarkdownReport(
   if (mockExcludedTests.length > 0) {
     lines.push('## Mock 不适用用例');
     lines.push('');
-    lines.push('> 这些 case 依赖真实 agent 语义或产物能力，mock 运行中不计入通过率；不代表通过。');
+    lines.push(`> 这些 case 依赖真实 agent 语义或产物能力，mock 运行中不计入${repeated ? '主指标' : '通过率'}；不代表通过。`);
     lines.push('');
     for (const result of mockExcludedTests) {
       lines.push(`- 🧪 **${result.testId}**: ${result.mockExcluded?.reason ?? ''}`);
@@ -436,7 +456,7 @@ export function generateMarkdownReport(
       lines.push('| 指标 | 值 |');
       lines.push('|------|-----|');
       lines.push(`| 首次运行 | ${baselineDelta.isFirstRun ? '是' : '否'} |`);
-      lines.push(`| 通过率变化 | ${(baselineDelta.passRateDelta * 100).toFixed(1)}% |`);
+      lines.push(`| ${mainMetricLabel}变化 | ${(baselineDelta.passRateDelta * 100).toFixed(1)}% |`);
       lines.push(`| 平均分变化 | ${(baselineDelta.scoreDelta * 100).toFixed(1)}% |`);
       lines.push(`| 回归 | ${baselineDelta.isRegression ? '是' : '否'} |`);
       lines.push('');
@@ -539,6 +559,9 @@ function generateFailureDistributionRows(summary: TestRunSummary): string[] {
  */
 export function generateConsoleReport(summary: TestRunSummary): string {
   const lines: string[] = [];
+  const mainMetricLabel = summary.aggregationRule === 'pass_caret_k'
+    ? `k=${summary.stamp.k} all-pass rate`
+    : 'Pass rate';
 
   lines.push('');
   lines.push('═══════════════════════════════════════════════════════');
@@ -574,7 +597,7 @@ export function generateConsoleReport(summary: TestRunSummary): string {
   const invalidSegment = summary.invalidCases > 0 ? `  |  ⚠️ 无效题 ${summary.invalidCases}` : '';
   const costSummary = summarizeCostUsage(summary.results);
   lines.push(`  Total: ${summary.total}  |  ✅ ${summary.passed}  |  🟡 ${summary.partial}  |  ❌ ${summary.failed}  |  ⏭️ ${summary.skipped}${mockSegment}${infraSegment}${costSegment}${notRunSegment}${invalidSegment}`);
-  lines.push(`  Duration: ${formatDuration(summary.duration)}  |  Pass rate: ${getPassRate(summary)}%  |  Avg score: ${(summary.averageScore * 100).toFixed(1)}%`);
+  lines.push(`  Duration: ${formatDuration(summary.duration)}  |  ${mainMetricLabel}: ${getPassRate(summary)}%  |  Avg score: ${(summary.averageScore * 100).toFixed(1)}%`);
   lines.push(`  Cost: $${costSummary.costUsd.toFixed(6)}  |  Provider usage: ${costSummary.availableCases}/${summary.results.length} cases${costSummary.unavailableCases > 0 ? `  |  usage_unavailable ${costSummary.unavailableCases}` : ''}`);
   lines.push('═══════════════════════════════════════════════════════');
   lines.push('');

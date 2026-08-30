@@ -36,6 +36,8 @@ function makeSummary(overrides: Partial<TestRunSummary> = {}): TestRunSummary {
     notRun: 0,
     invalidCases: 0,
     averageScore: 0.5,
+    aggregationRule: 'pass_rate_k1',
+    aggregationRuleVersion: 4,
     results: [
       {
         testId: 'a', description: 'a', status: 'passed', score: 1,

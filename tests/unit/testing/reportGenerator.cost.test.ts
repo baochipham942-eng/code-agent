@@ -27,7 +27,8 @@ function summary(results: TestResult[]): TestRunSummary {
     plannedCaseIds: results.map((item) => item.testId), completed: true, notRun: 0, invalidCases: 0,
     failureDistribution: { unknown: 0 },
     averageScore: 1, results,
-    stamp: UNKNOWN_EVAL_RUN_STAMP,
+    aggregationRule: 'pass_rate_k1', aggregationRuleVersion: 4,
+    stamp: { ...UNKNOWN_EVAL_RUN_STAMP, aggregationRuleVersion: 4 },
     environment: { provider: 'openai', model: 'gpt-4o', workingDirectory: '/tmp' },
     performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 2 },
   };
@@ -39,11 +40,30 @@ describe('成本与用量报告', () => {
     expect(markdown).toContain('## 环境信息');
     for (const label of [
       '代码版本', '题库版本', '评测集', '打分器', '每题跑几次',
-      '通过率口径版本', '提示词版本', '本轮形态', '与生产默认的差异',
+      '计分规则版本', '提示词版本', '本轮形态', '与生产默认的差异',
       '密钥来源', '价格表版本', '预估费用',
     ]) {
       expect(markdown).toContain(`| ${label} |`);
     }
+  });
+
+  it('k>1 概览只展示 k 次全过率，并输出组合聚合与修正后 sigma', () => {
+    const run = summary([result('repeated', {
+      status: 'failed',
+      score: 0.3,
+      trialAggregate: { n: 5, c: 3, passAtK: 0.9, passCaretK: 0.3, rule: 'pass_caret_k' },
+      stdDev: 0.5477,
+    })]);
+    run.passed = 0;
+    run.failed = 1;
+    run.aggregationRule = 'pass_caret_k';
+    run.stamp = { ...run.stamp, k: 2 };
+
+    const markdown = generateMarkdownReport(run);
+    const overview = markdown.slice(markdown.indexOf('## 概览'), markdown.indexOf('## 稳定性'));
+    expect(overview).toContain('| k 次全过率（k=2） |');
+    expect(overview).not.toContain('| 通过率 |');
+    expect(markdown).toContain('| repeated | 5 | 3 | 0.9000 | 0.3000 | 0.5477 |');
   });
 
   it('逐 case 输出 provider token、USD，汇总严格等于逐 case 之和', () => {

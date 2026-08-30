@@ -123,6 +123,7 @@ export class ExperimentAdapter {
         errored: 0,
         passRate: 0,
         avgScore: 0,
+        aggregation: event.config.k > 1 ? 'pass_caret_k' : 'pass_rate_k1',
         duration: 0,
         completed: false,
         plannedCaseIds: event.plannedCaseIds,
@@ -150,6 +151,7 @@ export class ExperimentAdapter {
         mockExcluded: event.mockExcluded,
         killedByTimeout: event.killedByTimeout,
         trials: event.trials,
+        trialAggregate: event.trialAggregate,
         scoreAuthority: event.scoreAuthority,
         source: 'eval',
       }),
@@ -179,6 +181,9 @@ export class ExperimentAdapter {
       failureCodebookSource: summary.failureCodebookSource,
       aborted: summary.aborted ?? false,
       abortReason: summary.abortReason,
+      aggregationRule: summary.aggregationRule,
+      aggregationRuleVersion: summary.aggregationRuleVersion,
+      aggregation: summary.aggregationRule,
       ...(error ? { error } : {}),
       source: 'eval',
     }));
@@ -509,9 +514,8 @@ export class ExperimentAdapter {
   }
 
   toCanonicalTestRun(summary: TestRunSummary): CanonicalEvalRun {
-    const aggregation: EvalRunAggregation = (summary.results || []).some(r => r.trials)
-      ? 'best_score_pass_at_k'
-      : 'single';
+    const aggregation: EvalRunAggregation = summary.aggregationRule
+      ?? ((summary.results || []).some(r => r.trials) ? 'best_score_pass_at_k' : 'single');
 
     const cases: CanonicalEvalCase[] = (summary.results || []).map((r: TestResult) => {
       const trace = r.sessionId ? buildSessionTraceIdentity(r.sessionId) : undefined;
@@ -556,6 +560,7 @@ export class ExperimentAdapter {
               }
             : {}),
           ...(r.variance !== undefined ? { variance: r.variance, stdDev: r.stdDev, unstable: r.unstable } : {}),
+          ...(r.trialAggregate ? { trialAggregate: r.trialAggregate } : {}),
         },
       };
     });

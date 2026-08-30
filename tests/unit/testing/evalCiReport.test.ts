@@ -56,6 +56,8 @@ function makeSummary(results: TestResult[]): TestRunSummary {
     notRun: 0,
     invalidCases: 0,
     averageScore: results.length ? results.reduce((sum, r) => sum + r.score, 0) / results.length : 0,
+    aggregationRule: 'pass_rate_k1',
+    aggregationRuleVersion: 4,
     results,
     stamp: UNKNOWN_EVAL_RUN_STAMP,
     environment: { model: 'mock-model', provider: 'mock', workingDirectory: '/tmp/work' },

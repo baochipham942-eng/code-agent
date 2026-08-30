@@ -6,7 +6,7 @@ import path from 'node:path';
 import type { EvalRunStamp } from '../../src/shared/contract/evaluation';
 import { PROMPT_VERSION } from '../../src/shared/constants/agent';
 import { CONFIG_DIR_NEW } from '../../src/shared/constants/configDir';
-import { BASELINE_DENOMINATOR_VERSION } from '../../src/host/testing/ci/baselineManager';
+import { AGGREGATION_RULES } from '../../src/host/testing/ci/baselineManager';
 import { resolveProductionShape } from '../../src/host/evaluation/productionShape';
 import { getQuickModelInfo } from '../../src/host/model/quickModel';
 import { estimateRunCost, PRICING_TABLE_VERSION } from './eval-cost-estimate';
@@ -204,7 +204,9 @@ export function buildRunStamp(opts: {
         : 'uncalibrated',
     },
     k: opts.trialsPerCase ?? 1,
-    aggregationRuleVersion: BASELINE_DENOMINATOR_VERSION,
+    aggregationRuleVersion: AGGREGATION_RULES[
+      (opts.trialsPerCase ?? 1) > 1 ? 'pass_caret_k' : 'pass_rate_k1'
+    ].version,
     promptVersion: PROMPT_VERSION,
     shape: opts.shape,
     divergesFromProduction: divergentShapeKeys(opts.shape, productionShape),

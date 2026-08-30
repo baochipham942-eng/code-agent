@@ -430,6 +430,14 @@ export interface TestResult {
   stdDev?: number;
   /** Whether the case is unstable (stdDev > threshold) */
   unstable?: boolean;
+  /** Combination-based result for repeated attempts. */
+  trialAggregate?: {
+    n: number;
+    c: number;
+    passAtK: number;
+    passCaretK: number;
+    rule: 'pass_caret_k';
+  };
   /** Session ID from the agent that ran this test */
   sessionId?: string;
   /** Replay key derived from the session trace identity */
@@ -518,6 +526,10 @@ export interface TestRunSummary {
   unstableCaseCount?: number;
   /** Mean stdDev across all cases with trials (stability metric) */
   averageStdDev?: number;
+  /** 本轮主指标的计分规则。 */
+  aggregationRule?: 'pass_rate_k1' | 'pass_caret_k';
+  /** 计分规则版本；改规则必须 bump。 */
+  aggregationRuleVersion?: number;
   /** GAP-017: 本次 run 使用的 harness 配置（对照实验维度，落 DB config_json） */
   harness?: HarnessVariantConfig;
   /** 数据集/套件名（可选）：run 覆盖的 case 全部来自同一 suite 时落该 suite 名，
@@ -1015,6 +1027,9 @@ export interface EvalBaseline {
   version: number;
   /** 通过率计算版本：4=计划题集一等字段，未跑题保留在通过率内；缺省=旧规则 */
   denominatorVersion?: number;
+  /** 晋升轮次的主指标计分规则；缺省或 legacy 名称均视为旧口径。 */
+  aggregationRule?: 'pass_rate_k1' | 'pass_caret_k' | 'best_score_pass_at_k';
+  aggregationRuleVersion?: number;
   /** 设为基准时完整执行的计划题集。 */
   plannedCaseIds: string[];
   updatedAt: number;

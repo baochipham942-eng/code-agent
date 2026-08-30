@@ -77,6 +77,7 @@ import {
 } from './lib/eval-cost-estimate';
 import { EVAL_AGENT_DEFAULTS } from '../src/host/testing/agentAdapter';
 import { EVAL_GOAL_ALLOW_SWARM } from '../src/host/testing/goalContractEval';
+import { EVAL_REPEAT_MAX } from '../src/shared/contract/evaluation';
 
 /** roadmap 2.4 A/B 归因（audit D-R3）：当前 run 的 provider 变体臂 */
 function providerVariantArm(): 'variant-on' | 'variant-off' {
@@ -113,6 +114,7 @@ function parseArgs(argv: string[]) {
   let split: SplitBucket | undefined;
   let dataDir: string | undefined;
   let runId: string | undefined;
+  let repeat = 1;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -164,6 +166,8 @@ function parseArgs(argv: string[]) {
       dataDir = args[++i];
     } else if (arg === '--run-id' && i + 1 < args.length) {
       runId = args[++i].trim();
+    } else if (arg === '--repeat') {
+      repeat = Number(args[++i]);
     } else if (arg === '--predicted-fixes' && i + 1 < args.length) {
       predictedFixes = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
     } else if (arg === '--risk-tasks' && i + 1 < args.length) {
@@ -206,8 +210,12 @@ function parseArgs(argv: string[]) {
     console.error(chalk.red('Invalid --run-id value: id must not be empty.'));
     process.exit(1);
   }
+  if (!Number.isInteger(repeat) || repeat < 1 || repeat > EVAL_REPEAT_MAX) {
+    console.error(chalk.red(`Invalid --repeat value: must be an integer from 1 to ${EVAL_REPEAT_MAX}.`));
+    process.exit(1);
+  }
 
-  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, runId };
+  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, runId, repeat };
 }
 
 function printUsage() {
@@ -224,6 +232,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --concurrency <n>  Parallel test execution count
   npx tsx scripts/eval-ci.ts --json-events      Emit NDJSON events on stdout; human output goes to stderr
   npx tsx scripts/eval-ci.ts --max-cases <n>    Max cases in --real mode (default: 50)
+  npx tsx scripts/eval-ci.ts --repeat <k>        Run every case k times (default: 1)
   npx tsx scripts/eval-ci.ts --tags <a,b>       Filter test cases by tags
   npx tsx scripts/eval-ci.ts --ids <a,b>        Filter test cases by IDs
   npx tsx scripts/eval-ci.ts --split <bucket>   Filter to 'held-in' (daily) / 'held-out' (milestone) / 'control' (judge calibration) / 'safety' (OS jail only)
@@ -500,6 +509,7 @@ async function runEvals(
     ids?: string[];
     prediction?: { predictedFixes: string[]; riskTasks: string[] };
     caseDir?: string;
+    repeat: number;
     eventStream?: EvalRunEventStream;
     eventConfig: EvalRunStartConfig;
   }
@@ -532,6 +542,7 @@ async function runEvals(
       testCaseDir: opts.caseDir ?? resolveCoreTestCaseDir(workingDir),
       filterTags: opts.tags,
       filterIds: opts.ids,
+      trialsPerCase: opts.repeat,
       ...(opts.concurrency ? { maxParallel: opts.concurrency, parallel: true } : {}),
       // WP1-4: 预测登记随 summary 落盘/DB，deltaReporter 对账
       ...(opts.prediction ? { prediction: opts.prediction } : {}),
@@ -921,6 +932,7 @@ function createRunStartConfig(opts: {
   judge: 'rules' | 'llm';
   workingDir: string;
   caseDir?: string;
+  repeat: number;
 }): EvalRunStartConfig {
   const model = opts.real
     ? opts.model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL
@@ -939,13 +951,14 @@ function createRunStartConfig(opts: {
     tags: opts.tags,
     ids: opts.ids,
     judge: opts.judge,
+    trialsPerCase: opts.repeat,
     shape: {
       skills: [...EVAL_AGENT_DEFAULTS.skills],
       memory: EVAL_AGENT_DEFAULTS.persistLongTermMemory,
       swarm: EVAL_GOAL_ALLOW_SWARM,
       harness: null,
     },
-    estimatedCases: opts.maxCases,
+    estimatedCases: opts.maxCases * opts.repeat,
   });
   return {
     ...stamp,
@@ -969,7 +982,7 @@ async function mainImpl(
   cwd: string,
   eventStream?: EvalRunEventStream,
 ): Promise<void> {
-  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir } = parseArgs(argv);
+  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, repeat } = parseArgs(argv);
   const workingDir = cwd;
   if (dataDir) {
     process.env.CODE_AGENT_DATA_DIR = path.resolve(cwd, dataDir);
@@ -1102,6 +1115,7 @@ async function mainImpl(
       concurrency,
       tags,
       ids,
+      repeat,
       eventStream,
       eventConfig: createRunStartConfig({
         real: false,
@@ -1111,6 +1125,7 @@ async function mainImpl(
         ids,
         maxCases,
         concurrency,
+        repeat,
         judge,
         workingDir,
       }),
@@ -1174,6 +1189,7 @@ async function mainImpl(
       concurrency,
       tags,
       ids,
+      repeat,
       eventStream,
       eventConfig: createRunStartConfig({
         real: effectiveReal,
@@ -1185,6 +1201,7 @@ async function mainImpl(
         ids,
         maxCases,
         concurrency,
+        repeat,
         judge,
         workingDir,
       }),
@@ -1288,6 +1305,7 @@ async function mainImpl(
     ids,
     prediction,
     caseDir,
+    repeat,
     eventStream,
     eventConfig: createRunStartConfig({
       real: effectiveReal,
@@ -1299,6 +1317,7 @@ async function mainImpl(
       ids,
       maxCases,
       concurrency,
+      repeat,
       judge,
       workingDir,
       caseDir,

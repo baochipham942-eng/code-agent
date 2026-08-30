@@ -17,6 +17,17 @@ import type {
 /** 通过率规则版本：4 = 计划题集一等字段，not_run 保留在通过率内。 */
 export const BASELINE_DENOMINATOR_VERSION = 4;
 
+export const AGGREGATION_RULES = {
+  pass_rate_k1: { version: BASELINE_DENOMINATOR_VERSION },
+  pass_caret_k: { version: BASELINE_DENOMINATOR_VERSION },
+} as const;
+
+type CurrentAggregationRule = keyof typeof AGGREGATION_RULES;
+
+function isCurrentAggregationRule(value: unknown): value is CurrentAggregationRule {
+  return value === 'pass_rate_k1' || value === 'pass_caret_k';
+}
+
 const DEFAULT_THRESHOLDS: EvalBaseline['thresholds'] = {
   minPassRate: 0.7,
   maxScoreDrop: 0.15,
@@ -80,6 +91,15 @@ export class BaselineManager {
         reason: `本轮有 ${currentInvalidCases} 道无效题（没调真模型），不与基准比较`,
       };
     }
+    if (
+      !isCurrentAggregationRule(current.aggregationRule)
+      || current.aggregationRuleVersion !== AGGREGATION_RULES[current.aggregationRule].version
+    ) {
+      return {
+        comparable: false,
+        reason: '两轮的计分规则不同，不能比',
+      };
+    }
 
     const baseline = await this.load();
 
@@ -108,6 +128,17 @@ export class BaselineManager {
       return {
         comparable: false,
         reason: '基线口径较老，请重新设为对比基准',
+      };
+    }
+    if (
+      !isCurrentAggregationRule(baseline.aggregationRule)
+      || baseline.aggregationRuleVersion !== AGGREGATION_RULES[baseline.aggregationRule].version
+      || baseline.aggregationRule !== current.aggregationRule
+      || baseline.aggregationRuleVersion !== current.aggregationRuleVersion
+    ) {
+      return {
+        comparable: false,
+        reason: '两轮的计分规则不同，不能比',
       };
     }
 
@@ -231,6 +262,12 @@ export class BaselineManager {
     };
 
     if (!summary.completed) rejectionReasons.push('本轮未跑满（completed=false）');
+    if (
+      !isCurrentAggregationRule(summary.aggregationRule)
+      || summary.aggregationRuleVersion !== AGGREGATION_RULES[summary.aggregationRule].version
+    ) {
+      rejectionReasons.push('本轮计分规则是旧口径或缺少版本，不能设为对比基准');
+    }
     addCaseReasons('未跑', summary.notRun, (result) => result.status === 'not_run', (result) => result.failureReason ?? '轮次中断');
     addCaseReasons('跳过', summary.skipped, (result) => result.status === 'skipped', (result) => result.failureReason ?? '未说明');
     addCaseReasons('环境故障', summary.infraExcluded ?? 0, (result) => result.status === 'infra_excluded', (result) => result.failureReason ?? '未说明');
@@ -294,6 +331,8 @@ export class BaselineManager {
     const baseline: EvalBaseline = {
       version: 1,
       denominatorVersion: BASELINE_DENOMINATOR_VERSION,
+      aggregationRule: summary.aggregationRule as CurrentAggregationRule,
+      aggregationRuleVersion: summary.aggregationRuleVersion,
       plannedCaseIds: [...summary.plannedCaseIds],
       updatedAt: Date.now(),
       updatedBy: commitSha,
@@ -366,6 +405,8 @@ export class BaselineManager {
     await this.save({
       version: 1,
       denominatorVersion: BASELINE_DENOMINATOR_VERSION,
+      aggregationRule: summary.aggregationRule,
+      aggregationRuleVersion: summary.aggregationRuleVersion,
       plannedCaseIds: [...summary.plannedCaseIds],
       updatedAt: Date.now(),
       updatedBy: commitSha,

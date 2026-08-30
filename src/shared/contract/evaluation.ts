@@ -11,6 +11,7 @@ import type {
 } from './turnQuality';
 
 export const EVAL_RUN_EVENT_SCHEMA_VERSION = 2 as const;
+export const EVAL_REPEAT_MAX = 10;
 
 export interface EvalFailureClassification {
   code: string;
@@ -177,6 +178,8 @@ export type EvalRunEventSummary = {
   abortReason?: string;
   unstableCaseCount?: number;
   averageStdDev?: number;
+  aggregationRule?: 'pass_rate_k1' | 'pass_caret_k';
+  aggregationRuleVersion?: number;
   dataset?: string;
 };
 
@@ -222,6 +225,13 @@ export type EvalRunEvent =
       trials?: number;
       sessionId?: string;
       scoreAuthority?: 'deterministic_assertion' | 'llm_judge' | 'self_check';
+      trialAggregate?: {
+        n: number;
+        c: number;
+        passAtK: number;
+        passCaretK: number;
+        rule: 'pass_caret_k';
+      };
     }
   | {
       schemaVersion: 2;
@@ -292,6 +302,7 @@ export interface EvalRunRequest {
   tags?: string[];
   split?: 'held-in' | 'held-out' | 'control' | 'safety';
   timeoutMs?: number;
+  repeat?: number;
 }
 
 export interface EvalRunStartResult {
@@ -316,6 +327,8 @@ export type EvalHarnessSource =
 
 export type EvalRunAggregation =
   | 'single'
+  | 'pass_rate_k1'
+  | 'pass_caret_k'
   | 'best_score_pass_at_k'
   | 'median_threshold'
   | 'regression_gate'

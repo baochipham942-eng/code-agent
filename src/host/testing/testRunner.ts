@@ -45,6 +45,8 @@ import { createScopedCostLimit, isScopedCostLimitExceeded } from '../services/co
 import { getMockCasePolicy } from './mockEvalPolicy';
 import { completePlannedResults, createNotRunResult, isRealAgentRunCase, markInvalidResultWithoutModel } from './testRunCompletion';
 import { appendTimeoutTelemetryFailureReason, attachTelemetryReplay } from './testRunnerTelemetryReplay';
+import { aggregateTrials, correctedSampleStats } from './trialAggregation';
+import { AGGREGATION_RULES } from './ci/baselineManager';
 import {
   loadFailureCodebook,
   loadProjectFailureCodebookWithSource,
@@ -323,64 +325,13 @@ export class TestRunner {
         }
       }
 
-      if (trialsPerCase <= 1) {
-        // Single trial (default behavior)
-        const result = await this.runIsolatedSingleTest(testCase);
-        results.push(result);
-
-        if ((result.status === 'passed' || result.status === 'partial') && !result.invalid) {
-          passedTests.add(testCase.id);
-        }
-      } else {
-        // Multiple trials: pass@k, with real-agent-run telemetry as a hard gate.
-        const trialResults: NonNullable<TestResult['trials']> = [];
-        let bestResult: TestResult | null = null;
-        let telemetryGateFailureResult: TestResult | null = null;
-
-        for (let trial = 0; trial < trialsPerCase; trial++) {
-          if (this.aborted) break;
-          logger.info(`Running trial ${trial + 1}/${trialsPerCase} for case ${testCase.id}`);
-          const result = await this.runIsolatedSingleTest(testCase);
-          trialResults.push(this.toTrialSummary(result));
-
-          // 同一 case 已经越过美元上限时不得继续后续 trial 烧量。
-          if (result.status === 'cost_exceeded') {
-            bestResult = result;
-            break;
-          }
-
-          if (isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false) {
-            telemetryGateFailureResult ??= result;
-          }
-
-          if (!bestResult || result.invalid || (!bestResult.invalid && result.score > bestResult.score)) {
-            bestResult = result;
-          }
-        }
-
-        if (bestResult) {
-          if (telemetryGateFailureResult && !bestResult.invalid) {
-            bestResult = telemetryGateFailureResult;
-          }
-
-          // Attach trial data to best result
-          bestResult.trials = trialResults;
-
-          // Compute variance and stdDev of trial scores
-          const scores = trialResults.map(t => t.score);
-          const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
-          const variance = scores.reduce((sum, s) => sum + (s - mean) ** 2, 0) / scores.length;
-          const stdDev = Math.sqrt(variance);
-          bestResult.variance = variance;
-          bestResult.stdDev = stdDev;
-          bestResult.unstable = stdDev > UNSTABLE_STDDEV_THRESHOLD;
-
-          results.push(bestResult);
-
-          if ((bestResult.status === 'passed' || bestResult.status === 'partial') && !bestResult.invalid) {
-            passedTests.add(testCase.id);
-          }
-        }
+      const result = await this.runParallelCaseTrials(testCase, trialsPerCase, {
+        agent: this.agent,
+        workingDirectory: this.config.workingDirectory,
+      });
+      results.push(result);
+      if ((result.status === 'passed' || result.status === 'partial') && !result.invalid) {
+        passedTests.add(testCase.id);
       }
 
         // Stop on first failure if configured
@@ -422,6 +373,7 @@ export class TestRunner {
     const averageStdDev = casesWithTrials.length > 0
       ? casesWithTrials.reduce((sum, r) => sum + (r.stdDev ?? 0), 0) / casesWithTrials.length
       : undefined;
+    const aggregationRule = trialsPerCase > 1 ? 'pass_caret_k' : 'pass_rate_k1';
 
     const summary: TestRunSummary = {
       runId,
@@ -446,6 +398,8 @@ export class TestRunner {
       }, { unknown: 0 }),
       failureCodebookSource: this.failureCodebookSource,
       averageScore: avgScore,
+      aggregationRule,
+      aggregationRuleVersion: AGGREGATION_RULES[aggregationRule].version,
       results,
       environment: {
         model: genInfo.model,
@@ -626,45 +580,69 @@ export class TestRunner {
       return this.runIsolatedSingleTest(testCase, context);
     }
 
-    const trialResults: NonNullable<TestResult['trials']> = [];
-    let bestResult: TestResult | null = null;
-    let telemetryGateFailureResult: TestResult | null = null;
+    const completedTrials: TestResult[] = [];
 
     for (let trial = 0; trial < trialsPerCase; trial++) {
       if (this.aborted) break;
       logger.info(`Running trial ${trial + 1}/${trialsPerCase} for case ${testCase.id}`);
       const result = await this.runIsolatedSingleTest(testCase, context);
-      trialResults.push(this.toTrialSummary(result));
+      completedTrials.push(result);
 
       if (result.status === 'cost_exceeded') {
-        bestResult = result;
         break;
       }
-
-      if (isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false) {
-        telemetryGateFailureResult ??= result;
-      }
-      if (!bestResult || result.invalid || (!bestResult.invalid && result.score > bestResult.score)) {
-        bestResult = result;
-      }
     }
 
-    if (!bestResult) {
+    if (completedTrials.length === 0) {
       return createNotRunResult(testCase, this.abortReason);
     }
-    if (telemetryGateFailureResult && !bestResult.invalid) {
-      bestResult = telemetryGateFailureResult;
+    const trialResults = completedTrials.map((result) => this.toTrialSummary(result));
+    const costExceeded = completedTrials.find((result) => result.status === 'cost_exceeded');
+    if (costExceeded) {
+      costExceeded.trials = trialResults;
+      this.emit({ type: 'case_end', result: costExceeded });
+      return costExceeded;
+    }
+    if (this.aborted && completedTrials.length < trialsPerCase) {
+      const interrupted = completedTrials[completedTrials.length - 1];
+      interrupted.trials = trialResults;
+      this.emit({ type: 'case_end', result: interrupted });
+      return interrupted;
+    }
+    if (completedTrials.every((result) => result.status === 'skipped')) {
+      const skipped = completedTrials[0];
+      skipped.trials = trialResults;
+      this.emit({ type: 'case_end', result: skipped });
+      return skipped;
     }
 
-    bestResult.trials = trialResults;
-    const scores = trialResults.map((trial) => trial.score);
-    const mean = scores.reduce((sum, score) => sum + score, 0) / scores.length;
-    const variance = scores.reduce((sum, score) => sum + (score - mean) ** 2, 0) / scores.length;
-    const stdDev = Math.sqrt(variance);
-    bestResult.variance = variance;
-    bestResult.stdDev = stdDev;
-    bestResult.unstable = stdDev > UNSTABLE_STDDEV_THRESHOLD;
-    return bestResult;
+    const aggregate = aggregateTrials(completedTrials, trialsPerCase);
+    const representative = completedTrials.find((result) => result.invalid)
+      ?? completedTrials.find((result) => isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false)
+      ?? completedTrials.find((result) => result.status !== 'passed' && result.status !== 'infra_excluded')
+      ?? completedTrials.find((result) => result.status !== 'infra_excluded')
+      ?? completedTrials[0];
+    const stats = correctedSampleStats(
+      completedTrials.filter((result) => result.status !== 'infra_excluded').map((result) => result.score),
+    );
+
+    if (!representative.invalid) {
+      representative.status = aggregate.status;
+      representative.score = aggregate.passCaretK;
+    }
+    representative.trials = trialResults;
+    representative.trialAggregate = {
+      n: aggregate.trialCount,
+      c: aggregate.passCount,
+      passAtK: aggregate.passAtK,
+      passCaretK: aggregate.passCaretK,
+      rule: 'pass_caret_k',
+    };
+    representative.variance = stats?.variance;
+    representative.stdDev = stats?.stdDev;
+    representative.unstable = aggregate.unstable || (stats?.stdDev ?? 0) > UNSTABLE_STDDEV_THRESHOLD;
+    this.emit({ type: 'case_end', result: representative });
+    return representative;
   }
 
   /**

@@ -77,4 +77,24 @@ describe('buildCaseEvidence', () => {
     expect(afterExcerpt.responseExcerpt.length).toBeLessThan(2_000);
     expect(Buffer.byteLength(JSON.stringify(afterExcerpt), 'utf8')).toBeLessThanOrEqual(64 * 1_024);
   });
+
+  it('判定依据自身超过 64KB 时也不砍、不抛（监工代笔 · Grok 盲区①）', () => {
+    const input = result();
+    input.toolExecutions = [];
+    input.responses = ['short'];
+    input.expectationResults = Array.from({ length: 200 }, (_, index) => ({
+      expectation: { type: 'content_contains', description: `check-${index}`, params: {} },
+      passed: index % 3 === 0,
+      evidence: { expected: 'e'.repeat(2_000), actual: 'a'.repeat(2_000), details: 'd'.repeat(2_000) },
+      duration: 1,
+    }));
+
+    const evidence = buildCaseEvidence(input);
+
+    expect(evidence.checks).toHaveLength(200);
+    expect(evidence.checks.every((check) => check.expected.length <= 500 && check.actual.length <= 500)).toBe(true);
+    // 软预算允许被判定依据单独撑破：这是工单明定的「永不砍 checks」优先级
+    expect(Buffer.byteLength(JSON.stringify(evidence), 'utf8')).toBeGreaterThan(64 * 1_024);
+    expect(evidence.toolCalls).toEqual([]);
+  });
 });

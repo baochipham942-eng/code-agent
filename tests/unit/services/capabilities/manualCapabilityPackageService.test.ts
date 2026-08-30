@@ -7,7 +7,10 @@ import { PluginRegistry } from '../../../../src/host/plugins/pluginRegistry';
 import { loadPlugin } from '../../../../src/host/plugins/pluginLoader';
 import { hasProtocolTool } from '../../../../src/host/tools/protocolToolRegistration';
 import { resetProtocolRegistry } from '../../../../src/host/tools/protocolRegistry';
-import { readComputerUseCapabilityState } from '../../../../src/host/plugins/builtin/computerUse/installState';
+import {
+  readBuiltinCapabilityState,
+} from '../../../../src/host/plugins/builtin/computerUse/installState';
+import { COMPUTER_USE_CAPABILITY_ID } from '../../../../src/host/plugins/builtin/builtinCapabilityIds';
 import type { MCPServerConfig } from '../../../../src/host/mcp/types';
 
 interface LifecycleEntry {
@@ -91,6 +94,31 @@ afterEach(async () => {
 });
 
 describe('ManualCapabilityPackageService', () => {
+  it('lists all eight builtin plugins and hot installs or removes a default-installed builtin', async () => {
+    const service = createService({ computerUseStateDir: () => tempRoot });
+    const builtinPackages = (await service.list()).filter((item) => item.id.startsWith('builtin.'));
+    expect(builtinPackages).toHaveLength(8);
+    expect(builtinPackages.find((item) => item.id === 'builtin.computerUse')).toMatchObject({ state: 'available' });
+
+    const preview = await service.stageBundled('builtin.imageProcess');
+    expect(preview).toMatchObject({
+      id: 'builtin.imageProcess',
+      sourceKind: 'bundled',
+      toolNames: ['image_process'],
+    });
+    await service.confirm(preview.token);
+
+    expect(registry.getPlugin('builtin.imageProcess')?.state).toBe('active');
+    expect(hasProtocolTool('image_process')).toBe(true);
+    expect(await readBuiltinCapabilityState('builtin.imageProcess', tempRoot)).toBe('installed');
+
+    await service.uninstall('builtin.imageProcess');
+    expect(registry.getPlugin('builtin.imageProcess')).toBeUndefined();
+    expect(hasProtocolTool('image_process')).toBe(false);
+    expect(await readBuiltinCapabilityState('builtin.imageProcess', tempRoot)).toBe('removed');
+    expect(lifecycle.map((entry) => entry.action)).toEqual(['loaded', 'unloaded']);
+  });
+
   it('accepts both a directory and its manifest file without writing before confirmation', async () => {
     const service = createService();
     const source = await writePackage('directory-cap');
@@ -289,13 +317,13 @@ describe('ManualCapabilityPackageService', () => {
 
       expect(registry.getPlugin('builtin.computerUse')?.state).toBe('active');
       expect(serverStates.has('cua-driver')).toBe(true);
-      expect(await readComputerUseCapabilityState(tempRoot)).toBe('installed');
+      expect(await readBuiltinCapabilityState(COMPUTER_USE_CAPABILITY_ID, tempRoot)).toBe('installed');
       expect(lifecycle.map((entry) => entry.action)).toEqual(['loaded']);
 
       await service.uninstall('builtin.computerUse');
       expect(registry.getPlugin('builtin.computerUse')).toBeUndefined();
       expect(serverStates.has('cua-driver')).toBe(false);
-      expect(await readComputerUseCapabilityState(tempRoot)).toBe('removed');
+      expect(await readBuiltinCapabilityState(COMPUTER_USE_CAPABILITY_ID, tempRoot)).toBe('removed');
       expect(lifecycle.map((entry) => entry.action)).toEqual(['loaded', 'unloaded']);
     } finally {
       Object.defineProperty(process, 'platform', originalPlatform);
@@ -318,7 +346,7 @@ describe('ManualCapabilityPackageService', () => {
       const preview = await service.stageBundled('builtin.computerUse');
       await expect(service.confirm(preview.token)).rejects.toThrow('cua-driver 在当前平台不可用');
       expect(registry.getPlugin('builtin.computerUse')).toBeUndefined();
-      expect(await readComputerUseCapabilityState(tempRoot)).toBe('missing');
+      expect(await readBuiltinCapabilityState(COMPUTER_USE_CAPABILITY_ID, tempRoot)).toBe('missing');
       expect(lifecycle.map((entry) => entry.action)).toEqual(['failed', 'rolled_back']);
     } finally {
       Object.defineProperty(process, 'platform', originalPlatform);

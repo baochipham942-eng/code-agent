@@ -34,7 +34,7 @@ export interface PluginManifest extends PluginMetadata {
   /** Required permissions */
   permissions?: PluginPermission[];
   /**
-   * Host surfaces the plugin extends (tools / skills / theme / language).
+   * Host surfaces the plugin extends (tools / internal-feature).
    *
    * Step 7 PR 1: 原字段名 `capabilities`，重命名为 `surfaces` 以释放
    * `capabilities` 给"领域能力标签"。host 内部统一读 `manifest.surfaces`。
@@ -112,10 +112,7 @@ export type PluginPermission =
  */
 export type PluginSurface =
   | 'tools'        // Provides tools
-  | 'internal-feature' // Admin-installed internal/dogfood product surface
-  | 'skills'       // Provides skills
-  | 'theme'        // Provides theme
-  | 'language';    // Provides language support
+  | 'internal-feature'; // Admin-installed internal/dogfood product surface
 
 /**
  * Plugin lifecycle hooks

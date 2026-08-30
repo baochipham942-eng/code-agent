@@ -14,6 +14,28 @@ function createDbWriter() {
 }
 
 describe('ExperimentAdapter canonical harness persistence', () => {
+  // 2026-08-30 监工代笔（Grok 变异席抓出的盲区）：桥落库计数只测过单题；键若退化成 runId 级会串题。
+  it('keeps per-testId skill activation slots isolated when two cases interleave', () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    const activate = (ts: number, testId: string, name: string) => adapter.recordSkillActivation({
+      schemaVersion: 2, type: 'skill_activated', ts, runId: 'event-run', testId, name,
+    });
+    const end = (ts: number, testId: string) => adapter.persistEventCase({
+      schemaVersion: 2, type: 'case_end', ts, runId: 'event-run', testId, status: 'passed', score: 1, durationMs: 1, skillActivations: {},
+    });
+    activate(1, 'case-a', 'x');
+    activate(2, 'case-b', 'y');
+    activate(3, 'case-a', 'x');
+    end(4, 'case-b');
+    end(5, 'case-a');
+    const rows = db.insertExperimentCases.mock.calls.map((call) => [call[1][0].case_id, JSON.parse(call[1][0].data_json).skillActivations]);
+    expect(rows).toEqual([
+      ['case-b', { y: 1 }],
+      ['case-a', { x: 2 }],
+    ]);
+  });
+
   it('counts memory and per-name skill signals into the matching event-backed case data', () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);

@@ -34,6 +34,8 @@ export interface CLIGlobalOptions {
   disallowedTools?: string;
   /** Path to write session metrics JSON (enables MetricsCollector), mapped from --metrics */
   metrics?: string;
+  /** Path to write run-status heartbeat JSON (--status-file), mapped from run/chat option */
+  statusFile?: string;
 }
 
 /**
@@ -55,6 +57,8 @@ export interface CLIConfig {
   systemPrompt?: string;
   /** Path to write session metrics JSON (enables MetricsCollector) */
   metricsPath?: string;
+  /** Path to write run-status heartbeat JSON snapshot (enables StatusFileWriter + MetricsCollector) */
+  statusFilePath?: string;
   /** /goal 自治模式契约；存在则激活 goal 模式（透传给 AgentLoop → ctx.goalMode） */
   goalContract?: GoalContract;
   /** 迭代数硬上限（角色主动性醒来等预算受限场景；不传用 AgentLoop 默认值） */

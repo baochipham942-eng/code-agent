@@ -20,7 +20,7 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-const { attachDictationClient } = await import('../../../../src/host/services/speech/dictationStreamService');
+const { attachDictationClient, hasActiveDictationStream } = await import('../../../../src/host/services/speech/dictationStreamService');
 
 class FakeClient extends EventEmitter {
   OPEN = 1;
@@ -72,6 +72,7 @@ describe('dictationStreamService', () => {
     client.emit('message', Buffer.from([1, 2, 3]), true);
 
     expect(transport.sendAudio).toHaveBeenCalledWith(Buffer.from([1, 2, 3]));
+    client.close();
   });
 
   it('上游 partial/final 结果按文本帧发回客户端', async () => {
@@ -85,6 +86,7 @@ describe('dictationStreamService', () => {
       { type: 'partial', text: '你', sentenceId: 1 },
       { type: 'final', text: '你好', sentenceId: 1 },
     ]);
+    client.close();
   });
 
   it('客户端断开时关闭上游', async () => {
@@ -94,6 +96,16 @@ describe('dictationStreamService', () => {
     client.close();
 
     expect(transport.close).toHaveBeenCalledTimes(1);
+    expect(hasActiveDictationStream()).toBe(false);
+  });
+
+  it('reports an attached stream as active so package uninstall can refuse', async () => {
+    const client = new FakeClient();
+    await attachDictationClient(client as never);
+
+    expect(hasActiveDictationStream()).toBe(true);
+    client.close();
+    expect(hasActiveDictationStream()).toBe(false);
   });
 
   it('客户端在上游建连过程中断开时立即取消握手', async () => {

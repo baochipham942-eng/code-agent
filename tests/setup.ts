@@ -36,6 +36,7 @@ vi.mock('electron', () => ({
   // 与 windowBridge.hasInteractiveUi 同语义：有 probe 用 probe，没有则按「无窗口」false。
   hasInteractiveUi: () => (mockInteractionProbe ? mockInteractionProbe() : false),
   setBrowserWindowInteractionProbe: (probe: (() => boolean) | null) => { mockInteractionProbe = probe; },
+  broadcastToRenderer: () => {},
   app: {
     getPath: (name: string) => `/tmp/mock-electron-${name}`,
     getAppPath: () => process.cwd(),
@@ -63,6 +64,10 @@ vi.mock('electron', () => ({
     readText: () => '',
     readImage: () => ({ isEmpty: () => true, toDataURL: () => '' }),
     writeText: () => {},
+  },
+  globalShortcut: {
+    register: () => true,
+    unregister: () => {},
   },
   nativeImage: {
     createFromDataURL: () => ({ isEmpty: () => true }),

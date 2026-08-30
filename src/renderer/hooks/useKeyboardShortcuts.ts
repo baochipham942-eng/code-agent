@@ -31,8 +31,16 @@ import { claimApprovalResponse, releaseApprovalResponse } from '../utils/approva
 import { claimDesignCanvasForSession } from '../components/design/designCanvasLaunch';
 import { voiceCallBridge } from '../services/voiceCallBridge';
 import { useVoiceCallStore } from '../stores/voiceCallStore';
+import { useBundledCapabilityStore } from '../stores/bundledCapabilityStore';
 
 const logger = createLogger('KeyboardShortcuts');
+
+function isKeybindingAvailableForCapabilities(
+  actionId: KeybindingActionId,
+  voiceInputInstalled: boolean,
+): boolean {
+  return actionId !== 'voice.toggle' || voiceInputInstalled;
+}
 
 // ============================================================================
 // Types
@@ -201,6 +209,9 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     recordPermissionDecision,
   } = useAppStore();
   const { keybindings, platform } = useKeybindingsSettings();
+  const voiceInputInstalled = useBundledCapabilityStore(
+    (state) => state.installed['builtin.voice-input'],
+  );
 
   const actionByAccelerator = useMemo(() => {
     const map = new Map<string, KeybindingActionId[]>();
@@ -213,6 +224,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     };
 
     for (const definition of KEYBINDING_DEFINITIONS) {
+      if (!isKeybindingAvailableForCapabilities(definition.id, voiceInputInstalled)) continue;
       const binding = keybindings.bindings[definition.id];
       if (!binding?.enabled || !binding.accelerator) continue;
       add(binding.accelerator, definition.id);
@@ -226,7 +238,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     }
 
     return map;
-  }, [keybindings, platform]);
+  }, [keybindings, platform, voiceInputInstalled]);
 
   const globalHotkeyBindings = useMemo<GlobalHotkeyBindingPayload[]>(() => {
     if (keybindings.globalHotkeysEnabled === false) return [];
@@ -234,6 +246,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     const bindings: GlobalHotkeyBindingPayload[] = [];
     for (const definition of KEYBINDING_DEFINITIONS) {
       if (definition.scope !== 'global') continue;
+      if (!isKeybindingAvailableForCapabilities(definition.id, voiceInputInstalled)) continue;
       const binding = keybindings.bindings[definition.id];
       if (!binding?.enabled || !binding.accelerator) continue;
       const accelerator = normalizeAccelerator(binding.accelerator, platform);
@@ -241,7 +254,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
       bindings.push({ actionId: definition.id, accelerator });
     }
     return bindings;
-  }, [keybindings, platform]);
+  }, [keybindings, platform, voiceInputInstalled]);
 
   // 获取当前会话在列表中的索引
   const currentSessionIndex = useMemo(() => {
@@ -422,6 +435,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           return true;
 
         case 'voice.toggle':
+          if (!voiceInputInstalled) return false;
           await ipcService.unsafeInvoke(IPC_CHANNELS.VOICE_PASTE_TOGGLE);
           return true;
 
@@ -541,6 +555,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
       pendingPermissionSessionId,
       setPendingPermissionRequest,
       recordPermissionDecision,
+      voiceInputInstalled,
     ]
   );
 

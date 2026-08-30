@@ -44,6 +44,7 @@ import { createWorkbenchActions } from './workbenchActions';
 import { SECONDARY_PAGES_CLOSED } from './secondaryPages';
 import { buildContentPreviewState } from './contentPreviewState';
 import { buildPermissionDecisionState } from './permissionDecisionState';
+import { installedBundledCapabilityIds } from './bundledCapabilityStore';
 
 // V2-A: 关 tab 时 fire-and-forget 调 stopDevServer。lazy import 避免
 // 在 store 模块顶层引入 ipcService（store 是大量被 import 的模块，链路尽量短）
@@ -595,7 +596,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // 落点判定收在 resolveSettingsDeepLink 一处（ADR-049 §收窄），store 只负责应用
   openSettingsTab: (tab) => {
     const noFocus = { settingsMemoryFocus: null, settingsCapabilityFocus: null };
-    const target = resolveSettingsDeepLink(tab);
+    const target = resolveSettingsDeepLink(tab, installedBundledCapabilityIds());
     if (target.kind === 'cronCenter') {
       set({ ...SECONDARY_PAGES_CLOSED, showCronCenter: true, showSettings: false, ...noFocus });
     } else if (target.kind === 'capabilityHub') {

@@ -1,7 +1,8 @@
 export const capabilityHubZh = {
   capabilityHub: {
     title: '能力中心',
-    description: '专家 · 自动化 · 技能 · 连接器 · 插件',
+    description: '功能包 · 专家 · 自动化 · 技能 · 连接器 · 插件',
+    tabPackages: '功能包',
     tabExperts: '专家',
     tabAutomation: '自动化',
     tabSkills: '技能',
@@ -9,6 +10,34 @@ export const capabilityHubZh = {
     tabPlugins: '插件',
     tabInventory: '能力清单',
     tabCandidates: '候选能力',
+  },
+  capabilityPackages: {
+    title: '功能包',
+    installed: '已装入',
+    removed: '未装入',
+    install: '装入',
+    uninstall: '卸载',
+    installPrompt: '先装入这项能力，语音输入入口、设置和快捷键才会出现。',
+    permissionsTitle: '权限披露',
+    readinessTitle: '本地识别就绪度',
+    copyCommand: '复制安装命令',
+    assetsPreserved: '卸载功能包不会删除你自行安装的 whisper-cpp 或模型。',
+    readiness: {
+      ready: '本地 whisper-cpp 与模型已就绪',
+      fallback: '本地依赖缺失，当前会走 Groq fallback',
+      notReady: 'local-only 模式尚未就绪',
+    },
+    voiceInput: {
+      name: '语音输入',
+      summary: '在输入框听写，并通过 Cmd/Ctrl+` 把语音转成文字粘贴到当前应用。',
+      permissions: [
+        '麦克风：录制听写和 Voice Paste 音频。',
+        '网络：连接 Gummy 流式识别或 Groq fallback。',
+        '剪贴板：Voice Paste 临时写入转写文字，粘贴后恢复原内容。',
+        '辅助功能：通过 AppleScript 把文字粘贴到当前应用。',
+        'Shell：调用 rec 录音与 osascript 粘贴；全局快捷键为 Cmd/Ctrl+`。',
+      ],
+    },
   },
   // 候选能力（N-CAP1 / F12）。文案纪律：这一区只出现「能力」，
   // 不许出现 插件 / plugin / manifest / cordis / 意图簇 这类实现概念。
@@ -44,7 +73,8 @@ export const capabilityHubZh = {
 export const capabilityHubEn = {
   capabilityHub: {
     title: 'Capability Hub',
-    description: 'Experts · Automation · Skills · Connectors · Plugins',
+    description: 'Packages · Experts · Automation · Skills · Connectors · Plugins',
+    tabPackages: 'Packages',
     tabExperts: 'Experts',
     tabAutomation: 'Automation',
     tabSkills: 'Skills',
@@ -52,6 +82,34 @@ export const capabilityHubEn = {
     tabPlugins: 'Plugins',
     tabInventory: 'Capability Inventory',
     tabCandidates: 'Candidates',
+  },
+  capabilityPackages: {
+    title: 'Packages',
+    installed: 'Installed',
+    removed: 'Not installed',
+    install: 'Install',
+    uninstall: 'Uninstall',
+    installPrompt: 'Install this capability before voice input, settings, and shortcuts become available.',
+    permissionsTitle: 'Permission disclosure',
+    readinessTitle: 'Local transcription readiness',
+    copyCommand: 'Copy install command',
+    assetsPreserved: 'Uninstalling the package does not delete whisper-cpp or models you installed yourself.',
+    readiness: {
+      ready: 'Local whisper-cpp and model are ready',
+      fallback: 'Local dependencies are missing; Groq fallback will be used',
+      notReady: 'Local-only mode is not ready',
+    },
+    voiceInput: {
+      name: 'Voice input',
+      summary: 'Dictate in the composer, or press Cmd/Ctrl+` to transcribe and paste into the active app.',
+      permissions: [
+        'Microphone: records dictation and Voice Paste audio.',
+        'Network: connects to Gummy streaming ASR or Groq fallback.',
+        'Clipboard: temporarily writes transcribed text, then restores previous contents.',
+        'Accessibility: uses AppleScript to paste into the active app.',
+        'Shell: runs rec and osascript; the global shortcut is Cmd/Ctrl+`.',
+      ],
+    },
   },
   capabilityCandidates: {
     title: 'Candidate capabilities',

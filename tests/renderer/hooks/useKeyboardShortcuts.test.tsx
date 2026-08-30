@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import React from 'react';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest } from '../../../src/shared/contract';
@@ -118,4 +117,5 @@ describe('useKeyboardShortcuts permission response', () => {
     });
     expect(setPendingPermissionRequest).toHaveBeenCalledWith(null);
   });
+
 });

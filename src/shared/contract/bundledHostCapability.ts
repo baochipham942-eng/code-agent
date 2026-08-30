@@ -6,3 +6,11 @@ export interface BundledHostCapabilityState {
   version: string;
   revision: number;
 }
+
+export interface BundledHostCapabilityReadiness {
+  id: BundledHostCapabilityId;
+  status: 'ready' | 'fallback' | 'not_ready';
+  detail: string;
+  installCommand?: string;
+  preservesExternalAssetsOnUninstall: boolean;
+}

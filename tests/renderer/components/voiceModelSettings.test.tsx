@@ -49,6 +49,7 @@ import { VoiceModelSettings } from '../../../src/renderer/components/features/se
 import { VoiceLiveSettingsSection } from '../../../src/renderer/components/features/settings/tabs/VoiceLiveSettingsSection';
 import { VoiceInputSettings } from '../../../src/renderer/components/features/settings/tabs/VoiceInputSettings';
 import { buildSettingsTabGroups } from '../../../src/renderer/components/features/settings/SettingsModal';
+import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 
 const BUILTIN_PROVIDERS = [
   {
@@ -121,6 +122,9 @@ describe('VoiceModelSettings（新 tab 收拢三项）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     availability.configured = true;
+    useBundledCapabilityStore.setState({
+      installed: { 'builtin.voice-live': true, 'builtin.voice-input': true },
+    });
   });
   afterEach(() => cleanup());
 
@@ -131,6 +135,18 @@ describe('VoiceModelSettings（新 tab 收拢三项）', () => {
     expect(await screen.findByTestId('voice-conversation-model')).toBeTruthy();
     expect(screen.getByTestId('voice-model-voice-list')).toBeTruthy();
     expect(screen.getByTestId('voice-model-transcription-model')).toBeTruthy();
+  });
+
+  it('voice-input 未安装时隐藏 ASR 转写模型段', async () => {
+    useBundledCapabilityStore.setState({
+      installed: { 'builtin.voice-live': true, 'builtin.voice-input': false },
+    });
+    settingsGet(undefined);
+
+    render(<VoiceModelSettings />);
+
+    expect(await screen.findByTestId('voice-provider-select')).toBeTruthy();
+    expect(screen.queryByTestId('voice-model-transcription-model')).toBeNull();
   });
 
   it('API Key 配置块常驻在语音模型 tab——配没配都展示，不是缺 key 才出现（批 X3 产品拍板）', async () => {

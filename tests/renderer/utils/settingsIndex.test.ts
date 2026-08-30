@@ -66,6 +66,15 @@ describe('settings search index', () => {
     expect(searchSettings(en.settings.tabs.workspace).map((entry) => entry.tab)).toContain('workspace');
   });
 
+  it('filters voice-input search entries with the same capability predicate as the sidebar', () => {
+    const query = zh.settings.searchIndex.voiceInput;
+    expect(searchSettings(query, { installedCapabilities: new Set() }).map((entry) => entry.tab))
+      .not.toContain('voiceInput');
+    expect(searchSettings(query, {
+      installedCapabilities: new Set(['builtin.voice-input']),
+    }).map((entry) => entry.tab)).toContain('voiceInput');
+  });
+
   it('covers permission/privacy boundary search terms', () => {
     expect(searchSettings(zh.settings.searchIndex.voiceTranscription).map((entry) => entry.tab)).toContain('privacy');
     expect(searchSettings(zh.settings.searchIndex.diagnosticBundle).map((entry) => entry.tab)).toContain('privacy');

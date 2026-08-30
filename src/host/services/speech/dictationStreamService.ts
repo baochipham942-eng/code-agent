@@ -13,6 +13,7 @@ import {
 } from './gummyRealtimeTransport';
 
 const logger = createLogger('DictationStream');
+const activeStreams = new Set<string>();
 
 type DictationServerEvent =
   | { type: 'partial' | 'final'; text: string; sentenceId: number }
@@ -24,10 +25,15 @@ function send(client: WsSocket, event: DictationServerEvent): void {
 
 export async function attachDictationClient(client: WsSocket): Promise<void> {
   const streamId = randomUUID();
+  activeStreams.add(streamId);
   const connectAbort = new AbortController();
   let upstream: GummyRealtimeHandle | null = null;
   let clientGone = false;
   let stopping = false;
+
+  const release = () => {
+    activeStreams.delete(streamId);
+  };
 
   const closeAll = () => {
     connectAbort.abort();
@@ -37,10 +43,12 @@ export async function attachDictationClient(client: WsSocket): Promise<void> {
 
   client.once('close', () => {
     clientGone = true;
+    release();
     closeAll();
   });
   client.once('error', () => {
     clientGone = true;
+    release();
     closeAll();
   });
 
@@ -51,6 +59,7 @@ export async function attachDictationClient(client: WsSocket): Promise<void> {
       code: 'SPEECH_NO_CHANNEL',
       message: '未配置 DashScope API Key',
     });
+    release();
     client.close();
     return;
   }
@@ -73,6 +82,7 @@ export async function attachDictationClient(client: WsSocket): Promise<void> {
     const message = err instanceof Error ? err.message : 'Gummy realtime connection failed';
     logger.warn('upstream connect failed', { streamId, message });
     send(client, { type: 'error', code: 'SPEECH_NO_CHANNEL', message });
+    release();
     client.close();
     return;
   }
@@ -80,6 +90,7 @@ export async function attachDictationClient(client: WsSocket): Promise<void> {
   // 客户端可能在上游握手期间已断开，不能留一条无人消费的计费连接。
   if (clientGone || client.readyState !== client.OPEN) {
     upstream.close();
+    release();
     return;
   }
 
@@ -106,4 +117,8 @@ export async function attachDictationClient(client: WsSocket): Promise<void> {
       // 非法控制帧忽略；不要把原文写日志。
     }
   });
+}
+
+export function hasActiveDictationStream(): boolean {
+  return activeStreams.size > 0;
 }

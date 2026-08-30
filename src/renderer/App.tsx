@@ -43,7 +43,7 @@ import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { SessionExpiredNotice } from './components/SessionExpiredNotice';
 import { BudgetAlertNotice } from './components/BudgetAlertNotice';
-import { AgentNoticeToast } from './components/AgentNoticeToast';
+import { RuntimeNotices } from './components/RuntimeNotices';
 import { FolderTrustDialog, needsFolderTrustDecision, type FolderTrustEvaluationView } from './components/FolderTrustDialog';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -912,7 +912,7 @@ export const App: React.FC = () => {
       <ToastContainer />
       <ProviderStatusNotice />
       <BudgetAlertNotice />
-      <AgentNoticeToast />
+      <RuntimeNotices />
       <ExpertWorkbenchAutoOpen />
       <SessionExpiredNotice />
       <div className="h-screen flex flex-col bg-zinc-950 text-zinc-200">
@@ -1200,8 +1200,6 @@ export const App: React.FC = () => {
           </div>
         </div>
       )}
-
-
       </div>
       </MemoryLearningProvider>
     </ErrorBoundary>

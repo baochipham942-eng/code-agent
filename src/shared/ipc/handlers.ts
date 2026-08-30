@@ -42,7 +42,11 @@ import type {
   CapabilityPackageResult,
   InstalledCapabilityPackage,
 } from '../contract/capabilityPackage';
-import type { BundledHostCapabilityState } from '../contract/bundledHostCapability';
+import type {
+  BundledHostCapabilityId,
+  BundledHostCapabilityReadiness,
+  BundledHostCapabilityState,
+} from '../contract/bundledHostCapability';
 import type { AlmaRegistryAuditRefreshResult } from '../constants/almaRegistryAudit';
 
 import type { ExtensionInfo, ExtensionValidationResult } from '../contract/extension';
@@ -364,6 +368,9 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CAPABILITY_PACKAGE_CANCEL]: (token: string) => Promise<CapabilityPackageResult<void>>;
   [IPC_CHANNELS.CAPABILITY_PACKAGE_UNINSTALL]: (pluginId: string) => Promise<CapabilityPackageResult<void>>;
   [IPC_CHANNELS.CAPABILITY_STATE_LIST]: () => Promise<BundledHostCapabilityState[]>;
+  [IPC_CHANNELS.CAPABILITY_STATE_INSTALL]: (id: BundledHostCapabilityId) => Promise<void>;
+  [IPC_CHANNELS.CAPABILITY_STATE_UNINSTALL]: (id: BundledHostCapabilityId) => Promise<void>;
+  [IPC_CHANNELS.CAPABILITY_STATE_READINESS]: (id: BundledHostCapabilityId) => Promise<BundledHostCapabilityReadiness>;
   [IPC_CHANNELS.ALMA_REGISTRY_AUDIT_REFRESH]: () => Promise<{ success: boolean; data?: AlmaRegistryAuditRefreshResult; error?: string }>;
 
   // Unified extensions
@@ -634,6 +641,8 @@ export interface TaskRuntimeStats {
 export type TaskRuntimeEvent = { type: 'state_change'; sessionId: string; data: TaskRuntimeSessionState } | { type: 'stats_updated'; data: TaskRuntimeStats } | { type: 'queue_update'; sessionId: string; queue: string[] };
 
 export interface IpcEventHandlers {
+  [IPC_CHANNELS.CAPABILITY_STATE_CHANGED]: (event: { id: BundledHostCapabilityId; revision: number }) => void;
+  [IPC_CHANNELS.VOICE_PASTE_STATUS]: (event: { status: 'recording' | 'transcribing' | 'processing' | 'idle'; error?: string }) => void;
   [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEventEnvelope) => void;
   [IPC_CHANNELS.AGENT_EVENT_BATCH]: (events: AgentEventEnvelope[]) => void;
   [IPC_CHANNELS.MEMORY_LEARNED]: (event: MemoryLearnedEvent) => void;

@@ -6,6 +6,7 @@ import * as os from 'os';
 import { DEFAULT_MODELS } from '../../shared/constants';
 import { getSpeechTranscriptionService } from '../services/speech/speechTranscriptionService';
 import { summarizeUserFacingError } from '../security/userFacingError';
+import type { HostCapabilityCleanup } from '../services/capabilities/hostCapabilityPorts';
 
 type VoicePasteStatusPayload = {
   status: 'recording' | 'transcribing' | 'processing' | 'idle';
@@ -54,6 +55,7 @@ const MODEL_API_ENDPOINTS = {
 };
 
 let isRecording = false;
+let voicePastePhase: VoicePasteStatusPayload['status'] = 'idle';
 let recProcess: ChildProcess | null = null;
 let currentTempFile: string | null = null;
 
@@ -161,7 +163,9 @@ function startRecording(): string {
   recProcess.on('error', (err) => {
     console.error('[VoicePaste] rec process error:', err.message);
     isRecording = false;
+    voicePastePhase = 'idle';
     recProcess = null;
+    notifyRenderer('voice-paste:status', { status: 'idle', error: err.message });
   });
 
   currentTempFile = tempFile;
@@ -214,6 +218,7 @@ function notifyRenderer(event: 'voice-paste:status', data?: VoicePasteStatusPayl
 async function toggleVoicePasteRecording(): Promise<{ isRecording: boolean }> {
   if (!isRecording) {
     isRecording = true;
+    voicePastePhase = 'recording';
     const tempFile = startRecording();
     console.log('[VoicePaste] Recording started:', tempFile);
     notifyRenderer('voice-paste:status', { status: 'recording' });
@@ -221,6 +226,7 @@ async function toggleVoicePasteRecording(): Promise<{ isRecording: boolean }> {
   }
 
   isRecording = false;
+  voicePastePhase = 'transcribing';
   stopRecording();
   console.log('[VoicePaste] Recording stopped, processing...');
   notifyRenderer('voice-paste:status', { status: 'transcribing' });
@@ -244,6 +250,7 @@ async function toggleVoicePasteRecording(): Promise<{ isRecording: boolean }> {
     }
 
     notifyRenderer('voice-paste:status', { status: 'processing' });
+    voicePastePhase = 'processing';
     const cleanText = await postProcessTranscript(rawText);
 
     await pasteText(cleanText);
@@ -257,6 +264,7 @@ async function toggleVoicePasteRecording(): Promise<{ isRecording: boolean }> {
       error: summary || (error as Error).message
     });
   } finally {
+    voicePastePhase = 'idle';
     if (currentTempFile && fs.existsSync(currentTempFile)) {
       fs.unlinkSync(currentTempFile);
       currentTempFile = null;
@@ -266,7 +274,22 @@ async function toggleVoicePasteRecording(): Promise<{ isRecording: boolean }> {
   return { isRecording };
 }
 
-export function registerVoicePasteHandlers(voicePasteIpcMain: typeof ipcHost): void {
+export function registerVoicePasteHandlers(voicePasteIpcMain: typeof ipcHost): HostCapabilityCleanup {
+  voicePasteIpcMain.handle('voice-paste:get-status', () => {
+    return { isRecording };
+  });
+
+  voicePasteIpcMain.handle('voice-paste:toggle', async () => {
+    return toggleVoicePasteRecording();
+  });
+
+  return () => {
+    voicePasteIpcMain.removeHandler('voice-paste:get-status');
+    voicePasteIpcMain.removeHandler('voice-paste:toggle');
+  };
+}
+
+export function registerVoicePasteShortcut(): HostCapabilityCleanup {
   const isWebMode = process.env.CODE_AGENT_WEB_MODE === 'true' || !process.versions.electron;
 
   // Register global shortcut Cmd+`
@@ -283,19 +306,11 @@ export function registerVoicePasteHandlers(voicePasteIpcMain: typeof ipcHost): v
     console.log('[VoicePaste] Global shortcut Cmd+` registered');
   }
 
-  // IPC handlers for renderer queries
-  voicePasteIpcMain.handle('voice-paste:get-status', () => {
-    return { isRecording };
-  });
-
-  voicePasteIpcMain.handle('voice-paste:toggle', async () => {
-    return toggleVoicePasteRecording();
-  });
+  return registered
+    ? () => globalShortcut.unregister('CommandOrControl+`')
+    : () => undefined;
 }
 
-export function unregisterVoicePaste(): void {
-  if (isRecording) {
-    stopRecording();
-  }
-  globalShortcut.unregister('CommandOrControl+`');
+export function hasActiveVoicePaste(): boolean {
+  return voicePastePhase !== 'idle';
 }

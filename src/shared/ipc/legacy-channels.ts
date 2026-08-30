@@ -225,6 +225,10 @@ export const IPC_CHANNELS = {
 
   // Public bundled host capability state projection (no admin gate)
   CAPABILITY_STATE_LIST: 'capability-state:list',
+  CAPABILITY_STATE_INSTALL: 'capability-state:install',
+  CAPABILITY_STATE_UNINSTALL: 'capability-state:uninstall',
+  CAPABILITY_STATE_READINESS: 'capability-state:readiness',
+  CAPABILITY_STATE_CHANGED: 'capability-state:changed',
 
   // Alma registry audit
   ALMA_REGISTRY_AUDIT_REFRESH: 'alma-registry:audit-refresh',

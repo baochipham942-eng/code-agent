@@ -3,6 +3,9 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import fsPromises from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -40,6 +43,10 @@ vi.mock('util', () => ({
 }));
 
 import { localSpeechToTextModule, executeLocalSpeechToText } from '../../../../../src/host/tools/modules/network/localSpeechToText';
+import {
+  readBundledHostCapabilityInstallSnapshot,
+  writeBundledHostCapabilityInstallState,
+} from '../../../../../src/host/services/capabilities/bundledHostCapabilityInstallState';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -120,6 +127,34 @@ describe('local_speech_to_text — execute', () => {
       expect(result.meta?.mediaKind).toBe('audio');
       expect(result.meta?.contentLength).toBe(result.output.length);
       expect(result.meta?.truncated).toBe(false);
+    }
+  });
+
+  it('stays available from the media foundation when voice-input is explicitly removed', async () => {
+    const dataDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'neo-local-stt-no-voice-input-'));
+    try {
+      await writeBundledHostCapabilityInstallState(
+        dataDir,
+        'builtin.voice-input',
+        'removed',
+        '1.0.0',
+        1,
+        'user',
+      );
+      await expect(readBundledHostCapabilityInstallSnapshot(dataDir, 'builtin.voice-input')).resolves.toMatchObject({
+        record: { state: 'removed' },
+      });
+      mockExec(() => [null, '[00:00:00.000 --> 00:00:01.000]  主干工具仍可用', '']);
+
+      const result = await executeLocalSpeechToText(
+        { file_path: '/abs/audio.wav' },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result).toMatchObject({ ok: true });
+    } finally {
+      await fsPromises.rm(dataDir, { recursive: true, force: true });
     }
   });
 

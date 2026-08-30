@@ -15,6 +15,7 @@ import type {
   ConversationSessionReference,
   ConversationVoiceInputMetadata,
 } from '@shared/contract/conversationEnvelope';
+import { DEFAULT_SPEECH_INPUT_SETTINGS } from '@shared/contract/speech';
 import type { SteerOrQueueOutcome } from '@shared/contract/appService';
 import { UI } from '@shared/constants';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -33,7 +34,8 @@ import {
   settleDictationFinal,
   type DictationComposerAnchor,
 } from './dictationComposerAnchor';
-import { useVoiceInput } from '../../../../hooks/useVoiceInput';
+import type { UseVoiceInputReturn } from '../../../../hooks/useVoiceInput';
+import { VoiceInputController } from './VoiceInputController';
 import { useVoiceLiveAvailability } from '../../voice/useVoiceLiveAvailability';
 import { useVoiceCallStore, type VoiceCallPhase } from '../../../../stores/voiceCallStore';
 import { VoiceChrome } from '../../voice/VoiceChrome';
@@ -112,6 +114,7 @@ import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
 import { ComposerUploadStatus } from './ComposerUploadStatus';
 import { QueuedInputTray } from './QueuedInputTray';
+import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
 
 // ============================================================================
 // 类型定义
@@ -192,6 +195,7 @@ export const COMPOSER_CORE_ACTION_LIMIT = 2 as const;
 export function resolveComposerCoreActions(params: Parameters<typeof resolveLiveVoiceSlot>[0] & {
   /** 缺 Provider key 仍占 live-voice 主位，只改变按钮为配置引导态。 */
   configured: boolean;
+  voiceInputInstalled?: boolean;
 }): readonly ComposerCoreAction[] {
   const liveVoiceSlot = resolveLiveVoiceSlot(params);
   const primaryAction: ComposerCoreAction = liveVoiceSlot === 'primary'
@@ -203,8 +207,29 @@ export function resolveComposerCoreActions(params: Parameters<typeof resolveLive
   // 核心操作区只指 composer 工具栏右端两个同级操作项：口述输入 + 主操作。
   // 附件「+」、身份/连接器/权限/模型、审批与提示 chip、VoiceChrome 状态条都不在此边界内。
   // JSX 必须逐项消费这份列表，禁止在映射外另塞同级核心按钮。
-  return ['voice-input', primaryAction];
+  return params.voiceInputInstalled === false ? [primaryAction] : ['voice-input', primaryAction];
 }
+
+const ignoreVoiceInput = () => undefined;
+const UNAVAILABLE_VOICE_INPUT: UseVoiceInputReturn = {
+  status: 'idle',
+  duration: 0,
+  isSupported: false,
+  isEnabled: false,
+  settings: DEFAULT_SPEECH_INPUT_SETTINGS,
+  start: ignoreVoiceInput,
+  stop: ignoreVoiceInput,
+  retry: ignoreVoiceInput,
+  canRetry: false,
+  toggle: ignoreVoiceInput,
+  clearError: ignoreVoiceInput,
+  error: null,
+  errorCode: null,
+  lastResult: null,
+  inputLevel: 0,
+  partialText: '',
+  silenceWarning: false,
+};
 
 // ============================================================================
 // 主组件
@@ -233,6 +258,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     anchor: string;
     metadata: ConversationVoiceInputMetadata;
   } | null>(null);
+  const voiceInputInstalled = useBundledCapabilityStore((state) => state.installed['builtin.voice-input']);
+  const [voice, setVoice] = useState<UseVoiceInputReturn>(UNAVAILABLE_VOICE_INPUT);
   const [isFocused, setIsFocused] = useState(false);
   const [queuedInputRevision, setQueuedInputRevision] = useState(0);
   const [editingQueuedInputId, setEditingQueuedInputId] = useState<string | null>(null);
@@ -926,47 +953,48 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     valueRef.current = next;
     setValue(next);
   }, [setValue]);
-  const voice = useVoiceInput({
-    onStreamStart: () => {
-      dictationAnchorRef.current = beginDictationAnchor(valueRef.current);
-    },
-    onPartialTranscript: (text) => {
-      const anchor = dictationAnchorRef.current;
-      if (!anchor) return;
-      const applied = applyDictationPartial(anchor, text);
-      dictationAnchorRef.current = applied.state;
-      if (applied.value !== null) writeDictationValue(applied.value);
-    },
-    onTranscript: (text, result) => {
-      const anchor = dictationAnchorRef.current;
-      if (anchor) {
-        const settled = settleDictationFinal(anchor, valueRef.current, text);
-        dictationAnchorRef.current = settled.state;
-        writeDictationValue(settled.value);
-        setVoiceInputContext({
-          anchor: text.slice(0, 64),
-          metadata: {
-            inputSource: 'voice',
-            transcriptionMode: 'cloud',
-            transcriptChars: text.length,
-            rawTranscriptChars: result?.rawText?.length,
-            postProcessed: false,
-          },
-        });
-        return;
-      }
+  const handleVoiceStreamStart = useCallback(() => {
+    dictationAnchorRef.current = beginDictationAnchor(valueRef.current);
+  }, []);
+  const handleVoicePartialTranscript = useCallback((text: string) => {
+    const anchor = dictationAnchorRef.current;
+    if (!anchor) return;
+    const applied = applyDictationPartial(anchor, text);
+    dictationAnchorRef.current = applied.state;
+    if (applied.value !== null) writeDictationValue(applied.value);
+  }, [writeDictationValue]);
+  const handleVoiceFinalTranscript = useCallback((text: string, result?: import('@shared/contract').SpeechTranscribeResult) => {
+    const anchor = dictationAnchorRef.current;
+    if (anchor) {
+      const settled = settleDictationFinal(anchor, valueRef.current, text);
+      dictationAnchorRef.current = settled.state;
+      writeDictationValue(settled.value);
+      setVoiceInputContext({
+        anchor: text.slice(0, 64),
+        metadata: {
+          inputSource: 'voice',
+          transcriptionMode: 'cloud',
+          transcriptChars: text.length,
+          rawTranscriptChars: result?.rawText?.length,
+          postProcessed: false,
+        },
+      });
+      return;
+    }
 
-      const sendAfter = dictationSendAfterTranscriptRef.current;
-      dictationSendAfterTranscriptRef.current = false;
-      handleVoiceTranscriptRef.current(text, result);
-      const transcript = text.trim();
-      if (sendAfter && transcript) {
-        const current = valueRef.current.trimEnd();
-        const merged = current ? `${current}\n\n${transcript}` : transcript;
-        void handleSubmitRef.current(undefined, { content: merged });
-      }
-    },
-  });
+    const sendAfter = dictationSendAfterTranscriptRef.current;
+    dictationSendAfterTranscriptRef.current = false;
+    handleVoiceTranscriptRef.current(text, result);
+    const transcript = text.trim();
+    if (sendAfter && transcript) {
+      const current = valueRef.current.trimEnd();
+      const merged = current ? `${current}\n\n${transcript}` : transcript;
+      void handleSubmitRef.current(undefined, { content: merged });
+    }
+  }, [setVoiceInputContext, writeDictationValue]);
+  useEffect(() => {
+    if (!voiceInputInstalled) setVoice(UNAVAILABLE_VOICE_INPUT);
+  }, [voiceInputInstalled]);
   const handleDictationAwareValueChange = useCallback((newValue: string) => {
     if (dictationAnchorRef.current) {
       dictationAnchorRef.current = markDictationUserEdit(
@@ -1029,6 +1057,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     hasMessages,
     hadLiveVoice: currentSessionHadLiveVoice,
     hasStoppableBackgroundWork: Boolean(hasStoppableBackgroundWork),
+    voiceInputInstalled,
   });
 
   return (
@@ -1038,6 +1067,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {voiceInputInstalled && (
+        <VoiceInputController
+          onStreamStart={handleVoiceStreamStart}
+          onPartialTranscript={handleVoicePartialTranscript}
+          onTranscript={handleVoiceFinalTranscript}
+          onStateChange={setVoice}
+        />
+      )}
       {/* Command Palette triggered by / */}
       <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
       <form

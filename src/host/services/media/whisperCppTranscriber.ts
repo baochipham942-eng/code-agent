@@ -67,7 +67,35 @@ export interface LocalSpeechTranscribeResult {
   processingTimeMs: number;
 }
 
-export async function findWhisperBinary(signal: AbortSignal): Promise<string | null> {
+export interface WhisperCppReadiness {
+  binaryAvailable: boolean;
+  modelAvailable: boolean;
+  modelFileName: string;
+  installCommand: string;
+}
+
+export async function inspectWhisperCppReadiness(
+  modelName?: string,
+  signal: AbortSignal = new AbortController().signal,
+): Promise<WhisperCppReadiness> {
+  const modelFileName = path.basename(normalizeWhisperModelFileName(modelName));
+  const modelPath = getWhisperModelPath(modelFileName);
+  const binaryAvailable = await findWhisperBinary(signal) !== null;
+  const modelAvailable = fs.existsSync(modelPath);
+  const encodedModel = encodeURIComponent(modelFileName);
+  return {
+    binaryAvailable,
+    modelAvailable,
+    modelFileName,
+    installCommand: [
+      'brew install whisper-cpp',
+      'mkdir -p "$HOME/.cache/whisper"',
+      `curl -L -o "$HOME/.cache/whisper/${modelFileName}" "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${encodedModel}"`,
+    ].join(' && '),
+  };
+}
+
+async function findWhisperBinary(signal: AbortSignal): Promise<string | null> {
   for (const p of LOCAL_SPEECH_CONFIG.WHISPER_PATHS) {
     if (fs.existsSync(p)) return p;
   }
@@ -90,11 +118,11 @@ export function normalizeWhisperModelFileName(modelName?: string): string {
   return `ggml-${trimmed}.bin`;
 }
 
-export function getWhisperModelPath(modelName?: string): string {
+function getWhisperModelPath(modelName?: string): string {
   return path.join(LOCAL_SPEECH_CONFIG.MODEL_DIR, normalizeWhisperModelFileName(modelName));
 }
 
-export async function convertToWav(
+async function convertToWav(
   inputPath: string,
   outputPath: string,
   signal: AbortSignal,
@@ -117,7 +145,7 @@ export async function convertToWav(
   }
 }
 
-export function parseWhisperOutput(stdout: string, format: string): string {
+function parseWhisperOutput(stdout: string, format: string): string {
   if (format === 'srt' || format === 'vtt') {
     return stdout.trim();
   }

@@ -24,10 +24,11 @@ import {
   LocalSpeechTranscriptionError,
   normalizeWhisperModelFileName,
   transcribeWithWhisperCpp,
-} from './whisperCppTranscriber';
+} from '../media/whisperCppTranscriber';
 
 const logger = createLogger('SpeechTranscriptionService');
 const execFileAsync = promisify(execFile);
+let activeTranscriptions = 0;
 
 const MAX_SINGLE_PASS_AUDIO_BYTES = 10 * 1024 * 1024;
 const MAX_COMPOSER_AUDIO_BYTES = 50 * 1024 * 1024;
@@ -513,6 +514,8 @@ async function transcribeChunkedAudio(
 
 export class SpeechTranscriptionService {
   async transcribe(request: SpeechTranscriptionRequest): Promise<SpeechTranscribeResult> {
+    activeTranscriptions += 1;
+    try {
     let normalized: NormalizedSpeechRequest;
     try {
       normalized = normalizeRequest(request);
@@ -598,7 +601,14 @@ export class SpeechTranscriptionService {
         }
       }
     }
+    } finally {
+      activeTranscriptions -= 1;
+    }
   }
+}
+
+export function hasActiveSpeechTranscription(): boolean {
+  return activeTranscriptions > 0;
 }
 
 let speechTranscriptionService: SpeechTranscriptionService | null = null;

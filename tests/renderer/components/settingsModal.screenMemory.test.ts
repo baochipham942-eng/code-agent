@@ -154,6 +154,21 @@ describe('SettingsModal screen memory tab visibility', () => {
       'roles', 'automation', 'skills', 'mcp', 'plugins',
     ]));
   });
+
+  it('uses requiresAnyCapability to hide and restore the voice-input tab', () => {
+    const buildIds = (installedCapabilities: ReadonlySet<'builtin.voice-input'>) => (
+      buildSettingsTabGroups({
+        t,
+        showScreenMemoryTab: false,
+        showUpdateTab: false,
+        hasOptionalUpdate: false,
+        installedCapabilities,
+      }).flatMap((group) => group.tabs.map((tab) => tab.id))
+    );
+
+    expect(buildIds(new Set())).not.toContain('voiceInput');
+    expect(buildIds(new Set(['builtin.voice-input']))).toContain('voiceInput');
+  });
 });
 
 describe('resolveOptionalUpdateInfo', () => {

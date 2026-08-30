@@ -8,6 +8,7 @@ import {
   type AccessControlledFeature,
   type AccessSubject,
 } from './accessControl';
+import type { BundledHostCapabilityId } from '@shared/contract/bundledHostCapability';
 
 export const SETTINGS_TAB_IDS = [
   'general',
@@ -45,6 +46,7 @@ export type SettingsTab = typeof SETTINGS_TAB_IDS[number];
 
 // 能力中心的顶层 tab（ADR-049）。单一真源放在 tab 注册表这里，appStore 只做 re-export。
 export type CapabilityHubTab =
+  | 'packages'
   | 'experts'
   | 'skills'
   | 'connectors'
@@ -66,7 +68,7 @@ export const CAPABILITY_HUB_TAB_BY_SETTINGS_TAB: Partial<Record<SettingsTab, Cap
 /** `openSettingsTab(id)` 的落点：这些 id 保留着只是让老深链继续可用，落点未必还在设置页。 */
 export type SettingsDeepLinkTarget =
   | { kind: 'settings'; tab: SettingsTab }
-  | { kind: 'capabilityHub'; tab: CapabilityHubTab }
+  | { kind: 'capabilityHub'; tab: CapabilityHubTab; capabilityId?: BundledHostCapabilityId }
   | { kind: 'cronCenter' };
 
 /**
@@ -75,7 +77,32 @@ export type SettingsDeepLinkTarget =
  * 放在 tab 注册表这里而不是 store 里，是为了让「id → 落点」只有一处可改——
  * 设置页搜索也走它，否则搜「自动化」会把 activeTab 设成一个已不存在的 tab。
  */
-export function resolveSettingsDeepLink(tab: SettingsTab): SettingsDeepLinkTarget {
+const SETTINGS_TAB_REQUIRES_ANY_CAPABILITY: Partial<
+  Record<SettingsTab, readonly BundledHostCapabilityId[]>
+> = {
+  voiceInput: ['builtin.voice-input'],
+};
+
+export function isSettingsTabCapabilityAvailable(
+  tab: SettingsTab,
+  installedCapabilities?: ReadonlySet<BundledHostCapabilityId>,
+): boolean {
+  const required = SETTINGS_TAB_REQUIRES_ANY_CAPABILITY[tab];
+  if (!required || installedCapabilities === undefined) return true;
+  return required.some((id) => installedCapabilities.has(id));
+}
+
+export function resolveSettingsDeepLink(
+  tab: SettingsTab,
+  installedCapabilities?: ReadonlySet<BundledHostCapabilityId>,
+): SettingsDeepLinkTarget {
+  if (!isSettingsTabCapabilityAvailable(tab, installedCapabilities)) {
+    return {
+      kind: 'capabilityHub',
+      tab: 'packages',
+      capabilityId: SETTINGS_TAB_REQUIRES_ANY_CAPABILITY[tab]?.[0],
+    };
+  }
   if (tab === 'automation') return { kind: 'cronCenter' };
   const hubTab = CAPABILITY_HUB_TAB_BY_SETTINGS_TAB[tab];
   return hubTab ? { kind: 'capabilityHub', tab: hubTab } : { kind: 'settings', tab };

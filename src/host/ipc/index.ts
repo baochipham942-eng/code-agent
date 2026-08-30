@@ -25,7 +25,6 @@ import { registerConnectorHandlers } from './connector.ipc';
 import { registerMemoryHandlers } from './memory.ipc';
 import { registerPlanningHandlers } from './planning.ipc';
 import { registerDataHandlers } from './data.ipc';
-import { registerSpeechHandlers } from './speech.ipc';
 import { registerTaskHandlers } from './task.ipc';
 import { registerStatusHandlers } from './status.ipc';
 import { registerContextHealthHandlers } from './contextHealth.ipc';
@@ -60,7 +59,6 @@ import { registerDesktopHandlers } from './desktop.ipc';
 import { registerSurfaceExecutionHandlers } from './surfaceExecution.ipc';
 import { registerSuggestionsHandlers } from './suggestions.ipc';
 import { registerSoulHandlers } from './soul.ipc';
-import { registerVoicePasteHandlers } from './voicePaste.ipc';
 import { registerContextHandlers } from './context.ipc';
 import { registerProviderHandlers } from './provider.ipc';
 import { registerLivePreviewHandlers } from './livePreview.ipc';
@@ -170,10 +168,6 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Data/Cache handlers
   registerDataHandlers(ipcMain);
-
-  // Speech handlers
-  registerSpeechHandlers(ipcMain);
-
 
   // Task handlers (Wave 5: 多任务并行)
   registerTaskHandlers(ipcMain, getTaskManager);
@@ -285,9 +279,6 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
     const appService = getAppService();
     return appService?.getWorkingDirectory() || app.getPath('home');
   });
-
-  // VoicePaste handlers (全局语音粘贴 Cmd+`)
-  registerVoicePasteHandlers(ipcMain);
 
   // Context observability handlers (/context true-view)
   registerContextHandlers({ getAppService });

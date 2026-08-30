@@ -6,6 +6,7 @@ import type {
 } from '../../../shared/contract/bundledHostCapability';
 
 export type BundledHostCapabilityInstallPhase = 'staged' | 'installed' | 'removed';
+export type BundledHostCapabilityInstallSource = 'default' | 'migration' | 'migration-failed' | 'user';
 
 export interface BundledHostCapabilityInstallRecord {
   schemaVersion: 1;
@@ -13,6 +14,7 @@ export interface BundledHostCapabilityInstallRecord {
   version: string;
   revision: number;
   updatedAt: number;
+  source?: BundledHostCapabilityInstallSource;
 }
 
 export interface BundledHostCapabilityInstallSnapshot {
@@ -37,6 +39,7 @@ function parseRecord(raw: string): BundledHostCapabilityInstallRecord {
     || !Number.isSafeInteger(parsed.revision)
     || (parsed.revision ?? -1) < 0
     || typeof parsed.updatedAt !== 'number'
+    || (parsed.source !== undefined && !['default', 'migration', 'migration-failed', 'user'].includes(parsed.source))
   ) {
     throw new Error('invalid bundled host capability install state');
   }
@@ -61,6 +64,7 @@ export async function writeBundledHostCapabilityInstallState(
   state: BundledHostCapabilityInstallPhase,
   version: string,
   revision: number,
+  source?: BundledHostCapabilityInstallSource,
 ): Promise<BundledHostCapabilityInstallRecord> {
   const target = statePath(dataDir, id);
   const record: BundledHostCapabilityInstallRecord = {
@@ -69,6 +73,7 @@ export async function writeBundledHostCapabilityInstallState(
     version,
     revision,
     updatedAt: Date.now(),
+    ...(source ? { source } : {}),
   };
   await fs.mkdir(path.dirname(target), { recursive: true });
   const temp = `${target}.${process.pid}.tmp`;
@@ -108,7 +113,7 @@ export function projectBundledHostCapabilityState(
 ): BundledHostCapabilityState {
   return {
     id,
-    installed: snapshot.record?.state === 'installed' || snapshot.record === null,
+    installed: snapshot.record?.state === 'installed' || (snapshot.record === null && id === 'builtin.voice-live'),
     version: snapshot.record?.version ?? version,
     revision: snapshot.record?.revision ?? 0,
   };

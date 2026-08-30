@@ -66,6 +66,13 @@ describe('resolveLiveVoiceSlot（composer 两项上限）', () => {
 // 此前主操作只看 isProcessing，于是发送键立刻变回发送形态——停止入口消失，
 // agentAppService.cancel 里现成的级联取消再也没人触发。
 describe('D1：主 loop idle + swarm 成员在跑', () => {
+  it('voice-input 未安装时不实例化口述输入动作位', () => {
+    expect(resolveComposerCoreActions({
+      ...BASE,
+      voiceInputInstalled: false,
+    })).toEqual(['live-voice']);
+  });
+
   it('无草稿时主操作是停止（而不是发送）', () => {
     expect(resolveComposerCoreActions({
       ...BASE,

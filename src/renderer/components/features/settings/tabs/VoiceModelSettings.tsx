@@ -27,6 +27,7 @@ import { deriveInterruptMode, deriveTurnDetection, deriveVadSensitivity } from '
 import { VoiceApiKeyConfig, type VoiceApiKeyCopyProfile } from './VoiceApiKeyConfig';
 import { Button } from '../../../primitives';
 import { toast } from '../../../../hooks/useToast';
+import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
 
 const logger = createLogger('VoiceModelSettings');
 
@@ -122,6 +123,9 @@ export const VoiceModelSettings: React.FC = () => {
   const { t } = useI18n();
   const text = t.voice.settings;
   const modelText = t.settings.voiceModel;
+  const voiceInputInstalled = useBundledCapabilityStore(
+    (state) => state.installed['builtin.voice-input'],
+  );
 
   const [live, setLive] = useState<VoiceLiveSettings>({});
   const [turnDetection, setTurnDetection] = useState<VoiceTurnDetectionConfig | undefined>(undefined);
@@ -363,23 +367,25 @@ export const VoiceModelSettings: React.FC = () => {
         <p className="mt-2 text-xs text-zinc-500">{text.voiceNote}</p>
       </div>
 
-      {/* 转写模型：本地 whisper-cpp 模型，仅本地转写模式生效 */}
-      <div className="border-t border-zinc-700 pt-4">
-        <label className="block space-y-2">
-          <span className="text-sm font-medium text-zinc-200">{modelText.transcriptionModelLabel}</span>
-          <select
-            data-testid="voice-model-transcription-model"
-            value={speech.localModel}
-            onChange={(event) => void persistSpeech({ localModel: event.target.value })}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
-          >
-            {TRANSCRIPTION_MODEL_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>{option.label}</option>
-            ))}
-          </select>
-          <p className="text-xs text-zinc-500">{modelText.transcriptionModelNote}</p>
-        </label>
-      </div>
+      {/* 转写模型随 voice-input 包出现；未安装时不暴露一段无法生效的配置。 */}
+      {voiceInputInstalled && (
+        <div className="border-t border-zinc-700 pt-4">
+          <label className="block space-y-2">
+            <span className="text-sm font-medium text-zinc-200">{modelText.transcriptionModelLabel}</span>
+            <select
+              data-testid="voice-model-transcription-model"
+              value={speech.localModel}
+              onChange={(event) => void persistSpeech({ localModel: event.target.value })}
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible"
+            >
+              {TRANSCRIPTION_MODEL_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-zinc-500">{modelText.transcriptionModelNote}</p>
+          </label>
+        </div>
+      )}
     </div>
   );
 };

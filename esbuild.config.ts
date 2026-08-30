@@ -187,6 +187,34 @@ function runGameSkillContentCodegen(): void {
 // ---------------------------------------------------------------------------
 // Build targets
 // ---------------------------------------------------------------------------
+
+/**
+ * Ink（ESM-only）打进单文件 cjs 的兼容插件，用于 cli / cli-spike 两个 target：
+ * 1. yoga-layout@3 默认入口用 top-level await 加载 wasm（base64 内嵌），cjs 不支持
+ *    TLA；精确匹配（不影响其子路径导入）重定向到本地垫片，改为异步初始化 + Proxy。
+ * 2. ink 的 devtools 调试分支含 TLA 和可选依赖 react-devtools-core，由
+ *    `process.env['DEV'] === 'true'` 守卫。ink 自己 `import process from 'node:process'`
+ *    使 esbuild define 对全局 process 的替换失效，只能在源码层把守卫改写成 false，
+ *    由 esbuild parse 阶段的死分支消除把 TLA 和动态 import 一并移除。
+ */
+const inkCjsCompatPlugin: esbuild.Plugin = {
+  name: 'ink-cjs-compat',
+  setup(buildApi) {
+    buildApi.onResolve({ filter: /^yoga-layout$/ }, () => ({
+      path: path.resolve('src/cli/tui-app/yogaCjsShim.ts'),
+    }));
+    // 垫片需要引用 yoga 内部文件，但其 package.json exports 只暴露 "." 和 "./load"，
+    // 这里把 dist 子路径直接解析为绝对路径绕过封装（仅限本 target 的图内）
+    buildApi.onResolve({ filter: /^yoga-layout\/dist\// }, (args) => ({
+      path: path.resolve('node_modules', args.path),
+    }));
+    buildApi.onLoad({ filter: /node_modules\/ink\/build\/reconciler\.js$/ }, (args) => ({
+      contents: readFileSync(args.path, 'utf8').replaceAll("process.env['DEV'] === 'true'", 'false'),
+      loader: 'js',
+    }));
+  },
+};
+
 interface BuildTarget {
   name: string;
   entry: string;
@@ -194,6 +222,7 @@ interface BuildTarget {
   format: 'cjs' | 'esm';
   external?: string[];
   alias?: Record<string, string>;
+  plugins?: esbuild.Plugin[];
   minify?: boolean;
   sourcemap?: boolean;
   /** 注入到 bundle 最顶部的 JS 代码，先于一切 require 执行 */
@@ -209,7 +238,10 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
       outfile: 'dist/cli/index.cjs',
       format: 'cjs',
       external: NATIVE_EXTERNALS,
-      alias: BUILD_ALIAS,
+      // cli-highlight 仅供 marked-terminal 代码块高亮；P1 不高亮，
+      // alias 成原样返回的 stub，避免把 highlight.js + parse5 拖进 bundle
+      alias: { ...BUILD_ALIAS, 'cli-highlight': './src/cli/tui-app/cliHighlightStub.ts' },
+      plugins: [inkCjsCompatPlugin],
       minify: !isDev,
       sourcemap: isDev,
       // 必须在任何 require 之前设置 CLI 模式，让 secureStorage.ts 跳过 keytar
@@ -224,6 +256,17 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
           writeFileSync('dist/cli/index.cjs', '#!/usr/bin/env node\n' + content);
         }
       },
+    },
+    // Step 0 spike：Ink TUI 可行性验证，独立入口独立产物，不影响主 CLI
+    'cli-spike': {
+      name: 'CLI Ink Spike',
+      entry: 'src/cli/tui-app/spike.tsx',
+      outfile: 'dist/cli/spike.cjs',
+      format: 'cjs',
+      external: NATIVE_EXTERNALS,
+      minify: !isDev,
+      sourcemap: isDev,
+      plugins: [inkCjsCompatPlugin],
     },
     web: {
       name: 'Web Server',
@@ -289,6 +332,7 @@ async function build(target: BuildTarget): Promise<void> {
     format: target.format,
     external: target.external,
     alias: target.alias,
+    plugins: target.plugins,
     minify: target.minify,
     sourcemap: target.sourcemap,
     banner: target.banner ? { js: target.banner } : undefined,

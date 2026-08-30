@@ -4,6 +4,9 @@
 // 多行编辑器（❯ + rail ┃）。
 // P2 能力：多行编辑（Shift+Enter/Ctrl+J/`\` 续行）、粘贴 chip、slash 补全、
 // 真 slash 命令（onCommand 注入）、运行中排队 follow-up、100 条输入历史。
+// P1 高频体感：/ps /stop 后台任务（StatusBar 计数）、OSC 9 终端通知（失焦才发）、
+// 审批卡扩充（allow-all-edits/never/附反馈/inline diff）、Ctrl+Q 双击退出、
+// Ctrl+R prompt 历史搜索。
 // ============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -15,6 +18,14 @@ import type { PermissionRequestData } from '../../host/tools/types';
 import { setInteractiveApprovalProvider } from '../permissionPolicy';
 import { approvalOptions, SessionAllowList, type ApprovalChoice } from './approval';
 import { ApprovalCard } from './ApprovalCard';
+import { getAllBackgroundTasks, onBackgroundTaskLifecycleEvent } from '../../host/tools/shell/backgroundTasks';
+import {
+  buildTerminalNotification,
+  FOCUS_REPORTING_DISABLE,
+  FOCUS_REPORTING_ENABLE,
+  parseFocusEvent,
+  shouldTerminalNotify,
+} from './terminalNotification';
 import {
   appendShellCommand,
   appendSystemMessage,
@@ -87,6 +98,8 @@ const PULSE_COLORS = ['#1d4d1d', '#2e7d2e', '#57c757', '#2e7d2e'];
 const TOAST_MS = 3000;
 /** Esc 取消后的手势冷静期（规格：取消后 1s 内不触发其他 Esc 手势） */
 const CANCEL_COOLDOWN_MS = 1000;
+/** Ctrl+Q 双击确认退出的时间窗（规格：1000ms 防误触） */
+const QUIT_CONFIRM_MS = 1000;
 
 /** 活动标签按类型着色（规格：accent 槽位） */
 function activityColor(activity: string | null): string {
@@ -99,7 +112,7 @@ function activityColor(activity: string | null): string {
 
 // ---------------------------------------------------------------------------
 // StatusBar：左 model(provider) / 中 cwd·branch / 右 条件分段
-// （token、ctx% 迷你条、成本、turns、工具数、上轮耗时、phase）
+// （后台任务、token、ctx% 迷你条、成本、turns、工具数、上轮耗时、phase）
 // ---------------------------------------------------------------------------
 
 /** ctx% 迷你条（5 格） */
@@ -108,17 +121,20 @@ function ctxBar(percent: number): string {
   return '▓'.repeat(filled) + '░'.repeat(5 - filled);
 }
 
-function StatusBar({ state, cwd, gitBranch, fallbackModel, columns }: {
+function StatusBar({ state, cwd, gitBranch, fallbackModel, columns, bgTasks }: {
   state: ChatState;
   cwd: string;
   gitBranch: string;
   fallbackModel: string;
   columns: number;
+  /** 运行中的后台任务数（0 = 不显示该分段） */
+  bgTasks: number;
 }) {
   const model = state.model ?? fallbackModel;
   const cost = estimateCostUsd(model, state.inputTokens, state.outputTokens);
   const leftText = `⏺ ${model}${state.provider ? ` (${state.provider})` : ''}`;
   const rightText = [
+    bgTasks > 0 ? `◉${bgTasks} bg` : '',
     state.inputTokens + state.outputTokens > 0 ? `⇡${state.inputTokens} ⇣${state.outputTokens}` : '',
     state.contextPercent != null ? `ctx ${ctxBar(state.contextPercent)} ${state.contextPercent.toFixed(0)}%` : '',
     cost > 0 ? `$${cost.toFixed(4)}` : '',
@@ -151,21 +167,24 @@ function StatusBar({ state, cwd, gitBranch, fallbackModel, columns }: {
 // 底部 shortcuts bar：随上下文切换提示内容
 // ---------------------------------------------------------------------------
 
-function ShortcutsBar({ running, menuOpen, hasDraft, approvalOpen }: {
+function ShortcutsBar({ running, menuOpen, hasDraft, approvalOpen, searchOpen }: {
   running: boolean;
   menuOpen: boolean;
   hasDraft: boolean;
   approvalOpen: boolean;
+  searchOpen: boolean;
 }) {
   const text = approvalOpen
-    ? '1-3 直选 · ↑↓ 选择 · Enter 确认 · Esc 拒绝'
-    : menuOpen
-      ? '↑↓ 选择 · Tab 采纳 · Enter 采纳/执行 · Esc 关闭'
-      : running
-        ? 'Esc 取消 · 带文本 Enter 排队 · Shift+Enter 换行'
-        : hasDraft
-          ? 'Enter 提交 · Ctrl+C 清草稿 · Shift+Enter 换行'
-          : '/ 命令 · ↑ 历史 · Shift+Enter 换行 · Ctrl+C 退出';
+    ? '数字直选 · ↑↓ 选择 · Enter 确认 · Tab diff · Esc 拒绝'
+    : searchOpen
+      ? '输入过滤 · Ctrl+R 下一条 · Enter 采纳 · Esc 取消'
+      : menuOpen
+        ? '↑↓ 选择 · Tab 采纳 · Enter 采纳/执行 · Esc 关闭'
+        : running
+          ? 'Esc 取消 · 带文本 Enter 排队 · Shift+Enter 换行'
+          : hasDraft
+            ? 'Enter 提交 · Ctrl+C 清草稿 · Shift+Enter 换行'
+            : '/ 命令 · ↑ 历史 · Ctrl+R 搜索 · Ctrl+Q 双击退出';
   return (
     <Box paddingX={1}>
       <Text dimColor>{text}</Text>
@@ -205,6 +224,25 @@ function TurnStatus({ state, frame, now, queuedCount }: {
         {state.outputTokens > 0 ? <Text dimColor>  ⇣{state.outputTokens}</Text> : null}
         {queuedCount > 0 ? <Text dimColor>  · {queuedCount} queued</Text> : null}
       </Text>
+    </Box>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ctrl+R 历史搜索行（占据 prompt 区域）
+// ---------------------------------------------------------------------------
+
+function HistorySearchBar({ query, match }: { query: string; match: string | null }) {
+  const preview = match
+    ? (match.split('\n').length > 1 ? `${match.split('\n')[0]} ⏎(${match.split('\n').length} 行)` : match)
+    : '（无匹配）';
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Text>
+        <Text color="cyan">(reverse-search) </Text>
+        <Text>{`'${query}'`}</Text>
+      </Text>
+      <Text dimColor wrap="truncate-end">  {preview}</Text>
     </Box>
   );
 }
@@ -257,14 +295,39 @@ export function App({ agent, options, onExit }: {
   const approvalRef = useRef(approval);
   approvalRef.current = approval;
   const [approvalIndex, setApprovalIndex] = useState(0);
+  /** No 附反馈输入模式（非 null = 正在输反馈） */
+  const [approvalFeedback, setApprovalFeedback] = useState<string | null>(null);
+  /** inline diff 展开（edit 类审批，Tab 切换） */
+  const [approvalDiffExpanded, setApprovalDiffExpanded] = useState(false);
   const setApproval = useCallback((next: typeof approval) => {
     setApprovalIndex(0);
+    setApprovalFeedback(null);
+    setApprovalDiffExpanded(false);
     setApprovalState(next);
   }, []);
-  /** 会话级 always 放行集合 */
+  /** 会话级 always/never 授权状态 */
   const allowListRef = useRef(new SessionAllowList());
   /** 工具归组展开开关（Ctrl+X 切换；只影响动态区，Static 已封口消息不回溯） */
   const [expandTools, setExpandTools] = useState(false);
+  /** 终端焦点（焦点上报 1004；默认聚焦 → 不打扰） */
+  const focusedRef = useRef(true);
+  /** 运行中后台任务数（StatusBar 分段） */
+  const [bgTaskCount, setBgTaskCount] = useState(0);
+  /** Ctrl+Q 首次按下时间（QUIT_CONFIRM_MS 内再按才退出） */
+  const quitArmedAtRef = useRef(0);
+  /** Ctrl+R 历史搜索：query + 当前匹配游标；null = 关闭 */
+  const [historySearch, setHistorySearch] = useState<{ query: string; index: number } | null>(null);
+  const historySearchRef = useRef(historySearch);
+  historySearchRef.current = historySearch;
+  /** 进搜索前的草稿（Esc 恢复） */
+  const historySearchDraftRef = useRef('');
+
+  /** 终端通知：失焦才发（语义对齐桌面 shouldSuppressOsNotification），OSC 9 回退 BEL */
+  const notify = useCallback((message: string) => {
+    if (!shouldTerminalNotify(focusedRef.current)) return;
+    const sequence = buildTerminalNotification(message, process.env);
+    if (sequence) stdout?.write(sequence);
+  }, [stdout]);
 
   // Agent 事件 → 消息模型
   useEffect(() => {
@@ -276,15 +339,60 @@ export function App({ agent, options, onExit }: {
   // P4：注册交互审批通道（Ink 存续期间）；headless 永远注册不到
   useEffect(() => {
     setInteractiveApprovalProvider((request) => {
+      // never allow 命中：直接拒（denialSource=user），不再弹卡
+      if (allowListRef.current.isDenied(request)) {
+        return Promise.resolve({
+          approved: false,
+          denialSource: 'user',
+          message: 'User chose "never allow" for this action earlier in the session.',
+        });
+      }
       if (allowListRef.current.has(request)) {
         return Promise.resolve({ approved: true });
       }
+      notify(`需要审批: ${request.tool}`);
       return new Promise<PermissionAskResult>((resolve) => {
         setApproval({ request, resolve });
       });
     });
     return () => setInteractiveApprovalProvider(null);
-  }, [setApproval]);
+  }, [setApproval, notify]);
+
+  // 终端焦点上报（DECSET 1004）：挂载开、卸载关；stdin 扫焦点事件序列
+  useEffect(() => {
+    stdout?.write(FOCUS_REPORTING_ENABLE);
+    const onData = (chunk: Buffer | string) => {
+      const event = parseFocusEvent(chunk.toString());
+      if (event === 'in') focusedRef.current = true;
+      if (event === 'out') focusedRef.current = false;
+    };
+    process.stdin.on('data', onData);
+    return () => {
+      process.stdin.off('data', onData);
+      stdout?.write(FOCUS_REPORTING_DISABLE);
+    };
+  }, [stdout]);
+
+  // 后台任务：StatusBar 计数 + 完成/失败时系统消息 + 失焦通知
+  useEffect(() => {
+    return onBackgroundTaskLifecycleEvent((event) => {
+      setBgTaskCount(getAllBackgroundTasks().filter((t) => t.status === 'running').length);
+      if (event.type === 'started') return;
+      const short = event.task.taskId.slice(0, 8);
+      const summary = `后台任务 ${short} ${event.type === 'completed' ? '完成' : '失败'}：${event.task.command.replace(/\s+/g, ' ').slice(0, 60)}`;
+      setState((prev) => appendSystemMessage(prev, summary, event.type === 'completed' ? 'info' : 'warn'));
+      notify(summary);
+    });
+  }, [notify]);
+
+  // turn 结束（running true→false）失焦通知
+  const prevRunningRef = useRef(false);
+  useEffect(() => {
+    if (prevRunningRef.current && !state.running) {
+      notify('Turn 完成');
+    }
+    prevRunningRef.current = state.running;
+  }, [state.running, notify]);
 
   // spinner + 呼吸 ◆ 共用 tick：运行时 braille ~7.5fps，空闲时 sin² 脉动
   useEffect(() => {
@@ -418,23 +526,74 @@ export function App({ agent, options, onExit }: {
   }, [setEditor]);
 
   useInput((input, key) => {
-    // P4 审批卡接管键盘：1-3 直选、↑↓+Enter、Esc/Ctrl+C = reject（agent 继续）
+    // 审批卡接管键盘：数字直选、↑↓+Enter、Tab 展开 diff、Esc/Ctrl+C = reject（agent 继续）
     const pendingApproval = approvalRef.current;
     if (pendingApproval) {
       const options = approvalOptions(pendingApproval.request);
       const answer = (choice: ApprovalChoice) => {
         const { request, resolve } = pendingApproval;
+        const optionLabel = (c: ApprovalChoice) => options.find((o) => o.choice === c)?.label ?? '';
+        if (choice === 'reject-feedback') {
+          // 进入附反馈输入模式，反馈随拒绝回传 agent（PermissionAskResult.message）
+          setApprovalFeedback('');
+          return;
+        }
         if (choice === 'always') {
           allowListRef.current.add(request);
-          showToast(`本会话不再询问：${options[2].label.replace('Always allow: ', '')}`);
+          showToast(`本会话不再询问：${optionLabel('always').replace('Always allow: ', '')}`);
+        }
+        if (choice === 'session-edits') {
+          allowListRef.current.addAllEdits();
+          showToast('本会话放行所有文件编辑');
         }
         setApproval(null);
+        if (choice === 'never') {
+          allowListRef.current.deny(request);
+          showToast(`本会话拒绝：${optionLabel('never').replace('Never allow: ', '')}`);
+          resolve({
+            approved: false,
+            denialSource: 'user',
+            message: 'User chose "never allow" for this action in the session.',
+          });
+          return;
+        }
         resolve(choice === 'reject'
           ? { approved: false, denialSource: 'user' }
           : { approved: true });
       };
+      // 附反馈输入模式：Enter 提交拒绝（反馈回传 agent），Esc 返回选项
+      if (approvalFeedback !== null) {
+        if (key.escape) {
+          setApprovalFeedback(null);
+          return;
+        }
+        if (key.return) {
+          const { resolve } = pendingApproval;
+          const feedback = approvalFeedback.trim();
+          setApproval(null);
+          resolve({
+            approved: false,
+            denialSource: 'user',
+            ...(feedback ? { message: `User rejected with feedback: ${feedback}` } : {}),
+          });
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setApprovalFeedback((prev) => (prev ?? '').slice(0, -1));
+          return;
+        }
+        if (input && !key.ctrl && !key.meta && input >= ' ') {
+          setApprovalFeedback((prev) => (prev ?? '') + input);
+          return;
+        }
+        return;
+      }
       if (key.escape || (key.ctrl && input === 'c')) {
         answer('reject');
+        return;
+      }
+      if (key.tab) {
+        setApprovalDiffExpanded((prev) => !prev);
         return;
       }
       if (key.upArrow) {
@@ -449,11 +608,46 @@ export function App({ agent, options, onExit }: {
         answer(options[Math.min(approvalIndex, options.length - 1)].choice);
         return;
       }
-      if (input === '1' || input === '2' || input === '3') {
-        answer(options[Number(input) - 1].choice);
+      if (/^[1-9]$/.test(input)) {
+        const option = options[Number(input) - 1];
+        if (option) answer(option.choice);
         return;
       }
       return; // 其余按键吞掉（blocking card）
+    }
+
+    // Ctrl+R 历史搜索接管键盘（Editor 区域换成搜索行）
+    const search = historySearchRef.current;
+    if (search) {
+      const matches = historyRef.current.search(search.query);
+      if (key.escape) {
+        setEditor(withContent(editorRef.current, historySearchDraftRef.current));
+        setHistorySearch(null);
+        return;
+      }
+      if (key.return) {
+        const match = matches[Math.min(search.index, matches.length - 1)];
+        if (match !== undefined) setEditor(withContent(editorRef.current, match));
+        setHistorySearch(null);
+        return;
+      }
+      if ((key.ctrl && input === 'r') || key.downArrow) {
+        if (matches.length > 0) setHistorySearch({ ...search, index: (search.index + 1) % matches.length });
+        return;
+      }
+      if (key.upArrow) {
+        if (matches.length > 0) setHistorySearch({ ...search, index: (search.index - 1 + matches.length) % matches.length });
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setHistorySearch({ query: search.query.slice(0, -1), index: 0 });
+        return;
+      }
+      if (input && !key.ctrl && !key.meta && input >= ' ') {
+        setHistorySearch({ query: search.query + input, index: 0 });
+        return;
+      }
+      return;
     }
 
     const menuItems = computeMenuItems();
@@ -508,6 +702,22 @@ export function App({ agent, options, onExit }: {
       } else {
         onExit();
       }
+      return;
+    }
+    // Ctrl+Q 双击确认退出（QUIT_CONFIRM_MS 窗口，防误触）
+    if (key.ctrl && input === 'q') {
+      if (Date.now() - quitArmedAtRef.current < QUIT_CONFIRM_MS) {
+        onExit();
+        return;
+      }
+      quitArmedAtRef.current = Date.now();
+      showToast('再按一次 Ctrl+Q 退出');
+      return;
+    }
+    // Ctrl+R：进入 prompt 历史搜索（草稿进暂存，Esc 恢复）
+    if (key.ctrl && input === 'r') {
+      historySearchDraftRef.current = content(editorRef.current);
+      setHistorySearch({ query: '', index: 0 });
       return;
     }
 
@@ -651,6 +861,12 @@ export function App({ agent, options, onExit }: {
   const pulseAlpha = Math.sin((now / PULSE_PERIOD_MS) * Math.PI) ** 2;
   const pulseColor = PULSE_COLORS[Math.min(PULSE_COLORS.length - 1, Math.floor(pulseAlpha * PULSE_COLORS.length))];
 
+  // Ctrl+R 搜索当前匹配（渲染用）
+  const searchMatches = historySearch ? historyRef.current.search(historySearch.query) : [];
+  const searchMatch = historySearch
+    ? (searchMatches[Math.min(historySearch.index, searchMatches.length - 1)] ?? null)
+    : null;
+
   // ── P3 钉顶行布局：动态块 = 终端行高，StatusBar 钉在物理 row 0 ──
   // 动态块高度恒等于 rows，新 <Static> 内容只会把滚动区往上顶，
   // 块底始终贴终端底 → 块顶 = 物理顶行。live 消息区按行预算分配
@@ -659,7 +875,19 @@ export function App({ agent, options, onExit }: {
   // 立即滚出全屏块，若只渲染未封口的，turn 一结束近期消息就全消失。
   const rows = stdout?.rows ?? 24;
   const editorMaxRows = Math.min(10, Math.max(3, rows - 6));
-  const promptRows = approval ? 6 : editorVisualRows(editor, Math.max(columns - 4, 8), editorMaxRows);
+  const approvalRows = approval
+    ? Math.min(
+      3 /* 标题+目标+reason */
+        + (approvalFeedback !== null ? 1 : approvalOptions(approval.request).length)
+        + (approvalDiffExpanded ? 20 : 2), /* 摘要行 + diff 预算（超出由 overflowY 裁） */
+      Math.max(6, rows - 6),
+    )
+    : 0;
+  const promptRows = approval
+    ? approvalRows
+    : historySearch
+      ? 2
+      : editorVisualRows(editor, Math.max(columns - 4, 8), editorMaxRows);
   const reservedRows = 1 /* StatusBar */ + 1 /* TurnStatus/呼吸◆ */ + Math.min(menuItems.length, 8)
     + promptRows + (toast ? 1 : 0) + 1 /* ShortcutsBar */;
   const liveAllocation = allocateLiveBudget(state.messages, messageWidth, Math.max(0, rows - reservedRows));
@@ -675,7 +903,7 @@ export function App({ agent, options, onExit }: {
         )}
       </Static>
       <Box flexDirection="column" height={rows} flexShrink={0}>
-        <StatusBar state={state} cwd={options.cwd} gitBranch={options.gitBranch} fallbackModel={options.model} columns={columns} />
+        <StatusBar state={state} cwd={options.cwd} gitBranch={options.gitBranch} fallbackModel={options.model} columns={columns} bgTasks={bgTaskCount} />
         <Box flexDirection="column" flexGrow={1} justifyContent="flex-end" overflowY="hidden">
           {visibleLive.map((message) => (
             <Box key={message.id} paddingX={2}>
@@ -692,14 +920,24 @@ export function App({ agent, options, onExit }: {
           )}
         {menuItems.length > 0 ? <SlashMenu items={menuItems} selected={menuIndex} /> : null}
         {approval
-          ? <ApprovalCard request={approval.request} selected={approvalIndex} />
-          : <Editor state={editor} width={columns} maxRows={editorMaxRows} />}
+          ? (
+            <ApprovalCard
+              request={approval.request}
+              selected={approvalIndex}
+              feedback={approvalFeedback}
+              diffExpanded={approvalDiffExpanded}
+            />
+          )
+          : historySearch
+            ? <HistorySearchBar query={historySearch.query} match={searchMatch} />
+            : <Editor state={editor} width={columns} maxRows={editorMaxRows} />}
         {toast ? <Toast text={toast} /> : null}
         <ShortcutsBar
           running={state.running}
           menuOpen={menuItems.length > 0}
           hasDraft={!isEmpty(editor)}
           approvalOpen={approval !== null}
+          searchOpen={historySearch !== null}
         />
       </Box>
     </Box>

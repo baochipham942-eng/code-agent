@@ -548,6 +548,85 @@ export const permissionsCommand: CommandDefinition = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// /ps /stop — 后台任务 UX（机制在 host/tools/shell/backgroundTasks，
+// CLI 只做呈现与控制）
+// ---------------------------------------------------------------------------
+
+function fmtTaskDuration(ms: number): string {
+  if (ms < 60_000) return `${Math.floor(ms / 1000)}s`;
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.floor((ms % 60_000) / 1000);
+  return `${minutes}m${seconds}s`;
+}
+
+function truncateCommand(command: string, max = 50): string {
+  const oneLine = command.replace(/\s+/g, ' ').trim();
+  return oneLine.length > max ? `${oneLine.slice(0, max - 3)}...` : oneLine;
+}
+
+const psCommand: CommandDefinition = {
+  id: 'ps',
+  name: '后台任务列表',
+  description: '列出后台任务（bash run_in_background / Process 工具启动）',
+  category: 'status',
+  surfaces: ['cli'],
+  handler: async (ctx) => {
+    const { getAllBackgroundTasks } = await import('../../../host/tools/shell/backgroundTasks');
+    const tasks = getAllBackgroundTasks().sort((a, b) => b.startTime - a.startTime);
+    if (tasks.length === 0) {
+      ctx.output.info('没有后台任务');
+      return { success: true };
+    }
+    const lines = ['后台任务:'];
+    for (const task of tasks) {
+      const icon = task.status === 'running' ? '▶' : task.status === 'completed' ? '✓' : '✗';
+      const exit = task.exitCode !== undefined ? ` exit=${task.exitCode}` : '';
+      lines.push(
+        `  ${icon} ${task.taskId.slice(0, 8)}  ${task.status.padEnd(9)} ${fmtTaskDuration(task.duration).padStart(6)}${exit}  ${truncateCommand(task.command)}`,
+      );
+    }
+    lines.push('（/stop <id 或前缀> 终止运行中的任务）');
+    ctx.output.info(lines.join('\n'));
+    return { success: true };
+  },
+};
+
+const stopCommand: CommandDefinition = {
+  id: 'stop',
+  name: '终止后台任务',
+  description: '终止指定后台任务（/stop <id 或前缀>）',
+  category: 'tools',
+  surfaces: ['cli'],
+  args: [{ name: 'taskId', description: '任务 id 或唯一前缀', required: true }],
+  handler: async (ctx, args) => {
+    const query = (args[0] ?? '').trim();
+    if (!query) {
+      return { success: false, message: '用法: /stop <taskId 或前缀>' };
+    }
+    const { getAllBackgroundTasks, killBackgroundTask } = await import('../../../host/tools/shell/backgroundTasks');
+    const matches = getAllBackgroundTasks().filter((t) => t.taskId.startsWith(query));
+    if (matches.length === 0) {
+      return { success: false, message: `没有匹配的后台任务: ${query}` };
+    }
+    if (matches.length > 1) {
+      return { success: false, message: `前缀匹配到 ${matches.length} 个任务，请输更长前缀` };
+    }
+    const task = matches[0];
+    const short = task.taskId.slice(0, 8);
+    if (task.status !== 'running') {
+      ctx.output.info(`任务 ${short} 已结束（${task.status}），无需终止`);
+      return { success: true };
+    }
+    const result = await killBackgroundTask(task.taskId);
+    if (!result.success) {
+      return { success: false, message: result.error ?? `终止任务 ${short} 失败` };
+    }
+    ctx.output.success(`已终止后台任务 ${short}（${truncateCommand(task.command)}）`);
+    return { success: true };
+  },
+};
+
 export const newCommands: CommandDefinition[] = [
   agentsCommand,
   statusCommand,
@@ -556,4 +635,6 @@ export const newCommands: CommandDefinition[] = [
   costCommand,
   contextCommand,
   permissionsCommand,
+  psCommand,
+  stopCommand,
 ];

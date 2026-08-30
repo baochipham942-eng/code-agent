@@ -482,6 +482,8 @@ async function handleCommand(
   /tools              list loaded tools
   /skills             list active skills
   /compact            trigger context compaction
+  /ps                 list background tasks
+  /stop <id>          kill a background task
   /clear, /c          new session
   /history            conversation history
   /sessions           list sessions (with branch/PR)

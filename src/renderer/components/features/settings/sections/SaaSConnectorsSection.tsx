@@ -23,6 +23,7 @@ import { Button, Input, Modal } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { ConnectorLogo } from '../../connectors/ConnectorLogo';
 import { CustomOAuthConnectorForm, type CustomOAuthDescriptorDraft } from './CustomOAuthConnectorForm';
+import { SaaSConnectorCardFooter } from './SaaSConnectorCardFooter';
 import { SaaSConnectorFeedback } from './SaaSConnectorFeedback';
 
 type LoopbackRedirectUriSupport = 'confirmed' | 'pending-verification' | 'unsupported';
@@ -408,6 +409,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
 
     setBusyKey(`${providerId}:connect`);
     setError(null);
+    setActiveProviderId(null);
     // The shared consent modal is now the pre-browser receipt. Do not claim the browser opened
     // while that decision is still pending; tmeet publishes a real authorizationOpened status.
     setReceipt(null);
@@ -450,6 +452,8 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
             ? text.toast.tmeetAuthorizationCancelled
             : text.toast.authorizationCancelled,
         });
+      } else if (isRecord(caught) && caught.code === 'TIMEOUT') {
+        setError(text.errors.authorizationTimedOut);
       } else if (isRecord(caught) && caught.code === 'ADMIN_REQUIRED') {
         await refresh();
       } else {
@@ -833,14 +837,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
               </div>
             )}
 
-            {!isCli && (
-              <div className={`mt-3 text-[11px] ${rowBusy ? 'text-badge-warning' : 'text-zinc-500'}`}>
-                {rowBusy ? text.badges.connecting : presentation.badge}
-                {status.requiresClientSecret && status.clientSecretConfigured
-                  ? `${text.metaSeparator}${text.clientSecretSaved}`
-                  : ''}
-              </div>
-            )}
+            {!isCli && <SaaSConnectorCardFooter status={status} badge={presentation.badge} text={text} busy={rowBusy} connecting={showConnecting} onCancel={cancelConnect} />}
           </div>
         );
       })}

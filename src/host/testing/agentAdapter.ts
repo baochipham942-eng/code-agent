@@ -439,7 +439,11 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
     try {
       const db = this.database ?? (await import('../services/core/databaseService')).getDatabase();
-      if (!db.isReady) return;
+      if (!db.isReady) {
+        logger.warn('Evaluation session database is not ready; attempting session creation', {
+          sessionId: this.currentSessionId,
+        });
+      }
 
       if (!db.getSession(this.currentSessionId)) {
         db.createSessionWithId(
@@ -568,6 +572,8 @@ export class StandaloneAgentAdapter implements AgentInterface {
       if (goalRunForThisRun) {
         this.goalRun = goalRunForThisRun;
       }
+      const runtimeDatabase = this.database;
+      const runtimeSessionId = this.currentSessionId;
 
       await runWithMemoryModelOverride(
         this.memoryRoutingModel
@@ -613,6 +619,12 @@ export class StandaloneAgentAdapter implements AgentInterface {
           includeRecentConversations: this.includeRecentConversations,
           maxSystemPromptTokens: this.maxSystemPromptTokens,
           skillDiscoveryService,
+          persistMessage: runtimeDatabase
+            ? async (message) => {
+                runtimeDatabase.addMessage(runtimeSessionId, message);
+              }
+            : undefined,
+          turnSnapshotSink: runtimeDatabase,
           onEvent: (event) => {
             if (this.currentSessionId) {
               telemetryCollector.handleEvent(this.currentSessionId, event);

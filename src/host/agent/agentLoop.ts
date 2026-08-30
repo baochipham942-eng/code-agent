@@ -139,6 +139,7 @@ export class AgentLoop {
       maxSystemPromptTokens: config.maxSystemPromptTokens,
       skillDiscoveryService: config.skillDiscoveryService,
       persistMessage: config.persistMessage,
+      turnSnapshotSink: config.turnSnapshotSink,
       // 工具步骤录制接在这里，而不是接在 AgentOrchestrator 上：真机 renderer 的
       // 每一次发送都走 webServer 的 /api/run → cli/bootstrap.createAgentLoop →
       // agentLoop.run，**根本不经过 AgentOrchestrator**（2026-08-14 N-CAP1 真机实测）。

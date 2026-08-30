@@ -9,7 +9,7 @@ import type { Message } from '../../../shared/contract';
 
 const logger = createLogger('TurnSnapshotWriter');
 
-interface SnapshotSink {
+export interface TurnSnapshotSink {
   insertTurnSnapshot: (input: {
     sessionId: string;
     turnId?: string | null;
@@ -20,13 +20,14 @@ interface SnapshotSink {
   }) => { id: string; createdAt: number; byteSize: number };
 }
 
-function getSnapshotSink(): SnapshotSink | null {
+function getSnapshotSink(injected?: TurnSnapshotSink): TurnSnapshotSink | null {
+  if (injected) return injected;
   if (process.env.CODE_AGENT_CLI_MODE === 'true') {
     try {
       // 动态 require 避免 main → cli 的反向静态依赖
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const cliDbMod = require('../../../cli/database') as {
-        getCLIDatabase?: () => { isInitialized: boolean } & SnapshotSink;
+        getCLIDatabase?: () => { isInitialized: boolean } & TurnSnapshotSink;
       };
       const cliDb = cliDbMod.getCLIDatabase?.();
       if (cliDb?.isInitialized) return cliDb;
@@ -36,7 +37,7 @@ function getSnapshotSink(): SnapshotSink | null {
     return null;
   }
   const db = getDatabase();
-  return db?.isReady ? (db as unknown as SnapshotSink) : null;
+  return db?.isReady ? (db as unknown as TurnSnapshotSink) : null;
 }
 
 export interface TurnSnapshotInput {
@@ -48,6 +49,8 @@ export interface TurnSnapshotInput {
   inputTokens?: number;
   outputTokens?: number;
   inferenceDurationMs?: number;
+  /** Per-run sink for isolated runtimes; product callers keep the global fallback. */
+  sink?: TurnSnapshotSink;
 }
 
 // 6 层上下文的已知 XML-like 标签（对齐 Light Memory 架构）
@@ -106,7 +109,7 @@ function parseSystemPromptLayers(prompt: string): ParsedLayer[] {
  */
 export function writeTurnSnapshot(input: TurnSnapshotInput): void {
   try {
-    const sink = getSnapshotSink();
+    const sink = getSnapshotSink(input.sink);
     if (!sink) return;
 
     const systemPrompt = input.systemPrompt ? String(input.systemPrompt) : '';

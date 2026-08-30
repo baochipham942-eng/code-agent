@@ -131,8 +131,16 @@ describe('EvalRunBridge', () => {
             },
             {
               schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
-              type: 'case_end',
+              type: 'memory_injected',
               ts: started + 1,
+              runId,
+              testId: 'case-1',
+              id: 'memory-1',
+            },
+            {
+              schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
+              type: 'case_end',
+              ts: started + 2,
               runId,
               testId: 'case-1',
               status: 'passed',
@@ -150,7 +158,7 @@ describe('EvalRunBridge', () => {
             {
               schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
               type: 'run_end',
-              ts: started + 2,
+              ts: started + 3,
               runId,
               summary: {
                 runId, startTime: started, endTime: started + 2, duration: 2,
@@ -172,9 +180,10 @@ describe('EvalRunBridge', () => {
     const { runId } = await bridge.startRun({ scope: 'smoke', maxCases: 1, ids: ['case-1'], repeat: 3 });
     await waitFor(() => !bridge.subscribe(runId).running);
 
-    expect(published.map((event) => event.type)).toEqual(['run_start', 'case_end', 'run_end']);
+    expect(published.map((event) => event.type)).toEqual(['run_start', 'memory_injected', 'case_end', 'run_end']);
     expect(db.insertExperiment).toHaveBeenCalledTimes(1);
     expect(db.insertExperimentCases).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(db.insertExperimentCases.mock.calls[0][1][0].data_json).memoryInjections).toBe(1);
     expect(db.updateExperimentSummary).toHaveBeenCalledTimes(1);
     expect(JSON.parse(db.updateExperimentSummary.mock.calls[0][1])).toMatchObject({
       completed: true,

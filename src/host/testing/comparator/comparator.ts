@@ -11,6 +11,7 @@ import type {
 } from '../types';
 import { ABGrader } from './abGrader';
 import { signTestPValue } from './signTest';
+import { decideCaseWinner } from './assertionWinner';
 
 /**
  * WP1-3b：判定一侧是否「没跑成」——infra_excluded（429/超时/5xx/网络）
@@ -27,6 +28,9 @@ function invalidRunReason(result: TestResult): string | null {
   }
   if (result.status === 'cost_exceeded') {
     return `cost_exceeded（${result.failureReason ?? 'case cost limit exceeded'}）`;
+  }
+  if (result.status === 'not_run') {
+    return `not_run（${result.failureReason ?? 'case did not run'}）`;
   }
   if (
     result.responses.length === 0 &&
@@ -123,6 +127,16 @@ export class ABComparator {
     const resultB = await runSingleTest(testCase, configB);
     const durationB = Date.now() - startB;
 
+    const baselineResult = assignment.A === 'baseline' ? resultA : resultB;
+    const candidateResult = assignment.A === 'candidate' ? resultA : resultB;
+    const assertionDecision = decideCaseWinner(baselineResult, candidateResult);
+    const passRateA = assignment.A === 'baseline'
+      ? assertionDecision.passRateA
+      : assertionDecision.passRateB;
+    const passRateB = assignment.B === 'baseline'
+      ? assertionDecision.passRateA
+      : assertionDecision.passRateB;
+
     // Step 2.5（WP1-3b）：任一侧没跑成 → 本 pair 不进胜负统计，只标注
     const invalidA = invalidRunReason(resultA);
     const invalidB = invalidRunReason(resultB);
@@ -134,10 +148,16 @@ export class ABComparator {
       return {
         testId: testCase.id,
         description: testCase.description,
+        layer: testCase.layer,
         assignment,
         scoreA: ZERO_RUBRIC,
         scoreB: ZERO_RUBRIC,
-        winner: 'tie',
+        referenceWinner: 'tie',
+        referenceKind: llmCall ? 'llm_judge' : 'heuristic',
+        assertionWinner: 'tie',
+        passRateA,
+        passRateB,
+        assertionCount: assertionDecision.assertionCount,
         realWinner: 'tie',
         reasoning: `pair 排除（未计入胜负）：${reasons}`,
         statusA: resultA.status,
@@ -164,24 +184,20 @@ export class ABComparator {
       llmCall,
     );
 
-    // Step 4: Unblind - determine real winner
-    let realWinner: 'baseline' | 'candidate' | 'tie';
-    if (gradeResult.winner === 'tie') {
-      realWinner = 'tie';
-    } else if (gradeResult.winner === 'A') {
-      realWinner = assignment.A;
-    } else {
-      realWinner = assignment.B;
-    }
-
     return {
       testId: testCase.id,
       description: testCase.description,
+      layer: testCase.layer,
       assignment,
       scoreA: gradeResult.scoreA,
       scoreB: gradeResult.scoreB,
-      winner: gradeResult.winner,
-      realWinner,
+      referenceWinner: gradeResult.winner,
+      referenceKind: llmCall ? 'llm_judge' : 'heuristic',
+      assertionWinner: assertionDecision.winner,
+      passRateA,
+      passRateB,
+      assertionCount: assertionDecision.assertionCount,
+      realWinner: assertionDecision.winner,
       reasoning: gradeResult.reasoning,
       statusA: resultA.status,
       statusB: resultB.status,
@@ -245,8 +261,7 @@ export class ABComparator {
       const winnerWins = winner === 'baseline' ? baselineWins : candidateWins;
       const loserWins = winner === 'baseline' ? candidateWins : baselineWins;
       verdict =
-        `${winner} wins ${winnerWins}-${loserWins} (${ties} ties). ` +
-        `Avg scores: baseline=${baselineAvgScore.toFixed(2)}, candidate=${candidateAvgScore.toFixed(2)}. ` +
+        `${winner} wins ${winnerWins}-${loserWins} (${ties} ties) by deterministic assertion pass rate. ` +
         `Confidence: ${(confidence * 100).toFixed(0)}%.` + excludedNote;
     }
 

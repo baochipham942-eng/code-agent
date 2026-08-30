@@ -56,7 +56,7 @@ import { isDynamicCustomProviderId } from '../src/shared/modelRuntime';
 import { isProviderVariantDisabled } from '../src/host/prompts/providerVariants';
 import { isRedlineCase } from '../src/host/testing/testCaseClassification';
 import { getTestDirs } from '../src/host/config/configPaths';
-import { assertMockPolicyCoverage } from '../src/host/testing/mockEvalPolicy';
+import { assertMockPolicyCoverage, getMockCasePolicy } from '../src/host/testing/mockEvalPolicy';
 import {
   requireScriptedRunPermissionHandler,
 } from '../src/host/permissions/scriptedRunPermissionPolicy';
@@ -65,6 +65,12 @@ import type { DatabaseService } from '../src/host/services/core/databaseService'
 import type { TelemetryCollector } from '../src/host/telemetry/telemetryCollector';
 import { EvalRunEventStream, type EvalRunStartConfig } from './lib/eval-run-event-stream';
 import { createIsolatedEvalState } from './lib/eval-isolated-state';
+import {
+  buildCompareArmShape,
+  createCompareAgent,
+  resolveEffectiveCompareArm,
+} from '../src/host/testing/comparator/compareAgentFactory';
+import { estimateDiscrimination } from '../src/host/testing/comparator/discrimination';
 import {
   buildRunStamp,
   getProviderKeyCandidates,
@@ -237,7 +243,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --ids <a,b>        Filter test cases by IDs
   npx tsx scripts/eval-ci.ts --split <bucket>   Filter to 'held-in' (daily) / 'held-out' (milestone) / 'control' (judge calibration) / 'safety' (OS jail only)
   npx tsx scripts/eval-ci.ts --force             Bypass --max-cases limit
-  npx tsx scripts/eval-ci.ts --compare <yaml>   A/B paired blind test: baseline vs candidate config (requires --real)
+  npx tsx scripts/eval-ci.ts --compare <yaml>   A/B paired blind test: baseline vs candidate config
   npx tsx scripts/eval-ci.ts --judge <mode>     Grading for --compare: 'rules' (default, free) or 'llm'
   npx tsx scripts/eval-ci.ts --predicted-fixes <a,b>  Register case ids this change should fix (delta report reconciles)
   npx tsx scripts/eval-ci.ts --risk-tasks <a,b>       Register case ids this change might break
@@ -705,7 +711,7 @@ async function exitIfAborted(
 
 /**
  * WP1-3：--compare 成对盲测。baseline = 当前默认配置，candidate 来自 YAML
- * （可覆盖 model/provider/systemPrompt）。每 case 两配置各真跑一次，
+ * （可覆盖 model/provider/systemPrompt）。每 case 两配置各跑一次，
  * ABComparator 盲分配 A/B + 评分 + unblind。paired 对比的统计功效远高于
  * 两轮整体总分对比。
  */
@@ -713,6 +719,8 @@ async function runCompareCommand(
   workingDir: string,
   candidatePath: string,
   opts: {
+    real: boolean;
+    mockEvalPolicy?: boolean;
     model?: string;
     provider?: string;
     tags?: string[];
@@ -745,19 +753,31 @@ async function runCompareCommand(
   // Load & filter cases
   const defaultConfig = createDefaultConfig(workingDir);
   const suites = await loadAllTestSuites(opts.caseDir ?? resolveCoreTestCaseDir(workingDir));
-  const testCases = filterTestCases(suites, { filterTags: opts.tags, filterIds: opts.ids });
+  const selectedTestCases = filterTestCases(suites, { filterTags: opts.tags, filterIds: opts.ids });
+  const testCases = !opts.real && opts.mockEvalPolicy
+    ? selectedTestCases.filter((testCase) => getMockCasePolicy(testCase.id)?.kind === 'fixture')
+    : selectedTestCases;
   const totalCases = testCases.length;
+  const discrimination = estimateDiscrimination(
+    testCases.map((testCase) => testCase.id),
+    await new BaselineManager(workingDir).load(),
+  );
+  if (discrimination.shouldWarn) {
+    console.log(chalk.yellow(
+      `  本轮题集区分度低，可能分不出胜负（历史 0.2–0.8：${discrimination.discriminatingCases}/${discrimination.totalCases}）`,
+    ));
+    console.log('');
+  }
 
   // Cost guard：每 case 跑两次（baseline + candidate）
   const casesToRun = Math.min(totalCases, opts.maxCases);
   const candidateModel = candidate.model || resolvedModel;
-  const estimatedCost = (
-    estimateRunCost(resolvedModel, casesToRun)
-    + estimateRunCost(candidateModel, casesToRun)
-  ).toFixed(2);
+  const estimatedCost = opts.real
+    ? estimateRunCost(resolvedModel, casesToRun) + estimateRunCost(candidateModel, casesToRun)
+    : 0;
   console.log(chalk.yellow(
     `  ⚠️  Compare mode: up to ${casesToRun} cases × 2 configs with ${resolvedModel} via ${resolvedProvider}. ` +
-    `Estimated cost: ~$${estimatedCost} (price table v${PRICING_TABLE_VERSION}, avg 5K tokens/case). ` +
+    `Estimated cost: ~$${estimatedCost.toFixed(2)} (price table v${PRICING_TABLE_VERSION}, avg 5K tokens/case). ` +
     `Use --max-cases to limit.`
   ));
   console.log('');
@@ -771,23 +791,18 @@ async function runCompareCommand(
 
   const testCaseDir = opts.caseDir ?? resolveCoreTestCaseDir(workingDir);
   const buildArmStamp = (config: CompareConfiguration) => {
-    const harness = config.harness ?? baseline.harness;
+    const arm = resolveEffectiveCompareArm(config, baseline);
     return buildRunStamp({
       workingDir,
       testCaseDir,
-      mode: 'real',
-      provider: config.provider || resolvedProvider,
-      model: config.model || resolvedModel,
+      mode: opts.real ? 'real' : 'mock',
+      provider: arm.provider || resolvedProvider,
+      model: arm.model || resolvedModel,
       split: opts.caseDir ? 'all' : opts.split ?? 'held-in',
       tags: opts.tags,
       ids: opts.ids,
       judge: opts.judge,
-      shape: {
-        skills: [...EVAL_AGENT_DEFAULTS.skills],
-        memory: EVAL_AGENT_DEFAULTS.persistLongTermMemory,
-        swarm: EVAL_GOAL_ALLOW_SWARM,
-        harness: harness ? { name: config.name, ...harness } : null,
-      },
+      shape: buildCompareArmShape(config, baseline, EVAL_GOAL_ALLOW_SWARM),
       estimatedCases: casesToRun,
     });
   };
@@ -795,10 +810,10 @@ async function runCompareCommand(
   const candidateStamp = buildArmStamp(candidate);
 
   const repoStatusBefore = getRepoStatusSnapshot(workingDir);
-  const sandbox = createEvalSandbox(workingDir, true);
+  const sandbox = createEvalSandbox(workingDir, opts.real);
   const agentWorkingDir = sandbox?.dir ?? workingDir;
   try {
-    await prepareRealEvalRuntime();
+    if (opts.real) await prepareRealEvalRuntime();
 
     const runnerConfig = createDefaultConfig(workingDir, {
       verbose: false,
@@ -810,28 +825,31 @@ async function runCompareCommand(
       armWorkingDir = agentWorkingDir,
       isolatedState?: Awaited<ReturnType<typeof createIsolatedEvalState>>,
     ) => {
-      const provider = config.provider || resolvedProvider;
-      const model = config.model || resolvedModel;
-      const harness = config.harness ?? baseline.harness;
+      const arm = resolveEffectiveCompareArm(config, baseline);
+      if (!opts.real) {
+        return createAgent({
+          real: false,
+          mockEvalPolicy: opts.mockEvalPolicy,
+          model: arm.model ?? undefined,
+          provider: arm.provider ?? undefined,
+          workingDir: armWorkingDir,
+          repoDir: workingDir,
+        });
+      }
+      const provider = arm.provider || resolvedProvider;
       const loadedApiKey = resolveEvalApiKey(provider, workingDir);
       if (!loadedApiKey) {
         const candidates = getProviderKeyCandidates(provider);
         throw new Error(`No API key found for ${provider}. Set AUTO_TEST_API_KEY or ${candidates.join(' / ')}.`);
       }
-      return new StandaloneAgentAdapter({
+      return createCompareAgent(config, baseline, {
         workingDirectory: armWorkingDir,
-        persistLongTermMemory: EVAL_AGENT_DEFAULTS.persistLongTermMemory,
-        includeRecentConversations: EVAL_AGENT_DEFAULTS.includeRecentConversations,
-        maxSystemPromptTokens: 12_000,
-        skills: EVAL_AGENT_DEFAULTS.skills,
-        includeClaudeLegacySkills: false,
+        apiKey: loadedApiKey.value,
+        ...(process.env.AUTO_TEST_BASE_URL ? { baseUrl: process.env.AUTO_TEST_BASE_URL } : {}),
         requestPermission: requireScriptedRunPermissionHandler(),
         sessionType: 'eval',
         database: isolatedState?.database,
         telemetryCollector: isolatedState?.telemetryCollector,
-        modelConfig: { provider, model, apiKey: loadedApiKey.value },
-        ...(config.systemPrompt ? { systemPromptOverride: config.systemPrompt } : {}),
-        ...(harness ? { harness: { name: config.name, ...harness } } : {}),
       });
     };
 
@@ -861,6 +879,17 @@ async function runCompareCommand(
       makeAgent,
       makeIsolatedExecution: (config) => async () => {
         const armSandbox = cloneEvalSandbox(sandbox.dir);
+        if (!opts.real) {
+          const armAgent = makeAgent(config, armSandbox.dir);
+          return {
+            agent: armAgent,
+            workingDirectory: armSandbox.dir,
+            cleanup: async () => {
+              await armAgent.finalizeSession?.();
+              armSandbox.cleanup();
+            },
+          };
+        }
         const dataParent = process.env.CODE_AGENT_DATA_DIR || os.tmpdir();
         fs.mkdirSync(dataParent, { recursive: true });
         const armDataDir = fs.mkdtempSync(path.join(dataParent, 'eval-arm-'));
@@ -1066,13 +1095,10 @@ async function mainImpl(
 
   // --compare: A/B paired blind test (WP1-3)
   if (compare) {
-    // mock adapter 两侧输出恒等，对比无意义；成对盲测必须真模型
-    if (!effectiveReal) {
-      console.error(chalk.red('  Error: --compare 需要 --real（或 --model <name>）。mock 两侧输出恒等，对比无意义。'));
-      process.exit(1);
-    }
     try {
       await runCompareCommand(workingDir, compare, {
+        real: effectiveReal,
+        mockEvalPolicy,
         model,
         provider,
         tags,

@@ -27,6 +27,7 @@ import {
   quickTask,
   resetQuickModel,
 } from '../../../src/host/model/quickModel';
+import { runWithMemoryModelOverride } from '../../../src/host/model/memoryModelOverrideScope';
 
 /** 构造一个 configService mock，可指定哪些 provider 有 key */
 function mockConfig(opts: {
@@ -102,6 +103,29 @@ describe('quick model 策略解析', () => {
 });
 
 describe('memory model 专档与回落', () => {
+  it('run-scoped override 优先于全局 routing.memory 且不污染 scope 外调用', async () => {
+    mockConfig({
+      memory: { provider: 'zhipu', model: 'global-memory' },
+      keys: { zhipu: 'global-key' },
+      providers: { zhipu: { enabled: true, baseUrl: 'https://global.example/v1' } },
+    });
+    const fetchMock = mockFetchOnce('organized');
+
+    const scoped = await runWithMemoryModelOverride({
+      provider: 'openai',
+      model: 'arm-memory',
+      apiKey: 'arm-key',
+      baseUrl: 'https://arm.example/v1',
+    }, () => memoryTask('整理'));
+
+    expect(scoped).toMatchObject({ success: true, provider: 'openai', model: 'arm-memory' });
+    expect(fetchMock.mock.calls[0][0]).toBe('https://arm.example/v1/chat/completions');
+
+    const global = await memoryTask('整理');
+    expect(global).toMatchObject({ success: true, provider: 'zhipu', model: 'global-memory' });
+    expect(fetchMock.mock.calls[1][0]).toBe('https://global.example/v1/chat/completions');
+  });
+
   it('动态 custom provider 使用设置中的 baseUrl，不静默回落 fast', async () => {
     mockConfig({
       memory: { provider: 'custom-tokenrhythm', model: 'deepseek-v4-flash-0731' },

@@ -99,7 +99,14 @@ export interface RegressionReportLike {
 }
 
 export class ExperimentAdapter {
+  private memoryInjections = new Map<string, number>();
+
   constructor(private db: ExperimentDbWriter) {}
+
+  recordMemoryInjection(event: Extract<EvalRunEvent, { type: 'memory_injected' }>): void {
+    const key = `${event.runId}:${event.testId}`;
+    this.memoryInjections.set(key, (this.memoryInjections.get(key) ?? 0) + 1);
+  }
 
   beginEventRun(event: Extract<EvalRunEvent, { type: 'run_start' }>): void {
     this.db.insertExperiment({
@@ -135,6 +142,9 @@ export class ExperimentAdapter {
   }
 
   persistEventCase(event: Extract<EvalRunEvent, { type: 'case_end' }>): void {
+    const signalKey = `${event.runId}:${event.testId}`;
+    const memoryInjections = this.memoryInjections.get(signalKey) ?? 0;
+    this.memoryInjections.delete(signalKey);
     this.db.insertExperimentCases(event.runId, [{
       id: `${event.runId}:${event.testId}`,
       case_id: event.testId,
@@ -153,6 +163,7 @@ export class ExperimentAdapter {
         trials: event.trials,
         trialAggregate: event.trialAggregate,
         scoreAuthority: event.scoreAuthority,
+        memoryInjections,
         source: 'eval',
       }),
     }]);

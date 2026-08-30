@@ -167,7 +167,7 @@ export interface InferenceOptions {
    * tokens don't crowd out content output. Mirrored onto ModelConfig before
    * the provider runs so buildRequestBody can read config.reasoningEffort.
    */
-  reasoningEffort?: 'low' | 'medium' | 'high';
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh';
   /**
    * 逐轮联网搜索开关（模型选择弹窗「联网搜索」，默认开）。
    * false 时这一轮：Responses 不挂 web_search、百炼不挂 enable_search；

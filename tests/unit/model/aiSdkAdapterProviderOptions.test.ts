@@ -155,6 +155,21 @@ describe('inferenceViaAiSdk provider options', () => {
     }));
   });
 
+  it('逐请求 reasoningEffort 进入 AI SDK 顶层 reasoning 参数', async () => {
+    await inferenceViaAiSdk(
+      [{ role: 'user', content: 'hello' }],
+      [],
+      { provider: 'longcat', model: 'LongCat-2.0' } as ModelConfig,
+      undefined,
+      undefined,
+      { reasoningEffort: 'xhigh' },
+    );
+
+    expect(vi.mocked(generateText)).toHaveBeenCalledWith(expect.objectContaining({
+      reasoning: 'xhigh',
+    }));
+  });
+
   it('Claude 仅在开启 thinking 且矩阵声明支持时传公开 anthropicBeta option', async () => {
     await runNonStreaming({
       provider: 'claude',

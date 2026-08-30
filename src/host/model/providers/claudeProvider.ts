@@ -452,7 +452,13 @@ export class ClaudeProvider implements Provider {
     const reasoningEffort = options?.reasoningEffort ?? config.reasoningEffort;
     const thinkingBudget = config.thinkingBudget
       ?? (reasoningEffort
-        ? (reasoningEffort === 'low' ? 4096 : reasoningEffort === 'medium' ? 16384 : 32768)
+        ? (reasoningEffort === 'low'
+            ? 4096
+            : reasoningEffort === 'medium'
+              ? 16384
+              : reasoningEffort === 'high'
+                ? 32768
+                : 65536)
         : undefined);
     if (thinkingBudget) {
       if ((requestBody.max_tokens as number) <= thinkingBudget) {

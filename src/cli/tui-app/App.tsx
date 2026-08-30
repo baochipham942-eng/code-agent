@@ -16,6 +16,7 @@ import { setInteractiveApprovalProvider } from '../permissionPolicy';
 import { approvalOptions, SessionAllowList, type ApprovalChoice } from './approval';
 import { ApprovalCard } from './ApprovalCard';
 import {
+  appendShellCommand,
   appendSystemMessage,
   appendUserMessage,
   createChatState,
@@ -23,6 +24,7 @@ import {
   formatDuration,
   markRunStarted,
   reduceAgentEvent,
+  resolveShellCommand,
   type ChatMessage,
   type ChatState,
 } from './events';
@@ -66,6 +68,8 @@ export interface InkChatOptions {
   gitBranch: string;
   /** slash 命令执行入口（chat.ts 注入，内部走统一 handleCommand） */
   onCommand: (input: string) => Promise<InkCommandResult>;
+  /** `!` shell 直通入口（chat.ts 注入，内部走 ToolExecutor 正式链路） */
+  onShellCommand: (command: string) => Promise<{ success: boolean; output?: string; error?: string }>;
   /** slash 补全数据源（注册表 cli 命令 + 本地命令） */
   slashItems: SlashItem[];
 }
@@ -259,6 +263,8 @@ export function App({ agent, options, onExit }: {
   }, []);
   /** 会话级 always 放行集合 */
   const allowListRef = useRef(new SessionAllowList());
+  /** 工具归组展开开关（Ctrl+X 切换；只影响动态区，Static 已封口消息不回溯） */
+  const [expandTools, setExpandTools] = useState(false);
 
   // Agent 事件 → 消息模型
   useEffect(() => {
@@ -346,6 +352,29 @@ export function App({ agent, options, onExit }: {
     }
   }, [agent]);
 
+  /** `!` shell 直通：追加进行中工具块 → 走正式链路执行 → 用结果收口。
+   *  审批卡打开时不并发（键盘与审批 Promise 都被卡片独占）。 */
+  const runShellCommand = useCallback(async (command: string) => {
+    if (approvalRef.current) {
+      showToast('请先处理当前审批');
+      return;
+    }
+    setState((prev) => appendUserMessage(prev, `! ${command}`));
+    let messageId = '';
+    setState((prev) => {
+      const [next, id] = appendShellCommand(prev, command);
+      messageId = id;
+      return next;
+    });
+    try {
+      const result = await options.onShellCommand(command);
+      setState((prev) => resolveShellCommand(prev, messageId, result));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setState((prev) => resolveShellCommand(prev, messageId, { success: false, error: message }));
+    }
+  }, [options, showToast]);
+
   const submit = useCallback((raw: string) => {
     const text = raw.trim();
     if (!text) return;
@@ -355,6 +384,13 @@ export function App({ agent, options, onExit }: {
       void handleSlash(text);
       return;
     }
+    if (text.startsWith('!')) {
+      // `!` shell 直通：走 ToolExecutor 正式链路（权限/审计/截断/cwd/超时），
+      // 永远不进模型 prompt（此前 Ink 无此分支，`!cmd` 被当 prompt 发出，行为陷阱）
+      const command = text.slice(1).trim();
+      if (command) void runShellCommand(command);
+      return;
+    }
     if (runningRef.current) {
       // turn 运行中：带文本 Enter = 排队 follow-up
       queueRef.current.push(text);
@@ -362,7 +398,7 @@ export function App({ agent, options, onExit }: {
       return;
     }
     void runPrompt(text);
-  }, [handleSlash, runPrompt, setEditor]);
+  }, [handleSlash, runPrompt, runShellCommand, setEditor]);
 
   /** Enter：`\` 结尾续行，否则提交（chip 在提交时展开） */
   const onEnter = useCallback(() => {
@@ -544,6 +580,11 @@ export function App({ agent, options, onExit }: {
       expandChips();
       return;
     }
+    if (key.ctrl && input === 'x') {
+      // 工具归组展开/折叠（› 明细）：开关全局切换，动态区即时生效
+      setExpandTools((prev) => !prev);
+      return;
+    }
 
     if (input && !key.ctrl && !key.meta) {
       // 逐字符状态机（合批按键不乱序）：\n 换行、\x7f 退格、可打印字符插入
@@ -629,7 +670,7 @@ export function App({ agent, options, onExit }: {
       <Static items={settled}>
         {(message) => (
           <Box key={message.id} paddingX={2}>
-            <MessageView message={message} width={messageWidth} />
+            <MessageView message={message} width={messageWidth} expandTools={expandTools} />
           </Box>
         )}
       </Static>
@@ -638,7 +679,7 @@ export function App({ agent, options, onExit }: {
         <Box flexDirection="column" flexGrow={1} justifyContent="flex-end" overflowY="hidden">
           {visibleLive.map((message) => (
             <Box key={message.id} paddingX={2}>
-              <MessageView message={message} width={messageWidth} maxLines={liveAllocation.get(message.id)} />
+              <MessageView message={message} width={messageWidth} maxLines={liveAllocation.get(message.id)} expandTools={expandTools} />
             </Box>
           ))}
         </Box>

@@ -6,7 +6,7 @@
 
 import { memo, useMemo } from 'react';
 import { Box, Text } from 'ink';
-import type { ChatMessage, ToolGroupMessage } from './events';
+import type { ChatMessage, ToolCallItem, ToolGroupMessage } from './events';
 import { formatDuration } from './events';
 import { renderMarkdown } from './markdown';
 
@@ -43,30 +43,12 @@ function ThinkingView({ message }: { message: Extract<ChatMessage, { kind: 'thin
   );
 }
 
-/** 工具分组：单行 bullet + 时态动词 + 参数摘要；同类连续调用折叠 "Read 3 files" */
-function ToolGroupView({ group }: { group: ToolGroupMessage }) {
-  const done = group.status !== 'running';
-  const error = group.status === 'error';
+/** 单个工具调用行：bullet + 时态动词 + 参数摘要 + 成功输出截断展示（前 2 后 3 行） */
+function ToolCallView({ call }: { call: ToolCallItem }) {
+  const done = call.status !== 'running';
+  const error = call.status === 'error';
   const color = error ? 'red' : done ? undefined : 'cyan';
   const bullet = error ? '✗' : '◆';
-
-  // 归组（Read 3 files / Searched 4 patterns）
-  if (group.groupNoun && group.calls.length > 1) {
-    const plural = group.calls.length === 1 ? group.groupNoun : `${group.groupNoun}s`;
-    const verb = done ? group.doneVerb : group.activeVerb;
-    const runningSummary = group.status === 'running'
-      ? group.calls[group.calls.length - 1]?.summary
-      : '';
-    return (
-      <Text dimColor={done && !error} color={color}>
-        {bullet} {verb} {group.calls.length} {plural}
-        {runningSummary ? <Text dimColor>  {runningSummary}</Text> : null}
-      </Text>
-    );
-  }
-
-  const call = group.calls[0];
-  if (!call) return null;
   const verb = done ? call.doneVerb : call.activeVerb;
   const preview = error && call.resultPreview ? call.resultPreview : undefined;
   return (
@@ -75,12 +57,48 @@ function ToolGroupView({ group }: { group: ToolGroupMessage }) {
         {bullet} {verb}
         {call.summary ? <Text dimColor>  {call.summary}</Text> : null}
       </Text>
+      {call.outputLines && call.outputLines.length > 0 ? (
+        <Text dimColor wrap="wrap">{'  '}{call.outputLines.join('\n  ')}</Text>
+      ) : null}
       {preview ? <Text color="red" wrap="truncate-end">  {preview}</Text> : null}
     </Box>
   );
 }
 
-function MessageBody({ message, width, maxLines }: { message: ChatMessage; width: number; maxLines?: number }) {
+/** 工具分组：单行 bullet + 时态动词 + 参数摘要；同类连续调用折叠 "Read 3 files"（› 可展开） */
+function ToolGroupView({ group, expanded }: { group: ToolGroupMessage; expanded?: boolean }) {
+  const done = group.status !== 'running';
+  const error = group.status === 'error';
+  const color = error ? 'red' : done ? undefined : 'cyan';
+  const bullet = error ? '✗' : '◆';
+
+  // 归组折叠态（Read 3 files / Searched 4 patterns），› 提示可展开（Ctrl+X）
+  if (group.groupNoun && group.calls.length > 1 && !expanded) {
+    const plural = `${group.groupNoun}s`;
+    const verb = done ? group.doneVerb : group.activeVerb;
+    const runningSummary = group.status === 'running'
+      ? group.calls[group.calls.length - 1]?.summary
+      : '';
+    return (
+      <Text dimColor={done && !error} color={color}>
+        {bullet} {verb} {group.calls.length} {plural}
+        {runningSummary ? <Text dimColor>  {runningSummary}</Text> : null}
+        <Text dimColor> ›</Text>
+      </Text>
+    );
+  }
+
+  // 展开态（或不成组的单次调用）：逐调用一行，shell 成功输出随调用展示
+  return (
+    <Box flexDirection="column">
+      {group.calls.map((call) => (
+        <ToolCallView key={call.id} call={call} />
+      ))}
+    </Box>
+  );
+}
+
+function MessageBody({ message, width, maxLines, expandTools }: { message: ChatMessage; width: number; maxLines?: number; expandTools?: boolean }) {
   switch (message.kind) {
     case 'user':
       return (
@@ -104,7 +122,7 @@ function MessageBody({ message, width, maxLines }: { message: ChatMessage; width
     case 'tool_group':
       return (
         <Box marginTop={1}>
-          <ToolGroupView group={message} />
+          <ToolGroupView group={message} expanded={expandTools} />
         </Box>
       );
     case 'system': {

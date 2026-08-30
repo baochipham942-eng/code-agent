@@ -22,6 +22,7 @@ export { MemoryRepository, type MemoryRecord } from './MemoryRepository';
 export { ConfigRepository, type UserPreference, type ProjectKnowledge, type ToolExecution } from './ConfigRepository';
 export { CaptureRepository } from './CaptureRepository';
 export { ExperimentRepository } from './ExperimentRepository';
+export { AnnotationRepository, type AnnotationRow } from './AnnotationRepository';
 export { ProjectRepository } from './ProjectRepository';
 export {
   NeoWorkCardRepository,

@@ -9,6 +9,9 @@ import type {
   EvalRunStartResult,
   EvalRunSubscriptionResult,
   EvalScorersOverview,
+  ListEvalAnnotationsResult,
+  SaveEvalAnnotationRequest,
+  SaveEvalAnnotationResult,
   SaveEvalCaseRequest,
   SaveEvalCaseResult,
 } from '@shared/contract/evaluation';
@@ -24,6 +27,8 @@ interface EvaluationRunIpcInvokeHandlers {
   [EVALUATION_CHANNELS.LOAD_CASE]: (payload: { experimentId: string; caseId: string }) => Promise<EvalExperimentCaseDetail | null>;
   [EVALUATION_CHANNELS.LIST_CASES]: () => Promise<EvalCaseListItem[]>;
   [EVALUATION_CHANNELS.SAVE_CASE]: (request: SaveEvalCaseRequest) => Promise<SaveEvalCaseResult>;
+  [EVALUATION_CHANNELS.SAVE_ANNOTATION]: (request: SaveEvalAnnotationRequest) => Promise<SaveEvalAnnotationResult>;
+  [EVALUATION_CHANNELS.LIST_ANNOTATIONS]: (request: { experimentId: string; caseId: string }) => Promise<ListEvalAnnotationsResult>;
 }
 
 interface EvaluationRunIpcEventHandlers {

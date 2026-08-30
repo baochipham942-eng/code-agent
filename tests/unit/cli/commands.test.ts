@@ -504,6 +504,43 @@ describe('CLI command entrypoints', () => {
     expect(process.exit).toHaveBeenCalledWith(0);
   });
 
+  it('run forwards --tools/--disallowed-tools to createCLIAgent', async () => {
+    mockProcessIO();
+    forceTtyStdin();
+    const run = vi.fn(async () => ({ success: true, output: 'done' }));
+    mocks.createCLIAgent.mockResolvedValue({
+      run,
+      restoreSession: vi.fn(),
+      getSessionId: vi.fn(() => 'session-tools'),
+    });
+    mocks.getDatabaseService.mockReturnValue(null);
+    const program = new Command();
+    program.exitOverride();
+    program
+      .option('--json')
+      .option('-p, --project <path>')
+      .addCommand(runCommand);
+
+    await program.parseAsync([
+      'node',
+      'agent-neo',
+      'run',
+      'do something',
+      '--tools',
+      'Read,skill:pdf',
+      '--disallowed-tools',
+      'Bash',
+    ]);
+
+    expect(mocks.createCLIAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools: 'Read,skill:pdf',
+        disallowedTools: 'Bash',
+      }),
+    );
+    expect(run).toHaveBeenCalledWith('do something');
+  });
+
   it('run retries schema validation failures and reports the validated structured output', async () => {
     mockProcessIO();
     forceTtyStdin();

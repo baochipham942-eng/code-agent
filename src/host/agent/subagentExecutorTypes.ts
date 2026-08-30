@@ -192,6 +192,13 @@ export interface SubagentExecutionContext {
   executionAgentId?: string;
   /** Parent context for child context inheritance */
   parentContext?: ParentContext;
+  /**
+   * 父 run 的工具白名单（CLI --tools / 宿主收窄）。硬边界：子 agent 的有效工具面
+   * 与之交集，只能收窄不能扩张；沿 spawn 链传递给孙代理。
+   */
+  allowedToolNames?: readonly string[];
+  /** 父 run 的工具禁用名单（CLI --disallowed-tools 等），语义同上。 */
+  deniedToolNames?: readonly string[];
   /** Parent agent remaining budget used to cap this subagent budget. */
   parentRemainingBudget?: number;
   /** Suppress idle parent wakeups for background subagents spawned from controlled loops. */

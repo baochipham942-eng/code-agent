@@ -156,7 +156,15 @@ export const chatCommand = new Command('chat')
   .option('-r, --resume', '恢复最近的会话')
   .option('--from-pr <pr>', '关联 GitHub PR (URL 或 #123)')
   .option('--tui', '（已移除）Ink 界面已是 TTY 默认交互模式')
-  .action(async (options: { session?: string; resume?: boolean; fromPr?: string; tui?: boolean }, command: Command) => {
+  .option(
+    '--tools <list>',
+    '仅允许指定工具（逗号分隔，精确白名单无核心工具兜底；支持 skill:<name> 前缀）',
+  )
+  .option(
+    '--disallowed-tools <list>',
+    '禁用指定工具（逗号分隔；支持 skill:<name> 前缀）。被禁工具从 schema 面移除且执行层硬拒',
+  )
+  .action(async (options: { session?: string; resume?: boolean; fromPr?: string; tui?: boolean; tools?: string; disallowedTools?: string }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
     const isJsonMode = globalOpts?.json || globalOpts?.outputFormat === 'json' || globalOpts?.outputFormat === 'stream-json';
 
@@ -196,6 +204,8 @@ export const chatCommand = new Command('chat')
         debug: globalOpts?.debug,
         outputFormat: globalOpts?.outputFormat,
         metrics: globalOpts?.metrics,
+        tools: options.tools,
+        disallowedTools: options.disallowedTools,
       });
 
       // 恢复会话

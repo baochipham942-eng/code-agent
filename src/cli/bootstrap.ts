@@ -56,6 +56,7 @@ import { initializeDurableRun, type DurableRunApplicationRuntime } from '../host
 import { DurableRunRepository } from '../host/services/core/repositories/DurableRunRepository';
 import { SERVICE_TIMEOUTS } from '../shared/constants/timeouts';
 import { isComputerUseCapabilityInstalledSync } from '../host/plugins/builtin/computerUse/installState';
+import { parseToolNameListFlag } from './utils/toolListFlags';
 import type { ToolExecutionDelegate, ToolExecutorConfig } from '../host/tools/toolExecutor';
 import {
   createRunTraceContext,
@@ -440,6 +441,8 @@ export function buildCLIConfig(options: {
   systemPrompt?: string;
   preloadTools?: string;
   metrics?: string;
+  tools?: string;
+  disallowedTools?: string;
 }): CLIConfig {
   const config = getConfigService();
   const settings = config.getSettings();
@@ -481,6 +484,9 @@ export function buildCLIConfig(options: {
     autoApprovePlan: true, // CLI 模式默认自动批准 plan mode
     systemPrompt: options.systemPrompt,
     metricsPath: options.metrics,
+    // --tools / --disallowed-tools：run 级工具面裁剪（精确白名单，无核心工具兜底）
+    allowedToolNames: parseToolNameListFlag(options.tools),
+    deniedToolNames: parseToolNameListFlag(options.disallowedTools),
   };
 }
 
@@ -649,6 +655,7 @@ export function createAgentLoop(
     requestedAgentId: config.requestedAgentId,
     deniedToolNames: Array.from(new Set([
       ...CLI_TASK_MANAGER_TOOL_DENYLIST,
+      ...(config.deniedToolNames ?? []),
       ...(config.agentOverride?.deniedToolNames ?? []),
     ])),
     allowedToolNames: config.allowedToolNames,

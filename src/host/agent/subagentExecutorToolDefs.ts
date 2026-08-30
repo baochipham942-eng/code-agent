@@ -4,11 +4,28 @@
 // 从 SubagentExecutor 抽出的纯工具定义过滤逻辑（不依赖实例状态）。
 
 import type { ToolDefinition } from '../../shared/contract';
-import type { SubagentToolResolverPort } from './subagentExecutorTypes';
+import type { SubagentExecutionContext, SubagentToolResolverPort } from './subagentExecutorTypes';
 import { resolveToolAlias } from '../services/toolSearch/deferredTools';
+import { narrowToolNamesByRunPolicy } from '../tools/runToolPolicy';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('SubagentExecutor');
+
+/**
+ * Run 级工具面（CLI --tools/--disallowed-tools 及等价宿主收窄）是硬边界：
+ * 在父子交集结果上再收一次，穿透 parentContext 缺省/退化分支——交集为空也
+ * 不许回扩到父 run 面之外（子代理只能收窄，永不扩张）。
+ */
+export function applyRunToolPolicyToSubagentTools(
+  effectiveToolNames: string[],
+  context: Pick<SubagentExecutionContext, 'allowedToolNames' | 'deniedToolNames' | 'toolScope'>,
+): string[] {
+  return narrowToolNamesByRunPolicy(effectiveToolNames, {
+    allowedToolNames: context.allowedToolNames,
+    deniedToolNames: context.deniedToolNames,
+    toolScope: context.toolScope,
+  });
+}
 
 export function filterSubagentToolDefs(
   allowedToolNames: string[],

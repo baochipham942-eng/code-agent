@@ -17,6 +17,8 @@ import {
   COLLAPSED_SETTINGS_TAB_GROUPS,
   CAPABILITY_HUB_TAB_BY_SETTINGS_TAB,
   canAccessSettingsTab,
+  isSettingsTabCapabilityAvailable,
+  resolveSettingsDeepLink,
 } from '../../../src/renderer/utils/settingsTabs';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
@@ -58,6 +60,19 @@ describe('Settings IA 分组 v2', () => {
 
   it('保留 plugins 深链到能力中心的映射', () => {
     expect(CAPABILITY_HUB_TAB_BY_SETTINGS_TAB.plugins).toBe('plugins');
+  });
+
+  it('voice-input 未安装时深链落到功能包，装入后才落设置页', () => {
+    expect(isSettingsTabCapabilityAvailable('voiceInput', new Set())).toBe(false);
+    expect(resolveSettingsDeepLink('voiceInput', new Set())).toEqual({
+      kind: 'capabilityHub',
+      tab: 'packages',
+      capabilityId: 'builtin.voice-input',
+    });
+    expect(resolveSettingsDeepLink('voiceInput', new Set(['builtin.voice-input']))).toEqual({
+      kind: 'settings',
+      tab: 'voiceInput',
+    });
   });
 
   it('高级组默认折叠，其余组不折叠', () => {

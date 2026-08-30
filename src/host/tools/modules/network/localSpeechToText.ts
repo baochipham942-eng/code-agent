@@ -26,7 +26,7 @@ import {
   LocalSpeechTranscriptionError,
   LOCAL_SPEECH_CONFIG,
   transcribeWithWhisperCpp,
-} from '../../../services/speech/whisperCppTranscriber';
+} from '../../../services/media/whisperCppTranscriber';
 
 interface LocalSpeechToTextParams {
   file_path: string;

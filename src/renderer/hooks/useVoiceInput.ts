@@ -29,7 +29,7 @@ let nextDictationId = 1;
 
 export type VoiceInputStatus = 'idle' | 'recording' | 'transcribing' | 'error';
 
-interface UseVoiceInputOptions {
+export interface UseVoiceInputOptions {
   /** 转写完成回调 */
   onTranscript?: (text: string, result?: SpeechTranscribeResult) => void;
   /** 流式中间结果回调；同一句的后续结果会覆盖前一次。 */

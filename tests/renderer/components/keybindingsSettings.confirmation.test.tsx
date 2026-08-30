@@ -13,12 +13,16 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 
 import { KeybindingsSettings } from '../../../src/renderer/components/features/settings/tabs/KeybindingsSettings';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 
 beforeEach(() => {
   invokeDomain.mockReset();
   invokeDomain.mockResolvedValue(undefined);
   publishGlobalHotkeyRegistrationResults([]);
   useAppStore.setState({ language: 'zh' });
+  useBundledCapabilityStore.setState({
+    installed: { 'builtin.voice-live': true, 'builtin.voice-input': false },
+  });
 });
 
 afterEach(() => {
@@ -27,6 +31,19 @@ afterEach(() => {
 });
 
 describe('KeybindingsSettings restore-all confirmation', () => {
+  it('shows the Voice Paste shortcut only while voice-input is installed', async () => {
+    const { unmount } = render(<KeybindingsSettings />);
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalled());
+    expect(screen.queryByText('语音输入')).toBeNull();
+    unmount();
+
+    useBundledCapabilityStore.setState({
+      installed: { 'builtin.voice-live': true, 'builtin.voice-input': true },
+    });
+    render(<KeybindingsSettings />);
+    expect(await screen.findByText('语音输入')).toBeTruthy();
+  });
+
   it('persists all defaults only after confirmation', async () => {
     render(<KeybindingsSettings />);
     await waitFor(() => {

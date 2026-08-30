@@ -33,6 +33,7 @@ import { useMcpServerStates } from '../../../../hooks/useMcpServerStates';
 import { zh } from '../../../../i18n/zh';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { Toggle } from '../../../primitives/Toggle';
+import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
 
 const logger = createLogger('KeybindingsSettings');
 
@@ -76,6 +77,9 @@ export const KeybindingsSettings: React.FC = () => {
   const mcpServerStates = useMcpServerStates();
   const hasComputerUse = mcpServerStates.some(
     (server) => server.config.name === 'cua-driver' && server.config.enabled,
+  );
+  const voiceInputInstalled = useBundledCapabilityStore(
+    (state) => state.installed['builtin.voice-input'],
   );
   const platform = useMemo(() => getCurrentKeybindingPlatform(), []);
   const [keybindings, setKeybindings] = useState<KeybindingsSettingsContract>(() =>
@@ -207,9 +211,12 @@ export const KeybindingsSettings: React.FC = () => {
 
   const normalizedQuery = query.trim().toLowerCase();
   const filteredDefinitions = useMemo(() => {
-    const availableDefinitions = hasComputerUse
+    const runtimeDefinitions = voiceInputInstalled
       ? KEYBINDING_DEFINITIONS
-      : KEYBINDING_DEFINITIONS.filter((definition) => definition.id !== 'computerUse.open');
+      : KEYBINDING_DEFINITIONS.filter((definition) => definition.id !== 'voice.toggle');
+    const availableDefinitions = hasComputerUse
+      ? runtimeDefinitions
+      : runtimeDefinitions.filter((definition) => definition.id !== 'computerUse.open');
     if (!normalizedQuery) return availableDefinitions;
     return availableDefinitions.filter((definition) => {
       const actionText = keybindingsText.actions[definition.id];
@@ -222,7 +229,7 @@ export const KeybindingsSettings: React.FC = () => {
       ].join(' ').toLowerCase();
       return haystack.includes(normalizedQuery);
     });
-  }, [hasComputerUse, keybindingsText, normalizedQuery]);
+  }, [hasComputerUse, keybindingsText, normalizedQuery, voiceInputInstalled]);
 
   const groupedDefinitions = useMemo(() => {
     const groups = new Map<KeybindingCategory, KeybindingDefinition[]>();

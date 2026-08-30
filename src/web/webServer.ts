@@ -345,7 +345,7 @@ import {
   writeDevAuthToken,
 } from './middleware/auth';
 import { attachVoiceStreamUpgrade } from './voiceStreamUpgrade';
-import { attachDictationStreamUpgrade } from './dictationStreamUpgrade';
+import { attachHostWebSocketUpgradeDispatcher } from '../host/services/capabilities/hostCapabilityContributions';
 import { installPermissionResponseHandler } from './webPermissionResponseHandler';
 
 import { applyRendererBundleUpdate } from '../host/services/renderer/rendererBundleFetcher';
@@ -448,16 +448,6 @@ async function initializeServices(): Promise<void> {
   }
   process.env.CODE_AGENT_DATA_DIR = dataDir;
 
-  // Signed host capabilities activate before the agent runtime can settle a turn.
-  // Both voice packages ship installed in P0; failures roll back their port contributions.
-  try {
-    const { initializeBundledHostCapabilities } = await import('../host/services/capabilities/bundledHostCapabilityRegistry');
-    await initializeBundledHostCapabilities();
-    logger.info('Bundled host capabilities initialized');
-  } catch (error) {
-    logger.warn('Bundled host capability initialization failed (non-blocking):', (error as Error).message);
-  }
-
   // Dev 槽首启动（数据目录里还没有 config.json）时，从生产数据目录一次性导入模型配置 +
   // 模型凭据，省掉「换槽 = 新机器、所有 key 重配」。必须排在 initConfigService /
   // getSecureStorage 之前——它俩一构造就会各自读盘并写回。
@@ -558,6 +548,17 @@ async function initializeServices(): Promise<void> {
     }
   }
   bootMark('database');
+
+  // Capability migration needs initialized settings and message history. Activation still
+  // finishes before IPC registration and before the agent runtime can settle a turn.
+  try {
+    const { initializeBundledHostCapabilities } = await import('../host/services/capabilities/bundledHostCapabilityRegistry');
+    await initializeBundledHostCapabilities();
+    logger.info('Bundled host capabilities initialized');
+  } catch (error) {
+    logger.warn('Bundled host capability initialization failed (non-blocking):', (error as Error).message);
+  }
+  bootMark('bundled-capabilities');
 
   // 5. Fleet telemetry 回传：登录起、登出停（auth-gated，metadata-only）
   // 上传器此前只在 Electron main 路径（initBackgroundServices.ts）启动，而所有发行版实际跑的
@@ -1026,7 +1027,7 @@ async function main(): Promise<void> {
   });
   queuedInputStartupSweep.maybeRun();
 
-  const server = attachDictationStreamUpgrade(attachVoiceStreamUpgrade(http.createServer(app)));
+  const server = attachHostWebSocketUpgradeDispatcher(attachVoiceStreamUpgrade(http.createServer(app)));
 
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {

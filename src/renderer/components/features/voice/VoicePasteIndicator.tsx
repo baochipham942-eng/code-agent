@@ -1,9 +1,22 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAppStore } from '@renderer/stores/appStore';
 import { Z_LAYERS } from '@renderer/styles/zLayers';
+import { IPC_CHANNELS } from '@shared/ipc';
+import ipcService from '@renderer/services/ipcService';
 
 export const VoicePasteIndicator: React.FC = () => {
   const voicePasteStatus = useAppStore((s) => s.voicePasteStatus);
+  const setVoicePasteStatus = useAppStore((s) => s.setVoicePasteStatus);
+
+  useEffect(() => {
+    const unsubscribe = ipcService.on(IPC_CHANNELS.VOICE_PASTE_STATUS, (payload) => {
+      setVoicePasteStatus(payload?.status ?? 'idle');
+    });
+    return () => {
+      unsubscribe?.();
+      setVoicePasteStatus('idle');
+    };
+  }, [setVoicePasteStatus]);
 
   if (voicePasteStatus === 'idle') return null;
 

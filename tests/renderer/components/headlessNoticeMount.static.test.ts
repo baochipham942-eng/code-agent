@@ -16,12 +16,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const APP_TSX = path.resolve(__dirname, '../../../src/renderer/App.tsx');
+const RUNTIME_NOTICES_TSX = path.resolve(__dirname, '../../../src/renderer/components/RuntimeNotices.tsx');
 
 /** 必须挂在 App 树里的 headless 通知组件。新增同族组件时加进来。 */
 const HEADLESS_NOTICE_COMPONENTS = [
   'ProviderStatusNotice',
   'BudgetAlertNotice',
-  'AgentNoticeToast',
 ] as const;
 
 describe('headless 通知组件必须真的挂在 App 树里', () => {
@@ -39,5 +39,13 @@ describe('headless 通知组件必须真的挂在 App 树里', () => {
     expect(app, `${name} 已 import 但没有 <${name} /> 渲染点`).toMatch(
       new RegExp(`<${name}\\s*/>`),
     );
+  });
+
+  it('RuntimeNotices 组合壳在 App 树中，并继续挂载 AgentNoticeToast', () => {
+    const runtimeNotices = fs.readFileSync(RUNTIME_NOTICES_TSX, 'utf8');
+    expect(app).toMatch(/import\s*\{[^}]*\bRuntimeNotices\b[^}]*\}\s*from/);
+    expect(app).toMatch(/<RuntimeNotices\s*\/>/);
+    expect(runtimeNotices).toMatch(/import\s*\{[^}]*\bAgentNoticeToast\b[^}]*\}\s*from/);
+    expect(runtimeNotices).toMatch(/<AgentNoticeToast\s*\/>/);
   });
 });

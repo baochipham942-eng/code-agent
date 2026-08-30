@@ -6,7 +6,12 @@
 import { en } from '../i18n/en';
 import { zh } from '../i18n/zh';
 import type { AccessSubject } from './accessControl';
-import { canAccessSettingsTab, type SettingsTab } from './settingsTabs';
+import {
+  canAccessSettingsTab,
+  isSettingsTabCapabilityAvailable,
+  type SettingsTab,
+} from './settingsTabs';
+import type { BundledHostCapabilityId } from '@shared/contract/bundledHostCapability';
 export type { SettingsTab } from './settingsTabs';
 
 export interface SettingsEntry {
@@ -15,7 +20,9 @@ export interface SettingsEntry {
   keywords: string[];
 }
 
-export type SearchSettingsOptions = AccessSubject;
+export interface SearchSettingsOptions extends AccessSubject {
+  installedCapabilities?: ReadonlySet<BundledHostCapabilityId>;
+}
 
 /**
  * Static index of all settings items across tabs.
@@ -182,6 +189,7 @@ export function searchSettings(query: string, options?: SearchSettingsOptions): 
 
   return SETTINGS_INDEX.filter((entry, index) => {
     if (!canAccessSettingsTab(entry.tab, options)) return false;
+    if (!isSettingsTabCapabilityAvailable(entry.tab, options?.installedCapabilities)) return false;
     return SETTINGS_SEARCH_TEXT[index].includes(q);
   });
 }

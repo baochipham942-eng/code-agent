@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { Blocks, Boxes, Lightbulb, Link2, Sparkles } from 'lucide-react';
+import { Blocks, Boxes, Lightbulb, Link2, Package, Sparkles } from 'lucide-react';
 import { useAppStore, type CapabilityHubTab } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -16,8 +16,10 @@ const SkillsSettings = React.lazy(() => import('../settings/tabs/SkillsSettings'
 const MCPSettings = React.lazy(() => import('../settings/tabs/MCPSettings').then((m) => ({ default: m.MCPSettings })));
 const PluginsSettings = React.lazy(() => import('../settings/tabs/PluginsSettings').then((m) => ({ default: m.PluginsSettings })));
 const CapabilityCandidatesTab = React.lazy(() => import('./CapabilityCandidatesTab').then((m) => ({ default: m.CapabilityCandidatesTab })));
+const BundledCapabilitiesTab = React.lazy(() => import('./BundledCapabilitiesTab').then((m) => ({ default: m.BundledCapabilitiesTab })));
 
 const HUB_TABS: Array<{ key: CapabilityHubTab; icon: React.ReactNode; label: (t: ReturnType<typeof useI18n>['t']) => string }> = [
+  { key: 'packages', icon: <Package className="h-4 w-4" />, label: (t) => t.capabilityHub.tabPackages },
   { key: 'experts', icon: <Boxes className="h-4 w-4" />, label: (t) => t.capabilityHub.tabExperts },
   { key: 'skills', icon: <Sparkles className="h-4 w-4" />, label: (t) => t.capabilityHub.tabSkills },
   { key: 'connectors', icon: <Link2 className="h-4 w-4" />, label: (t) => t.capabilityHub.tabConnectors },
@@ -45,7 +47,8 @@ export const CapabilityHubPage: React.FC = () => {
     openCapabilityHub(visibleTabs[0].key);
   }, [capabilityHubTab, openCapabilityHub, visibleTabs]);
 
-  const content = capabilityHubTab === 'experts' ? <ExpertPanel />
+  const content = capabilityHubTab === 'packages' ? <BundledCapabilitiesTab />
+    : capabilityHubTab === 'experts' ? <ExpertPanel />
     : capabilityHubTab === 'skills' ? <SkillsSettings />
     : capabilityHubTab === 'connectors' ? <MCPSettings />
     : capabilityHubTab === 'plugins' && canAccessSettingsTab('plugins', accessSubject) ? <PluginsSettings />

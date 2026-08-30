@@ -63,6 +63,7 @@ import {
   COLLAPSED_SETTINGS_TAB_GROUPS,
   resolveSettingsDeepLink,
   canAccessSettingsTab,
+  isSettingsTabCapabilityAvailable,
   type SettingsTab,
   type SettingsTabGroupId,
 } from '../../../utils/settingsTabs';
@@ -162,12 +163,15 @@ function SettingsTabSkeleton() {
 // 用户管理 / 邀请码 / 控制平面 / 能力治理四个 tab 已迁 admin-console（2026-07 方案 9C），
 // 组件文件保留在 ./tabs 下待清死代码，但设置页不再 import、不提供任何入口。
 import ipcService from '../../../services/ipcService';
+import { useBundledCapabilityStore } from '../../../stores/bundledCapabilityStore';
+import type { BundledHostCapabilityId } from '@shared/contract/bundledHostCapability';
 
 interface SettingsTabConfig {
   id: SettingsTab;
   label: string;
   icon: React.ReactNode;
   badge?: boolean;
+  requiresAnyCapability?: readonly BundledHostCapabilityId[];
 }
 
 interface SettingsTabGroupConfig {
@@ -182,6 +186,7 @@ interface BuildSettingsTabsOptions {
   showUpdateTab: boolean;
   hasOptionalUpdate: boolean;
   access?: AccessSubject | null;
+  installedCapabilities?: ReadonlySet<BundledHostCapabilityId>;
 }
 
 export function buildSettingsTabGroups({
@@ -190,6 +195,7 @@ export function buildSettingsTabGroups({
   showUpdateTab,
   hasOptionalUpdate,
   access,
+  installedCapabilities,
 }: BuildSettingsTabsOptions): SettingsTabGroupConfig[] {
   const accessSubject = createAccessSubject(access);
   // 顺序即侧栏顺序（Settings IA v2 拍板 2026-07-03：默认 5 组 + 高级折叠组；
@@ -210,7 +216,12 @@ export function buildSettingsTabGroups({
     { id: 'conversation', label: t.settings.tabs.conversation, icon: <FoldVertical className="w-4 h-4" /> },
     { id: 'keybindings', label: t.settings.tabs.keybindings, icon: <Keyboard className="w-4 h-4" /> },
     { id: 'voiceLive', label: t.settings.tabs.voiceLive, icon: <Phone className="w-4 h-4" /> },
-    { id: 'voiceInput', label: t.settings.tabs.voiceInput, icon: <Mic className="w-4 h-4" /> },
+    {
+      id: 'voiceInput',
+      label: t.settings.tabs.voiceInput,
+      icon: <Mic className="w-4 h-4" />,
+      requiresAnyCapability: ['builtin.voice-input'],
+    },
     // 工作与协作
     { id: 'workspace', label: t.settings.tabs.workspace, icon: <FolderOpen className="w-4 h-4" /> },
     { id: 'channels', label: t.settings.tabs.channels, icon: <MessageSquare className="w-4 h-4" /> },
@@ -232,7 +243,10 @@ export function buildSettingsTabGroups({
   for (const groupId of SETTINGS_TAB_GROUP_ORDER) {
     groups.set(groupId, []);
   }
-  for (const tab of tabs.filter((tab) => canAccessSettingsTab(tab.id, accessSubject))) {
+  for (const tab of tabs.filter((tab) => (
+    canAccessSettingsTab(tab.id, accessSubject)
+    && isSettingsTabCapabilityAvailable(tab.id, installedCapabilities)
+  ))) {
     groups.get(SETTINGS_TAB_GROUP_BY_TAB[tab.id])?.push(tab);
   }
 
@@ -286,6 +300,14 @@ export const SettingsModal: React.FC = () => {
   const currentUser = useAuthStore((state) => state.user);
   const accessSubject = useMemo(() => createAccessSubject(currentUser), [currentUser]);
   const { t } = useI18n();
+  const installedCapabilityState = useBundledCapabilityStore((state) => state.installed);
+  const installedCapabilities = useMemo<ReadonlySet<BundledHostCapabilityId>>(
+    () => new Set(
+      (Object.keys(installedCapabilityState) as BundledHostCapabilityId[])
+        .filter((id) => installedCapabilityState[id]),
+    ),
+    [installedCapabilityState],
+  );
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     settingsInitialTab ?? DEFAULT_SETTINGS_TAB
   );
@@ -343,13 +365,13 @@ export const SettingsModal: React.FC = () => {
   // 搜到的条目落点未必还在设置页（自动化 / 能力中心那几项已搬走），交给同一个判定函数分流
   const handleSearchNavigate = useCallback((tab: SettingsTab) => {
     guardWhileModelDirty(() => {
-      if (resolveSettingsDeepLink(tab).kind !== 'settings') {
+      if (resolveSettingsDeepLink(tab, installedCapabilities).kind !== 'settings') {
         openSettingsTab(tab);
         return;
       }
       setActiveTab(tab);
     });
-  }, [guardWhileModelDirty, openSettingsTab]);
+  }, [guardWhileModelDirty, installedCapabilities, openSettingsTab]);
 
   const handleClose = useCallback(() => {
     guardWhileModelDirty(() => setShowSettings(false));
@@ -393,8 +415,9 @@ export const SettingsModal: React.FC = () => {
       showUpdateTab,
       hasOptionalUpdate: !!optionalUpdateInfo?.hasUpdate,
       access: accessSubject,
+      installedCapabilities,
     }),
-    [t, showUpdateTab, optionalUpdateInfo?.hasUpdate, accessSubject]
+    [t, showUpdateTab, optionalUpdateInfo?.hasUpdate, accessSubject, installedCapabilities]
   );
   const tabs = useMemo(
     () => tabGroups.flatMap((group) => group.tabs),
@@ -447,7 +470,11 @@ export const SettingsModal: React.FC = () => {
                 <ChevronLeft className="h-4 w-4" />
                 <span>{t.settings.backToApp}</span>
               </button>
-              <SettingsSearch onNavigate={handleSearchNavigate} access={accessSubject} />
+              <SettingsSearch
+                onNavigate={handleSearchNavigate}
+                access={accessSubject}
+                installedCapabilities={installedCapabilities}
+              />
             </div>
           </div>
 
@@ -542,7 +569,7 @@ export const SettingsModal: React.FC = () => {
               {activeTab === 'conversation' && <ConversationSettings />}
               {activeTab === 'search' && <SearchSettings />}
               {activeTab === 'voiceLive' && <VoiceLiveSettings />}
-              {activeTab === 'voiceInput' && <VoiceInputSettings />}
+              {activeTab === 'voiceInput' && isSettingsTabCapabilityAvailable(activeTab, installedCapabilities) && <VoiceInputSettings />}
               {activeTab === 'voiceModel' && <VoiceModelSettings />}
               {activeTab === 'keybindings' && <KeybindingsSettings />}
               {activeTab === 'workspace' && <WorkspaceSettings />}

@@ -132,9 +132,15 @@ describe('ChatInput Dictation 接线（G4）', () => {
     resolve(process.cwd(), 'src/renderer/components/features/chat/ChatInput/ComposerCoreActions.tsx'),
     'utf8',
   );
+  const controllerSource = readFileSync(
+    resolve(process.cwd(), 'src/renderer/components/features/chat/ChatInput/VoiceInputController.tsx'),
+    'utf8',
+  );
 
-  it('hook 提到 ChatInput 层，录音条与语音按钮共享同一路 voice 状态', () => {
-    expect(source).toContain('const voice = useVoiceInput({');
+  it('能力装入后才实例化 hook，录音条与语音按钮共享同一路 voice 状态', () => {
+    expect(source).toContain('voiceInputInstalled && (');
+    expect(source).toContain('<VoiceInputController');
+    expect(controllerSource).toContain('const voice = useVoiceInput(options);');
     expect(source).toContain('<ComposerCoreActions');
     expect(source).toContain('voice={voice}');
     expect(coreActionsSource).toContain('<VoiceInputButton');

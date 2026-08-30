@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { IpcMain } from '../platform';
+import type { HostCapabilityCleanup } from '../services/capabilities/hostCapabilityPorts';
 import {
   type SpeechRetainedAudioClearResult,
   type SpeechTranscribeOptions,
@@ -29,7 +30,7 @@ export interface TranscribeRequest extends SpeechTranscribeOptions {
 
 export type TranscribeResponse = SpeechTranscribeResult;
 
-export function registerSpeechHandlers(ipcMain: IpcMain): void {
+export function registerSpeechHandlers(ipcMain: IpcMain): HostCapabilityCleanup {
   ipcMain.handle(
     SPEECH_CHANNELS.TRANSCRIBE,
     async (_event, request: TranscribeRequest): Promise<TranscribeResponse> => {
@@ -59,4 +60,8 @@ export function registerSpeechHandlers(ipcMain: IpcMain): void {
   );
 
   logger.info('Speech handlers registered');
+  return () => {
+    ipcMain.removeHandler(SPEECH_CHANNELS.TRANSCRIBE);
+    ipcMain.removeHandler(SPEECH_CHANNELS.CLEAR_RETAINED_AUDIO);
+  };
 }

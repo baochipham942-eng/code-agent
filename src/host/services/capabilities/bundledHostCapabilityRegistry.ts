@@ -1,9 +1,21 @@
 import type { CapabilityPackagePermission } from '../../../shared/contract/capabilityPackage';
 import type {
   BundledHostCapabilityId,
+  BundledHostCapabilityReadiness,
   BundledHostCapabilityState,
 } from '../../../shared/contract/bundledHostCapability';
+import { IPC_CHANNELS } from '../../../shared/ipc';
 import { getUserDataPath } from '../../platform';
+import { broadcastToRenderer, ipcHost, type IpcMain } from '../../platform';
+import { getConfigService } from '../core/configService';
+import {
+  DEFAULT_SPEECH_INPUT_SETTINGS,
+  type SpeechTranscriptionMode,
+} from '../../../shared/contract/speech';
+import {
+  inspectWhisperCppReadiness,
+  type WhisperCppReadiness,
+} from '../media/whisperCppTranscriber';
 import { voiceLiveCapabilityDescriptor } from '../voice/voiceLiveCapability';
 import { voiceInputCapabilityDescriptor } from '../speech/voiceInputCapability';
 import { recordBundledHostCapabilityLifecycle } from './capabilityPackageLifecycle';
@@ -20,13 +32,22 @@ import {
   restoreBundledHostCapabilityInstallSnapshot,
   writeBundledHostCapabilityInstallState,
 } from './bundledHostCapabilityInstallState';
+import {
+  registerHostWebSocketUpgrade,
+  registerImmediateHostContribution,
+  type HostWebSocketUpgradeContribution,
+  type HostIpcContribution,
+  type ImmediateHostContribution,
+} from './hostCapabilityContributions';
+import { runVoiceCapabilityMigrationV1 } from './voiceCapabilityMigrationV1';
 
 type PlaceholderContribution = Readonly<Record<string, unknown>>;
 
 interface HostCapabilityContext {
-  registerIpcHandler: (contribution: PlaceholderContribution) => HostCapabilityCleanup;
+  registerIpcHandler: (contribution: HostIpcContribution) => HostCapabilityCleanup;
   registerWebRoute: (contribution: PlaceholderContribution) => HostCapabilityCleanup;
-  registerWebSocketUpgrade: (contribution: PlaceholderContribution) => HostCapabilityCleanup;
+  registerWebSocketUpgrade: (contribution: HostWebSocketUpgradeContribution) => HostCapabilityCleanup;
+  registerShortcut: (contribution: ImmediateHostContribution) => HostCapabilityCleanup;
   registerStartupTask: (contribution: PlaceholderContribution) => HostCapabilityCleanup;
   registerProviderAction: (contribution: PlaceholderContribution) => HostCapabilityCleanup;
   registerTurnOutcomeResolver: (resolver: TurnOutcomeResolver) => HostCapabilityCleanup;
@@ -39,6 +60,7 @@ export interface BundledHostCapabilityDescriptor {
   version: string;
   dependencies: BundledHostCapabilityId[];
   permissions: CapabilityPackagePermission[];
+  beforeUninstall?: () => void | Promise<void>;
   activate: (host: HostCapabilityContext) => Promise<HostCapabilityCleanup>;
 }
 
@@ -48,6 +70,10 @@ interface BundledHostCapabilityRegistryOptions {
   dataDir?: string;
   descriptors?: readonly BundledHostCapabilityDescriptor[];
   lifecycle?: LifecycleRecorder;
+  migration?: false | typeof runVoiceCapabilityMigrationV1;
+  readSpeechMode?: () => SpeechTranscriptionMode;
+  readWhisperReadiness?: typeof inspectWhisperCppReadiness;
+  ipcMain?: IpcMain;
 }
 
 interface ActiveCapability {
@@ -61,6 +87,36 @@ const DEFAULT_DESCRIPTORS = [
 
 function asErrorDetail(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function projectVoiceInputReadiness(
+  mode: SpeechTranscriptionMode,
+  assets: WhisperCppReadiness,
+): BundledHostCapabilityReadiness {
+  if (assets.binaryAvailable && assets.modelAvailable) {
+    return {
+      id: 'builtin.voice-input',
+      status: 'ready',
+      detail: `whisper-cpp / ${assets.modelFileName}`,
+      preservesExternalAssetsOnUninstall: true,
+    };
+  }
+  if (mode === 'local-only') {
+    return {
+      id: 'builtin.voice-input',
+      status: 'not_ready',
+      detail: '本地模式缺少 whisper-cpp 或模型，安装前无法转写。',
+      installCommand: assets.installCommand,
+      preservesExternalAssetsOnUninstall: true,
+    };
+  }
+  return {
+    id: 'builtin.voice-input',
+    status: 'fallback',
+    detail: '本地 whisper-cpp 或模型缺失，将使用 Groq fallback。',
+    installCommand: assets.installCommand,
+    preservesExternalAssetsOnUninstall: true,
+  };
 }
 
 async function cleanupAll(cleanups: readonly HostCapabilityCleanup[]): Promise<void> {
@@ -77,6 +133,10 @@ export class BundledHostCapabilityRegistry {
   private readonly dataDir: string;
   private readonly descriptors: Map<BundledHostCapabilityId, BundledHostCapabilityDescriptor>;
   private readonly lifecycle: LifecycleRecorder;
+  private readonly migration?: typeof runVoiceCapabilityMigrationV1;
+  private readonly readSpeechMode: () => SpeechTranscriptionMode;
+  private readonly readWhisperReadiness: typeof inspectWhisperCppReadiness;
+  private readonly ipcMain: IpcMain;
   private readonly active = new Map<BundledHostCapabilityId, ActiveCapability>();
   private readonly published = new Set<BundledHostCapabilityId>();
   private initialized = false;
@@ -87,28 +147,58 @@ export class BundledHostCapabilityRegistry {
       (options.descriptors ?? DEFAULT_DESCRIPTORS).map((descriptor) => [descriptor.id, descriptor]),
     );
     this.lifecycle = options.lifecycle ?? recordBundledHostCapabilityLifecycle;
+    this.migration = options.migration === false
+      ? undefined
+      : options.migration ?? (options.dataDir === undefined ? runVoiceCapabilityMigrationV1 : undefined);
+    this.readSpeechMode = options.readSpeechMode ?? (() => (
+      getConfigService().getSettings().speech?.mode ?? DEFAULT_SPEECH_INPUT_SETTINGS.mode
+    ));
+    this.readWhisperReadiness = options.readWhisperReadiness ?? inspectWhisperCppReadiness;
+    this.ipcMain = options.ipcMain ?? ipcHost;
   }
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
+    if (this.migration) {
+      await this.migration({
+        dataDir: this.dataDir,
+        version: this.requireDescriptor('builtin.voice-input').version,
+        installVoiceInput: () => this.install('builtin.voice-input', {
+          detail: 'migration:legacy-usage',
+          source: 'migration',
+        }),
+      });
+    }
     const ordered = this.activationOrder();
     for (const descriptor of ordered) {
       const snapshot = await readBundledHostCapabilityInstallSnapshot(this.dataDir, descriptor.id);
       if (snapshot.record?.state === 'removed') continue;
       if (snapshot.record?.state === 'installed') {
-        await this.activateInstalled(descriptor);
+        if (!this.active.has(descriptor.id)) await this.activateInstalled(descriptor);
+      } else if (descriptor.id === 'builtin.voice-input') {
+        await writeBundledHostCapabilityInstallState(
+          this.dataDir,
+          descriptor.id,
+          'removed',
+          descriptor.version,
+          1,
+          'default',
+        );
       } else {
-        await this.install(descriptor.id);
+        await this.install(descriptor.id, { source: 'default' });
       }
     }
     this.initialized = true;
   }
 
-  async install(id: BundledHostCapabilityId): Promise<void> {
+  async install(
+    id: BundledHostCapabilityId,
+    options: { detail?: string; source?: 'default' | 'migration' | 'user' } = {},
+  ): Promise<void> {
     const descriptor = this.requireDescriptor(id);
     if (this.active.has(id)) return;
     for (const dependency of descriptor.dependencies) {
-      if (!this.active.has(dependency)) await this.install(dependency);
+      if (!this.active.has(dependency)) await this.install(dependency, options);
     }
     const previous = await readBundledHostCapabilityInstallSnapshot(this.dataDir, id);
     const baseRevision = previous.record?.revision ?? 0;
@@ -119,6 +209,7 @@ export class BundledHostCapabilityRegistry {
         'staged',
         descriptor.version,
         baseRevision + 1,
+        options.source,
       );
       await this.activateDescriptor(descriptor);
       await writeBundledHostCapabilityInstallState(
@@ -127,8 +218,10 @@ export class BundledHostCapabilityRegistry {
         'installed',
         descriptor.version,
         baseRevision + 2,
+        options.source,
       );
-      this.lifecycle(id, 'loaded', `version=${descriptor.version}`);
+      this.lifecycle(id, 'loaded', options.detail ?? `version=${descriptor.version}`);
+      this.publishStateChange(id, baseRevision + 2);
     } catch (error) {
       const active = this.active.get(id);
       if (active) {
@@ -149,6 +242,7 @@ export class BundledHostCapabilityRegistry {
 
   async uninstall(id: BundledHostCapabilityId): Promise<void> {
     const descriptor = this.requireDescriptor(id);
+    await descriptor.beforeUninstall?.();
     for (const candidate of this.descriptors.values()) {
       if (candidate.dependencies.includes(id) && this.active.has(candidate.id)) {
         throw new Error(`${id} is required by ${candidate.id}`);
@@ -164,8 +258,26 @@ export class BundledHostCapabilityRegistry {
       'removed',
       descriptor.version,
       (previous.record?.revision ?? 0) + 1,
+      'user',
     );
     this.lifecycle(id, 'unloaded', `version=${descriptor.version}`);
+    this.publishStateChange(id, (previous.record?.revision ?? 0) + 1);
+  }
+
+  async getReadiness(id: BundledHostCapabilityId): Promise<BundledHostCapabilityReadiness> {
+    this.requireDescriptor(id);
+    if (id !== 'builtin.voice-input') {
+      return {
+        id,
+        status: 'ready',
+        detail: 'ready',
+        preservesExternalAssetsOnUninstall: true,
+      };
+    }
+    const speech = getConfigService().getSettings().speech;
+    const mode = this.readSpeechMode();
+    const assets = await this.readWhisperReadiness(speech?.localModel);
+    return projectVoiceInputReadiness(mode, assets);
   }
 
   async listStates(): Promise<BundledHostCapabilityState[]> {
@@ -208,9 +320,10 @@ export class BundledHostCapabilityRegistry {
       throw new Error(`${surface} contributions are reserved for voice split P1`);
     };
     const host: HostCapabilityContext = {
-      registerIpcHandler: () => unsupported('IPC'),
+      registerIpcHandler: (contribution) => track(contribution(this.ipcMain)),
       registerWebRoute: () => unsupported('web route'),
-      registerWebSocketUpgrade: () => unsupported('WebSocket upgrade'),
+      registerWebSocketUpgrade: (contribution) => track(registerHostWebSocketUpgrade(contribution)),
+      registerShortcut: (contribution) => track(registerImmediateHostContribution(contribution)),
       registerStartupTask: () => unsupported('startup task'),
       registerProviderAction: () => unsupported('provider action'),
       registerTurnOutcomeResolver: (resolver) => track(registerTurnOutcomeResolver(resolver)),
@@ -258,6 +371,10 @@ export class BundledHostCapabilityRegistry {
     const descriptor = this.descriptors.get(id);
     if (!descriptor) throw new Error(`unknown bundled host capability: ${id}`);
     return descriptor;
+  }
+
+  private publishStateChange(id: BundledHostCapabilityId, revision: number): void {
+    broadcastToRenderer(IPC_CHANNELS.CAPABILITY_STATE_CHANGED, { id, revision });
   }
 }
 

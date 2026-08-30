@@ -49,9 +49,15 @@ vi.mock('../../../../../src/host/services/infra/notificationService', () => ({
 import { askUserQuestionModule } from '../../../../../src/host/tools/modules/planning/askUserQuestion';
 import {
   beginVoiceQuestionSession,
+  canOfferVoiceQuestion,
+  cancelVoiceQuestion,
   endVoiceQuestionSession,
+  offerVoiceQuestion,
 } from '../../../../../src/host/services/voice/voiceQuestionBridge';
+import { registerUserQuestionRoute } from '../../../../../src/host/services/capabilities/hostCapabilityPorts';
 import { IPC_CHANNELS } from '../../../../../src/shared/ipc';
+
+let cleanupVoiceQuestionRoute: (() => void | Promise<void>) | undefined;
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -74,12 +80,19 @@ const denyAll: CanUseToolFn = async () => ({ allow: false, reason: 'blocked' });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  cleanupVoiceQuestionRoute = registerUserQuestionRoute({
+    canOffer: canOfferVoiceQuestion,
+    offer: offerVoiceQuestion,
+    cancel: cancelVoiceQuestion,
+  });
   getAllWindowsMock.mockReturnValue([]);
   hasInteractiveRendererMock.mockReturnValue(false);
   sendMock.mockReset();
 });
 
 afterEach(() => {
+  void cleanupVoiceQuestionRoute?.();
+  cleanupVoiceQuestionRoute = undefined;
   vi.useRealTimers();
   setBrowserWindowInteractionProbe(null);
 });

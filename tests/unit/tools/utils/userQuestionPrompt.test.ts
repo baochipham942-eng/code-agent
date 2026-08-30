@@ -36,8 +36,14 @@ import type { CanUseToolFn, Logger, ToolContext } from '../../../../src/host/pro
 import { formatCny } from '../../../../src/shared/media/imageCost';
 import {
   beginVoiceQuestionSession,
+  canOfferVoiceQuestion,
+  cancelVoiceQuestion,
   endVoiceQuestionSession,
+  offerVoiceQuestion,
 } from '../../../../src/host/services/voice/voiceQuestionBridge';
+import { registerUserQuestionRoute } from '../../../../src/host/services/capabilities/hostCapabilityPorts';
+
+let cleanupVoiceQuestionRoute: (() => void | Promise<void>) | undefined;
 
 const Q: UserQuestion[] = [
   {
@@ -68,16 +74,25 @@ const allowAll: CanUseToolFn = async () => ({ allow: true });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  cleanupVoiceQuestionRoute = registerUserQuestionRoute({
+    canOffer: canOfferVoiceQuestion,
+    offer: offerVoiceQuestion,
+    cancel: cancelVoiceQuestion,
+  });
   getAllWindowsMock.mockReturnValue([]);
   hasInteractiveRendererMock.mockReturnValue(false);
 });
 
 afterEach(() => {
+  void cleanupVoiceQuestionRoute?.();
+  cleanupVoiceQuestionRoute = undefined;
   vi.useRealTimers();
 });
 
 describe('promptUserInChat', () => {
   it('无 renderer → status=no-renderer，不发 IPC（安全短路）', async () => {
+    await cleanupVoiceQuestionRoute?.();
+    cleanupVoiceQuestionRoute = undefined;
     getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
     hasInteractiveRendererMock.mockReturnValue(false);
     const r = await promptUserInChat(Q);

@@ -32,7 +32,7 @@ export interface ValidationResult {
 
 const VALID_PERMISSIONS: PluginPermission[] = [
   'filesystem', 'network', 'shell', 'clipboard', 'notification', 'storage',
-  'accessibility', 'screen-recording',
+  'accessibility', 'microphone', 'screen-recording',
 ];
 
 const VALID_SURFACES: PluginSurface[] = [

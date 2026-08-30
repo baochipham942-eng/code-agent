@@ -16,6 +16,9 @@ import {
   recordTurnOutcomeStamp,
   type TurnOutcomeStampContext,
 } from '../../../src/host/agent/runtime/turnOutcomeStamp';
+import { registerTurnOutcomeResolver } from '../../../src/host/services/capabilities/hostCapabilityPorts';
+
+let cleanupVoiceResolver: (() => void | Promise<void>) | undefined;
 
 function message(overrides: Partial<Message> = {}): Message {
   return {
@@ -71,6 +74,8 @@ function latestOutcome(recorder: TurnTraceRecorder) {
 
 describe('turn outcome stamp', () => {
   afterEach(() => {
+    void cleanupVoiceResolver?.();
+    cleanupVoiceResolver = undefined;
     if (existsSync(traceRoot)) rmSync(traceRoot, { recursive: true, force: true });
   });
 
@@ -183,6 +188,7 @@ describe('turn outcome stamp', () => {
   it('uses the existing voice outcome instead of rejudging generic evidence', async () => {
     const recorder = new TurnTraceRecorder('session-1');
     const voiceResolver = vi.fn(async () => 'unverified' as const);
+    cleanupVoiceResolver = registerTurnOutcomeResolver(voiceResolver);
     const messages = [
       message({
         metadata: {
@@ -201,10 +207,33 @@ describe('turn outcome stamp', () => {
       context(recorder, messages),
       'completed',
       summary({ toolCallCount: 1 }),
-      { resolveVoiceWorkOutcome: voiceResolver },
     );
 
     expect(voiceResolver).toHaveBeenCalledWith('session-1', 1_700_000_000_000);
+    expect(latestOutcome(recorder)).toEqual({
+      terminal: 'completed',
+      verdict: 'self_claimed',
+      evidenceRefs: [],
+      source: 'voice',
+    });
+  });
+
+  it('keeps a voice dispatch unverified when voice-live has not registered a resolver', async () => {
+    const recorder = new TurnTraceRecorder('session-1');
+    const messages = [message({
+      metadata: {
+        source: 'voice',
+        voiceCallId: 'voice-1',
+        voiceDispatch: { title: '写文件', workItemId: 'voice-work-1' },
+      },
+    })];
+
+    await recordTurnOutcomeStamp(
+      context(recorder, messages),
+      'completed',
+      summary({ changedFiles: ['/tmp/result.txt'] }),
+    );
+
     expect(latestOutcome(recorder)).toEqual({
       terminal: 'completed',
       verdict: 'self_claimed',

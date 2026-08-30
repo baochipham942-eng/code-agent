@@ -6,6 +6,7 @@ export type CapabilityPackagePermission =
   | 'notification'
   | 'storage'
   | 'accessibility'
+  | 'microphone'
   | 'screen-recording';
 
 export interface CapabilityPackagePreview {

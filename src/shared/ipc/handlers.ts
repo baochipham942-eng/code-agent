@@ -42,6 +42,7 @@ import type {
   CapabilityPackageResult,
   InstalledCapabilityPackage,
 } from '../contract/capabilityPackage';
+import type { BundledHostCapabilityState } from '../contract/bundledHostCapability';
 import type { AlmaRegistryAuditRefreshResult } from '../constants/almaRegistryAudit';
 
 import type { ExtensionInfo, ExtensionValidationResult } from '../contract/extension';
@@ -362,6 +363,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM]: (token: string) => Promise<CapabilityPackageResult<CapabilityPackageInstallResult>>;
   [IPC_CHANNELS.CAPABILITY_PACKAGE_CANCEL]: (token: string) => Promise<CapabilityPackageResult<void>>;
   [IPC_CHANNELS.CAPABILITY_PACKAGE_UNINSTALL]: (pluginId: string) => Promise<CapabilityPackageResult<void>>;
+  [IPC_CHANNELS.CAPABILITY_STATE_LIST]: () => Promise<BundledHostCapabilityState[]>;
   [IPC_CHANNELS.ALMA_REGISTRY_AUDIT_REFRESH]: () => Promise<{ success: boolean; data?: AlmaRegistryAuditRefreshResult; error?: string }>;
 
   // Unified extensions

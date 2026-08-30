@@ -448,6 +448,16 @@ async function initializeServices(): Promise<void> {
   }
   process.env.CODE_AGENT_DATA_DIR = dataDir;
 
+  // Signed host capabilities activate before the agent runtime can settle a turn.
+  // Both voice packages ship installed in P0; failures roll back their port contributions.
+  try {
+    const { initializeBundledHostCapabilities } = await import('../host/services/capabilities/bundledHostCapabilityRegistry');
+    await initializeBundledHostCapabilities();
+    logger.info('Bundled host capabilities initialized');
+  } catch (error) {
+    logger.warn('Bundled host capability initialization failed (non-blocking):', (error as Error).message);
+  }
+
   // Dev 槽首启动（数据目录里还没有 config.json）时，从生产数据目录一次性导入模型配置 +
   // 模型凭据，省掉「换槽 = 新机器、所有 key 重配」。必须排在 initConfigService /
   // getSecureStorage 之前——它俩一构造就会各自读盘并写回。

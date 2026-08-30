@@ -39,13 +39,61 @@ interface ExecPolicyFile {
 }
 
 // 禁止作为 prefix_rule 的模式（过于宽泛）
-const BANNED_PREFIXES = new Set([
+// 导出供 `neo policy check` 离线校验复用（banned-prefix-allow 冲突检测）。
+export const BANNED_PREFIXES = new Set([
   'python', 'python3', 'node', 'bash', 'sh', 'zsh',
   'sudo', 'su', 'eval', 'exec',
   // Windows shell 入口与任意执行（windows-support.md §3.2）
   'powershell', 'powershell.exe', 'pwsh', 'pwsh.exe',
   'cmd', 'cmd.exe', 'iex', 'invoke-expression',
 ]);
+
+// ----------------------------------------------------------------------------
+// Pure matching helpers — 与 ExecPolicyStore 共享同一套语义
+// （`neo policy check` 离线校验直接复用，避免实现分叉）
+// ----------------------------------------------------------------------------
+
+/** 命令策略只在统一 canonical form 上拆词；分析失败时返回空数组（不命中任何放行规则）。 */
+export function tokenizePolicyCommand(command: string): string[] {
+  const canonical = canonicalizeCommand(command);
+  return canonical.parsingFailed || !canonical.command
+    ? []
+    : canonical.command.split(' ');
+}
+
+/**
+ * 最长前缀匹配：更具体的规则优先；同长时先出现者胜出。
+ * 返回命中的规则本身（含 pattern/decision/source），未命中返回 null。
+ */
+export function matchPolicyRule(
+  rules: readonly PrefixRule[],
+  command: string,
+): PrefixRule | null {
+  const tokens = tokenizePolicyCommand(command);
+  if (tokens.length === 0) return null;
+
+  let bestMatch: PrefixRule | null = null;
+  let bestLength = 0;
+
+  for (const rule of rules) {
+    if (rule.pattern.length > tokens.length) continue;
+
+    let matches = true;
+    for (let i = 0; i < rule.pattern.length; i++) {
+      if (rule.pattern[i] !== tokens[i]) {
+        matches = false;
+        break;
+      }
+    }
+
+    if (matches && rule.pattern.length > bestLength) {
+      bestMatch = rule;
+      bestLength = rule.pattern.length;
+    }
+  }
+
+  return bestMatch;
+}
 
 // ----------------------------------------------------------------------------
 // ExecPolicyStore
@@ -71,31 +119,7 @@ export class ExecPolicyStore {
    * @returns 匹配的决策，或 null 表示未匹配
    */
   match(command: string): PolicyDecision | null {
-    const tokens = this.tokenize(command);
-    if (tokens.length === 0) return null;
-
-    // 从最长匹配开始（更具体的规则优先）
-    let bestMatch: PrefixRule | null = null;
-    let bestLength = 0;
-
-    for (const rule of this.rules) {
-      if (rule.pattern.length > tokens.length) continue;
-
-      let matches = true;
-      for (let i = 0; i < rule.pattern.length; i++) {
-        if (rule.pattern[i] !== tokens[i]) {
-          matches = false;
-          break;
-        }
-      }
-
-      if (matches && rule.pattern.length > bestLength) {
-        bestMatch = rule;
-        bestLength = rule.pattern.length;
-      }
-    }
-
-    return bestMatch?.decision ?? null;
+    return matchPolicyRule(this.rules, command)?.decision ?? null;
   }
 
   /**
@@ -108,7 +132,7 @@ export class ExecPolicyStore {
    * @returns 是否成功添加规则
    */
   learnFromApproval(command: string): boolean {
-    const tokens = this.tokenize(command);
+    const tokens = tokenizePolicyCommand(command);
     if (tokens.length === 0) return false;
 
     // 取前 1-2 个 token 作为 prefix（避免过于宽泛或过于具体）
@@ -219,14 +243,6 @@ export class ExecPolicyStore {
       logger.warn('Failed to load exec policy, starting fresh', error);
       this.rules = [];
     }
-  }
-
-  /** 命令策略只在统一 canonical form 上拆词；分析失败时不命中任何放行规则。 */
-  private tokenize(command: string): string[] {
-    const canonical = canonicalizeCommand(command);
-    return canonical.parsingFailed || !canonical.command
-      ? []
-      : canonical.command.split(' ');
   }
 }
 

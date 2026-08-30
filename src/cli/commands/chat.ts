@@ -278,13 +278,17 @@ export const chatCommand = new Command('chat')
         let gitBranch = '';
         let gitDirty = false;
         try {
-          gitBranch = execSync('git rev-parse --abbrev-ref HEAD 2>/dev/null', {
-            cwd: globalOpts?.project || process.cwd(),
+          const gitCwd = globalOpts?.project || process.cwd();
+          const gitStdio: ['ignore', 'pipe', 'ignore'] = ['ignore', 'pipe', 'ignore'];
+          gitBranch = execSync('git rev-parse --abbrev-ref HEAD', {
+            cwd: gitCwd,
             encoding: 'utf-8',
+            stdio: gitStdio,
           }).trim();
-          gitDirty = execSync('git status --porcelain --untracked-files=no 2>/dev/null', {
-            cwd: globalOpts?.project || process.cwd(),
+          gitDirty = execSync('git status --porcelain --untracked-files=no', {
+            cwd: gitCwd,
             encoding: 'utf-8',
+            stdio: gitStdio,
           }).trim().length > 0;
         } catch { /* not in git repo */ }
         // Ink 里执行真 slash 命令：console 输出捕获成系统消息渲染；

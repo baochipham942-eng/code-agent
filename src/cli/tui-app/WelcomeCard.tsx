@@ -1,32 +1,56 @@
 // ============================================================================
-// 首屏欢迎卡（Grok Build 风格）：全屏构图里居中渲染——
-// 星簇 logo + 产品名/版本 + 实际解析的 provider/model + cwd + 快捷动作行。
-// 只在空会话显示（首条消息出现即让位给消息流），取代旧的 scrollback 文字横幅。
+// 首屏欢迎海报（Grok Build 构图）：全屏留白里居中一张宽卡——
+// 大星簇 logo + 产品名/版本 + 高亮句 + 快捷动作表。
+// 矮终端退回 3 行紧缩 logo，避免把输入区顶出屏。
 // ============================================================================
 
 import { Box, Text } from 'ink';
+import {
+  NEO_LOGO_COMPACT,
+  NEO_LOGO_FULL,
+  WELCOME_ACTIONS,
+  WELCOME_HEADLINE,
+  WELCOME_SUBHEAD,
+} from './welcomeSplash';
 
-export function WelcomeCard({ version, provider, model, cwd }: {
+export function WelcomeCard({ version, columns, compact }: {
   version: string;
-  provider: string;
-  model: string;
-  cwd: string;
+  columns: number;
+  compact?: boolean;
 }) {
+  const logo = compact ? NEO_LOGO_COMPACT : NEO_LOGO_FULL;
+  const cardWidth = Math.min(Math.max(columns - 8, 42), 78);
+  const contentWidth = Math.max(28, cardWidth - 28);
+
   return (
-    <Box borderStyle="round" borderColor="gray" paddingX={2} columnGap={2}>
-      <Box flexDirection="column" justifyContent="center">
-        <Text color="cyan">  ◇  </Text>
-        <Text color="cyan">◇ ◈ ◇</Text>
-        <Text color="cyan">  ◇  </Text>
-      </Box>
+    <Box
+      width={cardWidth}
+      borderStyle="round"
+      borderColor="gray"
+      paddingX={3}
+      paddingY={compact ? 0 : 1}
+      columnGap={3}
+    >
       <Box flexDirection="column">
+        {logo.map((line, index) => (
+          <Text key={index} color="cyan">{line}</Text>
+        ))}
+      </Box>
+      <Box flexDirection="column" width={contentWidth}>
         <Text>
           <Text bold>Agent Neo</Text>
-          <Text dimColor> v{version}</Text>
+          {version ? <Text dimColor>  {version}</Text> : null}
         </Text>
-        <Text dimColor>{provider ? `${provider}/${model}` : model}</Text>
-        <Text dimColor>{cwd}</Text>
-        <Text dimColor>/help · /resume · /exit · !cmd</Text>
+        {compact ? null : <Box height={1} />}
+        <Text color="yellow" bold>{WELCOME_HEADLINE}</Text>
+        <Text dimColor>{WELCOME_SUBHEAD}</Text>
+        {compact ? null : <Box height={1} />}
+        {WELCOME_ACTIONS.map((action) => (
+          <Box key={action.label} width={contentWidth} justifyContent="space-between">
+            <Text>{action.label}</Text>
+            <Text dimColor>{action.shortcut}</Text>
+          </Box>
+        ))}
       </Box>
     </Box>
   );

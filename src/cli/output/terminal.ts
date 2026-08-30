@@ -8,6 +8,7 @@ import os from 'os';
 import ora, { type Ora } from 'ora';
 import type { AgentEvent, ToolCall, ToolResult } from '../../shared/contract';
 import type { SwarmEvent, SwarmAgentState } from '../../shared/contract/swarm';
+import { abbreviateHomePath, NEO_LOGO_COMPACT } from '../tui-app/welcomeSplash';
 
 // ♠♥♣♦ 旋转扑克牌思考动效
 const POKER_SPINNER = {
@@ -60,12 +61,7 @@ export class TerminalOutput {
     const termWidth = process.stdout.columns || 80;
     const line = chalk.dim('─'.repeat(Math.min(termWidth, 60)));
 
-    // ASCII logo：菱形星簇（保留 ◈ 识别符号，比旧方框更有存在感）
-    const logo = [
-      '   ◇   ',
-      ' ◇ ◈ ◇ ',
-      '   ◇   ',
-    ];
+    const logo = NEO_LOGO_COMPACT;
 
     // Initialize model tracking from welcome options
     if (options?.model) this.currentModel = options.model;
@@ -86,8 +82,7 @@ export class TerminalOutput {
 
     // Line 3: logo + working directory (abbreviated)
     const cwd = options?.workingDirectory || process.cwd();
-    const home = os.homedir();
-    const displayPath = cwd.startsWith(home) ? '~' + cwd.slice(home.length) : cwd;
+    const displayPath = abbreviateHomePath(cwd);
     console.log(`${chalk.cyan(logo[2])}${chalk.dim(displayPath)}`);
 
     console.log(line);

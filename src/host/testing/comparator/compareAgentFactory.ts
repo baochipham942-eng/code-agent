@@ -7,6 +7,7 @@ import type { DatabaseService } from '../../services/core/databaseService';
 import type { TelemetryCollector } from '../../telemetry/telemetryCollector';
 import { EVAL_AGENT_DEFAULTS, StandaloneAgentAdapter } from '../agentAdapter';
 import type { CompareConfiguration, HarnessVariantConfig } from '../types';
+import { normalizeSkillNames } from '../skillSelection';
 
 export interface EffectiveCompareArm {
   name: string;
@@ -16,6 +17,7 @@ export interface EffectiveCompareArm {
   harness: HarnessVariantConfig | null;
   memory: { longTerm: boolean; routingModel: string | null };
   reasoningEffort: CompareConfiguration['reasoningEffort'] | null;
+  skills: string[];
 }
 
 export function resolveEffectiveCompareArm(
@@ -34,6 +36,7 @@ export function resolveEffectiveCompareArm(
       routingModel: config.memory?.routingModel ?? baseline.memory?.routingModel ?? null,
     },
     reasoningEffort: config.reasoningEffort ?? baseline.reasoningEffort ?? null,
+    skills: normalizeSkillNames(config.skills),
   };
 }
 
@@ -44,7 +47,7 @@ export function buildCompareArmShape(
 ): EvalRunStamp['shape'] {
   const arm = resolveEffectiveCompareArm(config, baseline);
   return {
-    skills: [...EVAL_AGENT_DEFAULTS.skills],
+    skills: [...arm.skills],
     memory: arm.memory.longTerm,
     swarm,
     harness: arm.harness,
@@ -59,6 +62,7 @@ interface CompareAgentFactoryOptions {
   sessionType?: SessionType;
   database?: DatabaseService;
   telemetryCollector?: TelemetryCollector;
+  onEvaluationSignal?: ConstructorParameters<typeof StandaloneAgentAdapter>[0]['onEvaluationSignal'];
 }
 
 /** The only constructor path for compare arms, keeping signature/stamp/runtime values aligned. */
@@ -77,12 +81,13 @@ export function createCompareAgent(
     memoryRoutingModel: arm.memory.routingModel ?? undefined,
     includeRecentConversations: EVAL_AGENT_DEFAULTS.includeRecentConversations,
     maxSystemPromptTokens: 12_000,
-    skills: EVAL_AGENT_DEFAULTS.skills,
+    skills: arm.skills,
     includeClaudeLegacySkills: false,
     requestPermission: options.requestPermission,
     sessionType: options.sessionType ?? 'eval',
     database: options.database,
     telemetryCollector: options.telemetryCollector,
+    onEvaluationSignal: options.onEvaluationSignal,
     ...(arm.reasoningEffort ? { inferenceOptions: { reasoningEffort: arm.reasoningEffort } } : {}),
     modelConfig: {
       provider: arm.provider as ModelProvider,

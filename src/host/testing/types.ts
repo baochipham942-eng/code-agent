@@ -385,6 +385,8 @@ export interface TestResult {
   turnCount: number;
   /** Assertion score (0.0 - 1.0) */
   score: number;
+  /** 本 case 内每个 skill 的真实激活次数；缺省/空对象均表示未触发。 */
+  skillActivations?: Record<string, number>;
   /** 本 case 由 BudgetService usage 实际归集的美元成本 */
   costUsd?: number;
   /** provider response usage；缺失或混入本地估算时，usageStatus 固定为 usage_unavailable。 */
@@ -791,7 +793,7 @@ export interface CompareConfiguration {
     routingModel?: string;
   };
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh';
-  /** Reserved for SKILLARM. Declared here only; this task deliberately does not wire it. */
+  /** Run-scoped skills visible to this comparison arm. */
   skills?: string[];
   enabledTools?: string[];
   temperature?: number;
@@ -828,6 +830,8 @@ export interface CaseComparison {
   failureB?: EvalFailureClassification;
   durationA: number;
   durationB: number;
+  skillActivationsA: Record<string, number>;
+  skillActivationsB: Record<string, number>;
   /** WP1-3b：任一侧没跑成（infra_excluded / 零产出带错误）→ 本 pair 不进胜负统计 */
   excludedReason?: string;
 }
@@ -850,6 +854,10 @@ export interface ComparisonResult {
     verdict: string;
     /** WP1-3b：因一侧没跑成而排除的 pair 数（不在 totalCases 内） */
     excludedPairs?: number;
+    /** Candidate 配置了 skill 但本题零触发，未计入胜负的 pair 数。 */
+    skillNotActivatedPairs?: number;
+    baselineSkillActivations: Record<string, number>;
+    candidateSkillActivations: Record<string, number>;
     /** 配对 sign test 双尾 p 值（只算 decisive pair；tie/excluded 不进 n） */
     pValue?: number;
   };

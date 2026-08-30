@@ -100,12 +100,20 @@ export interface RegressionReportLike {
 
 export class ExperimentAdapter {
   private memoryInjections = new Map<string, number>();
+  private skillActivations = new Map<string, Record<string, number>>();
 
   constructor(private db: ExperimentDbWriter) {}
 
   recordMemoryInjection(event: Extract<EvalRunEvent, { type: 'memory_injected' }>): void {
     const key = `${event.runId}:${event.testId}`;
     this.memoryInjections.set(key, (this.memoryInjections.get(key) ?? 0) + 1);
+  }
+
+  recordSkillActivation(event: Extract<EvalRunEvent, { type: 'skill_activated' }>): void {
+    const key = `${event.runId}:${event.testId}`;
+    const activations = this.skillActivations.get(key) ?? {};
+    activations[event.name] = (activations[event.name] ?? 0) + 1;
+    this.skillActivations.set(key, activations);
   }
 
   beginEventRun(event: Extract<EvalRunEvent, { type: 'run_start' }>): void {
@@ -144,7 +152,12 @@ export class ExperimentAdapter {
   persistEventCase(event: Extract<EvalRunEvent, { type: 'case_end' }>): void {
     const signalKey = `${event.runId}:${event.testId}`;
     const memoryInjections = this.memoryInjections.get(signalKey) ?? 0;
+    const eventSkillActivations = event.skillActivations ?? {};
+    const skillActivations = Object.keys(eventSkillActivations).length > 0
+      ? eventSkillActivations
+      : this.skillActivations.get(signalKey) ?? {};
     this.memoryInjections.delete(signalKey);
+    this.skillActivations.delete(signalKey);
     this.db.insertExperimentCases(event.runId, [{
       id: `${event.runId}:${event.testId}`,
       case_id: event.testId,
@@ -164,6 +177,7 @@ export class ExperimentAdapter {
         trialAggregate: event.trialAggregate,
         scoreAuthority: event.scoreAuthority,
         memoryInjections,
+        skillActivations,
         source: 'eval',
       }),
     }]);
@@ -557,6 +571,7 @@ export class ExperimentAdapter {
           turnCount: r.turnCount,
           toolExecutions: r.toolExecutions?.length || 0,
           expectationResults: r.expectationResults,
+          skillActivations: r.skillActivations ?? {},
           telemetryGate: r.telemetryGate,
           realAgentRun,
           ...(r.killedByTimeout ? { killedByTimeout: true } : {}),

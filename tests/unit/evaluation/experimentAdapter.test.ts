@@ -14,7 +14,7 @@ function createDbWriter() {
 }
 
 describe('ExperimentAdapter canonical harness persistence', () => {
-  it('counts memory_injected events into the matching event-backed case data', () => {
+  it('counts memory and per-name skill signals into the matching event-backed case data', () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);
     adapter.recordMemoryInjection({
@@ -33,19 +33,32 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       testId: 'event-case',
       id: 'memory-b',
     });
+    for (const ts of [3, 4]) {
+      adapter.recordSkillActivation({
+        schemaVersion: 2,
+        type: 'skill_activated',
+        ts,
+        runId: 'event-run',
+        testId: 'event-case',
+        name: 'x',
+      });
+    }
     adapter.persistEventCase({
       schemaVersion: 2,
       type: 'case_end',
-      ts: 3,
+      ts: 5,
       runId: 'event-run',
       testId: 'event-case',
       status: 'passed',
       score: 1,
       durationMs: 5,
+      skillActivations: {},
     });
 
     expect(JSON.parse(db.insertExperimentCases.mock.calls[0]?.[1][0].data_json).memoryInjections)
       .toBe(2);
+    expect(JSON.parse(db.insertExperimentCases.mock.calls[0]?.[1][0].data_json).skillActivations)
+      .toEqual({ x: 2 });
   });
 
   it('persists failure axes for event-backed and TestRunner-backed cases', async () => {
@@ -126,6 +139,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
           errors: [],
           turnCount: 1,
           score: 0.75,
+          skillActivations: { x: 2 },
           trials: [
             { score: 0.4, status: 'failed', duration_ms: 1000 },
             { score: 0.75, status: 'passed', duration_ms: 2000 },
@@ -210,6 +224,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
         passed: false,
         reasons: expect.arrayContaining(['missing_telemetry_completeness']),
       },
+      skillActivations: { x: 2 },
       qualityReport: {
         reportId: 'quality:test-run-1:case-a',
         status: 'failed',

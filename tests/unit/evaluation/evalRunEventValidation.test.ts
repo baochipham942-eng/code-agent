@@ -33,5 +33,16 @@ describe('evaluation run event validation', () => {
       exitCode: 0,
       aborted: false,
     })).toThrow(/runId/);
+    expect(() => parseEvalRunEvent({
+      schemaVersion: 2,
+      type: 'case_end',
+      ts: 1,
+      runId: 'run-1',
+      testId: 'case-1',
+      status: 'passed',
+      score: 1,
+      durationMs: 1,
+      skillActivations: { docx: -1 },
+    })).toThrow(/skillActivations/);
   });
 });

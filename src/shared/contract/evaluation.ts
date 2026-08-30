@@ -225,6 +225,7 @@ export type EvalRunEvent =
       trials?: number;
       sessionId?: string;
       scoreAuthority?: 'deterministic_assertion' | 'llm_judge' | 'self_check';
+      skillActivations?: Record<string, number>;
       trialAggregate?: {
         n: number;
         c: number;
@@ -303,6 +304,7 @@ export interface EvalRunRequest {
   split?: 'held-in' | 'held-out' | 'control' | 'safety';
   timeoutMs?: number;
   repeat?: number;
+  skills?: string[];
 }
 
 export interface EvalRunStartResult {

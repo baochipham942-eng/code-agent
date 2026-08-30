@@ -125,6 +125,19 @@ describe('StandaloneAgentAdapter goal contract injection', () => {
     }
   });
 
+  it('counts emitted skill activations for the bound evaluation case and clears after consumption', async () => {
+    const adapter = makeAdapter();
+    adapter.configureEvaluationCase('case-a');
+    scriptedGoalEvents = [
+      { type: 'skill_activated', data: { name: 'commit' } },
+      { type: 'skill_activated', data: { name: 'commit' } },
+    ];
+    await adapter.sendMessage('hello');
+
+    expect(adapter.consumeSkillActivations('case-a')).toEqual({ commit: 2 });
+    expect(adapter.consumeSkillActivations('case-a')).toEqual({});
+  });
+
   it('passes a built GoalContract with prompt fallback and allowSwarm=false', async () => {
     const adapter = makeAdapter();
     adapter.configureGoalContract({ verify_command: 'test -f x.txt', max_turns: 9 });

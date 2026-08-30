@@ -83,14 +83,14 @@ function validateRequest(value: unknown): EvalRunRequest {
   if (foundForbidden.length > 0) {
     throw new Error(`评测请求不接受这些字段：${foundForbidden.join(', ')}`);
   }
-  const allowed = new Set(['scope', 'maxCases', 'ids', 'tags', 'split', 'timeoutMs', 'repeat']);
+  const allowed = new Set(['scope', 'maxCases', 'ids', 'tags', 'split', 'timeoutMs', 'repeat', 'skills']);
   const unknown = Object.keys(value).filter((key) => !allowed.has(key));
   if (unknown.length > 0) throw new Error(`评测请求包含未知字段：${unknown.join(', ')}`);
   if (value.scope !== 'smoke' && value.scope !== 'full') throw new Error('scope 必须是 smoke 或 full。');
   if (!Number.isInteger(value.maxCases) || (value.maxCases as number) <= 0) {
     throw new Error('maxCases 必须是正整数。');
   }
-  const readStrings = (key: 'ids' | 'tags'): string[] | undefined => {
+  const readStrings = (key: 'ids' | 'tags' | 'skills'): string[] | undefined => {
     const candidate = value[key];
     if (candidate === undefined) return undefined;
     if (!isNonEmptyStringArray(candidate)) {
@@ -118,6 +118,7 @@ function validateRequest(value: unknown): EvalRunRequest {
     split: split as EvalRunRequest['split'],
     timeoutMs: timeoutMs as number | undefined,
     repeat: repeat as number | undefined,
+    skills: readStrings('skills'),
   };
 }
 
@@ -216,6 +217,7 @@ export class EvalRunBridge {
       '--scope', request.scope,
       '--max-cases', String(request.maxCases),
       ...(request.repeat !== undefined ? ['--repeat', String(request.repeat)] : []),
+      ...(request.skills?.length ? ['--skills', request.skills.join(',')] : []),
       ...(request.ids?.length ? ['--ids', request.ids.join(',')] : []),
       ...(request.tags?.length ? ['--tags', request.tags.join(',')] : []),
       ...(request.split ? ['--split', request.split] : []),
@@ -355,6 +357,8 @@ export class EvalRunBridge {
         state.adapter.beginEventRun(event);
       } else if (event.type === 'memory_injected') {
         state.adapter.recordMemoryInjection(event);
+      } else if (event.type === 'skill_activated') {
+        state.adapter.recordSkillActivation(event);
       } else if (event.type === 'case_end') {
         state.caseEvents.push(event);
         state.adapter.persistEventCase(event);

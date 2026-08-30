@@ -13,6 +13,11 @@ type ComparisonRunStampContext = {
   candidate: EvalRunStamp;
 };
 
+function formatSkillActivations(activations: Record<string, number>): string {
+  const entries = Object.entries(activations).sort(([left], [right]) => left.localeCompare(right));
+  return entries.length > 0 ? entries.map(([name, count]) => `${name}:${count}`).join(', ') : '0';
+}
+
 /**
  * Generate a Markdown report from a ComparisonResult.
  */
@@ -66,8 +71,14 @@ export function generateComparisonMarkdown(
     lines.push(`| Sign test p 值 | ${describeSignTest(summary.baselineWins, summary.candidateWins, summary.pValue)} |`);
   }
   if (summary.excludedPairs) {
-    lines.push(`| 排除 Pair（一侧没跑成） | ${summary.excludedPairs} 🔌 |`);
+    lines.push(`| 排除 Pair（未计入胜负） | ${summary.excludedPairs} |`);
   }
+  if (summary.skillNotActivatedPairs) {
+    lines.push(`| 分出胜负的题 | ${summary.totalCases} |`);
+    lines.push(`| 实验组 skill 未出场，不计入 | ${summary.skillNotActivatedPairs} |`);
+  }
+  lines.push(`| Baseline skill 触发次数 | ${formatSkillActivations(summary.baselineSkillActivations)} |`);
+  lines.push(`| Candidate skill 触发次数 | ${formatSkillActivations(summary.candidateSkillActivations)} |`);
   {
     const valid = cases.filter((c) => !c.excludedReason && c.assertionCount > 0);
     if (valid.length > 0) {
@@ -106,7 +117,11 @@ export function generateComparisonMarkdown(
     lines.push(`## 排除的 Pair（未计入胜负）`);
     lines.push('');
     for (const c of excluded) {
-      lines.push(`- 🔌 **${c.testId}**: ${c.excludedReason}`);
+      const icon = c.excludedReason === 'skill_not_activated' ? '🫥' : '🔌';
+      lines.push(
+        `- ${icon} **${c.testId}**: ${c.excludedReason}; `
+        + `skill 触发次数 A ${formatSkillActivations(c.skillActivationsA)} / B ${formatSkillActivations(c.skillActivationsB)}`,
+      );
     }
     lines.push('');
   }
@@ -114,12 +129,12 @@ export function generateComparisonMarkdown(
   // Per-case results
   lines.push(`## Per-Case Results`);
   lines.push('');
-  lines.push(`| Test | Layer | A (role) | B (role) | Assertions A | Assertions B | Assertion Winner | 参考 · 启发式/评审 | Duration A | Duration B |`);
-  lines.push(`|---|---|---|---|---:|---:|---|---|---|---|`);
+  lines.push(`| Test | Layer | A (role) | B (role) | Assertions A | Assertions B | Skill A | Skill B | Assertion Winner | 参考 · 启发式/评审 | Duration A | Duration B |`);
+  lines.push(`|---|---|---|---|---:|---:|---|---|---|---|---|---|`);
 
   for (const c of cases.filter((x) => !x.excludedReason)) {
     lines.push(
-      `| ${c.testId} | ${c.layer ?? '其他题目'} | ${c.assignment.A} | ${c.assignment.B} | ${(c.passRateA * 100).toFixed(1)}% | ${(c.passRateB * 100).toFixed(1)}% | ${c.assertionWinner} | ${c.referenceWinner} (${c.referenceKind}) | ${formatDuration(c.durationA)} | ${formatDuration(c.durationB)} |`,
+      `| ${c.testId} | ${c.layer ?? '其他题目'} | ${c.assignment.A} | ${c.assignment.B} | ${(c.passRateA * 100).toFixed(1)}% | ${(c.passRateB * 100).toFixed(1)}% | ${formatSkillActivations(c.skillActivationsA)} | ${formatSkillActivations(c.skillActivationsB)} | ${c.assertionWinner} | ${c.referenceWinner} (${c.referenceKind}) | ${formatDuration(c.durationA)} | ${formatDuration(c.durationB)} |`,
     );
   }
   lines.push('');
@@ -132,6 +147,7 @@ export function generateComparisonMarkdown(
     lines.push('');
     lines.push(`- **断言胜方:** ${c.assertionWinner}（A ${(c.passRateA * 100).toFixed(1)}% / B ${(c.passRateB * 100).toFixed(1)}%，${c.assertionCount} 条）`);
     lines.push(`- **参考 · ${c.referenceKind === 'llm_judge' ? '评审' : '启发式'}:** ${c.referenceWinner}`);
+    lines.push(`- **skill 触发次数:** A ${formatSkillActivations(c.skillActivationsA)} / B ${formatSkillActivations(c.skillActivationsB)}`);
     lines.push(`- **参考分 A (${c.assignment.A}):** Content=${c.scoreA.content.total.toFixed(2)}, Structure=${c.scoreA.structure.total.toFixed(2)}, Combined=${c.scoreA.combined.toFixed(2)}`);
     lines.push(`- **参考分 B (${c.assignment.B}):** Content=${c.scoreB.content.total.toFixed(2)}, Structure=${c.scoreB.structure.total.toFixed(2)}, Combined=${c.scoreB.combined.toFixed(2)}`);
     lines.push(`- **参考说明:** ${c.reasoning}`);
@@ -166,6 +182,11 @@ export function generateComparisonConsole(result: ComparisonResult): string {
   lines.push(`  Winner: ${winnerColor.bold(summary.winner.toUpperCase())}`);
   lines.push(`  Reference score: ${chalk.cyan(summary.baselineAvgScore.toFixed(2))} vs ${chalk.magenta(summary.candidateAvgScore.toFixed(2))}`);
   lines.push(`  Wins:   ${chalk.cyan(String(summary.baselineWins))} - ${chalk.magenta(String(summary.candidateWins))} - ${chalk.yellow(String(summary.ties))} ties`);
+  lines.push(`  Skill activations: baseline ${formatSkillActivations(summary.baselineSkillActivations)} / candidate ${formatSkillActivations(summary.candidateSkillActivations)}`);
+  if (summary.skillNotActivatedPairs) {
+    lines.push(chalk.yellow(`  分出胜负的题: ${summary.totalCases}`));
+    lines.push(chalk.yellow(`  实验组有 ${summary.skillNotActivatedPairs} 题 skill 未出场，不计入`));
+  }
   lines.push(`  Confidence: ${(summary.confidence * 100).toFixed(0)}%`);
   if (summary.pValue !== undefined) {
     const sig = summary.pValue <= SIGN_TEST_ALPHA;
@@ -185,9 +206,13 @@ export function generateComparisonConsole(result: ComparisonResult): string {
   // 排除的 pair（WP1-3b）
   const excluded = cases.filter((c) => c.excludedReason);
   if (excluded.length > 0) {
-    lines.push(chalk.yellow.bold(`排除的 Pair（一侧没跑成，未计入胜负）: ${excluded.length}`));
+    lines.push(chalk.yellow.bold(`排除的 Pair（未计入胜负）: ${excluded.length}`));
     for (const c of excluded) {
-      lines.push(chalk.yellow(`  🔌 ${c.testId}: ${c.excludedReason}`));
+      const icon = c.excludedReason === 'skill_not_activated' ? '🫥' : '🔌';
+      lines.push(chalk.yellow(
+        `  ${icon} ${c.testId}: ${c.excludedReason}; `
+        + `skill A ${formatSkillActivations(c.skillActivationsA)} / B ${formatSkillActivations(c.skillActivationsB)}`,
+      ));
     }
     lines.push('');
   }
@@ -211,6 +236,7 @@ export function generateComparisonConsole(result: ComparisonResult): string {
       `B(${c.assignment.B}): ${scoreBLabel(`${(c.passRateB * 100).toFixed(1)}%`)}  ` +
       `Assertion winner: ${winnerLabel}`,
     );
+    lines.push(`    Skill activations: A ${formatSkillActivations(c.skillActivationsA)} / B ${formatSkillActivations(c.skillActivationsB)}`);
     lines.push(`    ${chalk.dim(`参考 · ${c.referenceKind === 'llm_judge' ? '评审' : '启发式'}: ${c.referenceWinner}; ${c.reasoning}`)}`);
     lines.push('');
   }

@@ -20,6 +20,7 @@ export class EvalRunEventStream {
     string,
     Array<Extract<TestEvent, { type: 'tool_result' }>>
   >();
+  private readonly skillActivations = new Map<string, Record<string, number>>();
   private readonly onProcessExit = (exitCode: number) => {
     this.finish(exitCode);
   };
@@ -58,6 +59,11 @@ export class EvalRunEventStream {
         });
         break;
       case 'case_end':
+        event.result.skillActivations = {
+          ...(event.result.skillActivations ?? {}),
+          ...(this.skillActivations.get(event.result.testId) ?? {}),
+        };
+        this.skillActivations.delete(event.result.testId);
         for (const toolExecution of event.result.toolExecutions) {
           this.forward({
             type: 'tool_call',
@@ -91,6 +97,7 @@ export class EvalRunEventStream {
           ...(event.result.trials ? { trials: event.result.trials.length } : {}),
           ...(event.result.sessionId ? { sessionId: event.result.sessionId } : {}),
           ...(event.result.scoreAuthority ? { scoreAuthority: event.result.scoreAuthority } : {}),
+          skillActivations: event.result.skillActivations,
           ...(event.result.trialAggregate ? { trialAggregate: event.result.trialAggregate } : {}),
         });
         break;
@@ -104,11 +111,17 @@ export class EvalRunEventStream {
         ]);
         break;
       case 'error':
-      case 'skill_activated':
       case 'memory_injected':
       case 'subagent_spawned':
         this.write({ schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, ts: Date.now(), runId: this.runId, ...event });
         break;
+      case 'skill_activated': {
+        const activations = this.skillActivations.get(event.testId) ?? {};
+        activations[event.name] = (activations[event.name] ?? 0) + 1;
+        this.skillActivations.set(event.testId, activations);
+        this.write({ schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, ts: Date.now(), runId: this.runId, ...event });
+        break;
+      }
       case 'suite_end':
         this.recordSummary(event.summary);
         break;

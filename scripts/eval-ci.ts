@@ -84,6 +84,7 @@ import {
 import { EVAL_AGENT_DEFAULTS } from '../src/host/testing/agentAdapter';
 import { EVAL_GOAL_ALLOW_SWARM } from '../src/host/testing/goalContractEval';
 import { EVAL_REPEAT_MAX } from '../src/shared/contract/evaluation';
+import { validateDiscoverableSkills } from '../src/host/testing/skillSelection';
 
 /** roadmap 2.4 A/B 归因（audit D-R3）：当前 run 的 provider 变体臂 */
 function providerVariantArm(): 'variant-on' | 'variant-off' {
@@ -121,6 +122,7 @@ function parseArgs(argv: string[]) {
   let dataDir: string | undefined;
   let runId: string | undefined;
   let repeat = 1;
+  let skills: string[] | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -174,6 +176,8 @@ function parseArgs(argv: string[]) {
       runId = args[++i].trim();
     } else if (arg === '--repeat') {
       repeat = Number(args[++i]);
+    } else if (arg === '--skills' && i + 1 < args.length) {
+      skills = args[++i].split(',').map((name) => name.trim()).filter(Boolean);
     } else if (arg === '--predicted-fixes' && i + 1 < args.length) {
       predictedFixes = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
     } else if (arg === '--risk-tasks' && i + 1 < args.length) {
@@ -221,7 +225,7 @@ function parseArgs(argv: string[]) {
     process.exit(1);
   }
 
-  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, runId, repeat };
+  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, runId, repeat, skills };
 }
 
 function printUsage() {
@@ -239,6 +243,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --json-events      Emit NDJSON events on stdout; human output goes to stderr
   npx tsx scripts/eval-ci.ts --max-cases <n>    Max cases in --real mode (default: 50)
   npx tsx scripts/eval-ci.ts --repeat <k>        Run every case k times (default: 1)
+  npx tsx scripts/eval-ci.ts --skills <a,b>      Expose exactly these discoverable skills to a normal eval run
   npx tsx scripts/eval-ci.ts --tags <a,b>       Filter test cases by tags
   npx tsx scripts/eval-ci.ts --ids <a,b>        Filter test cases by IDs
   npx tsx scripts/eval-ci.ts --split <bucket>   Filter to 'held-in' (daily) / 'held-out' (milestone) / 'control' (judge calibration) / 'safety' (OS jail only)
@@ -393,6 +398,7 @@ function createAgent(opts: {
     { type: 'skill_activated' | 'memory_injected' | 'subagent_spawned' }>) => void;
   database?: DatabaseService;
   telemetryCollector?: TelemetryCollector;
+  skills?: readonly string[];
 }): AgentInterface {
   if (!opts.real) {
     const mockAgent = new MockAgentAdapter();
@@ -455,7 +461,7 @@ function createAgent(opts: {
     persistLongTermMemory: EVAL_AGENT_DEFAULTS.persistLongTermMemory,
     includeRecentConversations: EVAL_AGENT_DEFAULTS.includeRecentConversations,
     maxSystemPromptTokens: 12_000,
-    skills: EVAL_AGENT_DEFAULTS.skills,
+    skills: opts.skills ?? EVAL_AGENT_DEFAULTS.skills,
     includeClaudeLegacySkills: false,
     sessionType: 'eval',
     onEvaluationSignal: opts.onEvaluationSignal,
@@ -516,6 +522,7 @@ async function runEvals(
     prediction?: { predictedFixes: string[]; riskTasks: string[] };
     caseDir?: string;
     repeat: number;
+    skills?: string[];
     eventStream?: EvalRunEventStream;
     eventConfig: EvalRunStartConfig;
   }
@@ -562,6 +569,7 @@ async function runEvals(
       workingDir: agentWorkingDir,
       repoDir: workingDir,
       onEvaluationSignal: forwardSignal,
+      skills: opts.skills,
     });
 
     const useParallelWorkers = (opts.concurrency ?? 1) > 1;
@@ -577,6 +585,7 @@ async function runEvals(
             workingDir: workingDirectory,
             repoDir: workingDir,
             onEvaluationSignal: forwardSignal,
+            skills: opts.skills,
           })
         : undefined,
       useParallelWorkers
@@ -611,6 +620,7 @@ async function runEvals(
               onEvaluationSignal: forwardSignal,
               database: isolatedState.database,
               telemetryCollector: isolatedState.telemetryCollector,
+              skills: opts.skills,
             });
             return {
               agent: isolatedAgent,
@@ -737,7 +747,7 @@ async function runCompareCommand(
     assertCompareArmsDistinct, assertCompareArmsActivated,
   } = await import('../src/host/testing/comparator');
 
-  const candidate = await loadCompareConfig(candidatePath);
+  const candidate = await loadCompareConfig(candidatePath, { workingDirectory: workingDir });
   const resolvedProvider = opts.provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
   const resolvedModel = opts.model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
   const baseline: CompareConfiguration = {
@@ -757,6 +767,14 @@ async function runCompareCommand(
   const testCases = !opts.real && opts.mockEvalPolicy
     ? selectedTestCases.filter((testCase) => getMockCasePolicy(testCase.id)?.kind === 'fixture')
     : selectedTestCases;
+  const candidateSkills = resolveEffectiveCompareArm(candidate, baseline).skills;
+  for (const skillName of candidateSkills) {
+    const taggedCount = testCases.filter((testCase) => testCase.tags?.includes(`skill:${skillName}`)).length;
+    if (taggedCount === 0) {
+      console.log(chalk.yellow(`  题集里没有针对能力 ${skillName} 的题，可能全程不出场`));
+    }
+  }
+  if (candidateSkills.length > 0) console.log('');
   const totalCases = testCases.length;
   const discrimination = estimateDiscrimination(
     testCases.map((testCase) => testCase.id),
@@ -962,6 +980,7 @@ function createRunStartConfig(opts: {
   workingDir: string;
   caseDir?: string;
   repeat: number;
+  skills?: string[];
 }): EvalRunStartConfig {
   const model = opts.real
     ? opts.model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL
@@ -982,7 +1001,7 @@ function createRunStartConfig(opts: {
     judge: opts.judge,
     trialsPerCase: opts.repeat,
     shape: {
-      skills: [...EVAL_AGENT_DEFAULTS.skills],
+      skills: [...(opts.skills ?? EVAL_AGENT_DEFAULTS.skills)],
       memory: EVAL_AGENT_DEFAULTS.persistLongTermMemory,
       swarm: EVAL_GOAL_ALLOW_SWARM,
       harness: null,
@@ -1011,11 +1030,12 @@ async function mainImpl(
   cwd: string,
   eventStream?: EvalRunEventStream,
 ): Promise<void> {
-  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, repeat } = parseArgs(argv);
+  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, repeat, skills } = parseArgs(argv);
   const workingDir = cwd;
   if (dataDir) {
     process.env.CODE_AGENT_DATA_DIR = path.resolve(cwd, dataDir);
   }
+  const selectedSkills = await validateDiscoverableSkills(skills, workingDir);
   const effectiveReal = real || !!model;
   const manager = new BaselineManager(
     workingDir,
@@ -1142,6 +1162,7 @@ async function mainImpl(
       tags,
       ids,
       repeat,
+      skills: selectedSkills,
       eventStream,
       eventConfig: createRunStartConfig({
         real: false,
@@ -1152,6 +1173,7 @@ async function mainImpl(
         maxCases,
         concurrency,
         repeat,
+        skills: selectedSkills,
         judge,
         workingDir,
       }),
@@ -1216,6 +1238,7 @@ async function mainImpl(
       tags,
       ids,
       repeat,
+      skills: selectedSkills,
       eventStream,
       eventConfig: createRunStartConfig({
         real: effectiveReal,
@@ -1228,6 +1251,7 @@ async function mainImpl(
         maxCases,
         concurrency,
         repeat,
+        skills: selectedSkills,
         judge,
         workingDir,
       }),
@@ -1332,6 +1356,7 @@ async function mainImpl(
     prediction,
     caseDir,
     repeat,
+    skills: selectedSkills,
     eventStream,
     eventConfig: createRunStartConfig({
       real: effectiveReal,
@@ -1344,6 +1369,7 @@ async function mainImpl(
       maxCases,
       concurrency,
       repeat,
+      skills: selectedSkills,
       judge,
       workingDir,
       caseDir,

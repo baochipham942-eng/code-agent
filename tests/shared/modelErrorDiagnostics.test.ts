@@ -36,3 +36,37 @@ describe('model error diagnostics', () => {
     });
   });
 });
+
+describe('auth_failed / quota_exhausted（2026-08-30 欠费卡死批）', () => {
+  it('401/403 状态码直接判鉴权失败，不可重试，给配置建议', () => {
+    for (const statusCode of [401, 403]) {
+      const diagnostic = classifyModelErrorMessage('upstream rejected the request', statusCode);
+      expect(diagnostic).toMatchObject({ code: 'auth_failed', retryable: false });
+      expect(diagnostic?.suggestion).toContain('/login');
+      expect(diagnostic?.suggestion).toContain('/model');
+    }
+  });
+
+  it('鉴权文案（含中文）无状态码也判 auth_failed', () => {
+    expect(classifyModelErrorMessage('invalid_api_key')).toMatchObject({ code: 'auth_failed' });
+    expect(classifyModelErrorMessage('鉴权失败，请检查密钥')).toMatchObject({ code: 'auth_failed' });
+  });
+
+  it('402 与欠费/余额文案判 quota_exhausted，不可重试', () => {
+    expect(classifyModelErrorMessage('rejected', 402)).toMatchObject({ code: 'quota_exhausted', retryable: false });
+    expect(classifyModelErrorMessage('insufficient_quota')).toMatchObject({ code: 'quota_exhausted' });
+    expect(classifyModelErrorMessage('账户已欠费，请充值')).toMatchObject({ code: 'quota_exhausted' });
+    expect(classifyModelErrorMessage('余额不足')).toMatchObject({ code: 'quota_exhausted' });
+  });
+
+  it('summarizeModelErrorForUser 输出人话 + 建议，不透出原始内部文案', () => {
+    const summary = summarizeModelErrorForUser('Error: 欠费 (status 402)', 402);
+    expect(summary).toContain('余额或配额不足');
+    expect(summary).toContain('建议：');
+    expect(summary).not.toContain('Native Durable Run');
+  });
+
+  it('裸 429 限流不算欠费（quota 语义只认文案/402）', () => {
+    expect(classifyModelErrorMessage('rate limit exceeded', 429)).toBeNull();
+  });
+});

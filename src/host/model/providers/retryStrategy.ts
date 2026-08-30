@@ -23,9 +23,14 @@ const NON_RETRYABLE_PATTERNS = [
   'authentication_error',     // 认证失败
   'insufficient_quota',       // 配额耗尽，跳过重试直接降级
   'INSUFFICIENT_BALANCE',     // 中转余额不足，重试无意义
-  'Insufficient account balance',
+  'account balance',          // 余额类笼统文案（含 Insufficient account balance）
   'insufficient balance',
   'payment required',         // 402 账户余额不足
+  '欠费',                     // 中文欠费/余额文案（longcat 等国内 provider 常见）
+  '余额不足',
+  '鉴权失败',
+  '配额已用尽',
+  'api key 无效',
   'model_not_allowed',        // 订阅不含模型，切换 provider/model 才可能恢复
   'subscription plan does not include access',
   'content_policy',           // 内容策略违规，重试无意义
@@ -98,6 +103,9 @@ const TRANSIENT_CODES = [
 /** 可重试的 HTTP 状态码：限流 + 服务端/网关瞬断。401/403/400 等确定性错误不在此列。 */
 const RETRYABLE_HTTP_STATUSES = new Set([429, 500, 502, 503, 504]);
 
+/** 确定性 4xx：鉴权失败/欠费/参数错误，重试不可能成功（429 限流除外，不在此列） */
+const NON_RETRYABLE_HTTP_STATUSES = new Set([400, 401, 402, 403, 404, 409, 422]);
+
 /** 指数退避封顶（毫秒） */
 const RETRY_BACKOFF_CAP_MS = 16_000;
 
@@ -140,6 +148,10 @@ export function isRetryableModelCallError(err: unknown): boolean {
   if (includesAnyPattern(msg, NON_RETRYABLE_PATTERNS)) return false;
   if (includesAnyPattern(msg, FALLBACK_ONLY_PATTERNS)) return false;
   const status = getErrorStatus(err);
+  // 显式 4xx 护栏：鉴权/欠费/参数类确定性错误（400-404、409、422）绝不重试——
+  // 文案未收录时（如国内 provider 中文报错）也不能靠 {429,5xx} 白名单漏进重试，
+  // 否则一次欠费要白等 ~15s 退避（429 除外：限流仍属瞬态，欠费文案由上一条拦截）。
+  if (status !== undefined && NON_RETRYABLE_HTTP_STATUSES.has(status)) return false;
   if (status !== undefined && RETRYABLE_HTTP_STATUSES.has(status)) return true;
   return isTransientError(msg, errCode);
 }

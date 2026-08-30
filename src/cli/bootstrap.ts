@@ -92,6 +92,13 @@ let initialized = false;
 let currentTelemetrySessionId: string | null = null;
 let currentAgentLoopSessionId: string | null = null;
 let cliDurableRunRuntime: DurableRunApplicationRuntime | null = null;
+/** MCP init 的后台 promise（未启用 = null）；首个 agent run 经 whenCLIMcpReady 等它就绪 */
+let mcpInitPromise: Promise<void> | null = null;
+
+/** 首个 agent run 的 MCP 就绪门：init 已发起时等它完成；未启用/已失败立即返回。 */
+export function whenCLIMcpReady(): Promise<void> {
+  return mcpInitPromise ?? Promise.resolve();
+}
 
 // CLI run/chat/serve do not initialize TaskManager, so its command-center tools
 // must stay out of the model-visible tool table on this surface.
@@ -266,22 +273,24 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
   sessionManager = getCLISessionManager();
   cliLog('SessionManager initialized');
 
-  // 动态导入核心模块
+  // 动态导入核心模块（相互无依赖只是赋值，并行加载省 0.1~0.3s）
   try {
-    const agentLoopModule = await import('../host/agent/agentLoop');
+    const [agentLoopModule, toolExecutorModule, protocolRegistryModule, skillsModule, telemetryModule] = await Promise.all([
+      import('../host/agent/agentLoop'),
+      import('../host/tools/toolExecutor'),
+      import('../host/tools/protocolRegistry'),
+      import('../host/services/skills'),
+      import('../host/telemetry'),
+    ]);
     AgentLoop = agentLoopModule.AgentLoop;
 
-    const toolExecutorModule = await import('../host/tools/toolExecutor');
     ToolExecutor = toolExecutorModule.ToolExecutor;
 
-    const protocolRegistryModule = await import('../host/tools/protocolRegistry');
     protocolRegistryModule.getProtocolRegistry();
     cliLog('Protocol tool registry initialized');
 
-    const skillsModule = await import('../host/services/skills');
     getSkillDiscoveryService = skillsModule.getSkillDiscoveryService;
 
-    const telemetryModule = await import('../host/telemetry');
     getTelemetryCollector = telemetryModule.getTelemetryCollector;
   } catch (error) {
     console.error('Fatal: Failed to import core modules:', error);
@@ -290,15 +299,19 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
 
   // MCP（按需）：computer-use 底座开启时接入 cua-driver / argus 等默认服务器，
   // 与桌面端同一条 initMCPClient 链路。失败不阻塞 CLI（与数据库初始化同策略）。
+  // 云端 MCP 服务器是 HTTP 握手（本机实测 13 个 server 串行 ~7s）——不挡首屏，
+  // 与 banner/Ink 并行；首个 agent run 经 whenCLIMcpReady() 等它就绪。
   if (cliShouldInitMcp()) {
-    try {
-      const { initMCPClient } = await import('../host/mcp/mcpClient');
-      await initMCPClient(undefined, process.cwd());
-      cliLog('MCP client initialized (computer-use enabled)');
-    } catch (error) {
-      const msg = error instanceof Error ? error.message.split('\n')[0] : String(error);
-      cliLog('MCP not available (CLI mode):', msg);
-    }
+    mcpInitPromise = (async () => {
+      try {
+        const { initMCPClient } = await import('../host/mcp/mcpClient');
+        await initMCPClient(undefined, process.cwd());
+        cliLog('MCP client initialized (computer-use enabled)');
+      } catch (error) {
+        const msg = error instanceof Error ? error.message.split('\n')[0] : String(error);
+        cliLog('MCP not available (CLI mode):', msg);
+      }
+    })();
   }
 
   // 初始化工具执行器（非交互安全默认：危险/需人工确认的权限自动拒绝，

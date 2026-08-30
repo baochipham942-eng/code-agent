@@ -600,6 +600,19 @@ describe('Retry Strategy', () => {
       expect(isRetryableModelCallError(err)).toBe(false);
     });
 
+    it.each([402, 409, 422])('HTTP %i（4xx 显式护栏，AI SDK statusCode 字段）不重试', (statusCode) => {
+      // AI SDK APICallError 的状态挂在 statusCode 上；文案未收录也不能漏进重试
+      const err = Object.assign(new Error('upstream rejected'), { statusCode });
+      expect(isRetryableModelCallError(err)).toBe(false);
+    });
+
+    it('429 + 中文欠费文案（国内 provider 形态）不重试', () => {
+      const err = Object.assign(new Error('429 Too Many Requests: 账户已欠费'), { status: 429 });
+      expect(isRetryableModelCallError(err)).toBe(false);
+      expect(isRetryableModelCallError(new Error('余额不足，请充值'))).toBe(false);
+      expect(isRetryableModelCallError(new Error('鉴权失败'))).toBe(false);
+    });
+
     it('网络瞬断（无 status）靠 message/code 判定可重试', () => {
       expect(isRetryableModelCallError(new Error('socket hang up'))).toBe(true);
       const reset = new Error('read ECONNRESET') as NodeJS.ErrnoException;

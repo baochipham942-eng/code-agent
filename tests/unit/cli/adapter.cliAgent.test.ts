@@ -52,6 +52,7 @@ vi.mock('../../../src/cli/bootstrap', () => ({
   getConfigService: mocks.getConfigService,
   startCLIDurableRun: mocks.startCLIDurableRun,
   terminalCLIDurableRun: mocks.terminalCLIDurableRun,
+  whenCLIMcpReady: () => Promise.resolve(),
 }));
 
 vi.mock('../../../src/host/services/skills/sessionSkillService', () => ({

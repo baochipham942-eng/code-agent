@@ -10,6 +10,7 @@ import {
   getConfigService,
   startCLIDurableRun,
   terminalCLIDurableRun,
+  whenCLIMcpReady,
 } from './bootstrap';
 import { terminalOutput, jsonOutput } from './output';
 import { addSwarmEventListener } from '../host/ipc/swarm.ipc';
@@ -185,6 +186,10 @@ export class CLIAgent {
           requestedAgentId: persistedExpertRoleId,
         }
       : this.config;
+    // MCP 就绪门：init 与首屏并行（云端 server HTTP 握手可达数秒），
+    // 首个 run 在这里等它完成，保证工具表完整；之后为已解决 promise 零成本。
+    await whenCLIMcpReady();
+
     const runInput = {
       sessionId: this.sessionId,
       workspace: runConfig.workingDirectory,

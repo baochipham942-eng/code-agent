@@ -120,6 +120,23 @@ describe('FolderTrustService', () => {
     expect(after.ino).toBe(before.ino);
   });
 
+  it('memoizes danger-item discovery but keeps trust decisions fresh', async () => {
+    await writeFile(path.join(projectDir, '.code-agent', 'hooks', 'hooks.json'), '{"PreToolUse":[]}');
+    const service = new FolderTrustService();
+    // 首次评估落目录扫描缓存；此后同步评估命中缓存（磁盘变化进程内不再反映）
+    const first = service.evaluateSync(projectDir);
+    expect(first.state).toBe('untrusted');
+    expect(first.dangerousItems.length).toBeGreaterThan(0);
+    await fs.rm(path.join(projectDir, '.code-agent'), { recursive: true, force: true });
+    expect(service.evaluateSync(projectDir).dangerousItems.length).toBe(first.dangerousItems.length); // 缓存命中
+    // trust 决策不缓存：set 之后 state 即时反映（loader gates 依赖这一语义）
+    await service.set(projectDir, 'trusted', 'test');
+    expect(service.evaluateSync(projectDir).state).toBe('trusted');
+    service.revokeSync(projectDir);
+    expect(service.evaluateSync(projectDir).state).toBe('blocked');
+    service.close();
+  });
+
   it('does not silently inherit trust when a trusted path is deleted and recreated', async () => {
     await writeFile(path.join(projectDir, '.code-agent', 'hooks', 'hooks.json'), '{"PreToolUse":[]}');
     const service = new FolderTrustService();

@@ -1,7 +1,9 @@
 export type ModelErrorDiagnosticCode =
   | 'unsupported_temperature'
   | 'fallback_not_configured'
-  | 'upstream_unavailable';
+  | 'upstream_unavailable'
+  | 'auth_failed'
+  | 'quota_exhausted';
 
 export interface ModelErrorDiagnostic {
   code: ModelErrorDiagnosticCode;
@@ -15,9 +17,59 @@ function normalizeMessage(message: string): string {
   return message.trim().replace(/\s+/g, ' ');
 }
 
-export function classifyModelErrorMessage(message: string): ModelErrorDiagnostic | null {
+/** 从错误对象提取 HTTP status（AI SDK APICallError 用 statusCode，其余用 status） */
+export function getModelErrorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const record = error as Record<string, unknown>;
+  const status = record['statusCode'] ?? record['status'];
+  return typeof status === 'number' ? status : undefined;
+}
+
+export function classifyModelErrorMessage(message: string, statusCode?: number): ModelErrorDiagnostic | null {
   const normalized = normalizeMessage(message);
   const lower = normalized.toLowerCase();
+
+  // 鉴权失败：401/403 或 key/认证类文案（含中文）。不可重试，必须换 key 或换模型。
+  const authFailed =
+    statusCode === 401
+    || statusCode === 403
+    || lower.includes('invalid_api_key')
+    || lower.includes('invalid api key')
+    || lower.includes('authentication_error')
+    || lower.includes('failed to authenticate')
+    || lower.includes('unauthorized')
+    || lower.includes('鉴权失败')
+    || lower.includes('api key 无效');
+  if (authFailed) {
+    return {
+      code: 'auth_failed',
+      message: '模型鉴权失败：API Key 无效、已过期或没有权限。',
+      suggestion: '用 /login <provider> 重新配置 API Key，或用 /model 切换到其他可用模型。',
+      retryable: false,
+    };
+  }
+
+  // 欠费/配额耗尽：402、或余额/配额文案（429 只认配额文案形态，裸 429 限流不收）。
+  // 不可重试——这类错误白等退避也不会好（2026-08-30 实测 longcat 欠费卡死 ~25s）。
+  const quotaExhausted =
+    statusCode === 402
+    || lower.includes('insufficient_quota')
+    || lower.includes('insufficient balance')
+    || lower.includes('insufficient_balance')
+    || lower.includes('account balance')
+    || lower.includes('payment required')
+    || lower.includes('欠费')
+    || lower.includes('余额不足')
+    || lower.includes('配额已用尽');
+  if (quotaExhausted) {
+    return {
+      code: 'quota_exhausted',
+      message: '模型账户余额或配额不足（欠费），请求被拒绝。',
+      suggestion: '请充值或更换账户；也可以用 /model 切换到其他可用模型。',
+      retryable: false,
+    };
+  }
+
   const unsupportedTemperature =
     lower.includes("unsupported value: 'temperature'")
     || lower.includes('unsupported value: "temperature"')
@@ -73,8 +125,8 @@ export function classifyModelErrorMessage(message: string): ModelErrorDiagnostic
   return null;
 }
 
-export function summarizeModelErrorForUser(message: string): string {
-  const diagnostic = classifyModelErrorMessage(message);
+export function summarizeModelErrorForUser(message: string, statusCode?: number): string {
+  const diagnostic = classifyModelErrorMessage(message, statusCode);
   if (diagnostic) {
     return `${diagnostic.message}\n建议：${diagnostic.suggestion}`;
   }

@@ -38,10 +38,34 @@ describe('skillParser allowed-tools validation', () => {
     );
   }
 
-  it('fails loud with the exact missing capability declaration', async () => {
+  it.each(['dream', 'lark-sheets', 'e2e-cdp', 'deploy-tauri-app'])(
+    'normalizes legacy capability declarations for %s',
+    async (name) => {
+      await fs.writeFile(
+        path.join(tmpDir, 'SKILL.md'),
+        ['---', `name: ${name}`, 'description: Legacy skill fixture', '---', '', 'Body.'].join('\n'),
+        'utf-8',
+      );
+
+      const parsed = await parseSkillMetadataOnly(tmpDir, 'user');
+
+      expect(parsed.depends).toEqual([]);
+      expect(parsed.provides).toEqual([`skill:${name}`]);
+    },
+  );
+
+  it('still rejects an explicitly malformed capability declaration', async () => {
     await fs.writeFile(
       path.join(tmpDir, 'SKILL.md'),
-      ['---', 'name: undeclared', 'description: Missing declaration fixture', '---', '', 'Body.'].join('\n'),
+      [
+        '---',
+        'name: malformed',
+        'description: Malformed declaration fixture',
+        'depends: invalid',
+        '---',
+        '',
+        'Body.',
+      ].join('\n'),
       'utf-8',
     );
 

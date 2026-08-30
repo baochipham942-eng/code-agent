@@ -483,7 +483,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
   }
 
   async getStructuredReplay(sessionId: string) {
-    const { TelemetryQueryService, getTelemetryQueryService } = await import('../evaluation/telemetryQueryService');
+    const { TelemetryQueryService, getTelemetryQueryService } = await import('../telemetry/replay/telemetryQueryService');
     return this.database
       ? new TelemetryQueryService(this.database).getStructuredReplay(sessionId)
       : getTelemetryQueryService().getStructuredReplay(sessionId);

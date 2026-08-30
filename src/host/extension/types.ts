@@ -23,7 +23,7 @@
 // ============================================================================
 
 /** 扩展暴露的 host surface */
-export type ExtensionSurface = 'tools' | 'skills' | 'theme' | 'language' | 'hooks';
+export type ExtensionSurface = 'tools' | 'internal-feature' | 'skills' | 'theme' | 'language' | 'hooks';
 
 /**
  * 扩展来源种类(origin —— 哪种类型的扩展系统/目录提供)。融合 plugin 和

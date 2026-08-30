@@ -39,40 +39,36 @@ describe('useInAppValidationBridge（不抢占契约）', () => {
   beforeEach(() => {
     captured.listener = null;
     useAppStore.setState({
-      showEvalCenter: false,
-      evalCenterTab: 'replay',
+      showInAppValidation: false,
       pendingInAppValidationRequest: null,
     });
   });
 
   afterEach(() => {
     cleanup();
-    useAppStore.setState({ showEvalCenter: false, pendingInAppValidationRequest: null });
+    useAppStore.setState({ showInAppValidation: false, pendingInAppValidationRequest: null });
   });
 
-  it('评测中心未打开：打开评测中心并落到验证 tab', () => {
+  it('验证面未打开：打开主干应用内验证工作台', () => {
     render(<Probe />);
     expect(captured.listener).toBeTypeOf('function');
 
     act(() => captured.listener?.(request));
 
     expect(useAppStore.getState()).toMatchObject({
-      showEvalCenter: true,
-      evalCenterTab: 'validation',
+      showInAppValidation: true,
       pendingInAppValidationRequest: request,
     });
   });
 
-  it('评测中心已打开：只写 pending，不打断用户当前 tab', () => {
-    useAppStore.setState({ showEvalCenter: true, evalCenterTab: 'replay' });
+  it('验证面已打开：只更新 pending，不重复导航', () => {
+    useAppStore.setState({ showInAppValidation: true });
     render(<Probe />);
 
     act(() => captured.listener?.(request));
 
     expect(useAppStore.getState()).toMatchObject({
-      showEvalCenter: true,
-      // 仍是 replay tab —— 由 EvalCenterPage 的角标提示新请求
-      evalCenterTab: 'replay',
+      showInAppValidation: true,
       pendingInAppValidationRequest: request,
     });
   });

@@ -4,7 +4,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 
-import { ExperimentAdapter } from '../../../src/host/evaluation/experimentAdapter';
+import { ExperimentAdapter } from '@internal-evaluation/host/evaluation/experimentAdapter';
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { applyConversationBranchSchema } from '../../../src/host/services/core/database/schemaConversationBranch';
 import { applySessionsMigrations } from '../../../src/host/services/core/database/migrations';

@@ -75,7 +75,7 @@ async function buildTrajectoryQualitySummary(
     persistMissingCollection?: boolean;
   } = {},
 ): Promise<AgentTrajectorySessionQualitySummary> {
-  const { getTelemetryQueryService } = await import('../evaluation/telemetryQueryService');
+  const { getTelemetryQueryService } = await import('../telemetry/replay/telemetryQueryService');
   const replay = await getTelemetryQueryService().getStructuredReplay(sessionId);
   const quality = evaluateAgentTrajectoryReplay(replay);
   const db = getDatabase();
@@ -179,7 +179,7 @@ export function registerTelemetryHandlers(getMainWindow: () => AppWindow | null)
   ipcHost.handle(TELEMETRY_CHANNELS.GET_STRUCTURED_REPLAY, async (_event, sessionId: string) => {
     assertAdminAccess('Telemetry');
     if (process.env.EVAL_DISABLED === 'true') return null;
-    const { extractStructuredReplay } = await import('../evaluation/replayService');
+    const { extractStructuredReplay } = await import('../telemetry/replay/replayService');
     return extractStructuredReplay(sessionId);
   });
 

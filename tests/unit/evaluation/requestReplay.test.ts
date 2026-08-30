@@ -6,7 +6,7 @@ import {
   reconstructRequest,
   RequestNotReconstructableError,
   type RequestReplayContentReaders,
-} from '../../../src/host/evaluation/requestReplay';
+} from '@internal-evaluation/host/evaluation/requestReplay';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 

@@ -167,9 +167,9 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).toContain('本机操作');
     // 「协作请求（@neo）」入口 2026-07-29 爸拍板拿掉（家=协作空间任务 tab），反向钉死
     expect(html).not.toContain('协作请求（@neo）');
-    // 评测中心（2026-07 v1）：admin-only 菜单项
-    expect(html).toContain('评测中心');
-    // 提示词管理（2026-07-27 拍板）：admin-only 工具，回到账号菜单与评测中心同档
+    // 内部评测中心随能力包分发，默认账号菜单不再带入口。
+    expect(html).not.toContain('评测中心');
+    // 提示词管理仍是 admin-only 常用工具。
     expect(html).toContain('提示词管理');
     expect(html).toContain('高级工具');
     expect(html).toContain('设置');

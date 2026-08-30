@@ -86,7 +86,7 @@ async function makeWorkDir(): Promise<string> {
 
 describe('runCompare 接线', () => {
   it('eval-ci compare 的 makeAgent 注入 scripted handler，使 adapter 强制使用显式审批处理器', () => {
-    const evalCiSrc = readFileSync(path.join(repoRoot, 'scripts/eval-ci.ts'), 'utf8');
+    const evalCiSrc = readFileSync(path.join(repoRoot, 'packages/internal/evaluation-center/scripts/eval-ci.ts'), 'utf8');
     const compareCommand = evalCiSrc.slice(
       evalCiSrc.indexOf('async function runCompareCommand'),
       evalCiSrc.indexOf('// --compare: A/B paired blind test'),

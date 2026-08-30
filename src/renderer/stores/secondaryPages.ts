@@ -21,7 +21,7 @@ export const SECONDARY_PAGES_CLOSED = {
   showCapabilityHub: false,
   showCronCenter: false,
   showLocalOpsPanel: false,
-  showEvalCenter: false,
+  showInAppValidation: false,
   showProjectCollaborationPage: false,
   showProjectSpacePage: false,
   expertDetailRoleId: null,

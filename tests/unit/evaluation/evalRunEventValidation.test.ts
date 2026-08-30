@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseEvalRunEvent } from '../../../src/host/evaluation/evalRunEventValidation';
+import { parseEvalRunEvent } from '@internal-evaluation/host/evaluation/evalRunEventValidation';
 import { EVAL_RUN_EVENT_SCHEMA_VERSION } from '../../../src/shared/contract/evaluation';
 
 describe('evaluation run event validation', () => {

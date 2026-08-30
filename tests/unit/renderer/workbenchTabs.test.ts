@@ -18,7 +18,7 @@ describe('appStore workbench tabs', () => {
       showProjectCollaborationPage: false,
       projectCollaborationPageProjectId: null,
       showLocalOpsPanel: false,
-      showEvalCenter: false,
+      showInAppValidation: false,
     });
   });
 
@@ -69,7 +69,7 @@ describe('appStore workbench tabs', () => {
   it('opens the project collaboration page with a project binding and closes sibling main panels', () => {
     useAppStore.setState({
       showLocalOpsPanel: true,
-      showEvalCenter: true,
+      showInAppValidation: true,
     });
 
     useAppStore.getState().openProjectCollaborationPage(' project-1 ');
@@ -78,7 +78,7 @@ describe('appStore workbench tabs', () => {
       showProjectCollaborationPage: true,
       projectCollaborationPageProjectId: 'project-1',
       showLocalOpsPanel: false,
-      showEvalCenter: false,
+      showInAppValidation: false,
     });
 
     useAppStore.getState().closeProjectCollaborationPage();

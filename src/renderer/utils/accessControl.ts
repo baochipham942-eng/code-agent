@@ -23,20 +23,12 @@ export const ACCESS_CONTROL_REGISTRY = {
     label: '提示词',
     adminOnly: true,
   },
-  'eval.center': {
-    label: '评测中心',
+  'capability.internal': {
+    label: '内部能力包',
     adminOnly: true,
   },
-  'eval.telemetry': {
-    label: 'Telemetry',
-    adminOnly: true,
-  },
-  'eval.replay': {
-    label: 'Replay',
-    adminOnly: true,
-  },
-  'eval.reviewQueue': {
-    label: 'Review Queue',
+  'telemetry.replay': {
+    label: '会话回放',
     adminOnly: true,
   },
 } as const;

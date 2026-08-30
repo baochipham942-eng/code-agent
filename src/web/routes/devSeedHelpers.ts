@@ -416,7 +416,7 @@ export async function readDevReplayState(sessionId: unknown): Promise<{
   telemetryCompleteness: unknown;
 }> {
   const resolvedSessionId = readRequiredString(sessionId, 'sessionId');
-  const { extractStructuredReplay } = await import('../../host/evaluation/replayService');
+  const { extractStructuredReplay } = await import('../../host/telemetry/replay/replayService');
   const replay = await extractStructuredReplay(resolvedSessionId);
 
   return {

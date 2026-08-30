@@ -7,7 +7,7 @@ import { EVAL_REPEAT_MAX } from '../../src/shared/contract/evaluation';
 const execFileAsync = promisify(execFile);
 const repoRoot = process.cwd();
 const tsxCli = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
-const evalScript = path.join(repoRoot, 'scripts', 'eval-ci.ts');
+const evalScript = path.join(repoRoot, 'packages', 'internal', 'evaluation-center', 'scripts', 'eval-ci.ts');
 
 describe('eval-ci --repeat', () => {
   it('rejects values above the bridge limit before starting a run', async () => {

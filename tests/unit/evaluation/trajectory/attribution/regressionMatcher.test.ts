@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
-import { matchRegressionCases } from '../../../../../src/host/evaluation/trajectory/attribution/regressionMatcher';
+import { matchRegressionCases } from '@internal-evaluation/host/evaluation/trajectory/attribution/regressionMatcher';
 import type {
   Trajectory,
   TrajectoryStep,

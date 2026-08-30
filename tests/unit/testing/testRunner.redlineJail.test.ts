@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { TestRunner, type AgentInterface } from '../../../src/host/testing/testRunner';
-import { EvalRunEventStream } from '../../../scripts/lib/eval-run-event-stream';
+import { EvalRunEventStream } from '@internal-evaluation-scripts/lib/eval-run-event-stream';
 import type { TestRunSummary } from '../../../src/host/testing/types';
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({

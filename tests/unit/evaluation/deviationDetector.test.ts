@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DeviationDetector } from '../../../src/host/evaluation/trajectory/deviationDetector';
+import { DeviationDetector } from '@internal-evaluation/host/evaluation/trajectory/deviationDetector';
 import type { Trajectory, TrajectoryStep } from '../../../src/host/testing/types';
 
 // ADR-036 F4b：DeviationDetector 已实现且在 telemetryQueryService 真用，但此前零测试。

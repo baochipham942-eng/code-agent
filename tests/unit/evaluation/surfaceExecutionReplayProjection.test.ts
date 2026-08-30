@@ -5,7 +5,7 @@ import {
   attachSurfaceExecutionReplayBlocks,
   buildSurfaceExecutionReplayBlocks,
   projectTranscriptToolResultForReplay,
-} from '../../../src/host/evaluation/transcriptReplayBuilder';
+} from '@host/telemetry/replay/transcriptReplayBuilder';
 
 function metadata() {
   return {

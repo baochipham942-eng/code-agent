@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { StructuredReplay } from '../../../src/shared/contract/evaluation';
-import { ReplayAuditPanelView } from '../../../src/renderer/components/features/audit/ReplayAuditPanel';
+import { ReplayAuditPanelView } from '@internal-evaluation/renderer/audit/ReplayAuditPanel';
 
 function buildReplay(): StructuredReplay {
   return {

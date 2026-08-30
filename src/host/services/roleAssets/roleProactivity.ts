@@ -753,7 +753,7 @@ function buildAdvanceGoalPrompt(proposal: AdvanceGoalProposal): string {
  */
 async function readGoalTerminalFromEvents(sessionId: string): Promise<'met' | 'aborted'> {
   try {
-    const { getSessionEventService } = await import('../../evaluation/sessionEventService');
+    const { getSessionEventService } = await import('../../session/sessionEventService');
     const events = getSessionEventService().getEventsByType(sessionId, 'goal_complete');
     const last = events[events.length - 1];
     const data = last?.eventData as { status?: string; degraded?: boolean } | undefined;

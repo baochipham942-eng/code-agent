@@ -33,7 +33,7 @@ import { capabilityHubEn } from './capabilityHub';
 import { neoTopicsEn } from './neoTopics';
 import { designToolbarEn } from './designToolbar';
 import { projectSpaceEn } from './projectSpace';
-import { evalCenterEn } from './evalCenter';
+import { inAppValidationEn } from './inAppValidation';
 import { localOpsEn } from './localOps';
 import { onboardingEn } from './onboarding';
 import { workbenchTabsEn } from './workbenchTabs';
@@ -54,7 +54,7 @@ export const en: Translations = {
   ...capabilityHubEn,
   ...neoTopicsEn,
   ...projectSpaceEn,
-  ...evalCenterEn,
+  ...inAppValidationEn,
   ...localOpsEn,
   ...onboardingEn,
   ...generativeUIEn,

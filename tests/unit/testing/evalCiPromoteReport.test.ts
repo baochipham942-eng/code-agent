@@ -89,7 +89,7 @@ vi.mock('../../../src/host/prompts/providerVariants', () => ({
   isProviderVariantDisabled: vi.fn(() => false),
 }));
 
-vi.mock('../../../scripts/lib/eval-sandbox', () => ({
+vi.mock('@internal-evaluation-scripts/lib/eval-sandbox', () => ({
   createStrictEvalSandbox: (repoDir: string) => ({ dir: repoDir, cleanup: vi.fn() }),
   cloneEvalSandbox: (repoDir: string) => ({ dir: repoDir, cleanup: vi.fn() }),
 }));
@@ -179,7 +179,7 @@ afterEach(async () => {
 
 describe('eval-ci promote reports', () => {
   it('saves Markdown and JSON in promote mode without baseline delta or baseline compare', async () => {
-    const { main } = await import('../../../scripts/eval-ci');
+    const { main } = await import('@internal-evaluation-scripts/eval-ci');
     await main(['node', 'eval-ci.ts', '--promote', '--real', '--ids', 'case-a', '--max-cases', '1', '--force'], root);
 
     expect(saveReportMock).toHaveBeenCalledWith(
@@ -219,7 +219,7 @@ describe('eval-ci promote reports', () => {
       throw new Error(`__process_exit_${code}__`);
     }) as never);
 
-    const { main } = await import('../../../scripts/eval-ci');
+    const { main } = await import('@internal-evaluation-scripts/eval-ci');
     await expect(
       main(['node', 'eval-ci.ts', '--promote', '--real', '--max-cases', '1', '--json-events', '--force'], root),
     ).rejects.toThrow('__process_exit_2__');
@@ -270,7 +270,7 @@ describe('eval-ci promote reports', () => {
       throw new Error(`exit:${code}`);
     }) as typeof process.exit);
 
-    const { main } = await import('../../../scripts/eval-ci');
+    const { main } = await import('@internal-evaluation-scripts/eval-ci');
     await expect(main(['node', 'eval-ci.ts', '--scope', 'full'], root)).rejects.toThrow('exit:2');
     expect(exit).toHaveBeenCalledWith(2);
     expect(trendAppendMock).not.toHaveBeenCalled();

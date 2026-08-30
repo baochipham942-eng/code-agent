@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { EvalRunEventStream, type EvalRunStartConfig } from '../../../scripts/lib/eval-run-event-stream';
+import { EvalRunEventStream, type EvalRunStartConfig } from '@internal-evaluation-scripts/lib/eval-run-event-stream';
 import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 import type { TestResult } from '../../../src/host/testing/types';
 

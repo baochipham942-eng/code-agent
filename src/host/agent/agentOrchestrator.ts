@@ -255,7 +255,7 @@ export class AgentOrchestrator {
     let eventService: { saveEvent: (sid: string, event: AgentEvent) => void } | null = null;
     if (process.env.EVAL_DISABLED !== 'true') {
       try {
-        const mod = await import('../evaluation/sessionEventService');
+        const mod = await import('../session/sessionEventService');
         eventService = mod.getSessionEventService();
       } catch { /* evaluation module not available */ }
     }

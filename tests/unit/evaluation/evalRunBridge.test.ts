@@ -10,7 +10,7 @@ import {
   EVAL_RUN_EVENT_SCHEMA_VERSION,
   UNKNOWN_EVAL_RUN_STAMP,
 } from '../../../src/shared/contract/evaluation';
-import { EvalRunBridge } from '../../../src/host/evaluation/evalRunBridge';
+import { EvalRunBridge } from '@internal-evaluation/host/evaluation/evalRunBridge';
 
 interface FakeDatabase {
   isReady: boolean;
@@ -38,7 +38,7 @@ function environment() {
     available: true,
     message: 'ready',
     repositoryRoot,
-    entryPath: path.join(repositoryRoot, 'scripts', 'eval-ci.ts'),
+    entryPath: path.join(repositoryRoot, 'packages', 'internal', 'evaluation-center', 'scripts', 'eval-ci.ts'),
     nodePath: process.execPath,
     tsxPath: path.join(repositoryRoot, 'node_modules', '.bin', 'tsx'),
     packaged: false,

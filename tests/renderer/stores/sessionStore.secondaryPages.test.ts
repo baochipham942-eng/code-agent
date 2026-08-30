@@ -15,7 +15,7 @@ const OPEN_PAGES = {
   showLibraryPanel: true,
   showCronCenter: true,
   showLocalOpsPanel: true,
-  showEvalCenter: true,
+  showInAppValidation: true,
   showProjectCollaborationPage: true,
   expertDetailRoleId: 'researcher',
 } as const;
@@ -27,7 +27,7 @@ function readPageFlags() {
     showLibraryPanel: s.showLibraryPanel,
     showCronCenter: s.showCronCenter,
     showLocalOpsPanel: s.showLocalOpsPanel,
-    showEvalCenter: s.showEvalCenter,
+    showInAppValidation: s.showInAppValidation,
     showProjectCollaborationPage: s.showProjectCollaborationPage,
     expertDetailRoleId: s.expertDetailRoleId,
   };
@@ -38,7 +38,7 @@ const ALL_CLOSED = {
   showLibraryPanel: false,
   showCronCenter: false,
   showLocalOpsPanel: false,
-  showEvalCenter: false,
+  showInAppValidation: false,
   showProjectCollaborationPage: false,
   expertDetailRoleId: null,
 };

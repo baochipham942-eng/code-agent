@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { inspectEvalEnvironment } from '../../../src/host/evaluation/evalEnvironment';
+import { inspectEvalEnvironment } from '@internal-evaluation/host/evaluation/evalEnvironment';
 
 const repoRoot = path.resolve(__dirname, '../../..');
 

@@ -17,9 +17,12 @@ vi.mock('../../../src/host/ipc/adminGuard', () => ({
 }));
 
 import { createDomainRouter } from '../../../src/web/routes/domain';
+import { registerAdminChannels } from '../../../src/host/ipc/channelAccessPolicy';
+import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
 
 let server: http.Server | undefined;
 let baseUrl = '';
+let unregisterAdminChannels: (() => void) | undefined;
 
 async function startApi(handlers: Map<string, WebRouteHandler>): Promise<void> {
   const app = express();
@@ -37,6 +40,8 @@ async function startApi(handlers: Map<string, WebRouteHandler>): Promise<void> {
 }
 
 afterEach(async () => {
+  unregisterAdminChannels?.();
+  unregisterAdminChannels = undefined;
   if (!server) return;
   await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
   server = undefined;
@@ -44,6 +49,7 @@ afterEach(async () => {
 
 beforeEach(() => {
   auth.admin = false;
+  unregisterAdminChannels = registerAdminChannels(Object.values(EVALUATION_CHANNELS));
 });
 
 describe('evaluation channel access policy on HTTP transport', () => {
@@ -53,11 +59,12 @@ describe('evaluation channel access policy on HTTP transport', () => {
       ['evaluation:run-suite', handler],
       ['evaluation:run-events', handler],
       ['evaluation:abort-run', handler],
+      ['evaluation:scorers-overview', handler],
       ['evaluation:list-cases', handler],
       ['evaluation:save-case', handler],
     ]));
 
-    for (const action of ['run-suite', 'run-events', 'abort-run', 'list-cases', 'save-case']) {
+    for (const action of ['run-suite', 'run-events', 'abort-run', 'scorers-overview', 'list-cases', 'save-case']) {
       const response = await fetch(`${baseUrl}/api/evaluation/${action}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

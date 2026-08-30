@@ -14,7 +14,7 @@ import {
   resolveFeedbackPrompt,
   selectRiskTurnMessages,
   journalPatternToDraftSeed,
-} from '../../../src/host/evaluation/trajectoryToCase';
+} from '@internal-evaluation/host/evaluation/trajectoryToCase';
 import type { Message } from '../../../src/shared/contract';
 
 function makeDb(): InstanceType<typeof Database> {
@@ -186,29 +186,29 @@ describe('resolveTurnPrompt（telemetry_turns 优先级）', () => {
   }
 
   it('turnId 精确命中且 user_prompt 非空 → 直接用', async () => {
-    const { resolveTurnPrompt } = await import('../../../src/host/evaluation/trajectoryToCase');
+    const { resolveTurnPrompt } = await import('@internal-evaluation/host/evaluation/trajectoryToCase');
     expect(resolveTurnPrompt(makeTurnsDb(), 's1', { turnId: 't3', anchorTimestamp: null })).toBe('加个存档');
   });
 
   it('turnId 命中但 user_prompt 空 → 回退时间锚定之前最近的非空 prompt', async () => {
-    const { resolveTurnPrompt } = await import('../../../src/host/evaluation/trajectoryToCase');
+    const { resolveTurnPrompt } = await import('@internal-evaluation/host/evaluation/trajectoryToCase');
     expect(resolveTurnPrompt(makeTurnsDb(), 's1', { turnId: 't2', anchorTimestamp: 250 })).toBe('做一个平台跳跃小游戏');
   });
 
   it('无 turnId 无锚点 → 取会话最后一条非空 user_prompt', async () => {
-    const { resolveTurnPrompt } = await import('../../../src/host/evaluation/trajectoryToCase');
+    const { resolveTurnPrompt } = await import('@internal-evaluation/host/evaluation/trajectoryToCase');
     expect(resolveTurnPrompt(makeTurnsDb(), 's1', { turnId: null, anchorTimestamp: null })).toBe('加个存档');
   });
 
   it('turns 表无该会话数据 → null（让调用方退 messages 回溯）', async () => {
-    const { resolveTurnPrompt } = await import('../../../src/host/evaluation/trajectoryToCase');
+    const { resolveTurnPrompt } = await import('@internal-evaluation/host/evaluation/trajectoryToCase');
     expect(resolveTurnPrompt(makeTurnsDb(), 's-none', { turnId: null, anchorTimestamp: null })).toBeNull();
   });
 });
 
 describe('Gemini 审计 R1 修复', () => {
   it('HIGH1: anchorTimestamp 早于全部 turns → null（不得回落最新 prompt）', async () => {
-    const { resolveTurnPrompt } = await import('../../../src/host/evaluation/trajectoryToCase');
+    const { resolveTurnPrompt } = await import('@internal-evaluation/host/evaluation/trajectoryToCase');
     const db = new Database(':memory:');
     db.exec(`CREATE TABLE telemetry_turns (id TEXT PRIMARY KEY, session_id TEXT, turn_number INTEGER, start_time INTEGER, user_prompt TEXT);`);
     db.prepare('INSERT INTO telemetry_turns VALUES (?,?,?,?,?)').run('t1', 's1', 1, 100, '晚于反馈的原话');
@@ -216,14 +216,14 @@ describe('Gemini 审计 R1 修复', () => {
   });
 
   it('MED1: 文件名连接符歧义不再产生碰撞', async () => {
-    const { draftFileName } = await import('../../../src/host/evaluation/trajectoryToCase');
+    const { draftFileName } = await import('@internal-evaluation/host/evaluation/trajectoryToCase');
     const a = draftFileName('feedback', 's1-a', '1');
     const b = draftFileName('feedback', 's1', 'a-1');
     expect(a).not.toBe(b);
   });
 
   it('HIGH2: writeDraftFiles 单文件写失败不炸整批，失败记入 failed', async () => {
-    const { writeDraftFiles } = await import('../../../src/host/evaluation/trajectoryToCase');
+    const { writeDraftFiles } = await import('@internal-evaluation/host/evaluation/trajectoryToCase');
     const { mkdtemp, chmod } = await import('fs/promises');
     const os = await import('os');
     const path = await import('path');

@@ -14,6 +14,8 @@ export default defineConfig({
       '@shared': path.resolve(__dirname, 'src/shared'),
       '@renderer': path.resolve(__dirname, 'src/renderer'),
       '@host': path.resolve(__dirname, 'src/host'),
+      '@internal-evaluation': path.resolve(__dirname, 'packages/internal/evaluation-center/src'),
+      '@internal-evaluation-scripts': path.resolve(__dirname, 'packages/internal/evaluation-center/scripts'),
       '@': path.resolve(__dirname, 'src'),
     },
   },

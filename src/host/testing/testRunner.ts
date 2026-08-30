@@ -1052,7 +1052,7 @@ export class TestRunner {
       // 保持原有时序：轨迹分析只发生在断言已完成的正常执行路径，且读取已收敛的 telemetry。
       if (completedExecution && this.config.enableTrajectoryAnalysis) {
         try {
-          const { TrajectoryBuilder } = await import('../evaluation/trajectory');
+          const { TrajectoryBuilder } = await import('../../../packages/internal/evaluation-center/src/host/evaluation/trajectory/trajectoryBuilder');
           const builder = new TrajectoryBuilder();
           result.trajectory = builder.buildFromTestResult(result, testCase);
         } catch (trajError: unknown) {
@@ -1227,7 +1227,7 @@ export class TestRunner {
 
     // Persist to unified experiment DB (best-effort)
     try {
-      const { ExperimentAdapter } = await import('../evaluation/experimentAdapter');
+      const { ExperimentAdapter } = await import('../../../packages/internal/evaluation-center/src/host/evaluation/experimentAdapter');
       const { getDatabase } = await import('../services/core/databaseService');
       const db = getDatabase();
       const adapter = new ExperimentAdapter(db);

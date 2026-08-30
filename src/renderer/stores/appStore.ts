@@ -73,8 +73,6 @@ export type TaskPanelTab = 'monitor' | 'orchestration';
 export type { CapabilityHubTab } from '../utils/settingsTabs';
 /** 「本机操作」整窗页的页内 tab：桌面操作 / 浏览器（2026-07-26 导航去重方案 9 合并页）。 */
 export type LocalOpsTab = 'desktop' | 'browser';
-// 评测中心（admin-only 整窗页）的顶层 tab。
-export type EvalCenterTab = 'replay' | 'validation' | 'telemetry' | 'cases' | 'scorers' | 'benchmarks';
 export type { WorkbenchTabId, WorkbenchViewId } from '../utils/workbenchViews';
 export type ContentPreviewInput = { id: string; title: string; content: string; format: 'html' | 'markdown' | 'json' | 'text' };
 
@@ -229,13 +227,10 @@ export interface AppState {
   showDesktopPanel: boolean;
   /** 「本机操作」合并整窗页（桌面操作 + 浏览器，页内 tab 切换）。 */
   showLocalOpsPanel: boolean;
+  /** browser-control 共用的应用内验证工作台，独立于内部评测中心。 */
+  showInAppValidation: boolean;
   /** 本机操作页当前 tab；openLocalOpsPanel 可带 tab 深链。 */
   localOpsTab: LocalOpsTab;
-  /** 评测中心（admin-only）：回放 + 应用内验证的合并整窗页。 */
-  showEvalCenter: boolean;
-  evalCenterTab: EvalCenterTab;
-  /** 回放 tab 深链：会话行眼睛图标进入时预选会话，回放 tab 消费后经 clearEvalCenterReplayTarget 清空。 */
-  evalCenterReplaySessionId: string | null;
   pendingInAppValidationRequest: import('@shared/contract/browserInteraction').InAppValidationRequest | null;
   showProjectCollaborationPage: boolean;
   projectCollaborationPageProjectId: string | null;
@@ -375,18 +370,13 @@ export interface AppState {
   setShowCapturePanel: (show: boolean) => void;
   setShowDesktopPanel: (show: boolean) => void;
   setShowLocalOpsPanel: (show: boolean) => void;
+  setShowInAppValidation: (show: boolean) => void;
   /** 打开「本机操作」页并切到指定 tab（默认桌面）。 */
   openLocalOpsPanel: (tab?: LocalOpsTab) => void;
   /** @deprecated 合并页兼容 shim：打开 = 本机操作页·桌面 tab；关闭 = 关页。 */
   setShowComputerUsePanel: (show: boolean) => void;
   /** @deprecated 合并页兼容 shim：打开 = 本机操作页·浏览器 tab；关闭 = 关页。 */
   setShowBrowserSurfacePanel: (show: boolean) => void;
-  setShowEvalCenter: (show: boolean) => void;
-  /** 打开评测中心并切到指定 tab（默认回放）；replaySessionId 供回放 tab 预选会话。 */
-  openEvalCenter: (tab?: EvalCenterTab, replaySessionId?: string | null) => void;
-  /** 页内 tab 切换（不重置回放深链、不动互斥表）。 */
-  setEvalCenterTab: (tab: EvalCenterTab) => void;
-  clearEvalCenterReplayTarget: () => void;
   openProjectCollaborationPage: (projectId?: string | null) => void;
   closeProjectCollaborationPage: () => void;
   openProjectSpacePage: () => void;
@@ -510,9 +500,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showCapturePanel: false, // Capture panel hidden by default
   showDesktopPanel: false,
   showLocalOpsPanel: false,
+  showInAppValidation: false,
   localOpsTab: 'browser',
-  showEvalCenter: false,
-  evalCenterTab: 'replay', evalCenterReplaySessionId: null,
   pendingInAppValidationRequest: null,
   showProjectCollaborationPage: false,
   projectCollaborationPageProjectId: null,
@@ -684,6 +673,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
   setShowDesktopPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showDesktopPanel: show }),
   setShowLocalOpsPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showLocalOpsPanel: show }),
+  setShowInAppValidation: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showInAppValidation: show }),
   openLocalOpsPanel: (tab) => set({
     ...SECONDARY_PAGES_CLOSED,
     showLocalOpsPanel: true,
@@ -692,10 +682,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // 旧入口（MCPSettings 连接器卡片、computerUse.open 快捷键）走 shim 进合并页，UI 不再直接引用旧开关。
   setShowComputerUsePanel: (show) => (show ? get().openLocalOpsPanel('desktop') : get().setShowLocalOpsPanel(false)),
   setShowBrowserSurfacePanel: (show) => (show ? get().openLocalOpsPanel('browser') : get().setShowLocalOpsPanel(false)),
-  setShowEvalCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showEvalCenter: show }),
-  openEvalCenter: (tab, replaySessionId) => set({ ...SECONDARY_PAGES_CLOSED, showEvalCenter: true, showSettings: false, evalCenterTab: tab || 'replay', evalCenterReplaySessionId: replaySessionId ?? null }),
-  setEvalCenterTab: (tab) => set({ evalCenterTab: tab }),
-  clearEvalCenterReplayTarget: () => set({ evalCenterReplaySessionId: null }),
   openProjectCollaborationPage: (projectId) => set({
     ...SECONDARY_PAGES_CLOSED,
     showProjectCollaborationPage: true,

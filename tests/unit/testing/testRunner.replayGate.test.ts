@@ -14,7 +14,7 @@ const databaseMocks = vi.hoisted(() => ({
   insertExperimentCases: vi.fn(),
 }));
 
-vi.mock('../../../src/host/evaluation/telemetryQueryService', () => ({
+vi.mock('@host/telemetry/replay/telemetryQueryService', () => ({
   getTelemetryQueryService: () => ({
     getStructuredReplay: telemetryMocks.getStructuredReplay,
   }),

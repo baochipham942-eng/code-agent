@@ -26,7 +26,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { buildSessionTraceIdentity } from '../../../src/shared/contract/reviewQueue';
 import { getDatabase } from '../../../src/host/services/core/databaseService';
-import { getTelemetryQueryService } from '../../../src/host/evaluation/telemetryQueryService';
+import { getTelemetryQueryService } from '@host/telemetry/replay/telemetryQueryService';
 
 const dbState = vi.hoisted(() => ({
   sqlite: null as import('better-sqlite3').Database | null,

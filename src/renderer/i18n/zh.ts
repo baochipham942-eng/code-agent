@@ -33,7 +33,7 @@ import { capabilityHubZh } from './capabilityHub';
 import { neoTopicsZh } from './neoTopics';
 import { designToolbarZh } from './designToolbar';
 import { projectSpaceZh } from './projectSpace';
-import { evalCenterZh } from './evalCenter';
+import { inAppValidationZh } from './inAppValidation';
 import { localOpsZh } from './localOps';
 import { onboardingZh } from './onboarding';
 import { workbenchTabsZh } from './workbenchTabs';
@@ -55,7 +55,7 @@ export const zh = {
   ...capabilityHubZh,
   ...neoTopicsZh,
   ...projectSpaceZh,
-  ...evalCenterZh,
+  ...inAppValidationZh,
   ...localOpsZh,
   ...onboardingZh,
   ...generativeUIZh,

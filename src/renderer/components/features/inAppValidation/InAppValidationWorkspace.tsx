@@ -93,7 +93,7 @@ const DEMO_STEPS: BrowserInteractionStep[] = [
 
 export function InAppValidationWorkspace(): React.ReactElement {
   const { t } = useI18n();
-  const v = t.evalCenter.validation;
+  const v = t.inAppValidation;
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [htmlSource, setHtmlSource] = useState<string>(DEMO_HTML);
   const [stepsText, setStepsText] = useState<string>(() => JSON.stringify(DEMO_STEPS, null, 2));

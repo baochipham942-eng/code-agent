@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MODEL_PRICING_PER_1M, PRICING_TABLE_VERSION } from '../../../src/shared/constants/pricing';
-import { estimateEvalCostPerCase } from '../../../src/host/evaluation/evalRunCostEstimate';
+import { estimateEvalCostPerCase } from '@internal-evaluation/host/evaluation/evalRunCostEstimate';
 
 describe('eval run host-side cost estimate', () => {
   it('uses the shared pricing table and 5K tokens per case', () => {

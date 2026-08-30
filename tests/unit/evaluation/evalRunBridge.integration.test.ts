@@ -8,8 +8,8 @@ import {
   EVAL_RUN_STAMP_KEYS,
   type EvalRunEvent,
 } from '../../../src/shared/contract/evaluation';
-import { EvalRunBridge } from '../../../src/host/evaluation/evalRunBridge';
-import { inspectEvalEnvironment } from '../../../src/host/evaluation/evalEnvironment';
+import { EvalRunBridge } from '@internal-evaluation/host/evaluation/evalRunBridge';
+import { inspectEvalEnvironment } from '@internal-evaluation/host/evaluation/evalEnvironment';
 
 const roots: string[] = [];
 const previousDataDir = process.env.CODE_AGENT_DATA_DIR;
@@ -69,7 +69,7 @@ describe('EvalRunBridge child-process integration', () => {
     await waitFor(() => !bridge.subscribe(runId).running);
 
     expect(spawnedArgs).toEqual(expect.arrayContaining([
-      expect.stringContaining('scripts/eval-ci.ts'), '--real', '--json-events', '--data-dir',
+      expect.stringContaining('packages/internal/evaluation-center/scripts/eval-ci.ts'), '--real', '--json-events', '--data-dir',
       expect.any(String), '--run-id', runId,
     ]));
     expect(events.some((event) => event.type === 'error')).toBe(true);

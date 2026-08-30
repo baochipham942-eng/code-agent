@@ -579,7 +579,7 @@ export function createAgentLoop(
   let eventService: { saveEvent: (sid: string, event: AgentEvent) => void } | null = null;
   if (process.env.EVAL_DISABLED !== 'true') {
     try {
-      const mod = cliRequire('../evaluation/sessionEventService') as typeof import('../host/evaluation/sessionEventService');
+      const mod = cliRequire('../host/session/sessionEventService') as typeof import('../host/session/sessionEventService');
       eventService = mod.getSessionEventService();
     } catch { /* evaluation module not available */ }
   }

@@ -16,6 +16,8 @@
       "@host/*": ["./src/host/*"],
       "@renderer/*": ["./src/renderer/*"],
       "@shared/*": ["./src/shared/*"],
+      "@internal-evaluation/*": ["./packages/internal/evaluation-center/src/*"],
+      "@internal-evaluation-scripts/*": ["./packages/internal/evaluation-center/scripts/*"],
       "electron": ["./src/host/platform/index.ts"]
     },
     "types": ["node"]

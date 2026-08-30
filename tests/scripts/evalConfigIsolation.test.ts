@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 const execFileAsync = promisify(execFile);
 const repoRoot = process.cwd();
 const tsxCli = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
-const evalScript = path.join(repoRoot, 'scripts', 'eval-ci.ts');
+const evalScript = path.join(repoRoot, 'packages', 'internal', 'evaluation-center', 'scripts', 'eval-ci.ts');
 
 // 每次调用给独立数据目录，避免轮次间互相污染。
 // ⚠️ 目录名不能含 'eval-config-isolation'——dotenvx 会把数据目录下的 .env 探测路径

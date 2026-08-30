@@ -2,16 +2,16 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { IPC_CHANNELS } from '../../../src/shared/ipc';
+import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
 import type { EvalCaseListItem } from '../../../src/shared/contract/evaluation';
 
 const ipc = vi.hoisted(() => ({ invoke: vi.fn() }));
 
-vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: { invoke: ipc.invoke },
+vi.mock('@internal-evaluation/renderer/evaluationRunIpc', () => ({
+  invokeEvaluation: ipc.invoke,
 }));
 
-import { EvalCaseListTab } from '../../../src/renderer/components/features/evalCenter/EvalCaseListTab';
+import { EvalCaseListTab } from '@internal-evaluation/renderer/evalCenter/EvalCaseListTab';
 
 const ITEMS: EvalCaseListItem[] = [
   {
@@ -61,7 +61,7 @@ const ITEMS: EvalCaseListItem[] = [
 
 beforeEach(() => {
   ipc.invoke.mockImplementation(async (channel: string) => {
-    if (channel === IPC_CHANNELS.EVALUATION_LIST_CASES) return ITEMS;
+    if (channel === EVALUATION_CHANNELS.LIST_CASES) return ITEMS;
     return { action: 'archive', id: 'daily-case', file: '01-tools.yaml' };
   });
 });
@@ -105,7 +105,7 @@ describe('EvalCaseListTab', () => {
     fireEvent.click(screen.getByText('保存草稿'));
 
     await waitFor(() => expect(ipc.invoke).toHaveBeenCalledWith(
-      IPC_CHANNELS.EVALUATION_SAVE_CASE,
+      EVALUATION_CHANNELS.SAVE_CASE,
       { action: 'create-draft', id: 'new-report', prompt: '生成报告', tags: ['report', 'html'] },
     ));
 
@@ -114,7 +114,7 @@ describe('EvalCaseListTab', () => {
     fireEvent.click(screen.getByText('确认归档'));
 
     await waitFor(() => expect(ipc.invoke).toHaveBeenCalledWith(
-      IPC_CHANNELS.EVALUATION_SAVE_CASE,
+      EVALUATION_CHANNELS.SAVE_CASE,
       { action: 'archive', id: 'daily-case' },
     ));
   });

@@ -226,7 +226,7 @@ export type EvalRunEventSummary = {
 };
 
 /**
- * Stable NDJSON protocol produced by `scripts/eval-ci.ts --json-events` and
+ * Stable NDJSON protocol produced by the internal evaluation package's `eval-ci.ts --json-events` and
  * consumed by the host run bridge and evaluation UI. Every stdout line is one
  * event. Consumers must tolerate additive fields; changing an existing field's
  * meaning requires incrementing `schemaVersion`.

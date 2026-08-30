@@ -176,3 +176,28 @@ describe('appendSystemMessage / formatDuration', () => {
     expect(formatDuration(80_000)).toBe('1m20s');
   });
 });
+
+describe('task_progress 活动标签不闪', () => {
+  it('具体 step 不被后续无 step 的 Thinking… 盖掉', () => {
+    let state = markRunStarted(createChatState(), 1);
+    state = reduceAgentEvent(state, ev('task_progress', { phase: 'thinking', step: '分析请求中...' }));
+    expect(state.activity).toBe('分析请求中...');
+    state = reduceAgentEvent(state, ev('task_progress', { phase: 'thinking' }));
+    expect(state.activity).toBe('分析请求中...');
+  });
+
+  it('completed 不把运行中的标签清空', () => {
+    let state = markRunStarted(createChatState(), 1);
+    state = reduceAgentEvent(state, ev('task_progress', { phase: 'thinking', step: '分析请求中...' }));
+    state = reduceAgentEvent(state, ev('task_progress', { phase: 'completed', step: '回复完成' }));
+    expect(state.running).toBe(true);
+    expect(state.activity).toBe('分析请求中...');
+  });
+
+  it('相同标签不换新对象（避免无意义重渲）', () => {
+    let state = markRunStarted(createChatState(), 1);
+    state = reduceAgentEvent(state, ev('task_progress', { phase: 'thinking', step: '分析请求中...' }));
+    const next = reduceAgentEvent(state, ev('task_progress', { phase: 'thinking', step: '分析请求中...' }));
+    expect(next).toBe(state);
+  });
+});

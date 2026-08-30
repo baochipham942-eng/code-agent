@@ -328,6 +328,7 @@ export const chatCommand = new Command('chat')
           version,
           gitBranch,
           gitDirty,
+          permissionLabel: permissionMode ?? 'ask',
           onCommand,
           onShellCommand,
           slashItems,

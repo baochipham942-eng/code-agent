@@ -417,16 +417,22 @@ export function reduceAgentEvent(state: ChatState, event: AgentEvent, now: numbe
       const data = event.data;
       if (!data) return state;
       if (data.phase === 'completed' || data.phase === 'failed') {
-        return { ...state, activity: null };
+        // 回合还在跑时不要把标签清空——空标签 + 下一条 thinking 会让
+        // 「分析请求中」在 TurnStatus 里闪烁。真正收口走 agent_complete。
+        return state;
       }
       const label = data.step
         || (data.phase === 'thinking' ? 'Thinking…' : data.phase === 'tool_running' ? 'Run command' : 'Working…');
+      if (state.activity === label && state.running) return state;
+      // 已有更具体的 step 时，不要被无 step 的泛化标签（Thinking…）盖掉
+      if (!data.step && state.activity) return state.running ? state : { ...state, running: true };
       return { ...state, running: true, activity: label };
     }
 
     case 'agent_thinking': {
       const message = event.data?.message;
-      return message ? { ...state, activity: message } : state;
+      if (!message || message === state.activity) return state;
+      return { ...state, activity: message };
     }
 
     case 'tool_progress': {

@@ -246,18 +246,13 @@ describe('断言条级胜负', () => {
       .toBe('tie');
   });
 
-  it('LLM judge 结果不进入胜负，infra/not_run/cost_exceeded 排除', () => {
+  it('LLM judge 结果不进入胜负', () => {
     const llmBaseline = result([false, false], { scoreAuthority: 'llm_judge' });
     const llmCandidate = result([true, true], { scoreAuthority: 'llm_judge' });
     expect(decideCaseWinner(llmBaseline, llmCandidate)).toMatchObject({
       winner: 'tie',
       assertionCount: 0,
     });
-
-    for (const status of ['infra_excluded', 'not_run', 'cost_exceeded'] as const) {
-      expect(decideCaseWinner(result([true]), result([true], { status })).excludedReason)
-        .toContain(status);
-    }
   });
 
   it('k>1 按每条断言 pass^k 聚合', () => {

@@ -6,6 +6,7 @@ import { formatDuration } from '../../../shared/utils/format';
 import { getRunStampReportRows } from '../runStampReport';
 import { describeSignTest, SIGN_TEST_ALPHA } from './signTest';
 import { failureCodeLabel, loadProjectFailureCodebook } from '../failureCodes';
+import type { HardGateItem, ShipGateState, ShipGateVerdict } from './shipGate';
 
 type ComparisonRunStampContext = {
   gitCommit: string;
@@ -16,6 +17,47 @@ type ComparisonRunStampContext = {
 function formatSkillActivations(activations: Record<string, number>): string {
   const entries = Object.entries(activations).sort(([left], [right]) => left.localeCompare(right));
   return entries.length > 0 ? entries.map(([name, count]) => `${name}:${count}`).join(', ') : '0';
+}
+
+const SHIP_GATE_STATE_TEXT: Record<ShipGateState, string> = {
+  candidate_better: '实验组更好 · 可上线',
+  non_inferior: '非劣（Δ=3pp）· 可上线',
+  candidate_worse: '实验组更差 · 不能上线',
+  insufficient: '样本不足 · 不能上线（这不是势均力敌，是数据还不够）',
+};
+
+function formatRate(value: number): string {
+  return `${(value * 100).toFixed(1)}pp`;
+}
+
+function hardGateCount(item: HardGateItem): string {
+  return item.status === 'not_measured' ? '未测量' : String(item.count ?? 0);
+}
+
+function hardGateMark(item: HardGateItem): string {
+  if (item.status === 'pass') return '✅ pass';
+  if (item.status === 'fail') return '❌ fail';
+  return '⚠ not_measured';
+}
+
+function hardGateFinal(verdict: ShipGateVerdict): string {
+  const failed = verdict.hardGate.items.filter((item) => item.status === 'fail');
+  if (failed.length > 0) return `❌ ${failed.map((item) => item.key).join(',')}`;
+  const unmeasured = verdict.hardGate.items.filter((item) => item.status === 'not_measured');
+  if (unmeasured.length > 0) return `⚠ 未测量：${unmeasured.map((item) => item.key).join(',')}`;
+  return '✅ ALL PASSED';
+}
+
+function shipGateHeadline(result: ComparisonResult): string | null {
+  const gate = result.summary.shipGate;
+  if (!gate) return null;
+  return `结论：${SHIP_GATE_STATE_TEXT[gate.state]}`
+    + ` · Δ=${gate.delta}pp · N_min=${gate.nMin} · decisive ${gate.decisivePairs}`
+    + ` · p=${gate.pValue.toFixed(4)} · 通过率差 ${formatRate(gate.passRateDiff)}`
+    + ` · 置信下界 ${formatRate(gate.ciLowerBound)}`
+    + ` · 口径 k=${gate.calibre.k}`
+    + ` / aggregationRuleVersion=${gate.calibre.aggregationRuleVersion}`
+    + ` / promptVersion=${gate.calibre.promptVersion} · 实验 id(${result.runId})`;
 }
 
 /**
@@ -30,6 +72,18 @@ export function generateComparisonMarkdown(
 
   lines.push(`# A/B Comparison Report`);
   lines.push('');
+  const headline = shipGateHeadline(result);
+  if (headline && summary.shipGate) {
+    lines.push(`> ${headline}`);
+    lines.push('');
+    lines.push('| 项 | 计数 | 门 |');
+    lines.push('|---|---:|---|');
+    for (const item of summary.shipGate.hardGate.items) {
+      lines.push(`| ${item.key} | ${hardGateCount(item)} | ${hardGateMark(item)} |`);
+    }
+    lines.push(`| **SHIP GATE** |  | **${hardGateFinal(summary.shipGate)}** |`);
+    lines.push('');
+  }
   lines.push(`**Run ID:** ${result.runId}`);
   lines.push(`**Date:** ${new Date(result.timestamp).toISOString()}`);
   lines.push(`**Duration:** ${formatDuration(result.duration)}`);
@@ -67,9 +121,6 @@ export function generateComparisonMarkdown(
   lines.push(`| Baseline 参考分（启发式/评审） | ${summary.baselineAvgScore.toFixed(2)} |`);
   lines.push(`| Candidate 参考分（启发式/评审） | ${summary.candidateAvgScore.toFixed(2)} |`);
   lines.push(`| Confidence | ${(summary.confidence * 100).toFixed(0)}% |`);
-  if (summary.pValue !== undefined) {
-    lines.push(`| Sign test p 值 | ${describeSignTest(summary.baselineWins, summary.candidateWins, summary.pValue)} |`);
-  }
   if (summary.excludedPairs) {
     lines.push(`| 排除 Pair（未计入胜负） | ${summary.excludedPairs} |`);
   }
@@ -94,7 +145,15 @@ export function generateComparisonMarkdown(
     }
   }
   lines.push('');
-  lines.push(`> ${summary.verdict}`);
+
+  lines.push('## 技术详情');
+  lines.push('');
+  if (summary.pValue !== undefined) {
+    lines.push(`- Sign test: ${describeSignTest(summary.baselineWins, summary.candidateWins, summary.pValue)}`);
+  }
+  if (summary.shipGate) {
+    lines.push(`- reasons: ${summary.shipGate.reasons.join(', ')}`);
+  }
   lines.push('');
 
   lines.push('## 按层别');
@@ -168,6 +227,16 @@ export function generateComparisonConsole(result: ComparisonResult): string {
   lines.push(chalk.bold.underline('A/B Comparison Report'));
   lines.push('');
 
+  const headline = shipGateHeadline(result);
+  if (headline && summary.shipGate) {
+    lines.push(chalk.bold(headline));
+    for (const item of summary.shipGate.hardGate.items) {
+      lines.push(`  ${item.key}: ${hardGateCount(item)} · ${hardGateMark(item)}`);
+    }
+    lines.push(chalk.bold(`  SHIP GATE: ${hardGateFinal(summary.shipGate)}`));
+    lines.push('');
+  }
+
   // Config info
   lines.push(chalk.dim(`Run: ${result.runId}`));
   lines.push(chalk.dim(`Duration: ${formatDuration(result.duration)}`));
@@ -188,13 +257,15 @@ export function generateComparisonConsole(result: ComparisonResult): string {
     lines.push(chalk.yellow(`  实验组有 ${summary.skillNotActivatedPairs} 题 skill 未出场，不计入`));
   }
   lines.push(`  Confidence: ${(summary.confidence * 100).toFixed(0)}%`);
+  lines.push('');
+
+  lines.push(chalk.bold('技术详情'));
   if (summary.pValue !== undefined) {
     const sig = summary.pValue <= SIGN_TEST_ALPHA;
     const text = describeSignTest(summary.baselineWins, summary.candidateWins, summary.pValue);
-    lines.push(`  Sign test:  ${sig ? chalk.green(text) : chalk.yellow(text)}`);
+    lines.push(`  Sign test: ${sig ? chalk.green(text) : chalk.yellow(text)}`);
   }
-  lines.push('');
-  lines.push(chalk.dim(`  ${summary.verdict}`));
+  if (summary.shipGate) lines.push(`  reasons: ${summary.shipGate.reasons.join(', ')}`);
   lines.push('');
 
   lines.push(chalk.bold('按层别'));

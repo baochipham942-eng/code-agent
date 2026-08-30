@@ -13,9 +13,13 @@ import type {
   TestRunSummary,
   EvalRunMode,
 } from '../types';
+import {
+  assertShipGateRuleVersion,
+  BASELINE_DENOMINATOR_VERSION,
+} from '../comparator/shipGate';
 
 /** 通过率规则版本：4 = 计划题集一等字段，not_run 保留在通过率内。 */
-export const BASELINE_DENOMINATOR_VERSION = 4;
+export { BASELINE_DENOMINATOR_VERSION } from '../comparator/shipGate';
 
 export const AGGREGATION_RULES = {
   pass_rate_k1: { version: BASELINE_DENOMINATOR_VERSION },
@@ -49,6 +53,7 @@ export class BaselineManager {
   private kind: 'agent' | 'mock-harness';
 
   constructor(private workingDir: string, options: BaselineManagerOptions = {}) {
+    assertShipGateRuleVersion();
     this.kind = options.kind ?? 'agent';
     this.baselinePath = this.kind === 'mock-harness'
       ? path.join(workingDir, '.claude', 'eval-mock-baseline.json')

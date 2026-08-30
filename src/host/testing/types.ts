@@ -12,6 +12,7 @@ import type {
 import type { AgentPointerEvent } from '../../shared/contract/desktop';
 import type { GoalGateVerdict } from '../../shared/contract/agent';
 import type { JudgeCalibrationRecord } from './calibration/calibrationRegistry';
+import type { ShipGateVerdict } from './comparator/shipGate';
 
 export type { ScoreAuthority } from '../../shared/contract/evaluation';
 
@@ -860,6 +861,7 @@ export interface ComparisonResult {
     candidateSkillActivations: Record<string, number>;
     /** 配对 sign test 双尾 p 值（只算 decisive pair；tie/excluded 不进 n） */
     pValue?: number;
+    shipGate?: ShipGateVerdict;
   };
   duration: number;
 }

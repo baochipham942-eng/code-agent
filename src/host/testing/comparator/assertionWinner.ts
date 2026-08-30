@@ -7,7 +7,6 @@ export interface AssertionWinnerDecision {
   passRateA: number;
   passRateB: number;
   assertionCount: number;
-  excludedReason?: string;
 }
 
 const EXCLUDED_STATUSES = new Set<TestStatus>([
@@ -15,11 +14,6 @@ const EXCLUDED_STATUSES = new Set<TestStatus>([
   'not_run',
   'cost_exceeded',
 ]);
-
-function excludedStatusReason(role: 'baseline' | 'candidate', result: TestResult): string | null {
-  if (!EXCLUDED_STATUSES.has(result.status)) return null;
-  return `${role}: ${result.status}${result.failureReason ? `（${result.failureReason}）` : ''}`;
-}
 
 /** Only deterministic assertion rows can participate in the experiment conclusion. */
 function deterministicAssertionResults(result: TestResult): ExpectationResult[] {
@@ -36,7 +30,10 @@ export function aggregateAssertionTrials(results: TestResult[]): TestResult {
   if (!first) throw new Error('aggregateAssertionTrials requires at least one trial');
   if (results.length === 1) return first;
 
-  const excluded = results.find((result) => EXCLUDED_STATUSES.has(result.status) || result.invalid);
+  // invalid 判废优先（FAKECLOSED 语义，与 testRunner 代表试次同口径）：不看试次顺序，
+  // 只要有一次没调真模型就按无效题排除，不让先到的 infra 试次把它遮掉。
+  const excluded = results.find((result) => result.invalid)
+    ?? results.find((result) => EXCLUDED_STATUSES.has(result.status));
   const rows = deterministicAssertionResults(first).map((row, index) => ({
     ...row,
     passed: results.every((result) => deterministicAssertionResults(result)[index]?.passed === true),
@@ -84,11 +81,6 @@ export function decideCaseWinner(
   baseline: TestResult,
   candidate: TestResult,
 ): AssertionWinnerDecision {
-  const excludedReason = [
-    excludedStatusReason('baseline', baseline),
-    excludedStatusReason('candidate', candidate),
-  ].filter((reason): reason is string => Boolean(reason)).join('; ');
-
   const assertionsA = deterministicAssertionResults(baseline);
   const assertionsB = deterministicAssertionResults(candidate);
   const passRateA = assertionsA.length > 0
@@ -108,6 +100,5 @@ export function decideCaseWinner(
     passRateA,
     passRateB,
     assertionCount: Math.max(assertionsA.length, assertionsB.length),
-    ...(excludedReason ? { excludedReason } : {}),
   };
 }

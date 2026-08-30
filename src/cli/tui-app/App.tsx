@@ -45,7 +45,7 @@ import { Editor } from './Editor';
 import { SlashMenu } from './SlashMenu';
 import { MessageView } from './MessageView';
 
-export interface InkCommandResult {
+interface InkCommandResult {
   /** 命令产生的文本输出（渲染为系统消息） */
   output?: string;
   /** /exit 类命令请求退出 */

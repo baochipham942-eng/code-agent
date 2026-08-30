@@ -42,9 +42,9 @@
       "kind": "type"
     },
     {
-      "file": "src/cli/tui/index.ts",
-      "name": "StatusBarData",
-      "kind": "type"
+      "file": "src/cli/tui-app/yogaCjsShim.ts",
+      "name": "default",
+      "kind": "export"
     },
     {
       "file": "src/design/critique/index.ts",
@@ -580,11 +580,6 @@
       "file": "src/host/agent/messageHandling/contextBuilder.ts",
       "name": "RAGContextOptions",
       "kind": "type"
-    },
-    {
-      "file": "src/host/agent/messageHandling/converter.ts",
-      "name": "sanitizeToolResultForHistory",
-      "kind": "export"
     },
     {
       "file": "src/host/agent/messageHandling/converter.ts",
@@ -6507,151 +6502,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/telemetry/index.ts",
-      "name": "bindRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "classifyIntent",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "createChildRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "createRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "CreateRunTraceContextInput",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "createTelemetryAdapter",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "evaluateOutcome",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "fingerprintRunWorkspace",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "getActiveRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "getTelemetryService",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "getTelemetryStorage",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "recordHookSpan",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "recordMcpSpan",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "restoreRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "RunTraceContext",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "SerializedRunTraceContext",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "serializeRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "SpanEvent",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "SpanKind",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "SpanStatus",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "TelemetryCollector",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "TelemetryMetrics",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "TelemetryService",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "TelemetrySpan",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "TelemetryStorage",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "withApprovalTrace",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "withRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/telemetryAdapter.ts",
-      "name": "recordHookSpan",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/telemetryAdapter.ts",
-      "name": "recordMcpSpan",
-      "kind": "export"
-    },
-    {
       "file": "src/host/telemetry/telemetryCollectorInternal.ts",
       "name": "asNumber",
       "kind": "export"
@@ -6675,11 +6525,6 @@
       "file": "src/host/telemetry/telemetryCollectorInternal.ts",
       "name": "isRecord",
       "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/telemetryService.ts",
-      "name": "SpanEvent",
-      "kind": "type"
     },
     {
       "file": "src/host/telemetry/telemetryStorageParsers.ts",
@@ -6812,11 +6657,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/testing/testRunner.ts",
-      "name": "isInfraExclusionError",
-      "kind": "export"
-    },
-    {
       "file": "src/host/testing/types.ts",
       "name": "EvalPrediction",
       "kind": "type"
@@ -6879,11 +6719,6 @@
     {
       "file": "src/host/testing/types.ts",
       "name": "TestDifficulty",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/testing/types.ts",
-      "name": "TestStatus",
       "kind": "type"
     },
     {

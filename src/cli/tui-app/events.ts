@@ -10,13 +10,13 @@ import { MODEL_PRICING_PER_1M } from '../../shared/constants/pricing';
 // 消息模型
 // ---------------------------------------------------------------------------
 
-export interface UserMessage {
+interface UserMessage {
   id: string;
   kind: 'user';
   text: string;
 }
 
-export interface AssistantMessage {
+interface AssistantMessage {
   id: string;
   kind: 'assistant';
   text: string;
@@ -24,7 +24,7 @@ export interface AssistantMessage {
   streaming: boolean;
 }
 
-export interface ThinkingMessage {
+interface ThinkingMessage {
   id: string;
   kind: 'thinking';
   text: string;
@@ -33,7 +33,7 @@ export interface ThinkingMessage {
   endedAt?: number;
 }
 
-export interface ToolCallItem {
+interface ToolCallItem {
   id: string;
   name: string;
   /** 进行时动词（Reading） */

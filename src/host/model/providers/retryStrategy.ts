@@ -99,7 +99,7 @@ const TRANSIENT_CODES = [
 const RETRYABLE_HTTP_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 /** 指数退避封顶（毫秒） */
-export const RETRY_BACKOFF_CAP_MS = 16_000;
+const RETRY_BACKOFF_CAP_MS = 16_000;
 
 function getErrorStatus(err: unknown): number | undefined {
   if (!err || typeof err !== 'object') return undefined;

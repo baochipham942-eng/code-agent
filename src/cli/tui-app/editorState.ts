@@ -11,14 +11,14 @@
 // ---------------------------------------------------------------------------
 
 /** chip 折叠阈值（对齐交互规格：≥4 行或 ≥10KB） */
-export const PASTE_CHIP_MIN_LINES = 4;
+const PASTE_CHIP_MIN_LINES = 4;
 export const PASTE_CHIP_MIN_BYTES = 10 * 1024;
 
 /** chip marker 用 Unicode 私用区单字符，光标/退格天然按原子处理 */
 const CHIP_MARKER_BASE = 0xe000;
 const CHIP_MARKER_MAX = 0xe0ff;
 
-export interface PasteChip {
+interface PasteChip {
   marker: string;
   text: string;
   lineCount: number;
@@ -266,7 +266,7 @@ export function computeWindow(
 // 提示历史（沿用 tui/inputManager 的 100 条内存模式）
 // ---------------------------------------------------------------------------
 
-export const HISTORY_LIMIT = 100;
+const HISTORY_LIMIT = 100;
 
 export class PromptHistory {
   private entries: string[] = [];

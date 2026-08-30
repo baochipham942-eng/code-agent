@@ -21,6 +21,16 @@ export interface ScopedTokenUsage {
   cacheCreationTokens: number;
 }
 
+export interface ScopedUsageRecord {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  source?: 'provider' | 'estimated';
+}
+
+export type ScopedCostRecorder = (usage: ScopedUsageRecord, costUsd: number) => void;
+
 const scopedCostStorage = new AsyncLocalStorage<ScopedCostState>();
 
 class ScopedCostLimitExceededError extends Error {
@@ -50,6 +60,24 @@ function throwIfExceeded(state: ScopedCostState): void {
   }
 }
 
+function recordUsageForState(
+  state: ScopedCostState,
+  usage: ScopedUsageRecord,
+  costUsd: number,
+): void {
+  state.usageRecorded = true;
+  state.costUsd += costUsd;
+  if (usage.source === 'estimated') {
+    state.usageUnavailable = true;
+  } else {
+    state.promptTokens += usage.inputTokens;
+    state.completionTokens += usage.outputTokens;
+    state.cacheReadTokens += usage.cacheReadTokens ?? 0;
+    state.cacheCreationTokens += usage.cacheCreationTokens ?? 0;
+  }
+  throwIfExceeded(state);
+}
+
 /**
  * 创建一个可跨多轮 sendMessage 复用、且并发隔离的成本上下文。
  * BudgetService 每落一条真实 usage 就会记入当前上下文；越线后立即抛错，
@@ -57,6 +85,7 @@ function throwIfExceeded(state: ScopedCostState): void {
  */
 export function createScopedCostLimit(maxCostUsd: number): {
   run<T>(operation: () => Promise<T>): Promise<T>;
+  recordUsage: ScopedCostRecorder;
   getCostUsd(): number;
   getUsage(): ScopedTokenUsage | undefined;
 } {
@@ -80,6 +109,11 @@ export function createScopedCostLimit(maxCostUsd: number): {
         throwIfExceeded(state);
         return value;
       });
+    },
+    // 流式 provider 的尾部 usage 可能由丢失 ALS 上下文的续体回调触发。
+    // 该句柄显式绑定本 case state，不依赖调用时 scopedCostStorage.getStore()。
+    recordUsage(usage, costUsd): void {
+      recordUsageForState(state, usage, costUsd);
     },
     getCostUsd(): number {
       return state.costUsd;

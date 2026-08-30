@@ -28,6 +28,7 @@ import type { RunTraceContext } from '../telemetry/runTraceContext';
 import type { SkillDiscoveryService } from '../services/skills/skillDiscoveryService';
 import type { SystemPromptCache } from '../telemetry/systemPromptCache';
 import type { TurnSnapshotSink } from './runtime/turnSnapshotWriter';
+import type { ScopedCostRecorder } from '../services/core/scopedCostLimit';
 
 // ----------------------------------------------------------------------------
 // Configuration Types
@@ -101,6 +102,8 @@ export interface AgentLoopConfig {
   persistMessage?: (message: Message) => Promise<void>;
   /** Per-run turn snapshot sink for isolated runtimes. */
   turnSnapshotSink?: TurnSnapshotSink;
+  /** Optional case-bound cost recorder for controlled eval runs. */
+  scopedCostRecorder?: ScopedCostRecorder;
   /** 当前 turn 的显式工具作用域 */
   toolScope?: WorkbenchToolScope;
   /** 当前 turn 的结构化执行意图 */

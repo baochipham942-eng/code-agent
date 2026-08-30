@@ -24,6 +24,7 @@ import type { SkillDiscoveryService } from '../services/skills/skillDiscoverySer
 import type { SessionType } from '../../shared/contract/session';
 import type { DatabaseService } from '../services/core/databaseService';
 import type { TelemetryCollector } from '../telemetry/telemetryCollector';
+import type { ScopedCostRecorder } from '../services/core/scopedCostLimit';
 import path from 'node:path';
 
 const logger = createLogger('AgentAdapter');
@@ -493,7 +494,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       : getTelemetryQueryService().getStructuredReplay(sessionId);
   }
 
-  async sendMessage(prompt: string): Promise<{
+  async sendMessage(prompt: string, options?: { scopedCostRecorder?: ScopedCostRecorder }): Promise<{
     responses: string[];
     toolExecutions: ToolExecutionRecord[];
     turnCount: number;
@@ -625,6 +626,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
               }
             : undefined,
           turnSnapshotSink: runtimeDatabase,
+          scopedCostRecorder: options?.scopedCostRecorder,
           onEvent: (event) => {
             if (this.currentSessionId) {
               telemetryCollector.handleEvent(this.currentSessionId, event);

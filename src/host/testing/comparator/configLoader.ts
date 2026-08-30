@@ -3,6 +3,37 @@ import fs from 'fs/promises';
 import * as yaml from 'js-yaml';
 import type { CompareConfiguration } from '../types';
 
+function optionalString(value: unknown, field: string, filePath: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`Invalid compare config in ${filePath}: "${field}" must be a non-empty string`);
+  }
+  return value;
+}
+
+function optionalBoolean(value: unknown, field: string, filePath: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') {
+    throw new Error(`Invalid compare config in ${filePath}: "${field}" must be a boolean`);
+  }
+  return value;
+}
+
+function optionalEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  field: string,
+  filePath: string,
+): T | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !allowed.includes(value as T)) {
+    throw new Error(
+      `Invalid compare config in ${filePath}: "${field}" must be one of ${allowed.join(', ')}`,
+    );
+  }
+  return value as T;
+}
+
 /**
  * Load a CompareConfiguration from a YAML file.
  */
@@ -21,19 +52,53 @@ export async function loadCompareConfig(filePath: string): Promise<CompareConfig
   const parsedHarness = parsed.harness && typeof parsed.harness === 'object'
     ? parsed.harness as Record<string, unknown>
     : undefined;
+  if (parsed.harness !== undefined && !parsedHarness) {
+    throw new Error(`Invalid compare config in ${filePath}: "harness" must be an object`);
+  }
+  const parsedMemory = parsed.memory && typeof parsed.memory === 'object'
+    ? parsed.memory as Record<string, unknown>
+    : undefined;
+  if (parsed.memory !== undefined && !parsedMemory) {
+    throw new Error(`Invalid compare config in ${filePath}: "memory" must be an object`);
+  }
+
+  let skills: string[] | undefined;
+  if (parsed.skills !== undefined) {
+    if (!Array.isArray(parsed.skills) || parsed.skills.some((item) => typeof item !== 'string')) {
+      throw new Error(`Invalid compare config in ${filePath}: "skills" must be an array of strings`);
+    }
+    skills = parsed.skills as string[];
+  }
 
   return {
     name: parsed.name as string,
-    model: parsed.model as string | undefined,
-    provider: parsed.provider as string | undefined,
-    systemPrompt: parsed.systemPrompt as string | undefined,
+    model: optionalString(parsed.model, 'model', filePath),
+    provider: optionalString(parsed.provider, 'provider', filePath),
+    systemPrompt: optionalString(parsed.systemPrompt, 'systemPrompt', filePath),
     harness: parsedHarness
       ? {
-          compressionPipeline: parsedHarness.compressionPipeline as boolean | undefined,
-          scaffoldProfile: parsedHarness.scaffoldProfile as boolean | undefined,
-          thinkingInjection: parsedHarness.thinkingInjection as boolean | undefined,
+          name: parsed.name as string,
+          contextCompression: optionalBoolean(parsedHarness.contextCompression, 'harness.contextCompression', filePath),
+          compressionPipeline: optionalBoolean(parsedHarness.compressionPipeline, 'harness.compressionPipeline', filePath),
+          scaffoldProfile: optionalBoolean(parsedHarness.scaffoldProfile, 'harness.scaffoldProfile', filePath),
+          thinkingInjection: optionalBoolean(parsedHarness.thinkingInjection, 'harness.thinkingInjection', filePath),
+          hooksEnabled: optionalBoolean(parsedHarness.hooksEnabled, 'harness.hooksEnabled', filePath),
+          toolMode: optionalEnum(parsedHarness.toolMode, ['all', 'deferred'], 'harness.toolMode', filePath),
         }
       : undefined,
+    memory: parsedMemory
+      ? {
+          longTerm: optionalBoolean(parsedMemory.longTerm, 'memory.longTerm', filePath),
+          routingModel: optionalString(parsedMemory.routingModel, 'memory.routingModel', filePath),
+        }
+      : undefined,
+    reasoningEffort: optionalEnum(
+      parsed.reasoningEffort,
+      ['low', 'medium', 'high', 'xhigh'],
+      'reasoningEffort',
+      filePath,
+    ),
+    skills,
     enabledTools: parsed.enabledTools as string[] | undefined,
     temperature: parsed.temperature as number | undefined,
     agentConfig: parsed.agentConfig as Record<string, unknown> | undefined,

@@ -256,6 +256,8 @@ export interface TestCase {
   reference_solution?: string;
   /** Difficulty level for categorization */
   difficulty?: TestDifficulty;
+  /** CASELIST/compare report layer, derived from the owning YAML path. */
+  layer?: string;
   /** Test category */
   category?: TestCategory;
   /** Expectation-based assertions (P1) */
@@ -783,11 +785,14 @@ export interface CompareConfiguration {
   model?: string;
   provider?: string;
   systemPrompt?: string;
-  harness?: {
-    compressionPipeline?: boolean;
-    scaffoldProfile?: boolean;
-    thinkingInjection?: boolean;
+  harness?: HarnessVariantConfig;
+  memory?: {
+    longTerm?: boolean;
+    routingModel?: string;
   };
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh';
+  /** Reserved for SKILLARM. Declared here only; this task deliberately does not wire it. */
+  skills?: string[];
   enabledTools?: string[];
   temperature?: number;
   agentConfig?: Record<string, unknown>;
@@ -802,10 +807,18 @@ export interface DualRubricScore {
 export interface CaseComparison {
   testId: string;
   description: string;
+  layer?: string;
   assignment: { A: 'baseline' | 'candidate'; B: 'baseline' | 'candidate' };
   scoreA: DualRubricScore;
   scoreB: DualRubricScore;
-  winner: 'A' | 'B' | 'tie';
+  /** ABGrader output retained only as an explicitly labelled reference column. */
+  referenceWinner: 'A' | 'B' | 'tie';
+  referenceKind: 'heuristic' | 'llm_judge';
+  /** Deterministic assertion pass-rate winner; the sole per-case conclusion signal. */
+  assertionWinner: 'baseline' | 'candidate' | 'tie';
+  passRateA: number;
+  passRateB: number;
+  assertionCount: number;
   realWinner: 'baseline' | 'candidate' | 'tie';
   reasoning: string;
   /** 每臂断言判定终态（非劣判定主指标=成功率；rubric 分只作参考） */

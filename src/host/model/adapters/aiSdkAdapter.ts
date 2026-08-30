@@ -580,8 +580,8 @@ async function runInferenceViaAiSdk(
   signal?: AbortSignal,
   options?: InferenceOptions,
 ): Promise<ModelResponse> {
-  const requestConfig = options?.reasoningEffort
-    ? { ...config, reasoningEffort: options.reasoningEffort }
+  const requestConfig: ModelConfig = options?.reasoningEffort
+    ? { ...config, reasoningEffort: options.reasoningEffort } as ModelConfig
     : config;
   const req = resolveProviderRequest(requestConfig);
   const streaming = typeof onStream === 'function' && options?.forceNonStreaming !== true;
@@ -679,6 +679,7 @@ async function generateViaAiSdk(params: {
             tools: aiTools,
             abortSignal: guard.signal,
             temperature: requestTemperature,
+            ...(config.reasoningEffort ? { reasoning: config.reasoningEffort } : {}),
             ...(providerOptions ? { providerOptions } : {}),
             ...(options?.toolChoice ? { toolChoice: options.toolChoice as ToolChoice<ToolSet> } : {}),
             ...(typeof config.maxTokens === 'number' && Number.isFinite(config.maxTokens)
@@ -924,6 +925,7 @@ async function streamViaAiSdk(params: {
         tools: aiTools,
         abortSignal: streamSignal,
         temperature: requestTemperature,
+        ...(config.reasoningEffort ? { reasoning: config.reasoningEffort } : {}),
         ...(providerOptions ? { providerOptions } : {}),
         ...(options?.toolChoice ? { toolChoice: options.toolChoice as ToolChoice<ToolSet> } : {}),
         // 主 loop 的 artifact 生成/修复按阶段 cap maxTokens，必须透传给 SDK 保住上限；

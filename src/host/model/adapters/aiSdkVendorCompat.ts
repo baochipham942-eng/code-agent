@@ -81,7 +81,9 @@ export function buildVendorCompatSettings(config: ModelConfig, options?: { searc
     case 'xiaomi': {
       // MiMo：thinking 字段（enabled/disabled 由 reasoningEffort/thinkingBudget 决定）+ 官方采样
       // temp=1.0/top_p=0.95 + 用 max_completion_tokens 而非 max_tokens（沿用 legacy XiaomiProvider）。
-      const thinkingEnabled = config.reasoningEffort === 'high' || (config.thinkingBudget ?? 0) > 0;
+      const thinkingEnabled = config.reasoningEffort === 'high'
+        || (config.reasoningEffort as string | undefined) === 'xhigh'
+        || (config.thinkingBudget ?? 0) > 0;
       settings = {
         includeUsage: true,
         transformRequestBody: (b) => {

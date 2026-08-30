@@ -77,6 +77,14 @@ function validateAiReview(value: unknown): void {
   }
 }
 
+function validateEvidence(value: unknown): void {
+  if (!isRecord(value)) throw new Error('评测用例 evidence 格式不正确。');
+  if (!Array.isArray(value.checks)) throw new Error('评测用例 evidence.checks 必须是数组。');
+  if (typeof value.responseExcerpt !== 'string') {
+    throw new Error('评测用例 evidence.responseExcerpt 必须是字符串。');
+  }
+}
+
 export function parseEvalRunEvent(value: unknown): EvalRunEvent {
   if (!isRecord(value)) throw new Error('评测事件不是对象。');
   if (value.schemaVersion !== EVAL_RUN_EVENT_SCHEMA_VERSION) {
@@ -132,6 +140,14 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
         }
       }
       if (value.aiReview !== undefined) validateAiReview(value.aiReview);
+      if (value.evidence !== undefined) validateEvidence(value.evidence);
+      if (value.invalid !== undefined) {
+        if (!isRecord(value.invalid)) throw new Error('评测用例 invalid 必须是对象。');
+        requireString(value.invalid, 'reason');
+        if (value.invalid.reason !== 'usage_unavailable' && value.invalid.reason !== 'mock_excluded') {
+          throw new Error('评测用例 invalid.reason 不受支持。');
+        }
+      }
       if (value.trialAggregate !== undefined) validateTrialAggregate(value.trialAggregate);
       if (value.failure !== undefined) {
         if (!isRecord(value.failure)) throw new Error('评测用例 failure 必须是对象。');

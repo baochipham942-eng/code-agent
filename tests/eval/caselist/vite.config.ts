@@ -12,6 +12,8 @@ export default defineConfig({
       '@': path.join(repositoryRoot, 'src'),
       '@renderer': path.join(repositoryRoot, 'src/renderer'),
       '@shared': path.join(repositoryRoot, 'src/shared'),
+      '@internal-evaluation': path.join(repositoryRoot, 'packages/internal/evaluation-center/src'),
+      '@internal-evaluation-scripts': path.join(repositoryRoot, 'packages/internal/evaluation-center/scripts'),
     },
   },
   server: {

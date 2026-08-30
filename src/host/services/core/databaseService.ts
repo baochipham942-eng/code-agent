@@ -3115,6 +3115,10 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.experimentRepo.loadExperiment(id);
   }
+  loadExperimentCase(experimentId: string, caseId: string) {
+    this.ensureDb();
+    return this.experimentRepo.loadExperimentCase(experimentId, caseId);
+  }
   updateExperimentSummary(id: string, summaryJson: string): void {
     this.ensureDb();
     this.experimentRepo.updateExperimentSummary(id, summaryJson);

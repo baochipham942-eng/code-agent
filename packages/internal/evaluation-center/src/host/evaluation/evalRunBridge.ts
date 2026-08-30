@@ -372,7 +372,7 @@ export class EvalRunBridge {
         state.adapter.persistEventCase(event);
       } else if (event.type === 'run_end') {
         state.endEvent = event;
-        state.adapter.finishEventRun(state.runId, event.summary);
+        state.adapter.finishEventRun(state.runId, { ...event.summary, reportFiles: event.reportFiles });
       }
       this.deps.publish(EVALUATION_CHANNELS.RUN_EVENTS, event);
     } catch (error) {

@@ -123,6 +123,8 @@ export async function enumerateCaseBank(repoRoot: string, today = todayIso()): P
           hasExpect: expectationExists(testCase),
           reviewStatus: testCase.reviewStatus,
           source: testCase.sourceSessionId ? 'session' : 'manual',
+          type: testCase.type,
+          ...(testCase.category ? { category: testCase.category } : {}),
           retired: isRetired(testCase, today),
           isDraft,
         };

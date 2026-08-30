@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { evalCenterEn, evalCenterZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evaluationCenter';
 import { evalRunPanelEn, evalRunPanelZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalRunPanel';
 import { evalScorersEn, evalScorersZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalScorers';
+import { evalCaseDrawerEn, evalCaseDrawerZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalCaseDrawer';
 
 function strings(value: unknown): string[] {
   if (typeof value === 'string') return [value];
@@ -16,12 +17,16 @@ describe('跑分面板用户词表', () => {
       evalCenterZh.evalCenter.runPanel,
       evalScorersZh.scorers,
       evalCenterZh.evalCenter.scorers,
+      evalCaseDrawerZh.caseDrawer,
+      evalCenterZh.evalCenter.caseDrawer,
     ];
     const enSurfaces = [
       evalRunPanelEn.runPanel,
       evalCenterEn.evalCenter.runPanel,
       evalScorersEn.scorers,
       evalCenterEn.evalCenter.scorers,
+      evalCaseDrawerEn.caseDrawer,
+      evalCenterEn.evalCenter.caseDrawer,
     ];
     const forbiddenZh = [
       '钉为基线', '口径', '身份戳', '硬化', '未硬化', '假跑', '标废', '已作废',

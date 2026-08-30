@@ -27,6 +27,7 @@ const panelProbe = vi.hoisted(() => ({
     },
   })),
 }));
+const database = vi.hoisted(() => ({ loadExperimentCase: vi.fn() }));
 
 vi.mock('../../../src/host/ipc/adminGuard', () => ({
   getAdminAccessIpcError: () => guard.denied
@@ -49,6 +50,10 @@ vi.mock('@internal-evaluation/host/testing/caseBank', () => ({
 
 vi.mock('@internal-evaluation/host/evaluation/evalRunPanelProbe', () => ({
   inspectEvalRunPanel: panelProbe.inspect,
+}));
+
+vi.mock('@host/services/core/databaseService', () => ({
+  getDatabase: () => database,
 }));
 
 import { registerEvaluationHandlers } from '@internal-evaluation/host/ipc/evaluation.ipc';
@@ -78,6 +83,7 @@ describe('evaluation run IPC admin gate', () => {
     caseBank.enumerate.mockClear();
     caseBank.save.mockClear();
     panelProbe.inspect.mockClear();
+    database.loadExperimentCase.mockReset();
   });
 
   it('rejects all three mutating/stream channels before reaching the bridge', async () => {
@@ -151,5 +157,44 @@ describe('evaluation run IPC admin gate', () => {
         aiReview: [{ dim: 'task_completed' }],
         judge: { model: 'glm-4.7' },
       });
+  });
+
+  it('T3：单题证据缺参数会拒绝、非管理员被拦，旧轮返回明确空因由与完整断言目录', async () => {
+    const { handlers } = setup();
+    await expect(handlers.get(EVALUATION_CHANNELS.LOAD_CASE)!(null, { experimentId: 'run-1', caseId: 'case-1' }))
+      .resolves.toMatchObject({ success: false, error: { code: 'FORBIDDEN' } });
+
+    guard.denied = false;
+    await expect(handlers.get(EVALUATION_CHANNELS.LOAD_CASE)!(null, { experimentId: 'run-1' }))
+      .rejects.toThrow(/caseId/);
+    database.loadExperimentCase.mockReturnValue({
+      case_id: 'case-1', session_id: null, status: 'failed', score: 0, duration_ms: 10,
+      data_json: JSON.stringify({ failureReason: 'missing' }),
+      config_json: JSON.stringify({ promptVersion: 'sys-v1' }),
+      summary_json: JSON.stringify({ reportFiles: ['/tmp/report.md'] }),
+    });
+    const detail = await handlers.get(EVALUATION_CHANNELS.LOAD_CASE)!(null, {
+      experimentId: 'run-1', caseId: 'case-1',
+    }) as { evidence: unknown; evidenceMissingReason?: string; assertionCatalog: unknown[] };
+    expect(detail).toMatchObject({ evidence: null, evidenceMissingReason: 'legacy_run' });
+    expect(detail.assertionCatalog.length).toBeGreaterThan(20);
+    expect(database.loadExperimentCase).toHaveBeenCalledWith('run-1', 'case-1');
+
+    const evidence = {
+      prompt: '输入', checks: [{ type: 'no_crash', passed: true, expected: 'true', actual: 'true', durationMs: 1 }],
+      toolCalls: [], responseExcerpt: '完成', responseTotalChars: 2,
+      trialDetails: [{ index: 1, status: 'passed', score: 1, durationMs: 2 }],
+    };
+    database.loadExperimentCase.mockReturnValue({
+      case_id: 'case-1', session_id: null, status: 'error', score: 0, duration_ms: 10,
+      data_json: JSON.stringify({ invalid: { reason: 'usage_unavailable' }, evidence }),
+      config_json: '{}', summary_json: '{}',
+    });
+    const current = await handlers.get(EVALUATION_CHANNELS.LOAD_CASE)!(null, {
+      experimentId: 'run-1', caseId: 'case-1',
+    }) as { status: string; evidence: typeof evidence };
+    expect(current.status).toBe('invalid');
+    expect(current.evidence.checks).toEqual(evidence.checks);
+    expect(current.evidence.trialDetails).toEqual(evidence.trialDetails);
   });
 });

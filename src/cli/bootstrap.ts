@@ -235,6 +235,15 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
   try {
     databaseService = await initCLIDatabase();
     setToolLedgerSink(createCliLedgerSink(databaseService));
+    // CLI 遥测落库：TelemetryStorage 默认依赖主 DatabaseService（CLI 刻意不初始化，
+    // 全部静默丢弃）。绑定到 CLI 自己的连接（与桌面同一 SQLite 文件），
+    // `neo session timeline` 的 Telemetry turns 才有真实数值。
+    const cliDbHandle = databaseService.getDb();
+    if (cliDbHandle) {
+      const { TelemetryStorage } = await import('../host/telemetry/telemetryStorage');
+      const { TelemetryCollector } = await import('../host/telemetry/telemetryCollector');
+      TelemetryCollector.initInstanceWithStorage(new TelemetryStorage(cliDbHandle));
+    }
     cliLog('Database initialized');
   } catch (error) {
     // 数据库失败不阻止 CLI 运行，只是缓存和会话持久化不可用

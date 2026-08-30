@@ -111,6 +111,9 @@ export function createProtocolSubagentExecutionContext(
       ?? ctx.suppressBackgroundSubagentIdleWake,
     toolScope: ctx.toolScope,
     executionIntent: ctx.executionIntent,
+    // Run 级工具面（CLI --tools/--disallowed-tools）：spawn 链硬边界，子代理只能收窄
+    allowedToolNames: ctx.allowedToolNames,
+    deniedToolNames: ctx.deniedToolNames,
     telemetryCollector: ctx.telemetryCollector as TelemetryCollector | undefined,
   };
 }

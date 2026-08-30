@@ -817,6 +817,7 @@ export class ToolExecutionEngine {
           suppressBackgroundSubagentIdleWake: Boolean(this.ctx.goalMode?.isPending()),
           abortSignal: this.ctx.control.runAbortController?.signal,
           deniedToolNames: this.ctx.deniedToolNames,
+          allowedToolNames: this.ctx.allowedToolNames,
         }
       );
       clearInterval(progressInterval);

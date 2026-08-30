@@ -54,7 +54,7 @@ import {
   materializeObservedMessages,
   type RuntimeMessage,
 } from './subagentExecutorProjection';
-import { filterSubagentToolDefs } from './subagentExecutorToolDefs';
+import { applyRunToolPolicyToSubagentTools, filterSubagentToolDefs } from './subagentExecutorToolDefs';
 import {
   buildSubagentModelCall,
   drainSubagentMessages,
@@ -317,6 +317,9 @@ export class SubagentExecutor {
     } else {
       effectiveToolNames = childCtx.toolPool;
     }
+
+    // Run 级工具面硬边界（CLI --tools/--disallowed-tools）：helper 见 subagentExecutorToolDefs
+    effectiveToolNames = applyRunToolPolicyToSubagentTools(effectiveToolNames, context);
 
     logger.info(`[${config.name}] childContext applied`, {
       inheritance,
@@ -936,6 +939,9 @@ export class SubagentExecutor {
                   abortSignal: effectiveSignal,
                   currentToolCallId: toolCall.id,
                   toolScope: context.toolScope,
+                  // Run 级工具面沿 spawn 链传递：孙代理 spawn 时同样只能收窄
+                  deniedToolNames: context.deniedToolNames,
+                  allowedToolNames: context.allowedToolNames,
                   emitEvent: context.events.emit,
                   modelConfig: context.modelConfig,
                   subagentPolicy,

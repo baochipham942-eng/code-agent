@@ -99,4 +99,17 @@ describe('protocol-native SubagentExecutionContext', () => {
 
     expect(context.telemetryCollector).toBe(telemetryCollector);
   });
+
+  it('forwards the run-level tool surface (CLI --tools/--disallowed-tools) so subagents can only narrow it', () => {
+    const context = createProtocolSubagentExecutionContext(
+      makeProtocolContext({
+        allowedToolNames: ['Read', 'Bash'],
+        deniedToolNames: ['Bash'],
+      }),
+      vi.fn(async () => ({ allow: true as const })),
+    );
+
+    expect(context.allowedToolNames).toEqual(['Read', 'Bash']);
+    expect(context.deniedToolNames).toEqual(['Bash']);
+  });
 });

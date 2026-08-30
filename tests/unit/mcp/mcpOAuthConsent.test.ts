@@ -91,6 +91,7 @@ describe('MCP OAuth consent bridge', () => {
 
     await expect(result).resolves.toMatchObject({
       granted: true,
+      timedOut: false,
       permissionDecision: 'allow',
     });
   });
@@ -107,6 +108,7 @@ describe('MCP OAuth consent bridge', () => {
 
     await expect(result).resolves.toMatchObject({
       granted: false,
+      timedOut: false,
       permissionDecision: 'deny',
       permissionDecisionReason: expect.stringContaining('用户拒绝'),
     });
@@ -121,6 +123,7 @@ describe('MCP OAuth consent bridge', () => {
 
     await expect(result).resolves.toMatchObject({
       granted: false,
+      timedOut: true,
       permissionDecision: 'deny',
       permissionDecisionReason: expect.stringContaining('无头规则'),
     });
@@ -141,5 +144,31 @@ describe('MCP OAuth consent bridge', () => {
     await getResponseHandler()!({}, { requestId: request.requestId, action: 'authorize' });
 
     await expect(result).resolves.toMatchObject({ granted: true, permissionDecision: 'allow' });
+  });
+
+  it('limits interactive connector consent to a minutes-scale timeout', async () => {
+    vi.useFakeTimers();
+    platformMocks.hasInteractiveUi.mockReturnValue(true);
+    const { requestMcpOAuthConsent } = await loadSubject();
+
+    const result = requestMcpOAuthConsent({ ...consentPayload(), kind: 'connector' }, { timeoutMs: 25 });
+    await vi.advanceTimersByTimeAsync(25);
+
+    await expect(result).resolves.toMatchObject({
+      granted: false,
+      timedOut: true,
+      permissionDecisionReason: expect.stringContaining('已停止连接'),
+    });
+  });
+
+  it('registers a cancellable pending request before the first renderer dispatch', async () => {
+    const { requestMcpOAuthConsent, cancelPendingMcpOAuthConsent } = await loadSubject();
+    platformMocks.send.mockImplementationOnce((_channel, request) => {
+      expect(request.serverName).toBe('Notion MCP');
+      expect(cancelPendingMcpOAuthConsent('Notion MCP')).toBe(true);
+    });
+
+    await expect(requestMcpOAuthConsent(consentPayload(), { timeoutMs: 1000 }))
+      .resolves.toMatchObject({ granted: false, timedOut: false });
   });
 });

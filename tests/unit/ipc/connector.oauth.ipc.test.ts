@@ -33,7 +33,8 @@ const env = vi.hoisted(() => ({
   openExternal: vi.fn(),
   descriptor: undefined as Record<string, unknown> | undefined,
   savedDescriptor: vi.fn(),
-  consent: { granted: true, permissionDecision: 'allow', permissionDecisionReason: 'allowed' },
+  consent: { granted: true, timedOut: false, permissionDecision: 'allow', permissionDecisionReason: 'allowed' },
+  cancelPendingConsent: vi.fn(),
 }));
 
 vi.mock('../../../src/host/connectors/feishu/larkCli', () => ({
@@ -76,6 +77,7 @@ vi.mock('../../../src/host/connectors/oauth/connectorOAuthStore', () => ({
 
 vi.mock('../../../src/host/mcp/mcpOAuthConsent', () => ({
   requestMcpOAuthConsent: vi.fn(async () => env.consent),
+  cancelPendingMcpOAuthConsent: env.cancelPendingConsent,
 }));
 
 vi.mock('../../../src/host/platform', () => ({
@@ -125,7 +127,8 @@ beforeEach(() => {
   env.openExternal.mockReset();
   env.descriptor = undefined;
   env.savedDescriptor.mockClear();
-  env.consent = { granted: true, permissionDecision: 'allow', permissionDecisionReason: 'allowed' };
+  env.consent = { granted: true, timedOut: false, permissionDecision: 'allow', permissionDecisionReason: 'allowed' };
+  env.cancelPendingConsent.mockReset().mockReturnValue(false);
 });
 
 describe('connector.ipc SaaS OAuth actions', () => {
@@ -269,6 +272,19 @@ describe('connector.ipc SaaS OAuth actions', () => {
     expect(env.larkCancelConnect).toHaveBeenCalledOnce();
   });
 
+  it('cancels a pending informed-consent wait for a browser OAuth connector', async () => {
+    env.cancelPendingConsent.mockReturnValueOnce(true);
+    const handler = register();
+
+    const response = await handler(null, {
+      action: 'oauthCancelConnect',
+      payload: { providerId: 'google-calendar' },
+    } as IPCRequest);
+
+    expect(response.success).toBe(true);
+    expect(env.cancelPendingConsent).toHaveBeenCalledWith('Google Calendar');
+  });
+
   it('dispatches connect to lark-cli instead of the built-in OAuth coordinator', async () => {
     const handler = register();
     const response = await handler(null, {
@@ -403,7 +419,7 @@ describe('connector.ipc SaaS OAuth actions', () => {
   });
 
   it('requires informed consent before opening a connector authorization flow', async () => {
-    env.consent = { granted: false, permissionDecision: 'deny', permissionDecisionReason: 'declined' };
+    env.consent = { granted: false, timedOut: false, permissionDecision: 'deny', permissionDecisionReason: 'declined' };
     const handler = register();
     const response = await handler(null, {
       action: 'oauthConnect',
@@ -416,6 +432,27 @@ describe('connector.ipc SaaS OAuth actions', () => {
     });
     expect(env.larkConnect).not.toHaveBeenCalled();
     expect(env.openExternal).not.toHaveBeenCalled();
+  });
+
+  it('returns a stable TIMEOUT code when connector consent expires', async () => {
+    env.consent = {
+      granted: false,
+      timedOut: true,
+      permissionDecision: 'deny',
+      permissionDecisionReason: '等待授权确认超时，已停止连接。',
+    };
+    const handler = register();
+
+    const response = await handler(null, {
+      action: 'oauthConnect',
+      payload: { providerId: 'feishu', action: 'message.send-as-user' },
+    } as IPCRequest);
+
+    expect(response).toMatchObject({
+      success: false,
+      error: { code: 'TIMEOUT', message: expect.stringContaining('超时') },
+    });
+    expect(env.larkConnect).not.toHaveBeenCalled();
   });
 });
 

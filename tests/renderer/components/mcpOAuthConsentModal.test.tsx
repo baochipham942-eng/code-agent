@@ -41,6 +41,7 @@ describe('MCPOAuthConsentModal', () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
   });
 
   it('renders the six required consent fields with literal values', () => {
@@ -116,5 +117,20 @@ describe('MCPOAuthConsentModal', () => {
       );
       expect(onClose).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('closes connector consent with a timeout response after two minutes', async () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    render(<MCPOAuthConsentModal request={makeRequest({ kind: 'connector' })} onClose={onClose} />);
+
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      IPC_CHANNELS.MCP_OAUTH_CONSENT_RESPONSE,
+      { requestId: 'consent-123', action: 'timeout' },
+    );
+    await vi.runAllTicks();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,4 +1,5 @@
 import { SIGN_TEST_ALPHA } from './signTest';
+import type { EvalShipGateVerdict } from '@shared/contract/evaluation';
 
 export const BASELINE_DENOMINATOR_VERSION = 4;
 const SHIP_GATE_MARGIN_PP = 3;
@@ -7,14 +8,10 @@ const SHIP_GATE_RULE_VERSION = 1;
 
 const ONE_SIDED_95_Z = 1.645;
 
-export type ShipGateState =
-  | 'candidate_better'
-  | 'non_inferior'
-  | 'candidate_worse'
-  | 'insufficient';
+export type ShipGateState = EvalShipGateVerdict['state'];
 
-type HardGateKey = 'false_allow' | 'false_block' | 'approval_bypass';
-type HardGateStatus = 'pass' | 'fail' | 'not_measured';
+type HardGateKey = EvalShipGateVerdict['hardGate']['items'][number]['key'];
+type HardGateStatus = EvalShipGateVerdict['hardGate']['items'][number]['status'];
 
 export interface HardGateItem {
   key: HardGateKey;
@@ -34,18 +31,7 @@ export interface ShipGateCalibre {
   promptVersion: string;
 }
 
-export interface ShipGateVerdict {
-  state: ShipGateState;
-  delta: number;
-  nMin: number;
-  decisivePairs: number;
-  pValue: number;
-  passRateDiff: number;
-  ciLowerBound: number;
-  hardGate: ShipGateHardGate;
-  calibre: ShipGateCalibre;
-  reasons: string[];
-}
+export type ShipGateVerdict = EvalShipGateVerdict;
 
 export interface DecideShipVerdictInput {
   decisivePairs: number;

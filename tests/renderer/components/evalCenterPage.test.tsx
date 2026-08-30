@@ -21,6 +21,9 @@ vi.mock('@internal-evaluation/renderer/evalCenter/EvalCaseListTab', () => ({
 vi.mock('@internal-evaluation/renderer/evalCenter/EvalScorersTab', () => ({
   EvalScorersTab: () => <div data-testid="eval-scorers-tab-mock" />,
 }));
+vi.mock('@internal-evaluation/renderer/evalCenter/EvalExperimentsTab', () => ({
+  EvalExperimentsTab: () => <div data-testid="eval-experiments-tab-mock" />,
+}));
 
 import { EvalCenterPage } from '@internal-evaluation/renderer/evalCenter/EvalCenterPage';
 import { useEvalCenterStore } from '@internal-evaluation/renderer/stores/evalCenterStore';
@@ -39,7 +42,7 @@ afterEach(() => {
 });
 
 describe('EvalCenterPage', () => {
-  it('按遥测 → 回放 → 题库 → 打分器 → 跑分 → 验证渲染，默认回放', async () => {
+  it('按遥测 → 回放 → 题库 → 打分器 → 实验 → 跑分 → 验证渲染，默认回放', async () => {
     useAuthStore.setState({ user: user(true) });
     render(<EvalCenterPage />);
 
@@ -54,10 +57,11 @@ describe('EvalCenterPage', () => {
       'eval-center-tab-replay',
       'eval-center-tab-cases',
       'eval-center-tab-scorers',
+      'eval-center-tab-experiments',
       'eval-center-tab-benchmarks',
       'eval-center-tab-validation',
     ]);
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['遥测', '回放', '题库', '打分器', '跑分', '验证']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['遥测', '回放', '题库', '打分器', '实验', '跑分', '验证']);
     expect(await screen.findByTestId('eval-replay-explorer-mock')).toBeTruthy();
   });
 

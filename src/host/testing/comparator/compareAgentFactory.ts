@@ -1,13 +1,15 @@
 import type { ModelProvider } from '../../../shared/contract';
 import type { RequestPermissionResult } from '../../../shared/contract/permission';
 import type { SessionType } from '../../../shared/contract/session';
-import type { EvalRunStamp } from '../../../shared/contract/evaluation';
+import {
+  resolveEffectiveEvalCompareArm,
+  type EvalRunStamp,
+} from '../../../shared/contract/evaluation';
 import type { PermissionRequestData } from '../../tools/types';
 import type { DatabaseService } from '../../services/core/databaseService';
 import type { TelemetryCollector } from '../../telemetry/telemetryCollector';
 import { EVAL_AGENT_DEFAULTS, StandaloneAgentAdapter } from '../agentAdapter';
 import type { CompareConfiguration, HarnessVariantConfig } from '../types';
-import { normalizeSkillNames } from '../skillSelection';
 
 export interface EffectiveCompareArm {
   name: string;
@@ -24,20 +26,7 @@ export function resolveEffectiveCompareArm(
   config: CompareConfiguration,
   baseline: CompareConfiguration,
 ): EffectiveCompareArm {
-  const sourceHarness = config.harness ?? baseline.harness;
-  return {
-    name: config.name,
-    model: config.model ?? baseline.model ?? null,
-    provider: config.provider ?? baseline.provider ?? null,
-    systemPrompt: config.systemPrompt ?? baseline.systemPrompt ?? null,
-    harness: sourceHarness ? { ...sourceHarness, name: config.name } : null,
-    memory: {
-      longTerm: config.memory?.longTerm ?? baseline.memory?.longTerm ?? false,
-      routingModel: config.memory?.routingModel ?? baseline.memory?.routingModel ?? null,
-    },
-    reasoningEffort: config.reasoningEffort ?? baseline.reasoningEffort ?? null,
-    skills: normalizeSkillNames(config.skills),
-  };
+  return resolveEffectiveEvalCompareArm(config, baseline);
 }
 
 export function buildCompareArmShape(

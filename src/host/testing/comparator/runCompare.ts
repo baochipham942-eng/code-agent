@@ -3,7 +3,6 @@
 // 双评分卡/unblind），此处只接线不重写。
 import { TestRunner, type AgentInterface, type IsolatedTestExecutionFactory } from '../testRunner';
 import { ABComparator } from './comparator';
-import { resolveEffectiveCompareArm } from './compareAgentFactory';
 import { aggregateAssertionTrials } from './assertionWinner';
 import type {
   CompareConfiguration,
@@ -12,8 +11,15 @@ import type {
   TestRunnerConfig,
 } from '../types';
 import { BASELINE_DENOMINATOR_VERSION } from './shipGate';
+import {
+  CONSUMED_COMPARE_FIELDS,
+  UNCONSUMED_COMPARE_FIELDS,
+  effectiveArmSignature,
+} from '@shared/contract/evaluation';
 
 export interface RunCompareOptions {
+  /** 事件桥传入时，报告、事件流和数据库共用同一个实验 id。 */
+  runId?: string;
   testCases: TestCase[];
   baseline: CompareConfiguration;
   candidate: CompareConfiguration;
@@ -41,51 +47,6 @@ export interface RunCompareOptions {
  * YAML 里能写但执行链路收不到的字段（enabledTools/temperature/agentConfig）
  * 是假区分特征——写了 temperature: 0.2 也照样跑出 X vs X。
  */
-const CONSUMED_COMPARE_FIELDS = [
-  'model',
-  'provider',
-  'systemPrompt',
-  'harness',
-  'memory',
-  'reasoningEffort',
-  'skills',
-] as const;
-const UNCONSUMED_COMPARE_FIELDS = ['enabledTools', 'temperature', 'agentConfig'] as const;
-
-/**
- * candidate 未写的字段在 makeAgent 时会回落到 baseline 值（config.model ||
- * resolvedModel 语义），所以判等必须按「回落后的有效配置」算，否则一个只有
- * name 的 candidate YAML 会以「字段是 undefined」为由被误判为有差异。
- * 签名只含 makeAgent 真消费的字段——未消费字段进签名 = 给假区分特征放行。
- */
-function effectiveArmSignature(
-  config: CompareConfiguration,
-  baseline: CompareConfiguration,
-): string {
-  const arm = resolveEffectiveCompareArm(config, baseline);
-  const consumedValues = {
-    model: arm.model,
-    provider: arm.provider,
-    systemPrompt: arm.systemPrompt,
-    harness: arm.harness
-      ? {
-          contextCompression: arm.harness.contextCompression ?? null,
-          compressionPipeline: arm.harness.compressionPipeline ?? null,
-          scaffoldProfile: arm.harness.scaffoldProfile ?? null,
-          thinkingInjection: arm.harness.thinkingInjection ?? null,
-          hooksEnabled: arm.harness.hooksEnabled ?? null,
-          toolMode: arm.harness.toolMode ?? null,
-        }
-      : null,
-    memory: arm.memory,
-    reasoningEffort: arm.reasoningEffort,
-    skills: arm.skills,
-  } satisfies Record<(typeof CONSUMED_COMPARE_FIELDS)[number], unknown>;
-  return JSON.stringify(Object.fromEntries(
-    CONSUMED_COMPARE_FIELDS.map((field) => [field, consumedValues[field]]),
-  ));
-}
-
 /** 跑前断言：对照臂必须与 baseline 至少有一个「执行链路真消费」的差异，否则 A/B 无意义。 */
 export function assertCompareArmsDistinct(
   baseline: CompareConfiguration,
@@ -175,7 +136,7 @@ export async function runCompare(opts: RunCompareOptions): Promise<ComparisonRes
       ?? baselineRunnerConfig.stamp?.aggregationRuleVersion
       ?? BASELINE_DENOMINATOR_VERSION,
     promptVersion: candidateRunnerConfig.stamp?.promptVersion ?? 'unknown',
-  });
+  }, opts.runId);
   return comparator.runComparison(
     opts.testCases,
     async (testCase, config) => {

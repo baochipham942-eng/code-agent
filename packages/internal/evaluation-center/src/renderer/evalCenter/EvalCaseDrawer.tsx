@@ -4,8 +4,8 @@ import { IPC_DOMAINS } from '@shared/ipc/domains';
 import type { EvalExperimentCaseDetail } from '@shared/contract/evaluation';
 import { EVALUATION_CHANNELS } from '../../shared/evaluationChannels';
 import { invokeEvaluation } from '../evaluationRunIpc';
-import type { EvalCaseDrawerLabels } from '../i18n/evalCaseDrawer';
 import { useEvaluationI18n } from '../i18n/useEvaluationI18n';
+import { getEvalStatusLabel } from '../i18n/evalStatusLabels';
 import { useEvalCenterStore } from '../stores/evalCenterStore';
 import ipcService from '@renderer/services/ipcService';
 import { Z_LAYERS } from '@renderer/styles/zLayers';
@@ -30,18 +30,6 @@ function excludesCapabilityResult(status: CaseStatus | undefined): boolean {
     || status === 'skipped'
     || status === 'cost_exceeded'
     || status === 'not_run';
-}
-
-function labelStatus(status: CaseStatus, labels: EvalCaseDrawerLabels): string {
-  if (status === 'passed') return labels.status.passed;
-  if (status === 'infra_excluded') return labels.status.infra;
-  if (status === 'invalid') return labels.status.invalid;
-  if (status === 'skipped') return labels.status.skipped;
-  if (status === 'cost_exceeded') return labels.status.costExceeded;
-  if (status === 'not_run') return labels.status.notRun;
-  if (status === 'partial') return labels.status.partial;
-  if (status === 'error') return labels.status.error;
-  return labels.status.failed;
 }
 
 export interface EvalCaseDrawerTarget {
@@ -102,7 +90,7 @@ export const EvalCaseDrawer: React.FC<EvalCaseDrawerProps> = ({ target, onClose 
   const failedTrials = trials.length - passedTrials - excludedTrials;
   const reportFile = detail?.reportFiles?.find((file) => /^(?:\/|[A-Za-z]:[\\/]).+\.md$/i.test(file));
 
-  const statusLabel = detail ? labelStatus(detail.status, labels) : labels.status.failed;
+  const statusLabel = detail ? getEvalStatusLabel(detail.status, labels.status) : labels.status.failed;
   const reason = detail?.failureLabel ?? detail?.failureReason ?? statusLabel;
   const conclusion = detail?.evidence && !excluded
     ? fill(labels.conclusion, { status: statusLabel, reason, ...counts })
@@ -162,7 +150,7 @@ export const EvalCaseDrawer: React.FC<EvalCaseDrawerProps> = ({ target, onClose 
                     variant="ghost"
                     size="sm"
                     aria-pressed={selectedTrial === trial.index}
-                    aria-label={fill(labels.selectedAttempt, { index: trial.index, status: labelStatus(trial.status, labels), score: trial.score })}
+                    aria-label={fill(labels.selectedAttempt, { index: trial.index, status: getEvalStatusLabel(trial.status, labels.status), score: trial.score })}
                     className={`h-7 min-w-7 px-1 ${selectedTrial === trial.index ? 'bg-[var(--bg-active)]' : ''}`}
                     onClick={() => setSelectedTrial(trial.index)}
                   >
@@ -185,7 +173,7 @@ export const EvalCaseDrawer: React.FC<EvalCaseDrawerProps> = ({ target, onClose 
                       : fill(labels.unstable, { total: trials.length, passed: passedTrials, failed: failedTrials })}
                 </span>
               </div>
-              {selected && !excluded && <div className="mt-2 text-[10px] text-zinc-600">{fill(labels.selectedAttempt, { index: selected.index, status: labelStatus(selected.status, labels), score: selected.score })}</div>}
+              {selected && !excluded && <div className="mt-2 text-[10px] text-zinc-600">{fill(labels.selectedAttempt, { index: selected.index, status: getEvalStatusLabel(selected.status, labels.status), score: selected.score })}</div>}
             </section>
           )}
 

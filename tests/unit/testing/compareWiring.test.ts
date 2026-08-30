@@ -8,7 +8,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { mkdir, mkdtemp, writeFile } from 'fs/promises';
+import { mkdir, mkdtemp } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
@@ -104,6 +104,7 @@ describe('runCompare 接线', () => {
     const root = await makeWorkDir();
 
     const result = await runCompare({
+      runId: 'bridge-run-id',
       testCases: CASES,
       baseline: BASELINE,
       candidate: CANDIDATE,
@@ -122,6 +123,7 @@ describe('runCompare 接线', () => {
     });
 
     expect(result.cases).toHaveLength(2);
+    expect(result.runId).toBe('bridge-run-id');
     // 每 case 两配置各一跑 = 4 次
     expect(log).toHaveLength(4);
     for (const testCase of CASES) {

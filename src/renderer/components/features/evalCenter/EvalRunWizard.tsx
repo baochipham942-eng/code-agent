@@ -1,6 +1,7 @@
 import React from 'react';
 import { Check, Circle, Square } from 'lucide-react';
 import type { EvalRunPanelProbe, EvalRunRequest } from '@shared/contract/evaluation';
+import type { AiReviewDimension } from '@shared/contract/evaluation';
 import type { EvalRunPanelLabels } from '../../../i18n/evalRunPanel';
 import { Button } from '../../primitives/Button';
 import { Modal } from '../../primitives/Modal';
@@ -36,17 +37,21 @@ interface EvalRunWizardProps {
   confirmArmed: boolean;
   starting: boolean;
   estimatedCost?: number;
+  aiReviewEstimatedCost?: number;
+  selectedAiReview: AiReviewDimension[];
   labels: EvalRunPanelLabels;
   onClose(): void;
   onSplit(split: EvalRunSplit): void;
   onToggleTag(tag: string): void;
   onMaxCases(value: number): void;
+  onToggleAiReview(dimension: AiReviewDimension): void;
   onRun(): void;
 }
 
 export const EvalRunWizard: React.FC<EvalRunWizardProps> = ({
   open, probe, split, tags, maxCases, confirmArmed, starting, estimatedCost,
-  labels, onClose, onSplit, onToggleTag, onMaxCases, onRun,
+  aiReviewEstimatedCost, selectedAiReview, labels, onClose, onSplit, onToggleTag,
+  onMaxCases, onToggleAiReview, onRun,
 }) => {
   const safetyAvailable = probe?.environment.osJail.active === true;
   const footer = (
@@ -58,6 +63,14 @@ export const EvalRunWizard: React.FC<EvalRunWizardProps> = ({
             version: probe?.priceTableVersion ?? '—',
           })}
         </span>
+        {selectedAiReview.length > 0 && (
+          <span className="mt-0.5 block text-[10px]" data-testid="eval-ai-review-cost">
+            {replace(labels.aiReviewEstimatedCost, {
+              cost: formatUsd(aiReviewEstimatedCost), count: maxCases, k: 1,
+              dimensions: selectedAiReview.length, model: probe?.judge.model ?? 'unknown',
+            })}
+          </span>
+        )}
         {confirmArmed && <span className="mt-0.5 block text-[10px]">{labels.confirmSafety}</span>}
       </span>
       <Button variant="ghost" size="sm" className="ml-auto" onClick={onClose} disabled={starting}>
@@ -151,6 +164,7 @@ export const EvalRunWizard: React.FC<EvalRunWizardProps> = ({
 
         <section>
           <h3 className="mb-2 text-xs font-semibold text-zinc-200">{labels.scorerSection}</h3>
+          <p className="mb-2 text-xs text-zinc-500">{labels.aiReviewColumns}</p>
           <div className="flex items-start gap-2 rounded-lg bg-zinc-800 p-3 text-xs">
             <span className="flex h-4 w-4 items-center justify-center rounded bg-zinc-700 text-zinc-100">
               <Check className="h-3 w-3" />
@@ -160,10 +174,38 @@ export const EvalRunWizard: React.FC<EvalRunWizardProps> = ({
               <span className="text-zinc-500">{labels.locked}</span>
             </span>
           </div>
-          <div className="mt-2 flex items-center gap-2 rounded-lg bg-zinc-800/60 p-3 text-xs text-zinc-600" aria-disabled="true">
-            <Square className="h-4 w-4" />
-            <span>{labels.aiJudge}</span>
-            <span className="ml-auto">{labels.nextVersion}</span>
+          <div className="mt-2 space-y-2">
+            {(probe?.aiReview ?? []).map(({ dim, calibration, requiresExpectation }) => {
+              const selected = selectedAiReview.includes(dim);
+              const calibrated = calibration.state === 'calibrated';
+              const disabled = requiresExpectation;
+              const reason = calibration.reason ? labels.calibrationReasons[calibration.reason] : '';
+              return (
+                <div key={dim}>
+                  <button /* ds-allow:button: checkbox 整行包含校准状态，Button primitive 不承载此复合选择语义 */
+                    type="button"
+                    disabled={disabled}
+                    aria-pressed={selected}
+                    onClick={() => onToggleAiReview(dim)}
+                    className="flex w-full items-center gap-2 rounded-lg bg-zinc-800 p-3 text-left text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                    data-testid={`eval-ai-review-toggle-${dim}`}
+                  >
+                    {selected ? <Check className="h-4 w-4 text-zinc-200" /> : <Square className="h-4 w-4 text-zinc-500" />}
+                    <span className="text-zinc-200">
+                      <span className="block">{labels.aiReviewDimensions[dim]}</span>
+                      <span className="text-zinc-500">{labels.aiJudge} · 是 / 否</span>
+                    </span>
+                    <span className={`ml-auto rounded px-1.5 py-0.5 ${calibrated ? 'text-badge-success' : 'text-badge-warning'}`}>
+                      {calibrated
+                        ? replace(labels.calibrated, { kappa: calibration.kappa?.toFixed(2) ?? '—', pairs: calibration.pairs ?? 0 })
+                        : `${labels.uncalibrated} · ${reason}`}
+                    </span>
+                  </button>
+                  {disabled && <p className="mt-1 px-3 text-[10px] text-zinc-500">{labels.needsExpectation}</p>}
+                  {selected && !calibrated && <p className="mt-1 px-3 text-[10px] text-badge-warning">{labels.referenceOnly}</p>}
+                </div>
+              );
+            })}
           </div>
         </section>
       </div>

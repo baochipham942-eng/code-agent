@@ -14,6 +14,8 @@ const panelProbe = vi.hoisted(() => ({
     provider: 'deepseek',
     priceTableVersion: 1,
     estimatedCostPerCaseUsd: 0.0021,
+    judge: { model: 'glm-4.7', provider: 'zhipu', estimatedCostPerCaseUsd: 0.01 },
+    aiReview: [{ dim: 'task_completed', requiresExpectation: false, calibration: { state: 'uncalibrated', reason: 'no_record' } }],
     splitCounts: { 'held-in': 76, 'held-out': 52, safety: 12 },
     quickCheck: { tags: ['core-path'], maxCases: 12 },
     environment: {
@@ -136,5 +138,18 @@ describe('evaluation run IPC admin gate', () => {
 
     expect(panelProbe.inspect).toHaveBeenCalledTimes(1);
     expect(bridge.subscribe).not.toHaveBeenCalled();
+  });
+
+  it('打分器总览与 RUN_SUITE 使用同一 admin 门，并返回断言与按维状态', async () => {
+    const { handlers } = setup();
+    await expect(handlers.get(EVALUATION_CHANNELS.SCORERS_OVERVIEW)!(null))
+      .resolves.toMatchObject({ success: false, error: { code: 'FORBIDDEN' } });
+    guard.denied = false;
+    await expect(handlers.get(EVALUATION_CHANNELS.SCORERS_OVERVIEW)!(null))
+      .resolves.toMatchObject({
+        assertions: expect.any(Array),
+        aiReview: [{ dim: 'task_completed' }],
+        judge: { model: 'glm-4.7' },
+      });
   });
 });

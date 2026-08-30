@@ -66,9 +66,14 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       score: 0,
       durationMs: 5,
       failure,
+      aiReview: {
+        task_completed: { verdict: 'no', reasoning: '未完成', judgeModel: 'judge/model', promptHash: 'hash' },
+      },
     });
     expect(JSON.parse(db.insertExperimentCases.mock.calls[0]?.[1][0].data_json).failure)
       .toEqual(failure);
+    expect(JSON.parse(db.insertExperimentCases.mock.calls[0]?.[1][0].data_json).aiReview)
+      .toMatchObject({ task_completed: { verdict: 'no' } });
 
     const summary: TestRunSummary = {
       runId: 'failure-run', startTime: 1, endTime: 2, duration: 1,
@@ -81,6 +86,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
         testId: 'failed-case', description: 'failed', status: 'failed',
         duration: 1, startTime: 1, endTime: 2, toolExecutions: [], responses: [], errors: [],
         turnCount: 1, score: 0, failure,
+        aiReview: { task_completed: { verdict: 'yes', reasoning: '完成', judgeModel: 'judge/model', promptHash: 'hash' } },
       }],
       stamp: UNKNOWN_EVAL_RUN_STAMP,
       environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },
@@ -93,6 +99,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     expect(JSON.parse(persistedExperiment.summary_json).failureCodebookSource).toBe('bundled');
     const persistedCase = db.insertExperimentCases.mock.calls[1]?.[1][0];
     expect(JSON.parse(persistedCase.data_json).failure).toEqual(failure);
+    expect(JSON.parse(persistedCase.data_json).aiReview).toMatchObject({ task_completed: { verdict: 'yes' } });
   });
 
   it('persists TestRunner summaries through the canonical eval run contract', async () => {

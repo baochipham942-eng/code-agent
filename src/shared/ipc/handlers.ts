@@ -64,6 +64,7 @@ import type {
   EvalRunRequest,
   EvalRunStartResult,
   EvalRunSubscriptionResult,
+  EvalScorersOverview,
 } from '../contract/evaluation';
 import type { AgentTrajectorySessionQualitySummary } from '../contract/agentTrajectory';
 
@@ -75,6 +76,7 @@ export interface EvaluationRunIpcInvokeHandlers {
   [IPC_CHANNELS.EVALUATION_RUN_SUITE]: (payload: EvalRunRequest) => Promise<EvalRunStartResult>;
   [IPC_CHANNELS.EVALUATION_RUN_EVENTS]: (payload?: { runId?: string }) => Promise<EvalRunSubscriptionResult | EvalRunPanelProbe>;
   [IPC_CHANNELS.EVALUATION_ABORT_RUN]: (payload: { runId: string }) => Promise<{ runId: string; pid: number; terminated: boolean }>;
+  [IPC_CHANNELS.EVALUATION_SCORERS_OVERVIEW]: () => Promise<EvalScorersOverview>;
 }
 
 export interface IpcInvokeHandlers {

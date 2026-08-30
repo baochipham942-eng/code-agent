@@ -24,6 +24,7 @@ import { inspectEvalEnvironment, type EvalEnvironmentResult } from './evalEnviro
 import { parseEvalRunEvent } from './evalRunEventValidation';
 import { terminateEvalProcessTree } from './evalProcessTree';
 import { resolveProductionShape } from './productionShape';
+import { isAiReviewDimension } from '../testing/judge/dimensions';
 
 const logger = createLogger('EvalRunBridge');
 const TERMINATE_GRACE_MS = 3_000;
@@ -83,7 +84,7 @@ function validateRequest(value: unknown): EvalRunRequest {
   if (foundForbidden.length > 0) {
     throw new Error(`评测请求不接受这些字段：${foundForbidden.join(', ')}`);
   }
-  const allowed = new Set(['scope', 'maxCases', 'ids', 'tags', 'split', 'timeoutMs', 'repeat']);
+  const allowed = new Set(['scope', 'maxCases', 'ids', 'tags', 'split', 'timeoutMs', 'repeat', 'aiReview']);
   const unknown = Object.keys(value).filter((key) => !allowed.has(key));
   if (unknown.length > 0) throw new Error(`评测请求包含未知字段：${unknown.join(', ')}`);
   if (value.scope !== 'smoke' && value.scope !== 'full') throw new Error('scope 必须是 smoke 或 full。');
@@ -110,6 +111,11 @@ function validateRequest(value: unknown): EvalRunRequest {
   if (repeat !== undefined && (!Number.isInteger(repeat) || (repeat as number) < 1 || (repeat as number) > EVAL_REPEAT_MAX)) {
     throw new Error(`repeat 必须是 1 到 ${EVAL_REPEAT_MAX} 的整数。`);
   }
+  const aiReview = value.aiReview;
+  if (aiReview !== undefined && (
+    !isNonEmptyStringArray(aiReview)
+    || aiReview.some((dimension) => !isAiReviewDimension(dimension))
+  )) throw new Error('aiReview 含未知评审维度。');
   return {
     scope: value.scope,
     maxCases: value.maxCases as number,
@@ -118,6 +124,7 @@ function validateRequest(value: unknown): EvalRunRequest {
     split: split as EvalRunRequest['split'],
     timeoutMs: timeoutMs as number | undefined,
     repeat: repeat as number | undefined,
+    aiReview: aiReview as EvalRunRequest['aiReview'],
   };
 }
 
@@ -216,6 +223,7 @@ export class EvalRunBridge {
       '--scope', request.scope,
       '--max-cases', String(request.maxCases),
       ...(request.repeat !== undefined ? ['--repeat', String(request.repeat)] : []),
+      ...(request.aiReview?.length ? ['--ai-review', request.aiReview.join(',')] : []),
       ...(request.ids?.length ? ['--ids', request.ids.join(',')] : []),
       ...(request.tags?.length ? ['--tags', request.tags.join(',')] : []),
       ...(request.split ? ['--split', request.split] : []),

@@ -164,6 +164,7 @@ export class ExperimentAdapter {
         trialAggregate: event.trialAggregate,
         scoreAuthority: event.scoreAuthority,
         memoryInjections,
+        ...(event.aiReview ? { aiReview: event.aiReview } : {}),
         source: 'eval',
       }),
     }]);
@@ -552,6 +553,7 @@ export class ExperimentAdapter {
         })),
         metadata: {
           description: r.description,
+          ...(r.aiReview ? { aiReview: r.aiReview } : {}),
           errors: r.errors,
           failureDetails: r.failureDetails,
           turnCount: r.turnCount,

@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-type Scenario = 'a1' | 'a2' | 'a8' | 'a12';
+type Scenario = 'a1' | 'a2' | 'a8' | 'a12' | 'c2';
 type Theme = 'light' | 'dark';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -17,6 +17,10 @@ if (process.env.NEO_SLOT !== 'runpanel') {
 
 async function prepareScenario(page: Page, scenario: Scenario, theme: Theme): Promise<void> {
   await page.goto(`http://127.0.0.1:4189/?scenario=${scenario}&theme=${theme}`);
+  if (scenario === 'c2') {
+    await page.getByTestId('eval-scorers-tab').waitFor();
+    return;
+  }
   await page.getByTestId('eval-benchmarks-tab').waitFor();
   if (scenario === 'a2' || scenario === 'a8') {
     await page.getByRole('button', { name: '开跑', exact: true }).click();
@@ -40,7 +44,7 @@ async function captureScenario(page: Page, scenario: Scenario, theme: Theme): Pr
 }
 
 async function captureReference(page: Page, scenario: Scenario): Promise<void> {
-  if (!referenceHtml) return;
+  if (!referenceHtml || scenario === 'c2') return;
   await page.goto(pathToFileURL(referenceHtml).href);
   const locator = scenario === 'a1'
     ? page.locator('#a1 .appframe').nth(1)
@@ -56,7 +60,7 @@ await server.listen();
 const browser = await chromium.launch({ headless: true });
 
 try {
-  for (const scenario of ['a1', 'a2', 'a8', 'a12'] as const) {
+  for (const scenario of ['a1', 'a2', 'a8', 'a12', 'c2'] as const) {
     for (const theme of ['light', 'dark'] as const) {
       const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
       await captureScenario(page, scenario, theme);
@@ -73,4 +77,4 @@ try {
   await server.close();
 }
 
-console.log(`[runpanel-visual] captured 8 theme screenshots${referenceHtml ? ' + 4 reference crops' : ''} in ${outputDir}`);
+console.log(`[runpanel-visual] captured 10 theme screenshots${referenceHtml ? ' + 4 reference crops' : ''} in ${outputDir}`);

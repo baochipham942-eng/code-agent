@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { EvalRunStamp } from '../../src/shared/contract/evaluation';
+import type { AiReviewDimension } from '../../src/shared/contract/evaluation';
 import { PROMPT_VERSION } from '../../src/shared/constants/agent';
 import { CONFIG_DIR_NEW } from '../../src/shared/constants/configDir';
 import { AGGREGATION_RULES } from '../../src/host/testing/ci/baselineManager';
@@ -174,11 +175,13 @@ export function buildRunStamp(opts: {
   tags?: string[];
   ids?: string[];
   judge: 'rules' | 'llm';
+  aiReview?: AiReviewDimension[];
   trialsPerCase?: number;
   shape: EvalRunStamp['shape'];
   estimatedCases: number;
 }): EvalRunStamp {
-  const judgeIdentity = opts.judge === 'llm' ? getQuickModelInfo() : null;
+  const aiReview = opts.aiReview ?? [];
+  const judgeIdentity = opts.judge === 'llm' || aiReview.length > 0 ? getQuickModelInfo() : null;
   const judgeModel = judgeIdentity
     ? `${judgeIdentity.provider}/${judgeIdentity.model}`
     : opts.judge === 'rules' ? 'none' : 'unavailable';
@@ -202,6 +205,13 @@ export function buildRunStamp(opts: {
       judgeCalibrationId: judgeIdentity
         ? resolveCalibrationId(opts.workingDir, judgeModel)
         : 'uncalibrated',
+      aiReview,
+      aiReviewCalibration: Object.fromEntries(aiReview.map((dimension) => [
+        dimension,
+        judgeIdentity
+          ? resolveCalibrationId(opts.workingDir, `${dimension}@${judgeModel}`)
+          : 'uncalibrated',
+      ])),
     },
     k: opts.trialsPerCase ?? 1,
     aggregationRuleVersion: AGGREGATION_RULES[
@@ -212,6 +222,9 @@ export function buildRunStamp(opts: {
     divergesFromProduction: divergentShapeKeys(opts.shape, productionShape),
     keySource,
     priceTableVersion: PRICING_TABLE_VERSION,
-    estimatedCostUsd: opts.mode === 'mock' ? 0 : estimateRunCost(opts.model, opts.estimatedCases),
+    estimatedCostUsd: opts.mode === 'mock' ? 0 : (
+      estimateRunCost(opts.model, opts.estimatedCases)
+      + (judgeIdentity ? estimateRunCost(judgeIdentity.model, opts.estimatedCases * aiReview.length) : 0)
+    ),
   };
 }

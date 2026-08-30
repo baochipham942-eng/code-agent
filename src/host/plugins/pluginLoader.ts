@@ -3,7 +3,9 @@
 // ============================================================================
 
 import fs from 'fs/promises';
+import { createRequire } from 'node:module';
 import path from 'path';
+import { pathToFileURL } from 'node:url';
 import { app } from '../platform';
 import type {
   PluginManifest,
@@ -15,13 +17,15 @@ import {
   validatePlugin,
   formatValidationResult,
 } from './pluginValidator';
+import { verifyPluginApprovalReceipt } from './pluginApprovalReceipt';
 
 // ----------------------------------------------------------------------------
 // Constants
 // ----------------------------------------------------------------------------
 
-const PLUGIN_MANIFEST_FILES = ['plugin.json', 'package.json'];
+export const PLUGIN_MANIFEST_FILES = ['plugin.json', 'manifest.json', 'package.json'] as const;
 const PLUGINS_DIR_NAME = 'plugins';
+const pluginRequire = typeof require === 'function' ? require : createRequire(import.meta.url);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -78,6 +82,18 @@ function normalizePluginEntry(value: unknown): PluginEntry | null {
     : null;
 }
 
+async function importPluginEntry(entryPath: string): Promise<unknown> {
+  const source = await fs.readFile(entryPath, 'utf8');
+  const isCommonJs = path.extname(entryPath) === '.cjs'
+    || /\bmodule\s*\.\s*exports\b|\bexports\s*\./.test(source);
+  if (isCommonJs) {
+    const resolved = pluginRequire.resolve(entryPath);
+    delete pluginRequire.cache[resolved];
+    return pluginRequire(resolved) as unknown;
+  }
+  return import(`${pathToFileURL(entryPath).href}?t=${Date.now()}`) as Promise<unknown>;
+}
+
 // ----------------------------------------------------------------------------
 // Plugin Loader
 // ----------------------------------------------------------------------------
@@ -105,7 +121,7 @@ export async function ensurePluginsDir(): Promise<void> {
 /**
  * Read and parse plugin manifest
  */
-async function readManifest(pluginDir: string): Promise<PluginManifest | null> {
+export async function readPluginManifest(pluginDir: string): Promise<PluginManifest | null> {
   for (const filename of PLUGIN_MANIFEST_FILES) {
     const manifestPath = path.join(pluginDir, filename);
     try {
@@ -132,7 +148,7 @@ async function readManifest(pluginDir: string): Promise<PluginManifest | null> {
 export async function loadPlugin(pluginDir: string): Promise<PluginLoadResult> {
   try {
     // Read manifest
-    const manifest = await readManifest(pluginDir);
+    const manifest = await readPluginManifest(pluginDir);
     if (!manifest) {
       return {
         success: false,
@@ -157,10 +173,14 @@ export async function loadPlugin(pluginDir: string): Promise<PluginLoadResult> {
         );
       }
     } catch (validationErr: unknown) {
-      // Validation itself should never block loading
       const msg = validationErr instanceof Error ? validationErr.message : String(validationErr);
-      console.warn(`Plugin validation error (non-blocking) for ${pluginDir}: ${msg}`);
+      return {
+        success: false,
+        error: `Plugin validation could not complete in ${pluginDir}: ${msg}`,
+      };
     }
+
+    await verifyPluginApprovalReceipt(pluginDir, manifest.id, manifest.permissions ?? []);
 
     // Load entry module
     const entryPath = path.join(pluginDir, manifest.main);
@@ -170,8 +190,8 @@ export async function loadPlugin(pluginDir: string): Promise<PluginLoadResult> {
       // Check if entry file exists
       await fs.access(entryPath);
 
-      // Dynamic import (supports both CommonJS and ESM)
-      const module: unknown = await import(entryPath + '?t=' + Date.now());
+      // CommonJS needs explicit require-cache invalidation; query strings only bust ESM imports.
+      const module = await importPluginEntry(entryPath);
       const normalizedEntry = normalizePluginEntry(module);
 
       if (!normalizedEntry) {

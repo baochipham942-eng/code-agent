@@ -79,6 +79,7 @@ import { registerTagHandlers } from './tag.ipc';
 import { registerAgentEngineHandlers } from './agentEngine.ipc';
 import { registerCapabilityHandlers } from './capability.ipc';
 import { registerCapabilityCandidateHandlers } from './capabilityCandidate.ipc';
+import { registerCapabilityPackageHandlers } from './capabilityPackage.ipc';
 import { registerHandoffHandlers } from './handoff.ipc';
 import { registerPiiHandlers } from './pii.ipc';
 import { registerAlmaRegistryHandlers } from './almaRegistry.ipc';
@@ -341,6 +342,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   // Capability Center handlers (Skill / MCP / Tool / Channel inventory)
   registerCapabilityHandlers(ipcMain, { getConfigService, getAppService });
   registerCapabilityCandidateHandlers(ipcMain);
+  registerCapabilityPackageHandlers(ipcMain, getMainWindow);
 
   logger.info('All handlers registered');
 }

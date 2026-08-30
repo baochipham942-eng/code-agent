@@ -216,6 +216,13 @@ export const IPC_CHANNELS = {
   MARKETPLACE_ENABLE_PLUGIN: 'marketplace:enable-plugin',
   MARKETPLACE_DISABLE_PLUGIN: 'marketplace:disable-plugin',
 
+  // Manual executable capability packages (F10)
+  CAPABILITY_PACKAGE_SELECT_STAGE: 'capability-package:select-stage',
+  CAPABILITY_PACKAGE_LIST: 'capability-package:list',
+  CAPABILITY_PACKAGE_CONFIRM: 'capability-package:confirm',
+  CAPABILITY_PACKAGE_CANCEL: 'capability-package:cancel',
+  CAPABILITY_PACKAGE_UNINSTALL: 'capability-package:uninstall',
+
   // Alma registry audit
   ALMA_REGISTRY_AUDIT_REFRESH: 'alma-registry:audit-refresh',
 

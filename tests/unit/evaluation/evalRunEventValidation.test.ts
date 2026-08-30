@@ -95,7 +95,7 @@ describe('evaluation run event validation', () => {
 
   it('证据字段存在时校验 checks 与 responseExcerpt 的最小形状', () => {
     const base = {
-      schemaVersion: 2, type: 'case_end', ts: 1, runId: 'run-1', testId: 'case-1',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 1, runId: 'run-1', testId: 'case-1',
       status: 'failed', score: 0, durationMs: 1,
     } as const;
     expect(parseEvalRunEvent({
@@ -110,7 +110,7 @@ describe('evaluation run event validation', () => {
 
   it('接受受支持的判废原因并拒绝未知值', () => {
     const base = {
-      schemaVersion: 2, type: 'case_end', ts: 1, runId: 'run-1', testId: 'case-1',
+      schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION, type: 'case_end', ts: 1, runId: 'run-1', testId: 'case-1',
       status: 'passed', score: 1, durationMs: 1,
     } as const;
     expect(parseEvalRunEvent({ ...base, invalid: { reason: 'usage_unavailable' } }))

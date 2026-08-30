@@ -50,9 +50,12 @@ export function buildVendorCompatSettings(config: ModelConfig, options?: { searc
     case 'deepseek':
       // DeepSeek thinking-mode：reasoning_effort 随 config 走（legacy DeepSeekProvider 有此映射，
       // 默认引擎此前没有——thinking/effort 逐轮设置在默认引擎上从未到过请求体，QE-01 真机抓获）。
-      settings = config.reasoningEffort
-        ? { transformRequestBody: (b) => ({ ...b, reasoning_effort: config.reasoningEffort }) }
-        : {};
+      settings = {
+        includeUsage: true,
+        ...(config.reasoningEffort
+          ? { transformRequestBody: (b: Record<string, unknown>) => ({ ...b, reasoning_effort: config.reasoningEffort }) }
+          : {}),
+      };
       break;
     case 'moonshot':
       // Kimi K2.5 thinking-mode 官方采样 temp=1.0/top_p=0.95 + 自报 UA（沿用 legacy MoonshotProvider）。
@@ -74,9 +77,10 @@ export function buildVendorCompatSettings(config: ModelConfig, options?: { searc
       settings = options?.searchEnabled !== false
         && resolveModelCapabilities(config.provider, config.model).search?.mode === 'bailian-enable-search'
         ? {
+          includeUsage: true,
           transformRequestBody: (b) => ({ ...b, enable_search: true }),
         }
-        : {};
+        : { includeUsage: true };
       break;
     case 'xiaomi': {
       // MiMo：thinking 字段（enabled/disabled 由 reasoningEffort/thinkingBudget 决定）+ 官方采样
@@ -103,10 +107,14 @@ export function buildVendorCompatSettings(config: ModelConfig, options?: { searc
       break;
     }
     default:
-      settings = {};
+      settings = { includeUsage: true };
+  }
+  const finalSettings = { ...settings };
+  if (resolveModelCapabilities(config.provider, config.model).requestCompat?.noStreamOptions === true) {
+    delete finalSettings.includeUsage;
   }
   return {
-    ...settings,
+    ...finalSettings,
     transformRequestBody: withDeepSeekReasoningContentCompat(config, settings.transformRequestBody),
   };
 }

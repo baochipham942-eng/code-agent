@@ -1,8 +1,11 @@
 import React from 'react';
 import type { UseVoiceInputReturn } from '../../../../hooks/useVoiceInput';
-import { LiveVoiceButton } from '../../voice/LiveVoiceButton';
 import { SendButton } from './SendButton';
 import { VoiceInputButton } from './VoiceInputButton';
+
+const LiveVoiceButton = React.lazy(() => import('../../voice/LiveVoiceButton').then((module) => ({
+  default: module.LiveVoiceButton,
+})));
 
 export type ComposerCoreAction = 'voice-input' | 'live-voice' | 'send' | 'stop';
 
@@ -44,15 +47,14 @@ export const ComposerCoreActions: React.FC<ComposerCoreActionsProps> = ({
         if (!sessionId) {
           throw new Error('composer scheduled live-voice without a sessionId');
         }
-        return (
+        return <React.Suspense key={action} fallback={null}>
           <LiveVoiceButton
-            key={action}
             sessionId={sessionId}
             hasMessages={hasMessages}
             disabled={disabled}
             configured={configured}
           />
-        );
+        </React.Suspense>;
       }
       return (
         <SendButton

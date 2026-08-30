@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
@@ -57,12 +57,17 @@ describe('BundledCapabilitiesTab', () => {
     }
     expect(screen.getByText(zh.capabilityPackages.assetsPreserved)).toBeTruthy();
     expect(screen.getByText('brew install whisper-cpp')).toBeTruthy();
+    for (const permission of zh.capabilityPackages.voiceLive.permissions) {
+      expect(screen.getByText(permission)).toBeTruthy();
+    }
+    expect(screen.getByText(zh.capabilityPackages.voiceLive.optionalAssets)).toBeTruthy();
   });
 
   it('installs through the capability IPC and refreshes the shared store', async () => {
     render(<BundledCapabilitiesTab />);
 
-    fireEvent.click(await screen.findByRole('button', { name: zh.capabilityPackages.install }));
+    const inputCard = await screen.findByTestId('voice-input-capability-card');
+    fireEvent.click(within(inputCard).getByRole('button', { name: zh.capabilityPackages.install }));
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith(
       IPC_CHANNELS.CAPABILITY_STATE_INSTALL,

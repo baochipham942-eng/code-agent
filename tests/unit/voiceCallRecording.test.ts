@@ -7,8 +7,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createVoiceCallRecorder, isVoiceCallRecordingEnabled } from '../../src/host/services/voice/voiceCallRecorder';
 import {
-  listVoiceRecordings,
-  readVoiceRecordingCleanupLedger,
+  getVoiceRecordingOverview,
   runVoiceRecordingRetention,
 } from '../../src/host/services/voice/voiceRecordingRetention';
 
@@ -25,6 +24,13 @@ function makeExistingCall(root: string, name: string, bytes: number, mtimeMs: nu
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'upstream.wav'), Buffer.alloc(bytes));
   fs.utimesSync(dir, new Date(mtimeMs), new Date(mtimeMs));
+}
+
+function recordingNames(root: string): string[] {
+  return fs.readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
 }
 
 // 判据 1 的结构面：默认态绝不录音。真机负例（跑一通 → 目录零音频文件）在验收报告里。
@@ -106,8 +112,9 @@ describe('runVoiceRecordingRetention — 三条上限分别变异验证', () => 
       root, now, retentionDays: 365, maxBytes: 1024 ** 3, maxCalls: 100,
     });
     expect(result).toBeNull();
-    expect((await listVoiceRecordings(root)).length).toBe(3);
-    expect(await readVoiceRecordingCleanupLedger(root)).toEqual([]);
+    const overview = await getVoiceRecordingOverview(root);
+    expect(overview.count).toBe(3);
+    expect(overview.lastCleanup).toBeNull();
   });
 
   it('① 只压保留期 → 只有 age 触发', async () => {
@@ -118,8 +125,7 @@ describe('runVoiceRecordingRetention — 三条上限分别变异验证', () => 
     });
     expect(result).not.toBeNull();
     expect(result!.byRule).toEqual({ age: 1, count: 0, bytes: 0 });
-    const names = (await listVoiceRecordings(root)).map((item) => item.name);
-    expect(names).toEqual(['20260812-120000-b', '20260814-120000-c']);
+    expect(recordingNames(root)).toEqual(['20260812-120000-b', '20260814-120000-c']);
   });
 
   it('② 只压条数 → 只有 count 触发', async () => {
@@ -130,7 +136,7 @@ describe('runVoiceRecordingRetention — 三条上限分别变异验证', () => 
     });
     expect(result).not.toBeNull();
     expect(result!.byRule).toEqual({ age: 0, count: 1, bytes: 0 });
-    expect((await listVoiceRecordings(root)).length).toBe(2);
+    expect((await getVoiceRecordingOverview(root)).count).toBe(2);
   });
 
   it('③ 只压体积 → 只有 bytes 触发', async () => {
@@ -142,17 +148,16 @@ describe('runVoiceRecordingRetention — 三条上限分别变异验证', () => 
     expect(result).not.toBeNull();
     expect(result!.byRule).toEqual({ age: 0, count: 0, bytes: 1 });
     expect(result!.freedBytes).toBe(1024 * 1024);
-    expect((await listVoiceRecordings(root)).length).toBe(2);
+    expect((await getVoiceRecordingOverview(root)).count).toBe(2);
   });
 
   it('清理写台账，删了几个/释放多少/哪条上限触发都能查到（判据 5 可见性）', async () => {
     const root = tmpRoot();
     seed(root);
     await runVoiceRecordingRetention({ root, now, retentionDays: 7, maxBytes: 1024 ** 3, maxCalls: 100 });
-    const ledger = await readVoiceRecordingCleanupLedger(root);
-    expect(ledger.length).toBe(1);
-    expect(ledger[0]).toMatchObject({ at: now, deleted: 1, freedBytes: 1024 * 1024 });
-    expect(ledger[0].byRule.age).toBe(1);
+    const lastCleanup = (await getVoiceRecordingOverview(root)).lastCleanup;
+    expect(lastCleanup).toMatchObject({ at: now, deleted: 1, freedBytes: 1024 * 1024 });
+    expect(lastCleanup?.byRule.age).toBe(1);
   });
 
   it('三条同时压到极小也不会删掉最新那通（它可能正在录）', async () => {
@@ -162,7 +167,6 @@ describe('runVoiceRecordingRetention — 三条上限分别变异验证', () => 
       root, now, retentionDays: 0, maxBytes: 0, maxCalls: 0,
     });
     expect(result!.deleted).toBe(2);
-    const survivors = await listVoiceRecordings(root);
-    expect(survivors.map((item) => item.name)).toEqual(['20260814-120000-c']);
+    expect(recordingNames(root)).toEqual(['20260814-120000-c']);
   });
 });

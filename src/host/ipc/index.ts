@@ -84,7 +84,6 @@ import { registerAlmaRegistryHandlers } from './almaRegistry.ipc';
 import { registerGenerativeUIHandlers } from './generativeUI.ipc';
 import { registerFolderTrustHandlers } from './folderTrust.ipc';
 import { registerTeamHandlers } from './team.ipc';
-import { registerVoiceHandlers } from './voice.ipc';
 import { getApplicationRunRegistry } from '../app/applicationRunRegistry';
 
 /**
@@ -155,8 +154,6 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerGenerativeUIHandlers(ipcMain);
   registerFolderTrustHandlers(ipcMain, getAppService);
   registerTeamHandlers(ipcMain);
-  registerVoiceHandlers(ipcMain);
-
   // Connector handlers
   registerConnectorHandlers(ipcMain, getMainWindow, getConfigService);
 

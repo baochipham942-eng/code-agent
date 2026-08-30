@@ -15,7 +15,7 @@ import { resolveConnectionTestModel } from '../model/providerConnectionTest';
 import { isRuntimeProviderConfigured } from '../../shared/modelRuntime';
 import { resolveProviderIconAsset, saveProviderIconAsset } from '../services/providerIconAssets';
 import { handleDiscoverModels, type DiscoveredProviderModel, type DiscoverModelsResult } from './provider.ipc';
-import { refreshVoiceInstructions } from '../services/voice/voiceSessionService';
+import { refreshRegisteredVoiceInstructions } from '../services/capabilities/hostCapabilityPorts';
 import { createLogger } from '../services/infra/logger';
 import { extractDocxParagraphsFromBuffer } from '../tools/artifacts/docxParagraphLocator';
 import {
@@ -271,7 +271,7 @@ async function handleSet(
   await configService.updateSettings((updates ?? {}) as Partial<AppSettings>);
   const liveUpdates = updates.voice?.live;
   if (liveUpdates && Object.prototype.hasOwnProperty.call(liveUpdates, 'speechRate')) {
-    refreshVoiceInstructions();
+    refreshRegisteredVoiceInstructions();
   }
   // 自动整理开关变更 → 立即对齐 consolidation cron job 的 dryRun（失败不阻塞设置保存）
   if (updates.memory && Object.prototype.hasOwnProperty.call(updates.memory, 'autoConsolidate')) {

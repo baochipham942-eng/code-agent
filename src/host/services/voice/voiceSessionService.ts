@@ -166,6 +166,8 @@ export function getActiveVoiceSessionId(): string | null {
   return active?.id ?? null;
 }
 
+export function hasActiveVoiceCall(): boolean { return active !== null || connecting; }
+
 /**
  * 忙态文本的唯一通话注入口。renderer 不猜 replace/steer，直接把原话交给通话 brain。
  * 任何 host 侧不能保证送达的情况都返回 fallback，由 renderer 复用已有 durable queue；

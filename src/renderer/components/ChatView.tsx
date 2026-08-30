@@ -39,7 +39,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
 import { ChatInput } from './features/chat/ChatInput';
 import { applyVoicePartialsToProjection } from '../utils/voicePartialOverlay';
-import { useVoiceCallStore } from '../stores/voiceCallStore';
+import { useVoiceLiveRuntime } from '../hooks/useVoiceLiveRuntime';
 import { GoalStatusBar } from './features/chat/GoalStatusBar';
 import { buildGoalNoticeMessage } from './features/chat/goalNotice';
 import type { ChatInputHandle } from './features/chat/ChatInput';
@@ -435,11 +435,12 @@ export const ChatView: React.FC = () => {
   const baseProjection = useTurnProjection(messages, currentSessionId, effectiveIsProcessing, launchRequests, neoWorkCards);
   const clarityProjection = useTurnExecutionClarity(baseProjection);
   // 通话 partial：只叠加在「正在通话的那条会话」上，且不写任何 store（§7.5）
-  const voiceCallPhase = useVoiceCallStore((state) => state.phase);
-  const voiceCallSessionId = useVoiceCallStore((state) => state.sessionId);
-  const voicePartialUser = useVoiceCallStore((state) => state.partialUser);
-  const voicePartialAssistant = useVoiceCallStore((state) => state.partialAssistant);
-  const voiceStartedAt = useVoiceCallStore((state) => state.startedAt);
+  const voiceRuntime = useVoiceLiveRuntime();
+  const voiceCallPhase = voiceRuntime.phase;
+  const voiceCallSessionId = voiceRuntime.sessionId;
+  const voicePartialUser = voiceRuntime.partialUser;
+  const voicePartialAssistant = voiceRuntime.partialAssistant;
+  const voiceStartedAt = voiceRuntime.startedAt;
   // 必须 memo：这个元素是 TurnBasedTraceView 的 itemContent 依赖，每渲染新建一个
   // 就等于每次 ChatView 重渲染都往 react-virtuoso 的 store 里发布一份新 itemContent。
   // virtuoso 每渲染在 layout effect 里全量发布 props，发布即通知订阅者

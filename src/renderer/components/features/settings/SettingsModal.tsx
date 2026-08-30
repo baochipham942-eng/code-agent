@@ -95,7 +95,7 @@ const ConversationSettings = React.lazy(() => import('./tabs/ConversationSetting
 })));
 const VoiceInputSettings = React.lazy(() => import('./tabs/VoiceInputSettings'));
 const VoiceLiveSettings = React.lazy(() => import('./tabs/VoiceLiveSettings'));
-const VoiceModelSettings = React.lazy(() => import('./tabs/VoiceModelSettings'));
+const VoiceModelSettings = React.lazy(() => import('./tabs/VoiceModelSettingsContainer'));
 const KeybindingsSettings = React.lazy(() => import('./tabs/KeybindingsSettings').then(({ KeybindingsSettings: component }) => ({
   default: component,
 })));
@@ -206,7 +206,12 @@ export function buildSettingsTabGroups({
     { id: 'visualModels', label: t.settings.tabs.visualModels, icon: <ImageIcon className="w-4 h-4" /> },
     // T1（2026-07-28 拍板）：通话模型/音色/转写模型从 voiceLive/voiceInput 收拢到这里，
     // 两个旧 tab 只留使用偏好（一个能力只有一个家、消费路径只选不配）。
-    { id: 'voiceModel', label: t.settings.tabs.voiceModel, icon: <AudioLines className="w-4 h-4" /> },
+    {
+      id: 'voiceModel',
+      label: t.settings.tabs.voiceModel,
+      icon: <AudioLines className="w-4 h-4" />,
+      requiresAnyCapability: ['builtin.voice-live', 'builtin.voice-input'],
+    },
     { id: 'search', label: t.settings.tabs.search, icon: <Search className="w-4 h-4" /> },
     { id: 'soul', label: t.settings.tabs.soul, icon: <Fingerprint className="w-4 h-4" /> },
     // 基础偏好
@@ -215,7 +220,12 @@ export function buildSettingsTabGroups({
     { id: 'doctor', label: t.settings.tabs.doctor, icon: <Stethoscope className="w-4 h-4" /> },
     { id: 'conversation', label: t.settings.tabs.conversation, icon: <FoldVertical className="w-4 h-4" /> },
     { id: 'keybindings', label: t.settings.tabs.keybindings, icon: <Keyboard className="w-4 h-4" /> },
-    { id: 'voiceLive', label: t.settings.tabs.voiceLive, icon: <Phone className="w-4 h-4" /> },
+    {
+      id: 'voiceLive',
+      label: t.settings.tabs.voiceLive,
+      icon: <Phone className="w-4 h-4" />,
+      requiresAnyCapability: ['builtin.voice-live'],
+    },
     {
       id: 'voiceInput',
       label: t.settings.tabs.voiceInput,
@@ -568,9 +578,9 @@ export const SettingsModal: React.FC = () => {
               {activeTab === 'doctor' && <DoctorSettings />}
               {activeTab === 'conversation' && <ConversationSettings />}
               {activeTab === 'search' && <SearchSettings />}
-              {activeTab === 'voiceLive' && <VoiceLiveSettings />}
+              {activeTab === 'voiceLive' && isSettingsTabCapabilityAvailable(activeTab, installedCapabilities) && <VoiceLiveSettings />}
               {activeTab === 'voiceInput' && isSettingsTabCapabilityAvailable(activeTab, installedCapabilities) && <VoiceInputSettings />}
-              {activeTab === 'voiceModel' && <VoiceModelSettings />}
+              {activeTab === 'voiceModel' && isSettingsTabCapabilityAvailable(activeTab, installedCapabilities) && <VoiceModelSettings />}
               {activeTab === 'keybindings' && <KeybindingsSettings />}
               {activeTab === 'workspace' && <WorkspaceSettings />}
               {activeTab === 'appshots' && <AppshotsSettings />}

@@ -75,6 +75,19 @@ describe('settings search index', () => {
     }).map((entry) => entry.tab)).toContain('voiceInput');
   });
 
+  it('filters voice model sections for the four installation states', () => {
+    const realtime = zh.settings.searchIndex.voiceConversationModel;
+    const asr = zh.settings.searchIndex.whisperModel;
+    expect(searchSettings(realtime, { installedCapabilities: new Set() })).toHaveLength(0);
+    expect(searchSettings(asr, { installedCapabilities: new Set() })).toHaveLength(0);
+    expect(searchSettings(realtime, { installedCapabilities: new Set(['builtin.voice-input']) })).toHaveLength(0);
+    expect(searchSettings(asr, { installedCapabilities: new Set(['builtin.voice-input']) }).map((entry) => entry.labelKey))
+      .toContain('whisperModel');
+    expect(searchSettings(realtime, { installedCapabilities: new Set(['builtin.voice-live']) }).map((entry) => entry.labelKey))
+      .toContain('voiceConversationModel');
+    expect(searchSettings(asr, { installedCapabilities: new Set(['builtin.voice-live']) })).toHaveLength(0);
+  });
+
   it('covers permission/privacy boundary search terms', () => {
     expect(searchSettings(zh.settings.searchIndex.voiceTranscription).map((entry) => entry.tab)).toContain('privacy');
     expect(searchSettings(zh.settings.searchIndex.diagnosticBundle).map((entry) => entry.tab)).toContain('privacy');

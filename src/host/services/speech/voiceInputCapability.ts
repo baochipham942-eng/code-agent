@@ -1,13 +1,16 @@
 import type { BundledHostCapabilityDescriptor } from '../capabilities/bundledHostCapabilityRegistry';
-import { registerSpeechHandlers } from '../../ipc/speech.ipc';
+import { configureSpeechHandlers, registerSpeechHandlers } from '../../ipc/speech.ipc';
 import {
   hasActiveVoicePaste,
   registerVoicePasteHandlers,
   registerVoicePasteShortcut,
+  configureVoicePasteTranscription,
 } from '../../ipc/voicePaste.ipc';
 import { createDictationStreamUpgradeContribution } from '../../../web/dictationStreamUpgrade';
 import { hasActiveDictationStream } from './dictationStreamService';
 import { hasActiveSpeechTranscription } from './speechTranscriptionService';
+import { clearRetainedSpeechAudio, getSpeechTranscriptionService } from './speechTranscriptionService';
+import { attachDictationClient } from './dictationStreamService';
 
 export const voiceInputCapabilityDescriptor: BundledHostCapabilityDescriptor = {
   id: 'builtin.voice-input',
@@ -20,11 +23,20 @@ export const voiceInputCapabilityDescriptor: BundledHostCapabilityDescriptor = {
     }
   },
   async activate(host) {
+    const transcribe = getSpeechTranscriptionService().transcribe.bind(getSpeechTranscriptionService());
+    const cleanupSpeechConfig = configureSpeechHandlers({
+      transcribe,
+      clearRetainedAudio: clearRetainedSpeechAudio,
+    });
+    const cleanupPasteConfig = configureVoicePasteTranscription(transcribe);
     host.registerIpcHandler(registerSpeechHandlers);
     host.registerIpcHandler(registerVoicePasteHandlers);
-    host.registerWebSocketUpgrade(createDictationStreamUpgradeContribution());
+    host.registerWebSocketUpgrade(createDictationStreamUpgradeContribution(attachDictationClient));
     host.registerShortcut(registerVoicePasteShortcut);
     host.publishRendererCapabilityState();
-    return async () => undefined;
+    return async () => {
+      await cleanupPasteConfig();
+      await cleanupSpeechConfig();
+    };
   },
 };

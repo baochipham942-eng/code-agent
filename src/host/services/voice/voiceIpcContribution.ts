@@ -1,15 +1,16 @@
-import type { IpcMain } from '../platform';
-import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { RendererVoiceFailureReport, VoiceUserTextInjectionResult } from '../../shared/contract/voice';
-import { persistVoiceCallFailure } from '../services/voice/voiceFailurePersistence';
-import { injectVoiceUserText } from '../services/voice/voiceSessionService';
-import { getVoiceRecordingOverview } from '../services/voice/voiceRecordingRetention';
+import type { IpcMain } from '../../platform';
+import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../shared/ipc';
+import type { RendererVoiceFailureReport, VoiceUserTextInjectionResult } from '../../../shared/contract/voice';
+import type { HostCapabilityCleanup } from '../capabilities/hostCapabilityPorts';
+import { persistVoiceCallFailure } from './voiceFailurePersistence';
+import { injectVoiceUserText } from './voiceSessionService';
+import { getVoiceRecordingOverview } from './voiceRecordingRetention';
 import {
   clearVoiceprintData,
   getVoiceprintOverview,
   prepareVoiceprintModel,
   registerVoiceprintFromActiveCall,
-} from '../services/voice/voiceprintService';
+} from './voiceprintService';
 
 function isRendererFailure(payload: unknown): payload is RendererVoiceFailureReport {
   if (!payload || typeof payload !== 'object') return false;
@@ -28,7 +29,7 @@ function isUserTextInjection(payload: unknown): payload is { neoSessionId: strin
     && value.text.trim().length > 0;
 }
 
-export function registerVoiceHandlers(ipcMain: IpcMain): void {
+export function registerVoiceHandlers(ipcMain: IpcMain): HostCapabilityCleanup {
   ipcMain.handle(IPC_DOMAINS.VOICE, async (_event, request: IPCRequest): Promise<IPCResponse> => {
     if (request.action === 'injectUserText') {
       if (!isUserTextInjection(request.payload)) {
@@ -37,20 +38,10 @@ export function registerVoiceHandlers(ipcMain: IpcMain): void {
       const result = await injectVoiceUserText(request.payload.neoSessionId, request.payload.text);
       return { success: true, data: result } satisfies IPCResponse<VoiceUserTextInjectionResult>;
     }
-    // 声纹（N-L7-SPK）：四个动作都不带 payload，也绝不在响应里携带 embedding 向量。
-    if (request.action === 'voiceprintOverview') {
-      return { success: true, data: getVoiceprintOverview() };
-    }
-    if (request.action === 'voiceprintRegister') {
-      return { success: true, data: registerVoiceprintFromActiveCall() };
-    }
-    if (request.action === 'voiceprintClear') {
-      return { success: true, data: clearVoiceprintData() };
-    }
-    // 通话录音（N-L7-REC）：只回计数/路径/上次清理，绝不在响应里携带任何音频。
-    if (request.action === 'recordingOverview') {
-      return { success: true, data: await getVoiceRecordingOverview() };
-    }
+    if (request.action === 'voiceprintOverview') return { success: true, data: getVoiceprintOverview() };
+    if (request.action === 'voiceprintRegister') return { success: true, data: registerVoiceprintFromActiveCall() };
+    if (request.action === 'voiceprintClear') return { success: true, data: clearVoiceprintData() };
+    if (request.action === 'recordingOverview') return { success: true, data: await getVoiceRecordingOverview() };
     if (request.action === 'voiceprintPrepareModel') {
       try {
         return { success: true, data: await prepareVoiceprintModel() };
@@ -70,4 +61,5 @@ export function registerVoiceHandlers(ipcMain: IpcMain): void {
     await persistVoiceCallFailure(request.payload);
     return { success: true };
   });
+  return () => ipcMain.removeHandler(IPC_DOMAINS.VOICE);
 }

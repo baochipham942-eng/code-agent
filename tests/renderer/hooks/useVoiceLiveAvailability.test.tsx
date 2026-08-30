@@ -9,10 +9,14 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 
 import { useVoiceLiveAvailability } from '../../../src/renderer/components/features/voice/useVoiceLiveAvailability';
+import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 
 describe('useVoiceLiveAvailability default and degraded entry', () => {
   beforeEach(() => {
     invokeDomain.mockReset();
+    useBundledCapabilityStore.setState({
+      installed: { 'builtin.voice-live': true, 'builtin.voice-input': false },
+    });
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: true,
       json: async () => ({
@@ -45,5 +49,17 @@ describe('useVoiceLiveAvailability default and degraded entry', () => {
     const { result } = renderHook(() => useVoiceLiveAvailability());
 
     await waitFor(() => expect(result.current.enabled).toBe(false));
+  });
+
+  it('does not touch settings or status endpoints while voice-live is removed', async () => {
+    useBundledCapabilityStore.setState({
+      installed: { 'builtin.voice-live': false, 'builtin.voice-input': false },
+    });
+
+    const { result } = renderHook(() => useVoiceLiveAvailability());
+
+    expect(result.current).toMatchObject({ enabled: false, configured: false });
+    expect(invokeDomain).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

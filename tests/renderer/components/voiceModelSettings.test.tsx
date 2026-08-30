@@ -46,6 +46,7 @@ vi.mock('../../../src/renderer/services/localBridge', () => ({
 }));
 
 import { VoiceModelSettings } from '../../../src/renderer/components/features/settings/tabs/VoiceModelSettings';
+import VoiceModelSettingsContainer from '../../../src/renderer/components/features/settings/tabs/VoiceModelSettingsContainer';
 import { VoiceLiveSettingsSection } from '../../../src/renderer/components/features/settings/tabs/VoiceLiveSettingsSection';
 import { VoiceInputSettings } from '../../../src/renderer/components/features/settings/tabs/VoiceInputSettings';
 import { buildSettingsTabGroups } from '../../../src/renderer/components/features/settings/SettingsModal';
@@ -314,6 +315,38 @@ describe('VoiceModelSettings（新 tab 收拢三项）', () => {
       expect(payload.speech.localModel).toBe('ggml-base.bin');
     });
   });
+});
+
+describe('VoiceModelSettingsContainer 安装矩阵', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    settingsGet(undefined);
+  });
+  afterEach(() => cleanup());
+
+  it.each([
+    { live: false, input: false, provider: false, transcription: false },
+    { live: false, input: true, provider: false, transcription: true },
+    { live: true, input: false, provider: true, transcription: false },
+    { live: true, input: true, provider: true, transcription: true },
+  ])(
+    'live=$live input=$input 时只显示对应模型段',
+    async ({ live, input, provider, transcription }) => {
+      useBundledCapabilityStore.setState({
+        installed: {
+          'builtin.voice-live': live,
+          'builtin.voice-input': input,
+        },
+      });
+
+      render(<VoiceModelSettingsContainer />);
+
+      if (provider) expect(await screen.findByTestId('voice-provider-select')).toBeTruthy();
+      else expect(screen.queryByTestId('voice-provider-select')).toBeNull();
+      if (transcription) expect(await screen.findByTestId('voice-model-transcription-model')).toBeTruthy();
+      else expect(screen.queryByTestId('voice-model-transcription-model')).toBeNull();
+    },
+  );
 });
 
 describe('回归测试：主审查四问题', () => {

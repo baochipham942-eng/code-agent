@@ -29,17 +29,19 @@ import { publishGlobalHotkeyRegistrationResults } from '../services/globalHotkey
 import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { claimApprovalResponse, releaseApprovalResponse } from '../utils/approvalResponseGuard';
 import { claimDesignCanvasForSession } from '../components/design/designCanvasLaunch';
-import { voiceCallBridge } from '../services/voiceCallBridge';
-import { useVoiceCallStore } from '../stores/voiceCallStore';
 import { useBundledCapabilityStore } from '../stores/bundledCapabilityStore';
+import { toggleInstalledVoiceCall } from './useVoiceLiveRuntime';
 
 const logger = createLogger('KeyboardShortcuts');
 
 function isKeybindingAvailableForCapabilities(
   actionId: KeybindingActionId,
   voiceInputInstalled: boolean,
+  voiceLiveInstalled: boolean,
 ): boolean {
-  return actionId !== 'voice.toggle' || voiceInputInstalled;
+  if (actionId === 'voice.toggle') return voiceInputInstalled;
+  if (actionId === 'voice.callToggle') return voiceLiveInstalled;
+  return true;
 }
 
 // ============================================================================
@@ -212,6 +214,9 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
   const voiceInputInstalled = useBundledCapabilityStore(
     (state) => state.installed['builtin.voice-input'],
   );
+  const voiceLiveInstalled = useBundledCapabilityStore(
+    (state) => state.installed['builtin.voice-live'],
+  );
 
   const actionByAccelerator = useMemo(() => {
     const map = new Map<string, KeybindingActionId[]>();
@@ -224,7 +229,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     };
 
     for (const definition of KEYBINDING_DEFINITIONS) {
-      if (!isKeybindingAvailableForCapabilities(definition.id, voiceInputInstalled)) continue;
+      if (!isKeybindingAvailableForCapabilities(definition.id, voiceInputInstalled, voiceLiveInstalled)) continue;
       const binding = keybindings.bindings[definition.id];
       if (!binding?.enabled || !binding.accelerator) continue;
       add(binding.accelerator, definition.id);
@@ -238,7 +243,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     }
 
     return map;
-  }, [keybindings, platform, voiceInputInstalled]);
+  }, [keybindings, platform, voiceInputInstalled, voiceLiveInstalled]);
 
   const globalHotkeyBindings = useMemo<GlobalHotkeyBindingPayload[]>(() => {
     if (keybindings.globalHotkeysEnabled === false) return [];
@@ -246,7 +251,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     const bindings: GlobalHotkeyBindingPayload[] = [];
     for (const definition of KEYBINDING_DEFINITIONS) {
       if (definition.scope !== 'global') continue;
-      if (!isKeybindingAvailableForCapabilities(definition.id, voiceInputInstalled)) continue;
+      if (!isKeybindingAvailableForCapabilities(definition.id, voiceInputInstalled, voiceLiveInstalled)) continue;
       const binding = keybindings.bindings[definition.id];
       if (!binding?.enabled || !binding.accelerator) continue;
       const accelerator = normalizeAccelerator(binding.accelerator, platform);
@@ -254,7 +259,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
       bindings.push({ actionId: definition.id, accelerator });
     }
     return bindings;
-  }, [keybindings, platform, voiceInputInstalled]);
+  }, [keybindings, platform, voiceInputInstalled, voiceLiveInstalled]);
 
   // 获取当前会话在列表中的索引
   const currentSessionIndex = useMemo(() => {
@@ -440,13 +445,8 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           return true;
 
         case 'voice.callToggle':
-          if (useVoiceCallStore.getState().phase !== 'idle') {
-            voiceCallBridge.hangUp();
-            return true;
-          }
           if (!currentSessionId) return false;
-          await voiceCallBridge.dial(currentSessionId);
-          return true;
+          return toggleInstalledVoiceCall(currentSessionId);
 
         case 'appshot.capture':
           if (isNativeCommandRuntimeAvailable() && await invokeNativeCommandAction('triggerAppshot')) return true;
@@ -556,6 +556,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
       setPendingPermissionRequest,
       recordPermissionDecision,
       voiceInputInstalled,
+      voiceLiveInstalled,
     ]
   );
 

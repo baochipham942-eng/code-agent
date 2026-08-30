@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { DEFAULT_MODELS } from '../../shared/constants';
-import { getSpeechTranscriptionService } from '../services/speech/speechTranscriptionService';
+import type { SpeechTranscribeOptions, SpeechTranscribeResult } from '../../shared/contract/speech';
 import { summarizeUserFacingError } from '../security/userFacingError';
 import type { HostCapabilityCleanup } from '../services/capabilities/hostCapabilityPorts';
 
@@ -12,6 +12,18 @@ type VoicePasteStatusPayload = {
   status: 'recording' | 'transcribing' | 'processing' | 'idle';
   error?: string;
 };
+interface VoicePasteTranscriptionRequest extends SpeechTranscribeOptions {
+  audioBuffer: Buffer;
+  mimeType: string;
+}
+let transcribeSpeech: ((options: VoicePasteTranscriptionRequest) => Promise<SpeechTranscribeResult>) | null = null;
+
+export function configureVoicePasteTranscription(
+  transcribe: (options: VoicePasteTranscriptionRequest) => Promise<SpeechTranscribeResult>,
+): HostCapabilityCleanup {
+  transcribeSpeech = transcribe;
+  return () => { if (transcribeSpeech === transcribe) transcribeSpeech = null; };
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -30,7 +42,8 @@ function getModelResponseContent(result: unknown): string | undefined {
 }
 
 async function transcribeAudio(wavPath: string): Promise<string> {
-  const result = await getSpeechTranscriptionService().transcribe({
+  if (!transcribeSpeech) throw new Error('voice-input capability is not installed');
+  const result = await transcribeSpeech({
     audioBuffer: fs.readFileSync(wavPath),
     mimeType: 'audio/wav',
     source: 'voice-paste',

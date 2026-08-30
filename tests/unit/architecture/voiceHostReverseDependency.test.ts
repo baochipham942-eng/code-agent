@@ -5,10 +5,16 @@ import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = process.cwd();
 const VOICE_ROOT = path.join(REPO_ROOT, 'src/host/services/voice');
+const SPEECH_ROOT = path.join(REPO_ROOT, 'src/host/services/speech');
 const GUARDED_ROOTS = [
-  path.join(REPO_ROOT, 'src/host/agent'),
-  path.join(REPO_ROOT, 'src/host/tools'),
+  path.join(REPO_ROOT, 'src/host'),
+  path.join(REPO_ROOT, 'src/web'),
 ];
+const CAPABILITY_REGISTRY = path.join(REPO_ROOT, 'src/host/services/capabilities/bundledHostCapabilityRegistry.ts');
+const ALLOWED_DESCRIPTORS = new Set([
+  path.join(VOICE_ROOT, 'voiceLiveCapability'),
+  path.join(SPEECH_ROOT, 'voiceInputCapability'),
+]);
 
 interface Violation {
   file: string;
@@ -49,7 +55,10 @@ function collectViolations(file: string, sourceText = fs.readFileSync(file, 'utf
     const specifierNode = importSpecifier(node);
     if (specifierNode?.text.startsWith('.')) {
       const resolved = path.resolve(path.dirname(file), specifierNode.text);
-      if (resolved === VOICE_ROOT || resolved.startsWith(`${VOICE_ROOT}${path.sep}`)) {
+      const targetsPackage = [VOICE_ROOT, SPEECH_ROOT]
+        .some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`));
+      const allowedDescriptor = file === CAPABILITY_REGISTRY && ALLOWED_DESCRIPTORS.has(resolved);
+      if (targetsPackage && !allowedDescriptor) {
         violations.push({
           file: path.relative(REPO_ROOT, file),
           line: source.getLineAndCharacterOfPosition(specifierNode.getStart(source)).line + 1,
@@ -63,9 +72,12 @@ function collectViolations(file: string, sourceText = fs.readFileSync(file, 'utf
   return violations;
 }
 
-describe('agent/tools -> services/voice reverse dependency boundary', () => {
+describe('host/web -> voice packages reverse dependency boundary', () => {
   it('has zero static, dynamic, re-export, or require dependencies', () => {
-    const files = GUARDED_ROOTS.flatMap(listTypeScriptFiles);
+    const files = GUARDED_ROOTS.flatMap(listTypeScriptFiles).filter((file) => (
+      !file.startsWith(`${VOICE_ROOT}${path.sep}`)
+      && !file.startsWith(`${SPEECH_ROOT}${path.sep}`)
+    ));
     expect(files.length, 'guarded roots unexpectedly contain no TypeScript files').toBeGreaterThan(0);
     const violations = files.flatMap((file) => collectViolations(file));
     expect(
@@ -77,14 +89,14 @@ describe('agent/tools -> services/voice reverse dependency boundary', () => {
   });
 
   it('mutation guard catches a restored direct voice import', () => {
-    const virtualFile = path.join(REPO_ROOT, 'src/host/agent/runtime/mutant.ts');
+    const virtualFile = path.join(REPO_ROOT, 'src/host/ipc/mutant.ts');
     expect(collectViolations(
       virtualFile,
-      "import { resolveVoiceWorkOutcome } from '../../services/voice/voiceWorkEvidence';\n",
+      "import { resolveVoiceWorkOutcome } from '../services/voice/voiceWorkEvidence';\n",
     )).toEqual([{
-      file: 'src/host/agent/runtime/mutant.ts',
+      file: 'src/host/ipc/mutant.ts',
       line: 1,
-      specifier: '../../services/voice/voiceWorkEvidence',
+      specifier: '../services/voice/voiceWorkEvidence',
     }]);
   });
 });

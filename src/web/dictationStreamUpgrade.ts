@@ -4,14 +4,16 @@
 
 import { WebSocketServer } from 'ws';
 import { DICTATION_STREAM_WS_PATH } from '../shared/constants/voice';
-import { attachDictationClient } from '../host/services/speech/dictationStreamService';
+import type { WebSocket } from 'ws';
 import type { HostWebSocketUpgradeContribution } from '../host/services/capabilities/hostCapabilityContributions';
 import { createLogger } from '../host/services/infra/logger';
 import { verifyToken } from './middleware/auth';
 
 const logger = createLogger('DictationUpgrade');
 
-export function createDictationStreamUpgradeContribution(): HostWebSocketUpgradeContribution {
+export function createDictationStreamUpgradeContribution(
+  attachDictationClient: (client: WebSocket) => Promise<void>,
+): HostWebSocketUpgradeContribution {
   const wss = new WebSocketServer({ noServer: true });
   return {
     path: DICTATION_STREAM_WS_PATH,

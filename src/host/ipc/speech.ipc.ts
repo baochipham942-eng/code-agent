@@ -10,13 +10,29 @@ import {
   type SpeechTranscribeResult,
 } from '../../shared/contract/speech';
 import { createLogger } from '../services/infra/logger';
-import {
-  clearRetainedSpeechAudio,
-  getSpeechTranscriptionService,
-} from '../services/speech/speechTranscriptionService';
 import { summarizeUserFacingError } from '../security/userFacingError';
 
 const logger = createLogger('Speech');
+interface SpeechTranscriptionRequest extends SpeechTranscribeOptions {
+  audioBuffer?: Buffer;
+  audioData?: string;
+  mimeType: string;
+}
+type SpeechTranscriber = (request: SpeechTranscriptionRequest) => Promise<SpeechTranscribeResult>;
+let transcribe: SpeechTranscriber | null = null;
+let clearRetainedAudio: (() => SpeechRetainedAudioClearResult) | null = null;
+
+export function configureSpeechHandlers(deps: {
+  transcribe: SpeechTranscriber;
+  clearRetainedAudio: () => SpeechRetainedAudioClearResult;
+}): HostCapabilityCleanup {
+  transcribe = deps.transcribe;
+  clearRetainedAudio = deps.clearRetainedAudio;
+  return () => {
+    if (transcribe === deps.transcribe) transcribe = null;
+    if (clearRetainedAudio === deps.clearRetainedAudio) clearRetainedAudio = null;
+  };
+}
 
 export const SPEECH_CHANNELS = {
   TRANSCRIBE: 'speech:transcribe',
@@ -35,7 +51,8 @@ export function registerSpeechHandlers(ipcMain: IpcMain): HostCapabilityCleanup 
     SPEECH_CHANNELS.TRANSCRIBE,
     async (_event, request: TranscribeRequest): Promise<TranscribeResponse> => {
       try {
-        return await getSpeechTranscriptionService().transcribe({
+        if (!transcribe) throw new Error('voice-input capability is not installed');
+        return await transcribe({
           ...request,
           source: request.source || 'composer',
         });
@@ -56,7 +73,10 @@ export function registerSpeechHandlers(ipcMain: IpcMain): HostCapabilityCleanup 
 
   ipcMain.handle(
     SPEECH_CHANNELS.CLEAR_RETAINED_AUDIO,
-    async (): Promise<SpeechRetainedAudioClearResult> => clearRetainedSpeechAudio(),
+    async (): Promise<SpeechRetainedAudioClearResult> => {
+      if (!clearRetainedAudio) throw new Error('voice-input capability is not installed');
+      return clearRetainedAudio();
+    },
   );
 
   logger.info('Speech handlers registered');

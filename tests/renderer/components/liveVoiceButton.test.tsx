@@ -4,7 +4,7 @@
 // 有消息会话先确认；缺 key（enabled && !configured）降级成可点引导态——
 // 按钮在、可点、点击不拨号，而是弹引导层跳设置（2026-07-30，降级提示不消失）。
 import React from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SPEECH_INPUT_SETTINGS } from '../../../src/shared/contract';
 import { zh } from '../../../src/renderer/i18n/zh';
@@ -28,6 +28,7 @@ import { LiveVoiceButton, type LiveVoiceButtonProps } from '../../../src/rendere
 import { resolveComposerCoreActions } from '../../../src/renderer/components/features/chat/ChatInput';
 import { ComposerCoreActions } from '../../../src/renderer/components/features/chat/ChatInput/ComposerCoreActions';
 import { useVoiceCallStore } from '../../../src/renderer/stores/voiceCallStore';
+import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 
 const IDLE_VOICE = {
   status: 'idle',
@@ -58,6 +59,9 @@ function renderButton(props: Partial<LiveVoiceButtonProps> = {}) {
 describe('LiveVoiceButton', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useBundledCapabilityStore.setState({
+      installed: { 'builtin.voice-live': true, 'builtin.voice-input': true },
+    });
   });
   afterEach(() => {
     cleanup();
@@ -91,7 +95,7 @@ describe('LiveVoiceButton', () => {
     expect(container.querySelector('[data-testid="live-voice-button"]')).not.toBeNull();
   });
 
-  it('渲染层门：完整状态组合下核心操作区恒有恰好 2 个可见按钮', () => {
+  it('渲染层门：完整状态组合下核心操作区恒有恰好 2 个可见按钮', async () => {
     const phases = ['idle', 'connecting', 'live', 'error'] as const;
     const availabilityStates = [
       { enabled: false, configured: false },
@@ -137,7 +141,9 @@ describe('LiveVoiceButton', () => {
 
               // marker 丢失或扫描到 0 个目标会直接报红，避免门的测量范围静默失效。
               expect(core, label).not.toBeNull();
-              expect(within(core as HTMLElement).getAllByRole('button'), label).toHaveLength(2);
+              await waitFor(() => {
+                expect(within(core as HTMLElement).getAllByRole('button'), label).toHaveLength(2);
+              });
               unmount();
             }
           }

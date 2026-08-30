@@ -53,6 +53,7 @@ export interface SessionContextMenuDeps {
   canOpenSessionReplay: boolean;
   handleOpenSessionReplay: (session: SessionWithMeta) => Promise<void> | void;
   handleOpenVoiceAudit: (session: SessionWithMeta) => void;
+  voiceLiveInstalled: boolean;
   unarchiveSession: (sessionId: string) => void;
   archiveSession: (sessionId: string) => void;
   softDelete: (sessionIds: string[]) => void;
@@ -85,6 +86,7 @@ export function buildSessionContextMenuItems(
     canOpenSessionReplay,
     handleOpenSessionReplay,
     handleOpenVoiceAudit,
+    voiceLiveInstalled,
     unarchiveSession,
     archiveSession,
     softDelete,
@@ -185,11 +187,11 @@ export function buildSessionContextMenuItems(
         await handleOpenSessionReplay(session);
       },
     },
-    {
+    ...(voiceLiveInstalled ? [{
       label: t.voiceAudit.menuLabel,
       icon: createElement(Mic2, { className: 'h-4 w-4' }),
       onClick: () => handleOpenVoiceAudit(session),
-    },
+    }] : []),
     {
       label: isArchived ? menu.unarchive : menu.archive,
       icon: createElement(Archive, { className: 'h-4 w-4' }),

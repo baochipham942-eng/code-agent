@@ -38,6 +38,7 @@ import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useMemberViewStore } from '../../../src/renderer/stores/memberViewStore';
 import { useVoiceCallStore } from '../../../src/renderer/stores/voiceCallStore';
 import { useBackgroundTaskStore } from '../../../src/renderer/stores/backgroundTaskStore';
+import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 
 function record(id: string, name: string): SwarmRunAgentRecord {
   return {
@@ -112,6 +113,9 @@ describe('SessionAgentsPanel 通话高亮（B4）', () => {
     useMemberViewStore.setState({ viewingMemberId: null });
     useBackgroundTaskStore.setState({ tasks: [] });
     useVoiceCallStore.getState().reset();
+    useBundledCapabilityStore.setState({
+      installed: { 'builtin.voice-live': true, 'builtin.voice-input': false },
+    });
   });
 
   afterEach(() => cleanup());

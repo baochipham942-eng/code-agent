@@ -19,7 +19,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ warn: vi.fn() }),
 }));
 
-const { registerVoiceHandlers } = await import('../../../src/host/ipc/voice.ipc');
+const { registerVoiceHandlers } = await import('../../../src/host/services/voice/voiceIpcContribution');
 
 type Handler = (_event: unknown, request: IPCRequest) => Promise<unknown>;
 
@@ -35,6 +35,7 @@ describe('voice IPC failure report', () => {
         expect(domain).toBe(IPC_DOMAINS.VOICE);
         handler = registered;
       },
+      removeHandler: vi.fn(),
     } as never);
   });
 

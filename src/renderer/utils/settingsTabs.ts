@@ -80,7 +80,9 @@ export type SettingsDeepLinkTarget =
 const SETTINGS_TAB_REQUIRES_ANY_CAPABILITY: Partial<
   Record<SettingsTab, readonly BundledHostCapabilityId[]>
 > = {
+  voiceLive: ['builtin.voice-live'],
   voiceInput: ['builtin.voice-input'],
+  voiceModel: ['builtin.voice-live', 'builtin.voice-input'],
 };
 
 export function isSettingsTabCapabilityAvailable(

@@ -17,6 +17,7 @@ export interface UserQuestionRoute {
 
 let turnOutcomeResolver: TurnOutcomeResolver | null = null;
 let userQuestionRoute: UserQuestionRoute | null = null;
+let voiceInstructionsRefresher: (() => void) | null = null;
 
 function exclusiveRegistration<T>(
   current: T | null,
@@ -81,4 +82,21 @@ export function offerRegisteredUserQuestion(
 
 export function cancelRegisteredUserQuestion(requestId: string): void {
   userQuestionRoute?.cancel(requestId);
+}
+
+export function registerVoiceInstructionsRefresher(refresher: () => void): HostCapabilityCleanup {
+  const cleanup = exclusiveRegistration(
+    voiceInstructionsRefresher,
+    refresher,
+    'voice instructions refresher',
+    () => {
+      if (voiceInstructionsRefresher === refresher) voiceInstructionsRefresher = null;
+    },
+  );
+  voiceInstructionsRefresher = refresher;
+  return cleanup;
+}
+
+export function refreshRegisteredVoiceInstructions(): void {
+  voiceInstructionsRefresher?.();
 }

@@ -100,6 +100,7 @@ const SHARED_SECRET_TYPE_MAP: Record<SecretPatternType, SensitiveType> = {
   env_secret: 'generic_secret',
   openai_key: 'openai_key',
   gcp_key: 'gcp_key',
+  generic_api_key: 'generic_secret',
   bearer_token: 'bearer_token',
   github_pat: 'github_pat',
   github_token: 'github_token',

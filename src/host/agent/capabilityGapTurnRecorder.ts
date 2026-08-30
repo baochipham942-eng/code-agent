@@ -8,6 +8,7 @@ import { getComboRecorder } from '../services/skills/comboRecorder';
 import { observeTurn } from '../services/skills/capabilityGapDetector';
 import { getCapabilityCandidateStore } from '../services/skills/capabilityCandidateStore';
 import { createLogger } from '../services/infra/logger';
+import type { ToolLedgerOrigin } from '../../shared/constants/toolLedger';
 
 const logger = createLogger('CapabilityGapTurnRecorder');
 
@@ -30,8 +31,37 @@ async function turnTokensSince(sessionId: string, sinceMs: number): Promise<numb
   }
 }
 
-export async function recordCapabilityGapTurn(sessionId: string): Promise<void> {
+async function isSyntheticRun(sessionId: string, ledgerOrigin?: ToolLedgerOrigin): Promise<boolean> {
+  // 产线评测 ToolExecutor 已显式标 eval；浏览器 e2e 与旧 auto-test 入口有进程级标记。
+  if (ledgerOrigin === 'eval'
+    || process.env.CODE_AGENT_E2E === '1'
+    || process.env.CODE_AGENT_EVAL_BRIDGE === '1'
+    || process.env.AUTO_TEST === 'true'
+    || process.env.CODE_AGENT_AUTO_TEST === 'true') {
+    return true;
+  }
+
   try {
+    const { getDatabase } = await import('../services/core/databaseService');
+    const session = getDatabase().getSession(sessionId);
+    return session?.type === 'eval'
+      || session?.origin?.name === 'evaluation-runner'
+      || session?.origin?.metadata?.source === 'StandaloneAgentAdapter';
+  } catch {
+    // CLI / 窄单测可能没有数据库；无明确测试来源时按真实会话保留。
+    return false;
+  }
+}
+
+export async function recordCapabilityGapTurn(
+  sessionId: string,
+  ledgerOrigin?: ToolLedgerOrigin,
+): Promise<void> {
+  try {
+    if (await isSyntheticRun(sessionId, ledgerOrigin)) {
+      logger.debug('候选能力记账跳过测试/评测会话', { sessionId, ledgerOrigin });
+      return;
+    }
     const recording = getComboRecorder().getRecording(sessionId);
     const turn = recording?.turns[recording.turns.length - 1];
     if (!turn) return;

@@ -18,9 +18,34 @@ const logger = createLogger('CapabilityCandidateNaming');
 
 const NAMING_MAX_TOKENS = 512;
 
-/** 机械兜底名：模型不可用 / 调用失败时列表照样有话可说，不留空行 */
+const FALLBACK_INTENTS: Array<{ pattern: RegExp; name: string }> = [
+  { pattern: /\b(?:pptx?|slides?)\b|幻灯|演示(?:文稿|稿)/i, name: '制作演示文稿' },
+  { pattern: /截图|截屏|screenshot|screencapture/i, name: '截取并分析屏幕' },
+  { pattern: /\b(?:csv|xlsx?|excel)\b|表格|销售额|员工数据/i, name: '分析并整理表格' },
+  { pattern: /\bgit\b|提交记录|仓库状态/i, name: '检查代码仓库状态' },
+  { pattern: /会议|meeting/i, name: '创建并管理会议' },
+  { pattern: /记忆|memory/i, name: '保存并整理记忆' },
+  { pattern: /网页|联网|搜索|\bsearch\b|https?:\/\//i, name: '搜索并整理信息' },
+  { pattern: /配置文件|\bconfig(?:uration)?\b/i, name: '读取并整理配置' },
+  { pattern: /读取|查找|列出|\bread\b|\bfind\b|\blist\b/i, name: '查找并读取文件' },
+  { pattern: /创建.*文件|写入|保存|\bwrite\b|\bsave\b/i, name: '创建并更新文件' },
+];
+
+/** 人话兜底名：模型不可用 / 调用失败时也落可读名字，不暴露工具组合。 */
 export function fallbackName(record: CapabilityCandidateRecord): string {
-  return record.shapeTokens.join(' + ');
+  const evidence = record.sampleUserMessages.join(' ');
+  const matched = FALLBACK_INTENTS.find(({ pattern }) => pattern.test(evidence));
+  if (matched) return matched.name;
+
+  const toolEvidence = record.shapeTokens.join(' ');
+  if (/image|vision|blob/i.test(toolEvidence)) return '处理并整理图片';
+  if (/browser|web/i.test(toolEvidence)) return '搜索并整理信息';
+  if (/read|write|edit|glob|grep|directory/i.test(toolEvidence)) return '整理并更新文件';
+  return '自动完成重复工作';
+}
+
+function fallbackSummary(name: string): string {
+  return `按用户要求${name}`;
 }
 
 function buildPrompt(records: CapabilityCandidateRecord[]): string {
@@ -68,43 +93,57 @@ function parseNamingReply(content: string): NamingReply[] {
 }
 
 /**
- * 给还没有人话名的候选补名字。一次一批，失败静默降级到机械兜底名。
+ * 给还没有人话名的候选补名字。模型只处理定额首批，其余及失败项落人话兜底。
  * 返回真正写入名字的条数（给调用方判断要不要重新读列表）。
  */
 export async function fillMissingNames(records: CapabilityCandidateRecord[]): Promise<number> {
-  const pending = records
-    .filter((record) => !record.displayName)
-    .slice(0, CAPABILITY_CANDIDATES.AGENT_NOTICE_MAX_ENTRIES * 2);
+  const pending = records.filter((record) => !record.displayName);
   if (pending.length === 0) return 0;
+  const modelPending = pending.slice(0, CAPABILITY_CANDIDATES.AGENT_NOTICE_MAX_ENTRIES * 2);
 
   let content: string | undefined;
   try {
     const { quickTask, isQuickModelAvailable } = await import('../../model/quickModel');
-    if (!isQuickModelAvailable()) return 0;
-    const result = await quickTask(buildPrompt(pending), NAMING_MAX_TOKENS);
-    if (!result.success || !result.content) return 0;
-    content = result.content;
+    if (isQuickModelAvailable()) {
+      const result = await quickTask(buildPrompt(modelPending), NAMING_MAX_TOKENS);
+      if (result.success && result.content) {
+        content = result.content;
+      } else {
+        logger.debug('候选能力起名使用人话兜底（模型调用失败）', {
+          failureReason: result.failureReason,
+          status: result.status,
+        });
+      }
+    }
   } catch (error) {
-    logger.debug('候选能力起名跳过（模型不可用）', {
+    logger.debug('候选能力起名使用人话兜底（模型不可用）', {
       error: error instanceof Error ? error.message : String(error),
     });
-    return 0;
   }
 
   const store = getCapabilityCandidateStore();
+  const replies = new Map(
+    (content ? parseNamingReply(content) : [])
+      .filter((reply) => Number.isInteger(reply.index) && (reply.index ?? 0) > 0)
+      .map((reply) => [reply.index as number, reply]),
+  );
   let written = 0;
-  for (const reply of parseNamingReply(content)) {
-    const target = pending[(reply.index ?? 0) - 1];
-    const name = typeof reply.name === 'string' ? reply.name.trim() : '';
-    if (!target || !name) continue;
+  for (const [index, target] of pending.entries()) {
+    const reply = replies.get(index + 1);
+    const modelName = typeof reply?.name === 'string' ? reply.name.trim() : '';
+    const name = modelName || fallbackName(target);
     const current = store.get(target.clusterKey);
     if (!current) continue;
     store.put({
       ...current,
       displayName: name.slice(0, 40),
-      summary: typeof reply.summary === 'string' ? reply.summary.trim().slice(0, 80) : current.summary,
+      summary: typeof reply?.summary === 'string' && reply.summary.trim()
+        ? reply.summary.trim().slice(0, 80)
+        : current.summary || fallbackSummary(name),
     });
     written += 1;
   }
+  // LIST 紧接着会把新名字返回给 renderer；这里同时等写盘完成，避免只有内存态成功。
+  if (written > 0) await store.flush();
   return written;
 }

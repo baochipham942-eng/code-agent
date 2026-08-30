@@ -1,15 +1,12 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 
 vi.mock('../../../src/renderer/components/features/expert/ExpertPanel', () => ({ ExpertPanel: () => <div /> }));
 vi.mock('../../../src/renderer/components/features/settings/tabs/SkillsSettings', () => ({ SkillsSettings: () => <div /> }));
 vi.mock('../../../src/renderer/components/features/settings/tabs/MCPSettings', () => ({ MCPSettings: () => <div /> }));
 vi.mock('../../../src/renderer/components/features/settings/tabs/PluginsSettings', () => ({ PluginsSettings: () => <div /> }));
-vi.mock('../../../src/renderer/components/features/capabilityHub/CapabilityLifecycleHistoryTab', () => ({
-  CapabilityLifecycleHistoryTab: () => <div data-testid="capability-history-tab" />,
-}));
 
 import { CapabilityHubPage } from '../../../src/renderer/components/features/capabilityHub/CapabilityHubPage';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -33,12 +30,14 @@ describe('CapabilityHubPage', () => {
     expect(screen.queryByTestId('capability-hub-tab-plugins')).toBeNull();
     expect(screen.queryByTestId('capability-hub-tab-automation')).toBeNull();
     expect(screen.queryByTestId('capability-hub-tab-inventory')).toBeNull();
+    expect(screen.queryByTestId('capability-hub-tab-history')).toBeNull();
   });
 
-  it('管理员看到 plugins tab（工单要求 admin 可达路径保留）', () => {
+  it('管理员看到 plugins tab，但不再看到装卸历史', () => {
     useAuthStore.setState({ user: user(true) });
     render(<CapabilityHubPage />);
     expect(screen.getByTestId('capability-hub-tab-plugins')).toBeTruthy();
+    expect(screen.queryByTestId('capability-hub-tab-history')).toBeNull();
   });
 
   it('普通用户从 plugins 深链进入时回退到 experts，不白屏', async () => {
@@ -66,19 +65,5 @@ describe('CapabilityHubPage', () => {
     useAuthStore.setState({ user: user(false) });
     const { container } = render(<CapabilityHubPage />);
     expect(container.querySelector('header[data-tauri-drag-region="deep"]')).not.toBeNull();
-  });
-
-  // N-LEDGER-P5 判据⑥：装卸历史是第 6 个 tab（末位），可点、点了渲染本 tab。
-  it('装卸历史 tab 注册在末位，点击后渲染本 tab', async () => {
-    useAuthStore.setState({ user: user(false) });
-    render(<CapabilityHubPage />);
-
-    const tab = screen.getByTestId('capability-hub-tab-history');
-    const tabs = screen.getAllByRole('tab');
-    expect(tabs[tabs.length - 1]).toBe(tab);
-
-    fireEvent.click(tab);
-    expect(useAppStore.getState().capabilityHubTab).toBe('history');
-    await waitFor(() => expect(screen.getByTestId('capability-history-tab')).toBeTruthy());
   });
 });

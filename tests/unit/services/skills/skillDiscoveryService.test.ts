@@ -126,6 +126,57 @@ describe('SkillDiscoveryService discovery', () => {
     ]);
   });
 
+  it('rebuilds stale pre-declaration metadata instead of replaying missing depends', async () => {
+    const names = ['dream', 'lark-sheets', 'e2e-cdp', 'deploy-tauri-app'];
+    const entries: Record<string, unknown> = {};
+    for (const name of names) {
+      const skillDir = path.join(homeDir, '.code-agent', 'skills', name);
+      await fs.mkdir(skillDir, { recursive: true });
+      const skillPath = path.join(skillDir, 'SKILL.md');
+      await fs.writeFile(
+        skillPath,
+        ['---', `name: ${name}`, `description: ${name} legacy fixture`, '---', '', 'Use this skill.'].join('\n'),
+        'utf-8',
+      );
+      const stat = await fs.stat(skillPath);
+      entries[`user:${skillPath}`] = {
+        source: 'user',
+        mtimeMs: stat.mtimeMs,
+        size: stat.size,
+        skill: {
+          name,
+          description: `${name} stale cache fixture`,
+          promptContent: '',
+          basePath: skillDir,
+          allowedTools: [],
+          disableModelInvocation: false,
+          userInvocable: true,
+          executionContext: 'inline',
+          source: 'user',
+          loaded: false,
+        },
+      };
+    }
+    const cacheDir = path.join(homeDir, '.code-agent', 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'skill-metadata-index-v3.json'),
+      JSON.stringify({ version: 3, entries }),
+      'utf-8',
+    );
+
+    const service = new SkillDiscoveryService({ includeClaudeLegacySkills: false });
+    await expect(service.initialize(projectDir)).resolves.toBeUndefined();
+
+    for (const name of names) {
+      expect(service.getSkill(name)).toMatchObject({
+        name,
+        depends: [],
+        provides: [`skill:${name}`],
+      });
+    }
+  });
+
   it('can skip Claude legacy skill directories when explicitly configured', async () => {
     await writeSkill(path.join(homeDir, '.claude', 'skills'), 'user-claude');
     await writeSkill(path.join(projectDir, '.claude', 'skills'), 'project-claude');
@@ -257,7 +308,7 @@ describe('SkillDiscoveryService discovery', () => {
       homeDir,
       '.code-agent',
       'cache',
-      'skill-metadata-index-v3.json',
+      'skill-metadata-index-v4.json',
     );
     const cacheContent = await fs.readFile(cachePath, 'utf-8');
     expect(cacheContent).toContain('user-claude');

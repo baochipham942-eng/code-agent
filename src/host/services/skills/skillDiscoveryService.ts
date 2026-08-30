@@ -25,8 +25,8 @@ import { synchronizeSkillCapabilitySurface } from './skillCapabilitySurface';
 
 const logger = createLogger('SkillDiscoveryService');
 const INCLUDE_CLAUDE_LEGACY_SKILLS_ENV = 'CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS';
-const SKILL_METADATA_CACHE_VERSION = 3;
-const SKILL_METADATA_CACHE_FILE = 'skill-metadata-index-v3.json';
+const SKILL_METADATA_CACHE_VERSION = 4;
+const SKILL_METADATA_CACHE_FILE = 'skill-metadata-index-v4.json';
 
 export interface SkillDiscoveryServiceOptions {
   includeClaudeLegacySkills?: boolean;

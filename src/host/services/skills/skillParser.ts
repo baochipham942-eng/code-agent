@@ -119,12 +119,24 @@ const SUPPORTED_PLATFORMS = new Set([
 ]);
 const CAPABILITY_KEY_REGEX = /^(skill|tool|plugin|connector|extension):[a-z0-9][a-z0-9._/-]*$/;
 
-function validateCapabilityDeclaration(frontmatter: SkillFrontmatter, skillPath: string): void {
+interface CapabilityDeclaration {
+  depends: string[];
+  provides: string[];
+}
+
+function normalizeCapabilityDeclaration(
+  frontmatter: SkillFrontmatter,
+  skillPath: string,
+): CapabilityDeclaration {
+  const declaration: CapabilityDeclaration = {
+    depends: frontmatter.depends === undefined ? [] : frontmatter.depends,
+    provides: frontmatter.provides === undefined ? [`skill:${frontmatter.name}`] : frontmatter.provides,
+  };
   for (const field of ['depends', 'provides'] as const) {
-    const value = frontmatter[field];
+    const value = declaration[field];
     if (!Array.isArray(value)) {
       throw new SkillValidationError(
-        `Missing required capability declaration: ${field} in ${skillPath}`,
+        `Capability declaration ${field} must be an array in ${skillPath}`,
         field,
         value,
       );
@@ -138,17 +150,18 @@ function validateCapabilityDeclaration(frontmatter: SkillFrontmatter, skillPath:
       );
     }
   }
-  if (frontmatter.provides.length === 0) {
+  if (declaration.provides.length === 0) {
     throw new SkillValidationError('Capability declaration provides must not be empty', 'provides', []);
   }
   const ownKey = `skill:${frontmatter.name}`;
-  if (!frontmatter.provides.includes(ownKey)) {
+  if (!declaration.provides.includes(ownKey)) {
     throw new SkillValidationError(
       `Skill "${frontmatter.name}" must provide its own key "${ownKey}"`,
       'provides',
-      frontmatter.provides,
+      declaration.provides,
     );
   }
+  return declaration;
 }
 
 /**
@@ -218,7 +231,7 @@ export async function parseSkillMd(
     );
   }
 
-  validateCapabilityDeclaration(frontmatter, skillPath);
+  const capabilityDeclaration = normalizeCapabilityDeclaration(frontmatter, skillPath);
 
   // 5. 验证 name 格式
   validateSkillName(frontmatter.name);
@@ -245,8 +258,8 @@ export async function parseSkillMd(
   return {
     name: frontmatter.name,
     description: frontmatter.description,
-    depends: frontmatter.depends,
-    provides: frontmatter.provides,
+    depends: capabilityDeclaration.depends,
+    provides: capabilityDeclaration.provides,
     aliases: parseAliases(frontmatter.aliases),
     license: frontmatter.license,
     compatibility: frontmatter.compatibility,
@@ -476,7 +489,7 @@ export async function parseSkillMetadataOnly(
     );
   }
 
-  validateCapabilityDeclaration(frontmatter, skillPath);
+  const capabilityDeclaration = normalizeCapabilityDeclaration(frontmatter, skillPath);
 
   // 5. 验证 name 格式
   validateSkillName(frontmatter.name);
@@ -503,8 +516,8 @@ export async function parseSkillMetadataOnly(
   return {
     name: frontmatter.name,
     description: frontmatter.description,
-    depends: frontmatter.depends,
-    provides: frontmatter.provides,
+    depends: capabilityDeclaration.depends,
+    provides: capabilityDeclaration.provides,
     aliases: parseAliases(frontmatter.aliases),
     license: frontmatter.license,
     compatibility: frontmatter.compatibility,

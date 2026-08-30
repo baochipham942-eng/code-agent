@@ -18,6 +18,7 @@ import type { AgentInterface } from '../../../src/host/testing/testRunner';
 import type {
   CompareConfiguration,
   ExpectationResult,
+  HarnessVariantConfig,
   TestCase,
   TestResult,
   TestRunnerConfig,
@@ -67,14 +68,14 @@ function result(passes: boolean[], overrides: Partial<TestResult> = {}): TestRes
 
 describe('统一实验臂 schema', () => {
   it('reasoningEffort、memory 两维与 harness 六键任一变化都进入有效签名（逐键放行）', () => {
-    const fullHarness = {
+    const fullHarness: HarnessVariantConfig = {
       name: 'arm',
       contextCompression: true,
       compressionPipeline: true,
       scaffoldProfile: false,
       thinkingInjection: true,
       hooksEnabled: false,
-      toolMode: 'all' as const,
+      toolMode: 'all',
     };
     const base: CompareConfiguration = {
       ...BASELINE,
@@ -87,13 +88,13 @@ describe('统一实验臂 schema', () => {
 
     // 2026-08-30 监工代笔（Grok 变异席抓出的盲区）：签名序列化删掉 toolMode 一键时 23/23 仍绿。
     // 这里把「两臂只差一键必须放行」按六键 + memory 两维 + reasoningEffort 逐个钉死。
-    const harnessFlips: Array<Partial<typeof fullHarness>> = [
+    const harnessFlips: Array<Partial<HarnessVariantConfig>> = [
       { contextCompression: false },
       { compressionPipeline: false },
       { scaffoldProfile: true },
       { thinkingInjection: false },
       { hooksEnabled: true },
-      { toolMode: 'deferred' as const },
+      { toolMode: 'deferred' },
     ];
     for (const flip of harnessFlips) {
       const candidate: CompareConfiguration = { ...same, harness: { ...fullHarness, ...flip } };

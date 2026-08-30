@@ -1225,7 +1225,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
           {/* 实时通话 chrome：live 时底栏扩展（打字/附件入口保留在下方原处，§7.2）
               （L2 进行中层，组件自闸 + 自己走互斥表） */}
-          <SlotEntry id="voice" active={voiceLiveInstalled}>
+          <SlotEntry id="voice">
             {voiceLiveInstalled && (
               <React.Suspense fallback={null}>
                 <VoiceChrome sessionId={currentSessionId ?? null} />

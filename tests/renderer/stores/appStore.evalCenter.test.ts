@@ -3,7 +3,7 @@ import { useEvalCenterStore } from '@internal-evaluation/renderer/stores/evalCen
 
 describe('internal evaluation center store', () => {
   beforeEach(() => {
-    useEvalCenterStore.setState({ tab: 'replay', replaySessionId: null });
+    useEvalCenterStore.setState({ tab: 'replay', replaySessionId: null, focusCaseId: null });
   });
 
   it('defaults to replay and supports tab changes', () => {
@@ -17,5 +17,12 @@ describe('internal evaluation center store', () => {
     expect(useEvalCenterStore.getState()).toMatchObject({ tab: 'replay', replaySessionId: 'session-1' });
     useEvalCenterStore.getState().clearReplayTarget();
     expect(useEvalCenterStore.getState().replaySessionId).toBeNull();
+  });
+
+  it('opens and clears a case deep link inside the package', () => {
+    useEvalCenterStore.getState().openCase('case-42');
+    expect(useEvalCenterStore.getState()).toMatchObject({ tab: 'cases', focusCaseId: 'case-42' });
+    useEvalCenterStore.getState().clearCaseTarget();
+    expect(useEvalCenterStore.getState().focusCaseId).toBeNull();
   });
 });

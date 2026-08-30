@@ -8,6 +8,7 @@ import type {
 } from '@shared/contract/evaluation';
 import { invokeEvaluation } from '../evaluationRunIpc';
 import { useEvaluationI18n } from '../i18n/useEvaluationI18n';
+import { useEvalCenterStore } from '../stores/evalCenterStore';
 import { toast } from '@renderer/hooks/useToast';
 import { Button } from '@renderer/components/primitives/Button';
 import { EmptyState } from '@renderer/components/primitives/EmptyState';
@@ -52,6 +53,9 @@ export const EvalCaseListTab: React.FC = () => {
   const [savingDraft, setSavingDraft] = useState(false);
   const [archiveItem, setArchiveItem] = useState<EvalCaseListEntry | null>(null);
   const [archiving, setArchiving] = useState(false);
+  const [highlightedCaseId, setHighlightedCaseId] = useState<string | null>(null);
+  const focusCaseId = useEvalCenterStore((state) => state.focusCaseId);
+  const clearFocusCase = useEvalCenterStore((state) => state.clearCaseTarget);
 
   const loadCases = useCallback(async () => {
     setLoadState('loading');
@@ -69,6 +73,14 @@ export const EvalCaseListTab: React.FC = () => {
   useEffect(() => {
     void loadCases();
   }, [loadCases]);
+
+  useEffect(() => {
+    if (loadState !== 'ready' || !focusCaseId) return;
+    const row = document.getElementById(`eval-case-${focusCaseId}`);
+    row?.scrollIntoView({ block: 'center' });
+    setHighlightedCaseId(focusCaseId);
+    clearFocusCase();
+  }, [clearFocusCase, focusCaseId, loadState]);
 
   const validItems = useMemo(() => items.filter((item): item is EvalCaseListEntry => !isParseError(item)), [items]);
   const counts = useMemo(() => ({
@@ -238,7 +250,7 @@ export const EvalCaseListTab: React.FC = () => {
                 const status = statusOf(item);
                 const inherited = item.inheritedTags.filter((tag) => !item.tags.includes(tag));
                 return (
-                  <tr key={`${item.file}-${item.id}`} className={status === 'archived' ? 'opacity-55' : ''} data-testid={`eval-case-row-${item.id}`}>
+                  <tr id={`eval-case-${item.id}`} key={`${item.file}-${item.id}`} className={`${status === 'archived' ? 'opacity-55' : ''} ${highlightedCaseId === item.id ? 'bg-teal-500/10' : ''}`} data-testid={`eval-case-row-${item.id}`}>
                     <td className="border-b border-zinc-900 px-2 py-2 font-mono text-zinc-300">{item.id}</td>
                     <td className="border-b border-zinc-900 px-2 py-2">
                       <div className="text-zinc-300">{item.layer}</div>

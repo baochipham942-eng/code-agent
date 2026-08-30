@@ -149,6 +149,36 @@ export class ExperimentRepository {
     };
   }
 
+  loadExperimentCase(experimentId: string, caseId: string): {
+    case_id: string;
+    session_id: string | null;
+    status: string;
+    score: number;
+    duration_ms: number | null;
+    data_json: string | null;
+    config_json: string | null;
+    summary_json: string;
+  } | undefined {
+    const row = this.db.prepare(`
+      SELECT ec.case_id, ec.session_id, ec.status, ec.score, ec.duration_ms, ec.data_json,
+             e.config_json, e.summary_json
+      FROM experiment_cases ec
+      JOIN experiments e ON e.id = ec.experiment_id
+      WHERE ec.experiment_id = ? AND ec.case_id = ?
+    `).get(experimentId, caseId) as SQLiteRow | undefined;
+    if (!row) return undefined;
+    return {
+      case_id: row.case_id as string,
+      session_id: (row.session_id as string) || null,
+      status: row.status as string,
+      score: row.score as number,
+      duration_ms: row.duration_ms as number | null,
+      data_json: row.data_json as string | null,
+      config_json: row.config_json as string | null,
+      summary_json: row.summary_json as string,
+    };
+  }
+
   updateExperimentSummary(id: string, summaryJson: string): void {
     this.db.prepare('UPDATE experiments SET summary_json = ? WHERE id = ?').run(summaryJson, id);
   }

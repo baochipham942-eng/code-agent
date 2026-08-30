@@ -26,6 +26,7 @@ describe('EvalRunEventStream AI 评审透传', () => {
     const result: TestResult = {
       testId: 'case-1',
       description: '任务',
+      prompt: '输入',
       status: 'passed',
       score: 1,
       duration: 1,
@@ -35,6 +36,7 @@ describe('EvalRunEventStream AI 评审透传', () => {
       responses: [],
       errors: [],
       turnCount: 1,
+      invalid: { reason: 'usage_unavailable' },
       aiReview: {
         task_completed: {
           verdict: 'no',
@@ -43,6 +45,12 @@ describe('EvalRunEventStream AI 评审透传', () => {
           promptHash: 'sha256',
         },
       },
+      expectationResults: [{
+        expectation: { type: 'no_crash', description: '没有崩溃', params: {} },
+        passed: true,
+        evidence: { expected: true, actual: true },
+        duration: 1,
+      }],
     };
 
     try {
@@ -55,12 +63,14 @@ describe('EvalRunEventStream AI 评审透传', () => {
     const events = ndjson.trim().split('\n').map((line) => JSON.parse(line));
     expect(events.find((event) => event.type === 'case_end')).toMatchObject({
       testId: 'case-1',
+      invalid: { reason: 'usage_unavailable' },
       aiReview: {
         task_completed: {
           verdict: 'no',
           reasoning: '缺少产物',
         },
       },
+      evidence: { prompt: '输入', checks: [{ type: 'no_crash', passed: true }] },
     });
   });
 });

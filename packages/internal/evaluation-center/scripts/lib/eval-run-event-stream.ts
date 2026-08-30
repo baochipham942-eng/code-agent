@@ -5,6 +5,7 @@ import {
   EVAL_RUN_EVENT_SCHEMA_VERSION,
   type EvalRunEvent,
 } from '@shared/contract/evaluation';
+import { buildCaseEvidence } from './eval-case-evidence';
 
 export type EvalRunStartConfig = Extract<EvalRunEvent, { type: 'run_start' }>['config'];
 
@@ -91,6 +92,7 @@ export class EvalRunEventStream {
           ...(event.result.failureStage ? { failureStage: event.result.failureStage } : {}),
           ...(event.result.failure ? { failure: event.result.failure } : {}),
           ...(event.result.usageStatus ? { usageStatus: event.result.usageStatus } : {}),
+          ...(event.result.invalid ? { invalid: event.result.invalid } : {}),
           ...(event.result.costUsd !== undefined ? { costUsd: event.result.costUsd } : {}),
           ...(event.result.mockExcluded ? { mockExcluded: true } : {}),
           ...(event.result.killedByTimeout ? { killedByTimeout: true } : {}),
@@ -99,6 +101,7 @@ export class EvalRunEventStream {
           ...(event.result.scoreAuthority ? { scoreAuthority: event.result.scoreAuthority } : {}),
           skillActivations: event.result.skillActivations,
           ...(event.result.aiReview ? { aiReview: event.result.aiReview } : {}),
+          evidence: buildCaseEvidence(event.result),
           ...(event.result.trialAggregate ? { trialAggregate: event.result.trialAggregate } : {}),
         });
         break;
@@ -198,6 +201,7 @@ export class EvalRunEventStream {
               ? { aggregationRuleVersion: summary.aggregationRuleVersion }
               : {}),
             ...(summary.dataset ? { dataset: summary.dataset } : {}),
+            ...(this.reportFiles.length > 0 ? { reportFiles: this.reportFiles } : {}),
           }
         : {
             runId: this.runId,

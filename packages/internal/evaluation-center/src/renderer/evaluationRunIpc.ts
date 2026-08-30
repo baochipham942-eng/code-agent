@@ -1,5 +1,6 @@
 import type {
   EvalCaseListItem,
+  EvalExperimentCaseDetail,
   EvalExperimentDetail,
   EvalExperimentListItem,
   EvalRunEvent,
@@ -20,6 +21,7 @@ interface EvaluationRunIpcInvokeHandlers {
   [EVALUATION_CHANNELS.SCORERS_OVERVIEW]: () => Promise<EvalScorersOverview>;
   [EVALUATION_CHANNELS.LIST_EXPERIMENTS]: (payload?: { limit?: number }) => Promise<EvalExperimentListItem[]>;
   [EVALUATION_CHANNELS.LOAD_EXPERIMENT]: (experimentId: string) => Promise<EvalExperimentDetail | null>;
+  [EVALUATION_CHANNELS.LOAD_CASE]: (payload: { experimentId: string; caseId: string }) => Promise<EvalExperimentCaseDetail | null>;
   [EVALUATION_CHANNELS.LIST_CASES]: () => Promise<EvalCaseListItem[]>;
   [EVALUATION_CHANNELS.SAVE_CASE]: (request: SaveEvalCaseRequest) => Promise<SaveEvalCaseResult>;
 }

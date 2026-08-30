@@ -83,6 +83,29 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       .toEqual({ x: 2 });
   });
 
+  it('T2：事件证据原样落库，旧事件不增加 evidence 键', () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    const evidence = {
+      prompt: '输入', checks: [{ type: 'no_crash', passed: true, expected: 'true', actual: 'true', durationMs: 1 }],
+      toolCalls: [], responseExcerpt: '完成', responseTotalChars: 2,
+    };
+    adapter.persistEventCase({
+      schemaVersion: 2, type: 'case_end', ts: 1, runId: 'event-run', testId: 'with-evidence',
+      status: 'passed', score: 1, durationMs: 2, evidence, invalid: { reason: 'usage_unavailable' },
+    });
+    adapter.persistEventCase({
+      schemaVersion: 2, type: 'case_end', ts: 2, runId: 'event-run', testId: 'legacy',
+      status: 'failed', score: 0, durationMs: 2,
+    });
+    const first = JSON.parse(db.insertExperimentCases.mock.calls[0][1][0].data_json);
+    const second = JSON.parse(db.insertExperimentCases.mock.calls[1][1][0].data_json);
+    expect(first.evidence.checks).toEqual(evidence.checks);
+    expect(db.insertExperimentCases.mock.calls[0][1][0].status).toBe('invalid');
+    expect(first.invalid).toEqual({ reason: 'usage_unavailable' });
+    expect(second).not.toHaveProperty('evidence');
+  });
+
   it('persists failure axes for event-backed and TestRunner-backed cases', async () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);
@@ -254,6 +277,12 @@ describe('ExperimentAdapter canonical harness persistence', () => {
         reasons: expect.arrayContaining(['missing_telemetry_completeness']),
       },
       skillActivations: { x: 2 },
+      evidence: {
+        prompt: '',
+        checks: [],
+        responseExcerpt: 'ok',
+        responseTotalChars: 2,
+      },
       qualityReport: {
         reportId: 'quality:test-run-1:case-a',
         status: 'failed',

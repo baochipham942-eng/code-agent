@@ -4,6 +4,7 @@ import type { ElectronAPI } from '@shared/ipc';
 import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
 import { UNKNOWN_EVAL_RUN_STAMP } from '@shared/contract/evaluation';
 import type {
+  EvalExperimentCaseDetail,
   EvalExperimentListItem,
   EvalRunEvent,
   EvalRunPanelProbe,
@@ -14,8 +15,9 @@ import { useEvalCenterStore } from '@internal-evaluation/renderer/stores/evalCen
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useAuthStore } from '../../../src/renderer/stores/authStore';
 import '../../../src/renderer/styles/global.css';
+import { EvalCaseDrawer } from '@internal-evaluation/renderer/evalCenter/EvalCaseDrawer';
 
-type Scenario = 'a1' | 'a2' | 'a8' | 'a12' | 'c2';
+type Scenario = 'a1' | 'a2' | 'a8' | 'a12' | 'c2' | 'a13a' | 'a13b' | 'a13c';
 type Theme = 'light' | 'dark';
 type EventListener = (event: EvalRunEvent) => void;
 
@@ -25,6 +27,10 @@ const theme = (params.get('theme') ?? 'dark') as Theme;
 const rootElement = document.documentElement;
 rootElement.dataset.theme = theme;
 rootElement.className = theme;
+const caseDetails = scenario.startsWith('a13')
+  ? await fetch('/.generated-casedrawer.json').then((response) => response.json()) as Record<string, EvalExperimentCaseDetail>
+  : {};
+const visualCaseId = scenario === 'a13b' ? 'TC-041' : scenario === 'a13c' ? 'TC-058' : 'TC-026';
 
 const probe: EvalRunPanelProbe = {
   environment: {
@@ -118,7 +124,7 @@ function emitActiveRun(): void {
 const bridge = {
   async invoke(channel: string, payload?: unknown): Promise<unknown> {
     if (channel === EVALUATION_CHANNELS.LIST_EXPERIMENTS) {
-      return scenario === 'a12' ? historyRuns : [];
+      return scenario === 'a12' || scenario.startsWith('a13') ? historyRuns : [];
     }
     if (channel === EVALUATION_CHANNELS.RUN_EVENTS && payload === undefined) return probe;
     if (channel === EVALUATION_CHANNELS.SCORERS_OVERVIEW) {
@@ -132,6 +138,7 @@ const bridge = {
     if (channel === EVALUATION_CHANNELS.ABORT_RUN) {
       return { runId: 'visual-run', pid: 101, terminated: true };
     }
+    if (channel === EVALUATION_CHANNELS.LOAD_CASE) return caseDetails[visualCaseId] ?? null;
     return null;
   },
   on(channel: string, listener: EventListener): () => void {
@@ -150,4 +157,14 @@ useAuthStore.setState({ user: { id: 'runpanel-admin', email: 'admin@example.com'
 useAppStore.setState({ language: 'zh' });
 useEvalCenterStore.setState({ tab: scenario === 'c2' ? 'scorers' : 'benchmarks' });
 
-createRoot(document.getElementById('root')!).render(<EvalCenterPage />);
+createRoot(document.getElementById('root')!).render(
+  scenario.startsWith('a13') ? (
+    <>
+      <div className="opacity-45 saturate-50"><EvalCenterPage /></div>
+      <EvalCaseDrawer
+        target={{ experimentId: 'visual-casedrawer-run', caseId: visualCaseId }}
+        onClose={() => undefined}
+      />
+    </>
+  ) : <EvalCenterPage />,
+);

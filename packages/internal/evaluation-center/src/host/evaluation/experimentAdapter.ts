@@ -23,6 +23,7 @@ import {
   buildEvalReplayQualityReport,
   type ArtifactIssue,
 } from '@shared/contract/productClosure';
+import { buildCaseEvidence } from '../../../scripts/lib/eval-case-evidence';
 
 type ConversationAttributionWriter = Pick<
   DatabaseService,
@@ -162,7 +163,7 @@ export class ExperimentAdapter {
       id: `${event.runId}:${event.testId}`,
       case_id: event.testId,
       session_id: event.sessionId,
-      status: event.status,
+      status: event.invalid ? 'invalid' : event.status,
       score: Math.round(Math.max(0, Math.min(1, event.score)) * 100),
       duration_ms: event.durationMs,
       data_json: JSON.stringify({
@@ -170,12 +171,14 @@ export class ExperimentAdapter {
         failureStage: event.failureStage,
         failure: event.failure,
         usageStatus: event.usageStatus,
+        ...(event.invalid ? { invalid: event.invalid } : {}),
         costUsd: event.costUsd,
         mockExcluded: event.mockExcluded,
         killedByTimeout: event.killedByTimeout,
         trials: event.trials,
         trialAggregate: event.trialAggregate,
         ...(event.aiReview ? { aiReview: event.aiReview } : {}),
+        ...(event.evidence ? { evidence: event.evidence } : {}),
         scoreAuthority: event.scoreAuthority,
         memoryInjections,
         skillActivations,
@@ -210,6 +213,7 @@ export class ExperimentAdapter {
       aggregationRule: summary.aggregationRule,
       aggregationRuleVersion: summary.aggregationRuleVersion,
       aggregation: summary.aggregationRule,
+      ...(summary.reportFiles ? { reportFiles: summary.reportFiles } : {}),
       ...(error ? { error } : {}),
       source: 'eval',
     }));
@@ -323,6 +327,7 @@ export class ExperimentAdapter {
       score100: c.score,
       ...(c.scoreAuthority ? { scoreAuthority: c.scoreAuthority } : {}),
       ...(c.trials ? { trials: c.trials } : {}),
+      ...(c.metadata?.evidence ? { evidence: c.metadata.evidence } : {}),
     });
   }
 
@@ -567,6 +572,7 @@ export class ExperimentAdapter {
         })),
         metadata: {
           description: r.description,
+          evidence: buildCaseEvidence(r),
           ...(r.aiReview ? { aiReview: r.aiReview } : {}),
           errors: r.errors,
           failureDetails: r.failureDetails,

@@ -15,6 +15,7 @@ import { AI_REVIEW_DIMENSION_DEFINITIONS } from '@host/testing/judge/dimensions'
 import { getAiReviewPromptHash } from '@host/testing/judge/dimensionJudge';
 import { getSkillDiscoveryService } from '@host/services/skills/skillDiscoveryService';
 import { buildProductionCompareArm } from './evalCompareRequest';
+import { enumerateCaseBank } from '../testing/caseBank';
 
 const FALLBACK_SPLIT_COUNTS: EvalRunPanelProbe['splitCounts'] = {
   'held-in': 76,
@@ -42,7 +43,7 @@ function readSplitCounts(repositoryRoot?: string): EvalRunPanelProbe['splitCount
   }
 }
 
-export function inspectEvalRunPanel(): EvalRunPanelProbe {
+export async function inspectEvalRunPanel(): Promise<EvalRunPanelProbe> {
   const environment = inspectEvalEnvironment();
   const model = resolveSessionDefaultModelConfig();
   const judge = getQuickModelRuntimeInfo();
@@ -76,6 +77,12 @@ export function inspectEvalRunPanel(): EvalRunPanelProbe {
     ...(productionArm.skills ?? []),
     ...getSkillDiscoveryService().getAllSkills().map((skill) => skill.name),
   ])).sort((left, right) => left.localeCompare(right));
+  const caseBank = environment.repositoryRoot
+    ? await enumerateCaseBank(environment.repositoryRoot)
+    : [];
+  const unhardenedCount = caseBank.filter(
+    (item) => !('parseError' in item) && !item.hardened,
+  ).length;
   return {
     environment: {
       available: environment.available,
@@ -95,6 +102,7 @@ export function inspectEvalRunPanel(): EvalRunPanelProbe {
     },
     aiReview,
     splitCounts: readSplitCounts(environment.repositoryRoot),
+    unhardenedCount,
     // 「快速检查」是 core-path 标签下最多取 12 题，不创建第四个评测集桶。
     quickCheck: { tags: ['core-path'], maxCases: 12 },
     productionArm,

@@ -15,6 +15,8 @@ cases:
   - id: normal-case
     type: tool
     prompt: list files
+    expect:
+      response_contains: [files]
 `;
 
 const DRAFT_YAML = `
@@ -40,13 +42,11 @@ describe('testCaseLoader drafts 隔离', () => {
     expect(names).not.toContain('draft-suite');
   });
 
-  it('草稿显式加载时 sourceSessionId/reviewStatus 直通进 TestCase', async () => {
+  it('草稿显式加载时会被 pending 门拒收', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'case-loader-draft-fields-'));
     const draftPath = path.join(dir, 'draft.yaml');
     await writeFile(draftPath, DRAFT_YAML);
 
-    const suite = await loadTestSuite(draftPath);
-    expect(suite.cases[0].sourceSessionId).toBe('web-session-123');
-    expect(suite.cases[0].reviewStatus).toBe('pending');
+    await expect(loadTestSuite(draftPath)).rejects.toThrow(/draft-case.*no_expectations/);
   });
 });

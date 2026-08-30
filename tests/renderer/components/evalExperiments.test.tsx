@@ -47,7 +47,7 @@ function probe(): EvalRunPanelProbe {
     environment: { available: true, message: 'ready', packaged: false, platform: 'darwin', osJail: { enabled: true, available: true, active: true } },
     model: 'm', provider: 'p', priceTableVersion: 1, estimatedCostPerCaseUsd: 0.01,
     judge: { model: 'judge', provider: 'p', estimatedCostPerCaseUsd: 0.01 }, aiReview: [],
-    splitCounts: { 'held-in': 2, 'held-out': 1, safety: 1 }, quickCheck: { tags: [], maxCases: 1 },
+    splitCounts: { 'held-in': 2, 'held-out': 1, safety: 1 }, unhardenedCount: 0, quickCheck: { tags: [], maxCases: 1 },
     productionArm: {
       name: 'production@sys-v45', model: 'm', provider: 'p',
       harness: {

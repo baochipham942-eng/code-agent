@@ -235,7 +235,8 @@ describe('TestRunner real-agent-run replay gate', () => {
       '    description: preserves telemetry after timeout kill',
       '    prompt: keep working',
       `    timeout: ${TEST_TIMEOUTS.DEFAULT}`,
-      '    expect: {}',
+      '    expect:',
+      '      response_contains: [done]',
       '',
     ].join('\n'));
     const replay = createReplay('timeout-session');

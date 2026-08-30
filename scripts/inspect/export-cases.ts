@@ -36,13 +36,13 @@ export function inspectTextCaseRejection(testCase: TestCase): string | undefined
     return 'is multi-turn or goal-driven';
   }
   const legacyFileKeys = [
-    testCase.expect.files_created,
-    testCase.expect.files_modified,
-    testCase.expect.file_contains,
-    testCase.expect.files_not_exist,
-    testCase.expect.file_exists,
-    testCase.expect.file_not_contains,
-    testCase.expect.test_pass,
+    testCase.expect?.files_created,
+    testCase.expect?.files_modified,
+    testCase.expect?.file_contains,
+    testCase.expect?.files_not_exist,
+    testCase.expect?.file_exists,
+    testCase.expect?.file_not_contains,
+    testCase.expect?.test_pass,
   ];
   if (legacyFileKeys.some(Boolean)) return 'has filesystem assertions';
   if (testCase.expectations?.some((expectation) => FILE_EXPECTATIONS.has(expectation.type))) {

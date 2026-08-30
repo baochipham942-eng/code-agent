@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -59,15 +59,39 @@ describe('打分器探针 · 提示词 hash 是校准态的真判据', () => {
   it('内置提示词未变（hash 与冻结快照一致）⇒ task_completed 判已校准', async () => {
     expect(getAiReviewPromptHash('task_completed'), '内置提示词变了：要么回退，要么重校准并更新冻结 hash').toBe(FROZEN_TASK_COMPLETED_PROMPT_HASH);
     await registryWith(FROZEN_TASK_COMPLETED_PROMPT_HASH);
-    const probe = inspectEvalRunPanel();
+    const probe = await inspectEvalRunPanel();
     const dim = probe.aiReview.find((item) => item.dim === 'task_completed');
     expect(dim?.calibration).toMatchObject({ state: 'calibrated', kappa: 0.7, pairs: 50 });
   });
 
   it('登记的 promptHash 与当前内置提示词不符 ⇒ 回未校准，理由 prompt_changed', async () => {
     await registryWith('deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef');
-    const probe = inspectEvalRunPanel();
+    const probe = await inspectEvalRunPanel();
     const dim = probe.aiReview.find((item) => item.dim === 'task_completed');
     expect(dim?.calibration).toMatchObject({ state: 'uncalibrated', reason: 'prompt_changed' });
+  });
+
+  it('T5：不会跑的题数包含根目录与 drafts 下的题', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'eval-probe-case-bank-'));
+    const bank = path.join(root, '.claude', 'test-cases');
+    const drafts = path.join(bank, 'drafts');
+    await mkdir(drafts, { recursive: true });
+    const yaml = (id: string) => [
+      `name: ${id}-suite`,
+      'cases:',
+      `  - id: ${id}`,
+      '    type: task',
+      `    prompt: ${id}`,
+      '    expect: {}',
+      '',
+    ].join('\n');
+    await writeFile(path.join(bank, 'normal.yaml'), yaml('normal-missing'));
+    await writeFile(path.join(drafts, 'draft-one.yaml'), yaml('draft-one'));
+    await writeFile(path.join(drafts, 'draft-two.yaml'), yaml('draft-two'));
+    probeEnv.repositoryRoot = root;
+
+    const probe = await inspectEvalRunPanel();
+
+    expect(probe.unhardenedCount).toBe(3);
   });
 });

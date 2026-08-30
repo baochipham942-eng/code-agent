@@ -5,6 +5,7 @@ import { evalScorersEn, evalScorersZh } from '../../../packages/internal/evaluat
 import { evalCaseDrawerEn, evalCaseDrawerZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalCaseDrawer';
 import { evalAnnotationsEn, evalAnnotationsZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalAnnotations';
 import { evalExperimentsEn, evalExperimentsZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalExperiments';
+import { evalCaseListEn, evalCaseListZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalCaseList';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -26,6 +27,8 @@ describe('跑分面板用户词表', () => {
       evalAnnotationsZh.annotations,
       evalCenterZh.evalCenter.annotations,
       evalExperimentsZh.experiments,
+      evalCaseListZh.cases,
+      evalCenterZh.evalCenter.cases,
     ];
     const enSurfaces = [
       evalRunPanelEn.runPanel,
@@ -37,6 +40,8 @@ describe('跑分面板用户词表', () => {
       evalAnnotationsEn.annotations,
       evalCenterEn.evalCenter.annotations,
       evalExperimentsEn.experiments,
+      evalCaseListEn.cases,
+      evalCenterEn.evalCenter.cases,
     ];
     const forbiddenZh = [
       '钉为基线', '口径', '身份戳', '硬化', '未硬化', '假跑', '标废', '已作废',

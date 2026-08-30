@@ -79,12 +79,14 @@ describe('TestRunner goal_contract integration', () => {
       '    goal_contract:',
       '      verify_command: "test -f x.txt"',
       '      max_turns: 9',
-      '    expect: {}',
+      '    expect:',
+      '      response_contains: [done]',
       '  - id: plain-case',
       '    type: task',
       '    description: plain case',
       '    prompt: "普通任务"',
-      '    expect: {}',
+      '    expect:',
+      '      response_contains: [done]',
     ], agent);
     expect(report.total).toBe(2);
     expect(agent.configuredContracts).toEqual([
@@ -109,7 +111,8 @@ describe('TestRunner goal_contract integration', () => {
       '    prompt: "做任务"',
       '    goal_contract:',
       '      verify_command: "false"',
-      '    expect: {}',
+      '    expect:',
+      '      response_contains: [done]',
     ], agent);
     const result = report.results.find((r) => r.testId === 'goal-case');
     expect(result?.goalRun?.status).toBe('met');
@@ -134,7 +137,8 @@ describe('TestRunner goal_contract integration', () => {
       '    prompt: "做任务"',
       '    goal_contract:',
       '      verify_command: "true"',
-      '    expect: {}',
+      '    expect:',
+      '      response_contains: [done]',
       '    expectations:',
       '      - type: goal_status',
       '        description: "终态必须是 met"',
@@ -175,7 +179,8 @@ describe('TestRunner goal_contract integration', () => {
       '    timeout: 200',
       '    goal_contract:',
       '      verify_command: "true"',
-      '    expect: {}',
+      '    expect:',
+      '      response_contains: [done]',
     ], hangingAgent);
     const result = report.results.find((r) => r.testId === 'goal-timeout');
     expect(result?.status).not.toBe('passed');
@@ -192,7 +197,8 @@ describe('TestRunner goal_contract integration', () => {
       '    description: no criterion',
       '    prompt: "做任务"',
       '    goal_contract: {}',
-      '    expect: {}',
+      '    expect:',
+      '      response_contains: [done]',
     ], agent);
     const result = report.results.find((r) => r.testId === 'bad-contract');
     expect(result?.status).toBe('failed');
@@ -217,7 +223,8 @@ describe('TestRunner goal_contract integration', () => {
       '          when:',
       '            question_asked: true',
       '          respond: "ok"',
-      '    expect: {}',
+      '    expect:',
+      '      response_contains: [done]',
     ], agent);
     const result = report.results.find((r) => r.testId === 'bad-combo');
     expect(result?.status).toBe('failed');
@@ -238,7 +245,8 @@ describe('TestRunner goal_contract integration', () => {
       '      - "继续"',
       '    goal_contract:',
       '      verify_command: "true"',
-      '    expect: {}',
+      '    expect:',
+      '      response_contains: [done]',
     ], agent);
     const result = report.results.find((r) => r.testId === 'bad-followup');
     expect(result?.status).toBe('failed');

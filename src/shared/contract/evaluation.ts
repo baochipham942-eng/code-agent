@@ -338,6 +338,7 @@ export interface EvalRunPanelProbe {
     requiresExpectation: boolean;
   }>;
   splitCounts: Record<'held-in' | 'held-out' | 'safety', number>;
+  unhardenedCount: number;
   quickCheck: {
     tags: string[];
     maxCases: number;
@@ -809,6 +810,7 @@ export interface EvalCaseListEntry {
   splits: EvalCaseSplitBucket[];
   turns: number | 'simulator';
   hasExpect: boolean;
+  hardened: boolean;
   reviewStatus?: 'pending' | 'reviewed';
   source: 'manual' | 'session';
   type?: string;

@@ -18,10 +18,10 @@ if (process.env.NEO_SLOT !== 'caselist') {
 async function prepareScenario(page: Page, scenario: Scenario, theme: Theme): Promise<void> {
   await page.goto(`http://127.0.0.1:4190/?theme=${theme}`);
   await page.getByTestId('eval-case-list-tab').waitFor();
-  await page.getByText('显示 153 / 153 题').waitFor();
+  await page.getByText('显示 154 / 154 题').waitFor();
   if (scenario === 'b1-filtered') {
     await page.getByLabel('评测集').selectOption('held-out');
-    await page.getByText(/\u663e\u793a \d+ \/ 153 \u9898/).waitFor();
+    await page.getByText(/\u663e\u793a \d+ \/ 154 \u9898/).waitFor();
   }
   if (scenario === 'b1-archive') {
     await page.getByTestId('eval-case-row-bash-pwd').getByRole('button', { name: '归档' }).click();

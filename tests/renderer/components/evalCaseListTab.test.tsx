@@ -24,6 +24,7 @@ const ITEMS: EvalCaseListItem[] = [
     splits: ['held-in', 'control'],
     turns: 1,
     hasExpect: true,
+    hardened: true,
     source: 'manual',
     retired: false,
     isDraft: false,
@@ -38,6 +39,7 @@ const ITEMS: EvalCaseListItem[] = [
     splits: ['held-out'],
     turns: 2,
     hasExpect: true,
+    hardened: true,
     source: 'session',
     retired: true,
     isDraft: false,
@@ -52,6 +54,7 @@ const ITEMS: EvalCaseListItem[] = [
     splits: [],
     turns: 'simulator',
     hasExpect: false,
+    hardened: false,
     reviewStatus: 'pending',
     source: 'manual',
     retired: false,
@@ -81,7 +84,33 @@ describe('EvalCaseListTab', () => {
     expect(screen.getByText('校准样本')).toBeTruthy();
     expect(screen.getByTestId('eval-case-row-draft-case')).toBeTruthy();
     expect(screen.getAllByText('还没有判定标准')).toHaveLength(2);
+    const draftRow = screen.getByTestId('eval-case-row-draft-case');
+    expect(draftRow.getAttribute('aria-disabled')).toBe('true');
+    expect(draftRow.className).toContain('opacity-60');
+    expect(draftRow.className).toContain('saturate-50');
+    expect(screen.getByText('不会进跑分')).toBeTruthy();
+    const dailyRow = screen.getByTestId('eval-case-row-daily-case');
+    expect(dailyRow.getAttribute('aria-disabled')).toBeNull();
+    expect(dailyRow.className).not.toContain('saturate-50');
+    expect(dailyRow.textContent).not.toContain('不会进跑分');
     expect(screen.queryByTestId('eval-case-row-archived-case')).toBeNull();
+  });
+
+  it('reviewStatus:pending 但 expect 非空的题仍禁选（hardened=false 而 hasExpect=true · Grok 盲区③ 监工代笔）', async () => {
+    const pendingHardened: EvalCaseListItem = {
+      id: 'pending-case', file: '01-tools.yaml', relativeDir: '', layer: '工具与任务基础',
+      tags: [], inheritedTags: [], splits: ['held-in'], turns: 1,
+      hasExpect: true, hardened: false, reviewStatus: 'pending',
+      source: 'manual', retired: false, isDraft: false,
+    };
+    ipc.invoke.mockImplementation(async (channel: string) =>
+      (channel === EVALUATION_CHANNELS.LIST_CASES ? [pendingHardened] : { action: 'archive', id: 'x', file: 'x' }));
+    render(<EvalCaseListTab />);
+    const row = await screen.findByTestId('eval-case-row-pending-case');
+    // hasExpect=true 但 reviewStatus=pending ⇒ hardened=false ⇒ 必须禁选；谓词退化成 !item.hasExpect 会漏禁这类题
+    expect(row.getAttribute('aria-disabled')).toBe('true');
+    expect(row.className).toContain('saturate-50');
+    expect(row.textContent).toContain('不会进跑分');
   });
 
   it('状态筛选可单独查看已归档题', async () => {

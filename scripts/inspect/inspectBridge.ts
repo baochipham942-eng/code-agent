@@ -33,7 +33,7 @@ export async function scoreInspectCase(
   testCase: TestCase,
   context: InspectAssertionContext,
 ): Promise<InspectCaseScore> {
-  const legacy = await runAssertions(testCase.expect, context);
+  const legacy = await runAssertions(testCase.expect ?? {}, context);
   let score = legacy.score;
   let status: InspectCaseScore['status'] = legacy.passed
     ? 'passed'

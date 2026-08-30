@@ -7,6 +7,7 @@ import path from 'path';
 import * as yaml from 'js-yaml';
 import type { TestSuite, TestCase } from './types';
 import { resolveCaseLayer } from './caseLayer';
+import { isCaseHardened } from './caseHardening';
 
 /**
  * Parse YAML content using js-yaml
@@ -18,7 +19,7 @@ function parseYaml(content: string): unknown {
 /**
  * Validate a test case
  */
-function validateTestCase(testCase: unknown, index: number): TestCase {
+function validateTestCase(testCase: unknown, index: number, requireHardened: boolean): TestCase {
   const tc = testCase as Record<string, unknown>;
 
   if (!tc.id || typeof tc.id !== 'string') {
@@ -37,8 +38,11 @@ function validateTestCase(testCase: unknown, index: number): TestCase {
     tc.description = tc.id;
   }
 
-  if (!tc.expect) {
-    tc.expect = {};
+  if (requireHardened) {
+    const hardening = isCaseHardened(tc as unknown as Pick<TestCase, 'expect' | 'expectations' | 'reviewStatus'>);
+    if (!hardening.hardened) {
+      throw new Error(`Test case ${tc.id}: 还没有判定标准（${hardening.reason}）`);
+    }
   }
   if (
     tc.max_cost_usd !== undefined
@@ -57,7 +61,7 @@ function validateTestCase(testCase: unknown, index: number): TestCase {
 /**
  * Validate a test suite
  */
-function validateTestSuite(data: unknown, filePath: string): TestSuite {
+function validateTestSuite(data: unknown, filePath: string, requireHardened: boolean): TestSuite {
   const suite = data as Record<string, unknown>;
 
   if (!suite.name || typeof suite.name !== 'string') {
@@ -71,7 +75,7 @@ function validateTestSuite(data: unknown, filePath: string): TestSuite {
   const suiteTags = suite.tags as string[] | undefined;
   const relativeDir = path.basename(path.dirname(filePath));
   const validatedCases = suite.cases.map((tc, i) => ({
-    ...validateTestCase(tc, i),
+    ...validateTestCase(tc, i, requireHardened),
     inheritedTags: suiteTags ? [...suiteTags] : undefined,
     layer: resolveCaseLayer(path.basename(filePath), relativeDir),
   }));
@@ -91,10 +95,13 @@ function validateTestSuite(data: unknown, filePath: string): TestSuite {
 /**
  * Load a single test suite from a YAML file
  */
-export async function loadTestSuite(filePath: string): Promise<TestSuite> {
+export async function loadTestSuite(
+  filePath: string,
+  options: { requireHardened?: boolean } = {},
+): Promise<TestSuite> {
   const content = await fs.readFile(filePath, 'utf-8');
   const data = parseYaml(content);
-  return validateTestSuite(data, filePath);
+  return validateTestSuite(data, filePath, options.requireHardened !== false);
 }
 
 /**

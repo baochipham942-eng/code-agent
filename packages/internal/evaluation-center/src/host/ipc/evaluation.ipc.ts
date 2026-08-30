@@ -75,7 +75,7 @@ export function registerEvaluationHandlers(
   ipcMain.handle(EVALUATION_CHANNELS.SCORERS_OVERVIEW, async () => {
     const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.SCORERS_OVERVIEW, 'Evaluation scorers');
     if (denied) return denied;
-    const probe = inspectEvalRunPanel();
+    const probe = await inspectEvalRunPanel();
     return { assertions: EXPECTATION_TYPE_CATALOG, aiReview: probe.aiReview, judge: probe.judge };
   });
 

@@ -51,6 +51,11 @@ export const EvalCaseSelectionFields: React.FC<{
           );
         })}
       </div>
+      {(probe?.unhardenedCount ?? 0) > 0 && (
+        <p className="mt-2 text-xs text-zinc-500">
+          {labels.unhardenedNotice.replace('{n}', String(probe?.unhardenedCount))}
+        </p>
+      )}
       {!safetyAvailable && <p className="mt-2 text-xs text-zinc-500">{labels.safetyUnavailable}</p>}
       <div className="mt-4">
         <div className="mb-2 text-xs text-zinc-400">{labels.tags}</div>

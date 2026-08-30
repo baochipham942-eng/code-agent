@@ -18,6 +18,7 @@ const panelProbe = vi.hoisted(() => ({
     judge: { model: 'glm-4.7', provider: 'zhipu', estimatedCostPerCaseUsd: 0.01 },
     aiReview: [{ dim: 'task_completed', requiresExpectation: false, calibration: { state: 'uncalibrated', reason: 'no_record' } }],
     splitCounts: { 'held-in': 76, 'held-out': 52, safety: 12 },
+    unhardenedCount: 0,
     quickCheck: { tags: ['core-path'], maxCases: 12 },
     environment: {
       available: true,

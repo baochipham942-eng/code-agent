@@ -916,7 +916,7 @@ export class TestRunner {
       }
 
       // Run assertions
-      const assertionResult = await runAssertions(testCase.expect, {
+      const assertionResult = await runAssertions(testCase.expect ?? {}, {
         toolExecutions: result.toolExecutions,
         responses: result.responses,
         errors: result.errors,
@@ -929,7 +929,7 @@ export class TestRunner {
       // 评分权威：有声明断言（含 P1 expectations）= 确定性背书；
       // 零断言的自动 pass 只是 agent 没崩，标 self_check 不作能力证据。
       const hasDeterministicEvidence =
-        countDeclaredAssertions(testCase.expect) > 0 ||
+        countDeclaredAssertions(testCase.expect ?? {}) > 0 ||
         (testCase.expectations?.length ?? 0) > 0;
       result.scoreAuthority = hasDeterministicEvidence ? 'deterministic_assertion' : 'self_check';
 

@@ -75,7 +75,8 @@ describe('scoreAuthority 标注（testRunner）', () => {
     expect(summary.results[0].scoreAuthority).toBe('deterministic_assertion');
   });
 
-  it('零断言自动通过的 case 标为 self_check', async () => {
+  it('零断言 case 被 loader 拒收，不再产生 self_check', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const summary = await runSuite([
       'name: authority',
       'cases:',
@@ -87,8 +88,12 @@ describe('scoreAuthority 标注（testRunner）', () => {
       '',
     ].join('\n'));
 
-    expect(summary.results[0].status).toBe('passed'); // 现状：空断言 min-1 自动 pass
-    expect(summary.results[0].scoreAuthority).toBe('self_check');
+    expect(summary.results).toEqual([]);
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to load test suite'),
+      expect.objectContaining({ message: expect.stringMatching(/no-assertions.*no_expectations/) }),
+    );
+    error.mockRestore();
   });
 
   it('P1 expectations 覆盖时仍为 deterministic_assertion', async () => {
@@ -99,7 +104,6 @@ describe('scoreAuthority 标注（testRunner）', () => {
       '    type: task',
       '    description: p1 expectations',
       '    prompt: say ok',
-      '    expect: {}',
       '    expectations:',
       '      - type: response_contains',
       '        description: response mentions ok',

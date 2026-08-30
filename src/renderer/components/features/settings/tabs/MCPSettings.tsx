@@ -10,6 +10,7 @@ import {
   AlertCircle,
   KeyRound,
   Loader2,
+  Monitor,
   Plug,
   PlugZap,
   Cloud,
@@ -39,6 +40,7 @@ import {
 } from '../McpServerEditor';
 import { McpDiscoverTab } from './McpDiscoverTab';
 import type { McpCatalogPayload, RecommendedMcpServerEntry } from '@shared/contract/mcpCatalog';
+import type { CapabilityRiskTier } from '@shared/contract/capability';
 import {
   getBuiltinMcpCatalogPayload,
   mergeMcpCatalogWithBuiltinOfficialFeatured,
@@ -67,6 +69,21 @@ import { ConnectorLogo } from '../../connectors/ConnectorLogo';
 
 const logger = createLogger('MCPSettings');
 
+const LOCAL_MCP_SERVER_IDS = new Set([
+  'argus',
+  'code-index',
+  'cua-driver',
+  'docker',
+  'filesystem',
+  'git',
+  'sqlite',
+]);
+const COMPUTER_USE_SERVER_IDS = new Set(['cua-driver', 'argus']);
+
+function getMcpRiskTier(serverId: string): CapabilityRiskTier | null {
+  return COMPUTER_USE_SERVER_IDS.has(serverId) ? 'high' : null;
+}
+
 // getMcpTrustSummary 已上移到 workbenchPresentation（防御空值版本），
 // 这里 re-export 保持既有引用/测试入口不变。
 export { getMcpTrustSummary };
@@ -76,7 +93,6 @@ export const MCPSettings: React.FC = () => {
   const mcpText = t.settings.mcp;
   const useInChat = useConnectorInChat();
   const isAdmin = useAuthStore((s) => s.user?.isAdmin === true);
-  const setShowComputerUsePanel = useAppStore((s) => s.setShowComputerUsePanel);
   const settingsCapabilityFocus = useAppStore((s) => s.settingsCapabilityFocus);
   const clearSettingsCapabilityFocus = useAppStore((s) => s.clearSettingsCapabilityFocus);
   const canManageMcp = true;
@@ -159,6 +175,24 @@ export const MCPSettings: React.FC = () => {
       resources: resourceCount,
     };
   }, [mcpServers, mcpStatus]);
+  const visibleMcpServers = useMemo(() => {
+    // cua-driver 是当前桌面操作底座；argus 仅在 cua-driver 未注册时作为旧底座回退。
+    // 两者在主网格表达同一个用户能力，管理员诊断表仍保留全部真实服务。
+    const computerUseServer = mcpServers.find((server) => server.id === 'cua-driver')
+      ?? mcpServers.find((server) => server.id === 'argus');
+    return mcpServers.filter((server) => (
+      server.id !== 'lark'
+      && (!COMPUTER_USE_SERVER_IDS.has(server.id) || server.id === computerUseServer?.id)
+    ));
+  }, [mcpServers]);
+  const localMcpServers = useMemo(
+    () => visibleMcpServers.filter((server) => LOCAL_MCP_SERVER_IDS.has(server.id)),
+    [visibleMcpServers],
+  );
+  const externalMcpServers = useMemo(
+    () => visibleMcpServers.filter((server) => !LOCAL_MCP_SERVER_IDS.has(server.id)),
+    [visibleMcpServers],
+  );
 
   // 自动清除成功消息
   useEffect(() => {
@@ -323,6 +357,124 @@ export const MCPSettings: React.FC = () => {
     }
   };
 
+  const renderMcpServerCard = (server: WorkbenchMcpRegistryItem) => {
+    const catalogEntry = mcpCatalog.servers.find((entry) => entry.id === server.id);
+    const serverStatus = getWorkbenchCapabilityStatusPresentation(server, { locale: language });
+    const installing = serverInstallStates[server.id] === 'installing';
+    const connectionState = installing ? 'connecting' : server.lifecycle.connectionState;
+    const statusClass = getStatusBadgeClass(connectionState);
+    const dotClass = connectionState === 'connected'
+      ? 'bg-mark-success'
+      : connectionState === 'connecting'
+        ? 'animate-pulse bg-amber-400'
+        : connectionState === 'error'
+          ? 'bg-red-500'
+          : 'bg-zinc-600';
+    const isComputerUse = COMPUTER_USE_SERVER_IDS.has(server.id);
+    const riskTier = getMcpRiskTier(server.id);
+    const displayName = isComputerUse ? mcpText.grid.sections.local.computerUseTitle : server.label;
+
+    return (
+      <div
+        key={server.id}
+        role="button"
+        tabIndex={0}
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest('[data-card-actions]')) return;
+          openCapabilitySheet(server);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') openCapabilitySheet(server);
+        }}
+        className="min-h-36 cursor-pointer rounded-xl border border-zinc-700 bg-zinc-900/60 p-4 transition-colors hover:border-zinc-600"
+        title={getWorkbenchCapabilityTitle(server, { locale: language })}
+        data-testid={`mcp-connector-card-${server.id}`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
+              {connectionState === 'connecting'
+                ? <Loader2 className="h-4 w-4 animate-spin text-badge-warning" />
+                : (
+                  <ConnectorLogo
+                    id={catalogEntry?.logo}
+                    displayName={catalogEntry?.name ?? displayName}
+                    fallback={isComputerUse
+                      ? <Monitor className="h-7 w-7 text-zinc-400" />
+                      : <Plug className="h-7 w-7 text-zinc-400" />}
+                    className="h-7 w-7"
+                  />
+                )}
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  data-testid={`mcp-server-status-dot-${server.id}`}
+                  aria-hidden="true"
+                  className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`}
+                />
+                <span className="truncate text-sm font-medium text-zinc-100">{displayName}</span>
+                <span className={`rounded border px-1.5 py-0.5 text-[10px] ${statusClass}`}>
+                  {connectionState === 'connecting' ? mcpText.management.installing : serverStatus.label}
+                </span>
+                {riskTier && (
+                  <span
+                    className="rounded border border-red-500/25 bg-red-500/10 px-1.5 py-0.5 text-[10px] text-badge-danger"
+                    data-testid={`mcp-risk-tier-${server.id}`}
+                  >
+                    {mcpText.grid.riskLabels[riskTier]}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2" data-card-actions>
+            {connectionState === 'connected' ? (
+              <button /* ds-allow:button: 卡片右上角紧凑断开动作位 */
+                type="button"
+                aria-label={`${mcpText.management.disconnect} ${displayName}`}
+                title={`${mcpText.management.disconnect} ${displayName}`}
+                data-testid={`mcp-card-action-${server.id}`}
+                onClick={() => setPendingDisconnectServerId(server.id)}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-zinc-600 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800"
+              >
+                <Unplug className="h-3.5 w-3.5" />
+              </button>
+            ) : canManageMcp && !serverInstallStates[server.id] && (
+              <Toggle
+                checked={server.enabled}
+                onChange={(enabled) => handleToggleServer(server.id, enabled)}
+                aria-label={`${server.enabled ? mcpText.management.disable : mcpText.management.enable} ${displayName}`}
+                title={`${server.enabled ? mcpText.management.disable : mcpText.management.enable} ${displayName}`}
+              />
+            )}
+            <WorkbenchCapabilityDetailButton
+              label={displayName}
+              onClick={() => openCapabilitySheet(server)}
+            />
+          </div>
+        </div>
+        <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-zinc-400">
+          {getWorkbenchCapabilityTitle(server, { locale: language })}
+        </p>
+        {connectionState === 'connected' && (
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => void useInChat({ kind: 'mcp', id: server.id })}
+            data-testid={`mcp-use-in-chat-${server.id}`}
+            className="mt-3"
+          >
+            {mcpText.management.useInChat}
+          </Button>
+        )}
+        <div className="mt-3 text-[11px] text-zinc-500">
+          {connectionState === 'connecting' ? mcpText.management.installing : serverStatus.label}
+        </div>
+      </div>
+    );
+  };
+
   // 页头走四 tab 共用的 HubTabHeader；连接器内部不再按连接状态切 tab。
   const hubHeader = (
     <HubTabHeader
@@ -368,32 +520,30 @@ export const MCPSettings: React.FC = () => {
       <SettingsSection
         title={mcpText.grid.title}
         description={mcpText.grid.description}
-      >
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-xs text-zinc-500">
-            {serverSummary.connected}/{serverSummary.total}{mcpText.grid.connectedSummarySuffix}
+        actions={canManageMcp ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleRefreshFromCloud}
+              loading={isRefreshing}
+              leftIcon={!isRefreshing ? <Cloud className="h-3 w-3" /> : undefined}
+            >
+              {isRefreshing ? mcpText.management.refreshing : mcpText.management.refreshFromCloud}
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => setIsEditorOpen(true)}
+              leftIcon={<Plus className="h-3 w-3" />}
+            >
+              {mcpText.management.addServer}
+            </Button>
           </div>
-          {canManageMcp && (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={handleRefreshFromCloud}
-                loading={isRefreshing}
-                leftIcon={!isRefreshing ? <Cloud className="h-3 w-3" /> : undefined}
-              >
-                {isRefreshing ? mcpText.management.refreshing : mcpText.management.refreshFromCloud}
-              </Button>
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => setIsEditorOpen(true)}
-                leftIcon={<Plus className="h-3 w-3" />}
-              >
-                {mcpText.management.addServer}
-              </Button>
-            </div>
-          )}
+        ) : undefined}
+      >
+        <div className="text-xs text-zinc-500">
+          {serverSummary.connected}/{serverSummary.total}{mcpText.grid.connectedSummarySuffix}
         </div>
 
         {message && (
@@ -417,140 +567,74 @@ export const MCPSettings: React.FC = () => {
             <span className="text-sm">{message.text}</span>
           </div>
         )}
-
-        <div
-          data-testid="connector-grid"
-          className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
-        >
-          <SaaSConnectorsSection
-            readonlyMcpConfigured={mcpServers.some((server) => server.id === 'lark')}
-            onConfigureReadonlyMcp={() => {
-              const readonlyEntry = mcpCatalog.servers.find((entry) => entry.id === 'lark');
-              if (readonlyEntry) handleAddEntry(readonlyEntry);
-            }}
-          />
-
-          {mcpServers.filter((server) => server.id !== 'lark').map((server) => {
-            const catalogEntry = mcpCatalog.servers.find((entry) => entry.id === server.id);
-            const serverStatus = getWorkbenchCapabilityStatusPresentation(server, { locale: language });
-            const installing = serverInstallStates[server.id] === 'installing';
-            const connectionState = installing ? 'connecting' : server.lifecycle.connectionState;
-            const statusClass = getStatusBadgeClass(connectionState);
-            const dotClass = connectionState === 'connected'
-              ? 'bg-mark-success'
-              : connectionState === 'connecting'
-                ? 'animate-pulse bg-amber-400'
-                : connectionState === 'error'
-                  ? 'bg-red-500'
-                  : 'bg-zinc-600';
-
-            return (
-              <div
-                key={server.id}
-                role="button"
-                tabIndex={0}
-                onClick={(event) => {
-                  // 操作区（开关/详情按钮）自己有语义，点它不该连带展开详情。
-                  // 这里由卡片判断事件源，而不是给操作区套一层 onClick 拦冒泡——
-                  // 那会让一个非交互 div 带上 onClick，a11y-scan 的 R3 会判它缺 role+tabIndex，
-                  // 而给它补 role+tabIndex 又会让键盘用户 tab 到一个什么都不做的元素上。
-                  if ((event.target as HTMLElement).closest('[data-card-actions]')) return;
-                  openCapabilitySheet(server);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') openCapabilitySheet(server);
-                }}
-                className="min-h-36 cursor-pointer rounded-xl border border-zinc-700 bg-zinc-900/60 p-4 transition-colors hover:border-zinc-600"
-                title={getWorkbenchCapabilityTitle(server, { locale: language })}
-                data-testid={`mcp-connector-card-${server.id}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
-                      {connectionState === 'connecting'
-                        ? <Loader2 className="h-4 w-4 animate-spin text-badge-warning" />
-                        : (
-                          <ConnectorLogo
-                            id={catalogEntry?.logo}
-                            displayName={catalogEntry?.name ?? server.label}
-                            fallback={<Plug className="h-7 w-7 text-zinc-400" />}
-                            className="h-7 w-7"
-                          />
-                        )}
-                    </span>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          data-testid={`mcp-server-status-dot-${server.id}`}
-                          aria-hidden="true"
-                          className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`}
-                        />
-                        <span className="truncate text-sm font-medium text-zinc-100">{server.label}</span>
-                        <span className={`rounded border px-1.5 py-0.5 text-[10px] ${statusClass}`}>
-                          {connectionState === 'connecting' ? mcpText.management.installing : serverStatus.label}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2" data-card-actions>
-                    {connectionState === 'connected' ? (
-                      <button /* ds-allow:button: 卡片右上角紧凑断开动作位 */
-                        type="button"
-                        aria-label={`${mcpText.management.disconnect} ${server.label}`}
-                        title={`${mcpText.management.disconnect} ${server.label}`}
-                        data-testid={`mcp-card-action-${server.id}`}
-                        onClick={() => setPendingDisconnectServerId(server.id)}
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-zinc-600 text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800"
-                      >
-                        <Unplug className="h-3.5 w-3.5" />
-                      </button>
-                    ) : canManageMcp && !serverInstallStates[server.id] && (
-                      <Toggle
-                        checked={server.enabled}
-                        onChange={(enabled) => handleToggleServer(server.id, enabled)}
-                        aria-label={`${server.enabled ? mcpText.management.disable : mcpText.management.enable} ${server.label}`}
-                        title={`${server.enabled ? mcpText.management.disable : mcpText.management.enable} ${server.label}`}
-                      />
-                    )}
-                    <WorkbenchCapabilityDetailButton
-                      label={server.label}
-                      onClick={() => openCapabilitySheet(server)}
-                    />
-                  </div>
-                </div>
-                <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-zinc-400">
-                  {getWorkbenchCapabilityTitle(server, { locale: language })}
-                </p>
-                {connectionState === 'connected' && (
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={() => void useInChat({ kind: 'mcp', id: server.id })}
-                    data-testid={`mcp-use-in-chat-${server.id}`}
-                    className="mt-3"
-                  >
-                    {mcpText.management.useInChat}
-                  </Button>
-                )}
-                <div className="mt-3 text-[11px] text-zinc-500">
-                  {connectionState === 'connecting' ? mcpText.management.installing : serverStatus.label}
-                </div>
-              </div>
-            );
-          })}
-
-          <McpDiscoverTab
-            catalog={mcpCatalog}
-            existingServerIds={new Set(mcpServers.map((server) => server.id))}
-            enabledServerIds={new Set(mcpServers.filter((server) => server.enabled).map((server) => server.id))}
-            canManageMcp={canManageMcp}
-            actionLoading={discoverActionLoading}
-            onAdd={handleAddEntry}
-            onEnableBuiltin={handleEnableBuiltin}
-            onOpenComputerUsePanel={() => setShowComputerUsePanel(true)}
-          />
-        </div>
       </SettingsSection>
+
+      <div className="space-y-6" data-testid="connector-grid">
+        <SettingsSection
+          title={mcpText.grid.sections.saas.title}
+          description={mcpText.grid.sections.saas.description}
+        >
+          <div
+            data-testid="connector-section-saas"
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+          >
+            <SaaSConnectorsSection
+              readonlyMcpConfigured={mcpServers.some((server) => server.id === 'lark')}
+              onConfigureReadonlyMcp={() => {
+                const readonlyEntry = mcpCatalog.servers.find((entry) => entry.id === 'lark');
+                if (readonlyEntry) handleAddEntry(readonlyEntry);
+              }}
+            />
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
+          title={mcpText.grid.sections.external.title}
+          description={mcpText.grid.sections.external.description}
+        >
+          <div
+            data-testid="connector-section-external"
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+          >
+            {externalMcpServers.length > 0
+              ? externalMcpServers.map(renderMcpServerCard)
+              : <div className="col-span-full text-xs text-zinc-500">{mcpText.grid.sections.external.empty}</div>}
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
+          title={mcpText.grid.sections.local.title}
+          description={mcpText.grid.sections.local.description}
+        >
+          <div
+            data-testid="connector-section-local"
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+          >
+            <NativeConnectorsSection presentation="grid" />
+            {localMcpServers.map(renderMcpServerCard)}
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
+          title={mcpText.grid.sections.shelf.title}
+          description={mcpText.grid.sections.shelf.description}
+        >
+          <div
+            data-testid="connector-section-shelf"
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+          >
+            <McpDiscoverTab
+              catalog={mcpCatalog}
+              existingServerIds={new Set(mcpServers.map((server) => server.id))}
+              enabledServerIds={new Set(mcpServers.filter((server) => server.enabled).map((server) => server.id))}
+              canManageMcp={canManageMcp}
+              actionLoading={discoverActionLoading}
+              onAdd={handleAddEntry}
+              onEnableBuiltin={handleEnableBuiltin}
+            />
+          </div>
+        </SettingsSection>
+      </div>
 
       {isAdmin && (
         <SettingsDetails

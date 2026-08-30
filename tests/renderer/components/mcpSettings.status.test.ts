@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkbenchMcpRegistryItem } from '../../../src/renderer/utils/workbenchCapabilityRegistry';
 import { getWorkbenchCapabilityQuickActions } from '../../../src/renderer/utils/workbenchQuickActions';
@@ -121,6 +121,27 @@ const oauthNotionServer: WorkbenchMcpRegistryItem = {
   },
 };
 
+const localFilesystemServer: WorkbenchMcpRegistryItem = {
+  ...disconnectedSlackServer,
+  key: 'mcp:filesystem',
+  id: 'filesystem',
+  label: 'filesystem',
+};
+
+const cuaDriverServer: WorkbenchMcpRegistryItem = {
+  ...disconnectedSlackServer,
+  key: 'mcp:cua-driver',
+  id: 'cua-driver',
+  label: 'cua-driver',
+};
+
+const argusServer: WorkbenchMcpRegistryItem = {
+  ...disconnectedSlackServer,
+  key: 'mcp:argus',
+  id: 'argus',
+  label: 'argus',
+};
+
 const mockDomainInvoke = vi.fn();
 
 const serverStates = [
@@ -235,8 +256,12 @@ vi.mock('../../../src/renderer/components/features/settings/sections/localBridge
 }));
 
 vi.mock('../../../src/renderer/components/features/settings/sections', () => ({
-  NativeConnectorsSection: () => React.createElement('div', null, 'NativeConnectors'),
-  SaaSConnectorsSection: () => React.createElement('div', null, 'SaaSConnectorCard'),
+  NativeConnectorsSection: (props: { presentation?: 'diagnostic' | 'grid' }) => React.createElement(
+    'div',
+    { 'data-testid': props.presentation === 'grid' ? 'mock-native-grid' : 'mock-native-diagnostics' },
+    props.presentation === 'grid' ? 'NativeConnectorCards' : 'NativeConnectorsDiagnostics',
+  ),
+  SaaSConnectorsSection: () => React.createElement('div', { 'data-testid': 'mock-saas-card' }, 'SaaSConnectorCard'),
 }));
 
 vi.mock('../../../src/renderer/components/features/settings/McpServerEditor', () => ({
@@ -291,7 +316,7 @@ vi.mock('../../../src/renderer/components/features/settings/tabs/McpDiscoverTab'
         connection: { type: 'http', url: 'https://mcp.example.test/mcp', auth: 'oauth' },
       }),
     },
-    'mock-add-entry',
+    React.createElement('span', { 'data-testid': 'mock-shelf-card' }, 'mock-add-entry'),
   ),
 }));
 
@@ -427,12 +452,12 @@ describe('MCPSettings status', () => {
     });
   });
 
-  it('同一网格同时显示已配置与待连接条目，状态点绿=connected、灰=其他态', () => {
+  it('已配置服务与发现货架分区显示，状态点绿=connected、灰=其他态', () => {
     mcpServers = [connectedGithubServer, disconnectedSlackServer];
 
     render(React.createElement(MCPSettings));
 
-    // 主视图同时包含已配置卡与待连接目录，不再需要切 tab。
+    // 主视图仍同时可达已配置卡与待连接目录，但分区承载，不再混排。
     expect(screen.getByText('mock-add-entry')).toBeTruthy();
 
     const githubDot = screen.getByTestId('mcp-server-status-dot-github');
@@ -444,6 +469,42 @@ describe('MCPSettings status', () => {
     expect(githubLogo.parentElement?.className).toContain('w-7');
     expect(screen.queryByText(mcpText.tabs.discover)).toBeNull();
     expect(screen.queryByText((content) => content.startsWith(mcpText.tabs.connectedPrefix))).toBeNull();
+  });
+
+  it('renders four user-facing sections and keeps the discovery shelf separate', () => {
+    render(React.createElement(MCPSettings));
+
+    expect(within(screen.getByTestId('connector-section-saas')).getByTestId('mock-saas-card')).toBeTruthy();
+    expect(within(screen.getByTestId('connector-section-external')).getByTestId('mcp-connector-card-github')).toBeTruthy();
+    expect(within(screen.getByTestId('connector-section-local')).getByTestId('mock-native-grid')).toBeTruthy();
+    expect(within(screen.getByTestId('connector-section-shelf')).getByTestId('mock-shelf-card')).toBeTruthy();
+    expect(within(screen.getByTestId('connector-section-external')).queryByTestId('mock-shelf-card')).toBeNull();
+  });
+
+  it('groups local MCP services and shows Computer Use once with a typed risk tier', () => {
+    mcpServers = [connectedGithubServer, localFilesystemServer, argusServer, cuaDriverServer];
+
+    render(React.createElement(MCPSettings));
+
+    const external = screen.getByTestId('connector-section-external');
+    const local = screen.getByTestId('connector-section-local');
+    expect(within(external).getByTestId('mcp-connector-card-github')).toBeTruthy();
+    expect(within(local).getByTestId('mcp-connector-card-filesystem')).toBeTruthy();
+    expect(within(local).getByTestId('mcp-connector-card-cua-driver')).toBeTruthy();
+    expect(within(local).queryByTestId('mcp-connector-card-argus')).toBeNull();
+    expect(within(local).getByText(mcpText.grid.sections.local.computerUseTitle)).toBeTruthy();
+    expect(within(local).getByTestId('mcp-risk-tier-cua-driver').textContent).toBe(mcpText.grid.riskLabels.high);
+  });
+
+  it('falls back to the argus Computer Use service when cua-driver is not registered', () => {
+    mcpServers = [argusServer];
+
+    render(React.createElement(MCPSettings));
+
+    const local = screen.getByTestId('connector-section-local');
+    expect(within(local).getByTestId('mcp-connector-card-argus')).toBeTruthy();
+    expect(within(local).getByText(mcpText.grid.sections.local.computerUseTitle)).toBeTruthy();
+    expect(within(local).getByTestId('mcp-risk-tier-argus').textContent).toBe(mcpText.grid.riskLabels.high);
   });
 
   it('connected: renders use-in-chat and routes the exact MCP server id', () => {
@@ -576,7 +637,9 @@ describe('MCPSettings status', () => {
     expect(html).toContain(mcpText.management.refreshFromCloud);
     expect(html).toContain(mcpText.management.addServer);
     expect(html).toContain(mcpText.management.disconnect);
+    expect(html).toContain('NativeConnectorCards');
     expect(html).not.toContain('LocalBridge');
+    expect(html).not.toContain('NativeConnectorsDiagnostics');
     expect(screen.queryByTestId('mcp-trust-summary-note')).toBeNull();
   });
 });

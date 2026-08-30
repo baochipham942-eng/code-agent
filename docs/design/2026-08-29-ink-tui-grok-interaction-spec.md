@@ -95,3 +95,10 @@
 6. Esc/Ctrl+C 分层语义表照搬
 7. 角色化 accent slot 主题模型
 8. Spinner 降帧 ~7.5fps + 等待输入时的呼吸 `◆`
+
+## 偏差记录（2026-08-30 用户实测决策）
+
+- **钉顶 StatusBar 撤销**：改紧凑流式布局——动态块 = 内容自然高（封顶终端行高），
+  空会话无整屏留白；status line（模型/cwd/branch/ctx/成本/后台任务等分段平移）
+  下置输入框下，对齐 Claude Code/Codex 的 footer 布局。内容超高时回退 P3 钉顶
+  满高 + 预算截尾（Ink v7 裁剪护栏保留）。

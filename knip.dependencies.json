@@ -2,7 +2,6 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "src/cli/index.ts",
-    "src/cli/tui-app/spike.tsx",
     "src/web/webServer.ts",
     "src/host/mcp/mcp-server-entry.ts",
     "src/renderer/index.tsx",

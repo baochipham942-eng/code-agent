@@ -189,7 +189,7 @@ function runGameSkillContentCodegen(): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Ink（ESM-only）打进单文件 cjs 的兼容插件，用于 cli / cli-spike 两个 target：
+ * Ink（ESM-only）打进单文件 cjs 的兼容插件，用于 cli target：
  * 1. yoga-layout@3 默认入口用 top-level await 加载 wasm（base64 内嵌），cjs 不支持
  *    TLA；精确匹配（不影响其子路径导入）重定向到本地垫片，改为异步初始化 + Proxy。
  * 2. ink 的 devtools 调试分支含 TLA 和可选依赖 react-devtools-core，由
@@ -210,6 +210,18 @@ const inkCjsCompatPlugin: esbuild.Plugin = {
     }));
     buildApi.onLoad({ filter: /node_modules\/ink\/build\/reconciler\.js$/ }, (args) => ({
       contents: readFileSync(args.path, 'utf8').replaceAll("process.env['DEV'] === 'true'", 'false'),
+      loader: 'js',
+    }));
+    // marked-terminal 顶层静态 import cli-highlight（拖入 highlight.js + parse5，
+    // MB 级），P1 代码块不高亮：源码层剔除 import 并把调用点改成 markdown 样式
+    // 函数直出（与其 catch 分支行为一致）；后续要做高亮时移除此 onLoad 即可
+    buildApi.onLoad({ filter: /node_modules\/marked-terminal\/index\.js$/ }, (args) => ({
+      contents: readFileSync(args.path, 'utf8')
+        .replace("import { highlight as highlightCli } from 'cli-highlight';", '')
+        .replace(
+          'return highlightCli(code, Object.assign({}, { language }, hightlightOpts));',
+          'return style(code);',
+        ),
       loader: 'js',
     }));
   },
@@ -238,9 +250,7 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
       outfile: 'dist/cli/index.cjs',
       format: 'cjs',
       external: NATIVE_EXTERNALS,
-      // cli-highlight 仅供 marked-terminal 代码块高亮；P1 不高亮，
-      // alias 成原样返回的 stub，避免把 highlight.js + parse5 拖进 bundle
-      alias: { ...BUILD_ALIAS, 'cli-highlight': './src/cli/tui-app/cliHighlightStub.ts' },
+      alias: { ...BUILD_ALIAS },
       plugins: [inkCjsCompatPlugin],
       minify: !isDev,
       sourcemap: isDev,
@@ -256,17 +266,6 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
           writeFileSync('dist/cli/index.cjs', '#!/usr/bin/env node\n' + content);
         }
       },
-    },
-    // Step 0 spike：Ink TUI 可行性验证，独立入口独立产物，不影响主 CLI
-    'cli-spike': {
-      name: 'CLI Ink Spike',
-      entry: 'src/cli/tui-app/spike.tsx',
-      outfile: 'dist/cli/spike.cjs',
-      format: 'cjs',
-      external: NATIVE_EXTERNALS,
-      minify: !isDev,
-      sourcemap: isDev,
-      plugins: [inkCjsCompatPlugin],
     },
     web: {
       name: 'Web Server',

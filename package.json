@@ -124,7 +124,6 @@
     "build:node:dev": "npm_config_cache=/tmp/code-agent-npm-cache npx tsx esbuild.config.ts --dev",
     "build:mcp-server": "npm_config_cache=/tmp/code-agent-npm-cache npx tsx esbuild.config.ts mcp",
     "build:cli": "npm_config_cache=/tmp/code-agent-npm-cache npx tsx esbuild.config.ts cli",
-    "build:cli-spike": "npm_config_cache=/tmp/code-agent-npm-cache npx tsx esbuild.config.ts cli-spike",
     "smoke:cli": "node scripts/smoke-cli-entry.cjs",
     "build:bridge": "npm_config_cache=/tmp/code-agent-npm-cache npx tsx esbuild.config.ts bridge",
     "dev:cli": "npm_config_cache=/tmp/code-agent-npm-cache npx tsx esbuild.config.ts cli --dev",

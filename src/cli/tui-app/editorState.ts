@@ -310,4 +310,12 @@ export class PromptHistory {
   get browsing(): boolean {
     return this.index !== -1;
   }
+
+  /** Ctrl+R 历史搜索：子串匹配（大小写不敏感），新的在前；空 query 返回全部 */
+  search(query: string): string[] {
+    const newestFirst = [...this.entries].reverse();
+    const q = query.trim().toLowerCase();
+    if (!q) return newestFirst;
+    return newestFirst.filter((entry) => entry.toLowerCase().includes(q));
+  }
 }

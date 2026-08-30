@@ -1,0 +1,46 @@
+const zh = {
+  title: '人工评审',
+  overallUp: '整体判好',
+  overallDown: '整体判差',
+  note: '失败笔记',
+  notePlaceholder: '写你看到的问题，一句话就行',
+  noteHelp: '笔记随本题写回，不进分数',
+  noteTooLong: '太长了，压到 2000 字内',
+  dimensionHelp: '各标各的，不合成综合分',
+  yes: '是',
+  no: '否',
+  save: '保存',
+  saving: '保存中…',
+  written: '已写回',
+  last: '上次',
+  me: '我',
+  others: '其他人',
+  dimensions: '{count} 维',
+  loadFailed: '人工评审暂时没读出来',
+  saveFailed: '没保存下来，请重试',
+};
+
+const en = {
+  title: 'Human review',
+  overallUp: 'Overall good',
+  overallDown: 'Overall poor',
+  note: 'Failure note',
+  notePlaceholder: 'Describe the problem in one sentence',
+  noteHelp: 'The note is stored with this case and excluded from scores',
+  noteTooLong: 'Shorten this to 2,000 characters',
+  dimensionHelp: 'Label each question separately; no overall score is calculated',
+  yes: 'Yes',
+  no: 'No',
+  save: 'Save',
+  saving: 'Saving…',
+  written: 'Saved',
+  last: 'Last',
+  me: 'Me',
+  others: 'Others',
+  dimensions: '{count} dimensions',
+  loadFailed: 'Human reviews are temporarily unavailable',
+  saveFailed: 'Could not save. Try again.',
+};
+
+export const evalAnnotationsZh = { annotations: zh };
+export const evalAnnotationsEn = { annotations: en };

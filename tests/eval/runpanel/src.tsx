@@ -7,6 +7,7 @@ import type {
   EvalExperimentCaseDetail,
   EvalExperimentDetail,
   EvalExperimentListItem,
+  ListEvalAnnotationsResult,
   EvalRunEvent,
   EvalRunPanelProbe,
 } from '@shared/contract/evaluation';
@@ -19,6 +20,7 @@ import '../../../src/renderer/styles/global.css';
 import { EvalCaseDrawer } from '@internal-evaluation/renderer/evalCenter/EvalCaseDrawer';
 
 type Scenario = 'a1' | 'a2' | 'a8' | 'a12' | 'c2' | 'a13a' | 'a13b' | 'a13c'
+  | 'a13-annotation-empty' | 'a13-annotation-prefill'
   | 'c1a' | 'c1b-disabled' | 'c1b-ready' | 'c1c';
 type Theme = 'light' | 'dark';
 type EventListener = (event: EvalRunEvent) => void;
@@ -31,6 +33,9 @@ rootElement.dataset.theme = theme;
 rootElement.className = theme;
 const caseDetails = scenario.startsWith('a13')
   ? await fetch('/.generated-casedrawer.json').then((response) => response.json()) as Record<string, EvalExperimentCaseDetail>
+  : {};
+const annotationDetails = scenario.startsWith('a13-annotation')
+  ? await fetch('/.generated-annotations.json').then((response) => response.json()) as Record<string, ListEvalAnnotationsResult>
   : {};
 const visualCaseId = scenario === 'a13b' ? 'TC-041' : scenario === 'a13c' ? 'TC-058' : 'TC-026';
 
@@ -188,6 +193,9 @@ const bridge = {
       return { runId: 'visual-run', pid: 101, terminated: true };
     }
     if (channel === EVALUATION_CHANNELS.LOAD_CASE) return caseDetails[visualCaseId] ?? null;
+    if (channel === EVALUATION_CHANNELS.LIST_ANNOTATIONS) {
+      return annotationDetails[scenario] ?? { annotations: [], latestByReviewer: [] };
+    }
     return null;
   },
   on(channel: string, listener: EventListener): () => void {

@@ -28,7 +28,7 @@ import { initConfigService as initMainConfigService } from '../host/services/cor
 import { initCLIDatabase, type CLIDatabaseService } from './database';
 import { setToolLedgerSink } from '../host/tools/toolLedgerSink';
 import { createCliLedgerSink } from './cliLedgerSink';
-import { createCLIPermissionHandler } from './permissionPolicy';
+import { createCLIPermissionHandler, type CLIPermissionMode } from './permissionPolicy';
 import { getCLISessionManager, type CLISessionManager } from './session';
 import type { CLIConfig, CLIEventHandler } from './types';
 import type { ModelConfig, Message, AgentEvent } from '../shared/contract';
@@ -157,6 +157,8 @@ export function installCLISwarmTraceWriterIfNeeded(): boolean {
 export interface InitializeCLIServicesOptions {
   /** 显式逃生门：恢复全自动批准（含危险操作），默认 false（安全默认） */
   dangerouslySkipPermissions?: boolean;
+  /** 颗粒度权限档：'auto' = 分类器判安全的自动批准并入账，其余 fail-closed 拒绝 */
+  permissionMode?: CLIPermissionMode;
 }
 
 /**
@@ -316,10 +318,13 @@ export async function initializeCLIServices(options: InitializeCLIServicesOption
   }
 
   // 初始化工具执行器（非交互安全默认：危险/需人工确认的权限自动拒绝，
-  // --dangerously-skip-permissions 显式恢复全自动批准）
+  // --dangerously-skip-permissions 显式恢复全自动批准，
+  // --permission-mode auto 走分类器裁决的中间档）
   toolExecutor = new ToolExecutor({
     requestPermission: createCLIPermissionHandler({
       dangerouslySkipPermissions: options.dangerouslySkipPermissions,
+      permissionMode: options.permissionMode,
+      workingDirectory: process.cwd(),
     }),
     workingDirectory: process.cwd(),
     ledgerOrigin: 'cli',

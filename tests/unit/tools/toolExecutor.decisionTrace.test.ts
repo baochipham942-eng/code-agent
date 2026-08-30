@@ -54,6 +54,8 @@ import {
 } from '../../../src/host/tools/toolPermissionClassification';
 import { HostReasonCode } from '../../../src/shared/contract/permission';
 import { getToolLedgerSink, setToolLedgerSink } from '../../../src/host/tools/toolLedgerSink';
+import { getPermissionClassifier } from '../../../src/host/tools/permissionClassifier';
+import { setCommandPolicyRulesForTest } from '../../../src/host/tools/modules/shell/commandPolicy';
 
 describe('ToolExecutor decision trace history', () => {
   beforeEach(() => {
@@ -400,5 +402,81 @@ describe('N-L10S3 机器批准来源可审计', () => {
       outcome: 'ask-denied',
       reason: 'scripted',
     });
+  });
+});
+
+// ============================================================================
+// --permission-mode auto（PR2）：handler 级分类器裁决 × executor × 权限账本
+// forcePermissionHandler=true 让每个 permissioned 工具都过 requestPermission，
+// 借此端到端验证：分类器判安全 → 放行且账本想得起来源；边界写 → fail-closed。
+// ============================================================================
+
+describe('--permission-mode auto 端到端（handler × executor × 账本）', () => {
+  beforeEach(() => {
+    resetDecisionHistory();
+    classifierState.shouldThrow = false;
+    resolverState.getDefinition.mockReset();
+    resolverState.execute.mockReset();
+    resolverState.execute.mockResolvedValue({ success: true, result: 'ok' });
+    resolverState.getDefinition.mockReturnValue(WRITE_TOOL_DEF);
+    setCommandPolicyRulesForTest([]);
+    getPermissionClassifier().clearCache();
+  });
+
+  function autoExecutor() {
+    return new ToolExecutor({
+      requestPermission: createCLIPermissionHandler({
+        permissionMode: 'auto',
+        workingDirectory: '/tmp/workbench',
+        warn: vi.fn(),
+      }),
+      forcePermissionHandler: true,
+      workingDirectory: '/tmp/workbench',
+      ledgerOrigin: 'cli',
+    });
+  }
+
+  it('工作区内写入：auto 档 handler 放行，账本记 ask-approved + 来源 cli-auto-approve', async () => {
+    const previousSink = getToolLedgerSink();
+    const appendPermissionDecision = vi.fn();
+    setToolLedgerSink({
+      appendPermissionDecision,
+      appendToolExecutionBegin: vi.fn(),
+      appendToolExecutionComplete: vi.fn(),
+    });
+    try {
+      const executor = autoExecutor();
+      const result = await executor.execute('Write', {
+        file_path: '/tmp/workbench/auto-mode-probe.txt',
+        content: 'probe',
+      }, { sessionId: 'auto-allow' });
+
+      expect(result.success).toBe(true);
+      expect(resolverState.execute).toHaveBeenCalledOnce();
+      const [entry] = getDecisionHistory().getRecent(1);
+      expect(entry).toMatchObject({ outcome: 'ask-approved', reason: 'cli-auto-approve' });
+      expect(appendPermissionDecision).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'auto-allow',
+          origin: 'cli',
+          historyOutcome: 'ask-approved',
+          reason: 'cli-auto-approve',
+          finalOutcome: 'allow',
+        }),
+      );
+    } finally {
+      setToolLedgerSink(previousSink);
+    }
+  });
+
+  it('工作区外写入：auto 档 fail-closed 拒绝，工具一次都不执行', async () => {
+    const executor = autoExecutor();
+    const result = await executor.execute('Write', EXTERNAL_WRITE_PARAMS, { sessionId: 'auto-deny' });
+
+    expect(result.success).toBe(false);
+    expect(resolverState.execute).not.toHaveBeenCalled();
+    expect(result.error).toContain('--permission-mode auto');
+    const [entry] = getDecisionHistory().getRecent(1);
+    expect(entry).toMatchObject({ outcome: 'ask-denied', reason: 'no-approval-ui' });
   });
 });

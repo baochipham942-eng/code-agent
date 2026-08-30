@@ -56,6 +56,23 @@ export interface AuditPolicy {
   log_path: string;
 }
 
+export interface EnvFilterPolicy {
+  /**
+   * Strip secret-looking env vars (names matching the built-in secret
+   * suffixes in src/host/utils/envSecretFilter.ts) from Bash-tool-spawned
+   * child processes. Default true (fail-closed). Set false to disable.
+   *
+   * Scope: child processes spawned by the Bash tool ONLY. The agent process
+   * itself always keeps its full environment (provider API keys etc.).
+   */
+  strip_secret_vars: boolean;
+  /**
+   * Extra variable names allowed to pass through even when they match the
+   * secret patterns (escape hatch, case-insensitive exact names).
+   */
+  allowed_secret_vars: string[];
+}
+
 export interface SecurityPolicy {
   network: NetworkPolicy;
   filesystem: FilesystemPolicy;
@@ -63,6 +80,7 @@ export interface SecurityPolicy {
   tools: ToolsPolicy;
   model: ModelPolicy;
   audit: AuditPolicy;
+  env_filter: EnvFilterPolicy;
 }
 
 // ----------------------------------------------------------------------------
@@ -96,6 +114,10 @@ export function createDefaultPolicy(): SecurityPolicy {
     audit: {
       log_all_tool_calls: false,
       log_path: '.code-agent/audit.log',
+    },
+    env_filter: {
+      strip_secret_vars: true,
+      allowed_secret_vars: [],
     },
   };
 }
@@ -246,6 +268,16 @@ export function policyFromToml(parsed: Record<string, Record<string, unknown>>):
         ? parsed.audit.log_all_tool_calls : false,
       log_path: typeof parsed.audit.log_path === 'string'
         ? parsed.audit.log_path : '.code-agent/audit.log',
+    };
+  }
+
+  if (parsed.env_filter) {
+    policy.env_filter = {
+      strip_secret_vars: typeof parsed.env_filter.strip_secret_vars === 'boolean'
+        ? parsed.env_filter.strip_secret_vars : true,
+      allowed_secret_vars: Array.isArray(parsed.env_filter.allowed_secret_vars)
+        ? parsed.env_filter.allowed_secret_vars as string[]
+        : [],
     };
   }
 

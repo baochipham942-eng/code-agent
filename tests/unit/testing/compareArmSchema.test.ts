@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import crypto from 'crypto';
 import { mkdtemp } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -65,20 +66,42 @@ function result(passes: boolean[], overrides: Partial<TestResult> = {}): TestRes
 }
 
 describe('统一实验臂 schema', () => {
-  it('reasoningEffort 与六维 harness 任一变化都进入有效签名', () => {
-    const reasoning: CompareConfiguration = { name: 'candidate', reasoningEffort: 'xhigh' };
-    const hooks: CompareConfiguration = {
-      name: 'candidate',
-      harness: { name: 'candidate', hooksEnabled: true },
+  it('reasoningEffort、memory 两维与 harness 六键任一变化都进入有效签名（逐键放行）', () => {
+    const fullHarness = {
+      name: 'arm',
+      contextCompression: true,
+      compressionPipeline: true,
+      scaffoldProfile: false,
+      thinkingInjection: true,
+      hooksEnabled: false,
+      toolMode: 'all' as const,
     };
-    const contextCompression: CompareConfiguration = {
-      name: 'candidate',
-      harness: { name: 'candidate', contextCompression: false },
+    const base: CompareConfiguration = {
+      ...BASELINE,
+      harness: fullHarness,
+      memory: { longTerm: false, routingModel: 'memory-a' },
+      reasoningEffort: 'medium',
     };
+    const same: CompareConfiguration = { ...base, name: 'candidate' };
+    expect(() => assertCompareArmsDistinct(base, same)).toThrow();
 
-    expect(() => assertCompareArmsDistinct(BASELINE, reasoning)).not.toThrow();
-    expect(() => assertCompareArmsDistinct(BASELINE, hooks)).not.toThrow();
-    expect(() => assertCompareArmsDistinct(BASELINE, contextCompression)).not.toThrow();
+    // 2026-08-30 监工代笔（Grok 变异席抓出的盲区）：签名序列化删掉 toolMode 一键时 23/23 仍绿。
+    // 这里把「两臂只差一键必须放行」按六键 + memory 两维 + reasoningEffort 逐个钉死。
+    const harnessFlips: Array<Partial<typeof fullHarness>> = [
+      { contextCompression: false },
+      { compressionPipeline: false },
+      { scaffoldProfile: true },
+      { thinkingInjection: false },
+      { hooksEnabled: true },
+      { toolMode: 'deferred' as const },
+    ];
+    for (const flip of harnessFlips) {
+      const candidate: CompareConfiguration = { ...same, harness: { ...fullHarness, ...flip } };
+      expect(() => assertCompareArmsDistinct(base, candidate), JSON.stringify(flip)).not.toThrow();
+    }
+    expect(() => assertCompareArmsDistinct(base, { ...same, memory: { longTerm: true, routingModel: 'memory-a' } })).not.toThrow();
+    expect(() => assertCompareArmsDistinct(base, { ...same, memory: { longTerm: false, routingModel: 'memory-b' } })).not.toThrow();
+    expect(() => assertCompareArmsDistinct(base, { ...same, reasoningEffort: 'xhigh' })).not.toThrow();
   });
 
   it('构造期把长期记忆、路由模型、reasoning effort 与 harness 真传给 adapter', () => {
@@ -167,7 +190,9 @@ describe('断言条级胜负', () => {
     expect(aggregated.trials).toHaveLength(2);
   });
 
-  it('ABGrader 参考胜方任意翻转都不改变 summary 结论', async () => {
+  // 2026-08-30 监工代笔：原用例靠 crypto.randomInt(2) 盲分配，变异「realWinner 改读 ABGrader」约 25% 全绿
+  // （Grok 席 6 跑 2 绿）。这里把分配朝向钉死，两种朝向各跑一遍；c/d 拆成两条独立断言链。
+  async function referenceFixture() {
     const root = await mkdtemp(path.join(os.tmpdir(), 'compare-reference-'));
     const testCase: TestCase = {
       id: 'assertion-case',
@@ -216,18 +241,46 @@ describe('断言条级胜负', () => {
       reasoning: 'reference only',
     });
     const candidate: CompareConfiguration = { name: 'candidate', systemPrompt: 'variant' };
+    return { testCase, makeAgent, runnerConfig, grade, candidate };
+  }
 
-    const referenceA = await runCompare({
-      testCases: [testCase], baseline: BASELINE, candidate, makeAgent, runnerConfig, llmCall: grade('A'),
-    });
-    const referenceB = await runCompare({
-      testCases: [testCase], baseline: BASELINE, candidate, makeAgent, runnerConfig, llmCall: grade('B'),
-    });
+  it('realWinner 只来自断言胜负：参考胜方翻转、盲分配两种朝向都不改变', async () => {
+    const { testCase, makeAgent, runnerConfig, grade, candidate } = await referenceFixture();
+    for (const baselineIsA of [0, 1]) {
+      const spy = vi.spyOn(crypto, 'randomInt').mockReturnValue(baselineIsA as never);
+      try {
+        for (const label of ['A', 'B'] as const) {
+          const result = await runCompare({
+            testCases: [testCase], baseline: BASELINE, candidate, makeAgent, runnerConfig, llmCall: grade(label),
+          });
+          expect(result.cases[0].assignment.A, `orientation=${baselineIsA}`).toBe(baselineIsA === 0 ? 'baseline' : 'candidate');
+          expect(result.cases[0].referenceWinner).toBe(label);
+          expect(result.cases[0].assertionWinner).toBe('baseline');
+          expect(result.cases[0].realWinner, `orientation=${baselineIsA} label=${label}`).toBe('baseline');
+          expect(generateComparisonMarkdown(result)).toContain('| L1 基础题 | 1 | 0 | 0 |');
+          expect(generateComparisonMarkdown(result)).toContain('参考 · 评审');
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    }
+  });
 
-    expect(referenceA.summary).toMatchObject({ winner: 'baseline', baselineWins: 1, candidateWins: 0 });
-    expect(referenceB.summary).toMatchObject({ winner: 'baseline', baselineWins: 1, candidateWins: 0 });
-    expect(referenceA.cases[0].referenceWinner).not.toBe(referenceB.cases[0].referenceWinner);
-    expect(generateComparisonMarkdown(referenceA)).toContain('| L1 基础题 | 1 | 0 | 0 |');
-    expect(generateComparisonMarkdown(referenceA)).toContain('参考 · 评审');
+  it('computeSummary 只数 realWinner：参考胜方指向 candidate 时 summary 仍判 baseline', async () => {
+    const { testCase, makeAgent, runnerConfig, grade, candidate } = await referenceFixture();
+    for (const baselineIsA of [0, 1]) {
+      const spy = vi.spyOn(crypto, 'randomInt').mockReturnValue(baselineIsA as never);
+      try {
+        const candidateLabel = baselineIsA === 0 ? 'B' : 'A';
+        const result = await runCompare({
+          testCases: [testCase], baseline: BASELINE, candidate, makeAgent, runnerConfig, llmCall: grade(candidateLabel),
+        });
+        expect(result.cases[0].assignment[candidateLabel]).toBe('candidate');
+        expect(result.cases[0].referenceWinner).toBe(candidateLabel);
+        expect(result.summary, `orientation=${baselineIsA}`).toMatchObject({ winner: 'baseline', baselineWins: 1, candidateWins: 0, ties: 0 });
+      } finally {
+        spy.mockRestore();
+      }
+    }
   });
 });

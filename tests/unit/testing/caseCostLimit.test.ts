@@ -84,7 +84,8 @@ describe('单 case 成本硬上限', () => {
       '    type: conversation',
       '    description: cost cap',
       '    prompt: first',
-      '    expect: {}',
+      '    expect:',
+      '      response_contains: [ok]',
       '',
     ].join('\n'));
 

@@ -41,7 +41,7 @@ export class CoverageGapDetector {
    */
   private detectUntestedTools(tc: TestCase, result: TestResult): CoverageGap[] {
     const gaps: CoverageGap[] = [];
-    const expect = tc.expect;
+    const expect = tc.expect ?? {};
 
     // Collect tools that are asserted
     const assertedTools = new Set<string>();
@@ -76,7 +76,7 @@ export class CoverageGapDetector {
    */
   private detectMissingFileAssertions(tc: TestCase, result: TestResult): CoverageGap[] {
     const gaps: CoverageGap[] = [];
-    const expect = tc.expect;
+    const expect = tc.expect ?? {};
 
     // Collect files that are asserted
     const assertedFiles = new Set<string>();
@@ -115,7 +115,7 @@ export class CoverageGapDetector {
    * missing_output_check: Agent responded but no response_contains assertion.
    */
   private detectMissingOutputCheck(tc: TestCase, result: TestResult): CoverageGap[] {
-    const expect = tc.expect;
+    const expect = tc.expect ?? {};
     const hasResponseCheck =
       (expect.response_contains?.length ?? 0) > 0 ||
       (expect.response_not_contains?.length ?? 0) > 0;

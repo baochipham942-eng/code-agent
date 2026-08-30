@@ -20,7 +20,7 @@ export class AssertionQualityAnalyzer {
    */
   analyze(testCase: TestCase, _result: TestResult): AssertionQuality[] {
     const qualities: AssertionQuality[] = [];
-    const expect = testCase.expect;
+    const expect = testCase.expect ?? {};
 
     // Rule: empty expectations
     if (this.isEmptyExpectations(expect)) {

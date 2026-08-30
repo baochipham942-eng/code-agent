@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { existsSync, readFileSync, rmSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type {
@@ -1009,5 +1009,136 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
       'curl https://example.com',
       expect.objectContaining({ allowNetwork: false }),
     );
+  });
+});
+
+// -----------------------------------------------------------------------------
+// A8: Bash child-env secret whitelist（*_KEY/*_TOKEN/*_SECRET 过滤）
+// -----------------------------------------------------------------------------
+
+describe('bashModule child-env secret whitelist (A8)', () => {
+  let configDir: string;
+  let savedDataDir: string | undefined;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    startBackgroundTaskMock.mockReset();
+    createPtySessionMock.mockReset();
+    savedDataDir = process.env.CODE_AGENT_DATA_DIR;
+    configDir = mkdtempSync(join(tmpdir(), 'bash-env-wl-'));
+    process.env.CODE_AGENT_DATA_DIR = configDir;
+    process.env.NEO_UT_PLANTED_API_KEY = 'sk-planted';
+    process.env.NEO_UT_PLANTED_TOKEN = 'tok-planted';
+    process.env.NEO_UT_VISIBLE = 'visible-1';
+  });
+
+  afterEach(() => {
+    if (savedDataDir === undefined) {
+      delete process.env.CODE_AGENT_DATA_DIR;
+    } else {
+      process.env.CODE_AGENT_DATA_DIR = savedDataDir;
+    }
+    delete process.env.NEO_UT_PLANTED_API_KEY;
+    delete process.env.NEO_UT_PLANTED_TOKEN;
+    delete process.env.NEO_UT_VISIBLE;
+    rmSync(configDir, { recursive: true, force: true });
+  });
+
+  it('foreground spawn: secret vars stripped, normal vars survive', async () => {
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute(
+      {
+        command:
+          'printf "%s" "${NEO_UT_PLANTED_API_KEY-unset}|${NEO_UT_PLANTED_TOKEN-unset}|${NEO_UT_VISIBLE-unset}"',
+      },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('unset|unset|visible-1');
+  });
+
+  it('background + pty spawn: env captured without secrets; pty never re-inherits process.env', async () => {
+    const handler = await bashModule.createHandler();
+
+    startBackgroundTaskMock.mockReturnValue({ success: true, taskId: 'wl-bg' });
+    await handler.execute(
+      { command: 'echo probe', run_in_background: true },
+      makeCtx(),
+      allowAll,
+    );
+    const bgEnv = startBackgroundTaskMock.mock.calls.at(-1)?.[3].env as Record<string, string>;
+    expect(bgEnv).not.toHaveProperty('NEO_UT_PLANTED_API_KEY');
+    expect(bgEnv).not.toHaveProperty('NEO_UT_PLANTED_TOKEN');
+    expect(bgEnv).toHaveProperty('NEO_UT_VISIBLE', 'visible-1');
+
+    createPtySessionMock.mockReturnValue({ success: true, sessionId: 'wl-pty' });
+    await handler.execute({ command: 'echo probe', pty: true }, makeCtx(), allowAll);
+    const ptyCall = createPtySessionMock.mock.calls.at(-1)?.[0] as {
+      env: Record<string, string>;
+      inheritProcessEnv?: boolean;
+    };
+    expect(ptyCall.env).not.toHaveProperty('NEO_UT_PLANTED_API_KEY');
+    expect(ptyCall.env).toHaveProperty('NEO_UT_VISIBLE', 'visible-1');
+    // ptyExecutor spreads process.env UNDER the passed env when inheriting —
+    // that would leak stripped secrets straight back in, so it must stay off.
+    expect(ptyCall.inheritProcessEnv).toBe(false);
+  });
+
+  it('escape hatch: [env_filter] allowed_secret_vars lets a planted key through', async () => {
+    writeFileSync(
+      join(configDir, 'policy.toml'),
+      '[env_filter]\nallowed_secret_vars = ["NEO_UT_PLANTED_API_KEY"]\n',
+    );
+
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute(
+      {
+        command:
+          'printf "%s" "${NEO_UT_PLANTED_API_KEY-unset}|${NEO_UT_PLANTED_TOKEN-unset}"',
+      },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('sk-planted|unset');
+  });
+
+  it('escape hatch: strip_secret_vars = false disables the filter entirely', async () => {
+    writeFileSync(
+      join(configDir, 'policy.toml'),
+      '[env_filter]\nstrip_secret_vars = false\n',
+    );
+
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute(
+      { command: 'printf "%s" "${NEO_UT_PLANTED_TOKEN-unset}"' },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain('tok-planted');
+  });
+
+  it('composes with eval-mode deletes (AUTO_TEST_* still removed)', async () => {
+    process.env.CODE_AGENT_EVAL_REAL_ROOT = '/private/source-repository';
+    process.env.AUTO_TEST_API_KEY = 'provider-secret';
+    try {
+      startBackgroundTaskMock.mockReturnValue({ success: true, taskId: 'wl-eval-bg' });
+      const handler = await bashModule.createHandler();
+      await handler.execute(
+        { command: 'echo probe', run_in_background: true },
+        makeCtx(),
+        allowAll,
+      );
+      const bgEnv = startBackgroundTaskMock.mock.calls.at(-1)?.[3].env as Record<string, string>;
+      expect(bgEnv).not.toHaveProperty('AUTO_TEST_API_KEY');
+      expect(bgEnv).not.toHaveProperty('CODE_AGENT_EVAL_REAL_ROOT');
+      expect(bgEnv).not.toHaveProperty('NEO_UT_PLANTED_API_KEY');
+      expect(bgEnv).toHaveProperty('NEO_UT_VISIBLE', 'visible-1');
+    } finally {
+      delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+      delete process.env.AUTO_TEST_API_KEY;
+    }
   });
 });

@@ -49,3 +49,15 @@ code_restricted_providers = []
 log_all_tool_calls = true
 # Audit log path (relative to project root)
 log_path = ".code-agent/audit.log"
+
+[env_filter]
+# Strip secret-looking env vars from Bash-tool-spawned CHILD processes
+# (names ending in _KEY/_TOKEN/_SECRET/_PASSWORD/_PASSWD/_PWD/_CREDENTIALS,
+# case-insensitive). Default: true (fail-closed). The agent process itself is
+# NOT affected — it keeps provider API keys to call models.
+# This applies on all ends (CLI/desktop/web share the Bash tool). Set to
+# false only if a workflow genuinely needs secrets in shell children.
+strip_secret_vars = true
+# Escape hatch: exact variable names allowed through even when they match a
+# secret pattern (case-insensitive). Merged by highest-priority non-empty.
+allowed_secret_vars = ["MY_APP_API_KEY"]

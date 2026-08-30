@@ -8,12 +8,14 @@
 import { evalCaseListEn, evalCaseListZh } from './evalCaseList';
 import { evalRunPanelEn, evalRunPanelZh } from './evalRunPanel';
 import { evalScorersEn, evalScorersZh } from './evalScorers';
+import { evalCaseDrawerEn, evalCaseDrawerZh } from './evalCaseDrawer';
 
 export const evalCenterZh = {
   evalCenter: {
     ...evalCaseListZh,
     ...evalRunPanelZh,
     ...evalScorersZh,
+    ...evalCaseDrawerZh,
     tabReplay: '回放',
     tabValidation: '验证',
     tabTelemetry: '遥测',
@@ -161,6 +163,7 @@ export const evalCenterEn = {
     ...evalCaseListEn,
     ...evalRunPanelEn,
     ...evalScorersEn,
+    ...evalCaseDrawerEn,
     tabReplay: 'Replay',
     tabValidation: 'Validation',
     tabTelemetry: 'Telemetry',

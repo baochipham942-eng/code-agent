@@ -64,4 +64,30 @@ describe('evaluation run event validation', () => {
       aiReview: { task_completed: { verdict: 'maybe', reasoning: 'x', judgeModel: 'm', promptHash: 'h' } },
     })).toThrow(/verdict/);
   });
+
+  it('证据字段存在时校验 checks 与 responseExcerpt 的最小形状', () => {
+    const base = {
+      schemaVersion: 2, type: 'case_end', ts: 1, runId: 'run-1', testId: 'case-1',
+      status: 'failed', score: 0, durationMs: 1,
+    } as const;
+    expect(parseEvalRunEvent({
+      ...base,
+      evidence: { prompt: 'x', checks: [], toolCalls: [], responseExcerpt: 'tail', responseTotalChars: 4 },
+    })).toMatchObject({ evidence: { checks: [], responseExcerpt: 'tail' } });
+    expect(() => parseEvalRunEvent({ ...base, evidence: { checks: {}, responseExcerpt: 'tail' } }))
+      .toThrow(/evidence\.checks/);
+    expect(() => parseEvalRunEvent({ ...base, evidence: { checks: [], responseExcerpt: 42 } }))
+      .toThrow(/responseExcerpt/);
+  });
+
+  it('接受受支持的判废原因并拒绝未知值', () => {
+    const base = {
+      schemaVersion: 2, type: 'case_end', ts: 1, runId: 'run-1', testId: 'case-1',
+      status: 'passed', score: 1, durationMs: 1,
+    } as const;
+    expect(parseEvalRunEvent({ ...base, invalid: { reason: 'usage_unavailable' } }))
+      .toMatchObject({ invalid: { reason: 'usage_unavailable' } });
+    expect(() => parseEvalRunEvent({ ...base, invalid: { reason: 'unknown' } }))
+      .toThrow(/invalid.reason/);
+  });
 });

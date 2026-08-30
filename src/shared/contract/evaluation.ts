@@ -194,6 +194,37 @@ type EvalRunEventStatus =
   | 'cost_exceeded'
   | 'not_run';
 
+export interface EvalCaseEvidence {
+  prompt: string;
+  followUpPrompts?: string[];
+  simTurns?: Array<{ turn: number; userText: string; matchedRule?: string }>;
+  checks: Array<{
+    type: string;
+    passed: boolean;
+    expected: string;
+    actual: string;
+    details?: string;
+    durationMs: number;
+  }>;
+  toolCalls: Array<{
+    tool: string;
+    inputSummary: string;
+    ok: boolean;
+    error?: string;
+    durationMs: number;
+  }>;
+  toolCallsTruncated?: number;
+  responseExcerpt: string;
+  responseTotalChars: number;
+  trialDetails?: Array<{
+    index: number;
+    status: EvalRunEventStatus;
+    score: number;
+    failureReason?: string;
+    durationMs: number;
+  }>;
+}
+
 export type EvalRunEventSummary = {
   runId: string;
   startTime: number;
@@ -223,6 +254,7 @@ export type EvalRunEventSummary = {
   aggregationRule?: 'pass_rate_k1' | 'pass_caret_k';
   aggregationRuleVersion?: number;
   dataset?: string;
+  reportFiles?: string[];
 };
 
 /**
@@ -261,6 +293,7 @@ export type EvalRunEvent =
       failureStage?: string;
       failure?: EvalFailureClassification;
       usageStatus?: 'available' | 'usage_unavailable';
+      invalid?: { reason: 'usage_unavailable' | 'mock_excluded' };
       costUsd?: number;
       mockExcluded?: boolean;
       killedByTimeout?: boolean;
@@ -269,6 +302,7 @@ export type EvalRunEvent =
       scoreAuthority?: 'deterministic_assertion' | 'llm_judge' | 'self_check';
       skillActivations?: Record<string, number>;
       aiReview?: Partial<Record<AiReviewDimension, AiReviewVerdict>>;
+      evidence?: EvalCaseEvidence;
       trialAggregate?: {
         n: number;
         c: number;
@@ -478,6 +512,7 @@ export interface EvalExperimentSummary {
   completed?: boolean;
   notRun?: number;
   aborted?: boolean;
+  reportFiles?: string[];
 }
 
 export interface EvalExperimentListItem {
@@ -508,6 +543,37 @@ export interface EvalExperimentDetail {
   cases: EvalExperimentCaseItem[];
 }
 
+export interface EvalExperimentCaseDetail {
+  caseId: string;
+  status: EvalRunEventStatus | 'invalid' | 'error';
+  score: number;
+  durationMs: number | null;
+  sessionId?: string;
+  failureReason?: string;
+  failure?: EvalFailureClassification;
+  failureLabel?: string;
+  trialAggregate?: {
+    n: number;
+    c: number;
+    passAtK: number;
+    passCaretK: number;
+    rule: 'pass_caret_k';
+  };
+  aiReview?: Partial<Record<AiReviewDimension, AiReviewVerdict>>;
+  evidence: EvalCaseEvidence | null;
+  evidenceMissingReason?: 'legacy_run';
+  assertionCatalog: ReadonlyArray<{ type: string; summary: string }>;
+  promptVersion?: string;
+  reportFiles?: string[];
+  caseMetadata?: {
+    type?: string;
+    category?: string;
+    tags: string[];
+    splits: EvalCaseSplitBucket[];
+    source: 'manual' | 'session';
+  };
+}
+
 export type EvalCaseSplitBucket = 'held-in' | 'held-out' | 'control' | 'safety';
 
 export interface EvalCaseListEntry {
@@ -522,6 +588,8 @@ export interface EvalCaseListEntry {
   hasExpect: boolean;
   reviewStatus?: 'pending' | 'reviewed';
   source: 'manual' | 'session';
+  type?: string;
+  category?: string;
   retired: boolean;
   isDraft: boolean;
 }

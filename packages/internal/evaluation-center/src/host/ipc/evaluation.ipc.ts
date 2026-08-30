@@ -11,11 +11,13 @@ import { EVALUATION_CHANNELS } from '../../shared/evaluationChannels';
 import { createLogger } from '@host/services/infra/logger';
 import { getChannelAccessIpcError, registerAdminChannels } from '@host/ipc/channelAccessPolicy';
 import { enumerateCaseBank, saveCaseBank } from '../testing/caseBank';
-import type { SaveEvalCaseRequest } from '@shared/contract/evaluation';
+import type { EvalCaseListEntry, EvalExperimentCaseDetail, SaveEvalCaseRequest } from '@shared/contract/evaluation';
 import { getEvalRunBridge, type EvalRunBridge } from '../evaluation/evalRunBridge';
 import { inspectEvalEnvironment } from '../evaluation/evalEnvironment';
 import { inspectEvalRunPanel } from '../evaluation/evalRunPanelProbe';
 import { EXPECTATION_TYPE_CATALOG } from '@host/testing/expectationCatalog';
+import { failureCodeLabel, loadProjectFailureCodebook } from '@host/testing/failureCodes';
+import { buildEvalExperimentCaseDetail } from '../evaluation/evalCaseDetail';
 
 const logger = createLogger('EvaluationIPC');
 
@@ -63,6 +65,29 @@ export function registerEvaluationHandlers(
     const probe = inspectEvalRunPanel();
     return { assertions: EXPECTATION_TYPE_CATALOG, aiReview: probe.aiReview, judge: probe.judge };
   });
+
+  ipcMain.handle(
+    EVALUATION_CHANNELS.LOAD_CASE,
+    async (_event, payload?: { experimentId?: string; caseId?: string }) => {
+      const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.LOAD_CASE, 'Evaluation case evidence');
+      if (denied) return denied;
+      if (!payload?.experimentId || typeof payload.experimentId !== 'string') {
+        throw new Error('experimentId is required');
+      }
+      if (!payload.caseId || typeof payload.caseId !== 'string') throw new Error('caseId is required');
+      const { getDatabase } = await import('@host/services/core/databaseService');
+      const loaded = getDatabase().loadExperimentCase(payload.experimentId, payload.caseId);
+      if (!loaded) return null;
+      const data = safeParseJsonRecord(loaded.data_json) ?? {};
+      const failure = data.failure as EvalExperimentCaseDetail['failure'] | undefined;
+      const context = await loadOptionalCaseContext(payload.caseId, failure);
+      return buildEvalExperimentCaseDetail({
+        row: loaded,
+        assertionCatalog: EXPECTATION_TYPE_CATALOG,
+        ...context,
+      });
+    },
+  );
 
   ipcMain.handle(EVALUATION_CHANNELS.LIST_CASES, async () => {
     const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.LIST_CASES, 'Evaluation case bank');
@@ -132,6 +157,31 @@ export function registerEvaluationHandlers(
   logger.info('Evaluation handlers registered', {
     channels: Object.values(EVALUATION_CHANNELS),
   });
+}
+
+async function loadOptionalCaseContext(
+  caseId: string,
+  failure: EvalExperimentCaseDetail['failure'] | undefined,
+): Promise<{ failureLabel?: string; caseMetadata?: EvalCaseListEntry }> {
+  const repositoryRoot = inspectEvalEnvironment().repositoryRoot;
+  if (!repositoryRoot) return {};
+  try {
+    const bankItem = (await enumerateCaseBank(repositoryRoot)).find(
+      (item): item is EvalCaseListEntry => item.id === caseId && !('parseError' in item),
+    );
+    return {
+      ...(failure ? {
+        failureLabel: failureCodeLabel(loadProjectFailureCodebook(repositoryRoot), failure.code),
+      } : {}),
+      ...(bankItem ? { caseMetadata: bankItem } : {}),
+    };
+  } catch (error) {
+    logger.warn('Optional evaluation case context unavailable', {
+      caseId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {};
+  }
 }
 
 function requireRepositoryRoot(): string {

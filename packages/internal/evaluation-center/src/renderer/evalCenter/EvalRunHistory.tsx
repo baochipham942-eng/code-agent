@@ -16,6 +16,7 @@ import {
   normalizeDatasetName,
   type EvalDatasetGroup,
 } from './evalDatasetName';
+import { EvalCaseDrawer, type EvalCaseDrawerTarget } from './EvalCaseDrawer';
 
 const EVALUATION_GUIDE_URL = 'https://github.com/baochipham942-eng/code-agent/blob/main/docs/architecture/decisions/ADR-036-eval-scoring-credibility-and-redline-jail.md';
 
@@ -177,6 +178,7 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
 }) => {
   const [selectedByGroup, setSelectedByGroup] = useState<Record<string, string[]>>({});
   const [comparisons, setComparisons] = useState<Record<string, GroupComparison | 'loading' | 'needTwo'>>({});
+  const [drawerTarget, setDrawerTarget] = useState<EvalCaseDrawerTarget | null>(null);
   const groups = useMemo(() => groupRuns(experiments), [experiments]);
   const quickCost = probe ? probe.estimatedCostPerCaseUsd * probe.quickCheck.maxCases : undefined;
 
@@ -250,12 +252,22 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
         ) : (
           <ul className="space-y-1 text-xs">
             {comparison.transitions.map((item) => (
-              <li key={item.caseId} className="flex items-center gap-2">
-                <span className={item.kind === 'regressed' ? 'text-badge-danger' : 'text-badge-success'}>
-                  {item.kind === 'regressed' ? labels.caseStatusRegressed : labels.caseStatusFixed}
-                </span>
-                <span className="font-mono text-zinc-300">{item.caseId}</span>
-                <span className="text-zinc-500">{item.from} → {item.to}</span>
+              <li key={item.caseId}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start gap-2 text-left"
+                  onClick={() => setDrawerTarget({
+                    experimentId: comparison.current.experiment.id,
+                    caseId: item.caseId,
+                  })}
+                >
+                  <span className={item.kind === 'regressed' ? 'text-badge-danger' : 'text-badge-success'}>
+                    {item.kind === 'regressed' ? labels.caseStatusRegressed : labels.caseStatusFixed}
+                  </span>
+                  <span className="font-mono text-zinc-300">{item.caseId}</span>
+                  <span className="text-zinc-500">{item.from} → {item.to}</span>
+                </Button>
               </li>
             ))}
           </ul>
@@ -266,6 +278,7 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
 
   return (
     <>
+      <div className={drawerTarget ? 'opacity-45 saturate-50 transition' : 'transition'}>
       {(loadState !== 'ready' || groups.length > 0) && (
         <div className="mx-3 mb-2 flex items-center gap-2">
           <span className="text-xs font-medium text-zinc-300">{labels.history}</span>
@@ -364,6 +377,8 @@ export const EvalRunHistory: React.FC<EvalRunHistoryProps> = ({
           {/* PROMOTE 留位：本卡不提供「设为对比基准」。 */}
         </section>
       ))}
+      </div>
+      {drawerTarget && <EvalCaseDrawer target={drawerTarget} onClose={() => setDrawerTarget(null)} />}
     </>
   );
 };

@@ -5,6 +5,7 @@ export const EVALUATION_CHANNELS = {
   SCORERS_OVERVIEW: 'evaluation:scorers-overview',
   LIST_EXPERIMENTS: 'evaluation:list-experiments',
   LOAD_EXPERIMENT: 'evaluation:load-experiment',
+  LOAD_CASE: 'evaluation:load-case',
   LIST_CASES: 'evaluation:list-cases',
   SAVE_CASE: 'evaluation:save-case',
 } as const;

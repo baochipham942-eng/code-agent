@@ -185,7 +185,7 @@ describe('EvalRunBridge', () => {
                 averageScore: 1, plannedCaseIds: ['case-1'], completed: true,
                 notRun: 0, invalidCases: 0,
               },
-              reportFiles: [],
+              reportFiles: ['/tmp/eval-report.md'],
               exitCode: 0,
               aborted: false,
             },
@@ -212,6 +212,7 @@ describe('EvalRunBridge', () => {
     expect(db.updateExperimentSummary).toHaveBeenCalledTimes(1);
     expect(JSON.parse(db.updateExperimentSummary.mock.calls[0][1])).toMatchObject({
       completed: true,
+      reportFiles: ['/tmp/eval-report.md'],
       source: 'eval',
     });
     const persistedConfig = JSON.parse(db.insertExperiment.mock.calls[0][0].config_json);

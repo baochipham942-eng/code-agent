@@ -3,6 +3,7 @@ import {
   EVAL_RUN_EVENT_SCHEMA_VERSION,
   type EvalRunEvent,
 } from '../../shared/contract/evaluation';
+import { isAiReviewDimension } from '../testing/judge/dimensions';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -60,6 +61,22 @@ function validateTrialAggregate(value: unknown): void {
   if (value.rule !== 'pass_caret_k') throw new Error('评测用例 trialAggregate 计分规则不受支持。');
 }
 
+function validateAiReview(value: unknown): void {
+  if (!isRecord(value)) throw new Error('评测用例 aiReview 格式不正确。');
+  for (const [dimension, rawVerdict] of Object.entries(value)) {
+    if (!isAiReviewDimension(dimension) || !isRecord(rawVerdict)) {
+      throw new Error('评测用例 aiReview 含未知维度或无效结果。');
+    }
+    if (!['yes', 'no', 'unavailable'].includes(String(rawVerdict.verdict))) {
+      throw new Error('评测用例 aiReview verdict 不受支持。');
+    }
+    for (const key of ['reasoning', 'judgeModel', 'promptHash']) requireString(rawVerdict, key);
+    if (rawVerdict.reason !== undefined && !['no_expectation', 'judge_error', 'parse_error'].includes(String(rawVerdict.reason))) {
+      throw new Error('评测用例 aiReview reason 不受支持。');
+    }
+  }
+}
+
 export function parseEvalRunEvent(value: unknown): EvalRunEvent {
   if (!isRecord(value)) throw new Error('评测事件不是对象。');
   if (value.schemaVersion !== EVAL_RUN_EVENT_SCHEMA_VERSION) {
@@ -114,6 +131,7 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
           }
         }
       }
+      if (value.aiReview !== undefined) validateAiReview(value.aiReview);
       if (value.trialAggregate !== undefined) validateTrialAggregate(value.trialAggregate);
       if (value.failure !== undefined) {
         if (!isRecord(value.failure)) throw new Error('评测用例 failure 必须是对象。');

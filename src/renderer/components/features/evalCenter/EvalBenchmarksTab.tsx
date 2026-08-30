@@ -13,6 +13,7 @@ import type {
   EvalRunPanelProbe,
   EvalRunRequest,
   EvalRunSubscriptionResult,
+  AiReviewDimension,
 } from '@shared/contract/evaluation';
 import {
   evalRunPanelEn,
@@ -70,6 +71,7 @@ export const EvalBenchmarksTab: React.FC = () => {
   const [split, setSplit] = useState<EvalRunSplit>('held-in');
   const [tags, setTags] = useState<string[]>([]);
   const [maxCases, setMaxCases] = useState(1);
+  const [selectedAiReview, setSelectedAiReview] = useState<AiReviewDimension[]>([]);
   const [confirmArmed, setConfirmArmed] = useState(false);
   const [starting, setStarting] = useState(false);
   const [activeRun, setActiveRun] = useState<EvalActiveRun | null>(null);
@@ -105,7 +107,13 @@ export const EvalBenchmarksTab: React.FC = () => {
   }, [loadExperiments]);
 
   const lastRun = useMemo(() => getLatestEvalRun(experiments), [experiments]);
-  const estimatedCost = probe ? probe.estimatedCostPerCaseUsd * maxCases : undefined;
+  const baseEstimatedCost = probe ? probe.estimatedCostPerCaseUsd * maxCases : undefined;
+  const aiReviewEstimatedCost = probe
+    ? (probe.judge?.estimatedCostPerCaseUsd ?? 0) * maxCases * selectedAiReview.length
+    : undefined;
+  const estimatedCost = baseEstimatedCost === undefined
+    ? undefined
+    : baseEstimatedCost + (aiReviewEstimatedCost ?? 0);
 
   const openWizard = useCallback((quick = false) => {
     setQuietNotice(null);
@@ -116,6 +124,7 @@ export const EvalBenchmarksTab: React.FC = () => {
     setMaxCases(quick
       ? (probe?.quickCheck.maxCases ?? 12)
       : (probe?.splitCounts['held-in'] ?? 1));
+    setSelectedAiReview([]);
   }, [probe]);
 
   const closeWizard = useCallback(() => {
@@ -162,6 +171,7 @@ export const EvalBenchmarksTab: React.FC = () => {
         split,
         maxCases,
         ...(tags.length > 0 ? { tags } : {}),
+        ...(selectedAiReview.length > 0 ? { aiReview: selectedAiReview } : {}),
       };
       const runResult = await invokeEvaluation(IPC_CHANNELS.EVALUATION_RUN_SUITE, request);
       if (!runResult || typeof runResult.runId !== 'string' || runResult.runId.length === 0) {
@@ -214,7 +224,7 @@ export const EvalBenchmarksTab: React.FC = () => {
     } finally {
       setStarting(false);
     }
-  }, [labels, loadExperiments, maxCases, probe, split, tags, updateActiveRunFromEvent]);
+  }, [labels, loadExperiments, maxCases, probe, selectedAiReview, split, tags, updateActiveRunFromEvent]);
 
   const handleRunClick = useCallback(() => {
     if (confirmArmed) {
@@ -285,6 +295,8 @@ export const EvalBenchmarksTab: React.FC = () => {
         confirmArmed={confirmArmed}
         starting={starting}
         estimatedCost={estimatedCost}
+        aiReviewEstimatedCost={aiReviewEstimatedCost}
+        selectedAiReview={selectedAiReview}
         labels={labels}
         onClose={closeWizard}
         onSplit={(next) => {
@@ -300,6 +312,12 @@ export const EvalBenchmarksTab: React.FC = () => {
         }}
         onMaxCases={(next) => {
           setMaxCases(next);
+          setConfirmArmed(false);
+        }}
+        onToggleAiReview={(dimension) => {
+          setSelectedAiReview((current) => current.includes(dimension)
+            ? current.filter((item) => item !== dimension)
+            : [...current, dimension]);
           setConfirmArmed(false);
         }}
         onRun={handleRunClick}

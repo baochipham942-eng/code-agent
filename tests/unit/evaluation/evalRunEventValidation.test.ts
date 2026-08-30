@@ -45,4 +45,23 @@ describe('evaluation run event validation', () => {
       skillActivations: { docx: -1 },
     })).toThrow(/skillActivations/);
   });
+
+  it('T4：接受合法 aiReview，拒绝未知维度和无效 verdict', () => {
+    const base = {
+      schemaVersion: 2, type: 'case_end', ts: 1, runId: 'run-1', testId: 'case-1',
+      status: 'passed', score: 1, durationMs: 1,
+    } as const;
+    expect(parseEvalRunEvent({
+      ...base,
+      aiReview: { task_completed: { verdict: 'yes', reasoning: '完成', judgeModel: 'judge/model', promptHash: 'hash' } },
+    })).toMatchObject({ aiReview: { task_completed: { verdict: 'yes' } } });
+    expect(() => parseEvalRunEvent({
+      ...base,
+      aiReview: { unknown: { verdict: 'yes', reasoning: 'x', judgeModel: 'm', promptHash: 'h' } },
+    })).toThrow(/aiReview/);
+    expect(() => parseEvalRunEvent({
+      ...base,
+      aiReview: { task_completed: { verdict: 'maybe', reasoning: 'x', judgeModel: 'm', promptHash: 'h' } },
+    })).toThrow(/verdict/);
+  });
 });

@@ -13,6 +13,21 @@ import type {
 export const EVAL_RUN_EVENT_SCHEMA_VERSION = 2 as const;
 export const EVAL_REPEAT_MAX = 10;
 
+export type AiReviewDimension =
+  | 'task_completed'
+  | 'tool_choice'
+  | 'confirmed_before_acting'
+  | 'no_extra_changes'
+  | 'self_tested';
+
+export interface AiReviewVerdict {
+  verdict: 'yes' | 'no' | 'unavailable';
+  reasoning: string;
+  judgeModel: string;
+  promptHash: string;
+  reason?: 'no_expectation' | 'judge_error' | 'parse_error';
+}
+
 export interface EvalFailureClassification {
   code: string;
   dispositions: string[];
@@ -32,6 +47,8 @@ export interface EvalRunStamp {
     judge: 'rules' | 'llm';
     judgeModel: string;
     judgeCalibrationId: string;
+    aiReview: AiReviewDimension[];
+    aiReviewCalibration: Partial<Record<AiReviewDimension, string>>;
   };
   k: number;
   aggregationRuleVersion: number;
@@ -85,6 +102,8 @@ export const UNKNOWN_EVAL_RUN_STAMP: EvalRunStamp = {
     judge: 'rules',
     judgeModel: 'none',
     judgeCalibrationId: 'uncalibrated',
+    aiReview: [],
+    aiReviewCalibration: {},
   },
   k: 1,
   aggregationRuleVersion: 0,
@@ -129,6 +148,23 @@ export interface EvalRunPanelProbe {
   provider: string;
   priceTableVersion: number;
   estimatedCostPerCaseUsd: number;
+  judge: {
+    model: string;
+    provider: string;
+    estimatedCostPerCaseUsd: number;
+  };
+  aiReview: Array<{
+    dim: AiReviewDimension;
+    calibration: {
+      state: 'calibrated' | 'uncalibrated';
+      reason?: 'no_record' | 'below_threshold' | 'prompt_changed' | 'not_enough_pairs' | 'superseded' | 'judge_changed';
+      kappa?: number;
+      pairs?: number;
+      computedAt?: string;
+      goldSource?: 'deterministic_shadow' | 'human_annotation';
+    };
+    requiresExpectation: boolean;
+  }>;
   splitCounts: Record<'held-in' | 'held-out' | 'safety', number>;
   quickCheck: {
     tags: string[];
@@ -139,6 +175,12 @@ export interface EvalRunPanelProbe {
 export interface EvalRunSubscriptionResult {
   runId: string;
   running: boolean;
+}
+
+export interface EvalScorersOverview {
+  assertions: ReadonlyArray<{ type: string; summary: string }>;
+  aiReview: EvalRunPanelProbe['aiReview'];
+  judge: EvalRunPanelProbe['judge'];
 }
 
 type EvalRunEventStatus =
@@ -226,6 +268,7 @@ export type EvalRunEvent =
       sessionId?: string;
       scoreAuthority?: 'deterministic_assertion' | 'llm_judge' | 'self_check';
       skillActivations?: Record<string, number>;
+      aiReview?: Partial<Record<AiReviewDimension, AiReviewVerdict>>;
       trialAggregate?: {
         n: number;
         c: number;
@@ -305,6 +348,7 @@ export interface EvalRunRequest {
   timeoutMs?: number;
   repeat?: number;
   skills?: string[];
+  aiReview?: AiReviewDimension[];
 }
 
 export interface EvalRunStartResult {

@@ -175,6 +175,7 @@ export class ExperimentAdapter {
         killedByTimeout: event.killedByTimeout,
         trials: event.trials,
         trialAggregate: event.trialAggregate,
+        ...(event.aiReview ? { aiReview: event.aiReview } : {}),
         scoreAuthority: event.scoreAuthority,
         memoryInjections,
         skillActivations,
@@ -566,6 +567,7 @@ export class ExperimentAdapter {
         })),
         metadata: {
           description: r.description,
+          ...(r.aiReview ? { aiReview: r.aiReview } : {}),
           errors: r.errors,
           failureDetails: r.failureDetails,
           turnCount: r.turnCount,

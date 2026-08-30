@@ -13,7 +13,6 @@ import './lib/eval-data-dir-bootstrap';
 //   npx tsx scripts/eval-ci.ts --promote          # promote to baseline
 //   npx tsx scripts/eval-ci.ts --baseline-info    # show baseline
 //   npx tsx scripts/eval-ci.ts --trend            # show trend
-
 import chalk from 'chalk';
 import { execSync } from 'child_process';
 import { Console } from 'node:console';
@@ -83,20 +82,18 @@ import {
 } from './lib/eval-cost-estimate';
 import { EVAL_AGENT_DEFAULTS } from '../src/host/testing/agentAdapter';
 import { EVAL_GOAL_ALLOW_SWARM } from '../src/host/testing/goalContractEval';
-import { EVAL_REPEAT_MAX } from '../src/shared/contract/evaluation';
+import { EVAL_REPEAT_MAX, type AiReviewDimension } from '../src/shared/contract/evaluation';
 import { validateDiscoverableSkills } from '../src/host/testing/skillSelection';
-
+import { parseAiReviewList } from './lib/eval-ai-review-args';
 /** roadmap 2.4 A/B 归因（audit D-R3）：当前 run 的 provider 变体臂 */
 function providerVariantArm(): 'variant-on' | 'variant-off' {
   return isProviderVariantDisabled() ? 'variant-off' : 'variant-on';
 }
-
 // ---------------------------------------------------------------------------
 // Arg parsing
 // ---------------------------------------------------------------------------
 
 const DEFAULT_MAX_CASES = 50;
-
 function parseArgs(argv: string[]) {
   const args = argv.slice(2);
   let scope: 'smoke' | 'full' | undefined;
@@ -123,6 +120,7 @@ function parseArgs(argv: string[]) {
   let runId: string | undefined;
   let repeat = 1;
   let skills: string[] | undefined;
+  let aiReview: AiReviewDimension[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -178,6 +176,8 @@ function parseArgs(argv: string[]) {
       repeat = Number(args[++i]);
     } else if (arg === '--skills' && i + 1 < args.length) {
       skills = args[++i].split(',').map((name) => name.trim()).filter(Boolean);
+    } else if (arg === '--ai-review' && i + 1 < args.length) {
+      aiReview = parseAiReviewList(args[++i]);
     } else if (arg === '--predicted-fixes' && i + 1 < args.length) {
       predictedFixes = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
     } else if (arg === '--risk-tasks' && i + 1 < args.length) {
@@ -225,13 +225,11 @@ function parseArgs(argv: string[]) {
     process.exit(1);
   }
 
-  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, runId, repeat, skills };
+  return { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, runId, repeat, skills, aiReview };
 }
-
 function printUsage() {
   console.log(`
 ${chalk.bold('eval-ci')} — Eval-Driven Development CLI
-
 ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts                    Auto-detect scope from git diff
   npx tsx scripts/eval-ci.ts --scope smoke      Smoke tests only
@@ -244,6 +242,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --max-cases <n>    Max cases in --real mode (default: 50)
   npx tsx scripts/eval-ci.ts --repeat <k>        Run every case k times (default: 1)
   npx tsx scripts/eval-ci.ts --skills <a,b>      Expose exactly these discoverable skills to a normal eval run
+  npx tsx scripts/eval-ci.ts --ai-review <a,b>   Add independent yes/no AI review dimensions
   npx tsx scripts/eval-ci.ts --tags <a,b>       Filter test cases by tags
   npx tsx scripts/eval-ci.ts --ids <a,b>        Filter test cases by IDs
   npx tsx scripts/eval-ci.ts --split <bucket>   Filter to 'held-in' (daily) / 'held-out' (milestone) / 'control' (judge calibration) / 'safety' (OS jail only)
@@ -261,7 +260,6 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --base <ref>       Git ref to diff against (default: HEAD)
 `);
 }
-
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
@@ -495,7 +493,6 @@ function createAgent(opts: {
 async function prepareRealEvalRuntime(initializeDatabase = true): Promise<void> {
   const { getProtocolRegistry } = await import('../src/host/tools/protocolRegistry');
   getProtocolRegistry();
-
   if (!initializeDatabase) return;
   try {
     const { getDatabase } = await import('../src/host/services/core/databaseService');
@@ -507,7 +504,6 @@ async function prepareRealEvalRuntime(initializeDatabase = true): Promise<void> 
     console.log(chalk.yellow(`  Warning: eval DB initialization skipped: ${error instanceof Error ? error.message : String(error)}`));
   }
 }
-
 async function runEvals(
   workingDir: string,
   _scope: 'smoke' | 'full',
@@ -556,6 +552,7 @@ async function runEvals(
       filterTags: opts.tags,
       filterIds: opts.ids,
       trialsPerCase: opts.repeat,
+      aiReview: opts.real ? opts.eventConfig.scorers.aiReview : [],
       ...(opts.concurrency ? { maxParallel: opts.concurrency, parallel: true } : {}),
       // WP1-4: 预测登记随 summary 落盘/DB，deltaReporter 对账
       ...(opts.prediction ? { prediction: opts.prediction } : {}),
@@ -960,7 +957,6 @@ async function runCompareCommand(
     sandbox?.cleanup();
   }
 }
-
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -981,6 +977,7 @@ function createRunStartConfig(opts: {
   caseDir?: string;
   repeat: number;
   skills?: string[];
+  aiReview: AiReviewDimension[];
 }): EvalRunStartConfig {
   const model = opts.real
     ? opts.model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL
@@ -999,6 +996,7 @@ function createRunStartConfig(opts: {
     tags: opts.tags,
     ids: opts.ids,
     judge: opts.judge,
+    aiReview: opts.aiReview,
     trialsPerCase: opts.repeat,
     shape: {
       skills: [...(opts.skills ?? EVAL_AGENT_DEFAULTS.skills)],
@@ -1030,7 +1028,7 @@ async function mainImpl(
   cwd: string,
   eventStream?: EvalRunEventStream,
 ): Promise<void> {
-  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, repeat, skills } = parseArgs(argv);
+  const { scope, promote, promoteMockHarness, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split, dataDir, repeat, skills, aiReview } = parseArgs(argv);
   const workingDir = cwd;
   if (dataDir) {
     process.env.CODE_AGENT_DATA_DIR = path.resolve(cwd, dataDir);
@@ -1174,6 +1172,7 @@ async function mainImpl(
         concurrency,
         repeat,
         skills: selectedSkills,
+        aiReview,
         judge,
         workingDir,
       }),
@@ -1252,6 +1251,7 @@ async function mainImpl(
         concurrency,
         repeat,
         skills: selectedSkills,
+        aiReview,
         judge,
         workingDir,
       }),
@@ -1370,6 +1370,7 @@ async function mainImpl(
       concurrency,
       repeat,
       skills: selectedSkills,
+      aiReview,
       judge,
       workingDir,
       caseDir,

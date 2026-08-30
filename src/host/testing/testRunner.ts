@@ -55,6 +55,7 @@ import {
 import { classifyTestResultFailure } from './testResultFailure';
 import { mergeSkillActivations } from './skillSelection';
 
+import { attachAiReview } from './testRunnerAiReview';
 const execAsync = promisify(exec);
 const logger = createLogger('TestRunner');
 
@@ -987,7 +988,7 @@ export class TestRunner {
             .join('; ');
         }
       }
-
+      await attachAiReview(this.config, testCase, result, agent.usesMockEvalPolicy?.() === true);
       // WP1-2：agentAdapter 把 inference error 塞 errors 数组不 throw（同上
       // circuit breaker 注释）。零产出 + 全零分 + errors 里是瞬态基础设施错
       // → 这 case 没有能力数据，分流进 infra 桶而非记 failed。

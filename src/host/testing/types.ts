@@ -5,6 +5,7 @@
 import type {
   EvalRunStamp,
   EvalFailureClassification,
+  AiReviewDimension, AiReviewVerdict,
   TelemetryCompleteness,
   ScoreAuthority,
 } from '../../shared/contract/evaluation';
@@ -24,9 +25,6 @@ export type TestCaseType =
   | 'error_handling' // Test error recovery
   | 'multi_step';    // Test multi-step workflows
 
-/**
- * Test case status
- */
 /**
  * infra_excluded（WP1-2）：429/5xx/网络等基础设施故障，非 agent 能力信号，
  * 不进能力通过率分母、不进 baseline 对账，报告单列。
@@ -402,6 +400,7 @@ export interface TestResult {
   costLimitUsd?: number;
   /** 评分权威桶：分数由确定性断言 / LLM judge / 无外部验证背书 */
   scoreAuthority?: ScoreAuthority;
+  aiReview?: Partial<Record<AiReviewDimension, AiReviewVerdict>>;
   /** Pipeline failure stage (from failure funnel analysis) */
   failureStage?: string;
   /** 两轴失败分类：唯一表现码 + 多个处置标签 + 全部命中表现 */
@@ -629,6 +628,7 @@ export interface TestRunnerConfig {
   prediction?: EvalPrediction;
   /** 覆盖默认的 .claude/eval-failcodes.yaml 所在目录，主要供隔离验证使用。 */
   failureCodebookDir?: string;
+  aiReview?: AiReviewDimension[];
 }
 
 /**

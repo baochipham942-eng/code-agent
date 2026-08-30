@@ -7,17 +7,20 @@
 // ============================================================================
 import { evalCaseListEn, evalCaseListZh } from './evalCaseList';
 import { evalRunPanelEn, evalRunPanelZh } from './evalRunPanel';
+import { evalScorersEn, evalScorersZh } from './evalScorers';
 
 export const evalCenterZh = {
   evalCenter: {
     ...evalCaseListZh,
     ...evalRunPanelZh,
+    ...evalScorersZh,
     title: '评测中心',
     description: '遥测 · 会话回放 · 题库 · 跑分 · 应用内验证',
     tabReplay: '回放',
     tabValidation: '验证',
     tabTelemetry: '遥测',
     tabBenchmarks: '跑分',
+    tabScorers: '打分器',
     adminOnly: '评测中心需要管理员权限',
     newRequestBadge: '新请求',
     validation: {
@@ -160,12 +163,14 @@ export const evalCenterEn = {
   evalCenter: {
     ...evalCaseListEn,
     ...evalRunPanelEn,
+    ...evalScorersEn,
     title: 'Eval Center',
     description: 'Telemetry · Session replay · Case bank · Benchmark runs · In-app validation',
     tabReplay: 'Replay',
     tabValidation: 'Validation',
     tabTelemetry: 'Telemetry',
     tabBenchmarks: 'Run',
+    tabScorers: 'Scorers',
     adminOnly: 'The eval center requires administrator access',
     newRequestBadge: 'New request',
     validation: {

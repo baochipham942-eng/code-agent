@@ -166,6 +166,9 @@ describe('EvalRunBridge', () => {
               trialAggregate: {
                 n: 3, c: 3, passAtK: 1, passCaretK: 1, rule: 'pass_caret_k',
               },
+              aiReview: {
+                task_completed: { verdict: 'yes', reasoning: '完成', judgeModel: 'judge/model', promptHash: 'hash' },
+              },
               responses: ['ok'],
               toolExecutions: [],
               errors: [],
@@ -194,7 +197,7 @@ describe('EvalRunBridge', () => {
     bridges.push(bridge);
 
     const { runId } = await bridge.startRun({
-      scope: 'smoke', maxCases: 1, ids: ['case-1'], repeat: 3, skills: ['x'],
+      scope: 'smoke', maxCases: 1, ids: ['case-1'], repeat: 3, skills: ['x'], aiReview: ['task_completed'],
     });
     await waitFor(() => !bridge.subscribe(runId).running);
 
@@ -219,8 +222,10 @@ describe('EvalRunBridge', () => {
     });
     expect(spawnedArgs).toEqual(expect.arrayContaining(['--repeat', '3']));
     expect(spawnedArgs).toEqual(expect.arrayContaining(['--skills', 'x']));
+    expect(spawnedArgs).toEqual(expect.arrayContaining(['--ai-review', 'task_completed']));
     expect(JSON.parse(db.insertExperimentCases.mock.calls[0][1][0].data_json)).toMatchObject({
       trialAggregate: { n: 3, c: 3, passAtK: 1, passCaretK: 1, rule: 'pass_caret_k' },
+      aiReview: { task_completed: { verdict: 'yes' } },
     });
   });
 
@@ -357,6 +362,7 @@ describe('EvalRunBridge', () => {
     await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, repeat: 1.5 })).rejects.toThrow(/repeat/);
     await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, skills: [''] })).rejects.toThrow(/skills/);
     await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, skills: 'docx' })).rejects.toThrow(/skills/);
+    await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, aiReview: ['unknown'] })).rejects.toThrow(/aiReview/);
     expect(spawnProcess).not.toHaveBeenCalled();
   });
 

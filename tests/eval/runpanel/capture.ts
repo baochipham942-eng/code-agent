@@ -128,7 +128,8 @@ async function writeCaseDrawerFixture(): Promise<{ fixturePath: string; annotati
       caseMetadata: {
         id: caseId, file: 'visual.yaml', relativeDir: '', layer: '任务', type: caseId === 'TC-058' ? 'conversation' : 'task',
         category: 'artifact', tags: caseId === 'TC-058' ? ['multi-turn'] : ['html-report'], inheritedTags: [],
-        splits: ['held-in'], turns: caseId === 'TC-058' ? 'simulator' : 1, hasExpect: true, source: 'manual', retired: false, isDraft: false,
+        splits: ['held-in'], turns: caseId === 'TC-058' ? 'simulator' : 1, hasExpect: true, hardened: true,
+        source: 'manual', retired: false, isDraft: false,
       },
     });
   }

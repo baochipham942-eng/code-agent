@@ -52,13 +52,18 @@ describe('case bank enumeration and YAML writes', () => {
     const items = await enumerateCaseBank(root, '2026-08-29');
 
     expect(items).toHaveLength(5);
-    expect(items.find((item) => item.id === 'draft-one')).toMatchObject({ isDraft: true, hasExpect: false });
+    expect(items.find((item) => item.id === 'draft-one')).toMatchObject({
+      isDraft: true,
+      hasExpect: false,
+      hardened: false,
+    });
     expect(items.find((item) => item.id === 'special-one')).toMatchObject({
       relativeDir: 'artifact-runnable',
       isDraft: false,
     });
     expect(items.find((item) => item.id === 'root-one')).toMatchObject({
       splits: ['held-in', 'control'],
+      hardened: true,
     });
     expect(items.find((item) => 'parseError' in item)).toMatchObject({ id: 'broken.yaml' });
   });

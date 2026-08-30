@@ -249,8 +249,15 @@ export const EvalCaseListTab: React.FC = () => {
                 }
                 const status = statusOf(item);
                 const inherited = item.inheritedTags.filter((tag) => !item.tags.includes(tag));
+                const unavailable = !item.hardened;
                 return (
-                  <tr id={`eval-case-${item.id}`} key={`${item.file}-${item.id}`} className={`${status === 'archived' ? 'opacity-55' : ''} ${highlightedCaseId === item.id ? 'bg-teal-500/10' : ''}`} data-testid={`eval-case-row-${item.id}`}>
+                  <tr
+                    id={`eval-case-${item.id}`}
+                    key={`${item.file}-${item.id}`}
+                    aria-disabled={unavailable || undefined}
+                    className={`${status === 'archived' ? 'opacity-55' : ''} ${unavailable ? 'opacity-60 saturate-50' : ''} ${highlightedCaseId === item.id ? 'bg-teal-500/10' : ''}`}
+                    data-testid={`eval-case-row-${item.id}`}
+                  >
                     <td className="border-b border-zinc-900 px-2 py-2 font-mono text-zinc-300">{item.id}</td>
                     <td className="border-b border-zinc-900 px-2 py-2">
                       <div className="text-zinc-300">{item.layer}</div>
@@ -270,9 +277,10 @@ export const EvalCaseListTab: React.FC = () => {
                     </td>
                     <td className="border-b border-zinc-900 px-2 py-2 font-mono text-zinc-400">{item.turns === 'simulator' ? c.simulatorTurns : item.turns}</td>
                     <td className="border-b border-zinc-900 px-2 py-2">
-                      <span className={item.hasExpect ? 'text-badge-success' : 'rounded border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-badge-warning'}>
-                        {item.hasExpect ? c.hasExpect : c.noExpect}
+                      <span className={item.hardened ? 'text-badge-success' : 'rounded border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-badge-warning'}>
+                        {item.hardened ? c.hasExpect : c.noExpect}
                       </span>
+                      {unavailable && <span className="ml-2 text-[10px] text-zinc-500">{c.notScored}</span>}
                     </td>
                     <td className="border-b border-zinc-900 px-2 py-2 text-zinc-400">{item.source === 'session' ? c.sourceSession : c.sourceManual}</td>
                     <td className="border-b border-zinc-900 px-2 py-2 text-zinc-400">{status === 'draft' ? c.statusDraft : status === 'archived' ? c.statusArchived : c.statusNormal}</td>

@@ -12,6 +12,7 @@ import { loadEvalSplits } from '@host/testing/ci/sampleSplits';
 import { loadTestSuite } from '@host/testing/testCaseLoader';
 import { resolveCaseLayer } from '@host/testing/caseLayer';
 import type { TestCase } from '@host/testing/types';
+import { expectationExists, isCaseHardened } from '@host/testing/caseHardening';
 
 const CASE_BANK_RELATIVE_PATH = path.join('.claude', 'test-cases');
 const ENUMERATED_SUBDIRECTORIES = [
@@ -74,10 +75,6 @@ function splitIndex(splitFile: Awaited<ReturnType<typeof loadEvalSplits>>): Map<
   return index;
 }
 
-function expectationExists(testCase: TestCase): boolean {
-  return Object.keys(testCase.expect ?? {}).length > 0 || (testCase.expectations?.length ?? 0) > 0;
-}
-
 function caseTurns(testCase: TestCase): number | 'simulator' {
   if (testCase.user_simulation) return 'simulator';
   return 1 + (testCase.follow_up_prompts?.length ?? 0);
@@ -109,8 +106,9 @@ export async function enumerateCaseBank(repoRoot: string, today = todayIso()): P
     const relativeDir = path.posix.dirname(file) === '.' ? '' : path.posix.dirname(file);
     const isDraft = relativeDir === 'drafts' || relativeDir.startsWith('drafts/');
     try {
-      const suite = await loadTestSuite(filePath);
+      const suite = await loadTestSuite(filePath, { requireHardened: false });
       for (const testCase of suite.cases) {
+        const { hardened } = isCaseHardened(testCase);
         const item: EvalCaseListEntry = {
           id: testCase.id,
           file,
@@ -121,6 +119,7 @@ export async function enumerateCaseBank(repoRoot: string, today = todayIso()): P
           splits: [...(splitsById.get(testCase.id) ?? [])],
           turns: caseTurns(testCase),
           hasExpect: expectationExists(testCase),
+          hardened,
           reviewStatus: testCase.reviewStatus,
           source: testCase.sourceSessionId ? 'session' : 'manual',
           type: testCase.type,

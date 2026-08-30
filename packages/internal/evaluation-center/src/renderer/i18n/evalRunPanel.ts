@@ -24,6 +24,7 @@ export interface EvalRunPanelLabels {
   maxCases: string;
   expensiveHint: string;
   safetyUnavailable: string;
+  unhardenedNotice: string;
   shapeSection: string;
   productionShape: string;
   scorerSection: string;
@@ -124,6 +125,7 @@ export const evalRunPanelZh: EvalRunPanelDictionary = {
     maxCases: '最多跑 N 题',
     expensiveHint: '超过 50 题，费用会明显增加。可以调小 N 再开跑。',
     safetyUnavailable: '不受控系统环境不可用',
+    unhardenedNotice: '另有 {n} 题还没有判定标准，不会跑',
     shapeSection: '本轮形态',
     productionShape: 'skill 集 / 记忆 / swarm：与生产默认相同',
     scorerSection: '打分器',
@@ -227,6 +229,7 @@ export const evalRunPanelEn: EvalRunPanelDictionary = {
     maxCases: 'Maximum cases',
     expensiveHint: 'More than 50 cases will increase cost noticeably. Lower the limit before running if needed.',
     safetyUnavailable: 'Unavailable without a controlled system environment',
+    unhardenedNotice: '{n} more cases have no criteria yet and will not run',
     shapeSection: 'Run shape',
     productionShape: 'Skills / memory / swarm: same as production defaults',
     scorerSection: 'Scorers',

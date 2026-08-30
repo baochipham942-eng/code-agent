@@ -60,6 +60,7 @@ const probe: EvalRunPanelProbe = {
     { dim: 'self_tested', requiresExpectation: true, calibration: { state: 'uncalibrated', reason: 'superseded' } },
   ],
   splitCounts: { 'held-in': 76, 'held-out': 52, safety: 12 },
+  unhardenedCount: 2,
   quickCheck: { tags: ['core-path'], maxCases: 12 },
   productionArm: {
     name: 'production-default@sys-v45', model: 'deepseek-chat', provider: 'deepseek',

@@ -11,6 +11,11 @@ import type {
   EvalRunEvent,
   EvalRunPanelProbe,
 } from '@shared/contract/evaluation';
+import type {
+  EvalBaselineCaseResult,
+  EvalBaselineExperimentListItem,
+  EvalBaselineInfo,
+} from '@shared/contract/evaluationBaseline';
 import { EXPECTATION_TYPE_CATALOG } from '../../../src/host/testing/expectationCatalog';
 import { EvalCenterPage } from '@internal-evaluation/renderer/evalCenter/EvalCenterPage';
 import { useEvalCenterStore } from '@internal-evaluation/renderer/stores/evalCenterStore';
@@ -19,7 +24,7 @@ import { useAuthStore } from '../../../src/renderer/stores/authStore';
 import '../../../src/renderer/styles/global.css';
 import { EvalCaseDrawer } from '@internal-evaluation/renderer/evalCenter/EvalCaseDrawer';
 
-type Scenario = 'a1' | 'a2' | 'a8' | 'a12' | 'c2' | 'a13a' | 'a13b' | 'a13c'
+type Scenario = 'a1' | 'a2' | 'a8' | 'a12' | 'a12-regressions' | 'c2' | 'a13a' | 'a13b' | 'a13c'
   | 'a13-annotation-empty' | 'a13-annotation-prefill'
   | 'c1a' | 'c1b-disabled' | 'c1b-ready' | 'c1c';
 type Theme = 'light' | 'dark';
@@ -75,7 +80,8 @@ function experiment(
   timestamp: number,
   config: Record<string, unknown>,
   summary: EvalExperimentListItem['summary'],
-): EvalExperimentListItem {
+  caseResults: Record<string, EvalBaselineCaseResult>,
+): EvalBaselineExperimentListItem {
   return {
     id,
     name: `run-${id}`,
@@ -87,23 +93,48 @@ function experiment(
     gitCommit: 'abcdef0123456789',
     config,
     summary,
+    caseResults,
   };
 }
 
-const historyRuns: EvalExperimentListItem[] = [
-  experiment('20260829-1430', Date.UTC(2026, 7, 29, 6, 30), {
-    split: 'held-in', k: 1, caseBankSha: 'abcdef012345', mode: 'real',
-  }, { passRate: 0.842, passed: 64, total: 76, completed: true, notRun: 0 }),
-  experiment('20260828-1741', Date.UTC(2026, 7, 28, 9, 41), {
-    split: 'held-in', k: 1, caseBankSha: 'abcdef012345', mode: 'real',
-  }, { passRate: 0.816, passed: 62, total: 76, completed: true, notRun: 0 }),
-  experiment('20260828-1105', Date.UTC(2026, 7, 28, 3, 5), {
-    split: 'held-in', k: 1, mode: 'real',
-  }, { passRate: 0.76, passed: 38, total: 50, completed: false, notRun: 26, aborted: true }),
-  experiment('mock-hidden', Date.UTC(2026, 7, 29, 7, 0), {
-    split: 'held-in', k: 1, caseBankSha: 'abcdef012345', mode: 'mock',
-  }, { passRate: 1, passed: 76, total: 76, completed: true, notRun: 0 }),
+const visualIds = Array.from({ length: 10 }, (_, index) => `TC-${String(index + 1).padStart(3, '0')}`);
+const referenceCases = Object.fromEntries(visualIds.map((id, index) => [
+  id, { status: index < 8 ? 'passed' : 'failed', score: index < 8 ? 1 : 0 },
+]));
+const candidateCases = {
+  ...referenceCases,
+  'TC-001': { status: 'failed', score: 0 },
+  'TC-002': { status: 'failed', score: 0 },
+  'TC-003': { status: 'failed', score: 0 },
+  'TC-009': { status: 'passed', score: 1 },
+  'TC-NEW-1': { status: 'passed', score: 1 },
+  'TC-NEW-2': { status: 'failed', score: 0 },
+};
+const completeSummary = (passRate: number, version = 4) => ({
+  passRate, passed: Math.round(passRate * 10), total: 10, completed: true, notRun: 0,
+  plannedCaseIds: visualIds, invalidCases: 0, aggregationRuleVersion: version,
+});
+const historyRuns: EvalBaselineExperimentListItem[] = [
+  experiment('candidate', Date.UTC(2026, 7, 30, 6, 30), {
+    split: 'held-in', k: 1, caseBankSha: 'bank-new', mode: 'real', aggregationRuleVersion: 4,
+  }, completeSummary(0.6), candidateCases),
+  experiment('old-rule', Date.UTC(2026, 7, 29, 9, 41), {
+    split: 'held-in', k: 1, caseBankSha: 'bank-old', mode: 'real', aggregationRuleVersion: 3,
+  }, completeSummary(0.9, 3), referenceCases),
+  experiment('incomplete', Date.UTC(2026, 7, 29, 3, 5), {
+    split: 'held-in', k: 1, caseBankSha: 'bank-old', mode: 'real', aggregationRuleVersion: 4,
+  }, { ...completeSummary(0.8), completed: false, notRun: 2 }, Object.fromEntries(Object.entries(referenceCases).slice(0, 8))),
+  experiment('reference', Date.UTC(2026, 7, 28, 9, 41), {
+    split: 'held-in', k: 1, caseBankSha: 'bank-old', mode: 'real', aggregationRuleVersion: 4,
+  }, completeSummary(0.8), referenceCases),
 ];
+const comparisonReference: EvalBaselineInfo = {
+  experimentId: 'reference', updatedAt: Date.UTC(2026, 7, 28, 9, 41), updatedBy: 'runpanel-admin',
+  commit: 'abcdef0123456789', caseBankSha: 'bank-old', aggregationRuleVersion: 4,
+  denominatorVersion: 4, divergesFromProduction: true,
+  productionDifferences: ['memory: off', 'prompt: sys-v44 → sys-v45'],
+  plannedCaseIds: visualIds, caseResults: referenceCases,
+};
 
 const compareRun: EvalExperimentListItem = {
   id: '01J6K9EXPERIMENT01', name: 'candidate-v3', timestamp: Date.UTC(2026, 7, 30, 9, 45),
@@ -178,7 +209,10 @@ const bridge = {
   async invoke(channel: string, payload?: unknown): Promise<unknown> {
     if (channel === EVALUATION_CHANNELS.LIST_EXPERIMENTS) {
       if (scenario.startsWith('c1')) return scenario === 'c1a' || scenario === 'c1c' ? [compareRun] : [];
-      return scenario === 'a12' || scenario.startsWith('a13') ? historyRuns : [];
+      return scenario.startsWith('a12') || scenario.startsWith('a13') ? historyRuns : [];
+    }
+    if (channel === EVALUATION_CHANNELS.BASELINE_INFO) {
+      return { groups: { 'held-in::1': comparisonReference } };
     }
     if (channel === EVALUATION_CHANNELS.RUN_EVENTS && payload === undefined) return probe;
     if (channel === EVALUATION_CHANNELS.SCORERS_OVERVIEW) {

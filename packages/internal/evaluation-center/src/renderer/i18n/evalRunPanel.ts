@@ -94,6 +94,21 @@ export interface EvalRunPanelLabels {
   loadFailed: string;
   baselineGroup: string;
   candidateGroup: string;
+  setComparisonReference: string;
+  confirmComparisonReference: string;
+  currentComparisonReference: string;
+  comparisonReferenceAt: string;
+  noComparisonReference: string;
+  caseBankUpdated: string;
+  compareSharedCases: string;
+  oldScoringRule: string;
+  productionDifferent: string;
+  regressed: string;
+  uniqueCases: string;
+  legacyRunReason: string;
+  incompleteReason: string;
+  invalidRunReason: string;
+  setReferenceFailed: string;
 }
 
 interface EvalRunPanelDictionary {
@@ -201,6 +216,21 @@ export const evalRunPanelZh: EvalRunPanelDictionary = {
     loadFailed: '加载失败：{message}',
     baselineGroup: '对照组',
     candidateGroup: '实验组',
+    setComparisonReference: '设为对比基准',
+    confirmComparisonReference: '再点一次确认',
+    currentComparisonReference: '当前对比基准',
+    comparisonReferenceAt: '对比基准 = {time} 这轮',
+    noComparisonReference: '还没有对比基准',
+    caseBankUpdated: '题库已更新',
+    compareSharedCases: '按两轮都有的题比',
+    oldScoringRule: '旧计分规则',
+    productionDifferent: '配置与生产不同',
+    regressed: '退步 {n}',
+    uniqueCases: '仅一轮有的题 {n} 题',
+    legacyRunReason: '旧记录 · 没有计划题集',
+    incompleteReason: '未跑满 · 缺 {n} 题',
+    invalidRunReason: '无效轮 · {n} 题判废',
+    setReferenceFailed: '设置失败，请刷新后再试',
   },
 };
 
@@ -305,5 +335,20 @@ export const evalRunPanelEn: EvalRunPanelDictionary = {
     loadFailed: 'Load failed: {message}',
     baselineGroup: 'Control',
     candidateGroup: 'Candidate',
+    setComparisonReference: 'Set comparison reference',
+    confirmComparisonReference: 'Click again to confirm',
+    currentComparisonReference: 'Current comparison reference',
+    comparisonReferenceAt: 'Comparison reference: run from {time}',
+    noComparisonReference: 'No comparison reference yet',
+    caseBankUpdated: 'Case bank updated',
+    compareSharedCases: 'Compared using cases present in both runs',
+    oldScoringRule: 'Old scoring rule',
+    productionDifferent: 'Configuration differs from production',
+    regressed: '{n} regressed',
+    uniqueCases: '{n} cases only appear in one run',
+    legacyRunReason: 'Old record · no planned case set',
+    incompleteReason: 'Incomplete · {n} cases missing',
+    invalidRunReason: 'Invalid run · {n} cases invalidated',
+    setReferenceFailed: 'Could not set comparison reference. Refresh and retry.',
   },
 };

@@ -10,6 +10,7 @@ import type {
   EvalRunEvent,
   EvalRunPanelProbe,
 } from '../../../src/shared/contract/evaluation';
+import type { EvalBaselineExperimentListItem } from '../../../src/shared/contract/evaluationBaseline';
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn<(channel: string, arg?: unknown) => Promise<unknown>>(),
@@ -72,8 +73,11 @@ const experiment = (
   id: string,
   timestamp: number,
   config: Record<string, unknown>,
-  summary: EvalExperimentListItem['summary'] = { passRate: 0.5, passed: 1, total: 2, completed: true, notRun: 0 },
-): EvalExperimentListItem => ({
+  summary: EvalExperimentListItem['summary'] = {
+    passRate: 0.5, passed: 1, total: 2, completed: true, notRun: 0,
+    plannedCaseIds: ['case-1'], invalidCases: 0, aggregationRuleVersion: 4,
+  },
+): EvalBaselineExperimentListItem => ({
   id,
   name: `eval-${id}`,
   timestamp,
@@ -84,6 +88,7 @@ const experiment = (
   gitCommit: null,
   config,
   summary,
+  caseResults: { 'case-1': { status: 'passed', score: 1 } },
 });
 
 const detail = (run: EvalExperimentListItem, cases: EvalExperimentDetail['cases']): EvalExperimentDetail => ({
@@ -307,7 +312,7 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     expect(await screen.findByText('这轮没有正常结束，已按已跑完的题记录')).toBeTruthy();
   });
 
-  it('T5：按评测集 × k × 题库版本分组，缺版本回落 unknown，mock 不显示', async () => {
+  it('T5：按评测集 × k 分组，题库版本不同仍在同组，mock 不显示', async () => {
     const runA = experiment('a', 3_000, { split: 'held-in', k: 1, caseBankSha: 'abcdef0123', mode: 'real' });
     const runB = experiment('b', 2_000, { evalSet: { split: 'held-in' }, k: 1, caseBankSha: 'abcdef0123', mode: 'real' });
     const runUnknown = experiment('unknown', 1_000, { split: 'held-in', k: 1, mode: 'real' });
@@ -324,13 +329,94 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     });
     render(<EvalBenchmarksTab />);
 
-    expect(await screen.findByText('日常集 · 每题 1 次 · 题库 abcdef0')).toBeTruthy();
-    expect(screen.getByText('日常集 · 每题 1 次 · 题库 未知版本')).toBeTruthy();
+    expect(await screen.findByText('日常集 · k=1')).toBeTruthy();
+    expect(screen.getAllByTestId(/benchmark-run-/)).toHaveLength(3);
     expect(screen.queryByTestId('benchmark-run-mock')).toBeNull();
 
     fireEvent.click(screen.getByTestId('benchmark-run-a').querySelector('button') as HTMLButtonElement);
     fireEvent.click(screen.getByTestId('benchmark-run-b').querySelector('button') as HTMLButtonElement);
     expect(await screen.findByText('50.0% → 50.0%')).toBeTruthy();
     expect(screen.getByText('case-1')).toBeTruthy();
+  });
+
+  it('T7-T10：基准置顶、变化按 caseId、灰标阻断规则、置灰理由常驻且两次点击才设置', async () => {
+    const ids = Array.from({ length: 10 }, (_, index) => `case-${index}`);
+    const baselineCases = Object.fromEntries(ids.map((id, index) => [
+      id, { status: index < 8 ? 'passed' : 'failed', score: index < 8 ? 1 : 0 },
+    ]));
+    const candidateCases = {
+      ...baselineCases,
+      'case-0': { status: 'failed', score: 0 },
+      'case-1': { status: 'failed', score: 0 },
+      'case-2': { status: 'failed', score: 0 },
+      'case-8': { status: 'passed', score: 1 },
+      'only-new-a': { status: 'passed', score: 1 },
+      'only-new-b': { status: 'failed', score: 0 },
+    };
+    const makeRun = (
+      id: string,
+      timestamp: number,
+      caseBankSha: string,
+      aggregationRuleVersion: number,
+      passRate: number,
+      caseResults = baselineCases,
+      completed = true,
+      notRun = 0,
+    ) => ({
+      ...experiment(id, timestamp, {
+        split: 'held-in', k: 1, caseBankSha, mode: 'real', aggregationRuleVersion,
+      }, {
+        passRate, passed: Math.round(passRate * 10), total: 10, completed, notRun,
+        plannedCaseIds: ids, invalidCases: 0, aggregationRuleVersion,
+      }),
+      caseResults,
+    });
+    const baselineRun = makeRun('reference', 1_000, 'bank-a', 4, 0.8);
+    const candidate = makeRun('candidate', 4_000, 'bank-b', 4, 0.6, candidateCases);
+    const oldRule = makeRun('old-rule', 3_000, 'bank-a', 3, 0.9);
+    const incomplete = makeRun(
+      'incomplete', 2_000, 'bank-a', 4, 0.8,
+      Object.fromEntries(Object.entries(baselineCases).slice(0, 8)), false, 2,
+    );
+    const referenceInfo = {
+      experimentId: 'reference', updatedAt: 1_000, updatedBy: 'reviewer', commit: 'sha',
+      caseBankSha: 'bank-a', aggregationRuleVersion: 4, denominatorVersion: 4,
+      divergesFromProduction: false, productionDifferences: [], plannedCaseIds: ids,
+      caseResults: baselineCases,
+    };
+    mocks.invoke.mockImplementation(async (channel: string, arg?: unknown) => {
+      if (channel === EVALUATION_CHANNELS.LIST_EXPERIMENTS) {
+        return [candidate, oldRule, incomplete, baselineRun];
+      }
+      if (channel === EVALUATION_CHANNELS.RUN_EVENTS && !arg) return probe;
+      if (channel === EVALUATION_CHANNELS.BASELINE_INFO) {
+        return { groups: { 'held-in::1': referenceInfo } };
+      }
+      if (channel === EVALUATION_CHANNELS.SET_BASELINE) {
+        return { baseline: { ...referenceInfo, experimentId: (arg as { experimentId: string }).experimentId } };
+      }
+      return null;
+    });
+    render(<EvalBenchmarksTab />);
+
+    const group = await screen.findByTestId('benchmark-group-held-in::1');
+    const rows = group.querySelectorAll('[data-testid^="benchmark-run-"]');
+    expect(rows[0]?.getAttribute('data-testid')).toBe('benchmark-run-reference');
+    expect(screen.getByTestId('benchmark-run-candidate').textContent).toContain('−20.0 pp');
+    expect(screen.getByTestId('benchmark-run-candidate').textContent).toContain('题库已更新');
+    expect(screen.getByTestId('benchmark-run-candidate').textContent).toContain('退步 3');
+    expect(screen.getByTestId('benchmark-run-old-rule').textContent).toContain('旧计分规则');
+    expect(screen.getByTestId('benchmark-run-old-rule').textContent).not.toContain('pp');
+    expect(screen.getByTestId('benchmark-run-incomplete').textContent).toContain('未跑满 · 缺 2 题');
+
+    const setButton = Array.from(
+      screen.getByTestId('benchmark-run-candidate').querySelectorAll('button'),
+    ).find((button) => button.textContent?.includes('设为对比基准')) as HTMLButtonElement;
+    fireEvent.click(setButton);
+    expect(mocks.invoke.mock.calls.filter(([channel]) => channel === EVALUATION_CHANNELS.SET_BASELINE)).toHaveLength(0);
+    fireEvent.click(setButton);
+    await waitFor(() => expect(
+      mocks.invoke.mock.calls.filter(([channel]) => channel === EVALUATION_CHANNELS.SET_BASELINE),
+    ).toHaveLength(1));
   });
 });

@@ -31,9 +31,9 @@ import { buildEvalExperimentCaseDetail } from '../evaluation/evalCaseDetail';
 import { getAuthService } from '@host/services/auth/authService';
 import { assertAiReviewDimensionsComplete, isAiReviewDimension } from '@host/testing/judge/dimensions';
 import type { AnnotationRow } from '@host/services/core/databaseService';
+import { registerEvaluationBaselineHandlers } from './evaluationBaseline.ipc';
 
 const logger = createLogger('EvaluationIPC');
-
 /**
  * 注册评测实验相关 IPC handlers
  */
@@ -42,6 +42,7 @@ export function registerEvaluationHandlers(
   runBridge: EvalRunBridge = getEvalRunBridge(),
 ): void {
   registerAdminChannels(Object.values(EVALUATION_CHANNELS));
+  registerEvaluationBaselineHandlers(ipcMain);
   ipcMain.handle(EVALUATION_CHANNELS.RUN_SUITE, async (_event, payload: unknown) => {
     const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.RUN_SUITE, 'Evaluation run');
     if (denied) return denied;
@@ -187,6 +188,8 @@ export function registerEvaluationHandlers(
         // 解析 config_json 方便调用方直接读 harness 维度
         config: safeParseJsonRecord(experiment.config_json),
         summary: safeParseJson(experiment.summary_json),
+        caseResults: Object.fromEntries((db.loadExperiment(experiment.id)?.cases ?? [])
+          .map((item) => [item.case_id, { status: item.status, score: item.score }])),
       }));
     },
   );
@@ -232,7 +235,6 @@ export function registerEvaluationHandlers(
     channels: Object.values(EVALUATION_CHANNELS),
   });
 }
-
 function validateAnnotationRequest(payload: unknown): SaveEvalAnnotationRequest {
   assertAiReviewDimensionsComplete();
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
@@ -269,12 +271,10 @@ function validateAnnotationRequest(payload: unknown): SaveEvalAnnotationRequest 
     ...(supersedesId ? { supersedesId } : {}),
   };
 }
-
 function requireNonEmptyString(value: unknown, name: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) throw new Error(`${name} is required`);
   return value;
 }
-
 function currentReviewerId(): string {
   try {
     return getAuthService().getCurrentUser()?.id ?? 'local';

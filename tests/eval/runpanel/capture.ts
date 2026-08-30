@@ -15,7 +15,7 @@ import { EXPECTATION_TYPE_CATALOG } from '../../../src/host/testing/expectationC
 import { UNKNOWN_EVAL_RUN_STAMP, type EvalRunEvent, type EvalExperimentCaseDetail, type ListEvalAnnotationsResult } from '../../../src/shared/contract/evaluation';
 import type { TestResult } from '../../../src/host/testing/types';
 
-type Scenario = 'a1' | 'a2' | 'a8' | 'a12' | 'c2' | 'a13a' | 'a13b' | 'a13c'
+type Scenario = 'a1' | 'a2' | 'a8' | 'a12' | 'a12-regressions' | 'c2' | 'a13a' | 'a13b' | 'a13c'
   | 'a13-annotation-empty' | 'a13-annotation-prefill'
   | 'c1a' | 'c1b-disabled' | 'c1b-ready' | 'c1c';
 type Theme = 'light' | 'dark';
@@ -24,7 +24,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const outputDir = process.env.RUNPANEL_EVIDENCE_DIR ?? path.join(here, 'artifacts', 'screenshots');
 const referenceHtml = process.env.RUNPANEL_REFERENCE_HTML;
 const scenarioNames = new Set<Scenario>([
-  'a1', 'a2', 'a8', 'a12', 'c2', 'a13a', 'a13b', 'a13c',
+  'a1', 'a2', 'a8', 'a12', 'a12-regressions', 'c2', 'a13a', 'a13b', 'a13c',
   'a13-annotation-empty', 'a13-annotation-prefill',
   'c1a', 'c1b-disabled', 'c1b-ready', 'c1c',
 ]);
@@ -200,13 +200,20 @@ async function prepareScenario(page: Page, scenario: Scenario, theme: Theme): Pr
     await page.getByText('case-sheet-07', { exact: true }).waitFor();
   }
   if (scenario === 'a12') {
-    await page.getByText('日常集 · 每题 1 次 · 题库 abcdef0').waitFor();
+    await page.getByText('日常集 · k=1').waitFor();
+  }
+  if (scenario === 'a12-regressions') {
+    await page.getByText('日常集 · k=1').waitFor();
+    await page.getByRole('button', { name: '退步 3' }).click();
+    await page.getByTestId('benchmark-compare-held-in::1').waitFor();
   }
 }
 
 async function captureScenario(page: Page, scenario: Scenario, theme: Theme): Promise<void> {
   await prepareScenario(page, scenario, theme);
-  const filename = scenario.startsWith('a13')
+  const filename = scenario.startsWith('a12')
+    ? `N-EVAL-PROMOTE-2026-08-31-${scenario === 'a12' ? 'a12-c' : 'regressions'}-${theme}.png`
+    : scenario.startsWith('a13')
     ? scenario.startsWith('a13-annotation')
       ? `N-EVAL-ANNOTQUEUE-2026-08-30-${scenario.replace('a13-annotation-', '')}-${theme}.png`
       : `N-EVAL-CASEDRAWER-2026-08-30-${scenario}-${theme}.png`

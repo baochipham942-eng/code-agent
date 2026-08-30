@@ -721,12 +721,14 @@ export interface EvalExperimentSummary {
   duration?: number;
   completed?: boolean;
   notRun?: number;
+  plannedCaseIds?: string[];
+  invalidCases?: number;
+  aggregationRuleVersion?: number;
   aborted?: boolean;
   reportFiles?: string[];
   error?: string;
   compare?: EvalRunEventSummary['compare'];
 }
-
 export interface EvalExperimentListItem {
   id: string;
   name: string;
@@ -741,8 +743,7 @@ export interface EvalExperimentListItem {
   config?: Record<string, unknown> | null;
   summary: EvalExperimentSummary | null;
 }
-
-export interface EvalExperimentCaseItem {
+interface EvalExperimentCaseItem {
   caseId: string;
   status: EvalCaseStatus;
   /** 0-100 分。 */
@@ -761,7 +762,6 @@ export interface EvalExperimentCaseItem {
     skillActivations?: { baseline: number; candidate: number };
   } | null;
 }
-
 export interface EvalExperimentDetail {
   experiment: EvalExperimentListItem;
   cases: EvalExperimentCaseItem[];

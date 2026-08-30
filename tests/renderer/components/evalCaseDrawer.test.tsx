@@ -5,8 +5,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
 import type {
   EvalExperimentCaseDetail,
-  EvalExperimentListItem,
 } from '../../../src/shared/contract/evaluation';
+import type { EvalBaselineExperimentListItem } from '../../../src/shared/contract/evaluationBaseline';
 import { evalRunPanelZh } from '@internal-evaluation/renderer/i18n/evalRunPanel';
 
 const evaluation = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -264,9 +264,9 @@ describe('EvalCaseDrawer', () => {
 
 describe('EvalRunHistory case drawer entry', () => {
   it('T7：点变化行请求本轮单题证据，Esc 关闭抽屉', async () => {
-    const runs: EvalExperimentListItem[] = [
-      { id: 'run-new', name: 'eval-daily-2026-08-30', timestamp: 2, model: 'm', provider: 'p', scope: 'full', source: 'eval', gitCommit: 'b', config: { mode: 'real', k: 1, caseBankSha: 'sha', evalSet: { split: 'held-in' } }, summary: { completed: true, notRun: 0, passRate: 0 } },
-      { id: 'run-old', name: 'eval-daily-2026-08-29', timestamp: 1, model: 'm', provider: 'p', scope: 'full', source: 'eval', gitCommit: 'a', config: { mode: 'real', k: 1, caseBankSha: 'sha', evalSet: { split: 'held-in' } }, summary: { completed: true, notRun: 0, passRate: 1 } },
+    const runs: EvalBaselineExperimentListItem[] = [
+      { id: 'run-new', name: 'eval-daily-2026-08-30', timestamp: 2, model: 'm', provider: 'p', scope: 'full', source: 'eval', gitCommit: 'b', config: { mode: 'real', k: 1, caseBankSha: 'sha', aggregationRuleVersion: 4, evalSet: { split: 'held-in' } }, summary: { completed: true, notRun: 0, passRate: 0, plannedCaseIds: ['case-1'], invalidCases: 0, aggregationRuleVersion: 4 }, caseResults: { 'case-1': { status: 'failed', score: 0 } } },
+      { id: 'run-old', name: 'eval-daily-2026-08-29', timestamp: 1, model: 'm', provider: 'p', scope: 'full', source: 'eval', gitCommit: 'a', config: { mode: 'real', k: 1, caseBankSha: 'sha', aggregationRuleVersion: 4, evalSet: { split: 'held-in' } }, summary: { completed: true, notRun: 0, passRate: 1, plannedCaseIds: ['case-1'], invalidCases: 0, aggregationRuleVersion: 4 }, caseResults: { 'case-1': { status: 'passed', score: 1 } } },
     ];
     evaluation.invoke.mockImplementation(async (channel: string, payload: unknown) => {
       if (channel === EVALUATION_CHANNELS.LOAD_CASE) return detail();

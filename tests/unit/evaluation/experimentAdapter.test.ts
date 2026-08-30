@@ -14,6 +14,25 @@ function createDbWriter() {
 }
 
 describe('ExperimentAdapter canonical harness persistence', () => {
+  it('T6：事件末态原样落计划题集，旧事件缺字段时不伪造', () => {
+    const db = { ...createDbWriter(), updateExperimentSummary: vi.fn() };
+    const adapter = new ExperimentAdapter(db as any);
+    const summary = {
+      runId: 'event-run', startTime: 1, endTime: 2, duration: 1, total: 1,
+      passed: 1, failed: 0, skipped: 0, partial: 0, averageScore: 1,
+      plannedCaseIds: ['case-1'], completed: true, notRun: 0, invalidCases: 0,
+      aggregationRule: 'pass_rate_k1' as const, aggregationRuleVersion: 4,
+    };
+    adapter.finishEventRun('event-run', summary);
+    expect(JSON.parse(db.updateExperimentSummary.mock.calls[0][1]).plannedCaseIds)
+      .toEqual(['case-1']);
+    adapter.finishEventRun('legacy-run', {
+      ...summary, plannedCaseIds: undefined,
+    } as unknown as typeof summary);
+    expect(JSON.parse(db.updateExperimentSummary.mock.calls[1][1]))
+      .not.toHaveProperty('plannedCaseIds');
+  });
+
   it('T2：compare 每对只落一行，胜负与排除理由完整留在 data_json', () => {
     const db = { ...createDbWriter(), updateExperimentSummary: vi.fn() };
     const adapter = new ExperimentAdapter(db as any);

@@ -108,7 +108,7 @@ async function isDictationStreamConfigured(): Promise<boolean> {
   try {
     const token = (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__;
     const query = typeof token === 'string' ? `?token=${encodeURIComponent(token)}` : '';
-    const response = await fetch(`/api/voice/status${query}`);
+    const response = await fetch(`/api/speech/status${query}`);
     if (!response.ok) return false;
     const status = await response.json() as { configured?: boolean };
     return status.configured === true;

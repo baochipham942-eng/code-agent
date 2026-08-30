@@ -71,12 +71,32 @@ describe('BundledHostCapabilityRegistry', () => {
     expect(lifecycle).not.toHaveBeenCalled();
     expect(ipcMain.handle).not.toHaveBeenCalled();
     expect(emitUpgrade().destroy).not.toHaveBeenCalled();
+    const inputStatusResponse = { json: vi.fn() };
+    const inputStatusNext = vi.fn();
+    dispatchHostWebRoute(
+      { path: '/speech/status' } as never,
+      inputStatusResponse as never,
+      inputStatusNext,
+    );
+    expect(inputStatusNext).toHaveBeenCalledOnce();
     await registry.install('builtin.voice-input', { source: 'user' });
     expect(ipcMain.handle).toHaveBeenCalledTimes(4);
     expect(emitUpgrade().destroy).toHaveBeenCalledOnce();
+    dispatchHostWebRoute(
+      { path: '/speech/status' } as never,
+      inputStatusResponse as never,
+      inputStatusNext,
+    );
+    expect(inputStatusResponse.json).toHaveBeenCalledWith({ configured: expect.any(Boolean) });
     await registry.uninstall('builtin.voice-input');
     expect(ipcMain.removeHandler).toHaveBeenCalledTimes(4);
     expect(emitUpgrade().destroy).not.toHaveBeenCalled();
+    dispatchHostWebRoute(
+      { path: '/speech/status' } as never,
+      inputStatusResponse as never,
+      inputStatusNext,
+    );
+    expect(inputStatusNext).toHaveBeenCalledTimes(2);
 
     await registry.install('builtin.voice-live', { source: 'user' });
     expect(ipcMain.handle).toHaveBeenCalledTimes(5);
@@ -225,6 +245,7 @@ describe('BundledHostCapabilityRegistry', () => {
       'shell',
     ]);
     expect(host.registerIpcHandler).toHaveBeenCalledTimes(2);
+    expect(host.registerWebRoute).toHaveBeenCalledOnce();
     expect(host.registerWebSocketUpgrade).toHaveBeenCalledOnce();
     expect(host.registerShortcut).toHaveBeenCalledOnce();
     expect(host.publishRendererCapabilityState).toHaveBeenCalledOnce();
@@ -282,6 +303,38 @@ describe('BundledHostCapabilityRegistry', () => {
     await registry.install('builtin.voice-live');
 
     await expect(registry.uninstall('builtin.voice-live')).rejects.toThrow('cleanup failed');
+
+    await expect(registry.listStates()).resolves.toEqual([
+      { id: 'builtin.voice-live', installed: true, version: '1.0.0', revision: 2 },
+    ]);
+    expect(activation).toBe(2);
+    expect(lifecycle.mock.calls.slice(-2).map(([, action]) => action)).toEqual(['failed', 'rolled_back']);
+  });
+
+  it('rolls back when a registered contribution cleanup fails', async () => {
+    dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-bundled-host-contribution-uninstall-'));
+    const lifecycle = vi.fn();
+    let activation = 0;
+    const descriptor: BundledHostCapabilityDescriptor = {
+      id: 'builtin.voice-live',
+      version: '1.0.0',
+      dependencies: [],
+      permissions: [],
+      async activate(host) {
+        activation += 1;
+        host.registerStartupTask(() => (
+          activation === 1
+            ? () => { throw new Error('startup contribution cleanup failed'); }
+            : () => undefined
+        ));
+        host.publishRendererCapabilityState();
+        return () => undefined;
+      },
+    };
+    const registry = new BundledHostCapabilityRegistry({ dataDir, descriptors: [descriptor], lifecycle });
+    await registry.install('builtin.voice-live');
+
+    await expect(registry.uninstall('builtin.voice-live')).rejects.toThrow('contribution cleanup failed');
 
     await expect(registry.listStates()).resolves.toEqual([
       { id: 'builtin.voice-live', installed: true, version: '1.0.0', revision: 2 },

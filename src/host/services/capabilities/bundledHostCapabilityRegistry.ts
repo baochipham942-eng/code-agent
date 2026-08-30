@@ -123,13 +123,22 @@ function projectVoiceInputReadiness(
   };
 }
 
-async function cleanupAll(cleanups: readonly HostCapabilityCleanup[]): Promise<void> {
+async function cleanupAll(
+  cleanups: readonly HostCapabilityCleanup[],
+  suppressErrors: boolean,
+): Promise<void> {
+  const errors: unknown[] = [];
   for (let index = cleanups.length - 1; index >= 0; index -= 1) {
     try {
       await cleanups[index]();
-    } catch {
-      // Cleanup is best-effort here; the original activation error stays authoritative.
+    } catch (error) {
+      errors.push(error);
     }
+  }
+  if (!suppressErrors && errors.length > 0) {
+    throw new AggregateError(errors, 'bundled host capability contribution cleanup failed', {
+      cause: errors[0],
+    });
   }
 }
 
@@ -365,12 +374,14 @@ export class BundledHostCapabilityRegistry {
           try {
             await descriptorCleanup();
           } finally {
-            await cleanupAll(contributionCleanups);
+            await cleanupAll(contributionCleanups, false);
           }
         },
       });
     } catch (error) {
-      await cleanupAll(contributionCleanups);
+      // Activation already has an authoritative error; cleanup still runs in reverse
+      // order, but a secondary cleanup failure must not hide the activation cause.
+      await cleanupAll(contributionCleanups, true);
       throw error;
     }
   }

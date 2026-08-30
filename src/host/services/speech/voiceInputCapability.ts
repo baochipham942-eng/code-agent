@@ -11,6 +11,7 @@ import { hasActiveDictationStream } from './dictationStreamService';
 import { hasActiveSpeechTranscription } from './speechTranscriptionService';
 import { clearRetainedSpeechAudio, getSpeechTranscriptionService } from './speechTranscriptionService';
 import { attachDictationClient } from './dictationStreamService';
+import { createVoiceInputWebRouteContribution } from './voiceInputWebContribution';
 
 export const voiceInputCapabilityDescriptor: BundledHostCapabilityDescriptor = {
   id: 'builtin.voice-input',
@@ -31,6 +32,7 @@ export const voiceInputCapabilityDescriptor: BundledHostCapabilityDescriptor = {
     const cleanupPasteConfig = configureVoicePasteTranscription(transcribe);
     host.registerIpcHandler(registerSpeechHandlers);
     host.registerIpcHandler(registerVoicePasteHandlers);
+    host.registerWebRoute(createVoiceInputWebRouteContribution());
     host.registerWebSocketUpgrade(createDictationStreamUpgradeContribution(attachDictationClient));
     host.registerShortcut(registerVoicePasteShortcut);
     host.publishRendererCapabilityState();

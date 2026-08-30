@@ -11,11 +11,17 @@ const mocks = vi.hoisted(() => ({
   has: vi.fn(),
   loggerWarn: vi.fn(),
   resolve: vi.fn(),
+  hasInteractiveUi: vi.fn(() => true),
 }));
 
 vi.mock('../../../src/host/memory/directiveMemoryConfirmation', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../../src/host/memory/directiveMemoryConfirmation')>(),
   requestDirectiveMemoryConfirmation: mocks.confirmation,
+}));
+
+vi.mock('../../../src/host/platform/windowBridge', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/platform/windowBridge')>(),
+  hasInteractiveUi: mocks.hasInteractiveUi,
 }));
 
 vi.mock('../../../src/host/tools/protocolRegistry', () => ({
@@ -72,6 +78,9 @@ const { getToolResolver, resetToolResolver } = await import('../../../src/host/t
 const { resolveToolWriteTargets } = await import('../../../src/host/tools/writeTargets');
 const { webSearchSchema } = await import('../../../src/host/tools/modules/network/webSearch.schema');
 const { screenshotPageSchema } = await import('../../../src/host/tools/modules/network/screenshotPage.schema');
+const { DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR } = await import('../../../src/host/memory/directiveMemoryMessages');
+const { HEADLESS_PERMISSION_PROBE_TIMEOUT_MS } = await import('../../../src/host/memory/directiveMemoryConfirmation');
+const { getDecisionHistory } = await import('../../../src/host/security/decisionHistory');
 const {
   createFileOwnershipActor,
   getFileOwnershipRegistry,
@@ -178,6 +187,7 @@ describe('ToolExecutor directive memory path authority', () => {
     mocks.execute.mockReset().mockResolvedValue({ ok: true, output: 'written' });
     mocks.resolve.mockResolvedValue({ execute: mocks.execute });
     mocks.confirmation.mockReset();
+    mocks.hasInteractiveUi.mockReset().mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -241,6 +251,104 @@ describe('ToolExecutor directive memory path authority', () => {
       metadata: { code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' },
     });
     expect(mocks.execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('ToolExecutor directive memory — headless（无交互界面）策略', () => {
+  const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
+  const dataDir = '/tmp/code-agent-directive-authority';
+  const memoryDir = path.join(dataDir, 'memory');
+
+  beforeEach(() => {
+    process.env.CODE_AGENT_DATA_DIR = dataDir;
+    resetToolResolver();
+    mocks.getSchemas.mockReturnValue(schemas);
+    mocks.has.mockReturnValue(true);
+    mocks.execute.mockReset().mockResolvedValue({ ok: true, output: 'written' });
+    mocks.resolve.mockResolvedValue({ execute: mocks.execute });
+    mocks.confirmation.mockReset();
+    mocks.hasInteractiveUi.mockReset().mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    if (originalDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+    else process.env.CODE_AGENT_DATA_DIR = originalDataDir;
+  });
+
+  it('非 skip：fail-fast 立即拒绝，不进 120s 确认窗、不派发执行', async () => {
+    const start = Date.now();
+    const executor = new ToolExecutor({
+      workingDirectory: '/tmp',
+      requestPermission: vi.fn(async () => ({ approved: false, denialSource: 'no-approval-ui' as const })),
+    });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute(
+      'MemoryWrite',
+      { action: 'write', filename: 'c1.md', content: 'directive' },
+      { preApprovedTools: new Set(['MemoryWrite']) },
+    );
+
+    expect(Date.now() - start).toBeLessThan(5_000);
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR);
+    expect(result.error).toContain('不要重试');
+    expect(result.metadata).toMatchObject({ code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' });
+    // 关键：headless 下绝不触碰 120s 确认窗
+    expect(mocks.confirmation).not.toHaveBeenCalled();
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
+  it('skip（requestPermission 批准）：放行写入、合成授权、写 permission ledger', async () => {
+    const history = getDecisionHistory();
+    history.clear();
+    const executor = new ToolExecutor({
+      workingDirectory: '/tmp',
+      requestPermission: vi.fn(async () => true),
+    });
+    executor.setAuditEnabled(false);
+    mocks.execute.mockImplementation(async () => ({ ok: true, output: 'written' }));
+
+    const result = await executor.execute(
+      'Bash',
+      { command: `printf directive > ${path.join(memoryDir, 'c1.md')}` },
+      { preApprovedTools: new Set(['Bash']), sessionId: 'headless-skip-test' },
+    );
+
+    expect(result).toMatchObject({ success: true, output: 'written' });
+    expect(mocks.execute).toHaveBeenCalledOnce();
+    expect(mocks.confirmation).not.toHaveBeenCalled();
+    // permission ledger：skip 放行全局记忆写入必须留痕
+    expect(history.getAll().some((entry) => (
+      entry.outcome === 'auto-approve' && entry.reason === 'directive-memory-headless-skip-permissions'
+    ))).toBe(true);
+  });
+
+  it('web 式「在等人类通道」的处理器（永不回答）：按探针上限 fail-fast，不陪等', async () => {
+    vi.useFakeTimers();
+    try {
+      const executor = new ToolExecutor({
+        workingDirectory: '/tmp',
+        // 模拟 web 停车审批/无 UI 超时定时器：永远不会自己 resolve
+        requestPermission: vi.fn(() => new Promise<boolean>(() => {})),
+      });
+      executor.setAuditEnabled(false);
+
+      const pending = executor.execute(
+        'MemoryWrite',
+        { action: 'write', filename: 'c1.md', content: 'directive' },
+        { preApprovedTools: new Set(['MemoryWrite']) },
+      );
+      await vi.advanceTimersByTimeAsync(HEADLESS_PERMISSION_PROBE_TIMEOUT_MS);
+      const result = await pending;
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe(DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR);
+      expect(mocks.confirmation).not.toHaveBeenCalled();
+      expect(mocks.execute).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -97,6 +97,7 @@ interface SensitivePattern {
 const SHARED_SECRET_TYPE_MAP: Record<SecretPatternType, SensitiveType> = {
   basic_auth: 'basic_auth',
   cookie: 'generic_secret',
+  env_secret: 'generic_secret',
   openai_key: 'openai_key',
   gcp_key: 'gcp_key',
   bearer_token: 'bearer_token',

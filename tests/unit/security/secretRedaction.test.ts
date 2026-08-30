@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { redactSecrets, sanitizeLogValue } from '../../../src/host/security/secretRedaction';
+import { redactSecrets, redactToolResultSecrets, sanitizeLogValue } from '../../../src/host/security/secretRedaction';
+import { sanitizeToolResultForHistory } from '../../../src/host/agent/messageHandling/converter';
+import type { ToolResult } from '../../../src/shared/contract';
 
 describe('secret redaction', () => {
   it('fully redacts OpenAI-style raw and partially masked keys', () => {
@@ -74,5 +76,70 @@ describe('secret redaction', () => {
     expect(sanitized.nested.session_cookie).toBe('***REDACTED***');
     expect(Array.isArray(sanitized.list)).toBe(true);
     expect((sanitized.list[1] as { authorization: string }).authorization).toBe('***REDACTED***');
+  });
+});
+
+describe('tool result 脱敏（transcript / 导出 / 事件流）', () => {
+  const configDump = JSON.stringify({
+    env: { ANTHROPIC_API_KEY: 'sk-ant-api03-realkeyvalue0001' },
+    githubToken: `ghp_${'g'.repeat(36)}`,
+    note: 'MAX_TOKENS = 128000',
+  }, null, 2);
+
+  it('redactToolResultSecrets 脱敏 output/error 里的密钥，正常内容原样保留', () => {
+    const result: ToolResult = {
+      toolCallId: 'call-1',
+      success: true,
+      output: `jq 读取 ~/.claude.json:\n${configDump}`,
+      duration: 5,
+    };
+
+    const redacted = redactToolResultSecrets(result);
+
+    expect(redacted.output).not.toContain('sk-ant-api03-realkeyvalue0001');
+    expect(redacted.output).not.toContain(`ghp_${'g'.repeat(36)}`);
+    // 不误伤：普通数字配置与非密钥文本原样保留
+    expect(redacted.output).toContain('MAX_TOKENS = 128000');
+    expect(redacted.output).toContain('jq 读取 ~/.claude.json');
+    // 原对象不被改写
+    expect(result.output).toContain('sk-ant-api03-realkeyvalue0001');
+  });
+
+  it('无密钥的结果原样返回（同引用，零拷贝路径）', () => {
+    const result: ToolResult = {
+      toolCallId: 'call-2',
+      success: true,
+      output: 'const token = userToken; // 普通代码',
+      duration: 1,
+    };
+
+    expect(redactToolResultSecrets(result)).toBe(result);
+  });
+
+  it('error 字段同样脱敏', () => {
+    const result: ToolResult = {
+      toolCallId: 'call-3',
+      success: false,
+      error: `curl failed: Authorization: Bearer ${'b'.repeat(24)}`,
+      duration: 1,
+    };
+
+    const redacted = redactToolResultSecrets(result);
+    expect(redacted.error).not.toContain('b'.repeat(24));
+  });
+
+  it('sanitizeToolResultForHistory（会话落库收口）对 tool_result 脱敏', () => {
+    const result: ToolResult = {
+      toolCallId: 'call-4',
+      success: true,
+      output: configDump,
+      duration: 3,
+    };
+
+    const sanitized = sanitizeToolResultForHistory(result);
+
+    expect(sanitized.output).not.toContain('sk-ant-api03-realkeyvalue0001');
+    expect(sanitized.output).not.toContain(`ghp_${'g'.repeat(36)}`);
+    expect(sanitized.output).toContain('MAX_TOKENS = 128000');
   });
 });

@@ -194,7 +194,9 @@ export function permissionDenialError(toolName: string, source: PermissionDenial
         HostReasonCode.PermissionDeniedNoApprovalUi,
         `${toolName} 被自动拒绝：当前运行环境没有审批界面（非交互 CLI / web headless），`
           + '需人工确认的操作一律 fail-closed 拒绝——用户并未看到审批请求。'
-          + '出路：把会话权限档抬到 bypassPermissions，或改用无需确认的等价操作。',
+          + '重试同一个操作会得到相同结果，不要重试。'
+          + '出路：改用有审批界面的交互模式（GUI），或加 --dangerously-skip-permissions 重跑（显式授权自动批准，危险），'
+          + '或改用无需确认的等价操作（只读操作不会被拦）。',
         metadata,
       );
     case 'timeout':

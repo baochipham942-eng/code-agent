@@ -2,6 +2,7 @@ export type SecretPatternId =
   | 'url-basic-auth'
   | 'cookie-header'
   | 'session-cookie-assignment'
+  | 'env-secret-assignment'
   | 'openai-key'
   | 'google-api-key'
   | 'bearer-token'
@@ -18,6 +19,7 @@ export type SecretPatternId =
 export type SecretPatternType =
   | 'basic_auth'
   | 'cookie'
+  | 'env_secret'
   | 'openai_key'
   | 'gcp_key'
   | 'bearer_token'
@@ -114,6 +116,18 @@ export const secretPatternRegistry: SecretPatternEntry[] = [
     pattern: /\b((?:session[-_\s]?cookie|cookie)\s*=\s*)[^\s'";,]+/gi,
     confidence: 'high',
     maskStyle: 'full',
+    redact: (match, redacted) => `${match[1]}${redacted}`,
+  },
+  {
+    // 环境变量/JSON 形态的密钥键值对：ANTHROPIC_API_KEY=…、 "github_token": "…" 等。
+    // 键必须全大写且以已知后缀结尾（允许 JSON 闭合引号），值 ≥8 字符且排除常见占位符——
+    // 避免误伤 `token: userToken`、`MAX_TOKENS = 128000` 这类正常代码。
+    id: 'env-secret-assignment',
+    type: 'env_secret',
+    pattern: /\b([A-Z][A-Z0-9_]{2,}(?:API_KEY|APIKEY|TOKEN|SECRET|PASSWORD|PASSWD|ACCESS_KEY|PRIVATE_KEY)["']?\s*[:=]\s*["']?)([^\s"',}]{8,})/g,
+    confidence: 'high',
+    maskStyle: 'full',
+    validate: (_input, match) => !/^(your[-_]?|xxx|changeme|change[-_]?me|example|dummy|placeholder|redacted|null|none|true|false|\*+)/i.test(match[2]),
     redact: (match, redacted) => `${match[1]}${redacted}`,
   },
   {

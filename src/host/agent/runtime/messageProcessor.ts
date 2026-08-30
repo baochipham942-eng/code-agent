@@ -66,6 +66,7 @@ import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemCo
 import { shouldEndRunForPlanApproval } from './planApprovalRunBoundary';
 import { persistCancelledToolCallClosures } from './cancelledToolCallClosure';
 import { emitArtifactRepairStopError } from './artifactRepairStopError';
+import { ensureUniqueToolCallIds } from './toolCallIdUniqueness';
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
 
@@ -543,7 +544,11 @@ export class MessageProcessor {
     iterations: number,
     langfuse: LangfuseSpanFacade,
   ): Promise<'continue' | 'continue-soft-validation' | 'break'> {
-    const toolCalls = response.toolCalls ?? [];
+    // 弱模型会重复发同一个 toolCallId（glm-5.3-flash 实测每轮都叫 "call_1"）。
+    // 下游一律以 toolCallId 为 Map 键做配对，同 id 后写覆盖前写（导出里 Bash 的
+    // 结果被同 id 调用的错误顶掉）。入口统一改写成全局唯一 id，细节见
+    // toolCallIdUniqueness.ts。
+    const toolCalls = ensureUniqueToolCallIds(response.toolCalls ?? [], this.ctx.messages).toolCalls;
     const requestedToolNames = toolCalls.map((toolCall) => toolCall.name).join(', ');
 
     const deniedToolCalls = toolCalls.filter((toolCall) => isToolDeniedForRun(this.ctx, toolCall.name));

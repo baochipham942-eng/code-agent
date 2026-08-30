@@ -49,6 +49,9 @@ describe('PluginsSettings install cancellation', () => {
       if (channel === IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED) {
         return Promise.resolve({ success: true, data: [] });
       }
+      if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST) {
+        return Promise.resolve({ success: true, data: [] });
+      }
       if (channel === IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN) {
         return new Promise((resolve) => {
           finishInstall = resolve;
@@ -81,5 +84,62 @@ describe('PluginsSettings install cancellation', () => {
     finishInstall({ success: false, cancelled: true });
     await waitFor(() => expect(screen.getByText(zh.settings.plugins.marketplace.install)).toBeTruthy());
     expect(document.body.textContent).not.toContain(zh.settings.plugins.errors.operationFailed);
+  });
+
+  it('discloses permissions and waits for the explicit confirmation before installing', async () => {
+    invoke.mockImplementation((channel: string) => {
+      if (
+        channel === IPC_CHANNELS.MARKETPLACE_LIST
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED
+        || channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST
+      ) {
+        return Promise.resolve({ success: true, data: [] });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_SELECT_STAGE) {
+        return Promise.resolve({
+          success: true,
+          data: {
+            token: 'validated-package-token',
+            id: 'local.web-research',
+            name: '本机网页研究',
+            version: '1.0.0',
+            description: '读取网页并整理证据。',
+            permissions: ['network', 'storage'],
+            toolNames: ['research_web'],
+            sourceKind: 'directory',
+            sourceLabel: 'web-research',
+            sandbox: { passed: true, summary: '激活与最小工具探针均通过。' },
+            expiresAt: Date.now() + 60_000,
+          },
+        });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM) {
+        return Promise.resolve({
+          success: true,
+          data: { id: 'local.web-research', version: '1.0.0', toolNames: ['research_web'] },
+        });
+      }
+      throw new Error(`Unexpected channel ${channel}`);
+    });
+
+    render(<PluginsSettings />);
+    fireEvent.click(await screen.findByRole('button', { name: zh.settings.plugins.manualImport.action }));
+
+    expect(await screen.findByText(zh.settings.plugins.manualImport.confirmTitle)).toBeTruthy();
+    expect(screen.getByText(zh.settings.plugins.manualImport.permissions.network)).toBeTruthy();
+    expect(screen.getByText(zh.settings.plugins.manualImport.permissions.storage)).toBeTruthy();
+    expect(invoke).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM,
+      expect.anything(),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: zh.settings.plugins.manualImport.confirm }));
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM,
+        'validated-package-token',
+      );
+    });
   });
 });

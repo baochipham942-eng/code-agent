@@ -15,7 +15,9 @@ import {
   RefreshCw,
   Search,
   Shield,
+  ShieldCheck,
   Trash2,
+  Upload,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type {
@@ -24,10 +26,15 @@ import type {
   MarketplacePluginEntry,
   PluginScope,
 } from '@shared/contract/marketplace';
+import type {
+  CapabilityPackagePermission,
+  CapabilityPackagePreview,
+  InstalledCapabilityPackage,
+} from '@shared/contract/capabilityPackage';
 import { useAuthStore } from '../../../../stores/authStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import ipcService from '../../../../services/ipcService';
-import { Button, EmptyState } from '../../../primitives';
+import { Button, EmptyState, Modal, ModalFooter } from '../../../primitives';
 import { SettingsDetails, SettingsSection } from '../SettingsLayout';
 import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
 
@@ -95,6 +102,9 @@ export const PluginsSettings: React.FC = () => {
   const [marketplaces, setMarketplaces] = useState<MarketplaceInfo[]>([]);
   const [catalog, setCatalog] = useState<MarketplacePluginEntry[]>([]);
   const [installed, setInstalled] = useState<InstalledPlugin[]>([]);
+  const [capabilityPackages, setCapabilityPackages] = useState<InstalledCapabilityPackage[]>([]);
+  const [packagePreview, setPackagePreview] = useState<CapabilityPackagePreview | null>(null);
+  const [packageBusy, setPackageBusy] = useState(false);
   const [selectedMarketplace, setSelectedMarketplace] = useState('all');
   const [query, setQuery] = useState('');
   const [newMarketplaceSource, setNewMarketplaceSource] = useState('');
@@ -110,10 +120,11 @@ export const PluginsSettings: React.FC = () => {
     setLoading(true);
     setNotice(null);
     try {
-      const [marketplaceResult, catalogResult, installedResult] = await Promise.all([
+      const [marketplaceResult, catalogResult, installedResult, capabilityPackageResult] = await Promise.all([
         ipcService.invoke(IPC_CHANNELS.MARKETPLACE_LIST),
         ipcService.invoke(IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS),
         ipcService.invoke(IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED, 'all'),
+        ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_LIST),
       ]);
 
       const marketplacesState = normalizeMarketplaceResult<MarketplaceInfo[]>(
@@ -132,10 +143,12 @@ export const PluginsSettings: React.FC = () => {
       if (!marketplacesState.success) throw new Error(getResultError(marketplacesState, pluginsText.errors));
       if (!catalogState.success) throw new Error(getResultError(catalogState, pluginsText.errors));
       if (!installedState.success) throw new Error(getResultError(installedState, pluginsText.errors));
+      if (!capabilityPackageResult.success) throw new Error(capabilityPackageResult.error);
 
       setMarketplaces(marketplacesState.data ?? []);
       setCatalog(catalogState.data ?? []);
       setInstalled(installedState.data ?? []);
+      setCapabilityPackages(capabilityPackageResult.data);
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
       setNotice({ type: 'error', text });
@@ -297,6 +310,65 @@ export const PluginsSettings: React.FC = () => {
     });
   }, [pluginsText, runAction]);
 
+  const handleSelectCapabilityPackage = useCallback(() => {
+    setPackageBusy(true);
+    setNotice(null);
+    void (async () => {
+      try {
+        const result = await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_SELECT_STAGE);
+        if (!result.success) throw new Error(result.error);
+        if (result.data) setPackagePreview(result.data);
+      } catch (error) {
+        setNotice({ type: 'error', text: error instanceof Error ? error.message : String(error) });
+      } finally {
+        setPackageBusy(false);
+      }
+    })();
+  }, []);
+
+  const closePackagePreview = useCallback(() => {
+    const token = packagePreview?.token;
+    setPackagePreview(null);
+    if (token) void ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_CANCEL, token);
+  }, [packagePreview]);
+
+  const handleConfirmCapabilityPackage = useCallback(() => {
+    if (!packagePreview) return;
+    const packageName = packagePreview.name;
+    setPackageBusy(true);
+    setNotice(null);
+    void (async () => {
+      try {
+        const result = await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, packagePreview.token);
+        if (!result.success) throw new Error(result.error);
+        setPackagePreview(null);
+        setNotice({
+          type: 'success',
+          text: `${pluginsText.manualImport.installedPrefix}${packageName}`,
+        });
+        await reload();
+      } catch (error) {
+        setNotice({ type: 'error', text: error instanceof Error ? error.message : String(error) });
+        setPackagePreview(null);
+      } finally {
+        setPackageBusy(false);
+      }
+    })();
+  }, [packagePreview, pluginsText.manualImport.installedPrefix, reload]);
+
+  const handleUninstallCapabilityPackage = useCallback((plugin: InstalledCapabilityPackage) => {
+    if (!window.confirm(`${pluginsText.manualImport.uninstallConfirmPrefix}${plugin.name}${pluginsText.manualImport.uninstallConfirmSuffix}`)) return;
+    void runAction(`capability-package:uninstall:${plugin.id}`, async () => {
+      const result = await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_UNINSTALL, plugin.id);
+      if (!result.success) throw new Error(result.error);
+      return `${pluginsText.manualImport.uninstalledPrefix}${plugin.name}`;
+    });
+  }, [pluginsText.manualImport, runAction]);
+
+  const permissionLabel = useCallback((permission: CapabilityPackagePermission): string => (
+    pluginsText.manualImport.permissions[permission]
+  ), [pluginsText.manualImport.permissions]);
+
   if (!isAdmin) {
     return (
       <div className="space-y-6">
@@ -316,15 +388,27 @@ export const PluginsSettings: React.FC = () => {
         testId="plugins-hub-header"
         title={t.capabilityHub.tabPlugins}
         actions={(
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void reload()}
-            loading={loading}
-            leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
-          >
-            {pluginsText.installed.refresh}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleSelectCapabilityPackage}
+              loading={packageBusy}
+              disabled={loading || packageBusy}
+              leftIcon={<Upload className="h-3.5 w-3.5" />}
+            >
+              {pluginsText.manualImport.action}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void reload()}
+              loading={loading}
+              leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
+            >
+              {pluginsText.installed.refresh}
+            </Button>
+          </div>
         )}
       />
       {/* 操作结果通知（页面级，所有 section 的操作都在这里反馈） */}
@@ -339,6 +423,52 @@ export const PluginsSettings: React.FC = () => {
           <span>{notice.text}</span>
         </div>
       )}
+
+      <SettingsSection
+        title={pluginsText.manualImport.title}
+        description={pluginsText.manualImport.description}
+      >
+        {capabilityPackages.length === 0 ? (
+          <EmptyState text={pluginsText.manualImport.empty} />
+        ) : (
+          <div className="space-y-3">
+            {capabilityPackages.map((plugin) => {
+              const busy = busyKey === `capability-package:uninstall:${plugin.id}`;
+              return (
+                <div key={plugin.id} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="text-sm font-medium text-zinc-100">{plugin.name}</h4>
+                        <Pill>{plugin.version}</Pill>
+                        <Pill tone={plugin.state === 'active' ? 'success' : 'danger'}>
+                          {plugin.state === 'active' ? pluginsText.manualImport.active : pluginsText.manualImport.inactive}
+                        </Pill>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-zinc-500">{plugin.description}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {plugin.permissions.map((permission) => <Pill key={permission}>{permissionLabel(permission)}</Pill>)}
+                        <Pill>{plugin.toolNames.length}{pluginsText.manualImport.toolsSuffix}</Pill>
+                      </div>
+                      {plugin.error && <p className="mt-2 text-xs text-badge-danger">{plugin.error}</p>}
+                    </div>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => handleUninstallCapabilityPackage(plugin)}
+                      loading={busy}
+                      disabled={busyKey !== null}
+                      leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                    >
+                      {pluginsText.manualImport.uninstall}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </SettingsSection>
 
       <SettingsSection
         title={pluginsText.installed.title}
@@ -777,6 +907,66 @@ export const PluginsSettings: React.FC = () => {
           </div>
         </div>
       </SettingsDetails>
+
+      <Modal
+        isOpen={packagePreview !== null}
+        onClose={packageBusy ? undefined : closePackagePreview}
+        closeOnBackdropClick={false}
+        closeOnEsc={!packageBusy}
+        title={pluginsText.manualImport.confirmTitle}
+        headerIcon={<ShieldCheck className="h-5 w-5 text-badge-warning" />}
+        size="lg"
+        footer={(
+          <ModalFooter
+            cancelText={pluginsText.manualImport.cancel}
+            confirmText={pluginsText.manualImport.confirm}
+            onCancel={closePackagePreview}
+            onConfirm={handleConfirmCapabilityPackage}
+            cancelDisabled={packageBusy}
+            confirmDisabled={packageBusy}
+          />
+        )}
+      >
+        {packagePreview && (
+          <div className="space-y-4">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold text-zinc-100">{packagePreview.name}</h3>
+                <Pill>{packagePreview.version}</Pill>
+                {packagePreview.replacesInstalledVersion && (
+                  <Pill tone="warning">{pluginsText.manualImport.replacePrefix}{packagePreview.replacesInstalledVersion}</Pill>
+                )}
+              </div>
+              <p className="mt-2 text-sm leading-6 text-zinc-400">{packagePreview.description}</p>
+            </div>
+            <div className="rounded-lg border border-badge-success/25 bg-emerald-500/5 p-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-badge-success">
+                <ShieldCheck className="h-4 w-4" />
+                {pluginsText.manualImport.sandboxPassed}
+              </div>
+              <p className="mt-1 text-xs text-zinc-500">{packagePreview.sandbox.summary}</p>
+            </div>
+            <div>
+              <h4 className="text-sm font-medium text-zinc-200">{pluginsText.manualImport.permissionTitle}</h4>
+              <p className="mt-1 text-xs leading-5 text-zinc-500">{pluginsText.manualImport.permissionDescription}</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {packagePreview.permissions.length === 0 ? (
+                  <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 text-xs text-zinc-500">
+                    {pluginsText.manualImport.noPermissions}
+                  </div>
+                ) : packagePreview.permissions.map((permission) => (
+                  <div key={permission} className="rounded-lg border border-badge-warning/20 bg-amber-500/5 p-3 text-sm text-zinc-300">
+                    {permissionLabel(permission)}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-lg bg-zinc-950/60 p-3 text-xs leading-5 text-zinc-500">
+              {pluginsText.manualImport.failureEffect}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

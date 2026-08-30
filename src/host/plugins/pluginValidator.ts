@@ -42,6 +42,12 @@ const VALID_PLATFORMS: PluginPlatform[] = ['darwin', 'win32', 'linux'];
 
 const SEMVER_REGEX = /^\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?$/;
 
+function isSafeRelativeEntry(value: string): boolean {
+  if (!value || path.isAbsolute(value)) return false;
+  const normalized = path.normalize(value);
+  return normalized !== '..' && !normalized.startsWith(`..${path.sep}`);
+}
+
 // ----------------------------------------------------------------------------
 // Manifest Validation
 // ----------------------------------------------------------------------------
@@ -81,6 +87,8 @@ export function validateManifest(manifest: unknown): ValidationResult {
   // Optional: main
   if (m.main !== undefined && typeof m.main !== 'string') {
     errors.push({ field: 'main', message: "'main' must be a string" });
+  } else if (typeof m.main === 'string' && !isSafeRelativeEntry(m.main)) {
+    errors.push({ field: 'main', message: "'main' must stay inside the plugin directory" });
   }
 
   // Optional: name
@@ -104,8 +112,8 @@ export function validateManifest(manifest: unknown): ValidationResult {
       errors.push({ field: 'permissions', message: "'permissions' must be an array" });
     } else {
       for (const perm of m.permissions) {
-        if (!VALID_PERMISSIONS.includes(perm as PluginPermission)) {
-          warnings.push({
+        if (typeof perm !== 'string' || !VALID_PERMISSIONS.includes(perm as PluginPermission)) {
+          errors.push({
             field: 'permissions',
             message: `Unknown permission '${perm}'. Valid: ${VALID_PERMISSIONS.join(', ')}`,
           });
@@ -120,8 +128,8 @@ export function validateManifest(manifest: unknown): ValidationResult {
       errors.push({ field: 'surfaces', message: "'surfaces' must be an array" });
     } else {
       for (const surface of m.surfaces) {
-        if (!VALID_SURFACES.includes(surface as PluginSurface)) {
-          warnings.push({
+        if (typeof surface !== 'string' || !VALID_SURFACES.includes(surface as PluginSurface)) {
+          errors.push({
             field: 'surfaces',
             message: `Unknown surface '${surface}'. Valid: ${VALID_SURFACES.join(', ')}`,
           });
@@ -276,7 +284,7 @@ export function validateHooks(hooks: unknown): ValidationResult {
   }
 
   for (let i = 0; i < hooks.length; i++) {
-    const hook = hooks[i];
+    const hook: unknown = hooks[i];
     const prefix = `hooks[${i}]`;
 
     if (typeof hook !== 'object' || hook === null) {

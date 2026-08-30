@@ -561,15 +561,18 @@ export function App({ agent, options, onExit }: {
           ? { approved: false, denialSource: 'user' }
           : { approved: true });
       };
-      // 附反馈输入模式：Enter 提交拒绝（反馈回传 agent），Esc 返回选项
+      // 附反馈输入模式：Enter 提交拒绝（反馈回传 agent），Esc 返回选项。
+      // 合批 chunk（如 'y\r'）里 \r 也算提交，前面的可打印字符并入反馈。
       if (approvalFeedback !== null) {
         if (key.escape) {
           setApprovalFeedback(null);
           return;
         }
-        if (key.return) {
+        if (key.return || input.includes('\r')) {
           const { resolve } = pendingApproval;
-          const feedback = approvalFeedback.trim();
+          const head = key.return ? '' : input.slice(0, input.indexOf('\r'));
+          const extra = [...head].filter((ch) => ch >= ' ').join('');
+          const feedback = (approvalFeedback + extra).trim();
           setApproval(null);
           resolve({
             approved: false,
@@ -616,7 +619,8 @@ export function App({ agent, options, onExit }: {
       return; // 其余按键吞掉（blocking card）
     }
 
-    // Ctrl+R 历史搜索接管键盘（Editor 区域换成搜索行）
+    // Ctrl+R 历史搜索接管键盘（Editor 区域换成搜索行）。
+    // 合批 chunk 里 \r 也算采纳，前面的可打印字符先并进 query。
     const search = historySearchRef.current;
     if (search) {
       const matches = historyRef.current.search(search.query);
@@ -625,8 +629,11 @@ export function App({ agent, options, onExit }: {
         setHistorySearch(null);
         return;
       }
-      if (key.return) {
-        const match = matches[Math.min(search.index, matches.length - 1)];
+      if (key.return || input.includes('\r')) {
+        const head = key.return ? '' : input.slice(0, input.indexOf('\r'));
+        const extra = [...head].filter((ch) => ch >= ' ').join('');
+        const finalMatches = extra ? historyRef.current.search(search.query + extra) : matches;
+        const match = finalMatches[Math.min(search.index, finalMatches.length - 1)];
         if (match !== undefined) setEditor(withContent(editorRef.current, match));
         setHistorySearch(null);
         return;

@@ -65,6 +65,15 @@ const tmeetCliStatus: TestProviderStatus = {
   authMode: 'tmeet-cli',
 };
 
+const googleStatus: TestProviderStatus = {
+  ...baseStatus,
+  id: 'google-calendar',
+  displayName: 'Google Calendar',
+  requiresClientSecret: true,
+  clientSecretConfigured: true,
+  authMode: 'oauth',
+};
+
 function renderStatus(overrides: Partial<TestProviderStatus> = {}) {
   invokeDomain.mockImplementation((_domain: string, action: string) => {
     if (action === 'oauthStatus') return Promise.resolve([{ ...baseStatus, ...overrides }]);
@@ -410,6 +419,25 @@ describe('SaaSConnectorsSection Tencent Meeting CLI card', () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(screen.getByText(message)).toBeTruthy();
     expect(screen.queryByTestId('saas-connector-toast')).toBeNull();
+  });
+
+  it('keeps the concrete Google token-exchange failure visible', async () => {
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'oauthStatus') return Promise.resolve([googleStatus]);
+      if (action === 'oauthConnect') {
+        return Promise.reject(new Error('Google Calendar 换取授权凭据失败：连接授权服务器超时'));
+      }
+      return Promise.resolve([]);
+    });
+    render(<SaaSConnectorsSection />);
+
+    const card = await screen.findByTestId('saas-connector-google-calendar');
+    fireEvent.click(within(card).getByTestId('saas-card-action-google-calendar'));
+    fireEvent.click(screen.getByTestId('saas-connect-google-calendar'));
+
+    await screen.findByText(
+      '连接失败：Google Calendar 换取授权凭据失败：连接授权服务器超时',
+    );
   });
 });
 

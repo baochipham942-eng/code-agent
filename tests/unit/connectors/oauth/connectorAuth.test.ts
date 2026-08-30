@@ -47,6 +47,7 @@ beforeEach(() => {
 describe('ConnectorAuth', () => {
   it('starts Google Calendar authorization with PKCE, offline access, and Calendar-only scope', async () => {
     const store = memoryStore('google-calendar');
+    store.saveClientSecret('test-google-secret');
     const handleAuthorizationRedirect = vi.fn(
       async (_input: { accountId: string; flowId?: string; authUrl: URL }) => {},
     );
@@ -150,6 +151,40 @@ describe('ConnectorAuth', () => {
       requestedScope: 'resource:write',
     });
     expect(() => store.codeVerifier()).toThrow('Connector OAuth code verifier is not available');
+  });
+
+  it('aborts a stalled token exchange after the browser callback', async () => {
+    const store = memoryStore();
+    const abortController = new AbortController();
+    const fetchFn: FetchLike = vi.fn((_input, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+    }));
+    const coordinator = {
+      beginFlow: vi.fn(async () => flow),
+      handleAuthorizationRedirect: vi.fn(async () => {}),
+      waitForCallback: vi.fn(async () => ({
+        flowId: flow.flowId,
+        accountLabel: flow.accountLabel,
+        accountId: flow.accountId,
+        state: flow.state,
+        code: 'authorization-code',
+      })),
+      cancelFlow: vi.fn(() => false),
+    } as unknown as OAuthCoordinator;
+    const auth = new ConnectorAuth({ coordinator, storeFactory: () => store, fetchFn });
+
+    const connecting = auth.beginFlow({
+      accountId: 'account-1',
+      accountLabel: 'Example account',
+      descriptor,
+      action: 'write',
+      signal: abortController.signal,
+    });
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledOnce());
+    abortController.abort();
+
+    await expect(connecting).rejects.toThrow('OAuth flow cancelled');
+    expect(store.tokens()).toBeUndefined();
   });
 
   it('uses the provider default grant when the five-field custom descriptor has no scope field', async () => {

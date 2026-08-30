@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 import {
   getCachedCliConnectorConnectionStatus,
@@ -9,6 +9,8 @@ import {
 // 走 dispatch handler 而不是导出内部函数——只给单测 import 的导出会被死导出棘轮判红。
 
 const env = vi.hoisted(() => ({
+  originalGoogleClientId: process.env.NEO_GOOGLE_CALENDAR_OAUTH_CLIENT_ID,
+  originalGoogleClientSecret: process.env.NEO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET,
   tokens: undefined as unknown,
   secret: undefined as string | undefined,
   invalidate: vi.fn(),
@@ -35,6 +37,18 @@ const env = vi.hoisted(() => ({
   savedDescriptor: vi.fn(),
   consent: { granted: true, timedOut: false, permissionDecision: 'allow', permissionDecisionReason: 'allowed' },
   cancelPendingConsent: vi.fn(),
+  beginOAuthFlow: vi.fn(),
+}));
+
+vi.hoisted(() => {
+  process.env.NEO_GOOGLE_CALENDAR_OAUTH_CLIENT_ID = 'test-google-client-id';
+  delete process.env.NEO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET;
+});
+
+vi.mock('../../../src/host/connectors/oauth/connectorAuth', () => ({
+  ConnectorAuth: class {
+    beginFlow(input: unknown) { return env.beginOAuthFlow(input); }
+  },
 }));
 
 vi.mock('../../../src/host/connectors/feishu/larkCli', () => ({
@@ -111,6 +125,7 @@ function register(): HandlerFn {
 }
 
 beforeEach(() => {
+  delete process.env.NEO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET;
   replaceCliConnectorConnectionStatusCache([]);
   env.tokens = undefined;
   env.secret = undefined;
@@ -129,6 +144,20 @@ beforeEach(() => {
   env.savedDescriptor.mockClear();
   env.consent = { granted: true, timedOut: false, permissionDecision: 'allow', permissionDecisionReason: 'allowed' };
   env.cancelPendingConsent.mockReset().mockReturnValue(false);
+  env.beginOAuthFlow.mockReset().mockResolvedValue({ access_token: 'test-access-token' });
+});
+
+afterAll(() => {
+  if (env.originalGoogleClientId === undefined) {
+    delete process.env.NEO_GOOGLE_CALENDAR_OAUTH_CLIENT_ID;
+  } else {
+    process.env.NEO_GOOGLE_CALENDAR_OAUTH_CLIENT_ID = env.originalGoogleClientId;
+  }
+  if (env.originalGoogleClientSecret === undefined) {
+    delete process.env.NEO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET;
+  } else {
+    process.env.NEO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET = env.originalGoogleClientSecret;
+  }
 });
 
 describe('connector.ipc SaaS OAuth actions', () => {
@@ -153,8 +182,8 @@ describe('connector.ipc SaaS OAuth actions', () => {
       {
         id: 'google-calendar',
         displayName: 'Google Calendar',
-        clientIdConfigured: false,
-        requiresClientSecret: false,
+        clientIdConfigured: true,
+        requiresClientSecret: true,
         clientSecretConfigured: false,
         connected: false,
         loopbackRedirectUriSupport: 'confirmed',
@@ -371,7 +400,7 @@ describe('connector.ipc SaaS OAuth actions', () => {
     expect(env.invalidate).not.toHaveBeenCalled();
   });
 
-  it('reports the missing Google client credential before opening a browser', async () => {
+  it('fails loudly on a missing Google client secret before consent or browser authorization', async () => {
     const handler = register();
     const response = await handler(null, {
       action: 'oauthConnect',
@@ -382,10 +411,33 @@ describe('connector.ipc SaaS OAuth actions', () => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Connector OAuth clientId is not configured for google-calendar',
+        message: '缺少 NEO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET，无法连接 Google Calendar',
       },
     });
+    expect(env.beginOAuthFlow).not.toHaveBeenCalled();
+    expect(env.savedSecret).not.toHaveBeenCalled();
     expect(env.openExternal).not.toHaveBeenCalled();
+  });
+
+  it('copies the injected Google client secret into SecureStorage before the OAuth flow', async () => {
+    process.env.NEO_GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET = '  injected-google-secret  ';
+    const handler = register();
+
+    const response = await handler(null, {
+      action: 'oauthConnect',
+      payload: { providerId: 'google-calendar', action: 'calendar.events', authMode: 'oauth' },
+    } as IPCRequest);
+
+    expect(response.success).toBe(true);
+    expect(env.savedSecret).toHaveBeenCalledWith('injected-google-secret');
+    expect(env.beginOAuthFlow).toHaveBeenCalledWith(expect.objectContaining({
+      accountId: 'google-calendar',
+      descriptor: expect.objectContaining({ requiresClientSecret: true }),
+    }));
+    expect((response.data as Array<Record<string, unknown>>)[1]).toMatchObject({
+      clientSecretConfigured: true,
+      requiresClientSecret: true,
+    });
   });
 
   it('saves the five-field custom descriptor into ConnectorOAuthStore', async () => {

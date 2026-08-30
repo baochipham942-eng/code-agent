@@ -1,5 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('OAuthCoordinator', { lane: 'mcp' });
 
 export const OAUTH_FLOW_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -94,7 +97,13 @@ export class OAuthCoordinator {
 
   async beginFlow(input: BeginOAuthFlowInput): Promise<OAuthFlow> {
     const existing = this.flowsByAccountId.get(input.accountId);
-    if (existing) return this.snapshot(existing);
+    if (existing) {
+      logger.info('Reusing active OAuth loopback listener', {
+        accountId: input.accountId,
+        flowId: existing.flowId,
+      });
+      return this.snapshot(existing);
+    }
 
     const pending = this.pendingBegins.get(input.accountId);
     if (pending) return pending;
@@ -131,8 +140,18 @@ export class OAuthCoordinator {
 
     flow.authorizationUrl = input.authUrl.toString();
     try {
+      logger.info('Opening OAuth authorization page', {
+        accountId: flow.accountId,
+        flowId: flow.flowId,
+        authorizationHost: input.authUrl.hostname,
+      });
       await this.openAuthorization(input.authUrl, this.snapshot(flow));
     } catch (error) {
+      logger.error('Failed to open OAuth authorization page', {
+        accountId: flow.accountId,
+        flowId: flow.flowId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       this.cancelFlow(flow.flowId);
       throw error;
     }
@@ -175,7 +194,19 @@ export class OAuthCoordinator {
       resolve = res;
       reject = rej;
     });
-    callbackPromise.catch(() => {});
+    void callbackPromise.catch((error) => {
+      logger.warn('OAuth callback waiter rejected', {
+        accountId: input.accountId,
+        flowId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+
+    logger.info('Starting OAuth loopback listener', {
+      accountId: input.accountId,
+      flowId,
+      redirectMode: input.redirect.mode,
+    });
 
     const { server, redirectUrl } = await this.createLoopbackServer(input.redirect, (req, res) => {
       const record = recordRef.current;
@@ -212,6 +243,14 @@ export class OAuthCoordinator {
     recordRef.current = record;
     this.flowsById.set(flowId, record);
     this.flowsByAccountId.set(input.accountId, record);
+    const callbackUrl = new URL(record.redirectUrl);
+    logger.info('OAuth loopback listener ready', {
+      accountId: input.accountId,
+      flowId,
+      host: callbackUrl.hostname,
+      port: callbackUrl.port,
+      path: callbackUrl.pathname,
+    });
     return this.snapshot(record);
   }
 
@@ -255,6 +294,11 @@ export class OAuthCoordinator {
   }
 
   private handleCallbackRequest(flow: FlowRecord, req: IncomingMessage, res: ServerResponse): void {
+    logger.info('Received OAuth loopback request', {
+      accountId: flow.accountId,
+      flowId: flow.flowId,
+      method: req.method ?? 'unknown',
+    });
     if (req.method !== 'GET') {
       this.sendText(res, 404, 'Not found');
       return;
@@ -267,6 +311,10 @@ export class OAuthCoordinator {
     }
 
     if (requestUrl.searchParams.get('state') !== flow.state) {
+      logger.warn('Rejected OAuth callback with invalid state', {
+        accountId: flow.accountId,
+        flowId: flow.flowId,
+      });
       this.sendText(res, 400, 'Invalid OAuth state');
       return;
     }
@@ -278,6 +326,10 @@ export class OAuthCoordinator {
       );
       flow.settled = true;
       flow.reject(error);
+      logger.warn('Rejected OAuth callback with mismatched issuer', {
+        accountId: flow.accountId,
+        flowId: flow.flowId,
+      });
       res.once('finish', () => this.cleanupFlow(flow));
       this.sendText(res, 400, error.message);
       return;
@@ -285,11 +337,20 @@ export class OAuthCoordinator {
 
     const code = requestUrl.searchParams.get('code');
     if (!code) {
+      logger.warn('Rejected OAuth callback without authorization code', {
+        accountId: flow.accountId,
+        flowId: flow.flowId,
+      });
       this.sendText(res, 400, 'Missing OAuth code');
       return;
     }
 
     flow.settled = true;
+    logger.info('Accepted OAuth callback', {
+      accountId: flow.accountId,
+      flowId: flow.flowId,
+      responseIssuerPresent: responseIssuer !== null,
+    });
     flow.resolve({
       flowId: flow.flowId,
       accountLabel: flow.accountLabel,
@@ -309,6 +370,11 @@ export class OAuthCoordinator {
   private failFlow(flow: FlowRecord, error: Error): void {
     if (flow.settled) return;
     flow.settled = true;
+    logger.warn('OAuth flow failed before callback completion', {
+      accountId: flow.accountId,
+      flowId: flow.flowId,
+      error: error.message,
+    });
     flow.reject(error);
     this.cleanupFlow(flow);
   }
@@ -324,10 +390,14 @@ export class OAuthCoordinator {
 
   private closeServer(server: Server): void {
     try {
-      server.close(() => {});
+      server.close((error) => {
+        if (error) logger.debug('OAuth loopback listener close reported an error', { error: error.message });
+      });
       server.closeAllConnections();
-    } catch {
-      // The server may already be closed by a prior cleanup path.
+    } catch (error) {
+      logger.debug('OAuth loopback listener was already closed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

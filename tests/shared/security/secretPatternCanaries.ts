@@ -45,6 +45,12 @@ export const secretPatternCanaries: SecretPatternCanary[] = [
     rawSecret: `AIza${'A'.repeat(32)}`,
   },
   {
+    id: 'ak-prefixed-key',
+    positive: `无效的AppId: ak_${'g'.repeat(32)}`,
+    negative: 'task id ak_short 与 make_unix_socket 不受影响',
+    rawSecret: `ak_${'g'.repeat(32)}`,
+  },
+  {
     id: 'bearer-token',
     positive: `Authorization: Bearer ${'b'.repeat(24)}`,
     negative: 'Authorization: Bearer short',

@@ -5,6 +5,7 @@ export type SecretPatternId =
   | 'env-secret-assignment'
   | 'openai-key'
   | 'google-api-key'
+  | 'ak-prefixed-key'
   | 'bearer-token'
   | 'github-ghp-token'
   | 'github-gho-token'
@@ -22,6 +23,7 @@ export type SecretPatternType =
   | 'env_secret'
   | 'openai_key'
   | 'gcp_key'
+  | 'generic_api_key'
   | 'bearer_token'
   | 'github_pat'
   | 'github_token'
@@ -145,6 +147,16 @@ export const secretPatternRegistry: SecretPatternEntry[] = [
     confidence: 'high',
     maskStyle: 'prefix',
     redact: (_match, redacted) => `AIza${redacted}`,
+  },
+  {
+    // LongCat 等厂商的 ak_ 前缀密钥（上游错误消息常原样带回，如 "无效的AppId: ak_…"）。
+    // 要求 ak_ 后 ≥20 位纯字母数字，避开普通标识符（ak_short、make_ 之类不匹配）。
+    id: 'ak-prefixed-key',
+    type: 'generic_api_key',
+    pattern: /\bak_[A-Za-z0-9]{20,}\b/g,
+    confidence: 'high',
+    maskStyle: 'prefix',
+    redact: (_match, redacted) => `ak_${redacted}`,
   },
   {
     id: 'bearer-token',

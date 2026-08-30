@@ -60,11 +60,11 @@ export class TerminalOutput {
     const termWidth = process.stdout.columns || 80;
     const line = chalk.dim('─'.repeat(Math.min(termWidth, 60)));
 
-    // ASCII logo
+    // ASCII logo：菱形星簇（保留 ◈ 识别符号，比旧方框更有存在感）
     const logo = [
-      '  ╔═══╗  ',
-      '  ║ ◈ ║  ',
-      '  ╚═══╝  ',
+      '   ◇   ',
+      ' ◇ ◈ ◇ ',
+      '   ◇   ',
     ];
 
     // Initialize model tracking from welcome options
@@ -95,6 +95,7 @@ export class TerminalOutput {
     // Hints
     const hints = [
       chalk.dim('/help'),
+      chalk.dim('/resume'),
       chalk.dim('/exit'),
       chalk.dim('!cmd'),
     ];

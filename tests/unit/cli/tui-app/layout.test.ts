@@ -57,11 +57,11 @@ describe('messageLineCost', () => {
   });
 });
 
-describe('allocateLiveBudget（经 planDynamicLayout 钉顶分支验证分配语义）', () => {
+describe('allocateLiveBudget（经 planDynamicLayout 验证分配语义）', () => {
   it('预算充足：全量分配', () => {
     const messages = [assistant('短'), toolGroup()];
     const plan = planDynamicLayout(messages, 80, 100, 6);
-    expect(plan.compact).toBe(true);
+    expect(plan.height).toBe(100);
     expect(plan.allocation.get('a1')).toBe(2);
     expect(plan.allocation.get('t1')).toBe(2);
   });
@@ -71,14 +71,13 @@ describe('allocateLiveBudget（经 planDynamicLayout 钉顶分支验证分配语
     const messages = [assistant('```\n第一行\n第二行\n第三行\n第四行\n```'), toolGroup()];
     // tool_group 要 2 行，assistant 全量要 7 行；预算 4（rows 44 - chrome 40）→ assistant 只剩 2
     const plan = planDynamicLayout(messages, 80, 44, 40);
-    expect(plan.compact).toBe(false);
+    expect(plan.height).toBe(44);
     expect(plan.allocation.get('t1')).toBe(2);
     expect(plan.allocation.get('a1')).toBe(2);
   });
 
   it('预算为 0：空分配', () => {
     const plan = planDynamicLayout([assistant('x')], 80, 40, 40);
-    expect(plan.compact).toBe(false);
     expect(plan.allocation.size).toBe(0);
   });
 
@@ -86,7 +85,6 @@ describe('allocateLiveBudget（经 planDynamicLayout 钉顶分支验证分配语
     const messages = [toolGroup(), { ...assistant('新'), id: 'a2' }];
     // 预算 2（rows 42 - chrome 40）：a2 全量 2 行，t1 被淘汰
     const plan = planDynamicLayout(messages, 80, 42, 40);
-    expect(plan.compact).toBe(false);
     expect(plan.allocation.has('a2')).toBe(true);
     expect(plan.allocation.has('t1')).toBe(false);
   });
@@ -103,7 +101,7 @@ describe('editorVisualRows', () => {
   });
 });
 
-describe('planDynamicLayout（紧凑流式布局）', () => {
+describe('planDynamicLayout（全屏钉底布局）', () => {
   // system 消息成本 = ceil(文本显示宽/width) + 1（marginTop）
   const msg = (id: string, text: string) => ({
     id,
@@ -112,38 +110,35 @@ describe('planDynamicLayout（紧凑流式布局）', () => {
     text,
   });
 
-  it('内容自然高 ≤ 预算：紧凑模式，高度=自然高+chrome，消息全量不截断', () => {
+  it('内容不满一屏：高度恒等于终端行高，消息全量不截断（留白在内容之上）', () => {
     // width=10：'x'*19 → 2 行 → 成本 3；'x'*29 → 3 行 → 成本 4
     const messages = [msg('a', 'x'.repeat(19)), msg('b', 'x'.repeat(29))];
     const plan = planDynamicLayout(messages, 10, 40, 6);
-    expect(plan.compact).toBe(true);
-    expect(plan.height).toBe(3 + 4 + 6);
+    expect(plan.height).toBe(40);
     expect(plan.allocation.get('a')).toBe(3);
     expect(plan.allocation.get('b')).toBe(4);
   });
 
-  it('空消息：紧凑模式，高度=chrome 行（空会话无留白）', () => {
+  it('空消息：高度=终端行高（首屏输入区钉底）', () => {
     const plan = planDynamicLayout([], 10, 40, 5);
-    expect(plan.compact).toBe(true);
-    expect(plan.height).toBe(5);
+    expect(plan.height).toBe(40);
+    expect(plan.allocation.size).toBe(0);
   });
 
-  it('内容超高：回退钉顶满高 + 尾部预算分配', () => {
+  it('内容超高：满高 + 尾部预算分配', () => {
     // 每条成本 ceil(200/10)+1 = 21，两条 42 > 预算 34
     const messages = [msg('a', 'x'.repeat(200)), msg('b', 'x'.repeat(200))];
     const plan = planDynamicLayout(messages, 10, 40, 6);
-    expect(plan.compact).toBe(false);
     expect(plan.height).toBe(40);
     // 预算 34：最新的 b 全量 21，a 只分到 13（截尾）
     expect(plan.allocation.get('b')).toBe(21);
     expect(plan.allocation.get('a')).toBe(13);
   });
 
-  it('恰好等于预算：紧凑（不截断）', () => {
+  it('恰好等于预算：全量不截断', () => {
     // 成本 ceil(330/10)+1 = 34 = 预算 34
     const messages = [msg('a', 'x'.repeat(330))];
     const plan = planDynamicLayout(messages, 10, 40, 6);
-    expect(plan.compact).toBe(true);
     expect(plan.height).toBe(40);
     expect(plan.allocation.get('a')).toBe(34);
   });

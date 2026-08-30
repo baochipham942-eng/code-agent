@@ -584,6 +584,7 @@ export class ConversationRuntime {
           inputTokens: response.usage?.inputTokens ?? 0,
           outputTokens: response.usage?.outputTokens ?? 0,
           inferenceDurationMs: inferenceDuration,
+          sink: this.ctx.turnSnapshotSink,
         });
 
         // Debug step mode: CODE_AGENT_STEP_MODE=true 时阻塞等用户回车

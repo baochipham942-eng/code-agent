@@ -9,11 +9,15 @@ import { validateScript } from '../../agent/scriptRuntime/scriptValidator';
 import { getPluginRegistry, type PluginRegistry } from '../../plugins/pluginRegistry';
 import { getPluginsDir, PLUGIN_MANIFEST_FILES, readPluginManifest } from '../../plugins/pluginLoader';
 import { validatePlugin } from '../../plugins/pluginValidator';
-import { manifest as computerUseManifest } from '../../plugins/builtin/computerUse';
+import { BUILTIN_PLUGIN_CATALOG, findBuiltinPlugin } from '../../plugins/builtin/catalog';
 import {
   COMPUTER_USE_CAPABILITY_ID,
-  readComputerUseCapabilityState,
-  writeComputerUseCapabilityState,
+  isBuiltinCapabilityId,
+  type BuiltinCapabilityId,
+} from '../../plugins/builtin/builtinCapabilityIds';
+import {
+  readBuiltinCapabilityState,
+  writeBuiltinCapabilityState,
 } from '../../plugins/builtin/computerUse/installState';
 import { getDefaultMCPServers } from '../../mcp/mcpDefaultServers';
 import { getMCPClient } from '../../mcp/mcpClient';
@@ -53,7 +57,7 @@ interface StagedPackage {
 
 interface StagedBundledPackage {
   token: string;
-  pluginId: typeof COMPUTER_USE_CAPABILITY_ID;
+  pluginId: BuiltinCapabilityId;
   expiresAt: number;
 }
 
@@ -266,7 +270,7 @@ export class ManualCapabilityPackageService {
   private readonly useOsSandbox: boolean | undefined;
   private readonly now: () => number;
   private readonly lifecycle: typeof recordCapabilityPackageLifecycle;
-  private readonly computerUseStateDir: () => string | undefined;
+  private readonly builtinStateDir: () => string | undefined;
   private readonly mcpClient: MCPClientPort;
   private readonly resolveComputerUseMcpConfig: () => MCPServerConfig | undefined;
 
@@ -277,7 +281,7 @@ export class ManualCapabilityPackageService {
     this.useOsSandbox = dependencies.useOsSandbox;
     this.now = dependencies.now ?? Date.now;
     this.lifecycle = dependencies.lifecycle ?? recordCapabilityPackageLifecycle;
-    this.computerUseStateDir = dependencies.computerUseStateDir ?? (() => undefined);
+    this.builtinStateDir = dependencies.computerUseStateDir ?? (() => undefined);
     this.mcpClient = dependencies.mcpClient ?? getMCPClient();
     this.resolveComputerUseMcpConfig = dependencies.resolveComputerUseMcpConfig ?? (() => (
       getDefaultMCPServers().find((server) => server.name === CUA_DRIVER_SERVER_NAME)
@@ -286,21 +290,24 @@ export class ManualCapabilityPackageService {
 
   async stageBundled(pluginId: string): Promise<CapabilityPackagePreview> {
     await this.pruneExpired();
-    if (pluginId !== COMPUTER_USE_CAPABILITY_ID) throw new Error('找不到可安装的内置能力包');
-    if (process.platform !== 'darwin') throw new Error('Computer Use 能力包当前只支持 macOS');
-    if (this.registry.getPlugin(pluginId)) throw new Error('Computer Use 能力包已经安装');
+    const descriptor = findBuiltinPlugin(pluginId);
+    if (!descriptor) throw new Error('找不到可安装的内置能力包');
+    if (pluginId === COMPUTER_USE_CAPABILITY_ID && process.platform !== 'darwin') {
+      throw new Error('Computer Use 能力包当前只支持 macOS');
+    }
+    if (this.registry.getPlugin(pluginId)) throw new Error(`${descriptor.manifest.name} 能力包已经安装`);
 
     const token = randomUUID();
     const expiresAt = this.now() + STAGE_TTL_MS;
-    this.stagedBundled.set(token, { token, pluginId, expiresAt });
+    this.stagedBundled.set(token, { token, pluginId: descriptor.manifest.id, expiresAt });
     return {
       token,
-      id: computerUseManifest.id,
-      name: computerUseManifest.name,
-      version: computerUseManifest.version,
-      description: computerUseManifest.description ?? '',
-      permissions: computerUseManifest.permissions ?? [],
-      toolNames: [CUA_DRIVER_SERVER_NAME, 'screenshot', 'ocr_search'],
+      id: descriptor.manifest.id,
+      name: descriptor.manifest.name,
+      version: descriptor.manifest.version,
+      description: descriptor.manifest.description ?? '',
+      permissions: descriptor.manifest.permissions ?? [],
+      toolNames: [...descriptor.previewToolNames],
       surface: 'tools',
       sourceKind: 'bundled',
       sourceLabel: 'Agent Neo',
@@ -476,30 +483,37 @@ export class ManualCapabilityPackageService {
   }
 
   private async confirmBundled(staged: StagedBundledPackage): Promise<CapabilityPackageInstallResult> {
-    const dataDir = this.computerUseStateDir();
-    const previousState = await readComputerUseCapabilityState(dataDir);
+    const descriptor = findBuiltinPlugin(staged.pluginId);
+    if (!descriptor) throw new Error('找不到可安装的内置能力包');
+    const dataDir = this.builtinStateDir();
+    const previousState = await readBuiltinCapabilityState(staged.pluginId, dataDir);
     let mcpAdded = false;
     try {
-      await writeComputerUseCapabilityState('installed', { dataDir });
+      await writeBuiltinCapabilityState(staged.pluginId, 'installed', { dataDir });
       if (!await this.registry.installBuiltinCapability(staged.pluginId)) {
-        throw new Error('Computer Use 能力包激活失败');
+        throw new Error(`${descriptor.manifest.name} 能力包激活失败`);
       }
-      const mcpConfig = this.resolveComputerUseMcpConfig();
-      if (!mcpConfig?.enabled) throw new Error('cua-driver 在当前平台不可用');
-      if (!this.mcpClient.getServerState(CUA_DRIVER_SERVER_NAME)) {
-        this.mcpClient.addServer({ ...mcpConfig, scope: 'builtin' });
-        mcpAdded = true;
+      if (staged.pluginId === COMPUTER_USE_CAPABILITY_ID) {
+        const mcpConfig = this.resolveComputerUseMcpConfig();
+        if (!mcpConfig?.enabled) throw new Error('cua-driver 在当前平台不可用');
+        if (!this.mcpClient.getServerState(CUA_DRIVER_SERVER_NAME)) {
+          this.mcpClient.addServer({ ...mcpConfig, scope: 'builtin' });
+          mcpAdded = true;
+        }
       }
       const plugin = this.registry.getPlugin(staged.pluginId);
-      const toolNames = [CUA_DRIVER_SERVER_NAME, ...(plugin?.registeredTools ?? [])];
-      this.lifecycle(staged.pluginId, 'loaded', `version=${computerUseManifest.version}; permissions=accessibility,screen-recording`);
-      return { id: staged.pluginId, version: computerUseManifest.version, toolNames, surface: 'tools' };
+      const toolNames = [
+        ...(staged.pluginId === COMPUTER_USE_CAPABILITY_ID ? [CUA_DRIVER_SERVER_NAME] : []),
+        ...(plugin?.registeredTools ?? []),
+      ];
+      this.lifecycle(staged.pluginId, 'loaded', `version=${descriptor.manifest.version}`);
+      return { id: staged.pluginId, version: descriptor.manifest.version, toolNames, surface: 'tools' };
     } catch (error) {
       if (mcpAdded) await this.mcpClient.removeServer(CUA_DRIVER_SERVER_NAME).catch(() => undefined);
       await this.registry.removeBuiltinCapability(staged.pluginId).catch(() => false);
       const rollbackState = previousState === 'installed' ? 'installed'
         : previousState === 'missing' ? 'missing' : 'removed';
-      await writeComputerUseCapabilityState(rollbackState, { dataDir }).catch(() => undefined);
+      await writeBuiltinCapabilityState(staged.pluginId, rollbackState, { dataDir }).catch(() => undefined);
       const detail = error instanceof Error ? error.message : String(error);
       this.lifecycle(staged.pluginId, 'failed', detail);
       this.lifecycle(staged.pluginId, 'rolled_back', 'removed rejected bundled capability');
@@ -510,20 +524,25 @@ export class ManualCapabilityPackageService {
   }
 
   async list(): Promise<InstalledCapabilityPackage[]> {
-    const computerUsePlugin = this.registry.getPlugin(COMPUTER_USE_CAPABILITY_ID);
-    const result: InstalledCapabilityPackage[] = [{
-      id: computerUseManifest.id,
-      name: computerUseManifest.name,
-      version: computerUseManifest.version,
-      description: computerUseManifest.description ?? '',
-      permissions: computerUseManifest.permissions ?? [],
-      state: computerUsePlugin?.state ?? 'available',
-      surface: 'tools',
-      toolNames: computerUsePlugin
-        ? [CUA_DRIVER_SERVER_NAME, ...computerUsePlugin.registeredTools]
-        : [],
-      ...(computerUsePlugin?.error ? { error: computerUsePlugin.error } : {}),
-    }];
+    const result: InstalledCapabilityPackage[] = BUILTIN_PLUGIN_CATALOG.map((descriptor) => {
+      const plugin = this.registry.getPlugin(descriptor.manifest.id);
+      return {
+        id: descriptor.manifest.id,
+        name: descriptor.manifest.name,
+        version: descriptor.manifest.version,
+        description: descriptor.manifest.description ?? '',
+        permissions: descriptor.manifest.permissions ?? [],
+        state: plugin?.state ?? 'available',
+        surface: 'tools',
+        toolNames: plugin
+          ? [
+            ...(descriptor.manifest.id === COMPUTER_USE_CAPABILITY_ID ? [CUA_DRIVER_SERVER_NAME] : []),
+            ...plugin.registeredTools,
+          ]
+          : [],
+        ...(plugin?.error ? { error: plugin.error } : {}),
+      };
+    });
     for (const plugin of this.registry.getPlugins()) {
       if (plugin.rootPath.startsWith('builtin:')) continue;
       try {
@@ -548,8 +567,8 @@ export class ManualCapabilityPackageService {
   }
 
   async uninstall(pluginId: string): Promise<void> {
-    if (pluginId === COMPUTER_USE_CAPABILITY_ID) {
-      await this.uninstallBundledComputerUse();
+    if (isBuiltinCapabilityId(pluginId)) {
+      await this.uninstallBundledCapability(pluginId);
       return;
     }
     const plugin = this.registry.getPlugin(pluginId);
@@ -573,32 +592,36 @@ export class ManualCapabilityPackageService {
     }
   }
 
-  private async uninstallBundledComputerUse(): Promise<void> {
-    const plugin = this.registry.getPlugin(COMPUTER_USE_CAPABILITY_ID);
-    if (plugin?.rootPath !== `builtin:${COMPUTER_USE_CAPABILITY_ID}`) {
-      throw new Error('Computer Use 能力包尚未安装');
+  private async uninstallBundledCapability(pluginId: BuiltinCapabilityId): Promise<void> {
+    const descriptor = findBuiltinPlugin(pluginId);
+    if (!descriptor) throw new Error('找不到可卸载的内置能力包');
+    const plugin = this.registry.getPlugin(pluginId);
+    if (plugin?.rootPath !== `builtin:${pluginId}`) {
+      throw new Error(`${descriptor.manifest.name} 能力包尚未安装`);
     }
-    const dataDir = this.computerUseStateDir();
-    const previousState = await readComputerUseCapabilityState(dataDir);
+    const dataDir = this.builtinStateDir();
+    const previousState = await readBuiltinCapabilityState(pluginId, dataDir);
     const mcpConfig = this.resolveComputerUseMcpConfig();
-    const hadMcp = Boolean(this.mcpClient.getServerState(CUA_DRIVER_SERVER_NAME));
+    const hadMcp = pluginId === COMPUTER_USE_CAPABILITY_ID
+      && Boolean(this.mcpClient.getServerState(CUA_DRIVER_SERVER_NAME));
     try {
       if (hadMcp) await this.mcpClient.removeServer(CUA_DRIVER_SERVER_NAME);
-      if (!await this.registry.removeBuiltinCapability(COMPUTER_USE_CAPABILITY_ID)) {
-        throw new Error('Computer Use 能力包运行时卸载失败');
+      if (!await this.registry.removeBuiltinCapability(pluginId)) {
+        throw new Error(`${descriptor.manifest.name} 能力包运行时卸载失败`);
       }
-      await writeComputerUseCapabilityState('removed', { dataDir });
-      this.lifecycle(COMPUTER_USE_CAPABILITY_ID, 'unloaded', `version=${computerUseManifest.version}`);
+      await writeBuiltinCapabilityState(pluginId, 'removed', { dataDir });
+      this.lifecycle(pluginId, 'unloaded', `version=${descriptor.manifest.version}`);
     } catch (error) {
-      await writeComputerUseCapabilityState(
+      await writeBuiltinCapabilityState(
+        pluginId,
         previousState === 'missing' ? 'missing' : previousState === 'installed' ? 'installed' : 'removed',
         { dataDir },
       ).catch(() => undefined);
-      await this.registry.installBuiltinCapability(COMPUTER_USE_CAPABILITY_ID).catch(() => false);
+      await this.registry.installBuiltinCapability(pluginId).catch(() => false);
       if (hadMcp && mcpConfig && !this.mcpClient.getServerState(CUA_DRIVER_SERVER_NAME)) {
         this.mcpClient.addServer({ ...mcpConfig, enabled: true, scope: 'builtin' });
       }
-      this.lifecycle(COMPUTER_USE_CAPABILITY_ID, 'rolled_back', 'uninstall failed; restored bundled capability');
+      this.lifecycle(pluginId, 'rolled_back', 'uninstall failed; restored bundled capability');
       throw error;
     }
   }

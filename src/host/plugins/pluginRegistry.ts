@@ -2,6 +2,7 @@
 // Plugin Registry - Manage plugin lifecycle
 // ============================================================================
 
+import path from 'node:path';
 import type { Tool } from '../tools/types';
 import { wrapLegacyTool } from '../tools/modules/_helpers/legacyAdapter';
 import { registerProtocolTool, unregisterProtocolTool } from '../tools/protocolToolRegistration';
@@ -18,44 +19,12 @@ import type {
 import type { ModelProvider } from '../../shared/contract';
 import { discoverPlugins, loadPlugin, watchPluginsDir } from './pluginLoader';
 import { createPluginStorage, initPluginStorageTable } from './pluginStorage';
-// Builtin plugins — 与 host 同 bundle，通过静态 import 让 esbuild 打包，不走磁盘 discovery
 import {
-  manifest as builtinImageProcessManifest,
-  default as builtinImageProcessEntry,
-} from './builtin/imageProcess';
-import {
-  manifest as builtinAudioProcessingManifest,
-  default as builtinAudioProcessingEntry,
-} from './builtin/audioProcessing';
-import {
-  manifest as builtinVideoGenerationManifest,
-  default as builtinVideoGenerationEntry,
-} from './builtin/videoGeneration';
-import {
-  manifest as builtinImageCreationManifest,
-  default as builtinImageCreationEntry,
-} from './builtin/imageCreation';
-import {
-  manifest as builtinMusicGenerationManifest,
-  default as builtinMusicGenerationEntry,
-} from './builtin/musicGeneration';
-import {
-  manifest as builtinBrowserControlManifest,
-  default as builtinBrowserControlEntry,
-} from './builtin/browserControl';
-import {
-  manifest as builtinComputerUseManifest,
-  default as builtinComputerUseEntry,
-} from './builtin/computerUse';
-import {
-  COMPUTER_USE_CAPABILITY_ID,
-  isComputerUseCapabilityInstalledSync,
+  isBuiltinCapabilityInstalledSync,
   migrateLegacyComputerUseEnv,
 } from './builtin/computerUse/installState';
-import {
-  manifest as builtinPhotoArchiveManifest,
-  default as builtinPhotoArchiveEntry,
-} from './builtin/photoArchive';
+import { BUILTIN_PLUGIN_CATALOG, findBuiltinPlugin } from './builtin/catalog';
+import { recordCapabilityPackageLifecycle } from '../services/capabilities/capabilityPackageLifecycle';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
 import { getAuthService } from '../services/auth/authService';
@@ -185,6 +154,11 @@ export class PluginRegistry {
   private plugins: Map<string, LoadedPlugin> = new Map();
   private stopWatcher: (() => void) | null = null;
 
+  constructor(
+    private readonly watchPlugins: typeof watchPluginsDir = watchPluginsDir,
+    private readonly recordLifecycle: typeof recordCapabilityPackageLifecycle = recordCapabilityPackageLifecycle,
+  ) {}
+
   /**
    * Get all registered plugins
    */
@@ -265,45 +239,8 @@ export class PluginRegistry {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    const builtinPlugins: Array<{
-      manifest: import('./types').PluginManifest;
-      entry: import('./types').PluginEntry;
-    }> = [
-      {
-        manifest: builtinImageProcessManifest,
-        entry: builtinImageProcessEntry,
-      },
-      {
-        manifest: builtinAudioProcessingManifest,
-        entry: builtinAudioProcessingEntry,
-      },
-      {
-        manifest: builtinVideoGenerationManifest,
-        entry: builtinVideoGenerationEntry,
-      },
-      {
-        manifest: builtinImageCreationManifest,
-        entry: builtinImageCreationEntry,
-      },
-      {
-        manifest: builtinMusicGenerationManifest,
-        entry: builtinMusicGenerationEntry,
-      },
-      {
-        manifest: builtinBrowserControlManifest,
-        entry: builtinBrowserControlEntry,
-      },
-      ...(isComputerUseCapabilityInstalledSync() ? [{
-        manifest: builtinComputerUseManifest,
-        entry: builtinComputerUseEntry,
-      }] : []),
-      {
-        manifest: builtinPhotoArchiveManifest,
-        entry: builtinPhotoArchiveEntry,
-      },
-    ];
-
-    for (const { manifest, entry } of builtinPlugins) {
+    for (const { manifest, entry } of BUILTIN_PLUGIN_CATALOG) {
+      if (!isBuiltinCapabilityInstalledSync(manifest.id)) continue;
       const loadedPlugin: LoadedPlugin = {
         manifest,
         rootPath: `builtin:${manifest.id}`,
@@ -317,15 +254,16 @@ export class PluginRegistry {
   }
 
   async installBuiltinCapability(pluginId: string): Promise<boolean> {
-    if (pluginId !== COMPUTER_USE_CAPABILITY_ID) return false;
+    const descriptor = findBuiltinPlugin(pluginId);
+    if (!descriptor) return false;
     const existing = this.plugins.get(pluginId);
     if (existing) return this.activatePlugin(pluginId);
 
     const plugin: LoadedPlugin = {
-      manifest: builtinComputerUseManifest,
+      manifest: descriptor.manifest,
       rootPath: `builtin:${pluginId}`,
       state: 'inactive',
-      entry: builtinComputerUseEntry,
+      entry: descriptor.entry,
       registeredTools: [],
     };
     this.plugins.set(pluginId, plugin);
@@ -335,7 +273,7 @@ export class PluginRegistry {
   }
 
   async removeBuiltinCapability(pluginId: string): Promise<boolean> {
-    if (pluginId !== COMPUTER_USE_CAPABILITY_ID) return false;
+    if (!findBuiltinPlugin(pluginId)) return false;
     const plugin = this.plugins.get(pluginId);
     if (plugin?.rootPath !== `builtin:${pluginId}`) return false;
     if (!await this.deactivatePlugin(pluginId)) return false;
@@ -615,7 +553,7 @@ export class PluginRegistry {
     const reloadTimers = new Map<string, ReturnType<typeof setTimeout>>();
     const DEBOUNCE_MS = 500;
 
-    this.stopWatcher = watchPluginsDir(
+    this.stopWatcher = this.watchPlugins(
       async (pluginDir) => {
         // Check if this is an existing plugin being modified (hot-reload)
         const existingPlugin = this.findPluginByPath(pluginDir);
@@ -629,8 +567,14 @@ export class PluginRegistry {
             logger.info(`Hot-reloading plugin: ${existingPlugin.manifest.id}`);
             const reloaded = await this.reloadPlugin(existingPlugin.manifest.id);
             if (reloaded) {
+              this.recordLifecycle(
+                existingPlugin.manifest.id,
+                'loaded',
+                `source=watcher; event=reload; version=${this.plugins.get(existingPlugin.manifest.id)?.manifest.version ?? 'unknown'}`,
+              );
               logger.info(`Plugin hot-reloaded successfully: ${existingPlugin.manifest.id}`);
             } else {
+              this.recordLifecycle(existingPlugin.manifest.id, 'failed', 'source=watcher; event=reload');
               logger.warn(`Plugin hot-reload failed: ${existingPlugin.manifest.id}`);
             }
           }, DEBOUNCE_MS));
@@ -642,16 +586,30 @@ export class PluginRegistry {
         const result = await loadPlugin(pluginDir);
         if (result.success && result.plugin) {
           this.plugins.set(result.plugin.manifest.id, result.plugin);
-          await this.activatePlugin(result.plugin.manifest.id);
-          logger.info(`New plugin activated: ${result.plugin.manifest.id}`);
+          if (await this.activatePlugin(result.plugin.manifest.id)) {
+            this.recordLifecycle(
+              result.plugin.manifest.id,
+              'loaded',
+              `source=watcher; event=add; version=${result.plugin.manifest.version}`,
+            );
+            logger.info(`New plugin activated: ${result.plugin.manifest.id}`);
+          } else {
+            this.recordLifecycle(result.plugin.manifest.id, 'failed', 'source=watcher; event=add; activation failed');
+          }
+        } else {
+          this.recordLifecycle(path.basename(pluginDir), 'failed', `source=watcher; event=add; ${result.error ?? 'load failed'}`);
         }
       },
       async (pluginName) => {
         logger.info(`Plugin removed: ${pluginName}`);
         for (const [id, plugin] of this.plugins) {
           if (plugin.rootPath.endsWith(pluginName)) {
-            await this.deactivatePlugin(id);
-            this.plugins.delete(id);
+            if (await this.deactivatePlugin(id)) {
+              this.plugins.delete(id);
+              this.recordLifecycle(id, 'unloaded', `source=watcher; event=remove; version=${plugin.manifest.version}`);
+            } else {
+              this.recordLifecycle(id, 'failed', 'source=watcher; event=remove; deactivation failed');
+            }
             break;
           }
         }

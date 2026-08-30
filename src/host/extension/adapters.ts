@@ -16,7 +16,7 @@
 // - 投影是确定的:相同输入恒产相同输出,便于做 cache key / diff。
 // ============================================================================
 
-import type { LoadedPlugin, PluginManifest, PluginState } from '../plugins/types';
+import type { LoadedPlugin, PluginManifest, PluginState, PluginSurface } from '../plugins/types';
 import type { ParsedSkill, SkillSource } from '../../shared/contract/agentSkill';
 import type {
   AgentExtension,
@@ -143,10 +143,5 @@ const _runtimeStateCompat = (s: PluginState): ExtensionRuntimeState => s;
 void _runtimeStateCompat;
 
 // 类型层 sanity check:ExtensionSurface 应包含 PluginSurface 全部取值。
-const _surfaceCompat: ExtensionSurface[] = [
-  'tools',
-  'skills',
-  'theme',
-  'language',
-] satisfies ExtensionSurface[];
+const _surfaceCompat = (surface: PluginSurface): ExtensionSurface => surface;
 void _surfaceCompat;

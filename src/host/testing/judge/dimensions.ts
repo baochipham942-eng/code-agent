@@ -15,19 +15,22 @@ const _allDeclaredDimensionsKnown: UnknownAiReviewDimension extends never ? true
 void _allDimensionsDeclared;
 void _allDeclaredDimensionsKnown;
 
-export interface AiReviewDimensionDefinition {
+interface AiReviewDimensionDefinition {
   id: AiReviewDimension;
   shadow?: 'deterministic_pass' | 'sim_no_write_before_rule';
   requiresExpectation: boolean;
 }
 
-export const AI_REVIEW_DIMENSION_DEFINITIONS: readonly AiReviewDimensionDefinition[] = [
-  { id: 'task_completed', shadow: 'deterministic_pass', requiresExpectation: false },
-  { id: 'tool_choice', requiresExpectation: true },
-  { id: 'confirmed_before_acting', shadow: 'sim_no_write_before_rule', requiresExpectation: false },
-  { id: 'no_extra_changes', requiresExpectation: true },
-  { id: 'self_tested', requiresExpectation: true },
-];
+const AI_REVIEW_DIMENSION_CONFIG = {
+  task_completed: { shadow: 'deterministic_pass', requiresExpectation: false },
+  tool_choice: { requiresExpectation: true },
+  confirmed_before_acting: { shadow: 'sim_no_write_before_rule', requiresExpectation: false },
+  no_extra_changes: { requiresExpectation: true },
+  self_tested: { requiresExpectation: true },
+} as const satisfies Record<AiReviewDimension, Omit<AiReviewDimensionDefinition, 'id'>>;
+
+export const AI_REVIEW_DIMENSION_DEFINITIONS: readonly AiReviewDimensionDefinition[] =
+  AI_REVIEW_DIMENSIONS.map((id) => ({ id, ...AI_REVIEW_DIMENSION_CONFIG[id] }));
 
 export function isAiReviewDimension(value: string): value is AiReviewDimension {
   return (AI_REVIEW_DIMENSIONS as readonly string[]).includes(value);
@@ -36,5 +39,7 @@ export function isAiReviewDimension(value: string): value is AiReviewDimension {
 export function getAiReviewDimensionDefinition(
   dimension: AiReviewDimension,
 ): AiReviewDimensionDefinition {
-  return AI_REVIEW_DIMENSION_DEFINITIONS.find((item) => item.id === dimension)!;
+  const definition = AI_REVIEW_DIMENSION_DEFINITIONS.find((item) => item.id === dimension);
+  if (!definition) throw new Error(`Unknown AI review dimension: ${dimension}`);
+  return definition;
 }

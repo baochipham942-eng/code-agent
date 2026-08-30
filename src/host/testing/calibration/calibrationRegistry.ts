@@ -36,7 +36,7 @@ export interface JudgeCalibrationRecord {
   computedAt: string;
 }
 
-export interface SupersededJudgeCalibrationRecord {
+interface SupersededJudgeCalibrationRecord {
   standardVersion: 'superseded';
   judgeId: string;
   kappa: number;

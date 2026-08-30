@@ -19,6 +19,7 @@ import {
   type JudgeCalibrationRecord,
 } from '../../../src/host/testing/calibration/calibrationRegistry';
 import { generateMarkdownReport } from '../../../src/host/testing/reportGenerator';
+import { approximateKappaLowerBound95 } from '../../../src/host/testing/calibration/judgeCalibration';
 import type { TestResult, TestRunSummary } from '../../../src/host/testing/types';
 
 function record(overrides: Partial<JudgeCalibrationRecord> = {}): JudgeCalibrationRecord {
@@ -99,6 +100,11 @@ describe('isTrustedCalibration 阈值门', () => {
     expect(isTrustedCalibration(record({ pairs: 20, kappa: 0.65 }))).toBe(false);
     expect(isTrustedCalibration(record({ pairs: 50, kappa: 0.62 }))).toBe(true);
   });
+
+  it('50 对豁免独立生效：κ=0.6 的 CI 下界不足 0.4 仍可信', () => {
+    expect(approximateKappaLowerBound95(0.6, 50)).toBeLessThan(0.4);
+    expect(isTrustedCalibration(record({ pairs: 50, kappa: 0.6 }))).toBe(true);
+  });
 });
 
 describe('calibrationRegistry 落盘', () => {
@@ -145,5 +151,25 @@ describe('AI 评审报告并列展示', () => {
   it('没有 AI 评审结果时不渲染并列表', () => {
     const md = generateMarkdownReport(makeSummary([makeResult({ scoreAuthority: 'deterministic_assertion' })]));
     expect(md).not.toContain('AI 评审（并列 · 不进通过率）');
+  });
+
+  it('T3：同一批题的 AI 评审全是或全否，通过率行逐字相同', () => {
+    const withVerdict = (verdict: 'yes' | 'no') => aiReviewed.map((result) => ({
+      ...result,
+      aiReview: {
+        task_completed: {
+          verdict,
+          reasoning: verdict,
+          judgeModel: 'zhipu/glm',
+          promptHash: 'abc',
+        },
+      },
+    }));
+    const passRateLine = (results: TestResult[]) => generateMarkdownReport(makeSummary(results))
+      .split('\n')
+      .find((line) => line.startsWith('| 通过率 |'));
+
+    expect(passRateLine(withVerdict('yes'))).toBe('| 通过率 | 50.0% |');
+    expect(passRateLine(withVerdict('no'))).toBe(passRateLine(withVerdict('yes')));
   });
 });

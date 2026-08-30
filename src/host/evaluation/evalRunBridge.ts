@@ -223,9 +223,9 @@ export class EvalRunBridge {
       '--scope', request.scope,
       '--max-cases', String(request.maxCases),
       ...(request.repeat !== undefined ? ['--repeat', String(request.repeat)] : []),
-      ...(request.aiReview?.length ? ['--ai-review', request.aiReview.join(',')] : []),
       ...(request.ids?.length ? ['--ids', request.ids.join(',')] : []),
       ...(request.tags?.length ? ['--tags', request.tags.join(',')] : []),
+      ...(request.aiReview?.length ? ['--ai-review', request.aiReview.join(',')] : []),
       ...(request.split ? ['--split', request.split] : []),
     ];
     let child: ChildProcess;

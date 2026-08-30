@@ -1,3 +1,21 @@
+import type { AiReviewDimension } from '../../shared/contract/evaluation';
+
+const zhDimensions = {
+  task_completed: '任务完成了吗',
+  tool_choice: '工具选得对吗',
+  confirmed_before_acting: '该确认时确认了吗',
+  no_extra_changes: '没干多余的事',
+  self_tested: '自测过没',
+} satisfies Record<AiReviewDimension, string>;
+
+const enDimensions = {
+  task_completed: 'Was the task completed?',
+  tool_choice: 'Were the right tools chosen?',
+  confirmed_before_acting: 'Was confirmation requested when needed?',
+  no_extra_changes: 'Were extra changes avoided?',
+  self_tested: 'Was the result self-tested?',
+} satisfies Record<AiReviewDimension, string>;
+
 const zh = {
   sectionAssertions: '确定性断言',
   assertionsSubtitle: '通过率 = 断言通过率，是定义不是选择 · 默认全挂、不可关',
@@ -16,13 +34,7 @@ const zh = {
     superseded: '按旧标准，需重跑',
     judge_changed: '评审模型或端点已变，需要重跑校准',
   },
-  dimensions: {
-    task_completed: '任务完成了吗',
-    tool_choice: '工具选得对吗',
-    confirmed_before_acting: '该确认时确认了吗',
-    no_extra_changes: '没干多余的事',
-    self_tested: '自测过没',
-  },
+  dimensions: zhDimensions,
   needsExpectation: '题集没有逐题期望，评审不了',
   sectionHuman: '人工评审',
   humanReview: '👍/👎 + 一句话 · 并列写回，不进通过率 · 在标注页打',
@@ -50,13 +62,7 @@ const en = {
     superseded: 'Old standard; rerun required',
     judge_changed: 'Review model or endpoint changed; rerun required',
   },
-  dimensions: {
-    task_completed: 'Was the task completed?',
-    tool_choice: 'Were the right tools chosen?',
-    confirmed_before_acting: 'Was confirmation requested when needed?',
-    no_extra_changes: 'Were extra changes avoided?',
-    self_tested: 'Was the result self-tested?',
-  },
+  dimensions: enDimensions,
   needsExpectation: 'This case set has no per-case expectation for this review',
   sectionHuman: 'Human review',
   humanReview: '👍/👎 + one sentence · stored alongside results, excluded from pass rate · labeled in Annotations',

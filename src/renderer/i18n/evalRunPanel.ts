@@ -1,3 +1,5 @@
+import type { AiReviewDimension } from '../../shared/contract/evaluation';
+
 export interface EvalRunPanelLabels {
   launch: string;
   lastRun: string;
@@ -30,7 +32,7 @@ export interface EvalRunPanelLabels {
   aiJudge: string;
   nextVersion: string;
   aiReviewColumns: string;
-  aiReviewDimensions: Record<'task_completed' | 'tool_choice' | 'confirmed_before_acting' | 'no_extra_changes' | 'self_tested', string>;
+  aiReviewDimensions: Record<AiReviewDimension, string>;
   calibrated: string;
   uncalibrated: string;
   calibrationReasons: Record<'no_record' | 'below_threshold' | 'prompt_changed' | 'not_enough_pairs' | 'superseded' | 'judge_changed', string>;

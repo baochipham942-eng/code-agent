@@ -162,9 +162,9 @@ export class ExperimentAdapter {
         killedByTimeout: event.killedByTimeout,
         trials: event.trials,
         trialAggregate: event.trialAggregate,
+        ...(event.aiReview ? { aiReview: event.aiReview } : {}),
         scoreAuthority: event.scoreAuthority,
         memoryInjections,
-        ...(event.aiReview ? { aiReview: event.aiReview } : {}),
         source: 'eval',
       }),
     }]);

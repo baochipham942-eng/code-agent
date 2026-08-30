@@ -29,8 +29,9 @@ function formatEvalSet(stamp: EvalRunStamp): string {
 }
 
 function formatScorers(stamp: EvalRunStamp): string {
-  const aiReview = stamp.scorers.aiReview.map((dimension) => (
-    `${dimension}（${stamp.scorers.aiReviewCalibration[dimension] ?? 'uncalibrated'}）`
+  const calibration = stamp.scorers.aiReviewCalibration ?? {};
+  const aiReview = (stamp.scorers.aiReview ?? []).map((dimension) => (
+    `${dimension}（${calibration[dimension] ?? 'uncalibrated'}）`
   ));
   const legacyJudge = stamp.scorers.judge === 'llm'
     ? `；对比实验评审（${stamp.scorers.judgeModel}）`

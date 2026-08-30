@@ -38,9 +38,9 @@ function parseArgs(): { reportPath: string; dimension: CalibratableDimension } {
 
 function groundTruth(testCase: ReportCase, dimension: CalibratableDimension): CalibrationLabel | null {
   if (dimension === 'task_completed') {
-    if (testCase.status === 'passed') return 'pass';
-    if (testCase.status === 'failed') return 'fail';
-    return null;
+    const assertions = testCase.expectationResults ?? [];
+    if (assertions.length === 0) return null;
+    return assertions.every((result) => result.passed === true) ? 'pass' : 'fail';
   }
   const shadows = (testCase.expectationResults ?? []).filter((result) => (
     result.expectation?.type === 'sim_no_write_before_rule'

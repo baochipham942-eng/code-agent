@@ -355,11 +355,12 @@ export function generateMarkdownReport(
     lines.push('## 期望断言详情');
     lines.push('');
     for (const result of resultsWithExpectations) {
+      const expectationResults = result.expectationResults ?? [];
       lines.push(`### ${result.testId}`);
       lines.push('');
       lines.push('| 状态 | 描述 | 证据 |');
       lines.push('|------|------|------|');
-      for (const er of result.expectationResults!) {
+      for (const er of expectationResults) {
         const status = er.passed ? '✅' : '❌';
         const desc = er.expectation.type.replace(/\|/g, '\\|');
         const evidence = (er.evidence.details ?? '—').replace(/\|/g, '\\|').substring(0, 100);
@@ -377,7 +378,8 @@ export function generateMarkdownReport(
     lines.push('| 用例 ID | 步骤数 | 效率 | 偏差数 | 恢复次数 |');
     lines.push('|---------|--------|------|--------|----------|');
     for (const result of resultsWithTrajectory) {
-      const t = result.trajectory!;
+      const t = result.trajectory;
+      if (!t) continue;
       const steps = t.steps.length;
       const efficiency = t.efficiency ? `${(t.efficiency.efficiency * 100).toFixed(0)}%` : '—';
       const deviations = t.deviations.length;
@@ -654,15 +656,7 @@ export async function saveReport(
 // Helper functions
 // ============================================================================
 
-/**
- * 评分权威分桶表（WP1-1）：deterministic_assertion / llm_judge / self_check，
- * 无标注的历史结果归 unknown 行，不冒充 deterministic。
- * L3 实验提案只准引用前两桶；self_check/unknown 分数不作能力证据。
- *
- * scoreAuthority 第二步：llm_judge 桶必须绑定达标的校准记录
- * （calibrationRegistry.isTrustedCalibration）才进可信列；未绑定/不达标
- * 的 judge 分强制标注，不作能力证据。
- */
+/** 评分权威只含确定性断言、自检与历史 unknown；AI 评审在独立表中并列展示。 */
 function generateScoreAuthoritySection(results: TestResult[]): string {
   const buckets: Array<{ key: string; label: string }> = [
     { key: 'deterministic_assertion', label: '确定性断言' },
@@ -689,7 +683,7 @@ function generateScoreAuthoritySection(results: TestResult[]): string {
     );
   }
   lines.push('');
-  lines.push('> 通过率只读取确定性断言；AI 评审在下方并列展示，不属于分数权威桶。');
+  lines.push('> 通过率只读取确定性断言；self_check 不作能力证据；AI 评审在下方并列展示，不属于分数权威桶。');
 
   return lines.join('\n');
 }

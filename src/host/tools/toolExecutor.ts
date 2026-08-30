@@ -31,6 +31,7 @@ import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
+import { isToolDeniedByRunPolicy } from './runToolPolicy';
 import { finalizeSurfaceAwareToolResult } from './artifacts/surfaceExecutionToolResultPipeline';
 import { recordDecision } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard } from './neoTagToolGuard';
@@ -251,6 +252,9 @@ export interface ExecuteOptions {
   abortSignal?: AbortSignal;
   // Run-level tool denylist. Dynamic discovery must inherit the same boundary.
   deniedToolNames?: readonly string[];
+  // Run-level tool allowlist（CLI --tools 等）。非空 = 精确白名单：名单外工具
+  // 在执行层同样硬拒（schema 面过滤之外的兜底闸，覆盖嵌套/直接 executor 调用）。
+  allowedToolNames?: readonly string[];
   skillDiscoveryService?: SkillDiscoveryService;
   // 内部标记：本次调用由 ctx.executeTool 发起（PTC 脚本里的一次 tools.X()）。
   // 唯一作用是不给嵌套出来的 context 再签发 executeTool —— 一层封顶，防递归。
@@ -522,6 +526,23 @@ export class ToolExecutor {
     });
 
     logger.debug('Tool found', { toolName: executionToolName, requestedToolName });
+
+    // Run 级工具面兜底闸（CLI --tools/--disallowed-tools 及等价宿主收窄）。
+    // AgentLoop 已在 schema 面过滤 + messageProcessor 拦截模型直调；这里兜底
+    // 嵌套调用（PTC executeTool）与直接 executor 调用，保证被裁剪工具永不静默执行。
+    // 与 recordDecision 配对（policy-deny），权限账本不断流。
+    if (isToolDeniedByRunPolicy({
+      deniedToolNames: options.deniedToolNames,
+      allowedToolNames: options.allowedToolNames,
+      toolScope: options.toolScope,
+    }, executionToolName)) {
+      logger.warn('Tool blocked by run tool policy', { toolName: executionToolName });
+      recordDecision(executionToolName, params, 'policy-deny', 'run tool policy (--tools/--disallowed-tools)', Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
+      return {
+        success: false,
+        error: `Tool not allowed: ${executionToolName} (disabled by --tools/--disallowed-tools)`,
+      };
+    }
 
     // Subagent 收缩闸：subagent 调用必须先过工具白名单 + 收缩策略。
     // 策略只能收紧不能放宽——'deny' 直接拒，'ask' 继续走下面的常规管道。
@@ -853,6 +874,7 @@ export class ToolExecutor {
       requestPermission: this.requestPermissionForTools,
       abortSignal: options.abortSignal,
       deniedToolNames: options.deniedToolNames,
+      allowedToolNames: options.allowedToolNames,
       skillDiscoveryService: options.skillDiscoveryService,
       telemetryCollector: this.telemetryCollector,
       planningService: options.planningService,

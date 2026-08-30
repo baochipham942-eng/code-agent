@@ -75,12 +75,22 @@ export const runCommand = new Command('run')
     '自动批准所有权限（含危险操作）。默认非交互模式会自动拒绝需人工确认的操作',
     false,
   )
+  .option(
+    '--tools <list>',
+    '仅允许指定工具（逗号分隔，精确白名单无核心工具兜底；支持 skill:<name> 前缀）',
+  )
+  .option(
+    '--disallowed-tools <list>',
+    '禁用指定工具（逗号分隔；支持 skill:<name> 前缀）。被禁工具从 schema 面移除且执行层硬拒',
+  )
   .action(async (prompt: string, options: {
     session?: string;
     outputSchema?: string;
     outputSchemaFile?: string;
     maxRetries?: string;
     dangerouslySkipPermissions?: boolean;
+    tools?: string;
+    disallowedTools?: string;
   }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
     const isStreamJson = globalOpts?.outputFormat === 'stream-json';
@@ -156,6 +166,8 @@ export const runCommand = new Command('run')
         outputFormat: globalOpts?.outputFormat,
         systemPrompt: globalOpts?.systemPrompt,
         metrics: globalOpts?.metrics,
+        tools: options.tools,
+        disallowedTools: options.disallowedTools,
       });
 
       // 恢复会话（如果指定）

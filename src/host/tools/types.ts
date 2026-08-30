@@ -40,6 +40,8 @@ export interface ToolContext {
   abortSignal?: AbortSignal;
   /** 当前 run 的工具拒绝集；动态工具发现同样必须遵守。 */
   deniedToolNames?: readonly string[];
+  /** 当前 run 的工具白名单（CLI --tools 等）；非空 = 精确白名单，spawn_agent 据此收窄子代理面。 */
+  allowedToolNames?: readonly string[];
   /** Run-scoped discovery source; production callers omit it and use the app singleton. */
   skillDiscoveryService?: SkillDiscoveryService;
   /** Run-scoped telemetry owner propagated to spawned agents. */

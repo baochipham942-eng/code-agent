@@ -155,6 +155,8 @@ export interface ToolContext {
   readonly abortSignal: AbortSignal;
   /** 当前 run 的工具拒绝集，ToolSearch 不得借延迟加载把它们重新带回。 */
   readonly deniedToolNames?: readonly string[];
+  /** 当前 run 的工具白名单（CLI --tools 等）；spawn_agent 收窄子代理工具面时与之交集。 */
+  readonly allowedToolNames?: readonly string[];
   /** Opaque run-scoped SkillDiscoveryService handle. */
   readonly skillDiscoveryService?: unknown;
   /** Opaque run-scoped telemetry owner for spawned agents. */

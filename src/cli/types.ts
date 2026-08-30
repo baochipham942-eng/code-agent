@@ -28,6 +28,10 @@ export interface CLIGlobalOptions {
   systemPrompt?: string;
   /** Comma-separated tool names to preload (bypass tool_search) */
   preloadTools?: string;
+  /** Raw --tools allowlist (comma-separated; supports skill:<name>) */
+  tools?: string;
+  /** Raw --disallowed-tools denylist (comma-separated; supports skill:<name>) */
+  disallowedTools?: string;
   /** Path to write session metrics JSON (enables MetricsCollector), mapped from --metrics */
   metrics?: string;
 }
@@ -57,6 +61,8 @@ export interface CLIConfig {
   maxIterations?: number;
   /** 当前 run 可见的原生工具白名单；会话指挥台前台脑据此保持窄工具面。 */
   allowedToolNames?: string[];
+  /** 当前 run 的工具禁用名单（CLI --disallowed-tools；与 allowedToolNames 同层语义）。 */
+  deniedToolNames?: string[];
   /** 当前 turn 的显式工具作用域；web HTTP 路径据此预载已选连接器/MCP 工具。 */
   toolScope?: WorkbenchToolScope;
   /** 每轮执行意图（含 designCanvasActive 等）；web HTTP 路径据此透传到 RuntimeContext。 */

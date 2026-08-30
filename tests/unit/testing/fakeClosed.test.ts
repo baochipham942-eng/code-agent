@@ -208,6 +208,33 @@ describe('题级无效判定', () => {
     expect(run.failed).toBe(0);
     expect(run.results.every((item) => item.invalid?.reason === 'usage_unavailable')).toBe(true);
   });
+
+  it('invalid 判废优先：k=2 混合 invalid 通过与 infra 时进 invalidCases', async () => {
+    const runner = await createRunner({ independentCases: true, trialsPerCase: 2 });
+    const calls = new Map<string, number>();
+    vi.spyOn(runner, 'runSingleTest').mockImplementation(async (testCase) => {
+      const trial = calls.get(testCase.id) ?? 0;
+      calls.set(testCase.id, trial + 1);
+      return trial === 0
+        ? result(testCase.id, {
+            status: 'passed',
+            invalid: { reason: 'usage_unavailable' },
+            usageStatus: 'usage_unavailable',
+          })
+        : result(testCase.id, {
+            status: 'infra_excluded',
+            score: 0,
+            failureReason: '503 Service Unavailable',
+          });
+    });
+
+    const run = await runner.runAll();
+
+    expect(run.invalidCases).toBe(3);
+    expect(run.infraExcluded).toBe(0);
+    expect(run.passed).toBe(0);
+    expect(run.results.every((item) => item.invalid?.reason === 'usage_unavailable')).toBe(true);
+  });
 });
 
 describe('超时归因', () => {

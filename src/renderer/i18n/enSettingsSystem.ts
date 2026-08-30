@@ -319,6 +319,20 @@ export const enSettingsSystem = {
     nativeConnectors: {
       title: 'Native connectors',
       description: 'Enable macOS native app connectors as needed. After enabling, you can check authorization, repair permissions, disconnect, or remove them here.',
+      grid: {
+        labels: {
+          calendar: 'Calendar',
+          mail: 'Mail',
+          photos: 'Photos',
+          reminders: 'Reminders',
+        },
+        descriptions: {
+          calendar: 'Read and manage calendars and events on this Mac.',
+          mail: 'Read local mail, and create or send messages.',
+          photos: 'Search and organize the local photo library.',
+          reminders: 'Read and manage reminders on this Mac.',
+        },
+      },
       loading: 'Loading…',
       otherConnectors: 'Other connectors',
       operationFailedPrefix: 'Connector operation failed: ',

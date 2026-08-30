@@ -3,7 +3,18 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Plug, RefreshCw, Trash2, Unplug, Wrench } from 'lucide-react';
+import {
+  CalendarDays,
+  Images,
+  ListChecks,
+  Loader2,
+  Mail,
+  Plug,
+  RefreshCw,
+  Trash2,
+  Unplug,
+  Wrench,
+} from 'lucide-react';
 import {
   IPC_DOMAINS,
   type ConnectorLifecycleAction,
@@ -15,6 +26,7 @@ import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
 import { localeForLanguage } from '../../../../utils/i18nTime';
 import { zh } from '../../../../i18n/zh';
+import { Toggle } from '../../../primitives';
 
 const logger = createLogger('NativeConnectorsSection');
 
@@ -79,6 +91,13 @@ const RUNTIME_ACTION_CONFIG: Record<RuntimeConnectorUiAction, NativeConnectorAct
 };
 
 const RUNTIME_ACTION_ORDER: RuntimeConnectorUiAction[] = ['retry', 'probe'];
+
+const NATIVE_CONNECTOR_ICON_BY_ID: Readonly<Record<string, React.ComponentType<{ className?: string }>>> = {
+  calendar: CalendarDays,
+  mail: Mail,
+  photos: Images,
+  reminders: ListChecks,
+};
 
 export function buildNativeConnectorRows(
   items: NativeConnectorInventoryItem[],
@@ -443,7 +462,13 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
   </div>
 );
 
-export const NativeConnectorsSection: React.FC = () => {
+interface NativeConnectorsSectionProps {
+  presentation?: 'diagnostic' | 'grid';
+}
+
+export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = ({
+  presentation = 'diagnostic',
+}) => {
   const { t, language } = useI18n();
   const connectorText = t.settings.nativeConnectors;
   const [items, setItems] = useState<NativeConnectorInventoryItem[]>([]);
@@ -543,6 +568,101 @@ export const NativeConnectorsSection: React.FC = () => {
       setBusyKey(null);
     }
   }, [refresh]);
+
+  if (presentation === 'grid') {
+    if (loading) {
+      return (
+        <div className="col-span-full flex min-h-24 items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900/40 text-xs text-zinc-500">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <span>{connectorText.loading}</span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="contents" data-testid="native-connector-grid-items">
+        {rows.map((row) => {
+          const readiness = getNativeConnectorReadiness(row, connectorText.readiness);
+          const lifecycleActions = getNativeConnectorLifecycleActions(row);
+          const rowBusy = Boolean(busyKey?.startsWith(`${row.id}:`));
+          const Icon = NATIVE_CONNECTOR_ICON_BY_ID[row.id] ?? Plug;
+          const label = connectorText.grid.labels[row.id as keyof typeof connectorText.grid.labels] ?? row.label;
+          const description = connectorText.grid.descriptions[
+            row.id as keyof typeof connectorText.grid.descriptions
+          ] ?? `${connectorText.capabilitiesPrefix}${formatCapabilities(row.status?.capabilities ?? [], connectorText)}`;
+
+          return (
+            <div
+              key={row.id}
+              className="min-h-36 rounded-xl border border-zinc-700 bg-zinc-900/60 p-4"
+              data-testid={`native-connector-card-${row.id}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
+                    <Icon className="h-4 w-4 text-zinc-300" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-medium text-zinc-100">{label}</span>
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] ${readiness.className}`}>
+                        {readiness.label}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="inline-flex shrink-0 items-center gap-2 text-xs text-zinc-400">
+                  <span>{row.enabled ? connectorText.enabled : connectorText.disabled}</span>
+                  <Toggle
+                    checked={row.enabled}
+                    disabled={rowBusy}
+                    onChange={(enabled) => void toggle(row.id, enabled)}
+                    aria-label={`${row.enabled ? connectorText.disabled : connectorText.enabled} ${label}`}
+                  />
+                </div>
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-zinc-400">
+                {row.status?.detail || description}
+              </p>
+              {lifecycleActions.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {lifecycleActions.map((action) => {
+                    const config = ACTION_CONFIG[action];
+                    const actionText = connectorText.actions[action];
+                    const ActionIcon = config.icon;
+                    const actionBusy = busyKey === `${row.id}:${action}`;
+                    return (
+                      <button /* ds-allow:button: 本机连接器卡片的紧凑生命周期动作位 */
+                        key={action}
+                        type="button"
+                        disabled={rowBusy}
+                        onClick={() => void runLifecycleAction(row.id, action)}
+                        className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                          config.danger
+                            ? 'border-red-500/25 text-badge-danger hover:bg-red-500/10'
+                            : 'border-zinc-600 text-zinc-300 hover:bg-zinc-800'
+                        }`}
+                      >
+                        {actionBusy
+                          ? <Loader2 className="h-3 w-3 animate-spin" />
+                          : <ActionIcon className="h-3 w-3" />}
+                        <span>{actionBusy ? actionText.busyLabel : actionText.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {error && (
+          <div className="col-span-full text-xs text-badge-danger">
+            {connectorText.operationFailedPrefix}{error}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">

@@ -554,8 +554,34 @@ export const zhSettingsModels = {
       closeFocusPrompt: '关闭提示',
       grid: {
         title: '所有连接器',
-        description: '想连接和已经连接的服务都在这里，状态直接显示在卡片上。点卡片查看能力、连接方式和使用示例。',
+        description: '按服务来源和使用位置分区查看，已连接服务与待发现服务不再混在一起。',
         connectedSummarySuffix: ' 台 MCP 已连接',
+        sections: {
+          saas: {
+            title: '工作账号与在线服务',
+            description: '连接飞书、日历、会议等日常工作账号。',
+          },
+          external: {
+            title: '外部工具服务',
+            description: '已经添加到 Neo 的第三方工具和数据服务。',
+            empty: '还没有添加外部工具服务。',
+          },
+          local: {
+            title: '本机能力与服务',
+            description: '使用这台电脑上的应用、文件、代码和桌面操作能力。',
+            empty: '当前没有可用的本机能力。',
+            computerUseTitle: '桌面操作',
+          },
+          shelf: {
+            title: '发现更多连接',
+            description: '这里都是尚未连接的服务，点开卡片后再确认连接方式。',
+          },
+        },
+        riskLabels: {
+          low: '低风险',
+          medium: '中风险',
+          high: '高风险',
+        },
       },
       tabs: {
         connectedPrefix: '已连接 (',
@@ -671,16 +697,6 @@ export const zhSettingsModels = {
         collapseTools: '收起工具清单',
         toolsCountSuffix: ' 个工具',
         toolsVisibleAfterInstall: '安装后可见',
-        computerUse: {
-          title: 'Computer Use 本机能力',
-          highPrivilegeBadge: '高权限',
-          description: '本机底座是 `cua-driver`，需要 `CODE_AGENT_ENABLE_CUA=1` 和系统辅助功能权限。',
-          defaultVisible: '默认可见，不默认强启',
-          registeredEnabled: '当前已启用',
-          registeredDisabled: '已注册但未启用',
-          unregistered: '当前未注册',
-          openButton: '查看本机能力',
-        },
         browseTitle: '按用途浏览',
         browseDescription: '热门 MCP 连接，按要连的能力分类。点「添加」会打开预填好目录配置的确认面板，凭证类条目在面板里补齐密钥。',
         grid: {

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useMemo, useState } from 'react';
-import { Check, Link2, Loader2, Monitor, Plug, ShieldAlert } from 'lucide-react';
+import { Check, Link2, Loader2, Plug } from 'lucide-react';
 import type { McpCatalogPayload, RecommendedMcpServerEntry } from '@shared/contract/mcpCatalog';
 import { getMcpRuntimeBadge, groupRecommendedMcpServersByCategory } from '@shared/constants/mcpCatalog';
 import { Button, Modal } from '../../../primitives';
@@ -22,7 +22,6 @@ export interface McpDiscoverTabProps {
   actionLoading: Set<string>;
   onAdd: (entry: RecommendedMcpServerEntry) => void;
   onEnableBuiltin: (serverId: string) => void;
-  onOpenComputerUsePanel?: () => void;
 }
 
 export function getEntryAction(
@@ -59,7 +58,6 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
   actionLoading,
   onAdd,
   onEnableBuiltin,
-  onOpenComputerUsePanel,
 }) => {
   const { t } = useI18n();
   const labels = t.settings.mcp.discover;
@@ -77,44 +75,6 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
 
   return (
     <div className="contents" data-testid="mcp-discover-grid-items">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onOpenComputerUsePanel}
-        onKeyDown={(event) => {
-          if ((event.key === 'Enter' || event.key === ' ') && onOpenComputerUsePanel) onOpenComputerUsePanel();
-        }}
-        className="min-h-36 cursor-pointer rounded-xl border border-badge-warning/20 bg-amber-500/[0.04] p-4 transition-colors hover:border-badge-warning/40"
-        data-testid="mcp-computer-use-card"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-badge-warning/20 bg-amber-500/10">
-              <Monitor className="h-4 w-4 text-badge-warning" />
-            </span>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-zinc-100">{labels.computerUse.title}</span>
-                <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] text-badge-danger">
-                  {labels.computerUse.highPrivilegeBadge}
-                </span>
-              </div>
-            </div>
-          </div>
-          <ShieldAlert className="h-4 w-4 text-badge-warning" />
-        </div>
-        <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-zinc-400">
-          {labels.computerUse.description}
-        </p>
-        <div className="mt-3 text-[11px] text-zinc-500">
-          {enabledServerIds.has('cua-driver')
-            ? labels.computerUse.registeredEnabled
-            : existingServerIds.has('cua-driver')
-              ? labels.computerUse.registeredDisabled
-              : labels.computerUse.unregistered}
-        </div>
-      </div>
-
       {entries.map((entry) => {
         const isLoading = actionLoading.has(entry.id);
         return (

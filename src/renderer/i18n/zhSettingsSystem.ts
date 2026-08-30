@@ -321,6 +321,20 @@ export const zhSettingsSystem = {
     nativeConnectors: {
       title: '原生连接器',
       description: '按需启用 macOS 原生应用的连接器；启用后可在这里检查授权、修复权限、断开或移除。',
+      grid: {
+        labels: {
+          calendar: '日历',
+          mail: '邮件',
+          photos: '照片',
+          reminders: '提醒事项',
+        },
+        descriptions: {
+          calendar: '读取和管理这台 Mac 上的日历与日程。',
+          mail: '读取本机邮件，并创建或发送邮件。',
+          photos: '搜索和整理本机照片图库。',
+          reminders: '读取和管理这台 Mac 上的提醒事项。',
+        },
+      },
       loading: '加载中…',
       otherConnectors: '其他连接器',
       operationFailedPrefix: '连接器操作失败: ',

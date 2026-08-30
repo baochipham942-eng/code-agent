@@ -102,6 +102,13 @@ describe('McpDiscoverTab unified grid cards', () => {
     expect(screen.queryByTestId('mcp-discover-card-lark')).toBeNull();
   });
 
+  it('does not synthesize a Computer Use card in the discovery shelf', () => {
+    renderDiscover();
+
+    expect(screen.queryByTestId('mcp-computer-use-card')).toBeNull();
+    expect(screen.queryByText(/Computer Use 本机能力/)).toBeNull();
+  });
+
   it('shows every live-approved remote Tencent connector as not connected', () => {
     renderDiscover();
 

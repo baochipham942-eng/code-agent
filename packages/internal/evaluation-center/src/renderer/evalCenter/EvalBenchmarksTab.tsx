@@ -37,8 +37,7 @@ import {
   EvalRunWizard,
   type EvalRunSplit,
 } from './EvalRunWizard';
-
-const RUN_CONFIRM_WINDOW_MS = 5_000;
+import { useRunConfirmation } from './useRunConfirmation';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -71,18 +70,18 @@ export const EvalBenchmarksTab: React.FC = () => {
   const [tags, setTags] = useState<string[]>([]);
   const [maxCases, setMaxCases] = useState(1);
   const [selectedAiReview, setSelectedAiReview] = useState<AiReviewDimension[]>([]);
-  const [confirmArmed, setConfirmArmed] = useState(false);
   const [starting, setStarting] = useState(false);
   const [activeRun, setActiveRun] = useState<EvalActiveRun | null>(null);
   const [quietNotice, setQuietNotice] = useState<string | null>(null);
-  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
+  const startRunRef = useRef<(() => Promise<void>) | null>(null);
+  const confirmation = useRunConfirmation(() => { void startRunRef.current?.(); });
 
   const loadExperiments = useCallback(async () => {
     setLoadState('loading');
     setLoadError(null);
     try {
-      const list = await invokeEvaluation(EVALUATION_CHANNELS.LIST_EXPERIMENTS, { limit: 100 });
+      const list = await invokeEvaluation(EVALUATION_CHANNELS.LIST_EXPERIMENTS, { limit: 100, source: 'eval' });
       setExperiments(list ?? []);
       setLoadState('ready');
     } catch (error) {
@@ -100,7 +99,6 @@ export const EvalBenchmarksTab: React.FC = () => {
       }
     });
     return () => {
-      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
       unsubscribeRef.current?.();
     };
   }, [loadExperiments]);
@@ -117,24 +115,23 @@ export const EvalBenchmarksTab: React.FC = () => {
   const openWizard = useCallback((quick = false) => {
     setQuietNotice(null);
     setWizardOpen(true);
-    setConfirmArmed(false);
+    confirmation.reset();
     setSplit('held-in');
     setTags(quick ? (probe?.quickCheck.tags ?? ['core-path']) : []);
     setMaxCases(quick
       ? (probe?.quickCheck.maxCases ?? 12)
       : (probe?.splitCounts['held-in'] ?? 1));
     setSelectedAiReview([]);
-  }, [probe]);
+  }, [confirmation, probe]);
 
   const closeWizard = useCallback(() => {
     if (starting) return;
     setWizardOpen(false);
-    setConfirmArmed(false);
-    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
-  }, [starting]);
+    confirmation.reset();
+  }, [confirmation, starting]);
 
   const updateActiveRunFromEvent = useCallback((event: EvalRunEvent) => {
-    if (event.schemaVersion !== 2) {
+    if (event.schemaVersion !== 3) {
       setQuietNotice(labels.quietDegraded);
       setActiveRun(null);
       void loadExperiments();
@@ -192,7 +189,7 @@ export const EvalBenchmarksTab: React.FC = () => {
         stopping: false,
       });
       setWizardOpen(false);
-      setConfirmArmed(false);
+      confirmation.reset();
 
       let receivedRunEnd = false;
       // 先挂监听再 subscribe，避免 host 同步推送的 run_start 丢失。
@@ -223,17 +220,8 @@ export const EvalBenchmarksTab: React.FC = () => {
     } finally {
       setStarting(false);
     }
-  }, [labels, loadExperiments, maxCases, probe, selectedAiReview, split, tags, updateActiveRunFromEvent]);
-
-  const handleRunClick = useCallback(() => {
-    if (confirmArmed) {
-      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
-      void startRun();
-      return;
-    }
-    setConfirmArmed(true);
-    confirmTimerRef.current = setTimeout(() => setConfirmArmed(false), RUN_CONFIRM_WINDOW_MS);
-  }, [confirmArmed, startRun]);
+  }, [confirmation, labels, loadExperiments, maxCases, probe, selectedAiReview, split, tags, updateActiveRunFromEvent]);
+  startRunRef.current = startRun;
 
   const stopRun = useCallback(async () => {
     if (!activeRun || activeRun.stopping) return;
@@ -291,7 +279,7 @@ export const EvalBenchmarksTab: React.FC = () => {
         split={split}
         tags={tags}
         maxCases={maxCases}
-        confirmArmed={confirmArmed}
+        confirmArmed={confirmation.confirmArmed}
         starting={starting}
         estimatedCost={estimatedCost}
         aiReviewEstimatedCost={aiReviewEstimatedCost}
@@ -301,25 +289,25 @@ export const EvalBenchmarksTab: React.FC = () => {
         onSplit={(next) => {
           setSplit(next);
           setMaxCases(probe?.splitCounts[next] ?? 1);
-          setConfirmArmed(false);
+          confirmation.reset();
         }}
         onToggleTag={(tag) => {
           setTags((current) => current.includes(tag)
             ? current.filter((item) => item !== tag)
             : [...current, tag]);
-          setConfirmArmed(false);
+          confirmation.reset();
         }}
         onMaxCases={(next) => {
           setMaxCases(next);
-          setConfirmArmed(false);
+          confirmation.reset();
         }}
         onToggleAiReview={(dimension) => {
           setSelectedAiReview((current) => current.includes(dimension)
             ? current.filter((item) => item !== dimension)
             : [...current, dimension]);
-          setConfirmArmed(false);
+          confirmation.reset();
         }}
-        onRun={handleRunClick}
+        onRun={confirmation.trigger}
       />
     </div>
   );

@@ -19,7 +19,7 @@ interface EvaluationRunIpcInvokeHandlers {
   [EVALUATION_CHANNELS.RUN_EVENTS]: (payload?: { runId?: string }) => Promise<EvalRunSubscriptionResult | EvalRunPanelProbe>;
   [EVALUATION_CHANNELS.ABORT_RUN]: (payload: { runId: string }) => Promise<{ runId: string; pid: number; terminated: boolean }>;
   [EVALUATION_CHANNELS.SCORERS_OVERVIEW]: () => Promise<EvalScorersOverview>;
-  [EVALUATION_CHANNELS.LIST_EXPERIMENTS]: (payload?: { limit?: number }) => Promise<EvalExperimentListItem[]>;
+  [EVALUATION_CHANNELS.LIST_EXPERIMENTS]: (payload?: { limit?: number; source?: 'compare' | 'eval' }) => Promise<EvalExperimentListItem[]>;
   [EVALUATION_CHANNELS.LOAD_EXPERIMENT]: (experimentId: string) => Promise<EvalExperimentDetail | null>;
   [EVALUATION_CHANNELS.LOAD_CASE]: (payload: { experimentId: string; caseId: string }) => Promise<EvalExperimentCaseDetail | null>;
   [EVALUATION_CHANNELS.LIST_CASES]: () => Promise<EvalCaseListItem[]>;

@@ -13,13 +13,17 @@ import { EXPECTATION_TYPE_CATALOG } from '../../../src/host/testing/expectationC
 import { UNKNOWN_EVAL_RUN_STAMP, type EvalRunEvent, type EvalExperimentCaseDetail } from '../../../src/shared/contract/evaluation';
 import type { TestResult } from '../../../src/host/testing/types';
 
-type Scenario = 'a1' | 'a2' | 'a8' | 'a12' | 'c2' | 'a13a' | 'a13b' | 'a13c';
+type Scenario = 'a1' | 'a2' | 'a8' | 'a12' | 'c2' | 'a13a' | 'a13b' | 'a13c'
+  | 'c1a' | 'c1b-disabled' | 'c1b-ready' | 'c1c';
 type Theme = 'light' | 'dark';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const outputDir = process.env.RUNPANEL_EVIDENCE_DIR ?? path.join(here, 'artifacts', 'screenshots');
 const referenceHtml = process.env.RUNPANEL_REFERENCE_HTML;
-const scenarioNames = new Set<Scenario>(['a1', 'a2', 'a8', 'a12', 'c2', 'a13a', 'a13b', 'a13c']);
+const scenarioNames = new Set<Scenario>([
+  'a1', 'a2', 'a8', 'a12', 'c2', 'a13a', 'a13b', 'a13c',
+  'c1a', 'c1b-disabled', 'c1b-ready', 'c1c',
+]);
 const requestedScenarios = (process.env.RUNPANEL_SCENARIOS?.split(',') ?? [...scenarioNames])
   .map((value) => value.trim())
   .filter((value): value is Scenario => scenarioNames.has(value as Scenario));
@@ -130,6 +134,21 @@ async function writeCaseDrawerFixture(): Promise<{ fixturePath: string; reportPa
 
 async function prepareScenario(page: Page, scenario: Scenario, theme: Theme): Promise<void> {
   await page.goto(`http://127.0.0.1:4189/?scenario=${scenario}&theme=${theme}`);
+  if (scenario.startsWith('c1')) {
+    await page.getByTestId('eval-experiments-tab').waitFor();
+    if (scenario === 'c1b-disabled' || scenario === 'c1b-ready') {
+      await page.getByRole('button', { name: '新建实验', exact: true }).first().click();
+      await page.getByRole('dialog').waitFor();
+      if (scenario === 'c1b-ready') {
+        await page.getByPlaceholder('production-default@sys-v45').fill('优先给出可验证结论。');
+      }
+    }
+    if (scenario === 'c1c') {
+      await page.getByTestId('experiment-row-01J6K9EXPERIMENT01').click();
+      await page.getByTestId('eval-experiment-result').waitFor();
+    }
+    return;
+  }
   if (scenario === 'c2') {
     await page.getByTestId('eval-scorers-tab').waitFor();
     return;

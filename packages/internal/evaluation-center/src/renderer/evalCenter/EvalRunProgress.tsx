@@ -10,6 +10,7 @@ type CasePresentationStatus = 'waiting' | 'running' | 'passed' | 'failed' | 'exc
 
 interface CasePresentation {
   id: string;
+  displayId?: string;
   status: CasePresentationStatus;
   result: string;
 }
@@ -72,8 +73,14 @@ export function reduceEvalActiveRun(
 ): EvalActiveRun {
   const next: EvalActiveRun = { ...current, lastTs: event.ts };
   if (event.type === 'run_start') {
-    const cases = Object.fromEntries(event.plannedCaseIds.map((id) => [id, {
+    const plannedCaseIds = event.config.compare
+      ? event.plannedCaseIds.flatMap((id) => [`${id}:baseline`, `${id}:candidate`])
+      : event.plannedCaseIds;
+    const cases = Object.fromEntries(plannedCaseIds.map((id) => [id, {
       id,
+      displayId: id.endsWith(':baseline')
+        ? `${id.slice(0, -9)} · ${labels.baselineGroup}`
+        : id.endsWith(':candidate') ? `${id.slice(0, -10)} · ${labels.candidateGroup}` : id,
       status: 'waiting' as const,
       result: labels.noResult,
     }]));
@@ -81,7 +88,7 @@ export function reduceEvalActiveRun(
       ...next,
       model: event.config.model,
       provider: event.config.provider,
-      plannedCaseIds: event.plannedCaseIds,
+      plannedCaseIds,
       cases,
       startTs: event.ts,
       logs: appendLog(next, { id: `${event.ts}:start`, text: labels.runStarted }),
@@ -101,6 +108,7 @@ export function reduceEvalActiveRun(
     };
   }
   if (event.type === 'case_end') {
+    const caseKey = event.arm ? `${event.testId}:${event.arm}` : event.testId;
     let status: CasePresentationStatus = 'failed';
     let result = event.failureReason ?? labels.failed;
     if (event.status === 'passed') {
@@ -120,7 +128,12 @@ export function reduceEvalActiveRun(
         : replace(labels.caseFailed, { caseId: event.testId, reason: result });
     return {
       ...next,
-      cases: { ...next.cases, [event.testId]: { id: event.testId, status, result } },
+      cases: { ...next.cases, [caseKey]: {
+        id: caseKey,
+        displayId: event.arm ? `${event.testId} · ${event.arm === 'baseline' ? labels.baselineGroup : labels.candidateGroup}` : event.testId,
+        status,
+        result,
+      } },
       logs: appendLog(next, {
         id: `${event.ts}:case-end:${event.testId}`,
         caseId: event.testId,
@@ -207,7 +220,7 @@ export const EvalRunProgress: React.FC<EvalRunProgressProps> = ({ run, labels, o
           {cases.map((item) => (
             <div key={item.id} className={`flex items-center gap-2 border-b border-zinc-800/70 px-3 py-2 text-xs ${item.status === 'running' ? 'bg-zinc-800/60' : ''}`}>
               <CaseStatusIcon status={item.status} />
-              <span className="w-36 truncate font-mono text-zinc-300">{item.id}</span>
+              <span className="w-36 truncate font-mono text-zinc-300">{item.displayId ?? item.id}</span>
               <span className={`min-w-0 flex-1 truncate ${item.status === 'failed' ? 'text-[var(--cc-error)]' : item.status === 'passed' ? 'text-[var(--cc-success)]' : 'text-zinc-500'}`}>
                 {item.result}
               </span>

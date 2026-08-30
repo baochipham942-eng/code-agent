@@ -12,6 +12,7 @@ import type { CLIGlobalOptions } from '../types';
 import { extractJSON } from '../utils/jsonExtractor';
 import { validateSchema, formatValidationErrors, type JSONSchema } from '../utils/schemaValidator';
 import { getPromptCommandService } from '../../host/services/commands/promptCommandService';
+import { resolveCLIPermissionModeFlag, type CLIPermissionMode } from '../permissionPolicy';
 
 /**
  * Read stdin when piped (non-TTY)
@@ -76,6 +77,10 @@ export const runCommand = new Command('run')
     false,
   )
   .option(
+    '--permission-mode <mode>',
+    '颗粒度权限档（目前仅支持 auto）：分类器判安全的操作自动批准并入账，其余 fail-closed 拒绝。与 --dangerously-skip-permissions 互斥',
+  )
+  .option(
     '--tools <list>',
     '仅允许指定工具（逗号分隔，精确白名单无核心工具兜底；支持 skill:<name> 前缀）',
   )
@@ -89,12 +94,28 @@ export const runCommand = new Command('run')
     outputSchemaFile?: string;
     maxRetries?: string;
     dangerouslySkipPermissions?: boolean;
+    permissionMode?: string;
     tools?: string;
     disallowedTools?: string;
   }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
     const isStreamJson = globalOpts?.outputFormat === 'stream-json';
     const isJson = globalOpts?.json || globalOpts?.outputFormat === 'json' || isStreamJson;
+
+    // --permission-mode 校验（互斥/合法值）先于一切初始化，报错保持干净
+    let permissionMode: CLIPermissionMode | undefined;
+    try {
+      permissionMode = resolveCLIPermissionModeFlag(options.permissionMode, options.dangerouslySkipPermissions);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (isJson) {
+        jsonOutput.error(message);
+      } else {
+        terminalOutput.error(message);
+      }
+      process.exit(1);
+      return;
+    }
 
     // Read stdin and prepend to prompt if available
     const stdinContent = await readStdin();
@@ -135,6 +156,7 @@ export const runCommand = new Command('run')
       // 初始化服务
       await initializeCLIServices({
         dangerouslySkipPermissions: options.dangerouslySkipPermissions,
+        permissionMode,
       });
 
       // 显示数据库状态

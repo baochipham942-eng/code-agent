@@ -24,6 +24,7 @@ import { getPRLinkService } from '../../host/services/github/prLinkService';
 import { initializeCommands, getCommandRegistry } from '../../shared/commands';
 import type { CommandContext, CommandOutput } from '../../shared/commands';
 import { getPromptCommandService } from '../../host/services/commands/promptCommandService';
+import { resolveCLIPermissionModeFlag } from '../permissionPolicy';
 
 /** Provider → env var name mapping */
 const PROVIDER_ENV_KEYS: Record<string, string> = {
@@ -164,11 +165,17 @@ export const chatCommand = new Command('chat')
     '--disallowed-tools <list>',
     '禁用指定工具（逗号分隔；支持 skill:<name> 前缀）。被禁工具从 schema 面移除且执行层硬拒',
   )
-  .action(async (options: { session?: string; resume?: boolean; fromPr?: string; tui?: boolean; tools?: string; disallowedTools?: string }, command: Command) => {
+  .option(
+    '--permission-mode <mode>',
+    '颗粒度权限档（目前仅支持 auto）：分类器判安全的操作自动批准并入账，其余 fail-closed 拒绝。仅 headless（非 TTY/json）生效，TTY 下人工审批卡优先',
+  )
+  .action(async (options: { session?: string; resume?: boolean; fromPr?: string; tui?: boolean; tools?: string; disallowedTools?: string; permissionMode?: string }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
     const isJsonMode = globalOpts?.json || globalOpts?.outputFormat === 'json' || globalOpts?.outputFormat === 'stream-json';
 
     try {
+      // --permission-mode 校验先于一切初始化，报错保持干净
+      const permissionMode = resolveCLIPermissionModeFlag(options.permissionMode);
       // Ink/yoga 模块加载与 init services 并行（加载不依赖 init 结果；非 TTY 不启动）
       const inkRunnerPromise = !isJsonMode
         && Boolean(process.stdin.isTTY && process.stdout.isTTY)
@@ -177,7 +184,7 @@ export const chatCommand = new Command('chat')
         : null;
 
       // 初始化服务
-      await initializeCLIServices();
+      await initializeCLIServices({ permissionMode });
 
       // 初始化统一命令注册表
       initializeCommands();

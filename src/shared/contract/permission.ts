@@ -220,7 +220,9 @@ type PermissionApprovalSource =
   /** dev 槽里的 devModeAutoApprove 机器放行 */
   | 'dev-auto-approve'
   /** 评测脚本按预设策略批准 */
-  | 'scripted';
+  | 'scripted'
+  /** CLI --permission-mode auto：分类器判安全后由审批处理器机器放行（见 src/cli/permissionPolicy.ts） */
+  | 'cli-auto-approve';
 
 /** 审批处理器的富返回值。裸 boolean 仍然合法（等价 `user` 语义），旧实现无需改动。 */
 export interface PermissionAskResult {

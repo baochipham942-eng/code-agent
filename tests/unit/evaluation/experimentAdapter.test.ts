@@ -48,6 +48,38 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     expect(db.insertExperiment.mock.calls[0][0]).toMatchObject({ source: 'compare' });
   });
 
+  it('实验组臂通过但对照组赢时，status 仍记臂状态且 winner 单独落 data_json', () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    adapter.persistPairEnd({
+      schemaVersion: 3, type: 'pair_end', ts: 1, runId: 'compare-run', testId: 'candidate-passed',
+      statusA: 'passed', statusB: 'failed', assignment: { A: 'candidate', B: 'baseline' },
+      assertionWinner: 'baseline', referenceWinner: 'B', assertionPassA: 1, assertionPassB: 0,
+      assertionCount: 1, skillActivations: { baseline: 0, candidate: 0 },
+    });
+
+    const row = db.insertExperimentCases.mock.calls[0][1][0];
+    expect(row.status).toBe('passed');
+    expect(JSON.parse(row.data_json).winner).toBe('baseline');
+  });
+
+  it('实验组臂失败或部分通过但实验组赢时，status 不得按 winner 改成通过', () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    for (const [index, candidateStatus] of (['failed', 'partial'] as const).entries()) {
+      adapter.persistPairEnd({
+        schemaVersion: 3, type: 'pair_end', ts: index + 1, runId: 'compare-run', testId: `candidate-${candidateStatus}`,
+        statusA: 'passed', statusB: candidateStatus, assignment: { A: 'baseline', B: 'candidate' },
+        assertionWinner: 'candidate', referenceWinner: 'B', assertionPassA: 0, assertionPassB: 1,
+        assertionCount: 1, skillActivations: { baseline: 0, candidate: 0 },
+      });
+    }
+
+    expect(db.insertExperimentCases.mock.calls.map((call) => call[1][0].status)).toEqual(['failed', 'partial']);
+    expect(db.insertExperimentCases.mock.calls.map((call) => JSON.parse(call[1][0].data_json).winner))
+      .toEqual(['candidate', 'candidate']);
+  });
+
   // 2026-08-30 监工代笔（Grok 变异席抓出的盲区）：桥落库计数只测过单题；键若退化成 runId 级会串题。
   it('keeps per-testId skill activation slots isolated when two cases interleave', () => {
     const db = createDbWriter();
@@ -125,11 +157,11 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       toolCalls: [], responseExcerpt: '完成', responseTotalChars: 2,
     };
     adapter.persistEventCase({
-      schemaVersion: 2, type: 'case_end', ts: 1, runId: 'event-run', testId: 'with-evidence',
+      schemaVersion: 3, type: 'case_end', ts: 1, runId: 'event-run', testId: 'with-evidence',
       status: 'passed', score: 1, durationMs: 2, evidence, invalid: { reason: 'usage_unavailable' },
     });
     adapter.persistEventCase({
-      schemaVersion: 2, type: 'case_end', ts: 2, runId: 'event-run', testId: 'legacy',
+      schemaVersion: 3, type: 'case_end', ts: 2, runId: 'event-run', testId: 'legacy',
       status: 'failed', score: 0, durationMs: 2,
     });
     const first = JSON.parse(db.insertExperimentCases.mock.calls[0][1][0].data_json);

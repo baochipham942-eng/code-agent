@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
+import fs from 'node:fs';
+import path from 'node:path';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EvalExperimentDetail, EvalRunPanelProbe, EvalShipGateVerdict } from '../../../src/shared/contract/evaluation';
@@ -46,7 +48,14 @@ function probe(): EvalRunPanelProbe {
     model: 'm', provider: 'p', priceTableVersion: 1, estimatedCostPerCaseUsd: 0.01,
     judge: { model: 'judge', provider: 'p', estimatedCostPerCaseUsd: 0.01 }, aiReview: [],
     splitCounts: { 'held-in': 2, 'held-out': 1, safety: 1 }, quickCheck: { tags: [], maxCases: 1 },
-    productionArm: { name: 'production@sys-v45', model: 'm', provider: 'p', harness: { name: 'production', contextCompression: true }, memory: { longTerm: true }, skills: ['xlsx'] },
+    productionArm: {
+      name: 'production@sys-v45', model: 'm', provider: 'p',
+      harness: {
+        name: 'production', contextCompression: true, compressionPipeline: false, scaffoldProfile: true,
+        thinkingInjection: false, hooksEnabled: true, toolMode: 'deferred',
+      },
+      memory: { longTerm: true }, skills: ['xlsx'],
+    },
     skills: ['xlsx', 'docx'],
   };
 }
@@ -79,5 +88,50 @@ describe('实验页四态与新建守卫', () => {
     expect(button.disabled).toBe(false);
     fireEvent.click(button);
     expect(button.textContent).toContain('再点一次确认发车');
+  });
+
+  it('对照组按与实验组相同顺序逐维列出六项运行配置', () => {
+    render(<EvalExperimentWizard open probe={probe()} starting={false} onClose={vi.fn()} onStart={vi.fn()} />);
+    const expected = [
+      ['contextCompression', '上下文压缩: 开'],
+      ['compressionPipeline', '压缩流水线: 关'],
+      ['scaffoldProfile', '脚手架档位: 开'],
+      ['thinkingInjection', '思考注入: 关'],
+      ['hooksEnabled', '钩子: 开'],
+      ['toolMode', '工具模式: 按需加载（deferred）'],
+    ] as const;
+    for (const [key, copy] of expected) {
+      expect(screen.getByTestId(`baseline-harness-${key}`).textContent).toBe(copy);
+    }
+  });
+
+  it('C1-b/C1-c 渲染层不泄漏配置键名与成对状态原始枚举', () => {
+    const resultDetail = detail('candidate_better');
+    resultDetail.cases = [
+      { caseId: 'passed-failed', status: 'passed', score: 100, durationMs: 1, data: { assignment: { A: 'candidate', B: 'baseline' }, statusA: 'passed', statusB: 'failed', winner: 'candidate', referenceWinner: 'A' } },
+      { caseId: 'infra-not-run', status: 'skipped', score: 0, durationMs: 1, data: { assignment: { A: 'baseline', B: 'candidate' }, statusA: 'infra_excluded', statusB: 'not_run', winner: 'tie', referenceWinner: 'tie', excludedReason: 'environment' } },
+      { caseId: 'cost-partial', status: 'partial', score: 50, durationMs: 1, data: { assignment: { A: 'baseline', B: 'candidate' }, statusA: 'cost_exceeded', statusB: 'partial', winner: 'candidate', referenceWinner: 'B' } },
+    ];
+    const { baseElement: container } = render(<>
+      <EvalExperimentResult detail={resultDetail} onBack={vi.fn()} />
+      <EvalExperimentWizard open probe={probe()} starting={false} onClose={vi.fn()} onStart={vi.fn()} />
+    </>);
+    const copy = container.textContent ?? '';
+    for (const forbidden of [
+      'infra_excluded', 'not_run', 'cost_exceeded', 'contextCompression',
+      'scaffoldProfile', 'thinkingInjection', 'hooksEnabled', 'toolMode',
+    ]) expect(copy).not.toContain(forbidden);
+    for (const humanLabel of ['通过', '失败', '环境故障', '未执行', '成本超限', '部分通过', '上下文压缩', '工具模式']) {
+      expect(copy).toContain(humanLabel);
+    }
+  });
+
+  it('两个向导复用同一评测集选择组件', () => {
+    const root = path.join(process.cwd(), 'packages/internal/evaluation-center/src/renderer/evalCenter');
+    for (const file of ['EvalRunWizard.tsx', 'EvalExperimentWizard.tsx']) {
+      const source = fs.readFileSync(path.join(root, file), 'utf8');
+      expect(source).toContain("from './EvalCaseSelectionFields'");
+      expect(source).toContain('<EvalCaseSelectionFields');
+    }
   });
 });

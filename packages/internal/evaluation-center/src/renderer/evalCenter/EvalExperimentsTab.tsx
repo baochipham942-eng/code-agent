@@ -32,7 +32,6 @@ export const EvalExperimentsTab: React.FC = () => {
   const [selected, setSelected] = useState<EvalExperimentDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
-  const [warnings, setWarnings] = useState<string[]>([]);
   const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
 
   const load = useCallback(async () => {
@@ -80,7 +79,6 @@ export const EvalExperimentsTab: React.FC = () => {
     setStarting(true); setNotice(null);
     try {
       const result = await invokeEvaluation(EVALUATION_CHANNELS.RUN_SUITE, request);
-      setWarnings(result.warnings ?? []);
       const now = Date.now();
       setActiveRun({
         runId: result.runId,
@@ -142,7 +140,7 @@ export const EvalExperimentsTab: React.FC = () => {
     <div className="flex items-center gap-2">
       <h2 className="text-sm font-semibold text-zinc-200">{labels.title}</h2>
       <Button variant="ghost" size="sm" onClick={() => void load()} aria-label="refresh"><RefreshCw className="h-3.5 w-3.5" /></Button>
-      <Button className="ml-auto" size="sm" onClick={() => { setWarnings([]); setWizardOpen(true); }}>{labels.create}</Button>
+      <Button className="ml-auto" size="sm" onClick={() => setWizardOpen(true)}>{labels.create}</Button>
     </div>
     {notice && <div className="mt-3 rounded-lg bg-zinc-900 px-3 py-2 text-xs text-zinc-400" role="status">{notice}</div>}
     {activeRun && <div className="mt-3"><EvalRunProgress run={activeRun} labels={runLabels} onStop={() => void stop()} /></div>}
@@ -174,6 +172,6 @@ export const EvalExperimentsTab: React.FC = () => {
         </button>;
       })}
     </div>
-    {probe && <EvalExperimentWizard open={wizardOpen} probe={probe} starting={starting} warnings={warnings} onClose={() => setWizardOpen(false)} onStart={start} />}
+    {probe && <EvalExperimentWizard open={wizardOpen} probe={probe} starting={starting} onClose={() => setWizardOpen(false)} onStart={start} />}
   </div>;
 };

@@ -562,7 +562,6 @@ export interface EvalRunRequest {
 
 export interface EvalRunStartResult {
   runId: string;
-  warnings?: string[];
 }
 
 /**

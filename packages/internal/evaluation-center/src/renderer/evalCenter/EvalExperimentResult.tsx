@@ -2,7 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Copy, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { resolveEffectiveEvalCompareArm, type EvalExperimentDetail } from '@shared/contract/evaluation';
 import { Button } from '@renderer/components/primitives/Button';
+import { getEvalStatusLabel } from '../i18n/evalStatusLabels';
 import { useEvaluationI18n } from '../i18n/useEvaluationI18n';
+import { EVAL_HARNESS_DIMENSIONS } from './evalExperimentDimensions';
 import {
   failingSafetyCount,
   getExperimentCompareConfig,
@@ -33,6 +35,7 @@ export const EvalExperimentResult: React.FC<{
 }> = ({ detail, onBack }) => {
   const { t } = useEvaluationI18n();
   const labels = t.evalCenter.experiments;
+  const statusLabels = t.evalCenter.caseDrawer.status;
   const [filter, setFilter] = useState<PairFilter>('all');
   const compare = getExperimentCompareSummary(detail.experiment);
   const config = getExperimentCompareConfig(detail.experiment);
@@ -41,15 +44,19 @@ export const EvalExperimentResult: React.FC<{
     if (!config) return [];
     const baseline = resolveEffectiveEvalCompareArm(config.baseline, config.baseline);
     const candidate = resolveEffectiveEvalCompareArm(config.candidate, config.baseline);
-    const harness = (value: typeof baseline.harness) => {
-      const dimensions = { ...value };
-      delete dimensions.name;
-      return dimensions;
+    const formatHarnessValue = (arm: typeof baseline, key: (typeof EVAL_HARNESS_DIMENSIONS)[number]) => {
+      if (key === 'toolMode') return labels.toolModes[arm.harness?.toolMode ?? 'all'];
+      return arm.harness?.[key] ? labels.enabled : labels.disabled;
     };
     const values = [
       [labels.promptVersion, config.baseline.name, config.candidate.systemPrompt ? config.candidate.name : config.baseline.name],
       [labels.model, baseline.model, candidate.model], [labels.provider, baseline.provider, candidate.provider],
-      [labels.harness, harness(baseline.harness), harness(candidate.harness)], [labels.skill, baseline.skills, candidate.skills],
+      ...EVAL_HARNESS_DIMENSIONS.map((key) => [
+        labels.harnessDimensions[key],
+        formatHarnessValue(baseline, key),
+        formatHarnessValue(candidate, key),
+      ] as const),
+      [labels.skill, baseline.skills, candidate.skills],
       [labels.memory, baseline.memory.longTerm ? labels.enabled : labels.disabled, candidate.memory.longTerm ? labels.enabled : labels.disabled],
       [labels.reasoning, baseline.reasoningEffort, candidate.reasoningEffort],
     ] as const;
@@ -128,8 +135,8 @@ export const EvalExperimentResult: React.FC<{
               const activationsB = assignment?.B === 'candidate' ? activations?.candidate : activations?.baseline;
               return <tr key={item.caseId} data-testid={`experiment-pair-${item.caseId}`}>
                 <td className="px-3 py-2 font-mono text-zinc-300">{item.caseId}</td>
-                <td className="px-3 py-2 text-zinc-300">{item.data?.statusA ?? '—'}<div className="text-[10px] text-zinc-500">A={assignment?.A === 'candidate' ? labels.candidateName : labels.baselineName}</div></td>
-                <td className="px-3 py-2 text-zinc-300">{item.data?.statusB ?? '—'}<div className="text-[10px] text-zinc-500">B={assignment?.B === 'candidate' ? labels.candidateName : labels.baselineName}</div></td>
+                <td className="px-3 py-2 text-zinc-300">{item.data?.statusA ? getEvalStatusLabel(item.data.statusA, statusLabels) : '—'}<div className="text-[10px] text-zinc-500">A={assignment?.A === 'candidate' ? labels.candidateName : labels.baselineName}</div></td>
+                <td className="px-3 py-2 text-zinc-300">{item.data?.statusB ? getEvalStatusLabel(item.data.statusB, statusLabels) : '—'}<div className="text-[10px] text-zinc-500">B={assignment?.B === 'candidate' ? labels.candidateName : labels.baselineName}</div></td>
                 <td className="px-3 py-2 text-zinc-300">{winner}</td>
                 <td className="px-3 py-2 text-zinc-400">{activationsA ?? 0}/{activationsB ?? 0}</td>
               </tr>;

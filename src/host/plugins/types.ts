@@ -62,6 +62,16 @@ export interface PluginManifest extends PluginMetadata {
    * 错误处理路径。
    */
   nativeDeps?: string[];
+  /** Internal/dogfood package marker. Internal feature packages are never part of the default app bundle. */
+  distribution?: 'public' | 'internal';
+  /** Internal feature packages must be installed and opened by a verified administrator. */
+  adminOnly?: boolean;
+  /** Declarative renderer surface carried by an internal package. */
+  internalFeature?: {
+    id: string;
+    label: string;
+    rendererEntry: string;
+  };
 }
 
 /** Manual capability-package approval receipt written only after sandbox validation + user confirmation. */
@@ -101,6 +111,7 @@ export type PluginPermission =
  */
 export type PluginSurface =
   | 'tools'        // Provides tools
+  | 'internal-feature' // Admin-installed internal/dogfood product surface
   | 'skills'       // Provides skills
   | 'theme'        // Provides theme
   | 'language';    // Provides language support

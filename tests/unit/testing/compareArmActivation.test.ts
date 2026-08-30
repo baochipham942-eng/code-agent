@@ -210,7 +210,7 @@ describe('接线契约：eval-ci --compare 路径真的调用了两道断言', (
     }) as never);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    const { main } = await import('../../../scripts/eval-ci');
+    const { main } = await import('@internal-evaluation-scripts/eval-ci');
     await expect(
       main([
         'node',
@@ -232,7 +232,7 @@ describe('接线契约：eval-ci --compare 路径真的调用了两道断言', (
   });
 
   it('文本级兜底：producer（断言函数）与 consumer（调用点）同时存在，且调用不在注释里', () => {
-    const evalCiSrc = readFileSync(resolve(repoRoot, 'scripts/eval-ci.ts'), 'utf8');
+    const evalCiSrc = readFileSync(resolve(repoRoot, 'packages/internal/evaluation-center/scripts/eval-ci.ts'), 'utf8');
     // 先剥掉块注释与行注释——被注释掉的调用（// assertCompareArmsDistinct(...)）
     // 不算接线，剥完再匹配才防注释型突变。
     const activeSrc = evalCiSrc

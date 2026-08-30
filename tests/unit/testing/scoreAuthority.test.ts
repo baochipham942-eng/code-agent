@@ -14,7 +14,7 @@ import os from 'os';
 import path from 'path';
 import { TestRunner, type AgentInterface } from '../../../src/host/testing/testRunner';
 import { generateMarkdownReport } from '../../../src/host/testing/reportGenerator';
-import { ExperimentAdapter } from '../../../src/host/evaluation/experimentAdapter';
+import { ExperimentAdapter } from '@internal-evaluation/host/evaluation/experimentAdapter';
 import type { TestResult, TestRunSummary } from '../../../src/host/testing/types';
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({

@@ -15,9 +15,9 @@ import path from 'path';
 import { TestRunner, type AgentInterface } from '../../../src/host/testing/testRunner';
 import { generateMarkdownReport } from '../../../src/host/testing/reportGenerator';
 import { BaselineManager } from '../../../src/host/testing/ci/baselineManager';
-import { ExperimentAdapter } from '../../../src/host/evaluation/experimentAdapter';
+import { ExperimentAdapter } from '@internal-evaluation/host/evaluation/experimentAdapter';
 import type { TestEvent, TestResult, TestRunSummary } from '../../../src/host/testing/types';
-import { EvalRunEventStream, type EvalRunStartConfig } from '../../../scripts/lib/eval-run-event-stream';
+import { EvalRunEventStream, type EvalRunStartConfig } from '@internal-evaluation-scripts/lib/eval-run-event-stream';
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({

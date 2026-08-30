@@ -36,7 +36,7 @@ const VALID_PERMISSIONS: PluginPermission[] = [
 ];
 
 const VALID_SURFACES: PluginSurface[] = [
-  'tools', 'skills', 'theme', 'language',
+  'tools', 'internal-feature', 'skills', 'theme', 'language',
 ];
 
 const VALID_PLATFORMS: PluginPlatform[] = ['darwin', 'win32', 'linux'];
@@ -135,6 +135,29 @@ export function validateManifest(manifest: unknown): ValidationResult {
             message: `Unknown surface '${surface}'. Valid: ${VALID_SURFACES.join(', ')}`,
           });
         }
+      }
+    }
+  }
+
+  if (Array.isArray(m.surfaces) && m.surfaces.includes('internal-feature')) {
+    if (m.distribution !== 'internal') {
+      errors.push({ field: 'distribution', message: "Internal feature packages must declare distribution: 'internal'" });
+    }
+    if (m.adminOnly !== true) {
+      errors.push({ field: 'adminOnly', message: 'Internal feature packages must declare adminOnly: true' });
+    }
+    if (!m.internalFeature || typeof m.internalFeature !== 'object' || Array.isArray(m.internalFeature)) {
+      errors.push({ field: 'internalFeature', message: 'Internal feature packages must declare internalFeature metadata' });
+    } else {
+      const feature = m.internalFeature as Record<string, unknown>;
+      if (typeof feature.id !== 'string' || !feature.id.trim()) {
+        errors.push({ field: 'internalFeature.id', message: 'Internal feature id is required' });
+      }
+      if (typeof feature.label !== 'string' || !feature.label.trim()) {
+        errors.push({ field: 'internalFeature.label', message: 'Internal feature label is required' });
+      }
+      if (typeof feature.rendererEntry !== 'string' || !isSafeRelativeEntry(feature.rendererEntry)) {
+        errors.push({ field: 'internalFeature.rendererEntry', message: 'Internal renderer entry must stay inside the package' });
       }
     }
   }

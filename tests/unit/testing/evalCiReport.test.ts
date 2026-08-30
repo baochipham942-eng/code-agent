@@ -13,7 +13,7 @@ import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation'
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const tsxCli = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
-const evalCiScript = path.join(repoRoot, 'scripts', 'eval-ci.ts');
+const evalCiScript = path.resolve(repoRoot, 'packages/internal/evaluation-center/scripts/eval-ci.ts');
 
 const roots: string[] = [];
 
@@ -108,6 +108,7 @@ async function runEvalCi(cwd: string, args: string[]): Promise<void> {
     timeout: 30_000,
     env: {
       ...process.env,
+      TSX_TSCONFIG_PATH: path.join(repoRoot, 'tsconfig.json'),
       CODE_AGENT_EVAL_NO_SANDBOX: 'true',
       CODE_AGENT_DATA_DIR: path.join(cwd, '.runtime-data'),
     },

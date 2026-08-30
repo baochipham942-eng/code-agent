@@ -73,7 +73,7 @@ export const SessionActionsMenu: React.FC = () => {
   const showToast = useUIStore((s) => s.showToast);
 
   const currentSession = sessions.find((s) => s.id === currentSessionId) || null;
-  const canOpenReplay = canAccessFeature('eval.replay', user);
+  const canOpenReplay = canAccessFeature('telemetry.replay', user);
 
   useEffect(() => {
     if (!open) return;

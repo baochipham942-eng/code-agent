@@ -11,7 +11,7 @@ const FROZEN_TASK_COMPLETED_PROMPT_HASH = 'd609345b10709e47137d0f584d84f122a9b6d
 
 const probeEnv = vi.hoisted(() => ({ repositoryRoot: '' }));
 
-vi.mock('../../../src/host/evaluation/evalEnvironment', () => ({
+vi.mock('@internal-evaluation/host/evaluation/evalEnvironment', () => ({
   inspectEvalEnvironment: () => ({
     available: true,
     message: '',
@@ -28,7 +28,7 @@ vi.mock('../../../src/host/model/quickModel', () => ({
   getQuickModelRuntimeInfo: () => ({ provider: 'judge-provider', model: 'judge-model', baseUrl: 'https://judge.example/v1' }),
 }));
 
-import { inspectEvalRunPanel } from '../../../src/host/evaluation/evalRunPanelProbe';
+import { inspectEvalRunPanel } from '@internal-evaluation/host/evaluation/evalRunPanelProbe';
 import { saveCalibrationRecord, type JudgeCalibrationRecord } from '../../../src/host/testing/calibration/calibrationRegistry';
 import { getAiReviewPromptHash } from '../../../src/host/testing/judge/dimensionJudge';
 

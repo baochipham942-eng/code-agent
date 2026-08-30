@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IpcMain } from '../../../src/host/platform';
-import type { EvalRunBridge } from '../../../src/host/evaluation/evalRunBridge';
-import { EVALUATION_CHANNELS } from '../../../src/shared/ipc/channels';
+import type { EvalRunBridge } from '@internal-evaluation/host/evaluation/evalRunBridge';
+import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
 
 const guard = vi.hoisted(() => ({ denied: true }));
 const caseBank = vi.hoisted(() => ({
@@ -38,20 +38,20 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
-vi.mock('../../../src/host/evaluation/evalEnvironment', () => ({
+vi.mock('@internal-evaluation/host/evaluation/evalEnvironment', () => ({
   inspectEvalEnvironment: () => ({ repositoryRoot: '/repo' }),
 }));
 
-vi.mock('../../../src/host/testing/caseBank', () => ({
+vi.mock('@internal-evaluation/host/testing/caseBank', () => ({
   enumerateCaseBank: caseBank.enumerate,
   saveCaseBank: caseBank.save,
 }));
 
-vi.mock('../../../src/host/evaluation/evalRunPanelProbe', () => ({
+vi.mock('@internal-evaluation/host/evaluation/evalRunPanelProbe', () => ({
   inspectEvalRunPanel: panelProbe.inspect,
 }));
 
-import { registerEvaluationHandlers } from '../../../src/host/ipc/evaluation.ipc';
+import { registerEvaluationHandlers } from '@internal-evaluation/host/ipc/evaluation.ipc';
 
 type Handler = (...args: unknown[]) => unknown;
 
@@ -140,7 +140,7 @@ describe('evaluation run IPC admin gate', () => {
     expect(bridge.subscribe).not.toHaveBeenCalled();
   });
 
-  it('打分器总览与 RUN_SUITE 使用同一 admin 门，并返回断言与按维状态', async () => {
+  it('打分器总览使用自身 admin 通道门，并返回断言与按维状态', async () => {
     const { handlers } = setup();
     await expect(handlers.get(EVALUATION_CHANNELS.SCORERS_OVERVIEW)!(null))
       .resolves.toMatchObject({ success: false, error: { code: 'FORBIDDEN' } });

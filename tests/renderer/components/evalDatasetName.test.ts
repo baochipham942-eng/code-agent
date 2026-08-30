@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   groupExperimentsByDataset,
   normalizeDatasetName,
-} from '../../../src/renderer/components/features/evalCenter/evalDatasetName';
+} from '@internal-evaluation/renderer/evalCenter/evalDatasetName';
 import type { EvalExperimentListItem } from '../../../src/shared/contract/evaluation';
 
 const run = (id: string, name: string, timestamp: number, source = 'eval-harness'): EvalExperimentListItem => ({

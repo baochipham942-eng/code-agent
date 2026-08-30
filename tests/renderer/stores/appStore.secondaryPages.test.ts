@@ -70,9 +70,9 @@ const OPENERS: Array<{
     expected: true,
   },
   {
-    key: 'showEvalCenter',
-    label: '评测中心',
-    open: () => useAppStore.getState().openEvalCenter(),
+    key: 'showInAppValidation',
+    label: '应用内验证',
+    open: () => useAppStore.getState().setShowInAppValidation(true),
     expected: true,
   },
   {

@@ -18,8 +18,8 @@ import type { ModelMessage } from '../../../src/host/agent/loopTypes';
 import type { ModelMessagesWithSources } from '../../../src/host/agent/runtime/contextAssembly/shared';
 import type { TraceEventDataMap } from '../../../src/host/agent/runtime/turnTrace';
 import { buildToolSchemaSnapshot } from '../../../src/host/agent/runtime/contextAssembly/inferenceArtifactRepair';
-import { reconstructRequest } from '../../../src/host/evaluation/requestReplay';
-import { assertReconstructedRequestMatches } from '../../../src/host/evaluation/requestReplayGate';
+import { reconstructRequest } from '@internal-evaluation/host/evaluation/requestReplay';
+import { assertReconstructedRequestMatches } from '@internal-evaluation/host/evaluation/requestReplayGate';
 import { CompressionState } from '../../../src/host/context/compressionState';
 import type { ToolDefinition } from '../../../src/shared/contract';
 

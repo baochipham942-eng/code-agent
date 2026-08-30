@@ -7,7 +7,7 @@ name: Eval Harness Gate
 # 与本地 SecureStorage key，GitHub runner 环境无法触达，故**不在 PR 上跑真实
 # 评测**。本门禁只守确定性的 harness 逻辑：类型检查 + 评测/测试框架单测
 # （断言引擎、baseline/trend 来源护栏、judge 校准计算）。agent 真实能力的
-# 评测靠本地 `npx tsx scripts/eval-ci.ts --real`（详见 docs/guides/evaluation-system.md）。
+# 评测靠内部包的 `npm run eval -- --real`（详见 docs/guides/evaluation-system.md）。
 #
 # 触发条件：仅在评测基础设施文件改动时跑，其余 PR 直接绿灯，不串进 swarm-ci。
 
@@ -16,9 +16,8 @@ on:
     branches: [main]
     paths:
       - 'src/host/testing/**'
-      - 'src/host/evaluation/**'
+      - 'packages/internal/evaluation-center/**'
       - 'packages/eval-harness/**'
-      - 'scripts/eval-ci.ts'
       - '.claude/test-cases/**'
       - 'tests/unit/testing/**'
       - 'tests/unit/evaluation/**'
@@ -29,9 +28,8 @@ on:
     branches: [main]
     paths:
       - 'src/host/testing/**'
-      - 'src/host/evaluation/**'
+      - 'packages/internal/evaluation-center/**'
       - 'packages/eval-harness/**'
-      - 'scripts/eval-ci.ts'
       - 'tests/unit/testing/**'
       - 'tests/unit/evaluation/**'
       - 'tests/eval/**'
@@ -73,6 +71,7 @@ jobs:
         run: |
           npm run typecheck
           npm --prefix packages/eval-harness run typecheck
+          npm --prefix packages/internal/evaluation-center run typecheck
 
       - name: Eval harness 单测
         # 断言引擎 + baseline/trend 来源护栏 + judge 校准计算 + replay gate

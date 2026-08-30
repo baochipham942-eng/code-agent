@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
-import { FailureAttributor } from '../../../../../src/host/evaluation/trajectory/attribution/failureAttributor';
+import { FailureAttributor } from '@internal-evaluation/host/evaluation/trajectory/attribution/failureAttributor';
 import type {
   Trajectory,
   TrajectoryStep,

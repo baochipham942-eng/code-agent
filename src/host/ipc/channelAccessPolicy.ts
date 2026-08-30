@@ -2,23 +2,16 @@ import { assertAdminAccess } from './adminGuard';
 import { getAdminAccessIpcError } from './adminGuard';
 import type { IPCResponse } from '../../shared/ipc';
 
-type ChannelAccessLevel = 'admin' | 'user';
+const ADMIN_CHANNELS = new Set<string>();
 
-const CHANNEL_ACCESS_POLICY = new Map<string, ChannelAccessLevel>([
-  ['evaluation:run-suite', 'admin'],
-  ['evaluation:run-events', 'admin'],
-  ['evaluation:abort-run', 'admin'],
-  ['evaluation:scorers-overview', 'admin'],
-  ['evaluation:list-cases', 'admin'],
-  ['evaluation:save-case', 'admin'],
-]);
-
-function getChannelAccessLevel(channel: string): ChannelAccessLevel {
-  return CHANNEL_ACCESS_POLICY.get(channel) ?? 'user';
+/** Internal packages register their private transport channels only while installed. */
+export function registerAdminChannels(channels: readonly string[]): () => void {
+  channels.forEach((channel) => ADMIN_CHANNELS.add(channel));
+  return () => channels.forEach((channel) => ADMIN_CHANNELS.delete(channel));
 }
 
 export function isAdminChannel(channel: string): boolean {
-  return getChannelAccessLevel(channel) === 'admin';
+  return ADMIN_CHANNELS.has(channel);
 }
 
 export function assertChannelAccess(channel: string): void {

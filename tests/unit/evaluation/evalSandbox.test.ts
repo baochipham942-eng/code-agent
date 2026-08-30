@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createStrictEvalSandbox } from '../../../scripts/lib/eval-sandbox';
+import { createStrictEvalSandbox } from '@internal-evaluation-scripts/lib/eval-sandbox';
 
 const previousNoSandbox = process.env.CODE_AGENT_EVAL_NO_SANDBOX;
 const previousTempRoot = process.env.CODE_AGENT_EVAL_TEMP_ROOT;

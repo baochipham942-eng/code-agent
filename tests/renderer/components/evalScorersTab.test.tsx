@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EXPECTATION_TYPE_CATALOG } from '../../../src/host/testing/expectationCatalog';
 
-vi.mock('../../../src/renderer/services/evaluationRunIpc', () => ({
+vi.mock('@internal-evaluation/renderer/evaluationRunIpc', () => ({
   invokeEvaluation: vi.fn(async () => ({
     assertions: EXPECTATION_TYPE_CATALOG,
     judge: { model: 'glm-4.7', provider: 'zhipu', estimatedCostPerCaseUsd: 0.01 },
@@ -18,7 +18,7 @@ vi.mock('../../../src/renderer/services/evaluationRunIpc', () => ({
   })),
 }));
 
-import { EvalScorersTab } from '../../../src/renderer/components/features/evalCenter/EvalScorersTab';
+import { EvalScorersTab } from '@internal-evaluation/renderer/evalCenter/EvalScorersTab';
 
 afterEach(cleanup);
 

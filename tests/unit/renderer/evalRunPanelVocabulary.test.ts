@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { evalCenterEn, evalCenterZh } from '../../../src/renderer/i18n/evalCenter';
-import { evalRunPanelEn, evalRunPanelZh } from '../../../src/renderer/i18n/evalRunPanel';
-import { evalScorersEn, evalScorersZh } from '../../../src/renderer/i18n/evalScorers';
+import { evalCenterEn, evalCenterZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evaluationCenter';
+import { evalRunPanelEn, evalRunPanelZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalRunPanel';
+import { evalScorersEn, evalScorersZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalScorers';
 
 function strings(value: unknown): string[] {
   if (typeof value === 'string') return [value];

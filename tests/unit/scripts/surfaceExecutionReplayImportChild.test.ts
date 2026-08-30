@@ -9,7 +9,7 @@ import {
   surfaceReplaySemanticDigest,
   surfaceReplaySemanticsFromProjection,
   surfaceReplaySemanticsFromReplay,
-} from '../../../scripts/acceptance/surface-execution-replay-import-child';
+} from '@internal-evaluation-scripts/acceptance/surface-execution-replay-import-child';
 
 function projection(): SurfaceExecutionExportProjectionV1 {
   return {
@@ -163,7 +163,7 @@ describe('Surface Execution fresh-process replay import child', () => {
   it('uses production import, archive projection, and transcript replay APIs behind a guarded entrypoint', () => {
     const source = readFileSync(resolve(
       process.cwd(),
-      'scripts/acceptance/surface-execution-replay-import-child.ts',
+      'packages/internal/evaluation-center/scripts/acceptance/surface-execution-replay-import-child.ts',
     ), 'utf8');
 
     expect(source).toContain('await initDatabase()');

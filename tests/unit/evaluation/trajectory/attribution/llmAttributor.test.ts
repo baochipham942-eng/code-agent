@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi } from 'vitest';
-import { attributeByLLM } from '../../../../../src/host/evaluation/trajectory/attribution/llmAttributor';
+import { attributeByLLM } from '@internal-evaluation/host/evaluation/trajectory/attribution/llmAttributor';
 import type {
   Trajectory,
   TrajectoryStep,

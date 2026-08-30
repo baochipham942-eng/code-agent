@@ -6,11 +6,15 @@ import {
 } from '../../../src/renderer/utils/accessControl';
 
 describe('renderer access control registry', () => {
-  it('keeps internal quality surfaces admin-only', () => {
-    expect(canAccessFeature('eval.center')).toBe(false);
-    expect(canAccessFeature('eval.telemetry', { isAdmin: false })).toBe(false);
-    expect(canAccessFeature('eval.replay', { isAdmin: true })).toBe(true);
-    expect(canAccessFeature('eval.reviewQueue', { isAdmin: true })).toBe(true);
+  it('keeps internal capability packages admin-only without registering eval surfaces in core', () => {
+    expect(canAccessFeature('capability.internal')).toBe(false);
+    expect(canAccessFeature('capability.internal', { isAdmin: false })).toBe(false);
+    expect(canAccessFeature('capability.internal', { isAdmin: true })).toBe(true);
+    expect(ACCESS_CONTROL_REGISTRY).not.toHaveProperty('eval.center');
+    expect(ACCESS_CONTROL_REGISTRY).not.toHaveProperty('eval.telemetry');
+    expect(ACCESS_CONTROL_REGISTRY).not.toHaveProperty('eval.replay');
+    expect(canAccessFeature('telemetry.replay', { isAdmin: false })).toBe(false);
+    expect(canAccessFeature('telemetry.replay', { isAdmin: true })).toBe(true);
   });
 
   it('keeps prompt manager admin-only', () => {

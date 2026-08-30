@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { calculateTrajectoryEfficiency } from '../../../../src/host/evaluation/trajectory/trajectoryEfficiency';
-import { TrajectoryBuilder } from '../../../../src/host/evaluation/trajectory/trajectoryBuilder';
+import { calculateTrajectoryEfficiency } from '@internal-evaluation/host/evaluation/trajectory/trajectoryEfficiency';
+import { TrajectoryBuilder } from '@internal-evaluation/host/evaluation/trajectory/trajectoryBuilder';
 import type { TrajectoryStep } from '../../../../src/host/testing/types';
 
 describe('calculateTrajectoryEfficiency', () => {

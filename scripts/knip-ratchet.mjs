@@ -35,7 +35,7 @@ const profiles = {
   },
   production: {
     baselineFile: 'knip-production-export-ratchet-baseline.json',
-    configFile: 'knip.production-strict.json',
+    configFile: 'knip.production-exports.json',
     label: 'production dead-export',
     tracksUnreachableFiles: true,
   },

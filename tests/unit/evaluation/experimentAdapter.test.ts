@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ExperimentAdapter, type EvalHarnessExperimentResultLike } from '../../../src/host/evaluation/experimentAdapter';
+import { ExperimentAdapter, type EvalHarnessExperimentResultLike } from '@internal-evaluation/host/evaluation/experimentAdapter';
 import type { TestRunSummary } from '../../../src/host/testing/types';
 import {
   EVAL_RUN_STAMP_KEYS,

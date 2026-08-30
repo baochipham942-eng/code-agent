@@ -14,7 +14,7 @@ import os from 'os';
 import path from 'path';
 import { TestRunner, type AgentInterface } from '../../../src/host/testing/testRunner';
 import { generateDeltaConsole, generateDeltaMarkdown } from '../../../src/host/testing/ci/deltaReporter';
-import { ExperimentAdapter } from '../../../src/host/evaluation/experimentAdapter';
+import { ExperimentAdapter } from '@internal-evaluation/host/evaluation/experimentAdapter';
 import type { BaselineDelta, ComparableBaselineDelta, TestRunSummary } from '../../../src/host/testing/types';
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({

@@ -8,7 +8,7 @@ vi.mock('../../../src/host/model/quickModel', () => ({
   getQuickModelInfo: () => ({ provider: 'judge-provider', model: 'judge-model' }),
 }));
 
-import { buildRunStamp } from '../../../scripts/lib/eval-run-stamp';
+import { buildRunStamp } from '@internal-evaluation-scripts/lib/eval-run-stamp';
 
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;

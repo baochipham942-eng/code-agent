@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { enumerateCaseBank, saveCaseBank } from '../../../src/host/testing/caseBank';
+import { enumerateCaseBank, saveCaseBank } from '@internal-evaluation/host/testing/caseBank';
 import { filterTestCases, loadAllTestSuites, loadTestSuite } from '../../../src/host/testing/testCaseLoader';
 
 async function makeRepo(): Promise<{ root: string; bank: string }> {

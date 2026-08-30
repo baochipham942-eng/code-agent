@@ -1,9 +1,10 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import type { ElectronAPI } from '@shared/ipc';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
 import type { EvalCaseListEntry, EvalCaseListItem } from '@shared/contract/evaluation';
-import { EvalCenterPage } from '../../../src/renderer/components/features/evalCenter/EvalCenterPage';
+import { EvalCenterPage } from '@internal-evaluation/renderer/evalCenter/EvalCenterPage';
+import { useEvalCenterStore } from '@internal-evaluation/renderer/stores/evalCenterStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useAuthStore } from '../../../src/renderer/stores/authStore';
 import '../../../src/renderer/styles/global.css';
@@ -76,8 +77,8 @@ const cases: EvalCaseListItem[] = [
 
 const bridge = {
   async invoke(channel: string, payload?: unknown): Promise<unknown> {
-    if (channel === IPC_CHANNELS.EVALUATION_LIST_CASES) return cases;
-    if (channel === IPC_CHANNELS.EVALUATION_SAVE_CASE) {
+    if (channel === EVALUATION_CHANNELS.LIST_CASES) return cases;
+    if (channel === EVALUATION_CHANNELS.SAVE_CASE) {
       const request = payload as { action: 'archive' | 'create-draft'; id: string };
       return { action: request.action, id: request.id, file: '01-tool-tests.yaml' };
     }
@@ -89,6 +90,7 @@ const bridge = {
 
 window.codeAgentAPI = bridge;
 useAuthStore.setState({ user: { id: 'caselist-admin', email: 'admin@example.com', isAdmin: true } });
-useAppStore.setState({ language: 'zh', evalCenterTab: 'cases' });
+useAppStore.setState({ language: 'zh' });
+useEvalCenterStore.setState({ tab: 'cases' });
 
 createRoot(document.getElementById('root')!).render(<EvalCenterPage />);

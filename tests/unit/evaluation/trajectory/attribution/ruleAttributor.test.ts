@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { attributeByRules } from '../../../../../src/host/evaluation/trajectory/attribution/ruleAttributor';
+import { attributeByRules } from '@internal-evaluation/host/evaluation/trajectory/attribution/ruleAttributor';
 import type {
   Trajectory,
   TrajectoryStep,

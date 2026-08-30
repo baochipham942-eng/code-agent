@@ -2,7 +2,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
 import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
 import type {
   EvalExperimentDetail,
@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   order: [] as string[],
 }));
 
-vi.mock('../../../src/renderer/services/evaluationRunIpc', () => ({
+vi.mock('@internal-evaluation/renderer/evaluationRunIpc', () => ({
   invokeEvaluation: mocks.invoke,
   onEvaluation: mocks.on,
 }));
@@ -39,7 +39,7 @@ vi.mock('react-virtuoso', () => ({
   }),
 }));
 
-import { EvalBenchmarksTab } from '../../../src/renderer/components/features/evalCenter/EvalBenchmarksTab';
+import { EvalBenchmarksTab } from '@internal-evaluation/renderer/evalCenter/EvalBenchmarksTab';
 
 const probe: EvalRunPanelProbe = {
   environment: {
@@ -99,15 +99,15 @@ function configureIpc(
     return vi.fn();
   });
   mocks.invoke.mockImplementation(async (channel: string, arg?: unknown) => {
-    if (channel === IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS) return list();
-    if (channel === IPC_CHANNELS.EVALUATION_RUN_EVENTS && !arg) return probe;
-    if (channel === IPC_CHANNELS.EVALUATION_RUN_SUITE) return startResult;
-    if (channel === IPC_CHANNELS.EVALUATION_RUN_EVENTS) {
+    if (channel === EVALUATION_CHANNELS.LIST_EXPERIMENTS) return list();
+    if (channel === EVALUATION_CHANNELS.RUN_EVENTS && !arg) return probe;
+    if (channel === EVALUATION_CHANNELS.RUN_SUITE) return startResult;
+    if (channel === EVALUATION_CHANNELS.RUN_EVENTS) {
       mocks.order.push('subscribe');
       eventsOnSubscribe.forEach((event) => mocks.eventHandler?.(event));
       return { runId: 'run-live', running: true };
     }
-    if (channel === IPC_CHANNELS.EVALUATION_ABORT_RUN) return { runId: 'run-live', pid: 1, terminated: true };
+    if (channel === EVALUATION_CHANNELS.ABORT_RUN) return { runId: 'run-live', pid: 1, terminated: true };
     return null;
   });
 }
@@ -143,17 +143,17 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     render(<EvalBenchmarksTab />);
 
     await openWizardAndArm();
-    expect(mocks.invoke.mock.calls.some(([channel]) => channel === IPC_CHANNELS.EVALUATION_RUN_SUITE)).toBe(false);
+    expect(mocks.invoke.mock.calls.some(([channel]) => channel === EVALUATION_CHANNELS.RUN_SUITE)).toBe(false);
 
     act(() => vi.advanceTimersByTime(5_000));
     expect(screen.getByTestId('eval-run-confirm').textContent).toContain('真跑并计费');
-    expect(mocks.invoke.mock.calls.some(([channel]) => channel === IPC_CHANNELS.EVALUATION_RUN_SUITE)).toBe(false);
+    expect(mocks.invoke.mock.calls.some(([channel]) => channel === EVALUATION_CHANNELS.RUN_SUITE)).toBe(false);
 
     fireEvent.click(screen.getByTestId('eval-run-confirm'));
     fireEvent.click(screen.getByTestId('eval-run-confirm'));
-    await waitFor(() => expect(mocks.invoke.mock.calls.some(([channel]) => channel === IPC_CHANNELS.EVALUATION_RUN_SUITE)).toBe(true));
+    await waitFor(() => expect(mocks.invoke.mock.calls.some(([channel]) => channel === EVALUATION_CHANNELS.RUN_SUITE)).toBe(true));
 
-    const call = mocks.invoke.mock.calls.find(([channel]) => channel === IPC_CHANNELS.EVALUATION_RUN_SUITE);
+    const call = mocks.invoke.mock.calls.find(([channel]) => channel === EVALUATION_CHANNELS.RUN_SUITE);
     expect(call?.[1]).toMatchObject({ scope: 'full', split: 'held-in', maxCases: 76 });
     expect(call?.[1]).not.toHaveProperty('apiKey');
     expect(call?.[1]).not.toHaveProperty('model');
@@ -177,7 +177,7 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     expect(screen.queryByTestId('eval-run-active')).toBeNull();
     expect(mocks.on).not.toHaveBeenCalled();
     expect(mocks.invoke.mock.calls.some(([channel, arg]) => (
-      channel === IPC_CHANNELS.EVALUATION_RUN_EVENTS && Boolean(arg)
+      channel === EVALUATION_CHANNELS.RUN_EVENTS && Boolean(arg)
     ))).toBe(false);
   });
 
@@ -197,8 +197,8 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
 
     fireEvent.click(screen.getByTestId('eval-run-confirm'));
     fireEvent.click(screen.getByTestId('eval-run-confirm'));
-    await waitFor(() => expect(mocks.invoke.mock.calls.some(([channel]) => channel === IPC_CHANNELS.EVALUATION_RUN_SUITE)).toBe(true));
-    const call = mocks.invoke.mock.calls.find(([channel]) => channel === IPC_CHANNELS.EVALUATION_RUN_SUITE);
+    await waitFor(() => expect(mocks.invoke.mock.calls.some(([channel]) => channel === EVALUATION_CHANNELS.RUN_SUITE)).toBe(true));
+    const call = mocks.invoke.mock.calls.find(([channel]) => channel === EVALUATION_CHANNELS.RUN_SUITE);
     expect(call?.[1]).toMatchObject({ aiReview: ['task_completed'] });
   });
 
@@ -299,9 +299,9 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     const runMock = experiment('mock', 4_000, { split: 'held-in', k: 1, caseBankSha: 'abcdef0123', mode: 'mock' });
     configureIpc(() => [runA, runB, runUnknown, runMock]);
     mocks.invoke.mockImplementation(async (channel: string, arg?: unknown) => {
-      if (channel === IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS) return [runA, runB, runUnknown, runMock];
-      if (channel === IPC_CHANNELS.EVALUATION_RUN_EVENTS && !arg) return probe;
-      if (channel === IPC_CHANNELS.EVALUATION_LOAD_EXPERIMENT) {
+      if (channel === EVALUATION_CHANNELS.LIST_EXPERIMENTS) return [runA, runB, runUnknown, runMock];
+      if (channel === EVALUATION_CHANNELS.RUN_EVENTS && !arg) return probe;
+      if (channel === EVALUATION_CHANNELS.LOAD_EXPERIMENT) {
         const run = arg === 'a' ? runA : runB;
         return detail(run, [{ caseId: 'case-1', status: arg === 'a' ? 'passed' : 'failed', score: 1, durationMs: 10 }]);
       }

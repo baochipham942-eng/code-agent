@@ -12,7 +12,7 @@ import {
 
 const repoRoot = process.cwd();
 const tsxCli = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
-const evalScript = path.join(repoRoot, 'scripts', 'eval-ci.ts');
+const evalScript = path.join(repoRoot, 'packages', 'internal', 'evaluation-center', 'scripts', 'eval-ci.ts');
 const tempDirs: string[] = [];
 
 async function runJsonEval(): Promise<{ stdout: string; stderr: string; exitCode: number }> {

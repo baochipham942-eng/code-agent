@@ -1,0 +1,12 @@
+{
+  "name": "@code-agent/internal-evaluation-center",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Admin-only internal evaluation center capability package",
+  "scripts": {
+    "typecheck": "../../../node_modules/typescript7/bin/tsc --noEmit -p tsconfig.json",
+    "eval": "npx tsx scripts/eval-ci.ts --split held-in",
+    "eval:smoke": "npx tsx scripts/eval-ci.ts --scope smoke",
+    "trajectory:audit": "npx tsx scripts/export-agent-trajectories.ts"
+  }
+}

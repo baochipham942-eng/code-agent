@@ -14,6 +14,8 @@ import {
   sseClients,
   __resetSSEReplayBufferForTests,
 } from '../../src/web/helpers/sse';
+import { registerAdminChannels } from '../../src/host/ipc/channelAccessPolicy';
+import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
 
 interface CapturedResponse {
   write: (chunk: string) => boolean;
@@ -133,6 +135,7 @@ describe('sse replay buffer', () => {
   });
 
   it('admin-only evaluation events are filtered from live delivery and replay', () => {
+    const unregister = registerAdminChannels(Object.values(EVALUATION_CHANNELS));
     const user = fakeResponse();
     const admin = fakeResponse();
     registerSSEClient(user as unknown as Parameters<typeof registerSSEClient>[0], false);
@@ -159,5 +162,6 @@ describe('sse replay buffer', () => {
       adminReplay as unknown as Parameters<typeof replayFromLastEventId>[0],
       0,
     )).toBe(2);
+    unregister();
   });
 });

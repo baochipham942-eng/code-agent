@@ -4,8 +4,8 @@ import {
   assertReconstructedRequestMatches,
   RequestReplayMismatchError,
   verifyRequestReplayBatch,
-} from '../../../src/host/evaluation/requestReplayGate';
-import type { RequestReplayGateCase } from '../../../src/host/evaluation/requestReplayGate';
+} from '@internal-evaluation/host/evaluation/requestReplayGate';
+import type { RequestReplayGateCase } from '@internal-evaluation/host/evaluation/requestReplayGate';
 
 describe('assertReconstructedRequestMatches', () => {
   it('accepts byte-identical canonical messages and tools', () => {

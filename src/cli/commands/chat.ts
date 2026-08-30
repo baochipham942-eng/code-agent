@@ -270,13 +270,20 @@ export const chatCommand = new Command('chat')
         const { buildSlashItems } = await import('../tui-app/slashCommands');
         const { captureConsoleOutput } = await import('./captureConsoleOutput');
         const { execSync } = await import('child_process');
-        // git 分支（StatusBar 显示；非 git 仓库静默为空）
+        // git 分支 + 脏标（StatusBar 显示；非 git 仓库静默为空。
+        // 脏标只看已跟踪文件的改动（--untracked-files=no）——仓库级 scratchpad/
+        // 这类长期未跟踪文件不该让 * 常亮失去信息量）
         let gitBranch = '';
+        let gitDirty = false;
         try {
           gitBranch = execSync('git rev-parse --abbrev-ref HEAD 2>/dev/null', {
             cwd: globalOpts?.project || process.cwd(),
             encoding: 'utf-8',
           }).trim();
+          gitDirty = execSync('git status --porcelain --untracked-files=no 2>/dev/null', {
+            cwd: globalOpts?.project || process.cwd(),
+            encoding: 'utf-8',
+          }).trim().length > 0;
         } catch { /* not in git repo */ }
         // Ink 里执行真 slash 命令：console 输出捕获成系统消息渲染；
         // /exit 通过注入的 onExit 转成退出信号
@@ -312,6 +319,7 @@ export const chatCommand = new Command('chat')
           // StatusBar 初始模型：与 banner 同源，用 agent 实际解析值（/model 切换后由事件流刷新）
           model: agent.getConfig().modelConfig.model,
           gitBranch,
+          gitDirty,
           onCommand,
           onShellCommand,
           slashItems,

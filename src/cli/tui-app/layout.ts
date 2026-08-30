@@ -81,17 +81,17 @@ export function editorVisualRows(state: EditorState, innerWidth: number, maxRows
 }
 
 // ---------------------------------------------------------------------------
-// 紧凑流式布局（2026-08-30 用户实测决策：消灭空会话整屏留白）
-// 动态块不再恒等于终端行高：内容自然高 ≤ 可用预算时按实际高度（紧凑），
-// 超出时回退钉顶满高 + 预算截尾（保留 Ink v7 裁剪缺陷的护栏）。
+// 全屏钉底布局（2026-08-31 用户实测决策：对标 Grok 全屏零噪音首屏——
+// 输入区钉在屏幕底部，留白在内容之上；取代 2026-08-30 的紧凑流式，
+// 紧凑把留白留在输入框之下，首屏上半截拥挤下半截空，利用率低）。
+// 动态块恒等于终端行高；live 消息预算分配（最新优先、最旧截尾）杜绝溢出，
+// 不依赖 Ink v7 裁剪（overflowY:hidden 负偏移子节点裁剪缺陷的护栏保留）。
 // ---------------------------------------------------------------------------
 
 export interface DynamicLayoutPlan {
-  /** 动态块高度（行）：紧凑 = 内容自然高，钉顶 = rows */
+  /** 动态块高度（行）：恒等于终端行高 */
   height: number;
-  /** true = 紧凑流式（无截断）；false = 钉顶满高（尾部预算分配） */
-  compact: boolean;
-  /** messageId → 行预算（紧凑时每条都是全量成本） */
+  /** messageId → 行预算（从最新往最旧分配，最旧一条截尾） */
   allocation: Map<string, number>;
 }
 
@@ -101,12 +101,6 @@ export function planDynamicLayout(
   rows: number,
   chromeRows: number,
 ): DynamicLayoutPlan {
-  const full = allocateLiveBudget(messages, width, Number.MAX_SAFE_INTEGER);
-  let natural = 0;
-  for (const cost of full.values()) natural += cost;
   const liveBudget = Math.max(0, rows - chromeRows);
-  if (natural <= liveBudget) {
-    return { height: natural + chromeRows, compact: true, allocation: full };
-  }
-  return { height: rows, compact: false, allocation: allocateLiveBudget(messages, width, liveBudget) };
+  return { height: rows, allocation: allocateLiveBudget(messages, width, liveBudget) };
 }

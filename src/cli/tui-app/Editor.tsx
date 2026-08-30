@@ -1,6 +1,8 @@
 // ============================================================================
 // 多行编辑器渲染组件（受控：状态在 App 的 editorRef，编辑逻辑在 editor.ts）
-// 左侧 accent rail ┃ + 首行 ❯ 前缀；chip marker 渲染成 [Pasted: N lines] 徽章；
+// 圆角边框输入框（对标 Kimi/Grok 的 boxed input）+ 首行 ❯ 前缀；
+// 空草稿显示 dim placeholder（Codex 风格，光标叠首字符）；
+// chip marker 渲染成 [Pasted: N lines] 徽章；
 // 高度随内容伸缩（computeWindow，上限 maxRows），光标行保持可见。
 // ============================================================================
 
@@ -60,17 +62,33 @@ function LineContent({ line, cursorCol, state }: {
   return <Text wrap="wrap">{nodes}</Text>;
 }
 
-export function Editor({ state, width, maxRows = 10, active = true }: {
+/** 空草稿 placeholder：光标叠首字符反色（Codex 的 "Ask Codex to do anything" 风格） */
+function PlaceholderLine({ text, showCursor }: { text: string; showCursor: boolean }) {
+  if (!showCursor || text.length === 0) {
+    return <Text dimColor>{text}</Text>;
+  }
+  return (
+    <Text>
+      <Text inverse>{text[0]}</Text>
+      <Text dimColor>{text.slice(1)}</Text>
+    </Text>
+  );
+}
+
+export function Editor({ state, width, maxRows = 10, active = true, placeholder }: {
   state: EditorState;
-  /** 编辑区可用总宽（含 rail + ❯ 前缀） */
+  /** 编辑区可用总宽（含边框 + ❯ 前缀） */
   width: number;
   maxRows?: number;
   /** false = 非活跃（暂无此态，P4 权限卡接管键盘时用） */
   active?: boolean;
+  /** 空草稿时的 dim 占位提示；不传则空草稿只显示光标 */
+  placeholder?: string;
 }) {
-  // 首行前缀 '┃ ❯ '（4 列），续行 '┃   '（4 列），文本内宽 = width - 4
-  const innerWidth = Math.max(width - 4, 8);
+  // 边框 1 + 左 padding 1 + '❯ ' 前缀 2（右对称 2）：文本内宽 = width - 6
+  const innerWidth = Math.max(width - 6, 8);
   const { startRow, endRow } = computeWindow(state.lines, state.cursorRow, innerWidth, maxRows);
+  const empty = state.lines.every((line) => line.length === 0);
 
   const rows: ReactNode[] = [];
   for (let row = startRow; row < endRow; row++) {
@@ -78,15 +96,23 @@ export function Editor({ state, width, maxRows = 10, active = true }: {
     rows.push(
       <Box key={row}>
         {isFirst
-          ? <Text color={ACCENT}>{'┃ '}<Text bold>❯ </Text></Text>
-          : <Text color={ACCENT}>{'┃   '}</Text>}
-        <LineContent
-          line={state.lines[row]}
-          cursorCol={active && row === state.cursorRow ? state.cursorCol : null}
-          state={state}
-        />
+          ? <Text color={ACCENT} bold>{'❯ '}</Text>
+          : <Text>{'  '}</Text>}
+        {empty && isFirst && placeholder
+          ? <PlaceholderLine text={placeholder} showCursor={active && state.cursorRow === 0} />
+          : (
+            <LineContent
+              line={state.lines[row]}
+              cursorCol={active && row === state.cursorRow ? state.cursorCol : null}
+              state={state}
+            />
+          )}
       </Box>,
     );
   }
-  return <Box flexDirection="column">{rows}</Box>;
+  return (
+    <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column" width={width}>
+      {rows}
+    </Box>
+  );
 }

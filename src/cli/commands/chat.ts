@@ -265,11 +265,17 @@ export const chatCommand = new Command('chat')
           return { output, exit };
         };
         const slashItems = buildSlashItems(getCommandRegistry().list('cli'));
+        // `!` shell 直通：与 readline 同一通道（ToolExecutor 正式链路）
+        const onShellCommand = async (command: string) => {
+          const { runDirectShellCommand } = await import('./shellPassthrough');
+          return runDirectShellCommand(command);
+        };
         await runInkChat(agent, {
           cwd: globalOpts?.project || process.cwd(),
           model: globalOpts?.model || DEFAULT_MODELS.chat,
           gitBranch,
           onCommand,
+          onShellCommand,
           slashItems,
         });
         await cleanup();
@@ -328,25 +334,24 @@ export const chatCommand = new Command('chat')
         }
 
         // P3-18: Bash shortcut - execute shell commands directly with !
+        // 走 ToolExecutor 正式链路（权限/审计/截断/cwd/超时）——历史 execSync
+        // 直通绕权限分类器，已收口进 shellPassthrough（与 Ink 路径同一通道）。
         if (input.startsWith('!')) {
           const shellCmd = input.slice(1).trim();
           if (shellCmd) {
             try {
-              const { execSync } = await import('child_process');
-              const output = execSync(shellCmd, {
-                cwd: globalOpts?.project || process.cwd(),
-                encoding: 'utf-8',
-                timeout: 30000,
-                stdio: ['pipe', 'pipe', 'pipe'],
-              });
-              if (output.trim()) {
-                console.log(output);
+              const { runDirectShellCommand } = await import('./shellPassthrough');
+              const result = await runDirectShellCommand(shellCmd);
+              if (result.success) {
+                if (result.output?.trim()) {
+                  console.log(result.output);
+                }
+              } else {
+                terminalOutput.error(result.error || 'Command failed');
               }
             } catch (error: unknown) {
               const errMsg = error instanceof Error ? error.message : String(error);
-              if ((error as Record<string, unknown>).stdout) console.log((error as Record<string, unknown>).stdout);
-              if ((error as Record<string, unknown>).stderr) console.error((error as Record<string, unknown>).stderr);
-              else terminalOutput.error(errMsg || String(error));
+              terminalOutput.error(errMsg || String(error));
             }
           }
           promptUser();

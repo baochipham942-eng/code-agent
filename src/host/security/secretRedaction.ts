@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { redactCredentialText } from '../../shared/security/secretPatterns';
+import type { ToolResult } from '../../shared/contract';
 
 const SENSITIVE_KEY_PARTS = [
   'apikey',
@@ -26,6 +27,23 @@ export function isSensitiveLogKey(key: string): boolean {
 
 export function redactSecrets(value: string): string {
   return redactCredentialText(value, { redacted: '***REDACTED***' });
+}
+
+/**
+ * 工具结果级脱敏（transcript / 会话落库 / 导出 / 事件流统一入口）。
+ *
+ * 背景：agent 用 Bash/jq 读 ~/.claude.json 之类的配置文件时，明文 API key 会原样
+ * 进入 tool_result，随后扩散到会话 transcript、neo export 与日志。这里只改写
+ * output / error 两个文本字段里的密钥形态子串，不动 metadata 结构，也不做整段
+ * 替换——正常代码内容不受影响的概率由 secretPatterns 的键/形态约束保证。
+ */
+export function redactToolResultSecrets(result: ToolResult): ToolResult {
+  const output = typeof result.output === 'string' ? redactSecrets(result.output) : result.output;
+  const error = typeof result.error === 'string' ? redactSecrets(result.error) : result.error;
+  if (output === result.output && error === result.error) {
+    return result;
+  }
+  return { ...result, output, error };
 }
 
 export function sanitizeLogValue(value: unknown, key?: string): unknown {

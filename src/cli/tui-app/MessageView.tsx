@@ -1,0 +1,129 @@
+// ============================================================================
+// Ink TUI 消息渲染：user / assistant(markdown) / thinking 三态 / 工具分组 / system
+// markdown 走 marked + marked-terminal 输出 ANSI 字符串喂 <Text>；
+// 代码块一期不高亮（esbuild alias 把 cli-highlight stub 成原样返回）。
+// ============================================================================
+
+import { memo, useMemo } from 'react';
+import { Box, Text } from 'ink';
+import { Marked } from 'marked';
+import { markedTerminal } from 'marked-terminal';
+import type { ChatMessage, ToolGroupMessage } from './events';
+import { formatDuration } from './events';
+
+/** markdown → ANSI 字符串（每个 Marked 实例绑定当前宽度，交给 reflow 换行） */
+function renderMarkdown(markdown: string, width: number): string {
+  const marked = new Marked(markedTerminal({
+    width: Math.max(width, 20),
+    reflowText: true,
+    showSectionPrefix: false,
+  }));
+  const rendered = marked.parse(markdown, { async: false });
+  return rendered.trimEnd();
+}
+
+function AssistantBody({ text, width }: { text: string; width: number }) {
+  const ansi = useMemo(() => renderMarkdown(text, width), [text, width]);
+  return <Text wrap="wrap">{ansi}</Text>;
+}
+
+/** thinking 三态：运行中加粗标题 + 尾部 3 行灰化；完成折叠单行 "Thought for Xs" */
+function ThinkingView({ message }: { message: Extract<ChatMessage, { kind: 'thinking' }> }) {
+  if (message.endedAt !== undefined) {
+    const duration = formatDuration(message.endedAt - message.startedAt);
+    return (
+      <Text dimColor wrap="truncate-end">
+        {'✶ Thought for '}{duration}
+      </Text>
+    );
+  }
+  const lines = message.text.split('\n').filter((line) => line.trim().length > 0);
+  const tail = lines.slice(-3).join('\n');
+  return (
+    <Box flexDirection="column">
+      <Text bold dimColor>Thinking…</Text>
+      {tail ? <Text dimColor wrap="wrap">{tail}</Text> : null}
+    </Box>
+  );
+}
+
+/** 工具分组：单行 bullet + 时态动词 + 参数摘要；同类连续调用折叠 "Read 3 files" */
+function ToolGroupView({ group }: { group: ToolGroupMessage }) {
+  const done = group.status !== 'running';
+  const error = group.status === 'error';
+  const color = error ? 'red' : done ? undefined : 'cyan';
+  const bullet = error ? '✗' : '◆';
+
+  // 归组（Read 3 files / Searched 4 patterns）
+  if (group.groupNoun && group.calls.length > 1) {
+    const plural = group.calls.length === 1 ? group.groupNoun : `${group.groupNoun}s`;
+    const verb = done ? group.doneVerb : group.activeVerb;
+    const runningSummary = group.status === 'running'
+      ? group.calls[group.calls.length - 1]?.summary
+      : '';
+    return (
+      <Text dimColor={done && !error} color={color}>
+        {bullet} {verb} {group.calls.length} {plural}
+        {runningSummary ? <Text dimColor>  {runningSummary}</Text> : null}
+      </Text>
+    );
+  }
+
+  const call = group.calls[0];
+  if (!call) return null;
+  const verb = done ? call.doneVerb : call.activeVerb;
+  const preview = error && call.resultPreview ? call.resultPreview : undefined;
+  return (
+    <Box flexDirection="column">
+      <Text dimColor={done && !error} color={color} wrap="truncate-end">
+        {bullet} {verb}
+        {call.summary ? <Text dimColor>  {call.summary}</Text> : null}
+      </Text>
+      {preview ? <Text color="red" wrap="truncate-end">  {preview}</Text> : null}
+    </Box>
+  );
+}
+
+function MessageBody({ message, width }: { message: ChatMessage; width: number }) {
+  switch (message.kind) {
+    case 'user':
+      return (
+        <Box marginTop={1}>
+          <Text bold color="green">{'❯ '}</Text>
+          <Text bold wrap="wrap">{message.text}</Text>
+        </Box>
+      );
+    case 'assistant':
+      return (
+        <Box marginTop={1}>
+          <AssistantBody text={message.text} width={width} />
+        </Box>
+      );
+    case 'thinking':
+      return (
+        <Box marginTop={1}>
+          <ThinkingView message={message} />
+        </Box>
+      );
+    case 'tool_group':
+      return (
+        <Box marginTop={1}>
+          <ToolGroupView group={message} />
+        </Box>
+      );
+    case 'system': {
+      const color = message.tone === 'error' ? 'red' : message.tone === 'warn' ? 'yellow' : undefined;
+      return (
+        <Box marginTop={1}>
+          <Text color={color} dimColor={message.tone === 'info'} wrap="wrap">
+            {message.text}
+          </Text>
+        </Box>
+      );
+    }
+    default:
+      return null;
+  }
+}
+
+export const MessageView = memo(MessageBody);

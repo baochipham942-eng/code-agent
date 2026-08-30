@@ -31,6 +31,16 @@ export const DIRECTIVE_MEMORY_CONFIRMATION_DECLINED_ERROR =
   '如果刚才是误点，再让我保存一次即可；如果是不想保存，告诉我一声就行。' +
   '（给模型：用户已明确拒绝，不要自动重试同一次写入；先与用户确认意图。）';
 
+/**
+ * headless/非交互环境（CLI run、无 renderer 的 web）：确认窗根本不存在，
+ * 确认门 fail-fast 立即关闭。文案必须有效阻止模型重试——重试结果必然相同。
+ */
+export const DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR =
+  '保存到全局记忆需要用户确认，但当前运行环境没有交互确认能力（CLI/headless），确认门已立即关闭，这次没有写入。' +
+  '全局记忆会影响之后的所有会话，所以必须用户本人点头；重试同一次写入会得到完全相同的结果，不会成功。' +
+  '需要保存的话：① 用 --dangerously-skip-permissions 重跑（显式授权本次运行自动批准，含全局记忆写入）；② 或在有界面的交互模式（GUI）里重新发起，弹窗出现时点「确认」。' +
+  '（给模型：不要重试同一次写入，也不要改用 Bash 等其他工具写全局记忆目录绕过确认门——那会被同一道门拦截；把上述两个选项告诉用户，由用户选择。）';
+
 /** 没有有效确认记录就试图写入（dispatch / 模块层的 fail-closed 兜底，正常不会触达）。 */
 export const DIRECTIVE_MEMORY_WRITE_NO_GRANT_ERROR =
   '写入全局记忆需要你本人确认，而这次调用没有携带有效的确认记录，所以没有写入。' +
@@ -39,12 +49,13 @@ export const DIRECTIVE_MEMORY_WRITE_NO_GRANT_ERROR =
   '（给模型：不要重试或绕过；走正常确认流程重新发起。）';
 
 /**
- * 按确认结果分流失败文案：超时与用户明确拒绝是两种不同处境，
- * 「没看见弹窗」和「点了拒绝」需要的下一步完全不一样。
+ * 按确认结果分流失败文案：headless 无界面 / 超时 / 用户明确拒绝是三种不同处境，
+ * 「没法弹窗」「没看见弹窗」和「点了拒绝」需要的下一步完全不一样。
  */
 export function directiveMemoryConfirmationFailureError(
-  result: Pick<DirectiveMemoryConfirmationResult, 'timedOut'>,
+  result: Pick<DirectiveMemoryConfirmationResult, 'timedOut' | 'headlessNoUi'>,
 ): string {
+  if (result.headlessNoUi) return DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR;
   return result.timedOut
     ? DIRECTIVE_MEMORY_CONFIRMATION_TIMEOUT_ERROR
     : DIRECTIVE_MEMORY_CONFIRMATION_DECLINED_ERROR;

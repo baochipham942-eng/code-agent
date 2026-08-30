@@ -53,9 +53,14 @@ async function main(): Promise<void> {
   // Avoid importing chat/browser/tool modules on this lightweight route because
   // some of those modules initialize writable runtime directories at import time.
   const args = process.argv.slice(2);
-  const requestedCommand = requestedTopLevelCommand(args);
+  let requestedCommand = requestedTopLevelCommand(args);
   const metadataOnly = requestedCommand == null
     && args.some((arg) => ['--help', '-h', '--version', '-v'].includes(arg));
+  // 无子命令且非轻量元数据路由时默认进入交互式对话（bare `neo` ≡ `neo chat`）
+  if (requestedCommand == null && !metadataOnly) {
+    args.unshift('chat');
+    requestedCommand = 'chat';
+  }
   if (metadataOnly) {
     for (const [name, description] of [
       ['chat', '启动交互式对话'], ['run', '执行一次 Agent 任务'], ['serve', '启动服务'],
@@ -88,7 +93,7 @@ async function main(): Promise<void> {
     program.addCommand(debugCommand);
   }
 
-  await program.parseAsync();
+  await program.parseAsync([process.argv[0] ?? 'node', process.argv[1] ?? 'neo', ...args]);
 }
 
 void main().catch((error: unknown) => {

@@ -66,12 +66,14 @@ const TRANSIENT_PATTERNS = [
   'stream inactivity timeout',
   'timeout of ',
   'empty artifact response',
+  '500',
   '502',
   '503',
   '504',
   '429',
   // 网关类错误的**文案形态**：AI SDK 的 APICallError.message 常常只有 'Bad Gateway'，
   // 不含 '502' 这三个字符（2026-07-23 实测智谱 GLM-5 上游 502，因此一次没重试就抛给用户）。
+  'internal server error',
   'bad gateway',
   'service unavailable',
   'gateway timeout',
@@ -93,6 +95,19 @@ const TRANSIENT_CODES = [
   'EAI_AGAIN',
 ];
 
+/** 可重试的 HTTP 状态码：限流 + 服务端/网关瞬断。401/403/400 等确定性错误不在此列。 */
+const RETRYABLE_HTTP_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+/** 指数退避封顶（毫秒） */
+const RETRY_BACKOFF_CAP_MS = 16_000;
+
+function getErrorStatus(err: unknown): number | undefined {
+  if (!err || typeof err !== 'object') return undefined;
+  const e = err as Record<string, unknown>;
+  const status = e['status'] ?? e['statusCode'];
+  return typeof status === 'number' ? status : undefined;
+}
+
 function includesAnyPattern(msg: string, patterns: string[]): boolean {
   const normalized = msg.toLowerCase();
   return patterns.some((pattern) => normalized.includes(pattern.toLowerCase()));
@@ -109,6 +124,39 @@ export function isTransientError(msg: string, errCode?: string): boolean {
   if (includesAnyPattern(msg, TRANSIENT_PATTERNS)) return true;
   if (errCode && TRANSIENT_CODES.includes(errCode)) return true;
   return false;
+}
+
+/**
+ * 模型调用层的统一可重试判定（isTransientError 的超集）：
+ * - message/code 命中瞬态模式（网络超时、连接重置、网关文案等）；
+ * - 或带结构化 HTTP status 且 ∈ {429, 500, 502, 503, 504}——AI SDK 的
+ *   APICallError.message 经常只有 'Bad Gateway' 这类文案而没有状态码数字，
+ *   网关 504 抖动（实测 tokenrhythm 约 1/3 首轮中招）只能靠 status 认出来。
+ * 401/403/400 等确定性错误不在可重试集合内，NON_RETRYABLE 文案护栏同样先生效。
+ */
+export function isRetryableModelCallError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  const errCode = (err as NodeJS.ErrnoException).code;
+  if (includesAnyPattern(msg, NON_RETRYABLE_PATTERNS)) return false;
+  if (includesAnyPattern(msg, FALLBACK_ONLY_PATTERNS)) return false;
+  const status = getErrorStatus(err);
+  if (status !== undefined && RETRYABLE_HTTP_STATUSES.has(status)) return true;
+  return isTransientError(msg, errCode);
+}
+
+/**
+ * 重试等待时长：指数退避 baseDelay * 2^attempt（封顶 RETRY_BACKOFF_CAP_MS）
+ * + ±25% jitter（防止多客户端同拍重试）。上游 retry-after 提示优先且不加 jitter。
+ */
+export function computeRetryBackoffMs(
+  attempt: number,
+  baseDelay: number,
+  retryAfterMs?: number | null,
+): number {
+  if (retryAfterMs != null) return retryAfterMs;
+  const exponential = Math.min(RETRY_BACKOFF_CAP_MS, baseDelay * 2 ** attempt);
+  const jittered = exponential * (0.75 + Math.random() * 0.5);
+  return Math.min(RETRY_BACKOFF_CAP_MS, Math.round(jittered));
 }
 
 /** 判断失败是否为明确的用户取消，避免把业务错误误判为取消。 */
@@ -279,12 +327,11 @@ export async function withTransientRetry<T>(
       return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      const errCode = (err as NodeJS.ErrnoException).code;
-      if (isTransientError(msg, errCode) && attempt < maxRetries && !signal?.aborted) {
-        // 优先尊重上游的 retry-after 提示，否则指数退避（roadmap 1.9）
+      if (isRetryableModelCallError(err) && attempt < maxRetries && !signal?.aborted) {
+        // 优先尊重上游的 retry-after 提示，否则指数退避 + jitter（roadmap 1.9）
         const retryAfterMs = extractRetryAfterMs(err);
-        const delay = retryAfterMs ?? baseDelay * 2 ** attempt;
-        logger.warn(`[${providerName}] 瞬态错误 "${msg}" (code=${errCode}), ${delay}ms 后重试 (${attempt + 1}/${maxRetries})${retryAfterMs != null ? ' [retry-after]' : ''}`);
+        const delay = computeRetryBackoffMs(attempt, baseDelay, retryAfterMs);
+        logger.warn(`[${providerName}] 瞬态错误 "${msg}" (code=${(err as NodeJS.ErrnoException).code}), ${delay}ms 后重试 (${attempt + 1}/${maxRetries})${retryAfterMs != null ? ' [retry-after]' : ''}`);
         // Notify caller about retry (for CLI visibility)
         const retryInfo = { provider: providerName, attempt: attempt + 1, maxRetries, delay, error: msg };
         onRetry?.(retryInfo);

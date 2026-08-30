@@ -347,6 +347,36 @@ describe('inferenceViaAiSdk —— emittedOutput 闸门重试', () => {
     expect(col.texts()).toBe('ok'); // 只来自成功那次，无重复
   }, 10_000);
 
+  it('网关 504 抖动（message 无状态码数字，tokenrhythm 实测形态）：status 判定重试后成功', async () => {
+    const gateway504 = Object.assign(new Error('Gateway Timeout'), { status: 504 });
+    vi.mocked(streamText)
+      .mockReturnValueOnce(fakeStream([{ type: 'error', error: gateway504 }]))
+      .mockReturnValueOnce(fakeStream([
+        { type: 'text-delta', id: 't', text: 'recovered' },
+        { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } },
+      ]));
+    const col = makeCollector();
+
+    const res = await inferenceViaAiSdk([{ role: 'user', content: 'x' }], [], CONFIG, col.onStream);
+
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(2);
+    expect(res.content).toBe('recovered');
+  }, 10_000);
+
+  it('确定性错误（401 auth）：首字节前也不重试，直接抛', async () => {
+    const auth401 = Object.assign(new Error('invalid_api_key'), { status: 401 });
+    vi.mocked(streamText)
+      .mockReturnValueOnce(fakeStream([{ type: 'error', error: auth401 }]))
+      .mockReturnValueOnce(fakeStream([{ type: 'text-delta', id: 't', text: 'SHOULD-NOT-RUN' }]));
+    const col = makeCollector();
+
+    await expect(
+      inferenceViaAiSdk([{ role: 'user', content: 'x' }], [], CONFIG, col.onStream),
+    ).rejects.toThrow(/invalid_api_key/);
+
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1); // 不重试
+  });
+
   it('已吐过 delta 后的瞬态错误：绝不 mid-stream 重试，直接抛', async () => {
     vi.mocked(streamText)
       .mockReturnValueOnce(fakeStream([

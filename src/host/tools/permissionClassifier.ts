@@ -143,6 +143,10 @@ const PROCESS_CONTROL_ACTIONS = new Set(['write', 'submit', 'kill']);
 // MCP 工具前缀 — 默认 ask（未知副作用）
 const MCP_TOOL_PREFIXES = ['mcp_', 'mcp:', 'MCPUnified'];
 
+// MCPUnified 的纯只读 action：不改动任何外部/本地状态（MCP 资源按协议设计为只读）。
+// invoke（任意工具调用）与 add_server（改配置、起进程）不在此列。
+const MCPUNIFIED_READ_ONLY_ACTIONS = new Set(['status', 'list_tools', 'list_resources', 'read_resource']);
+
 // 危险 bash 模式 — 始终拒绝或要求确认
 const DANGEROUS_BASH_PATTERNS: Array<{ pattern: RegExp; reason: string; decision: PermissionDecision }> = [
   // flag 前缀用共享 RM_FLAGS_REQUIRED（短簇/长选项/=值/任意序）+ RM_HEAD 词边界
@@ -400,6 +404,17 @@ export class PermissionClassifier {
 
     // R7: MCP 工具 → ask（未知副作用）
     if (this.isMcpTool(toolName)) {
+      // R6b: MCPUnified 的纯只读 action（连接状态/工具与资源清单/读资源）没有写副作用，
+      // 与 web_fetch 同级——只读操作永不进确认门（headless 下 ask = 一刀切拒，
+      // status 都被 fail-closed 就是这里的 over-gating）。invoke / add_server 维持 ask。
+      if (toolName === 'MCPUnified' && MCPUNIFIED_READ_ONLY_ACTIONS.has(String(args.action ?? ''))) {
+        return {
+          decision: 'approve',
+          reason: `MCPUnified 只读动作: ${String(args.action)}`,
+          confidence: 0.95,
+          cached: false,
+        };
+      }
       const reason = `MCP 工具 ${toolName} 可能有副作用`;
       return {
         decision: 'ask',

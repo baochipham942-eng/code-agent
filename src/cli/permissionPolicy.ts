@@ -36,7 +36,8 @@ export function createCLIPermissionHandler(
       );
       warn(
         `[permission] 非交互模式自动拒绝需人工确认的操作: ${request.tool} (${target})。`
-        + ' 如需放行请使用 --dangerously-skip-permissions（危险）。',
+        + ' CLI 无交互确认能力，重试结果相同；'
+        + '请改用 GUI/交互模式，或加 --dangerously-skip-permissions（危险）放行。',
       );
       // 拒的是这条路的**环境**（没有审批 UI），不是用户——账本/模型文案都不许再写成 user。
       return { approved: false, denialSource: 'no-approval-ui' };

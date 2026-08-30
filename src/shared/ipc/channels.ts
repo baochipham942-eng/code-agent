@@ -245,10 +245,6 @@ export const CHANNEL_CHANNELS = {
 export type ChannelChannel = (typeof CHANNEL_CHANNELS)[keyof typeof CHANNEL_CHANNELS];
 
 // ============================================================================
-// Evaluation 评测系统 IPC 通道
-// ============================================================================
-
-// ============================================================================
 // Handoff 提案 IPC 通道
 // ============================================================================
 
@@ -360,25 +356,3 @@ export const TELEMETRY_CHANNELS = {
  * Telemetry 通道名称类型
  */
 export type TelemetryChannel = (typeof TELEMETRY_CHANNELS)[keyof typeof TELEMETRY_CHANNELS];
-
-/**
- * 评测实验 IPC 通道（GAP-017: Harness 对照实验）
- */
-export const EVALUATION_CHANNELS = {
-  /** 发起一次真实评测；host 返回 runId，renderer 不得透传密钥或工作目录。 */
-  RUN_SUITE: 'evaluation:run-suite',
-  /** 订阅确认与 host -> renderer/web 的实时评测事件共用通道。 */
-  RUN_EVENTS: 'evaluation:run-events',
-  /** 终止正在运行的评测子进程。 */
-  ABORT_RUN: 'evaluation:abort-run',
-  /** 打分器页只读总览：确定性断言清单、按维校准状态与当前评审模型。 */
-  SCORERS_OVERVIEW: 'evaluation:scorers-overview',
-  /** 列出已落 DB 的实验（含 config_json harness 维度，用于对比/轮询完成状态） */
-  LIST_EXPERIMENTS: 'evaluation:list-experiments',
-  /** 只读加载单个实验 + 用例行（评测中心「基准」tab 回归对比用；裁剪 data_json 大字段） */
-  LOAD_EXPERIMENT: 'evaluation:load-experiment',
-  /** 递归枚举题库展示面；仓库根目录由 host 决定。 */
-  LIST_CASES: 'evaluation:list-cases',
-  /** 新增本地草稿或原地归档题目。 */
-  SAVE_CASE: 'evaluation:save-case',
-} as const;

@@ -2,6 +2,31 @@
   "schemaVersion": 2,
   "symbols": [
     {
+      "file": "packages/internal/evaluation-center/src/host/evaluation/trajectory/trajectoryExporter.ts",
+      "name": "normalizeAgentTrajectorySampleWindow",
+      "kind": "export"
+    },
+    {
+      "file": "packages/internal/evaluation-center/src/host/evaluation/trajectory/trajectoryExporter.ts",
+      "name": "shouldExportTrajectory",
+      "kind": "export"
+    },
+    {
+      "file": "packages/internal/evaluation-center/src/host/evaluation/trajectoryToCase.ts",
+      "name": "buildDraftYaml",
+      "kind": "export"
+    },
+    {
+      "file": "packages/internal/evaluation-center/src/host/evaluation/trajectoryToCase.ts",
+      "name": "draftFileName",
+      "kind": "export"
+    },
+    {
+      "file": "packages/internal/evaluation-center/src/host/evaluation/trajectoryToCase.ts",
+      "name": "DraftSource",
+      "kind": "type"
+    },
+    {
       "file": "src/cli/adapter.ts",
       "name": "getAgentDispatchInfo",
       "kind": "export"
@@ -2812,201 +2837,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/evaluation/replayService.ts",
-      "name": "ReplayBlock",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/replayService.ts",
-      "name": "ReplayTurn",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/replayService.ts",
-      "name": "ToolCategory",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/attribution/index.ts",
-      "name": "attributeByLLM",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/attribution/index.ts",
-      "name": "attributeByRules",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/attribution/index.ts",
-      "name": "AttributeOptions",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/attribution/index.ts",
-      "name": "ChatFn",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/attribution/index.ts",
-      "name": "defaultRegressionCasesDir",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/attribution/index.ts",
-      "name": "matchRegressionCases",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/index.ts",
-      "name": "buildAgentTrajectoryFromReplay",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/index.ts",
-      "name": "DeviationDetector",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/index.ts",
-      "name": "evaluateAgentTrajectoryReplay",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/index.ts",
-      "name": "exportAgentTrajectories",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/index.ts",
-      "name": "listTelemetryTrajectorySessionIds",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/index.ts",
-      "name": "normalizeAgentTrajectorySampleWindow",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/index.ts",
-      "name": "shouldExportTrajectory",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/index.ts",
-      "name": "writeAgentTrajectoryJsonl",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/trajectoryExporter.ts",
-      "name": "AgentTrajectorySampleWindow",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/trajectoryExporter.ts",
-      "name": "AgentTrajectoryTrendBucket",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/trajectoryExporter.ts",
-      "name": "listTelemetryTrajectorySessionIds",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/trajectoryExporter.ts",
-      "name": "normalizeAgentTrajectorySampleWindow",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/trajectoryExporter.ts",
-      "name": "shouldExportTrajectory",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/trajectoryGate.ts",
-      "name": "AgentTrajectoryClassification",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/trajectoryGate.ts",
-      "name": "AgentTrajectoryDatasetRole",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/trajectoryGate.ts",
-      "name": "AgentTrajectoryGateFailure",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/trajectoryGate.ts",
-      "name": "AgentTrajectoryQualityGate",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/trajectoryGate.ts",
-      "name": "AgentTrajectoryQualityTier",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/trajectory/trajectoryGate.ts",
-      "name": "AgentTrajectoryTaskKind",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/trajectoryToCase.ts",
-      "name": "buildDraftYaml",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectoryToCase.ts",
-      "name": "draftFileName",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/trajectoryToCase.ts",
-      "name": "DraftSource",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/transcriptReplayBuilder.ts",
-      "name": "attachSurfaceExecutionReplayBlocks",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/transcriptReplayBuilder.ts",
-      "name": "buildSurfaceExecutionReplayBlocks",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/transcriptReplayBuilder.ts",
-      "name": "getToolResultContent",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/transcriptReplayBuilder.ts",
-      "name": "projectTranscriptToolResultForReplay",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/evaluation/types.ts",
-      "name": "ConversationType",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/types.ts",
-      "name": "SessionMessage",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/types.ts",
-      "name": "ToolCallRecord",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/evaluation/types.ts",
-      "name": "ToolCallStats",
-      "kind": "type"
-    },
-    {
       "file": "src/host/extension/adapters.ts",
       "name": "parsedSkillToMetadata",
       "kind": "export"
@@ -3977,11 +3807,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/mcp/mcpDefaultServers.ts",
-      "name": "pickEnvGatedComputerUseServers",
-      "kind": "export"
-    },
-    {
       "file": "src/host/mcp/mcpDurableTask.ts",
       "name": "buildMcpTaskRecoveryDecision",
       "kind": "export"
@@ -4009,11 +3834,6 @@
     {
       "file": "src/host/mcp/mcpErrors.ts",
       "name": "MCP_TOOL_DELIVERY_UNKNOWN_CODE",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/mcp/mcpOAuthConsent.ts",
-      "name": "MCP_OAUTH_CONSENT_TIMEOUT_MS",
       "kind": "export"
     },
     {
@@ -4425,11 +4245,6 @@
       "file": "src/host/model/quickModel.ts",
       "name": "ClassificationResult",
       "kind": "type"
-    },
-    {
-      "file": "src/host/model/quickModel.ts",
-      "name": "getQuickModelInfo",
-      "kind": "export"
     },
     {
       "file": "src/host/model/quickModel.ts",
@@ -9662,6 +9477,26 @@
       "kind": "export"
     },
     {
+      "file": "src/host/telemetry/replay/transcriptReplayBuilder.ts",
+      "name": "attachSurfaceExecutionReplayBlocks",
+      "kind": "export"
+    },
+    {
+      "file": "src/host/telemetry/replay/transcriptReplayBuilder.ts",
+      "name": "buildSurfaceExecutionReplayBlocks",
+      "kind": "export"
+    },
+    {
+      "file": "src/host/telemetry/replay/transcriptReplayBuilder.ts",
+      "name": "getToolResultContent",
+      "kind": "export"
+    },
+    {
+      "file": "src/host/telemetry/replay/transcriptReplayBuilder.ts",
+      "name": "projectTranscriptToolResultForReplay",
+      "kind": "export"
+    },
+    {
       "file": "src/host/telemetry/telemetryCollectorInternal.ts",
       "name": "asNumber",
       "kind": "export"
@@ -9784,31 +9619,6 @@
     {
       "file": "src/host/testing/ci/index.ts",
       "name": "TrendTracker",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/testing/ci/noiseBand.ts",
-      "name": "computeNoiseBand",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/testing/ci/noiseBand.ts",
-      "name": "NOISE_BAND_LIMITS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/testing/ci/noiseBand.ts",
-      "name": "saveNoiseBand",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/testing/ci/sampleSplits.ts",
-      "name": "saveEvalSplits",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/testing/ci/sampleSplits.ts",
-      "name": "splitHeldInOut",
       "kind": "export"
     },
     {
@@ -11590,16 +11400,6 @@
       "file": "src/renderer/components/features/activity/activityPanelModel.ts",
       "name": "ActivityRecentItem",
       "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/audit/ReplayAuditPanel.tsx",
-      "name": "default",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/audit/ReplayAuditPanel.tsx",
-      "name": "ReplayAuditPanel",
-      "kind": "export"
     },
     {
       "file": "src/renderer/components/features/background/BackgroundSessionPanel.tsx",

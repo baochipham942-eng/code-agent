@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 const execFileAsync = promisify(execFile);
 const repoRoot = process.cwd();
 const tsxCli = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
-const sweepScript = path.join(repoRoot, 'scripts', 'eval-noise-sweep.ts');
+const sweepScript = path.join(repoRoot, 'packages', 'internal', 'evaluation-center', 'scripts', 'eval-noise-sweep.ts');
 
 describe('eval-noise-sweep safety preflight', () => {
   it('显式 --ids 也不能把红线 case 绕进重复跑量', async () => {

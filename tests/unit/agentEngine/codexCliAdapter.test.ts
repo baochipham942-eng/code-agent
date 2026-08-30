@@ -54,7 +54,7 @@ vi.mock('../../../src/host/task/backgroundTaskLedger', () => ({
   }),
 }));
 
-vi.mock('../../../src/host/evaluation/reviewQueueService', () => ({
+vi.mock('@internal-evaluation/host/evaluation/reviewQueueService', () => ({
   ReviewQueueService: {
     getInstance: () => ({
       enqueueSession: mocks.enqueueSession,

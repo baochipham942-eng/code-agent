@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachSessionQualityScoring } from '../../../src/host/evaluation/sessionQualityScoring';
+import { attachSessionQualityScoring } from '@host/telemetry/replay/sessionQualityScoring';
 import type { StructuredReplay } from '../../../src/shared/contract/evaluation';
 
 function replay(): StructuredReplay {

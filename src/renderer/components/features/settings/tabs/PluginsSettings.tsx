@@ -468,7 +468,11 @@ export const PluginsSettings: React.FC = () => {
                       <p className="mt-1 text-xs leading-5 text-zinc-500">{plugin.description}</p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {plugin.permissions.map((permission) => <Pill key={permission}>{permissionLabel(permission)}</Pill>)}
-                        <Pill>{plugin.toolNames.length}{pluginsText.manualImport.toolsSuffix}</Pill>
+                        {plugin.surface === 'internal-feature' ? (
+                          <Pill tone="warning">{pluginsText.manualImport.internalFeature}</Pill>
+                        ) : (
+                          <Pill>{plugin.toolNames.length}{pluginsText.manualImport.toolsSuffix}</Pill>
+                        )}
                       </div>
                       {plugin.error && <p className="mt-2 text-xs text-badge-danger">{plugin.error}</p>}
                     </div>
@@ -966,6 +970,9 @@ export const PluginsSettings: React.FC = () => {
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-sm font-semibold text-zinc-100">{packagePreview.name}</h3>
                 <Pill>{packagePreview.version}</Pill>
+                {packagePreview.surface === 'internal-feature' && (
+                  <Pill tone="warning">{pluginsText.manualImport.internalFeature}</Pill>
+                )}
                 {packagePreview.replacesInstalledVersion && (
                   <Pill tone="warning">{pluginsText.manualImport.replacePrefix}{packagePreview.replacesInstalledVersion}</Pill>
                 )}

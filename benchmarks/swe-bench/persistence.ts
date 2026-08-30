@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { ExperimentAdapter } from '../../src/host/evaluation/experimentAdapter';
+import { ExperimentAdapter } from '../../packages/internal/evaluation-center/src/host/evaluation/experimentAdapter';
 import type { DatabaseService } from '../../src/host/services/core/databaseService';
 import type {
   CanonicalEvalCase,

@@ -19,9 +19,9 @@ describe('失败原因分类静态接线锚点', () => {
   });
 
   it('NDJSON、事件落库和 TestRun 落库都携带同一 failure 字段', () => {
-    expect(source('scripts/lib/eval-run-event-stream.ts'))
+    expect(source('packages/internal/evaluation-center/scripts/lib/eval-run-event-stream.ts'))
       .toContain('failure: event.result.failure');
-    const adapter = source('src/host/evaluation/experimentAdapter.ts');
+    const adapter = source('packages/internal/evaluation-center/src/host/evaluation/experimentAdapter.ts');
     expect(adapter).toContain('failure: event.failure');
     expect(adapter).toContain('failure: r.failure');
     expect(adapter).toContain('failure: c.failure');
@@ -29,14 +29,14 @@ describe('失败原因分类静态接线锚点', () => {
 
   it('summary 与 run_end 原始行都携带 failureDistribution', () => {
     expect(source('src/host/testing/testRunner.ts')).toContain('failureDistribution: results.reduce');
-    expect(source('scripts/lib/eval-run-event-stream.ts'))
+    expect(source('packages/internal/evaluation-center/scripts/lib/eval-run-event-stream.ts'))
       .toContain('failureDistribution: summary.failureDistribution');
   });
 
   it('码本回退来源进入 summary、run_end 与报告头', () => {
     expect(source('src/host/testing/testRunner.ts'))
       .toContain('failureCodebookSource: this.failureCodebookSource');
-    expect(source('scripts/lib/eval-run-event-stream.ts'))
+    expect(source('packages/internal/evaluation-center/scripts/lib/eval-run-event-stream.ts'))
       .toContain('failureCodebookSource: summary.failureCodebookSource');
     expect(source('src/host/testing/reportGenerator.ts')).toContain('失败原因码本：');
   });

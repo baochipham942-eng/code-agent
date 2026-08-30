@@ -204,7 +204,7 @@ export const Sidebar: React.FC = () => {
     authBackendAvailable,
     hasCachedAdminClaim,
   } = useAuthStore();
-  const canOpenSessionReplay = canAccessFeature('eval.replay', user);
+  const canOpenSessionReplay = canAccessFeature('telemetry.replay', user);
   const isVerifiedAdmin = user?.isAdmin === true;
   const isAdminPendingVerification = !isVerifiedAdmin && hasCachedAdminClaim && sessionTrustState === 'cached';
   const adminPendingTitle =

@@ -10,7 +10,7 @@ import {
   createEmptyToolDistribution,
   normalizeToolCategory,
   getToolResultContent,
-} from '../../../src/host/evaluation/transcriptReplayBuilder';
+} from '@host/telemetry/replay/transcriptReplayBuilder';
 import type { ToolResult } from '../../../src/shared/contract';
 import type { TurnQualitySummary } from '../../../src/shared/contract/turnQuality';
 

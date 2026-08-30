@@ -107,6 +107,47 @@ describe('ManualCapabilityPackageService', () => {
     await service.discard(manifestPreview.token);
   });
 
+  it('accepts an admin-only internal feature package and rejects an adminOnly mutation', async () => {
+    const service = createService();
+    const internalManifest = manifest('evaluation-center', {
+      distribution: 'internal',
+      adminOnly: true,
+      surfaces: ['internal-feature'],
+      internalFeature: {
+        id: 'evaluation-center',
+        label: '评测中心',
+        rendererEntry: 'renderer/index.js',
+      },
+    });
+    const source = await writePackage('evaluation-center', {
+      manifest: internalManifest,
+      source: 'module.exports = { async activate() {} };',
+    });
+    await fs.mkdir(path.join(source, 'renderer'), { recursive: true });
+    await fs.writeFile(path.join(source, 'renderer', 'index.js'), 'export {};', 'utf8');
+
+    const preview = await service.stage(source);
+    expect(preview).toMatchObject({
+      id: 'evaluation-center',
+      surface: 'internal-feature',
+      toolNames: [],
+    });
+    const installed = await service.confirm(preview.token);
+    expect(installed).toMatchObject({ id: 'evaluation-center', surface: 'internal-feature' });
+    const listed = (await service.list()).find((item) => item.id === 'evaluation-center');
+    expect(listed).toMatchObject({
+      id: 'evaluation-center',
+      surface: 'internal-feature',
+      internalFeature: { id: 'evaluation-center', label: '评测中心' },
+    });
+
+    const mutated = await writePackage('evaluation-center-mutated', {
+      manifest: { ...internalManifest, id: 'evaluation-center-mutated', adminOnly: false },
+      source: 'module.exports = { async activate() {} };',
+    });
+    await expect(service.stage(mutated)).rejects.toThrow(/adminOnly=true/);
+  });
+
   it('rejects missing manifest fields in plain language and leaves the plugins directory untouched', async () => {
     const service = createService();
     const source = await writePackage('missing-field', {

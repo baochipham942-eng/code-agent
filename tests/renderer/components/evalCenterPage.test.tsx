@@ -3,26 +3,27 @@ import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
-vi.mock('../../../src/renderer/components/features/evalCenter/EvalReplayExplorer', () => ({
+vi.mock('@internal-evaluation/renderer/evalCenter/EvalReplayExplorer', () => ({
   EvalReplayExplorer: () => <div data-testid="eval-replay-explorer-mock" />,
 }));
 vi.mock('../../../src/renderer/components/features/inAppValidation/InAppValidationWorkspace', () => ({
   InAppValidationWorkspace: () => <div data-testid="in-app-validation-workspace-mock" />,
 }));
-vi.mock('../../../src/renderer/components/features/evalCenter/EvalTelemetryTab', () => ({
+vi.mock('@internal-evaluation/renderer/evalCenter/EvalTelemetryTab', () => ({
   EvalTelemetryTab: () => <div data-testid="eval-telemetry-tab-mock" />,
 }));
-vi.mock('../../../src/renderer/components/features/evalCenter/EvalBenchmarksTab', () => ({
+vi.mock('@internal-evaluation/renderer/evalCenter/EvalBenchmarksTab', () => ({
   EvalBenchmarksTab: () => <div data-testid="eval-benchmarks-tab-mock" />,
 }));
-vi.mock('../../../src/renderer/components/features/evalCenter/EvalCaseListTab', () => ({
+vi.mock('@internal-evaluation/renderer/evalCenter/EvalCaseListTab', () => ({
   EvalCaseListTab: () => <div data-testid="eval-case-list-tab-mock" />,
 }));
-vi.mock('../../../src/renderer/components/features/evalCenter/EvalScorersTab', () => ({
+vi.mock('@internal-evaluation/renderer/evalCenter/EvalScorersTab', () => ({
   EvalScorersTab: () => <div data-testid="eval-scorers-tab-mock" />,
 }));
 
-import { EvalCenterPage } from '../../../src/renderer/components/features/evalCenter/EvalCenterPage';
+import { EvalCenterPage } from '@internal-evaluation/renderer/evalCenter/EvalCenterPage';
+import { useEvalCenterStore } from '@internal-evaluation/renderer/stores/evalCenterStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useAuthStore } from '../../../src/renderer/stores/authStore';
 
@@ -32,10 +33,9 @@ afterEach(() => {
   cleanup();
   useAuthStore.setState({ user: null });
   useAppStore.setState({
-    showEvalCenter: false,
-    evalCenterTab: 'replay',
     pendingInAppValidationRequest: null,
   });
+  useEvalCenterStore.setState({ tab: 'replay', replaySessionId: null });
 });
 
 describe('EvalCenterPage', () => {
@@ -76,7 +76,7 @@ describe('EvalCenterPage', () => {
 
     fireEvent.click(screen.getByTestId('eval-center-tab-validation'));
 
-    expect(useAppStore.getState().evalCenterTab).toBe('validation');
+    expect(useEvalCenterStore.getState().tab).toBe('validation');
     expect(await screen.findByTestId('in-app-validation-workspace-mock')).toBeTruthy();
   });
 
@@ -85,11 +85,11 @@ describe('EvalCenterPage', () => {
     render(<EvalCenterPage />);
 
     fireEvent.click(screen.getByTestId('eval-center-tab-telemetry'));
-    expect(useAppStore.getState().evalCenterTab).toBe('telemetry');
+    expect(useEvalCenterStore.getState().tab).toBe('telemetry');
     expect(await screen.findByTestId('eval-telemetry-tab-mock')).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('eval-center-tab-benchmarks'));
-    expect(useAppStore.getState().evalCenterTab).toBe('benchmarks');
+    expect(useEvalCenterStore.getState().tab).toBe('benchmarks');
     expect(await screen.findByTestId('eval-benchmarks-tab-mock')).toBeTruthy();
   });
 
@@ -98,7 +98,7 @@ describe('EvalCenterPage', () => {
     render(<EvalCenterPage />);
 
     fireEvent.click(screen.getByTestId('eval-center-tab-cases'));
-    expect(useAppStore.getState().evalCenterTab).toBe('cases');
+    expect(useEvalCenterStore.getState().tab).toBe('cases');
     expect(await screen.findByTestId('eval-case-list-tab-mock')).toBeTruthy();
   });
 

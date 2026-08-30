@@ -757,6 +757,7 @@ export const zhSettingsModels = {
         active: '下一轮可用',
         available: '可安装',
         inactive: '当前不可用',
+        internalFeature: '仅管理员内部界面',
         toolsSuffix: ' 个工具',
         uninstall: '卸载',
         install: '安装',

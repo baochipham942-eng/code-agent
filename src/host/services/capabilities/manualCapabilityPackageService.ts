@@ -136,8 +136,17 @@ function validateStrictManifest(raw: Record<string, unknown>): void {
   }
   if (!SEMVER.test(version)) throw new Error('版本号需使用 1.2.3 这样的格式');
   if (!Array.isArray(raw.permissions)) throw new Error('能力包清单必须声明 permissions 权限列表，可以是空数组');
-  if (!Array.isArray(raw.surfaces) || raw.surfaces.length !== 1 || raw.surfaces[0] !== 'tools') {
-    throw new Error('可执行能力包的 surfaces 只能声明 tools，skill、主题和语言仍走各自现有入口');
+  if (!Array.isArray(raw.surfaces) || raw.surfaces.length !== 1) {
+    throw new Error('能力包只能声明一个 surface');
+  }
+  if (raw.surfaces[0] === 'internal-feature') {
+    if (raw.distribution !== 'internal' || raw.adminOnly !== true) {
+      throw new Error('内部能力包必须声明 distribution=internal 且 adminOnly=true');
+    }
+    return;
+  }
+  if (raw.surfaces[0] !== 'tools') {
+    throw new Error('可执行能力包的 surfaces 只能声明 tools；内部包可声明 internal-feature');
   }
 }
 
@@ -180,7 +189,11 @@ function assertNoAmbientAuthority(source: string): void {
   visit(ast);
 }
 
-function sandboxProbeScript(source: string, permissions: readonly PluginPermission[]): string {
+function sandboxProbeScript(
+  source: string,
+  permissions: readonly PluginPermission[],
+  requireTool: boolean,
+): string {
   const prefix = `
 const module = { exports: {} };
 const exports = module.exports;
@@ -233,7 +246,7 @@ const api = Object.freeze({
   getConstants: () => Object.freeze({}),
 });
 await entry.activate(api);
-if (toolNames.length === 0) throw new Error('能力包没有注册任何工具');
+if (${JSON.stringify(requireTool)} && toolNames.length === 0) throw new Error('能力包没有注册任何工具');
 return { toolNames: [...new Set(toolNames)].sort() };
 `;
   return `${prefix}${source}\n${suffix}`;
@@ -288,6 +301,7 @@ export class ManualCapabilityPackageService {
       description: computerUseManifest.description ?? '',
       permissions: computerUseManifest.permissions ?? [],
       toolNames: [CUA_DRIVER_SERVER_NAME, 'screenshot', 'ocr_search'],
+      surface: 'tools',
       sourceKind: 'bundled',
       sourceLabel: 'Agent Neo',
       sandbox: { passed: true, summary: '随 Neo 签名发货的内置能力已通过完整性校验' },
@@ -339,7 +353,8 @@ export class ManualCapabilityPackageService {
       if (Buffer.byteLength(source, 'utf8') > MAX_ENTRY_BYTES) throw new Error('入口代码超过 48 KB，已拒绝');
       if (!/module\s*\.\s*exports/.test(source)) throw new Error('当前只支持 CommonJS 能力包，入口需使用 module.exports');
       assertNoAmbientAuthority(source);
-      const probeScript = sandboxProbeScript(source, manifest.permissions ?? []);
+      const surface = manifest.surfaces?.[0] === 'internal-feature' ? 'internal-feature' : 'tools';
+      const probeScript = sandboxProbeScript(source, manifest.permissions ?? [], surface === 'tools');
       const validation = validateScript(probeScript);
       if (!validation.ok) throw new Error(`沙箱校验没通过：${validation.error}`);
       const probe = await this.runSandbox({
@@ -356,7 +371,7 @@ export class ManualCapabilityPackageService {
         throw new Error(`沙箱校验没通过：${probe.error ?? '入口探针没有返回工具清单'}`);
       }
       const toolNames = probe.result.toolNames.filter((item): item is string => typeof item === 'string');
-      if (toolNames.length === 0) throw new Error('沙箱校验没通过：能力包没有注册工具');
+      if (surface === 'tools' && toolNames.length === 0) throw new Error('沙箱校验没通过：能力包没有注册工具');
       const packageHash = await hashPluginPackage(rootDir);
       const token = randomUUID();
       const stagedAt = this.now();
@@ -386,10 +401,16 @@ export class ManualCapabilityPackageService {
         description: manifest.description ?? '',
         permissions: manifest.permissions ?? [],
         toolNames,
+        surface,
         sourceKind,
         sourceLabel: staged.sourceLabel,
         ...(staged.replacesInstalledVersion ? { replacesInstalledVersion: staged.replacesInstalledVersion } : {}),
-        sandbox: { passed: true, summary: `隔离进程试跑通过，发现 ${toolNames.length} 个工具` },
+        sandbox: {
+          passed: true,
+          summary: surface === 'internal-feature'
+            ? '隔离进程试跑通过，内部界面声明有效'
+            : `隔离进程试跑通过，发现 ${toolNames.length} 个工具`,
+        },
         expiresAt,
       };
     } catch (error) {
@@ -437,6 +458,7 @@ export class ManualCapabilityPackageService {
         id: staged.manifest.id,
         version: staged.manifest.version,
         toolNames: staged.toolNames.map((name) => `${staged.manifest.id}:${name}`),
+        surface: staged.manifest.surfaces?.[0] === 'internal-feature' ? 'internal-feature' : 'tools',
         ...(staged.replacesInstalledVersion ? { replacedVersion: staged.replacesInstalledVersion } : {}),
       };
     } catch (error) {
@@ -471,7 +493,7 @@ export class ManualCapabilityPackageService {
       const plugin = this.registry.getPlugin(staged.pluginId);
       const toolNames = [CUA_DRIVER_SERVER_NAME, ...(plugin?.registeredTools ?? [])];
       this.lifecycle(staged.pluginId, 'loaded', `version=${computerUseManifest.version}; permissions=accessibility,screen-recording`);
-      return { id: staged.pluginId, version: computerUseManifest.version, toolNames };
+      return { id: staged.pluginId, version: computerUseManifest.version, toolNames, surface: 'tools' };
     } catch (error) {
       if (mcpAdded) await this.mcpClient.removeServer(CUA_DRIVER_SERVER_NAME).catch(() => undefined);
       await this.registry.removeBuiltinCapability(staged.pluginId).catch(() => false);
@@ -496,6 +518,7 @@ export class ManualCapabilityPackageService {
       description: computerUseManifest.description ?? '',
       permissions: computerUseManifest.permissions ?? [],
       state: computerUsePlugin?.state ?? 'available',
+      surface: 'tools',
       toolNames: computerUsePlugin
         ? [CUA_DRIVER_SERVER_NAME, ...computerUsePlugin.registeredTools]
         : [],
@@ -516,6 +539,8 @@ export class ManualCapabilityPackageService {
         permissions: plugin.manifest.permissions ?? [],
         state: plugin.state,
         toolNames: [...plugin.registeredTools],
+        surface: plugin.manifest.surfaces?.[0] === 'internal-feature' ? 'internal-feature' : 'tools',
+        ...(plugin.manifest.internalFeature ? { internalFeature: plugin.manifest.internalFeature } : {}),
         ...(plugin.error ? { error: plugin.error } : {}),
       });
     }

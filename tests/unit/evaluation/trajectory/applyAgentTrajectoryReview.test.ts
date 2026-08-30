@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   extractAgentTrajectoryReviewDecision,
   parseAgentTrajectoryReviewPacketMarkdown,
-} from '../../../../scripts/apply-agent-trajectory-review';
+} from '@internal-evaluation-scripts/apply-agent-trajectory-review';
 
 describe('extractAgentTrajectoryReviewDecision', () => {
   it('requires an explicit reviewed dataset role and never applies suggestedAction alone', () => {

@@ -9,14 +9,14 @@ import {
   type EvalRunStamp,
 } from '../../../src/shared/contract/evaluation';
 import { MODEL_PRICING_PER_1M } from '../../../src/shared/constants/pricing';
-import { resolveProductionShape } from '../../../src/host/evaluation/productionShape';
+import { resolveProductionShape } from '@internal-evaluation/host/evaluation/productionShape';
 import { EVAL_AGENT_DEFAULTS } from '../../../src/host/testing/agentAdapter';
 import { EVAL_GOAL_ALLOW_SWARM } from '../../../src/host/testing/goalContractEval';
 import {
   buildRunStamp,
   loadApiKey,
-} from '../../../scripts/lib/eval-run-stamp';
-import { estimateCostPerCase } from '../../../scripts/lib/eval-cost-estimate';
+} from '@internal-evaluation-scripts/lib/eval-run-stamp';
+import { estimateCostPerCase } from '@internal-evaluation-scripts/lib/eval-cost-estimate';
 
 const roots: string[] = [];
 

@@ -1,7 +1,7 @@
 import type { StructuredReplay } from '../../shared/contract/evaluation';
 import { buildSessionTraceIdentity } from '../../shared/contract/reviewQueue';
 import { createLogger } from '../services/infra/logger';
-import { evaluateAgentTrajectoryReplay } from '../evaluation/trajectory/trajectoryGate';
+import { evaluateAgentTrajectoryReplay } from '../../shared/contract/agentTrajectory';
 import type { TestCase, TestResult } from './types';
 import { isRealAgentRunCase } from './testRunCompletion';
 
@@ -27,7 +27,7 @@ export async function attachTelemetryReplay(
       if (agent.getStructuredReplay) {
         replay = await agent.getStructuredReplay(result.sessionId);
       } else {
-        const { getTelemetryQueryService } = await import('../evaluation/telemetryQueryService');
+        const { getTelemetryQueryService } = await import('../telemetry/replay/telemetryQueryService');
         replay = await getTelemetryQueryService().getStructuredReplay(result.sessionId);
       }
       if (replay) {

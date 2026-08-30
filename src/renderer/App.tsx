@@ -48,7 +48,6 @@ import { FolderTrustDialog, needsFolderTrustDecision, type FolderTrustEvaluation
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTaskSync } from './hooks/useTaskSync';
-import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useBackgroundTaskSync } from './hooks/useBackgroundTaskSync';
 import { useOpenPreviewBridge } from './hooks/useOpenPreviewBridge';
 import { useTerminalRevealBridge } from './hooks/useTerminalRevealBridge';
@@ -84,6 +83,7 @@ import {
   isSwarmSurfaceArtifact,
 } from './utils/swarmEventRouting';
 import { openSurfaceForArtifact } from './services/surfaceIntentDispatcher';
+import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 
 const logger = createLogger('App');
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
@@ -121,8 +121,8 @@ const ActivityPanel = React.lazy(() => import('./components/features/activity/Ac
 const LocalOpsPage = React.lazy(() => import('./components/features/localOps/LocalOpsPage').then((module) => ({
   default: module.LocalOpsPage,
 })));
-const EvalCenterPage = React.lazy(() => import('./components/features/evalCenter/EvalCenterPage').then((module) => ({
-  default: module.EvalCenterPage,
+const InAppValidationWorkspace = React.lazy(() => import('./components/features/inAppValidation/InAppValidationWorkspace').then((module) => ({
+  default: module.InAppValidationWorkspace,
 })));
 
 async function invokeDomain<T>(domain: string, action: string, payload?: unknown): Promise<T> {
@@ -149,6 +149,7 @@ export const App: React.FC = () => {
   useAppshots(); // 挂载 Appshots 事件监听（热键截图 → composer）
   useSurfaceExecutionPip(); // 当前会话 Browser / Computer 共享的可信实时 PiP
   useAgentHalo(); // CUA 原生驱动时的系统级光晕跟随（单指针共驾聚光灯）
+  useInAppValidationBridge(); // browser-control 共用验证链路，不依赖内部评测包
   const {
     showSettings,
     showPromptManager,
@@ -165,7 +166,7 @@ export const App: React.FC = () => {
     selectedSwarmAgentId,
     showLab,
     showLocalOpsPanel,
-    showEvalCenter,
+    showInAppValidation,
     showProjectCollaborationPage,
     projectCollaborationPageProjectId,
     closeProjectCollaborationPage,
@@ -271,7 +272,6 @@ export const App: React.FC = () => {
   // 防止 dev server 重启 / 网络断开导致前端 isProcessing 卡住不放
   useTaskSync({ pollInterval: 30_000 });
   useBackgroundTaskSync();
-  useInAppValidationBridge();
   // 2b：监听 agent（ProposeSlidesOps 等）生成文档型产物后请求打开预览 tab（按当前会话过滤）。
   useOpenPreviewBridge();
   useTerminalRevealBridge();
@@ -877,15 +877,15 @@ export const App: React.FC = () => {
 
   // 侧栏是否真的在画（收起 / 非 standard 档都不画）——顶栏该不该存在跟着它走。
   const isSidebarVisible = isStandard && !sidebarCollapsed;
-  // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/本机操作/评测中心，
+  // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/本机操作，
   // 以及 2026-07-29 起统一收进 inline 的账号菜单页：提示词库/Lab/时间能力/活动/
-  // Neo 协同/桌面状态）在位时，顶栏收敛。评测中心 2026-07-27 拍板从 overlay 改 inline，一并计入。
+  // Neo 协同/桌面状态）在位时，顶栏收敛。
   // 知识记忆整窗页 2026-08-02 退役（内容并入设置 → 记忆）。
   // 设置页 2026-07-30 起是 overlay 整窗覆盖（X5.5-B1），本就不是 inline 页；仍留在名单里
   // 只为压住底下的顶栏不随设置开关抖动（覆盖层在位时它反正不可见）。
   const inlineSecondaryPageActive = Boolean(
     expertDetailRoleId || showLibraryPanel
-    || showCapabilityHub || showCronCenter || showLocalOpsPanel || showEvalCenter
+    || showCapabilityHub || showCronCenter || showLocalOpsPanel || showInAppValidation
     || showProjectSpacePage
     || showSettings || showPromptManager || showLab || showTimeCapabilityCenter
     || showActivityPanel || showProjectCollaborationPage || showDesktopPanel
@@ -1009,9 +1009,9 @@ export const App: React.FC = () => {
                 <React.Suspense fallback={null}>
                   <LocalOpsPage />
                 </React.Suspense>
-              ) : showEvalCenter ? (
+              ) : showInAppValidation ? (
                 <React.Suspense fallback={null}>
-                  <EvalCenterPage />
+                  <InAppValidationWorkspace />
                 </React.Suspense>
               ) : (
                 <PanelGroup orientation="horizontal" className="flex-1 min-h-0" id="main-layout">

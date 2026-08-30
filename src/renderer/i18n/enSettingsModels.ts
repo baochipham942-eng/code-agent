@@ -755,6 +755,7 @@ export const enSettingsModels = {
         active: 'Available next turn',
         available: 'Available to install',
         inactive: 'Unavailable',
+        internalFeature: 'Admin-only internal UI',
         toolsSuffix: ' tools',
         uninstall: 'Uninstall',
         install: 'Install',

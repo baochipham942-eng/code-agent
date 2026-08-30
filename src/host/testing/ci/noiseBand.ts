@@ -3,7 +3,7 @@
 // ============================================================================
 // baselineManager 原固定 maxScoreDrop=0.15 是拍脑袋值：比真实噪声宽会漏报
 // 回归，比噪声窄会假警报逼人无视门。sweep（同子集同配置重复 K 跑，
-// scripts/eval-noise-sweep.ts）测出 avgScore 的样本 σ，
+// internal evaluation package 的 eval-noise-sweep.ts）测出 avgScore 的样本 σ，
 // maxScoreDrop = clamp(2σ, floor, cap) 落盘本文件；compare 优先读它。
 // floor 防零方差把门焊死；cap 防"噪声大到离谱"被当成理由放宽门——
 // 触 cap 应该修 eval（拆 flaky case）而不是接受一个形同虚设的门。

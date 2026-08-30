@@ -1,15 +1,16 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import type { ElectronAPI } from '@shared/ipc';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
 import { UNKNOWN_EVAL_RUN_STAMP } from '@shared/contract/evaluation';
 import type {
   EvalExperimentListItem,
   EvalRunEvent,
   EvalRunPanelProbe,
 } from '@shared/contract/evaluation';
-import { EvalCenterPage } from '../../../src/renderer/components/features/evalCenter/EvalCenterPage';
 import { EXPECTATION_TYPE_CATALOG } from '../../../src/host/testing/expectationCatalog';
+import { EvalCenterPage } from '@internal-evaluation/renderer/evalCenter/EvalCenterPage';
+import { useEvalCenterStore } from '@internal-evaluation/renderer/stores/evalCenterStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useAuthStore } from '../../../src/renderer/stores/authStore';
 import '../../../src/renderer/styles/global.css';
@@ -87,7 +88,7 @@ const historyRuns: EvalExperimentListItem[] = [
 const listeners = new Map<string, Set<EventListener>>();
 
 function emit(event: EvalRunEvent): void {
-  listeners.get(IPC_CHANNELS.EVALUATION_RUN_EVENTS)?.forEach((listener) => listener(event));
+  listeners.get(EVALUATION_CHANNELS.RUN_EVENTS)?.forEach((listener) => listener(event));
 }
 
 function emitActiveRun(): void {
@@ -116,19 +117,19 @@ function emitActiveRun(): void {
 
 const bridge = {
   async invoke(channel: string, payload?: unknown): Promise<unknown> {
-    if (channel === IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS) {
+    if (channel === EVALUATION_CHANNELS.LIST_EXPERIMENTS) {
       return scenario === 'a12' ? historyRuns : [];
     }
-    if (channel === IPC_CHANNELS.EVALUATION_RUN_EVENTS && payload === undefined) return probe;
-    if (channel === IPC_CHANNELS.EVALUATION_SCORERS_OVERVIEW) {
+    if (channel === EVALUATION_CHANNELS.RUN_EVENTS && payload === undefined) return probe;
+    if (channel === EVALUATION_CHANNELS.SCORERS_OVERVIEW) {
       return { assertions: EXPECTATION_TYPE_CATALOG, aiReview: probe.aiReview, judge: probe.judge };
     }
-    if (channel === IPC_CHANNELS.EVALUATION_RUN_SUITE) return { runId: 'visual-run' };
-    if (channel === IPC_CHANNELS.EVALUATION_RUN_EVENTS) {
+    if (channel === EVALUATION_CHANNELS.RUN_SUITE) return { runId: 'visual-run' };
+    if (channel === EVALUATION_CHANNELS.RUN_EVENTS) {
       window.setTimeout(emitActiveRun, 0);
       return { runId: 'visual-run', running: true };
     }
-    if (channel === IPC_CHANNELS.EVALUATION_ABORT_RUN) {
+    if (channel === EVALUATION_CHANNELS.ABORT_RUN) {
       return { runId: 'visual-run', pid: 101, terminated: true };
     }
     return null;
@@ -146,6 +147,7 @@ const bridge = {
 
 window.codeAgentAPI = bridge;
 useAuthStore.setState({ user: { id: 'runpanel-admin', email: 'admin@example.com', isAdmin: true } });
-useAppStore.setState({ language: 'zh', evalCenterTab: scenario === 'c2' ? 'scorers' : 'benchmarks' });
+useAppStore.setState({ language: 'zh' });
+useEvalCenterStore.setState({ tab: scenario === 'c2' ? 'scorers' : 'benchmarks' });
 
 createRoot(document.getElementById('root')!).render(<EvalCenterPage />);

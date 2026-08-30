@@ -78,7 +78,7 @@ vi.mock('../../../../src/host/services/sessionAutomation', () => ({
   getSessionAutomationService: () => mockSessionAutomation,
 }));
 
-vi.mock('../../../../src/host/evaluation/sessionEventService', () => ({
+vi.mock('@host/session/sessionEventService', () => ({
   getSessionEventService: () => mockSessionEvents,
 }));
 

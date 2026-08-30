@@ -11,8 +11,8 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invoke: invokeMock, on: vi.fn(() => () => {}) },
 }));
 
-import { EvalTelemetryTab } from '../../../src/renderer/components/features/evalCenter/EvalTelemetryTab';
-import { useTelemetryStore } from '../../../src/renderer/stores/telemetryStore';
+import { EvalTelemetryTab } from '@internal-evaluation/renderer/evalCenter/EvalTelemetryTab';
+import { useTelemetryStore } from '@internal-evaluation/renderer/stores/telemetryStore';
 import type { TelemetrySession, TelemetrySessionListItem } from '../../../src/shared/contract/telemetry';
 
 const listItem: TelemetrySessionListItem = {

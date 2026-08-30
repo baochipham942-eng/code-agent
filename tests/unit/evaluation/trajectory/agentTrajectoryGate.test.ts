@@ -9,12 +9,12 @@ import {
   mergeAgentTrajectoryCollectionMetadata,
   resolveAgentTrajectoryCollectionMetadata,
 } from '../../../../src/shared/contract/agentTrajectory';
-import { evaluateAgentTrajectoryReplay } from '../../../../src/host/evaluation/trajectory/trajectoryGate';
+import { evaluateAgentTrajectoryReplay } from '@internal-evaluation/host/evaluation/trajectory/trajectoryGate';
 import {
   buildAgentTrajectoryFromReplay,
   normalizeAgentTrajectorySampleWindow,
   shouldExportTrajectory,
-} from '../../../../src/host/evaluation/trajectory/trajectoryExporter';
+} from '@internal-evaluation/host/evaluation/trajectory/trajectoryExporter';
 import {
   buildGateThresholdCalibration,
   buildP3ActionPlan,
@@ -23,7 +23,7 @@ import {
   buildP3ReviewWorklist,
   buildReviewPacketMarkdown,
   parseTimestampFlag,
-} from '../../../../scripts/export-agent-trajectories';
+} from '@internal-evaluation-scripts/export-agent-trajectories';
 
 function toolDistribution(): StructuredReplay['summary']['toolDistribution'] {
   return {

@@ -16,6 +16,7 @@ export interface CapabilityPackagePreview {
   description: string;
   permissions: CapabilityPackagePermission[];
   toolNames: string[];
+  surface: 'tools' | 'internal-feature';
   sourceKind: 'directory' | 'manifest' | 'zip' | 'bundled';
   sourceLabel: string;
   replacesInstalledVersion?: string;
@@ -34,6 +35,12 @@ export interface InstalledCapabilityPackage {
   permissions: CapabilityPackagePermission[];
   state: 'available' | 'inactive' | 'activating' | 'active' | 'error' | 'disabled';
   toolNames: string[];
+  surface: 'tools' | 'internal-feature';
+  internalFeature?: {
+    id: string;
+    label: string;
+    rendererEntry: string;
+  };
   error?: string;
 }
 
@@ -41,6 +48,7 @@ export interface CapabilityPackageInstallResult {
   id: string;
   version: string;
   toolNames: string[];
+  surface: 'tools' | 'internal-feature';
   replacedVersion?: string;
 }
 

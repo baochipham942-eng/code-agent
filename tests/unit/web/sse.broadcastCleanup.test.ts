@@ -12,6 +12,8 @@ import {
   sendSSE,
   sseClients,
 } from '../../../src/web/helpers/sse';
+import { registerAdminChannels } from '../../../src/host/ipc/channelAccessPolicy';
+import { EVALUATION_CHANNELS } from '@internal-evaluation/shared/evaluationChannels';
 
 function fakeClient(options: { failWrite?: boolean } = {}) {
   const chunks: string[] = [];
@@ -38,6 +40,7 @@ afterEach(() => {
 
 describe('broadcastSSE client cleanup', () => {
   it('delivers evaluation run events to admin SSE clients only', () => {
+    const unregister = registerAdminChannels(Object.values(EVALUATION_CHANNELS));
     const user = fakeClient();
     const admin = fakeClient();
     registerSSEClient(user as unknown as Response, false);
@@ -48,6 +51,7 @@ describe('broadcastSSE client cleanup', () => {
     expect(user.chunks).toHaveLength(0);
     expect(admin.chunks).toHaveLength(1);
     expect(admin.chunks[0]).toContain('"channel":"evaluation:run-events"');
+    unregister();
   });
 
   it('removes clients whose write throws (dead connection)', () => {

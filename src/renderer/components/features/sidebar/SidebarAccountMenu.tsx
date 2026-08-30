@@ -15,7 +15,6 @@ import {
   CalendarDays,
   ChevronRight,
   FlaskConical,
-  Gauge,
   LogOut,
   Monitor,
   MonitorSmartphone,
@@ -57,14 +56,9 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
     setShowActivityPanel,
     showLocalOpsPanel,
     openLocalOpsPanel,
-    showEvalCenter,
-    openEvalCenter,
     setShowPromptManager,
   } = useAppStore();
 
-  // 评测中心与提示词管理同为 admin-only：门禁走 user.isAdmin 的 verified claim，
-  // 与账号行上的「管理员」徽标同一条通路。
-  const canOpenEvalCenter = canAccessFeature('eval.center', user);
   const canOpenPromptManager = canAccessFeature('prompt.manager', user);
 
   return (
@@ -81,13 +75,6 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
         label={sb.menuLocalOps}
       />
       {/* 「协作请求（@neo）」入口已拿掉（爸 2026-07-29）：topic 目录的家=协作空间页任务 tab */}
-      {canOpenEvalCenter && (
-        <AccountMenuItem
-          onClick={() => { openEvalCenter(); onClose(); }}
-          icon={<Gauge className={`w-4 h-4 ${showEvalCenter ? 'text-badge-warning' : 'text-badge-warning/80'}`} />}
-          label={sb.menuEvalCenter}
-        />
-      )}
       {canOpenPromptManager && (
         <AccountMenuItem
           onClick={() => { setShowPromptManager(true); onClose(); }}

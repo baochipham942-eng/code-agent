@@ -10,7 +10,6 @@ const PRIMARY_PAGE_HEADERS = [
   ['实验室', 'lab/LabPage.tsx'],
   ['协作空间列表', 'projectSpace/ProjectSpacePage.tsx'],
   ['本机操作', 'localOps/LocalOpsPage.tsx'],
-  ['评测中心', 'evalCenter/EvalCenterPage.tsx'],
   ['自动化', 'cron/CronCenterPanel.tsx'],
   ['资料库', 'knowledge/LibraryPanel.tsx'],
 ] as const;

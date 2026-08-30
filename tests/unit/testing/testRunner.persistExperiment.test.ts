@@ -6,7 +6,7 @@ import type { TestRunnerConfig } from '../../../src/host/testing/types';
 
 const persistTestRun = vi.hoisted(() => vi.fn(async () => undefined));
 
-vi.mock('../../../src/host/evaluation/experimentAdapter', () => ({
+vi.mock('@internal-evaluation/host/evaluation/experimentAdapter', () => ({
   ExperimentAdapter: class {
     persistTestRun = persistTestRun;
   },

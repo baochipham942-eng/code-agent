@@ -169,6 +169,13 @@ export const chatCommand = new Command('chat')
     const isJsonMode = globalOpts?.json || globalOpts?.outputFormat === 'json' || globalOpts?.outputFormat === 'stream-json';
 
     try {
+      // Ink/yoga 模块加载与 init services 并行（加载不依赖 init 结果；非 TTY 不启动）
+      const inkRunnerPromise = !isJsonMode
+        && Boolean(process.stdin.isTTY && process.stdout.isTTY)
+        && process.env.NEO_DISABLE_INK_TUI !== '1'
+        ? import('../tui-app/inkRunner')
+        : null;
+
       // 初始化服务
       await initializeCLIServices();
 
@@ -247,7 +254,7 @@ export const chatCommand = new Command('chat')
         && Boolean(process.stdin.isTTY && process.stdout.isTTY)
         && process.env.NEO_DISABLE_INK_TUI !== '1';
       if (useInkTui) {
-        const { runInkChat } = await import('../tui-app/inkRunner');
+        const { runInkChat } = await (inkRunnerPromise ?? import('../tui-app/inkRunner'));
         const { buildSlashItems } = await import('../tui-app/slashCommands');
         const { captureConsoleOutput } = await import('./captureConsoleOutput');
         const { execSync } = await import('child_process');

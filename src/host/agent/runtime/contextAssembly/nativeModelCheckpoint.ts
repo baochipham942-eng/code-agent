@@ -54,8 +54,17 @@ export async function withNativeModelOperation<T>(
   signal: AbortSignal,
   run: () => Promise<T>,
 ): Promise<T> {
-  await checkpointNativeModel(ctx, config, 'before_model_dispatch', 'prepared');
-  await checkpointNativeModel(ctx, config, 'after_model_dispatch', 'dispatched');
+  // checkpoint 失败（如 run 半注销时 "Native Durable Run … is not active"）只降级为
+  // 本轮不做 durable 记账，绝不顶替模型调用的真实结果/错误冒到用户面前——
+  // 与失败 settle 路径（:66-73）同一处理。
+  const checkpointQuiet = (
+    phase: 'before_model_dispatch' | 'after_model_dispatch',
+    status: 'prepared' | 'dispatched' | 'succeeded' | 'failed' | 'abandoned',
+  ) => checkpointNativeModel(ctx, config, phase, status).catch((checkpointError) => {
+    logger.warn('[AgentLoop] Native model checkpoint skipped (durable bookkeeping degraded):', checkpointError);
+  });
+  await checkpointQuiet('before_model_dispatch', 'prepared');
+  await checkpointQuiet('after_model_dispatch', 'dispatched');
   let result: T;
   try {
     result = await run();
@@ -63,16 +72,9 @@ export async function withNativeModelOperation<T>(
     const abandonedByUser = ctx.runtime.control.isCancelled
       || ctx.runtime.control.isInterrupted
       || signal.aborted;
-    await checkpointNativeModel(
-      ctx,
-      config,
-      'after_model_dispatch',
-      abandonedByUser ? 'abandoned' : 'failed',
-    ).catch((checkpointError) => {
-      logger.warn('[AgentLoop] Failed to settle the native model operation after an inference error:', checkpointError);
-    });
+    await checkpointQuiet('after_model_dispatch', abandonedByUser ? 'abandoned' : 'failed');
     throw error;
   }
-  await checkpointNativeModel(ctx, config, 'after_model_dispatch', 'succeeded');
+  await checkpointQuiet('after_model_dispatch', 'succeeded');
   return result;
 }

@@ -230,6 +230,17 @@ function pushItem(
 export class FolderTrustService {
   private db: SqliteDatabase | null = null;
   readonly defaultProjectConfigTrust: boolean | undefined;
+  /**
+   * discoverDangerousItemsSync 的进程级缓存（key = canonical realpath）。
+   * 技能发现等热点路径会对同一目录反复评估（每个 skill 一次），而单次发现要
+   * 深度 5 递归扫描整个工作目录（实测 266 skill × ~18ms ≈ 5s 纯同步 IO，
+   * 把 CLI 首屏饿死）。只缓存目录扫描产物，不缓存评估结论——trust 决策
+   * （folder_trust 表）与 identity 每次现读（DB/stat，廉价），决策变更即时
+   * 生效；目录内容（新落盘的危险配置）在进程内变化不再即时反映——
+   * 这是用进程内一致性换启动性能，与 defaultProjectConfigTrust 短路同属
+   * "跳过一次评估"的合法语义。
+   */
+  private readonly syncDangerousItemsCache = new Map<string, DangerousConfigItem[]>();
 
   constructor(options: { defaultProjectConfigTrust?: boolean } = {}) {
     this.defaultProjectConfigTrust = options.defaultProjectConfigTrust;
@@ -245,7 +256,11 @@ export class FolderTrustService {
   evaluateSync(workingDirectory: string): FolderTrustEvaluation {
     const canonicalRealpath = fs.realpathSync.native(workingDirectory);
     const identity = this.readIdentitySync(canonicalRealpath);
-    const dangerousItems = this.discoverDangerousItemsSync(canonicalRealpath);
+    let dangerousItems = this.syncDangerousItemsCache.get(canonicalRealpath);
+    if (!dangerousItems) {
+      dangerousItems = this.discoverDangerousItemsSync(canonicalRealpath);
+      this.syncDangerousItemsCache.set(canonicalRealpath, dangerousItems);
+    }
     return this.buildEvaluation(canonicalRealpath, workingDirectory, identity, dangerousItems);
   }
 
@@ -280,6 +295,7 @@ export class FolderTrustService {
   }
 
   close(): void {
+    this.syncDangerousItemsCache.clear();
     if (this.db) {
       this.db.close();
       this.db = null;

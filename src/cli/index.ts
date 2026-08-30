@@ -7,6 +7,13 @@
 process.env.CODE_AGENT_CLI_MODE = 'true';
 process.env.DOTENV_CONFIG_QUIET = 'true';
 
+// V8 编译缓存（node ≥22.8）：26MB 单文件 bundle 的编译开销热启动可省 ~0.3-0.5s。
+// 必须在任何重模块 import 之前调用；不支持的运行时静默跳过。
+import { enableCompileCache } from 'node:module';
+if (typeof enableCompileCache === 'function') {
+  enableCompileCache();
+}
+
 import { Command } from 'commander';
 import { sessionCommand } from './commands/session';
 import { version } from '../../package.json';

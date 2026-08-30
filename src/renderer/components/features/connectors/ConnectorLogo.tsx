@@ -9,6 +9,7 @@ import feishuLogo from '../../../assets/brand/connectors/feishu.png';
 import figmaLogo from '../../../assets/brand/connectors/figma.svg';
 import firecrawlLogo from '../../../assets/brand/connectors/firecrawl.svg';
 import githubLogo from '../../../assets/brand/connectors/github.svg';
+import googleCalendarLogo from '../../../assets/brand/connectors/google-calendar.png';
 import notionLogo from '../../../assets/brand/connectors/notion.png';
 import playwrightLogo from '../../../assets/brand/connectors/playwright.svg';
 import puppeteerLogo from '../../../assets/brand/connectors/puppeteer.png';
@@ -31,6 +32,7 @@ const CONNECTOR_LOGO_ASSETS: Readonly<Record<string, string>> = {
   figma: figmaLogo,
   firecrawl: firecrawlLogo,
   github: githubLogo,
+  'google-calendar': googleCalendarLogo,
   notion: notionLogo,
   playwright: playwrightLogo,
   puppeteer: puppeteerLogo,

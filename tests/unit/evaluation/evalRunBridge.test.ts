@@ -139,8 +139,24 @@ describe('EvalRunBridge', () => {
             },
             {
               schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
-              type: 'case_end',
+              type: 'skill_activated',
               ts: started + 2,
+              runId,
+              testId: 'case-1',
+              name: 'x',
+            },
+            {
+              schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
+              type: 'skill_activated',
+              ts: started + 3,
+              runId,
+              testId: 'case-1',
+              name: 'x',
+            },
+            {
+              schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
+              type: 'case_end',
+              ts: started + 4,
               runId,
               testId: 'case-1',
               status: 'passed',
@@ -161,7 +177,7 @@ describe('EvalRunBridge', () => {
             {
               schemaVersion: EVAL_RUN_EVENT_SCHEMA_VERSION,
               type: 'run_end',
-              ts: started + 3,
+              ts: started + 5,
               runId,
               summary: {
                 runId, startTime: started, endTime: started + 2, duration: 2,
@@ -180,13 +196,19 @@ describe('EvalRunBridge', () => {
     });
     bridges.push(bridge);
 
-    const { runId } = await bridge.startRun({ scope: 'smoke', maxCases: 1, ids: ['case-1'], repeat: 3, aiReview: ['task_completed'] });
+    const { runId } = await bridge.startRun({
+      scope: 'smoke', maxCases: 1, ids: ['case-1'], repeat: 3, skills: ['x'], aiReview: ['task_completed'],
+    });
     await waitFor(() => !bridge.subscribe(runId).running);
 
-    expect(published.map((event) => event.type)).toEqual(['run_start', 'memory_injected', 'case_end', 'run_end']);
+    expect(published.map((event) => event.type)).toEqual([
+      'run_start', 'memory_injected', 'skill_activated', 'skill_activated', 'case_end', 'run_end',
+    ]);
     expect(db.insertExperiment).toHaveBeenCalledTimes(1);
     expect(db.insertExperimentCases).toHaveBeenCalledTimes(1);
     expect(JSON.parse(db.insertExperimentCases.mock.calls[0][1][0].data_json).memoryInjections).toBe(1);
+    expect(JSON.parse(db.insertExperimentCases.mock.calls[0][1][0].data_json).skillActivations)
+      .toEqual({ x: 2 });
     expect(db.updateExperimentSummary).toHaveBeenCalledTimes(1);
     expect(JSON.parse(db.updateExperimentSummary.mock.calls[0][1])).toMatchObject({
       completed: true,
@@ -199,6 +221,7 @@ describe('EvalRunBridge', () => {
       OS_SANDBOX_ENABLED: 'true',
     });
     expect(spawnedArgs).toEqual(expect.arrayContaining(['--repeat', '3']));
+    expect(spawnedArgs).toEqual(expect.arrayContaining(['--skills', 'x']));
     expect(spawnedArgs).toEqual(expect.arrayContaining(['--ai-review', 'task_completed']));
     expect(JSON.parse(db.insertExperimentCases.mock.calls[0][1][0].data_json)).toMatchObject({
       trialAggregate: { n: 3, c: 3, passAtK: 1, passCaretK: 1, rule: 'pass_caret_k' },
@@ -337,6 +360,8 @@ describe('EvalRunBridge', () => {
     await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, repeat: 0 })).rejects.toThrow(/repeat/);
     await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, repeat: 11 })).rejects.toThrow(/repeat/);
     await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, repeat: 1.5 })).rejects.toThrow(/repeat/);
+    await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, skills: [''] })).rejects.toThrow(/skills/);
+    await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, skills: 'docx' })).rejects.toThrow(/skills/);
     await expect(bridge.startRun({ scope: 'smoke', maxCases: 1, aiReview: ['unknown'] })).rejects.toThrow(/aiReview/);
     expect(spawnProcess).not.toHaveBeenCalled();
   });

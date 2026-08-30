@@ -8,7 +8,11 @@ import {
   createCompareAgent,
   resolveEffectiveCompareArm,
 } from '../../../src/host/testing/comparator/compareAgentFactory';
-import { assertCompareArmsDistinct, runCompare } from '../../../src/host/testing/comparator/runCompare';
+import {
+  assertCompareArmsActivated,
+  assertCompareArmsDistinct,
+  runCompare,
+} from '../../../src/host/testing/comparator/runCompare';
 import { generateComparisonMarkdown } from '../../../src/host/testing/comparator/comparisonReport';
 import {
   aggregateAssertionTrials,
@@ -67,7 +71,7 @@ function result(passes: boolean[], overrides: Partial<TestResult> = {}): TestRes
 }
 
 describe('统一实验臂 schema', () => {
-  it('reasoningEffort、memory 两维与 harness 六键任一变化都进入有效签名（逐键放行）', () => {
+  it('reasoningEffort、memory、skills 与 harness 六键任一变化都进入有效签名（逐项放行）', () => {
     const fullHarness: HarnessVariantConfig = {
       name: 'arm',
       contextCompression: true,
@@ -103,6 +107,13 @@ describe('统一实验臂 schema', () => {
     expect(() => assertCompareArmsDistinct(base, { ...same, memory: { longTerm: true, routingModel: 'memory-a' } })).not.toThrow();
     expect(() => assertCompareArmsDistinct(base, { ...same, memory: { longTerm: false, routingModel: 'memory-b' } })).not.toThrow();
     expect(() => assertCompareArmsDistinct(base, { ...same, reasoningEffort: 'xhigh' })).not.toThrow();
+    for (const skills of [['alpha'], ['beta'], ['alpha', 'beta']]) {
+      expect(() => assertCompareArmsDistinct(base, { ...same, skills }), JSON.stringify(skills)).not.toThrow();
+    }
+    expect(() => assertCompareArmsDistinct(
+      { ...base, skills: ['alpha', 'beta'] },
+      { ...same, skills: ['beta', 'alpha', 'beta'] },
+    )).toThrow();
   });
 
   it('构造期把长期记忆、路由模型、reasoning effort 与 harness 真传给 adapter', () => {
@@ -111,6 +122,7 @@ describe('统一实验臂 schema', () => {
       model: 'model-b',
       memory: { longTerm: true, routingModel: 'memory-b' },
       reasoningEffort: 'xhigh',
+      skills: ['skill-b', 'skill-a', 'skill-b'],
       harness: {
         name: 'candidate',
         contextCompression: false,
@@ -131,6 +143,7 @@ describe('统一实验臂 schema', () => {
       inferenceOptions?: { reasoningEffort?: string };
       modelConfig: { reasoningEffort?: string };
       harness?: { hooksEnabled?: boolean; contextCompression?: boolean };
+      skills: readonly string[];
     };
 
     expect(adapter.persistLongTermMemory).toBe(true);
@@ -138,6 +151,7 @@ describe('统一实验臂 schema', () => {
     expect(adapter.inferenceOptions?.reasoningEffort).toBe('xhigh');
     expect(adapter.modelConfig.reasoningEffort).toBe('high');
     expect(adapter.harness).toMatchObject({ hooksEnabled: true, contextCompression: false });
+    expect(adapter.skills).toEqual(['skill-a', 'skill-b']);
 
     expect(resolveEffectiveCompareArm(BASELINE, BASELINE).memory.longTerm).toBe(false);
   });
@@ -154,8 +168,73 @@ describe('统一实验臂 schema', () => {
     });
     expect(buildCompareArmShape(candidate, BASELINE, false)).toMatchObject({
       memory: true,
+      skills: [],
       harness: { name: 'candidate', hooksEnabled: true, toolMode: 'all' },
     });
+    expect(buildCompareArmShape({ ...candidate, skills: ['z', 'a', 'z'] }, BASELINE, false).skills)
+      .toEqual(['a', 'z']);
+  });
+});
+
+describe('skill 出场门', () => {
+  async function runSkillComparison(activationCount: number, orientation: 0 | 1) {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'compare-skill-'));
+    const testCase: TestCase = {
+      id: 'skill-case',
+      type: 'task',
+      description: 'skill activation',
+      prompt: 'run',
+      expect: { response_contains: ['done'] },
+    };
+    const candidate: CompareConfiguration = { name: 'candidate', skills: ['x'] };
+    const makeAgent = (config: CompareConfiguration): AgentInterface => ({
+      sendMessage: async () => ({ responses: ['done'], toolExecutions: [], turnCount: 1, errors: [] }),
+      reset: async () => undefined,
+      getAgentInfo: () => ({ name: 'mock', model: 'm', provider: 'mock' }),
+      consumeSkillActivations: () => {
+        const activations: Record<string, number> = {};
+        if (config.name === 'candidate' && activationCount > 0) activations.x = activationCount;
+        return activations;
+      },
+    });
+    const runnerConfig: TestRunnerConfig = {
+      testCaseDir: root,
+      resultsDir: path.join(root, 'results'),
+      workingDirectory: root,
+      defaultTimeout: 1000,
+      stopOnFailure: false,
+      verbose: false,
+      parallel: false,
+      maxParallel: 1,
+    };
+    const spy = vi.spyOn(crypto, 'randomInt').mockReturnValue(orientation as never);
+    try {
+      return await runCompare({ testCases: [testCase], baseline: BASELINE, candidate, makeAgent, runnerConfig });
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it('固定两种盲分配朝向：candidate 零触发逐项排除，全部未出场结论首句固定', async () => {
+    for (const orientation of [0, 1] as const) {
+      const comparison = await runSkillComparison(0, orientation);
+      expect(comparison.cases[0].assignment.A).toBe(orientation === 0 ? 'baseline' : 'candidate');
+      expect(comparison.cases[0].excludedReason).toBe('skill_not_activated');
+      expect(comparison.summary).toMatchObject({ totalCases: 0, skillNotActivatedPairs: 1 });
+      expect(comparison.summary.verdict.startsWith('skill 未出场，结论不说明 skill 效果')).toBe(true);
+      expect(() => assertCompareArmsActivated(comparison)).not.toThrow();
+      expect(generateComparisonMarkdown(comparison)).toContain('实验组 skill 未出场，不计入 | 1');
+    }
+  });
+
+  it('固定两种盲分配朝向：candidate 真实触发逐项计数并进入胜负 n', async () => {
+    for (const orientation of [0, 1] as const) {
+      const comparison = await runSkillComparison(2, orientation);
+      expect(comparison.cases[0].excludedReason).toBeUndefined();
+      expect(comparison.summary.totalCases).toBe(1);
+      expect(comparison.summary.candidateSkillActivations).toEqual({ x: 2 });
+      expect(comparison.summary.baselineSkillActivations).toEqual({});
+    }
   });
 });
 
@@ -183,11 +262,12 @@ describe('断言条级胜负', () => {
 
   it('k>1 按每条断言 pass^k 聚合', () => {
     const aggregated = aggregateAssertionTrials([
-      result([true, true]),
-      result([true, false]),
+      result([true, true], { skillActivations: { x: 1 } }),
+      result([true, false], { skillActivations: { x: 2, y: 1 } }),
     ]);
     expect(aggregated.expectationResults?.map((row) => row.passed)).toEqual([true, false]);
     expect(aggregated.score).toBe(0.5);
+    expect(aggregated.skillActivations).toEqual({ x: 3, y: 1 });
     expect(aggregated.trials).toHaveLength(2);
   });
 

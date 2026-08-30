@@ -1,5 +1,6 @@
 import type { ExpectationResult, TestResult, TestStatus } from '../types';
 import { aggregateTrials } from '../trialAggregation';
+import { mergeSkillActivations } from '../skillSelection';
 
 export interface AssertionWinnerDecision {
   winner: 'baseline' | 'candidate' | 'tie';
@@ -51,6 +52,7 @@ export function aggregateAssertionTrials(results: TestResult[]): TestResult {
     score,
     duration: results.reduce((sum, result) => sum + result.duration, 0),
     endTime: Math.max(...results.map((result) => result.endTime)),
+    skillActivations: mergeSkillActivations(results),
     expectationResults: rows,
     trialAggregate: {
       n: aggregate.trialCount,

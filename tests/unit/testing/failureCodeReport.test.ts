@@ -64,11 +64,13 @@ describe('失败原因报告', () => {
         failureA: { code: 'unknown', dispositions: ['needs_human'], symptoms: [] },
         failureB: { code: 'timeout', dispositions: ['retryable'], symptoms: ['timeout'] },
         durationA: 1, durationB: 1,
+        skillActivationsA: {}, skillActivationsB: {},
       }],
       summary: {
         totalCases: 1, baselineWins: 0, candidateWins: 0, ties: 1,
         baselineAvgScore: 0, candidateAvgScore: 0, winner: 'tie', confidence: 0,
         verdict: '未检出差异',
+        baselineSkillActivations: {}, candidateSkillActivations: {},
       },
       duration: 2,
     };

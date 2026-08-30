@@ -121,6 +121,16 @@ export function parseEvalRunEvent(value: unknown): EvalRunEvent {
       if (!statuses.has(String(value.status))) throw new Error('评测用例状态不受支持。');
       requireNumber(value, 'score');
       requireNumber(value, 'durationMs');
+      if (value.skillActivations !== undefined) {
+        if (!isRecord(value.skillActivations)) {
+          throw new Error('评测用例 skillActivations 必须是对象。');
+        }
+        for (const [name, count] of Object.entries(value.skillActivations)) {
+          if (name.length === 0 || !Number.isInteger(count) || (count as number) < 0) {
+            throw new Error('评测用例 skillActivations 含无效计数。');
+          }
+        }
+      }
       if (value.aiReview !== undefined) validateAiReview(value.aiReview);
       if (value.trialAggregate !== undefined) validateTrialAggregate(value.trialAggregate);
       if (value.failure !== undefined) {

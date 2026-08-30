@@ -243,6 +243,8 @@ describe('接线契约：eval-ci --compare 路径真的调用了两道断言', (
     // compare 专属 case-dir 接线：CLI 解析值传入 runCompareCommand，并用于 suite 加载。
     expect(activeSrc).toMatch(/runCompareCommand\(workingDir, compare, \{[^}]*caseDir[^}]*\}\)/);
     expect(activeSrc).toMatch(/loadAllTestSuites\(opts\.caseDir \?\? resolveCoreTestCaseDir\(workingDir\)\)/);
+    expect(activeSrc).toMatch(/testCase\.tags\?\.includes\(`skill:\$\{skillName\}`\)/);
+    expect(activeSrc).toContain('题集里没有针对能力 ${skillName} 的题，可能全程不出场');
     // 跑后断言调用点，且必须出现在报数（generateComparisonConsole）之前
     const activatedAt = activeSrc.indexOf('assertCompareArmsActivated(result)');
     const reportAt = activeSrc.indexOf('generateComparisonConsole(result)');

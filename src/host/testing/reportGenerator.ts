@@ -13,6 +13,11 @@ import type { AiReviewDimension } from '../../shared/contract/evaluation';
 
 type ReportFormat = 'markdown' | 'json' | 'console';
 
+function formatSkillActivationCounts(activations: Record<string, number> | undefined): string {
+  const entries = Object.entries(activations ?? {}).sort(([left], [right]) => left.localeCompare(right));
+  return entries.length > 0 ? entries.map(([name, count]) => `${name}:${count}`).join(', ') : '0';
+}
+
 function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleString('zh-CN', {
     year: 'numeric',
@@ -118,6 +123,20 @@ export function generateMarkdownReport(
   if (costSummary.unavailableCases > 0) {
     lines.push(`| usage_unavailable case | ${costSummary.unavailableCases} | — | — | — |`);
   }
+  lines.push('');
+
+  lines.push('## Skill 触发次数');
+  lines.push('');
+  lines.push('| 用例 ID | 触发次数 |');
+  lines.push('|---------|----------|');
+  const skillTotals: Record<string, number> = {};
+  for (const result of summary.results) {
+    lines.push(`| ${result.testId} | ${formatSkillActivationCounts(result.skillActivations)} |`);
+    for (const [name, count] of Object.entries(result.skillActivations ?? {})) {
+      skillTotals[name] = (skillTotals[name] ?? 0) + count;
+    }
+  }
+  lines.push(`| **汇总** | **${formatSkillActivationCounts(skillTotals)}** |`);
   lines.push('');
 
   // Progress bar
@@ -588,7 +607,7 @@ export function generateConsoleReport(summary: TestRunSummary): string {
                  result.status === 'not_run' ? '⏸️' : '⏭️';
     const duration = formatDuration(result.duration);
     const scoreStr = result.status === 'partial' ? ` (${(result.score * 100).toFixed(0)}%)` : '';
-    lines.push(`  ${icon} ${result.testId.padEnd(30)} ${duration}${scoreStr}`);
+    lines.push(`  ${icon} ${result.testId.padEnd(30)} ${duration}${scoreStr}  |  skill ${formatSkillActivationCounts(result.skillActivations)}`);
 
     if ((result.status === 'failed' || result.status === 'partial' || result.mockExcluded || result.invalid || result.status === 'not_run') && result.failureReason) {
       lines.push(`     └─ ${result.failureReason}`);
@@ -603,9 +622,16 @@ export function generateConsoleReport(summary: TestRunSummary): string {
   const notRunSegment = summary.notRun > 0 ? `  |  ⏸️ 未跑 ${summary.notRun}` : '';
   const invalidSegment = summary.invalidCases > 0 ? `  |  ⚠️ 无效题 ${summary.invalidCases}` : '';
   const costSummary = summarizeCostUsage(summary.results);
+  const skillTotals = summary.results.reduce<Record<string, number>>((totals, result) => {
+    for (const [name, count] of Object.entries(result.skillActivations ?? {})) {
+      totals[name] = (totals[name] ?? 0) + count;
+    }
+    return totals;
+  }, {});
   lines.push(`  Total: ${summary.total}  |  ✅ ${summary.passed}  |  🟡 ${summary.partial}  |  ❌ ${summary.failed}  |  ⏭️ ${summary.skipped}${mockSegment}${infraSegment}${costSegment}${notRunSegment}${invalidSegment}`);
   lines.push(`  Duration: ${formatDuration(summary.duration)}  |  ${mainMetricLabel}: ${getPassRate(summary)}%  |  Avg score: ${(summary.averageScore * 100).toFixed(1)}%`);
   lines.push(`  Cost: $${costSummary.costUsd.toFixed(6)}  |  Provider usage: ${costSummary.availableCases}/${summary.results.length} cases${costSummary.unavailableCases > 0 ? `  |  usage_unavailable ${costSummary.unavailableCases}` : ''}`);
+  lines.push(`  Skill activations: ${formatSkillActivationCounts(skillTotals)}`);
   lines.push('═══════════════════════════════════════════════════════');
   lines.push('');
 

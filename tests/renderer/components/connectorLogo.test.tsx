@@ -23,6 +23,20 @@ describe('ConnectorLogo', () => {
     expect(screen.queryByTestId('fallback-icon')).toBeNull();
   });
 
+  it('renders the Google Calendar brand asset', () => {
+    render(
+      <ConnectorLogo
+        id="google-calendar"
+        displayName="Google Calendar"
+        fallback={<Plug data-testid="fallback-icon" />}
+      />,
+    );
+
+    const logo = screen.getByRole('img', { name: 'Google Calendar' });
+    expect(logo.getAttribute('src')).toMatch(/google-calendar\.png$/u);
+    expect(screen.queryByTestId('fallback-icon')).toBeNull();
+  });
+
   it('falls back to the existing icon when the logo field is absent', () => {
     render(
       <ConnectorLogo

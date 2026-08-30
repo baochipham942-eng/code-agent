@@ -35,6 +35,11 @@ const CASES: TestCase[] = [
     description: 'first case',
     prompt: 'do thing one',
     expect: { response_contains: ['done'] },
+    expectations: [{
+      type: 'response_contains',
+      description: 'candidate detail marker',
+      params: { text: 'detailed explanation' },
+    }],
   },
   {
     id: 'case-2',
@@ -42,6 +47,11 @@ const CASES: TestCase[] = [
     description: 'second case',
     prompt: 'do thing two',
     expect: { response_contains: ['done'] },
+    expectations: [{
+      type: 'response_contains',
+      description: 'candidate detail marker',
+      params: { text: 'detailed explanation' },
+    }],
   },
 ];
 
@@ -49,7 +59,7 @@ function makeAgentFactory(log: Array<{ config: string; prompt: string }>) {
   return (config: CompareConfiguration): AgentInterface => ({
     sendMessage: async (prompt: string) => {
       log.push({ config: config.name, prompt });
-      // candidate 输出明显更强（更长响应 + 工具调用），heuristic grader 应判它赢
+      // candidate 命中确定性断言；更长响应/工具调用只影响参考列。
       if (config.name === 'candidate') {
         return {
           responses: ['done. ' + 'detailed explanation of the work performed. '.repeat(30)],
@@ -120,7 +130,7 @@ describe('runCompare 接线', () => {
     }
   });
 
-  it('盲测后正确 unblind：更强的 candidate 赢，与 A/B 随机分配无关', async () => {
+  it('盲测后正确 unblind：断言通过率更高的 candidate 赢，与 A/B 随机分配无关', async () => {
     const root = await makeWorkDir();
 
     const result = await runCompare({

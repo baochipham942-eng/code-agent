@@ -13,6 +13,7 @@ import { DEFAULT_MODELS, MODEL_API_ENDPOINTS, MODEL_FEATURES, QUICK_MODEL_AUTH_B
 import { getConfigService } from '../services/core/configService';
 import { getProviderLimiter } from './concurrencyLimiter';
 import { isZhipuFreeModel, resolveProviderApiKey, resolveProviderBaseUrl } from './providers/providerResolution';
+import { getMemoryModelOverride, type MemoryModelOverride } from './memoryModelOverrideScope';
 import type { ModelConfig, ModelProvider } from '../../shared/contract';
 
 const logger = createLogger('QuickModel');
@@ -271,6 +272,28 @@ function resolveRole(
   return { apiKey, baseUrl, model, provider, disableThinking: isThinkingModel(model), routeSource };
 }
 
+function resolveMemoryOverride(override: MemoryModelOverride): QuickModelConfig | null {
+  if (isProviderExplicitlyDisabled(override.provider)) return null;
+  const modelConfig = {
+    provider: override.provider as ModelProvider,
+    model: override.model,
+    apiKey: override.apiKey,
+    baseUrl: override.baseUrl,
+  } as ModelConfig;
+  const apiKey = override.apiKey ?? resolveProviderApiKey(modelConfig, { trustConfigKey: false });
+  if (!apiKey || isAuthBlacklisted(override.provider, override.model, apiKey)) return null;
+  const baseUrl = override.baseUrl ?? resolveProviderBaseUrl({ ...modelConfig, apiKey });
+  if (!baseUrl) return null;
+  return {
+    apiKey,
+    baseUrl,
+    model: override.model,
+    provider: override.provider,
+    disableThinking: isThinkingModel(override.model),
+    routeSource: 'memory',
+  };
+}
+
 function pushUniqueCandidate(resolved: QuickModelConfig[], candidate: QuickModelConfig | null): void {
   if (!candidate) return;
   if (resolved.some((current) => (
@@ -291,6 +314,10 @@ function pushUniqueCandidate(resolved: QuickModelConfig[], candidate: QuickModel
 function initializeQuickModelCandidates(route: 'quick' | 'memory' = 'quick'): QuickModelConfig[] {
   const resolved: QuickModelConfig[] = [];
   try {
+    if (route === 'memory') {
+      const override = getMemoryModelOverride();
+      if (override) pushUniqueCandidate(resolved, resolveMemoryOverride(override));
+    }
     const routing = getConfigService().getSettings().models.routing;
     if (route === 'memory' && routing.memory) {
       pushUniqueCandidate(

@@ -1,4 +1,4 @@
-import { PassThrough } from 'stream';
+import { PassThrough } from 'node:stream';
 import { EventEmitter } from 'events';
 import * as os from 'os';
 import * as path from 'path';

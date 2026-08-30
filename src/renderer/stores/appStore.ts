@@ -510,7 +510,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showCapturePanel: false, // Capture panel hidden by default
   showDesktopPanel: false,
   showLocalOpsPanel: false,
-  localOpsTab: 'desktop',
+  localOpsTab: 'browser',
   showEvalCenter: false,
   evalCenterTab: 'replay', evalCenterReplaySessionId: null,
   pendingInAppValidationRequest: null,
@@ -687,7 +687,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   openLocalOpsPanel: (tab) => set({
     ...SECONDARY_PAGES_CLOSED,
     showLocalOpsPanel: true,
-    localOpsTab: tab || 'desktop',
+    localOpsTab: tab || 'browser',
   }),
   // 旧入口（MCPSettings 连接器卡片、computerUse.open 快捷键）走 shim 进合并页，UI 不再直接引用旧开关。
   setShowComputerUsePanel: (show) => (show ? get().openLocalOpsPanel('desktop') : get().setShowLocalOpsPanel(false)),

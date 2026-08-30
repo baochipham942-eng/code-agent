@@ -48,6 +48,11 @@ import {
   default as builtinComputerUseEntry,
 } from './builtin/computerUse';
 import {
+  COMPUTER_USE_CAPABILITY_ID,
+  isComputerUseCapabilityInstalledSync,
+  migrateLegacyComputerUseEnv,
+} from './builtin/computerUse/installState';
+import {
   manifest as builtinPhotoArchiveManifest,
   default as builtinPhotoArchiveEntry,
 } from './builtin/photoArchive';
@@ -225,7 +230,7 @@ export class PluginRegistry {
     initPluginStorageTable();
 
     // Load builtin plugins first（硬编码列表，与 host 同 bundle，不走磁盘 discovery）
-    this.loadBuiltinPlugins();
+    await this.loadBuiltinPlugins();
 
     // Discover and load third-party plugins from disk
     const plugins = await discoverPlugins();
@@ -252,7 +257,14 @@ export class PluginRegistry {
    *
    * 新增 builtin plugin 时在下方数组追加一条即可。
    */
-  private loadBuiltinPlugins(): void {
+  private async loadBuiltinPlugins(): Promise<void> {
+    try {
+      await migrateLegacyComputerUseEnv();
+    } catch (error) {
+      logger.warn('Failed to persist legacy Computer Use migration; keeping runtime compatibility', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     const builtinPlugins: Array<{
       manifest: import('./types').PluginManifest;
       entry: import('./types').PluginEntry;
@@ -281,10 +293,10 @@ export class PluginRegistry {
         manifest: builtinBrowserControlManifest,
         entry: builtinBrowserControlEntry,
       },
-      {
+      ...(isComputerUseCapabilityInstalledSync() ? [{
         manifest: builtinComputerUseManifest,
         entry: builtinComputerUseEntry,
-      },
+      }] : []),
       {
         manifest: builtinPhotoArchiveManifest,
         entry: builtinPhotoArchiveEntry,
@@ -302,6 +314,33 @@ export class PluginRegistry {
       this.plugins.set(manifest.id, loadedPlugin);
       logger.info(`Loaded builtin plugin: ${manifest.id}`);
     }
+  }
+
+  async installBuiltinCapability(pluginId: string): Promise<boolean> {
+    if (pluginId !== COMPUTER_USE_CAPABILITY_ID) return false;
+    const existing = this.plugins.get(pluginId);
+    if (existing) return this.activatePlugin(pluginId);
+
+    const plugin: LoadedPlugin = {
+      manifest: builtinComputerUseManifest,
+      rootPath: `builtin:${pluginId}`,
+      state: 'inactive',
+      entry: builtinComputerUseEntry,
+      registeredTools: [],
+    };
+    this.plugins.set(pluginId, plugin);
+    if (await this.activatePlugin(pluginId)) return true;
+    this.plugins.delete(pluginId);
+    return false;
+  }
+
+  async removeBuiltinCapability(pluginId: string): Promise<boolean> {
+    if (pluginId !== COMPUTER_USE_CAPABILITY_ID) return false;
+    const plugin = this.plugins.get(pluginId);
+    if (plugin?.rootPath !== `builtin:${pluginId}`) return false;
+    if (!await this.deactivatePlugin(pluginId)) return false;
+    this.plugins.delete(pluginId);
+    return true;
   }
 
   /**

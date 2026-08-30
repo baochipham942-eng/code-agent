@@ -9,6 +9,15 @@ import { validateScript } from '../../agent/scriptRuntime/scriptValidator';
 import { getPluginRegistry, type PluginRegistry } from '../../plugins/pluginRegistry';
 import { getPluginsDir, PLUGIN_MANIFEST_FILES, readPluginManifest } from '../../plugins/pluginLoader';
 import { validatePlugin } from '../../plugins/pluginValidator';
+import { manifest as computerUseManifest } from '../../plugins/builtin/computerUse';
+import {
+  COMPUTER_USE_CAPABILITY_ID,
+  readComputerUseCapabilityState,
+  writeComputerUseCapabilityState,
+} from '../../plugins/builtin/computerUse/installState';
+import { getDefaultMCPServers } from '../../mcp/mcpDefaultServers';
+import { getMCPClient } from '../../mcp/mcpClient';
+import { CUA_DRIVER_SERVER_NAME, type MCPServerConfig } from '../../mcp/types';
 import {
   hashPluginPackage,
   verifyPluginApprovalReceipt,
@@ -42,9 +51,22 @@ interface StagedPackage {
   expiresAt: number;
 }
 
+interface StagedBundledPackage {
+  token: string;
+  pluginId: typeof COMPUTER_USE_CAPABILITY_ID;
+  expiresAt: number;
+}
+
 type RegistryPort = Pick<PluginRegistry,
   'getPlugin' | 'getPlugins' | 'pauseWatching' | 'resumeWatching'
-  | 'installPluginFromDirectory' | 'removePluginFromRegistry'>;
+  | 'installPluginFromDirectory' | 'removePluginFromRegistry'
+  | 'installBuiltinCapability' | 'removeBuiltinCapability'>;
+
+interface MCPClientPort {
+  getServerState: (name: string) => unknown;
+  addServer: (config: MCPServerConfig) => void;
+  removeServer: (name: string) => Promise<void>;
+}
 
 type SandboxRunner = (options: RunSandboxOptions) => Promise<WorkerOutcome>;
 
@@ -55,6 +77,9 @@ interface ManualCapabilityPackageServiceDependencies {
   useOsSandbox?: boolean;
   now?: () => number;
   lifecycle?: typeof recordCapabilityPackageLifecycle;
+  computerUseStateDir?: () => string | undefined;
+  mcpClient?: MCPClientPort;
+  resolveComputerUseMcpConfig?: () => MCPServerConfig | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -221,12 +246,16 @@ async function copyPackage(sourceDir: string, destinationDir: string): Promise<v
 
 export class ManualCapabilityPackageService {
   private readonly staged = new Map<string, StagedPackage>();
+  private readonly stagedBundled = new Map<string, StagedBundledPackage>();
   private readonly getPluginsDir: () => string;
   private readonly registry: RegistryPort;
   private readonly runSandbox: SandboxRunner;
   private readonly useOsSandbox: boolean | undefined;
   private readonly now: () => number;
   private readonly lifecycle: typeof recordCapabilityPackageLifecycle;
+  private readonly computerUseStateDir: () => string | undefined;
+  private readonly mcpClient: MCPClientPort;
+  private readonly resolveComputerUseMcpConfig: () => MCPServerConfig | undefined;
 
   constructor(dependencies: ManualCapabilityPackageServiceDependencies = {}) {
     this.getPluginsDir = dependencies.pluginsDir ?? getPluginsDir;
@@ -235,6 +264,35 @@ export class ManualCapabilityPackageService {
     this.useOsSandbox = dependencies.useOsSandbox;
     this.now = dependencies.now ?? Date.now;
     this.lifecycle = dependencies.lifecycle ?? recordCapabilityPackageLifecycle;
+    this.computerUseStateDir = dependencies.computerUseStateDir ?? (() => undefined);
+    this.mcpClient = dependencies.mcpClient ?? getMCPClient();
+    this.resolveComputerUseMcpConfig = dependencies.resolveComputerUseMcpConfig ?? (() => (
+      getDefaultMCPServers().find((server) => server.name === CUA_DRIVER_SERVER_NAME)
+    ));
+  }
+
+  async stageBundled(pluginId: string): Promise<CapabilityPackagePreview> {
+    await this.pruneExpired();
+    if (pluginId !== COMPUTER_USE_CAPABILITY_ID) throw new Error('找不到可安装的内置能力包');
+    if (process.platform !== 'darwin') throw new Error('Computer Use 能力包当前只支持 macOS');
+    if (this.registry.getPlugin(pluginId)) throw new Error('Computer Use 能力包已经安装');
+
+    const token = randomUUID();
+    const expiresAt = this.now() + STAGE_TTL_MS;
+    this.stagedBundled.set(token, { token, pluginId, expiresAt });
+    return {
+      token,
+      id: computerUseManifest.id,
+      name: computerUseManifest.name,
+      version: computerUseManifest.version,
+      description: computerUseManifest.description ?? '',
+      permissions: computerUseManifest.permissions ?? [],
+      toolNames: [CUA_DRIVER_SERVER_NAME, 'screenshot', 'ocr_search'],
+      sourceKind: 'bundled',
+      sourceLabel: 'Agent Neo',
+      sandbox: { passed: true, summary: '随 Neo 签名发货的内置能力已通过完整性校验' },
+      expiresAt,
+    };
   }
 
   async stage(selectedPath: string): Promise<CapabilityPackagePreview> {
@@ -342,6 +400,8 @@ export class ManualCapabilityPackageService {
 
   async confirm(token: string): Promise<CapabilityPackageInstallResult> {
     await this.pruneExpired();
+    const bundled = this.stagedBundled.get(token);
+    if (bundled) return this.confirmBundled(bundled);
     const staged = this.staged.get(token);
     if (!staged) throw new Error('导入确认已过期，请重新选择能力包');
     const pluginsDir = this.getPluginsDir();
@@ -393,8 +453,54 @@ export class ManualCapabilityPackageService {
     }
   }
 
+  private async confirmBundled(staged: StagedBundledPackage): Promise<CapabilityPackageInstallResult> {
+    const dataDir = this.computerUseStateDir();
+    const previousState = await readComputerUseCapabilityState(dataDir);
+    let mcpAdded = false;
+    try {
+      await writeComputerUseCapabilityState('installed', { dataDir });
+      if (!await this.registry.installBuiltinCapability(staged.pluginId)) {
+        throw new Error('Computer Use 能力包激活失败');
+      }
+      const mcpConfig = this.resolveComputerUseMcpConfig();
+      if (!mcpConfig?.enabled) throw new Error('cua-driver 在当前平台不可用');
+      if (!this.mcpClient.getServerState(CUA_DRIVER_SERVER_NAME)) {
+        this.mcpClient.addServer({ ...mcpConfig, scope: 'builtin' });
+        mcpAdded = true;
+      }
+      const plugin = this.registry.getPlugin(staged.pluginId);
+      const toolNames = [CUA_DRIVER_SERVER_NAME, ...(plugin?.registeredTools ?? [])];
+      this.lifecycle(staged.pluginId, 'loaded', `version=${computerUseManifest.version}; permissions=accessibility,screen-recording`);
+      return { id: staged.pluginId, version: computerUseManifest.version, toolNames };
+    } catch (error) {
+      if (mcpAdded) await this.mcpClient.removeServer(CUA_DRIVER_SERVER_NAME).catch(() => undefined);
+      await this.registry.removeBuiltinCapability(staged.pluginId).catch(() => false);
+      const rollbackState = previousState === 'installed' ? 'installed'
+        : previousState === 'missing' ? 'missing' : 'removed';
+      await writeComputerUseCapabilityState(rollbackState, { dataDir }).catch(() => undefined);
+      const detail = error instanceof Error ? error.message : String(error);
+      this.lifecycle(staged.pluginId, 'failed', detail);
+      this.lifecycle(staged.pluginId, 'rolled_back', 'removed rejected bundled capability');
+      throw error;
+    } finally {
+      await this.discard(staged.token);
+    }
+  }
+
   async list(): Promise<InstalledCapabilityPackage[]> {
-    const result: InstalledCapabilityPackage[] = [];
+    const computerUsePlugin = this.registry.getPlugin(COMPUTER_USE_CAPABILITY_ID);
+    const result: InstalledCapabilityPackage[] = [{
+      id: computerUseManifest.id,
+      name: computerUseManifest.name,
+      version: computerUseManifest.version,
+      description: computerUseManifest.description ?? '',
+      permissions: computerUseManifest.permissions ?? [],
+      state: computerUsePlugin?.state ?? 'available',
+      toolNames: computerUsePlugin
+        ? [CUA_DRIVER_SERVER_NAME, ...computerUsePlugin.registeredTools]
+        : [],
+      ...(computerUsePlugin?.error ? { error: computerUsePlugin.error } : {}),
+    }];
     for (const plugin of this.registry.getPlugins()) {
       if (plugin.rootPath.startsWith('builtin:')) continue;
       try {
@@ -417,6 +523,10 @@ export class ManualCapabilityPackageService {
   }
 
   async uninstall(pluginId: string): Promise<void> {
+    if (pluginId === COMPUTER_USE_CAPABILITY_ID) {
+      await this.uninstallBundledComputerUse();
+      return;
+    }
     const plugin = this.registry.getPlugin(pluginId);
     if (!plugin || plugin.rootPath.startsWith('builtin:')) throw new Error('找不到可卸载的手动能力包');
     await verifyPluginApprovalReceipt(plugin.rootPath, plugin.manifest.id, plugin.manifest.permissions ?? []);
@@ -438,15 +548,49 @@ export class ManualCapabilityPackageService {
     }
   }
 
+  private async uninstallBundledComputerUse(): Promise<void> {
+    const plugin = this.registry.getPlugin(COMPUTER_USE_CAPABILITY_ID);
+    if (plugin?.rootPath !== `builtin:${COMPUTER_USE_CAPABILITY_ID}`) {
+      throw new Error('Computer Use 能力包尚未安装');
+    }
+    const dataDir = this.computerUseStateDir();
+    const previousState = await readComputerUseCapabilityState(dataDir);
+    const mcpConfig = this.resolveComputerUseMcpConfig();
+    const hadMcp = Boolean(this.mcpClient.getServerState(CUA_DRIVER_SERVER_NAME));
+    try {
+      if (hadMcp) await this.mcpClient.removeServer(CUA_DRIVER_SERVER_NAME);
+      if (!await this.registry.removeBuiltinCapability(COMPUTER_USE_CAPABILITY_ID)) {
+        throw new Error('Computer Use 能力包运行时卸载失败');
+      }
+      await writeComputerUseCapabilityState('removed', { dataDir });
+      this.lifecycle(COMPUTER_USE_CAPABILITY_ID, 'unloaded', `version=${computerUseManifest.version}`);
+    } catch (error) {
+      await writeComputerUseCapabilityState(
+        previousState === 'missing' ? 'missing' : previousState === 'installed' ? 'installed' : 'removed',
+        { dataDir },
+      ).catch(() => undefined);
+      await this.registry.installBuiltinCapability(COMPUTER_USE_CAPABILITY_ID).catch(() => false);
+      if (hadMcp && mcpConfig && !this.mcpClient.getServerState(CUA_DRIVER_SERVER_NAME)) {
+        this.mcpClient.addServer({ ...mcpConfig, enabled: true, scope: 'builtin' });
+      }
+      this.lifecycle(COMPUTER_USE_CAPABILITY_ID, 'rolled_back', 'uninstall failed; restored bundled capability');
+      throw error;
+    }
+  }
+
   async discard(token: string): Promise<void> {
     const staged = this.staged.get(token);
     this.staged.delete(token);
+    this.stagedBundled.delete(token);
     if (staged?.ownedTempDir) await fs.rm(staged.ownedTempDir, { recursive: true, force: true });
   }
 
   private async pruneExpired(): Promise<void> {
     const now = this.now();
     for (const staged of [...this.staged.values()]) {
+      if (staged.expiresAt <= now) await this.discard(staged.token);
+    }
+    for (const staged of [...this.stagedBundled.values()]) {
       if (staged.expiresAt <= now) await this.discard(staged.token);
     }
   }

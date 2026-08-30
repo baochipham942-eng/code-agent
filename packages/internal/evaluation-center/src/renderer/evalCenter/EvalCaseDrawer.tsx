@@ -14,6 +14,7 @@ import { Button } from '@renderer/components/primitives/Button';
 import { IconButton } from '@renderer/components/primitives/IconButton';
 import { EvalCaseTranscript } from './EvalCaseTranscript';
 import { EvalCaseChecks } from './EvalCaseChecks';
+import { EvalCaseAnnotation } from './EvalCaseAnnotation';
 
 function fill(template: string, values: Record<string, string | number>): string {
   return Object.entries(values).reduce(
@@ -137,7 +138,7 @@ export const EvalCaseDrawer: React.FC<EvalCaseDrawerProps> = ({ target, onClose 
       {loadState === 'error' && <p className="p-4 text-sm text-zinc-500">{fill(labels.loadFailed, { message: loadError })}</p>}
       {loadState === 'ready' && detail && (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className={excluded ? 'bg-badge-warning px-4 py-3 text-sm font-medium text-badge-warning' : 'bg-[var(--bg-active)] px-4 py-3 text-sm font-medium text-zinc-200'}>
+          <div data-testid="eval-case-conclusion" className={excluded ? 'bg-badge-warning px-4 py-3 text-sm font-medium text-badge-warning' : 'bg-[var(--bg-active)] px-4 py-3 text-sm font-medium text-zinc-200'}>
             {conclusion}
           </div>
 
@@ -193,6 +194,8 @@ export const EvalCaseDrawer: React.FC<EvalCaseDrawerProps> = ({ target, onClose 
               excludedStatusLabel={statusLabel}
             />
           </section>
+
+          <EvalCaseAnnotation target={target} />
 
           <section className="px-4 py-4">
             <h3 className="mb-3 text-xs font-medium text-zinc-300">{labels.source}</h3>

@@ -14,8 +14,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import {
-  DEFAULT_PROVIDER,
-  DEFAULT_MODELS,
   PROVIDER_REGISTRY,
   getProviderInfo,
   normalizeProviderId,
@@ -193,19 +191,6 @@ export const chatCommand = new Command('chat')
       // 初始化统一命令注册表
       initializeCommands();
 
-      if (!isJsonMode) {
-        // 显示欢迎横幅
-        const db = getDatabaseService();
-        const stats = db?.getStats();
-        terminalOutput.welcome(version, {
-          model: globalOpts?.model || DEFAULT_MODELS.chat,
-          provider: globalOpts?.provider || DEFAULT_PROVIDER,
-          workingDirectory: globalOpts?.project || process.cwd(),
-          sessionCount: stats?.sessionCount,
-          messageCount: stats?.messageCount,
-        });
-      }
-
       // 创建 Agent
       const agent = await createCLIAgent({
         project: globalOpts?.project,
@@ -219,6 +204,28 @@ export const chatCommand = new Command('chat')
         disallowedTools: options.disallowedTools,
         statusFile: options.statusFile,
       });
+
+      // Ink TUI：TTY 默认界面；非 TTY / 管道 / json 模式回落 readline 线性模式。
+      // NEO_DISABLE_INK_TUI=1 为回退逃生门。
+      const useInkTui = !isJsonMode
+        && Boolean(process.stdin.isTTY && process.stdout.isTTY)
+        && process.env.NEO_DISABLE_INK_TUI !== '1';
+
+      if (!isJsonMode && !useInkTui) {
+        // 显示欢迎横幅：展示 agent 实际解析出的 provider/model（config 默认或 flag），
+        // 不能用 DEFAULT_* 常量——否则配置了自定义默认的用户看到错误的模型名。
+        // Ink 模式下欢迎卡由 TUI 内 WelcomeCard 全屏居中渲染，不再打 scrollback 横幅。
+        const db = getDatabaseService();
+        const stats = db?.getStats();
+        const resolved = agent.getConfig().modelConfig;
+        terminalOutput.welcome(version, {
+          model: resolved.model,
+          provider: resolved.provider,
+          workingDirectory: globalOpts?.project || process.cwd(),
+          sessionCount: stats?.sessionCount,
+          messageCount: stats?.messageCount,
+        });
+      }
 
       // 恢复会话
       if (options.session) {
@@ -260,23 +267,25 @@ export const chatCommand = new Command('chat')
         terminalOutput.warning('--tui 已移除：Ink 界面已是 TTY 默认交互模式（非 TTY 自动回落线性模式）');
       }
 
-      // Ink TUI：TTY 默认界面；非 TTY / 管道 / json 模式回落 readline 线性模式。
-      // NEO_DISABLE_INK_TUI=1 为回退逃生门。
-      const useInkTui = !isJsonMode
-        && Boolean(process.stdin.isTTY && process.stdout.isTTY)
-        && process.env.NEO_DISABLE_INK_TUI !== '1';
       if (useInkTui) {
         const { runInkChat } = await (inkRunnerPromise ?? import('../tui-app/inkRunner'));
         const { buildSlashItems } = await import('../tui-app/slashCommands');
         const { captureConsoleOutput } = await import('./captureConsoleOutput');
         const { execSync } = await import('child_process');
-        // git 分支（StatusBar 显示；非 git 仓库静默为空）
+        // git 分支 + 脏标（StatusBar 显示；非 git 仓库静默为空。
+        // 脏标只看已跟踪文件的改动（--untracked-files=no）——仓库级 scratchpad/
+        // 这类长期未跟踪文件不该让 * 常亮失去信息量）
         let gitBranch = '';
+        let gitDirty = false;
         try {
           gitBranch = execSync('git rev-parse --abbrev-ref HEAD 2>/dev/null', {
             cwd: globalOpts?.project || process.cwd(),
             encoding: 'utf-8',
           }).trim();
+          gitDirty = execSync('git status --porcelain --untracked-files=no 2>/dev/null', {
+            cwd: globalOpts?.project || process.cwd(),
+            encoding: 'utf-8',
+          }).trim().length > 0;
         } catch { /* not in git repo */ }
         // Ink 里执行真 slash 命令：console 输出捕获成系统消息渲染；
         // /exit 通过注入的 onExit 转成退出信号
@@ -309,8 +318,12 @@ export const chatCommand = new Command('chat')
         );
         await runInkChat(agent, {
           cwd: globalOpts?.project || process.cwd(),
-          model: globalOpts?.model || DEFAULT_MODELS.chat,
+          // StatusBar 初始模型：与 banner 同源，用 agent 实际解析值（/model 切换后由事件流刷新）
+          model: agent.getConfig().modelConfig.model,
+          provider: agent.getConfig().modelConfig.provider,
+          version,
           gitBranch,
+          gitDirty,
           onCommand,
           onShellCommand,
           slashItems,

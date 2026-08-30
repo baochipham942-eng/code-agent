@@ -27,6 +27,7 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
     CREATE INDEX IF NOT EXISTS idx_experiments_timestamp ON experiments(timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_experiments_source ON experiments(source);
     CREATE INDEX IF NOT EXISTS idx_experiment_cases_experiment ON experiment_cases(experiment_id);
+    CREATE INDEX IF NOT EXISTS idx_annotations_case ON annotations(experiment_id, case_id, created_at);
   `);
 
   // 性能优化：复合索引（首轮响应加速）

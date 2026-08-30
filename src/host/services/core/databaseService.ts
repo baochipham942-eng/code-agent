@@ -28,9 +28,9 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 import { SessionForkError } from '../../../shared/contract/sessionFork';
 
 // Re-export types from repositories（保持外部调用方零修改）
-export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
+export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution, AnnotationRow } from './repositories';
 
-import { SessionRepository, SessionForkRepository, SessionForkWorkspaceRepository, ConversationBranchRepository, SessionForkPortabilityRepository, digestSessionForkAnchorMessage, isCompletedSessionForkAnchor, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, VoiceCallAuditRepository, type VoiceAuditMessage, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository, TurnCostRepository, findLatestExpertThreadSession } from './repositories';
+import { SessionRepository, SessionForkRepository, SessionForkWorkspaceRepository, ConversationBranchRepository, SessionForkPortabilityRepository, digestSessionForkAnchorMessage, isCompletedSessionForkAnchor, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, AnnotationRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, VoiceCallAuditRepository, type VoiceAuditMessage, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, type AnnotationRow, AgentWakeRepository, TurnCostRepository, findLatestExpertThreadSession } from './repositories';
 import type {
   CreateForkRepositoryInput,
   CreateForkRepositoryResult,
@@ -237,6 +237,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   private configRepo!: ConfigRepository;
   private captureRepo!: CaptureRepository;
   private experimentRepo!: ExperimentRepository;
+  private annotationRepo!: AnnotationRepository;
   private projectRepo!: ProjectRepository;
   private swarmTraceRepo!: SwarmTraceRepo;
   private pendingApprovalRepo!: PendingApprovalRepository;
@@ -400,6 +401,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       this.configRepo = new ConfigRepository(this.db);
       this.captureRepo = new CaptureRepository(this.db);
       this.experimentRepo = new ExperimentRepository(this.db);
+      this.annotationRepo = new AnnotationRepository(this.db);
       this.projectRepo = new ProjectRepository(this.db);
       const projectSourcesMigrated = this.projectRepo.backfillProjectSources(Date.now());
       if (projectSourcesMigrated > 0) {
@@ -3118,6 +3120,14 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   loadExperimentCase(experimentId: string, caseId: string) {
     this.ensureDb();
     return this.experimentRepo.loadExperimentCase(experimentId, caseId);
+  }
+  insertAnnotation(row: AnnotationRow): void {
+    this.ensureDb();
+    this.annotationRepo.insert(row);
+  }
+  listAnnotationsForCase(experimentId: string, caseId: string): AnnotationRow[] {
+    this.ensureDb();
+    return this.annotationRepo.listForCase(experimentId, caseId);
   }
   updateExperimentSummary(id: string, summaryJson: string): void {
     this.ensureDb();

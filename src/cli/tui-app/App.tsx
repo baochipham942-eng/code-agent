@@ -22,10 +22,13 @@ import { setInteractiveApprovalProvider } from '../permissionPolicy';
 import { approvalOptions, SessionAllowList, type ApprovalChoice } from './approval';
 import { ApprovalCard } from './ApprovalCard';
 import { getAllBackgroundTasks, onBackgroundTaskLifecycleEvent } from '../../host/tools/shell/backgroundTasks';
+import { pickStartupTip } from './tips';
+import { WelcomeCard } from './WelcomeCard';
 import {
   buildTerminalNotification,
   FOCUS_REPORTING_DISABLE,
   FOCUS_REPORTING_ENABLE,
+  isFocusEventInput,
   parseFocusEvent,
   shouldTerminalNotify,
 } from './terminalNotification';
@@ -80,8 +83,14 @@ interface InkCommandResult {
 export interface InkChatOptions {
   cwd: string;
   model: string;
+  /** 当前 provider（WelcomeCard 显示 provider/model；/model 切换后由事件流刷新） */
+  provider?: string;
+  /** 产品版本（WelcomeCard 显示） */
+  version?: string;
   /** git 分支（StatusBar 显示；取不到传空串） */
   gitBranch: string;
+  /** 工作树有未提交改动（StatusBar 分支名后加 *） */
+  gitDirty?: boolean;
   /** slash 命令执行入口（chat.ts 注入，内部走统一 handleCommand） */
   onCommand: (input: string) => Promise<InkCommandResult>;
   /** `!` shell 直通入口（chat.ts 注入，内部走 ToolExecutor 正式链路） */
@@ -128,10 +137,12 @@ function ctxBar(percent: number): string {
   return '▓'.repeat(filled) + '░'.repeat(5 - filled);
 }
 
-function StatusBar({ state, cwd, gitBranch, fallbackModel, columns, bgTasks }: {
+function StatusBar({ state, cwd, gitBranch, gitDirty, fallbackModel, columns, bgTasks }: {
   state: ChatState;
   cwd: string;
   gitBranch: string;
+  /** 工作树有未提交改动（不含未跟踪文件）时分支名后加 *（Claude Code 同款） */
+  gitDirty?: boolean;
   fallbackModel: string;
   columns: number;
   /** 运行中的后台任务数（0 = 不显示该分段） */
@@ -150,8 +161,8 @@ function StatusBar({ state, cwd, gitBranch, fallbackModel, columns, bgTasks }: {
     state.lastTurnMs != null ? formatDuration(state.lastTurnMs) : '',
     state.running ? 'running' : 'idle',
   ].filter(Boolean).join('  ');
-  // 单行合成：中段 cwd(branch) 按剩余宽度截断，保证永不折行（布局预算按 1 行算）
-  const middleFull = `${cwd}${gitBranch ? ` (${gitBranch})` : ''}`;
+  // 单行合成：中段 cwd(branch*) 按剩余宽度截断，保证永不折行（布局预算按 1 行算）
+  const middleFull = `${cwd}${gitBranch ? ` (${gitBranch}${gitDirty ? '*' : ''})` : ''}`;
   const middleBudget = columns - 2 - displayWidth(leftText) - displayWidth(rightText) - 4;
   const middle = middleBudget >= 8 && displayWidth(middleFull) > middleBudget
     ? middleFull.slice(0, Math.max(1, middleBudget - 1)) + '…'
@@ -543,6 +554,9 @@ export function App({ agent, options, onExit }: {
   }, [setEditor]);
 
   useInput((input, key) => {
+    // 焦点事件残片（DECSET 1004 的 \x1b[I/\x1b[O 被 Ink 剥 ESC 后成 '[I'/'[O'）：
+    // 丢弃，不进草稿、不触发任何快捷键
+    if (isFocusEventInput(input)) return;
     // 审批卡接管键盘：数字直选、↑↓+Enter、Tab 展开 diff、Esc/Ctrl+C = reject（agent 继续）
     const pendingApproval = approvalRef.current;
     if (pendingApproval) {
@@ -916,10 +930,9 @@ export function App({ agent, options, onExit }: {
     ? (searchMatches[Math.min(historySearch.index, searchMatches.length - 1)] ?? null)
     : null;
 
-  // ── 紧凑流式布局（2026-08-30 用户实测决策）──
-  // 动态块 = 内容自然高（封顶 rows）：空会话不再整屏留白（Claude Code/Codex
-  // 同款流式）；内容超高时回退 P3 钉顶满高 + 预算截尾（Ink v7 裁剪护栏保留）。
-  // StatusBar 从钉顶移到输入框下（status line 下置，与两家一致）。
+  // ── 全屏钉底布局（2026-08-31 用户实测决策：Grok 式全屏零噪音首屏）──
+  // 动态块恒等于终端行高：输入区钉在屏幕底部，留白在内容之上；
+  // live 消息预算分配防溢出（Ink v7 裁剪护栏保留）。StatusBar 在输入框下。
   const rows = stdout?.rows ?? 24;
   const editorMaxRows = Math.min(10, Math.max(3, rows - 6));
   const approvalRows = approval
@@ -937,9 +950,21 @@ export function App({ agent, options, onExit }: {
       ? pickerRows
       : historySearch
         ? 2
-        : editorVisualRows(editor, Math.max(columns - 4, 8), editorMaxRows);
-  const chromeRows = 1 /* StatusBar（输入框下） */ + 1 /* TurnStatus/呼吸◆ */ + Math.min(menuItems.length, 8)
-    + promptRows + (toast ? 1 : 0) + 1 /* ShortcutsBar */;
+        // 输入框圆角边框上下各 1 行（Editor 组件内渲染，这里计入布局预算）
+        : editorVisualRows(editor, Math.max(columns - 6, 8), editorMaxRows) + 2;
+  // 首屏欢迎卡（Grok 全屏构图）：空会话时 live 区居中渲染 WelcomeCard，
+  // 呼吸 ◆ 也让位（零噪音）；首条消息出现即切回消息流
+  const showWelcome = state.messages.length === 0;
+  // 首屏 tip 行（Grok 风格）：空会话空闲时在输入框上方显示一条轮换提示
+  const [tip] = useState(() => pickStartupTip(Date.now()));
+  const showTip = showWelcome && !state.running && !approval && !modelPicker && !historySearch;
+  // 零噪音首屏（Grok）：快捷键提示栏只在有上下文时出现——
+  // 空闲空草稿的首屏不显示（可发现性由轮换 tip 行承担）
+  const shortcutsVisible = state.running || menuItems.length > 0 || !isEmpty(editor)
+    || approval !== null || historySearch !== null;
+  const chromeRows = 1 /* StatusBar（输入框下） */ + (showWelcome ? 0 : 1) /* TurnStatus/呼吸◆（首屏让位） */
+    + Math.min(menuItems.length, 8)
+    + promptRows + (toast ? 1 : 0) + (showTip ? 1 : 0) + (shortcutsVisible ? 1 : 0);
   const layoutPlan = planDynamicLayout(state.messages, messageWidth, rows, chromeRows);
   const liveAllocation = layoutPlan.allocation;
   const visibleLive = state.messages.filter((message) => liveAllocation.has(message.id));
@@ -955,20 +980,40 @@ export function App({ agent, options, onExit }: {
       </Static>
       <Box flexDirection="column" height={layoutPlan.height} flexShrink={0}>
         <Box flexDirection="column" flexGrow={1} justifyContent="flex-end" overflowY="hidden">
-          {visibleLive.map((message) => (
-            <Box key={message.id} paddingX={2}>
-              <MessageView message={message} width={messageWidth} maxLines={liveAllocation.get(message.id)} expandTools={expandTools} />
-            </Box>
-          ))}
+          {showWelcome
+            ? (
+              <Box flexGrow={1} justifyContent="center" alignItems="center">
+                <WelcomeCard
+                  version={options.version ?? ''}
+                  provider={options.provider ?? ''}
+                  model={options.model}
+                  cwd={options.cwd}
+                />
+              </Box>
+            )
+            : visibleLive.map((message) => (
+              <Box key={message.id} paddingX={2}>
+                <MessageView message={message} width={messageWidth} maxLines={liveAllocation.get(message.id)} expandTools={expandTools} />
+              </Box>
+            ))}
         </Box>
         {state.running
           ? <TurnStatus state={state} frame={frame} now={now} queuedCount={queuedCount} />
-          : (
-            <Box paddingX={1}>
-              <Text color={pulseColor}>◆</Text>
+          : showWelcome
+            ? null
+            : (
+              <Box paddingX={1}>
+                <Text color={pulseColor}>◆</Text>
             </Box>
           )}
         {menuItems.length > 0 ? <SlashMenu items={menuItems} selected={menuIndex} /> : null}
+        {showTip
+          ? (
+            <Box paddingX={1}>
+              <Text dimColor>{tip}</Text>
+            </Box>
+          )
+          : null}
         {approval
           ? (
             <ApprovalCard
@@ -982,16 +1027,20 @@ export function App({ agent, options, onExit }: {
             ? <ModelPicker items={options.modelItems} selected={modelPicker.index} />
             : historySearch
               ? <HistorySearchBar query={historySearch.query} match={searchMatch} />
-              : <Editor state={editor} width={columns} maxRows={editorMaxRows} />}
+              : <Editor state={editor} width={columns} maxRows={editorMaxRows} placeholder="让 Neo 做点什么…" />}
         {toast ? <Toast text={toast} /> : null}
-        <StatusBar state={state} cwd={options.cwd} gitBranch={options.gitBranch} fallbackModel={options.model} columns={columns} bgTasks={bgTaskCount} />
-        <ShortcutsBar
-          running={state.running}
-          menuOpen={menuItems.length > 0}
-          hasDraft={!isEmpty(editor)}
-          approvalOpen={approval !== null}
-          searchOpen={historySearch !== null}
-        />
+        <StatusBar state={state} cwd={options.cwd} gitBranch={options.gitBranch} gitDirty={options.gitDirty} fallbackModel={options.model} columns={columns} bgTasks={bgTaskCount} />
+        {shortcutsVisible
+          ? (
+            <ShortcutsBar
+              running={state.running}
+              menuOpen={menuItems.length > 0}
+              hasDraft={!isEmpty(editor)}
+              approvalOpen={approval !== null}
+              searchOpen={historySearch !== null}
+            />
+          )
+          : null}
       </Box>
     </Box>
   );

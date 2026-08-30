@@ -36,6 +36,16 @@ export function isAiReviewDimension(value: string): value is AiReviewDimension {
   return (AI_REVIEW_DIMENSIONS as readonly string[]).includes(value);
 }
 
+export function assertAiReviewDimensionsComplete(): void {
+  const configured = Object.keys(AI_REVIEW_DIMENSION_CONFIG);
+  if (
+    configured.length !== AI_REVIEW_DIMENSIONS.length
+    || configured.some((dimension) => !isAiReviewDimension(dimension))
+  ) {
+    throw new Error('AI review dimensions are incomplete');
+  }
+}
+
 export function getAiReviewDimensionDefinition(
   dimension: AiReviewDimension,
 ): AiReviewDimensionDefinition {

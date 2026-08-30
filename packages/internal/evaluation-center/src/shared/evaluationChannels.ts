@@ -8,4 +8,6 @@ export const EVALUATION_CHANNELS = {
   LOAD_CASE: 'evaluation:load-case',
   LIST_CASES: 'evaluation:list-cases',
   SAVE_CASE: 'evaluation:save-case',
+  SAVE_ANNOTATION: 'evaluation:save-annotation',
+  LIST_ANNOTATIONS: 'evaluation:list-annotations',
 } as const;

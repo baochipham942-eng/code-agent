@@ -34,10 +34,10 @@ function buildList(): CapabilityCandidateList {
 export function registerCapabilityCandidateHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(CAPABILITY_CANDIDATE_CHANNELS.LIST, async (): Promise<CapabilityCandidateList> => {
     await getCapabilityCandidateStore().load();
-    // 模型分是懒补的：首屏先出机械分排好的表（名字用工具组合兜底），
-    // 补名字失败不影响这次返回，下次打开自然会再试。
+    // 模型分是懒补的；模型定额处理高分项，其余和失败项都落人话兜底。
+    // fillMissingNames 返回前会 flush，确保这次响应与磁盘账本一致。
     const before = buildList();
-    const written = await fillMissingNames(before.candidates.filter((candidate) => candidate.aboveFold));
+    const written = await fillMissingNames(before.candidates);
     return written > 0 ? buildList() : before;
   });
 

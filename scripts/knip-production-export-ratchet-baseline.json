@@ -82,8 +82,8 @@
       "kind": "type"
     },
     {
-      "file": "src/cli/tui-app/editorState.ts",
-      "name": "displayWidth",
+      "file": "src/cli/tui-app/approval.ts",
+      "name": "approvalKey",
       "kind": "export"
     },
     {
@@ -97,13 +97,13 @@
       "kind": "export"
     },
     {
-      "file": "src/cli/tui-app/editorState.ts",
-      "name": "visualRowCount",
+      "file": "src/cli/tui-app/events.ts",
+      "name": "summarizeToolArgs",
       "kind": "export"
     },
     {
-      "file": "src/cli/tui-app/events.ts",
-      "name": "summarizeToolArgs",
+      "file": "src/cli/tui-app/layout.ts",
+      "name": "messageLineCost",
       "kind": "export"
     },
     {
@@ -18849,9 +18849,6 @@
   ],
   "unreachableFiles": [
     "src/artifacts/question-form.ts",
-    "src/cli/tui-app/cliHighlightStub.ts",
-    "src/cli/tui-app/spike.tsx",
-    "src/cli/tui-app/spikeMain.tsx",
     "src/design/critique/critique.ts",
     "src/design/critique/index.ts",
     "src/design/critique/prompt.ts",

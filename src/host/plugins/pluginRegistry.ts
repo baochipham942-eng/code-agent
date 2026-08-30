@@ -9,6 +9,7 @@ import type { ToolCategory, ToolModule } from '../protocol/tools';
 import type {
   LoadedPlugin,
   PluginAPI,
+  PluginPermission,
   PluginStorage,
   PluginApiKeyProvider,
   PluginConstantsNamespace,
@@ -193,6 +194,27 @@ export class PluginRegistry {
     return this.plugins.get(pluginId);
   }
 
+  private assertPermission(plugin: LoadedPlugin, permission: PluginPermission, operation: string): void {
+    if (plugin.rootPath.startsWith('builtin:')) return;
+    if (!plugin.manifest.permissions?.includes(permission)) {
+      throw new Error(`能力包 ${plugin.manifest.id} 在${operation}前必须声明 '${permission}' 权限`);
+    }
+  }
+
+  private assertLegacyToolPermission(plugin: LoadedPlugin, tool: Tool): void {
+    if (tool.permissionLevel === 'write') this.assertPermission(plugin, 'filesystem', `注册工具 ${tool.name}`);
+    if (tool.permissionLevel === 'execute') {
+      this.assertPermission(plugin, 'shell', `注册工具 ${tool.name}`);
+    }
+    if (tool.permissionLevel === 'network') this.assertPermission(plugin, 'network', `注册工具 ${tool.name}`);
+  }
+
+  private assertToolModulePermission(plugin: LoadedPlugin, module: ToolModule): void {
+    if (module.schema.category === 'fs') this.assertPermission(plugin, 'filesystem', `注册工具 ${module.schema.name}`);
+    if (module.schema.category === 'shell') this.assertPermission(plugin, 'shell', `注册工具 ${module.schema.name}`);
+    if (module.schema.category === 'network') this.assertPermission(plugin, 'network', `注册工具 ${module.schema.name}`);
+  }
+
   /**
    * Initialize plugin system
    */
@@ -311,6 +333,7 @@ export class PluginRegistry {
       metadata: plugin.manifest,
 
       registerTool: (tool: Tool) => {
+        this.assertLegacyToolPermission(plugin, tool);
         // Prefix tool name with plugin ID to avoid conflicts
         const prefixedTool: Tool = {
           ...tool,
@@ -361,9 +384,13 @@ export class PluginRegistry {
         }
       },
 
-      getStorage: () => this.createPersistentStorage(plugin.manifest.id),
+      getStorage: () => {
+        this.assertPermission(plugin, 'storage', '访问插件存储');
+        return this.createPersistentStorage(plugin.manifest.id);
+      },
 
       showNotification: (title, body) => {
+        this.assertPermission(plugin, 'notification', '发送系统通知');
         // TODO: Implement notifications
         logger.info(`[Notification] ${title}: ${body}`);
       },
@@ -375,6 +402,7 @@ export class PluginRegistry {
       pluginApiVersion: 2 as const,
 
       getApiKey: async (provider: PluginApiKeyProvider) => {
+        this.assertPermission(plugin, 'network', '读取服务凭据');
         // 运行时白名单校验：TS 类型擦除后插件仍可能传任意字符串
         if (!ALLOWED_PROVIDERS.has(provider)) {
           logger.warn(`Plugin ${plugin.manifest.id} queried disallowed provider: ${provider}`);
@@ -406,6 +434,7 @@ export class PluginRegistry {
         module: ToolModule,
         options?: PluginRegisterToolModuleOptions,
       ) => {
+        this.assertToolModulePermission(plugin, module);
         // 默认 prefixWithPluginId=true，与既有第三方插件安全模型一致。
         // 传 false 仅供 builtin plugin 使用：保留原工具名，避免破坏 executionPhase
         // 分类、ToolSearch deferredTools 注册、LLM prompt / cache / eval baseline。
@@ -469,6 +498,8 @@ export class PluginRegistry {
       logger.info(`Plugin activated: ${pluginId}`);
       return true;
     } catch (err: unknown) {
+      for (const toolName of plugin.registeredTools) unregisterProtocolTool(toolName);
+      plugin.registeredTools = [];
       const message = err instanceof Error ? err.message : String(err);
       plugin.state = 'error';
       plugin.error = message;
@@ -587,6 +618,69 @@ export class PluginRegistry {
         }
       }
     );
+  }
+
+  pauseWatching(): boolean {
+    const wasWatching = this.stopWatcher !== null;
+    this.stopWatcher?.();
+    this.stopWatcher = null;
+    return wasWatching;
+  }
+
+  resumeWatching(): void {
+    if (!this.stopWatcher) this.startWatching();
+  }
+
+  async installPluginFromDirectory(pluginDir: string): Promise<{
+    success: boolean;
+    pluginId?: string;
+    rolledBack: boolean;
+    error?: string;
+  }> {
+    const result = await loadPlugin(pluginDir);
+    if (!result.success || !result.plugin) {
+      return { success: false, rolledBack: false, error: result.error ?? '能力包加载失败' };
+    }
+    const incoming = result.plugin;
+    const existing = this.plugins.get(incoming.manifest.id);
+    if (existing?.rootPath.startsWith('builtin:')) {
+      return { success: false, rolledBack: false, error: '能力包 ID 与内置能力冲突' };
+    }
+
+    if (existing && !await this.deactivatePlugin(existing.manifest.id)) {
+      return {
+        success: false,
+        pluginId: incoming.manifest.id,
+        rolledBack: false,
+        error: '旧版本无法安全停用，已保留原能力包',
+      };
+    }
+    this.plugins.set(incoming.manifest.id, incoming);
+    if (await this.activatePlugin(incoming.manifest.id)) {
+      return { success: true, pluginId: incoming.manifest.id, rolledBack: false };
+    }
+
+    const activationError = incoming.error ?? '能力包激活失败';
+    this.plugins.delete(incoming.manifest.id);
+    if (existing) {
+      this.plugins.set(existing.manifest.id, existing);
+      const restored = await this.activatePlugin(existing.manifest.id);
+      return {
+        success: false,
+        pluginId: incoming.manifest.id,
+        rolledBack: restored,
+        error: restored ? activationError : `${activationError}；旧版本恢复失败`,
+      };
+    }
+    return { success: false, pluginId: incoming.manifest.id, rolledBack: true, error: activationError };
+  }
+
+  async removePluginFromRegistry(pluginId: string): Promise<boolean> {
+    const plugin = this.plugins.get(pluginId);
+    if (!plugin || plugin.rootPath.startsWith('builtin:')) return false;
+    if (!await this.deactivatePlugin(pluginId)) return false;
+    this.plugins.delete(pluginId);
+    return true;
   }
 
   /**

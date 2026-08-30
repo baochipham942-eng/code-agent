@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createCLIPermissionHandler } from '../../../src/cli/permissionPolicy';
+import {
+  createCLIPermissionHandler,
+  setInteractiveApprovalProvider,
+} from '../../../src/cli/permissionPolicy';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
 
 /** N-PERMTRACE：CLI/headless 拒的是「环境没有审批界面」，不是用户——处理器必须自报。 */
@@ -75,3 +78,27 @@ describe('createCLIPermissionHandler', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 });
+
+describe('交互审批注册点（P4 Ink TUI）', () => {
+  it('注册 provider 后走交互通道，注销后回落 no-approval-ui', async () => {
+    const handler = createCLIPermissionHandler();
+    try {
+      setInteractiveApprovalProvider(async () => ({ approved: true }));
+      await expect(handler(makeRequest({ type: 'dangerous_command' }))).resolves.toEqual({ approved: true });
+    } finally {
+      setInteractiveApprovalProvider(null);
+    }
+    await expect(handler(makeRequest({ type: 'dangerous_command' }))).resolves.toEqual(DENIED_BY_ENV);
+  });
+
+  it('--dangerously-skip-permissions 优先于交互通道', async () => {
+    const handler = createCLIPermissionHandler({ dangerouslySkipPermissions: true });
+    try {
+      setInteractiveApprovalProvider(async () => ({ approved: false, denialSource: 'user' }));
+      await expect(handler(makeRequest())).resolves.toEqual({ approved: true });
+    } finally {
+      setInteractiveApprovalProvider(null);
+    }
+  });
+});
+

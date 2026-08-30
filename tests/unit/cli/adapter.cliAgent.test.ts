@@ -259,6 +259,27 @@ describe('CLIAgent', () => {
     expect(mocks.terminalCLIDurableRun).toHaveBeenCalledWith(durableRun, true);
   });
 
+  it('wraps the whole run in a run trace context carrying the sessionId (log correlation)', async () => {
+    const { getActiveRunTraceContext } = await import('../../../src/host/telemetry/runTraceContext');
+    let activeDuringRun: unknown;
+    installLoop(async (ctl) => {
+      // 与 agentLoop 内部日志同一时点：ALS 里必须能拿到带 sessionId 的 correlation context
+      activeDuringRun = getActiveRunTraceContext();
+      ctl.onEvent({ type: 'agent_complete' } as AgentEvent);
+    });
+
+    const agent = new CLIAgent();
+    await agent.run('correlated turn');
+
+    expect(activeDuringRun).toMatchObject({ sessionId: 'sess-1' });
+    // 同一个 context 也传给了 createAgentLoop（第 8 参），agentLoop 内部不再另建
+    const traceArg = mocks.createAgentLoop.mock.calls[0][7] as { sessionId?: string; runId?: string };
+    expect(traceArg?.sessionId).toBe('sess-1');
+    expect(typeof traceArg?.runId).toBe('string');
+    // run 结束后 context 不泄漏到外层异步链
+    expect(getActiveRunTraceContext()).toBeUndefined();
+  });
+
   it('restores the persisted expertThread role before creating the CLI AgentLoop', async () => {
     const override = {
       id: '牧之',
@@ -289,7 +310,7 @@ describe('CLIAgent', () => {
       undefined,
       undefined,
       expect.objectContaining({ sessionId: 'sess-1' }),
-      undefined,
+      expect.objectContaining({ sessionId: 'sess-1' }),
     );
   });
 

@@ -36,6 +36,12 @@ import type { ChannelAccount, ChannelConversationListResponse, ChannelInboxItem,
 import type { LabProjectType, LabProjectStatus, PythonEnvStatus, TrainingProgressEvent, DownloadProjectRequest, DownloadProjectResponse, UploadDataRequest, UploadDataResponse, StartTrainingRequest, StartTrainingResponse, InferenceRequest, InferenceResult } from '../contract/lab';
 
 import type { MarketplaceInfo, MarketplacePluginEntry, InstalledPlugin, MarketplaceResult, PluginInstallResult } from '../contract/marketplace';
+import type {
+  CapabilityPackageInstallResult,
+  CapabilityPackagePreview,
+  CapabilityPackageResult,
+  InstalledCapabilityPackage,
+} from '../contract/capabilityPackage';
 import type { AlmaRegistryAuditRefreshResult } from '../constants/almaRegistryAudit';
 
 import type { ExtensionInfo, ExtensionValidationResult } from '../contract/extension';
@@ -370,6 +376,11 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED]: (scope?: 'user' | 'project' | 'all') => Promise<MarketplaceResult<InstalledPlugin[]>>;
   [IPC_CHANNELS.MARKETPLACE_ENABLE_PLUGIN]: (pluginId: string) => Promise<MarketplaceResult<void>>;
   [IPC_CHANNELS.MARKETPLACE_DISABLE_PLUGIN]: (pluginId: string) => Promise<MarketplaceResult<void>>;
+  [IPC_CHANNELS.CAPABILITY_PACKAGE_SELECT_STAGE]: () => Promise<CapabilityPackageResult<CapabilityPackagePreview | null>>;
+  [IPC_CHANNELS.CAPABILITY_PACKAGE_LIST]: () => Promise<CapabilityPackageResult<InstalledCapabilityPackage[]>>;
+  [IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM]: (token: string) => Promise<CapabilityPackageResult<CapabilityPackageInstallResult>>;
+  [IPC_CHANNELS.CAPABILITY_PACKAGE_CANCEL]: (token: string) => Promise<CapabilityPackageResult<void>>;
+  [IPC_CHANNELS.CAPABILITY_PACKAGE_UNINSTALL]: (pluginId: string) => Promise<CapabilityPackageResult<void>>;
   [IPC_CHANNELS.ALMA_REGISTRY_AUDIT_REFRESH]: () => Promise<{ success: boolean; data?: AlmaRegistryAuditRefreshResult; error?: string }>;
 
   // Unified extensions

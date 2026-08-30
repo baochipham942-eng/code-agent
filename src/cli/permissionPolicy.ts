@@ -21,6 +21,19 @@ export function requiresHumanConfirmation(_request: PermissionRequestData): bool
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// 交互审批注册点（P4）：Ink TUI 启动时注册审批卡实现，退出时注销。
+// headless（非 TTY / 管道 / web）永远注册不到，维持 no-approval-ui fail-closed。
+// ---------------------------------------------------------------------------
+
+export type InteractiveApprovalProvider = (request: PermissionRequestData) => Promise<PermissionAskResult>;
+
+let interactiveApprovalProvider: InteractiveApprovalProvider | null = null;
+
+export function setInteractiveApprovalProvider(provider: InteractiveApprovalProvider | null): void {
+  interactiveApprovalProvider = provider;
+}
+
 export function createCLIPermissionHandler(
   options: CLIPermissionPolicyOptions = {},
 ): (request: PermissionRequestData) => Promise<PermissionAskResult> {
@@ -29,6 +42,11 @@ export function createCLIPermissionHandler(
   return async (request: PermissionRequestData): Promise<PermissionAskResult> => {
     if (options.dangerouslySkipPermissions) {
       return { approved: true };
+    }
+    // 交互通道优先（Ink TUI 审批卡）；调用时现查，注册/注销不需要重建 executor
+    const provider = interactiveApprovalProvider;
+    if (provider) {
+      return provider(request);
     }
     if (requiresHumanConfirmation(request)) {
       const target = String(
@@ -45,3 +63,4 @@ export function createCLIPermissionHandler(
     return { approved: true };
   };
 }
+

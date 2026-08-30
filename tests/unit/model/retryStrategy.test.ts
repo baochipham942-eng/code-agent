@@ -5,9 +5,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   abortableSleep,
+  computeRetryBackoffMs,
   extractRetryAfterMs,
   isCancellationError,
   isFallbackEligible,
+  isRetryableModelCallError,
   isTransientError,
   withTransientRetry,
 } from '../../../src/host/model/providers/retryStrategy';
@@ -371,7 +373,7 @@ describe('Retry Strategy', () => {
       expect(result).toBe('ok');
     });
 
-    it('uses exponential backoff (baseDelay * 2^attempt)', async () => {
+    it('uses exponential backoff (baseDelay * 2^attempt) with ±25% jitter', async () => {
       const delays: number[] = [];
       const fn = vi.fn()
         .mockRejectedValueOnce(new Error('socket hang up'))
@@ -384,7 +386,12 @@ describe('Retry Strategy', () => {
         baseDelay: 4,
         onRetry: (info) => delays.push(info.delay),
       });
-      expect(delays).toEqual([4, 8]);
+      // 指数基数 4→8，jitter ±25%：落在 [3,5] / [6,10] 区间，且第二次的基数严格大于第一次
+      expect(delays).toHaveLength(2);
+      expect(delays[0]).toBeGreaterThanOrEqual(3);
+      expect(delays[0]).toBeLessThanOrEqual(5);
+      expect(delays[1]).toBeGreaterThanOrEqual(6);
+      expect(delays[1]).toBeLessThanOrEqual(10);
     });
 
     it('prefers retry-after hint from the error over backoff', async () => {
@@ -560,6 +567,78 @@ describe('Retry Strategy', () => {
       const controller = new AbortController();
       controller.abort();
       await expect(abortableSleep(60_000, controller.signal)).resolves.toBeUndefined();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // isRetryableModelCallError（模型调用层统一可重试判定）
+  // --------------------------------------------------------------------------
+  describe('isRetryableModelCallError', () => {
+    it.each([429, 500, 502, 503, 504])('HTTP %i（结构化 status）可重试', (status) => {
+      const err = Object.assign(new Error('gateway hiccup'), { status });
+      expect(isRetryableModelCallError(err)).toBe(true);
+    });
+
+    it.each([400, 401, 403, 404, 413])('HTTP %i（确定性错误）不重试', (status) => {
+      const err = Object.assign(new Error('deterministic failure'), { status });
+      expect(isRetryableModelCallError(err)).toBe(false);
+    });
+
+    it('网关 504 抖动但 message 不含状态码数字（tokenrhythm 实测形态）可重试', () => {
+      // AI SDK APICallError：message 只有文案，status 在结构化字段上
+      const err = Object.assign(new Error('Gateway Timeout'), { status: 504 });
+      expect(isRetryableModelCallError(err)).toBe(true);
+    });
+
+    it('auth 失败（401 + invalid_api_key 文案）不重试', () => {
+      const err = Object.assign(new Error('invalid_api_key'), { status: 401 });
+      expect(isRetryableModelCallError(err)).toBe(false);
+    });
+
+    it('429 但余额耗尽文案（NON_RETRYABLE 护栏优先）不重试', () => {
+      const err = Object.assign(new Error('429 insufficient balance'), { status: 429 });
+      expect(isRetryableModelCallError(err)).toBe(false);
+    });
+
+    it('网络瞬断（无 status）靠 message/code 判定可重试', () => {
+      expect(isRetryableModelCallError(new Error('socket hang up'))).toBe(true);
+      const reset = new Error('read ECONNRESET') as NodeJS.ErrnoException;
+      reset.code = 'ECONNRESET';
+      expect(isRetryableModelCallError(reset)).toBe(true);
+      const timeout = new Error('timeout of 90000ms exceeded');
+      expect(isRetryableModelCallError(timeout)).toBe(true);
+    });
+
+    it('普通业务错误不重试', () => {
+      expect(isRetryableModelCallError(new Error('Cannot read properties of undefined'))).toBe(false);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // computeRetryBackoffMs（指数退避 1s→2s→4s→8s + jitter，封顶 16s）
+  // --------------------------------------------------------------------------
+  describe('computeRetryBackoffMs', () => {
+    it('指数基数按 attempt 翻倍（jitter ±25% 内）', () => {
+      for (let i = 0; i < 50; i++) {
+        expect(computeRetryBackoffMs(0, 1000)).toBeGreaterThanOrEqual(750);
+        expect(computeRetryBackoffMs(0, 1000)).toBeLessThanOrEqual(1250);
+        expect(computeRetryBackoffMs(1, 1000)).toBeGreaterThanOrEqual(1500);
+        expect(computeRetryBackoffMs(1, 1000)).toBeLessThanOrEqual(2500);
+        expect(computeRetryBackoffMs(2, 1000)).toBeGreaterThanOrEqual(3000);
+        expect(computeRetryBackoffMs(2, 1000)).toBeLessThanOrEqual(5000);
+        expect(computeRetryBackoffMs(3, 1000)).toBeGreaterThanOrEqual(6000);
+        expect(computeRetryBackoffMs(3, 1000)).toBeLessThanOrEqual(10_000);
+      }
+    });
+
+    it('高 attempt 封顶 16s', () => {
+      for (let i = 0; i < 20; i++) {
+        expect(computeRetryBackoffMs(10, 1000)).toBeLessThanOrEqual(16_000);
+      }
+    });
+
+    it('retry-after 提示优先且不加 jitter', () => {
+      expect(computeRetryBackoffMs(0, 1000, 3000)).toBe(3000);
     });
   });
 });

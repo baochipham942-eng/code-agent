@@ -105,7 +105,13 @@ function getLogStream(): fs.WriteStream | null {
     logStream = fs.createWriteStream(filePath, { flags: 'a' });
     if (!fileSinkPathReported) {
       fileSinkPathReported = true;
-      console.error(`[Logger] file sink → ${filePath}`);
+      // CLI 交互界面下这行属于噪音，仅 --debug 时打印
+      const isCliOnly = process.env.CODE_AGENT_CLI_MODE === 'true'
+        && process.env.CODE_AGENT_WEB_MODE !== 'true';
+      const cliDebug = process.env.DEBUG === 'true' || process.argv.includes('--debug');
+      if (!isCliOnly || cliDebug) {
+        console.error(`[Logger] file sink → ${filePath}`);
+      }
     }
     logStream.on('error', () => {
       // Silently ignore write errors — best-effort logging
@@ -116,6 +122,23 @@ function getLogStream(): fs.WriteStream | null {
   } catch {
     return null;
   }
+}
+
+/** 从已脱敏的日志参数中提取一句话错误原因（用于 CLI 紧凑单行输出） */
+function extractErrorHint(args: unknown[]): string {
+  for (const arg of args) {
+    if (!arg || typeof arg !== 'object') continue;
+    const record = arg as Record<string, unknown>;
+    if (typeof record.errorMessage === 'string' && record.errorMessage) {
+      return `: ${record.errorMessage}`;
+    }
+    const nested = record.error;
+    if (nested && typeof nested === 'object') {
+      const message = (nested as Record<string, unknown>).message;
+      if (typeof message === 'string' && message) return `: ${message}`;
+    }
+  }
+  return '';
 }
 
 /** 写一行 JSON 日志到文件（non-blocking buffered write） */
@@ -221,11 +244,17 @@ class Logger {
     // WEB 模式不适用 — 见 constructor 注释
     const isCliOnly = process.env.CODE_AGENT_CLI_MODE === 'true'
       && process.env.CODE_AGENT_WEB_MODE !== 'true';
-    if (isCliOnly && level !== 'ERROR'
-        && process.env.DEBUG !== 'true' && !process.argv.includes('--debug')) {
-      // 仍然写文件，但不输出到 stderr
+    const cliDebug = process.env.DEBUG === 'true' || process.argv.includes('--debug');
+    if (isCliOnly && !cliDebug) {
+      // 所有级别仍然写文件；非 ERROR 不输出到 stderr，
+      // ERROR 只输出紧凑单行（完整数据含 stack 留在日志文件），避免刷屏污染交互界面
       if (level !== 'DEBUG') {
         writeToFile(level, this.context, this.lane, sanitizedMessage, sanitizedArgs.length > 0 ? sanitizedArgs : undefined);
+      }
+      if (level === 'ERROR') {
+        const ts = new Date().toISOString();
+        const ctx = this.context ? `[${this.context}]` : '';
+        console.error(`${ts} ERROR ${ctx} ${sanitizedMessage}${extractErrorHint(sanitizedArgs)}`);
       }
       return;
     }

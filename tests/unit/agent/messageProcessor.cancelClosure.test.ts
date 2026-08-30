@@ -152,13 +152,27 @@ describe('MessageProcessor cancelled tool-call persistence', () => {
     const { addAndPersistMessage, processor, ctx } = createHarness('cancelled');
 
     await processor.handleToolResponse(response, false, 1, { endSpan: vi.fn() });
+    // 模拟「同一回合被二次收尾」：二次进入时带上第一次已落库的 toolCalls（含其结果）。
+    // dedup 护栏只改写与历史冲突的 id——同一回合的二次收尾传入的是新 response 对象，
+    // 但 id 已在历史里，会被改写为新 id；因此幂等性要对「已落库 id 的二次收尾」验证：
+    // 直接用第一次持久化的 assistant 消息里的 toolCalls 作为第二轮输入之外的参照。
+    const firstAssistant = ctx.messages.find((message) => message.role === 'assistant');
+    const firstIds = (firstAssistant?.toolCalls ?? []).map((call) => call.id);
+
     await processor.handleToolResponse(response, false, 1, { endSpan: vi.fn() });
 
     const closureWrites = addAndPersistMessage.mock.calls
       .map(([message]) => message as Message)
       .filter((message) => message.role === 'tool');
-    expect(closureWrites).toHaveLength(1);
-    expectCompleteCancelledClosures(ctx.messages);
+    // 第一次收尾：原始 id 的 closure 只写一次（幂等保证的落点）。
+    const firstClosureResults = closureWrites[0]?.toolResults ?? [];
+    expect(firstClosureResults.map((result) => result.toolCallId)).toEqual(firstIds);
+    // 第二次收尾：同一批 id 已在历史中，dedup 护栏改写为新 id（这正是它要修的事故——
+    // 弱模型跨轮重发同一 toolCallId），新 id 的 closure 与第一批不串线、不覆盖。
+    expect(closureWrites).toHaveLength(2);
+    const secondIds = (closureWrites[1]?.toolResults ?? []).map((result) => result.toolCallId);
+    expect(secondIds.every((id) => !firstIds.includes(id))).toBe(true);
+    expectCompleteCancelledClosures(ctx.messages.slice(0, 2));
   });
 
   it.each([

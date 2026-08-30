@@ -155,7 +155,7 @@ export const chatCommand = new Command('chat')
   .option('-s, --session <id>', '恢复指定会话')
   .option('-r, --resume', '恢复最近的会话')
   .option('--from-pr <pr>', '关联 GitHub PR (URL 或 #123)')
-  .option('--tui', '启用 TUI 模式（持久输入框 + 状态栏）')
+  .option('--tui', '（已移除）Ink 界面已是 TTY 默认交互模式')
   .action(async (options: { session?: string; resume?: boolean; fromPr?: string; tui?: boolean }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
     const isJsonMode = globalOpts?.json || globalOpts?.outputFormat === 'json' || globalOpts?.outputFormat === 'stream-json';
@@ -226,13 +226,53 @@ export const chatCommand = new Command('chat')
         }
       }
 
-      // TUI mode: persistent input + status bar
-      if (options.tui && process.stdin.isTTY && !isJsonMode) {
-        const { runTUIChat } = await import('../tui/tuiChat');
-        const cmdHandler = async (input: string, a: typeof agent) => {
-          return handleCommand(input, a, null as unknown as readline.Interface);
+      // --tui 旧手写 ANSI TUI 已退役（P3）：明确提示后走当前默认路径
+      if (options.tui) {
+        terminalOutput.warning('--tui 已移除：Ink 界面已是 TTY 默认交互模式（非 TTY 自动回落线性模式）');
+      }
+
+      // Ink TUI：TTY 默认界面；非 TTY / 管道 / json 模式回落 readline 线性模式。
+      // NEO_DISABLE_INK_TUI=1 为回退逃生门。
+      const useInkTui = !isJsonMode
+        && Boolean(process.stdin.isTTY && process.stdout.isTTY)
+        && process.env.NEO_DISABLE_INK_TUI !== '1';
+      if (useInkTui) {
+        const { runInkChat } = await import('../tui-app/inkRunner');
+        const { buildSlashItems } = await import('../tui-app/slashCommands');
+        const { captureConsoleOutput } = await import('./captureConsoleOutput');
+        const { execSync } = await import('child_process');
+        // git 分支（StatusBar 显示；非 git 仓库静默为空）
+        let gitBranch = '';
+        try {
+          gitBranch = execSync('git rev-parse --abbrev-ref HEAD 2>/dev/null', {
+            cwd: globalOpts?.project || process.cwd(),
+            encoding: 'utf-8',
+          }).trim();
+        } catch { /* not in git repo */ }
+        // Ink 里执行真 slash 命令：console 输出捕获成系统消息渲染；
+        // /exit 通过注入的 onExit 转成退出信号
+        const onCommand = async (input: string): Promise<{ output?: string; exit?: boolean }> => {
+          const argv = input.trim().split(/\s+/);
+          const cmd = argv[0]?.slice(1).toLowerCase() ?? '';
+          // 交互式 raw-mode 读 key 的命令（/login <p>、/model key <p>）stdin 归 Ink 管，
+          // 在 Ink 下会卡死，引导回经典模式
+          if ((cmd === 'login' && argv.length > 1) || (cmd === 'model' && argv[1]?.toLowerCase() === 'key')) {
+            return { output: '该命令需要交互式输入，Ink 模式暂不支持；请用 NEO_DISABLE_INK_TUI=1 的经典模式执行' };
+          }
+          let exit = false;
+          const output = await captureConsoleOutput(() =>
+            handleCommand(input, agent, { onExit: () => { exit = true; } }));
+          return { output, exit };
         };
-        await runTUIChat(agent, cmdHandler, cleanup, globalOpts);
+        const slashItems = buildSlashItems(getCommandRegistry().list('cli'));
+        await runInkChat(agent, {
+          cwd: globalOpts?.project || process.cwd(),
+          model: globalOpts?.model || DEFAULT_MODELS.chat,
+          gitBranch,
+          onCommand,
+          slashItems,
+        });
+        await cleanup();
         process.exit(0);
       }
 
@@ -315,7 +355,11 @@ export const chatCommand = new Command('chat')
 
         // 处理命令
         if (input.startsWith('/')) {
-          const handled = await handleCommand(input, agent, rl, () => viMode, (v: boolean) => { viMode = v; });
+          const handled = await handleCommand(input, agent, {
+            onExit: () => rl.close(),
+            getViMode: () => viMode,
+            setViMode: (v: boolean) => { viMode = v; },
+          });
           if (!handled) {
             promptUser();
           }
@@ -361,14 +405,21 @@ export const chatCommand = new Command('chat')
 
 /**
  * 处理斜杠命令
+ * hooks.onExit：/exit 的退出动作由调用方注入（readline 关 rl，Ink unmount），
+ * 使本函数脱离 readline 依赖，Ink / readline / 旧 TUI 三条路径共用。
  */
+export interface CommandHooks {
+  onExit: () => void;
+  getViMode?: () => boolean;
+  setViMode?: (v: boolean) => void;
+}
+
 async function handleCommand(
   input: string,
   agent: CLIAgent,
-  rl?: readline.Interface | null,
-  getViMode?: () => boolean,
-  setViMode?: (v: boolean) => void,
+  hooks: CommandHooks,
 ): Promise<boolean> {
+  const { onExit, getViMode, setViMode } = hooks;
   const [cmd, ...args] = input.slice(1).split(/\s+/);
   const cmdLower = cmd.toLowerCase();
 
@@ -776,7 +827,7 @@ async function handleCommand(
     case 'exit':
     case 'quit':
     case 'q':
-      rl?.close();
+      onExit();
       return true;
 
     default: {

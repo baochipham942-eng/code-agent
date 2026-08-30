@@ -7,19 +7,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const broadcast = vi.hoisted(() => vi.fn());
+const interactiveUi = vi.hoisted(() => vi.fn(() => true));
 
 vi.mock('../../../src/host/platform/windowBridge', () => ({
   broadcastToRenderer: broadcast,
+  hasInteractiveUi: interactiveUi,
 }));
 
 import {
   clearDirectiveMemoryConfirmationsForTest,
+  HEADLESS_PERMISSION_PROBE_TIMEOUT_MS,
+  probeHeadlessPermission,
   requestDirectiveMemoryConfirmation,
   respondToDirectiveMemoryConfirmation,
 } from '../../../src/host/memory/directiveMemoryConfirmation';
 import {
   DIRECTIVE_MEMORY_CONFIRMATION_DECLINED_ERROR,
   DIRECTIVE_MEMORY_CONFIRMATION_TIMEOUT_ERROR,
+  DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR,
   DIRECTIVE_MEMORY_WRITE_NO_GRANT_ERROR,
   directiveMemoryConfirmationFailureError,
 } from '../../../src/host/memory/directiveMemoryMessages';
@@ -34,6 +39,7 @@ function captureRequest(): MemoryConfirmRequest {
 describe('requestDirectiveMemoryConfirmation — 超时与拒绝要可区分', () => {
   beforeEach(() => {
     broadcast.mockClear();
+    interactiveUi.mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -73,6 +79,93 @@ describe('requestDirectiveMemoryConfirmation — 超时与拒绝要可区分', (
 
     expect(result.confirmed).toBe(true);
     expect(result.timedOut).toBe(false);
+  });
+});
+
+describe('requestDirectiveMemoryConfirmation — headless 无交互界面 fail-fast', () => {
+  beforeEach(() => {
+    broadcast.mockClear();
+    interactiveUi.mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    clearDirectiveMemoryConfirmationsForTest();
+    vi.useRealTimers();
+  });
+
+  it('没有交互界面：立即返回不挂 120s、不广播确认窗', async () => {
+    vi.useFakeTimers();
+    const start = Date.now();
+    const result = await requestDirectiveMemoryConfirmation({ content: 'x', category: 'y' });
+
+    expect(Date.now() - start).toBe(0);
+    expect(broadcast).not.toHaveBeenCalled();
+    expect(result.confirmed).toBe(false);
+    expect(result.timedOut).toBe(false);
+    expect(result.headlessNoUi).toBe(true);
+  });
+
+  it('headless 结果分流到专用文案，且文案能有效阻止模型重试', () => {
+    const error = directiveMemoryConfirmationFailureError({ timedOut: false, headlessNoUi: true });
+
+    expect(error).toBe(DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR);
+    expect(error).toContain('没有交互确认能力');
+    expect(error).toContain('不要重试');
+    // 出路必须可执行：skip flag 或 GUI 交互模式
+    expect(error).toContain('--dangerously-skip-permissions');
+    expect(error).toContain('GUI');
+  });
+
+  it('headless 文案与超时/拒绝文案互不相同', () => {
+    const all = [
+      DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR,
+      DIRECTIVE_MEMORY_CONFIRMATION_TIMEOUT_ERROR,
+      DIRECTIVE_MEMORY_CONFIRMATION_DECLINED_ERROR,
+      DIRECTIVE_MEMORY_WRITE_NO_GRANT_ERROR,
+    ];
+    expect(new Set(all).size).toBe(4);
+  });
+});
+
+describe('probeHeadlessPermission — headless 探针带上限', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const request = { type: 'file_write', tool: 'MemoryWrite', details: {} } as const;
+
+  it('同步批准的处理器（CLI skip / devModeAutoApprove）：按批准放行', async () => {
+    const result = await probeHeadlessPermission(async () => true, { ...request });
+    expect(result?.approved).toBe(true);
+  });
+
+  it('同步拒绝的处理器：保留 denialSource', async () => {
+    const result = await probeHeadlessPermission(
+      async () => ({ approved: false, denialSource: 'no-approval-ui' as const }),
+      { ...request },
+    );
+    expect(result?.approved).toBe(false);
+    expect(result?.denialSource).toBe('no-approval-ui');
+  });
+
+  it('在等人类通道的处理器（web 停车/无 UI 定时器）：超时按未答处理，不陪等', async () => {
+    vi.useFakeTimers();
+    const neverAnswers = () => new Promise<boolean>(() => {});
+    const probe = probeHeadlessPermission(neverAnswers, { ...request });
+
+    await vi.advanceTimersByTimeAsync(HEADLESS_PERMISSION_PROBE_TIMEOUT_MS);
+    await expect(probe).resolves.toBeUndefined();
+  });
+
+  it('上限内迟到的答案仍然有效', async () => {
+    vi.useFakeTimers();
+    const slowApprover = () => new Promise<boolean>((resolve) => {
+      setTimeout(() => resolve(true), HEADLESS_PERMISSION_PROBE_TIMEOUT_MS - 1);
+    });
+    const probe = probeHeadlessPermission(slowApprover, { ...request });
+
+    await vi.advanceTimersByTimeAsync(HEADLESS_PERMISSION_PROBE_TIMEOUT_MS - 1);
+    await expect(probe).resolves.toMatchObject({ approved: true });
   });
 });
 

@@ -196,7 +196,10 @@ describe('N-PERMTRACE 审批拒绝路径可观测性', () => {
     // 给模型的文案也要说实话 + 给出路，不能再说「用户拒绝了」
     expect(result.error).not.toContain('Permission denied by user');
     expect(result.error).toContain('没有审批界面');
-    expect(result.error).toContain('bypassPermissions');
+    // 统一文案（Fix 4）：说明 headless 无交互、给出 GUI / skip flag 两条出路、阻止重试
+    expect(result.error).toContain('不要重试');
+    expect(result.error).toContain('GUI');
+    expect(result.error).toContain('--dangerously-skip-permissions');
   });
 
   it('对照组：真人拒绝（裸 boolean false）仍记 user，文案不变', async () => {

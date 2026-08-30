@@ -49,9 +49,12 @@ import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
 import {
   withTransientRetry,
-  isTransientError,
+  isRetryableModelCallError,
   isCancellationError,
   abortableSleep,
+  computeRetryBackoffMs,
+  extractRetryAfterMs,
+  retryEvents,
 } from '../providers/retryStrategy';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
 import { getProviderLimiter } from '../concurrencyLimiter';
@@ -504,10 +507,15 @@ function buildTools(toolDefs: ToolDefinition[]): ToolSet {
   return tools as ToolSet;
 }
 
-// 流式重试/节流常量（对齐旧路径：withTransientRetry 默认 maxRetries=2/baseDelay=1000，
+// 流式重试/节流常量（模型调用层统一 5 次尝试 = 1 + 4 retries，指数退避 1s→2s→4s→8s
+// + ±25% jitter、封顶 16s，见 retryStrategy.computeRetryBackoffMs；
 // sseStream token 估算每 500ms、snapshot 默认 3000ms）。
-const STREAM_MAX_RETRIES = 2;
+const STREAM_MAX_RETRIES = 4;
 const STREAM_RETRY_BASE_DELAY_MS = 1000;
+// 非流式（generateText）同策略：5 次尝试，退避参数与流式一致（withTransientRetry 内部
+// 走同一套 computeRetryBackoffMs / isRetryableModelCallError）。
+const GENERATE_MAX_RETRIES = 4;
+const GENERATE_RETRY_BASE_DELAY_MS = 1000;
 const TOKEN_ESTIMATE_INTERVAL_MS = 500;
 const DEFAULT_SNAPSHOT_INTERVAL_MS = 3000;
 
@@ -687,7 +695,14 @@ async function generateViaAiSdk(params: {
           guard.cleanup();
         }
       },
-      { providerName: config.provider, signal },
+      {
+        providerName: config.provider,
+        signal,
+        // 与流式路径同一契约：调用方自带重试循环（modelRouter fallback/artifact 修复）
+        // 时本层必须单次尝试，否则候选数 × 5 放大成长时间卡死。
+        maxRetries: options?.disableProviderTransientRetry ? 0 : GENERATE_MAX_RETRIES,
+        baseDelay: GENERATE_RETRY_BASE_DELAY_MS,
+      },
     );
   } catch (err) {
     logInferenceFailure(err, 'generateText', config, messages);
@@ -1026,21 +1041,28 @@ async function streamViaAiSdk(params: {
       const msg = watchdogTimedOut
         ? `${timedOutKind} timeout`
         : (err instanceof Error ? err.message : String(err));
+      // 可重试判定要作用在「改写后的有效错误」上：看门狗超时的原始 err 是 'aborted'
+      // （不是瞬态文案），改写后的 'first-byte/stream inactivity timeout' 才是。
+      const effectiveErr = watchdogTimedOut ? new Error(msg, { cause: err }) : err;
       // emittedOutput 闸门：已向用户吐过 delta → 绝不重试（避免重复 emit）；只在首个可见
-      // delta 之前的瞬态失败才重试，复用项目 isTransientError 策略（与旧路径同一套护栏）。
-      if (!emittedOutput && attempt < maxRetries && !signal?.aborted && isTransientError(msg, code)) {
-        logger.warn(`[AiSdkAdapter] 流式瞬态错误 "${msg}" (code=${code})，首字节前重试 (${attempt + 1}/${maxRetries})`);
+      // delta 之前的瞬态失败才重试，复用模型调用层统一可重试判定（status 429/5xx +
+      // 网络瞬态文案/code，401/403/400 等确定性错误不重试）。
+      if (!emittedOutput && attempt < maxRetries && !signal?.aborted && isRetryableModelCallError(effectiveErr)) {
+        const retryAfterMs = extractRetryAfterMs(err);
+        const delay = computeRetryBackoffMs(attempt, STREAM_RETRY_BASE_DELAY_MS, retryAfterMs);
+        logger.warn(`[AiSdkAdapter] 流式瞬态错误 "${msg}" (code=${code})，${delay}ms 后首字节前重试 (${attempt + 1}/${maxRetries})${retryAfterMs != null ? ' [retry-after]' : ''}`);
+        // CLI 可见性：与非流式 withTransientRetry 同一事件通道（adapter 订阅后打一行重试提示）
+        retryEvents.emit('retry', { provider: config.provider, attempt: attempt + 1, maxRetries, delay, error: msg });
         // 可中断退避（codex audit R2 对称应用）：abort 立即醒来，醒后已 abort 则不再重试
-        await abortableSleep(STREAM_RETRY_BASE_DELAY_MS * (attempt + 1), signal);
+        await abortableSleep(delay, signal);
         if (!signal?.aborted) continue;
       }
       healthMonitor.recordFailure(config.provider, { cancelled: isCancellationError(err, signal) });
       if (!signal?.aborted) {
         onStream({ type: 'error', error: summarizeModelErrorForUser(msg), ...(code ? { errorCode: code } : {}) });
       }
-      const finalErr = watchdogTimedOut ? new Error(msg, { cause: err }) : err;
-      logInferenceFailure(finalErr, 'streamText', config, messages);
-      throw finalErr;
+      logInferenceFailure(effectiveErr, 'streamText', config, messages);
+      throw effectiveErr;
     }
   }
 }

@@ -750,41 +750,50 @@ class SkillRepositoryService implements Disposable {
         if (!entry.isDirectory()) continue;
         if (entry.name.startsWith('.')) continue; // 跳过隐藏目录
 
-        const libraryPath = path.join(this.skillsDir, entry.name);
+        // per-library 隔离：单个坏库（layout 探测失败、元数据损坏等）只 warn 跳过，
+        // 不中止其余库的扫描。
+        try {
+          const libraryPath = path.join(this.skillsDir, entry.name);
 
-        // 读取元数据
-        const meta = await readRepoMetaAsync(libraryPath);
-        if (!meta) {
-          logger.warn('No metadata found for library directory', {
-            path: libraryPath,
+          // 读取元数据
+          const meta = await readRepoMetaAsync(libraryPath);
+          if (!meta) {
+            logger.warn('No metadata found for library directory', {
+              path: libraryPath,
+            });
+            continue;
+          }
+
+          // 查找对应的仓库配置
+          const repo = this.config.repositories.find(
+            (r) => r.id === entry.name || `${meta.owner}-${meta.repo}`.toLowerCase() === entry.name
+          );
+
+          const layout = await detectRepositoryLayout(libraryPath);
+          const skills = await this.scanSkillsInLibrary(libraryPath, layout);
+
+          // 创建库对象
+          const library: LocalSkillLibrary = {
+            repoId: entry.name,
+            repoName: repo?.name || `${meta.owner}/${meta.repo}`,
+            localPath: libraryPath,
+            downloadedAt: meta.downloadedAt,
+            lastUpdated: meta.lastUpdated,
+            version: meta.commitHash,
+            skills,
+          };
+
+          this.libraries.set(entry.name, library);
+          logger.debug('Loaded local library', {
+            repoId: entry.name,
+            skillCount: skills.length,
           });
-          continue;
+        } catch (error) {
+          logger.warn('Failed to load local skill library; skipping', {
+            library: entry.name,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
-
-        // 查找对应的仓库配置
-        const repo = this.config.repositories.find(
-          (r) => r.id === entry.name || `${meta.owner}-${meta.repo}`.toLowerCase() === entry.name
-        );
-
-        const layout = await detectRepositoryLayout(libraryPath);
-        const skills = await this.scanSkillsInLibrary(libraryPath, layout);
-
-        // 创建库对象
-        const library: LocalSkillLibrary = {
-          repoId: entry.name,
-          repoName: repo?.name || `${meta.owner}/${meta.repo}`,
-          localPath: libraryPath,
-          downloadedAt: meta.downloadedAt,
-          lastUpdated: meta.lastUpdated,
-          version: meta.commitHash,
-          skills,
-        };
-
-        this.libraries.set(entry.name, library);
-        logger.debug('Loaded local library', {
-          repoId: entry.name,
-          skillCount: skills.length,
-        });
       }
     } catch (error) {
       // 目录不存在时忽略

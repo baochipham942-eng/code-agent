@@ -353,6 +353,8 @@ export class EvalRunBridge {
         if (event.config.mode !== 'real') throw new Error('评测桥只允许真实运行。');
         state.startEvent = event;
         state.adapter.beginEventRun(event);
+      } else if (event.type === 'memory_injected') {
+        state.adapter.recordMemoryInjection(event);
       } else if (event.type === 'case_end') {
         state.caseEvents.push(event);
         state.adapter.persistEventCase(event);

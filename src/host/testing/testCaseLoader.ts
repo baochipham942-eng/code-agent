@@ -6,6 +6,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import * as yaml from 'js-yaml';
 import type { TestSuite, TestCase } from './types';
+import { resolveCaseLayer } from './caseLayer';
 
 /**
  * Parse YAML content using js-yaml
@@ -68,9 +69,11 @@ function validateTestSuite(data: unknown, filePath: string): TestSuite {
   }
 
   const suiteTags = suite.tags as string[] | undefined;
+  const relativeDir = path.basename(path.dirname(filePath));
   const validatedCases = suite.cases.map((tc, i) => ({
     ...validateTestCase(tc, i),
     inheritedTags: suiteTags ? [...suiteTags] : undefined,
+    layer: resolveCaseLayer(path.basename(filePath), relativeDir),
   }));
 
   return {

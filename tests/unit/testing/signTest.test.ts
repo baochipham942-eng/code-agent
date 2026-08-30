@@ -78,6 +78,11 @@ describe('接入 summary 与报告', () => {
       description: `case ${i}`,
       prompt: `do thing ${i}`,
       expect: { response_contains: ['done'] },
+      expectations: [{
+        type: 'response_contains' as const,
+        description: 'candidate detail marker',
+        params: { text: 'long detailed' },
+      }],
     }));
     // candidate 恒强 → 3:0，p=0.25（样本不足）
     const makeAgent = (config: CompareConfiguration): AgentInterface => ({

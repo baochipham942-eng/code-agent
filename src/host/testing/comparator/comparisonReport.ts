@@ -54,13 +54,13 @@ export function generateComparisonMarkdown(
   lines.push('');
   lines.push(`| Metric | Value |`);
   lines.push(`|---|---|`);
-  lines.push(`| **Winner** | **${summary.winner}** |`);
+  lines.push(`| **断言胜方** | **${summary.winner}** |`);
   lines.push(`| Total Cases | ${summary.totalCases} |`);
   lines.push(`| Baseline Wins | ${summary.baselineWins} |`);
   lines.push(`| Candidate Wins | ${summary.candidateWins} |`);
   lines.push(`| Ties | ${summary.ties} |`);
-  lines.push(`| Baseline Avg Score | ${summary.baselineAvgScore.toFixed(2)} |`);
-  lines.push(`| Candidate Avg Score | ${summary.candidateAvgScore.toFixed(2)} |`);
+  lines.push(`| Baseline 参考分（启发式/评审） | ${summary.baselineAvgScore.toFixed(2)} |`);
+  lines.push(`| Candidate 参考分（启发式/评审） | ${summary.candidateAvgScore.toFixed(2)} |`);
   lines.push(`| Confidence | ${(summary.confidence * 100).toFixed(0)}% |`);
   if (summary.pValue !== undefined) {
     lines.push(`| Sign test p 值 | ${describeSignTest(summary.baselineWins, summary.candidateWins, summary.pValue)} |`);
@@ -69,23 +69,30 @@ export function generateComparisonMarkdown(
     lines.push(`| 排除 Pair（一侧没跑成） | ${summary.excludedPairs} 🔌 |`);
   }
   {
-    // 成功率（断言判定，passed 计 1 / partial 计 0.5）——非劣判定主指标
-    const valid = cases.filter((c) => !c.excludedReason && c.statusA && c.statusB);
+    const valid = cases.filter((c) => !c.excludedReason && c.assertionCount > 0);
     if (valid.length > 0) {
-      const passScore = (s?: string) => (s === 'passed' ? 1 : s === 'partial' ? 0.5 : 0);
       const armRate = (role: 'baseline' | 'candidate') => {
         const sum = valid.reduce(
-          (acc, c) => acc + passScore(c.assignment.A === role ? c.statusA : c.statusB),
+          (acc, c) => acc + (c.assignment.A === role ? c.passRateA : c.passRateB),
           0,
         );
         return sum / valid.length;
       };
-      lines.push(`| Baseline 成功率（断言） | ${(armRate('baseline') * 100).toFixed(1)}% (n=${valid.length}) |`);
-      lines.push(`| Candidate 成功率（断言） | ${(armRate('candidate') * 100).toFixed(1)}% (n=${valid.length}) |`);
+      lines.push(`| Baseline 断言条通过率 | ${(armRate('baseline') * 100).toFixed(1)}% (n=${valid.length}) |`);
+      lines.push(`| Candidate 断言条通过率 | ${(armRate('candidate') * 100).toFixed(1)}% (n=${valid.length}) |`);
     }
   }
   lines.push('');
   lines.push(`> ${summary.verdict}`);
+  lines.push('');
+
+  lines.push('## 按层别');
+  lines.push('');
+  lines.push('| 层别 | Baseline wins | Candidate wins | Ties |');
+  lines.push('|---|---:|---:|---:|');
+  for (const row of layerRows(cases)) {
+    lines.push(`| ${row.layer} | ${row.baselineWins} | ${row.candidateWins} | ${row.ties} |`);
+  }
   lines.push('');
 
   lines.push('## 失败原因分布');
@@ -107,12 +114,12 @@ export function generateComparisonMarkdown(
   // Per-case results
   lines.push(`## Per-Case Results`);
   lines.push('');
-  lines.push(`| Test | A (role) | B (role) | Status A | Status B | Score A | Score B | Winner | Real Winner | Duration A | Duration B |`);
-  lines.push(`|---|---|---|---|---|---|---|---|---|---|---|`);
+  lines.push(`| Test | Layer | A (role) | B (role) | Assertions A | Assertions B | Assertion Winner | 参考 · 启发式/评审 | Duration A | Duration B |`);
+  lines.push(`|---|---|---|---|---:|---:|---|---|---|---|`);
 
   for (const c of cases.filter((x) => !x.excludedReason)) {
     lines.push(
-      `| ${c.testId} | ${c.assignment.A} | ${c.assignment.B} | ${c.statusA ?? '-'} | ${c.statusB ?? '-'} | ${c.scoreA.combined.toFixed(2)} | ${c.scoreB.combined.toFixed(2)} | ${c.winner} | ${c.realWinner} | ${formatDuration(c.durationA)} | ${formatDuration(c.durationB)} |`,
+      `| ${c.testId} | ${c.layer ?? '其他题目'} | ${c.assignment.A} | ${c.assignment.B} | ${(c.passRateA * 100).toFixed(1)}% | ${(c.passRateB * 100).toFixed(1)}% | ${c.assertionWinner} | ${c.referenceWinner} (${c.referenceKind}) | ${formatDuration(c.durationA)} | ${formatDuration(c.durationB)} |`,
     );
   }
   lines.push('');
@@ -123,10 +130,11 @@ export function generateComparisonMarkdown(
   for (const c of cases) {
     lines.push(`### ${c.testId}: ${c.description}`);
     lines.push('');
-    lines.push(`- **Winner:** ${c.winner} (${c.realWinner})`);
-    lines.push(`- **Score A (${c.assignment.A}):** Content=${c.scoreA.content.total.toFixed(2)}, Structure=${c.scoreA.structure.total.toFixed(2)}, Combined=${c.scoreA.combined.toFixed(2)}`);
-    lines.push(`- **Score B (${c.assignment.B}):** Content=${c.scoreB.content.total.toFixed(2)}, Structure=${c.scoreB.structure.total.toFixed(2)}, Combined=${c.scoreB.combined.toFixed(2)}`);
-    lines.push(`- **Reasoning:** ${c.reasoning}`);
+    lines.push(`- **断言胜方:** ${c.assertionWinner}（A ${(c.passRateA * 100).toFixed(1)}% / B ${(c.passRateB * 100).toFixed(1)}%，${c.assertionCount} 条）`);
+    lines.push(`- **参考 · ${c.referenceKind === 'llm_judge' ? '评审' : '启发式'}:** ${c.referenceWinner}`);
+    lines.push(`- **参考分 A (${c.assignment.A}):** Content=${c.scoreA.content.total.toFixed(2)}, Structure=${c.scoreA.structure.total.toFixed(2)}, Combined=${c.scoreA.combined.toFixed(2)}`);
+    lines.push(`- **参考分 B (${c.assignment.B}):** Content=${c.scoreB.content.total.toFixed(2)}, Structure=${c.scoreB.structure.total.toFixed(2)}, Combined=${c.scoreB.combined.toFixed(2)}`);
+    lines.push(`- **参考说明:** ${c.reasoning}`);
     lines.push('');
   }
 
@@ -156,7 +164,7 @@ export function generateComparisonConsole(result: ComparisonResult): string {
   const winnerColor = summary.winner === 'baseline' ? chalk.cyan : summary.winner === 'candidate' ? chalk.magenta : chalk.yellow;
   lines.push(chalk.bold('Summary'));
   lines.push(`  Winner: ${winnerColor.bold(summary.winner.toUpperCase())}`);
-  lines.push(`  Score:  ${chalk.cyan(summary.baselineAvgScore.toFixed(2))} vs ${chalk.magenta(summary.candidateAvgScore.toFixed(2))}`);
+  lines.push(`  Reference score: ${chalk.cyan(summary.baselineAvgScore.toFixed(2))} vs ${chalk.magenta(summary.candidateAvgScore.toFixed(2))}`);
   lines.push(`  Wins:   ${chalk.cyan(String(summary.baselineWins))} - ${chalk.magenta(String(summary.candidateWins))} - ${chalk.yellow(String(summary.ties))} ties`);
   lines.push(`  Confidence: ${(summary.confidence * 100).toFixed(0)}%`);
   if (summary.pValue !== undefined) {
@@ -166,6 +174,12 @@ export function generateComparisonConsole(result: ComparisonResult): string {
   }
   lines.push('');
   lines.push(chalk.dim(`  ${summary.verdict}`));
+  lines.push('');
+
+  lines.push(chalk.bold('按层别'));
+  for (const row of layerRows(cases)) {
+    lines.push(`  ${row.layer}: ${chalk.cyan(String(row.baselineWins))}-${chalk.magenta(String(row.candidateWins))}-${chalk.yellow(String(row.ties))} ties`);
+  }
   lines.push('');
 
   // 排除的 pair（WP1-3b）
@@ -193,15 +207,36 @@ export function generateComparisonConsole(result: ComparisonResult): string {
     const scoreBLabel = c.assignment.B === 'baseline' ? chalk.cyan : chalk.magenta;
 
     lines.push(
-      `    A(${c.assignment.A}): ${scoreALabel(c.scoreA.combined.toFixed(2))}  ` +
-      `B(${c.assignment.B}): ${scoreBLabel(c.scoreB.combined.toFixed(2))}  ` +
-      `Winner: ${winnerLabel}`,
+      `    A(${c.assignment.A}): ${scoreALabel(`${(c.passRateA * 100).toFixed(1)}%`)}  ` +
+      `B(${c.assignment.B}): ${scoreBLabel(`${(c.passRateB * 100).toFixed(1)}%`)}  ` +
+      `Assertion winner: ${winnerLabel}`,
     );
-    lines.push(`    ${chalk.dim(c.reasoning)}`);
+    lines.push(`    ${chalk.dim(`参考 · ${c.referenceKind === 'llm_judge' ? '评审' : '启发式'}: ${c.referenceWinner}; ${c.reasoning}`)}`);
     lines.push('');
   }
 
   return lines.join('\n');
+}
+
+function layerRows(cases: CaseComparison[]): Array<{
+  layer: string;
+  baselineWins: number;
+  candidateWins: number;
+  ties: number;
+}> {
+  const grouped = new Map<string, CaseComparison[]>();
+  for (const comparison of cases.filter((item) => !item.excludedReason)) {
+    const layer = comparison.layer ?? '其他题目';
+    grouped.set(layer, [...(grouped.get(layer) ?? []), comparison]);
+  }
+  return [...grouped.entries()]
+    .sort(([left], [right]) => left.localeCompare(right, 'zh-CN'))
+    .map(([layer, rows]) => ({
+      layer,
+      baselineWins: rows.filter((row) => row.realWinner === 'baseline').length,
+      candidateWins: rows.filter((row) => row.realWinner === 'candidate').length,
+      ties: rows.filter((row) => row.realWinner === 'tie').length,
+    }));
 }
 
 function getWinnerIcon(c: CaseComparison): string {

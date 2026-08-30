@@ -14,6 +14,40 @@ function createDbWriter() {
 }
 
 describe('ExperimentAdapter canonical harness persistence', () => {
+  it('counts memory_injected events into the matching event-backed case data', () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    adapter.recordMemoryInjection({
+      schemaVersion: 2,
+      type: 'memory_injected',
+      ts: 1,
+      runId: 'event-run',
+      testId: 'event-case',
+      id: 'memory-a',
+    });
+    adapter.recordMemoryInjection({
+      schemaVersion: 2,
+      type: 'memory_injected',
+      ts: 2,
+      runId: 'event-run',
+      testId: 'event-case',
+      id: 'memory-b',
+    });
+    adapter.persistEventCase({
+      schemaVersion: 2,
+      type: 'case_end',
+      ts: 3,
+      runId: 'event-run',
+      testId: 'event-case',
+      status: 'passed',
+      score: 1,
+      durationMs: 5,
+    });
+
+    expect(JSON.parse(db.insertExperimentCases.mock.calls[0]?.[1][0].data_json).memoryInjections)
+      .toBe(2);
+  });
+
   it('persists failure axes for event-backed and TestRunner-backed cases', async () => {
     const db = createDbWriter();
     const adapter = new ExperimentAdapter(db as any);

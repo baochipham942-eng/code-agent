@@ -8,6 +8,7 @@ import type {
   AiReviewDimension, AiReviewVerdict,
   TelemetryCompleteness,
   ScoreAuthority,
+  EvalCompareArm,
 } from '../../shared/contract/evaluation';
 import type { AgentPointerEvent } from '../../shared/contract/desktop';
 import type { GoalGateVerdict } from '../../shared/contract/agent';
@@ -783,23 +784,7 @@ export interface ExpectationResult {
 
 // === P2: A/B Comparison Types ===
 
-export interface CompareConfiguration {
-  name: string;
-  model?: string;
-  provider?: string;
-  systemPrompt?: string;
-  harness?: HarnessVariantConfig;
-  memory?: {
-    longTerm?: boolean;
-    routingModel?: string;
-  };
-  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh';
-  /** Run-scoped skills visible to this comparison arm. */
-  skills?: string[];
-  enabledTools?: string[];
-  temperature?: number;
-  agentConfig?: Record<string, unknown>;
-}
+export type CompareConfiguration = EvalCompareArm;
 
 export interface DualRubricScore {
   content: { correctness: number; completeness: number; accuracy: number; total: number };

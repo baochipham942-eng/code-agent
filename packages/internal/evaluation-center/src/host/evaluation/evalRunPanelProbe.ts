@@ -13,6 +13,8 @@ import {
 } from '@host/testing/calibration/calibrationRegistry';
 import { AI_REVIEW_DIMENSION_DEFINITIONS } from '@host/testing/judge/dimensions';
 import { getAiReviewPromptHash } from '@host/testing/judge/dimensionJudge';
+import { getSkillDiscoveryService } from '@host/services/skills/skillDiscoveryService';
+import { buildProductionCompareArm } from './evalCompareRequest';
 
 const FALLBACK_SPLIT_COUNTS: EvalRunPanelProbe['splitCounts'] = {
   'held-in': 76,
@@ -69,6 +71,11 @@ export function inspectEvalRunPanel(): EvalRunPanelProbe {
         : { state: 'calibrated' as const, ...details },
     };
   });
+  const productionArm = buildProductionCompareArm({ model: model.model, provider: model.provider });
+  const skills = Array.from(new Set([
+    ...(productionArm.skills ?? []),
+    ...getSkillDiscoveryService().getAllSkills().map((skill) => skill.name),
+  ])).sort((left, right) => left.localeCompare(right));
   return {
     environment: {
       available: environment.available,
@@ -90,5 +97,7 @@ export function inspectEvalRunPanel(): EvalRunPanelProbe {
     splitCounts: readSplitCounts(environment.repositoryRoot),
     // 「快速检查」是 core-path 标签下最多取 12 题，不创建第四个评测集桶。
     quickCheck: { tags: ['core-path'], maxCases: 12 },
+    productionArm,
+    skills,
   };
 }

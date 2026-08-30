@@ -85,6 +85,11 @@ import { EVAL_GOAL_ALLOW_SWARM } from '@host/testing/goalContractEval';
 import { EVAL_REPEAT_MAX, type AiReviewDimension } from '@shared/contract/evaluation';
 import { validateDiscoverableSkills } from '@host/testing/skillSelection';
 import { parseAiReviewList } from './lib/eval-ai-review-args';
+import { dispatchEvalCompareCommand } from './lib/eval-compare-command';
+import {
+  buildProductionCompareArm,
+  describeEvalCompareDiff,
+} from '../src/host/evaluation/evalCompareRequest';
 /** roadmap 2.4 A/B 归因（audit D-R3）：当前 run 的 provider 变体臂 */
 function providerVariantArm(): 'variant-on' | 'variant-off' {
   return isProviderVariantDisabled() ? 'variant-off' : 'variant-on';
@@ -716,12 +721,6 @@ async function exitIfAborted(
   process.exit(2);
 }
 
-/**
- * WP1-3：--compare 成对盲测。baseline = 当前默认配置，candidate 来自 YAML
- * （可覆盖 model/provider/systemPrompt）。每 case 两配置各跑一次，
- * ABComparator 盲分配 A/B + 评分 + unblind。paired 对比的统计功效远高于
- * 两轮整体总分对比。
- */
 async function runCompareCommand(
   workingDir: string,
   candidatePath: string,
@@ -737,6 +736,8 @@ async function runCompareCommand(
     judge: 'rules' | 'llm';
     caseDir?: string;
     split?: SplitBucket;
+    repeat: number;
+    eventStream?: EvalRunEventStream;
   },
 ): Promise<void> {
   const {
@@ -747,17 +748,11 @@ async function runCompareCommand(
   const candidate = await loadCompareConfig(candidatePath, { workingDirectory: workingDir });
   const resolvedProvider = opts.provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
   const resolvedModel = opts.model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
-  const baseline: CompareConfiguration = {
-    name: 'baseline',
+  const baseline: CompareConfiguration = buildProductionCompareArm({
     model: resolvedModel,
     provider: resolvedProvider,
-  };
-
-  // A3 臂激活断言（跑前，零成本）：candidate 与 baseline 有效配置相同 = 对照臂空跑，
-  // 在烧任何 API 预算前直接拒绝发车。
+  });
   assertCompareArmsDistinct(baseline, candidate);
-
-  // Load & filter cases
   const defaultConfig = createDefaultConfig(workingDir);
   const suites = await loadAllTestSuites(opts.caseDir ?? resolveCoreTestCaseDir(workingDir));
   const selectedTestCases = filterTestCases(suites, { filterTags: opts.tags, filterIds: opts.ids });
@@ -783,8 +778,6 @@ async function runCompareCommand(
     ));
     console.log('');
   }
-
-  // Cost guard：每 case 跑两次（baseline + candidate）
   const casesToRun = Math.min(totalCases, opts.maxCases);
   const candidateModel = candidate.model || resolvedModel;
   const estimatedCost = opts.real
@@ -803,7 +796,6 @@ async function runCompareCommand(
     ));
     process.exit(1);
   }
-
   const testCaseDir = opts.caseDir ?? resolveCoreTestCaseDir(workingDir);
   const buildArmStamp = (config: CompareConfiguration) => {
     const arm = resolveEffectiveCompareArm(config, baseline);
@@ -817,13 +809,28 @@ async function runCompareCommand(
       tags: opts.tags,
       ids: opts.ids,
       judge: opts.judge,
+      trialsPerCase: opts.repeat,
       shape: buildCompareArmShape(config, baseline, EVAL_GOAL_ALLOW_SWARM),
-      estimatedCases: casesToRun,
+      estimatedCases: casesToRun * opts.repeat,
     });
   };
   const baselineStamp = buildArmStamp(baseline);
   const candidateStamp = buildArmStamp(candidate);
-
+  opts.eventStream?.start(testCases.slice(0, casesToRun).map((testCase) => testCase.id), {
+    ...candidateStamp,
+    mode: opts.real ? 'real' : 'mock',
+    model: candidate.model ?? resolvedModel,
+    provider: candidate.provider ?? resolvedProvider,
+    scope: 'full',
+    ...(opts.split ? { split: opts.split } : {}),
+    ...(opts.tags?.length ? { tags: opts.tags } : {}),
+    ...(opts.ids?.length ? { ids: opts.ids } : {}),
+    maxCases: casesToRun,
+    concurrency: 1,
+    compare: { baseline, candidate, diff: describeEvalCompareDiff(baseline, candidate) },
+    gitCommit: getCommitSha(),
+    testCaseDir,
+  });
   const repoStatusBefore = getRepoStatusSnapshot(workingDir);
   const sandbox = createEvalSandbox(workingDir, opts.real);
   const agentWorkingDir = sandbox?.dir ?? workingDir;
@@ -867,9 +874,6 @@ async function runCompareCommand(
         telemetryCollector: isolatedState?.telemetryCollector,
       });
     };
-
-    // LLM 评审可选（有额外 API 成本）；默认 heuristic 规则免费。
-    // 评审来源即 scoreAuthority 语义：llm → llm_judge，rules → self_check 级弱证据。
     let llmCall: ((prompt: string) => Promise<string>) | undefined;
     if (opts.judge === 'llm') {
       const { quickTask } = await import('@host/model/quickModel');
@@ -888,6 +892,7 @@ async function runCompareCommand(
     console.log('');
 
     const result = await runCompare({
+      runId: opts.eventStream?.runId,
       testCases: testCases.slice(0, casesToRun),
       baseline,
       candidate,
@@ -928,14 +933,13 @@ async function runCompareCommand(
       },
       runnerConfig: (config) => ({
         ...runnerConfig,
+        trialsPerCase: opts.repeat,
         stamp: config === baseline ? baselineStamp : candidateStamp,
       }),
       llmCall,
     });
-
-    // A3 臂激活断言（跑后，报数前准入）：没有任何有效配对数据（零 case 或全部
-    // pair 被排除）时抛错拒绝报数——不写报告、退出码非 0。
     assertCompareArmsActivated(result);
+    opts.eventStream?.recordComparison(result);
 
     console.log(generateComparisonConsole(result));
 
@@ -947,6 +951,7 @@ async function runCompareCommand(
       baseline: baselineStamp,
       candidate: candidateStamp,
     }));
+    opts.eventStream?.recordReportFiles([reportPath]);
     console.log(chalk.dim(`  Comparison report saved to: ${reportPath}`));
     console.log('');
 
@@ -971,7 +976,6 @@ function createRunStartConfig(opts: {
   ids?: string[];
   maxCases: number;
   concurrency?: number;
-  compare?: boolean;
   judge: 'rules' | 'llm';
   workingDir: string;
   caseDir?: string;
@@ -1017,7 +1021,6 @@ function createRunStartConfig(opts: {
     ...(opts.ids?.length ? { ids: opts.ids } : {}),
     maxCases: opts.maxCases,
     concurrency: opts.concurrency ?? 1,
-    ...(opts.compare ? { compare: true } : {}),
     gitCommit: getCommitSha(),
     testCaseDir,
   };
@@ -1111,10 +1114,11 @@ async function mainImpl(
     ? { predictedFixes: predictedFixes ?? [], riskTasks: riskTasks ?? [] }
     : undefined;
 
-  // --compare: A/B paired blind test (WP1-3)
   if (compare) {
-    try {
-      await runCompareCommand(workingDir, compare, {
+    await dispatchEvalCompareCommand({
+      jsonEvents: Boolean(eventStream),
+      reportError: (message) => console.error(chalk.red(`  Error: ${message}`)),
+      run: () => runCompareCommand(workingDir, compare, {
         real: effectiveReal,
         mockEvalPolicy,
         model,
@@ -1126,14 +1130,10 @@ async function mainImpl(
         judge,
         caseDir,
         split: caseDir ? undefined : split ?? 'held-in',
-      });
-    } catch (error) {
-      // A3 臂激活断言等准入失败：干净的红色报错 + 非零退出，不产出对比报告
-      console.error(chalk.red(`  Error: ${error instanceof Error ? error.message : String(error)}`));
-      process.exit(1);
-    }
-    // 显式退出：真跑后 DB/telemetry/限流器残留 handle 会让进程写完报告仍挂住不退
-    process.exit(0);
+        repeat,
+        eventStream,
+      }),
+    });
   }
 
   // --trend

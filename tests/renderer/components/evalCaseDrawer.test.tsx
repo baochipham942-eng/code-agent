@@ -231,6 +231,28 @@ describe('EvalCaseDrawer', () => {
     expect((await screen.findByTestId('eval-case-conclusion')).textContent).toBe(withoutAnnotation);
   });
 
+  it('T9：人工评审段内不出现分数、百分比或综合分（监工代笔 · Grok 刀 B 席盲区⑩）', async () => {
+    const mine = {
+      id: 'mine-1', experimentId: 'run-1', caseId: 'case-1', reviewerId: 'host-reviewer',
+      overall: 'down' as const, note: '我的笔记', dims: { task_completed: 'no' as const },
+      consentScope: 'metadata' as const, createdAt: Date.now() - 7_200_000, mine: true,
+    };
+    const other = {
+      id: 'other-1', experimentId: 'run-1', caseId: 'case-1', reviewerId: 'someone-else',
+      overall: 'up' as const, note: '别人的笔记', dims: { tool_choice: 'yes' as const, self_tested: 'yes' as const },
+      consentScope: 'metadata' as const, createdAt: Date.now(), mine: false,
+    };
+    evaluation.invoke.mockImplementation(async (channel: string) => channel === EVALUATION_CHANNELS.LIST_ANNOTATIONS
+      ? { annotations: [other, mine], latestByReviewer: [other, mine] }
+      : detail());
+    render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
+    const section = await screen.findByTestId('eval-case-annotation');
+    await screen.findByText(/别人的笔记|someone-else/);
+    const text = section.textContent ?? '';
+    // 允许「上次 2 小时前」「2000 字」「3 维」与否定句「不进分数 / 不合成综合分」；不允许出现分值：60% / 评分 / 「80 分」
+    expect(text).not.toMatch(/\d\s*%|评分|\d+\s*分(?![钟数])/);
+  });
+
   it('超过 2000 字时常驻说明原因并禁用保存', async () => {
     render(<EvalCaseDrawer target={{ experimentId: 'run-1', caseId: 'case-1' }} onClose={vi.fn()} />);
     const note = await screen.findByPlaceholderText('写你看到的问题，一句话就行');

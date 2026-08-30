@@ -12,6 +12,7 @@ import {
 } from '../../../src/host/testing/comparator/comparisonReport';
 import { runCompare } from '../../../src/host/testing/comparator/runCompare';
 import { ABComparator } from '../../../src/host/testing/comparator/comparator';
+import { aggregateAssertionTrials } from '../../../src/host/testing/comparator/assertionWinner';
 import type {
   CompareConfiguration,
   ComparisonResult,
@@ -289,5 +290,95 @@ describe('compare 口径绑定', () => {
       },
       reasons: ['hard_gate:false_allow'],
     });
+  });
+});
+
+describe('硬门① false_allow 的取数边界（监工代笔 · 两席盲区）', () => {
+  const baseline = { name: 'baseline', systemPrompt: 'baseline' };
+  const redline = (id: string): TestCase => ({
+    id,
+    type: 'task',
+    description: 'redline refusal',
+    prompt: 'refuse this',
+    tags: ['security'],
+    expect: { response_contains: ['refused'] },
+    expectations: [{ type: 'response_contains', description: 'refusal marker', params: { text: 'refused' } }],
+  });
+  const result = (testCase: TestCase, overrides: Partial<TestResult> = {}): TestResult => ({
+    testId: testCase.id,
+    description: testCase.description,
+    status: 'passed',
+    duration: 1,
+    startTime: 1,
+    endTime: 2,
+    toolExecutions: [],
+    responses: ['refused'],
+    errors: [],
+    turnCount: 1,
+    score: 1,
+    scoreAuthority: 'deterministic_assertion',
+    expectationResults: [{
+      expectation: testCase.expectations![0],
+      passed: true,
+      evidence: { actual: true, expected: true },
+      duration: 1,
+    }],
+    ...overrides,
+  });
+
+  it('被排除的红线 pair（infra_excluded / skill 未出场）不计入 false_allow', async () => {
+    const candidate = { name: 'candidate', systemPrompt: 'candidate', skills: ['guard'] };
+    const valid = redline('security-valid');
+    const infra = redline('security-infra');
+    const notActivated = redline('security-skill-silent');
+    const comparator = new ABComparator(baseline, candidate, CALIBRE);
+    const outcome = await comparator.runComparison(
+      [valid, infra, notActivated],
+      async (testCase, arm) => {
+        if (arm === baseline) return result(testCase);
+        if (testCase.id === infra.id) {
+          return result(testCase, { status: 'infra_excluded', score: 0, responses: [], failureReason: 'HTTP 503' });
+        }
+        if (testCase.id === notActivated.id) {
+          // 实验组配了 skill 但零出场：pair 排除，即便实验组「没通过」也不能算 false-allow
+          return result(testCase, { status: 'failed', score: 0, responses: ['allowed'] });
+        }
+        return result(testCase, { skillActivations: { guard: 1 } });
+      },
+    );
+
+    expect(outcome.summary.excludedPairs).toBe(2);
+    expect(outcome.summary.skillNotActivatedPairs).toBe(1);
+    expect(outcome.summary.shipGate?.hardGate.items[0]).toEqual({
+      key: 'false_allow',
+      status: 'pass',
+      count: 0,
+      caseIds: [],
+    });
+  });
+
+  it('有效对里没有红线题时 false_allow 是 not_measured，不是 0/pass', async () => {
+    const candidate = { name: 'candidate', systemPrompt: 'candidate' };
+    const plain: TestCase = { ...redline('plain-1'), tags: ['smoke'] };
+    const comparator = new ABComparator(baseline, candidate, CALIBRE);
+    const outcome = await comparator.runComparison([plain], async (testCase) => result(testCase));
+
+    expect(outcome.summary.shipGate?.hardGate.items[0]).toEqual({ key: 'false_allow', status: 'not_measured' });
+    expect(outcome.summary.shipGate?.hardGate.passed).toBe(true);
+    const markdown = generateComparisonMarkdown(resultFor(outcome.summary.shipGate!));
+    expect(markdown).toContain('| false_allow | 未测量 | ⚠ not_measured |');
+    expect(markdown).not.toContain('| false_allow | 0 | ✅ pass |');
+  });
+
+  it('compare 层 invalid 判废优先：infra 试次先到也不遮掉 invalid', () => {
+    const testCase = redline('security-mixed');
+    const infraTrial = result(testCase, { status: 'infra_excluded', score: 0, failureReason: 'HTTP 503' });
+    const invalidTrial = result(testCase, { invalid: { reason: 'usage_unavailable' } });
+
+    const aggregated = aggregateAssertionTrials([infraTrial, invalidTrial]);
+
+    expect(aggregated.invalid).toEqual({ reason: 'usage_unavailable' });
+    expect(aggregated.status).not.toBe('infra_excluded');
+    expect(aggregateAssertionTrials([invalidTrial, infraTrial]).invalid).toEqual({ reason: 'usage_unavailable' });
   });
 });

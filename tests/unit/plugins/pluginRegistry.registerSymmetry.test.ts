@@ -132,6 +132,11 @@ describe('PluginRegistry registerTool / registerToolModule symmetry', () => {
       expect(plugin?.registeredTools.length).toBeGreaterThan(0);
     }
 
+    expect(await reg.removeBuiltinCapability('builtin.imageProcess')).toBe(true);
+    expect(reg.getPlugin('builtin.imageProcess')).toBeUndefined();
+    expect(await reg.installBuiltinCapability('builtin.imageProcess')).toBe(true);
+    expect(reg.getPlugin('builtin.imageProcess')?.state).toBe('active');
+
     for (const pluginId of expectedIds) {
       expect(await reg.deactivatePlugin(pluginId)).toBe(true);
       const plugin = reg.getPlugin(pluginId);
@@ -144,6 +149,7 @@ describe('PluginRegistry registerTool / registerToolModule symmetry', () => {
     expect(reg.getPlugin('builtin.computerUse')?.state).toBe('active');
     expect(await reg.removeBuiltinCapability('builtin.computerUse')).toBe(true);
     expect(reg.getPlugin('builtin.computerUse')).toBeUndefined();
+    expect(await reg.installBuiltinCapability('not-a-builtin')).toBe(false);
   });
 
   it('registerTool 重复同名 → 第二次抛 "already registered"', async () => {

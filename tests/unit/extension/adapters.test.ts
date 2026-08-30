@@ -37,7 +37,7 @@ function fullManifest(): PluginManifest {
     author: 'Agent Neo',
     homepage: 'https://example.com/image-process',
     main: 'index.js',
-    surfaces: ['tools', 'language'],
+    surfaces: ['tools', 'internal-feature'],
     capabilities: ['image-processing', 'image-analysis'],
     platforms: ['darwin', 'linux'],
     permissions: ['filesystem', 'network'],
@@ -78,7 +78,7 @@ describe('pluginManifestToMetadata', () => {
       name: 'Image Process',
       description: 'Process images',
       source: 'plugin',
-      surfaces: ['tools', 'language'],
+      surfaces: ['tools', 'internal-feature'],
       version: '1.2.3',
       author: 'Agent Neo',
       capabilities: ['image-processing', 'image-analysis'],
@@ -169,7 +169,7 @@ describe('parsedSkillToMetadata', () => {
     }
   });
 
-  it('surfaces 固定 ["skills"](不参与 tools/theme/language)', () => {
+  it('surfaces 固定 ["skills"](不参与 plugin surface)', () => {
     const result = parsedSkillToMetadata(fullSkill());
     expect(result.surfaces).toEqual(['skills']);
   });

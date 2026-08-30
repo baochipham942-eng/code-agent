@@ -155,15 +155,26 @@ describe('PluginsSettings install cancellation', () => {
       if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST) {
         return Promise.resolve({
           success: true,
-          data: [{
-            id: 'builtin.computerUse',
-            name: 'Computer Use',
-            version: '1.0.0',
-            description: 'macOS 桌面控制',
-            permissions: ['filesystem', 'shell', 'accessibility', 'screen-recording'],
-            state: 'available',
-            toolNames: [],
-          }],
+          data: [
+            {
+              id: 'builtin.imageProcess',
+              name: 'Image Process',
+              version: '1.0.0',
+              description: '图片处理',
+              permissions: ['filesystem'],
+              state: 'active',
+              toolNames: ['image_process'],
+            },
+            {
+              id: 'builtin.computerUse',
+              name: 'Computer Use',
+              version: '1.0.0',
+              description: 'macOS 桌面控制',
+              permissions: ['filesystem', 'shell', 'accessibility', 'screen-recording'],
+              state: 'available',
+              toolNames: [],
+            },
+          ],
         });
       }
       if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_STAGE_BUNDLED) {
@@ -194,6 +205,8 @@ describe('PluginsSettings install cancellation', () => {
     });
 
     render(<PluginsSettings />);
+    expect(await screen.findByText('Image Process')).toBeTruthy();
+    expect(screen.getByText('Computer Use')).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: zh.settings.plugins.manualImport.install }));
 
     expect(await screen.findByText(zh.settings.plugins.manualImport.confirmTitle)).toBeTruthy();

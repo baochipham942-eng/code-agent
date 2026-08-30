@@ -36,7 +36,7 @@ const VALID_PERMISSIONS: PluginPermission[] = [
 ];
 
 const VALID_SURFACES: PluginSurface[] = [
-  'tools', 'internal-feature', 'skills', 'theme', 'language',
+  'tools', 'internal-feature',
 ];
 
 const VALID_PLATFORMS: PluginPlatform[] = ['darwin', 'win32', 'linux'];
@@ -123,7 +123,7 @@ export function validateManifest(manifest: unknown): ValidationResult {
     }
   }
 
-  // Optional: surfaces (host extension surfaces — tools/skills/theme/language)
+  // Optional: surfaces (host extension surfaces — tools/internal-feature)
   if (m.surfaces !== undefined) {
     if (!Array.isArray(m.surfaces)) {
       errors.push({ field: 'surfaces', message: "'surfaces' must be an array" });
@@ -237,57 +237,6 @@ export async function validateEntry(entryPath: string): Promise<ValidationResult
 }
 
 // ----------------------------------------------------------------------------
-// Skills Directory Validation
-// ----------------------------------------------------------------------------
-
-/**
- * Validate the skills directory structure if it exists
- */
-export async function validateSkillsDir(pluginDir: string): Promise<ValidationResult> {
-  const errors: ValidationError[] = [];
-  const warnings: ValidationWarning[] = [];
-
-  const skillsDir = path.join(pluginDir, 'skills');
-
-  try {
-    await fs.access(skillsDir);
-  } catch {
-    // skills directory is optional
-    return { valid: true, errors, warnings };
-  }
-
-  try {
-    const entries = await fs.readdir(skillsDir, { withFileTypes: true });
-
-    for (const entry of entries) {
-      if (!entry.isDirectory() && !entry.isFile()) continue;
-      if (entry.name.startsWith('.')) continue;
-
-      if (entry.isDirectory()) {
-        // Skill directories should contain at least one .md file
-        const skillDir = path.join(skillsDir, entry.name);
-        const files = await fs.readdir(skillDir);
-        const hasMd = files.some(f => f.endsWith('.md'));
-        if (!hasMd) {
-          warnings.push({
-            field: `skills/${entry.name}`,
-            message: `Skill directory '${entry.name}' has no .md file`,
-          });
-        }
-      }
-    }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    warnings.push({
-      field: 'skills',
-      message: `Could not read skills directory: ${message}`,
-    });
-  }
-
-  return { valid: errors.length === 0, errors, warnings };
-}
-
-// ----------------------------------------------------------------------------
 // Hook Validation
 // ----------------------------------------------------------------------------
 
@@ -340,7 +289,7 @@ export function validateHooks(hooks: unknown): ValidationResult {
 
 /**
  * Run all validations for a plugin directory.
- * Merges errors/warnings from manifest, entry, skills, and hooks.
+ * Merges errors/warnings from manifest, entry, and hooks.
  */
 export async function validatePlugin(
   pluginDir: string,
@@ -368,12 +317,7 @@ export async function validatePlugin(
   allErrors.push(...entryResult.errors);
   allWarnings.push(...entryResult.warnings);
 
-  // 3. Validate skills directory
-  const skillsResult = await validateSkillsDir(pluginDir);
-  allErrors.push(...skillsResult.errors);
-  allWarnings.push(...skillsResult.warnings);
-
-  // 4. Validate hooks if present
+  // 3. Validate hooks if present
   if (m.hooks !== undefined) {
     const hooksResult = validateHooks(m.hooks);
     allErrors.push(...hooksResult.errors);

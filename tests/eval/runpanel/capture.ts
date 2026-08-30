@@ -7,13 +7,16 @@ import Database from 'better-sqlite3';
 import { ExperimentAdapter } from '@internal-evaluation/host/evaluation/experimentAdapter';
 import type { DatabaseService } from '../../../src/host/services/core/databaseService';
 import { ExperimentRepository } from '../../../src/host/services/core/repositories/ExperimentRepository';
+import { AnnotationRepository } from '../../../src/host/services/core/repositories/AnnotationRepository';
+import { applyAnnotationsSchema } from '../../../src/host/services/core/database/schemaAnnotations';
 import { buildEvalExperimentCaseDetail } from '@internal-evaluation/host/evaluation/evalCaseDetail';
 import { buildCaseEvidence } from '@internal-evaluation-scripts/lib/eval-case-evidence';
 import { EXPECTATION_TYPE_CATALOG } from '../../../src/host/testing/expectationCatalog';
-import { UNKNOWN_EVAL_RUN_STAMP, type EvalRunEvent, type EvalExperimentCaseDetail } from '../../../src/shared/contract/evaluation';
+import { UNKNOWN_EVAL_RUN_STAMP, type EvalRunEvent, type EvalExperimentCaseDetail, type ListEvalAnnotationsResult } from '../../../src/shared/contract/evaluation';
 import type { TestResult } from '../../../src/host/testing/types';
 
 type Scenario = 'a1' | 'a2' | 'a8' | 'a12' | 'c2' | 'a13a' | 'a13b' | 'a13c'
+  | 'a13-annotation-empty' | 'a13-annotation-prefill'
   | 'c1a' | 'c1b-disabled' | 'c1b-ready' | 'c1c';
 type Theme = 'light' | 'dark';
 
@@ -22,6 +25,7 @@ const outputDir = process.env.RUNPANEL_EVIDENCE_DIR ?? path.join(here, 'artifact
 const referenceHtml = process.env.RUNPANEL_REFERENCE_HTML;
 const scenarioNames = new Set<Scenario>([
   'a1', 'a2', 'a8', 'a12', 'c2', 'a13a', 'a13b', 'a13c',
+  'a13-annotation-empty', 'a13-annotation-prefill',
   'c1a', 'c1b-disabled', 'c1b-ready', 'c1c',
 ]);
 const requestedScenarios = (process.env.RUNPANEL_SCENARIOS?.split(',') ?? [...scenarioNames])
@@ -54,13 +58,15 @@ function baseResult(testId: string): TestResult {
   };
 }
 
-async function writeCaseDrawerFixture(): Promise<{ fixturePath: string; reportPath: string }> {
+async function writeCaseDrawerFixture(): Promise<{ fixturePath: string; annotationPath: string; reportPath: string }> {
   const db = new Database(':memory:');
   db.exec(`
     CREATE TABLE experiments (id TEXT PRIMARY KEY, name TEXT, timestamp INTEGER, model TEXT, provider TEXT, scope TEXT, config_json TEXT, summary_json TEXT, source TEXT, git_commit TEXT);
     CREATE TABLE experiment_cases (id TEXT PRIMARY KEY, experiment_id TEXT, case_id TEXT, session_id TEXT, status TEXT, score INTEGER, duration_ms INTEGER, data_json TEXT);
   `);
+  applyAnnotationsSchema(db, { debug() {}, info() {}, warn() {}, error() {} } as never);
   const repo = new ExperimentRepository(db);
+  const annotations = new AnnotationRepository(db);
   const writer: Pick<DatabaseService, 'insertExperiment' | 'insertExperimentCases' | 'updateExperimentSummary'> = {
     insertExperiment: (row) => repo.insertExperiment(row),
     insertExperimentCases: (id, rows) => repo.insertExperimentCases(id, rows),
@@ -126,10 +132,29 @@ async function writeCaseDrawerFixture(): Promise<{ fixturePath: string; reportPa
       },
     });
   }
-  db.close();
   const fixturePath = path.join(here, '.generated-casedrawer.json');
   await fs.writeFile(fixturePath, JSON.stringify(details));
-  return { fixturePath, reportPath };
+  annotations.insert({
+    id: 'visual-annotation-1', experiment_id: runId, case_id: 'TC-026', reviewer_id: 'runpanel-admin',
+    overall: 'down', note: '报告文件没有生成，工具调用也失败了。',
+    dims_json: JSON.stringify({ task_completed: 'no', tool_choice: 'no', self_tested: 'yes' }),
+    consent_scope: 'metadata', calibration_split: null, supersedes_id: null, created_at: Date.now() - 7_200_000,
+  });
+  const row = annotations.listForCase(runId, 'TC-026')[0];
+  if (!row) throw new Error('missing persisted visual annotation');
+  const annotation = {
+    id: row.id, experimentId: row.experiment_id, caseId: row.case_id, reviewerId: row.reviewer_id,
+    overall: row.overall ?? undefined, note: row.note ?? undefined, dims: JSON.parse(row.dims_json),
+    consentScope: row.consent_scope, createdAt: row.created_at, mine: true,
+  };
+  const annotationFixtures: Record<string, ListEvalAnnotationsResult> = {
+    'a13-annotation-empty': { annotations: [], latestByReviewer: [] },
+    'a13-annotation-prefill': { annotations: [annotation], latestByReviewer: [annotation] },
+  };
+  const annotationPath = path.join(here, '.generated-annotations.json');
+  await fs.writeFile(annotationPath, JSON.stringify(annotationFixtures));
+  db.close();
+  return { fixturePath, annotationPath, reportPath };
 }
 
 async function prepareScenario(page: Page, scenario: Scenario, theme: Theme): Promise<void> {
@@ -156,6 +181,9 @@ async function prepareScenario(page: Page, scenario: Scenario, theme: Theme): Pr
   if (scenario.startsWith('a13')) {
     await page.getByText('日常集 · 每题 1 次 · 题库 abcdef0').waitFor();
     await page.getByRole('dialog').waitFor();
+    if (scenario.startsWith('a13-annotation')) {
+      await page.getByTestId('eval-case-annotation').scrollIntoViewIfNeeded();
+    }
     return;
   }
   await page.getByTestId('eval-benchmarks-tab').waitFor();
@@ -178,7 +206,9 @@ async function prepareScenario(page: Page, scenario: Scenario, theme: Theme): Pr
 async function captureScenario(page: Page, scenario: Scenario, theme: Theme): Promise<void> {
   await prepareScenario(page, scenario, theme);
   const filename = scenario.startsWith('a13')
-    ? `N-EVAL-CASEDRAWER-2026-08-30-${scenario}-${theme}.png`
+    ? scenario.startsWith('a13-annotation')
+      ? `N-EVAL-ANNOTQUEUE-2026-08-30-${scenario.replace('a13-annotation-', '')}-${theme}.png`
+      : `N-EVAL-CASEDRAWER-2026-08-30-${scenario}-${theme}.png`
     : `${scenario}-${theme}.png`;
   await page.screenshot({ path: path.join(outputDir, filename), fullPage: scenario === 'c2' });
 }
@@ -217,6 +247,7 @@ try {
   await browser.close();
   await server.close();
   await fs.rm(generatedFixture.fixturePath, { force: true });
+  await fs.rm(generatedFixture.annotationPath, { force: true });
   await fs.rm(generatedFixture.reportPath, { force: true });
 }
 

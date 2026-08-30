@@ -3,6 +3,7 @@ import { evalCenterEn, evalCenterZh } from '../../../packages/internal/evaluatio
 import { evalRunPanelEn, evalRunPanelZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalRunPanel';
 import { evalScorersEn, evalScorersZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalScorers';
 import { evalCaseDrawerEn, evalCaseDrawerZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalCaseDrawer';
+import { evalAnnotationsEn, evalAnnotationsZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalAnnotations';
 import { evalExperimentsEn, evalExperimentsZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalExperiments';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,6 +23,8 @@ describe('跑分面板用户词表', () => {
       evalCenterZh.evalCenter.scorers,
       evalCaseDrawerZh.caseDrawer,
       evalCenterZh.evalCenter.caseDrawer,
+      evalAnnotationsZh.annotations,
+      evalCenterZh.evalCenter.annotations,
       evalExperimentsZh.experiments,
     ];
     const enSurfaces = [
@@ -31,6 +34,8 @@ describe('跑分面板用户词表', () => {
       evalCenterEn.evalCenter.scorers,
       evalCaseDrawerEn.caseDrawer,
       evalCenterEn.evalCenter.caseDrawer,
+      evalAnnotationsEn.annotations,
+      evalCenterEn.evalCenter.annotations,
       evalExperimentsEn.experiments,
     ];
     const forbiddenZh = [

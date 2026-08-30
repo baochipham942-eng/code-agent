@@ -7,6 +7,8 @@ import { PluginRegistry } from '../../../../src/host/plugins/pluginRegistry';
 import { loadPlugin } from '../../../../src/host/plugins/pluginLoader';
 import { hasProtocolTool } from '../../../../src/host/tools/protocolToolRegistration';
 import { resetProtocolRegistry } from '../../../../src/host/tools/protocolRegistry';
+import { readComputerUseCapabilityState } from '../../../../src/host/plugins/builtin/computerUse/installState';
+import type { MCPServerConfig } from '../../../../src/host/mcp/types';
 
 interface LifecycleEntry {
   id: string;
@@ -165,7 +167,10 @@ describe('ManualCapabilityPackageService', () => {
     expect(installed.toolNames).toEqual(['approved-cap:ping']);
     expect(hasProtocolTool('approved-cap:ping')).toBe(true);
     expect(lifecycle.map((entry) => entry.action)).toEqual(['loaded']);
-    expect(await service.list()).toMatchObject([{ id: 'approved-cap', state: 'active' }]);
+    expect((await service.list()).find((item) => item.id === 'approved-cap')).toMatchObject({
+      id: 'approved-cap',
+      state: 'active',
+    });
 
     await service.uninstall('approved-cap');
     expect(hasProtocolTool('approved-cap:ping')).toBe(false);
@@ -189,7 +194,11 @@ describe('ManualCapabilityPackageService', () => {
     expect(preview.replacesInstalledVersion).toBe('1.0.0');
     await expect(service.confirm(preview.token)).rejects.toThrow('真实激活失败');
     expect(hasProtocolTool('rollback-cap:ping')).toBe(true);
-    expect(await service.list()).toMatchObject([{ id: 'rollback-cap', version: '1.0.0', state: 'active' }]);
+    expect((await service.list()).find((item) => item.id === 'rollback-cap')).toMatchObject({
+      id: 'rollback-cap',
+      version: '1.0.0',
+      state: 'active',
+    });
     expect(JSON.parse(await fs.readFile(path.join(pluginsDir, 'rollback-cap', 'plugin.json'), 'utf8')))
       .toMatchObject({ version: '1.0.0' });
     expect(lifecycle.map((entry) => entry.action)).toEqual(['loaded', 'failed', 'rolled_back']);
@@ -204,5 +213,74 @@ describe('ManualCapabilityPackageService', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('缺少安装审批凭据');
     expect(hasProtocolTool('direct-bypass:ping')).toBe(false);
+  });
+
+  it('installs and uninstalls bundled Computer Use through the disclosure lifecycle', async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+    const serverStates = new Map<string, MCPServerConfig>();
+    const mcpConfig: MCPServerConfig = {
+      name: 'cua-driver',
+      type: 'stdio',
+      command: 'cua-driver',
+      args: ['mcp'],
+      enabled: true,
+    };
+    const service = createService({
+      computerUseStateDir: () => tempRoot,
+      mcpClient: {
+        getServerState: (name) => serverStates.get(name),
+        addServer: (config) => { serverStates.set(config.name, config); },
+        removeServer: async (name) => { serverStates.delete(name); },
+      },
+      resolveComputerUseMcpConfig: () => mcpConfig,
+    });
+    try {
+      const available = (await service.list()).find((item) => item.id === 'builtin.computerUse');
+      expect(available).toMatchObject({ state: 'available' });
+
+      const preview = await service.stageBundled('builtin.computerUse');
+      expect(preview).toMatchObject({
+        sourceKind: 'bundled',
+        permissions: expect.arrayContaining(['accessibility', 'screen-recording']),
+      });
+      await service.confirm(preview.token);
+
+      expect(registry.getPlugin('builtin.computerUse')?.state).toBe('active');
+      expect(serverStates.has('cua-driver')).toBe(true);
+      expect(await readComputerUseCapabilityState(tempRoot)).toBe('installed');
+      expect(lifecycle.map((entry) => entry.action)).toEqual(['loaded']);
+
+      await service.uninstall('builtin.computerUse');
+      expect(registry.getPlugin('builtin.computerUse')).toBeUndefined();
+      expect(serverStates.has('cua-driver')).toBe(false);
+      expect(await readComputerUseCapabilityState(tempRoot)).toBe('removed');
+      expect(lifecycle.map((entry) => entry.action)).toEqual(['loaded', 'unloaded']);
+    } finally {
+      Object.defineProperty(process, 'platform', originalPlatform);
+    }
+  });
+
+  it('rolls back bundled Computer Use when cua-driver cannot be registered', async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+    const service = createService({
+      computerUseStateDir: () => tempRoot,
+      mcpClient: {
+        getServerState: () => undefined,
+        addServer: () => undefined,
+        removeServer: async () => undefined,
+      },
+      resolveComputerUseMcpConfig: () => undefined,
+    });
+    try {
+      const preview = await service.stageBundled('builtin.computerUse');
+      await expect(service.confirm(preview.token)).rejects.toThrow('cua-driver 在当前平台不可用');
+      expect(registry.getPlugin('builtin.computerUse')).toBeUndefined();
+      expect(await readComputerUseCapabilityState(tempRoot)).toBe('missing');
+      expect(lifecycle.map((entry) => entry.action)).toEqual(['failed', 'rolled_back']);
+    } finally {
+      Object.defineProperty(process, 'platform', originalPlatform);
+    }
   });
 });

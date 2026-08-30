@@ -6,6 +6,7 @@ import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { PageContent } from '../shared/PageContent';
 import { ComputerUseContent } from '../computerUse/ComputerUseContent';
 import { BrowserSurfaceContent } from '../browser/BrowserSurfaceContent';
+import { useMcpServerStates } from '../../../hooks/useMcpServerStates';
 
 // 「本机操作」合并整窗页（2026-07-26 导航去重方案 9）：桌面操作与浏览器是
 // “Neo 操作本机”的同域能力，页内分段 tab 切换；tab 样式沿用 CapabilityHubPage。
@@ -19,17 +20,25 @@ const LOCAL_OPS_TABS: Array<{ key: LocalOpsTab; label: (t: ReturnType<typeof use
 export const LocalOpsPage: React.FC = () => {
   const { t } = useI18n();
   const { localOpsTab, openLocalOpsPanel } = useAppStore();
+  const mcpServerStates = useMcpServerStates();
+  const hasComputerUse = mcpServerStates.some(
+    (server) => server.config.name === 'cua-driver' && server.config.enabled,
+  );
+  const visibleTabs = hasComputerUse
+    ? LOCAL_OPS_TABS
+    : LOCAL_OPS_TABS.filter((tab) => tab.key === 'browser');
+  const visibleTab = localOpsTab === 'desktop' && !hasComputerUse ? 'browser' : localOpsTab;
 
   return (
     <FullScreenPage testId="local-ops-page" variant="inline">
       <FullScreenPageHeader
         icon={<MonitorSmartphone className="h-4 w-4 text-badge-info" />}
         title={t.localOps.title}
-        description={t.localOps.description}
+        description={hasComputerUse ? t.localOps.description : t.localOps.descriptionBrowserOnly}
         actions={(
           <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
-            {LOCAL_OPS_TABS.map(({ key, label }) => (
-              <button /* ds-allow:button: 本机操作 tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */ key={key} type="button" role="tab" aria-selected={localOpsTab === key} data-testid={`local-ops-tab-${key}`} onClick={() => openLocalOpsPanel(key)} className={`rounded px-2.5 py-1 text-xs transition-colors ${localOpsTab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}>
+            {visibleTabs.map(({ key, label }) => (
+              <button /* ds-allow:button: 本机操作 tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */ key={key} type="button" role="tab" aria-selected={visibleTab === key} data-testid={`local-ops-tab-${key}`} onClick={() => openLocalOpsPanel(key)} className={`rounded px-2.5 py-1 text-xs transition-colors ${visibleTab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}>
                 {label(t)}
               </button>
             ))}
@@ -37,7 +46,7 @@ export const LocalOpsPage: React.FC = () => {
         )}
       />
       <PageContent scroll={false} padding={false}>
-        {localOpsTab === 'browser' ? <BrowserSurfaceContent /> : <ComputerUseContent />}
+        {visibleTab === 'browser' ? <BrowserSurfaceContent /> : <ComputerUseContent />}
       </PageContent>
     </FullScreenPage>
   );

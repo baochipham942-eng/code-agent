@@ -1,5 +1,6 @@
 import type { AgentPointerNativeCursorCapability } from '../../shared/contract/desktop';
 import { CUA_DRIVER_SERVER_NAME } from './types';
+import { isComputerUseCapabilityInstalledSync } from '../plugins/builtin/computerUse/installState';
 
 export const CUA_AGENT_CURSOR_TOOLS = new Set([
   'start_session',
@@ -20,7 +21,7 @@ export function buildCuaAgentCursorCapabilityForToolCall(args: {
   const platform = args.platform || process.platform;
   const checkedAtMs = args.checkedAtMs ?? Date.now();
   const supportedPlatform = platform === 'darwin' || platform === 'win32';
-  const cuaEnabled = env.CODE_AGENT_ENABLE_CUA === '1';
+  const cuaEnabled = isComputerUseCapabilityInstalledSync(env);
   const isCuaServer = !args.serverName || args.serverName === CUA_DRIVER_SERVER_NAME;
 
   if (!supportedPlatform) {

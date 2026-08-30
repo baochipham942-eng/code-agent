@@ -88,7 +88,9 @@ export type PluginPermission =
   | 'shell'        // Execute shell commands
   | 'clipboard'    // Access clipboard
   | 'notification' // Show notifications
-  | 'storage';     // Persistent storage
+  | 'storage'      // Persistent storage
+  | 'accessibility' // macOS Accessibility / Windows UI Automation
+  | 'screen-recording'; // macOS Screen Recording / platform capture permission
 
 /**
  * Plugin surface types — what host surface the plugin extends.

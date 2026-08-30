@@ -9,11 +9,12 @@ import type {
   EvalRunPanelProbe,
 } from '@shared/contract/evaluation';
 import { EvalCenterPage } from '../../../src/renderer/components/features/evalCenter/EvalCenterPage';
+import { EXPECTATION_TYPE_CATALOG } from '../../../src/host/testing/expectationCatalog';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useAuthStore } from '../../../src/renderer/stores/authStore';
 import '../../../src/renderer/styles/global.css';
 
-type Scenario = 'a1' | 'a2' | 'a8' | 'a12';
+type Scenario = 'a1' | 'a2' | 'a8' | 'a12' | 'c2';
 type Theme = 'light' | 'dark';
 type EventListener = (event: EvalRunEvent) => void;
 
@@ -36,6 +37,14 @@ const probe: EvalRunPanelProbe = {
   provider: 'deepseek',
   priceTableVersion: 1,
   estimatedCostPerCaseUsd: 0.0021,
+  judge: { model: 'glm-4.7', provider: 'zhipu', estimatedCostPerCaseUsd: 0.01 },
+  aiReview: [
+    { dim: 'task_completed', requiresExpectation: false, calibration: { state: 'calibrated', kappa: 0.71, pairs: 34, computedAt: '2026-08-30', goldSource: 'deterministic_shadow' } },
+    { dim: 'tool_choice', requiresExpectation: true, calibration: { state: 'uncalibrated', reason: 'no_record' } },
+    { dim: 'confirmed_before_acting', requiresExpectation: false, calibration: { state: 'uncalibrated', reason: 'not_enough_pairs', pairs: 12, goldSource: 'deterministic_shadow' } },
+    { dim: 'no_extra_changes', requiresExpectation: true, calibration: { state: 'uncalibrated', reason: 'prompt_changed' } },
+    { dim: 'self_tested', requiresExpectation: true, calibration: { state: 'uncalibrated', reason: 'superseded' } },
+  ],
   splitCounts: { 'held-in': 76, 'held-out': 52, safety: 12 },
   quickCheck: { tags: ['core-path'], maxCases: 12 },
 };
@@ -111,6 +120,9 @@ const bridge = {
       return scenario === 'a12' ? historyRuns : [];
     }
     if (channel === IPC_CHANNELS.EVALUATION_RUN_EVENTS && payload === undefined) return probe;
+    if (channel === IPC_CHANNELS.EVALUATION_SCORERS_OVERVIEW) {
+      return { assertions: EXPECTATION_TYPE_CATALOG, aiReview: probe.aiReview, judge: probe.judge };
+    }
     if (channel === IPC_CHANNELS.EVALUATION_RUN_SUITE) return { runId: 'visual-run' };
     if (channel === IPC_CHANNELS.EVALUATION_RUN_EVENTS) {
       window.setTimeout(emitActiveRun, 0);
@@ -134,6 +146,6 @@ const bridge = {
 
 window.codeAgentAPI = bridge;
 useAuthStore.setState({ user: { id: 'runpanel-admin', email: 'admin@example.com', isAdmin: true } });
-useAppStore.setState({ language: 'zh', evalCenterTab: 'benchmarks' });
+useAppStore.setState({ language: 'zh', evalCenterTab: scenario === 'c2' ? 'scorers' : 'benchmarks' });
 
 createRoot(document.getElementById('root')!).render(<EvalCenterPage />);

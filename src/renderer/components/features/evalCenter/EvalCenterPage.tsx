@@ -33,12 +33,14 @@ const InAppValidationWorkspace = React.lazy(() => import('../inAppValidation/InA
 const EvalTelemetryTab = React.lazy(() => import('./EvalTelemetryTab').then((m) => ({ default: m.EvalTelemetryTab })));
 const EvalCaseListTab = React.lazy(() => import('./EvalCaseListTab').then((m) => ({ default: m.EvalCaseListTab })));
 const EvalBenchmarksTab = React.lazy(() => import('./EvalBenchmarksTab').then((m) => ({ default: m.EvalBenchmarksTab })));
+const EvalScorersTab = React.lazy(() => import('./EvalScorersTab').then((m) => ({ default: m.EvalScorersTab })));
 
 const EVAL_TABS: Array<{ key: EvalCenterTab; label: (t: ReturnType<typeof useI18n>['t']) => string }> = [
   { key: 'telemetry', label: (t) => t.evalCenter.tabTelemetry },
   { key: 'replay', label: (t) => t.evalCenter.tabReplay },
   // 2026-08-29 爸拍板 R4：题库位于回放之后、跑分之前。
   { key: 'cases', label: (t) => t.evalCenter.tabCases },
+  { key: 'scorers', label: (t) => t.evalCenter.tabScorers },
   { key: 'benchmarks', label: (t) => t.evalCenter.tabBenchmarks },
   { key: 'validation', label: (t) => t.evalCenter.tabValidation },
 ];
@@ -48,6 +50,7 @@ const EVAL_TAB_CONTENT: Record<EvalCenterTab, React.ReactNode> = {
   validation: <InAppValidationWorkspace />,
   telemetry: <EvalTelemetryTab />,
   cases: <EvalCaseListTab />,
+  scorers: <EvalScorersTab />,
   benchmarks: <EvalBenchmarksTab />,
 };
 

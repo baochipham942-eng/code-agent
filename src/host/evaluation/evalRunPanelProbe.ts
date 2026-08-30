@@ -4,6 +4,15 @@ import type { EvalRunPanelProbe } from '../../shared/contract/evaluation';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { inspectEvalEnvironment } from './evalEnvironment';
 import { estimateEvalCostPerCase, PRICING_TABLE_VERSION } from './evalRunCostEstimate';
+import { getQuickModelRuntimeInfo } from '../model/quickModel';
+import { CONFIG_DIR_NEW } from '../../shared/constants/configDir';
+import {
+  CALIBRATION_TRUST_THRESHOLDS,
+  isTrustedCalibration,
+  loadCalibrationRecordSync,
+} from '../testing/calibration/calibrationRegistry';
+import { AI_REVIEW_DIMENSION_DEFINITIONS } from '../testing/judge/dimensions';
+import { getAiReviewPromptHash } from '../testing/judge/dimensionJudge';
 
 const FALLBACK_SPLIT_COUNTS: EvalRunPanelProbe['splitCounts'] = {
   'held-in': 76,
@@ -34,6 +43,32 @@ function readSplitCounts(repositoryRoot?: string): EvalRunPanelProbe['splitCount
 export function inspectEvalRunPanel(): EvalRunPanelProbe {
   const environment = inspectEvalEnvironment();
   const model = resolveSessionDefaultModelConfig();
+  const judge = getQuickModelRuntimeInfo();
+  const judgeIdentity = judge ? `${judge.provider}/${judge.model}` : 'unavailable';
+  const registryDir = path.join(environment.repositoryRoot ?? '', CONFIG_DIR_NEW);
+  const aiReview = AI_REVIEW_DIMENSION_DEFINITIONS.map(({ id, requiresExpectation }) => {
+    const record = loadCalibrationRecordSync(registryDir, `${id}@${judgeIdentity}`);
+    const details = record ? {
+      kappa: record.kappa,
+      pairs: record.pairs,
+      computedAt: record.computedAt,
+      ...(record.standardVersion === 2 ? { goldSource: record.goldSource } : {}),
+    } : {};
+    let reason: EvalRunPanelProbe['aiReview'][number]['calibration']['reason'];
+    if (!record) reason = 'no_record';
+    else if (record.standardVersion !== 2) reason = 'superseded';
+    else if (record.promptHash !== getAiReviewPromptHash(id)) reason = 'prompt_changed';
+    else if (judge && (record.endpoint !== judge.baseUrl || record.judgeModel !== judgeIdentity)) reason = 'judge_changed';
+    else if (record.pairs < CALIBRATION_TRUST_THRESHOLDS.minPairs) reason = 'not_enough_pairs';
+    else if (!isTrustedCalibration(record)) reason = 'below_threshold';
+    return {
+      dim: id,
+      requiresExpectation,
+      calibration: reason
+        ? { state: 'uncalibrated' as const, reason, ...details }
+        : { state: 'calibrated' as const, ...details },
+    };
+  });
   return {
     environment: {
       available: environment.available,
@@ -46,6 +81,12 @@ export function inspectEvalRunPanel(): EvalRunPanelProbe {
     provider: model.provider,
     priceTableVersion: PRICING_TABLE_VERSION,
     estimatedCostPerCaseUsd: estimateEvalCostPerCase(model.model),
+    judge: {
+      model: judge?.model ?? 'unavailable',
+      provider: judge?.provider ?? 'unavailable',
+      estimatedCostPerCaseUsd: estimateEvalCostPerCase(judge?.model ?? 'default'),
+    },
+    aiReview,
     splitCounts: readSplitCounts(environment.repositoryRoot),
     // 「快速检查」是 core-path 标签下最多取 12 题，不创建第四个评测集桶。
     quickCheck: { tags: ['core-path'], maxCases: 12 },

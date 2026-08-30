@@ -1,3 +1,5 @@
+import type { AiReviewDimension } from '../../shared/contract/evaluation';
+
 export interface EvalRunPanelLabels {
   launch: string;
   lastRun: string;
@@ -29,6 +31,14 @@ export interface EvalRunPanelLabels {
   locked: string;
   aiJudge: string;
   nextVersion: string;
+  aiReviewColumns: string;
+  aiReviewDimensions: Record<AiReviewDimension, string>;
+  calibrated: string;
+  uncalibrated: string;
+  calibrationReasons: Record<'no_record' | 'below_threshold' | 'prompt_changed' | 'not_enough_pairs' | 'superseded' | 'judge_changed', string>;
+  needsExpectation: string;
+  referenceOnly: string;
+  aiReviewEstimatedCost: string;
   estimatedCost: string;
   runAndBill: string;
   confirmRun: string;
@@ -119,6 +129,20 @@ export const evalRunPanelZh: EvalRunPanelDictionary = {
     locked: '不可取消',
     aiJudge: 'AI 评审',
     nextVersion: '下一版',
+    aiReviewColumns: '各成一列，不合成综合分',
+    aiReviewDimensions: {
+      task_completed: '任务完成了吗', tool_choice: '工具选得对吗',
+      confirmed_before_acting: '该确认时确认了吗', no_extra_changes: '没干多余的事', self_tested: '自测过没',
+    },
+    calibrated: '已校准 κ={kappa} · 金标 {pairs} 条',
+    uncalibrated: '未校准',
+    calibrationReasons: {
+      no_record: '无记录', below_threshold: '一致性未达标', prompt_changed: '提示词改过',
+      not_enough_pairs: '金标不足 N<20', superseded: '按旧标准，需重跑', judge_changed: '评审模型已变',
+    },
+    needsExpectation: '这题集没有逐题期望，评审不了',
+    referenceOnly: '结果只作参考，不作能力证据',
+    aiReviewEstimatedCost: 'AI 评审预估 {cost} = {count} 题 × {k} × {dimensions} 维 × 单价（{model}）',
     estimatedCost: '约 {cost} · 按价格表 v{version}',
     runAndBill: '真跑并计费',
     confirmRun: '再点一次确认：将调用 {model} 跑 {count} 题，预估 {cost}',
@@ -206,6 +230,20 @@ export const evalRunPanelEn: EvalRunPanelDictionary = {
     locked: 'Required',
     aiJudge: 'AI review',
     nextVersion: 'Next version',
+    aiReviewColumns: 'Separate columns, never combined into an overall score',
+    aiReviewDimensions: {
+      task_completed: 'Was the task completed?', tool_choice: 'Were the right tools chosen?',
+      confirmed_before_acting: 'Was confirmation requested when needed?', no_extra_changes: 'Were extra changes avoided?', self_tested: 'Was the result self-tested?',
+    },
+    calibrated: 'Calibrated κ={kappa} · {pairs} gold labels',
+    uncalibrated: 'Uncalibrated',
+    calibrationReasons: {
+      no_record: 'No record', below_threshold: 'Agreement below requirement', prompt_changed: 'Prompt changed',
+      not_enough_pairs: 'Not enough gold labels N<20', superseded: 'Old standard; rerun required', judge_changed: 'Review model changed',
+    },
+    needsExpectation: 'This case set has no per-case expectation for this review',
+    referenceOnly: 'Reference only; not capability evidence',
+    aiReviewEstimatedCost: 'AI review estimate {cost} = {count} cases × {k} × {dimensions} dimensions × unit price ({model})',
     estimatedCost: 'About {cost} · pricing table v{version}',
     runAndBill: 'Run and incur charges',
     confirmRun: 'Click again to confirm: call {model} for {count} cases, estimated {cost}',

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evalCenterEn, evalCenterZh } from '../../../src/renderer/i18n/evalCenter';
 import { evalRunPanelEn, evalRunPanelZh } from '../../../src/renderer/i18n/evalRunPanel';
+import { evalScorersEn, evalScorersZh } from '../../../src/renderer/i18n/evalScorers';
 
 function strings(value: unknown): string[] {
   if (typeof value === 'string') return [value];
@@ -10,8 +11,18 @@ function strings(value: unknown): string[] {
 
 describe('跑分面板用户词表', () => {
   it('四个挂载面都不出现 §7.3 左列与 H4 禁用主文案', () => {
-    const zhSurfaces = [evalRunPanelZh.runPanel, evalCenterZh.evalCenter.runPanel];
-    const enSurfaces = [evalRunPanelEn.runPanel, evalCenterEn.evalCenter.runPanel];
+    const zhSurfaces = [
+      evalRunPanelZh.runPanel,
+      evalCenterZh.evalCenter.runPanel,
+      evalScorersZh.scorers,
+      evalCenterZh.evalCenter.scorers,
+    ];
+    const enSurfaces = [
+      evalRunPanelEn.runPanel,
+      evalCenterEn.evalCenter.runPanel,
+      evalScorersEn.scorers,
+      evalCenterEn.evalCenter.scorers,
+    ];
     const forbiddenZh = [
       '钉为基线', '口径', '身份戳', '硬化', '未硬化', '假跑', '标废', '已作废',
       '能力分母', '不进分母', '回流', '收成题目', '溯源', '两臂', 'decisive',

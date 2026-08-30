@@ -371,6 +371,8 @@ export const EVALUATION_CHANNELS = {
   RUN_EVENTS: 'evaluation:run-events',
   /** 终止正在运行的评测子进程。 */
   ABORT_RUN: 'evaluation:abort-run',
+  /** 打分器页只读总览：确定性断言清单、按维校准状态与当前评审模型。 */
+  SCORERS_OVERVIEW: 'evaluation:scorers-overview',
   /** 列出已落 DB 的实验（含 config_json harness 维度，用于对比/轮询完成状态） */
   LIST_EXPERIMENTS: 'evaluation:list-experiments',
   /** 只读加载单个实验 + 用例行（评测中心「基准」tab 回归对比用；裁剪 data_json 大字段） */

@@ -82,14 +82,39 @@
       "kind": "type"
     },
     {
-      "file": "src/cli/tui/index.ts",
-      "name": "patchStdout",
+      "file": "src/cli/tui-app/editorState.ts",
+      "name": "displayWidth",
       "kind": "export"
     },
     {
-      "file": "src/cli/tui/index.ts",
-      "name": "StatusBarData",
-      "kind": "type"
+      "file": "src/cli/tui-app/editorState.ts",
+      "name": "PASTE_CHIP_MIN_BYTES",
+      "kind": "export"
+    },
+    {
+      "file": "src/cli/tui-app/editorState.ts",
+      "name": "shouldChipPaste",
+      "kind": "export"
+    },
+    {
+      "file": "src/cli/tui-app/editorState.ts",
+      "name": "visualRowCount",
+      "kind": "export"
+    },
+    {
+      "file": "src/cli/tui-app/events.ts",
+      "name": "summarizeToolArgs",
+      "kind": "export"
+    },
+    {
+      "file": "src/cli/tui-app/slashCommands.ts",
+      "name": "LOCAL_SLASH_ITEMS",
+      "kind": "export"
+    },
+    {
+      "file": "src/cli/tui-app/yogaCjsShim.ts",
+      "name": "default",
+      "kind": "export"
     },
     {
       "file": "src/design/critique/types.ts",
@@ -4132,6 +4157,11 @@
       "kind": "export"
     },
     {
+      "file": "src/host/memory/directiveMemoryConfirmation.ts",
+      "name": "HEADLESS_PERMISSION_PROBE_TIMEOUT_MS",
+      "kind": "export"
+    },
+    {
       "file": "src/host/memory/directiveMemoryMessages.ts",
       "name": "DIRECTIVE_MEMORY_CONFIRMATION_DECLINED_ERROR",
       "kind": "export"
@@ -4299,11 +4329,6 @@
     {
       "file": "src/host/model/providers/providerHttp.ts",
       "name": "httpsAgent",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/model/providers/retryStrategy.ts",
-      "name": "extractRetryAfterMs",
       "kind": "export"
     },
     {
@@ -6774,11 +6799,6 @@
     {
       "file": "src/host/services/agentEngine/agentEngineGuards.ts",
       "name": "assertExternalEngineSessionAllowed",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/agentEngine/agentEngineModelCatalog.ts",
-      "name": "AgentEngineModelIncompatibleError",
       "kind": "export"
     },
     {
@@ -9642,161 +9662,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/telemetry/index.ts",
-      "name": "bindRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "classifyIntent",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "createChildRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "createRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "CreateRunTraceContextInput",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "createTelemetryAdapter",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "evaluateOutcome",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "fingerprintRunWorkspace",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "getActiveRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "getTelemetryService",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "getTelemetryStorage",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "recordHookSpan",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "recordMcpSpan",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "restoreRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "RunTraceContext",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "SerializedRunTraceContext",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "serializeRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "SpanEvent",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "SpanKind",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "SpanStatus",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "TelemetryCollector",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "TelemetryMetrics",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "TelemetryService",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "TelemetrySpan",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "TelemetryStorage",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "withApprovalTrace",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/index.ts",
-      "name": "withRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/runTraceContext.ts",
-      "name": "bindRunTraceContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/runTraceContext.ts",
-      "name": "fingerprintRunWorkspace",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/telemetryAdapter.ts",
-      "name": "recordHookSpan",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/telemetryAdapter.ts",
-      "name": "recordMcpSpan",
-      "kind": "export"
-    },
-    {
       "file": "src/host/telemetry/telemetryCollectorInternal.ts",
       "name": "asNumber",
       "kind": "export"
@@ -9820,11 +9685,6 @@
       "file": "src/host/telemetry/telemetryCollectorInternal.ts",
       "name": "isRecord",
       "kind": "export"
-    },
-    {
-      "file": "src/host/telemetry/telemetryService.ts",
-      "name": "SpanEvent",
-      "kind": "type"
     },
     {
       "file": "src/host/telemetry/telemetryStorage.ts",
@@ -9997,11 +9857,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/testing/testCaseLoader.ts",
-      "name": "loadTestSuite",
-      "kind": "export"
-    },
-    {
       "file": "src/host/testing/testRunner.ts",
       "name": "isInfraExclusionError",
       "kind": "export"
@@ -10069,11 +9924,6 @@
     {
       "file": "src/host/testing/types.ts",
       "name": "TestDifficulty",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/testing/types.ts",
-      "name": "TestStatus",
       "kind": "type"
     },
     {
@@ -12555,11 +12405,6 @@
       "file": "src/renderer/components/features/cron/cronTemplates.ts",
       "name": "TemplateField",
       "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/evalCenter/evalDatasetName.ts",
-      "name": "normalizeDatasetName",
-      "kind": "export"
     },
     {
       "file": "src/renderer/components/features/expert/RoleInitialAvatar.tsx",
@@ -16353,11 +16198,6 @@
     },
     {
       "file": "src/shared/contract/capability.ts",
-      "name": "CapabilityRiskTier",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/capability.ts",
       "name": "CapabilitySourceInfo",
       "kind": "type"
     },
@@ -18847,11 +18687,6 @@
       "kind": "export"
     },
     {
-      "file": "src/web/middleware/auth.ts",
-      "name": "shouldRefuseE2EFlag",
-      "kind": "export"
-    },
-    {
       "file": "src/web/queuedInputStartupSweep.ts",
       "name": "maybeRunQueuedInputStartupSweep",
       "kind": "export"
@@ -19014,6 +18849,9 @@
   ],
   "unreachableFiles": [
     "src/artifacts/question-form.ts",
+    "src/cli/tui-app/cliHighlightStub.ts",
+    "src/cli/tui-app/spike.tsx",
+    "src/cli/tui-app/spikeMain.tsx",
     "src/design/critique/critique.ts",
     "src/design/critique/index.ts",
     "src/design/critique/prompt.ts",

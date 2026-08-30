@@ -1,3 +1,9 @@
+// ============================================================================
+// skillCapabilitySurface 测试
+// 1) legacy 声明规范化（main #1472）：缺 depends/provides 的 skill 全部可注册
+// 2) per-skill 隔离：单个坏 skill（声明非法 / 注册抛错 / key 冲突）只 warn 跳过
+// ============================================================================
+
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
@@ -9,6 +15,7 @@ vi.mock('../../../../src/host/services/capability/capabilityLifecycleTrace', () 
   recordCapabilityLifecycle: recordCapabilityLifecycleMock,
 }));
 
+import type { ParsedSkill } from '../../../../src/shared/contract/agentSkill';
 import { synchronizeSkillCapabilitySurface } from '../../../../src/host/services/skills/skillCapabilitySurface';
 import { parseSkillMetadataOnly } from '../../../../src/host/services/skills/skillParser';
 import { ToolSearchService } from '../../../../src/host/services/toolSearch';
@@ -49,5 +56,96 @@ describe('skill capability surface legacy declarations', () => {
     expect(recordCapabilityLifecycleMock.mock.calls.map(([, data]) => data)).toEqual(
       LEGACY_SKILL_NAMES.map((name) => ({ capabilityKey: `skill:${name}`, action: 'loaded' })),
     );
+  });
+});
+
+function makeSkill(overrides: Partial<ParsedSkill> & { name: string }): ParsedSkill {
+  return {
+    description: `${overrides.name} description`,
+    depends: [],
+    provides: [`skill:${overrides.name}`],
+    promptContent: '',
+    basePath: `/tmp/${overrides.name}`,
+    allowedTools: [],
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'user',
+    ...overrides,
+  } as ParsedSkill;
+}
+
+function makeToolSearch() {
+  const registered = new Set<string>();
+  const toolSearch = {
+    registerSkill: vi.fn((name: string) => { registered.add(name); }),
+    unregisterSkill: vi.fn((name: string) => { registered.delete(name); }),
+  } as unknown as ToolSearchService;
+  return { toolSearch, registered };
+}
+
+describe('synchronizeSkillCapabilitySurface per-skill isolation', () => {
+  it('skips a skill with an invalid capability declaration and registers the rest', async () => {
+    const { toolSearch, registered } = makeToolSearch();
+    const bad = makeSkill({ name: 'bad-skill', provides: ['not-namespaced'] });
+    const good = makeSkill({ name: 'good-skill' });
+
+    await expect(
+      synchronizeSkillCapabilitySurface([bad, good], toolSearch),
+    ).resolves.toBeUndefined();
+
+    expect(registered.has('good-skill')).toBe(true);
+    expect(registered.has('bad-skill')).toBe(false);
+  });
+
+  it('keeps registering when one skill conflicts on a provided capability key', async () => {
+    const { toolSearch, registered } = makeToolSearch();
+    const first = makeSkill({ name: 'first', provides: ['skill:first', 'skill:shared'] });
+    const conflicting = makeSkill({ name: 'second', provides: ['skill:second', 'skill:shared'] });
+    const independent = makeSkill({ name: 'third' });
+
+    await expect(
+      synchronizeSkillCapabilitySurface([first, conflicting, independent], toolSearch),
+    ).resolves.toBeUndefined();
+
+    expect(registered.has('first')).toBe(true);
+    expect(registered.has('third')).toBe(true);
+    expect(registered.has('second')).toBe(false);
+  });
+
+  it('keeps registering when one skill registration throws', async () => {
+    const registered = new Set<string>();
+    const toolSearch = {
+      registerSkill: vi.fn((name: string) => {
+        if (name === 'exploding-skill') throw new Error('registry exploded');
+        registered.add(name);
+      }),
+      unregisterSkill: vi.fn((name: string) => { registered.delete(name); }),
+    } as unknown as ToolSearchService;
+
+    await expect(
+      synchronizeSkillCapabilitySurface(
+        [makeSkill({ name: 'exploding-skill' }), makeSkill({ name: 'calm-skill' })],
+        toolSearch,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(registered.has('calm-skill')).toBe(true);
+    expect(registered.has('exploding-skill')).toBe(false);
+  });
+
+  it('loads dependency-ordered skills and skips dependents of skipped providers', async () => {
+    const { toolSearch, registered } = makeToolSearch();
+    const base = makeSkill({ name: 'base' });
+    const dependent = makeSkill({ name: 'dependent', depends: ['skill:base'] });
+    const orphan = makeSkill({ name: 'orphan', depends: ['skill:missing-provider'] });
+
+    await expect(
+      synchronizeSkillCapabilitySurface([dependent, base, orphan], toolSearch),
+    ).resolves.toBeUndefined();
+
+    expect(registered.has('base')).toBe(true);
+    expect(registered.has('dependent')).toBe(true);
+    expect(registered.has('orphan')).toBe(false);
   });
 });

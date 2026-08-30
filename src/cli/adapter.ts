@@ -259,9 +259,14 @@ export class CLIAgent {
       // 运行 Agent
       agentLoop.run(prompt).catch((error: unknown) => {
         logger.error('Agent run error', error);
+        // 失败收口不能抹掉本轮已产生的成果：模型中途瞬断（如网关 5xx 重试耗尽）时，
+        // 前面成功的工具结果/已生成内容仍属于这次 run 的记录，原样带出去。
         void this.finishRun({
           success: false,
           error: getErrorMessage(error),
+          output: this.lastContent || this.getLastAssistantMessage()?.content,
+          toolsUsed: [...new Set(this.toolsUsed)],
+          duration: Date.now() - this.startTime,
         });
       });
     });

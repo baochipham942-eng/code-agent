@@ -27,6 +27,12 @@ export const secretPatternCanaries: SecretPatternCanary[] = [
     rawSecret: 'session-cookie-value-secret',
   },
   {
+    id: 'env-secret-assignment',
+    positive: 'MOONSHOT_API_KEY=mk-abcdef1234567890',
+    negative: 'MAX_TOKENS = 128000 and token: userToken',
+    rawSecret: 'mk-abcdef1234567890',
+  },
+  {
     id: 'openai-key',
     positive: `provider key sk-${'a'.repeat(24)}`,
     negative: 'task id sk-short',

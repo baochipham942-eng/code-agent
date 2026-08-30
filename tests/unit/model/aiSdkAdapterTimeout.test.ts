@@ -57,11 +57,14 @@ function makeCollector() {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // 退避带 ±25% jitter（0.75 + random*0.5）：钉住 random=0.5 → jitter 因子 1.0，延迟确定性。
+  vi.spyOn(Math, 'random').mockReturnValue(0.5);
   vi.mocked(streamText).mockReset();
   vi.mocked(generateText).mockReset();
 });
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('inferenceViaAiSdk —— per-request 超时 + 重试', () => {

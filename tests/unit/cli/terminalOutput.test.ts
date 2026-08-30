@@ -81,19 +81,17 @@ describe('TerminalOutput', () => {
     expect(text).toContain('bad token');
   });
 
-  it('streams chunks, suppresses duplicate assistant messages, and routes TUI errors to stdout', () => {
+  it('streams chunks, suppresses duplicate assistant messages, and routes errors to stderr', () => {
     const output = new TerminalOutput();
-    const { logs, errors, writes } = captureOutput();
+    const { errors, writes } = captureOutput();
 
     output.handleEvent({ type: 'stream_chunk', data: { content: 'hel' } } as AgentEvent);
     output.handleEvent({ type: 'stream_chunk', data: { content: 'lo' } } as AgentEvent);
     output.handleEvent({ type: 'message', data: { role: 'assistant', content: 'hello' } } as AgentEvent);
-    output.setTUIMode(true);
     output.error('visible');
 
     expect(writes.join('')).toContain('hello');
-    expect(logs.join('\n')).toContain('visible');
-    expect(errors).toEqual([]);
+    expect(errors.join('\n')).toContain('visible');
   });
 
   it('tracks model response metadata into the task completion status line', () => {

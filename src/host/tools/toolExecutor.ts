@@ -5,7 +5,7 @@
 import type { ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
 import * as nodePath from 'path';
 import * as nodeFs from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { AgentFailureCode, type ToolDefinition } from '../../shared/contract';
 import type { PermissionBoundaryId } from '../../shared/contract/permissionBoundary';
 import {
@@ -68,8 +68,13 @@ import { evaluateGuardFabricGate } from './guardFabricGate';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
 import { ensureFailedToolResultError } from './toolResultError';
-import { requestDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
-import { directiveMemoryConfirmationFailureError } from '../memory/directiveMemoryMessages';
+import { probeHeadlessPermission, requestDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
+import {
+  DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR,
+  directiveMemoryConfirmationFailureError,
+} from '../memory/directiveMemoryMessages';
+import { hasInteractiveUi } from '../platform/windowBridge';
+import { getMemoryDir } from '../lightMemory/indexLoader';
 import {
   assessDirectiveMemoryWrite,
   createDirectiveMemoryWriteGrant,
@@ -573,25 +578,70 @@ export class ToolExecutor {
     });
     let directiveMemoryWriteGrant: import('../../shared/contract').DirectiveMemoryWriteGrant | undefined;
     if (directiveMemoryAssessment.requiresConfirmation) {
-      const confirmation = await requestDirectiveMemoryConfirmation({
-        category: `Persistent memory write: ${executionToolName}`,
-        content: directiveMemoryAssessment.preview,
-      });
-      if (!confirmation.confirmed) {
-        return {
-          success: false,
-          // 文案唯一来源在 memory/directiveMemoryMessages.ts（超时/拒绝分流）
-          error: directiveMemoryConfirmationFailureError(confirmation),
-          metadata: {
-            code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
-            targets: directiveMemoryAssessment.targets,
+      if (!hasInteractiveUi()) {
+        // headless/非交互：确认窗不存在，绝不挂 DIRECTIVE_CONFIRM（120s）。
+        // 策略与 CLI 权限门同源——问一次 run 级 requestPermission（带上限：
+        // skip/devModeAutoApprove/scripted 同步可答；web 停车审批、无 UI 超时
+        // 定时器这类在等人类通道的，按 fail-fast 处理，不陪等）。
+        const headlessAsk = await probeHeadlessPermission(this.requestPermission, {
+          type: 'file_write',
+          tool: executionToolName,
+          details: { path: getMemoryDir(), preview: directiveMemoryAssessment.preview },
+          reason: `全局记忆写入需要用户确认（${executionToolName}）`,
+        });
+        if (!headlessAsk?.approved) {
+          recordDecision(
+            executionToolName, params, 'ask-denied',
+            headlessAsk?.denialSource ?? 'no-approval-ui',
+            Date.now(), undefined, effectiveSessionId, this.ledgerOrigin,
+          );
+          return {
+            success: false,
+            // 文案唯一来源在 memory/directiveMemoryMessages.ts（headless 分流）
+            error: DIRECTIVE_MEMORY_HEADLESS_NO_UI_ERROR,
+            metadata: {
+              code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
+              targets: directiveMemoryAssessment.targets,
+            },
+          };
+        }
+        // skip 模式放行：合成确认授权并写 permission ledger（全局记忆写入必须留痕，
+        // 设计意图是「用户知情」——skip flag 本身就是用户的显式知情授权）。
+        recordDecision(
+          executionToolName, params, 'auto-approve',
+          'directive-memory-headless-skip-permissions',
+          Date.now(), undefined, effectiveSessionId, this.ledgerOrigin,
+        );
+        directiveMemoryWriteGrant = createDirectiveMemoryWriteGrant(
+          directiveMemoryAssessment,
+          {
+            requestId: `headless-skip-${randomUUID()}`,
+            confirmed: true,
+            respondedAt: Date.now(),
+            timedOut: false,
           },
-        };
+        );
+      } else {
+        const confirmation = await requestDirectiveMemoryConfirmation({
+          category: `Persistent memory write: ${executionToolName}`,
+          content: directiveMemoryAssessment.preview,
+        });
+        if (!confirmation.confirmed) {
+          return {
+            success: false,
+            // 文案唯一来源在 memory/directiveMemoryMessages.ts（headless/超时/拒绝分流）
+            error: directiveMemoryConfirmationFailureError(confirmation),
+            metadata: {
+              code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
+              targets: directiveMemoryAssessment.targets,
+            },
+          };
+        }
+        directiveMemoryWriteGrant = createDirectiveMemoryWriteGrant(
+          directiveMemoryAssessment,
+          confirmation,
+        );
       }
-      directiveMemoryWriteGrant = createDirectiveMemoryWriteGrant(
-        directiveMemoryAssessment,
-        confirmation,
-      );
     }
 
     const writeTargets = toolDef.permissionLevel !== 'read'

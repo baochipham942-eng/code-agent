@@ -132,7 +132,6 @@ describe('信号处理器注册点白名单', () => {
     'src/host/services/infra/gracefulShutdown.ts',
     'src/web/webServer.ts',
     'src/web/routes/devCancellableToolSmoke.ts',
-    'src/cli/tui/tuiChat.ts',
     'src/cli/commands/chat.ts',
     'src/cli/commands/serve.ts',
   ]);

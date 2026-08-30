@@ -19,6 +19,7 @@ import {
 } from '../../../shared/utils/browserComputerRedaction';
 import { buildAgentPointerTimeline } from '../../../shared/utils/agentPointerEvidence';
 import { getAttachmentId } from '../../../shared/utils/messageAttachments';
+import { redactToolResultSecrets } from '../../security/secretRedaction';
 import * as fs from 'fs';
 
 const logger = createLogger('MessageConverter');
@@ -127,16 +128,19 @@ export function sanitizeToolCallsForHistory(toolCalls: ToolCall[] | undefined): 
  * 1. Large binary data (base64 images etc.) only keep reference, not stored in history
  * 2. Frontend gets full data via tool_call_end event for rendering
  * 3. Model only needs to know "image generated", doesn't need to see image content
+ * 4. 密钥形态子串一律脱敏——tool_result 会进会话 transcript / neo export / 日志，
+ *    明文 key 落盘即扩散（真实事故：agent jq 读 ~/.claude.json 把 API key 写进会话）。
  */
 export function sanitizeToolResultForHistory(result: ToolResult): ToolResult {
-  if (!result.metadata) {
-    return result;
+  const redacted = redactToolResultSecrets(result);
+  if (!redacted.metadata) {
+    return redacted;
   }
 
   // Deep copy to avoid modifying original data
   const sanitized: ToolResult = {
-    ...result,
-    metadata: { ...result.metadata },
+    ...redacted,
+    metadata: { ...redacted.metadata },
   };
 
   // Filter known large data fields

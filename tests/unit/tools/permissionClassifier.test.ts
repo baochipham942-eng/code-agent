@@ -21,6 +21,54 @@ describe('PermissionClassifier', () => {
     setCommandPolicyRulesForTest([]);
   });
 
+  describe('MCPUnified 只读 action 不进确认门（headless over-gating 修复）', () => {
+    it.each(['status', 'list_tools', 'list_resources', 'read_resource'])(
+      'MCPUnified %s → approve（只读操作永不进确认门）',
+      async (action) => {
+        const result = await classifyPermission(
+          'MCPUnified',
+          { action },
+          { workingDirectory: '/tmp', permissionLevel: 'network' },
+        );
+
+        expect(result.decision).toBe('approve');
+      },
+    );
+
+    it.each(['invoke', 'add_server'])(
+      'MCPUnified %s → 维持 ask（有副作用/改配置）',
+      async (action) => {
+        const result = await classifyPermission(
+          'MCPUnified',
+          { action, server: 'fs', tool: 'write_file' },
+          { workingDirectory: '/tmp', permissionLevel: 'network' },
+        );
+
+        expect(result.decision).toBe('ask');
+      },
+    );
+
+    it('MCPUnified 缺失 action → 维持 ask（未知即确认）', async () => {
+      const result = await classifyPermission(
+        'MCPUnified',
+        {},
+        { workingDirectory: '/tmp', permissionLevel: 'network' },
+      );
+
+      expect(result.decision).toBe('ask');
+    });
+
+    it('其他 mcp_ 前缀工具维持 ask（未知副作用）', async () => {
+      const result = await classifyPermission(
+        'mcp_github_create_issue',
+        { title: 'x' },
+        { workingDirectory: '/tmp', permissionLevel: 'network' },
+      );
+
+      expect(result.decision).toBe('ask');
+    });
+  });
+
   it('does not reuse a relative-path decision across run workspaces', async () => {
     const first = await classifyPermission(
       'Write',

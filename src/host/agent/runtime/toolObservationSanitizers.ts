@@ -4,6 +4,7 @@ import {
   sanitizeBrowserComputerToolResult,
   sanitizeLargeTextToolArguments,
 } from '../../../shared/utils/browserComputerRedaction';
+import { redactToolResultSecrets } from '../../security/secretRedaction';
 import { ensureFailedToolResultError } from '../../tools/toolResultError';
 
 export function sanitizeToolArgumentsForObservation(toolCall: Pick<ToolCall, 'name' | 'arguments'>): Record<string, unknown> {
@@ -15,10 +16,12 @@ export function sanitizeToolResultForObservation(
   toolCall: Pick<ToolCall, 'name' | 'arguments'>,
   result: ToolResult,
 ): ToolResult {
+  // 事件流（tool_call_end → SSE / session_events / CLI 展示）与会话落库同级：
+  // 密钥形态子串必须在这里就脱敏，不能指望下游各自处理。
   return sanitizeBrowserComputerToolResult(
     toolCall.name,
     toolCall.arguments,
-    ensureFailedToolResultError(toolCall.name, result),
+    redactToolResultSecrets(ensureFailedToolResultError(toolCall.name, result)),
   );
 }
 

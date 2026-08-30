@@ -23,6 +23,7 @@ import { approvalOptions, SessionAllowList, type ApprovalChoice } from './approv
 import { ApprovalCard } from './ApprovalCard';
 import { getAllBackgroundTasks, onBackgroundTaskLifecycleEvent } from '../../host/tools/shell/backgroundTasks';
 import { pickStartupTip } from './tips';
+import { WelcomeCard } from './WelcomeCard';
 import {
   buildTerminalNotification,
   FOCUS_REPORTING_DISABLE,
@@ -82,6 +83,10 @@ interface InkCommandResult {
 export interface InkChatOptions {
   cwd: string;
   model: string;
+  /** 当前 provider（WelcomeCard 显示 provider/model；/model 切换后由事件流刷新） */
+  provider?: string;
+  /** 产品版本（WelcomeCard 显示） */
+  version?: string;
   /** git 分支（StatusBar 显示；取不到传空串） */
   gitBranch: string;
   /** 工作树有未提交改动（StatusBar 分支名后加 *） */
@@ -947,14 +952,18 @@ export function App({ agent, options, onExit }: {
         ? 2
         // 输入框圆角边框上下各 1 行（Editor 组件内渲染，这里计入布局预算）
         : editorVisualRows(editor, Math.max(columns - 6, 8), editorMaxRows) + 2;
+  // 首屏欢迎卡（Grok 全屏构图）：空会话时 live 区居中渲染 WelcomeCard，
+  // 呼吸 ◆ 也让位（零噪音）；首条消息出现即切回消息流
+  const showWelcome = state.messages.length === 0;
   // 首屏 tip 行（Grok 风格）：空会话空闲时在输入框上方显示一条轮换提示
   const [tip] = useState(() => pickStartupTip(Date.now()));
-  const showTip = state.messages.length === 0 && !state.running && !approval && !modelPicker && !historySearch;
+  const showTip = showWelcome && !state.running && !approval && !modelPicker && !historySearch;
   // 零噪音首屏（Grok）：快捷键提示栏只在有上下文时出现——
   // 空闲空草稿的首屏不显示（可发现性由轮换 tip 行承担）
   const shortcutsVisible = state.running || menuItems.length > 0 || !isEmpty(editor)
     || approval !== null || historySearch !== null;
-  const chromeRows = 1 /* StatusBar（输入框下） */ + 1 /* TurnStatus/呼吸◆ */ + Math.min(menuItems.length, 8)
+  const chromeRows = 1 /* StatusBar（输入框下） */ + (showWelcome ? 0 : 1) /* TurnStatus/呼吸◆（首屏让位） */
+    + Math.min(menuItems.length, 8)
     + promptRows + (toast ? 1 : 0) + (showTip ? 1 : 0) + (shortcutsVisible ? 1 : 0);
   const layoutPlan = planDynamicLayout(state.messages, messageWidth, rows, chromeRows);
   const liveAllocation = layoutPlan.allocation;
@@ -971,17 +980,30 @@ export function App({ agent, options, onExit }: {
       </Static>
       <Box flexDirection="column" height={layoutPlan.height} flexShrink={0}>
         <Box flexDirection="column" flexGrow={1} justifyContent="flex-end" overflowY="hidden">
-          {visibleLive.map((message) => (
-            <Box key={message.id} paddingX={2}>
-              <MessageView message={message} width={messageWidth} maxLines={liveAllocation.get(message.id)} expandTools={expandTools} />
-            </Box>
-          ))}
+          {showWelcome
+            ? (
+              <Box flexGrow={1} justifyContent="center" alignItems="center">
+                <WelcomeCard
+                  version={options.version ?? ''}
+                  provider={options.provider ?? ''}
+                  model={options.model}
+                  cwd={options.cwd}
+                />
+              </Box>
+            )
+            : visibleLive.map((message) => (
+              <Box key={message.id} paddingX={2}>
+                <MessageView message={message} width={messageWidth} maxLines={liveAllocation.get(message.id)} expandTools={expandTools} />
+              </Box>
+            ))}
         </Box>
         {state.running
           ? <TurnStatus state={state} frame={frame} now={now} queuedCount={queuedCount} />
-          : (
-            <Box paddingX={1}>
-              <Text color={pulseColor}>◆</Text>
+          : showWelcome
+            ? null
+            : (
+              <Box paddingX={1}>
+                <Text color={pulseColor}>◆</Text>
             </Box>
           )}
         {menuItems.length > 0 ? <SlashMenu items={menuItems} selected={menuIndex} /> : null}

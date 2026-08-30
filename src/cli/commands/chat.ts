@@ -205,9 +205,16 @@ export const chatCommand = new Command('chat')
         statusFile: options.statusFile,
       });
 
-      if (!isJsonMode) {
+      // Ink TUI：TTY 默认界面；非 TTY / 管道 / json 模式回落 readline 线性模式。
+      // NEO_DISABLE_INK_TUI=1 为回退逃生门。
+      const useInkTui = !isJsonMode
+        && Boolean(process.stdin.isTTY && process.stdout.isTTY)
+        && process.env.NEO_DISABLE_INK_TUI !== '1';
+
+      if (!isJsonMode && !useInkTui) {
         // 显示欢迎横幅：展示 agent 实际解析出的 provider/model（config 默认或 flag），
-        // 不能用 DEFAULT_* 常量——否则配置了自定义默认的用户看到错误的模型名
+        // 不能用 DEFAULT_* 常量——否则配置了自定义默认的用户看到错误的模型名。
+        // Ink 模式下欢迎卡由 TUI 内 WelcomeCard 全屏居中渲染，不再打 scrollback 横幅。
         const db = getDatabaseService();
         const stats = db?.getStats();
         const resolved = agent.getConfig().modelConfig;
@@ -260,11 +267,6 @@ export const chatCommand = new Command('chat')
         terminalOutput.warning('--tui 已移除：Ink 界面已是 TTY 默认交互模式（非 TTY 自动回落线性模式）');
       }
 
-      // Ink TUI：TTY 默认界面；非 TTY / 管道 / json 模式回落 readline 线性模式。
-      // NEO_DISABLE_INK_TUI=1 为回退逃生门。
-      const useInkTui = !isJsonMode
-        && Boolean(process.stdin.isTTY && process.stdout.isTTY)
-        && process.env.NEO_DISABLE_INK_TUI !== '1';
       if (useInkTui) {
         const { runInkChat } = await (inkRunnerPromise ?? import('../tui-app/inkRunner'));
         const { buildSlashItems } = await import('../tui-app/slashCommands');
@@ -318,6 +320,8 @@ export const chatCommand = new Command('chat')
           cwd: globalOpts?.project || process.cwd(),
           // StatusBar 初始模型：与 banner 同源，用 agent 实际解析值（/model 切换后由事件流刷新）
           model: agent.getConfig().modelConfig.model,
+          provider: agent.getConfig().modelConfig.provider,
+          version,
           gitBranch,
           gitDirty,
           onCommand,

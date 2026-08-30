@@ -58,6 +58,14 @@ export function registerCapabilityPackageHandlers(
     }
   });
 
+  guard(IPC_CHANNELS.CAPABILITY_PACKAGE_STAGE_BUNDLED, async (pluginId: string): Promise<CapabilityPackageResult<CapabilityPackagePreview>> => {
+    try {
+      return success(await getManualCapabilityPackageService().stageBundled(pluginId));
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
   guard(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, async (token: string): Promise<CapabilityPackageResult<CapabilityPackageInstallResult>> => {
     try {
       return success(await getManualCapabilityPackageService().confirm(token));

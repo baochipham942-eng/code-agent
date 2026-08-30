@@ -55,6 +55,7 @@ import { createApplicationNativeRecoveryPorts } from '../host/app/nativeRecovery
 import { initializeDurableRun, type DurableRunApplicationRuntime } from '../host/app/initializeDurableRun';
 import { DurableRunRepository } from '../host/services/core/repositories/DurableRunRepository';
 import { SERVICE_TIMEOUTS } from '../shared/constants/timeouts';
+import { isComputerUseCapabilityInstalledSync } from '../host/plugins/builtin/computerUse/installState';
 import type { ToolExecutionDelegate, ToolExecutorConfig } from '../host/tools/toolExecutor';
 import {
   createRunTraceContext,
@@ -153,12 +154,11 @@ export interface InitializeCLIServicesOptions {
 /**
  * CLI 是否需要初始化 MCP 客户端。
  * 默认不初始化（普通 run/exec 不该为 MCP 连接付启动延迟），
- * 仅 computer-use 底座显式开启时接入——否则 CODE_AGENT_ENABLE_CUA=1
- * 下 CLI 拿不到 cua-driver 工具，模型只能退回 Bash+AppleScript
- * 前台抢焦点（2026-06-11 真机验证实测）。
+ * 仅 computer-use 能力包已安装时接入；旧 CODE_AGENT_ENABLE_CUA=1 会迁移成安装状态。
+ * 否则 CLI 不启动 MCP，避免普通 run/exec 支付 cua-driver 启动成本。
  */
 export function cliShouldInitMcp(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_ENABLE_CUA === '1' || env.CODE_AGENT_ENABLE_ARGUS_MCP === '1';
+  return isComputerUseCapabilityInstalledSync(env) || env.CODE_AGENT_ENABLE_ARGUS_MCP === '1';
 }
 
 async function initializeCLIDurableRun(

@@ -1,9 +1,9 @@
 import * as path from 'node:path';
-import { describe, it, expect, afterEach } from 'vitest';
-import {
-  pickEnvGatedComputerUseServers,
-  getDefaultMCPServers,
-} from '../../../src/host/mcp/mcpDefaultServers';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import { describe, it, expect, afterAll, afterEach, beforeAll } from 'vitest';
+import { getDefaultMCPServers } from '../../../src/host/mcp/mcpDefaultServers';
+import { pickEnabledComputerUseServers } from '../../../src/host/mcp/computerUseServerSelection';
 import type { MCPServerConfig } from '../../../src/host/mcp/types';
 
 // 背景（2026-06-11 真机验证）：initMCPClient 里云端 MCP 清单与本地默认清单
@@ -21,6 +21,17 @@ import type { MCPServerConfig } from '../../../src/host/mcp/types';
 //      enabled 过滤）用合成清单喂，跟默认清单和宿主环境彻底解耦。
 const CUA_SUPPORTED_PLATFORM = 'darwin';
 const CUA_UNSUPPORTED_PLATFORM = 'linux';
+let testDataDir: string;
+
+beforeAll(async () => {
+  testDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-cua-default-mcp-'));
+  process.env.CODE_AGENT_DATA_DIR = testDataDir;
+});
+
+afterAll(async () => {
+  delete process.env.CODE_AGENT_DATA_DIR;
+  await fs.rm(testDataDir, { recursive: true, force: true });
+});
 
 /** 在钉死的 process.platform 下执行——覆盖平台闸，且任何 runner 上都真跑。 */
 function withPlatform<T>(platform: string, fn: () => T): T {
@@ -56,7 +67,7 @@ describe('平台闸：cua-driver 的 enabled 受 process.platform 门控', () =>
   it('CUA 开启 + 受支持平台 → 返回 cua-driver 待补注册', () => {
     withPlatform(CUA_SUPPORTED_PLATFORM, () => {
       process.env.CODE_AGENT_ENABLE_CUA = '1';
-      const picked = pickEnvGatedComputerUseServers(getDefaultMCPServers(), new Set(['context7']));
+      const picked = pickEnabledComputerUseServers(getDefaultMCPServers(), new Set(['context7']));
       expect(picked.map((s) => s.name)).toContain('cua-driver');
     });
   });
@@ -64,22 +75,24 @@ describe('平台闸：cua-driver 的 enabled 受 process.platform 门控', () =>
   it('CUA 开启但平台不支持（linux）→ 不返回 cua-driver', () => {
     withPlatform(CUA_UNSUPPORTED_PLATFORM, () => {
       process.env.CODE_AGENT_ENABLE_CUA = '1';
-      const picked = pickEnvGatedComputerUseServers(getDefaultMCPServers(), new Set());
+      const picked = pickEnabledComputerUseServers(getDefaultMCPServers(), new Set());
       expect(picked.map((s) => s.name)).not.toContain('cua-driver');
     });
   });
 
   it('受支持平台但 CUA 未开启 → 不返回 cua-driver', () => {
     withPlatform(CUA_SUPPORTED_PLATFORM, () => {
-      const picked = pickEnvGatedComputerUseServers(getDefaultMCPServers(), new Set());
+      const defaults = getDefaultMCPServers();
+      const picked = pickEnabledComputerUseServers(defaults, new Set());
+      expect(defaults.map((server) => server.name)).not.toContain('cua-driver');
       expect(picked.map((s) => s.name)).not.toContain('cua-driver');
     });
   });
 });
 
-describe('pickEnvGatedComputerUseServers 的纯逻辑（合成清单，与宿主环境解耦）', () => {
+describe('pickEnabledComputerUseServers 的纯逻辑（合成清单，与宿主环境解耦）', () => {
   it('云端清单已含同名 server → 不重复注册', () => {
-    const picked = pickEnvGatedComputerUseServers(
+    const picked = pickEnabledComputerUseServers(
       defaultsFixture({ cuaEnabled: true }),
       new Set(['cua-driver']),
     );
@@ -87,17 +100,17 @@ describe('pickEnvGatedComputerUseServers 的纯逻辑（合成清单，与宿主
   });
 
   it('未启用 → 不返回（任何平台上都真的在守 enabled 过滤）', () => {
-    const picked = pickEnvGatedComputerUseServers(defaultsFixture({ cuaEnabled: false }), new Set());
+    const picked = pickEnabledComputerUseServers(defaultsFixture({ cuaEnabled: false }), new Set());
     expect(picked.map((s) => s.name)).not.toContain('cua-driver');
   });
 
   it('argus 回退路径同样独立补注册', () => {
-    const picked = pickEnvGatedComputerUseServers(defaultsFixture({ argusEnabled: true }), new Set());
+    const picked = pickEnabledComputerUseServers(defaultsFixture({ argusEnabled: true }), new Set());
     expect(picked.map((s) => s.name)).toContain('argus');
   });
 
   it('不夹带其他默认 server（filesystem/context7 等仍走原有云端优先逻辑）', () => {
-    const picked = pickEnvGatedComputerUseServers(
+    const picked = pickEnabledComputerUseServers(
       defaultsFixture({ cuaEnabled: true, argusEnabled: true }),
       new Set(),
     );

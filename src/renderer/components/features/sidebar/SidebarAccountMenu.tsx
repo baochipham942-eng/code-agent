@@ -76,7 +76,7 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
         label={sb.menuActivity}
       />
       <AccountMenuItem
-        onClick={() => { openLocalOpsPanel('desktop'); onClose(); }}
+        onClick={() => { openLocalOpsPanel('browser'); onClose(); }}
         icon={<MonitorSmartphone className={`w-4 h-4 ${showLocalOpsPanel ? 'text-badge-info' : 'text-badge-info/80'}`} />}
         label={sb.menuLocalOps}
       />

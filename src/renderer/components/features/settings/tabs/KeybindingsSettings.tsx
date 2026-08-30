@@ -29,6 +29,7 @@ import {
 import { createLogger } from '../../../../utils/logger';
 import { emitKeybindingsChanged } from '../../../../hooks/useKeybindingsSettings';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useMcpServerStates } from '../../../../hooks/useMcpServerStates';
 import { zh } from '../../../../i18n/zh';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { Toggle } from '../../../primitives/Toggle';
@@ -72,6 +73,10 @@ function indexRegistrationResults(
 export const KeybindingsSettings: React.FC = () => {
   const { t } = useI18n();
   const keybindingsText = t.settings.keybindings;
+  const mcpServerStates = useMcpServerStates();
+  const hasComputerUse = mcpServerStates.some(
+    (server) => server.config.name === 'cua-driver' && server.config.enabled,
+  );
   const platform = useMemo(() => getCurrentKeybindingPlatform(), []);
   const [keybindings, setKeybindings] = useState<KeybindingsSettingsContract>(() =>
     createDefaultKeybindingsSettings(platform)
@@ -202,8 +207,11 @@ export const KeybindingsSettings: React.FC = () => {
 
   const normalizedQuery = query.trim().toLowerCase();
   const filteredDefinitions = useMemo(() => {
-    if (!normalizedQuery) return KEYBINDING_DEFINITIONS;
-    return KEYBINDING_DEFINITIONS.filter((definition) => {
+    const availableDefinitions = hasComputerUse
+      ? KEYBINDING_DEFINITIONS
+      : KEYBINDING_DEFINITIONS.filter((definition) => definition.id !== 'computerUse.open');
+    if (!normalizedQuery) return availableDefinitions;
+    return availableDefinitions.filter((definition) => {
       const actionText = keybindingsText.actions[definition.id];
       const haystack = [
         definition.id,
@@ -214,7 +222,7 @@ export const KeybindingsSettings: React.FC = () => {
       ].join(' ').toLowerCase();
       return haystack.includes(normalizedQuery);
     });
-  }, [keybindingsText, normalizedQuery]);
+  }, [hasComputerUse, keybindingsText, normalizedQuery]);
 
   const groupedDefinitions = useMemo(() => {
     const groups = new Map<KeybindingCategory, KeybindingDefinition[]>();

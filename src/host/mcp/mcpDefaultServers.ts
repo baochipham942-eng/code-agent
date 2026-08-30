@@ -16,10 +16,12 @@ import type {
 } from './types';
 import { CUA_DRIVER_SERVER_NAME } from './types';
 import { CUA_HELPER_APP_NAMES } from '../../shared/cuaHelperChannel';
+import { isComputerUseCapabilityInstalledSync } from '../plugins/builtin/computerUse/installState';
 import { createMemoryKVServer } from './servers/memoryKVServer';
 import { createCodeIndexServer } from './servers/codeIndexServer';
 import { loadMcpConfigFiles } from './mcpConfigFile';
 import type { MCPClient } from './mcpClient';
+import { pickEnabledComputerUseServers } from './computerUseServerSelection';
 
 const logger = createLogger('MCPDefaultServers', { lane: 'mcp' });
 
@@ -103,25 +105,13 @@ const EXA_SEARCH_HTTP_URL = 'https://mcp.exa.ai/mcp?tools=web_search_exa,web_fet
 // ----------------------------------------------------------------------------
 
 /**
- * 从默认清单中挑出「环境变量门控的 computer-use 底座」（cua-driver / argus）。
+ * 从默认清单中挑出需独立补注册的 computer-use 底座（cua-driver / argus）。
  * 这类 server 是本机能力，不该被云端 MCP 清单的存在与否左右：
  * initMCPClient 的云端清单与本地默认清单是二选一，云端清单存在时本地
- * 默认清单整体被跳过，曾导致 CODE_AGENT_ENABLE_CUA=1 在有云端配置的
- * 机器上永远注册不上 cua-driver（2026-06-11 真机验证实测）。
+ * 默认清单整体被跳过，曾导致已启用的本机 Computer Use 在有云端配置的
+ * 机器上注册不上 cua-driver（2026-06-11 真机验证实测）。
  * 已注册同名 server（如云端清单显式下发）时不重复。
  */
-export function pickEnvGatedComputerUseServers(
-  defaults: MCPServerConfig[],
-  alreadyRegistered: ReadonlySet<string>,
-): MCPServerConfig[] {
-  return defaults.filter(
-    (s) =>
-      (s.name === CUA_DRIVER_SERVER_NAME || s.name === 'argus') &&
-      s.enabled &&
-      !alreadyRegistered.has(s.name),
-  );
-}
-
 /**
  * Get default MCP server configurations
  * Uses configService for API keys (secure storage > env variable)
@@ -132,12 +122,28 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
   const githubToken = configService?.getServiceApiKey('github') || process.env.GITHUB_TOKEN || '';
   const argusEnabled = process.env.CODE_AGENT_ENABLE_ARGUS_MCP === '1';
   // cua-driver (trycua) — computer-use 新底座，逐步替代 argus（详见 内部文档）
-  // 启用: CODE_AGENT_ENABLE_CUA=1；默认指向 bundle 内重签的 Agent Neo Computer Use.app，
+  // 启用条件来自能力包安装状态；默认指向 bundle 内重签的 Agent Neo Computer Use.app，
   // 可用 CODE_AGENT_CUA_DRIVER_PATH 覆盖，最终回退 PATH 上的 `cua-driver`。
-  const cuaEnabled = process.env.CODE_AGENT_ENABLE_CUA === '1';
-  const cuaDriverCommand = resolveCuaDriverPath();
-  const cuaMcpLaunch = resolveCuaMcpLaunch(cuaDriverCommand);
+  const cuaEnabled = isComputerUseCapabilityInstalledSync();
   const cuaSupported = process.platform === 'darwin' || process.platform === 'win32';
+  const computerUseServers: MCPServerConfig[] = [];
+  if (cuaEnabled && cuaSupported) {
+    const cuaMcpLaunch = resolveCuaMcpLaunch(resolveCuaDriverPath());
+    computerUseServers.push({
+      name: CUA_DRIVER_SERVER_NAME,
+      command: cuaMcpLaunch.command,
+      args: cuaMcpLaunch.args,
+      env: {
+        CUA_DRIVER_RS_UPDATE_CHECK: '0',
+        // 上游默认启用产品遥测；Neo 的桌面能力保持显式 opt-in，不向上游发事件。
+        CUA_DRIVER_RS_TELEMETRY_ENABLED: 'false',
+      },
+      enabled: true,
+      // 保持按需启动：cua-driver 空闲时仍会维持 cursor overlay 主线程刷新，
+      // 启动即连接会让未使用 Computer Use 的普通会话也长期占 CPU。
+      lazyLoad: true,
+    });
+  }
 
   return [
     // ========== SSE 远程服务器 ==========
@@ -244,22 +250,8 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
     },
 
     // ========== Computer Use 新底座: cua-driver (trycua, MIT) ==========
-    // AX 树优先 + 后台不抢焦点 + mac/win 原生统一，stdio MCP。替代 argus。
-    // 工具: list_apps/get_window_state/click/type_text/set_value/screenshot/… (~30)
-    {
-      name: CUA_DRIVER_SERVER_NAME,
-      command: cuaMcpLaunch.command,
-      args: cuaMcpLaunch.args,
-      env: {
-        CUA_DRIVER_RS_UPDATE_CHECK: '0',
-        // 上游默认启用产品遥测；Neo 的桌面能力保持显式 opt-in，不向上游发事件。
-        CUA_DRIVER_RS_TELEMETRY_ENABLED: 'false',
-      },
-      enabled: cuaEnabled && cuaSupported,
-      // 保持按需启动：cua-driver 空闲时仍会维持 cursor overlay 主线程刷新，
-      // 启动即连接会让未使用 Computer Use 的普通会话也长期占 CPU。
-      lazyLoad: true,
-    },
+    // 未安装时不进入默认清单，避免 MCP 设置和本机操作页残留入口。
+    ...computerUseServers,
   ];
 }
 
@@ -418,14 +410,14 @@ export async function initMCPClient(
     }
   }
 
-  // computer-use 底座（cua-driver / argus）：本机能力 + 环境变量门控，
+  // computer-use 底座（cua-driver / argus）：本机能力，
   // 独立于云端清单补注册——否则云端清单存在时上面 else 分支不走，
-  // CODE_AGENT_ENABLE_CUA=1 永远注册不上（2026-06-11 真机验证实测）。
+  // 已安装的 CUA 永远注册不上（2026-06-11 真机验证实测）。
   const registeredNames = new Set(client.getServerStates().map((s) => s.config.name));
-  for (const config of pickEnvGatedComputerUseServers(getDefaultMCPServers(), registeredNames)) {
+  for (const config of pickEnabledComputerUseServers(getDefaultMCPServers(), registeredNames)) {
     config.scope = 'builtin';
     client.addServer(config);
-    logger.info(`Registered env-gated computer-use server: ${config.name}`);
+    logger.info(`Registered installed computer-use server: ${config.name}`);
   }
 
   // .mcp.json 配置文件：user → project → local 三档 scope

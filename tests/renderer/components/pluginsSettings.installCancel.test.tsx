@@ -142,4 +142,68 @@ describe('PluginsSettings install cancellation', () => {
       );
     });
   });
+
+  it('installs bundled Computer Use only after disclosing Accessibility and Screen Recording', async () => {
+    invoke.mockImplementation((channel: string) => {
+      if (
+        channel === IPC_CHANNELS.MARKETPLACE_LIST
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED
+      ) {
+        return Promise.resolve({ success: true, data: [] });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST) {
+        return Promise.resolve({
+          success: true,
+          data: [{
+            id: 'builtin.computerUse',
+            name: 'Computer Use',
+            version: '1.0.0',
+            description: 'macOS 桌面控制',
+            permissions: ['filesystem', 'shell', 'accessibility', 'screen-recording'],
+            state: 'available',
+            toolNames: [],
+          }],
+        });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_STAGE_BUNDLED) {
+        return Promise.resolve({
+          success: true,
+          data: {
+            token: 'bundled-cua-token',
+            id: 'builtin.computerUse',
+            name: 'Computer Use',
+            version: '1.0.0',
+            description: 'macOS 桌面控制',
+            permissions: ['filesystem', 'shell', 'accessibility', 'screen-recording'],
+            toolNames: ['cua-driver'],
+            sourceKind: 'bundled',
+            sourceLabel: 'Agent Neo',
+            sandbox: { passed: true, summary: '内置能力已校验' },
+            expiresAt: Date.now() + 60_000,
+          },
+        });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM) {
+        return Promise.resolve({
+          success: true,
+          data: { id: 'builtin.computerUse', version: '1.0.0', toolNames: ['cua-driver'] },
+        });
+      }
+      throw new Error(`Unexpected channel ${channel}`);
+    });
+
+    render(<PluginsSettings />);
+    fireEvent.click(await screen.findByRole('button', { name: zh.settings.plugins.manualImport.install }));
+
+    expect(await screen.findByText(zh.settings.plugins.manualImport.confirmTitle)).toBeTruthy();
+    expect(screen.getAllByText(zh.settings.plugins.manualImport.permissions.accessibility).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(zh.settings.plugins.manualImport.permissions['screen-recording']).length).toBeGreaterThanOrEqual(2);
+    expect(invoke).not.toHaveBeenCalledWith(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, expect.anything());
+
+    fireEvent.click(screen.getByRole('button', { name: zh.settings.plugins.manualImport.confirm }));
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, 'bundled-cua-token');
+    });
+  });
 });

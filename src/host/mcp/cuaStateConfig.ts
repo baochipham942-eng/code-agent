@@ -1,3 +1,5 @@
+import { isComputerUseCapabilityInstalledSync } from '../plugins/builtin/computerUse/installState';
+
 const CUA_STATE_V2_ENV = 'CODE_AGENT_CUA_STATE_V2';
 
 /**
@@ -8,5 +10,5 @@ const CUA_STATE_V2_ENV = 'CODE_AGENT_CUA_STATE_V2';
 export function isCuaStateV2Enabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return env.CODE_AGENT_ENABLE_CUA === '1' && env[CUA_STATE_V2_ENV] === '1';
+  return isComputerUseCapabilityInstalledSync(env) && env[CUA_STATE_V2_ENV] === '1';
 }

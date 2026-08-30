@@ -53,6 +53,8 @@ import {
   type FailureCodebook,
 } from './failureCodes';
 import { classifyTestResultFailure } from './testResultFailure';
+import { mergeSkillActivations } from './skillSelection';
+
 import { attachAiReview } from './testRunnerAiReview';
 const execAsync = promisify(exec);
 const logger = createLogger('TestRunner');
@@ -121,6 +123,8 @@ export interface AgentInterface {
   getGoalRunRecord?(): GoalRunRecord | undefined;
   /** Bind runtime capability signals to the case that is currently executing. */
   configureEvaluationCase?(testId: string | undefined): void;
+  /** Read and clear the real skill activations accumulated for one case. */
+  consumeSkillActivations?(testId: string): Record<string, number>;
   getStructuredReplay?(sessionId: string): Promise<StructuredReplay | null>;
 }
 
@@ -597,21 +601,25 @@ export class TestRunner {
       return createNotRunResult(testCase, this.abortReason);
     }
     const trialResults = completedTrials.map((result) => this.toTrialSummary(result));
+    const skillActivations = mergeSkillActivations(completedTrials);
     const costExceeded = completedTrials.find((result) => result.status === 'cost_exceeded');
     if (costExceeded) {
       costExceeded.trials = trialResults;
+      costExceeded.skillActivations = skillActivations;
       this.emit({ type: 'case_end', result: costExceeded });
       return costExceeded;
     }
     if (this.aborted && completedTrials.length < trialsPerCase) {
       const interrupted = completedTrials[completedTrials.length - 1];
       interrupted.trials = trialResults;
+      interrupted.skillActivations = skillActivations;
       this.emit({ type: 'case_end', result: interrupted });
       return interrupted;
     }
     if (completedTrials.every((result) => result.status === 'skipped')) {
       const skipped = completedTrials[0];
       skipped.trials = trialResults;
+      skipped.skillActivations = skillActivations;
       this.emit({ type: 'case_end', result: skipped });
       return skipped;
     }
@@ -631,6 +639,7 @@ export class TestRunner {
       representative.score = aggregate.passCaretK;
     }
     representative.trials = trialResults;
+    representative.skillActivations = skillActivations;
     representative.trialAggregate = {
       n: aggregate.trialCount,
       c: aggregate.passCount,
@@ -1072,6 +1081,7 @@ export class TestRunner {
 
       result.endTime = Date.now();
       result.duration = result.endTime - result.startTime;
+      result.skillActivations = agent.consumeSkillActivations?.(testCase.id) ?? {};
       const usage = costTracker.getUsage();
       if (usage) {
         result.usage = usage;

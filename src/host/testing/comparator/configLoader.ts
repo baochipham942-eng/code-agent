@@ -2,6 +2,7 @@
 import fs from 'fs/promises';
 import * as yaml from 'js-yaml';
 import type { CompareConfiguration } from '../types';
+import { validateDiscoverableSkills } from '../skillSelection';
 
 function optionalString(value: unknown, field: string, filePath: string): string | undefined {
   if (value === undefined) return undefined;
@@ -37,7 +38,10 @@ function optionalEnum<T extends string>(
 /**
  * Load a CompareConfiguration from a YAML file.
  */
-export async function loadCompareConfig(filePath: string): Promise<CompareConfiguration> {
+export async function loadCompareConfig(
+  filePath: string,
+  options: { workingDirectory?: string; discoverableSkillNames?: readonly string[] } = {},
+): Promise<CompareConfiguration> {
   const content = await fs.readFile(filePath, 'utf-8');
   const parsed = yaml.load(content) as Record<string, unknown>;
 
@@ -64,10 +68,17 @@ export async function loadCompareConfig(filePath: string): Promise<CompareConfig
 
   let skills: string[] | undefined;
   if (parsed.skills !== undefined) {
-    if (!Array.isArray(parsed.skills) || parsed.skills.some((item) => typeof item !== 'string')) {
+    if (
+      !Array.isArray(parsed.skills)
+      || parsed.skills.some((item) => typeof item !== 'string' || item.trim() === '')
+    ) {
       throw new Error(`Invalid compare config in ${filePath}: "skills" must be an array of strings`);
     }
-    skills = parsed.skills as string[];
+    skills = await validateDiscoverableSkills(
+      parsed.skills as string[],
+      options.workingDirectory ?? process.cwd(),
+      options.discoverableSkillNames,
+    );
   }
 
   return {

@@ -48,6 +48,19 @@ const ZERO_RUBRIC: DualRubricScore = {
   combined: 0,
 };
 
+function activationTotal(activations: Record<string, number> | undefined): number {
+  return Object.values(activations ?? {}).reduce((sum, count) => sum + count, 0);
+}
+
+function addActivations(
+  total: Record<string, number>,
+  activations: Record<string, number>,
+): void {
+  for (const [name, count] of Object.entries(activations)) {
+    total[name] = (total[name] ?? 0) + count;
+  }
+}
+
 /**
  * Runs A/B comparisons between a baseline and candidate configuration.
  * For each test case, randomly assigns baseline/candidate to A/B,
@@ -136,6 +149,8 @@ export class ABComparator {
     const passRateB = assignment.B === 'baseline'
       ? assertionDecision.passRateA
       : assertionDecision.passRateB;
+    const skillActivationsA = { ...(resultA.skillActivations ?? {}) };
+    const skillActivationsB = { ...(resultB.skillActivations ?? {}) };
 
     // Step 2.5（WP1-3b）：任一侧没跑成 → 本 pair 不进胜负统计，只标注
     const invalidA = invalidRunReason(resultA);
@@ -166,7 +181,37 @@ export class ABComparator {
         failureB: resultB.failure,
         durationA,
         durationB,
+        skillActivationsA,
+        skillActivationsB,
         excludedReason: reasons,
+      };
+    }
+
+    if ((this.candidate.skills?.length ?? 0) > 0 && activationTotal(candidateResult.skillActivations) === 0) {
+      return {
+        testId: testCase.id,
+        description: testCase.description,
+        layer: testCase.layer,
+        assignment,
+        scoreA: ZERO_RUBRIC,
+        scoreB: ZERO_RUBRIC,
+        referenceWinner: 'tie',
+        referenceKind: llmCall ? 'llm_judge' : 'heuristic',
+        assertionWinner: 'tie',
+        passRateA,
+        passRateB,
+        assertionCount: assertionDecision.assertionCount,
+        realWinner: 'tie',
+        reasoning: 'pair 排除（未计入胜负）：skill 未出场，结论不说明 skill 效果',
+        statusA: resultA.status,
+        statusB: resultB.status,
+        failureA: resultA.failure,
+        failureB: resultB.failure,
+        durationA,
+        durationB,
+        skillActivationsA,
+        skillActivationsB,
+        excludedReason: 'skill_not_activated',
       };
     }
 
@@ -205,12 +250,15 @@ export class ABComparator {
       failureB: resultB.failure,
       durationA,
       durationB,
+      skillActivationsA,
+      skillActivationsB,
     };
   }
 
   private computeSummary(allCases: CaseComparison[]): ComparisonResult['summary'] {
     // WP1-3b：排除的 pair 不进胜负/均分统计
     const excludedPairs = allCases.filter((c) => c.excludedReason).length;
+    const skillNotActivatedPairs = allCases.filter((c) => c.excludedReason === 'skill_not_activated').length;
     const cases = allCases.filter((c) => !c.excludedReason);
     const totalCases = cases.length;
     const baselineWins = cases.filter((c) => c.realWinner === 'baseline').length;
@@ -252,10 +300,33 @@ export class ABComparator {
     // 配对 sign test：confidence 只是多数比例，2:0 和 25:15 看不出可信度差异
     const pValue = signTestPValue(baselineWins, candidateWins);
 
+    const baselineSkillActivations: Record<string, number> = {};
+    const candidateSkillActivations: Record<string, number> = {};
+    for (const comparison of allCases) {
+      addActivations(
+        baselineSkillActivations,
+        comparison.assignment.A === 'baseline'
+          ? comparison.skillActivationsA
+          : comparison.skillActivationsB,
+      );
+      addActivations(
+        candidateSkillActivations,
+        comparison.assignment.A === 'candidate'
+          ? comparison.skillActivationsA
+          : comparison.skillActivationsB,
+      );
+    }
+
     // Build verdict
-    const excludedNote = excludedPairs > 0 ? ` （另有 ${excludedPairs} 个 pair 因一侧没跑成被排除）` : '';
+    const otherExcludedPairs = excludedPairs - skillNotActivatedPairs;
+    const excludedNote = otherExcludedPairs > 0 ? ` （另有 ${otherExcludedPairs} 个 pair 因一侧没跑成被排除）` : '';
+    const skillNote = skillNotActivatedPairs > 0
+      ? ` 实验组有 ${skillNotActivatedPairs} 题 skill 未出场，不计入。`
+      : '';
     let verdict: string;
-    if (winner === 'tie') {
+    if (skillNotActivatedPairs === allCases.length && allCases.length > 0) {
+      verdict = `skill 未出场，结论不说明 skill 效果。实验组 ${skillNotActivatedPairs} 题均未计入胜负统计。`;
+    } else if (winner === 'tie') {
       verdict = `Tie: baseline and candidate each won ${baselineWins} cases with ${ties} ties.${excludedNote}`;
     } else {
       const winnerWins = winner === 'baseline' ? baselineWins : candidateWins;
@@ -264,6 +335,7 @@ export class ABComparator {
         `${winner} wins ${winnerWins}-${loserWins} (${ties} ties) by deterministic assertion pass rate. ` +
         `Confidence: ${(confidence * 100).toFixed(0)}%.` + excludedNote;
     }
+    if (skillNotActivatedPairs > 0 && skillNotActivatedPairs !== allCases.length) verdict += skillNote;
 
     return {
       totalCases,
@@ -276,6 +348,9 @@ export class ABComparator {
       confidence,
       verdict,
       ...(excludedPairs > 0 ? { excludedPairs } : {}),
+      ...(skillNotActivatedPairs > 0 ? { skillNotActivatedPairs } : {}),
+      baselineSkillActivations,
+      candidateSkillActivations,
       pValue,
     };
   }

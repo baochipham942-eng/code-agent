@@ -32,7 +32,7 @@ describe('loadCompareConfig unified arm schema', () => {
       '',
     ].join('\n'));
 
-    await expect(loadCompareConfig(file)).resolves.toMatchObject({
+    await expect(loadCompareConfig(file, { discoverableSkillNames: ['docx'] })).resolves.toMatchObject({
       name: 'candidate',
       harness: {
         name: 'candidate',
@@ -47,6 +47,20 @@ describe('loadCompareConfig unified arm schema', () => {
       reasoningEffort: 'xhigh',
       skills: ['docx'],
     });
+  });
+
+  it('sorts/deduplicates discoverable skills and rejects a missing capability', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'compare-config-'));
+    tempDirs.push(dir);
+    const valid = path.join(dir, 'valid.yaml');
+    const missing = path.join(dir, 'missing.yaml');
+    await writeFile(valid, 'name: candidate\nskills: [xlsx, docx, xlsx]\n');
+    await writeFile(missing, 'name: candidate\nskills: [missing-skill]\n');
+
+    await expect(loadCompareConfig(valid, { discoverableSkillNames: ['docx', 'xlsx'] }))
+      .resolves.toMatchObject({ skills: ['docx', 'xlsx'] });
+    await expect(loadCompareConfig(missing, { discoverableSkillNames: ['docx', 'xlsx'] }))
+      .rejects.toThrow('实验组指定的能力 missing-skill 不存在');
   });
 
   it('rejects invalid reasoning effort and harness enum values', async () => {

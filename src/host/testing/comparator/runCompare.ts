@@ -47,8 +47,9 @@ const CONSUMED_COMPARE_FIELDS = [
   'harness',
   'memory',
   'reasoningEffort',
+  'skills',
 ] as const;
-const UNCONSUMED_COMPARE_FIELDS = ['skills', 'enabledTools', 'temperature', 'agentConfig'] as const;
+const UNCONSUMED_COMPARE_FIELDS = ['enabledTools', 'temperature', 'agentConfig'] as const;
 
 /**
  * candidate 未写的字段在 makeAgent 时会回落到 baseline 值（config.model ||
@@ -77,6 +78,7 @@ function effectiveArmSignature(
       : null,
     memory: arm.memory,
     reasoningEffort: arm.reasoningEffort,
+    skills: arm.skills,
   } satisfies Record<(typeof CONSUMED_COMPARE_FIELDS)[number], unknown>;
   return JSON.stringify(Object.fromEntries(
     CONSUMED_COMPARE_FIELDS.map((field) => [field, consumedValues[field]]),
@@ -117,6 +119,12 @@ export function assertCompareArmsActivated(result: ComparisonResult): void {
     );
   }
   if (result.summary.totalCases === 0) {
+    if (
+      result.cases.length > 0
+      && result.cases.every((comparison) => comparison.excludedReason === 'skill_not_activated')
+    ) {
+      return;
+    }
     const reasons = result.cases
       .map((c) => c.excludedReason)
       .filter(Boolean)

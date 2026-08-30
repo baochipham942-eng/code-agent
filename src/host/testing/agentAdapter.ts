@@ -359,6 +359,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
   private readonly database?: DatabaseService;
   private readonly telemetryCollector?: TelemetryCollector;
   private evaluationTestId?: string;
+  private readonly skillActivations = new Map<string, Record<string, number>>();
 
   // Persisted across sendMessage() calls so multi-turn follow-ups share conversation history.
   // Cleared by reset() between cases (testRunner calls reset before each case's first prompt).
@@ -473,6 +474,12 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
   configureEvaluationCase(testId: string | undefined): void {
     this.evaluationTestId = testId;
+  }
+
+  consumeSkillActivations(testId: string): Record<string, number> {
+    const activations = this.skillActivations.get(testId) ?? {};
+    this.skillActivations.delete(testId);
+    return { ...activations };
   }
 
   async getStructuredReplay(sessionId: string) {
@@ -613,13 +620,16 @@ export class StandaloneAgentAdapter implements AgentInterface {
             if (goalRunForThisRun) {
               applyGoalEvent(goalRunForThisRun, event);
             }
-            if (this.evaluationTestId && this.onEvaluationSignal) {
+            if (this.evaluationTestId) {
               if (event.type === 'skill_activated') {
-                this.onEvaluationSignal({ type: 'skill_activated', testId: this.evaluationTestId, name: event.data.name });
+                const current = this.skillActivations.get(this.evaluationTestId) ?? {};
+                current[event.data.name] = (current[event.data.name] ?? 0) + 1;
+                this.skillActivations.set(this.evaluationTestId, current);
+                this.onEvaluationSignal?.({ type: 'skill_activated', testId: this.evaluationTestId, name: event.data.name });
               } else if (event.type === 'memory_injected') {
-                this.onEvaluationSignal({ type: 'memory_injected', testId: this.evaluationTestId, id: event.data.id });
+                this.onEvaluationSignal?.({ type: 'memory_injected', testId: this.evaluationTestId, id: event.data.id });
               } else if (event.type === 'subagent_activity' && event.data.kind === 'started') {
-                this.onEvaluationSignal({ type: 'subagent_spawned', testId: this.evaluationTestId, id: event.data.agentId });
+                this.onEvaluationSignal?.({ type: 'subagent_spawned', testId: this.evaluationTestId, id: event.data.agentId });
               }
             }
             switch (event.type) {

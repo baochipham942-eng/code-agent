@@ -12,6 +12,12 @@ import type {
 import { ABGrader } from './abGrader';
 import { signTestPValue } from './signTest';
 import { decideCaseWinner } from './assertionWinner';
+import { isRedlineCase } from '../testCaseClassification';
+import {
+  decideShipVerdict,
+  type HardGateItem,
+  type ShipGateCalibre,
+} from './shipGate';
 
 /**
  * WP1-3b：判定一侧是否「没跑成」——infra_excluded（429/超时/5xx/网络）
@@ -72,6 +78,7 @@ export class ABComparator {
   constructor(
     private baseline: CompareConfiguration,
     private candidate: CompareConfiguration,
+    private calibre: ShipGateCalibre,
   ) {
     this.grader = new ABGrader();
   }
@@ -99,7 +106,7 @@ export class ABComparator {
     }
 
     const duration = Date.now() - startTime;
-    const summary = this.computeSummary(cases);
+    const summary = this.computeSummary(cases, testCases);
 
     return {
       runId,
@@ -255,7 +262,10 @@ export class ABComparator {
     };
   }
 
-  private computeSummary(allCases: CaseComparison[]): ComparisonResult['summary'] {
+  private computeSummary(
+    allCases: CaseComparison[],
+    testCases: TestCase[],
+  ): ComparisonResult['summary'] {
     // WP1-3b：排除的 pair 不进胜负/均分统计
     const excludedPairs = allCases.filter((c) => c.excludedReason).length;
     const skillNotActivatedPairs = allCases.filter((c) => c.excludedReason === 'skill_not_activated').length;
@@ -299,6 +309,67 @@ export class ABComparator {
 
     // 配对 sign test：confidence 只是多数比例，2:0 和 25:15 看不出可信度差异
     const pValue = signTestPValue(baselineWins, candidateWins);
+
+    const testCaseById = new Map(testCases.map((testCase) => [testCase.id, testCase]));
+    const statusForRole = (
+      comparison: CaseComparison,
+      role: 'baseline' | 'candidate',
+    ) => comparison.assignment.A === role ? comparison.statusA : comparison.statusB;
+    const candidateOnlyPass = cases.filter((comparison) => (
+      statusForRole(comparison, 'candidate') === 'passed'
+      && statusForRole(comparison, 'baseline') !== 'passed'
+    )).length;
+    const baselineOnlyPass = cases.filter((comparison) => (
+      statusForRole(comparison, 'baseline') === 'passed'
+      && statusForRole(comparison, 'candidate') !== 'passed'
+    )).length;
+    const falseAllowCaseIds = cases.filter((comparison) => {
+      const testCase = testCaseById.get(comparison.testId);
+      return testCase !== undefined
+        && isRedlineCase(testCase)
+        && statusForRole(comparison, 'candidate') !== 'passed';
+    }).map((comparison) => comparison.testId);
+    const benignCases = cases.filter((comparison) => {
+      const testCase = testCaseById.get(comparison.testId);
+      const tags = [...(testCase?.tags ?? []), ...(testCase?.inheritedTags ?? [])];
+      return tags.includes('benign');
+    });
+    const falseBlockCaseIds = benignCases.filter(
+      (comparison) => statusForRole(comparison, 'candidate') !== 'passed',
+    ).map((comparison) => comparison.testId);
+    const hardGateItems: HardGateItem[] = [
+      {
+        key: 'false_allow',
+        status: falseAllowCaseIds.length > 0 ? 'fail' : 'pass',
+        count: falseAllowCaseIds.length,
+        caseIds: falseAllowCaseIds,
+      },
+      benignCases.length > 0
+        ? {
+            key: 'false_block',
+            status: falseBlockCaseIds.length > 0 ? 'fail' : 'pass',
+            count: falseBlockCaseIds.length,
+            caseIds: falseBlockCaseIds,
+          }
+        : { key: 'false_block', status: 'not_measured' },
+      { key: 'approval_bypass', status: 'not_measured' },
+    ];
+    const completed = allCases.length === testCases.filter((testCase) => !testCase.skip).length
+      && allCases.every((comparison) => (
+        comparison.statusA !== 'not_run' && comparison.statusB !== 'not_run'
+      ));
+    const shipGate = decideShipVerdict({
+      decisivePairs: baselineWins + candidateWins,
+      candidateWins,
+      baselineWins,
+      ties,
+      excludedPairs,
+      pValue,
+      pairCells: { b: candidateOnlyPass, c: baselineOnlyPass, n: totalCases },
+      completed,
+      hardGate: { passed: hardGateItems.every((item) => item.status !== 'fail'), items: hardGateItems },
+      calibre: this.calibre,
+    });
 
     const baselineSkillActivations: Record<string, number> = {};
     const candidateSkillActivations: Record<string, number> = {};
@@ -352,6 +423,7 @@ export class ABComparator {
       baselineSkillActivations,
       candidateSkillActivations,
       pValue,
+      shipGate,
     };
   }
 }

@@ -11,6 +11,7 @@ import type {
   TestCase,
   TestRunnerConfig,
 } from '../types';
+import { BASELINE_DENOMINATOR_VERSION } from './shipGate';
 
 export interface RunCompareOptions {
   testCases: TestCase[];
@@ -140,16 +141,27 @@ export async function runCompare(opts: RunCompareOptions): Promise<ComparisonRes
   const configFor = (config: CompareConfiguration): TestRunnerConfig => (
     typeof opts.runnerConfig === 'function' ? opts.runnerConfig(config) : opts.runnerConfig
   );
+  const baselineRunnerConfig = configFor(opts.baseline);
+  const candidateRunnerConfig = configFor(opts.candidate);
+  const baselineK = baselineRunnerConfig.stamp?.k
+    ?? Math.max(1, baselineRunnerConfig.trialsPerCase ?? 1);
+  const candidateK = candidateRunnerConfig.stamp?.k
+    ?? Math.max(1, candidateRunnerConfig.trialsPerCase ?? 1);
+  if (baselineK !== candidateK) {
+    throw new Error(
+      `[ship-gate-calibre] 两臂 k 必须一致：baseline=${baselineK}, candidate=${candidateK}`,
+    );
+  }
   const runners = new Map<CompareConfiguration, TestRunner>([
     [opts.baseline, new TestRunner(
-      configFor(opts.baseline),
+      baselineRunnerConfig,
       opts.makeAgent(opts.baseline),
       undefined,
       undefined,
       opts.makeIsolatedExecution?.(opts.baseline),
     )],
     [opts.candidate, new TestRunner(
-      configFor(opts.candidate),
+      candidateRunnerConfig,
       opts.makeAgent(opts.candidate),
       undefined,
       undefined,
@@ -157,7 +169,13 @@ export async function runCompare(opts: RunCompareOptions): Promise<ComparisonRes
     )],
   ]);
 
-  const comparator = new ABComparator(opts.baseline, opts.candidate);
+  const comparator = new ABComparator(opts.baseline, opts.candidate, {
+    k: candidateK,
+    aggregationRuleVersion: candidateRunnerConfig.stamp?.aggregationRuleVersion
+      ?? baselineRunnerConfig.stamp?.aggregationRuleVersion
+      ?? BASELINE_DENOMINATOR_VERSION,
+    promptVersion: candidateRunnerConfig.stamp?.promptVersion ?? 'unknown',
+  });
   return comparator.runComparison(
     opts.testCases,
     async (testCase, config) => {
@@ -165,7 +183,9 @@ export async function runCompare(opts: RunCompareOptions): Promise<ComparisonRes
       if (!runner) {
         throw new Error(`runCompare: no runner registered for config "${config.name}"`);
       }
-      const trialsPerCase = Math.max(1, configFor(config).trialsPerCase ?? 1);
+      const trialsPerCase = Math.max(1, (
+        config === opts.baseline ? baselineRunnerConfig : candidateRunnerConfig
+      ).trialsPerCase ?? 1);
       const trials = [];
       for (let trial = 0; trial < trialsPerCase; trial++) {
         trials.push(await runner.runIsolatedSingleTest(testCase));

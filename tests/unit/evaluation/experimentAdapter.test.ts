@@ -216,7 +216,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
       passed: 1,
       passRate: 1,
       avgScore: 0.75,
-      aggregation: 'best_score_pass_at_k',
+      aggregation: 'legacy',
       source: 'test-runner',
       canonical: {
         schemaVersion: 1,

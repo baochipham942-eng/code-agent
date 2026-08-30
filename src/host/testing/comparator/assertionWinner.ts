@@ -7,7 +7,6 @@ export interface AssertionWinnerDecision {
   passRateA: number;
   passRateB: number;
   assertionCount: number;
-  excludedReason?: string;
 }
 
 const EXCLUDED_STATUSES = new Set<TestStatus>([
@@ -15,11 +14,6 @@ const EXCLUDED_STATUSES = new Set<TestStatus>([
   'not_run',
   'cost_exceeded',
 ]);
-
-function excludedStatusReason(role: 'baseline' | 'candidate', result: TestResult): string | null {
-  if (!EXCLUDED_STATUSES.has(result.status)) return null;
-  return `${role}: ${result.status}${result.failureReason ? `（${result.failureReason}）` : ''}`;
-}
 
 /** Only deterministic assertion rows can participate in the experiment conclusion. */
 function deterministicAssertionResults(result: TestResult): ExpectationResult[] {
@@ -84,11 +78,6 @@ export function decideCaseWinner(
   baseline: TestResult,
   candidate: TestResult,
 ): AssertionWinnerDecision {
-  const excludedReason = [
-    excludedStatusReason('baseline', baseline),
-    excludedStatusReason('candidate', candidate),
-  ].filter((reason): reason is string => Boolean(reason)).join('; ');
-
   const assertionsA = deterministicAssertionResults(baseline);
   const assertionsB = deterministicAssertionResults(candidate);
   const passRateA = assertionsA.length > 0
@@ -108,6 +97,5 @@ export function decideCaseWinner(
     passRateA,
     passRateB,
     assertionCount: Math.max(assertionsA.length, assertionsB.length),
-    ...(excludedReason ? { excludedReason } : {}),
   };
 }

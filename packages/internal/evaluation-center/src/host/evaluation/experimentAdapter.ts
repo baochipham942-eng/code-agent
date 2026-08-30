@@ -541,7 +541,7 @@ export class ExperimentAdapter {
 
   toCanonicalTestRun(summary: TestRunSummary): CanonicalEvalRun {
     const aggregation: EvalRunAggregation = summary.aggregationRule
-      ?? ((summary.results || []).some(r => r.trials) ? 'best_score_pass_at_k' : 'single');
+      ?? ((summary.results || []).some(r => r.trials) ? 'legacy' : 'single');
 
     const cases: CanonicalEvalCase[] = (summary.results || []).map((r: TestResult) => {
       const trace = r.sessionId ? buildSessionTraceIdentity(r.sessionId) : undefined;

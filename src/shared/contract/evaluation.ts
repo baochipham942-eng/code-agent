@@ -376,6 +376,7 @@ export type EvalRunAggregation =
   | 'pass_rate_k1'
   | 'pass_caret_k'
   | 'best_score_pass_at_k'
+  | 'legacy'
   | 'median_threshold'
   | 'regression_gate'
   | 'swe_bench_gates'

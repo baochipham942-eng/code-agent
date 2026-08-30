@@ -34,11 +34,6 @@ export function setInteractiveApprovalProvider(provider: InteractiveApprovalProv
   interactiveApprovalProvider = provider;
 }
 
-/** 测试/诊断用：当前是否有交互审批通道 */
-export function hasInteractiveApprovalProvider(): boolean {
-  return interactiveApprovalProvider !== null;
-}
-
 export function createCLIPermissionHandler(
   options: CLIPermissionPolicyOptions = {},
 ): (request: PermissionRequestData) => Promise<PermissionAskResult> {

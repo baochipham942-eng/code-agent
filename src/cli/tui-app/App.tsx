@@ -24,6 +24,7 @@ import { ApprovalCard } from './ApprovalCard';
 import { getAllBackgroundTasks, onBackgroundTaskLifecycleEvent } from '../../host/tools/shell/backgroundTasks';
 import { pickStartupTip } from './tips';
 import { WelcomeCard } from './WelcomeCard';
+import { formatWorkspaceLine, WELCOME_COMPACT_ROWS } from './welcomeSplash';
 import {
   buildTerminalNotification,
   FOCUS_REPORTING_DISABLE,
@@ -83,11 +84,11 @@ interface InkCommandResult {
 export interface InkChatOptions {
   cwd: string;
   model: string;
-  /** 当前 provider（WelcomeCard 显示 provider/model；/model 切换后由事件流刷新） */
+  /** 当前 provider（StatusBar；/model 切换后由事件流刷新） */
   provider?: string;
-  /** 产品版本（WelcomeCard 显示） */
+  /** 产品版本（欢迎海报标题行） */
   version?: string;
-  /** git 分支（StatusBar 显示；取不到传空串） */
+  /** git 分支（首屏顶左 + StatusBar；取不到传空串） */
   gitBranch: string;
   /** 工作树有未提交改动（StatusBar 分支名后加 *） */
   gitDirty?: boolean;
@@ -137,20 +138,22 @@ function ctxBar(percent: number): string {
   return '▓'.repeat(filled) + '░'.repeat(5 - filled);
 }
 
-function StatusBar({ state, cwd, gitBranch, gitDirty, fallbackModel, columns, bgTasks }: {
+function StatusBar({ state, cwd, gitBranch, gitDirty, fallbackModel, fallbackProvider, columns, bgTasks }: {
   state: ChatState;
   cwd: string;
   gitBranch: string;
   /** 工作树有未提交改动（不含未跟踪文件）时分支名后加 *（Claude Code 同款） */
   gitDirty?: boolean;
   fallbackModel: string;
+  fallbackProvider?: string;
   columns: number;
   /** 运行中的后台任务数（0 = 不显示该分段） */
   bgTasks: number;
 }) {
   const model = state.model ?? fallbackModel;
+  const provider = state.provider ?? fallbackProvider;
   const cost = estimateCostUsd(model, state.inputTokens, state.outputTokens);
-  const leftText = `⏺ ${model}${state.provider ? ` (${state.provider})` : ''}`;
+  const leftText = `⏺ ${model}${provider ? ` (${provider})` : ''}`;
   const rightText = [
     bgTasks > 0 ? `◉${bgTasks} bg` : '',
     state.inputTokens + state.outputTokens > 0 ? `⇡${state.inputTokens} ⇣${state.outputTokens}` : '',
@@ -174,7 +177,7 @@ function StatusBar({ state, cwd, gitBranch, gitDirty, fallbackModel, columns, bg
       <Text wrap="truncate-end">
         <Text color="green">⏺ </Text>
         <Text bold>{model}</Text>
-        {state.provider ? <Text dimColor> ({state.provider})</Text> : null}
+        {provider ? <Text dimColor> ({provider})</Text> : null}
         <Text dimColor>{gap1}{middle}{gap2}{rightText}</Text>
       </Text>
     </Box>
@@ -955,9 +958,10 @@ export function App({ agent, options, onExit }: {
         ? 2
         // 输入框圆角边框上下各 1 行（Editor 组件内渲染，这里计入布局预算）
         : editorVisualRows(editor, Math.max(columns - 6, 8), editorMaxRows) + 2;
-  // 首屏欢迎卡（Grok 全屏构图）：空会话时 live 区居中渲染 WelcomeCard，
-  // 呼吸 ◆ 也让位（零噪音）；首条消息出现即切回消息流
+  // 首屏欢迎海报（Grok Build 构图）：顶左 workspace 行 + live 区居中宽卡，
+  // 呼吸 ◆ 让位（零噪音）；首条消息出现即切回消息流
   const showWelcome = state.messages.length === 0;
+  const welcomeCompact = rows < WELCOME_COMPACT_ROWS;
   // 首屏 tip 行（Grok 风格）：空会话空闲时在输入框上方显示一条轮换提示
   const [tip] = useState(() => pickStartupTip(Date.now()));
   const showTip = showWelcome && !state.running && !approval && !modelPicker && !historySearch;
@@ -985,13 +989,19 @@ export function App({ agent, options, onExit }: {
         <Box flexDirection="column" flexGrow={1} justifyContent="flex-end" overflowY="hidden">
           {showWelcome
             ? (
-              <Box flexGrow={1} justifyContent="flex-start" alignItems="flex-start" paddingX={2} paddingTop={1}>
-                <WelcomeCard
-                  version={options.version ?? ''}
-                  provider={options.provider ?? ''}
-                  model={options.model}
-                  cwd={options.cwd}
-                />
+              <Box flexGrow={1} flexDirection="column">
+                <Box paddingX={2} paddingTop={1}>
+                  <Text dimColor>
+                    {formatWorkspaceLine(options.cwd, options.gitBranch, options.gitDirty)}
+                  </Text>
+                </Box>
+                <Box flexGrow={1} justifyContent="center" alignItems="center" paddingX={2}>
+                  <WelcomeCard
+                    version={options.version ?? ''}
+                    columns={columns}
+                    compact={welcomeCompact}
+                  />
+                </Box>
               </Box>
             )
             : visibleLive.map((message) => (
@@ -1032,7 +1042,7 @@ export function App({ agent, options, onExit }: {
               ? <HistorySearchBar query={historySearch.query} match={searchMatch} />
               : <Editor state={editor} width={columns} maxRows={editorMaxRows} placeholder="让 Neo 做点什么…" />}
         {toast ? <Toast text={toast} /> : null}
-        <StatusBar state={state} cwd={options.cwd} gitBranch={options.gitBranch} gitDirty={options.gitDirty} fallbackModel={options.model} columns={columns} bgTasks={bgTaskCount} />
+        <StatusBar state={state} cwd={options.cwd} gitBranch={options.gitBranch} gitDirty={options.gitDirty} fallbackModel={options.model} fallbackProvider={options.provider} columns={columns} bgTasks={bgTaskCount} />
         {shortcutsVisible
           ? (
             <ShortcutsBar

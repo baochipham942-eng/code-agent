@@ -248,12 +248,15 @@ describe('evaluation run IPC admin gate', () => {
 
     database.loadExperimentCase.mockReturnValue({ case_id: 'case-1' });
     database.listAnnotationsForCase.mockReturnValue([]);
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(1234);
     const result = await save(null, {
-      experimentId: 'run-1', caseId: 'case-1', dims: {}, reviewerId: 'someone',
+      experimentId: 'run-1', caseId: 'case-1', dims: {}, reviewerId: 'someone', createdAt: 1,
     }) as { annotation: { reviewerId: string; mine: boolean } };
+    dateNow.mockRestore();
     expect(result.annotation).toMatchObject({ reviewerId: 'host-reviewer', mine: true });
     expect(database.insertAnnotation).toHaveBeenCalledWith(expect.objectContaining({
       reviewer_id: 'host-reviewer',
+      created_at: 1234,
       consent_scope: 'metadata',
       calibration_split: null,
     }));

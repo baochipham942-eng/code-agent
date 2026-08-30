@@ -45,7 +45,7 @@ export class AnnotationRepository {
              consent_scope, calibration_split, supersedes_id, created_at
       FROM annotations
       WHERE experiment_id = ? AND case_id = ?
-      ORDER BY created_at DESC
+      ORDER BY created_at DESC, rowid DESC
     `).all(experimentId, caseId) as AnnotationRow[];
   }
 }

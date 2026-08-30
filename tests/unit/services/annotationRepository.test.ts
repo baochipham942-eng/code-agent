@@ -53,7 +53,7 @@ describe('AnnotationRepository', () => {
         id: 'annotation-2',
         supersedes_id: 'annotation-1',
         note: 'new review',
-        created_at: 200,
+        created_at: 100,
       }));
 
       const annotations = repository.listForCase('run-1', 'case-1');

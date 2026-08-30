@@ -74,7 +74,7 @@ export type { CapabilityHubTab } from '../utils/settingsTabs';
 /** 「本机操作」整窗页的页内 tab：桌面操作 / 浏览器（2026-07-26 导航去重方案 9 合并页）。 */
 export type LocalOpsTab = 'desktop' | 'browser';
 // 评测中心（admin-only 整窗页）的顶层 tab。
-export type EvalCenterTab = 'replay' | 'validation' | 'telemetry' | 'cases' | 'benchmarks';
+export type EvalCenterTab = 'replay' | 'validation' | 'telemetry' | 'cases' | 'scorers' | 'benchmarks';
 export type { WorkbenchTabId, WorkbenchViewId } from '../utils/workbenchViews';
 export type ContentPreviewInput = { id: string; title: string; content: string; format: 'html' | 'markdown' | 'json' | 'text' };
 

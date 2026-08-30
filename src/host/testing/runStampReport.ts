@@ -29,8 +29,14 @@ function formatEvalSet(stamp: EvalRunStamp): string {
 }
 
 function formatScorers(stamp: EvalRunStamp): string {
-  if (stamp.scorers.judge === 'rules') return '确定性断言；规则评审';
-  return `确定性断言；AI 评审（${stamp.scorers.judgeModel}，校准记录 ${stamp.scorers.judgeCalibrationId}）`;
+  const calibration = stamp.scorers.aiReviewCalibration ?? {};
+  const aiReview = (stamp.scorers.aiReview ?? []).map((dimension) => (
+    `${dimension}（${calibration[dimension] ?? 'uncalibrated'}）`
+  ));
+  const legacyJudge = stamp.scorers.judge === 'llm'
+    ? `；对比实验评审（${stamp.scorers.judgeModel}）`
+    : '';
+  return `确定性断言${aiReview.length ? `；AI 评审：${aiReview.join('、')}` : ''}${legacyJudge}`;
 }
 
 function formatShape(stamp: EvalRunStamp): string {

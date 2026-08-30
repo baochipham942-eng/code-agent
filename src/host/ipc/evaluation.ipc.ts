@@ -15,6 +15,7 @@ import { inspectEvalEnvironment } from '../evaluation/evalEnvironment';
 import { enumerateCaseBank, saveCaseBank } from '../testing/caseBank';
 import type { SaveEvalCaseRequest } from '../../shared/contract/evaluation';
 import { inspectEvalRunPanel } from '../evaluation/evalRunPanelProbe';
+import { EXPECTATION_TYPE_CATALOG } from '../testing/expectationCatalog';
 
 const logger = createLogger('EvaluationIPC');
 
@@ -53,6 +54,13 @@ export function registerEvaluationHandlers(
     if (denied) return denied;
     if (!payload?.runId) throw new Error('runId is required');
     return runBridge.abortRun(payload.runId);
+  });
+
+  ipcMain.handle(EVALUATION_CHANNELS.SCORERS_OVERVIEW, async () => {
+    const denied = getChannelAccessIpcError(EVALUATION_CHANNELS.RUN_SUITE, 'Evaluation scorers');
+    if (denied) return denied;
+    const probe = inspectEvalRunPanel();
+    return { assertions: EXPECTATION_TYPE_CATALOG, aiReview: probe.aiReview, judge: probe.judge };
   });
 
   ipcMain.handle(EVALUATION_CHANNELS.LIST_CASES, async () => {

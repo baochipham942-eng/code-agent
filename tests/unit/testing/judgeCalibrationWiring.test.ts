@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
-import { mkdtemp } from 'fs/promises';
+import { mkdtemp, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import {
@@ -19,11 +19,19 @@ import {
   type JudgeCalibrationRecord,
 } from '../../../src/host/testing/calibration/calibrationRegistry';
 import { generateMarkdownReport } from '../../../src/host/testing/reportGenerator';
+import { approximateKappaLowerBound95 } from '../../../src/host/testing/calibration/judgeCalibration';
 import type { TestResult, TestRunSummary } from '../../../src/host/testing/types';
 
 function record(overrides: Partial<JudgeCalibrationRecord> = {}): JudgeCalibrationRecord {
   return {
-    judgeId: 'zhipu/glm-4.7',
+    standardVersion: 2,
+    dimension: 'task_completed',
+    judgeId: 'task_completed@zhipu/glm-4.7',
+    promptHash: 'abc',
+    endpoint: 'https://open.bigmodel.cn/api/paas/v4',
+    judgeModel: 'zhipu/glm-4.7',
+    datasetFingerprint: 'def',
+    goldSource: 'deterministic_shadow',
     kappa: 0.72,
     agreementRate: 0.9,
     pairs: 40,
@@ -87,15 +95,25 @@ describe('isTrustedCalibration 阈值门', () => {
   it('配对样本不足 → 不可信（小样本 κ 不稳）', () => {
     expect(isTrustedCalibration(record({ pairs: CALIBRATION_TRUST_THRESHOLDS.minPairs - 1 }))).toBe(false);
   });
+
+  it('T8：20 对且 κ=0.65 但 CI 下界不足 0.4 → 不可信；50 对 κ=0.62 → 可信', () => {
+    expect(isTrustedCalibration(record({ pairs: 20, kappa: 0.65 }))).toBe(false);
+    expect(isTrustedCalibration(record({ pairs: 50, kappa: 0.62 }))).toBe(true);
+  });
+
+  it('50 对豁免独立生效：κ=0.6 的 CI 下界不足 0.4 仍可信', () => {
+    expect(approximateKappaLowerBound95(0.6, 50)).toBeLessThan(0.4);
+    expect(isTrustedCalibration(record({ pairs: 50, kappa: 0.6 }))).toBe(true);
+  });
 });
 
 describe('calibrationRegistry 落盘', () => {
   it('save → load 按 judgeId 取回记录；未知 judgeId 返回 null', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'calib-registry-'));
     await saveCalibrationRecord(dir, record());
-    await saveCalibrationRecord(dir, record({ judgeId: 'zhipu/glm-5', kappa: 0.5 }));
+    await saveCalibrationRecord(dir, record({ judgeId: 'task_completed@zhipu/glm-5', kappa: 0.5 }));
 
-    const loaded = await loadCalibrationRecord(dir, 'zhipu/glm-4.7');
+    const loaded = await loadCalibrationRecord(dir, 'task_completed@zhipu/glm-4.7');
     expect(loaded?.kappa).toBe(0.72);
     expect(await loadCalibrationRecord(dir, 'nope/none')).toBeNull();
   });
@@ -104,35 +122,54 @@ describe('calibrationRegistry 落盘', () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'calib-registry-'));
     await saveCalibrationRecord(dir, record({ kappa: 0.3 }));
     await saveCalibrationRecord(dir, record({ kappa: 0.8 }));
-    expect((await loadCalibrationRecord(dir, 'zhipu/glm-4.7'))?.kappa).toBe(0.8);
+    expect((await loadCalibrationRecord(dir, 'task_completed@zhipu/glm-4.7'))?.kappa).toBe(0.8);
+  });
+
+  it('T8：旧记录无 standardVersion 时读为 superseded 且永不可信', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'calib-registry-'));
+    await writeFile(path.join(dir, 'judge-calibration.json'), JSON.stringify({
+      'legacy/model': { judgeId: 'legacy/model', kappa: 0.9, agreementRate: 0.95, pairs: 100, falsePositiveRate: 0, computedAt: '2026-01-01' },
+    }));
+    const loaded = await loadCalibrationRecord(dir, 'legacy/model');
+    expect(loaded?.standardVersion).toBe('superseded');
+    expect(loaded && isTrustedCalibration(loaded)).toBe(false);
   });
 });
 
-describe('报告层强制标注', () => {
-  const llmJudged = [
-    makeResult({ testId: 'j1', scoreAuthority: 'llm_judge' }),
-    makeResult({ testId: 'j2', scoreAuthority: 'llm_judge', status: 'failed', score: 0 }),
+describe('AI 评审报告并列展示', () => {
+  const aiReviewed = [
+    makeResult({ testId: 'j1', scoreAuthority: 'deterministic_assertion', aiReview: { task_completed: { verdict: 'yes', reasoning: '完成', judgeModel: 'zhipu/glm', promptHash: 'abc' } } }),
+    makeResult({ testId: 'j2', scoreAuthority: 'deterministic_assertion', status: 'failed', score: 0, aiReview: { task_completed: { verdict: 'no', reasoning: '未完成', judgeModel: 'zhipu/glm', promptHash: 'abc' } } }),
   ];
 
-  it('llm_judge 分未绑定校准记录 → 报告强制标注未校准、不作能力证据', () => {
-    const md = generateMarkdownReport(makeSummary(llmJudged));
-    expect(md).toContain('未校准');
+  it('按维统计是/否，并明确不进通过率', () => {
+    const md = generateMarkdownReport(makeSummary(aiReviewed));
+    expect(md).toContain('AI 评审（并列 · 不进通过率）');
+    expect(md).toContain('| 任务完成 | 1 | 1 | 0 |');
   });
 
-  it('绑定达标校准记录 → 报告展示 κ 与样本数，进可信列', () => {
-    const md = generateMarkdownReport(makeSummary(llmJudged, { judgeCalibration: record() }));
-    expect(md).toContain('0.72');
-    expect(md).toContain('已校准');
-    expect(md).not.toContain('未校准');
-  });
-
-  it('绑定不达标校准记录（κ 低）→ 仍标注不可信', () => {
-    const md = generateMarkdownReport(makeSummary(llmJudged, { judgeCalibration: record({ kappa: 0.4 }) }));
-    expect(md).toContain('未达标');
-  });
-
-  it('没有 llm_judge 结果时不出现校准告警（不误伤纯断言 run）', () => {
+  it('没有 AI 评审结果时不渲染并列表', () => {
     const md = generateMarkdownReport(makeSummary([makeResult({ scoreAuthority: 'deterministic_assertion' })]));
-    expect(md).not.toContain('未校准');
+    expect(md).not.toContain('AI 评审（并列 · 不进通过率）');
+  });
+
+  it('T3：同一批题的 AI 评审全是或全否，通过率行逐字相同', () => {
+    const withVerdict = (verdict: 'yes' | 'no') => aiReviewed.map((result) => ({
+      ...result,
+      aiReview: {
+        task_completed: {
+          verdict,
+          reasoning: verdict,
+          judgeModel: 'zhipu/glm',
+          promptHash: 'abc',
+        },
+      },
+    }));
+    const passRateLine = (results: TestResult[]) => generateMarkdownReport(makeSummary(results))
+      .split('\n')
+      .find((line) => line.startsWith('| 通过率 |'));
+
+    expect(passRateLine(withVerdict('yes'))).toBe('| 通过率 | 50.0% |');
+    expect(passRateLine(withVerdict('no'))).toBe(passRateLine(withVerdict('yes')));
   });
 });

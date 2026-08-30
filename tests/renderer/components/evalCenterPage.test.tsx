@@ -18,6 +18,9 @@ vi.mock('../../../src/renderer/components/features/evalCenter/EvalBenchmarksTab'
 vi.mock('../../../src/renderer/components/features/evalCenter/EvalCaseListTab', () => ({
   EvalCaseListTab: () => <div data-testid="eval-case-list-tab-mock" />,
 }));
+vi.mock('../../../src/renderer/components/features/evalCenter/EvalScorersTab', () => ({
+  EvalScorersTab: () => <div data-testid="eval-scorers-tab-mock" />,
+}));
 
 import { EvalCenterPage } from '../../../src/renderer/components/features/evalCenter/EvalCenterPage';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -36,7 +39,7 @@ afterEach(() => {
 });
 
 describe('EvalCenterPage', () => {
-  it('按遥测 → 回放 → 题库 → 跑分 → 验证渲染，默认回放（2026-08-29 爸拍板 R4）', async () => {
+  it('按遥测 → 回放 → 题库 → 打分器 → 跑分 → 验证渲染，默认回放', async () => {
     useAuthStore.setState({ user: user(true) });
     render(<EvalCenterPage />);
 
@@ -50,10 +53,11 @@ describe('EvalCenterPage', () => {
       'eval-center-tab-telemetry',
       'eval-center-tab-replay',
       'eval-center-tab-cases',
+      'eval-center-tab-scorers',
       'eval-center-tab-benchmarks',
       'eval-center-tab-validation',
     ]);
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['遥测', '回放', '题库', '跑分', '验证']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['遥测', '回放', '题库', '打分器', '跑分', '验证']);
     expect(await screen.findByTestId('eval-replay-explorer-mock')).toBeTruthy();
   });
 

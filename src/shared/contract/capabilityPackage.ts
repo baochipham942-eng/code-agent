@@ -4,7 +4,9 @@ export type CapabilityPackagePermission =
   | 'shell'
   | 'clipboard'
   | 'notification'
-  | 'storage';
+  | 'storage'
+  | 'accessibility'
+  | 'screen-recording';
 
 export interface CapabilityPackagePreview {
   token: string;
@@ -14,7 +16,7 @@ export interface CapabilityPackagePreview {
   description: string;
   permissions: CapabilityPackagePermission[];
   toolNames: string[];
-  sourceKind: 'directory' | 'manifest' | 'zip';
+  sourceKind: 'directory' | 'manifest' | 'zip' | 'bundled';
   sourceLabel: string;
   replacesInstalledVersion?: string;
   sandbox: {
@@ -30,7 +32,7 @@ export interface InstalledCapabilityPackage {
   version: string;
   description: string;
   permissions: CapabilityPackagePermission[];
-  state: 'inactive' | 'activating' | 'active' | 'error' | 'disabled';
+  state: 'available' | 'inactive' | 'activating' | 'active' | 'error' | 'disabled';
   toolNames: string[];
   error?: string;
 }

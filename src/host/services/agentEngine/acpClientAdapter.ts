@@ -30,7 +30,7 @@ import { createWriteStream } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-import { Readable, Writable, PassThrough } from 'stream';
+import { Readable, Writable, PassThrough } from 'node:stream';
 import { client, ndJsonStream } from '@agentclientprotocol/sdk';
 import { getLogsPath } from '../../platform';
 import type { AgentEventEnvelope, Message, MessageMetadata } from '../../../shared/contract';

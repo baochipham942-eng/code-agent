@@ -18,9 +18,8 @@
 // CGWindowList）。`nativeDeps: ['vision-ocr']` 披露 ocr_search 依赖的 Swift
 // 二进制（由 scripts/build-vision-ocr.sh 编译，tauri.conf.json resources 内置）。
 //
-// permissions 字段不包含 'accessibility'（PluginPermission 类型目前未定义此值）；
-// AXUIElement 权限由用户在系统设置 → 隐私与安全 → 辅助功能授权，与 plugin manifest
-// 解耦。后续如需在 manifest 层声明，再走 PluginPermission 类型扩展流程。
+// accessibility / screen-recording 是安装披露权限：能力中心确认卡会在写入安装状态前
+// 逐项说明，真实授权仍由 macOS 系统设置负责。
 // ============================================================================
 
 import type { PluginAPI, PluginEntry, PluginManifest } from '../../types';
@@ -41,7 +40,7 @@ export const manifest: PluginManifest = {
   main: 'index.ts',
   surfaces: ['tools'],
   capabilities: ['computer-use', 'ocr'],
-  permissions: ['filesystem', 'shell'],
+  permissions: ['filesystem', 'shell', 'accessibility', 'screen-recording'],
   platforms: ['darwin'],
   nativeDeps: ['vision-ocr'],
 };
@@ -53,7 +52,9 @@ export async function activate(api: PluginAPI): Promise<void> {
   // 截图验证走智谱视觉模型易 403。符合提案 §1.2「禁止两个 computer-use 引擎
   // 运行时互切」。cua 关闭时保留旧工具作回退。
   // screenshot / ocr_search 是通用视觉工具（非桌面控制冲突项），始终保留。
-  const cuaEnabled = process.env.CODE_AGENT_ENABLE_CUA === '1';
+  // 能走到 activate，说明能力包已安装。旧 CODE_AGENT_ENABLE_CUA 只负责首次迁移，
+  // 不再作为运行时门；安装状态由 capability package lifecycle 持久化。
+  const cuaEnabled = true;
   const cuaStateV2Enabled = isCuaStateV2Enabled();
 
   // opt-out 前缀：保留原工具名，与历史 prompt / cache / eval baseline 兼容

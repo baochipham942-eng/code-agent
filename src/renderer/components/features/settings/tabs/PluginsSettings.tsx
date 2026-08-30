@@ -365,6 +365,22 @@ export const PluginsSettings: React.FC = () => {
     });
   }, [pluginsText.manualImport, runAction]);
 
+  const handleInstallBundledCapabilityPackage = useCallback((plugin: InstalledCapabilityPackage) => {
+    setPackageBusy(true);
+    setNotice(null);
+    void (async () => {
+      try {
+        const result = await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_STAGE_BUNDLED, plugin.id);
+        if (!result.success) throw new Error(result.error);
+        setPackagePreview(result.data);
+      } catch (error) {
+        setNotice({ type: 'error', text: error instanceof Error ? error.message : String(error) });
+      } finally {
+        setPackageBusy(false);
+      }
+    })();
+  }, []);
+
   const permissionLabel = useCallback((permission: CapabilityPackagePermission): string => (
     pluginsText.manualImport.permissions[permission]
   ), [pluginsText.manualImport.permissions]);
@@ -441,8 +457,12 @@ export const PluginsSettings: React.FC = () => {
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="text-sm font-medium text-zinc-100">{plugin.name}</h4>
                         <Pill>{plugin.version}</Pill>
-                        <Pill tone={plugin.state === 'active' ? 'success' : 'danger'}>
-                          {plugin.state === 'active' ? pluginsText.manualImport.active : pluginsText.manualImport.inactive}
+                        <Pill tone={plugin.state === 'active' ? 'success' : plugin.state === 'available' ? 'warning' : 'danger'}>
+                          {plugin.state === 'active'
+                            ? pluginsText.manualImport.active
+                            : plugin.state === 'available'
+                              ? pluginsText.manualImport.available
+                              : pluginsText.manualImport.inactive}
                         </Pill>
                       </div>
                       <p className="mt-1 text-xs leading-5 text-zinc-500">{plugin.description}</p>
@@ -452,16 +472,29 @@ export const PluginsSettings: React.FC = () => {
                       </div>
                       {plugin.error && <p className="mt-2 text-xs text-badge-danger">{plugin.error}</p>}
                     </div>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={() => handleUninstallCapabilityPackage(plugin)}
-                      loading={busy}
-                      disabled={busyKey !== null}
-                      leftIcon={<Trash2 className="h-3.5 w-3.5" />}
-                    >
-                      {pluginsText.manualImport.uninstall}
-                    </Button>
+                    {plugin.state === 'available' ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleInstallBundledCapabilityPackage(plugin)}
+                        loading={packageBusy}
+                        disabled={busyKey !== null || packageBusy}
+                        leftIcon={<Download className="h-3.5 w-3.5" />}
+                      >
+                        {pluginsText.manualImport.install}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => handleUninstallCapabilityPackage(plugin)}
+                        loading={busy}
+                        disabled={busyKey !== null}
+                        leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                      >
+                        {pluginsText.manualImport.uninstall}
+                      </Button>
+                    )}
                   </div>
                 </div>
               );
@@ -942,7 +975,9 @@ export const PluginsSettings: React.FC = () => {
             <div className="rounded-lg border border-badge-success/25 bg-emerald-500/5 p-3">
               <div className="flex items-center gap-2 text-sm font-medium text-badge-success">
                 <ShieldCheck className="h-4 w-4" />
-                {pluginsText.manualImport.sandboxPassed}
+                {packagePreview.sourceKind === 'bundled'
+                  ? pluginsText.manualImport.bundledVerified
+                  : pluginsText.manualImport.sandboxPassed}
               </div>
               <p className="mt-1 text-xs text-zinc-500">{packagePreview.sandbox.summary}</p>
             </div>

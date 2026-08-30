@@ -11,7 +11,10 @@
 // 被 bug 静默吃掉,更安全。
 // ============================================================================
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { PluginRegistry } from '../../../src/host/plugins/pluginRegistry';
 import { resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import type {
@@ -94,13 +97,22 @@ async function getPluginApi(reg: PluginRegistry, pluginId: string): Promise<Plug
 // ----------------------------------------------------------------------------
 
 describe('PluginRegistry registerTool / registerToolModule symmetry', () => {
-  beforeEach(() => {
+  let testDataDir: string;
+
+  beforeEach(async () => {
+    testDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'neo-plugin-registry-test-'));
+    process.env.CODE_AGENT_DATA_DIR = testDataDir;
     resetProtocolRegistry();
   });
 
-  it('8 个内置插件可加载、激活并卸载', async () => {
+  afterEach(async () => {
+    delete process.env.CODE_AGENT_DATA_DIR;
+    await fs.rm(testDataDir, { recursive: true, force: true });
+  });
+
+  it('默认只加载 7 个内置插件，Computer Use 等用户安装后再热激活', async () => {
     const reg = new PluginRegistry();
-    (reg as unknown as { loadBuiltinPlugins: () => void }).loadBuiltinPlugins();
+    await (reg as unknown as { loadBuiltinPlugins: () => Promise<void> }).loadBuiltinPlugins();
 
     const expectedIds = [
       'builtin.imageProcess',
@@ -109,7 +121,6 @@ describe('PluginRegistry registerTool / registerToolModule symmetry', () => {
       'builtin.imageCreation',
       'builtin.musicGeneration',
       'builtin.browserControl',
-      'builtin.computerUse',
       'builtin.photoArchive',
     ];
     expect(reg.getPlugins().map((plugin) => plugin.manifest.id)).toEqual(expectedIds);
@@ -127,6 +138,12 @@ describe('PluginRegistry registerTool / registerToolModule symmetry', () => {
       expect(plugin?.state).toBe('inactive');
       expect(plugin?.registeredTools).toEqual([]);
     }
+
+    expect(reg.getPlugin('builtin.computerUse')).toBeUndefined();
+    expect(await reg.installBuiltinCapability('builtin.computerUse')).toBe(true);
+    expect(reg.getPlugin('builtin.computerUse')?.state).toBe('active');
+    expect(await reg.removeBuiltinCapability('builtin.computerUse')).toBe(true);
+    expect(reg.getPlugin('builtin.computerUse')).toBeUndefined();
   });
 
   it('registerTool 重复同名 → 第二次抛 "already registered"', async () => {

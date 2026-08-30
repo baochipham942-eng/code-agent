@@ -218,6 +218,7 @@ export const IPC_CHANNELS = {
 
   // Manual executable capability packages (F10)
   CAPABILITY_PACKAGE_SELECT_STAGE: 'capability-package:select-stage',
+  CAPABILITY_PACKAGE_STAGE_BUNDLED: 'capability-package:stage-bundled',
   CAPABILITY_PACKAGE_LIST: 'capability-package:list',
   CAPABILITY_PACKAGE_CONFIRM: 'capability-package:confirm',
   CAPABILITY_PACKAGE_CANCEL: 'capability-package:cancel',

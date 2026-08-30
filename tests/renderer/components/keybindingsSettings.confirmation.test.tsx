@@ -8,7 +8,7 @@ import { publishGlobalHotkeyRegistrationResults } from '../../../src/renderer/se
 const invokeDomain = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: { invokeDomain },
+  default: { invokeDomain, on: vi.fn(() => vi.fn()) },
 }));
 
 import { KeybindingsSettings } from '../../../src/renderer/components/features/settings/tabs/KeybindingsSettings';
@@ -32,6 +32,7 @@ describe('KeybindingsSettings restore-all confirmation', () => {
     await waitFor(() => {
       expect(invokeDomain).toHaveBeenCalledWith(IPC_DOMAINS.SETTINGS, 'get');
     });
+    expect(screen.queryByText('打开 Computer Use')).toBeNull();
     invokeDomain.mockClear();
 
     fireEvent.click(screen.getByRole('button', { name: '恢复默认' }));

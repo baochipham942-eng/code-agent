@@ -5,6 +5,7 @@
 
 import type { AgentEvent } from '../../shared/contract';
 import { MODEL_PRICING_PER_1M } from '../../shared/constants/pricing';
+import { shellOutputPreview } from './shellOutput';
 
 // ---------------------------------------------------------------------------
 // 消息模型
@@ -33,7 +34,7 @@ interface ThinkingMessage {
   endedAt?: number;
 }
 
-interface ToolCallItem {
+export interface ToolCallItem {
   id: string;
   name: string;
   /** 进行时动词（Reading） */
@@ -45,6 +46,8 @@ interface ToolCallItem {
   status: 'running' | 'done' | 'error';
   /** 完成后的单行结果预览 / 失败原因 */
   resultPreview?: string;
+  /** 成功输出的截断展示行（前 2 + 后 3，shell 类工具才有；渲染层原样逐行显示） */
+  outputLines?: string[];
   startedAt: number;
   durationMs?: number;
 }
@@ -229,6 +232,70 @@ export function markRunStarted(state: ChatState, now: number = Date.now()): Chat
   return { ...state, running: true, activity: 'Thinking…', turnStartedAt: now };
 }
 
+// ---------------------------------------------------------------------------
+// `!` shell 直通的消息块（不走 agent 事件流，UI 直接追加/收口）
+// ---------------------------------------------------------------------------
+
+export interface ShellCommandResult {
+  success: boolean;
+  output?: string;
+  error?: string;
+}
+
+/** 追加一条进行中的 bash 工具块，返回消息 id 供 resolveShellCommand 收口 */
+export function appendShellCommand(
+  state: ChatState,
+  command: string,
+  now: number = Date.now(),
+): [ChatState, string] {
+  const [id, next] = takeId(state);
+  const call: ToolCallItem = {
+    id: `shell-${id}`,
+    name: 'bash',
+    activeVerb: 'Running',
+    doneVerb: 'Ran',
+    summary: command,
+    status: 'running',
+    startedAt: now,
+  };
+  const message: ToolGroupMessage = {
+    id,
+    kind: 'tool_group',
+    name: 'bash',
+    activeVerb: 'Running',
+    doneVerb: 'Ran',
+    groupNoun: '',
+    calls: [call],
+    status: 'running',
+  };
+  return [withMessage(next, message), id];
+}
+
+/** 用执行结果收口 appendShellCommand 追加的进行中工具块；找不到消息时原样返回 */
+export function resolveShellCommand(
+  state: ChatState,
+  messageId: string,
+  result: ShellCommandResult,
+  now: number = Date.now(),
+): ChatState {
+  const index = state.messages.findIndex((m) => m.id === messageId && m.kind === 'tool_group');
+  if (index < 0) return state;
+  const message = state.messages[index] as ToolGroupMessage;
+  const call = message.calls[0];
+  if (call?.status !== 'running') return state;
+  const status: ToolCallItem['status'] = result.success ? 'done' : 'error';
+  const rawPreview = result.success ? (result.output ?? '') : (result.error ?? 'failed');
+  const updatedCall: ToolCallItem = {
+    ...call,
+    status,
+    resultPreview: rawPreview.replace(/\s+/g, ' ').trim().slice(0, 80) || undefined,
+    outputLines: result.success && result.output ? shellOutputPreview(result.output) : undefined,
+    durationMs: now - call.startedAt,
+  };
+  const updated: ToolGroupMessage = { ...message, calls: [updatedCall], status };
+  return { ...state, messages: [...state.messages.slice(0, index), updated, ...state.messages.slice(index + 1)] };
+}
+
 /** AgentEvent → 消息模型。now 可注入便于单测。 */
 export function reduceAgentEvent(state: ChatState, event: AgentEvent, now: number = Date.now()): ChatState {
   switch (event.type) {
@@ -328,8 +395,12 @@ export function reduceAgentEvent(state: ChatState, event: AgentEvent, now: numbe
         const status: ToolCallItem['status'] = data.success ? 'done' : 'error';
         const rawPreview = data.success ? (data.output ?? '') : (data.error ?? 'failed');
         const resultPreview = rawPreview.replace(/\s+/g, ' ').trim().slice(0, 80) || undefined;
+        // shell 成功输出此前完全不可见：按规格留前 2 + 后 3 行（含省略标记）
+        const outputLines = data.success && data.output && message.name === 'bash'
+          ? shellOutputPreview(data.output)
+          : undefined;
         const calls = message.calls.map((c, j) => (j === callIndex
-          ? { ...c, status, resultPreview, durationMs: data.duration ?? now - c.startedAt }
+          ? { ...c, status, resultPreview, outputLines, durationMs: data.duration ?? now - c.startedAt }
           : c));
         const groupStatus: ToolGroupMessage['status'] = calls.some((c) => c.status === 'running')
           ? 'running'

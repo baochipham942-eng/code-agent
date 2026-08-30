@@ -63,6 +63,8 @@ const probe: EvalRunPanelProbe = {
   ],
   splitCounts: { 'held-in': 76, 'held-out': 52, safety: 12 },
   quickCheck: { tags: ['core-path'], maxCases: 12 },
+  productionArm: { name: 'production@sys-v45', model: 'deepseek-chat', provider: 'deepseek' },
+  skills: ['data-cleaning', 'xlsx'],
 };
 
 const experiment = (
@@ -137,6 +139,18 @@ afterEach(() => {
 });
 
 describe('EvalBenchmarksTab 跑分闭环', () => {
+  it('T3：读侧即使返回 compare 行，跑分历史仍主动隔离', async () => {
+    const compare = { ...experiment('compare-only', 1_000, { split: 'held-in', k: 1, mode: 'real' }), source: 'compare' };
+    configureIpc(() => [compare]);
+    render(<EvalBenchmarksTab />);
+
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith(
+      EVALUATION_CHANNELS.LIST_EXPERIMENTS,
+      { limit: 100, source: 'eval' },
+    ));
+    expect(screen.queryByTestId('benchmark-run-compare-only')).toBeNull();
+  });
+
   it('T1：第一次点击不发车，5 秒收回；第二次点击才发且 payload 不含 host 配置', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     configureIpc();
@@ -203,7 +217,7 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
   });
 
   it('T2：先监听再 subscribe，事件流驱动三行步骤并把工具调用折成一行', async () => {
-    const base = { schemaVersion: 2 as const, runId: 'run-live' };
+    const base = { schemaVersion: 3 as const, runId: 'run-live' };
     const synchronousEvents: EvalRunEvent[] = [
       {
         ...base,
@@ -244,7 +258,7 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
 
     act(() => {
       mocks.eventHandler?.({
-        schemaVersion: 2,
+        schemaVersion: 3,
         type: 'run_start',
         ts: 1_000,
         runId: 'run-live',
@@ -265,7 +279,7 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     })];
     act(() => {
       mocks.eventHandler?.({
-        schemaVersion: 2,
+        schemaVersion: 3,
         type: 'run_end',
         ts: 2_000,
         runId: 'run-live',
@@ -287,7 +301,7 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     render(<EvalBenchmarksTab />);
     await startRun();
     act(() => {
-      mocks.eventHandler?.({ schemaVersion: 2, type: 'error', ts: 3_000, runId: 'run-live', error: 'boom' });
+      mocks.eventHandler?.({ schemaVersion: 3, type: 'error', ts: 3_000, runId: 'run-live', error: 'boom' });
     });
     expect(await screen.findByText('这轮没有正常结束，已按已跑完的题记录')).toBeTruthy();
   });

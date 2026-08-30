@@ -124,6 +124,7 @@ function groupRuns(experiments: EvalExperimentListItem[]): RunGroup[] {
   const groups = new Map<string, RunGroup>();
   const legacyDatasetGroups: EvalDatasetGroup[] = groupExperimentsByDataset(experiments);
   for (const run of legacyDatasetGroups.flatMap((group) => group.runs)) {
+    if (run.source === 'compare') continue;
     const config = getEvalRunConfig(run);
     if (config.mode === 'mock') continue;
     const key = `${config.split}::${config.k}::${config.caseBankSha}`;

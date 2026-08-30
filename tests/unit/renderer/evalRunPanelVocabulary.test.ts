@@ -3,6 +3,9 @@ import { evalCenterEn, evalCenterZh } from '../../../packages/internal/evaluatio
 import { evalRunPanelEn, evalRunPanelZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalRunPanel';
 import { evalScorersEn, evalScorersZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalScorers';
 import { evalCaseDrawerEn, evalCaseDrawerZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalCaseDrawer';
+import { evalExperimentsEn, evalExperimentsZh } from '../../../packages/internal/evaluation-center/src/renderer/i18n/evalExperiments';
+import fs from 'node:fs';
+import path from 'node:path';
 
 function strings(value: unknown): string[] {
   if (typeof value === 'string') return [value];
@@ -19,6 +22,7 @@ describe('跑分面板用户词表', () => {
       evalCenterZh.evalCenter.scorers,
       evalCaseDrawerZh.caseDrawer,
       evalCenterZh.evalCenter.caseDrawer,
+      evalExperimentsZh.experiments,
     ];
     const enSurfaces = [
       evalRunPanelEn.runPanel,
@@ -27,6 +31,7 @@ describe('跑分面板用户词表', () => {
       evalCenterEn.evalCenter.scorers,
       evalCaseDrawerEn.caseDrawer,
       evalCenterEn.evalCenter.caseDrawer,
+      evalExperimentsEn.experiments,
     ];
     const forbiddenZh = [
       '钉为基线', '口径', '身份戳', '硬化', '未硬化', '假跑', '标废', '已作废',
@@ -43,5 +48,17 @@ describe('跑分面板用户词表', () => {
       const copy = strings(surface).join('\n').toLowerCase();
       for (const word of ['ndjson', 'spawn', 'decisive', 'pass^k']) expect(copy).not.toContain(word);
     }
+  });
+
+  it('T5/T7：renderer 不自行按统计量判态，技术键只在详情折叠区消费', () => {
+    const rendererRoot = path.join(process.cwd(), 'packages/internal/evaluation-center/src/renderer');
+    const files = fs.readdirSync(path.join(rendererRoot, 'evalCenter'))
+      .filter((name) => name.endsWith('.ts') || name.endsWith('.tsx'));
+    const source = files.map((name) => fs.readFileSync(path.join(rendererRoot, 'evalCenter', name), 'utf8')).join('\n');
+    for (const pattern of [/0\.05/, /signTest/, /pValue\s*</, /ciLowerBound\s*>/]) expect(source).not.toMatch(pattern);
+    const resultSource = fs.readFileSync(path.join(rendererRoot, 'evalCenter/EvalExperimentResult.tsx'), 'utf8');
+    expect(resultSource).toContain('experiment-technical-details');
+    expect(resultSource).toContain('labels.pValue');
+    expect(resultSource).toContain('verdict.decisivePairs');
   });
 });

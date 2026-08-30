@@ -1,0 +1,137 @@
+// @vitest-environment jsdom
+import React from 'react';
+import fs from 'node:fs';
+import path from 'node:path';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { EvalExperimentDetail, EvalRunPanelProbe, EvalShipGateVerdict } from '../../../src/shared/contract/evaluation';
+import { EvalExperimentResult } from '@internal-evaluation/renderer/evalCenter/EvalExperimentResult';
+import { EvalExperimentWizard } from '@internal-evaluation/renderer/evalCenter/EvalExperimentWizard';
+import { UNKNOWN_EVAL_RUN_STAMP } from '../../../src/shared/contract/evaluation';
+
+afterEach(cleanup);
+
+function verdict(state: EvalShipGateVerdict['state'], hardGatePassed = true): EvalShipGateVerdict {
+  return {
+    state, delta: 3, nMin: 30, decisivePairs: 18, pValue: 0.04, passRateDiff: 0.1, ciLowerBound: -0.01,
+    hardGate: { passed: hardGatePassed, items: [
+      { key: 'false_allow', status: hardGatePassed ? 'pass' : 'fail', count: hardGatePassed ? 0 : 2 },
+      { key: 'false_block', status: 'not_measured' },
+    ] },
+    calibre: { k: 1, aggregationRuleVersion: 4, promptVersion: 'sys-v45' }, reasons: ['fixture'],
+  };
+}
+
+function detail(state: EvalShipGateVerdict['state'], hardGatePassed = true): EvalExperimentDetail {
+  return {
+    experiment: {
+      id: `exp-${state}`, name: 'candidate-v3', timestamp: 1, model: 'm', provider: 'p', scope: 'full', source: 'compare', gitCommit: 'abc',
+      config: { ...UNKNOWN_EVAL_RUN_STAMP, compare: {
+        baseline: { name: 'production', model: 'm', provider: 'p' }, candidate: { name: 'candidate-v3', model: 'm', provider: 'p', systemPrompt: 'new' },
+        diff: ['systemPrompt: sys-v45 → candidate-v3'],
+      } },
+      summary: { completed: true, compare: {
+        totalCases: 20, baselineWins: 7, candidateWins: 11, ties: 2, excludedPairs: 1,
+        skillNotActivatedPairs: 1, pValue: 0.04, shipGate: verdict(state, hardGatePassed),
+      } },
+    },
+    cases: [{
+      caseId: 'case-1', status: 'passed', score: 100, durationMs: 10,
+      data: { assignment: { A: 'candidate', B: 'baseline' }, statusA: 'passed', statusB: 'failed', winner: 'candidate', referenceWinner: 'A', skillActivations: { baseline: 0, candidate: 2 } },
+    }],
+  };
+}
+
+function probe(): EvalRunPanelProbe {
+  return {
+    environment: { available: true, message: 'ready', packaged: false, platform: 'darwin', osJail: { enabled: true, available: true, active: true } },
+    model: 'm', provider: 'p', priceTableVersion: 1, estimatedCostPerCaseUsd: 0.01,
+    judge: { model: 'judge', provider: 'p', estimatedCostPerCaseUsd: 0.01 }, aiReview: [],
+    splitCounts: { 'held-in': 2, 'held-out': 1, safety: 1 }, quickCheck: { tags: [], maxCases: 1 },
+    productionArm: {
+      name: 'production@sys-v45', model: 'm', provider: 'p',
+      harness: {
+        name: 'production', contextCompression: true, compressionPipeline: false, scaffoldProfile: true,
+        thinkingInjection: false, hooksEnabled: true, toolMode: 'deferred',
+      },
+      memory: { longTerm: true }, skills: ['xlsx'],
+    },
+    skills: ['xlsx', 'docx'],
+  };
+}
+
+describe('实验页四态与新建守卫', () => {
+  it.each([
+    ['candidate_better', '实验组更好'], ['non_inferior', '非劣'], ['candidate_worse', '实验组更差'], ['insufficient', '样本不足'],
+  ] as const)('T4：%s 只渲染 host 给出的对应徽标', (state, copy) => {
+    render(<EvalExperimentResult detail={detail(state)} onBack={vi.fn()} />);
+    expect(screen.getByTestId(`experiment-verdict-${state}`).textContent).toContain(copy);
+    if (state === 'insufficient') expect(screen.getByText('这不是势均力敌，是数据还不够')).toBeTruthy();
+  });
+
+  it('硬门失败显示红行，技术详情保留统计与未测量项', () => {
+    render(<EvalExperimentResult detail={detail('candidate_worse', false)} onBack={vi.fn()} />);
+    expect(screen.getByRole('alert').textContent).toContain('安全项出现 2 次，不能上线');
+    fireEvent.click(screen.getByText('技术详情'));
+    const technical = screen.getByTestId('experiment-technical-details').textContent ?? '';
+    expect(technical).toContain('pValue');
+    expect(technical).toContain('分出胜负的题');
+    expect(technical).toContain('false_block');
+  });
+
+  it('T6：两组签名相同时主按钮置灰，改 systemPrompt 后可进入二次确认', () => {
+    render(<EvalExperimentWizard open probe={probe()} starting={false} onClose={vi.fn()} onStart={vi.fn()} />);
+    const button = screen.getByTestId('experiment-run-confirm') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(screen.getByTestId('experiment-same-reason').textContent).toContain('两组一样，没法比');
+    fireEvent.change(screen.getByPlaceholderText('production@sys-v45'), { target: { value: 'candidate prompt' } });
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(button.textContent).toContain('再点一次确认发车');
+  });
+
+  it('对照组按与实验组相同顺序逐维列出六项运行配置', () => {
+    render(<EvalExperimentWizard open probe={probe()} starting={false} onClose={vi.fn()} onStart={vi.fn()} />);
+    const expected = [
+      ['contextCompression', '上下文压缩: 开'],
+      ['compressionPipeline', '压缩流水线: 关'],
+      ['scaffoldProfile', '脚手架档位: 开'],
+      ['thinkingInjection', '思考注入: 关'],
+      ['hooksEnabled', '钩子: 开'],
+      ['toolMode', '工具模式: 按需加载（deferred）'],
+    ] as const;
+    for (const [key, copy] of expected) {
+      expect(screen.getByTestId(`baseline-harness-${key}`).textContent).toBe(copy);
+    }
+  });
+
+  it('C1-b/C1-c 渲染层不泄漏配置键名与成对状态原始枚举', () => {
+    const resultDetail = detail('candidate_better');
+    resultDetail.cases = [
+      { caseId: 'passed-failed', status: 'passed', score: 100, durationMs: 1, data: { assignment: { A: 'candidate', B: 'baseline' }, statusA: 'passed', statusB: 'failed', winner: 'candidate', referenceWinner: 'A' } },
+      { caseId: 'infra-not-run', status: 'skipped', score: 0, durationMs: 1, data: { assignment: { A: 'baseline', B: 'candidate' }, statusA: 'infra_excluded', statusB: 'not_run', winner: 'tie', referenceWinner: 'tie', excludedReason: 'environment' } },
+      { caseId: 'cost-partial', status: 'partial', score: 50, durationMs: 1, data: { assignment: { A: 'baseline', B: 'candidate' }, statusA: 'cost_exceeded', statusB: 'partial', winner: 'candidate', referenceWinner: 'B' } },
+    ];
+    const { baseElement: container } = render(<>
+      <EvalExperimentResult detail={resultDetail} onBack={vi.fn()} />
+      <EvalExperimentWizard open probe={probe()} starting={false} onClose={vi.fn()} onStart={vi.fn()} />
+    </>);
+    const copy = container.textContent ?? '';
+    for (const forbidden of [
+      'infra_excluded', 'not_run', 'cost_exceeded', 'contextCompression',
+      'scaffoldProfile', 'thinkingInjection', 'hooksEnabled', 'toolMode',
+    ]) expect(copy).not.toContain(forbidden);
+    for (const humanLabel of ['通过', '失败', '环境故障', '未执行', '成本超限', '部分通过', '上下文压缩', '工具模式']) {
+      expect(copy).toContain(humanLabel);
+    }
+  });
+
+  it('两个向导复用同一评测集选择组件', () => {
+    const root = path.join(process.cwd(), 'packages/internal/evaluation-center/src/renderer/evalCenter');
+    for (const file of ['EvalRunWizard.tsx', 'EvalExperimentWizard.tsx']) {
+      const source = fs.readFileSync(path.join(root, file), 'utf8');
+      expect(source).toContain("from './EvalCaseSelectionFields'");
+      expect(source).toContain('<EvalCaseSelectionFields');
+    }
+  });
+});

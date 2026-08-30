@@ -309,7 +309,7 @@ export class AgentLoop {
     } finally {
       this.ctx.turn.setModelFacingUserMessage(undefined);
       // 缺口探测器（N-CAP1 / F1）：纯记账，不发事件、不弹卡、不通知。
-      void recordCapabilityGapTurn(this.ctx.sessionId);
+      void recordCapabilityGapTurn(this.ctx.sessionId, this.ctx.toolExecutor.getLedgerOrigin?.());
     }
   }
 

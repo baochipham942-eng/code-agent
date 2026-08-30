@@ -5,6 +5,7 @@
 // 以及"模型不可用时列表会不会空掉/报错"。两条都在这里钉住。
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -70,25 +71,66 @@ describe('模型分', () => {
     expect(after.summary).toBe('把截图里的表格识别成表格文件');
     // 起了名字之后机械分一分不动
     expect(after.mechanicalScore).toBe(scoreBefore);
+
+    const ledger = JSON.parse(await fs.readFile(
+      path.join(tmpConfigDir, 'capability-candidates.json'),
+      'utf-8',
+    )) as { candidates: Array<{ displayName?: string }> };
+    expect(ledger.candidates[0]?.displayName).toBe('截图表格转 Excel');
   });
 
-  it('模型不可用 / 回复不是 JSON / 调用抛错，都静默降级到机械兜底名', async () => {
+  it('模型不可用时落人话兜底名与说明，不暴露工具组合', async () => {
     const record = seedCandidate();
 
     quick.available = false;
-    expect(await fillMissingNames([record])).toBe(0);
+    expect(await fillMissingNames([record])).toBe(1);
 
-    quick.available = true;
-    quick.result = { success: true, content: '抱歉，我不太确定。' };
-    expect(await fillMissingNames([record])).toBe(0);
-
-    quick.result = { success: false };
-    expect(await fillMissingNames([record])).toBe(0);
-
-    // 全程没写坏账本，列表照样有话可说
     const view = listCandidates(T0)[0];
-    expect(view.displayName).toBeUndefined();
-    expect(fallbackName(view)).toBe('bash:screencapture + bash:tesseract + write_file');
+    expect(view.displayName).toBe('截取并分析屏幕');
+    expect(view.summary).toBe('按用户要求截取并分析屏幕');
+    expect(view.displayName).not.toContain('bash');
+    expect(view.displayName).not.toContain(' + ');
+  });
+
+  it('坏 JSON 或失败回复也逐条落人话兜底', async () => {
+    const record = seedCandidate();
+
+    quick.result = { success: true, content: '抱歉，我不太确定。' };
+    expect(await fillMissingNames([record])).toBe(1);
+    expect(getCapabilityCandidateStore().get(record.clusterKey)?.displayName).toBe(fallbackName(record));
+  });
+
+  it('模型定额之外的折叠候选也会在同次 LIST 链路落兜底名', async () => {
+    const first = seedCandidate();
+    const store = getCapabilityCandidateStore();
+    const records = [first];
+    for (let index = 1; index < 8; index++) {
+      const record = {
+        ...first,
+        clusterKey: `${first.clusterKey}-${index}`,
+        shapeTokens: [...first.shapeTokens, `extra-${index}`],
+        displayName: undefined,
+        summary: undefined,
+      };
+      store.put(record);
+      records.push(record);
+    }
+    quick.result = {
+      success: true,
+      content: '[{"index":1,"name":"截图表格转 Excel","summary":"把截图表格转成文件"}]',
+    };
+
+    expect(await fillMissingNames(records)).toBe(8);
+    expect(records.map((record) => store.get(record.clusterKey)?.displayName)).toEqual([
+      '截图表格转 Excel',
+      '截取并分析屏幕',
+      '截取并分析屏幕',
+      '截取并分析屏幕',
+      '截取并分析屏幕',
+      '截取并分析屏幕',
+      '截取并分析屏幕',
+      '截取并分析屏幕',
+    ]);
   });
 
   it('已经有名字的候选不再花钱重起', async () => {

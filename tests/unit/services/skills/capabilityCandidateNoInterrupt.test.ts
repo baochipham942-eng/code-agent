@@ -9,7 +9,7 @@
 // 为什么盯 EventBus：主链路上「让渲染层弹出点什么」的唯一出口就是它
 // （publish 带 bridgeToRenderer 会经 EventBridge 转成 IPC 推给 renderer）。
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -39,6 +39,19 @@ beforeEach(() => {
   getCapabilityCandidateStore().resetForTests();
   getComboRecorder().stopRecording(SESSION);
 });
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+function recordFixtureTurn(userMessage: string): void {
+  const recorder = getComboRecorder();
+  recorder.startRecording(SESSION);
+  recorder.markTurn(SESSION, userMessage);
+  recorder.recordStep(SESSION, 'c1', 'bash', { command: 'python3 analyze.py' }, toolResult());
+  recorder.recordStep(SESSION, 'c2', 'read_file', { path: 'test-sales.csv' }, toolResult());
+  recorder.recordStep(SESSION, 'c3', 'write_file', { path: 'summary.csv' }, toolResult());
+}
 
 describe('零打断', () => {
   it('记账走完整条真实路径，EventBus 上零事件', async () => {
@@ -70,5 +83,30 @@ describe('零打断', () => {
 
     expect(subscribe).not.toHaveBeenCalled();
     expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('eval 来源即使带高分测试样本也不进候选账本', async () => {
+    recordFixtureTurn('分析 test-sales.csv，并找到 SECRET_MARKER');
+
+    await recordCapabilityGapTurn(SESSION, 'eval');
+
+    expect(listCandidates(Date.now())).toHaveLength(0);
+  });
+
+  it('CODE_AGENT_E2E 会话不进候选账本', async () => {
+    vi.stubEnv('CODE_AGENT_E2E', '1');
+    recordFixtureTurn('列出 /this/path/does/not/exist/12345 的内容');
+
+    await recordCapabilityGapTurn(SESSION, 'desktop');
+
+    expect(listCandidates(Date.now())).toHaveLength(0);
+  });
+
+  it('真实 desktop 会话照常记账，文本里出现 test-* 也不误伤', async () => {
+    recordFixtureTurn('分析 test-sales.csv，汇总本次真实销售测试数据');
+
+    await recordCapabilityGapTurn(SESSION, 'desktop');
+
+    expect(listCandidates(Date.now())).toHaveLength(1);
   });
 });

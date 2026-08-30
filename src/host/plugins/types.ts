@@ -100,6 +100,7 @@ export type PluginPermission =
   | 'notification' // Show notifications
   | 'storage'      // Persistent storage
   | 'accessibility' // macOS Accessibility / Windows UI Automation
+  | 'microphone' // Microphone capture
   | 'screen-recording'; // macOS Screen Recording / platform capture permission
 
 /**

@@ -783,6 +783,7 @@ export const zhSettingsModels = {
           notification: '发送系统通知',
           storage: '保存能力自己的本地数据',
           accessibility: '使用 macOS 辅助功能读取界面并执行点击、输入',
+          microphone: '采集麦克风音频',
           'screen-recording': '使用 macOS 屏幕录制读取屏幕画面与窗口内容',
         },
       },

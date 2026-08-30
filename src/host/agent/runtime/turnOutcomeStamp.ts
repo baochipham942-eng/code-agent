@@ -2,23 +2,18 @@ import type { Message, ToolResult } from '../../../shared/contract';
 import type { CompletionSummaryRecord } from '../../../shared/contract/completionSummary';
 import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
 import { createLogger } from '../../services/infra/logger';
+import { resolveRegisteredTurnOutcome } from '../../services/capabilities/hostCapabilityPorts';
 import type { RuntimeContext } from './runtimeContext';
 import type { RunTerminalStatus } from './runTerminalStatus';
 import type { TraceEvent, TraceEventDataMap, TurnTraceRecorder } from './turnTrace';
 
 const logger = createLogger('TurnOutcomeStamp');
 
-type VoiceWorkOutcome = 'done' | 'unverified';
-
 export interface TurnOutcomeStampContext {
   sessionId: string;
   messages: Message[];
   goalMode?: RuntimeContext['goalMode'];
   turnTrace: TurnTraceRecorder;
-}
-
-export interface TurnOutcomeStampDependencies {
-  resolveVoiceWorkOutcome?: (sessionId: string, dispatchedAtMs: number) => Promise<VoiceWorkOutcome>;
 }
 
 function successfulToolResults(messages: readonly Message[]): ToolResult[] {
@@ -82,20 +77,14 @@ function currentVoiceDispatch(messages: readonly Message[]): Message | undefined
 async function resolveVoiceOutcome(
   ctx: TurnOutcomeStampContext,
   dispatch: Message,
-  dependencies: TurnOutcomeStampDependencies,
-): Promise<VoiceWorkOutcome> {
-  if (dependencies.resolveVoiceWorkOutcome) {
-    return dependencies.resolveVoiceWorkOutcome(ctx.sessionId, dispatch.timestamp);
-  }
-  const voiceEvidence = await import('../../services/voice/voiceWorkEvidence');
-  return voiceEvidence.resolveVoiceWorkOutcome(ctx.sessionId, dispatch.timestamp);
+): Promise<'done' | 'unverified'> {
+  return resolveRegisteredTurnOutcome(ctx.sessionId, dispatch.timestamp);
 }
 
 async function buildTurnOutcome(
   ctx: TurnOutcomeStampContext,
   terminal: RunTerminalStatus,
   summary?: CompletionSummaryRecord,
-  dependencies: TurnOutcomeStampDependencies = {},
 ): Promise<TraceEventDataMap['turn_outcome']> {
   const goalEvidenceRefs = ctx.goalMode ? latestGoalEvidence(ctx.turnTrace.getEvents()) : undefined;
   if (goalEvidenceRefs) {
@@ -115,7 +104,7 @@ async function buildTurnOutcome(
     if (terminal !== 'completed') {
       return { terminal, verdict: 'n_a', evidenceRefs: [], source: 'voice' };
     }
-    const voiceOutcome = await resolveVoiceOutcome(ctx, voiceDispatch, dependencies);
+    const voiceOutcome = await resolveVoiceOutcome(ctx, voiceDispatch);
     return {
       terminal,
       verdict: voiceOutcome === 'done' ? 'verified' : 'self_claimed',
@@ -140,10 +129,9 @@ export async function recordTurnOutcomeStamp(
   ctx: TurnOutcomeStampContext,
   terminal: RunTerminalStatus,
   summary?: CompletionSummaryRecord,
-  dependencies: TurnOutcomeStampDependencies = {},
 ): Promise<void> {
   try {
-    const outcome = await buildTurnOutcome(ctx, terminal, summary, dependencies);
+    const outcome = await buildTurnOutcome(ctx, terminal, summary);
     ctx.turnTrace.record('turn_outcome', outcome);
     if (!ctx.turnTrace.flush()) logger.warn('turn outcome trace flush failed', { sessionId: ctx.sessionId });
   } catch (error) {

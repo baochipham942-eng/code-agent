@@ -781,6 +781,7 @@ export const enSettingsModels = {
           notification: 'Send system notifications',
           storage: 'Save capability-local data',
           accessibility: 'Use macOS Accessibility to read interfaces and perform clicks or typing',
+          microphone: 'Capture audio from the microphone',
           'screen-recording': 'Use macOS Screen Recording to read screen and window contents',
         },
       },

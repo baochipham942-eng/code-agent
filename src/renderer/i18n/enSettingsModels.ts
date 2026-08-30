@@ -552,8 +552,34 @@ export const enSettingsModels = {
       closeFocusPrompt: 'Dismiss',
       grid: {
         title: 'All connectors',
-        description: 'Services you can connect and those already connected live together here. Open a card for capabilities, connection options, and examples.',
+        description: 'Browse by service source and where it runs. Connected services stay separate from services you can discover.',
         connectedSummarySuffix: ' MCP servers connected',
+        sections: {
+          saas: {
+            title: 'Work accounts and online services',
+            description: 'Connect everyday work accounts such as Feishu, calendars, and meetings.',
+          },
+          external: {
+            title: 'External tool services',
+            description: 'Third-party tools and data services already added to Neo.',
+            empty: 'No external tool services have been added yet.',
+          },
+          local: {
+            title: 'On-device capabilities and services',
+            description: 'Use apps, files, code, and desktop controls on this computer.',
+            empty: 'No on-device capabilities are available.',
+            computerUseTitle: 'Desktop control',
+          },
+          shelf: {
+            title: 'Discover more connections',
+            description: 'These services are not connected yet. Open a card to review the connection method.',
+          },
+        },
+        riskLabels: {
+          low: 'Low risk',
+          medium: 'Medium risk',
+          high: 'High risk',
+        },
       },
       tabs: {
         connectedPrefix: 'Connected (',
@@ -669,16 +695,6 @@ export const enSettingsModels = {
         collapseTools: 'Hide tools',
         toolsCountSuffix: ' tools',
         toolsVisibleAfterInstall: 'Visible after install',
-        computerUse: {
-          title: 'Computer Use local capability',
-          highPrivilegeBadge: 'High privilege',
-          description: 'The local foundation is `cua-driver`, which needs `CODE_AGENT_ENABLE_CUA=1` and system accessibility permission.',
-          defaultVisible: 'Visible by default, not force-enabled',
-          registeredEnabled: 'Currently enabled',
-          registeredDisabled: 'Registered but disabled',
-          unregistered: 'Not registered',
-          openButton: 'View local capability',
-        },
         browseTitle: 'Browse by use case',
         browseDescription: 'Popular MCP connections grouped by capability. "Add" opens a confirmation panel prefilled with the catalog config; credential-based entries are completed there.',
         grid: {

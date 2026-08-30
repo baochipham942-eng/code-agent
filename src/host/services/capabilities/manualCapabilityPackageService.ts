@@ -28,6 +28,7 @@ import {
   writePluginApprovalReceipt,
 } from '../../plugins/pluginApprovalReceipt';
 import type { PluginManifest, PluginPermission } from '../../plugins/types';
+import { validatePluginCapabilityDeclaration } from '../../plugins/pluginCapabilitySurface';
 import type {
   CapabilityPackageInstallResult,
   CapabilityPackagePreview,
@@ -64,6 +65,7 @@ interface StagedBundledPackage {
 type RegistryPort = Pick<PluginRegistry,
   'getPlugin' | 'getPlugins' | 'pauseWatching' | 'resumeWatching'
   | 'installPluginFromDirectory' | 'removePluginFromRegistry'
+  | 'validatePluginCapabilityManifest'
   | 'installBuiltinCapability' | 'removeBuiltinCapability'>;
 
 interface MCPClientPort {
@@ -139,6 +141,11 @@ function validateStrictManifest(raw: Record<string, unknown>): void {
     throw new Error('能力 ID 只能用小写字母、数字、点、下划线和短横线，最长 64 个字符');
   }
   if (!SEMVER.test(version)) throw new Error('版本号需使用 1.2.3 这样的格式');
+  const capabilityIssue = validatePluginCapabilityDeclaration(raw)[0];
+  if (capabilityIssue) {
+    const label = capabilityIssue.field === 'depends' ? '依赖声明' : '能力声明';
+    throw new Error(`${label}不合规：${capabilityIssue.message}`);
+  }
   if (!Array.isArray(raw.permissions)) throw new Error('能力包清单必须声明 permissions 权限列表，可以是空数组');
   if (!Array.isArray(raw.surfaces) || raw.surfaces.length !== 1) {
     throw new Error('能力包只能声明一个 surface');
@@ -355,6 +362,13 @@ export class ManualCapabilityPackageService {
       }
       const manifest = await readPluginManifest(rootDir);
       if (!manifest) throw new Error('能力包清单无法读取');
+      try {
+        this.registry.validatePluginCapabilityManifest(manifest);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        this.lifecycle(manifest.id, 'failed', detail);
+        throw new Error(`能力包依赖校验没通过：${detail}`, { cause: error });
+      }
       const entryPath = path.join(rootDir, manifest.main);
       const source = await fs.readFile(entryPath, 'utf8');
       if (Buffer.byteLength(source, 'utf8') > MAX_ENTRY_BYTES) throw new Error('入口代码超过 48 KB，已拒绝');
@@ -585,6 +599,7 @@ export class ManualCapabilityPackageService {
       const targetExists = await fs.stat(plugin.rootPath).then(() => true, () => false);
       if (!targetExists) await fs.rename(backupDir, plugin.rootPath).catch(() => undefined);
       await this.registry.installPluginFromDirectory(plugin.rootPath).catch(() => undefined);
+      this.lifecycle(pluginId, 'failed', error instanceof Error ? error.message : String(error));
       this.lifecycle(pluginId, 'rolled_back', 'uninstall failed; restored package');
       throw error;
     } finally {

@@ -5,6 +5,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import type { PluginPermission, PluginSurface, PluginPlatform } from './types';
+import { validatePluginCapabilityDeclaration } from './pluginCapabilitySurface';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -121,6 +122,10 @@ export function validateManifest(manifest: unknown): ValidationResult {
         }
       }
     }
+  }
+
+  for (const issue of validatePluginCapabilityDeclaration(m)) {
+    errors.push(issue);
   }
 
   // Optional: surfaces (host extension surfaces — tools/internal-feature)

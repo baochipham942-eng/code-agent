@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ManualCapabilityPackageService } from '../../../../src/host/services/capabilities/manualCapabilityPackageService';
 import { PluginRegistry } from '../../../../src/host/plugins/pluginRegistry';
-import { loadPlugin } from '../../../../src/host/plugins/pluginLoader';
+import { loadPlugin, readPluginManifest } from '../../../../src/host/plugins/pluginLoader';
 import { hasProtocolTool } from '../../../../src/host/tools/protocolToolRegistration';
 import { resetProtocolRegistry } from '../../../../src/host/tools/protocolRegistry';
 import {
@@ -127,6 +127,10 @@ describe('ManualCapabilityPackageService', () => {
     expect(directoryPreview.sourceKind).toBe('directory');
     expect(directoryPreview.sandbox.passed).toBe(true);
     expect(directoryPreview.toolNames).toEqual(['ping']);
+    expect(await readPluginManifest(source)).toMatchObject({
+      depends: [],
+      provides: ['plugin:directory-cap'],
+    });
     await expect(fs.stat(path.join(pluginsDir, 'directory-cap'))).rejects.toMatchObject({ code: 'ENOENT' });
     await service.discard(directoryPreview.token);
 
@@ -184,6 +188,73 @@ describe('ManualCapabilityPackageService', () => {
 
     await expect(service.stage(source)).rejects.toThrow('能力包清单缺少能力说明（description）');
     expect(await fs.readdir(pluginsDir)).toEqual([]);
+  });
+
+  it('rejects malformed capability declarations before sandbox probing', async () => {
+    const service = createService();
+    const source = await writePackage('wrong-own-key', {
+      manifest: manifest('wrong-own-key', { provides: ['plugin:someone-else'] }),
+    });
+
+    await expect(service.stage(source)).rejects.toThrow(
+      /能力声明不合规.*must include the plugin's own capability key 'plugin:wrong-own-key'/,
+    );
+    expect(await fs.readdir(pluginsDir)).toEqual([]);
+  });
+
+  it('rejects a missing plugin dependency during stage and records failed without touching install state', async () => {
+    const service = createService();
+    const source = await writePackage('needs-provider', {
+      manifest: manifest('needs-provider', { depends: ['plugin:not-installed'] }),
+    });
+
+    await expect(service.stage(source)).rejects.toThrow(
+      /能力包依赖校验没通过.*plugin:needs-provider is missing dependencies: plugin:not-installed/,
+    );
+    expect(lifecycle).toEqual([expect.objectContaining({
+      id: 'needs-provider',
+      action: 'failed',
+      detail: expect.stringContaining('plugin:not-installed'),
+    })]);
+    expect(await fs.readdir(pluginsDir)).toEqual([]);
+  });
+
+  it('rejects an upgrade that would introduce a dependency cycle and leaves both installed plugins active', async () => {
+    const service = createService();
+    const provider = await writePackage('cycle-a');
+    await service.confirm((await service.stage(provider)).token);
+    const consumer = await writePackage('cycle-b', {
+      manifest: manifest('cycle-b', { depends: ['plugin:cycle-a'] }),
+    });
+    await service.confirm((await service.stage(consumer)).token);
+
+    const cyclicUpgrade = await writePackage('cycle-a', {
+      manifest: manifest('cycle-a', { version: '2.0.0', depends: ['plugin:cycle-b'] }),
+    });
+    await expect(service.stage(cyclicUpgrade)).rejects.toThrow(
+      /capability dependency cycle: plugin:cycle-b -> plugin:cycle-a -> plugin:cycle-b/,
+    );
+
+    expect(registry.getPlugin('cycle-a')).toMatchObject({ state: 'active', manifest: { version: '1.0.0' } });
+    expect(registry.getPlugin('cycle-b')).toMatchObject({ state: 'active' });
+    expect(lifecycle.map((entry) => entry.action)).toEqual(['loaded', 'loaded', 'failed']);
+  });
+
+  it('refuses to uninstall a provider while its dependent is active and keeps both plugins usable', async () => {
+    const service = createService();
+    const provider = await writePackage('unload-provider');
+    await service.confirm((await service.stage(provider)).token);
+    const consumer = await writePackage('unload-consumer', {
+      manifest: manifest('unload-consumer', { depends: ['plugin:unload-provider'] }),
+    });
+    await service.confirm((await service.stage(consumer)).token);
+
+    await expect(service.uninstall('unload-provider')).rejects.toThrow('能力包运行时卸载失败');
+    expect(registry.getPlugin('unload-provider')?.state).toBe('active');
+    expect(registry.getPlugin('unload-consumer')?.state).toBe('active');
+    expect(hasProtocolTool('unload-provider:ping')).toBe(true);
+    expect(hasProtocolTool('unload-consumer:ping')).toBe(true);
+    expect(lifecycle.slice(-2).map((entry) => entry.action)).toEqual(['failed', 'rolled_back']);
   });
 
   it('rejects a package whose activation probe cannot run in scriptRuntime', async () => {

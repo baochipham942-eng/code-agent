@@ -66,4 +66,71 @@ describe('PluginRegistry watcher lifecycle ledger', () => {
     ]);
     expect(registry.getPlugin('watcher-plugin')).toBeUndefined();
   });
+
+  it('keeps startup healthy plugins active while missing and cyclic plugins are skipped with failed ledger entries', async () => {
+    const lifecycle = vi.fn();
+    const registry = new PluginRegistry(vi.fn(() => () => undefined), lifecycle);
+    const healthy = makePlugin('1.0.0');
+    healthy.manifest.id = 'healthy';
+    healthy.manifest.name = 'Healthy';
+    healthy.rootPath = '/plugins/healthy';
+    const missing = makePlugin('1.0.0');
+    missing.manifest.id = 'missing-consumer';
+    missing.manifest.name = 'Missing Consumer';
+    missing.manifest.depends = ['plugin:absent'];
+    missing.rootPath = '/plugins/missing-consumer';
+    const cycleA = makePlugin('1.0.0');
+    cycleA.manifest.id = 'cycle-a';
+    cycleA.manifest.name = 'Cycle A';
+    cycleA.manifest.depends = ['plugin:cycle-b'];
+    cycleA.rootPath = '/plugins/cycle-a';
+    const cycleB = makePlugin('1.0.0');
+    cycleB.manifest.id = 'cycle-b';
+    cycleB.manifest.name = 'Cycle B';
+    cycleB.manifest.depends = ['plugin:cycle-a'];
+    cycleB.rootPath = '/plugins/cycle-b';
+    const plugins = (registry as unknown as { plugins: Map<string, LoadedPlugin> }).plugins;
+    for (const plugin of [healthy, missing, cycleA, cycleB]) plugins.set(plugin.manifest.id, plugin);
+
+    await expect((registry as unknown as { activateAll: () => Promise<void> }).activateAll())
+      .resolves.toBeUndefined();
+
+    expect(registry.getPlugin('healthy')?.state).toBe('active');
+    for (const id of ['missing-consumer', 'cycle-a', 'cycle-b']) {
+      expect(registry.getPlugin(id)?.state).toBe('error');
+      expect(lifecycle).toHaveBeenCalledWith(id, 'failed', expect.stringContaining('source=startup'));
+    }
+  });
+
+  it('skips a watcher-added plugin with a missing dependency without disturbing an active sibling', async () => {
+    let onAdded: ((pluginDir: string) => Promise<void>) | undefined;
+    const lifecycle = vi.fn();
+    const registry = new PluginRegistry(vi.fn((added: (pluginDir: string) => void) => {
+      onAdded = added as (pluginDir: string) => Promise<void>;
+      return () => undefined;
+    }), lifecycle);
+    const healthy = makePlugin('1.0.0');
+    healthy.manifest.id = 'healthy-watcher-sibling';
+    healthy.manifest.name = 'Healthy Watcher Sibling';
+    healthy.rootPath = '/plugins/healthy-watcher-sibling';
+    (registry as unknown as { plugins: Map<string, LoadedPlugin> }).plugins.set(healthy.manifest.id, healthy);
+    await registry.activatePlugin(healthy.manifest.id);
+    (registry as unknown as { startWatching: () => void }).startWatching();
+
+    const missing = makePlugin('1.0.0');
+    missing.manifest.id = 'watcher-missing';
+    missing.manifest.name = 'Watcher Missing';
+    missing.manifest.depends = ['plugin:absent'];
+    missing.rootPath = '/plugins/watcher-missing';
+    loaderMocks.loadPlugin.mockResolvedValueOnce({ success: true, plugin: missing });
+    await onAdded?.('/plugins/watcher-missing');
+
+    expect(registry.getPlugin('healthy-watcher-sibling')?.state).toBe('active');
+    expect(registry.getPlugin('watcher-missing')?.state).toBe('error');
+    expect(lifecycle).toHaveBeenCalledWith(
+      'watcher-missing',
+      'failed',
+      'source=watcher; event=add; activation failed',
+    );
+  });
 });

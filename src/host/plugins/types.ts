@@ -31,6 +31,10 @@ export interface PluginMetadata {
 export interface PluginManifest extends PluginMetadata {
   /** Entry point file (relative to plugin root) */
   main: string;
+  /** Capability keys that must already be active before this plugin can load. */
+  depends?: string[];
+  /** Capability keys provided by this plugin. Must include `plugin:<id>` when explicitly declared. */
+  provides?: string[];
   /** Required permissions */
   permissions?: PluginPermission[];
   /**

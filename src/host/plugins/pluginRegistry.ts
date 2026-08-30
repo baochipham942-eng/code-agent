@@ -9,6 +9,7 @@ import { registerProtocolTool, unregisterProtocolTool } from '../tools/protocolT
 import type { ToolCategory, ToolModule } from '../protocol/tools';
 import type {
   LoadedPlugin,
+  PluginManifest,
   PluginAPI,
   PluginPermission,
   PluginStorage,
@@ -18,6 +19,10 @@ import type {
 } from './types';
 import type { ModelProvider } from '../../shared/contract';
 import { discoverPlugins, loadPlugin, watchPluginsDir } from './pluginLoader';
+import {
+  normalizePluginCapabilityDeclaration,
+  PluginCapabilitySurface,
+} from './pluginCapabilitySurface';
 import { createPluginStorage, initPluginStorageTable } from './pluginStorage';
 import {
   isBuiltinCapabilityInstalledSync,
@@ -153,6 +158,7 @@ const CONSTANTS_BUCKETS: Readonly<Record<PluginConstantsNamespace, Readonly<Reco
 export class PluginRegistry {
   private plugins: Map<string, LoadedPlugin> = new Map();
   private stopWatcher: (() => void) | null = null;
+  private readonly capabilitySurface = new PluginCapabilitySurface();
 
   constructor(
     private readonly watchPlugins: typeof watchPluginsDir = watchPluginsDir,
@@ -171,6 +177,10 @@ export class PluginRegistry {
    */
   getPlugin(pluginId: string): LoadedPlugin | undefined {
     return this.plugins.get(pluginId);
+  }
+
+  validatePluginCapabilityManifest(manifest: PluginManifest): void {
+    this.capabilitySurface.validateCandidate(manifest);
   }
 
   private assertPermission(plugin: LoadedPlugin, permission: PluginPermission, operation: string): void {
@@ -207,8 +217,18 @@ export class PluginRegistry {
     await this.loadBuiltinPlugins();
 
     // Discover and load third-party plugins from disk
-    const plugins = await discoverPlugins();
+    const plugins = await discoverPlugins((pluginDir, error) => {
+      this.recordLifecycle(path.basename(pluginDir), 'failed', `source=startup; ${error}`);
+    });
     for (const plugin of plugins) {
+      const existing = this.plugins.get(plugin.manifest.id);
+      if (existing?.rootPath.startsWith('builtin:')) {
+        const detail = 'source=startup; 能力包 ID 与内置能力冲突';
+        plugin.state = 'error';
+        plugin.error = detail;
+        this.recordLifecycle(plugin.manifest.id, 'failed', detail);
+        continue;
+      }
       this.plugins.set(plugin.manifest.id, plugin);
     }
 
@@ -461,22 +481,14 @@ export class PluginRegistry {
       return true;
     }
 
-    if (!plugin.entry) {
-      plugin.state = 'error';
-      plugin.error = 'Plugin has no entry module';
-      return false;
-    }
-
     try {
-      plugin.state = 'activating';
-      const api = this.createPluginAPI(plugin);
-      await plugin.entry.activate(api);
-      plugin.state = 'active';
-      logger.info(`Plugin activated: ${pluginId}`);
+      await this.capabilitySurface.load(
+        plugin.manifest,
+        () => this.activatePluginEntry(plugin),
+        () => this.deactivatePluginEntry(plugin),
+      );
       return true;
     } catch (err: unknown) {
-      for (const toolName of plugin.registeredTools) unregisterProtocolTool(toolName);
-      plugin.registeredTools = [];
       const message = err instanceof Error ? err.message : String(err);
       plugin.state = 'error';
       plugin.error = message;
@@ -494,28 +506,20 @@ export class PluginRegistry {
       return false;
     }
 
-    if (plugin.state !== 'active') {
+    if (plugin.state !== 'active' && !this.capabilitySurface.isLoaded(pluginId)) {
       return true;
     }
 
     try {
-      // Call deactivate hook if available
-      if (plugin.entry?.deactivate) {
-        await plugin.entry.deactivate();
+      if (this.capabilitySurface.isLoaded(pluginId)) {
+        await this.capabilitySurface.unload(pluginId);
+      } else {
+        await this.deactivatePluginEntry(plugin);
       }
-
-      // Unregister all tools
-      for (const toolName of plugin.registeredTools) {
-        unregisterProtocolTool(toolName);
-      }
-      plugin.registeredTools = [];
-
-      plugin.state = 'inactive';
-      logger.info(`Plugin deactivated: ${pluginId}`);
       return true;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      plugin.state = 'error';
+      plugin.state = this.capabilitySurface.isLoaded(pluginId) ? 'active' : 'error';
       plugin.error = message;
       logger.error(`Failed to deactivate plugin ${pluginId}:`, err);
       return false;
@@ -526,8 +530,73 @@ export class PluginRegistry {
    * Activate all plugins
    */
   private async activateAll(): Promise<void> {
-    for (const [pluginId] of this.plugins) {
-      await this.activatePlugin(pluginId);
+    const available = new Set<string>();
+    for (const manifest of this.capabilitySurface.getActiveManifests()) {
+      for (const key of manifest.provides ?? []) available.add(key);
+    }
+    const pending = new Map(
+      [...this.plugins.values()]
+        .filter((plugin) => plugin.state !== 'active')
+        .map((plugin) => [plugin.manifest.id, plugin]),
+    );
+
+    while (pending.size > 0) {
+      let progressed = false;
+      for (const [pluginId, plugin] of pending) {
+        const manifest = normalizePluginCapabilityDeclaration(plugin.manifest);
+        if (!manifest.depends?.every((key) => available.has(key))) continue;
+        pending.delete(pluginId);
+        progressed = true;
+        if (await this.activatePlugin(pluginId)) {
+          for (const key of manifest.provides ?? []) available.add(key);
+        } else {
+          this.recordLifecycle(
+            pluginId,
+            'failed',
+            `source=startup; ${plugin.error ?? 'activation failed'}`,
+          );
+        }
+      }
+      if (progressed) continue;
+
+      const manifests = [...pending.values()].map((plugin) => (
+        normalizePluginCapabilityDeclaration(plugin.manifest)
+      ));
+      const declaredProviders = new Set<string>(available);
+      for (const manifest of manifests) {
+        for (const key of manifest.provides ?? []) declaredProviders.add(key);
+      }
+      let removedMissing = false;
+      for (const [pluginId, plugin] of pending) {
+        const manifest = normalizePluginCapabilityDeclaration(plugin.manifest);
+        const missing = (manifest.depends ?? []).filter((key) => !declaredProviders.has(key));
+        if (missing.length === 0) continue;
+        const detail = `plugin:${pluginId} is missing dependencies: ${missing.join(', ')}`;
+        plugin.state = 'error';
+        plugin.error = detail;
+        this.recordLifecycle(pluginId, 'failed', `source=startup; ${detail}`);
+        logger.warn(`Plugin skipped because dependencies cannot be satisfied: ${pluginId}`, { detail });
+        pending.delete(pluginId);
+        removedMissing = true;
+      }
+      if (removedMissing) continue;
+
+      let detail = 'capability dependencies cannot be satisfied';
+      try {
+        this.capabilitySurface.validateGraph([
+          ...this.capabilitySurface.getActiveManifests(),
+          ...manifests,
+        ]);
+      } catch (error) {
+        detail = error instanceof Error ? error.message : String(error);
+      }
+      for (const [pluginId, plugin] of pending) {
+        plugin.state = 'error';
+        plugin.error = detail;
+        this.recordLifecycle(pluginId, 'failed', `source=startup; ${detail}`);
+        logger.warn(`Plugin skipped because dependencies cannot be satisfied: ${pluginId}`, { detail });
+      }
+      pending.clear();
     }
   }
 
@@ -535,9 +604,38 @@ export class PluginRegistry {
    * Deactivate all plugins
    */
   private async deactivateAll(): Promise<void> {
-    for (const [pluginId] of this.plugins) {
+    const ordered = this.capabilitySurface.getLoadedPluginIds().reverse();
+    const remaining = [...this.plugins.keys()].filter((pluginId) => !ordered.includes(pluginId));
+    for (const pluginId of [...ordered, ...remaining]) {
       await this.deactivatePlugin(pluginId);
     }
+  }
+
+  private async activatePluginEntry(plugin: LoadedPlugin): Promise<void> {
+    if (!plugin.entry) throw new Error('Plugin has no entry module');
+    try {
+      plugin.state = 'activating';
+      const api = this.createPluginAPI(plugin);
+      await plugin.entry.activate(api);
+      plugin.state = 'active';
+      delete plugin.error;
+      logger.info(`Plugin activated: ${plugin.manifest.id}`);
+    } catch (error) {
+      for (const toolName of plugin.registeredTools) unregisterProtocolTool(toolName);
+      plugin.registeredTools = [];
+      plugin.state = 'error';
+      plugin.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
+  }
+
+  private async deactivatePluginEntry(plugin: LoadedPlugin): Promise<void> {
+    if (plugin.entry?.deactivate) await plugin.entry.deactivate();
+    for (const toolName of plugin.registeredTools) unregisterProtocolTool(toolName);
+    plugin.registeredTools = [];
+    plugin.state = 'inactive';
+    delete plugin.error;
+    logger.info(`Plugin deactivated: ${plugin.manifest.id}`);
   }
 
   /**
@@ -585,6 +683,15 @@ export class PluginRegistry {
         logger.info(`New plugin detected: ${pluginDir}`);
         const result = await loadPlugin(pluginDir);
         if (result.success && result.plugin) {
+          const colliding = this.plugins.get(result.plugin.manifest.id);
+          if (colliding?.rootPath.startsWith('builtin:')) {
+            this.recordLifecycle(
+              result.plugin.manifest.id,
+              'failed',
+              'source=watcher; event=add; 能力包 ID 与内置能力冲突',
+            );
+            return;
+          }
           this.plugins.set(result.plugin.manifest.id, result.plugin);
           if (await this.activatePlugin(result.plugin.manifest.id)) {
             this.recordLifecycle(
@@ -642,6 +749,16 @@ export class PluginRegistry {
     const existing = this.plugins.get(incoming.manifest.id);
     if (existing?.rootPath.startsWith('builtin:')) {
       return { success: false, rolledBack: false, error: '能力包 ID 与内置能力冲突' };
+    }
+    try {
+      this.validatePluginCapabilityManifest(incoming.manifest);
+    } catch (error) {
+      return {
+        success: false,
+        pluginId: incoming.manifest.id,
+        rolledBack: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
 
     if (existing && !await this.deactivatePlugin(existing.manifest.id)) {
@@ -709,7 +826,7 @@ export class PluginRegistry {
       return false;
     }
 
-    await this.deactivatePlugin(pluginId);
+    if (!await this.deactivatePlugin(pluginId)) return false;
 
     // Builtin plugin: 没有磁盘路径，直接复用现有 entry 重新 activate
     if (plugin.rootPath.startsWith('builtin:')) {
@@ -719,9 +836,10 @@ export class PluginRegistry {
     const result = await loadPlugin(plugin.rootPath);
     if (result.success && result.plugin) {
       this.plugins.set(pluginId, result.plugin);
-      return this.activatePlugin(pluginId);
+      if (await this.activatePlugin(pluginId)) return true;
     }
-
+    this.plugins.set(pluginId, plugin);
+    await this.activatePlugin(pluginId);
     return false;
   }
 }

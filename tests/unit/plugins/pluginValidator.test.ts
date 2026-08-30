@@ -23,4 +23,20 @@ describe('plugin manifest surfaces', () => {
       });
     }
   });
+
+  it('accepts omitted capability declarations and enforces arrays, namespaced keys, uniqueness, and own-key', () => {
+    expect(validateManifest(manifest('tools')).valid).toBe(true);
+
+    expect(validateManifest({ ...manifest('tools'), depends: 'plugin:provider' }).errors)
+      .toContainEqual({ field: 'depends', message: "'depends' must be an array" });
+    expect(validateManifest({ ...manifest('tools'), depends: ['provider'] }).errors[0])
+      .toMatchObject({ field: 'depends', message: expect.stringContaining('Invalid capability key') });
+    expect(validateManifest({ ...manifest('tools'), depends: ['plugin:provider', 'plugin:provider'] }).errors)
+      .toContainEqual({ field: 'depends', message: "'depends' must not contain duplicate capability keys" });
+    expect(validateManifest({ ...manifest('tools'), provides: ['plugin:alias'] }).errors)
+      .toContainEqual({
+        field: 'provides',
+        message: "'provides' must include the plugin's own capability key 'plugin:surface-test'",
+      });
+  });
 });

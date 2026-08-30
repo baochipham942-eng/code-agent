@@ -40,6 +40,8 @@ import { getShellPathDiagnostics } from '../../../services/infra/shellEnvironmen
 import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { createSanitizedEnv } from '../../../utils/sanitizeEnv';
+import { filterSecretEnvVars } from '../../../utils/envSecretFilter';
+import { getEnvFilterPolicy } from '../../../security/policyLoader';
 import { truncateMiddleErrorAware } from '../../../utils/truncate';
 import { spillToolResultArchive, buildSpillNotice } from '../../../utils/toolResultSpill';
 import { checkCommandPolicy } from './commandPolicy';
@@ -51,14 +53,36 @@ const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
 const BACKGROUND_TRAILING_OPERATOR = /(?:^|[;\n])\s*([^;&|\n][\s\S]*?)\s*&\s*$/;
 const MAX_LIVE_OUTPUT_DELTA_LENGTH = 2_000;
 
-function createEvalSafeShellEnv(extra?: Record<string, string | undefined>): Record<string, string> {
+function createEvalSafeShellEnv(
+  extra: Record<string, string | undefined> | undefined,
+  projectDir: string,
+  logger?: ToolContext['logger'],
+): Record<string, string> {
   const env = createSanitizedEnv(extra);
-  if (process.env.CODE_AGENT_EVAL_REAL_ROOT === undefined) return env;
-  delete env.CODE_AGENT_EVAL_REAL_ROOT;
-  delete env.AUTO_TEST_API_KEY;
-  delete env.AUTO_TEST_BASE_URL;
-  delete env.NEO_SCRIPTED_APPROVAL_POLICY;
-  return env;
+  if (process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined) {
+    delete env.CODE_AGENT_EVAL_REAL_ROOT;
+    delete env.AUTO_TEST_API_KEY;
+    delete env.AUTO_TEST_BASE_URL;
+    delete env.NEO_SCRIPTED_APPROVAL_POLICY;
+  }
+
+  // A8 env secret whitelist: strip secret-looking vars (*_KEY/*_TOKEN/
+  // *_SECRET/...) from the CHILD process env. This module is shared by
+  // CLI/desktop/web, so the filter applies on all three ends by default
+  // (intended — A8 is P0). The AGENT process itself is untouched: it keeps
+  // its own process.env with provider API keys for model calls.
+  // Escape hatch: [env_filter] in code-agent-policy.toml
+  // (strip_secret_vars=false, or allowed_secret_vars=[...]).
+  const envFilter = getEnvFilterPolicy(projectDir);
+  if (!envFilter.strip_secret_vars) return env;
+  const { env: filtered, strippedNames } = filterSecretEnvVars(env, {
+    allowedNames: envFilter.allowed_secret_vars,
+  });
+  if (strippedNames.length > 0) {
+    // Names only — values must never touch logs.
+    logger?.debug('Bash child env: stripped secret-looking vars', { names: strippedNames });
+  }
+  return filtered;
 }
 
 /**
@@ -642,8 +666,12 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         maxRuntime: timeout,
         sessionId: ctx.sessionId,
         toolCallId: ctx.currentToolCallId,
-        env: createEvalSafeShellEnv(),
-        inheritProcessEnv: process.env.CODE_AGENT_EVAL_REAL_ROOT === undefined,
+        env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
+        // The passed env already contains the full sanitized process.env minus
+        // filtered secrets. If we also inherited process.env here, the filtered
+        // secret vars would leak straight back in (ptyExecutor spreads
+        // process.env UNDER the passed env) — so never inherit.
+        inheritProcessEnv: false,
       });
 
       if (!result.success) {
@@ -737,7 +765,7 @@ Use process_kill to terminate the session.`;
       const result = startBackgroundTask(sandboxed.command, workingDirectory, timeout, {
         sessionId: ctx.sessionId,
         toolCallId: ctx.currentToolCallId,
-        env: createEvalSafeShellEnv(),
+        env: createEvalSafeShellEnv(undefined, workingDirectory, ctx.logger),
       });
       if (!result.success) {
         const message = result.error || 'Failed to start background task';
@@ -850,7 +878,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         startedAt,
         env: createEvalSafeShellEnv({
           PATH: shellPathDiagnostics.path,
-        }),
+        }, workingDirectory, ctx.logger),
       });
 
       let output = stdout;

@@ -330,6 +330,15 @@ LSP 不再只是“有 diagnostics 工具”。当前实现把语言识别、ser
 
 5/10 后，旧 Codex sandbox / cross-verify 路径退场，shell 统一走 `src/host/tools/modules/shell/commandPolicy.ts`。它负责把命令风险、审批范围、bash policy 和 UI 展示放到同一个决策面，避免 hybrid agent 分支里再维护第二套 shell 解释。
 
+### Bash 子进程环境密钥白名单（A8，2026-08-30）
+
+Bash 工具 spawn 子进程前，在 `createSanitizedEnv`（控制字符清洗）之上再过一道**按名字**的密钥过滤（`src/host/utils/envSecretFilter.ts`）：变量名匹配 `*_KEY` / `*_TOKEN` / `*_SECRET` / `*_PASSWORD` / `*_PASSWD` / `*_PWD` / `*_CREDENTIALS`（大小写不敏感，对齐 Windows 语义）的一律不进子进程环境。这是**事前**防泄漏，与 tool_result 密钥打码（事后）互补；防的是无人值守批跑时 `env`、`/proc/<pid>/environ`、崩溃转储把密钥带出去。
+
+- **作用域**：仅 Bash 工具 spawn 的子进程（前台 / 后台 / PTY 三条路径）。Agent 进程自身 env 不动——它需要 provider API key 调模型。CLI / desktop / web 共用 `bash.ts`，三端默认同时生效。
+- **默认即开启**（fail-closed），无 policy 文件也生效。内置核心白名单为空（PATH/HOME/TERM/locale/shell 变量均不匹配这些后缀，无需豁免）。
+- **逃逸口**：`code-agent-policy.toml` 的 `[env_filter]` 段（`strip_secret_vars = false` 整体关闭；`allowed_secret_vars = ["NAME"]` 按名放行，大小写不敏感）。三层合并规则与既有 policy 一致（标量高优先级覆盖；allowed 列表取高优先级非空值）。Bash 侧经 `getEnvFilterPolicy(projectDir)`（mtime 指纹缓存）读取。
+- PTY 路径配套改动：`createPtySession` 现在恒 `inheritProcessEnv: false`——否则 ptyExecutor 会把 `process.env` 垫在被过滤 env 底下，被剥离的密钥原样漏回。
+
 ### Bash 前台命令的后台子进程逃生（2026-05-28）
 
 **问题**（commit `f6d0f031` 实证）：前台 `runForegroundCommand` 只在子进程 `'close'`（stdio 管道 EOF）才 settle。命令里被 `&` 后台化的子/孙进程（如 `python3 -m http.server 8099 &`）会**继承并持有 stdout 管道写端**，EOF 永不到达 → `'close'` 永不触发 → 工具 Promise 永不 settle → 整个 agent run 挂死到超时。

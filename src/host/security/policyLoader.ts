@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import {
+  type EnvFilterPolicy,
   type SecurityPolicy,
   createDefaultPolicy,
   parseSimpleToml,
@@ -156,6 +157,19 @@ function mergePolicy(base: SecurityPolicy, override: Partial<SecurityPolicy>): S
     };
   }
 
+  if (override.env_filter) {
+    merged.env_filter = {
+      // Scalar override: a higher-priority file decides strip on/off
+      // (a system-level admin file can therefore force stripping back on).
+      strip_secret_vars: override.env_filter.strip_secret_vars,
+      // Allowed list: highest-priority non-empty value wins (same rule as
+      // network.allowed_domains); empty = keep lower-priority value.
+      allowed_secret_vars: override.env_filter.allowed_secret_vars.length > 0
+        ? override.env_filter.allowed_secret_vars
+        : base.env_filter.allowed_secret_vars,
+    };
+  }
+
   return merged;
 }
 
@@ -198,4 +212,49 @@ export function loadPolicy(projectDir: string): SecurityPolicy {
  */
 export function hasPolicyFile(projectDir: string): boolean {
   return getPolicyPaths(projectDir, isProjectConfigTrustedSync(projectDir, 'project-policy')).some(p => fs.existsSync(p));
+}
+
+// ----------------------------------------------------------------------------
+// Env filter accessor (Bash child-process secret whitelist)
+// ----------------------------------------------------------------------------
+//
+// The Bash tool needs the [env_filter] section on EVERY child spawn, including
+// when no policy file exists (defaults still apply: strip = on). Going through
+// getPolicyEnforcer is not an option: it returns null without a policy file,
+// and it is a workspace-keyed singleton that would thrash if the Bash tool
+// queried it with a different workingDir than the tool executor's workspace.
+// So this accessor does its own tiny cache keyed by projectDir + file mtimes;
+// statSync on <=3 candidate paths per Bash call, full TOML parse only when a
+// file appears/changes.
+
+const envFilterCache = new Map<string, { fingerprint: string; config: EnvFilterPolicy }>();
+
+function policyPathsFingerprint(paths: string[]): string {
+  return paths.map((p) => {
+    try {
+      const stat = fs.statSync(p);
+      return `${p}:${stat.mtimeMs}:${stat.size}`;
+    } catch {
+      return `${p}:-`;
+    }
+  }).join('|');
+}
+
+/**
+ * Resolve the effective [env_filter] policy for a project directory.
+ * Fail-closed: any load/parse problem yields the default (strip = on).
+ */
+export function getEnvFilterPolicy(projectDir: string): EnvFilterPolicy {
+  const includeProject = isProjectConfigTrustedSync(projectDir, 'project-policy');
+  const paths = getPolicyPaths(projectDir, includeProject);
+  const fingerprint = policyPathsFingerprint(paths);
+
+  const cached = envFilterCache.get(projectDir);
+  if (cached?.fingerprint === fingerprint) {
+    return cached.config;
+  }
+
+  const config = loadPolicy(projectDir).env_filter;
+  envFilterCache.set(projectDir, { fingerprint, config });
+  return config;
 }

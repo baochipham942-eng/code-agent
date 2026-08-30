@@ -8,6 +8,7 @@ const CHANNEL_ACCESS_POLICY = new Map<string, ChannelAccessLevel>([
   ['evaluation:run-suite', 'admin'],
   ['evaluation:run-events', 'admin'],
   ['evaluation:abort-run', 'admin'],
+  ['evaluation:scorers-overview', 'admin'],
   ['evaluation:list-cases', 'admin'],
   ['evaluation:save-case', 'admin'],
 ]);

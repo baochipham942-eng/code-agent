@@ -9,12 +9,21 @@
 // ============================================================================
 
 import { promises as fs } from 'fs';
+import fsSync from 'node:fs';
 import path from 'path';
+import type { AiReviewDimension } from '../../../shared/contract/evaluation';
+import { approximateKappaLowerBound95 } from './judgeCalibration';
 
 /** 一次 judge 校准的落盘摘要（完整混淆矩阵在 calibration-*.json 原始报告里） */
 export interface JudgeCalibrationRecord {
-  /** judge 身份：provider/model（同一 judge 换 prompt 版本应视为新 judgeId） */
+  standardVersion: 2;
+  dimension: AiReviewDimension | 'legacy';
   judgeId: string;
+  promptHash: string;
+  endpoint: string;
+  judgeModel: string;
+  datasetFingerprint: string;
+  goldSource: 'deterministic_shadow' | 'human_annotation';
   /** Cohen's Kappa（去除随机一致后的真实一致度） */
   kappa: number;
   /** 裸一致率 */
@@ -27,6 +36,18 @@ export interface JudgeCalibrationRecord {
   computedAt: string;
 }
 
+interface SupersededJudgeCalibrationRecord {
+  standardVersion: 'superseded';
+  judgeId: string;
+  kappa: number;
+  agreementRate: number;
+  pairs: number;
+  falsePositiveRate: number;
+  computedAt: string;
+}
+
+export type LoadedJudgeCalibrationRecord = JudgeCalibrationRecord | SupersededJudgeCalibrationRecord;
+
 /**
  * 可信阈值：κ≥0.6 = Landis-Koch substantial 档起步；
  * 样本 <20 时 κ 方差过大，不足以背书。
@@ -34,18 +55,44 @@ export interface JudgeCalibrationRecord {
 export const CALIBRATION_TRUST_THRESHOLDS = {
   minKappa: 0.6,
   minPairs: 20,
+  minKappaLowerBound: 0.4,
+  pairsWaiver: 50,
 } as const;
 
-export function isTrustedCalibration(record: JudgeCalibrationRecord): boolean {
+export function isTrustedCalibration(record: LoadedJudgeCalibrationRecord): boolean {
+  if (record.standardVersion !== 2) return false;
+  const lowerBound = approximateKappaLowerBound95(record.kappa, record.pairs);
   return (
     record.kappa >= CALIBRATION_TRUST_THRESHOLDS.minKappa &&
-    record.pairs >= CALIBRATION_TRUST_THRESHOLDS.minPairs
+    record.pairs >= CALIBRATION_TRUST_THRESHOLDS.minPairs &&
+    (
+      lowerBound >= CALIBRATION_TRUST_THRESHOLDS.minKappaLowerBound
+      || record.pairs >= CALIBRATION_TRUST_THRESHOLDS.pairsWaiver
+    )
   );
 }
 
 const REGISTRY_FILE = 'judge-calibration.json';
 
-type Registry = Record<string, JudgeCalibrationRecord>;
+type Registry = Record<string, unknown>;
+
+function normalizeRecord(value: unknown, judgeId: string): LoadedJudgeCalibrationRecord | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (record.standardVersion !== 2) {
+    if (typeof record.kappa !== 'number' || typeof record.pairs !== 'number') return null;
+    return {
+      standardVersion: 'superseded',
+      judgeId,
+      kappa: record.kappa,
+      agreementRate: typeof record.agreementRate === 'number' ? record.agreementRate : 0,
+      pairs: record.pairs,
+      falsePositiveRate: typeof record.falsePositiveRate === 'number' ? record.falsePositiveRate : 0,
+      computedAt: typeof record.computedAt === 'string' ? record.computedAt : 'unknown',
+    };
+  }
+  return record as unknown as JudgeCalibrationRecord;
+}
 
 async function loadRegistry(dir: string): Promise<Registry> {
   try {
@@ -65,7 +112,16 @@ export async function saveCalibrationRecord(dir: string, record: JudgeCalibratio
 }
 
 /** 按 judgeId 取校准记录；没有 → null（= 未校准） */
-export async function loadCalibrationRecord(dir: string, judgeId: string): Promise<JudgeCalibrationRecord | null> {
+export async function loadCalibrationRecord(dir: string, judgeId: string): Promise<LoadedJudgeCalibrationRecord | null> {
   const registry = await loadRegistry(dir);
-  return registry[judgeId] ?? null;
+  return normalizeRecord(registry[judgeId], judgeId);
+}
+
+export function loadCalibrationRecordSync(dir: string, judgeId: string): LoadedJudgeCalibrationRecord | null {
+  try {
+    const raw = JSON.parse(fsSync.readFileSync(path.join(dir, REGISTRY_FILE), 'utf8')) as Registry;
+    return normalizeRecord(raw[judgeId], judgeId);
+  } catch {
+    return null;
+  }
 }

@@ -91,6 +91,7 @@ export class EvalRunEventStream {
           ...(event.result.trials ? { trials: event.result.trials.length } : {}),
           ...(event.result.sessionId ? { sessionId: event.result.sessionId } : {}),
           ...(event.result.scoreAuthority ? { scoreAuthority: event.result.scoreAuthority } : {}),
+          ...(event.result.aiReview ? { aiReview: event.result.aiReview } : {}),
           ...(event.result.trialAggregate ? { trialAggregate: event.result.trialAggregate } : {}),
         });
         break;

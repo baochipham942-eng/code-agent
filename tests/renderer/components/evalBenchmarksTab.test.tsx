@@ -53,6 +53,14 @@ const probe: EvalRunPanelProbe = {
   provider: 'deepseek',
   priceTableVersion: 1,
   estimatedCostPerCaseUsd: 0.0021,
+  judge: { model: 'glm-4.7', provider: 'zhipu', estimatedCostPerCaseUsd: 0.01 },
+  aiReview: [
+    { dim: 'task_completed', requiresExpectation: false, calibration: { state: 'uncalibrated', reason: 'not_enough_pairs', pairs: 12 } },
+    { dim: 'tool_choice', requiresExpectation: true, calibration: { state: 'uncalibrated', reason: 'no_record' } },
+    { dim: 'confirmed_before_acting', requiresExpectation: false, calibration: { state: 'calibrated', kappa: 0.71, pairs: 34 } },
+    { dim: 'no_extra_changes', requiresExpectation: true, calibration: { state: 'uncalibrated', reason: 'no_record' } },
+    { dim: 'self_tested', requiresExpectation: true, calibration: { state: 'uncalibrated', reason: 'no_record' } },
+  ],
   splitCounts: { 'held-in': 76, 'held-out': 52, safety: 12 },
   quickCheck: { tags: ['core-path'], maxCases: 12 },
 };
@@ -171,6 +179,27 @@ describe('EvalBenchmarksTab 跑分闭环', () => {
     expect(mocks.invoke.mock.calls.some(([channel, arg]) => (
       channel === IPC_CHANNELS.EVALUATION_RUN_EVENTS && Boolean(arg)
     ))).toBe(false);
+  });
+
+  it('T6：未校准维默认不勾，勾选后请求透传且费用按题数×维数×评审单价单列', async () => {
+    configureIpc();
+    render(<EvalBenchmarksTab />);
+    fireEvent.click(await screen.findByRole('button', { name: '开跑' }));
+
+    const toggle = screen.getByTestId('eval-ai-review-toggle-task_completed');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(toggle.textContent).toContain('金标不足 N<20');
+    fireEvent.click(toggle);
+
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText('结果只作参考，不作能力证据')).toBeTruthy();
+    expect(screen.getByTestId('eval-ai-review-cost').textContent).toContain('$0.76');
+
+    fireEvent.click(screen.getByTestId('eval-run-confirm'));
+    fireEvent.click(screen.getByTestId('eval-run-confirm'));
+    await waitFor(() => expect(mocks.invoke.mock.calls.some(([channel]) => channel === IPC_CHANNELS.EVALUATION_RUN_SUITE)).toBe(true));
+    const call = mocks.invoke.mock.calls.find(([channel]) => channel === IPC_CHANNELS.EVALUATION_RUN_SUITE);
+    expect(call?.[1]).toMatchObject({ aiReview: ['task_completed'] });
   });
 
   it('T2：先监听再 subscribe，事件流驱动三行步骤并把工具调用折成一行', async () => {

@@ -8,11 +8,8 @@ import type { BaselineDelta, TestRunSummary, TestResult } from './types';
 import { formatDuration } from '../../shared/utils/format';
 import { getRunStampReportRows } from './runStampReport';
 import { failureCodeLabel, loadProjectFailureCodebook } from './failureCodes';
-import {
-  CALIBRATION_TRUST_THRESHOLDS,
-  isTrustedCalibration,
-  type JudgeCalibrationRecord,
-} from './calibration/calibrationRegistry';
+import { AI_REVIEW_DIMENSIONS } from './judge/dimensions';
+import type { AiReviewDimension } from '../../shared/contract/evaluation';
 
 type ReportFormat = 'markdown' | 'json' | 'console';
 
@@ -132,7 +129,15 @@ export function generateMarkdownReport(
   // Score authority buckets（WP1-1）：分数由什么背书，judge/自报分不冒充硬 pass
   lines.push('## 评分权威分桶');
   lines.push('');
-  lines.push(generateScoreAuthoritySection(summary.results, summary.judgeCalibration));
+  lines.push(generateScoreAuthoritySection(summary.results));
+  lines.push('');
+
+  const aiReviewSection = generateAiReviewSection(summary.results);
+  if (aiReviewSection) {
+    lines.push('## AI 评审（并列 · 不进通过率）');
+    lines.push('');
+    lines.push(aiReviewSection);
+  }
   lines.push('');
 
   // Environment
@@ -350,11 +355,12 @@ export function generateMarkdownReport(
     lines.push('## 期望断言详情');
     lines.push('');
     for (const result of resultsWithExpectations) {
+      const expectationResults = result.expectationResults ?? [];
       lines.push(`### ${result.testId}`);
       lines.push('');
       lines.push('| 状态 | 描述 | 证据 |');
       lines.push('|------|------|------|');
-      for (const er of result.expectationResults!) {
+      for (const er of expectationResults) {
         const status = er.passed ? '✅' : '❌';
         const desc = er.expectation.type.replace(/\|/g, '\\|');
         const evidence = (er.evidence.details ?? '—').replace(/\|/g, '\\|').substring(0, 100);
@@ -372,7 +378,8 @@ export function generateMarkdownReport(
     lines.push('| 用例 ID | 步骤数 | 效率 | 偏差数 | 恢复次数 |');
     lines.push('|---------|--------|------|--------|----------|');
     for (const result of resultsWithTrajectory) {
-      const t = result.trajectory!;
+      const t = result.trajectory;
+      if (!t) continue;
       const steps = t.steps.length;
       const efficiency = t.efficiency ? `${(t.efficiency.efficiency * 100).toFixed(0)}%` : '—';
       const deviations = t.deviations.length;
@@ -649,41 +656,13 @@ export async function saveReport(
 // Helper functions
 // ============================================================================
 
-/**
- * 评分权威分桶表（WP1-1）：deterministic_assertion / llm_judge / self_check，
- * 无标注的历史结果归 unknown 行，不冒充 deterministic。
- * L3 实验提案只准引用前两桶；self_check/unknown 分数不作能力证据。
- *
- * scoreAuthority 第二步：llm_judge 桶必须绑定达标的校准记录
- * （calibrationRegistry.isTrustedCalibration）才进可信列；未绑定/不达标
- * 的 judge 分强制标注，不作能力证据。
- */
-function generateScoreAuthoritySection(
-  results: TestResult[],
-  judgeCalibration?: JudgeCalibrationRecord,
-): string {
+/** 评分权威只含确定性断言、自检与历史 unknown；AI 评审在独立表中并列展示。 */
+function generateScoreAuthoritySection(results: TestResult[]): string {
   const buckets: Array<{ key: string; label: string }> = [
     { key: 'deterministic_assertion', label: '确定性断言' },
-    { key: 'llm_judge', label: 'LLM 评审' },
     { key: 'self_check', label: '无外部验证' },
     { key: 'unknown', label: '未标注（历史遗留）' },
   ];
-
-  const hasLlmJudge = results.some(
-    (result) =>
-      result.scoreAuthority === 'llm_judge'
-      && result.status !== 'skipped'
-      && result.status !== 'infra_excluded'
-      && result.status !== 'cost_exceeded',
-  );
-  const judgeTrusted = judgeCalibration ? isTrustedCalibration(judgeCalibration) : false;
-  const judgeNote = !hasLlmJudge
-    ? ''
-    : !judgeCalibration
-      ? ' ⚠ 未校准——不作能力证据'
-      : judgeTrusted
-        ? ` ✅ 已校准 ${judgeCalibration.judgeId} κ=${judgeCalibration.kappa.toFixed(2)} (n=${judgeCalibration.pairs})`
-        : ` ⚠ 校准未达标（κ=${judgeCalibration.kappa.toFixed(2)}, n=${judgeCalibration.pairs}，需 κ≥${CALIBRATION_TRUST_THRESHOLDS.minKappa} 且 n≥${CALIBRATION_TRUST_THRESHOLDS.minPairs}）——不作能力证据`;
 
   const lines: string[] = [];
   lines.push('| 权威桶 | 用例数 | 通过 | 平均分数 |');
@@ -699,18 +678,43 @@ function generateScoreAuthoritySection(
     if (inBucket.length === 0) continue;
     const passed = inBucket.filter((r) => r.status === 'passed' && !r.invalid).length;
     const avgScore = inBucket.reduce((sum, r) => sum + (r.invalid ? 0 : r.score), 0) / inBucket.length;
-    const suffix = bucket.key === 'llm_judge' ? judgeNote : '';
     lines.push(
-      `| ${bucket.key}（${bucket.label}）${suffix} | ${inBucket.length} | ${passed} | ${(avgScore * 100).toFixed(1)}% |`,
+      `| ${bucket.key}（${bucket.label}） | ${inBucket.length} | ${passed} | ${(avgScore * 100).toFixed(1)}% |`,
     );
   }
   lines.push('');
-  lines.push('> self_check / 未标注分数不作能力证据；L3 实验提案只准引用 deterministic_assertion 与（校准达标的）llm_judge 两桶。');
-  if (hasLlmJudge && !judgeTrusted) {
-    lines.push('>');
-    lines.push('> ⚠ 本次 run 的 llm_judge 分数未通过校准背书，视同 self_check：只能参考，不得作为能力结论或 L3 实验证据。');
-  }
+  lines.push('> 通过率只读取确定性断言；self_check 不作能力证据；AI 评审在下方并列展示，不属于分数权威桶。');
 
+  return lines.join('\n');
+}
+
+const AI_REVIEW_LABELS: Record<AiReviewDimension, string> = {
+  task_completed: '任务完成',
+  tool_choice: '工具选择',
+  confirmed_before_acting: '先确认后执行',
+  no_extra_changes: '改动克制',
+  self_tested: '完成自测',
+};
+
+function generateAiReviewSection(results: TestResult[]): string {
+  if (!results.some((result) => result.aiReview)) return '';
+  const lines = [
+    '| 维度 | 是 | 否 | 不可用 |',
+    '|------|---:|---:|-------:|',
+  ];
+  for (const dimension of AI_REVIEW_DIMENSIONS) {
+    const verdicts = results.map((result) => result.aiReview?.[dimension]?.verdict).filter(Boolean);
+    lines.push(`| ${AI_REVIEW_LABELS[dimension]} | ${verdicts.filter((v) => v === 'yes').length} | ${verdicts.filter((v) => v === 'no').length} | ${verdicts.filter((v) => v === 'unavailable').length} |`);
+  }
+  lines.push('', `| 用例 ID | ${AI_REVIEW_DIMENSIONS.map((dimension) => AI_REVIEW_LABELS[dimension]).join(' | ')} |`);
+  lines.push(`|---------|${AI_REVIEW_DIMENSIONS.map(() => '---').join('|')}|`);
+  for (const result of results) {
+    const cells = AI_REVIEW_DIMENSIONS.map((dimension) => {
+      const verdict = result.aiReview?.[dimension]?.verdict;
+      return verdict === 'yes' ? '是' : verdict === 'no' ? '否' : verdict === 'unavailable' ? '不可用' : '—';
+    });
+    lines.push(`| ${result.testId} | ${cells.join(' | ')} |`);
+  }
   return lines.join('\n');
 }
 

@@ -729,10 +729,11 @@ export function isQuickModelAvailable(): boolean {
  * Get quick model info for debugging
  */
 export function getQuickModelInfo(): { provider: string; model: string } | null {
+  const config = getQuickModelRuntimeInfo();
+  return config ? { provider: config.provider, model: config.model } : null;
+}
+
+export function getQuickModelRuntimeInfo(): { provider: string; model: string; baseUrl: string } | null {
   const config = initializeQuickModel();
-  if (!config) return null;
-  return {
-    provider: config.provider,
-    model: config.model,
-  };
+  return config ? { provider: config.provider, model: config.model, baseUrl: config.baseUrl } : null;
 }

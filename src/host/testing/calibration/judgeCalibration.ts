@@ -42,6 +42,8 @@ export interface CalibrationReport {
   agreementRate: number;
   /** Cohen's Kappa，去除随机一致 */
   cohensKappa: number;
+  /** κ 的近似 95% 置信区间下界 */
+  kappaLowerBound95: number;
   /** Landis-Koch 解读档位 */
   kappaInterpretation: string;
   /** 虚高率 FP/(FP+TN)：金标为 fail 时 judge 错判 pass 的比例 */
@@ -52,6 +54,12 @@ export interface CalibrationReport {
   scoreCorrelation?: number;
   /** 全部分歧 case（judge 与金标不一致），供人工复核 */
   disagreements: CalibrationPair[];
+}
+
+export function approximateKappaLowerBound95(kappa: number, pairs: number): number {
+  if (pairs < 2) return -1;
+  const standardError = Math.sqrt(Math.max(0, 1 - (kappa * kappa)) / (pairs - 1));
+  return Math.max(-1, kappa - (1.96 * standardError));
 }
 
 /** Landis & Koch (1977) kappa 解读档位 */
@@ -112,6 +120,7 @@ export function computeCalibration(pairs: CalibrationPair[]): CalibrationReport 
       confusion,
       agreementRate: 0,
       cohensKappa: 0,
+      kappaLowerBound95: -1,
       kappaInterpretation: interpretKappa(0),
       falsePositiveRate: 0,
       falseNegativeRate: 0,
@@ -145,6 +154,7 @@ export function computeCalibration(pairs: CalibrationPair[]): CalibrationReport 
     confusion,
     agreementRate: po,
     cohensKappa,
+    kappaLowerBound95: approximateKappaLowerBound95(cohensKappa, total),
     kappaInterpretation: interpretKappa(cohensKappa),
     falsePositiveRate,
     falseNegativeRate,

@@ -20,7 +20,7 @@ function removeAnswerAssets(dir: string): void {
   const claudeDir = path.join(dir, '.claude');
   if (!fs.existsSync(claudeDir)) return;
   for (const entry of fs.readdirSync(claudeDir)) {
-    if (entry.startsWith('eval-')) {
+    if (entry.startsWith('eval-baseline.') || entry.startsWith('eval-')) {
       fs.rmSync(path.join(claudeDir, entry), { recursive: true, force: true });
     }
   }

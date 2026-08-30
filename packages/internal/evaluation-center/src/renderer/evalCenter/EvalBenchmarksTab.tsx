@@ -8,13 +8,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EVALUATION_CHANNELS } from '../../shared/evaluationChannels';
 import type {
-  EvalExperimentListItem,
   EvalRunEvent,
   EvalRunPanelProbe,
   EvalRunRequest,
   EvalRunSubscriptionResult,
   AiReviewDimension,
 } from '@shared/contract/evaluation';
+import type { EvalBaselineExperimentListItem } from '@shared/contract/evaluationBaseline';
 import {
   evalRunPanelEn,
   evalRunPanelZh,
@@ -61,7 +61,7 @@ function splitLabel(
 export const EvalBenchmarksTab: React.FC = () => {
   const language = useAppStore((state) => state.language);
   const labels = language === 'zh' ? evalRunPanelZh.runPanel : evalRunPanelEn.runPanel;
-  const [experiments, setExperiments] = useState<EvalExperimentListItem[]>([]);
+  const [experiments, setExperiments] = useState<EvalBaselineExperimentListItem[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [probe, setProbe] = useState<EvalRunPanelProbe | null>(null);

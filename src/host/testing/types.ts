@@ -10,6 +10,7 @@ import type {
   ScoreAuthority,
   EvalCompareArm,
 } from '../../shared/contract/evaluation';
+import type { RunShape } from '../../shared/contract/evaluationBaseline';
 import type { AgentPointerEvent } from '../../shared/contract/desktop';
 import type { GoalGateVerdict } from '../../shared/contract/agent';
 import type { JudgeCalibrationRecord } from './calibration/calibrationRegistry';
@@ -1040,6 +1041,15 @@ export interface EvalBaseline {
   aggregationRuleVersion?: number;
   /** 设为基准时完整执行的计划题集。 */
   plannedCaseIds: string[];
+  experimentId?: string;
+  commit?: string;
+  caseBankSha?: string;
+  shape?: RunShape;
+  divergesFromProduction?: boolean;
+  productionDifferences?: string[];
+  excludedCaseIds?: Array<{ id: string; reason: string; approvedBy: string }>;
+  knownIssues?: Array<{ caseId: string; reason: string; approvedBy: string; expiresOn: string }>;
+  history?: Array<{ experimentId: string; updatedAt: number; updatedBy: string }>;
   updatedAt: number;
   updatedBy: string;
   /** 晋升此 baseline 的运行来源。缺省视为历史遗留（来源不明，可能是 mock） */

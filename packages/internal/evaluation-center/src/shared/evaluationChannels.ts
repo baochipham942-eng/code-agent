@@ -10,4 +10,6 @@ export const EVALUATION_CHANNELS = {
   SAVE_CASE: 'evaluation:save-case',
   SAVE_ANNOTATION: 'evaluation:save-annotation',
   LIST_ANNOTATIONS: 'evaluation:list-annotations',
+  SET_BASELINE: 'evaluation:set-baseline',
+  BASELINE_INFO: 'evaluation:baseline-info',
 } as const;

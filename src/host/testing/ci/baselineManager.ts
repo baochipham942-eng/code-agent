@@ -17,6 +17,7 @@ import {
   assertShipGateRuleVersion,
   BASELINE_DENOMINATOR_VERSION,
 } from '../comparator/shipGate';
+import type { EvalBaselineSplit, RunShape } from '../../../shared/contract/evaluationBaseline';
 
 /** 通过率规则版本：4 = 计划题集一等字段，not_run 保留在通过率内。 */
 export { BASELINE_DENOMINATOR_VERSION } from '../comparator/shipGate';
@@ -46,6 +47,25 @@ const MOCK_HARNESS_THRESHOLDS: EvalBaseline['thresholds'] = {
 
 interface BaselineManagerOptions {
   kind?: 'agent' | 'mock-harness';
+  group?: { split: EvalBaselineSplit; k: number };
+}
+
+export interface BaselinePromotionMetadata {
+  experimentId?: string;
+  updatedBy?: string;
+  caseBankSha?: string;
+  shape?: RunShape;
+  productionDifferences?: string[];
+}
+
+export class BaselinePromotionError extends Error {
+  constructor(
+    public readonly code: 'baseline_incomplete' | 'baseline_invalid_run' | 'baseline_not_real' | 'baseline_legacy_run',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'BaselinePromotionError';
+  }
 }
 
 export class BaselineManager {
@@ -55,9 +75,17 @@ export class BaselineManager {
   constructor(private workingDir: string, options: BaselineManagerOptions = {}) {
     assertShipGateRuleVersion();
     this.kind = options.kind ?? 'agent';
+    if (options.group && !['held-in', 'held-out', 'safety', 'all'].includes(options.group.split)) {
+      throw new Error(`Unsupported evaluation baseline split: ${options.group.split}`);
+    }
+    if (options.group && (!Number.isInteger(options.group.k) || options.group.k < 1)) {
+      throw new Error(`Unsupported evaluation baseline k: ${options.group.k}`);
+    }
     this.baselinePath = this.kind === 'mock-harness'
       ? path.join(workingDir, '.claude', 'eval-mock-baseline.json')
-      : path.join(workingDir, CONFIG_DIR_NEW, 'eval-baseline.json');
+      : options.group
+        ? path.join(workingDir, '.claude', `eval-baseline.${options.group.split}.k${options.group.k}.json`)
+        : path.join(workingDir, CONFIG_DIR_NEW, 'eval-baseline.json');
   }
 
   async load(): Promise<EvalBaseline | null> {
@@ -238,16 +266,27 @@ export class BaselineManager {
     commitSha: string,
     mode: EvalRunMode,
     expectedCaseIds: string[],
+    metadata: BaselinePromotionMetadata = {},
   ): Promise<void> {
     if (!expectedCaseIds || expectedCaseIds.length === 0) {
-      throw new Error('拒绝设为对比基准：缺少本轮加载到的评测集全集');
+      throw new BaselinePromotionError('baseline_incomplete', '拒绝设为对比基准：缺少本轮加载到的评测集全集');
     }
     // 来源护栏：mock 跑出来的通过率是 adapter 桩的产物，不代表 agent 真实能力，
     // 绝不允许晋升为回归基线。历史上线上 baseline 正是被一次 mock 跑污染过。
     if (mode !== 'real') {
-      throw new Error(
+      throw new BaselinePromotionError(
+        'baseline_not_real',
         `拒绝将 ${mode} 运行晋升为 baseline：基线必须来自 --real 真实模型执行。` +
         `mock 通过率是确定性桩的产物，不是 agent 能力。`,
+      );
+    }
+
+    const invalidResults = summary.results.filter((result) => result.invalid !== undefined);
+    if (summary.invalidCases > 0 || invalidResults.length > 0) {
+      const detail = invalidResults.map((result) => result.testId).join(', ');
+      throw new BaselinePromotionError(
+        'baseline_invalid_run',
+        `拒绝设为对比基准：无效轮${detail ? `（${detail}）` : ''}`,
       );
     }
 
@@ -277,8 +316,6 @@ export class BaselineManager {
     addCaseReasons('跳过', summary.skipped, (result) => result.status === 'skipped', (result) => result.failureReason ?? '未说明');
     addCaseReasons('环境故障', summary.infraExcluded ?? 0, (result) => result.status === 'infra_excluded', (result) => result.failureReason ?? '未说明');
     addCaseReasons('成本超限', summary.costExceeded ?? 0, (result) => result.status === 'cost_exceeded', (result) => result.failureReason ?? '未说明');
-    addCaseReasons('无效题（没调真模型）', summary.invalidCases, (result) => result.invalid !== undefined, (result) => result.invalid?.reason ?? '未说明');
-
     const planned = new Set(summary.plannedCaseIds);
     const expected = new Set(expectedCaseIds);
     const resultIds = new Set(summary.results.map((result) => result.testId));
@@ -292,11 +329,20 @@ export class BaselineManager {
       );
     }
     const missingResults = summary.plannedCaseIds.filter((id) => !resultIds.has(id));
-    if (missingResults.length > 0) {
-      rejectionReasons.push(`计划题集缺少结果: ${missingResults.join(', ')}`);
+    const extraResults = summary.results.filter((result) => !planned.has(result.testId));
+    if (missingResults.length > 0 || extraResults.length > 0) {
+      rejectionReasons.push(
+        `结果集与计划题集不一致`
+        + `${missingResults.length > 0 ? `；缺少: ${missingResults.join(', ')}` : ''}`
+        + `${extraResults.length > 0 ? `；多出: ${extraResults.map((result) => result.testId).join(', ')}` : ''}`,
+      );
     }
     if (rejectionReasons.length > 0) {
-      throw new Error(`拒绝设为对比基准：${rejectionReasons.join('；')}`);
+      const legacy = rejectionReasons.some((reason) => reason.includes('旧口径') || reason.includes('缺少版本'));
+      throw new BaselinePromotionError(
+        legacy ? 'baseline_legacy_run' : 'baseline_incomplete',
+        `拒绝设为对比基准：${rejectionReasons.join('；')}`,
+      );
     }
 
     // WP1-2 完整形态：infra_excluded 是「无数据」、skipped 是「未执行」，
@@ -333,14 +379,33 @@ export class BaselineManager {
       };
     }
 
+    const previous = await this.load();
+    const updatedAt = Date.now();
+    const updatedBy = metadata.updatedBy ?? commitSha;
+    const experimentId = metadata.experimentId ?? summary.runId;
+    const productionDifferences = metadata.productionDifferences
+      ?? summary.stamp?.divergesFromProduction
+      ?? [];
     const baseline: EvalBaseline = {
       version: 1,
       denominatorVersion: BASELINE_DENOMINATOR_VERSION,
       aggregationRule: summary.aggregationRule as CurrentAggregationRule,
       aggregationRuleVersion: summary.aggregationRuleVersion,
       plannedCaseIds: [...summary.plannedCaseIds],
-      updatedAt: Date.now(),
-      updatedBy: commitSha,
+      experimentId,
+      commit: commitSha,
+      caseBankSha: metadata.caseBankSha ?? summary.stamp?.caseBankSha ?? 'unknown',
+      shape: metadata.shape ?? summary.stamp?.shape,
+      divergesFromProduction: productionDifferences.length > 0,
+      productionDifferences,
+      excludedCaseIds: [],
+      knownIssues: [],
+      history: [
+        { experimentId, updatedAt, updatedBy },
+        ...(previous?.history ?? []),
+      ].slice(0, 10),
+      updatedAt,
+      updatedBy,
       mode,
       globalMetrics: {
         passRate,

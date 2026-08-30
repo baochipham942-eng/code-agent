@@ -2,7 +2,6 @@ import type {
   EvalCaseListItem,
   EvalExperimentCaseDetail,
   EvalExperimentDetail,
-  EvalExperimentListItem,
   EvalRunEvent,
   EvalRunPanelProbe,
   EvalRunRequest,
@@ -15,6 +14,7 @@ import type {
   SaveEvalCaseRequest,
   SaveEvalCaseResult,
 } from '@shared/contract/evaluation';
+import type { EvalBaselineExperimentListItem, EvalBaselineInfoResult, EvalBaselineSetResult } from '@shared/contract/evaluationBaseline';
 import { EVALUATION_CHANNELS } from '../shared/evaluationChannels';
 
 interface EvaluationRunIpcInvokeHandlers {
@@ -22,13 +22,15 @@ interface EvaluationRunIpcInvokeHandlers {
   [EVALUATION_CHANNELS.RUN_EVENTS]: (payload?: { runId?: string }) => Promise<EvalRunSubscriptionResult | EvalRunPanelProbe>;
   [EVALUATION_CHANNELS.ABORT_RUN]: (payload: { runId: string }) => Promise<{ runId: string; pid: number; terminated: boolean }>;
   [EVALUATION_CHANNELS.SCORERS_OVERVIEW]: () => Promise<EvalScorersOverview>;
-  [EVALUATION_CHANNELS.LIST_EXPERIMENTS]: (payload?: { limit?: number; source?: 'compare' | 'eval' }) => Promise<EvalExperimentListItem[]>;
+  [EVALUATION_CHANNELS.LIST_EXPERIMENTS]: (payload?: { limit?: number; source?: 'compare' | 'eval' }) => Promise<EvalBaselineExperimentListItem[]>;
   [EVALUATION_CHANNELS.LOAD_EXPERIMENT]: (experimentId: string) => Promise<EvalExperimentDetail | null>;
   [EVALUATION_CHANNELS.LOAD_CASE]: (payload: { experimentId: string; caseId: string }) => Promise<EvalExperimentCaseDetail | null>;
   [EVALUATION_CHANNELS.LIST_CASES]: () => Promise<EvalCaseListItem[]>;
   [EVALUATION_CHANNELS.SAVE_CASE]: (request: SaveEvalCaseRequest) => Promise<SaveEvalCaseResult>;
   [EVALUATION_CHANNELS.SAVE_ANNOTATION]: (request: SaveEvalAnnotationRequest) => Promise<SaveEvalAnnotationResult>;
   [EVALUATION_CHANNELS.LIST_ANNOTATIONS]: (request: { experimentId: string; caseId: string }) => Promise<ListEvalAnnotationsResult>;
+  [EVALUATION_CHANNELS.SET_BASELINE]: (request: { experimentId: string }) => Promise<EvalBaselineSetResult>;
+  [EVALUATION_CHANNELS.BASELINE_INFO]: () => Promise<EvalBaselineInfoResult>;
 }
 
 interface EvaluationRunIpcEventHandlers {

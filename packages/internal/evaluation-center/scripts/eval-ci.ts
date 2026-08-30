@@ -22,6 +22,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { ChangeDetector } from '@host/agent/changeDetector';
 import { BaselineManager } from '@host/testing/ci/baselineManager';
+import { createEvalBaselineManager, hasLegacyEvalBaseline } from './lib/eval-baseline-path';
 import {
   EVAL_SPLITS_RELATIVE_PATH,
   applySplitFilter,
@@ -94,7 +95,6 @@ import {
 function providerVariantArm(): 'variant-on' | 'variant-off' {
   return isProviderVariantDisabled() ? 'variant-off' : 'variant-on';
 }
-// ---------------------------------------------------------------------------
 // Arg parsing
 // ---------------------------------------------------------------------------
 
@@ -269,9 +269,12 @@ ${chalk.dim('Usage:')}
 // Commands
 // ---------------------------------------------------------------------------
 
-async function showBaselineInfo(manager: BaselineManager) {
+async function showBaselineInfo(manager: BaselineManager, workingDir: string) {
   const baseline = await manager.load();
   if (!baseline) {
+    if (hasLegacyEvalBaseline(workingDir)) return void console.log(chalk.yellow(
+      '  旧基线（superseded · 口径 v1 · 不可比），请重新设为对比基准',
+    ));
     console.log(chalk.yellow('  No baseline found. Run evals and use --promote to create one.'));
     return;
   }
@@ -1038,21 +1041,18 @@ async function mainImpl(
   }
   const selectedSkills = await validateDiscoverableSkills(skills, workingDir);
   const effectiveReal = real || !!model;
-  const manager = new BaselineManager(
-    workingDir,
-    effectiveReal ? { kind: 'agent' } : { kind: 'mock-harness' },
-  );
+  const manager = createEvalBaselineManager(workingDir, {
+    kind: baselineInfo || promote || effectiveReal ? 'agent' : 'mock-harness',
+    grouped: baselineInfo || promote, split, repeat, caseDir,
+  });
   const tracker = new TrendTracker(workingDir);
   let mockEvalPolicy = false;
   let fullSelectedCaseIds: string[] | undefined;
-
   // --baseline-info
   if (baselineInfo) {
-    await showBaselineInfo(manager);
+    await showBaselineInfo(manager, workingDir);
     return;
   }
-
-  // WP1b：核心集所有执行路径默认 held-in。外部 benchmark 保持自己的独立 case
   // 目录，不读取内部切分资产；显式 --split 才能进入 held-out/control/safety。
   let ids = rawIds;
   if (caseDir) {

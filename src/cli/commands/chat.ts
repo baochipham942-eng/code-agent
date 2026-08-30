@@ -14,8 +14,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import {
-  DEFAULT_PROVIDER,
-  DEFAULT_MODELS,
   PROVIDER_REGISTRY,
   getProviderInfo,
   normalizeProviderId,
@@ -193,19 +191,6 @@ export const chatCommand = new Command('chat')
       // 初始化统一命令注册表
       initializeCommands();
 
-      if (!isJsonMode) {
-        // 显示欢迎横幅
-        const db = getDatabaseService();
-        const stats = db?.getStats();
-        terminalOutput.welcome(version, {
-          model: globalOpts?.model || DEFAULT_MODELS.chat,
-          provider: globalOpts?.provider || DEFAULT_PROVIDER,
-          workingDirectory: globalOpts?.project || process.cwd(),
-          sessionCount: stats?.sessionCount,
-          messageCount: stats?.messageCount,
-        });
-      }
-
       // 创建 Agent
       const agent = await createCLIAgent({
         project: globalOpts?.project,
@@ -219,6 +204,21 @@ export const chatCommand = new Command('chat')
         disallowedTools: options.disallowedTools,
         statusFile: options.statusFile,
       });
+
+      if (!isJsonMode) {
+        // 显示欢迎横幅：展示 agent 实际解析出的 provider/model（config 默认或 flag），
+        // 不能用 DEFAULT_* 常量——否则配置了自定义默认的用户看到错误的模型名
+        const db = getDatabaseService();
+        const stats = db?.getStats();
+        const resolved = agent.getConfig().modelConfig;
+        terminalOutput.welcome(version, {
+          model: resolved.model,
+          provider: resolved.provider,
+          workingDirectory: globalOpts?.project || process.cwd(),
+          sessionCount: stats?.sessionCount,
+          messageCount: stats?.messageCount,
+        });
+      }
 
       // 恢复会话
       if (options.session) {
@@ -309,7 +309,8 @@ export const chatCommand = new Command('chat')
         );
         await runInkChat(agent, {
           cwd: globalOpts?.project || process.cwd(),
-          model: globalOpts?.model || DEFAULT_MODELS.chat,
+          // StatusBar 初始模型：与 banner 同源，用 agent 实际解析值（/model 切换后由事件流刷新）
+          model: agent.getConfig().modelConfig.model,
           gitBranch,
           onCommand,
           onShellCommand,

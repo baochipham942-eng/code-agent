@@ -1,0 +1,51 @@
+export const evalExperimentsZh = {
+  experiments: {
+    tab: '实验', title: '实验', create: '新建实验', emptyTitle: '还没有实验', emptyBody: '改一个配置，看看实验组是否真的更好。',
+    diff: '实验组和对照组差在哪', date: '日期', cost: '花费', noCost: '—', refreshedBank: '题库已更新',
+    states: { candidate_better: '实验组更好', non_inferior: '非劣', candidate_worse: '实验组更差', insufficient: '样本不足' },
+    insufficientHint: '这不是势均力敌，是数据还不够', hardGateFailed: '安全项未过',
+    winsLine: '分出胜负 {n} 题 · 实验组赢 {candidate} / 对照组赢 {baseline}', noPairs: '没有有效配对',
+    wizardTitle: '新建实验', baseline: '对照组（基线）', baselineHint: '当前生产默认配置 · 只读', candidate: '实验组（候选）',
+    promptVersion: '系统提示词', model: '模型', provider: '供应商', skill: 'skill', memory: '记忆', reasoning: '推理强度',
+    harnessDimensions: {
+      contextCompression: '上下文压缩', compressionPipeline: '压缩流水线', scaffoldProfile: '脚手架档位',
+      thinkingInjection: '思考注入', hooksEnabled: '钩子', toolMode: '工具模式',
+    },
+    toolModes: { all: '全部工具（all）', deferred: '按需加载（deferred）' },
+    chooseSkill: '选能力中心里的 skill', enabled: '开', disabled: '关', sameReason: '两组一样，没法比',
+    repeat: '每题次数 k',
+    estimated: '约 {cost} · 两组各真跑一遍，费用 ×2 · {count} 题 × 2 组 × {k}', launch: '真跑并计费', confirm: '再点一次确认发车', cancel: '取消', starting: '正在发车…',
+    blindHint: '跑的时候 A/B 是盲分配的，跑完才揭盲，下表已揭盲', back: '返回实验列表',
+    safetyLine: '安全项出现 {n} 次，不能上线', metadata: '{count} 题 × 2 次真跑 · 排除 {excluded} 对（一侧没跑成 / skill 未出场）· 总花费 {cost}',
+    filters: { all: '全部', candidate: '实验组赢', baseline: '对照组赢', tie: '平', excluded: '已排除' },
+    columns: { caseId: '题目 id', a: 'A 结果', b: 'B 结果', winner: '谁赢', skills: 'skill 触发次数 A/B' },
+    technical: '技术详情', pValue: 'pValue', decisivePairs: '分出胜负的题', ciLowerBound: 'ciLowerBound', delta: 'delta', nMin: 'nMin', calibre: 'calibre', reasons: '判定依据', unmeasured: '未测量', experimentId: '实验 id', copy: '复制', reference: '参考',
+    same: '相同', baselineName: '对照组', candidateName: '实验组', tie: '平', excluded: '已排除', loading: '加载中…', loadFailed: '实验加载失败', runFailed: '实验没有成功发车。', stop: '停止',
+  },
+} as const;
+
+export const evalExperimentsEn = {
+  experiments: {
+    tab: 'Experiments', title: 'Experiments', create: 'New experiment', emptyTitle: 'No experiments yet', emptyBody: 'Change one configuration and measure whether the candidate improves.',
+    diff: 'Candidate vs control difference', date: 'Date', cost: 'Cost', noCost: '—', refreshedBank: 'Case bank updated',
+    states: { candidate_better: 'Candidate better', non_inferior: 'Non-inferior', candidate_worse: 'Candidate worse', insufficient: 'Insufficient sample' },
+    insufficientHint: 'This is not a tie; there is not enough data', hardGateFailed: 'Safety gate failed',
+    winsLine: '{n} cases with a winner · candidate {candidate} / control {baseline}', noPairs: 'No valid pairs',
+    wizardTitle: 'New experiment', baseline: 'Control', baselineHint: 'Current production defaults · read-only', candidate: 'Candidate',
+    promptVersion: 'System prompt', model: 'Model', provider: 'Provider', skill: 'Skills', memory: 'Memory', reasoning: 'Reasoning effort',
+    harnessDimensions: {
+      contextCompression: 'Context compression', compressionPipeline: 'Compression pipeline', scaffoldProfile: 'Scaffold profile',
+      thinkingInjection: 'Thinking injection', hooksEnabled: 'Hooks', toolMode: 'Tool mode',
+    },
+    toolModes: { all: 'All tools (all)', deferred: 'Load on demand (deferred)' },
+    chooseSkill: 'Choose skills from Capability Center', enabled: 'On', disabled: 'Off', sameReason: 'The two groups are identical',
+    repeat: 'Runs per case k',
+    estimated: 'About {cost} · both groups run for real · {count} cases × 2 groups × {k}', launch: 'Run and bill', confirm: 'Click again to confirm', cancel: 'Cancel', starting: 'Starting…',
+    blindHint: 'A/B assignment was blind during the run and revealed afterward; the table is revealed', back: 'Back to experiments',
+    safetyLine: '{n} safety failures; cannot ship', metadata: '{count} cases × 2 real runs · {excluded} excluded · total {cost}',
+    filters: { all: 'All', candidate: 'Candidate won', baseline: 'Control won', tie: 'Tie', excluded: 'Excluded' },
+    columns: { caseId: 'Case id', a: 'A result', b: 'B result', winner: 'Winner', skills: 'Skill activations A/B' },
+    technical: 'Technical details', pValue: 'pValue', decisivePairs: 'Cases with a winner', ciLowerBound: 'ciLowerBound', delta: 'delta', nMin: 'nMin', calibre: 'Calibration', reasons: 'Reasons', unmeasured: 'Not measured', experimentId: 'Experiment id', copy: 'Copy', reference: 'Reference',
+    same: 'Same', baselineName: 'Control', candidateName: 'Candidate', tie: 'Tie', excluded: 'Excluded', loading: 'Loading…', loadFailed: 'Could not load experiment', runFailed: 'The experiment did not start.', stop: 'Stop',
+  },
+} as const;

@@ -1,10 +1,12 @@
+import type { EvalStatusLabels } from './evalStatusLabels';
+
 /** Copy for the single-case evidence drawer. */
 export interface EvalCaseDrawerLabels {
   title: string;
   close: string;
   loading: string;
   loadFailed: string;
-  status: Record<'passed' | 'failed' | 'infra' | 'invalid' | 'skipped' | 'costExceeded' | 'notRun' | 'partial' | 'error', string>;
+  status: EvalStatusLabels;
   conclusion: string;
   conversation: string;
   representativeAttempt: string;
@@ -54,7 +56,7 @@ export interface EvalCaseDrawerLabels {
 export const evalCaseDrawerZh = {
   caseDrawer: {
     title: '单题证据', close: '关闭证据抽屉', loading: '正在读取本题证据…', loadFailed: '本题证据暂时无法读取：{message}',
-    status: { passed: '通过', failed: '失败', infra: '环境故障', invalid: '判废', skipped: '跳过', costExceeded: '成本超限', notRun: '未执行', partial: '部分完成', error: '运行错误' },
+    status: { passed: '通过', failed: '失败', infra: '环境故障', invalid: '判废', skipped: '跳过', costExceeded: '成本超限', notRun: '未执行', partial: '部分通过', error: '出错' },
     conclusion: '{status} · {reason} · {total} 条判定 {passed} 过 {failed} 挂',
     conversation: '对话', representativeAttempt: '按代表尝试', selectedAttempt: '第 {index} 次 · {status} · score {score}',
     unstable: '{total} 次 {passed} 过 {failed} 挂 → 这题不稳，按失败处理',
@@ -76,7 +78,7 @@ export const evalCaseDrawerZh = {
 export const evalCaseDrawerEn = {
   caseDrawer: {
     title: 'Case evidence', close: 'Close case evidence', loading: 'Loading case evidence…', loadFailed: 'Case evidence is unavailable: {message}',
-    status: { passed: 'Passed', failed: 'Failed', infra: 'Environment issue', invalid: 'Invalid', skipped: 'Skipped', costExceeded: 'Cost limit reached', notRun: 'Not run', partial: 'Partial', error: 'Run error' },
+    status: { passed: 'Passed', failed: 'Failed', infra: 'Environment issue', invalid: 'Invalid', skipped: 'Skipped', costExceeded: 'Cost limit reached', notRun: 'Not run', partial: 'Partially passed', error: 'Error' },
     conclusion: '{status} · {reason} · {total} checks, {passed} passed, {failed} failed',
     conversation: 'Conversation', representativeAttempt: 'Representative attempt', selectedAttempt: 'Attempt {index} · {status} · score {score}',
     unstable: '{total} attempts: {passed} passed, {failed} failed → unstable, treated as failed',

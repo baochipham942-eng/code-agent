@@ -10,8 +10,142 @@ import type {
   TurnQualityScoreSummary,
 } from './turnQuality';
 
-export const EVAL_RUN_EVENT_SCHEMA_VERSION = 2 as const;
+export const EVAL_RUN_EVENT_SCHEMA_VERSION = 3 as const;
 export const EVAL_REPEAT_MAX = 10;
+
+export interface EvalCompareHarness {
+  name: string;
+  contextCompression?: boolean;
+  compressionPipeline?: boolean;
+  scaffoldProfile?: boolean;
+  thinkingInjection?: boolean;
+  hooksEnabled?: boolean;
+  toolMode?: 'all' | 'deferred';
+}
+
+/** Shared experiment-arm contract consumed by host, bridge and the internal UI. */
+export interface EvalCompareArm {
+  name: string;
+  model?: string;
+  provider?: string;
+  systemPrompt?: string;
+  harness?: EvalCompareHarness;
+  memory?: {
+    longTerm?: boolean;
+    routingModel?: string;
+  };
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh';
+  skills?: string[];
+  enabledTools?: string[];
+  temperature?: number;
+  agentConfig?: Record<string, unknown>;
+}
+
+export const CONSUMED_COMPARE_FIELDS = [
+  'model',
+  'provider',
+  'systemPrompt',
+  'harness',
+  'memory',
+  'reasoningEffort',
+  'skills',
+] as const satisfies readonly (keyof EvalCompareArm)[];
+
+export const UNCONSUMED_COMPARE_FIELDS = [
+  'enabledTools',
+  'temperature',
+  'agentConfig',
+] as const satisfies readonly (keyof EvalCompareArm)[];
+
+type MissingCompareField = Exclude<
+  keyof EvalCompareArm,
+  'name' | (typeof CONSUMED_COMPARE_FIELDS)[number] | (typeof UNCONSUMED_COMPARE_FIELDS)[number]
+>;
+const _compareFieldsExhaustive: MissingCompareField extends never ? true : never = true;
+void _compareFieldsExhaustive;
+
+function normalizeCompareSkills(skills: readonly string[] | undefined): string[] {
+  return [...new Set((skills ?? []).map((name) => name.trim()).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right));
+}
+
+export function resolveEffectiveEvalCompareArm(
+  config: EvalCompareArm,
+  baseline: EvalCompareArm,
+): Required<Pick<EvalCompareArm, 'name'>> & {
+  model: string | null;
+  provider: string | null;
+  systemPrompt: string | null;
+  harness: EvalCompareHarness | null;
+  memory: { longTerm: boolean; routingModel: string | null };
+  reasoningEffort: EvalCompareArm['reasoningEffort'] | null;
+  skills: string[];
+} {
+  const sourceHarness = config.harness ?? baseline.harness;
+  return {
+    name: config.name,
+    model: config.model ?? baseline.model ?? null,
+    provider: config.provider ?? baseline.provider ?? null,
+    systemPrompt: config.systemPrompt ?? baseline.systemPrompt ?? null,
+    harness: sourceHarness ? { ...sourceHarness, name: config.name } : null,
+    memory: {
+      longTerm: config.memory?.longTerm ?? baseline.memory?.longTerm ?? false,
+      routingModel: config.memory?.routingModel ?? baseline.memory?.routingModel ?? null,
+    },
+    reasoningEffort: config.reasoningEffort ?? baseline.reasoningEffort ?? null,
+    skills: normalizeCompareSkills(config.skills ?? baseline.skills),
+  };
+}
+
+export function effectiveArmSignature(config: EvalCompareArm, baseline: EvalCompareArm): string {
+  const arm = resolveEffectiveEvalCompareArm(config, baseline);
+  const consumedValues = {
+    model: arm.model,
+    provider: arm.provider,
+    systemPrompt: arm.systemPrompt,
+    harness: arm.harness
+      ? {
+          contextCompression: arm.harness.contextCompression ?? null,
+          compressionPipeline: arm.harness.compressionPipeline ?? null,
+          scaffoldProfile: arm.harness.scaffoldProfile ?? null,
+          thinkingInjection: arm.harness.thinkingInjection ?? null,
+          hooksEnabled: arm.harness.hooksEnabled ?? null,
+          toolMode: arm.harness.toolMode ?? null,
+        }
+      : null,
+    memory: arm.memory,
+    reasoningEffort: arm.reasoningEffort,
+    skills: arm.skills,
+  } satisfies Record<(typeof CONSUMED_COMPARE_FIELDS)[number], unknown>;
+  return JSON.stringify(Object.fromEntries(
+    CONSUMED_COMPARE_FIELDS.map((field) => [field, consumedValues[field]]),
+  ));
+}
+
+export interface EvalShipGateVerdict {
+  state: 'candidate_better' | 'non_inferior' | 'candidate_worse' | 'insufficient';
+  delta: number;
+  nMin: number;
+  decisivePairs: number;
+  pValue: number;
+  passRateDiff: number;
+  ciLowerBound: number;
+  hardGate: {
+    passed: boolean;
+    items: Array<{
+      key: 'false_allow' | 'false_block' | 'approval_bypass';
+      status: 'pass' | 'fail' | 'not_measured';
+      count?: number;
+      caseIds?: string[];
+    }>;
+  };
+  calibre: {
+    k: number;
+    aggregationRuleVersion: number;
+    promptVersion: string;
+  };
+  reasons: string[];
+}
 
 export type AiReviewDimension =
   | 'task_completed'
@@ -125,7 +259,11 @@ interface EvalRunStartConfig extends EvalRunStamp {
   ids?: string[];
   maxCases: number;
   concurrency: number;
-  compare?: boolean;
+  compare?: {
+    baseline: EvalCompareArm;
+    candidate: EvalCompareArm;
+    diff: string[];
+  };
   gitCommit: string;
   testCaseDir: string;
 }
@@ -170,6 +308,8 @@ export interface EvalRunPanelProbe {
     tags: string[];
     maxCases: number;
   };
+  productionArm: EvalCompareArm;
+  skills: string[];
 }
 
 export interface EvalRunSubscriptionResult {
@@ -255,6 +395,16 @@ export type EvalRunEventSummary = {
   aggregationRuleVersion?: number;
   dataset?: string;
   reportFiles?: string[];
+  compare?: {
+    totalCases: number;
+    baselineWins: number;
+    candidateWins: number;
+    ties: number;
+    excludedPairs: number;
+    skillNotActivatedPairs: number;
+    pValue: number;
+    shipGate: EvalShipGateVerdict;
+  };
 };
 
 /**
@@ -265,7 +415,7 @@ export type EvalRunEventSummary = {
  */
 export type EvalRunEvent =
   | {
-      schemaVersion: 2;
+      schemaVersion: 3;
       type: 'run_start';
       ts: number;
       runId: string;
@@ -273,7 +423,7 @@ export type EvalRunEvent =
       config: EvalRunStartConfig;
     }
   | {
-      schemaVersion: 2;
+      schemaVersion: 3;
       type: 'case_start';
       ts: number;
       runId: string;
@@ -281,7 +431,7 @@ export type EvalRunEvent =
       description: string;
     }
   | {
-      schemaVersion: 2;
+      schemaVersion: 3;
       type: 'case_end';
       ts: number;
       runId: string;
@@ -310,9 +460,27 @@ export type EvalRunEvent =
         passCaretK: number;
         rule: 'pass_caret_k';
       };
+      arm?: 'baseline' | 'candidate';
     }
   | {
-      schemaVersion: 2;
+      schemaVersion: 3;
+      type: 'pair_end';
+      ts: number;
+      runId: string;
+      testId: string;
+      statusA: EvalRunEventStatus;
+      statusB: EvalRunEventStatus;
+      assignment: { A: 'baseline' | 'candidate'; B: 'baseline' | 'candidate' };
+      assertionWinner: 'baseline' | 'candidate' | 'tie';
+      referenceWinner: 'A' | 'B' | 'tie';
+      excludedReason?: string;
+      assertionPassA: number;
+      assertionPassB: number;
+      assertionCount: number;
+      skillActivations: { baseline: number; candidate: number };
+    }
+  | {
+      schemaVersion: 3;
       type: 'tool_call';
       ts: number;
       runId: string;
@@ -321,7 +489,7 @@ export type EvalRunEvent =
       input: unknown;
     }
   | {
-      schemaVersion: 2;
+      schemaVersion: 3;
       type: 'tool_result';
       ts: number;
       runId: string;
@@ -330,7 +498,7 @@ export type EvalRunEvent =
       success: boolean;
     }
   | {
-      schemaVersion: 2;
+      schemaVersion: 3;
       type: 'error';
       ts: number;
       runId: string;
@@ -338,7 +506,7 @@ export type EvalRunEvent =
       error: string;
     }
   | {
-      schemaVersion: 2;
+      schemaVersion: 3;
       type: 'run_end';
       ts: number;
       runId: string;
@@ -347,9 +515,10 @@ export type EvalRunEvent =
       exitCode: number;
       aborted: boolean;
       abortReason?: string;
+      error?: string;
     }
   | {
-      schemaVersion: 2;
+      schemaVersion: 3;
       type: 'skill_activated';
       ts: number;
       runId: string;
@@ -357,7 +526,7 @@ export type EvalRunEvent =
       name: string;
     }
   | {
-      schemaVersion: 2;
+      schemaVersion: 3;
       type: 'memory_injected';
       ts: number;
       runId: string;
@@ -365,7 +534,7 @@ export type EvalRunEvent =
       id: string;
     }
   | {
-      schemaVersion: 2;
+      schemaVersion: 3;
       type: 'subagent_spawned';
       ts: number;
       runId: string;
@@ -376,6 +545,8 @@ export type EvalRunEvent =
 export interface EvalRunRequest {
   scope: 'smoke' | 'full';
   maxCases: number;
+  /** Internal pipeline self-check. Renderer omits this and therefore always runs real mode. */
+  mode?: 'real' | 'mock';
   ids?: string[];
   tags?: string[];
   split?: 'held-in' | 'held-out' | 'control' | 'safety';
@@ -383,6 +554,10 @@ export interface EvalRunRequest {
   repeat?: number;
   skills?: string[];
   aiReview?: AiReviewDimension[];
+  compare?: {
+    candidate: EvalCompareArm;
+    baselineName?: string;
+  };
 }
 
 export interface EvalRunStartResult {
@@ -513,6 +688,8 @@ export interface EvalExperimentSummary {
   notRun?: number;
   aborted?: boolean;
   reportFiles?: string[];
+  error?: string;
+  compare?: EvalRunEventSummary['compare'];
 }
 
 export interface EvalExperimentListItem {
@@ -536,6 +713,18 @@ export interface EvalExperimentCaseItem {
   /** 0-100 分。 */
   score: number;
   durationMs: number | null;
+  data?: {
+    assignment?: { A: 'baseline' | 'candidate'; B: 'baseline' | 'candidate' };
+    statusA?: EvalRunEventStatus;
+    statusB?: EvalRunEventStatus;
+    winner?: 'baseline' | 'candidate' | 'tie';
+    referenceWinner?: 'A' | 'B' | 'tie';
+    excludedReason?: string;
+    assertionPassA?: number;
+    assertionPassB?: number;
+    assertionCount?: number;
+    skillActivations?: { baseline: number; candidate: number };
+  } | null;
 }
 
 export interface EvalExperimentDetail {

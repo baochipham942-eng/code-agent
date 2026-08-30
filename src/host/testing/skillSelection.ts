@@ -1,7 +1,7 @@
 import { SkillDiscoveryService } from '../services/skills/skillDiscoveryService';
 import type { TestResult } from './types';
 
-export function normalizeSkillNames(skillNames: readonly string[] | undefined): string[] {
+function normalizeSkillNames(skillNames: readonly string[] | undefined): string[] {
   if (!skillNames) return [];
   return [...new Set(skillNames.map((name) => name.trim()).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right));

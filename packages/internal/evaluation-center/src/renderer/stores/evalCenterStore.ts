@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type EvalCenterTab = 'replay' | 'validation' | 'telemetry' | 'cases' | 'scorers' | 'benchmarks';
+export type EvalCenterTab = 'replay' | 'validation' | 'telemetry' | 'cases' | 'scorers' | 'experiments' | 'benchmarks';
 
 interface EvalCenterState {
   tab: EvalCenterTab;

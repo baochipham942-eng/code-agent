@@ -102,6 +102,7 @@ export interface RegressionReportLike {
 export class ExperimentAdapter {
   private memoryInjections = new Map<string, number>();
   private skillActivations = new Map<string, Record<string, number>>();
+  private compareRun = false;
 
   constructor(private db: ExperimentDbWriter) {}
 
@@ -118,9 +119,12 @@ export class ExperimentAdapter {
   }
 
   beginEventRun(event: Extract<EvalRunEvent, { type: 'run_start' }>): void {
+    this.compareRun = event.config.compare !== undefined;
     this.db.insertExperiment({
       id: event.runId,
-      name: `eval-${new Date(event.ts).toISOString().slice(0, 10)}`,
+      name: this.compareRun
+        ? event.config.compare?.candidate.name ?? `compare-${new Date(event.ts).toISOString().slice(0, 10)}`
+        : `eval-${new Date(event.ts).toISOString().slice(0, 10)}`,
       timestamp: event.ts,
       model: event.config.model,
       provider: event.config.provider,
@@ -128,7 +132,7 @@ export class ExperimentAdapter {
       config_json: JSON.stringify({
         ...event.config,
         plannedCaseIds: event.plannedCaseIds,
-        sessionType: 'eval',
+        sessionType: this.compareRun ? 'compare' : 'eval',
       }),
       summary_json: JSON.stringify({
         total: event.plannedCaseIds.length,
@@ -145,7 +149,7 @@ export class ExperimentAdapter {
         plannedCaseIds: event.plannedCaseIds,
         notRun: event.plannedCaseIds.length,
       }),
-      source: 'eval',
+      source: this.compareRun ? 'compare' : 'eval',
       git_commit: event.config.gitCommit,
     });
   }
@@ -159,6 +163,7 @@ export class ExperimentAdapter {
       : this.skillActivations.get(signalKey) ?? {};
     this.memoryInjections.delete(signalKey);
     this.skillActivations.delete(signalKey);
+    if (this.compareRun) return;
     this.db.insertExperimentCases(event.runId, [{
       id: `${event.runId}:${event.testId}`,
       case_id: event.testId,
@@ -183,6 +188,32 @@ export class ExperimentAdapter {
         memoryInjections,
         skillActivations,
         source: 'eval',
+      }),
+    }]);
+  }
+
+  persistPairEnd(event: Extract<EvalRunEvent, { type: 'pair_end' }>): void {
+    const candidateIsA = event.assignment.A === 'candidate';
+    const candidateStatus = candidateIsA ? event.statusA : event.statusB;
+    const candidateScore = candidateIsA ? event.assertionPassA : event.assertionPassB;
+    this.db.insertExperimentCases(event.runId, [{
+      id: `${event.runId}:${event.testId}`,
+      case_id: event.testId,
+      status: candidateStatus,
+      score: Math.round(Math.max(0, Math.min(1, candidateScore)) * 100),
+      duration_ms: 0,
+      data_json: JSON.stringify({
+        assignment: event.assignment,
+        statusA: event.statusA,
+        statusB: event.statusB,
+        winner: event.assertionWinner,
+        referenceWinner: event.referenceWinner,
+        excludedReason: event.excludedReason,
+        assertionPassA: event.assertionPassA,
+        assertionPassB: event.assertionPassB,
+        assertionCount: event.assertionCount,
+        skillActivations: event.skillActivations,
+        source: 'compare',
       }),
     }]);
   }
@@ -214,8 +245,9 @@ export class ExperimentAdapter {
       aggregationRuleVersion: summary.aggregationRuleVersion,
       aggregation: summary.aggregationRule,
       ...(summary.reportFiles ? { reportFiles: summary.reportFiles } : {}),
+      ...(summary.compare ? { compare: summary.compare } : {}),
       ...(error ? { error } : {}),
-      source: 'eval',
+      source: this.compareRun ? 'compare' : 'eval',
     }));
   }
 

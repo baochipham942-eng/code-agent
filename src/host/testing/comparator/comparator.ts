@@ -79,6 +79,7 @@ export class ABComparator {
     private baseline: CompareConfiguration,
     private candidate: CompareConfiguration,
     private calibre: ShipGateCalibre,
+    private runId?: string,
   ) {
     this.grader = new ABGrader();
   }
@@ -94,7 +95,7 @@ export class ABComparator {
     runSingleTest: (testCase: TestCase, config: CompareConfiguration) => Promise<TestResult>,
     llmCall?: (prompt: string) => Promise<string>,
   ): Promise<ComparisonResult> {
-    const runId = uuidv4();
+    const runId = this.runId ?? uuidv4();
     const startTime = Date.now();
     const cases: CaseComparison[] = [];
 

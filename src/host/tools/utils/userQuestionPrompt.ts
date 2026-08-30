@@ -23,10 +23,10 @@ import { IPC_CHANNELS } from '../../../shared/ipc';
 import { AppWindow, hasInteractiveUi, ipcHost } from '../../platform';
 import { INTERACTION_TIMEOUTS } from '../../../shared/constants';
 import {
-  canOfferVoiceQuestion,
-  cancelVoiceQuestion,
-  offerVoiceQuestion,
-} from '../../services/voice/voiceQuestionBridge';
+  canOfferRegisteredUserQuestion,
+  cancelRegisteredUserQuestion,
+  offerRegisteredUserQuestion,
+} from '../../services/capabilities/hostCapabilityPorts';
 import { createLogger } from '../../services/infra/logger';
 import {
   headlessDecisionTimeoutReason,
@@ -69,7 +69,7 @@ function settleUserQuestionResponse(response: UserQuestionResponse): void {
   }
   clearTimeout(p.timeout);
   pending.delete(response.requestId);
-  cancelVoiceQuestion(response.requestId);
+  cancelRegisteredUserQuestion(response.requestId);
   p.resolve(response);
 }
 
@@ -109,7 +109,7 @@ export async function promptUserInChat(
 
   const mainWindow = AppWindow.getAllWindows()[0];
   const hasInteractiveRenderer = Boolean(mainWindow && hasInteractiveUi());
-  const hasVoiceQuestionRoute = canOfferVoiceQuestion(opts.sessionId);
+  const hasVoiceQuestionRoute = canOfferRegisteredUserQuestion(opts.sessionId);
   if (!hasInteractiveRenderer && !hasVoiceQuestionRoute) {
     return { status: 'no-renderer' };
   }
@@ -119,7 +119,7 @@ export async function promptUserInChat(
     const timeout = hasInteractiveRenderer
       ? setTimeout(() => {
         pending.delete(request.id);
-        cancelVoiceQuestion(request.id);
+        cancelRegisteredUserQuestion(request.id);
         markDecisionRequestExpired(request.id, '用户问题');
         logger.warn('Interactive user question expired after 24h backstop', {
           requestId: request.id,
@@ -129,7 +129,7 @@ export async function promptUserInChat(
       }, INTERACTION_TIMEOUTS.PARKED_APPROVAL)
       : setTimeout(() => {
         pending.delete(request.id);
-        cancelVoiceQuestion(request.id);
+        cancelRegisteredUserQuestion(request.id);
         markDecisionRequestExpired(request.id, '用户问题');
         reject(new Error('timeout'));
       }, timeoutMs);
@@ -143,7 +143,7 @@ export async function promptUserInChat(
           if (p) {
             clearTimeout(p.timeout);
             pending.delete(request.id);
-            cancelVoiceQuestion(request.id);
+            cancelRegisteredUserQuestion(request.id);
             reject(new Error('aborted'));
           }
         },
@@ -156,7 +156,7 @@ export async function promptUserInChat(
     if (hasInteractiveRenderer) {
       mainWindow?.webContents.send(IPC_CHANNELS.USER_QUESTION_ASK, request);
     }
-    const voiceOffered = offerVoiceQuestion(request, settleUserQuestionResponse);
+    const voiceOffered = offerRegisteredUserQuestion(request, settleUserQuestionResponse);
     if (!hasInteractiveRenderer && !voiceOffered) {
       const p = pending.get(request.id);
       if (p) {
@@ -174,7 +174,7 @@ export async function promptUserInChat(
     if (p) {
       clearTimeout(p.timeout);
       pending.delete(request.id);
-      cancelVoiceQuestion(request.id);
+      cancelRegisteredUserQuestion(request.id);
     }
     throw error;
   }

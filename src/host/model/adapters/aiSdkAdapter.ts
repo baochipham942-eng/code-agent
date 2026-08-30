@@ -933,6 +933,10 @@ async function streamViaAiSdk(params: {
         ...(typeof config.maxTokens === 'number' && Number.isFinite(config.maxTokens)
           ? { maxOutputTokens: config.maxTokens } : {}),
         maxRetries: 0,
+        // SDK 默认 onError 会把整个错误对象（含 requestBody/responseBody/上游回显的
+        // API key）console.error 到终端——TUI 刷屏且明文 key 上屏。真正的错误经
+        // stream 抛给外层 catch，由 logger 脱敏后记录，这里只需压住 SDK 的默认打印。
+        onError: () => {},
       });
 
       for await (const part of result.stream as AsyncIterable<TextStreamPart<ToolSet>>) {

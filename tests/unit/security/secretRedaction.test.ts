@@ -25,6 +25,14 @@ describe('secret redaction', () => {
     expect(output).toContain('Bearer ***REDACTED***');
   });
 
+  it('redacts ak_-prefixed provider keys echoed by upstream error messages', () => {
+    const akKey = `ak_${'g'.repeat(32)}`;
+    const output = redactSecrets(`无效的AppId: ${akKey}`);
+
+    expect(output).not.toContain(akKey);
+    expect(output).toContain('无效的AppId: ak_***REDACTED***');
+  });
+
   it('redacts URL credentials and Cookie headers in strings', () => {
     const output = redactSecrets([
       'request=https://ledger-user:ledger-password@example.test/private',

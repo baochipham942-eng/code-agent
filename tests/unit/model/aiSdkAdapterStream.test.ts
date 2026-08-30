@@ -169,6 +169,23 @@ describe('inferenceViaAiSdk —— 流式映射', () => {
     }));
   });
 
+  it('显式 onError 压制 SDK 默认打印（全量错误对象含 requestBody/上游回显 key 不上屏）', async () => {
+    vi.mocked(streamText).mockReturnValue(fakeStream([
+      { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } },
+    ]));
+    const col = makeCollector();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await inferenceViaAiSdk([{ role: 'user', content: 'hi' }], [], CONFIG, col.onStream);
+
+    const options = vi.mocked(streamText).mock.calls[0]?.[0] as { onError?: (event: { error: unknown }) => void };
+    expect(typeof options.onError).toBe('function');
+    // 模拟 SDK 回调错误事件：不得往 console 写任何东西（错误经 stream 抛出走 logger 脱敏通道）
+    options.onError!({ error: new Error('无效的AppId: ak_xxxxxxxxxxxxxxxxxxxxxxxx') });
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
   it('流式错误事件会把模型配置错误转成可读消息', async () => {
     vi.mocked(streamText).mockReturnValue(fakeStream([
       {

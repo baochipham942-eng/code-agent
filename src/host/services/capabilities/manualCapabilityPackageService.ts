@@ -34,6 +34,7 @@ import {
   type InternalFeatureHostRuntime,
 } from '../../internalFeatures/internalFeatureHostRuntime';
 import { validatePluginCapabilityDeclaration } from '../../plugins/pluginCapabilitySurface';
+import { isCurrentUserAdmin } from '../../ipc/adminGuard';
 import type {
   CapabilityPackageInstallResult,
   CapabilityPackagePreview,
@@ -93,6 +94,7 @@ interface ManualCapabilityPackageServiceDependencies {
   mcpClient?: MCPClientPort;
   resolveComputerUseMcpConfig?: () => MCPServerConfig | undefined;
   internalFeatureRuntime?: InternalFeatureRuntimePort;
+  isCurrentUserAdmin?: () => boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -288,6 +290,7 @@ export class ManualCapabilityPackageService {
   private readonly mcpClient: MCPClientPort;
   private readonly resolveComputerUseMcpConfig: () => MCPServerConfig | undefined;
   private readonly internalFeatureRuntime: InternalFeatureRuntimePort;
+  private readonly isCurrentUserAdmin: () => boolean;
 
   constructor(dependencies: ManualCapabilityPackageServiceDependencies = {}) {
     this.getPluginsDir = dependencies.pluginsDir ?? getPluginsDir;
@@ -302,6 +305,7 @@ export class ManualCapabilityPackageService {
       getDefaultMCPServers().find((server) => server.name === CUA_DRIVER_SERVER_NAME)
     ));
     this.internalFeatureRuntime = dependencies.internalFeatureRuntime ?? getInternalFeatureHostRuntime();
+    this.isCurrentUserAdmin = dependencies.isCurrentUserAdmin ?? isCurrentUserAdmin;
   }
 
   async stageBundled(pluginId: string): Promise<CapabilityPackagePreview> {
@@ -371,6 +375,9 @@ export class ManualCapabilityPackageService {
       }
       const manifest = await readPluginManifest(rootDir);
       if (!manifest) throw new Error('插件清单无法读取');
+      if (manifest.adminOnly === true && !this.isCurrentUserAdmin()) {
+        throw new Error('这个插件只能由管理员安装');
+      }
       assertInternalFeatureHostCompatibility(manifest);
       try {
         this.registry.validatePluginCapabilityManifest(manifest);

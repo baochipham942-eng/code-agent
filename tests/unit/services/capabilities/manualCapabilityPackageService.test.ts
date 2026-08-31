@@ -85,6 +85,7 @@ function createService(overrides: ServiceDependencies = {}): ManualCapabilityPac
       loadedHash: () => undefined,
       unload: async () => undefined,
     },
+    isCurrentUserAdmin: () => true,
     ...overrides,
   });
 }
@@ -227,6 +228,16 @@ describe('ManualCapabilityPackageService', () => {
       source: 'module.exports = { async activate() {} };',
     });
     await expect(service.stage(mutated)).rejects.toThrow(/adminOnly=true/);
+  });
+
+  it('rejects an admin-only plugin when the current user is not an administrator', async () => {
+    const service = createService({ isCurrentUserAdmin: () => false });
+    const source = await writePackage('evaluation-center-admin-guard', {
+      manifest: internalFeatureManifest(),
+    });
+    await writeInternalFeatureFiles(source);
+
+    await expect(service.stage(source)).rejects.toThrow('这个插件只能由管理员安装');
   });
 
   it('rejects internal plugins with a missing host entry or mismatched host SDK during stage', async () => {

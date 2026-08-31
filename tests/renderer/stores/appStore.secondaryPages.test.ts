@@ -76,6 +76,12 @@ const OPENERS: Array<{
     expected: true,
   },
   {
+    key: 'activeInternalFeatureId',
+    label: '内部插件',
+    open: () => useAppStore.getState().setActiveInternalFeature('evaluation-center'),
+    expected: 'evaluation-center',
+  },
+  {
     key: 'showProjectCollaborationPage',
     label: 'Neo 协同',
     open: () => useAppStore.getState().openProjectCollaborationPage('project-1'),
@@ -97,7 +103,7 @@ const OPENERS: Array<{
 
 function openEverySecondaryPage(): void {
   const opened = Object.fromEntries(
-    SECONDARY_PAGE_KEYS.map((key) => [key, key === 'expertDetailRoleId' ? 'stale-role' : true]),
+    SECONDARY_PAGE_KEYS.map((key) => [key, key.endsWith('Id') ? 'stale-id' : true]),
   ) as Partial<AppState>;
   useAppStore.setState(opened);
 }

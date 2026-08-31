@@ -90,7 +90,11 @@ function createService(overrides: ServiceDependencies = {}): ManualCapabilityPac
   });
 }
 
-function internalFeatureManifest(version = '1.0.0', hostVersion: string = INTERNAL_SDK_VERSION.host): Record<string, unknown> {
+function internalFeatureManifest(
+  version = '1.0.0',
+  hostVersion: string = INTERNAL_SDK_VERSION.host,
+  rendererVersion: string = INTERNAL_SDK_VERSION.renderer,
+): Record<string, unknown> {
   return manifest('evaluation-center', {
     version,
     distribution: 'internal',
@@ -99,7 +103,7 @@ function internalFeatureManifest(version = '1.0.0', hostVersion: string = INTERN
     internalFeature: {
       id: 'evaluation-center',
       label: '评测中心',
-      sdkVersion: { host: hostVersion, renderer: 'pending' },
+      sdkVersion: { host: hostVersion, renderer: rendererVersion },
       rendererEntry: 'dist/renderer/index.js',
       rendererStyles: 'dist/renderer/index.css',
       hostEntry: 'dist/host/index.cjs',
@@ -228,6 +232,19 @@ describe('ManualCapabilityPackageService', () => {
       source: 'module.exports = { async activate() {} };',
     });
     await expect(service.stage(mutated)).rejects.toThrow(/adminOnly=true/);
+  });
+
+  it('rejects an internal plugin built for a different renderer contract', async () => {
+    const service = createService();
+    const source = await writePackage('evaluation-center', {
+      manifest: internalFeatureManifest('1.0.0', INTERNAL_SDK_VERSION.host, 'deadbeef'),
+      source: 'module.exports = { async activate() {} };',
+    });
+    await writeInternalFeatureFiles(source);
+
+    await expect(service.stage(source)).rejects.toThrow(
+      '这个插件的界面版本与当前应用不匹配，请重新安装',
+    );
   });
 
   it('rejects an admin-only plugin when the current user is not an administrator', async () => {
@@ -475,6 +492,8 @@ describe('ManualCapabilityPackageService', () => {
     const oldHash = runtime.loadedHash('evaluation-center');
     expect(oldHash).toBeTruthy();
     expect(handlers.has('test:ping')).toBe(true);
+    expect((await service.list()).find((item) => item.id === 'evaluation-center'))
+      .toMatchObject({ internalFeature: { loadedHash: oldHash } });
 
     const replacement = await writePackage('evaluation-center', {
       manifest: internalFeatureManifest('2.0.0'),

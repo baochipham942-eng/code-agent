@@ -45,9 +45,30 @@ const VALID_PLATFORMS: PluginPlatform[] = ['darwin', 'win32', 'linux'];
 const SEMVER_REGEX = /^\d+\.\d+\.\d+(?:-[\w.]+)?(?:\+[\w.]+)?$/;
 
 function isSafeRelativeEntry(value: string): boolean {
-  if (!value || path.isAbsolute(value)) return false;
+  if (!value || path.isAbsolute(value) || path.win32.isAbsolute(value)) return false;
+  if (value.split(/[\\/]+/u).includes('..')) return false;
   const normalized = path.normalize(value);
   return normalized !== '..' && !normalized.startsWith(`..${path.sep}`);
+}
+
+async function validateInternalFeatureFiles(
+  pluginDir: string,
+  feature: Record<string, unknown>,
+): Promise<ValidationError[]> {
+  const errors: ValidationError[] = [];
+  for (const field of ['rendererEntry', 'rendererStyles', 'hostEntry'] as const) {
+    const relativePath = feature[field];
+    if (typeof relativePath !== 'string' || !isSafeRelativeEntry(relativePath)) continue;
+    const filePath = path.resolve(pluginDir, relativePath);
+    const stat = await fs.stat(filePath).catch(() => null);
+    if (!stat?.isFile()) {
+      errors.push({
+        field: `internalFeature.${field}`,
+        message: `Internal feature file not found: ${relativePath}`,
+      });
+    }
+  }
+  return errors;
 }
 
 // ----------------------------------------------------------------------------
@@ -161,8 +182,27 @@ export function validateManifest(manifest: unknown): ValidationResult {
       if (typeof feature.label !== 'string' || !feature.label.trim()) {
         errors.push({ field: 'internalFeature.label', message: 'Internal feature label is required' });
       }
-      if (typeof feature.rendererEntry !== 'string' || !isSafeRelativeEntry(feature.rendererEntry)) {
-        errors.push({ field: 'internalFeature.rendererEntry', message: 'Internal renderer entry must stay inside the package' });
+      const sdkVersion = feature.sdkVersion;
+      if (!sdkVersion || typeof sdkVersion !== 'object' || Array.isArray(sdkVersion)) {
+        errors.push({ field: 'internalFeature.sdkVersion', message: 'Internal SDK versions are required' });
+      } else {
+        const versions = sdkVersion as Record<string, unknown>;
+        for (const side of ['host', 'renderer'] as const) {
+          if (typeof versions[side] !== 'string' || !versions[side].trim()) {
+            errors.push({
+              field: `internalFeature.sdkVersion.${side}`,
+              message: `Internal ${side} SDK version is required`,
+            });
+          }
+        }
+      }
+      for (const field of ['rendererEntry', 'rendererStyles', 'hostEntry'] as const) {
+        if (typeof feature[field] !== 'string' || !isSafeRelativeEntry(feature[field])) {
+          errors.push({
+            field: `internalFeature.${field}`,
+            message: `Internal feature ${field} must stay inside the package`,
+          });
+        }
       }
     }
   }
@@ -321,6 +361,11 @@ export async function validatePlugin(
   const entryResult = await validateEntry(entryPath);
   allErrors.push(...entryResult.errors);
   allWarnings.push(...entryResult.warnings);
+
+  if (Array.isArray(m.surfaces) && m.surfaces.includes('internal-feature')) {
+    const feature = m.internalFeature as Record<string, unknown>;
+    allErrors.push(...await validateInternalFeatureFiles(pluginDir, feature));
+  }
 
   // 3. Validate hooks if present
   if (m.hooks !== undefined) {

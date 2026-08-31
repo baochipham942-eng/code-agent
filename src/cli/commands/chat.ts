@@ -165,7 +165,7 @@ export const chatCommand = new Command('chat')
   )
   .option(
     '--permission-mode <mode>',
-    '颗粒度权限档（目前仅支持 auto）：分类器判安全的操作自动批准并入账，其余 fail-closed 拒绝。仅 headless（非 TTY/json）生效，TTY 下人工审批卡优先',
+    '权限档：auto（默认，分类器判安全的自动批准，其余弹审批卡）或 ask（每条都问）。与 --dangerously-skip-permissions 互斥',
   )
   .option(
     '--status-file <path>',
@@ -177,7 +177,7 @@ export const chatCommand = new Command('chat')
 
     try {
       // --permission-mode 校验先于一切初始化，报错保持干净
-      const permissionMode = resolveCLIPermissionModeFlag(options.permissionMode);
+      const permissionMode = resolveCLIPermissionModeFlag(options.permissionMode) ?? 'auto';
       // Ink/yoga 模块加载与 init services 并行（加载不依赖 init 结果；非 TTY 不启动）
       const inkRunnerPromise = !isJsonMode
         && Boolean(process.stdin.isTTY && process.stdout.isTTY)
@@ -328,7 +328,7 @@ export const chatCommand = new Command('chat')
           version,
           gitBranch,
           gitDirty,
-          permissionLabel: permissionMode ?? 'ask',
+          permissionLabel: permissionMode,
           onCommand,
           onShellCommand,
           slashItems,

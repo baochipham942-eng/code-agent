@@ -119,6 +119,10 @@ describe('resolveCLIPermissionModeFlag', () => {
     expect(resolveCLIPermissionModeFlag('auto')).toBe('auto');
   });
 
+  it('接受 ask', () => {
+    expect(resolveCLIPermissionModeFlag('ask')).toBe('ask');
+  });
+
   it('拒绝未知取值', () => {
     expect(() => resolveCLIPermissionModeFlag('strict')).toThrow(/--permission-mode/);
   });
@@ -246,12 +250,30 @@ describe('createCLIPermissionHandler --permission-mode auto', () => {
     expect(result.message).toContain('硬性审批门');
   });
 
-  it('交互审批通道优先于 auto 档', async () => {
-    const { handler } = autoHandler();
+  it('TTY auto：分类器放行的安全命令不弹卡', async () => {
+    const { handler, warn } = autoHandler();
+    const provider = vi.fn(async () => ({ approved: false, denialSource: 'user' as const }));
     try {
-      setInteractiveApprovalProvider(async () => ({ approved: false, denialSource: 'user' }));
-      const result = await handler(makeRequest({ details: { command: 'ls' } }));
+      setInteractiveApprovalProvider(provider);
+      await expect(handler(makeRequest({ details: { command: 'ls' } }))).resolves.toEqual(AUTO_APPROVED);
+      expect(provider).not.toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      setInteractiveApprovalProvider(null);
+    }
+  });
+
+  it('TTY auto：分类器没放行的危险命令交给审批卡', async () => {
+    const { handler } = autoHandler();
+    const provider = vi.fn(async () => ({ approved: false, denialSource: 'user' as const }));
+    try {
+      setInteractiveApprovalProvider(provider);
+      const result = await handler(makeRequest({
+        type: 'dangerous_command',
+        details: { command: 'rm -rf /' },
+      }));
       expect(result).toEqual({ approved: false, denialSource: 'user' });
+      expect(provider).toHaveBeenCalledTimes(1);
     } finally {
       setInteractiveApprovalProvider(null);
     }

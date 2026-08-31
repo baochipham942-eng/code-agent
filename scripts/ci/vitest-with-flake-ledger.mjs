@@ -5,6 +5,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 function fail(message) {
   console.error(`vitest flake ledger: ${message}`);
@@ -18,7 +19,9 @@ function parseArgs(argv) {
   let job;
   let ledger = process.env.RUNNER_TEMP
     ? path.join(process.env.RUNNER_TEMP, 'flaky-ledger.jsonl')
-    : path.join(os.homedir(), '.ship', 'flaky-ledger.jsonl');
+    : process.env.GITHUB_STEP_SUMMARY
+      ? path.resolve('docs/stability/flaky-ledger.jsonl')
+      : path.join(os.homedir(), '.ship', 'flaky-ledger.jsonl');
   for (let index = 0; index < separator; index += 1) {
     if (argv[index] === '--job') {
       job = argv[index + 1];
@@ -37,22 +40,22 @@ function parseArgs(argv) {
   return { job, ledger, command };
 }
 
-function findAssertions(report) {
-  return (report.testResults ?? []).flatMap((suite) => (suite.assertionResults ?? []).map((test) => ({
-    file: suite.name,
-    test: test.fullName ?? test.title ?? '(unnamed test)',
-    retryCount: test.retryCount ?? 0,
-    flaky: test.flaky === true,
-  }))).filter((test) => Number(test.retryCount) > 0);
-}
-
 function findDiagnostics(report) {
-  return (report.testDiagnostics ?? []).filter((test) => Number(test.retryCount) > 0).map((test) => ({
-    file: test.file,
-    test: test.test,
-    retryCount: test.retryCount,
-    flaky: test.flaky === true,
-  }));
+  if (!Array.isArray(report.testDiagnostics)) fail('diagnostic JSON is missing testDiagnostics[]');
+  return report.testDiagnostics.map((test, index) => {
+    if (typeof test?.file !== 'string' || typeof test?.test !== 'string') {
+      fail(`diagnostic JSON testDiagnostics[${index}] is missing file or test`);
+    }
+    if (!Number.isInteger(test.retryCount) || test.retryCount < 0) {
+      fail(`diagnostic JSON testDiagnostics[${index}].retryCount is not a non-negative integer`);
+    }
+    return {
+      file: test.file,
+      test: test.test,
+      retryCount: test.retryCount,
+      flaky: test.flaky === true,
+    };
+  }).filter((test) => test.retryCount > 0);
 }
 
 function markdown(job, flakes) {
@@ -64,13 +67,17 @@ function markdown(job, flakes) {
 function gitSha() {
   if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
   const result = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' });
-  return result.status === 0 ? result.stdout.trim() : undefined;
+  const sha = result.status === 0 ? result.stdout.trim() : '';
+  if (!sha) fail('cannot resolve sha from GITHUB_SHA or git rev-parse HEAD');
+  return sha;
 }
 
 const { job, ledger, command } = parseArgs(process.argv.slice(2));
-const outputFile = path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), `vitest-flake-ledger-${process.pid}.json`);
+const outputRoot = process.env.RUNNER_TEMP ?? os.tmpdir();
+mkdirSync(outputRoot, { recursive: true });
+const outputFile = path.join(outputRoot, `vitest-report-flake-ledger-${process.pid}.json`);
 const diagnosticFile = path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), `vitest-flake-diagnostics-${process.pid}.json`);
-const reporter = path.resolve(path.dirname(new URL(import.meta.url).pathname), 'vitest-flake-diagnostic-reporter.mjs');
+const reporter = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'vitest-flake-diagnostic-reporter.mjs');
 const vitestArgs = [...command, '--reporter=default', '--reporter=json', `--reporter=${reporter}`, `--outputFile.json=${outputFile}`];
 const result = spawnSync(vitestArgs[0], vitestArgs.slice(1), {
   stdio: 'inherit',
@@ -79,9 +86,8 @@ const result = spawnSync(vitestArgs[0], vitestArgs.slice(1), {
 
 if (!existsSync(outputFile)) fail(`JSON reporter did not create ${outputFile}`);
 
-let report;
 try {
-  report = JSON.parse(readFileSync(outputFile, 'utf8'));
+  JSON.parse(readFileSync(outputFile, 'utf8'));
 } catch (error) {
   fail(`cannot parse JSON reporter output: ${error instanceof Error ? error.message : String(error)}`);
 }
@@ -94,7 +100,7 @@ try {
   fail(`cannot parse diagnostic reporter output: ${error instanceof Error ? error.message : String(error)}`);
 }
 
-const flakes = findDiagnostics(diagnostics).length ? findDiagnostics(diagnostics) : findAssertions(report);
+const flakes = findDiagnostics(diagnostics);
 const summary = markdown(job, flakes);
 if (process.env.GITHUB_STEP_SUMMARY) {
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);

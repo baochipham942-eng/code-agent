@@ -362,7 +362,7 @@ jobs:
           name: swarm-smoke-logs-${{ github.run_id }}
           path: |
             coverage/
-            **/vitest-report*.json
+            ${{ runner.temp }}/vitest-report*.json
           if-no-files-found: ignore
           retention-days: 7
 

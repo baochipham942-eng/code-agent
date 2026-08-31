@@ -21,14 +21,20 @@ function run(args: string[], env: NodeJS.ProcessEnv = {}) {
   });
 }
 
-function fixtureRunner(dir: string, report: object, status = 0) {
+function fixtureRunner(dir: string, diagnostics: object, options: {
+  report?: object;
+  reportText?: string;
+  status?: number;
+  writeReport?: boolean;
+} = {}) {
   const file = join(dir, 'reporter-fixture.mjs');
+  const reportText = options.reportText ?? JSON.stringify(options.report ?? { testResults: [] });
   writeFileSync(file, [
     "import { writeFileSync } from 'node:fs';",
     "const output = process.argv.find((arg) => arg.startsWith('--outputFile.json=')).slice('--outputFile.json='.length);",
-    `writeFileSync(output, ${JSON.stringify(JSON.stringify(report))});`,
-    "writeFileSync(process.env.VITEST_FLAKE_LEDGER_DIAGNOSTICS_FILE, JSON.stringify({ testDiagnostics: [] }));",
-    `process.exit(${status});`,
+    ...(options.writeReport === false ? [] : [`writeFileSync(output, ${JSON.stringify(reportText)});`]),
+    `writeFileSync(process.env.VITEST_FLAKE_LEDGER_DIAGNOSTICS_FILE, ${JSON.stringify(JSON.stringify(diagnostics))});`,
+    `process.exit(${options.status ?? 0});`,
   ].join('\n'));
   return file;
 }
@@ -38,13 +44,11 @@ afterEach(() => {
 });
 
 describe('vitest flake ledger wrapper', () => {
-  it('writes retryCount entries from the real Vitest JSON path and keeps zero retries visible', () => {
+  it('writes retryCount entries from testDiagnostics[] and keeps zero retries visible', () => {
     const dir = root();
     const ledger = join(dir, 'ledger.jsonl');
     const flaky = fixtureRunner(dir, {
-      testResults: [{ name: 'tests/example.test.ts', assertionResults: [{
-        fullName: 'suite retries once', retryCount: 1, flaky: true,
-      }] }],
+      testDiagnostics: [{ file: 'tests/example.test.ts', test: 'suite retries once', retryCount: 1, flaky: true }],
     });
     const flakyResult = run(['--job', 'fixture retry', '--ledger', ledger, '--', process.execPath, flaky]);
     expect(flakyResult.status, flakyResult.stderr).toBe(0);
@@ -53,12 +57,28 @@ describe('vitest flake ledger wrapper', () => {
 
     const zeroLedger = join(dir, 'zero-ledger.jsonl');
     const zero = fixtureRunner(dir, {
-      testResults: [{ name: 'tests/zero.test.ts', assertionResults: [{ fullName: 'suite stays green', retryCount: 0 }] }],
+      testDiagnostics: [{ file: 'tests/zero.test.ts', test: 'suite stays green', retryCount: 0, flaky: false }],
     });
     const zeroResult = run(['--job', 'fixture zero', '--ledger', zeroLedger, '--', process.execPath, zero]);
     expect(zeroResult.status, zeroResult.stderr).toBe(0);
     expect(zeroResult.stdout).toContain('retryCount>0: 0');
     expect(() => readFileSync(zeroLedger, 'utf8')).toThrow();
+  });
+
+  it('fails loud when the Vitest JSON report is missing', () => {
+    const dir = root();
+    const runner = fixtureRunner(dir, { testDiagnostics: [] }, { writeReport: false });
+    const result = run(['--job', 'missing report', '--ledger', join(dir, 'ledger.jsonl'), '--', process.execPath, runner]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('JSON reporter did not create');
+  });
+
+  it('fails loud when the Vitest JSON report cannot be parsed', () => {
+    const dir = root();
+    const runner = fixtureRunner(dir, { testDiagnostics: [] }, { reportText: '{not-json' });
+    const result = run(['--job', 'invalid report', '--ledger', join(dir, 'ledger.jsonl'), '--', process.execPath, runner]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('cannot parse JSON reporter output');
   });
 
   it('records a genuine first-red second-green Vitest retry without changing its green exit code', () => {
@@ -98,5 +118,24 @@ describe('vitest flake ledger wrapper', () => {
       expect(swarm.slice(start, swarm.indexOf('\n      - name:', start + 1))).toContain('scripts/ci/vitest-with-flake-ledger.mjs');
     }
     expect(full.slice(full.indexOf('- name: Full vitest'))).toContain('scripts/ci/vitest-with-flake-ledger.mjs');
+    for (const anchor of [
+      'tests/scripts --retry=1',
+      'tests/renderer "${ROOT_UNIT_TESTS[@]}" tests/unit/web/agentRunControllerBroadcast.test.ts --retry=1',
+      "--exclude 'tests/unit/tools/modules/network/webSearch.test.ts'",
+      "--exclude 'tests/unit/agent/goalVerifyGate.test.ts'",
+      'tests/unit/mcp tests/integration/mcp --retry=1',
+      'npm run test:swarm:smoke -- --retry=1',
+    ]) expect(swarm).toContain(anchor);
+    expect(full).toContain('npx vitest run --retry=1');
+  });
+
+  it('keeps all three local retry mirrors behind the wrapper', () => {
+    const local = readFileSync('scripts/gates-local.mjs', 'utf8');
+    const retryOffsets = [...local.matchAll(/'--retry=1'/g)].map((match) => match.index ?? -1);
+    expect(retryOffsets).toHaveLength(3);
+    for (const offset of retryOffsets) {
+      const objectStart = local.lastIndexOf('\n  {', offset);
+      expect(local.slice(objectStart, offset)).toContain('scripts/ci/vitest-with-flake-ledger.mjs');
+    }
   });
 });

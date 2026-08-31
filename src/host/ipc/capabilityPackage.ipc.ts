@@ -47,6 +47,15 @@ export function registerCapabilityPackageHandlers(
     }
   });
 
+  handle(IPC_CHANNELS.CAPABILITY_PACKAGE_STAGE_PATH, async (selectedPath: string): Promise<CapabilityPackageResult<CapabilityPackagePreview>> => {
+    if (!selectedPath?.trim()) return failure('没有收到可导入的插件路径');
+    try {
+      return success(await getManualCapabilityPackageService().stage(selectedPath));
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
   handle(IPC_CHANNELS.CAPABILITY_PACKAGE_LIST, async (): Promise<CapabilityPackageResult<InstalledCapabilityPackage[]>> => {
     try {
       return success(await getManualCapabilityPackageService().list());

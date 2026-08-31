@@ -752,6 +752,7 @@ export const enSettingsModels = {
         title: 'Available plugins',
         description: 'Official plugins ship with Neo and work once installed; you can also import your own plugin from a local file. Validation and permission confirmation install it on this device.',
         empty: 'No installable or imported plugins yet.',
+        importUnavailable: 'No local plugin import route is available in this runtime.',
         internalFeature: 'Admin-only internal UI',
         toolsSuffix: ' tools',
         uninstall: 'Uninstall',

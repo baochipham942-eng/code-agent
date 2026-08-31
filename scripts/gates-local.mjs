@@ -181,8 +181,8 @@ const gates = [
   },
   {
     ci: 'swarm-ci / smoke / Script gates (vitest tests/scripts)',
-    command: 'npx',
-    args: ['vitest', 'run', 'tests/scripts', '--retry=1'],
+    command: 'node',
+    args: ['scripts/ci/vitest-with-flake-ledger.mjs', '--job', 'Script gates (vitest tests/scripts)', '--', 'npx', 'vitest', 'run', 'tests/scripts', '--retry=1'],
   },
   {
     ci: 'swarm-ci / smoke / Knip dead-export ratchet',
@@ -206,8 +206,13 @@ const gates = [
   },
   {
     ci: 'eval-harness / harness / Eval harness unit tests',
-    command: 'npx',
+    command: 'node',
     args: [
+      'scripts/ci/vitest-with-flake-ledger.mjs',
+      '--job',
+      'Main-chain vitest subset',
+      '--',
+      'npx',
       'vitest',
       'run',
       'tests/unit/testing',
@@ -251,8 +256,8 @@ const gates = [
   },
   {
     ci: 'swarm-ci / smoke + full / Run swarm smoke suite',
-    command: 'npm',
-    args: ['run', 'test:swarm:smoke', '--', '--retry=1'],
+    command: 'node',
+    args: ['scripts/ci/vitest-with-flake-ledger.mjs', '--job', 'Run swarm smoke suite', '--', 'npm', 'run', 'test:swarm:smoke', '--', '--retry=1'],
   },
   {
     ci: 'webserver-boot / boot-gate / Build webServer bundle',

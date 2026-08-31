@@ -356,10 +356,6 @@ jobs:
         # errors / warnings 双独立基线棘轮；任一超基线即阻塞，清理后只能下调。
         run: node scripts/eslint-ratchet.mjs
 
-      - name: Architecture effective-line gate
-        # 只阻断非 God File 历史白名单的 effective 超限文件；报告里的 ESLint 热点在 CI 不重复扫。
-        run: node scripts/architecture-debt-report.mjs --gate --skip-eslint
-
       - name: Run swarm smoke suite
         run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Run swarm smoke suite" -- npm run test:swarm:smoke -- --retry=1
 

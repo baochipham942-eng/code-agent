@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-export type PluginCardStatusTone = 'active' | 'inactive' | 'warning';
+type PluginCardStatusTone = 'active' | 'inactive' | 'warning';
 
 interface PluginCardProps {
   testId: string;
@@ -45,7 +45,7 @@ export const PluginCard: React.FC<PluginCardProps> = ({
     <section
       data-testid={testId}
       data-plugin-card="unified"
-      className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4"
+      className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-start gap-3">

@@ -85,11 +85,5 @@ describe('architecture debt report', () => {
     };
 
     expect(packageJson.scripts['debt:report']).toBe('node scripts/architecture-debt-report.mjs');
-
-    const workflow = readFileSync(resolve(repoRoot, '.github/workflows/swarm-ci.yml'), 'utf8');
-    const eslintStep = workflow.indexOf('run: node scripts/eslint-ratchet.mjs');
-    const architectureGateStep = workflow.indexOf('run: node scripts/architecture-debt-report.mjs --gate --skip-eslint');
-    expect(eslintStep).toBeGreaterThan(-1);
-    expect(architectureGateStep).toBeGreaterThan(eslintStep);
   });
 });

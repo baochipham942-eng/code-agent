@@ -181,8 +181,8 @@ const gates = [
   },
   {
     ci: 'swarm-ci / smoke / Script gates (vitest tests/scripts)',
-    command: 'npx',
-    args: ['vitest', 'run', 'tests/scripts', '--retry=1'],
+    command: 'node',
+    args: ['scripts/ci/vitest-with-flake-ledger.mjs', '--job', 'Script gates (vitest tests/scripts)', '--', 'npx', 'vitest', 'run', 'tests/scripts', '--retry=1'],
   },
   {
     ci: 'swarm-ci / smoke / Knip dead-export ratchet',
@@ -218,7 +218,7 @@ const gates = [
   },
   {
     ci: 'swarm-ci / smoke / Main-chain vitest subset',
-    command: 'npx',
+    command: 'node',
     // ⚠️ 目标清单必须与 swarm-ci.yml 同名步骤**逐项一致**。
     // 2026-08-14 踩到：本地这里少了 host / shared / **根级 tests/unit/*.test.ts** /
     // web/agentRunControllerBroadcast 四项，于是本地 gates:local 报 31/31 全绿、
@@ -229,6 +229,11 @@ const gates = [
     // 对齐后本地收 1609 个 test file，CI 是 1610——**还差 1 个未对上**，如实记在这里，
     // 别当成已经完全等价；下次谁撞到 PR 红而本地绿，先从这 1 个的差集查起。
     args: [
+      'scripts/ci/vitest-with-flake-ledger.mjs',
+      '--job',
+      'Main-chain vitest subset',
+      '--',
+      'npx',
       'vitest',
       'run',
       'tests/unit/agent',
@@ -251,8 +256,8 @@ const gates = [
   },
   {
     ci: 'swarm-ci / smoke + full / Run swarm smoke suite',
-    command: 'npm',
-    args: ['run', 'test:swarm:smoke', '--', '--retry=1'],
+    command: 'node',
+    args: ['scripts/ci/vitest-with-flake-ledger.mjs', '--job', 'Run swarm smoke suite', '--', 'npm', 'run', 'test:swarm:smoke', '--', '--retry=1'],
   },
   {
     ci: 'webserver-boot / boot-gate / Build webServer bundle',

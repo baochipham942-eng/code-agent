@@ -81,7 +81,7 @@ jobs:
 
       - name: Full vitest
         # --retry=1 与 swarm-ci flake 约定一致，吸收 game/browser 族已知负载抖动。
-        run: npx vitest run --retry=1
+        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Full vitest" -- npx vitest run --retry=1
         env:
           CI: 'true'
           NODE_OPTIONS: --max-old-space-size=6144

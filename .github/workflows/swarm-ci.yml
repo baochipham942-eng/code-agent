@@ -221,7 +221,7 @@ jobs:
         # tests/scripts 下的守门测试（designSystemGate / architectureDebtReport /
         # windowChromeContract / releaseMacosGates 等）此前不在任何 CI 套件里，
         # god-file 债务在 main 上红了都没人知道（2026-07-02 抓到 4 文件超线）。整套接入。
-        run: npx vitest run tests/scripts --retry=1
+        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Script gates (vitest tests/scripts)" -- npx vitest run tests/scripts --retry=1
 
       - name: Read Playwright version
         id: playwright-version
@@ -318,12 +318,12 @@ jobs:
             exit 1
           fi
           echo "根级单测文件 ${#ROOT_UNIT_TESTS[@]} 个进门"
-          npx vitest run tests/unit/agent tests/unit/host tests/unit/ipc tests/unit/tools tests/unit/services tests/unit/design tests/unit/shared tests/renderer "${ROOT_UNIT_TESTS[@]}" tests/unit/web/agentRunControllerBroadcast.test.ts --retry=1 \
+          node scripts/ci/vitest-with-flake-ledger.mjs --job "Main-chain vitest subset" -- npx vitest run tests/unit/agent tests/unit/host tests/unit/ipc tests/unit/tools tests/unit/services tests/unit/design tests/unit/shared tests/renderer "${ROOT_UNIT_TESTS[@]}" tests/unit/web/agentRunControllerBroadcast.test.ts --retry=1 \
             --exclude 'tests/unit/tools/modules/network/webSearch.test.ts' \
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts'
 
       - name: MCP protocol compatibility (unit + integration)
-        run: npx vitest run tests/unit/mcp tests/integration/mcp --retry=1
+        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "MCP protocol compatibility" -- npx vitest run tests/unit/mcp tests/integration/mcp --retry=1
 
       - name: Knip dead-export ratchet
         # dead exports+types 集合棘轮（基线见 scripts/knip-ratchet-baseline.json）。
@@ -353,7 +353,7 @@ jobs:
         run: node scripts/eslint-ratchet.mjs
 
       - name: Run swarm smoke suite
-        run: npm run test:swarm:smoke -- --retry=1
+        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Run swarm smoke suite" -- npm run test:swarm:smoke -- --retry=1
 
       - name: Upload smoke failure logs
         if: failure()
@@ -362,7 +362,7 @@ jobs:
           name: swarm-smoke-logs-${{ github.run_id }}
           path: |
             coverage/
-            **/vitest-report*.json
+            ${{ runner.temp }}/vitest-report*.json
           if-no-files-found: ignore
           retention-days: 7
 
@@ -429,7 +429,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run smoke suite
-        run: npm run test:swarm:smoke -- --retry=1
+        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Run smoke suite" -- npm run test:swarm:smoke -- --retry=1
 
       # e2e 从只跑 swarm-chain 扩到三条（+ design-canvas + workbench-overview）：
       # 手动 spec 没有运行者必然腐烂——design-canvas 那条引用的 testid 和按钮标签在 main 上

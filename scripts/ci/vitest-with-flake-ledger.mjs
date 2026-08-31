@@ -102,10 +102,9 @@ try {
 
 const flakes = findDiagnostics(diagnostics);
 const summary = markdown(job, flakes);
+process.stdout.write(summary);
 if (process.env.GITHUB_STEP_SUMMARY) {
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
-} else {
-  process.stdout.write(summary);
 }
 
 if (flakes.length) {

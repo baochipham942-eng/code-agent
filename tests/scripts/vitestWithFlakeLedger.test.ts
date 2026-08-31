@@ -14,10 +14,16 @@ function root() {
 }
 
 function run(args: string[], env: NodeJS.ProcessEnv = {}) {
+  const isolated: NodeJS.ProcessEnv = { ...process.env, ...env };
+  delete isolated.GITHUB_STEP_SUMMARY;
+  for (const key of Object.keys(isolated)) {
+    if (key.startsWith('VITEST_')) delete isolated[key];
+  }
+  Object.assign(isolated, env);
   return spawnSync(process.execPath, [wrapper, ...args], {
     cwd: resolve('.'),
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: isolated,
   });
 }
 
@@ -63,6 +69,23 @@ describe('vitest flake ledger wrapper', () => {
     expect(zeroResult.status, zeroResult.stderr).toBe(0);
     expect(zeroResult.stdout).toContain('retryCount>0: 0');
     expect(() => readFileSync(zeroLedger, 'utf8')).toThrow();
+  });
+
+  it('still writes the summary to stdout when GITHUB_STEP_SUMMARY is set', () => {
+    const dir = root();
+    const ledger = join(dir, 'ledger.jsonl');
+    const stepSummary = join(dir, 'github-step-summary.md');
+    writeFileSync(stepSummary, '');
+    const runner = fixtureRunner(dir, {
+      testDiagnostics: [{ file: 'tests/example.test.ts', test: 'suite retries once', retryCount: 1, flaky: true }],
+    });
+    const result = run(
+      ['--job', 'ci summary', '--ledger', ledger, '--', process.execPath, runner],
+      { GITHUB_STEP_SUMMARY: stepSummary },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('tests/example.test.ts:suite retries once:1');
+    expect(readFileSync(stepSummary, 'utf8')).toContain('tests/example.test.ts:suite retries once:1');
   });
 
   it('fails loud when the Vitest JSON report is missing', () => {

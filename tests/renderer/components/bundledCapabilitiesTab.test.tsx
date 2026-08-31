@@ -25,7 +25,10 @@ describe('BundledCapabilitiesTab', () => {
     readinessStatus = 'fallback';
     useBundledCapabilityStore.setState({
       installed: { 'builtin.voice-live': true, 'builtin.voice-input': false },
-      states: [],
+      states: [
+        { id: 'builtin.voice-live', installed: true, version: '1.0.0', revision: 2 },
+        { id: 'builtin.voice-input', installed: false, version: '1.0.0', revision: 2 },
+      ],
       loaded: true,
       error: null,
     });
@@ -57,6 +60,8 @@ describe('BundledCapabilitiesTab', () => {
     const inputCard = await screen.findByTestId('voice-input-capability-card');
     const readinessWarning = await within(inputCard).findByTestId('voice-input-readiness-warning');
     expect(within(readinessWarning).getByText(zh.capabilityPackages.readiness.fallback)).toBeTruthy();
+    expect(within(inputCard).getByTestId('voice-input-capability-card-icon')).toBeTruthy();
+    expect(within(inputCard).getByText('v1.0.0')).toBeTruthy();
     expect(within(inputCard).getByRole('button', { name: zh.capabilityPackages.detailsLabel })
       .getAttribute('aria-expanded')).toBe('false');
 
@@ -65,6 +70,7 @@ describe('BundledCapabilitiesTab', () => {
       expect(within(permissionPills).getByText(permission.split(/[：:]/, 1)[0].trim())).toBeTruthy();
       expect(within(inputCard).queryByText(permission)).toBeNull();
     }
+    expect(within(permissionPills).queryByText('文件系统（可选）')).toBeNull();
     expect(within(inputCard).queryByText('brew install whisper-cpp')).toBeNull();
     expect(within(inputCard).queryByText(zh.capabilityPackages.assetsPreserved)).toBeNull();
   });

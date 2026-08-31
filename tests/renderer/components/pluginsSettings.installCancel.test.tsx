@@ -181,8 +181,12 @@ describe('PluginsSettings install cancellation', () => {
     fireEvent.click(await screen.findByRole('button', { name: zh.settings.plugins.manualImport.action }));
 
     expect(await screen.findByText(zh.settings.plugins.manualImport.confirmTitle)).toBeTruthy();
-    expect(screen.getByText(zh.settings.plugins.manualImport.permissions.network)).toBeTruthy();
-    expect(screen.getByText(zh.settings.plugins.manualImport.permissions.storage)).toBeTruthy();
+    expect(screen.getByText(
+      `网络：${zh.capabilityPackages.permissionText.descriptions.network}`,
+    )).toBeTruthy();
+    expect(screen.getByText(
+      `本地数据：${zh.capabilityPackages.permissionText.descriptions.storage}`,
+    )).toBeTruthy();
     expect(invoke).not.toHaveBeenCalledWith(
       IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM,
       expect.anything(),
@@ -267,8 +271,14 @@ describe('PluginsSettings install cancellation', () => {
     fireEvent.click(await screen.findByRole('button', { name: zh.settings.plugins.manualImport.install }));
 
     expect(await screen.findByText(zh.settings.plugins.manualImport.confirmTitle)).toBeTruthy();
-    expect(screen.getAllByText(zh.settings.plugins.manualImport.permissions.accessibility).length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText(zh.settings.plugins.manualImport.permissions['screen-recording']).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(zh.capabilityPackages.permissionText.labels.accessibility).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(
+      `辅助功能：${zh.capabilityPackages.permissionText.descriptions.accessibility}`,
+    )).toBeTruthy();
+    expect(screen.getAllByText(zh.capabilityPackages.permissionText.labels['screen-recording']).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(
+      `屏幕录制：${zh.capabilityPackages.permissionText.descriptions['screen-recording']}`,
+    )).toBeTruthy();
     expect(invoke).not.toHaveBeenCalledWith(IPC_CHANNELS.CAPABILITY_PACKAGE_CONFIRM, expect.anything());
 
     fireEvent.click(screen.getByRole('button', { name: zh.settings.plugins.manualImport.confirm }));

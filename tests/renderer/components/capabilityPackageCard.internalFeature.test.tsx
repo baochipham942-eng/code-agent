@@ -56,7 +56,6 @@ describe('CapabilityPackageCard internal plugin states', () => {
         plugin={installed}
         busyKey={null}
         packageBusy={false}
-        permissionLabel={(permission) => permission}
         {...callbacks}
       />,
     );
@@ -80,7 +79,6 @@ describe('CapabilityPackageCard internal plugin states', () => {
         plugin={failed}
         busyKey={null}
         packageBusy={false}
-        permissionLabel={(permission) => permission}
         {...callbacks}
       />,
     );

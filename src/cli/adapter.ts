@@ -624,6 +624,20 @@ export class CLIAgent {
     return this.sessionId;
   }
 
+  /**
+   * 获取当前会话标题（Ink TUI 终端标签标题用）。首条用户消息后会由 quick model
+   * 自动改名（SessionManager.maybeUpdateTitle），因此调用方应在 turn 边界重取。
+   */
+  async getSessionTitle(): Promise<string | null> {
+    if (!this.sessionId) return null;
+    try {
+      const session = await getSessionManager().getSession(this.sessionId, 0);
+      return session?.title ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   getLastRunContext(): RunContext | null {
     return this.lastRunContext;
   }

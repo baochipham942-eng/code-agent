@@ -110,33 +110,33 @@ function MessageBody({ message, width, maxLines, expandTools }: { message: ChatM
   switch (message.kind) {
     case 'user':
       return (
-        <Box marginTop={2} paddingBottom={1}>
+        <Box marginTop={1}>
           <Text>{'❯ '}</Text>
           <Text wrap="wrap">{message.text}</Text>
         </Box>
       );
     case 'assistant':
       return (
-        <Box marginTop={2} paddingBottom={1}>
+        <Box marginTop={1}>
           <AssistantBody text={message.text} width={width} maxLines={maxLines !== undefined ? Math.max(1, maxLines - 1) : undefined} />
         </Box>
       );
     case 'thinking':
       return (
-        <Box marginTop={2}>
+        <Box marginTop={1}>
           <ThinkingView message={message} />
         </Box>
       );
     case 'tool_group':
       return (
-        <Box marginTop={2}>
+        <Box marginTop={1}>
           <ToolGroupView group={message} expanded={expandTools} />
         </Box>
       );
     case 'system': {
       const color = message.tone === 'error' ? 'red' : message.tone === 'warn' ? 'yellow' : undefined;
       return (
-        <Box marginTop={2}>
+        <Box marginTop={1}>
           <Text color={color} dimColor={message.tone === 'info'} wrap="wrap">
             {message.text}
           </Text>

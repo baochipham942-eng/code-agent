@@ -1,9 +1,10 @@
 {
   "schemaVersion": 1,
-  "statements": 66.35,
-  "branches": 60.05,
-  "functions": 66.69,
-  "lines": 67.8,
-  "measuredAt": "2026-08-31T08:51:00Z",
-  "source": "npx vitest run --retry=1 --coverage @ ab731c6e1\uff08origin/main\uff09\uff0cload 6.98\uff0ccoverage-summary.json total.pct"
+  "statements": 66.27,
+  "branches": 59.97,
+  "functions": 66.61,
+  "lines": 67.73,
+  "measuredAt": "2026-08-31T09:49:00Z",
+  "source": "main-full-gate run 33377164312（merge 1c0f51884，ubuntu CI）coverage-summary.json total.pct",
+  "lowerJustification": "初值取自本地 macOS 实测（66.35/60.05/66.69/67.80），CI ubuntu 全量实测系统性低 0.07-0.08pp（main-full-gate run 33377164312 首跑四项全红）；门运行环境以 CI 为准，初值一次性校正为 CI 实测。"
 }

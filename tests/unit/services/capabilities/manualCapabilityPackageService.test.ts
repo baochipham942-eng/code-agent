@@ -12,6 +12,10 @@ import {
 } from '../../../../src/host/plugins/builtin/computerUse/installState';
 import { COMPUTER_USE_CAPABILITY_ID } from '../../../../src/host/plugins/builtin/builtinCapabilityIds';
 import type { MCPServerConfig } from '../../../../src/host/mcp/types';
+import { InternalFeatureHostRuntime } from '../../../../src/host/internalFeatures/internalFeatureHostRuntime';
+import { INTERNAL_SDK_VERSION } from '../../../../src/host/internalFeatures/internalSdkVersion';
+import { hashPluginPackage } from '../../../../src/host/plugins/pluginApprovalReceipt';
+import type { ipcHost } from '../../../../src/host/platform';
 
 interface LifecycleEntry {
   id: string;
@@ -75,8 +79,46 @@ function createService(overrides: ServiceDependencies = {}): ManualCapabilityPac
     registry,
     useOsSandbox: false,
     lifecycle: (id, action, detail) => { lifecycle.push({ id, action, detail }); },
+    internalFeatureRuntime: {
+      isLoaded: () => false,
+      load: async () => undefined,
+      loadedHash: () => undefined,
+      unload: async () => undefined,
+    },
+    isCurrentUserAdmin: () => true,
     ...overrides,
   });
+}
+
+function internalFeatureManifest(version = '1.0.0', hostVersion: string = INTERNAL_SDK_VERSION.host): Record<string, unknown> {
+  return manifest('evaluation-center', {
+    version,
+    distribution: 'internal',
+    adminOnly: true,
+    surfaces: ['internal-feature'],
+    internalFeature: {
+      id: 'evaluation-center',
+      label: '评测中心',
+      sdkVersion: { host: hostVersion, renderer: 'pending' },
+      rendererEntry: 'dist/renderer/index.js',
+      rendererStyles: 'dist/renderer/index.css',
+      hostEntry: 'dist/host/index.cjs',
+      builtFrom: { appVersion: '0.33.0', commit: 'fixture' },
+    },
+  });
+}
+
+async function writeInternalFeatureFiles(root: string, hostSource = `
+module.exports.activate = ({ ipcMain }) => {
+  ipcMain.handle('test:ping', () => 'old');
+  return { deactivate() { ipcMain.removeHandler('test:ping'); } };
+};
+`): Promise<void> {
+  await fs.mkdir(path.join(root, 'dist/renderer'), { recursive: true });
+  await fs.mkdir(path.join(root, 'dist/host'), { recursive: true });
+  await fs.writeFile(path.join(root, 'dist/renderer/index.js'), 'export {};', 'utf8');
+  await fs.writeFile(path.join(root, 'dist/renderer/index.css'), '.fixture {}', 'utf8');
+  await fs.writeFile(path.join(root, 'dist/host/index.cjs'), hostSource, 'utf8');
 }
 
 beforeEach(async () => {
@@ -159,22 +201,12 @@ describe('ManualCapabilityPackageService', () => {
 
   it('accepts an admin-only internal feature package and rejects an adminOnly mutation', async () => {
     const service = createService();
-    const internalManifest = manifest('evaluation-center', {
-      distribution: 'internal',
-      adminOnly: true,
-      surfaces: ['internal-feature'],
-      internalFeature: {
-        id: 'evaluation-center',
-        label: '评测中心',
-        rendererEntry: 'renderer/index.js',
-      },
-    });
+    const internalManifest = internalFeatureManifest();
     const source = await writePackage('evaluation-center', {
       manifest: internalManifest,
       source: 'module.exports = { async activate() {} };',
     });
-    await fs.mkdir(path.join(source, 'renderer'), { recursive: true });
-    await fs.writeFile(path.join(source, 'renderer', 'index.js'), 'export {};', 'utf8');
+    await writeInternalFeatureFiles(source);
 
     const preview = await service.stage(source);
     expect(preview).toMatchObject({
@@ -196,6 +228,62 @@ describe('ManualCapabilityPackageService', () => {
       source: 'module.exports = { async activate() {} };',
     });
     await expect(service.stage(mutated)).rejects.toThrow(/adminOnly=true/);
+  });
+
+  it('rejects an admin-only plugin when the current user is not an administrator', async () => {
+    const service = createService({ isCurrentUserAdmin: () => false });
+    const source = await writePackage('evaluation-center-admin-guard', {
+      manifest: internalFeatureManifest(),
+    });
+    await writeInternalFeatureFiles(source);
+
+    await expect(service.stage(source)).rejects.toThrow('这个插件只能由管理员安装');
+  });
+
+  it('rejects internal plugins with a missing host entry or mismatched host SDK during stage', async () => {
+    const service = createService();
+    const missingHost = await writePackage('evaluation-center', {
+      manifest: internalFeatureManifest(),
+      source: 'module.exports = { async activate() {} };',
+    });
+    await writeInternalFeatureFiles(missingHost);
+    await fs.rm(path.join(missingHost, 'dist/host/index.cjs'));
+    await expect(service.stage(missingHost)).rejects.toThrow(/internalFeature\.hostEntry.*not found/i);
+
+    const mismatched = await writePackage('evaluation-center', {
+      manifest: internalFeatureManifest('1.0.0', 'deadbeef'),
+      source: 'module.exports = { async activate() {} };',
+    });
+    await writeInternalFeatureFiles(mismatched);
+    await expect(service.stage(mismatched)).rejects.toThrow(
+      '这个插件与当前应用的内部接口不匹配，请用当前版本重新构建（插件构建于 Neo 0.33.0）',
+    );
+  });
+
+  it('shows an internal host activation error through list()', async () => {
+    const service = createService();
+    const source = await writePackage('evaluation-center', {
+      manifest: internalFeatureManifest(),
+      source: 'module.exports = { async activate() {} };',
+    });
+    await writeInternalFeatureFiles(
+      source,
+      "module.exports.activate = () => { throw new Error('visible host failure'); };",
+    );
+    await service.confirm((await service.stage(source)).token);
+    const plugin = registry.getPlugin('evaluation-center');
+    if (!plugin) throw new Error('fixture plugin was not installed');
+    const runtime = new InternalFeatureHostRuntime({
+      registry,
+      lifecycle: (id, action, detail) => { lifecycle.push({ id, action, detail }); },
+      logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+    });
+
+    await expect(runtime.load(plugin)).rejects.toThrow('visible host failure');
+    expect((await service.list()).find((item) => item.id === 'evaluation-center')).toMatchObject({
+      state: 'error',
+      error: 'visible host failure',
+    });
   });
 
   it('rejects missing manifest fields in plain language and leaves the plugins directory untouched', async () => {
@@ -360,6 +448,49 @@ describe('ManualCapabilityPackageService', () => {
     expect(JSON.parse(await fs.readFile(path.join(pluginsDir, 'rollback-cap', 'plugin.json'), 'utf8')))
       .toMatchObject({ version: '1.0.0' });
     expect(lifecycle.map((entry) => entry.action)).toEqual(['loaded', 'failed', 'rolled_back']);
+  });
+
+  it('reloads the old internal host and hash when replacement host activation fails', async () => {
+    const handlers = new Map<string, unknown>();
+    const ipcMain: typeof ipcHost = {
+      handle: (channel, handler) => { handlers.set(channel, handler); },
+      on: () => undefined,
+      once: () => undefined,
+      removeHandler: (channel) => { handlers.delete(channel); },
+      removeAllListeners: () => undefined,
+    };
+    const runtime = new InternalFeatureHostRuntime({
+      registry,
+      ipcMain,
+      lifecycle: (id, action, detail) => { lifecycle.push({ id, action, detail }); },
+      logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+    });
+    const service = createService({ internalFeatureRuntime: runtime });
+    const firstSource = await writePackage('evaluation-center', {
+      manifest: internalFeatureManifest('1.0.0'),
+      source: 'module.exports = { async activate() {} };',
+    });
+    await writeInternalFeatureFiles(firstSource);
+    await service.confirm((await service.stage(firstSource)).token);
+    const oldHash = runtime.loadedHash('evaluation-center');
+    expect(oldHash).toBeTruthy();
+    expect(handlers.has('test:ping')).toBe(true);
+
+    const replacement = await writePackage('evaluation-center', {
+      manifest: internalFeatureManifest('2.0.0'),
+      source: 'module.exports = { async activate() {} };',
+    });
+    await writeInternalFeatureFiles(
+      replacement,
+      "module.exports.activate = () => { throw new Error('new host failed'); };",
+    );
+
+    await expect(service.confirm((await service.stage(replacement)).token)).rejects.toThrow('new host failed');
+    expect(runtime.isLoaded('evaluation-center')).toBe(true);
+    expect(runtime.loadedHash('evaluation-center')).toBe(oldHash);
+    expect(handlers.has('test:ping')).toBe(true);
+    expect(await hashPluginPackage(path.join(pluginsDir, 'evaluation-center'))).toBe(oldHash);
+    expect(registry.getPlugin('evaluation-center')).toMatchObject({ manifest: { version: '1.0.0' } });
   });
 
   it('rejects a direct filesystem install that bypasses validation and approval', async () => {

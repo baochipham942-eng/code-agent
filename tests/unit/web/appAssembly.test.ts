@@ -62,6 +62,11 @@ function buildDeps(dataDir: string): CreateAppDeps {
       ready: false,
     }),
     getDurableRunReadService: () => undefined,
+    internalFeatures: {
+      runtime: { isLoaded: () => false, loadedHash: () => undefined },
+      registry: { getPlugin: () => undefined },
+      pluginsDir: `${dataDir}/plugins`,
+    },
   };
 }
 
@@ -151,6 +156,7 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   // shell router
   ['get', '/shell/capabilities'],
   // static router (mounted at root, not under /api)
+  ['get', '/internal-features/:id/{*path}'],
   ['get', '/{*path}'],
 ];
 

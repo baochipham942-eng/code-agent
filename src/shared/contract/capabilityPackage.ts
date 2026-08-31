@@ -40,7 +40,17 @@ export interface InstalledCapabilityPackage {
   internalFeature?: {
     id: string;
     label: string;
+    sdkVersion: {
+      host: string;
+      renderer: string;
+    };
     rendererEntry: string;
+    rendererStyles: string;
+    hostEntry: string;
+    builtFrom?: {
+      appVersion: string;
+      commit: string;
+    };
   };
   error?: string;
 }

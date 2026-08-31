@@ -856,6 +856,8 @@ export function getPluginRegistry(): PluginRegistry {
 
 export async function initPluginSystem(): Promise<void> {
   await pluginRegistry.initialize();
+  const { getInternalFeatureHostRuntime } = await import('../internalFeatures/internalFeatureHostRuntime');
+  await getInternalFeatureHostRuntime().loadInstalled();
 }
 
 export async function shutdownPluginSystem(): Promise<void> {

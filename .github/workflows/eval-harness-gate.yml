@@ -97,7 +97,11 @@ jobs:
 
   internal-plugin-lifecycle:
     name: 插件装/开/卸 + HTTP 负例
-    runs-on: ubuntu-latest
+    # macOS runner：真插件 stage 走平台沙箱，Linux 的 bubblewrap 在 GitHub runner 上
+    # 拿不到用户命名空间（bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted），
+    # macOS 的 seatbelt 是系统自带且本机真跑验证过的那条路径。公有仓 runner 免费。
+    # 同判例见 .github/workflows/main-full-gate.yml。
+    runs-on: macos-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -113,20 +117,18 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Build node-pty native binding
-        # --ignore-scripts 会跳过 node-pty 的 Linux 编译；webServer 启动时会同步加载该原生模块。
+        # --ignore-scripts 会跳过 node-pty 的原生编译；webServer 启动时会同步加载该原生模块。
         run: |
           npm rebuild node-pty --build-from-source
           test -f node_modules/node-pty/build/Release/pty.node
 
-      - name: Install plugin sandbox runtime
-        # 真插件 stage 在 Linux 上 fail-closed 依赖 bubblewrap；runner 镜像默认不含 bwrap。
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes bubblewrap
-          bwrap --version
+      - name: Verify plugin sandbox runtime
+        # 真插件 stage fail-closed 依赖平台沙箱；macOS 走 seatbelt（系统自带 sandbox-exec）。
+        run: test -x /usr/bin/sandbox-exec
 
       - name: Verify system Chrome
-        run: google-chrome --version
+        # playwright channel: 'chrome' 要求系统 Chrome；macOS runner 镜像预装。
+        run: test -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
       - name: Run free internal-plugin lifecycle E2E
         env:

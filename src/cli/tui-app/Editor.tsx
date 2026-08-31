@@ -47,14 +47,14 @@ function LineContent({ line, cursorCol, state }: {
     }
     if (cursorCol === i) {
       flush();
-      nodes.push(<Text key={key++} inverse>{ch}</Text>);
+      nodes.push(<Text key={key++} inverse color={ACCENT}>{ch}</Text>);
       continue;
     }
     run += ch;
   }
   flush();
   if (cursorCol === line.length) {
-    nodes.push(<Text key={key++} inverse> </Text>);
+    nodes.push(<Text key={key++} inverse color={ACCENT}> </Text>);
   }
   if (nodes.length === 0) {
     return <Text> </Text>;
@@ -62,14 +62,14 @@ function LineContent({ line, cursorCol, state }: {
   return <Text wrap="wrap">{nodes}</Text>;
 }
 
-/** 空草稿 placeholder：光标叠首字符反色（Codex 的 "Ask Codex to do anything" 风格） */
+/** 空草稿 placeholder：绿色块光标叠在首字符上，避免默认 inverse 变成白块 */
 function PlaceholderLine({ text, showCursor }: { text: string; showCursor: boolean }) {
   if (!showCursor || text.length === 0) {
     return <Text dimColor>{text}</Text>;
   }
   return (
     <Text>
-      <Text inverse>{text[0]}</Text>
+      <Text inverse color={ACCENT}>{text[0]}</Text>
       <Text dimColor>{text.slice(1)}</Text>
     </Text>
   );

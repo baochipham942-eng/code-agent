@@ -5,8 +5,13 @@
 
 import { en } from '../i18n/en';
 import { zh } from '../i18n/zh';
-import type { AccessSubject } from './accessControl';
 import {
+  canAccessFeature,
+  type AccessControlledFeature,
+  type AccessSubject,
+} from './accessControl';
+import {
+  CAPABILITY_HUB_TAB_BY_SETTINGS_TAB,
   canAccessSettingsTab,
   isSettingsTabCapabilityAvailable,
   type SettingsTab,
@@ -19,6 +24,7 @@ export interface SettingsEntry {
   labelKey: string;
   keywords: string[];
   requiresAnyCapability?: readonly BundledHostCapabilityId[];
+  requiresFeature?: AccessControlledFeature;
 }
 
 export interface SearchSettingsOptions extends AccessSubject {
@@ -109,7 +115,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'plugins', labelKey: 'pluginMarketplace', keywords: ['plugin', 'plugins', 'marketplace', 'install', 'uninstall', 'enable', 'disable'] },
   { tab: 'plugins', labelKey: 'pluginVisibility', keywords: ['visibility', 'admin', 'user', 'regular user', 'admin only', 'visible to users', 'permission'] },
   { tab: 'plugins', labelKey: 'pluginPermissions', keywords: ['plugin permission', 'plugin risk', 'external service', 'hook permission'] },
-  { tab: 'plugins', labelKey: 'marketplaceSource', keywords: ['marketplace source', 'github', 'npm', 'url', 'dir', 'source', 'refresh'] },
+  { tab: 'plugins', labelKey: 'marketplaceSource', keywords: ['marketplace source', 'github', 'npm', 'url', 'dir', 'source', 'refresh'], requiresFeature: 'settings.plugins' },
 
   // Hooks（Settings IA v2 下放普通用户后补索引——此前 admin-only 从未被索引）
   { tab: 'hooks', labelKey: 'hookConfig', keywords: ['hook', 'hooks', 'pre', 'post', 'intercept', 'auto run', 'event'] },
@@ -189,7 +195,9 @@ export function searchSettings(query: string, options?: SearchSettingsOptions): 
   if (!q) return [];
 
   return SETTINGS_INDEX.filter((entry, index) => {
-    if (!canAccessSettingsTab(entry.tab, options)) return false;
+    const opensCapabilityHub = CAPABILITY_HUB_TAB_BY_SETTINGS_TAB[entry.tab] !== undefined;
+    if (!opensCapabilityHub && !canAccessSettingsTab(entry.tab, options)) return false;
+    if (entry.requiresFeature && !canAccessFeature(entry.requiresFeature, options)) return false;
     if (!isSettingsTabCapabilityAvailable(entry.tab, options?.installedCapabilities)) return false;
     if (
       entry.requiresAnyCapability

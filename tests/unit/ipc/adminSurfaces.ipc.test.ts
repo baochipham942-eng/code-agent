@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   },
   loadAllHooksConfig: vi.fn(),
   listMarketplaces: vi.fn(),
+  addMarketplace: vi.fn(),
 }));
 
 vi.mock('../../../src/host/services/auth', () => ({
@@ -51,7 +52,7 @@ vi.mock('../../../src/host/config/configPaths', () => ({
 
 vi.mock('../../../src/host/skills/marketplace', () => ({
   listMarketplaces: mocks.listMarketplaces,
-  addMarketplace: vi.fn(),
+  addMarketplace: mocks.addMarketplace,
   removeMarketplace: vi.fn(),
   refreshMarketplace: vi.fn(),
   getMarketplaceInfo: vi.fn(),
@@ -155,17 +156,20 @@ describe('admin-only IPC surfaces', () => {
     expect(mocks.loadAllHooksConfig).not.toHaveBeenCalled();
   });
 
-  it('blocks non-admin marketplace access before reading registries', async () => {
+  it('blocks non-admin marketplace source additions before mutating registries', async () => {
     const ipc = makeFakeIpc();
     registerMarketplaceHandlers(ipc as never);
 
-    const response = await ipc.invoke<{ success: boolean; error?: string }>(IPC_CHANNELS.MARKETPLACE_LIST);
+    const response = await ipc.invoke<{ success: boolean; error?: string }>(
+      IPC_CHANNELS.MARKETPLACE_ADD,
+      'https://untrusted.example/catalog',
+    );
 
     expect(response).toEqual({
       success: false,
       error: 'Marketplace: Admin permission required',
     });
-    expect(mocks.listMarketplaces).not.toHaveBeenCalled();
+    expect(mocks.addMarketplace).not.toHaveBeenCalled();
   });
 
 });

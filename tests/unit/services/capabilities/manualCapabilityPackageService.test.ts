@@ -139,6 +139,24 @@ describe('ManualCapabilityPackageService', () => {
     await service.discard(manifestPreview.token);
   });
 
+  it('classifies only server-staged and approval-backed package sources for IPC authorization', async () => {
+    const service = createService({ computerUseStateDir: () => tempRoot });
+    const localPreview = await service.stage(await writePackage('source-check'));
+    const bundledPreview = await service.stageBundled('builtin.imageProcess');
+
+    await expect(service.getStagedPackageSource(localPreview.token)).resolves.toBe('local');
+    await expect(service.getStagedPackageSource(bundledPreview.token)).resolves.toBe('bundled');
+    await expect(service.getStagedPackageSource('forged-token')).resolves.toBeNull();
+
+    await service.confirm(localPreview.token);
+    await expect(service.getStagedPackageSource(localPreview.token)).resolves.toBeNull();
+    await expect(service.getInstalledPackageSource('source-check')).resolves.toBe('local');
+    await expect(service.getInstalledPackageSource('builtin.imageProcess')).resolves.toBe('bundled');
+    await expect(service.getInstalledPackageSource('foreign.plugin')).resolves.toBeNull();
+
+    await service.discard(bundledPreview.token);
+  });
+
   it('accepts an admin-only internal feature package and rejects an adminOnly mutation', async () => {
     const service = createService();
     const internalManifest = manifest('evaluation-center', {
@@ -186,7 +204,7 @@ describe('ManualCapabilityPackageService', () => {
       manifest: manifest('missing-field', { description: undefined }),
     });
 
-    await expect(service.stage(source)).rejects.toThrow('能力包清单缺少能力说明（description）');
+    await expect(service.stage(source)).rejects.toThrow('插件清单缺少能力说明（description）');
     expect(await fs.readdir(pluginsDir)).toEqual([]);
   });
 
@@ -209,7 +227,7 @@ describe('ManualCapabilityPackageService', () => {
     });
 
     await expect(service.stage(source)).rejects.toThrow(
-      /能力包依赖校验没通过.*plugin:needs-provider is missing dependencies: plugin:not-installed/,
+      /插件依赖校验没通过.*plugin:needs-provider is missing dependencies: plugin:not-installed/,
     );
     expect(lifecycle).toEqual([expect.objectContaining({
       id: 'needs-provider',
@@ -249,7 +267,7 @@ describe('ManualCapabilityPackageService', () => {
     });
     await service.confirm((await service.stage(consumer)).token);
 
-    await expect(service.uninstall('unload-provider')).rejects.toThrow('能力包运行时卸载失败');
+    await expect(service.uninstall('unload-provider')).rejects.toThrow('插件运行时卸载失败');
     expect(registry.getPlugin('unload-provider')?.state).toBe('active');
     expect(registry.getPlugin('unload-consumer')?.state).toBe('active');
     expect(hasProtocolTool('unload-provider:ping')).toBe(true);

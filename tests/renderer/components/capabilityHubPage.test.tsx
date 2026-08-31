@@ -6,9 +6,8 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 vi.mock('../../../src/renderer/components/features/expert/ExpertPanel', () => ({ ExpertPanel: () => <div /> }));
 vi.mock('../../../src/renderer/components/features/settings/tabs/SkillsSettings', () => ({ SkillsSettings: () => <div /> }));
 vi.mock('../../../src/renderer/components/features/settings/tabs/MCPSettings', () => ({ MCPSettings: () => <div /> }));
-vi.mock('../../../src/renderer/components/features/settings/tabs/PluginsSettings', () => ({ PluginsSettings: () => <div /> }));
-vi.mock('../../../src/renderer/components/features/capabilityHub/BundledCapabilitiesTab', () => ({
-  BundledCapabilitiesTab: () => <div data-testid="bundled-capabilities-tab" />,
+vi.mock('../../../src/renderer/components/features/settings/tabs/PluginsSettings', () => ({
+  PluginsSettings: () => <div data-testid="plugins-settings" />,
 }));
 
 import { CapabilityHubPage } from '../../../src/renderer/components/features/capabilityHub/CapabilityHubPage';
@@ -24,24 +23,25 @@ afterEach(() => {
 });
 
 describe('CapabilityHubPage', () => {
-  it('普通用户看到功能包、专家、技能和连接器（插件 tab 隐藏，代码与深链保留）', () => {
+  it('普通用户看到唯一插件入口以及专家、技能、连接器和候选能力', () => {
     useAuthStore.setState({ user: user(false) });
     render(<CapabilityHubPage />);
-    for (const key of ['packages', 'experts', 'skills', 'connectors']) {
+    for (const key of ['plugins', 'experts', 'skills', 'connectors', 'candidates']) {
       expect(screen.getByTestId(`capability-hub-tab-${key}`)).toBeTruthy();
     }
-    expect(screen.queryByTestId('capability-hub-tab-plugins')).toBeNull();
+    expect(screen.queryByTestId('capability-hub-tab-packages')).toBeNull();
     expect(screen.queryByTestId('capability-hub-tab-automation')).toBeNull();
     expect(screen.queryByTestId('capability-hub-tab-inventory')).toBeNull();
     expect(screen.queryByTestId('capability-hub-tab-history')).toBeNull();
   });
 
-  it('功能包深链打开 voice-input 安装面', async () => {
+  it('旧 packages 深链归并到插件页', async () => {
     useAuthStore.setState({ user: user(false) });
-    useAppStore.setState({ capabilityHubTab: 'packages' });
+    useAppStore.setState({ capabilityHubTab: 'packages' as never });
     render(<CapabilityHubPage />);
 
-    expect(await screen.findByTestId('bundled-capabilities-tab')).toBeTruthy();
+    expect(await screen.findByTestId('plugins-settings')).toBeTruthy();
+    await waitFor(() => expect(useAppStore.getState().capabilityHubTab).toBe('plugins'));
   });
 
   it('管理员看到 plugins tab，但不再看到装卸历史', () => {
@@ -51,12 +51,13 @@ describe('CapabilityHubPage', () => {
     expect(screen.queryByTestId('capability-hub-tab-history')).toBeNull();
   });
 
-  it('普通用户从 plugins 深链进入时回退到首个可见的功能包 tab，不白屏', async () => {
+  it('普通用户从 plugins 深链直接进入插件页，不白屏', async () => {
     useAuthStore.setState({ user: user(false) });
     useAppStore.setState({ capabilityHubTab: 'plugins' });
     render(<CapabilityHubPage />);
 
-    await waitFor(() => expect(useAppStore.getState().capabilityHubTab).toBe('packages'));
+    expect(await screen.findByTestId('plugins-settings')).toBeTruthy();
+    expect(useAppStore.getState().capabilityHubTab).toBe('plugins');
   });
 
   it('不再承载提示词入口（2026-07-27 二次拍板：迁账号菜单 admin 档）', () => {

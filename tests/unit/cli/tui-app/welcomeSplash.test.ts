@@ -52,6 +52,12 @@ describe('welcomeSplash', () => {
     expect(welcomeActionIndexAt(15, 30, 5, false, 70, 100)).toBe(0);
   });
 
+  it('最后一项下一行不是 Quit：鼠标离开动作表即未命中', () => {
+    expect(welcomeActionIndexAt(18, 30, 5, false)).toBe(3);
+    expect(welcomeActionIndexAt(19, 30, 5, false)).toBeNull();
+    expect(welcomeActionIndexAt(18, 30, 8, false)).toBeNull();
+  });
+
   it('abbreviateHomePath 把家目录换成 ~', () => {
     expect(abbreviateHomePath('/Users/linchen/Downloads/ai', '/Users/linchen')).toBe('~/Downloads/ai');
     expect(abbreviateHomePath('/Users/linchen', '/Users/linchen')).toBe('~');

@@ -75,7 +75,12 @@ export const EvalBenchmarksTab: React.FC = () => {
   const [quietNotice, setQuietNotice] = useState<string | null>(null);
   const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
   const startRunRef = useRef<(() => Promise<void>) | null>(null);
+  const maxCasesTouchedRef = useRef(false);
   const confirmation = useRunConfirmation(() => { void startRunRef.current?.(); });
+
+  const setMaxCasesDefault = useCallback((next: number) => {
+    if (!maxCasesTouchedRef.current) setMaxCases(next);
+  }, []);
 
   const loadExperiments = useCallback(async () => {
     setLoadState('loading');
@@ -95,13 +100,13 @@ export const EvalBenchmarksTab: React.FC = () => {
     void invokeEvaluation(EVALUATION_CHANNELS.RUN_EVENTS).then((result) => {
       if (result && 'environment' in result) {
         setProbe(result);
-        setMaxCases(result.splitCounts['held-in']);
+        setMaxCasesDefault(result.splitCounts['held-in']);
       }
     });
     return () => {
       unsubscribeRef.current?.();
     };
-  }, [loadExperiments]);
+  }, [loadExperiments, setMaxCasesDefault]);
 
   const lastRun = useMemo(() => getLatestEvalRun(experiments), [experiments]);
   const baseEstimatedCost = probe ? probe.estimatedCostPerCaseUsd * maxCases : undefined;
@@ -113,16 +118,17 @@ export const EvalBenchmarksTab: React.FC = () => {
     : baseEstimatedCost + (aiReviewEstimatedCost ?? 0);
 
   const openWizard = useCallback((quick = false) => {
+    maxCasesTouchedRef.current = false;
     setQuietNotice(null);
     setWizardOpen(true);
     confirmation.reset();
     setSplit('held-in');
     setTags(quick ? (probe?.quickCheck.tags ?? ['core-path']) : []);
-    setMaxCases(quick
+    setMaxCasesDefault(quick
       ? (probe?.quickCheck.maxCases ?? 12)
       : (probe?.splitCounts['held-in'] ?? 1));
     setSelectedAiReview([]);
-  }, [confirmation, probe]);
+  }, [confirmation, probe, setMaxCasesDefault]);
 
   const closeWizard = useCallback(() => {
     if (starting) return;
@@ -287,8 +293,9 @@ export const EvalBenchmarksTab: React.FC = () => {
         labels={labels}
         onClose={closeWizard}
         onSplit={(next) => {
+          maxCasesTouchedRef.current = false;
           setSplit(next);
-          setMaxCases(probe?.splitCounts[next] ?? 1);
+          setMaxCasesDefault(probe?.splitCounts[next] ?? 1);
           confirmation.reset();
         }}
         onToggleTag={(tag) => {
@@ -298,6 +305,7 @@ export const EvalBenchmarksTab: React.FC = () => {
           confirmation.reset();
         }}
         onMaxCases={(next) => {
+          maxCasesTouchedRef.current = true;
           setMaxCases(next);
           confirmation.reset();
         }}
